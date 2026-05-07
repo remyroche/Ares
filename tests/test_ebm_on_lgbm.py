@@ -4,18 +4,18 @@ import pandas as pd
 import extreme_price_movements.ebm_on_lgbm as lor
 from extreme_price_movements.ebm_on_lgbm import (
     SplinePostProcessor,
+    _diversity_bonus_for_leaf_name,
     _false_positive_avoidance_weight,
+    _family_signature_from_path,
     _feature_shape_scores,
     _fit_final_model,
     _hpo_objective_from_aggregate,
+    _leaf_path_features,
+    _lgbm_leaf_screen_scores,
     _metric_pack,
     _post_hpo_manage_features,
     _prescreen_features,
-    _lgbm_leaf_screen_scores,
     _select_leaf_names_from_score_matrix,
-    _diversity_bonus_for_leaf_name,
-    _family_signature_from_path,
-    _leaf_path_features,
     _select_smallest_within_one_se,
     _stage_partition_indices,
     max_leaves_for_tree,
@@ -97,10 +97,11 @@ def test_feature_shape_scores_are_finite_non_negative():
     assert np.all(scores >= 0.0)
 
 
-def test_hpo_objective_uses_lift_and_stability_weights():
-    score = _hpo_objective_from_aggregate({"lift20": 2.0, "stability20": 0.5})
+def test_hpo_objective_uses_salg_j20_score():
+    agg = {"lift20": 2.0, "stability20": 0.5, "ndcg20": 0.8}
+    score = _hpo_objective_from_aggregate(agg)
 
-    assert score == 0.65 * 2.0 + 0.35 * 0.5
+    assert np.isclose(score, lor._metric_j_from_lift_stability_ndcg(2.0, 0.5, 0.8))
 
 
 def test_max_leaves_for_tree_quota_schedule():
@@ -160,6 +161,103 @@ def test_mixed_family_leaves_receive_diversity_bonus():
     assert mixed > base
 
 
+def test_soft_tree_features_adds_value_feature_for_unselected_trees():
+    class _Booster:
+        def dump_model(self):
+            return {
+                "tree_info": [
+                    {
+                        "tree_structure": {
+                            "split_index": 0,
+                            "split_feature": 0,
+                            "threshold": 0.0,
+                            "left_child": {"leaf_index": 0, "leaf_value": 0.1},
+                            "right_child": {"leaf_index": 1, "leaf_value": 0.2},
+                        }
+                    },
+                    {"tree_structure": {"leaf_index": 0, "leaf_value": 0.3}},
+                ]
+            }
+
+    class _Model:
+        tree_feature_prefix = "test_prefix"
+        booster_ = _Booster()
+
+    arr, names, _ = lor._compute_soft_tree_features_ebm(
+        [_Model()],
+        np.ones((4, 1), dtype=np.float32),
+        np.ones(1, dtype=np.float32),
+        selected_names={"test_prefix_tree1_leaf0_soft"},
+    )
+
+    assert names == ["test_prefix_tree1_leaf0_soft"]
+    assert arr.shape == (4, 1)
+    assert np.all(np.isfinite(arr))
+    assert np.allclose(arr[:, 0], 1.0)
+
+    arr_missing, names_missing, _ = lor._compute_soft_tree_features_ebm(
+        [_Model()],
+        np.ones((4, 1), dtype=np.float32),
+        np.ones(1, dtype=np.float32),
+        selected_names={"test_prefix_tree1_leaf9_soft"},
+    )
+    assert names_missing == ["test_prefix_tree1_value"]
+    assert arr_missing.shape == (4, 1)
+
+
+def test_lgbm_tree_features_require_stricter_presence_and_sign_thresholds():
+    presence_min = lor._round_presence_min(1)
+    sign_min = lor._round_sign_consistency_min(1)
+    eval_stats = {
+        "presence_rate": np.array(
+            [presence_min + 0.05, presence_min + 0.05], dtype=np.float32
+        ),
+        "sign_consistency": np.array(
+            [sign_min + 0.05, sign_min + 0.05], dtype=np.float32
+        ),
+        "top_usefulness": np.ones(2, dtype=np.float32),
+        "stability_tiebreaker": np.ones(2, dtype=np.float32),
+        "n_eval_folds": np.ones(2, dtype=np.float32),
+    }
+
+    scores, details = lor._combine_ebm_feature_scores(
+        np.ones(2, dtype=np.float32),
+        eval_stats,
+        1,
+        ["raw_signal", "lgbm_depth3_minpct0200_tree0_leaf0_soft"],
+    )
+
+    assert scores[0] > 0.0
+    assert scores[1] == 0.0
+    assert details["presence_fail_count"] == 1.0
+    assert details["sign_fail_count"] == 1.0
+    assert details["lgbm_presence_fail_count"] == 1.0
+    assert details["lgbm_sign_fail_count"] == 1.0
+    assert details["raw_presence_fail_count"] == 0.0
+    assert details["raw_sign_fail_count"] == 0.0
+
+
+def test_combine_ebm_feature_scores_falls_back_on_eval_shape_mismatch():
+    base_scores = np.asarray([0.2, 0.5, 0.1], dtype=np.float32)
+    eval_stats = {
+        "presence_rate": np.ones(2, dtype=np.float32),
+        "sign_consistency": np.ones(2, dtype=np.float32),
+        "top_usefulness": np.ones(2, dtype=np.float32),
+        "stability_tiebreaker": np.ones(2, dtype=np.float32),
+        "n_eval_folds": np.ones(2, dtype=np.float32),
+    }
+
+    scores, details = lor._combine_ebm_feature_scores(
+        base_scores,
+        eval_stats,
+        1,
+        ["a", "b", "c"],
+    )
+
+    assert np.allclose(scores, base_scores)
+    assert details["eval_stats_shape_mismatch"] == 1.0
+
+
 def test_leaf_path_and_family_metadata():
     tree = {
         "split_feature": 0,
@@ -201,6 +299,17 @@ def test_metric_pack_uses_grouped_stability_when_groups_available():
     assert metrics["stability30"] != metrics["stability30_proxy"]
     assert "stability30_group_mean" in metrics
     assert "stability30_group_std" in metrics
+
+
+def test_metric_pack_tiny_sample_uses_baseline_lift_for_salg_consistency():
+    y = np.asarray([0.0, 1.0, 0.0, 1.0], dtype=np.float32)
+    pred = np.asarray([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
+
+    metrics = _metric_pack(y, pred, classifier=True)
+
+    assert metrics["lift20"] == 1.0
+    assert metrics["salg20"] == lor._metric_salg(1.0, 0.0)
+    assert metrics["J20"] == lor._metric_j_from_lift_stability_ndcg(1.0, 0.0, 0.0)
 
 
 def test_stage_partition_uses_interwoven_ratio_without_overlap():
@@ -258,14 +367,615 @@ def test_feature_shape_scores_zero_out_negative_shape_correlation():
 
 def test_select_smallest_within_one_se_prefers_smaller_model():
     history = [
-        {"round": 1, "J_final": 1.00, "J_se": 0.05, "n_features_end": 90},
-        {"round": 2, "J_final": 0.97, "J_se": 0.04, "n_features_end": 55},
-        {"round": 3, "J_final": 0.90, "J_se": 0.03, "n_features_end": 30},
+        {
+            "round": 1,
+            "J_final": 1.00,
+            "J_se": 0.05,
+            "n_features_end": 240,
+            "lift20": 1.5,
+            "stability20": 0.8,
+            "ndcg20": 0.6,
+        },
+        {
+            "round": 2,
+            "J_final": 0.98,
+            "J_se": 0.04,
+            "n_features_end": 120,
+            "lift20": 1.5,
+            "stability20": 0.8,
+            "ndcg20": 0.6,
+        },
+        {
+            "round": 3,
+            "J_final": 0.90,
+            "J_se": 0.03,
+            "n_features_end": 80,
+            "lift20": 1.5,
+            "stability20": 0.8,
+            "ndcg20": 0.6,
+        },
     ]
 
     chosen = _select_smallest_within_one_se(history)
 
     assert chosen["round"] == 2
+    assert chosen["selection_used_target_feature_range"] == 1.0
+
+
+def test_select_smallest_within_one_se_penalizes_unstable_fold_scores():
+    history = [
+        {
+            "round": 1,
+            "J_final": 1.00,
+            "J_se": 0.01,
+            "n_features_end": 120,
+            "J_folds": [1.20, 1.10, 0.30, 0.25, 1.15],
+            "lift20": 1.8,
+            "stability20": 0.5,
+            "ndcg20": 0.6,
+        },
+        {
+            "round": 2,
+            "J_final": 0.96,
+            "J_se": 0.01,
+            "n_features_end": 80,
+            "J_folds": [0.94, 0.96, 0.95, 0.97, 0.96],
+            "lift20": 1.7,
+            "stability20": 0.8,
+            "ndcg20": 0.58,
+        },
+    ]
+
+    chosen = _select_smallest_within_one_se(history)
+
+    assert chosen["round"] == 2
+    assert chosen["selection_robust_j"] > 0.0
+    assert chosen["selection_n_acceptable_rounds"] >= 1.0
+
+
+def test_select_smallest_within_one_se_preserves_candidate_gate_filter():
+    history = [
+        {
+            "round": 1,
+            "J_final": 1.20,
+            "J_se": 0.01,
+            "n_features_end": 40,
+            "candidate_gate_passed": False,
+        },
+        {
+            "round": 2,
+            "J_final": 1.00,
+            "J_se": 0.01,
+            "n_features_end": 90,
+            "candidate_gate_passed": True,
+            "lift20": 1.5,
+            "stability20": 0.8,
+            "ndcg20": 0.6,
+        },
+    ]
+
+    chosen = _select_smallest_within_one_se(history)
+
+    assert chosen["round"] == 2
+
+
+def test_select_smallest_within_one_se_uses_pareto_front(monkeypatch):
+    monkeypatch.setattr(lor, "EBM_SELECTED_FEATURES_MIN", 40)
+    monkeypatch.setattr(lor, "EBM_SELECTED_FEATURES_MAX", 300)
+
+    history = [
+        {
+            "round": 1,
+            "J_final": 1.00,
+            "J_se": 0.01,
+            "n_features_end": 250,
+            "active_indices": np.arange(250),
+            "candidate_gate_passed": True,
+            "J_folds": [1.00, 1.00, 1.00],
+            "lift20": 1.5,
+            "stability20": 0.8,
+            "ndcg20": 0.6,
+        },
+        {
+            "round": 2,
+            "J_final": 1.01,
+            "J_se": 0.01,
+            "n_features_end": 200,
+            "active_indices": np.arange(200),
+            "candidate_gate_passed": True,
+            "J_folds": [1.01, 1.01, 1.01],
+            "lift20": 1.5,
+            "stability20": 0.8,
+            "ndcg20": 0.6,
+        },
+    ]
+
+    chosen = _select_smallest_within_one_se(history)
+
+    assert chosen["round"] == 2
+    assert chosen["selection_n_pareto_rounds"] == 1.0
+
+
+def test_select_smallest_within_one_se_prefers_target_range_when_viable(monkeypatch):
+    monkeypatch.setattr(lor, "EBM_SELECTED_FEATURES_MIN", 100)
+    monkeypatch.setattr(lor, "EBM_SELECTED_FEATURES_MAX", 300)
+
+    history = [
+        {
+            "round": 1,
+            "J_final": 1.00,
+            "J_se": 0.01,
+            "n_features_end": 80,
+            "active_indices": np.arange(80),
+            "candidate_gate_passed": True,
+            "J_folds": [1.00, 1.00, 1.00],
+            "lift20": 1.5,
+            "stability20": 0.8,
+            "ndcg20": 0.6,
+        },
+        {
+            "round": 2,
+            "J_final": 0.99,
+            "J_se": 0.01,
+            "n_features_end": 120,
+            "active_indices": np.arange(120),
+            "candidate_gate_passed": True,
+            "J_folds": [0.99, 0.99, 0.99],
+            "lift20": 1.5,
+            "stability20": 0.8,
+            "ndcg20": 0.6,
+        },
+    ]
+
+    chosen = _select_smallest_within_one_se(history)
+
+    assert chosen["round"] == 2
+    assert chosen["selection_used_target_feature_range"] == 1.0
+    assert chosen["selection_n_target_acceptable_rounds"] == 1.0
+
+
+def test_select_smallest_within_one_se_uses_efficiency_gates_before_pareto(monkeypatch):
+    monkeypatch.setattr(lor, "EBM_SELECTED_FEATURES_MIN", 40)
+    monkeypatch.setattr(lor, "EBM_SELECTED_FEATURES_MAX", 300)
+
+    history = [
+        {
+            "round": 1,
+            "J_final": 0.96,
+            "J_se": 0.01,
+            "n_features_end": 80,
+            "active_indices": np.arange(80),
+            "candidate_gate_passed": True,
+            "J_folds": [0.96, 0.96, 0.96],
+            "lift20": 1.5,
+            "stability20": 0.8,
+            "ndcg20": 0.6,
+        },
+        {
+            "round": 2,
+            "J_final": 1.00,
+            "J_se": 0.01,
+            "n_features_end": 160,
+            "active_indices": np.arange(160),
+            "candidate_gate_passed": True,
+            "J_folds": [1.00, 1.00, 1.00],
+            "lift20": 1.5,
+            "stability20": 0.8,
+            "ndcg20": 0.6,
+        },
+        {
+            "round": 3,
+            "J_final": 1.01,
+            "J_se": 0.01,
+            "n_features_end": 500,
+            "active_indices": np.arange(500),
+            "candidate_gate_passed": True,
+            "J_folds": [1.01, 1.01, 1.01],
+            "lift20": 1.5,
+            "stability20": 0.8,
+            "ndcg20": 0.6,
+        },
+    ]
+
+    chosen = _select_smallest_within_one_se(history)
+
+    assert chosen["round"] == 2
+    assert (
+        chosen["selection_policy"] == "quality_efficiency_pareto_close_j_min_features"
+    )
+    assert chosen["selection_used_target_feature_range"] == 1.0
+    assert chosen["selection_n_efficiency_pass_rounds"] == 1.0
+    assert chosen["selection_n_pareto_rounds"] == 1.0
+
+
+def test_select_robust_pruning_round_keeps_negative_best_reference(monkeypatch):
+    monkeypatch.setattr(lor, "EBM_SELECTED_FEATURES_MIN", 40)
+    monkeypatch.setattr(lor, "EBM_SELECTED_FEATURES_MAX", 300)
+    history = [
+        {
+            "round": 1,
+            "J_final": -0.10,
+            "J_se": 0.01,
+            "n_features_end": 120,
+            "active_indices": np.arange(120),
+            "candidate_gate_passed": True,
+            "J_folds": [-0.10, -0.10, -0.10],
+            "lift20": 1.1,
+            "stability20": 0.2,
+            "ndcg20": 0.2,
+        },
+        {
+            "round": 2,
+            "J_final": -0.20,
+            "J_se": 0.01,
+            "n_features_end": 100,
+            "active_indices": np.arange(100),
+            "candidate_gate_passed": True,
+            "J_folds": [-0.20, -0.20, -0.20],
+            "lift20": 1.1,
+            "stability20": 0.2,
+            "ndcg20": 0.2,
+        },
+    ]
+
+    chosen = lor._select_robust_pruning_round(history)
+
+    assert chosen["round"] == 1
+    assert np.isclose(
+        chosen["selection_min_robust_j"],
+        -0.10 - lor._dynamic_round_tolerance(-0.10),
+    )
+    assert np.isclose(chosen["selection_tol"], lor._dynamic_round_tolerance(-0.10))
+
+
+def test_select_robust_pruning_round_uses_target_range_when_five_pass(monkeypatch):
+    monkeypatch.setattr(lor, "EBM_SELECTED_FEATURES_MIN", 100)
+    monkeypatch.setattr(lor, "EBM_SELECTED_FEATURES_MAX", 350)
+    history = [
+        {
+            "round": i + 1,
+            "J_final": j,
+            "J_se": 0.0,
+            "n_features_end": n,
+            "active_indices": np.arange(n),
+            "candidate_gate_passed": True,
+            "J_folds": [j, j, j],
+            "lift20": 1.6,
+            "stability20": 0.8,
+            "ndcg20": 0.8,
+        }
+        for i, (j, n) in enumerate(
+            [(0.90, 180), (0.91, 180), (0.92, 180), (0.93, 180), (1.10, 180)]
+        )
+    ]
+
+    chosen = lor._select_robust_pruning_round(history)
+
+    assert chosen["round"] == 5
+    assert chosen["selection_used_target_feature_range"] == 1.0
+    assert chosen["selection_n_target_acceptable_rounds"] == 5.0
+
+
+def test_select_pareto_knee_uses_signed_above_line_distance():
+    pareto = [
+        {
+            "round": 1,
+            "_robust_j": 0.96,
+            "_n_features_end": 80,
+            "lift20": 1.5,
+            "stability20": 0.8,
+            "ndcg20": 0.6,
+        },
+        {
+            "round": 2,
+            "_robust_j": 0.97,
+            "_n_features_end": 160,
+            "lift20": 1.5,
+            "stability20": 0.8,
+            "ndcg20": 0.6,
+        },
+        {
+            "round": 3,
+            "_robust_j": 1.01,
+            "_n_features_end": 280,
+            "lift20": 1.5,
+            "stability20": 0.8,
+            "ndcg20": 0.6,
+        },
+    ]
+
+    chosen = lor._select_pareto_knee_round(pareto)
+
+    assert chosen["round"] == 1
+
+
+def test_top20_acceptability_uses_salg_from_std_blend():
+    pareto = [
+        {
+            "round": 1,
+            "_robust_j": 0.98,
+            "_n_features_end": 120,
+            "lift20": 1.7,
+            "stability20_weekly_std": 0.10,
+            "stability20_monthly_std": 0.20,
+            "ndcg20": 0.82,
+        },
+        {
+            "round": 2,
+            "_robust_j": 1.00,
+            "_n_features_end": 220,
+            "lift20": 1.8,
+            "stability20_weekly_std": 2.00,
+            "stability20_monthly_std": 2.00,
+            "ndcg20": 0.84,
+        },
+    ]
+
+    acceptable = lor._top20_metric_acceptable_rounds(
+        pareto,
+        best_robust=1.00,
+        best_tolerance=0.05,
+    )
+
+    assert [r["round"] for r in acceptable] == [1, 2]
+
+
+def test_top20_metric_acceptable_rounds_accepts_non_enriched_history_rows():
+    rounds = [
+        {
+            "round": 1,
+            "J_robust": 0.97,
+            "lift20": 1.7,
+            "stability20": 0.8,
+            "ndcg20": 0.8,
+        },
+        {
+            "round": 2,
+            "J_final": 0.80,
+            "lift20": 1.7,
+            "stability20": 0.8,
+            "ndcg20": 0.8,
+        },
+    ]
+
+    acceptable = lor._top20_metric_acceptable_rounds(
+        rounds,
+        best_robust=1.00,
+        best_tolerance=0.05,
+    )
+
+    assert [r["round"] for r in acceptable] == [1]
+
+
+def test_top20_metric_helpers_use_salg_and_require_finite_values():
+    row = {"lift20": 0.8, "stability20": 0.9, "ndcg20": 0.7}
+
+    assert np.isclose(lor._round_salg20(row), 0.9 + 0.38 * (0.8 - 1.0))
+    assert np.isclose(lor._round_lift_stab_adjusted(row), lor._round_salg20(row))
+    assert lor._has_finite_top20_metrics(
+        {"lift20": 1.2, "stability20": 0.9, "ndcg_at_20": 0.7}
+    )
+    assert lor._round_ndcg20({"ndcg_at_20": 0.7}) == 0.7
+    assert not lor._has_finite_top20_metrics(
+        {"lift20": 1.2, "stability20": 0.9, "ndcg20": float("nan")}
+    )
+
+
+def test_ndcg_at_k_respects_prediction_rank_order():
+    y = np.asarray([0.0, 1.0, 2.0], dtype=float)
+    pred_good = np.asarray([0.1, 0.2, 0.3], dtype=float)
+    pred_bad = np.asarray([0.1, 0.3, 0.2], dtype=float)
+
+    assert np.isclose(lor._ndcg_at_k(y, pred_good, k=3), 1.0)
+    assert lor._ndcg_at_k(y, pred_bad, k=3) < 1.0
+
+
+def test_mean_metric_skips_nan_before_fallback_key():
+    fold_metrics = [
+        {"stability20": float("nan"), "stability15": 0.7},
+        {"stability20": 0.9, "stability15": 0.5},
+    ]
+
+    assert np.isclose(lor._mean_metric(fold_metrics, "stability20", "stability15"), 0.8)
+
+
+def test_history_fold_values_prefers_explicit_j_folds_without_double_counting():
+    row = {
+        "J_folds": [0.4, 0.6],
+        "fold_metrics": [{"J20": 0.4}, {"J20": 0.6}],
+    }
+
+    assert lor._history_fold_values(row, ("J20",)) == [0.4, 0.6]
+
+
+def test_top20_acceptance_thresholds_use_best_j20_reference_model():
+    reference = [
+        {"lift20": 1.90, "stability20": 0.30, "ndcg20": 0.70},
+        {"lift20": 1.50, "stability20": 0.90, "ndcg20": 0.95},
+    ]
+
+    thresholds = lor._top20_acceptance_thresholds(reference)
+
+    assert np.isclose(thresholds["min_lift20"], 1.0 + 0.66 * (1.50 - 1.0))
+    best_salg = 0.90 + 0.38 * (1.50 - 1.0)
+    assert np.isclose(thresholds["min_stability20"], 0.0)
+    assert np.isclose(thresholds["min_salg20"], 0.75 * best_salg)
+    assert np.isclose(thresholds["min_lift_stab_adjusted20"], thresholds["min_salg20"])
+    assert np.isclose(thresholds["best_salg20"], best_salg)
+    assert np.isclose(thresholds["min_ndcg20"], 0.85)
+
+
+def test_top20_acceptance_requires_finite_row_and_threshold_metrics():
+    thresholds = {
+        "min_lift20": 1.0,
+        "min_stability20": 0.0,
+        "min_salg20": 0.0,
+        "min_ndcg20": 0.0,
+    }
+
+    assert not lor._passes_top20_acceptance({"lift20": 1.2}, thresholds)
+    assert not lor._passes_top20_acceptance(
+        {"lift20": 1.2, "stability20": 0.8, "ndcg20": 0.7},
+        {**thresholds, "min_salg20": float("nan")},
+    )
+
+
+def test_top20_acceptance_thresholds_floor_lift_and_tolerate_negative_salg():
+    thresholds = lor._top20_acceptance_thresholds(
+        [
+            {
+                "J_final": 1.0,
+                "lift20": 0.80,
+                "stability20": -0.10,
+                "ndcg20": 0.40,
+            }
+        ]
+    )
+
+    assert np.isclose(thresholds["min_lift20"], 1.0)
+    assert np.isclose(
+        thresholds["min_salg20"],
+        lor._metric_salg(0.80, -0.10) - lor.EBM_TOP20_SALG_TOL,
+    )
+
+
+def test_fold_j_and_aggregate_use_salg_ndcg_robust_objective():
+    fold_metrics = [
+        {"lift20": 1.5, "stability20": 0.80, "ndcg20": 0.60},
+        {"lift20": 1.7, "stability20": 0.70, "ndcg_at_20": 0.70},
+        {"lift20": 1.4, "stability20": 0.90, "ndcg@20": 0.65},
+    ]
+    fold_j = np.asarray([lor._fold_j(m) for m in fold_metrics], dtype=float)
+    expected = np.asarray(
+        [
+            0.75 * (0.80 + 0.38 * 0.50) + 0.25 * 0.60,
+            0.75 * (0.70 + 0.38 * 0.70) + 0.25 * 0.70,
+            0.75 * (0.90 + 0.38 * 0.40) + 0.25 * 0.65,
+        ],
+        dtype=float,
+    )
+
+    assert np.allclose(fold_j, expected)
+
+    agg = lor._aggregate_j(fold_metrics)
+    q25, q50, q75 = np.percentile(expected, [25, 50, 75])
+    assert np.isclose(agg["J_robust"], q50 - 0.5 * (q75 - q25))
+    assert np.isclose(agg["J_final"], agg["J_robust"])
+    assert np.isclose(
+        agg["salg20"], lor._metric_salg(agg["lift20"], agg["stability20"])
+    )
+    assert np.isclose(
+        agg["J20_mean_metrics"],
+        lor._metric_j_from_lift_stability_ndcg(
+            agg["lift20"], agg["stability20"], agg["ndcg20"]
+        ),
+    )
+
+
+def test_top20_lift_threshold_uses_reference_lift_gain_formula():
+    thresholds = lor._top20_acceptance_thresholds(
+        [
+            {"lift20": 0.90, "stability20": 0.30, "ndcg_at_20": 0.50},
+            {"lift20": 0.95, "stability20": 0.40, "ndcg_at_20": 0.55},
+        ]
+    )
+
+    assert np.isclose(thresholds["min_lift20"], 1.0)
+
+
+def test_top20_metric_acceptable_models_compare_to_best_so_far_thresholds():
+    prior_best_so_far = [
+        {"spec_i": 1, "lift20": 1.90, "stability20": 0.30, "ndcg20": 0.70},
+        {"spec_i": 2, "lift20": 1.50, "stability20": 0.90, "ndcg20": 0.95},
+    ]
+    current_round_models = [
+        {"spec_i": 1, "lift20": 1.55, "stability20": 0.90, "ndcg20": 0.95},
+        {"spec_i": 2, "lift20": 1.65, "stability20": 0.10, "ndcg20": 0.95},
+        {"spec_i": 3, "lift20": 1.65, "stability20": 0.90, "ndcg20": 0.80},
+        {"spec_i": 4, "lift20": 1.65, "stability20": 0.90, "ndcg20": 0.86},
+    ]
+
+    acceptable = lor._top20_metric_acceptable_models(
+        current_round_models,
+        prior_best_so_far,
+    )
+
+    assert [r["spec_i"] for r in acceptable] == [1, 4]
+
+
+def test_select_robust_pruning_round_target_range_cannot_bypass_top20(monkeypatch):
+    monkeypatch.setattr(lor, "EBM_SELECTED_FEATURES_MIN", 100)
+    monkeypatch.setattr(lor, "EBM_SELECTED_FEATURES_MAX", 300)
+
+    history = [
+        {
+            "round": 1,
+            "J_final": 1.00,
+            "J_se": 0.01,
+            "n_features_end": 80,
+            "active_indices": np.arange(80),
+            "candidate_gate_passed": True,
+            "J_folds": [1.00, 1.00, 1.00],
+            "lift20": 2.0,
+            "stability20": 1.0,
+            "ndcg_at_20": 1.0,
+        },
+        {
+            "round": 2,
+            "J_final": 0.99,
+            "J_se": 0.01,
+            "n_features_end": 120,
+            "active_indices": np.arange(120),
+            "candidate_gate_passed": True,
+            "J_folds": [0.99, 0.99, 0.99],
+            "lift20": 1.0,
+            "stability20": 1.0,
+            "ndcg_at_20": 1.0,
+        },
+    ]
+
+    chosen = lor._select_robust_pruning_round(history)
+
+    assert chosen["round"] == 1
+    assert chosen["selection_n_target_acceptable_rounds"] == 0.0
+
+
+def test_select_smallest_within_one_se_uses_feature_efficiency():
+    history = [
+        {
+            "round": 1,
+            "J_final": 1.00,
+            "J_se": 0.01,
+            "n_features_end": 500,
+            "lift20": 1.5,
+            "stability20": 0.8,
+            "ndcg20": 0.6,
+        },
+        {
+            "round": 2,
+            "J_final": 0.99,
+            "J_se": 0.01,
+            "n_features_end": 60,
+            "lift20": 1.5,
+            "stability20": 0.8,
+            "ndcg20": 0.6,
+        },
+    ]
+
+    chosen = _select_smallest_within_one_se(history)
+
+    assert chosen["round"] == 2
+    assert chosen["selection_used_target_feature_range"] == 0.0
+    assert "selection_feature_efficiency_j" in chosen
+
+
+def test_is_lgbm_tree_feature_name_detects_tree_leaf_features():
+    assert lor._is_lgbm_tree_feature_name("lgbm_depth3_minpct0200_tree0_leaf1_soft")
+    assert lor._is_lgbm_tree_feature_name("lgbm_depth3_minpct0200_tree0_value")
+    assert lor._is_lgbm_tree_feature_name("custom_tree0_leaf1_soft")
+    assert not lor._is_lgbm_tree_feature_name("tree_regime")
+    assert not lor._is_lgbm_tree_feature_name("leaf_support")
+    assert not lor._is_lgbm_tree_feature_name("rsi_slope")
 
 
 def test_prescreen_features_reduces_to_configured_cap(monkeypatch):

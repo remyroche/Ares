@@ -196,7 +196,7 @@ def select_top_rank_mask(
     topx_values: tuple[int, ...] = (20, 25, 30, 35, 40),
     rank_window: int = 240,
 ) -> TopRankMaskResult:
-    """Choose top-x% rolling-rank mask maximizing lift*coverage*excess magnitude."""
+    """Choose an exact global top-x% mask over the current strategy population."""
     p = np.asarray(base_prob, dtype=np.float32)
     sm = np.asarray(strategy_mask, dtype=bool)
     y = np.asarray(outcomes, dtype=np.float32)
@@ -212,13 +212,7 @@ def select_top_rank_mask(
             score=0.0,
         )
 
-    pct = rolling_asset_percentile(
-        scores=p,
-        symbols=symbols,
-        timestamps=timestamps,
-        window=max(int(rank_window), 5),
-    )
-    valid = sm & np.isfinite(pct)
+    valid = sm & np.isfinite(p)
     baseline_hit = float(np.mean(y[sm] >= 0.5)) if int(sm.sum()) else 0.0
 
     mfe_v = np.asarray(mfe, dtype=np.float32) if mfe is not None else None
@@ -229,9 +223,12 @@ def select_top_rank_mask(
 
     best = (-1.0, int(topx_values[0]), np.zeros(n, dtype=bool), 0.0)
     for x in topx_values:
-        thr = 1.0 - float(x) / 100.0
-        m = valid & (pct >= thr)
-        cov = float(np.mean(m))
+        valid_idx = np.flatnonzero(valid)
+        n_keep = max(1, int(np.ceil(float(x) / 100.0 * valid_idx.size)))
+        kept_global = valid_idx[np.argsort(p[valid_idx], kind="mergesort")[-n_keep:]]
+        m = np.zeros(n, dtype=bool)
+        m[kept_global] = True
+        cov = float(np.sum(m) / max(int(np.sum(sm)), 1))
         if cov <= 0.0:
             continue
         y_frac = float(np.clip(0.10 / max(cov, 1e-6), 0.01, 1.0))
@@ -272,7 +269,7 @@ def select_top_rank_mask(
             best = (score, int(x), m, cov)
         tprint(
             "[trade_filtering] candidate "
-            f"topx={int(x)} cov={cov:.4f} y_frac={y_frac:.4f} lift={lift:.4f} "
+            f"global_topx={int(x)} cov={cov:.4f} y_frac={y_frac:.4f} lift={lift:.4f} "
             f"excess={excess:.6f} score={score:.6e}"
         )
 
@@ -280,7 +277,7 @@ def select_top_rank_mask(
         mask=best[2], chosen_topx=best[1], coverage=float(best[3]), score=float(best[0])
     )
     tprint(
-        f"[trade_filtering] selected topx={out.chosen_topx} "
+        f"[trade_filtering] selected global_topx={out.chosen_topx} "
         f"coverage={out.coverage:.4f} score={out.score:.6e} kept={int(out.mask.sum())}/{n}"
     )
     return out

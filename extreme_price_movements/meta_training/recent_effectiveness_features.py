@@ -100,18 +100,155 @@ def _compute_scope_timeseries(
     metric_fn,
 ) -> pd.DataFrame:
     rows: list[dict[str, float | pd.Timestamp]] = []
-    ts_unique = pd.Index(g[ts_col].dropna().unique()).sort_values()
+    g_sorted = g.sort_values(ts_col)
+    ts_values = pd.to_datetime(g_sorted[ts_col], errors="coerce")
+    label_values = pd.to_datetime(g_sorted[label_available_ts_col], errors="coerce")
+    ts_ns = ts_values.astype("int64").to_numpy(copy=False)
+    label_ns = label_values.astype("int64").to_numpy(copy=False)
+    valid_label_ns = label_ns[label_ns != pd.NaT.value]
+    monotone_label = bool(np.all(np.diff(valid_label_ns) >= 0))
+    ts_unique = pd.Index(ts_values.dropna().unique()).sort_values()
     for t in ts_unique:
         rec: dict[str, float | pd.Timestamp] = {ts_col: t}
+        t_ns = pd.Timestamp(t).value
         for win in windows:
-            hist = g[
-                (g[label_available_ts_col] < t) & (g[ts_col] >= t - pd.Timedelta(win))
-            ]
+            lo_ns = (pd.Timestamp(t) - pd.Timedelta(win)).value
+            if monotone_label:
+                lo = int(np.searchsorted(ts_ns, lo_ns, side="left"))
+                hi = int(np.searchsorted(label_ns, t_ns, side="left"))
+                hist = g_sorted.iloc[lo:hi] if hi > lo else g_sorted.iloc[:0]
+            else:
+                hist = g_sorted[
+                    (label_values < t)
+                    & (ts_values >= pd.Timestamp(t) - pd.Timedelta(win))
+                ]
             vals = metric_fn(hist)
             for k, v in vals.items():
                 rec[f"{k}_{win.lower()}"] = v
         rows.append(rec)
     return pd.DataFrame(rows)
+
+
+def _compute_scope_timeseries_vectorized(
+    g: pd.DataFrame,
+    *,
+    ts_col: str,
+    label_available_ts_col: str,
+    windows: tuple[str, ...],
+    score_col: str,
+    prob_col: str,
+    y_col: str,
+    ret_col: str,
+    top_frac: float,
+    min_samples: int,
+    min_top_samples: int,
+    top_label: str,
+) -> pd.DataFrame:
+    """Precompute causal recent-effectiveness stats once per scope.
+
+    Rows are indexed by label-availability time, then joined back to prediction
+    timestamps with merge_asof. Time-window rolling operations use closed="left"
+    so a label that becomes available exactly at t is not visible to the feature
+    for a prediction at t, matching the strict ``label_available_ts < t`` rule.
+    """
+    hist = g[
+        [
+            label_available_ts_col,
+            score_col,
+            prob_col,
+            y_col,
+            ret_col,
+        ]
+    ].copy()
+    hist[label_available_ts_col] = pd.to_datetime(
+        hist[label_available_ts_col], errors="coerce"
+    )
+    hist = hist.dropna(subset=[label_available_ts_col]).sort_values(
+        label_available_ts_col
+    )
+    if hist.empty:
+        return pd.DataFrame(columns=[ts_col])
+
+    for col in [score_col, prob_col, y_col, ret_col]:
+        hist[col] = pd.to_numeric(hist[col], errors="coerce").astype(np.float32)
+
+    valid_all = (
+        np.isfinite(hist[score_col].to_numpy(dtype=np.float32, copy=False))
+        & np.isfinite(hist[prob_col].to_numpy(dtype=np.float32, copy=False))
+        & np.isfinite(hist[y_col].to_numpy(dtype=np.float32, copy=False))
+        & np.isfinite(hist[ret_col].to_numpy(dtype=np.float32, copy=False))
+    ).astype(np.float32)
+    hist["_valid_all"] = valid_all
+    hist["_cal_abs"] = np.abs(
+        hist[prob_col].to_numpy(dtype=np.float32, copy=False)
+        - hist[y_col].to_numpy(dtype=np.float32, copy=False)
+    ).astype(np.float32)
+    idxed = hist.set_index(label_available_ts_col, drop=False)
+    out = pd.DataFrame({ts_col: hist[label_available_ts_col].values}, index=hist.index)
+
+    score = idxed[score_col]
+    ret = idxed[ret_col]
+    prob = idxed[prob_col]
+    y = idxed[y_col]
+    valid = idxed["_valid_all"]
+    cal_abs = idxed["_cal_abs"]
+
+    for win in windows:
+        sfx = win.lower()
+        roll_valid = valid.rolling(win, closed="left")
+        n_valid = roll_valid.sum().astype(np.float32)
+        n_samples = (
+            pd.Series(np.ones(len(idxed), dtype=np.float32), index=idxed.index)
+            .rolling(win, closed="left")
+            .sum()
+            .astype(np.float32)
+        )
+
+        score_mean = score.rolling(win, closed="left").mean()
+        ret_mean = ret.rolling(win, closed="left").mean()
+        score_ret_mean = (score * ret).rolling(win, closed="left").mean()
+        score_std = score.rolling(win, closed="left").std(ddof=0)
+        ret_std = ret.rolling(win, closed="left").std(ddof=0)
+        corr = (score_ret_mean - score_mean * ret_mean) / (
+            score_std * ret_std
+        ).replace(0.0, np.nan)
+
+        thr = score.rolling(win, closed="left").quantile(1.0 - top_frac)
+        top = (score >= thr).astype(np.float32).where(np.isfinite(thr), 0.0)
+        top_valid = (top * valid).astype(np.float32)
+        n_top = top_valid.rolling(win, closed="left").sum().astype(np.float32)
+        top_y_sum = (top_valid * y).rolling(win, closed="left").sum()
+        top_p_sum = (top_valid * prob).rolling(win, closed="left").sum()
+        top_ret_sum = (top_valid * ret).rolling(win, closed="left").sum()
+        top_hit = top_y_sum / n_top.replace(0.0, np.nan)
+        top_cal = (top_p_sum / n_top.replace(0.0, np.nan)) - top_hit
+        top_ev = top_ret_sum / n_top.replace(0.0, np.nan)
+
+        enough = n_valid >= float(min_samples)
+        enough_top = n_top >= float(min_top_samples)
+        out[f"n_samples_{sfx}"] = n_samples.to_numpy(dtype=np.float32)
+        out[f"n_valid_{sfx}"] = n_valid.to_numpy(dtype=np.float32)
+        out[f"rolling_ic_{sfx}"] = corr.where(enough).to_numpy(dtype=np.float32)
+        out[f"model_ece_{sfx}"] = (
+            cal_abs.rolling(win, closed="left").mean().where(enough).to_numpy(
+                dtype=np.float32
+            )
+        )
+        out[f"{top_label}_hit_rate_{sfx}"] = top_hit.where(enough_top).to_numpy(
+            dtype=np.float32
+        )
+        out[f"{top_label}_calibration_error_{sfx}"] = top_cal.where(
+            enough_top
+        ).to_numpy(dtype=np.float32)
+        out[f"abs_{top_label}_calibration_error_{sfx}"] = np.abs(
+            top_cal.where(enough_top).to_numpy(dtype=np.float32)
+        )
+        out[f"{top_label}_ev_{sfx}"] = top_ev.where(enough_top).to_numpy(
+            dtype=np.float32
+        )
+        out[f"n_{top_label}_{sfx}"] = n_top.to_numpy(dtype=np.float32)
+
+    return out.drop_duplicates(subset=[ts_col], keep="last").sort_values(ts_col)
 
 
 def _add_scope_features(
@@ -185,13 +322,29 @@ def _add_scope_features(
                 f"n_{top_label}": raw["n_top"],
             }
 
-        stats_ts = _compute_scope_timeseries(
-            g,
-            ts_col=ts_col,
-            label_available_ts_col=label_available_ts_col,
-            windows=windows,
-            metric_fn=_scoped_window_stats,
-        )
+        if len(g) >= 1000:
+            stats_ts = _compute_scope_timeseries_vectorized(
+                g,
+                ts_col=ts_col,
+                label_available_ts_col=label_available_ts_col,
+                windows=windows,
+                score_col=score_col,
+                prob_col=prob_col,
+                y_col=y_col,
+                ret_col=ret_col,
+                top_frac=top_frac,
+                min_samples=min_samples,
+                min_top_samples=min_top_samples,
+                top_label=top_label,
+            )
+        else:
+            stats_ts = _compute_scope_timeseries(
+                g,
+                ts_col=ts_col,
+                label_available_ts_col=label_available_ts_col,
+                windows=windows,
+                metric_fn=_scoped_window_stats,
+            )
         if stats_ts.empty:
             continue
         mapped = pd.merge_asof(
@@ -202,19 +355,41 @@ def _add_scope_features(
             allow_exact_matches=True,
         )
         mapped.index = g[[ts_col]].sort_values(ts_col).index
-        for idx in g.index:
-            row = mapped.loc[idx]
-            for win in windows:
-                sfx = win.lower()
-                for m in metrics:
-                    key = f"{m}_{sfx}"
-                    df.at[idx, f"recent_{scope_name}_{m}_{sfx}"] = np.float32(
-                        row.get(key, np.nan)
-                    )
-                df.at[idx, f"recent_{scope_name}_available_{sfx}"] = np.int8(
-                    row.get(f"n_valid_{sfx}", 0.0) >= min_samples
-                    and np.isfinite(row.get(f"model_ece_{sfx}", np.nan))
+        assign_cols: dict[str, np.ndarray] = {}
+        for win in windows:
+            sfx = win.lower()
+            for m in metrics:
+                key = f"{m}_{sfx}"
+                out_key = f"recent_{scope_name}_{m}_{sfx}"
+                raw = (
+                    mapped[key]
+                    if key in mapped.columns
+                    else pd.Series(np.nan, index=mapped.index)
                 )
+                assign_cols[out_key] = pd.to_numeric(
+                    raw, errors="coerce"
+                ).to_numpy(dtype=np.float32)
+            n_valid_raw = (
+                mapped[f"n_valid_{sfx}"]
+                if f"n_valid_{sfx}" in mapped.columns
+                else pd.Series(np.nan, index=mapped.index)
+            )
+            model_ece_raw = (
+                mapped[f"model_ece_{sfx}"]
+                if f"model_ece_{sfx}" in mapped.columns
+                else pd.Series(np.nan, index=mapped.index)
+            )
+            n_valid = pd.to_numeric(
+                n_valid_raw, errors="coerce"
+            ).to_numpy(dtype=np.float32)
+            model_ece = pd.to_numeric(
+                model_ece_raw, errors="coerce"
+            ).to_numpy(dtype=np.float32)
+            assign_cols[f"recent_{scope_name}_available_{sfx}"] = (
+                (n_valid >= min_samples) & np.isfinite(model_ece)
+            ).astype(np.int8)
+        for col, values in assign_cols.items():
+            df.loc[mapped.index, col] = values
     return df
 
 

@@ -771,7 +771,12 @@ def _compute_features_hourly_runtime(
 
 
 # Priority order for quote-currency deduplication.
-_QUOTE_PRIORITY: list[str] = ["USDT", "USDC", "BUSD", "EUR"]
+#
+# Keep this aligned with universe.py: USDC is the training/default quote. The
+# feature snapshot for the 20260321_140000 run contains the new orderbook and
+# cross-asset feature blocks on USDC symbols; preferring USDT here silently
+# routes training/meta artifacts onto stale USDT feature files.
+_QUOTE_PRIORITY: list[str] = ["USDC", "USDT", "BUSD", "EUR"]
 FEATURE_HEALTH_CRITICAL_KEYS: tuple[str, ...] = (
     "loc_range_pos_24",
     "loc_vwap_dev_z_24",
@@ -861,11 +866,11 @@ def load_features_for_stage_or_all(
 def _dedup_universe_by_base(symbols: list[str]) -> list[str]:
     """Return at most one symbol per base asset, preferring the highest-priority quote.
 
-    Priority: USDT > USDC > BUSD > EUR. If a base asset has none of those quotes,
+    Priority: USDC > USDT > BUSD > EUR. If a base asset has none of those quotes,
     it is kept as-is (preserves non-stablecoin pairs like BTC/ETH).
 
     Examples:
-        [ETH/USDT, ETH/USDC, BTC/USDT] -> [ETH/USDT, BTC/USDT]
+        [ETH/USDT, ETH/USDC, BTC/USDT] -> [ETH/USDC, BTC/USDT]
         [SOL/USDC, SOL/BUSD]            -> [SOL/USDC]
     """
     _KNOWN_QUOTES = set(_QUOTE_PRIORITY)
@@ -2052,12 +2057,12 @@ def _load_close_panel_for_symbols(
     ts_sig: pd.Timestamp,
     lookback_days: int,
     end_ts: pd.Timestamp | None = None,
+    min_rows: int = 24 * 60,
 ) -> tuple[pd.DataFrame | None, list[str], list[str]]:
     """Load only close series needed for cheap cache-completeness checks."""
     close_map: dict[str, pd.Series] = {}
     loaded_syms: list[str] = []
     skipped_log: list[str] = []
-    min_rows = 24 * 60
     data_end_ts = pd.Timestamp(end_ts) if end_ts is not None else pd.Timestamp(ts_sig)
     for s in symbols:
         df = store.load(s, columns=["close"], end_ts=data_end_ts)
@@ -2275,7 +2280,7 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         _dedup_universe_by_base(train_syms)
     )
     tprint(
-        f"Universe after base-asset dedup (USDT>USDC>BUSD>EUR): {len(train_syms)} symbols"
+        f"Universe after base-asset dedup (USDC>USDT>BUSD>EUR): {len(train_syms)} symbols"
     )
     if _label_symbols_override:
         _override_set = set(_label_symbols_override)
@@ -6388,11 +6393,32 @@ def run_feature_generation_step(
     # 1. Define Universe
     # We want "all assets in our universe".
     # This implies the margin universe (Top M).
+    explicit_feature_subset = bool(margin_symbols)
     try:
         # IMPORTANT: use pipeline timestamp for variance filtering.
         # Passing ts_sig=None makes variance filtering anchor to "now", which can
         # wrongly drop symbols for historical/backfill runs.
-        train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
+        if explicit_feature_subset:
+            requested_syms = apply_hardcoded_universe_exclusions(
+                _dedup_universe_by_base([str(s).strip() for s in margin_symbols if str(s).strip()])
+            )
+            local_syms = set(_local_store_symbols(store))
+            train_syms = [s for s in requested_syms if s in local_syms]
+            missing_requested = sorted(set(requested_syms) - set(train_syms))
+            tprint(
+                f"Feature subset mode: requested={len(requested_syms)} "
+                f"matched_local_store={len(train_syms)}"
+            )
+            if missing_requested:
+                tprint(
+                    "Feature subset mode: requested symbols missing from local store: "
+                    + ", ".join(missing_requested[:20])
+                    + (" ..." if len(missing_requested) > 20 else "")
+                )
+        else:
+            train_syms = get_training_universe(
+                margin_symbols, cfg, store, ts_sig=ts_sig
+            )
     except Exception as exc:
         tprint(
             f"WARNING: get_training_universe failed ({exc}); falling back to local store symbol discovery"
@@ -6407,7 +6433,6 @@ def run_feature_generation_step(
         f"Universe (Top {cfg['fetch_symbols_M']} Vol + VarianceFilter): {len(train_syms)} symbols"
     )
     output_syms = list(train_syms)
-    explicit_feature_subset = bool(margin_symbols)
     feature_context_syms: list[str] = []
     if explicit_feature_subset:
         local_context_symbols = _local_store_symbols(store)
@@ -6444,6 +6469,7 @@ def run_feature_generation_step(
             ts_sig=ts_sig,
             lookback_days=lookback_days,
             end_ts=feature_data_end_ts,
+            min_rows=24 * 15 if explicit_feature_subset else 24 * 60,
         )
         tprint(
             f"Close-only cache precheck loaded {len(loaded_close_syms)} symbols. "
@@ -6569,8 +6595,10 @@ def run_feature_generation_step(
                 skipped_log.append(f"{s}: Empty DataFrame")
                 continue
 
-            # Check length (at least 60 days for basic moving averages + volatility)
-            min_rows = 24 * 60
+            # Check length. Full-universe runs keep the mature-history guard;
+            # explicit backfills allow newer listings and emit leading NaNs for
+            # long-window features until enough history accrues.
+            min_rows = 24 * 15 if explicit_feature_subset else 24 * 60
             if len(df) < min_rows:
                 skipped_log.append(
                     f"{s}: Insufficient data ({len(df)} rows < {min_rows})"

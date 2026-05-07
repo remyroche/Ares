@@ -91,6 +91,7 @@ def fit_uncertainty_state(
     feature_names: list[str],
     max_bins: int = 64,
 ) -> EBMUncertaintyState:
+    max_bins = max(4, int(max_bins))
     X_df = _prepare_feature_frame(X, feature_names)
     bin_edges: dict[str, np.ndarray] = {}
     bin_counts: dict[str, np.ndarray] = {}
@@ -443,18 +444,14 @@ def fit_en_uncertainty_adjuster(
             groups=None if groups is None else np.asarray(groups)[:n],
         )
         lift_delta = float(metric["precision30"] - full_base_metric["precision30"])
-        stability_delta = float(
-            metric["stability30"] - full_base_metric["stability30"]
-        )
+        stability_delta = float(metric["stability30"] - full_base_metric["stability30"])
         return10_delta = float(
-            metric["mean_gross_return10"]
-            - full_base_metric["mean_gross_return10"]
+            metric["mean_gross_return10"] - full_base_metric["mean_gross_return10"]
         )
         score = 0.4 * lift_delta + 0.4 * stability_delta + 0.2 * return10_delta
         gates_ok = (
             metric["precision30"] + 1e-6 >= 0.95 * full_base_metric["precision30"]
-            and metric["stability30"] + 1e-6
-            >= 0.95 * full_base_metric["stability30"]
+            and metric["stability30"] + 1e-6 >= 0.95 * full_base_metric["stability30"]
             and _guardrails_ok(y_arr, p, full_pred)
         )
         if gates_ok and score > full_best_score:

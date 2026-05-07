@@ -1576,7 +1576,7 @@
         "base_prob_x_entropy"
       ],
       "base_probability_column": "pred_dist_prior_day_low_0_012672868_range_expansion_ratio_-0_26680329_variance_ratio_10_48_-0_37689748_vov_fast_slow_ratio_0_56139898_H5",
-      "rank_mask_kept_rows": 8017,
+      "rank_mask_kept_rows": 1060,
       "schema_version": 1
     }
   },

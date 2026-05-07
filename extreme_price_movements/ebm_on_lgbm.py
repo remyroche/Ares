@@ -38,6 +38,8 @@ EBM_RACE_MAX_ROWS = 60000
 EBM_RACE_EVAL_FRACTION = 1.0 / 3.0
 EBM_FOLD_SUBSAMPLE_ROWS = 5000
 EBM_MIN_FEATURES = 40
+EBM_SELECTED_FEATURES_MIN = int(os.environ.get("EPM_EBM_SELECTED_FEATURES_MIN", "100"))
+EBM_SELECTED_FEATURES_MAX = int(os.environ.get("EPM_EBM_SELECTED_FEATURES_MAX", "350"))
 EBM_MAX_ROUNDS = int(os.environ.get("EPM_EBM_MAX_ROUNDS", "10"))
 EBM_PRESCREEN_MAX_FEATURES: int | None = None
 EBM_PRESCREEN_BASE_FEATURES = 200
@@ -48,7 +50,7 @@ EBM_TREE_CORR_PRUNE_THRESHOLD = 0.96
 EBM_TREE_CORR_PRUNE_MIN_FEATURES = 1000
 EBM_TREE_LGBM_MAX_FIT_ROWS = 30000
 EBM_TREE_LGBM_EARLY_STOPPING_ROUNDS = 25
-EBM_FINAL_MODEL_COUNT = 5
+EBM_FINAL_MODEL_COUNT = int(os.environ.get("EPM_EBM_FINAL_MODEL_COUNT", "3"))
 EBM_HONEST_EVAL_MIN_MODELS = int(os.environ.get("EPM_EBM_HONEST_EVAL_MIN_MODELS", "3"))
 EBM_HONEST_EVAL_MAX_J_STD = float(
     os.environ.get("EPM_EBM_HONEST_EVAL_MAX_J_STD", "0.015")
@@ -56,6 +58,38 @@ EBM_HONEST_EVAL_MAX_J_STD = float(
 EBM_HONEST_EVAL_MAX_PRED_DISAGREE = float(
     os.environ.get("EPM_EBM_HONEST_EVAL_MAX_PRED_DISAGREE", "0.020")
 )
+EBM_SALG_LIFT_COEF = float(os.environ.get("EPM_EBM_SALG_LIFT_COEF", "0.38"))
+EBM_J_SALG_WEIGHT = float(os.environ.get("EPM_EBM_J_SALG_WEIGHT", "0.75"))
+EBM_J_NDCG_WEIGHT = float(os.environ.get("EPM_EBM_J_NDCG_WEIGHT", "0.25"))
+EBM_J_ROBUST_IQR_PENALTY = float(os.environ.get("EPM_EBM_J_ROBUST_IQR_PENALTY", "0.50"))
+EBM_TOP20_SALG_TOL = float(os.environ.get("EPM_EBM_TOP20_SALG_TOL", "0.05"))
+# Reserved for future explicit stability floor/tolerance tuning.
+EBM_TOP20_STABILITY_TOL = float(os.environ.get("EPM_EBM_TOP20_STABILITY_TOL", "0.10"))
+if EBM_SELECTED_FEATURES_MIN > EBM_SELECTED_FEATURES_MAX:
+    raise ValueError(
+        "EPM_EBM_SELECTED_FEATURES_MIN must be <= EPM_EBM_SELECTED_FEATURES_MAX "
+        f"({EBM_SELECTED_FEATURES_MIN} > {EBM_SELECTED_FEATURES_MAX})."
+    )
+if EBM_SELECTED_FEATURES_MIN < EBM_MIN_FEATURES:
+    tprint(
+        "EBMOnLGBM: EPM_EBM_SELECTED_FEATURES_MIN is below EBM_MIN_FEATURES; "
+        "EBM_MIN_FEATURES will dominate the hard floor."
+    )
+if EBM_FINAL_MODEL_COUNT < 1:
+    raise ValueError("EPM_EBM_FINAL_MODEL_COUNT must be >= 1.")
+if EBM_HONEST_EVAL_MIN_MODELS > EBM_FINAL_MODEL_COUNT:
+    tprint(
+        "EBMOnLGBM: clamping EBM_HONEST_EVAL_MIN_MODELS to " "EBM_FINAL_MODEL_COUNT."
+    )
+    EBM_HONEST_EVAL_MIN_MODELS = EBM_FINAL_MODEL_COUNT
+_j_weight_sum = EBM_J_SALG_WEIGHT + EBM_J_NDCG_WEIGHT
+if _j_weight_sum <= 0.0:
+    raise ValueError("EPM_EBM_J_SALG_WEIGHT + EPM_EBM_J_NDCG_WEIGHT must be > 0.")
+if abs(_j_weight_sum - 1.0) > 1e-6:
+    tprint(
+        "EBMOnLGBM: J weights do not sum to 1.0 "
+        f"(sum={_j_weight_sum:.6f}); using them as provided."
+    )
 EBM_SPEC_N_JOBS = 1
 EBM_HPO_TRIALS = 200
 EBM_HPO_EARLY_STOP_PATIENCE = 50
@@ -88,8 +122,42 @@ EBM_SIGN_CONSISTENCY_MIN_CAP = float(
 EBM_TOP_SLICE_TIEBREAKER_WEIGHT = float(
     os.environ.get("EPM_EBM_TOP_SLICE_TIEBREAKER_WEIGHT", "0.05")
 )
+EBM_TOP_ECON_TIEBREAKER_WEIGHT = float(
+    os.environ.get("EPM_EBM_TOP_ECON_TIEBREAKER_WEIGHT", "0.05")
+)
+EBM_TOP_CONTRIB_TIEBREAKER_WEIGHT = float(
+    os.environ.get("EPM_EBM_TOP_CONTRIB_TIEBREAKER_WEIGHT", "0.04")
+)
+EBM_TOP_CONTRIB_FRACTION = 0.20
 EBM_STABILITY_TIEBREAKER_WEIGHT = float(
     os.environ.get("EPM_EBM_STABILITY_TIEBREAKER_WEIGHT", "0.03")
+)
+EBM_TOP_BUCKET_MULTIPLIER_STRENGTH = float(
+    os.environ.get("EPM_EBM_TOP_BUCKET_MULTIPLIER_STRENGTH", "0.45")
+)
+EBM_TOP_BUCKET_MULTIPLIER_MAX = float(
+    os.environ.get("EPM_EBM_TOP_BUCKET_MULTIPLIER_MAX", "1.75")
+)
+EBM_TOP_BUCKET_FALSE_POSITIVE_HARD_MAX = float(
+    os.environ.get("EPM_EBM_TOP_BUCKET_FALSE_POSITIVE_HARD_MAX", "0.65")
+)
+EBM_TOP_BUCKET_FALSE_POSITIVE_MULTIPLIER_MIN = float(
+    os.environ.get("EPM_EBM_TOP_BUCKET_FALSE_POSITIVE_MULTIPLIER_MIN", "0.65")
+)
+EBM_CONTRIB_REDUNDANCY_CORR_START = float(
+    os.environ.get("EPM_EBM_CONTRIB_REDUNDANCY_CORR_START", "0.85")
+)
+EBM_CONTRIB_REDUNDANCY_CORR_FULL = float(
+    os.environ.get("EPM_EBM_CONTRIB_REDUNDANCY_CORR_FULL", "0.96")
+)
+EBM_CONTRIB_REDUNDANCY_MULTIPLIER_MIN = float(
+    os.environ.get("EPM_EBM_CONTRIB_REDUNDANCY_MULTIPLIER_MIN", "0.75")
+)
+EBM_CONTRIB_REDUNDANCY_MAX_ROWS = int(
+    os.environ.get("EPM_EBM_CONTRIB_REDUNDANCY_MAX_ROWS", "5000")
+)
+EBM_CONTRIB_REDUNDANCY_MAX_FEATURES = int(
+    os.environ.get("EPM_EBM_CONTRIB_REDUNDANCY_MAX_FEATURES", "2000")
 )
 EBM_PRUNE_FOLD_N_JOBS = int(os.environ.get("EPM_EBM_PRUNE_FOLD_N_JOBS", "2"))
 EBM_HPO_MIN_LEAF_PCT_LO = 0.02
@@ -638,10 +706,43 @@ def _compute_soft_tree_features_ebm(
 
     all_features = []
     out_names = []
+    forced_tree_value_count = 0
+    selected_names_str = (
+        {str(name) for name in selected_names} if selected_names is not None else None
+    )
+
+    def emit_feature(name: str, values: np.ndarray, *, force: bool = False) -> bool:
+        out_name = str(name)
+        if (
+            selected_names_str is not None
+            and out_name not in selected_names_str
+            and not force
+        ):
+            return False
+        all_features.append(np.asarray(values).reshape(-1, 1))
+        out_names.append(out_name)
+        return True
+
+    model_prefixes = [
+        str(getattr(model, "tree_feature_prefix", f"lgbm_model{mi}"))
+        for mi, model in enumerate(models)
+    ]
+    selected_by_tree: dict[tuple[str, int], set[str]] = {}
+    if selected_names_str is not None:
+        selected_tree_feature_names = list(selected_names_str)
+        for model_prefix in model_prefixes:
+            for name in selected_tree_feature_names:
+                if not name.startswith(f"{model_prefix}_tree"):
+                    continue
+                parsed = _parse_tree_feature_name(name)
+                if parsed is None:
+                    continue
+                tree_idx, _ = parsed
+                selected_by_tree.setdefault((model_prefix, tree_idx), set()).add(name)
 
     for mi, model in enumerate(models):
         booster = getattr(model, "booster_", model)
-        model_prefix = getattr(model, "tree_feature_prefix", f"lgbm_model{mi}")
+        model_prefix = model_prefixes[mi]
         dump = booster.dump_model()
         trees = dump.get("tree_info", [])
 
@@ -728,17 +829,44 @@ def _compute_soft_tree_features_ebm(
                 leaf_values[leaf_idx] = data["value"]
 
             value_name = f"{model_prefix}_tree{ti}_value"
-            if selected_names is None or value_name in selected_names:
-                tree_pred = np.sum(soft_leaves * leaf_values, axis=1)
-                all_features.append(tree_pred.reshape(-1, 1))
-                out_names.append(value_name)
+            tree_pred = np.sum(soft_leaves * leaf_values, axis=1)
+            n_before_tree = len(out_names)
+            emit_feature(value_name, tree_pred)
 
             for leaf_idx in range(n_leaves):
                 leaf_name = f"{model_prefix}_tree{ti}_leaf{leaf_idx}_soft"
-                if selected_names is not None and leaf_name not in selected_names:
-                    continue
-                all_features.append(soft_leaves[:, leaf_idx].reshape(-1, 1))
-                out_names.append(leaf_name)
+                emit_feature(leaf_name, soft_leaves[:, leaf_idx])
+
+            if (
+                selected_names_str is not None
+                and len(out_names) == n_before_tree
+                and (model_prefix, ti) in selected_by_tree
+            ):
+                # Preserve selected-tree coverage without admitting every
+                # unselected LGBM tree into the final EBM contract.
+                if emit_feature(value_name, tree_pred, force=True):
+                    forced_tree_value_count += 1
+
+    if selected_names_str is not None:
+        if forced_tree_value_count:
+            tprint(
+                "EBMOnLGBM: added forced per-tree value features for selected "
+                f"soft-tree generation ({forced_tree_value_count} trees without "
+                "selected leaf/value features)."
+            )
+        requested_tree_names = set()
+        for name in selected_names_str:
+            if _parse_tree_feature_name(name) is None:
+                continue
+            if any(name.startswith(f"{prefix}_tree") for prefix in model_prefixes):
+                requested_tree_names.add(name)
+        emitted = set(out_names)
+        missing = requested_tree_names - emitted
+        if missing:
+            tprint(
+                "EBMOnLGBM: missing selected tree features during soft-tree generation "
+                f"({len(missing)} missing, {len(emitted)} emitted)."
+            )
 
     if not all_features:
         return np.zeros((n_instances, 0), dtype=np.float32), [], final_scales
@@ -972,7 +1100,7 @@ def _ndcg_at_k(y_true: np.ndarray, pred: np.ndarray, k: int = 10) -> float:
         return 0.0
     k = max(1, int(min(k, n)))
     order = np.argsort(p)
-    top = order[-k:]
+    top = order[-k:][::-1]
     y_top = y[top]
     y_sorted = np.sort(y)[::-1]
     idcg = np.sum((2.0 ** y_sorted[:k] - 1.0) / np.log2(np.arange(2, k + 2)))
@@ -980,6 +1108,25 @@ def _ndcg_at_k(y_true: np.ndarray, pred: np.ndarray, k: int = 10) -> float:
         return 0.0
     dcg = np.sum((2.0**y_top - 1.0) / np.log2(np.arange(2, k + 2)))
     return float(dcg / idcg)
+
+
+def _metric_salg(lift: float, stability: float) -> float:
+    """Model Stability-Adjusted Lift Gain: Stability + coef * (Lift - 1)."""
+    if not (np.isfinite(lift) and np.isfinite(stability)):
+        return float("nan")
+    return float(stability + EBM_SALG_LIFT_COEF * (lift - 1.0))
+
+
+def _metric_j_from_lift_stability_ndcg(
+    lift: float,
+    stability: float,
+    ndcg: float,
+) -> float:
+    """Top-20 model comparison J from SALG and NDCG."""
+    salg = _metric_salg(lift, stability)
+    if not (np.isfinite(salg) and np.isfinite(ndcg)):
+        return float("nan")
+    return float(EBM_J_SALG_WEIGHT * salg + EBM_J_NDCG_WEIGHT * ndcg)
 
 
 def _metric_pack(
@@ -1003,11 +1150,11 @@ def _metric_pack(
     p = p[m]
     if len(y) < 8:
         return {
-            "lift15": 0.0,
-            "lift30": 0.0,
-            "lift20": 0.0,
-            "lift10": 0.0,
-            "lift5": 0.0,
+            "lift15": 1.0,
+            "lift30": 1.0,
+            "lift20": 1.0,
+            "lift10": 1.0,
+            "lift5": 1.0,
             "precision15": 0.0,
             "hit_rate10": 0.0,
             "hit_rate5": 0.0,
@@ -1022,14 +1169,21 @@ def _metric_pack(
             "precision005": 0.0,
             "ndcg_at_10": 0.0,
             "ndcg_at_20": 0.0,
+            "ndcg20": 0.0,
             "ndcg@10": 0.0,
             "ndcg@20": 0.0,
+            "salg15": 0.0,
+            "salg20": 0.0,
+            "salg30": 0.0,
+            "J20": 0.0,
+            "j20": 0.0,
             "auc_correct_15": 0.5,
             "auc_correct_30": 0.5,
             "stability30_proxy": 0.0,
             "stability30": 0.0,
             "stability15_proxy": 0.0,
             "stability15": 0.0,
+            "stability20": 0.0,
             "stability15_n_groups": 0.0,
             "stability15_group_mean": 0.0,
             "stability15_group_std": 0.0,
@@ -1117,8 +1271,14 @@ def _metric_pack(
     stab_metrics30 = _grouped_top_stability(
         y, p, 0.30, classifier=classifier, groups=default_groups
     )
+    stab_proxy20 = _top_stability(y, p, 0.20)
+    stab_metrics20 = _grouped_top_stability(
+        y, p, 0.20, classifier=classifier, groups=default_groups
+    )
     stab_week30 = stab_metrics30
     stab_month30 = None
+    stab_week20 = stab_metrics20
+    stab_month20 = None
     stab_week15 = stab_metrics
     stab_month15 = None
     if isinstance(grp, dict):
@@ -1129,6 +1289,12 @@ def _metric_pack(
         )
         stab_month30 = _grouped_top_stability(
             y, p, 0.30, classifier=classifier, groups=month_groups
+        )
+        stab_week20 = _grouped_top_stability(
+            y, p, 0.20, classifier=classifier, groups=week_groups
+        )
+        stab_month20 = _grouped_top_stability(
+            y, p, 0.20, classifier=classifier, groups=month_groups
         )
         stab_week15 = _grouped_top_stability(
             y, p, frac_obj, classifier=classifier, groups=week_groups
@@ -1154,6 +1320,25 @@ def _metric_pack(
             stab_metrics30["stability"]
             if stab_metrics30["n_groups"] >= 3
             else stab_proxy30
+        )
+
+    if stab_month20 is not None and stab_week20["n_groups"] >= 3:
+        weekly_std20 = float(stab_week20["group_std"])
+        monthly_std20 = (
+            float(stab_month20["group_std"])
+            if stab_month20["n_groups"] >= 3
+            else weekly_std20
+        )
+        stability20_std_blend = 0.7 * weekly_std20 + 0.3 * monthly_std20
+        stability20 = float(1.0 / (1.0 + max(stability20_std_blend, 0.0)))
+    else:
+        weekly_std20 = float(stab_metrics20["group_std"])
+        monthly_std20 = float("nan")
+        stability20_std_blend = weekly_std20
+        stability20 = (
+            stab_metrics20["stability"]
+            if stab_metrics20["n_groups"] >= 3
+            else stab_proxy20
         )
 
     if stab_month15 is not None and stab_week15["n_groups"] >= 3:
@@ -1188,6 +1373,14 @@ def _metric_pack(
         if len(top10) > 0
         else 0.0
     )
+    salg15 = _metric_salg(float(lift15), float(stability15))
+    salg20 = _metric_salg(float(lift20), float(stability20))
+    salg30 = _metric_salg(float(lift30), float(stability30))
+    j20 = _metric_j_from_lift_stability_ndcg(
+        float(lift20),
+        float(stability20),
+        float(ndcg20),
+    )
     return {
         "lift15": float(lift15),
         "lift30": float(lift30),
@@ -1212,6 +1405,12 @@ def _metric_pack(
         "ndcg_at_10": ndcg10,
         "ndcg@20": ndcg20,
         "ndcg_at_20": ndcg20,
+        "ndcg20": ndcg20,
+        "salg15": float(salg15),
+        "salg20": float(salg20),
+        "salg30": float(salg30),
+        "J20": float(j20),
+        "j20": float(j20),
         "ndcg_tradable_top20pct": ndcg_top20pct,
         "ndcg_tradable_top10pct": ndcg_top10pct,
         "auc_correct_15": float(auc15),
@@ -1226,6 +1425,14 @@ def _metric_pack(
         ),
         "stability15_proxy": float(stab_proxy),
         "stability15": float(stability15),
+        "stability20_proxy": float(stab_proxy20),
+        "stability20": float(stability20),
+        "stability20_n_groups": float(stab_metrics20["n_groups"]),
+        "stability20_group_mean": float(stab_metrics20["group_mean"]),
+        "stability20_group_std": float(stab_metrics20["group_std"]),
+        "stability20_weekly_std": float(weekly_std20),
+        "stability20_monthly_std": float(monthly_std20),
+        "stability20_std_blend": float(stability20_std_blend),
         "stability15_n_groups": float(stab_metrics["n_groups"]),
         "stability15_group_mean": float(stab_metrics["group_mean"]),
         "stability15_group_std": float(stab_metrics["group_std"]),
@@ -1254,97 +1461,142 @@ def _metric_pack(
 
 
 def _fold_j(m: dict[str, float]) -> float:
-    return 0.6 * m.get("lift20", m.get("lift15", m.get("lift30", 0.0))) + 0.4 * m.get(
-        "ndcg_at_20", m.get("ndcg@20", 0.0)
+    lift20 = float(m.get("lift20", m.get("lift15", m.get("lift30", np.nan))))
+    stability20 = float(
+        m.get("stability20", m.get("stability15", m.get("stability30", np.nan)))
     )
+    ndcg20 = float(m.get("ndcg20", m.get("ndcg_at_20", m.get("ndcg@20", np.nan))))
+
+    j = _metric_j_from_lift_stability_ndcg(lift20, stability20, ndcg20)
+    if np.isfinite(j):
+        return float(j)
+
+    return float("nan")
+
+
+def _mean_metric(
+    fold_metrics: list[dict[str, float]], *keys: str, default: float = 0.0
+) -> float:
+    vals: list[float] = []
+    for m in fold_metrics:
+        for key in keys:
+            if key not in m:
+                continue
+            try:
+                v = float(m[key])
+            except Exception:
+                continue
+            if np.isfinite(v):
+                vals.append(v)
+                break
+    return float(np.mean(vals)) if vals else float(default)
 
 
 def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
     if not fold_metrics:
-        return {"J_final": -999.0, "J_mean": -999.0, "J_std": 0.0}
+        return {
+            "J_final": -999.0,
+            "J_mean": -999.0,
+            "J_std": 0.0,
+            "J_robust": -999.0,
+            "J_median": -999.0,
+            "J_iqr": 0.0,
+            "J_se": 0.0,
+        }
+
     j = np.asarray([_fold_j(m) for m in fold_metrics], dtype=np.float64)
-    lift = float(np.mean([m.get("lift30", 0.0) for m in fold_metrics]))
-    lift20 = float(np.mean([m.get("lift20", 0.0) for m in fold_metrics]))
-    lift10 = float(np.mean([m.get("lift10", 0.0) for m in fold_metrics]))
-    lift5 = float(np.mean([m.get("lift5", 0.0) for m in fold_metrics]))
-    lift15 = float(
-        np.mean(
-            [
-                m.get("lift15", m.get("lift30", m.get("lift20", 0.0)))
-                for m in fold_metrics
-            ]
-        )
-    )
-    hit_rate5 = float(np.mean([m.get("hit_rate5", 0.0) for m in fold_metrics]))
-    hit_rate10 = float(np.mean([m.get("hit_rate10", 0.0) for m in fold_metrics]))
-    hit_rate20 = float(np.mean([m.get("hit_rate20", 0.0) for m in fold_metrics]))
-    hit_rate15 = float(
-        np.mean([m.get("hit_rate15", m.get("hit_rate30", 0.0)) for m in fold_metrics])
-    )
-    hit_rate30 = float(
-        np.mean(
-            [
-                m.get("hit_rate30", m.get("hit_rate15", m.get("hit_rate20", 0.0)))
-                for m in fold_metrics
-            ]
-        )
-    )
-    precision01 = float(
-        np.mean([m.get("precision01", m.get("hit_rate01", 0.0)) for m in fold_metrics])
-    )
-    precision005 = float(
-        np.mean(
-            [m.get("precision005", m.get("hit_rate005", 0.0)) for m in fold_metrics]
-        )
-    )
-    ndcg_at_10 = float(
-        np.mean([m.get("ndcg_at_10", m.get("ndcg@10", 0.0)) for m in fold_metrics])
-    )
-    ndcg_at_20 = float(
-        np.mean([m.get("ndcg_at_20", m.get("ndcg@20", 0.0)) for m in fold_metrics])
-    )
-    ece_at_20 = float(
-        np.mean([m.get("ece_top20", m.get("ece_at_20", np.nan)) for m in fold_metrics])
-    )
-    ndcg_tradable_top20pct = float(
-        np.mean([m.get("ndcg_tradable_top20pct", 0.0) for m in fold_metrics])
-    )
-    ndcg_tradable_top10pct = float(
-        np.mean([m.get("ndcg_tradable_top10pct", 0.0) for m in fold_metrics])
-    )
+    j = j[np.isfinite(j)]
+    if len(j) == 0:
+        return {
+            "J_final": -999.0,
+            "J_mean": -999.0,
+            "J_std": 0.0,
+            "J_robust": -999.0,
+            "J_median": -999.0,
+            "J_iqr": 0.0,
+            "J_se": 0.0,
+        }
+
+    q25, q50, q75 = np.percentile(j, [25, 50, 75])
+    j_iqr = float(q75 - q25)
+    j_median = float(q50)
+    j_mean = float(np.mean(j))
+    j_std = float(np.std(j, ddof=1)) if len(j) > 1 else 0.0
+    j_se = float(j_std / np.sqrt(max(len(j), 1)))
+    j_robust = float(j_median - EBM_J_ROBUST_IQR_PENALTY * j_iqr)
+
+    lift30 = _mean_metric(fold_metrics, "lift30")
+    lift20 = _mean_metric(fold_metrics, "lift20")
+    lift10 = _mean_metric(fold_metrics, "lift10")
+    lift5 = _mean_metric(fold_metrics, "lift5")
+    lift15 = _mean_metric(fold_metrics, "lift15", "lift30", "lift20")
+    hit_rate5 = _mean_metric(fold_metrics, "hit_rate5")
+    hit_rate10 = _mean_metric(fold_metrics, "hit_rate10")
+    hit_rate20 = _mean_metric(fold_metrics, "hit_rate20")
+    hit_rate15 = _mean_metric(fold_metrics, "hit_rate15", "hit_rate30")
+    hit_rate30 = _mean_metric(fold_metrics, "hit_rate30", "hit_rate15", "hit_rate20")
+    precision01 = _mean_metric(fold_metrics, "precision01", "hit_rate01")
+    precision005 = _mean_metric(fold_metrics, "precision005", "hit_rate005")
+    ndcg_at_10 = _mean_metric(fold_metrics, "ndcg_at_10", "ndcg@10")
+    ndcg_at_20 = _mean_metric(fold_metrics, "ndcg20", "ndcg_at_20", "ndcg@20")
+    ece_at_20 = _mean_metric(fold_metrics, "ece_top20", "ece_at_20", default=np.nan)
+    ndcg_tradable_top20pct = _mean_metric(fold_metrics, "ndcg_tradable_top20pct")
+    ndcg_tradable_top10pct = _mean_metric(fold_metrics, "ndcg_tradable_top10pct")
     _ndcg20_fold = np.asarray(
-        [m.get("ndcg_at_20", m.get("ndcg@20", 0.0)) for m in fold_metrics],
-        dtype=np.float64,
-    )
-    ndcg20_std = float(np.std(_ndcg20_fold, ddof=1)) if len(_ndcg20_fold) > 1 else 0.0
-    ndcg20_p25 = (
-        float(np.percentile(_ndcg20_fold, 25.0)) if len(_ndcg20_fold) > 0 else 0.0
-    )
-    auc30 = float(
-        np.mean(
-            [
-                m.get("auc_correct_15", m.get("auc_correct_30", 0.0))
-                for m in fold_metrics
-            ]
-        )
-    )
-    stability_vals = np.asarray(
         [
-            m.get("stability20", m.get("stability15", m.get("stability30", 0.0)))
+            float(m.get("ndcg20", m.get("ndcg_at_20", m.get("ndcg@20", np.nan))))
             for m in fold_metrics
         ],
         dtype=np.float64,
     )
-    j_mean = float(np.mean(j))
-    j_std = float(np.std(j, ddof=1)) if len(j) > 1 else 0.0
-    stability30 = float(
-        np.mean(stability_vals)
-        - (np.std(stability_vals, ddof=1) if len(stability_vals) > 1 else 0.0)
+    _ndcg20_fold = _ndcg20_fold[np.isfinite(_ndcg20_fold)]
+    ndcg20_std = float(np.std(_ndcg20_fold, ddof=1)) if len(_ndcg20_fold) > 1 else 0.0
+    ndcg20_p25 = (
+        float(np.percentile(_ndcg20_fold, 25.0)) if len(_ndcg20_fold) > 0 else 0.0
     )
+    auc30 = _mean_metric(fold_metrics, "auc_correct_30", "auc_correct_15")
+
+    stability15 = _mean_metric(fold_metrics, "stability15", default=np.nan)
+    stability20 = _mean_metric(fold_metrics, "stability20", default=np.nan)
+    stability30 = _mean_metric(fold_metrics, "stability30", default=np.nan)
+
+    if not np.isfinite(stability20):
+        if np.isfinite(stability15) and np.isfinite(stability30):
+            stability20 = float(
+                np.clip(
+                    (2.0 / 3.0) * stability15 + (1.0 / 3.0) * stability30,
+                    0.0,
+                    1.0,
+                )
+            )
+        elif np.isfinite(stability15):
+            stability20 = float(stability15)
+        elif np.isfinite(stability30):
+            stability20 = float(stability30)
+        else:
+            stability20 = 0.0
+
+    if not np.isfinite(stability15):
+        stability15 = stability20
+    if not np.isfinite(stability30):
+        stability30 = stability20
+
+    stability15 = float(np.clip(stability15, 0.0, 1.0))
+    stability20 = float(np.clip(stability20, 0.0, 1.0))
     stability30 = float(np.clip(stability30, 0.0, 1.0))
+
+    salg15 = _metric_salg(lift15, stability15)
+    salg20 = _metric_salg(lift20, stability20)
+    salg30 = _metric_salg(lift30, stability30)
+    j20_mean_metrics = _metric_j_from_lift_stability_ndcg(
+        lift20,
+        stability20,
+        ndcg_at_20,
+    )
+
     return {
         "lift15": lift15,
-        "lift30": lift15,
+        "lift30": lift30,
         "lift20": lift20,
         "lift10": lift10,
         "lift5": lift5,
@@ -1363,6 +1615,7 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
         "precision005": precision005,
         "ndcg@10": ndcg_at_10,
         "ndcg_at_10": ndcg_at_10,
+        "ndcg20": ndcg_at_20,
         "ndcg@20": ndcg_at_20,
         "ndcg_at_20": ndcg_at_20,
         "ece_top20": ece_at_20,
@@ -1372,92 +1625,84 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
         "ndcg20_std": ndcg20_std,
         "ndcg20_p25": ndcg20_p25,
         "auc_correct_30": auc30,
+        "stability20": stability20,
         "stability30": stability30,
-        "stability15": stability30,
+        "stability15": stability15,
         "stability30_n_groups": float(
             np.sum([m.get("stability30_n_groups", 0.0) for m in fold_metrics])
         ),
         "stability15_n_groups": float(
             np.sum([m.get("stability15_n_groups", 0.0) for m in fold_metrics])
         ),
-        "stability15_group_mean": float(
-            np.mean([m.get("stability15_group_mean", 0.0) for m in fold_metrics])
-        ),
-        "stability15_group_std": float(
-            np.mean([m.get("stability15_group_std", 0.0) for m in fold_metrics])
-        ),
+        "stability15_group_mean": _mean_metric(fold_metrics, "stability15_group_mean"),
+        "stability15_group_std": _mean_metric(fold_metrics, "stability15_group_std"),
+        "salg15": float(salg15),
+        "salg20": float(salg20),
+        "salg30": float(salg30),
+        "J20": float(j20_mean_metrics),
+        "j20": float(j20_mean_metrics),
+        "J20_mean_metrics": float(j20_mean_metrics),
         "J_mean": j_mean,
+        "J_median": j_median,
         "J_std": j_std,
-        "J_final": float(0.4 * lift15 + 0.2 * ndcg_at_20 + 0.4 * stability30),
+        "J_se": j_se,
+        "J_iqr": j_iqr,
+        "J_robust": j_robust,
+        "J_final": j_robust,
     }
 
 
 def _hpo_objective_from_aggregate(
     agg: dict[str, float], objective_mode: str = "base"
 ) -> float:
-    # Pareto-style feasibility constraints for ranking-aware selection.
-    _ndcg20_floor = 0.05
-    _ndcg20_p25_floor = 0.03
-    _precision_floor = float(agg.get("pareto_precision_floor", 0.0))
-    _ndcg20 = float(agg.get("ndcg_at_20", agg.get("ndcg@20", float("nan"))))
-    _ndcg20_p25 = float(agg.get("ndcg20_p25", float("nan")))
-    _precision15 = float(agg.get("precision15", agg.get("hit_rate15", float("nan"))))
-    _lift20 = float(agg.get("lift20", agg.get("lift15", agg.get("lift30", 0.0))))
-    _stability20 = float(
-        agg.get("stability20", agg.get("stability15", agg.get("stability30", 0.0)))
-    )
-    if not (
-        "ndcg_at_20" in agg
-        or "ndcg@20" in agg
-        or "ndcg20_p25" in agg
-        or "ndcg20_std" in agg
-        or "ndcg_at_10" in agg
-        or "ndcg_tradable_top10pct" in agg
-        or "ndcg_tradable_top20pct" in agg
-    ):
-        return float(0.65 * _lift20 + 0.35 * _stability20)
-    if (
-        (np.isfinite(_ndcg20) and _ndcg20 < _ndcg20_floor)
-        or (np.isfinite(_ndcg20_p25) and _ndcg20_p25 < _ndcg20_p25_floor)
-        or (np.isfinite(_precision15) and _precision15 < _precision_floor)
-    ):
-        return float(-1e9)
-    if str(objective_mode).lower() == "meta":
-        _tradable_ndcg = float(
-            agg.get("ndcg_tradable_top20pct", agg.get("ndcg_tradable_top10pct", 0.0))
-        )
-        return float(
-            0.24 * float(agg.get("precision15", agg.get("hit_rate15", 0.0)))
-            + 0.22 * float(agg.get("lift20", agg.get("lift15", agg.get("lift30", 0.0))))
-            + 0.12 * float(agg.get("precision01", agg.get("precision1", 0.0)))
-            + 0.10 * float(agg.get("precision005", 0.0))
-            + 0.12 * float(agg.get("ndcg_at_10", 0.0))
-            + 0.10 * float(agg.get("ndcg_at_20", agg.get("ndcg@20", 0.0)))
-            + 0.05 * _tradable_ndcg
-            + 0.10 * float(agg.get("ndcg20_p25", 0.0))
-            - 0.05 * float(agg.get("ndcg20_std", 0.0))
-            + 0.10
-            * float(
-                agg.get(
-                    "stability20", agg.get("stability15", agg.get("stability30", 0.0))
-                )
+    """HPO score aligned to robust top-20 SALG/NDCG model comparison."""
+    base_score = float(agg.get("J_robust", agg.get("J_final", float("nan"))))
+    if not np.isfinite(base_score):
+        base_score = float(agg.get("J20", agg.get("j20", float("nan"))))
+    if not np.isfinite(base_score):
+        lift20 = float(agg.get("lift20", agg.get("lift15", agg.get("lift30", np.nan))))
+        stability20 = float(
+            agg.get(
+                "stability20", agg.get("stability15", agg.get("stability30", np.nan))
             )
         )
-    _tradable_ndcg = float(
-        agg.get("ndcg_tradable_top10pct", agg.get("ndcg_tradable_top20pct", 0.0))
-    )
-    return float(
-        0.45 * float(agg.get("lift20", agg.get("lift15", agg.get("lift30", 0.0))))
-        + 0.25
-        * float(
-            agg.get("stability20", agg.get("stability15", agg.get("stability30", 0.0)))
+        ndcg20 = float(
+            agg.get("ndcg20", agg.get("ndcg_at_20", agg.get("ndcg@20", np.nan)))
         )
-        + 0.12 * float(agg.get("ndcg_at_10", 0.0))
-        + 0.08 * float(agg.get("ndcg_at_20", agg.get("ndcg@20", 0.0)))
-        + 0.05 * _tradable_ndcg
-        + 0.08 * float(agg.get("ndcg20_p25", 0.0))
-        - 0.03 * float(agg.get("ndcg20_std", 0.0))
-    )
+        base_score = _metric_j_from_lift_stability_ndcg(lift20, stability20, ndcg20)
+    if not np.isfinite(base_score):
+        return -999.0
+
+    ndcg20 = float(agg.get("ndcg20", agg.get("ndcg_at_20", agg.get("ndcg@20", np.nan))))
+    ndcg20_p25 = float(agg.get("ndcg20_p25", float("nan")))
+    ndcg20_floor = float(agg.get("pareto_ndcg20_floor", 0.0))
+    precision_floor = float(agg.get("pareto_precision_floor", 0.0))
+    precision15 = float(agg.get("precision15", agg.get("hit_rate15", float("nan"))))
+    lift20 = float(agg.get("lift20", agg.get("lift15", agg.get("lift30", np.nan))))
+    salg20 = float(agg.get("salg20", float("nan")))
+
+    penalty = 0.0
+    if np.isfinite(ndcg20) and ndcg20 < 0.05:
+        penalty += 0.05 - ndcg20
+    if np.isfinite(ndcg20) and np.isfinite(ndcg20_floor) and ndcg20 < ndcg20_floor:
+        penalty += ndcg20_floor - ndcg20
+    if np.isfinite(ndcg20_p25) and ndcg20_p25 < 0.03:
+        penalty += 0.03 - ndcg20_p25
+    if np.isfinite(precision15) and precision15 < precision_floor:
+        penalty += precision_floor - precision15
+    if np.isfinite(lift20) and lift20 < 1.0:
+        penalty += 0.10 * (1.0 - lift20)
+    if np.isfinite(salg20) and salg20 < 0.0:
+        penalty += 0.10 * abs(salg20)
+
+    if str(objective_mode).lower() == "meta":
+        ndcg10 = float(agg.get("ndcg_at_10", agg.get("ndcg@10", 0.0)))
+        tradable_ndcg = float(
+            agg.get("ndcg_tradable_top20pct", agg.get("ndcg_tradable_top10pct", 0.0))
+        )
+        base_score += 0.02 * ndcg10 + 0.02 * tradable_ndcg
+
+    return float(base_score - penalty)
 
 
 def _ebm_hpo_warm_start_path() -> Path:
@@ -1805,6 +2050,31 @@ def _monthly_stability_group_labels(
     return month.astype(str)
 
 
+def _calendar_month_group_labels(n: int, timestamps: Any = None) -> np.ndarray | None:
+    if n <= 0 or timestamps is None or len(np.asarray(timestamps)) != n:
+        return None
+    ts = pd.to_datetime(np.asarray(timestamps), utc=True, errors="coerce")
+    month = (
+        pd.Series(ts)
+        .dt.tz_localize(None)
+        .dt.to_period("M")
+        .astype(str)
+        .to_numpy(dtype=object)
+    )
+    return np.where(pd.isna(month), "__unknown_month__", month).astype(str)
+
+
+def _asset_stability_group_labels(n: int, assets: Any = None) -> np.ndarray | None:
+    if n <= 0 or assets is None or len(np.asarray(assets)) != n:
+        return None
+    asset_arr = np.asarray(assets).astype(str)
+    counts = pd.Series(asset_arr).value_counts()
+    common = set(counts[counts >= 20].index.astype(str))
+    return np.asarray(
+        [a if a in common else "__rare_asset__" for a in asset_arr], dtype=object
+    ).astype(str)
+
+
 def _stability_group_bundle(
     n: int,
     timestamps: Any = None,
@@ -1812,11 +2082,18 @@ def _stability_group_bundle(
 ) -> dict[str, np.ndarray] | np.ndarray | None:
     week = _stability_group_labels(n, timestamps=timestamps, assets=assets)
     month = _monthly_stability_group_labels(n, timestamps=timestamps, assets=assets)
+    calendar_month = _calendar_month_group_labels(n, timestamps=timestamps)
+    asset = _asset_stability_group_labels(n, assets=assets)
     if week is None:
         return None
-    if month is None:
-        return week
-    return {"week": week, "month": month}
+    out = {"week": week}
+    if month is not None:
+        out["month"] = month
+    if calendar_month is not None:
+        out["calendar_month"] = calendar_month
+    if asset is not None:
+        out["asset"] = asset
+    return out
 
 
 def _groups_take(groups: Any, idx: Any) -> Any:
@@ -2202,6 +2479,14 @@ def _parse_tree_feature_name(name: str) -> tuple[int, int] | None:
     if m is not None:
         return int(m.group(1)), -1
     return None
+
+
+def _is_lgbm_tree_feature_name(name: str) -> bool:
+    s = str(name).lower()
+    return (
+        s.startswith("lgbm_")
+        or re.search(r"_tree\d+_(?:leaf\d+_soft|value)$", s) is not None
+    )
 
 
 def _safe_zscore(x: np.ndarray) -> np.ndarray:
@@ -3210,44 +3495,805 @@ def _contribution_correlation_prune(
         return selected_features
 
 
-def _select_smallest_within_one_se(history: list[dict[str, Any]]) -> dict[str, Any]:
+def _history_float(
+    row: dict[str, Any], keys: tuple[str, ...], default: float = 0.0
+) -> float:
+    """Read the first finite float-like value from a history row."""
+    for k in keys:
+        if k not in row:
+            continue
+        try:
+            v = float(row[k])
+        except Exception:
+            continue
+        if np.isfinite(v):
+            return v
+    return float(default)
+
+
+def _history_fold_values(row: dict[str, Any], keys: tuple[str, ...]) -> list[float]:
+    """
+    Extract fold-level values from a history row.
+
+    Prefer explicit fold-J containers over fold metric dictionaries so records
+    that store both do not double-count the same folds.
+    """
+    for container_key in ("fold_J", "J_folds", "fold_j", "j_folds"):
+        raw = row.get(container_key)
+        if raw is None:
+            continue
+        try:
+            arr = np.asarray(raw, dtype=float).reshape(-1)
+        except Exception:
+            continue
+        vals = [float(v) for v in arr if np.isfinite(v)]
+        if vals:
+            return vals
+
+    vals: list[float] = []
+    fold_metrics = row.get("fold_metrics")
+    if isinstance(fold_metrics, list):
+        for fm in fold_metrics:
+            if not isinstance(fm, dict):
+                continue
+            for k in keys:
+                if k not in fm:
+                    continue
+                try:
+                    v = float(fm[k])
+                except Exception:
+                    continue
+                if np.isfinite(v):
+                    vals.append(v)
+                    break
+
+    return vals
+
+
+def _robust_round_score_from_history(
+    row: dict[str, Any], iqr_penalty: float = EBM_J_ROBUST_IQR_PENALTY
+) -> tuple[float, float, float]:
+    """
+    Return median_j, iqr_j, robust_j for a pruning/history row.
+
+    If fold-level J values exist, use:
+        robust_j = median(fold_J) - iqr_penalty * IQR(fold_J)
+
+    If fold-level values do not exist, fall back to:
+        robust_j = J_final - J_se
+    """
+    fold_js = _history_fold_values(
+        row,
+        keys=("J20", "j20", "J", "j", "J_final", "j_final", "score", "objective"),
+    )
+
+    if len(fold_js) >= 2:
+        arr = np.asarray(fold_js, dtype=float)
+        q25, q50, q75 = np.percentile(arr, [25, 50, 75])
+        iqr = float(q75 - q25)
+        median = float(q50)
+        robust = float(median - float(iqr_penalty) * iqr)
+        return median, iqr, robust
+
+    j_final = _history_float(
+        row, ("J_final", "j_final", "J", "j", "score", "objective"), 0.0
+    )
+    j_se = _history_float(row, ("J_se", "j_se", "se", "std", "J_std", "j_std"), 0.0)
+    return float(j_final), float(j_se), float(j_final - j_se)
+
+
+def _top20_round_quality(row: dict[str, Any]) -> float:
+    """Top20-focused SALG/NDCG quality score used as a tie-breaker."""
+    salg20 = _round_salg20(row)
+    ndcg20 = _round_ndcg20(row)
+    if not np.isfinite(salg20):
+        salg20 = 0.0
+    if not np.isfinite(ndcg20):
+        ndcg20 = 0.0
+    return float(EBM_J_SALG_WEIGHT * salg20 + EBM_J_NDCG_WEIGHT * ndcg20)
+
+
+def _feature_bucket(n: int, bucket_size: int = 5) -> int:
+    """Bucket feature counts so tiny differences do not dominate selection."""
+    return int(np.ceil(int(n) / float(bucket_size)) * bucket_size)
+
+
+def _feature_efficiency_score(
+    robust_j: float, n_features: int, sparsity_lambda: float = 0.003
+) -> float:
+    """
+    Mild feature-efficiency score.
+
+    This is only a late tie-breaker, not the primary selector.
+    """
+    return float(robust_j - sparsity_lambda * np.log1p(max(int(n_features), 1)))
+
+
+def _feature_count_in_target_range(n_features: int) -> bool:
+    n = int(n_features)
+    return EBM_SELECTED_FEATURES_MIN <= n <= EBM_SELECTED_FEATURES_MAX
+
+
+def _dynamic_round_tolerance(best_robust: float) -> float:
+    """
+    Dynamic tolerance around the best robust round score.
+
+    Wider than the old very-tight one-SE behavior so smaller acceptable rounds
+    can win when performance is close.
+    """
+    return float(min(0.05, max(0.01, 0.05 * abs(float(best_robust)))))
+
+
+def _pareto_rounds(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Return pruning rounds that are not dominated on:
+      - higher robust_j is better
+      - lower n_features_end is better
+
+    A round is dominated if another round has:
+      - robust_j >= this robust_j
+      - n_features_end <= this n_features_end
+      - and is strictly better on at least one of those two dimensions
+    """
+    front: list[dict[str, Any]] = []
+
+    for r in rounds:
+        r_j = float(r["_robust_j"])
+        r_n = int(r["_n_features_end"])
+
+        dominated = False
+        for q in rounds:
+            if q is r:
+                continue
+
+            q_j = float(q["_robust_j"])
+            q_n = int(q["_n_features_end"])
+
+            if q_j >= r_j and q_n <= r_n and (q_j > r_j or q_n < r_n):
+                dominated = True
+                break
+
+        if not dominated:
+            front.append(r)
+
+    return front
+
+
+def _round_lift20(row: dict[str, Any], default: float = 1.0) -> float:
+    return _history_float(
+        row, ("lift20", "Lift20", "lift_top20", "Lift@20"), float(default)
+    )
+
+
+def _round_stability20(row: dict[str, Any], default: float = 0.0) -> float:
+    weekly_std = _history_float(
+        row,
+        (
+            "stability20_weekly_std",
+            "Stability20_weekly_std",
+            "lift20_weekly_std",
+            "Lift20_weekly_std",
+        ),
+        float("nan"),
+    )
+    monthly_std = _history_float(
+        row,
+        (
+            "stability20_monthly_std",
+            "Stability20_monthly_std",
+            "lift20_monthly_std",
+            "Lift20_monthly_std",
+        ),
+        float("nan"),
+    )
+    if np.isfinite(weekly_std):
+        if not np.isfinite(monthly_std):
+            monthly_std = weekly_std
+        std_blend = 0.7 * float(weekly_std) + 0.3 * float(monthly_std)
+        return float(1.0 / (1.0 + max(std_blend, 0.0)))
+
+    return _history_float(
+        row,
+        ("stability20", "Stability20", "stability_top20", "Stability@20"),
+        float(default),
+    )
+
+
+def _round_ndcg20(row: dict[str, Any], default: float = 0.0) -> float:
+    return _history_float(
+        row,
+        (
+            "ndcg20",
+            "ndcg_at_20",
+            "ndcg@20",
+            "NDCG20",
+            "NDCG@20",
+            "ndcg_top20",
+        ),
+        float(default),
+    )
+
+
+def _round_salg20(row: dict[str, Any]) -> float:
+    return _metric_salg(_round_lift20(row), _round_stability20(row))
+
+
+def _round_lift_stab_adjusted(row: dict[str, Any]) -> float:
+    """Backward-compatible alias for the SALG top-20 metric."""
+    return _round_salg20(row)
+
+
+def _salg_acceptance_threshold(best_salg: float) -> float:
+    if not np.isfinite(best_salg):
+        return float("nan")
+    if best_salg > 0.0:
+        return float(0.75 * best_salg)
+    return float(best_salg - EBM_TOP20_SALG_TOL)
+
+
+def _reference_quality_key(row: dict[str, Any]) -> float:
+    for key in ("_robust_j", "J_robust", "J_final"):
+        try:
+            value = float(row.get(key, float("nan")))
+        except Exception:
+            value = float("nan")
+        if np.isfinite(value):
+            return value
+    return _top20_round_quality(row)
+
+
+def _has_finite_top20_metrics(row: dict[str, Any]) -> bool:
+    return bool(
+        np.isfinite(_round_lift20(row, default=float("nan")))
+        and np.isfinite(_round_stability20(row, default=float("nan")))
+        and np.isfinite(_round_ndcg20(row, default=float("nan")))
+    )
+
+
+def _top20_acceptance_thresholds(
+    reference_models: list[dict[str, Any]],
+) -> dict[str, float]:
+    reference_models = [r for r in reference_models if _has_finite_top20_metrics(r)]
+    if not reference_models:
+        return {
+            "min_lift20": float("nan"),
+            "min_stability20": float("nan"),
+            "min_salg20": float("nan"),
+            "min_lift_stab_adjusted20": float("nan"),
+            "min_ndcg20": float("nan"),
+            "best_lift20": float("nan"),
+            "best_stability20": float("nan"),
+            "best_salg20": float("nan"),
+            "best_lift_stab_adjusted20": float("nan"),
+            "best_ndcg20": float("nan"),
+        }
+
+    ref = max(reference_models, key=_reference_quality_key)
+    best_lift = _round_lift20(ref)
+    best_stability = _round_stability20(ref)
+    best_salg = _round_salg20(ref)
+    best_ndcg = _round_ndcg20(ref)
+    min_salg = _salg_acceptance_threshold(best_salg)
+    return {
+        "min_lift20": float(max(1.0, 1.0 + 0.66 * (best_lift - 1.0))),
+        "min_stability20": 0.0,
+        "min_salg20": float(min_salg),
+        "min_lift_stab_adjusted20": float(min_salg),
+        "min_ndcg20": float(max(0.0, best_ndcg - 0.10)),
+        "best_lift20": float(best_lift),
+        "best_stability20": float(best_stability),
+        "best_salg20": float(best_salg),
+        "best_lift_stab_adjusted20": float(best_salg),
+        "best_ndcg20": float(best_ndcg),
+    }
+
+
+def _passes_top20_acceptance(row: dict[str, Any], thresholds: dict[str, float]) -> bool:
+    min_lift = float(thresholds.get("min_lift20", float("nan")))
+    min_stability = float(thresholds.get("min_stability20", float("nan")))
+    min_salg = float(
+        thresholds.get(
+            "min_salg20", thresholds.get("min_lift_stab_adjusted20", float("nan"))
+        )
+    )
+    min_ndcg = float(thresholds.get("min_ndcg20", float("nan")))
+
+    if not (
+        np.isfinite(min_lift)
+        and np.isfinite(min_stability)
+        and np.isfinite(min_salg)
+        and np.isfinite(min_ndcg)
+    ):
+        return False
+
+    lift20 = _round_lift20(row, default=float("nan"))
+    stability20 = _round_stability20(row, default=float("nan"))
+    salg20 = _metric_salg(lift20, stability20)
+    ndcg20 = _round_ndcg20(row, default=float("nan"))
+
+    if not (
+        np.isfinite(lift20)
+        and np.isfinite(stability20)
+        and np.isfinite(salg20)
+        and np.isfinite(ndcg20)
+    ):
+        return False
+
+    return bool(
+        lift20 >= min_lift
+        and stability20 >= min_stability
+        and salg20 >= min_salg
+        and ndcg20 >= min_ndcg
+    )
+
+
+def _top20_metric_acceptable_models(
+    models: list[dict[str, Any]],
+    reference_models: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    thresholds = _top20_acceptance_thresholds(reference_models)
+    return [r for r in models if _passes_top20_acceptance(r, thresholds)]
+
+
+def _round_robust_value(row: dict[str, Any]) -> float:
+    try:
+        return float(
+            row.get("_robust_j", row.get("J_robust", row.get("J_final", np.nan)))
+        )
+    except Exception:
+        return float("nan")
+
+
+def _top20_reference_snapshot(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "J_final": float(row.get("J_final", np.nan)),
+        "J_robust": float(row.get("J_robust", row.get("J_final", np.nan))),
+        "lift20": _round_lift20(row, default=float("nan")),
+        "stability20": _round_stability20(row, default=float("nan")),
+        "salg20": _round_salg20(row),
+        "ndcg20": _round_ndcg20(row, default=float("nan")),
+        "round": int(row.get("round", -1)) if "round" in row else -1,
+    }
+
+
+def _finite_fold_j_values(fold_metrics: list[Any]) -> list[float]:
+    fold_j_values: list[float] = []
+    for m in fold_metrics:
+        if not isinstance(m, dict):
+            continue
+        v = float(_fold_j(m))
+        if np.isfinite(v):
+            fold_j_values.append(v)
+    return fold_j_values
+
+
+def _top20_metric_acceptable_rounds(
+    rounds: list[dict[str, Any]],
+    best_robust: float,
+    best_tolerance: float,
+    reference_models: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    if not rounds:
+        return []
+    thresholds = _top20_acceptance_thresholds(
+        rounds if reference_models is None else reference_models
+    )
+    acceptable: list[dict[str, Any]] = []
+    for r in rounds:
+        robust_value = _round_robust_value(r)
+        if (
+            np.isfinite(robust_value)
+            and robust_value >= best_robust - best_tolerance
+            and _passes_top20_acceptance(r, thresholds)
+        ):
+            acceptable.append(r)
+    return acceptable
+
+
+def _select_pareto_knee_round(candidates: list[dict[str, Any]]) -> dict[str, Any]:
+    """Legacy helper retained for focused geometry tests; not used for pruning selection."""
+    if not candidates:
+        raise ValueError("Cannot select knee from empty candidate list.")
+
+    candidates = sorted(
+        candidates,
+        key=lambda r: (
+            int(r["_n_features_end"]),
+            float(r["_robust_j"]),
+        ),
+    )
+
+    if len(candidates) <= 2:
+        return min(
+            candidates,
+            key=lambda r: (
+                _feature_bucket(int(r["_n_features_end"])),
+                -float(r["_robust_j"]),
+            ),
+        )
+
+    n = np.asarray([int(r["_n_features_end"]) for r in candidates], dtype=float)
+    j = np.asarray([float(r["_robust_j"]) for r in candidates], dtype=float)
+
+    n_span = max(float(np.max(n) - np.min(n)), 1e-12)
+    j_span = max(float(np.max(j) - np.min(j)), 1e-12)
+
+    # Normalize so feature count and score are comparable.
+    # x: 0 = fewest features, 1 = most features
+    # y: 0 = worst robust score, 1 = best robust score
+    x = (n - np.min(n)) / n_span
+    y = (j - np.min(j)) / j_span
+
+    start_idx = int(np.argmin(n))
+    end_idx = int(np.argmax(j))
+
+    if end_idx == start_idx:
+        return candidates[start_idx]
+
+    x0, y0 = float(x[start_idx]), float(y[start_idx])
+    x1, y1 = float(x[end_idx]), float(y[end_idx])
+
+    dx = x1 - x0
+    dy = y1 - y0
+    denom = max(float(np.sqrt(dx * dx + dy * dy)), 1e-12)
+
+    distances = (dx * (y - y0) - dy * (x - x0)) / denom
+    in_span = (x >= min(x0, x1)) & (x <= max(x0, x1))
+    distances = np.where(in_span, distances, -np.inf)
+
+    feature_penalty = 0.02 * x
+    knee_score = distances - feature_penalty
+
+    return candidates[int(np.argmax(knee_score))]
+
+
+def _select_robust_pruning_round(
+    history: list[dict[str, Any]],
+    *,
+    iqr_penalty: float = EBM_J_ROBUST_IQR_PENALTY,
+    max_iqr_multiplier: float = 1.50,
+) -> dict[str, Any]:
+    """
+    Select an EBM pruning round with hard quality/efficiency gates.
+
+    Policy:
+      1. Use the highest-robust-J candidate as the reference model.
+      2. Apply top-20 hard gates for Lift, SALG, and NDCG; prefer candidates
+         in the configured 100-350 feature range, but if fewer than five pass
+         that range gate keep all quality-passing candidates.
+      3. Require robust J to be at least 80% of the reference robust J.
+      4. Require feature-value efficiency gates:
+            robust_j / n_features >= median
+            robust_j / sqrt(n_features) >= q33
+      5. Keep the Pareto front on higher robust J and lower feature count.
+      6. Choose the smallest Pareto candidate within max(J_se, dynamic_tol)
+         of the best robust J, unless its top-20 quality is materially worse.
+    """
     valid = [
         h
         for h in history
-        if "J_final" in h
-        and "J_se" in h
-        and ("active_indices" not in h or h.get("active_indices") is not None)
+        if ("active_indices" not in h or h.get("active_indices") is not None)
         and bool(h.get("candidate_gate_passed", True))
     ]
     if not valid:
-        valid = [
-            h
-            for h in history
-            if "J_final" in h
-            and "J_se" in h
-            and ("active_indices" not in h or h.get("active_indices") is not None)
-        ]
-        if valid:
-            tprint(
-                "EBMOnLGBM: all pruning candidates failed gates; "
-                "falling back to ungated 1SE selection."
-            )
-    if not valid:
+        tprint("EBMOnLGBM: no pruning candidate passed candidate-level gates.")
         return {}
-    best = max(valid, key=lambda h: float(h["J_final"]))
-    cut = float(best["J_final"]) - float(best.get("J_se", 0.0))
-    contenders = [h for h in valid if float(h["J_final"]) >= cut]
-    return min(
-        contenders,
-        key=lambda h: (
-            int(h.get("n_features_end", h.get("n_features", 10**9))),
-            -float(h.get("J_final", -np.inf)),
+
+    enriched: list[dict[str, Any]] = []
+    for row in valid:
+        r = dict(row)
+        median_j, iqr_j, robust_j = _robust_round_score_from_history(
+            r,
+            iqr_penalty=iqr_penalty,
+        )
+        r["_median_j"] = float(median_j)
+        r["_iqr_j"] = float(iqr_j)
+        r["_robust_j"] = float(robust_j)
+        r["_top20_quality"] = float(_top20_round_quality(r))
+        r["_n_features_end"] = int(
+            _history_float(
+                r,
+                ("n_features_end", "n_features", "feature_count", "n_keep"),
+                10**9,
+            )
+        )
+        n_features = max(int(r["_n_features_end"]), 1)
+        r["_selection_j_eff"] = 0.0
+        r["_feature_value"] = 0.0
+        r["_sqrt_feature_value"] = 0.0
+        r["_feature_efficiency_j"] = _feature_efficiency_score(
+            float(r["_robust_j"]),
+            n_features,
+        )
+        enriched.append(r)
+
+    hard_min_features = 50
+    hard_max_features = 500
+    target_max_features = int(EBM_SELECTED_FEATURES_MAX)
+    # Pruning proceeds in coarse fractional drops. A round can land just above
+    # the target cap (for example 504 vs 500) while still being the best honest
+    # candidate. Keep near-cap rounds eligible and trim them deterministically
+    # after selection instead of rejecting the whole EBM candidate.
+    near_cap_max_features = int(np.ceil(float(hard_max_features) * 1.05))
+    hard_count_pool = [
+        r
+        for r in enriched
+        if hard_min_features <= int(r["_n_features_end"]) <= near_cap_max_features
+    ]
+    if not hard_count_pool:
+        tprint(
+            "EBMOnLGBM: no pruning candidate satisfied the hard "
+            f"{hard_min_features}-{near_cap_max_features} feature-count gate; "
+            "falling back to quality-first selection with post-selection cap."
+        )
+        hard_count_pool = [
+            r
+            for r in enriched
+            if hard_min_features <= int(r["_n_features_end"])
+        ]
+        if not hard_count_pool:
+            tprint(
+                "EBMOnLGBM: no pruning candidate satisfied the minimum "
+                f"{hard_min_features} feature-count gate."
+            )
+            return {}
+
+    reference_pool = [r for r in hard_count_pool if _has_finite_top20_metrics(r)]
+    if not reference_pool:
+        tprint("EBMOnLGBM: no pruning candidate had finite top-20 metrics.")
+        return {}
+
+    reference = max(reference_pool, key=lambda r: float(r["_robust_j"]))
+    best_robust = float(reference["_robust_j"])
+    top20_thresholds = _top20_acceptance_thresholds(reference_pool)
+    min_lift = float(top20_thresholds["min_lift20"])
+    min_salg = float(top20_thresholds["min_salg20"])
+    min_ndcg = float(top20_thresholds["min_ndcg20"])
+
+    quality_pass = [
+        r for r in hard_count_pool if _passes_top20_acceptance(r, top20_thresholds)
+    ]
+    if not quality_pass:
+        tprint("EBMOnLGBM: no pruning candidate satisfied top-20 quality hard gates.")
+        return {}
+
+    target_quality_pass = [
+        r
+        for r in quality_pass
+        if _feature_count_in_target_range(int(r["_n_features_end"]))
+    ]
+    used_target_range = len(target_quality_pass) > 0
+    if not used_target_range:
+        tprint(
+            "EBMOnLGBM: no top-20 quality-passing pruning candidate is inside "
+            f"the target feature range [{EBM_SELECTED_FEATURES_MIN}, "
+            f"{EBM_SELECTED_FEATURES_MAX}]; falling back to 50-500 hard range."
+        )
+    quality_pool = target_quality_pass if used_target_range else quality_pass
+
+    selection_tol = _dynamic_round_tolerance(best_robust)
+    robust_threshold = float(best_robust - selection_tol)
+    robust_pool = [r for r in quality_pool if float(r["_robust_j"]) >= robust_threshold]
+    if not robust_pool and used_target_range:
+        tprint(
+            "EBMOnLGBM: target feature-range pool failed robust-J gate; "
+            "falling back to broader top-20 quality-passing pool."
+        )
+        used_target_range = False
+        quality_pool = quality_pass
+        robust_pool = [
+            r for r in quality_pool if float(r["_robust_j"]) >= robust_threshold
+        ]
+    if not robust_pool:
+        tprint("EBMOnLGBM: no pruning candidate satisfied the robust-J hard gate.")
+        return {}
+    n_robust_pass_rounds = len(robust_pool)
+
+    iqr_values = np.asarray([float(r["_iqr_j"]) for r in robust_pool], dtype=float)
+    finite_iqr = iqr_values[np.isfinite(iqr_values)]
+    median_iqr = float(np.median(finite_iqr)) if len(finite_iqr) else 0.0
+    max_allowed_iqr = max(0.005, float(max_iqr_multiplier) * median_iqr)
+    stable_pool = [
+        r
+        for r in robust_pool
+        if np.isfinite(float(r["_iqr_j"])) and float(r["_iqr_j"]) <= max_allowed_iqr
+    ]
+    n_stable_rounds = len(stable_pool)
+    if stable_pool:
+        robust_pool = stable_pool
+    else:
+        n_stable_rounds = len(robust_pool)
+
+    j_floor = robust_threshold
+    for r in robust_pool:
+        n_features = max(int(r["_n_features_end"]), 1)
+        j_eff = max(0.0, float(r["_robust_j"]) - j_floor)
+        r["_selection_j_eff"] = float(j_eff)
+        r["_feature_value"] = float(j_eff / float(n_features))
+        r["_sqrt_feature_value"] = float(j_eff / np.sqrt(float(n_features)))
+
+    feature_values = np.asarray(
+        [float(r["_feature_value"]) for r in robust_pool], dtype=float
+    )
+    sqrt_feature_values = np.asarray(
+        [float(r["_sqrt_feature_value"]) for r in robust_pool], dtype=float
+    )
+    finite_feature_values = feature_values[np.isfinite(feature_values)]
+    finite_sqrt_feature_values = sqrt_feature_values[np.isfinite(sqrt_feature_values)]
+    feature_value_min = (
+        float(np.median(finite_feature_values))
+        if len(finite_feature_values)
+        else -np.inf
+    )
+    sqrt_feature_value_min = (
+        float(np.percentile(finite_sqrt_feature_values, 33.0))
+        if len(finite_sqrt_feature_values)
+        else -np.inf
+    )
+    efficiency_pool = [
+        r
+        for r in robust_pool
+        if float(r["_feature_value"]) >= feature_value_min
+        and float(r["_sqrt_feature_value"]) >= sqrt_feature_value_min
+    ]
+    if not efficiency_pool:
+        tprint("EBMOnLGBM: no pruning candidate satisfied feature-efficiency gates.")
+        return {}
+
+    pareto = _pareto_rounds(efficiency_pool)
+    if not pareto:
+        pareto = efficiency_pool
+
+    best_pareto = max(pareto, key=lambda r: float(r["_robust_j"]))
+    best_pareto_robust = float(best_pareto["_robust_j"])
+    best_pareto_j_se = _history_float(
+        best_pareto,
+        ("J_se", "j_se", "se", "J_std", "j_std"),
+        0.0,
+    )
+    if not np.isfinite(best_pareto_j_se):
+        best_pareto_j_se = 0.0
+    pareto_robust_tol = float(
+        max(float(best_pareto_j_se), _dynamic_round_tolerance(best_pareto_robust))
+    )
+    pareto_robust_floor = float(best_pareto_robust - pareto_robust_tol)
+    robust_close_pareto = [
+        r for r in pareto if float(r["_robust_j"]) >= pareto_robust_floor
+    ]
+    if not robust_close_pareto:
+        robust_close_pareto = [best_pareto]
+
+    best_close_top20_quality = max(
+        float(r["_top20_quality"]) for r in robust_close_pareto
+    )
+    top20_quality_tol = float(
+        max(EBM_TOP20_SALG_TOL, 0.05 * abs(best_close_top20_quality))
+    )
+    top20_quality_floor = float(best_close_top20_quality - top20_quality_tol)
+    conservative_pareto = [
+        r
+        for r in robust_close_pareto
+        if float(r["_top20_quality"]) >= top20_quality_floor
+    ]
+    if not conservative_pareto:
+        conservative_pareto = robust_close_pareto
+
+    chosen = min(
+        conservative_pareto,
+        key=lambda r: (
+            _feature_bucket(int(r["_n_features_end"])),
+            -float(r["_top20_quality"]),
+            float(r["_iqr_j"]),
+            -float(r["_robust_j"]),
         ),
+    )
+
+    tprint(
+        "EBMOnLGBM: robust pruning selection "
+        f"hard_count={len(hard_count_pool)}, quality_pass={len(quality_pass)}, "
+        f"target_pass={len(target_quality_pass)}, robust_pass={n_robust_pass_rounds}, "
+        f"stable_pass={n_stable_rounds}, efficiency_pass={len(efficiency_pool)}, "
+        f"pareto={len(pareto)}, pareto_close={len(robust_close_pareto)}, "
+        f"pareto_conservative={len(conservative_pareto)}, "
+        f"used_target_range={used_target_range}; "
+        f"min_lift20={min_lift:.4f}, min_salg20={min_salg:.4f}, "
+        f"min_ndcg20={min_ndcg:.4f}, min_robust_j={robust_threshold:.4f}; "
+        f"pareto_best_robust_j={best_pareto_robust:.4f}, "
+        f"pareto_robust_tol={pareto_robust_tol:.4f}, "
+        f"pareto_top20_quality_floor={top20_quality_floor:.4f}; "
+        f"chosen_round={int(chosen.get('round', -1))}, "
+        f"chosen_features={int(chosen['_n_features_end'])}, "
+        f"chosen_robust_j={float(chosen['_robust_j']):.4f}."
+    )
+
+    out = dict(chosen)
+    chosen_feature_count = int(out.get("_n_features_end", out.get("n_features_end", 0)))
+    if chosen_feature_count > target_max_features:
+        active_idx = np.asarray(out.get("active_indices"), dtype=np.int32)
+        active_scores = np.asarray(out.get("active_scores", []), dtype=np.float32)
+        if len(active_idx) == chosen_feature_count and len(active_scores) == len(
+            active_idx
+        ):
+            keep_pos = np.argsort(active_scores)[-target_max_features:]
+            capped = np.sort(active_idx[keep_pos]).astype(np.int32)
+        else:
+            capped = np.sort(active_idx)[:target_max_features].astype(np.int32)
+        out["active_indices"] = capped
+        out["_n_features_end"] = int(len(capped))
+        out["n_features_end"] = int(len(capped))
+        out["selection_feature_cap_applied"] = 1.0
+        out["selection_feature_count_before_cap"] = float(chosen_feature_count)
+        tprint(
+            "EBMOnLGBM: capped selected pruning round features "
+            f"{chosen_feature_count} -> {len(capped)} to satisfy "
+            f"target_max_features={target_max_features}."
+        )
+    else:
+        out["selection_feature_cap_applied"] = 0.0
+    out["selection_policy"] = "quality_efficiency_pareto_close_j_min_features"
+    out["selection_best_robust_j"] = float(best_robust)
+    out["selection_tol"] = float(selection_tol)
+    out["selection_median_j"] = float(chosen["_median_j"])
+    out["selection_iqr_j"] = float(chosen["_iqr_j"])
+    out["selection_robust_j"] = float(chosen["_robust_j"])
+    out["selection_top20_quality"] = float(chosen["_top20_quality"])
+    out["selection_n_acceptable_rounds"] = float(len(quality_pool))
+    out["selection_n_quality_pool_rounds"] = float(len(quality_pool))
+    out["selection_n_quality_pass_rounds"] = float(len(quality_pass))
+    out["selection_n_robust_pass_rounds"] = float(n_robust_pass_rounds)
+    out["selection_n_stable_rounds"] = float(n_stable_rounds)
+    out["selection_n_efficiency_pass_rounds"] = float(len(efficiency_pool))
+    out["selection_n_enriched_rounds"] = float(len(enriched))
+    out["selection_n_pareto_rounds"] = float(len(pareto))
+    out["selection_n_pareto_close_rounds"] = float(len(robust_close_pareto))
+    out["selection_n_pareto_conservative_rounds"] = float(len(conservative_pareto))
+    out["selection_n_target_acceptable_rounds"] = float(len(target_quality_pass))
+    out["selection_target_min_features"] = float(EBM_SELECTED_FEATURES_MIN)
+    out["selection_target_max_features"] = float(EBM_SELECTED_FEATURES_MAX)
+    out["selection_used_target_feature_range"] = float(used_target_range)
+    out["selection_feature_efficiency_j"] = float(chosen["_feature_efficiency_j"])
+    out["selection_feature_value"] = float(chosen["_feature_value"])
+    out["selection_sqrt_feature_value"] = float(chosen["_sqrt_feature_value"])
+    out["selection_j_eff"] = float(chosen["_selection_j_eff"])
+    out["selection_n_hard_count_pass_rounds"] = float(len(hard_count_pool))
+    out["selection_min_lift20"] = float(min_lift)
+    out["selection_min_salg20"] = float(min_salg)
+    out["selection_min_ndcg20"] = float(min_ndcg)
+    out["selection_min_robust_j"] = float(robust_threshold)
+    out["selection_pareto_best_robust_j"] = float(best_pareto_robust)
+    out["selection_pareto_best_j_se"] = float(best_pareto_j_se)
+    out["selection_pareto_robust_tol"] = float(pareto_robust_tol)
+    out["selection_pareto_robust_floor"] = float(pareto_robust_floor)
+    out["selection_pareto_top20_quality_floor"] = float(top20_quality_floor)
+    out["selection_pareto_top20_quality_tol"] = float(top20_quality_tol)
+    out["selection_min_feature_value"] = float(feature_value_min)
+    out["selection_min_sqrt_feature_value"] = float(sqrt_feature_value_min)
+    out["selection_reference_round"] = float(reference.get("round", -1))
+    return out
+
+
+def _select_smallest_within_one_se(
+    history: list[dict[str, Any]],
+    *,
+    iqr_penalty: float = EBM_J_ROBUST_IQR_PENALTY,
+    max_iqr_multiplier: float = 1.50,
+) -> dict[str, Any]:
+    """Backward-compatible alias for the robust quality/efficiency selector."""
+    return _select_robust_pruning_round(
+        history,
+        iqr_penalty=iqr_penalty,
+        max_iqr_multiplier=max_iqr_multiplier,
     )
 
 
 def _feature_pruning_candidate_gate(rec: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
-    min_lift15, min_stability15 = _candidate_gate_thresholds()
+    min_lift20, min_stability20 = _candidate_gate_thresholds()
+    lift20 = _round_lift20(rec, default=float("nan"))
+    stability20 = _round_stability20(rec, default=float("nan"))
+    salg20 = _round_salg20(rec)
+    ndcg20 = _round_ndcg20(rec, default=float("nan"))
+    j20 = _metric_j_from_lift_stability_ndcg(lift20, stability20, ndcg20)
+
     lift15 = float(rec.get("lift15", rec.get("lift30", np.nan)))
     stability15 = float(rec.get("stability15", rec.get("stability30", np.nan)))
     lift30 = float(rec.get("lift30", np.nan))
@@ -3256,22 +4302,33 @@ def _feature_pruning_candidate_gate(rec: dict[str, Any]) -> tuple[bool, dict[str
     n_features = int(rec.get("n_features_end", rec.get("n_features", 0)))
     checks = {
         "finite_score": bool(np.isfinite(j_final)),
-        "min_lift15": bool(np.isfinite(lift15) and lift15 >= min_lift15),
-        "min_stability15": bool(
-            np.isfinite(stability15) and stability15 >= min_stability15
+        "finite_j20": bool(np.isfinite(j20)),
+        "finite_salg20": bool(np.isfinite(salg20)),
+        "min_lift20": bool(np.isfinite(lift20) and lift20 >= min_lift20),
+        "min_stability20": bool(
+            np.isfinite(stability20) and stability20 >= min_stability20
         ),
+        "finite_lift15": bool(np.isfinite(lift15)),
+        "finite_stability15": bool(np.isfinite(stability15)),
         "legacy_min_lift30": bool(np.isfinite(lift30)),
         "legacy_min_stability30": bool(np.isfinite(stability30)),
         "min_features": bool(n_features >= EBM_MIN_FEATURES),
     }
     details: dict[str, Any] = {
         "candidate_gate_passed": bool(all(checks.values())),
-        "candidate_gate_min_lift15": float(min_lift15),
-        "candidate_gate_min_stability15": float(min_stability15),
-        "candidate_gate_min_lift30": float(min_lift15),
-        "candidate_gate_min_stability30": float(min_stability15),
+        "candidate_gate_min_lift15": float(min_lift20),
+        "candidate_gate_min_stability15": float(min_stability20),
+        "candidate_gate_min_lift20": float(min_lift20),
+        "candidate_gate_min_stability20": float(min_stability20),
+        "candidate_gate_min_lift30": float(min_lift20),
+        "candidate_gate_min_stability30": float(min_stability20),
         "candidate_gate_lift15": float(lift15),
         "candidate_gate_stability15": float(stability15),
+        "candidate_gate_lift20": float(lift20),
+        "candidate_gate_stability20": float(stability20),
+        "candidate_gate_salg20": float(salg20),
+        "candidate_gate_ndcg20": float(ndcg20),
+        "candidate_gate_j20": float(j20),
         "candidate_gate_lift30": float(lift30),
         "candidate_gate_stability30": float(stability30),
     }
@@ -3287,7 +4344,8 @@ def _round_drop_fraction(round_id: int) -> float:
 
 
 def _round_presence_min(round_id: int) -> float:
-    return float(
+    first_round_relief = 0.10 if int(round_id) <= 1 else 0.0
+    threshold = float(
         np.clip(
             EBM_FOLD_PRESENCE_MIN_START
             + EBM_FOLD_PRESENCE_MIN_STEP * max(0, int(round_id) - 1),
@@ -3295,10 +4353,12 @@ def _round_presence_min(round_id: int) -> float:
             EBM_FOLD_PRESENCE_MIN_CAP,
         )
     )
+    return float(max(0.0, threshold - first_round_relief))
 
 
 def _round_sign_consistency_min(round_id: int) -> float:
-    return float(
+    first_round_relief = 0.10 if int(round_id) <= 1 else 0.0
+    threshold = float(
         np.clip(
             EBM_SIGN_CONSISTENCY_MIN_START
             + EBM_SIGN_CONSISTENCY_MIN_STEP * max(0, int(round_id) - 1),
@@ -3306,6 +4366,7 @@ def _round_sign_consistency_min(round_id: int) -> float:
             EBM_SIGN_CONSISTENCY_MIN_CAP,
         )
     )
+    return float(max(0.0, threshold - first_round_relief))
 
 
 def _term_contrib_matrix(model: Any, X: pd.DataFrame) -> np.ndarray | None:
@@ -3322,6 +4383,75 @@ def _term_contrib_matrix(model: Any, X: pd.DataFrame) -> np.ndarray | None:
     return np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
 
 
+def _contribution_redundancy_stats(
+    contrib: np.ndarray,
+    term_features: Any,
+    finite_mask: np.ndarray,
+    n_features: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    max_corr = np.zeros(n_features, dtype=np.float32)
+    multiplier = np.ones(n_features, dtype=np.float32)
+    if EBM_CONTRIB_REDUNDANCY_MAX_FEATURES <= 1:
+        return max_corr, multiplier
+
+    finite = np.asarray(finite_mask, dtype=bool)
+    if contrib.ndim != 2 or contrib.shape[0] != len(finite):
+        return max_corr, multiplier
+
+    cols: list[np.ndarray] = []
+    feature_indices: list[int] = []
+    for ti, term in enumerate(term_features):
+        if ti >= contrib.shape[1] or len(term) != 1:
+            continue
+        fi = int(term[0])
+        if fi < 0 or fi >= n_features:
+            continue
+        vals = np.asarray(contrib[:, ti][finite], dtype=np.float32)
+        vals = np.nan_to_num(vals, nan=0.0, posinf=0.0, neginf=0.0)
+        if vals.size < 8 or float(np.std(vals)) <= 1e-12:
+            continue
+        cols.append(vals)
+        feature_indices.append(fi)
+
+    n_cols = len(cols)
+    if n_cols <= 1 or n_cols > EBM_CONTRIB_REDUNDANCY_MAX_FEATURES:
+        return max_corr, multiplier
+
+    mat = np.column_stack(cols).astype(np.float32, copy=False)
+    if mat.shape[0] > EBM_CONTRIB_REDUNDANCY_MAX_ROWS > 0:
+        idx = np.linspace(
+            0,
+            mat.shape[0] - 1,
+            int(EBM_CONTRIB_REDUNDANCY_MAX_ROWS),
+            dtype=np.int32,
+        )
+        mat = mat[idx]
+
+    ranks = pd.DataFrame(mat).rank(pct=True).to_numpy(dtype=np.float32)
+    ranks = np.nan_to_num(ranks, nan=0.0, posinf=0.0, neginf=0.0)
+    ranks -= np.mean(ranks, axis=0, keepdims=True)
+    denom = np.sqrt(np.sum(ranks * ranks, axis=0, keepdims=True))
+    valid_cols = denom.ravel() > 1e-12
+    if int(np.sum(valid_cols)) <= 1:
+        return max_corr, multiplier
+
+    ranks = ranks[:, valid_cols] / np.maximum(denom[:, valid_cols], 1e-12)
+    valid_feature_indices = np.asarray(feature_indices, dtype=np.int32)[valid_cols]
+    corr = np.abs(np.matmul(ranks.T, ranks))
+    corr = np.nan_to_num(corr, nan=0.0, posinf=0.0, neginf=0.0)
+    np.fill_diagonal(corr, 0.0)
+    local_max = np.max(corr, axis=1).astype(np.float32)
+
+    start = float(np.clip(EBM_CONTRIB_REDUNDANCY_CORR_START, 0.0, 0.999))
+    full = float(np.clip(EBM_CONTRIB_REDUNDANCY_CORR_FULL, start + 1e-6, 0.999))
+    min_mult = float(np.clip(EBM_CONTRIB_REDUNDANCY_MULTIPLIER_MIN, 0.0, 1.0))
+    excess = np.clip((local_max - start) / max(full - start, 1e-6), 0.0, 1.0)
+    local_mult = 1.0 - (1.0 - min_mult) * excess
+    max_corr[valid_feature_indices] = local_max
+    multiplier[valid_feature_indices] = local_mult.astype(np.float32)
+    return max_corr, multiplier
+
+
 def _feature_eval_term_stats(
     model: Any,
     X_va: pd.DataFrame,
@@ -3329,6 +4459,7 @@ def _feature_eval_term_stats(
     pred_va: np.ndarray,
     feature_names: list[str],
     classifier: bool,
+    groups: Any = None,
 ) -> dict[str, np.ndarray] | None:
     contrib = _term_contrib_matrix(model, X_va)
     if contrib is None:
@@ -3340,20 +4471,48 @@ def _feature_eval_term_stats(
     presence = np.zeros(n_features, dtype=np.float32)
     sign = np.zeros(n_features, dtype=np.float32)
     top_use = np.zeros(n_features, dtype=np.float32)
+    top_econ = np.zeros(n_features, dtype=np.float32)
+    top_model_contrib_abs = np.zeros(n_features, dtype=np.float32)
+    top_model_contrib_enrichment = np.zeros(n_features, dtype=np.float32)
+    top_model_contrib_signed = np.zeros(n_features, dtype=np.float32)
+    top_model_contrib_push = np.zeros(n_features, dtype=np.float32)
+    top_model_contrib_push_enrichment = np.zeros(n_features, dtype=np.float32)
+    top_model_fp_push_share = np.zeros(n_features, dtype=np.float32)
+    top_model_fp_multiplier = np.ones(n_features, dtype=np.float32)
+    asset_edge_std = np.zeros(n_features, dtype=np.float32)
+    month_edge_std = np.zeros(n_features, dtype=np.float32)
+    asset_stability = np.ones(n_features, dtype=np.float32)
+    month_stability = np.ones(n_features, dtype=np.float32)
+    contrib_redundancy_corr = np.zeros(n_features, dtype=np.float32)
+    contrib_redundancy_multiplier = np.ones(n_features, dtype=np.float32)
     yy = np.asarray(y_va, dtype=np.float32)
     pp = np.asarray(pred_va, dtype=np.float32)
     finite = np.isfinite(yy) & np.isfinite(pp)
     if int(np.sum(finite)) < 8:
         return None
+    grp_asset = None
+    grp_month = None
+    if isinstance(groups, dict):
+        if "asset" in groups and len(np.asarray(groups["asset"])) == len(finite):
+            grp_asset = np.asarray(groups["asset"], dtype=object)[finite]
+        month_key = "calendar_month" if "calendar_month" in groups else "month"
+        if month_key in groups and len(np.asarray(groups[month_key])) == len(finite):
+            grp_month = np.asarray(groups[month_key], dtype=object)[finite]
+    elif groups is not None and len(np.asarray(groups)) == len(finite):
+        grp_asset = np.asarray(groups, dtype=object)[finite]
     yy = yy[finite]
     pp = pp[finite]
     order = np.argsort(pp)
     top20 = _top_idx(order, 0.20, len(pp))
     top30 = _top_idx(order, 0.30, len(pp))
+    top_contrib_idx = _top_idx(order, EBM_TOP_CONTRIB_FRACTION, len(pp))
     if classifier:
         y_eval = (yy >= 0.5).astype(np.float32)
     else:
         y_eval = yy.astype(np.float32)
+    contrib_redundancy_corr, contrib_redundancy_multiplier = (
+        _contribution_redundancy_stats(contrib, term_features, finite, n_features)
+    )
     for ti, term in enumerate(term_features):
         if ti >= contrib.shape[1] or len(term) != 1:
             continue
@@ -3373,19 +4532,148 @@ def _feature_eval_term_stats(
                 np.mean(y_eval[c < np.median(c)])
             )
             corr_total = lift_dir
-        sign[fi] = float(np.sign(corr_total))
+        direction = float(np.sign(corr_total))
+        sign[fi] = direction
         score20 = (
             abs(_safe_spearman(c[top20], y_eval[top20])) if len(top20) > 2 else 0.0
         )
         score30 = (
             abs(_safe_spearman(c[top30], y_eval[top30])) if len(top30) > 2 else 0.0
         )
-        top_use[fi] = float(max(score20, score30))
+        top_use[fi] = float(0.75 * score20 + 0.25 * score30)
+        if len(top_contrib_idx) >= 3:
+            c_top = c[top_contrib_idx]
+            y_top = y_eval[top_contrib_idx]
+            positive_push = np.maximum(c_top, 0.0)
+            top_push_sum = float(np.sum(positive_push))
+            top_push = float(np.mean(positive_push))
+            top_abs = float(np.mean(np.abs(c_top)))
+            all_abs = float(np.mean(np.abs(c))) + 1e-8
+            all_push = float(np.mean(np.maximum(c, 0.0))) + 1e-8
+            top_signed = float(np.mean(c_top))
+            top_model_contrib_abs[fi] = top_abs
+            top_model_contrib_enrichment[fi] = float(top_abs / all_abs)
+            top_model_contrib_signed[fi] = top_signed
+            top_model_contrib_push[fi] = top_push
+            top_model_contrib_push_enrichment[fi] = float(top_push / all_push)
+            if top_push_sum > 1e-12:
+                if classifier:
+                    false_positive_mask = y_top < 0.5
+                else:
+                    false_positive_mask = y_top <= 0.0
+                fp_push = float(np.sum(positive_push[false_positive_mask]))
+                fp_share = float(np.clip(fp_push / top_push_sum, 0.0, 1.0))
+                top_model_fp_push_share[fi] = fp_share
+                fp_mult_min = float(
+                    np.clip(EBM_TOP_BUCKET_FALSE_POSITIVE_MULTIPLIER_MIN, 0.0, 1.0)
+                )
+                top_model_fp_multiplier[fi] = float(
+                    np.clip(
+                        1.0 - (1.0 - fp_mult_min) * fp_share,
+                        fp_mult_min,
+                        1.0,
+                    )
+                )
+        if direction == 0.0:
+            direction = 1.0
+        feature_rank_score = c * float(direction)
+        feature_top = _top_idx(np.argsort(feature_rank_score), 0.20, len(y_eval))
+        if len(feature_top) >= 3:
+            if classifier:
+                base_rate = float(np.mean(y_eval >= 0.5))
+                top_rate = float(np.mean(y_eval[feature_top] >= 0.5))
+                top_econ[fi] = float(max(0.0, top_rate / max(base_rate, 1e-6) - 1.0))
+            else:
+                denom = float(np.mean(np.abs(y_eval)) + 1e-6)
+                top_econ[fi] = float(max(0.0, np.mean(y_eval[feature_top]) / denom))
+        asset_std, asset_mult = _feature_group_edge_stability(
+            c,
+            y_eval,
+            direction=direction,
+            classifier=classifier,
+            groups=grp_asset,
+        )
+        month_std, month_mult = _feature_group_edge_stability(
+            c,
+            y_eval,
+            direction=direction,
+            classifier=classifier,
+            groups=grp_month,
+        )
+        asset_edge_std[fi] = asset_std
+        month_edge_std[fi] = month_std
+        asset_stability[fi] = asset_mult
+        month_stability[fi] = month_mult
     return {
         "presence": presence,
         "sign": sign,
         "top_usefulness": top_use,
+        "top_economic_usefulness": top_econ,
+        "top_model_contribution_abs": top_model_contrib_abs,
+        "top_model_contribution_enrichment": top_model_contrib_enrichment,
+        "top_model_contribution_signed": top_model_contrib_signed,
+        "top_model_contribution_push": top_model_contrib_push,
+        "top_model_contribution_push_enrichment": top_model_contrib_push_enrichment,
+        "top_model_false_positive_push_share": top_model_fp_push_share,
+        "top_model_false_positive_multiplier": top_model_fp_multiplier,
+        "asset_edge_std": asset_edge_std,
+        "month_edge_std": month_edge_std,
+        "asset_stability_multiplier": asset_stability,
+        "month_stability_multiplier": month_stability,
+        "contribution_redundancy_corr": contrib_redundancy_corr,
+        "contribution_redundancy_multiplier": contrib_redundancy_multiplier,
     }
+
+
+def _feature_group_edge_stability(
+    contribution: np.ndarray,
+    y_eval: np.ndarray,
+    *,
+    direction: float,
+    classifier: bool,
+    groups: np.ndarray | None,
+    top_frac: float = 0.20,
+) -> tuple[float, float]:
+    if groups is None:
+        return 0.0, 1.0
+    c = np.asarray(contribution, dtype=np.float32)
+    y = np.asarray(y_eval, dtype=np.float32)
+    g = np.asarray(groups, dtype=object)
+    if len(c) != len(y) or len(g) != len(y):
+        return 0.0, 1.0
+    score = np.nan_to_num(c * float(direction), nan=0.0, posinf=0.0, neginf=0.0)
+    edges: list[float] = []
+    for group in pd.unique(g):
+        mask = g == group
+        n = int(np.sum(mask))
+        if n < 20:
+            continue
+        yy = y[mask]
+        ss = score[mask]
+        finite = np.isfinite(yy) & np.isfinite(ss)
+        if int(np.sum(finite)) < 20 or float(np.nanstd(ss[finite])) <= 1e-12:
+            continue
+        yy = yy[finite]
+        ss = ss[finite]
+        order = np.argsort(ss)
+        top = _top_idx(order, top_frac, len(yy))
+        if len(top) < 3:
+            continue
+        if classifier:
+            base = float(np.mean(yy >= 0.5))
+            edge = float(np.mean(yy[top] >= 0.5) - base)
+        else:
+            edge = float(np.mean(yy[top]))
+        if np.isfinite(edge):
+            edges.append(edge)
+    if len(edges) < 3:
+        return 0.0, 1.0
+    arr = np.asarray(edges, dtype=np.float32)
+    std = float(np.std(arr, ddof=1))
+    mean_abs = float(abs(np.mean(arr)))
+    cv = std / max(mean_abs, 0.05)
+    multiplier = float(np.clip(1.0 / (1.0 + cv), 0.65, 1.0))
+    return std, multiplier
 
 
 def _aggregate_feature_eval_stats(
@@ -3398,12 +4686,95 @@ def _aggregate_feature_eval_stats(
             "presence_rate": zeros,
             "sign_consistency": zeros,
             "top_usefulness": zeros,
+            "top_economic_usefulness": zeros,
+            "top_model_contribution_abs": zeros,
+            "top_model_contribution_enrichment": zeros,
+            "top_model_contribution_signed": zeros,
+            "top_model_contribution_push": zeros,
+            "top_model_contribution_push_enrichment": zeros,
+            "top_model_false_positive_push_share": zeros,
+            "top_model_false_positive_multiplier": np.ones(
+                n_features, dtype=np.float32
+            ),
             "stability_tiebreaker": zeros,
+            "asset_edge_std": zeros,
+            "month_edge_std": zeros,
+            "asset_stability_multiplier": np.ones(n_features, dtype=np.float32),
+            "month_stability_multiplier": np.ones(n_features, dtype=np.float32),
+            "group_stability_multiplier": np.ones(n_features, dtype=np.float32),
+            "contribution_redundancy_corr": zeros,
+            "contribution_redundancy_multiplier": np.ones(n_features, dtype=np.float32),
             "n_eval_folds": zeros,
         }
     presence = np.vstack([s["presence"] for s in fold_stats]).astype(np.float32)
     signs = np.vstack([s["sign"] for s in fold_stats]).astype(np.float32)
     top_use = np.vstack([s["top_usefulness"] for s in fold_stats]).astype(np.float32)
+    top_econ = np.vstack(
+        [
+            s.get("top_economic_usefulness", np.zeros(n_features, dtype=np.float32))
+            for s in fold_stats
+        ]
+    ).astype(np.float32)
+    top_contrib_abs = np.vstack(
+        [
+            s.get("top_model_contribution_abs", np.zeros(n_features, dtype=np.float32))
+            for s in fold_stats
+        ]
+    ).astype(np.float32)
+    top_contrib_enrichment = np.vstack(
+        [
+            s.get(
+                "top_model_contribution_enrichment",
+                np.zeros(n_features, dtype=np.float32),
+            )
+            for s in fold_stats
+        ]
+    ).astype(np.float32)
+    top_contrib_signed = np.vstack(
+        [
+            s.get(
+                "top_model_contribution_signed",
+                np.zeros(n_features, dtype=np.float32),
+            )
+            for s in fold_stats
+        ]
+    ).astype(np.float32)
+    top_contrib_push = np.vstack(
+        [
+            s.get(
+                "top_model_contribution_push",
+                np.zeros(n_features, dtype=np.float32),
+            )
+            for s in fold_stats
+        ]
+    ).astype(np.float32)
+    top_contrib_push_enrichment = np.vstack(
+        [
+            s.get(
+                "top_model_contribution_push_enrichment",
+                np.zeros(n_features, dtype=np.float32),
+            )
+            for s in fold_stats
+        ]
+    ).astype(np.float32)
+    top_fp_push_share = np.vstack(
+        [
+            s.get(
+                "top_model_false_positive_push_share",
+                np.zeros(n_features, dtype=np.float32),
+            )
+            for s in fold_stats
+        ]
+    ).astype(np.float32)
+    top_fp_multiplier = np.vstack(
+        [
+            s.get(
+                "top_model_false_positive_multiplier",
+                np.ones(n_features, dtype=np.float32),
+            )
+            for s in fold_stats
+        ]
+    ).astype(np.float32)
     presence_rate = np.mean(presence > 0.0, axis=0).astype(np.float32)
     pos_rate = np.mean(signs > 0.0, axis=0)
     neg_rate = np.mean(signs < 0.0, axis=0)
@@ -3412,12 +4783,103 @@ def _aggregate_feature_eval_stats(
     mean_top = np.mean(top_use, axis=0)
     std_top = np.std(top_use, axis=0)
     top_usefulness = mean_top.astype(np.float32)
+    top_economic_usefulness = np.mean(top_econ, axis=0).astype(np.float32)
+    top_model_contribution_abs = np.mean(top_contrib_abs, axis=0).astype(np.float32)
+    top_model_contribution_enrichment = np.mean(top_contrib_enrichment, axis=0).astype(
+        np.float32
+    )
+    top_model_contribution_signed = np.mean(top_contrib_signed, axis=0).astype(
+        np.float32
+    )
+    top_model_contribution_push = np.mean(top_contrib_push, axis=0).astype(np.float32)
+    top_model_contribution_push_enrichment = np.mean(
+        top_contrib_push_enrichment, axis=0
+    ).astype(np.float32)
+    top_model_false_positive_push_share = np.mean(top_fp_push_share, axis=0).astype(
+        np.float32
+    )
+    top_model_false_positive_multiplier = np.mean(top_fp_multiplier, axis=0).astype(
+        np.float32
+    )
     stability_tiebreaker = (1.0 / (1.0 + std_top)).astype(np.float32)
+    asset_std = np.vstack(
+        [
+            s.get("asset_edge_std", np.zeros(n_features, dtype=np.float32))
+            for s in fold_stats
+        ]
+    ).astype(np.float32)
+    month_std = np.vstack(
+        [
+            s.get("month_edge_std", np.zeros(n_features, dtype=np.float32))
+            for s in fold_stats
+        ]
+    ).astype(np.float32)
+    asset_mult = np.vstack(
+        [
+            s.get(
+                "asset_stability_multiplier",
+                np.ones(n_features, dtype=np.float32),
+            )
+            for s in fold_stats
+        ]
+    ).astype(np.float32)
+    month_mult = np.vstack(
+        [
+            s.get(
+                "month_stability_multiplier",
+                np.ones(n_features, dtype=np.float32),
+            )
+            for s in fold_stats
+        ]
+    ).astype(np.float32)
+    contrib_redundancy_corr = np.vstack(
+        [
+            s.get(
+                "contribution_redundancy_corr",
+                np.zeros(n_features, dtype=np.float32),
+            )
+            for s in fold_stats
+        ]
+    ).astype(np.float32)
+    contrib_redundancy_multiplier = np.vstack(
+        [
+            s.get(
+                "contribution_redundancy_multiplier",
+                np.ones(n_features, dtype=np.float32),
+            )
+            for s in fold_stats
+        ]
+    ).astype(np.float32)
+    asset_stability_multiplier = np.mean(asset_mult, axis=0).astype(np.float32)
+    month_stability_multiplier = np.mean(month_mult, axis=0).astype(np.float32)
+    group_stability_multiplier = np.sqrt(
+        np.clip(asset_stability_multiplier, 0.65, 1.0)
+        * np.clip(month_stability_multiplier, 0.65, 1.0)
+    ).astype(np.float32)
     return {
         "presence_rate": presence_rate,
         "sign_consistency": sign_consistency,
         "top_usefulness": top_usefulness,
+        "top_economic_usefulness": top_economic_usefulness,
+        "top_model_contribution_abs": top_model_contribution_abs,
+        "top_model_contribution_enrichment": top_model_contribution_enrichment,
+        "top_model_contribution_signed": top_model_contribution_signed,
+        "top_model_contribution_push": top_model_contribution_push,
+        "top_model_contribution_push_enrichment": top_model_contribution_push_enrichment,
+        "top_model_false_positive_push_share": top_model_false_positive_push_share,
+        "top_model_false_positive_multiplier": top_model_false_positive_multiplier,
         "stability_tiebreaker": stability_tiebreaker,
+        "asset_edge_std": np.mean(asset_std, axis=0).astype(np.float32),
+        "month_edge_std": np.mean(month_std, axis=0).astype(np.float32),
+        "asset_stability_multiplier": asset_stability_multiplier,
+        "month_stability_multiplier": month_stability_multiplier,
+        "group_stability_multiplier": group_stability_multiplier,
+        "contribution_redundancy_corr": np.mean(contrib_redundancy_corr, axis=0).astype(
+            np.float32
+        ),
+        "contribution_redundancy_multiplier": np.mean(
+            contrib_redundancy_multiplier, axis=0
+        ).astype(np.float32),
         "n_eval_folds": np.full(n_features, len(fold_stats), dtype=np.float32),
     }
 
@@ -3426,6 +4888,7 @@ def _combine_ebm_feature_scores(
     base_scores: np.ndarray,
     eval_stats: dict[str, np.ndarray] | None,
     round_id: int,
+    feature_names: list[str] | None = None,
 ) -> tuple[np.ndarray, dict[str, float]]:
     scores = np.nan_to_num(
         np.asarray(base_scores, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0
@@ -3436,8 +4899,36 @@ def _combine_ebm_feature_scores(
             "sign_consistency_min": float("nan"),
             "presence_fail_count": 0.0,
             "sign_fail_count": 0.0,
+            "lgbm_presence_min": float("nan"),
+            "lgbm_sign_consistency_min": float("nan"),
+            "lgbm_presence_fail_count": 0.0,
+            "lgbm_sign_fail_count": 0.0,
+            "raw_presence_fail_count": 0.0,
+            "raw_sign_fail_count": 0.0,
             "top_usefulness_mean": 0.0,
+            "top_economic_usefulness_mean": 0.0,
+            "top_model_contribution_abs_mean": 0.0,
+            "top_model_contribution_enrichment_mean": 0.0,
+            "top_model_contribution_push_mean": 0.0,
+            "top_model_contribution_push_enrichment_mean": 0.0,
+            "top_model_false_positive_push_share_mean": 0.0,
+            "top_model_false_positive_multiplier_mean": 1.0,
+            "top_bucket_multiplier_mean": 1.0,
+            "top_bucket_false_positive_hard_max": float(
+                EBM_TOP_BUCKET_FALSE_POSITIVE_HARD_MAX
+            ),
+            "top_bucket_false_positive_hard_fail_count": 0.0,
+            "top_bucket_false_positive_multiplier_min": float(
+                EBM_TOP_BUCKET_FALSE_POSITIVE_MULTIPLIER_MIN
+            ),
             "stability_tiebreaker_mean": 0.0,
+            "asset_edge_std_mean": 0.0,
+            "month_edge_std_mean": 0.0,
+            "asset_stability_multiplier_mean": 1.0,
+            "month_stability_multiplier_mean": 1.0,
+            "group_stability_multiplier_mean": 1.0,
+            "contribution_redundancy_corr_mean": 0.0,
+            "contribution_redundancy_multiplier_mean": 1.0,
         }
     n_eval_folds = np.asarray(
         eval_stats.get("n_eval_folds", np.zeros_like(scores)), dtype=np.float32
@@ -3448,26 +4939,245 @@ def _combine_ebm_feature_scores(
             "sign_consistency_min": float("nan"),
             "presence_fail_count": 0.0,
             "sign_fail_count": 0.0,
+            "lgbm_presence_min": float("nan"),
+            "lgbm_sign_consistency_min": float("nan"),
+            "lgbm_presence_fail_count": 0.0,
+            "lgbm_sign_fail_count": 0.0,
+            "raw_presence_fail_count": 0.0,
+            "raw_sign_fail_count": 0.0,
             "top_usefulness_mean": 0.0,
+            "top_economic_usefulness_mean": 0.0,
+            "top_model_contribution_abs_mean": 0.0,
+            "top_model_contribution_enrichment_mean": 0.0,
+            "top_model_contribution_push_mean": 0.0,
+            "top_model_contribution_push_enrichment_mean": 0.0,
+            "top_model_false_positive_push_share_mean": 0.0,
+            "top_model_false_positive_multiplier_mean": 1.0,
+            "top_bucket_multiplier_mean": 1.0,
+            "top_bucket_false_positive_hard_max": float(
+                EBM_TOP_BUCKET_FALSE_POSITIVE_HARD_MAX
+            ),
+            "top_bucket_false_positive_hard_fail_count": 0.0,
+            "top_bucket_false_positive_multiplier_min": float(
+                EBM_TOP_BUCKET_FALSE_POSITIVE_MULTIPLIER_MIN
+            ),
             "stability_tiebreaker_mean": 0.0,
+            "asset_edge_std_mean": 0.0,
+            "month_edge_std_mean": 0.0,
+            "asset_stability_multiplier_mean": 1.0,
+            "month_stability_multiplier_mean": 1.0,
+            "group_stability_multiplier_mean": 1.0,
+            "contribution_redundancy_corr_mean": 0.0,
+            "contribution_redundancy_multiplier_mean": 1.0,
         }
     presence = np.asarray(eval_stats["presence_rate"], dtype=np.float32)
     sign_consistency = np.asarray(eval_stats["sign_consistency"], dtype=np.float32)
     top_use = np.asarray(eval_stats["top_usefulness"], dtype=np.float32)
+    top_econ = np.asarray(
+        eval_stats.get("top_economic_usefulness", np.zeros_like(scores)),
+        dtype=np.float32,
+    )
+    top_contrib_abs = np.asarray(
+        eval_stats.get("top_model_contribution_abs", np.zeros_like(scores)),
+        dtype=np.float32,
+    )
+    top_contrib_enrichment = np.asarray(
+        eval_stats.get("top_model_contribution_enrichment", np.zeros_like(scores)),
+        dtype=np.float32,
+    )
+    top_contrib_signed = np.asarray(
+        eval_stats.get("top_model_contribution_signed", np.zeros_like(scores)),
+        dtype=np.float32,
+    )
+    top_contrib_push = np.asarray(
+        eval_stats.get("top_model_contribution_push", np.zeros_like(scores)),
+        dtype=np.float32,
+    )
+    top_contrib_push_enrichment = np.asarray(
+        eval_stats.get("top_model_contribution_push_enrichment", np.zeros_like(scores)),
+        dtype=np.float32,
+    )
+    top_fp_push_share = np.asarray(
+        eval_stats.get("top_model_false_positive_push_share", np.zeros_like(scores)),
+        dtype=np.float32,
+    )
+    top_fp_multiplier = np.asarray(
+        eval_stats.get("top_model_false_positive_multiplier", np.ones_like(scores)),
+        dtype=np.float32,
+    )
     stability = np.asarray(eval_stats["stability_tiebreaker"], dtype=np.float32)
+    asset_edge_std = np.asarray(
+        eval_stats.get("asset_edge_std", np.zeros_like(scores)), dtype=np.float32
+    )
+    month_edge_std = np.asarray(
+        eval_stats.get("month_edge_std", np.zeros_like(scores)), dtype=np.float32
+    )
+    asset_stability_multiplier = np.asarray(
+        eval_stats.get("asset_stability_multiplier", np.ones_like(scores)),
+        dtype=np.float32,
+    )
+    month_stability_multiplier = np.asarray(
+        eval_stats.get("month_stability_multiplier", np.ones_like(scores)),
+        dtype=np.float32,
+    )
+    group_stability_multiplier = np.asarray(
+        eval_stats.get("group_stability_multiplier", np.ones_like(scores)),
+        dtype=np.float32,
+    )
+    contribution_redundancy_corr = np.asarray(
+        eval_stats.get("contribution_redundancy_corr", np.zeros_like(scores)),
+        dtype=np.float32,
+    )
+    contribution_redundancy_multiplier = np.asarray(
+        eval_stats.get("contribution_redundancy_multiplier", np.ones_like(scores)),
+        dtype=np.float32,
+    )
+    expected_n = scores.shape[0]
+    if any(
+        arr.shape[0] != expected_n
+        for arr in (
+            presence,
+            sign_consistency,
+            top_use,
+            top_econ,
+            top_contrib_abs,
+            top_contrib_enrichment,
+            top_contrib_signed,
+            top_contrib_push,
+            top_contrib_push_enrichment,
+            top_fp_push_share,
+            top_fp_multiplier,
+            stability,
+            asset_edge_std,
+            month_edge_std,
+            asset_stability_multiplier,
+            month_stability_multiplier,
+            group_stability_multiplier,
+            contribution_redundancy_corr,
+            contribution_redundancy_multiplier,
+        )
+    ):
+        tprint(
+            "EBMOnLGBM: feature eval stats shape mismatch; "
+            "falling back to ungated feature scores."
+        )
+        return scores, {
+            "presence_min": float("nan"),
+            "sign_consistency_min": float("nan"),
+            "presence_fail_count": 0.0,
+            "sign_fail_count": 0.0,
+            "lgbm_presence_min": float("nan"),
+            "lgbm_sign_consistency_min": float("nan"),
+            "lgbm_presence_fail_count": 0.0,
+            "lgbm_sign_fail_count": 0.0,
+            "raw_presence_fail_count": 0.0,
+            "raw_sign_fail_count": 0.0,
+            "top_usefulness_mean": 0.0,
+            "top_economic_usefulness_mean": 0.0,
+            "top_model_contribution_abs_mean": 0.0,
+            "top_model_contribution_enrichment_mean": 0.0,
+            "top_model_contribution_push_mean": 0.0,
+            "top_model_contribution_push_enrichment_mean": 0.0,
+            "top_model_false_positive_push_share_mean": 0.0,
+            "top_model_false_positive_multiplier_mean": 1.0,
+            "top_bucket_multiplier_mean": 1.0,
+            "top_bucket_false_positive_hard_max": float(
+                EBM_TOP_BUCKET_FALSE_POSITIVE_HARD_MAX
+            ),
+            "top_bucket_false_positive_hard_fail_count": 0.0,
+            "top_bucket_false_positive_multiplier_min": float(
+                EBM_TOP_BUCKET_FALSE_POSITIVE_MULTIPLIER_MIN
+            ),
+            "stability_tiebreaker_mean": 0.0,
+            "asset_edge_std_mean": 0.0,
+            "month_edge_std_mean": 0.0,
+            "asset_stability_multiplier_mean": 1.0,
+            "month_stability_multiplier_mean": 1.0,
+            "group_stability_multiplier_mean": 1.0,
+            "contribution_redundancy_corr_mean": 0.0,
+            "contribution_redundancy_multiplier_mean": 1.0,
+            "eval_stats_shape_mismatch": 1.0,
+        }
     presence_min = _round_presence_min(round_id)
     sign_min = _round_sign_consistency_min(round_id)
-    presence_fail = presence < presence_min
-    sign_fail = sign_consistency < sign_min
+    presence_threshold = np.full_like(presence, presence_min, dtype=np.float32)
+    sign_threshold = np.full_like(sign_consistency, sign_min, dtype=np.float32)
+    lgbm_mask = np.zeros_like(presence_threshold, dtype=bool)
+    if feature_names is not None:
+        candidate_lgbm_mask = np.asarray(
+            [_is_lgbm_tree_feature_name(name) for name in feature_names],
+            dtype=bool,
+        )
+        if candidate_lgbm_mask.shape[0] == presence_threshold.shape[0]:
+            lgbm_mask = candidate_lgbm_mask
+            presence_threshold[lgbm_mask] = np.minimum(
+                presence_threshold[lgbm_mask] + 0.10, 1.0
+            )
+            sign_threshold[lgbm_mask] = np.minimum(
+                sign_threshold[lgbm_mask] + 0.10, 1.0
+            )
+    raw_mask = ~lgbm_mask
+    presence_fail = presence < presence_threshold
+    sign_fail = sign_consistency < sign_threshold
+    top_fp_hard_fail = (top_contrib_push > 1e-8) & (
+        top_fp_push_share > EBM_TOP_BUCKET_FALSE_POSITIVE_HARD_MAX
+    )
     gated = scores.copy()
-    gated[presence_fail | sign_fail] = 0.0
+    gated[presence_fail | sign_fail | top_fp_hard_fail] = 0.0
     top_norm = top_use / max(float(np.nanpercentile(top_use, 90.0)), 1e-6)
+    top_econ_norm = top_econ / max(float(np.nanpercentile(top_econ, 90.0)), 1e-6)
+    top_contrib_push_norm = top_contrib_push / max(
+        float(np.nanpercentile(top_contrib_push, 90.0)), 1e-6
+    )
+    top_contrib_push_enrichment_norm = top_contrib_push_enrichment / max(
+        float(np.nanpercentile(top_contrib_push_enrichment, 90.0)), 1e-6
+    )
     stability_norm = stability / max(float(np.nanpercentile(stability, 90.0)), 1e-6)
-    tie = (
-        EBM_TOP_SLICE_TIEBREAKER_WEIGHT * np.clip(top_norm, 0.0, 3.0)
-        + EBM_STABILITY_TIEBREAKER_WEIGHT * np.clip(stability_norm, 0.0, 3.0)
+    fp_mult_min = float(np.clip(EBM_TOP_BUCKET_FALSE_POSITIVE_MULTIPLIER_MIN, 0.0, 1.0))
+    top_fp_score_mult = np.clip(top_fp_multiplier, fp_mult_min, 1.0).astype(np.float32)
+    top_contrib_signal = np.where(
+        top_contrib_push > 1e-8,
+        np.clip(
+            0.5 * top_contrib_push_norm + 0.5 * top_contrib_push_enrichment_norm,
+            0.0,
+            3.0,
+        )
+        * top_fp_score_mult,
+        0.0,
     ).astype(np.float32)
-    combined = gated * (1.0 + tie)
+    top_bucket_weight_sum = max(
+        EBM_TOP_SLICE_TIEBREAKER_WEIGHT
+        + EBM_TOP_ECON_TIEBREAKER_WEIGHT
+        + EBM_TOP_CONTRIB_TIEBREAKER_WEIGHT
+        + EBM_STABILITY_TIEBREAKER_WEIGHT,
+        1e-6,
+    )
+    top_bucket_signal = (
+        EBM_TOP_SLICE_TIEBREAKER_WEIGHT * np.clip(top_norm, 0.0, 3.0)
+        + EBM_TOP_ECON_TIEBREAKER_WEIGHT * np.clip(top_econ_norm, 0.0, 3.0)
+        + EBM_TOP_CONTRIB_TIEBREAKER_WEIGHT * top_contrib_signal
+        + EBM_STABILITY_TIEBREAKER_WEIGHT * np.clip(stability_norm, 0.0, 3.0)
+    ) / top_bucket_weight_sum
+    top_bucket_multiplier = np.clip(
+        1.0 + EBM_TOP_BUCKET_MULTIPLIER_STRENGTH * top_bucket_signal,
+        1.0,
+        max(1.0, EBM_TOP_BUCKET_MULTIPLIER_MAX),
+    ).astype(np.float32)
+    group_mult = np.sqrt(np.clip(group_stability_multiplier, 0.65, 1.0)).astype(
+        np.float32
+    )
+    contribution_redundancy_mult = np.clip(
+        contribution_redundancy_multiplier,
+        EBM_CONTRIB_REDUNDANCY_MULTIPLIER_MIN,
+        1.0,
+    ).astype(np.float32)
+    combined = (
+        gated
+        * group_mult
+        * top_fp_score_mult
+        * top_bucket_multiplier
+        * contribution_redundancy_mult
+    )
     return (
         np.nan_to_num(combined, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32),
         {
@@ -3475,10 +5185,186 @@ def _combine_ebm_feature_scores(
             "sign_consistency_min": float(sign_min),
             "presence_fail_count": float(np.sum(presence_fail)),
             "sign_fail_count": float(np.sum(sign_fail)),
+            "lgbm_presence_min": float(min(presence_min + 0.10, 1.0)),
+            "lgbm_sign_consistency_min": float(min(sign_min + 0.10, 1.0)),
+            "lgbm_presence_fail_count": float(np.sum(presence_fail & lgbm_mask)),
+            "lgbm_sign_fail_count": float(np.sum(sign_fail & lgbm_mask)),
+            "raw_presence_fail_count": float(np.sum(presence_fail & raw_mask)),
+            "raw_sign_fail_count": float(np.sum(sign_fail & raw_mask)),
             "top_usefulness_mean": float(np.mean(top_use)),
+            "top_economic_usefulness_mean": float(np.mean(top_econ)),
+            "top_model_contribution_abs_mean": float(np.mean(top_contrib_abs)),
+            "top_model_contribution_enrichment_mean": float(
+                np.mean(top_contrib_enrichment)
+            ),
+            "top_model_contribution_signed_mean": float(np.mean(top_contrib_signed)),
+            "top_model_contribution_push_mean": float(np.mean(top_contrib_push)),
+            "top_model_contribution_push_enrichment_mean": float(
+                np.mean(top_contrib_push_enrichment)
+            ),
+            "top_model_false_positive_push_share_mean": float(
+                np.mean(top_fp_push_share)
+            ),
+            "top_model_false_positive_multiplier_mean": float(
+                np.mean(top_fp_score_mult)
+            ),
+            "top_bucket_multiplier_mean": float(np.mean(top_bucket_multiplier)),
+            "top_bucket_false_positive_hard_max": float(
+                EBM_TOP_BUCKET_FALSE_POSITIVE_HARD_MAX
+            ),
+            "top_bucket_false_positive_hard_fail_count": float(
+                np.sum(top_fp_hard_fail)
+            ),
+            "top_bucket_false_positive_multiplier_min": float(fp_mult_min),
             "stability_tiebreaker_mean": float(np.mean(stability)),
+            "asset_edge_std_mean": float(np.mean(asset_edge_std)),
+            "month_edge_std_mean": float(np.mean(month_edge_std)),
+            "asset_stability_multiplier_mean": float(
+                np.mean(asset_stability_multiplier)
+            ),
+            "month_stability_multiplier_mean": float(
+                np.mean(month_stability_multiplier)
+            ),
+            "group_stability_multiplier_mean": float(np.mean(group_mult)),
+            "contribution_redundancy_corr_mean": float(
+                np.mean(contribution_redundancy_corr)
+            ),
+            "contribution_redundancy_multiplier_mean": float(
+                np.mean(contribution_redundancy_mult)
+            ),
         },
     )
+
+
+def _top_prediction_feature_contributors(
+    eval_stats: dict[str, np.ndarray] | None,
+    feature_names: list[str],
+    *,
+    top_n: int = 10,
+) -> list[dict[str, float | str]]:
+    if not eval_stats or not feature_names:
+        return []
+    top_abs = np.asarray(
+        eval_stats.get("top_model_contribution_abs", np.array([], dtype=np.float32)),
+        dtype=np.float32,
+    )
+    enrichment = np.asarray(
+        eval_stats.get(
+            "top_model_contribution_enrichment", np.array([], dtype=np.float32)
+        ),
+        dtype=np.float32,
+    )
+    signed = np.asarray(
+        eval_stats.get("top_model_contribution_signed", np.array([], dtype=np.float32)),
+        dtype=np.float32,
+    )
+    push = np.asarray(
+        eval_stats.get("top_model_contribution_push", np.array([], dtype=np.float32)),
+        dtype=np.float32,
+    )
+    push_enrichment = np.asarray(
+        eval_stats.get(
+            "top_model_contribution_push_enrichment",
+            np.array([], dtype=np.float32),
+        ),
+        dtype=np.float32,
+    )
+    fp_push_share = np.asarray(
+        eval_stats.get(
+            "top_model_false_positive_push_share",
+            np.array([], dtype=np.float32),
+        ),
+        dtype=np.float32,
+    )
+    fp_multiplier = np.asarray(
+        eval_stats.get(
+            "top_model_false_positive_multiplier",
+            np.ones_like(push),
+        ),
+        dtype=np.float32,
+    )
+    top_econ = np.asarray(
+        eval_stats.get("top_economic_usefulness", np.array([], dtype=np.float32)),
+        dtype=np.float32,
+    )
+    group_mult = np.asarray(
+        eval_stats.get("group_stability_multiplier", np.ones_like(top_abs)),
+        dtype=np.float32,
+    )
+    contribution_redundancy_corr = np.asarray(
+        eval_stats.get("contribution_redundancy_corr", np.zeros_like(top_abs)),
+        dtype=np.float32,
+    )
+    contribution_redundancy_multiplier = np.asarray(
+        eval_stats.get("contribution_redundancy_multiplier", np.ones_like(top_abs)),
+        dtype=np.float32,
+    )
+    n = min(
+        len(feature_names),
+        len(top_abs),
+        len(enrichment),
+        len(signed),
+        len(push),
+        len(push_enrichment),
+        len(contribution_redundancy_corr),
+        len(contribution_redundancy_multiplier),
+    )
+    if n <= 0:
+        return []
+    top_econ = top_econ[:n] if len(top_econ) >= n else np.zeros(n, dtype=np.float32)
+    group_mult = (
+        group_mult[:n] if len(group_mult) >= n else np.ones(n, dtype=np.float32)
+    )
+    fp_push_share = (
+        fp_push_share[:n] if len(fp_push_share) >= n else np.zeros(n, dtype=np.float32)
+    )
+    fp_multiplier = (
+        fp_multiplier[:n] if len(fp_multiplier) >= n else np.ones(n, dtype=np.float32)
+    )
+    fp_mult_min = float(np.clip(EBM_TOP_BUCKET_FALSE_POSITIVE_MULTIPLIER_MIN, 0.0, 1.0))
+    fp_multiplier = np.clip(fp_multiplier, fp_mult_min, 1.0)
+    contribution_redundancy_corr = contribution_redundancy_corr[:n]
+    contribution_redundancy_multiplier = np.clip(
+        contribution_redundancy_multiplier[:n],
+        EBM_CONTRIB_REDUNDANCY_MULTIPLIER_MIN,
+        1.0,
+    )
+    contributor_group_mult = np.sqrt(np.clip(group_mult, 0.65, 1.0))
+    score = np.nan_to_num(
+        push[:n]
+        * np.maximum(push_enrichment[:n], 0.0)
+        * np.maximum(contributor_group_mult, 0.0)
+        * fp_multiplier
+        * contribution_redundancy_multiplier,
+        nan=0.0,
+        posinf=0.0,
+        neginf=0.0,
+    )
+    order = np.argsort(score)[::-1]
+    out: list[dict[str, float | str]] = []
+    for i in order[: max(0, int(top_n))]:
+        if not np.isfinite(score[i]) or float(score[i]) <= 0.0:
+            continue
+        out.append(
+            {
+                "feature": str(feature_names[i]),
+                "top_contribution_score": float(score[i]),
+                "top_contribution_abs": float(top_abs[i]),
+                "top_contribution_enrichment": float(enrichment[i]),
+                "top_contribution_signed": float(signed[i]),
+                "top_contribution_push": float(push[i]),
+                "top_contribution_push_enrichment": float(push_enrichment[i]),
+                "top_false_positive_push_share": float(fp_push_share[i]),
+                "top_false_positive_multiplier": float(fp_multiplier[i]),
+                "top_economic_usefulness": float(top_econ[i]),
+                "group_stability_multiplier": float(group_mult[i]),
+                "contribution_redundancy_corr": float(contribution_redundancy_corr[i]),
+                "contribution_redundancy_multiplier": float(
+                    contribution_redundancy_multiplier[i]
+                ),
+            }
+        )
+    return out
 
 
 def _build_tree_features_fold(
@@ -3955,6 +5841,7 @@ def _compute_oof_bundle_tree_frame(
     x_raw = np.nan_to_num(
         X_raw.to_numpy(dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0
     )
+    forced_tree_value_names: set[str] = set()
     for fold_i, models in enumerate(models_by_fold):
         scales = scales_by_fold[fold_i] if fold_i < len(scales_by_fold) else None
         arr, names, _ = _compute_soft_tree_features_ebm(
@@ -3968,15 +5855,34 @@ def _compute_oof_bundle_tree_frame(
             if fold_i < len(names_by_fold)
             else set(frame.columns)
         )
-        cols = [c for c in target_names if c in frame.columns and c in allowed]
+        forced_cols = [
+            c
+            for c in frame.columns
+            if c.endswith("_value") and c not in allowed and c in target_names
+        ]
+        if forced_cols:
+            forced_tree_value_names.update(map(str, forced_cols))
+            for c in forced_cols:
+                out[c] = np.float32(0.0)
+                counts.loc[c] = np.float32(0.0)
+        cols = [
+            c
+            for c in frame.columns
+            if (c in target_names and c in allowed) or c in forced_cols
+        ]
         if not cols:
             continue
         out.loc[:, cols] += frame.loc[:, cols].astype(np.float32)
         counts.loc[cols] += 1.0
-    for col in target_names:
+    for col in list(out.columns):
         c = float(counts.loc[col])
         if c > 0.0:
             out[col] = out[col] / c
+    if forced_tree_value_names:
+        tprint(
+            "EBMOnLGBM: OOF tree bundle retained forced per-tree value features "
+            f"({len(forced_tree_value_names)} additional tree-state columns)."
+        )
     return out.astype(np.float32)
 
 
@@ -3984,7 +5890,7 @@ def _build_ebm_fold_cache(
     X: pd.DataFrame,
     y: np.ndarray,
     sample_weight: np.ndarray,
-    groups: np.ndarray | None,
+    groups: Any,
     y_split: np.ndarray,
     splitter: Any,
     classifier: bool,
@@ -4088,6 +5994,7 @@ def _fit_ebm_spec_on_cache(
             pred_va,
             list(fold["X_va"].columns),
             classifier=classifier,
+            groups=fold.get("groups_va"),
         )
         return {
             "fold_i": int(fold.get("fold_i", -1)),
@@ -4165,7 +6072,6 @@ def _fit_round_oof(
     build_tree_features: bool = False,
     min_samples_leaf_pct: float = 0.02,
     monotone_constraints: list[int] | None = None,
-    one_se_floor: float | None = None,
 ) -> dict[str, Any]:
     splitter = (
         StratifiedKFold(
@@ -4227,13 +6133,6 @@ def _fit_round_oof(
         if rec is None:
             continue
         records.append(rec)
-        if one_se_floor is not None and float(rec["J_final"]) < float(one_se_floor):
-            tprint(
-                f"    EBM round {round_id}: early stop after spec {spec_i}/{len(specs)}; "
-                f"J={float(rec['J_final']):.4f} below prior best-1SE floor "
-                f"{float(one_se_floor):.4f}."
-            )
-            break
         spec_oof = np.asarray(rec["oof"], dtype=np.float32)
         spec_weights = sample_weight * _compute_weight_distillation(
             y, spec_oof, prev_spec_oof, is_classifier=classifier
@@ -4250,7 +6149,7 @@ def _fit_round_oof(
         )
     all_shape_models: list[Any] = []
     for rec in records:
-        all_shape_models.extend(rec.pop("shape_models", []))
+        all_shape_models.extend(rec.get("shape_models", []))
         tprint(
             f"      spec {rec['spec_i']}: J={rec['J_final']:.4f} "
             f"lift30={rec.get('lift30', 0.0):.3f} "
@@ -4485,9 +6384,10 @@ def _fit_final_model(
         hpo_runtime_state = {"n_jobs": hpo_n_jobs}
         best_ndcg20 = float("-inf")
         best_ndcg20_se = 0.0
+        best_precision15 = float("-inf")
 
         def objective(trial):
-            nonlocal best_ndcg20, best_ndcg20_se
+            nonlocal best_ndcg20, best_ndcg20_se, best_precision15
             lr = trial.suggest_float("learning_rate", 0.01, 0.05)
             max_bins = trial.suggest_int("max_bins", 16, 48)
             smoothing_rounds = trial.suggest_int("smoothing_rounds", 200, 500)
@@ -4572,9 +6472,10 @@ def _fit_final_model(
                 )
                 fold_metrics.append(metrics)
                 agg = _aggregate_j(fold_metrics)
-                agg["pareto_precision_floor"] = float(
+                agg["pareto_ndcg20_floor"] = float(
                     max(0.0, best_ndcg20 - 0.75 * best_ndcg20_se)
                 )
+                agg["pareto_precision_floor"] = float(max(0.0, best_precision15))
                 score = _hpo_objective_from_aggregate(agg, hpo_objective_mode)
 
                 trial.report(score, step)
@@ -4591,9 +6492,15 @@ def _fit_final_model(
             ):
                 best_ndcg20 = _ndcg20_curr
                 best_ndcg20_se = _se_curr
-            agg["pareto_precision_floor"] = float(
+            _precision15_curr = float(
+                agg.get("precision15", agg.get("hit_rate15", float("nan")))
+            )
+            if np.isfinite(_precision15_curr):
+                best_precision15 = max(best_precision15, _precision15_curr)
+            agg["pareto_ndcg20_floor"] = float(
                 max(0.0, best_ndcg20 - 0.75 * best_ndcg20_se)
             )
+            agg["pareto_precision_floor"] = float(max(0.0, best_precision15))
             hpo_objective = _hpo_objective_from_aggregate(agg, hpo_objective_mode)
             trial.set_user_attr("lift15", float(agg.get("lift15", np.nan)))
             trial.set_user_attr("lift30", float(agg.get("lift30", np.nan)))
@@ -4630,6 +6537,10 @@ def _fit_final_model(
             )
             trial.set_user_attr("ndcg20_std", float(agg.get("ndcg20_std", np.nan)))
             trial.set_user_attr("ndcg20_p25", float(agg.get("ndcg20_p25", np.nan)))
+            trial.set_user_attr(
+                "pareto_ndcg20_floor",
+                float(agg.get("pareto_ndcg20_floor", np.nan)),
+            )
             trial.set_user_attr(
                 "pareto_precision_floor",
                 float(agg.get("pareto_precision_floor", np.nan)),
@@ -4870,7 +6781,9 @@ def _fit_final_model(
         if key in tree_bundle:
             model.tree_feature_config[key] = tree_bundle[key]
     model.tree_feature_scales = tree_bundle.get("tree_feature_scales")
-    model.tree_feature_names = list(tree_bundle.get("tree_feature_names", []))
+    model.tree_feature_names = [
+        str(c) for c in final_active_cols if str(c).startswith("lgbm_")
+    ]
     model.selected_features = final_active_cols
     model.selected_indices = np.array([], dtype=np.int32)
     model.oof_probs = _final_stage_oof_predictions(
@@ -4921,6 +6834,7 @@ def _fit_final_model(
             model.uncertainty_state = fit_uncertainty_state(
                 Xs.iloc[fit_idx][final_active_cols].reset_index(drop=True),
                 final_active_cols,
+                max_bins=32,
             )
             unc_features = compute_uncertainty_features(
                 Xs[final_active_cols],
@@ -5414,6 +7328,7 @@ def train_ebm_on_lgbm_candidate(
         f"({len(active)} active total)."
     )
     history: list[dict[str, Any]] = []
+    prior_pruning_records: list[dict[str, Any]] = []
     best_seen: Optional[dict[str, Any]] = None
     pruning_stop_reason = "max_rounds"
     current_weights = sw_select.copy()
@@ -5447,19 +7362,117 @@ def train_ebm_on_lgbm_candidate(
             build_tree_features=False,
             min_samples_leaf_pct=current_leaf_min_pct,
             monotone_constraints=current_constraints,
-            one_se_floor=(
-                float(best_seen["J_final"]) - float(best_seen["J_se"])
-                if best_seen is not None
-                else None
-            ),
         )
         if not round_res.get("ok"):
             tprint(f"EBMOnLGBM round {round_id}: no valid EBM records, stopping.")
             pruning_stop_reason = "no_valid_records"
             break
-        best = dict(round_res["best"])
+        round_records = list(round_res.get("records", []))
+        original_best = dict(round_res["best"])
+        best = original_best
+        top20_thresholds: dict[str, float] | None = None
+        acceptable_round_records: list[dict[str, Any]] = []
+        if round_id >= 3 and prior_pruning_records:
+            top20_thresholds = _top20_acceptance_thresholds(prior_pruning_records)
+            acceptable_round_records = [
+                r
+                for r in round_records
+                if _passes_top20_acceptance(r, top20_thresholds)
+            ]
+            if not acceptable_round_records:
+                best_j = float(original_best["J_final"])
+                best_se = float(original_best.get("J_se", 0.0))
+                fold_metrics = list(original_best.get("fold_metrics", []))
+                fold_j_values = _finite_fold_j_values(fold_metrics)
+                rec = {
+                    "round": round_id,
+                    "n_features_start": int(len(active)),
+                    "J_final": best_j,
+                    "J_mean": float(original_best.get("J_mean", 0.0)),
+                    "J_std": float(original_best.get("J_std", 0.0)),
+                    "J_se": best_se,
+                    "J_robust": float(original_best.get("J_robust", best_j)),
+                    "J_iqr": float(original_best.get("J_iqr", np.nan)),
+                    "J_median": float(original_best.get("J_median", np.nan)),
+                    "lift15": float(original_best.get("lift15", np.nan)),
+                    "stability15": float(original_best.get("stability15", np.nan)),
+                    "lift20": float(original_best.get("lift20", np.nan)),
+                    "stability20": float(
+                        original_best.get(
+                            "stability20", original_best.get("stability30", np.nan)
+                        )
+                    ),
+                    "salg20": float(original_best.get("salg20", np.nan)),
+                    "J20": float(
+                        original_best.get("J20", original_best.get("j20", np.nan))
+                    ),
+                    "j20": float(
+                        original_best.get("j20", original_best.get("J20", np.nan))
+                    ),
+                    "ndcg20": float(
+                        original_best.get(
+                            "ndcg20",
+                            original_best.get(
+                                "ndcg_at_20", original_best.get("ndcg@20", np.nan)
+                            ),
+                        )
+                    ),
+                    "J_folds": fold_j_values,
+                    "fold_metrics": fold_metrics,
+                    "lift30": float(original_best.get("lift30", 0.0)),
+                    "stability30": float(original_best.get("stability30", 0.0)),
+                    "stopped_by_top20_acceptability": True,
+                    "candidate_gate_passed": False,
+                    "n_features_end": int(len(active)),
+                    "active_indices": active.copy(),
+                    "n_top20_acceptable_specs": 0,
+                    "top20_acceptance_min_lift20": float(
+                        top20_thresholds["min_lift20"]
+                    ),
+                    "top20_acceptance_min_salg20": float(
+                        top20_thresholds["min_salg20"]
+                    ),
+                    "top20_acceptance_min_stability20": float(
+                        top20_thresholds["min_stability20"]
+                    ),
+                    "top20_acceptance_min_ndcg20": float(
+                        top20_thresholds["min_ndcg20"]
+                    ),
+                    "top20_acceptance_best_lift20": float(
+                        top20_thresholds["best_lift20"]
+                    ),
+                    "top20_acceptance_best_salg20": float(
+                        top20_thresholds["best_salg20"]
+                    ),
+                    "top20_acceptance_best_stability20": float(
+                        top20_thresholds["best_stability20"]
+                    ),
+                    "top20_acceptance_best_ndcg20": float(
+                        top20_thresholds["best_ndcg20"]
+                    ),
+                }
+                history.append(rec)
+                tprint(
+                    f"EBMOnLGBM round {round_id}: stop, no full-round EBM spec "
+                    "met prior best-so-far @20 acceptance gates "
+                    f"(min_lift20={top20_thresholds['min_lift20']:.4f}, "
+                    f"min_stability20={top20_thresholds['min_stability20']:.4f}, "
+                    f"min_salg20={top20_thresholds['min_salg20']:.4f}, "
+                    f"min_ndcg20={top20_thresholds['min_ndcg20']:.4f})."
+                )
+                pruning_stop_reason = "no_top20_acceptable_specs_vs_best_so_far"
+                break
+            best = dict(
+                max(
+                    acceptable_round_records,
+                    key=lambda r: float(r.get("J_final", -np.inf)),
+                )
+            )
+
         best_j = float(best["J_final"])
         best_se = float(best.get("J_se", 0.0))
+        fold_metrics = list(best.get("fold_metrics", []))
+        fold_j_values = _finite_fold_j_values(fold_metrics)
         rec = {
             "round": round_id,
             "n_features_start": int(len(active)),
@@ -5467,31 +7480,33 @@ def train_ebm_on_lgbm_candidate(
             "J_mean": float(best.get("J_mean", 0.0)),
             "J_std": float(best.get("J_std", 0.0)),
             "J_se": best_se,
+            "J_robust": float(best.get("J_robust", best_j)),
+            "J_iqr": float(best.get("J_iqr", np.nan)),
+            "J_median": float(best.get("J_median", np.nan)),
+            "lift15": float(best.get("lift15", np.nan)),
+            "stability15": float(best.get("stability15", np.nan)),
+            "lift20": float(best.get("lift20", np.nan)),
+            "stability20": float(
+                best.get("stability20", best.get("stability30", np.nan))
+            ),
+            "salg20": float(best.get("salg20", np.nan)),
+            "J20": float(best.get("J20", best.get("j20", np.nan))),
+            "j20": float(best.get("j20", best.get("J20", np.nan))),
+            "ndcg20": float(
+                best.get("ndcg20", best.get("ndcg_at_20", best.get("ndcg@20", np.nan)))
+            ),
+            "J_folds": fold_j_values,
+            "fold_metrics": fold_metrics,
             "lift30": float(best.get("lift30", 0.0)),
             "stability30": float(best.get("stability30", 0.0)),
         }
-        if best_seen is not None:
-            one_se_floor = float(best_seen["J_final"]) - float(best_seen["J_se"])
-            round_records = list(round_res.get("records", []))
-            below_floor = [
-                float(r.get("J_final", -np.inf)) < one_se_floor for r in round_records
-            ]
-            if round_records and best_j < one_se_floor:
-                rec["stopped_by_one_se"] = True
-                rec["one_se_floor"] = one_se_floor
-                rec["n_specs_below_one_se_floor"] = int(len(below_floor))
-                history.append(rec)
-                tprint(
-                    f"EBMOnLGBM round {round_id}: stop, best round spec is below "
-                    f"prior best 1SE floor {one_se_floor:.4f} "
-                    f"(best round spec J={best_j:.4f})."
-                )
-                pruning_stop_reason = "round_best_below_prior_one_se"
-                break
+        if top20_thresholds is not None:
+            rec["n_top20_acceptable_specs"] = int(len(acceptable_round_records))
 
         binary_mask = _binary_feature_mask(X_select[round_features])
+        shape_models_for_scoring = best.get("shape_models", round_res["shape_models"])
         shape_scores, bends, is_cont, mas = _feature_shape_score_components(
-            round_res["shape_models"], round_features, binary_mask=binary_mask
+            shape_models_for_scoring, round_features, binary_mask=binary_mask
         )
 
         cont_bends = bends[is_cont]
@@ -5514,7 +7529,55 @@ def train_ebm_on_lgbm_candidate(
             shape_scores,
             best.get("feature_eval_stats"),
             round_id,
+            round_features,
         )
+        top_contributors = _top_prediction_feature_contributors(
+            best.get("feature_eval_stats"), round_features, top_n=10
+        )
+        if top_contributors:
+            rec["top_prediction_feature_contributors"] = top_contributors
+            tprint(
+                "  -> Top-prediction feature contributors: "
+                + ", ".join(
+                    f"{row['feature']}:{row['top_contribution_score']:.3g}"
+                    for row in top_contributors[:5]
+                )
+            )
+        if not np.any(shape_scores > 0.0):
+            tprint(
+                "EBMOnLGBM: all combined feature scores are zero after "
+                "stability gates; falling back to ungated target scores for "
+                "this pruning round."
+            )
+            shape_scores = _target_scores(
+                x_select_np[:, active],
+                y_select,
+                round_features,
+            )
+            score_source = "ungated_target_fallback"
+            eval_score_details["used_ungated_score_fallback"] = 1.0
+            if not np.any(shape_scores > 0.0):
+                start_features = [str(X_select.columns[i]) for i in active]
+                n_tree_start = int(sum(c.startswith("lgbm_") for c in start_features))
+                rec["stopped_by_zero_feature_scores"] = True
+                rec["candidate_gate_passed"] = False
+                rec["n_features_end"] = int(len(active))
+                rec["n_raw_start"] = int(len(active) - n_tree_start)
+                rec["n_tree_start"] = n_tree_start
+                rec["n_raw_end"] = int(len(active) - n_tree_start)
+                rec["n_tree_end"] = n_tree_start
+                rec["score_source"] = score_source
+                rec.update(eval_score_details)
+                rec["feature_score_mean"] = 0.0
+                rec["feature_score_p10"] = 0.0
+                rec["feature_score_p50"] = 0.0
+                rec["feature_score_p90"] = 0.0
+                rec["active_indices"] = active.copy()
+                history.append(rec)
+                pruning_stop_reason = "all_feature_scores_zero"
+                break
+        else:
+            eval_score_details["used_ungated_score_fallback"] = 0.0
         drop_frac = _round_drop_fraction(round_id)
         keep_n = max(EBM_MIN_FEATURES, int(np.ceil(len(active) * (1.0 - drop_frac))))
         keep_n = min(keep_n, len(active))
@@ -5537,6 +7600,17 @@ def train_ebm_on_lgbm_candidate(
         rec["feature_score_p50"] = float(np.percentile(shape_scores, 50.0))
         rec["feature_score_p90"] = float(np.percentile(shape_scores, 90.0))
         rec["active_indices"] = next_active.copy()
+        rec["active_scores"] = np.asarray(
+            shape_scores[np.sort(keep_local)], dtype=np.float32
+        )
+        if best_seen is None or best_j > float(best_seen["J_final"]):
+            best_seen = {
+                "J_final": best_j,
+                "J_se": best_se,
+                "active": next_active.copy(),
+                "oof": np.asarray(best["oof"], dtype=np.float32).copy(),
+                "round": round_id,
+            }
         gate_passed, gate_details = _feature_pruning_candidate_gate(rec)
         rec.update(gate_details)
         history.append(rec)
@@ -5549,10 +7623,18 @@ def train_ebm_on_lgbm_candidate(
             f"score_source={score_source}; "
             f"presence_min={rec['presence_min']:.2f}, "
             f"sign_min={rec['sign_consistency_min']:.2f}, "
+            f"lgbm_presence_min={rec['lgbm_presence_min']:.2f}, "
+            f"lgbm_sign_min={rec['lgbm_sign_consistency_min']:.2f}, "
             f"presence_fail={int(rec['presence_fail_count'])}, "
-            f"sign_fail={int(rec['sign_fail_count'])}; "
+            f"sign_fail={int(rec['sign_fail_count'])}, "
+            f"lgbm_presence_fail={int(rec['lgbm_presence_fail_count'])}, "
+            f"lgbm_sign_fail={int(rec['lgbm_sign_fail_count'])}; "
             f"candidate gates {gate_msg} "
-            f"(lift30={rec['lift30']:.4f}, stability30={rec['stability30']:.4f})."
+            f"(lift20={rec.get('lift20', np.nan):.4f}, "
+            f"stability20={rec.get('stability20', np.nan):.4f}, "
+            f"salg20={rec.get('salg20', np.nan):.4f}, "
+            f"ndcg20={rec.get('ndcg20', np.nan):.4f}, "
+            f"J={rec.get('J_final', np.nan):.4f})."
         )
 
         current_oof = np.asarray(best["oof"], dtype=np.float32)
@@ -5571,33 +7653,33 @@ def train_ebm_on_lgbm_candidate(
         )
         current_weights, _current_ess = _normalize_rank_based_weights(current_weights)
         active = next_active
-        if best_seen is None or best_j > float(best_seen["J_final"]):
-            best_seen = {
-                "J_final": best_j,
-                "J_se": best_se,
-                "active": active.copy(),
-                "oof": current_oof.copy(),
-                "round": round_id,
-            }
+        if _has_finite_top20_metrics(best):
+            snap = _top20_reference_snapshot(best)
+            snap["round"] = int(round_id)
+            prior_pruning_records.append(snap)
         gc.collect()
 
-    chosen_round = _select_smallest_within_one_se(history)
+    chosen_round = _select_robust_pruning_round(history) if history else {}
     tprint(
         "EBMOnLGBM pruning stopped: "
         f"reason={pruning_stop_reason}, rounds_completed={len(history)}, "
         f"best_round={int(best_seen.get('round', -1)) if best_seen else -1}."
     )
-    if chosen_round and chosen_round.get("active_indices") is not None:
-        selected_active = np.asarray(chosen_round["active_indices"], dtype=np.int32)
+    if not chosen_round or chosen_round.get("active_indices") is None:
         tprint(
-            "EBMOnLGBM: selected smallest gated feature candidate within 1SE "
-            f"(round={int(chosen_round.get('round', -1))}, "
-            f"features={len(selected_active)}, "
-            f"J={float(chosen_round.get('J_final', np.nan)):.4f}, "
-            f"SE={float(chosen_round.get('J_se', np.nan)):.4f})."
+            "EBMOnLGBM: no pruning round passed hard selection guardrails; "
+            "rejecting candidate."
         )
-    else:
-        selected_active = active
+        return None
+
+    selected_active = np.asarray(chosen_round["active_indices"], dtype=np.int32)
+    tprint(
+        "EBMOnLGBM: selected robust quality-efficiency feature candidate "
+        f"(round={int(chosen_round.get('round', -1))}, "
+        f"features={len(selected_active)}, "
+        f"J={float(chosen_round.get('J_final', np.nan)):.4f}, "
+        f"SE={float(chosen_round.get('J_se', np.nan)):.4f})."
+    )
 
     selected_features = [X_select.columns[i] for i in selected_active]
     if best_seen is None:

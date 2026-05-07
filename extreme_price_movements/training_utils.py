@@ -37,6 +37,8 @@ _BASE_NON_LOCATION_48H_PLUS_EXACT = {
 }
 
 _BASE_META_ONLY_EXACT = {
+    "a_funding_proxy",
+    "funding_proxy",
     "regime_stability_24h",
     "complexity_regime_24h",
     "entropy_jump_24h",

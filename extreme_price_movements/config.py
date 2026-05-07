@@ -24,6 +24,14 @@ _PERP_COLLISION_RENAMES = {
 PERP_FEATURE_KEYS = [
     _PERP_COLLISION_RENAMES.get(k, k) for k in get_perp_feature_names()
 ]
+PERP_META_PRIMARY_FEATURE_KEYS = [
+    "funding_abs_z",
+    "funding_persistence",
+    "funding_z",
+    "leverage_build",
+    "squeeze_prob",
+    "unwind",
+]
 
 ORDERBOOK_BASE_FEATURE_KEYS = [
     # Directional book pressure
@@ -2610,12 +2618,23 @@ def enable_perp_feature_keys(cfg: dict) -> dict:
     Spot pipeline remains unchanged unless this helper is called.
     """
     out = dict(cfg)
+
+    def _is_perp_meta_primary_feature(name: str) -> bool:
+        return name in set(PERP_META_PRIMARY_FEATURE_KEYS) or name.startswith(
+            "funding_mom_"
+        )
+
+    base_perp_feature_keys = [
+        k for k in PERP_FEATURE_KEYS if not _is_perp_meta_primary_feature(k)
+    ]
     for k in (
         "base_long_feature_keys",
         "base_short_feature_keys",
-        "meta_shared_feature_keys",
     ):
-        out[k] = _append_missing(out.get(k, []), PERP_FEATURE_KEYS)
+        out[k] = _append_missing(out.get(k, []), base_perp_feature_keys)
+    out["meta_shared_feature_keys"] = _append_missing(
+        out.get("meta_shared_feature_keys", []), PERP_FEATURE_KEYS
+    )
     return out
 
 
@@ -3039,12 +3058,7 @@ POSITION_SIZER_V2_LAYER0_CONFIG = {
 
 CFG["ORDERBOOK_BASE_FEATURE_KEYS"] = ORDERBOOK_BASE_FEATURE_KEYS
 CFG["FUNDING_BASE_FEATURE_KEYS"] = [
-    "fund_rate",
-    "fund_rate_z_14d",
     "fund_rate_mom_8h",
-    "fund_rate_mom_24h",
-    "fund_sign_persistence_3",
-    "fund_abs_z",
 ]
 CFG["ORDERBOOK_FEATURE_KEYS"] = ORDERBOOK_FEATURE_KEYS
 CFG["ORDERBOOK_DIAGNOSTIC_ONLY_FEATURE_KEYS"] = ORDERBOOK_DIAGNOSTIC_ONLY_FEATURE_KEYS
@@ -3054,22 +3068,27 @@ CFG["meta_product_feature_keys"] += sorted(
 )
 CFG["CROSS_ASSET_FEATURE_KEYS"] = CROSS_ASSET_FEATURE_KEYS
 CFG["PERP_FEATURE_KEYS"] = PERP_FEATURE_KEYS
+CFG["PERP_META_PRIMARY_FEATURE_KEYS"] = PERP_META_PRIMARY_FEATURE_KEYS
 CFG["CROSS_ASSET_BASE_FEATURE_KEYS"] = [
     "xasset_btc_ob_pressure",
     "xasset_eth_ob_pressure",
     "xasset_asset_minus_mkt_ob_pressure",
-    "xasset_btc_funding_z",
-    "xasset_asset_minus_mkt_funding",
     "xasset_leverage_build_score",
 ]
 CFG["ORDERBOOK_META_FEATURE_KEYS"] = ORDERBOOK_META_FEATURE_KEYS
 CFG["FUNDING_META_FEATURE_KEYS"] = [
+    "fund_rate",
     "fund_rate_ffill",
     "fund_rate_z_14d",
+    "fund_rate_mom_24h",
+    "fund_abs_z",
     "fund_abs_z_14d",
     "fund_carry_24h",
+    "funding_proxy",
+    "a_funding_proxy",
     "fund_mom_8h",
     "fund_mom_24h",
+    "fund_sign_persistence_3",
     "fund_sign_persistence_24h",
     "fund_extreme_duration_24h",
     "fund_rank_30d",
@@ -3079,6 +3098,8 @@ CFG["CROSS_ASSET_META_FEATURE_KEYS"] = [
     "xasset_fund_dispersion_basket",
     "xasset_fund_extreme_share_basket",
     "xasset_asset_minus_basket_fund_z",
+    "xasset_asset_minus_mkt_funding",
+    "xasset_btc_funding_z",
     "xasset_btc_fund_z",
     "xasset_ob_stress_basket",
     "xasset_asset_minus_basket_ob_pressure",

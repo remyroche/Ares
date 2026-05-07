@@ -48,7 +48,6 @@ def _configure_numba_threading_layer() -> None:
 import argparse
 import json
 import os
-import sys
 import threading
 import time
 from datetime import datetime, timezone
@@ -77,7 +76,6 @@ from extreme_price_movements.inference.data_fetcher import (
     DataFetcher,
     classify_api_error,
     fetch_and_build_panel,
-    fetch_latest_ohlcv,
     make_exchange,
 )
 from extreme_price_movements.inference.feature_generator import (
@@ -85,7 +83,6 @@ from extreme_price_movements.inference.feature_generator import (
     generate_features,
     get_features_for_candidates,
     get_inference_required_feature_keys,
-    get_market_data,
     load_or_compute_features,
     raw_required_feature_keys,
 )
@@ -110,7 +107,6 @@ from extreme_price_movements.inference.symbol_mapping import (
 from extreme_price_movements.inference.trade_executor import TradeExecutor
 from extreme_price_movements.inference.trade_logger import (
     TradeLogger,
-    log_trade_decision,
 )
 from extreme_price_movements.portfolio_manager import PortfolioManager
 from extreme_price_movements.simple_position_sizer import load_calibration_curves
@@ -1862,7 +1858,6 @@ def _policy_optimiser_trailing_stop(
 
 
 def main():
-    import argparse
 
     _configure_numba_threading_layer()
     parser = argparse.ArgumentParser()
@@ -2410,11 +2405,24 @@ def _evaluate_oco_policy(
         )
         last_bar_ts = bars.index[-1]
 
-        for bar_ts, row in bars.iterrows():
-            bar_open = float(row["open"])
-            bar_high = float(row["high"])
-            bar_low = float(row["low"])
-            bar_close = float(row["close"])
+        def _get_col_array(df, col_name, default_value=np.nan):
+            if col_name in df.columns:
+                return df[col_name].to_numpy()
+            return np.full(len(df), default_value)
+
+        open_arr = _get_col_array(bars, "open")
+        high_arr = _get_col_array(bars, "high")
+        low_arr = _get_col_array(bars, "low")
+        close_arr = _get_col_array(bars, "close")
+        index_arr = bars.index.to_numpy()
+
+        for bar_ts, _open_v, _high_v, _low_v, _close_v in zip(
+            index_arr, open_arr, high_arr, low_arr, close_arr
+        ):
+            bar_open = float(_open_v)
+            bar_high = float(_high_v)
+            bar_low = float(_low_v)
+            bar_close = float(_close_v)
 
             if side == "long":
                 mfe = max(mfe, (bar_high - entry_price) / max(entry_price, 1e-12))

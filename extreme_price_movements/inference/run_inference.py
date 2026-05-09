@@ -48,7 +48,6 @@ def _configure_numba_threading_layer() -> None:
 import argparse
 import json
 import os
-import sys
 import threading
 import time
 from datetime import datetime, timezone
@@ -77,7 +76,6 @@ from extreme_price_movements.inference.data_fetcher import (
     DataFetcher,
     classify_api_error,
     fetch_and_build_panel,
-    fetch_latest_ohlcv,
     make_exchange,
 )
 from extreme_price_movements.inference.feature_generator import (
@@ -85,7 +83,6 @@ from extreme_price_movements.inference.feature_generator import (
     generate_features,
     get_features_for_candidates,
     get_inference_required_feature_keys,
-    get_market_data,
     load_or_compute_features,
     raw_required_feature_keys,
 )
@@ -110,7 +107,6 @@ from extreme_price_movements.inference.symbol_mapping import (
 from extreme_price_movements.inference.trade_executor import TradeExecutor
 from extreme_price_movements.inference.trade_logger import (
     TradeLogger,
-    log_trade_decision,
 )
 from extreme_price_movements.portfolio_manager import PortfolioManager
 from extreme_price_movements.simple_position_sizer import load_calibration_curves
@@ -644,7 +640,7 @@ def _log_score_distribution(label: str, values: list[float]) -> None:
     pass_99 = int(np.sum(arr >= q99))
     tprint(
         f"{label}: n={arr.size}, mean={float(np.mean(arr)):.6f}, std={float(np.std(arr)):.6f}, "
-        f"min={float(np.min(arr)):.6f}, max={float(np.max(arr)):.6f}, range={(float(np.max(arr))-float(np.min(arr))):.6f}, "
+        f"min={float(np.min(arr)):.6f}, max={float(np.max(arr)):.6f}, range={(float(np.max(arr)) - float(np.min(arr))):.6f}, "
         f"top1%={pass_99}, top5%={pass_95}, top10%={pass_90}"
     )
 
@@ -1108,12 +1104,9 @@ def run_inference_step(
                         symbol=symbol,
                     )
                     size = float(policy_size["position_size"])
-                    chain_results[
-                        "legacy_orchestrator_position_size"
-                    ] = chain_results.get(
-                        "orchestrator_position_size"
-                    ) or chain_results.get(
-                        "position_size"
+                    chain_results["legacy_orchestrator_position_size"] = (
+                        chain_results.get("orchestrator_position_size")
+                        or chain_results.get("position_size")
                     )
                     chain_results.update(policy_size)
                     if abs(size) < 0.01:
@@ -1862,7 +1855,6 @@ def _policy_optimiser_trailing_stop(
 
 
 def main():
-    import argparse
 
     _configure_numba_threading_layer()
     parser = argparse.ArgumentParser()
@@ -2410,11 +2402,19 @@ def _evaluate_oco_policy(
         )
         last_bar_ts = bars.index[-1]
 
-        for bar_ts, row in bars.iterrows():
-            bar_open = float(row["open"])
-            bar_high = float(row["high"])
-            bar_low = float(row["low"])
-            bar_close = float(row["close"])
+        # Vectorized array extraction for performance
+        bars_index = bars.index.to_numpy()
+        bars_open = bars["open"].to_numpy(dtype=float)
+        bars_high = bars["high"].to_numpy(dtype=float)
+        bars_low = bars["low"].to_numpy(dtype=float)
+        bars_close = bars["close"].to_numpy(dtype=float)
+
+        for i in range(len(bars)):
+            bar_ts = bars_index[i]  # noqa: F841
+            bar_open = bars_open[i]  # noqa: F841
+            bar_high = bars_high[i]
+            bar_low = bars_low[i]
+            bar_close = bars_close[i]  # noqa: F841
 
             if side == "long":
                 mfe = max(mfe, (bar_high - entry_price) / max(entry_price, 1e-12))

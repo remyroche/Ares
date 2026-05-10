@@ -8,22 +8,22 @@
     "reg_lambda": 3.0,
     "smoothing_rounds": 200
   },
-  "best_trial_number": 1,
-  "best_value": 0.9004236235008287,
+  "best_trial_number": 0,
+  "best_value": 1.293323176823177,
   "metrics": {
-    "ece_top20": 0.01829225746933334,
-    "hpo_objective": 0.9004236235008287,
-    "lift15": 1.1937972227166591,
-    "lift30": 1.1619940611646091,
-    "ndcg_at_10": 0.6542791524849005,
-    "ndcg_at_20": 0.5401096677575333,
-    "precision005": 0.5925925925925926,
-    "precision01": 0.4705882352941176,
-    "precision15": 0.3949322709163347,
-    "stability15": 0.945075843052812,
-    "stability30": 0.9732964080571938
+    "ece_top20": 0.012579719225565592,
+    "hpo_objective": 1.293323176823177,
+    "lift15": 2.0660672660672663,
+    "lift30": 2.0660672660672663,
+    "ndcg_at_10": 1.0,
+    "ndcg_at_20": 1.0,
+    "precision005": 1.0,
+    "precision01": 1.0,
+    "precision15": 1.0,
+    "stability15": 1.0,
+    "stability30": 1.0
   },
-  "min_samples_leaf_pct": 0.044070330160596194,
+  "min_samples_leaf_pct": 0.03866666666666667,
   "schema_version": 1,
-  "updated_at_utc": "2026-05-07T05:42:09.676686+00:00"
+  "updated_at_utc": "2026-05-10T12:49:00.941772+00:00"
 }

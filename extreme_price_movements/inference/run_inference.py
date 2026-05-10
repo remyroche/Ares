@@ -1108,12 +1108,9 @@ def run_inference_step(
                         symbol=symbol,
                     )
                     size = float(policy_size["position_size"])
-                    chain_results[
-                        "legacy_orchestrator_position_size"
-                    ] = chain_results.get(
-                        "orchestrator_position_size"
-                    ) or chain_results.get(
-                        "position_size"
+                    chain_results["legacy_orchestrator_position_size"] = (
+                        chain_results.get("orchestrator_position_size")
+                        or chain_results.get("position_size")
                     )
                     chain_results.update(policy_size)
                     if abs(size) < 0.01:
@@ -2410,11 +2407,20 @@ def _evaluate_oco_policy(
         )
         last_bar_ts = bars.index[-1]
 
-        for bar_ts, row in bars.iterrows():
-            bar_open = float(row["open"])
-            bar_high = float(row["high"])
-            bar_low = float(row["low"])
-            bar_close = float(row["close"])
+        # Replace O(N) Pandas iterrows with much faster direct array iteration
+        bar_ts_arr = bars.index.to_numpy()
+        open_arr = bars["open"].to_numpy()
+        high_arr = bars["high"].to_numpy()
+        low_arr = bars["low"].to_numpy()
+        close_arr = bars["close"].to_numpy()
+
+        for bar_ts, bar_open_raw, bar_high_raw, bar_low_raw, bar_close_raw in zip(
+            bar_ts_arr, open_arr, high_arr, low_arr, close_arr
+        ):
+            bar_open = float(bar_open_raw)
+            bar_high = float(bar_high_raw)
+            bar_low = float(bar_low_raw)
+            bar_close = float(bar_close_raw)
 
             if side == "long":
                 mfe = max(mfe, (bar_high - entry_price) / max(entry_price, 1e-12))

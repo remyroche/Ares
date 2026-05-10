@@ -4,6 +4,7 @@ import pandas as pd
 
 from extreme_price_movements.simple_policy_optimiser import (
     _build_top5_validation_diagnostic,
+    _load_slice_plan_source_validation,
     _suggest_policy_params,
     apply_asset_weights,
     compute_position_size,
@@ -77,6 +78,46 @@ def test_top5_validation_diagnostic_uses_raw_gains_and_skips_length_mismatch(cap
     np.testing.assert_allclose(diag["net_gain"].to_numpy(), np.array([0.1, -0.2]))
     assert skipped is None
     assert "length mismatch" in caplog.text
+
+
+def test_policy_oos_validation_uses_policy_plan_temporal_disjointness(tmp_path):
+    slice_plan = {
+        "version": 2,
+        "materialized_views": {
+            "train_base": {"n_plans": 1},
+            "utility_policy_optimisation": {"n_plans": 1},
+        },
+        "consumer_plans": {
+            "base_model_fit": [
+                {
+                    "fit_idx": [1, 2, 3],
+                    "predict_idx": [4, 5],
+                    "metadata": {},
+                }
+            ],
+            "policy_optimiser": [
+                {
+                    # These indices intentionally overlap the base plan. They are
+                    # local to the consumer plan and must not invalidate OOS.
+                    "fit_idx": [1, 2, 3],
+                    "predict_idx": [4, 5],
+                    "metadata": {
+                        "predict_role": "policy_holdout_tail",
+                        "fit_end": "2026-01-01T00:00:00Z",
+                        "predict_actual_start": "2026-01-02T00:00:00Z",
+                    },
+                }
+            ],
+        },
+    }
+    path = tmp_path / "slice_plan.json"
+    path.write_text(__import__("json").dumps(slice_plan))
+
+    validation = _load_slice_plan_source_validation(path)
+
+    assert validation["oos_policy_slice_verified"] is True
+    assert validation["policy_holdout_temporal_disjoint"] is True
+    assert validation["policy_holdout_train_base_meta_fit_overlap_rows"] == 0
 
 
 def test_suggested_policy_params_do_not_optimize_max_concurrent_trades():

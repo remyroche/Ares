@@ -914,6 +914,16 @@ class DataFetcher:
             "cum_ask_qty_l10": {},
             "cum_bid_qty_l20": {},
             "cum_ask_qty_l20": {},
+            "snapshot_ts": {},
+            "trade_count_1h": {},
+            "buy_qty_1h": {},
+            "sell_qty_1h": {},
+            "notional_1h": {},
+            "buy_notional_1h": {},
+            "sell_notional_1h": {},
+            "vwap_1h": {},
+            "mean_trade_qty_1h": {},
+            "signed_flow_imbalance_1h": {},
         }
         funding_rate = {}
         for sym in symbols:

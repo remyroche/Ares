@@ -398,8 +398,15 @@ def _run_meta_training(
         models_dir = Path(cfg["data_root"]) / "artifacts" / run_id / "models"
         models_dir.mkdir(parents=True, exist_ok=True)
         meta_state_path = models_dir / "model_state_meta.pkl"
-        joblib.dump(result, meta_state_path)
-        tprint(f"Meta model state saved to {meta_state_path}")
+        tmp_meta_state_path = meta_state_path.with_suffix(
+            meta_state_path.suffix + ".tmp"
+        )
+        joblib.dump(result, tmp_meta_state_path)
+        # Verify before replacing the last usable state. An interrupted joblib dump
+        # leaves a truncated pickle, which is worse than keeping the prior model.
+        joblib.load(tmp_meta_state_path)
+        os.replace(tmp_meta_state_path, meta_state_path)
+        tprint(f"Meta model state saved atomically to {meta_state_path}")
         del result
         gc.collect()
         tprint("STAGE 2/4: META TRAINING COMPLETE")

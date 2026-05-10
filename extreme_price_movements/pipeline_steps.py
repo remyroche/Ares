@@ -2307,7 +2307,10 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         def load_sym(s):
             df = store.load(s)
             if not df.empty:
-                df = df[df.index <= ts_sig].tail(24 * lookback_days)
+                # `ts_sig` identifies the artifact/run folder; it must not cap
+                # the historical label window. Use all locally available data
+                # and let the label builder cap by the latest aligned panel row.
+                df = df.tail(24 * lookback_days)
                 # Downcast to float32 immediately to save memory
                 for c in df.columns:
                     if pd.api.types.is_float_dtype(df[c]):
@@ -2420,6 +2423,20 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         if isinstance(v, pd.DataFrame)
     }
     feats = _align_features_to_panel(feats, panel, valid_syms)
+    _label_close = panel.get("close")
+    _label_data_end_ts = pd.Timestamp(ts_sig)
+    if isinstance(_label_close, pd.DataFrame) and not _label_close.empty:
+        _valid_label_rows = _label_close.notna().any(axis=1)
+        if bool(_valid_label_rows.any()):
+            _label_data_end_ts = pd.Timestamp(_label_close.index[_valid_label_rows][-1])
+    if _label_data_end_ts != pd.Timestamp(ts_sig):
+        tprint(
+            "Labels: artifact run_id remains "
+            f"{run_id}, but label event end uses latest aligned data "
+            f"{_label_data_end_ts} (requested ts_sig={ts_sig})."
+        )
+    cfg = dict(cfg)
+    cfg["_label_artifact_run_id"] = run_id
 
     # 1. Label Datasets
     tprint(
@@ -2427,7 +2444,14 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         f"across horizons={horizons if horizons is not None else list(CANON_HORIZONS)}"
     )
     datasets = generate_label_datasets(
-        panel, feats, mkt_gates, cfg, train_syms, ts_sig, None, horizons=horizons
+        panel,
+        feats,
+        mkt_gates,
+        cfg,
+        train_syms,
+        _label_data_end_ts,
+        None,
+        horizons=horizons,
     )
 
     # Use SlicePlanner to determine walk-forward test set and exclude it from training data
@@ -3133,9 +3157,13 @@ def run_training_step(
     state_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "models")
     os.makedirs(state_dir, exist_ok=True)
     state_path = os.path.join(state_dir, "trained_state.pkl")
-    with open(state_path, "wb") as f:
-        pickle.dump(state, f)
-    tprint(f"Saved trained state to {state_path}")
+    tmp_state_path = f"{state_path}.tmp"
+    with open(tmp_state_path, "wb") as f:
+        pickle.dump(state, f, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(tmp_state_path, "rb") as f:
+        pickle.load(f)
+    os.replace(tmp_state_path, state_path)
+    tprint(f"Saved trained state atomically to {state_path}")
 
     # Log summary
     bundle = trained_bundle

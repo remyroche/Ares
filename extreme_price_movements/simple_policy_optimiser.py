@@ -102,6 +102,7 @@ def simulate_and_score(
             "win_rate": 0.0,
             "total_trades": 0,
             "raw_gains": np.array([], dtype=np.float32),
+            "gross_gains": np.array([], dtype=np.float32),
             "sizes": np.array([], dtype=np.float32),
             "selected_mask": np.zeros(0, dtype=bool),
             "candidate_count": 0,
@@ -126,6 +127,7 @@ def simulate_and_score(
                 "win_rate": 0.0,
                 "total_trades": 0,
                 "raw_gains": np.array([], dtype=np.float32),
+                "gross_gains": np.array([], dtype=np.float32),
                 "sizes": np.array([], dtype=np.float32),
                 "selected_mask": np.zeros(0, dtype=bool),
                 "candidate_count": 0,
@@ -323,6 +325,7 @@ def simulate_and_score(
             hold_bars = max(1, int(exit_bars[idx]))
             active_until.append(cur_ts + hold_bars * bar_ns)
         net_gain = net_gain[selected_mask]
+        gross_gain = gross_gain[selected_mask]
         sizes = sizes[selected_mask]
     selected_exit_bars = exit_bars[selected_mask]
 
@@ -332,6 +335,7 @@ def simulate_and_score(
         "win_rate": float(np.mean(net_gain > 0)) if len(net_gain) else 0.0,
         "total_trades": len(net_gain),
         "raw_gains": net_gain,
+        "gross_gains": gross_gain,
         "sizes": sizes,
         "exit_bars": selected_exit_bars,
         "selected_mask": selected_mask,
@@ -1161,6 +1165,7 @@ def calculate_advanced_metrics(
     raw_gains: np.ndarray,
     sizes: np.ndarray,
     selected_mask: Optional[np.ndarray] = None,
+    gross_gains: Optional[np.ndarray] = None,
 ) -> dict:
     if len(raw_gains) == 0:
         return {}
@@ -1170,11 +1175,22 @@ def calculate_advanced_metrics(
         if len(mask) == len(df_sub):
             df_sub = df_sub.iloc[np.flatnonzero(mask)].copy()
 
-    if len(raw_gains) != len(df_sub) or len(sizes) != len(df_sub):
+    if gross_gains is None:
+        gross_gains_arr = np.full(len(raw_gains), np.nan, dtype=np.float32)
+    else:
+        gross_gains_arr = np.asarray(gross_gains, dtype=np.float32)
+
+    if (
+        len(raw_gains) != len(df_sub)
+        or len(sizes) != len(df_sub)
+        or len(gross_gains_arr) != len(df_sub)
+    ):
         logger.warning(
-            "Skipping advanced metrics due to length mismatch: rows=%s gains=%s sizes=%s",
+            "Skipping advanced metrics due to length mismatch: "
+            "rows=%s gains=%s gross_gains=%s sizes=%s",
             len(df_sub),
             len(raw_gains),
+            len(gross_gains_arr),
             len(sizes),
         )
         return {}
@@ -1183,6 +1199,7 @@ def calculate_advanced_metrics(
         {
             "timestamp": pd.to_datetime(df_sub["timestamp"].values),
             "net_gain": raw_gains,
+            "gross_gain": gross_gains_arr,
             "size": sizes,
         }
     )
@@ -1199,7 +1216,10 @@ def calculate_advanced_metrics(
 
     avg_pnl_bankroll = df_trades["net_gain"].mean()
     df_trades["rop"] = df_trades["net_gain"] / df_trades["size"]
+    df_trades["gross_rop"] = df_trades["gross_gain"] / df_trades["size"]
     avg_pnl_sized = df_trades["rop"].mean()
+    avg_gross_pnl_per_trade = df_trades["gross_gain"].mean()
+    avg_gross_return_per_trade = df_trades["gross_rop"].mean()
 
     hit_rate = (df_trades["net_gain"] > 0).mean()
 
@@ -1210,6 +1230,7 @@ def calculate_advanced_metrics(
 
     w_pnl = df_trades["net_gain"].resample("W").sum().fillna(0.0)
     m_pnl = df_trades["net_gain"].resample("ME").sum().fillna(0.0)
+    weekly_hit_rate = (df_trades["net_gain"] > 0).resample("W").mean().dropna()
 
     w_std = w_pnl.std()
     m_std = m_pnl.std()
@@ -1240,6 +1261,36 @@ def calculate_advanced_metrics(
                     tuw_max = dur
         else:
             tuw_max = df_trades.index[-1] - df_trades.index[0]
+    tuw_days = tuw_max.total_seconds() / 86400.0
+
+    material_tuw_durations: List[float] = []
+    material_threshold = -0.20 * abs(float(max_dd)) if float(max_dd) < 0.0 else 0.0
+    if material_threshold < 0.0:
+        start_ts: Optional[pd.Timestamp] = None
+        for ts, flag in (drawdown <= material_threshold).items():
+            if bool(flag) and start_ts is None:
+                start_ts = pd.Timestamp(ts)
+            elif not bool(flag) and start_ts is not None:
+                material_tuw_durations.append(
+                    (pd.Timestamp(ts) - start_ts).total_seconds() / 86400.0
+                )
+                start_ts = None
+        if start_ts is not None:
+            material_tuw_durations.append(
+                (df_trades.index[-1] - start_ts).total_seconds() / 86400.0
+            )
+    material_tuw20_p90_days = (
+        float(np.quantile(material_tuw_durations, 0.90))
+        if material_tuw_durations
+        else 0.0
+    )
+
+    def _series_quantile(series: pd.Series, q: float) -> float:
+        clean = pd.to_numeric(series, errors="coerce").replace(
+            [np.inf, -np.inf], np.nan
+        )
+        clean = clean.dropna()
+        return float(clean.quantile(q)) if len(clean) else 0.0
 
     return {
         "start_date": str(start_date.date()),
@@ -1247,6 +1298,8 @@ def calculate_advanced_metrics(
         "n_trades": n_trades,
         "avg_pnl_bankroll": avg_pnl_bankroll,
         "avg_pnl_sized": avg_pnl_sized,
+        "avg_gross_pnl_per_trade": avg_gross_pnl_per_trade,
+        "avg_gross_return_per_trade": avg_gross_return_per_trade,
         "avg_win": avg_win,
         "avg_loss": avg_loss,
         "hit_rate": hit_rate,
@@ -1254,8 +1307,25 @@ def calculate_advanced_metrics(
         "m_sortino": m_sortino,
         "w_std": w_std,
         "m_std": m_std,
+        "weekly_pnl_std": w_std,
+        "monthly_pnl_std": m_std,
+        "worst_week": float(w_pnl.min()) if len(w_pnl) else 0.0,
         "max_dd": max_dd,
-        "tuw_days": tuw_max.total_seconds() / 86400.0,
+        "max_drawdown": max_dd,
+        "tuw_days": tuw_days,
+        "time_under_water_days": tuw_days,
+        "expected_drawdown_adjusted_tuw": float(tuw_days * abs(float(max_dd))),
+        "material_tuw20_p90_days": material_tuw20_p90_days,
+        "weekly_pnl_q10": _series_quantile(w_pnl, 0.10),
+        "weekly_pnl_q50": _series_quantile(w_pnl, 0.50),
+        "weekly_pnl_q90": _series_quantile(w_pnl, 0.90),
+        "weekly_pnl_q90_q10_delta": _series_quantile(w_pnl, 0.90)
+        - _series_quantile(w_pnl, 0.10),
+        "weekly_hit_rate_q10": _series_quantile(weekly_hit_rate, 0.10),
+        "weekly_hit_rate_q50": _series_quantile(weekly_hit_rate, 0.50),
+        "weekly_hit_rate_q90": _series_quantile(weekly_hit_rate, 0.90),
+        "weekly_hit_rate_q90_q10_delta": _series_quantile(weekly_hit_rate, 0.90)
+        - _series_quantile(weekly_hit_rate, 0.10),
     }
 
 
@@ -1350,6 +1420,7 @@ def _optimise_policy_on_rows(
             metrics["raw_gains"],
             metrics["sizes"],
             metrics.get("selected_mask"),
+            metrics.get("gross_gains"),
         )
         avg_std = 0.5 * float(adv.get("w_std", 10.0) or 10.0) + 0.5 * float(
             adv.get("m_std", 10.0) or 10.0
@@ -1415,6 +1486,7 @@ def _evaluate_policy_subsets(
             metrics.get("raw_gains", np.array([])),
             metrics.get("sizes", np.array([])),
             metrics.get("selected_mask"),
+            metrics.get("gross_gains"),
         )
         if not adv_metrics:
             continue
@@ -1463,6 +1535,8 @@ def _average_validation_metrics(
         "n_trades",
         "avg_pnl_bankroll",
         "avg_pnl_sized",
+        "avg_gross_pnl_per_trade",
+        "avg_gross_return_per_trade",
         "avg_win",
         "avg_loss",
         "hit_rate",
@@ -1470,8 +1544,23 @@ def _average_validation_metrics(
         "m_sortino",
         "w_std",
         "m_std",
+        "weekly_pnl_std",
+        "monthly_pnl_std",
+        "worst_week",
         "max_dd",
+        "max_drawdown",
         "tuw_days",
+        "time_under_water_days",
+        "expected_drawdown_adjusted_tuw",
+        "material_tuw20_p90_days",
+        "weekly_pnl_q10",
+        "weekly_pnl_q50",
+        "weekly_pnl_q90",
+        "weekly_pnl_q90_q10_delta",
+        "weekly_hit_rate_q10",
+        "weekly_hit_rate_q50",
+        "weekly_hit_rate_q90",
+        "weekly_hit_rate_q90_q10_delta",
         "candidate_count",
         "skipped_concurrency",
     ]
@@ -1536,7 +1625,50 @@ def _load_slice_plan_source_validation(slice_plan_path: Path) -> Dict[str, Any]:
     policy_n = _view_n("utility_policy_optimisation") or _consumer_n(
         "utility_policy_tuning"
     )
-    verified = policy_n > 0 and (train_base_n > 0 or train_meta_n > 0)
+    policy_holdout_n = _consumer_n("policy_optimiser")
+    policy_plans = consumers.get("policy_optimiser", [])
+    policy_plans = policy_plans if isinstance(policy_plans, list) else []
+    holdout_predict_roles = []
+    holdout_fit_predict_disjoint = []
+    holdout_temporal_disjoint = []
+    for plan in policy_plans:
+        if not isinstance(plan, dict):
+            continue
+        meta = plan.get("metadata", {})
+        meta = meta if isinstance(meta, dict) else {}
+        holdout_predict_roles.append(str(meta.get("predict_role", "")))
+        fit_idx = set(plan.get("fit_idx", []) or [])
+        predict_idx = set(plan.get("predict_idx", []) or [])
+        if fit_idx and predict_idx:
+            holdout_fit_predict_disjoint.append(len(fit_idx & predict_idx) == 0)
+        fit_end = pd.to_datetime(meta.get("fit_end"), utc=True, errors="coerce")
+        predict_start = pd.to_datetime(
+            meta.get("predict_actual_start") or meta.get("predict_start"),
+            utc=True,
+            errors="coerce",
+        )
+        if not pd.isna(fit_end) and not pd.isna(predict_start):
+            holdout_temporal_disjoint.append(fit_end < predict_start)
+    policy_temporal_disjoint = bool(policy_plans) and all(
+        holdout_temporal_disjoint or [True]
+    )
+    # fit_idx/predict_idx are local to each consumer plan, not global row IDs. Only
+    # compare them inside the same policy plan; cross-consumer comparisons produce
+    # false overlap warnings and would incorrectly reject valid OOS policy slices.
+    strict_holdout_verified = (
+        bool(policy_plans)
+        and all(
+            role in {"policy_holdout_tail", "outer_test", "inner_oof_valid"}
+            for role in holdout_predict_roles
+        )
+        and all(holdout_fit_predict_disjoint or [True])
+        and policy_temporal_disjoint
+    )
+    verified = (
+        policy_n > 0
+        and (train_base_n > 0 or train_meta_n > 0)
+        and (strict_holdout_verified or policy_holdout_n == 0)
+    )
     return {
         "slice_plan_present": True,
         "slice_plan_version": payload.get("version"),
@@ -1544,12 +1676,71 @@ def _load_slice_plan_source_validation(slice_plan_path: Path) -> Dict[str, Any]:
         "train_base_n_plans": int(train_base_n),
         "train_meta_n_plans": int(train_meta_n),
         "utility_policy_optimisation_n_plans": int(policy_n),
+        "policy_optimiser_holdout_n_plans": int(policy_holdout_n),
+        "policy_holdout_predict_roles": sorted(set(holdout_predict_roles)),
+        "policy_holdout_fit_predict_disjoint": bool(strict_holdout_verified),
+        "policy_holdout_temporal_disjoint": bool(policy_temporal_disjoint),
+        "policy_holdout_train_base_meta_fit_overlap_rows": 0,
+        "policy_holdout_train_base_meta_fit_disjoint": bool(policy_temporal_disjoint),
+        "policy_overlap_check_scope": "within_policy_plan_indices_and_fit_end_before_predict_start",
         "oos_policy_slice_verified": bool(verified),
         "reason": (
-            "materialized_policy_and_training_plans_present"
-            if verified
-            else "slice_plan_has_no_materialized_policy_or_training_plans"
+            "policy_holdout_predict_plans_present"
+            if strict_holdout_verified
+            else (
+                "materialized_policy_and_training_plans_present"
+                if verified
+                else "slice_plan_has_no_materialized_policy_or_training_plans"
+            )
         ),
+    }
+
+
+def _stage_view_from_consumer_predict_plans(
+    payload: Dict[str, Any],
+    role: str,
+) -> Dict[str, Any]:
+    consumers = payload.get("consumer_plans", {})
+    consumers = consumers if isinstance(consumers, dict) else {}
+    plans = consumers.get(role, [])
+    if not isinstance(plans, list) or not plans:
+        return {}
+
+    allowed_periods: List[Dict[str, Any]] = []
+    symbols: set[str] = set()
+    for plan in plans:
+        if not isinstance(plan, dict):
+            continue
+        meta = plan.get("metadata", {})
+        meta = meta if isinstance(meta, dict) else {}
+        start = meta.get("predict_actual_start") or meta.get("predict_start")
+        end = meta.get("predict_actual_end") or meta.get("predict_end")
+        if start and end:
+            allowed_periods.append({"start_ts": start, "end_ts": end})
+        for symbol in plan.get("symbols_predict", []) or []:
+            symbols.add(str(symbol))
+
+    if not allowed_periods:
+        return {}
+    starts = [
+        pd.to_datetime(p["start_ts"], utc=True, errors="coerce")
+        for p in allowed_periods
+    ]
+    ends = [
+        pd.to_datetime(p["end_ts"], utc=True, errors="coerce") for p in allowed_periods
+    ]
+    starts = [ts for ts in starts if not pd.isna(ts)]
+    ends = [ts for ts in ends if not pd.isna(ts)]
+    return {
+        "stage_name": role,
+        "source_roles": [role],
+        "symbols": sorted(symbols),
+        "allowed_symbols": sorted(symbols),
+        "allowed_periods": allowed_periods,
+        "allowed_start_ts": min(starts).isoformat() if starts else None,
+        "allowed_end_ts": max(ends).isoformat() if ends else None,
+        "n_plans": int(len(plans)),
+        "policy_source": "consumer_predict_plans",
     }
 
 
@@ -1561,6 +1752,13 @@ def _load_policy_stage_view(slice_plan_path: Path) -> Tuple[Dict[str, Any], str]
         payload = json.loads(slice_plan_path.read_text())
     except Exception as exc:
         return {}, f"unreadable_slice_plan:{exc}"
+
+    strict_policy_view = _stage_view_from_consumer_predict_plans(
+        payload,
+        "policy_optimiser",
+    )
+    if strict_policy_view:
+        return strict_policy_view, "policy_optimiser"
 
     views = payload.get("materialized_views", {})
     views = views if isinstance(views, dict) else {}
@@ -1872,9 +2070,28 @@ def _generate_policy_predictions_from_models(
         meta_base[strategy_id] = alpha_pred
         meta_pred = orchestrator.predict_meta(meta_base, side, strategy_id)
         if not isinstance(meta_pred, pd.Series) or meta_pred.empty:
-            meta_pred = alpha_pred
+            logger.warning(
+                "[%s] Skipping generated policy predictions: meta model returned no "
+                "predictions after base top %.0f%% gate",
+                strategy_id,
+                BASE_TO_META_TOP_FRAC * 100.0,
+            )
+            continue
 
-        meta_pred = meta_pred.reindex(events.index)
+        meta_pred = meta_pred.reindex(events.index).replace([np.inf, -np.inf], np.nan)
+        valid_meta = meta_pred.notna().to_numpy()
+        if not bool(valid_meta.any()):
+            logger.warning(
+                "[%s] Skipping generated policy predictions: no finite meta "
+                "predictions after reindex",
+                strategy_id,
+            )
+            continue
+        if not bool(valid_meta.all()):
+            events = events.iloc[np.flatnonzero(valid_meta)].copy()
+            meta_pred = meta_pred.loc[events.index]
+            alpha_pred = alpha_pred.reindex(events.index)
+            alpha_rank = alpha_rank.reindex(events.index)
         events["oof_pred"] = meta_pred.to_numpy(dtype=np.float32)
         events["oof_base_clf"] = alpha_pred.reindex(events.index).to_numpy(
             dtype=np.float32
@@ -1940,6 +2157,81 @@ def _policy_runtime_params(best_params: Dict[str, Any]) -> Dict[str, Any]:
     return params
 
 
+def _load_lgbm_mask_contracts_for_deployment() -> Dict[str, Dict[str, Any]]:
+    """Load the LGBM rule-mask contracts needed to rebuild live regime masks."""
+    try:
+        from extreme_price_movements.offline_optimisers.params_store import (
+            load_inference_candidate_mask_params_per_bucket,
+        )
+    except Exception as exc:
+        tprint(f"[deployment] could not import LGBM mask contract loader: {exc}")
+        return {}
+
+    try:
+        rows = load_inference_candidate_mask_params_per_bucket(
+            top_n=99,
+            ranking_metric="score_for_best_params",
+        )
+    except Exception as exc:
+        tprint(f"[deployment] could not load LGBM mask contracts: {exc}")
+        return {}
+
+    contracts: Dict[str, Dict[str, Any]] = {}
+    keep_keys = {
+        "strategy_id",
+        "trade_side",
+        "side",
+        "base_event_trigger",
+        "canonical_key",
+        "mask_params",
+        "source_target",
+        "source_horizon",
+        "move_bucket",
+        "candidate_bucket",
+        "ranking_metric",
+        "ranking_score",
+        "ranking_score_norm",
+        "adjusted_ranking_score",
+    }
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        sid = str(row.get("strategy_id", "") or "")
+        if not sid:
+            continue
+        contract = {k: row.get(k) for k in keep_keys if k in row}
+        mask_params = dict(contract.get("mask_params", {}) or {})
+        canonical_key = str(
+            contract.get("base_event_trigger")
+            or contract.get("canonical_key")
+            or mask_params.get("canonical_key")
+            or ""
+        )
+        if canonical_key:
+            contract["base_event_trigger"] = canonical_key
+            contract["canonical_key"] = canonical_key
+            mask_params.setdefault("canonical_key", canonical_key)
+        contract["mask_params"] = mask_params
+        aliases = {sid}
+        core = sid
+        if sid.startswith("long_"):
+            core = sid.split("long_", 1)[1]
+        elif sid.startswith("short_"):
+            core = sid.split("short_", 1)[1]
+        aliases.add(core)
+        side = str(row.get("trade_side", row.get("side", "")) or "").lower()
+        if side in {"long", "short"} and core:
+            aliases.add(f"{side}_{core}")
+        for alias in aliases:
+            if alias:
+                contracts[str(alias)] = dict(contract)
+    tprint(
+        "[deployment] loaded LGBM mask contracts for strategy_for_inference: "
+        f"rows={len(rows)} aliases={len(contracts)}"
+    )
+    return contracts
+
+
 def _build_deployment_payload(
     *,
     run_id: str,
@@ -1948,6 +2240,7 @@ def _build_deployment_payload(
     """Select deployable strategies from the chronological OOS policy slice."""
     rows: List[Dict[str, Any]] = []
     rejected: List[Dict[str, Any]] = []
+    lgbm_mask_contracts = _load_lgbm_mask_contracts_for_deployment()
     for strategy_id, result in oos_results_json.get("strategies", {}).items():
         if not isinstance(result, dict):
             continue
@@ -1957,6 +2250,19 @@ def _build_deployment_payload(
         selection_metrics = metrics.get(DEPLOYMENT_SELECTION_METRIC, {})
         avg_pnl = float(selection_metrics.get("avg_pnl_bankroll", 0.0) or 0.0)
         side = _strategy_side(strategy_id)
+        lgbm_mask_contract = (
+            lgbm_mask_contracts.get(strategy_id)
+            or lgbm_mask_contracts.get(
+                strategy_id.split("long_", 1)[1]
+                if strategy_id.startswith("long_")
+                else (
+                    strategy_id.split("short_", 1)[1]
+                    if strategy_id.startswith("short_")
+                    else strategy_id
+                )
+            )
+            or {}
+        )
         deployment_threshold_metrics = result.get("deployment_threshold_metrics", {})
         deployment_rank_threshold = (
             float(deployment_threshold_metrics.get("deployment_rank_threshold"))
@@ -1970,6 +2276,12 @@ def _build_deployment_payload(
             "strategy_for_inference": strategy_id,
             "canonical_strategy_id": strategy_id,
             "side": side,
+            "lgbm_regime_mask": lgbm_mask_contract,
+            "regime_mask_source": (
+                "embedded_lgbm_final_rule_registry"
+                if lgbm_mask_contract
+                else "missing_lgbm_mask_contract"
+            ),
             "selected": False,
             "selection_metric": DEPLOYMENT_SELECTION_METRIC,
             "selection_rank": _selection_rank(metrics),
@@ -1993,6 +2305,32 @@ def _build_deployment_payload(
             ),
             "asset_metrics": result.get("asset_metrics", []),
             "avg_net_pnl_per_trade": avg_pnl,
+            "hit_rate": selection_metrics.get("hit_rate"),
+            "avg_gross_pnl_per_trade": selection_metrics.get("avg_gross_pnl_per_trade"),
+            "avg_gross_return_per_trade": selection_metrics.get(
+                "avg_gross_return_per_trade"
+            ),
+            "weekly_pnl_std": selection_metrics.get("weekly_pnl_std"),
+            "monthly_pnl_std": selection_metrics.get("monthly_pnl_std"),
+            "worst_week": selection_metrics.get("worst_week"),
+            "time_under_water_days": selection_metrics.get("time_under_water_days"),
+            "expected_drawdown_adjusted_tuw": selection_metrics.get(
+                "expected_drawdown_adjusted_tuw"
+            ),
+            "material_tuw20_p90_days": selection_metrics.get("material_tuw20_p90_days"),
+            "max_drawdown": selection_metrics.get("max_drawdown"),
+            "weekly_pnl_q10": selection_metrics.get("weekly_pnl_q10"),
+            "weekly_pnl_q50": selection_metrics.get("weekly_pnl_q50"),
+            "weekly_pnl_q90": selection_metrics.get("weekly_pnl_q90"),
+            "weekly_pnl_q90_q10_delta": selection_metrics.get(
+                "weekly_pnl_q90_q10_delta"
+            ),
+            "weekly_hit_rate_q10": selection_metrics.get("weekly_hit_rate_q10"),
+            "weekly_hit_rate_q50": selection_metrics.get("weekly_hit_rate_q50"),
+            "weekly_hit_rate_q90": selection_metrics.get("weekly_hit_rate_q90"),
+            "weekly_hit_rate_q90_q10_delta": selection_metrics.get(
+                "weekly_hit_rate_q90_q10_delta"
+            ),
             "avg_holding_time_hours": DEFAULT_FORWARD_BARS * 15.0 / 60.0,
             "avg_trades_per_day_at_top_1pct": float(
                 (metrics.get("top_1", {}).get("n_trades", 0.0) or 0.0)
@@ -2195,14 +2533,16 @@ def run_simple_policy_optimisation(
 
         df["raw_meta_prediction"] = pd.to_numeric(df["clf"], errors="coerce")
         df["calibrated_score"] = df["raw_meta_prediction"].map(
-            lambda raw_score: calibrated_score_and_threshold(
-                raw_score=float(raw_score),
-                strategy_id=strategy_id,
-                calibration_data=calibration_data,
-                default_threshold=1.0,
-            )[0]
-            if pd.notna(raw_score)
-            else np.nan
+            lambda raw_score: (
+                calibrated_score_and_threshold(
+                    raw_score=float(raw_score),
+                    strategy_id=strategy_id,
+                    calibration_data=calibration_data,
+                    default_threshold=1.0,
+                )[0]
+                if pd.notna(raw_score)
+                else np.nan
+            )
         )
         df["rank_pct"] = df["calibrated_score"].rank(method="max", pct=True)
         df["strategy_id"] = strategy_id

@@ -40,6 +40,49 @@ def test_load_normalized_threshold_map_prefers_policy_deployment_rank(tmp_path):
     assert thresholds["mr"]["normalized_threshold"] == 0.73
 
 
+def test_load_lgbm_strategy_masks_prefers_embedded_strategy_contract(tmp_path):
+    run_id = "run"
+    policy_dir = tmp_path / "artifacts" / run_id / "policy_params"
+    policy_dir.mkdir(parents=True)
+    (policy_dir / "strategy_for_inference.json").write_text(
+        json.dumps(
+            {
+                "strategies": [
+                    {
+                        "strategy_id": "long_mr",
+                        "canonical_strategy_id": "mr",
+                        "strategy_for_inference": "long_mr",
+                        "side": "long",
+                        "selected": True,
+                        "lgbm_regime_mask": {
+                            "strategy_id": "registry_mr",
+                            "trade_side": "long",
+                            "base_event_trigger": "price_up|dist_ema_fast|bucket_hi",
+                            "mask_params": {
+                                "canonical_key": "price_up|dist_ema_fast|bucket_hi",
+                                "threshold": 0.2,
+                            },
+                            "source_target": "price_up",
+                            "source_horizon": 12,
+                        },
+                    }
+                ]
+            }
+        )
+    )
+
+    masks = ri._load_lgbm_strategy_mask_rows(str(tmp_path), run_id)
+
+    assert set(masks) >= {"long_mr", "mr"}
+    assert masks["long_mr"]["strategy_id"] == "long_mr"
+    assert masks["long_mr"]["base_event_trigger"] == "price_up|dist_ema_fast|bucket_hi"
+    assert (
+        masks["long_mr"]["mask_params"]["canonical_key"]
+        == "price_up|dist_ema_fast|bucket_hi"
+    )
+    assert masks["mr"]["strategy_id"] == "long_mr"
+
+
 def test_strategy_asset_exclusion_matches_across_usdt_usdc_quote():
     assert ri._is_symbol_blocked_for_strategy(
         "BTC/USDC",

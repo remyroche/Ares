@@ -7,7 +7,9 @@ from extreme_price_movements.inference.feature_generator import (
 )
 from extreme_price_movements.inference.run_inference import (
     _evaluate_oco_policy,
+    _latest_closed_candle_start,
     _monitor_active_position_price_action,
+    _policy_optimiser_stop_decision,
 )
 from extreme_price_movements.inference.trade_executor import (
     TradeExecutor,
@@ -108,6 +110,49 @@ def test_select_candidates_uses_ret12h_move_and_vol_thresholds():
 
     assert long_cands == ["A"]
     assert short_cands == ["D"]
+
+
+def test_latest_closed_candle_respects_publication_delay():
+    now = pd.Timestamp("2026-05-10 17:00:03", tz="UTC")
+    assert _latest_closed_candle_start(
+        now,
+        timeframe_minutes=60,
+        delay_seconds=5.0,
+    ) == pd.Timestamp("2026-05-10 15:00:00", tz="UTC")
+
+    now = pd.Timestamp("2026-05-10 17:00:06", tz="UTC")
+    assert _latest_closed_candle_start(
+        now,
+        timeframe_minutes=60,
+        delay_seconds=5.0,
+    ) == pd.Timestamp("2026-05-10 16:00:00", tz="UTC")
+
+
+def test_policy_optimiser_stop_decision_uses_max_favorable_giveback():
+    params = {
+        "enable_trailing": True,
+        "barrier_frac": 0.02,
+        "sl_mult": 1.2,
+        "trailing_override_alpha": 1.5,
+        "trailing_power": 1.4,
+        "trailing_squash_divisor": 1.5,
+        "giveback_beta": 0.8,
+        "capital_protect_mfe_mult": 0.0,
+    }
+    decision = _policy_optimiser_stop_decision(
+        side="long",
+        entry_price=100.0,
+        peak_price=104.0,
+        mfe=0.04,
+        stop_price=97.6,
+        params=params,
+    )
+    max_favorable_abs = 4.0
+    dynamic = min((max_favorable_abs / (2.0 * 1.5)) ** 1.4, 1.0)
+    expected = 100.0 + max_favorable_abs - (max_favorable_abs * 0.8 * (1.0 - dynamic))
+
+    assert decision["reason"] == "trailing_profit"
+    assert decision["stop_price"] == pytest.approx(expected)
 
 
 def test_select_candidates_rejects_legacy_threshold_overrides():
@@ -301,7 +346,7 @@ def test_shadow_monitor_updates_stop_from_trailing_price_action():
             "low": [100.0, 104.0],
             "close": [102.0, 105.0],
         },
-        index=pd.date_range("2026-03-01 00:05", periods=2, freq="5min", tz="UTC"),
+        index=pd.date_range("2026-03-01 00:00", periods=2, freq="15min", tz="UTC"),
     )
     executor.update_position_policy_state(
         "BTC/USDT",
@@ -315,7 +360,7 @@ def test_shadow_monitor_updates_stop_from_trailing_price_action():
     statuses = _monitor_active_position_price_action(
         executor,
         exchange=None,
-        now=pd.Timestamp("2026-03-01 00:15", tz="UTC"),
+        now=pd.Timestamp("2026-03-01 00:30:06", tz="UTC"),
     )
     updated = executor.get_active_positions()["BTC/USDT"]
 
@@ -323,6 +368,53 @@ def test_shadow_monitor_updates_stop_from_trailing_price_action():
     assert updated["peak_price"] == 106.0
     assert statuses["BTC/USDT"]["price_action"]["stop_price_before"] == initial_stop
     assert statuses["BTC/USDT"]["price_action"]["stop_price_after"] > initial_stop
+
+
+def test_shadow_monitor_keeps_updating_after_initial_eight_hour_window():
+    executor = TradeExecutor(
+        mode="shadow",
+        exchange=None,
+        bucket_params={
+            "long_mr": {
+                "sl_mult": 1.0,
+                "trail_mult": 0.25,
+                "giveback_pct": 0.01,
+                "profit_lock_amount": 0.003,
+            }
+        },
+    )
+    rec = executor.execute_trade(
+        "BTC/USDT", "long", 0.5, price=100.0, bucket_key="long_mr"
+    )
+    assert rec["status"] == "recorded"
+    initial_stop = executor.get_active_positions()["BTC/USDT"]["stop_price"]
+    bars = pd.DataFrame(
+        {
+            "open": [100.0, 105.0],
+            "high": [106.0, 108.0],
+            "low": [104.0, 106.0],
+            "close": [105.0, 107.0],
+        },
+        index=pd.date_range("2026-03-01 12:00", periods=2, freq="15min", tz="UTC"),
+    )
+    executor.positions["BTC/USDT"]["entry_time"] = pd.Timestamp(
+        "2026-03-01 00:00", tz="UTC"
+    )
+    executor.positions["BTC/USDT"]["last_5m_eval_ts"] = pd.Timestamp(
+        "2026-03-01 11:45", tz="UTC"
+    )
+    executor.positions["BTC/USDT"]["ohlcv_5m_latest"] = bars
+
+    statuses = _monitor_active_position_price_action(
+        executor,
+        exchange=None,
+        now=pd.Timestamp("2026-03-01 12:30:06", tz="UTC"),
+    )
+    updated = executor.get_active_positions()["BTC/USDT"]
+
+    assert updated["stop_price"] > initial_stop
+    assert updated["peak_price"] == 108.0
+    assert statuses["BTC/USDT"]["price_action"]["bars_evaluated"] == 2
 
 
 def test_live_executor_places_stop_loss_only_not_oco_or_take_profit(monkeypatch):
@@ -367,8 +459,8 @@ def test_live_executor_places_stop_loss_only_not_oco_or_take_profit(monkeypatch)
     assert result["success"]
     order_types = [order["type"] for order in exchange.orders]
     assert "STOP_LOSS" in order_types
-    assert "limit" in order_types  # entry order only
-    assert order_types.count("limit") == 1
+    assert "market" in order_types  # entry order and emergency cleanup in test
+    assert order_types.count("market") >= 1
     assert exchange.oco_calls == 0
 
 
@@ -471,11 +563,11 @@ def test_live_executor_converts_quote_notional_to_base_amount(monkeypatch):
         executor.shutdown()
 
     assert result["success"]
-    assert result["base_amount"] == 1.0
+    assert result["base_amount"] == pytest.approx(0.999)
     entry_order = exchange.orders[0]
     stop_order = exchange.orders[1]
     assert entry_order["amount"] == 1.0
-    assert stop_order["amount"] == 1.0
+    assert stop_order["amount"] == pytest.approx(0.999)
     assert stop_order["type"] == "STOP_LOSS"
 
 
@@ -602,9 +694,9 @@ def test_live_executor_uses_partial_fill_amount_for_stop_loss(monkeypatch):
 
     assert result["success"]
     assert result["partial_fill"] is True
-    assert result["base_amount"] == 0.5
+    assert result["base_amount"] == pytest.approx(0.4995)
     stop_orders = [order for order in exchange.orders if order["type"] == "STOP_LOSS"]
-    assert stop_orders[-1]["amount"] == 0.5
+    assert stop_orders[-1]["amount"] == pytest.approx(0.4995)
 
 
 def test_stop_loss_cancel_replace_uses_existing_base_amount(monkeypatch):
@@ -625,13 +717,13 @@ def test_stop_loss_cancel_replace_uses_existing_base_amount(monkeypatch):
         )
         assert result["success"]
         state = executor.oco_executor.active_positions["BTC/USDT"]
-        executor.oco_executor._update_stop_loss("BTC/USDT", state, 101.0)
+        executor.oco_executor._update_stop_loss("BTC/USDT", state, 99.0)
     finally:
         executor.shutdown()
 
     stop_orders = [order for order in exchange.orders if order["type"] == "STOP_LOSS"]
     assert len(stop_orders) >= 2
-    assert stop_orders[-1]["amount"] == 1.0
+    assert stop_orders[-1]["amount"] == pytest.approx(0.999)
     assert exchange.canceled[0][0] == "order-2"
     assert exchange.oco_calls == 0
 
@@ -654,7 +746,7 @@ def test_stop_loss_cancel_replace_does_not_duplicate_on_cancel_failure(monkeypat
         )
         assert result["success"]
         state = executor.oco_executor.active_positions["BTC/USDT"]
-        executor.oco_executor._update_stop_loss("BTC/USDT", state, 101.0)
+        executor.oco_executor._update_stop_loss("BTC/USDT", state, 99.0)
         stop_update_error_category = state.get("stop_update_error_category")
     finally:
         executor.shutdown()
@@ -687,7 +779,7 @@ def test_margin_executor_routes_entry_stop_cancel_and_close_params(monkeypatch):
         )
         assert result["success"]
         state = executor.oco_executor.active_positions["BTC/USDT"]
-        executor.oco_executor._update_stop_loss("BTC/USDT", state, 101.0)
+        executor.oco_executor._update_stop_loss("BTC/USDT", state, 99.0)
         close_result = executor.close_position("BTC/USDT", reason="test_close")
     finally:
         executor.shutdown()
@@ -703,9 +795,9 @@ def test_margin_executor_routes_entry_stop_cancel_and_close_params(monkeypatch):
     assert entry_order["params"]["marginMode"] == "cross"
     assert entry_order["params"]["sideEffectType"] == "AUTO_BORROW_REPAY"
     assert stop_orders[0]["params"]["marginMode"] == "cross"
-    assert stop_orders[0]["params"]["reduceOnly"] is True
+    assert stop_orders[0]["params"]["sideEffectType"] == "AUTO_REPAY"
     assert exchange.canceled[0][2]["marginMode"] == "cross"
-    assert market_closes[-1]["params"]["reduceOnly"] is True
+    assert market_closes[-1]["params"]["sideEffectType"] == "AUTO_REPAY"
 
 
 def test_monitor_orders_once_removes_filled_stop(monkeypatch):

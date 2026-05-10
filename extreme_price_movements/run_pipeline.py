@@ -1340,6 +1340,7 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
             tprint(
                 f"WARNING: invalid EPM_BASE_MAX_STRATEGY_IDS={_base_max_strats_env!r}: {e}"
             )
+    _base_strategy_ids_env = os.getenv("EPM_BASE_STRATEGY_IDS", "")
     ts_sig = _resolve_ts_sig(cfg, ts_override)
     if ts_sig is None:
         tprint("ERROR: No feature directories found. Run feature_generation first.")
@@ -1365,6 +1366,42 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
 
     tprint(f"Train mode. ts_sig={ts_sig} base_only={base_only} meta_only={meta_only}")
     _load_mask_params_by_mode(cfg)
+    if _base_strategy_ids_env.strip():
+        from extreme_price_movements.strategy_registry import get_strategies
+
+        requested_ids = [
+            s.strip() for s in _base_strategy_ids_env.split(",") if s.strip()
+        ]
+        requested_set = set(requested_ids)
+        all_strategies = get_strategies(cfg)
+        selected_strategies = [
+            s
+            for s in all_strategies
+            if str(s.get("strategy_id", "")).strip() in requested_set
+        ]
+        found_ids = {str(s.get("strategy_id", "")).strip() for s in selected_strategies}
+        missing_ids = [s for s in requested_ids if s not in found_ids]
+        if missing_ids:
+            tprint(
+                "WARNING: EPM_BASE_STRATEGY_IDS requested strategies not found after "
+                f"mask-param load: {missing_ids}"
+            )
+        if selected_strategies:
+            order = {sid: i for i, sid in enumerate(requested_ids)}
+            selected_strategies.sort(
+                key=lambda s: order.get(str(s.get("strategy_id", "")), 10**9)
+            )
+            cfg["strategies"] = selected_strategies
+            tprint(
+                "Base override: explicit strategy allowlist active after "
+                f"mask-param load; selected {len(selected_strategies)}/"
+                f"{len(requested_ids)} strategies"
+            )
+        else:
+            tprint(
+                "WARNING: EPM_BASE_STRATEGY_IDS matched no mask-loaded strategies; "
+                "falling back to configured strategy list"
+            )
 
     # TP/SL optimisation happens during label generation (see training.generate_label_datasets).
     # Check if labels already exist before refreshing to avoid unnecessary recomputation.
@@ -1849,10 +1886,25 @@ def run_train_meta(cfg, ts_override=None, store=None):
     cfg["meta_clf_top_frac"] = _meta_top_frac
     cfg["meta_move_top_frac"] = _meta_top_frac
     cfg["meta_trade_topx_values"] = [40]
-    cfg["meta_train_tbm_clf_head"] = False
+    _base_target_env = (
+        str(os.getenv("EPM_META_TRAIN_BASE_TARGET_CLF_HEAD", "1")).strip().lower()
+    )
+    cfg["meta_train_base_target_clf_head"] = _base_target_env not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+    _tbm_env = str(os.getenv("EPM_META_TRAIN_TBM_CLF_HEAD", "0")).strip().lower()
+    cfg["meta_train_tbm_clf_head"] = _tbm_env not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
     cfg["meta_train_early_invalidation_head"] = False
     _correctness_env = (
-        str(os.getenv("EPM_META_TRAIN_CORRECTNESS_CLF_HEAD", "1")).strip().lower()
+        str(os.getenv("EPM_META_TRAIN_CORRECTNESS_CLF_HEAD", "0")).strip().lower()
     )
     cfg["meta_train_correctness_clf_head"] = _correctness_env not in {
         "0",
@@ -1863,9 +1915,16 @@ def run_train_meta(cfg, ts_override=None, store=None):
     cfg["meta_model_backend"] = "ebm_on_lgbm_only"
     cfg["meta_training_pipeline_version"] = "legacy"
     cfg["meta_run_pre_risk_optimisation"] = False
+    _enabled_heads = []
+    if cfg["meta_train_base_target_clf_head"]:
+        _enabled_heads.append("base-target")
+    if cfg["meta_train_correctness_clf_head"]:
+        _enabled_heads.append("base-correctness")
+    if cfg["meta_train_tbm_clf_head"]:
+        _enabled_heads.append("TBM")
     _head_msg = (
-        "base-correctness classifier head only"
-        if cfg["meta_train_correctness_clf_head"]
+        ", ".join(_enabled_heads) + " classifier head(s)"
+        if _enabled_heads
         else "no classifier heads"
     )
     tprint(
@@ -1881,6 +1940,7 @@ def run_train_meta(cfg, ts_override=None, store=None):
             tprint(
                 f"WARNING: invalid EPM_META_HPO_TRIALS={_meta_hpo_trials_env!r}: {e}"
             )
+    _meta_strategy_ids_env = os.getenv("EPM_META_STRATEGY_IDS", "")
     _meta_max_strats_env = os.getenv("EPM_META_MAX_STRATEGY_IDS")
     if _meta_max_strats_env:
         try:
@@ -1945,6 +2005,42 @@ def run_train_meta(cfg, ts_override=None, store=None):
         tprint(f"Slice plan loading failed: {e}")
 
     _load_mask_params_by_mode(cfg)
+    if _meta_strategy_ids_env.strip():
+        from extreme_price_movements.strategy_registry import get_strategies
+
+        requested_ids = [
+            s.strip() for s in _meta_strategy_ids_env.split(",") if s.strip()
+        ]
+        requested_set = set(requested_ids)
+        all_strategies = get_strategies(cfg)
+        selected_strategies = [
+            s
+            for s in all_strategies
+            if str(s.get("strategy_id", "")).strip() in requested_set
+        ]
+        found_ids = {str(s.get("strategy_id", "")).strip() for s in selected_strategies}
+        missing_ids = [s for s in requested_ids if s not in found_ids]
+        if missing_ids:
+            tprint(
+                "WARNING: EPM_META_STRATEGY_IDS requested strategies not found after "
+                f"mask-param load: {missing_ids}"
+            )
+        if selected_strategies:
+            order = {sid: i for i, sid in enumerate(requested_ids)}
+            selected_strategies.sort(
+                key=lambda s: order.get(str(s.get("strategy_id", "")), 10**9)
+            )
+            cfg["strategies"] = selected_strategies
+            tprint(
+                "Meta override: explicit strategy allowlist active after "
+                f"mask-param load; selected {len(selected_strategies)}/"
+                f"{len(requested_ids)} strategies"
+            )
+        else:
+            tprint(
+                "WARNING: EPM_META_STRATEGY_IDS matched no mask-loaded strategies; "
+                "falling back to configured strategy list"
+            )
     _meta_max_strategy_ids = int(cfg.get("meta_max_strategy_ids", 0) or 0)
     if _meta_max_strategy_ids > 0:
         from extreme_price_movements.strategy_registry import get_strategies
@@ -1985,9 +2081,14 @@ def run_train_meta(cfg, ts_override=None, store=None):
         models_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "models")
         os.makedirs(models_dir, exist_ok=True)
         meta_state_path = os.path.join(models_dir, "model_state_meta.pkl")
+        tmp_meta_state_path = f"{meta_state_path}.tmp"
 
-        joblib.dump(result, meta_state_path)
-        tprint(f"Meta model state saved to {meta_state_path} using joblib")
+        joblib.dump(result, tmp_meta_state_path)
+        # Verify before replacing the last usable state. An interrupted joblib dump
+        # leaves a truncated pickle, which is worse than keeping the prior model.
+        joblib.load(tmp_meta_state_path)
+        os.replace(tmp_meta_state_path, meta_state_path)
+        tprint(f"Meta model state saved atomically to {meta_state_path} using joblib")
 
         # Free memory before moving on
         del result

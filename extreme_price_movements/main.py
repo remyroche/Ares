@@ -70,6 +70,14 @@ from extreme_price_movements.universe import (
 from extreme_price_movements.utils import Timer, tprint
 
 
+class SavedOOFProxy:
+    """Picklable placeholder; meta loading reads the real saved OOF parquet."""
+
+    oof_probs = np.asarray([0.5], dtype=np.float32)
+    detailed_metrics: dict[str, Any] = {}
+    best_model_name = None
+
+
 def reconcile_state(ex, state):
     tprint("Reconciling state...")
     return True
@@ -430,8 +438,6 @@ def _load_base_oof_symbols(data_root: str, run_id: str) -> list[str]:
                 continue
             seen.add(sym)
             symbols.append(sym)
-        if path == preferred and symbols:
-            break
 
     return sorted(symbols)
 
@@ -467,16 +473,18 @@ def _filter_meta_training_to_base_oof_symbols(
         if len(df_filtered) > 0:
             filtered[name] = df_filtered
             tprint(
-                f"Base OOF symbol filter: {name} {len(df)} -> {len(df_filtered)} rows"
+                f"Meta active-symbol filter: {name} {len(df)} -> {len(df_filtered)} rows"
             )
         else:
-            tprint(f"Base OOF symbol filter: {name} dropped (no matching symbols)")
+            tprint(f"Meta active-symbol filter: {name} dropped (no matching symbols)")
 
     for side_bundle in alpha_models.values():
         if not isinstance(side_bundle, dict):
             continue
         for strategy_id, conf in side_bundle.items():
             if not isinstance(conf, dict):
+                continue
+            if bool(conf.get("from_saved_oof_only", False)):
                 continue
             models_by_h = conf.get("models_by_h", {})
             if not isinstance(models_by_h, dict):
@@ -621,8 +629,12 @@ def train_daily_base(ts_sig, margin_symbols, cfg, store, ex):
         cfg["data_root"], "artifacts", run_id, "base_models_intermediate.pkl"
     )
     os.makedirs(os.path.dirname(intermediate_path), exist_ok=True)
-    with open(intermediate_path, "wb") as f:
-        _pkl.dump(trained_bundle, f)
+    tmp_intermediate_path = f"{intermediate_path}.tmp"
+    with open(tmp_intermediate_path, "wb") as f:
+        _pkl.dump(trained_bundle, f, protocol=_pkl.HIGHEST_PROTOCOL)
+    with open(tmp_intermediate_path, "rb") as f:
+        _pkl.load(f)
+    os.replace(tmp_intermediate_path, intermediate_path)
     tprint(f"Base models intermediate saved to {intermediate_path}")
 
     tprint("DAILY BASE TRAINING COMPLETE")
@@ -703,6 +715,82 @@ def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
         if isinstance(side_models, dict)
         for strategy_id in side_models.keys()
     }
+    _diag_by_key = dict(base_bundle.get("alpha_fit_diagnostics", {}) or {})
+
+    def _maybe_add_saved_oof_alpha(
+        strategy: dict[str, Any],
+    ) -> bool:
+        sid = str(strategy.get("strategy_id", "")).strip()
+        if not sid:
+            return False
+        side = "short" if str(strategy.get("trade_side", "")).lower() == "short" else "long"
+        if sid in (alpha_models.get(side) or {}):
+            return False
+        horizons = strategy_runtime_horizons(strategy, cfg)
+        if not horizons:
+            return False
+        h = int(horizons[0])
+        oof_path = os.path.join(
+            cfg["data_root"],
+            "artifacts",
+            run_id,
+            "oof",
+            f"oof_{sid}_H{h}.parquet",
+        )
+        if not os.path.exists(oof_path):
+            return False
+        diag = dict(_diag_by_key.get(f"{side}_{sid}_H{h}") or {})
+        try:
+            df_oof = pd.read_parquet(oof_path, columns=["oof_prob", "y_bin"])
+            yb = (pd.to_numeric(df_oof["y_bin"], errors="coerce").to_numpy(float) >= 0.5)
+            pp = pd.to_numeric(df_oof["oof_prob"], errors="coerce").to_numpy(float)
+            m = np.isfinite(pp)
+            yb = yb[m]
+            pp = pp[m]
+            base_rate = float(np.mean(yb)) if len(yb) else 0.0
+            if len(yb) and base_rate > 1e-6:
+                k30 = max(1, int(np.ceil(0.30 * len(yb))))
+                top30 = np.argsort(pp)[-k30:]
+                diag["en_lift30"] = float(np.mean(yb[top30]) / base_rate)
+            td = dict(diag.get("training_diagnostics") or {})
+            td["class_counts"] = {
+                "pos": int(np.sum(yb)),
+                "neg": int(len(yb) - np.sum(yb)),
+            }
+            td["n_eval"] = int(len(yb))
+            diag["training_diagnostics"] = td
+        except Exception as exc:
+            tprint(
+                f"Meta startup: saved-OOF alpha fallback for {side}_{sid}_H{h} "
+                f"could not compute gate metrics ({exc}); using diagnostics only."
+            )
+        if not np.isfinite(float(diag.get("en_lift30", np.nan))):
+            return False
+        alpha_models.setdefault(side, {})[sid] = {
+            "H": h,
+            "models_by_h": {h: {"model": SavedOOFProxy()}},
+            "alpha_diag": diag,
+            "from_saved_oof_only": True,
+        }
+        return True
+
+    if _cfg_strategy_ids:
+        _added_saved_oof = 0
+        for _strategy in _cfg_strategies or []:
+            if isinstance(_strategy, dict) and _maybe_add_saved_oof_alpha(_strategy):
+                _added_saved_oof += 1
+        if _added_saved_oof:
+            _alpha_strategy_ids = {
+                str(strategy_id)
+                for side_models in alpha_models.values()
+                if isinstance(side_models, dict)
+                for strategy_id in side_models.keys()
+            }
+            tprint(
+                "Meta training: synthesized "
+                f"{_added_saved_oof} alpha entries from saved OOF artifacts "
+                "for explicitly configured strategies."
+            )
     if not _cfg_strategy_ids or not (_cfg_strategy_ids & _alpha_strategy_ids):
         cfg["strategies"] = _strategies_from_alpha_models()
         tprint(
@@ -785,44 +873,49 @@ def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
     else:
         base_variant_models = base_bundle.get("base_variant_models", {})
 
-    base_oof_symbols = _load_base_oof_symbols(cfg["data_root"], run_id)
     _stage_view = cfg.get("_active_stage_view") or {}
     _stage_symbols = _stage_view.get("symbols") or None
-    if base_oof_symbols and _stage_symbols:
-        _stage_symbol_set = {str(sym) for sym in _stage_symbols if str(sym)}
-        _before = len(base_oof_symbols)
-        base_oof_symbols = [
-            str(sym) for sym in base_oof_symbols if str(sym) in _stage_symbol_set
-        ]
+    base_oof_symbols = _load_base_oof_symbols(cfg["data_root"], run_id)
+    if _stage_symbols:
+        meta_filter_symbols = sorted({str(sym) for sym in _stage_symbols if str(sym)})
         tprint(
-            f"Meta training: intersected base OOF symbol universe with active stage view "
-            f"({_before} -> {len(base_oof_symbols)} symbols)"
+            "Meta training: using active stage/universe symbol coverage "
+            f"({len(meta_filter_symbols)} symbols); saved OOF coverage "
+            f"available={len(base_oof_symbols)} symbols"
         )
+    else:
+        meta_filter_symbols = sorted({str(sym) for sym in base_oof_symbols if str(sym)})
+        if meta_filter_symbols:
+            tprint(
+                "Meta training: no active stage/universe symbols found; falling back to "
+                f"saved OOF symbol coverage ({len(meta_filter_symbols)} symbols)"
+            )
     _planned_max_assets = int(cfg.get("planned_max_assets", 0) or 0)
-    if base_oof_symbols and _planned_max_assets > 0:
-        _before = len(base_oof_symbols)
-        base_oof_symbols = sorted(str(sym) for sym in base_oof_symbols)[
+    if meta_filter_symbols and _planned_max_assets > 0:
+        _before = len(meta_filter_symbols)
+        meta_filter_symbols = sorted(str(sym) for sym in meta_filter_symbols)[
             :_planned_max_assets
         ]
-        if len(base_oof_symbols) < _before:
+        if len(meta_filter_symbols) < _before:
             tprint(
-                "Meta training: capped base OOF symbol universe "
-                f"({_before} -> {len(base_oof_symbols)} symbols) based on "
+                "Meta training: capped active symbol universe "
+                f"({_before} -> {len(meta_filter_symbols)} symbols) based on "
                 f"planned_max_assets={_planned_max_assets}"
             )
-    if base_oof_symbols:
+    if meta_filter_symbols:
         tprint(
-            f"Filtering meta training to {len(base_oof_symbols)} symbols with base-model OOF predictions"
+            f"Filtering meta training to {len(meta_filter_symbols)} active universe symbols"
         )
         datasets = _filter_meta_training_to_base_oof_symbols(
             datasets,
             alpha_models,
             base_bundle.get("base_variant_models", {}),
-            base_oof_symbols,
+            meta_filter_symbols,
         )
     else:
         tprint(
-            "WARNING: No base-model OOF symbol universe found; proceeding without symbol filtering"
+            "WARNING: No active universe or base-model OOF symbol coverage found; "
+            "proceeding without symbol filtering"
         )
 
     cfg["_feature_snapshot_ts"] = ts_sig

@@ -660,10 +660,22 @@ class ModelOrchestrator:
             feature_names = list(bucket_weights.keys())
             unavailable = sorted(set(feature_names) & LIVE_UNAVAILABLE_FEATURES)
             if unavailable:
-                raise ValueError(
-                    "Flattened ridge weights require live-unavailable fields: "
-                    f"{unavailable}"
+                fallback_size = self._policy_fallback_position_size(bucket_key)
+                if fallback_size > 0.0:
+                    tprint(
+                        "Ignoring flattened ridge weights for live inference; "
+                        f"they require target-derived fields: {unavailable}. "
+                        f"Using policy fallback sizing for {bucket_key}: "
+                        f"{fallback_size:.6g}"
+                    )
+                    return pd.Series(fallback_size, index=features.index), {
+                        "confidence": min(1.0, fallback_size)
+                    }
+                tprint(
+                    "Ignoring flattened ridge weights for live inference; "
+                    f"they require target-derived fields: {unavailable}"
                 )
+                return pd.Series(0.0, index=features.index), {"confidence": 0.0}
             X = (
                 features.reindex(columns=feature_names, fill_value=0.0)
                 .fillna(0.0)
@@ -973,23 +985,15 @@ class ModelOrchestrator:
         # =====================================================================
         meta_pred = self.predict_meta(meta_base, side, kind)
         if not isinstance(meta_pred, (pd.DataFrame, pd.Series)) or meta_pred.empty:
-            fallback_key = str(kind)
-            fallback_pred = alpha_preds.get(fallback_key)
-            if (
-                isinstance(fallback_pred, (pd.DataFrame, pd.Series))
-                and not fallback_pred.empty
-            ):
-                meta_pred = (
-                    fallback_pred
-                    if isinstance(fallback_pred, pd.Series)
-                    else fallback_pred.iloc[:, 0]
-                )
-                results["meta_pred_fallback"] = "alpha_only"
-            if not isinstance(meta_pred, (pd.DataFrame, pd.Series)) or meta_pred.empty:
-                results["action"] = "no_meta_prediction"
-                return results
+            results["action"] = "no_meta_prediction"
+            results["reason"] = "meta_prediction_missing_no_base_fallback"
+            return results
 
         meta_pred_val = float(meta_pred.iloc[0]) if len(meta_pred) > 0 else 0.0
+        if not np.isfinite(meta_pred_val):
+            results["action"] = "no_meta_prediction"
+            results["reason"] = "meta_prediction_non_finite_no_base_fallback"
+            return results
         results["meta_pred"] = meta_pred_val
 
         # Merge Meta Model with Base Model Predictions

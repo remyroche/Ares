@@ -25,10 +25,15 @@ CANDIDATE_BEST_PARAMS_CSV = REPORTS_DIR / "candidate_thresholds_best_params.csv"
 INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV = (
     REPORTS_DIR / "inference_candidate_mask_best_params.csv"
 )
+INFERENCE_CANDIDATE_MASK_BEST_PARAMS_PER_BUCKET_CSV = (
+    REPORTS_DIR / "inference_candidate_mask_best_params_per_bucket.csv"
+)
 TBM_BEST_PARAMS_CSV = REPORTS_DIR / "tbm_best_params.csv"
 TBM_BEST_PARAMS_PER_BUCKET_CSV = REPORTS_DIR / "tbm_best_params_per_bucket.csv"
 TBM_BEST_PARAMS_PER_CELL_CSV = REPORTS_DIR / "tbm_best_params_per_cell.csv"
-TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV = REPORTS_DIR / "tbm_best_params_per_side_horizon.csv"
+TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV = (
+    REPORTS_DIR / "tbm_best_params_per_side_horizon.csv"
+)
 TBM_GEOMETRY_GRID_CSV = REPORTS_DIR / "tbm_geometry_grid.csv"
 SAMPLE_WEIGHT_BEST_PARAMS_CSV = REPORTS_DIR / "sample_weight_best_params.csv"
 
@@ -149,10 +154,14 @@ def _read_best_params_csv(path: Path) -> Dict[str, Any]:
 
 def load_inference_candidate_mask_params_by_mode() -> Dict[str, Dict[str, Any]]:
     mode_to_path = {
-        "price_up_tf": REPORTS_DIR / "inference_candidate_mask_best_params_price_up_tf.csv",
-        "price_up_mr": REPORTS_DIR / "inference_candidate_mask_best_params_price_up_mr.csv",
-        "price_down_tf": REPORTS_DIR / "inference_candidate_mask_best_params_price_down_tf.csv",
-        "price_down_mr": REPORTS_DIR / "inference_candidate_mask_best_params_price_down_mr.csv",
+        "price_up_tf": REPORTS_DIR
+        / "inference_candidate_mask_best_params_price_up_tf.csv",
+        "price_up_mr": REPORTS_DIR
+        / "inference_candidate_mask_best_params_price_up_mr.csv",
+        "price_down_tf": REPORTS_DIR
+        / "inference_candidate_mask_best_params_price_down_tf.csv",
+        "price_down_mr": REPORTS_DIR
+        / "inference_candidate_mask_best_params_price_down_mr.csv",
     }
     out: Dict[str, Dict[str, Any]] = {}
     for mode, path in mode_to_path.items():
@@ -173,15 +182,15 @@ def load_inference_candidate_mask_params_per_bucket(
 
     By default this returns the top-2 rules per (side, horizon) group, ensuring
     diversity across long/short and different horizons (e.g., H3, H10).
-    
+
     Args:
         top_n: Number of top rules to load per (side, horizon) group (default: 2)
         ranking_metric: Metric to rank rules by (default: "score_for_best_params")
-                      Options: "score_for_best_params", "composite_score", 
+                      Options: "score_for_best_params", "composite_score",
                             "learnability_step_c_score", "stage2_score", "mask_oof_corr"
-        classification_filter: Filter by production_classification (e.g., "production", 
+        classification_filter: Filter by production_classification (e.g., "production",
                             "research", or None for all). Default None allows all.
-    
+
     Returns:
         List of strategy dicts, each with keys:
             - strategy_id: Safe identifier for the rule
@@ -193,64 +202,102 @@ def load_inference_candidate_mask_params_per_bucket(
     import os
     import pandas as pd
     import logging as _logging
-    
+
     _log = _logging.getLogger("params_store")
-    
-    candidate_paths: list[Path] = []
-    candidate_paths.extend(
-        Path(p)
-        for p in glob.glob(
-            str(Path("production_lgbm_outputs") / "run_*" / "final_rule_registry.csv")
-        )
-    )
-    candidate_paths.extend(
-        Path(p)
-        for p in glob.glob(str(Path("tmp") / "lgbm_*_run*" / "run_*" / "final_rule_registry.csv"))
-    )
 
     path = None
-    if candidate_paths:
-        candidate_paths.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-        for _cp in candidate_paths:
-            try:
-                if _cp.stat().st_size > 100:
-                    path = _cp
-                    break
-            except OSError:
-                continue
-    else:
-        path = Path("production_lgbm_outputs") / "combined_accepted_rule_registry.csv"
-        if not path.exists():
-            path = REPORTS_DIR / "lgbm_accepted_rule_registry.csv"
+    preferred_paths = [
+        INFERENCE_CANDIDATE_MASK_BEST_PARAMS_PER_BUCKET_CSV,
+        INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV,
+    ]
+    for candidate_path in preferred_paths:
+        try:
+            if candidate_path.exists() and candidate_path.stat().st_size > 100:
+                path = candidate_path
+                break
+        except OSError:
+            continue
+
+    candidate_paths: list[Path] = []
+    if path is None:
+        candidate_paths.extend(
+            Path(p)
+            for p in glob.glob(
+                str(
+                    Path("production_lgbm_outputs")
+                    / "run_*"
+                    / "final_rule_registry.csv"
+                )
+            )
+        )
+        candidate_paths.extend(
+            Path(p)
+            for p in glob.glob(
+                str(Path("tmp") / "lgbm_*_run*" / "run_*" / "final_rule_registry.csv")
+            )
+        )
+
+    if path is None:
+        if candidate_paths:
+            candidate_paths.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            for _cp in candidate_paths:
+                try:
+                    if _cp.stat().st_size > 100:
+                        path = _cp
+                        break
+                except OSError:
+                    continue
+        else:
+            path = (
+                Path("production_lgbm_outputs") / "combined_accepted_rule_registry.csv"
+            )
+            if not path.exists():
+                path = REPORTS_DIR / "lgbm_accepted_rule_registry.csv"
 
     if not path or not path.exists():
         return []
-    
+
     try:
         df = pd.read_csv(path)
     except pd.errors.EmptyDataError:
         return []
     if df.empty:
         return []
-    
+
     # Ensure required columns exist
     if "side" not in df.columns:
-        df["side"] = "long"
+        if "trade_side" in df.columns:
+            df["side"] = df["trade_side"].astype(str).str.lower()
+        else:
+            df["side"] = "long"
+    if "canonical_key" not in df.columns and "base_event_trigger" in df.columns:
+        df["canonical_key"] = df["base_event_trigger"].astype(str)
     if "source_horizon" not in df.columns:
         df["source_horizon"] = 100
-    
+
     # Apply classification filter if specified
     if classification_filter is not None and "production_classification" in df.columns:
-        df = df[df["production_classification"].astype(str).str.lower() == classification_filter.lower()]
-        _log.info(f"[params_store] Filtered to {len(df)} rules with classification='{classification_filter}'")
-    
+        df = df[
+            df["production_classification"].astype(str).str.lower()
+            == classification_filter.lower()
+        ]
+        _log.info(
+            f"[params_store] Filtered to {len(df)} rules with classification='{classification_filter}'"
+        )
+
     if df.empty:
-        _log.warning(f"[params_store] No rules match classification filter '{classification_filter}'")
+        _log.warning(
+            f"[params_store] No rules match classification filter '{classification_filter}'"
+        )
         return []
-    
+
     strategies = []
-    
+
     df_sorted = df
+    if ranking_metric not in df.columns and "ranking_score" in df.columns:
+        ranking_metric = "ranking_score"
+        _log.info("[params_store] ranking_metric fallback to 'ranking_score'")
+
     if ranking_metric not in df.columns:
         for _fallback in ("directional_mean_ret", "mean_net_ret", "mean_uplift"):
             if _fallback in df.columns:
@@ -265,8 +312,36 @@ def load_inference_candidate_mask_params_per_bucket(
                 f"using default ranking"
             )
     if ranking_metric in df.columns:
-        df_sorted = df.sort_values(by=ranking_metric, ascending=False)
-    
+        metric_values = pd.to_numeric(df[ranking_metric], errors="coerce")
+        if not bool(np.isfinite(metric_values.to_numpy()).any()):
+            _log.warning(
+                f"[params_store] ranking_metric '{ranking_metric}' in {path} "
+                "has no finite values; searching finite fallback metrics"
+            )
+            ranking_metric = "__missing__"
+        else:
+            df_sorted = df.assign(_ranking_metric_value=metric_values).sort_values(
+                by="_ranking_metric_value",
+                ascending=False,
+            )
+            df_sorted = df_sorted.drop(columns=["_ranking_metric_value"])
+
+    if ranking_metric not in df.columns:
+        for _fallback in ("directional_mean_ret", "mean_net_ret", "mean_uplift"):
+            if _fallback not in df.columns:
+                continue
+            metric_values = pd.to_numeric(df[_fallback], errors="coerce")
+            if not bool(np.isfinite(metric_values.to_numpy()).any()):
+                continue
+            ranking_metric = _fallback
+            _log.info(f"[params_store] ranking_metric fallback to '{ranking_metric}'")
+            df_sorted = df.assign(_ranking_metric_value=metric_values).sort_values(
+                by="_ranking_metric_value",
+                ascending=False,
+            )
+            df_sorted = df_sorted.drop(columns=["_ranking_metric_value"])
+            break
+
     # Group by (side, source_horizon) and take top_n from each group.
     # Within a group, apply a weak diversity penalty using IC-series overlap.
     grouped = df_sorted.groupby(["side", "source_horizon"], sort=False)
@@ -325,7 +400,9 @@ def load_inference_candidate_mask_params_per_bucket(
             best_base_score = -np.inf
 
             for idx, row in remaining.iterrows():
-                base_score = pd.to_numeric(row.get(ranking_metric, np.nan), errors="coerce")
+                base_score = pd.to_numeric(
+                    row.get(ranking_metric, np.nan), errors="coerce"
+                )
                 if not np.isfinite(base_score):
                     continue
                 normalized_base = float((float(base_score) - raw_min) / raw_span)
@@ -335,12 +412,9 @@ def load_inference_candidate_mask_params_per_bucket(
                     overlap = max(overlap, _ic_overlap(idx, selected_idx))
                 weak_factor = max(0.0, 1.0 - overlap_weight * overlap)
                 adjusted_score = normalized_base * weak_factor
-                if (
-                    adjusted_score > best_adjusted_score
-                    or (
-                        np.isclose(adjusted_score, best_adjusted_score)
-                        and float(base_score) > best_base_score
-                    )
+                if adjusted_score > best_adjusted_score or (
+                    np.isclose(adjusted_score, best_adjusted_score)
+                    and float(base_score) > best_base_score
                 ):
                     best_idx = idx
                     best_adjusted_score = adjusted_score
@@ -405,9 +479,8 @@ def load_inference_candidate_mask_params_per_bucket(
         f"[params_store] Loaded {len(strategies)} strategies from {path} "
         f"({len(grouped)} groups x top_{top_n}, ranked by {ranking_metric})"
     )
-    
-    return strategies
 
+    return strategies
 
 
 def load_tbm_geometry_grid() -> Dict[str, Any]:
@@ -530,7 +603,7 @@ def load_tbm_geometry_grid() -> Dict[str, Any]:
                 continue
             triplets: list[tuple[float, float, int]] = []
             for cell in cells:
-                for triplet in (cell.get("validated_triplets") or []):
+                for triplet in cell.get("validated_triplets") or []:
                     if triplet not in triplets:
                         triplets.append(triplet)
             tp_abs_vals = [
@@ -586,9 +659,9 @@ def save_best_params_csv(
 def load_tbm_best_params_per_bucket() -> Dict[str, Dict[str, Any]]:
     """Load per-strategy best TBM params from tbm_best_params_per_bucket.csv.
 
-    Returns a dict keyed by strategy_id (e.g. 'long_tf', 'long_mr', 
-    'short_tf', 'short_mr'). Each value is a dict of barrier params 
-    ready for injection into cfg. Falls back to empty dict if the file 
+    Returns a dict keyed by strategy_id (e.g. 'long_tf', 'long_mr',
+    'short_tf', 'short_mr'). Each value is a dict of barrier params
+    ready for injection into cfg. Falls back to empty dict if the file
     does not exist.
     """
     import pandas as pd
@@ -667,7 +740,9 @@ def load_tbm_all_params_per_cell() -> Dict[str, list[Dict[str, Any]]]:
             df = df.sort_values(["cell_key", "rank_in_cell"], ascending=[True, True])
         result: Dict[str, list[Dict[str, Any]]] = {}
         for _, row in df.iterrows():
-            cell = str(row.get("cell_key", "")) or str(row.get("strategy_id", row.get("bucket", "")))
+            cell = str(row.get("cell_key", "")) or str(
+                row.get("strategy_id", row.get("bucket", ""))
+            )
             if not cell:
                 continue
             result.setdefault(cell, []).append(

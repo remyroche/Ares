@@ -621,6 +621,50 @@ def _compute_per_symbol_features(
     range_12h_pct = (h_12 - l_12) / (c + 1e-12)
     feats["range_12h_pct"] = range_12h_pct.astype(np.float32)
 
+    # LGBM deployment masks are saved as raw-feature predicates. Keep this
+    # selector-side subset aligned with the feature names used in those masks.
+    h_24 = h.rolling(24, min_periods=1).max()
+    l_24 = l.rolling(24, min_periods=1).min()
+    range_24h_pct = (h_24 - l_24) / (c + 1e-12)
+    feats["range_24h_pct"] = range_24h_pct.astype(np.float32)
+
+    prev_low_24 = l_24.shift(1)
+    dist_prior_day_low = (c - prev_low_24) / (c + 1e-12)
+    feats["dist_prior_day_low"] = dist_prior_day_low.fillna(0.0).astype(np.float32)
+
+    tr_components = [
+        (h - l).abs(),
+        (h - c.shift(1)).abs(),
+        (l - c.shift(1)).abs(),
+    ]
+    tr = pd.concat(tr_components, axis=0).groupby(level=0).max()
+    atr = tr.rolling(14, min_periods=1).mean().replace(0.0, np.nan)
+    ema_fast = c.ewm(span=10, adjust=False, min_periods=1).mean()
+    dist_ema_fast = (c - ema_fast) / (atr + 1e-12)
+    feats["dist_ema_fast"] = (
+        dist_ema_fast.replace([np.inf, -np.inf], np.nan).fillna(0.0).astype(np.float32)
+    )
+
+    delta = c.diff()
+    gain = delta.clip(lower=0.0).rolling(14, min_periods=1).mean()
+    loss = (-delta.clip(upper=0.0)).rolling(14, min_periods=1).mean()
+    rs = gain / (loss + 1e-12)
+    rsi = 100.0 - (100.0 / (1.0 + rs))
+    feats["rsi_slope"] = rsi.diff(3).fillna(0.0).astype(np.float32)
+
+    rolling_notional = (c * v).rolling(48, min_periods=1).sum()
+    rolling_volume = v.rolling(48, min_periods=1).sum()
+    vwap_48 = rolling_notional / (rolling_volume + 1e-12)
+    session_stdev_48 = c.rolling(48, min_periods=2).std()
+    loc_vwap_dev_z_48 = (c - vwap_48) / (
+        np.maximum(session_stdev_48, atr * 0.5) + 1e-12
+    )
+    feats["loc_vwap_dev_z_48"] = (
+        loc_vwap_dev_z_48.replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+        .astype(np.float32)
+    )
+
     # Compute volatility (24-hour rolling std of returns)
     rv_24h = ret1h.rolling(24).std()
 
@@ -676,6 +720,308 @@ def _zero_frame_like_panel(
     return pd.DataFrame(0.0, index=close.index, columns=valid_syms, dtype=np.float32)
 
 
+def _rolling_zscore_frame(df: pd.DataFrame, window: int) -> pd.DataFrame:
+    values = df.astype(np.float32)
+    mean = values.rolling(window, min_periods=max(4, min(window, 24))).mean()
+    std = values.rolling(window, min_periods=max(4, min(window, 24))).std(ddof=0)
+    return (
+        ((values - mean) / (std + 1e-6))
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+        .astype(np.float32)
+    )
+
+
+def _aligned_orderbook_panel_field(
+    panel: Dict[str, pd.DataFrame],
+    field_name: str,
+    index: pd.Index,
+    columns: List[str],
+    shift_bars: int,
+) -> Optional[pd.DataFrame]:
+    frame = panel.get(f"orderbook_{field_name}")
+    if not isinstance(frame, pd.DataFrame) or frame.empty:
+        return None
+    return (
+        frame.reindex(index=index, columns=columns)
+        .ffill()
+        .shift(max(int(shift_bars), 0))
+        .astype(np.float32)
+    )
+
+
+def _materialize_live_orderbook_summary_features(
+    feats: Dict[str, pd.DataFrame],
+    panel: Dict[str, pd.DataFrame],
+    basket_syms: List[str],
+    required_feature_keys: Set[str],
+    cfg: Optional[Dict[str, Any]] = None,
+) -> Dict[str, pd.DataFrame]:
+    """Compute live orderbook proxy features from saved hourly summary panels."""
+    if not any(k.startswith(("ob_", "obw_")) for k in required_feature_keys):
+        return feats
+
+    zero_frame = _zero_frame_like_panel(panel, basket_syms)
+    close = panel.get("close")
+    volume = panel.get("volume")
+    if (
+        zero_frame is None
+        or not isinstance(close, pd.DataFrame)
+        or close.empty
+        or not isinstance(volume, pd.DataFrame)
+        or volume.empty
+    ):
+        return feats
+
+    out = dict(feats)
+    idx = zero_frame.index
+    cols = list(zero_frame.columns)
+    shift_bars = int((cfg or {}).get("microstructure_shift_bars", 1))
+    eps = 1e-12
+
+    best_bid = _aligned_orderbook_panel_field(panel, "best_bid", idx, cols, shift_bars)
+    best_ask = _aligned_orderbook_panel_field(panel, "best_ask", idx, cols, shift_bars)
+    mid = _aligned_orderbook_panel_field(panel, "mid", idx, cols, shift_bars)
+    bid_qty_1 = _aligned_orderbook_panel_field(
+        panel, "bid_qty_1", idx, cols, shift_bars
+    )
+    ask_qty_1 = _aligned_orderbook_panel_field(
+        panel, "ask_qty_1", idx, cols, shift_bars
+    )
+    bid_qty_l10 = _aligned_orderbook_panel_field(
+        panel, "cum_bid_qty_l10", idx, cols, shift_bars
+    )
+    ask_qty_l10 = _aligned_orderbook_panel_field(
+        panel, "cum_ask_qty_l10", idx, cols, shift_bars
+    )
+    bid_qty_l20 = _aligned_orderbook_panel_field(
+        panel, "cum_bid_qty_l20", idx, cols, shift_bars
+    )
+    ask_qty_l20 = _aligned_orderbook_panel_field(
+        panel, "cum_ask_qty_l20", idx, cols, shift_bars
+    )
+
+    if best_bid is None or best_ask is None:
+        return feats
+    if mid is None:
+        mid = ((best_bid + best_ask) * 0.5).astype(np.float32)
+
+    close_aligned = close.reindex(index=idx, columns=cols).astype(np.float32)
+    volume_aligned = volume.reindex(index=idx, columns=cols).astype(np.float32)
+    available = (best_bid.notna() & best_ask.notna() & mid.notna()).astype(np.float32)
+
+    def put(name: str, value: pd.DataFrame) -> None:
+        if name in required_feature_keys or name in out:
+            out[name] = (
+                value.reindex(index=idx, columns=cols)
+                .replace([np.inf, -np.inf], np.nan)
+                .fillna(0.0)
+                .astype(np.float32)
+            )
+
+    spread_bps = (((best_ask - best_bid) / (mid.abs() + eps)) * 1e4).clip(0, 1000)
+    put("ob_available", available)
+    put("ob_stale_flag", 1.0 - available)
+    put("ob_update_gap_flag", 1.0 - available)
+    put("ob_snapshot_age_sec", (1.0 - available) * 3600.0)
+    put("ob_spread_bps", spread_bps)
+    put("ob_spread_z_24h", _rolling_zscore_frame(spread_bps, 24))
+    mid_close_gap = (((mid - close_aligned) / (close_aligned.abs() + eps)) * 1e4).clip(
+        -1000, 1000
+    )
+    put("ob_mid_close_dislocation_bps", mid_close_gap)
+    put("ob_mid_vs_close_bps", mid_close_gap)
+
+    if bid_qty_1 is not None and ask_qty_1 is not None:
+        l1_imb = ((bid_qty_1 - ask_qty_1) / (bid_qty_1 + ask_qty_1 + eps)).clip(-1, 1)
+        microprice = (best_ask * bid_qty_1 + best_bid * ask_qty_1) / (
+            bid_qty_1 + ask_qty_1 + eps
+        )
+        microprice_bps = (((microprice - mid) / (mid.abs() + eps)) * 1e4).clip(
+            -1000, 1000
+        )
+        put("ob_l1_imbalance", l1_imb)
+        put("ob_imb_l1", l1_imb)
+        put("ob_microprice_premium_bps", microprice_bps)
+        put("ob_microprice_dev_bps", microprice_bps)
+        top_liq = (mid * (bid_qty_1 + ask_qty_1)).clip(lower=0.0)
+        put("ob_top_liquidity_usd", np.log1p(top_liq))
+
+    l10_imb = None
+    if bid_qty_l10 is not None and ask_qty_l10 is not None:
+        l10_imb = (
+            (bid_qty_l10 - ask_qty_l10) / (bid_qty_l10 + ask_qty_l10 + eps)
+        ).clip(-1, 1)
+        depth_l10 = (mid * (bid_qty_l10 + ask_qty_l10)).clip(lower=0.0)
+        put("ob_l10_imbalance", l10_imb)
+        put("ob_imb_l10", l10_imb)
+        put("ob_wimb_l10", l10_imb)
+        put("ob_depth_usd_l10", np.log1p(depth_l10))
+        put("ob_depth_usd_l10_z", _rolling_zscore_frame(np.log1p(depth_l10), 24 * 7))
+
+    l20_imb = None
+    depth_l20 = None
+    if bid_qty_l20 is not None and ask_qty_l20 is not None:
+        l20_imb = (
+            (bid_qty_l20 - ask_qty_l20) / (bid_qty_l20 + ask_qty_l20 + eps)
+        ).clip(-1, 1)
+        depth_l20 = (mid * (bid_qty_l20 + ask_qty_l20)).clip(lower=0.0)
+        put("ob_l20_imbalance", l20_imb)
+        put("ob_imb_l20", l20_imb)
+        put("ob_wimb_l20", l20_imb)
+        put("ob_wall_imb_l20", l20_imb)
+        put("ob_depth_usd_l20", np.log1p(depth_l20))
+        depth_l20_z = _rolling_zscore_frame(np.log1p(depth_l20), 24 * 7)
+        put("ob_depth_usd_l20_z", depth_l20_z)
+        put("ob_depth_usd_z_24h", depth_l20_z)
+        if bid_qty_1 is not None:
+            put("ob_bid_depth_decay_l20", (bid_qty_1 / (bid_qty_l20 + eps)).clip(0, 1))
+        if ask_qty_1 is not None:
+            put("ob_ask_depth_decay_l20", (ask_qty_1 / (ask_qty_l20 + eps)).clip(0, 1))
+        if bid_qty_1 is not None and ask_qty_1 is not None:
+            top_depth = mid * (bid_qty_1 + ask_qty_1)
+            put("ob_depth_ratio_l1_l20", (top_depth / (depth_l20 + eps)).clip(0, 1))
+        if l10_imb is not None:
+            put("ob_flow_vs_book_l10", (-l10_imb).clip(-2, 2))
+            put("ob_imb_near_far_delta", (l10_imb - l20_imb).clip(-2, 2))
+        put("ob_flow_vs_book_l20", (-l20_imb).clip(-2, 2))
+        put("ob_abs_flow_vs_book_l20", l20_imb.abs().clip(0, 2))
+        put(
+            "ob_book_pressure_l10",
+            (l10_imb if l10_imb is not None else l20_imb) * spread_bps,
+        )
+        put("ob_book_absorption_score", (-l20_imb.abs()).clip(-2, 2))
+        put(
+            "ob_liquidity_shock_z",
+            _rolling_zscore_frame(depth_l20.diff().fillna(0.0), 24 * 7),
+        )
+
+    trade_count = _aligned_orderbook_panel_field(
+        panel, "trade_count_1h", idx, cols, shift_bars
+    )
+    buy_qty = _aligned_orderbook_panel_field(panel, "buy_qty_1h", idx, cols, shift_bars)
+    sell_qty = _aligned_orderbook_panel_field(
+        panel, "sell_qty_1h", idx, cols, shift_bars
+    )
+    notional = _aligned_orderbook_panel_field(
+        panel, "notional_1h", idx, cols, shift_bars
+    )
+    buy_notional = _aligned_orderbook_panel_field(
+        panel, "buy_notional_1h", idx, cols, shift_bars
+    )
+    sell_notional = _aligned_orderbook_panel_field(
+        panel, "sell_notional_1h", idx, cols, shift_bars
+    )
+    vwap = _aligned_orderbook_panel_field(panel, "vwap_1h", idx, cols, shift_bars)
+    mean_trade_qty = _aligned_orderbook_panel_field(
+        panel, "mean_trade_qty_1h", idx, cols, shift_bars
+    )
+    signed_flow = _aligned_orderbook_panel_field(
+        panel, "signed_flow_imbalance_1h", idx, cols, shift_bars
+    )
+
+    if trade_count is not None:
+        put(
+            "ob_trade_count_z_24h",
+            _rolling_zscore_frame(np.log1p(trade_count.clip(lower=0.0)), 24 * 7),
+        )
+    if notional is not None:
+        put(
+            "ob_notional_z_24h",
+            _rolling_zscore_frame(np.log1p(notional.clip(lower=0.0)), 24 * 7),
+        )
+        if depth_l20 is not None:
+            notional_to_depth = (notional / (depth_l20 + eps)).clip(0, 100)
+            put("ob_notional_to_depth_l20", notional_to_depth)
+            if signed_flow is not None:
+                put(
+                    "ob_flow_toxicity_1h",
+                    (signed_flow.abs() * notional_to_depth).clip(0, 100),
+                )
+    if buy_notional is not None:
+        put(
+            "ob_buy_notional_z_24h",
+            _rolling_zscore_frame(np.log1p(buy_notional.clip(lower=0.0)), 24 * 7),
+        )
+    if sell_notional is not None:
+        put(
+            "ob_sell_notional_z_24h",
+            _rolling_zscore_frame(np.log1p(sell_notional.clip(lower=0.0)), 24 * 7),
+        )
+    if buy_notional is not None and sell_notional is not None:
+        flow_notional_imb = (
+            (buy_notional - sell_notional) / (buy_notional + sell_notional + eps)
+        ).clip(-1, 1)
+        put("ob_flow_notional_imbalance_1h", flow_notional_imb)
+        put(
+            "ob_flow_notional_skew_z_24h",
+            _rolling_zscore_frame(buy_notional - sell_notional, 24 * 7),
+        )
+    if buy_qty is not None and sell_qty is not None:
+        flow_qty_imb = ((buy_qty - sell_qty) / (buy_qty + sell_qty + eps)).clip(-1, 1)
+        put("ob_flow_qty_imbalance_1h", flow_qty_imb)
+    if signed_flow is not None:
+        put("ob_trade_flow_imbalance_1h", signed_flow.clip(-1, 1))
+    if vwap is not None:
+        vwap_gap = (((vwap - mid) / (mid.abs() + eps)) * 1e4).clip(-1000, 1000)
+        put("ob_vwap_mid_gap_bps", vwap_gap)
+        if notional is not None and depth_l20 is not None:
+            kyle = (vwap_gap.abs() / ((notional / (depth_l20 + eps)).abs() + eps)).clip(
+                0, 1000
+            )
+            put("ob_kyle_lambda_1h", kyle)
+    if mean_trade_qty is not None:
+        put(
+            "ob_mean_trade_qty_z_24h",
+            _rolling_zscore_frame(np.log1p(mean_trade_qty.clip(lower=0.0)), 24 * 7),
+        )
+        if bid_qty_1 is not None and ask_qty_1 is not None:
+            put(
+                "ob_trade_size_to_l1_depth",
+                (mean_trade_qty / (bid_qty_1 + ask_qty_1 + eps)).clip(0, 100),
+            )
+
+    if l20_imb is not None:
+        depth_proxy = out.get("ob_depth_usd_l20_z", zero_frame)
+        bid_wall = l20_imb.clip(lower=0.0).abs() * (depth_proxy.abs() + 1.0)
+        ask_wall = (-l20_imb).clip(lower=0.0).abs() * (depth_proxy.abs() + 1.0)
+        for band in ("r005", "r010", "r020", "r030", "a05", "a10", "a20", "a30"):
+            put(f"obw_wall_skew_book_{band}", l20_imb)
+            put(f"obw_wall_skew_vol_{band}", (l20_imb * depth_proxy).clip(-6, 6))
+            put(
+                f"obw_wall_pressure_skew_{band}",
+                (l20_imb * (spread_bps + 1.0)).clip(-100, 100),
+            )
+            put(f"obw_band_depth_skew_vol_{band}", (l20_imb * depth_proxy).clip(-6, 6))
+            put(f"obw_wall_concentration_skew_{band}", l20_imb.abs().clip(0, 1))
+            put(f"obw_blocking_wall_to_vol_{band}", ask_wall)
+            put(f"obw_support_wall_to_vol_{band}", bid_wall)
+            put(
+                f"obw_blocking_minus_support_wall_{band}",
+                ((ask_wall - bid_wall) / (ask_wall + bid_wall + eps)).clip(-1, 1),
+            )
+            put(f"obw_blocking_wall_pressure_{band}", ask_wall * (spread_bps + 1.0))
+            put(f"obw_blocking_wall_distance_{band}", (spread_bps / 100.0).clip(0, 1))
+            put(f"obw_path_depth_to_target_{band}", ask_wall)
+        put("obw_nearest_bid_wall_to_vol", bid_wall)
+        put("obw_nearest_ask_wall_to_vol", ask_wall)
+        put(
+            "obw_nearest_wall_skew_vol",
+            ((bid_wall - ask_wall) / (bid_wall + ask_wall + eps)).clip(-1, 1),
+        )
+        put("obw_nearest_wall_distance_skew", (spread_bps / 100.0).clip(0, 1))
+
+    produced = sorted(
+        k for k in required_feature_keys if k in out and k.startswith(("ob_", "obw_"))
+    )
+    if produced:
+        tprint(
+            "Materialized live orderbook summary features from hourly panels: "
+            f"{len(produced)} required keys available"
+        )
+    return out
+
+
 def _synthesize_live_safe_feature_keys(
     feats: Dict[str, pd.DataFrame],
     panel: Dict[str, pd.DataFrame],
@@ -687,6 +1033,12 @@ def _synthesize_live_safe_feature_keys(
         return feats
 
     required = set(required_feature_keys)
+    feats = _materialize_live_orderbook_summary_features(
+        feats,
+        panel,
+        basket_syms,
+        required,
+    )
     missing = sorted(
         key for key in ({"p_exh_lag1", "retest_accept"} & required) if key not in feats
     )
@@ -700,8 +1052,56 @@ def _synthesize_live_safe_feature_keys(
         for key in required
         if key not in feats and re.fullmatch(r"rolling30d\([^)]+\)", key)
     )
-    if not missing and not calendar_missing and not rolling_missing:
-        return feats
+    # Several historical orderbook features were trained from richer L2/aggtrade
+    # data. Live inference currently has hourly top-of-book plus cumulative-depth
+    # summaries, so synthesize aliases where possible and neutral zero-valued
+    # columns for flow-only fields that cannot be reconstructed causally.
+    orderbook_aliases = {
+        "ob_l1_imbalance": "ob_imb_l1",
+        "ob_l10_imbalance": "ob_imb_l10",
+        "ob_l20_imbalance": "ob_imb_l20",
+        "ob_microprice_premium_bps": "ob_microprice_dev_bps",
+        "ob_mid_vs_close_bps": "ob_mid_close_dislocation_bps",
+    }
+    orderbook_zero_fallbacks = {
+        "ob_abs_flow_vs_book_l20",
+        "ob_available",
+        "ob_book_absorption_score",
+        "ob_buy_notional_z_24h",
+        "ob_flow_notional_imbalance_1h",
+        "ob_flow_notional_skew_z_24h",
+        "ob_flow_qty_imbalance_1h",
+        "ob_flow_toxicity_1h",
+        "ob_flow_vs_book_l10",
+        "ob_flow_vs_book_l20",
+        "ob_kyle_lambda_1h",
+        "ob_mean_trade_qty_z_24h",
+        "ob_notional_to_depth_l20",
+        "ob_notional_z_24h",
+        "ob_sell_notional_z_24h",
+        "ob_trade_count_z_24h",
+        "ob_trade_flow_imbalance_1h",
+        "ob_trade_size_to_l1_depth",
+        "ob_vwap_mid_gap_bps",
+    }
+    orderbook_prefix_zero_missing = sorted(
+        key for key in required if key not in feats and key.startswith("obw_")
+    )
+    orderbook_alias_missing = sorted(
+        key for key in orderbook_aliases if key in required and key not in feats
+    )
+    orderbook_zero_missing = sorted(
+        key for key in (orderbook_zero_fallbacks & required) if key not in feats
+    )
+    if (
+        not missing
+        and not calendar_missing
+        and not rolling_missing
+        and not orderbook_alias_missing
+        and not orderbook_zero_missing
+        and not orderbook_prefix_zero_missing
+    ):
+        return _ensure_required_symbol_columns(feats, panel, basket_syms, required)
 
     zero_frame = _zero_frame_like_panel(panel, basket_syms)
     if zero_frame is None:
@@ -742,10 +1142,75 @@ def _synthesize_live_safe_feature_keys(
             )
     for key in missing:
         out[key] = zero_frame.copy()
+    for key in orderbook_alias_missing:
+        source = orderbook_aliases[key]
+        source_df = out.get(source)
+        if isinstance(source_df, pd.DataFrame) and not source_df.empty:
+            out[key] = (
+                source_df.reindex(
+                    index=zero_frame.index,
+                    columns=zero_frame.columns,
+                )
+                .fillna(0.0)
+                .astype(np.float32)
+            )
+        else:
+            out[key] = zero_frame.copy()
+    for key in orderbook_zero_missing + orderbook_prefix_zero_missing:
+        if key == "ob_available":
+            availability = zero_frame.copy()
+            for source in ("orderbook_mid", "orderbook_best_bid", "orderbook_best_ask"):
+                source_df = panel.get(source)
+                if isinstance(source_df, pd.DataFrame) and not source_df.empty:
+                    aligned = source_df.reindex(
+                        index=zero_frame.index,
+                        columns=zero_frame.columns,
+                    )
+                    availability = availability.mask(
+                        aligned.notna(),
+                        1.0,
+                    )
+            out[key] = availability.fillna(0.0).astype(np.float32)
+        else:
+            out[key] = zero_frame.copy()
+    out = _ensure_required_symbol_columns(out, panel, basket_syms, required)
     tprint(
         "Synthesized live-safe training fallback features for inference: "
-        f"{missing + calendar_missing + rolling_missing}"
+        f"{missing + calendar_missing + rolling_missing + orderbook_alias_missing + orderbook_zero_missing + orderbook_prefix_zero_missing}"
     )
+    return out
+
+
+def _ensure_required_symbol_columns(
+    feats: Dict[str, pd.DataFrame],
+    panel: Dict[str, pd.DataFrame],
+    basket_syms: List[str],
+    required_feature_keys: Set[str],
+) -> Dict[str, pd.DataFrame]:
+    """Add neutral columns for live symbols absent from cached feature frames."""
+    zero_frame = _zero_frame_like_panel(panel, basket_syms)
+    if zero_frame is None:
+        return feats
+    out = dict(feats)
+    added: Dict[str, int] = {}
+    for key in required_feature_keys:
+        value = out.get(key)
+        if not isinstance(value, pd.DataFrame) or value.empty:
+            continue
+        missing_cols = [sym for sym in zero_frame.columns if sym not in value.columns]
+        if not missing_cols:
+            continue
+        aligned = value.reindex(index=zero_frame.index)
+        for sym in missing_cols:
+            aligned[sym] = 0.0
+        out[key] = aligned.astype(np.float32, copy=False)
+        added[key] = len(missing_cols)
+    if added:
+        sample = dict(list(sorted(added.items()))[:10])
+        tprint(
+            "Added neutral live symbol columns for required inference features: "
+            f"{sample}"
+        )
     return out
 
 

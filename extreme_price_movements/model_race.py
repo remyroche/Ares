@@ -1569,6 +1569,18 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         if hasattr(self, "platt_calibrator_") and self.platt_calibrator_ is not None:
             p_cal = self.platt_calibrator_.predict_proba(p_cal.reshape(-1, 1))[:, 1]
 
+        if (
+            len(p_cal) > 1
+            and float(np.nanstd(p_cal)) < 1e-10
+            and float(np.nanstd(p_corr)) > 1e-6
+        ):
+            tprint(
+                "ModelRace: calibrated predictions collapsed to a constant on "
+                "live/inference batch; using bias-corrected raw scores to "
+                "preserve cross-symbol ranking."
+            )
+            p_cal = p_corr
+
         p_cal = safe_clip_proba(p_cal, eps=1e-6)
         probs = np.column_stack([1.0 - p_cal, p_cal])
         return np.asarray(probs, dtype=np.float64)

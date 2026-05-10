@@ -103,6 +103,77 @@ def _strategy_side(row: Dict[str, Any]) -> str:
     return "unknown"
 
 
+def _load_lgbm_mask_contracts_for_deployment() -> Dict[str, Dict[str, Any]]:
+    """Load LGBM rule-mask contracts so deployment is independent of registry discovery."""
+    try:
+        from extreme_price_movements.offline_optimisers.params_store import (
+            load_inference_candidate_mask_params_per_bucket,
+        )
+    except Exception as exc:
+        tprint(f"[deployment] could not import LGBM mask contract loader: {exc}")
+        return {}
+
+    try:
+        rows = load_inference_candidate_mask_params_per_bucket(
+            top_n=99,
+            ranking_metric="score_for_best_params",
+        )
+    except Exception as exc:
+        tprint(f"[deployment] could not load LGBM mask contracts: {exc}")
+        return {}
+
+    contracts: Dict[str, Dict[str, Any]] = {}
+    keep_keys = {
+        "strategy_id",
+        "trade_side",
+        "side",
+        "base_event_trigger",
+        "canonical_key",
+        "mask_params",
+        "source_target",
+        "source_horizon",
+        "move_bucket",
+        "candidate_bucket",
+        "ranking_metric",
+        "ranking_score",
+        "ranking_score_norm",
+        "adjusted_ranking_score",
+    }
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        sid = str(row.get("strategy_id", "") or "")
+        if not sid:
+            continue
+        contract = {k: row.get(k) for k in keep_keys if k in row}
+        mask_params = dict(contract.get("mask_params", {}) or {})
+        canonical_key = str(
+            contract.get("base_event_trigger")
+            or contract.get("canonical_key")
+            or mask_params.get("canonical_key")
+            or ""
+        )
+        if canonical_key:
+            contract["base_event_trigger"] = canonical_key
+            contract["canonical_key"] = canonical_key
+            mask_params.setdefault("canonical_key", canonical_key)
+        contract["mask_params"] = mask_params
+
+        aliases = {sid, strategy_core_id(sid)}
+        side = str(row.get("trade_side", row.get("side", "")) or "").lower()
+        core = strategy_core_id(sid)
+        if side in {"long", "short"} and core:
+            aliases.add(f"{side}_{core}")
+        for alias in aliases:
+            if alias:
+                contracts[str(alias)] = dict(contract)
+    tprint(
+        "[deployment] loaded LGBM mask contracts for strategy_for_inference: "
+        f"rows={len(rows)} aliases={len(contracts)}"
+    )
+    return contracts
+
+
 def _compute_strategy_D(row: Dict[str, Any]) -> float:
     pf = float(row.get("profit_factor", float("nan")))
     stability = float(row.get("stability", float("nan")))
@@ -439,6 +510,7 @@ def build_strategy_for_inference_payload(
 ) -> Dict[str, Any]:
     """Select deployable strategies and persist the live inference contract."""
     enriched: List[Dict[str, Any]] = []
+    lgbm_mask_contracts = _load_lgbm_mask_contracts_for_deployment()
     tolerance = 1e-6
     for row in strategy_rows:
         if not isinstance(row, dict):
@@ -452,6 +524,18 @@ def build_strategy_for_inference_payload(
         side = _strategy_side(row)
         enriched_row = dict(row)
         enriched_row["side"] = side
+        sid = str(row.get("strategy_id", "") or "")
+        lgbm_mask_contract = (
+            lgbm_mask_contracts.get(sid)
+            or lgbm_mask_contracts.get(strategy_core_id(sid))
+            or {}
+        )
+        enriched_row["lgbm_regime_mask"] = lgbm_mask_contract
+        enriched_row["regime_mask_source"] = (
+            "embedded_lgbm_final_rule_registry"
+            if lgbm_mask_contract
+            else "missing_lgbm_mask_contract"
+        )
         enriched_row["avg_net_pnl_per_trade"] = float(avg_net_pnl)
         enriched_row["selection_rank"] = float(rank)
         enriched_row.update(components)
@@ -579,6 +663,10 @@ def build_strategy_for_inference_payload(
                     str(row.get("strategy_id", "") or "")
                 ),
                 "strategy_for_inference": row.get("strategy_id", ""),
+                "lgbm_regime_mask": row.get("lgbm_regime_mask", {}),
+                "regime_mask_source": row.get(
+                    "regime_mask_source", "missing_lgbm_mask_contract"
+                ),
                 "meta_oof_available": bool(row.get("meta_oof_available", True)),
                 "base_oof_available": bool(row.get("base_oof_available", True)),
                 "policy_replay_source": str(
@@ -4911,7 +4999,9 @@ def run_policy_optimisation(
                     if "capital_protect_mfe_mult" in p:
                         active_params["cap_mfe_mult"] = p["capital_protect_mfe_mult"]
                     if "capital_protect_regression_frac" in p:
-                        active_params["cap_reg_frac"] = p["capital_protect_regression_frac"]
+                        active_params["cap_reg_frac"] = p[
+                            "capital_protect_regression_frac"
+                        ]
                     if "multiplier_band_min" in p:
                         active_params["mult_min"] = p["multiplier_band_min"]
                     if "multiplier_band_max" in p:

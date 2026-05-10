@@ -1652,25 +1652,23 @@ def build_consumer_slice_plan(
 
         elif consumer_role == "policy_optimiser":
             n_test = len(of.test_idx)
-            n_policy = max(1, int(n_test * config.policy_optimiser_holdout_frac))
-            policy_idx = of.test_idx[-n_policy:] if n_policy <= n_test else of.test_idx
+            policy_idx = of.test_idx
             add(
-                "predict_policy_holdout",
+                "predict_policy_oos",
                 of.train_idx,
                 policy_idx,
                 None,
                 "full_outer_train",
-                "policy_holdout_tail",
+                "outer_test",
                 of.metadata.get("train_window_start"),
                 of.metadata.get("train_window_end"),
-                (
-                    of.metadata.get("test_window_end")
-                    if pd.notna(of.metadata.get("test_window_end"))
-                    else of.metadata.get("test_window_start")
-                ),
+                of.metadata.get("test_window_start"),
                 of.metadata.get("test_window_end"),
                 extra={
-                    "policy_optimiser_holdout_frac": config.policy_optimiser_holdout_frac
+                    "policy_optimiser_predict_scope": "all_outer_test_rows_not_fit_by_train_base_or_train_meta",
+                    "policy_optimiser_holdout_frac": 1.0,
+                    "legacy_policy_optimiser_holdout_frac_config": config.policy_optimiser_holdout_frac,
+                    "n_policy_predict_rows": int(n_test),
                 },
             )
 

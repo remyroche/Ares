@@ -4,15 +4,18 @@ import gc
 import inspect
 import json
 import logging
+import multiprocessing as mp
 import os
+import queue
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import numpy as np
 import pandas as pd
@@ -93,8 +96,18 @@ if abs(_j_weight_sum - 1.0) > 1e-6:
 EBM_SPEC_N_JOBS = 1
 EBM_HPO_TRIALS = 200
 EBM_HPO_EARLY_STOP_PATIENCE = 50
-EBM_HPO_N_JOBS = 2
+EBM_HPO_N_JOBS = 1
 EBM_FIT_N_JOBS = 1
+EBM_HPO_FOLD_TIMEOUT_SEC = float(
+    os.environ.get("EPM_EBM_HPO_FOLD_TIMEOUT_SEC", "300")
+)
+EBM_HPO_MAX_FOLD_TIMEOUTS = int(os.environ.get("EPM_EBM_HPO_MAX_FOLD_TIMEOUTS", "5"))
+EBM_HPO_MAX_ROUNDS = int(os.environ.get("EPM_EBM_HPO_MAX_ROUNDS", "1000"))
+EBM_HPO_VALIDATION_SIZE = float(os.environ.get("EPM_EBM_HPO_VALIDATION_SIZE", "0.15"))
+EBM_HPO_SUBPROCESS_TIMEOUT = (
+    os.environ.get("EPM_EBM_HPO_SUBPROCESS_TIMEOUT", "0").strip().lower()
+    in {"1", "true", "yes", "on"}
+)
 EBM_FINAL_STAGE_OOF_OUTER_BAGS = int(
     os.environ.get("EPM_EBM_FINAL_STAGE_OOF_OUTER_BAGS", "1")
 )
@@ -525,6 +538,30 @@ class EBMOnLGBMModel:
         else:
             X_df = pd.DataFrame(X)
         X_df = X_df.replace([np.inf, -np.inf], 0.0).fillna(0.0)
+        if self.raw_selected_features:
+            raw_names = [str(c) for c in self.raw_selected_features]
+            synthetic_raw_contract = all(
+                re.fullmatch(r"f\d+", name) is not None for name in raw_names
+            )
+            missing_raw = sum(1 for name in raw_names if name not in X_df.columns)
+            if (
+                synthetic_raw_contract
+                and missing_raw == len(raw_names)
+                and X_df.shape[1] >= len(raw_names)
+            ):
+                renamed = X_df.iloc[:, : len(raw_names)].copy()
+                renamed.columns = raw_names
+                extra = X_df.iloc[:, len(raw_names) :]
+                if not extra.empty:
+                    X_df = pd.concat([renamed, extra], axis=1)
+                else:
+                    X_df = renamed
+                if not getattr(self, "_synthetic_contract_warned", False):
+                    tprint(
+                        "EBMOnLGBM: mapped positional inference features onto "
+                        "synthetic fN training contract."
+                    )
+                    self._synthetic_contract_warned = True
         if self.tree_models and self.raw_selected_features:
             raw_df = X_df.reindex(columns=self.raw_selected_features, fill_value=0.0)
             if self.tree_feature_config.get("oof_tree_features"):
@@ -559,10 +596,26 @@ class EBMOnLGBMModel:
             fill = 0.5 if self.mode == "classifier" else 0.0
             return np.full(len(X_df), fill, dtype=np.float32)
         preds: list[np.ndarray] = []
+        raw_preds: list[np.ndarray] = []
         for model, pp in zip(self.models, self.postprocessors):
             raw = _predict_raw_ebm(model, X_df, self.mode)
+            raw_preds.append(raw)
             preds.append(pp.predict(raw))
         out = np.mean(np.vstack(preds), axis=0).astype(np.float32)
+        if (
+            self.mode == "classifier"
+            and len(out) > 1
+            and raw_preds
+            and float(np.nanstd(out)) < 1e-10
+        ):
+            raw_out = np.mean(np.vstack(raw_preds), axis=0).astype(np.float32)
+            if float(np.nanstd(raw_out)) > 1e-6:
+                tprint(
+                    "EBMOnLGBM: postprocessed predictions collapsed to a constant "
+                    "on live/inference batch; using raw EBM probabilities to "
+                    "preserve cross-symbol ranking."
+                )
+                out = raw_out
         if self.mode == "classifier":
             out = np.clip(out, 1e-4, 1.0 - 1e-4)
         return out.astype(np.float32)
@@ -1064,6 +1117,114 @@ def _filter_model_kwargs(cls: Any, params: dict[str, Any]) -> dict[str, Any]:
 def _make_ebm(cls: Any, params: dict[str, Any]) -> Any:
     _quiet_interpret_logging()
     return cls(**_filter_model_kwargs(cls, params))
+
+
+def _hpo_fit_predict_worker(
+    out_q: Any,
+    mode: str,
+    params: dict[str, Any],
+    x_train: pd.DataFrame,
+    y_train: np.ndarray,
+    sample_weight: np.ndarray,
+    x_valid: pd.DataFrame,
+) -> None:
+    """Fit one HPO fold in a child process so native EBM stalls are killable."""
+    try:
+        import traceback
+
+        ebm_clf, ebm_reg = _load_ebm_classes()
+        cls = ebm_clf if mode == "classifier" else ebm_reg
+        if cls is None:
+            raise RuntimeError("interpret EBM class unavailable in HPO worker")
+        model = _fit_one_ebm(
+            cls,
+            x_train,
+            np.asarray(y_train),
+            np.asarray(sample_weight, dtype=np.float32),
+            dict(params),
+        )
+        pred = (
+            model.predict_proba(_coerce_ebm_feature_types(x_valid))[:, 1]
+            if mode == "classifier"
+            else model.predict(_coerce_ebm_feature_types(x_valid))
+        )
+        out_q.put(("ok", np.asarray(pred, dtype=np.float32), ""))
+    except BaseException as exc:  # pragma: no cover - child-process safety net
+        out_q.put(("err", None, f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"))
+
+
+def _fit_predict_hpo_fold_with_timeout(
+    *,
+    mode: str,
+    params: dict[str, Any],
+    x_train: pd.DataFrame,
+    y_train: np.ndarray,
+    sample_weight: np.ndarray,
+    x_valid: pd.DataFrame,
+    timeout_sec: float,
+) -> np.ndarray:
+    """Return fold predictions, terminating the child if native EBM fit stalls."""
+    timeout_sec = float(timeout_sec)
+    if timeout_sec <= 0.0:
+        ebm_clf, ebm_reg = _load_ebm_classes()
+        cls = ebm_clf if mode == "classifier" else ebm_reg
+        if cls is None:
+            raise RuntimeError("interpret EBM class unavailable")
+        model = _fit_one_ebm(cls, x_train, y_train, sample_weight, params)
+        pred = (
+            model.predict_proba(_coerce_ebm_feature_types(x_valid))[:, 1]
+            if mode == "classifier"
+            else model.predict(_coerce_ebm_feature_types(x_valid))
+        )
+        return np.asarray(pred, dtype=np.float32)
+
+    start_method = os.environ.get("EPM_EBM_HPO_TIMEOUT_START_METHOD", "spawn")
+    try:
+        ctx = mp.get_context(start_method)
+    except ValueError:
+        ctx = mp.get_context("spawn")
+    out_q = ctx.Queue(maxsize=1)
+    proc = ctx.Process(
+        target=_hpo_fit_predict_worker,
+        args=(
+            out_q,
+            mode,
+            dict(params),
+            x_train,
+            np.asarray(y_train),
+            np.asarray(sample_weight, dtype=np.float32),
+            x_valid,
+        ),
+    )
+    proc.daemon = True
+    proc.start()
+    proc.join(timeout_sec)
+    if proc.is_alive():
+        proc.terminate()
+        proc.join(5.0)
+        if proc.is_alive() and hasattr(proc, "kill"):
+            proc.kill()
+            proc.join(2.0)
+        try:
+            out_q.close()
+        except Exception:
+            pass
+        raise TimeoutError(f"HPO EBM fold exceeded {timeout_sec:.1f}s")
+
+    try:
+        status, payload, err = out_q.get_nowait()
+    except queue.Empty as exc:
+        raise RuntimeError(
+            f"HPO EBM worker exited without predictions (exitcode={proc.exitcode})"
+        ) from exc
+    finally:
+        try:
+            out_q.close()
+        except Exception:
+            pass
+    if status != "ok":
+        raise RuntimeError(str(err))
+    return np.asarray(payload, dtype=np.float32)
 
 
 def _safe_spearman(a: np.ndarray, b: np.ndarray) -> float:
@@ -1720,17 +1881,40 @@ def _clip_int_param(value: Any, lo: int, hi: int) -> int:
     return int(np.clip(int(round(float(value))), lo, hi))
 
 
+def _quantize_hpo_learning_rate(value: Any) -> float:
+    return float(np.clip(round(float(value) / 0.01) * 0.01, 0.01, 0.05))
+
+
+def _start_stage_heartbeat(label: str, *, interval_sec: float = 60.0) -> Callable[[], None]:
+    """Emit coarse progress while a blocking native fit is running."""
+    stop_event = threading.Event()
+    start = time.monotonic()
+
+    def _run() -> None:
+        while not stop_event.wait(float(max(5.0, interval_sec))):
+            tprint(f"EBMOnLGBM: {label} still running ({time.monotonic() - start:.0f}s).")
+
+    thread = threading.Thread(target=_run, name=f"ebm-{label}-heartbeat", daemon=True)
+    thread.start()
+
+    def _stop() -> None:
+        stop_event.set()
+        thread.join(timeout=1.0)
+
+    return _stop
+
+
 def _sanitize_ebm_hpo_trial_params(params: dict[str, Any]) -> dict[str, Any]:
     sanitized: dict[str, Any] = {}
     if "learning_rate" in params:
-        sanitized["learning_rate"] = _clip_float_param(
-            params["learning_rate"], 0.01, 0.05
+        sanitized["learning_rate"] = _quantize_hpo_learning_rate(
+            params["learning_rate"]
         )
     if "max_bins" in params:
         sanitized["max_bins"] = _clip_int_param(params["max_bins"], 16, 48)
     if "smoothing_rounds" in params:
         sanitized["smoothing_rounds"] = _clip_int_param(
-            params["smoothing_rounds"], 200, 500
+            params["smoothing_rounds"], 100, 100
         )
     if "max_leaves" in params:
         sanitized["max_leaves"] = _clip_int_param(params["max_leaves"], 2, 3)
@@ -2721,7 +2905,7 @@ def _ebm_specs(pruning: bool, random_state: int) -> list[dict[str, Any]]:
         max_bins = 64
         learning_rate = 0.01
         early_stopping_rounds = 25
-        smoothing_rounds = 25
+        smoothing_rounds = 400
     specs = []
     for i, (l2, l1) in enumerate(pairs):
         specs.append(
@@ -6185,6 +6369,8 @@ def _fit_final_model(
     assets: Any = None,
     tree_feature_bundle: dict[str, Any] | None = None,
     hpo_objective_mode: str = "base",
+    hpo_trials_override: int | None = None,
+    hpo_patience_override: int | None = None,
 ) -> EBMOnLGBMModel:
     tprint(
         f"EBMOnLGBM: full-data fit with {len(selected_features)} raw features "
@@ -6295,6 +6481,7 @@ def _fit_final_model(
         pre_hpo_spec = dict(final_spec)
         pre_hpo_spec["max_bins"] = min(int(pre_hpo_spec.get("max_bins", 48)), 48)
         pre_hpo_spec["outer_bags"] = 1
+        pre_hpo_spec["smoothing_rounds"] = 100
         hpo_sample_weight, _pre_hpo_oof = _oof_distilled_sample_weights(
             cls,
             Xs[final_active_cols],
@@ -6322,27 +6509,63 @@ def _fit_final_model(
     shape_smoothing_policy: dict[str, int] = {}
 
     if HAS_OPTUNA:
-        hpo_trials = int(os.environ.get("EPM_EBM_HPO_TRIALS", EBM_HPO_TRIALS))
-        hpo_patience = int(
-            os.environ.get(
-                "EPM_EBM_HPO_EARLY_STOP_PATIENCE", EBM_HPO_EARLY_STOP_PATIENCE
+        hpo_trials = (
+            int(hpo_trials_override)
+            if hpo_trials_override is not None
+            else int(os.environ.get("EPM_EBM_HPO_TRIALS", EBM_HPO_TRIALS))
+        )
+        hpo_patience = (
+            int(hpo_patience_override)
+            if hpo_patience_override is not None
+            else int(
+                os.environ.get(
+                    "EPM_EBM_HPO_EARLY_STOP_PATIENCE", EBM_HPO_EARLY_STOP_PATIENCE
+                )
             )
         )
         hpo_n_jobs = int(os.environ.get("EPM_EBM_HPO_N_JOBS", EBM_HPO_N_JOBS))
         hpo_folds = int(os.environ.get("EPM_EBM_HPO_FOLDS", 3))
         hpo_pruner_startup = int(os.environ.get("EPM_EBM_HPO_MEDIAN_STARTUP", 10))
         hpo_pruner_min_trials = int(os.environ.get("EPM_EBM_HPO_MEDIAN_MIN_TRIALS", 5))
+        hpo_fold_timeout_sec = float(
+            os.environ.get("EPM_EBM_HPO_FOLD_TIMEOUT_SEC", EBM_HPO_FOLD_TIMEOUT_SEC)
+        )
+        hpo_max_fold_timeouts = int(
+            os.environ.get("EPM_EBM_HPO_MAX_FOLD_TIMEOUTS", EBM_HPO_MAX_FOLD_TIMEOUTS)
+        )
+        hpo_max_rounds = int(os.environ.get("EPM_EBM_HPO_MAX_ROUNDS", EBM_HPO_MAX_ROUNDS))
+        hpo_validation_size = float(
+            os.environ.get("EPM_EBM_HPO_VALIDATION_SIZE", EBM_HPO_VALIDATION_SIZE)
+        )
+        hpo_subprocess_timeout = (
+            os.environ.get(
+                "EPM_EBM_HPO_SUBPROCESS_TIMEOUT",
+                "1" if EBM_HPO_SUBPROCESS_TIMEOUT else "0",
+            )
+            .strip()
+            .lower()
+            in {"1", "true", "yes", "on"}
+        )
         hpo_trials = max(0, hpo_trials)
         hpo_patience = max(1, hpo_patience)
-        hpo_n_jobs = min(2, max(1, hpo_n_jobs))
+        hpo_n_jobs = min(1, max(1, hpo_n_jobs))
         hpo_folds = min(3, max(2, hpo_folds))
         hpo_pruner_startup = max(0, hpo_pruner_startup)
         hpo_pruner_min_trials = max(1, hpo_pruner_min_trials)
+        hpo_fold_timeout_sec = max(0.0, hpo_fold_timeout_sec)
+        hpo_max_fold_timeouts = max(1, hpo_max_fold_timeouts)
+        hpo_max_rounds = int(np.clip(hpo_max_rounds, 100, 10000))
+        hpo_validation_size = float(np.clip(hpo_validation_size, 0.05, 0.25))
         tprint(
             "  EBMOnLGBM: running Optuna HPO with Bends Analysis "
             f"(trials={hpo_trials}, early_stop_patience={hpo_patience}, "
             f"subsample=5000, folds={hpo_folds}, outer_bags=1, "
+            f"inner_bags=0, validation_size={hpo_validation_size:.2f}, "
+            f"max_rounds={hpo_max_rounds}, "
             f"trial_n_jobs={hpo_n_jobs}, fit_n_jobs=1, "
+            f"fold_timeout={hpo_fold_timeout_sec:.0f}s, "
+            f"subprocess_timeout={hpo_subprocess_timeout}, "
+            f"max_fold_timeouts={hpo_max_fold_timeouts}, "
             "pruner=Median"
             f"(startup={hpo_pruner_startup}, min_trials={hpo_pruner_min_trials}))."
         )
@@ -6382,15 +6605,39 @@ def _fit_final_model(
             "feature_j_scores": {c: 1.0 for c in Xs.columns},
         }
         hpo_runtime_state = {"n_jobs": hpo_n_jobs}
+        hpo_log_interval = float(
+            os.environ.get("EPM_EBM_HPO_PROGRESS_INTERVAL_SEC", "120")
+        )
+        hpo_log_interval = float(max(10.0, hpo_log_interval))
+        hpo_progress_state = {
+            "last_log_ts": 0.0,
+            "started_trials": 0,
+            "finished_trials": 0,
+            "fold_timeouts": 0,
+        }
         best_ndcg20 = float("-inf")
         best_ndcg20_se = 0.0
         best_precision15 = float("-inf")
 
+        def _hpo_heartbeat(message: str, *, force: bool = False) -> None:
+            now = time.monotonic()
+            if force or (
+                now - float(hpo_progress_state["last_log_ts"]) >= hpo_log_interval
+            ):
+                hpo_progress_state["last_log_ts"] = now
+                tprint(f"  EBMOnLGBM: HPO {message}")
+
         def objective(trial):
             nonlocal best_ndcg20, best_ndcg20_se, best_precision15
-            lr = trial.suggest_float("learning_rate", 0.01, 0.05)
+            trial_start = time.monotonic()
+            hpo_progress_state["started_trials"] = (
+                int(hpo_progress_state["started_trials"]) + 1
+            )
+            lr = trial.suggest_categorical(
+                "learning_rate", [0.01, 0.02, 0.03, 0.04, 0.05]
+            )
             max_bins = trial.suggest_int("max_bins", 16, 48)
-            smoothing_rounds = trial.suggest_int("smoothing_rounds", 200, 500)
+            smoothing_rounds = 100
             max_leaves = trial.suggest_int("max_leaves", 2, 3)
             reg_alpha = trial.suggest_float("reg_alpha", 0.01, 2.0, log=True)
             reg_lambda = trial.suggest_float("reg_lambda", 0.5, 10.0, log=True)
@@ -6402,6 +6649,10 @@ def _fit_final_model(
                 if global_hp_state["feature_j_scores"][c] > 0.1
             ]
             if not active_cols:
+                _hpo_heartbeat(
+                    f"trial {trial.number} pruned before fit: no active features.",
+                    force=True,
+                )
                 raise optuna.TrialPruned()
             leaf_min_pct = _hpo_leaf_min_pct_formula(
                 max_leaves=max_leaves,
@@ -6424,23 +6675,93 @@ def _fit_final_model(
                 "reg_lambda": reg_lambda,
                 "greedy_ratio": greedy_ratio,
                 "outer_bags": outer_bags,
+                "inner_bags": 0,
+                "validation_size": hpo_validation_size,
+                "max_rounds": hpo_max_rounds,
                 "min_samples_leaf": max(1, int(leaf_min_pct * n_sub)),
                 "early_stopping_rounds": 30,
                 "interactions": 0,
                 "n_jobs": 1,
             }
+            _hpo_heartbeat(
+                f"trial {trial.number} start "
+                f"(started={hpo_progress_state['started_trials']}, "
+                f"finished={hpo_progress_state['finished_trials']}, "
+                f"active_features={len(active_cols)}, "
+                f"leaf_min_pct={leaf_min_pct:.4f}, "
+                f"min_leaf={spec['min_samples_leaf']}, lr={lr:.4f}, "
+                f"bins={max_bins}, leaves={max_leaves}, "
+                f"smooth={smoothing_rounds}, l1={reg_alpha:.4g}, "
+                f"l2={reg_lambda:.4g}, greedy={greedy_ratio:.4g}).",
+                force=trial.number < 3,
+            )
 
             fold_metrics = []
             for step, (tr, va) in enumerate(kf.split(Xs_sub)):
-                m = EBMCls(
-                    **{k: v for k, v in spec.items() if k in EBMCls().get_params()}
+                fold_start = time.monotonic()
+                _hpo_heartbeat(
+                    f"trial {trial.number} fold {step + 1}/{hpo_folds} fitting "
+                    f"(train={len(tr)}, valid={len(va)}).",
+                    force=trial.number < 3,
                 )
                 try:
-                    m.fit(
-                        Xs_sub.iloc[tr][active_cols],
-                        y_sub[tr],
-                        sample_weight=sw_sub[tr],
+                    if hpo_subprocess_timeout:
+                        pred = _fit_predict_hpo_fold_with_timeout(
+                            mode=mode,
+                            params=spec,
+                            x_train=Xs_sub.iloc[tr][active_cols].reset_index(
+                                drop=True
+                            ),
+                            y_train=y_sub[tr],
+                            sample_weight=sw_sub[tr],
+                            x_valid=Xs_sub.iloc[va][active_cols].reset_index(
+                                drop=True
+                            ),
+                            timeout_sec=hpo_fold_timeout_sec,
+                        )
+                    else:
+                        model = _fit_one_ebm(
+                            EBMCls,
+                            Xs_sub.iloc[tr][active_cols].reset_index(drop=True),
+                            y_sub[tr],
+                            np.asarray(sw_sub[tr], dtype=np.float32),
+                            spec,
+                        )
+                        pred = (
+                            model.predict_proba(
+                                _coerce_ebm_feature_types(
+                                    Xs_sub.iloc[va][active_cols].reset_index(
+                                        drop=True
+                                    )
+                                )
+                            )[:, 1]
+                            if mode == "classifier"
+                            else model.predict(
+                                _coerce_ebm_feature_types(
+                                    Xs_sub.iloc[va][active_cols].reset_index(
+                                        drop=True
+                                    )
+                                )
+                            )
+                        )
+                        pred = np.asarray(pred, dtype=np.float32)
+                except TimeoutError as exc:
+                    hpo_progress_state["fold_timeouts"] = (
+                        int(hpo_progress_state["fold_timeouts"]) + 1
                     )
+                    timeout_count = int(hpo_progress_state["fold_timeouts"])
+                    tprint(
+                        "  EBMOnLGBM: HPO fold timeout "
+                        f"{timeout_count}/{hpo_max_fold_timeouts} on trial "
+                        f"{trial.number} fold {step + 1}/{hpo_folds}: {exc}"
+                    )
+                    if timeout_count >= hpo_max_fold_timeouts:
+                        tprint(
+                            "  EBMOnLGBM: stopping HPO after repeated native EBM "
+                            "fold timeouts; keeping best completed parameters."
+                        )
+                        study.stop()
+                    raise optuna.TrialPruned()
                 except PermissionError as exc:
                     if int(spec.get("n_jobs", 1)) <= 1:
                         raise
@@ -6458,11 +6779,11 @@ def _fit_final_model(
                         y_sub[tr],
                         sample_weight=sw_sub[tr],
                     )
-                pred = (
-                    m.predict_proba(Xs_sub.iloc[va][active_cols])[:, 1]
-                    if mode == "classifier"
-                    else m.predict(Xs_sub.iloc[va][active_cols])
-                )
+                    pred = (
+                        m.predict_proba(Xs_sub.iloc[va][active_cols])[:, 1]
+                        if mode == "classifier"
+                        else m.predict(Xs_sub.iloc[va][active_cols])
+                    )
 
                 metrics = _metric_pack(
                     y_sub[va],
@@ -6480,7 +6801,21 @@ def _fit_final_model(
 
                 trial.report(score, step)
                 if trial.should_prune():
+                    _hpo_heartbeat(
+                        f"trial {trial.number} pruned after fold "
+                        f"{step + 1}/{hpo_folds} "
+                        f"(score={score:.4f}, "
+                        f"elapsed={time.monotonic() - trial_start:.1f}s).",
+                        force=True,
+                    )
                     raise optuna.TrialPruned()
+                _hpo_heartbeat(
+                    f"trial {trial.number} fold {step + 1}/{hpo_folds} done "
+                    f"(score={score:.4f}, "
+                    f"fold_time={time.monotonic() - fold_start:.1f}s, "
+                    f"elapsed={time.monotonic() - trial_start:.1f}s).",
+                    force=trial.number < 3,
+                )
 
             agg = _aggregate_j(fold_metrics)
             _ndcg20_curr = float(agg.get("ndcg_at_20", agg.get("ndcg@20", 0.0)))
@@ -6547,6 +6882,16 @@ def _fit_final_model(
             )
             trial.set_user_attr("J_final", float(agg.get("J_final", np.nan)))
             trial.set_user_attr("hpo_objective", float(hpo_objective))
+            hpo_progress_state["finished_trials"] = (
+                int(hpo_progress_state["finished_trials"]) + 1
+            )
+            _hpo_heartbeat(
+                f"trial {trial.number} complete "
+                f"(value={hpo_objective:.4f}, "
+                f"finished={hpo_progress_state['finished_trials']}/{hpo_trials}, "
+                f"elapsed={time.monotonic() - trial_start:.1f}s).",
+                force=trial.number < 3,
+            )
             return float(hpo_objective)
 
         optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -6580,7 +6925,7 @@ def _fit_final_model(
                 {
                     "learning_rate": 0.05,
                     "max_bins": 32,
-                    "smoothing_rounds": 200,
+                    "smoothing_rounds": 100,
                     "max_leaves": 3,
                     "reg_alpha": 0.1,
                     "reg_lambda": 3.0,
@@ -6593,7 +6938,7 @@ def _fit_final_model(
                 {
                     "learning_rate": 0.01,
                     "max_bins": 48,
-                    "smoothing_rounds": 350,
+                    "smoothing_rounds": 100,
                     "max_leaves": 3,
                     "reg_alpha": 1.0,
                     "reg_lambda": 6.0,
@@ -6666,49 +7011,66 @@ def _fit_final_model(
                     TrialState.FAIL,
                 )
             }
-            best_trial = study.best_trial
-            best_spec = dict(best_trial.params)
-            best_leaf_min_pct = float(
-                best_trial.user_attrs.get(
-                    "leaf_min_pct",
-                    _hpo_leaf_min_pct_formula(
-                        max_leaves=int(best_spec.get("max_leaves", 3)),
-                        max_bins=int(best_spec.get("max_bins", 48)),
-                        smoothing_rounds=int(best_spec.get("smoothing_rounds", 25)),
-                        n_features=len(Xs.columns),
+            completed_trials = [
+                trial
+                for trial in study.trials
+                if trial.state == TrialState.COMPLETE and trial.value is not None
+            ]
+            if not completed_trials:
+                tprint(
+                    "  EBMOnLGBM: HPO produced no completed trials "
+                    f"(trial_states={hpo_state_counts}); keeping default final "
+                    f"params={final_spec}."
+                )
+                best_trial = None
+            else:
+                best_trial = study.best_trial
+            if best_trial is None:
+                hpo_selected_params = dict(final_spec)
+            else:
+                best_spec = dict(best_trial.params)
+                best_leaf_min_pct = float(
+                    best_trial.user_attrs.get(
+                        "leaf_min_pct",
+                        _hpo_leaf_min_pct_formula(
+                            max_leaves=int(best_spec.get("max_leaves", 3)),
+                            max_bins=int(best_spec.get("max_bins", 48)),
+                            smoothing_rounds=int(best_spec.get("smoothing_rounds", 25)),
+                            n_features=len(Xs.columns),
+                        ),
                     ),
                 )
-            )
-            best_spec["min_samples_leaf"] = max(
-                1, int(best_leaf_min_pct * len(fit_idx))
-            )
-            best_spec["min_samples_leaf_pct"] = best_leaf_min_pct
-            best_spec["outer_bags"] = 10
-            best_spec["early_stopping_rounds"] = 30
-            best_spec["interactions"] = 0
-            best_spec["n_jobs"] = 1
-            final_spec = best_spec
-            hpo_selected_params = dict(best_spec)
-            _save_ebm_hpo_warm_start(
-                best_params=best_spec,
-                best_value=float(best_trial.value),
-                best_trial_number=int(best_trial.number),
-                best_trial_attrs=dict(best_trial.user_attrs),
-                leaf_min_pct=best_leaf_min_pct,
-            )
-            tprint(
-                "  EBMOnLGBM: HPO complete. "
-                "trial_states="
-                f"{hpo_state_counts}, "
-                f"Best trial={best_trial.number}, value={best_trial.value:.4f}, "
-                f"lift30={float(best_trial.user_attrs.get('lift30', np.nan)):.4f}, "
-                "stability30="
-                f"{float(best_trial.user_attrs.get('stability30', np.nan)):.4f}, "
-                f"ndcg20={float(best_trial.user_attrs.get('ndcg_at_20', np.nan)):.4f}, "
-                f"ece20={float(best_trial.user_attrs.get('ece_top20', np.nan)):.4f}, "
-                f"objective_mode={hpo_objective_mode}, "
-                f"leaf_min_pct={best_leaf_min_pct:.4f}, final params={best_spec}."
-            )
+                best_spec["min_samples_leaf"] = max(
+                    1, int(best_leaf_min_pct * len(fit_idx))
+                )
+                best_spec["min_samples_leaf_pct"] = best_leaf_min_pct
+                best_spec["outer_bags"] = 10
+                best_spec["smoothing_rounds"] = 400
+                best_spec["early_stopping_rounds"] = 30
+                best_spec["interactions"] = 0
+                best_spec["n_jobs"] = 1
+                final_spec = best_spec
+                hpo_selected_params = dict(best_spec)
+                _save_ebm_hpo_warm_start(
+                    best_params=best_spec,
+                    best_value=float(best_trial.value),
+                    best_trial_number=int(best_trial.number),
+                    best_trial_attrs=dict(best_trial.user_attrs),
+                    leaf_min_pct=best_leaf_min_pct,
+                )
+                tprint(
+                    "  EBMOnLGBM: HPO complete. "
+                    "trial_states="
+                    f"{hpo_state_counts}, "
+                    f"Best trial={best_trial.number}, value={best_trial.value:.4f}, "
+                    f"lift30={float(best_trial.user_attrs.get('lift30', np.nan)):.4f}, "
+                    "stability30="
+                    f"{float(best_trial.user_attrs.get('stability30', np.nan)):.4f}, "
+                    f"ndcg20={float(best_trial.user_attrs.get('ndcg_at_20', np.nan)):.4f}, "
+                    f"ece20={float(best_trial.user_attrs.get('ece_top20', np.nan)):.4f}, "
+                    f"objective_mode={hpo_objective_mode}, "
+                    f"leaf_min_pct={best_leaf_min_pct:.4f}, final params={best_spec}."
+                )
 
     (
         final_active_cols,
@@ -6752,13 +7114,26 @@ def _fit_final_model(
 
     for i in range(1):
         t0 = time.perf_counter()
-        ebm = _fit_one_ebm(
-            cls,
-            Xs.iloc[fit_idx][final_active_cols].reset_index(drop=True),
-            y[fit_idx],
-            final_sample_weight[fit_idx],
-            final_spec,
+        final_fit_rows = int(len(fit_idx))
+        final_fit_features = int(len(final_active_cols))
+        tprint(
+            "EBMOnLGBM: starting final EBM fit "
+            f"(rows={final_fit_rows}, features={final_fit_features}, "
+            f"outer_bags={int(final_spec.get('outer_bags', 1))}, "
+            f"smoothing_rounds={int(final_spec.get('smoothing_rounds', 0))}, "
+            f"max_rounds={int(final_spec.get('max_rounds', 0))})."
         )
+        stop_heartbeat = _start_stage_heartbeat("final EBM fit", interval_sec=60.0)
+        try:
+            ebm = _fit_one_ebm(
+                cls,
+                Xs.iloc[fit_idx][final_active_cols].reset_index(drop=True),
+                y[fit_idx],
+                final_sample_weight[fit_idx],
+                final_spec,
+            )
+        finally:
+            stop_heartbeat()
         _apply_shape_smoothing_policy(
             ebm, final_active_cols, shape_smoothing_policy, log=True
         )
@@ -7889,6 +8264,8 @@ def fit_ebm_on_lgbm_full_model(
     assets: Any = None,
     tree_feature_bundle: Optional[dict[str, Any]] = None,
     hpo_objective_mode: str = "base",
+    hpo_trials_override: int | None = None,
+    hpo_patience_override: int | None = None,
 ) -> Optional[EBMOnLGBMModel]:
     classifier = mode == "classifier"
     ebm_clf, ebm_reg = _load_ebm_classes()
@@ -7938,4 +8315,6 @@ def fit_ebm_on_lgbm_full_model(
         assets=assets,
         tree_feature_bundle=tree_feature_bundle,
         hpo_objective_mode=hpo_objective_mode,
+        hpo_trials_override=hpo_trials_override,
+        hpo_patience_override=hpo_patience_override,
     )

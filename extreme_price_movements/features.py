@@ -788,9 +788,11 @@ def compute_orderbook_snapshot_features(
     if not {"timestamp", "symbol", "side", "level", "price", "qty"}.issubset(
         orderbook_panel.columns
     ):
-        raise ValueError(
-            "orderbook_hourly must be long format: timestamp,symbol,side,level,price,qty"
-        )
+        # Live/incremental inference stores hourly top-of-book/cumulative-depth
+        # summaries in wide panels. Those are consumed by the proxy microstructure
+        # block below; the L2 snapshot block must not overwrite them with neutral
+        # values or raise here.
+        return {}
 
     ob = orderbook_panel.copy()
     ob["timestamp"] = pd.to_datetime(ob["timestamp"], utc=True, errors="coerce")
@@ -3216,6 +3218,157 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     for name in ob_names:
         if name not in feats:
             feats[name] = ob_default.copy()
+
+    def _aligned_orderbook_field(field_name: str) -> pd.DataFrame | None:
+        if not isinstance(panel, dict):
+            return None
+        frame = panel.get(f"orderbook_{field_name}")
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            return None
+        shift_bars = int(cfg.get("microstructure_shift_bars", 1))
+        return (
+            frame.reindex(index=idx, columns=cols)
+            .ffill()
+            .shift(max(shift_bars, 0))
+            .astype(np.float32)
+        )
+
+    ob_best_bid = _aligned_orderbook_field("best_bid")
+    ob_best_ask = _aligned_orderbook_field("best_ask")
+    ob_mid = _aligned_orderbook_field("mid")
+    ob_bid_qty_1 = _aligned_orderbook_field("bid_qty_1")
+    ob_ask_qty_1 = _aligned_orderbook_field("ask_qty_1")
+    ob_bid_qty_l10 = _aligned_orderbook_field("cum_bid_qty_l10")
+    ob_ask_qty_l10 = _aligned_orderbook_field("cum_ask_qty_l10")
+    ob_bid_qty_l20 = _aligned_orderbook_field("cum_bid_qty_l20")
+    ob_ask_qty_l20 = _aligned_orderbook_field("cum_ask_qty_l20")
+
+    if isinstance(ob_best_bid, pd.DataFrame) and isinstance(ob_best_ask, pd.DataFrame):
+        if not isinstance(ob_mid, pd.DataFrame):
+            ob_mid = ((ob_best_bid + ob_best_ask) * 0.5).astype(np.float32)
+        spread_bps = (
+            ((ob_best_ask - ob_best_bid) / (ob_mid.abs() + eps)) * 1e4
+        ).replace([np.inf, -np.inf], np.nan)
+        available = (ob_best_bid.notna() & ob_best_ask.notna()).astype(np.float32)
+        feats["ob_spread_bps"] = spread_bps.fillna(0.0).clip(0, 1000).astype(
+            np.float32
+        )
+        feats["ob_spread_z_24h"] = _batch_roll_zscore(
+            feats["ob_spread_bps"], 24
+        ).clip(-6, 6)
+        feats["ob_mid_close_dislocation_bps"] = (
+            ((ob_mid - close_panel) / (close_panel.abs() + eps)) * 1e4
+        ).replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(-1000, 1000).astype(
+            np.float32
+        )
+        feats["ob_microprice_dev_bps"] = feats[
+            "ob_mid_close_dislocation_bps"
+        ].astype(np.float32)
+        feats["ob_snapshot_age_sec"] = (
+            (1.0 - available) * float(cfg.get("orderbook_missing_age_sentinel_min", 60))
+            * 60.0
+        ).astype(np.float32)
+        feats["ob_update_gap_flag"] = (1.0 - available).astype(np.float32)
+        feats["ob_stale_flag"] = (1.0 - available).astype(np.float32)
+
+    if isinstance(ob_bid_qty_1, pd.DataFrame) and isinstance(
+        ob_ask_qty_1, pd.DataFrame
+    ):
+        denom_l1 = (ob_bid_qty_1 + ob_ask_qty_1).abs() + eps
+        feats["ob_imb_l1"] = (
+            ((ob_bid_qty_1 - ob_ask_qty_1) / denom_l1)
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(0.0)
+            .clip(-1, 1)
+            .astype(np.float32)
+        )
+        feats["ob_wimb_l10"] = feats["ob_imb_l1"].astype(np.float32)
+        if isinstance(ob_mid, pd.DataFrame):
+            microprice = (
+                (ob_best_ask * ob_bid_qty_1 + ob_best_bid * ob_ask_qty_1)
+                / (ob_bid_qty_1 + ob_ask_qty_1 + eps)
+            )
+            feats["ob_microprice_dev_bps"] = (
+                ((microprice - ob_mid) / (ob_mid.abs() + eps)) * 1e4
+            ).replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(
+                -1000, 1000
+            ).astype(np.float32)
+            feats["ob_microprice_ret_1"] = (
+                feats["ob_microprice_dev_bps"].diff(1).fillna(0.0).astype(np.float32)
+            )
+
+    if isinstance(ob_bid_qty_l10, pd.DataFrame) and isinstance(
+        ob_ask_qty_l10, pd.DataFrame
+    ):
+        denom_l10 = (ob_bid_qty_l10 + ob_ask_qty_l10).abs() + eps
+        feats["ob_imb_l5"] = (
+            ((ob_bid_qty_l10 - ob_ask_qty_l10) / denom_l10)
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(0.0)
+            .clip(-1, 1)
+            .astype(np.float32)
+        )
+        feats["ob_imb_l10"] = feats["ob_imb_l5"].astype(np.float32)
+        feats["ob_wimb_l10"] = feats["ob_imb_l10"].astype(np.float32)
+        if isinstance(ob_mid, pd.DataFrame):
+            depth_l10 = ((ob_bid_qty_l10 + ob_ask_qty_l10) * ob_mid).replace(
+                [np.inf, -np.inf], np.nan
+            )
+            feats["ob_depth_usd_l10"] = (
+                np.log1p(depth_l10.clip(lower=0.0)).fillna(0.0).astype(np.float32)
+            )
+
+    if isinstance(ob_bid_qty_l20, pd.DataFrame) and isinstance(
+        ob_ask_qty_l20, pd.DataFrame
+    ):
+        denom_l20 = (ob_bid_qty_l20 + ob_ask_qty_l20).abs() + eps
+        feats["ob_imb_l20"] = (
+            ((ob_bid_qty_l20 - ob_ask_qty_l20) / denom_l20)
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(0.0)
+            .clip(-1, 1)
+            .astype(np.float32)
+        )
+        feats["ob_wimb_l20"] = feats["ob_imb_l20"].astype(np.float32)
+        feats["ob_wall_imb_l20"] = feats["ob_imb_l20"].astype(np.float32)
+        feats["ob_bid_depth_decay_l20"] = (
+            (ob_bid_qty_1 / (ob_bid_qty_l20.abs() + eps))
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(0.0)
+            .clip(0, 1)
+            .astype(np.float32)
+            if isinstance(ob_bid_qty_1, pd.DataFrame)
+            else ob_default.copy()
+        )
+        feats["ob_ask_depth_decay_l20"] = (
+            (ob_ask_qty_1 / (ob_ask_qty_l20.abs() + eps))
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(0.0)
+            .clip(0, 1)
+            .astype(np.float32)
+            if isinstance(ob_ask_qty_1, pd.DataFrame)
+            else ob_default.copy()
+        )
+        if isinstance(ob_mid, pd.DataFrame):
+            depth_l20 = ((ob_bid_qty_l20 + ob_ask_qty_l20) * ob_mid).replace(
+                [np.inf, -np.inf], np.nan
+            )
+            feats["ob_depth_usd_l20"] = (
+                np.log1p(depth_l20.clip(lower=0.0)).fillna(0.0).astype(np.float32)
+            )
+            feats["ob_top_liquidity_usd"] = (
+                np.log1p(
+                    (
+                        (ob_bid_qty_1.fillna(0.0) + ob_ask_qty_1.fillna(0.0))
+                        * ob_mid
+                    ).clip(lower=0.0)
+                )
+                .fillna(0.0)
+                .astype(np.float32)
+                if isinstance(ob_bid_qty_1, pd.DataFrame)
+                and isinstance(ob_ask_qty_1, pd.DataFrame)
+                else feats["ob_depth_usd_l20"]
+            )
 
     feats["ob_gap_skew_l10"] = (
         feats["ob_gap_up_bps_l10"] - feats["ob_gap_dn_bps_l10"]

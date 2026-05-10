@@ -10,11 +10,14 @@ This module handles CSV logging of trade decisions with detailed metrics:
 import csv
 import json
 import os
+import shutil
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import pandas as pd
 
 from extreme_price_movements.utils import tprint
@@ -28,6 +31,9 @@ TRADE_LOG_COLUMNS = [
     # Core identifiers
     "timestamp",
     "run_id",
+    "trade_id",
+    "position_id",
+    "lifecycle_event",
     "symbol",
     "side",
     "action",
@@ -37,7 +43,11 @@ TRADE_LOG_COLUMNS = [
     "entry_price",
     "expected_entry_price",
     "realized_entry_price",
+    "entry_order_type",
     "price_slippage_pct",
+    "ohlcv_entry_price",
+    "entry_price_delta_vs_ohlcv",
+    "entry_price_delta_vs_ohlcv_pct",
     "spread_proxy_pct",
     "atr",
     "atr_frac",
@@ -56,9 +66,18 @@ TRADE_LOG_COLUMNS = [
     "meta_confidence",
     "calibrated_score",
     "rank_threshold",
+    "rank_percentile",
+    "deployment_rank_threshold",
+    "policy_artifact_run_id",
+    "policy_schema_version",
     "base_pred",
     "base_rank_pct",
+    "base_train_rank_pct",
     "base_gate_top_frac",
+    "meta_train_rank_pct",
+    "rank_score_source",
+    "sizer_rank_percentile",
+    "effective_threshold",
     # Model predictions - Ridge position sizer
     "ridge_position_size",
     "ridge_confidence",
@@ -97,7 +116,9 @@ TRADE_LOG_COLUMNS = [
     "agree_tf_minus_mr",
     # OCO order details (live mode)
     "oco_id",
+    "exchange_order_id",
     "stop_price",
+    "stop_order_id",
     "stop_price_updated",
     "limit_price",
     "exit_reason",
@@ -107,11 +128,46 @@ TRADE_LOG_COLUMNS = [
     # Aggtrades data (live mode)
     "aggtrades_count",
     "orderbook_snapshot",
+    "gross_pnl_pct",
+    "net_pnl_pct",
+    "gross_pnl_amount",
+    "net_pnl_amount",
+    "fees_amount",
     "net_pnl",
+    "mfe",
+    "mae",
+    "exit_reason_detail",
+    "trade_recap",
+    "expected_hit_rate",
+    "realized_hit_rate",
+    "calibration_error",
     # Status
     "status",
+    "order_error_category",
     "error",
 ]
+
+
+def _classify_trade_log_error(error: Any) -> str:
+    """Return a stable execution-error category for reporting."""
+    text = str(error or "").lower()
+    if not text:
+        return ""
+    if "max pledged collateral" in text or "max transfer in quantity is 0" in text:
+        return "asset_collateral_limit"
+    if "insufficient" in text or "balance" in text or "margin" in text:
+        return "insufficient_balance"
+    if "precision" in text or "lot_size" in text or "min_notional" in text:
+        return "invalid_precision_or_filter"
+    if "rate limit" in text or "too many requests" in text or "429" in text:
+        return "rate_limited"
+    if "timeout" in text or "network" in text:
+        return "network_timeout"
+    if "permission" in text or "unauthorized" in text or "authentication" in text:
+        return "auth_or_permission"
+    if "reject" in text or "invalidorder" in text:
+        return "order_rejected"
+    return "exchange_error"
 
 
 @dataclass
@@ -138,10 +194,15 @@ class TradeLogger:
         self._log_file = self.output_path
         self.db_path = self.db_path or os.path.splitext(self.output_path)[0] + ".sqlite"
 
-        # Initialize CSV file with headers
-        if not os.path.exists(self._log_file):
-            self._write_header()
         self._init_db()
+        # SQLite is the canonical store. Keep CSV as a regenerated reporting
+        # view so schema additions cannot shift historical rows.
+        if self._sqlite_has_rows():
+            self._sync_csv_from_db(backup_if_changed=True)
+        elif not os.path.exists(self._log_file):
+            self._write_header()
+        else:
+            self._ensure_csv_schema()
 
         self._initialized = True
         tprint(f"TradeLogger initialized: {self._log_file}")
@@ -156,6 +217,24 @@ class TradeLogger:
         with open(self._log_file, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=TRADE_LOG_COLUMNS)
             writer.writeheader()
+
+    def _ensure_csv_schema(self) -> None:
+        """Backfill newly added trade log columns into existing CSV logs."""
+        try:
+            with open(self._log_file, newline="") as f:
+                reader = csv.reader(f)
+                header = next(reader, [])
+            if list(header) == TRADE_LOG_COLUMNS:
+                return
+            missing = [col for col in TRADE_LOG_COLUMNS if col not in header]
+            if not missing:
+                return
+            existing = pd.read_csv(self._log_file)
+            existing = existing.reindex(columns=TRADE_LOG_COLUMNS, fill_value="")
+            existing.to_csv(self._log_file, index=False)
+            tprint(f"TradeLogger CSV schema updated with columns: {missing}")
+        except Exception as exc:
+            tprint(f"TradeLogger CSV schema check failed: {exc}")
 
     def _init_db(self) -> None:
         """Create the durable trade diagnostics table if needed."""
@@ -175,7 +254,105 @@ class TradeLogger:
                 )
                 """
             )
+            existing = {
+                str(row[1])
+                for row in conn.execute('PRAGMA table_info("trades")').fetchall()
+            }
+            for col in TRADE_LOG_COLUMNS:
+                if col not in existing:
+                    conn.execute(f'ALTER TABLE trades ADD COLUMN "{col}" TEXT')
+            self._backfill_missing_lifecycle_ids(conn)
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_trade_id "
+                'ON trades("trade_id")'
+            )
             conn.commit()
+
+    def _backfill_missing_lifecycle_ids(self, conn: sqlite3.Connection) -> None:
+        """Populate lifecycle identifiers for rows logged before they existed."""
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute('SELECT * FROM "trades" ORDER BY id ASC').fetchall()
+        for row in rows:
+            record = {
+                col: row[col] if col in row.keys() else "" for col in TRADE_LOG_COLUMNS
+            }
+            normalized = self._normalize_record(record)
+            updates: Dict[str, str] = {}
+            for col in (
+                "trade_id",
+                "position_id",
+                "lifecycle_event",
+                "order_error_category",
+            ):
+                should_update = not row[col] and normalized.get(col)
+                if (
+                    col == "order_error_category"
+                    and row[col] == "exchange_error"
+                    and normalized.get(col)
+                    and normalized[col] != "exchange_error"
+                ):
+                    should_update = True
+                if should_update:
+                    updates[col] = self._stringify_value(normalized[col])
+            if not updates:
+                continue
+            assignments = ", ".join(f'"{col}" = ?' for col in updates)
+            conn.execute(
+                f'UPDATE "trades" SET {assignments} WHERE id = ?',
+                [*updates.values(), row["id"]],
+            )
+
+    def _sqlite_has_rows(self) -> bool:
+        """Return True when the canonical sqlite log has any rows."""
+        if not self.db_path or not os.path.exists(self.db_path):
+            return False
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                row = conn.execute('SELECT COUNT(*) FROM "trades"').fetchone()
+            return bool(row and int(row[0]) > 0)
+        except Exception:
+            return False
+
+    def _read_db_logs(self) -> pd.DataFrame:
+        """Read canonical sqlite logs into the public CSV column order."""
+        if not self.db_path or not os.path.exists(self.db_path):
+            return pd.DataFrame(columns=TRADE_LOG_COLUMNS)
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                df = pd.read_sql_query(
+                    'SELECT * FROM "trades" ORDER BY id ASC',
+                    conn,
+                )
+        except Exception as exc:
+            tprint(f"TradeLogger sqlite read failed: {exc}")
+            return pd.DataFrame(columns=TRADE_LOG_COLUMNS)
+        if df.empty:
+            return pd.DataFrame(columns=TRADE_LOG_COLUMNS)
+        return df.reindex(columns=TRADE_LOG_COLUMNS, fill_value="")
+
+    def _sync_csv_from_db(self, *, backup_if_changed: bool = False) -> None:
+        """Regenerate the reporting CSV from sqlite."""
+        df = self._read_db_logs()
+        if df.empty:
+            if not os.path.exists(self._log_file):
+                self._write_header()
+            return
+        path = Path(self._log_file)
+        if backup_if_changed and path.exists():
+            try:
+                existing = pd.read_csv(path, dtype=str).reindex(
+                    columns=TRADE_LOG_COLUMNS,
+                    fill_value="",
+                )
+                if not existing.fillna("").equals(df.fillna("")):
+                    backup = path.with_suffix(path.suffix + ".pre_sqlite_sync.bak")
+                    if not backup.exists():
+                        shutil.copy2(path, backup)
+            except Exception:
+                backup = path.with_suffix(path.suffix + ".pre_sqlite_sync.bak")
+                if not backup.exists():
+                    shutil.copy2(path, backup)
+        df.to_csv(self._log_file, index=False)
 
     def _stringify_value(self, value: Any) -> str:
         if value is None:
@@ -184,11 +361,80 @@ class TradeLogger:
             return json.dumps(value, sort_keys=True, default=str)
         return str(value)
 
+    def _default_lifecycle_event(self, record: Dict[str, Any]) -> str:
+        """Infer a lifecycle event when callers only pass legacy action/status."""
+        explicit = record.get("lifecycle_event")
+        if explicit:
+            return str(explicit)
+        action = str(record.get("action", "") or "").lower()
+        status = str(record.get("status", "") or "").lower()
+        if status in {"failed", "rejected", "error"}:
+            return f"{action or 'trade'}_failed"
+        if action == "enter":
+            if status in {"pending", "recorded"}:
+                return "entry_placed"
+            return "entry_recorded"
+        if action == "exit":
+            if status in {"closed", "completed"}:
+                return "exit_filled"
+            return "exit_update"
+        if "stop" in action:
+            return "stop_replaced" if "replace" in action else "stop_update"
+        return action or "trade_event"
+
+    def _derive_position_id(self, record: Dict[str, Any]) -> str:
+        """Build a stable position id from exchange ids or deterministic context."""
+        explicit = record.get("position_id")
+        if explicit:
+            return self._stringify_value(explicit)
+        for key in ("exchange_order_id", "oco_id"):
+            value = record.get(key)
+            if value:
+                return f"{record.get('run_id', self.run_id)}:{value}"
+        parts = [
+            record.get("run_id", self.run_id),
+            record.get("symbol", ""),
+            record.get("side", ""),
+            record.get("strategy_id", ""),
+            record.get("expected_entry_price")
+            or record.get("realized_entry_price")
+            or record.get("entry_price", ""),
+            record.get("timestamp", ""),
+        ]
+        return "|".join(self._stringify_value(part) for part in parts)
+
+    def _derive_trade_id(self, record: Dict[str, Any]) -> str:
+        """Build a unique event id under a position lifecycle."""
+        explicit = record.get("trade_id")
+        if explicit:
+            return self._stringify_value(explicit)
+        parts = [
+            record.get("position_id") or self._derive_position_id(record),
+            record.get("action", ""),
+            record.get("lifecycle_event") or self._default_lifecycle_event(record),
+            record.get("timestamp", ""),
+            record.get("stop_order_id", ""),
+            record.get("realized_exit_price", ""),
+        ]
+        return "|".join(self._stringify_value(part) for part in parts)
+
     def _normalize_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
-        return {col: record.get(col, "") for col in TRADE_LOG_COLUMNS}
+        enriched = dict(record)
+        enriched["lifecycle_event"] = self._default_lifecycle_event(enriched)
+        enriched["position_id"] = self._derive_position_id(enriched)
+        enriched["trade_id"] = self._derive_trade_id(enriched)
+        if enriched.get("error"):
+            classified_error = _classify_trade_log_error(enriched.get("error"))
+            if not enriched.get("order_error_category") or (
+                enriched.get("order_error_category") == "exchange_error"
+                and classified_error
+                and classified_error != "exchange_error"
+            ):
+                enriched["order_error_category"] = classified_error
+        return {col: enriched.get(col, "") for col in TRADE_LOG_COLUMNS}
 
     def _write_db_record(self, record: Dict[str, Any]) -> None:
-        """Append a trade row to sqlite with idempotent duplicate protection."""
+        """Append or update a trade row in sqlite with idempotent protection."""
         if not self.db_path:
             return
         normalized = self._normalize_record(record)
@@ -208,16 +454,35 @@ class TradeLogger:
         cols = list(TRADE_LOG_COLUMNS) + ["record_hash"]
         placeholders = ", ".join("?" for _ in cols)
         quoted_cols = ", ".join(f'"{col}"' for col in cols)
+        update_cols = [col for col in TRADE_LOG_COLUMNS if col != "trade_id"]
+        update_clause = ", ".join(
+            f'"{col}" = CASE '
+            f'WHEN excluded."{col}" != "" THEN excluded."{col}" '
+            f'ELSE "trades"."{col}" END'
+            for col in update_cols
+        )
         values = [
             self._stringify_value(normalized.get(col)) for col in TRADE_LOG_COLUMNS
         ]
         values.append(record_hash)
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                f"INSERT OR IGNORE INTO trades ({quoted_cols}) VALUES ({placeholders})",
+                f"""
+                INSERT INTO trades ({quoted_cols}) VALUES ({placeholders})
+                ON CONFLICT(trade_id) DO UPDATE SET
+                    {update_clause},
+                    record_hash = excluded.record_hash
+                """,
                 values,
             )
             conn.commit()
+
+    def _persist_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        """Persist record to sqlite and refresh the CSV reporting view."""
+        normalized = self._normalize_record(record)
+        self._write_db_record(normalized)
+        self._sync_csv_from_db()
+        return normalized
 
     def log_trade(
         self,
@@ -247,6 +512,9 @@ class TradeLogger:
             # Core identifiers
             "timestamp": pd.Timestamp.now(tz="UTC").isoformat(),
             "run_id": config.get("run_id", self.run_id),
+            "trade_id": decision.get("trade_id"),
+            "position_id": decision.get("position_id"),
+            "lifecycle_event": decision.get("lifecycle_event"),
             "symbol": decision.get("symbol"),
             "side": decision.get("side"),
             "action": decision.get("action"),
@@ -258,7 +526,13 @@ class TradeLogger:
             or decision.get("entry_px"),
             "realized_entry_price": decision.get("realized_entry_price")
             or decision.get("price"),
+            "entry_order_type": decision.get("entry_order_type"),
             "price_slippage_pct": decision.get("price_slippage_pct"),
+            "ohlcv_entry_price": decision.get("ohlcv_entry_price"),
+            "entry_price_delta_vs_ohlcv": decision.get("entry_price_delta_vs_ohlcv"),
+            "entry_price_delta_vs_ohlcv_pct": decision.get(
+                "entry_price_delta_vs_ohlcv_pct"
+            ),
             "spread_proxy_pct": decision.get("spread_proxy_pct"),
             "atr": market_data.get("atr"),
             "atr_frac": market_data.get("atr_frac"),
@@ -277,11 +551,27 @@ class TradeLogger:
             "meta_confidence": model_results.get("meta_confidence"),
             "calibrated_score": decision.get("calibrated_score"),
             "rank_threshold": decision.get("rank_threshold"),
+            "rank_percentile": decision.get("rank_percentile")
+            or decision.get("sizer_rank_percentile"),
+            "deployment_rank_threshold": decision.get("deployment_rank_threshold")
+            or decision.get("effective_threshold"),
+            "policy_artifact_run_id": decision.get("policy_artifact_run_id")
+            or config.get("policy_artifact_run_id"),
+            "policy_schema_version": decision.get("policy_schema_version")
+            or config.get("policy_schema_version"),
             "base_pred": model_results.get("base_pred") or decision.get("base_pred"),
             "base_rank_pct": model_results.get("base_rank_pct")
             or decision.get("base_rank_pct"),
+            "base_train_rank_pct": model_results.get("base_train_rank_pct")
+            or decision.get("base_train_rank_pct"),
             "base_gate_top_frac": model_results.get("base_gate_top_frac")
             or decision.get("base_gate_top_frac"),
+            "meta_train_rank_pct": model_results.get("meta_train_rank_pct")
+            or decision.get("meta_train_rank_pct"),
+            "rank_score_source": model_results.get("rank_score_source")
+            or decision.get("rank_score_source"),
+            "sizer_rank_percentile": decision.get("sizer_rank_percentile"),
+            "effective_threshold": decision.get("effective_threshold"),
             # Ridge position sizer
             "ridge_position_size": model_results.get("position_size"),
             "ridge_confidence": model_results.get("ridge_confidence"),
@@ -320,7 +610,9 @@ class TradeLogger:
             "agree_tf_minus_mr": disagreement_features.get("agree_tf_minus_mr_avg"),
             # OCO (live mode)
             "oco_id": decision.get("oco_id"),
+            "exchange_order_id": decision.get("exchange_order_id"),
             "stop_price": decision.get("stop_price"),
+            "stop_order_id": decision.get("stop_order_id"),
             "stop_price_updated": decision.get("stop_price_updated"),
             "limit_price": decision.get("limit_price"),
             "exit_reason": decision.get("exit_reason"),
@@ -335,17 +627,26 @@ class TradeLogger:
                 len(decision.get("aggtrades", [])) if decision.get("aggtrades") else 0
             ),
             "orderbook_snapshot": decision.get("orderbook_snapshot"),
+            "gross_pnl_pct": decision.get("gross_pnl_pct"),
+            "net_pnl_pct": decision.get("net_pnl_pct"),
+            "gross_pnl_amount": decision.get("gross_pnl_amount"),
+            "net_pnl_amount": decision.get("net_pnl_amount"),
+            "fees_amount": decision.get("fees_amount"),
             "net_pnl": decision.get("net_pnl"),
+            "mfe": decision.get("mfe"),
+            "mae": decision.get("mae"),
+            "exit_reason_detail": decision.get("exit_reason_detail"),
+            "trade_recap": decision.get("trade_recap"),
+            "expected_hit_rate": decision.get("expected_hit_rate"),
+            "realized_hit_rate": decision.get("realized_hit_rate"),
+            "calibration_error": decision.get("calibration_error"),
             # Status
             "status": decision.get("status", "completed"),
+            "order_error_category": decision.get("order_error_category", ""),
             "error": decision.get("error", ""),
         }
 
-        # Write to CSV
-        with open(self._log_file, "a", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=TRADE_LOG_COLUMNS)
-            writer.writerow(record)
-        self._write_db_record(record)
+        record = self._persist_record(record)
 
         # Generate and print explanation
         explanation = self.explain_trade(record)
@@ -595,10 +896,15 @@ class TradeLogger:
         Returns:
             DataFrame of trade logs
         """
+        db_logs = self._read_db_logs()
+        if not db_logs.empty:
+            return db_logs
         if not os.path.exists(self._log_file):
-            return pd.DataFrame()
-
-        return pd.read_csv(self._log_file)
+            return pd.DataFrame(columns=TRADE_LOG_COLUMNS)
+        return pd.read_csv(self._log_file).reindex(
+            columns=TRADE_LOG_COLUMNS,
+            fill_value="",
+        )
 
     def get_last_trade_timestamp(self, symbol: str) -> Optional[pd.Timestamp]:
         """Return the latest logged trade timestamp for a symbol."""
@@ -609,6 +915,38 @@ class TradeLogger:
         if sym_df.empty:
             return None
         ts = pd.to_datetime(sym_df["timestamp"], utc=True, errors="coerce").dropna()
+        if ts.empty:
+            return None
+        return pd.Timestamp(ts.max())
+
+    def get_last_losing_trade_timestamp(self, symbol: str) -> Optional[pd.Timestamp]:
+        """Return the latest closed-trade timestamp with negative realized PnL."""
+        df = self.read_logs()
+        required = {"symbol", "timestamp"}
+        if df.empty or not required.issubset(set(df.columns)):
+            return None
+        sym_df = df[df["symbol"] == symbol].copy()
+        if sym_df.empty:
+            return None
+
+        closed_mask = pd.Series(False, index=sym_df.index)
+        if "status" in sym_df.columns:
+            status = sym_df["status"].astype(str).str.lower()
+            closed_mask |= status.isin({"closed", "completed"})
+        if "lifecycle_event" in sym_df.columns:
+            event = sym_df["lifecycle_event"].astype(str).str.lower()
+            closed_mask |= event.str.contains("close|closed|exit", regex=True)
+
+        pnl = pd.Series(np.nan, index=sym_df.index, dtype="float64")
+        for col in ("net_pnl_pct", "gross_pnl_pct", "net_pnl", "gross_pnl_amount"):
+            if col in sym_df.columns:
+                vals = pd.to_numeric(sym_df[col], errors="coerce")
+                pnl = pnl.where(pnl.notna(), vals)
+
+        losing_df = sym_df[closed_mask & (pnl < 0.0)]
+        if losing_df.empty:
+            return None
+        ts = pd.to_datetime(losing_df["timestamp"], utc=True, errors="coerce").dropna()
         if ts.empty:
             return None
         return pd.Timestamp(ts.max())
@@ -660,7 +998,13 @@ class TradeLogger:
             row["ridge_position_size"] = context.get(
                 "position_size", row.get("ridge_position_size", "")
             )
-            row["meta_pred"] = context.get("meta_mr_pred", "")
+            row["trade_id"] = context.get("trade_id", "")
+            row["position_id"] = context.get("position_id", "")
+            row["lifecycle_event"] = context.get("lifecycle_event", "")
+            row["meta_pred"] = context.get(
+                "meta_pred",
+                context.get("meta_mr_pred", ""),
+            )
             row["alpha_long_mr_pred"] = context.get("alpha_mr_pred", "")
             row["alpha_long_tf_pred"] = context.get("alpha_tf_pred", "")
             row["disagree_mr_std"] = context.get("disagreement_mr", "")
@@ -671,20 +1015,36 @@ class TradeLogger:
             row["strategy_id"] = context.get("strategy_id", "")
             row["calibrated_score"] = context.get("calibrated_score", "")
             row["rank_threshold"] = context.get("rank_threshold", "")
+            row["rank_percentile"] = context.get(
+                "rank_percentile",
+                context.get("sizer_rank_percentile", ""),
+            )
+            row["deployment_rank_threshold"] = context.get(
+                "deployment_rank_threshold",
+                context.get("effective_threshold", ""),
+            )
+            row["base_train_rank_pct"] = context.get("base_train_rank_pct", "")
+            row["meta_train_rank_pct"] = context.get("meta_train_rank_pct", "")
+            row["rank_score_source"] = context.get("rank_score_source", "")
+            row["policy_artifact_run_id"] = context.get("policy_artifact_run_id", "")
+            row["policy_schema_version"] = context.get("policy_schema_version", "")
             row["expected_entry_price"] = context.get("expected_entry_price", "")
             row["realized_entry_price"] = context.get("realized_entry_price", "")
+            row["entry_order_type"] = context.get("entry_order_type", "")
             row["price_slippage_pct"] = context.get("price_slippage_pct", "")
+            row["ohlcv_entry_price"] = context.get("ohlcv_entry_price", "")
+            row["entry_price_delta_vs_ohlcv"] = context.get(
+                "entry_price_delta_vs_ohlcv", ""
+            )
+            row["entry_price_delta_vs_ohlcv_pct"] = context.get(
+                "entry_price_delta_vs_ohlcv_pct", ""
+            )
             row["spread_proxy_pct"] = context.get("spread_proxy_pct", "")
             for col in TRADE_LOG_COLUMNS:
                 if col in context and col not in row:
                     row[col] = context[col]
 
-        # Write row
-        row = self._normalize_record(row)
-        with open(self._log_file, "a", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=TRADE_LOG_COLUMNS)
-            writer.writerow(row)
-        self._write_db_record(row)
+        row = self._persist_record(row)
 
         tprint(f"Logged trade: {action} {side} {symbol} {size}@{price}")
 
@@ -707,6 +1067,10 @@ class TradeLogger:
         context = dict(predictions or {})
         context.update(features or {})
         context.update(extra or {})
+        status = str(
+            extra.get("status") or ("completed" if mode == "shadow" else "pending")
+        )
+        error = extra.get("error")
         self.log_trade_legacy(
             symbol=symbol,
             side=side,
@@ -715,7 +1079,8 @@ class TradeLogger:
             price=price,
             context=context,
             mode=mode,
-            status="completed" if mode == "shadow" else "pending",
+            status=status,
+            error=str(error) if error else None,
         )
 
 

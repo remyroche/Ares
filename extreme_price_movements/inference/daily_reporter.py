@@ -29,9 +29,17 @@ REPORT_TRADE_COLUMNS = [
     "entry_price",
     "actual_entry_price",
     "actual_exit_price",
+    "gross_pnl_pct",
+    "net_pnl_pct",
+    "gross_pnl_amount",
+    "net_pnl_amount",
     "net_pnl",
+    "mfe",
+    "mae",
     "exit_reason",
+    "exit_reason_detail",
     "status",
+    "order_error_category",
     "error",
 ]
 
@@ -104,6 +112,108 @@ def _trades_since(logger: TradeLogger, since_ts: Optional[str]) -> pd.DataFrame:
             since = since.tz_convert("UTC")
         valid &= ts > since
     return df.loc[valid].copy()
+
+
+def _model_drift_summary(trades: pd.DataFrame) -> str:
+    if trades.empty:
+        return "Model drift summary: no trades in reporting window."
+
+    pred_col = (
+        "calibrated_score" if "calibrated_score" in trades.columns else "meta_pred"
+    )
+    pred = pd.to_numeric(trades.get(pred_col, pd.Series(dtype=float)), errors="coerce")
+    pnl = pd.to_numeric(
+        trades.get("net_pnl_pct", pd.Series(dtype=float)), errors="coerce"
+    )
+    if pnl.isna().all():
+        pnl = pd.to_numeric(
+            trades.get("gross_pnl_pct", pd.Series(dtype=float)), errors="coerce"
+        )
+    if pnl.isna().all():
+        pnl = pd.to_numeric(
+            trades.get("net_pnl", pd.Series(dtype=float)), errors="coerce"
+        )
+
+    closed_mask = pnl.notna()
+    closed_n = int(closed_mask.sum())
+    executed_mask = (
+        trades.get("status", pd.Series(index=trades.index, dtype=str))
+        .astype(str)
+        .str.lower()
+        .isin({"pending", "completed", "closed", "recorded"})
+    )
+    error_mask = (
+        trades.get("status", pd.Series(index=trades.index, dtype=str))
+        .astype(str)
+        .str.lower()
+        .isin({"failed", "rejected", "error"})
+    )
+    order_error_categories = (
+        trades.get("order_error_category", pd.Series(dtype=str)).fillna("").astype(str)
+    )
+    unexplained_errors = int(
+        (
+            (order_error_categories == "")
+            & error_mask.reindex(trades.index, fill_value=False)
+        ).sum()
+    )
+
+    lines = [
+        "Model drift and execution diagnostics:",
+        f"trades_logged={len(trades)} executed_or_pending={int(executed_mask.sum())} "
+        f"order_errors={int(error_mask.sum())} unexplained_order_errors={unexplained_errors}",
+    ]
+
+    finite_pred = pred.replace([np.inf, -np.inf], np.nan).dropna()
+    if not finite_pred.empty:
+        lines.append(
+            f"{pred_col}: mean={float(finite_pred.mean()):.4f} "
+            f"std={float(finite_pred.std(ddof=0)):.4f} "
+            f"range=[{float(finite_pred.min()):.4f},{float(finite_pred.max()):.4f}] "
+            f"top10_count={int((finite_pred.rank(pct=True) >= 0.90).sum())}"
+        )
+
+    if closed_n <= 0:
+        lines.append(
+            "realised_hit_rate=unavailable; no closed trades with realised PnL yet."
+        )
+        return "\n".join(lines)
+
+    outcome = (pnl.loc[closed_mask] > 0).astype(float)
+    pred_closed = pred.loc[closed_mask].clip(0.0, 1.0)
+    valid = pred_closed.notna()
+    realised_hit_rate = float(outcome.mean())
+    if valid.any():
+        expected_hit_rate = float(pred_closed.loc[valid].mean())
+        calibration_error = abs(realised_hit_rate - expected_hit_rate)
+        brier = float(np.mean((pred_closed.loc[valid] - outcome.loc[valid]) ** 2))
+        lines.append(
+            f"closed_trades={closed_n} expected_hit_rate={expected_hit_rate:.3f} "
+            f"realised_hit_rate={realised_hit_rate:.3f} "
+            f"abs_calibration_error={calibration_error:.3f} brier={brier:.4f}"
+        )
+    else:
+        lines.append(
+            f"closed_trades={closed_n} realised_hit_rate={realised_hit_rate:.3f}; "
+            "expected hit-rate unavailable because calibrated scores are missing."
+        )
+
+    pnl_closed = pnl.loc[closed_mask].replace([np.inf, -np.inf], np.nan).dropna()
+    if not pnl_closed.empty:
+        lines.append(
+            f"realised_pnl_pct: mean={float(pnl_closed.mean()):.4%} "
+            f"sum={float(pnl_closed.sum()):.4%} "
+            f"range=[{float(pnl_closed.min()):.4%},{float(pnl_closed.max()):.4%}]"
+        )
+    mae = pd.to_numeric(trades.get("mae", pd.Series(dtype=float)), errors="coerce")
+    mae_closed = mae.loc[closed_mask].replace([np.inf, -np.inf], np.nan).dropna()
+    if not mae_closed.empty:
+        lines.append(
+            f"mae: mean={float(mae_closed.mean()):.4%} "
+            f"p90={float(mae_closed.quantile(0.90)):.4%} "
+            f"max={float(mae_closed.max()):.4%}"
+        )
+    return "\n".join(lines)
 
 
 def transfer_profit_to_spot(
@@ -218,13 +328,18 @@ class DailyDeploymentReporter:
             [
                 "Extreme price movement deployment daily report",
                 "",
-                f"datetime: {now.isoformat()}",
-                f"total_balance_usdt: {total_balance:.8f}",
-                f"previous_best_balance_usdt: {previous_best_balance:.8f}",
-                f"amount_saved_to_spot_usdt: {amount_to_save:.8f}",
-                f"transfer_result: {json.dumps(transfer_result, default=str, sort_keys=True)}",
+                "Account",
+                f"  datetime: {now.isoformat()}",
+                f"  total_balance_usdt: {total_balance:.8f}",
+                f"  previous_best_balance_usdt: {previous_best_balance:.8f}",
+                f"  amount_saved_to_spot_usdt: {amount_to_save:.8f}",
+                "  transfer_result: "
+                f"{json.dumps(transfer_result, default=str, sort_keys=True)}",
                 "",
-                "Trades since previous message:",
+                "Model Drift And Execution",
+                _model_drift_summary(trades),
+                "",
+                "Trades Since Previous Message",
                 _format_trade_report(trades),
             ]
         )

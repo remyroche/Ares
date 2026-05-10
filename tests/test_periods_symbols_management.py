@@ -4,12 +4,16 @@ from numpy.typing import NDArray
 
 from extreme_price_movements.periods_symbols_management import (
     EventSchema,
+    InnerFold,
+    OuterFold,
     PlannerState,
+    ResolvedFoldPartition,
     SamplingPolicy,
     SlicePlannerConfig,
     SymbolPolicy,
     _resolve_outer_partition,
     apply_sampling_policy,
+    build_consumer_slice_plan,
     validate_events,
 )
 
@@ -121,3 +125,57 @@ def test_symbol_sampling_rotates_for_train_and_keeps_min_symbols():
     assert len(syms1) == 2
     assert len(syms2) == 2
     assert syms0 != syms1 != syms2
+
+
+def test_policy_optimiser_receives_full_outer_test_slice():
+    t0 = pd.date_range("2026-01-01", periods=10, freq="h", tz="UTC")
+    state = PlannerState(
+        events=pd.DataFrame(),
+        schema=EventSchema(),
+        t0_ns=t0.view("int64"),
+        t1_ns=(t0 + pd.Timedelta(hours=1)).view("int64"),
+        symbol_codes=np.zeros(10, dtype=np.int32),
+        symbol_labels=np.array(["BTC/USDC"], dtype=object),
+        group_codes={},
+        group_labels={},
+        overlap=None,  # type: ignore[arg-type]
+    )
+    partition = ResolvedFoldPartition(
+        outer_fold_id=0,
+        symbol_mode="all_symbols",
+        train_symbol_codes=np.array([0], dtype=np.int32),
+        valid_symbol_codes=np.array([0], dtype=np.int32),
+        test_symbol_codes=np.array([0], dtype=np.int32),
+    )
+    outer = OuterFold(
+        outer_fold_id=0,
+        train_idx=np.arange(0, 6, dtype=np.int64),
+        valid_idx=np.arange(6, 8, dtype=np.int64),
+        test_idx=np.arange(8, 10, dtype=np.int64),
+        train_symbols=("BTC/USDC",),
+        valid_symbols=("BTC/USDC",),
+        test_symbols=("BTC/USDC",),
+        partition=partition,
+        metadata={
+            "train_window_start": t0[0],
+            "train_window_end": t0[5],
+            "test_window_start": t0[8],
+            "test_window_end": t0[9],
+        },
+    )
+    cfg = SlicePlannerConfig.fast_defaults(schema=EventSchema())
+
+    plans = build_consumer_slice_plan(
+        state,
+        [outer],
+        {0: [InnerFold(0, 0, np.arange(0, 4), np.arange(4, 6))]},
+        "policy_optimiser",
+        cfg,
+        tprint=lambda _msg: None,
+    )
+
+    assert len(plans) == 1
+    assert plans[0].tag == "predict_policy_oos"
+    assert plans[0].metadata["predict_role"] == "outer_test"
+    assert plans[0].metadata["policy_optimiser_holdout_frac"] == 1.0
+    assert plans[0].predict_idx.tolist() == outer.test_idx.tolist()

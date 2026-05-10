@@ -7,7 +7,7 @@ This module applies candidate thresholds to select trade candidates:
 - Returns long_candidates and short_candidates
 """
 
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, Iterable, List, Tuple, Any, Optional
 
 import pandas as pd
 import numpy as np
@@ -162,7 +162,7 @@ def _build_mask_for_mode(
 
     fp = FeatureProcessor()
     X, metadata, _ = fp.prepare_features(feats_1d, idx_flat, sym_flat, mask_cfg)
-    resolver = CanonicalRuleMaskResolver(X, metadata)
+    resolver = CanonicalRuleMaskResolver(X, metadata, raw_feature_lookup=feats_1d)
     tprint(
         f"candidate_selector: CanonicalRuleMaskResolver initialized for mask_cfg name {mask_cfg.get('name')}"
     )
@@ -389,6 +389,59 @@ def _build_mask_for_mode(
         return pd.DataFrame(
             False, index=close_df.index, columns=close_df.columns, dtype=bool
         )
+
+
+def build_strategy_candidate_masks(
+    panel: Dict[str, pd.DataFrame],
+    feats: Dict[str, pd.DataFrame],
+    strategies: Iterable[Dict[str, Any]],
+) -> Dict[str, List[str]]:
+    """Return latest symbols passing each LGBM-generated strategy mask.
+
+    Strategies are rows from
+    load_inference_candidate_mask_params_per_bucket(), where strategy_id is the
+    safe ID used by train_base/train_meta and base_event_trigger is the
+    canonical LGBM rule expression.
+    """
+    out: Dict[str, List[str]] = {}
+    close = panel.get("close")
+    if not isinstance(close, pd.DataFrame) or close.empty:
+        return out
+
+    for strategy in strategies:
+        if not isinstance(strategy, dict):
+            continue
+        strategy_id = str(strategy.get("strategy_id", "") or "")
+        if not strategy_id:
+            continue
+        mask_cfg = dict(strategy.get("mask_params", {}) or {})
+        mask_cfg.update(strategy)
+        canonical_key = str(
+            strategy.get("base_event_trigger")
+            or strategy.get("canonical_key")
+            or mask_cfg.get("canonical_key")
+            or ""
+        )
+        if canonical_key:
+            mask_cfg.setdefault("base_event_trigger", canonical_key)
+            mask_cfg.setdefault("canonical_key", canonical_key)
+        try:
+            mask_df = _build_mask_for_mode(panel, feats, mask_cfg)
+        except Exception as exc:
+            tprint(
+                "candidate_selector: strategy mask failed "
+                f"strategy_id={strategy_id} error={exc}"
+            )
+            out[strategy_id] = []
+            continue
+        if not isinstance(mask_df, pd.DataFrame) or mask_df.empty:
+            out[strategy_id] = []
+            continue
+        latest = mask_df.reindex(index=close.index, columns=close.columns).iloc[-1]
+        out[strategy_id] = (
+            latest[latest.fillna(False).astype(bool)].index.astype(str).tolist()
+        )
+    return out
 
 
 def _up_down_zones(

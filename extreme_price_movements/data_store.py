@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 import requests
+from requests.adapters import HTTPAdapter
 
 from extreme_price_movements.utils import retry_with_backoff, tprint
 
@@ -34,6 +35,38 @@ _ARCHIVE_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"
 )
+HTTP_POOL_MAXSIZE = int(os.getenv("EPM_HTTP_POOL_MAXSIZE", "64") or "64")
+HTTP_POOL_CONNECTIONS = int(os.getenv("EPM_HTTP_POOL_CONNECTIONS", "64") or "64")
+_PUBLIC_DATA_SESSION: requests.Session | None = None
+
+
+def _configure_requests_session_pool(session: Any) -> None:
+    """Increase requests/urllib3 pool capacity for shared Binance clients."""
+    if session is None or not hasattr(session, "mount"):
+        return
+    adapter = HTTPAdapter(
+        pool_connections=max(1, HTTP_POOL_CONNECTIONS),
+        pool_maxsize=max(1, HTTP_POOL_MAXSIZE),
+        max_retries=0,
+        pool_block=False,
+    )
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+
+
+def _configure_exchange_http_pool(exchange: Any) -> Any:
+    """Configure ccxt's requests session pool when the sync client exposes it."""
+    session = getattr(exchange, "session", None)
+    _configure_requests_session_pool(session)
+    return exchange
+
+
+def _public_data_session() -> requests.Session:
+    global _PUBLIC_DATA_SESSION
+    if _PUBLIC_DATA_SESSION is None:
+        _PUBLIC_DATA_SESSION = requests.Session()
+        _configure_requests_session_pool(_PUBLIC_DATA_SESSION)
+    return _PUBLIC_DATA_SESSION
 
 
 def _download_public_zip_to_tmp(url: str) -> Optional[str]:
@@ -43,7 +76,7 @@ def _download_public_zip_to_tmp(url: str) -> Optional[str]:
     for attempt, verify_ssl in enumerate((True, False), start=1):
         try:
             headers = {"User-Agent": _ARCHIVE_USER_AGENT}
-            response = requests.get(
+            response = _public_data_session().get(
                 url, stream=True, timeout=60, headers=headers, verify=verify_ssl
             )
             if response.status_code == 404:
@@ -362,13 +395,13 @@ def make_spot_exchange():
     }
     if api_key and api_secret:
         config.update({"apiKey": api_key, "secret": api_secret})
-    ex = ccxt.binance(config)
+    ex = _configure_exchange_http_pool(ccxt.binance(config))
     ex.load_markets()
     return ex
 
 
 def make_perp_exchange():
-    ex = ccxt.binanceusdm({"enableRateLimit": True})
+    ex = _configure_exchange_http_pool(ccxt.binanceusdm({"enableRateLimit": True}))
     ex.load_markets()
     return ex
 

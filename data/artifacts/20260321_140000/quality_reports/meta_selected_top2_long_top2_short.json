@@ -1,0 +1,109 @@
+{
+  "ranking_formula": "HR20 * NDCG20",
+  "selected_strategy_ids": [
+    "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575",
+    "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701",
+    "dist_prior_day_low_0_023332626_loc_vwap_dev_z_48_-0_85210818_dist_ema_fast_0_003809185_ret24h_-1_0786834",
+    "dist_prior_day_low_0_029999996_compression_ratio_-0_095844157_vov_mad_20_-0_2115936"
+  ],
+  "selected": [
+    {
+      "side": "long",
+      "strategy_id": "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575",
+      "H": 10,
+      "HR20": 0.497708261013031,
+      "NDCG20": 0.5132468100029234,
+      "score_hr20_ndcg20": 0.2554471772770405
+    },
+    {
+      "side": "long",
+      "strategy_id": "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701",
+      "H": 10,
+      "HR20": 0.4589444100856781,
+      "NDCG20": 0.4731855159836531,
+      "score_hr20_ndcg20": 0.21716584749420487
+    },
+    {
+      "side": "short",
+      "strategy_id": "dist_prior_day_low_0_023332626_loc_vwap_dev_z_48_-0_85210818_dist_ema_fast_0_003809185_ret24h_-1_0786834",
+      "H": 5,
+      "HR20": 0.4702443778514862,
+      "NDCG20": 0.4837576466046612,
+      "score_hr20_ndcg20": 0.22748431355850804
+    },
+    {
+      "side": "short",
+      "strategy_id": "dist_prior_day_low_0_029999996_compression_ratio_-0_095844157_vov_mad_20_-0_2115936",
+      "H": 10,
+      "HR20": 0.43828117847442627,
+      "NDCG20": 0.4494224113708795,
+      "score_hr20_ndcg20": 0.19697338408844747
+    }
+  ],
+  "ranked_all": [
+    {
+      "side": "long",
+      "strategy_id": "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575",
+      "H": 10,
+      "HR20": 0.497708261013031,
+      "NDCG20": 0.5132468100029234,
+      "score_hr20_ndcg20": 0.2554471772770405
+    },
+    {
+      "side": "long",
+      "strategy_id": "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701",
+      "H": 10,
+      "HR20": 0.4589444100856781,
+      "NDCG20": 0.4731855159836531,
+      "score_hr20_ndcg20": 0.21716584749420487
+    },
+    {
+      "side": "long",
+      "strategy_id": "dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639",
+      "H": 5,
+      "HR20": 0.4539109766483307,
+      "NDCG20": 0.4676709432607095,
+      "score_hr20_ndcg20": 0.2122809746055147
+    },
+    {
+      "side": "long",
+      "strategy_id": "dist_prior_day_low_0_012672868_range_expansion_ratio_-0_26680329_variance_ratio_10_48_-0_37689748_vov_fast_slow_ratio_0_56139898",
+      "H": 5,
+      "HR20": 0.4278804361820221,
+      "NDCG20": 0.4369283040727384,
+      "score_hr20_ndcg20": 0.1869530733269145
+    },
+    {
+      "side": "short",
+      "strategy_id": "dist_prior_day_low_0_023332626_loc_vwap_dev_z_48_-0_85210818_dist_ema_fast_0_003809185_ret24h_-1_0786834",
+      "H": 5,
+      "HR20": 0.4702443778514862,
+      "NDCG20": 0.4837576466046612,
+      "score_hr20_ndcg20": 0.22748431355850804
+    },
+    {
+      "side": "short",
+      "strategy_id": "dist_prior_day_low_0_029999996_compression_ratio_-0_095844157_vov_mad_20_-0_2115936",
+      "H": 10,
+      "HR20": 0.43828117847442627,
+      "NDCG20": 0.4494224113708795,
+      "score_hr20_ndcg20": 0.19697338408844747
+    },
+    {
+      "side": "short",
+      "strategy_id": "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701",
+      "H": 5,
+      "HR20": 0.42216452956199646,
+      "NDCG20": 0.4319470051017588,
+      "score_hr20_ndcg20": 0.18235270420449728
+    },
+    {
+      "side": "short",
+      "strategy_id": "dist_prior_day_low_0_033441655_compression_score_0_55698758_ret24h_-1_0731928",
+      "H": 10,
+      "HR20": 0.40544724464416504,
+      "NDCG20": 0.4121310873595817,
+      "score_hr20_ndcg20": 0.16709741380214607
+    }
+  ]
+}

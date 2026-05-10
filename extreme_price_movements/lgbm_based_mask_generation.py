@@ -4564,7 +4564,9 @@ class CanonicalRuleMaskResolver:
             "context_feature_names": tuple(context_feature_names),
             "context_target_values": np.asarray(context_target_values, dtype=np.int8),
             "parent_context_name": parent_context_name,
-            "unresolved_count": len(unresolved),
+            "unresolved_count": (
+                0 if parent_context_name is not None else len(unresolved)
+            ),
         }
 
         instr_source_type: List[int] = []

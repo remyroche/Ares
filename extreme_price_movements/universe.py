@@ -8,6 +8,7 @@ from typing import Optional
 
 import pandas as pd
 import requests
+from requests.adapters import HTTPAdapter
 
 from extreme_price_movements.utils import tprint
 
@@ -50,6 +51,25 @@ PERP_INFO_PATH = "/fapi/v1/exchangeInfo"
 PERP_QUOTES = frozenset({"USDT", "USDC"})
 
 _PERP_SYMBOL_CACHE: Optional[set[str]] = None
+_BINANCE_SESSION: Optional[requests.Session] = None
+HTTP_POOL_MAXSIZE = int(os.getenv("EPM_HTTP_POOL_MAXSIZE", "64") or "64")
+HTTP_POOL_CONNECTIONS = int(os.getenv("EPM_HTTP_POOL_CONNECTIONS", "64") or "64")
+
+
+def _binance_session() -> requests.Session:
+    global _BINANCE_SESSION
+    if _BINANCE_SESSION is None:
+        session = requests.Session()
+        adapter = HTTPAdapter(
+            pool_connections=max(1, HTTP_POOL_CONNECTIONS),
+            pool_maxsize=max(1, HTTP_POOL_MAXSIZE),
+            max_retries=0,
+            pool_block=False,
+        )
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        _BINANCE_SESSION = session
+    return _BINANCE_SESSION
 
 
 def _request_error_category(exc: Exception) -> str:
@@ -92,7 +112,7 @@ def _binance_get_json(path: str) -> object:
             tprint(
                 f"Binance public GET {path}: attempt={attempt}/{REQUEST_MAX_RETRIES}"
             )
-            response = requests.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
+            response = _binance_session().get(url, timeout=REQUEST_TIMEOUT_SECONDS)
             response.raise_for_status()
             return response.json()
         except Exception as exc:

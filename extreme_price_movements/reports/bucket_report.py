@@ -795,13 +795,85 @@ def report_ridge_sizer(run_id: str, result: Dict[str, Any], base_dir: str | Path
         lines.extend(_md_table(headers, table_rows))
         lines.append("")
 
-        # Weight breakdown per bucket
-        lines.append(f"### Weight Breakdown — {direction.upper()}")
+        # Detailed Bucket Breakdowns
+        lines.append(f"### Detailed Breakdowns — {direction.upper()}")
         for bkt in buckets:
+            m = dir_metrics.get(bkt, {})
             bkt_weights = {k.replace(bkt + "_", ""): v for k, v in all_weights.items() if k.startswith(bkt + "_")}
-            if bkt_weights:
-                lines.append(f"**{bkt}**: " + ", ".join(f"`{k}`={v:.4f}" for k, v in sorted(bkt_weights.items())))
-        lines.append("")
+            lines.append(f"#### Bucket: {bkt}")
+
+            # 1. CV Performance & Stability
+            lines.append("**CV Performance (Fold Stability)**")
+            cv_pnl = _fmt(m.get("cv_best_pnl_total", float("nan")))
+            cv_sortino = _fmt(m.get("cv_best_sortino", float("nan")))
+            cv_ic = _fmt(m.get("cv_best_ic", float("nan")))
+            cv_maxdd = _fmt(m.get("cv_best_maxdd", float("nan")))
+            cv_wr = _pct(m.get("cv_best_winrate", float("nan")))
+            lines.append(f"- PnL Total: {cv_pnl}")
+            lines.append(f"- Sortino: {cv_sortino}")
+            lines.append(f"- IC: {cv_ic}")
+            lines.append(f"- MaxDD: {cv_maxdd}")
+            lines.append(f"- WinRate: {cv_wr}")
+            lines.append("")
+
+            # 2. Walk-Forward OOS Evaluation
+            lines.append("**Walk-Forward Validation (Out-of-Sample)**")
+            best_oos = m.get("best_oos_metrics", {})
+            full_oos = m.get("full_oos_metrics", {})
+            if best_oos or full_oos:
+                oos_to_use = best_oos if best_oos else full_oos
+                oos_pnl = _fmt(oos_to_use.get("PnL_total", float("nan")))
+                oos_pnl_day = _fmt(oos_to_use.get("PnL_per_day", float("nan")))
+                oos_sortino = _fmt(oos_to_use.get("Sortino", float("nan")))
+                oos_maxdd = _fmt(oos_to_use.get("MaxDD", float("nan")))
+                oos_wr = _pct(oos_to_use.get("WinRate", float("nan")))
+                oos_pf = _fmt(oos_to_use.get("ProfitFactor", float("nan")), 2)
+                lines.append(f"- OOS PnL Total: {oos_pnl}")
+                lines.append(f"- OOS PnL/Day: {oos_pnl_day}")
+                lines.append(f"- OOS Sortino: {oos_sortino}")
+                lines.append(f"- OOS MaxDD: {oos_maxdd}")
+                lines.append(f"- OOS WinRate: {oos_wr}")
+                lines.append(f"- OOS Profit Factor: {oos_pf}")
+            else:
+                lines.append("- *No OOS metrics available.*")
+            lines.append("")
+
+            # 3. Baseline Comparison (Alpha Retention)
+            lines.append("**Baseline Comparison (Alpha Retention)**")
+            waterfall = m.get("alpha_retention_waterfall", {})
+            if waterfall:
+                b_feat = waterfall.get("best_raw_feature", "N/A")
+                b_ic = _fmt(waterfall.get("best_raw_feature_ic", float("nan")))
+                c_ic = _fmt(waterfall.get("combined_score_ic", float("nan")))
+                lines.append(f"- Best Raw Feature: `{b_feat}` (IC: {b_ic})")
+                lines.append(f"- Combined Score IC: {c_ic}")
+            else:
+                lines.append("- *No baseline comparison available.*")
+            lines.append("")
+
+            # 4. Per-Model Component Analysis
+            lines.append("**Per-Model Component Analysis**")
+            wdiag = m.get("weight_diagnostics", {})
+            top_models = wdiag.get("top_model_contributors", [])
+            if top_models:
+                mod_headers = ["Model Name", "Weight", "Abs Weight Share", "Corr with Combined Score"]
+                mod_rows = []
+                for mod in top_models:
+                    m_name = mod.get("model_name", "—")
+                    # strip bkt prefix if present
+                    if m_name.startswith(bkt + "_"):
+                        m_name = m_name.replace(bkt + "_", "")
+                    m_w = _fmt(mod.get("weight", float("nan")))
+                    m_ws = _pct(mod.get("weight_share_abs", float("nan")))
+                    m_corr = _fmt(mod.get("corr_with_combined_score", float("nan")))
+                    mod_rows.append([m_name, m_w, m_ws, m_corr])
+                lines.extend(_md_table(mod_headers, mod_rows))
+            else:
+                if bkt_weights:
+                    lines.append("- *Basic weight list:* " + ", ".join(f"`{k}`={v:.4f}" for k, v in sorted(bkt_weights.items())))
+                else:
+                    lines.append("- *No weight diagnostics available.*")
+            lines.append("")
 
     _data_root = result.get("data_root")
     if _data_root:

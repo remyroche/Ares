@@ -24,7 +24,6 @@ LIVE_UNAVAILABLE_FEATURES: Set[str] = {
     "y_move",
     "y_move_soft",
     "move_threshold",
-    "barrier_pct",
     "bars_to_mfe",
     "reg_weight",
 }

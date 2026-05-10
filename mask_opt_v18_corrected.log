@@ -1,3 +1,0 @@
-  File "/Users/remyroche/Documents/Ares/extreme_price_movements/mask_optimiser.py", line 926
-    silent=True,
-IndentationError: unexpected indent

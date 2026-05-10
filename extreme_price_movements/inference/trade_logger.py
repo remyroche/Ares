@@ -1046,7 +1046,12 @@ class TradeLogger:
 
         row = self._persist_record(row)
 
-        tprint(f"Logged trade: {action} {side} {symbol} {size}@{price}")
+        lifecycle_event = row.get("lifecycle_event") or action
+        status = row.get("status") or ""
+        tprint(
+            f"Logged trade event: {lifecycle_event} status={status} "
+            f"action={action} {side} {symbol} {size}@{price}"
+        )
 
     def log_entry(
         self,

@@ -1,6 +1,0 @@
-model_id,fold_id,seed,tree_idx,leaf_idx,reason
-stage_a_context_model,1,42,5,0,all_negative_path
-stage_a_context_model,1,42,37,0,all_negative_path
-stage_a_context_model,2,42,63,0,all_negative_path
-stage_a_context_model,2,42,66,0,all_negative_path
-stage_a_context_model,2,42,83,0,all_negative_path

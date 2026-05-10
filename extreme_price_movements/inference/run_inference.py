@@ -1292,6 +1292,28 @@ def _execute_trade_with_optional_context(
         )
 
 
+def _resolve_live_barrier_pct(
+    symbol: str,
+    features_log: Dict[str, Any],
+) -> Optional[float]:
+    """Return a live-safe barrier fraction for optimiser-style stop placement."""
+    for key in ("barrier_pct", "barrier_frac", "atr_pct", "atr_frac", "atr_pct_base"):
+        value = features_log.get(key)
+        try:
+            barrier = float(value)
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(barrier) and barrier > 0.0:
+            if key != "barrier_pct":
+                barrier = max(barrier, 0.005)
+                tprint(
+                    f"Live barrier fallback for {symbol}: using {key}={barrier:.6g} "
+                    "because barrier_pct was unavailable"
+                )
+            return barrier
+    return None
+
+
 def _sleep_until_hourly_ohlcv_window(
     now: pd.Timestamp,
     *,
@@ -1323,6 +1345,27 @@ def _latest_closed_candle_start(
     if now_ts < boundary + pd.Timedelta(seconds=float(delay_seconds)):
         boundary -= freq
     return boundary - freq
+
+
+def _closed_candle_age_seconds(
+    now: Optional[pd.Timestamp],
+    candle_start: pd.Timestamp,
+    *,
+    timeframe_minutes: int,
+) -> float:
+    """Age in seconds since the candle close time, not since candle start."""
+    now_ts = pd.Timestamp(now if now is not None else pd.Timestamp.now(tz="UTC"))
+    if now_ts.tzinfo is None:
+        now_ts = now_ts.tz_localize("UTC")
+    else:
+        now_ts = now_ts.tz_convert("UTC")
+    start_ts = pd.Timestamp(candle_start)
+    if start_ts.tzinfo is None:
+        start_ts = start_ts.tz_localize("UTC")
+    else:
+        start_ts = start_ts.tz_convert("UTC")
+    close_ts = start_ts + pd.Timedelta(minutes=int(timeframe_minutes))
+    return max(0.0, float((now_ts - close_ts).total_seconds()))
 
 
 def _sleep_until_next_candle_close(
@@ -2305,6 +2348,9 @@ def run_inference_step(
                             vals = feat_df[symbol].dropna()
                             if not vals.empty:
                                 features_log[feat_name] = vals.iloc[-1]
+                live_barrier_pct = _resolve_live_barrier_pct(symbol, features_log)
+                if live_barrier_pct is not None:
+                    features_log["barrier_pct"] = live_barrier_pct
                 execution_price = (
                     None
                     if live_test_mode
@@ -2333,17 +2379,7 @@ def run_inference_step(
                         "deployment_rank_threshold": decision.get(
                             "deployment_rank_threshold"
                         ),
-                        "atr_frac": (
-                            features_log.get("atr_frac")
-                            or features_log.get("atr_pct")
-                            or features_log.get("atr_pct_base")
-                        ),
-                        "barrier_pct": (
-                            features_log.get("barrier_pct")
-                            or features_log.get("atr_frac")
-                            or features_log.get("atr_pct")
-                            or features_log.get("atr_pct_base")
-                        ),
+                        "barrier_pct": live_barrier_pct,
                     },
                 )
                 _record_trade_execution_health(portfolio_mgr, trade_result)
@@ -2372,7 +2408,8 @@ def run_inference_step(
                         entry_price=float(price if price is not None else 0.0),
                         entry_time=now_utc,
                     )
-                logger.log_entry(
+                if trade_success:
+                    logger.log_entry(
                     symbol=symbol,
                     side=side,
                     size=abs(size),
@@ -2407,9 +2444,26 @@ def run_inference_step(
                     net_pnl_pct=trade_result.get("net_pnl_pct"),
                     gross_pnl_amount=trade_result.get("gross_pnl_amount"),
                     net_pnl_amount=trade_result.get("net_pnl_amount"),
-                    status="pending" if trade_success else "failed",
+                    status="pending",
                     error=trade_result.get("error", ""),
-                )
+                    )
+                else:
+                    logger.log_entry(
+                        symbol=symbol,
+                        side=side,
+                        size=abs(size),
+                        price=price,
+                        predictions=predictions,
+                        features=features_log,
+                        mode=executor.mode,
+                        strategy_id=strategy_id,
+                        calibrated_score=float(decision["calibrated_score"]),
+                        rank_threshold=float(decision["rank_threshold"]),
+                        order_error_category=order_error_category,
+                        lifecycle_event="entry_rejected",
+                        status="failed",
+                        error=trade_result.get("error", ""),
+                    )
                 if trade_success:
                     side_metrics["executed"] += 1
                     total_entries_executed += 1
@@ -3211,22 +3265,14 @@ def _infer_policy_barrier_frac(
     entry_price: float,
     stop_price: float,
 ) -> float:
-    """Infer the policy optimiser barrier fraction from params/active stop."""
-    for key in ("barrier_frac", "barrier_pct", "atr", "tp_base_pct", "tp_abs_pct"):
+    """Return the policy optimiser barrier fraction without live ATR fallbacks."""
+    for key in ("barrier_frac", "barrier_pct"):
         if key not in params:
             continue
         value = float(params.get(key, np.nan))
         if np.isfinite(value) and value > 0.0:
             return value
-    sl_mult = max(float(params.get("sl_mult", 1.0) or 1.0), 1e-12)
-    if (
-        np.isfinite(entry_price)
-        and entry_price > 0.0
-        and np.isfinite(stop_price)
-        and stop_price > 0.0
-    ):
-        return abs(entry_price - stop_price) / entry_price / sl_mult
-    return 0.01
+    return float("nan")
 
 
 def _policy_optimiser_trailing_stop(
@@ -3277,6 +3323,12 @@ def _policy_optimiser_stop_decision(
         entry_price=entry_price,
         stop_price=stop_price,
     )
+    if not np.isfinite(barrier_frac) or barrier_frac <= 0.0:
+        return {
+            "stop_price": float(stop_price),
+            "reason": "original_stop_loss",
+            "detail": "missing_policy_barrier_pct",
+        }
     candidate = float(stop_price)
     reason = "original_stop_loss"
     detail = "unchanged_original_stop_loss"
@@ -3635,9 +3687,43 @@ def main():
                 timeframe_minutes=60,
                 delay_seconds=hourly_delay,
             )
+            current_close = current_time + pd.Timedelta(minutes=15)
+            latest_closed_hour_close = latest_closed_hour + pd.Timedelta(hours=1)
+            fifteen_age_seconds = _closed_candle_age_seconds(
+                loop_now,
+                current_time,
+                timeframe_minutes=15,
+            )
+            hourly_age_seconds = _closed_candle_age_seconds(
+                loop_now,
+                latest_closed_hour,
+                timeframe_minutes=60,
+            )
+            max_entry_15m_age_seconds = float(
+                config.get("entry_15m_max_staleness_seconds", 15.0 * 60.0)
+            )
+            max_entry_hourly_age_seconds = float(
+                config.get("entry_hourly_max_staleness_seconds", 15.0 * 60.0)
+            )
+            fifteen_entry_fresh = fifteen_age_seconds <= max(
+                max_entry_15m_age_seconds,
+                fifteen_delay,
+            )
+            hourly_entry_fresh = hourly_age_seconds <= max(
+                max_entry_hourly_age_seconds,
+                hourly_delay,
+            )
+            entry_context_fresh = bool(fifteen_entry_fresh and hourly_entry_fresh)
             tprint(
                 f"\n=== Running inference after closed 15m candle "
-                f"{current_time} (latest_closed_hour={latest_closed_hour}) ==="
+                f"start={current_time} close={current_close} "
+                f"age={fifteen_age_seconds:.0f}s "
+                f"fresh_15m_for_entries={fifteen_entry_fresh} "
+                f"(latest_closed_hour_start={latest_closed_hour} "
+                f"close={latest_closed_hour_close} "
+                f"age={hourly_age_seconds:.0f}s "
+                f"fresh_1h_for_entries={hourly_entry_fresh} "
+                f"fresh_for_entries={entry_context_fresh}) ==="
             )
             did_hourly_refresh = False
 
@@ -3658,7 +3744,10 @@ def main():
                 )
 
             # Fetch full universe only for closed hourly candles.
-            if (last_hourly_sync is None) or (latest_closed_hour > last_hourly_sync):
+            if (
+                ((last_hourly_sync is None) or (latest_closed_hour > last_hourly_sync))
+                and entry_context_fresh
+            ):
                 refresh_microdata = bool(config.get("hourly_refresh_microdata", True))
                 data_fetcher.fetch_hourly_universe_once(
                     download_symbols,
@@ -3678,6 +3767,19 @@ def main():
                 )
                 last_hourly_sync = latest_closed_hour
                 did_hourly_refresh = True
+            elif (last_hourly_sync is None) or (latest_closed_hour > last_hourly_sync):
+                tprint(
+                    "Skipping hourly entry refresh: latest closed candle context is "
+                    f"stale for new entries (latest_15m={current_time}, "
+                    f"latest_15m_closed_at={current_close}, "
+                    f"latest_15m_age={fifteen_age_seconds:.0f}s, "
+                    f"max_15m_age={max_entry_15m_age_seconds:.0f}s, "
+                    f"target_hour={latest_closed_hour}, "
+                    f"closed_at={latest_closed_hour_close}, "
+                    f"hour_age={hourly_age_seconds:.0f}s, "
+                    f"max_hour_age={max_entry_hourly_age_seconds:.0f}s). "
+                    "Monitoring existing positions only until a fresh hourly close."
+                )
 
             if not did_hourly_refresh:
                 _monitor_active_position_price_action(
@@ -3891,7 +3993,7 @@ def _evaluate_oco_policy(
         entry_price = float(position_state.get("entry_price", 0.0) or 0.0)
         bucket_key = position_state.get("bucket_key", "")
         params = dict(executor.get_bucket_params(bucket_key) or {})
-        for key in ("barrier_frac", "barrier_pct", "atr", "atr_frac"):
+        for key in ("barrier_frac", "barrier_pct"):
             value = position_state.get(key)
             if value is not None and key not in params:
                 params[key] = value

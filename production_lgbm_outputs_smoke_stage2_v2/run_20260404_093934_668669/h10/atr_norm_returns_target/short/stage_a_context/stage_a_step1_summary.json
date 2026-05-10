@@ -1,6 +1,0 @@
-{
-  "candidate_rules": 460,
-  "post_dedup_rules": 15,
-  "buckets": 1,
-  "checkpoint_path": "production_lgbm_outputs_smoke_stage2_v2/run_20260404_093934_668669/h10/atr_norm_returns_target/short/stage_a_context/stage_a_step1_checkpoint.pkl"
-}

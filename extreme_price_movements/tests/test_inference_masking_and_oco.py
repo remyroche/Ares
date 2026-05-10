@@ -272,6 +272,7 @@ def test_5m_exit_takes_priority_over_threshold_update():
         bucket_params={
             "long_mr": {
                 "sl_mult": 1.0,
+                "barrier_pct": 0.01,
                 "tp_mult": 3.0,
                 "trail_mult": 0.25,
                 "giveback_pct": 0.01,
@@ -304,7 +305,7 @@ def test_shadow_executor_exposes_monitorable_open_positions():
     executor = TradeExecutor(
         mode="shadow",
         exchange=None,
-        bucket_params={"long_mr": {"sl_mult": 1.0}},
+        bucket_params={"long_mr": {"sl_mult": 1.0, "barrier_pct": 0.02}},
     )
 
     rec = executor.execute_trade(
@@ -328,6 +329,7 @@ def test_shadow_monitor_updates_stop_from_trailing_price_action():
         bucket_params={
             "long_mr": {
                 "sl_mult": 1.0,
+                "barrier_pct": 0.02,
                 "trail_mult": 0.25,
                 "giveback_pct": 0.01,
                 "profit_lock_amount": 0.003,
@@ -377,6 +379,7 @@ def test_shadow_monitor_keeps_updating_after_initial_eight_hour_window():
         bucket_params={
             "long_mr": {
                 "sl_mult": 1.0,
+                "barrier_pct": 0.02,
                 "trail_mult": 0.25,
                 "giveback_pct": 0.01,
                 "profit_lock_amount": 0.003,
@@ -446,7 +449,7 @@ def test_live_executor_places_stop_loss_only_not_oco_or_take_profit(monkeypatch)
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": {"sl_mult": 1.0}},
+        bucket_params={"long_mr": {"sl_mult": 1.0, "barrier_pct": 0.02}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -535,6 +538,10 @@ def test_exchange_error_classifier_covers_binance_failure_modes():
         "Filter failure: LOT_SIZE precision invalid": "invalid_precision_or_filter",
         "symbol halted or inactive: BTC/USDT": "symbol_halted",
         "Order rejected by exchange": "order_rejected",
+        "ORDER_WOULD_IMMEDIATELY_TRIGGER": "trigger_price_rejected",
+        "OrderImmediatelyFillable": "trigger_price_rejected",
+        "STRATEGY_INVALID_TRIGGER_PRICE": "trigger_price_rejected",
+        "CONDITIONAL_ORDER_TRIGGER_REJECT": "trigger_price_rejected",
         "network timeout while sending order": "network_timeout",
         "cancel rejected by exchange": "cancel_failed",
         "Duplicate clientOrderId was sent": "duplicate_client_order_id",
@@ -552,7 +559,7 @@ def test_live_executor_converts_quote_notional_to_base_amount(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": {"sl_mult": 1.0}},
+        bucket_params={"long_mr": {"sl_mult": 1.0, "barrier_pct": 0.02}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -571,6 +578,30 @@ def test_live_executor_converts_quote_notional_to_base_amount(monkeypatch):
     assert stop_order["type"] == "STOP_LOSS"
 
 
+def test_live_executor_refuses_entry_without_policy_barrier(monkeypatch):
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
+        lambda *args, **kwargs: pd.DataFrame(),
+    )
+    exchange = _FilterAwareExchange()
+    executor = TradeExecutor(
+        mode="live",
+        exchange=exchange,
+        bucket_params={"long_mr": {"sl_mult": 1.0}},
+        config={"monitor_interval_seconds": 300},
+    )
+    try:
+        result = executor.execute_trade(
+            "BTC/USDT", "long", 100.0, price=100.0, bucket_key="long_mr"
+        )
+    finally:
+        executor.shutdown()
+
+    assert not result["success"]
+    assert result["error_category"] == "missing_policy_barrier_pct"
+    assert exchange.orders == []
+
+
 def test_live_executor_rejects_exchange_filter_failures(monkeypatch):
     monkeypatch.setattr(
         "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
@@ -580,7 +611,7 @@ def test_live_executor_rejects_exchange_filter_failures(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": {"sl_mult": 1.0}},
+        bucket_params={"long_mr": {"sl_mult": 1.0, "barrier_pct": 0.02}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -604,7 +635,7 @@ def test_live_executor_rejects_halted_symbols(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": {"sl_mult": 1.0}},
+        bucket_params={"long_mr": {"sl_mult": 1.0, "barrier_pct": 0.02}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -646,7 +677,7 @@ def test_live_executor_classifies_entry_order_failures(
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": {"sl_mult": 1.0}},
+        bucket_params={"long_mr": {"sl_mult": 1.0, "barrier_pct": 0.02}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -682,7 +713,7 @@ def test_live_executor_uses_partial_fill_amount_for_stop_loss(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": {"sl_mult": 1.0}},
+        bucket_params={"long_mr": {"sl_mult": 1.0, "barrier_pct": 0.02}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -708,7 +739,7 @@ def test_stop_loss_cancel_replace_uses_existing_base_amount(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": {"sl_mult": 1.0}},
+        bucket_params={"long_mr": {"sl_mult": 1.0, "barrier_pct": 0.02}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -737,7 +768,7 @@ def test_stop_loss_cancel_replace_does_not_duplicate_on_cancel_failure(monkeypat
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": {"sl_mult": 1.0}},
+        bucket_params={"long_mr": {"sl_mult": 1.0, "barrier_pct": 0.02}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -756,6 +787,59 @@ def test_stop_loss_cancel_replace_does_not_duplicate_on_cancel_failure(monkeypat
     assert stop_update_error_category == "cancel_failed"
 
 
+def test_stop_loss_replacement_retries_trigger_reject_with_wider_gap(monkeypatch):
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
+        lambda *args, **kwargs: pd.DataFrame(),
+    )
+
+    class _TriggerRejectOnceExchange(_FilterAwareExchange):
+        def __init__(self):
+            super().__init__()
+            self.rejected_replacement = False
+
+        def create_order(self, **kwargs):
+            if (
+                kwargs["type"] == "STOP_LOSS"
+                and any(order["type"] == "STOP_LOSS" for order in self.orders)
+                and not self.rejected_replacement
+            ):
+                self.rejected_replacement = True
+                raise RuntimeError("ORDER_WOULD_IMMEDIATELY_TRIGGER")
+            return super().create_order(**kwargs)
+
+    exchange = _TriggerRejectOnceExchange()
+    executor = TradeExecutor(
+        mode="live",
+        exchange=exchange,
+        bucket_params={"long_mr": {"sl_mult": 1.0, "barrier_pct": 0.02}},
+        config={
+            "monitor_interval_seconds": 300,
+            "stop_replace_retry_backoff_seconds": 0.0,
+            "stop_replace_retry_gap_growths": [0.0, 0.10, 0.20, 0.30],
+        },
+    )
+    try:
+        result = executor.execute_trade(
+            "BTC/USDT", "long", 100.0, price=100.0, bucket_key="long_mr"
+        )
+        assert result["success"]
+        state = executor.oco_executor.active_positions["BTC/USDT"]
+        executor.oco_executor._update_stop_loss("BTC/USDT", state, 99.95)
+        stop_update_error_category = state.get("stop_update_error_category")
+        events = list(state.get("trade_recap_events", []))
+    finally:
+        executor.shutdown()
+
+    stop_orders = [order for order in exchange.orders if order["type"] == "STOP_LOSS"]
+    assert stop_update_error_category is None
+    assert len(stop_orders) == 2
+    assert exchange.rejected_replacement is True
+    assert stop_orders[-1]["params"]["stopPrice"] < 99.70
+    assert exchange.canceled[0][0] == "order-2"
+    assert any(event["event"] == "stop_replace_attempt_failed" for event in events)
+
+
 def test_margin_executor_routes_entry_stop_cancel_and_close_params(monkeypatch):
     monkeypatch.setattr(
         "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
@@ -765,7 +849,7 @@ def test_margin_executor_routes_entry_stop_cancel_and_close_params(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": {"sl_mult": 1.0}},
+        bucket_params={"long_mr": {"sl_mult": 1.0, "barrier_pct": 0.02}},
         config={
             "monitor_interval_seconds": 300,
             "execution_account": "margin",
@@ -817,7 +901,7 @@ def test_monitor_orders_once_removes_filled_stop(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": {"sl_mult": 1.0}},
+        bucket_params={"long_mr": {"sl_mult": 1.0, "barrier_pct": 0.02}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -847,7 +931,7 @@ def test_monitor_orders_once_classifies_fetch_order_timeout(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": {"sl_mult": 1.0}},
+        bucket_params={"long_mr": {"sl_mult": 1.0, "barrier_pct": 0.02}},
         config={"monitor_interval_seconds": 300},
     )
     try:

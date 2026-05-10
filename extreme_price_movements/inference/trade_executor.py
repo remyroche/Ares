@@ -20,6 +20,17 @@ from extreme_price_movements.inference.parity import strategy_core_id
 from extreme_price_movements.utils import tprint
 
 LIVE_EXECUTION_MODES = {"live", "live-test", "live_test", "livetest"}
+TRIGGER_PRICE_REJECT_TOKENS = (
+    "order_would_immediately_trigger",
+    "order would immediately trigger",
+    "orderimmediatelyfillable",
+    "immediately fillable",
+    "strategy_invalid_trigger_price",
+    "invalid trigger price",
+    "conditional_order_trigger_reject",
+    "trigger reject",
+    "trigger price",
+)
 
 
 def _is_live_execution_mode(mode: str) -> bool:
@@ -33,6 +44,98 @@ def _safe_float(value: Any, default: float = np.nan) -> float:
     except (TypeError, ValueError):
         return default
     return out if np.isfinite(out) else default
+
+
+def _extract_policy_barrier_frac(
+    trade_context: Optional[Dict[str, Any]],
+    params: Optional[Dict[str, Any]] = None,
+) -> float:
+    """Return the optimiser barrier fraction without ATR-style fallbacks."""
+    for source in (trade_context, params):
+        if not isinstance(source, dict):
+            continue
+        for key in ("barrier_frac", "barrier_pct"):
+            value = _safe_float(source.get(key), default=np.nan)
+            if np.isfinite(value) and value > 0.0:
+                return float(value)
+    return np.nan
+
+
+def _exchange_error_text(exc: Exception) -> str:
+    return f"{exc.__class__.__name__} {exc}".lower()
+
+
+def _exchange_reject_reason(exc: Exception) -> str:
+    """Extract the most useful stable reject reason from a Binance/ccxt error."""
+    text = _exchange_error_text(exc)
+    for token in TRIGGER_PRICE_REJECT_TOKENS:
+        if token in text:
+            return token.upper().replace(" ", "_")
+    for token in (
+        "insufficient",
+        "balance",
+        "min_notional",
+        "lot_size",
+        "precision",
+        "rate limit",
+        "too many requests",
+        "timeout",
+        "network",
+        "permission",
+        "unauthorized",
+    ):
+        if token in text:
+            return token.upper().replace(" ", "_")
+    return exc.__class__.__name__
+
+
+def _is_trigger_price_reject(exc: Exception) -> bool:
+    text = _exchange_error_text(exc)
+    return any(token in text for token in TRIGGER_PRICE_REJECT_TOKENS)
+
+
+def _stop_side_is_valid(side: str, stop_price: float, current_price: float) -> bool:
+    if not (np.isfinite(stop_price) and np.isfinite(current_price)):
+        return False
+    if current_price <= 0.0 or stop_price <= 0.0:
+        return False
+    return stop_price < current_price if side == "long" else stop_price > current_price
+
+
+def _stop_gap_fraction(stop_price: float, current_price: float) -> float:
+    if not (np.isfinite(stop_price) and np.isfinite(current_price)):
+        return np.nan
+    if current_price <= 0.0:
+        return np.nan
+    return float(
+        abs(float(current_price) - float(stop_price)) / abs(float(current_price))
+    )
+
+
+def _widen_stop_away_from_market(
+    *,
+    side: str,
+    stop_price: float,
+    current_price: float,
+    round_fee_buffer_pct: float,
+    retry_gap_growth: float,
+    immediate_buffer_pct: float,
+) -> float:
+    """Move a stop away from current price while preserving the stop side.
+
+    The retry schedule keeps at least the round-trip fee buffer between current
+    price and stop, then widens by 10/20/30% of the distance between the
+    requested gap and that fee buffer.
+    """
+    raw_gap = _stop_gap_fraction(stop_price, current_price)
+    if not np.isfinite(raw_gap):
+        return float(stop_price)
+    min_gap = max(float(round_fee_buffer_pct), float(immediate_buffer_pct), 1e-9)
+    target_gap = max(float(raw_gap), min_gap)
+    target_gap += max(float(retry_gap_growth), 0.0) * abs(float(raw_gap) - min_gap)
+    if str(side).lower() == "long":
+        return float(current_price) * (1.0 - target_gap)
+    return float(current_price) * (1.0 + target_gap)
 
 
 def _append_position_event(
@@ -82,9 +185,9 @@ def _format_trade_recap(events: Any) -> str:
 
 def _classify_exchange_error(exc: Exception) -> str:
     """Return a stable exchange error category for logs and risk gates."""
-    message = str(exc).lower()
-    name = exc.__class__.__name__.lower()
-    text = f"{name} {message}"
+    text = _exchange_error_text(exc)
+    if _is_trigger_price_reject(exc):
+        return "trigger_price_rejected"
     if "429" in text or "rate limit" in text or "too many requests" in text:
         return "rate_limited"
     if "authentication" in text or "unauthorized" in text or "permission" in text:
@@ -513,51 +616,6 @@ class OCOExecutor:
         """Return zero: live inference cooldown is handled on losing closes only."""
         return 0.0
 
-    def _get_current_atr(self, symbol: str) -> float:
-        """Get current ATR for the symbol.
-
-        In production, this would fetch from exchange or calculate from recent data.
-        Returns ATR as a fraction of price (e.g., 0.01 = 1%).
-        """
-        try:
-            ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe="1h", limit=24)
-            if ohlcv:
-                now = pd.Timestamp.now(tz="UTC")
-                latest_closed_start = now.floor("h") - pd.Timedelta(hours=1)
-                closed = []
-                for row in ohlcv:
-                    try:
-                        row_ts = pd.to_datetime(row[0], unit="ms", utc=True)
-                    except Exception:
-                        row_ts = None
-                    if row_ts is None or row_ts <= latest_closed_start:
-                        closed.append(row)
-                ohlcv = closed[-14:]
-            if ohlcv and len(ohlcv) >= 14:
-                highs = [x[2] for x in ohlcv]
-                lows = [x[3] for x in ohlcv]
-                closes = [x[4] for x in ohlcv]
-
-                # Calculate True Range
-                trs = []
-                for i in range(1, len(ohlcv)):
-                    high = highs[i]
-                    low = lows[i]
-                    prev_close = closes[i - 1]
-                    tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
-                    trs.append(tr)
-
-                atr = sum(trs) / len(trs) if trs else 0.01
-                current_price = closes[-1]
-                return atr / current_price  # Return as fraction
-        except Exception as e:
-            tprint(
-                f"Could not fetch ATR for {symbol}: "
-                f"{_classify_exchange_error(e)}: {e}"
-            )
-
-        return 0.01  # Default 1% ATR
-
     def _fetch_aggtrades(
         self, symbol: str, since: int = None, limit: int = None
     ) -> List[Dict[str, Any]]:
@@ -638,9 +696,20 @@ class OCOExecutor:
             Dictionary with order details
         """
         params = self._get_bucket_params(bucket_key)
-        atr = _safe_float(atr_frac, default=np.nan)
-        if not np.isfinite(atr) or atr <= 0.0:
-            atr = self._get_current_atr(symbol)
+        barrier_frac = _safe_float(atr_frac, default=np.nan)
+        if not np.isfinite(barrier_frac) or barrier_frac <= 0.0:
+            error = "missing policy barrier_pct/barrier_frac for stop placement"
+            tprint(f"Refusing STOP_LOSS for {symbol}: {error}")
+            return {
+                "success": False,
+                "symbol": symbol,
+                "side": side,
+                "entry_price": entry_price,
+                "size": size,
+                "bucket_key": bucket_key,
+                "error": error,
+                "error_category": "missing_policy_barrier_pct",
+            }
 
         sl_mult = params["sl_mult"]
         fixed_stop_loss_pct = _safe_float(
@@ -657,9 +726,9 @@ class OCOExecutor:
             else:
                 stop_price = entry_price * (1.0 + fixed_stop_loss_pct)
         elif side == "long":
-            stop_price = entry_price * (1 - sl_mult * atr)
+            stop_price = entry_price * (1 - sl_mult * barrier_frac)
         else:  # short
-            stop_price = entry_price * (1 + sl_mult * atr)
+            stop_price = entry_price * (1 + sl_mult * barrier_frac)
         limit_price = None
 
         # Track position state
@@ -670,14 +739,14 @@ class OCOExecutor:
             "bucket_key": bucket_key,
             "stop_price": stop_price,
             "limit_price": limit_price,
-            "atr": atr,
-            "barrier_frac": atr,
-            "barrier_pct": atr,
+            "barrier_frac": barrier_frac,
+            "barrier_pct": barrier_frac,
             "sl_mult": sl_mult,
             "initial_stop_price": stop_price,
             "stop_reason": "original_stop_loss",
             "stop_reason_detail": (
-                f"original_stop_loss: sl_mult={sl_mult:.6g} " f"barrier_frac={atr:.6g}"
+                f"original_stop_loss: sl_mult={sl_mult:.6g} "
+                f"barrier_frac={barrier_frac:.6g}"
             ),
             "peak_price": entry_price,
             "mfe": 0.0,
@@ -698,7 +767,7 @@ class OCOExecutor:
                 / max(float(entry_price), 1e-12)
             ),
             sl_mult=float(sl_mult),
-            barrier_frac=float(atr),
+            barrier_frac=float(barrier_frac),
             stop_reason="original_stop_loss",
         )
 
@@ -732,11 +801,20 @@ class OCOExecutor:
         except Exception as e:
             stop_order_error = str(e)
             stop_order_error_category = _classify_exchange_error(e)
+            stop_order_reject_reason = _exchange_reject_reason(e)
             position_state["stop_order_error"] = stop_order_error
             position_state["stop_order_error_category"] = stop_order_error_category
+            position_state["stop_order_reject_reason"] = stop_order_reject_reason
+            _append_position_event(
+                position_state,
+                "entry_stop_failed",
+                error_category=stop_order_error_category,
+                reject_reason=stop_order_reject_reason,
+                error=stop_order_error,
+            )
             tprint(
                 f"Error placing STOP_LOSS for {symbol}: "
-                f"{stop_order_error_category}: {e}"
+                f"{stop_order_error_category} reason={stop_order_reject_reason}: {e}"
             )
             # Continue with tracking even if order placement fails
             # This allows for manual intervention or retry
@@ -781,7 +859,7 @@ class OCOExecutor:
         if position_state.get("stop_order_id"):
             tprint(
                 f"Placed STOP_LOSS for {symbol}: SL={stop_price:.8g} "
-                f"barrier_frac={atr:.6g} sl_mult={sl_mult:.6g}"
+                f"barrier_frac={barrier_frac:.6g} sl_mult={sl_mult:.6g}"
             )
 
         return {
@@ -797,8 +875,8 @@ class OCOExecutor:
             "fixed_stop_loss_pct": (
                 float(fixed_stop_loss_pct) if np.isfinite(fixed_stop_loss_pct) else None
             ),
-            "atr_frac": float(atr),
-            "barrier_frac": float(atr),
+            "barrier_frac": float(barrier_frac),
+            "barrier_pct": float(barrier_frac),
             "error": stop_order_error,
             "error_category": stop_order_error_category,
             "aggtrades": aggtrades_data,
@@ -951,54 +1029,52 @@ class OCOExecutor:
         old_stop_price = _safe_float(state.get("stop_price"), default=np.nan)
         side = str(state.get("side", "long")).lower()
         canceled_existing = False
+        last_error: Optional[Exception] = None
         try:
             stop_price_candidate = _exchange_precision(
                 self.exchange, symbol, float(new_stop_price), kind="price"
             )
-            try:
-                ticker = self.exchange.fetch_ticker(symbol)
-                current_price = _safe_float(ticker.get("last"), default=np.nan)
-            except Exception:
-                current_price = np.nan
             immediate_buffer = (
                 float((self.config or {}).get("stop_replace_immediate_buffer_bps", 5.0))
                 / 1e4
             )
-            if np.isfinite(current_price) and current_price > 0:
-                if side == "long" and stop_price_candidate >= current_price * (
-                    1.0 - immediate_buffer
-                ):
-                    _append_position_event(
-                        state,
-                        "stop_replace_skipped",
-                        reason="candidate_would_trigger_immediately",
-                        current_price=float(current_price),
-                        candidate_stop=float(stop_price_candidate),
-                        previous_stop=old_stop_price,
+            round_fee_buffer = float(
+                (self.config or {}).get("stop_replace_round_fee_buffer_pct", 0.003)
+            )
+            round_fee_buffer = max(round_fee_buffer, 0.0)
+            retry_growths = (self.config or {}).get(
+                "stop_replace_retry_gap_growths", [0.0, 0.10, 0.20, 0.30]
+            )
+            if not isinstance(retry_growths, (list, tuple)):
+                retry_growths = [0.0, 0.10, 0.20, 0.30]
+            retry_growths = [float(x) for x in retry_growths]
+            max_attempts = max(
+                1,
+                int(
+                    (self.config or {}).get(
+                        "stop_replace_max_attempts", len(retry_growths)
                     )
-                    tprint(
-                        f"Skipping SL update for {symbol}: candidate "
-                        f"{stop_price_candidate:.8g} too close to current "
-                        f"{current_price:.8g}"
+                ),
+            )
+            if len(retry_growths) < max_attempts:
+                retry_growths.extend(
+                    [retry_growths[-1] if retry_growths else 0.30]
+                    * (max_attempts - len(retry_growths))
+                )
+            backoff_base = max(
+                0.0,
+                float(
+                    (self.config or {}).get("stop_replace_retry_backoff_seconds", 0.25)
+                ),
+            )
+            backoff_max = max(
+                backoff_base,
+                float(
+                    (self.config or {}).get(
+                        "stop_replace_retry_backoff_max_seconds", 2.0
                     )
-                    return
-                if side == "short" and stop_price_candidate <= current_price * (
-                    1.0 + immediate_buffer
-                ):
-                    _append_position_event(
-                        state,
-                        "stop_replace_skipped",
-                        reason="candidate_would_trigger_immediately",
-                        current_price=float(current_price),
-                        candidate_stop=float(stop_price_candidate),
-                        previous_stop=old_stop_price,
-                    )
-                    tprint(
-                        f"Skipping SL update for {symbol}: candidate "
-                        f"{stop_price_candidate:.8g} too close to current "
-                        f"{current_price:.8g}"
-                    )
-                    return
+                ),
+            )
 
             # Stop replacement is authoritative: cancel any tracked exit
             # orders before placing the new protective stop.
@@ -1038,25 +1114,194 @@ class OCOExecutor:
             amount = _exchange_precision(
                 self.exchange, symbol, float(state["size"]), kind="amount"
             )
-            stop_price = stop_price_candidate
             _validate_order_filters(
                 symbol,
                 market,
                 amount=amount,
-                price=max(float(state.get("entry_price", stop_price)), stop_price),
+                price=max(
+                    float(state.get("entry_price", stop_price_candidate)),
+                    stop_price_candidate,
+                ),
             )
 
-            new_stop_order = self.exchange.create_order(
-                symbol=symbol,
-                type="STOP_LOSS",
-                side="sell" if state["side"] == "long" else "buy",
-                amount=amount,
-                price=stop_price,
-                params={
-                    **_order_params(self.config, reduce_only=True),
-                    "stopPrice": stop_price,
-                },
+            new_stop_order = None
+            stop_price = stop_price_candidate
+            entry_price = _safe_float(state.get("entry_price"), default=np.nan)
+            pending_reason = state.get("_pending_stop_reason") or state.get(
+                "stop_reason", "stop_replaced"
             )
+
+            for attempt_idx in range(max_attempts):
+                retry_growth = retry_growths[min(attempt_idx, len(retry_growths) - 1)]
+                current_price = np.nan
+                try:
+                    ticker = self.exchange.fetch_ticker(symbol)
+                    current_price = _safe_float(ticker.get("last"), default=np.nan)
+                except Exception as price_exc:
+                    _append_position_event(
+                        state,
+                        "stop_replace_price_fetch_failed",
+                        attempt=attempt_idx + 1,
+                        error_category=_classify_exchange_error(price_exc),
+                        error=str(price_exc),
+                    )
+
+                attempt_stop = stop_price_candidate
+                if np.isfinite(current_price) and current_price > 0.0:
+                    adjusted = _widen_stop_away_from_market(
+                        side=side,
+                        stop_price=attempt_stop,
+                        current_price=current_price,
+                        round_fee_buffer_pct=round_fee_buffer,
+                        retry_gap_growth=retry_growth,
+                        immediate_buffer_pct=immediate_buffer,
+                    )
+                    adjusted = _exchange_precision(
+                        self.exchange, symbol, float(adjusted), kind="price"
+                    )
+                    if abs(float(adjusted) - float(attempt_stop)) > 1e-12:
+                        _append_position_event(
+                            state,
+                            "stop_replace_candidate_adjusted",
+                            attempt=attempt_idx + 1,
+                            previous_candidate=float(attempt_stop),
+                            adjusted_candidate=float(adjusted),
+                            current_price=float(current_price),
+                            retry_gap_growth=float(retry_growth),
+                            round_fee_buffer_pct=float(round_fee_buffer),
+                        )
+                    attempt_stop = adjusted
+
+                improves_existing = True
+                if np.isfinite(old_stop_price):
+                    improves_existing = (
+                        attempt_stop > old_stop_price
+                        if side == "long"
+                        else attempt_stop < old_stop_price
+                    )
+                if not improves_existing:
+                    _append_position_event(
+                        state,
+                        "stop_replace_skipped",
+                        reason="adjusted_candidate_not_better_than_existing_stop",
+                        current_price=(
+                            float(current_price) if np.isfinite(current_price) else None
+                        ),
+                        candidate_stop=float(attempt_stop),
+                        previous_stop=old_stop_price,
+                    )
+                    tprint(
+                        f"Skipping SL update for {symbol}: adjusted candidate "
+                        f"{attempt_stop:.8g} is not better than existing "
+                        f"{old_stop_price:.8g}"
+                    )
+                    return
+
+                if (
+                    str(pending_reason) in {"capital_preservation", "trailing_profit"}
+                    and np.isfinite(entry_price)
+                    and entry_price > 0.0
+                ):
+                    breakeven_stop = (
+                        entry_price * (1.0 + round_fee_buffer)
+                        if side == "long"
+                        else entry_price * (1.0 - round_fee_buffer)
+                    )
+                    non_loss_ok = (
+                        attempt_stop >= breakeven_stop
+                        if side == "long"
+                        else attempt_stop <= breakeven_stop
+                    )
+                    if not non_loss_ok:
+                        _append_position_event(
+                            state,
+                            "stop_replace_skipped",
+                            reason="adjusted_candidate_below_fee_breakeven",
+                            candidate_stop=float(attempt_stop),
+                            fee_breakeven_stop=float(breakeven_stop),
+                            current_price=(
+                                float(current_price)
+                                if np.isfinite(current_price)
+                                else None
+                            ),
+                            round_fee_buffer_pct=float(round_fee_buffer),
+                        )
+                        tprint(
+                            f"Skipping SL update for {symbol}: adjusted stop "
+                            f"{attempt_stop:.8g} would not clear fee breakeven "
+                            f"{breakeven_stop:.8g}"
+                        )
+                        return
+
+                if (
+                    np.isfinite(current_price)
+                    and current_price > 0.0
+                    and not _stop_side_is_valid(side, attempt_stop, current_price)
+                ):
+                    _append_position_event(
+                        state,
+                        "stop_replace_attempt_failed",
+                        attempt=attempt_idx + 1,
+                        error_category="trigger_price_rejected",
+                        reject_reason="LOCAL_STOP_SIDE_INVALID",
+                        current_price=float(current_price),
+                        candidate_stop=float(attempt_stop),
+                    )
+                    continue
+
+                try:
+                    stop_price = attempt_stop
+                    new_stop_order = self.exchange.create_order(
+                        symbol=symbol,
+                        type="STOP_LOSS",
+                        side="sell" if state["side"] == "long" else "buy",
+                        amount=amount,
+                        price=stop_price,
+                        params={
+                            **_order_params(self.config, reduce_only=True),
+                            "stopPrice": stop_price,
+                        },
+                    )
+                    break
+                except Exception as create_exc:
+                    last_error = create_exc
+                    category = _classify_exchange_error(create_exc)
+                    reject_reason = _exchange_reject_reason(create_exc)
+                    _append_position_event(
+                        state,
+                        "stop_replace_attempt_failed",
+                        attempt=attempt_idx + 1,
+                        error_category=category,
+                        reject_reason=reject_reason,
+                        current_price=(
+                            float(current_price) if np.isfinite(current_price) else None
+                        ),
+                        candidate_stop=float(attempt_stop),
+                        retry_gap_growth=float(retry_growth),
+                        error=str(create_exc),
+                    )
+                    tprint(
+                        f"Stop replace attempt {attempt_idx + 1}/{max_attempts} "
+                        f"failed for {symbol}: category={category} "
+                        f"reason={reject_reason} candidate={attempt_stop:.8g} "
+                        f"current={current_price if np.isfinite(current_price) else 'n/a'} "
+                        f"error={create_exc}"
+                    )
+                    retryable = category in {
+                        "trigger_price_rejected",
+                        "rate_limited",
+                        "network_timeout",
+                    }
+                    if not retryable or attempt_idx >= max_attempts - 1:
+                        raise
+                    sleep_s = min(backoff_max, backoff_base * (2**attempt_idx))
+                    if sleep_s > 0.0:
+                        time.sleep(sleep_s)
+
+            if new_stop_order is None:
+                raise RuntimeError(
+                    f"stop replace did not create an order for {symbol}"
+                ) from last_error
 
             state["stop_price"] = stop_price
             state["stop_order_id"] = new_stop_order.get("id")
@@ -1069,7 +1314,8 @@ class OCOExecutor:
             )
             state["stop_reason"] = stop_reason
             state["stop_reason_detail"] = stop_detail
-            entry_price = _safe_float(state.get("entry_price"), default=np.nan)
+            state.pop("stop_update_error", None)
+            state.pop("stop_update_error_category", None)
             _append_position_event(
                 state,
                 "stop_replaced",
@@ -1093,17 +1339,23 @@ class OCOExecutor:
 
         except Exception as e:
             category = _classify_exchange_error(e)
+            reject_reason = _exchange_reject_reason(e)
             state["stop_update_error"] = str(e)
             state["stop_update_error_category"] = category
+            state["stop_update_reject_reason"] = reject_reason
             _append_position_event(
                 state,
                 "stop_replace_failed",
                 previous_stop=old_stop_price,
                 candidate_stop=float(new_stop_price),
                 error_category=category,
+                reject_reason=reject_reason,
                 error=str(e),
             )
-            tprint(f"Error updating SL for {symbol}: {category}: {e}")
+            tprint(
+                f"Error updating SL for {symbol}: category={category} "
+                f"reason={reject_reason}: {e}"
+            )
             if canceled_existing and np.isfinite(old_stop_price):
                 try:
                     ticker = self.exchange.fetch_ticker(symbol)
@@ -1600,6 +1852,10 @@ class TradeExecutor:
         )
         if not np.isfinite(stop_frac) or stop_frac <= 0.0:
             stop_frac = 0.03
+        sl_mult = _safe_float(params.get("sl_mult"), default=1.0)
+        if not np.isfinite(sl_mult) or sl_mult <= 0.0:
+            sl_mult = 1.0
+        attach_barrier_frac = float(stop_frac) / float(sl_mult)
         stop_price = (
             entry_price * (1.0 - stop_frac)
             if side == "long"
@@ -1630,11 +1886,11 @@ class TradeExecutor:
                 {
                     "oco_order_id": None,
                     "stop_order_id": None,
-                    "take_profit_order_id": None,
-                    "atr": 0.01,
-                    "sl_mult": 1.0,
-                }
-            )
+                            "take_profit_order_id": None,
+                            "atr": float(attach_barrier_frac),
+                            "sl_mult": float(sl_mult),
+                        }
+                    )
             adopted_stop_order = None
             try:
                 fetch_open_orders = getattr(self.exchange, "fetch_open_orders", None)
@@ -1710,6 +1966,7 @@ class TradeExecutor:
                         entry_price=float(entry_price),
                         size=float(amount),
                         bucket_key=None,
+                        atr_frac=float(attach_barrier_frac),
                     )
                     with self.oco_executor._positions_lock:
                         tracked = self.oco_executor.active_positions.get(symbol)
@@ -2037,6 +2294,27 @@ class TradeExecutor:
         expected_entry_price = float(price) if price is not None else np.nan
 
         try:
+            barrier_override = np.nan
+            if bucket_key and self.oco_executor:
+                barrier_override = _extract_policy_barrier_frac(
+                    trade_context,
+                    self.oco_executor.get_bucket_params(bucket_key),
+                )
+                if not np.isfinite(barrier_override) or barrier_override <= 0.0:
+                    error = (
+                        "missing policy barrier_pct/barrier_frac before live entry; "
+                        "refusing to place unprotected order"
+                    )
+                    tprint(f"Refusing live entry for {symbol}: {error}")
+                    return {
+                        "success": False,
+                        "error": error,
+                        "error_category": "missing_policy_barrier_pct",
+                        "symbol": symbol,
+                        "side": side,
+                        "size": float(size),
+                    }
+
             if not np.isfinite(expected_entry_price):
                 ticker = self.exchange.fetch_ticker(symbol)
                 expected_entry_price = _safe_float(ticker.get("last"), default=np.nan)
@@ -2114,21 +2392,13 @@ class TradeExecutor:
 
             oco_result = None
             if bucket_key and self.oco_executor:
-                atr_override = np.nan
-                if isinstance(trade_context, dict):
-                    for key in ("barrier_frac", "barrier_pct", "atr_frac", "atr"):
-                        atr_override = _safe_float(
-                            trade_context.get(key), default=np.nan
-                        )
-                        if np.isfinite(atr_override) and atr_override > 0.0:
-                            break
                 oco_result = self.oco_executor.place_oco_order(
                     symbol=symbol,
                     side=side,
                     entry_price=entry_price,
                     size=stop_amount,
                     bucket_key=bucket_key,
-                    atr_frac=atr_override,
+                    atr_frac=barrier_override,
                 )
                 if isinstance(trade_context, dict):
                     with self.oco_executor._positions_lock:
@@ -2214,9 +2484,6 @@ class TradeExecutor:
                     if isinstance(oco_result, dict)
                     else None
                 ),
-                "atr_frac": (
-                    oco_result.get("atr_frac") if isinstance(oco_result, dict) else None
-                ),
                 "barrier_frac": (
                     oco_result.get("barrier_frac")
                     if isinstance(oco_result, dict)
@@ -2298,21 +2565,34 @@ class TradeExecutor:
             if np.isfinite(entry_price_delta) and np.isfinite(ohlcv_entry_price)
             else np.nan
         )
-        atr_frac = float(params.get("atr", 0.01) or 0.01)
-        if isinstance(trade_context, dict):
-            for key in ("barrier_frac", "barrier_pct", "atr_frac", "atr"):
-                override = _safe_float(trade_context.get(key), default=np.nan)
-                if np.isfinite(override) and override > 0.0:
-                    atr_frac = float(override)
-                    break
+        barrier_frac = _extract_policy_barrier_frac(trade_context, params)
+        if not np.isfinite(barrier_frac) or barrier_frac <= 0.0:
+            return {
+                "timestamp": datetime.now().isoformat(),
+                "mode": "shadow",
+                "symbol": symbol,
+                "side": side,
+                "size": size,
+                "price": price,
+                "status": "failed",
+                "success": False,
+                "bucket_key": bucket_key,
+                "error": "missing policy barrier_pct/barrier_frac",
+                "error_category": "missing_policy_barrier_pct",
+                **dict(trade_context or {}),
+            }
         sl_mult = float(params.get("sl_mult", 1.0))
         if side == "long":
             stop_price = (
-                entry_price * (1.0 - sl_mult * atr_frac) if entry_price > 0 else None
+                entry_price * (1.0 - sl_mult * barrier_frac)
+                if entry_price > 0
+                else None
             )
         else:
             stop_price = (
-                entry_price * (1.0 + sl_mult * atr_frac) if entry_price > 0 else None
+                entry_price * (1.0 + sl_mult * barrier_frac)
+                if entry_price > 0
+                else None
             )
         limit_price = None
         record = {
@@ -2349,14 +2629,13 @@ class TradeExecutor:
                 "stop_price": stop_price,
                 "initial_stop_price": stop_price,
                 "limit_price": limit_price,
-                "atr": atr_frac,
-                "barrier_frac": atr_frac,
-                "barrier_pct": atr_frac,
+                "barrier_frac": barrier_frac,
+                "barrier_pct": barrier_frac,
                 "sl_mult": sl_mult,
                 "stop_reason": "original_stop_loss",
                 "stop_reason_detail": (
                     f"original_stop_loss: sl_mult={sl_mult:.6g} "
-                    f"barrier_frac={atr_frac:.6g}"
+                    f"barrier_frac={barrier_frac:.6g}"
                 ),
                 "peak_price": entry_price,
                 "mfe": 0.0,
@@ -2377,7 +2656,7 @@ class TradeExecutor:
                     else np.nan
                 ),
                 sl_mult=float(sl_mult),
-                barrier_frac=float(atr_frac),
+                barrier_frac=float(barrier_frac),
                 stop_reason="original_stop_loss",
             )
             self._last_trade_timestamps[symbol] = pd.Timestamp.now(tz="UTC")

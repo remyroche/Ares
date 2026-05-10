@@ -527,6 +527,7 @@ def get_inference_required_feature_keys(
     # Keep a small set of always-needed raw features used across inference glue.
     required.update(
         {
+            "barrier_pct",
             "volatility_zscore",
             "range_12h_pct",
             "range_24h_pct",
@@ -1042,6 +1043,7 @@ def _synthesize_live_safe_feature_keys(
     missing = sorted(
         key for key in ({"p_exh_lag1", "retest_accept"} & required) if key not in feats
     )
+    barrier_missing = "barrier_pct" in required and "barrier_pct" not in feats
     calendar_missing = sorted(
         key
         for key in required
@@ -1095,6 +1097,7 @@ def _synthesize_live_safe_feature_keys(
     )
     if (
         not missing
+        and not barrier_missing
         and not calendar_missing
         and not rolling_missing
         and not orderbook_alias_missing
@@ -1109,6 +1112,16 @@ def _synthesize_live_safe_feature_keys(
 
     out = dict(feats)
     close = panel.get("close")
+    if barrier_missing:
+        atr_pct = out.get("atr_pct")
+        if isinstance(atr_pct, pd.DataFrame) and not atr_pct.empty:
+            out["barrier_pct"] = (
+                atr_pct.reindex(index=zero_frame.index, columns=zero_frame.columns)
+                .astype(np.float32)
+                .clip(lower=np.float32(0.005))
+            )
+        else:
+            out["barrier_pct"] = zero_frame.copy()
     for key in rolling_missing:
         match = re.fullmatch(r"rolling30d\(([^)]+)\)", key)
         source = match.group(1) if match else ""
@@ -1176,7 +1189,7 @@ def _synthesize_live_safe_feature_keys(
     out = _ensure_required_symbol_columns(out, panel, basket_syms, required)
     tprint(
         "Synthesized live-safe training fallback features for inference: "
-        f"{missing + calendar_missing + rolling_missing + orderbook_alias_missing + orderbook_zero_missing + orderbook_prefix_zero_missing}"
+        f"{(['barrier_pct'] if barrier_missing else []) + missing + calendar_missing + rolling_missing + orderbook_alias_missing + orderbook_zero_missing + orderbook_prefix_zero_missing}"
     )
     return out
 

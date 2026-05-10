@@ -1,7 +1,0 @@
-reason,count
-top_n_cutoff,44
-no positive post-fee profit threshold,33
-ev_per_event_less_than_or_equal_to_zero,25
-high_density_dispersion_top_decile,14
-top_quartile_precision_not_positive,2
-high_tail_risk_top_decile,2

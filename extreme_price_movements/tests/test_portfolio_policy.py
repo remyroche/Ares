@@ -8,9 +8,11 @@ from extreme_price_movements.inference.portfolio_policy import (
 from extreme_price_movements.portfolio_manager import PortfolioManager
 
 
-def test_portfolio_policy_defaults_resolve_to_10_6_6():
+def test_portfolio_policy_defaults_resolve_to_8_and_dynamic_75pct_caps():
     policy = PortfolioPolicyConfig()
-    assert policy.max_concurrent_positions == 10
+    assert policy.max_concurrent_positions == 8
+    assert policy.max_concurrent_per_side is None
+    assert policy.max_concurrent_per_strategy is None
     assert policy.resolved_max_concurrent_per_side() == 6
     assert policy.resolved_max_concurrent_per_strategy() == 6
     assert policy.max_total_wallet_allocation_pct == 0.75
@@ -57,7 +59,7 @@ def test_portfolio_policy_loads_nested_artifact_sections_and_aliases(tmp_path):
 def test_portfolio_manager_from_policy_config_enforces_caps():
     policy = PortfolioPolicyConfig()
     mgr = PortfolioManager.from_policy_config(policy, portfolio_value=10000.0)
-    assert mgr.max_positions == 10
+    assert mgr.max_positions == 8
     assert mgr.max_same_side == 6
     assert mgr.max_same_strategy == 6
     assert mgr.max_portfolio_pct == 0.75

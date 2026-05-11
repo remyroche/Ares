@@ -20,6 +20,8 @@ from extreme_price_movements.inference.parity import strategy_core_id
 from extreme_price_movements.inference.simple_policy_stop import (
     SimplePolicyStopDecision,
     SimplePolicyStopParamsError,
+    is_concrete_simple_policy_params_source,
+    compute_initial_simple_policy_stop_decision,
     extract_simple_policy_stop_params_by_strategy,
     validate_simple_policy_stop_params,
 )
@@ -126,21 +128,6 @@ def _execution_audit_fields(source: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return out
 
 
-def _extract_policy_barrier_frac(
-    trade_context: Optional[Dict[str, Any]],
-    params: Optional[Dict[str, Any]] = None,
-) -> float:
-    """Return the optimiser barrier fraction without ATR-style fallbacks."""
-    for source in (trade_context, params):
-        if not isinstance(source, dict):
-            continue
-        for key in ("barrier_frac", "barrier_pct"):
-            value = _safe_float(source.get(key), default=np.nan)
-            if np.isfinite(value) and value > 0.0:
-                return float(value)
-    return np.nan
-
-
 def _exchange_error_text(exc: Exception) -> str:
     return f"{exc.__class__.__name__} {exc}".lower()
 
@@ -186,6 +173,8 @@ def _validate_policy_stop_decision(
     decision: Any,
     *,
     require_should_replace: bool = True,
+    position_state: Optional[Dict[str, Any]] = None,
+    artifact_params: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, str]:
     """Validate policy-stop decision metadata before state/exchange mutation."""
     if not isinstance(decision, SimplePolicyStopDecision):
@@ -199,8 +188,11 @@ def _validate_policy_stop_decision(
         return False, "invalid simple-policy decision schema"
     if not str(decision.strategy_id or "").strip():
         return False, "missing simple-policy decision strategy_id"
-    if not str(decision.params_source or "").strip():
+    params_source = str(decision.params_source or "").strip()
+    if not params_source:
         return False, "missing simple-policy decision params_source"
+    if not is_concrete_simple_policy_params_source(params_source):
+        return False, "invalid simple-policy decision params_source"
     if not str(decision.params_hash or "").strip():
         return False, "missing simple-policy decision params_hash"
     if require_should_replace and not np.isfinite(stop_price):
@@ -209,6 +201,21 @@ def _validate_policy_stop_decision(
         return False, "invalid simple-policy decision barrier_frac"
     if not np.isfinite(sl_mult) or sl_mult <= 0.0:
         return False, "invalid simple-policy decision sl_mult"
+    if position_state is not None:
+        expected_strategy = str(position_state.get("strategy_id") or position_state.get("bucket_key") or "").strip()
+        if expected_strategy and decision.strategy_id != expected_strategy:
+            return False, "simple-policy decision strategy_id does not match active position"
+        if str(position_state.get("stop_policy_params_source") or "").strip() != params_source:
+            return False, "simple-policy decision params_source does not match active position"
+        if str(position_state.get("stop_policy_params_hash") or "").strip() != str(decision.params_hash or "").strip():
+            return False, "simple-policy decision params_hash does not match active position"
+    if artifact_params is not None:
+        if str(artifact_params.get("strategy_id") or "").strip() != decision.strategy_id:
+            return False, "simple-policy decision strategy_id does not match latest artifact"
+        if str(artifact_params.get("params_source") or "").strip() != params_source:
+            return False, "simple-policy decision params_source does not match latest artifact"
+        if str(artifact_params.get("params_hash") or "").strip() != str(decision.params_hash or "").strip():
+            return False, "simple-policy decision params_hash does not match latest artifact"
     return True, ""
 
 def _append_position_event(
@@ -728,15 +735,11 @@ class OCOExecutor:
         self._positions_lock = threading.RLock()
 
     def get_simple_policy_stop_params(self, bucket_key: Optional[str] = None) -> Dict[str, Any]:
-        """Return only simple_policy_optimiser stop params for a strategy."""
+        """Return exact-strategy simple_policy_optimiser stop params."""
         if bucket_key is None:
             return {}
-        raw_key = str(bucket_key or "")
-        for key in (raw_key, strategy_core_id(raw_key), raw_key.lower(), raw_key.upper()):
-            params = self.simple_policy_stop_params_by_strategy.get(key)
-            if isinstance(params, dict):
-                return dict(params)
-        return {}
+        params = self.simple_policy_stop_params_by_strategy.get(str(bucket_key))
+        return dict(params) if isinstance(params, dict) else {}
 
     def get_cooldown_hours(self, bucket_key: Optional[str] = None) -> float:
         """Return zero: live inference cooldown is handled on losing closes only."""
@@ -824,12 +827,18 @@ class OCOExecutor:
 
         require_metadata = True
         try:
-            validated_policy = validate_simple_policy_stop_params(
-                params,
-                state={"strategy_id": bucket_key},
+            initial_stop_decision = compute_initial_simple_policy_stop_decision(
+                entry_price=float(entry_price),
+                policy_params=params,
+                side=side,
+                strategy_id=bucket_key,
                 require_metadata=require_metadata,
-                reject_legacy_fields=True,
             )
+            valid_decision, invalid_reason = _validate_policy_stop_decision(
+                initial_stop_decision, require_should_replace=True
+            )
+            if not valid_decision:
+                raise SimplePolicyStopParamsError(invalid_reason)
         except SimplePolicyStopParamsError as exc:
             error = str(exc)
             tprint(f"Refusing STOP_LOSS for {symbol}: {error}")
@@ -843,13 +852,9 @@ class OCOExecutor:
                 "error": error,
                 "error_category": "invalid_simple_policy_stop_params",
             }
-        barrier_frac = validated_policy.barrier_frac
-        sl_mult = validated_policy.sl_mult
-
-        if side == "long":
-            stop_price = entry_price * (1 - sl_mult * barrier_frac)
-        else:  # short
-            stop_price = entry_price * (1 + sl_mult * barrier_frac)
+        barrier_frac = initial_stop_decision.barrier_frac
+        sl_mult = initial_stop_decision.sl_mult
+        stop_price = float(initial_stop_decision.stop_price)
         limit_price = None
 
         # Track position state
@@ -863,16 +868,20 @@ class OCOExecutor:
             "barrier_frac": barrier_frac,
             "barrier_pct": barrier_frac,
             "sl_mult": sl_mult,
-            "stop_policy_params_source": validated_policy.params_source,
-            "stop_policy_params_hash": validated_policy.params_hash,
-            "stop_policy_schema": validated_policy.schema,
-            "strategy_id": validated_policy.strategy_id,
+            "trailing_activation_mult": initial_stop_decision.trailing_activation_mult,
+            "trailing_power": initial_stop_decision.trailing_power,
+            "trailing_squash_divisor": initial_stop_decision.trailing_squash_divisor,
+            "giveback_beta": initial_stop_decision.giveback_beta,
+            "capital_protect_mfe_mult": initial_stop_decision.capital_protect_mfe_mult,
+            "capital_protect_regression_frac": initial_stop_decision.capital_protect_regression_frac,
+            "decision_module": initial_stop_decision.decision_module,
+            "stop_policy_params_source": initial_stop_decision.params_source,
+            "stop_policy_params_hash": initial_stop_decision.params_hash,
+            "stop_policy_schema": initial_stop_decision.params_schema,
+            "strategy_id": initial_stop_decision.strategy_id,
             "initial_stop_price": stop_price,
             "stop_reason": "original_stop_loss",
-            "stop_reason_detail": (
-                f"original_stop_loss: sl_mult={sl_mult:.6g} "
-                f"barrier_frac={barrier_frac:.6g}"
-            ),
+            "stop_reason_detail": initial_stop_decision.reason_detail,
             "peak_price": entry_price,
             "mfe": 0.0,
             "mae": 0.0,
@@ -894,6 +903,16 @@ class OCOExecutor:
             sl_mult=float(sl_mult),
             barrier_frac=float(barrier_frac),
             stop_reason="original_stop_loss",
+            params_source=initial_stop_decision.params_source,
+            params_hash=initial_stop_decision.params_hash,
+            schema=initial_stop_decision.params_schema,
+            decision_module=initial_stop_decision.decision_module,
+            trailing_activation_mult=initial_stop_decision.trailing_activation_mult,
+            trailing_power=initial_stop_decision.trailing_power,
+            trailing_squash_divisor=initial_stop_decision.trailing_squash_divisor,
+            giveback_beta=initial_stop_decision.giveback_beta,
+            capital_protect_mfe_mult=initial_stop_decision.capital_protect_mfe_mult,
+            capital_protect_regression_frac=initial_stop_decision.capital_protect_regression_frac,
         )
 
         market = _load_market(self.exchange, symbol)
@@ -997,10 +1016,17 @@ class OCOExecutor:
             "barrier_frac": float(barrier_frac),
             "barrier_pct": float(barrier_frac),
             "sl_mult": float(sl_mult),
-            "strategy_id": validated_policy.strategy_id,
-            "stop_policy_params_source": validated_policy.params_source,
-            "stop_policy_params_hash": validated_policy.params_hash,
-            "stop_policy_schema": validated_policy.schema,
+            "trailing_activation_mult": initial_stop_decision.trailing_activation_mult,
+            "trailing_power": initial_stop_decision.trailing_power,
+            "trailing_squash_divisor": initial_stop_decision.trailing_squash_divisor,
+            "giveback_beta": initial_stop_decision.giveback_beta,
+            "capital_protect_mfe_mult": initial_stop_decision.capital_protect_mfe_mult,
+            "capital_protect_regression_frac": initial_stop_decision.capital_protect_regression_frac,
+            "decision_module": initial_stop_decision.decision_module,
+            "strategy_id": initial_stop_decision.strategy_id,
+            "stop_policy_params_source": initial_stop_decision.params_source,
+            "stop_policy_params_hash": initial_stop_decision.params_hash,
+            "stop_policy_schema": initial_stop_decision.params_schema,
             "error": stop_order_error,
             "error_category": stop_order_error_category,
             "aggtrades": aggtrades_data,
@@ -1011,11 +1037,17 @@ class OCOExecutor:
         self,
         symbol: str,
         state: Dict[str, Any],
-        decision: SimplePolicyStopDecision,
+        decision: Any,
     ):
         """Replace a stop only from a validated simple-policy decision."""
+        artifact_params = self.get_simple_policy_stop_params(
+            str(state.get("strategy_id") or state.get("bucket_key") or "")
+        )
         valid_decision, invalid_reason = _validate_policy_stop_decision(
-            decision, require_should_replace=False
+            decision,
+            require_should_replace=False,
+            position_state=state,
+            artifact_params=artifact_params,
         )
         if not valid_decision:
             state["stop_update_error"] = invalid_reason
@@ -1038,7 +1070,10 @@ class OCOExecutor:
             )
             return
         valid_decision, invalid_reason = _validate_policy_stop_decision(
-            decision, require_should_replace=True
+            decision,
+            require_should_replace=True,
+            position_state=state,
+            artifact_params=artifact_params,
         )
         stop_price_value = _safe_float(decision.stop_price, default=np.nan)
         if not valid_decision:
@@ -1082,6 +1117,13 @@ class OCOExecutor:
         state["barrier_frac"] = decision.barrier_frac
         state["barrier_pct"] = decision.barrier_frac
         state["sl_mult"] = decision.sl_mult
+        state["trailing_activation_mult"] = decision.trailing_activation_mult
+        state["trailing_power"] = decision.trailing_power
+        state["trailing_squash_divisor"] = decision.trailing_squash_divisor
+        state["giveback_beta"] = decision.giveback_beta
+        state["capital_protect_mfe_mult"] = decision.capital_protect_mfe_mult
+        state["capital_protect_regression_frac"] = decision.capital_protect_regression_frac
+        state["decision_module"] = decision.decision_module
         state["requested_policy_stop"] = stop_price_value
         self._replace_stop_order_from_decision(symbol, state, decision)
 
@@ -1092,8 +1134,14 @@ class OCOExecutor:
         decision: SimplePolicyStopDecision,
     ):
         """Cancel/replace a stop from a validated simple-policy decision only."""
+        artifact_params = self.get_simple_policy_stop_params(
+            str(state.get("strategy_id") or state.get("bucket_key") or "")
+        )
         valid_decision, invalid_reason = _validate_policy_stop_decision(
-            decision, require_should_replace=True
+            decision,
+            require_should_replace=True,
+            position_state=state,
+            artifact_params=artifact_params,
         )
         requested_stop = _safe_float(
             decision.stop_price if isinstance(decision, SimplePolicyStopDecision) else None,
@@ -1229,6 +1277,14 @@ class OCOExecutor:
                 strategy_id=state.get("strategy_id"),
                 params_source=state.get("stop_policy_params_source"),
                 params_hash=state.get("stop_policy_params_hash"),
+                schema=state.get("stop_policy_schema"),
+                decision_module=state.get("decision_module"),
+                trailing_activation_mult=state.get("trailing_activation_mult"),
+                trailing_power=state.get("trailing_power"),
+                trailing_squash_divisor=state.get("trailing_squash_divisor"),
+                giveback_beta=state.get("giveback_beta"),
+                capital_protect_mfe_mult=state.get("capital_protect_mfe_mult"),
+                capital_protect_regression_frac=state.get("capital_protect_regression_frac"),
                 entry_price=entry_price,
                 stop_dev_pct=(
                     (float(stop_price) - entry_price) / max(abs(entry_price), 1e-12)
@@ -2384,17 +2440,13 @@ class TradeExecutor:
         return params
 
     def get_simple_policy_stop_params(self, bucket_key: Optional[str] = None) -> Dict[str, Any]:
-        """Return only simple_policy_optimiser stop params for stop decisions."""
+        """Return exact-strategy simple_policy_optimiser stop params for stop decisions."""
         if self.oco_executor is not None:
             return self.oco_executor.get_simple_policy_stop_params(bucket_key)
         if bucket_key is None:
             return {}
-        raw_key = str(bucket_key or "")
-        for key in (raw_key, strategy_core_id(raw_key), raw_key.lower(), raw_key.upper()):
-            params = self.simple_policy_stop_params_by_strategy.get(key)
-            if isinstance(params, dict):
-                return dict(params)
-        return {}
+        params = self.simple_policy_stop_params_by_strategy.get(str(bucket_key))
+        return dict(params) if isinstance(params, dict) else {}
 
     def get_cooldown_hours(self, bucket_key: Optional[str] = None) -> float:
         """Return zero: live inference cooldown is handled on losing closes only."""
@@ -2545,7 +2597,6 @@ class TradeExecutor:
                         live_bucket_params,
                         state={"strategy_id": bucket_key},
                         require_metadata=True,
-                        reject_legacy_fields=True,
                     )
                 except SimplePolicyStopParamsError as exc:
                     error = (
@@ -2834,13 +2885,13 @@ class TradeExecutor:
             if np.isfinite(entry_price_delta) and np.isfinite(ohlcv_entry_price)
             else np.nan
         )
-        barrier_frac = _extract_policy_barrier_frac(params)
         try:
-            validated_policy = validate_simple_policy_stop_params(
-                params,
-                state={"strategy_id": bucket_key},
-                require_metadata=False,
-                reject_legacy_fields=True,
+            initial_stop_decision = compute_initial_simple_policy_stop_decision(
+                entry_price=float(entry_price),
+                policy_params=params,
+                side=side,
+                strategy_id=bucket_key,
+                require_metadata=True,
             )
         except SimplePolicyStopParamsError as exc:
             return {
@@ -2857,20 +2908,9 @@ class TradeExecutor:
                 "error_category": "invalid_simple_policy_stop_params",
                 **dict(trade_context or {}),
             }
-        barrier_frac = validated_policy.barrier_frac
-        sl_mult = validated_policy.sl_mult
-        if side == "long":
-            stop_price = (
-                entry_price * (1.0 - sl_mult * barrier_frac)
-                if entry_price > 0
-                else None
-            )
-        else:
-            stop_price = (
-                entry_price * (1.0 + sl_mult * barrier_frac)
-                if entry_price > 0
-                else None
-            )
+        barrier_frac = initial_stop_decision.barrier_frac
+        sl_mult = initial_stop_decision.sl_mult
+        stop_price = float(initial_stop_decision.stop_price)
         limit_price = None
         record = {
             "timestamp": datetime.now().isoformat(),
@@ -2893,10 +2933,10 @@ class TradeExecutor:
             "barrier_frac": float(barrier_frac),
             "barrier_pct": float(barrier_frac),
             "sl_mult": float(sl_mult),
-            "strategy_id": validated_policy.strategy_id,
-            "stop_policy_params_source": validated_policy.params_source,
-            "stop_policy_params_hash": validated_policy.params_hash,
-            "stop_policy_schema": validated_policy.schema,
+            "strategy_id": initial_stop_decision.strategy_id,
+            "stop_policy_params_source": initial_stop_decision.params_source,
+            "stop_policy_params_hash": initial_stop_decision.params_hash,
+            "stop_policy_schema": initial_stop_decision.params_schema,
         }
 
         # Update positions
@@ -2913,10 +2953,7 @@ class TradeExecutor:
                 "bucket_key": bucket_key,
                 "limit_price": limit_price,
                 "stop_reason": "original_stop_loss",
-                "stop_reason_detail": (
-                    f"original_stop_loss: sl_mult={sl_mult:.6g} "
-                    f"barrier_frac={barrier_frac:.6g}"
-                ),
+                "stop_reason_detail": initial_stop_decision.reason_detail,
                 "peak_price": entry_price,
                 "mfe": 0.0,
                 "mae": 0.0,
@@ -2926,10 +2963,17 @@ class TradeExecutor:
                 "barrier_frac": barrier_frac,
                 "barrier_pct": barrier_frac,
                 "sl_mult": sl_mult,
-                "stop_policy_params_source": validated_policy.params_source,
-                "stop_policy_params_hash": validated_policy.params_hash,
-                "stop_policy_schema": validated_policy.schema,
-                "strategy_id": validated_policy.strategy_id,
+            "trailing_activation_mult": initial_stop_decision.trailing_activation_mult,
+            "trailing_power": initial_stop_decision.trailing_power,
+            "trailing_squash_divisor": initial_stop_decision.trailing_squash_divisor,
+            "giveback_beta": initial_stop_decision.giveback_beta,
+            "capital_protect_mfe_mult": initial_stop_decision.capital_protect_mfe_mult,
+            "capital_protect_regression_frac": initial_stop_decision.capital_protect_regression_frac,
+            "decision_module": initial_stop_decision.decision_module,
+                "stop_policy_params_source": initial_stop_decision.params_source,
+                "stop_policy_params_hash": initial_stop_decision.params_hash,
+                "stop_policy_schema": initial_stop_decision.params_schema,
+                "strategy_id": initial_stop_decision.strategy_id,
                 "last_update": pd.Timestamp.now(tz="UTC"),
                 "last_5m_eval_ts": None,
             }
@@ -2947,6 +2991,16 @@ class TradeExecutor:
                 sl_mult=float(sl_mult),
                 barrier_frac=float(barrier_frac),
                 stop_reason="original_stop_loss",
+                params_source=initial_stop_decision.params_source,
+                params_hash=initial_stop_decision.params_hash,
+                schema=initial_stop_decision.params_schema,
+                decision_module=initial_stop_decision.decision_module,
+                trailing_activation_mult=initial_stop_decision.trailing_activation_mult,
+                trailing_power=initial_stop_decision.trailing_power,
+                trailing_squash_divisor=initial_stop_decision.trailing_squash_divisor,
+                giveback_beta=initial_stop_decision.giveback_beta,
+                capital_protect_mfe_mult=initial_stop_decision.capital_protect_mfe_mult,
+                capital_protect_regression_frac=initial_stop_decision.capital_protect_regression_frac,
             )
             self._last_trade_timestamps[symbol] = pd.Timestamp.now(tz="UTC")
 
@@ -3162,14 +3216,7 @@ class TradeExecutor:
     ) -> None:
         """Persist monitor state and apply policy-authorised stop decisions only."""
 
-        def _decision_obj(value: Optional[Any]) -> Optional[SimplePolicyStopDecision]:
-            if value is None:
-                return None
-            if isinstance(value, SimplePolicyStopDecision):
-                return value
-            raise TypeError("policy_stop_decision must be SimplePolicyStopDecision")
-
-        decision = _decision_obj(policy_stop_decision)
+        decision = policy_stop_decision
         if self.oco_executor is not None:
             with self.oco_executor._positions_lock:
                 state = self.oco_executor.active_positions.get(symbol)
@@ -3196,10 +3243,25 @@ class TradeExecutor:
             if state is None:
                 return
             if decision is not None:
-                valid, reason = _validate_policy_stop_decision(
-                    decision, require_should_replace=True
+                artifact_params = self.get_simple_policy_stop_params(
+                    str(state.get("strategy_id") or state.get("bucket_key") or "")
                 )
-                if decision.should_replace:
+                valid, reason = _validate_policy_stop_decision(
+                    decision,
+                    require_should_replace=True,
+                    position_state=state,
+                    artifact_params=artifact_params,
+                )
+                if not valid:
+                    state["stop_update_error"] = reason
+                    state["stop_update_error_category"] = "unauthorised_stop_update"
+                    _append_position_event(
+                        state,
+                        "stop_replace_skipped",
+                        reason="invalid_simple_policy_decision_metadata",
+                        error=reason,
+                    )
+                elif isinstance(decision, SimplePolicyStopDecision) and decision.should_replace:
                     stop_price_value = _safe_float(decision.stop_price, default=np.nan)
                     current_stop = _safe_float(state.get("stop_price"), default=np.nan)
                     side = str(state.get("side", "long")).lower()

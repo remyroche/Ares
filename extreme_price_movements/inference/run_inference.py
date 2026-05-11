@@ -2526,8 +2526,8 @@ def run_inference_step(
                             f"{side}/{strategy_id} "
                             f"reason={strategy_switch_decision.reason}"
                         )
-                side_metrics["non_fatal_issues"] += 1
-                continue
+                        side_metrics["non_fatal_issues"] += 1
+                        continue
             cooldown_hours = LOSING_TRADE_COOLDOWN_HOURS
             symbol_block_reason = _symbol_entry_block_reason(
                 symbol,

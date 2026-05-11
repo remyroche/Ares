@@ -308,6 +308,57 @@ def test_run_inference_step_blocks_strategy_kill_switch(monkeypatch, tmp_path):
     assert executor.calls == []
 
 
+def test_run_inference_step_allows_unblocked_strategy_kill_switch(
+    monkeypatch, tmp_path
+):
+    idx = pd.date_range("2026-03-01", periods=3, freq="1h", tz="UTC")
+    close = pd.DataFrame({"BTC/USDT": [100.0, 100.0, 100.0]}, index=idx)
+    panel = {
+        "close": close,
+        "high": close,
+        "low": close,
+        "open": close,
+        "volume": close,
+    }
+    feats = {"ret12h": close.pct_change().fillna(0.0)}
+
+    monkeypatch.setattr(ri, "select_candidates", lambda **kwargs: (["BTC/USDT"], []))
+    monkeypatch.setattr(
+        ri,
+        "get_features_for_candidates",
+        lambda feats, candidates: pd.DataFrame(
+            {"dummy": [1.0] * len(candidates)}, index=candidates
+        ),
+    )
+    switch = StrategyKillSwitch(
+        tmp_path / "strategy_kill_switches.json",
+        observe_only=False,
+    )
+    executor = _DummyExecutor()
+
+    results = ri.run_inference_step(
+        orchestrator=_DummyOrchestrator(),
+        panel=panel,
+        feats=feats,
+        thresholds={"metric": "ret12h"},
+        executor=executor,
+        logger=_DummyLogger(),
+        accepted_strategies={"long_mr"},
+        calibration_data={
+            "long_mr": {
+                "p75_threshold": 0.6,
+                "calibration_curve": [(0.0, 0.0), (1.0, 1.0)],
+            }
+        },
+        portfolio_mgr=PortfolioManager(portfolio_value=10000.0),
+        initial_rank_threshold=0.5,
+        strategy_kill_switch=switch,
+    )
+
+    assert len(results["trades"]) == 1
+    assert executor.calls, "expected unblocked strategy to continue to execution"
+
+
 def test_run_inference_step_sizes_from_calibrated_meta_policy_power(monkeypatch):
     idx = pd.date_range("2026-03-01", periods=3, freq="1h", tz="UTC")
     close = pd.DataFrame({"BTC/USDT": [100.0, 100.0, 100.0]}, index=idx)

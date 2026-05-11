@@ -15,7 +15,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Set
 
 import numpy as np
 import pandas as pd
@@ -48,6 +48,31 @@ TRADE_LOG_COLUMNS = [
     "ohlcv_entry_price",
     "entry_price_delta_vs_ohlcv",
     "entry_price_delta_vs_ohlcv_pct",
+    "signal_price",
+    "decision_mid",
+    "signal_gap_bps",
+    "ticker_bid",
+    "ticker_ask",
+    "ticker_mid",
+    "ticker_spread_bps",
+    "expected_fill_price",
+    "expected_fill_slippage_bps",
+    "expected_total_entry_friction_bps",
+    "orderbook_side",
+    "best_touch",
+    "max_walk_price",
+    "orderbook_capacity_quote_within_slippage",
+    "intended_quote_size",
+    "spread_weight",
+    "depth_weight",
+    "liquidity_capacity_weight",
+    "price_gap_penalty",
+    "adjusted_rank_score",
+    "final_threshold",
+    "position_size_before_liquidity",
+    "position_size_after_liquidity",
+    "max_chase_bps",
+    "entry_limit_price",
     "spread_proxy_pct",
     "atr",
     "atr_frac",
@@ -533,6 +558,40 @@ class TradeLogger:
             "entry_price_delta_vs_ohlcv_pct": decision.get(
                 "entry_price_delta_vs_ohlcv_pct"
             ),
+            "signal_price": decision.get("signal_price"),
+            "decision_mid": decision.get("decision_mid"),
+            "signal_gap_bps": decision.get("signal_gap_bps"),
+            "ticker_bid": decision.get("ticker_bid") or decision.get("bid"),
+            "ticker_ask": decision.get("ticker_ask") or decision.get("ask"),
+            "ticker_mid": decision.get("ticker_mid") or decision.get("mid"),
+            "ticker_spread_bps": decision.get("ticker_spread_bps")
+            or decision.get("spread_bps"),
+            "expected_fill_price": decision.get("expected_fill_price"),
+            "expected_fill_slippage_bps": decision.get("expected_fill_slippage_bps"),
+            "expected_total_entry_friction_bps": decision.get(
+                "expected_total_entry_friction_bps"
+            ),
+            "orderbook_side": decision.get("orderbook_side"),
+            "best_touch": decision.get("best_touch"),
+            "max_walk_price": decision.get("max_walk_price"),
+            "orderbook_capacity_quote_within_slippage": decision.get(
+                "orderbook_capacity_quote_within_slippage"
+            ),
+            "intended_quote_size": decision.get("intended_quote_size"),
+            "spread_weight": decision.get("spread_weight"),
+            "depth_weight": decision.get("depth_weight"),
+            "liquidity_capacity_weight": decision.get("liquidity_capacity_weight"),
+            "price_gap_penalty": decision.get("price_gap_penalty"),
+            "adjusted_rank_score": decision.get("adjusted_rank_score"),
+            "final_threshold": decision.get("final_threshold"),
+            "position_size_before_liquidity": decision.get(
+                "position_size_before_liquidity"
+            ),
+            "position_size_after_liquidity": decision.get(
+                "position_size_after_liquidity"
+            ),
+            "max_chase_bps": decision.get("max_chase_bps"),
+            "entry_limit_price": decision.get("entry_limit_price"),
             "spread_proxy_pct": decision.get("spread_proxy_pct"),
             "atr": market_data.get("atr"),
             "atr_frac": market_data.get("atr_frac"),
@@ -951,6 +1010,60 @@ class TradeLogger:
             return None
         return pd.Timestamp(ts.max())
 
+    def reconcile_pending_entries_absent(
+        self,
+        active_symbols: Iterable[str],
+        *,
+        reason: str = "absent_from_executor_startup_reconciliation",
+    ) -> int:
+        """Mark pending entry rows absent when startup reconciliation finds no position."""
+        if not self.db_path or not os.path.exists(self.db_path):
+            return 0
+        active: Set[str] = {str(sym) for sym in active_symbols if str(sym)}
+        now = pd.Timestamp.now(tz="UTC").isoformat()
+        updated = 0
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT id, symbol
+                FROM trades
+                WHERE action = 'enter'
+                  AND lifecycle_event = 'entry_placed'
+                  AND status = 'pending'
+                """
+            ).fetchall()
+            for row in rows:
+                symbol = str(row["symbol"] or "")
+                if symbol in active:
+                    continue
+                conn.execute(
+                    """
+                    UPDATE trades
+                    SET status = ?,
+                        order_error_category = ?,
+                        error = ?,
+                        stop_price_updated = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        "reconciled_absent",
+                        "position_reconciled_absent",
+                        reason,
+                        now,
+                        row["id"],
+                    ),
+                )
+                updated += 1
+            conn.commit()
+        if updated:
+            self._sync_csv_from_db()
+            tprint(
+                "TradeLogger reconciled pending entries absent from exchange state: "
+                f"updated={updated}"
+            )
+        return updated
+
     # =========================================================================
     # Legacy methods for backward compatibility
     # =========================================================================
@@ -1039,6 +1152,45 @@ class TradeLogger:
             row["entry_price_delta_vs_ohlcv_pct"] = context.get(
                 "entry_price_delta_vs_ohlcv_pct", ""
             )
+            row["signal_price"] = context.get("signal_price", "")
+            row["decision_mid"] = context.get("decision_mid", "")
+            row["signal_gap_bps"] = context.get("signal_gap_bps", "")
+            row["ticker_bid"] = context.get("ticker_bid", context.get("bid", ""))
+            row["ticker_ask"] = context.get("ticker_ask", context.get("ask", ""))
+            row["ticker_mid"] = context.get("ticker_mid", context.get("mid", ""))
+            row["ticker_spread_bps"] = context.get(
+                "ticker_spread_bps", context.get("spread_bps", "")
+            )
+            row["expected_fill_price"] = context.get("expected_fill_price", "")
+            row["expected_fill_slippage_bps"] = context.get(
+                "expected_fill_slippage_bps", ""
+            )
+            row["expected_total_entry_friction_bps"] = context.get(
+                "expected_total_entry_friction_bps", ""
+            )
+            row["orderbook_side"] = context.get("orderbook_side", "")
+            row["best_touch"] = context.get("best_touch", "")
+            row["max_walk_price"] = context.get("max_walk_price", "")
+            row["orderbook_capacity_quote_within_slippage"] = context.get(
+                "orderbook_capacity_quote_within_slippage", ""
+            )
+            row["intended_quote_size"] = context.get("intended_quote_size", "")
+            row["spread_weight"] = context.get("spread_weight", "")
+            row["depth_weight"] = context.get("depth_weight", "")
+            row["liquidity_capacity_weight"] = context.get(
+                "liquidity_capacity_weight", ""
+            )
+            row["price_gap_penalty"] = context.get("price_gap_penalty", "")
+            row["adjusted_rank_score"] = context.get("adjusted_rank_score", "")
+            row["final_threshold"] = context.get("final_threshold", "")
+            row["position_size_before_liquidity"] = context.get(
+                "position_size_before_liquidity", ""
+            )
+            row["position_size_after_liquidity"] = context.get(
+                "position_size_after_liquidity", ""
+            )
+            row["max_chase_bps"] = context.get("max_chase_bps", "")
+            row["entry_limit_price"] = context.get("entry_limit_price", "")
             row["spread_proxy_pct"] = context.get("spread_proxy_pct", "")
             for col in TRADE_LOG_COLUMNS:
                 if col in context and col not in row:

@@ -17,7 +17,7 @@ def test_portfolio_manager_caps_size_at_5000_usdt():
     assert info["position_size_cap"] == 5000.0
 
 
-def test_portfolio_manager_defaults_to_15pct_position_cap_without_total_cap():
+def test_portfolio_manager_defaults_to_75pct_total_and_15pct_position_cap():
     pm = PortfolioManager(portfolio_value=10000.0)
     can_enter, info = pm.can_enter_position(
         symbol="BTC/USDT",
@@ -26,19 +26,19 @@ def test_portfolio_manager_defaults_to_15pct_position_cap_without_total_cap():
         confidence_score=0.9,
         initial_threshold=0.5,
         current_time=pd.Timestamp("2026-01-01", tz="UTC"),
-        requested_position_size=10000.0,
+        requested_position_size=1500.0,
     )
     assert can_enter
     assert info["position_size_cap"] == 1500.0
     state = pm.get_portfolio_state()
-    assert state["max_invested_pct"] is None
+    assert state["max_invested_pct"] == 0.75
     assert state["max_position_pct"] == 0.15
 
 
-def test_portfolio_manager_allows_only_two_positions_per_strategy():
+def test_portfolio_manager_allows_six_positions_per_strategy_by_default():
     pm = PortfolioManager(portfolio_value=10000.0)
     t0 = pd.Timestamp("2026-01-01", tz="UTC")
-    for i in range(2):
+    for i in range(6):
         pm.record_position_open(
             symbol=f"SYM{i}/USDT",
             side="long",
@@ -57,7 +57,7 @@ def test_portfolio_manager_allows_only_two_positions_per_strategy():
         requested_position_size=1000.0,
     )
     assert not can_enter
-    assert info["reason"].startswith("max_same_strategy_reached")
+    assert info["reason"] == "max_concurrent_per_side_reached"
 
 
 def test_dynamic_threshold_widens_with_open_positions():

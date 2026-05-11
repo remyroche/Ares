@@ -1,6 +1,7 @@
 import numpy as np
 import optuna
 import pandas as pd
+import pytest
 
 from extreme_price_movements.simple_policy_optimiser import (
     _build_top5_validation_diagnostic,
@@ -8,6 +9,7 @@ from extreme_price_movements.simple_policy_optimiser import (
     _suggest_policy_params,
     apply_asset_weights,
     compute_position_size,
+    discover_deployment_rank_threshold_simple_grid,
     optimise_deployment_rank_threshold,
     simulate_and_score,
 )
@@ -171,6 +173,50 @@ def test_deployment_rank_threshold_uses_concurrency_limited_pnl():
     assert best["net_pnl"] == 0.4
     assert best["threshold_search"]["max_concurrent_per_asset"] == 1
     assert best["threshold_search"]["max_concurrent_per_strategy"] == 3
+
+
+def test_simple_grid_threshold_discovery_uses_full_rank_population_below_top15():
+    ranks = [0.50, 0.60, 0.62, 0.64, 0.66, 0.68, 0.70]
+    rows = pd.DataFrame(
+        {
+            "timestamp": pd.date_range(
+                "2026-01-01T00:00:00Z", periods=len(ranks), freq="h"
+            ),
+            "symbol": list("ABCDEFG"),
+            "strategy_id": ["long_a"] * len(ranks),
+            "side": [1.0] * len(ranks),
+            "rank_pct": ranks,
+            "barrier_pct": [0.01] * len(ranks),
+        }
+    )
+    f_opens = np.full((len(ranks), 3), 100.0, dtype=np.float32)
+    f_highs = np.full((len(ranks), 3), 100.0, dtype=np.float32)
+    f_lows = np.full((len(ranks), 3), 100.0, dtype=np.float32)
+    f_closes = np.full((len(ranks), 3), 100.0, dtype=np.float32)
+    f_lows[0, 1] = 99.0
+    f_highs[1:, 1] = 103.0
+
+    best = discover_deployment_rank_threshold_simple_grid(
+        rows,
+        (f_opens, f_highs, f_lows, f_closes),
+        cost_pct=0.0,
+        lo=0.5,
+        hi=0.7,
+        precision=0.02,
+        sl_mults=(1.0,),
+        tp_mults=(1.0,),
+        local_band_width=0.02,
+        confirmation_bands=5,
+        confirmation_min_positive=4,
+    )
+
+    assert best["deployment_rank_threshold"] < 0.85
+    assert best["deployment_rank_threshold"] == pytest.approx(0.6)
+    assert best["mean_net_trade"] > 0.0
+    assert best["local_confirmation_passed"] is True
+    assert best["next_band_positive_count"] >= 4
+    assert best["threshold_search"]["method"].startswith("full_policy_rank_grid")
+    assert best["threshold_search"]["profitable_threshold_min"] == pytest.approx(0.6)
 
 
 def test_asset_weights_blacklist_only_reliable_harmful_assets():

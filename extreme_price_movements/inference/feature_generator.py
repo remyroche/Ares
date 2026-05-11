@@ -7,7 +7,11 @@ This module generates features for inference:
 - Computes per-symbol features needed by candidate selector
 """
 
+import hashlib
+import json
 import re
+import time
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 import numpy as np
@@ -16,6 +20,7 @@ import pandas as pd
 from extreme_price_movements.data_store import load_features_selected
 from extreme_price_movements.features import (
     add_regime_gates,
+    atr_percent,
     compute_features_hourly,
     compute_market_features,
 )
@@ -49,9 +54,186 @@ DEFAULT_TREND_SMA_HOURS = 24 * 14  # 14 days
 DEFAULT_GATE_VOL_LOOKBACK_HOURS = 24 * 7  # 7 days
 DEFAULT_GATE_TREND_THR = 0.0
 DEFAULT_TAIL_WARMUP_BUFFER_HOURS = 72
+LIVE_FEATURE_CACHE_VERSION = 3
+_LIVE_FEATURE_MEMORY_CACHE: Dict[str, Dict[str, Any]] = {}
 MODEL_DERIVED_FEATURE_RE = re.compile(
     r"^(base_H\d+_|pred_H\d+|pred_.*_H\d+|pred_logit$|oof_ebm_unc_|base_med_|base_prob_|base_model_|prob_error|recent_prob_error_|recent_hit_rate_|recent_global_|recent_side_horizon_|recent_bucket_|recent_regime_|recent_meta_|recent_effectiveness_available$)"
 )
+
+
+class _StageTimer:
+    """Small timing helper for live inference feature stages."""
+
+    def __init__(self, label: str):
+        self.label = label
+        self.start = time.perf_counter()
+        self.last = self.start
+
+    def mark(self, stage: str) -> None:
+        now = time.perf_counter()
+        tprint(
+            f"[Timing] {self.label}.{stage}: "
+            f"stage={now - self.last:.3f}s total={now - self.start:.3f}s"
+        )
+        self.last = now
+
+
+def _hash_values(values: Iterable[str]) -> str:
+    payload = "\n".join(sorted(str(v) for v in values if str(v))).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()[:16]
+
+
+def _live_feature_cache_key(
+    *,
+    run_id: str,
+    symbols: List[str],
+    required_feature_keys: Set[str],
+    lookback_hours: int,
+) -> str:
+    return "|".join(
+        [
+            str(LIVE_FEATURE_CACHE_VERSION),
+            str(run_id),
+            str(int(lookback_hours)),
+            _hash_values(symbols),
+            _hash_values(required_feature_keys),
+        ]
+    )
+
+
+def _feature_snapshot_dir(cfg: Dict[str, Any], run_id: str, cache_key: str) -> Path:
+    root = Path(
+        cfg.get(
+            "live_feature_snapshot_cache_dir",
+            f"cache/inference_live_features/{run_id}",
+        )
+    )
+    safe = hashlib.sha256(cache_key.encode("utf-8")).hexdigest()[:24]
+    return root / safe
+
+
+def _latest_feature_matrix(
+    feats: Dict[str, pd.DataFrame],
+    symbols: List[str],
+    end_ts: pd.Timestamp,
+    required_feature_keys: Set[str],
+) -> pd.DataFrame:
+    rows: Dict[str, Dict[str, float]] = {sym: {} for sym in symbols}
+    keys = required_feature_keys or set(feats.keys())
+    for key in keys:
+        df = feats.get(key)
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            continue
+        available = [sym for sym in symbols if sym in df.columns]
+        if not available:
+            continue
+        if end_ts in df.index:
+            values = df.loc[end_ts, available]
+        else:
+            values = df.loc[:, available].ffill().iloc[-1]
+        for sym, value in values.items():
+            try:
+                rows[str(sym)][str(key)] = float(value)
+            except (TypeError, ValueError):
+                rows[str(sym)][str(key)] = np.nan
+    return pd.DataFrame.from_dict(rows, orient="index").astype(np.float32)
+
+
+def _matrix_to_feature_dict(
+    matrix: pd.DataFrame,
+    end_ts: pd.Timestamp,
+) -> Dict[str, pd.DataFrame]:
+    out: Dict[str, pd.DataFrame] = {}
+    if matrix is None or matrix.empty:
+        return out
+    ts_index = pd.DatetimeIndex([pd.Timestamp(end_ts)])
+    for key in matrix.columns:
+        values = matrix[key].to_numpy(dtype=np.float32, copy=False)[None, :]
+        out[str(key)] = pd.DataFrame(values, index=ts_index, columns=matrix.index)
+    return out
+
+
+def _load_live_feature_snapshot(
+    *,
+    cfg: Dict[str, Any],
+    run_id: str,
+    cache_key: str,
+    symbols: List[str],
+    end_ts: pd.Timestamp,
+    required_feature_keys: Set[str],
+) -> Dict[str, pd.DataFrame]:
+    if not bool(cfg.get("live_feature_snapshot_cache_enabled", True)):
+        return {}
+    cache_dir = _feature_snapshot_dir(cfg, run_id, cache_key)
+    meta_path = cache_dir / "meta.json"
+    data_path = cache_dir / "latest.parquet"
+    if not (meta_path.exists() and data_path.exists()):
+        return {}
+    try:
+        meta = json.loads(meta_path.read_text())
+        if meta.get("version") != LIVE_FEATURE_CACHE_VERSION:
+            return {}
+        if meta.get("cache_key") != cache_key:
+            return {}
+        if pd.Timestamp(meta.get("end_ts")) != pd.Timestamp(end_ts):
+            return {}
+        if meta.get("symbols_hash") != _hash_values(symbols):
+            return {}
+        if meta.get("required_hash") != _hash_values(required_feature_keys):
+            return {}
+        matrix = pd.read_parquet(data_path)
+    except Exception:
+        return {}
+    missing = required_feature_keys.difference(str(c) for c in matrix.columns)
+    if missing:
+        return {}
+    tprint(
+        "Loaded persisted live transformed feature snapshot: "
+        f"symbols={len(matrix.index)} features={len(matrix.columns)} end_ts={end_ts}"
+    )
+    return _matrix_to_feature_dict(matrix, end_ts=end_ts)
+
+
+def _write_live_feature_snapshot(
+    *,
+    cfg: Dict[str, Any],
+    run_id: str,
+    cache_key: str,
+    feats: Dict[str, pd.DataFrame],
+    symbols: List[str],
+    end_ts: pd.Timestamp,
+    required_feature_keys: Set[str],
+) -> None:
+    if not bool(cfg.get("live_feature_snapshot_cache_enabled", True)):
+        return
+    try:
+        cache_dir = _feature_snapshot_dir(cfg, run_id, cache_key)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        matrix = _latest_feature_matrix(feats, symbols, end_ts, required_feature_keys)
+        if matrix.empty:
+            return
+        tmp_data = cache_dir / "latest.tmp.parquet"
+        data_path = cache_dir / "latest.parquet"
+        matrix.to_parquet(tmp_data)
+        tmp_data.replace(data_path)
+        meta = {
+            "version": LIVE_FEATURE_CACHE_VERSION,
+            "cache_key": cache_key,
+            "symbols_hash": _hash_values(symbols),
+            "required_hash": _hash_values(required_feature_keys),
+            "end_ts": pd.Timestamp(end_ts).isoformat(),
+            "features": list(matrix.columns),
+            "symbols": list(matrix.index),
+        }
+        tmp_meta = cache_dir / "meta.tmp.json"
+        tmp_meta.write_text(json.dumps(meta))
+        tmp_meta.replace(cache_dir / "meta.json")
+        tprint(
+            "Persisted live transformed feature snapshot: "
+            f"symbols={len(matrix.index)} features={len(matrix.columns)} end_ts={end_ts}"
+        )
+    except Exception as exc:
+        tprint(f"Warning: failed to persist live feature snapshot: {exc}")
 
 
 def is_model_derived_feature_key(key: str) -> bool:
@@ -144,6 +326,50 @@ def _merge_feature_dicts(
         elif isinstance(right, pd.DataFrame):
             merged[key] = right
     return merged
+
+
+def _compute_policy_barrier_pct(
+    panel: Dict[str, pd.DataFrame],
+    basket_syms: List[str],
+    cfg: Dict[str, Any],
+) -> Optional[pd.DataFrame]:
+    """Compute the raw optimiser barrier fraction from raw OHLCV.
+
+    The policy optimiser consumes label ``barrier_pct`` values generated from
+    raw ATR% before CausalTransform. Live stop placement must not use the
+    transformed ``atr_pct``/``atr_pct_base`` model features, because those may
+    be standardized or otherwise unsuitable as price-distance fractions.
+    """
+    high = panel.get("high")
+    low = panel.get("low")
+    close = panel.get("close")
+    if (
+        not isinstance(high, pd.DataFrame)
+        or high.empty
+        or not isinstance(low, pd.DataFrame)
+        or low.empty
+        or not isinstance(close, pd.DataFrame)
+        or close.empty
+    ):
+        return None
+
+    cols = [
+        sym
+        for sym in basket_syms
+        if sym in high.columns and sym in low.columns and sym in close.columns
+    ]
+    if not cols:
+        return None
+
+    atr_n = max(1, int((cfg or {}).get("atr_n", 14)))
+    high_raw = high.loc[:, cols].astype(np.float32)
+    low_raw = low.loc[:, cols].astype(np.float32)
+    close_raw = close.loc[:, cols].astype(np.float32)
+    barrier = (
+        atr_percent(high_raw, low_raw, close_raw, atr_n) / (close_raw + 1e-12)
+    ).astype(np.float32)
+    barrier = barrier.replace([np.inf, -np.inf], np.nan)
+    return barrier.clip(lower=np.float32(0.005))
 
 
 def _backfill_missing_requested_keys(
@@ -269,6 +495,7 @@ def load_or_compute_features(
     gate_trend_thr: float = DEFAULT_GATE_TREND_THR,
     tail_compute_hours: Optional[int] = None,
 ) -> Dict[str, pd.DataFrame]:
+    timer = _StageTimer("load_or_compute_features")
     close = panel.get("close")
     if not isinstance(close, pd.DataFrame) or close.empty:
         return {}
@@ -278,16 +505,69 @@ def load_or_compute_features(
     cfg = dict(cfg_source or {})
     if _requires_gated_feature_generation(required_feature_keys):
         cfg["enable_gated_features"] = True
+    cfg.setdefault("feature_transform_cache_enabled", False)
 
     end_ts = close.index.max()
     start_ts = end_ts - pd.Timedelta(hours=lookback_hours)
-    cached_feats = load_cached_features_for_inference(
+    cache_key = _live_feature_cache_key(
         run_id=run_id,
-        data_root=data_root,
         symbols=basket_syms,
-        start_ts=start_ts,
-        end_ts=end_ts,
+        required_feature_keys=required_feature_keys,
+        lookback_hours=lookback_hours,
     )
+    if bool(cfg.get("live_feature_memory_cache_enabled", True)):
+        memory_entry = _LIVE_FEATURE_MEMORY_CACHE.get(cache_key)
+        if isinstance(memory_entry, dict):
+            memory_end = memory_entry.get("end_ts")
+            memory_feats = memory_entry.get("feats")
+            if (
+                memory_end is not None
+                and pd.Timestamp(memory_end) == pd.Timestamp(end_ts)
+                and isinstance(memory_feats, dict)
+            ):
+                tprint(
+                    "Loaded in-memory live transformed feature cache: "
+                    f"features={len(memory_feats)} end_ts={end_ts}"
+                )
+                return memory_feats
+
+    snapshot_feats = _load_live_feature_snapshot(
+        cfg=cfg,
+        run_id=run_id,
+        cache_key=cache_key,
+        symbols=basket_syms,
+        end_ts=end_ts,
+        required_feature_keys=required_feature_keys,
+    )
+    if snapshot_feats:
+        if bool(cfg.get("live_feature_memory_cache_enabled", True)):
+            _LIVE_FEATURE_MEMORY_CACHE[cache_key] = {
+                "end_ts": end_ts,
+                "feats": snapshot_feats,
+            }
+        timer.mark("snapshot_cache_hit")
+        return snapshot_feats
+
+    cached_feats = {}
+    memory_entry = _LIVE_FEATURE_MEMORY_CACHE.get(cache_key)
+    if isinstance(memory_entry, dict) and isinstance(memory_entry.get("feats"), dict):
+        cached_feats = _slice_feature_window(
+            memory_entry["feats"], start_ts=start_ts, end_ts=end_ts
+        )
+        if cached_feats:
+            tprint(
+                "Using in-memory live feature history as tail base: "
+                f"features={len(cached_feats)}"
+            )
+    if not cached_feats:
+        cached_feats = load_cached_features_for_inference(
+            run_id=run_id,
+            data_root=data_root,
+            symbols=basket_syms,
+            start_ts=start_ts,
+            end_ts=end_ts,
+        )
+    timer.mark("load_cached_transformed_features")
 
     cached_last_ts = None
     if cached_feats:
@@ -301,6 +581,10 @@ def load_or_compute_features(
     # stored offline feature cache, because the offline cache does not
     # necessarily contain keys like ret24h/range_12h_pct used by inference.
     selector_feats = _compute_per_symbol_features(panel, basket_syms)
+    policy_barrier = _compute_policy_barrier_pct(panel, basket_syms, cfg)
+    if isinstance(policy_barrier, pd.DataFrame) and not policy_barrier.empty:
+        selector_feats["barrier_pct"] = policy_barrier
+    timer.mark("compute_selector_features")
 
     if not need_tail_backfill:
         tprint(
@@ -322,6 +606,19 @@ def load_or_compute_features(
             merged = _synthesize_live_safe_feature_keys(
                 merged, panel, basket_syms, required_feature_keys
             )
+        merged = _slice_feature_window(merged, start_ts=start_ts, end_ts=end_ts)
+        if bool(cfg.get("live_feature_memory_cache_enabled", True)):
+            _LIVE_FEATURE_MEMORY_CACHE[cache_key] = {"end_ts": end_ts, "feats": merged}
+        _write_live_feature_snapshot(
+            cfg=cfg,
+            run_id=run_id,
+            cache_key=cache_key,
+            feats=merged,
+            symbols=basket_syms,
+            end_ts=end_ts,
+            required_feature_keys=required_feature_keys,
+        )
+        timer.mark("feature_cache_ready_no_tail")
         return merged
 
     tail_warmup_hours = _required_tail_warmup_hours(
@@ -347,14 +644,21 @@ def load_or_compute_features(
         "Stored features missing latest timestamps; computing tail-only feature backfill "
         f"from {tail_start_ts} to {end_ts}"
     )
+    tprint(
+        "Live feature parity: tail backfill uses shared training/backtest "
+        "compute_features_hourly() and its CausalTransform skip logic; no separate "
+        "live-only transform is applied."
+    )
     mkt_df = compute_market_features(
         panel_tail, basket_syms, trend_sma_hours=trend_sma_hours
     )
+    timer.mark("compute_market_features_tail")
     mkt_gates = add_regime_gates(
         mkt_df,
         gate_vol_lookback_hours=gate_vol_lookback_hours,
         gate_trend_thr=gate_trend_thr,
     )
+    timer.mark("compute_regime_gates_tail")
     full_tail_feats, _, _ = compute_features_hourly(
         panel_tail,
         mkt_gates,
@@ -363,6 +667,7 @@ def load_or_compute_features(
             sorted(required_feature_keys) if required_feature_keys else None
         ),
     )
+    timer.mark("compute_features_hourly_tail")
     if cached_last_ts is not None:
         full_tail_feats = {
             key: df[df.index > cached_last_ts]
@@ -388,6 +693,20 @@ def load_or_compute_features(
         merged_feats = _synthesize_live_safe_feature_keys(
             merged_feats, panel, basket_syms, required_feature_keys
         )
+    if bool(cfg.get("live_feature_memory_cache_enabled", True)):
+        _LIVE_FEATURE_MEMORY_CACHE[cache_key] = {
+            "end_ts": end_ts,
+            "feats": merged_feats,
+        }
+    _write_live_feature_snapshot(
+        cfg=cfg,
+        run_id=run_id,
+        cache_key=cache_key,
+        feats=merged_feats,
+        symbols=basket_syms,
+        end_ts=end_ts,
+        required_feature_keys=required_feature_keys,
+    )
     new_rows = 0
     if full_tail_feats:
         for df in full_tail_feats.values():
@@ -395,6 +714,7 @@ def load_or_compute_features(
                 new_rows = len(df.index)
                 break
     tprint(f"Loaded cached features and backfilled {new_rows} new timestamps")
+    timer.mark("merge_and_cache_features")
     return merged_feats
 
 
@@ -1113,13 +1433,12 @@ def _synthesize_live_safe_feature_keys(
     out = dict(feats)
     close = panel.get("close")
     if barrier_missing:
-        atr_pct = out.get("atr_pct")
-        if isinstance(atr_pct, pd.DataFrame) and not atr_pct.empty:
-            out["barrier_pct"] = (
-                atr_pct.reindex(index=zero_frame.index, columns=zero_frame.columns)
-                .astype(np.float32)
-                .clip(lower=np.float32(0.005))
-            )
+        policy_barrier = _compute_policy_barrier_pct(panel, basket_syms, {})
+        if isinstance(policy_barrier, pd.DataFrame) and not policy_barrier.empty:
+            out["barrier_pct"] = policy_barrier.reindex(
+                index=zero_frame.index,
+                columns=zero_frame.columns,
+            ).astype(np.float32)
         else:
             out["barrier_pct"] = zero_frame.copy()
     for key in rolling_missing:
@@ -1519,7 +1838,10 @@ def get_features_for_candidates(
                 if ts is not None and ts in series.index:
                     row[feat_name] = series.loc[ts]
                 elif isinstance(series, (pd.DataFrame, pd.Series)) and not series.empty:
-                    row[feat_name] = series.dropna().iloc[-1]
+                    finite_series = series.dropna()
+                    if finite_series.empty:
+                        continue
+                    row[feat_name] = finite_series.iloc[-1]
 
         if row:
             row["symbol"] = sym

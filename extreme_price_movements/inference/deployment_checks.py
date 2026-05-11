@@ -185,9 +185,11 @@ def _feature_parity_verified(ctx: DeploymentCheckContext) -> DeploymentCheckResu
             "meta_feature_contract_ok": meta_feature_ok,
             "model_coverage_ok": coverage_ok,
         },
-        error=""
-        if ok
-        else "model coverage, meta feature contract, or live feature contract failed",
+        error=(
+            ""
+            if ok
+            else "model coverage, meta feature contract, or live feature contract failed"
+        ),
     )
 
 
@@ -264,18 +266,54 @@ def _portfolio_risk_constraints_verified(
         confidence_score=0.99,
         initial_threshold=0.50,
         current_time=now + pd.Timedelta(minutes=2),
-        requested_position_size=9_000.0,
+        requested_position_size=1_000.0,
+    )
+    for i in range(1, 6):
+        mgr.record_position_open(
+            symbol=f"LONG{i}/USDC",
+            side="long",
+            strategy_id=f"long_mr_{i}",
+            position_size=500.0,
+            entry_price=100.0,
+            entry_time=now + pd.Timedelta(minutes=2 + i),
+        )
+    allowed_seventh_long, seventh_long_info = mgr.can_enter_position(
+        symbol="SEVENTH/USDC",
+        side="long",
+        strategy_id="long_extra",
+        confidence_score=0.99,
+        initial_threshold=0.50,
+        current_time=now + pd.Timedelta(minutes=10),
+        requested_position_size=500.0,
     )
     position_cap_ok = float(next_info.get("position_size_cap", 0.0)) <= 1_500.0
     threshold_ok = float(next_info.get("final_threshold", 0.0)) > 0.50
-    ok = not allowed_same_asset and allowed_next and position_cap_ok and threshold_ok
+    cap_policy_ok = (
+        mgr.max_positions == 8
+        and mgr.max_same_side == 6
+        and mgr.max_same_strategy == 6
+        and float(mgr.max_portfolio_pct or 0.0) == 0.75
+    )
+    ok = (
+        not allowed_same_asset
+        and allowed_next
+        and not allowed_seventh_long
+        and position_cap_ok
+        and threshold_ok
+        and cap_policy_ok
+    )
     return _result(
         name,
         ok,
         details={
             "same_asset_reason": same_asset_info.get("reason"),
+            "seventh_long_reason": seventh_long_info.get("reason"),
             "next_position_cap": next_info.get("position_size_cap"),
             "next_final_threshold": next_info.get("final_threshold"),
+            "max_positions": mgr.max_positions,
+            "max_same_side": mgr.max_same_side,
+            "max_same_strategy": mgr.max_same_strategy,
+            "max_portfolio_pct": mgr.max_portfolio_pct,
         },
         error="" if ok else "portfolio constraints did not block/cap as expected",
     )

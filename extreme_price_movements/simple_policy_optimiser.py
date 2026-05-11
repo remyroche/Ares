@@ -36,20 +36,36 @@ except Exception:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 # Parameter grids (moved to Optuna suggest variables directly below)
-TOP_POLICY_RANK_THRESHOLD = 0.85
-TOP_POLICY_LABEL = "top_15"
+REPORTING_POLICY_RANK_THRESHOLD = 0.85
+REPORTING_POLICY_LABEL = "top_15"
 DEFAULT_FORWARD_BARS = 96
 DEFAULT_CV_FOLDS = 3
 DEFAULT_N_TRIALS = 400
 MAX_DEPLOYMENT_STRATEGIES_PER_SIDE = 2
 DEPLOYMENT_SELECTION_METRIC = "top_5"
-MAX_CONCURRENT_TRADES = 1
+PORTFOLIO_POLICY_MAX_CONCURRENT_POSITIONS = 10
+PORTFOLIO_POLICY_MAX_CONCURRENT_PER_SIDE = 6
+PORTFOLIO_POLICY_MAX_CONCURRENT_PER_STRATEGY = 6
+PORTFOLIO_POLICY_MAX_TOTAL_WALLET_ALLOCATION_PCT = 0.75
+PORTFOLIO_POLICY_MAX_AVAILABLE_WALLET_POSITION_PCT = 0.50
+PORTFOLIO_POLICY_MAX_POSITION_WALLET_PCT = 0.15
+PORTFOLIO_POLICY_MAX_POSITION_QUOTE_NOTIONAL = 5000.0
+PORTFOLIO_POLICY_INITIAL_RANK_THRESHOLD_FLOOR = 0.90
+PORTFOLIO_POLICY_LIVE_TEST_MIN_QUOTE_NOTIONAL = 5.0
+PORTFOLIO_POLICY_LIVE_TEST_QUOTE_NOTIONAL = 10.0
+MAX_CONCURRENT_TRADES = PORTFOLIO_POLICY_MAX_CONCURRENT_POSITIONS
 BASE_TO_META_TOP_FRAC = 0.40
-DEPLOYMENT_THRESHOLD_MIN = 0.85
+DEPLOYMENT_THRESHOLD_MIN = 0.50
 DEPLOYMENT_THRESHOLD_MAX = 0.99
 DEPLOYMENT_THRESHOLD_PRECISION = 0.01
 DEPLOYMENT_MAX_CONCURRENT_PER_ASSET = 1
-DEPLOYMENT_MAX_CONCURRENT_PER_STRATEGY = 3
+DEPLOYMENT_MAX_CONCURRENT_PER_STRATEGY = PORTFOLIO_POLICY_MAX_CONCURRENT_PER_STRATEGY
+SIMPLE_DISCOVERY_SL_MULTS = (0.8, 1.0, 1.2, 1.5)
+SIMPLE_DISCOVERY_TP_MULTS = (1.0, 1.5, 2.0, 2.5)
+SIMPLE_DISCOVERY_SIZE_POWER = 1.0
+SIMPLE_DISCOVERY_LOCAL_BAND_WIDTH = 0.02
+SIMPLE_DISCOVERY_CONFIRMATION_BANDS = 5
+SIMPLE_DISCOVERY_CONFIRMATION_MIN_POSITIVE = 4
 ASSET_DECISION_KEEP = "keep"
 ASSET_DECISION_DOWN_WEIGHT = "down_weight"
 ASSET_DECISION_BLACKLIST = "blacklist"
@@ -61,9 +77,9 @@ ASSET_DECISIONS = (
 
 
 def compute_position_size(rank_pct: np.ndarray, size_power: float) -> np.ndarray:
-    """Position size formula: size = 0.05 + (0.15 - 0.05) * rank_pct ** size_power"""
+    """Position size formula: size = 0.075 + (0.15 - 0.075) * rank_pct ** size_power"""
     rank_pct = np.asarray(rank_pct, dtype=np.float32)
-    return 0.05 + 0.10 * (rank_pct**size_power)
+    return 0.075 + 0.075 * (rank_pct**size_power)
 
 
 def _without_concurrency_param(params: Dict[str, Any]) -> Dict[str, Any]:
@@ -381,41 +397,107 @@ def apply_deployment_concurrency_constraints(
     *,
     timestamp_col: str = "timestamp",
     symbol_col: str = "symbol",
+    side_col: str = "side",
+    strategy_col: str = "strategy_id",
+    rank_col: str = "deployment_rank_pct",
     holding_bars_col: str = "exit_bars",
     bar_minutes: int = 15,
+    initial_rank_threshold: float | None = None,
+    dynamic_threshold_enabled: bool = True,
+    max_concurrent_total: int = PORTFOLIO_POLICY_MAX_CONCURRENT_POSITIONS,
+    max_concurrent_per_side: int = PORTFOLIO_POLICY_MAX_CONCURRENT_PER_SIDE,
     max_concurrent_per_asset: int = DEPLOYMENT_MAX_CONCURRENT_PER_ASSET,
     max_concurrent_per_strategy: int = DEPLOYMENT_MAX_CONCURRENT_PER_STRATEGY,
+    side_crowding_penalty_max: float = 0.03,
+    strategy_crowding_penalty_max: float = 0.03,
 ) -> pd.DataFrame:
     if rows.empty:
         return rows.copy()
 
-    work = rows.sort_values(timestamp_col).copy()
+    sort_cols = [timestamp_col]
+    ascending = [True]
+    if rank_col in rows.columns:
+        sort_cols.append(rank_col)
+        ascending.append(False)
+    work = rows.sort_values(sort_cols, ascending=ascending).copy()
     selected: List[Any] = []
     active_by_symbol: Dict[str, List[pd.Timestamp]] = {}
-    active_strategy_until: List[pd.Timestamp] = []
+    active_by_side: Dict[str, List[pd.Timestamp]] = {}
+    active_by_strategy: Dict[str, List[pd.Timestamp]] = {}
+    active_total_until: List[pd.Timestamp] = []
 
     for idx, row in work.iterrows():
         ts = pd.Timestamp(row[timestamp_col])
         if pd.isna(ts):
             continue
         symbol = str(row[symbol_col])
+        strategy_id = str(row.get(strategy_col, "") or "")
+        side = str(row.get(side_col, "") or "").lower()
+        if side not in {"long", "short"}:
+            side = _strategy_side(strategy_id) if strategy_id else "unknown"
 
-        active_strategy_until = [until for until in active_strategy_until if until > ts]
+        active_total_until = [until for until in active_total_until if until > ts]
+        active_by_side[side] = [
+            until for until in active_by_side.get(side, []) if until > ts
+        ]
+        active_by_strategy[strategy_id] = [
+            until for until in active_by_strategy.get(strategy_id, []) if until > ts
+        ]
         active_by_symbol[symbol] = [
             until for until in active_by_symbol.get(symbol, []) if until > ts
         ]
 
-        if len(active_strategy_until) >= int(max_concurrent_per_strategy):
+        if len(active_total_until) >= int(max_concurrent_total):
+            continue
+        if len(active_by_side.get(side, [])) >= int(max_concurrent_per_side):
+            continue
+        if len(active_by_strategy.get(strategy_id, [])) >= int(
+            max_concurrent_per_strategy
+        ):
             continue
         if len(active_by_symbol[symbol]) >= int(max_concurrent_per_asset):
             continue
+        if (
+            initial_rank_threshold is not None
+            and dynamic_threshold_enabled
+            and rank_col in row.index
+        ):
+            rank_val = _safe_float(row.get(rank_col), default=np.nan)
+            if not np.isfinite(rank_val):
+                continue
+            side_util = len(active_by_side.get(side, [])) / max(
+                int(max_concurrent_per_side), 1
+            )
+            strategy_util = len(active_by_strategy.get(strategy_id, [])) / max(
+                int(max_concurrent_per_strategy), 1
+            )
+            occupancy_raise = (
+                len(active_total_until)
+                * (1.0 - float(initial_rank_threshold))
+                / max(int(max_concurrent_total), 1)
+            )
+            side_penalty = float(side_crowding_penalty_max) * float(side_util) ** 2
+            strategy_penalty = float(strategy_crowding_penalty_max) * (
+                float(strategy_util) ** 2
+            )
+            effective_threshold = min(
+                0.99,
+                float(initial_rank_threshold)
+                + occupancy_raise
+                + side_penalty
+                + strategy_penalty,
+            )
+            if rank_val < effective_threshold:
+                continue
 
         holding_bars = int(row.get(holding_bars_col, 1) or 1)
         holding_bars = max(1, holding_bars)
         until = ts + pd.Timedelta(minutes=int(bar_minutes) * holding_bars)
 
         selected.append(idx)
-        active_strategy_until.append(until)
+        active_total_until.append(until)
+        active_by_side.setdefault(side, []).append(until)
+        active_by_strategy.setdefault(strategy_id, []).append(until)
         active_by_symbol.setdefault(symbol, []).append(until)
 
     return work.loc[selected].copy()
@@ -461,19 +543,464 @@ def score_deployment_threshold_rows(rows: pd.DataFrame) -> Dict[str, Any]:
     }
 
 
+def _simulate_simple_tp_sl_rows(
+    df_sub: pd.DataFrame,
+    paths: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    *,
+    cost_pct: float,
+    size_power: float,
+    sl_mult: float,
+    tp_mult: float,
+) -> pd.DataFrame:
+    """Vectorized fixed TP/SL simulator for broad rank-threshold discovery."""
+    f_opens, f_highs, f_lows, f_closes = paths
+    n_trades, max_bars = f_opens.shape
+    if n_trades == 0:
+        return pd.DataFrame()
+
+    entry_prices = f_opens[:, 0].astype(np.float32, copy=True)
+    valid_entry = np.isfinite(entry_prices) & (entry_prices > 0.0)
+    if not np.any(valid_entry):
+        return pd.DataFrame()
+    if not np.all(valid_entry):
+        df_sub = df_sub.iloc[np.flatnonzero(valid_entry)].copy()
+        f_opens = f_opens[valid_entry]
+        f_highs = f_highs[valid_entry]
+        f_lows = f_lows[valid_entry]
+        f_closes = f_closes[valid_entry]
+        entry_prices = f_opens[:, 0].astype(np.float32, copy=True)
+        n_trades, max_bars = f_opens.shape
+        if n_trades == 0:
+            return pd.DataFrame()
+
+    sizes = compute_position_size(df_sub["rank_pct"].to_numpy(), size_power)
+    side = np.ones(n_trades, dtype=np.float32)
+    if "side" in df_sub.columns:
+        side = (
+            pd.to_numeric(df_sub["side"], errors="coerce")
+            .fillna(1)
+            .to_numpy(dtype=np.float32)
+        )
+
+    barrier = np.maximum(
+        pd.to_numeric(
+            df_sub.get("barrier_pct", pd.Series(np.full(n_trades, 0.02))),
+            errors="coerce",
+        )
+        .fillna(0.02)
+        .to_numpy(dtype=np.float32),
+        np.float32(1e-4),
+    )
+    barrier_price_dist = entry_prices * barrier
+    sl_dist = barrier_price_dist * np.float32(sl_mult)
+    tp_dist = barrier_price_dist * np.float32(tp_mult)
+    is_long_arr = side == 1
+    is_short_arr = side == -1
+
+    active = np.ones(n_trades, dtype=bool)
+    exit_rets = np.zeros(n_trades, dtype=np.float32)
+    exit_bars = np.full(n_trades, max_bars - 1, dtype=np.int16)
+
+    for j in range(1, max_bars):
+        active_idx = np.flatnonzero(active)
+        if len(active_idx) == 0:
+            break
+        entry = entry_prices[active_idx]
+        is_long = is_long_arr[active_idx]
+        is_short = is_short_arr[active_idx]
+
+        # Pessimistic same-bar ordering: stop loss before take profit.
+        sl_hit_long = is_long & (f_lows[active_idx, j] <= entry - sl_dist[active_idx])
+        sl_hit_short = is_short & (
+            f_highs[active_idx, j] >= entry + sl_dist[active_idx]
+        )
+        sl_hit = sl_hit_long | sl_hit_short
+        if np.any(sl_hit):
+            hit = active_idx[sl_hit]
+            exit_rets[hit] = -(sl_dist[hit] / entry_prices[hit])
+            exit_bars[hit] = j
+            active[hit] = False
+
+        active_idx = np.flatnonzero(active)
+        if len(active_idx) == 0:
+            break
+        entry = entry_prices[active_idx]
+        is_long = is_long_arr[active_idx]
+        is_short = is_short_arr[active_idx]
+        tp_hit_long = is_long & (f_highs[active_idx, j] >= entry + tp_dist[active_idx])
+        tp_hit_short = is_short & (f_lows[active_idx, j] <= entry - tp_dist[active_idx])
+        tp_hit = tp_hit_long | tp_hit_short
+        if np.any(tp_hit):
+            hit = active_idx[tp_hit]
+            exit_rets[hit] = tp_dist[hit] / entry_prices[hit]
+            exit_bars[hit] = j
+            active[hit] = False
+
+    active_end = np.flatnonzero(active)
+    if len(active_end) > 0:
+        close_rows = f_closes[active_end]
+        finite_close = np.isfinite(close_rows)
+        last_pos = np.maximum(np.sum(finite_close, axis=1) - 1, 0)
+        b_close = close_rows[np.arange(len(active_end)), last_pos].astype(
+            np.float32, copy=False
+        )
+        v_ent = entry_prices[active_end]
+        v_s = side[active_end]
+        exit_rets[active_end] = v_s * (b_close / v_ent - 1.0)
+        exit_bars[active_end] = last_pos.astype(np.int16, copy=False)
+
+    fees = sizes * cost_pct + sizes * (1.0 + exit_rets) * cost_pct
+    gross_gain = sizes * exit_rets
+    net_gain = gross_gain - fees
+    rows = df_sub.copy()
+    rows["net_gain"] = net_gain.astype(np.float32, copy=False)
+    rows["exit_bars"] = exit_bars.astype(np.int16, copy=False)
+    rows["simple_sl_mult"] = float(sl_mult)
+    rows["simple_tp_mult"] = float(tp_mult)
+    return rows
+
+
+def discover_deployment_rank_threshold_simple_grid(
+    rows: pd.DataFrame,
+    paths: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    *,
+    cost_pct: float,
+    timestamp_col: str = "timestamp",
+    symbol_col: str = "symbol",
+    side_col: str = "side",
+    strategy_col: str = "strategy_id",
+    max_concurrent_per_asset: int = DEPLOYMENT_MAX_CONCURRENT_PER_ASSET,
+    lo: float = DEPLOYMENT_THRESHOLD_MIN,
+    hi: float = DEPLOYMENT_THRESHOLD_MAX,
+    precision: float = DEPLOYMENT_THRESHOLD_PRECISION,
+    sl_mults: Sequence[float] = SIMPLE_DISCOVERY_SL_MULTS,
+    tp_mults: Sequence[float] = SIMPLE_DISCOVERY_TP_MULTS,
+    size_power: float = SIMPLE_DISCOVERY_SIZE_POWER,
+    local_band_width: float = SIMPLE_DISCOVERY_LOCAL_BAND_WIDTH,
+    confirmation_bands: int = SIMPLE_DISCOVERY_CONFIRMATION_BANDS,
+    confirmation_min_positive: int = SIMPLE_DISCOVERY_CONFIRMATION_MIN_POSITIVE,
+) -> Dict[str, Any]:
+    """Stage A: rank-threshold discovery over full policy rows and simple TP/SL."""
+    if rows.empty:
+        return {
+            "deployment_rank_threshold": float(hi),
+            "objective": float("-inf"),
+            "reason": "empty_rows",
+        }
+
+    work = rows.copy()
+    work[timestamp_col] = pd.to_datetime(work[timestamp_col], errors="coerce")
+    work["rank_pct"] = pd.to_numeric(work["rank_pct"], errors="coerce")
+    work = work.replace([np.inf, -np.inf], np.nan)
+    valid_mask = ~work[[timestamp_col, symbol_col, "rank_pct"]].isna().any(axis=1)
+    valid_idx = np.flatnonzero(valid_mask.to_numpy())
+    work = work.iloc[valid_idx].copy().reset_index(drop=True)
+    paths = _path_take(paths, valid_idx)
+    if work.empty:
+        return {
+            "deployment_rank_threshold": float(hi),
+            "objective": float("-inf"),
+            "reason": "no_valid_rank_rows",
+        }
+
+    threshold_grid = np.arange(
+        float(lo), float(hi) + float(precision) / 2.0, float(precision)
+    )
+    threshold_grid = np.unique(np.round(np.clip(threshold_grid, lo, hi), 4))
+    all_threshold_results: List[Dict[str, Any]] = []
+    best_by_threshold: List[Dict[str, Any]] = []
+    simulated_policy_rows: List[Tuple[float, float, pd.DataFrame]] = []
+    local_band_width = float(max(local_band_width, 1e-6))
+    confirmation_bands = int(max(0, confirmation_bands))
+    confirmation_min_positive = int(
+        min(max(0, confirmation_min_positive), max(confirmation_bands, 1))
+    )
+
+    for sl_mult in sl_mults:
+        for tp_mult in tp_mults:
+            sim_rows = _simulate_simple_tp_sl_rows(
+                work,
+                paths,
+                cost_pct=cost_pct,
+                size_power=size_power,
+                sl_mult=float(sl_mult),
+                tp_mult=float(tp_mult),
+            )
+            if not sim_rows.empty:
+                simulated_policy_rows.append((float(sl_mult), float(tp_mult), sim_rows))
+
+    for threshold in threshold_grid:
+        threshold_best: Optional[Dict[str, Any]] = None
+        for sl_mult, tp_mult, sim_rows in simulated_policy_rows:
+            rank_values = sim_rows["rank_pct"].to_numpy(dtype=np.float32)
+            local_idx = np.flatnonzero(
+                (rank_values >= threshold)
+                & (rank_values < min(1.0 + 1e-6, threshold + local_band_width))
+            )
+            if len(local_idx) == 0:
+                continue
+
+            local_sub = sim_rows.iloc[local_idx].copy()
+            selected_local = apply_deployment_concurrency_constraints(
+                local_sub,
+                timestamp_col=timestamp_col,
+                symbol_col=symbol_col,
+                side_col=side_col,
+                strategy_col=strategy_col,
+                rank_col="rank_pct",
+                initial_rank_threshold=None,
+                dynamic_threshold_enabled=False,
+                max_concurrent_total=1_000_000,
+                max_concurrent_per_side=1_000_000,
+                max_concurrent_per_asset=max_concurrent_per_asset,
+                max_concurrent_per_strategy=1_000_000,
+            )
+            local_metrics = score_deployment_threshold_rows(selected_local)
+            next_band_metrics: List[Dict[str, Any]] = []
+            next_positive_count = 0
+            for band_no in range(1, confirmation_bands + 1):
+                band_lo = float(threshold + band_no * local_band_width)
+                band_hi = float(band_lo + local_band_width)
+                band_idx = np.flatnonzero(
+                    (rank_values >= band_lo) & (rank_values < min(1.0 + 1e-6, band_hi))
+                )
+                if len(band_idx) == 0:
+                    band_metrics = {
+                        "band_lo": band_lo,
+                        "band_hi": min(1.0, band_hi),
+                        "mean_net_trade": 0.0,
+                        "n_trades": 0,
+                        "positive": False,
+                    }
+                    next_band_metrics.append(band_metrics)
+                    continue
+                band_sub = sim_rows.iloc[band_idx].copy()
+                selected_band = apply_deployment_concurrency_constraints(
+                    band_sub,
+                    timestamp_col=timestamp_col,
+                    symbol_col=symbol_col,
+                    side_col=side_col,
+                    strategy_col=strategy_col,
+                    rank_col="rank_pct",
+                    initial_rank_threshold=None,
+                    dynamic_threshold_enabled=False,
+                    max_concurrent_total=1_000_000,
+                    max_concurrent_per_side=1_000_000,
+                    max_concurrent_per_asset=max_concurrent_per_asset,
+                    max_concurrent_per_strategy=1_000_000,
+                )
+                scored_band = score_deployment_threshold_rows(selected_band)
+                positive = (
+                    float(scored_band.get("mean_net_trade", 0.0) or 0.0) > 0.0
+                    and int(scored_band.get("n_trades", 0) or 0) > 0
+                )
+                if positive:
+                    next_positive_count += 1
+                next_band_metrics.append(
+                    {
+                        "band_lo": band_lo,
+                        "band_hi": min(1.0, band_hi),
+                        "mean_net_trade": float(
+                            scored_band.get("mean_net_trade", 0.0) or 0.0
+                        ),
+                        "n_trades": int(scored_band.get("n_trades", 0) or 0),
+                        "positive": bool(positive),
+                    }
+                )
+
+            cumulative_idx = np.flatnonzero(rank_values >= threshold)
+            cumulative_sub = sim_rows.iloc[cumulative_idx].copy()
+            selected_cumulative = apply_deployment_concurrency_constraints(
+                cumulative_sub,
+                timestamp_col=timestamp_col,
+                symbol_col=symbol_col,
+                side_col=side_col,
+                strategy_col=strategy_col,
+                rank_col="rank_pct",
+                initial_rank_threshold=None,
+                dynamic_threshold_enabled=False,
+                max_concurrent_total=1_000_000,
+                max_concurrent_per_side=1_000_000,
+                max_concurrent_per_asset=max_concurrent_per_asset,
+                max_concurrent_per_strategy=1_000_000,
+            )
+            cumulative_metrics = score_deployment_threshold_rows(selected_cumulative)
+            local_positive = (
+                float(local_metrics.get("mean_net_trade", 0.0) or 0.0) > 0.0
+                and int(local_metrics.get("n_trades", 0) or 0) > 0
+            )
+            local_confirmation_passed = bool(
+                local_positive and next_positive_count >= confirmation_min_positive
+            )
+            objective = (
+                local_metrics["net_pnl"]
+                - 0.10 * abs(local_metrics.get("max_drawdown", 0.0))
+                + 0.10 * local_metrics.get("sortino", 0.0)
+            )
+            result = {
+                "deployment_rank_threshold": float(threshold),
+                "objective": float(objective),
+                "simple_sl_mult": float(sl_mult),
+                "simple_tp_mult": float(tp_mult),
+                "candidate_rows": int(len(local_sub)),
+                "local_band_width": float(local_band_width),
+                "local_band_lo": float(threshold),
+                "local_band_hi": float(min(1.0, threshold + local_band_width)),
+                "local_band_positive": bool(local_positive),
+                "next_band_positive_count": int(next_positive_count),
+                "confirmation_bands": int(confirmation_bands),
+                "confirmation_min_positive": int(confirmation_min_positive),
+                "local_confirmation_passed": bool(local_confirmation_passed),
+                "next_band_metrics": next_band_metrics,
+                "cumulative_net_pnl": float(cumulative_metrics.get("net_pnl", 0.0)),
+                "cumulative_mean_net_trade": float(
+                    cumulative_metrics.get("mean_net_trade", 0.0)
+                ),
+                "cumulative_hit_rate": float(cumulative_metrics.get("hit_rate", 0.0)),
+                "cumulative_n_trades": int(cumulative_metrics.get("n_trades", 0)),
+                "cumulative_max_drawdown": float(
+                    cumulative_metrics.get("max_drawdown", 0.0)
+                ),
+                "cumulative_sortino": float(cumulative_metrics.get("sortino", 0.0)),
+                **local_metrics,
+            }
+            all_threshold_results.append(result)
+            if not local_confirmation_passed:
+                continue
+            if threshold_best is None or (
+                float(result["mean_net_trade"]),
+                float(result["net_pnl"]),
+                int(result["n_trades"]),
+            ) > (
+                float(threshold_best["mean_net_trade"]),
+                float(threshold_best["net_pnl"]),
+                int(threshold_best["n_trades"]),
+            ):
+                threshold_best = result
+
+        if threshold_best is None:
+            empty = {
+                "deployment_rank_threshold": float(threshold),
+                "objective": float("-inf"),
+                "net_pnl": 0.0,
+                "mean_net_trade": 0.0,
+                "hit_rate": 0.0,
+                "n_trades": 0,
+                "max_drawdown": 0.0,
+                "sortino": 0.0,
+                "simple_sl_mult": None,
+                "simple_tp_mult": None,
+            }
+            best_by_threshold.append(empty)
+            continue
+        best_by_threshold.append(dict(threshold_best))
+
+    profitable = [
+        r for r in best_by_threshold if bool(r.get("local_confirmation_passed", False))
+    ]
+    if profitable:
+        profitable_thresholds = np.asarray(
+            [float(r["deployment_rank_threshold"]) for r in profitable],
+            dtype=np.float32,
+        )
+        selected_threshold = float(np.quantile(profitable_thresholds, 0.20))
+        threshold_candidates = [
+            r
+            for r in profitable
+            if float(r["deployment_rank_threshold"])
+            == float(
+                min(
+                    profitable,
+                    key=lambda row: abs(
+                        float(row["deployment_rank_threshold"]) - selected_threshold
+                    ),
+                )["deployment_rank_threshold"]
+            )
+        ]
+        best = dict(
+            max(
+                threshold_candidates,
+                key=lambda r: (
+                    float(r.get("mean_net_trade", 0.0)),
+                    float(r.get("cumulative_mean_net_trade", 0.0)),
+                    int(r.get("n_trades", 0)),
+                ),
+            )
+        )
+        reason = "iq20_local_band_positive_with_4of5_positive_above"
+    else:
+        best = max(
+            all_threshold_results or best_by_threshold,
+            key=lambda r: (
+                int(r.get("next_band_positive_count", 0)),
+                float(r.get("mean_net_trade", 0.0)),
+                float(r.get("cumulative_mean_net_trade", 0.0)),
+            ),
+        )
+        reason = "no_confirmed_local_band_fallback_best_local_mean"
+
+    profitable_threshold_list = [
+        float(r["deployment_rank_threshold"]) for r in profitable
+    ]
+    best["threshold_search"] = {
+        "method": "full_policy_rank_grid_simple_tp_sl_iq20_positive_mean_net_trade",
+        "lo": float(lo),
+        "hi": float(hi),
+        "precision": float(precision),
+        "selected_threshold": float(best["deployment_rank_threshold"]),
+        "evaluated_thresholds": [float(t) for t in threshold_grid],
+        "profitable_thresholds": profitable_threshold_list,
+        "profitable_threshold_count": int(len(profitable_threshold_list)),
+        "profitable_threshold_min": (
+            float(min(profitable_threshold_list)) if profitable_threshold_list else None
+        ),
+        "profitable_threshold_max": (
+            float(max(profitable_threshold_list)) if profitable_threshold_list else None
+        ),
+        "selection_quantile": 0.20,
+        "selection_reason": reason,
+        "local_band_width": float(local_band_width),
+        "confirmation_bands": int(confirmation_bands),
+        "confirmation_min_positive": int(confirmation_min_positive),
+        "simple_sl_mults": [float(x) for x in sl_mults],
+        "simple_tp_mults": [float(x) for x in tp_mults],
+        "simple_size_power": float(size_power),
+        "simple_policy_count": int(len(simulated_policy_rows)),
+        "best_by_threshold": best_by_threshold,
+        "all_grid_result_count": int(len(all_threshold_results)),
+        "max_concurrent_per_asset": int(max_concurrent_per_asset),
+        "cross_symbol_concurrency_enforced": False,
+        "cross_strategy_concurrency_enforced": False,
+        "dynamic_threshold_enabled": False,
+        "threshold_space": "rank_percentile",
+    }
+    return best
+
+
 def optimise_deployment_rank_threshold(
     rows: pd.DataFrame,
     *,
     score_col: str = "calibrated_score",
     timestamp_col: str = "timestamp",
     symbol_col: str = "symbol",
+    side_col: str = "side",
+    strategy_col: str = "strategy_id",
+    max_concurrent_total: int = PORTFOLIO_POLICY_MAX_CONCURRENT_POSITIONS,
+    max_concurrent_per_side: int = PORTFOLIO_POLICY_MAX_CONCURRENT_PER_SIDE,
     max_concurrent_per_asset: int = DEPLOYMENT_MAX_CONCURRENT_PER_ASSET,
     max_concurrent_per_strategy: int = DEPLOYMENT_MAX_CONCURRENT_PER_STRATEGY,
     lo: float = DEPLOYMENT_THRESHOLD_MIN,
     hi: float = DEPLOYMENT_THRESHOLD_MAX,
     precision: float = DEPLOYMENT_THRESHOLD_PRECISION,
 ) -> Dict[str, Any]:
-    """Optimise the live rank-percentile gate with deployment concurrency limits."""
+    """Choose a broad profitable deployment rank gate.
+
+    The live portfolio layer handles cross-symbol/strategy capacity. This offline
+    gate only forbids overlapping same-symbol trades, then selects the 20th
+    percentile of thresholds whose mean net trade is positive. That keeps the
+    top 80% of the profitable threshold band without overfitting to sparse,
+    high-threshold pockets.
+    """
     if rows.empty:
         return {
             "deployment_rank_threshold": float(hi),
@@ -521,13 +1048,20 @@ def optimise_deployment_rank_threshold(
             candidates,
             timestamp_col=timestamp_col,
             symbol_col=symbol_col,
+            side_col=side_col,
+            strategy_col=strategy_col,
+            rank_col="deployment_rank_pct",
+            initial_rank_threshold=None,
+            dynamic_threshold_enabled=False,
+            max_concurrent_total=max(1_000_000, max_concurrent_total),
+            max_concurrent_per_side=max(1_000_000, max_concurrent_per_side),
             max_concurrent_per_asset=max_concurrent_per_asset,
-            max_concurrent_per_strategy=max_concurrent_per_strategy,
+            max_concurrent_per_strategy=max(1_000_000, max_concurrent_per_strategy),
         )
         metrics = score_deployment_threshold_rows(selected)
         objective = (
             metrics["net_pnl"]
-            - 0.25 * abs(metrics.get("max_drawdown", 0.0))
+            - 0.10 * abs(metrics.get("max_drawdown", 0.0))
             + 0.10 * metrics.get("sortino", 0.0)
         )
         out = {
@@ -538,36 +1072,64 @@ def optimise_deployment_rank_threshold(
         cache[threshold] = out
         return out
 
-    left = float(lo)
-    right = float(hi)
-    while (right - left) > float(precision):
-        m1 = left + (right - left) / 3.0
-        m2 = right - (right - left) / 3.0
-        r1 = evaluate(m1)
-        r2 = evaluate(m2)
-        if r1["objective"] < r2["objective"]:
-            left = m1
-        else:
-            right = m2
-
-    final_grid = np.arange(
-        max(lo, left - precision),
-        min(hi, right + precision) + precision / 2.0,
-        precision,
+    threshold_grid = np.arange(
+        float(lo), float(hi) + float(precision) / 2.0, float(precision)
     )
-    final_grid = np.unique(
-        np.clip(np.concatenate([final_grid, np.array([lo, hi])]), lo, hi)
-    )
+    threshold_grid = np.unique(np.round(np.clip(threshold_grid, lo, hi), 4))
+    evaluated = [evaluate(float(t)) for t in threshold_grid]
+    profitable = [
+        r
+        for r in evaluated
+        if float(r.get("mean_net_trade", 0.0) or 0.0) > 0.0
+        and int(r.get("n_trades", 0) or 0) > 0
+    ]
+    if profitable:
+        profitable_thresholds = np.asarray(
+            [float(r["deployment_rank_threshold"]) for r in profitable],
+            dtype=np.float32,
+        )
+        selected_threshold = float(np.quantile(profitable_thresholds, 0.20))
+        selected_threshold = float(
+            min(
+                profitable,
+                key=lambda r: abs(
+                    float(r["deployment_rank_threshold"]) - selected_threshold
+                ),
+            )["deployment_rank_threshold"]
+        )
+        best = dict(evaluate(selected_threshold))
+        reason = "iq20_positive_mean_net_trade_band"
+    else:
+        best = max(evaluated, key=lambda r: r["mean_net_trade"])
+        reason = "no_positive_mean_net_trade_fallback_best_mean"
 
-    best = max((evaluate(t) for t in final_grid), key=lambda r: r["objective"])
+    profitable_threshold_list = [
+        float(r["deployment_rank_threshold"]) for r in profitable
+    ]
     best["threshold_search"] = {
-        "method": "ternary_search_with_final_grid",
+        "method": "grid_iq20_positive_mean_net_trade_symbol_only_concurrency",
         "lo": float(lo),
         "hi": float(hi),
         "precision": float(precision),
+        "selected_threshold": float(best["deployment_rank_threshold"]),
         "evaluated_thresholds": sorted(float(k) for k in cache.keys()),
+        "profitable_thresholds": profitable_threshold_list,
+        "profitable_threshold_count": int(len(profitable_threshold_list)),
+        "profitable_threshold_min": (
+            float(min(profitable_threshold_list)) if profitable_threshold_list else None
+        ),
+        "profitable_threshold_max": (
+            float(max(profitable_threshold_list)) if profitable_threshold_list else None
+        ),
+        "selection_quantile": 0.20,
+        "selection_reason": reason,
+        "max_concurrent_total": int(max_concurrent_total),
+        "max_concurrent_per_side": int(max_concurrent_per_side),
         "max_concurrent_per_asset": int(max_concurrent_per_asset),
         "max_concurrent_per_strategy": int(max_concurrent_per_strategy),
+        "cross_symbol_concurrency_enforced": False,
+        "cross_strategy_concurrency_enforced": False,
+        "dynamic_threshold_enabled": False,
         "score_col": score_col,
         "threshold_space": "rank_percentile",
     }
@@ -1140,7 +1702,7 @@ def optimise_position_sizing(
     best_pnl = float("-inf")
     best_metrics = {}
 
-    SIZE_POWER_GRID = [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
+    SIZE_POWER_GRID = [1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
     for size_power in SIZE_POWER_GRID:
         metrics = simulate_and_score(
             df_sub,
@@ -1463,7 +2025,9 @@ def _evaluate_policy_subsets(
 ) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
     for top_pct, rank_thresh in [
-        (TOP_POLICY_LABEL, TOP_POLICY_RANK_THRESHOLD),
+        ("top_30", 0.70),
+        ("top_20", 0.80),
+        (REPORTING_POLICY_LABEL, REPORTING_POLICY_RANK_THRESHOLD),
         ("top_10", 0.90),
         ("top_5", 0.95),
         ("top_1", 0.99),
@@ -1530,7 +2094,7 @@ def _average_validation_metrics(
     fold_metrics: Sequence[Dict[str, Any]],
 ) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
-    top_keys = [TOP_POLICY_LABEL, "top_10", "top_5", "top_1"]
+    top_keys = ["top_30", "top_20", REPORTING_POLICY_LABEL, "top_10", "top_5", "top_1"]
     metric_keys = [
         "n_trades",
         "avg_pnl_bankroll",
@@ -2404,6 +2968,63 @@ def _build_deployment_payload(
     }
 
 
+def _build_portfolio_policy_config_payload() -> Dict[str, Any]:
+    """Export the live portfolio policy used by offline deployment replay."""
+    return {
+        "schema_version": "portfolio_policy_v1",
+        "max_concurrent_positions": PORTFOLIO_POLICY_MAX_CONCURRENT_POSITIONS,
+        "max_concurrent_per_side": PORTFOLIO_POLICY_MAX_CONCURRENT_PER_SIDE,
+        "max_concurrent_per_strategy": PORTFOLIO_POLICY_MAX_CONCURRENT_PER_STRATEGY,
+        "max_total_wallet_allocation_pct": (
+            PORTFOLIO_POLICY_MAX_TOTAL_WALLET_ALLOCATION_PCT
+        ),
+        "max_available_wallet_position_pct": (
+            PORTFOLIO_POLICY_MAX_AVAILABLE_WALLET_POSITION_PCT
+        ),
+        "max_position_wallet_pct": PORTFOLIO_POLICY_MAX_POSITION_WALLET_PCT,
+        "max_position_quote_notional": PORTFOLIO_POLICY_MAX_POSITION_QUOTE_NOTIONAL,
+        "live_test_min_quote_notional": PORTFOLIO_POLICY_LIVE_TEST_MIN_QUOTE_NOTIONAL,
+        "live_test_quote_notional": PORTFOLIO_POLICY_LIVE_TEST_QUOTE_NOTIONAL,
+        "initial_rank_threshold": PORTFOLIO_POLICY_INITIAL_RANK_THRESHOLD_FLOOR,
+        "initial_rank_threshold_floor": PORTFOLIO_POLICY_INITIAL_RANK_THRESHOLD_FLOOR,
+        "dynamic_threshold_enabled": True,
+        "side_crowding_penalty_max": 0.03,
+        "strategy_crowding_penalty_max": 0.03,
+        "price_gap_penalty_max": 0.05,
+        "rank_multiplier_min": 0.80,
+        "rank_multiplier_max": 1.60,
+        "rank_size_power": 1.10,
+        "ticker_precheck_enabled": True,
+        "orderbook_precheck_enabled": True,
+        "max_orderbook_slippage_bps": 50.0,
+        "max_spread_bps": 25.0,
+        "hard_max_spread_bps": 75.0,
+        "min_liquidity_capacity_weight": 0.25,
+        "max_ticker_age_seconds": 30.0,
+        "max_signal_gap_bps_default": 150.0,
+        "max_order_chase_bps": 30.0,
+        "entry_order_timeout_seconds": 10.0,
+        "entry_order_max_retries": 1,
+        "top_prediction_ledger_pct": 0.15,
+        "enable_symbol_underperformance_gates": False,
+        "symbol_underperformance_gates_enabled": False,
+        "rank_sizing": {
+            "max_available_wallet_position_pct": (
+                PORTFOLIO_POLICY_MAX_AVAILABLE_WALLET_POSITION_PCT
+            ),
+            "rank_multiplier_min": 0.80,
+            "rank_multiplier_max": 1.60,
+            "rank_size_power": 1.10,
+        },
+        "liquidity": {
+            "max_orderbook_slippage_bps": 50.0,
+            "max_spread_bps": 25.0,
+            "hard_max_spread_bps": 75.0,
+            "min_liquidity_capacity_weight": 0.25,
+        },
+    }
+
+
 def run_simple_policy_optimisation(
     data_root: str,
     run_id: str,
@@ -2502,10 +3123,12 @@ def run_simple_policy_optimisation(
     oos_results_json = {
         "generated_by": "simple_policy_optimiser",
         "run_id": run_id,
-        "rank_threshold": TOP_POLICY_RANK_THRESHOLD,
-        "rank_slice": TOP_POLICY_LABEL,
+        "rank_threshold": None,
+        "rank_slice": "full_policy_oos_for_threshold_discovery",
+        "reporting_rank_threshold": REPORTING_POLICY_RANK_THRESHOLD,
+        "reporting_rank_slice": REPORTING_POLICY_LABEL,
         "cost_pct": cost_pct,
-        "split": "chronological_top15_oos_policy_3fold_cv",
+        "split": "full_oos_policy_threshold_discovery_then_stage_b_3fold_cv",
         "cv_folds": DEFAULT_CV_FOLDS,
         "n_trials_per_fit": n_trials,
         "prediction_source": {
@@ -2553,16 +3176,20 @@ def run_simple_policy_optimisation(
             else:
                 df["side"] = 1
 
-        # Optimise policy on the deployment-relevant top 15% slice.
-        df_top = df[df["rank_pct"] >= TOP_POLICY_RANK_THRESHOLD].copy()
-
-        if "timestamp" in df_top.columns:
-            df_top = df_top.sort_values("timestamp").reset_index(drop=True)
+        # Stage A discovers the deployable rank threshold from the full policy
+        # OOS population. Reporting top-N slices are applied only after this.
+        df_policy_all = df.dropna(
+            subset=["timestamp", "symbol", "rank_pct", "calibrated_score"]
+        ).copy()
+        if "timestamp" in df_policy_all.columns:
+            df_policy_all = df_policy_all.sort_values("timestamp").reset_index(
+                drop=True
+            )
         else:
-            df_top = df_top.sort_index().reset_index(drop=True)
+            df_policy_all = df_policy_all.sort_index().reset_index(drop=True)
 
-        n = len(df_top)
-        if n < 10:
+        n_policy = len(df_policy_all)
+        if n_policy < 10:
             continue
 
         def _fetch_paths(df_subset):
@@ -2612,7 +3239,52 @@ def run_simple_policy_optimisation(
                                 f_cl[rel_idx, actual_len:] = last_close
             return f_op, f_hi, f_lo, f_cl
 
-        all_paths = _fetch_paths(df_top)
+        all_policy_paths = _fetch_paths(df_policy_all)
+        deployment_threshold_metrics = discover_deployment_rank_threshold_simple_grid(
+            df_policy_all,
+            all_policy_paths,
+            cost_pct=cost_pct,
+            timestamp_col="timestamp",
+            symbol_col="symbol",
+            side_col="side",
+            strategy_col="strategy_id",
+            max_concurrent_per_asset=DEPLOYMENT_MAX_CONCURRENT_PER_ASSET,
+            lo=DEPLOYMENT_THRESHOLD_MIN,
+            hi=DEPLOYMENT_THRESHOLD_MAX,
+            precision=DEPLOYMENT_THRESHOLD_PRECISION,
+        )
+        deployment_rank_threshold = float(
+            deployment_threshold_metrics.get("deployment_rank_threshold", 1.0)
+        )
+        trade_idx = np.flatnonzero(
+            df_policy_all["rank_pct"].to_numpy(dtype=np.float32)
+            >= deployment_rank_threshold
+        )
+        df_top = df_policy_all.iloc[trade_idx].copy().reset_index(drop=True)
+        all_paths = _path_take(all_policy_paths, trade_idx)
+        n = len(df_top)
+        logger.info(
+            "[%s] Stage A threshold discovery selected rank>=%.4f from %s full "
+            "policy rows -> %s Stage B optimisation rows. simple_sl=%.2f "
+            "simple_tp=%.2f mean_net_trade=%.6f n_trades=%s",
+            strategy_id,
+            deployment_rank_threshold,
+            n_policy,
+            n,
+            float(deployment_threshold_metrics.get("simple_sl_mult", np.nan)),
+            float(deployment_threshold_metrics.get("simple_tp_mult", np.nan)),
+            float(deployment_threshold_metrics.get("mean_net_trade", np.nan)),
+            int(deployment_threshold_metrics.get("n_trades", 0) or 0),
+        )
+        if n < 10:
+            logger.warning(
+                "[%s] Stage A threshold rank>=%.4f left only %s rows. Skipping.",
+                strategy_id,
+                deployment_rank_threshold,
+                n,
+            )
+            continue
+
         folds = _build_equal_time_folds(n, DEFAULT_CV_FOLDS)
         if len(folds) != DEFAULT_CV_FOLDS:
             logger.warning(
@@ -2624,7 +3296,7 @@ def run_simple_policy_optimisation(
             continue
 
         logger.info(
-            "[%s] Running %s-fold chronological CV on %s top15 policy rows; fold sizes=%s",
+            "[%s] Running %s-fold chronological CV on %s Stage B policy rows; fold sizes=%s",
             strategy_id,
             DEFAULT_CV_FOLDS,
             n,
@@ -2680,8 +3352,9 @@ def run_simple_policy_optimisation(
             fold_results.append(
                 {
                     "fold": fold_no,
-                    "train_rows_top15": int(len(df_train)),
-                    "validation_rows_top15": int(len(df_val)),
+                    "train_rows_stage_b": int(len(df_train)),
+                    "validation_rows_stage_b": int(len(df_val)),
+                    "deployment_rank_threshold": float(deployment_rank_threshold),
                     "best_params": best_params,
                     "best_size_power": float(best_size_power),
                     "fit_summary": fit_summary,
@@ -2728,7 +3401,7 @@ def run_simple_policy_optimisation(
             max_concurrent_trades=max(1, len(df_top) + 1),
             **_without_concurrency_param(final_params),
         )
-        deployment_threshold_rows = _build_deployment_threshold_rows(
+        final_policy_threshold_rows = _build_deployment_threshold_rows(
             df_top,
             all_paths,
             cost_pct=cost_pct,
@@ -2736,16 +3409,8 @@ def run_simple_policy_optimisation(
             best_size_power=final_size_power,
             metrics=deployment_sim_metrics,
         )
-        deployment_threshold_metrics = optimise_deployment_rank_threshold(
-            deployment_threshold_rows,
-            score_col="calibrated_score",
-            timestamp_col="timestamp",
-            symbol_col="symbol",
-            max_concurrent_per_asset=DEPLOYMENT_MAX_CONCURRENT_PER_ASSET,
-            max_concurrent_per_strategy=DEPLOYMENT_MAX_CONCURRENT_PER_STRATEGY,
-            lo=DEPLOYMENT_THRESHOLD_MIN,
-            hi=DEPLOYMENT_THRESHOLD_MAX,
-            precision=DEPLOYMENT_THRESHOLD_PRECISION,
+        final_policy_deployment_metrics = score_deployment_threshold_rows(
+            final_policy_threshold_rows
         )
         asset_metrics = build_asset_metrics_from_simulation(
             selected_rows=df_top,
@@ -2773,13 +3438,14 @@ def run_simple_policy_optimisation(
             asset_metric_rows = []
         logger.info(
             "[%s] Final all-data fit best_params=%s best_size_power=%.3f "
-            "deployment_rank_threshold=%.4f",
+            "deployment_rank_threshold=%.4f final_mean_net_trade=%.6f",
             strategy_id,
             final_params,
             final_size_power,
             float(
                 deployment_threshold_metrics.get("deployment_rank_threshold", np.nan)
             ),
+            float(final_policy_deployment_metrics.get("mean_net_trade", np.nan)),
         )
 
         strategy_results = {
@@ -2790,6 +3456,7 @@ def run_simple_policy_optimisation(
                 "final_fit_all": final_fit_metrics,
             },
             "deployment_threshold_metrics": deployment_threshold_metrics,
+            "final_policy_deployment_metrics": final_policy_deployment_metrics,
             "asset_metrics": asset_metric_rows,
             "cv_folds": fold_results,
             "final_fit_summary": final_fit_summary,
@@ -2856,13 +3523,22 @@ def run_simple_policy_optimisation(
             "final_fit_metrics": final_fit_metrics,
             "final_fit_summary": final_fit_summary,
             "deployment_threshold_metrics": deployment_threshold_metrics,
+            "final_policy_deployment_metrics": final_policy_deployment_metrics,
             "asset_metrics": asset_metric_rows,
+            "validation_rows_stage_b_avg": float(
+                np.mean([len(fold) for fold in folds]) if folds else 0.0
+            ),
+            "optimisation_rows_stage_b_avg": float(
+                np.mean([n - len(fold) for fold in folds]) if folds else 0.0
+            ),
             "validation_rows_top15_avg": float(
                 np.mean([len(fold) for fold in folds]) if folds else 0.0
             ),
             "optimisation_rows_top15_avg": float(
                 np.mean([n - len(fold) for fold in folds]) if folds else 0.0
             ),
+            "full_policy_rows": int(n_policy),
+            "stage_b_policy_rows": int(n),
             "source_validation": strategy_results["prediction_source"],
         }
 
@@ -2907,6 +3583,11 @@ def run_simple_policy_optimisation(
     ]:
         deployment_path.write_text(deployment_text)
         logger.info(f"Saved deployment policy contract to {deployment_path}")
+    portfolio_policy_path = policy_params_dir / "portfolio_policy_config.json"
+    portfolio_policy_path.write_text(
+        json.dumps(_json_safe(_build_portfolio_policy_config_payload()), indent=2)
+    )
+    logger.info(f"Saved portfolio policy config to {portfolio_policy_path}")
 
 
 if __name__ == "__main__":

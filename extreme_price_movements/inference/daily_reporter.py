@@ -29,6 +29,15 @@ REPORT_TRADE_COLUMNS = [
     "entry_price",
     "actual_entry_price",
     "actual_exit_price",
+    "signal_price",
+    "decision_mid",
+    "signal_gap_bps",
+    "ticker_spread_bps",
+    "expected_fill_price",
+    "expected_fill_slippage_bps",
+    "expected_total_entry_friction_bps",
+    "liquidity_capacity_weight",
+    "orderbook_capacity_quote_within_slippage",
     "gross_pnl_pct",
     "net_pnl_pct",
     "gross_pnl_amount",
@@ -96,6 +105,170 @@ def _format_trade_report(trades: pd.DataFrame) -> str:
     for col in view.columns:
         view[col] = view[col].astype(str).str.slice(0, 120)
     return view.to_csv(index=False)
+
+
+def _trade_closed_mask(trades: pd.DataFrame) -> pd.Series:
+    if trades.empty:
+        return pd.Series(dtype=bool)
+    mask = pd.Series(False, index=trades.index)
+    if "lifecycle_event" in trades.columns:
+        mask |= (
+            trades["lifecycle_event"]
+            .fillna("")
+            .astype(str)
+            .str.lower()
+            .isin({"exit_filled", "closed", "exit"})
+        )
+    if "status" in trades.columns:
+        mask |= (
+            trades["status"]
+            .fillna("")
+            .astype(str)
+            .str.lower()
+            .isin({"closed", "completed"})
+        )
+    for col in (
+        "actual_exit_price",
+        "realized_exit_price",
+        "net_pnl_amount",
+        "net_pnl",
+    ):
+        if col in trades.columns:
+            mask |= pd.to_numeric(trades[col], errors="coerce").notna()
+    return mask
+
+
+def _format_money(value: float) -> str:
+    if not np.isfinite(value):
+        return "n/a"
+    return f"{value:,.4f}"
+
+
+def _format_pct(value: float) -> str:
+    if not np.isfinite(value):
+        return "n/a"
+    return f"{value:.4%}"
+
+
+def _strategy_trade_recap(trades: pd.DataFrame, *, total_balance: float) -> str:
+    """Readable net-PnL recap by strategy for the daily deployment email."""
+    if trades.empty:
+        return "No trade events logged in this reporting window."
+
+    work = trades.copy()
+    strategy = work.get("strategy_id", pd.Series(index=work.index, dtype=object))
+    work["strategy_id"] = strategy.fillna("unknown").astype(str).replace("", "unknown")
+    closed = work.loc[_trade_closed_mask(work)].copy()
+    if closed.empty:
+        entries = (
+            work.groupby("strategy_id", dropna=False)
+            .size()
+            .rename("events")
+            .reset_index()
+        )
+        lines = [
+            "No closed trades with realised net PnL yet.",
+            "",
+            "Trade events by strategy:",
+            "strategy_id | events",
+        ]
+        lines.extend(
+            f"{row.strategy_id} | {int(row.events)}" for row in entries.itertuples()
+        )
+        return "\n".join(lines)
+
+    net_amount = pd.to_numeric(
+        closed.get("net_pnl_amount", pd.Series(index=closed.index, dtype=float)),
+        errors="coerce",
+    )
+    fallback_net = pd.to_numeric(
+        closed.get("net_pnl", pd.Series(index=closed.index, dtype=float)),
+        errors="coerce",
+    )
+    closed["net_amount"] = net_amount.fillna(fallback_net).fillna(0.0)
+    closed["net_pct"] = pd.to_numeric(
+        closed.get("net_pnl_pct", pd.Series(index=closed.index, dtype=float)),
+        errors="coerce",
+    )
+    closed["notional"] = pd.to_numeric(
+        closed.get("ridge_position_size", pd.Series(index=closed.index, dtype=float)),
+        errors="coerce",
+    ).fillna(0.0)
+    if (closed["notional"] <= 0.0).all():
+        entry = pd.to_numeric(
+            closed.get("actual_entry_price", closed.get("entry_price")),
+            errors="coerce",
+        )
+        size = pd.to_numeric(
+            closed.get("size", pd.Series(index=closed.index, dtype=float)),
+            errors="coerce",
+        )
+        closed["notional"] = (entry.abs() * size.abs()).fillna(0.0)
+
+    rows: List[str] = []
+    header = (
+        "strategy_id | closed | won | lost | avg_net/trade | total_net | "
+        "bankroll_net | total_notional"
+    )
+    total_closed = int(len(closed))
+    total_won = int((closed["net_amount"] > 0.0).sum())
+    total_lost = int((closed["net_amount"] < 0.0).sum())
+    total_net = float(closed["net_amount"].sum())
+    total_notional = float(closed["notional"].sum())
+    bankroll_pct = (
+        total_net / total_balance
+        if np.isfinite(total_balance) and total_balance > 0.0
+        else np.nan
+    )
+    rows.append("Overall net recap:")
+    rows.append(
+        f"closed={total_closed} won={total_won} lost={total_lost} "
+        f"avg_net/trade={_format_money(total_net / max(total_closed, 1))} "
+        f"total_net={_format_money(total_net)} "
+        f"bankroll_net={_format_pct(bankroll_pct)} "
+        f"total_notional={_format_money(total_notional)}"
+    )
+    rows.append("")
+    rows.append("Per-strategy net recap:")
+    rows.append(header)
+    for strategy_id, grp in closed.groupby("strategy_id", dropna=False, sort=True):
+        n = int(len(grp))
+        net = float(grp["net_amount"].sum())
+        won = int((grp["net_amount"] > 0.0).sum())
+        lost = int((grp["net_amount"] < 0.0).sum())
+        notional = float(grp["notional"].sum())
+        bankroll = (
+            net / total_balance
+            if np.isfinite(total_balance) and total_balance > 0.0
+            else np.nan
+        )
+        rows.append(
+            f"{strategy_id} | {n} | {won} | {lost} | "
+            f"{_format_money(net / max(n, 1))} | {_format_money(net)} | "
+            f"{_format_pct(bankroll)} | {_format_money(notional)}"
+        )
+    execution_cols = {
+        "ticker_spread_bps": "avg_spread_bps",
+        "expected_fill_slippage_bps": "avg_book_slip_bps",
+        "expected_total_entry_friction_bps": "avg_total_friction_bps",
+        "liquidity_capacity_weight": "avg_liq_weight",
+        "signal_gap_bps": "avg_signal_gap_bps",
+    }
+    available = [col for col in execution_cols if col in closed.columns]
+    if available:
+        rows.append("")
+        rows.append("Execution-quality recap:")
+        rows.append(
+            "strategy_id | " + " | ".join(execution_cols[col] for col in available)
+        )
+        for strategy_id, grp in closed.groupby("strategy_id", dropna=False, sort=True):
+            vals = []
+            for col in available:
+                series = pd.to_numeric(grp[col], errors="coerce")
+                mean_val = float(series.mean()) if series.notna().any() else np.nan
+                vals.append(_format_money(mean_val))
+            rows.append(f"{strategy_id} | " + " | ".join(vals))
+    return "\n".join(rows)
 
 
 def _trades_since(logger: TradeLogger, since_ts: Optional[str]) -> pd.DataFrame:
@@ -338,6 +511,9 @@ class DailyDeploymentReporter:
                 "",
                 "Model Drift And Execution",
                 _model_drift_summary(trades),
+                "",
+                "Net Strategy Recap",
+                _strategy_trade_recap(trades, total_balance=total_balance),
                 "",
                 "Trades Since Previous Message",
                 _format_trade_report(trades),

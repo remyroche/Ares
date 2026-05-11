@@ -10,6 +10,7 @@ import os
 import threading
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -31,10 +32,51 @@ TRIGGER_PRICE_REJECT_TOKENS = (
     "trigger reject",
     "trigger price",
 )
+EXECUTION_AUDIT_KEYS = (
+    "signal_price",
+    "decision_mid",
+    "signal_gap_bps",
+    "bid",
+    "ask",
+    "mid",
+    "spread_bps",
+    "ticker_bid",
+    "ticker_ask",
+    "ticker_mid",
+    "ticker_spread_bps",
+    "expected_fill_price",
+    "expected_fill_slippage_bps",
+    "expected_total_entry_friction_bps",
+    "orderbook_side",
+    "best_touch",
+    "max_walk_price",
+    "orderbook_capacity_quote_within_slippage",
+    "intended_quote_size",
+    "spread_weight",
+    "depth_weight",
+    "liquidity_capacity_weight",
+    "price_gap_penalty",
+    "adjusted_rank_score",
+    "final_threshold",
+    "position_size_before_liquidity",
+    "position_size_after_liquidity",
+    "max_chase_bps",
+    "entry_limit_price",
+)
 
 
 def _is_live_execution_mode(mode: str) -> bool:
     return str(mode or "").strip().lower() in LIVE_EXECUTION_MODES
+
+
+def _default_cross_margin_dust_quote_threshold(mode: str) -> float:
+    """Return mode-specific dust threshold for margin reconciliation."""
+    mode_l = str(mode or "").strip().lower()
+    if mode_l in {"live-test", "live_test", "livetest"}:
+        return 2.5
+    if mode_l == "live":
+        return 5.0
+    return 5.0
 
 
 def _safe_float(value: Any, default: float = np.nan) -> float:
@@ -44,6 +86,24 @@ def _safe_float(value: Any, default: float = np.nan) -> float:
     except (TypeError, ValueError):
         return default
     return out if np.isfinite(out) else default
+
+
+def _execution_audit_fields(source: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Return execution-quality fields safe to persist in trade logs/emails."""
+    if not isinstance(source, dict):
+        return {}
+    out = {key: source.get(key) for key in EXECUTION_AUDIT_KEYS if key in source}
+    if "bid" in source and "ticker_bid" not in out:
+        out["ticker_bid"] = source.get("bid")
+    if "ask" in source and "ticker_ask" not in out:
+        out["ticker_ask"] = source.get("ask")
+    if "mid" in source and "ticker_mid" not in out:
+        out["ticker_mid"] = source.get("mid")
+    if "spread_bps" in source and "ticker_spread_bps" not in out:
+        out["ticker_spread_bps"] = source.get("spread_bps")
+    if "expected_fill_price" in source and "expected_entry_price" not in out:
+        out["expected_entry_price"] = source.get("expected_fill_price")
+    return out
 
 
 def _extract_policy_barrier_frac(
@@ -415,6 +475,92 @@ def _cancel_params(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return {"marginMode": _margin_mode(config)}
 
 
+def _dedupe_param_variants(variants: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Return order-preserving unique exchange param dictionaries."""
+    seen = set()
+    out: List[Dict[str, Any]] = []
+    for params in variants:
+        clean = {k: v for k, v in dict(params or {}).items() if v is not None}
+        key = tuple(sorted(clean.items()))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(clean)
+    return out
+
+
+def _margin_fetch_param_variants(config: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Return robust ccxt param variants for Binance margin order reads."""
+    base = _cancel_params(config)
+    if _execution_account(config) != "margin":
+        return [base]
+    margin_mode = _margin_mode(config)
+    return _dedupe_param_variants(
+        [
+            base,
+            {**base, "type": "margin"},
+            {"type": "margin", "marginMode": margin_mode},
+            {"type": "margin"},
+            {},
+        ]
+    )
+
+
+def _reduce_order_param_variants(config: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Return robust ccxt param variants for margin reduce/close orders."""
+    base = _order_params(config, reduce_only=True)
+    if _execution_account(config) != "margin":
+        return [base]
+    margin_mode = _margin_mode(config)
+    variants: List[Dict[str, Any]] = [base]
+    for side_effect in ("AUTO_REPAY", "AUTO_BORROW_REPAY", "NO_SIDE_EFFECT"):
+        params = {"marginMode": margin_mode, "sideEffectType": side_effect}
+        variants.append(params)
+        variants.append({**params, "type": "margin"})
+    variants.extend(
+        [
+            {"marginMode": margin_mode},
+            {"type": "margin", "marginMode": margin_mode},
+        ]
+    )
+    return _dedupe_param_variants(variants)
+
+
+def _create_reduce_stop_loss_order(
+    exchange: Any,
+    *,
+    symbol: str,
+    side: str,
+    amount: float,
+    stop_price: float,
+    config: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Create a reduce/close STOP_LOSS order, retrying safe margin param variants."""
+    last_exc: Optional[Exception] = None
+    for params in _reduce_order_param_variants(config):
+        try:
+            return exchange.create_order(
+                symbol=symbol,
+                type="STOP_LOSS",
+                side=side,
+                amount=amount,
+                price=stop_price,
+                params={**params, "stopPrice": stop_price},
+            )
+        except Exception as exc:
+            last_exc = exc
+            category = _classify_exchange_error(exc)
+            if category not in {
+                "insufficient_balance",
+                "auth_or_permission",
+                "invalid_precision_or_filter",
+            }:
+                raise
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError(f"STOP_LOSS creation did not run for {symbol}")
+
+
 def _symbol_from_asset_quote(asset: str, quote: str) -> str:
     """Return the canonical ccxt symbol for an asset/quote pair."""
     return f"{str(asset).upper()}/{str(quote).upper()}"
@@ -471,11 +617,16 @@ def _closed_trade_metrics(
     net_pnl_pct = net_pnl / max(notional, 1e-12) if np.isfinite(notional) else np.nan
     stop_origin = str(state.get("stop_reason") or "original_stop_loss")
     reason_detail = state.get("stop_reason_detail") or stop_origin
+    reason_out = (
+        f"{reason}:{stop_origin}"
+        if str(reason) == "stop_loss_filled" and stop_origin
+        else reason
+    )
     return {
         "symbol": symbol,
         "side": side,
         "strategy_id": state.get("bucket_key"),
-        "reason": reason,
+        "reason": reason_out,
         "exit_reason_detail": reason_detail,
         "stop_origin": stop_origin,
         "entry_time": state.get("entry_time"),
@@ -517,6 +668,7 @@ def _closed_trade_metrics(
         "fee_currency": fee_currency,
         "fees_amount": fee_quote,
         "trade_recap": _format_trade_recap(state.get("trade_recap_events")),
+        **_execution_audit_fields(state),
     }
 
 
@@ -785,16 +937,13 @@ class OCOExecutor:
             _validate_order_filters(
                 symbol, market, amount=amount, price=float(entry_price)
             )
-            stop_order = self.exchange.create_order(
+            stop_order = _create_reduce_stop_loss_order(
+                self.exchange,
                 symbol=symbol,
-                type="STOP_LOSS",
                 side="sell" if side == "long" else "buy",
                 amount=amount,
-                price=stop_price,
-                params={
-                    **_order_params(self.config, reduce_only=True),
-                    "stopPrice": stop_price,
-                },
+                stop_price=stop_price,
+                config=self.config,
             )
             position_state["stop_order_id"] = stop_order.get("id")
 
@@ -1099,7 +1248,12 @@ class OCOExecutor:
                     already_done = any(
                         token in text
                         for token in ("not found", "unknown order", "filled", "closed")
-                    )
+                    ) or str(state.get("last_order_status") or "").lower() in {
+                        "canceled",
+                        "cancelled",
+                        "expired",
+                        "rejected",
+                    }
                     if not already_done:
                         raise RuntimeError(
                             f"cancel failed before stop replace for {symbol}: "
@@ -1251,16 +1405,13 @@ class OCOExecutor:
 
                 try:
                     stop_price = attempt_stop
-                    new_stop_order = self.exchange.create_order(
+                    new_stop_order = _create_reduce_stop_loss_order(
+                        self.exchange,
                         symbol=symbol,
-                        type="STOP_LOSS",
                         side="sell" if state["side"] == "long" else "buy",
                         amount=amount,
-                        price=stop_price,
-                        params={
-                            **_order_params(self.config, reduce_only=True),
-                            "stopPrice": stop_price,
-                        },
+                        stop_price=stop_price,
+                        config=self.config,
                     )
                     break
                 except Exception as create_exc:
@@ -1366,9 +1517,15 @@ class OCOExecutor:
                     if side == "short" and np.isfinite(current_price):
                         restore_ok = old_stop_price > current_price
                     if restore_ok:
-                        restore_order = self.exchange.create_order(
+                        restored_stop = _exchange_precision(
+                            self.exchange,
+                            symbol,
+                            old_stop_price,
+                            kind="price",
+                        )
+                        restore_order = _create_reduce_stop_loss_order(
+                            self.exchange,
                             symbol=symbol,
-                            type="STOP_LOSS",
                             side="sell" if side == "long" else "buy",
                             amount=_exchange_precision(
                                 self.exchange,
@@ -1376,21 +1533,8 @@ class OCOExecutor:
                                 float(state["size"]),
                                 kind="amount",
                             ),
-                            price=_exchange_precision(
-                                self.exchange,
-                                symbol,
-                                old_stop_price,
-                                kind="price",
-                            ),
-                            params={
-                                **_order_params(self.config, reduce_only=True),
-                                "stopPrice": _exchange_precision(
-                                    self.exchange,
-                                    symbol,
-                                    old_stop_price,
-                                    kind="price",
-                                ),
-                            },
+                            stop_price=restored_stop,
+                            config=self.config,
                         )
                         state["stop_price"] = old_stop_price
                         state["stop_order_id"] = restore_order.get("id")
@@ -1417,6 +1561,70 @@ class OCOExecutor:
                         f"CRITICAL: failed to restore previous SL for {symbol}: "
                         f"{state['stop_restore_error_category']}: {restore_exc}"
                     )
+
+    def _reattach_protective_stop(
+        self,
+        symbol: str,
+        state: Dict[str, Any],
+        *,
+        previous_status: str,
+    ) -> Dict[str, Any]:
+        """Try to reattach a protective STOP_LOSS for a still-open position."""
+        stop_price = _safe_float(state.get("stop_price"), default=np.nan)
+        if not np.isfinite(stop_price) or stop_price <= 0.0:
+            entry_price = _safe_float(state.get("entry_price"), default=np.nan)
+            barrier = _safe_float(
+                state.get("barrier_frac", state.get("barrier_pct")),
+                default=np.nan,
+            )
+            sl_mult = _safe_float(state.get("sl_mult"), default=1.0)
+            side = str(state.get("side", "long")).lower()
+            if (
+                np.isfinite(entry_price)
+                and entry_price > 0.0
+                and np.isfinite(barrier)
+                and barrier > 0.0
+            ):
+                stop_price = (
+                    entry_price * (1.0 - sl_mult * barrier)
+                    if side == "long"
+                    else entry_price * (1.0 + sl_mult * barrier)
+                )
+        if not np.isfinite(stop_price) or stop_price <= 0.0:
+            return {
+                "success": False,
+                "error_category": "missing_policy_barrier_pct",
+                "error": "cannot reattach stop without finite stop_price/barrier",
+            }
+        before_id = state.get("stop_order_id")
+        _append_position_event(
+            state,
+            "stop_reattach_attempt",
+            previous_stop_order_id=before_id,
+            previous_status=previous_status,
+            candidate_stop=float(stop_price),
+        )
+        self._update_stop_loss(symbol, state, float(stop_price))
+        after_id = state.get("stop_order_id")
+        success = bool(after_id) and str(after_id) != str(before_id)
+        _append_position_event(
+            state,
+            "stop_reattach_result",
+            previous_stop_order_id=before_id,
+            stop_order_id=after_id,
+            previous_status=previous_status,
+            success=success,
+            stop_price=state.get("stop_price"),
+            error_category=state.get("stop_update_error_category"),
+            error=state.get("stop_update_error"),
+        )
+        return {
+            "success": success,
+            "stop_order_id": after_id,
+            "stop_price": state.get("stop_price"),
+            "error_category": state.get("stop_update_error_category"),
+            "error": state.get("stop_update_error"),
+        }
 
     def _close_position(
         self, symbol: str, state: Dict[str, Any], current_price: float, reason: str
@@ -1447,24 +1655,32 @@ class OCOExecutor:
                 amount=state["size"],
                 params=_order_params(self.config, reduce_only=True),
             )
-            close_order.setdefault("average", current_price)
-            close_order.setdefault("price", current_price)
+            exit_price, filled_amount, _partial_fill = _extract_order_fill(
+                close_order, current_price
+            )
+            if not np.isfinite(exit_price) or exit_price <= 0.0:
+                exit_price = float(current_price)
+            if not np.isfinite(filled_amount) or filled_amount <= 0.0:
+                filled_amount = _safe_float(state.get("size"), 0.0)
+            close_order["average"] = exit_price
+            close_order["price"] = exit_price
+            close_order.setdefault("filled", filled_amount)
 
-            tprint(f"Closed {symbol} at {current_price:.4f}, reason: {reason}")
+            tprint(f"Closed {symbol} at {exit_price:.4f}, reason: {reason}")
 
             # Log trade result
             pnl = 0
             if state["side"] == "long":
-                pnl = (current_price - state["entry_price"]) * state["size"]
+                pnl = (exit_price - state["entry_price"]) * filled_amount
             else:
-                pnl = (state["entry_price"] - current_price) * state["size"]
+                pnl = (state["entry_price"] - exit_price) * filled_amount
 
             tprint(f"  PnL: {pnl:.2f}, MFE: {state['mfe']*100:.2f}%")
             _append_position_event(
                 state,
                 "position_closed",
                 reason=reason,
-                close_price=float(current_price),
+                close_price=float(exit_price),
                 gross_pnl=float(pnl),
                 mfe=_safe_float(state.get("mfe"), 0.0),
                 mae=_safe_float(state.get("mae"), 0.0),
@@ -1566,11 +1782,16 @@ class OCOExecutor:
                 }
                 if status in {"closed", "filled"}:
                     state["exit_reason"] = "stop_loss_filled"
+                    exit_price, filled_amount, _partial_fill = _extract_order_fill(
+                        order, _safe_float(state.get("stop_price"), np.nan)
+                    )
                     _append_position_event(
                         state,
                         "stop_order_filled",
                         stop_order_id=stop_order_id,
                         stop_price=state.get("stop_price"),
+                        fill_price=exit_price,
+                        filled=filled_amount,
                         stop_reason=state.get("stop_reason"),
                         order_status=status,
                     )
@@ -1581,6 +1802,16 @@ class OCOExecutor:
                         self.active_positions.pop(symbol, None)
                 elif status in {"canceled", "cancelled", "expired", "rejected"}:
                     state["stop_order_error"] = f"stop_order_{status}"
+                    repair = self._reattach_protective_stop(
+                        symbol, state, previous_status=status
+                    )
+                    statuses[symbol]["stop_repair"] = repair
+                    if repair.get("success"):
+                        statuses[symbol]["status"] = "open"
+                        statuses[symbol]["repaired_after_status"] = status
+                        statuses[symbol]["stop_order_id"] = repair.get("stop_order_id")
+                    else:
+                        statuses[symbol]["status"] = f"unprotected_stop_{status}"
             except Exception as exc:
                 category = _classify_exchange_error(exc)
                 reconciled_order: Optional[Dict[str, Any]] = None
@@ -1613,11 +1844,17 @@ class OCOExecutor:
                     }
                     if status in {"closed", "filled"}:
                         state["exit_reason"] = "stop_loss_filled"
+                        exit_price, filled_amount, _partial_fill = _extract_order_fill(
+                            reconciled_order,
+                            _safe_float(state.get("stop_price"), np.nan),
+                        )
                         _append_position_event(
                             state,
                             "stop_order_filled",
                             stop_order_id=stop_order_id,
                             stop_price=state.get("stop_price"),
+                            fill_price=exit_price,
+                            filled=filled_amount,
                             stop_reason=state.get("stop_reason"),
                             order_status=status,
                             reconciled_after_error=True,
@@ -1633,6 +1870,18 @@ class OCOExecutor:
                         )
                     elif status in {"canceled", "cancelled", "expired", "rejected"}:
                         state["stop_order_error"] = f"stop_order_{status}"
+                        repair = self._reattach_protective_stop(
+                            symbol, state, previous_status=status
+                        )
+                        statuses[symbol]["stop_repair"] = repair
+                        if repair.get("success"):
+                            statuses[symbol]["status"] = "open"
+                            statuses[symbol]["repaired_after_status"] = status
+                            statuses[symbol]["stop_order_id"] = repair.get(
+                                "stop_order_id"
+                            )
+                        else:
+                            statuses[symbol]["status"] = f"unprotected_stop_{status}"
                     continue
                 statuses[symbol] = {
                     "status": "error",
@@ -1832,6 +2081,46 @@ class TradeExecutor:
                 slot["interest"] = max(slot["interest"], interest)
         return assets
 
+    def _load_pending_entry_context(self, symbol: str) -> Dict[str, Any]:
+        """Return the latest pending live entry row for a symbol, if available."""
+        paths: List[Path] = []
+        for key in ("trade_log_path", "inference_trade_log_path"):
+            raw = (self.config or {}).get(key)
+            if raw:
+                paths.append(Path(str(raw)))
+        paths.append(Path("inference_trades.csv"))
+        seen = set()
+        for path in paths:
+            if path in seen:
+                continue
+            seen.add(path)
+            if not path.exists():
+                continue
+            try:
+                df = pd.read_csv(path)
+            except Exception:
+                continue
+            if df.empty or "symbol" not in df.columns:
+                continue
+            mask = df["symbol"].astype(str).eq(str(symbol))
+            if "lifecycle_event" in df.columns:
+                mask &= df["lifecycle_event"].astype(str).eq("entry_placed")
+            if "status" in df.columns:
+                mask &= df["status"].astype(str).eq("pending")
+            if "action" in df.columns:
+                mask &= df["action"].astype(str).eq("enter")
+            rows = df.loc[mask].copy()
+            if rows.empty:
+                continue
+            if "timestamp" in rows.columns:
+                rows["_ts"] = pd.to_datetime(rows["timestamp"], errors="coerce")
+                rows = rows.sort_values("_ts")
+            return {
+                str(k): (None if pd.isna(v) else v)
+                for k, v in rows.iloc[-1].to_dict().items()
+            }
+        return {}
+
     def _track_external_margin_position(
         self,
         *,
@@ -1845,7 +2134,20 @@ class TradeExecutor:
         """Import a real external margin position for monitoring-only tracking."""
         if not np.isfinite(entry_price) or entry_price <= 0.0:
             return False
-        params = self.get_bucket_params(None)
+        pending_context = self._load_pending_entry_context(symbol)
+        pending_strategy = ""
+        if pending_context:
+            pending_strategy = str(pending_context.get("strategy_id") or "")
+            pending_entry = _safe_float(
+                pending_context.get("actual_entry_price")
+                or pending_context.get("realized_entry_price")
+                or pending_context.get("entry_price"),
+                default=np.nan,
+            )
+            if np.isfinite(pending_entry) and pending_entry > 0.0:
+                entry_price = float(pending_entry)
+        bucket_key = pending_strategy or "external_margin_reconciliation"
+        params = self.get_bucket_params(pending_strategy or None)
         stop_frac = _safe_float(
             params.get("fixed_stop_loss_pct", params.get("stop_loss_pct")),
             default=0.03,
@@ -1855,12 +2157,49 @@ class TradeExecutor:
         sl_mult = _safe_float(params.get("sl_mult"), default=1.0)
         if not np.isfinite(sl_mult) or sl_mult <= 0.0:
             sl_mult = 1.0
-        attach_barrier_frac = float(stop_frac) / float(sl_mult)
-        stop_price = (
-            entry_price * (1.0 - stop_frac)
-            if side == "long"
-            else entry_price * (1.0 + stop_frac)
+        pending_barrier = _safe_float(
+            pending_context.get("atr_frac")
+            or pending_context.get("barrier_frac")
+            or pending_context.get("barrier_pct"),
+            default=np.nan,
         )
+        attach_barrier_frac = (
+            float(pending_barrier)
+            if np.isfinite(pending_barrier) and pending_barrier > 0.0
+            else float(stop_frac) / float(sl_mult)
+        )
+        pending_stop = _safe_float(
+            pending_context.get("stop_price") if pending_context else None,
+            default=np.nan,
+        )
+        if np.isfinite(pending_stop) and pending_stop > 0.0:
+            stop_price = float(pending_stop)
+            pending_stop_gap = (
+                (1.0 - stop_price / entry_price)
+                if side == "long"
+                else (stop_price / entry_price - 1.0)
+            )
+            if np.isfinite(pending_stop_gap) and pending_stop_gap > 0.0:
+                attach_barrier_frac = float(pending_stop_gap) / float(sl_mult)
+        else:
+            stop_price = (
+                entry_price * (1.0 - sl_mult * attach_barrier_frac)
+                if side == "long"
+                else entry_price * (1.0 + sl_mult * attach_barrier_frac)
+            )
+        if pending_context:
+            stop_reason = "original_stop_loss"
+            stop_reason_detail = (
+                f"original_stop_loss: sl_mult={sl_mult:.6g} "
+                f"barrier_frac={attach_barrier_frac:.6g}"
+            )
+        else:
+            stop_reason = "external_emergency_stop"
+            stop_reason_detail = (
+                f"external_emergency_stop: fallback_stop_frac={stop_frac:.6g} "
+                "because no policy barrier_pct is available for a pre-existing "
+                "external margin position"
+            )
         now = pd.Timestamp.now(tz="UTC")
         state = {
             "side": side,
@@ -1879,25 +2218,44 @@ class TradeExecutor:
             "external_position": True,
             "monitoring_only": True,
             "reconciliation_reason": reason,
+            "bucket_key": bucket_key,
+            "strategy_id": pending_strategy or "external_margin_reconciliation",
+            "barrier_frac": float(attach_barrier_frac),
+            "barrier_pct": float(attach_barrier_frac),
+            "sl_mult": float(sl_mult),
+            "stop_reason": stop_reason,
+            "stop_reason_detail": stop_reason_detail,
         }
+        if pending_context:
+            state["recovered_from_pending_trade_log"] = True
+            for key in EXECUTION_AUDIT_KEYS:
+                if key in pending_context and pending_context.get(key) not in ("", None):
+                    state[key] = pending_context.get(key)
         if self.oco_executor is not None:
             oco_state = state.copy()
             oco_state.update(
                 {
                     "oco_order_id": None,
                     "stop_order_id": None,
-                            "take_profit_order_id": None,
-                            "atr": float(attach_barrier_frac),
-                            "sl_mult": float(sl_mult),
-                        }
-                    )
+                    "take_profit_order_id": None,
+                    "atr": float(attach_barrier_frac),
+                    "sl_mult": float(sl_mult),
+                }
+            )
             adopted_stop_order = None
+            mismatched_stop_orders: List[Dict[str, Any]] = []
             try:
                 fetch_open_orders = getattr(self.exchange, "fetch_open_orders", None)
                 if callable(fetch_open_orders):
-                    for order in (
-                        fetch_open_orders(symbol, _cancel_params(self.config)) or []
-                    ):
+                    open_orders: List[Dict[str, Any]] = []
+                    for fetch_params in _margin_fetch_param_variants(self.config):
+                        try:
+                            open_orders = fetch_open_orders(symbol, fetch_params) or []
+                        except Exception:
+                            continue
+                        if open_orders:
+                            break
+                    for order in open_orders:
                         if not isinstance(order, dict):
                             continue
                         order_side = str(order.get("side") or "").lower()
@@ -1921,6 +2279,14 @@ class TradeExecutor:
                             and np.isfinite(stop_px)
                             and stop_px > 0.0
                         ):
+                            if (
+                                pending_context
+                                and np.isfinite(stop_price)
+                                and abs(stop_px - float(stop_price))
+                                > max(abs(float(stop_price)) * 1e-4, 1e-8)
+                            ):
+                                mismatched_stop_orders.append(order)
+                                continue
                             adopted_stop_order = order
                             break
             except Exception as exc:
@@ -1928,6 +2294,33 @@ class TradeExecutor:
                     f"External position stop-order adoption failed for {symbol}: "
                     f"{_classify_exchange_error(exc)}: {exc}"
                 )
+            if mismatched_stop_orders:
+                cancel_order = getattr(self.exchange, "cancel_order", None)
+                if callable(cancel_order):
+                    for order in mismatched_stop_orders:
+                        order_id = order.get("id")
+                        if not order_id:
+                            continue
+                        cancelled = False
+                        for cancel_params in _margin_fetch_param_variants(self.config):
+                            try:
+                                cancel_order(order_id, symbol, cancel_params)
+                                cancelled = True
+                                break
+                            except Exception as exc:
+                                category = _classify_exchange_error(exc)
+                                if category in {
+                                    "order_not_found",
+                                    "already_closed_or_cancelled",
+                                }:
+                                    cancelled = True
+                                    break
+                        if cancelled:
+                            tprint(
+                                f"Cancelled mismatched recovered STOP_LOSS for "
+                                f"{symbol}: order_id={order_id} "
+                                f"expected_stop={float(stop_price):.12g}"
+                            )
 
             if isinstance(adopted_stop_order, dict):
                 oco_state["stop_order_id"] = adopted_stop_order.get("id")
@@ -1965,7 +2358,7 @@ class TradeExecutor:
                         side=side,
                         entry_price=float(entry_price),
                         size=float(amount),
-                        bucket_key=None,
+                        bucket_key=bucket_key,
                         atr_frac=float(attach_barrier_frac),
                     )
                     with self.oco_executor._positions_lock:
@@ -1976,6 +2369,8 @@ class TradeExecutor:
                             tracked["stop_price"] = stop_result.get(
                                 "stop_price", tracked.get("stop_price")
                             )
+                            tracked["stop_reason"] = state["stop_reason"]
+                            tracked["stop_reason_detail"] = state["stop_reason_detail"]
                             tracked["external_stop_attached"] = bool(
                                 stop_result.get("success")
                             )
@@ -1990,25 +2385,54 @@ class TradeExecutor:
                         return True
                     else:
                         with self.oco_executor._positions_lock:
-                            self.oco_executor.active_positions.pop(symbol, None)
+                            tracked = self.oco_executor.active_positions.get(symbol)
+                            if isinstance(tracked, dict):
+                                tracked.update(oco_state)
+                                tracked["external_stop_attached"] = False
+                                tracked["stop_order_error"] = stop_result.get("error")
+                                tracked["stop_order_error_category"] = stop_result.get(
+                                    "error_category"
+                                )
+                                tracked["stop_order_reject_reason"] = stop_result.get(
+                                    "stop_order_reject_reason"
+                                )
+                            else:
+                                oco_state["external_stop_attached"] = False
+                                oco_state["stop_order_error"] = stop_result.get("error")
+                                oco_state["stop_order_error_category"] = stop_result.get(
+                                    "error_category"
+                                )
+                                self.oco_executor.active_positions[symbol] = oco_state
                         with self._state_lock:
-                            self.positions.pop(symbol, None)
+                            state["external_stop_attached"] = False
+                            state["stop_order_error"] = stop_result.get("error")
+                            state["stop_order_error_category"] = stop_result.get(
+                                "error_category"
+                            )
+                            self.positions[symbol] = state.copy()
                         tprint(
-                            f"External margin position was not imported because "
-                            f"STOP_LOSS attach failed: "
+                            f"Imported external margin position WITHOUT exchange "
+                            f"STOP_LOSS after attach failure; software monitoring "
+                            f"remains active: "
                             f"{symbol} category={stop_result.get('error_category')} "
                             f"error={stop_result.get('error')}"
                         )
-                    return False
+                    return True
                 except Exception as exc:
-                    with self.oco_executor._positions_lock:
-                        self.oco_executor.active_positions.pop(symbol, None)
                     with self._state_lock:
-                        self.positions.pop(symbol, None)
+                        self.positions[symbol] = state.copy()
+                    oco_state["external_stop_attached"] = False
+                    oco_state["stop_order_error"] = str(exc)
+                    oco_state["stop_order_error_category"] = _classify_exchange_error(exc)
+                    with self.oco_executor._positions_lock:
+                        self.oco_executor.active_positions[symbol] = oco_state
                     tprint(
-                        f"External position STOP_LOSS attach failed for {symbol}: "
+                        f"Imported external margin position WITHOUT exchange "
+                        f"STOP_LOSS after attach exception; software monitoring "
+                        f"remains active: {symbol} "
                         f"{_classify_exchange_error(exc)}: {exc}"
                     )
+                    return True
             tprint(
                 f"External margin position not imported for monitoring without "
                 f"STOP_LOSS protection: {symbol} side={side}"
@@ -2029,7 +2453,10 @@ class TradeExecutor:
                 or "USDC"
             ).upper(),
             "dust_quote_threshold": float(
-                self.config.get("cross_margin_dust_quote_threshold", 10.0)
+                self.config.get(
+                    "cross_margin_dust_quote_threshold",
+                    _default_cross_margin_dust_quote_threshold(self.mode),
+                )
             ),
             "cross_margin_residual_assets": list(
                 self.config.get("cross_margin_residual_assets", ["BNB"])
@@ -2097,6 +2524,8 @@ class TradeExecutor:
                     )
                 elif asset == quote and kind == "balance":
                     classification = "quote_balance_available"
+                elif asset == quote:
+                    classification = "quote_debt_liability"
                 else:
                     classification = f"external_{side}_position"
 
@@ -2205,6 +2634,19 @@ class TradeExecutor:
         bucket_key: Optional[str] = None,
         ohlcv_reference_price: Optional[float] = None,
         trade_context: Optional[Dict[str, Any]] = None,
+        execution_snapshot: Optional[Dict[str, Any]] = None,
+        signal_price: Optional[float] = None,
+        decision_mid: Optional[float] = None,
+        expected_entry_price: Optional[float] = None,
+        expected_fill_slippage_bps: Optional[float] = None,
+        max_chase_bps: Optional[float] = None,
+        rank_score: Optional[float] = None,
+        adjusted_rank_score: Optional[float] = None,
+        final_threshold: Optional[float] = None,
+        position_size_before_liquidity: Optional[float] = None,
+        position_size_after_liquidity: Optional[float] = None,
+        order_type: Optional[str] = None,
+        limit_price: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Execute a trade with OCO order support.
 
@@ -2246,25 +2688,51 @@ class TradeExecutor:
                     "error": f"symbol {symbol} in cooldown for {cooldown_hours:.1f}h",
                 }
 
+        audit_context = dict(trade_context or {})
+        if isinstance(execution_snapshot, dict):
+            audit_context.update(execution_snapshot)
+        audit_context.update(
+            {
+                k: v
+                for k, v in {
+                    "signal_price": signal_price,
+                    "decision_mid": decision_mid,
+                    "expected_entry_price": expected_entry_price,
+                    "expected_fill_slippage_bps": expected_fill_slippage_bps,
+                    "max_chase_bps": max_chase_bps,
+                    "rank_score": rank_score,
+                    "adjusted_rank_score": adjusted_rank_score,
+                    "final_threshold": final_threshold,
+                    "position_size_before_liquidity": position_size_before_liquidity,
+                    "position_size_after_liquidity": position_size_after_liquidity,
+                    "entry_order_type_requested": order_type,
+                    "entry_limit_price": limit_price,
+                }.items()
+                if v is not None
+            }
+        )
+        effective_price = float(limit_price) if limit_price is not None else price
+
         if _is_live_execution_mode(self.mode):
             return self._execute_live(
                 symbol,
                 side,
                 position_value,
-                price,
+                effective_price,
                 bucket_key,
                 ohlcv_reference_price=ohlcv_reference_price,
-                trade_context=trade_context,
+                trade_context=audit_context,
+                order_type=order_type,
             )
         else:
             return self._record_shadow_trade(
                 symbol,
                 side,
                 position_value,
-                price,
+                effective_price,
                 bucket_key=bucket_key,
                 ohlcv_reference_price=ohlcv_reference_price,
-                trade_context=trade_context,
+                trade_context=audit_context,
             )
 
     def _execute_live(
@@ -2276,6 +2744,7 @@ class TradeExecutor:
         bucket_key: Optional[str] = None,
         ohlcv_reference_price: Optional[float] = None,
         trade_context: Optional[Dict[str, Any]] = None,
+        order_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Execute live trade with STOP_LOSS support.
 
@@ -2326,8 +2795,11 @@ class TradeExecutor:
             )
 
             force_market_entries = bool(
-                self.config.get("force_market_entry_orders", True)
+                self.config.get("force_market_entry_orders", False)
             )
+            requested_order_type = str(order_type or "").lower()
+            if requested_order_type == "market":
+                force_market_entries = True
             if force_market_entries and price is not None:
                 tprint(
                     f"Live entry for {symbol}: forcing market order; "
@@ -2418,6 +2890,7 @@ class TradeExecutor:
                             )
 
             context = dict(trade_context or {})
+            audit_fields = _execution_audit_fields(context)
             with self._state_lock:
                 self.positions[symbol] = {
                     "side": side,
@@ -2457,6 +2930,7 @@ class TradeExecutor:
                     "entry_price_delta_vs_ohlcv_pct": entry_price_delta_pct,
                     "partial_fill": partial_fill,
                     "entry_order_type": entry_order_type,
+                    **audit_fields,
                 }
 
             return {
@@ -2497,6 +2971,7 @@ class TradeExecutor:
                     if np.isfinite(expected_entry_price)
                     else 0.0
                 ),
+                **audit_fields,
             }
 
         except Exception as e:

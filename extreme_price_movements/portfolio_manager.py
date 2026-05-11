@@ -1,12 +1,12 @@
 """Portfolio Manager for position-level risk and constraint enforcement.
 
 Enforces portfolio-level constraints:
-- Max 4 positions open simultaneously
-- No max total capital allocation by default
+- Max 10 positions open simultaneously
+- Max 75% total wallet allocation by default
 - Max 15% of portfolio per position
 - Dynamic entry threshold based on current position count
 - 24h cooldown after losing trades per asset
-- Max 50% same-strategy concentration (2 per strategy max, different assets)
+- Max 6 positions per side and per strategy by default
 """
 
 from __future__ import annotations
@@ -21,6 +21,11 @@ import numpy as np
 import pandas as pd
 
 from extreme_price_movements.utils import tprint
+
+try:
+    from extreme_price_movements.inference.portfolio_policy import PortfolioPolicyConfig
+except Exception:  # pragma: no cover - keeps legacy imports resilient.
+    PortfolioPolicyConfig = Any  # type: ignore
 
 
 def _classify_api_error(exc: Exception) -> str:
@@ -63,24 +68,26 @@ class PortfolioManager:
     """Manages portfolio state and enforces position constraints.
 
     Constraints:
-    - MAX_POSITIONS: Maximum simultaneous open positions (default: 4)
-    - MAX_PORTFOLIO_PCT: Optional maximum % of portfolio invested (default: disabled)
+    - MAX_POSITIONS: Maximum simultaneous open positions (default: 10)
+    - MAX_PORTFOLIO_PCT: Maximum % of portfolio invested (default: 75%)
     - MAX_POSITION_PCT: Maximum % of portfolio per position (default: 15%)
-    - MAX_POSITION_USDT: Optional absolute quote-notional cap (default: disabled)
+    - MAX_POSITION_USDT: Optional absolute quote-notional cap (default: 5000)
     - COOLDOWN_HOURS: Hours to wait after losing trade (default: 24)
-    - MAX_SAME_SIDE_PCT: Max % of positions on same side (default: 100% -> disabled)
-    - MAX_SAME_STRATEGY_PCT: Max % from same strategy_id (default: 50% -> 2 of 4)
+    - MAX_SAME_SIDE: Max positions on same side (default: 6)
+    - MAX_SAME_STRATEGY: Max positions from same strategy_id (default: 6)
     """
 
     def __init__(
         self,
-        max_positions: int = 4,
-        max_portfolio_pct: Optional[float] = None,
-        max_position_usdt: Optional[float] = None,
+        max_positions: int = 10,
+        max_portfolio_pct: Optional[float] = 0.75,
+        max_position_usdt: Optional[float] = 5000.0,
         max_position_pct: float = 0.15,
         cooldown_hours: float = 24.0,
-        max_same_side_pct: float = 1.0,
-        max_same_strategy_pct: float = 0.50,
+        max_same_side: Optional[int] = 6,
+        max_same_strategy: Optional[int] = 6,
+        max_same_side_pct: Optional[float] = None,
+        max_same_strategy_pct: Optional[float] = None,
         portfolio_value: float = 10000.0,  # Default assumed portfolio value
         max_daily_loss_pct: float = 0.10,
         max_weekly_loss_pct: float = 0.20,
@@ -88,13 +95,25 @@ class PortfolioManager:
         max_failed_api_calls_5m: int = 10,
         max_consecutive_order_rejections: int = 5,
     ):
-        self.max_positions = max_positions
+        self.max_positions = max(1, int(max_positions))
         self.max_portfolio_pct = max_portfolio_pct
         self.max_position_usdt = max_position_usdt
         self.max_position_pct = max_position_pct
         self.cooldown_hours = cooldown_hours
-        self.max_same_side = max(1, int(max_positions * max_same_side_pct))
-        self.max_same_strategy = max(1, int(max_positions * max_same_strategy_pct))
+        if max_same_side is not None:
+            self.max_same_side = max(1, int(max_same_side))
+        elif max_same_side_pct is not None:
+            self.max_same_side = max(1, int(self.max_positions * max_same_side_pct))
+        else:
+            self.max_same_side = max(1, int(0.75 * self.max_positions))
+        if max_same_strategy is not None:
+            self.max_same_strategy = max(1, int(max_same_strategy))
+        elif max_same_strategy_pct is not None:
+            self.max_same_strategy = max(
+                1, int(self.max_positions * max_same_strategy_pct)
+            )
+        else:
+            self.max_same_strategy = max(1, int(0.75 * self.max_positions))
         self.portfolio_value = portfolio_value
         self.max_daily_loss_pct = max_daily_loss_pct
         self.max_weekly_loss_pct = max_weekly_loss_pct
@@ -113,6 +132,33 @@ class PortfolioManager:
         self.order_rejection_backoff_until: Optional[pd.Timestamp] = None
         self.manual_reset_required = False
         self.hard_limit_reason = ""
+
+    @classmethod
+    def from_policy_config(
+        cls,
+        policy: PortfolioPolicyConfig,
+        *,
+        portfolio_value: float = 10000.0,
+        cooldown_hours: float = 24.0,
+        **kwargs: Any,
+    ) -> "PortfolioManager":
+        max_same_side = kwargs.pop(
+            "max_same_side", policy.resolved_max_concurrent_per_side()
+        )
+        max_same_strategy = kwargs.pop(
+            "max_same_strategy", policy.resolved_max_concurrent_per_strategy()
+        )
+        return cls(
+            max_positions=policy.max_concurrent_positions,
+            max_portfolio_pct=policy.max_total_wallet_allocation_pct,
+            max_position_usdt=policy.max_position_quote_notional,
+            max_position_pct=policy.max_position_wallet_pct,
+            max_same_side=max_same_side,
+            max_same_strategy=max_same_strategy,
+            portfolio_value=portfolio_value,
+            cooldown_hours=cooldown_hours,
+            **kwargs,
+        )
 
     def get_portfolio_state(self) -> Dict[str, Any]:
         """Return current portfolio state summary."""
@@ -173,7 +219,16 @@ class PortfolioManager:
             "hard_limits": self.get_hard_limit_status(),
         }
 
-    def calculate_dynamic_threshold(self, initial_threshold: float) -> float:
+    def calculate_dynamic_threshold(
+        self,
+        initial_threshold: float,
+        *,
+        side: Optional[str] = None,
+        strategy_id: Optional[str] = None,
+        side_penalty: float = 0.0,
+        strategy_penalty: float = 0.0,
+        max_threshold: float = 0.99,
+    ) -> float:
         """Calculate adjusted entry threshold based on current position count.
 
         Formula: final_threshold = initial_threshold + (n_positions * (1 - initial_threshold)) / max_positions
@@ -181,14 +236,17 @@ class PortfolioManager:
         As more positions are open, threshold increases making entry harder.
         """
         n_positions = len([p for p in self.positions.values() if p.is_open])
-        if n_positions == 0:
-            return initial_threshold
 
         # Formula: initial + (n_positions * (1 - initial)) / max_positions
         adjustment = (n_positions * (1.0 - initial_threshold)) / self.max_positions
-        final_threshold = initial_threshold + adjustment
+        final_threshold = (
+            initial_threshold
+            + adjustment
+            + float(side_penalty)
+            + float(strategy_penalty)
+        )
 
-        return min(final_threshold, 1.0)  # Cap at 1.0
+        return min(float(max_threshold), final_threshold)
 
     def calculate_position_size_cap(self, requested_size: float) -> float:
         """Calculate allowed position size considering portfolio constraints.
@@ -210,6 +268,66 @@ class PortfolioManager:
             caps.append(max_total_invested - total_invested)
 
         return max(0.0, min(caps))
+
+    def get_portfolio_capacity(
+        self,
+        *,
+        side: str,
+        strategy_id: str,
+        wallet_value: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Return deterministic portfolio capacity without mutating state."""
+        wallet = (
+            float(wallet_value)
+            if wallet_value is not None and np.isfinite(float(wallet_value))
+            else float(self.portfolio_value)
+        )
+        open_positions = [p for p in self.positions.values() if p.is_open]
+        n_open = len(open_positions)
+        side_open = sum(1 for p in open_positions if p.side == side)
+        strategy_open = sum(1 for p in open_positions if p.strategy_id == strategy_id)
+        open_notional = float(sum(p.position_size for p in open_positions))
+
+        max_total_notional = (
+            float(self.max_portfolio_pct) * wallet
+            if self.max_portfolio_pct is not None
+            and np.isfinite(float(self.max_portfolio_pct))
+            else float("inf")
+        )
+        remaining_total = max(max_total_notional - open_notional, 0.0)
+        per_position_caps = [float(self.max_position_pct) * wallet]
+        if self.max_position_usdt is not None and np.isfinite(
+            float(self.max_position_usdt)
+        ):
+            per_position_caps.append(float(self.max_position_usdt))
+        max_position_notional = max(0.0, min(per_position_caps))
+        remaining_position_slots = self.max_positions - n_open
+        remaining_side_slots = self.max_same_side - side_open
+        remaining_strategy_slots = self.max_same_strategy - strategy_open
+        return {
+            "wallet_value": wallet,
+            "open_positions": n_open,
+            "side_open_positions": side_open,
+            "strategy_open_positions": strategy_open,
+            "open_notional": open_notional,
+            "max_concurrent_positions": self.max_positions,
+            "max_concurrent_per_side": self.max_same_side,
+            "max_concurrent_per_strategy": self.max_same_strategy,
+            "max_total_notional": max_total_notional,
+            "remaining_total_notional": remaining_total,
+            "max_position_notional": max_position_notional,
+            "remaining_position_slots": remaining_position_slots,
+            "remaining_side_slots": remaining_side_slots,
+            "remaining_strategy_slots": remaining_strategy_slots,
+            "allowed_by_count_caps": bool(
+                remaining_position_slots > 0
+                and remaining_side_slots > 0
+                and remaining_strategy_slots > 0
+            ),
+            "allowed_by_allocation_caps": bool(
+                remaining_total > 0.0 and max_position_notional > 0.0
+            ),
+        }
 
     def _rolling_loss_pct(
         self, current_time: pd.Timestamp, window: pd.Timedelta
@@ -466,10 +584,14 @@ class PortfolioManager:
         symbol: str,
         side: str,
         strategy_id: str,
-        confidence_score: float,
-        initial_threshold: float,
+        confidence_score: Optional[float] = None,
+        initial_threshold: float = 0.90,
         current_time: Optional[pd.Timestamp] = None,
         requested_position_size: Optional[float] = None,
+        rank_score: Optional[float] = None,
+        wallet_value: Optional[float] = None,
+        side_penalty: float = 0.0,
+        strategy_penalty: float = 0.0,
     ) -> Tuple[bool, Dict[str, Any]]:
         """Check if a new position can be entered.
 
@@ -477,7 +599,7 @@ class PortfolioManager:
             symbol: Asset symbol
             side: "long" or "short"
             strategy_id: Strategy identifier
-            confidence_score: Current confidence score (0-1)
+            confidence_score: Legacy confidence score (0-1)
             initial_threshold: Base threshold for entry
             current_time: Timestamp for cooldown checks (default: now)
 
@@ -486,6 +608,11 @@ class PortfolioManager:
         """
         if current_time is None:
             current_time = pd.Timestamp.now(tz="UTC")
+        effective_score = (
+            float(rank_score)
+            if rank_score is not None
+            else float(confidence_score) if confidence_score is not None else np.nan
+        )
 
         info = {
             "reason": "",
@@ -503,74 +630,80 @@ class PortfolioManager:
         hard_allowed, hard_status = self.evaluate_hard_limits(current_time)
         info["hard_limits"] = hard_status
         if not hard_allowed:
-            info["reason"] = hard_status.get("reason", "hard_limit_block")
+            info["reason"] = "hard_limit_block"
+            info["hard_limit_reason"] = hard_status.get("reason", "hard_limit_block")
             info["constraints_checked"].append("hard_limits")
             return False, info
 
-        # 1. Check max positions
-        if n_positions >= self.max_positions:
-            info["reason"] = (
-                f"max_positions_reached ({n_positions}/{self.max_positions})"
-            )
-            info["constraints_checked"].append("max_positions")
-            return False, info
+        capacity = self.get_portfolio_capacity(
+            side=side,
+            strategy_id=strategy_id,
+            wallet_value=wallet_value,
+        )
+        info["capacity"] = capacity
 
-        # 2. Check if symbol already has position (max 1 per asset)
         if symbol in self.positions and self.positions[symbol].is_open:
-            info["reason"] = f"symbol_already_has_position ({symbol})"
+            info["reason"] = "symbol_already_has_position"
             info["constraints_checked"].append("max_one_per_symbol")
             return False, info
 
-        # 3. Check cooldown
         if symbol in self.cooldowns:
             cd = self.cooldowns[symbol]
             if cd.cooldown_until > current_time:
                 hours_remaining = (
                     cd.cooldown_until - current_time
                 ).total_seconds() / 3600
-                info["reason"] = f"cooldown_active ({hours_remaining:.1f}h remaining)"
+                info["reason"] = "cooldown_active"
                 info["constraints_checked"].append("cooldown")
                 info["cooldown_until"] = cd.cooldown_until.isoformat()
+                info["cooldown_hours_remaining"] = float(hours_remaining)
                 return False, info
 
-        # 4. Check same-side concentration (max 75% -> 3 of 4)
-        side_count = sum(1 for p in open_positions if p.side == side)
+        if n_positions >= self.max_positions:
+            info["reason"] = "max_concurrent_positions_reached"
+            info["constraints_checked"].append("max_positions")
+            return False, info
+
+        side_count = int(capacity["side_open_positions"])
         if side_count >= self.max_same_side:
-            info["reason"] = (
-                f"max_same_side_reached ({side_count} {side}, max {self.max_same_side})"
-            )
+            info["reason"] = "max_concurrent_per_side_reached"
             info["constraints_checked"].append("max_same_side")
             return False, info
 
-        # 5. Check same-strategy concentration (max 50% -> 2 of 4)
-        strategy_count = sum(1 for p in open_positions if p.strategy_id == strategy_id)
+        strategy_count = int(capacity["strategy_open_positions"])
         if strategy_count >= self.max_same_strategy:
-            info["reason"] = (
-                f"max_same_strategy_reached ({strategy_count} {strategy_id}, max {self.max_same_strategy})"
-            )
+            info["reason"] = "max_concurrent_per_strategy_reached"
             info["constraints_checked"].append("max_same_strategy")
             return False, info
 
-        # 6. Calculate dynamic threshold
-        final_threshold = self.calculate_dynamic_threshold(initial_threshold)
+        final_threshold = self.calculate_dynamic_threshold(
+            initial_threshold,
+            side=side,
+            strategy_id=strategy_id,
+            side_penalty=side_penalty,
+            strategy_penalty=strategy_penalty,
+        )
         info["final_threshold"] = final_threshold
         info["initial_threshold"] = initial_threshold
+        info["rank_score"] = effective_score
+        info["side_penalty"] = float(side_penalty)
+        info["strategy_penalty"] = float(strategy_penalty)
         info["constraints_checked"].append("dynamic_threshold")
 
-        # 7. Check confidence against dynamic threshold
-        if confidence_score < final_threshold:
-            info["reason"] = (
-                f"confidence_below_threshold ({confidence_score:.4f} < {final_threshold:.4f})"
-            )
-            info["constraints_checked"].append("confidence_threshold")
+        if not np.isfinite(effective_score) or effective_score < final_threshold:
+            info["reason"] = "rank_below_dynamic_threshold"
+            info["constraints_checked"].append("rank_threshold")
             return False, info
 
-        # 8. Calculate position size cap
         requested_size = (
             float(requested_position_size)
             if requested_position_size is not None
             else self.portfolio_value * self.max_position_pct
         )
+        if not np.isfinite(requested_size) or requested_size <= 0.0:
+            info["reason"] = "invalid_requested_position_size"
+            info["requested_position_size"] = requested_size
+            return False, info
         position_size_cap = self.calculate_position_size_cap(requested_size)
         info["position_size_cap"] = position_size_cap
         info["requested_position_size"] = requested_size
@@ -579,8 +712,10 @@ class PortfolioManager:
         if position_size_cap <= 0:
             info["reason"] = "no_remaining_portfolio_capacity"
             return False, info
+        if requested_size > float(capacity["remaining_total_notional"]):
+            info["reason"] = "requested_size_exceeds_remaining_total_notional"
+            return False, info
 
-        # All checks passed
         info["reason"] = "allowed"
         return True, info
 

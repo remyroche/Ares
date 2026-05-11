@@ -4,6 +4,7 @@ import pandas as pd
 
 from extreme_price_movements.inference import run_inference as ri
 from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
+from extreme_price_movements.inference.safety_switches import StrategyKillSwitch
 from extreme_price_movements.portfolio_manager import PortfolioManager
 
 
@@ -257,6 +258,56 @@ def test_run_inference_step_applies_strategy_rank_and_portfolio_caps(monkeypatch
     assert executor.calls[0]["size"] <= 1500.0 + 1e-9
 
 
+def test_run_inference_step_blocks_strategy_kill_switch(monkeypatch, tmp_path):
+    idx = pd.date_range("2026-03-01", periods=3, freq="1h", tz="UTC")
+    close = pd.DataFrame({"BTC/USDT": [100.0, 100.0, 100.0]}, index=idx)
+    panel = {
+        "close": close,
+        "high": close,
+        "low": close,
+        "open": close,
+        "volume": close,
+    }
+    feats = {"ret12h": close.pct_change().fillna(0.0)}
+
+    monkeypatch.setattr(ri, "select_candidates", lambda **kwargs: (["BTC/USDT"], []))
+    monkeypatch.setattr(
+        ri,
+        "get_features_for_candidates",
+        lambda feats, candidates: pd.DataFrame(
+            {"dummy": [1.0] * len(candidates)}, index=candidates
+        ),
+    )
+    switch = StrategyKillSwitch(
+        tmp_path / "strategy_kill_switches.json",
+        observe_only=False,
+    )
+    switch.set_state("long_mr", active=True, reason="weak_hit_rate")
+    executor = _DummyExecutor()
+
+    results = ri.run_inference_step(
+        orchestrator=_DummyOrchestrator(),
+        panel=panel,
+        feats=feats,
+        thresholds={"metric": "ret12h"},
+        executor=executor,
+        logger=_DummyLogger(),
+        accepted_strategies={"long_mr"},
+        calibration_data={
+            "long_mr": {
+                "p75_threshold": 0.6,
+                "calibration_curve": [(0.0, 0.0), (1.0, 1.0)],
+            }
+        },
+        portfolio_mgr=PortfolioManager(portfolio_value=10000.0),
+        initial_rank_threshold=0.5,
+        strategy_kill_switch=switch,
+    )
+
+    assert results["trades"] == []
+    assert executor.calls == []
+
+
 def test_run_inference_step_sizes_from_calibrated_meta_policy_power(monkeypatch):
     idx = pd.date_range("2026-03-01", periods=3, freq="1h", tz="UTC")
     close = pd.DataFrame({"BTC/USDT": [100.0, 100.0, 100.0]}, index=idx)
@@ -319,9 +370,11 @@ def test_run_inference_step_sizes_from_calibrated_meta_policy_power(monkeypatch)
     )
 
     assert len(results["trades"]) == 1
-    # calibrated=0.9, threshold=0.5 -> scaled rank=0.8.
-    # size=(0.05 + 0.10 * 0.8**2) * 0.5 = 0.057 of a 10k wallet.
-    assert abs(executor.calls[0]["size"] - 570.0) < 1e-9
+    # With PortfolioManager active, live rank-sizing supersedes legacy
+    # calibrated policy sizing and symbol-underperformance downweights.
+    # Single-candidate rank is 1.0, so size reaches the hard 15% wallet cap;
+    # the 50% available-wallet cap is looser for this 10k wallet test.
+    assert abs(executor.calls[0]["size"] - 1500.0) < 1e-9
 
 
 def test_portfolio_manager_hard_gates_require_manual_reset():

@@ -14,6 +14,7 @@ from extreme_price_movements.inference.run_inference import (
 from extreme_price_movements.inference.trade_executor import (
     TradeExecutor,
     _classify_exchange_error,
+    _default_cross_margin_dust_quote_threshold,
 )
 from extreme_price_movements.optimise import _select_candidate_trade_mask
 
@@ -36,6 +37,13 @@ def test_synthesize_live_safe_timestamp_dayofweek_feature():
         1.0,
         0.0,
     ]
+
+
+def test_cross_margin_dust_threshold_defaults_by_mode():
+    assert _default_cross_margin_dust_quote_threshold("live-test") == 2.5
+    assert _default_cross_margin_dust_quote_threshold("live_test") == 2.5
+    assert _default_cross_margin_dust_quote_threshold("live") == 5.0
+    assert _default_cross_margin_dust_quote_threshold("shadow") == 5.0
 
 
 def test_select_candidates_uses_ret12h_move_and_vol_thresholds():

@@ -112,6 +112,119 @@ class DataFetcher:
         self.dead_letter_symbols: Dict[str, str] = {}
         self._perp_exchange: Optional[Any] = None
         self._symbols_without_perp_funding: set[str] = set()
+        self._ohlcv_cache: Dict[str, pd.DataFrame] = {}
+        self._microdata_symbol_cache: Dict[
+            str, tuple[Optional[float], Optional[float], Dict[str, pd.Series]]
+        ] = {}
+
+    def _invalidate_symbol_cache(self, symbol: str, *, microdata: bool = False) -> None:
+        """Invalidate in-memory panel cache entries after local data writes."""
+        self._ohlcv_cache.pop(symbol, None)
+        if microdata:
+            self._microdata_symbol_cache.pop(symbol, None)
+
+    @staticmethod
+    def _tail_frame(df: pd.DataFrame, start_ts: Optional[pd.Timestamp]) -> pd.DataFrame:
+        if start_ts is None or df is None or df.empty:
+            return df
+        return df[df.index >= start_ts]
+
+    @staticmethod
+    def _cache_covers(df: pd.DataFrame, start_ts: Optional[pd.Timestamp]) -> bool:
+        if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+            return False
+        if start_ts is None:
+            return True
+        idx = pd.DatetimeIndex(df.index)
+        return bool(len(idx) and pd.Timestamp(idx.min()) <= pd.Timestamp(start_ts))
+
+    def _load_ohlcv_symbol_cached(
+        self, symbol: str, start_ts: Optional[pd.Timestamp]
+    ) -> pd.DataFrame:
+        cached = self._ohlcv_cache.get(symbol)
+        if self._cache_covers(cached, start_ts):
+            return self._tail_frame(cached, start_ts)
+        data = self.ohlcv_store.load(symbol, start_ts=start_ts, end_ts=None)
+        if data is not None and isinstance(data, pd.DataFrame) and not data.empty:
+            data = data.sort_index()
+            for col in ("open", "high", "low", "close", "volume"):
+                if col in data.columns:
+                    data[col] = pd.to_numeric(data[col], errors="coerce").astype(
+                        np.float32
+                    )
+            self._ohlcv_cache[symbol] = data
+        return data
+
+    def _merge_symbol_cache(self, symbol: str, new_df: pd.DataFrame) -> None:
+        if new_df is None or not isinstance(new_df, pd.DataFrame) or new_df.empty:
+            return
+        cached = self._ohlcv_cache.get(symbol)
+        if cached is None or cached.empty:
+            self._ohlcv_cache[symbol] = new_df.sort_index()
+            return
+        merged = pd.concat([cached, new_df]).sort_index()
+        merged = merged[~merged.index.duplicated(keep="last")]
+        self._ohlcv_cache[symbol] = merged
+
+    def _load_microdata_symbol_cached(
+        self, symbol: str
+    ) -> tuple[Optional[pd.Index], Dict[str, pd.Series]]:
+        key = self._symbol_file_key(symbol)
+        obp = self.orderbook_dir / f"{key}.parquet"
+        frp = self.funding_dir / f"{key}.parquet"
+        ob_mtime = obp.stat().st_mtime if obp.exists() else None
+        fr_mtime = frp.stat().st_mtime if frp.exists() else None
+        cached = self._microdata_symbol_cache.get(symbol)
+        if cached and cached[0] == ob_mtime and cached[1] == fr_mtime:
+            by_field = cached[2]
+            idx_union = None
+            for series in by_field.values():
+                idx_union = (
+                    series.index if idx_union is None else idx_union.union(series.index)
+                )
+            return idx_union, by_field
+
+        by_field: Dict[str, pd.Series] = {}
+        idx_union = None
+        if obp.exists():
+            ob = pd.read_parquet(obp)
+            ob.index = pd.to_datetime(ob.index, utc=True)
+            for field_name in (
+                "mid",
+                "best_bid",
+                "best_ask",
+                "bid_qty_1",
+                "ask_qty_1",
+                "cum_bid_qty_l10",
+                "cum_ask_qty_l10",
+                "cum_bid_qty_l20",
+                "cum_ask_qty_l20",
+                "snapshot_ts",
+                "trade_count_1h",
+                "buy_qty_1h",
+                "sell_qty_1h",
+                "notional_1h",
+                "buy_notional_1h",
+                "sell_notional_1h",
+                "vwap_1h",
+                "mean_trade_qty_1h",
+                "signed_flow_imbalance_1h",
+            ):
+                if field_name in ob.columns:
+                    by_field[f"orderbook_{field_name}"] = pd.to_numeric(
+                        ob[field_name], errors="coerce"
+                    ).astype(np.float32)
+            idx_union = ob.index if idx_union is None else idx_union.union(ob.index)
+        if frp.exists():
+            fr = pd.read_parquet(frp)
+            fr.index = pd.to_datetime(fr.index, utc=True)
+            by_field["funding_rate"] = pd.to_numeric(
+                fr.get("funding_rate"), errors="coerce"
+            ).astype(np.float32)
+            idx_union = fr.index if idx_union is None else idx_union.union(fr.index)
+
+        self._microdata_symbol_cache[symbol] = (ob_mtime, fr_mtime, by_field)
+        return idx_union, by_field
 
     def _record_api_error(self, symbol: str, exc: Exception, *, context: str) -> None:
         category = classify_api_error(exc)
@@ -534,6 +647,7 @@ class DataFetcher:
             return pd.DataFrame()
         df = df[~df.index.duplicated(keep="last")]
         self.ohlcv_store.save_partitioned(symbol=symbol, df=df, defer_compact=True)
+        self._merge_symbol_cache(symbol, df)
         return df
 
     def fetch_hourly_universe_once(
@@ -608,6 +722,7 @@ class DataFetcher:
                         if refresh_microdata:
                             try:
                                 self.update_microdata_symbol(sym)
+                                self._invalidate_symbol_cache(sym, microdata=True)
                             except Exception as exc:
                                 self._log_microdata_error(
                                     sym, exc, context="microdata_refresh"
@@ -623,6 +738,7 @@ class DataFetcher:
                                 days=check_recent_gaps_days,
                                 backfill_fn=backfill_fn,
                             )
+                            self._invalidate_symbol_cache(sym, microdata=False)
                             gap_backfills += 1
                         except Exception as exc:
                             failed += 1
@@ -927,25 +1043,16 @@ class DataFetcher:
         }
         funding_rate = {}
         for sym in symbols:
-            key = self._symbol_file_key(sym)
-            obp = self.orderbook_dir / f"{key}.parquet"
-            frp = self.funding_dir / f"{key}.parquet"
-            if obp.exists():
-                ob = pd.read_parquet(obp)
-                ob.index = pd.to_datetime(ob.index, utc=True)
-                for field_name in orderbook_fields:
-                    if field_name in ob.columns:
-                        orderbook_fields[field_name][sym] = pd.to_numeric(
-                            ob[field_name], errors="coerce"
-                        )
-                idx_union = ob.index if idx_union is None else idx_union.union(ob.index)
-            if frp.exists():
-                fr = pd.read_parquet(frp)
-                fr.index = pd.to_datetime(fr.index, utc=True)
-                funding_rate[sym] = pd.to_numeric(
-                    fr.get("funding_rate"), errors="coerce"
-                )
-                idx_union = fr.index if idx_union is None else idx_union.union(fr.index)
+            sym_idx, by_field = self._load_microdata_symbol_cached(sym)
+            if sym_idx is not None:
+                idx_union = sym_idx if idx_union is None else idx_union.union(sym_idx)
+            for field_name in orderbook_fields:
+                series = by_field.get(f"orderbook_{field_name}")
+                if series is not None:
+                    orderbook_fields[field_name][sym] = series
+            funding = by_field.get("funding_rate")
+            if funding is not None:
+                funding_rate[sym] = funding
         if idx_union is None:
             return {}
         idx_union = pd.DatetimeIndex(idx_union).sort_values().unique()
@@ -987,9 +1094,16 @@ class DataFetcher:
             start_ts = pd.Timestamp.now(tz="UTC") - pd.Timedelta(
                 hours=int(lookback_hours)
             )
+        cache_hits = 0
+        cache_misses = 0
         for symbol in symbols:
             try:
-                data = self.ohlcv_store.load(symbol, start_ts=start_ts, end_ts=None)
+                cached = self._ohlcv_cache.get(symbol)
+                if self._cache_covers(cached, start_ts):
+                    cache_hits += 1
+                else:
+                    cache_misses += 1
+                data = self._load_ohlcv_symbol_cached(symbol, start_ts=start_ts)
                 # Safely check data
                 try:
                     data_not_empty = (
@@ -1006,6 +1120,11 @@ class DataFetcher:
                 tprint(f"Warning: Could not load data for {symbol}: {e}")
 
         # Convert to panel format
+        tprint(
+            "DataFetcher panel load: "
+            f"symbols={len(symbols)} cache_hits={cache_hits} "
+            f"cache_misses={cache_misses} lookback_hours={lookback_hours}"
+        )
         panel = get_panel_from_dict(ohlcv_data)
         panel.update(self._load_microdata_panel(symbols))
         return panel

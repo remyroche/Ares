@@ -1,0 +1,160 @@
+import json
+
+from extreme_price_movements.inference.portfolio_policy import (
+    PortfolioPolicyConfig,
+    compute_rank_based_position_size,
+    load_portfolio_policy_config,
+)
+from extreme_price_movements.portfolio_manager import PortfolioManager
+
+
+def test_portfolio_policy_defaults_resolve_to_10_6_6():
+    policy = PortfolioPolicyConfig()
+    assert policy.max_concurrent_positions == 10
+    assert policy.resolved_max_concurrent_per_side() == 6
+    assert policy.resolved_max_concurrent_per_strategy() == 6
+    assert policy.max_total_wallet_allocation_pct == 0.75
+    assert policy.max_available_wallet_position_pct == 0.50
+    assert policy.live_test_min_quote_notional == 5.0
+    assert policy.live_test_quote_notional == 10.0
+
+
+def test_portfolio_policy_loads_artifact_before_runtime(tmp_path):
+    root = tmp_path / "data"
+    path = root / "artifacts" / "RID" / "policy_params"
+    path.mkdir(parents=True)
+    (path / "portfolio_policy_config.json").write_text(
+        json.dumps({"max_concurrent_positions": 12, "initial_rank_threshold": 0.93})
+    )
+    policy = load_portfolio_policy_config(
+        data_root=str(root),
+        run_id="RID",
+        runtime_cfg={"max_concurrent_positions": 4},
+    )
+    assert policy.max_concurrent_positions == 12
+    assert policy.initial_rank_threshold == 0.93
+
+
+def test_portfolio_policy_loads_nested_artifact_sections_and_aliases(tmp_path):
+    root = tmp_path / "data"
+    path = root / "artifacts" / "RID" / "policy_params"
+    path.mkdir(parents=True)
+    (path / "portfolio_policy_config.json").write_text(
+        json.dumps(
+            {
+                "rank_sizing": {"rank_multiplier_min": 0.7},
+                "liquidity": {"max_orderbook_slippage_bps": 40.0},
+                "symbol_underperformance_gates_enabled": True,
+            }
+        )
+    )
+    policy = load_portfolio_policy_config(data_root=str(root), run_id="RID")
+    assert policy.rank_multiplier_min == 0.7
+    assert policy.max_orderbook_slippage_bps == 40.0
+    assert policy.enable_symbol_underperformance_gates is True
+
+
+def test_portfolio_manager_from_policy_config_enforces_caps():
+    policy = PortfolioPolicyConfig()
+    mgr = PortfolioManager.from_policy_config(policy, portfolio_value=10000.0)
+    assert mgr.max_positions == 10
+    assert mgr.max_same_side == 6
+    assert mgr.max_same_strategy == 6
+    assert mgr.max_portfolio_pct == 0.75
+    assert mgr.max_position_usdt == 5000.0
+
+
+def test_rank_based_position_size_caps_and_live_test_override():
+    policy = PortfolioPolicyConfig()
+    prod = compute_rank_based_position_size(
+        wallet_value=100000.0,
+        open_notional=0.0,
+        adjusted_rank_score=1.0,
+        final_threshold=0.90,
+        policy=policy,
+        live_test_mode=False,
+    )
+    assert prod["size_after_liquidity"] == 5000.0
+    live_test = compute_rank_based_position_size(
+        wallet_value=100000.0,
+        open_notional=0.0,
+        adjusted_rank_score=1.0,
+        final_threshold=0.90,
+        policy=policy,
+        live_test_mode=True,
+    )
+    assert live_test["size_after_liquidity"] == 10.0
+
+
+def test_rank_based_position_size_live_test_minimum_for_positive_size():
+    policy = PortfolioPolicyConfig()
+    small = compute_rank_based_position_size(
+        wallet_value=100.0,
+        open_notional=0.0,
+        adjusted_rank_score=0.91,
+        final_threshold=0.90,
+        policy=policy,
+        liquidity_capacity_weight=0.25,
+        live_test_mode=True,
+    )
+    assert small["size_after_liquidity"] == 5.0
+
+
+def test_rank_based_position_size_uses_available_wallet_cap():
+    policy = PortfolioPolicyConfig(
+        max_position_wallet_pct=1.0,
+        max_position_quote_notional=1_000_000.0,
+        max_total_wallet_allocation_pct=1.0,
+    )
+    high_rank = compute_rank_based_position_size(
+        wallet_value=10000.0,
+        open_notional=6000.0,
+        adjusted_rank_score=1.0,
+        final_threshold=0.90,
+        policy=policy,
+        live_test_mode=False,
+    )
+    assert high_rank["available_wallet"] == 4000.0
+    assert high_rank["available_wallet_position_cap"] == 2000.0
+    assert high_rank["size_after_liquidity"] == 2000.0
+
+
+def test_rank_based_position_size_rank_scales_under_position_cap():
+    policy = PortfolioPolicyConfig()
+    low_rank = compute_rank_based_position_size(
+        wallet_value=10000.0,
+        open_notional=0.0,
+        adjusted_rank_score=0.90,
+        final_threshold=0.90,
+        policy=policy,
+        live_test_mode=False,
+    )
+    high_rank = compute_rank_based_position_size(
+        wallet_value=10000.0,
+        open_notional=0.0,
+        adjusted_rank_score=1.0,
+        final_threshold=0.90,
+        policy=policy,
+        live_test_mode=False,
+    )
+    assert high_rank["rank_scaled_cap"] == 1500.0
+    assert high_rank["size_after_liquidity"] == 1500.0
+    assert low_rank["size_after_liquidity"] == 750.0
+    assert low_rank["size_after_liquidity"] < high_rank["size_after_liquidity"]
+
+
+def test_capacity_api_reports_remaining_slots_and_notional():
+    mgr = PortfolioManager(portfolio_value=10000.0)
+    mgr.record_position_open(
+        "BTC/USDC",
+        "long",
+        "s1",
+        position_size=1000.0,
+        entry_price=100.0,
+    )
+    cap = mgr.get_portfolio_capacity(side="long", strategy_id="s1")
+    assert cap["open_positions"] == 1
+    assert cap["remaining_position_slots"] == 9
+    assert cap["remaining_side_slots"] == 5
+    assert cap["remaining_strategy_slots"] == 5
+    assert cap["remaining_total_notional"] == 6500.0

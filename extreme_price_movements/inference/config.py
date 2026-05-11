@@ -269,7 +269,6 @@ def get_inference_defaults() -> Dict[str, Any]:
         "use_multi_horizon": True,
         # Execution
         "max_position_size": 0.1,  # 10% of capital
-        "default_stop_loss_pct": 0.05,  # 5%
         "default_take_profit_pct": 0.15,  # 15%
     }
 

@@ -12,6 +12,7 @@ Requirements:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -2713,11 +2714,19 @@ def _selection_rank(metrics: Dict[str, Any]) -> float:
     return float(effective_ops_day * avg_pnl / max(denom, 1e-9))
 
 
+
+def _runtime_params_hash(params: Dict[str, Any]) -> str:
+    payload = {
+        str(k): v
+        for k, v in params.items()
+        if str(k) not in {"params_hash", "metrics", "asset_metrics", "lgbm_regime_mask"}
+    }
+    text = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
 def _policy_runtime_params(best_params: Dict[str, Any]) -> Dict[str, Any]:
     params = dict(best_params)
     params["enable_trailing"] = True
-    if "trailing_activation_mult" in params:
-        params["trailing_override_alpha"] = params["trailing_activation_mult"]
     return params
 
 
@@ -2835,6 +2844,7 @@ def _build_deployment_payload(
             is not None
             else _deployment_rank_threshold(metrics)
         )
+        runtime_params = _policy_runtime_params(result.get("best_params", {}))
         row = {
             "strategy_id": strategy_id,
             "strategy_for_inference": strategy_id,
@@ -2901,7 +2911,17 @@ def _build_deployment_payload(
                 / _elapsed_days(metrics.get("top_1", {}))
             ),
             "best_size_power": result.get("best_size_power"),
-            **_policy_runtime_params(result.get("best_params", {})),
+            **runtime_params,
+            "generated_by": "simple_policy_optimiser",
+            "schema": "simple_policy_v1",
+            "params_source": f"simple_policy_optimisation:{run_id}",
+            "params_hash": _runtime_params_hash({
+                "strategy_id": strategy_id,
+                "generated_by": "simple_policy_optimiser",
+                "schema": "simple_policy_v1",
+                "params_source": f"simple_policy_optimisation:{run_id}",
+                **runtime_params,
+            }),
             "metrics": result,
         }
         reject_reasons: List[str] = []

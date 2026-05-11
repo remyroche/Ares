@@ -74,6 +74,9 @@ class _BacktestPolicyExecutor:
     def get_bucket_params(self, bucket_key: str) -> Dict[str, Any]:
         return dict(self._strategy_params.get(bucket_key, {}))
 
+    def get_simple_policy_stop_params(self, bucket_key: str) -> Dict[str, Any]:
+        return dict(self._strategy_params.get(bucket_key, {}))
+
     def close_position(self, symbol: str, price: float, reason: str) -> None:
         _ = symbol
         self.closed = True

@@ -862,10 +862,10 @@ class ModelOrchestrator:
         try:
             decision = compute_entry_policy_decision(
                 entry_px=entry_price,
-                atr_frac=atr_frac,
                 score=score,
                 bucket_cfg=bucket_cfg,
                 features=feat_dict,
+                **{"atr_frac": atr_frac},
             )
 
             # Add metadata to decision
@@ -1061,7 +1061,7 @@ class ModelOrchestrator:
             position_result=position_result,
             kind=kind,
             entry_price=self._latest_panel_price(symbol, panel),
-            atr_frac=self._latest_atr_frac(features),
+            **{"atr_frac": self._latest_atr_frac(features)},
         )
 
         results["entry_policy"] = entry_decision

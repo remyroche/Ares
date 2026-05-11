@@ -577,9 +577,14 @@ def compute_simple_policy_stop_decision(
 
     bars = _latest_bars(latest_market_state)
     if not bars.empty:
-        for _, row in bars.iterrows():
-            high = _safe_float(row.get("high"), default=np.nan)
-            low = _safe_float(row.get("low"), default=np.nan)
+        high_col = bars.get("high")
+        low_col = bars.get("low")
+        highs = high_col.values if high_col is not None else np.full(len(bars), np.nan)
+        lows = low_col.values if low_col is not None else np.full(len(bars), np.nan)
+
+        for high, low in zip(highs, lows):
+            high = _safe_float(high, default=np.nan)
+            low = _safe_float(low, default=np.nan)
             if side_l == "long":
                 if np.isfinite(high):
                     peak_price = max(peak_price, high)

@@ -48,12 +48,11 @@ def _configure_numba_threading_layer() -> None:
 import argparse
 import json
 import os
-import sys
 import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -80,7 +79,6 @@ from extreme_price_movements.inference.data_fetcher import (
     DataFetcher,
     classify_api_error,
     fetch_and_build_panel,
-    fetch_latest_ohlcv,
     make_exchange,
 )
 from extreme_price_movements.inference.feature_generator import (
@@ -88,7 +86,6 @@ from extreme_price_movements.inference.feature_generator import (
     generate_features,
     get_features_for_candidates,
     get_inference_required_feature_keys,
-    get_market_data,
     load_or_compute_features,
     raw_required_feature_keys,
 )
@@ -135,7 +132,6 @@ from extreme_price_movements.inference.simple_policy_stop import (
 from extreme_price_movements.inference.trade_executor import TradeExecutor
 from extreme_price_movements.inference.trade_logger import (
     TradeLogger,
-    log_trade_decision,
 )
 from extreme_price_movements.portfolio_manager import PortfolioManager
 from extreme_price_movements.utils import tprint
@@ -3964,7 +3960,6 @@ def _emit_inference_heartbeat(
 
 
 def main():
-    import argparse
 
     _configure_numba_threading_layer()
     parser = argparse.ArgumentParser()
@@ -4625,11 +4620,23 @@ def _evaluate_oco_policy(
         stop_reason = str(position_state.get("stop_reason") or "original_stop_loss")
         last_bar_ts = bars.index[-1]
 
-        for bar_ts, row in bars.iterrows():
-            bar_open = float(row["open"])
-            bar_high = float(row["high"])
-            bar_low = float(row["low"])
-            bar_close = float(row["close"])
+        index_vals = bars.index.to_numpy()
+
+        open_col = bars.get("open")
+        high_col = bars.get("high")
+        low_col = bars.get("low")
+        close_col = bars.get("close")
+
+        opens = open_col.values if open_col is not None else np.full(len(bars), np.nan)
+        highs = high_col.values if high_col is not None else np.full(len(bars), np.nan)
+        lows = low_col.values if low_col is not None else np.full(len(bars), np.nan)
+        closes = close_col.values if close_col is not None else np.full(len(bars), np.nan)
+
+        for bar_ts, bar_open, bar_high, bar_low, bar_close in zip(index_vals, opens, highs, lows, closes):
+            bar_open = float(bar_open)
+            bar_high = float(bar_high)
+            bar_low = float(bar_low)
+            bar_close = float(bar_close)
             price_dev_pct = (
                 (bar_close - entry_price) / max(abs(entry_price), 1e-12)
                 if side == "long"

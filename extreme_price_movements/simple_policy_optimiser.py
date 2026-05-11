@@ -1920,7 +1920,8 @@ def _path_take(
 def _suggest_policy_params(trial: optuna.Trial) -> Dict[str, Any]:
     return {
         "sl_mult": trial.suggest_categorical(
-            "sl_mult", [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2]
+            "sl_mult",
+            [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5],
         ),
         "trailing_activation_mult": trial.suggest_categorical(
             "trailing_activation_mult", [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5]

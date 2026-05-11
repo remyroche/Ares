@@ -196,8 +196,16 @@ def _strategy_trade_recap(trades: pd.DataFrame, *, total_balance: float) -> str:
     ).fillna(0.0)
     if (closed["notional"] <= 0.0).all():
         entry = pd.to_numeric(
-            closed.get("actual_entry_price", closed.get("entry_price")),
+            closed.get(
+                "actual_entry_price", pd.Series(index=closed.index, dtype=float)
+            ),
             errors="coerce",
+        )
+        entry = entry.fillna(
+            pd.to_numeric(
+                closed.get("entry_price", pd.Series(index=closed.index, dtype=float)),
+                errors="coerce",
+            )
         )
         size = pd.to_numeric(
             closed.get("size", pd.Series(index=closed.index, dtype=float)),
@@ -285,6 +293,216 @@ def _trades_since(logger: TradeLogger, since_ts: Optional[str]) -> pd.DataFrame:
             since = since.tz_convert("UTC")
         valid &= ts > since
     return df.loc[valid].copy()
+
+
+CONFIDENCE_RECAP_COLUMNS = [
+    "rank_percentile",
+    "sizer_rank_percentile",
+    "meta_train_rank_pct",
+    "base_train_rank_pct",
+    "base_rank_pct",
+    "calibrated_score",
+    "meta_pred",
+]
+
+
+def _confidence_calibration_recap(trades: pd.DataFrame) -> str:
+    """Summarise whether higher-confidence closed trades performed better."""
+    if trades.empty:
+        return "insufficient closed trades for confidence/outcome recap"
+
+    closed = trades.loc[_trade_closed_mask(trades)].copy()
+    if closed.empty:
+        return "insufficient closed trades for confidence/outcome recap"
+
+    confidence_source = ""
+    confidence = pd.Series(index=closed.index, dtype=float)
+    for col in CONFIDENCE_RECAP_COLUMNS:
+        if col not in closed.columns:
+            continue
+        candidate = pd.to_numeric(closed[col], errors="coerce").replace(
+            [np.inf, -np.inf], np.nan
+        )
+        if candidate.notna().any():
+            confidence_source = col
+            confidence = candidate.clip(0.0, 1.0)
+            break
+    if not confidence_source:
+        return "insufficient closed trades for confidence/outcome recap"
+
+    pnl_pct = pd.to_numeric(
+        closed.get("net_pnl_pct", pd.Series(index=closed.index, dtype=float)),
+        errors="coerce",
+    ).replace([np.inf, -np.inf], np.nan)
+    gross_pnl_pct = pd.to_numeric(
+        closed.get("gross_pnl_pct", pd.Series(index=closed.index, dtype=float)),
+        errors="coerce",
+    ).replace([np.inf, -np.inf], np.nan)
+    pnl_pct = pnl_pct.fillna(gross_pnl_pct)
+
+    net_amount = pd.to_numeric(
+        closed.get("net_pnl_amount", pd.Series(index=closed.index, dtype=float)),
+        errors="coerce",
+    ).replace([np.inf, -np.inf], np.nan)
+    fallback_net = pd.to_numeric(
+        closed.get("net_pnl", pd.Series(index=closed.index, dtype=float)),
+        errors="coerce",
+    ).replace([np.inf, -np.inf], np.nan)
+    net_amount = net_amount.fillna(fallback_net)
+
+    notional = pd.to_numeric(
+        closed.get("ridge_position_size", pd.Series(index=closed.index, dtype=float)),
+        errors="coerce",
+    ).replace([np.inf, -np.inf], np.nan)
+    if notional.isna().all() or (notional.fillna(0.0).abs() <= 0.0).all():
+        entry = pd.to_numeric(
+            closed.get(
+                "actual_entry_price", pd.Series(index=closed.index, dtype=float)
+            ),
+            errors="coerce",
+        ).replace([np.inf, -np.inf], np.nan)
+        entry = entry.fillna(
+            pd.to_numeric(
+                closed.get("entry_price", pd.Series(index=closed.index, dtype=float)),
+                errors="coerce",
+            ).replace([np.inf, -np.inf], np.nan)
+        )
+        size = pd.to_numeric(
+            closed.get("size", pd.Series(index=closed.index, dtype=float)),
+            errors="coerce",
+        ).replace([np.inf, -np.inf], np.nan)
+        notional = entry.abs() * size.abs()
+    fallback_pct = net_amount / notional.where(notional.abs() > 0.0)
+    pnl_pct = pnl_pct.fillna(fallback_pct.replace([np.inf, -np.inf], np.nan))
+
+    win = pd.Series(np.nan, index=closed.index, dtype=float)
+    win.loc[pnl_pct.notna()] = (pnl_pct.loc[pnl_pct.notna()] > 0.0).astype(float)
+    amount_only = win.isna() & net_amount.notna()
+    win.loc[amount_only] = (net_amount.loc[amount_only] > 0.0).astype(float)
+
+    usable = confidence.notna() & win.notna()
+    if not usable.any():
+        return "insufficient closed trades for confidence/outcome recap"
+
+    recap = pd.DataFrame(
+        {
+            "confidence": confidence.loc[usable],
+            "pnl_pct": pnl_pct.loc[usable],
+            "net_amount": net_amount.loc[usable],
+            "win": win.loc[usable],
+            "mfe": pd.to_numeric(
+                closed.get("mfe", pd.Series(index=closed.index, dtype=float)),
+                errors="coerce",
+            )
+            .replace([np.inf, -np.inf], np.nan)
+            .loc[usable],
+            "mae": pd.to_numeric(
+                closed.get("mae", pd.Series(index=closed.index, dtype=float)),
+                errors="coerce",
+            )
+            .replace([np.inf, -np.inf], np.nan)
+            .loc[usable],
+        }
+    )
+
+    overall_avg_pnl = (
+        float(recap["pnl_pct"].mean()) if recap["pnl_pct"].notna().any() else np.nan
+    )
+    total_net = (
+        float(recap["net_amount"].sum())
+        if recap["net_amount"].notna().any()
+        else np.nan
+    )
+    lines = [
+        "closed_trades="
+        f"{len(recap)} confidence_source={confidence_source} "
+        f"avg_confidence={float(recap['confidence'].mean()):.4f} "
+        f"hit_rate={_format_pct(float(recap['win'].mean()))} "
+        f"avg_net_pnl_pct={_format_pct(overall_avg_pnl)} "
+        f"total_net={_format_money(total_net)}"
+    ]
+    extras = []
+    if recap["mfe"].notna().any():
+        extras.append(f"avg_mfe={_format_pct(float(recap['mfe'].mean()))}")
+    if recap["mae"].notna().any():
+        extras.append(f"avg_mae={_format_pct(float(recap['mae'].mean()))}")
+    if extras:
+        lines.append(" ".join(extras))
+
+    lines.extend(
+        [
+            "Buckets:",
+            "bucket | trades | avg_conf | hit_rate | avg_net_pnl_pct | total_net | edge_vs_all",
+        ]
+    )
+    bucket_defs = [
+        ("<0.50", recap["confidence"] < 0.50),
+        ("0.50-0.80", (recap["confidence"] >= 0.50) & (recap["confidence"] < 0.80)),
+        ("0.80-0.95", (recap["confidence"] >= 0.80) & (recap["confidence"] < 0.95)),
+        (">=0.95", recap["confidence"] >= 0.95),
+    ]
+    bucket_stats: Dict[str, Dict[str, float]] = {}
+    for label, mask in bucket_defs:
+        bucket = recap.loc[mask]
+        avg_pnl = (
+            float(bucket["pnl_pct"].mean())
+            if bucket["pnl_pct"].notna().any()
+            else np.nan
+        )
+        bucket_net = (
+            float(bucket["net_amount"].sum())
+            if bucket["net_amount"].notna().any()
+            else np.nan
+        )
+        edge = (
+            avg_pnl - overall_avg_pnl
+            if np.isfinite(avg_pnl) and np.isfinite(overall_avg_pnl)
+            else np.nan
+        )
+        bucket_stats[label] = {"avg_pnl": avg_pnl, "edge": edge}
+        avg_conf = float(bucket["confidence"].mean()) if not bucket.empty else np.nan
+        hit_rate = float(bucket["win"].mean()) if not bucket.empty else np.nan
+        lines.append(
+            f"{label} | {len(bucket)} | {_format_pct(avg_conf)} | "
+            f"{_format_pct(hit_rate)} | {_format_pct(avg_pnl)} | "
+            f"{_format_money(bucket_net)} | {_format_pct(edge)}"
+        )
+
+    paired = recap[["confidence", "pnl_pct"]].dropna()
+    if len(paired) >= 3:
+        spearman = float(
+            paired["confidence"].corr(paired["pnl_pct"], method="spearman")
+        )
+        slope = float(np.polyfit(paired["confidence"], paired["pnl_pct"], 1)[0])
+        lines.append(
+            "Monotonicity: "
+            f"spearman={spearman:.4f} "
+            f"slope_pp_per_10pct_conf={slope * 0.10 * 100.0:.4f}"
+        )
+
+    if confidence_source == "calibrated_score":
+        expected_hit_rate = float(recap["confidence"].mean())
+        realised_hit_rate = float(recap["win"].mean())
+        brier = float(np.mean((recap["confidence"] - recap["win"]) ** 2))
+        lines.append(
+            "Probability calibration: "
+            f"expected_hit_rate={expected_hit_rate:.3f} "
+            f"realised_hit_rate={realised_hit_rate:.3f} "
+            f"hit_rate_gap={realised_hit_rate - expected_hit_rate:.3f} "
+            f"brier={brier:.4f}"
+        )
+
+    top_avg = bucket_stats[">=0.95"]["avg_pnl"]
+    if np.isfinite(top_avg) and np.isfinite(overall_avg_pnl):
+        diff = top_avg - overall_avg_pnl
+        if diff >= 0.0:
+            verdict = f"top-confidence trades outperformed by {_format_pct(abs(diff))} per trade"
+        else:
+            verdict = f"top-confidence trades underperformed by {_format_pct(abs(diff))} per trade"
+    else:
+        verdict = "insufficient closed trades for confidence/outcome recap"
+    lines.append(f"Verdict: {verdict}")
+    return "\n".join(lines)
 
 
 def _model_drift_summary(trades: pd.DataFrame) -> str:
@@ -511,6 +729,9 @@ class DailyDeploymentReporter:
                 "",
                 "Model Drift And Execution",
                 _model_drift_summary(trades),
+                "",
+                "Confidence Calibration Recap",
+                _confidence_calibration_recap(trades),
                 "",
                 "Net Strategy Recap",
                 _strategy_trade_recap(trades, total_balance=total_balance),

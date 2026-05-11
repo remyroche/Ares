@@ -1,4 +1,6 @@
 import inspect
+import json
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -19,6 +21,7 @@ from extreme_price_movements.inference.simple_policy_stop import (
     SimplePolicyStopParamsError,
     compute_simple_policy_stop_decision,
     extract_simple_policy_stop_params_by_strategy,
+    load_simple_policy_stop_params_by_strategy,
     validate_simple_policy_stop_params,
 )
 from extreme_price_movements.inference.trade_executor import (
@@ -31,23 +34,36 @@ from extreme_price_movements.optimise import _select_candidate_trade_mask
 
 
 def _simple_policy_params(**overrides):
-    params = {
+    strategy_id = str(overrides.get("strategy_id", "long_mr"))
+    base = Path("/tmp/ares_inference_policy_tests")
+    source = "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json"
+    artifact_path = base / source
+    row = {
         "generated_by": SIMPLE_POLICY_GENERATOR,
         "schema": SIMPLE_POLICY_SCHEMA,
-        "params_source": SIMPLE_POLICY_GENERATOR,
-        "params_hash": "test-policy-hash",
-        "strategy_id": "long_mr",
+        "strategy_id": strategy_id,
         "enable_trailing": True,
         "barrier_pct": 0.02,
         "sl_mult": 1.0,
         "trailing_activation_mult": 1.0,
-        "trailing_override_alpha": 1.0,
         "trailing_power": 1.5,
         "trailing_squash_divisor": 2.0,
         "giveback_beta": 0.5,
         "capital_protect_mfe_mult": 1.0,
         "capital_protect_regression_frac": 0.45,
     }
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "generated_by": SIMPLE_POLICY_GENERATOR,
+                "schema_version": SIMPLE_POLICY_SCHEMA,
+                "strategies": [row],
+            },
+            sort_keys=True,
+        )
+    )
+    params = load_simple_policy_stop_params_by_strategy(str(base), run_id="test-run")[strategy_id]
     params.update(overrides)
     return params
 
@@ -174,7 +190,6 @@ def test_policy_optimiser_stop_decision_uses_max_favorable_giveback():
         barrier_frac=0.02,
         sl_mult=1.2,
         trailing_activation_mult=1.5,
-        trailing_override_alpha=1.5,
         trailing_power=1.4,
         trailing_squash_divisor=1.5,
         giveback_beta=0.8,
@@ -319,7 +334,9 @@ def test_5m_exit_takes_priority_over_threshold_update():
         mode="shadow",
         exchange=None,
         bucket_params={
-            "long_mr": _simple_policy_params(barrier_pct=0.01)
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params(barrier_pct=0.01)
+            }
         },
     )
     rec = executor.execute_trade(
@@ -346,7 +363,7 @@ def test_shadow_executor_exposes_monitorable_open_positions():
     executor = TradeExecutor(
         mode="shadow",
         exchange=None,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
     )
 
     rec = executor.execute_trade(
@@ -368,7 +385,7 @@ def test_shadow_monitor_updates_stop_from_trailing_price_action():
         mode="shadow",
         exchange=None,
         bucket_params={
-            "long_mr": _simple_policy_params()
+            "simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}
         },
     )
     rec = executor.execute_trade(
@@ -412,7 +429,7 @@ def test_shadow_monitor_keeps_updating_after_initial_eight_hour_window():
         mode="shadow",
         exchange=None,
         bucket_params={
-            "long_mr": _simple_policy_params()
+            "simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}
         },
     )
     rec = executor.execute_trade(
@@ -478,7 +495,7 @@ def test_live_executor_places_stop_loss_only_not_oco_or_take_profit(monkeypatch)
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -588,7 +605,7 @@ def test_live_executor_converts_quote_notional_to_base_amount(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -616,7 +633,7 @@ def test_live_executor_preserves_margin_order_params(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={
             "execution_account": "margin",
             "margin_mode": "cross",
@@ -646,11 +663,13 @@ def test_get_bucket_params_filters_stop_policy_fields():
         bucket_params={
             "global_rank_threshold": 0.4,
             "long_mr": {
-                **_simple_policy_params(),
                 "max_hold_hours": 12,
                 "cooldown_hours": 3,
                 "tp_mult": 9.0,
                 "rank_threshold": 0.8,
+            },
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
             },
         },
     )
@@ -687,7 +706,11 @@ def test_live_executor_refuses_entry_without_policy_barrier(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params(barrier_pct=None)},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params(barrier_pct=None)
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -719,7 +742,7 @@ def test_live_executor_rejects_exchange_filter_failures(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -743,7 +766,7 @@ def test_live_executor_rejects_halted_symbols(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -785,7 +808,7 @@ def test_live_executor_classifies_entry_order_failures(
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -821,7 +844,7 @@ def test_live_executor_uses_partial_fill_amount_for_stop_loss(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -847,7 +870,7 @@ def test_stop_loss_cancel_replace_uses_existing_base_amount(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -862,7 +885,7 @@ def test_stop_loss_cancel_replace_uses_existing_base_amount(monkeypatch):
             reason="capital_preservation",
             reason_detail="capital_preservation: test",
             strategy_id="long_mr",
-            params_source=SIMPLE_POLICY_GENERATOR,
+            params_source="artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
             params_hash="test-policy-hash",
             barrier_frac=0.02,
             sl_mult=1.0,
@@ -889,7 +912,7 @@ def test_stop_loss_cancel_replace_does_not_duplicate_on_cancel_failure(monkeypat
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -904,7 +927,7 @@ def test_stop_loss_cancel_replace_does_not_duplicate_on_cancel_failure(monkeypat
             reason="capital_preservation",
             reason_detail="capital_preservation: test",
             strategy_id="long_mr",
-            params_source=SIMPLE_POLICY_GENERATOR,
+            params_source="artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
             params_hash="test-policy-hash",
             barrier_frac=0.02,
             sl_mult=1.0,
@@ -946,7 +969,7 @@ def test_stop_loss_replacement_rejects_immediate_trigger_without_widening(monkey
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={
             "monitor_interval_seconds": 300,
             "stop_replace_retry_backoff_seconds": 0.0,
@@ -965,7 +988,7 @@ def test_stop_loss_replacement_rejects_immediate_trigger_without_widening(monkey
             reason="capital_preservation",
             reason_detail="capital_preservation: test",
             strategy_id="long_mr",
-            params_source=SIMPLE_POLICY_GENERATOR,
+            params_source="artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
             params_hash="test-policy-hash",
             barrier_frac=0.02,
             sl_mult=1.0,
@@ -999,7 +1022,7 @@ def test_margin_executor_routes_entry_stop_cancel_and_close_params(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={
             "monitor_interval_seconds": 300,
             "execution_account": "margin",
@@ -1019,7 +1042,7 @@ def test_margin_executor_routes_entry_stop_cancel_and_close_params(monkeypatch):
             reason="capital_preservation",
             reason_detail="capital_preservation: test",
             strategy_id="long_mr",
-            params_source=SIMPLE_POLICY_GENERATOR,
+            params_source="artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
             params_hash="test-policy-hash",
             barrier_frac=0.02,
             sl_mult=1.0,
@@ -1064,7 +1087,7 @@ def test_monitor_orders_once_removes_filled_stop(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -1094,7 +1117,7 @@ def test_monitor_orders_once_classifies_fetch_order_timeout(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -1121,7 +1144,7 @@ def test_raw_stop_replacement_api_removed_from_live_executor(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -1149,7 +1172,7 @@ def test_missing_policy_decision_does_not_authorise_replacement(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -1175,7 +1198,7 @@ def test_decision_missing_hash_blocks_live_replacement(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -1191,7 +1214,7 @@ def test_decision_missing_hash_blocks_live_replacement(monkeypatch):
             reason="capital_preservation",
             reason_detail="capital_preservation: test",
             strategy_id="long_mr",
-            params_source=SIMPLE_POLICY_GENERATOR,
+            params_source="artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
             params_hash="",
             barrier_frac=0.02,
             sl_mult=1.0,
@@ -1206,32 +1229,29 @@ def test_decision_missing_hash_blocks_live_replacement(monkeypatch):
 
 
 def test_legacy_fields_alone_cannot_produce_stop_replacement():
-    executor = TradeExecutor(
-        mode="shadow",
-        exchange=None,
-        bucket_params={
-            "long_mr": {
-                "sl_mult": 1.0,
-                "barrier_pct": 0.02,
-                "trail_mult": 0.25,
-                "giveback_pct": 0.01,
-                "profit_lock_amount": 0.003,
-                "fixed_stop_loss_pct": 0.02,
-            }
-        },
-    )
-    result = executor.execute_trade(
-        "BTC/USDT", "long", 0.5, price=100.0, bucket_key="long_mr"
-    )
-    assert not result["success"]
-    assert result["error_category"] == "invalid_simple_policy_stop_params"
+    with pytest.raises(SimplePolicyStopParamsError, match="unknown simple-policy"):
+        TradeExecutor(
+            mode="shadow",
+            exchange=None,
+            bucket_params={
+                "simple_policy_stop_params_by_strategy": {
+                    "long_mr": {
+                        **_simple_policy_params(),
+                        "trail_mult": 0.25,
+                        "giveback_pct": 0.01,
+                        "profit_lock_amount": 0.003,
+                        "fixed_stop_loss_pct": 0.02,
+                    }
+                }
+            },
+        )
 
 
 def test_shadow_rejects_arbitrary_stop_price_without_policy_decision():
     executor = TradeExecutor(
         mode="shadow",
         exchange=None,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
     )
     result = executor.execute_trade(
         "BTC/USDT", "long", 0.5, price=100.0, bucket_key="long_mr"
@@ -1246,7 +1266,7 @@ def test_shadow_rejects_invalid_policy_decision_with_shared_validator():
     executor = TradeExecutor(
         mode="shadow",
         exchange=None,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
     )
     result = executor.execute_trade(
         "BTC/USDT", "long", 0.5, price=100.0, bucket_key="long_mr"
@@ -1260,7 +1280,7 @@ def test_shadow_rejects_invalid_policy_decision_with_shared_validator():
         reason="capital_preservation",
         reason_detail="missing hash",
         strategy_id="long_mr",
-        params_source=SIMPLE_POLICY_GENERATOR,
+        params_source="artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
         params_hash="",
         barrier_frac=0.02,
         sl_mult=1.0,
@@ -1277,7 +1297,7 @@ def test_policy_update_rejects_dict_decision_inputs():
     executor = TradeExecutor(
         mode="shadow",
         exchange=None,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
     )
     executor.execute_trade("BTC/USDT", "long", 0.5, price=100.0, bucket_key="long_mr")
 
@@ -1290,7 +1310,7 @@ def test_policy_update_rejects_dict_decision_inputs():
                 "reason": "capital_preservation",
                 "reason_detail": "dict input",
                 "strategy_id": "long_mr",
-                "params_source": SIMPLE_POLICY_GENERATOR,
+                "params_source": "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
                 "params_hash": "test-policy-hash",
                 "barrier_frac": 0.02,
                 "sl_mult": 1.0,
@@ -1302,7 +1322,7 @@ def test_short_policy_decision_replacement_improves_downward():
     executor = TradeExecutor(
         mode="shadow",
         exchange=None,
-        bucket_params={"short_mr": _simple_policy_params(strategy_id="short_mr")},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"short_mr": _simple_policy_params(strategy_id="short_mr")}},
     )
     result = executor.execute_trade(
         "BTC/USDT", "short", 0.5, price=100.0, bucket_key="short_mr"
@@ -1314,7 +1334,7 @@ def test_short_policy_decision_replacement_improves_downward():
         reason="trailing_profit",
         reason_detail="trailing_profit: test",
         strategy_id="short_mr",
-        params_source=SIMPLE_POLICY_GENERATOR,
+        params_source="artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
         params_hash="test-policy-hash",
         barrier_frac=0.02,
         sl_mult=1.0,
@@ -1332,7 +1352,7 @@ def test_reattach_requires_policy_provenance(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -1360,7 +1380,7 @@ def test_reattach_succeeds_for_policy_derived_stop_state(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -1382,7 +1402,7 @@ def test_trade_context_cannot_override_validated_simple_policy_fields():
     executor = TradeExecutor(
         mode="shadow",
         exchange=None,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
     )
     result = executor.execute_trade(
         "BTC/USDT",
@@ -1402,13 +1422,13 @@ def test_trade_context_cannot_override_validated_simple_policy_fields():
     )
     assert result["status"] == "recorded"
     assert result["stop_policy_params_hash"] == "test-policy-hash"
-    assert result["stop_policy_params_source"] == SIMPLE_POLICY_GENERATOR
+    assert result["stop_policy_params_source"] == "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json"
     assert result["stop_policy_schema"] == SIMPLE_POLICY_SCHEMA
     assert result["sl_mult"] == pytest.approx(1.0)
     assert result["barrier_frac"] == pytest.approx(0.02)
     state = executor.get_active_positions()["BTC/USDT"]
     assert state["stop_policy_params_hash"] == "test-policy-hash"
-    assert state["stop_policy_params_source"] == SIMPLE_POLICY_GENERATOR
+    assert state["stop_policy_params_source"] == "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json"
     assert state["stop_policy_schema"] == SIMPLE_POLICY_SCHEMA
     assert state["sl_mult"] == pytest.approx(1.0)
     assert state["barrier_frac"] == pytest.approx(0.02)
@@ -1432,7 +1452,7 @@ def test_live_entry_fails_closed_without_explicit_policy_metadata(monkeypatch, o
     executor = TradeExecutor(
         mode="live",
         exchange=_FilterAwareExchange(),
-        bucket_params={"long_mr": params},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": params}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -1464,7 +1484,7 @@ def test_strict_immediate_trigger_preflight_does_not_cancel_existing_stop(monkey
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -1481,7 +1501,7 @@ def test_strict_immediate_trigger_preflight_does_not_cancel_existing_stop(monkey
             reason="capital_preservation",
             reason_detail="invalid local trigger side",
             strategy_id="long_mr",
-            params_source=SIMPLE_POLICY_GENERATOR,
+            params_source="artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
             params_hash="test-policy-hash",
             barrier_frac=0.02,
             sl_mult=1.0,
@@ -1507,7 +1527,7 @@ def test_live_entry_requires_artifact_barrier_even_if_context_supplies(monkeypat
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": params},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": params}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -1535,7 +1555,7 @@ def test_live_entry_artifact_barrier_wins_over_forged_context(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -1565,7 +1585,7 @@ def test_live_replacement_requires_artifact_barrier_even_if_state_has_it(monkeyp
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -1614,7 +1634,7 @@ def test_forged_policy_decision_metadata_is_rejected(monkeypatch, decision_overr
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -1630,7 +1650,7 @@ def test_forged_policy_decision_metadata_is_rejected(monkeypatch, decision_overr
             reason="capital_preservation",
             reason_detail="forged",
             strategy_id="long_mr",
-            params_source=SIMPLE_POLICY_GENERATOR,
+            params_source="artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
             params_hash="test-policy-hash",
             barrier_frac=0.02,
             sl_mult=1.0,
@@ -1656,7 +1676,7 @@ def test_reattach_rejects_nan_policy_provenance(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -1685,7 +1705,7 @@ def test_initial_live_stop_uses_artifact_barrier_without_context(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -1714,7 +1734,7 @@ def test_live_trade_context_cannot_forge_mirror_stop_fields(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -1742,7 +1762,7 @@ def test_live_trade_context_cannot_forge_mirror_stop_fields(monkeypatch):
         assert mirror["barrier_pct"] == pytest.approx(0.02)
         assert mirror["sl_mult"] == pytest.approx(1.0)
         assert mirror["strategy_id"] == "long_mr"
-        assert mirror["stop_policy_params_source"] == SIMPLE_POLICY_GENERATOR
+        assert mirror["stop_policy_params_source"] == "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json"
         assert mirror["stop_policy_params_hash"] == "test-policy-hash"
         assert mirror["stop_policy_schema"] == SIMPLE_POLICY_SCHEMA
     finally:
@@ -1753,7 +1773,7 @@ def test_shadow_trade_context_cannot_forge_initial_stop_fields():
     executor = TradeExecutor(
         mode="shadow",
         exchange=None,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
     )
     rec = executor.execute_trade(
         "BTC/USDT",
@@ -1781,7 +1801,7 @@ def test_shadow_trade_context_cannot_forge_initial_stop_fields():
     assert state["barrier_pct"] == pytest.approx(0.02)
     assert state["sl_mult"] == pytest.approx(1.0)
     assert state["strategy_id"] == "long_mr"
-    assert state["stop_policy_params_source"] == SIMPLE_POLICY_GENERATOR
+    assert state["stop_policy_params_source"] == "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json"
     assert state["stop_policy_params_hash"] == "test-policy-hash"
     assert state["stop_policy_schema"] == SIMPLE_POLICY_SCHEMA
 
@@ -1795,7 +1815,7 @@ def test_initial_short_stop_uses_artifact_barrier_and_sl_mult(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"short_mr": _simple_policy_params(strategy_id="short_mr")},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"short_mr": _simple_policy_params(strategy_id="short_mr")}},
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -1816,42 +1836,42 @@ def test_initial_short_stop_uses_artifact_barrier_and_sl_mult(monkeypatch):
         executor.shutdown()
 
 
-def test_simple_policy_extraction_preserves_legacy_fields_for_rejection():
+def test_simple_policy_extraction_rejects_legacy_stop_fields():
     params = _simple_policy_params(trail_mult=0.25)
-    extracted = extract_simple_policy_stop_params_by_strategy({"long_mr": params})
-    row = extracted["long_mr"]
-    assert row["trail_mult"] == pytest.approx(0.25)
-    with pytest.raises(SimplePolicyStopParamsError, match="legacy stop replacement fields"):
-        validate_simple_policy_stop_params(row, require_metadata=True)
+    with pytest.raises(SimplePolicyStopParamsError, match="unknown simple-policy"):
+        extract_simple_policy_stop_params_by_strategy(
+            {"simple_policy_stop_params_by_strategy": {"long_mr": params}}
+        )
 
 
 def test_simple_policy_extraction_aliases_and_filters_non_stop_fields():
     selected = _simple_policy_params(strategy_id="long_unique")
     strategies = _simple_policy_params(strategy_id="short_mr")
-    buckets = _simple_policy_params(strategy_id="long_breakout")
+    legacy_bucket = _simple_policy_params(strategy_id="long_breakout")
     explicit = _simple_policy_params(strategy_id="short_breakout")
     payload = {
+        "generated_by": SIMPLE_POLICY_GENERATOR,
+        "schema": SIMPLE_POLICY_SCHEMA,
+        "params_source": "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
+        "params_hash": "artifact-hash",
         "selected": [selected],
-        "strategies": {"SHORT_MR": {**strategies, "ridge_alpha": 0.7}},
-        "buckets": {"Long_Breakout": {**buckets, "max_hold_hours": 99}},
+        "strategies": [selected, {**strategies, "ridge_alpha": 0.7}],
+        "buckets": {"Long_Breakout": {**legacy_bucket, "max_hold_hours": 99}},
         "simple_policy_stop_params_by_strategy": {
-            "short_breakout": {**explicit, "full_state": {"unsafe": True}}
+            "short_breakout": explicit
         },
         "ridge_global": 123,
     }
     extracted = extract_simple_policy_stop_params_by_strategy(payload)
-    assert extracted["long_unique"]["strategy_id"] == "long_unique"
-    assert extracted["LONG_UNIQUE"]["strategy_id"] == "long_unique"
-    assert extracted["unique"]["strategy_id"] == "long_unique"
-    assert extracted["SHORT_MR"]["strategy_id"] == "short_mr"
-    assert extracted["short_mr"]["strategy_id"] == "short_mr"
-    assert extracted["Long_Breakout"]["strategy_id"] == "long_breakout"
-    assert extracted["long_breakout"]["strategy_id"] == "long_breakout"
+    assert set(extracted) == {"short_breakout"}
+    assert "long_unique" not in extracted
+    assert "SHORT_MR" not in extracted
+    assert "Long_Breakout" not in extracted
+    assert "long_breakout" not in extracted
     assert extracted["short_breakout"]["strategy_id"] == "short_breakout"
     for row in extracted.values():
         assert "ridge_alpha" not in row
         assert "max_hold_hours" not in row
-        assert "full_state" not in row
         assert "ridge_global" not in row
 
 
@@ -1864,7 +1884,7 @@ def test_reattach_rejects_open_tracked_stop(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"long_mr": _simple_policy_params()},
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
         config={"monitor_interval_seconds": 300},
     )
     try:

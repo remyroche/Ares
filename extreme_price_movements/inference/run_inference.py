@@ -101,7 +101,6 @@ from extreme_price_movements.inference.liquidity_precheck import (
 from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
 from extreme_price_movements.inference.parity import (
     calibrated_score_and_threshold,
-    load_policy_params_by_strategy,
     load_strategy_asset_exclusion_filter,
     resolve_deployment_strategy_filter,
     strategy_core_id,
@@ -113,6 +112,9 @@ from extreme_price_movements.inference.parity import (
     validate_required_feature_frames,
 )
 from extreme_price_movements.inference.prediction_ledger import PredictionLedger
+from extreme_price_movements.inference.simple_policy_stop import (
+    load_simple_policy_stop_params_by_strategy,
+)
 from extreme_price_movements.inference.portfolio_policy import (
     PortfolioPolicyConfig,
     compute_rank_based_position_size,
@@ -822,7 +824,7 @@ def _build_market_snapshot(
 
 
 def _build_executor_bucket_params(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Build executor params, preferring optimized ridge-sizer bucket params."""
+    """Build runtime params with stop policy isolated from blended buckets."""
     model_bundle = config.get("model_bundle", {}) or {}
     full_state = config.get("full_state", {}) or {}
     ridge_weights = model_bundle.get("ridge_weights", {}) or {}
@@ -837,14 +839,10 @@ def _build_executor_bucket_params(config: Dict[str, Any]) -> Dict[str, Any]:
         bucket_params.setdefault(
             "cooldown_hours", float(ridge_sizer.best_params_.get("cooldown_hours", 0.0))
         )
-    policy_params = load_policy_params_by_strategy(
+    stop_params = load_simple_policy_stop_params_by_strategy(
         str(config.get("data_root", "data")), str(config.get("run_id", ""))
     )
-    for strategy_id, params in policy_params.items():
-        existing = bucket_params.get(strategy_id, {})
-        merged = dict(existing) if isinstance(existing, dict) else {}
-        merged.update(params)
-        bucket_params[strategy_id] = merged
+    bucket_params["simple_policy_stop_params_by_strategy"] = stop_params
     return bucket_params
 
 
@@ -4708,11 +4706,7 @@ def _evaluate_oco_policy(
                         symbol, price=float(stop_price), reason=exit_reason
                     )
 
-        require_metadata = str(getattr(executor, "mode", "") or "").lower() in {
-            "live",
-            "live-test",
-            "live_test",
-        }
+        require_metadata = True
         decision = None
         try:
             decision = compute_simple_policy_stop_decision(
@@ -4726,7 +4720,6 @@ def _evaluate_oco_policy(
                 policy_params=params,
                 side=side,
                 require_metadata=require_metadata,
-                reject_legacy_fields=True,
             )
         except SimplePolicyStopParamsError as exc:
             position_state.setdefault("trade_recap_events", []).append(

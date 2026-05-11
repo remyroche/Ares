@@ -8,7 +8,9 @@ pass real dependencies after credentials have been configured.
 
 from __future__ import annotations
 
+import json
 import sqlite3
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
@@ -30,7 +32,8 @@ from extreme_price_movements.inference.parity import (
 from extreme_price_movements.inference.simple_policy_stop import (
     SIMPLE_POLICY_GENERATOR,
     SIMPLE_POLICY_SCHEMA,
-    SimplePolicyStopDecision,
+    compute_simple_policy_stop_decision,
+    load_simple_policy_stop_params_by_strategy,
 )
 from extreme_price_movements.inference.trade_executor import (
     TradeExecutor,
@@ -348,28 +351,45 @@ def _exchange_filters_verified(ctx: DeploymentCheckContext) -> DeploymentCheckRe
     )
 
 
+def _deployment_check_stop_params() -> Dict[str, Dict[str, Any]]:
+    data_root = Path(tempfile.mkdtemp(prefix="ares_deployment_check_policy_"))
+    run_id = "deployment-check"
+    source = f"artifacts/{run_id}/simple_policy_optimiser/deployment/best_policy_params.json"
+    path = data_root / source
+    path.parent.mkdir(parents=True, exist_ok=True)
+    row = {
+        "generated_by": SIMPLE_POLICY_GENERATOR,
+        "schema": SIMPLE_POLICY_SCHEMA,
+        "strategy_id": "long_mr",
+        "sl_mult": 1.0,
+        "barrier_pct": 0.01,
+        "enable_trailing": True,
+        "trailing_activation_mult": 1.0,
+        "trailing_power": 1.5,
+        "trailing_squash_divisor": 2.0,
+        "giveback_beta": 0.5,
+        "capital_protect_mfe_mult": 1.0,
+        "capital_protect_regression_frac": 0.45,
+    }
+    path.write_text(
+        json.dumps(
+            {
+                "generated_by": SIMPLE_POLICY_GENERATOR,
+                "schema_version": SIMPLE_POLICY_SCHEMA,
+                "strategies": [row],
+            },
+            sort_keys=True,
+        )
+    )
+    return load_simple_policy_stop_params_by_strategy(str(data_root), run_id=run_id)
+
+
 def _new_shadow_executor() -> TradeExecutor:
     return TradeExecutor(
         mode="shadow",
         exchange=None,
         bucket_params={
-            "long_mr": {
-                "generated_by": SIMPLE_POLICY_GENERATOR,
-                "schema": SIMPLE_POLICY_SCHEMA,
-                "params_source": SIMPLE_POLICY_GENERATOR,
-                "params_hash": "deployment-check-policy",
-                "strategy_id": "long_mr",
-                "sl_mult": 1.0,
-                "barrier_pct": 0.01,
-                "enable_trailing": True,
-                "trailing_activation_mult": 1.0,
-                "trailing_override_alpha": 1.0,
-                "trailing_power": 1.5,
-                "trailing_squash_divisor": 2.0,
-                "giveback_beta": 0.5,
-                "capital_protect_mfe_mult": 1.0,
-                "capital_protect_regression_frac": 0.45,
-            }
+            "simple_policy_stop_params_by_strategy": _deployment_check_stop_params()
         },
         config={"monitor_interval_seconds": 300},
     )
@@ -420,16 +440,17 @@ def _stop_loss_lifecycle_tested(ctx: DeploymentCheckContext) -> DeploymentCheckR
     positions = executor.get_active_positions()
     position = positions.get("ETH/USDT", {})
     stop_price = float(position.get("stop_price", np.nan))
-    decision = SimplePolicyStopDecision(
-        should_replace=True,
-        stop_price=99.5,
-        reason="capital_preservation",
-        reason_detail="capital_preservation: deployment check",
-        strategy_id="long_mr",
-        params_source=SIMPLE_POLICY_GENERATOR,
-        params_hash="deployment-check-policy",
-        barrier_frac=0.01,
-        sl_mult=1.0,
+    params = executor.get_simple_policy_stop_params("long_mr")
+    decision = compute_simple_policy_stop_decision(
+        state={
+            **position,
+            "peak_price": 103.0,
+            "mfe": 0.03,
+            "mae": 0.0,
+        },
+        latest_market_state={"open": 100.0, "high": 103.0, "low": 100.0, "close": 102.0},
+        policy_params=params,
+        side="long",
     )
     executor.update_position_policy_state(
         "ETH/USDT",

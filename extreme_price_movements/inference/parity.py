@@ -10,6 +10,11 @@ from typing import Any, Dict, Iterable, List, Optional, Set
 
 import pandas as pd
 
+from extreme_price_movements.inference.simple_policy_stop import (
+    SIMPLE_POLICY_GENERATOR,
+    SIMPLE_POLICY_SCHEMA,
+    is_concrete_simple_policy_params_source,
+)
 from extreme_price_movements.simple_position_sizer import (
     calibrate_score,
     load_calibration_contract,
@@ -438,12 +443,29 @@ def load_policy_params_by_strategy(
                     strategies = strategy_for_inference
                 else:
                     strategies = payload.get("strategies", [])
+            payload_schema = str(
+                payload.get("schema") or payload.get("schema_version") or ""
+            ) if isinstance(payload, dict) else ""
+            payload_generated_by = str(
+                payload.get("generated_by") or ""
+            ).strip() if isinstance(payload, dict) else ""
             for row in strategies:
                 if not isinstance(row, dict) or not row.get("strategy_id"):
                     continue
                 if row.get("selected") is False:
                     continue
+                row_schema = str(row.get("schema") or row.get("schema_version") or payload_schema)
+                row_generated_by = str(row.get("generated_by") or payload_generated_by).strip()
+                row_params_source = str(row.get("params_source") or "").strip()
+                if (
+                    row_generated_by != SIMPLE_POLICY_GENERATOR
+                    or row_schema != SIMPLE_POLICY_SCHEMA
+                    or not is_concrete_simple_policy_params_source(row_params_source)
+                ):
+                    continue
                 params = dict(row)
+                params.setdefault("generated_by", row_generated_by)
+                params.setdefault("schema", row_schema)
                 sid = str(params["strategy_id"])
                 core = strategy_core_id(sid)
                 out[sid] = params

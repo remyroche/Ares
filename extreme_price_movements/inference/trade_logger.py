@@ -115,8 +115,6 @@ TRADE_LOG_COLUMNS = [
     "limit_offset_bps",
     "sl_distance_atr",
     "tp_distance_atr",
-    "trail_mult_eff",
-    "giveback_pct_eff",
     # Regime features (for explaining why)
     "G_VOL",
     "G_TREND",
@@ -643,8 +641,6 @@ class TradeLogger:
             "limit_offset_bps": entry_policy.get("limit_offset_bps_dynamic"),
             "sl_distance_atr": entry_policy.get("sl_distance_atr_eff"),
             "tp_distance_atr": entry_policy.get("tp_distance_atr_eff"),
-            "trail_mult_eff": entry_policy.get("trail_mult_eff"),
-            "giveback_pct_eff": entry_policy.get("giveback_pct_eff"),
             # Regime features
             "G_VOL": market_data.get("G_VOL"),
             "G_TREND": market_data.get("G_TREND"),

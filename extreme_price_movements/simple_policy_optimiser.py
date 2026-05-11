@@ -2914,12 +2914,12 @@ def _build_deployment_payload(
             **runtime_params,
             "generated_by": "simple_policy_optimiser",
             "schema": "simple_policy_v1",
-            "params_source": f"simple_policy_optimisation:{run_id}",
+            "params_source": f"artifacts/{run_id}/simple_policy_optimiser/deployment/best_policy_params.json",
             "params_hash": _runtime_params_hash({
                 "strategy_id": strategy_id,
                 "generated_by": "simple_policy_optimiser",
                 "schema": "simple_policy_v1",
-                "params_source": f"simple_policy_optimisation:{run_id}",
+                "params_source": f"artifacts/{run_id}/simple_policy_optimiser/deployment/best_policy_params.json",
                 **runtime_params,
             }),
             "metrics": result,
@@ -3600,7 +3600,9 @@ def run_simple_policy_optimisation(
         meta_oof_dir.parent / "strategy_for_inference.json",
         policy_params_dir / "best_policy_params.json",
         meta_oof_dir.parent / "best_policy_params.json",
+        meta_oof_dir.parent / "simple_policy_optimiser" / "deployment" / "best_policy_params.json",
     ]:
+        deployment_path.parent.mkdir(parents=True, exist_ok=True)
         deployment_path.write_text(deployment_text)
         logger.info(f"Saved deployment policy contract to {deployment_path}")
     portfolio_policy_path = policy_params_dir / "portfolio_policy_config.json"

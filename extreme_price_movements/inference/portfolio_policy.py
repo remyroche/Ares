@@ -16,9 +16,9 @@ class PortfolioPolicyConfig:
 
     schema_version: str = "portfolio_policy_v1"
 
-    max_concurrent_positions: int = 10
-    max_concurrent_per_side: Optional[int] = 6
-    max_concurrent_per_strategy: Optional[int] = 6
+    max_concurrent_positions: int = 8
+    max_concurrent_per_side: Optional[int] = None
+    max_concurrent_per_strategy: Optional[int] = None
 
     max_total_wallet_allocation_pct: float = 0.75
     max_available_wallet_position_pct: float = 0.50

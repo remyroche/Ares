@@ -27,6 +27,11 @@ from extreme_price_movements.inference.parity import (
     validate_live_feature_contract,
     validate_meta_feature_contract_artifact,
 )
+from extreme_price_movements.inference.simple_policy_stop import (
+    SIMPLE_POLICY_GENERATOR,
+    SIMPLE_POLICY_SCHEMA,
+    SimplePolicyStopDecision,
+)
 from extreme_price_movements.inference.trade_executor import (
     TradeExecutor,
     _validate_order_filters,
@@ -349,9 +354,21 @@ def _new_shadow_executor() -> TradeExecutor:
         exchange=None,
         bucket_params={
             "long_mr": {
+                "generated_by": SIMPLE_POLICY_GENERATOR,
+                "schema": SIMPLE_POLICY_SCHEMA,
+                "params_source": SIMPLE_POLICY_GENERATOR,
+                "params_hash": "deployment-check-policy",
+                "strategy_id": "long_mr",
                 "sl_mult": 1.0,
-                "trail_mult": 0.25,
-                "profit_lock_amount": 0.003,
+                "barrier_pct": 0.01,
+                "enable_trailing": True,
+                "trailing_activation_mult": 1.0,
+                "trailing_override_alpha": 1.0,
+                "trailing_power": 1.5,
+                "trailing_squash_divisor": 2.0,
+                "giveback_beta": 0.5,
+                "capital_protect_mfe_mult": 1.0,
+                "capital_protect_regression_frac": 0.45,
             }
         },
         config={"monitor_interval_seconds": 300},
@@ -362,7 +379,11 @@ def _order_lifecycle_tested(ctx: DeploymentCheckContext) -> DeploymentCheckResul
     name = CHECK_NAMES[6]
     executor = ctx.trade_executor or _new_shadow_executor()
     result = executor.execute_trade(
-        "BTC/USDT", "long", 25.0, price=100.0, bucket_key="long_mr"
+        "BTC/USDT",
+        "long",
+        25.0,
+        price=100.0,
+        bucket_key="long_mr"
     )
     active_after_entry = executor.get_active_positions()
     close_result = executor.close_position("BTC/USDT", price=101.0, reason="check")
@@ -390,14 +411,29 @@ def _stop_loss_lifecycle_tested(ctx: DeploymentCheckContext) -> DeploymentCheckR
     name = CHECK_NAMES[7]
     executor = ctx.stop_loss_executor or _new_shadow_executor()
     result = executor.execute_trade(
-        "ETH/USDT", "long", 25.0, price=100.0, bucket_key="long_mr"
+        "ETH/USDT",
+        "long",
+        25.0,
+        price=100.0,
+        bucket_key="long_mr"
     )
     positions = executor.get_active_positions()
     position = positions.get("ETH/USDT", {})
     stop_price = float(position.get("stop_price", np.nan))
+    decision = SimplePolicyStopDecision(
+        should_replace=True,
+        stop_price=99.5,
+        reason="capital_preservation",
+        reason_detail="capital_preservation: deployment check",
+        strategy_id="long_mr",
+        params_source=SIMPLE_POLICY_GENERATOR,
+        params_hash="deployment-check-policy",
+        barrier_frac=0.01,
+        sl_mult=1.0,
+    )
     executor.update_position_policy_state(
         "ETH/USDT",
-        stop_price=99.5,
+        policy_stop_decision=decision,
         last_5m_eval_ts=pd.Timestamp("2026-01-01T00:05:00Z"),
     )
     updated_position = executor.get_active_positions().get("ETH/USDT", {})

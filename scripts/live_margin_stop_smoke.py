@@ -1,13 +1,14 @@
-"""Place a tiny Binance margin live-test order and replace its stop loss.
+"""Place a tiny Binance margin live-test order with artifact-derived stop params.
 
-This script uses the inference exchange and executor stack so API plumbing is
-verified through the same code path used by deployment.
+This script intentionally does not expose percentage-based stop replacement.
+Stop placement must use a complete simple_policy_optimiser artifact row.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 from typing import Any, Dict
 
 from extreme_price_movements.inference.config import (
@@ -30,8 +31,11 @@ def main() -> None:
     parser.add_argument("--symbol", default="BTC/USDC")
     parser.add_argument("--side", choices=["long", "short"], default="long")
     parser.add_argument("--quote-size", type=float, default=10.0)
-    parser.add_argument("--initial-stop-pct", type=float, default=0.003)
-    parser.add_argument("--replacement-stop-pct", type=float, default=0.005)
+    parser.add_argument(
+        "--simple-policy-json",
+        required=True,
+        help="Path to a JSON object containing a complete simple_policy_optimiser runtime row",
+    )
     parser.add_argument("--quote-currency", default="USDC")
     parser.add_argument(
         "--execution-account",
@@ -52,12 +56,12 @@ def main() -> None:
         "live_quote_currency": args.quote_currency.upper(),
     }
     bucket_key = "manual_live_test"
+    policy_row = json.loads(Path(args.simple_policy_json).read_text())
+    if not isinstance(policy_row, dict):
+        raise SystemExit("--simple-policy-json must contain a JSON object")
+    policy_row.setdefault("strategy_id", bucket_key)
     bucket_params = {
-        bucket_key: {
-            "fixed_stop_loss_pct": float(args.initial_stop_pct),
-            "enable_trailing": False,
-            "cooldown_hours": 0.0,
-        }
+        "simple_policy_stop_params_by_strategy": {bucket_key: policy_row},
     }
 
     exchange = make_exchange()
@@ -92,14 +96,6 @@ def main() -> None:
         statuses = executor.monitor_orders_once()
         tprint("[live_margin_stop_smoke] order_statuses=" + _jsonable(statuses))
 
-        replacement = executor.replace_stop_loss_pct(
-            args.symbol,
-            float(args.replacement_stop_pct),
-        )
-        tprint("[live_margin_stop_smoke] stop_replacement=" + _jsonable(replacement))
-        if not bool(replacement.get("success")):
-            raise SystemExit(3)
-
         logger.log_entry(
             symbol=args.symbol,
             side=args.side,
@@ -114,8 +110,8 @@ def main() -> None:
             expected_entry_price=entry.get("expected_entry_price"),
             realized_entry_price=entry.get("realized_entry_price"),
             actual_entry_price=entry.get("realized_entry_price"),
-            stop_price=replacement.get("stop_price"),
-            stop_order_id=replacement.get("stop_order_id"),
+            stop_price=entry.get("stop_price"),
+            stop_order_id=entry.get("stop_order_id"),
             exchange_order_id=(entry.get("order") or {}).get("id"),
             order_error_category=entry.get("error_category", ""),
             status="pending",
@@ -130,8 +126,7 @@ def main() -> None:
         )
         tprint("[live_margin_stop_smoke] balance_after=" + _jsonable(after))
     finally:
-        if executor.oco_executor is not None:
-            executor.oco_executor.stop_monitoring()
+        pass
 
 
 if __name__ == "__main__":

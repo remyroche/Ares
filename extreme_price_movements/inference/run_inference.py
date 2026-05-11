@@ -126,13 +126,16 @@ from extreme_price_movements.inference.symbol_mapping import (
     normalise_symbol,
     symbol_base,
 )
+from extreme_price_movements.inference.simple_policy_stop import (
+    SimplePolicyStopParamsError,
+    compute_simple_policy_stop_decision,
+)
 from extreme_price_movements.inference.trade_executor import TradeExecutor
 from extreme_price_movements.inference.trade_logger import (
     TradeLogger,
     log_trade_decision,
 )
 from extreme_price_movements.portfolio_manager import PortfolioManager
-from extreme_price_movements.simple_position_sizer import load_calibration_curves
 from extreme_price_movements.utils import tprint
 
 _FEATURE_COMPUTE_LOCK = threading.RLock()
@@ -3962,168 +3965,6 @@ def _emit_inference_heartbeat(
     _emit_structured_event("INFERENCE_HEARTBEAT", payload)
 
 
-def _infer_policy_barrier_frac(
-    *,
-    params: Dict[str, Any],
-    entry_price: float,
-    stop_price: float,
-) -> float:
-    """Return the policy optimiser barrier fraction without live ATR fallbacks."""
-    for key in ("barrier_frac", "barrier_pct"):
-        if key not in params:
-            continue
-        value = float(params.get(key, np.nan))
-        if np.isfinite(value) and value > 0.0:
-            return value
-    return float("nan")
-
-
-def _policy_optimiser_trailing_stop(
-    *,
-    side: str,
-    entry_price: float,
-    peak_price: float,
-    mfe: float,
-    stop_price: float,
-    params: Dict[str, Any],
-) -> float:
-    """Return the policy-optimiser trailing threshold for the current MFE."""
-    return float(
-        _policy_optimiser_stop_decision(
-            side=side,
-            entry_price=entry_price,
-            peak_price=peak_price,
-            mfe=mfe,
-            stop_price=stop_price,
-            params=params,
-        )["stop_price"]
-    )
-
-
-def _policy_optimiser_stop_decision(
-    *,
-    side: str,
-    entry_price: float,
-    peak_price: float,
-    mfe: float,
-    stop_price: float,
-    params: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Return live stop update using simple_policy_optimiser simulate parity.
-
-    The optimiser trails on max favorable price distance from entry:
-    trail = entry +/- (max_favorable - max_favorable * beta * (1 - dynamic)).
-    This intentionally does not use a fixed barrier giveback.
-    """
-    if not bool(params.get("enable_trailing", False)):
-        return {
-            "stop_price": float(stop_price),
-            "reason": "original_stop_loss",
-            "detail": "trailing_disabled",
-        }
-    barrier_frac = _infer_policy_barrier_frac(
-        params=params,
-        entry_price=entry_price,
-        stop_price=stop_price,
-    )
-    if not np.isfinite(barrier_frac) or barrier_frac <= 0.0:
-        return {
-            "stop_price": float(stop_price),
-            "reason": "original_stop_loss",
-            "detail": "missing_policy_barrier_pct",
-        }
-    candidate = float(stop_price)
-    reason = "original_stop_loss"
-    detail = "unchanged_original_stop_loss"
-
-    cap_mfe_mult = float(params.get("capital_protect_mfe_mult", 0.0))
-    cap_reg_frac = float(params.get("capital_protect_regression_frac", 0.45))
-    if cap_mfe_mult > 0.0:
-        sl_mult = max(float(params.get("sl_mult", 1.0) or 1.0), 1e-12)
-        sl_dist_ret = sl_mult * barrier_frac
-        x_dist = cap_mfe_mult * barrier_frac
-        lock_dist = x_dist - cap_reg_frac * (x_dist + sl_dist_ret)
-        if float(mfe) >= x_dist:
-            if str(side).lower() == "long":
-                cap_stop = float(entry_price) * (1.0 + lock_dist)
-                if cap_stop > candidate:
-                    candidate = float(cap_stop)
-                    reason = "capital_preservation"
-                    detail = (
-                        f"capital_preservation: mfe={float(mfe):.6g} "
-                        f"trigger={x_dist:.6g} lock_dist={lock_dist:.6g}"
-                    )
-            else:
-                cap_stop = float(entry_price) * (1.0 - lock_dist)
-                if cap_stop < candidate:
-                    candidate = float(cap_stop)
-                    reason = "capital_preservation"
-                    detail = (
-                        f"capital_preservation: mfe={float(mfe):.6g} "
-                        f"trigger={x_dist:.6g} lock_dist={lock_dist:.6g}"
-                    )
-
-    activation_mult = float(
-        params.get(
-            "trailing_override_alpha",
-            params.get("trailing_activation_mult", 0.0),
-        )
-    )
-    activation = activation_mult * barrier_frac
-    if float(mfe) <= activation:
-        return {
-            "stop_price": float(candidate),
-            "reason": reason,
-            "detail": detail,
-            "barrier_frac": float(barrier_frac),
-            "activation": float(activation),
-        }
-
-    trailing_power = float(params.get("trailing_power", 1.0))
-    trailing_squash_divisor = max(
-        float(params.get("trailing_squash_divisor", 1.0)), 1e-6
-    )
-    giveback_beta = float(params.get("giveback_beta", 0.5))
-    max_favorable_abs = max(float(mfe), 0.0) * float(entry_price)
-    barrier_price_dist = max(float(entry_price) * barrier_frac, 1e-12)
-    dynamic_giveback = (
-        max_favorable_abs / (barrier_price_dist * trailing_squash_divisor)
-    ) ** trailing_power
-    dynamic_giveback = float(np.clip(dynamic_giveback, 0.0, 1.0))
-    trail_amount = max_favorable_abs * giveback_beta * (1.0 - dynamic_giveback)
-    locked_profit_abs = max_favorable_abs - trail_amount
-
-    if str(side).lower() == "long":
-        trail_stop = float(entry_price) + locked_profit_abs
-        if trail_stop > candidate:
-            candidate = float(trail_stop)
-            reason = "trailing_profit"
-            detail = (
-                f"trailing_profit: mfe={float(mfe):.6g} activation={activation:.6g} "
-                f"giveback_beta={giveback_beta:.6g} "
-                f"dynamic_giveback={dynamic_giveback:.6g}"
-            )
-    else:
-        trail_stop = float(entry_price) - locked_profit_abs
-        if trail_stop < candidate:
-            candidate = float(trail_stop)
-            reason = "trailing_profit"
-            detail = (
-                f"trailing_profit: mfe={float(mfe):.6g} activation={activation:.6g} "
-                f"giveback_beta={giveback_beta:.6g} "
-                f"dynamic_giveback={dynamic_giveback:.6g}"
-            )
-
-    return {
-        "stop_price": float(candidate),
-        "reason": reason,
-        "detail": detail,
-        "barrier_frac": float(barrier_frac),
-        "activation": float(activation),
-        "dynamic_giveback": float(dynamic_giveback),
-    }
-
-
 def main():
     import argparse
 
@@ -4241,6 +4082,8 @@ def main():
         effective_model_bundle,
         accepted_strategies,
     )
+    from extreme_price_movements.simple_position_sizer import load_calibration_curves
+
     calibration_data = load_calibration_curves(config["data_root"], config["run_id"])
     normalized_thresholds = _load_normalized_threshold_map(
         config["data_root"], config["run_id"]
@@ -4748,15 +4591,7 @@ def _evaluate_oco_policy(
     ohlcv_5m: pd.DataFrame,
     executor: TradeExecutor,
 ):
-    """
-    Evaluate OCO policy and update orders if needed based on 5m OHLCV data.
-
-    Args:
-        symbol: Trading symbol
-        position_state: Position state dictionary containing entry info and OCO params
-        ohlcv_5m: 5m OHLCV DataFrame
-        executor: TradeExecutor instance for placing/updating orders
-    """
+    """Evaluate stop touches and delegate replacement to simple-policy decision."""
     if (
         ohlcv_5m is None
         or not isinstance(ohlcv_5m, (pd.DataFrame, pd.Series))
@@ -4780,34 +4615,16 @@ def _evaluate_oco_policy(
         side = str(position_state.get("side", "long")).lower()
         entry_price = float(position_state.get("entry_price", 0.0) or 0.0)
         bucket_key = position_state.get("bucket_key", "")
-        params = dict(executor.get_bucket_params(bucket_key) or {})
-        for key in ("barrier_frac", "barrier_pct"):
-            value = position_state.get(key)
-            if value is not None and key not in params:
-                params[key] = value
+        if hasattr(executor, "get_simple_policy_stop_params"):
+            params = dict(executor.get_simple_policy_stop_params(bucket_key) or {})
+        else:
+            params = {}
+
         stop_price = float(position_state.get("stop_price", np.nan))
         peak_price = float(position_state.get("peak_price", entry_price) or entry_price)
         mfe = float(position_state.get("mfe", 0.0) or 0.0)
         mae = float(position_state.get("mae", 0.0) or 0.0)
         stop_reason = str(position_state.get("stop_reason") or "original_stop_loss")
-        stop_reason_detail = str(
-            position_state.get("stop_reason_detail") or stop_reason
-        )
-        enable_trailing = bool(params.get("enable_trailing", True))
-        policy_style_trailing = any(
-            key in params
-            for key in (
-                "trailing_power",
-                "trailing_squash_divisor",
-                "trailing_override_alpha",
-                "giveback_beta",
-            )
-        )
-        giveback_pct = float(params.get("giveback_pct", 0.005))
-        trail_mult = float(params.get("trail_mult", 0.25))
-        profit_lock = None
-        if not policy_style_trailing and "profit_lock_amount" in params:
-            profit_lock = float(params["profit_lock_amount"])
         last_bar_ts = bars.index[-1]
 
         for bar_ts, row in bars.iterrows():
@@ -4839,6 +4656,7 @@ def _evaluate_oco_policy(
             if side == "long":
                 mfe = max(mfe, (bar_high - entry_price) / max(entry_price, 1e-12))
                 mae = max(mae, (entry_price - bar_low) / max(entry_price, 1e-12))
+                peak_price = max(peak_price, bar_high)
                 if np.isfinite(stop_price) and bar_low <= stop_price:
                     exit_reason = f"stop_loss_filled:{stop_reason}"
                     if str(getattr(executor, "mode", "") or "").lower() in {
@@ -4862,38 +4680,10 @@ def _evaluate_oco_policy(
                     return executor.close_position(
                         symbol, price=float(stop_price), reason=exit_reason
                     )
-                peak_price = max(peak_price, bar_high)
-                new_stop = stop_price
-                if enable_trailing and peak_price > entry_price:
-                    if policy_style_trailing:
-                        decision = _policy_optimiser_stop_decision(
-                            side=side,
-                            entry_price=entry_price,
-                            peak_price=peak_price,
-                            mfe=mfe,
-                            stop_price=stop_price,
-                            params=params,
-                        )
-                        new_stop = float(decision["stop_price"])
-                        if np.isfinite(new_stop) and new_stop > float(stop_price):
-                            stop_reason = str(decision.get("reason") or stop_reason)
-                            stop_reason_detail = str(
-                                decision.get("detail") or stop_reason_detail
-                            )
-                    else:
-                        giveback_stop = peak_price * (1.0 - giveback_pct)
-                        trailing_stop = entry_price + trail_mult * (
-                            peak_price - entry_price
-                        )
-                        new_stop = max(float(stop_price), giveback_stop, trailing_stop)
-                    if profit_lock is not None:
-                        locked_stop = entry_price * (1.0 + profit_lock)
-                        new_stop = max(float(new_stop), locked_stop)
-                if np.isfinite(new_stop) and new_stop > float(stop_price):
-                    stop_price = float(new_stop)
             else:
                 mfe = max(mfe, (entry_price - bar_low) / max(entry_price, 1e-12))
                 mae = max(mae, (bar_high - entry_price) / max(entry_price, 1e-12))
+                peak_price = min(peak_price, bar_low)
                 if np.isfinite(stop_price) and bar_high >= stop_price:
                     exit_reason = f"stop_loss_filled:{stop_reason}"
                     if str(getattr(executor, "mode", "") or "").lower() in {
@@ -4917,44 +4707,43 @@ def _evaluate_oco_policy(
                     return executor.close_position(
                         symbol, price=float(stop_price), reason=exit_reason
                     )
-                peak_price = min(peak_price, bar_low)
-                new_stop = stop_price
-                if enable_trailing and peak_price < entry_price:
-                    if policy_style_trailing:
-                        decision = _policy_optimiser_stop_decision(
-                            side=side,
-                            entry_price=entry_price,
-                            peak_price=peak_price,
-                            mfe=mfe,
-                            stop_price=stop_price,
-                            params=params,
-                        )
-                        new_stop = float(decision["stop_price"])
-                        if np.isfinite(new_stop) and new_stop < float(stop_price):
-                            stop_reason = str(decision.get("reason") or stop_reason)
-                            stop_reason_detail = str(
-                                decision.get("detail") or stop_reason_detail
-                            )
-                    else:
-                        giveback_stop = peak_price * (1.0 + giveback_pct)
-                        trailing_stop = entry_price - trail_mult * (
-                            entry_price - peak_price
-                        )
-                        new_stop = min(float(stop_price), giveback_stop, trailing_stop)
-                    if profit_lock is not None:
-                        locked_stop = entry_price * (1.0 - profit_lock)
-                        new_stop = min(float(new_stop), locked_stop)
-                if np.isfinite(new_stop) and new_stop < float(stop_price):
-                    stop_price = float(new_stop)
+
+        require_metadata = str(getattr(executor, "mode", "") or "").lower() in {
+            "live",
+            "live-test",
+            "live_test",
+        }
+        decision = None
+        try:
+            decision = compute_simple_policy_stop_decision(
+                state={
+                    **position_state,
+                    "peak_price": peak_price,
+                    "mfe": mfe,
+                    "mae": mae,
+                },
+                latest_market_state=bars,
+                policy_params=params,
+                side=side,
+                require_metadata=require_metadata,
+                reject_legacy_fields=True,
+            )
+        except SimplePolicyStopParamsError as exc:
+            position_state.setdefault("trade_recap_events", []).append(
+                {
+                    "ts": pd.Timestamp(last_bar_ts).isoformat(),
+                    "event": "stop_update_skipped",
+                    "reason": "invalid_simple_policy_runtime_params",
+                    "error": str(exc),
+                }
+            )
 
         executor.update_position_policy_state(
             symbol,
-            stop_price=stop_price,
+            policy_stop_decision=decision,
             peak_price=peak_price,
             mfe=mfe,
             mae=mae,
-            stop_reason=stop_reason,
-            stop_reason_detail=stop_reason_detail,
             last_5m_eval_ts=last_bar_ts,
         )
     except Exception as e:

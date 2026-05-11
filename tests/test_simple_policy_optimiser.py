@@ -4,15 +4,45 @@ import pandas as pd
 import pytest
 
 from extreme_price_movements.simple_policy_optimiser import (
+    STAGE2_CLUSTER_FEATURE_RANGES,
     _build_top5_validation_diagnostic,
     _load_slice_plan_source_validation,
+    _normalise_trial_params,
+    _select_cluster_medoid_trial,
+    _select_top_trials_after_safety_filters,
     _suggest_policy_params,
     apply_asset_weights,
+    calculate_advanced_metrics,
     compute_position_size,
     discover_deployment_rank_threshold_simple_grid,
     optimise_deployment_rank_threshold,
     simulate_and_score,
 )
+
+
+def _trial_record(trial_number: int, objective: float, **overrides):
+    params = {
+        "sl_mult": 1.0,
+        "capital_protect_mfe_mult": 1.0,
+        "capital_protect_regression_frac": 0.4,
+        "adverse_exit_enabled": True,
+        "adverse_exit_min_mae_atr": 0.5,
+        "adverse_exit_min_speed": 0.3,
+        "adverse_exit_theta_quantile": 0.75,
+    }
+    params.update(overrides.pop("params", {}))
+    row = {
+        "trial_number": trial_number,
+        "params": params,
+        "objective": objective,
+        "fold_objectives": [objective, objective * 0.99],
+        "min_fold_objective": objective * 0.99,
+        "n_trades": 100,
+        "adverse_exit_rate": 0.05,
+        "max_drawdown": -0.05,
+    }
+    row.update(overrides)
+    return row
 
 
 def _simple_df() -> pd.DataFrame:
@@ -82,6 +112,27 @@ def test_top5_validation_diagnostic_uses_raw_gains_and_skips_length_mismatch(cap
     assert "length mismatch" in caplog.text
 
 
+def test_advanced_metrics_hit_rate_counts_trailing_profit_only():
+    rows = pd.DataFrame(
+        {"timestamp": pd.date_range("2026-01-01", periods=4, freq="h", tz="UTC")}
+    )
+    metrics = calculate_advanced_metrics(
+        rows,
+        raw_gains=np.array([0.10, 0.05, -0.02, -0.03], dtype=np.float32),
+        sizes=np.ones(4, dtype=np.float32),
+        gross_gains=np.array([0.11, 0.06, -0.01, -0.02], dtype=np.float32),
+        exit_reasons=["trailing", "capital_protect", "full_sl", "adverse_exit"],
+    )
+
+    assert metrics["hit_rate_definition"] == "trailing_profit_exit_rate"
+    assert metrics["hit_rate"] == pytest.approx(0.25)
+    assert metrics["pnl_positive_rate"] == pytest.approx(0.50)
+    assert metrics["trailing_profit_exit_count"] == 1
+    assert metrics["capital_protect_exit_count"] == 1
+    assert metrics["full_sl_exit_count"] == 1
+    assert metrics["adverse_fast_exit_count"] == 1
+
+
 def test_policy_oos_validation_uses_policy_plan_temporal_disjointness(tmp_path):
     slice_plan = {
         "version": 2,
@@ -136,6 +187,117 @@ def test_suggested_policy_params_do_not_optimize_max_concurrent_trades():
     )
     params = _suggest_policy_params(trial)
     assert "max_concurrent_trades" not in params
+
+
+def test_top15_feasible_trials_selected_after_safety_filters():
+    records = [_trial_record(i, 100.0 - i) for i in range(20)]
+    records.append(_trial_record(100, 200.0, n_trades=2))
+    records.append(_trial_record(101, 199.0, adverse_exit_rate=0.30))
+    records.append(_trial_record(102, 198.0, max_drawdown=-2.0))
+
+    top = _select_top_trials_after_safety_filters(
+        records,
+        top_k_trials=15,
+        min_trades=10,
+        max_adverse_exit_rate=0.15,
+        max_allowed_drawdown=-1.0,
+    )
+
+    assert len(top) == 15
+    assert [row["trial_number"] for row in top[:3]] == [0, 1, 2]
+    assert {100, 101, 102}.isdisjoint({row["trial_number"] for row in top})
+
+
+def test_stage2_safety_filters_reject_adverse_trigger_at_full_stop_boundary():
+    records = [
+        _trial_record(
+            1,
+            200.0,
+            params={"sl_mult": 1.0, "adverse_exit_min_mae_atr": 1.0},
+        ),
+        _trial_record(
+            2,
+            100.0,
+            params={"sl_mult": 1.0, "adverse_exit_min_mae_atr": 0.5},
+        ),
+    ]
+
+    top = _select_top_trials_after_safety_filters(
+        records,
+        top_k_trials=15,
+        min_trades=10,
+        max_adverse_exit_rate=0.15,
+        max_allowed_drawdown=-1.0,
+    )
+
+    assert [row["trial_number"] for row in top] == [2]
+
+
+def test_cluster_features_are_normalized_to_configured_ranges():
+    x = _normalise_trial_params(
+        {
+            "sl_mult": 1.75,
+            "capital_protect_mfe_mult": 1.5,
+            "capital_protect_regression_frac": 0.5,
+            "adverse_exit_min_mae_atr": 1.55,
+            "adverse_exit_min_speed": 0.8,
+            "adverse_exit_theta_quantile": 0.725,
+        },
+        STAGE2_CLUSTER_FEATURE_RANGES,
+    )
+
+    np.testing.assert_allclose(x, np.full(len(STAGE2_CLUSTER_FEATURE_RANGES), 0.5))
+
+
+def test_cluster_rejects_clusters_smaller_than_min_cluster_size():
+    selected = _select_cluster_medoid_trial(
+        [_trial_record(1, 1.0), _trial_record(2, 0.9)],
+        feature_ranges=STAGE2_CLUSTER_FEATURE_RANGES,
+        min_cluster_size=3,
+    )
+
+    assert selected["stable_cluster_found"] is False
+    assert selected["reason"] == "fewer_than_min_cluster_size_feasible_trials"
+
+
+def test_cluster_medoid_is_actual_trial_and_can_replace_best_trial():
+    records = [
+        _trial_record(
+            1,
+            10.0,
+            params={
+                "sl_mult": 3.0,
+                "capital_protect_mfe_mult": 3.0,
+                "capital_protect_regression_frac": 1.0,
+                "adverse_exit_min_mae_atr": 3.0,
+                "adverse_exit_min_speed": 1.5,
+                "adverse_exit_theta_quantile": 0.95,
+            },
+        ),
+        _trial_record(2, 9.8),
+        _trial_record(
+            3,
+            9.7,
+            params={"sl_mult": 1.1, "adverse_exit_min_speed": 0.4},
+        ),
+        _trial_record(
+            4,
+            9.6,
+            params={"sl_mult": 0.9, "adverse_exit_min_speed": 0.2},
+        ),
+    ]
+
+    selected = _select_cluster_medoid_trial(
+        records,
+        feature_ranges=STAGE2_CLUSTER_FEATURE_RANGES,
+        min_cluster_size=3,
+    )
+
+    medoid = selected["selected_trial"]
+    assert selected["stable_cluster_found"] is True
+    assert medoid["trial_number"] in {2, 3, 4}
+    assert medoid["trial_number"] != 1
+    assert medoid["params"] in [row["params"] for row in records]
 
 
 def test_deployment_rank_threshold_uses_concurrency_limited_pnl():

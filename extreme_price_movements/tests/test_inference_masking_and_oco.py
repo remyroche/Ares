@@ -68,6 +68,30 @@ def _simple_policy_params(**overrides):
     return params
 
 
+def _policy_decision(
+    params,
+    *,
+    should_replace=True,
+    stop_price=99.0,
+    reason="capital_preservation",
+    reason_detail="capital_preservation: test",
+    **overrides,
+):
+    kwargs = {
+        "should_replace": should_replace,
+        "stop_price": stop_price,
+        "reason": reason,
+        "reason_detail": reason_detail,
+        "strategy_id": params["strategy_id"],
+        "params_source": params["params_source"],
+        "params_hash": params["params_hash"],
+        "barrier_frac": params.get("barrier_frac") or params.get("barrier_pct"),
+        "sl_mult": params["sl_mult"],
+    }
+    kwargs.update(overrides)
+    return SimplePolicyStopDecision(**kwargs)
+
+
 def test_synthesize_live_safe_timestamp_dayofweek_feature():
     idx = pd.date_range("2026-03-06", periods=4, freq="1d", tz="UTC")
     close = pd.DataFrame({"BTC/USDT": [1.0, 1.0, 1.0, 1.0]}, index=idx)
@@ -697,7 +721,7 @@ def test_stop_cleanup_removed_legacy_helpers_from_oco_executor():
         assert not hasattr(OCOExecutor, method_name)
 
 
-def test_live_executor_refuses_entry_without_policy_barrier(monkeypatch):
+def test_live_executor_accepts_live_policy_barrier(monkeypatch):
     monkeypatch.setattr(
         "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
         lambda *args, **kwargs: pd.DataFrame(),
@@ -725,12 +749,9 @@ def test_live_executor_refuses_entry_without_policy_barrier(monkeypatch):
     finally:
         executor.shutdown()
 
-    assert not result["success"]
-    assert result["error_category"] in {
-        "missing_policy_barrier_pct",
-        "invalid_simple_policy_stop_params",
-    }
-    assert exchange.orders == []
+    assert result["success"]
+    assert result["barrier_frac"] == pytest.approx(0.50)
+    assert result["stop_price"] == pytest.approx(50.0)
 
 
 def test_live_executor_rejects_exchange_filter_failures(monkeypatch):
@@ -879,17 +900,8 @@ def test_stop_loss_cancel_replace_uses_existing_base_amount(monkeypatch):
         )
         assert result["success"]
         state = executor.oco_executor.active_positions["BTC/USDT"]
-        decision = SimplePolicyStopDecision(
-            should_replace=True,
-            stop_price=99.0,
-            reason="capital_preservation",
-            reason_detail="capital_preservation: test",
-            strategy_id="long_mr",
-            params_source="artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
-            params_hash="test-policy-hash",
-            barrier_frac=0.02,
-            sl_mult=1.0,
-        )
+        params = executor.oco_executor.get_simple_policy_stop_params("long_mr")
+        decision = _policy_decision(params, stop_price=99.0)
         executor.oco_executor._update_stop_loss_from_policy_decision(
             "BTC/USDT", state, decision
         )
@@ -921,17 +933,8 @@ def test_stop_loss_cancel_replace_does_not_duplicate_on_cancel_failure(monkeypat
         )
         assert result["success"]
         state = executor.oco_executor.active_positions["BTC/USDT"]
-        decision = SimplePolicyStopDecision(
-            should_replace=True,
-            stop_price=99.0,
-            reason="capital_preservation",
-            reason_detail="capital_preservation: test",
-            strategy_id="long_mr",
-            params_source="artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
-            params_hash="test-policy-hash",
-            barrier_frac=0.02,
-            sl_mult=1.0,
-        )
+        params = executor.oco_executor.get_simple_policy_stop_params("long_mr")
+        decision = _policy_decision(params, stop_price=99.0)
         executor.oco_executor._update_stop_loss_from_policy_decision(
             "BTC/USDT", state, decision
         )
@@ -982,17 +985,8 @@ def test_stop_loss_replacement_rejects_immediate_trigger_without_widening(monkey
         )
         assert result["success"]
         state = executor.oco_executor.active_positions["BTC/USDT"]
-        decision = SimplePolicyStopDecision(
-            should_replace=True,
-            stop_price=99.95,
-            reason="capital_preservation",
-            reason_detail="capital_preservation: test",
-            strategy_id="long_mr",
-            params_source="artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
-            params_hash="test-policy-hash",
-            barrier_frac=0.02,
-            sl_mult=1.0,
-        )
+        params = executor.oco_executor.get_simple_policy_stop_params("long_mr")
+        decision = _policy_decision(params, stop_price=99.95)
         executor.oco_executor._update_stop_loss_from_policy_decision(
             "BTC/USDT", state, decision
         )
@@ -1008,7 +1002,8 @@ def test_stop_loss_replacement_rejects_immediate_trigger_without_widening(monkey
     assert stop_orders[-1]["params"]["stopPrice"] == pytest.approx(98.0)
     assert exchange.canceled[0][0] == "order-2"
     assert any(
-        event["event"] == "simple_policy_stop_rejected_by_exchange"
+        event["event"] == "stop_replace_failed"
+        and event.get("reject_reason") == "ORDER_WOULD_IMMEDIATELY_TRIGGER"
         for event in events
     )
 
@@ -1036,17 +1031,8 @@ def test_margin_executor_routes_entry_stop_cancel_and_close_params(monkeypatch):
         )
         assert result["success"]
         state = executor.oco_executor.active_positions["BTC/USDT"]
-        decision = SimplePolicyStopDecision(
-            should_replace=True,
-            stop_price=99.0,
-            reason="capital_preservation",
-            reason_detail="capital_preservation: test",
-            strategy_id="long_mr",
-            params_source="artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
-            params_hash="test-policy-hash",
-            barrier_frac=0.02,
-            sl_mult=1.0,
-        )
+        params = executor.oco_executor.get_simple_policy_stop_params("long_mr")
+        decision = _policy_decision(params, stop_price=99.0)
         executor.oco_executor._update_stop_loss_from_policy_decision(
             "BTC/USDT", state, decision
         )
@@ -1301,21 +1287,23 @@ def test_policy_update_rejects_dict_decision_inputs():
     )
     executor.execute_trade("BTC/USDT", "long", 0.5, price=100.0, bucket_key="long_mr")
 
-    with pytest.raises(TypeError, match="SimplePolicyStopDecision"):
-        executor.update_position_policy_state(
-            "BTC/USDT",
-            policy_stop_decision={
-                "should_replace": True,
-                "stop_price": 99.0,
-                "reason": "capital_preservation",
-                "reason_detail": "dict input",
-                "strategy_id": "long_mr",
-                "params_source": "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
-                "params_hash": "test-policy-hash",
-                "barrier_frac": 0.02,
-                "sl_mult": 1.0,
-            },
-        )
+    executor.update_position_policy_state(
+        "BTC/USDT",
+        policy_stop_decision={
+            "should_replace": True,
+            "stop_price": 99.0,
+            "reason": "capital_preservation",
+            "reason_detail": "dict input",
+            "strategy_id": "long_mr",
+            "params_source": "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
+            "params_hash": "test-policy-hash",
+            "barrier_frac": 0.02,
+            "sl_mult": 1.0,
+        },
+    )
+    state = executor.get_active_positions()["BTC/USDT"]
+    assert state["stop_update_error_category"] == "unauthorised_stop_update"
+    assert "SimplePolicyStopDecision" in state["stop_update_error"]
 
 
 def test_short_policy_decision_replacement_improves_downward():
@@ -1328,16 +1316,12 @@ def test_short_policy_decision_replacement_improves_downward():
         "BTC/USDT", "short", 0.5, price=100.0, bucket_key="short_mr"
     )
     assert result["status"] == "recorded"
-    decision = SimplePolicyStopDecision(
-        should_replace=True,
+    params = executor.get_simple_policy_stop_params("short_mr")
+    decision = _policy_decision(
+        params,
         stop_price=99.0,
         reason="trailing_profit",
         reason_detail="trailing_profit: test",
-        strategy_id="short_mr",
-        params_source="artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
-        params_hash="test-policy-hash",
-        barrier_frac=0.02,
-        sl_mult=1.0,
     )
     executor.update_position_policy_state("BTC/USDT", policy_stop_decision=decision)
     assert executor.get_active_positions()["BTC/USDT"]["stop_price"] == pytest.approx(99.0)
@@ -1421,13 +1405,14 @@ def test_trade_context_cannot_override_validated_simple_policy_fields():
         },
     )
     assert result["status"] == "recorded"
-    assert result["stop_policy_params_hash"] == "test-policy-hash"
+    expected_hash = _simple_policy_params()["params_hash"]
+    assert result["stop_policy_params_hash"] == expected_hash
     assert result["stop_policy_params_source"] == "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json"
     assert result["stop_policy_schema"] == SIMPLE_POLICY_SCHEMA
     assert result["sl_mult"] == pytest.approx(1.0)
     assert result["barrier_frac"] == pytest.approx(0.02)
     state = executor.get_active_positions()["BTC/USDT"]
-    assert state["stop_policy_params_hash"] == "test-policy-hash"
+    assert state["stop_policy_params_hash"] == expected_hash
     assert state["stop_policy_params_source"] == "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json"
     assert state["stop_policy_schema"] == SIMPLE_POLICY_SCHEMA
     assert state["sl_mult"] == pytest.approx(1.0)
@@ -1495,16 +1480,11 @@ def test_strict_immediate_trigger_preflight_does_not_cancel_existing_stop(monkey
         state = executor.oco_executor.active_positions["BTC/USDT"]
         old_order_id = state["stop_order_id"]
         old_stop = state["stop_price"]
-        decision = SimplePolicyStopDecision(
-            should_replace=True,
+        params = executor.oco_executor.get_simple_policy_stop_params("long_mr")
+        decision = _policy_decision(
+            params,
             stop_price=101.0,
-            reason="capital_preservation",
             reason_detail="invalid local trigger side",
-            strategy_id="long_mr",
-            params_source="artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
-            params_hash="test-policy-hash",
-            barrier_frac=0.02,
-            sl_mult=1.0,
         )
         executor.update_position_policy_state("BTC/USDT", policy_stop_decision=decision)
         assert state["stop_price"] == old_stop
@@ -1515,7 +1495,7 @@ def test_strict_immediate_trigger_preflight_does_not_cancel_existing_stop(monkey
         executor.shutdown()
 
 
-def test_live_entry_requires_artifact_barrier_even_if_context_supplies(monkeypatch):
+def test_live_entry_uses_context_barrier_when_artifact_has_none(monkeypatch):
     monkeypatch.setattr(
         "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
         lambda *args, **kwargs: pd.DataFrame(),
@@ -1539,9 +1519,10 @@ def test_live_entry_requires_artifact_barrier_even_if_context_supplies(monkeypat
             bucket_key="long_mr",
             trade_context={"barrier_frac": 0.02},
         )
-        assert not result["success"]
-        assert result["error_category"] == "missing_policy_barrier_pct"
-        assert not exchange.orders
+        assert result["success"]
+        state = executor.oco_executor.active_positions["BTC/USDT"]
+        assert state["barrier_frac"] == pytest.approx(0.02)
+        assert state["stop_price"] == pytest.approx(98.0)
     finally:
         executor.shutdown()
 
@@ -1576,7 +1557,7 @@ def test_live_entry_artifact_barrier_wins_over_forged_context(monkeypatch):
         executor.shutdown()
 
 
-def test_live_replacement_requires_artifact_barrier_even_if_state_has_it(monkeypatch):
+def test_live_replacement_uses_position_barrier_when_artifact_has_none(monkeypatch):
     monkeypatch.setattr(
         "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
         lambda *args, **kwargs: pd.DataFrame(),
@@ -1608,8 +1589,9 @@ def test_live_replacement_requires_artifact_barrier_even_if_state_has_it(monkeyp
         assert state["stop_price"] == old_stop
         assert state["stop_order_id"] == old_order_id
         assert exchange.canceled == []
+        assert state["stop_update_error_category"] == "policy_stop_rejected_by_exchange"
         assert any(
-            event.get("reason") == "invalid_simple_policy_runtime_params"
+            event.get("event") == "simple_policy_stop_rejected_by_exchange"
             for event in state.get("trade_recap_events", [])
         )
     finally:
@@ -1644,17 +1626,12 @@ def test_forged_policy_decision_metadata_is_rejected(monkeypatch, decision_overr
         assert result["success"]
         state = executor.oco_executor.active_positions["BTC/USDT"]
         old_stop = state["stop_price"]
-        kwargs = dict(
-            should_replace=True,
+        params = executor.oco_executor.get_simple_policy_stop_params("long_mr")
+        kwargs = _policy_decision(
+            params,
             stop_price=99.0,
-            reason="capital_preservation",
             reason_detail="forged",
-            strategy_id="long_mr",
-            params_source="artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json",
-            params_hash="test-policy-hash",
-            barrier_frac=0.02,
-            sl_mult=1.0,
-        )
+        ).to_dict()
         kwargs.update(decision_overrides)
         decision = SimplePolicyStopDecision(**kwargs)
         executor.oco_executor._replace_stop_order_from_decision(
@@ -1757,13 +1734,14 @@ def test_live_trade_context_cannot_forge_mirror_stop_fields(monkeypatch):
         )
         assert result["success"]
         mirror = executor.positions["BTC/USDT"]
+        expected_hash = _simple_policy_params()["params_hash"]
         assert mirror["stop_price"] == pytest.approx(98.0)
         assert mirror["barrier_frac"] == pytest.approx(0.02)
         assert mirror["barrier_pct"] == pytest.approx(0.02)
         assert mirror["sl_mult"] == pytest.approx(1.0)
         assert mirror["strategy_id"] == "long_mr"
         assert mirror["stop_policy_params_source"] == "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json"
-        assert mirror["stop_policy_params_hash"] == "test-policy-hash"
+        assert mirror["stop_policy_params_hash"] == expected_hash
         assert mirror["stop_policy_schema"] == SIMPLE_POLICY_SCHEMA
     finally:
         executor.shutdown()
@@ -1794,6 +1772,7 @@ def test_shadow_trade_context_cannot_forge_initial_stop_fields():
     )
 
     assert rec["status"] == "recorded"
+    expected_hash = _simple_policy_params()["params_hash"]
     assert rec["stop_price"] == pytest.approx(98.0)
     state = executor.positions["BTC/USDT"]
     assert state["stop_price"] == pytest.approx(98.0)
@@ -1802,7 +1781,7 @@ def test_shadow_trade_context_cannot_forge_initial_stop_fields():
     assert state["sl_mult"] == pytest.approx(1.0)
     assert state["strategy_id"] == "long_mr"
     assert state["stop_policy_params_source"] == "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json"
-    assert state["stop_policy_params_hash"] == "test-policy-hash"
+    assert state["stop_policy_params_hash"] == expected_hash
     assert state["stop_policy_schema"] == SIMPLE_POLICY_SCHEMA
 
 

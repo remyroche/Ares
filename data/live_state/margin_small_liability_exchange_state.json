@@ -1,0 +1,5 @@
+{
+  "last_attempt_ts": "2026-05-11T20:31:38.101292+00:00",
+  "last_error": "binance {\"code\":-1022,\"msg\":\"Signature for this request is not valid.\"}",
+  "last_error_category": "auth_or_permission"
+}

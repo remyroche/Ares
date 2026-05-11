@@ -18,6 +18,7 @@ import pandas as pd
 
 SIMPLE_POLICY_SCHEMA = "simple_policy_v1"
 SIMPLE_POLICY_GENERATOR = "simple_policy_optimiser"
+ADVERSE_EXIT_MAX_SL_FRACTION = 0.75
 
 REQUIRED_SIMPLE_POLICY_STOP_FIELDS = (
     "sl_mult",
@@ -27,6 +28,18 @@ REQUIRED_SIMPLE_POLICY_STOP_FIELDS = (
     "giveback_beta",
     "capital_protect_mfe_mult",
     "capital_protect_regression_frac",
+)
+ADVERSE_SIMPLE_POLICY_STOP_FIELDS = (
+    "adverse_exit_enabled",
+    "adverse_exit_alpha",
+    "adverse_exit_beta",
+    "adverse_exit_delta",
+    "adverse_exit_theta_quantile",
+    "adverse_exit_theta",
+    "adverse_exit_fast_bars",
+    "adverse_exit_min_mae_atr",
+    "adverse_exit_min_speed",
+    "adverse_exit_max_mfe_atr",
 )
 
 SIMPLE_POLICY_STOP_PARAM_KEYS = (
@@ -45,6 +58,7 @@ SIMPLE_POLICY_STOP_PARAM_KEYS = (
     "giveback_beta",
     "capital_protect_mfe_mult",
     "capital_protect_regression_frac",
+    *ADVERSE_SIMPLE_POLICY_STOP_FIELDS,
 )
 
 _OPTIONAL_SIMPLE_POLICY_STOP_FIELDS = {"barrier_pct", "barrier_frac", "enable_trailing"}
@@ -52,8 +66,14 @@ _ARTIFACT_AUDIT_FIELDS = {
     "_loaded_from_simple_policy_artifact",
     "_artifact_path",
     "_artifact_mtime_ns",
+    "provisional_trailing_stage_sl_mult",
+    "sl_mult_source",
+    "stage2_selection_method",
+    "adverse_exit_disabled_reason",
 }
-_ALLOWED_SIMPLE_POLICY_STOP_FIELDS = set(SIMPLE_POLICY_STOP_PARAM_KEYS) | _ARTIFACT_AUDIT_FIELDS
+_ALLOWED_SIMPLE_POLICY_STOP_FIELDS = (
+    set(SIMPLE_POLICY_STOP_PARAM_KEYS) | _ARTIFACT_AUDIT_FIELDS
+)
 _GENERIC_PARAMS_SOURCES = {
     "",
     SIMPLE_POLICY_GENERATOR,
@@ -108,8 +128,12 @@ def _normalise_simple_policy_stop_param_row(
     if not isinstance(row, Mapping):
         return {}
     schema = _normalise_schema(row, artifact_metadata)
-    generated_by = str(row.get("generated_by") or artifact_metadata.get("generated_by") or "").strip()
-    row_strategy = str(row.get("strategy_id") or row.get("strategy_for_inference") or "").strip()
+    generated_by = str(
+        row.get("generated_by") or artifact_metadata.get("generated_by") or ""
+    ).strip()
+    row_strategy = str(
+        row.get("strategy_id") or row.get("strategy_for_inference") or ""
+    ).strip()
     if row_strategy != str(strategy_id):
         return {}
     out = {k: row[k] for k in SIMPLE_POLICY_STOP_PARAM_KEYS if k in row}
@@ -143,7 +167,9 @@ def extract_simple_policy_stop_params_by_strategy(
         if not strategy_id or strategy_id != str(key):
             continue
         unknown = sorted(
-            set(row) - _ALLOWED_SIMPLE_POLICY_STOP_FIELDS - {"schema_version", "strategy_for_inference"}
+            set(row)
+            - _ALLOWED_SIMPLE_POLICY_STOP_FIELDS
+            - {"schema_version", "strategy_for_inference"}
         )
         if unknown:
             raise SimplePolicyStopParamsError(
@@ -163,7 +189,6 @@ def extract_simple_policy_stop_params_by_strategy(
             params_hash=params_hash,
         )
         if normalised:
-            validate_simple_policy_stop_params(normalised, state={"strategy_id": strategy_id})
             out[strategy_id] = normalised
     return out
 
@@ -172,14 +197,25 @@ def _iter_simple_policy_artifact_paths(data_root: str, run_id: Optional[str] = N
     artifacts_root = Path(data_root) / "artifacts"
     if not artifacts_root.exists():
         return
-    # Strict runtime loading accepts only the canonical optimiser namespace.
-    run_dirs = sorted(artifacts_root.iterdir())
+    if run_id:
+        run_dirs = [artifacts_root / str(run_id)]
+    else:
+        run_dirs = sorted(artifacts_root.iterdir())
     for run_dir in run_dirs:
         if not run_dir.is_dir():
             continue
+        # Prefer the canonical optimiser namespace. Historical deployment
+        # copies are accepted only after strict payload provenance validation.
         opt_root = run_dir / "simple_policy_optimiser"
         if opt_root.is_dir():
             yield from opt_root.glob("*/best_policy_params.json")
+        for rel in (
+            "policy_params/best_policy_params.json",
+            "best_policy_params.json",
+        ):
+            path = run_dir / rel
+            if path.is_file():
+                yield path
 
 
 def _artifact_params_source(path: Path, data_root: str) -> str:
@@ -232,7 +268,9 @@ def load_simple_policy_stop_params_by_strategy(
         for row in _artifact_strategy_rows(payload):
             if not isinstance(row, Mapping) or row.get("selected") is False:
                 continue
-            strategy_id = str(row.get("strategy_id") or row.get("strategy_for_inference") or "").strip()
+            strategy_id = str(
+                row.get("strategy_id") or row.get("strategy_for_inference") or ""
+            ).strip()
             if not strategy_id:
                 continue
             normalised = _normalise_simple_policy_stop_param_row(
@@ -249,7 +287,9 @@ def load_simple_policy_stop_params_by_strategy(
                 continue
             try:
                 validate_simple_policy_stop_params(
-                    normalised, state={"strategy_id": strategy_id}
+                    normalised,
+                    state={"strategy_id": strategy_id},
+                    require_barrier=False,
                 )
             except SimplePolicyStopParamsError:
                 continue
@@ -275,6 +315,16 @@ class ValidatedSimplePolicyParams:
     giveback_beta: float
     capital_protect_mfe_mult: float
     capital_protect_regression_frac: float
+    adverse_exit_enabled: bool
+    adverse_exit_alpha: float
+    adverse_exit_beta: float
+    adverse_exit_delta: float
+    adverse_exit_theta_quantile: float
+    adverse_exit_theta: float
+    adverse_exit_fast_bars: int
+    adverse_exit_min_mae_atr: float
+    adverse_exit_min_speed: float
+    adverse_exit_max_mfe_atr: float
     enable_trailing: bool
     strategy_id: str
     params_source: str
@@ -302,6 +352,15 @@ class SimplePolicyStopDecision:
     giveback_beta: Optional[float] = None
     capital_protect_mfe_mult: Optional[float] = None
     capital_protect_regression_frac: Optional[float] = None
+    adverse_exit_enabled: bool = False
+    adverse_exit_theta: Optional[float] = None
+    adverse_exit_theta_quantile: Optional[float] = None
+    adverse_exit_min_mae_atr: Optional[float] = None
+    adverse_exit_min_speed: Optional[float] = None
+    adverse_exit_fast_bars: Optional[int] = None
+    adverse_exit_max_mfe_atr: Optional[float] = None
+    should_exit: bool = False
+    exit_reason: Optional[str] = None
     decision_module: str = "simple_policy_stop.py"
     requested_policy_stop: Optional[float] = None
     peak_price: Optional[float] = None
@@ -326,7 +385,6 @@ def _safe_float(value: Any, default: float = np.nan) -> float:
     return out if np.isfinite(out) else default
 
 
-
 def _first_positive(params: Mapping[str, Any], *keys: str) -> float:
     for key in keys:
         value = _safe_float(params.get(key), default=np.nan)
@@ -335,11 +393,23 @@ def _first_positive(params: Mapping[str, Any], *keys: str) -> float:
     return np.nan
 
 
+def _barrier_from_params_or_state(
+    params: Mapping[str, Any],
+    state: Mapping[str, Any],
+) -> float:
+    """Return row-specific policy barrier from params or live inference state."""
+    barrier_frac = _first_positive(params, "barrier_frac", "barrier_pct")
+    if np.isfinite(barrier_frac):
+        return float(barrier_frac)
+    return _first_positive(state, "barrier_frac", "barrier_pct", "policy_barrier_frac")
+
+
 def validate_simple_policy_stop_params(
     params: Mapping[str, Any],
     *,
     state: Optional[Mapping[str, Any]] = None,
     require_metadata: bool = True,
+    require_barrier: bool = True,
 ) -> ValidatedSimplePolicyParams:
     """Validate and normalise simple-policy stop runtime params.
 
@@ -356,9 +426,7 @@ def validate_simple_policy_stop_params(
             "unknown simple-policy stop fields: " + ",".join(unknown)
         )
 
-    missing = [
-        key for key in REQUIRED_SIMPLE_POLICY_STOP_FIELDS if key not in params
-    ]
+    missing = [key for key in REQUIRED_SIMPLE_POLICY_STOP_FIELDS if key not in params]
     if missing:
         raise SimplePolicyStopParamsError(
             "missing simple-policy stop fields: " + ",".join(missing)
@@ -370,9 +438,13 @@ def validate_simple_policy_stop_params(
             "missing simple-policy trailing activation field"
         )
 
-    barrier_frac = _first_positive(params, "barrier_frac", "barrier_pct")
+    barrier_frac = _barrier_from_params_or_state(params, state)
     if not np.isfinite(barrier_frac):
-        raise SimplePolicyStopParamsError("missing simple-policy barrier_frac/barrier_pct")
+        if require_barrier:
+            raise SimplePolicyStopParamsError(
+                "missing simple-policy barrier_frac/barrier_pct"
+            )
+        barrier_frac = np.nan
 
     values = {
         key: _safe_float(params.get(key), default=np.nan)
@@ -410,7 +482,9 @@ def validate_simple_policy_stop_params(
     strategy_id = str(params.get("strategy_id") or "").strip()
     if not strategy_id:
         raise SimplePolicyStopParamsError("missing simple-policy strategy_id")
-    expected_strategy = str(state.get("strategy_id") or state.get("bucket_key") or "").strip()
+    expected_strategy = str(
+        state.get("strategy_id") or state.get("bucket_key") or ""
+    ).strip()
     if expected_strategy and strategy_id != expected_strategy:
         raise SimplePolicyStopParamsError(
             f"simple-policy strategy_id mismatch: params={strategy_id} state={expected_strategy}"
@@ -452,7 +526,29 @@ def validate_simple_policy_stop_params(
         trailing_squash_divisor=float(values["trailing_squash_divisor"]),
         giveback_beta=float(values["giveback_beta"]),
         capital_protect_mfe_mult=float(values["capital_protect_mfe_mult"]),
-        capital_protect_regression_frac=float(values["capital_protect_regression_frac"]),
+        capital_protect_regression_frac=float(
+            values["capital_protect_regression_frac"]
+        ),
+        adverse_exit_enabled=bool(params.get("adverse_exit_enabled", False)),
+        adverse_exit_alpha=float(_safe_float(params.get("adverse_exit_alpha"), 1.0)),
+        adverse_exit_beta=float(_safe_float(params.get("adverse_exit_beta"), 1.0)),
+        adverse_exit_delta=float(_safe_float(params.get("adverse_exit_delta"), 1.0)),
+        adverse_exit_theta_quantile=float(
+            _safe_float(params.get("adverse_exit_theta_quantile"), 0.75)
+        ),
+        adverse_exit_theta=float(_safe_float(params.get("adverse_exit_theta"), np.nan)),
+        adverse_exit_fast_bars=int(
+            max(1, _safe_float(params.get("adverse_exit_fast_bars"), 4.0))
+        ),
+        adverse_exit_min_mae_atr=float(
+            _safe_float(params.get("adverse_exit_min_mae_atr"), 1.0)
+        ),
+        adverse_exit_min_speed=float(
+            _safe_float(params.get("adverse_exit_min_speed"), 0.3)
+        ),
+        adverse_exit_max_mfe_atr=float(
+            _safe_float(params.get("adverse_exit_max_mfe_atr"), 0.25)
+        ),
         enable_trailing=bool(params.get("enable_trailing", True)),
         strategy_id=strategy_id,
         params_source=params_source,
@@ -467,17 +563,23 @@ def compute_initial_simple_policy_stop_decision(
     policy_params: Mapping[str, Any],
     side: str,
     strategy_id: Optional[str] = None,
+    barrier_frac: Optional[float] = None,
+    state: Optional[Mapping[str, Any]] = None,
     require_metadata: bool = True,
 ) -> SimplePolicyStopDecision:
     """Compute the canonical initial simple-policy STOP_LOSS order decision."""
     entry = _safe_float(entry_price, default=np.nan)
     if not np.isfinite(entry) or entry <= 0.0:
         raise SimplePolicyStopParamsError("missing finite entry_price")
-    state = {"strategy_id": strategy_id or ""}
+    state = dict(state or {})
+    state.setdefault("strategy_id", strategy_id or "")
+    if barrier_frac is not None:
+        state["barrier_frac"] = barrier_frac
     validated = validate_simple_policy_stop_params(
         policy_params,
         state=state,
         require_metadata=require_metadata,
+        require_barrier=True,
     )
     side_l = str(side or "long").lower()
     if side_l == "long":
@@ -485,9 +587,13 @@ def compute_initial_simple_policy_stop_decision(
     elif side_l == "short":
         stop_price = entry * (1.0 + validated.sl_mult * validated.barrier_frac)
     else:
-        raise SimplePolicyStopParamsError(f"unsupported side for simple-policy stop: {side}")
+        raise SimplePolicyStopParamsError(
+            f"unsupported side for simple-policy stop: {side}"
+        )
     if not np.isfinite(stop_price) or stop_price <= 0.0:
-        raise SimplePolicyStopParamsError("initial simple-policy stop_price must be positive")
+        raise SimplePolicyStopParamsError(
+            "initial simple-policy stop_price must be positive"
+        )
     if side_l == "long" and stop_price >= entry:
         raise SimplePolicyStopParamsError("long stop must be below entry_price")
     if side_l == "short" and stop_price <= entry:
@@ -516,6 +622,13 @@ def compute_initial_simple_policy_stop_decision(
         giveback_beta=validated.giveback_beta,
         capital_protect_mfe_mult=validated.capital_protect_mfe_mult,
         capital_protect_regression_frac=validated.capital_protect_regression_frac,
+        adverse_exit_enabled=validated.adverse_exit_enabled,
+        adverse_exit_theta=validated.adverse_exit_theta,
+        adverse_exit_theta_quantile=validated.adverse_exit_theta_quantile,
+        adverse_exit_min_mae_atr=validated.adverse_exit_min_mae_atr,
+        adverse_exit_min_speed=validated.adverse_exit_min_speed,
+        adverse_exit_fast_bars=validated.adverse_exit_fast_bars,
+        adverse_exit_max_mfe_atr=validated.adverse_exit_max_mfe_atr,
         peak_price=float(entry),
         mfe=0.0,
         mae=0.0,
@@ -523,7 +636,9 @@ def compute_initial_simple_policy_stop_decision(
     )
 
 
-def compute_simple_policy_initial_stop_decision(*args: Any, **kwargs: Any) -> SimplePolicyStopDecision:
+def compute_simple_policy_initial_stop_decision(
+    *args: Any, **kwargs: Any
+) -> SimplePolicyStopDecision:
     """Backward-compatible alias for the canonical initial stop decision."""
     return compute_initial_simple_policy_stop_decision(*args, **kwargs)
 
@@ -570,6 +685,7 @@ def compute_simple_policy_stop_decision(
     peak_price = _safe_float(state.get("peak_price"), default=entry_price)
     mfe = max(_safe_float(state.get("mfe"), default=0.0), 0.0)
     mae = max(_safe_float(state.get("mae"), default=0.0), 0.0)
+    bars_in_trade = int(max(0, _safe_float(state.get("bars_in_trade"), 0.0)))
     if not np.isfinite(entry_price) or entry_price <= 0.0:
         raise SimplePolicyStopParamsError("missing finite entry_price")
     if not np.isfinite(current_stop) or current_stop <= 0.0:
@@ -578,6 +694,7 @@ def compute_simple_policy_stop_decision(
     bars = _latest_bars(latest_market_state)
     if not bars.empty:
         for _, row in bars.iterrows():
+            bars_in_trade += 1
             high = _safe_float(row.get("high"), default=np.nan)
             low = _safe_float(row.get("low"), default=np.nan)
             if side_l == "long":
@@ -592,6 +709,78 @@ def compute_simple_policy_stop_decision(
                     mfe = max(mfe, (entry_price - low) / max(entry_price, 1e-12))
                 if np.isfinite(high):
                     mae = max(mae, (high - entry_price) / max(entry_price, 1e-12))
+
+            if validated.adverse_exit_enabled and np.isfinite(
+                validated.adverse_exit_theta
+            ):
+                mae_atr = mae / max(validated.barrier_frac, 1e-12)
+                mfe_atr = mfe / max(validated.barrier_frac, 1e-12)
+                adverse_speed = mae_atr / max(bars_in_trade, 1)
+                rank_source = _safe_float(
+                    state.get(
+                        "rank_percentile",
+                        state.get(
+                            "sizer_rank_percentile",
+                            state.get("meta_train_rank_pct", np.nan),
+                        ),
+                    ),
+                    default=np.nan,
+                )
+                ranked_confidence = float(np.clip(rank_source - 0.5, 0.0, 0.5))
+                eligible = (
+                    bars_in_trade <= int(validated.adverse_exit_fast_bars)
+                    and mae_atr >= validated.adverse_exit_min_mae_atr
+                    and mae_atr <= validated.sl_mult * ADVERSE_EXIT_MAX_SL_FRACTION
+                    and adverse_speed >= validated.adverse_exit_min_speed
+                    and mfe_atr <= validated.adverse_exit_max_mfe_atr
+                )
+                log_exit_score = (
+                    np.log1p(validated.adverse_exit_alpha * (1.0 - ranked_confidence))
+                    + np.log1p(validated.adverse_exit_beta * mae_atr)
+                    + np.log1p(validated.adverse_exit_delta * adverse_speed)
+                )
+                if eligible and float(log_exit_score) > validated.adverse_exit_theta:
+                    detail = (
+                        "adverse_excursion_exit: "
+                        f"bars={bars_in_trade} mae_atr={mae_atr:.6g} "
+                        f"mfe_atr={mfe_atr:.6g} speed={adverse_speed:.6g} "
+                        f"ranked_confidence_minus_0_5={ranked_confidence:.6g} "
+                        f"score={float(log_exit_score):.6g} "
+                        f"theta={validated.adverse_exit_theta:.6g}"
+                    )
+                    return SimplePolicyStopDecision(
+                        should_replace=False,
+                        stop_price=None,
+                        requested_policy_stop=None,
+                        reason="adverse_excursion_exit",
+                        reason_detail=detail,
+                        strategy_id=validated.strategy_id,
+                        params_source=validated.params_source,
+                        params_hash=validated.params_hash,
+                        barrier_frac=validated.barrier_frac,
+                        sl_mult=validated.sl_mult,
+                        trailing_activation_mult=validated.trailing_activation_mult,
+                        trailing_power=validated.trailing_power,
+                        trailing_squash_divisor=validated.trailing_squash_divisor,
+                        giveback_beta=validated.giveback_beta,
+                        capital_protect_mfe_mult=validated.capital_protect_mfe_mult,
+                        capital_protect_regression_frac=validated.capital_protect_regression_frac,
+                        adverse_exit_enabled=True,
+                        adverse_exit_theta=validated.adverse_exit_theta,
+                        adverse_exit_theta_quantile=validated.adverse_exit_theta_quantile,
+                        adverse_exit_min_mae_atr=validated.adverse_exit_min_mae_atr,
+                        adverse_exit_min_speed=validated.adverse_exit_min_speed,
+                        adverse_exit_fast_bars=validated.adverse_exit_fast_bars,
+                        adverse_exit_max_mfe_atr=validated.adverse_exit_max_mfe_atr,
+                        should_exit=True,
+                        exit_reason="adverse_excursion_exit",
+                        peak_price=(
+                            float(peak_price) if np.isfinite(peak_price) else None
+                        ),
+                        mfe=float(mfe),
+                        mae=float(mae),
+                        params_schema=validated.schema,
+                    )
 
     candidate = float(current_stop)
     reason = "original_stop_loss"
@@ -609,7 +798,9 @@ def compute_simple_policy_stop_decision(
                 if side_l == "long"
                 else entry_price * (1.0 - lock_dist)
             )
-            improved = cap_stop > candidate if side_l == "long" else cap_stop < candidate
+            improved = (
+                cap_stop > candidate if side_l == "long" else cap_stop < candidate
+            )
             if improved:
                 candidate = float(cap_stop)
                 reason = "capital_preservation"
@@ -623,18 +814,21 @@ def compute_simple_policy_stop_decision(
         max_favorable_abs = max(float(mfe), 0.0) * entry_price
         barrier_price_dist = max(entry_price * validated.barrier_frac, 1e-12)
         dynamic_giveback = (
-            max_favorable_abs
-            / (barrier_price_dist * validated.trailing_squash_divisor)
+            max_favorable_abs / (barrier_price_dist * validated.trailing_squash_divisor)
         ) ** validated.trailing_power
         dynamic_giveback = float(np.clip(dynamic_giveback, 0.0, 1.0))
-        trail_amount = max_favorable_abs * validated.giveback_beta * (1.0 - dynamic_giveback)
+        trail_amount = (
+            max_favorable_abs * validated.giveback_beta * (1.0 - dynamic_giveback)
+        )
         locked_profit_abs = max_favorable_abs - trail_amount
         trail_stop = (
             entry_price + locked_profit_abs
             if side_l == "long"
             else entry_price - locked_profit_abs
         )
-        improved = trail_stop > candidate if side_l == "long" else trail_stop < candidate
+        improved = (
+            trail_stop > candidate if side_l == "long" else trail_stop < candidate
+        )
         if improved:
             candidate = float(trail_stop)
             reason = "trailing_profit"
@@ -644,7 +838,9 @@ def compute_simple_policy_stop_decision(
                 f"dynamic_giveback={dynamic_giveback:.6g}"
             )
 
-    should_replace = candidate > current_stop if side_l == "long" else candidate < current_stop
+    should_replace = (
+        candidate > current_stop if side_l == "long" else candidate < current_stop
+    )
     last_eval_ts = None
     if not bars.empty:
         try:
@@ -668,6 +864,13 @@ def compute_simple_policy_stop_decision(
         giveback_beta=validated.giveback_beta,
         capital_protect_mfe_mult=validated.capital_protect_mfe_mult,
         capital_protect_regression_frac=validated.capital_protect_regression_frac,
+        adverse_exit_enabled=validated.adverse_exit_enabled,
+        adverse_exit_theta=validated.adverse_exit_theta,
+        adverse_exit_theta_quantile=validated.adverse_exit_theta_quantile,
+        adverse_exit_min_mae_atr=validated.adverse_exit_min_mae_atr,
+        adverse_exit_min_speed=validated.adverse_exit_min_speed,
+        adverse_exit_fast_bars=validated.adverse_exit_fast_bars,
+        adverse_exit_max_mfe_atr=validated.adverse_exit_max_mfe_atr,
         peak_price=float(peak_price) if np.isfinite(peak_price) else None,
         mfe=float(mfe),
         mae=float(mae),

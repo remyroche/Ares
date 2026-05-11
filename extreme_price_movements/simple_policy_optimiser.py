@@ -41,7 +41,41 @@ REPORTING_POLICY_RANK_THRESHOLD = 0.85
 REPORTING_POLICY_LABEL = "top_15"
 DEFAULT_FORWARD_BARS = 96
 DEFAULT_CV_FOLDS = 3
-DEFAULT_N_TRIALS = 400
+DEFAULT_N_TRIALS = 200
+OPTUNA_EARLY_STOP_NO_IMPROVEMENT = 50
+STABLE_TRIAL_TOP_K = 15
+STABLE_TRIAL_MIN_CLUSTER_SIZE = 3
+STABLE_TRIAL_MAX_ADVERSE_EXIT_RATE = 0.15
+STABLE_TRIAL_MAX_FOLD_INSTABILITY = 1.0e9
+STABLE_TRIAL_FOLD_FAILURE_THRESHOLD = -1.0e9
+STABLE_TRIAL_FOLD_INSTABILITY_PENALTY = 0.25
+STABLE_TRIAL_DRAWDOWN_PENALTY = 0.25
+STABLE_TRIAL_ADVERSE_OVERUSE_PENALTY = 1.0
+STAGE2_MIN_TRADES = 10
+STAGE2_MAX_ALLOWED_DRAWDOWN = -1.0
+STAGE2_MIN_ALLOWED_FOLD_OBJECTIVE = -1.0e9
+ADVERSE_EXIT_ALPHA = 1.0
+ADVERSE_EXIT_BETA = 1.0
+ADVERSE_EXIT_DELTA = 1.0
+ADVERSE_EXIT_FAST_BARS = 4
+ADVERSE_EXIT_MAX_MFE_ATR = 0.25
+ADVERSE_EXIT_MAX_SL_FRACTION = 0.75
+ADVERSE_EXIT_MIN_MAE_ATR_FLOOR = 0.1
+TRAILING_CLUSTER_FEATURE_RANGES: Dict[str, Tuple[float, float]] = {
+    "sl_mult": (0.5, 1.5),
+    "trailing_activation_mult": (0.5, 2.5),
+    "trailing_power": (1.2, 2.0),
+    "trailing_squash_divisor": (1.0, 6.0),
+    "giveback_beta": (0.3, 0.95),
+}
+STAGE2_CLUSTER_FEATURE_RANGES: Dict[str, Tuple[float, float]] = {
+    "sl_mult": (0.5, 3.0),
+    "capital_protect_mfe_mult": (0.0, 3.0),
+    "capital_protect_regression_frac": (0.0, 1.0),
+    "adverse_exit_min_mae_atr": (ADVERSE_EXIT_MIN_MAE_ATR_FLOOR, 3.0),
+    "adverse_exit_min_speed": (0.1, 1.5),
+    "adverse_exit_theta_quantile": (0.50, 0.95),
+}
 MAX_DEPLOYMENT_STRATEGIES_PER_SIDE = 2
 DEPLOYMENT_SELECTION_METRIC = "top_5"
 PORTFOLIO_POLICY_MAX_CONCURRENT_POSITIONS = 8
@@ -64,8 +98,7 @@ DEPLOYMENT_MAX_CONCURRENT_PER_ASSET = 1
 DEPLOYMENT_MAX_CONCURRENT_PER_STRATEGY = max(
     1,
     int(
-        PORTFOLIO_POLICY_MAX_CONCURRENT_POSITIONS
-        * PORTFOLIO_POLICY_CONCURRENT_FRACTION
+        PORTFOLIO_POLICY_MAX_CONCURRENT_POSITIONS * PORTFOLIO_POLICY_CONCURRENT_FRACTION
     ),
 )
 SIMPLE_DISCOVERY_SL_MULTS = (0.8, 1.0, 1.2, 1.5)
@@ -97,6 +130,79 @@ def _without_concurrency_param(params: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _ranked_trade_confidence(rank_pct: np.ndarray) -> np.ndarray:
+    """Confidence used by adverse exits: ranked confidence centered at 0.5."""
+    rank = np.asarray(rank_pct, dtype=np.float32)
+    return np.clip(rank - np.float32(0.5), 0.0, 0.5).astype(np.float32, copy=False)
+
+
+def _adverse_log_exit_scores(
+    *,
+    df_sub: pd.DataFrame,
+    f_highs: np.ndarray,
+    f_lows: np.ndarray,
+    entry_prices: np.ndarray,
+    barrier_price_dist: np.ndarray,
+    side: np.ndarray,
+    min_mae_atr: float,
+    min_speed: float,
+    fast_bars: int,
+    max_mfe_atr: float,
+    sl_mult: float,
+) -> np.ndarray:
+    """Collect eligible adverse-exit scores used to resolve theta by quantile."""
+    n_trades, max_bars = f_highs.shape
+    if n_trades == 0 or max_bars <= 1:
+        return np.array([], dtype=np.float32)
+    confidence = _ranked_trade_confidence(
+        pd.to_numeric(df_sub["rank_pct"], errors="coerce")
+        .fillna(0.5)
+        .to_numpy(dtype=np.float32)
+    )
+    is_long = side == 1
+    max_fav = np.zeros(n_trades, dtype=np.float32)
+    max_adv = np.zeros(n_trades, dtype=np.float32)
+    scores: List[np.ndarray] = []
+    fast_bars = max(1, int(fast_bars))
+    for j in range(1, min(max_bars, fast_bars + 1)):
+        cur_fav = np.where(
+            is_long,
+            f_highs[:, j] - entry_prices,
+            entry_prices - f_lows[:, j],
+        )
+        cur_adv = np.where(
+            is_long,
+            entry_prices - f_lows[:, j],
+            f_highs[:, j] - entry_prices,
+        )
+        cur_fav = np.where(np.isfinite(cur_fav), cur_fav, 0.0)
+        cur_adv = np.where(np.isfinite(cur_adv), cur_adv, 0.0)
+        max_fav = np.maximum(max_fav, cur_fav)
+        max_adv = np.maximum(max_adv, cur_adv)
+        denom = np.maximum(barrier_price_dist, np.float32(1e-12))
+        mae_atr = max_adv / denom
+        mfe_atr = max_fav / denom
+        bars = np.float32(max(j, 1))
+        adverse_speed = mae_atr / bars
+        max_adverse_mae_atr = float(sl_mult) * float(ADVERSE_EXIT_MAX_SL_FRACTION)
+        eligible = (
+            (mae_atr >= float(min_mae_atr))
+            & (mae_atr <= max_adverse_mae_atr)
+            & (adverse_speed >= float(min_speed))
+            & (mfe_atr <= float(max_mfe_atr))
+        )
+        if np.any(eligible):
+            score = (
+                np.log1p(ADVERSE_EXIT_ALPHA * (1.0 - confidence[eligible]))
+                + np.log1p(ADVERSE_EXIT_BETA * mae_atr[eligible])
+                + np.log1p(ADVERSE_EXIT_DELTA * adverse_speed[eligible])
+            )
+            scores.append(score.astype(np.float32, copy=False))
+    if not scores:
+        return np.array([], dtype=np.float32)
+    return np.concatenate(scores).astype(np.float32, copy=False)
+
+
 def simulate_and_score(
     df_sub: pd.DataFrame,
     f_opens: np.ndarray,
@@ -112,7 +218,18 @@ def simulate_and_score(
     giveback_beta: float = 0.5,
     capital_protect_mfe_mult: float = 0.0,
     capital_protect_regression_frac: float = 0.45,
+    adverse_exit_enabled: bool = False,
+    adverse_exit_min_mae_atr: float = 1.0,
+    adverse_exit_min_speed: float = 0.3,
+    adverse_exit_theta_quantile: float = 0.75,
+    adverse_exit_theta: Optional[float] = None,
+    adverse_exit_alpha: float = ADVERSE_EXIT_ALPHA,
+    adverse_exit_beta: float = ADVERSE_EXIT_BETA,
+    adverse_exit_delta: float = ADVERSE_EXIT_DELTA,
+    adverse_exit_fast_bars: int = ADVERSE_EXIT_FAST_BARS,
+    adverse_exit_max_mfe_atr: float = ADVERSE_EXIT_MAX_MFE_ATR,
     max_concurrent_trades: int = MAX_CONCURRENT_TRADES,
+    **_ignored_policy_audit_params: Any,
 ) -> Dict[str, Any]:
     """
     Fully self-contained, vectorized, bar-by-bar simulator.
@@ -131,6 +248,17 @@ def simulate_and_score(
             "selected_mask": np.zeros(0, dtype=bool),
             "candidate_count": 0,
             "skipped_concurrency": 0,
+            "adverse_exit_count": 0,
+            "adverse_exit_rate": 0.0,
+            "full_sl_exit_count": 0,
+            "capital_protect_exit_count": 0,
+            "trailing_exit_count": 0,
+            "adverse_exit_theta": (
+                float(adverse_exit_theta)
+                if adverse_exit_theta is not None
+                and np.isfinite(float(adverse_exit_theta))
+                else np.nan
+            ),
         }
 
     # 1. Entry
@@ -156,6 +284,17 @@ def simulate_and_score(
                 "selected_mask": np.zeros(0, dtype=bool),
                 "candidate_count": 0,
                 "skipped_concurrency": 0,
+                "adverse_exit_count": 0,
+                "adverse_exit_rate": 0.0,
+                "full_sl_exit_count": 0,
+                "capital_protect_exit_count": 0,
+                "trailing_exit_count": 0,
+                "adverse_exit_theta": (
+                    float(adverse_exit_theta)
+                    if adverse_exit_theta is not None
+                    and np.isfinite(float(adverse_exit_theta))
+                    else np.nan
+                ),
             }
 
     # 2. Position sizing (dynamically scaled)
@@ -176,6 +315,39 @@ def simulate_and_score(
 
     sl_dist = barrier_price_dist * sl_mult
     tp_act = barrier_price_dist * trailing_activation_mult
+    adverse_exit_enabled = bool(adverse_exit_enabled)
+    if adverse_exit_enabled:
+        resolved_theta = (
+            float(adverse_exit_theta)
+            if adverse_exit_theta is not None and np.isfinite(float(adverse_exit_theta))
+            else np.nan
+        )
+        if not np.isfinite(resolved_theta):
+            score_dist = _adverse_log_exit_scores(
+                df_sub=df_sub,
+                f_highs=f_highs,
+                f_lows=f_lows,
+                entry_prices=entry_prices,
+                barrier_price_dist=barrier_price_dist,
+                side=side,
+                min_mae_atr=float(adverse_exit_min_mae_atr),
+                min_speed=float(adverse_exit_min_speed),
+                fast_bars=int(adverse_exit_fast_bars),
+                max_mfe_atr=float(adverse_exit_max_mfe_atr),
+                sl_mult=float(sl_mult),
+            )
+            if len(score_dist):
+                resolved_theta = float(
+                    np.nanquantile(
+                        score_dist,
+                        np.clip(float(adverse_exit_theta_quantile), 0.0, 1.0),
+                    )
+                )
+        if not np.isfinite(resolved_theta):
+            adverse_exit_enabled = False
+            resolved_theta = np.nan
+    else:
+        resolved_theta = np.nan
     protect_enabled = float(capital_protect_mfe_mult) > 0.0
     x_dist = barrier_price_dist * max(float(capital_protect_mfe_mult), 0.0)
     lock_dist = x_dist - float(capital_protect_regression_frac) * (x_dist + sl_dist)
@@ -185,6 +357,13 @@ def simulate_and_score(
     exit_rets = np.zeros(n_trades, dtype=np.float32)
     exit_bars = np.full(n_trades, max_bars - 1, dtype=np.int16)
     max_favorable = np.zeros(n_trades, dtype=np.float32)
+    max_adverse = np.zeros(n_trades, dtype=np.float32)
+    exit_reason = np.full(n_trades, "timeout", dtype=object)
+    ranked_confidence = _ranked_trade_confidence(
+        pd.to_numeric(df_sub["rank_pct"], errors="coerce")
+        .fillna(0.5)
+        .to_numpy(dtype=np.float32)
+    )
 
     # 4. Bar by Bar Simulation Loop
     for j in range(1, max_bars):
@@ -209,6 +388,7 @@ def simulate_and_score(
         hit_indices = active_idx[sl_hit]
         exit_rets[hit_indices] = -(sl_dist[hit_indices] / entry_prices[hit_indices])
         exit_bars[hit_indices] = j
+        exit_reason[hit_indices] = "full_sl"
         active[hit_indices] = False
 
         # Re-filter active
@@ -217,8 +397,68 @@ def simulate_and_score(
             break
 
         entry = entry_prices[active_idx]
+        cur_fav_long_all = f_highs[:, j] - entry_prices
+        cur_fav_short_all = entry_prices - f_lows[:, j]
+        cur_fav_all = np.where(is_long_arr, cur_fav_long_all, cur_fav_short_all)
+        cur_fav_all = np.where(np.isfinite(cur_fav_all), cur_fav_all, 0.0)
+        cur_adv_long_all = entry_prices - f_lows[:, j]
+        cur_adv_short_all = f_highs[:, j] - entry_prices
+        cur_adv_all = np.where(is_long_arr, cur_adv_long_all, cur_adv_short_all)
+        cur_adv_all = np.where(np.isfinite(cur_adv_all), cur_adv_all, 0.0)
+        adverse_max_favorable = np.maximum(
+            max_favorable,
+            np.where(active, cur_fav_all, 0.0),
+        )
+        adverse_max_adverse = np.maximum(
+            max_adverse,
+            np.where(active, cur_adv_all, 0.0),
+        )
 
-        # 2. Optional capital protection before trailing activates.
+        # 2. Fast adverse-excursion exit before capital protection/trailing.
+        if adverse_exit_enabled and j <= int(adverse_exit_fast_bars):
+            denom = np.maximum(barrier_price_dist[active_idx], np.float32(1e-12))
+            mae_atr = adverse_max_adverse[active_idx] / denom
+            mfe_atr = adverse_max_favorable[active_idx] / denom
+            bars = np.float32(max(j, 1))
+            adverse_speed = mae_atr / bars
+            max_adverse_mae_atr = float(sl_mult) * float(ADVERSE_EXIT_MAX_SL_FRACTION)
+            eligible = (
+                (mae_atr >= float(adverse_exit_min_mae_atr))
+                & (mae_atr <= max_adverse_mae_atr)
+                & (adverse_speed >= float(adverse_exit_min_speed))
+                & (mfe_atr <= float(adverse_exit_max_mfe_atr))
+            )
+            if np.any(eligible):
+                log_exit_score = (
+                    np.log1p(
+                        float(adverse_exit_alpha)
+                        * (1.0 - ranked_confidence[active_idx])
+                    )
+                    + np.log1p(float(adverse_exit_beta) * mae_atr)
+                    + np.log1p(float(adverse_exit_delta) * adverse_speed)
+                )
+                adverse_hit = eligible & (log_exit_score > float(resolved_theta))
+                if np.any(adverse_hit):
+                    hit = active_idx[adverse_hit]
+                    close_px = f_closes[hit, j].astype(np.float32, copy=False)
+                    finite_close = np.isfinite(close_px) & (close_px > 0.0)
+                    if np.any(finite_close):
+                        finite_hit = hit[finite_close]
+                        close_px_f = close_px[finite_close]
+                        exit_rets[finite_hit] = side[finite_hit] * (
+                            close_px_f / entry_prices[finite_hit] - 1.0
+                        )
+                        exit_bars[finite_hit] = j
+                        exit_reason[finite_hit] = "adverse_exit"
+                        active[finite_hit] = False
+
+            active_idx = np.where(active)[0]
+            if len(active_idx) == 0:
+                break
+            entry = entry_prices[active_idx]
+        max_adverse = np.maximum(max_adverse, np.where(active, cur_adv_all, 0.0))
+
+        # 3. Optional capital protection before trailing activates.
         if protect_enabled:
             cap_trigger = max_favorable[active_idx] >= x_dist[active_idx]
             if np.any(cap_trigger):
@@ -247,6 +487,7 @@ def simulate_and_score(
                         eff_sl_long[cap_hit_long] - protected_entry[cap_hit_long]
                     ) / protected_entry[cap_hit_long]
                     exit_bars[hit] = j
+                    exit_reason[hit] = "capital_protect"
                     active[hit] = False
                 if np.any(cap_hit_short):
                     hit = protected_idx[cap_hit_short]
@@ -254,6 +495,7 @@ def simulate_and_score(
                         protected_entry[cap_hit_short] - eff_sl_short[cap_hit_short]
                     ) / protected_entry[cap_hit_short]
                     exit_bars[hit] = j
+                    exit_reason[hit] = "capital_protect"
                     active[hit] = False
 
             active_idx = np.where(active)[0]
@@ -261,7 +503,7 @@ def simulate_and_score(
                 break
             entry = entry_prices[active_idx]
 
-        # 3. Check Trailing
+        # 4. Check Trailing
         trail_active = max_favorable[active_idx] > tp_act[active_idx]
 
         dynamic_giveback = (
@@ -295,14 +537,12 @@ def simulate_and_score(
             entry[trail_hit_short] - trail_level_short[trail_hit_short]
         ) / entry[trail_hit_short]
         exit_bars[active_idx[trail_hit]] = j
+        exit_reason[active_idx[trail_hit]] = "trailing"
         active[active_idx[trail_hit]] = False
 
-        # 4. Update max_favorable
-        cur_fav_long = f_highs[:, j] - entry_prices
-        cur_fav_short = entry_prices - f_lows[:, j]
-        cur_fav = np.where(is_long_arr, cur_fav_long, cur_fav_short)
-        cur_fav = np.where(np.isfinite(cur_fav), cur_fav, 0.0)
-        max_favorable = np.maximum(max_favorable, np.where(active, cur_fav, 0.0))
+        # Keep legacy trailing/capital semantics: this bar's favorable excursion
+        # is available for the next bar, not for same-bar stop promotion.
+        max_favorable = np.maximum(max_favorable, np.where(active, cur_fav_all, 0.0))
 
     # 5. Force exit remaining at max bars
     active_end = active
@@ -318,6 +558,7 @@ def simulate_and_score(
         v_s = side[end_idx]
         exit_rets[end_idx] = v_s * (b_close / v_ent - 1.0)
         exit_bars[end_idx] = last_pos.astype(np.int16, copy=False)
+        exit_reason[end_idx] = "timeout"
 
     # 6. Apply fees and compute net
     fees = sizes * cost_pct + sizes * (1 + exit_rets) * cost_pct
@@ -352,6 +593,11 @@ def simulate_and_score(
         gross_gain = gross_gain[selected_mask]
         sizes = sizes[selected_mask]
     selected_exit_bars = exit_bars[selected_mask]
+    selected_exit_reason = exit_reason[selected_mask]
+    adverse_exit_count = int(np.sum(selected_exit_reason == "adverse_exit"))
+    full_sl_exit_count = int(np.sum(selected_exit_reason == "full_sl"))
+    capital_protect_exit_count = int(np.sum(selected_exit_reason == "capital_protect"))
+    trailing_exit_count = int(np.sum(selected_exit_reason == "trailing"))
 
     return {
         "net_pnl": float(np.sum(net_gain)),
@@ -362,9 +608,18 @@ def simulate_and_score(
         "gross_gains": gross_gain,
         "sizes": sizes,
         "exit_bars": selected_exit_bars,
+        "exit_reason": selected_exit_reason.tolist(),
         "selected_mask": selected_mask,
         "candidate_count": candidate_count,
         "skipped_concurrency": int(candidate_count - int(np.sum(selected_mask))),
+        "adverse_exit_count": adverse_exit_count,
+        "adverse_exit_rate": float(adverse_exit_count / max(len(net_gain), 1)),
+        "full_sl_exit_count": full_sl_exit_count,
+        "capital_protect_exit_count": capital_protect_exit_count,
+        "trailing_exit_count": trailing_exit_count,
+        "adverse_exit_theta": (
+            float(resolved_theta) if np.isfinite(resolved_theta) else np.nan
+        ),
     }
 
 
@@ -1045,6 +1300,15 @@ def optimise_deployment_rank_threshold(
             "reason": "no_valid_rank_rows",
         }
     cache: Dict[float, Dict[str, Any]] = {}
+    total_cap = 1_000_000 if max_concurrent_total is None else int(max_concurrent_total)
+    side_cap = (
+        1_000_000 if max_concurrent_per_side is None else int(max_concurrent_per_side)
+    )
+    strategy_cap = (
+        1_000_000
+        if max_concurrent_per_strategy is None
+        else int(max_concurrent_per_strategy)
+    )
 
     def evaluate(threshold: float) -> Dict[str, Any]:
         threshold = float(np.round(threshold, 4))
@@ -1061,10 +1325,10 @@ def optimise_deployment_rank_threshold(
             rank_col="deployment_rank_pct",
             initial_rank_threshold=None,
             dynamic_threshold_enabled=False,
-            max_concurrent_total=max(1_000_000, max_concurrent_total),
-            max_concurrent_per_side=max(1_000_000, max_concurrent_per_side),
+            max_concurrent_total=max(1_000_000, total_cap),
+            max_concurrent_per_side=max(1_000_000, side_cap),
             max_concurrent_per_asset=max_concurrent_per_asset,
-            max_concurrent_per_strategy=max(1_000_000, max_concurrent_per_strategy),
+            max_concurrent_per_strategy=max(1_000_000, strategy_cap),
         )
         metrics = score_deployment_threshold_rows(selected)
         objective = (
@@ -1131,10 +1395,10 @@ def optimise_deployment_rank_threshold(
         ),
         "selection_quantile": 0.20,
         "selection_reason": reason,
-        "max_concurrent_total": int(max_concurrent_total),
-        "max_concurrent_per_side": int(max_concurrent_per_side),
+        "max_concurrent_total": int(total_cap),
+        "max_concurrent_per_side": int(side_cap),
         "max_concurrent_per_asset": int(max_concurrent_per_asset),
-        "max_concurrent_per_strategy": int(max_concurrent_per_strategy),
+        "max_concurrent_per_strategy": int(strategy_cap),
         "cross_symbol_concurrency_enforced": False,
         "cross_strategy_concurrency_enforced": False,
         "dynamic_threshold_enabled": False,
@@ -1736,14 +2000,22 @@ def calculate_advanced_metrics(
     sizes: np.ndarray,
     selected_mask: Optional[np.ndarray] = None,
     gross_gains: Optional[np.ndarray] = None,
+    exit_reasons: Optional[Sequence[Any]] = None,
 ) -> dict:
     if len(raw_gains) == 0:
         return {}
 
+    exit_reasons_arr = (
+        np.asarray(exit_reasons, dtype=object)
+        if exit_reasons is not None
+        else np.full(len(raw_gains), "unknown", dtype=object)
+    )
     if selected_mask is not None:
         mask = np.asarray(selected_mask, dtype=bool)
         if len(mask) == len(df_sub):
             df_sub = df_sub.iloc[np.flatnonzero(mask)].copy()
+        if len(mask) == len(exit_reasons_arr):
+            exit_reasons_arr = exit_reasons_arr[mask]
 
     if gross_gains is None:
         gross_gains_arr = np.full(len(raw_gains), np.nan, dtype=np.float32)
@@ -1754,14 +2026,16 @@ def calculate_advanced_metrics(
         len(raw_gains) != len(df_sub)
         or len(sizes) != len(df_sub)
         or len(gross_gains_arr) != len(df_sub)
+        or len(exit_reasons_arr) != len(df_sub)
     ):
         logger.warning(
             "Skipping advanced metrics due to length mismatch: "
-            "rows=%s gains=%s gross_gains=%s sizes=%s",
+            "rows=%s gains=%s gross_gains=%s sizes=%s exit_reasons=%s",
             len(df_sub),
             len(raw_gains),
             len(gross_gains_arr),
             len(sizes),
+            len(exit_reasons_arr),
         )
         return {}
 
@@ -1771,6 +2045,7 @@ def calculate_advanced_metrics(
             "net_gain": raw_gains,
             "gross_gain": gross_gains_arr,
             "size": sizes,
+            "exit_reason": exit_reasons_arr,
         }
     )
     df_trades = df_trades[np.isfinite(df_trades["net_gain"])]
@@ -1791,7 +2066,31 @@ def calculate_advanced_metrics(
     avg_gross_pnl_per_trade = df_trades["gross_gain"].mean()
     avg_gross_return_per_trade = df_trades["gross_rop"].mean()
 
-    hit_rate = (df_trades["net_gain"] > 0).mean()
+    pnl_positive_rate = (df_trades["net_gain"] > 0).mean()
+    exit_reason_counts = df_trades["exit_reason"].astype(str).value_counts()
+
+    def _exit_count(reason: str) -> int:
+        return int(exit_reason_counts.get(reason, 0))
+
+    trailing_profit_exit_count = _exit_count("trailing")
+    capital_protect_exit_count = _exit_count("capital_protect")
+    full_sl_exit_count = _exit_count("full_sl")
+    adverse_fast_exit_count = _exit_count("adverse_exit")
+    timeout_exit_count = _exit_count("timeout")
+    known_exit_count = (
+        trailing_profit_exit_count
+        + capital_protect_exit_count
+        + full_sl_exit_count
+        + adverse_fast_exit_count
+        + timeout_exit_count
+    )
+    unknown_exit_count = int(max(0, n_trades - known_exit_count))
+
+    def _exit_rate(count: int) -> float:
+        return float(count / max(n_trades, 1))
+
+    # Reporting hit rate intentionally means trailing-profit exits only.
+    hit_rate = _exit_rate(trailing_profit_exit_count)
 
     winning_trades = df_trades[df_trades["rop"] > 0]["rop"]
     losing_trades = df_trades[df_trades["rop"] < 0]["rop"]
@@ -1800,7 +2099,13 @@ def calculate_advanced_metrics(
 
     w_pnl = df_trades["net_gain"].resample("W").sum().fillna(0.0)
     m_pnl = df_trades["net_gain"].resample("ME").sum().fillna(0.0)
-    weekly_hit_rate = (df_trades["net_gain"] > 0).resample("W").mean().dropna()
+    weekly_hit_rate = (
+        (df_trades["exit_reason"].astype(str) == "trailing")
+        .resample("W")
+        .mean()
+        .dropna()
+    )
+    weekly_pnl_positive_rate = (df_trades["net_gain"] > 0).resample("W").mean().dropna()
 
     w_std = w_pnl.std()
     m_std = m_pnl.std()
@@ -1873,6 +2178,20 @@ def calculate_advanced_metrics(
         "avg_win": avg_win,
         "avg_loss": avg_loss,
         "hit_rate": hit_rate,
+        "hit_rate_definition": "trailing_profit_exit_rate",
+        "pnl_positive_rate": pnl_positive_rate,
+        "trailing_profit_exit_count": trailing_profit_exit_count,
+        "trailing_profit_exit_rate": _exit_rate(trailing_profit_exit_count),
+        "capital_protect_exit_count": capital_protect_exit_count,
+        "capital_protect_exit_rate": _exit_rate(capital_protect_exit_count),
+        "full_sl_exit_count": full_sl_exit_count,
+        "full_sl_exit_rate": _exit_rate(full_sl_exit_count),
+        "adverse_fast_exit_count": adverse_fast_exit_count,
+        "adverse_fast_exit_rate": _exit_rate(adverse_fast_exit_count),
+        "timeout_exit_count": timeout_exit_count,
+        "timeout_exit_rate": _exit_rate(timeout_exit_count),
+        "unknown_exit_count": unknown_exit_count,
+        "unknown_exit_rate": _exit_rate(unknown_exit_count),
         "w_sortino": w_sortino,
         "m_sortino": m_sortino,
         "w_std": w_std,
@@ -1896,6 +2215,19 @@ def calculate_advanced_metrics(
         "weekly_hit_rate_q90": _series_quantile(weekly_hit_rate, 0.90),
         "weekly_hit_rate_q90_q10_delta": _series_quantile(weekly_hit_rate, 0.90)
         - _series_quantile(weekly_hit_rate, 0.10),
+        "weekly_pnl_positive_rate_q10": _series_quantile(
+            weekly_pnl_positive_rate, 0.10
+        ),
+        "weekly_pnl_positive_rate_q50": _series_quantile(
+            weekly_pnl_positive_rate, 0.50
+        ),
+        "weekly_pnl_positive_rate_q90": _series_quantile(
+            weekly_pnl_positive_rate, 0.90
+        ),
+        "weekly_pnl_positive_rate_q90_q10_delta": _series_quantile(
+            weekly_pnl_positive_rate, 0.90
+        )
+        - _series_quantile(weekly_pnl_positive_rate, 0.10),
     }
 
 
@@ -1951,22 +2283,340 @@ def _suggest_policy_params(trial: optuna.Trial) -> Dict[str, Any]:
     }
 
 
-def _choose_best_trial(study: optuna.Study) -> Optional[optuna.trial.FrozenTrial]:
-    best_trials = study.best_trials
-    if not best_trials:
-        return None
-    best_trials_sorted_by_pnl = sorted(
-        best_trials, key=lambda t: t.values[0], reverse=True
+def _suggest_trailing_stage_params(trial: optuna.Trial) -> Dict[str, Any]:
+    params = _suggest_policy_params(trial)
+    params["capital_protect_mfe_mult"] = 0.0
+    params["capital_protect_regression_frac"] = 0.45
+    params["adverse_exit_enabled"] = False
+    return params
+
+
+def _suggest_stage2_params(
+    trial: optuna.Trial,
+    trailing_stage_params: Dict[str, Any],
+) -> Dict[str, Any]:
+    params = dict(trailing_stage_params)
+    sl_mult = trial.suggest_float("sl_mult", 0.5, 3.0, step=0.1)
+    adverse_mae_frac = trial.suggest_float(
+        "adverse_exit_min_mae_sl_frac",
+        0.20,
+        ADVERSE_EXIT_MAX_SL_FRACTION,
+        step=0.05,
     )
-    top_trials = best_trials_sorted_by_pnl[: min(5, len(best_trials_sorted_by_pnl))]
-    pnls = np.array([t.values[0] for t in top_trials], dtype=np.float64)
-    stds = np.array([t.values[1] for t in top_trials], dtype=np.float64)
-    pnl_range = np.ptp(pnls) if np.ptp(pnls) > 0 else 1.0
-    std_range = np.ptp(stds) if np.ptp(stds) > 0 else 1.0
-    scores = 0.5 * ((pnls - np.min(pnls)) / pnl_range) - 0.5 * (
-        (stds - np.min(stds)) / std_range
+    adverse_mae_atr = float(
+        max(
+            ADVERSE_EXIT_MIN_MAE_ATR_FLOOR,
+            np.floor(float(sl_mult) * adverse_mae_frac * 10.0) / 10.0,
+        )
     )
-    return top_trials[int(np.argmax(scores))]
+    params.update(
+        {
+            "sl_mult": sl_mult,
+            "capital_protect_mfe_mult": trial.suggest_float(
+                "capital_protect_mfe_mult", 0.0, 3.0, step=0.1
+            ),
+            "capital_protect_regression_frac": trial.suggest_float(
+                "capital_protect_regression_frac", 0.0, 1.0, step=0.05
+            ),
+            "adverse_exit_enabled": True,
+            "adverse_exit_min_mae_atr": adverse_mae_atr,
+            "adverse_exit_min_speed": trial.suggest_float(
+                "adverse_exit_min_speed", 0.1, 1.5, step=0.1
+            ),
+            "adverse_exit_theta_quantile": trial.suggest_float(
+                "adverse_exit_theta_quantile", 0.50, 0.95, step=0.05
+            ),
+            "adverse_exit_alpha": ADVERSE_EXIT_ALPHA,
+            "adverse_exit_beta": ADVERSE_EXIT_BETA,
+            "adverse_exit_delta": ADVERSE_EXIT_DELTA,
+            "adverse_exit_fast_bars": ADVERSE_EXIT_FAST_BARS,
+            "adverse_exit_max_mfe_atr": ADVERSE_EXIT_MAX_MFE_ATR,
+        }
+    )
+    return params
+
+
+def _trial_metric_summary(metrics: Dict[str, Any]) -> Dict[str, Any]:
+    gains = np.asarray(metrics.get("raw_gains", []), dtype=np.float64)
+    if gains.size == 0:
+        return {
+            "net_pnl": 0.0,
+            "mean_net_trade": 0.0,
+            "win_rate": 0.0,
+            "sortino": 0.0,
+            "max_drawdown": 0.0,
+            "n_trades": 0,
+            "adverse_exit_count": 0,
+            "adverse_exit_rate": 0.0,
+            "full_sl_exit_count": 0,
+            "capital_protect_exit_count": 0,
+            "trailing_exit_count": 0,
+        }
+    cum = np.cumsum(gains)
+    dd = cum - np.maximum.accumulate(cum)
+    downside = gains[gains < 0.0]
+    if len(downside) == 0 or float(np.std(downside)) == 0.0:
+        sortino = 100.0 if float(np.mean(gains)) > 0.0 else 0.0
+    else:
+        sortino = float(np.mean(gains) / np.sqrt(np.mean(downside**2)))
+    return {
+        "net_pnl": float(np.sum(gains)),
+        "mean_net_trade": float(np.mean(gains)),
+        "win_rate": float(np.mean(gains > 0.0)),
+        "sortino": float(sortino),
+        "max_drawdown": float(np.min(dd)) if len(dd) else 0.0,
+        "n_trades": int(len(gains)),
+        "adverse_exit_count": int(metrics.get("adverse_exit_count", 0) or 0),
+        "adverse_exit_rate": float(metrics.get("adverse_exit_rate", 0.0) or 0.0),
+        "full_sl_exit_count": int(metrics.get("full_sl_exit_count", 0) or 0),
+        "capital_protect_exit_count": int(
+            metrics.get("capital_protect_exit_count", 0) or 0
+        ),
+        "trailing_exit_count": int(metrics.get("trailing_exit_count", 0) or 0),
+    }
+
+
+def _policy_objective_scalar(metrics: Dict[str, Any], adv: Dict[str, Any]) -> float:
+    avg_std = 0.5 * float(adv.get("w_std", 10.0) or 10.0) + 0.5 * float(
+        adv.get("m_std", 10.0) or 10.0
+    )
+    max_dd = abs(float(_trial_metric_summary(metrics).get("max_drawdown", 0.0)))
+    return float(metrics.get("net_pnl", 0.0)) - 0.25 * avg_std - 0.10 * max_dd
+
+
+def _normalise_trial_params(
+    params: Dict[str, Any],
+    feature_ranges: Dict[str, Tuple[float, float]],
+) -> np.ndarray:
+    values: List[float] = []
+    for key, (lo, hi) in feature_ranges.items():
+        val = float(params.get(key, lo))
+        denom = max(float(hi) - float(lo), 1e-12)
+        values.append(float(np.clip((val - float(lo)) / denom, 0.0, 1.0)))
+    return np.asarray(values, dtype=np.float64)
+
+
+def _adverse_trigger_sl_fraction(params: Dict[str, Any]) -> float:
+    sl_mult = float(params.get("sl_mult", np.nan))
+    min_mae_atr = float(params.get("adverse_exit_min_mae_atr", np.nan))
+    if not np.isfinite(sl_mult) or sl_mult <= 0.0 or not np.isfinite(min_mae_atr):
+        return float("inf")
+    return float(min_mae_atr / max(sl_mult, 1e-12))
+
+
+def _adverse_trigger_inside_stop_envelope(params: Dict[str, Any]) -> bool:
+    if not bool(params.get("adverse_exit_enabled", False)):
+        return True
+    return _adverse_trigger_sl_fraction(params) <= float(ADVERSE_EXIT_MAX_SL_FRACTION)
+
+
+def _agglomerative_cluster_labels(x: np.ndarray, n_clusters: int) -> np.ndarray:
+    n = int(len(x))
+    clusters: List[List[int]] = [[i] for i in range(n)]
+    while len(clusters) > int(n_clusters):
+        best_pair: Optional[Tuple[int, int]] = None
+        best_dist = float("inf")
+        for i in range(len(clusters)):
+            ci = np.mean(x[clusters[i]], axis=0)
+            for j in range(i + 1, len(clusters)):
+                cj = np.mean(x[clusters[j]], axis=0)
+                dist = float(np.linalg.norm(ci - cj))
+                if dist < best_dist:
+                    best_dist = dist
+                    best_pair = (i, j)
+        if best_pair is None:
+            break
+        i, j = best_pair
+        clusters[i] = clusters[i] + clusters[j]
+        del clusters[j]
+    labels = np.zeros(n, dtype=np.int32)
+    for label, cluster in enumerate(clusters):
+        labels[cluster] = label
+    return labels
+
+
+def _select_top_trials_after_safety_filters(
+    trial_records: Sequence[Dict[str, Any]],
+    *,
+    top_k_trials: int = STABLE_TRIAL_TOP_K,
+    min_trades: int = STAGE2_MIN_TRADES,
+    max_adverse_exit_rate: float = STABLE_TRIAL_MAX_ADVERSE_EXIT_RATE,
+    max_allowed_drawdown: float = STAGE2_MAX_ALLOWED_DRAWDOWN,
+    min_allowed_fold_objective: float = STAGE2_MIN_ALLOWED_FOLD_OBJECTIVE,
+) -> List[Dict[str, Any]]:
+    feasible = []
+    for record in trial_records:
+        params = dict(record.get("params", {}) or {})
+        if not _adverse_trigger_inside_stop_envelope(params):
+            continue
+        if int(record.get("n_trades", 0) or 0) < int(min_trades):
+            continue
+        if float(record.get("adverse_exit_rate", 0.0) or 0.0) > float(
+            max_adverse_exit_rate
+        ):
+            continue
+        objective = float(record.get("objective", np.nan))
+        if not np.isfinite(objective):
+            continue
+        if float(record.get("max_drawdown", 0.0) or 0.0) < float(max_allowed_drawdown):
+            continue
+        if float(record.get("min_fold_objective", objective) or objective) < float(
+            min_allowed_fold_objective
+        ):
+            continue
+        feasible.append(dict(record))
+    feasible.sort(key=lambda row: float(row.get("objective", -np.inf)), reverse=True)
+    return feasible[: int(top_k_trials)]
+
+
+def _select_cluster_medoid_trial(
+    trial_records: Sequence[Dict[str, Any]],
+    *,
+    feature_ranges: Dict[str, Tuple[float, float]],
+    top_k_trials: int = STABLE_TRIAL_TOP_K,
+    min_cluster_size: int = STABLE_TRIAL_MIN_CLUSTER_SIZE,
+    min_trades: int = STAGE2_MIN_TRADES,
+    max_adverse_exit_rate: float = STABLE_TRIAL_MAX_ADVERSE_EXIT_RATE,
+    max_fold_instability: float = STABLE_TRIAL_MAX_FOLD_INSTABILITY,
+    fold_failure_threshold: float = STABLE_TRIAL_FOLD_FAILURE_THRESHOLD,
+) -> Dict[str, Any]:
+    top_trials = _select_top_trials_after_safety_filters(
+        trial_records,
+        top_k_trials=top_k_trials,
+        min_trades=min_trades,
+        max_adverse_exit_rate=max_adverse_exit_rate,
+    )
+    if len(top_trials) < int(min_cluster_size):
+        return {
+            "selected_trial": top_trials[0] if top_trials else None,
+            "stable_cluster_found": False,
+            "reason": "fewer_than_min_cluster_size_feasible_trials",
+            "top_trials": top_trials,
+        }
+
+    x = np.vstack(
+        [
+            _normalise_trial_params(row.get("params", {}), feature_ranges)
+            for row in top_trials
+        ]
+    )
+    best_top_objective = float(top_trials[0]["objective"])
+    stable_candidates: List[Dict[str, Any]] = []
+    max_k = min(5, len(top_trials))
+    for n_clusters in range(1, max_k + 1):
+        labels = _agglomerative_cluster_labels(x, n_clusters)
+        for label in sorted(set(labels.tolist())):
+            idx = np.flatnonzero(labels == label)
+            if len(idx) < int(min_cluster_size):
+                continue
+            cluster_trials = [top_trials[i] for i in idx]
+            objectives = np.asarray(
+                [float(row.get("objective", np.nan)) for row in cluster_trials],
+                dtype=np.float64,
+            )
+            fold_objectives = np.concatenate(
+                [
+                    np.asarray(
+                        row.get("fold_objectives", [row.get("objective", np.nan)]),
+                        dtype=np.float64,
+                    )
+                    for row in cluster_trials
+                ]
+            )
+            objective_median = float(np.nanmedian(objectives))
+            objective_std = float(np.nanstd(objectives))
+            fold_std = float(np.nanstd(fold_objectives))
+            fold_min = float(np.nanmin(fold_objectives))
+            adv_rate_median = float(
+                np.nanmedian(
+                    [
+                        float(row.get("adverse_exit_rate", 0.0) or 0.0)
+                        for row in cluster_trials
+                    ]
+                )
+            )
+            if objective_median < best_top_objective - 0.05 * max(
+                abs(best_top_objective), 1e-9
+            ):
+                continue
+            if adv_rate_median > float(max_adverse_exit_rate):
+                continue
+            if fold_std > float(max_fold_instability):
+                continue
+            if fold_min < float(fold_failure_threshold):
+                continue
+            max_dd_median = float(
+                np.nanmedian(
+                    [
+                        abs(float(row.get("max_drawdown", 0.0) or 0.0))
+                        for row in cluster_trials
+                    ]
+                )
+            )
+            cluster_score = (
+                objective_median
+                - STABLE_TRIAL_FOLD_INSTABILITY_PENALTY * fold_std
+                - STABLE_TRIAL_DRAWDOWN_PENALTY * max_dd_median
+                - STABLE_TRIAL_ADVERSE_OVERUSE_PENALTY
+                * max(0.0, adv_rate_median - float(max_adverse_exit_rate))
+            )
+            center = np.median(x[idx], axis=0)
+            distances = np.linalg.norm(x[idx] - center, axis=1)
+            medoid_local = int(np.argmin(distances))
+            medoid_idx = int(idx[medoid_local])
+            stable_candidates.append(
+                {
+                    "cluster_score": float(cluster_score),
+                    "cluster_size": int(len(idx)),
+                    "cluster_label": int(label),
+                    "n_clusters": int(n_clusters),
+                    "median_objective": objective_median,
+                    "objective_std": objective_std,
+                    "fold_objective_std": fold_std,
+                    "fold_objective_min": fold_min,
+                    "adverse_exit_rate_median": adv_rate_median,
+                    "medoid_trial": top_trials[medoid_idx],
+                    "medoid_distance": float(distances[medoid_local]),
+                    "cluster_trials": cluster_trials,
+                }
+            )
+    if not stable_candidates:
+        return {
+            "selected_trial": top_trials[0],
+            "stable_cluster_found": False,
+            "reason": "no_stable_cluster",
+            "top_trials": top_trials,
+        }
+    stable_candidates.sort(key=lambda row: float(row["cluster_score"]), reverse=True)
+    selected = stable_candidates[0]
+    return {
+        "selected_trial": selected["medoid_trial"],
+        "stable_cluster_found": True,
+        "top_trials": top_trials,
+        "cluster": selected,
+    }
+
+
+def _trial_record_from_evaluation(
+    *,
+    trial_number: int,
+    params: Dict[str, Any],
+    metrics: Dict[str, Any],
+    adv: Dict[str, Any],
+    objective: float,
+) -> Dict[str, Any]:
+    summary = _trial_metric_summary(metrics)
+    return {
+        "trial_number": int(trial_number),
+        "params": dict(params),
+        "adverse_exit_theta": float(metrics.get("adverse_exit_theta", np.nan)),
+        "adverse_exit_trigger_sl_fraction": _adverse_trigger_sl_fraction(params),
+        "objective": float(objective),
+        "fold_objectives": [float(objective)],
+        "min_fold_objective": float(objective),
+        "per_fold_metrics": [summary],
+        **summary,
+    }
 
 
 def _optimise_policy_on_rows(
@@ -1976,7 +2626,240 @@ def _optimise_policy_on_rows(
     cost_pct: float,
     n_trials: int,
 ) -> Tuple[Dict[str, Any], float, Dict[str, Any], Dict[str, Any]]:
-    def objective(trial: optuna.Trial) -> Tuple[float, float]:
+    def _run_study(
+        *,
+        stage_name: str,
+        suggest_fn,
+        feature_ranges: Dict[str, Tuple[float, float]],
+        min_trades: int,
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        trial_records: List[Dict[str, Any]] = []
+        best_objective = float("-inf")
+        no_improve = 0
+
+        def objective(trial: optuna.Trial) -> float:
+            params = suggest_fn(trial)
+            metrics = simulate_and_score(
+                df_train,
+                *train_paths,
+                cost_pct=cost_pct,
+                size_power=1.0,
+                max_concurrent_trades=MAX_CONCURRENT_TRADES,
+                **params,
+            )
+            adv = calculate_advanced_metrics(
+                df_train,
+                metrics["raw_gains"],
+                metrics["sizes"],
+                metrics.get("selected_mask"),
+                metrics.get("gross_gains"),
+                metrics.get("exit_reason"),
+            )
+            value = _policy_objective_scalar(metrics, adv)
+            record = _trial_record_from_evaluation(
+                trial_number=trial.number,
+                params=params,
+                metrics=metrics,
+                adv=adv,
+                objective=value,
+            )
+            trial.set_user_attr("policy_record", record)
+            trial_records.append(record)
+            return value
+
+        def early_stop_callback(
+            study: optuna.Study,
+            trial: optuna.trial.FrozenTrial,
+        ) -> None:
+            nonlocal best_objective, no_improve
+            value = float(trial.value) if trial.value is not None else float("-inf")
+            if value > best_objective + 1e-12:
+                best_objective = value
+                no_improve = 0
+            else:
+                no_improve += 1
+            if no_improve >= int(OPTUNA_EARLY_STOP_NO_IMPROVEMENT):
+                study.stop()
+
+        study = optuna.create_study(direction="maximize")
+        study.optimize(
+            objective,
+            n_trials=int(n_trials),
+            callbacks=[early_stop_callback],
+            show_progress_bar=False,
+        )
+        completed_records = [
+            dict(trial.user_attrs.get("policy_record"))
+            for trial in study.trials
+            if trial.state == optuna.trial.TrialState.COMPLETE
+            and isinstance(trial.user_attrs.get("policy_record"), dict)
+        ]
+        if not completed_records:
+            raise RuntimeError(f"Optuna returned no completed {stage_name} trials")
+        selected = _select_cluster_medoid_trial(
+            completed_records,
+            feature_ranges=feature_ranges,
+            min_cluster_size=STABLE_TRIAL_MIN_CLUSTER_SIZE,
+            min_trades=min_trades,
+            max_adverse_exit_rate=(
+                STABLE_TRIAL_MAX_ADVERSE_EXIT_RATE if "adverse" in stage_name else 1.0
+            ),
+        )
+        best_record = max(
+            completed_records, key=lambda row: float(row.get("objective", -np.inf))
+        )
+        medoid_record = selected.get("selected_trial") or best_record
+        stage_summary = {
+            "stage": stage_name,
+            "trials": int(len(study.trials)),
+            "completed_trials": int(len(completed_records)),
+            "best_trial_number": int(best_record.get("trial_number", -1)),
+            "best_trial_objective": float(best_record.get("objective", np.nan)),
+            "best_trial_metrics": {
+                key: best_record.get(key)
+                for key in (
+                    "net_pnl",
+                    "mean_net_trade",
+                    "win_rate",
+                    "sortino",
+                    "max_drawdown",
+                    "n_trades",
+                    "adverse_exit_rate",
+                )
+            },
+            "selected_medoid_trial_number": int(medoid_record.get("trial_number", -1)),
+            "selected_medoid_objective": float(medoid_record.get("objective", np.nan)),
+            "selected_medoid_metrics": {
+                key: medoid_record.get(key)
+                for key in (
+                    "net_pnl",
+                    "mean_net_trade",
+                    "win_rate",
+                    "sortino",
+                    "max_drawdown",
+                    "n_trades",
+                    "adverse_exit_rate",
+                )
+            },
+            "best_trial_not_deployed_reason": (
+                "cluster_medoid_selection"
+                if int(best_record.get("trial_number", -1))
+                != int(medoid_record.get("trial_number", -1))
+                else None
+            ),
+            "selection": selected,
+            "min_trades": int(min_trades),
+        }
+        if selected.get("stable_cluster_found"):
+            cluster = selected.get("cluster", {})
+            stage_summary.update(
+                {
+                    "stage2_selection_method": "top15_cluster_medoid",
+                    "top_k_trials": STABLE_TRIAL_TOP_K,
+                    "selected_cluster_size": int(cluster.get("cluster_size", 0)),
+                    "selected_cluster_median_objective": float(
+                        cluster.get("median_objective", np.nan)
+                    ),
+                    "selected_cluster_objective_std": float(
+                        cluster.get("objective_std", np.nan)
+                    ),
+                    "selected_cluster_fold_objective_std": float(
+                        cluster.get("fold_objective_std", np.nan)
+                    ),
+                    "selected_medoid_distance_to_cluster_center": float(
+                        cluster.get("medoid_distance", np.nan)
+                    ),
+                }
+            )
+        else:
+            stage_summary["stage2_selection_method"] = "best_feasible_fallback"
+        return dict(medoid_record.get("params", {})), stage_summary
+
+    trailing_stage_params, trailing_summary = _run_study(
+        stage_name="trailing_stage",
+        suggest_fn=_suggest_trailing_stage_params,
+        feature_ranges=TRAILING_CLUSTER_FEATURE_RANGES,
+        min_trades=STAGE2_MIN_TRADES,
+    )
+    provisional_sl_mult = float(trailing_stage_params.get("sl_mult", np.nan))
+
+    def _stage2_suggest(trial: optuna.Trial) -> Dict[str, Any]:
+        return _suggest_stage2_params(trial, trailing_stage_params)
+
+    stage2_params, stage2_summary = _run_study(
+        stage_name="stage2_adverse_capital_protection",
+        suggest_fn=_stage2_suggest,
+        feature_ranges=STAGE2_CLUSTER_FEATURE_RANGES,
+        min_trades=STAGE2_MIN_TRADES,
+    )
+    if not bool(stage2_summary.get("selection", {}).get("stable_cluster_found")):
+        stage2_params["adverse_exit_enabled"] = False
+        stage2_params["adverse_exit_disabled_reason"] = "no_stable_cluster"
+
+    best_params = {**trailing_stage_params, **stage2_params}
+    best_params["sl_mult"] = stage2_params["sl_mult"]
+    best_params["provisional_trailing_stage_sl_mult"] = provisional_sl_mult
+    best_params["sl_mult_source"] = (
+        "capital_preservation_adverse_exit_top15_cluster_medoid"
+    )
+    best_params.setdefault("adverse_exit_alpha", ADVERSE_EXIT_ALPHA)
+    best_params.setdefault("adverse_exit_beta", ADVERSE_EXIT_BETA)
+    best_params.setdefault("adverse_exit_delta", ADVERSE_EXIT_DELTA)
+    best_params.setdefault("adverse_exit_fast_bars", ADVERSE_EXIT_FAST_BARS)
+    best_params.setdefault("adverse_exit_max_mfe_atr", ADVERSE_EXIT_MAX_MFE_ATR)
+    best_params["stage2_selection_method"] = (
+        "top15_cluster_medoid"
+        if bool(stage2_summary.get("selection", {}).get("stable_cluster_found"))
+        else "no_stable_cluster_adverse_disabled"
+    )
+    audit_metrics = simulate_and_score(
+        df_train,
+        *train_paths,
+        cost_pct=cost_pct,
+        size_power=1.0,
+        max_concurrent_trades=MAX_CONCURRENT_TRADES,
+        **best_params,
+    )
+    if np.isfinite(float(audit_metrics.get("adverse_exit_theta", np.nan))):
+        best_params["adverse_exit_theta"] = float(audit_metrics["adverse_exit_theta"])
+
+    best_size_power, best_pnl, best_metrics = optimise_position_sizing(
+        df_train,
+        *train_paths,
+        cost_pct=cost_pct,
+        best_trailing_params=best_params,
+    )
+    summary = {
+        "trailing_stage": trailing_summary,
+        "stage2": stage2_summary,
+        "trials": int(
+            trailing_summary.get("trials", 0) + stage2_summary.get("trials", 0)
+        ),
+        "best_size_train_pnl": float(best_pnl),
+        "provisional_trailing_stage_sl_mult": provisional_sl_mult,
+        "final_stage2_sl_mult": float(best_params.get("sl_mult", np.nan)),
+        "final_audit_metrics": _trial_metric_summary(audit_metrics),
+    }
+    logger.info(
+        "Policy medoid selection: trailing_medoid=%s stage2_medoid=%s "
+        "best_trial_stage2=%s final_sl=%.3f adverse_enabled=%s",
+        trailing_summary.get("selected_medoid_trial_number"),
+        stage2_summary.get("selected_medoid_trial_number"),
+        stage2_summary.get("best_trial_number"),
+        float(best_params.get("sl_mult", np.nan)),
+        bool(best_params.get("adverse_exit_enabled", False)),
+    )
+    return best_params, float(best_size_power), best_metrics, summary
+
+
+def _legacy_optimise_policy_on_rows(
+    df_train: pd.DataFrame,
+    train_paths: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    *,
+    cost_pct: float,
+    n_trials: int,
+) -> Tuple[Dict[str, Any], float, Dict[str, Any], Dict[str, Any]]:
+    def objective(trial: optuna.Trial) -> float:
         params = _suggest_policy_params(trial)
         metrics = simulate_and_score(
             df_train,
@@ -1992,15 +2875,16 @@ def _optimise_policy_on_rows(
             metrics["sizes"],
             metrics.get("selected_mask"),
             metrics.get("gross_gains"),
+            metrics.get("exit_reason"),
         )
         avg_std = 0.5 * float(adv.get("w_std", 10.0) or 10.0) + 0.5 * float(
             adv.get("m_std", 10.0) or 10.0
         )
-        return float(metrics["net_pnl"]), avg_std
+        return float(metrics["net_pnl"] - 0.25 * avg_std)
 
-    study = optuna.create_study(directions=["maximize", "minimize"])
+    study = optuna.create_study(direction="maximize")
     study.optimize(objective, n_trials=int(n_trials), show_progress_bar=False)
-    best_trial = _choose_best_trial(study)
+    best_trial = study.best_trial
     if best_trial is None:
         raise RuntimeError("Optuna returned no best trials")
 
@@ -2014,8 +2898,7 @@ def _optimise_policy_on_rows(
     )
     summary = {
         "trials": int(len(study.trials)),
-        "best_pareto_train_pnl": float(best_trial.values[0]),
-        "best_pareto_train_std": float(best_trial.values[1]),
+        "best_train_objective": float(best_trial.value),
         "best_size_train_pnl": float(best_pnl),
     }
     return best_params, float(best_size_power), best_metrics, summary
@@ -2060,6 +2943,7 @@ def _evaluate_policy_subsets(
             metrics.get("sizes", np.array([])),
             metrics.get("selected_mask"),
             metrics.get("gross_gains"),
+            metrics.get("exit_reason"),
         )
         if not adv_metrics:
             continue
@@ -2087,7 +2971,25 @@ def _evaluate_policy_subsets(
             logger.info(
                 f"Avg Win: {adv_metrics['avg_win'] * 100:.2f}%, Avg Loss: {adv_metrics['avg_loss'] * 100:.2f}%"
             )
-            logger.info(f"Hit Rate: {adv_metrics['hit_rate'] * 100:.1f}%")
+            logger.info(
+                "Hit Rate (trailing profit only): %.1f%%; positive-PnL rate: %.1f%%",
+                adv_metrics["hit_rate"] * 100.0,
+                adv_metrics["pnl_positive_rate"] * 100.0,
+            )
+            logger.info(
+                "Exit mix: trailing=%s (%.1f%%), capital_protect=%s (%.1f%%), "
+                "full_sl=%s (%.1f%%), adverse_fast=%s (%.1f%%), timeout=%s (%.1f%%)",
+                adv_metrics["trailing_profit_exit_count"],
+                adv_metrics["trailing_profit_exit_rate"] * 100.0,
+                adv_metrics["capital_protect_exit_count"],
+                adv_metrics["capital_protect_exit_rate"] * 100.0,
+                adv_metrics["full_sl_exit_count"],
+                adv_metrics["full_sl_exit_rate"] * 100.0,
+                adv_metrics["adverse_fast_exit_count"],
+                adv_metrics["adverse_fast_exit_rate"] * 100.0,
+                adv_metrics["timeout_exit_count"],
+                adv_metrics["timeout_exit_rate"] * 100.0,
+            )
             logger.info(
                 f"Sortino (W / M): {adv_metrics['w_sortino']:.2f} / {adv_metrics['m_sortino']:.2f}"
             )
@@ -2113,6 +3015,19 @@ def _average_validation_metrics(
         "avg_win",
         "avg_loss",
         "hit_rate",
+        "pnl_positive_rate",
+        "trailing_profit_exit_count",
+        "trailing_profit_exit_rate",
+        "capital_protect_exit_count",
+        "capital_protect_exit_rate",
+        "full_sl_exit_count",
+        "full_sl_exit_rate",
+        "adverse_fast_exit_count",
+        "adverse_fast_exit_rate",
+        "timeout_exit_count",
+        "timeout_exit_rate",
+        "unknown_exit_count",
+        "unknown_exit_rate",
         "w_sortino",
         "m_sortino",
         "w_std",
@@ -2134,6 +3049,10 @@ def _average_validation_metrics(
         "weekly_hit_rate_q50",
         "weekly_hit_rate_q90",
         "weekly_hit_rate_q90_q10_delta",
+        "weekly_pnl_positive_rate_q10",
+        "weekly_pnl_positive_rate_q50",
+        "weekly_pnl_positive_rate_q90",
+        "weekly_pnl_positive_rate_q90_q10_delta",
         "candidate_count",
         "skipped_concurrency",
     ]
@@ -2722,7 +3641,6 @@ def _selection_rank(metrics: Dict[str, Any]) -> float:
     return float(effective_ops_day * avg_pnl / max(denom, 1e-9))
 
 
-
 def _runtime_params_hash(params: Dict[str, Any]) -> str:
     payload = {
         str(k): v
@@ -2731,6 +3649,7 @@ def _runtime_params_hash(params: Dict[str, Any]) -> str:
     }
     text = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
 
 def _policy_runtime_params(best_params: Dict[str, Any]) -> Dict[str, Any]:
     params = dict(best_params)
@@ -2888,6 +3807,28 @@ def _build_deployment_payload(
             "asset_metrics": result.get("asset_metrics", []),
             "avg_net_pnl_per_trade": avg_pnl,
             "hit_rate": selection_metrics.get("hit_rate"),
+            "hit_rate_definition": selection_metrics.get(
+                "hit_rate_definition", "trailing_profit_exit_rate"
+            ),
+            "pnl_positive_rate": selection_metrics.get("pnl_positive_rate"),
+            "trailing_profit_exit_count": selection_metrics.get(
+                "trailing_profit_exit_count"
+            ),
+            "trailing_profit_exit_rate": selection_metrics.get(
+                "trailing_profit_exit_rate"
+            ),
+            "capital_protect_exit_count": selection_metrics.get(
+                "capital_protect_exit_count"
+            ),
+            "capital_protect_exit_rate": selection_metrics.get(
+                "capital_protect_exit_rate"
+            ),
+            "full_sl_exit_count": selection_metrics.get("full_sl_exit_count"),
+            "full_sl_exit_rate": selection_metrics.get("full_sl_exit_rate"),
+            "adverse_fast_exit_count": selection_metrics.get("adverse_fast_exit_count"),
+            "adverse_fast_exit_rate": selection_metrics.get("adverse_fast_exit_rate"),
+            "timeout_exit_count": selection_metrics.get("timeout_exit_count"),
+            "timeout_exit_rate": selection_metrics.get("timeout_exit_rate"),
             "avg_gross_pnl_per_trade": selection_metrics.get("avg_gross_pnl_per_trade"),
             "avg_gross_return_per_trade": selection_metrics.get(
                 "avg_gross_return_per_trade"
@@ -2913,6 +3854,18 @@ def _build_deployment_payload(
             "weekly_hit_rate_q90_q10_delta": selection_metrics.get(
                 "weekly_hit_rate_q90_q10_delta"
             ),
+            "weekly_pnl_positive_rate_q10": selection_metrics.get(
+                "weekly_pnl_positive_rate_q10"
+            ),
+            "weekly_pnl_positive_rate_q50": selection_metrics.get(
+                "weekly_pnl_positive_rate_q50"
+            ),
+            "weekly_pnl_positive_rate_q90": selection_metrics.get(
+                "weekly_pnl_positive_rate_q90"
+            ),
+            "weekly_pnl_positive_rate_q90_q10_delta": selection_metrics.get(
+                "weekly_pnl_positive_rate_q90_q10_delta"
+            ),
             "avg_holding_time_hours": DEFAULT_FORWARD_BARS * 15.0 / 60.0,
             "avg_trades_per_day_at_top_1pct": float(
                 (metrics.get("top_1", {}).get("n_trades", 0.0) or 0.0)
@@ -2923,13 +3876,15 @@ def _build_deployment_payload(
             "generated_by": "simple_policy_optimiser",
             "schema": "simple_policy_v1",
             "params_source": f"artifacts/{run_id}/simple_policy_optimiser/deployment/best_policy_params.json",
-            "params_hash": _runtime_params_hash({
-                "strategy_id": strategy_id,
-                "generated_by": "simple_policy_optimiser",
-                "schema": "simple_policy_v1",
-                "params_source": f"artifacts/{run_id}/simple_policy_optimiser/deployment/best_policy_params.json",
-                **runtime_params,
-            }),
+            "params_hash": _runtime_params_hash(
+                {
+                    "strategy_id": strategy_id,
+                    "generated_by": "simple_policy_optimiser",
+                    "schema": "simple_policy_v1",
+                    "params_source": f"artifacts/{run_id}/simple_policy_optimiser/deployment/best_policy_params.json",
+                    **runtime_params,
+                }
+            ),
             "metrics": result,
         }
         reject_reasons: List[str] = []
@@ -3378,6 +4333,30 @@ def run_simple_policy_optimisation(
                 float(train_metrics.get("top_5", {}).get("avg_pnl_bankroll", np.nan)),
                 float(val_metrics.get("top_5", {}).get("avg_pnl_bankroll", np.nan)),
             )
+            train_top5 = train_metrics.get("top_5", {})
+            val_top5 = val_metrics.get("top_5", {})
+            train_validation_gap = {
+                "avg_net_pnl_per_trade": float(
+                    train_top5.get("avg_pnl_bankroll", np.nan)
+                )
+                - float(val_top5.get("avg_pnl_bankroll", np.nan)),
+                "win_rate": float(train_top5.get("hit_rate", np.nan))
+                - float(val_top5.get("hit_rate", np.nan)),
+                "sortino": float(train_top5.get("m_sortino", np.nan))
+                - float(val_top5.get("m_sortino", np.nan)),
+                "max_drawdown": float(train_top5.get("max_drawdown", np.nan))
+                - float(val_top5.get("max_drawdown", np.nan)),
+            }
+            logger.info(
+                "[%s] CV fold %s train-validation gap top5: "
+                "avg_net=%.6f win_rate=%.4f sortino=%.4f maxdd=%.6f",
+                strategy_id,
+                fold_no,
+                train_validation_gap["avg_net_pnl_per_trade"],
+                train_validation_gap["win_rate"],
+                train_validation_gap["sortino"],
+                train_validation_gap["max_drawdown"],
+            )
             fold_results.append(
                 {
                     "fold": fold_no,
@@ -3389,6 +4368,7 @@ def run_simple_policy_optimisation(
                     "fit_summary": fit_summary,
                     "train_metrics": train_metrics,
                     "validation_metrics": val_metrics,
+                    "train_validation_gap_top5": train_validation_gap,
                 }
             )
 
@@ -3609,7 +4589,10 @@ def run_simple_policy_optimisation(
         meta_oof_dir.parent / "strategy_for_inference.json",
         policy_params_dir / "best_policy_params.json",
         meta_oof_dir.parent / "best_policy_params.json",
-        meta_oof_dir.parent / "simple_policy_optimiser" / "deployment" / "best_policy_params.json",
+        meta_oof_dir.parent
+        / "simple_policy_optimiser"
+        / "deployment"
+        / "best_policy_params.json",
     ]:
         deployment_path.parent.mkdir(parents=True, exist_ok=True)
         deployment_path.write_text(deployment_text)

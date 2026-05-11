@@ -1033,6 +1033,9 @@ def validate_deployment_model_coverage(
         bucket_sources = []
         if isinstance(bucket_params, dict):
             bucket_sources.append(bucket_params.get("buckets", bucket_params))
+            stop_params = bucket_params.get("simple_policy_stop_params_by_strategy")
+            if isinstance(stop_params, dict):
+                bucket_sources.append(stop_params)
         if isinstance(ridge_params_per_bucket, dict):
             bucket_sources.append(ridge_params_per_bucket)
         for sid in selected_alpha:

@@ -32,7 +32,22 @@ def _params(**overrides):
         "giveback_beta": 0.5,
         "capital_protect_mfe_mult": 1.0,
         "capital_protect_regression_frac": 0.45,
+        "adverse_exit_enabled": False,
+        "adverse_exit_alpha": 1.0,
+        "adverse_exit_beta": 1.0,
+        "adverse_exit_delta": 1.0,
+        "adverse_exit_theta_quantile": 0.75,
+        "adverse_exit_theta": 0.65,
+        "adverse_exit_fast_bars": 4,
+        "adverse_exit_min_mae_atr": 1.0,
+        "adverse_exit_min_speed": 0.3,
+        "adverse_exit_max_mfe_atr": 0.25,
+        "provisional_trailing_stage_sl_mult": None,
+        "sl_mult_source": None,
+        "stage2_selection_method": None,
+        "adverse_exit_disabled_reason": None,
     }
+    row.update({k: v for k, v in overrides.items() if k in row})
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
     artifact_path.write_text(
         json.dumps(
@@ -47,12 +62,19 @@ def _params(**overrides):
     params = load_simple_policy_stop_params_by_strategy(
         str(base), run_id="20260101_000000"
     )[strategy_id]
-    params.update(overrides)
+    params.update({k: v for k, v in overrides.items() if k not in row})
     return params
 
 
 def _write_artifact(tmp_path, run_id, strategies):
-    path = tmp_path / "artifacts" / run_id / "simple_policy_optimiser" / "deployment" / "best_policy_params.json"
+    path = (
+        tmp_path
+        / "artifacts"
+        / run_id
+        / "simple_policy_optimiser"
+        / "deployment"
+        / "best_policy_params.json"
+    )
     path.parent.mkdir(parents=True)
     path.write_text(
         json.dumps(
@@ -82,6 +104,84 @@ def test_compute_initial_requires_artifact_metadata():
     params = _params()
     params.pop("schema")
     with pytest.raises(SimplePolicyStopParamsError, match="schema"):
+        compute_simple_policy_initial_stop_decision(
+            entry_price=100.0,
+            policy_params=params,
+            side="long",
+            strategy_id="long_mr",
+        )
+
+
+def test_initial_stop_accepts_live_barrier_from_state_not_artifact():
+    params = _params()
+    params.pop("barrier_pct")
+    decision = compute_simple_policy_initial_stop_decision(
+        entry_price=100.0,
+        policy_params=params,
+        side="long",
+        strategy_id="long_mr",
+        barrier_frac=0.015,
+    )
+    assert decision.stop_price == pytest.approx(98.5)
+    assert decision.barrier_frac == pytest.approx(0.015)
+
+
+def test_adverse_excursion_exit_uses_ranked_confidence_minus_half():
+    params = _params(
+        adverse_exit_enabled=True,
+        adverse_exit_theta=0.5,
+        adverse_exit_min_mae_atr=0.5,
+        adverse_exit_min_speed=0.1,
+        adverse_exit_max_mfe_atr=0.25,
+    )
+    decision = compute_simple_policy_stop_decision(
+        state={
+            "entry_price": 100.0,
+            "stop_price": 98.0,
+            "strategy_id": "long_mr",
+            "rank_percentile": 0.90,
+        },
+        latest_market_state={
+            "open": 100.0,
+            "high": 100.1,
+            "low": 98.8,
+            "close": 99.0,
+        },
+        policy_params=params,
+        side="long",
+    )
+
+    assert decision.should_exit is True
+    assert decision.exit_reason == "adverse_excursion_exit"
+    assert "ranked_confidence_minus_0_5=0.4" in decision.reason_detail
+
+
+def test_loader_uses_stage2_medoid_sl_mult_and_adverse_params():
+    params = _params(
+        sl_mult=1.1,
+        adverse_exit_enabled=True,
+        adverse_exit_theta=0.6421,
+        adverse_exit_min_mae_atr=1.0,
+        adverse_exit_min_speed=0.3,
+        provisional_trailing_stage_sl_mult=1.4,
+        sl_mult_source="capital_preservation_adverse_exit_top15_cluster_medoid",
+        stage2_selection_method="top15_cluster_medoid",
+    )
+
+    assert params["sl_mult"] == pytest.approx(1.1)
+    assert params["adverse_exit_enabled"] is True
+    assert params["adverse_exit_theta"] == pytest.approx(0.6421)
+    assert params["provisional_trailing_stage_sl_mult"] == pytest.approx(1.4)
+    assert (
+        params["sl_mult_source"]
+        == "capital_preservation_adverse_exit_top15_cluster_medoid"
+    )
+
+
+def test_initial_stop_requires_live_barrier_when_artifact_has_none():
+    params = _params()
+    params.pop("barrier_pct")
+    with pytest.raises(SimplePolicyStopParamsError, match="barrier"):
         compute_simple_policy_initial_stop_decision(
             entry_price=100.0,
             policy_params=params,
@@ -134,9 +234,12 @@ def test_legacy_stop_fields_are_rejected(legacy_field):
 def test_extractor_accepts_only_explicit_container_and_exact_strategy():
     params = _params()
     assert extract_simple_policy_stop_params_by_strategy({"long_mr": params}) == {}
-    assert extract_simple_policy_stop_params_by_strategy(
-        {"simple_policy_stop_params_by_strategy": {"mr": params}}
-    ) == {}
+    assert (
+        extract_simple_policy_stop_params_by_strategy(
+            {"simple_policy_stop_params_by_strategy": {"mr": params}}
+        )
+        == {}
+    )
     extracted = extract_simple_policy_stop_params_by_strategy(
         {"simple_policy_stop_params_by_strategy": {"long_mr": params}}
     )
@@ -155,16 +258,28 @@ def test_loader_selects_latest_valid_artifact_for_exact_strategy(tmp_path):
     _write_artifact(tmp_path, "20260101_000000", [stale, other])
     latest_path = _write_artifact(tmp_path, "20260102_000000", [fresh])
 
-    loaded = load_simple_policy_stop_params_by_strategy(str(tmp_path), run_id="20260101_000000")
+    loaded = load_simple_policy_stop_params_by_strategy(
+        str(tmp_path), run_id="20260102_000000"
+    )
 
     assert loaded["long_mr"]["sl_mult"] == 1.2
-    assert loaded["long_mr"]["params_source"] == latest_path.relative_to(tmp_path).as_posix()
+    assert (
+        loaded["long_mr"]["params_source"]
+        == latest_path.relative_to(tmp_path).as_posix()
+    )
     assert loaded["long_mr"]["strategy_id"] == "long_mr"
-    assert loaded["short_mr"]["strategy_id"] == "short_mr"
+    assert "short_mr" not in loaded
 
 
 def test_loader_ignores_wrong_generator_and_bad_strategy_rows(tmp_path):
-    bad_path = tmp_path / "artifacts" / "20260101_000000" / "simple_policy_optimiser" / "deployment" / "best_policy_params.json"
+    bad_path = (
+        tmp_path
+        / "artifacts"
+        / "20260101_000000"
+        / "simple_policy_optimiser"
+        / "deployment"
+        / "best_policy_params.json"
+    )
     bad_path.parent.mkdir(parents=True)
     bad_path.write_text(
         json.dumps(
@@ -184,13 +299,17 @@ def test_legacy_order_manager_v2_is_quarantined():
     from pathlib import Path
 
     module_path = Path("live_trading/order_manager_v2.py")
-    spec = importlib.util.spec_from_file_location("order_manager_v2_quarantine", module_path)
+    spec = importlib.util.spec_from_file_location(
+        "order_manager_v2_quarantine", module_path
+    )
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
 
     with pytest.raises(RuntimeError, match="quarantined"):
-        module.OrderManagerV2(api_client=object(), portfolio_manager=object(), config={})
+        module.OrderManagerV2(
+            api_client=object(), portfolio_manager=object(), config={}
+        )
 
 
 def test_fake_concrete_params_source_without_loader_stamp_is_rejected():
@@ -215,7 +334,9 @@ def test_manual_replacement_decision_with_fake_artifact_is_rejected():
     import sys
     import types
 
-    from extreme_price_movements.inference.simple_policy_stop import SimplePolicyStopDecision
+    from extreme_price_movements.inference.simple_policy_stop import (
+        SimplePolicyStopDecision,
+    )
 
     optuna = types.ModuleType("optuna")
     optuna_pruners = types.ModuleType("optuna.pruners")
@@ -225,7 +346,9 @@ def test_manual_replacement_decision_with_fake_artifact_is_rejected():
     sys.modules.setdefault("optuna", optuna)
     sys.modules.setdefault("optuna.pruners", optuna_pruners)
     sys.modules.setdefault("optuna.samplers", optuna_samplers)
-    from extreme_price_movements.inference.trade_executor import _validate_policy_stop_decision
+    from extreme_price_movements.inference.trade_executor import (
+        _validate_policy_stop_decision,
+    )
 
     state = {
         "strategy_id": "long_mr",

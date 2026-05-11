@@ -26,6 +26,9 @@ REPORT_TRADE_COLUMNS = [
     "meta_pred",
     "calibrated_score",
     "ridge_position_size",
+    "quote_size",
+    "entry_notional_quote",
+    "exit_notional_quote",
     "entry_price",
     "actual_entry_price",
     "actual_exit_price",
@@ -43,10 +46,18 @@ REPORT_TRADE_COLUMNS = [
     "gross_pnl_amount",
     "net_pnl_amount",
     "net_pnl",
+    "entry_fee_quote",
+    "exit_fee_quote",
+    "gross_to_net_cost_quote",
+    "gross_to_net_cost_pct",
     "mfe",
     "mae",
     "exit_reason",
     "exit_reason_detail",
+    "stop_policy_params_source",
+    "stop_policy_params_hash",
+    "stop_policy_schema",
+    "decision_module",
     "status",
     "order_error_category",
     "error",
@@ -190,10 +201,20 @@ def _strategy_trade_recap(trades: pd.DataFrame, *, total_balance: float) -> str:
         closed.get("net_pnl_pct", pd.Series(index=closed.index, dtype=float)),
         errors="coerce",
     )
-    closed["notional"] = pd.to_numeric(
-        closed.get("ridge_position_size", pd.Series(index=closed.index, dtype=float)),
-        errors="coerce",
-    ).fillna(0.0)
+    closed["notional"] = pd.Series(np.nan, index=closed.index, dtype=float)
+    for notional_col in (
+        "entry_notional_quote",
+        "quote_size",
+        "position_size_after_liquidity",
+        "ridge_position_size",
+    ):
+        closed["notional"] = closed["notional"].fillna(
+            pd.to_numeric(
+                closed.get(notional_col, pd.Series(index=closed.index, dtype=float)),
+                errors="coerce",
+            ).replace([np.inf, -np.inf], np.nan)
+        )
+    closed["notional"] = closed["notional"].fillna(0.0)
     if (closed["notional"] <= 0.0).all():
         entry = pd.to_numeric(
             closed.get(
@@ -276,7 +297,31 @@ def _strategy_trade_recap(trades: pd.DataFrame, *, total_balance: float) -> str:
                 mean_val = float(series.mean()) if series.notna().any() else np.nan
                 vals.append(_format_money(mean_val))
             rows.append(f"{strategy_id} | " + " | ".join(vals))
+    mfe_loss_lines = _mfe_losing_trade_recap(closed)
+    if mfe_loss_lines:
+        rows.append("")
+        rows.extend(mfe_loss_lines)
     return "\n".join(rows)
+
+
+def _mfe_losing_trade_recap(closed: pd.DataFrame) -> List[str]:
+    """Count trades that had meaningful MFE but still closed net-negative."""
+    if closed.empty or "mfe" not in closed.columns:
+        return []
+    mfe = pd.to_numeric(closed["mfe"], errors="coerce").replace([np.inf, -np.inf], np.nan)
+    net = pd.to_numeric(
+        closed.get("net_amount", pd.Series(index=closed.index, dtype=float)),
+        errors="coerce",
+    ).replace([np.inf, -np.inf], np.nan)
+    losing = net < 0.0
+    if not losing.any() or not mfe.notna().any():
+        return []
+    thresholds = (0.01, 0.015, 0.02, 0.025, 0.03)
+    parts = [
+        f"MFE>={thr:.1%}: {int(((mfe >= thr) & losing).sum())}"
+        for thr in thresholds
+    ]
+    return ["MFE-but-losing recap:", " | ".join(parts)]
 
 
 def _trades_since(logger: TradeLogger, since_ts: Optional[str]) -> pd.DataFrame:
@@ -710,6 +755,7 @@ class DailyDeploymentReporter:
         *,
         now: pd.Timestamp,
         total_balance: float,
+        available_balance: float,
         previous_best_balance: float,
         amount_to_save: float,
         transfer_result: Dict[str, Any],
@@ -722,7 +768,9 @@ class DailyDeploymentReporter:
                 "Account",
                 f"  datetime: {now.isoformat()}",
                 f"  total_balance_usdt: {total_balance:.8f}",
-                f"  previous_best_balance_usdt: {previous_best_balance:.8f}",
+                f"  available_balance_usdt_for_profit_skim: {available_balance:.8f}",
+                "  previous_best_available_balance_usdt: "
+                f"{previous_best_balance:.8f}",
                 f"  amount_saved_to_spot_usdt: {amount_to_save:.8f}",
                 "  transfer_result: "
                 f"{json.dumps(transfer_result, default=str, sort_keys=True)}",
@@ -786,10 +834,18 @@ class DailyDeploymentReporter:
                 "snapshot_errors": snapshot.get("errors", []),
             }
 
-        previous_best = _coerce_float(
-            state.get("previous_best_balance_usdt"), default=total_balance
+        available_balance = _coerce_float(
+            snapshot.get("free_balance"),
+            default=total_balance,
         )
-        amount_to_save = max(0.0, (total_balance - previous_best) / 20.0)
+        previous_best = _coerce_float(
+            state.get("previous_best_available_balance_usdt"),
+            default=_coerce_float(
+                state.get("previous_best_balance_usdt"),
+                default=available_balance,
+            ),
+        )
+        amount_to_save = max(0.0, (available_balance - previous_best) / 20.0)
         transfer_enabled = bool(
             cfg.get("daily_report_transfer_enabled", cfg.get("mode") == "live")
         )
@@ -815,8 +871,19 @@ class DailyDeploymentReporter:
             # Persist the new high-water mark immediately after a successful
             # transfer so an SMTP failure cannot repeat the same transfer.
             state = dict(state)
-            state["previous_best_balance_usdt"] = max(previous_best, total_balance)
+            state["previous_best_available_balance_usdt"] = max(
+                previous_best,
+                available_balance,
+            )
+            state["previous_best_balance_usdt"] = max(
+                _coerce_float(
+                    state.get("previous_best_balance_usdt"),
+                    default=total_balance,
+                ),
+                total_balance,
+            )
             state["last_total_balance_usdt"] = total_balance
+            state["last_available_balance_usdt"] = available_balance
             state["last_amount_saved_to_spot_usdt"] = amount_to_save
             state["last_transfer_result"] = transfer_result
             state["last_transfer_ts"] = now_ts.isoformat()
@@ -832,6 +899,7 @@ class DailyDeploymentReporter:
         body = self._build_body(
             now=now_ts,
             total_balance=total_balance,
+            available_balance=available_balance,
             previous_best_balance=previous_best,
             amount_to_save=amount_to_save,
             transfer_result=transfer_result,
@@ -854,16 +922,25 @@ class DailyDeploymentReporter:
             }
 
         new_state = dict(state)
-        new_state["previous_best_balance_usdt"] = max(previous_best, total_balance)
+        new_state["previous_best_available_balance_usdt"] = max(
+            previous_best,
+            available_balance,
+        )
+        new_state["previous_best_balance_usdt"] = max(
+            _coerce_float(state.get("previous_best_balance_usdt"), default=total_balance),
+            total_balance,
+        )
         new_state["last_report_ts"] = now_ts.isoformat()
         new_state["last_trade_report_ts"] = now_ts.isoformat()
         new_state["last_total_balance_usdt"] = total_balance
+        new_state["last_available_balance_usdt"] = available_balance
         new_state["last_amount_saved_to_spot_usdt"] = amount_to_save
         new_state["last_transfer_result"] = transfer_result
         self._save_state(new_state)
         tprint(
             "[DailyReporter] Daily report sent: "
             f"total={total_balance:.2f} previous_best={previous_best:.2f} "
+            f"available={available_balance:.2f} "
             f"saved={amount_to_save:.2f} trades={len(trades)}"
         )
         return {
@@ -873,5 +950,6 @@ class DailyDeploymentReporter:
             "amount_to_save": amount_to_save,
             "trade_count": int(len(trades)),
             "total_balance": total_balance,
+            "available_balance": available_balance,
             "previous_best_balance": previous_best,
         }

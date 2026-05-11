@@ -3147,6 +3147,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         )
 
     feats["fund_rate"] = fund_aligned.clip(lower=-0.01, upper=0.01).astype(np.float32)
+    feats["funding_rate"] = feats["fund_rate"]
     feats["fund_rate_z_14d"] = _batch_roll_zscore(feats["fund_rate"], 14 * 24).clip(
         -6, 6
     )
@@ -3680,6 +3681,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["mkt_ret_eq_1h"] = _broadcast_series(basket_ret1)
     feats["mkt_ret_eq_4h"] = _broadcast_series(basket_ret4)
     feats["mkt_ret_eq_24h"] = _broadcast_series(basket_ret24)
+    feats["cs_rank_ret_24h"] = ret24.rank(axis=1, method="average", pct=True).astype(
+        np.float32
+    )
 
     btc1 = ret1[btc_symbol] if btc_symbol is not None else basket_ret1
     btc4 = ret4[btc_symbol] if btc_symbol is not None else med4
@@ -3707,6 +3711,10 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["symbol_minus_mkt_ret_24h"] = ret24.sub(basket_ret24, axis=0).astype(
         np.float32
     )
+    feats["market_breadth_4h"] = _broadcast_series((ret4[basket_cols] > 0.0).mean(axis=1))
+    feats["market_breadth_24h"] = _broadcast_series((ret24[basket_cols] > 0.0).mean(axis=1))
+    feats["market_dispersion_4h"] = _broadcast_series(ret4[basket_cols].std(axis=1))
+    feats["market_dispersion_24h"] = _broadcast_series(ret24[basket_cols].std(axis=1))
     feats["ret_resid_btc_1h"] = ret1.sub(btc1, axis=0).astype(np.float32)
     feats["ret_resid_btc_4h"] = ret4.sub(btc4, axis=0).astype(np.float32)
     feats["ret_resid_eth_1h"] = ret1.sub(eth1, axis=0).astype(np.float32)

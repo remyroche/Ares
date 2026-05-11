@@ -347,6 +347,10 @@ class PortfolioManager:
         self.manual_reset_required = True
         self.hard_limit_reason = reason
 
+    def trip_hard_limit(self, reason: str) -> None:
+        """Block new entries until the hard-risk gate is manually reset."""
+        self._trip_hard_limit(reason)
+
     def evaluate_hard_limits(
         self, current_time: Optional[pd.Timestamp] = None
     ) -> Tuple[bool, Dict[str, Any]]:

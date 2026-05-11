@@ -6,11 +6,15 @@ exchange orders. The inference caller passes USDT quote notional; live orders
 convert that notional to base quantity before touching the exchange.
 """
 
+import hashlib
+import hmac
+import json
 import os
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+from urllib.parse import urlencode
 
 import numpy as np
 import pandas as pd
@@ -20,9 +24,10 @@ from extreme_price_movements.inference.parity import strategy_core_id
 from extreme_price_movements.inference.simple_policy_stop import (
     SimplePolicyStopDecision,
     SimplePolicyStopParamsError,
-    is_concrete_simple_policy_params_source,
     compute_initial_simple_policy_stop_decision,
+    compute_simple_policy_stop_decision,
     extract_simple_policy_stop_params_by_strategy,
+    is_concrete_simple_policy_params_source,
     validate_simple_policy_stop_params,
 )
 from extreme_price_movements.utils import tprint
@@ -38,10 +43,31 @@ CANONICAL_STOP_POSITION_FIELDS = {
     "barrier_pct",
     "sl_mult",
     "strategy_id",
+    "decision_module",
     "stop_policy_params_source",
     "stop_policy_params_hash",
     "stop_policy_schema",
 }
+MODEL_AND_POLICY_CONTEXT_KEYS = (
+    "base_pred",
+    "base_rank_pct",
+    "base_train_rank_pct",
+    "base_gate_top_frac",
+    "meta_pred",
+    "meta_train_rank_pct",
+    "rank_score_source",
+    "calibrated_score",
+    "rank_percentile",
+    "effective_threshold",
+    "deployment_rank_threshold",
+    "quote_size",
+    "requested_base_amount",
+    "entry_notional_quote",
+    "position_size_before_liquidity",
+    "position_size_after_liquidity",
+    "policy_artifact_run_id",
+    "policy_schema_version",
+)
 TRIGGER_PRICE_REJECT_TOKENS = (
     "order_would_immediately_trigger",
     "order would immediately trigger",
@@ -202,21 +228,54 @@ def _validate_policy_stop_decision(
     if not np.isfinite(sl_mult) or sl_mult <= 0.0:
         return False, "invalid simple-policy decision sl_mult"
     if position_state is not None:
-        expected_strategy = str(position_state.get("strategy_id") or position_state.get("bucket_key") or "").strip()
+        expected_strategy = str(
+            position_state.get("strategy_id") or position_state.get("bucket_key") or ""
+        ).strip()
         if expected_strategy and decision.strategy_id != expected_strategy:
-            return False, "simple-policy decision strategy_id does not match active position"
-        if str(position_state.get("stop_policy_params_source") or "").strip() != params_source:
-            return False, "simple-policy decision params_source does not match active position"
-        if str(position_state.get("stop_policy_params_hash") or "").strip() != str(decision.params_hash or "").strip():
-            return False, "simple-policy decision params_hash does not match active position"
+            return (
+                False,
+                "simple-policy decision strategy_id does not match active position",
+            )
+        if (
+            str(position_state.get("stop_policy_params_source") or "").strip()
+            != params_source
+        ):
+            return (
+                False,
+                "simple-policy decision params_source does not match active position",
+            )
+        if (
+            str(position_state.get("stop_policy_params_hash") or "").strip()
+            != str(decision.params_hash or "").strip()
+        ):
+            return (
+                False,
+                "simple-policy decision params_hash does not match active position",
+            )
     if artifact_params is not None:
-        if str(artifact_params.get("strategy_id") or "").strip() != decision.strategy_id:
-            return False, "simple-policy decision strategy_id does not match latest artifact"
+        if (
+            str(artifact_params.get("strategy_id") or "").strip()
+            != decision.strategy_id
+        ):
+            return (
+                False,
+                "simple-policy decision strategy_id does not match latest artifact",
+            )
         if str(artifact_params.get("params_source") or "").strip() != params_source:
-            return False, "simple-policy decision params_source does not match latest artifact"
-        if str(artifact_params.get("params_hash") or "").strip() != str(decision.params_hash or "").strip():
-            return False, "simple-policy decision params_hash does not match latest artifact"
+            return (
+                False,
+                "simple-policy decision params_source does not match latest artifact",
+            )
+        if (
+            str(artifact_params.get("params_hash") or "").strip()
+            != str(decision.params_hash or "").strip()
+        ):
+            return (
+                False,
+                "simple-policy decision params_hash does not match latest artifact",
+            )
     return True, ""
+
 
 def _append_position_event(
     state: Dict[str, Any],
@@ -274,7 +333,12 @@ def _classify_exchange_error(exc: Exception) -> str:
         return "auth_or_permission"
     if "max pledged collateral" in text or "max transfer in quantity is 0" in text:
         return "asset_collateral_limit"
-    if "insufficient" in text or "balance" in text or "margin" in text:
+    if (
+        "insufficient" in text
+        or "balance" in text
+        or "margin" in text
+        or ("borrow amount" in text and "maximum borrow amount" in text)
+    ):
         return "insufficient_balance"
     if (
         "precision" in text
@@ -518,7 +582,9 @@ def _dedupe_param_variants(variants: List[Dict[str, Any]]) -> List[Dict[str, Any
     return out
 
 
-def _margin_fetch_param_variants(config: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _margin_fetch_param_variants(
+    config: Optional[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
     """Return robust ccxt param variants for Binance margin order reads."""
     base = _cancel_params(config)
     if _execution_account(config) != "margin":
@@ -535,17 +601,26 @@ def _margin_fetch_param_variants(config: Optional[Dict[str, Any]]) -> List[Dict[
     )
 
 
-def _reduce_order_param_variants(config: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _reduce_order_param_variants(
+    config: Optional[Dict[str, Any]],
+    *,
+    side: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     """Return robust ccxt param variants for margin reduce/close orders."""
     base = _order_params(config, reduce_only=True)
     if _execution_account(config) != "margin":
         return [base]
     margin_mode = _margin_mode(config)
-    variants: List[Dict[str, Any]] = [base]
-    for side_effect in ("AUTO_REPAY", "AUTO_BORROW_REPAY", "NO_SIDE_EFFECT"):
+    variants: List[Dict[str, Any]] = []
+    side_effects = ["AUTO_REPAY", "NO_SIDE_EFFECT"]
+    if str(side or "").lower() == "buy":
+        side_effects.append("MARGIN_BUY")
+    side_effects.append("AUTO_BORROW_REPAY")
+    for side_effect in side_effects:
         params = {"marginMode": margin_mode, "sideEffectType": side_effect}
         variants.append(params)
         variants.append({**params, "type": "margin"})
+    variants.append(base)
     variants.extend(
         [
             {"marginMode": margin_mode},
@@ -566,7 +641,7 @@ def _create_reduce_stop_loss_order(
 ) -> Dict[str, Any]:
     """Create a reduce/close STOP_LOSS order, retrying safe margin param variants."""
     last_exc: Optional[Exception] = None
-    for params in _reduce_order_param_variants(config):
+    for params in _reduce_order_param_variants(config, side=side):
         try:
             return exchange.create_order(
                 symbol=symbol,
@@ -590,9 +665,222 @@ def _create_reduce_stop_loss_order(
     raise RuntimeError(f"STOP_LOSS creation did not run for {symbol}")
 
 
+def _create_reduce_market_order(
+    exchange: Any,
+    *,
+    symbol: str,
+    side: str,
+    amount: float,
+    price: Optional[float] = None,
+    config: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Create a reduce/close market order, retrying safe margin param variants."""
+    last_exc: Optional[Exception] = None
+    order_price = float(price) if price is not None and np.isfinite(price) else None
+    for params in _reduce_order_param_variants(config, side=side):
+        try:
+            return exchange.create_order(
+                symbol=symbol,
+                type="market",
+                side=side,
+                amount=amount,
+                price=order_price,
+                params=params,
+            )
+        except Exception as exc:
+            last_exc = exc
+            category = _classify_exchange_error(exc)
+            if category not in {
+                "insufficient_balance",
+                "auth_or_permission",
+                "invalid_precision_or_filter",
+            }:
+                raise
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError(f"Market reduce order creation did not run for {symbol}")
+
+
+def _create_margin_market_order_variants(
+    exchange: Any,
+    *,
+    symbol: str,
+    side: str,
+    amount: float,
+    price: Optional[float],
+    side_effects: Sequence[str],
+    config: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Create a margin market order using explicit sideEffectType variants."""
+    if exchange is None:
+        raise RuntimeError("exchange is required")
+    margin_mode = _margin_mode(config)
+    order_price = float(price) if price is not None and np.isfinite(price) else None
+    variants: List[Dict[str, Any]] = []
+    for side_effect in side_effects:
+        params = {"marginMode": margin_mode, "sideEffectType": str(side_effect)}
+        variants.append(params)
+        variants.append({**params, "type": "margin"})
+    variants.extend(
+        [
+            {"marginMode": margin_mode},
+            {"type": "margin", "marginMode": margin_mode},
+        ]
+    )
+    last_exc: Optional[Exception] = None
+    for params in _dedupe_param_variants(variants):
+        try:
+            return exchange.create_order(
+                symbol=symbol,
+                type="market",
+                side=side,
+                amount=amount,
+                price=order_price,
+                params=params,
+            )
+        except Exception as exc:
+            last_exc = exc
+            category = _classify_exchange_error(exc)
+            if category not in {
+                "insufficient_balance",
+                "auth_or_permission",
+                "invalid_precision_or_filter",
+                "platform_collateral_limit",
+            }:
+                raise
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError(f"Margin market order creation did not run for {symbol}")
+
+
+def _order_stop_price(order: Dict[str, Any]) -> float:
+    """Extract stop price from a ccxt/Binance order payload."""
+    info = order.get("info") if isinstance(order.get("info"), dict) else {}
+    return _safe_float(
+        order.get("stopPrice")
+        or order.get("stop_price")
+        or info.get("stopPrice")
+        or info.get("triggerPrice")
+        or info.get("activatePrice")
+        or order.get("triggerPrice")
+        or order.get("price"),
+        default=np.nan,
+    )
+
+
+def _is_stop_loss_order(order: Dict[str, Any]) -> bool:
+    """Return whether an exchange order payload looks like a protective stop."""
+    if not isinstance(order, dict):
+        return False
+    info = order.get("info") if isinstance(order.get("info"), dict) else {}
+    tokens = " ".join(
+        str(v or "").upper()
+        for v in (
+            order.get("type"),
+            order.get("orderType"),
+            order.get("origType"),
+            info.get("type"),
+            info.get("orderType"),
+            info.get("origType"),
+        )
+    )
+    if "STOP" in tokens:
+        return True
+    return np.isfinite(_order_stop_price(order))
+
+
+def _fetch_open_protective_stop_orders(
+    exchange: Any,
+    *,
+    symbol: str,
+    position_side: str,
+    config: Optional[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Fetch open STOP_LOSS orders that reduce the tracked position side."""
+    fetch_open_orders = getattr(exchange, "fetch_open_orders", None)
+    if not callable(fetch_open_orders):
+        return []
+    expected_side = "sell" if str(position_side).lower() == "long" else "buy"
+    out: List[Dict[str, Any]] = []
+    for fetch_params in _margin_fetch_param_variants(config):
+        try:
+            open_orders = fetch_open_orders(symbol, None, None, fetch_params) or []
+        except Exception:
+            continue
+        for order in open_orders:
+            if not isinstance(order, dict):
+                continue
+            if str(order.get("side") or "").lower() != expected_side:
+                continue
+            if not _is_stop_loss_order(order):
+                continue
+            out.append(order)
+        if out:
+            break
+    return out
+
+
+def _cancel_open_protective_stop_orders(
+    exchange: Any,
+    *,
+    symbol: str,
+    position_side: str,
+    config: Optional[Dict[str, Any]],
+    keep_order_id: Any = None,
+) -> int:
+    """Cancel open protective stops to free reserved position quantity."""
+    cancel_order = getattr(exchange, "cancel_order", None)
+    if not callable(cancel_order):
+        return 0
+    cancelled = 0
+    keep = str(keep_order_id) if keep_order_id not in (None, "") else ""
+    for order in _fetch_open_protective_stop_orders(
+        exchange, symbol=symbol, position_side=position_side, config=config
+    ):
+        order_id = order.get("id")
+        if not order_id or (keep and str(order_id) == keep):
+            continue
+        for cancel_params in _margin_fetch_param_variants(config):
+            try:
+                cancel_order(order_id, symbol, cancel_params)
+                cancelled += 1
+                break
+            except Exception as exc:
+                category = _classify_exchange_error(exc)
+                if category in {"order_not_found", "already_closed_or_cancelled"}:
+                    cancelled += 1
+                    break
+    return cancelled
+
+
 def _symbol_from_asset_quote(asset: str, quote: str) -> str:
     """Return the canonical ccxt symbol for an asset/quote pair."""
     return f"{str(asset).upper()}/{str(quote).upper()}"
+
+
+def _fee_to_quote(
+    symbol: str,
+    fee: Any,
+    *,
+    price: float,
+) -> Tuple[float, float, str]:
+    """Return fee as quote currency, original cost, and original currency."""
+    fee_dict = fee if isinstance(fee, dict) else {}
+    fee_cost = _safe_float(fee_dict.get("cost"), 0.0)
+    fee_currency = str(fee_dict.get("currency") or "").upper()
+    base_asset = str(symbol).split("/", 1)[0].upper()
+    quote_asset = (
+        str(symbol).split("/", 1)[1].split(":", 1)[0].upper()
+        if "/" in str(symbol)
+        else ""
+    )
+    fee_quote = 0.0
+    if np.isfinite(fee_cost) and fee_cost > 0.0:
+        if fee_currency == quote_asset or not fee_currency:
+            fee_quote = fee_cost
+        elif fee_currency == base_asset and np.isfinite(price):
+            fee_quote = fee_cost * price
+    return float(fee_quote), float(fee_cost), fee_currency
 
 
 def _closed_trade_metrics(
@@ -616,6 +904,7 @@ def _closed_trade_metrics(
     gross_pnl = np.nan
     gross_pnl_pct = np.nan
     notional = np.nan
+    exit_notional = np.nan
     if (
         np.isfinite(entry_price)
         and entry_price > 0
@@ -625,25 +914,24 @@ def _closed_trade_metrics(
     ):
         direction = 1.0 if side == "long" else -1.0
         notional = entry_price * filled
+        exit_notional = exit_price * filled
         gross_pnl = direction * (exit_price - entry_price) * filled
         gross_pnl_pct = gross_pnl / max(notional, 1e-12)
-    fee = order.get("fee") if isinstance(order.get("fee"), dict) else {}
-    fee_cost = _safe_float(fee.get("cost"), 0.0)
-    fee_currency = str(fee.get("currency") or "").upper()
-    base_asset = str(symbol).split("/", 1)[0].upper()
-    quote_asset = (
-        str(symbol).split("/", 1)[1].split(":", 1)[0].upper()
-        if "/" in str(symbol)
-        else ""
+    exit_fee_quote, fee_cost, fee_currency = _fee_to_quote(
+        symbol,
+        order.get("fee"),
+        price=exit_price,
     )
-    fee_quote = 0.0
-    if np.isfinite(fee_cost) and fee_cost > 0.0:
-        if fee_currency == quote_asset or not fee_currency:
-            fee_quote = fee_cost
-        elif fee_currency == base_asset and np.isfinite(exit_price):
-            fee_quote = fee_cost * exit_price
+    entry_fee_quote = _safe_float(state.get("entry_fee_quote"), 0.0)
+    fee_quote = exit_fee_quote + max(entry_fee_quote, 0.0)
     net_pnl = gross_pnl - fee_quote if np.isfinite(gross_pnl) else np.nan
     net_pnl_pct = net_pnl / max(notional, 1e-12) if np.isfinite(notional) else np.nan
+    gross_to_net_cost = fee_quote if np.isfinite(fee_quote) else np.nan
+    gross_to_net_cost_pct = (
+        gross_to_net_cost / max(notional, 1e-12)
+        if np.isfinite(gross_to_net_cost) and np.isfinite(notional)
+        else np.nan
+    )
     stop_price = _safe_float(state.get("stop_price"), default=np.nan)
     stop_origin = str(state.get("stop_reason") or "original_stop_loss")
     reason_detail = str(state.get("stop_reason_detail") or stop_origin)
@@ -679,12 +967,20 @@ def _closed_trade_metrics(
         "effective_threshold": state.get("effective_threshold"),
         "deployment_rank_threshold": state.get("deployment_rank_threshold"),
         "filled": filled,
+        "entry_notional_quote": notional,
+        "exit_notional_quote": exit_notional,
+        "quote_size": state.get("quote_size"),
+        "requested_base_amount": state.get("requested_base_amount"),
         "gross_pnl": gross_pnl,
         "gross_pnl_amount": gross_pnl,
         "gross_pnl_pct": gross_pnl_pct,
         "net_pnl": net_pnl,
         "net_pnl_amount": net_pnl,
         "net_pnl_pct": net_pnl_pct,
+        "entry_fee_quote": entry_fee_quote,
+        "exit_fee_quote": exit_fee_quote,
+        "gross_to_net_cost_quote": gross_to_net_cost,
+        "gross_to_net_cost_pct": gross_to_net_cost_pct,
         "pnl_scope": "position_notional_excluding_wallet_equity_borrow_interest",
         "mfe": _safe_float(state.get("mfe"), 0.0),
         "mae": _safe_float(state.get("mae"), 0.0),
@@ -697,6 +993,10 @@ def _closed_trade_metrics(
         "fee_cost": fee_cost,
         "fee_currency": fee_currency,
         "fees_amount": fee_quote,
+        "decision_module": state.get("decision_module"),
+        "stop_policy_params_source": state.get("stop_policy_params_source"),
+        "stop_policy_params_hash": state.get("stop_policy_params_hash"),
+        "stop_policy_schema": state.get("stop_policy_schema"),
         "trade_recap": _format_trade_recap(state.get("trade_recap_events")),
         **_execution_audit_fields(state),
     }
@@ -734,12 +1034,32 @@ class OCOExecutor:
         self.active_positions: Dict[str, Dict[str, Any]] = {}
         self._positions_lock = threading.RLock()
 
-    def get_simple_policy_stop_params(self, bucket_key: Optional[str] = None) -> Dict[str, Any]:
+    def get_simple_policy_stop_params(
+        self, bucket_key: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Return exact-strategy simple_policy_optimiser stop params."""
         if bucket_key is None:
             return {}
-        params = self.simple_policy_stop_params_by_strategy.get(str(bucket_key))
+        key = str(bucket_key)
+        params = self.simple_policy_stop_params_by_strategy.get(key)
         return dict(params) if isinstance(params, dict) else {}
+
+    def resolve_simple_policy_strategy_id(
+        self, strategy_id: Optional[str], side: Optional[str]
+    ) -> str:
+        """Return the exact side-prefixed strategy id present in policy artifacts."""
+        sid = str(strategy_id or "").strip()
+        side_l = str(side or "").lower().strip()
+        candidates: List[str] = []
+        if sid:
+            candidates.append(sid)
+            core = strategy_core_id(sid)
+            if core and side_l in {"long", "short"}:
+                candidates.append(f"{side_l}_{core}")
+        for candidate in candidates:
+            if candidate in self.simple_policy_stop_params_by_strategy:
+                return candidate
+        return sid
 
     def get_cooldown_hours(self, bucket_key: Optional[str] = None) -> float:
         """Return zero: live inference cooldown is handled on losing closes only."""
@@ -810,6 +1130,7 @@ class OCOExecutor:
         entry_price: float,
         size: float,
         bucket_key: str,
+        barrier_frac: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Place the initial STOP_LOSS order after entry.
 
@@ -832,6 +1153,7 @@ class OCOExecutor:
                 policy_params=params,
                 side=side,
                 strategy_id=bucket_key,
+                barrier_frac=barrier_frac,
                 require_metadata=require_metadata,
             )
             valid_decision, invalid_reason = _validate_policy_stop_decision(
@@ -874,6 +1196,13 @@ class OCOExecutor:
             "giveback_beta": initial_stop_decision.giveback_beta,
             "capital_protect_mfe_mult": initial_stop_decision.capital_protect_mfe_mult,
             "capital_protect_regression_frac": initial_stop_decision.capital_protect_regression_frac,
+            "adverse_exit_enabled": initial_stop_decision.adverse_exit_enabled,
+            "adverse_exit_theta": initial_stop_decision.adverse_exit_theta,
+            "adverse_exit_theta_quantile": initial_stop_decision.adverse_exit_theta_quantile,
+            "adverse_exit_min_mae_atr": initial_stop_decision.adverse_exit_min_mae_atr,
+            "adverse_exit_min_speed": initial_stop_decision.adverse_exit_min_speed,
+            "adverse_exit_fast_bars": initial_stop_decision.adverse_exit_fast_bars,
+            "adverse_exit_max_mfe_atr": initial_stop_decision.adverse_exit_max_mfe_atr,
             "decision_module": initial_stop_decision.decision_module,
             "stop_policy_params_source": initial_stop_decision.params_source,
             "stop_policy_params_hash": initial_stop_decision.params_hash,
@@ -913,6 +1242,13 @@ class OCOExecutor:
             giveback_beta=initial_stop_decision.giveback_beta,
             capital_protect_mfe_mult=initial_stop_decision.capital_protect_mfe_mult,
             capital_protect_regression_frac=initial_stop_decision.capital_protect_regression_frac,
+            adverse_exit_enabled=initial_stop_decision.adverse_exit_enabled,
+            adverse_exit_theta=initial_stop_decision.adverse_exit_theta,
+            adverse_exit_theta_quantile=initial_stop_decision.adverse_exit_theta_quantile,
+            adverse_exit_min_mae_atr=initial_stop_decision.adverse_exit_min_mae_atr,
+            adverse_exit_min_speed=initial_stop_decision.adverse_exit_min_speed,
+            adverse_exit_fast_bars=initial_stop_decision.adverse_exit_fast_bars,
+            adverse_exit_max_mfe_atr=initial_stop_decision.adverse_exit_max_mfe_atr,
         )
 
         market = _load_market(self.exchange, symbol)
@@ -1022,6 +1358,13 @@ class OCOExecutor:
             "giveback_beta": initial_stop_decision.giveback_beta,
             "capital_protect_mfe_mult": initial_stop_decision.capital_protect_mfe_mult,
             "capital_protect_regression_frac": initial_stop_decision.capital_protect_regression_frac,
+            "adverse_exit_enabled": initial_stop_decision.adverse_exit_enabled,
+            "adverse_exit_theta": initial_stop_decision.adverse_exit_theta,
+            "adverse_exit_theta_quantile": initial_stop_decision.adverse_exit_theta_quantile,
+            "adverse_exit_min_mae_atr": initial_stop_decision.adverse_exit_min_mae_atr,
+            "adverse_exit_min_speed": initial_stop_decision.adverse_exit_min_speed,
+            "adverse_exit_fast_bars": initial_stop_decision.adverse_exit_fast_bars,
+            "adverse_exit_max_mfe_atr": initial_stop_decision.adverse_exit_max_mfe_atr,
             "decision_module": initial_stop_decision.decision_module,
             "strategy_id": initial_stop_decision.strategy_id,
             "stop_policy_params_source": initial_stop_decision.params_source,
@@ -1122,7 +1465,16 @@ class OCOExecutor:
         state["trailing_squash_divisor"] = decision.trailing_squash_divisor
         state["giveback_beta"] = decision.giveback_beta
         state["capital_protect_mfe_mult"] = decision.capital_protect_mfe_mult
-        state["capital_protect_regression_frac"] = decision.capital_protect_regression_frac
+        state["capital_protect_regression_frac"] = (
+            decision.capital_protect_regression_frac
+        )
+        state["adverse_exit_enabled"] = decision.adverse_exit_enabled
+        state["adverse_exit_theta"] = decision.adverse_exit_theta
+        state["adverse_exit_theta_quantile"] = decision.adverse_exit_theta_quantile
+        state["adverse_exit_min_mae_atr"] = decision.adverse_exit_min_mae_atr
+        state["adverse_exit_min_speed"] = decision.adverse_exit_min_speed
+        state["adverse_exit_fast_bars"] = decision.adverse_exit_fast_bars
+        state["adverse_exit_max_mfe_atr"] = decision.adverse_exit_max_mfe_atr
         state["decision_module"] = decision.decision_module
         state["requested_policy_stop"] = stop_price_value
         self._replace_stop_order_from_decision(symbol, state, decision)
@@ -1144,7 +1496,11 @@ class OCOExecutor:
             artifact_params=artifact_params,
         )
         requested_stop = _safe_float(
-            decision.stop_price if isinstance(decision, SimplePolicyStopDecision) else None,
+            (
+                decision.stop_price
+                if isinstance(decision, SimplePolicyStopDecision)
+                else None
+            ),
             default=np.nan,
         )
         if not valid_decision:
@@ -1154,7 +1510,9 @@ class OCOExecutor:
                 state,
                 "stop_replace_skipped",
                 reason="invalid_or_missing_policy_decision",
-                candidate_stop=(float(requested_stop) if np.isfinite(requested_stop) else None),
+                candidate_stop=(
+                    float(requested_stop) if np.isfinite(requested_stop) else None
+                ),
                 error=invalid_reason,
             )
             return
@@ -1183,23 +1541,124 @@ class OCOExecutor:
                 and current_price > 0.0
                 and not _stop_side_is_valid(side, stop_price, current_price)
             ):
-                state["stop_update_error"] = "LOCAL_STOP_SIDE_INVALID"
-                state["stop_update_error_category"] = "policy_stop_rejected_by_exchange"
-                state["stop_update_reject_reason"] = "LOCAL_STOP_SIDE_INVALID"
-                _append_position_event(
-                    state,
-                    "simple_policy_stop_rejected_by_exchange",
-                    attempt=0,
-                    error_category="policy_stop_rejected_by_exchange",
-                    reject_reason="LOCAL_STOP_SIDE_INVALID",
-                    current_price=float(current_price),
-                    candidate_stop=float(stop_price),
-                )
-                tprint(
-                    f"Rejected simple-policy SL for {symbol} before cancel: "
-                    f"candidate={stop_price:.8g} current={current_price:.8g}"
-                )
-                return
+                original_stop_price = float(stop_price)
+                recompute_stop_price = np.nan
+                recompute_reason = None
+                recompute_error = None
+                recompute_decision: Optional[SimplePolicyStopDecision] = None
+                try:
+                    live_bar = pd.DataFrame(
+                        [
+                            {
+                                "open": float(current_price),
+                                "high": float(current_price),
+                                "low": float(current_price),
+                                "close": float(current_price),
+                            }
+                        ],
+                        index=[pd.Timestamp.utcnow()],
+                    )
+                    recompute_state = dict(state)
+                    recompute_state["current_price"] = float(current_price)
+                    recompute_state["last_price"] = float(current_price)
+                    recompute_decision = compute_simple_policy_stop_decision(
+                        state=recompute_state,
+                        latest_market_state=live_bar,
+                        policy_params=artifact_params,
+                        side=side,
+                        require_metadata=True,
+                    )
+                    recompute_valid, recompute_reason = _validate_policy_stop_decision(
+                        recompute_decision,
+                        require_should_replace=True,
+                        position_state=state,
+                        artifact_params=artifact_params,
+                    )
+                    if recompute_valid:
+                        recompute_stop_price = _exchange_precision(
+                            self.exchange,
+                            symbol,
+                            float(recompute_decision.stop_price),
+                            kind="price",
+                        )
+                except Exception as recompute_exc:
+                    recompute_error = str(recompute_exc)
+
+                if (
+                    recompute_decision is not None
+                    and np.isfinite(recompute_stop_price)
+                    and recompute_stop_price > 0.0
+                    and _stop_side_is_valid(side, recompute_stop_price, current_price)
+                ):
+                    _append_position_event(
+                        state,
+                        "simple_policy_stop_recomputed_after_invalid_candidate",
+                        attempt=0,
+                        original_candidate_stop=original_stop_price,
+                        recomputed_stop=float(recompute_stop_price),
+                        current_price=float(current_price),
+                        stop_reason=recompute_decision.reason,
+                        reason_detail=recompute_decision.reason_detail,
+                        params_source=recompute_decision.params_source,
+                        params_hash=recompute_decision.params_hash,
+                    )
+                    decision = recompute_decision
+                    stop_price = float(recompute_stop_price)
+                else:
+                    state["stop_update_error"] = "LOCAL_STOP_SIDE_INVALID"
+                    state["stop_update_error_category"] = (
+                        "policy_stop_rejected_by_exchange"
+                    )
+                    state["stop_update_reject_reason"] = "LOCAL_STOP_SIDE_INVALID"
+                    _append_position_event(
+                        state,
+                        "simple_policy_stop_rejected_by_exchange",
+                        attempt=0,
+                        error_category="policy_stop_rejected_by_exchange",
+                        reject_reason="LOCAL_STOP_SIDE_INVALID",
+                        current_price=float(current_price),
+                        candidate_stop=original_stop_price,
+                        recomputed_stop=(
+                            float(recompute_stop_price)
+                            if np.isfinite(recompute_stop_price)
+                            else None
+                        ),
+                        recompute_validation_error=recompute_reason,
+                        recompute_error=recompute_error,
+                    )
+                    tprint(
+                        f"Rejected simple-policy SL for {symbol} before cancel: "
+                        f"candidate={original_stop_price:.8g} "
+                        f"current={current_price:.8g}; "
+                        "canonical recompute did not produce a valid replacement"
+                    )
+                    return
+
+            existing_stops = _fetch_open_protective_stop_orders(
+                self.exchange, symbol=symbol, position_side=side, config=self.config
+            )
+            for existing in existing_stops:
+                existing_id = existing.get("id")
+                existing_stop = _order_stop_price(existing)
+                if np.isfinite(existing_stop) and abs(
+                    float(existing_stop) - float(stop_price)
+                ) <= max(abs(float(stop_price)) * 1e-4, 1e-8):
+                    state["stop_price"] = float(existing_stop)
+                    state["stop_order_id"] = existing_id
+                    state.pop("stop_update_error", None)
+                    state.pop("stop_update_error_category", None)
+                    _append_position_event(
+                        state,
+                        "existing_stop_adopted",
+                        stop_order_id=existing_id,
+                        stop_price=float(existing_stop),
+                        requested_policy_stop=float(stop_price),
+                    )
+                    tprint(
+                        f"Adopted existing protective SL for {symbol}: "
+                        f"stop_order_id={existing_id} stop={existing_stop:.8g}"
+                    )
+                    return
 
             cancel_ids = []
             for key in (
@@ -1236,6 +1695,17 @@ class OCOExecutor:
             for key in ("stop_order_id", "take_profit_order_id", "limit_order_id"):
                 state[key] = None
             canceled_existing = bool(cancel_ids)
+            extra_cancelled = _cancel_open_protective_stop_orders(
+                self.exchange, symbol=symbol, position_side=side, config=self.config
+            )
+            if extra_cancelled:
+                canceled_existing = True
+                _append_position_event(
+                    state,
+                    "stale_protective_stops_cancelled",
+                    count=int(extra_cancelled),
+                    requested_policy_stop=float(stop_price),
+                )
 
             market = _load_market(self.exchange, symbol)
             amount = _exchange_precision(
@@ -1284,7 +1754,9 @@ class OCOExecutor:
                 trailing_squash_divisor=state.get("trailing_squash_divisor"),
                 giveback_beta=state.get("giveback_beta"),
                 capital_protect_mfe_mult=state.get("capital_protect_mfe_mult"),
-                capital_protect_regression_frac=state.get("capital_protect_regression_frac"),
+                capital_protect_regression_frac=state.get(
+                    "capital_protect_regression_frac"
+                ),
                 entry_price=entry_price,
                 stop_dev_pct=(
                     (float(stop_price) - entry_price) / max(abs(entry_price), 1e-12)
@@ -1301,7 +1773,9 @@ class OCOExecutor:
         except Exception as e:
             category = _classify_exchange_error(e)
             reject_reason = _exchange_reject_reason(e)
-            if reject_reason == "LOCAL_STOP_SIDE_INVALID" or _is_trigger_price_reject(e):
+            if reject_reason == "LOCAL_STOP_SIDE_INVALID" or _is_trigger_price_reject(
+                e
+            ):
                 category = "policy_stop_rejected_by_exchange"
             state["stop_update_error"] = str(e)
             state["stop_update_error_category"] = category
@@ -1310,7 +1784,9 @@ class OCOExecutor:
                 state,
                 "stop_replace_failed",
                 previous_stop=old_stop_price,
-                candidate_stop=float(requested_stop) if np.isfinite(requested_stop) else None,
+                candidate_stop=(
+                    float(requested_stop) if np.isfinite(requested_stop) else None
+                ),
                 error_category=category,
                 reject_reason=reject_reason,
                 error=str(e),
@@ -1319,6 +1795,137 @@ class OCOExecutor:
                 f"Error updating SL for {symbol}: category={category} "
                 f"reason={reject_reason}: {e}"
             )
+            if reject_reason == "LOCAL_STOP_SIDE_INVALID" or _is_trigger_price_reject(
+                e
+            ):
+                try:
+                    ticker = self.exchange.fetch_ticker(symbol)
+                    current_price = _safe_float(ticker.get("last"), default=np.nan)
+                    if np.isfinite(current_price) and current_price > 0.0:
+                        live_bar = pd.DataFrame(
+                            [
+                                {
+                                    "open": float(current_price),
+                                    "high": float(current_price),
+                                    "low": float(current_price),
+                                    "close": float(current_price),
+                                }
+                            ],
+                            index=[pd.Timestamp.utcnow()],
+                        )
+                        recompute_state = dict(state)
+                        recompute_state["current_price"] = float(current_price)
+                        recompute_state["last_price"] = float(current_price)
+                        recompute_decision = compute_simple_policy_stop_decision(
+                            state=recompute_state,
+                            latest_market_state=live_bar,
+                            policy_params=artifact_params,
+                            side=side,
+                            require_metadata=True,
+                        )
+                        recompute_valid, recompute_reason = (
+                            _validate_policy_stop_decision(
+                                recompute_decision,
+                                require_should_replace=True,
+                                position_state=state,
+                                artifact_params=artifact_params,
+                            )
+                        )
+                        recompute_stop_price = (
+                            _exchange_precision(
+                                self.exchange,
+                                symbol,
+                                float(recompute_decision.stop_price),
+                                kind="price",
+                            )
+                            if recompute_valid
+                            else np.nan
+                        )
+                        if (
+                            recompute_valid
+                            and np.isfinite(recompute_stop_price)
+                            and recompute_stop_price > 0.0
+                            and _stop_side_is_valid(
+                                side, recompute_stop_price, current_price
+                            )
+                        ):
+                            amount = _exchange_precision(
+                                self.exchange,
+                                symbol,
+                                float(state["size"]),
+                                kind="amount",
+                            )
+                            retry_order = _create_reduce_stop_loss_order(
+                                self.exchange,
+                                symbol=symbol,
+                                side="sell" if side == "long" else "buy",
+                                amount=amount,
+                                stop_price=float(recompute_stop_price),
+                                config=self.config,
+                            )
+                            state["stop_price"] = float(recompute_stop_price)
+                            state["stop_order_id"] = retry_order.get("id")
+                            state["size"] = amount
+                            state["stop_reason"] = recompute_decision.reason
+                            state["stop_reason_detail"] = (
+                                recompute_decision.reason_detail
+                            )
+                            state["requested_policy_stop"] = float(recompute_stop_price)
+                            state["stop_policy_params_source"] = (
+                                recompute_decision.params_source
+                            )
+                            state["stop_policy_params_hash"] = (
+                                recompute_decision.params_hash
+                            )
+                            state["stop_policy_schema"] = (
+                                recompute_decision.params_schema
+                            )
+                            state["decision_module"] = "simple_policy_stop"
+                            state.pop("stop_update_error", None)
+                            state.pop("stop_update_error_category", None)
+                            state.pop("stop_update_reject_reason", None)
+                            _append_position_event(
+                                state,
+                                "stop_recomputed_and_replaced_after_exchange_reject",
+                                previous_stop=old_stop_price,
+                                rejected_candidate_stop=(
+                                    float(requested_stop)
+                                    if np.isfinite(requested_stop)
+                                    else None
+                                ),
+                                recomputed_stop=float(recompute_stop_price),
+                                current_price=float(current_price),
+                                stop_order_id=state.get("stop_order_id"),
+                                stop_reason=recompute_decision.reason,
+                                reason_detail=recompute_decision.reason_detail,
+                                params_source=recompute_decision.params_source,
+                                params_hash=recompute_decision.params_hash,
+                                schema=recompute_decision.params_schema,
+                            )
+                            tprint(
+                                f"Recomputed and replaced SL for {symbol} after "
+                                f"exchange reject: stop={recompute_stop_price:.8g} "
+                                f"reason={recompute_decision.reason}"
+                            )
+                            return
+                        _append_position_event(
+                            state,
+                            "stop_recompute_after_exchange_reject_skipped",
+                            current_price=float(current_price),
+                            recomputed_stop=(
+                                float(recompute_stop_price)
+                                if np.isfinite(recompute_stop_price)
+                                else None
+                            ),
+                            recompute_validation_error=recompute_reason,
+                        )
+                except Exception as recompute_exc:
+                    _append_position_event(
+                        state,
+                        "stop_recompute_after_exchange_reject_failed",
+                        error_category=_classify_exchange_error(recompute_exc),
+                        error=str(recompute_exc),
+                    )
             if canceled_existing and np.isfinite(old_stop_price):
                 try:
                     ticker = self.exchange.fetch_ticker(symbol)
@@ -1337,7 +1944,10 @@ class OCOExecutor:
                             symbol=symbol,
                             side="sell" if side == "long" else "buy",
                             amount=_exchange_precision(
-                                self.exchange, symbol, float(state["size"]), kind="amount"
+                                self.exchange,
+                                symbol,
+                                float(state["size"]),
+                                kind="amount",
                             ),
                             stop_price=restored_stop,
                             config=self.config,
@@ -1372,7 +1982,9 @@ class OCOExecutor:
         previous_status: str,
     ) -> Dict[str, Any]:
         """Try to reattach a policy-derived protective STOP_LOSS."""
-        if str(previous_status or "").lower() in {"open", "new"} and state.get("stop_order_id"):
+        if str(previous_status or "").lower() in {"open", "new"} and state.get(
+            "stop_order_id"
+        ):
             return {
                 "success": False,
                 "error_category": "stop_order_still_active",
@@ -1429,6 +2041,47 @@ class OCOExecutor:
             requested_policy_stop=float(stop_price),
             params_schema=str(state.get("stop_policy_schema") or ""),
         )
+        for existing in _fetch_open_protective_stop_orders(
+            self.exchange,
+            symbol=symbol,
+            position_side=str(state.get("side", "long")).lower(),
+            config=self.config,
+        ):
+            existing_id = existing.get("id")
+            existing_stop = _order_stop_price(existing)
+            if np.isfinite(existing_stop) and abs(
+                float(existing_stop) - float(stop_price)
+            ) <= max(abs(float(stop_price)) * 1e-4, 1e-8):
+                state["stop_order_id"] = existing_id
+                state["stop_price"] = float(existing_stop)
+                state.pop("stop_update_error", None)
+                state.pop("stop_update_error_category", None)
+                _append_position_event(
+                    state,
+                    "existing_stop_adopted_on_reattach",
+                    previous_stop_order_id=before_id,
+                    stop_order_id=existing_id,
+                    stop_price=float(existing_stop),
+                )
+                return {
+                    "success": True,
+                    "stop_order_id": existing_id,
+                    "stop_price": float(existing_stop),
+                    "adopted_existing_stop": True,
+                }
+        cancelled = _cancel_open_protective_stop_orders(
+            self.exchange,
+            symbol=symbol,
+            position_side=str(state.get("side", "long")).lower(),
+            config=self.config,
+        )
+        if cancelled:
+            _append_position_event(
+                state,
+                "stale_protective_stops_cancelled_before_reattach",
+                count=int(cancelled),
+                candidate_stop=float(stop_price),
+            )
         self._replace_stop_order_from_decision(symbol, state, reattach_decision)
         after_id = state.get("stop_order_id")
         success = bool(after_id) and str(after_id) != str(before_id)
@@ -1462,6 +2115,7 @@ class OCOExecutor:
             current_price: Current market price
             reason: Reason for closing (e.g., "stop_loss")
         """
+        close_success = False
         try:
             # Cancel any existing orders
             if state.get("stop_order_id"):
@@ -1471,14 +2125,33 @@ class OCOExecutor:
                     )
                 except Exception:
                     pass
+            cancelled_extra = _cancel_open_protective_stop_orders(
+                self.exchange,
+                symbol=symbol,
+                position_side=str(state.get("side", "long")).lower(),
+                config=self.config,
+            )
+            if cancelled_extra:
+                _append_position_event(
+                    state,
+                    "protective_stops_cancelled_before_close",
+                    count=int(cancelled_extra),
+                )
 
             # Market close
-            close_order = self.exchange.create_order(
+            amount = _exchange_precision(
+                self.exchange,
+                symbol,
+                float(state["size"]),
+                kind="amount",
+            )
+            close_order = _create_reduce_market_order(
+                self.exchange,
                 symbol=symbol,
-                type="market",
                 side="sell" if state["side"] == "long" else "buy",
-                amount=state["size"],
-                params=_order_params(self.config, reduce_only=True),
+                amount=amount,
+                price=float(current_price),
+                config=self.config,
             )
             exit_price, filled_amount, _partial_fill = _extract_order_fill(
                 close_order, current_price
@@ -1514,6 +2187,7 @@ class OCOExecutor:
             state["last_close_metrics"] = _closed_trade_metrics(
                 symbol, state, close_order, reason=reason
             )
+            close_success = True
 
         except Exception as e:
             category = _classify_exchange_error(e)
@@ -1521,10 +2195,11 @@ class OCOExecutor:
             state["close_error_category"] = category
             tprint(f"Error closing {symbol}: {category}: {e}")
         finally:
-            # Remove from active positions
-            with self._positions_lock:
-                if symbol in self.active_positions:
-                    del self.active_positions[symbol]
+            # Keep failed closes tracked so the next monitor cycle can retry.
+            if close_success:
+                with self._positions_lock:
+                    if symbol in self.active_positions:
+                        del self.active_positions[symbol]
 
     def get_active_positions(self) -> Dict[str, Dict[str, Any]]:
         """Get all active positions."""
@@ -1897,6 +2572,667 @@ class TradeExecutor:
                 slot["interest"] = max(slot["interest"], interest)
         return assets
 
+    def _binance_sapi_post(self, path: str, params: Dict[str, Any]) -> Any:
+        """Call a Binance SAPI POST endpoint through ccxt implicit methods."""
+        if self.exchange is None:
+            raise RuntimeError("exchange is not configured")
+        explicit_methods = {
+            "asset/dust-btc": (
+                "sapiPostAssetDustBtc",
+                "sapi_post_asset_dust_btc",
+            ),
+            "asset/dust": ("sapiPostAssetDust", "sapi_post_asset_dust"),
+            "margin/dust": ("sapiPostMarginDust", "sapi_post_margin_dust"),
+            "margin/exchange-small-liability": (
+                "sapiPostMarginExchangeSmallLiability",
+                "sapi_post_margin_exchange_small_liability",
+            ),
+        }
+        for explicit_name in explicit_methods.get(str(path), ()):
+            explicit_method = getattr(self.exchange, explicit_name, None)
+            if callable(explicit_method):
+                return explicit_method(params)
+        method_name = "sapiPost" + "".join(
+            part[:1].upper() + part[1:]
+            for chunk in str(path).split("/")
+            for part in chunk.split("-")
+            if part
+        )
+        method = getattr(self.exchange, method_name, None)
+        if callable(method):
+            return method(params)
+        request = getattr(self.exchange, "request", None)
+        if callable(request):
+            return request(path, "sapi", "POST", params)
+        raise RuntimeError(f"exchange does not expose Binance SAPI POST {path}")
+
+    def _binance_sapi_post_repeated_params(
+        self, path: str, params: Dict[str, Any]
+    ) -> Any:
+        """Call Binance SAPI POST preserving repeated array keys in signature."""
+        if self.exchange is None:
+            raise RuntimeError("exchange is not configured")
+        fetch = getattr(self.exchange, "fetch", None)
+        api_key = str(getattr(self.exchange, "apiKey", "") or "")
+        secret = str(getattr(self.exchange, "secret", "") or "")
+        if not callable(fetch) or not api_key or not secret:
+            return self._binance_sapi_post(path, params)
+        milliseconds = getattr(self.exchange, "milliseconds", None)
+        timestamp = int(
+            milliseconds()
+            if callable(milliseconds)
+            else pd.Timestamp.now(tz="UTC").timestamp() * 1000
+        )
+        recv_window = int(
+            getattr(self.exchange, "options", {}).get("recvWindow", 10000)
+        )
+        pairs: List[Tuple[str, Any]] = [("timestamp", timestamp)]
+        for key, value in params.items():
+            if isinstance(value, (list, tuple, set)):
+                for item in value:
+                    pairs.append((str(key), item))
+            else:
+                pairs.append((str(key), value))
+        pairs.append(("recvWindow", recv_window))
+        query = urlencode(pairs, doseq=True)
+        signature = hmac.new(
+            secret.encode("utf-8"),
+            query.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        base_url = str(
+            getattr(self.exchange, "urls", {})
+            .get("api", {})
+            .get("sapi", "https://api.binance.com/sapi/v1")
+        )
+        signed = {
+            "url": f"{base_url}/{path}",
+            "method": "POST",
+            "headers": {
+                "X-MBX-APIKEY": api_key,
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            "body": f"{query}&signature={signature}",
+        }
+        return fetch(
+            signed["url"],
+            signed.get("method", "POST"),
+            signed.get("headers"),
+            signed.get("body"),
+        )
+
+    def _repay_cross_margin_asset(self, asset: str, amount: float) -> Dict[str, Any]:
+        """Repay a cross-margin liability for one asset."""
+        asset_u = str(asset or "").upper()
+        amount_f = float(amount)
+        if not asset_u or not np.isfinite(amount_f) or amount_f <= 0.0:
+            raise ValueError(f"invalid margin repay request: {asset} {amount}")
+        params = {"asset": asset_u, "amount": amount_f}
+        borrow_repay_params = {
+            "asset": asset_u,
+            "amount": amount_f,
+            "type": "REPAY",
+            "isIsolated": "FALSE",
+        }
+        for method_name in (
+            "sapiPostMarginBorrowRepay",
+            "sapi_post_margin_borrow_repay",
+        ):
+            method = getattr(self.exchange, method_name, None)
+            if not callable(method):
+                continue
+            try:
+                return method(borrow_repay_params)
+            except TypeError:
+                try:
+                    return method(**borrow_repay_params)
+                except Exception:
+                    raise
+        for method_name in (
+            "repayCrossMargin",
+            "repay_cross_margin",
+            "repayMargin",
+            "repay_margin",
+            "sapiPostMarginRepay",
+            "sapi_post_margin_repay",
+        ):
+            method = getattr(self.exchange, method_name, None)
+            if not callable(method):
+                continue
+            try:
+                if method_name in {
+                    "repayCrossMargin",
+                    "repay_cross_margin",
+                    "repayMargin",
+                    "repay_margin",
+                }:
+                    return method(asset_u, amount_f, params)
+                return method(params)
+            except TypeError:
+                try:
+                    return method(params)
+                except Exception:
+                    raise
+        return self._binance_sapi_post("margin/repay", params)
+
+    def _try_repay_available_margin_debt(
+        self,
+        *,
+        asset: str,
+        free: float,
+        debt: float,
+        quote_value: float,
+        report: Dict[str, Any],
+        reason: str,
+    ) -> Dict[str, Any]:
+        """Repay same-asset debt using currently free asset balance."""
+        result: Dict[str, Any] = {
+            "asset": str(asset).upper(),
+            "reason": reason,
+            "free": float(free),
+            "debt": float(debt),
+            "quote_value": float(quote_value) if np.isfinite(quote_value) else None,
+            "attempted": False,
+            "success": False,
+        }
+        report.setdefault("margin_repay_attempts", []).append(result)
+        if not bool(
+            self.config.get(
+                "cross_margin_auto_repay_same_asset_enabled",
+                _is_live_execution_mode(self.mode),
+            )
+        ):
+            result["skip_reason"] = "disabled"
+            return result
+        repay_amount = min(max(float(free), 0.0), max(float(debt), 0.0))
+        if repay_amount <= 0.0:
+            result["skip_reason"] = "no_free_balance_to_repay"
+            return result
+        # Leave a small precision buffer so Binance does not reject due rounding.
+        repay_amount *= 0.999
+        if repay_amount <= 0.0:
+            result["skip_reason"] = "repay_amount_after_buffer_zero"
+            return result
+        result["attempted"] = True
+        result["repay_amount"] = float(repay_amount)
+        try:
+            response = self._repay_cross_margin_asset(asset, repay_amount)
+            result["success"] = True
+            result["response"] = response
+            tprint(
+                "Repaid same-asset cross-margin liability: "
+                f"asset={asset} amount={repay_amount:.12g} reason={reason}"
+            )
+        except Exception as exc:
+            result["error_category"] = _classify_exchange_error(exc)
+            result["error"] = str(exc)
+            tprint(
+                "Same-asset margin repay skipped/failed: "
+                f"asset={asset} category={result['error_category']}: {exc}"
+            )
+        return result
+
+    def _try_admin_close_external_margin_position(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        amount: float,
+        price: float,
+        quote_value: float,
+        report: Dict[str, Any],
+        reason: str,
+    ) -> Dict[str, Any]:
+        """Close an unimportable external margin position without fallback stops."""
+        result: Dict[str, Any] = {
+            "symbol": symbol,
+            "side": side,
+            "amount": float(amount),
+            "price": float(price),
+            "quote_value": float(quote_value),
+            "reason": reason,
+            "attempted": False,
+            "success": False,
+        }
+        report.setdefault("external_position_cleanup_attempts", []).append(result)
+        if not bool(
+            self.config.get(
+                "cross_margin_cleanup_unimported_external_positions_enabled",
+                _is_live_execution_mode(self.mode),
+            )
+        ):
+            result["skip_reason"] = "disabled"
+            return result
+        if not symbol or not np.isfinite(amount) or amount <= 0.0:
+            result["skip_reason"] = "invalid_symbol_or_amount"
+            return result
+        close_side = "sell" if side == "long" else "buy"
+        result["attempted"] = True
+        result["close_side"] = close_side
+        try:
+            if side == "long":
+                order = _create_margin_market_order_variants(
+                    self.exchange,
+                    symbol=symbol,
+                    side=close_side,
+                    amount=float(amount),
+                    price=float(price),
+                    side_effects=("AUTO_REPAY", "NO_SIDE_EFFECT"),
+                    config=self.config,
+                )
+            else:
+                order = _create_margin_market_order_variants(
+                    self.exchange,
+                    symbol=symbol,
+                    side=close_side,
+                    amount=float(amount),
+                    price=float(price),
+                    side_effects=("AUTO_REPAY", "MARGIN_BUY", "AUTO_BORROW_REPAY"),
+                    config=self.config,
+                )
+            result["success"] = True
+            result["order_id"] = order.get("id") if isinstance(order, dict) else None
+            result["order"] = order
+            tprint(
+                "Submitted admin cleanup order for unimported external margin "
+                f"position: {symbol} side={side} close_side={close_side} "
+                f"amount={float(amount):.12g} reason={reason}"
+            )
+        except Exception as exc:
+            result["error_category"] = _classify_exchange_error(exc)
+            result["error"] = str(exc)
+            tprint(
+                "Admin cleanup close failed for unimported external margin "
+                f"position {symbol}: {result['error_category']}: {exc}"
+            )
+        return result
+
+    def _maybe_cleanup_small_margin_positions(
+        self,
+        *,
+        candidate_positions: List[Dict[str, Any]],
+        report: Dict[str, Any],
+    ) -> None:
+        """Try to settle dust-sized margin positions that official dust APIs missed."""
+        threshold = float(
+            self.config.get("cross_margin_small_position_cleanup_quote_threshold", 1.0)
+        )
+        result: Dict[str, Any] = {
+            "enabled": bool(
+                self.config.get(
+                    "cross_margin_cleanup_small_positions_enabled",
+                    _is_live_execution_mode(self.mode),
+                )
+            ),
+            "threshold_quote": threshold,
+            "candidate_count": len(candidate_positions),
+            "attempts": [],
+        }
+        report["small_position_cleanup"] = result
+        if not result["enabled"]:
+            result["reason"] = "disabled"
+            return
+
+        dust_result = report.get("dust_to_bnb", {})
+        dust_converted_assets = {
+            str(asset).upper()
+            for asset in (
+                dust_result.get("assets")
+                or dust_result.get("converted_assets")
+                or dust_result.get("last_assets")
+                or []
+            )
+        }
+        liability_result = report.get("small_liability_exchange", {})
+        exchanged_assets = {
+            str(asset).upper()
+            for asset in (
+                liability_result.get("assets")
+                if liability_result.get("exchanged")
+                else []
+            )
+        }
+        max_attempts = int(
+            self.config.get("cross_margin_small_position_cleanup_max_assets", 20)
+        )
+        seen: set[tuple[str, str]] = set()
+        for pos in sorted(
+            candidate_positions,
+            key=lambda row: float(row.get("quote_value") or 0.0),
+            reverse=True,
+        ):
+            if len(result["attempts"]) >= max_attempts:
+                result["truncated"] = True
+                break
+            asset = str(pos.get("asset") or "").upper()
+            side = str(pos.get("side") or "").lower()
+            symbol = str(pos.get("symbol") or "")
+            quote_value = _safe_float(pos.get("quote_value"), default=np.nan)
+            amount = _safe_float(pos.get("amount"), default=np.nan)
+            price = _safe_float(pos.get("price"), default=np.nan)
+            key = (asset, side)
+            if key in seen:
+                continue
+            seen.add(key)
+            attempt: Dict[str, Any] = {
+                "asset": asset,
+                "symbol": symbol,
+                "side": side,
+                "amount": float(amount) if np.isfinite(amount) else None,
+                "price": float(price) if np.isfinite(price) else None,
+                "quote_value": float(quote_value) if np.isfinite(quote_value) else None,
+                "classification": pos.get("classification"),
+                "reason": pos.get("reason"),
+                "attempted": False,
+                "success": False,
+            }
+            result["attempts"].append(attempt)
+            if not asset or asset in {
+                "BNB",
+                str(report.get("quote_currency", "")).upper(),
+            }:
+                attempt["skip_reason"] = "quote_or_fee_asset"
+                continue
+            if side not in {"long", "short"} or not symbol:
+                attempt["skip_reason"] = "missing_symbol_or_side"
+                continue
+            if not np.isfinite(quote_value) or quote_value <= 0.0:
+                attempt["skip_reason"] = "invalid_quote_value"
+                continue
+            if quote_value > threshold:
+                attempt["skip_reason"] = "above_small_position_threshold"
+                continue
+            if not np.isfinite(amount) or amount <= 0.0:
+                attempt["skip_reason"] = "invalid_amount"
+                continue
+            if side == "long" and asset in dust_converted_assets:
+                attempt["skip_reason"] = "already_submitted_to_dust_conversion"
+                continue
+            if side == "short" and asset in exchanged_assets:
+                attempt["skip_reason"] = "already_submitted_to_small_liability_exchange"
+                continue
+            close_side = "sell" if side == "long" else "buy"
+            # Sell slightly less than the free dust balance to avoid precision/balance rejects.
+            order_amount = float(amount) * (0.999 if side == "long" else 1.0)
+            if order_amount <= 0.0:
+                attempt["skip_reason"] = "order_amount_after_buffer_zero"
+                continue
+            attempt["attempted"] = True
+            attempt["close_side"] = close_side
+            attempt["order_amount"] = order_amount
+            try:
+                side_effects = (
+                    ("AUTO_REPAY", "NO_SIDE_EFFECT")
+                    if side == "long"
+                    else ("AUTO_REPAY", "MARGIN_BUY", "AUTO_BORROW_REPAY")
+                )
+                order = _create_margin_market_order_variants(
+                    self.exchange,
+                    symbol=symbol,
+                    side=close_side,
+                    amount=order_amount,
+                    price=float(price) if np.isfinite(price) and price > 0.0 else None,
+                    side_effects=side_effects,
+                    config=self.config,
+                )
+                attempt["success"] = True
+                attempt["order_id"] = (
+                    order.get("id") if isinstance(order, dict) else None
+                )
+                attempt["order"] = order
+                tprint(
+                    "Submitted small cross-margin position cleanup order: "
+                    f"{symbol} side={side} close_side={close_side} "
+                    f"quote_value={quote_value:.6g}"
+                )
+            except Exception as exc:
+                attempt["error_category"] = _classify_exchange_error(exc)
+                attempt["error"] = str(exc)
+                tprint(
+                    "Small cross-margin position cleanup skipped/failed: "
+                    f"{symbol} {side} {attempt['error_category']}: {exc}"
+                )
+
+    def _maybe_convert_margin_dust_to_bnb(
+        self,
+        *,
+        candidate_assets: List[str],
+        report: Dict[str, Any],
+    ) -> None:
+        """Periodically convert positive cross-margin dust balances to BNB."""
+        result: Dict[str, Any] = {
+            "enabled": bool(
+                self.config.get(
+                    "cross_margin_dust_to_bnb_enabled",
+                    _is_live_execution_mode(self.mode),
+                )
+            ),
+            "candidate_assets": sorted(set(candidate_assets)),
+            "converted": False,
+        }
+        report["dust_to_bnb"] = result
+        if not result["enabled"]:
+            result["reason"] = "disabled"
+            return
+        assets = [
+            str(asset).upper()
+            for asset in sorted(set(candidate_assets))
+            if str(asset or "").strip()
+        ]
+        if not assets:
+            result["reason"] = "no_candidate_assets"
+            return
+        state_path = Path(
+            self.config.get(
+                "cross_margin_dust_to_bnb_state_path",
+                "data/live_state/margin_dust_to_bnb_state.json",
+            )
+        )
+        interval_hours = float(
+            self.config.get("cross_margin_dust_to_bnb_interval_hours", 24.0)
+        )
+        now_ts = pd.Timestamp.now(tz="UTC")
+        try:
+            state = json.loads(state_path.read_text()) if state_path.exists() else {}
+        except Exception:
+            state = {}
+        last_ts_raw = state.get("last_attempt_ts")
+        if last_ts_raw:
+            try:
+                last_ts = pd.Timestamp(last_ts_raw)
+                if last_ts.tzinfo is None:
+                    last_ts = last_ts.tz_localize("UTC")
+                else:
+                    last_ts = last_ts.tz_convert("UTC")
+                if now_ts < last_ts + pd.Timedelta(hours=interval_hours):
+                    result["reason"] = "cooldown_active"
+                    result["last_attempt_ts"] = last_ts.isoformat()
+                    return
+            except Exception:
+                pass
+
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state["last_attempt_ts"] = now_ts.isoformat()
+        try:
+            state_path.write_text(json.dumps(state, indent=2, sort_keys=True))
+        except Exception:
+            pass
+
+        try:
+            convertible = self._binance_sapi_post(
+                "asset/dust-btc",
+                {"accountType": "MARGIN"},
+            )
+            details = (
+                convertible.get("details") if isinstance(convertible, dict) else []
+            )
+            allowed_assets = {
+                str(row.get("asset") or "").upper()
+                for row in details
+                if isinstance(row, dict)
+                and bool(row.get("convertible", True))
+                and str(row.get("asset") or "").strip()
+            }
+            if allowed_assets:
+                assets = [asset for asset in assets if asset in allowed_assets]
+                result["convertible_assets"] = assets
+            if not assets:
+                result["reason"] = "no_convertible_candidate_assets"
+                return
+            try:
+                response = self._binance_sapi_post_repeated_params(
+                    "margin/dust",
+                    {"asset": assets},
+                )
+            except Exception as margin_exc:
+                result["margin_dust_error_category"] = _classify_exchange_error(
+                    margin_exc
+                )
+                result["margin_dust_error"] = str(margin_exc)
+                response = self._binance_sapi_post_repeated_params(
+                    "asset/dust",
+                    {"asset": assets, "accountType": "MARGIN"},
+                )
+            result["converted"] = True
+            result["assets"] = assets
+            result["response"] = response
+            state["last_success_ts"] = now_ts.isoformat()
+            state["last_assets"] = assets
+            try:
+                state_path.write_text(json.dumps(state, indent=2, sort_keys=True))
+            except Exception:
+                pass
+            tprint(
+                "Converted cross-margin dust to BNB: "
+                f"assets={assets} accountType=MARGIN"
+            )
+        except Exception as exc:
+            result["error_category"] = _classify_exchange_error(exc)
+            result["error"] = str(exc)
+            tprint(
+                "Cross-margin dust-to-BNB conversion skipped/failed: "
+                f"{result['error_category']}: {exc}"
+            )
+
+    def _maybe_exchange_small_margin_liabilities(
+        self,
+        *,
+        candidate_assets: List[str],
+        report: Dict[str, Any],
+    ) -> None:
+        """Periodically clear tiny cross-margin liabilities via Binance small exchange."""
+        result: Dict[str, Any] = {
+            "enabled": bool(
+                self.config.get(
+                    "cross_margin_small_liability_exchange_enabled",
+                    _is_live_execution_mode(self.mode),
+                )
+            ),
+            "candidate_assets": sorted(set(candidate_assets)),
+            "exchanged": False,
+        }
+        report["small_liability_exchange"] = result
+        if not result["enabled"]:
+            result["reason"] = "disabled"
+            return
+        assets = [
+            str(asset).upper()
+            for asset in sorted(set(candidate_assets))
+            if str(asset or "").strip()
+        ][:10]
+        if not assets:
+            result["reason"] = "no_candidate_assets"
+            return
+        state_path = Path(
+            self.config.get(
+                "cross_margin_small_liability_exchange_state_path",
+                "data/live_state/margin_small_liability_exchange_state.json",
+            )
+        )
+        interval_hours = float(
+            self.config.get("cross_margin_small_liability_exchange_interval_hours", 6.0)
+        )
+        failure_cooldown_minutes = float(
+            self.config.get(
+                "cross_margin_small_liability_exchange_failure_cooldown_minutes",
+                10.0,
+            )
+        )
+        now_ts = pd.Timestamp.now(tz="UTC")
+        try:
+            state = json.loads(state_path.read_text()) if state_path.exists() else {}
+        except Exception:
+            state = {}
+        last_success_raw = state.get("last_success_ts")
+        last_attempt_raw = state.get("last_attempt_ts")
+        if last_success_raw:
+            try:
+                last_ts = pd.Timestamp(last_success_raw)
+                if last_ts.tzinfo is None:
+                    last_ts = last_ts.tz_localize("UTC")
+                else:
+                    last_ts = last_ts.tz_convert("UTC")
+                if now_ts < last_ts + pd.Timedelta(hours=interval_hours):
+                    result["reason"] = "cooldown_active"
+                    result["last_success_ts"] = last_ts.isoformat()
+                    return
+            except Exception:
+                pass
+        if last_attempt_raw:
+            try:
+                last_attempt = pd.Timestamp(last_attempt_raw)
+                if last_attempt.tzinfo is None:
+                    last_attempt = last_attempt.tz_localize("UTC")
+                else:
+                    last_attempt = last_attempt.tz_convert("UTC")
+                if now_ts < last_attempt + pd.Timedelta(
+                    minutes=failure_cooldown_minutes
+                ):
+                    result["reason"] = "failure_cooldown_active"
+                    result["last_attempt_ts"] = last_attempt.isoformat()
+                    return
+            except Exception:
+                pass
+
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state["last_attempt_ts"] = now_ts.isoformat()
+        try:
+            state_path.write_text(json.dumps(state, indent=2, sort_keys=True))
+        except Exception:
+            pass
+
+        try:
+            response = self._binance_sapi_post_repeated_params(
+                "margin/exchange-small-liability",
+                {"assetNames": assets},
+            )
+            result["exchanged"] = True
+            result["assets"] = assets
+            result["response"] = response
+            state["last_success_ts"] = now_ts.isoformat()
+            state["last_assets"] = assets
+            try:
+                state_path.write_text(json.dumps(state, indent=2, sort_keys=True))
+            except Exception:
+                pass
+            tprint(
+                "Exchanged small cross-margin liabilities: "
+                f"assets={assets} threshold_quote={self.config.get('cross_margin_small_liability_quote_threshold', 1.0)}"
+            )
+        except Exception as exc:
+            result["error_category"] = _classify_exchange_error(exc)
+            result["error"] = str(exc)
+            state["last_error_category"] = result["error_category"]
+            state["last_error"] = str(exc)
+            try:
+                state_path.write_text(json.dumps(state, indent=2, sort_keys=True))
+            except Exception:
+                pass
+            tprint(
+                "Cross-margin small-liability exchange skipped/failed: "
+                f"{result['error_category']}: {exc}"
+            )
+
     def _load_pending_entry_context(self, symbol: str) -> Dict[str, Any]:
         """Return the latest pending live entry row for a symbol, if available."""
         paths: List[Path] = []
@@ -1962,16 +3298,53 @@ class TradeExecutor:
             )
             if np.isfinite(pending_entry) and pending_entry > 0.0:
                 entry_price = float(pending_entry)
-        bucket_key = pending_strategy or "external_margin_reconciliation"
-        sl_mult = _safe_float(
-            (pending_context or {}).get("sl_mult"),
-            default=np.nan,
+        pending_strategy = self.resolve_simple_policy_strategy_id(
+            pending_strategy, side
         )
+        bucket_key = pending_strategy or "external_margin_reconciliation"
+        artifact_params = self.get_simple_policy_stop_params(pending_strategy)
+        if artifact_params and isinstance(pending_context, dict):
+            for src_key, dst_key in (
+                ("params_source", "stop_policy_params_source"),
+                ("params_hash", "stop_policy_params_hash"),
+                ("schema", "stop_policy_schema"),
+            ):
+                if not pending_context.get(dst_key) and artifact_params.get(src_key):
+                    pending_context[dst_key] = artifact_params.get(src_key)
+            if not pending_context.get("sl_mult") and artifact_params.get("sl_mult"):
+                pending_context["sl_mult"] = artifact_params.get("sl_mult")
+            pending_context.setdefault("strategy_id", pending_strategy)
+        sl_mult = _safe_float((pending_context or {}).get("sl_mult"), default=np.nan)
         pending_barrier = _safe_float(
             (pending_context or {}).get("barrier_frac")
             or (pending_context or {}).get("barrier_pct"),
             default=np.nan,
         )
+        pending_stop = _safe_float(
+            pending_context.get("stop_price") if pending_context else None,
+            default=np.nan,
+        )
+        if (
+            (not np.isfinite(pending_barrier) or pending_barrier <= 0.0)
+            and np.isfinite(pending_stop)
+            and pending_stop > 0.0
+            and np.isfinite(sl_mult)
+            and sl_mult > 0.0
+        ):
+            stop_gap = (
+                (1.0 - pending_stop / entry_price)
+                if side == "long"
+                else (pending_stop / entry_price - 1.0)
+            )
+            if np.isfinite(stop_gap) and stop_gap > 0.0:
+                pending_barrier = float(stop_gap) / float(sl_mult)
+                pending_context["barrier_frac"] = pending_barrier
+                pending_context["barrier_pct"] = pending_barrier
+                tprint(
+                    f"Recovered simple_policy barrier for {symbol} from persisted "
+                    f"entry/stop distance: strategy_id={pending_strategy} "
+                    f"barrier_frac={pending_barrier:.6g}"
+                )
         required_policy_context = (
             "stop_policy_params_source",
             "stop_policy_params_hash",
@@ -1981,12 +3354,15 @@ class TradeExecutor:
             "sl_mult",
         )
         missing_policy_context = [
-            key for key in required_policy_context if not (pending_context or {}).get(key)
+            key
+            for key in required_policy_context
+            if not (pending_context or {}).get(key)
         ]
         has_policy_context = bool(
             pending_context
             and not missing_policy_context
-            and str((pending_context or {}).get("stop_policy_schema")) == "simple_policy_v1"
+            and str((pending_context or {}).get("stop_policy_schema"))
+            == "simple_policy_v1"
             and np.isfinite(pending_barrier)
             and pending_barrier > 0.0
             and pending_strategy
@@ -2001,10 +3377,6 @@ class TradeExecutor:
             )
             return False
         attach_barrier_frac = float(pending_barrier)
-        pending_stop = _safe_float(
-            pending_context.get("stop_price") if pending_context else None,
-            default=np.nan,
-        )
         if np.isfinite(pending_stop) and pending_stop > 0.0:
             stop_price = float(pending_stop)
             pending_stop_gap = (
@@ -2026,13 +3398,29 @@ class TradeExecutor:
             f"barrier_frac={attach_barrier_frac:.6g}"
         )
         now = pd.Timestamp.now(tz="UTC")
+        entry_ts = now
+        if isinstance(pending_context, dict):
+            for ts_key in ("entry_time", "timestamp"):
+                raw_ts = pending_context.get(ts_key)
+                if raw_ts in ("", None):
+                    continue
+                try:
+                    candidate_ts = pd.Timestamp(raw_ts)
+                    if candidate_ts.tzinfo is None:
+                        candidate_ts = candidate_ts.tz_localize("UTC")
+                    else:
+                        candidate_ts = candidate_ts.tz_convert("UTC")
+                    entry_ts = candidate_ts
+                    break
+                except Exception:
+                    continue
         state = {
             "side": side,
             "size": float(amount),
             "quote_size": float(quote_value),
             "entry_price": float(entry_price),
             "timestamp": datetime.now(),
-            "entry_time": now,
+            "entry_time": entry_ts,
             "bucket_key": "external_margin_reconciliation",
             "stop_price": float(stop_price),
             "limit_price": None,
@@ -2050,14 +3438,19 @@ class TradeExecutor:
             "sl_mult": float(sl_mult),
             "stop_reason": stop_reason,
             "stop_reason_detail": stop_reason_detail,
-            "stop_policy_params_source": pending_context.get("stop_policy_params_source"),
+            "stop_policy_params_source": pending_context.get(
+                "stop_policy_params_source"
+            ),
             "stop_policy_params_hash": pending_context.get("stop_policy_params_hash"),
             "stop_policy_schema": pending_context.get("stop_policy_schema"),
         }
         if pending_context:
             state["recovered_from_pending_trade_log"] = True
-            for key in EXECUTION_AUDIT_KEYS:
-                if key in pending_context and pending_context.get(key) not in ("", None):
+            for key in tuple(EXECUTION_AUDIT_KEYS) + MODEL_AND_POLICY_CONTEXT_KEYS:
+                if key in pending_context and pending_context.get(key) not in (
+                    "",
+                    None,
+                ):
                     state[key] = pending_context.get(key)
         if self.oco_executor is not None:
             oco_state = state.copy()
@@ -2073,50 +3466,23 @@ class TradeExecutor:
             adopted_stop_order = None
             mismatched_stop_orders: List[Dict[str, Any]] = []
             try:
-                fetch_open_orders = getattr(self.exchange, "fetch_open_orders", None)
-                if callable(fetch_open_orders):
-                    open_orders: List[Dict[str, Any]] = []
-                    for fetch_params in _margin_fetch_param_variants(self.config):
-                        try:
-                            open_orders = fetch_open_orders(symbol, fetch_params) or []
-                        except Exception:
-                            continue
-                        if open_orders:
-                            break
-                    for order in open_orders:
-                        if not isinstance(order, dict):
-                            continue
-                        order_side = str(order.get("side") or "").lower()
-                        order_type = str(order.get("type") or "").upper()
-                        info = (
-                            order.get("info")
-                            if isinstance(order.get("info"), dict)
-                            else {}
-                        )
-                        stop_price_raw = (
-                            order.get("stopPrice")
-                            or order.get("stop_price")
-                            or info.get("stopPrice")
-                            or order.get("price")
-                        )
-                        stop_px = _safe_float(stop_price_raw, default=np.nan)
-                        expected_side = "sell" if side == "long" else "buy"
-                        if (
-                            order_side == expected_side
-                            and "STOP" in order_type
-                            and np.isfinite(stop_px)
-                            and stop_px > 0.0
-                        ):
-                            if (
-                                pending_context
-                                and np.isfinite(stop_price)
-                                and abs(stop_px - float(stop_price))
-                                > max(abs(float(stop_price)) * 1e-4, 1e-8)
-                            ):
-                                mismatched_stop_orders.append(order)
-                                continue
-                            adopted_stop_order = order
-                            break
+                open_orders = _fetch_open_protective_stop_orders(
+                    self.exchange,
+                    symbol=symbol,
+                    position_side=side,
+                    config=self.config,
+                )
+                for order in open_orders:
+                    stop_px = _order_stop_price(order)
+                    if not (np.isfinite(stop_px) and stop_px > 0.0):
+                        continue
+                    if np.isfinite(stop_price) and abs(
+                        stop_px - float(stop_price)
+                    ) > max(abs(float(stop_price)) * 1e-4, 1e-8):
+                        mismatched_stop_orders.append(order)
+                        continue
+                    adopted_stop_order = order
+                    break
             except Exception as exc:
                 tprint(
                     f"External position stop-order adoption failed for {symbol}: "
@@ -2187,6 +3553,7 @@ class TradeExecutor:
                         entry_price=float(entry_price),
                         size=float(amount),
                         bucket_key=bucket_key,
+                        barrier_frac=float(attach_barrier_frac),
                     )
                     with self.oco_executor._positions_lock:
                         tracked = self.oco_executor.active_positions.get(symbol)
@@ -2226,8 +3593,8 @@ class TradeExecutor:
                             else:
                                 oco_state["external_stop_attached"] = False
                                 oco_state["stop_order_error"] = stop_result.get("error")
-                                oco_state["stop_order_error_category"] = stop_result.get(
-                                    "error_category"
+                                oco_state["stop_order_error_category"] = (
+                                    stop_result.get("error_category")
                                 )
                                 self.oco_executor.active_positions[symbol] = oco_state
                         with self._state_lock:
@@ -2250,7 +3617,9 @@ class TradeExecutor:
                         self.positions[symbol] = state.copy()
                     oco_state["external_stop_attached"] = False
                     oco_state["stop_order_error"] = str(exc)
-                    oco_state["stop_order_error_category"] = _classify_exchange_error(exc)
+                    oco_state["stop_order_error_category"] = _classify_exchange_error(
+                        exc
+                    )
                     with self.oco_executor._positions_lock:
                         self.oco_executor.active_positions[symbol] = oco_state
                     tprint(
@@ -2324,6 +3693,13 @@ class TradeExecutor:
         )
         assets = self._parse_margin_assets(balance)
         counts: Dict[str, int] = {}
+        dust_to_bnb_candidates: List[str] = []
+        dust_to_bnb_excluded_due_debt: List[str] = []
+        small_liability_candidates: List[str] = []
+        small_position_cleanup_candidates: List[Dict[str, Any]] = []
+        small_liability_threshold = float(
+            self.config.get("cross_margin_small_liability_quote_threshold", 1.0)
+        )
 
         for asset, vals in sorted(assets.items()):
             if not asset:
@@ -2333,6 +3709,123 @@ class TradeExecutor:
             interest = max(_safe_float(vals.get("interest"), 0.0), 0.0)
             free = max(_safe_float(vals.get("free"), 0.0), 0.0)
             used = max(_safe_float(vals.get("used"), 0.0), 0.0)
+
+            if asset != quote and total > 0.0 and debt > 0.0:
+                balance_value, balance_px, balance_symbol = self._asset_quote_value(
+                    asset, total, quote
+                )
+                debt_value, _, _ = self._asset_quote_value(asset, debt, quote)
+                net_amount = total - debt
+                net_quote_value = (
+                    abs(float(net_amount)) * float(balance_px)
+                    if balance_px is not None and np.isfinite(balance_px)
+                    else np.nan
+                )
+                net_item = {
+                    "asset": asset,
+                    "kind": "net_exposure",
+                    "side": "long" if net_amount >= 0.0 else "short",
+                    "amount": abs(float(net_amount)),
+                    "free": float(free),
+                    "used": float(used),
+                    "debt": float(debt),
+                    "interest": float(interest),
+                    "gross_balance_quote_value": (
+                        float(balance_value) if np.isfinite(balance_value) else None
+                    ),
+                    "gross_debt_quote_value": (
+                        float(debt_value) if np.isfinite(debt_value) else None
+                    ),
+                    "quote_value": (
+                        float(net_quote_value) if np.isfinite(net_quote_value) else None
+                    ),
+                    "price": float(balance_px) if balance_px is not None else None,
+                    "symbol": balance_symbol,
+                    "classification": "",
+                    "imported_for_monitoring": False,
+                    "netted_balance_and_debt": True,
+                }
+                if not np.isfinite(net_quote_value) or net_quote_value <= 0.0:
+                    net_item["classification"] = "netted_flat_or_unpriced"
+                elif net_quote_value < threshold:
+                    net_item["classification"] = (
+                        "dust_residual" if net_amount >= 0.0 else "dust_to_repay"
+                    )
+                else:
+                    net_item["classification"] = (
+                        "external_long_position"
+                        if net_amount >= 0.0
+                        else "external_short_position"
+                    )
+                classification = str(net_item["classification"])
+                if classification == "dust_to_repay":
+                    small_liability_candidates.append(asset)
+                    small_position_cleanup_candidates.append(
+                        {
+                            **net_item,
+                            "reason": "net_dust_to_repay",
+                        }
+                    )
+                    self._try_repay_available_margin_debt(
+                        asset=asset,
+                        free=free,
+                        debt=debt,
+                        quote_value=net_quote_value,
+                        report=report,
+                        reason="net_dust_to_repay",
+                    )
+                elif (
+                    classification == "dust_residual"
+                    and asset not in {quote, "BNB"}
+                    and free > 0.0
+                    and debt <= 0.0
+                    and interest <= 0.0
+                ):
+                    dust_to_bnb_candidates.append(asset)
+                    small_position_cleanup_candidates.append(
+                        {
+                            **net_item,
+                            "reason": "net_dust_residual",
+                        }
+                    )
+                elif classification == "dust_residual":
+                    dust_to_bnb_excluded_due_debt.append(asset)
+                if (
+                    import_non_dust
+                    and classification
+                    in {"external_long_position", "external_short_position"}
+                    and balance_symbol
+                    and balance_px is not None
+                ):
+                    imported = self._track_external_margin_position(
+                        symbol=balance_symbol,
+                        side=str(net_item["side"]),
+                        amount=abs(float(net_amount)),
+                        entry_price=float(balance_px),
+                        quote_value=float(net_quote_value),
+                        reason=classification,
+                    )
+                    net_item["imported_for_monitoring"] = bool(imported)
+                    if not imported:
+                        net_item["monitoring_skip_reason"] = "stop_loss_not_attached"
+                        cleanup = self._try_admin_close_external_margin_position(
+                            symbol=balance_symbol,
+                            side=str(net_item["side"]),
+                            amount=abs(float(net_amount)),
+                            price=float(balance_px),
+                            quote_value=float(net_quote_value),
+                            report=report,
+                            reason="unimported_netted_external_position",
+                        )
+                        net_item["cleanup_attempted"] = bool(cleanup.get("attempted"))
+                        net_item["cleanup_success"] = bool(cleanup.get("success"))
+                        if cleanup.get("error_category"):
+                            net_item["cleanup_error_category"] = cleanup.get(
+                                "error_category"
+                            )
+                report["items"].append(net_item)
+                counts[classification] = counts.get(classification, 0) + 1
+                continue
 
             for kind, amount, side in (
                 ("debt", debt, "short"),
@@ -2374,6 +3867,44 @@ class TradeExecutor:
                     "imported_for_monitoring": False,
                 }
                 if (
+                    classification == "dust_to_repay"
+                    and kind == "debt"
+                    and asset != quote
+                    and np.isfinite(quote_value)
+                    and 0.0 < quote_value < small_liability_threshold
+                ):
+                    small_liability_candidates.append(asset)
+                    small_position_cleanup_candidates.append(
+                        {
+                            **item,
+                            "reason": "dust_to_repay",
+                        }
+                    )
+                    self._try_repay_available_margin_debt(
+                        asset=asset,
+                        free=free,
+                        debt=debt,
+                        quote_value=quote_value,
+                        report=report,
+                        reason="dust_to_repay",
+                    )
+                if (
+                    classification == "dust_residual"
+                    and kind == "balance"
+                    and asset not in {quote, "BNB"}
+                    and free > 0.0
+                ):
+                    if debt > 0.0 or interest > 0.0:
+                        dust_to_bnb_excluded_due_debt.append(asset)
+                    else:
+                        dust_to_bnb_candidates.append(asset)
+                        small_position_cleanup_candidates.append(
+                            {
+                                **item,
+                                "reason": "dust_residual",
+                            }
+                        )
+                if (
                     import_non_dust
                     and classification == f"external_{side}_position"
                     and symbol
@@ -2390,8 +3921,39 @@ class TradeExecutor:
                     item["imported_for_monitoring"] = bool(imported)
                     if not imported:
                         item["monitoring_skip_reason"] = "stop_loss_not_attached"
+                        cleanup = self._try_admin_close_external_margin_position(
+                            symbol=symbol,
+                            side=side,
+                            amount=float(amount),
+                            price=float(px),
+                            quote_value=float(quote_value),
+                            report=report,
+                            reason="unimported_external_position",
+                        )
+                        item["cleanup_attempted"] = bool(cleanup.get("attempted"))
+                        item["cleanup_success"] = bool(cleanup.get("success"))
+                        if cleanup.get("error_category"):
+                            item["cleanup_error_category"] = cleanup.get(
+                                "error_category"
+                            )
                 report["items"].append(item)
                 counts[classification] = counts.get(classification, 0) + 1
+        self._maybe_convert_margin_dust_to_bnb(
+            candidate_assets=dust_to_bnb_candidates,
+            report=report,
+        )
+        if dust_to_bnb_excluded_due_debt:
+            report.setdefault("dust_to_bnb", {})["excluded_due_same_asset_debt"] = (
+                sorted(set(dust_to_bnb_excluded_due_debt))
+            )
+        self._maybe_exchange_small_margin_liabilities(
+            candidate_assets=small_liability_candidates,
+            report=report,
+        )
+        self._maybe_cleanup_small_margin_positions(
+            candidate_positions=small_position_cleanup_candidates,
+            report=report,
+        )
 
         report["summary"] = {
             "skipped": False,
@@ -2439,7 +4001,9 @@ class TradeExecutor:
         params.update(_non_stop_bucket_fields(bucket))
         return params
 
-    def get_simple_policy_stop_params(self, bucket_key: Optional[str] = None) -> Dict[str, Any]:
+    def get_simple_policy_stop_params(
+        self, bucket_key: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Return exact-strategy simple_policy_optimiser stop params for stop decisions."""
         if self.oco_executor is not None:
             return self.oco_executor.get_simple_policy_stop_params(bucket_key)
@@ -2447,6 +4011,28 @@ class TradeExecutor:
             return {}
         params = self.simple_policy_stop_params_by_strategy.get(str(bucket_key))
         return dict(params) if isinstance(params, dict) else {}
+
+    def resolve_simple_policy_strategy_id(
+        self, strategy_id: Optional[str], side: Optional[str]
+    ) -> str:
+        if self.oco_executor is not None:
+            resolver = getattr(
+                self.oco_executor, "resolve_simple_policy_strategy_id", None
+            )
+            if callable(resolver):
+                return str(resolver(strategy_id, side) or "")
+        sid = str(strategy_id or "").strip()
+        side_l = str(side or "").lower().strip()
+        candidates: List[str] = []
+        if sid:
+            candidates.append(sid)
+            core = strategy_core_id(sid)
+            if core and side_l in {"long", "short"}:
+                candidates.append(f"{side_l}_{core}")
+        for candidate in candidates:
+            if candidate in self.simple_policy_stop_params_by_strategy:
+                return candidate
+        return sid
 
     def get_cooldown_hours(self, bucket_key: Optional[str] = None) -> float:
         """Return zero: live inference cooldown is handled on losing closes only."""
@@ -2588,30 +4174,61 @@ class TradeExecutor:
         order_side = "buy" if side == "long" else "sell"
         market = _load_market(self.exchange, symbol)
         expected_entry_price = float(price) if price is not None else np.nan
+        live_barrier_frac = _safe_float(
+            (trade_context or {}).get("barrier_frac")
+            or (trade_context or {}).get("barrier_pct"),
+            default=np.nan,
+        )
 
         try:
-            if bucket_key and self.oco_executor:
-                live_bucket_params = self.oco_executor.get_simple_policy_stop_params(bucket_key)
-                try:
-                    validate_simple_policy_stop_params(
-                        live_bucket_params,
-                        state={"strategy_id": bucket_key},
-                        require_metadata=True,
-                    )
-                except SimplePolicyStopParamsError as exc:
-                    error = (
-                        f"invalid simple_policy_optimiser params before live entry: {exc}; "
-                        "refusing to place unprotected order"
-                    )
-                    tprint(f"Refusing live entry for {symbol}: {error}")
-                    return {
-                        "success": False,
-                        "error": error,
-                        "error_category": "invalid_simple_policy_stop_params",
-                        "symbol": symbol,
-                        "side": side,
-                        "size": float(size),
-                    }
+            if not bucket_key or not self.oco_executor:
+                error = (
+                    "missing simple_policy_optimiser strategy context before live entry; "
+                    "refusing to place unprotected order"
+                )
+                tprint(f"Refusing live entry for {symbol}: {error}")
+                return {
+                    "success": False,
+                    "error": error,
+                    "error_category": "invalid_simple_policy_stop_params",
+                    "symbol": symbol,
+                    "side": side,
+                    "size": float(size),
+                }
+
+            live_bucket_params = self.oco_executor.get_simple_policy_stop_params(
+                bucket_key
+            )
+            try:
+                validate_simple_policy_stop_params(
+                    live_bucket_params,
+                    state={
+                        "strategy_id": bucket_key,
+                        "barrier_frac": live_barrier_frac,
+                    },
+                    require_metadata=True,
+                    require_barrier=True,
+                )
+            except SimplePolicyStopParamsError as exc:
+                err_text = str(exc)
+                err_category = (
+                    "missing_policy_barrier_pct"
+                    if "barrier_frac/barrier_pct" in err_text
+                    else "invalid_simple_policy_stop_params"
+                )
+                error = (
+                    f"invalid simple_policy_optimiser params before live entry: {exc}; "
+                    "refusing to place unprotected order"
+                )
+                tprint(f"Refusing live entry for {symbol}: {error}")
+                return {
+                    "success": False,
+                    "error": error,
+                    "error_category": err_category,
+                    "symbol": symbol,
+                    "side": side,
+                    "size": float(size),
+                }
 
             if not np.isfinite(expected_entry_price):
                 ticker = self.exchange.fetch_ticker(symbol)
@@ -2661,6 +4278,11 @@ class TradeExecutor:
             entry_price, filled_amount, partial_fill = _extract_order_fill(
                 order, fallback_price
             )
+            entry_fee_quote, entry_fee_cost, entry_fee_currency = _fee_to_quote(
+                symbol,
+                order.get("fee"),
+                price=entry_price,
+            )
             ohlcv_entry_price = _safe_float(
                 ohlcv_reference_price,
                 default=_safe_float(price, default=np.nan),
@@ -2699,6 +4321,7 @@ class TradeExecutor:
                     entry_price=entry_price,
                     size=stop_amount,
                     bucket_key=bucket_key,
+                    barrier_frac=live_barrier_frac,
                 )
                 if isinstance(trade_context, dict):
                     with self.oco_executor._positions_lock:
@@ -2710,9 +4333,14 @@ class TradeExecutor:
                                 "barrier_pct": state.get("barrier_pct"),
                                 "sl_mult": state.get("sl_mult"),
                                 "strategy_id": state.get("strategy_id"),
-                                "stop_policy_params_source": state.get("stop_policy_params_source"),
-                                "stop_policy_params_hash": state.get("stop_policy_params_hash"),
+                                "stop_policy_params_source": state.get(
+                                    "stop_policy_params_source"
+                                ),
+                                "stop_policy_params_hash": state.get(
+                                    "stop_policy_params_hash"
+                                ),
                                 "stop_policy_schema": state.get("stop_policy_schema"),
+                                "decision_module": state.get("decision_module"),
                             }
                             state.update(
                                 {
@@ -2720,7 +4348,11 @@ class TradeExecutor:
                                     **canonical_policy_fields,
                                     "quote_size": float(size),
                                     "requested_base_amount": amount_base,
+                                    "entry_notional_quote": entry_price * filled_amount,
                                     "base_fee_amount": base_fee,
+                                    "entry_fee_quote": entry_fee_quote,
+                                    "entry_fee_cost": entry_fee_cost,
+                                    "entry_fee_currency": entry_fee_currency,
                                     "entry_order_type": entry_order_type,
                                     "ohlcv_entry_price": ohlcv_entry_price,
                                     "entry_price_delta_vs_ohlcv": entry_price_delta,
@@ -2741,7 +4373,11 @@ class TradeExecutor:
                     "size": stop_amount,
                     "quote_size": float(size),
                     "requested_base_amount": amount_base,
+                    "entry_notional_quote": entry_price * filled_amount,
                     "base_fee_amount": base_fee,
+                    "entry_fee_quote": entry_fee_quote,
+                    "entry_fee_cost": entry_fee_cost,
+                    "entry_fee_currency": entry_fee_currency,
                     "entry_price": entry_price,
                     "ohlcv_entry_price": ohlcv_entry_price,
                     "entry_price_delta_vs_ohlcv": entry_price_delta,
@@ -2757,6 +4393,9 @@ class TradeExecutor:
 
             if oco_result is not None and not oco_result.get("success", False):
                 error_category = oco_result.get("error_category") or "stop_loss_failed"
+                canonical_stop_fields = _canonical_stop_fields_from_oco_result(
+                    oco_result
+                )
                 return {
                     "success": False,
                     "error": oco_result.get("error") or "stop_loss_not_placed",
@@ -2768,6 +4407,9 @@ class TradeExecutor:
                     "size": float(size),
                     "base_amount": stop_amount,
                     "base_fee_amount": base_fee,
+                    "entry_fee_quote": entry_fee_quote,
+                    "entry_fee_cost": entry_fee_cost,
+                    "entry_fee_currency": entry_fee_currency,
                     "expected_entry_price": expected_entry_price,
                     "realized_entry_price": entry_price,
                     "ohlcv_entry_price": ohlcv_entry_price,
@@ -2775,9 +4417,11 @@ class TradeExecutor:
                     "entry_price_delta_vs_ohlcv_pct": entry_price_delta_pct,
                     "partial_fill": partial_fill,
                     "entry_order_type": entry_order_type,
+                    **canonical_stop_fields,
                     **audit_fields,
                 }
 
+            canonical_stop_fields = _canonical_stop_fields_from_oco_result(oco_result)
             return {
                 "success": True,
                 "order": order,
@@ -2787,6 +4431,9 @@ class TradeExecutor:
                 "size": float(size),
                 "base_amount": stop_amount,
                 "base_fee_amount": base_fee,
+                "entry_fee_quote": entry_fee_quote,
+                "entry_fee_cost": entry_fee_cost,
+                "entry_fee_currency": entry_fee_currency,
                 "price": entry_price,
                 "expected_entry_price": expected_entry_price,
                 "realized_entry_price": entry_price,
@@ -2808,6 +4455,7 @@ class TradeExecutor:
                     if isinstance(oco_result, dict)
                     else None
                 ),
+                **canonical_stop_fields,
                 "partial_fill": partial_fill,
                 "entry_order_type": entry_order_type,
                 "price_slippage_pct": (
@@ -2886,14 +4534,21 @@ class TradeExecutor:
             else np.nan
         )
         try:
+            live_barrier_frac = _safe_float(
+                (trade_context or {}).get("barrier_frac")
+                or (trade_context or {}).get("barrier_pct"),
+                default=np.nan,
+            )
             initial_stop_decision = compute_initial_simple_policy_stop_decision(
                 entry_price=float(entry_price),
                 policy_params=params,
                 side=side,
                 strategy_id=bucket_key,
+                barrier_frac=live_barrier_frac,
                 require_metadata=True,
             )
         except SimplePolicyStopParamsError as exc:
+            err_text = str(exc)
             return {
                 "timestamp": datetime.now().isoformat(),
                 "mode": "shadow",
@@ -2905,7 +4560,11 @@ class TradeExecutor:
                 "success": False,
                 "bucket_key": bucket_key,
                 "error": str(exc),
-                "error_category": "invalid_simple_policy_stop_params",
+                "error_category": (
+                    "missing_policy_barrier_pct"
+                    if "barrier_frac/barrier_pct" in err_text
+                    else "invalid_simple_policy_stop_params"
+                ),
                 **dict(trade_context or {}),
             }
         barrier_frac = initial_stop_decision.barrier_frac
@@ -2963,13 +4622,13 @@ class TradeExecutor:
                 "barrier_frac": barrier_frac,
                 "barrier_pct": barrier_frac,
                 "sl_mult": sl_mult,
-            "trailing_activation_mult": initial_stop_decision.trailing_activation_mult,
-            "trailing_power": initial_stop_decision.trailing_power,
-            "trailing_squash_divisor": initial_stop_decision.trailing_squash_divisor,
-            "giveback_beta": initial_stop_decision.giveback_beta,
-            "capital_protect_mfe_mult": initial_stop_decision.capital_protect_mfe_mult,
-            "capital_protect_regression_frac": initial_stop_decision.capital_protect_regression_frac,
-            "decision_module": initial_stop_decision.decision_module,
+                "trailing_activation_mult": initial_stop_decision.trailing_activation_mult,
+                "trailing_power": initial_stop_decision.trailing_power,
+                "trailing_squash_divisor": initial_stop_decision.trailing_squash_divisor,
+                "giveback_beta": initial_stop_decision.giveback_beta,
+                "capital_protect_mfe_mult": initial_stop_decision.capital_protect_mfe_mult,
+                "capital_protect_regression_frac": initial_stop_decision.capital_protect_regression_frac,
+                "decision_module": initial_stop_decision.decision_module,
                 "stop_policy_params_source": initial_stop_decision.params_source,
                 "stop_policy_params_hash": initial_stop_decision.params_hash,
                 "stop_policy_schema": initial_stop_decision.params_schema,
@@ -3165,6 +4824,36 @@ class TradeExecutor:
                 if isinstance(state, dict)
             }
 
+    def retry_missing_protective_stop(
+        self, symbol: str, position_state: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Retry attaching the policy-derived STOP_LOSS for a monitored position."""
+        if self.oco_executor is None:
+            return {
+                "success": False,
+                "error_category": "oco_executor_unavailable",
+                "error": "cannot retry protective stop without OCO executor",
+            }
+        with self.oco_executor._positions_lock:
+            state = self.oco_executor.active_positions.get(symbol)
+            if not isinstance(state, dict):
+                state = position_state
+            if not isinstance(state, dict):
+                return {
+                    "success": False,
+                    "error_category": "position_not_found",
+                    "error": "cannot retry protective stop for unknown position",
+                }
+        result = self.oco_executor._reattach_protective_stop(
+            symbol,
+            state,
+            previous_status="missing_stop_order",
+        )
+        with self._state_lock:
+            if symbol in self.positions and isinstance(self.positions[symbol], dict):
+                self.positions[symbol].update(state)
+        return result
+
     def monitor_orders_once(self) -> Dict[str, Dict[str, Any]]:
         """Fetch live order statuses for active stop-loss orders once."""
         if self.oco_executor is not None:
@@ -3212,6 +4901,7 @@ class TradeExecutor:
         peak_price: Optional[float] = None,
         mfe: Optional[float] = None,
         mae: Optional[float] = None,
+        bars_in_trade: Optional[int] = None,
         last_5m_eval_ts: Optional[pd.Timestamp] = None,
     ) -> None:
         """Persist monitor state and apply policy-authorised stop decisions only."""
@@ -3234,6 +4924,8 @@ class TradeExecutor:
                     state["mfe"] = float(mfe)
                 if mae is not None and np.isfinite(mae):
                     state["mae"] = float(mae)
+                if bars_in_trade is not None:
+                    state["bars_in_trade"] = int(max(0, bars_in_trade))
                 if last_5m_eval_ts is not None:
                     state["last_5m_eval_ts"] = pd.Timestamp(last_5m_eval_ts)
                     state["last_update"] = pd.Timestamp.now(tz="UTC")
@@ -3261,15 +4953,22 @@ class TradeExecutor:
                         reason="invalid_simple_policy_decision_metadata",
                         error=reason,
                     )
-                elif isinstance(decision, SimplePolicyStopDecision) and decision.should_replace:
+                elif (
+                    isinstance(decision, SimplePolicyStopDecision)
+                    and decision.should_replace
+                ):
                     stop_price_value = _safe_float(decision.stop_price, default=np.nan)
                     current_stop = _safe_float(state.get("stop_price"), default=np.nan)
                     side = str(state.get("side", "long")).lower()
                     improved = (
-                        stop_price_value > current_stop
-                        if side == "long"
-                        else stop_price_value < current_stop
-                    ) if valid else False
+                        (
+                            stop_price_value > current_stop
+                            if side == "long"
+                            else stop_price_value < current_stop
+                        )
+                        if valid
+                        else False
+                    )
                     if valid and improved:
                         state["stop_price"] = stop_price_value
                         state["stop_reason"] = decision.reason
@@ -3316,6 +5015,8 @@ class TradeExecutor:
                 state["mfe"] = float(mfe)
             if mae is not None and np.isfinite(mae):
                 state["mae"] = float(mae)
+            if bars_in_trade is not None:
+                state["bars_in_trade"] = int(max(0, bars_in_trade))
             if last_5m_eval_ts is not None:
                 state["last_5m_eval_ts"] = pd.Timestamp(last_5m_eval_ts)
                 state["last_update"] = pd.Timestamp.now(tz="UTC")

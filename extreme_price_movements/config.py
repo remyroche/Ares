@@ -166,6 +166,7 @@ ORDERBOOK_FEATURE_KEYS = sorted(
     set(ORDERBOOK_BASE_FEATURE_KEYS) | set(ORDERBOOK_META_FEATURE_KEYS)
 )
 CROSS_ASSET_FEATURE_KEYS = [
+    "cs_rank_ret_24h",
     "mkt_ret_eq_1h",
     "mkt_ret_eq_4h",
     "mkt_ret_eq_24h",
@@ -191,8 +192,10 @@ CROSS_ASSET_FEATURE_KEYS = [
     "symbol_minus_mkt_ret_24h",
     "market_breadth_1h",
     "market_breadth_4h",
+    "market_breadth_24h",
     "market_dispersion_1h",
     "market_dispersion_4h",
+    "market_dispersion_24h",
 ]
 
 
@@ -527,6 +530,20 @@ CONTINUOUS_REGIME_FEATURES = {
     "amihud_illiq": {"family": "liquidity", "type": "continuous"},
     "amihud_z": {"family": "liquidity", "type": "continuous"},
     "coherence_24": {"family": "path_structure", "type": "continuous"},
+    "mkt_ret_eq_24h": {"family": "cross_asset", "type": "continuous"},
+    "cs_rank_ret_24h": {"family": "cross_sectional", "type": "continuous"},
+    "market_breadth_4h": {"family": "cross_sectional", "type": "continuous"},
+    "market_breadth_24h": {"family": "cross_sectional", "type": "continuous"},
+    "market_dispersion_4h": {"family": "cross_sectional", "type": "continuous"},
+    "market_dispersion_24h": {"family": "cross_sectional", "type": "continuous"},
+    "symbol_minus_mkt_ret_24h": {"family": "cross_asset", "type": "continuous"},
+    "funding_rate": {"family": "funding", "type": "continuous"},
+    "fund_rate_z_14d": {"family": "funding", "type": "continuous"},
+    "ob_spread_z_24h": {"family": "orderbook", "type": "continuous"},
+    "ob_depth_usd_l20_z": {"family": "orderbook", "type": "continuous"},
+    "xasset_mkt_spread_bps": {"family": "cross_asset_orderbook", "type": "continuous"},
+    "xasset_mkt_depth_z": {"family": "cross_asset_orderbook", "type": "continuous"},
+    "xasset_mkt_ob_stress": {"family": "cross_asset_orderbook", "type": "continuous"},
 }
 
 RIDGE_FEATURE_COLS = list(CONTINUOUS_REGIME_FEATURES.keys())

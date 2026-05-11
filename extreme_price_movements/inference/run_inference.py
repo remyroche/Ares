@@ -84,6 +84,7 @@ from extreme_price_movements.inference.data_fetcher import (
     make_exchange,
 )
 from extreme_price_movements.inference.feature_generator import (
+    _compute_policy_barrier_pct,
     compute_selector_features,
     generate_features,
     get_features_for_candidates,
@@ -1062,9 +1063,7 @@ def _symbol_entry_block_reason(
         last_ts = None
     if last_ts is None:
         return ""
-    blocked_until = pd.Timestamp(last_ts) + pd.Timedelta(
-        hours=float(cooldown_hours)
-    )
+    blocked_until = pd.Timestamp(last_ts) + pd.Timedelta(hours=float(cooldown_hours))
     return "recent_losing_trade_cooldown" if pd.Timestamp(now) < blocked_until else ""
 
 
@@ -1169,15 +1168,34 @@ def _send_trade_close_email(
             f"{_format_float(closed_trade.get('deployment_rank_threshold'), digits=6)}",
             f"exit_price: {_format_float(closed_trade.get('exit_price'))}",
             f"filled: {_format_float(closed_trade.get('filled'))}",
+            "entry_notional_quote: "
+            f"{_format_float(closed_trade.get('entry_notional_quote'))}",
+            "exit_notional_quote: "
+            f"{_format_float(closed_trade.get('exit_notional_quote'))}",
+            f"requested_quote_size: {_format_float(closed_trade.get('quote_size'))}",
+            "requested_base_amount: "
+            f"{_format_float(closed_trade.get('requested_base_amount'))}",
             "pnl_scope: position notional only; excludes whole-wallet equity, "
             "other positions, and borrow interest",
             f"net_pnl_quote_est_position: {_format_float(net_pnl_amount)}",
             f"net_pnl_pct_position_notional: {_format_pct(net_pnl_pct)}",
             f"gross_pnl_quote_est_position: {_format_float(closed_trade.get('gross_pnl'))}",
             f"gross_pnl_pct_position_notional: {_format_pct(gross_pnl_pct)}",
+            "gross_to_net_cost_quote: "
+            f"{_format_float(closed_trade.get('gross_to_net_cost_quote'))}",
+            "gross_to_net_cost_pct_position_notional: "
+            f"{_format_pct(closed_trade.get('gross_to_net_cost_pct'))}",
+            f"entry_fee_quote: {_format_float(closed_trade.get('entry_fee_quote'))}",
+            f"exit_fee_quote: {_format_float(closed_trade.get('exit_fee_quote'))}",
             f"mfe: {_format_pct(closed_trade.get('mfe'))}",
             f"mae: {_format_pct(closed_trade.get('mae'))}",
             f"stop_price: {closed_trade.get('stop_price')}",
+            f"decision_module: {closed_trade.get('decision_module')}",
+            "stop_policy_params_source: "
+            f"{closed_trade.get('stop_policy_params_source')}",
+            "stop_policy_params_hash: "
+            f"{closed_trade.get('stop_policy_params_hash')}",
+            f"stop_policy_schema: {closed_trade.get('stop_policy_schema')}",
             f"stop_order_id: {closed_trade.get('stop_order_id')}",
             f"close_order_id: {closed_trade.get('close_order_id')}",
             f"close_order_status: {closed_trade.get('close_order_status')}",
@@ -1364,6 +1382,39 @@ def _sync_reconciled_positions_to_portfolio_manager(
             )
 
 
+def _apply_reconciliation_entry_gate(
+    *,
+    reconciliation_report: dict[str, Any],
+    portfolio_mgr: PortfolioManager,
+) -> list[dict[str, Any]]:
+    """Block new entries if real external margin positions are not imported."""
+    unimported_external_positions = [
+        item
+        for item in reconciliation_report.get("items", [])
+        if str(item.get("classification", "")).startswith("external_")
+        and not bool(item.get("imported_for_monitoring"))
+    ]
+    if not unimported_external_positions:
+        return []
+    symbols_blocking = sorted(
+        {
+            str(item.get("symbol") or item.get("asset") or "unknown")
+            for item in unimported_external_positions
+        }
+    )
+    portfolio_mgr.trip_hard_limit(
+        "external_margin_reconciliation_incomplete: "
+        f"{len(unimported_external_positions)} external position record(s) "
+        f"not imported for monitoring ({','.join(symbols_blocking)})"
+    )
+    tprint(
+        "New entries blocked because cross-margin reconciliation is incomplete; "
+        "existing imported positions will continue to be monitored. "
+        f"Unimported external positions: {symbols_blocking}"
+    )
+    return unimported_external_positions
+
+
 def _maybe_send_daily_deployment_report(
     *,
     daily_reporter: DailyDeploymentReporter,
@@ -1517,6 +1568,9 @@ def _execute_trade_with_optional_context(
 def _resolve_live_barrier_pct(
     symbol: str,
     features_log: Dict[str, Any],
+    *,
+    panel: Optional[Dict[str, pd.DataFrame]] = None,
+    cfg: Optional[Dict[str, Any]] = None,
 ) -> Optional[float]:
     """Return the optimiser barrier fraction for live stop placement.
 
@@ -1533,6 +1587,23 @@ def _resolve_live_barrier_pct(
             continue
         if np.isfinite(barrier) and barrier > 0.0:
             return barrier
+    if isinstance(panel, dict):
+        try:
+            raw_barrier = _compute_policy_barrier_pct(panel, [symbol], cfg or {})
+        except Exception as exc:
+            tprint(f"Live barrier raw recompute failed for {symbol}: {exc}")
+            raw_barrier = None
+        if isinstance(raw_barrier, pd.DataFrame) and symbol in raw_barrier.columns:
+            vals = raw_barrier[symbol].dropna()
+            if not vals.empty:
+                barrier = float(vals.iloc[-1])
+                if np.isfinite(barrier) and barrier > 0.0:
+                    features_log["barrier_pct"] = barrier
+                    tprint(
+                        f"Live barrier recomputed from raw OHLCV for {symbol}: "
+                        f"barrier_pct={barrier:.6g}"
+                    )
+                    return barrier
     tprint(
         f"Live barrier unavailable for {symbol}: missing explicit raw barrier_pct; "
         "entry will be blocked rather than using transformed ATR fallbacks"
@@ -1609,8 +1680,8 @@ def _sleep_until_next_candle_close(
     guard_seconds = 1.5
     target = boundary + pd.Timedelta(seconds=float(delay_seconds) + guard_seconds)
     if now_ts >= target:
-        target = boundary + freq + pd.Timedelta(
-            seconds=float(delay_seconds) + guard_seconds
+        target = (
+            boundary + freq + pd.Timedelta(seconds=float(delay_seconds) + guard_seconds)
         )
     while True:
         now_ts = pd.Timestamp.now(tz="UTC")
@@ -1997,6 +2068,7 @@ def run_inference_step(
     calibration_data = calibration_data or {}
     normalized_thresholds = normalized_thresholds or {}
     strategy_candidate_masks = strategy_candidate_masks or {}
+    runtime_config = dict(getattr(executor, "config", {}) or {})
     live_test_mode = _is_live_test_mode(executor)
     portfolio_policy = portfolio_policy or PortfolioPolicyConfig()
     prediction_ledger_rows: List[Dict[str, Any]] = []
@@ -2492,6 +2564,11 @@ def run_inference_step(
                 chain_results = dict(decision["chain_results"])
                 size = float(decision["size"])
                 bucket_key = strategy_core_id(strategy_id)
+                resolver = getattr(executor, "resolve_simple_policy_strategy_id", None)
+                if callable(resolver):
+                    resolved_bucket_key = resolver(bucket_key, side)
+                    if resolved_bucket_key:
+                        bucket_key = str(resolved_bucket_key)
                 threshold_for_size = float(decision["effective_threshold"])
                 rank_for_size = float(
                     decision.get(
@@ -2537,11 +2614,8 @@ def run_inference_step(
                 cooldown_hours=cooldown_hours,
             )
             if symbol_block_reason:
-                if (
-                    prediction_ledger is not None
-                    and _should_log_prediction_candidate(
-                        decision, policy=portfolio_policy
-                    )
+                if prediction_ledger is not None and _should_log_prediction_candidate(
+                    decision, policy=portfolio_policy
                 ):
                     prediction_ledger_rows.append(
                         _prediction_ledger_row(
@@ -2555,12 +2629,8 @@ def run_inference_step(
                 base_pred = _safe_float(chain_results.get("base_pred"))
                 meta_pred = _safe_float(chain_results.get("meta_pred"))
                 rank_pct = _safe_float(chain_results.get("sizer_rank_percentile"))
-                base_train_rank = _safe_float(
-                    chain_results.get("base_train_rank_pct")
-                )
-                meta_train_rank = _safe_float(
-                    chain_results.get("meta_train_rank_pct")
-                )
+                base_train_rank = _safe_float(chain_results.get("base_train_rank_pct"))
+                meta_train_rank = _safe_float(chain_results.get("meta_train_rank_pct"))
                 threshold = _safe_float(chain_results.get("effective_threshold"))
                 if symbol_block_reason == "symbol_already_active":
                     reason_text = "active-symbol one-position constraint"
@@ -2592,9 +2662,7 @@ def run_inference_step(
                     live_test_mode=live_test_mode,
                     rank_size_power=float(policy_size.get("size_power", 1.1)),
                 )
-                requested_position_usdt = float(
-                    sizing_audit["size_after_liquidity"]
-                )
+                requested_position_usdt = float(sizing_audit["size_after_liquidity"])
                 chain_results["portfolio_rank_sizing"] = sizing_audit
                 can_enter, info = portfolio_mgr.can_enter_position(
                     symbol=symbol,
@@ -2700,7 +2768,12 @@ def run_inference_step(
                             vals = feat_df[symbol].dropna()
                             if not vals.empty:
                                 features_log[feat_name] = vals.iloc[-1]
-                live_barrier_pct = _resolve_live_barrier_pct(symbol, features_log)
+                live_barrier_pct = _resolve_live_barrier_pct(
+                    symbol,
+                    features_log,
+                    panel=panel,
+                    cfg=runtime_config,
+                )
                 if live_barrier_pct is not None:
                     features_log["barrier_pct"] = live_barrier_pct
                 execution_snapshot = {}
@@ -3030,6 +3103,7 @@ def run_inference_step(
                             "deployment_rank_threshold"
                         ),
                         "barrier_pct": live_barrier_pct,
+                        "barrier_frac": live_barrier_pct,
                     },
                     execution_kwargs={
                         "execution_snapshot": execution_snapshot,
@@ -3725,6 +3799,25 @@ def _monitor_active_position_price_action(
     tprint(f"Monitoring {len(active_positions)} active positions for price action...")
     for symbol, position_state in active_positions.items():
         try:
+            status = statuses.setdefault(symbol, {})
+            if str(
+                status.get("status") or ""
+            ).lower() == "missing_stop_order" or not position_state.get(
+                "stop_order_id"
+            ):
+                retry_stop = getattr(executor, "retry_missing_protective_stop", None)
+                if callable(retry_stop):
+                    retry_result = retry_stop(symbol, position_state)
+                    status["missing_stop_retry"] = retry_result
+                    refreshed = (
+                        executor.get_position(symbol)
+                        if hasattr(executor, "get_position")
+                        else None
+                    )
+                    if isinstance(refreshed, dict):
+                        position_state = refreshed
+                    if isinstance(retry_result, dict) and retry_result.get("success"):
+                        status["status"] = "open"
             entry_time = position_state.get("entry_time") or position_state.get(
                 "timestamp"
             )
@@ -4150,6 +4243,7 @@ def main():
     logger = TradeLogger()
     reconciliation_report = executor.reconcile_cross_margin_account()
     _write_margin_reconciliation_report(config, reconciliation_report)
+    unimported_external_positions: list[dict[str, Any]] = []
     try:
         unimported_external_positions = [
             item
@@ -4219,6 +4313,11 @@ def main():
         max_same_strategy=max_concurrent_per_strategy,
     )
     _sync_reconciled_positions_to_portfolio_manager(executor, portfolio_mgr)
+    if unimported_external_positions:
+        _apply_reconciliation_entry_gate(
+            reconciliation_report=reconciliation_report,
+            portfolio_mgr=portfolio_mgr,
+        )
 
     # Setup scheduling
     if args.run_once and args.challenger_interval > 0:
@@ -4249,6 +4348,10 @@ def main():
     # Main inference loop - run after closed 15m candles. Model entry decisions
     # only run after a closed hourly candle is available.
     last_hourly_sync = None
+    last_margin_reconciliation = pd.Timestamp.now(tz="UTC")
+    margin_reconciliation_interval = pd.Timedelta(
+        minutes=float(config.get("margin_reconciliation_interval_minutes", 60.0))
+    )
     last_universe_refresh_day = pd.Timestamp.utcnow().floor("D")
     while True:
         try:
@@ -4305,6 +4408,23 @@ def main():
             )
             did_hourly_refresh = False
             loop_timer = _StageTimer("live_entry_loop")
+
+            if loop_now >= last_margin_reconciliation + margin_reconciliation_interval:
+                try:
+                    reconciliation_report = executor.reconcile_cross_margin_account()
+                    _write_margin_reconciliation_report(config, reconciliation_report)
+                    _sync_reconciled_positions_to_portfolio_manager(
+                        executor,
+                        portfolio_mgr,
+                    )
+                    _apply_reconciliation_entry_gate(
+                        reconciliation_report=reconciliation_report,
+                        portfolio_mgr=portfolio_mgr,
+                    )
+                    last_margin_reconciliation = loop_now
+                    loop_timer.mark("margin_reconciliation")
+                except Exception as exc:
+                    tprint(f"Periodic cross-margin reconciliation failed: {exc}")
 
             current_day = pd.Timestamp.utcnow().floor("D")
             if current_day > last_universe_refresh_day and not args.symbols:
@@ -4624,6 +4744,45 @@ def _evaluate_oco_policy(
         mae = float(position_state.get("mae", 0.0) or 0.0)
         stop_reason = str(position_state.get("stop_reason") or "original_stop_loss")
         last_bar_ts = bars.index[-1]
+        live_mode = str(getattr(executor, "mode", "") or "").lower() in {
+            "live",
+            "live-test",
+            "live_test",
+        }
+        if live_mode and not position_state.get("stop_order_id"):
+            retry_stop = getattr(executor, "retry_missing_protective_stop", None)
+            if callable(retry_stop):
+                retry_result = retry_stop(symbol, position_state)
+                position_state.setdefault("trade_recap_events", []).append(
+                    {
+                        "ts": pd.Timestamp.now(tz="UTC").isoformat(),
+                        "event": "missing_exchange_stop_retry",
+                        "success": bool(
+                            isinstance(retry_result, dict)
+                            and retry_result.get("success")
+                        ),
+                        "error_category": (
+                            retry_result.get("error_category")
+                            if isinstance(retry_result, dict)
+                            else None
+                        ),
+                        "error": (
+                            retry_result.get("error")
+                            if isinstance(retry_result, dict)
+                            else None
+                        ),
+                        "stop_price": float(stop_price),
+                        "stop_reason": stop_reason,
+                    }
+                )
+                refreshed = (
+                    executor.get_position(symbol)
+                    if hasattr(executor, "get_position")
+                    else None
+                )
+                if isinstance(refreshed, dict):
+                    position_state.update(refreshed)
+                    stop_price = float(position_state.get("stop_price", stop_price))
 
         for bar_ts, row in bars.iterrows():
             bar_open = float(row["open"])
@@ -4652,16 +4811,10 @@ def _evaluate_oco_policy(
                 del position_state["trade_recap_events"][:-500]
 
             if side == "long":
-                mfe = max(mfe, (bar_high - entry_price) / max(entry_price, 1e-12))
-                mae = max(mae, (entry_price - bar_low) / max(entry_price, 1e-12))
-                peak_price = max(peak_price, bar_high)
                 if np.isfinite(stop_price) and bar_low <= stop_price:
                     exit_reason = f"stop_loss_filled:{stop_reason}"
-                    if str(getattr(executor, "mode", "") or "").lower() in {
-                        "live",
-                        "live-test",
-                        "live_test",
-                    }:
+                    has_exchange_stop = bool(position_state.get("stop_order_id"))
+                    if live_mode and has_exchange_stop:
                         position_state.setdefault("trade_recap_events", []).append(
                             {
                                 "ts": pd.Timestamp(bar_ts).isoformat(),
@@ -4679,16 +4832,10 @@ def _evaluate_oco_policy(
                         symbol, price=float(stop_price), reason=exit_reason
                     )
             else:
-                mfe = max(mfe, (entry_price - bar_low) / max(entry_price, 1e-12))
-                mae = max(mae, (bar_high - entry_price) / max(entry_price, 1e-12))
-                peak_price = min(peak_price, bar_low)
                 if np.isfinite(stop_price) and bar_high >= stop_price:
                     exit_reason = f"stop_loss_filled:{stop_reason}"
-                    if str(getattr(executor, "mode", "") or "").lower() in {
-                        "live",
-                        "live-test",
-                        "live_test",
-                    }:
+                    has_exchange_stop = bool(position_state.get("stop_order_id"))
+                    if live_mode and has_exchange_stop:
                         position_state.setdefault("trade_recap_events", []).append(
                             {
                                 "ts": pd.Timestamp(bar_ts).isoformat(),
@@ -4721,6 +4868,23 @@ def _evaluate_oco_policy(
                 side=side,
                 require_metadata=require_metadata,
             )
+            if getattr(decision, "should_exit", False):
+                position_state.setdefault("trade_recap_events", []).append(
+                    {
+                        "ts": pd.Timestamp(last_bar_ts).isoformat(),
+                        "event": "adverse_excursion_exit_triggered",
+                        "reason": decision.reason,
+                        "detail": decision.reason_detail,
+                        "mfe": float(decision.mfe if decision.mfe is not None else mfe),
+                        "mae": float(decision.mae if decision.mae is not None else mae),
+                    }
+                )
+                exit_price = float(bars.iloc[-1]["close"])
+                return executor.close_position(
+                    symbol,
+                    price=exit_price,
+                    reason=str(decision.exit_reason or decision.reason),
+                )
         except SimplePolicyStopParamsError as exc:
             position_state.setdefault("trade_recap_events", []).append(
                 {
@@ -4731,12 +4895,25 @@ def _evaluate_oco_policy(
                 }
             )
 
+        decision_peak = (
+            decision.peak_price
+            if decision is not None and decision.peak_price is not None
+            else peak_price
+        )
+        decision_mfe = (
+            decision.mfe if decision is not None and decision.mfe is not None else mfe
+        )
+        decision_mae = (
+            decision.mae if decision is not None and decision.mae is not None else mae
+        )
         executor.update_position_policy_state(
             symbol,
             policy_stop_decision=decision,
-            peak_price=peak_price,
-            mfe=mfe,
-            mae=mae,
+            peak_price=decision_peak,
+            mfe=decision_mfe,
+            mae=decision_mae,
+            bars_in_trade=int(position_state.get("bars_in_trade", 0) or 0)
+            + int(len(bars)),
             last_5m_eval_ts=last_bar_ts,
         )
     except Exception as e:

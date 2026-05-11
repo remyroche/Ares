@@ -4805,11 +4805,9 @@ def _evaluate_oco_policy(
         )
         giveback_pct = float(params.get("giveback_pct", 0.005))
         trail_mult = float(params.get("trail_mult", 0.25))
-        profit_lock = (
-            float(params["profit_lock_amount"])
-            if "profit_lock_amount" in params
-            else None
-        )
+        profit_lock = None
+        if not policy_style_trailing and "profit_lock_amount" in params:
+            profit_lock = float(params["profit_lock_amount"])
         last_bar_ts = bars.index[-1]
 
         for bar_ts, row in bars.iterrows():

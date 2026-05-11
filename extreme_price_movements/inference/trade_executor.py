@@ -561,6 +561,43 @@ def _create_reduce_stop_loss_order(
     raise RuntimeError(f"STOP_LOSS creation did not run for {symbol}")
 
 
+def _infer_effective_stop_origin(
+    state: Dict[str, Any],
+    *,
+    entry_price: float,
+    stop_price: float,
+    gross_pnl_pct: float,
+) -> Tuple[str, str]:
+    """Return a close-report stop class that reflects the final stop location."""
+    stop_origin = str(state.get("stop_reason") or "original_stop_loss")
+    reason_detail = str(state.get("stop_reason_detail") or stop_origin)
+    if stop_origin != "original_stop_loss":
+        return stop_origin, reason_detail
+
+    side = str(state.get("side", "") or "").lower()
+    initial_stop = _safe_float(state.get("initial_stop_price"), default=np.nan)
+    mfe = _safe_float(state.get("mfe"), default=0.0)
+    improved_from_initial = False
+    if np.isfinite(initial_stop) and np.isfinite(stop_price):
+        improved_from_initial = (
+            stop_price > initial_stop if side == "long" else stop_price < initial_stop
+        )
+    protected_breakeven = False
+    if np.isfinite(entry_price) and entry_price > 0.0 and np.isfinite(stop_price):
+        protected_breakeven = (
+            stop_price >= entry_price if side == "long" else stop_price <= entry_price
+        )
+
+    if improved_from_initial and (protected_breakeven or gross_pnl_pct > 0.0 or mfe > 0.0):
+        detail = (
+            "trailing_profit: final stop was improved from the original stop "
+            f"(initial_stop={initial_stop:.8g}, final_stop={stop_price:.8g}, "
+            f"mfe={mfe:.6g})"
+        )
+        return "trailing_profit", detail
+    return stop_origin, reason_detail
+
+
 def _symbol_from_asset_quote(asset: str, quote: str) -> str:
     """Return the canonical ccxt symbol for an asset/quote pair."""
     return f"{str(asset).upper()}/{str(quote).upper()}"
@@ -615,8 +652,13 @@ def _closed_trade_metrics(
             fee_quote = fee_cost * exit_price
     net_pnl = gross_pnl - fee_quote if np.isfinite(gross_pnl) else np.nan
     net_pnl_pct = net_pnl / max(notional, 1e-12) if np.isfinite(notional) else np.nan
-    stop_origin = str(state.get("stop_reason") or "original_stop_loss")
-    reason_detail = state.get("stop_reason_detail") or stop_origin
+    stop_price = _safe_float(state.get("stop_price"), default=np.nan)
+    stop_origin, reason_detail = _infer_effective_stop_origin(
+        state,
+        entry_price=entry_price,
+        stop_price=stop_price,
+        gross_pnl_pct=gross_pnl_pct,
+    )
     reason_out = (
         f"{reason}:{stop_origin}"
         if str(reason) == "stop_loss_filled" and stop_origin
@@ -1463,6 +1505,15 @@ class OCOExecutor:
             stop_detail = state.pop("_pending_stop_reason_detail", None) or state.get(
                 "stop_reason_detail", stop_reason
             )
+            if str(stop_reason) == "original_stop_loss":
+                inferred_reason, inferred_detail = _infer_effective_stop_origin(
+                    state,
+                    entry_price=entry_price,
+                    stop_price=float(stop_price),
+                    gross_pnl_pct=0.0,
+                )
+                stop_reason = inferred_reason
+                stop_detail = inferred_detail
             state["stop_reason"] = stop_reason
             state["stop_reason_detail"] = stop_detail
             state.pop("stop_update_error", None)

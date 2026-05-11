@@ -176,18 +176,28 @@ def evaluate_orderbook_liquidity(
     policy: PortfolioPolicyConfig,
     mode: str,
 ) -> ExecutionSnapshot:
-    """Measure executable quote capacity within the policy book-walk cap."""
+    """Measure executable quote capacity within slippage and entry-friction caps."""
     if ticker_snapshot.hard_reject:
         return ticker_snapshot
     bid = _safe_float(ticker_snapshot.bid)
     ask = _safe_float(ticker_snapshot.ask)
+    spread = float(ticker_snapshot.spread_bps or 0.0)
+    half_spread_bps = max(0.0, spread / 2.0)
+    friction_slippage_cap_bps = max(
+        0.0,
+        float(policy.max_entry_friction_bps) - half_spread_bps,
+    )
+    effective_slippage_cap_bps = min(
+        float(policy.max_orderbook_slippage_bps),
+        friction_slippage_cap_bps,
+    )
     if side == "long":
         best_touch = ask
-        max_walk_price = ask * (1.0 + policy.max_orderbook_slippage_bps / 10000.0)
+        max_walk_price = ask * (1.0 + effective_slippage_cap_bps / 10000.0)
         levels_key = "asks"
     else:
         best_touch = bid
-        max_walk_price = bid * (1.0 - policy.max_orderbook_slippage_bps / 10000.0)
+        max_walk_price = bid * (1.0 - effective_slippage_cap_bps / 10000.0)
         levels_key = "bids"
     if not np.isfinite(best_touch) or best_touch <= 0:
         return replace(
@@ -212,8 +222,9 @@ def evaluate_orderbook_liquidity(
             fill_slip = (1.0 - expected_price / best_touch) * 10000.0
     else:
         fill_slip = float("nan")
-    spread = float(ticker_snapshot.spread_bps or 0.0)
-    total_friction = spread + (float(fill_slip) if np.isfinite(fill_slip) else 0.0)
+    total_friction = half_spread_bps + (
+        float(fill_slip) if np.isfinite(fill_slip) else 0.0
+    )
     liq_weight = min(float(ticker_snapshot.spread_weight), float(depth_weight))
 
     reject = None
@@ -221,6 +232,8 @@ def evaluate_orderbook_liquidity(
         reject = "no_orderbook_capacity_within_slippage"
     elif np.isfinite(fill_slip) and fill_slip > policy.max_orderbook_slippage_bps:
         reject = "orderbook_slippage_above_cap"
+    elif np.isfinite(total_friction) and total_friction > policy.max_entry_friction_bps:
+        reject = "entry_friction_above_cap"
     elif liq_weight < policy.min_liquidity_capacity_weight:
         reject = "liquidity_capacity_weight_below_min"
 
@@ -242,7 +255,14 @@ def evaluate_orderbook_liquidity(
         liquidity_capacity_weight=float(liq_weight),
         hard_reject=reject is not None,
         reject_reason=reject,
-        details={**(ticker_snapshot.details or {}), "mode": mode},
+        details={
+            **(ticker_snapshot.details or {}),
+            "mode": mode,
+            "entry_friction_formula": "expected_fill_slippage_bps + spread_bps / 2",
+            "half_spread_bps": float(half_spread_bps),
+            "max_entry_friction_bps": float(policy.max_entry_friction_bps),
+            "effective_orderbook_slippage_cap_bps": float(effective_slippage_cap_bps),
+        },
     )
 
 

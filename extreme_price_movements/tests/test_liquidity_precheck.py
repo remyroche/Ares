@@ -90,6 +90,47 @@ def test_short_orderbook_walks_bids_and_shallow_book_rejects():
     assert snap.reject_reason == "liquidity_capacity_weight_below_min"
 
 
+def test_orderbook_liquidity_caps_size_by_slippage_plus_half_spread():
+    policy = PortfolioPolicyConfig()
+    ex = _Exchange(
+        ticker={"bid": 99.6008, "ask": 100.0, "last": 99.8},
+        book={"asks": [[100.0, 5.0], [100.45, 20.0]], "bids": []},
+    )
+    ticker = fetch_ticker_snapshot(
+        exchange=ex,
+        symbol="BTC/USDC",
+        side="long",
+        policy=policy,
+        mode="live",
+        now=pd.Timestamp("2026-01-01", tz="UTC"),
+    )
+    snap = evaluate_orderbook_liquidity(
+        exchange=ex,
+        symbol="BTC/USDC",
+        side="long",
+        intended_quote_size=1500.0,
+        ticker_snapshot=ticker,
+        policy=policy,
+        mode="live",
+    )
+
+    assert not snap.hard_reject
+    assert snap.orderbook_capacity_quote_within_slippage == 500.0
+    assert (
+        snap.liquidity_capacity_weight
+        == snap.orderbook_capacity_quote_within_slippage / 1500.0
+    )
+    assert (
+        snap.details["entry_friction_formula"]
+        == "expected_fill_slippage_bps + spread_bps / 2"
+    )
+    assert (
+        snap.details["effective_orderbook_slippage_cap_bps"]
+        < policy.max_orderbook_slippage_bps
+    )
+    assert snap.expected_total_entry_friction_bps <= policy.max_entry_friction_bps
+
+
 def test_price_gap_penalty_and_marketable_limit():
     policy = PortfolioPolicyConfig()
     penalty, info = compute_price_gap_rank_penalty(

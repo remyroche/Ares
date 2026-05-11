@@ -43,6 +43,7 @@ class PortfolioPolicyConfig:
     ticker_precheck_enabled: bool = True
     orderbook_precheck_enabled: bool = True
     max_orderbook_slippage_bps: float = 50.0
+    max_entry_friction_bps: float = 60.0
     max_spread_bps: float = 25.0
     hard_max_spread_bps: float = 75.0
     min_liquidity_capacity_weight: float = 0.25
@@ -116,6 +117,7 @@ def load_portfolio_policy_config(
         },
         "liquidity": {
             "max_orderbook_slippage_bps",
+            "max_entry_friction_bps",
             "max_spread_bps",
             "hard_max_spread_bps",
             "min_liquidity_capacity_weight",

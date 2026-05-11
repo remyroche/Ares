@@ -71,13 +71,30 @@ class PredictionLedger:
             return
         old_idx = old.set_index(key_cols, drop=False)
         upd_idx = updates.set_index(key_cols, drop=False)
-        for key, row in upd_idx.iterrows():
-            if key in old_idx.index:
-                for col, value in row.items():
-                    old_idx.loc[key, col] = value
-            else:
-                old_idx = pd.concat([old_idx, row.to_frame().T], axis=0, sort=False)
-        self._write_atomic(old_idx.reset_index(drop=True))
+
+        missing_cols = set(upd_idx.columns) - set(old_idx.columns)
+        for col in missing_cols:
+            old_idx[col] = pd.Series(dtype=upd_idx[col].dtype)
+
+        common_idx = upd_idx.index.intersection(old_idx.index)
+        if not common_idx.empty:
+            old_idx.loc[common_idx, upd_idx.columns] = upd_idx.loc[common_idx]
+
+        new_idx = upd_idx.index.difference(old_idx.index)
+        if not new_idx.empty:
+            old_idx = pd.concat([old_idx, upd_idx.loc[new_idx]], axis=0, sort=False)
+
+        old_idx = old_idx.reset_index(drop=True)
+        for col, dtype in old.dtypes.items():
+            if col in old_idx.columns:
+                try:
+                    if dtype.kind in "iu" and old_idx[col].isna().any():
+                        continue
+                    old_idx[col] = old_idx[col].astype(dtype)
+                except (ValueError, TypeError):
+                    pass
+
+        self._write_atomic(old_idx)
 
 
 def top_fraction_rows(

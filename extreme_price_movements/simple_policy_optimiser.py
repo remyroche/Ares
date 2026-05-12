@@ -17,7 +17,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import numpy as np
 import optuna
@@ -76,8 +76,15 @@ STAGE2_CLUSTER_FEATURE_RANGES: Dict[str, Tuple[float, float]] = {
     "adverse_exit_min_speed": (0.1, 1.5),
     "adverse_exit_theta_quantile": (0.50, 0.95),
 }
-MAX_DEPLOYMENT_STRATEGIES_PER_SIDE = 2
-DEPLOYMENT_SELECTION_METRIC = "top_5"
+MAX_DEPLOYMENT_STRATEGIES_PER_SIDE = int(
+    os.environ.get("EPM_POLICY_MAX_STRATEGIES_PER_SIDE", "2")
+)
+MAX_DEPLOYMENT_STRATEGIES_TOTAL = int(
+    os.environ.get("EPM_POLICY_MAX_DEPLOYMENT_STRATEGIES", "0") or 0
+)
+DEPLOYMENT_SELECTION_METRIC = str(
+    os.environ.get("EPM_POLICY_DEPLOYMENT_SELECTION_METRIC", "top_5")
+)
 PORTFOLIO_POLICY_MAX_CONCURRENT_POSITIONS = 8
 PORTFOLIO_POLICY_CONCURRENT_FRACTION = 0.75
 PORTFOLIO_POLICY_MAX_CONCURRENT_PER_SIDE = None
@@ -115,6 +122,56 @@ ASSET_DECISIONS = (
     ASSET_DECISION_DOWN_WEIGHT,
     ASSET_DECISION_BLACKLIST,
 )
+
+
+def _policy_max_strategies_per_side() -> int:
+    return int(
+        os.environ.get(
+            "EPM_POLICY_MAX_STRATEGIES_PER_SIDE",
+            str(MAX_DEPLOYMENT_STRATEGIES_PER_SIDE),
+        )
+    )
+
+
+def _policy_max_strategies_total() -> int:
+    return int(
+        os.environ.get(
+            "EPM_POLICY_MAX_DEPLOYMENT_STRATEGIES",
+            str(MAX_DEPLOYMENT_STRATEGIES_TOTAL),
+        )
+        or 0
+    )
+
+
+def _policy_selection_metric() -> str:
+    return str(
+        os.environ.get(
+            "EPM_POLICY_DEPLOYMENT_SELECTION_METRIC",
+            DEPLOYMENT_SELECTION_METRIC,
+        )
+    )
+
+
+def _expand_strategy_id_allowlist(strategy_ids: Sequence[str]) -> Set[str]:
+    """Accept core strategy IDs and side-prefixed deployment strategy IDs."""
+    expanded: Set[str] = set()
+    for raw in strategy_ids:
+        sid = str(raw).strip()
+        if not sid:
+            continue
+        expanded.add(sid)
+        if sid.startswith("long_"):
+            core = sid[len("long_") :]
+            if core:
+                expanded.add(core)
+        elif sid.startswith("short_"):
+            core = sid[len("short_") :]
+            if core:
+                expanded.add(core)
+        else:
+            expanded.add(f"long_{sid}")
+            expanded.add(f"short_{sid}")
+    return expanded
 
 
 def compute_position_size(rank_pct: np.ndarray, size_power: float) -> np.ndarray:
@@ -3507,6 +3564,7 @@ def _generate_policy_predictions_from_models(
     run_id: str,
     stage_view: Dict[str, Any],
     max_strategies: Optional[int],
+    strategy_ids_allowlist: Optional[Set[str]] = None,
 ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, str]]:
     """Generate policy-slice predictions using the inference model bundle."""
     from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
@@ -3515,6 +3573,8 @@ def _generate_policy_predictions_from_models(
     full_state = load_full_state(run_id, data_root)
     orchestrator = ModelOrchestrator(full_state, full_state)
     strategy_ids = sorted(str(sid) for sid in orchestrator.alpha_by_strategy.keys())
+    if strategy_ids_allowlist:
+        strategy_ids = [sid for sid in strategy_ids if sid in strategy_ids_allowlist]
     if max_strategies is not None:
         strategy_ids = strategy_ids[: int(max_strategies)]
 
@@ -3629,7 +3689,7 @@ def _deployment_rank_threshold(metrics: Dict[str, Any]) -> float:
 
 
 def _selection_rank(metrics: Dict[str, Any]) -> float:
-    selected = metrics.get(DEPLOYMENT_SELECTION_METRIC, {})
+    selected = metrics.get(_policy_selection_metric(), {})
     avg_pnl = float(selected.get("avg_pnl_bankroll", 0.0) or 0.0)
     holding_hours = DEFAULT_FORWARD_BARS * 15.0 / 60.0
     weekly_vol = float(selected.get("w_std", 0.0) or 0.0)
@@ -3747,7 +3807,8 @@ def _build_deployment_payload(
         metrics = result.get("validation_metrics", {})
         if not isinstance(metrics, dict):
             metrics = {}
-        selection_metrics = metrics.get(DEPLOYMENT_SELECTION_METRIC, {})
+        selection_metric_name = _policy_selection_metric()
+        selection_metrics = metrics.get(selection_metric_name, {})
         avg_pnl = float(selection_metrics.get("avg_pnl_bankroll", 0.0) or 0.0)
         side = _strategy_side(strategy_id)
         lgbm_mask_contract = (
@@ -3784,7 +3845,7 @@ def _build_deployment_payload(
                 else "missing_lgbm_mask_contract"
             ),
             "selected": False,
-            "selection_metric": DEPLOYMENT_SELECTION_METRIC,
+            "selection_metric": selection_metric_name,
             "selection_rank": _selection_rank(metrics),
             "deployment_rank_threshold": float(deployment_rank_threshold),
             "threshold_space": "rank_percentile",
@@ -3891,7 +3952,7 @@ def _build_deployment_payload(
         if side not in {"long", "short"}:
             reject_reasons.append("unknown_side")
         if avg_pnl <= 0.0:
-            reject_reasons.append(f"{DEPLOYMENT_SELECTION_METRIC}_net_pnl_not_positive")
+            reject_reasons.append(f"{selection_metric_name}_net_pnl_not_positive")
         if not np.isfinite(float(row["selection_rank"])):
             reject_reasons.append("non_finite_selection_rank")
         if reject_reasons:
@@ -3900,17 +3961,45 @@ def _build_deployment_payload(
         else:
             rows.append(row)
 
-    selected: List[Dict[str, Any]] = []
+    by_side: Dict[str, List[Dict[str, Any]]] = {}
+    max_per_side = _policy_max_strategies_per_side()
     for side in ("long", "short"):
         side_rows = [row for row in rows if row["side"] == side]
         side_rows.sort(key=lambda row: float(row["selection_rank"]), reverse=True)
-        for row in side_rows[:MAX_DEPLOYMENT_STRATEGIES_PER_SIDE]:
-            selected_row = dict(row)
+        by_side[side] = side_rows[:max_per_side]
+        for row in side_rows[max_per_side:]:
+            rejected_row = dict(row)
+            rejected_row["reject_reasons"] = [
+                f"outside_top_{max_per_side}_per_side"
+            ]
+            rejected.append(rejected_row)
+
+    max_total = int(_policy_max_strategies_total() or 0)
+    if max_total <= 0:
+        max_total = sum(len(v) for v in by_side.values())
+
+    selected: List[Dict[str, Any]] = []
+    while len(selected) < max_total:
+        added = False
+        for side in ("long", "short"):
+            side_rows = by_side.get(side) or []
+            if not side_rows:
+                continue
+            selected_row = dict(side_rows.pop(0))
             selected_row["selected"] = True
             selected.append(selected_row)
-        for row in side_rows[MAX_DEPLOYMENT_STRATEGIES_PER_SIDE:]:
+            added = True
+            if len(selected) >= max_total:
+                break
+        if not added:
+            break
+
+    for side_rows in by_side.values():
+        for row in side_rows:
             rejected_row = dict(row)
-            rejected_row["reject_reasons"] = ["outside_top_2_per_side"]
+            rejected_row["reject_reasons"] = [
+                f"outside_top_{max_total}_portfolio_selection"
+            ]
             rejected.append(rejected_row)
 
     selected.sort(
@@ -3925,7 +4014,9 @@ def _build_deployment_payload(
         "run_id": run_id,
         "selection_rules": {
             "max_strategies_per_side": MAX_DEPLOYMENT_STRATEGIES_PER_SIDE,
-            "selection_metric": DEPLOYMENT_SELECTION_METRIC,
+            "max_strategies_per_side_effective": max_per_side,
+            "max_strategies_total": _policy_max_strategies_total(),
+            "selection_metric": _policy_selection_metric(),
             "min_selection_metric_avg_net_pnl_per_trade": 0.0,
             "runtime_rank_threshold_source": "policy_optimiser_pnl_concurrency",
             "runtime_rank_threshold_scope": (
@@ -4015,6 +4106,7 @@ def run_simple_policy_optimisation(
     cost_pct: float = 0.0015,
     max_strategies: Optional[int] = None,
     n_trials: Optional[int] = None,
+    strategy_ids: Optional[Sequence[str]] = None,
 ):
     artifacts_root = Path(data_root) / "artifacts"
     if run_id is None:
@@ -4047,6 +4139,14 @@ def run_simple_policy_optimisation(
 
     meta_oof: Dict[str, pd.DataFrame] = {}
     meta_oof_sources: Dict[str, str] = {}
+    env_strategy_ids = [
+        s.strip()
+        for s in str(os.environ.get("EPM_POLICY_STRATEGY_IDS", "")).split(",")
+        if s.strip()
+    ]
+    strategy_ids_allowlist = _expand_strategy_id_allowlist(
+        list(strategy_ids or []) + env_strategy_ids
+    )
     if meta_oof_dir.exists():
         for pq_file in sorted(meta_oof_dir.glob("meta_oof_*_clf.parquet")):
             strategy_id = pq_file.stem.replace("meta_oof_", "")
@@ -4054,6 +4154,8 @@ def run_simple_policy_optimisation(
                 strategy_id = strategy_id[: -len("_tbm_clf")]
             elif strategy_id.endswith("_clf"):
                 strategy_id = strategy_id[: -len("_clf")]
+            if strategy_ids_allowlist and strategy_id not in strategy_ids_allowlist:
+                continue
             if strategy_id in meta_oof:
                 continue
             df = pd.read_parquet(pq_file)
@@ -4081,6 +4183,9 @@ def run_simple_policy_optimisation(
             run_id=run_id,
             stage_view=stage_view,
             max_strategies=max_strategies,
+            strategy_ids_allowlist=(
+                strategy_ids_allowlist if strategy_ids_allowlist else None
+            ),
         )
         if not meta_oof:
             logger.error(
@@ -4615,6 +4720,7 @@ if __name__ == "__main__":
     parser.add_argument("--run_id", type=str, default=None)
     parser.add_argument("--max-strategies", type=int, default=None)
     parser.add_argument("--n-trials", type=int, default=None)
+    parser.add_argument("--strategy-ids", type=str, default="")
     args = parser.parse_args()
 
     run_simple_policy_optimisation(
@@ -4622,4 +4728,5 @@ if __name__ == "__main__":
         args.run_id,
         max_strategies=args.max_strategies,
         n_trials=args.n_trials,
+        strategy_ids=[s.strip() for s in args.strategy_ids.split(",") if s.strip()],
     )

@@ -2014,6 +2014,17 @@ def _fit_direct_extratrees_base_model(
             traceback.print_exc()
 
     if not candidate_scores:
+        if bool(cfg.get("strategy_selection_mode", False)) and not bool(
+            cfg.get("strategy_selection_final_retrain", False)
+        ):
+            tprint(
+                f"Model Race [{kind_name}]: no EBMOnLGBM candidate had sufficient "
+                "OOF coverage in lightweight strategy-selection mode; skipping head."
+            )
+            return None, _base_fit_failure_payload(
+                failure_reason="insufficient_ebm_oof_coverage_selection_mode",
+                training_diagnostics={"n_total": int(len(y_hard))},
+            )
         raise RuntimeError(
             f"Model Race [{kind_name}]: no EBMOnLGBM candidate "
             "had sufficient OOF coverage; ExtraTrees training is disabled."
@@ -2137,70 +2148,100 @@ def _fit_direct_extratrees_base_model(
         f"AUC={cand_auc:.4f}, Brier={cand_brier:.4f}, ECE={cand_ece:.4f}."
     )
 
-    tprint(
-        f"Model Race [{kind_name}]: running deferred full-data fit for winning "
-        f"{winning_candidate}..."
-    )
-    x_full_fit_np = np.asarray(X_full_np, dtype=np.float32)
-    x_full_fit_df = pd.DataFrame(
-        x_full_fit_np, columns=[f"f{i}" for i in range(x_full_fit_np.shape[1])]
-    )
-    y_bin_full = np.asarray(y >= 0.5, dtype=np.int8)
-    w_base_full = (
-        np.ones(len(y_bin_full), dtype=np.float32)
-        if sample_weight_arr is None
-        else np.asarray(sample_weight_arr, dtype=np.float32)
-    )
-    if winning_candidate == "ridge_on_lgbm":
-        from extreme_price_movements.ridge_on_lgbm import _fit_full_model_for_winner
-
-        cand_model = _fit_full_model_for_winner(
-            x_full_fit_np,
-            y_bin_full,
-            w_base_full,
-            result["selected_features_from_cv"],
-            result.get("oof_race", np.full(len(y_bin_full), 0.5, dtype=np.float32)),
-            random_state=42,
-            tree_cfg=result.get("tree_cfg", {}),
-            x_df=x_full_fit_df,
-            selected_feature_names=result.get("selected_feature_names"),
+    if bool(cfg.get("strategy_selection_mode", False)) and not bool(
+        cfg.get("strategy_selection_final_retrain", False)
+    ):
+        tprint(
+            f"Model Race [{kind_name}]: skipping deferred full-data fit for "
+            "lightweight strategy-selection mode."
         )
+        cand_model = result.get("model")
     else:
-        from extreme_price_movements.ebm_on_lgbm import fit_ebm_on_lgbm_full_model
+        tprint(
+            f"Model Race [{kind_name}]: running deferred full-data fit for winning "
+            f"{winning_candidate}..."
+        )
+        x_full_fit_np = np.asarray(X_full_np, dtype=np.float32)
+        x_full_fit_df = pd.DataFrame(
+            x_full_fit_np, columns=[f"f{i}" for i in range(x_full_fit_np.shape[1])]
+        )
+        y_bin_full = np.asarray(y >= 0.5, dtype=np.int8)
+        w_base_full = (
+            np.ones(len(y_bin_full), dtype=np.float32)
+            if sample_weight_arr is None
+            else np.asarray(sample_weight_arr, dtype=np.float32)
+        )
+        if winning_candidate == "ridge_on_lgbm":
+            from extreme_price_movements.ridge_on_lgbm import _fit_full_model_for_winner
 
-        cand_model = fit_ebm_on_lgbm_full_model(
-            x_full_fit_df,
-            y_bin_full,
-            w_base_full,
-            result["selected_features_from_cv"],
-            random_state=42,
-            mode="classifier",
-            oof_probs=cand_oof_full,
-            metrics=cand_metrics,
-            pruning_history=result.get("pruning_history", []),
-            selected_feature_names=result.get("selected_feature_names"),
-            stage_indices=result.get("stage_indices"),
-            timestamps=groups_arr,
-            assets=symbols_arr,
-            tree_feature_bundle=result.get("tree_feature_bundle"),
-            hpo_objective_mode=result.get("hpo_objective_mode", hpo_objective_mode),
-            hpo_trials_override=(
-                int(_ebm_hpo_trials_override)
-                if _ebm_hpo_trials_override is not None
-                else None
-            ),
-            hpo_patience_override=(
-                int(_ebm_hpo_patience_override)
-                if _ebm_hpo_patience_override is not None
-                else None
-            ),
-        )
+            cand_model = _fit_full_model_for_winner(
+                x_full_fit_np,
+                y_bin_full,
+                w_base_full,
+                result["selected_features_from_cv"],
+                result.get(
+                    "oof_race", np.full(len(y_bin_full), 0.5, dtype=np.float32)
+                ),
+                random_state=42,
+                tree_cfg=result.get("tree_cfg", {}),
+                x_df=x_full_fit_df,
+                selected_feature_names=result.get("selected_feature_names"),
+            )
+        else:
+            from extreme_price_movements.ebm_on_lgbm import fit_ebm_on_lgbm_full_model
+
+            cand_model = fit_ebm_on_lgbm_full_model(
+                x_full_fit_df,
+                y_bin_full,
+                w_base_full,
+                result["selected_features_from_cv"],
+                random_state=42,
+                mode="classifier",
+                oof_probs=cand_oof_full,
+                metrics=cand_metrics,
+                pruning_history=result.get("pruning_history", []),
+                selected_feature_names=result.get("selected_feature_names"),
+                stage_indices=result.get("stage_indices"),
+                timestamps=groups_arr,
+                assets=symbols_arr,
+                tree_feature_bundle=result.get("tree_feature_bundle"),
+                hpo_objective_mode=result.get("hpo_objective_mode", hpo_objective_mode),
+                hpo_trials_override=(
+                    int(_ebm_hpo_trials_override)
+                    if _ebm_hpo_trials_override is not None
+                    else None
+                ),
+                hpo_patience_override=(
+                    int(_ebm_hpo_patience_override)
+                    if _ebm_hpo_patience_override is not None
+                    else None
+                ),
+            )
     if cand_model is None:
-        raise RuntimeError(
-            f"Model Race [{kind_name}]: {winning_candidate} won the race but did "
-            "not produce a fitted model; ExtraTrees training is disabled."
-        )
-    tprint(f"Model Race [{kind_name}]: full-data fit complete.")
+        if bool(cfg.get("strategy_selection_mode", False)) and not bool(
+            cfg.get("strategy_selection_final_retrain", False)
+        ):
+            from types import SimpleNamespace
+
+            cand_model = SimpleNamespace(
+                oof_probs=np.asarray(cand_oof_full, dtype=np.float32),
+                metrics=dict(cand_metrics),
+                best_model_name=winning_candidate,
+                selected_features_from_cv=result.get("selected_features_from_cv"),
+                selected_feature_names=result.get("selected_feature_names"),
+                lightweight_strategy_selection_proxy=True,
+            )
+            tprint(
+                f"Model Race [{kind_name}]: created lightweight OOF proxy for "
+                "strategy-selection mode."
+            )
+        else:
+            raise RuntimeError(
+                f"Model Race [{kind_name}]: {winning_candidate} won the race but did "
+                "not produce a fitted model; ExtraTrees training is disabled."
+            )
+    if not bool(getattr(cand_model, "lightweight_strategy_selection_proxy", False)):
+        tprint(f"Model Race [{kind_name}]: full-data fit complete.")
     final_cand_metrics = dict(cand_metrics)
     if hasattr(cand_model, "metrics") and isinstance(cand_model.metrics, dict):
         final_cand_metrics.update(cand_model.metrics)
@@ -3178,6 +3219,10 @@ def _fit_direct_extratrees_base_model(
 
             if (
                 result.get("full_fit_needed")
+                and not (
+                    bool(cfg.get("strategy_selection_mode", False))
+                    and not bool(cfg.get("strategy_selection_final_retrain", False))
+                )
                 and result.get("selected_features_from_cv") is not None
             ):
                 tprint(
@@ -9187,12 +9232,86 @@ def generate_label_datasets(
 
     # Always resolve + enforce persisted offline-optimal candidate ranges before any event generation.
     cfg = _resolve_training_cfg_with_offline_optimisers(cfg)
+    _label_strategy_ids_env = (
+        os.getenv("EPM_LABEL_STRATEGY_IDS", "").strip()
+        or os.getenv("EPM_BASE_STRATEGY_IDS", "").strip()
+        or os.getenv("EPM_META_STRATEGY_IDS", "").strip()
+    )
+    if _label_strategy_ids_env:
+        _requested_ids = [
+            s.strip() for s in _label_strategy_ids_env.split(",") if s.strip()
+        ]
+        _requested_set = set(_requested_ids)
+        _all_strategies = get_strategies(cfg)
+        _selected_strategies = [
+            s
+            for s in _all_strategies
+            if str(s.get("strategy_id", "")).strip() in _requested_set
+        ]
+        _found_ids = {
+            str(s.get("strategy_id", "")).strip() for s in _selected_strategies
+        }
+        _missing_ids = [s for s in _requested_ids if s not in _found_ids]
+        if _missing_ids:
+            tprint(
+                "WARNING: label builder strategy allowlist missing ids after "
+                f"offline optimiser resolution: {_missing_ids}"
+            )
+        if _selected_strategies:
+            _order = {sid: i for i, sid in enumerate(_requested_ids)}
+            _selected_strategies.sort(
+                key=lambda s: _order.get(str(s.get("strategy_id", "")), 10**9)
+            )
+            cfg = dict(cfg)
+            cfg["strategies"] = _selected_strategies
+            tprint(
+                "Label dataset builder: strategy allowlist reapplied after "
+                f"offline optimiser resolution; selected {len(_selected_strategies)}/"
+                f"{len(_requested_ids)} strategies"
+            )
 
     # Pre-compute shared expensive operations once
     tprint("Pre-computing candidate mask (shared across all steps)...")
     cached_cand_mask, cfg, mask_by_strategy = _build_optimal_candidate_mask(
         panel, feats, cfg
     )
+    if _label_strategy_ids_env:
+        _requested_ids = [
+            s.strip() for s in _label_strategy_ids_env.split(",") if s.strip()
+        ]
+        _requested_set = set(_requested_ids)
+        _all_strategies = get_strategies(cfg)
+        _selected_strategies = [
+            s
+            for s in _all_strategies
+            if str(s.get("strategy_id", "")).strip() in _requested_set
+        ]
+        if _selected_strategies:
+            _order = {sid: i for i, sid in enumerate(_requested_ids)}
+            _selected_strategies.sort(
+                key=lambda s: _order.get(str(s.get("strategy_id", "")), 10**9)
+            )
+            cfg = dict(cfg)
+            cfg["strategies"] = _selected_strategies
+            mask_by_strategy = {
+                sid: mask
+                for sid, mask in mask_by_strategy.items()
+                if str(sid).strip() in _requested_set
+            }
+            if mask_by_strategy:
+                global_mask = None
+                for _mask_df in mask_by_strategy.values():
+                    global_mask = (
+                        _mask_df
+                        if global_mask is None
+                        else (global_mask | _mask_df)
+                    )
+                cached_cand_mask = global_mask
+            tprint(
+                "Label dataset builder: strategy allowlist reapplied after "
+                f"candidate-mask build; selected {len(_selected_strategies)}/"
+                f"{len(_requested_ids)} strategies"
+            )
 
     # Pre-calculate Microstructure Noise Filter (Costly rolling operations, shared across all models)
     if bool(cfg.get("use_noise_filter", True)) and cached_cand_mask is not None:
@@ -10749,6 +10868,24 @@ def train_meta_models_from_artifacts(
                     f"(rows={len(df_oof)}, mtime_newer_than_base={mtime >= base_mtime})"
                 )
                 df_oof = _normalize_saved_oof_frame(df_oof)
+                if bool(cfg.get("meta_filter_saved_oof_to_active_symbols", False)):
+                    stage_symbols = (
+                        (cfg.get("_active_stage_view") or {}).get("symbols") or []
+                    )
+                    stage_symbol_set = {
+                        str(sym) for sym in stage_symbols if str(sym).strip()
+                    }
+                    if stage_symbol_set and "__symbol__" in df_oof.columns:
+                        before_rows = len(df_oof)
+                        df_oof = df_oof[
+                            df_oof["__symbol__"].astype(str).isin(stage_symbol_set)
+                        ].reset_index(drop=True)
+                        if len(df_oof) < before_rows:
+                            tprint(
+                                f"Meta training: active-symbol filtered saved OOF "
+                                f"for {strategy_id} H={int(horizon)} "
+                                f"{before_rows} -> {len(df_oof)} rows."
+                            )
                 df_oof.attrs["artifact_path"] = path
                 df_oof.attrs["artifact_mtime"] = mtime
                 df_oof.attrs["preferred_over_base_bundle"] = bool(
@@ -15903,7 +16040,17 @@ def train_meta_models_from_artifacts(
             tprint(f"Meta {side}_{k}: auxiliary MAE/MFE/utility/asym heads disabled.")
 
         # --- 2. Optional Meta Move-Classifier Training ---
-        if include_meta_clf and not _ran_aligned_map_v2 and not _meta_ebm_heads_trained:
+        _skip_legacy_meta_clf_for_selection = (
+            bool(cfg.get("strategy_selection_mode", False))
+            and not bool(cfg.get("strategy_selection_final_retrain", False))
+            and str(cfg.get("meta_model_backend", "")).lower() == "ebm_on_lgbm_only"
+        )
+        if _skip_legacy_meta_clf_for_selection:
+            tprint(
+                f"Meta {side}_{k}: skipped legacy MetaClassifierModel in "
+                "lightweight strategy-selection EBM-only mode."
+            )
+        elif include_meta_clf and not _ran_aligned_map_v2 and not _meta_ebm_heads_trained:
             # Magnitude sigmoid: very slight top-40% upweight (same alpha as regressors)
             # Each source normalized to mean=1 before combining so neither dominates.
             _alpha_clf = float(cfg.get("meta_weight_sigmoid_alpha", 0.2))
@@ -18839,6 +18986,37 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
     tprint(f"Entering function: train_models_from_artifacts in training.py")
     tprint(f"train_base={train_base}, train_meta={train_meta}")
     cfg = _resolve_training_cfg_with_offline_optimisers(cfg)
+    _strategy_ids_env = ""
+    _strategy_ids_label = ""
+    if train_base and os.getenv("EPM_BASE_STRATEGY_IDS", "").strip():
+        _strategy_ids_env = os.getenv("EPM_BASE_STRATEGY_IDS", "")
+        _strategy_ids_label = "EPM_BASE_STRATEGY_IDS"
+    elif train_meta and os.getenv("EPM_META_STRATEGY_IDS", "").strip():
+        _strategy_ids_env = os.getenv("EPM_META_STRATEGY_IDS", "")
+        _strategy_ids_label = "EPM_META_STRATEGY_IDS"
+    if _strategy_ids_env.strip():
+        from extreme_price_movements.strategy_registry import get_strategies
+
+        _requested_ids = [s.strip() for s in _strategy_ids_env.split(",") if s.strip()]
+        _requested_set = set(_requested_ids)
+        _all_strategies = get_strategies(cfg)
+        _selected_strategies = [
+            s
+            for s in _all_strategies
+            if str(s.get("strategy_id", "")).strip() in _requested_set
+        ]
+        if _selected_strategies:
+            _order = {sid: i for i, sid in enumerate(_requested_ids)}
+            _selected_strategies.sort(
+                key=lambda s: _order.get(str(s.get("strategy_id", "")), 10**9)
+            )
+            cfg = dict(cfg)
+            cfg["strategies"] = _selected_strategies
+            tprint(
+                f"Training strategy allowlist reapplied after optimiser resolution "
+                f"({_strategy_ids_label}): {len(_selected_strategies)}/"
+                f"{len(_requested_ids)} strategies"
+            )
     final_models = {}
     spike_models = {}
     exh_models = {}
@@ -20640,13 +20818,22 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 _finite_oof_mask = np.isfinite(_oof_full[:_n])
                 _expected_oof_rows = int(len(_df_oof)) if _df_oof is not None else _n
                 _finite_oof_count = int(np.sum(_finite_oof_mask))
+                _allow_partial_oof_export = bool(
+                    cfg.get("strategy_selection_mode", False)
+                ) and not bool(cfg.get("strategy_selection_final_retrain", False))
                 if _n != _expected_oof_rows or _finite_oof_count != _expected_oof_rows:
-                    raise RuntimeError(
-                        "Base OOF export requires full finite coverage for deployable "
-                        f"head {k} H{_h}: finite={_finite_oof_count}/"
-                        f"{_expected_oof_rows}, oof_len={len(_oof_full)}. "
-                        "Regenerate train_base with full-frame OOF enabled instead "
-                        "of writing a partial meta-training artifact."
+                    if not _allow_partial_oof_export:
+                        raise RuntimeError(
+                            "Base OOF export requires full finite coverage for deployable "
+                            f"head {k} H{_h}: finite={_finite_oof_count}/"
+                            f"{_expected_oof_rows}, oof_len={len(_oof_full)}. "
+                            "Regenerate train_base with full-frame OOF enabled instead "
+                            "of writing a partial meta-training artifact."
+                        )
+                    tprint(
+                        "WARNING: lightweight strategy-selection OOF export is partial "
+                        f"for {k} H{_h}: finite={_finite_oof_count}/"
+                        f"{_expected_oof_rows}, oof_len={len(_oof_full)}."
                     )
                 if _df_oof is not None:
                     _df_oof = _df_oof.iloc[:_n].reset_index(drop=True)
@@ -20766,6 +20953,12 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             )
             for _h, _v in deployable_h_models.items():
                 _race = _v["model"]
+                if not hasattr(_race, "save_native"):
+                    tprint(
+                        f"  Skipping native model save for lightweight strategy-selection "
+                        f"proxy {side}_{k}_H{_h}."
+                    )
+                    continue
                 _model_dir = os.path.join(models_dir, f"{side}_{k}_H{_h}")
                 _race.save_native(_model_dir)
                 import json as _json
@@ -20809,7 +21002,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     )
             # Strip for pickle fallback
             for _h, _v in deployable_h_models.items():
-                _v["model"].strip_for_serialization()
+                if hasattr(_v["model"], "strip_for_serialization"):
+                    _v["model"].strip_for_serialization()
 
             # --- Stage Gate Check (Alpha) — per horizon ---
             for _gate_H, _gate_v in deployable_h_models.items():

@@ -37,7 +37,7 @@ from .ridge_on_lgbm import _compute_weight_distillation
 from .utils import tprint
 
 EBM_CV_SPLITS = 2
-EBM_RACE_MAX_ROWS = 60000
+EBM_RACE_MAX_ROWS = int(os.environ.get("EPM_EBM_RACE_MAX_ROWS", "120000"))
 EBM_RACE_EVAL_FRACTION = 1.0 / 3.0
 EBM_FOLD_SUBSAMPLE_ROWS = 5000
 EBM_MIN_FEATURES = 40
@@ -51,7 +51,10 @@ EBM_TREE_FEATURE_CAP = 1200
 EBM_TREE_TARGET_RANK_CAP = 2000
 EBM_TREE_CORR_PRUNE_THRESHOLD = 0.96
 EBM_TREE_CORR_PRUNE_MIN_FEATURES = 1000
-EBM_TREE_LGBM_MAX_FIT_ROWS = 30000
+EBM_TREE_LGBM_MAX_FIT_ROWS = int(
+    os.environ.get("EPM_EBM_TREE_LGBM_MAX_FIT_ROWS", "60000")
+)
+EBM_HPO_MAX_ROWS = int(os.environ.get("EPM_EBM_HPO_MAX_ROWS", "10000"))
 EBM_TREE_LGBM_EARLY_STOPPING_ROUNDS = 25
 EBM_FINAL_MODEL_COUNT = int(os.environ.get("EPM_EBM_FINAL_MODEL_COUNT", "3"))
 EBM_HONEST_EVAL_MIN_MODELS = int(os.environ.get("EPM_EBM_HONEST_EVAL_MIN_MODELS", "3"))
@@ -94,7 +97,7 @@ if abs(_j_weight_sum - 1.0) > 1e-6:
         f"(sum={_j_weight_sum:.6f}); using them as provided."
     )
 EBM_SPEC_N_JOBS = 1
-EBM_HPO_TRIALS = 200
+EBM_HPO_TRIALS = int(os.environ.get("EPM_EBM_HPO_TRIALS", "200"))
 EBM_HPO_EARLY_STOP_PATIENCE = 50
 EBM_HPO_N_JOBS = 1
 EBM_FIT_N_JOBS = 1
@@ -2423,6 +2426,44 @@ def _stage_partition_indices(
         f"({len(result['fit_oof']) / max(n, 1):.1%})."
     )
     return result
+
+
+def _cap_stage_and_move_unused_to_fit_oof(
+    stage_indices: dict[str, np.ndarray],
+    y: np.ndarray,
+    *,
+    stage_key: str,
+    cap: int,
+    random_state: int,
+    classifier: bool,
+) -> dict[str, np.ndarray]:
+    if cap <= 0:
+        return stage_indices
+    idx = np.asarray(stage_indices.get(stage_key, []), dtype=np.int32)
+    if len(idx) <= cap:
+        return stage_indices
+    keep_local = _stratified_subsample_indices(
+        np.asarray(y, dtype=np.float32)[idx],
+        max_n=int(cap),
+        random_state=int(random_state),
+        classifier=bool(classifier),
+    )
+    keep = np.sort(idx[keep_local].astype(np.int32))
+    unused = np.setdiff1d(idx, keep, assume_unique=False).astype(np.int32)
+    fit_existing = np.asarray(stage_indices.get("fit_oof", []), dtype=np.int32)
+    stage_indices = dict(stage_indices)
+    stage_indices[stage_key] = keep
+    stage_indices["fit_oof"] = np.asarray(
+        sorted(np.unique(np.concatenate([fit_existing, unused])).tolist()),
+        dtype=np.int32,
+    )
+    tprint(
+        "EBMOnLGBM stage budget: capped "
+        f"{stage_key} {len(idx)} -> {len(keep)} rows "
+        f"(cap={cap}); moved {len(unused)} unused rows to fit_oof "
+        f"(fit_oof={len(stage_indices['fit_oof'])})."
+    )
+    return stage_indices
 
 
 def _looks_classifier_target(y: np.ndarray) -> bool:
@@ -6559,7 +6600,7 @@ def _fit_final_model(
         tprint(
             "  EBMOnLGBM: running Optuna HPO with Bends Analysis "
             f"(trials={hpo_trials}, early_stop_patience={hpo_patience}, "
-            f"subsample=5000, folds={hpo_folds}, outer_bags=1, "
+            f"subsample={max(1, int(EBM_HPO_MAX_ROWS))}, folds={hpo_folds}, outer_bags=1, "
             f"inner_bags=0, validation_size={hpo_validation_size:.2f}, "
             f"max_rounds={hpo_max_rounds}, "
             f"trial_n_jobs={hpo_n_jobs}, fit_n_jobs=1, "
@@ -6582,7 +6623,7 @@ def _fit_final_model(
         )
 
         hpo_pool = np.asarray(hpo_idx, dtype=np.int32)
-        n_sub = min(5000, len(hpo_pool))
+        n_sub = min(max(1, int(EBM_HPO_MAX_ROWS)), len(hpo_pool))
         rng_hpo = np.random.default_rng(random_state + 44017)
         idx_sub = (
             rng_hpo.choice(hpo_pool, n_sub, replace=False)
@@ -7599,6 +7640,22 @@ def train_ebm_on_lgbm_candidate(
         timestamps=timestamps,
         assets=assets,
         random_state=random_state + 701,
+    )
+    stage_indices = _cap_stage_and_move_unused_to_fit_oof(
+        stage_indices,
+        y_arr,
+        stage_key="lgbm_prune",
+        cap=EBM_RACE_MAX_ROWS,
+        random_state=random_state + 1701,
+        classifier=classifier,
+    )
+    stage_indices = _cap_stage_and_move_unused_to_fit_oof(
+        stage_indices,
+        y_arr,
+        stage_key="hpo",
+        cap=EBM_HPO_MAX_ROWS,
+        random_state=random_state + 2701,
+        classifier=classifier,
     )
     race_idx = np.asarray(stage_indices["lgbm_prune"], dtype=np.int32)
     if len(race_idx) < 200:

@@ -8,6 +8,9 @@ Usage:
 import os
 import sys
 import warnings
+import json
+import pickle
+import re
 from pathlib import Path
 
 # Avoid expensive/warning-prone Matplotlib cache initialization under read-only HOME.
@@ -49,7 +52,8 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 import argparse
-from typing import List, Optional, Tuple
+from contextlib import contextmanager
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -183,8 +187,27 @@ def _load_mask_params_by_mode(cfg: dict) -> dict:
     cfg.update(merged)
 
     # Populate strategies from final_rule_registry.csv
+    _strategy_top_n = int(
+        os.environ.get("EPM_MASK_STRATEGY_TOP_N", cfg.get("mask_strategy_top_n", 2))
+        or 2
+    )
+    _strategy_ranking_metric = str(
+        os.environ.get(
+            "EPM_MASK_STRATEGY_RANKING_METRIC",
+            cfg.get("mask_strategy_ranking_metric", "score_for_best_params"),
+        )
+    )
+    _strategy_class_filter = str(
+        os.environ.get(
+            "EPM_MASK_STRATEGY_CLASSIFICATION_FILTER",
+            cfg.get("mask_strategy_classification_filter", ""),
+        )
+        or ""
+    ).strip()
     strategies = load_inference_candidate_mask_params_per_bucket(
-        top_n=2, ranking_metric="score_for_best_params"
+        top_n=max(1, _strategy_top_n),
+        ranking_metric=_strategy_ranking_metric,
+        classification_filter=_strategy_class_filter or None,
     )
     if not strategies:
         from extreme_price_movements.offline_optimisers.params_store import (
@@ -1017,6 +1040,47 @@ def run_labels(cfg, horizons=None, ts_override=None, store=None):
         "geom_payload=compact(tp_vals/sl_vals)"
     )
     _load_mask_params_by_mode(cfg)
+    _label_strategy_ids_env = (
+        os.getenv("EPM_LABEL_STRATEGY_IDS", "").strip()
+        or os.getenv("EPM_BASE_STRATEGY_IDS", "").strip()
+        or os.getenv("EPM_META_STRATEGY_IDS", "").strip()
+    )
+    if _label_strategy_ids_env:
+        from extreme_price_movements.strategy_registry import get_strategies
+
+        requested_ids = [
+            s.strip() for s in _label_strategy_ids_env.split(",") if s.strip()
+        ]
+        requested_set = set(requested_ids)
+        all_strategies = get_strategies(cfg)
+        selected_strategies = [
+            s
+            for s in all_strategies
+            if str(s.get("strategy_id", "")).strip() in requested_set
+        ]
+        found_ids = {str(s.get("strategy_id", "")).strip() for s in selected_strategies}
+        missing_ids = [s for s in requested_ids if s not in found_ids]
+        if missing_ids:
+            tprint(
+                "WARNING: EPM_LABEL_STRATEGY_IDS requested strategies not found after "
+                f"mask-param load: {missing_ids}"
+            )
+        if selected_strategies:
+            order = {sid: i for i, sid in enumerate(requested_ids)}
+            selected_strategies.sort(
+                key=lambda s: order.get(str(s.get("strategy_id", "")), 10**9)
+            )
+            cfg["strategies"] = selected_strategies
+            tprint(
+                "Labels override: explicit strategy allowlist active after "
+                f"mask-param load; selected {len(selected_strategies)}/"
+                f"{len(requested_ids)} strategies"
+            )
+        else:
+            tprint(
+                "WARNING: EPM_LABEL_STRATEGY_IDS matched no mask-loaded strategies; "
+                "falling back to configured strategy list"
+            )
 
     if store is None:
         store = PartitionedOHLCVStore(
@@ -2104,6 +2168,714 @@ def run_train_meta(cfg, ts_override=None, store=None):
     _maintenance_checkpoint("train_meta:end")
 
 
+def _json_safe(obj):
+    if isinstance(obj, dict):
+        return {str(k): _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        val = float(obj)
+        return val if np.isfinite(val) else None
+    if isinstance(obj, np.ndarray):
+        return [_json_safe(v) for v in obj.tolist()]
+    if isinstance(obj, pd.Timestamp):
+        return obj.isoformat()
+    return obj
+
+
+@contextmanager
+def _temporary_env(overrides: Dict[str, Any]):
+    old = {}
+    try:
+        for key, val in overrides.items():
+            old[key] = os.environ.get(key)
+            if val is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = str(val)
+        yield
+    finally:
+        for key, val in old.items():
+            if val is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = val
+
+
+def _strategy_selection_dir(cfg: dict, run_id: str) -> Path:
+    path = Path(cfg["data_root"]) / "artifacts" / run_id / "strategy_selection"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(_json_safe(payload), indent=2), encoding="utf-8")
+
+
+def _strategy_id_list(strategies: Iterable[dict]) -> list[str]:
+    return [
+        str(s.get("strategy_id", "")).strip()
+        for s in strategies
+        if isinstance(s, dict) and str(s.get("strategy_id", "")).strip()
+    ]
+
+
+def _strategy_side_from_id(strategy_id: str) -> str:
+    sid = str(strategy_id).lower()
+    if sid.startswith("short"):
+        return "short"
+    if sid.startswith("long"):
+        return "long"
+    return "unknown"
+
+
+def _first_finite(mapping: dict, *keys: str, default: float = np.nan) -> float:
+    for key in keys:
+        if key not in mapping:
+            continue
+        try:
+            val = float(mapping.get(key))
+        except Exception:
+            continue
+        if np.isfinite(val):
+            return val
+    return float(default)
+
+
+def _ndcg_binary_at_k(y: np.ndarray, score: np.ndarray, frac: float) -> float:
+    valid = np.isfinite(y) & np.isfinite(score)
+    y = np.asarray(y[valid], dtype=float)
+    score = np.asarray(score[valid], dtype=float)
+    if len(y) < 2:
+        return float("nan")
+    k = max(1, int(np.ceil(float(frac) * len(y))))
+    order = np.argsort(score)[-k:][::-1]
+    ideal = np.argsort(y)[-k:][::-1]
+    denom = np.log2(np.arange(2, k + 2))
+    dcg = float(np.sum((2.0**y[order] - 1.0) / denom))
+    idcg = float(np.sum((2.0**y[ideal] - 1.0) / denom))
+    return float(dcg / max(idcg, 1e-12))
+
+
+def _score_oof_frame(df: pd.DataFrame) -> dict[str, Any]:
+    score_col = next(
+        (
+            c
+            for c in (
+                "clf",
+                "oof_meta_clf",
+                "cv_meta_clf",
+                "oof_pred",
+                "oof_prob",
+                "oof_p_tp",
+                "calibrated_score",
+            )
+            if c in df.columns
+        ),
+        None,
+    )
+    y_col = next(
+        (c for c in ("y_bin", "target", "label", "outcome") if c in df.columns), None
+    )
+    if score_col is None or y_col is None:
+        return {}
+    score = pd.to_numeric(df[score_col], errors="coerce").to_numpy(float)
+    y = (pd.to_numeric(df[y_col], errors="coerce").to_numpy(float) >= 0.5).astype(float)
+    valid = np.isfinite(score) & np.isfinite(y)
+    if int(valid.sum()) < 20:
+        return {}
+    score_v = score[valid]
+    y_v = y[valid]
+    order = np.argsort(score_v)
+    base_rate = float(np.mean(y_v))
+    out: dict[str, Any] = {
+        "n_samples": int(len(y_v)),
+        "base_rate": base_rate,
+        "score_col": score_col,
+        "target_col": y_col,
+    }
+    for frac in (0.10, 0.20, 0.30):
+        tag = str(int(round(frac * 100)))
+        k = max(1, int(np.ceil(frac * len(y_v))))
+        idx = order[-k:]
+        hit = float(np.mean(y_v[idx])) if len(idx) else float("nan")
+        out[f"hit_rate{tag}"] = hit
+        out[f"lift{tag}"] = float(hit / max(base_rate, 1e-12))
+        out[f"ndcg{tag}"] = _ndcg_binary_at_k(y_v, score_v, frac)
+    if "timestamp" in df.columns:
+        ts = pd.to_datetime(df.loc[valid, "timestamp"], errors="coerce")
+        for frac in (0.10, 0.20, 0.30):
+            tag = str(int(round(frac * 100)))
+            period_hits = {"daily": [], "weekly": [], "monthly": []}
+            for freq_name, period_freq in (
+                ("daily", "D"),
+                ("weekly", "W"),
+                ("monthly", "M"),
+            ):
+                periods = ts.dt.to_period(period_freq).astype(str).to_numpy()
+                for _, idx_ser in pd.Series(np.arange(len(y_v))).groupby(periods).groups.items():
+                    idx_arr = np.asarray(list(idx_ser), dtype=int)
+                    if len(idx_arr) < 20:
+                        continue
+                    k = max(1, int(np.ceil(frac * len(idx_arr))))
+                    top = idx_arr[np.argsort(score_v[idx_arr])[-k:]]
+                    period_hits[freq_name].append(float(np.mean(y_v[top])))
+                vals = period_hits[freq_name]
+                if vals:
+                    out[f"hit_rate{tag}_{freq_name}_std"] = (
+                        float(np.std(vals, ddof=1)) if len(vals) > 1 else 0.0
+                    )
+        for freq_name, period_freq in (("daily", "D"), ("weekly", "W"), ("monthly", "M")):
+            vals = []
+            periods = ts.dt.to_period(period_freq).astype(str).to_numpy()
+            for _, idx_ser in pd.Series(np.arange(len(y_v))).groupby(periods).groups.items():
+                idx_arr = np.asarray(list(idx_ser), dtype=int)
+                if len(idx_arr) < 20:
+                    continue
+                k = max(1, int(np.ceil(0.30 * len(idx_arr))))
+                top = idx_arr[np.argsort(score_v[idx_arr])[-k:]]
+                vals.append(float(np.mean(y_v[top])))
+            if vals:
+                out[f"hit_rate30_{freq_name}_std"] = float(np.std(vals, ddof=1)) if len(vals) > 1 else 0.0
+    return out
+
+
+def _load_base_diag_metrics(cfg: dict, run_id: str) -> list[dict[str, Any]]:
+    path = Path(cfg["data_root"]) / "artifacts" / run_id / "base_models_intermediate.pkl"
+    if not path.exists():
+        return []
+    try:
+        with open(path, "rb") as fp:
+            bundle = pickle.load(fp)
+    except Exception as exc:
+        tprint(f"Strategy selection: could not load base diagnostics: {exc}")
+        return []
+    rows: list[dict[str, Any]] = []
+    for key, diag in dict(bundle.get("alpha_fit_diagnostics", {}) or {}).items():
+        if not isinstance(diag, dict):
+            continue
+        m = re.match(r"^(long|short)_(.+)_H(\d+)$", str(key))
+        if not m:
+            continue
+        side, strategy_id, horizon = m.group(1), m.group(2), int(m.group(3))
+        row = {
+            "strategy_id": strategy_id,
+            "side": side,
+            "horizon": horizon,
+            "source": "base_models_intermediate.alpha_fit_diagnostics",
+            "hit_rate30": _first_finite(diag, "hit_rate30", "precision30", "prec30", "en_hit_rate30"),
+            "lift30": _first_finite(diag, "lift30", "en_lift30", "Lift@30"),
+            "lift20": _first_finite(diag, "lift20", "Lift@20"),
+            "hit_rate30_std": _first_finite(diag, "hit_rate30_weekly_std", "hit_rate30_daily_std", default=0.0),
+            "ic": _first_finite(diag, "ic", "rank_ic", "ic_cs", "mean_ic"),
+            "ic_stability": _first_finite(diag, "ic_stability", "ir_weekly", default=0.0),
+            "degenerate": bool(diag.get("degenerate", False)),
+            "fit_status": diag.get("fit_status"),
+        }
+        row["selection_score"] = _strategy_metric_score(row)
+        rows.append(row)
+    return rows
+
+
+def _strategy_horizon_map(strategies: Sequence[dict]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for strat in strategies:
+        sid = str(strat.get("strategy_id", "")).strip()
+        if not sid:
+            continue
+        try:
+            horizons = strategy_runtime_horizons(strat, {})
+            if horizons:
+                out[sid] = int(horizons[0])
+                continue
+        except Exception:
+            pass
+        try:
+            out[sid] = int(strat.get("source_horizon", 5))
+        except Exception:
+            out[sid] = 5
+    return out
+
+
+def _load_oof_strategy_metrics(
+    cfg: dict,
+    run_id: str,
+    strategies: Sequence[dict],
+    *,
+    layer: str,
+) -> list[dict[str, Any]]:
+    artifacts = Path(cfg["data_root"]) / "artifacts" / run_id
+    horizon_by_id = _strategy_horizon_map(strategies)
+    rows: list[dict[str, Any]] = []
+    for sid in _strategy_id_list(strategies):
+        paths: list[Path] = []
+        if layer == "base":
+            h = int(horizon_by_id.get(sid, 5))
+            paths = [artifacts / "oof" / f"oof_{sid}_H{h}.parquet"]
+        else:
+            meta_dir = artifacts / "meta_oof"
+            paths = sorted(meta_dir.glob(f"meta_oof_{sid}*_clf.parquet"))
+        for path in paths:
+            if not path.exists():
+                continue
+            try:
+                metrics = _score_oof_frame(pd.read_parquet(path))
+            except Exception as exc:
+                tprint(f"Strategy selection: could not score {path.name}: {exc}")
+                metrics = {}
+            if not metrics:
+                continue
+            metrics.update(
+                {
+                    "strategy_id": sid,
+                    "side": _strategy_side_from_id(sid),
+                    "horizon": int(horizon_by_id.get(sid, 0) or 0),
+                    "source": str(path),
+                    "layer": layer,
+                }
+            )
+            metrics["hit_rate30_std"] = _first_finite(
+                metrics,
+                "hit_rate30_weekly_std",
+                "hit_rate30_daily_std",
+                "hit_rate30_monthly_std",
+                default=0.0,
+            )
+            metrics["selection_score"] = _strategy_metric_score(metrics)
+            rows.append(metrics)
+            break
+    if layer == "base":
+        seen = {r["strategy_id"] for r in rows}
+        for row in _load_base_diag_metrics(cfg, run_id):
+            if row["strategy_id"] not in seen:
+                rows.append(row)
+    return rows
+
+
+def _strategy_metric_score(row: dict[str, Any]) -> float:
+    hit30 = _first_finite(row, "hit_rate30", "precision30", "prec30", default=0.0)
+    lift30 = _first_finite(row, "lift30", "en_lift30", default=0.0)
+    ndcg30 = _first_finite(row, "ndcg30", default=0.0)
+    std30 = _first_finite(row, "hit_rate30_std", default=0.0)
+    score = 0.20 * hit30 + 0.20 * lift30 + 0.50 * ndcg30 - 0.25 * std30
+    if bool(row.get("degenerate", False)):
+        score -= 1e6
+    return float(score if np.isfinite(score) else -1e12)
+
+
+def _write_metrics_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(rows).to_csv(path, index=False)
+
+
+def _select_top_fraction(rows: list[dict[str, Any]], frac: float) -> list[str]:
+    ranked = sorted(rows, key=lambda r: float(r.get("selection_score", -1e12)), reverse=True)
+    n = max(1, int(np.ceil(float(frac) * len(ranked)))) if ranked else 0
+    return [str(r["strategy_id"]) for r in ranked[:n]]
+
+
+def _strategy_period_return_series(row: dict[str, Any]) -> dict[str, pd.Series]:
+    source = str(row.get("source", "") or "")
+    path = Path(source)
+    if not path.exists() or path.suffix.lower() != ".parquet":
+        return {}
+    try:
+        df = pd.read_parquet(path)
+    except Exception:
+        return {}
+    if "timestamp" not in df.columns or "y_ret" not in df.columns:
+        return {}
+    score_col = "oof_prob" if "oof_prob" in df.columns else None
+    if score_col is None:
+        score_candidates = [
+            c
+            for c in df.columns
+            if c.startswith("meta_") or c.startswith("oof_") or c.endswith("_prob")
+        ]
+        score_col = score_candidates[0] if score_candidates else None
+    if score_col is None:
+        return {}
+    tmp = df[["timestamp", "y_ret", score_col]].copy()
+    tmp["timestamp"] = pd.to_datetime(tmp["timestamp"], utc=True, errors="coerce")
+    tmp["y_ret"] = pd.to_numeric(tmp["y_ret"], errors="coerce")
+    tmp[score_col] = pd.to_numeric(tmp[score_col], errors="coerce")
+    tmp = tmp.dropna(subset=["timestamp", "y_ret", score_col])
+    if len(tmp) < 20:
+        return {}
+    out: dict[str, pd.Series] = {}
+    for name, freq in (("daily", "D"), ("weekly", "W"), ("monthly", "M")):
+        values: dict[str, float] = {}
+        for period, part in tmp.groupby(tmp["timestamp"].dt.to_period(freq).astype(str)):
+            if len(part) < 5:
+                continue
+            k = max(1, int(np.ceil(0.30 * len(part))))
+            top = part.nlargest(k, score_col)
+            values[str(period)] = float(np.mean(top["y_ret"]))
+        if len(values) >= 2:
+            out[name] = pd.Series(values, dtype=np.float64)
+    return out
+
+
+def _max_same_side_period_corr(
+    row: dict[str, Any],
+    selected: Sequence[dict[str, Any]],
+    period_cache: dict[str, dict[str, pd.Series]],
+) -> float:
+    sid = str(row.get("strategy_id", ""))
+    side = str(row.get("side", ""))
+    row_series = period_cache.setdefault(sid, _strategy_period_return_series(row))
+    if not row_series:
+        return 0.0
+    max_corr = 0.0
+    for other in selected:
+        if str(other.get("side", "")) != side:
+            continue
+        other_sid = str(other.get("strategy_id", ""))
+        other_series = period_cache.setdefault(
+            other_sid, _strategy_period_return_series(other)
+        )
+        for freq in ("daily", "weekly", "monthly"):
+            a = row_series.get(freq)
+            b = other_series.get(freq)
+            if a is None or b is None:
+                continue
+            aligned = pd.concat([a, b], axis=1, join="inner").dropna()
+            if len(aligned) < 2:
+                continue
+            corr = float(aligned.iloc[:, 0].corr(aligned.iloc[:, 1]))
+            if np.isfinite(corr):
+                max_corr = max(max_corr, abs(corr))
+    return float(max_corr)
+
+
+def _select_portfolio_pool(
+    rows: list[dict[str, Any]],
+    *,
+    pool_n: int,
+    min_side_share: float,
+) -> list[dict[str, Any]]:
+    ranked = sorted(rows, key=lambda r: float(r.get("selection_score", -1e12)), reverse=True)
+    by_side = {
+        "long": [r for r in ranked if str(r.get("side")) == "long"],
+        "short": [r for r in ranked if str(r.get("side")) == "short"],
+    }
+    min_per_side = int(np.floor(float(pool_n) * float(min_side_share)))
+    selected: list[dict[str, Any]] = []
+    used: set[str] = set()
+    period_cache: dict[str, dict[str, pd.Series]] = {}
+    corr_penalty = float(os.environ.get("EPM_STRATEGY_SELECTION_SAME_SIDE_CORR_PENALTY", "0.35"))
+
+    def _with_portfolio_score(row: dict[str, Any]) -> dict[str, Any]:
+        out = dict(row)
+        max_corr = _max_same_side_period_corr(out, selected, period_cache)
+        out["same_side_period_corr_penalty"] = float(max_corr)
+        out["portfolio_selection_score"] = float(
+            row.get("selection_score", -1e12)
+        ) - corr_penalty * float(max_corr)
+        return out
+
+    for side in ("long", "short"):
+        for row in by_side[side][:min_per_side]:
+            sid = str(row["strategy_id"])
+            if sid not in used:
+                selected.append(_with_portfolio_score(row))
+                used.add(sid)
+    while len(selected) < int(pool_n):
+        available = [r for r in ranked if str(r["strategy_id"]) not in used]
+        if not available:
+            break
+        scored = [_with_portfolio_score(r) for r in available]
+        row = max(scored, key=lambda r: float(r.get("portfolio_selection_score", -1e12)))
+        if len(selected) >= int(pool_n):
+            break
+        sid = str(row["strategy_id"])
+        if sid not in used:
+            selected.append(row)
+            used.add(sid)
+    selected.sort(key=lambda r: float(r.get("portfolio_selection_score", r.get("selection_score", -1e12))), reverse=True)
+    return selected[: int(pool_n)]
+
+
+def _load_policy_winners(cfg: dict, run_id: str) -> list[str]:
+    candidates = [
+        Path(cfg["data_root"]) / "artifacts" / run_id / "strategy_for_inference.json",
+        Path(cfg["data_root"]) / "artifacts" / run_id / "policy_params" / "strategy_for_inference.json",
+        Path(cfg["data_root"]) / "artifacts" / run_id / "simple_policy_optimiser" / "deployment" / "best_policy_params.json",
+    ]
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        out = [
+            str(row.get("strategy_id", "")).strip()
+            for row in payload.get("strategies", [])
+            if isinstance(row, dict) and bool(row.get("selected", False))
+        ]
+        if out:
+            return out
+    return []
+
+
+def _selection_profile_env(*, final: bool = False) -> dict[str, Any]:
+    if final:
+        return {
+            "EPM_MASK_STRATEGY_TOP_N": os.environ.get("EPM_MASK_STRATEGY_TOP_N", "999"),
+            "EPM_EBM_FINAL_FIT_MAX_ROWS": "0",
+            "EPM_EBM_FINAL_FIT_METRIC_MAX_ROWS": "0",
+            "EPM_EBM_FINAL_UNCERTAINTY_MAX_ROWS": "0",
+            "EPM_EBM_OOF_DISTILLATION_PASSES": os.environ.get("EPM_STRATEGY_SELECTION_SELF_DISTILL_ROUNDS", "1"),
+            "EPM_BASE_HPO_TRIALS": "0",
+            "EPM_META_HPO_TRIALS": "0",
+            "EPM_EBM_HPO_TRIALS": "0",
+            "EPM_EBM_MAX_ROUNDS": os.environ.get("EPM_EBM_MAX_ROUNDS", "1"),
+            "EPM_EBM_FINAL_MODEL_COUNT": "3",
+            "EPM_EBM_HONEST_EVAL_MIN_MODELS": "3",
+        }
+    return {
+        "EPM_MASK_STRATEGY_TOP_N": os.environ.get("EPM_MASK_STRATEGY_TOP_N", "999"),
+        "EPM_BASE_HPO_TRIALS": os.environ.get("EPM_BASE_HPO_TRIALS", "8"),
+        "EPM_META_HPO_TRIALS": os.environ.get("EPM_META_HPO_TRIALS", "8"),
+        "EPM_META_TOP_FRAC": os.environ.get("EPM_STRATEGY_SELECTION_BASE_TOP_FRAC", "0.33"),
+        "EPM_EBM_HPO_TRIALS": os.environ.get("EPM_EBM_HPO_TRIALS", "24"),
+        "EPM_EBM_RACE_MAX_ROWS": os.environ.get("EPM_EBM_RACE_MAX_ROWS", "60000"),
+        "EPM_EBM_TREE_LGBM_MAX_FIT_ROWS": os.environ.get("EPM_EBM_TREE_LGBM_MAX_FIT_ROWS", "30000"),
+        "EPM_EBM_HPO_MAX_ROWS": os.environ.get("EPM_EBM_HPO_MAX_ROWS", "10000"),
+        "EPM_EBM_MAX_ROUNDS": os.environ.get("EPM_EBM_MAX_ROUNDS", "1"),
+        "EPM_EBM_FINAL_FIT_MAX_ROWS": os.environ.get("EPM_EBM_FINAL_FIT_MAX_ROWS", "1"),
+        "EPM_EBM_OOF_DISTILLATION_PASSES": os.environ.get("EPM_STRATEGY_SELECTION_SELF_DISTILL_ROUNDS", "1"),
+        "EPM_EBM_FINAL_MODEL_COUNT": os.environ.get("EPM_STRATEGY_SELECTION_EBM_PRUNE_MODELS", "3"),
+        "EPM_EBM_HONEST_EVAL_MIN_MODELS": os.environ.get("EPM_STRATEGY_SELECTION_EBM_PRUNE_MODELS", "3"),
+    }
+
+
+def _run_final_retraining_layers(
+    cfg: dict,
+    ts_sig: pd.Timestamp,
+    strategy_ids: Sequence[str],
+    *,
+    store=None,
+) -> dict[str, Any]:
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    sel_dir = _strategy_selection_dir(cfg, run_id)
+    rounds = max(1, int(os.environ.get("EPM_FINAL_RETRAIN_REWEIGHT_ROUNDS", "3")))
+    ids_csv = ",".join(str(s) for s in strategy_ids if str(s).strip())
+    if not ids_csv:
+        return {"status": "skipped", "reason": "no_policy_winners"}
+    final_cfg = dict(cfg)
+    final_cfg["planned_max_assets"] = None
+    final_cfg["planned_max_months"] = None
+    final_cfg["sample_weight_opt_enable"] = True
+    final_cfg["train_full_inference_models"] = True
+    final_cfg["strategy_selection_final_retrain"] = True
+    final_cfg["final_retrain_folds"] = int(os.environ.get("EPM_FINAL_RETRAIN_FOLDS", "4"))
+    final_cfg["final_retrain_sample_multiplier"] = float(
+        os.environ.get("EPM_FINAL_RETRAIN_SAMPLE_MULTIPLIER", "2")
+    )
+    report: dict[str, Any] = {"strategy_ids": list(strategy_ids), "base_rounds": [], "meta_rounds": []}
+    env = _selection_profile_env(final=True)
+    env.update(
+        {
+            "EPM_BASE_STRATEGY_IDS": ids_csv,
+            "EPM_META_STRATEGY_IDS": ids_csv,
+            "EPM_POLICY_STRATEGY_IDS": ids_csv,
+        }
+    )
+    for round_i in range(1, rounds + 1):
+        tprint(f"FINAL RETRAIN base round {round_i}/{rounds}")
+        round_cfg = dict(final_cfg)
+        round_cfg["final_retrain_round"] = round_i
+        with _temporary_env(env):
+            run_train(round_cfg, ts_override=ts_sig.strftime("%Y%m%d_%H%M%S"), base_only=True, meta_only=False, store=store)
+        metrics = _load_oof_strategy_metrics(round_cfg, run_id, round_cfg.get("strategies", []), layer="base")
+        _write_metrics_csv(sel_dir / f"final_base_round_{round_i}_metrics.csv", metrics)
+        report["base_rounds"].append({"round": round_i, "metrics": metrics})
+    for round_i in range(1, rounds + 1):
+        tprint(f"FINAL RETRAIN meta round {round_i}/{rounds}")
+        round_cfg = dict(final_cfg)
+        round_cfg["final_retrain_round"] = round_i
+        with _temporary_env(env):
+            run_train_meta(round_cfg, ts_override=ts_sig.strftime("%Y%m%d_%H%M%S"), store=store)
+        metrics = _load_oof_strategy_metrics(round_cfg, run_id, round_cfg.get("strategies", []), layer="meta")
+        _write_metrics_csv(sel_dir / f"final_meta_round_{round_i}_metrics.csv", metrics)
+        report["meta_rounds"].append({"round": round_i, "metrics": metrics})
+    _write_json(sel_dir / "final_retrain_report.json", report)
+    return report
+
+
+def run_strategies_selection(cfg, ts_override=None, store=None):
+    _maintenance_checkpoint("strategies_selection:start")
+    ts_sig = _resolve_ts_sig(cfg, ts_override)
+    if ts_sig is None:
+        tprint("ERROR: No feature directories found.")
+        return
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    sel_dir = _strategy_selection_dir(cfg, run_id)
+    assets = int(os.environ.get("EPM_STRATEGY_SELECTION_ASSETS", "100"))
+    base_top_frac = float(os.environ.get("EPM_STRATEGY_SELECTION_BASE_TOP_FRAC", "0.33"))
+    final_pool_n = int(os.environ.get("EPM_STRATEGY_SELECTION_FINAL_POOL_N", "15"))
+    inference_max_n = int(os.environ.get("EPM_STRATEGY_SELECTION_INFERENCE_MAX_N", "8"))
+    max_per_side = int(os.environ.get("EPM_STRATEGY_SELECTION_MAX_PER_SIDE", "4"))
+    min_side_share = float(os.environ.get("EPM_STRATEGY_SELECTION_MIN_SIDE_SHARE", "0.40"))
+    policy_trials = int(os.environ.get("EPM_STRATEGY_SELECTION_POLICY_TRIALS", "50"))
+
+    if store is None:
+        store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+
+    selection_cfg = dict(cfg)
+    selection_cfg["planned_max_assets"] = assets
+    selection_cfg["train_full_inference_models"] = False
+    selection_cfg["strategy_selection_mode"] = True
+    selection_cfg["meta_filter_saved_oof_to_active_symbols"] = True
+    selection_cfg["mask_strategy_top_n"] = int(os.environ.get("EPM_MASK_STRATEGY_TOP_N", "999"))
+    if assets <= 10:
+        selection_cfg["min_train_samples"] = int(
+            os.environ.get("EPM_STRATEGY_SELECTION_MIN_TRAIN_SAMPLES", "100")
+        )
+        selection_cfg["base_min_samples_hard_floor"] = int(
+            os.environ.get("EPM_STRATEGY_SELECTION_BASE_MIN_SAMPLES", "200")
+        )
+        selection_cfg["sample_weight_opt_min_samples"] = int(
+            os.environ.get("EPM_STRATEGY_SELECTION_SAMPLE_WEIGHT_MIN_SAMPLES", "50")
+        )
+    _load_mask_params_by_mode(selection_cfg)
+    all_strategies = list(get_strategies(selection_cfg))
+    _write_json(sel_dir / "candidate_strategies.json", all_strategies)
+
+    with _temporary_env(_selection_profile_env(final=False)):
+        tprint("STRATEGY SELECTION: lightweight train_base")
+        run_train(selection_cfg, ts_override=ts_sig.strftime("%Y%m%d_%H%M%S"), base_only=True, meta_only=False, store=store)
+
+    base_metric_strategies = all_strategies
+    _base_ids_env = os.environ.get("EPM_BASE_STRATEGY_IDS", "")
+    if _base_ids_env.strip():
+        _base_ids = {s.strip() for s in _base_ids_env.split(",") if s.strip()}
+        base_metric_strategies = [
+            s
+            for s in all_strategies
+            if str(s.get("strategy_id", "")).strip() in _base_ids
+        ]
+    base_metrics = _load_oof_strategy_metrics(selection_cfg, run_id, base_metric_strategies, layer="base")
+    _write_metrics_csv(sel_dir / "base_metrics.csv", base_metrics)
+    base_selected_ids = _select_top_fraction(base_metrics, base_top_frac)
+    _write_json(sel_dir / "base_selected_strategy_ids.json", base_selected_ids)
+    if not base_selected_ids:
+        tprint("STRATEGY SELECTION: no base strategies selected; stopping.")
+        return
+
+    meta_cfg = dict(selection_cfg)
+    with _temporary_env(
+        {
+            **_selection_profile_env(final=False),
+            "EPM_META_STRATEGY_IDS": ",".join(base_selected_ids),
+        }
+    ):
+        tprint(
+            "STRATEGY SELECTION: lightweight train_meta "
+            f"on {len(base_selected_ids)} base-selected strategies"
+        )
+        run_train_meta(meta_cfg, ts_override=ts_sig.strftime("%Y%m%d_%H%M%S"), store=store)
+
+    meta_strategies = [s for s in all_strategies if str(s.get("strategy_id")) in set(base_selected_ids)]
+    meta_metrics = _load_oof_strategy_metrics(meta_cfg, run_id, meta_strategies, layer="meta")
+    if not meta_metrics:
+        meta_metrics = [r for r in base_metrics if str(r.get("strategy_id")) in set(base_selected_ids)]
+    _write_metrics_csv(sel_dir / "meta_metrics.csv", meta_metrics)
+
+    top15_pool = _select_portfolio_pool(
+        meta_metrics,
+        pool_n=final_pool_n,
+        min_side_share=min_side_share,
+    )
+    top15_ids = [str(r["strategy_id"]) for r in top15_pool]
+    _write_json(sel_dir / "top15_strategy_pool.json", top15_pool)
+
+    from extreme_price_movements.simple_policy_optimiser import (
+        run_simple_policy_optimisation,
+    )
+
+    with _temporary_env(
+        {
+            "EPM_POLICY_STRATEGY_IDS": ",".join(top15_ids),
+            "EPM_POLICY_MAX_DEPLOYMENT_STRATEGIES": inference_max_n,
+            "EPM_POLICY_MAX_STRATEGIES_PER_SIDE": max_per_side,
+            "EPM_POLICY_DEPLOYMENT_SELECTION_METRIC": "top_30",
+        }
+    ):
+        tprint(f"STRATEGY SELECTION: simple_policy_optimiser on top-{len(top15_ids)} pool")
+        run_simple_policy_optimisation(
+            data_root=selection_cfg["data_root"],
+            run_id=run_id,
+            cost_pct=float(selection_cfg.get("ridge_cost_pct", selection_cfg.get("fee_bps", 50.0) / 10000.0)),
+            max_strategies=len(top15_ids),
+            n_trials=policy_trials,
+            strategy_ids=top15_ids,
+        )
+
+    policy_winners = [
+        sid for sid in _load_policy_winners(selection_cfg, run_id) if sid in set(top15_ids)
+    ]
+    _write_json(sel_dir / "policy_winners.json", policy_winners)
+    if not policy_winners:
+        tprint("STRATEGY SELECTION: no policy winners selected; skipping final retrain.")
+        _write_json(
+            sel_dir / "strategy_selection_report.json",
+            {
+                "run_id": run_id,
+                "base_selected_count": len(base_selected_ids),
+                "top15_count": len(top15_ids),
+                "policy_winner_count": 0,
+                "status": "no_policy_winners",
+            },
+        )
+        _maintenance_checkpoint("strategies_selection:end")
+        return
+
+    if os.environ.get("EPM_STRATEGY_SELECTION_SKIP_FINAL_RETRAIN", "").strip() in {"1", "true", "True", "yes"}:
+        tprint("STRATEGY SELECTION: skipping final retrain because EPM_STRATEGY_SELECTION_SKIP_FINAL_RETRAIN is set.")
+        _write_json(
+            sel_dir / "strategy_selection_report.json",
+            {
+                "run_id": run_id,
+                "candidate_count": len(all_strategies),
+                "base_selected_count": len(base_selected_ids),
+                "top15_count": len(top15_ids),
+                "policy_winner_count": len(policy_winners),
+                "policy_winners": policy_winners,
+                "final_retrain_status": "skipped_by_env",
+            },
+        )
+        _maintenance_checkpoint("strategies_selection:end")
+        return
+
+    final_report = _run_final_retraining_layers(
+        selection_cfg,
+        ts_sig,
+        policy_winners,
+        store=store,
+    )
+    _write_json(
+        sel_dir / "strategy_selection_report.json",
+        {
+            "run_id": run_id,
+            "candidate_count": len(all_strategies),
+            "base_selected_count": len(base_selected_ids),
+            "top15_count": len(top15_ids),
+            "policy_winner_count": len(policy_winners),
+            "policy_winners": policy_winners,
+            "final_retrain_report_path": str(sel_dir / "final_retrain_report.json"),
+            "final_retrain_status": final_report.get("status", "complete") if isinstance(final_report, dict) else "complete",
+        },
+    )
+    tprint("STRATEGY SELECTION COMPLETE")
+    _maintenance_checkpoint("strategies_selection:end")
+
+
 def run_optimise(cfg, ts_override=None, store=None):
     _maintenance_checkpoint("optimise:start")
     ts_sig = _resolve_ts_sig(cfg, ts_override)
@@ -2359,6 +3131,7 @@ def main():
             "train",
             "base_training",
             "train_base",
+            "strategies_selection",
             "meta_training",
             "train_meta",
             "base_hpo",
@@ -2525,6 +3298,8 @@ def main():
         run_train(cfg, ts_override=args.ts_override, base_only=True, meta_only=False)
     elif args.mode == "train_base":
         run_train(cfg, ts_override=args.ts_override, base_only=True, meta_only=False)
+    elif args.mode == "strategies_selection":
+        run_strategies_selection(cfg, ts_override=args.ts_override)
     elif args.mode == "meta_training":
         run_train_meta(cfg, ts_override=args.ts_override)
     elif args.mode == "train_meta":

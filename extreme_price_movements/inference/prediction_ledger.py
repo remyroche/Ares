@@ -8,6 +8,33 @@ from typing import Any, Dict, Iterable, List
 import pandas as pd
 
 
+PREDICTION_LEDGER_DIAGNOSTIC_COLUMNS = [
+    "decision_ts",
+    "signal_bar_ts",
+    "feature_source_max_ts",
+    "feature_available_ts",
+    "feature_contract_hash",
+    "model_artifact_run_id",
+    "policy_artifact_run_id",
+    "was_traded",
+    "portfolio_decision",
+    "portfolio_reject_reason",
+    "liquidity_reject_reason",
+    "signal_price",
+    "decision_mid",
+    "expected_fill_price",
+    "realized_entry_price",
+    "realized_exit_price",
+    "expected_total_entry_friction_bps",
+    "expected_fill_slippage_bps",
+    "spread_bps",
+    "ticker_spread_bps",
+    "realized_fee_bps",
+    "realized_funding_bps",
+    "realized_borrow_bps",
+]
+
+
 class PredictionLedger:
     """Persist top live predictions and later outcome resolution state."""
 
@@ -29,15 +56,19 @@ class PredictionLedger:
         if not rows:
             return
         new = pd.DataFrame(rows)
-        if "timestamp" in new.columns:
-            new["timestamp"] = pd.to_datetime(
-                new["timestamp"], utc=True, errors="coerce"
-            )
+        for col in PREDICTION_LEDGER_DIAGNOSTIC_COLUMNS:
+            if col not in new.columns:
+                new[col] = pd.NA
+        for ts_col in ("timestamp", "signal_bar_ts", "decision_ts"):
+            if ts_col in new.columns:
+                new[ts_col] = pd.to_datetime(
+                    new[ts_col], utc=True, errors="coerce"
+                )
         old = self._read()
         out = new if old.empty else pd.concat([old, new], ignore_index=True, sort=False)
         subset = [
             c
-            for c in ("timestamp", "symbol", "side", "strategy_id")
+            for c in ("timestamp", "signal_bar_ts", "symbol", "side", "strategy_id")
             if c in out.columns
         ]
         if subset:
@@ -63,7 +94,7 @@ class PredictionLedger:
             return
         key_cols = [
             c
-            for c in ("timestamp", "symbol", "side", "strategy_id")
+            for c in ("timestamp", "signal_bar_ts", "symbol", "side", "strategy_id")
             if c in old.columns and c in updates.columns
         ]
         if not key_cols:

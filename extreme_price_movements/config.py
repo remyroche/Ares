@@ -3325,6 +3325,9 @@ CFG["META_SELF_FEATURE_KEYS"] = [
     "recent_meta_ece_5d",
     "recent_meta_ece_10d",
     "recent_meta_ece_30d",
+    "recent_meta_brier_5d",
+    "recent_meta_brier_10d",
+    "recent_meta_brier_30d",
     "recent_meta_top15_cal_error_10d",
     "recent_meta_top15_cal_error_30d",
     "recent_meta_top15_cal_error_5d",
@@ -3333,6 +3336,35 @@ CFG["META_SELF_FEATURE_KEYS"] = [
     "recent_meta_global_top15_hit_rate_5d",
 ]
 CFG["meta_shared_feature_keys"] += ["META_SELF_FEATURE_KEYS"]
+
+
+CFG["META_RECENT_DISAGREEMENT_FEATURE_KEYS"] = [
+    "recent_meta_brier_3d",
+    "recent_meta_brier_7d",
+    "recent_meta_brier_15d",
+    "recent_base_meta_disagreement_sub_mean_3d",
+    "recent_base_meta_disagreement_sub_mean_7d",
+    "recent_base_meta_disagreement_sub_mean_15d",
+    "recent_base_meta_disagreement_abs_sub_mean_3d",
+    "recent_base_meta_disagreement_abs_sub_mean_7d",
+    "recent_base_meta_disagreement_abs_sub_mean_15d",
+    "recent_base_meta_disagreement_ratio_mean_3d",
+    "recent_base_meta_disagreement_ratio_mean_7d",
+    "recent_base_meta_disagreement_ratio_mean_15d",
+    "recent_base_internal_disagreement_std_mean_3d",
+    "recent_base_internal_disagreement_std_mean_7d",
+    "recent_base_internal_disagreement_std_mean_15d",
+    "recent_base_internal_disagreement_range_mean_3d",
+    "recent_base_internal_disagreement_range_mean_7d",
+    "recent_base_internal_disagreement_range_mean_15d",
+    "recent_base_internal_disagreement_std_max_3d",
+    "recent_base_internal_disagreement_std_max_7d",
+    "recent_base_internal_disagreement_std_max_15d",
+    "recent_base_internal_disagreement_range_max_3d",
+    "recent_base_internal_disagreement_range_max_7d",
+    "recent_base_internal_disagreement_range_max_15d",
+]
+CFG["meta_shared_feature_keys"] += ["META_RECENT_DISAGREEMENT_FEATURE_KEYS"]
 
 
 # =============================================================================

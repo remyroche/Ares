@@ -574,6 +574,29 @@ def _should_log_prediction_candidate(
     return rank >= float(1.0 - policy.top_prediction_ledger_pct)
 
 
+
+def _max_feature_timestamp(feats: Dict[str, pd.DataFrame]) -> Optional[pd.Timestamp]:
+    max_ts: Optional[pd.Timestamp] = None
+    for df in (feats or {}).values():
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            continue
+        idx = pd.to_datetime(df.index, utc=True, errors="coerce")
+        idx = idx[pd.notna(idx)]
+        if len(idx) == 0:
+            continue
+        ts = pd.Timestamp(idx.max())
+        if max_ts is None or ts > max_ts:
+            max_ts = ts
+    return max_ts
+
+
+def _diagnostic_timestamp(value: Any, fallback: Any = None) -> Any:
+    raw = value if value is not None else fallback
+    ts = pd.to_datetime(raw, utc=True, errors="coerce")
+    if pd.isna(ts):
+        return None
+    return pd.Timestamp(ts).isoformat()
+
 def _prediction_ledger_row(
     decision: Dict[str, Any],
     *,
@@ -605,6 +628,13 @@ def _prediction_ledger_row(
     order = trade.get("order") if isinstance(trade.get("order"), dict) else {}
     return {
         "timestamp": timestamp,
+        "decision_ts": _diagnostic_timestamp(decision.get("decision_ts"), timestamp),
+        "signal_bar_ts": _diagnostic_timestamp(decision.get("signal_bar_ts"), timestamp),
+        "feature_source_max_ts": _diagnostic_timestamp(decision.get("feature_source_max_ts")),
+        "feature_available_ts": _diagnostic_timestamp(decision.get("feature_available_ts")),
+        "feature_contract_hash": decision.get("feature_contract_hash"),
+        "model_artifact_run_id": decision.get("model_artifact_run_id"),
+        "policy_artifact_run_id": decision.get("policy_artifact_run_id"),
         "symbol": decision.get("symbol"),
         "side": side,
         "strategy_id": decision.get("strategy_id"),
@@ -660,6 +690,11 @@ def _prediction_ledger_row(
         "order_id": trade.get("order_id") or order.get("id"),
         "entry_price_expected": snap.get("expected_fill_price"),
         "entry_price_actual": trade.get("realized_entry_price"),
+        "realized_entry_price": trade.get("realized_entry_price"),
+        "realized_exit_price": trade.get("realized_exit_price"),
+        "realized_fee_bps": trade.get("realized_fee_bps"),
+        "realized_funding_bps": trade.get("realized_funding_bps"),
+        "realized_borrow_bps": trade.get("realized_borrow_bps"),
         "outcome_status": None,
         "tp_hit": None,
         "sl_hit": None,
@@ -2063,6 +2098,9 @@ def run_inference_step(
         },
     }
     now_utc = pd.Timestamp.now(tz="UTC")
+    feature_source_max_ts = _max_feature_timestamp(feats)
+    feature_available_ts = now_utc
+    signal_bar_ts = feature_source_max_ts or now_utc
     timer = _StageTimer("run_inference_step")
     total_entries_executed = 0
     calibration_data = calibration_data or {}
@@ -2498,6 +2536,19 @@ def run_inference_step(
                             "effective_threshold": effective_threshold,
                             "policy_sizing": policy_size,
                             "chain_results": chain_results,
+                            "decision_ts": now_utc.isoformat(),
+                            "signal_bar_ts": signal_bar_ts.isoformat(),
+                            "feature_source_max_ts": (
+                                feature_source_max_ts.isoformat()
+                                if feature_source_max_ts is not None
+                                else None
+                            ),
+                            "feature_available_ts": feature_available_ts.isoformat(),
+                            "feature_contract_hash": runtime_config.get("feature_contract_hash"),
+                            "model_artifact_run_id": artifact_run_id,
+                            "policy_artifact_run_id": runtime_config.get(
+                                "policy_artifact_run_id", artifact_run_id
+                            ),
                         }
                     )
 

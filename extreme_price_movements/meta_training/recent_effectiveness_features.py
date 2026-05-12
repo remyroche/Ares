@@ -550,6 +550,7 @@ def add_recent_meta_self_features(
             for name in [
                 "rank_ic",
                 "ece",
+                "brier",
                 f"{top_label}_cal_error",
                 f"{top_label}_hit_rate",
                 f"{top_label}_ev",
@@ -595,6 +596,12 @@ def add_recent_meta_self_features(
                     )
                     out.at[ridx, f"recent_meta_{scope}_ece_{sfx}"] = _ece_from_hist(
                         p, y
+                    )
+                    brier_ok = np.isfinite(p) & np.isfinite(y)
+                    out.at[ridx, f"recent_meta_{scope}_brier_{sfx}"] = (
+                        float(np.nanmean((p[brier_ok] - y[brier_ok]) ** 2))
+                        if int(brier_ok.sum()) > 0
+                        else np.nan
                     )
                     finite_score = np.isfinite(mscore)
                     top = np.zeros_like(finite_score, dtype=bool)
@@ -644,6 +651,9 @@ def add_recent_meta_self_features(
                     out.at[ridx, f"recent_meta_{scope}_available_{sfx}"] = np.int8(1)
     top_label = f"top{int(round(top_frac * 100))}"
     out["recent_meta_ece_30d"] = out.get("recent_meta_global_ece_30d")
+    out["recent_meta_brier_30d"] = out.get("recent_meta_global_brier_30d")
+    out["recent_meta_brier_10d"] = out.get("recent_meta_global_brier_10d")
+    out["recent_meta_brier_5d"] = out.get("recent_meta_global_brier_5d")
     out[f"recent_meta_{top_label}_cal_error_30d"] = out.get(
         f"recent_meta_global_{top_label}_cal_error_30d"
     )
@@ -658,4 +668,144 @@ def add_recent_meta_self_features(
     )
     if standardize:
         out = standardize_recent_effectiveness_features(out, prefix="recent_meta_")
+    return out
+
+
+
+def _infer_base_probability_columns(
+    df: pd.DataFrame,
+    *,
+    meta_prob_col: str,
+    explicit: Iterable[str] | None = None,
+) -> list[str]:
+    if explicit is not None:
+        return [str(c) for c in explicit if str(c) in df.columns]
+    prefixes = (
+        "base_prob_",
+        "base_probability_",
+        "base_model_prob_",
+        "p_base_",
+        "pred_base_",
+    )
+    cols = [
+        str(c)
+        for c in df.columns
+        if str(c) != meta_prob_col and any(str(c).startswith(p) for p in prefixes)
+    ]
+    # Horizon-style base prediction columns used in several runtime paths.
+    cols.extend(
+        str(c)
+        for c in df.columns
+        if str(c).startswith("base_H") or str(c).startswith("pred_H")
+    )
+    return list(dict.fromkeys(cols))
+
+
+def add_recent_prediction_disagreement_features(
+    df: pd.DataFrame,
+    *,
+    ts_col: str = "timestamp",
+    label_available_ts_col: str = "label_available_ts",
+    meta_prob_col: str = "p_meta",
+    y_success_col: str = "y_true",
+    base_prob_cols: Iterable[str] | None = None,
+    windows: tuple[str, ...] = ("3D", "7D", "15D"),
+    min_samples: int = 20,
+    standardize: bool = True,
+) -> pd.DataFrame:
+    """Add causal rolling meta/base calibration and disagreement diagnostics.
+
+    Features are computed using only rows whose label was available before the
+    current prediction timestamp.  The outputs include recent meta-model Brier
+    score, base-vs-meta disagreement by subtraction and ratio, and internal base
+    model disagreement aggregates over 3/7/15 day windows by default.
+    """
+    out = df.sort_values(ts_col).copy()
+    if ts_col not in out.columns or label_available_ts_col not in out.columns:
+        raise ValueError(f"Missing required columns: {[ts_col, label_available_ts_col]}")
+    if meta_prob_col not in out.columns:
+        raise ValueError(f"Missing required meta probability column: {meta_prob_col}")
+    base_cols = _infer_base_probability_columns(
+        out, meta_prob_col=meta_prob_col, explicit=base_prob_cols
+    )
+    out[ts_col] = pd.to_datetime(out[ts_col], errors="coerce")
+    out[label_available_ts_col] = pd.to_datetime(
+        out[label_available_ts_col], errors="coerce"
+    )
+    meta = pd.to_numeric(out[meta_prob_col], errors="coerce").astype(np.float32)
+    if base_cols:
+        base_mat = out[base_cols].apply(pd.to_numeric, errors="coerce").astype(
+            np.float32
+        )
+        base_mean = base_mat.mean(axis=1, skipna=True).astype(np.float32)
+        base_std = base_mat.std(axis=1, skipna=True, ddof=0).astype(np.float32)
+        base_range = (base_mat.max(axis=1, skipna=True) - base_mat.min(axis=1, skipna=True)).astype(np.float32)
+    else:
+        base_mean = pd.Series(np.nan, index=out.index, dtype=np.float32)
+        base_std = pd.Series(np.nan, index=out.index, dtype=np.float32)
+        base_range = pd.Series(np.nan, index=out.index, dtype=np.float32)
+    out["base_meta_disagreement_sub"] = (base_mean - meta).astype(np.float32)
+    out["base_meta_disagreement_abs_sub"] = (base_mean - meta).abs().astype(np.float32)
+    out["base_meta_disagreement_ratio"] = (base_mean / meta.replace(0.0, np.nan)).replace(
+        [np.inf, -np.inf], np.nan
+    ).astype(np.float32)
+    out["base_internal_disagreement_std"] = base_std
+    out["base_internal_disagreement_range"] = base_range
+
+    for win in windows:
+        sfx = win.lower()
+        for name in (
+            "meta_brier",
+            "base_meta_disagreement_sub_mean",
+            "base_meta_disagreement_abs_sub_mean",
+            "base_meta_disagreement_ratio_mean",
+            "base_internal_disagreement_std_mean",
+            "base_internal_disagreement_range_mean",
+            "base_internal_disagreement_std_max",
+            "base_internal_disagreement_range_max",
+            "n",
+        ):
+            out[f"recent_{name}_{sfx}"] = np.nan
+        out[f"recent_prediction_disagreement_available_{sfx}"] = np.int8(0)
+
+    for ridx, row in out.iterrows():
+        t = row[ts_col]
+        if pd.isna(t):
+            continue
+        for win in windows:
+            sfx = win.lower()
+            hist = out[
+                (out[label_available_ts_col] < t)
+                & (out[ts_col] >= t - pd.Timedelta(win))
+            ]
+            n = int(len(hist))
+            out.at[ridx, f"recent_n_{sfx}"] = float(n)
+            if n < int(min_samples):
+                continue
+            p = pd.to_numeric(hist[meta_prob_col], errors="coerce").to_numpy(np.float32)
+            if y_success_col in hist.columns:
+                y = pd.to_numeric(hist[y_success_col], errors="coerce").to_numpy(np.float32)
+                ok = np.isfinite(p) & np.isfinite(y)
+                if int(ok.sum()) > 0:
+                    out.at[ridx, f"recent_meta_brier_{sfx}"] = float(
+                        np.nanmean((p[ok] - y[ok]) ** 2)
+                    )
+            for src, dst in (
+                ("base_meta_disagreement_sub", "base_meta_disagreement_sub_mean"),
+                ("base_meta_disagreement_abs_sub", "base_meta_disagreement_abs_sub_mean"),
+                ("base_meta_disagreement_ratio", "base_meta_disagreement_ratio_mean"),
+                ("base_internal_disagreement_std", "base_internal_disagreement_std_mean"),
+                ("base_internal_disagreement_range", "base_internal_disagreement_range_mean"),
+            ):
+                vals = pd.to_numeric(hist[src], errors="coerce")
+                out.at[ridx, f"recent_{dst}_{sfx}"] = float(vals.mean()) if vals.notna().any() else np.nan
+            out.at[ridx, f"recent_base_internal_disagreement_std_max_{sfx}"] = float(
+                pd.to_numeric(hist["base_internal_disagreement_std"], errors="coerce").max()
+            )
+            out.at[ridx, f"recent_base_internal_disagreement_range_max_{sfx}"] = float(
+                pd.to_numeric(hist["base_internal_disagreement_range"], errors="coerce").max()
+            )
+            out.at[ridx, f"recent_prediction_disagreement_available_{sfx}"] = np.int8(1)
+    if standardize:
+        out = standardize_recent_effectiveness_features(out, prefix="recent_")
     return out

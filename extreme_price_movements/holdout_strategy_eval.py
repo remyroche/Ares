@@ -1091,9 +1091,14 @@ def evaluate_holdout_symbol(
                         timestamps=np.asarray(outcomes["timestamp"].values),
                         symbols=np.repeat(panel_symbol, len(score_values)),
                     )
-                    score_values = np.asarray(
-                        applied["deployment_score_rank"], dtype=np.float64
-                    )
+                    if "deployment_score_pre_rank" in applied:
+                        score_values = np.asarray(
+                            applied["deployment_score_pre_rank"], dtype=np.float64
+                        )
+                    else:
+                        score_values = np.asarray(
+                            applied["deployment_score_rank"], dtype=np.float64
+                        )
                     eligible = np.asarray(applied["eligible"], dtype=bool)
                     if not bool(eligible.any()):
                         tprint(

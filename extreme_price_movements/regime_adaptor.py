@@ -12,7 +12,31 @@ import pandas as pd
 from scipy.stats import linregress
 from sklearn.linear_model import ElasticNet
 from sklearn.preprocessing import RobustScaler
+from sklearn.metrics import roc_auc_score
 from sklearn.tree import DecisionTreeRegressor
+
+from extreme_price_movements.config import (
+    REGIME_ADAPTOR_ASSET_FEATURE_KEYS,
+    REGIME_ADAPTOR_COMBINATION_GRID,
+    REGIME_ADAPTOR_EBM_CONSOLIDATED_FEATURE_KEYS,
+    REGIME_ADAPTOR_FEATURE_ORDER,
+    REGIME_ADAPTOR_FUNDING_FEATURE_KEYS,
+    REGIME_ADAPTOR_GLOBAL_BAD_RATE_THRESHOLD,
+    REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS,
+    REGIME_ADAPTOR_LGBM_CLASSIFIER_PARAMS,
+    REGIME_ADAPTOR_ASSET_BAD_RATE_THRESHOLD,
+    REGIME_ADAPTOR_OBJECTIVE_WEIGHTS,
+    REGIME_ADAPTOR_ORDERBOOK_FEATURE_KEYS,
+    REGIME_ADAPTOR_RATIO_CLIPS,
+    REGIME_ADAPTOR_ROLLING_PRIOR_FEATURE_KEYS,
+    REGIME_ADAPTOR_STRATEGY_ASSET_FEATURE_KEYS,
+)
+
+try:
+    from lightgbm import LGBMClassifier, early_stopping
+except Exception:  # pragma: no cover - optional runtime dependency fallback.
+    LGBMClassifier = None  # type: ignore[assignment]
+    early_stopping = None  # type: ignore[assignment]
 
 try:
     import optuna
@@ -24,36 +48,30 @@ except Exception:  # pragma: no cover - optional runtime dependency fallback.
     TPESampler = None  # type: ignore[assignment]
 
 EPS = 1e-9
-REGIME_FEATURE_ORDER = [
-    "rv_24h",
-    "rv1_rv24",
-    "rv4_rv24",
-    "signed_adx",
-    "dist_ema_fast",
-    "dist_ema_slow",
-    "dist_vwap",
-    "prior_day_low",
-    "prior_day_high",
-    "rvol_z",
-    "asset_volume_30d",
-    "is_weekend",
-    "asset_atr_30d",
-    "ebm_unc_logodds_var",
-    "ebm_unc_pi_width",
-    "ebm_unc_entropy_mean",
-    "ebm_unc_entropy_std",
-    "ebm_unc_conflict_norm",
-    "ebm_unc_proximity_min",
-    "ebm_unc_support_mean",
-    "ebm_unc_support_min",
-    "ebm_unc_concentration",
-    "ebm_unc_sign_ratio",
-    "ebm_unc_interaction_share",
-    "ebm_unc_gap50rel",
-    "ebm_unc_support_adjusted_uncertainty",
-    "ebm_unc_uncertainty_weight",
-    "ebm_unc_friction_weight",
-]
+
+ROLLING_REGIME_HORIZONS_DAYS = (3, 5)
+ROLLING_REGIME_DEFAULT_BLEND_WEIGHTS = {3: 0.6, 5: 0.4}
+ROLLING_REGIME_BLEND_GRID = ((0.8, 0.2), (0.6, 0.4), (0.5, 0.5), (0.4, 0.6))
+REGIME_FEATURE_ORDER = list(dict.fromkeys(REGIME_ADAPTOR_FEATURE_ORDER))
+GLOBAL_REGIME_FEATURES = tuple(REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS)
+CROSS_ASSET_REGIME_FEATURES = GLOBAL_REGIME_FEATURES
+ASSET_REGIME_FEATURES = tuple(REGIME_ADAPTOR_ASSET_FEATURE_KEYS)
+STRATEGY_ASSET_REGIME_FEATURES = tuple(REGIME_ADAPTOR_STRATEGY_ASSET_FEATURE_KEYS)
+FUNDING_REGIME_FEATURES = tuple(REGIME_ADAPTOR_FUNDING_FEATURE_KEYS)
+ORDERBOOK_REGIME_FEATURES = tuple(REGIME_ADAPTOR_ORDERBOOK_FEATURE_KEYS)
+EBM_CONSOLIDATED_REGIME_FEATURES = tuple(REGIME_ADAPTOR_EBM_CONSOLIDATED_FEATURE_KEYS)
+ROLLING_PRIOR_REGIME_FEATURES = tuple(REGIME_ADAPTOR_ROLLING_PRIOR_FEATURE_KEYS)
+REQUIRED_LIVE_BAD_REGIME_COLUMNS = (
+    "p_bad_regime_global_3d",
+    "p_bad_regime_global_5d",
+    "p_bad_regime_asset_3d",
+    "p_bad_regime_asset_5d",
+)
+REGIME_OBJECTIVE_WEIGHTS = dict(REGIME_ADAPTOR_OBJECTIVE_WEIGHTS)
+GLOBAL_BAD_RATE_THRESHOLD = float(REGIME_ADAPTOR_GLOBAL_BAD_RATE_THRESHOLD)
+ASSET_BAD_RATE_THRESHOLD = float(REGIME_ADAPTOR_ASSET_BAD_RATE_THRESHOLD)
+REGIME_RATIO_CLIPS = {k: tuple(v) for k, v in REGIME_ADAPTOR_RATIO_CLIPS.items()}
+ROLLING_REGIME_LGBM_PARAMS = dict(REGIME_ADAPTOR_LGBM_CLASSIFIER_PARAMS)
 
 FEATURE_CANDIDATES: Dict[str, Tuple[str, ...]] = {
     "rv_24h": (
@@ -149,6 +167,7 @@ FEATURE_CANDIDATES: Dict[str, Tuple[str, ...]] = {
         "regime_transition_entropy_48h",
     ),
     "asset_volume_30d": (
+        "asset_volume_30d",
         "asset_vol_level",
         "volume",
         "quote_volume",
@@ -157,6 +176,7 @@ FEATURE_CANDIDATES: Dict[str, Tuple[str, ...]] = {
         "volume_percentile",
     ),
     "asset_atr_30d": (
+        "asset_atr_30d",
         "asset_atr_level",
         "atr_pct",
         "atr_pct_base",
@@ -203,6 +223,171 @@ FEATURE_CANDIDATES: Dict[str, Tuple[str, ...]] = {
 }
 
 
+# Canonical next-few-days bad-regime candidate mappings.  The canonical names
+# are stable artifact keys; aliases let existing feature generators feed the
+# layer without requiring a parallel subsystem.
+FEATURE_CANDIDATES.update(
+    {
+        "market_breadth_24h": ("market_breadth_24h", "mkt_breadth_24h"),
+        "market_breadth_7d": ("market_breadth_7d", "market_breadth_168h"),
+        "market_breadth_15d": ("market_breadth_15d", "market_breadth_360h"),
+        "cross_asset_return_dispersion_24h": (
+            "cross_asset_return_dispersion_24h",
+            "market_dispersion_24h",
+            "cross_asset_return_dispersion",
+            "xasset_return_dispersion",
+        ),
+        "cross_asset_return_dispersion_7d": (
+            "cross_asset_return_dispersion_7d",
+            "market_dispersion_7d",
+            "xasset_return_dispersion_7d",
+        ),
+        "cross_asset_vol_dispersion_24h": (
+            "cross_asset_vol_dispersion_24h",
+            "cross_asset_vol_dispersion",
+            "xasset_vol_dispersion",
+            "rv_cross_asset_dispersion",
+        ),
+        "cross_asset_vol_dispersion_7d": (
+            "cross_asset_vol_dispersion_7d",
+            "xasset_vol_dispersion_7d",
+        ),
+        "cross_asset_vol_dispersion_15d": (
+            "cross_asset_vol_dispersion_15d",
+            "xasset_vol_dispersion_15d",
+        ),
+        "median_asset_rv_24h": ("median_asset_rv_24h", "xasset_median_rv_24h"),
+        "median_asset_rv_7d": ("median_asset_rv_7d", "xasset_median_rv_7d"),
+        "top_decile_asset_rv_24h": (
+            "top_decile_asset_rv_24h",
+            "xasset_top_decile_rv_24h",
+        ),
+        "top_decile_asset_rv_7d": (
+            "top_decile_asset_rv_7d",
+            "xasset_top_decile_rv_7d",
+        ),
+        "btc_eth_trend_proxy": (
+            "btc_eth_trend_proxy",
+            "btc_ret_24h",
+            "eth_btc_ret_24h",
+        ),
+        "btc_eth_vol_proxy": ("btc_eth_vol_proxy", "btc_eth_rv_24h"),
+        "cross_asset_correlation_7d": ("cross_asset_correlation_7d", "xasset_corr_7d"),
+        "cross_asset_correlation_30d": (
+            "cross_asset_correlation_30d",
+            "xasset_corr_30d",
+        ),
+        "funding_rate_cross_asset_dispersion": (
+            "funding_rate_cross_asset_dispersion",
+            "funding_cross_asset_dispersion",
+        ),
+        "asset_funding_z": ("asset_funding_z", "funding_z", "funding_rate_z"),
+        "asset_funding_side_alignment": (
+            "asset_funding_side_alignment",
+        ),
+        "asset_funding_trend_alignment": (
+            "asset_funding_trend_alignment",
+            "funding_trend_alignment",
+        ),
+        "asset_funding_rate_abs_mean_7d": (
+            "asset_funding_rate_abs_mean_7d",
+            "funding_abs_z",
+            "funding_rate_abs_mean",
+        ),
+        "asset_spread_proxy_p90_24h": (
+            "asset_spread_proxy_p90_24h",
+            "spread_proxy_p90_24h",
+            "ob_spread_z_24h",
+            "ob_spread_bps",
+        ),
+        "asset_spread_proxy_p90_96h": (
+            "asset_spread_proxy_p90_96h",
+            "spread_proxy_p90_96h",
+            "ob_spread_z_24h",
+            "ob_spread_bps",
+        ),
+        "asset_spread_proxy_p90_7d": (
+            "asset_spread_proxy_p90_7d",
+            "spread_proxy_p90_7d",
+            "ob_spread_z_24h",
+            "ob_spread_bps",
+        ),
+        "asset_spread_proxy_p90_15d": (
+            "asset_spread_proxy_p90_15d",
+            "spread_proxy_p90_15d",
+            "ob_spread_z_24h",
+            "ob_spread_bps",
+        ),
+        "asset_volume_depth_risk_p90_24h": (
+            "asset_volume_depth_risk_p90_24h",
+            "volume_depth_risk_p90_24h",
+            "ob_depth_usd_l20_z",
+            "ob_depth_usd_l20",
+            "ob_top_liquidity_usd",
+        ),
+        "asset_volume_depth_risk_p90_96h": (
+            "asset_volume_depth_risk_p90_96h",
+            "volume_depth_risk_p90_96h",
+            "ob_depth_usd_l20_z",
+            "ob_depth_usd_l20",
+            "ob_top_liquidity_usd",
+        ),
+        "asset_volume_depth_risk_p90_7d": (
+            "asset_volume_depth_risk_p90_7d",
+            "volume_depth_risk_p90_7d",
+            "ob_depth_usd_l20_z",
+            "ob_depth_usd_l20",
+            "ob_top_liquidity_usd",
+        ),
+        "asset_volume_depth_risk_p90_15d": (
+            "asset_volume_depth_risk_p90_15d",
+            "volume_depth_risk_p90_15d",
+            "ob_depth_usd_l20_z",
+            "ob_depth_usd_l20",
+            "ob_top_liquidity_usd",
+        ),
+        "asset_orderbook_imbalance_abs_mean_24h": (
+            "asset_orderbook_imbalance_abs_mean_24h",
+            "orderbook_imbalance_abs_mean_24h",
+            "ob_imb_l1",
+            "ob_imb_l10",
+            "ob_wimb_l10",
+            "ob_book_pressure_l10",
+        ),
+        "asset_orderbook_imbalance_abs_mean_96h": (
+            "asset_orderbook_imbalance_abs_mean_96h",
+            "orderbook_imbalance_abs_mean_96h",
+            "ob_imb_l1",
+            "ob_imb_l10",
+            "ob_wimb_l10",
+            "ob_book_pressure_l10",
+        ),
+        "asset_orderbook_imbalance_abs_mean_7d": (
+            "asset_orderbook_imbalance_abs_mean_7d",
+            "orderbook_imbalance_abs_mean_7d",
+            "ob_imb_l1",
+            "ob_imb_l10",
+            "ob_wimb_l10",
+            "ob_book_pressure_l10",
+        ),
+        "asset_orderbook_imbalance_abs_mean_15d": (
+            "asset_orderbook_imbalance_abs_mean_15d",
+            "orderbook_imbalance_abs_mean_15d",
+            "ob_imb_l1",
+            "ob_imb_l10",
+            "ob_wimb_l10",
+            "ob_book_pressure_l10",
+        ),
+        "asset_liquidity_stress_score_7d": (
+            "asset_liquidity_stress_score_7d",
+            "xasset_mkt_ob_stress",
+        ),
+    }
+)
+for _feat in REGIME_FEATURE_ORDER:
+    FEATURE_CANDIDATES.setdefault(_feat, (_feat,))
+
+
 @dataclass
 class RegimeAdaptorFit:
     artifact: Dict[str, Any]
@@ -214,6 +399,10 @@ class RegimeAdaptorFit:
     eligible_oof: np.ndarray
     deployment_score_oof: np.ndarray
     deployment_score_rank_oof: np.ndarray
+    regime_utility_pred_15d_oof: Optional[np.ndarray] = None
+    regime_utility_pred_30d_oof: Optional[np.ndarray] = None
+    combined_regime_utility_oof: Optional[np.ndarray] = None
+    regime_logit_offset_oof: Optional[np.ndarray] = None
 
 
 def safe_strategy_slug(strategy_id: str) -> str:
@@ -337,6 +526,74 @@ def build_regime_feature_frame(
             out[key] = _fill_numeric(arr)
             mapping[key] = _first_col(feature_frame, FEATURE_CANDIDATES[key])
 
+    for key in CROSS_ASSET_REGIME_FEATURES + FUNDING_REGIME_FEATURES:
+        if key in out:
+            continue
+        arr = _col(feature_frame, FEATURE_CANDIDATES.get(key, (key,)), n)
+        if arr is not None:
+            out[key] = _fill_numeric(arr, fill=0.0)
+            mapping[key] = _first_col(
+                feature_frame, FEATURE_CANDIDATES.get(key, (key,))
+            )
+
+    if "asset_funding_side_alignment" not in out and "asset_funding_z" in out:
+        side = _col(feature_frame, ("trade_side", "side_sign"), n)
+        if side is not None:
+            out["asset_funding_side_alignment"] = _fill_numeric(
+                side * out["asset_funding_z"], fill=0.0
+            )
+            mapping["asset_funding_side_alignment"] = {
+                "trade_side": "trade_side/side_sign",
+                "funding": mapping.get("asset_funding_z"),
+            }
+
+    for key in ORDERBOOK_REGIME_FEATURES:
+        if key in out:
+            continue
+        arr = _col(feature_frame, FEATURE_CANDIDATES.get(key, (key,)), n)
+        if arr is not None:
+            if "orderbook_imbalance_abs" in key:
+                arr = np.abs(arr)
+            if "volume_depth_risk" in key and "risk" not in str(
+                _first_col(feature_frame, FEATURE_CANDIDATES.get(key, (key,)))
+            ):
+                arr = 1.0 / np.sqrt(1.0 + np.maximum(arr, 0.0))
+            out[key] = _fill_numeric(arr, fill=0.0)
+            mapping[key] = _first_col(
+                feature_frame, FEATURE_CANDIDATES.get(key, (key,))
+            )
+
+    if "liquidity_stress_score" not in out:
+        parts = [
+            out[k]
+            for k in ("spread_proxy", "volume_depth_proxy", "orderbook_imbalance_proxy")
+            if k in out
+        ]
+        if parts:
+            stress_parts = []
+            if "spread_proxy" in out:
+                stress_parts.append(_zscore(out["spread_proxy"]))
+            if "volume_depth_proxy" in out:
+                stress_parts.append(
+                    _zscore(-np.asarray(out["volume_depth_proxy"], dtype=np.float64))
+                )
+            if "orderbook_imbalance_proxy" in out:
+                stress_parts.append(_zscore(np.abs(out["orderbook_imbalance_proxy"])))
+            out["liquidity_stress_score"] = _fill_numeric(
+                np.nanmean(np.column_stack(stress_parts), axis=1), fill=0.0
+            )
+            mapping["liquidity_stress_score"] = "mean_z(spread, -depth, abs(imbalance))"
+
+    for key in EBM_CONSOLIDATED_REGIME_FEATURES + ROLLING_PRIOR_REGIME_FEATURES:
+        if key in out:
+            continue
+        arr = _col(feature_frame, FEATURE_CANDIDATES.get(key, (key,)), n)
+        if arr is not None:
+            out[key] = _fill_numeric(arr, fill=0.0)
+            mapping[key] = _first_col(
+                feature_frame, FEATURE_CANDIDATES.get(key, (key,))
+            )
+
     if timestamps is not None and len(timestamps) >= n:
         ts = pd.to_datetime(np.asarray(timestamps)[:n], utc=True, errors="coerce")
         out["is_weekend"] = (pd.DatetimeIndex(ts).dayofweek >= 5).astype(np.float32)
@@ -347,15 +604,38 @@ def build_regime_feature_frame(
         if symbols is not None and len(symbols) >= n
         else np.repeat("all", n).astype(str)
     )
+    rolling_30d_periods = 30 * 24
+    rolling_30d_min_periods = 24
+    if timestamps is not None and len(timestamps) >= n:
+        ts_for_window = pd.to_datetime(
+            np.asarray(timestamps)[:n], utc=True, errors="coerce"
+        )
+        finite_ts = pd.Series(ts_for_window).dropna().sort_values()
+        if len(finite_ts) > 2:
+            median_step = finite_ts.diff().dropna().median()
+            if pd.notna(median_step) and median_step >= pd.Timedelta(hours=18):
+                rolling_30d_periods = 30
+                rolling_30d_min_periods = 3
     for key in ("asset_volume_30d", "asset_atr_30d"):
+        if key in out:
+            continue
+        direct = key in feature_frame.columns
         arr = _col(feature_frame, FEATURE_CANDIDATES[key], n)
         if arr is None:
+            continue
+        if direct:
+            out[key] = _fill_numeric(arr)
+            mapping[key] = key
             continue
         series = pd.Series(_fill_numeric(arr), index=np.arange(n))
         group = pd.Series(sym_arr, index=np.arange(n))
         roll = (
             series.groupby(group, sort=False)
-            .transform(lambda s: s.shift(1).rolling(30 * 24, min_periods=24).mean())
+            .transform(
+                lambda s: s.shift(1)
+                .rolling(rolling_30d_periods, min_periods=rolling_30d_min_periods)
+                .mean()
+            )
             .to_numpy(dtype=np.float64)
         )
         fallback = (
@@ -364,9 +644,9 @@ def build_regime_feature_frame(
             .to_numpy(dtype=np.float64)
         )
         out[key] = _fill_numeric(np.where(np.isfinite(roll), roll, fallback))
-        mapping[key] = (
-            f"rolling30d({_first_col(feature_frame, FEATURE_CANDIDATES[key])})"
-        )
+        mapping[
+            key
+        ] = f"rolling30d({_first_col(feature_frame, FEATURE_CANDIDATES[key])})"
 
     ordered = {key: out[key] for key in REGIME_FEATURE_ORDER if key in out}
     return pd.DataFrame(ordered), mapping
@@ -559,15 +839,23 @@ def _apply_percentile(values: np.ndarray, ref: np.ndarray) -> np.ndarray:
 def _walk_forward_splits(
     timestamps: Sequence[Any], n: int, n_splits: int = 5
 ) -> List[Tuple[np.ndarray, np.ndarray]]:
+    """Time-only walk-forward splits that keep equal timestamps together."""
     if n < 20:
         return [(np.arange(0, max(1, n // 2)), np.arange(max(1, n // 2), n))]
     ts = pd.to_datetime(np.asarray(timestamps)[:n], utc=True, errors="coerce")
-    order = np.argsort(np.where(pd.isna(ts), np.arange(n), ts.view("int64")))
-    folds = np.array_split(order, n_splits)
+    ts_int = np.where(pd.isna(ts), np.arange(n, dtype=np.int64), ts.view("int64"))
+    unique_times = np.array(sorted(pd.unique(ts_int)))
+    time_folds = np.array_split(unique_times, min(int(n_splits), len(unique_times)))
     out: List[Tuple[np.ndarray, np.ndarray]] = []
-    for i in range(1, len(folds)):
-        tr = np.concatenate(folds[:i])
-        te = folds[i]
+    for i in range(1, len(time_folds)):
+        train_times = set(np.concatenate(time_folds[:i]).tolist())
+        valid_times = set(time_folds[i].tolist())
+        tr = np.asarray(
+            [j for j, t in enumerate(ts_int) if int(t) in train_times], dtype=int
+        )
+        te = np.asarray(
+            [j for j, t in enumerate(ts_int) if int(t) in valid_times], dtype=int
+        )
         if len(tr) and len(te):
             out.append((np.sort(tr), np.sort(te)))
     if not out:
@@ -959,6 +1247,87 @@ def apply_regime_adaptor(
 ) -> Dict[str, np.ndarray]:
     n = len(pred_calibrated)
     score = _as_float_array(pred_calibrated, n)
+    if (
+        artifact.get("schema_version") in {"rolling_bad_regime_v2", "rolling_regime_v1"}
+        or "selected_combination_params" in artifact
+    ):
+        regime_df, mapping = build_regime_feature_frame(
+            feature_frame.iloc[:n], timestamps, symbols
+        )
+        required = REQUIRED_LIVE_BAD_REGIME_COLUMNS
+        missing_live_columns = [c for c in required if c not in feature_frame.columns]
+        available = not missing_live_columns
+        requested_enabled = bool(artifact.get("enable_regime_adaptor", False))
+        live_enabled = bool(requested_enabled and available)
+        p_global_3d = _col(feature_frame, ("p_bad_regime_global_3d",), n)
+        p_global_5d = _col(feature_frame, ("p_bad_regime_global_5d",), n)
+        p_asset_3d = _col(feature_frame, ("p_bad_regime_asset_3d",), n)
+        p_asset_5d = _col(feature_frame, ("p_bad_regime_asset_5d",), n)
+        if not live_enabled:
+            p_global_3d = p_global_5d = p_asset_3d = p_asset_5d = np.full(n, 0.5)
+        else:
+            p_global_3d = np.clip(_fill_numeric(p_global_3d, 0.5), 0.0, 1.0)
+            p_global_5d = np.clip(_fill_numeric(p_global_5d, 0.5), 0.0, 1.0)
+            p_asset_3d = np.clip(_fill_numeric(p_asset_3d, 0.5), 0.0, 1.0)
+            p_asset_5d = np.clip(_fill_numeric(p_asset_5d, 0.5), 0.0, 1.0)
+        blend = artifact.get("selected_3d_5d_blend", {"3d": 0.6, "5d": 0.4})
+        w3 = float(blend.get("3d", 0.6))
+        w5 = float(blend.get("5d", 0.4))
+        combined_global = w3 * np.asarray(
+            p_global_3d, dtype=np.float64
+        ) + w5 * np.asarray(p_global_5d, dtype=np.float64)
+        combined_asset = w3 * np.asarray(
+            p_asset_3d, dtype=np.float64
+        ) + w5 * np.asarray(p_asset_5d, dtype=np.float64)
+        params = (
+            artifact.get("selected_combination_params", {})
+            if isinstance(artifact.get("selected_combination_params", {}), dict)
+            else {}
+        )
+        combined = combine_meta_bad_regime_scores(
+            score, combined_global, combined_asset, params=params
+        )
+        deployment_pre_rank = (
+            combined["final_score"] if live_enabled else score.copy()
+        )
+        local_rank = _global_rank(deployment_pre_rank)
+        return {
+            "regime_weight": np.ones(n, dtype=np.float64),
+            "eligible": np.ones(n, dtype=bool),
+            "deployment_score_pre_rank": deployment_pre_rank.astype(np.float64),
+            "local_batch_rank": local_rank.astype(np.float64),
+            "p_bad_regime_global_3d": np.asarray(p_global_3d, dtype=np.float64),
+            "p_bad_regime_global_5d": np.asarray(p_global_5d, dtype=np.float64),
+            "p_bad_regime_asset_3d": np.asarray(p_asset_3d, dtype=np.float64),
+            "p_bad_regime_asset_5d": np.asarray(p_asset_5d, dtype=np.float64),
+            "combined_global_bad_regime_score": combined_global.astype(np.float64),
+            "combined_asset_bad_regime_score": combined_asset.astype(np.float64),
+            "bad_regime_offset": combined["bad_regime_offset"].astype(np.float64),
+            "combined_score": combined["final_score"].astype(np.float64),
+            "rank_scope": np.repeat("local_batch", n),
+            "live_required_columns_available": np.repeat(bool(available), n),
+            "missing_live_p_bad_regime_columns": np.repeat(
+                ",".join(missing_live_columns), n
+            ),
+            "score_delta_from_regime_adjustment": combined[
+                "score_delta_from_regime_adjustment"
+            ].astype(np.float64),
+            "regime_adjustment_enabled": np.repeat(live_enabled, n),
+            "regime_disabled_reason": np.repeat(
+                ""
+                if live_enabled
+                else (
+                    "missing_live_p_bad_regime_columns"
+                    if requested_enabled and missing_live_columns
+                    else "artifact_disabled"
+                ),
+                n,
+            ),
+            "selected_combination_params": np.repeat(
+                json.dumps(params, sort_keys=True), n
+            ),
+            "feature_mapping": mapping,
+        }
     regime_df, _ = build_regime_feature_frame(
         feature_frame.iloc[:n], timestamps, symbols
     )
@@ -1006,7 +1375,7 @@ def apply_regime_adaptor(
         weight[:] = 1.0
     deployment = score * weight
     deployment[~eligible] = -np.inf
-    rank = _rank_pct(np.where(np.isfinite(deployment), deployment, np.nan))
+    rank = _rank_pct(np.where(np.isfinite(deployment), deployment, np.nan)).copy()
     rank[~np.isfinite(deployment)] = 0.0
     return {
         "regime_weight": weight.astype(np.float64),
@@ -1284,6 +1653,1385 @@ def _regime_enable_decision(summary: pd.DataFrame) -> Tuple[bool, Dict[str, Any]
     if best_pass_decision:
         return True, best_pass_decision
     return False, best_any_decision
+
+
+def _sigmoid(x: np.ndarray | float) -> np.ndarray | float:
+    arr = np.asarray(x, dtype=np.float64)
+    out = 1.0 / (1.0 + np.exp(-np.clip(arr, -50.0, 50.0)))
+    return float(out) if np.ndim(x) == 0 else out
+
+
+def _logit(p: np.ndarray | float) -> np.ndarray | float:
+    arr = np.clip(np.asarray(p, dtype=np.float64), 1e-6, 1.0 - 1e-6)
+    out = np.log(arr / (1.0 - arr))
+    return float(out) if np.ndim(p) == 0 else out
+
+
+def _zscore(values: Sequence[float]) -> np.ndarray:
+    x = np.asarray(values, dtype=np.float64)
+    finite = np.isfinite(x)
+    out = np.zeros(len(x), dtype=np.float64)
+    if finite.any():
+        med = float(np.nanmedian(x[finite]))
+        std = float(np.nanstd(x[finite]))
+        out[finite] = (x[finite] - med) / (std if std > EPS else 1.0)
+    return out
+
+
+def compute_hit_rate_surprise(
+    net_pnl_per_trade: Sequence[float],
+    meta_pred_calibrated: Sequence[float],
+    *,
+    eps: float = EPS,
+) -> Dict[str, float]:
+    pnl = np.asarray(net_pnl_per_trade, dtype=np.float64)
+    pred = np.clip(np.asarray(meta_pred_calibrated, dtype=np.float64), 0.0, 1.0)
+    mask = np.isfinite(pnl) & np.isfinite(pred)
+    pnl = pnl[mask]
+    pred = pred[mask]
+    trade_count = int(len(pnl))
+    wins = int(np.sum(pnl > 0.0))
+    expected_wins = float(np.sum(pred))
+    variance = float(np.sum(pred * (1.0 - pred)))
+    return {
+        "wins": wins,
+        "expected_wins": expected_wins,
+        "variance": variance,
+        "trade_count": trade_count,
+        "expected_hit_rate": expected_wins / max(trade_count, 1),
+        "hit_rate_surprise_z": (wins - expected_wins) / math.sqrt(variance + eps),
+    }
+
+
+def _resolve_time_col(df: pd.DataFrame, candidates: Sequence[str]) -> Optional[str]:
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
+
+
+def _point_in_time_rolling(
+    df: pd.DataFrame,
+    value_col: str,
+    anchor_dates: pd.DatetimeIndex,
+    window: str,
+    *,
+    group_col: Optional[str] = None,
+    agg: str = "mean",
+    abs_value: bool = False,
+    higher_worse_depth_risk: bool = False,
+) -> np.ndarray:
+    if value_col not in df.columns or "_ts" not in df.columns:
+        return np.full(len(anchor_dates), np.nan, dtype=np.float64)
+    work = df[
+        ["_ts", value_col]
+        + ([group_col] if group_col and group_col in df.columns else [])
+    ].copy()
+    work[value_col] = pd.to_numeric(work[value_col], errors="coerce")
+    if abs_value:
+        work[value_col] = work[value_col].abs()
+    if higher_worse_depth_risk:
+        nonneg = np.maximum(work[value_col].to_numpy(dtype=np.float64), 0.0)
+        work[value_col] = 1.0 / np.sqrt(1.0 + nonneg)
+    out = []
+    delta = pd.Timedelta(window)
+    for anchor in anchor_dates:
+        hist = work[(work["_ts"] < anchor) & (work["_ts"] >= anchor - delta)]
+        vals = hist[value_col].to_numpy(dtype=np.float64)
+        vals = vals[np.isfinite(vals)]
+        if len(vals) == 0:
+            out.append(np.nan)
+        elif agg == "p90":
+            out.append(float(np.nanquantile(vals, 0.90)))
+        elif agg == "max":
+            out.append(float(np.nanmax(vals)))
+        elif agg == "sum":
+            out.append(float(np.nansum(vals)))
+        else:
+            out.append(float(np.nanmean(vals)))
+    return np.asarray(out, dtype=np.float64)
+
+
+def _prepare_trade_frame(
+    trades: pd.DataFrame,
+    *,
+    timestamp_col: Optional[str],
+    net_pnl_col: str,
+    wallet_return_col: Optional[str],
+    meta_pred_col: str,
+    symbol_col: str,
+    strategy_id: Optional[str],
+) -> pd.DataFrame:
+    tcol = timestamp_col or _resolve_time_col(
+        trades, ("timestamp", "entry_time", "exit_time", "date")
+    )
+    if tcol is None:
+        raise ValueError(
+            "trades must contain a timestamp/entry_time/exit_time/date column"
+        )
+    df = trades.copy()
+    df["_ts"] = pd.to_datetime(df[tcol], utc=True, errors="coerce")
+    df = df[df["_ts"].notna()].sort_values("_ts").reset_index(drop=True)
+    if symbol_col not in df.columns:
+        df[symbol_col] = "all"
+    if "strategy_id" not in df.columns:
+        df["strategy_id"] = str(strategy_id or "strategy")
+    pnl_col = wallet_return_col or (
+        "wallet_return" if "wallet_return" in df.columns else net_pnl_col
+    )
+    if pnl_col not in df.columns:
+        raise ValueError(f"missing pnl column {pnl_col!r}")
+    df["_wallet_pnl"] = pd.to_numeric(df[pnl_col], errors="coerce").fillna(0.0)
+    df["_net_pnl"] = pd.to_numeric(
+        df.get(net_pnl_col, df["_wallet_pnl"]), errors="coerce"
+    ).fillna(0.0)
+    df["_meta_p"] = np.clip(
+        pd.to_numeric(df.get(meta_pred_col, 0.5), errors="coerce").fillna(0.5), 0.0, 1.0
+    )
+    df["_symbol"] = df[symbol_col].astype(str)
+    df["_strategy_id"] = df["strategy_id"].astype(str)
+    return df
+
+
+def _worst_day_loss(rets: np.ndarray, timestamps: Optional[np.ndarray]) -> float:
+    return _worst_period_loss(rets, timestamps, "D")
+
+
+def compute_bad_regime_label(
+    *,
+    future_horizon_wallet_pnl: float,
+    future_horizon_maxDD: float,
+    future_horizon_hit_rate_surprise_z: float,
+    horizon_days: int,
+    dd_thresholds: Optional[Dict[int, float]] = None,
+) -> bool:
+    dd_thresholds = dd_thresholds or {3: 0.05, 5: 0.08}
+    threshold = float(dd_thresholds.get(int(horizon_days), 0.05))
+    return bool(
+        future_horizon_wallet_pnl < 0.0
+        or future_horizon_maxDD > threshold
+        or future_horizon_hit_rate_surprise_z < -1.0
+    )
+
+
+def add_consolidated_ebm_regime_features(
+    frame: pd.DataFrame,
+    timestamps: Optional[Sequence[Any]] = None,
+    *,
+    symbols: Optional[Sequence[Any]] = None,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """Create higher-is-worse asset and global EBM aggregates point-in-time."""
+    out = frame.copy()
+    n = len(out)
+    ts = pd.to_datetime(
+        np.asarray(timestamps)[:n]
+        if timestamps is not None and len(timestamps) >= n
+        else out.index,
+        utc=True,
+        errors="coerce",
+    )
+    out["_ts"] = ts
+    if symbols is not None and len(symbols) >= n:
+        out["_symbol"] = np.asarray(symbols).astype(str)[:n]
+    elif "symbol" in out.columns:
+        out["_symbol"] = out["symbol"].astype(str)
+    else:
+        out["_symbol"] = "all"
+    mapping: Dict[str, Any] = {}
+
+    def available(cols: Sequence[str]) -> List[str]:
+        return [c for c in cols if c in out.columns]
+
+    primitive_specs = {
+        "ebm_unc_dispersion": available(
+            [
+                "ebm_unc_logodds_var",
+                "ebm_unc_pi_width",
+                "ebm_unc_entropy_mean",
+                "ebm_unc_entropy_std",
+                "ebm_unc_gap50rel",
+                "ebm_unc_support_adjusted_uncertainty",
+            ]
+        ),
+        "ebm_conflict": available(["ebm_unc_conflict_norm"]),
+        "ebm_brittleness": available(
+            ["ebm_unc_concentration", "ebm_unc_interaction_share"]
+        ),
+    }
+    primitives: Dict[str, np.ndarray] = {}
+    for name, cols in primitive_specs.items():
+        if cols:
+            primitives[name] = np.nanmean(
+                np.column_stack([pd.to_numeric(out[c], errors="coerce") for c in cols]),
+                axis=1,
+            )
+            mapping[name] = cols
+    if "ebm_unc_friction_weight" in out.columns:
+        friction_risk = 1.0 - pd.to_numeric(
+            out["ebm_unc_friction_weight"], errors="coerce"
+        ).to_numpy(dtype=np.float64)
+        primitives["ebm_conflict"] = np.nanmean(
+            np.column_stack(
+                [primitives.get("ebm_conflict", friction_risk), friction_risk]
+            ),
+            axis=1,
+        )
+        mapping["ebm_conflict"] = mapping.get("ebm_conflict", []) + [
+            "1.0-ebm_unc_friction_weight"
+        ]
+    support_cols = available(
+        ["ebm_unc_support_min", "ebm_unc_support_mean", "ebm_unc_proximity_min"]
+    )
+    if support_cols:
+        support_raw = np.nanmin(
+            np.column_stack(
+                [pd.to_numeric(out[c], errors="coerce") for c in support_cols]
+            ),
+            axis=1,
+        )
+        primitives["ebm_support_risk"] = 1.0 / np.sqrt(
+            1.0 + np.maximum(support_raw, 0.0)
+        )
+        mapping["ebm_support_risk"] = [f"risk({c})" for c in support_cols]
+
+    tmp = pd.DataFrame({"_ts": ts, "_symbol": out["_symbol"]})
+    for family, values in primitives.items():
+        tmp[family] = values
+        for days in (3, 7, 15):
+            window = f"{days}D"
+            asset_mean = []
+            global_mean = []
+            for sym, anchor in zip(tmp["_symbol"].to_numpy(), pd.DatetimeIndex(ts)):
+                hist = tmp[
+                    (tmp["_ts"] < anchor)
+                    & (tmp["_ts"] >= anchor - pd.Timedelta(window))
+                ]
+                global_vals = hist[family].to_numpy(dtype=np.float64)
+                asset_vals = hist.loc[
+                    hist["_symbol"].astype(str) == str(sym), family
+                ].to_numpy(dtype=np.float64)
+                global_mean.append(
+                    float(np.nanmean(global_vals[np.isfinite(global_vals)]))
+                    if np.isfinite(global_vals).any()
+                    else np.nan
+                )
+                asset_mean.append(
+                    float(np.nanmean(asset_vals[np.isfinite(asset_vals)]))
+                    if np.isfinite(asset_vals).any()
+                    else np.nan
+                )
+            out[f"asset_{family}_mean_{days}d"] = asset_mean
+            out[f"global_{family}_mean_{days}d"] = global_mean
+        if family == "ebm_unc_dispersion":
+            out[f"asset_{family}_trend_3d_to_15d"] = out[
+                f"asset_{family}_mean_3d"
+            ] / (np.abs(out[f"asset_{family}_mean_15d"]) + EPS)
+    return out.drop(columns=["_ts", "_symbol"], errors="ignore"), mapping
+
+
+def build_rolling_bad_regime_panel(
+    trades: pd.DataFrame,
+    feature_frame: Optional[pd.DataFrame] = None,
+    *,
+    strategy_id: Optional[str] = None,
+    timestamp_col: Optional[str] = None,
+    net_pnl_col: str = "net_pnl",
+    wallet_return_col: Optional[str] = None,
+    meta_pred_col: str = "meta_pred_calibrated",
+    symbol_col: str = "symbol",
+    anchor_freq: str = "D",
+    horizons_days: Sequence[int] = ROLLING_REGIME_HORIZONS_DAYS,
+    horizon_dd_thresholds: Optional[Dict[int, float]] = None,
+    min_future_trades: int = 1,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """Build strategy_id × symbol × anchor_date × horizon bad-regime panel."""
+    if trades.empty:
+        return pd.DataFrame(), {"missing_features": [], "feature_mapping": {}}
+    df = _prepare_trade_frame(
+        trades,
+        timestamp_col=timestamp_col,
+        net_pnl_col=net_pnl_col,
+        wallet_return_col=wallet_return_col,
+        meta_pred_col=meta_pred_col,
+        symbol_col=symbol_col,
+        strategy_id=strategy_id,
+    )
+    start = df["_ts"].min().floor("D") + pd.Timedelta(days=30)
+    end = df["_ts"].max().floor("D") - pd.Timedelta(days=max(horizons_days))
+    anchors = (
+        pd.date_range(start, end, freq=anchor_freq, tz="UTC")
+        if end >= start
+        else pd.DatetimeIndex([df["_ts"].min().floor("D")])
+    )
+
+    base_source = feature_frame.copy() if feature_frame is not None else df.copy()
+    if "_ts" not in base_source.columns:
+        if timestamp_col and timestamp_col in base_source.columns:
+            base_source["_ts"] = pd.to_datetime(
+                base_source[timestamp_col], utc=True, errors="coerce"
+            )
+        else:
+            base_source["_ts"] = pd.to_datetime(
+                base_source.index, utc=True, errors="coerce"
+            )
+    if symbol_col not in base_source.columns:
+        base_source[symbol_col] = base_source.get("_symbol", "all")
+    src_ts = base_source["_ts"].copy()
+    base_source, ebm_mapping = add_consolidated_ebm_regime_features(
+        base_source, src_ts, symbols=base_source[symbol_col]
+    )
+    base_source["_ts"] = pd.to_datetime(src_ts, utc=True, errors="coerce")
+    base_source["_symbol"] = base_source[symbol_col].astype(str)
+
+    rows: List[Dict[str, Any]] = []
+    keys = sorted(set(zip(df["_strategy_id"], df["_symbol"])))
+    for sid, sym in keys:
+        sdf = df[(df["_strategy_id"] == sid) & (df["_symbol"] == sym)]
+        for anchor in anchors:
+            hist = sdf[sdf["_ts"] < anchor]
+            base_row: Dict[str, Any] = {
+                "strategy_id": sid,
+                "symbol": sym,
+                "anchor_date": anchor,
+            }
+            for days in (1, 3, 5, 7, 15, 30):
+                h = hist[hist["_ts"] >= anchor - pd.Timedelta(days=days)]
+                if days in (1, 3, 5, 7, 15, 30):
+                    base_row[f"prior_{days}d_strategy_asset_pnl"] = float(
+                        np.nansum(h["_wallet_pnl"])
+                    )
+                if days in (3, 5, 7, 15, 30):
+                    base_row[f"prior_{days}d_strategy_asset_maxDD"] = _drawdown(
+                        h["_wallet_pnl"].to_numpy(dtype=np.float64)
+                    )
+                    base_row[f"prior_{days}d_strategy_asset_trade_count"] = int(len(h))
+                    surprise = compute_hit_rate_surprise(h["_net_pnl"], h["_meta_p"])
+                    base_row[f"prior_{days}d_expected_hit_rate"] = surprise[
+                        "expected_hit_rate"
+                    ]
+                    base_row[f"prior_{days}d_hit_rate_surprise_z"] = surprise[
+                        "hit_rate_surprise_z"
+                    ]
+            hist_features = base_source[
+                (base_source["_ts"] < anchor)
+                & (base_source["_symbol"].astype(str) == str(sym))
+            ].tail(1)
+            if hist_features.empty:
+                hist_features = base_source[base_source["_ts"] < anchor].tail(1)
+            if not hist_features.empty:
+                for col in hist_features.columns:
+                    if (
+                        col.startswith("future_")
+                        or col.startswith("target_")
+                        or col in {"_ts", "_symbol"}
+                    ):
+                        continue
+                    val = hist_features.iloc[-1][col]
+                    if np.isscalar(val) and not isinstance(val, str):
+                        base_row[col] = val
+            side_hist = hist.tail(1)
+            if not side_hist.empty:
+                side_val = float(
+                    side_hist.iloc[-1].get(
+                        "trade_side", side_hist.iloc[-1].get("side_sign", 0.0)
+                    )
+                    or 0.0
+                )
+                funding_z_val = base_row.get("asset_funding_z", np.nan)
+                if np.isfinite(funding_z_val):
+                    base_row["asset_funding_side_alignment"] = side_val * float(
+                        funding_z_val
+                    )
+
+            for horizon in horizons_days:
+                fut = sdf[
+                    (sdf["_ts"] >= anchor)
+                    & (sdf["_ts"] < anchor + pd.Timedelta(days=int(horizon)))
+                ]
+                wallet = fut["_wallet_pnl"].to_numpy(dtype=np.float64)
+                net = fut["_net_pnl"].to_numpy(dtype=np.float64)
+                future_surprise = compute_hit_rate_surprise(
+                    net, fut["_meta_p"] if len(fut) else []
+                )
+                maxdd = _drawdown(wallet)
+                worst_day = _worst_day_loss(
+                    wallet, fut["_ts"].to_numpy() if len(fut) else None
+                )
+                std = float(np.nanstd(wallet if len(wallet) else [0.0]))
+                wallet_pnl = float(np.nansum(wallet))
+                row = dict(base_row)
+                future_trade_count = int(len(fut))
+                row.update(
+                    {
+                        "horizon_days": int(horizon),
+                        "future_horizon_trade_count": future_trade_count,
+                        "future_horizon_wallet_pnl": wallet_pnl,
+                        "future_horizon_net_pnl": float(np.nansum(net)),
+                        "future_horizon_maxDD": maxdd,
+                        "future_horizon_return_std": std,
+                        "future_horizon_worst_day_loss": worst_day,
+                        "future_horizon_hit_rate_surprise_z": future_surprise[
+                            "hit_rate_surprise_z"
+                        ],
+                        "future_horizon_badness": -wallet_pnl
+                        + 2.0 * maxdd
+                        + worst_day
+                        + 0.5 * std,
+                    }
+                )
+                row["bad_regime_label"] = (
+                    np.nan
+                    if future_trade_count < int(min_future_trades)
+                    else compute_bad_regime_label(
+                        future_horizon_wallet_pnl=wallet_pnl,
+                        future_horizon_maxDD=maxdd,
+                        future_horizon_hit_rate_surprise_z=row[
+                            "future_horizon_hit_rate_surprise_z"
+                        ],
+                        horizon_days=int(horizon),
+                        dd_thresholds=horizon_dd_thresholds,
+                    )
+                )
+                rows.append(row)
+    panel = pd.DataFrame(rows)
+    if panel.empty:
+        return panel, {
+            "missing_features": list(REGIME_FEATURE_ORDER),
+            "feature_mapping": {},
+        }
+    regime_features, mapping = build_regime_feature_frame(
+        panel, panel["anchor_date"], panel["symbol"]
+    )
+    for c in regime_features.columns:
+        panel[c] = regime_features[c].values
+    missing_features = [f for f in REGIME_FEATURE_ORDER if f not in panel.columns]
+    neutral_missing_cols: Dict[str, float] = {}
+    for f in missing_features:
+        if f in set(
+            GLOBAL_REGIME_FEATURES
+            + ASSET_REGIME_FEATURES
+            + STRATEGY_ASSET_REGIME_FEATURES
+            + EBM_CONSOLIDATED_REGIME_FEATURES
+        ):
+            neutral_missing_cols[f] = 0.0
+            neutral_missing_cols[f"{f}_missing"] = 1.0
+    if neutral_missing_cols:
+        panel = pd.concat(
+            [panel, pd.DataFrame(neutral_missing_cols, index=panel.index)], axis=1
+        )
+    return panel, {
+        "schema_version": "rolling_bad_regime_v2",
+        "panel_schema": list(panel.columns),
+        "feature_columns": [c for c in REGIME_FEATURE_ORDER if c in panel.columns],
+        "global_feature_columns": [
+            c for c in GLOBAL_REGIME_FEATURES if c in panel.columns
+        ],
+        "asset_feature_columns": [
+            c
+            for c in ASSET_REGIME_FEATURES + STRATEGY_ASSET_REGIME_FEATURES
+            if c in panel.columns
+        ],
+        "feature_mapping": {**mapping, "ebm_consolidated": ebm_mapping},
+        "missing_features": missing_features,
+        "no_leakage_statement": "all rolling realised features and feature_frame joins use timestamp strictly before anchor_date; labels use [anchor_date, anchor_date+horizon_days).",
+        "min_future_trades": int(min_future_trades),
+        "no_trade_label_policy": "bad_regime_label is NaN/excluded when future_horizon_trade_count < min_future_trades",
+        "horizon_dd_threshold_source": "configured defaults or caller supplied horizon_dd_thresholds",
+    }
+
+
+def build_monthly_regime_panel(
+    *args: Any, **kwargs: Any
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """Backward-compatible alias for the rolling bad-regime panel builder."""
+    return build_rolling_bad_regime_panel(*args, **kwargs)
+
+
+def regime_acceptance_objective(
+    candidate: Dict[str, float],
+    baseline: Dict[str, float],
+    *,
+    weights: Optional[Dict[str, float]] = None,
+    clips: Optional[Dict[str, Tuple[float, float]]] = None,
+    eps: float = EPS,
+) -> Dict[str, Any]:
+    weights = weights or REGIME_OBJECTIVE_WEIGHTS
+    clips = clips or REGIME_RATIO_CLIPS
+    diagnostics: Dict[str, Any] = {"valid": True, "fallback_reason": ""}
+    b_net = float(baseline.get("net_pnl", np.nan))
+    c_net = float(candidate.get("net_pnl", np.nan))
+    if not np.isfinite(b_net) or b_net <= 0:
+        diagnostics.update(
+            {"valid": False, "fallback_reason": "baseline_net_pnl_non_positive"}
+        )
+    ratios = {"pnl_ratio": c_net / b_net if b_net > eps else np.nan}
+    b_sort = float(baseline.get("sortino", np.nan))
+    c_sort = float(candidate.get("sortino", np.nan))
+    if not np.isfinite(b_sort) or b_sort <= eps:
+        ratios["sortino_ratio"] = 1.0 + np.clip((c_sort - max(b_sort, 0.0)), -1.0, 1.0)
+        diagnostics["sortino_denominator_handling"] = "signed_delta_floor"
+    else:
+        ratios["sortino_ratio"] = c_sort / b_sort
+    b_dd = float(baseline.get("maxDD", baseline.get("max_drawdown", np.nan)))
+    c_dd = float(candidate.get("maxDD", candidate.get("max_drawdown", np.nan)))
+    ratios["dd_ratio"] = (
+        1.0 if b_dd <= eps else (clips["dd_ratio"][1] if c_dd <= eps else b_dd / c_dd)
+    )
+    b_std = float(baseline.get("period_std", baseline.get("return_std", np.nan)))
+    c_std = float(candidate.get("period_std", candidate.get("return_std", np.nan)))
+    ratios["period_std_ratio"] = (
+        1.0
+        if b_std <= eps
+        else (clips["period_std_ratio"][1] if c_std <= eps else b_std / c_std)
+    )
+    b_wl = abs(
+        float(baseline.get("worst_loss", baseline.get("worst_day_loss", np.nan)))
+    )
+    c_wl = abs(
+        float(candidate.get("worst_loss", candidate.get("worst_day_loss", np.nan)))
+    )
+    ratios["worst_loss_ratio"] = (
+        1.0
+        if b_wl <= eps
+        else (clips["worst_loss_ratio"][1] if c_wl <= eps else b_wl / c_wl)
+    )
+    log_objective = 0.0
+    components: Dict[str, float] = {}
+    for k, w in weights.items():
+        lo, hi = clips[k]
+        r = float(ratios.get(k, np.nan))
+        clipped = float(np.clip(r if np.isfinite(r) and r > 0 else lo, lo, hi))
+        components[k] = clipped
+        log_objective += float(w) * math.log(max(clipped, eps))
+    diagnostics.update(
+        {
+            "ratios": ratios,
+            "clipped_components": components,
+            "log_objective": log_objective,
+            "objective": float(math.exp(log_objective)),
+        }
+    )
+    return diagnostics
+
+
+def _global_rank(values: Sequence[float]) -> np.ndarray:
+    return _rank_pct(np.asarray(values, dtype=np.float64))
+
+
+def _mean_zscore(values: Sequence[float]) -> np.ndarray:
+    x = np.asarray(values, dtype=np.float64)
+    finite = np.isfinite(x)
+    out = np.zeros(len(x), dtype=np.float64)
+    if finite.any():
+        mean = float(np.nanmean(x[finite]))
+        std = float(np.nanstd(x[finite]))
+        out[finite] = (x[finite] - mean) / (std if std > EPS else 1.0)
+    return out
+
+
+def combine_meta_bad_regime_scores(
+    meta_p_calibrated: Sequence[float],
+    p_bad_regime_global: Sequence[float],
+    p_bad_regime_asset: Sequence[float],
+    *,
+    params: Optional[Dict[str, float]] = None,
+) -> Dict[str, np.ndarray]:
+    params = params or {}
+    meta = np.clip(np.asarray(meta_p_calibrated, dtype=np.float64), 1e-6, 1.0 - 1e-6)
+    p_global = np.clip(
+        np.asarray(p_bad_regime_global, dtype=np.float64), 1e-6, 1.0 - 1e-6
+    )
+    p_asset = np.clip(
+        np.asarray(p_bad_regime_asset, dtype=np.float64), 1e-6, 1.0 - 1e-6
+    )
+
+    global_weight = max(float(params.get("global_weight", 0.6)), 0.0)
+    asset_weight = max(float(params.get("asset_weight", 0.4)), 0.0)
+    weight_sum = global_weight + asset_weight
+    if weight_sum <= EPS:
+        w_global = 0.0
+        w_asset = 0.0
+    else:
+        w_global = global_weight / weight_sum
+        w_asset = asset_weight / weight_sum
+
+    gamma_global = max(float(params.get("gamma_global", 1.0)), EPS)
+    gamma_asset = max(float(params.get("gamma_asset", 1.0)), EPS)
+    w_interaction = max(float(params.get("interaction_weight", 0.0)), 0.0)
+
+    meta_logit = _logit(meta)
+    g_raw = _mean_zscore(_logit(p_global))
+    a_raw = _mean_zscore(_logit(p_asset))
+    g = np.maximum(g_raw, 0.0)
+    a = np.maximum(a_raw, 0.0)
+    bad_offset = (
+        w_global * np.power(g, gamma_global)
+        + w_asset * np.power(a, gamma_asset)
+        + w_interaction * g * a
+    )
+    raw = meta_logit - float(params.get("lambda_regime", 1.0)) * bad_offset
+    score = _sigmoid(raw)
+    rank = _global_rank(score)
+    return {
+        "final_score_raw": np.asarray(raw, dtype=np.float64),
+        "final_score": np.asarray(score, dtype=np.float64),
+        "final_global_rank": rank,
+        "bad_regime_offset": np.asarray(bad_offset, dtype=np.float64),
+        "global_bad_regime_zscore_raw": np.asarray(g_raw, dtype=np.float64),
+        "asset_bad_regime_zscore_raw": np.asarray(a_raw, dtype=np.float64),
+        "global_bad_regime_positive_zscore": np.asarray(g, dtype=np.float64),
+        "asset_bad_regime_positive_zscore": np.asarray(a, dtype=np.float64),
+        "score_delta_from_regime_adjustment": np.asarray(
+            score - meta, dtype=np.float64
+        ),
+    }
+
+
+def combine_meta_regime_scores(
+    meta_p_calibrated: Sequence[float],
+    regime_utility_calibrated: Sequence[float],
+    regime_logit_offset: Sequence[float],
+    *,
+    family: str = "logit_offset",
+    params: Optional[Dict[str, float]] = None,
+) -> Dict[str, np.ndarray]:
+    """Compatibility wrapper: treats legacy regime input as bad-regime probability."""
+    return combine_meta_bad_regime_scores(
+        meta_p_calibrated,
+        regime_utility_calibrated,
+        regime_logit_offset,
+        params={"global_weight": 1.0, "asset_weight": 0.0, **(params or {})},
+    )
+
+
+def select_by_final_rank(
+    scores: Sequence[float], *, top_frac: float = 0.30
+) -> np.ndarray:
+    """Threshold/sizing helper: intentionally uses final global rank."""
+    rank = _global_rank(np.asarray(scores, dtype=np.float64))
+    return rank >= 1.0 - float(top_frac)
+
+
+def _fit_lgbm_classifier(
+    x_train: pd.DataFrame,
+    y_train: np.ndarray,
+    x_val: Optional[pd.DataFrame] = None,
+    y_val: Optional[np.ndarray] = None,
+    params: Optional[Dict[str, Any]] = None,
+    sample_weight: Optional[np.ndarray] = None,
+) -> Any:
+    params = {
+        k: v
+        for k, v in {**ROLLING_REGIME_LGBM_PARAMS, **(params or {})}.items()
+        if not str(k).startswith("_")
+    }
+    if len(np.unique(y_train.astype(int))) < 2:
+        return float(np.nanmean(y_train))
+    if LGBMClassifier is None:
+        from sklearn.linear_model import LogisticRegression
+
+        model = LogisticRegression(
+            max_iter=1000, random_state=42, class_weight="balanced"
+        )
+        model.fit(x_train, y_train.astype(int), sample_weight=sample_weight)
+        return model
+    model = LGBMClassifier(**params)
+    fit_kwargs: Dict[str, Any] = {}
+    if (
+        x_val is not None
+        and y_val is not None
+        and len(x_val) > 0
+        and len(np.unique(y_val.astype(int))) > 1
+        and early_stopping is not None
+    ):
+        fit_kwargs["eval_set"] = [(x_val, y_val.astype(int))]
+        fit_kwargs["callbacks"] = [early_stopping(stopping_rounds=25, verbose=False)]
+    if sample_weight is not None:
+        fit_kwargs["sample_weight"] = sample_weight
+    model.fit(x_train, y_train.astype(int), **fit_kwargs)
+    return model
+
+
+def _predict_classifier(model: Any, x: pd.DataFrame) -> np.ndarray:
+    if isinstance(model, (float, int, np.floating)):
+        return np.full(len(x), float(model), dtype=np.float64)
+    if hasattr(model, "predict_proba"):
+        proba = model.predict_proba(x)
+        if np.ndim(proba) == 2 and proba.shape[1] > 1:
+            return np.asarray(proba[:, 1], dtype=np.float64)
+    return np.clip(np.asarray(model.predict(x), dtype=np.float64), 0.0, 1.0)
+
+
+def _tune_lgbm_classifier_params(
+    frame: pd.DataFrame,
+    features: Sequence[str],
+    label_col: str,
+    time_col: str,
+    *,
+    optuna_trials: int,
+    no_improvement_trials: int,
+) -> Dict[str, Any]:
+    """Small walk-forward Optuna search for the bad-regime classifier."""
+    base = dict(ROLLING_REGIME_LGBM_PARAMS)
+    if (
+        optuna is None
+        or LGBMClassifier is None
+        or optuna_trials <= 0
+        or len(frame) < 40
+    ):
+        return base
+    y_all = frame[label_col].astype(int).to_numpy()
+    if len(np.unique(y_all)) < 2:
+        return base
+    splits = _walk_forward_splits(frame[time_col].to_numpy(), len(frame), n_splits=4)
+    if not splits:
+        return base
+    study = optuna.create_study(
+        direction="minimize",
+        sampler=TPESampler(seed=42) if TPESampler is not None else None,
+        pruner=MedianPruner(n_startup_trials=8, n_min_trials=4)
+        if MedianPruner is not None
+        else None,
+    )
+    best_seen = {"trial": -1, "value": np.inf}
+
+    def objective(trial: Any) -> float:
+        params = {
+            **base,
+            "max_depth": trial.suggest_int("max_depth", 2, 3),
+            "num_leaves": trial.suggest_int("num_leaves", 4, 8),
+            "n_estimators": 50,
+            "min_child_samples": trial.suggest_int("min_child_samples", 50, 500),
+            "reg_alpha": trial.suggest_float("reg_alpha", 0.0, 4.0),
+            "reg_lambda": trial.suggest_float("reg_lambda", 5.0, 40.0),
+            "learning_rate": trial.suggest_float("learning_rate", 0.03, 0.08),
+            "subsample": trial.suggest_float("subsample", 0.6, 0.9),
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 0.9),
+        }
+        losses: List[float] = []
+        for tr, te in splits:
+            y_tr = y_all[tr]
+            y_te = y_all[te]
+            if len(np.unique(y_tr)) < 2 or len(np.unique(y_te)) < 2:
+                continue
+            model = _fit_lgbm_classifier(
+                frame.iloc[tr][list(features)],
+                y_tr,
+                frame.iloc[te][list(features)],
+                y_te,
+                params,
+                sample_weight=frame.iloc[tr]
+                .get("label_weight", pd.Series(1.0, index=frame.index[tr]))
+                .to_numpy(dtype=np.float64),
+            )
+            pred = np.clip(
+                _predict_classifier(model, frame.iloc[te][list(features)]),
+                1e-6,
+                1 - 1e-6,
+            )
+            losses.append(
+                float(-np.mean(y_te * np.log(pred) + (1 - y_te) * np.log(1 - pred)))
+            )
+        val = float(np.nanmean(losses)) if losses else float("inf")
+        if val < best_seen["value"]:
+            best_seen.update({"trial": int(trial.number), "value": val})
+        elif int(trial.number) - int(best_seen["trial"]) >= int(no_improvement_trials):
+            study.stop()
+        return val
+
+    study.optimize(
+        objective,
+        n_trials=int(optuna_trials),
+        gc_after_trial=True,
+        show_progress_bar=False,
+    )
+    if study.best_trial is not None:
+        base.update(study.best_trial.params)
+        base["n_estimators"] = 50
+        base["_optuna_best_trial"] = {
+            "number": int(study.best_trial.number),
+            "value": float(study.best_trial.value),
+            "params": _jsonify(study.best_trial.params),
+        }
+    return base
+
+
+def _selection_metrics(
+    scores: np.ndarray,
+    returns: np.ndarray,
+    timestamps: Optional[Sequence[Any]] = None,
+    *,
+    top_frac: float = 0.30,
+) -> Dict[str, float]:
+    mask = _top_mask(scores, top_frac)
+    r = np.asarray(returns, dtype=np.float64)[mask]
+    ts = (
+        np.asarray(timestamps)[mask]
+        if timestamps is not None and len(timestamps) == len(scores)
+        else None
+    )
+    r = r[np.isfinite(r)]
+    if len(r) == 0:
+        r = np.array([0.0])
+        ts = None
+    downside = r[r < 0]
+    return {
+        "net_pnl": float(np.nansum(r)),
+        "sortino": float(
+            np.nanmean(r) / ((np.nanstd(downside) if len(downside) else 0.0) + EPS)
+        ),
+        "maxDD": _drawdown(r),
+        "period_std": float(np.nanstd(r)),
+        "worst_day_loss": _worst_day_loss(r, ts),
+        "worst_loss": _worst_day_loss(r, ts),
+    }
+
+
+def compare_regime_combination_families(
+    panel: pd.DataFrame,
+    *,
+    meta_score_col: str = "meta_pred_calibrated",
+    return_col: str = "future_horizon_wallet_pnl",
+) -> Dict[str, Any]:
+    if meta_score_col in panel.columns:
+        meta_series = pd.to_numeric(panel[meta_score_col], errors="coerce").fillna(0.5)
+    else:
+        meta_series = pd.Series(np.full(len(panel), 0.5), index=panel.index)
+    meta = np.clip(meta_series.to_numpy(dtype=np.float64), 1e-6, 1 - 1e-6)
+    returns = (
+        pd.to_numeric(panel[return_col], errors="coerce")
+        .fillna(0.0)
+        .to_numpy(dtype=np.float64)
+    )
+    if "anchor_date" in panel.columns:
+        timestamps = panel["anchor_date"].to_numpy()
+    elif "timestamp" in panel.columns:
+        timestamps = panel["timestamp"].to_numpy()
+    else:
+        timestamps = None
+    p_global = (
+        pd.to_numeric(
+            panel.get(
+                "combined_global_bad_regime_oof",
+                panel.get("combined_global_bad_regime_score", 0.5),
+            ),
+            errors="coerce",
+        )
+        .fillna(0.5)
+        .to_numpy(dtype=np.float64)
+    )
+    p_asset = (
+        pd.to_numeric(
+            panel.get(
+                "combined_asset_bad_regime_oof",
+                panel.get("combined_asset_bad_regime_score", 0.5),
+            ),
+            errors="coerce",
+        )
+        .fillna(0.5)
+        .to_numpy(dtype=np.float64)
+    )
+    baseline_metrics = _selection_metrics(meta, returns, timestamps, top_frac=0.30)
+    rows: List[Dict[str, Any]] = []
+    best = {"objective": -np.inf, "params": {}}
+    grid = REGIME_ADAPTOR_COMBINATION_GRID
+    for wg in grid["global_weight"]:
+        for wa in grid["asset_weight"]:
+            if float(wg) + float(wa) <= 0.0:
+                continue
+            for gamma_global in grid.get("gamma_global", [1.0]):
+                for gamma_asset in grid.get("gamma_asset", [1.0]):
+                    for lam in grid["lambda_regime"]:
+                        params = {
+                            "global_weight": float(wg),
+                            "asset_weight": float(wa),
+                            "lambda_regime": float(lam),
+                            "gamma_global": float(gamma_global),
+                            "gamma_asset": float(gamma_asset),
+                        }
+                        combined = combine_meta_bad_regime_scores(
+                            meta, p_global, p_asset, params=params
+                        )
+                        metrics = _selection_metrics(
+                            combined["final_score"],
+                            returns,
+                            timestamps,
+                            top_frac=0.30,
+                        )
+                        obj = regime_acceptance_objective(metrics, baseline_metrics)
+                        row = {"params": params, "metrics": metrics, **obj}
+                        rows.append(row)
+                        if (
+                            obj["valid"]
+                            and metrics["net_pnl"]
+                            >= 0.90 * baseline_metrics["net_pnl"]
+                            and obj["objective"] > best["objective"]
+                        ):
+                            best = {
+                                "objective": obj["objective"],
+                                "params": params,
+                                "metrics": metrics,
+                                "objective_components": obj,
+                            }
+    accepted = bool(best["objective"] > 1.05)
+    return {
+        "baseline_top30_metrics": baseline_metrics,
+        "candidate_top30_metrics": best.get("metrics", {}),
+        "comparison_table": _jsonify(rows),
+        "accepted": accepted,
+        "selected_params": best["params"] if accepted else {},
+        "selected_objective": None
+        if not np.isfinite(best["objective"])
+        else float(best["objective"]),
+        "objective_components": best.get("objective_components", {}),
+    }
+
+
+def join_regime_oof_to_trade_candidates(
+    trade_candidates: pd.DataFrame,
+    wide_oof_panel: pd.DataFrame,
+    *,
+    timestamp_col: str = "timestamp",
+    strategy_col: str = "strategy_id",
+    symbol_col: str = "symbol",
+) -> pd.DataFrame:
+    """Point-in-time asof join of wide OOF bad-regime scores onto trade candidates."""
+    if trade_candidates.empty or wide_oof_panel.empty:
+        return trade_candidates.copy()
+    left = trade_candidates.copy()
+    right = wide_oof_panel.copy()
+    left["_ts"] = pd.to_datetime(left[timestamp_col], utc=True, errors="coerce")
+    right["_anchor_ts"] = pd.to_datetime(
+        right["anchor_date"], utc=True, errors="coerce"
+    )
+    out_parts: List[pd.DataFrame] = []
+    for (sid, sym), chunk in left.groupby([strategy_col, symbol_col], sort=False):
+        r = right[
+            (right[strategy_col].astype(str) == str(sid))
+            & (right[symbol_col].astype(str) == str(sym))
+        ]
+        if r.empty:
+            out_parts.append(chunk)
+            continue
+        joined = pd.merge_asof(
+            chunk.sort_values("_ts"),
+            r.sort_values("_anchor_ts"),
+            left_on="_ts",
+            right_on="_anchor_ts",
+            direction="backward",
+            suffixes=("", "_regime"),
+        )
+        out_parts.append(joined)
+    return pd.concat(out_parts, ignore_index=True).drop(
+        columns=["_ts", "_anchor_ts"], errors="ignore"
+    )
+
+
+def compare_regime_on_trade_candidates(
+    trade_candidates: pd.DataFrame,
+    *,
+    meta_score_col: str = "meta_pred_calibrated",
+    return_col: str = "wallet_return",
+    timestamp_col: str = "timestamp",
+) -> Dict[str, Any]:
+    """Trade-candidate top-30 comparison after OOF bad-regime scores are joined."""
+    return compare_regime_combination_families(
+        trade_candidates,
+        meta_score_col=meta_score_col,
+        return_col=return_col,
+    ) | {"evaluation_universe": "trade_candidates"}
+
+
+def fit_rolling_regime_adaptor(
+    panel: pd.DataFrame,
+    *,
+    strategy_id: str = "pooled",
+    model_name: str = "bad_regime_classifier",
+    global_feature_columns: Optional[Sequence[str]] = None,
+    asset_feature_columns: Optional[Sequence[str]] = None,
+    trade_candidate_oof: Optional[pd.DataFrame] = None,
+    optuna_trials: int = 50,
+    no_improvement_trials: int = 25,
+    global_bad_rate_threshold: float = GLOBAL_BAD_RATE_THRESHOLD,
+    asset_bad_rate_threshold: float = ASSET_BAD_RATE_THRESHOLD,
+) -> Dict[str, Any]:
+    """Train walk-forward pooled global/asset bad-regime classifiers."""
+    if panel.empty:
+        return {
+            "schema_version": "rolling_bad_regime_v2",
+            "enabled": False,
+            "reason": "empty_panel",
+        }
+    work = (
+        panel.sort_values(["anchor_date", "strategy_id", "symbol", "horizon_days"])
+        .reset_index(drop=True)
+        .copy()
+    )
+    global_features = [
+        c
+        for c in (global_feature_columns or GLOBAL_REGIME_FEATURES)
+        if c in work.columns
+    ]
+    asset_features = [
+        c
+        for c in (
+            asset_feature_columns
+            or (ASSET_REGIME_FEATURES + STRATEGY_ASSET_REGIME_FEATURES)
+        )
+        if c in work.columns
+    ]
+    for c in set(global_features + asset_features):
+        work[c] = pd.to_numeric(work[c], errors="coerce").fillna(0.0)
+    if (
+        "bad_regime_label" not in work.columns
+        or not global_features
+        or not asset_features
+    ):
+        return {
+            "schema_version": "rolling_bad_regime_v2",
+            "enabled": False,
+            "reason": "insufficient_features_or_label",
+            "global_features": global_features,
+            "asset_features": asset_features,
+        }
+    valid_label = work["bad_regime_label"].notna()
+    no_trade_rows = int((~valid_label).sum())
+    work_trainable = work.loc[valid_label].copy()
+    oof_cols: Dict[str, np.ndarray] = {}
+    split_defs: List[Dict[str, Any]] = []
+    params_by_model: Dict[str, Any] = {}
+    oof_metrics: Dict[str, Any] = {}
+
+    def _metrics(y_true: np.ndarray, pred: np.ndarray) -> Dict[str, float]:
+        mask = np.isfinite(y_true) & np.isfinite(pred)
+        if not mask.any():
+            return {"auc": np.nan, "logloss": np.nan, "brier": np.nan}
+        y = y_true[mask].astype(int)
+        p = np.clip(pred[mask], 1e-6, 1.0 - 1e-6)
+        auc = float(roc_auc_score(y, p)) if len(np.unique(y)) > 1 else np.nan
+        logloss = float(-np.mean(y * np.log(p) + (1 - y) * np.log(1 - p)))
+        brier = float(np.mean((p - y) ** 2))
+        return {"auc": auc, "logloss": logloss, "brier": brier}
+
+    for horizon in ROLLING_REGIME_HORIZONS_DAYS:
+        hwork = work_trainable[
+            work_trainable["horizon_days"].astype(int) == int(horizon)
+        ].copy()
+        if hwork.empty:
+            continue
+        # Global labels are one row per anchor/horizon to avoid contradictory labels
+        # for identical global features.
+        global_df = hwork.groupby("anchor_date", as_index=False).agg(
+            {
+                **{c: "mean" for c in global_features},
+                "bad_regime_label": ["mean", "count"],
+            }
+        )
+        global_df.columns = [
+            "_".join(c).strip("_") if isinstance(c, tuple) else c
+            for c in global_df.columns
+        ]
+        global_df = global_df.rename(
+            columns={
+                **{f"{c}_mean": c for c in global_features},
+                "bad_regime_label_mean": "bad_rate",
+                "bad_regime_label_count": "global_label_weight",
+            }
+        )
+        global_df["label_weight"] = global_df["global_label_weight"].astype(
+            np.float64
+        )
+        global_df["global_bad_regime_label"] = (
+            global_df["bad_rate"] >= float(global_bad_rate_threshold)
+        ).astype(int)
+        # Asset labels are one row per symbol/anchor/horizon, pooled across strategies.
+        asset_df = hwork.groupby(["symbol", "anchor_date"], as_index=False).agg(
+            {
+                **{c: "mean" for c in asset_features},
+                "bad_regime_label": ["mean", "count"],
+            }
+        )
+        asset_df.columns = [
+            "_".join(c).strip("_") if isinstance(c, tuple) else c
+            for c in asset_df.columns
+        ]
+        asset_df = asset_df.rename(
+            columns={
+                **{f"{c}_mean": c for c in asset_features},
+                "bad_regime_label_mean": "bad_rate",
+                "bad_regime_label_count": "asset_label_weight",
+            }
+        )
+        asset_df["label_weight"] = asset_df["asset_label_weight"].astype(np.float64)
+        asset_df["asset_bad_regime_label"] = (
+            asset_df["bad_rate"] >= float(asset_bad_rate_threshold)
+        ).astype(int)
+
+        for scope, model_df, features, label_col, join_cols in (
+            (
+                "global",
+                global_df,
+                global_features,
+                "global_bad_regime_label",
+                ["anchor_date"],
+            ),
+            (
+                "asset",
+                asset_df,
+                asset_features,
+                "asset_bad_regime_label",
+                ["symbol", "anchor_date"],
+            ),
+        ):
+            col = f"p_bad_regime_{scope}_{horizon}d_oof"
+            pred_frame = model_df[join_cols].copy()
+            pred_frame[col] = np.nan
+            best_params = _tune_lgbm_classifier_params(
+                model_df,
+                features,
+                label_col,
+                "anchor_date",
+                optuna_trials=optuna_trials,
+                no_improvement_trials=no_improvement_trials,
+            )
+            splits = _walk_forward_splits(
+                model_df["anchor_date"].to_numpy(), len(model_df), n_splits=5
+            )
+            y = model_df[label_col].astype(int).to_numpy()
+            for tr, te in splits:
+                if len(tr) == 0 or len(te) == 0:
+                    continue
+                model = _fit_lgbm_classifier(
+                    model_df.iloc[tr][list(features)],
+                    y[tr],
+                    model_df.iloc[te][list(features)],
+                    y[te],
+                    best_params,
+                    sample_weight=model_df.iloc[tr]["label_weight"].to_numpy(
+                        dtype=np.float64
+                    )
+                    if "label_weight" in model_df.columns
+                    else None,
+                )
+                pred_frame.loc[pred_frame.index[te], col] = _predict_classifier(
+                    model, model_df.iloc[te][list(features)]
+                )
+                split_defs.append(
+                    {
+                        "horizon_days": int(horizon),
+                        "scope": scope,
+                        "train_start": str(model_df.iloc[tr]["anchor_date"].min()),
+                        "train_end": str(model_df.iloc[tr]["anchor_date"].max()),
+                        "valid_start": str(model_df.iloc[te]["anchor_date"].min()),
+                        "valid_end": str(model_df.iloc[te]["anchor_date"].max()),
+                        "train_rows": int(len(tr)),
+                        "valid_rows": int(len(te)),
+                    }
+                )
+            oof_metrics[f"{scope}_{horizon}d"] = _metrics(
+                y, pred_frame[col].to_numpy(dtype=np.float64)
+            )
+            params_by_model[f"{scope}_{horizon}d"] = best_params
+            if scope == "global":
+                work = work.merge(pred_frame, on=["anchor_date"], how="left")
+            else:
+                work = work.merge(pred_frame, on=["symbol", "anchor_date"], how="left")
+            oof_cols[col] = work[col].to_numpy(dtype=np.float64)
+
+    key_cols = ["strategy_id", "symbol", "anchor_date"]
+    wide = work.groupby(key_cols, as_index=False).agg(
+        {
+            **{
+                c: "first"
+                for c in work.columns
+                if c.startswith("p_bad_regime_") and c.endswith("_oof")
+            },
+            "future_horizon_wallet_pnl": "mean",
+            "future_horizon_trade_count": "sum"
+            if "future_horizon_trade_count" in work.columns
+            else "size",
+            **(
+                {"meta_pred_calibrated": "first"}
+                if "meta_pred_calibrated" in work.columns
+                else {}
+            ),
+            **(
+                {"meta_p_calibrated": "first"}
+                if "meta_p_calibrated" in work.columns
+                else {}
+            ),
+        }
+    )
+    w3, w5 = (
+        ROLLING_REGIME_DEFAULT_BLEND_WEIGHTS[3],
+        ROLLING_REGIME_DEFAULT_BLEND_WEIGHTS[5],
+    )
+    for col in (
+        "p_bad_regime_global_3d_oof",
+        "p_bad_regime_global_5d_oof",
+        "p_bad_regime_asset_3d_oof",
+        "p_bad_regime_asset_5d_oof",
+    ):
+        if col not in wide.columns:
+            wide[col] = 0.5
+    wide["combined_global_bad_regime_oof"] = (
+        w3 * wide["p_bad_regime_global_3d_oof"]
+        + w5 * wide["p_bad_regime_global_5d_oof"]
+    )
+    wide["combined_asset_bad_regime_oof"] = (
+        w3 * wide["p_bad_regime_asset_3d_oof"] + w5 * wide["p_bad_regime_asset_5d_oof"]
+    )
+    anchor_diagnostic_comparison = compare_regime_combination_families(
+        wide,
+        meta_score_col="meta_p_calibrated"
+        if "meta_p_calibrated" in wide.columns
+        else "meta_pred_calibrated",
+    )
+    trade_candidate_eval_available = (
+        trade_candidate_oof is not None and not trade_candidate_oof.empty
+    )
+    if trade_candidate_eval_available:
+        joined_candidates = join_regime_oof_to_trade_candidates(
+            trade_candidate_oof, wide
+        )
+        comparison = compare_regime_on_trade_candidates(
+            joined_candidates,
+            meta_score_col="meta_p_calibrated"
+            if "meta_p_calibrated" in joined_candidates.columns
+            else "meta_pred_calibrated",
+            return_col="wallet_return"
+            if "wallet_return" in joined_candidates.columns
+            else "future_horizon_wallet_pnl",
+        )
+        accepted = bool(comparison.get("accepted", False))
+        selected_params = comparison.get("selected_params", {}) if accepted else {}
+        decision_reason = (
+            "accepted" if accepted else "failed_trade_candidate_oof_acceptance"
+        )
+    else:
+        comparison = anchor_diagnostic_comparison
+        accepted = False
+        selected_params = {}
+        decision_reason = "missing_trade_candidate_oof_evaluation"
+    meta_col = (
+        "meta_pred_calibrated"
+        if "meta_pred_calibrated" in wide.columns
+        else "meta_p_calibrated"
+    )
+    meta_values = (
+        pd.to_numeric(wide[meta_col], errors="coerce")
+        .fillna(0.5)
+        .to_numpy(dtype=np.float64)
+        if meta_col in wide.columns
+        else np.full(len(wide), 0.5, dtype=np.float64)
+    )
+    combined = combine_meta_bad_regime_scores(
+        np.clip(meta_values, 1e-6, 1 - 1e-6),
+        wide["combined_global_bad_regime_oof"],
+        wide["combined_asset_bad_regime_oof"],
+        params=selected_params
+        or {
+            "global_weight": 0.6,
+            "asset_weight": 0.4,
+            "lambda_regime": 1.0,
+            "gamma_global": 1.0,
+            "gamma_asset": 1.0,
+        },
+    )
+    wide["combined_bad_regime_offset_oof"] = combined["bad_regime_offset"]
+    optuna_best_trial_diagnostics = {
+        k: v.get("_optuna_best_trial")
+        for k, v in params_by_model.items()
+        if isinstance(v, dict) and v.get("_optuna_best_trial") is not None
+    }
+    return {
+        "schema_version": "rolling_bad_regime_v2",
+        "strategy_id": str(strategy_id),
+        "model_name": str(model_name),
+        "model_type": "bad_regime_classifier",
+        "enabled": accepted,
+        "enable_regime_adaptor": accepted,
+        "reason": decision_reason,
+        "config_snapshot": {
+            "horizons_days": list(ROLLING_REGIME_HORIZONS_DAYS),
+            "global_bad_rate_threshold": float(global_bad_rate_threshold),
+            "asset_bad_rate_threshold": float(asset_bad_rate_threshold),
+            "combination_grid": REGIME_ADAPTOR_COMBINATION_GRID,
+            "objective_weights": REGIME_OBJECTIVE_WEIGHTS,
+            "ratio_clips": REGIME_RATIO_CLIPS,
+        },
+        "feature_key_lists": {
+            "global": list(global_features),
+            "asset": list(asset_features),
+        },
+        "missing_feature_list": [
+            f for f in REGIME_FEATURE_ORDER if f not in work.columns
+        ],
+        "panel_schema": list(work.columns),
+        "wide_oof_panel_schema": list(wide.columns),
+        "no_leakage_statement": "walk-forward split by anchor_date only; OOF predictions use train anchors strictly before validation anchors.",
+        "live_scoring_mode": "mode_b_precomputed_p_bad_regime_columns",
+        "rank_scope": "local_batch",
+        "rank_requirement": "portfolio_global_or_per_side_rank_required_downstream_before_thresholding_or_sizing",
+        "trade_candidate_eval_available": bool(trade_candidate_eval_available),
+        "global_bad_rate_threshold": float(global_bad_rate_threshold),
+        "asset_bad_rate_threshold": float(asset_bad_rate_threshold),
+        "optuna_best_trial_diagnostics": optuna_best_trial_diagnostics,
+        "no_trade_rows_excluded": no_trade_rows,
+        "global_classifier_label_definition": f"mean(strategy-symbol bad_regime_label at anchor/horizon) >= {float(global_bad_rate_threshold):.3f}",
+        "asset_classifier_label_definition": f"mean(strategy bad_regime_label for symbol at anchor/horizon) >= {float(asset_bad_rate_threshold):.3f}",
+        "walk_forward_splits": split_defs,
+        "global_classifier_params": {
+            k: v for k, v in params_by_model.items() if k.startswith("global")
+        },
+        "asset_classifier_params": {
+            k: v for k, v in params_by_model.items() if k.startswith("asset")
+        },
+        "oof_p_bad_regime_predictions": wide[
+            ["strategy_id", "symbol", "anchor_date"]
+            + [
+                c
+                for c in wide.columns
+                if c.startswith("p_bad_regime_") and c.endswith("_oof")
+            ]
+            + [
+                "combined_global_bad_regime_oof",
+                "combined_asset_bad_regime_oof",
+                "combined_bad_regime_offset_oof",
+            ]
+        ].to_dict(orient="records"),
+        "oof_classifier_metrics": oof_metrics,
+        "evaluation_universe": comparison.get(
+            "evaluation_universe",
+            "trade_candidates" if trade_candidate_eval_available else "unavailable",
+        ),
+        "selected_3d_5d_blend": {"3d": w3, "5d": w5},
+        "selected_combination_params": selected_params,
+        "baseline_top30_metrics": comparison.get("baseline_top30_metrics", {}),
+        "candidate_top30_metrics": comparison.get("candidate_top30_metrics", {}),
+        "multiplicative_objective_components": comparison.get(
+            "objective_components", {}
+        ),
+        "final_enable_disable_decision": {
+            "enabled": accepted,
+            "reason": decision_reason,
+        },
+        "inference_contract": {
+            "required_live_columns_if_no_serialized_model": [
+                "p_bad_regime_global_3d",
+                "p_bad_regime_global_5d",
+                "p_bad_regime_asset_3d",
+                "p_bad_regime_asset_5d",
+            ],
+            "combination": (
+                "sigmoid(logit(meta_p_calibrated) - lambda_regime * bad_offset), "
+                "where bad_offset uses positive z-scored bad-regime logits with "
+                "global/asset weights and gammas"
+            ),
+        },
+        "combination_family_comparison": comparison,
+        "anchor_panel_diagnostic_comparison": anchor_diagnostic_comparison,
+    }
 
 
 def fit_regime_adaptor(
@@ -1658,6 +3406,113 @@ def _asset_gates(asset_diag: pd.DataFrame) -> List[str]:
     return sorted(
         str(s) for s in asset_diag.loc[asset_diag["asset_gated"], "symbol"].tolist()
     )
+
+
+def audit_rolling_regime_readiness(
+    artifact: Dict[str, Any],
+    *,
+    live_feature_frame: Optional[pd.DataFrame] = None,
+    downstream_candidate_frame: Optional[pd.DataFrame] = None,
+) -> Dict[str, Any]:
+    """Summarize whether a rolling bad-regime artifact is wired for use.
+
+    This is intentionally a lightweight structural audit: it does not judge the
+    trading objective itself, but it highlights the common integration states
+    that make the rolling adaptor train-only or live-disabled.
+    """
+    is_rolling = artifact.get("schema_version") in {
+        "rolling_bad_regime_v2",
+        "rolling_regime_v1",
+    } or "selected_combination_params" in artifact
+    trade_eval_available = bool(
+        artifact.get("trade_candidate_eval_available", False)
+    )
+    evaluation_universe = str(artifact.get("evaluation_universe", ""))
+    enablement_uses_trade_candidates = (
+        trade_eval_available and evaluation_universe == "trade_candidates"
+    )
+
+    missing_live_cols: List[str]
+    if live_feature_frame is None:
+        missing_live_cols = list(
+            artifact.get("missing_live_p_bad_regime_columns", [])
+        )
+        if isinstance(missing_live_cols, str):
+            missing_live_cols = [c for c in missing_live_cols.split(",") if c]
+    else:
+        missing_live_cols = [
+            c
+            for c in REQUIRED_LIVE_BAD_REGIME_COLUMNS
+            if c not in live_feature_frame.columns
+        ]
+    live_columns_available = not missing_live_cols
+
+    downstream_rank_columns = ("final_global_rank", "final_side_rank")
+    downstream_has_pre_rank = False
+    downstream_rank_available = False
+    if downstream_candidate_frame is not None:
+        downstream_has_pre_rank = (
+            "deployment_score_pre_rank" in downstream_candidate_frame.columns
+        )
+        downstream_rank_available = any(
+            c in downstream_candidate_frame.columns for c in downstream_rank_columns
+        )
+
+    live_feature_missingness_by_scope: Dict[str, Dict[str, float]] = {}
+    high_missing_live_features: Dict[str, List[str]] = {}
+    feature_key_lists = artifact.get("feature_key_lists", {})
+    if live_feature_frame is not None and isinstance(feature_key_lists, dict):
+        for scope, cols in feature_key_lists.items():
+            scope_missingness: Dict[str, float] = {}
+            for col in cols or []:
+                col = str(col)
+                if col not in live_feature_frame.columns:
+                    missing_rate = 1.0
+                else:
+                    vals = pd.to_numeric(
+                        live_feature_frame[col], errors="coerce"
+                    ).to_numpy(dtype=np.float64)
+                    missing_rate = (
+                        float(np.mean(~np.isfinite(vals))) if len(vals) else 1.0
+                    )
+                scope_missingness[col] = missing_rate
+            live_feature_missingness_by_scope[str(scope)] = scope_missingness
+            high_missing_live_features[str(scope)] = [
+                col for col, rate in scope_missingness.items() if rate > 0.50
+            ]
+
+    checks = {
+        "rolling_artifact": bool(is_rolling),
+        "trade_candidate_eval_available": trade_eval_available,
+        "evaluation_universe_is_trade_candidates": evaluation_universe
+        == "trade_candidates",
+        "live_p_bad_regime_columns_available": live_columns_available,
+        "downstream_rank_available": downstream_rank_available,
+    }
+    if downstream_candidate_frame is None:
+        checks["downstream_rank_available"] = None
+
+    return {
+        "schema_version": artifact.get("schema_version", ""),
+        "enable_regime_adaptor": bool(artifact.get("enable_regime_adaptor", False)),
+        "reason": artifact.get("reason", ""),
+        "trade_candidate_eval_available": trade_eval_available,
+        "evaluation_universe": evaluation_universe,
+        "enablement_uses_trade_candidates": enablement_uses_trade_candidates,
+        "live_required_columns": list(REQUIRED_LIVE_BAD_REGIME_COLUMNS),
+        "live_required_columns_available": live_columns_available,
+        "missing_live_p_bad_regime_columns": missing_live_cols,
+        "downstream_has_deployment_score_pre_rank": downstream_has_pre_rank,
+        "downstream_rank_columns": list(downstream_rank_columns),
+        "downstream_rank_available": downstream_rank_available
+        if downstream_candidate_frame is not None
+        else None,
+        "live_feature_missingness_by_scope": live_feature_missingness_by_scope,
+        "high_missing_live_features": high_missing_live_features,
+        "rank_scope": artifact.get("rank_scope", ""),
+        "rank_requirement": artifact.get("rank_requirement", ""),
+        "checks": checks,
+    }
 
 
 def save_regime_adaptor_outputs(

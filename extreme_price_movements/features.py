@@ -3251,22 +3251,23 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             ((ob_best_ask - ob_best_bid) / (ob_mid.abs() + eps)) * 1e4
         ).replace([np.inf, -np.inf], np.nan)
         available = (ob_best_bid.notna() & ob_best_ask.notna()).astype(np.float32)
-        feats["ob_spread_bps"] = spread_bps.fillna(0.0).clip(0, 1000).astype(
-            np.float32
+        feats["ob_spread_bps"] = spread_bps.fillna(0.0).clip(0, 1000).astype(np.float32)
+        feats["ob_spread_z_24h"] = _batch_roll_zscore(feats["ob_spread_bps"], 24).clip(
+            -6, 6
         )
-        feats["ob_spread_z_24h"] = _batch_roll_zscore(
-            feats["ob_spread_bps"], 24
-        ).clip(-6, 6)
         feats["ob_mid_close_dislocation_bps"] = (
-            ((ob_mid - close_panel) / (close_panel.abs() + eps)) * 1e4
-        ).replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(-1000, 1000).astype(
+            (((ob_mid - close_panel) / (close_panel.abs() + eps)) * 1e4)
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(0.0)
+            .clip(-1000, 1000)
+            .astype(np.float32)
+        )
+        feats["ob_microprice_dev_bps"] = feats["ob_mid_close_dislocation_bps"].astype(
             np.float32
         )
-        feats["ob_microprice_dev_bps"] = feats[
-            "ob_mid_close_dislocation_bps"
-        ].astype(np.float32)
         feats["ob_snapshot_age_sec"] = (
-            (1.0 - available) * float(cfg.get("orderbook_missing_age_sentinel_min", 60))
+            (1.0 - available)
+            * float(cfg.get("orderbook_missing_age_sentinel_min", 60))
             * 60.0
         ).astype(np.float32)
         feats["ob_update_gap_flag"] = (1.0 - available).astype(np.float32)
@@ -3285,15 +3286,16 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         )
         feats["ob_wimb_l10"] = feats["ob_imb_l1"].astype(np.float32)
         if isinstance(ob_mid, pd.DataFrame):
-            microprice = (
-                (ob_best_ask * ob_bid_qty_1 + ob_best_bid * ob_ask_qty_1)
-                / (ob_bid_qty_1 + ob_ask_qty_1 + eps)
+            microprice = (ob_best_ask * ob_bid_qty_1 + ob_best_bid * ob_ask_qty_1) / (
+                ob_bid_qty_1 + ob_ask_qty_1 + eps
             )
             feats["ob_microprice_dev_bps"] = (
-                ((microprice - ob_mid) / (ob_mid.abs() + eps)) * 1e4
-            ).replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(
-                -1000, 1000
-            ).astype(np.float32)
+                (((microprice - ob_mid) / (ob_mid.abs() + eps)) * 1e4)
+                .replace([np.inf, -np.inf], np.nan)
+                .fillna(0.0)
+                .clip(-1000, 1000)
+                .astype(np.float32)
+            )
             feats["ob_microprice_ret_1"] = (
                 feats["ob_microprice_dev_bps"].diff(1).fillna(0.0).astype(np.float32)
             )
@@ -3360,8 +3362,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             feats["ob_top_liquidity_usd"] = (
                 np.log1p(
                     (
-                        (ob_bid_qty_1.fillna(0.0) + ob_ask_qty_1.fillna(0.0))
-                        * ob_mid
+                        (ob_bid_qty_1.fillna(0.0) + ob_ask_qty_1.fillna(0.0)) * ob_mid
                     ).clip(lower=0.0)
                 )
                 .fillna(0.0)
@@ -3561,6 +3562,118 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         (feats["ob_depth_usd_l20_z"] * feats["rvol_z"]).clip(-12, 12).astype(np.float32)
     )
 
+    # Canonical RegimeAdaptor aliases/aggregates.  These are point-in-time
+    # rolling windows on the hourly feature panel, so day windows use 24 * days.
+    feats["asset_funding_rate_mean_3d"] = (
+        feats["fund_rate"]
+        .rolling(24 * 3, min_periods=24)
+        .mean()
+        .fillna(0.0)
+        .astype(np.float32)
+    )
+    feats["asset_funding_rate_mean_7d"] = (
+        feats["fund_rate"]
+        .rolling(24 * 7, min_periods=24)
+        .mean()
+        .fillna(0.0)
+        .astype(np.float32)
+    )
+    feats["asset_funding_rate_mean_15d"] = (
+        feats["fund_rate"]
+        .rolling(24 * 15, min_periods=24 * 3)
+        .mean()
+        .fillna(0.0)
+        .astype(np.float32)
+    )
+    feats["asset_funding_rate_abs_mean_7d"] = (
+        feats["fund_rate"]
+        .abs()
+        .rolling(24 * 7, min_periods=24)
+        .mean()
+        .fillna(0.0)
+        .astype(np.float32)
+    )
+    feats["asset_funding_z"] = feats["fund_rate_z_14d"].clip(-6, 6).astype(np.float32)
+    trend_proxy = np.sign(feats.get("ret24h", _zero_panel())).astype(np.float32)
+    feats["asset_funding_trend_alignment"] = (
+        (trend_proxy * feats["asset_funding_z"]).clip(-6, 6).astype(np.float32)
+    )
+    feats["funding_rate_cross_asset_dispersion"] = _broadcast_series(
+        feats["fund_rate_z_14d"].std(axis=1).fillna(0.0)
+    )
+
+    spread_proxy = feats.get(
+        "ob_spread_bps", feats.get("ob_spread_z_24h", _zero_panel())
+    )
+    depth_proxy = feats.get(
+        "ob_depth_usd_l20", feats.get("ob_top_liquidity_usd", _zero_panel())
+    )
+    depth_risk = (1.0 / np.sqrt(1.0 + np.maximum(depth_proxy, 0.0))).astype(np.float32)
+    imb_proxy = (
+        feats.get(
+            "ob_imb_l10",
+            feats.get("ob_wimb_l10", feats.get("ob_book_pressure_l10", _zero_panel())),
+        )
+        .abs()
+        .astype(np.float32)
+    )
+    for _name, _panel in (
+        ("asset_spread_proxy_p90", spread_proxy),
+        ("asset_volume_depth_risk_p90", depth_risk),
+    ):
+        feats[f"{_name}_24h"] = (
+            _panel.rolling(24, min_periods=6)
+            .quantile(0.90)
+            .fillna(0.0)
+            .astype(np.float32)
+        )
+        feats[f"{_name}_96h"] = (
+            _panel.rolling(96, min_periods=24)
+            .quantile(0.90)
+            .fillna(0.0)
+            .astype(np.float32)
+        )
+        feats[f"{_name}_7d"] = (
+            _panel.rolling(24 * 7, min_periods=24)
+            .quantile(0.90)
+            .fillna(0.0)
+            .astype(np.float32)
+        )
+        feats[f"{_name}_15d"] = (
+            _panel.rolling(24 * 15, min_periods=24 * 3)
+            .quantile(0.90)
+            .fillna(0.0)
+            .astype(np.float32)
+        )
+    feats["asset_orderbook_imbalance_abs_mean_24h"] = (
+        imb_proxy.rolling(24, min_periods=6).mean().fillna(0.0).astype(np.float32)
+    )
+    feats["asset_orderbook_imbalance_abs_mean_96h"] = (
+        imb_proxy.rolling(96, min_periods=24).mean().fillna(0.0).astype(np.float32)
+    )
+    feats["asset_orderbook_imbalance_abs_mean_7d"] = (
+        imb_proxy.rolling(24 * 7, min_periods=24).mean().fillna(0.0).astype(np.float32)
+    )
+    feats["asset_orderbook_imbalance_abs_mean_15d"] = (
+        imb_proxy.rolling(24 * 15, min_periods=24 * 3)
+        .mean()
+        .fillna(0.0)
+        .astype(np.float32)
+    )
+    feats["asset_liquidity_stress_score_7d"] = (
+        (
+            _batch_roll_zscore(spread_proxy, 24 * 7)
+            + _batch_roll_zscore(depth_risk, 24 * 7)
+            + _batch_roll_zscore(imb_proxy, 24 * 7)
+        )
+        .div(3.0)
+        .fillna(0.0)
+        .astype(np.float32)
+    )
+    feats["global_liquidity_stress_score_7d"] = _broadcast_series(
+        feats["asset_liquidity_stress_score_7d"].mean(axis=1).fillna(0.0)
+    )
+
     orderbook_feature_keys = set(cfg.get("ORDERBOOK_FEATURE_KEYS", []))
     if not orderbook_feature_keys and requested_feature_set:
         orderbook_feature_keys = {
@@ -3702,19 +3815,52 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["eth_btc_ret_1h"] = _broadcast_series((eth1 - btc1).astype(np.float32))
     feats["eth_btc_ret_4h"] = _broadcast_series((eth4 - btc4).astype(np.float32))
     feats["eth_btc_ret_24h"] = _broadcast_series((eth24 - btc24).astype(np.float32))
-    feats["symbol_minus_mkt_ret_1h"] = ret1.sub(basket_ret1, axis=0).astype(
-        np.float32
-    )
-    feats["symbol_minus_mkt_ret_4h"] = ret4.sub(basket_ret4, axis=0).astype(
-        np.float32
-    )
+    feats["symbol_minus_mkt_ret_1h"] = ret1.sub(basket_ret1, axis=0).astype(np.float32)
+    feats["symbol_minus_mkt_ret_4h"] = ret4.sub(basket_ret4, axis=0).astype(np.float32)
     feats["symbol_minus_mkt_ret_24h"] = ret24.sub(basket_ret24, axis=0).astype(
         np.float32
     )
-    feats["market_breadth_4h"] = _broadcast_series((ret4[basket_cols] > 0.0).mean(axis=1))
-    feats["market_breadth_24h"] = _broadcast_series((ret24[basket_cols] > 0.0).mean(axis=1))
+    feats["market_breadth_4h"] = _broadcast_series(
+        (ret4[basket_cols] > 0.0).mean(axis=1)
+    )
+    feats["market_breadth_24h"] = _broadcast_series(
+        (ret24[basket_cols] > 0.0).mean(axis=1)
+    )
+    feats["market_breadth_7d"] = _broadcast_series(
+        (ret24[basket_cols] > 0.0).mean(axis=1).rolling(24 * 7, min_periods=24).mean()
+    )
+    feats["market_breadth_15d"] = _broadcast_series(
+        (ret24[basket_cols] > 0.0)
+        .mean(axis=1)
+        .rolling(24 * 15, min_periods=24 * 3)
+        .mean()
+    )
     feats["market_dispersion_4h"] = _broadcast_series(ret4[basket_cols].std(axis=1))
     feats["market_dispersion_24h"] = _broadcast_series(ret24[basket_cols].std(axis=1))
+    feats["cross_asset_return_dispersion_24h"] = feats["market_dispersion_24h"]
+    feats["cross_asset_return_dispersion_7d"] = _broadcast_series(
+        ret24[basket_cols].std(axis=1).rolling(24 * 7, min_periods=24).mean()
+    )
+    rv_proxy = ret24[basket_cols].abs()
+    feats["cross_asset_vol_dispersion_24h"] = _broadcast_series(rv_proxy.std(axis=1))
+    feats["cross_asset_vol_dispersion_7d"] = _broadcast_series(
+        rv_proxy.std(axis=1).rolling(24 * 7, min_periods=24).mean()
+    )
+    feats["cross_asset_vol_dispersion_15d"] = _broadcast_series(
+        rv_proxy.std(axis=1).rolling(24 * 15, min_periods=24 * 3).mean()
+    )
+    feats["median_asset_rv_24h"] = _broadcast_series(rv_proxy.median(axis=1))
+    feats["median_asset_rv_7d"] = _broadcast_series(
+        rv_proxy.median(axis=1).rolling(24 * 7, min_periods=24).mean()
+    )
+    feats["top_decile_asset_rv_24h"] = _broadcast_series(
+        rv_proxy.quantile(0.90, axis=1)
+    )
+    feats["top_decile_asset_rv_7d"] = _broadcast_series(
+        rv_proxy.quantile(0.90, axis=1).rolling(24 * 7, min_periods=24).mean()
+    )
+    feats["btc_eth_trend_proxy"] = _broadcast_series((btc24 + eth24) * 0.5)
+    feats["btc_eth_vol_proxy"] = _broadcast_series((btc24.abs() + eth24.abs()) * 0.5)
     feats["ret_resid_btc_1h"] = ret1.sub(btc1, axis=0).astype(np.float32)
     feats["ret_resid_btc_4h"] = ret4.sub(btc4, axis=0).astype(np.float32)
     feats["ret_resid_eth_1h"] = ret1.sub(eth1, axis=0).astype(np.float32)
@@ -3765,6 +3911,26 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         .fillna(0.0)
         .clip(-1.0, 1.0)
         .astype(np.float32)
+    )
+
+    btc24_frame = pd.DataFrame(
+        np.repeat(np.asarray(btc24, dtype=np.float32)[:, None], len(cols), axis=1),
+        index=idx,
+        columns=cols,
+    )
+    feats["cross_asset_correlation_7d"] = _broadcast_series(
+        ret24.rolling(24 * 7, min_periods=24)
+        .corr(btc24_frame)
+        .mean(axis=1)
+        .fillna(0.0)
+        .clip(-1, 1)
+    )
+    feats["cross_asset_correlation_30d"] = _broadcast_series(
+        ret24.rolling(24 * 30, min_periods=24 * 3)
+        .corr(btc24_frame)
+        .mean(axis=1)
+        .fillna(0.0)
+        .clip(-1, 1)
     )
 
     mix4 = 0.5 * (btc4 + eth4)
@@ -3820,15 +3986,11 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["pct_assets_above_ema_fast"] = _broadcast_series(
         (feats.get("dist_ema_fast", _zero_panel()) > 0).mean(axis=1).astype(np.float32)
     )
-    weekly_vwap = (
-        close_panel.mul(v).rolling(24 * 7, min_periods=24).sum()
-        / (v.rolling(24 * 7, min_periods=24).sum() + eps)
+    weekly_vwap = close_panel.mul(v).rolling(24 * 7, min_periods=24).sum() / (
+        v.rolling(24 * 7, min_periods=24).sum() + eps
     )
     feats["pct_assets_above_vwap"] = _broadcast_series(
-        (close_panel > weekly_vwap)
-        .mean(axis=1)
-        .fillna(0.0)
-        .astype(np.float32)
+        (close_panel > weekly_vwap).mean(axis=1).fillna(0.0).astype(np.float32)
     )
 
     corr_proxy = ret1.rolling(24, min_periods=8).corr(ret1.median(axis=1)).fillna(0.0)

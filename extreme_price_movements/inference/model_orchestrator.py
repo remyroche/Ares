@@ -752,13 +752,57 @@ class ModelOrchestrator:
                     timestamps=features.index,
                     symbols=symbols,
                 )
-                regime_weight = np.asarray(applied["regime_weight"], dtype=float)
-                eligible = np.asarray(applied["eligible"], dtype=bool)
-                final_preds = final_preds * np.clip(regime_weight, 0.75, 1.20)
+                regime_weight = np.asarray(
+                    applied.get("regime_weight", np.ones(len(final_preds))), dtype=float
+                )
+                eligible = np.asarray(
+                    applied.get("eligible", np.ones(len(final_preds), dtype=bool)),
+                    dtype=bool,
+                )
+                if (
+                    "combined_score" in applied
+                    and "deployment_score_pre_rank" in applied
+                ):
+                    # Rolling RegimeAdaptor integration emits only a pre-rank score here.
+                    # Portfolio/global or per-side rank normalization must happen downstream
+                    # after all strategy × symbol candidates are assembled.
+                    final_preds = np.asarray(
+                        applied["deployment_score_pre_rank"], dtype=float
+                    )
+                else:
+                    final_preds = final_preds * np.clip(regime_weight, 0.75, 1.20)
                 final_preds = np.where(eligible, final_preds, 0.0)
-                mix_meta["regime_adaptor_enabled"] = 1.0
+                mix_meta["regime_adaptor_enabled"] = float(
+                    bool(np.any(applied.get("regime_adjustment_enabled", [True])))
+                )
                 mix_meta["regime_eligible_share"] = float(np.mean(eligible))
                 mix_meta["regime_weight_mean"] = float(np.mean(regime_weight))
+                for key in (
+                    "p_bad_regime_global_3d",
+                    "p_bad_regime_global_5d",
+                    "p_bad_regime_asset_3d",
+                    "p_bad_regime_asset_5d",
+                    "combined_global_bad_regime_score",
+                    "combined_asset_bad_regime_score",
+                    "bad_regime_offset",
+                    "combined_score",
+                    "deployment_score_pre_rank",
+                    "local_batch_rank",
+                    "score_delta_from_regime_adjustment",
+                    "live_required_columns_available",
+                ):
+                    if key in applied:
+                        arr = np.asarray(applied[key], dtype=float)
+                        mix_meta[key] = float(np.nanmean(arr)) if len(arr) else 0.0
+                for key in (
+                    "selected_combination_params",
+                    "rank_scope",
+                    "regime_disabled_reason",
+                    "missing_live_p_bad_regime_columns",
+                ):
+                    if key in applied:
+                        vals = np.asarray(applied[key]).astype(str)
+                        mix_meta[key] = vals[0] if len(vals) else ""
             except Exception as exc:
                 tprint(f"Warning: regime adaptor failed for {bucket_key}: {exc}")
 

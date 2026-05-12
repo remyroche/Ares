@@ -3333,3 +3333,311 @@ CFG["META_SELF_FEATURE_KEYS"] = [
     "recent_meta_global_top15_hit_rate_5d",
 ]
 CFG["meta_shared_feature_keys"] += ["META_SELF_FEATURE_KEYS"]
+
+
+# =============================================================================
+# Rolling RegimeAdaptor config (next-few-days bad-regime detector)
+# =============================================================================
+REGIME_ADAPTOR_BASE_FEATURE_KEYS = [
+    "rv_24h",
+    "rv1_rv24",
+    "rv4_rv24",
+    "signed_adx",
+    "dist_ema_fast",
+    "dist_ema_slow",
+    "dist_vwap",
+    "prior_day_low",
+    "prior_day_high",
+    "rvol_z",
+    "asset_volume_30d",
+    "is_weekend",
+    "asset_atr_30d",
+    "ebm_unc_logodds_var",
+    "ebm_unc_pi_width",
+    "ebm_unc_entropy_mean",
+    "ebm_unc_entropy_std",
+    "ebm_unc_conflict_norm",
+    "ebm_unc_proximity_min",
+    "ebm_unc_support_mean",
+    "ebm_unc_support_min",
+    "ebm_unc_concentration",
+    "ebm_unc_sign_ratio",
+    "ebm_unc_interaction_share",
+    "ebm_unc_gap50rel",
+    "ebm_unc_support_adjusted_uncertainty",
+    "ebm_unc_uncertainty_weight",
+    "ebm_unc_friction_weight",
+]
+
+REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS = [
+    "market_breadth_24h",
+    "market_breadth_7d",
+    "market_breadth_15d",
+    "cross_asset_return_dispersion_24h",
+    "cross_asset_return_dispersion_7d",
+    "cross_asset_vol_dispersion_24h",
+    "cross_asset_vol_dispersion_7d",
+    "cross_asset_vol_dispersion_15d",
+    "median_asset_rv_24h",
+    "median_asset_rv_7d",
+    "top_decile_asset_rv_24h",
+    "top_decile_asset_rv_7d",
+    "cross_asset_correlation_7d",
+    "cross_asset_correlation_30d",
+    "btc_eth_trend_proxy",
+    "btc_eth_vol_proxy",
+    "funding_rate_cross_asset_dispersion",
+    "global_ebm_unc_dispersion_mean_7d",
+    "global_ebm_conflict_mean_7d",
+    "global_ebm_support_risk_mean_7d",
+    "global_liquidity_stress_score_7d",
+]
+
+REGIME_ADAPTOR_ASSET_FEATURE_KEYS = [
+    "asset_rv_mean_24h",
+    "asset_rv_mean_96h",
+    "asset_rv_mean_7d",
+    "asset_rv_mean_15d",
+    "asset_rv_p90_7d",
+    "asset_rv_trend_24h_to_7d",
+    "asset_rvol_mean_24h",
+    "asset_rvol_mean_7d",
+    "asset_rvol_mean_15d",
+    "asset_atr_30d",
+    "asset_volume_30d",
+    "asset_funding_rate_mean_3d",
+    "asset_funding_rate_mean_7d",
+    "asset_funding_rate_mean_15d",
+    "asset_funding_rate_abs_mean_7d",
+    "asset_funding_z",
+    "asset_funding_side_alignment",
+    "asset_funding_trend_alignment",
+    "asset_spread_proxy_p90_24h",
+    "asset_spread_proxy_p90_96h",
+    "asset_spread_proxy_p90_7d",
+    "asset_spread_proxy_p90_15d",
+    "asset_volume_depth_risk_p90_24h",
+    "asset_volume_depth_risk_p90_96h",
+    "asset_volume_depth_risk_p90_7d",
+    "asset_volume_depth_risk_p90_15d",
+    "asset_orderbook_imbalance_abs_mean_24h",
+    "asset_orderbook_imbalance_abs_mean_96h",
+    "asset_orderbook_imbalance_abs_mean_7d",
+    "asset_orderbook_imbalance_abs_mean_15d",
+    "asset_liquidity_stress_score_7d",
+    "asset_ebm_unc_dispersion_mean_3d",
+    "asset_ebm_unc_dispersion_mean_7d",
+    "asset_ebm_unc_dispersion_mean_15d",
+    "asset_ebm_conflict_mean_3d",
+    "asset_ebm_conflict_mean_7d",
+    "asset_ebm_conflict_mean_15d",
+    "asset_ebm_support_risk_mean_3d",
+    "asset_ebm_support_risk_mean_7d",
+    "asset_ebm_support_risk_mean_15d",
+    "asset_ebm_brittleness_mean_3d",
+    "asset_ebm_brittleness_mean_7d",
+    "asset_ebm_brittleness_mean_15d",
+]
+
+REGIME_ADAPTOR_STRATEGY_ASSET_FEATURE_KEYS = [
+    "prior_1d_strategy_asset_pnl",
+    "prior_3d_strategy_asset_pnl",
+    "prior_5d_strategy_asset_pnl",
+    "prior_7d_strategy_asset_pnl",
+    "prior_15d_strategy_asset_pnl",
+    "prior_30d_strategy_asset_pnl",
+    "prior_3d_strategy_asset_maxDD",
+    "prior_5d_strategy_asset_maxDD",
+    "prior_7d_strategy_asset_maxDD",
+    "prior_15d_strategy_asset_maxDD",
+    "prior_30d_strategy_asset_maxDD",
+    "prior_3d_strategy_asset_trade_count",
+    "prior_5d_strategy_asset_trade_count",
+    "prior_7d_strategy_asset_trade_count",
+    "prior_15d_strategy_asset_trade_count",
+    "prior_30d_strategy_asset_trade_count",
+    "prior_3d_expected_hit_rate",
+    "prior_5d_expected_hit_rate",
+    "prior_7d_expected_hit_rate",
+    "prior_15d_expected_hit_rate",
+    "prior_30d_expected_hit_rate",
+    "prior_3d_hit_rate_surprise_z",
+    "prior_5d_hit_rate_surprise_z",
+    "prior_7d_hit_rate_surprise_z",
+    "prior_15d_hit_rate_surprise_z",
+    "prior_30d_hit_rate_surprise_z",
+]
+
+REGIME_ADAPTOR_EBM_CONSOLIDATED_FEATURE_KEYS = [
+    "global_ebm_unc_dispersion_mean_7d",
+    "global_ebm_conflict_mean_7d",
+    "global_ebm_support_risk_mean_7d",
+    "asset_ebm_unc_dispersion_mean_3d",
+    "asset_ebm_unc_dispersion_mean_7d",
+    "asset_ebm_unc_dispersion_mean_15d",
+    "asset_ebm_conflict_mean_3d",
+    "asset_ebm_conflict_mean_7d",
+    "asset_ebm_conflict_mean_15d",
+    "asset_ebm_support_risk_mean_3d",
+    "asset_ebm_support_risk_mean_7d",
+    "asset_ebm_support_risk_mean_15d",
+    "asset_ebm_brittleness_mean_3d",
+    "asset_ebm_brittleness_mean_7d",
+    "asset_ebm_brittleness_mean_15d",
+]
+
+
+REGIME_ADAPTOR_CROSS_ASSET_FEATURE_KEYS = REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS
+REGIME_ADAPTOR_FUNDING_FEATURE_KEYS = [
+    "asset_funding_rate_mean_3d",
+    "asset_funding_rate_mean_7d",
+    "asset_funding_rate_mean_15d",
+    "asset_funding_rate_abs_mean_7d",
+    "asset_funding_z",
+    "asset_funding_side_alignment",
+    "asset_funding_trend_alignment",
+    "funding_rate_cross_asset_dispersion",
+]
+REGIME_ADAPTOR_ORDERBOOK_FEATURE_KEYS = [
+    "asset_spread_proxy_p90_24h",
+    "asset_spread_proxy_p90_96h",
+    "asset_spread_proxy_p90_7d",
+    "asset_spread_proxy_p90_15d",
+    "asset_volume_depth_risk_p90_24h",
+    "asset_volume_depth_risk_p90_96h",
+    "asset_volume_depth_risk_p90_7d",
+    "asset_volume_depth_risk_p90_15d",
+    "asset_orderbook_imbalance_abs_mean_24h",
+    "asset_orderbook_imbalance_abs_mean_96h",
+    "asset_orderbook_imbalance_abs_mean_7d",
+    "asset_orderbook_imbalance_abs_mean_15d",
+    "asset_liquidity_stress_score_7d",
+    "global_liquidity_stress_score_7d",
+]
+REGIME_ADAPTOR_ROLLING_PRIOR_FEATURE_KEYS = REGIME_ADAPTOR_STRATEGY_ASSET_FEATURE_KEYS
+REGIME_ADAPTOR_FEATURE_ORDER = (
+    REGIME_ADAPTOR_BASE_FEATURE_KEYS
+    + REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS
+    + REGIME_ADAPTOR_ASSET_FEATURE_KEYS
+    + REGIME_ADAPTOR_STRATEGY_ASSET_FEATURE_KEYS
+    + REGIME_ADAPTOR_EBM_CONSOLIDATED_FEATURE_KEYS
+)
+
+REGIME_ADAPTOR_COMBINATION_GRID = {
+    "lambda_regime": [
+        0.125,
+        0.25,
+        0.33,
+        0.50,
+        0.66,
+        0.75,
+        1.0,
+        1.25,
+        1.5,
+    ],
+    "global_weight": [0.0, 0.25, 0.50, 0.75, 1.0],
+    "asset_weight": [0.0, 0.25, 0.50, 0.75, 1.0],
+    "gamma_global": [0.75, 1.0, 1.25, 1.5, 2.0],
+    "gamma_asset": [0.75, 1.0, 1.25, 1.5, 2.0],
+}
+REGIME_ADAPTOR_OBJECTIVE_WEIGHTS = {
+    "pnl_ratio": 0.30,
+    "sortino_ratio": 0.20,
+    "dd_ratio": 0.30,
+    "period_std_ratio": 0.10,
+    "worst_loss_ratio": 0.10,
+}
+REGIME_ADAPTOR_RATIO_CLIPS = {
+    "pnl_ratio": [0.70, 1.50],
+    "sortino_ratio": [0.50, 2.00],
+    "dd_ratio": [0.50, 2.00],
+    "period_std_ratio": [0.50, 1.75],
+    "worst_loss_ratio": [0.50, 1.75],
+}
+REGIME_ADAPTOR_GLOBAL_BAD_RATE_THRESHOLD = 0.50
+REGIME_ADAPTOR_ASSET_BAD_RATE_THRESHOLD = 0.50
+
+REGIME_ADAPTOR_LGBM_CLASSIFIER_PARAMS = {
+    "objective": "binary",
+    "max_depth": 2,
+    "num_leaves": 4,
+    "n_estimators": 50,
+    "min_child_samples": 50,
+    "reg_alpha": 0.0,
+    "reg_lambda": 10.0,
+    "learning_rate": 0.05,
+    "random_state": 42,
+    "verbosity": -1,
+    "class_weight": "balanced",
+}
+
+
+class RegimeAdaptorKey:
+    """Canonical config keys for the rolling RegimeAdaptor layer."""
+
+    REGIME_ADAPTOR_ENABLED = "regime_adaptor.enabled"
+    REGIME_ADAPTOR_HORIZONS_DAYS = "regime_adaptor.horizons_days"
+    REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS = "regime_adaptor.global_feature_keys"
+    REGIME_ADAPTOR_ASSET_FEATURE_KEYS = "regime_adaptor.asset_feature_keys"
+    REGIME_ADAPTOR_STRATEGY_ASSET_FEATURE_KEYS = (
+        "regime_adaptor.strategy_asset_feature_keys"
+    )
+    REGIME_ADAPTOR_CROSS_ASSET_FEATURE_KEYS = "regime_adaptor.cross_asset_feature_keys"
+    REGIME_ADAPTOR_FUNDING_FEATURE_KEYS = "regime_adaptor.funding_feature_keys"
+    REGIME_ADAPTOR_ORDERBOOK_FEATURE_KEYS = "regime_adaptor.orderbook_feature_keys"
+    REGIME_ADAPTOR_EBM_CONSOLIDATED_FEATURE_KEYS = (
+        "regime_adaptor.ebm_consolidated_feature_keys"
+    )
+    REGIME_ADAPTOR_ROLLING_PRIOR_FEATURE_KEYS = (
+        "regime_adaptor.rolling_prior_feature_keys"
+    )
+    REGIME_ADAPTOR_MODEL_TYPE = "regime_adaptor.model_type"
+    REGIME_ADAPTOR_GLOBAL_BAD_RATE_THRESHOLD = (
+        "regime_adaptor.global_bad_rate_threshold"
+    )
+    REGIME_ADAPTOR_ASSET_BAD_RATE_THRESHOLD = "regime_adaptor.asset_bad_rate_threshold"
+    REGIME_ADAPTOR_LGBM_CLASSIFIER_PARAMS = "regime_adaptor.lgbm_classifier_params"
+    REGIME_ADAPTOR_OPTUNA_NO_IMPROVEMENT_TRIALS = (
+        "regime_adaptor.optuna_no_improvement_trials"
+    )
+    REGIME_ADAPTOR_COMBINATION_GRID = "regime_adaptor.combination_grid"
+    REGIME_ADAPTOR_OBJECTIVE_WEIGHTS = "regime_adaptor.objective_weights"
+    REGIME_ADAPTOR_RATIO_CLIPS = "regime_adaptor.ratio_clips"
+    REGIME_ADAPTOR_MIN_NET_PNL_RATIO = "regime_adaptor.min_net_pnl_ratio"
+    REGIME_ADAPTOR_MIN_OBJECTIVE = "regime_adaptor.min_objective"
+    REGIME_ADAPTOR_INFERENCE_INTEGRATION_MODE = (
+        "regime_adaptor.inference_integration_mode"
+    )
+    REGIME_ADAPTOR_ARTIFACT_PATH = "regime_adaptor.artifact_path"
+    REGIME_ADAPTOR_DIAGNOSTICS_PATH = "regime_adaptor.diagnostics_path"
+
+
+REGIME_ADAPTOR_DEFAULT_CONFIG = {
+    RegimeAdaptorKey.REGIME_ADAPTOR_ENABLED: True,
+    RegimeAdaptorKey.REGIME_ADAPTOR_HORIZONS_DAYS: [3, 5],
+    RegimeAdaptorKey.REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS: REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS,
+    RegimeAdaptorKey.REGIME_ADAPTOR_ASSET_FEATURE_KEYS: REGIME_ADAPTOR_ASSET_FEATURE_KEYS,
+    RegimeAdaptorKey.REGIME_ADAPTOR_STRATEGY_ASSET_FEATURE_KEYS: REGIME_ADAPTOR_STRATEGY_ASSET_FEATURE_KEYS,
+    RegimeAdaptorKey.REGIME_ADAPTOR_CROSS_ASSET_FEATURE_KEYS: REGIME_ADAPTOR_CROSS_ASSET_FEATURE_KEYS,
+    RegimeAdaptorKey.REGIME_ADAPTOR_FUNDING_FEATURE_KEYS: REGIME_ADAPTOR_FUNDING_FEATURE_KEYS,
+    RegimeAdaptorKey.REGIME_ADAPTOR_ORDERBOOK_FEATURE_KEYS: REGIME_ADAPTOR_ORDERBOOK_FEATURE_KEYS,
+    RegimeAdaptorKey.REGIME_ADAPTOR_EBM_CONSOLIDATED_FEATURE_KEYS: REGIME_ADAPTOR_EBM_CONSOLIDATED_FEATURE_KEYS,
+    RegimeAdaptorKey.REGIME_ADAPTOR_ROLLING_PRIOR_FEATURE_KEYS: REGIME_ADAPTOR_ROLLING_PRIOR_FEATURE_KEYS,
+    RegimeAdaptorKey.REGIME_ADAPTOR_MODEL_TYPE: "bad_regime_classifier",
+    RegimeAdaptorKey.REGIME_ADAPTOR_GLOBAL_BAD_RATE_THRESHOLD: REGIME_ADAPTOR_GLOBAL_BAD_RATE_THRESHOLD,
+    RegimeAdaptorKey.REGIME_ADAPTOR_ASSET_BAD_RATE_THRESHOLD: REGIME_ADAPTOR_ASSET_BAD_RATE_THRESHOLD,
+    RegimeAdaptorKey.REGIME_ADAPTOR_LGBM_CLASSIFIER_PARAMS: REGIME_ADAPTOR_LGBM_CLASSIFIER_PARAMS,
+    RegimeAdaptorKey.REGIME_ADAPTOR_OPTUNA_NO_IMPROVEMENT_TRIALS: 25,
+    RegimeAdaptorKey.REGIME_ADAPTOR_COMBINATION_GRID: REGIME_ADAPTOR_COMBINATION_GRID,
+    RegimeAdaptorKey.REGIME_ADAPTOR_OBJECTIVE_WEIGHTS: REGIME_ADAPTOR_OBJECTIVE_WEIGHTS,
+    RegimeAdaptorKey.REGIME_ADAPTOR_RATIO_CLIPS: REGIME_ADAPTOR_RATIO_CLIPS,
+    RegimeAdaptorKey.REGIME_ADAPTOR_MIN_NET_PNL_RATIO: 0.90,
+    RegimeAdaptorKey.REGIME_ADAPTOR_MIN_OBJECTIVE: 1.05,
+    RegimeAdaptorKey.REGIME_ADAPTOR_INFERENCE_INTEGRATION_MODE: "pre_rank_bad_regime_offset",
+    RegimeAdaptorKey.REGIME_ADAPTOR_ARTIFACT_PATH: "ridge_sizer/regime_adaptors/{strategy_id}/regime_adaptor.json",
+    RegimeAdaptorKey.REGIME_ADAPTOR_DIAGNOSTICS_PATH: "ridge_sizer/regime_adaptors/{strategy_id}/diagnostics",
+}
+
+
+# Expose RegimeAdaptor defaults through the runtime CFG dictionary as well as constants.
+CFG.update(REGIME_ADAPTOR_DEFAULT_CONFIG)

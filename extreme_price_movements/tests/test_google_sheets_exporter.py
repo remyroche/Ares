@@ -53,6 +53,7 @@ def test_google_sheets_export_tables_split_open_closed_and_compute_unrealized():
                 "side": "short",
                 "strategy_id": "s_short",
                 "entry_time": "2026-05-12T09:00:00Z",
+                "exit_time": "2026-05-12T11:30:00Z",
                 "exit_reason": "stop_loss_filled:original_stop_loss",
                 "realized_entry_price": "2000",
                 "realized_exit_price": "1990",
@@ -93,6 +94,7 @@ def test_google_sheets_export_tables_split_open_closed_and_compute_unrealized():
 
     assert list(closed_trades["position_id"]) == ["pos-closed"]
     assert closed_trades.iloc[0]["exit_reason"] == "stop_loss_filled:original_stop_loss"
+    assert float(closed_trades.iloc[0]["holding_time_hours"]) == 2.5
 
     short_metrics = strategy_metrics[
         (strategy_metrics["strategy_id"] == "s_short")
@@ -122,3 +124,73 @@ def test_google_sheets_exporter_enabled_by_default_when_spreadsheet_id_configure
     )
     assert disabled is not None
     assert disabled.enabled is False
+
+
+def test_export_task_to_sheet_missing_config(monkeypatch, capsys):
+    from infrastructure.utils.google_sheets_exporter import export_task_to_sheet
+
+    monkeypatch.delenv("SHEETS_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("SHEETS_WEBHOOK_SECRET", raising=False)
+
+    assert export_task_to_sheet("sheet-123", "task", "ok", "job-1") is False
+    assert "Missing env var: SHEETS_WEBHOOK_URL" in capsys.readouterr().out
+
+
+def test_export_task_to_sheet_posts_payload_and_requires_ok(monkeypatch):
+    from infrastructure.utils import google_sheets_exporter as exporter
+
+    calls = []
+
+    class FakeResponse:
+        text = '{"ok": false}'
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"ok": True}
+
+    def fake_post(url, *, json, timeout):
+        calls.append((url, json, timeout))
+        return FakeResponse()
+
+    monkeypatch.setenv("SHEETS_WEBHOOK_URL", "https://script.example/exec")
+    monkeypatch.setenv("SHEETS_WEBHOOK_SECRET", "top-secret")
+    monkeypatch.setattr(exporter.requests, "post", fake_post)
+
+    assert exporter.export_task_to_sheet("sheet-123", "task", "ok", "job-1") is True
+    assert calls == [
+        (
+            "https://script.example/exec",
+            {
+                "secret": "top-secret",
+                "sheet_id": "sheet-123",
+                "job_id": "job-1",
+                "task": "task",
+                "status": "ok",
+            },
+            10,
+        )
+    ]
+
+
+def test_export_task_to_sheet_returns_false_when_webhook_rejects(monkeypatch, capsys):
+    from infrastructure.utils import google_sheets_exporter as exporter
+
+    class FakeResponse:
+        text = '{"ok": false}'
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"ok": False, "error": "unauthorized"}
+
+    monkeypatch.setenv("SHEETS_WEBHOOK_URL", "https://script.example/exec")
+    monkeypatch.setenv("SHEETS_WEBHOOK_SECRET", "top-secret")
+    monkeypatch.setattr(exporter.requests, "post", lambda *args, **kwargs: FakeResponse())
+
+    assert exporter.export_task_to_sheet("sheet-123", "task", "ok", "job-1") is False
+    output = capsys.readouterr().out
+    assert "Apps Script rejected export" in output
+    assert "top-secret" not in output

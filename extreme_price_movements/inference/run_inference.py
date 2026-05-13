@@ -1154,6 +1154,16 @@ def _safe_float(value: Any, default: float = np.nan) -> float:
     return out if np.isfinite(out) else default
 
 
+def _holding_time_hours(entry_time: Any, exit_time: Any) -> float:
+    entry_ts = pd.to_datetime(entry_time, utc=True, errors="coerce")
+    exit_ts = pd.to_datetime(exit_time, utc=True, errors="coerce")
+    if pd.isna(entry_ts) or pd.isna(exit_ts):
+        return np.nan
+    return float(
+        (pd.Timestamp(exit_ts) - pd.Timestamp(entry_ts)).total_seconds() / 3600.0
+    )
+
+
 def _send_trade_close_email(
     *,
     closed_trade: Dict[str, Any],
@@ -1180,6 +1190,12 @@ def _send_trade_close_email(
     gross_pnl_pct = closed_trade.get("gross_pnl_pct")
     net_pnl_pct = closed_trade.get("net_pnl_pct")
     net_pnl_amount = closed_trade.get("net_pnl_amount", closed_trade.get("net_pnl"))
+    holding_time_hours = _safe_float(closed_trade.get("holding_time_hours"))
+    if not np.isfinite(holding_time_hours):
+        holding_time_hours = _holding_time_hours(
+            closed_trade.get("entry_time"),
+            closed_trade.get("exit_time"),
+        )
     trade_recap = str(closed_trade.get("trade_recap") or "").strip()
     body = "\n".join(
         [
@@ -1193,6 +1209,7 @@ def _send_trade_close_email(
             f"  exit_reason_detail: {reason_detail}",
             f"entry_time: {closed_trade.get('entry_time')}",
             f"exit_time: {closed_trade.get('exit_time')}",
+            f"holding_time_hours: {_format_float(holding_time_hours, digits=4)}",
             f"entry_price: {_format_float(closed_trade.get('entry_price'))}",
             f"entry_order_type: {closed_trade.get('entry_order_type')}",
             f"ohlcv_entry_price: {_format_float(closed_trade.get('ohlcv_entry_price'))}",
@@ -3971,6 +3988,12 @@ def _log_closed_trade_event(
             or isinstance(value, (str, int, float, bool, np.integer, np.floating))
             or isinstance(value, (pd.Timestamp, datetime))
         }
+        holding_time_hours = _safe_float(closed_trade.get("holding_time_hours"))
+        if not np.isfinite(holding_time_hours):
+            holding_time_hours = _holding_time_hours(
+                closed_trade.get("entry_time"),
+                closed_trade.get("exit_time"),
+            )
         scalar_context.update(
             {
                 "run_id": config.get("run_id"),
@@ -3981,6 +4004,7 @@ def _log_closed_trade_event(
                 "realized_exit_price": closed_trade.get("exit_price"),
                 "exit_reason": closed_trade.get("reason"),
                 "exchange_order_id": closed_trade.get("close_order_id"),
+                "holding_time_hours": holding_time_hours,
             }
         )
         trade_logger.log_trade_legacy(

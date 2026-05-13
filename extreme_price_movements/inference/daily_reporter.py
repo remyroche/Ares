@@ -20,6 +20,9 @@ DEFAULT_REPORT_TO = "cryptoalias.rp@proton.me"
 DEFAULT_STATE_PATH = "extreme_price_movements/logs/daily_report_state.json"
 REPORT_TRADE_COLUMNS = [
     "timestamp",
+    "entry_time",
+    "exit_time",
+    "holding_time_hours",
     "symbol",
     "side",
     "strategy_id",
@@ -161,6 +164,16 @@ def _format_pct(value: float) -> str:
     return f"{value:.4%}"
 
 
+def _elapsed_hours(start: Any, end: Any) -> float:
+    start_ts = pd.to_datetime(start, utc=True, errors="coerce")
+    end_ts = pd.to_datetime(end, utc=True, errors="coerce")
+    if pd.isna(start_ts) or pd.isna(end_ts):
+        return np.nan
+    return float(
+        (pd.Timestamp(end_ts) - pd.Timestamp(start_ts)).total_seconds() / 3600.0
+    )
+
+
 def _strategy_trade_recap(trades: pd.DataFrame, *, total_balance: float) -> str:
     """Readable net-PnL recap by strategy for the daily deployment email."""
     if trades.empty:
@@ -215,6 +228,29 @@ def _strategy_trade_recap(trades: pd.DataFrame, *, total_balance: float) -> str:
             ).replace([np.inf, -np.inf], np.nan)
         )
     closed["notional"] = closed["notional"].fillna(0.0)
+    closed["holding_time_hours"] = pd.to_numeric(
+        closed.get("holding_time_hours", pd.Series(index=closed.index, dtype=float)),
+        errors="coerce",
+    ).replace([np.inf, -np.inf], np.nan)
+    if "time_in_trade_hours" in closed.columns:
+        closed["holding_time_hours"] = closed["holding_time_hours"].fillna(
+            pd.to_numeric(closed["time_in_trade_hours"], errors="coerce").replace(
+                [np.inf, -np.inf], np.nan
+            )
+        )
+    if "entry_time" in closed.columns:
+        exit_source = (
+            closed["exit_time"]
+            if "exit_time" in closed.columns
+            else closed.get("timestamp", pd.Series(index=closed.index, dtype=object))
+        )
+        computed_holding = [
+            _elapsed_hours(entry, exit_)
+            for entry, exit_ in zip(closed["entry_time"], exit_source)
+        ]
+        closed["holding_time_hours"] = closed["holding_time_hours"].fillna(
+            pd.Series(computed_holding, index=closed.index, dtype=float)
+        )
     if (closed["notional"] <= 0.0).all():
         entry = pd.to_numeric(
             closed.get(
@@ -236,8 +272,8 @@ def _strategy_trade_recap(trades: pd.DataFrame, *, total_balance: float) -> str:
 
     rows: List[str] = []
     header = (
-        "strategy_id | closed | won | lost | avg_net/trade | total_net | "
-        "bankroll_net | total_notional"
+        "strategy_id | closed | won | lost | avg_hold_hours | avg_net/trade | "
+        "total_net | bankroll_net | total_notional"
     )
     total_closed = int(len(closed))
     total_won = int((closed["net_amount"] > 0.0).sum())
@@ -252,6 +288,8 @@ def _strategy_trade_recap(trades: pd.DataFrame, *, total_balance: float) -> str:
     rows.append("Overall net recap:")
     rows.append(
         f"closed={total_closed} won={total_won} lost={total_lost} "
+        "avg_hold_hours="
+        f"{_format_money(float(closed['holding_time_hours'].mean()))} "
         f"avg_net/trade={_format_money(total_net / max(total_closed, 1))} "
         f"total_net={_format_money(total_net)} "
         f"bankroll_net={_format_pct(bankroll_pct)} "
@@ -271,8 +309,10 @@ def _strategy_trade_recap(trades: pd.DataFrame, *, total_balance: float) -> str:
             if np.isfinite(total_balance) and total_balance > 0.0
             else np.nan
         )
+        avg_holding_hours = float(grp["holding_time_hours"].mean())
         rows.append(
             f"{strategy_id} | {n} | {won} | {lost} | "
+            f"{_format_money(avg_holding_hours)} | "
             f"{_format_money(net / max(n, 1))} | {_format_money(net)} | "
             f"{_format_pct(bankroll)} | {_format_money(notional)}"
         )

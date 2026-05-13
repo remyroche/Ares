@@ -81,6 +81,31 @@ def _compact_symbol(symbol: object) -> str:
     return _normalise_symbol(symbol).replace("/", "").replace("_", "").replace("-", "")
 
 
+def _normalise_join_id(value: object) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    try:
+        num = float(text)
+        if np.isfinite(num) and num.is_integer():
+            return str(int(num))
+    except (TypeError, ValueError):
+        pass
+    if text.endswith(".0") and text[:-2].isdigit():
+        return text[:-2]
+    return text
+
+
+def _normalise_strategy_id(strategy_id: object) -> str:
+    text = str(strategy_id or "").strip()
+    for prefix in ("long_", "short_"):
+        if text.startswith(prefix):
+            return text[len(prefix) :]
+    return text
+
+
 def _first_present(row: pd.Series, names: Sequence[str], default=np.nan):
     for name in names:
         if name in row and pd.notna(row[name]) and row[name] != "":
@@ -173,6 +198,35 @@ def _truthy(value) -> bool:
     return bool(value)
 
 
+def _is_failed_trade_lifecycle(row: pd.Series) -> bool:
+    fields = []
+    for col in (
+        "action",
+        "lifecycle_event",
+        "status",
+        "portfolio_decision",
+        "portfolio_reject_reason",
+        "liquidity_reject_reason",
+        "order_error_category",
+        "error",
+    ):
+        if col in row and pd.notna(row[col]):
+            fields.append(str(row[col]).lower())
+    text = " ".join(fields)
+    return any(
+        token in text
+        for token in (
+            "fail",
+            "failed",
+            "reject",
+            "rejected",
+            "refus",
+            "error",
+            "blocked",
+        )
+    )
+
+
 def _normalise_times(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     if "decision_ts" not in out.columns and "timestamp" in out.columns:
@@ -186,6 +240,17 @@ def _normalise_times(df: pd.DataFrame) -> pd.DataFrame:
             out[col] = pd.to_datetime(out[col], utc=True, errors="coerce")
     if "symbol" in out.columns:
         out["symbol"] = out["symbol"].map(_normalise_symbol)
+    if "strategy_id" in out.columns:
+        out["strategy_id"] = out["strategy_id"].map(_normalise_strategy_id)
+    for col in (
+        "order_id",
+        "exchange_order_id",
+        "stop_order_id",
+        "take_profit_order_id",
+        "oco_id",
+    ):
+        if col in out.columns:
+            out[col] = out[col].map(_normalise_join_id)
     return out
 
 
@@ -209,8 +274,51 @@ def collapse_trade_lifecycle(trade_log: pd.DataFrame) -> pd.DataFrame:
             + src.get("timestamp", pd.NaT).astype(str)
         )
 
+    action_all = src.get("action", pd.Series("", index=src.index)).astype(str).str.lower()
+    event_all = src.get("lifecycle_event", pd.Series("", index=src.index)).astype(str).str.lower()
+    entry_mask = (action_all == "enter") | event_all.str.contains("entry", na=False)
+    stop_to_entry_position: dict[str, object] = {}
+    order_to_entry_position: dict[str, object] = {}
+    for _, row in src.loc[entry_mask].iterrows():
+        pos = row.get("position_id")
+        if pd.isna(pos) or pos == "":
+            continue
+        for key in ("stop_order_id", "take_profit_order_id", "oco_id"):
+            val = row.get(key)
+            join_id = _normalise_join_id(val)
+            if join_id:
+                stop_to_entry_position[join_id] = pos
+        val = row.get("exchange_order_id")
+        join_id = _normalise_join_id(val)
+        if join_id:
+            order_to_entry_position[join_id] = pos
+
+    def _linked_position_id(row: pd.Series):
+        pos = row.get("position_id")
+        action_raw = row.get("action")
+        event_raw = row.get("lifecycle_event")
+        action = str(action_raw if pd.notna(action_raw) else "").lower()
+        event = str(event_raw if pd.notna(event_raw) else "").lower()
+        if (action == "exit" or "exit" in event) and stop_to_entry_position:
+            for key in ("exchange_order_id", "stop_order_id", "position_id"):
+                val = row.get(key)
+                join_id = _normalise_join_id(val)
+                if join_id in stop_to_entry_position:
+                    return stop_to_entry_position[join_id]
+            text = str(pos or "")
+            if ":" in text:
+                suffix = text.rsplit(":", 1)[-1]
+                join_id = _normalise_join_id(suffix)
+                if join_id in stop_to_entry_position:
+                    return stop_to_entry_position[join_id]
+        return pos
+
+    src["_lifecycle_position_id"] = src.apply(_linked_position_id, axis=1)
+
     rows = []
-    for position_id, grp in src.sort_values("timestamp").groupby("position_id", dropna=False):
+    for position_id, grp in src.sort_values("timestamp").groupby(
+        "_lifecycle_position_id", dropna=False
+    ):
         action = grp.get("action", pd.Series("", index=grp.index)).astype(str).str.lower()
         event = grp.get("lifecycle_event", pd.Series("", index=grp.index)).astype(str).str.lower()
         status = grp.get("status", pd.Series("", index=grp.index)).astype(str).str.lower()
@@ -220,8 +328,10 @@ def collapse_trade_lifecycle(trade_log: pd.DataFrame) -> pd.DataFrame:
         exit_ = (exit_grp.iloc[-1] if not exit_grp.empty else pd.Series(dtype=object))
         base = entry.to_dict()
         base["position_id"] = position_id
+        if "exchange_order_id" in base:
+            base["order_id"] = _normalise_join_id(base.get("exchange_order_id"))
         base["lifecycle_entry_ts"] = _first_present(entry, ["timestamp", "decision_ts"])
-        base["was_traded"] = True
+        base["was_traded"] = not _is_failed_trade_lifecycle(entry)
         if not exit_.empty:
             base["lifecycle_exit_ts"] = _first_present(exit_, ["timestamp", "decision_ts"])
             for col in (
@@ -657,9 +767,52 @@ def _coalesce_trade_suffix_columns(df: pd.DataFrame) -> pd.DataFrame:
             continue
         base = col[:-6]
         if base in out.columns:
-            out[base] = out[base].combine_first(out[col])
+            if not out[col].notna().any():
+                continue
+            mask = out[base].isna() & out[col].notna()
+            if bool(mask.any()):
+                out.loc[mask, base] = out.loc[mask, col]
         else:
             out[base] = out[col]
+    return out
+
+
+def _merge_trade_lifecycle_on_nonempty_keys(
+    candidates: pd.DataFrame,
+    trades: pd.DataFrame,
+    keys: Sequence[str],
+) -> pd.DataFrame:
+    out = candidates.copy()
+    out["_trade_matched"] = False
+    for key in keys:
+        if key not in out.columns or key not in trades.columns:
+            continue
+        left_mask = (~out["_trade_matched"]) & out[key].map(_normalise_join_id).ne("")
+        if not bool(left_mask.any()):
+            continue
+        right = trades[trades[key].map(_normalise_join_id).ne("")].drop_duplicates(
+            key, keep="last"
+        )
+        if right.empty:
+            continue
+        merged = out.loc[left_mask].merge(
+            right,
+            on=key,
+            how="left",
+            suffixes=("", "_trade"),
+        )
+        merged.index = out.loc[left_mask].index
+        matched = merged[[c for c in merged.columns if c.endswith("_trade")]].notna().any(axis=1)
+        if not bool(matched.any()):
+            continue
+        for col in merged.columns:
+            if col == key:
+                continue
+            if col not in out.columns:
+                out[col] = pd.NA
+            out.loc[merged.index[matched], col] = merged.loc[matched, col]
+        out.loc[merged.index[matched], "_trade_matched"] = True
+    out = out.drop(columns=["_trade_matched"])
     return out
 
 
@@ -681,18 +834,35 @@ def build_live_candidate_replay_table(
         candidates["was_traded"] = candidates.get("portfolio_decision", "").astype(str).str.lower().isin({"trade", "traded", "accepted", "filled"})
     if trade_log is not None and not trade_log.empty:
         trades = collapse_trade_lifecycle(trade_log)
-        merge_keys = [c for c in ["position_id", "trade_id"] if c in candidates.columns and c in trades.columns]
+        for df in (candidates, trades):
+            for col in ("order_id", "position_id", "trade_id"):
+                if col in df.columns:
+                    df[col] = df[col].map(_normalise_join_id)
+        merge_keys = [
+            c
+            for c in ["position_id", "trade_id", "order_id"]
+            if c in candidates.columns and c in trades.columns
+        ]
         if merge_keys:
-            candidates = candidates.merge(trades, on=merge_keys, how="left", suffixes=("", "_trade"))
+            candidates = _merge_trade_lifecycle_on_nonempty_keys(
+                candidates,
+                trades,
+                merge_keys,
+            )
         else:
             keys = [c for c in _JOIN_KEYS if c in candidates.columns and c in trades.columns]
             candidates = candidates.merge(trades, on=keys, how="left", suffixes=("", "_trade"))
         candidates = _coalesce_trade_suffix_columns(candidates)
-    replay = build_live_replay_table(
+    replay = _base_replay_table(
         candidates,
         oos_policy=oos_policy,
         default_expected_fee_bps=default_expected_fee_bps,
+        oos_join_tolerance=pd.Timedelta("1min"),
+        allow_legacy_cost_features=False,
     )
+    replay = _apply_decomposition(replay)
+    cols = list(dict.fromkeys(LIVE_REPLAY_COLUMNS + DECOMPOSITION_COLUMNS + list(replay.columns)))
+    replay = replay.reindex(columns=cols)
     if forward_close is not None:
         replay = attach_forward_outcomes(replay, close=forward_close, high=forward_high, low=forward_low)
     return replay

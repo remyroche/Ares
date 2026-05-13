@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import argparse
 import re
 import sys
 from pathlib import Path
@@ -163,7 +164,7 @@ def _write_inference_candidate_bucket_params() -> Path:
     return out_path
 
 
-def regenerate_simple_tbm_reports() -> tuple[Path, Path, Path]:
+def regenerate_simple_tbm_reports(*, perps: bool = False) -> tuple[Path, Path, Path]:
     if not TBM_GEOMETRY_GRID_CSV.exists():
         raise FileNotFoundError(TBM_GEOMETRY_GRID_CSV)
     if not TBM_BEST_PARAMS_PER_CELL_CSV.exists():
@@ -176,17 +177,36 @@ def regenerate_simple_tbm_reports() -> tuple[Path, Path, Path]:
     cell_df = _rewrite_best_params_per_cell(cell_df)
     side_df = _build_side_horizon_best_params(cell_df)
     _assert_family_coverage(grid_df)
+    if perps:
+        grid_df["market_mode"] = "perps"
+        cell_df["market_mode"] = "perps"
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     grid_df.to_csv(TBM_GEOMETRY_GRID_CSV, index=False)
     cell_df.to_csv(TBM_BEST_PARAMS_PER_CELL_CSV, index=False)
     side_df.to_csv(TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV, index=False)
     _write_inference_candidate_bucket_params()
+    if perps:
+        manifest = {
+            "market_mode": "perps",
+            "sl_liquidation_rule": "stop_loss_pct <= liquidation_wall_pct / 3 using mark price where available",
+        }
+        (REPORTS_DIR / "tbm_perps_mode_manifest.json").write_text(
+            json.dumps(manifest, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
     return TBM_GEOMETRY_GRID_CSV, TBM_BEST_PARAMS_PER_CELL_CSV, TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV
 
 
 def main() -> None:
-    grid_path, cell_path, side_path = regenerate_simple_tbm_reports()
+    parser = argparse.ArgumentParser(description="Regenerate simple TBM report tables")
+    parser.add_argument(
+        "--perps",
+        action="store_true",
+        help="Annotate regenerated TBM tables as perp-mode outputs.",
+    )
+    args = parser.parse_args()
+    grid_path, cell_path, side_path = regenerate_simple_tbm_reports(perps=args.perps)
     print(f"rewrote {grid_path}")
     print(f"rewrote {cell_path}")
     print(f"rewrote {side_path}")

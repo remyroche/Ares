@@ -69,10 +69,6 @@ from extreme_price_movements.position_sizer_v2_metrics import (
     compute_false_safe_rate,
     compute_top_slice_metrics,
 )
-from extreme_price_movements.regime_adaptor import (
-    fit_regime_adaptor,
-    save_regime_adaptor_outputs,
-)
 from extreme_price_movements.run_ridge_sizer import (
     load_base_oof_predictions,
     load_meta_oof_predictions,
@@ -323,6 +319,9 @@ def _extract_strategy_params_payload(
             "source_horizon": _to_float_or_nan(source_horizon),
             "meta_oof_available": bool(strategy_meta.get("meta_oof_available", False)),
             "regime_adaptor_enabled": bool(res.get("regime_adaptor_enabled_", False)),
+            "regime_adaptor_research_enabled": bool(
+                res.get("regime_adaptor_research_enabled_", False)
+            ),
             "regime_adaptor_path": str(res.get("regime_adaptor_path_", "") or ""),
         }
         row["profitable_for_downstream"] = bool(
@@ -1654,6 +1653,9 @@ def _persist_regime_adaptor_summary(
             selection_score_f = float("nan")
         summary["strategies"][str(strategy_id)] = {
             "enabled": bool(res.get("regime_adaptor_enabled_", False)),
+            "research_enabled": bool(
+                res.get("regime_adaptor_research_enabled_", False)
+            ),
             "artifact_path": str(res.get("regime_adaptor_path_", "") or ""),
             "selection_score": (
                 selection_score_f if np.isfinite(selection_score_f) else None
@@ -7341,83 +7343,6 @@ def run_simple_position_sizer_from_artifacts(
             _score_ref = res.get("lgbm_sizer_scores_")
         if _score_ref is None:
             _score_ref = res.get("et_sizer_scores_")
-        if _score_ref is not None:
-            try:
-                _sym_for_regime = (
-                    trade_outcomes["symbol"].astype(str).values
-                    if "symbol" in trade_outcomes.columns
-                    else (
-                        active_df["symbol"].astype(str).values
-                        if "symbol" in active_df.columns
-                        else None
-                    )
-                )
-                _regime_fit = fit_regime_adaptor(
-                    feature_frame=active_df,
-                    pred_calibrated=np.asarray(_score_ref, dtype=np.float32),
-                    returns=np.asarray(y_raw_net_return, dtype=np.float32),
-                    timestamps=timestamps,
-                    symbols=_sym_for_regime,
-                    strategy_id=strategy_id,
-                    model_name=str(res.get("best_simple_score_name_", "sizer")),
-                    cost_pct=0.003,
-                )
-                _artifact_path = save_regime_adaptor_outputs(
-                    data_root=data_root,
-                    run_id=run_id,
-                    strategy_id=strategy_id,
-                    fit=_regime_fit,
-                )
-                res["sizer_score_raw_oof_"] = np.asarray(_score_ref, dtype=np.float32)
-                res["regime_adaptor_"] = _regime_fit.artifact
-                res["regime_adaptor_path_"] = str(_artifact_path)
-                res["regime_adaptor_enabled_"] = bool(
-                    _regime_fit.artifact.get("enable_regime_adaptor", False)
-                )
-                res["regime_weight_oof_"] = _regime_fit.regime_weight_oof
-                res["regime_eligible_oof_"] = _regime_fit.eligible_oof
-                res["regime_deployment_score_oof_"] = _regime_fit.deployment_score_oof
-                res["regime_deployment_score_rank_oof_"] = (
-                    _regime_fit.deployment_score_rank_oof
-                )
-                res["regime_metrics_table_"] = _regime_fit.metrics
-                res["regime_fixed_diagnostics_"] = _regime_fit.fixed_diagnostics
-                res["regime_adaptive_diagnostics_"] = _regime_fit.adaptive_diagnostics
-                res["regime_asset_diagnostics_"] = _regime_fit.asset_diagnostics
-                if res["regime_adaptor_enabled_"]:
-                    res["best_simple_score_"] = _regime_fit.deployment_score_rank_oof
-                    _score_ref = res["best_simple_score_"]
-                    (
-                        _adj_profit,
-                        _adj_opt_rets,
-                        _adj_opt_ts,
-                    ) = evaluate_selection_profit_proxy(
-                        np.asarray(_score_ref, dtype=np.float32),
-                        y_raw_net_return,
-                        timestamps=timestamps,
-                        symbols=_sym_for_regime,
-                        top_fracs=list(top_fracs) + [0.3],
-                        cost_pct=0.003,
-                    )
-                    if not _adj_profit.empty:
-                        res["profit_proxy_table_raw_"] = res.get(
-                            "profit_proxy_table_", pd.DataFrame()
-                        )
-                        res["profit_proxy_table_"] = _adj_profit
-                        res["opt_rets_"] = _adj_opt_rets
-                        res["opt_ts_"] = _adj_opt_ts
-                logger.info(
-                    "Regime adaptor for %s: enabled=%s artifact=%s",
-                    strategy_id[:50],
-                    res["regime_adaptor_enabled_"],
-                    _artifact_path,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Regime adaptor failed for strategy %s: %s",
-                    strategy_id[:50],
-                    exc,
-                )
         _n_score = len(_score_ref) if _score_ref is not None else len(trade_outcomes)
         _ctx: Dict[str, Any] = {}
         if "timestamp" in active_df.columns:

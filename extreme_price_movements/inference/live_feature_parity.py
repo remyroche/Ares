@@ -42,7 +42,7 @@ FEATURE_PARITY_COLUMNS = [
 def _normalise_symbol_for_join(symbol: object) -> str:
     """Normalize symbols conservatively for decision/feature joins."""
     text = str(symbol or "").upper().strip()
-    return text.replace(":USDT", "")
+    return text.replace(":USDT", "").replace("/", "_").replace("-", "_")
 
 
 def _normalise_feature_frame(df: pd.DataFrame) -> pd.DataFrame:

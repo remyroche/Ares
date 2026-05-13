@@ -1151,6 +1151,43 @@ _BASE_REG_INTERACTION_KEYS: tuple[str, ...] = (
     "clf_std_x_reg_std",
 )
 
+_BASE_EBM_UNCERTAINTY_KEYS: tuple[str, ...] = (
+    "ebm_unc_logodds_var",
+    "ebm_unc_entropy_mean",
+    "ebm_unc_conflict",
+    "ebm_unc_support_mean",
+    "ebm_unc_uncertainty_weight",
+    "ebm_unc_term_var_mean",
+    "ebm_unc_term_var_max",
+    "ebm_unc_support_min",
+    "ebm_unc_conflict_norm",
+    "ebm_unc_proximity_mean",
+    "ebm_unc_proximity_min",
+    "ebm_unc_concentration",
+    "ebm_unc_sign_ratio",
+    "ebm_unc_sign_ratio_top50_mas",
+    "ebm_unc_gradient_mean_top80_mas",
+    "ebm_unc_gradient_max_top80_mas",
+    "ebm_unc_entropy_std",
+    "ebm_unc_interaction_share",
+    "ebm_unc_gap50rel",
+    "ebm_unc_consensus_edge",
+    "ebm_unc_pi_width",
+    "ebm_unc_gradient_damped_logit",
+    "ebm_unc_convexity_boosted_logit",
+    "ebm_unc_chaos_factor",
+    "ebm_unc_edge_case_volatility",
+    "ebm_unc_signal_to_noise",
+    "ebm_unc_support_adjusted_variance",
+    "ebm_unc_support_adjusted_uncertainty",
+    "ebm_unc_friction_weight",
+)
+
+_BASE_CLF_UNCERTAINTY_ALIAS_KEYS: tuple[tuple[str, str], ...] = (
+    ("oof_sigma_trees", "sigma_trees"),
+    ("oof_sigma_robust", "sigma_robust"),
+)
+
 
 def _sanitize_tree_fit_matrix(X: Any, context: str) -> np.ndarray:
     arr = np.asarray(X, dtype=np.float32)
@@ -5283,6 +5320,177 @@ def _write_base_meta_contract_manifest(
         json.dump(manifest, f, indent=2)
     tprint(f"Base/meta compatibility contract written to {path}")
     return path
+
+
+def _payload_put_oof_vector(
+    payload: dict[str, Any],
+    key: str,
+    values: Any,
+    n: int,
+    finite_mask: np.ndarray,
+    *,
+    default: Optional[float] = None,
+) -> bool:
+    """Add an OOF vector aligned to the exported finite OOF rows."""
+    if key in payload:
+        return True
+    if values is None:
+        if default is None:
+            return False
+        arr = np.full(n, float(default), dtype=np.float32)
+    else:
+        try:
+            arr = np.asarray(values, dtype=np.float32).reshape(-1)
+        except Exception:
+            if default is None:
+                return False
+            arr = np.full(n, float(default), dtype=np.float32)
+        if len(arr) < n:
+            if default is None:
+                return False
+            padded = np.full(n, float(default), dtype=np.float32)
+            padded[: len(arr)] = arr
+            arr = padded
+    payload[key] = arr[:n][finite_mask].astype(np.float32, copy=False)
+    return True
+
+
+def _probability_entropy(prob: np.ndarray) -> np.ndarray:
+    p = np.clip(np.asarray(prob, dtype=np.float32), 1e-6, 1.0 - 1e-6)
+    return (-(p * np.log(p) + (1.0 - p) * np.log(1.0 - p))).astype(np.float32)
+
+
+def _append_base_oof_contract_uncertainty(
+    payload: dict[str, Any],
+    *,
+    race: Any,
+    detailed_metrics: dict[str, Any],
+    reg_head: dict[str, Any],
+    n: int,
+    finite_mask: np.ndarray,
+) -> None:
+    """Export uncertainty columns promised in base_meta_contract.json.
+
+    Diagnostics may be stored on ModelRace.detailed_metrics, on race/model
+    oof_uncertainty_features, or on the optional regression head. Normalize those
+    sources into the OOF parquet contract so future runs are self-contained.
+    """
+    dm = detailed_metrics or {}
+    best_model = getattr(race, "best_model", None)
+    oof_prob = np.asarray(getattr(race, "oof_probs", np.full(n, np.nan)), dtype=np.float32)
+    if len(oof_prob) < n:
+        oof_prob = np.pad(oof_prob, (0, n - len(oof_prob)), constant_values=np.nan)
+    oof_prob = oof_prob[:n]
+    finite_count = int(np.sum(finite_mask))
+
+    def from_sources(contract_key: str, *aliases: str) -> Any:
+        names = (contract_key, *aliases)
+        for name in names:
+            if name in dm:
+                return dm[name]
+        for owner in (race, best_model):
+            if owner is None:
+                continue
+            feats = getattr(owner, "oof_uncertainty_features", None)
+            if isinstance(feats, dict):
+                for name in names:
+                    raw = name[4:] if name.startswith("oof_") else name
+                    if raw in feats:
+                        return feats[raw]
+                    if name in feats:
+                        return feats[name]
+        return None
+
+    for owner in (race, best_model):
+        if owner is None:
+            continue
+        feats = getattr(owner, "oof_uncertainty_features", None)
+        if not isinstance(feats, dict):
+            continue
+        for raw_key, vals in feats.items():
+            out_key = str(raw_key)
+            if not out_key.startswith("oof_"):
+                out_key = f"oof_{out_key}"
+            if out_key.startswith("oof_ebm_unc_"):
+                _payload_put_oof_vector(payload, out_key, vals, n, finite_mask)
+
+    for attr, key in (
+        ("oof_probs_raw_ebm", "oof_prob_ebm_raw"),
+        ("oof_probs_en", "oof_prob_en"),
+        ("oof_probs_uncertainty_weighted", "oof_prob_uncertainty_weighted"),
+    ):
+        vals = dm.get(key)
+        if vals is None:
+            vals = getattr(race, attr, None)
+        if vals is None and best_model is not None:
+            vals = getattr(best_model, attr, None)
+        _payload_put_oof_vector(payload, key, vals, n, finite_mask, default=np.nan)
+
+    raw_export = np.asarray(payload.get("oof_prob_ebm_raw", oof_prob[finite_mask]), dtype=np.float32)
+    en_export = np.asarray(payload.get("oof_prob_en", raw_export), dtype=np.float32)
+    raw_full = np.full(n, np.nan, dtype=np.float32)
+    en_full = np.full(n, np.nan, dtype=np.float32)
+    raw_full[finite_mask] = raw_export[:finite_count]
+    en_full[finite_mask] = en_export[:finite_count]
+
+    ebm_defaults = {
+        "oof_ebm_unc_logodds_var": np.zeros(n, dtype=np.float32),
+        "oof_ebm_unc_entropy_mean": _probability_entropy(np.nan_to_num(raw_full, nan=0.5)),
+        "oof_ebm_unc_conflict": np.abs(
+            np.nan_to_num(raw_full, nan=0.5) - np.nan_to_num(en_full, nan=0.5)
+        ).astype(np.float32),
+        "oof_ebm_unc_support_mean": np.ones(n, dtype=np.float32),
+        "oof_ebm_unc_uncertainty_weight": np.ones(n, dtype=np.float32),
+    }
+    for key, default_vec in ebm_defaults.items():
+        _payload_put_oof_vector(payload, key, from_sources(key), n, finite_mask)
+        if key not in payload:
+            payload[key] = default_vec[:n][finite_mask].astype(np.float32, copy=False)
+
+    confidence = 2.0 * np.abs(np.nan_to_num(oof_prob, nan=0.5) - 0.5)
+    tree_defaults = {
+        "oof_sigma_trees": np.zeros(n, dtype=np.float32),
+        "oof_sigma_robust": np.zeros(n, dtype=np.float32),
+        "oof_tree_pred_mean": oof_prob,
+        "oof_tree_pred_std": np.zeros(n, dtype=np.float32),
+        "oof_tree_pred_cv": np.zeros(n, dtype=np.float32),
+        "oof_tree_pred_std_robust": np.zeros(n, dtype=np.float32),
+        "oof_tree_vote_entropy": _probability_entropy(np.nan_to_num(oof_prob, nan=0.5)),
+        "oof_tree_vote_margin": confidence.astype(np.float32),
+        "oof_tree_vote_top_gap": confidence.astype(np.float32),
+    }
+    for key in (
+        "oof_sigma_trees",
+        "oof_sigma_robust",
+        *[f"oof_tree_{k}" for k in ModelRace._TREE_UNCERTAINTY_KEYS],
+    ):
+        _payload_put_oof_vector(payload, key, from_sources(key), n, finite_mask)
+        if key not in payload:
+            default_vec = tree_defaults.get(key)
+            if default_vec is None:
+                default_vec = np.full(n, np.nan, dtype=np.float32)
+            payload[key] = default_vec[:n][finite_mask].astype(np.float32, copy=False)
+
+    for key, vals in ((reg_head or {}).get("oof_features", {}) or {}).items():
+        _payload_put_oof_vector(payload, str(key), vals, n, finite_mask)
+    if "reg_q10" in payload and "reg_q90" in payload:
+        reg_range = (
+            np.asarray(payload["reg_q90"], dtype=np.float32)
+            - np.asarray(payload["reg_q10"], dtype=np.float32)
+        ).astype(np.float32)
+        payload.setdefault("reg_pred_range_q90_q10", reg_range)
+        payload.setdefault("reg_uncertainty", reg_range)
+    if "reg_q50" in payload and "reg_q90" in payload:
+        payload.setdefault(
+            "reg_upside_tail",
+            (
+                np.asarray(payload["reg_q90"], dtype=np.float32)
+                - np.asarray(payload["reg_q50"], dtype=np.float32)
+            ).astype(np.float32),
+        )
+    for key in (*_BASE_REG_UNCERTAINTY_KEYS, *_BASE_REG_INTERACTION_KEYS):
+        if key not in payload:
+            payload[key] = np.full(finite_count, np.nan, dtype=np.float32)
 
 
 def _fast_lookup(feat_df, event_ts, event_sym):
@@ -11033,6 +11241,21 @@ def train_meta_models_from_artifacts(
                 out = np.full(fallback_len, np.nan, dtype=np.float32)
                 out[: len(vals)] = vals
                 return out
+        for owner in (race, getattr(race, "best_model", None)):
+            feats = getattr(owner, "oof_uncertainty_features", None)
+            if not isinstance(feats, dict):
+                continue
+            aliases = [key]
+            if key.startswith("oof_"):
+                aliases.append(key[4:])
+            for alias in aliases:
+                if alias in feats:
+                    vals = np.asarray(feats[alias], dtype=np.float32)
+                    if len(vals) >= fallback_len:
+                        return vals[:fallback_len]
+                    out = np.full(fallback_len, np.nan, dtype=np.float32)
+                    out[: len(vals)] = vals
+                    return out
         return np.full(fallback_len, np.nan, dtype=np.float32)
 
     _TREE_UNCERTAINTY_KEYS = (
@@ -11108,6 +11331,27 @@ def train_meta_models_from_artifacts(
                 f"    Meta {strategy_id} H{int(h)}: aligning clf/reg uncertainty on "
                 f"{len(ds_h)} fitted rows -> {len(df_union)} union rows"
             )
+            for oof_col, feat_key in _BASE_CLF_UNCERTAINTY_ALIAS_KEYS:
+                if saved_oof_preferred:
+                    if oof_col not in ds_h.columns:
+                        continue
+                    vec_h = np.asarray(ds_h[oof_col].values, dtype=np.float32)
+                else:
+                    vec_h = _race_sigma_vector(race, oof_col, len(ds_h))
+                if not np.isfinite(vec_h).any():
+                    continue
+                aligned = _align_values_by_ts_symbol_keys(
+                    df_union["__ts__"].values,
+                    df_union["__symbol__"].values,
+                    ds_h["__ts__"].values,
+                    ds_h["__symbol__"].values,
+                    vec_h,
+                    fill_value=np.nan,
+                    dtype=np.float32,
+                )
+                out[f"pred_{strategy_id}_H{int(h)}_{feat_key}"] = aligned
+                out[f"pred_H{int(h)}_{feat_key}"] = aligned
+                out[f"base_H{int(h)}_{feat_key}"] = aligned
             for feat_key in _TREE_UNCERTAINTY_KEYS:
                 oof_col = f"oof_tree_{feat_key}"
                 if saved_oof_preferred:
@@ -11153,14 +11397,44 @@ def train_meta_models_from_artifacts(
                 out[f"pred_{strategy_id}_H{int(h)}_{pred_alias}"] = aligned
                 out[f"pred_H{int(h)}_{pred_alias}"] = aligned
                 out[f"base_H{int(h)}_{pred_alias}"] = aligned
+            ebm_unc_keys = list(_BASE_EBM_UNCERTAINTY_KEYS)
+            if saved_oof_preferred:
+                for col in ds_h.columns:
+                    if str(col).startswith("oof_ebm_unc_"):
+                        ebm_unc_keys.append(str(col).replace("oof_", "", 1))
+            for feat_key in list(dict.fromkeys(ebm_unc_keys)):
+                oof_col = f"oof_{feat_key}"
+                if saved_oof_preferred:
+                    if oof_col not in ds_h.columns:
+                        continue
+                    vec_h = np.asarray(ds_h[oof_col].values, dtype=np.float32)
+                else:
+                    vec_h = _race_sigma_vector(race, oof_col, len(ds_h))
+                if not np.isfinite(vec_h).any():
+                    continue
+                aligned = _align_values_by_ts_symbol_keys(
+                    df_union["__ts__"].values,
+                    df_union["__symbol__"].values,
+                    ds_h["__ts__"].values,
+                    ds_h["__symbol__"].values,
+                    vec_h,
+                    fill_value=np.nan,
+                    dtype=np.float32,
+                )
+                out[f"pred_{strategy_id}_H{int(h)}_{feat_key}"] = aligned
+                out[f"pred_H{int(h)}_{feat_key}"] = aligned
+                out[f"base_H{int(h)}_{feat_key}"] = aligned
             reg_head = model_info.get("reg_head") or {}
             reg_oof_features = dict(reg_head.get("oof_features", {}) or {})
             for feat_key in _BASE_REG_UNCERTAINTY_KEYS + _BASE_REG_INTERACTION_KEYS:
                 if saved_oof_preferred:
+                    if feat_key not in ds_h.columns:
+                        continue
+                    vec_h = np.asarray(ds_h[feat_key].values, dtype=np.float32)
+                elif feat_key in reg_oof_features:
+                    vec_h = np.asarray(reg_oof_features.get(feat_key), dtype=np.float32)
+                else:
                     continue
-                if feat_key not in reg_oof_features:
-                    continue
-                vec_h = np.asarray(reg_oof_features.get(feat_key), dtype=np.float32)
                 if len(vec_h) == 0:
                     continue
                 aligned = _align_values_by_ts_symbol_keys(
@@ -14659,7 +14933,7 @@ def train_meta_models_from_artifacts(
             tprint(
                 f"  Meta {k}: primary tree uncertainty features materialized="
                 f"{len(tree_uncertainty_cols)} columns from "
-                f"{len(_TREE_UNCERTAINTY_KEYS) + len(_BASE_REG_UNCERTAINTY_KEYS) + len(_BASE_REG_INTERACTION_KEYS)} "
+                f"{len(_BASE_CLF_UNCERTAINTY_ALIAS_KEYS) + len(_TREE_UNCERTAINTY_KEYS) + len(_BASE_EBM_UNCERTAINTY_KEYS) + len(_BASE_REG_UNCERTAINTY_KEYS) + len(_BASE_REG_INTERACTION_KEYS)} "
                 f"primary clf/reg families; sample={tree_uncertainty_cols[:8]}"
             )
 
@@ -20899,6 +21173,14 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         _payload[_metric_key] = np.asarray(
                             _metric_vals, dtype=np.float32
                         )[:_n][_finite_oof_mask]
+                _append_base_oof_contract_uncertainty(
+                    _payload,
+                    race=_race,
+                    detailed_metrics=_dm_best,
+                    reg_head=_reg_head,
+                    n=_n,
+                    finite_mask=_finite_oof_mask,
+                )
 
                 if _df_oof is not None:
                     if "__ts__" in _df_oof.columns:
@@ -21113,6 +21395,14 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                                     _payload[_metric_key] = np.asarray(
                                         _metric_vals, dtype=np.float32
                                     )[:_n]
+                        _append_base_oof_contract_uncertainty(
+                            _payload,
+                            race=_race,
+                            detailed_metrics=_dm_best,
+                            reg_head=_variant_fit.get("reg_head", {}) or {},
+                            n=_n,
+                            finite_mask=np.ones(_n, dtype=bool),
+                        )
                         if "__ts__" in _df_oof.columns:
                             _payload["timestamp"] = _normalize_oof_timestamps_to_numpy(
                                 _df_oof["__ts__"]

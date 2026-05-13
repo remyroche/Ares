@@ -96,6 +96,7 @@ from extreme_price_movements.config import (
     RIDGE_FEATURE_COLS,
     TEST_FEATURE_KEYS,
     TIME_FEATURE_KEYS,
+    enable_perp_feature_keys,
 )
 from extreme_price_movements.data_store import (
     PartitionedOHLCVStore,
@@ -16468,6 +16469,17 @@ if __name__ == "__main__":
         default="5,10",
         help="Comma-separated list of horizons for triad targets (default: 5,10)",
     )
+    parser.add_argument(
+        "--market-mode",
+        choices=["spot", "perps", "auto"],
+        default="auto",
+        help="Regime feature mode. perps enables perp-native registry/features.",
+    )
+    parser.add_argument(
+        "--perps",
+        action="store_true",
+        help="Alias for --market-mode perps.",
+    )
     args = parser.parse_args()
 
     cfg = dict(CFG)
@@ -16477,6 +16489,13 @@ if __name__ == "__main__":
     cfg["run_step"] = args.run_step
     if args.step1_dir:
         cfg["step1_dir"] = args.step1_dir
+    market_mode = "perps" if args.perps else args.market_mode
+    if market_mode == "auto":
+        market_mode = "perps" if str(args.data_root).rstrip("/").endswith("_perp") else "spot"
+    cfg["market_mode"] = market_mode
+    cfg["use_perps"] = market_mode == "perps"
+    if cfg["use_perps"]:
+        cfg = enable_perp_feature_keys(cfg)
     cfg.setdefault("sliceplanner_outer_n_folds", 8)
     cfg.setdefault("sliceplanner_warmup_days", 90)
     
@@ -16509,7 +16528,8 @@ if __name__ == "__main__":
 
     root_output_dir = build_run_output_dir(cfg)
     tprint(
-        f"LGBM Full Run: root={args.data_root} | lookback={args.lookback_years}y | symbols={args.max_symbols} | run_step={args.run_step}"
+        f"LGBM Full Run: root={args.data_root} | market_mode={market_mode} | "
+        f"lookback={args.lookback_years}y | symbols={args.max_symbols} | run_step={args.run_step}"
     )
     tprint(f"LGBM Output Dir: {root_output_dir}")
     if args.step1_dir:
@@ -16626,9 +16646,20 @@ if __name__ == "__main__":
     )
     requested_feature_keys = sorted(
         set(
-            list(CFG.get("FEATURE_SELECTION_KEYS", []))
-            + list(TEST_FEATURE_KEYS)
-            + RIDGE_FEATURE_COLS
+            list(cfg.get("FEATURE_SELECTION_KEYS", []))
+            + list(cfg.get("test_feature_keys", TEST_FEATURE_KEYS))
+            + (list(cfg.get("PERP_FEATURE_KEYS", [])) if cfg.get("use_perps") else [])
+            + (
+                list(cfg.get("SPOT_FOR_PERPS_BASE_FEATURE_KEYS", []))
+                if cfg.get("use_perps")
+                else []
+            )
+            + (
+                list(cfg.get("SPOT_FOR_PERPS_META_FEATURE_KEYS", []))
+                if cfg.get("use_perps")
+                else []
+            )
+            + list(RIDGE_FEATURE_COLS)
             + list(CONTINUOUS_LOCATION_COLS)
         )
     )
@@ -16665,7 +16696,9 @@ if __name__ == "__main__":
     # Check for missing features - RIDGE_FEATURE_COLS and FEATURE_SELECTION_KEYS are required,
     # but CONTINUOUS_LOCATION_COLS are optional (they'll be skipped if missing)
     required_keys = set(
-        list(CFG.get("FEATURE_SELECTION_KEYS", [])) + RIDGE_FEATURE_COLS
+        list(cfg.get("FEATURE_SELECTION_KEYS", []))
+        + list(RIDGE_FEATURE_COLS)
+        + (list(cfg.get("PERP_FEATURE_KEYS", [])) if cfg.get("use_perps") else [])
     )
     missing_required_keys = sorted(required_keys - set(feat_dict_raw))
     if missing_required_keys:

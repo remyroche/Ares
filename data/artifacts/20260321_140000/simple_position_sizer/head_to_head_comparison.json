@@ -1,106 +1,15 @@
 [
   {
-    "strategy_id": "bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50_slope_0_00070510805",
+    "strategy_id": "dist_prior_day_low_0_023332626_loc_vwap_dev_z_48_-0_85210818_dist_ema_fast_0_003809185_ret24h_-1_0786834",
     "rows": [
       {
         "pipeline": "meta_clf_only",
-        "utility": 0.34166813528482054,
-        "wallet_pnl": 1.2638517935694833
+        "utility": 0.7719952809709791,
+        "wallet_pnl": 0.3982264723335099
       }
     ],
     "winner": "meta_clf_only",
-    "winner_wallet_pnl": 1.2638517935694833,
-    "winner_utility": 0.34166813528482054
-  },
-  {
-    "strategy_id": "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701",
-    "rows": [
-      {
-        "pipeline": "meta_clf_only",
-        "utility": 0.17910405282425335,
-        "wallet_pnl": 0.42934182566385304
-      }
-    ],
-    "winner": "meta_clf_only",
-    "winner_wallet_pnl": 0.42934182566385304,
-    "winner_utility": 0.17910405282425335
-  },
-  {
-    "strategy_id": "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_tbm",
-    "rows": [
-      {
-        "pipeline": "meta_clf_only",
-        "utility": 0.17910405282425335,
-        "wallet_pnl": 0.42934182566385304
-      }
-    ],
-    "winner": "meta_clf_only",
-    "winner_wallet_pnl": 0.42934182566385304,
-    "winner_utility": 0.17910405282425335
-  },
-  {
-    "strategy_id": "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575",
-    "rows": [
-      {
-        "pipeline": "meta_clf_only",
-        "utility": 0.27647798220778097,
-        "wallet_pnl": 0.5692702043948572
-      }
-    ],
-    "winner": "meta_clf_only",
-    "winner_wallet_pnl": 0.5692702043948572,
-    "winner_utility": 0.27647798220778097
-  },
-  {
-    "strategy_id": "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_tbm",
-    "rows": [
-      {
-        "pipeline": "meta_clf_only",
-        "utility": 0.27647798220778097,
-        "wallet_pnl": 0.5692702043948572
-      }
-    ],
-    "winner": "meta_clf_only",
-    "winner_wallet_pnl": 0.5692702043948572,
-    "winner_utility": 0.27647798220778097
-  },
-  {
-    "strategy_id": "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701",
-    "rows": [
-      {
-        "pipeline": "meta_clf_only",
-        "utility": 0.14661148364213927,
-        "wallet_pnl": 0.33123121455937543
-      }
-    ],
-    "winner": "meta_clf_only",
-    "winner_wallet_pnl": 0.33123121455937543,
-    "winner_utility": 0.14661148364213927
-  },
-  {
-    "strategy_id": "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_tbm",
-    "rows": [
-      {
-        "pipeline": "meta_clf_only",
-        "utility": 0.14661148364213927,
-        "wallet_pnl": 0.33123121455937543
-      }
-    ],
-    "winner": "meta_clf_only",
-    "winner_wallet_pnl": 0.33123121455937543,
-    "winner_utility": 0.14661148364213927
-  },
-  {
-    "strategy_id": "dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639",
-    "rows": [
-      {
-        "pipeline": "meta_clf_only",
-        "utility": -0.016101721270675995,
-        "wallet_pnl": 0.23468764798231606
-      }
-    ],
-    "winner": "meta_clf_only",
-    "winner_wallet_pnl": 0.23468764798231606,
-    "winner_utility": -0.016101721270675995
+    "winner_wallet_pnl": 0.3982264723335099,
+    "winner_utility": 0.7719952809709791
   }
 ]

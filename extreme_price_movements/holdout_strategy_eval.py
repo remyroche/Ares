@@ -51,6 +51,7 @@ from extreme_price_movements.policy_optimiser import (
 from extreme_price_movements.regime_adaptor import (
     apply_regime_adaptor,
     load_regime_adaptor,
+    regime_adaptor_inference_enabled,
     safe_strategy_slug,
 )
 from extreme_price_movements.ridge_position_sizer import (
@@ -1080,7 +1081,7 @@ def evaluate_holdout_symbol(
         if adaptor_path.exists():
             try:
                 adaptor = load_regime_adaptor(adaptor_path)
-                if bool(adaptor.get("enable_regime_adaptor", False)):
+                if regime_adaptor_inference_enabled(DEFAULT_CFG, adaptor):
                     feature_rows = feature_df.reindex(
                         pd.DatetimeIndex(outcomes["timestamp"].values)
                     )

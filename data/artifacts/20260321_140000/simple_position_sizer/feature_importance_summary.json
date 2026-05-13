@@ -3,46 +3,6 @@
   "run_id": "20260321_140000",
   "schema_version": "v1",
   "strategies": {
-    "bars_in_high_vol_state_log_norm_-0_61002535_dist_weekly_vwap_-0_38453856_loc_ema_stack_pos_48_0_66408622_loc_prev_day_range_pos_24_0_41419065_atr_compression_ratio_0_97724169_ema50_slope_0_00070510805": {
-      "barrier_clf_top10": [],
-      "elasticnet_top10": [],
-      "extratrees_top10": [],
-      "winner_model": "et",
-      "winner_pred_prefix_share": null,
-      "winner_top10": []
-    },
-    "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701": {
-      "barrier_clf_top10": [],
-      "elasticnet_top10": [],
-      "extratrees_top10": [],
-      "winner_model": "et",
-      "winner_pred_prefix_share": null,
-      "winner_top10": []
-    },
-    "bars_in_high_vol_state_log_norm_0_45356679_dist_prior_day_low_0_011585106_rvol_z_0_89040798_volume_trend_48_-1_0869701_tbm": {
-      "barrier_clf_top10": [],
-      "elasticnet_top10": [],
-      "extratrees_top10": [],
-      "winner_model": "et",
-      "winner_pred_prefix_share": null,
-      "winner_top10": []
-    },
-    "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575": {
-      "barrier_clf_top10": [],
-      "elasticnet_top10": [],
-      "extratrees_top10": [],
-      "winner_model": "et",
-      "winner_pred_prefix_share": null,
-      "winner_top10": []
-    },
-    "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_tbm": {
-      "barrier_clf_top10": [],
-      "elasticnet_top10": [],
-      "extratrees_top10": [],
-      "winner_model": "et",
-      "winner_pred_prefix_share": null,
-      "winner_top10": []
-    },
     "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701": {
       "barrier_clf_top10": [],
       "elasticnet_top10": [],
@@ -51,7 +11,7 @@
       "winner_pred_prefix_share": null,
       "winner_top10": []
     },
-    "dist_prior_day_high_0_035536911_dist_prior_day_low_0_012770575_vol_z_0_6473701_tbm": {
+    "dist_prior_day_low_0_023332626_loc_vwap_dev_z_48_-0_85210818_dist_ema_fast_0_003809185_ret24h_-1_0786834": {
       "barrier_clf_top10": [],
       "elasticnet_top10": [],
       "extratrees_top10": [],
@@ -59,7 +19,15 @@
       "winner_pred_prefix_share": null,
       "winner_top10": []
     },
-    "dist_prior_day_low_0_012672868_loc_prev_week_range_pos_48_0_22452639": {
+    "dist_prior_day_low_0_029999996_compression_ratio_-0_095844157_vov_mad_20_-0_2115936": {
+      "barrier_clf_top10": [],
+      "elasticnet_top10": [],
+      "extratrees_top10": [],
+      "winner_model": "et",
+      "winner_pred_prefix_share": null,
+      "winner_top10": []
+    },
+    "dist_prior_day_low_0_033441655_compression_score_0_55698758_ret24h_-1_0731928": {
       "barrier_clf_top10": [],
       "elasticnet_top10": [],
       "extratrees_top10": [],

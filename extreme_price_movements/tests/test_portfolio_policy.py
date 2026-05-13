@@ -17,6 +17,9 @@ def test_portfolio_policy_defaults_resolve_to_8_and_dynamic_75pct_caps():
     assert policy.resolved_max_concurrent_per_strategy() == 6
     assert policy.max_total_wallet_allocation_pct == 0.75
     assert policy.max_available_wallet_position_pct == 0.50
+    assert policy.book_notional_multiplier == 1.0
+    assert policy.leverage_wallet_multiplier == 1.0
+    assert policy.min_margin_level_after_entry == 2.5
     assert policy.live_test_min_quote_notional == 5.0
     assert policy.live_test_quote_notional == 10.0
 
@@ -77,6 +80,8 @@ def test_rank_based_position_size_caps_and_live_test_override():
         live_test_mode=False,
     )
     assert prod["size_after_liquidity"] == 5000.0
+    assert prod["book_notional_multiplier"] == 1.0
+    assert prod["leverage_wallet_multiplier"] == 1.0
     live_test = compute_rank_based_position_size(
         wallet_value=100000.0,
         open_notional=0.0,
@@ -99,7 +104,7 @@ def test_rank_based_position_size_live_test_minimum_for_positive_size():
         liquidity_capacity_weight=0.25,
         live_test_mode=True,
     )
-    assert small["size_after_liquidity"] == 5.0
+    assert small["size_after_liquidity"] == 0.0
 
 
 def test_rank_based_position_size_uses_available_wallet_cap():
@@ -116,6 +121,7 @@ def test_rank_based_position_size_uses_available_wallet_cap():
         policy=policy,
         live_test_mode=False,
     )
+    assert high_rank["open_equity_allocation"] == 6000.0
     assert high_rank["available_wallet"] == 4000.0
     assert high_rank["available_wallet_position_cap"] == 2000.0
     assert high_rank["size_after_liquidity"] == 2000.0

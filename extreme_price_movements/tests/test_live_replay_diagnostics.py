@@ -1,14 +1,22 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from extreme_price_movements.inference.live_feature_parity import (
     build_feature_parity_report,
     summarize_feature_parity,
 )
+from extreme_price_movements.inference.live_feature_parity_job import (
+    run_offline_feature_parity_job,
+)
 from extreme_price_movements.inference.live_gap_report import (
     build_live_gap_report,
     classify_gap_rows,
     render_live_gap_report_markdown,
+)
+from extreme_price_movements.inference.live_gap_diagnostics import (
+    attach_strategy_oos_expectations,
+    load_strategy_oos_expectations,
 )
 from extreme_price_movements.inference.live_replay import (
     attach_forward_outcomes,
@@ -38,6 +46,41 @@ def test_build_feature_parity_report_detects_exact_mismatch_and_missing():
 
     summary = summarize_feature_parity(report)
     assert set(summary["feature"]) == {"ret1h", "vol_z"}
+
+
+def test_offline_feature_parity_job_writes_reports(tmp_path):
+    idx = pd.date_range("2026-01-01", periods=2, freq="h", tz="UTC")
+    decisions = pd.DataFrame(
+        {
+            "timestamp": [idx[1]],
+            "signal_bar_ts": [idx[1]],
+            "symbol": ["BTC/USDT"],
+        }
+    )
+    live_dir = tmp_path / "live"
+    oos_dir = tmp_path / "oos"
+    live_dir.mkdir()
+    oos_dir.mkdir()
+    decisions_path = tmp_path / "decisions.parquet"
+    decisions.to_parquet(decisions_path, index=False)
+    pd.DataFrame({"BTC/USDT": [1.0, 2.0]}, index=idx).to_parquet(
+        live_dir / "ret1h.parquet"
+    )
+    pd.DataFrame({"BTC/USDT": [1.0, 2.0]}, index=idx).to_parquet(
+        oos_dir / "ret1h.parquet"
+    )
+
+    report, summary = run_offline_feature_parity_job(
+        decisions_path=decisions_path,
+        live_features_path=live_dir,
+        oos_features_path=oos_dir,
+        output_dir=tmp_path / "out",
+    )
+
+    assert report.loc[0, "parity_status"] == "match"
+    assert summary.loc[0, "matches"] == 1
+    assert (tmp_path / "out" / "feature_parity_report.csv").exists()
+    assert (tmp_path / "out" / "feature_parity_summary.csv").exists()
 
 
 def test_feature_parity_asof_never_looks_after_decision():
@@ -185,6 +228,105 @@ def test_collapse_trade_lifecycle_entry_exit_and_open_position():
     assert collapsed.loc["p2", "was_traded"] == True
 
 
+def test_collapse_trade_lifecycle_marks_failed_entry_not_traded():
+    log = pd.DataFrame(
+        [
+            {
+                "timestamp": "2026-01-01T00:00:00Z",
+                "position_id": "p1",
+                "action": "enter",
+                "lifecycle_event": "enter_failed",
+                "status": "failed",
+                "symbol": "BTC/USDT",
+                "side": "long",
+                "strategy_id": "long_s1",
+                "error": "missing barrier",
+            }
+        ]
+    )
+    collapsed = collapse_trade_lifecycle(log)
+    assert collapsed.loc[0, "was_traded"] == False
+    assert collapsed.loc[0, "strategy_id"] == "s1"
+
+
+def test_candidate_replay_links_closed_exit_by_stop_order_id():
+    ledger = pd.DataFrame(
+        {
+            "timestamp": ["2026-01-01T00:00:00Z"],
+            "signal_bar_ts": ["2026-01-01T00:00:00Z"],
+            "symbol": ["BTC/USDT"],
+            "side": ["long"],
+            "strategy_id": ["long_s1"],
+            "was_traded": [True],
+            "order_id": ["100"],
+            "signal_price": [100.0],
+            "decision_mid": [100.0],
+            "realized_entry_price": [100.0],
+        }
+    )
+    trade_log = pd.DataFrame(
+        [
+            {
+                "timestamp": "2026-01-01T00:00:01Z",
+                "position_id": "run:100",
+                "action": "enter",
+                "lifecycle_event": "entry_placed",
+                "exchange_order_id": "100",
+                "stop_order_id": "200",
+                "symbol": "BTC/USDT",
+                "side": "long",
+                "strategy_id": "long_s1",
+                "actual_entry_price": 100.0,
+            },
+            {
+                "timestamp": "2026-01-01T01:00:00Z",
+                "position_id": "run:200",
+                "action": "exit",
+                "lifecycle_event": "exit_filled",
+                "exchange_order_id": "200",
+                "symbol": "BTC/USDT",
+                "side": "long",
+                "strategy_id": "long_s1",
+                "realized_exit_price": 101.0,
+                "net_pnl_pct": 0.01,
+            },
+        ]
+    )
+    replay = build_live_candidate_replay_table(ledger, trade_log=trade_log)
+    assert replay.loc[0, "realized_exit_price"] == pytest.approx(101.0)
+    assert replay.loc[0, "realized_trade_net_bps"] == pytest.approx(100.0)
+    assert replay.loc[0, "diagnostic_complete"] == False
+
+
+def test_strategy_level_oos_expectations_match_live_ids_without_side_prefix(tmp_path):
+    artifact = tmp_path / "strategy_for_inference.json"
+    artifact.write_text(
+        __import__("json").dumps(
+            {
+                "strategies": [
+                    {
+                        "strategy_id": "long_s1",
+                        "side": "long",
+                        "selected": True,
+                        "avg_net_pnl_per_trade": 0.0012,
+                    }
+                ]
+            }
+        )
+    )
+    expectations = load_strategy_oos_expectations(artifact)
+    replay = pd.DataFrame(
+        {
+            "strategy_id": ["s1"],
+            "side": ["long"],
+            "oos_expected_net_bps": [np.nan],
+        }
+    )
+    out = attach_strategy_oos_expectations(replay, expectations)
+    assert out.loc[0, "oos_expected_net_bps"] == pytest.approx(12.0)
+    assert out.loc[0, "oos_expectation_source"] == "strategy_level_policy_artifact"
+
+
 def test_forward_outcomes_long_short_and_no_realized_exit_for_prediction():
     idx = pd.date_range("2026-01-01", periods=6, freq="15min", tz="UTC")
     close = pd.DataFrame({"BTC/USDT": [100, 101, 102, 103, 104, 105], "ETH/USDT": [100, 99, 98, 97, 96, 95]}, index=idx)
@@ -296,13 +438,25 @@ def test_live_gap_report_dict_and_markdown_interpretations():
         }
     )
     report = build_live_gap_report(replay)
-    assert {"summary", "classification_counts", "by_strategy"}.issubset(report)
+    assert {
+        "summary",
+        "classification_counts",
+        "by_strategy",
+        "four_element_diagnosis",
+    }.issubset(report)
+    assert (
+        report["four_element_diagnosis"]["signal_forward_good_fill_forward_bad"][
+            "rows"
+        ]
+        == 1
+    )
     md = render_live_gap_report_markdown(report)
     for text in [
         "execution/timing gap",
         "model/rank/live-feature drift",
         "selection/gating/portfolio constraints issue",
         "exit/stop/slippage/cost issue",
+        "Four-element diagnosis",
     ]:
         assert text in md
 

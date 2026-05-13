@@ -30,7 +30,10 @@ from extreme_price_movements.inference.parity import (
     strategy_id_matches,
     strategy_side,
 )
-from extreme_price_movements.regime_adaptor import apply_regime_adaptor
+from extreme_price_movements.regime_adaptor import (
+    apply_regime_adaptor,
+    regime_adaptor_inference_enabled,
+)
 from extreme_price_movements.utils import tprint
 
 
@@ -737,8 +740,8 @@ class ModelOrchestrator:
                     if strategy_id_matches(str(sid), {str(strategy_id_for_regime)}):
                         adaptor = candidate
                         break
-        if isinstance(adaptor, dict) and bool(
-            adaptor.get("enable_regime_adaptor", False)
+        if isinstance(adaptor, dict) and regime_adaptor_inference_enabled(
+            self.cfg, adaptor
         ):
             try:
                 if "symbol" in features.columns:

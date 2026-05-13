@@ -254,7 +254,8 @@ def test_run_inference_step_applies_strategy_rank_and_portfolio_caps(monkeypatch
 
     assert len(results["trades"]) == 1
     assert executor.calls, "expected trade execution call"
-    # Must cap to the live per-position constraint: <= 15% of 10k.
+    # Rank sizing reserves capacity per slot so early positions cannot consume
+    # the whole safe book.
     assert executor.calls[0]["size"] <= 1500.0 + 1e-9
 
 
@@ -423,8 +424,8 @@ def test_run_inference_step_sizes_from_calibrated_meta_policy_power(monkeypatch)
     assert len(results["trades"]) == 1
     # With PortfolioManager active, live rank-sizing supersedes legacy
     # calibrated policy sizing and symbol-underperformance downweights.
-    # Single-candidate rank is 1.0, so size reaches the hard 15% wallet cap;
-    # the 50% available-wallet cap is looser for this 10k wallet test.
+    # Single-candidate rank is 1.0, so size reaches the reserved-slot 15%
+    # wallet cap, without a static leverage multiplier.
     assert abs(executor.calls[0]["size"] - 1500.0) < 1e-9
 
 

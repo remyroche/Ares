@@ -24,6 +24,53 @@ _PERP_COLLISION_RENAMES = {
 PERP_FEATURE_KEYS = [
     _PERP_COLLISION_RENAMES.get(k, k) for k in get_perp_feature_names()
 ]
+PERP_PRICE_RELATION_FEATURE_KEYS = [
+    "mark_price",
+    "index_price",
+    "premium_index",
+    "mark_index_basis",
+    "mark_index_basis_z",
+    "mark_perp_dislocation",
+    "perp_index_basis",
+    "perp_index_basis_z",
+    "premium_index_z",
+    "premium_index_mom_8h",
+]
+SPOT_FOR_PERPS_BASE_FEATURE_KEYS = [
+    "spot_ret1h",
+    "spot_ret4h",
+    "spot_ret24h",
+    "spot_rv_24h",
+    "spot_volume_z_24h",
+    "spot_quote_volume_z_24h",
+    "spot_range_pct_24h",
+    "spot_breakout_up_24h",
+    "spot_breakout_down_24h",
+    "spot_liquidity_sweep_up",
+    "spot_liquidity_sweep_down",
+    "spot_perp_return_agreement_4h",
+    "perp_minus_spot_ret1h",
+    "perp_minus_spot_ret4h",
+    "perp_minus_spot_ret24h",
+]
+SPOT_FOR_PERPS_META_FEATURE_KEYS = [
+    "basis_pct",
+    "basis_pct_z",
+    "basis_mom_4h",
+    "basis_fund_div_z",
+    "spot_leads_perp_1h",
+    "spot_perp_vol_ratio_24h",
+    "spot_perp_volume_ratio_24h",
+    "spot_available",
+]
+PERP_FEATURE_KEYS = list(
+    dict.fromkeys(
+        PERP_FEATURE_KEYS
+        + PERP_PRICE_RELATION_FEATURE_KEYS
+        + SPOT_FOR_PERPS_BASE_FEATURE_KEYS
+        + SPOT_FOR_PERPS_META_FEATURE_KEYS
+    )
+)
 PERP_META_PRIMARY_FEATURE_KEYS = [
     "funding_abs_z",
     "funding_persistence",
@@ -539,6 +586,48 @@ CONTINUOUS_REGIME_FEATURES = {
     "symbol_minus_mkt_ret_24h": {"family": "cross_asset", "type": "continuous"},
     "funding_rate": {"family": "funding", "type": "continuous"},
     "fund_rate_z_14d": {"family": "funding", "type": "continuous"},
+    "funding_z": {"family": "funding", "type": "continuous"},
+    "funding_abs_z": {"family": "funding", "type": "continuous"},
+    "funding_persistence": {"family": "funding", "type": "continuous"},
+    "funding_mom_2h": {"family": "funding", "type": "continuous"},
+    "funding_mom_4h": {"family": "funding", "type": "continuous"},
+    "funding_mom_8h": {"family": "funding", "type": "continuous"},
+    "funding_mom_w": {"family": "funding", "type": "continuous"},
+    "oi_z": {"family": "open_interest", "type": "continuous"},
+    "oi_rank": {"family": "open_interest", "type": "continuous"},
+    "oi_chg_2h": {"family": "open_interest", "type": "continuous"},
+    "oi_chg_4h": {"family": "open_interest", "type": "continuous"},
+    "oi_chg_8h": {"family": "open_interest", "type": "continuous"},
+    "oi_vel_2h": {"family": "open_interest", "type": "continuous"},
+    "oi_vel_4h": {"family": "open_interest", "type": "continuous"},
+    "oi_vel_8h": {"family": "open_interest", "type": "continuous"},
+    "oi_rel_vol_2h": {"family": "open_interest", "type": "continuous"},
+    "oi_rel_vol_4h": {"family": "open_interest", "type": "continuous"},
+    "oi_rel_vol_8h": {"family": "open_interest", "type": "continuous"},
+    "oi_chg_w": {"family": "open_interest", "type": "continuous"},
+    "basis_pct": {"family": "basis", "type": "continuous"},
+    "basis_pct_z": {"family": "basis", "type": "continuous"},
+    "basis_stretch": {"family": "basis", "type": "continuous"},
+    "basis_vol": {"family": "basis", "type": "continuous"},
+    "basis_mom_2h": {"family": "basis", "type": "continuous"},
+    "basis_mom_4h": {"family": "basis", "type": "continuous"},
+    "basis_mom_8h": {"family": "basis", "type": "continuous"},
+    "basis_mom_w": {"family": "basis", "type": "continuous"},
+    "basis_funding_div": {"family": "basis", "type": "continuous"},
+    "basis_funding_div_2h": {"family": "basis", "type": "continuous"},
+    "basis_funding_div_4h": {"family": "basis", "type": "continuous"},
+    "basis_funding_div_8h": {"family": "basis", "type": "continuous"},
+    "mark_index_basis": {"family": "mark_index", "type": "continuous"},
+    "mark_index_basis_z": {"family": "mark_index", "type": "continuous"},
+    "mark_perp_dislocation": {"family": "mark_index", "type": "continuous"},
+    "perp_index_basis": {"family": "mark_index", "type": "continuous"},
+    "perp_index_basis_z": {"family": "mark_index", "type": "continuous"},
+    "premium_index": {"family": "mark_index", "type": "continuous"},
+    "premium_index_z": {"family": "mark_index", "type": "continuous"},
+    "premium_index_mom_8h": {"family": "mark_index", "type": "continuous"},
+    "leverage_build": {"family": "crowding", "type": "continuous"},
+    "unwind": {"family": "crowding", "type": "continuous"},
+    "squeeze_prob": {"family": "crowding", "type": "continuous"},
     "ob_spread_z_24h": {"family": "orderbook", "type": "continuous"},
     "ob_depth_usd_l20_z": {"family": "orderbook", "type": "continuous"},
     "xasset_mkt_spread_bps": {"family": "cross_asset_orderbook", "type": "continuous"},
@@ -2639,7 +2728,7 @@ def enable_perp_feature_keys(cfg: dict) -> dict:
     def _is_perp_meta_primary_feature(name: str) -> bool:
         return name in set(PERP_META_PRIMARY_FEATURE_KEYS) or name.startswith(
             "funding_mom_"
-        )
+        ) or name in set(SPOT_FOR_PERPS_META_FEATURE_KEYS)
 
     base_perp_feature_keys = [
         k for k in PERP_FEATURE_KEYS if not _is_perp_meta_primary_feature(k)
@@ -2648,10 +2737,16 @@ def enable_perp_feature_keys(cfg: dict) -> dict:
         "base_long_feature_keys",
         "base_short_feature_keys",
     ):
-        out[k] = _append_missing(out.get(k, []), base_perp_feature_keys)
+        out[k] = _append_missing(
+            out.get(k, []),
+            base_perp_feature_keys + SPOT_FOR_PERPS_BASE_FEATURE_KEYS,
+        )
     out["meta_shared_feature_keys"] = _append_missing(
-        out.get("meta_shared_feature_keys", []), PERP_FEATURE_KEYS
+        out.get("meta_shared_feature_keys", []),
+        PERP_FEATURE_KEYS + SPOT_FOR_PERPS_META_FEATURE_KEYS,
     )
+    out["spot_for_perps_base_feature_keys"] = SPOT_FOR_PERPS_BASE_FEATURE_KEYS
+    out["spot_for_perps_meta_feature_keys"] = SPOT_FOR_PERPS_META_FEATURE_KEYS
     return out
 
 
@@ -3086,6 +3181,9 @@ CFG["meta_product_feature_keys"] += sorted(
 CFG["CROSS_ASSET_FEATURE_KEYS"] = CROSS_ASSET_FEATURE_KEYS
 CFG["PERP_FEATURE_KEYS"] = PERP_FEATURE_KEYS
 CFG["PERP_META_PRIMARY_FEATURE_KEYS"] = PERP_META_PRIMARY_FEATURE_KEYS
+CFG["PERP_PRICE_RELATION_FEATURE_KEYS"] = PERP_PRICE_RELATION_FEATURE_KEYS
+CFG["SPOT_FOR_PERPS_BASE_FEATURE_KEYS"] = SPOT_FOR_PERPS_BASE_FEATURE_KEYS
+CFG["SPOT_FOR_PERPS_META_FEATURE_KEYS"] = SPOT_FOR_PERPS_META_FEATURE_KEYS
 CFG["CROSS_ASSET_BASE_FEATURE_KEYS"] = [
     "xasset_btc_ob_pressure",
     "xasset_eth_ob_pressure",
@@ -3665,7 +3763,7 @@ REGIME_ADAPTOR_DEFAULT_CONFIG = {
     RegimeAdaptorKey.REGIME_ADAPTOR_RATIO_CLIPS: REGIME_ADAPTOR_RATIO_CLIPS,
     RegimeAdaptorKey.REGIME_ADAPTOR_MIN_NET_PNL_RATIO: 0.90,
     RegimeAdaptorKey.REGIME_ADAPTOR_MIN_OBJECTIVE: 1.05,
-    RegimeAdaptorKey.REGIME_ADAPTOR_INFERENCE_INTEGRATION_MODE: "pre_rank_bad_regime_offset",
+    RegimeAdaptorKey.REGIME_ADAPTOR_INFERENCE_INTEGRATION_MODE: "disabled",
     RegimeAdaptorKey.REGIME_ADAPTOR_ARTIFACT_PATH: "ridge_sizer/regime_adaptors/{strategy_id}/regime_adaptor.json",
     RegimeAdaptorKey.REGIME_ADAPTOR_DIAGNOSTICS_PATH: "ridge_sizer/regime_adaptors/{strategy_id}/diagnostics",
 }

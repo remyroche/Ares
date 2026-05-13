@@ -13,6 +13,7 @@ from requests.adapters import HTTPAdapter
 from extreme_price_movements.utils import tprint
 
 BINANCE_API = "https://api.binance.com"
+BINANCE_FAPI = "https://fapi.binance.com"
 REQUEST_TIMEOUT_SECONDS = 30
 REQUEST_MAX_RETRIES = 3
 MIN_ASSET_EXISTENCE_DAYS = 15
@@ -34,7 +35,7 @@ HARDCODED_EXCLUDED_SYMBOLS = frozenset(
         "MANTRA/USDC",
     }
 )
-DEDUP_QUOTES = ("USDC",)
+DEDUP_QUOTES = ("USDC", "USDT")
 DEDUP_QUOTE_PRIORITY = {quote: rank for rank, quote in enumerate(DEDUP_QUOTES)}
 SUPPORTED_TRAINING_QUOTES = frozenset(DEDUP_QUOTES)
 SPOT_QUOTE_SUFFIXES = (
@@ -48,7 +49,7 @@ SPOT_QUOTE_SUFFIXES = (
     "ETH",
 )
 PERP_INFO_PATH = "/fapi/v1/exchangeInfo"
-PERP_QUOTES = frozenset({"USDT", "USDC"})
+PERP_QUOTES = frozenset({"USDC", "USDT"})
 
 _PERP_SYMBOL_CACHE: Optional[set[str]] = None
 _BINANCE_SESSION: Optional[requests.Session] = None
@@ -105,7 +106,8 @@ def _request_retry_after(exc: Exception) -> Optional[float]:
 
 def _binance_get_json(path: str) -> object:
     """GET a public Binance REST path with retry-after/backoff logging."""
-    url = f"{BINANCE_API}{path}"
+    base_url = BINANCE_FAPI if str(path).startswith("/fapi/") else BINANCE_API
+    url = f"{base_url}{path}"
     last_exc: Optional[Exception] = None
     for attempt in range(1, REQUEST_MAX_RETRIES + 1):
         try:
@@ -163,7 +165,7 @@ def _is_valid_spot_symbol_format(symbol: str) -> bool:
 
 
 def deduplicate_symbols_by_base(symbols: list[str]) -> list[str]:
-    """Return at most one symbol per base asset for USDT/USDC/BUSD quote variants."""
+    """Return at most one symbol per base asset for preferred spot quote variants."""
     original_count = len(symbols)
 
     best_by_base: dict[str, tuple[int, str]] = {}
@@ -303,12 +305,26 @@ def fetch_binance_perp_spot_symbols() -> set[str]:
     tprint(f"Entering function: fetch_binance_perp_spot_symbols in universe.py")
     raw = _binance_get_json(PERP_INFO_PATH)
     spot_symbols = set()
+    now_ms = int(pd.Timestamp.utcnow().value // 10**6)
+    removed_not_tradeable = 0
     for row in raw.get("symbols", []):
         if not isinstance(row, dict):
             continue
         if row.get("contractType") != "PERPETUAL":
             continue
         if row.get("status", "").upper() != "TRADING":
+            removed_not_tradeable += 1
+            continue
+        try:
+            onboard_ms = int(row.get("onboardDate") or 0)
+        except Exception:
+            onboard_ms = 0
+        try:
+            delivery_ms = int(row.get("deliveryDate") or 0)
+        except Exception:
+            delivery_ms = 0
+        if onboard_ms > now_ms or (delivery_ms > 0 and delivery_ms <= now_ms):
+            removed_not_tradeable += 1
             continue
         quote = str(row.get("quoteAsset", "")).upper()
         if quote not in PERP_QUOTES:
@@ -318,6 +334,11 @@ def fetch_binance_perp_spot_symbols() -> set[str]:
             continue
         spot_symbols.add(f"{base}/{quote}")
 
+    if removed_not_tradeable:
+        tprint(
+            "Filtered out non-current Binance perpetual contracts: "
+            f"{removed_not_tradeable} not tradeable today"
+        )
     tprint(
         f"Fetched {len(spot_symbols)} perpetual perp symbols across {sorted(PERP_QUOTES)}."
     )
@@ -332,14 +353,14 @@ def get_available_perp_spot_symbols(force_refresh: bool = False) -> set[str]:
 
 
 def filter_symbols_without_perp_support(symbols: list[str]) -> list[str]:
-    """Drop symbols without a USDT or USDC perpetual available."""
+    """Drop symbols without a supported-quote perpetual available."""
     if not symbols:
         return []
     try:
         perp_symbols = get_available_perp_spot_symbols()
     except Exception as exc:
         tprint(
-            "Warning: failed to refresh perp universe; skipping perp-based filtering: "
+            "Warning: failed to refresh supported perp universe; skipping perp-based filtering: "
             f"{_request_error_category(exc)}: {exc}"
         )
         return sorted(set(symbols))
@@ -350,7 +371,7 @@ def filter_symbols_without_perp_support(symbols: list[str]) -> list[str]:
     removed = len(set(symbols)) - len(out)
     if removed > 0:
         tprint(
-            "Filtered out symbols without USDT/USDC perps from universe selection: "
+            "Filtered out symbols without supported-quote perps from universe selection: "
             f"{removed} removed"
         )
     return out
@@ -485,8 +506,23 @@ def filter_symbols_by_min_asset_existence_days(
 
             with open(meta_path, "r") as f:
                 meta = json.load(f)
-            first_ts = pd.Timestamp(meta.get("first_ts"))
-            last_ts = pd.Timestamp(meta.get("last_ts"))
+            first_raw = meta.get("first_ts")
+            last_raw = meta.get("last_ts")
+            if first_raw and last_raw:
+                first_ts = pd.Timestamp(first_raw)
+                last_ts = pd.Timestamp(last_raw)
+            else:
+                df = store.load(symbol, columns=["close"])
+                if df is None or df.empty:
+                    removed.append(symbol)
+                    continue
+                idx = (
+                    df.index
+                    if isinstance(df.index, pd.DatetimeIndex)
+                    else pd.to_datetime(df.index)
+                )
+                first_ts = pd.Timestamp(idx.min())
+                last_ts = pd.Timestamp(idx.max())
             if first_ts.tzinfo is None:
                 first_ts = first_ts.tz_localize("UTC")
             if last_ts.tzinfo is None:
@@ -539,8 +575,36 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
         base_syms = margin_symbols if margin_symbols is not None else local_syms
         if not base_syms:
             base_syms = list(cfg.get("market_basket", []))
-        # In offline mode, use all available symbols (no volume data to remove bottom 30)
-        train_syms = deduplicate_symbols_by_base(list(set(base_syms)))
+        # In offline mode, use all available symbols (no volume data to remove bottom 30).
+        # Perp mode keeps USDC and USDT contracts as distinct trainable markets.
+        if bool(cfg.get("use_perps", False)):
+            train_syms = deduplicate_symbols_by_base(list(set(base_syms)))
+            try:
+                mu = refresh_margin_universe_daily(None, quotes=("USDC",))
+                margin_usdc_bases = {
+                    sym.split("/", 1)[0]
+                    for sym in apply_hardcoded_universe_exclusions(mu.symbols)
+                    if "/" in sym
+                }
+                before_margin_base = len(train_syms)
+                train_syms = [
+                    sym
+                    for sym in train_syms
+                    if "/" in sym and sym.split("/", 1)[0] in margin_usdc_bases
+                ]
+                removed_margin_base = before_margin_base - len(train_syms)
+                if removed_margin_base > 0:
+                    tprint(
+                        "Perp offline universe margin-base filter removed "
+                        f"{removed_margin_base} symbols."
+                    )
+            except Exception as exc:
+                tprint(
+                    "Warning: perp offline margin-base filter failed; "
+                    f"keeping local perp symbols: {_request_error_category(exc)}: {exc}"
+                )
+        else:
+            train_syms = deduplicate_symbols_by_base(list(set(base_syms)))
         train_syms = filter_symbols_without_perp_support(
             apply_hardcoded_universe_exclusions(train_syms)
         )

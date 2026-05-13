@@ -410,7 +410,11 @@ def _resolve_perp_symbol(exchange, spot_symbol: str) -> Optional[str]:
     if not spot_symbol or "/" not in spot_symbol:
         return None
     base, quote = spot_symbol.split("/", 1)
-    preferred_quotes = [quote, "USDT", "USDC", "BUSD"]
+    quote = quote.split(":", 1)[0].upper()
+    preferred_quotes = [quote]
+    for fallback_quote in ("USDC", "USDT"):
+        if fallback_quote != quote:
+            preferred_quotes.append(fallback_quote)
     seen_quotes = set()
     candidates = []
     for perp_quote in preferred_quotes:
@@ -1325,14 +1329,24 @@ def fetch_hourly_orderbook_proxy(
 
 @retry_with_backoff(retries=3, backoff_in_seconds=2)
 def _fetch_ohlcv_paged(
-    exchange, symbol, since_ms, until_ms, timeframe="1h", limit=1000
+    exchange,
+    symbol,
+    since_ms,
+    until_ms,
+    timeframe="1h",
+    limit=1000,
+    params: Optional[dict] = None,
 ):
     # Reduced logging: entry log removed
     out = []
     since = since_ms
     while True:
         batch = exchange.fetch_ohlcv(
-            symbol, timeframe=timeframe, since=since, limit=limit
+            symbol,
+            timeframe=timeframe,
+            since=since,
+            limit=limit,
+            params=params or {},
         )
         if not batch:
             break
@@ -1363,7 +1377,14 @@ def _fetch_ohlcv_paged(
     return df
 
 
-def fetch_ohlcv_all_7d_chunks(exchange, symbol, since_ms, timeframe="1h", limit=1000):
+def fetch_ohlcv_all_7d_chunks(
+    exchange,
+    symbol,
+    since_ms,
+    timeframe="1h",
+    limit=1000,
+    params: Optional[dict] = None,
+):
     chunk_ms = int(pd.Timedelta(days=7).total_seconds() * 1000)
     now_ms = int(pd.Timestamp.utcnow().value // 10**6)
 
@@ -1371,12 +1392,24 @@ def fetch_ohlcv_all_7d_chunks(exchange, symbol, since_ms, timeframe="1h", limit=
     while start < now_ms:
         end = min(start + chunk_ms, now_ms)
         df = _fetch_ohlcv_paged(
-            exchange, symbol, start, end, timeframe=timeframe, limit=limit
+            exchange,
+            symbol,
+            start,
+            end,
+            timeframe=timeframe,
+            limit=limit,
+            params=params,
         )
         if len(df):
             yield df
         start = end
         time.sleep(exchange.rateLimit / 1000)
+
+
+def _recent_history_floor_ms(env_name: str, default_days: float) -> int:
+    days = float(os.getenv(env_name, str(default_days)) or default_days)
+    floor_ts = pd.Timestamp.utcnow() - pd.Timedelta(days=max(days, 0.0))
+    return int(floor_ts.value // 10**6)
 
 
 class PartitionedOHLCVStore:
@@ -1419,8 +1452,16 @@ class PartitionedOHLCVStore:
     def _write_meta(self, symbol: str, meta: dict):
         path = self._get_meta_path(symbol)
         try:
+            existing = {}
+            if os.path.exists(path):
+                try:
+                    with open(path, "r") as f:
+                        existing = json.load(f)
+                except Exception:
+                    existing = {}
+            existing.update(meta)
             with open(path, "w") as f:
-                json.dump(meta, f)
+                json.dump(existing, f)
         except Exception as e:
             tprint(f"Error writing meta for {symbol}: {e}")
 
@@ -1437,6 +1478,25 @@ class PartitionedOHLCVStore:
             "funding_rate",
             "open_interest",
             "spot_close",
+            "spot_open",
+            "spot_high",
+            "spot_low",
+            "spot_volume",
+            "mark_open",
+            "mark_high",
+            "mark_low",
+            "mark_close",
+            "mark_price",
+            "index_open",
+            "index_high",
+            "index_low",
+            "index_close",
+            "index_price",
+            "premium_index_open",
+            "premium_index_high",
+            "premium_index_low",
+            "premium_index_close",
+            "premium_index",
         ]:
             if col in out.columns:
                 out[col] = pd.to_numeric(out[col], errors="coerce").astype(np.float32)
@@ -1584,6 +1644,25 @@ class PartitionedOHLCVStore:
             "funding_rate",
             "open_interest",
             "spot_close",
+            "spot_open",
+            "spot_high",
+            "spot_low",
+            "spot_volume",
+            "mark_open",
+            "mark_high",
+            "mark_low",
+            "mark_close",
+            "mark_price",
+            "index_open",
+            "index_high",
+            "index_low",
+            "index_close",
+            "index_price",
+            "premium_index_open",
+            "premium_index_high",
+            "premium_index_low",
+            "premium_index_close",
+            "premium_index",
         ]:
             if c in df_reset.columns:
                 df_reset[c] = df_reset[c].astype(np.float32)
@@ -1733,12 +1812,20 @@ class PartitionedOHLCVStore:
             for yr in sorted(touched_years):
                 self.compact_partition(symbol, yr)
 
-    def update_symbol_perp(self, exchange, symbol: str, since_ms: int) -> pd.DataFrame:
+    def update_symbol_perp(
+        self,
+        exchange,
+        symbol: str,
+        since_ms: int,
+        spot_exchange=None,
+    ) -> pd.DataFrame:
         """
         Update symbol from perp market:
         - OHLCV from perp exchange
         - funding_rate history
         - open_interest history
+        - mark/index/premium-index OHLCV where the exchange exposes it
+        - spot OHLCV auxiliary columns for spot/perp parity features
         """
         sym_dir = self._get_symbol_dir(symbol)
         os.makedirs(sym_dir, exist_ok=True)
@@ -1791,11 +1878,17 @@ class PartitionedOHLCVStore:
                 chunk_end_ms = min(chunk_end_ms, now_ms)
 
                 funding = pd.Series(dtype=np.float32)
-                if hasattr(exchange, "fetch_funding_rate_history"):
+                funding_floor_ms = _recent_history_floor_ms(
+                    "EPM_FUNDING_HISTORY_DAYS", 30.0
+                )
+                if (
+                    hasattr(exchange, "fetch_funding_rate_history")
+                    and chunk_end_ms >= funding_floor_ms
+                ):
                     funding = _fetch_ccxt_history_paged(
                         exchange.fetch_funding_rate_history,
                         perp_symbol,
-                        chunk_start_ms,
+                        max(chunk_start_ms, funding_floor_ms),
                         chunk_end_ms,
                         value_keys=["fundingRate", "funding_rate", "rate"],
                         exchange=exchange,
@@ -1803,11 +1896,15 @@ class PartitionedOHLCVStore:
                     )
 
                 oi = pd.Series(dtype=np.float32)
-                if hasattr(exchange, "fetch_open_interest_history"):
+                oi_floor_ms = _recent_history_floor_ms("EPM_OPEN_INTEREST_HISTORY_DAYS", 30.0)
+                if (
+                    hasattr(exchange, "fetch_open_interest_history")
+                    and chunk_end_ms >= oi_floor_ms
+                ):
                     oi = _fetch_ccxt_history_paged(
                         exchange.fetch_open_interest_history,
                         perp_symbol,
-                        chunk_start_ms,
+                        max(chunk_start_ms, oi_floor_ms),
                         chunk_end_ms,
                         value_keys=[
                             "openInterestAmount",
@@ -1820,12 +1917,78 @@ class PartitionedOHLCVStore:
                         limit=500,
                     )
 
+                def _align_ohlcv(extra_df: pd.DataFrame, prefix: str) -> None:
+                    if extra_df is None or extra_df.empty:
+                        return
+                    extra = extra_df.reindex(chunk.index).ffill()
+                    for src_col in ("open", "high", "low", "close", "volume"):
+                        if src_col in extra.columns:
+                            chunk[f"{prefix}_{src_col}"] = pd.to_numeric(
+                                extra[src_col], errors="coerce"
+                            ).astype(np.float32)
+
+                for price_name, prefix in (
+                    ("mark", "mark"),
+                    ("index", "index"),
+                    ("premiumIndex", "premium_index"),
+                ):
+                    try:
+                        price_df = _fetch_ohlcv_paged(
+                            exchange,
+                            perp_symbol,
+                            chunk_start_ms,
+                            chunk_end_ms,
+                            timeframe=self.timeframe,
+                            limit=1000,
+                            params={"price": price_name},
+                        )
+                        _align_ohlcv(price_df, prefix)
+                    except Exception as exc:
+                        tprint(
+                            f"WARN perp {price_name} OHLCV fetch failed for {symbol}: {exc}"
+                        )
+
+                if spot_exchange is not None:
+                    try:
+                        spot_symbol = None
+                        if "/" in symbol:
+                            base, _quote = symbol.split("/", 1)
+                            usdc_symbol = f"{base}/USDC"
+                            if usdc_symbol in getattr(spot_exchange, "markets", {}):
+                                spot_symbol = usdc_symbol
+                        if spot_symbol is None and symbol in getattr(
+                            spot_exchange, "markets", {}
+                        ):
+                            spot_symbol = symbol
+                        if spot_symbol is None:
+                            normalized = _normalize_spot_symbol(symbol)
+                            if normalized in getattr(spot_exchange, "markets", {}):
+                                spot_symbol = normalized
+                        if spot_symbol is not None:
+                            spot_df = _fetch_ohlcv_paged(
+                                spot_exchange,
+                                spot_symbol,
+                                chunk_start_ms,
+                                chunk_end_ms,
+                                timeframe=self.timeframe,
+                                limit=1000,
+                            )
+                            _align_ohlcv(spot_df, "spot")
+                    except Exception as exc:
+                        tprint(f"WARN spot auxiliary OHLCV fetch failed for {symbol}: {exc}")
+
                 chunk["funding_rate"] = (
                     funding.reindex(chunk.index).ffill().fillna(0.0).astype(np.float32)
                 )
                 chunk["open_interest"] = (
                     oi.reindex(chunk.index).ffill().fillna(0.0).astype(np.float32)
                 )
+                if "mark_close" in chunk.columns:
+                    chunk["mark_price"] = chunk["mark_close"]
+                if "index_close" in chunk.columns:
+                    chunk["index_price"] = chunk["index_close"]
+                if "premium_index_close" in chunk.columns:
+                    chunk["premium_index"] = chunk["premium_index_close"]
 
                 fresh = self._downcast(chunk)
                 self.save_partitioned(symbol, fresh, defer_compact=True)

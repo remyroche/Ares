@@ -12,6 +12,7 @@ import json
 import logging
 import math
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -19,7 +20,6 @@ import numpy as np
 import pandas as pd
 
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
-from extreme_price_movements.inference.parity import strategy_core_id
 from extreme_price_movements.run_ridge_sizer import (
     load_base_oof_predictions,
     load_meta_oof_predictions,
@@ -40,6 +40,20 @@ POLICY_OPTIMISER_ASSESSMENT_FRAC = 0.05
 POLICY_OPTIMISER_DIAGNOSTIC_FRAC = 0.01
 POLICY_OPTIMISER_OFFSET_LIMITER_ENABLED = False
 logger = logging.getLogger(__name__)
+
+
+def strategy_core_id(strategy_id: str) -> str:
+    """Return the side-agnostic strategy id used by policy artifacts.
+
+    Keep this local to avoid importing inference.parity during optimiser import;
+    parity imports the sizer stack, which imports this module.
+    """
+    sid = str(strategy_id or "")
+    for prefix in ("long_", "short_"):
+        if sid.startswith(prefix):
+            sid = sid[len(prefix) :]
+            break
+    return re.sub(r"_H\d+$", "", sid)
 
 
 def _strategy_description(row: Dict[str, Any]) -> str:

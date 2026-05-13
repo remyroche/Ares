@@ -102,7 +102,10 @@ from extreme_price_movements.strategy_registry import (
     strategy_runtime_horizons,
 )
 from extreme_price_movements.universe import (
+    apply_hardcoded_universe_exclusions,
     build_fetch_universe,
+    deduplicate_symbols_by_base,
+    get_available_perp_spot_symbols,
     refresh_margin_universe_daily,
 )
 from extreme_price_movements.utils import tprint
@@ -399,6 +402,12 @@ def run_download(cfg):
         tprint("Freshness gate bypassed (download_force=True)")
 
     ex = make_perp_exchange() if use_perps else make_spot_exchange()
+    spot_aux_ex = None
+    if use_perps:
+        try:
+            spot_aux_ex = make_spot_exchange()
+        except Exception as exc:
+            tprint(f"Spot auxiliary exchange unavailable; spot/perp features degraded: {exc}")
     funding_ex = ex
     if not use_perps:
         try:
@@ -407,10 +416,38 @@ def run_download(cfg):
             funding_ex = None
             tprint(f"Funding exchange unavailable; skipping funding refresh: {exc}")
 
-    mu = refresh_margin_universe_daily(None, quotes=("USDC",))
-    fetch_syms = build_fetch_universe(
-        mu.symbols, cfg["market_basket"], cfg["fetch_symbols_M"]
-    )
+    if use_perps:
+        raw_perp_symbols = sorted(get_available_perp_spot_symbols(force_refresh=True))
+        mu = refresh_margin_universe_daily(None, quotes=("USDC",))
+        margin_usdc_bases = {
+            sym.split("/", 1)[0]
+            for sym in apply_hardcoded_universe_exclusions(mu.symbols)
+            if "/" in sym
+        }
+        sanitized_perp_symbols = apply_hardcoded_universe_exclusions(raw_perp_symbols)
+        perp_symbols = [
+            sym
+            for sym in sanitized_perp_symbols
+            if "/" in sym and sym.split("/", 1)[0] in margin_usdc_bases
+        ]
+        perp_symbols = deduplicate_symbols_by_base(perp_symbols)
+        _perps_m = int(cfg.get("fetch_symbols_M", 0) or 0)
+        fetch_syms = (
+            perp_symbols[:_perps_m]
+            if _perps_m > 0 and _perps_m < len(perp_symbols)
+            else perp_symbols
+        )
+        tprint(
+            "Perps download universe source: active USDC/USDT perpetual markets "
+            "intersected with USDC margin spot bases "
+            f"({len(raw_perp_symbols)} raw perps, {len(sanitized_perp_symbols)} sanitized, "
+            f"{len(margin_usdc_bases)} margin bases, {len(fetch_syms)} before runtime slicing)"
+        )
+    else:
+        mu = refresh_margin_universe_daily(None, quotes=("USDC",))
+        fetch_syms = build_fetch_universe(
+            mu.symbols, cfg["market_basket"], cfg["fetch_symbols_M"]
+        )
     _base_n = len(fetch_syms)
     _symbol_allowlist_file = str(
         os.environ.get("EPM_DOWNLOAD_SYMBOLS_FILE", "")
@@ -631,6 +668,13 @@ def run_download(cfg):
         os.environ.get("EPM_DOWNLOAD_MIN_MICRODATA_RANGES", "10")
     )
     microdata_min_ranges = max(10, int(microdata_min_ranges))
+    funding_history_days = float(
+        os.environ.get("EPM_FUNDING_HISTORY_DAYS", cfg.get("funding_history_days", 30.0))
+        or 30.0
+    )
+    funding_history_floor = (
+        pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=max(funding_history_days, 0.0))
+    ).floor("1h")
 
     def _update_symbol_microdata(
         sym: str,
@@ -677,10 +721,13 @@ def run_download(cfg):
                 ob_io = "write:attempted"
             ob_frames = []
             if missing_ranges:
+                ob_symbol = sym
+                if use_perps:
+                    ob_symbol = _resolve_perp_symbol(ex, sym) or sym
                 for range_start, range_end in missing_ranges:
                     proxy_df = fetch_hourly_orderbook_proxy(
                         ex,
-                        sym,
+                        ob_symbol,
                         int(range_start.value // 10**6),
                         int(range_end.value // 10**6),
                     )
@@ -704,7 +751,7 @@ def run_download(cfg):
 
         try:
             fr_df = None
-            funding_symbol = sym
+            funding_symbol = _resolve_perp_symbol(funding_ex, sym) if use_perps else sym
             funding_client = funding_ex
             existing_funding = None
             if not use_perps:
@@ -715,6 +762,8 @@ def run_download(cfg):
                 )
                 if funding_symbol is None:
                     raise ValueError(f"No perp funding symbol found for {sym}")
+            elif funding_symbol is None:
+                raise ValueError(f"No perp funding symbol found for {sym}")
             if funding_client is not None and hasattr(
                 funding_client, "fetch_funding_rate_history"
             ):
@@ -729,7 +778,7 @@ def run_download(cfg):
                 funding_missing_ranges = list(
                     _compute_missing_funding_ranges(
                         existing_idx,
-                        micro_since,
+                        max(micro_since, funding_history_floor),
                         now_h,
                     )
                 )
@@ -845,7 +894,7 @@ def run_download(cfg):
         else:
             try:
                 if use_perps:
-                    store.update_symbol_perp(ex, sym, since_ms)
+                    store.update_symbol_perp(ex, sym, since_ms, spot_exchange=spot_aux_ex)
                 else:
                     store.update_symbol(ex, sym, since_ms)
                 success_1h += 1
@@ -863,9 +912,12 @@ def run_download(cfg):
             symbol_15m_status = f"skip:recent_missing<{_missing_lt_days:g}d"
         else:
             try:
+                dl_15m_symbol = _resolve_perp_symbol(ex, sym) if use_perps else sym
+                if dl_15m_symbol is None:
+                    raise ValueError(f"No perp 15m OHLCV symbol found for {sym}")
                 df_15m = sync_15m_ohlcv_range(
                     ex,
-                    sym,
+                    dl_15m_symbol,
                     since,
                     pd.Timestamp.now(tz="UTC"),
                     full_backfill=bool(cfg.get("download_15m_full_backfill", False)),
@@ -3168,6 +3220,11 @@ def main():
         "--ts", dest="ts_override", help="Timestamp override (YYYYMMDD_HHMMSS)"
     )
     parser.add_argument(
+        "--run-id",
+        dest="run_id_override",
+        help="Alias for --ts when run id equals artifact timestamp.",
+    )
+    parser.add_argument(
         "--base-only",
         action="store_true",
         help="Only train base models (alpha, spike, exh)",
@@ -3232,6 +3289,8 @@ def main():
         "--refresh-slice-plan", action="store_true", help="Force rebuild the slice plan"
     )
     args = parser.parse_args()
+    if args.run_id_override and not args.ts_override:
+        args.ts_override = args.run_id_override
 
     cfg = CFG.copy()
     _apply_fee_model(cfg, BASE_ROUND_TRIP_FEE_PCT)

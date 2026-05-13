@@ -1398,7 +1398,6 @@ def load_trade_outcomes(
                 if len(p) > 0:
                     entry_prices[i] = p[0]
             outcomes["entry_price"] = entry_prices
-
     return outcomes
 
 

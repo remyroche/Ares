@@ -1814,6 +1814,13 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     funding_panel = panel.get("funding_rate")
     oi_panel = panel.get("open_interest")
     spot_close_panel = panel.get("spot_close")
+    spot_open_panel = panel.get("spot_open")
+    spot_high_panel = panel.get("spot_high")
+    spot_low_panel = panel.get("spot_low")
+    spot_volume_panel = panel.get("spot_volume")
+    mark_price_panel = panel.get("mark_price")
+    index_price_panel = panel.get("index_price")
+    premium_index_panel = panel.get("premium_index")
 
     if len(mkt_gates) == len(new_idx):
         mkt_gates.index = new_idx
@@ -3026,12 +3033,143 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["a_funding_proxy"] = feats["funding_proxy"]
 
     if bool(cfg.get("use_perps", False)):
+        perp_price_panel = np.exp(c_log).astype(np.float32)
+        volume_panel = np.exp(v).astype(np.float32)
+        idx_perp = perp_price_panel.index
+        cols_perp = perp_price_panel.columns
+
+        def _perp_panel_or_default(frame, default):
+            if isinstance(frame, pd.DataFrame):
+                return (
+                    frame.reindex(index=idx_perp, columns=cols_perp)
+                    .ffill()
+                    .bfill()
+                    .astype(np.float32)
+                )
+            return default.copy().astype(np.float32)
+
+        spot_price_panel_for_rel = _perp_panel_or_default(
+            spot_close_panel, perp_price_panel
+        )
+        spot_price_panel_for_rel = spot_price_panel_for_rel.where(
+            spot_price_panel_for_rel > 0, perp_price_panel
+        )
+        mark_panel = _perp_panel_or_default(mark_price_panel, perp_price_panel)
+        mark_panel = mark_panel.where(mark_panel > 0, perp_price_panel)
+        index_panel = _perp_panel_or_default(index_price_panel, spot_price_panel_for_rel)
+        index_panel = index_panel.where(index_panel > 0, spot_price_panel_for_rel)
+        premium_panel = _perp_panel_or_default(
+            premium_index_panel,
+            pd.DataFrame(0.0, index=idx_perp, columns=cols_perp, dtype=np.float32),
+        )
+
+        feats["mark_price"] = mark_panel.astype(np.float32)
+        feats["index_price"] = index_panel.astype(np.float32)
+        feats["premium_index"] = premium_panel.astype(np.float32)
+        feats["mark_index_basis"] = ((mark_panel / (index_panel + 1e-12)) - 1.0).clip(
+            -0.10, 0.10
+        ).astype(np.float32)
+        feats["mark_index_basis_z"] = _batch_roll_zscore(
+            feats["mark_index_basis"], 14 * 24
+        ).clip(-6, 6)
+        feats["mark_perp_dislocation"] = (
+            (mark_panel / (perp_price_panel + 1e-12)) - 1.0
+        ).clip(-0.05, 0.05).astype(np.float32)
+        feats["perp_index_basis"] = (
+            (perp_price_panel / (index_panel + 1e-12)) - 1.0
+        ).clip(-0.10, 0.10).astype(np.float32)
+        feats["perp_index_basis_z"] = _batch_roll_zscore(
+            feats["perp_index_basis"], 14 * 24
+        ).clip(-6, 6)
+        feats["premium_index_z"] = _batch_roll_zscore(premium_panel, 14 * 24).clip(-6, 6)
+        feats["premium_index_mom_8h"] = _batch_roll_zscore(
+            premium_panel.diff(8), 14 * 24
+        ).clip(-6, 6)
+
+        spot_open = _perp_panel_or_default(spot_open_panel, spot_price_panel_for_rel)
+        spot_high = _perp_panel_or_default(spot_high_panel, spot_price_panel_for_rel)
+        spot_low = _perp_panel_or_default(spot_low_panel, spot_price_panel_for_rel)
+        spot_volume = _perp_panel_or_default(
+            spot_volume_panel,
+            pd.DataFrame(0.0, index=idx_perp, columns=cols_perp, dtype=np.float32),
+        )
+        spot_available = (
+            isinstance(spot_close_panel, pd.DataFrame)
+            and spot_close_panel.reindex(index=idx_perp, columns=cols_perp).notna()
+        )
+        if isinstance(spot_available, pd.DataFrame):
+            feats["spot_available"] = spot_available.astype(np.float32)
+        else:
+            feats["spot_available"] = pd.DataFrame(
+                0.0, index=idx_perp, columns=cols_perp, dtype=np.float32
+            )
+
+        spot_log = _safe_log_df(spot_price_panel_for_rel, eps=safe_log_eps)
+        perp_log = _safe_log_df(perp_price_panel, eps=safe_log_eps)
+        feats["spot_ret1h"] = spot_log.diff(1).astype(np.float32)
+        feats["spot_ret4h"] = spot_log.diff(4).astype(np.float32)
+        feats["spot_ret24h"] = spot_log.diff(24).astype(np.float32)
+        feats["perp_minus_spot_ret1h"] = (
+            perp_log.diff(1) - spot_log.diff(1)
+        ).astype(np.float32)
+        feats["perp_minus_spot_ret4h"] = (
+            perp_log.diff(4) - spot_log.diff(4)
+        ).astype(np.float32)
+        feats["perp_minus_spot_ret24h"] = (
+            perp_log.diff(24) - spot_log.diff(24)
+        ).astype(np.float32)
+        feats["spot_perp_return_agreement_4h"] = (
+            np.sign(feats["spot_ret4h"]) * np.sign(perp_log.diff(4))
+        ).fillna(0.0).astype(np.float32)
+        feats["spot_leads_perp_1h"] = (
+            feats["spot_ret1h"].shift(1) - perp_log.diff(1)
+        ).astype(np.float32)
+        feats["spot_rv_24h"] = feats["spot_ret1h"].rolling(24, min_periods=6).std(
+            ddof=0
+        ).astype(np.float32)
+        feats["spot_volume_z_24h"] = _batch_roll_zscore(spot_volume, 24).clip(-6, 6)
+        spot_quote_volume = (spot_volume * spot_price_panel_for_rel).astype(np.float32)
+        feats["spot_quote_volume_z_24h"] = _batch_roll_zscore(
+            spot_quote_volume, 24
+        ).clip(-6, 6)
+        spot_range = ((spot_high - spot_low) / (spot_price_panel_for_rel + 1e-12)).clip(
+            0, 1
+        )
+        feats["spot_range_pct_24h"] = (
+            spot_range.rolling(24, min_periods=6).mean().astype(np.float32)
+        )
+        prev_spot_high = spot_high.shift(1).rolling(24, min_periods=6).max()
+        prev_spot_low = spot_low.shift(1).rolling(24, min_periods=6).min()
+        feats["spot_breakout_up_24h"] = (
+            (spot_price_panel_for_rel > prev_spot_high).astype(np.float32)
+        )
+        feats["spot_breakout_down_24h"] = (
+            (spot_price_panel_for_rel < prev_spot_low).astype(np.float32)
+        )
+        feats["spot_liquidity_sweep_up"] = (
+            ((spot_high > prev_spot_high) & (spot_price_panel_for_rel < prev_spot_high))
+            .fillna(False)
+            .astype(np.float32)
+        )
+        feats["spot_liquidity_sweep_down"] = (
+            ((spot_low < prev_spot_low) & (spot_price_panel_for_rel > prev_spot_low))
+            .fillna(False)
+            .astype(np.float32)
+        )
+        perp_rv_24h = perp_log.diff(1).rolling(24, min_periods=6).std(ddof=0)
+        feats["spot_perp_vol_ratio_24h"] = (
+            feats["spot_rv_24h"] / (perp_rv_24h + 1e-12)
+        ).clip(0, 10).astype(np.float32)
+        perp_quote_volume = (volume_panel * perp_price_panel).astype(np.float32)
+        feats["spot_perp_volume_ratio_24h"] = (
+            spot_quote_volume.rolling(24, min_periods=6).sum()
+            / (perp_quote_volume.rolling(24, min_periods=6).sum() + 1e-12)
+        ).clip(0, 10).astype(np.float32)
+
         if isinstance(funding_panel, pd.DataFrame) and isinstance(
             oi_panel, pd.DataFrame
         ):
             tprint("Computing perp derivative features...")
-            perp_price_panel = np.exp(c_log).astype(np.float32)
-            volume_panel = np.exp(v).astype(np.float32)
             if isinstance(spot_close_panel, pd.DataFrame):
                 spot_price_panel = spot_close_panel.reindex(
                     index=perp_price_panel.index,

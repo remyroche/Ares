@@ -33,6 +33,8 @@ from extreme_price_movements.inference.simple_policy_stop import (
 from extreme_price_movements.utils import tprint
 
 LIVE_EXECUTION_MODES = {"live", "live-test", "live_test", "livetest"}
+DUST_TO_BNB_METHOD_VERSION = "margin_dust_v2_repeated_params"
+SMALL_LIABILITY_EXCHANGE_METHOD_VERSION = "small_liability_v5_target_guard"
 NON_STOP_COMPAT_BUCKET_KEYS = {
     "max_hold_hours",
     "cooldown_hours",
@@ -63,6 +65,15 @@ MODEL_AND_POLICY_CONTEXT_KEYS = (
     "quote_size",
     "requested_base_amount",
     "entry_notional_quote",
+    "wallet_value",
+    "wallet_value_at_entry",
+    "open_notional",
+    "open_notional_at_entry",
+    "leverage_wallet_multiplier",
+    "book_notional_multiplier",
+    "safe_book_notional",
+    "target_slot_notional",
+    "current_margin_level",
     "position_size_before_liquidity",
     "position_size_after_liquidity",
     "policy_artifact_run_id",
@@ -108,6 +119,15 @@ EXECUTION_AUDIT_KEYS = (
     "final_threshold",
     "position_size_before_liquidity",
     "position_size_after_liquidity",
+    "wallet_value",
+    "wallet_value_at_entry",
+    "open_notional",
+    "open_notional_at_entry",
+    "leverage_wallet_multiplier",
+    "book_notional_multiplier",
+    "safe_book_notional",
+    "target_slot_notional",
+    "current_margin_level",
     "max_chase_bps",
     "entry_limit_price",
 )
@@ -334,11 +354,13 @@ def _classify_exchange_error(exc: Exception) -> str:
     if "max pledged collateral" in text or "max transfer in quantity is 0" in text:
         return "asset_collateral_limit"
     if (
-        "insufficient" in text
-        or "balance" in text
-        or "margin" in text
-        or ("borrow amount" in text and "maximum borrow amount" in text)
+        "maximum borrow amount" in text
+        or "exceed maximum borrow" in text
+        or "max borrow" in text
+        or "maxborrowable" in text
     ):
+        return "borrow_limit"
+    if "insufficient" in text or "balance" in text or "margin" in text:
         return "insufficient_balance"
     if (
         "precision" in text
@@ -350,6 +372,8 @@ def _classify_exchange_error(exc: Exception) -> str:
         return "invalid_precision_or_filter"
     if "halt" in text or "suspend" in text or "inactive" in text or "closed" in text:
         return "symbol_halted"
+    if "unsupported target asset" in text:
+        return "unsupported_liability_target"
     if "duplicate" in text or "clientorderid" in text or "client order id" in text:
         return "duplicate_client_order_id"
     if "timeout" in text or "timed out" in text or "network" in text:
@@ -457,6 +481,13 @@ def _validate_order_filters(
         raise ValueError(
             f"notional above exchange maximum for {symbol}: {cost} > {max_cost}"
         )
+
+
+def _market_min_notional(market: Dict[str, Any]) -> float:
+    """Return exchange minimum notional when the market definition exposes it."""
+    limits = market.get("limits", {}) if isinstance(market, dict) else {}
+    cost_limits = limits.get("cost", {}) if isinstance(limits, dict) else {}
+    return _safe_float(cost_limits.get("min"), default=np.nan)
 
 
 def _extract_order_fill(
@@ -863,24 +894,107 @@ def _fee_to_quote(
     fee: Any,
     *,
     price: float,
-) -> Tuple[float, float, str]:
-    """Return fee as quote currency, original cost, and original currency."""
+) -> Tuple[float, float, str, str]:
+    """Return fee as quote currency, original cost/currency, and source status."""
     fee_dict = fee if isinstance(fee, dict) else {}
-    fee_cost = _safe_float(fee_dict.get("cost"), 0.0)
+    if not fee_dict:
+        return np.nan, np.nan, "", "missing"
+    fee_cost = _safe_float(fee_dict.get("cost"), np.nan)
     fee_currency = str(fee_dict.get("currency") or "").upper()
+    if not np.isfinite(fee_cost):
+        return np.nan, np.nan, fee_currency, "missing"
     base_asset = str(symbol).split("/", 1)[0].upper()
     quote_asset = (
         str(symbol).split("/", 1)[1].split(":", 1)[0].upper()
         if "/" in str(symbol)
         else ""
     )
-    fee_quote = 0.0
-    if np.isfinite(fee_cost) and fee_cost > 0.0:
-        if fee_currency == quote_asset or not fee_currency:
-            fee_quote = fee_cost
-        elif fee_currency == base_asset and np.isfinite(price):
-            fee_quote = fee_cost * price
-    return float(fee_quote), float(fee_cost), fee_currency
+    if fee_cost <= 0.0:
+        return 0.0, float(fee_cost), fee_currency, "order_fee"
+    if fee_currency == quote_asset or not fee_currency:
+        return float(fee_cost), float(fee_cost), fee_currency, "order_fee"
+    if fee_currency == base_asset and np.isfinite(price):
+        return float(fee_cost * price), float(fee_cost), fee_currency, "order_fee"
+    return np.nan, float(fee_cost), fee_currency, "unconverted_order_fee"
+
+
+def _combine_fee_quotes(
+    entry_fee_quote: float,
+    exit_fee_quote: float,
+) -> Tuple[float, bool]:
+    """Combine finite fee quotes without silently treating missing fees as zero."""
+    parts = [v for v in (entry_fee_quote, exit_fee_quote) if np.isfinite(v)]
+    if not parts:
+        return np.nan, False
+    return float(sum(parts)), len(parts) == 2
+
+
+def _directional_price_gap_bps(
+    *,
+    side: str,
+    actual_price: float,
+    reference_price: float,
+) -> float:
+    """Positive means actual fill is more favorable than the reference stop."""
+    if (
+        not np.isfinite(actual_price)
+        or actual_price <= 0.0
+        or not np.isfinite(reference_price)
+        or reference_price <= 0.0
+    ):
+        return np.nan
+    side_norm = str(side or "").lower()
+    if side_norm == "short":
+        return float((1.0 - actual_price / reference_price) * 10000.0)
+    return float((actual_price / reference_price - 1.0) * 10000.0)
+
+
+def _wallet_scaled_pnl_fields(
+    *,
+    state: Dict[str, Any],
+    notional: float,
+    gross_pnl: float,
+    net_pnl: float,
+) -> Dict[str, Any]:
+    """Return effective notional-to-wallet leverage and wallet-scaled PnL."""
+    wallet_value = _safe_float(
+        state.get("wallet_value_at_entry"),
+        default=_safe_float(state.get("wallet_value"), np.nan),
+    )
+    open_notional = _safe_float(
+        state.get("open_notional_at_entry"),
+        default=_safe_float(state.get("open_notional"), np.nan),
+    )
+    effective_leverage = (
+        float(notional / wallet_value)
+        if np.isfinite(notional)
+        and notional > 0.0
+        and np.isfinite(wallet_value)
+        and wallet_value > 0.0
+        else np.nan
+    )
+    gross_pnl_pct_wallet = (
+        float(gross_pnl / wallet_value)
+        if np.isfinite(gross_pnl) and np.isfinite(wallet_value) and wallet_value > 0.0
+        else np.nan
+    )
+    net_pnl_pct_wallet = (
+        float(net_pnl / wallet_value)
+        if np.isfinite(net_pnl) and np.isfinite(wallet_value) and wallet_value > 0.0
+        else np.nan
+    )
+    return {
+        "wallet_value_at_entry": wallet_value,
+        "open_notional_at_entry": open_notional,
+        "leverage_wallet_multiplier": _safe_float(
+            state.get("leverage_wallet_multiplier"), np.nan
+        ),
+        "effective_position_leverage": effective_leverage,
+        "gross_pnl_pct_wallet": gross_pnl_pct_wallet,
+        "net_pnl_pct_wallet": net_pnl_pct_wallet,
+        "leverage_adjusted_gross_pnl_pct": gross_pnl_pct_wallet,
+        "leverage_adjusted_net_pnl_pct": net_pnl_pct_wallet,
+    }
 
 
 def _closed_trade_metrics(
@@ -917,14 +1031,19 @@ def _closed_trade_metrics(
         exit_notional = exit_price * filled
         gross_pnl = direction * (exit_price - entry_price) * filled
         gross_pnl_pct = gross_pnl / max(notional, 1e-12)
-    exit_fee_quote, fee_cost, fee_currency = _fee_to_quote(
+    exit_fee_quote, fee_cost, fee_currency, exit_fee_source = _fee_to_quote(
         symbol,
         order.get("fee"),
         price=exit_price,
     )
-    entry_fee_quote = _safe_float(state.get("entry_fee_quote"), 0.0)
-    fee_quote = exit_fee_quote + max(entry_fee_quote, 0.0)
-    net_pnl = gross_pnl - fee_quote if np.isfinite(gross_pnl) else np.nan
+    entry_fee_quote = _safe_float(state.get("entry_fee_quote"), np.nan)
+    entry_fee_source = str(state.get("entry_fee_source") or "")
+    fee_quote, fees_verified = _combine_fee_quotes(entry_fee_quote, exit_fee_quote)
+    net_pnl = (
+        gross_pnl - fee_quote
+        if np.isfinite(gross_pnl) and np.isfinite(fee_quote)
+        else np.nan
+    )
     net_pnl_pct = net_pnl / max(notional, 1e-12) if np.isfinite(notional) else np.nan
     gross_to_net_cost = fee_quote if np.isfinite(fee_quote) else np.nan
     gross_to_net_cost_pct = (
@@ -933,6 +1052,36 @@ def _closed_trade_metrics(
         else np.nan
     )
     stop_price = _safe_float(state.get("stop_price"), default=np.nan)
+    requested_policy_stop = _safe_float(
+        state.get("requested_policy_stop"),
+        default=_safe_float(state.get("policy_stop_price"), default=stop_price),
+    )
+    exit_vs_policy_stop_bps = _directional_price_gap_bps(
+        side=side,
+        actual_price=exit_price,
+        reference_price=requested_policy_stop,
+    )
+    mfe_value = _safe_float(state.get("mfe"), np.nan)
+    mae_value = _safe_float(state.get("mae"), np.nan)
+    exit_vs_peak_giveback_pct = np.nan
+    if np.isfinite(mfe_value) and mfe_value > 0.0 and np.isfinite(gross_pnl_pct):
+        exit_vs_peak_giveback_pct = float(
+            max(mfe_value - gross_pnl_pct, 0.0) / mfe_value
+        )
+    policy_parity_ok = (
+        bool(
+            np.isfinite(exit_vs_policy_stop_bps)
+            and abs(exit_vs_policy_stop_bps) <= 75.0
+        )
+        if np.isfinite(requested_policy_stop)
+        else False
+    )
+    wallet_pnl_fields = _wallet_scaled_pnl_fields(
+        state=state,
+        notional=notional,
+        gross_pnl=gross_pnl,
+        net_pnl=net_pnl,
+    )
     stop_origin = str(state.get("stop_reason") or "original_stop_loss")
     reason_detail = str(state.get("stop_reason_detail") or stop_origin)
     reason_out = (
@@ -971,6 +1120,7 @@ def _closed_trade_metrics(
         "exit_notional_quote": exit_notional,
         "quote_size": state.get("quote_size"),
         "requested_base_amount": state.get("requested_base_amount"),
+        **wallet_pnl_fields,
         "gross_pnl": gross_pnl,
         "gross_pnl_amount": gross_pnl,
         "gross_pnl_pct": gross_pnl_pct,
@@ -979,11 +1129,24 @@ def _closed_trade_metrics(
         "net_pnl_pct": net_pnl_pct,
         "entry_fee_quote": entry_fee_quote,
         "exit_fee_quote": exit_fee_quote,
+        "entry_fee_source": entry_fee_source,
+        "exit_fee_source": exit_fee_source,
+        "fee_source": (
+            "verified_order_fees"
+            if fees_verified
+            else f"partial_or_missing(entry={entry_fee_source or 'missing'},exit={exit_fee_source})"
+        ),
+        "fees_verified": fees_verified,
         "gross_to_net_cost_quote": gross_to_net_cost,
         "gross_to_net_cost_pct": gross_to_net_cost_pct,
         "pnl_scope": "position_notional_excluding_wallet_equity_borrow_interest",
-        "mfe": _safe_float(state.get("mfe"), 0.0),
-        "mae": _safe_float(state.get("mae"), 0.0),
+        "mfe": mfe_value,
+        "mae": mae_value,
+        "requested_policy_stop": requested_policy_stop,
+        "final_placed_stop": stop_price,
+        "exit_vs_policy_stop_bps": exit_vs_policy_stop_bps,
+        "exit_vs_peak_giveback_pct": exit_vs_peak_giveback_pct,
+        "policy_parity_ok": policy_parity_ok,
         "stop_price": state.get("stop_price"),
         "stop_order_id": state.get("stop_order_id"),
         "close_order_id": order.get("id"),
@@ -1626,11 +1789,66 @@ class OCOExecutor:
                         recompute_validation_error=recompute_reason,
                         recompute_error=recompute_error,
                     )
+                    existing_stop_price = _safe_float(state.get("stop_price"), np.nan)
+                    existing_stop_order_id = state.get("stop_order_id")
+                    if (
+                        existing_stop_order_id
+                        and np.isfinite(existing_stop_price)
+                        and _stop_side_is_valid(
+                            side, existing_stop_price, current_price
+                        )
+                    ):
+                        tprint(
+                            f"Rejected simple-policy SL for {symbol} before cancel: "
+                            f"candidate={original_stop_price:.8g} "
+                            f"current={current_price:.8g}; "
+                            "canonical recompute did not produce a valid replacement; "
+                            "keeping existing exchange stop unchanged"
+                        )
+                        _append_position_event(
+                            state,
+                            "simple_policy_stop_existing_stop_preserved",
+                            reason="candidate_crossed_existing_stop_valid",
+                            existing_stop=float(existing_stop_price),
+                            existing_stop_order_id=str(existing_stop_order_id),
+                            original_candidate_stop=original_stop_price,
+                            current_price=float(current_price),
+                            recomputed_stop=(
+                                float(recompute_stop_price)
+                                if np.isfinite(recompute_stop_price)
+                                else None
+                            ),
+                            recompute_validation_error=recompute_reason,
+                            recompute_error=recompute_error,
+                        )
+                        return
                     tprint(
                         f"Rejected simple-policy SL for {symbol} before cancel: "
                         f"candidate={original_stop_price:.8g} "
                         f"current={current_price:.8g}; "
-                        "canonical recompute did not produce a valid replacement"
+                        "canonical recompute did not produce a valid replacement "
+                        "and no valid existing exchange stop is known; "
+                        "closing position with software policy stop"
+                    )
+                    _append_position_event(
+                        state,
+                        "software_policy_stop_close",
+                        reason="policy_stop_crossed_no_valid_exchange_stop",
+                        original_candidate_stop=original_stop_price,
+                        current_price=float(current_price),
+                        recomputed_stop=(
+                            float(recompute_stop_price)
+                            if np.isfinite(recompute_stop_price)
+                            else None
+                        ),
+                        recompute_validation_error=recompute_reason,
+                        recompute_error=recompute_error,
+                    )
+                    self._close_position(
+                        symbol,
+                        state,
+                        float(current_price),
+                        "software_policy_stop_close",
                     )
                     return
 
@@ -2646,13 +2864,13 @@ class TradeExecutor:
             .get("sapi", "https://api.binance.com/sapi/v1")
         )
         signed = {
-            "url": f"{base_url}/{path}",
+            "url": f"{base_url}/{path}?{query}&signature={signature}",
             "method": "POST",
             "headers": {
                 "X-MBX-APIKEY": api_key,
                 "Content-Type": "application/x-www-form-urlencoded",
             },
-            "body": f"{query}&signature={signature}",
+            "body": None,
         }
         return fetch(
             signed["url"],
@@ -2661,59 +2879,227 @@ class TradeExecutor:
             signed.get("body"),
         )
 
+    def _binance_sapi_get(
+        self, path: str, params: Optional[Dict[str, Any]] = None
+    ) -> Any:
+        """Call a Binance SAPI GET endpoint through ccxt implicit methods."""
+        if self.exchange is None:
+            raise RuntimeError("exchange is not configured")
+        params = dict(params or {})
+        explicit_methods = {
+            "margin/exchange-small-liability": (
+                "sapiGetMarginExchangeSmallLiability",
+                "sapi_get_margin_exchange_small_liability",
+            ),
+            "margin/exchange-small-liability-history": (
+                "sapiGetMarginExchangeSmallLiabilityHistory",
+                "sapi_get_margin_exchange_small_liability_history",
+            ),
+            "margin/dust": ("sapiGetMarginDust", "sapi_get_margin_dust"),
+        }
+        for explicit_name in explicit_methods.get(str(path), ()):
+            explicit_method = getattr(self.exchange, explicit_name, None)
+            if callable(explicit_method):
+                return explicit_method(params)
+        method_name = "sapiGet" + "".join(
+            part[:1].upper() + part[1:]
+            for chunk in str(path).split("/")
+            for part in chunk.split("-")
+            if part
+        )
+        method = getattr(self.exchange, method_name, None)
+        if callable(method):
+            return method(params)
+        request = getattr(self.exchange, "request", None)
+        if callable(request):
+            return request(path, "sapi", "GET", params)
+        raise RuntimeError(f"exchange does not expose Binance SAPI GET {path}")
+
+    @staticmethod
+    def _extract_small_liability_assets(response: Any) -> Tuple[List[str], List[str]]:
+        """Extract exchangeable source assets and liability targets from Binance."""
+        rows: List[Any]
+        if isinstance(response, list):
+            rows = response
+        elif isinstance(response, dict):
+            data = response.get("data")
+            if isinstance(data, list):
+                rows = data
+            elif isinstance(response.get("rows"), list):
+                rows = response.get("rows", [])
+            elif isinstance(response.get("assets"), list):
+                rows = response.get("assets", [])
+            else:
+                rows = []
+        else:
+            rows = []
+
+        assets: List[str] = []
+        liability_assets: List[str] = []
+        for row in rows:
+            if isinstance(row, str):
+                asset = row
+                liability_asset = row
+            elif isinstance(row, dict):
+                asset = (
+                    row.get("asset")
+                    or row.get("liabilityAsset")
+                    or row.get("liability_asset")
+                    or row.get("coin")
+                )
+                liability_asset = (
+                    row.get("liabilityAsset")
+                    or row.get("liability_asset")
+                    or row.get("targetAsset")
+                    or row.get("target_asset")
+                    or row.get("asset")
+                )
+                if row.get("exchangeable") is False or row.get("convertible") is False:
+                    continue
+            else:
+                continue
+            asset_u = str(asset or "").strip().upper()
+            if asset_u and asset_u not in assets:
+                assets.append(asset_u)
+            liability_u = str(liability_asset or "").strip().upper()
+            if liability_u and liability_u not in liability_assets:
+                liability_assets.append(liability_u)
+        return assets, liability_assets
+
+    def _fetch_exchangeable_small_liability_assets(
+        self,
+    ) -> Tuple[List[str], List[str], Any]:
+        """Return assets Binance currently accepts for small-liability exchange."""
+        response = self._binance_sapi_get("margin/exchange-small-liability", {})
+        assets, liability_assets = self._extract_small_liability_assets(response)
+        return assets, liability_assets, response
+
+    def _margin_repay_amount_variants(self, asset: str, amount: float) -> List[str]:
+        """Return safe repay amount strings from finest to coarsest precision."""
+        asset_u = str(asset or "").upper()
+        amount_f = float(amount)
+        if not asset_u or not np.isfinite(amount_f) or amount_f <= 0.0:
+            return []
+        quote = str(
+            self.config.get("quote_currency")
+            or self.config.get("live_quote_currency")
+            or "USDC"
+        ).upper()
+        candidates: List[str] = []
+
+        def _add(value: Any) -> None:
+            try:
+                value_f = float(value)
+            except Exception:
+                return
+            if not np.isfinite(value_f) or value_f <= 0.0 or value_f > amount_f:
+                return
+            text = f"{value_f:.12f}".rstrip("0").rstrip(".")
+            if text and text not in candidates:
+                candidates.append(text)
+
+        for symbol in (f"{asset_u}/{quote}", f"{asset_u}/USDC", f"{asset_u}/USDT"):
+            try:
+                _load_market(self.exchange, symbol)
+                amount_to_precision = getattr(
+                    self.exchange, "amount_to_precision", None
+                )
+                if callable(amount_to_precision):
+                    _add(amount_to_precision(symbol, amount_f))
+            except Exception:
+                pass
+        for decimals in (8, 6, 5, 4, 3, 2, 1, 0):
+            scale = 10**decimals
+            floored = np.floor(amount_f * scale) / scale
+            _add(floored)
+        return candidates
+
     def _repay_cross_margin_asset(self, asset: str, amount: float) -> Dict[str, Any]:
         """Repay a cross-margin liability for one asset."""
         asset_u = str(asset or "").upper()
         amount_f = float(amount)
         if not asset_u or not np.isfinite(amount_f) or amount_f <= 0.0:
             raise ValueError(f"invalid margin repay request: {asset} {amount}")
-        params = {"asset": asset_u, "amount": amount_f}
-        borrow_repay_params = {
-            "asset": asset_u,
-            "amount": amount_f,
-            "type": "REPAY",
-            "isIsolated": "FALSE",
-        }
-        for method_name in (
-            "sapiPostMarginBorrowRepay",
-            "sapi_post_margin_borrow_repay",
-        ):
-            method = getattr(self.exchange, method_name, None)
-            if not callable(method):
-                continue
-            try:
-                return method(borrow_repay_params)
-            except TypeError:
+        amount_variants = self._margin_repay_amount_variants(asset_u, amount_f)
+        if not amount_variants:
+            amount_variants = [f"{amount_f:.8f}".rstrip("0").rstrip(".")]
+        errors: List[str] = []
+        for amount_text in amount_variants:
+            params = {"asset": asset_u, "amount": amount_text}
+            borrow_repay_params = {
+                "asset": asset_u,
+                "amount": amount_text,
+                "type": "REPAY",
+                "isIsolated": "FALSE",
+            }
+            for method_name in (
+                "sapiPostMarginBorrowRepay",
+                "sapi_post_margin_borrow_repay",
+            ):
+                method = getattr(self.exchange, method_name, None)
+                if not callable(method):
+                    continue
                 try:
-                    return method(**borrow_repay_params)
-                except Exception:
-                    raise
-        for method_name in (
-            "repayCrossMargin",
-            "repay_cross_margin",
-            "repayMargin",
-            "repay_margin",
-            "sapiPostMarginRepay",
-            "sapi_post_margin_repay",
-        ):
-            method = getattr(self.exchange, method_name, None)
-            if not callable(method):
-                continue
-            try:
-                if method_name in {
-                    "repayCrossMargin",
-                    "repay_cross_margin",
-                    "repayMargin",
-                    "repay_margin",
-                }:
-                    return method(asset_u, amount_f, params)
-                return method(params)
-            except TypeError:
+                    response = method(borrow_repay_params)
+                    if isinstance(response, dict):
+                        response.setdefault("attempted_repay_amount", amount_text)
+                    return response
+                except TypeError:
+                    try:
+                        response = method(**borrow_repay_params)
+                        if isinstance(response, dict):
+                            response.setdefault("attempted_repay_amount", amount_text)
+                        return response
+                    except Exception as exc:
+                        errors.append(f"{method_name}({amount_text}): {exc}")
+                        continue
+                except Exception as exc:
+                    errors.append(f"{method_name}({amount_text}): {exc}")
+                    continue
+            for method_name in (
+                "repayCrossMargin",
+                "repay_cross_margin",
+                "repayMargin",
+                "repay_margin",
+                "sapiPostMarginRepay",
+                "sapi_post_margin_repay",
+            ):
+                method = getattr(self.exchange, method_name, None)
+                if not callable(method):
+                    continue
                 try:
-                    return method(params)
-                except Exception:
-                    raise
-        return self._binance_sapi_post("margin/repay", params)
+                    if method_name in {
+                        "repayCrossMargin",
+                        "repay_cross_margin",
+                        "repayMargin",
+                        "repay_margin",
+                    }:
+                        response = method(asset_u, float(amount_text), params)
+                    else:
+                        response = method(params)
+                    if isinstance(response, dict):
+                        response.setdefault("attempted_repay_amount", amount_text)
+                    return response
+                except TypeError:
+                    try:
+                        response = method(params)
+                        if isinstance(response, dict):
+                            response.setdefault("attempted_repay_amount", amount_text)
+                        return response
+                    except Exception as exc:
+                        errors.append(f"{method_name}({amount_text}): {exc}")
+                        continue
+                except Exception as exc:
+                    errors.append(f"{method_name}({amount_text}): {exc}")
+                    continue
+            try:
+                response = self._binance_sapi_post("margin/repay", params)
+                if isinstance(response, dict):
+                    response.setdefault("attempted_repay_amount", amount_text)
+                return response
+            except Exception as exc:
+                errors.append(f"margin/repay({amount_text}): {exc}")
+        raise RuntimeError("; ".join(errors[-5:]))
 
     def _try_repay_available_margin_debt(
         self,
@@ -2951,6 +3337,12 @@ class TradeExecutor:
             if side == "short" and asset in exchanged_assets:
                 attempt["skip_reason"] = "already_submitted_to_small_liability_exchange"
                 continue
+            market = _load_market(self.exchange, symbol)
+            min_notional = _market_min_notional(market)
+            if np.isfinite(min_notional) and quote_value < min_notional:
+                attempt["skip_reason"] = "below_exchange_min_notional_use_liability_api"
+                attempt["exchange_min_notional"] = float(min_notional)
+                continue
             close_side = "sell" if side == "long" else "buy"
             # Sell slightly less than the free dust balance to avoid precision/balance rejects.
             order_amount = float(amount) * (0.999 if side == "long" else 1.0)
@@ -3031,28 +3423,54 @@ class TradeExecutor:
         interval_hours = float(
             self.config.get("cross_margin_dust_to_bnb_interval_hours", 24.0)
         )
+        failure_cooldown_minutes = float(
+            self.config.get(
+                "cross_margin_dust_to_bnb_failure_cooldown_minutes",
+                10.0,
+            )
+        )
         now_ts = pd.Timestamp.now(tz="UTC")
         try:
             state = json.loads(state_path.read_text()) if state_path.exists() else {}
         except Exception:
             state = {}
-        last_ts_raw = state.get("last_attempt_ts")
-        if last_ts_raw:
+        method_version_changed = (
+            state.get("method_version") != DUST_TO_BNB_METHOD_VERSION
+        )
+        last_success_raw = state.get("last_success_ts")
+        last_attempt_raw = state.get("last_attempt_ts")
+        if last_success_raw and not method_version_changed:
             try:
-                last_ts = pd.Timestamp(last_ts_raw)
+                last_ts = pd.Timestamp(last_success_raw)
                 if last_ts.tzinfo is None:
                     last_ts = last_ts.tz_localize("UTC")
                 else:
                     last_ts = last_ts.tz_convert("UTC")
                 if now_ts < last_ts + pd.Timedelta(hours=interval_hours):
                     result["reason"] = "cooldown_active"
-                    result["last_attempt_ts"] = last_ts.isoformat()
+                    result["last_success_ts"] = last_ts.isoformat()
+                    return
+            except Exception:
+                pass
+        if last_attempt_raw and not method_version_changed:
+            try:
+                last_attempt = pd.Timestamp(last_attempt_raw)
+                if last_attempt.tzinfo is None:
+                    last_attempt = last_attempt.tz_localize("UTC")
+                else:
+                    last_attempt = last_attempt.tz_convert("UTC")
+                if now_ts < last_attempt + pd.Timedelta(
+                    minutes=failure_cooldown_minutes
+                ):
+                    result["reason"] = "failure_cooldown_active"
+                    result["last_attempt_ts"] = last_attempt.isoformat()
                     return
             except Exception:
                 pass
 
         state_path.parent.mkdir(parents=True, exist_ok=True)
         state["last_attempt_ts"] = now_ts.isoformat()
+        state["method_version"] = DUST_TO_BNB_METHOD_VERSION
         try:
             state_path.write_text(json.dumps(state, indent=2, sort_keys=True))
         except Exception:
@@ -3163,9 +3581,12 @@ class TradeExecutor:
             state = json.loads(state_path.read_text()) if state_path.exists() else {}
         except Exception:
             state = {}
+        method_version_changed = (
+            state.get("method_version") != SMALL_LIABILITY_EXCHANGE_METHOD_VERSION
+        )
         last_success_raw = state.get("last_success_ts")
         last_attempt_raw = state.get("last_attempt_ts")
-        if last_success_raw:
+        if last_success_raw and not method_version_changed:
             try:
                 last_ts = pd.Timestamp(last_success_raw)
                 if last_ts.tzinfo is None:
@@ -3178,7 +3599,7 @@ class TradeExecutor:
                     return
             except Exception:
                 pass
-        if last_attempt_raw:
+        if last_attempt_raw and not method_version_changed:
             try:
                 last_attempt = pd.Timestamp(last_attempt_raw)
                 if last_attempt.tzinfo is None:
@@ -3196,18 +3617,122 @@ class TradeExecutor:
 
         state_path.parent.mkdir(parents=True, exist_ok=True)
         state["last_attempt_ts"] = now_ts.isoformat()
+        state["method_version"] = SMALL_LIABILITY_EXCHANGE_METHOD_VERSION
         try:
             state_path.write_text(json.dumps(state, indent=2, sort_keys=True))
         except Exception:
             pass
 
+        exchangeable_assets: List[str] = []
+        liability_target_assets: List[str] = []
+        exchangeable_response: Any = None
         try:
-            response = self._binance_sapi_post_repeated_params(
-                "margin/exchange-small-liability",
-                {"assetNames": assets},
+            exchangeable_assets, liability_target_assets, exchangeable_response = (
+                self._fetch_exchangeable_small_liability_assets()
+            )
+            result["exchangeable_assets"] = exchangeable_assets
+            result["liability_target_assets"] = liability_target_assets
+            supported_liability_targets = {
+                str(asset).upper()
+                for asset in self.config.get(
+                    "cross_margin_small_liability_supported_targets",
+                    ["USDT"],
+                )
+                if str(asset or "").strip()
+            }
+            unsupported_targets = sorted(
+                set(liability_target_assets).difference(supported_liability_targets)
+            )
+            if unsupported_targets:
+                result["reason"] = "unsupported_liability_target"
+                result["unsupported_liability_targets"] = unsupported_targets
+                result["supported_liability_targets"] = sorted(
+                    supported_liability_targets
+                )
+                result["exchangeable_response"] = exchangeable_response
+                state["last_unsupported_target_ts"] = now_ts.isoformat()
+                state["last_unsupported_liability_targets"] = unsupported_targets
+                try:
+                    state_path.write_text(json.dumps(state, indent=2, sort_keys=True))
+                except Exception:
+                    pass
+                tprint(
+                    "Skipping small-liability exchange: Binance reports unsupported "
+                    f"liability targets {unsupported_targets}; supported targets="
+                    f"{sorted(supported_liability_targets)}"
+                )
+                return
+            assets = [asset for asset in assets if asset in set(exchangeable_assets)]
+            result["filtered_assets"] = assets
+            submit_assets = list(assets)
+            if not assets:
+                result["reason"] = "no_exchangeable_candidate_assets"
+                result["exchangeable_response"] = exchangeable_response
+                return
+        except Exception as exc:
+            result["exchangeable_error_category"] = _classify_exchange_error(exc)
+            result["exchangeable_error"] = str(exc)
+            result["filtered_assets"] = assets
+            submit_assets = assets
+            tprint(
+                "Small-liability exchange eligibility fetch failed; "
+                f"trying candidate assets directly: {result['exchangeable_error_category']}: {exc}"
+            )
+
+        successes: List[Dict[str, Any]] = []
+        failures: List[Dict[str, Any]] = []
+
+        def _submit_asset_batch(batch_assets: List[str]) -> Tuple[Any, str]:
+            """Submit small-liability assets using Binance-compatible encodings."""
+            submission_variants: List[Tuple[str, Dict[str, Any]]] = [
+                ("array_query", {"assetNames": list(batch_assets)}),
+                ("comma_query", {"assetNames": ",".join(batch_assets)}),
+                (
+                    "json_array_query",
+                    {
+                        "assetNames": json.dumps(
+                            list(batch_assets), separators=(",", ":")
+                        )
+                    },
+                ),
+            ]
+            last_exc: Optional[Exception] = None
+            variant_errors: List[str] = []
+            for variant_name, params in submission_variants:
+                try:
+                    response = self._binance_sapi_post_repeated_params(
+                        "margin/exchange-small-liability",
+                        params,
+                    )
+                    return response, variant_name
+                except Exception as exc:
+                    last_exc = exc
+                    variant_errors.append(
+                        f"{variant_name}:{_classify_exchange_error(exc)}:{exc}"
+                    )
+            if last_exc is not None:
+                setattr(
+                    last_exc,
+                    "_small_liability_variant_errors",
+                    " | ".join(variant_errors),
+                )
+                raise last_exc
+            raise RuntimeError("small-liability exchange submission did not run")
+
+        try:
+            response, submission_format = _submit_asset_batch(submit_assets)
+            successes.append(
+                {
+                    "assets": assets,
+                    "submitted_asset_names": submit_assets,
+                    "submission_format": submission_format,
+                    "response": response,
+                }
             )
             result["exchanged"] = True
             result["assets"] = assets
+            result["submitted_asset_names"] = submit_assets
+            result["submission_format"] = submission_format
             result["response"] = response
             state["last_success_ts"] = now_ts.isoformat()
             state["last_assets"] = assets
@@ -3220,18 +3745,88 @@ class TradeExecutor:
                 f"assets={assets} threshold_quote={self.config.get('cross_margin_small_liability_quote_threshold', 1.0)}"
             )
         except Exception as exc:
-            result["error_category"] = _classify_exchange_error(exc)
-            result["error"] = str(exc)
-            state["last_error_category"] = result["error_category"]
-            state["last_error"] = str(exc)
+            batch_error_category = _classify_exchange_error(exc)
+            batch_error = str(exc)
+            result["batch_error_category"] = batch_error_category
+            result["batch_error"] = batch_error
+            variant_errors = getattr(exc, "_small_liability_variant_errors", None)
+            if variant_errors:
+                result["batch_variant_errors"] = variant_errors
+            tprint(
+                "Small-liability batch exchange failed; retrying per asset: "
+                f"{batch_error_category}: {exc}"
+            )
+            retry_assets = assets
+            for asset in retry_assets:
+                try:
+                    response, submission_format = _submit_asset_batch([asset])
+                    successes.append(
+                        {
+                            "assets": [asset],
+                            "submitted_asset_names": [asset],
+                            "submission_format": submission_format,
+                            "response": response,
+                        }
+                    )
+                    tprint(
+                        "Exchanged small cross-margin liability: "
+                        f"asset={asset} threshold_quote={self.config.get('cross_margin_small_liability_quote_threshold', 1.0)}"
+                    )
+                except Exception as asset_exc:
+                    failure = {
+                        "asset": asset,
+                        "error_category": _classify_exchange_error(asset_exc),
+                        "error": str(asset_exc),
+                    }
+                    variant_errors = getattr(
+                        asset_exc, "_small_liability_variant_errors", None
+                    )
+                    if variant_errors:
+                        failure["variant_errors"] = variant_errors
+                    failures.append(failure)
+                    tprint(
+                        "Small-liability exchange failed for asset: "
+                        f"{asset} {failure['error_category']}: {asset_exc}"
+                    )
+
+        if successes:
+            converted_assets: List[str] = []
+            for row in successes:
+                for asset in row.get("assets", []):
+                    if asset not in converted_assets:
+                        converted_assets.append(str(asset).upper())
+            result["exchanged"] = True
+            result["assets"] = converted_assets
+            result["responses"] = successes
+            if failures:
+                result["failures"] = failures
+            state["last_success_ts"] = now_ts.isoformat()
+            state["last_assets"] = converted_assets
+            if failures:
+                state["last_partial_failure_ts"] = now_ts.isoformat()
+                state["last_failures"] = failures
             try:
                 state_path.write_text(json.dumps(state, indent=2, sort_keys=True))
             except Exception:
                 pass
-            tprint(
-                "Cross-margin small-liability exchange skipped/failed: "
-                f"{result['error_category']}: {exc}"
-            )
+            return
+
+        result["exchanged"] = False
+        result["failures"] = failures
+        result["error_category"] = (
+            failures[-1]["error_category"] if failures else "exchange_error"
+        )
+        result["error"] = failures[-1]["error"] if failures else "no_asset_exchanged"
+        state["last_error_category"] = result["error_category"]
+        state["last_error"] = result["error"]
+        try:
+            state_path.write_text(json.dumps(state, indent=2, sort_keys=True))
+        except Exception:
+            pass
+        tprint(
+            "Cross-margin small-liability exchange skipped/failed: "
+            f"{result['error_category']}: {result['error']}"
+        )
 
     def _load_pending_entry_context(self, symbol: str) -> Dict[str, Any]:
         """Return the latest pending live entry row for a symbol, if available."""
@@ -3272,6 +3867,22 @@ class TradeExecutor:
                 for k, v in rows.iloc[-1].to_dict().items()
             }
         return {}
+
+    def _has_active_or_pending_trade_context(self, symbol: str) -> bool:
+        """Return True when a symbol is an active strategy trade or pending entry."""
+        symbol_s = str(symbol or "")
+        if not symbol_s:
+            return False
+        with self._state_lock:
+            if symbol_s in self.positions:
+                return True
+            active_oco = bool(
+                self.oco_executor
+                and symbol_s in self.oco_executor.get_active_positions()
+            )
+            if active_oco:
+                return True
+        return bool(self._load_pending_entry_context(symbol_s))
 
     def _track_external_margin_position(
         self,
@@ -3657,6 +4268,9 @@ class TradeExecutor:
             "cross_margin_residual_assets": list(
                 self.config.get("cross_margin_residual_assets", ["BNB"])
             ),
+            "residual_cleanup_cap_quote": float(
+                self.config.get("cross_margin_residual_cleanup_cap_quote", 5.0)
+            ),
             "items": [],
             "summary": {},
         }
@@ -3700,6 +4314,16 @@ class TradeExecutor:
         small_liability_threshold = float(
             self.config.get("cross_margin_small_liability_quote_threshold", 1.0)
         )
+        residual_cleanup_cap_quote = float(
+            self.config.get("cross_margin_residual_cleanup_cap_quote", 5.0)
+        )
+
+        def _below_residual_cleanup_cap(value: float) -> bool:
+            return (
+                np.isfinite(value)
+                and value > 0.0
+                and value <= residual_cleanup_cap_quote
+            )
 
         for asset, vals in sorted(assets.items()):
             if not asset:
@@ -3747,6 +4371,12 @@ class TradeExecutor:
                 }
                 if not np.isfinite(net_quote_value) or net_quote_value <= 0.0:
                     net_item["classification"] = "netted_flat_or_unpriced"
+                elif (
+                    asset in residual_assets
+                    and net_amount >= 0.0
+                    and _below_residual_cleanup_cap(float(net_quote_value))
+                ):
+                    net_item["classification"] = "fee_token_or_collateral_residual"
                 elif net_quote_value < threshold:
                     net_item["classification"] = (
                         "dust_residual" if net_amount >= 0.0 else "dust_to_repay"
@@ -3758,7 +4388,19 @@ class TradeExecutor:
                         else "external_short_position"
                     )
                 classification = str(net_item["classification"])
-                if classification == "dust_to_repay":
+                has_trade_context = bool(
+                    balance_symbol
+                    and self._has_active_or_pending_trade_context(balance_symbol)
+                )
+                if has_trade_context:
+                    net_item["cleanup_skip_reason"] = "active_or_pending_trade_present"
+                elif classification == "fee_token_or_collateral_residual":
+                    net_item["cleanup_skip_reason"] = (
+                        "residual_asset_below_cleanup_cap_not_imported"
+                    )
+                elif classification == "dust_to_repay" and _below_residual_cleanup_cap(
+                    float(net_quote_value)
+                ):
                     small_liability_candidates.append(asset)
                     small_position_cleanup_candidates.append(
                         {
@@ -3788,6 +4430,11 @@ class TradeExecutor:
                             "reason": "net_dust_residual",
                         }
                     )
+                elif classification == "dust_to_repay":
+                    net_item["cleanup_skip_reason"] = "above_residual_cleanup_cap_quote"
+                    net_item["residual_cleanup_cap_quote"] = float(
+                        residual_cleanup_cap_quote
+                    )
                 elif classification == "dust_residual":
                     dust_to_bnb_excluded_due_debt.append(asset)
                 if (
@@ -3808,21 +4455,35 @@ class TradeExecutor:
                     net_item["imported_for_monitoring"] = bool(imported)
                     if not imported:
                         net_item["monitoring_skip_reason"] = "stop_loss_not_attached"
-                        cleanup = self._try_admin_close_external_margin_position(
-                            symbol=balance_symbol,
-                            side=str(net_item["side"]),
-                            amount=abs(float(net_amount)),
-                            price=float(balance_px),
-                            quote_value=float(net_quote_value),
-                            report=report,
-                            reason="unimported_netted_external_position",
+                        pending_context = self._load_pending_entry_context(
+                            balance_symbol
                         )
-                        net_item["cleanup_attempted"] = bool(cleanup.get("attempted"))
-                        net_item["cleanup_success"] = bool(cleanup.get("success"))
-                        if cleanup.get("error_category"):
-                            net_item["cleanup_error_category"] = cleanup.get(
-                                "error_category"
+                        if pending_context:
+                            net_item["monitoring_skip_reason"] = (
+                                "pending_trade_log_entry_present"
                             )
+                            net_item["cleanup_attempted"] = False
+                            net_item["cleanup_skip_reason"] = (
+                                "do_not_admin_close_regular_trade"
+                            )
+                        else:
+                            cleanup = self._try_admin_close_external_margin_position(
+                                symbol=balance_symbol,
+                                side=str(net_item["side"]),
+                                amount=abs(float(net_amount)),
+                                price=float(balance_px),
+                                quote_value=float(net_quote_value),
+                                report=report,
+                                reason="unimported_netted_external_position",
+                            )
+                            net_item["cleanup_attempted"] = bool(
+                                cleanup.get("attempted")
+                            )
+                            net_item["cleanup_success"] = bool(cleanup.get("success"))
+                            if cleanup.get("error_category"):
+                                net_item["cleanup_error_category"] = cleanup.get(
+                                    "error_category"
+                                )
                 report["items"].append(net_item)
                 counts[classification] = counts.get(classification, 0) + 1
                 continue
@@ -3866,12 +4527,19 @@ class TradeExecutor:
                     "classification": classification,
                     "imported_for_monitoring": False,
                 }
+                has_trade_context = bool(
+                    symbol and self._has_active_or_pending_trade_context(symbol)
+                )
+                if has_trade_context:
+                    item["cleanup_skip_reason"] = "active_or_pending_trade_present"
                 if (
                     classification == "dust_to_repay"
                     and kind == "debt"
                     and asset != quote
                     and np.isfinite(quote_value)
                     and 0.0 < quote_value < small_liability_threshold
+                    and _below_residual_cleanup_cap(float(quote_value))
+                    and not has_trade_context
                 ):
                     small_liability_candidates.append(asset)
                     small_position_cleanup_candidates.append(
@@ -3887,6 +4555,17 @@ class TradeExecutor:
                         quote_value=quote_value,
                         report=report,
                         reason="dust_to_repay",
+                    )
+                elif (
+                    classification == "dust_to_repay"
+                    and kind == "debt"
+                    and asset != quote
+                    and np.isfinite(quote_value)
+                    and quote_value > residual_cleanup_cap_quote
+                ):
+                    item["cleanup_skip_reason"] = "above_residual_cleanup_cap_quote"
+                    item["residual_cleanup_cap_quote"] = float(
+                        residual_cleanup_cap_quote
                     )
                 if (
                     classification == "dust_residual"
@@ -3921,21 +4600,31 @@ class TradeExecutor:
                     item["imported_for_monitoring"] = bool(imported)
                     if not imported:
                         item["monitoring_skip_reason"] = "stop_loss_not_attached"
-                        cleanup = self._try_admin_close_external_margin_position(
-                            symbol=symbol,
-                            side=side,
-                            amount=float(amount),
-                            price=float(px),
-                            quote_value=float(quote_value),
-                            report=report,
-                            reason="unimported_external_position",
-                        )
-                        item["cleanup_attempted"] = bool(cleanup.get("attempted"))
-                        item["cleanup_success"] = bool(cleanup.get("success"))
-                        if cleanup.get("error_category"):
-                            item["cleanup_error_category"] = cleanup.get(
-                                "error_category"
+                        pending_context = self._load_pending_entry_context(symbol)
+                        if pending_context:
+                            item["monitoring_skip_reason"] = (
+                                "pending_trade_log_entry_present"
                             )
+                            item["cleanup_attempted"] = False
+                            item["cleanup_skip_reason"] = (
+                                "do_not_admin_close_regular_trade"
+                            )
+                        else:
+                            cleanup = self._try_admin_close_external_margin_position(
+                                symbol=symbol,
+                                side=side,
+                                amount=float(amount),
+                                price=float(px),
+                                quote_value=float(quote_value),
+                                report=report,
+                                reason="unimported_external_position",
+                            )
+                            item["cleanup_attempted"] = bool(cleanup.get("attempted"))
+                            item["cleanup_success"] = bool(cleanup.get("success"))
+                            if cleanup.get("error_category"):
+                                item["cleanup_error_category"] = cleanup.get(
+                                    "error_category"
+                                )
                 report["items"].append(item)
                 counts[classification] = counts.get(classification, 0) + 1
         self._maybe_convert_margin_dust_to_bnb(
@@ -4278,7 +4967,12 @@ class TradeExecutor:
             entry_price, filled_amount, partial_fill = _extract_order_fill(
                 order, fallback_price
             )
-            entry_fee_quote, entry_fee_cost, entry_fee_currency = _fee_to_quote(
+            (
+                entry_fee_quote,
+                entry_fee_cost,
+                entry_fee_currency,
+                entry_fee_source,
+            ) = _fee_to_quote(
                 symbol,
                 order.get("fee"),
                 price=entry_price,
@@ -4353,6 +5047,7 @@ class TradeExecutor:
                                     "entry_fee_quote": entry_fee_quote,
                                     "entry_fee_cost": entry_fee_cost,
                                     "entry_fee_currency": entry_fee_currency,
+                                    "entry_fee_source": entry_fee_source,
                                     "entry_order_type": entry_order_type,
                                     "ohlcv_entry_price": ohlcv_entry_price,
                                     "entry_price_delta_vs_ohlcv": entry_price_delta,
@@ -4378,6 +5073,7 @@ class TradeExecutor:
                     "entry_fee_quote": entry_fee_quote,
                     "entry_fee_cost": entry_fee_cost,
                     "entry_fee_currency": entry_fee_currency,
+                    "entry_fee_source": entry_fee_source,
                     "entry_price": entry_price,
                     "ohlcv_entry_price": ohlcv_entry_price,
                     "entry_price_delta_vs_ohlcv": entry_price_delta,
@@ -4410,6 +5106,7 @@ class TradeExecutor:
                     "entry_fee_quote": entry_fee_quote,
                     "entry_fee_cost": entry_fee_cost,
                     "entry_fee_currency": entry_fee_currency,
+                    "entry_fee_source": entry_fee_source,
                     "expected_entry_price": expected_entry_price,
                     "realized_entry_price": entry_price,
                     "ohlcv_entry_price": ohlcv_entry_price,
@@ -4434,6 +5131,7 @@ class TradeExecutor:
                 "entry_fee_quote": entry_fee_quote,
                 "entry_fee_cost": entry_fee_cost,
                 "entry_fee_currency": entry_fee_currency,
+                "entry_fee_source": entry_fee_source,
                 "price": entry_price,
                 "expected_entry_price": expected_entry_price,
                 "realized_entry_price": entry_price,
@@ -4903,6 +5601,8 @@ class TradeExecutor:
         mae: Optional[float] = None,
         bars_in_trade: Optional[int] = None,
         last_5m_eval_ts: Optional[pd.Timestamp] = None,
+        current_price: Optional[float] = None,
+        current_price_ts: Optional[pd.Timestamp] = None,
     ) -> None:
         """Persist monitor state and apply policy-authorised stop decisions only."""
 
@@ -4924,6 +5624,11 @@ class TradeExecutor:
                     state["mfe"] = float(mfe)
                 if mae is not None and np.isfinite(mae):
                     state["mae"] = float(mae)
+                if current_price is not None and np.isfinite(current_price):
+                    state["current_price"] = float(current_price)
+                    state["last_price"] = float(current_price)
+                if current_price_ts is not None:
+                    state["current_price_ts"] = pd.Timestamp(current_price_ts)
                 if bars_in_trade is not None:
                     state["bars_in_trade"] = int(max(0, bars_in_trade))
                 if last_5m_eval_ts is not None:
@@ -5015,6 +5720,11 @@ class TradeExecutor:
                 state["mfe"] = float(mfe)
             if mae is not None and np.isfinite(mae):
                 state["mae"] = float(mae)
+            if current_price is not None and np.isfinite(current_price):
+                state["current_price"] = float(current_price)
+                state["last_price"] = float(current_price)
+            if current_price_ts is not None:
+                state["current_price_ts"] = pd.Timestamp(current_price_ts)
             if bars_in_trade is not None:
                 state["bars_in_trade"] = int(max(0, bars_in_trade))
             if last_5m_eval_ts is not None:

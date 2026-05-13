@@ -24,6 +24,9 @@ class PortfolioPolicyConfig:
     max_available_wallet_position_pct: float = 0.50
     max_position_wallet_pct: float = 0.15
     max_position_quote_notional: float = 5000.0
+    book_notional_multiplier: float = 1.0
+    leverage_wallet_multiplier: float = 1.0
+    min_margin_level_after_entry: float = 2.50
 
     live_test_min_quote_notional: float = 5.0
     live_test_quote_notional: float = 10.0
@@ -112,8 +115,12 @@ def load_portfolio_policy_config(
     }
     nested_sections = {
         "rank_sizing": {
+            "book_notional_multiplier",
+            "leverage_wallet_multiplier",
+            "min_margin_level_after_entry",
             "rank_multiplier_min",
             "rank_multiplier_max",
+            "rank_size_power",
         },
         "liquidity": {
             "max_orderbook_slippage_bps",
@@ -147,6 +154,15 @@ def load_portfolio_policy_config(
         values["max_concurrent_per_strategy"] = max(
             1, int(values["max_concurrent_per_strategy"])
         )
+    values["book_notional_multiplier"] = max(
+        0.0, float(values.get("book_notional_multiplier", 1.0))
+    )
+    values["leverage_wallet_multiplier"] = max(
+        1.0, float(values.get("leverage_wallet_multiplier", 1.0))
+    )
+    values["min_margin_level_after_entry"] = max(
+        1.0, float(values.get("min_margin_level_after_entry", 2.5))
+    )
     return PortfolioPolicyConfig(**{k: values[k] for k in valid})
 
 
@@ -160,14 +176,46 @@ def compute_rank_based_position_size(
     liquidity_capacity_weight: float = 1.0,
     live_test_mode: bool = False,
     rank_size_power: float | None = None,
+    total_assets_quote: float | None = None,
+    total_liabilities_quote: float | None = None,
 ) -> Dict[str, Any]:
     """Compute rank-only position size with policy and liquidity caps."""
     wallet = max(float(wallet_value), 0.0)
     open_notional = max(float(open_notional), 0.0)
-    max_total_notional = policy.max_total_wallet_allocation_pct * wallet
-    available_wallet = max(wallet - open_notional, 0.0)
-    available_wallet_position_cap = (
-        policy.max_available_wallet_position_pct * available_wallet
+    book_multiplier = max(float(policy.book_notional_multiplier), 0.0)
+    legacy_leverage_multiplier = max(float(policy.leverage_wallet_multiplier), 1.0)
+    max_total_equity_allocation = policy.max_total_wallet_allocation_pct * wallet
+    configured_book_notional = max_total_equity_allocation * book_multiplier
+    assets_q = (
+        float(total_assets_quote)
+        if total_assets_quote is not None and np.isfinite(float(total_assets_quote))
+        else np.nan
+    )
+    liabilities_q = (
+        float(total_liabilities_quote)
+        if total_liabilities_quote is not None
+        and np.isfinite(float(total_liabilities_quote))
+        else np.nan
+    )
+    margin_surplus_notional = float("inf")
+    margin_level = float("inf")
+    if np.isfinite(assets_q) and np.isfinite(liabilities_q) and liabilities_q > 0.0:
+        margin_level = assets_q / max(liabilities_q, 1e-12)
+        margin_surplus_notional = max(
+            assets_q - float(policy.min_margin_level_after_entry) * liabilities_q,
+            0.0,
+        )
+    elif np.isfinite(assets_q) and liabilities_q == 0.0:
+        margin_level = float("inf")
+        margin_surplus_notional = assets_q
+    safe_book_notional = min(configured_book_notional, margin_surplus_notional)
+    if not np.isfinite(safe_book_notional):
+        safe_book_notional = configured_book_notional
+    safe_book_notional = max(safe_book_notional, 0.0)
+    open_equity_allocation = open_notional / max(book_multiplier, 1e-9)
+    available_wallet = max(wallet - open_equity_allocation, 0.0)
+    available_wallet_position_cap = policy.max_available_wallet_position_pct * (
+        available_wallet * book_multiplier
     )
     denom = max(1.0 - float(final_threshold), 1e-9)
     rank_excess = (float(adjusted_rank_score) - float(final_threshold)) / denom
@@ -184,36 +232,54 @@ def compute_rank_based_position_size(
         + (policy.rank_multiplier_max - policy.rank_multiplier_min) * curved_rank_excess
     )
     position_cap = min(
-        policy.max_position_wallet_pct * wallet,
-        float(policy.max_position_quote_notional),
+        policy.max_position_wallet_pct * wallet * book_multiplier,
+        float(policy.max_position_quote_notional) * book_multiplier,
     )
-    rank_scaled_cap = min(available_wallet_position_cap, position_cap)
-    rank_base_notional = rank_scaled_cap / max(float(policy.rank_multiplier_max), 1e-9)
-    provisional_size = rank_base_notional * rank_multiplier
-    remaining_total = max(max_total_notional - open_notional, 0.0)
+    target_slot_notional = safe_book_notional / max(
+        float(policy.max_concurrent_positions), 1.0
+    )
+    provisional_size = target_slot_notional * rank_multiplier
+    remaining_total = max(safe_book_notional - open_notional, 0.0)
     size_before_liquidity = min(
         provisional_size,
-        rank_scaled_cap,
         available_wallet_position_cap,
         position_cap,
+        remaining_total,
     )
     liq_weight = float(np.clip(liquidity_capacity_weight, 0.0, 1.0))
     size_after_liquidity = size_before_liquidity * liq_weight
     if live_test_mode and size_after_liquidity > 0.0:
-        size_after_liquidity = min(
-            max(size_after_liquidity, policy.live_test_min_quote_notional),
-            policy.live_test_quote_notional,
-        )
+        live_test_min_notional = policy.live_test_min_quote_notional * book_multiplier
+        live_test_max_notional = policy.live_test_quote_notional * book_multiplier
+        if size_after_liquidity < live_test_min_notional:
+            size_after_liquidity = 0.0
+        else:
+            size_after_liquidity = min(size_after_liquidity, live_test_max_notional)
     return {
         "wallet_value": wallet,
-        "max_total_notional": max_total_notional,
+        "book_notional_multiplier": book_multiplier,
+        "leverage_wallet_multiplier": legacy_leverage_multiplier,
+        "min_margin_level_after_entry": float(policy.min_margin_level_after_entry),
+        "total_assets_quote": assets_q if np.isfinite(assets_q) else None,
+        "total_liabilities_quote": (
+            liabilities_q if np.isfinite(liabilities_q) else None
+        ),
+        "current_margin_level": margin_level if np.isfinite(margin_level) else None,
+        "max_total_equity_allocation": max_total_equity_allocation,
+        "configured_book_notional": configured_book_notional,
+        "margin_surplus_notional": (
+            margin_surplus_notional if np.isfinite(margin_surplus_notional) else None
+        ),
+        "safe_book_notional": safe_book_notional,
+        "max_total_notional": safe_book_notional,
         "open_notional": open_notional,
+        "open_equity_allocation": open_equity_allocation,
         "remaining_total_notional": remaining_total,
         "available_wallet": available_wallet,
         "available_wallet_position_cap": available_wallet_position_cap,
-        "rank_scaled_cap": rank_scaled_cap,
-        "rank_base_notional": rank_base_notional,
-        "target_slot_notional": rank_base_notional,
+        "rank_scaled_cap": position_cap,
+        "rank_base_notional": target_slot_notional,
+        "target_slot_notional": target_slot_notional,
         "rank_excess": rank_excess,
         "curved_rank_excess": curved_rank_excess,
         "rank_size_power": size_power,

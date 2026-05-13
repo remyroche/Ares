@@ -202,12 +202,47 @@ def _ic_metrics(df: pd.DataFrame) -> dict[str, Any]:
     return out
 
 
+def _four_element_diagnosis(classified: pd.DataFrame) -> dict[str, Any]:
+    if classified is None or classified.empty:
+        return {}
+    mapping = {
+        "execution_timing_gap": "signal_forward_good_fill_forward_bad",
+        "prediction_or_live_feature_drift": "signal_forward_bad",
+        "selection_or_gating_gap": "rejected_candidate_signal_forward_good",
+        "exit_stop_slippage_cost_gap": "fill_forward_good_realized_trade_bad",
+    }
+    out: dict[str, Any] = {}
+    for gap_class, label in mapping.items():
+        grp = classified[classified.get("gap_classification") == gap_class]
+        record: dict[str, Any] = {"rows": int(len(grp))}
+        for col in (
+            "oos_expected_net_bps",
+            "signal_forward_net_bps",
+            "fill_forward_net_bps",
+            "realized_trade_net_bps",
+            "gap_oos_vs_realized_bps",
+        ):
+            vals = pd.to_numeric(grp.get(col, pd.Series(dtype=float)), errors="coerce")
+            record[f"mean_{col}"] = (
+                float(vals.mean()) if vals.notna().any() else np.nan
+            )
+        out[label] = record
+    return out
+
+
 def _recommended_action(class_counts: dict[str, int], parity_summary: dict[str, Any]) -> str:
     if parity_summary.get("lookahead", 0) or parity_summary.get("mismatches", 0):
         return "Start with feature parity/timestamp leakage: mismatches or lookahead violations were detected."
     if not class_counts:
         return "Collect more replay rows with forward outcomes before drawing conclusions."
-    top = max(class_counts.items(), key=lambda kv: kv[1])[0]
+    actionable = {
+        k: v
+        for k, v in class_counts.items()
+        if k not in {"missing_forward_outcome", "unresolved_trade"}
+    }
+    if not actionable:
+        return "Collect more replay rows with forward and realized outcomes before drawing conclusions."
+    top = max(actionable.items(), key=lambda kv: kv[1])[0]
     mapping = {
         "execution_timing_gap": "Prioritize execution timing, entry routing, and fill-price controls.",
         "prediction_or_live_feature_drift": "Prioritize model/rank drift and live feature parity investigation.",
@@ -312,6 +347,7 @@ def build_live_gap_report(
         "feature_parity": parity_summary,
         "gap_decomposition": gap_decomp,
         "selection_summary": selection_summary,
+        "four_element_diagnosis": _four_element_diagnosis(classified),
         "ic_metrics": ic_metrics,
         "classification_counts": {str(k): int(v) for k, v in class_counts.items()},
         "by_strategy": _group_records(classified, "strategy_id"),
@@ -345,6 +381,9 @@ def render_live_gap_report_markdown(report: Dict[str, Any]) -> str:
         lines.append(f"- **{key}**: {value}")
     lines.extend(["", "## Selection summary"])
     for key, value in (report.get("selection_summary") or {}).items():
+        lines.append(f"- **{key}**: {value}")
+    lines.extend(["", "## Four-element diagnosis"])
+    for key, value in (report.get("four_element_diagnosis") or {}).items():
         lines.append(f"- **{key}**: {value}")
     lines.extend(["", "## IC metrics"])
     for key, value in (report.get("ic_metrics") or {}).items():

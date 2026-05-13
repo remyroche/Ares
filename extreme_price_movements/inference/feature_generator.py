@@ -28,6 +28,7 @@ from extreme_price_movements.inference.parity import (
     LIVE_UNAVAILABLE_FEATURES,
     strategy_id_matches,
 )
+from extreme_price_movements.regime_adaptor import regime_adaptor_inference_enabled
 from extreme_price_movements.utils import tprint
 
 
@@ -822,7 +823,9 @@ def get_inference_required_feature_keys(
         for key, adaptor in regime_adaptors.items():
             if not _model_key_matches_allowed(str(key), allowed):
                 continue
-            if isinstance(adaptor, dict):
+            if isinstance(adaptor, dict) and regime_adaptor_inference_enabled(
+                artifact=adaptor
+            ):
                 mapping = adaptor.get("feature_mapping", {}) or {}
                 for value in mapping.values():
                     if isinstance(value, str):

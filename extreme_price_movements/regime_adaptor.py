@@ -10,9 +10,11 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 from scipy.stats import linregress
+from sklearn.decomposition import PCA
 from sklearn.linear_model import ElasticNet
 from sklearn.preprocessing import RobustScaler
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import log_loss, roc_auc_score
+from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeRegressor
 
 from extreme_price_movements.config import (
@@ -48,11 +50,71 @@ except Exception:  # pragma: no cover - optional runtime dependency fallback.
     TPESampler = None  # type: ignore[assignment]
 
 EPS = 1e-9
+PREDICTION_DISAGREEMENT_THRESHOLD = 0.20
+SYMBOL_SHRINK_K = 200.0
+PSI_RARITY_THRESHOLD = 1.50
+MAX_DISTRIBUTION_FEATURES = 256
+REGIME_ADAPTOR_INFERENCE_DISABLED_MODES = {
+    "",
+    "0",
+    "false",
+    "no",
+    "off",
+    "none",
+    "disabled",
+}
+NEW_REGIME_FEATURES = (
+    "base_model_prediction",
+    "meta_model_prediction",
+    "ebm_raw_prediction",
+    "ebm_en_prediction",
+    "ebm_uncertainty_weighted_prediction",
+    "ebm_en_adjustment_abs",
+    "ebm_uncertainty_adjustment_abs",
+    "ebm_prediction_dispersion",
+    "ebm_prediction_brittleness",
+    "meta_recent_brier_shrunk",
+    "meta_recent_brier_global",
+    "abs_base_meta_diff",
+    "signed_base_meta_diff",
+    "abs_base_meta_diff_3d",
+    "abs_base_meta_diff_7d",
+    "abs_base_meta_diff_15d",
+    "signed_base_meta_diff_3d",
+    "signed_base_meta_diff_7d",
+    "signed_base_meta_diff_15d",
+    "base_meta_diff_ewm_3d",
+    "base_meta_disagreement_rate_3d",
+    "base_meta_disagreement_rate_7d",
+    "base_models_pred_std",
+    "base_models_pred_range",
+    "base_models_pred_iqr",
+    "base_models_disagreement_rate_3d",
+    "base_models_disagreement_rate_7d",
+    "base_models_disagreement_rate_15d",
+    "max_abs_zscore",
+    "mean_abs_zscore",
+    "num_features_outside_p01_p99",
+    "num_features_outside_p05_p95",
+    "p95_PSI",
+    "mean_PSI",
+    "num_features_PSI_above_threshold",
+    "pca_reconstruction_error",
+    "missing_count",
+    "stale_feature_count",
+    "symbol_recent_utility_shrunk",
+    "symbol_recent_bad_rate_shrunk",
+    "symbol_sample_count_log",
+    "symbol_liquidity_rank",
+    "symbol_vol_rank",
+)
 
 ROLLING_REGIME_HORIZONS_DAYS = (3, 5)
 ROLLING_REGIME_DEFAULT_BLEND_WEIGHTS = {3: 0.6, 5: 0.4}
 ROLLING_REGIME_BLEND_GRID = ((0.8, 0.2), (0.6, 0.4), (0.5, 0.5), (0.4, 0.6))
-REGIME_FEATURE_ORDER = list(dict.fromkeys(REGIME_ADAPTOR_FEATURE_ORDER))
+REGIME_FEATURE_ORDER = list(
+    dict.fromkeys(list(REGIME_ADAPTOR_FEATURE_ORDER) + list(NEW_REGIME_FEATURES))
+)
 GLOBAL_REGIME_FEATURES = tuple(REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS)
 CROSS_ASSET_REGIME_FEATURES = GLOBAL_REGIME_FEATURES
 ASSET_REGIME_FEATURES = tuple(REGIME_ADAPTOR_ASSET_FEATURE_KEYS)
@@ -403,11 +465,79 @@ class RegimeAdaptorFit:
     regime_utility_pred_30d_oof: Optional[np.ndarray] = None
     combined_regime_utility_oof: Optional[np.ndarray] = None
     regime_logit_offset_oof: Optional[np.ndarray] = None
+    trust_score_oof: Optional[np.ndarray] = None
+    trust_proba_oof: Optional[np.ndarray] = None
 
 
 def safe_strategy_slug(strategy_id: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(strategy_id or "")).strip("_")
     return slug[:180] or "strategy"
+
+
+def _coerce_optional_bool(value: Any) -> Optional[bool]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and np.isfinite(float(value)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on", "enabled"}:
+        return True
+    if text in REGIME_ADAPTOR_INFERENCE_DISABLED_MODES:
+        return False
+    return None
+
+
+def regime_adaptor_inference_enabled(
+    runtime_cfg: Optional[Dict[str, Any]] = None,
+    artifact: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """Return whether a trained regime adaptor should be applied at inference.
+
+    Research/training enablement and live inference enablement are intentionally
+    separate so artifacts can keep diagnostics while deployment stays opt-in.
+    """
+    artifact = artifact or {}
+    if not bool(artifact.get("enable_regime_adaptor", False)):
+        return False
+
+    cfg = runtime_cfg or {}
+    nested = cfg.get("regime_adaptor", {}) if isinstance(cfg, dict) else {}
+    if not isinstance(nested, dict):
+        nested = {}
+
+    explicit_cfg = None
+    if isinstance(cfg, dict):
+        explicit_cfg = _coerce_optional_bool(
+            cfg.get("regime_adaptor.inference_enabled")
+        )
+        if explicit_cfg is None:
+            explicit_cfg = _coerce_optional_bool(
+                cfg.get("regime_adaptor_inference_enabled")
+            )
+    if explicit_cfg is None:
+        explicit_cfg = _coerce_optional_bool(nested.get("inference_enabled"))
+    if explicit_cfg is not None:
+        return bool(explicit_cfg)
+
+    mode = None
+    if isinstance(cfg, dict):
+        mode = cfg.get("regime_adaptor.inference_integration_mode")
+    if mode is None:
+        mode = nested.get("inference_integration_mode")
+    if mode is not None:
+        return str(mode).strip().lower() not in REGIME_ADAPTOR_INFERENCE_DISABLED_MODES
+
+    explicit_artifact = _coerce_optional_bool(
+        artifact.get("enable_regime_adaptor_inference")
+    )
+    if explicit_artifact is not None:
+        return bool(explicit_artifact)
+
+    if mode is None:
+        mode = artifact.get("inference_integration_mode", "disabled")
+    return str(mode).strip().lower() not in REGIME_ADAPTOR_INFERENCE_DISABLED_MODES
 
 
 def _as_float_array(values: Any, n: int) -> np.ndarray:
@@ -650,6 +780,681 @@ def build_regime_feature_frame(
 
     ordered = {key: out[key] for key in REGIME_FEATURE_ORDER if key in out}
     return pd.DataFrame(ordered), mapping
+
+
+def _candidate_model_feature_columns(
+    feature_frame: pd.DataFrame,
+    used_feature_columns: Optional[Sequence[str]] = None,
+) -> List[str]:
+    if used_feature_columns:
+        cols = [str(c) for c in used_feature_columns if str(c) in feature_frame.columns]
+    else:
+        blocked_exact = {
+            "timestamp",
+            "ts",
+            "symbol",
+            "side",
+            "trade_side",
+            "label",
+            "target",
+            "return",
+            "returns",
+            "net_gain",
+            "gross_gain",
+            "mae_ret",
+            "mfe_ret",
+            "bars_to_mfe",
+            "bars_to_mae",
+            "t_mfe",
+            "t_mae",
+        }
+        blocked_substrings = ("future", "forward", "outcome", "realized")
+        cols = []
+        for c in feature_frame.columns:
+            lc = str(c).lower()
+            if lc in blocked_exact or any(s in lc for s in blocked_substrings):
+                continue
+            if pd.api.types.is_numeric_dtype(feature_frame[c]):
+                cols.append(str(c))
+    leaf_cols = [c for c in cols if re.search(r"(?:_leaf|leaf_|_soft$)", c)]
+    non_leaf = [c for c in cols if c not in set(leaf_cols)]
+    ordered = leaf_cols + non_leaf
+    return ordered[:MAX_DISTRIBUTION_FEATURES]
+
+
+def _fit_distribution_feature_spec(
+    feature_frame: pd.DataFrame,
+    used_feature_columns: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    cols = _candidate_model_feature_columns(feature_frame, used_feature_columns)
+    if not cols:
+        return {"enabled": False, "columns": []}
+    x = feature_frame[cols].apply(pd.to_numeric, errors="coerce")
+    med = x.median(axis=0, skipna=True).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    q01 = x.quantile(0.01).replace([np.inf, -np.inf], np.nan).fillna(med)
+    q05 = x.quantile(0.05).replace([np.inf, -np.inf], np.nan).fillna(med)
+    q25 = x.quantile(0.25).replace([np.inf, -np.inf], np.nan).fillna(med)
+    q75 = x.quantile(0.75).replace([np.inf, -np.inf], np.nan).fillna(med)
+    q95 = x.quantile(0.95).replace([np.inf, -np.inf], np.nan).fillna(med)
+    q99 = x.quantile(0.99).replace([np.inf, -np.inf], np.nan).fillna(med)
+    scale = (q75 - q25).abs().replace(0.0, np.nan).fillna(
+        x.std(axis=0, skipna=True).replace(0.0, np.nan)
+    ).fillna(1.0)
+    filled = x.fillna(med)
+    scaler = RobustScaler()
+    pca_payload: Dict[str, Any] = {"enabled": False}
+    if len(filled) >= 20 and len(cols) >= 2:
+        try:
+            xs = scaler.fit_transform(filled.to_numpy(dtype=np.float64))
+            max_components = min(xs.shape[0], xs.shape[1], 64)
+            pca = PCA(n_components=max_components, random_state=42)
+            pca.fit(xs)
+            cumulative = np.cumsum(pca.explained_variance_ratio_)
+            n_comp = int(np.searchsorted(cumulative, 0.90) + 1)
+            n_comp = max(1, min(n_comp, max_components))
+            pca = PCA(n_components=n_comp, random_state=42)
+            pca.fit(xs)
+            pca_payload = {
+                "enabled": True,
+                "center": np.asarray(scaler.center_, dtype=float).tolist(),
+                "scale": np.asarray(scaler.scale_, dtype=float).tolist(),
+                "mean": np.asarray(pca.mean_, dtype=float).tolist(),
+                "components": np.asarray(pca.components_, dtype=float).tolist(),
+                "explained_variance_ratio": np.asarray(
+                    pca.explained_variance_ratio_, dtype=float
+                ).tolist(),
+            }
+        except Exception:
+            pca_payload = {"enabled": False}
+    bin_edges: Dict[str, List[float]] = {}
+    bin_probs: Dict[str, List[float]] = {}
+    for c in cols:
+        vals = pd.to_numeric(x[c], errors="coerce").to_numpy(dtype=np.float64)
+        vals = vals[np.isfinite(vals)]
+        if len(vals) < 20:
+            continue
+        edges = np.unique(np.quantile(vals, np.linspace(0.0, 1.0, 11)))
+        if len(edges) < 3:
+            continue
+        ids = np.searchsorted(edges[1:-1], vals, side="right")
+        counts = np.bincount(ids, minlength=len(edges) - 1).astype(np.float64)
+        probs = (counts + 1.0) / (float(np.sum(counts)) + len(counts))
+        bin_edges[c] = edges.astype(float).tolist()
+        bin_probs[c] = probs.astype(float).tolist()
+    return {
+        "enabled": True,
+        "columns": cols,
+        "median": med.astype(float).to_dict(),
+        "scale": scale.astype(float).to_dict(),
+        "q01": q01.astype(float).to_dict(),
+        "q05": q05.astype(float).to_dict(),
+        "q95": q95.astype(float).to_dict(),
+        "q99": q99.astype(float).to_dict(),
+        "bin_edges": bin_edges,
+        "bin_probs": bin_probs,
+        "pca": pca_payload,
+    }
+
+
+def _append_distribution_features(
+    regime_df: pd.DataFrame,
+    feature_frame: pd.DataFrame,
+    spec: Dict[str, Any],
+    timestamps: Optional[Sequence[Any]],
+    symbols: Optional[Sequence[Any]],
+) -> pd.DataFrame:
+    if not bool(spec.get("enabled", False)):
+        return regime_df
+    out = regime_df.copy()
+    cols = [c for c in spec.get("columns", []) if c in feature_frame.columns]
+    n = len(feature_frame)
+    if not cols:
+        for name in (
+            "max_abs_zscore",
+            "mean_abs_zscore",
+            "num_features_outside_p01_p99",
+            "num_features_outside_p05_p95",
+            "p95_PSI",
+            "mean_PSI",
+            "num_features_PSI_above_threshold",
+            "pca_reconstruction_error",
+            "missing_count",
+            "stale_feature_count",
+        ):
+            out[name] = np.zeros(n, dtype=np.float32)
+        return out
+    x = feature_frame[cols].apply(pd.to_numeric, errors="coerce")
+    med = pd.Series({c: float(spec.get("median", {}).get(c, 0.0)) for c in cols})
+    scale = pd.Series({c: float(spec.get("scale", {}).get(c, 1.0)) for c in cols})
+    scale = scale.mask(scale.abs() < EPS, 1.0)
+    z = (x - med) / scale
+    abs_z = z.abs().to_numpy(dtype=np.float64)
+    out["max_abs_zscore"] = np.nanmax(abs_z, axis=1).astype(np.float32)
+    out["mean_abs_zscore"] = np.nanmean(abs_z, axis=1).astype(np.float32)
+    q01 = pd.Series({c: float(spec.get("q01", {}).get(c, -np.inf)) for c in cols})
+    q05 = pd.Series({c: float(spec.get("q05", {}).get(c, -np.inf)) for c in cols})
+    q95 = pd.Series({c: float(spec.get("q95", {}).get(c, np.inf)) for c in cols})
+    q99 = pd.Series({c: float(spec.get("q99", {}).get(c, np.inf)) for c in cols})
+    out["num_features_outside_p01_p99"] = (
+        ((x.lt(q01)) | (x.gt(q99))).sum(axis=1).to_numpy(dtype=np.float32)
+    )
+    out["num_features_outside_p05_p95"] = (
+        ((x.lt(q05)) | (x.gt(q95))).sum(axis=1).to_numpy(dtype=np.float32)
+    )
+    rarity = np.zeros((n, len(cols)), dtype=np.float64)
+    for j, c in enumerate(cols):
+        edges = np.asarray(spec.get("bin_edges", {}).get(c, []), dtype=np.float64)
+        probs = np.asarray(spec.get("bin_probs", {}).get(c, []), dtype=np.float64)
+        if len(edges) < 3 or len(probs) != len(edges) - 1:
+            continue
+        vals = pd.to_numeric(x[c], errors="coerce").to_numpy(dtype=np.float64)
+        ids = np.searchsorted(edges[1:-1], vals, side="right")
+        ids = np.clip(ids, 0, len(probs) - 1)
+        rarity[:, j] = -np.log(np.clip(probs[ids], 1e-6, 1.0))
+        rarity[~np.isfinite(vals), j] = 0.0
+    out["p95_PSI"] = np.nanpercentile(rarity, 95, axis=1).astype(np.float32)
+    out["mean_PSI"] = np.nanmean(rarity, axis=1).astype(np.float32)
+    out["num_features_PSI_above_threshold"] = (
+        rarity > PSI_RARITY_THRESHOLD
+    ).sum(axis=1).astype(np.float32)
+    pca = spec.get("pca", {})
+    if bool(pca.get("enabled", False)):
+        center = np.asarray(pca.get("center", []), dtype=np.float64)
+        sc = np.asarray(pca.get("scale", []), dtype=np.float64)
+        mean = np.asarray(pca.get("mean", []), dtype=np.float64)
+        comps = np.asarray(pca.get("components", []), dtype=np.float64)
+        xf = x.fillna(med).to_numpy(dtype=np.float64)
+        if len(center) == xf.shape[1] and len(sc) == xf.shape[1] and comps.ndim == 2:
+            xs = (xf - center) / np.where(np.abs(sc) > EPS, sc, 1.0)
+            scores = (xs - mean) @ comps.T
+            recon = scores @ comps + mean
+            out["pca_reconstruction_error"] = np.mean(
+                np.square(xs - recon), axis=1
+            ).astype(np.float32)
+        else:
+            out["pca_reconstruction_error"] = np.zeros(n, dtype=np.float32)
+    else:
+        out["pca_reconstruction_error"] = np.zeros(n, dtype=np.float32)
+    out["missing_count"] = x.isna().sum(axis=1).to_numpy(dtype=np.float32)
+    stale = np.zeros(n, dtype=np.float32)
+    if n > 1:
+        sy = (
+            np.asarray(symbols).astype(str)[:n]
+            if symbols is not None and len(symbols) >= n
+            else np.repeat("all", n)
+        )
+        filled = x.fillna(med)
+        for _sym, idx in pd.Series(np.arange(n)).groupby(sy, sort=False):
+            pos = idx.to_numpy(dtype=np.int64)
+            if len(pos) <= 1:
+                continue
+            delta = np.abs(np.diff(filled.iloc[pos].to_numpy(dtype=np.float64), axis=0))
+            stale[pos[1:]] = np.sum(delta <= 1e-12, axis=1)
+    out["stale_feature_count"] = stale
+    return out.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+
+def _rolling_by_symbol(
+    values: np.ndarray,
+    timestamps: Optional[Sequence[Any]],
+    symbols: np.ndarray,
+    window_days: int,
+    *,
+    min_periods: int = 5,
+    shift: bool = True,
+) -> np.ndarray:
+    n = len(values)
+    if timestamps is None or len(timestamps) < n:
+        s = pd.Series(values)
+        rolled = s.shift(1 if shift else 0).rolling(
+            max(min_periods, window_days), min_periods=min_periods
+        ).mean()
+        return rolled.to_numpy(dtype=np.float64)
+    ts = pd.to_datetime(np.asarray(timestamps)[:n], utc=True, errors="coerce")
+    df = pd.DataFrame(
+        {"value": np.asarray(values, dtype=np.float64), "symbol": symbols, "ts": ts}
+    )
+    out = np.full(n, np.nan, dtype=np.float64)
+    for _sym, grp in df.groupby("symbol", sort=False):
+        g = grp.dropna(subset=["ts"]).sort_values("ts")
+        if g.empty:
+            continue
+        series = pd.Series(g["value"].to_numpy(dtype=np.float64), index=g["ts"])
+        if shift:
+            series = series.shift(1)
+        rolled = series.rolling(f"{int(window_days)}D", min_periods=min_periods).mean()
+        out[g.index.to_numpy(dtype=np.int64)] = rolled.to_numpy(dtype=np.float64)
+    return out
+
+
+def _rolling_global(
+    values: np.ndarray,
+    timestamps: Optional[Sequence[Any]],
+    window_days: int,
+    *,
+    min_periods: int = 1,
+    shift: bool = True,
+) -> np.ndarray:
+    n = len(values)
+    if timestamps is None or len(timestamps) < n:
+        s = pd.Series(np.asarray(values, dtype=np.float64))
+        rolled = s.shift(1 if shift else 0).rolling(
+            max(min_periods, int(window_days)), min_periods=min_periods
+        ).mean()
+        return rolled.to_numpy(dtype=np.float64)
+    ts = pd.to_datetime(np.asarray(timestamps)[:n], utc=True, errors="coerce")
+    df = pd.DataFrame({"value": np.asarray(values, dtype=np.float64), "ts": ts})
+    out = np.full(n, np.nan, dtype=np.float64)
+    g = df.dropna(subset=["ts"]).sort_values("ts")
+    if g.empty:
+        return out
+    series = pd.Series(g["value"].to_numpy(dtype=np.float64), index=g["ts"])
+    if shift:
+        series = series.shift(1)
+    rolled = series.rolling(f"{int(window_days)}D", min_periods=min_periods).mean()
+    out[g.index.to_numpy(dtype=np.int64)] = rolled.to_numpy(dtype=np.float64)
+    return out
+
+
+def _find_prediction_column(feature_frame: pd.DataFrame, names: Sequence[str]) -> Optional[np.ndarray]:
+    col = _first_col(feature_frame, names)
+    if col is None:
+        return None
+    return _as_float_array(feature_frame[col].values, len(feature_frame))
+
+
+def _prediction_columns(feature_frame: pd.DataFrame) -> List[str]:
+    exact = {
+        "ridge_score",
+        "et_score",
+        "lgbm_score",
+        "lgbm_clf_score",
+        "total_confidence",
+        "sizer_score_oof",
+        "oof_base_clf",
+        "oof_meta_clf",
+        "oof_pred",
+        "oof_p_tp",
+        "oof_p_move",
+        "clf",
+        "raw_meta_prediction",
+        "calibrated_score",
+        "oof_ebm_raw",
+        "oof_ebm_en",
+        "oof_ebm_uncertainty_weighted",
+    }
+    out: List[str] = []
+    for c in feature_frame.columns:
+        name = str(c)
+        if name in exact:
+            out.append(name)
+            continue
+        if re.match(r"^(?:base_H\d+|base_H\d+_(?:tight|wide|balanced)|pred_H\d+)$", name):
+            out.append(name)
+            continue
+        if re.search(
+            r"(?:^|_)(?:base|meta|ridge|lgbm|et|ebm).*(?:pred|score|prob|clf|raw|en|weighted)",
+            name,
+        ):
+            out.append(name)
+    seen: List[str] = []
+    for c in out:
+        if c in feature_frame.columns and c not in seen and pd.api.types.is_numeric_dtype(feature_frame[c]):
+            seen.append(c)
+    return seen
+
+
+def _prediction_matrix(feature_frame: pd.DataFrame) -> Optional[np.ndarray]:
+    seen = _prediction_columns(feature_frame)
+    if len(seen) < 2:
+        return None
+    mat = feature_frame[seen].apply(pd.to_numeric, errors="coerce").to_numpy(
+        dtype=np.float64
+    )
+    finite_cols = np.sum(np.isfinite(mat), axis=0) >= max(5, int(0.05 * len(mat)))
+    mat = mat[:, finite_cols]
+    if mat.shape[1] < 2:
+        return None
+    return mat
+
+
+def _base_prediction_matrix(feature_frame: pd.DataFrame) -> Optional[np.ndarray]:
+    horizon_candidates: List[str] = []
+    fallback_candidates: List[str] = []
+    for c in feature_frame.columns:
+        name = str(c)
+        if re.match(r"^base_H\d+(?:_(?:tight|wide|balanced))?$", name):
+            horizon_candidates.append(name)
+            continue
+        if name == "oof_base_clf":
+            fallback_candidates.append(name)
+            continue
+        if re.search(r"(?:^|_)base.*(?:pred|score|prob|clf)", name):
+            fallback_candidates.append(name)
+    candidates = horizon_candidates if horizon_candidates else fallback_candidates
+    seen: List[str] = []
+    for c in candidates:
+        if c not in seen and c in feature_frame.columns and pd.api.types.is_numeric_dtype(feature_frame[c]):
+            seen.append(c)
+    if len(seen) < 2:
+        return None
+    mat = feature_frame[seen].apply(pd.to_numeric, errors="coerce").to_numpy(
+        dtype=np.float64
+    )
+    finite_cols = np.sum(np.isfinite(mat), axis=0) >= max(5, int(0.05 * len(mat)))
+    mat = mat[:, finite_cols]
+    nonconstant_cols = np.nanstd(mat, axis=0) > 1e-8 if mat.size else np.array([], dtype=bool)
+    mat = mat[:, nonconstant_cols]
+    if mat.shape[1] < 2:
+        return None
+    return mat
+
+
+def _base_prediction_proxy(feature_frame: pd.DataFrame, n: int) -> Optional[np.ndarray]:
+    cols = [
+        c
+        for c in feature_frame.columns
+        if re.match(r"^base_H\d+(?:_(?:tight|wide|balanced))?$", str(c))
+        and pd.api.types.is_numeric_dtype(feature_frame[c])
+    ]
+    if cols:
+        vals = feature_frame.iloc[:n][cols].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=np.float64)
+        if vals.shape[1]:
+            nonconstant = np.nanstd(vals, axis=0) > 1e-8
+            if np.any(nonconstant):
+                return np.nanmean(vals[:, nonconstant], axis=1)
+    base = _find_prediction_column(
+        feature_frame.iloc[:n],
+        (
+            "base_pred",
+            "base_prediction",
+            "base_score",
+            "base_rank_pct",
+            "base_H10",
+            "base_H5",
+            "base_H4",
+            "base_H2",
+            "base_H1",
+            "oof_base_clf",
+            "oof_p_move_base",
+            "oof_p_move",
+            "oof_p_tp_base",
+            "oof_p_tp",
+        ),
+    )
+    if base is not None:
+        return base
+    return None
+
+
+def _meta_prediction_proxy(
+    feature_frame: pd.DataFrame,
+    scores: np.ndarray,
+    n: int,
+) -> np.ndarray:
+    meta = _find_prediction_column(
+        feature_frame.iloc[:n],
+        (
+            "oof_meta_clf",
+            "oof_ebm_en",
+            "oof_ebm_uncertainty_weighted",
+            "clf",
+            "oof_p_move",
+            "oof_p_tp",
+            "raw_meta_prediction",
+            "calibrated_score",
+        ),
+    )
+    if meta is None:
+        meta = np.asarray(scores, dtype=np.float64)[:n]
+    return meta
+
+
+def _append_prediction_reliability_features(
+    regime_df: pd.DataFrame,
+    feature_frame: pd.DataFrame,
+    scores: np.ndarray,
+    returns: Optional[np.ndarray],
+    timestamps: Optional[Sequence[Any]],
+    symbols: np.ndarray,
+    artifact: Optional[Dict[str, Any]] = None,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    n = len(regime_df)
+    out = regime_df.copy()
+    meta = np.clip(np.asarray(scores, dtype=np.float64)[:n], 1e-6, 1.0 - 1e-6)
+    raw_meta = _meta_prediction_proxy(feature_frame, meta, n)
+    out["meta_model_prediction"] = np.clip(
+        _fill_numeric(raw_meta, 0.5), 1e-6, 1.0 - 1e-6
+    ).astype(np.float32)
+    base = _base_prediction_proxy(feature_frame, n)
+    if base is None:
+        base = meta.copy()
+    base = np.clip(_fill_numeric(base, 0.5), 1e-6, 1.0 - 1e-6)
+    out["base_model_prediction"] = base.astype(np.float32)
+    diff = meta - base
+    abs_diff = np.abs(diff)
+    out["abs_base_meta_diff"] = abs_diff.astype(np.float32)
+    out["signed_base_meta_diff"] = diff.astype(np.float32)
+    for days in (3, 7, 15):
+        out[f"abs_base_meta_diff_{days}d"] = _fill_numeric(
+            _rolling_by_symbol(abs_diff, timestamps, symbols, days), 0.0
+        )
+        out[f"signed_base_meta_diff_{days}d"] = _fill_numeric(
+            _rolling_by_symbol(diff, timestamps, symbols, days), 0.0
+        )
+    out["base_meta_diff_ewm_3d"] = (
+        pd.Series(diff).shift(1).ewm(span=3, min_periods=2, adjust=False).mean()
+    ).fillna(0.0).to_numpy(dtype=np.float32)
+    disagreement = (abs_diff > PREDICTION_DISAGREEMENT_THRESHOLD).astype(np.float64)
+    out["base_meta_disagreement_rate_3d"] = _fill_numeric(
+        _rolling_by_symbol(disagreement, timestamps, symbols, 3), 0.0
+    )
+    out["base_meta_disagreement_rate_7d"] = _fill_numeric(
+        _rolling_by_symbol(disagreement, timestamps, symbols, 7), 0.0
+    )
+    mat = _base_prediction_matrix(feature_frame.iloc[:n])
+    if mat is not None:
+        out["base_models_pred_std"] = np.nanstd(mat, axis=1).astype(np.float32)
+        out["base_models_pred_range"] = (
+            np.nanmax(mat, axis=1) - np.nanmin(mat, axis=1)
+        ).astype(np.float32)
+        out["base_models_pred_iqr"] = (
+            np.nanpercentile(mat, 75, axis=1) - np.nanpercentile(mat, 25, axis=1)
+        ).astype(np.float32)
+        internal_disagree = (
+            out["base_models_pred_range"].to_numpy(dtype=np.float64)
+            > PREDICTION_DISAGREEMENT_THRESHOLD
+        ).astype(np.float64)
+        out["base_models_disagreement_rate_3d"] = _fill_numeric(
+            _rolling_by_symbol(internal_disagree, timestamps, symbols, 3), 0.0
+        )
+        out["base_models_disagreement_rate_7d"] = _fill_numeric(
+            _rolling_by_symbol(internal_disagree, timestamps, symbols, 7), 0.0
+        )
+        out["base_models_disagreement_rate_15d"] = _fill_numeric(
+            _rolling_by_symbol(internal_disagree, timestamps, symbols, 15), 0.0
+        )
+    else:
+        for c in (
+            "base_models_pred_std",
+            "base_models_pred_range",
+            "base_models_pred_iqr",
+            "base_models_disagreement_rate_3d",
+            "base_models_disagreement_rate_7d",
+            "base_models_disagreement_rate_15d",
+        ):
+            out[c] = np.zeros(n, dtype=np.float32)
+    ebm_cols = [
+        c
+        for c in ("oof_ebm_raw", "oof_ebm_en", "oof_ebm_uncertainty_weighted")
+        if c in feature_frame.columns and pd.api.types.is_numeric_dtype(feature_frame[c])
+    ]
+    if ebm_cols:
+        ebm = feature_frame.iloc[:n][ebm_cols].apply(pd.to_numeric, errors="coerce")
+        raw = (
+            ebm["oof_ebm_raw"].to_numpy(dtype=np.float64)
+            if "oof_ebm_raw" in ebm
+            else meta.copy()
+        )
+        en = (
+            ebm["oof_ebm_en"].to_numpy(dtype=np.float64)
+            if "oof_ebm_en" in ebm
+            else raw.copy()
+        )
+        weighted = (
+            ebm["oof_ebm_uncertainty_weighted"].to_numpy(dtype=np.float64)
+            if "oof_ebm_uncertainty_weighted" in ebm
+            else en.copy()
+        )
+        ebm_mat = np.column_stack(
+            [_fill_numeric(raw, 0.5), _fill_numeric(en, 0.5), _fill_numeric(weighted, 0.5)]
+        )
+        dispersion = np.nanmax(ebm_mat, axis=1) - np.nanmin(ebm_mat, axis=1)
+        en_adj = np.abs(ebm_mat[:, 1] - ebm_mat[:, 0])
+        weighted_adj = np.abs(ebm_mat[:, 2] - ebm_mat[:, 0])
+        brittleness = dispersion + 0.5 * (en_adj + weighted_adj)
+        out["ebm_raw_prediction"] = ebm_mat[:, 0].astype(np.float32)
+        out["ebm_en_prediction"] = ebm_mat[:, 1].astype(np.float32)
+        out["ebm_uncertainty_weighted_prediction"] = ebm_mat[:, 2].astype(np.float32)
+        out["ebm_en_adjustment_abs"] = en_adj.astype(np.float32)
+        out["ebm_uncertainty_adjustment_abs"] = weighted_adj.astype(np.float32)
+        out["ebm_prediction_dispersion"] = dispersion.astype(np.float32)
+        out["ebm_prediction_brittleness"] = brittleness.astype(np.float32)
+        if "global_ebm_unc_dispersion_mean_7d" not in out:
+            out["global_ebm_unc_dispersion_mean_7d"] = _fill_numeric(
+                _rolling_global(dispersion, timestamps, 7), 0.0
+            )
+        for days in (3, 7, 15):
+            disp_col = f"asset_ebm_unc_dispersion_mean_{days}d"
+            conflict_col = f"asset_ebm_conflict_mean_{days}d"
+            support_col = f"asset_ebm_support_risk_mean_{days}d"
+            brittle_col = f"asset_ebm_brittleness_mean_{days}d"
+            if disp_col not in out:
+                out[disp_col] = _fill_numeric(
+                    _rolling_by_symbol(dispersion, timestamps, symbols, days), 0.0
+                )
+            if conflict_col not in out:
+                out[conflict_col] = _fill_numeric(
+                    _rolling_by_symbol(en_adj, timestamps, symbols, days), 0.0
+                )
+            if support_col not in out:
+                out[support_col] = _fill_numeric(
+                    _rolling_by_symbol(weighted_adj, timestamps, symbols, days), 0.0
+                )
+            if brittle_col not in out:
+                out[brittle_col] = _fill_numeric(
+                    _rolling_by_symbol(brittleness, timestamps, symbols, days), 0.0
+                )
+    else:
+        for c in (
+            "ebm_raw_prediction",
+            "ebm_en_prediction",
+            "ebm_uncertainty_weighted_prediction",
+            "ebm_en_adjustment_abs",
+            "ebm_uncertainty_adjustment_abs",
+            "ebm_prediction_dispersion",
+            "ebm_prediction_brittleness",
+        ):
+            out[c] = np.zeros(n, dtype=np.float32)
+    spec: Dict[str, Any] = {}
+    if returns is not None and len(returns) >= n:
+        y = (np.asarray(returns[:n], dtype=np.float64) > 0.0).astype(np.float64)
+        brier = np.square(meta - y)
+        global_brier = float(np.nanmean(brier[np.isfinite(brier)])) if np.isfinite(brier).any() else 0.25
+        local_brier = _rolling_by_symbol(brier, timestamps, symbols, 15, min_periods=5)
+        counts = _rolling_by_symbol(
+            np.isfinite(brier).astype(np.float64), timestamps, symbols, 15, min_periods=1
+        )
+        w = counts / (counts + SYMBOL_SHRINK_K)
+        shrunk = w * local_brier + (1.0 - w) * global_brier
+        out["meta_recent_brier_shrunk"] = _fill_numeric(shrunk, global_brier)
+        out["meta_recent_brier_global"] = np.full(n, global_brier, dtype=np.float32)
+        spec["global_brier"] = global_brier
+    else:
+        global_brier = float(
+            (artifact or {}).get("reliability_feature_spec", {}).get("global_brier", 0.25)
+        )
+        out["meta_recent_brier_shrunk"] = np.full(n, global_brier, dtype=np.float32)
+        out["meta_recent_brier_global"] = np.full(n, global_brier, dtype=np.float32)
+    return out.replace([np.inf, -np.inf], np.nan).fillna(0.0), spec
+
+
+def _append_symbol_features(
+    regime_df: pd.DataFrame,
+    returns: Optional[np.ndarray],
+    timestamps: Optional[Sequence[Any]],
+    symbols: np.ndarray,
+    artifact: Optional[Dict[str, Any]] = None,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    n = len(regime_df)
+    out = regime_df.copy()
+    spec = dict((artifact or {}).get("symbol_feature_spec", {}) or {})
+    global_utility = float(spec.get("global_utility", 0.0))
+    global_bad = float(spec.get("global_bad_rate", 0.5))
+    symbol_stats = spec.get("symbols", {}) if isinstance(spec.get("symbols", {}), dict) else {}
+    if returns is not None and len(returns) >= n:
+        r = np.asarray(returns[:n], dtype=np.float64)
+        finite = np.isfinite(r)
+        global_utility = float(np.nanmean(r[finite])) if finite.any() else 0.0
+        bad = (r < 0.0).astype(np.float64)
+        global_bad = float(np.nanmean(bad[finite])) if finite.any() else 0.5
+        local_utility = _rolling_by_symbol(r, timestamps, symbols, 15, min_periods=5)
+        local_bad = _rolling_by_symbol(bad, timestamps, symbols, 15, min_periods=5)
+        counts = _rolling_by_symbol(
+            finite.astype(np.float64), timestamps, symbols, 15, min_periods=1
+        )
+        w = counts / (counts + SYMBOL_SHRINK_K)
+        out["symbol_recent_utility_shrunk"] = _fill_numeric(
+            w * local_utility + (1.0 - w) * global_utility, global_utility
+        )
+        out["symbol_recent_bad_rate_shrunk"] = _fill_numeric(
+            w * local_bad + (1.0 - w) * global_bad, global_bad
+        )
+        stats: Dict[str, Any] = {}
+        for sym in sorted(set(str(s) for s in symbols)):
+            m = symbols == sym
+            rr = r[m]
+            ff = np.isfinite(rr)
+            stats[str(sym)] = {
+                "n": int(np.sum(ff)),
+                "utility": float(np.nanmean(rr[ff])) if ff.any() else global_utility,
+                "bad_rate": float(np.nanmean(rr[ff] < 0.0)) if ff.any() else global_bad,
+            }
+        spec = {"global_utility": global_utility, "global_bad_rate": global_bad, "symbols": stats}
+    else:
+        util = np.full(n, global_utility, dtype=np.float64)
+        bad = np.full(n, global_bad, dtype=np.float64)
+        for i, sym in enumerate(symbols[:n]):
+            row = symbol_stats.get(str(sym), {})
+            cnt = float(row.get("n", 0.0))
+            w = cnt / (cnt + SYMBOL_SHRINK_K)
+            util[i] = w * float(row.get("utility", global_utility)) + (1.0 - w) * global_utility
+            bad[i] = w * float(row.get("bad_rate", global_bad)) + (1.0 - w) * global_bad
+        out["symbol_recent_utility_shrunk"] = util.astype(np.float32)
+        out["symbol_recent_bad_rate_shrunk"] = bad.astype(np.float32)
+    counts_map = pd.Series(symbols).value_counts()
+    out["symbol_sample_count_log"] = np.log1p(
+        pd.Series(symbols).map(counts_map).fillna(0.0).to_numpy(dtype=np.float64)
+    ).astype(np.float32)
+    if "asset_volume_30d" in out.columns:
+        vol_med = out.groupby(pd.Series(symbols, index=out.index), sort=False)[
+            "asset_volume_30d"
+        ].transform("median")
+        out["symbol_liquidity_rank"] = vol_med.rank(method="average", pct=True).to_numpy(
+            dtype=np.float32
+        )
+    else:
+        out["symbol_liquidity_rank"] = np.full(n, 0.5, dtype=np.float32)
+    if "asset_atr_30d" in out.columns:
+        atr_med = out.groupby(pd.Series(symbols, index=out.index), sort=False)[
+            "asset_atr_30d"
+        ].transform("median")
+        out["symbol_vol_rank"] = atr_med.rank(method="average", pct=True).to_numpy(
+            dtype=np.float32
+        )
+    else:
+        out["symbol_vol_rank"] = np.full(n, 0.5, dtype=np.float32)
+    return out.replace([np.inf, -np.inf], np.nan).fillna(0.0), spec
 
 
 def _rank_pct(scores: np.ndarray) -> np.ndarray:
@@ -1238,6 +2043,522 @@ def _effects_from_artifact(
     return effects
 
 
+def _model_matrix_from_regime_features(
+    regime_df: pd.DataFrame, features: Sequence[str]
+) -> np.ndarray:
+    cols = [f for f in features if f in regime_df.columns]
+    if not cols:
+        return np.empty((len(regime_df), 0), dtype=np.float64)
+    return (
+        regime_df[cols]
+        .apply(pd.to_numeric, errors="coerce")
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+        .to_numpy(dtype=np.float64)
+    )
+
+
+def _path_quality_ratio(
+    feature_frame: pd.DataFrame,
+    n: int,
+    mfe: Optional[Sequence[float]] = None,
+    mae: Optional[Sequence[float]] = None,
+) -> np.ndarray:
+    mfe_arr = _as_float_array(mfe, n) if mfe is not None else None
+    mae_arr = _as_float_array(mae, n) if mae is not None else None
+    if mfe_arr is None:
+        mfe_arr = _col(feature_frame, ("mfe_ret", "mfe", "mfe_mean", "oof_mfe_hat"), n)
+    if mae_arr is None:
+        mae_arr = _col(feature_frame, ("mae_ret", "mae", "mae_mean", "oof_mae_q70_hat"), n)
+    if mfe_arr is None or mae_arr is None:
+        return np.full(n, np.nan, dtype=np.float64)
+    return np.asarray(mfe_arr, dtype=np.float64) / (np.abs(np.asarray(mae_arr, dtype=np.float64)) + EPS)
+
+
+def _path_quality_components(
+    feature_frame: pd.DataFrame,
+    n: int,
+    *,
+    mfe: Optional[Sequence[float]] = None,
+    mae: Optional[Sequence[float]] = None,
+    t_mfe: Optional[Sequence[float]] = None,
+    t_mae: Optional[Sequence[float]] = None,
+) -> Dict[str, np.ndarray]:
+    mfe_arr = _as_float_array(mfe, n) if mfe is not None else None
+    mae_arr = _as_float_array(mae, n) if mae is not None else None
+    if mfe_arr is None:
+        mfe_arr = _col(feature_frame, ("mfe_ret", "mfe", "mfe_mean", "oof_mfe_hat"), n)
+    if mae_arr is None:
+        mae_arr = _col(feature_frame, ("mae_ret", "mae", "mae_mean", "oof_mae_q70_hat"), n)
+    if mfe_arr is None:
+        mfe_arr = np.full(n, np.nan, dtype=np.float64)
+    if mae_arr is None:
+        mae_arr = np.full(n, np.nan, dtype=np.float64)
+    tm = _as_float_array(t_mfe, n) if t_mfe is not None else None
+    ta = _as_float_array(t_mae, n) if t_mae is not None else None
+    if tm is None:
+        tm = _col(feature_frame, ("t_mfe", "time_to_mfe", "bars_to_mfe"), n)
+    if ta is None:
+        ta = _col(feature_frame, ("t_mae", "time_to_mae", "bars_to_mae"), n)
+    if tm is None:
+        tm = np.full(n, np.nan, dtype=np.float64)
+    if ta is None:
+        ta = np.full(n, np.nan, dtype=np.float64)
+    tm_filled = np.where(np.isfinite(tm), tm, np.nan)
+    ta_filled = np.where(np.isfinite(ta), ta, np.nan)
+    horizon = np.where(
+        np.isfinite(tm_filled) & np.isfinite(ta_filled),
+        np.maximum(tm_filled, ta_filled),
+        np.where(np.isfinite(tm_filled), tm_filled, ta_filled),
+    )
+    horizon = np.where(np.isfinite(horizon) & (horizon > 0.0), horizon, np.nan)
+    ratio = np.asarray(mfe_arr, dtype=np.float64) / (
+        np.abs(np.asarray(mae_arr, dtype=np.float64)) + EPS
+    )
+    t_mfe_frac = tm / (horizon + EPS)
+    t_mae_frac = ta / (horizon + EPS)
+    timing_advantage = (ta - tm) / (horizon + EPS)
+    ratio_log = np.log((np.maximum(mfe_arr, 0.0) + 1e-6) / (np.maximum(mae_arr, 0.0) + 1e-6))
+    path_score = ratio_log + 0.50 * np.where(np.isfinite(timing_advantage), timing_advantage, 0.0)
+    return {
+        "mfe": np.asarray(mfe_arr, dtype=np.float64),
+        "mae": np.asarray(mae_arr, dtype=np.float64),
+        "ratio": ratio,
+        "t_mfe": tm,
+        "t_mae": ta,
+        "t_mfe_frac": t_mfe_frac,
+        "t_mae_frac": t_mae_frac,
+        "timing_advantage": timing_advantage,
+        "path_score": path_score,
+    }
+
+
+def _trust_volatility_scale(
+    feature_frame: pd.DataFrame,
+    utility: np.ndarray,
+) -> np.ndarray:
+    n = len(utility)
+    for col in (
+        "atr_12_15m",
+        "atr_pct",
+        "atr_pct_base",
+        "asset_atr_level",
+        "realized_volatility_24h",
+        "rv_24h",
+    ):
+        if col in feature_frame.columns:
+            vals = pd.to_numeric(feature_frame[col], errors="coerce").to_numpy(dtype=np.float64)[:n]
+            vals = np.abs(vals)
+            finite = np.isfinite(vals) & (vals > 1e-6)
+            if int(np.sum(finite)) >= max(20, int(0.10 * n)):
+                fill = float(np.nanmedian(vals[finite]))
+                return np.where(finite, vals, fill)
+    finite_u = np.isfinite(utility)
+    fallback = float(np.nanmedian(np.abs(utility[finite_u]))) if finite_u.any() else 0.01
+    return np.full(n, max(fallback, 1e-4), dtype=np.float64)
+
+
+def _finite_quantile(values: np.ndarray, q: float, default: float) -> float:
+    vals = np.asarray(values, dtype=np.float64)
+    vals = vals[np.isfinite(vals)]
+    if len(vals) == 0:
+        return float(default)
+    return float(np.nanquantile(vals, q))
+
+
+def _trust_targets(
+    returns: np.ndarray,
+    feature_frame: pd.DataFrame,
+    cost_pct: float,
+    *,
+    gross_returns: Optional[Sequence[float]] = None,
+    policy_returns: Optional[Sequence[float]] = None,
+    mfe: Optional[Sequence[float]] = None,
+    mae: Optional[Sequence[float]] = None,
+    t_mfe: Optional[Sequence[float]] = None,
+    t_mae: Optional[Sequence[float]] = None,
+) -> Tuple[np.ndarray, Dict[str, Any]]:
+    n = len(returns)
+    net = np.asarray(returns, dtype=np.float64)
+    utility = (
+        _as_float_array(policy_returns, n)
+        if policy_returns is not None
+        else net
+    )
+    gross = (
+        _as_float_array(gross_returns, n)
+        if gross_returns is not None
+        else net + float(cost_pct)
+    )
+    path = _path_quality_components(
+        feature_frame.iloc[:n],
+        n,
+        mfe=mfe,
+        mae=mae,
+        t_mfe=t_mfe,
+        t_mae=t_mae,
+    )
+    ratio = path["ratio"]
+    path_score = path["path_score"]
+    scale = _trust_volatility_scale(feature_frame.iloc[:n], utility)
+    utility_norm = utility / np.maximum(scale, 1e-4)
+    finite = np.isfinite(utility) & np.isfinite(utility_norm)
+    util_med = _finite_quantile(utility, 0.50, 0.0)
+    norm_good = _finite_quantile(utility_norm[finite], 0.67, 0.0)
+    norm_bad = _finite_quantile(utility_norm[finite], 0.33, 0.0)
+    util_good = max(0.0, _finite_quantile(utility[finite], 0.58, util_med))
+    util_bad = min(0.0, _finite_quantile(utility[finite], 0.42, util_med))
+    path_good = _finite_quantile(path_score, 0.40, 0.0)
+    path_bad = _finite_quantile(path_score, 0.25, -0.5)
+    clean_path = np.isfinite(path_score) & (path_score >= path_good)
+    adverse_path = np.isfinite(path_score) & (path_score <= path_bad)
+    y = np.zeros(n, dtype=np.int64)
+    good = (
+        finite
+        & (utility > util_good)
+        & (utility_norm >= norm_good)
+        & clean_path
+    )
+    bad = (
+        finite
+        & (
+            (utility < util_bad)
+            | (utility_norm <= norm_bad)
+            | ((gross < -float(cost_pct)) & adverse_path)
+            | ((utility <= util_med) & adverse_path)
+        )
+    )
+    y[good] = 1
+    y[bad] = -1
+    for good_q, bad_q in ((0.62, 0.38), (0.58, 0.42), (0.55, 0.45)):
+        counts = {k: int(np.sum(y == k)) for k in (-1, 0, 1)}
+        if min(counts.values()) >= max(10, int(0.02 * n)):
+            break
+        y[:] = 0
+        norm_good = _finite_quantile(utility_norm[finite], good_q, 0.0)
+        norm_bad = _finite_quantile(utility_norm[finite], bad_q, 0.0)
+        path_good = _finite_quantile(path_score, 0.35, 0.0)
+        path_bad = _finite_quantile(path_score, 0.30, -0.5)
+        clean_path = np.isfinite(path_score) & (path_score >= path_good)
+        adverse_path = np.isfinite(path_score) & (path_score <= path_bad)
+        y[
+            finite
+            & (utility > max(0.0, _finite_quantile(utility[finite], 0.52, util_med)))
+            & (utility_norm >= norm_good)
+            & clean_path
+        ] = 1
+        y[
+            finite
+            & (
+                (utility < min(0.0, _finite_quantile(utility[finite], 0.48, util_med)))
+                | (utility_norm <= norm_bad)
+                | ((utility <= util_med) & adverse_path)
+            )
+        ] = -1
+    spec = {
+        "target_source": "policy_realized_utility" if policy_returns is not None else "raw_realized_return",
+        "utility_good_threshold": util_good,
+        "utility_bad_threshold": util_bad,
+        "utility_norm_good_threshold": norm_good,
+        "utility_norm_bad_threshold": norm_bad,
+        "path_score_good_threshold": path_good,
+        "path_score_bad_threshold": path_bad,
+        "path_features_used_for_target_only": True,
+        "class_counts": {str(k): int(np.sum(y == k)) for k in (-1, 0, 1)},
+        "median_policy_utility": _finite_quantile(utility, 0.50, 0.0),
+        "median_path_ratio": _finite_quantile(ratio, 0.50, 1.0),
+        "median_timing_advantage": _finite_quantile(path["timing_advantage"], 0.50, 0.0),
+    }
+    return y, spec
+
+
+def _serialize_logistic_model(
+    model: LogisticRegression,
+    scaler: RobustScaler,
+    classes: np.ndarray,
+    features: Sequence[str],
+) -> Dict[str, Any]:
+    return {
+        "enabled": True,
+        "model_type": "multinomial_logistic_regression",
+        "features": list(features),
+        "classes": np.asarray(classes, dtype=int).tolist(),
+        "coef": np.asarray(model.coef_, dtype=float).tolist(),
+        "intercept": np.asarray(model.intercept_, dtype=float).tolist(),
+        "scaler": {
+            "center": np.asarray(getattr(scaler, "center_", []), dtype=float).tolist(),
+            "scale": np.asarray(getattr(scaler, "scale_", []), dtype=float).tolist(),
+        },
+        "trust_score_formula": "P_good - 1.2 * P_bad",
+    }
+
+
+def _serialize_binary_logistic_model(
+    model: LogisticRegression,
+    scaler: RobustScaler,
+) -> Dict[str, Any]:
+    return {
+        "coef": np.asarray(model.coef_, dtype=float).tolist(),
+        "intercept": np.asarray(model.intercept_, dtype=float).tolist(),
+        "classes": np.asarray(model.classes_, dtype=int).tolist(),
+        "scaler": {
+            "center": np.asarray(getattr(scaler, "center_", []), dtype=float).tolist(),
+            "scale": np.asarray(getattr(scaler, "scale_", []), dtype=float).tolist(),
+        },
+    }
+
+
+def _predict_binary_logistic_model(x: np.ndarray, spec: Dict[str, Any]) -> np.ndarray:
+    n = x.shape[0]
+    coef = np.asarray(spec.get("coef", []), dtype=np.float64)
+    intercept = np.asarray(spec.get("intercept", []), dtype=np.float64)
+    classes = np.asarray(spec.get("classes", [0, 1]), dtype=int)
+    scaler = spec.get("scaler", {})
+    center = np.asarray(scaler.get("center", np.zeros(x.shape[1])), dtype=np.float64)
+    scale = np.asarray(scaler.get("scale", np.ones(x.shape[1])), dtype=np.float64)
+    if coef.ndim != 2 or coef.shape[1] != x.shape[1] or coef.shape[0] < 1:
+        return np.full(n, 0.5, dtype=np.float64)
+    if len(center) != x.shape[1]:
+        center = np.zeros(x.shape[1], dtype=np.float64)
+    if len(scale) != x.shape[1]:
+        scale = np.ones(x.shape[1], dtype=np.float64)
+    xs = (x - center) / np.where(np.abs(scale) > EPS, scale, 1.0)
+    if coef.shape[0] == 1:
+        logits = xs @ coef[0] + float(intercept[0] if len(intercept) else 0.0)
+        p_pos = 1.0 / (1.0 + np.exp(-np.clip(logits, -50, 50)))
+        if len(classes) >= 2 and classes[-1] == 0:
+            p_pos = 1.0 - p_pos
+        return p_pos.astype(np.float64)
+    logits = xs @ coef.T + intercept
+    logits -= np.nanmax(logits, axis=1, keepdims=True)
+    exp_logits = np.exp(np.clip(logits, -50, 50))
+    proba = exp_logits / np.sum(exp_logits, axis=1, keepdims=True)
+    pos_idx = int(np.where(classes == 1)[0][0]) if np.any(classes == 1) else proba.shape[1] - 1
+    return proba[:, pos_idx].astype(np.float64)
+
+
+def _ordinal_proba_from_thresholds(
+    p_gt_bad: np.ndarray,
+    p_good: np.ndarray,
+) -> np.ndarray:
+    p_gt_bad = np.clip(np.asarray(p_gt_bad, dtype=np.float64), 1e-6, 1.0 - 1e-6)
+    p_good = np.clip(np.asarray(p_good, dtype=np.float64), 1e-6, 1.0 - 1e-6)
+    p_good = np.minimum(p_good, p_gt_bad)
+    p_bad = 1.0 - p_gt_bad
+    p_neutral = np.maximum(p_gt_bad - p_good, 1e-6)
+    proba = np.column_stack([p_good, p_neutral, p_bad])
+    proba = proba / np.sum(proba, axis=1, keepdims=True)
+    return proba
+
+
+def _predict_serialized_logistic(
+    x: np.ndarray, model_spec: Dict[str, Any]
+) -> Tuple[np.ndarray, np.ndarray]:
+    n = x.shape[0]
+    classes = np.asarray(model_spec.get("classes", [-1, 0, 1]), dtype=int)
+    coef = np.asarray(model_spec.get("coef", []), dtype=np.float64)
+    intercept = np.asarray(model_spec.get("intercept", []), dtype=np.float64)
+    scaler = model_spec.get("scaler", {})
+    center = np.asarray(scaler.get("center", np.zeros(x.shape[1])), dtype=np.float64)
+    scale = np.asarray(scaler.get("scale", np.ones(x.shape[1])), dtype=np.float64)
+    if coef.ndim != 2 or coef.shape[1] != x.shape[1] or len(intercept) != coef.shape[0]:
+        proba = np.full((n, 3), 1.0 / 3.0, dtype=np.float64)
+        return proba, np.zeros(n, dtype=np.float64)
+    if len(center) != x.shape[1]:
+        center = np.zeros(x.shape[1], dtype=np.float64)
+    if len(scale) != x.shape[1]:
+        scale = np.ones(x.shape[1], dtype=np.float64)
+    xs = (x - center) / np.where(np.abs(scale) > EPS, scale, 1.0)
+    logits = xs @ coef.T + intercept
+    if coef.shape[0] == 1 and len(classes) == 2:
+        p1 = 1.0 / (1.0 + np.exp(-np.clip(logits[:, 0], -50, 50)))
+        raw_proba = np.column_stack([1.0 - p1, p1])
+    else:
+        logits -= np.nanmax(logits, axis=1, keepdims=True)
+        exp_logits = np.exp(np.clip(logits, -50, 50))
+        raw_proba = exp_logits / np.sum(exp_logits, axis=1, keepdims=True)
+    proba = np.zeros((n, 3), dtype=np.float64)
+    for j, cls in enumerate(classes):
+        if cls == -1:
+            proba[:, 2] = raw_proba[:, j]
+        elif cls == 0:
+            proba[:, 1] = raw_proba[:, j]
+        elif cls == 1:
+            proba[:, 0] = raw_proba[:, j]
+    missing = np.sum(proba, axis=1) <= 0
+    proba[missing, :] = 1.0 / 3.0
+    trust_score = proba[:, 0] - 1.2 * proba[:, 2]
+    return proba, trust_score
+
+
+def _predict_serialized_trust_model(
+    x: np.ndarray, model_spec: Dict[str, Any]
+) -> Tuple[np.ndarray, np.ndarray]:
+    if str(model_spec.get("model_type", "")) != "ordinal_logistic_plus_multinomial":
+        return _predict_serialized_logistic(x, model_spec)
+    ordinal = model_spec.get("ordinal_models", {})
+    p_gt_bad = _predict_binary_logistic_model(x, ordinal.get("gt_bad", {}))
+    p_good = _predict_binary_logistic_model(x, ordinal.get("gt_neutral", {}))
+    ordinal_proba = _ordinal_proba_from_thresholds(p_gt_bad, p_good)
+    secondary = model_spec.get("secondary_classifier", {})
+    if bool(secondary.get("enabled", False)):
+        secondary_proba, _ = _predict_serialized_logistic(x, secondary)
+        blend = float(model_spec.get("secondary_blend_weight", 0.25))
+        blend = float(np.clip(blend, 0.0, 0.5))
+        proba = (1.0 - blend) * ordinal_proba + blend * secondary_proba
+        proba = proba / np.sum(proba, axis=1, keepdims=True)
+    else:
+        proba = ordinal_proba
+    trust_score = proba[:, 0] - 1.2 * proba[:, 2]
+    return proba, trust_score
+
+
+def _fit_trust_model(
+    regime_df: pd.DataFrame,
+    features: Sequence[str],
+    returns: np.ndarray,
+    feature_frame: pd.DataFrame,
+    timestamps: Optional[np.ndarray],
+    cost_pct: float,
+    *,
+    gross_returns: Optional[Sequence[float]] = None,
+    policy_returns: Optional[Sequence[float]] = None,
+    mfe: Optional[Sequence[float]] = None,
+    mae: Optional[Sequence[float]] = None,
+    t_mfe: Optional[Sequence[float]] = None,
+    t_mae: Optional[Sequence[float]] = None,
+) -> Tuple[Dict[str, Any], np.ndarray, np.ndarray, np.ndarray]:
+    n = len(regime_df)
+    y, target_spec = _trust_targets(
+        returns,
+        feature_frame.iloc[:n],
+        cost_pct,
+        gross_returns=gross_returns,
+        policy_returns=policy_returns,
+        mfe=mfe,
+        mae=mae,
+        t_mfe=t_mfe,
+        t_mae=t_mae,
+    )
+    x = _model_matrix_from_regime_features(regime_df, features)
+    neutral_proba = np.full((n, 3), 1.0 / 3.0, dtype=np.float64)
+    if x.shape[1] == 0 or n < 80 or len(np.unique(y)) < 2:
+        return (
+            {
+                "enabled": False,
+                "reason": "insufficient_classes_or_features",
+                "target_spec": target_spec,
+            },
+            neutral_proba,
+            np.zeros(n, dtype=np.float64),
+            y,
+        )
+    oof = np.full((n, 3), 1.0 / 3.0, dtype=np.float64)
+    splits = _walk_forward_splits(timestamps if timestamps is not None else np.arange(n), n, 5)
+    for tr, va in splits:
+        if len(np.unique(y[tr])) < 2:
+            continue
+        ordinal_fold = np.full((len(va), 3), 1.0 / 3.0, dtype=np.float64)
+        scaler = RobustScaler()
+        xtr = scaler.fit_transform(x[tr])
+        xva = scaler.transform(x[va])
+        try:
+            gt_bad = (y[tr] > -1).astype(int)
+            if len(np.unique(gt_bad)) == 2:
+                clf_gt_bad = LogisticRegression(
+                    C=0.5,
+                    max_iter=1000,
+                    class_weight="balanced",
+                    random_state=42,
+                )
+                clf_gt_bad.fit(xtr, gt_bad)
+                p_gt_bad = clf_gt_bad.predict_proba(xva)[:, list(clf_gt_bad.classes_).index(1)]
+            else:
+                p_gt_bad = np.full(len(va), float(np.mean(gt_bad)), dtype=np.float64)
+            gt_neutral = (y[tr] > 0).astype(int)
+            if len(np.unique(gt_neutral)) == 2:
+                clf_gt_neutral = LogisticRegression(
+                    C=0.5,
+                    max_iter=1000,
+                    class_weight="balanced",
+                    random_state=42,
+                )
+                clf_gt_neutral.fit(xtr, gt_neutral)
+                p_good = clf_gt_neutral.predict_proba(xva)[:, list(clf_gt_neutral.classes_).index(1)]
+            else:
+                p_good = np.full(len(va), float(np.mean(gt_neutral)), dtype=np.float64)
+            ordinal_fold = _ordinal_proba_from_thresholds(p_gt_bad, p_good)
+        except Exception:
+            ordinal_fold = np.full((len(va), 3), 1.0 / 3.0, dtype=np.float64)
+        clf = LogisticRegression(
+            C=0.5,
+            max_iter=1000,
+            class_weight="balanced",
+            random_state=42,
+        )
+        try:
+            clf.fit(xtr, y[tr])
+            pred = clf.predict_proba(xva)
+            secondary_fold = np.full((len(va), 3), 1.0 / 3.0, dtype=np.float64)
+            for j, cls in enumerate(clf.classes_):
+                if cls == 1:
+                    secondary_fold[:, 0] = pred[:, j]
+                elif cls == 0:
+                    secondary_fold[:, 1] = pred[:, j]
+                elif cls == -1:
+                    secondary_fold[:, 2] = pred[:, j]
+            oof[va] = 0.75 * ordinal_fold + 0.25 * secondary_fold
+            oof[va] = oof[va] / np.sum(oof[va], axis=1, keepdims=True)
+        except Exception:
+            oof[va] = ordinal_fold
+            continue
+    trust_score = oof[:, 0] - 1.2 * oof[:, 2]
+    scaler = RobustScaler()
+    xs = scaler.fit_transform(x)
+    try:
+        gt_bad_final = LogisticRegression(
+            C=0.5,
+            max_iter=1000,
+            class_weight="balanced",
+            random_state=42,
+        )
+        gt_bad_final.fit(xs, (y > -1).astype(int))
+        gt_neutral_final = LogisticRegression(
+            C=0.5,
+            max_iter=1000,
+            class_weight="balanced",
+            random_state=42,
+        )
+        gt_neutral_final.fit(xs, (y > 0).astype(int))
+        secondary = LogisticRegression(
+            C=0.5,
+            max_iter=1000,
+            class_weight="balanced",
+            random_state=42,
+        )
+        secondary.fit(xs, y)
+        spec = {
+            "enabled": True,
+            "model_type": "ordinal_logistic_plus_multinomial",
+            "features": list(features),
+            "classes": [-1, 0, 1],
+            "ordinal_models": {
+                "gt_bad": _serialize_binary_logistic_model(gt_bad_final, scaler),
+                "gt_neutral": _serialize_binary_logistic_model(gt_neutral_final, scaler),
+            },
+            "secondary_classifier": _serialize_logistic_model(
+                secondary, scaler, secondary.classes_, features
+            ),
+            "secondary_blend_weight": 0.25,
+            "trust_score_formula": "P_good - 1.2 * P_bad",
+            "target_spec": target_spec,
+        }
+        spec["target_counts"] = {str(k): int(np.sum(y == k)) for k in (-1, 0, 1)}
+    except Exception as exc:
+        spec = {"enabled": False, "reason": f"fit_failed:{exc}", "target_spec": target_spec}
+    return spec, oof, trust_score, y
+
+
 def apply_regime_adaptor(
     feature_frame: pd.DataFrame,
     pred_calibrated: Sequence[float],
@@ -1331,6 +2652,34 @@ def apply_regime_adaptor(
     regime_df, _ = build_regime_feature_frame(
         feature_frame.iloc[:n], timestamps, symbols
     )
+    sym_arr = (
+        np.asarray(symbols).astype(str)[:n]
+        if symbols is not None and len(symbols) >= n
+        else np.repeat("all", n)
+    )
+    regime_df = _append_distribution_features(
+        regime_df,
+        feature_frame.iloc[:n],
+        artifact.get("distribution_feature_spec", {}),
+        timestamps,
+        sym_arr,
+    )
+    regime_df, _ = _append_prediction_reliability_features(
+        regime_df,
+        feature_frame.iloc[:n],
+        score,
+        None,
+        timestamps,
+        sym_arr,
+        artifact,
+    )
+    regime_df, _ = _append_symbol_features(
+        regime_df,
+        None,
+        timestamps,
+        sym_arr,
+        artifact,
+    )
     effects = _effects_from_artifact(regime_df, artifact)
     scaler = artifact.get("elastic_net", {}).get("scaler", {})
     center = np.asarray(
@@ -1373,7 +2722,21 @@ def apply_regime_adaptor(
         )
     else:
         weight[:] = 1.0
-    deployment = score * weight
+    trust_model = artifact.get("trust_model", {})
+    trust_proba = np.full((n, 3), 1.0 / 3.0, dtype=np.float64)
+    trust_score = np.zeros(n, dtype=np.float64)
+    trust_multiplier = np.ones(n, dtype=np.float64)
+    if bool(trust_model.get("enabled", False)):
+        trust_x = _model_matrix_from_regime_features(
+            regime_df, trust_model.get("features", artifact.get("features", []))
+        )
+        trust_proba, trust_score = _predict_serialized_trust_model(trust_x, trust_model)
+        trust_multiplier = np.clip(1.0 + 0.25 * trust_score, 0.65, 1.15)
+        if bool(artifact.get("enable_regime_adaptor", False)):
+            eligible &= trust_score >= float(
+                artifact.get("trust_gate_threshold", -0.35)
+            )
+    deployment = score * weight * trust_multiplier
     deployment[~eligible] = -np.inf
     rank = _rank_pct(np.where(np.isfinite(deployment), deployment, np.nan)).copy()
     rank[~np.isfinite(deployment)] = 0.0
@@ -1383,6 +2746,9 @@ def apply_regime_adaptor(
         "deployment_score": deployment.astype(np.float64),
         "deployment_score_rank": rank.astype(np.float64),
         "spline_effects": effects.astype(np.float32),
+        "trust_score": trust_score.astype(np.float64),
+        "trust_proba_good_neutral_bad": trust_proba.astype(np.float64),
+        "trust_multiplier": trust_multiplier.astype(np.float64),
     }
 
 
@@ -3044,10 +4410,25 @@ def fit_regime_adaptor(
     strategy_id: str,
     model_name: str,
     cost_pct: float = 0.003,
+    used_feature_columns: Optional[Sequence[str]] = None,
+    policy_candidate_mask: Optional[Sequence[bool]] = None,
+    gross_returns: Optional[Sequence[float]] = None,
+    policy_returns: Optional[Sequence[float]] = None,
+    mfe: Optional[Sequence[float]] = None,
+    mae: Optional[Sequence[float]] = None,
+    t_mfe: Optional[Sequence[float]] = None,
+    t_mae: Optional[Sequence[float]] = None,
 ) -> RegimeAdaptorFit:
     n = min(len(feature_frame), len(pred_calibrated), len(returns))
+    frame_n = feature_frame.iloc[:n].copy()
     scores = _as_float_array(pred_calibrated, n)
     rets = _as_float_array(returns, n)
+    gross_arr = _as_float_array(gross_returns, n) if gross_returns is not None else None
+    policy_arr = _as_float_array(policy_returns, n) if policy_returns is not None else None
+    mfe_arr = _as_float_array(mfe, n) if mfe is not None else None
+    mae_arr = _as_float_array(mae, n) if mae is not None else None
+    t_mfe_arr = _as_float_array(t_mfe, n) if t_mfe is not None else None
+    t_mae_arr = _as_float_array(t_mae, n) if t_mae is not None else None
     ts = (
         np.asarray(timestamps)[:n]
         if timestamps is not None and len(timestamps) >= n
@@ -3058,18 +4439,52 @@ def fit_regime_adaptor(
         if symbols is not None and len(symbols) >= n
         else np.repeat("all", n)
     )
-    regime_df, mapping = build_regime_feature_frame(feature_frame.iloc[:n], ts, sy)
+    if policy_candidate_mask is not None and len(policy_candidate_mask) >= n:
+        keep = np.asarray(policy_candidate_mask, dtype=bool)[:n]
+        frame_n = frame_n.iloc[keep].reset_index(drop=True)
+        scores = scores[keep]
+        rets = rets[keep]
+        gross_arr = gross_arr[keep] if gross_arr is not None else None
+        policy_arr = policy_arr[keep] if policy_arr is not None else None
+        mfe_arr = mfe_arr[keep] if mfe_arr is not None else None
+        mae_arr = mae_arr[keep] if mae_arr is not None else None
+        t_mfe_arr = t_mfe_arr[keep] if t_mfe_arr is not None else None
+        t_mae_arr = t_mae_arr[keep] if t_mae_arr is not None else None
+        ts = ts[keep] if ts is not None else None
+        sy = sy[keep]
+        n = len(scores)
+    outcome = policy_arr if policy_arr is not None else rets
+    outcome_cost_pct = 0.0 if policy_arr is not None else float(cost_pct)
+    outcome_source = (
+        "policy_realized_utility"
+        if policy_arr is not None
+        else "raw_realized_return"
+    )
+    distribution_spec = _fit_distribution_feature_spec(frame_n, used_feature_columns)
+    regime_df, mapping = build_regime_feature_frame(frame_n, ts, sy)
+    regime_df = _append_distribution_features(
+        regime_df, frame_n, distribution_spec, ts, sy
+    )
+    regime_df, reliability_spec = _append_prediction_reliability_features(
+        regime_df, frame_n, scores, outcome, ts, sy
+    )
+    regime_df, symbol_feature_spec = _append_symbol_features(
+        regime_df, outcome, ts, sy
+    )
     features = [f for f in REGIME_FEATURE_ORDER if f in regime_df.columns]
     if not features or n < 50:
         artifact = _empty_artifact(strategy_id, model_name, features, mapping)
-        applied = apply_regime_adaptor(feature_frame.iloc[:n], scores, artifact, ts, sy)
+        artifact["distribution_feature_spec"] = _jsonify(distribution_spec)
+        artifact["reliability_feature_spec"] = _jsonify(reliability_spec)
+        artifact["symbol_feature_spec"] = _jsonify(symbol_feature_spec)
+        applied = apply_regime_adaptor(frame_n, scores, artifact, ts, sy)
         empty = pd.DataFrame()
         return RegimeAdaptorFit(
             artifact,
             empty,
             empty,
             empty,
-            score_metrics(scores, rets, ts),
+            score_metrics(scores, outcome, ts, cost_pct=outcome_cost_pct),
             applied["regime_weight"],
             applied["eligible"],
             applied["deployment_score"],
@@ -3085,7 +4500,7 @@ def fit_regime_adaptor(
         features,
         percentile_refs,
         scores,
-        rets,
+        outcome,
         ts,
         rank_weight,
     )
@@ -3103,19 +4518,33 @@ def fit_regime_adaptor(
             )
 
     fixed = fixed_bucket_diagnostics(
-        regime_df, scores, rets, ts, sy, strategy_id, model_name, percentile_refs
+        regime_df, scores, outcome, ts, sy, strategy_id, model_name, percentile_refs
     )
-    asset_diag = asset_diagnostics(scores, rets, ts, sy, strategy_id, model_name)
+    asset_diag = asset_diagnostics(scores, outcome, ts, sy, strategy_id, model_name)
     bucket_gates = _bucket_gates(fixed)
     asset_gates = _asset_gates(asset_diag)
 
     top = _top_mask(scores, 0.10)
     target_center = (
-        float(np.nanmean(rets[top])) if top.any() else float(np.nanmean(rets))
+        float(np.nanmean(outcome[top])) if top.any() else float(np.nanmean(outcome))
     )
-    target = (rets - target_center).astype(np.float64)
+    target = (outcome - target_center).astype(np.float64)
     model, scaler, train_mean, params = _fit_elastic_net(
-        effects, target, rank_weight, scores, rets, ts
+        effects, target, rank_weight, scores, outcome, ts
+    )
+    trust_model, trust_proba_oof, trust_score_oof, trust_target = _fit_trust_model(
+        regime_df,
+        features,
+        rets,
+        frame_n,
+        ts,
+        cost_pct,
+        gross_returns=gross_arr,
+        policy_returns=policy_arr,
+        mfe=mfe_arr,
+        mae=mae_arr,
+        t_mfe=t_mfe_arr,
+        t_mae=t_mae_arr,
     )
     artifact = {
         "schema_version": "v1",
@@ -3123,6 +4552,14 @@ def fit_regime_adaptor(
         "model_name": str(model_name),
         "features": features,
         "feature_mapping": mapping,
+        "training_universe": (
+            "policy_candidate_mask_after_simple_policy_optimiser"
+            if policy_candidate_mask is not None
+            else "provided_oos_rows"
+        ),
+        "distribution_feature_spec": _jsonify(distribution_spec),
+        "reliability_feature_spec": _jsonify(reliability_spec),
+        "symbol_feature_spec": _jsonify(symbol_feature_spec),
         "percentile_refs": {
             k: v.astype(float).tolist() for k, v in percentile_refs.items()
         },
@@ -3149,29 +4586,40 @@ def fit_regime_adaptor(
             "regime_weight_clip": [0.70, 1.25],
         },
         "bucket_gates": bucket_gates,
-        "asset_gates": asset_gates,
+        "asset_gates": [],
+        "retired_asset_gates": asset_gates,
+        "trust_model": _jsonify(trust_model),
+        "trust_gate_threshold": -0.35,
+        "outcome_source": outcome_source,
+        "outcome_cost_pct": outcome_cost_pct,
         "rank_normalization": {
             "method": "pandas_rank_pct_average",
             "score": "deployment_score",
         },
         "enable_regime_adaptor": False,
+        "enable_regime_adaptor_inference": False,
+        "inference_integration_mode": "disabled",
     }
     candidate_applied = apply_regime_adaptor(
-        feature_frame.iloc[:n],
+        frame_n,
         scores,
         artifact | {"enable_regime_adaptor": True},
         ts,
         sy,
     )
     raw_m = score_metrics(
-        scores, rets, ts, top_fracs=(0.01, 0.05, 0.10, 0.20), cost_pct=cost_pct
+        scores,
+        outcome,
+        ts,
+        top_fracs=(0.01, 0.05, 0.10, 0.20),
+        cost_pct=outcome_cost_pct,
     )
     candidate_m = score_metrics(
         candidate_applied["deployment_score_rank"],
-        rets,
+        outcome,
         ts,
         top_fracs=(0.01, 0.05, 0.10, 0.20),
-        cost_pct=cost_pct,
+        cost_pct=outcome_cost_pct,
     )
     summary = _compare_metrics(raw_m, candidate_m)
     enabled, enable_decision = _regime_enable_decision(summary)
@@ -3179,23 +4627,47 @@ def fit_regime_adaptor(
     artifact["selection_score"] = float(enable_decision.get("selection_score", 0.0))
     artifact["enable_gate"] = _jsonify(enable_decision)
     final_applied = apply_regime_adaptor(
-        feature_frame.iloc[:n], scores, artifact, ts, sy
+        frame_n, scores, artifact, ts, sy
     )
     deployed_m = score_metrics(
         final_applied["deployment_score_rank"],
-        rets,
+        outcome,
         ts,
         top_fracs=(0.01, 0.05, 0.10, 0.20),
-        cost_pct=cost_pct,
+        cost_pct=outcome_cost_pct,
     )
     deployed_summary = _compare_metrics(raw_m, deployed_m)
+    model_quality = _model_quality_metrics_table(
+        strategy_id=strategy_id,
+        model_name=model_name,
+        training_universe=artifact["training_universe"],
+        raw_scores=scores,
+        adjusted_scores=final_applied["deployment_score_rank"],
+        returns=outcome,
+        timestamps=ts,
+        symbols=sy,
+        trust_proba=trust_proba_oof,
+        trust_score=trust_score_oof,
+        trust_target=trust_target,
+    )
+    top30_comparison = _regime_top30_comparison(
+        scores,
+        final_applied["deployment_score_rank"],
+        outcome,
+        ts,
+        sy,
+        cost_pct=outcome_cost_pct,
+    )
     metrics = pd.concat(
         [
             raw_m.assign(stage="raw"),
             candidate_m.assign(stage="regime_adjusted_candidate"),
             deployed_m.assign(stage="regime_adjusted_deployed"),
+            top30_comparison.assign(stage="top30_before_after"),
+            model_quality.assign(stage="model_quality"),
         ],
         ignore_index=True,
+        sort=False,
     )
     metrics["strategy_id"] = strategy_id
     metrics["model"] = model_name
@@ -3206,6 +4678,12 @@ def fit_regime_adaptor(
     )
     artifact["before_after_top10"] = artifact["candidate_before_after"]
     artifact["metrics"] = _jsonify(metrics.to_dict(orient="records"))
+    artifact["model_quality_metrics"] = _jsonify(
+        model_quality.to_dict(orient="records")
+    )
+    artifact["top30_regime_comparison"] = _jsonify(
+        top30_comparison.to_dict(orient="records")
+    )
     return RegimeAdaptorFit(
         artifact=artifact,
         fixed_diagnostics=fixed,
@@ -3216,6 +4694,299 @@ def fit_regime_adaptor(
         eligible_oof=final_applied["eligible"],
         deployment_score_oof=final_applied["deployment_score"],
         deployment_score_rank_oof=final_applied["deployment_score_rank"],
+        trust_score_oof=trust_score_oof,
+        trust_proba_oof=trust_proba_oof,
+    )
+
+
+def _safe_corr(a: np.ndarray, b: np.ndarray) -> float:
+    aa = np.asarray(a, dtype=np.float64)
+    bb = np.asarray(b, dtype=np.float64)
+    m = np.isfinite(aa) & np.isfinite(bb)
+    if int(np.sum(m)) < 3 or float(np.nanstd(aa[m])) <= EPS or float(np.nanstd(bb[m])) <= EPS:
+        return float("nan")
+    return float(np.corrcoef(aa[m], bb[m])[0, 1])
+
+
+def _group_corr_stats(
+    scores: np.ndarray, returns: np.ndarray, groups: Sequence[Any]
+) -> Tuple[float, float]:
+    rows = []
+    df = pd.DataFrame({"score": scores, "ret": returns, "group": groups})
+    for _g, grp in df.groupby("group", sort=False):
+        if len(grp) < 3:
+            continue
+        rows.append(_safe_corr(grp["score"].to_numpy(), grp["ret"].to_numpy()))
+    vals = np.asarray([x for x in rows if np.isfinite(x)], dtype=np.float64)
+    if len(vals) == 0:
+        return float("nan"), float("nan")
+    return float(np.mean(vals)), float(np.std(vals))
+
+
+def _ndcg_at_frac(scores: np.ndarray, returns: np.ndarray, frac: float) -> float:
+    s = np.asarray(scores, dtype=np.float64)
+    r = np.asarray(returns, dtype=np.float64)
+    finite = np.isfinite(s) & np.isfinite(r)
+    if not finite.any():
+        return float("nan")
+    k = max(1, int(math.ceil(np.sum(finite) * frac)))
+    gain = np.maximum(r[finite], 0.0)
+    order = np.argsort(s[finite])[::-1][:k]
+    ideal = np.argsort(gain)[::-1][:k]
+    denom = np.log2(np.arange(2, k + 2, dtype=np.float64))
+    dcg = float(np.sum(gain[order] / denom))
+    idcg = float(np.sum(gain[ideal] / denom))
+    return dcg / idcg if idcg > EPS else float("nan")
+
+
+def _ece_binary(y: np.ndarray, p: np.ndarray, bins: int = 10) -> float:
+    yy = np.asarray(y, dtype=np.float64)
+    pp = np.clip(np.asarray(p, dtype=np.float64), 0.0, 1.0)
+    finite = np.isfinite(yy) & np.isfinite(pp)
+    if not finite.any():
+        return float("nan")
+    yy, pp = yy[finite], pp[finite]
+    edges = np.linspace(0.0, 1.0, bins + 1)
+    ece = 0.0
+    for i in range(bins):
+        m = (pp >= edges[i]) & (pp < edges[i + 1] if i < bins - 1 else pp <= edges[i + 1])
+        if not m.any():
+            continue
+        ece += float(np.mean(m)) * abs(float(np.mean(yy[m])) - float(np.mean(pp[m])))
+    return float(ece)
+
+
+def _decile_utility(scores: np.ndarray, returns: np.ndarray) -> Tuple[List[float], float]:
+    df = pd.DataFrame({"score": scores, "ret": returns}).replace([np.inf, -np.inf], np.nan).dropna()
+    if len(df) < 10:
+        return [], float("nan")
+    df["decile"] = pd.qcut(df["score"].rank(method="first"), 10, labels=False, duplicates="drop")
+    vals = df.groupby("decile")["ret"].mean().to_list()
+    if len(vals) < 2:
+        return [float(v) for v in vals], float("nan")
+    mono = float(np.corrcoef(np.arange(len(vals)), np.asarray(vals, dtype=float))[0, 1])
+    return [float(v) for v in vals], mono
+
+
+def _quality_row(
+    *,
+    model_name: str,
+    target_name: str,
+    training_universe: str,
+    scores: np.ndarray,
+    returns: np.ndarray,
+    timestamps: Optional[np.ndarray],
+    symbols: Optional[np.ndarray],
+    y_binary: Optional[np.ndarray] = None,
+    proba_binary: Optional[np.ndarray] = None,
+    y_multiclass: Optional[np.ndarray] = None,
+    proba_multiclass: Optional[np.ndarray] = None,
+) -> Dict[str, Any]:
+    s = np.asarray(scores, dtype=np.float64)
+    r = np.asarray(returns, dtype=np.float64)
+    finite = np.isfinite(s) & np.isfinite(r)
+    n = len(s)
+    deciles, mono = _decile_utility(s, r)
+    symbol_mean = symbol_std = float("nan")
+    if symbols is not None and len(symbols) >= n:
+        symbol_mean, symbol_std = _group_corr_stats(s, r, np.asarray(symbols)[:n])
+    week_mean = week_std = month_mean = month_std = float("nan")
+    if timestamps is not None and len(timestamps) >= n:
+        ts = pd.to_datetime(np.asarray(timestamps)[:n], utc=True, errors="coerce")
+        ts_naive = pd.Series(ts).dt.tz_convert(None)
+        week_mean, week_std = _group_corr_stats(s, r, ts_naive.dt.to_period("W").astype(str))
+        month_mean, month_std = _group_corr_stats(s, r, ts_naive.dt.to_period("M").astype(str))
+    auc_good = auc_bad = auc_ovr = brier = ece = ll = float("nan")
+    if y_binary is not None and proba_binary is not None:
+        yy = np.asarray(y_binary, dtype=int)
+        pp = np.clip(np.asarray(proba_binary, dtype=np.float64), 1e-6, 1.0 - 1e-6)
+        m = np.isfinite(pp) & np.isfinite(yy)
+        if len(np.unique(yy[m])) == 2:
+            auc_good = float(roc_auc_score(yy[m], pp[m]))
+            brier = float(np.mean(np.square(pp[m] - yy[m])))
+            ece = _ece_binary(yy[m], pp[m])
+            ll = float(log_loss(yy[m], pp[m], labels=[0, 1]))
+    if y_multiclass is not None and proba_multiclass is not None:
+        yy = np.asarray(y_multiclass, dtype=int)
+        labels = np.array([-1, 0, 1], dtype=int)
+        pp = np.clip(np.asarray(proba_multiclass, dtype=np.float64), 1e-6, 1.0)
+        pp = pp / np.sum(pp, axis=1, keepdims=True)
+        pp_ordered = pp[:, [2, 1, 0]]
+        m = np.isfinite(pp).all(axis=1)
+        unique_classes = np.unique(yy[m])
+        if len(unique_classes) >= 2:
+            try:
+                if set(labels.tolist()).issubset(set(unique_classes.tolist())):
+                    auc_ovr = float(
+                        roc_auc_score(
+                            yy[m], pp_ordered[m], labels=labels, multi_class="ovr"
+                        )
+                    )
+            except Exception:
+                auc_ovr = float("nan")
+            if np.any(yy[m] == 1) and np.any(yy[m] != 1):
+                auc_good = float(roc_auc_score((yy[m] == 1).astype(int), pp[m, 0]))
+            if np.any(yy[m] == -1) and np.any(yy[m] != -1):
+                auc_bad = float(roc_auc_score((yy[m] == -1).astype(int), pp[m, 2]))
+            ll = float(log_loss(yy[m], pp_ordered[m], labels=labels))
+            brier = float(np.mean(np.sum((pp[m] - np.column_stack([yy[m] == 1, yy[m] == 0, yy[m] == -1])) ** 2, axis=1)))
+    return {
+        "model_name": model_name,
+        "target_name": target_name,
+        "training_universe": training_universe,
+        "n_train": int(np.sum(finite)),
+        "n_valid": int(np.sum(finite)),
+        "coverage": float(np.mean(finite)) if n else 0.0,
+        "IC_all": _safe_corr(s, r),
+        "IC_symbol_mean": symbol_mean,
+        "IC_symbol_std": symbol_std,
+        "IC_week_mean": week_mean,
+        "IC_week_std": week_std,
+        "IC_month_mean": month_mean,
+        "IC_month_std": month_std,
+        "AUC_ovr": auc_ovr,
+        "AUC_good_vs_rest": auc_good,
+        "AUC_bad_vs_rest": auc_bad,
+        "NDCG@1%": _ndcg_at_frac(s, r, 0.01),
+        "NDCG@5%": _ndcg_at_frac(s, r, 0.05),
+        "NDCG@10%": _ndcg_at_frac(s, r, 0.10),
+        "Brier": brier,
+        "ECE": ece,
+        "logloss": ll,
+        "mean_realized_utility_by_score_decile": deciles,
+        "top_decile_utility": float(deciles[-1]) if deciles else float("nan"),
+        "bottom_decile_utility": float(deciles[0]) if deciles else float("nan"),
+        "monotonicity_score": mono,
+    }
+
+
+def _model_quality_metrics_table(
+    *,
+    strategy_id: str,
+    model_name: str,
+    training_universe: str,
+    raw_scores: np.ndarray,
+    adjusted_scores: np.ndarray,
+    returns: np.ndarray,
+    timestamps: Optional[np.ndarray],
+    symbols: np.ndarray,
+    trust_proba: np.ndarray,
+    trust_score: np.ndarray,
+    trust_target: np.ndarray,
+) -> pd.DataFrame:
+    y_win = (np.asarray(returns, dtype=np.float64) > 0.0).astype(int)
+    rows = [
+        _quality_row(
+            model_name=f"{model_name}:correctedness_classifier",
+            target_name="realized_utility_positive",
+            training_universe=training_universe,
+            scores=raw_scores,
+            returns=returns,
+            timestamps=timestamps,
+            symbols=symbols,
+            y_binary=y_win,
+            proba_binary=np.clip(raw_scores, 1e-6, 1.0 - 1e-6),
+        ),
+        _quality_row(
+            model_name=f"{model_name}:utility_global_regressor",
+            target_name="realized_net_utility",
+            training_universe=training_universe,
+            scores=adjusted_scores,
+            returns=returns,
+            timestamps=timestamps,
+            symbols=symbols,
+        ),
+        _quality_row(
+            model_name=f"{model_name}:trustworthiness_classifier",
+            target_name="trust_target_-1_0_1",
+            training_universe=training_universe,
+            scores=trust_score,
+            returns=returns,
+            timestamps=timestamps,
+            symbols=symbols,
+            y_multiclass=trust_target,
+            proba_multiclass=trust_proba,
+        ),
+    ]
+    df = pd.DataFrame(rows)
+    df.insert(0, "strategy_id", strategy_id)
+    return df
+
+
+def _worst_rolling_days(net: np.ndarray, timestamps: Optional[np.ndarray], days: int) -> float:
+    if timestamps is None or len(timestamps) != len(net):
+        if len(net) == 0:
+            return 0.0
+        window = max(1, min(days, len(net)))
+        vals = pd.Series(net).rolling(window, min_periods=1).sum()
+        return float(vals.min())
+    ts = pd.to_datetime(timestamps, utc=True, errors="coerce")
+    df = pd.DataFrame({"net": net, "ts": ts}).dropna()
+    if df.empty:
+        return 0.0
+    daily = df.set_index("ts")["net"].resample("D").sum().fillna(0.0)
+    return float(daily.rolling(days, min_periods=1).sum().min())
+
+
+def _period_sortino(net: np.ndarray, timestamps: Optional[np.ndarray], freq: str) -> float:
+    if timestamps is None or len(timestamps) != len(net):
+        vals = np.asarray(net, dtype=np.float64)
+    else:
+        ts = pd.to_datetime(timestamps, utc=True, errors="coerce")
+        df = pd.DataFrame({"net": net, "ts": ts}).dropna()
+        if df.empty:
+            return 0.0
+        vals = df.set_index("ts")["net"].resample(freq).sum().to_numpy(dtype=np.float64)
+    down = vals[vals < 0.0]
+    if len(down) == 0:
+        return 100.0 if len(vals) and float(np.mean(vals)) > 0 else 0.0
+    return float(np.mean(vals) / (np.sqrt(np.mean(np.square(down))) + EPS))
+
+
+def _top30_row(
+    label: str,
+    scores: np.ndarray,
+    returns: np.ndarray,
+    timestamps: Optional[np.ndarray],
+    symbols: np.ndarray,
+    cost_pct: float,
+) -> Dict[str, Any]:
+    mask = _top_mask(scores, 0.30)
+    net = np.asarray(returns, dtype=np.float64)[mask] - float(cost_pct)
+    ts_sel = np.asarray(timestamps)[mask] if timestamps is not None and len(timestamps) == len(scores) else None
+    sym_sel = symbols[mask] if len(symbols) == len(scores) else np.repeat("all", len(net))
+    asset_means = pd.DataFrame({"sym": sym_sel, "net": net}).groupby("sym")["net"].mean()
+    return {
+        "comparison": label,
+        "top_frac": 0.30,
+        "avg_pnl_per_trade": float(np.mean(net)) if len(net) else 0.0,
+        "maxdrawdown": _drawdown(net),
+        "std_dev_weekly": _period_std(net, ts_sel, "W"),
+        "std_dev_monthly": _period_std(net, ts_sel, "M"),
+        "worst_7_rolling_days": _worst_rolling_days(net, ts_sel, 7),
+        "worst_15_rolling_days": _worst_rolling_days(net, ts_sel, 15),
+        "worst_30_rolling_days": _worst_rolling_days(net, ts_sel, 30),
+        "sortino_weekly": _period_sortino(net, ts_sel, "W"),
+        "sortino_monthly": _period_sortino(net, ts_sel, "ME"),
+        "between_asset_mean_utility_std": float(asset_means.std(ddof=0)) if len(asset_means) > 1 else 0.0,
+        "trades": int(len(net)),
+    }
+
+
+def _regime_top30_comparison(
+    raw_scores: np.ndarray,
+    adjusted_scores: np.ndarray,
+    returns: np.ndarray,
+    timestamps: Optional[np.ndarray],
+    symbols: np.ndarray,
+    *,
+    cost_pct: float,
+) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            _top30_row("without_regime_adaptation", raw_scores, returns, timestamps, symbols, cost_pct),
+            _top30_row("with_regime_adaptation", adjusted_scores, returns, timestamps, symbols, cost_pct),
+        ]
     )
 
 
@@ -3254,6 +5025,15 @@ def _empty_artifact(
         "feature_mapping": mapping,
         "percentile_refs": {},
         "feature_splines": {},
+        "distribution_feature_spec": {"enabled": False, "columns": []},
+        "reliability_feature_spec": {"global_brier": 0.25},
+        "symbol_feature_spec": {
+            "global_utility": 0.0,
+            "global_bad_rate": 0.5,
+            "symbols": {},
+        },
+        "trust_model": {"enabled": False, "reason": "empty_artifact"},
+        "trust_gate_threshold": -0.35,
         "elastic_net": {
             "coef": [],
             "intercept": 0.0,
@@ -3272,6 +5052,8 @@ def _empty_artifact(
             "score": "deployment_score",
         },
         "enable_regime_adaptor": False,
+        "enable_regime_adaptor_inference": False,
+        "inference_integration_mode": "disabled",
     }
 
 

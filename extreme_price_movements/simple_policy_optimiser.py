@@ -93,6 +93,9 @@ PORTFOLIO_POLICY_MAX_TOTAL_WALLET_ALLOCATION_PCT = 0.75
 PORTFOLIO_POLICY_MAX_AVAILABLE_WALLET_POSITION_PCT = 0.50
 PORTFOLIO_POLICY_MAX_POSITION_WALLET_PCT = 0.15
 PORTFOLIO_POLICY_MAX_POSITION_QUOTE_NOTIONAL = 5000.0
+PORTFOLIO_POLICY_BOOK_NOTIONAL_MULTIPLIER = 1.0
+PORTFOLIO_POLICY_LEVERAGE_WALLET_MULTIPLIER = 1.0
+PORTFOLIO_POLICY_MIN_MARGIN_LEVEL_AFTER_ENTRY = 2.50
 PORTFOLIO_POLICY_INITIAL_RANK_THRESHOLD_FLOOR = 0.90
 PORTFOLIO_POLICY_LIVE_TEST_MIN_QUOTE_NOTIONAL = 5.0
 PORTFOLIO_POLICY_LIVE_TEST_QUOTE_NOTIONAL = 10.0
@@ -2313,6 +2316,510 @@ def _path_take(
     return tuple(arr[idx] for arr in paths)
 
 
+def _path_extrema_from_policy_paths(
+    df_rows: pd.DataFrame,
+    paths: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Compute MFE/MAE magnitude and timing from the simple-policy path matrix."""
+    f_opens, f_highs, f_lows, _f_closes = paths
+    n = len(df_rows)
+    mfe = np.full(n, np.nan, dtype=np.float32)
+    mae = np.full(n, np.nan, dtype=np.float32)
+    t_mfe = np.full(n, np.nan, dtype=np.float32)
+    t_mae = np.full(n, np.nan, dtype=np.float32)
+    if n == 0 or f_opens.shape[0] != n or f_highs.shape[0] != n or f_lows.shape[0] != n:
+        return mfe, mae, t_mfe, t_mae
+    entry = np.asarray(f_opens[:, 0], dtype=np.float64)
+    side = (
+        pd.to_numeric(df_rows["side"], errors="coerce")
+        .fillna(1.0)
+        .to_numpy(dtype=np.float64)
+        if "side" in df_rows.columns
+        else np.ones(n, dtype=np.float64)
+    )
+    is_long = side >= 0.0
+    valid_entry = np.isfinite(entry) & (entry > 0.0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        fav = np.where(
+            is_long[:, None],
+            (f_highs.astype(np.float64) - entry[:, None]) / entry[:, None],
+            (entry[:, None] - f_lows.astype(np.float64)) / entry[:, None],
+        )
+        adv = np.where(
+            is_long[:, None],
+            (entry[:, None] - f_lows.astype(np.float64)) / entry[:, None],
+            (f_highs.astype(np.float64) - entry[:, None]) / entry[:, None],
+        )
+    fav = np.where(np.isfinite(fav), np.maximum(fav, 0.0), np.nan)
+    adv = np.where(np.isfinite(adv), np.maximum(adv, 0.0), np.nan)
+    for i in np.flatnonzero(valid_entry):
+        if not np.isfinite(fav[i]).any() or not np.isfinite(adv[i]).any():
+            continue
+        fav_i = np.nan_to_num(fav[i], nan=-np.inf)
+        adv_i = np.nan_to_num(adv[i], nan=-np.inf)
+        fav_idx = int(np.argmax(fav_i))
+        adv_idx = int(np.argmax(adv_i))
+        mfe[i] = float(fav_i[fav_idx]) if np.isfinite(fav_i[fav_idx]) else np.nan
+        mae[i] = float(adv_i[adv_idx]) if np.isfinite(adv_i[adv_idx]) else np.nan
+        t_mfe[i] = float(fav_idx + 1)
+        t_mae[i] = float(adv_idx + 1)
+    return mfe, mae, t_mfe, t_mae
+
+
+def _raw_return_from_policy_paths(
+    df_rows: pd.DataFrame,
+    paths: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> np.ndarray:
+    """Fallback realized return over the policy horizon, unsized and before policy exits."""
+    f_opens, _f_highs, _f_lows, f_closes = paths
+    n = len(df_rows)
+    out = np.full(n, np.nan, dtype=np.float32)
+    if "u_policy_net" in df_rows.columns:
+        vals = pd.to_numeric(df_rows["u_policy_net"], errors="coerce").to_numpy(
+            dtype=np.float32
+        )
+        if np.isfinite(vals).any():
+            return vals
+    if "u_policy" in df_rows.columns:
+        vals = pd.to_numeric(df_rows["u_policy"], errors="coerce").to_numpy(
+            dtype=np.float32
+        )
+        if np.isfinite(vals).any():
+            return vals
+    if "return" in df_rows.columns:
+        vals = pd.to_numeric(df_rows["return"], errors="coerce").to_numpy(
+            dtype=np.float32
+        )
+        if np.isfinite(vals).any():
+            return vals
+    if n == 0 or f_opens.shape[0] != n or f_closes.shape[0] != n:
+        return out
+    entry = np.asarray(f_opens[:, 0], dtype=np.float64)
+    side = (
+        pd.to_numeric(df_rows["side"], errors="coerce")
+        .fillna(1.0)
+        .to_numpy(dtype=np.float64)
+        if "side" in df_rows.columns
+        else np.ones(n, dtype=np.float64)
+    )
+    finite_close = np.isfinite(f_closes)
+    last_pos = np.maximum(np.sum(finite_close, axis=1) - 1, 0)
+    close = f_closes[np.arange(n), last_pos].astype(np.float64, copy=False)
+    valid = np.isfinite(entry) & (entry > 0.0) & np.isfinite(close)
+    out[valid] = (side[valid] * (close[valid] / entry[valid] - 1.0)).astype(np.float32)
+    return out
+
+
+def _regime_used_feature_columns(df: pd.DataFrame) -> List[str]:
+    blocked_exact = {
+        "timestamp",
+        "ts",
+        "symbol",
+        "strategy_id",
+        "side",
+        "return",
+        "u_policy",
+        "u_policy_net",
+        "rank_pct",
+        "deployment_rank_pct",
+        "raw_meta_prediction",
+        "calibrated_score",
+        "mfe_ret",
+        "mae_ret",
+        "t_mfe",
+        "t_mae",
+        "exit_bars",
+        "net_gain",
+        "gross_gain",
+    }
+    blocked_substrings = ("future_", "realized", "outcome", "label")
+    cols: List[str] = []
+    for c in df.columns:
+        name = str(c)
+        low = name.lower()
+        if low in blocked_exact or any(s in low for s in blocked_substrings):
+            continue
+        try:
+            if pd.api.types.is_numeric_dtype(df[c]):
+                cols.append(name)
+        except Exception:
+            continue
+    priority = [
+        c
+        for c in (
+            "clf",
+            "oof_meta_clf",
+            "oof_pred",
+            "oof_p_move",
+            "base_H10",
+            "base_H5",
+            "base_H4",
+            "base_H2",
+            "base_H1",
+            "oof_base_clf",
+            "base_clf_centered",
+            "clf_entropy",
+            "oof_ebm_raw",
+            "oof_ebm_en",
+            "oof_ebm_uncertainty_weighted",
+            "oof_ebm_unc_logodds_var",
+            "oof_ebm_unc_pi_width",
+            "oof_ebm_unc_entropy_mean",
+            "oof_ebm_unc_conflict_norm",
+            "oof_ebm_unc_support_mean",
+            "oof_ebm_unc_support_min",
+            "oof_ebm_unc_support_adjusted_uncertainty",
+            "oof_ebm_unc_uncertainty_weight",
+        )
+        if c in cols
+    ]
+    return list(dict.fromkeys(priority + cols))
+
+
+def _strip_policy_side(strategy_id: str) -> str:
+    for prefix in ("long_", "short_"):
+        if str(strategy_id).startswith(prefix):
+            return str(strategy_id)[len(prefix) :]
+    return str(strategy_id)
+
+
+def _base_oof_context_columns(df: pd.DataFrame, context_name: str) -> pd.DataFrame:
+    out = pd.DataFrame(index=df.index)
+    if "oof_prob" in df.columns:
+        out[context_name] = pd.to_numeric(df["oof_prob"], errors="coerce")
+    elif "oof_pred" in df.columns:
+        out[context_name] = pd.to_numeric(df["oof_pred"], errors="coerce")
+    for src, suffix in (
+        ("oof_sigma_trees", "_sigma"),
+        ("oof_sigma_robust", "_robust_sigma"),
+    ):
+        if src in df.columns:
+            out[f"{context_name}{suffix}"] = pd.to_numeric(df[src], errors="coerce")
+    for col in [c for c in df.columns if str(c).startswith("oof_tree_")]:
+        out[f"{context_name}_{str(col).replace('oof_tree_', '')}"] = pd.to_numeric(
+            df[col], errors="coerce"
+        )
+    for col in ("timestamp", "symbol", "index"):
+        if col in df.columns:
+            out[col] = df[col].values
+    return out
+
+
+def _merge_prediction_context(
+    df: pd.DataFrame,
+    ctx: pd.DataFrame,
+    *,
+    prefix_existing: bool = False,
+) -> Tuple[pd.DataFrame, int]:
+    if df.empty or ctx.empty:
+        return df, 0
+    out = df.copy()
+    ctx = ctx.copy()
+    add_cols = [
+        c
+        for c in ctx.columns
+        if c not in {"timestamp", "symbol", "index"} and c not in out.columns
+    ]
+    if not add_cols:
+        return out, 0
+    common = {c for c in ("timestamp", "symbol", "index") if c in out.columns and c in ctx.columns}
+    key_options: List[List[str]] = []
+    # The meta/base OOF parquet "index" column is often local to that file. Prefer
+    # the event identity, otherwise it can turn a valid timestamp/symbol match into
+    # an all-null join.
+    if {"timestamp", "symbol"}.issubset(common):
+        key_options.append(["timestamp", "symbol"])
+    if "index" in common:
+        key_options.append(["index"])
+    if "timestamp" in common:
+        key_options.append(["timestamp"])
+    if "timestamp" in common:
+        out["timestamp"] = pd.to_datetime(out["timestamp"], utc=True, errors="coerce")
+        ctx["timestamp"] = pd.to_datetime(ctx["timestamp"], utc=True, errors="coerce")
+    if "symbol" in common:
+        out["symbol"] = out["symbol"].astype(str)
+        ctx["symbol"] = ctx["symbol"].astype(str)
+    for keys in key_options:
+        right = ctx[keys + add_cols].drop_duplicates(subset=keys, keep="first")
+        merged = out.merge(right, on=keys, how="left", sort=False)
+        coverage = 0.0
+        if add_cols:
+            coverage = float(merged[add_cols].notna().any(axis=1).mean())
+        if coverage > 0.0:
+            added = sum(c in merged.columns for c in add_cols)
+            return merged, int(added)
+    if len(ctx) != len(out):
+        return out, 0
+    for col in add_cols:
+        target = f"context_{col}" if prefix_existing and col in out.columns else col
+        if target not in out.columns:
+            out[target] = ctx[col].to_numpy()
+    return out, len(add_cols)
+
+
+def _load_base_prediction_context(
+    *,
+    data_root: str,
+    run_id: str,
+    strategy_id: str,
+    stage_view: Dict[str, Any],
+) -> pd.DataFrame:
+    oof_dir = Path(data_root) / "artifacts" / run_id / "oof"
+    if not oof_dir.exists():
+        return pd.DataFrame()
+    canonical = _strip_policy_side(strategy_id)
+    frames: List[pd.DataFrame] = []
+    for path in sorted(oof_dir.glob("oof_*.parquet")):
+        stem = path.stem.replace("oof_", "", 1)
+        if not stem.startswith(f"{canonical}_H") and not stem.startswith(
+            f"{strategy_id}_H"
+        ):
+            continue
+        suffix = stem[len(canonical) + 1 :] if stem.startswith(canonical) else stem
+        context_name = f"base_{suffix}" if suffix.startswith("H") else f"base_{stem}"
+        try:
+            raw = pd.read_parquet(path)
+            filt = _filter_rows_to_stage_view(raw, stage_view)
+            frames.append(_base_oof_context_columns(filt, context_name))
+        except Exception as exc:
+            logger.warning(
+                "[%s] Failed to load base OOF context %s: %s",
+                strategy_id,
+                path,
+                exc,
+            )
+    if not frames:
+        return pd.DataFrame()
+    out = frames[0]
+    for frame in frames[1:]:
+        out, _ = _merge_prediction_context(out, frame)
+    return out
+
+
+def _ensure_regime_prediction_context(
+    df: pd.DataFrame,
+    *,
+    data_root: str,
+    run_id: str,
+    strategy_id: str,
+    stage_view: Dict[str, Any],
+) -> pd.DataFrame:
+    """Attach OOS base/meta/EBM prediction context for regime-adaptor features."""
+    out = df.copy()
+    if "oof_meta_clf" not in out.columns:
+        for col in ("clf", "oof_p_move", "oof_pred"):
+            if col in out.columns:
+                out["oof_meta_clf"] = pd.to_numeric(out[col], errors="coerce")
+                break
+    if "oof_base_clf" not in out.columns and "base_clf_centered" in out.columns:
+        out["oof_base_clf"] = np.clip(
+            pd.to_numeric(out["base_clf_centered"], errors="coerce") + 0.5,
+            0.0,
+            1.0,
+        )
+    base_ctx = _load_base_prediction_context(
+        data_root=data_root,
+        run_id=run_id,
+        strategy_id=strategy_id,
+        stage_view=stage_view,
+    )
+    out, added = _merge_prediction_context(out, base_ctx)
+    if added:
+        logger.info(
+            "[%s] Added %s base OOF prediction/uncertainty context columns for regime adaptor.",
+            strategy_id,
+            added,
+        )
+    ebm_cols = [c for c in out.columns if str(c).startswith("oof_ebm")]
+    pred_cols = [
+        c
+        for c in out.columns
+        if c in {"oof_base_clf", "oof_meta_clf", "oof_ebm_raw", "oof_ebm_en", "oof_ebm_uncertainty_weighted"}
+        or str(c).startswith("base_H")
+    ]
+    out.attrs["regime_prediction_context"] = {
+        "base_meta_prediction_columns": sorted(pred_cols),
+        "ebm_prediction_or_uncertainty_columns": sorted(ebm_cols),
+    }
+    return out
+
+
+def _fit_regime_adaptor_from_simple_policy(
+    *,
+    data_root: str,
+    run_id: str,
+    strategy_id: str,
+    df_policy_all: pd.DataFrame,
+    all_policy_paths: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    trade_idx: np.ndarray,
+    final_params: Dict[str, Any],
+    final_size_power: float,
+    cost_pct: float,
+    deployment_rank_threshold: float,
+) -> Optional[Dict[str, Any]]:
+    if len(df_policy_all) < 50 or len(trade_idx) < 10:
+        return None
+    from extreme_price_movements.regime_adaptor import (
+        fit_regime_adaptor,
+        save_regime_adaptor_outputs,
+    )
+
+    df_top = df_policy_all.iloc[trade_idx].copy().reset_index(drop=True)
+    top_paths = _path_take(all_policy_paths, trade_idx)
+    policy_metrics = simulate_and_score(
+        df_top.copy(),
+        top_paths[0],
+        top_paths[1],
+        top_paths[2],
+        top_paths[3],
+        cost_pct=cost_pct,
+        size_power=final_size_power,
+        **final_params,
+    )
+    selected_mask_top = np.asarray(policy_metrics.get("selected_mask"), dtype=bool)
+    raw_gains = np.asarray(policy_metrics.get("raw_gains", []), dtype=np.float32)
+    gross_gains = np.asarray(policy_metrics.get("gross_gains", []), dtype=np.float32)
+    if len(selected_mask_top) != len(df_top) or len(raw_gains) != int(
+        np.sum(selected_mask_top)
+    ):
+        logger.warning(
+            "[%s] Regime adaptor skipped: simple-policy selection length mismatch "
+            "rows=%s selected_mask=%s gains=%s",
+            strategy_id,
+            len(df_top),
+            len(selected_mask_top),
+            len(raw_gains),
+        )
+        return None
+    selected_top_idx = np.flatnonzero(selected_mask_top)
+    if len(selected_top_idx) < 50:
+        logger.warning(
+            "[%s] Regime adaptor skipped: optimized simple policy selected only %s rows.",
+            strategy_id,
+            len(selected_top_idx),
+        )
+        return None
+    selected_full_idx = np.asarray(trade_idx, dtype=np.int64)[selected_top_idx]
+    n_policy = len(df_policy_all)
+    policy_candidate_mask = np.zeros(n_policy, dtype=bool)
+    policy_candidate_mask[selected_full_idx] = True
+    policy_returns = np.full(n_policy, np.nan, dtype=np.float32)
+    policy_returns[selected_full_idx] = raw_gains.astype(np.float32, copy=False)
+    gross_returns = np.full(n_policy, np.nan, dtype=np.float32)
+    if len(gross_gains) == len(raw_gains):
+        gross_returns[selected_full_idx] = gross_gains.astype(np.float32, copy=False)
+    mfe, mae, t_mfe, t_mae = _path_extrema_from_policy_paths(
+        df_policy_all, all_policy_paths
+    )
+    raw_returns = _raw_return_from_policy_paths(df_policy_all, all_policy_paths)
+    scores = pd.to_numeric(df_policy_all["calibrated_score"], errors="coerce").to_numpy(
+        dtype=np.float32
+    )
+    timestamps = (
+        pd.to_datetime(df_policy_all["timestamp"], utc=True, errors="coerce").to_numpy()
+        if "timestamp" in df_policy_all.columns
+        else None
+    )
+    symbols = (
+        df_policy_all["symbol"].astype(str).to_numpy()
+        if "symbol" in df_policy_all.columns
+        else np.repeat("all", n_policy)
+    )
+    fit = fit_regime_adaptor(
+        feature_frame=df_policy_all,
+        pred_calibrated=scores,
+        returns=raw_returns,
+        timestamps=timestamps,
+        symbols=symbols,
+        strategy_id=strategy_id,
+        model_name="simple_policy_optimiser",
+        cost_pct=cost_pct,
+        used_feature_columns=_regime_used_feature_columns(df_policy_all),
+        policy_candidate_mask=policy_candidate_mask,
+        gross_returns=gross_returns,
+        policy_returns=policy_returns,
+        mfe=mfe,
+        mae=mae,
+        t_mfe=t_mfe,
+        t_mae=t_mae,
+    )
+    fit.artifact["foundation"] = "simple_policy_optimiser"
+    fit.artifact["prediction_context"] = {
+        "base_meta_prediction_columns": sorted(
+            [
+                c
+                for c in df_policy_all.columns
+                if c
+                in {
+                    "clf",
+                    "oof_pred",
+                    "oof_p_move",
+                    "oof_base_clf",
+                    "oof_meta_clf",
+                    "raw_meta_prediction",
+                    "calibrated_score",
+                }
+                or str(c).startswith("base_H")
+            ]
+        ),
+        "ebm_prediction_or_uncertainty_columns": sorted(
+            [c for c in df_policy_all.columns if str(c).startswith("oof_ebm")]
+        ),
+        "base_oof_context_source": f"artifacts/{run_id}/oof lightweight parquet join",
+    }
+    fit.artifact["policy_candidate_mask"] = {
+        "available": True,
+        "source": "simple_policy_optimiser_final_policy_selected_mask",
+        "deployment_rank_threshold": float(deployment_rank_threshold),
+        "rank_threshold_candidates": int(len(trade_idx)),
+        "selected_after_policy_concurrency": int(len(selected_full_idx)),
+        "rows": int(n_policy),
+        "coverage": float(len(selected_full_idx) / max(n_policy, 1)),
+    }
+    fit.artifact["policy_realized_utility"] = {
+        "available": True,
+        "source": "simple_policy_optimiser.simulate_and_score.final_params",
+        "rows": int(len(selected_full_idx)),
+        "mean_policy_net_utility": float(np.nanmean(raw_gains)),
+        "best_size_power": float(final_size_power),
+        "max_concurrent_trades": int(
+            final_params.get("max_concurrent_trades", MAX_CONCURRENT_TRADES)
+        ),
+        "has_barwise_paths": True,
+    }
+    artifact_path = save_regime_adaptor_outputs(
+        data_root=data_root,
+        run_id=run_id,
+        strategy_id=strategy_id,
+        fit=fit,
+    )
+    logger.info(
+        "[%s] Regime adaptor trained from simple_policy_optimiser: "
+        "selected=%s/%s mean_policy_net_utility=%.6f inference_enabled=%s artifact=%s",
+        strategy_id,
+        len(selected_full_idx),
+        n_policy,
+        float(np.nanmean(raw_gains)),
+        bool(fit.artifact.get("enable_regime_adaptor_inference", False)),
+        artifact_path,
+    )
+    return {
+        "artifact_path": str(artifact_path),
+        "research_enabled": bool(fit.artifact.get("enable_regime_adaptor", False)),
+        "inference_enabled": bool(
+            fit.artifact.get("enable_regime_adaptor_inference", False)
+        ),
+        "training_universe": fit.artifact.get("training_universe"),
+        "outcome_source": fit.artifact.get("outcome_source"),
+        "target_counts": (
+            fit.artifact.get("trust_model", {}).get("target_counts")
+            if isinstance(fit.artifact.get("trust_model"), dict)
+            else None
+        ),
+        "selection_score": fit.artifact.get("selection_score"),
+    }
+
+
 def _suggest_policy_params(trial: optuna.Trial) -> Dict[str, Any]:
     return {
         "sl_mult": trial.suggest_categorical(
@@ -3969,9 +4476,7 @@ def _build_deployment_payload(
         by_side[side] = side_rows[:max_per_side]
         for row in side_rows[max_per_side:]:
             rejected_row = dict(row)
-            rejected_row["reject_reasons"] = [
-                f"outside_top_{max_per_side}_per_side"
-            ]
+            rejected_row["reject_reasons"] = [f"outside_top_{max_per_side}_per_side"]
             rejected.append(rejected_row)
 
     max_total = int(_policy_max_strategies_total() or 0)
@@ -4058,6 +4563,9 @@ def _build_portfolio_policy_config_payload() -> Dict[str, Any]:
         ),
         "max_position_wallet_pct": PORTFOLIO_POLICY_MAX_POSITION_WALLET_PCT,
         "max_position_quote_notional": PORTFOLIO_POLICY_MAX_POSITION_QUOTE_NOTIONAL,
+        "book_notional_multiplier": PORTFOLIO_POLICY_BOOK_NOTIONAL_MULTIPLIER,
+        "leverage_wallet_multiplier": PORTFOLIO_POLICY_LEVERAGE_WALLET_MULTIPLIER,
+        "min_margin_level_after_entry": PORTFOLIO_POLICY_MIN_MARGIN_LEVEL_AFTER_ENTRY,
         "live_test_min_quote_notional": PORTFOLIO_POLICY_LIVE_TEST_MIN_QUOTE_NOTIONAL,
         "live_test_quote_notional": PORTFOLIO_POLICY_LIVE_TEST_QUOTE_NOTIONAL,
         "initial_rank_threshold": PORTFOLIO_POLICY_INITIAL_RANK_THRESHOLD_FLOOR,
@@ -4086,6 +4594,11 @@ def _build_portfolio_policy_config_payload() -> Dict[str, Any]:
         "rank_sizing": {
             "max_available_wallet_position_pct": (
                 PORTFOLIO_POLICY_MAX_AVAILABLE_WALLET_POSITION_PCT
+            ),
+            "book_notional_multiplier": PORTFOLIO_POLICY_BOOK_NOTIONAL_MULTIPLIER,
+            "leverage_wallet_multiplier": PORTFOLIO_POLICY_LEVERAGE_WALLET_MULTIPLIER,
+            "min_margin_level_after_entry": (
+                PORTFOLIO_POLICY_MIN_MARGIN_LEVEL_AFTER_ENTRY
             ),
             "rank_multiplier_min": 0.80,
             "rank_multiplier_max": 1.60,
@@ -4167,6 +4680,13 @@ def run_simple_policy_optimisation(
                     stage_name,
                 )
                 continue
+            df = _ensure_regime_prediction_context(
+                df,
+                data_root=data_root,
+                run_id=run_id,
+                strategy_id=strategy_id,
+                stage_view=stage_view,
+            )
             meta_oof[strategy_id] = df
             meta_oof_sources[strategy_id] = str(pq_file)
             if max_strategies is not None and len(meta_oof) >= int(max_strategies):
@@ -4192,6 +4712,16 @@ def run_simple_policy_optimisation(
                 "No policy-slice predictions available after model generation fallback."
             )
             return
+        meta_oof = {
+            sid: _ensure_regime_prediction_context(
+                frame,
+                data_root=data_root,
+                run_id=run_id,
+                strategy_id=sid,
+                stage_view=stage_view,
+            )
+            for sid, frame in meta_oof.items()
+        }
 
     n_trials = int(
         n_trials
@@ -4526,6 +5056,18 @@ def run_simple_policy_optimisation(
         final_policy_deployment_metrics = score_deployment_threshold_rows(
             final_policy_threshold_rows
         )
+        regime_adaptor_summary = _fit_regime_adaptor_from_simple_policy(
+            data_root=data_root,
+            run_id=run_id,
+            strategy_id=strategy_id,
+            df_policy_all=df_policy_all,
+            all_policy_paths=all_policy_paths,
+            trade_idx=trade_idx,
+            final_params=final_params,
+            final_size_power=final_size_power,
+            cost_pct=cost_pct,
+            deployment_rank_threshold=deployment_rank_threshold,
+        )
         asset_metrics = build_asset_metrics_from_simulation(
             selected_rows=df_top,
             metrics=deployment_sim_metrics,
@@ -4574,6 +5116,7 @@ def run_simple_policy_optimisation(
             "asset_metrics": asset_metric_rows,
             "cv_folds": fold_results,
             "final_fit_summary": final_fit_summary,
+            "regime_adaptor": regime_adaptor_summary,
             "prediction_source": {
                 "parquet": meta_oof_sources.get(strategy_id),
                 "score_column": "clf",
@@ -4639,6 +5182,7 @@ def run_simple_policy_optimisation(
             "deployment_threshold_metrics": deployment_threshold_metrics,
             "final_policy_deployment_metrics": final_policy_deployment_metrics,
             "asset_metrics": asset_metric_rows,
+            "regime_adaptor": regime_adaptor_summary,
             "validation_rows_stage_b_avg": float(
                 np.mean([len(fold) for fold in folds]) if folds else 0.0
             ),

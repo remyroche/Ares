@@ -89,6 +89,9 @@ class PortfolioManager:
         max_same_side_pct: Optional[float] = None,
         max_same_strategy_pct: Optional[float] = None,
         portfolio_value: float = 10000.0,  # Default assumed portfolio value
+        book_notional_multiplier: float = 1.0,
+        leverage_wallet_multiplier: float = 1.0,
+        min_margin_level_after_entry: float = 2.5,
         max_daily_loss_pct: float = 0.10,
         max_weekly_loss_pct: float = 0.20,
         max_consecutive_losing_trades: int = 5,
@@ -99,6 +102,14 @@ class PortfolioManager:
         self.max_portfolio_pct = max_portfolio_pct
         self.max_position_usdt = max_position_usdt
         self.max_position_pct = max_position_pct
+        self.book_notional_multiplier = max(float(book_notional_multiplier), 0.0)
+        self.leverage_wallet_multiplier = max(float(leverage_wallet_multiplier), 1.0)
+        self.min_margin_level_after_entry = max(
+            float(min_margin_level_after_entry), 1.0
+        )
+        self.margin_total_assets_quote: Optional[float] = None
+        self.margin_total_liabilities_quote: Optional[float] = None
+        self.margin_level: Optional[float] = None
         self.cooldown_hours = cooldown_hours
         if max_same_side is not None:
             self.max_same_side = max(1, int(max_same_side))
@@ -153,6 +164,9 @@ class PortfolioManager:
             max_portfolio_pct=policy.max_total_wallet_allocation_pct,
             max_position_usdt=policy.max_position_quote_notional,
             max_position_pct=policy.max_position_wallet_pct,
+            book_notional_multiplier=policy.book_notional_multiplier,
+            leverage_wallet_multiplier=policy.leverage_wallet_multiplier,
+            min_margin_level_after_entry=policy.min_margin_level_after_entry,
             max_same_side=max_same_side,
             max_same_strategy=max_same_strategy,
             portfolio_value=portfolio_value,
@@ -160,15 +174,56 @@ class PortfolioManager:
             **kwargs,
         )
 
+    def update_margin_account_metrics(
+        self,
+        *,
+        total_assets_quote: Optional[float],
+        total_liabilities_quote: Optional[float],
+    ) -> None:
+        """Update cross-margin account metrics used for reserved slot sizing."""
+        assets = (
+            float(total_assets_quote)
+            if total_assets_quote is not None and np.isfinite(float(total_assets_quote))
+            else np.nan
+        )
+        liabilities = (
+            float(total_liabilities_quote)
+            if total_liabilities_quote is not None
+            and np.isfinite(float(total_liabilities_quote))
+            else np.nan
+        )
+        if not np.isfinite(assets) or not np.isfinite(liabilities):
+            return
+        self.margin_total_assets_quote = max(assets, 0.0)
+        self.margin_total_liabilities_quote = max(liabilities, 0.0)
+        equity = max(
+            self.margin_total_assets_quote - self.margin_total_liabilities_quote,
+            0.0,
+        )
+        if equity > 0.0:
+            self.portfolio_value = equity
+        self.margin_level = (
+            self.margin_total_assets_quote
+            / max(self.margin_total_liabilities_quote, 1e-12)
+            if self.margin_total_liabilities_quote > 0.0
+            else float("inf")
+        )
+
     def get_portfolio_state(self) -> Dict[str, Any]:
         """Return current portfolio state summary."""
         open_positions = [p for p in self.positions.values() if p.is_open]
         n_open = len(open_positions)
 
-        # Calculate invested percentage
+        capacity = self.get_portfolio_capacity(side="", strategy_id="")
+
+        # Calculate invested percentage against the current margin-safe book,
+        # not against a static leverage multiplier.
         total_invested = sum(p.position_size for p in open_positions)
+        max_total_notional = float(capacity.get("max_total_notional") or 0.0)
         invested_pct = (
-            total_invested / self.portfolio_value if self.portfolio_value > 0 else 0.0
+            total_invested / max(max_total_notional, 1e-12)
+            if max_total_notional > 0.0
+            else 0.0
         )
 
         # Count by side
@@ -198,7 +253,12 @@ class PortfolioManager:
             remaining_pct = None
         else:
             max_invested_pct = self.max_portfolio_pct
-            remaining_pct = self.max_portfolio_pct - invested_pct
+            remaining_pct = (
+                float(capacity.get("remaining_total_notional") or 0.0)
+                / max(max_total_notional, 1e-12)
+                if max_total_notional > 0.0
+                else 0.0
+            )
 
         return {
             "n_positions": n_open,
@@ -209,6 +269,15 @@ class PortfolioManager:
             "remaining_pct": remaining_pct,
             "max_position_pct": self.max_position_pct,
             "max_position_usdt": self.max_position_usdt,
+            "book_notional_multiplier": self.book_notional_multiplier,
+            "leverage_wallet_multiplier": self.leverage_wallet_multiplier,
+            "min_margin_level_after_entry": self.min_margin_level_after_entry,
+            "max_total_notional": max_total_notional,
+            "configured_book_notional": capacity.get("configured_book_notional"),
+            "margin_surplus_notional": capacity.get("margin_surplus_notional"),
+            "total_assets_quote": self.margin_total_assets_quote,
+            "total_liabilities_quote": self.margin_total_liabilities_quote,
+            "current_margin_level": self.margin_level,
             "long_count": long_count,
             "short_count": short_count,
             "max_same_side": self.max_same_side,
@@ -256,16 +325,20 @@ class PortfolioManager:
         """
         open_positions = [p for p in self.positions.values() if p.is_open]
         total_invested = sum(p.position_size for p in open_positions)
+        max_total_notional = float(
+            self.get_portfolio_capacity(side="", strategy_id="")["max_total_notional"]
+        )
 
         caps = [
             float(requested_size),
-            float(self.portfolio_value) * float(self.max_position_pct),
+            float(self.portfolio_value)
+            * float(self.max_position_pct)
+            * float(self.book_notional_multiplier),
         ]
         if self.max_position_usdt is not None and np.isfinite(self.max_position_usdt):
-            caps.append(float(self.max_position_usdt))
+            caps.append(float(self.max_position_usdt) * self.book_notional_multiplier)
         if self.max_portfolio_pct is not None and np.isfinite(self.max_portfolio_pct):
-            max_total_invested = self.portfolio_value * float(self.max_portfolio_pct)
-            caps.append(max_total_invested - total_invested)
+            caps.append(max_total_notional - total_invested)
 
         return max(0.0, min(caps))
 
@@ -288,18 +361,40 @@ class PortfolioManager:
         strategy_open = sum(1 for p in open_positions if p.strategy_id == strategy_id)
         open_notional = float(sum(p.position_size for p in open_positions))
 
-        max_total_notional = (
-            float(self.max_portfolio_pct) * wallet
+        configured_book_notional = (
+            float(self.max_portfolio_pct)
+            * wallet
+            * float(self.book_notional_multiplier)
             if self.max_portfolio_pct is not None
             and np.isfinite(float(self.max_portfolio_pct))
             else float("inf")
         )
+        margin_surplus_notional = float("inf")
+        if (
+            self.margin_total_assets_quote is not None
+            and self.margin_total_liabilities_quote is not None
+            and np.isfinite(float(self.margin_total_assets_quote))
+            and np.isfinite(float(self.margin_total_liabilities_quote))
+        ):
+            margin_surplus_notional = max(
+                float(self.margin_total_assets_quote)
+                - float(self.min_margin_level_after_entry)
+                * float(self.margin_total_liabilities_quote),
+                0.0,
+            )
+        max_total_notional = min(configured_book_notional, margin_surplus_notional)
+        if not np.isfinite(max_total_notional):
+            max_total_notional = configured_book_notional
         remaining_total = max(max_total_notional - open_notional, 0.0)
-        per_position_caps = [float(self.max_position_pct) * wallet]
+        per_position_caps = [
+            float(self.max_position_pct) * wallet * float(self.book_notional_multiplier)
+        ]
         if self.max_position_usdt is not None and np.isfinite(
             float(self.max_position_usdt)
         ):
-            per_position_caps.append(float(self.max_position_usdt))
+            per_position_caps.append(
+                float(self.max_position_usdt) * self.book_notional_multiplier
+            )
         max_position_notional = max(0.0, min(per_position_caps))
         remaining_position_slots = self.max_positions - n_open
         remaining_side_slots = self.max_same_side - side_open
@@ -314,8 +409,20 @@ class PortfolioManager:
             "max_concurrent_per_side": self.max_same_side,
             "max_concurrent_per_strategy": self.max_same_strategy,
             "max_total_notional": max_total_notional,
+            "configured_book_notional": configured_book_notional,
+            "margin_surplus_notional": (
+                margin_surplus_notional
+                if np.isfinite(margin_surplus_notional)
+                else None
+            ),
             "remaining_total_notional": remaining_total,
             "max_position_notional": max_position_notional,
+            "book_notional_multiplier": float(self.book_notional_multiplier),
+            "leverage_wallet_multiplier": float(self.leverage_wallet_multiplier),
+            "min_margin_level_after_entry": float(self.min_margin_level_after_entry),
+            "total_assets_quote": self.margin_total_assets_quote,
+            "total_liabilities_quote": self.margin_total_liabilities_quote,
+            "current_margin_level": self.margin_level,
             "remaining_position_slots": remaining_position_slots,
             "remaining_side_slots": remaining_side_slots,
             "remaining_strategy_slots": remaining_strategy_slots,
@@ -702,7 +809,9 @@ class PortfolioManager:
         requested_size = (
             float(requested_position_size)
             if requested_position_size is not None
-            else self.portfolio_value * self.max_position_pct
+            else self.portfolio_value
+            * self.max_position_pct
+            * self.book_notional_multiplier
         )
         if not np.isfinite(requested_size) or requested_size <= 0.0:
             info["reason"] = "invalid_requested_position_size"
@@ -880,6 +989,12 @@ class PortfolioManager:
                 for sym, rec in self.cooldowns.items()
             },
             "portfolio_value": self.portfolio_value,
+            "book_notional_multiplier": self.book_notional_multiplier,
+            "leverage_wallet_multiplier": self.leverage_wallet_multiplier,
+            "min_margin_level_after_entry": self.min_margin_level_after_entry,
+            "margin_total_assets_quote": self.margin_total_assets_quote,
+            "margin_total_liabilities_quote": self.margin_total_liabilities_quote,
+            "margin_level": self.margin_level,
         }
 
         path = Path(filepath)
@@ -920,6 +1035,40 @@ class PortfolioManager:
             )
 
         self.portfolio_value = data.get("portfolio_value", self.portfolio_value)
+        self.book_notional_multiplier = max(
+            0.0,
+            float(
+                data.get(
+                    "book_notional_multiplier",
+                    self.book_notional_multiplier,
+                )
+            ),
+        )
+        self.leverage_wallet_multiplier = max(
+            1.0,
+            float(
+                data.get(
+                    "leverage_wallet_multiplier",
+                    self.leverage_wallet_multiplier,
+                )
+            ),
+        )
+        self.min_margin_level_after_entry = max(
+            1.0,
+            float(
+                data.get(
+                    "min_margin_level_after_entry",
+                    self.min_margin_level_after_entry,
+                )
+            ),
+        )
+        assets = data.get("margin_total_assets_quote")
+        liabilities = data.get("margin_total_liabilities_quote")
+        if assets is not None and liabilities is not None:
+            self.update_margin_account_metrics(
+                total_assets_quote=float(assets),
+                total_liabilities_quote=float(liabilities),
+            )
         tprint(
             f"[PortfolioManager] State loaded from {filepath} "
             f"({len(self.positions)} positions, {len(self.cooldowns)} cooldowns)"

@@ -10,6 +10,44 @@ from extreme_price_movements.regime_adaptor import (
     load_regime_adaptor,
     save_regime_adaptor_outputs,
 )
+from extreme_price_movements.simple_policy_optimiser import (
+    _path_extrema_from_policy_paths,
+)
+
+
+def test_simple_policy_path_extrema_produces_trust_positive_candidates():
+    rows = pd.DataFrame(
+        {
+            "return": [0.018, 0.015, -0.006],
+            "side": [1, -1, 1],
+        }
+    )
+    opens = np.asarray(
+        [[100.0, 101.0, 103.0], [100.0, 99.0, 97.5], [100.0, 99.0, 98.0]],
+        dtype=np.float32,
+    )
+    highs = np.asarray(
+        [[101.0, 103.0, 102.0], [100.5, 101.0, 100.2], [100.2, 100.1, 99.8]],
+        dtype=np.float32,
+    )
+    lows = np.asarray(
+        [[99.5, 100.5, 101.0], [99.0, 97.5, 98.0], [99.0, 98.5, 98.0]],
+        dtype=np.float32,
+    )
+    closes = opens.copy()
+
+    mfe, mae, t_mfe, t_mae = _path_extrema_from_policy_paths(
+        rows, (opens, highs, lows, closes)
+    )
+    ratio = mfe / (mae + 1e-9)
+
+    assert np.isfinite(mfe).all()
+    assert np.isfinite(mae).all()
+    assert np.isfinite(t_mfe).all()
+    assert np.isfinite(t_mae).all()
+    assert ratio[0] > 1.2
+    assert ratio[1] > 1.2
+    assert int(np.sum((rows["return"].to_numpy() > 0.01) & (ratio > 1.2))) == 2
 
 
 def test_regime_adaptor_training_live_parity(tmp_path):

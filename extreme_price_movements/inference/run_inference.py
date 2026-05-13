@@ -46,6 +46,7 @@ def _configure_numba_threading_layer() -> None:
 
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -93,6 +94,9 @@ from extreme_price_movements.inference.feature_generator import (
     load_or_compute_features,
     raw_required_feature_keys,
 )
+from extreme_price_movements.inference.google_sheets_exporter import (
+    GoogleSheetsTradeExporter,
+)
 from extreme_price_movements.inference.liquidity_precheck import (
     compute_price_gap_rank_penalty,
     evaluate_orderbook_liquidity,
@@ -112,26 +116,24 @@ from extreme_price_movements.inference.parity import (
     validate_meta_feature_contract_artifact,
     validate_required_feature_frames,
 )
-from extreme_price_movements.inference.prediction_ledger import PredictionLedger
-from extreme_price_movements.inference.simple_policy_stop import (
-    load_simple_policy_stop_params_by_strategy,
-)
 from extreme_price_movements.inference.portfolio_policy import (
     PortfolioPolicyConfig,
     compute_rank_based_position_size,
     load_portfolio_policy_config,
 )
+from extreme_price_movements.inference.prediction_ledger import PredictionLedger
 from extreme_price_movements.inference.safety_switches import (
     MarketKillSwitch,
     StrategyKillSwitch,
 )
-from extreme_price_movements.inference.symbol_mapping import (
-    normalise_symbol,
-    symbol_base,
-)
 from extreme_price_movements.inference.simple_policy_stop import (
     SimplePolicyStopParamsError,
     compute_simple_policy_stop_decision,
+    load_simple_policy_stop_params_by_strategy,
+)
+from extreme_price_movements.inference.symbol_mapping import (
+    normalise_symbol,
+    symbol_base,
 )
 from extreme_price_movements.inference.trade_executor import TradeExecutor
 from extreme_price_movements.inference.trade_logger import (
@@ -574,7 +576,6 @@ def _should_log_prediction_candidate(
     return rank >= float(1.0 - policy.top_prediction_ledger_pct)
 
 
-
 def _max_feature_timestamp(feats: Dict[str, pd.DataFrame]) -> Optional[pd.Timestamp]:
     max_ts: Optional[pd.Timestamp] = None
     for df in (feats or {}).values():
@@ -596,6 +597,26 @@ def _diagnostic_timestamp(value: Any, fallback: Any = None) -> Any:
     if pd.isna(ts):
         return None
     return pd.Timestamp(ts).isoformat()
+
+
+def _artifact_file_hash(path: Path) -> Optional[str]:
+    try:
+        if path.exists():
+            return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+    except Exception:
+        return None
+    return None
+
+
+def _meta_feature_contract_hash(data_root: str, run_id: str) -> Optional[str]:
+    return _artifact_file_hash(
+        Path(data_root)
+        / "artifacts"
+        / str(run_id)
+        / "meta_oof"
+        / "meta_feature_contract.json"
+    )
+
 
 def _prediction_ledger_row(
     decision: Dict[str, Any],
@@ -629,9 +650,15 @@ def _prediction_ledger_row(
     return {
         "timestamp": timestamp,
         "decision_ts": _diagnostic_timestamp(decision.get("decision_ts"), timestamp),
-        "signal_bar_ts": _diagnostic_timestamp(decision.get("signal_bar_ts"), timestamp),
-        "feature_source_max_ts": _diagnostic_timestamp(decision.get("feature_source_max_ts")),
-        "feature_available_ts": _diagnostic_timestamp(decision.get("feature_available_ts")),
+        "signal_bar_ts": _diagnostic_timestamp(
+            decision.get("signal_bar_ts"), timestamp
+        ),
+        "feature_source_max_ts": _diagnostic_timestamp(
+            decision.get("feature_source_max_ts")
+        ),
+        "feature_available_ts": _diagnostic_timestamp(
+            decision.get("feature_available_ts")
+        ),
         "feature_contract_hash": decision.get("feature_contract_hash"),
         "model_artifact_run_id": decision.get("model_artifact_run_id"),
         "policy_artifact_run_id": decision.get("policy_artifact_run_id"),
@@ -687,6 +714,7 @@ def _prediction_ledger_row(
         "decision_mid": snap.get("decision_mid", snap.get("mid")),
         "signal_gap_bps": snap.get("signal_gap_bps"),
         "was_traded": bool(was_traded),
+        "position_id": trade.get("position_id"),
         "order_id": trade.get("order_id") or order.get("id"),
         "entry_price_expected": snap.get("expected_fill_price"),
         "entry_price_actual": trade.get("realized_entry_price"),
@@ -1207,6 +1235,14 @@ def _send_trade_close_email(
             f"{_format_float(closed_trade.get('entry_notional_quote'))}",
             "exit_notional_quote: "
             f"{_format_float(closed_trade.get('exit_notional_quote'))}",
+            "wallet_value_at_entry: "
+            f"{_format_float(closed_trade.get('wallet_value_at_entry'))}",
+            "open_notional_at_entry: "
+            f"{_format_float(closed_trade.get('open_notional_at_entry'))}",
+            "leverage_wallet_multiplier: "
+            f"{_format_float(closed_trade.get('leverage_wallet_multiplier'), digits=4)}x",
+            "effective_position_leverage: "
+            f"{_format_float(closed_trade.get('effective_position_leverage'), digits=4)}x",
             f"requested_quote_size: {_format_float(closed_trade.get('quote_size'))}",
             "requested_base_amount: "
             f"{_format_float(closed_trade.get('requested_base_amount'))}",
@@ -1214,16 +1250,33 @@ def _send_trade_close_email(
             "other positions, and borrow interest",
             f"net_pnl_quote_est_position: {_format_float(net_pnl_amount)}",
             f"net_pnl_pct_position_notional: {_format_pct(net_pnl_pct)}",
+            "net_pnl_pct_wallet_leverage_adjusted: "
+            f"{_format_pct(closed_trade.get('leverage_adjusted_net_pnl_pct'))}",
             f"gross_pnl_quote_est_position: {_format_float(closed_trade.get('gross_pnl'))}",
             f"gross_pnl_pct_position_notional: {_format_pct(gross_pnl_pct)}",
+            "gross_pnl_pct_wallet_leverage_adjusted: "
+            f"{_format_pct(closed_trade.get('leverage_adjusted_gross_pnl_pct'))}",
             "gross_to_net_cost_quote: "
             f"{_format_float(closed_trade.get('gross_to_net_cost_quote'))}",
             "gross_to_net_cost_pct_position_notional: "
             f"{_format_pct(closed_trade.get('gross_to_net_cost_pct'))}",
             f"entry_fee_quote: {_format_float(closed_trade.get('entry_fee_quote'))}",
             f"exit_fee_quote: {_format_float(closed_trade.get('exit_fee_quote'))}",
+            f"entry_fee_source: {closed_trade.get('entry_fee_source')}",
+            f"exit_fee_source: {closed_trade.get('exit_fee_source')}",
+            f"fee_source: {closed_trade.get('fee_source')}",
+            f"fees_verified: {closed_trade.get('fees_verified')}",
             f"mfe: {_format_pct(closed_trade.get('mfe'))}",
             f"mae: {_format_pct(closed_trade.get('mae'))}",
+            "requested_policy_stop: "
+            f"{_format_float(closed_trade.get('requested_policy_stop'))}",
+            "final_placed_stop: "
+            f"{_format_float(closed_trade.get('final_placed_stop'))}",
+            "exit_vs_policy_stop_bps: "
+            f"{_format_float(closed_trade.get('exit_vs_policy_stop_bps'), digits=4)}",
+            "exit_vs_peak_giveback_pct: "
+            f"{_format_pct(closed_trade.get('exit_vs_peak_giveback_pct'))}",
+            f"policy_parity_ok: {closed_trade.get('policy_parity_ok')}",
             f"stop_price: {closed_trade.get('stop_price')}",
             f"decision_module: {closed_trade.get('decision_module')}",
             "stop_policy_params_source: "
@@ -1450,6 +1503,76 @@ def _apply_reconciliation_entry_gate(
     return unimported_external_positions
 
 
+def _margin_account_metrics_from_reconciliation(
+    reconciliation_report: dict[str, Any],
+) -> dict[str, float]:
+    """Extract gross margin assets/liabilities for sizing-cap decisions."""
+
+    total_assets_quote = 0.0
+    total_liabilities_quote = 0.0
+    for item in reconciliation_report.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind") or "")
+        if kind == "net_exposure":
+            balance_value = item.get("gross_balance_quote_value")
+            debt_value = item.get("gross_debt_quote_value")
+            if balance_value is not None and np.isfinite(float(balance_value)):
+                total_assets_quote += max(float(balance_value), 0.0)
+            if debt_value is not None and np.isfinite(float(debt_value)):
+                total_liabilities_quote += max(float(debt_value), 0.0)
+            continue
+        quote_value = item.get("quote_value")
+        if quote_value is None or not np.isfinite(float(quote_value)):
+            continue
+        if kind == "balance":
+            total_assets_quote += max(float(quote_value), 0.0)
+        elif kind == "debt":
+            total_liabilities_quote += max(float(quote_value), 0.0)
+
+    equity_quote = max(total_assets_quote - total_liabilities_quote, 0.0)
+    margin_level = (
+        total_assets_quote / max(total_liabilities_quote, 1e-12)
+        if total_liabilities_quote > 0.0
+        else float("inf")
+    )
+    return {
+        "total_assets_quote": total_assets_quote,
+        "total_liabilities_quote": total_liabilities_quote,
+        "equity_quote": equity_quote,
+        "margin_level": margin_level,
+    }
+
+
+def _apply_margin_metrics_to_portfolio_manager(
+    *,
+    reconciliation_report: dict[str, Any],
+    portfolio_mgr: PortfolioManager,
+) -> dict[str, float]:
+    """Sync margin-account gross assets/debt into PortfolioManager sizing state."""
+
+    metrics = _margin_account_metrics_from_reconciliation(reconciliation_report)
+    portfolio_mgr.update_margin_account_metrics(
+        total_assets_quote=metrics["total_assets_quote"],
+        total_liabilities_quote=metrics["total_liabilities_quote"],
+    )
+    target_margin_level = float(portfolio_mgr.min_margin_level_after_entry)
+    safe_surplus = max(
+        metrics["total_assets_quote"]
+        - target_margin_level * metrics["total_liabilities_quote"],
+        0.0,
+    )
+    tprint(
+        "Margin sizing metrics: "
+        f"assets={metrics['total_assets_quote']:.4f} "
+        f"liabilities={metrics['total_liabilities_quote']:.4f} "
+        f"equity={metrics['equity_quote']:.4f} "
+        f"margin_level={metrics['margin_level']:.4f} "
+        f"safe_surplus@{target_margin_level:.2f}={safe_surplus:.4f}"
+    )
+    return metrics
+
+
 def _maybe_send_daily_deployment_report(
     *,
     daily_reporter: DailyDeploymentReporter,
@@ -1478,6 +1601,32 @@ def _maybe_send_daily_deployment_report(
     if reason and reason != "not_due":
         tprint(f"Daily deployment report skipped: {reason}")
     return result
+
+
+def _maybe_export_google_sheets(
+    *,
+    sheets_exporter: Optional[GoogleSheetsTradeExporter],
+    trade_logger: TradeLogger,
+    executor: TradeExecutor,
+    force: bool = False,
+) -> bool:
+    """Export local trade diagnostics to Google Sheets when configured."""
+    if sheets_exporter is None:
+        return False
+    try:
+        active_positions = (
+            executor.get_active_positions()
+            if hasattr(executor, "get_active_positions")
+            else {}
+        )
+        return sheets_exporter.export_trade_logger(
+            trade_logger,
+            active_positions=active_positions,
+            force=force,
+        )
+    except Exception as exc:
+        tprint(f"Google Sheets export wrapper failed: {type(exc).__name__}: {exc}")
+        return False
 
 
 def _is_symbol_blocked_for_strategy(
@@ -1524,7 +1673,9 @@ def _record_trade_execution_health(
     category = str(trade_result.get("error_category", "") or "")
     symbol_scoped_rejection_categories = {
         "asset_collateral_limit",
+        "borrow_limit",
         "symbol_halted",
+        "unsupported_liability_target",
     }
     if category in symbol_scoped_rejection_categories:
         tprint(
@@ -1561,6 +1712,14 @@ def _record_trade_execution_health(
             False,
             error=f"order execution failed: {category}: {error_text}",
         )
+
+
+def _is_expected_order_capacity_rejection(category: str) -> bool:
+    """Return True for exchange-side capacity limits that are not code failures."""
+    return str(category or "") in {
+        "asset_collateral_limit",
+        "borrow_limit",
+    }
 
 
 def _execute_trade_with_optional_context(
@@ -2109,6 +2268,21 @@ def run_inference_step(
     runtime_config = dict(getattr(executor, "config", {}) or {})
     live_test_mode = _is_live_test_mode(executor)
     portfolio_policy = portfolio_policy or PortfolioPolicyConfig()
+    if portfolio_mgr is None:
+        portfolio_mgr = PortfolioManager.from_policy_config(
+            portfolio_policy,
+            cooldown_hours=0.0,
+        )
+    else:
+        portfolio_mgr.book_notional_multiplier = (
+            portfolio_policy.book_notional_multiplier
+        )
+        portfolio_mgr.leverage_wallet_multiplier = (
+            portfolio_policy.leverage_wallet_multiplier
+        )
+        portfolio_mgr.min_margin_level_after_entry = (
+            portfolio_policy.min_margin_level_after_entry
+        )
     prediction_ledger_rows: List[Dict[str, Any]] = []
     _log_generated_feature_frames(feats)
     _log_concurrent_positions_snapshot(portfolio_mgr, label="start")
@@ -2117,7 +2291,9 @@ def run_inference_step(
         tprint(
             "LIVE-TEST mode active: production decision path with quote clamp="
             f"[{portfolio_policy.live_test_min_quote_notional:.2f}, "
-            f"{portfolio_policy.live_test_quote_notional:.2f}] USDC. "
+            f"{portfolio_policy.live_test_quote_notional:.2f}] USDC notional "
+            f"multiplied by book_notional_multiplier="
+            f"{portfolio_policy.book_notional_multiplier:.2f}. "
             "Rank thresholds are loaded from the deployment policy artifacts."
         )
 
@@ -2544,7 +2720,9 @@ def run_inference_step(
                                 else None
                             ),
                             "feature_available_ts": feature_available_ts.isoformat(),
-                            "feature_contract_hash": runtime_config.get("feature_contract_hash"),
+                            "feature_contract_hash": runtime_config.get(
+                                "feature_contract_hash"
+                            ),
                             "model_artifact_run_id": artifact_run_id,
                             "policy_artifact_run_id": runtime_config.get(
                                 "policy_artifact_run_id", artifact_run_id
@@ -2599,6 +2777,45 @@ def run_inference_step(
                 reverse=True,
             )
             decision_rows = decision_rows[: max(1, int(max_entries_per_side))]
+            if strategy_kill_switch is not None and decision_rows:
+                allowed_decision_rows = []
+                for row in decision_rows:
+                    row_strategy_id = str(row["strategy_id"])
+                    row_symbol = str(row["symbol"])
+                    strategy_switch_decision = strategy_kill_switch.is_blocked(
+                        row_strategy_id
+                    )
+                    if strategy_switch_decision.allow_new_entries:
+                        allowed_decision_rows.append(row)
+                        continue
+                    if (
+                        prediction_ledger is not None
+                        and _should_log_prediction_candidate(
+                            row, policy=portfolio_policy
+                        )
+                    ):
+                        prediction_ledger_rows.append(
+                            _prediction_ledger_row(
+                                row,
+                                timestamp=now_utc.isoformat(),
+                                side=side,
+                                portfolio_decision="strategy_kill_switch_rejected",
+                                portfolio_reject_reason=strategy_switch_decision.reason,
+                            )
+                        )
+                    tprint(
+                        f"Strategy kill-switch block: {row_symbol} "
+                        f"{side}/{row_strategy_id} "
+                        f"reason={strategy_switch_decision.reason}"
+                    )
+                    side_metrics["non_fatal_issues"] += 1
+                decision_rows = allowed_decision_rows
+                if not decision_rows:
+                    tprint(
+                        f"All ranked decisions [{side}] were blocked by strategy "
+                        "kill switches"
+                    )
+                    continue
             tprint(
                 f"Top-{max(1, int(max_entries_per_side))} selection [{side}]: "
                 f"selected={len(decision_rows)} from ranked_decisions "
@@ -2627,35 +2844,6 @@ def run_inference_step(
                         decision.get("calibrated_score", 0.0),
                     )
                 )
-                if strategy_kill_switch is not None:
-                    strategy_switch_decision = strategy_kill_switch.is_blocked(
-                        strategy_id
-                    )
-                    if not strategy_switch_decision.allow_new_entries:
-                        if (
-                            prediction_ledger is not None
-                            and _should_log_prediction_candidate(
-                                decision, policy=portfolio_policy
-                            )
-                        ):
-                            prediction_ledger_rows.append(
-                                _prediction_ledger_row(
-                                    decision,
-                                    timestamp=now_utc.isoformat(),
-                                    side=side,
-                                    portfolio_decision="strategy_kill_switch_rejected",
-                                    portfolio_reject_reason=(
-                                        strategy_switch_decision.reason
-                                    ),
-                                )
-                            )
-                        tprint(
-                            f"Strategy kill-switch block: {symbol} "
-                            f"{side}/{strategy_id} "
-                            f"reason={strategy_switch_decision.reason}"
-                        )
-                        side_metrics["non_fatal_issues"] += 1
-                        continue
             cooldown_hours = LOSING_TRADE_COOLDOWN_HOURS
             symbol_block_reason = _symbol_entry_block_reason(
                 symbol,
@@ -2712,6 +2900,8 @@ def run_inference_step(
                     liquidity_capacity_weight=1.0,
                     live_test_mode=live_test_mode,
                     rank_size_power=float(policy_size.get("size_power", 1.1)),
+                    total_assets_quote=capacity.get("total_assets_quote"),
+                    total_liabilities_quote=capacity.get("total_liabilities_quote"),
                 )
                 requested_position_usdt = float(sizing_audit["size_after_liquidity"])
                 chain_results["portfolio_rank_sizing"] = sizing_audit
@@ -2969,6 +3159,12 @@ def run_inference_step(
                                     rank_size_power=float(
                                         chain_results.get("size_power", 1.1)
                                     ),
+                                    total_assets_quote=capacity.get(
+                                        "total_assets_quote"
+                                    ),
+                                    total_liabilities_quote=capacity.get(
+                                        "total_liabilities_quote"
+                                    ),
                                 )
                                 size = float(sizing_audit["size_after_liquidity"])
                                 chain_results["portfolio_rank_sizing"] = sizing_audit
@@ -3061,6 +3257,27 @@ def run_inference_step(
                     sizing_for_log = (
                         chain_results.get("portfolio_rank_sizing", {}) or {}
                     )
+                    execution_snapshot["wallet_value_at_entry"] = sizing_for_log.get(
+                        "wallet_value"
+                    )
+                    execution_snapshot["open_notional_at_entry"] = sizing_for_log.get(
+                        "open_notional"
+                    )
+                    execution_snapshot["leverage_wallet_multiplier"] = (
+                        sizing_for_log.get("leverage_wallet_multiplier")
+                    )
+                    execution_snapshot["book_notional_multiplier"] = sizing_for_log.get(
+                        "book_notional_multiplier"
+                    )
+                    execution_snapshot["safe_book_notional"] = sizing_for_log.get(
+                        "safe_book_notional"
+                    )
+                    execution_snapshot["target_slot_notional"] = sizing_for_log.get(
+                        "target_slot_notional"
+                    )
+                    execution_snapshot["current_margin_level"] = sizing_for_log.get(
+                        "current_margin_level"
+                    )
                     execution_snapshot["signal_price"] = (
                         float(price) if price is not None else None
                     )
@@ -3125,6 +3342,15 @@ def run_inference_step(
                                 "final_threshold",
                                 "position_size_before_liquidity",
                                 "position_size_after_liquidity",
+                                "wallet_value",
+                                "wallet_value_at_entry",
+                                "open_notional",
+                                "open_notional_at_entry",
+                                "leverage_wallet_multiplier",
+                                "book_notional_multiplier",
+                                "safe_book_notional",
+                                "target_slot_notional",
+                                "current_margin_level",
                                 "max_chase_bps",
                                 "entry_limit_price",
                             }
@@ -3153,6 +3379,27 @@ def run_inference_step(
                         "deployment_rank_threshold": decision.get(
                             "deployment_rank_threshold"
                         ),
+                        "wallet_value_at_entry": (
+                            chain_results.get("portfolio_rank_sizing", {}) or {}
+                        ).get("wallet_value"),
+                        "open_notional_at_entry": (
+                            chain_results.get("portfolio_rank_sizing", {}) or {}
+                        ).get("open_notional"),
+                        "leverage_wallet_multiplier": (
+                            chain_results.get("portfolio_rank_sizing", {}) or {}
+                        ).get("leverage_wallet_multiplier"),
+                        "book_notional_multiplier": (
+                            chain_results.get("portfolio_rank_sizing", {}) or {}
+                        ).get("book_notional_multiplier"),
+                        "safe_book_notional": (
+                            chain_results.get("portfolio_rank_sizing", {}) or {}
+                        ).get("safe_book_notional"),
+                        "target_slot_notional": (
+                            chain_results.get("portfolio_rank_sizing", {}) or {}
+                        ).get("target_slot_notional"),
+                        "current_margin_level": (
+                            chain_results.get("portfolio_rank_sizing", {}) or {}
+                        ).get("current_margin_level"),
                         "barrier_pct": live_barrier_pct,
                         "barrier_frac": live_barrier_pct,
                     },
@@ -3187,13 +3434,23 @@ def run_inference_step(
                 )
                 order_error_category = str(trade_result.get("error_category", "") or "")
                 if not trade_success:
-                    side_metrics["order_errors"] += 1
+                    expected_capacity_rejection = _is_expected_order_capacity_rejection(
+                        order_error_category
+                    )
+                    if expected_capacity_rejection:
+                        side_metrics["non_fatal_issues"] += 1
+                    else:
+                        side_metrics["order_errors"] += 1
                     if not order_error_category:
                         order_error_category = "unclassified_order_error"
                         side_metrics["unexplained_order_errors"] += 1
                     tprint(
-                        "[ORDER_ERROR] "
-                        f"{symbol} {side}/{strategy_id} "
+                        (
+                            "[ORDER_CAPACITY_REJECTION] "
+                            if expected_capacity_rejection
+                            else "[ORDER_ERROR] "
+                        )
+                        + f"{symbol} {side}/{strategy_id} "
                         f"category={order_error_category} "
                         f"error={trade_result.get('error', '')}"
                     )
@@ -3707,6 +3964,25 @@ def _log_closed_trade_event(
         return
     try:
         side = str(closed_trade.get("side") or "")
+        scalar_context = {
+            key: value
+            for key, value in closed_trade.items()
+            if value is None
+            or isinstance(value, (str, int, float, bool, np.integer, np.floating))
+            or isinstance(value, (pd.Timestamp, datetime))
+        }
+        scalar_context.update(
+            {
+                "run_id": config.get("run_id"),
+                "lifecycle_event": "exit_filled",
+                "strategy_id": closed_trade.get("strategy_id"),
+                "actual_entry_price": closed_trade.get("entry_price"),
+                "actual_exit_price": closed_trade.get("exit_price"),
+                "realized_exit_price": closed_trade.get("exit_price"),
+                "exit_reason": closed_trade.get("reason"),
+                "exchange_order_id": closed_trade.get("close_order_id"),
+            }
+        )
         trade_logger.log_trade_legacy(
             symbol=str(closed_trade.get("symbol") or ""),
             side=side,
@@ -3715,37 +3991,7 @@ def _log_closed_trade_event(
             price=_safe_float(closed_trade.get("entry_price"), np.nan),
             mode=str(config.get("mode", "live")),
             status="closed",
-            context={
-                "run_id": config.get("run_id"),
-                "lifecycle_event": "exit_filled",
-                "strategy_id": closed_trade.get("strategy_id"),
-                "entry_price": closed_trade.get("entry_price"),
-                "actual_entry_price": closed_trade.get("entry_price"),
-                "actual_exit_price": closed_trade.get("exit_price"),
-                "realized_exit_price": closed_trade.get("exit_price"),
-                "exit_reason": closed_trade.get("reason"),
-                "exit_reason_detail": closed_trade.get("exit_reason_detail"),
-                "stop_price": closed_trade.get("stop_price"),
-                "stop_order_id": closed_trade.get("stop_order_id"),
-                "exchange_order_id": closed_trade.get("close_order_id"),
-                "gross_pnl_pct": closed_trade.get("gross_pnl_pct"),
-                "net_pnl_pct": closed_trade.get("net_pnl_pct"),
-                "gross_pnl_amount": closed_trade.get("gross_pnl_amount"),
-                "net_pnl_amount": closed_trade.get("net_pnl_amount"),
-                "net_pnl": closed_trade.get("net_pnl"),
-                "fees_amount": closed_trade.get("fees_amount"),
-                "mfe": closed_trade.get("mfe"),
-                "mae": closed_trade.get("mae"),
-                "trade_recap": closed_trade.get("trade_recap"),
-                "meta_pred": closed_trade.get("meta_pred"),
-                "base_pred": closed_trade.get("base_pred"),
-                "calibrated_score": closed_trade.get("calibrated_score"),
-                "rank_percentile": closed_trade.get("rank_percentile"),
-                "effective_threshold": closed_trade.get("effective_threshold"),
-                "deployment_rank_threshold": closed_trade.get(
-                    "deployment_rank_threshold"
-                ),
-            },
+            context=scalar_context,
         )
     except Exception as exc:
         tprint(
@@ -3762,6 +4008,7 @@ def _monitor_active_position_price_action(
     config: Optional[Dict[str, Any]] = None,
     portfolio_mgr: Optional[PortfolioManager] = None,
     trade_logger: Optional[TradeLogger] = None,
+    sheets_exporter: Optional[GoogleSheetsTradeExporter] = None,
 ) -> Dict[str, Dict[str, Any]]:
     """Monitor active positions and apply closed-15m trailing/stop updates."""
     statuses: Dict[str, Dict[str, Any]] = {}
@@ -3809,6 +4056,13 @@ def _monitor_active_position_price_action(
                         closed_trade=closed_trade,
                         config=cfg,
                     )
+                    if trade_logger is not None:
+                        _maybe_export_google_sheets(
+                            sheets_exporter=sheets_exporter,
+                            trade_logger=trade_logger,
+                            executor=executor,
+                            force=True,
+                        )
         except Exception as exc:
             tprint(
                 f"  Error monitoring order statuses: {classify_api_error(exc)}: {exc}"
@@ -3950,6 +4204,13 @@ def _monitor_active_position_price_action(
                         closed_trade=closed_trade,
                         config=dict(config or getattr(executor, "config", {}) or {}),
                     )
+                    if trade_logger is not None:
+                        _maybe_export_google_sheets(
+                            sheets_exporter=sheets_exporter,
+                            trade_logger=trade_logger,
+                            executor=executor,
+                            force=True,
+                        )
                 continue
             after_stop = float(after_position.get("stop_price", np.nan))
             status["price_action"] = {
@@ -4220,6 +4481,13 @@ def main():
         accepted_strategies,
         strict=True,
     )
+    config["model_artifact_run_id"] = str(config["run_id"])
+    config["policy_artifact_run_id"] = str(
+        config.get("policy_artifact_run_id") or config["run_id"]
+    )
+    config["feature_contract_hash"] = _meta_feature_contract_hash(
+        config["data_root"], config["run_id"]
+    )
     required_feature_keys = get_inference_required_feature_keys(
         effective_model_bundle,
         accepted_strategies,
@@ -4242,11 +4510,20 @@ def main():
     strategy_asset_exclusions = load_strategy_asset_exclusion_filter(
         config["data_root"], config["run_id"]
     )
-    validate_deployment_model_coverage(
-        effective_model_bundle,
-        accepted_strategies,
-        strict=True,
-    )
+    deployment_model_coverage_error: str | None = None
+    try:
+        validate_deployment_model_coverage(
+            effective_model_bundle,
+            accepted_strategies,
+            strict=True,
+        )
+    except Exception as exc:
+        deployment_model_coverage_error = str(exc)
+        tprint(
+            "CRITICAL: deployment model coverage failed; live inference will "
+            "start in monitor-only fail-closed mode until artifacts are fixed: "
+            f"{deployment_model_coverage_error}"
+        )
 
     # Initialize data fetcher with incremental updates
     data_fetcher = DataFetcher(exchange, config["data_root"])
@@ -4277,11 +4554,18 @@ def main():
             "Warning: tradable universe is empty after training-universe restriction"
         )
 
-    # Initialize on startup with historical data
-    tprint("Initializing with historical data...")
-    data_fetcher.initialize_with_historical_data(
-        download_symbols, lookback_hours=args.lookback_hours
-    )
+    # Initialize on startup with historical data only when model coverage is valid.
+    # In fail-closed mode we only reconcile/monitor existing exchange positions.
+    if deployment_model_coverage_error:
+        tprint(
+            "Skipping startup historical data initialization because deployment "
+            "model coverage failed; monitor-only mode does not need model panels."
+        )
+    else:
+        tprint("Initializing with historical data...")
+        data_fetcher.initialize_with_historical_data(
+            download_symbols, lookback_hours=args.lookback_hours
+        )
 
     # Initialize other components
     orchestrator = ModelOrchestrator(model_bundle, config)
@@ -4292,6 +4576,7 @@ def main():
         config=config,
     )
     logger = TradeLogger()
+    sheets_exporter = GoogleSheetsTradeExporter.from_config(config)
     reconciliation_report = executor.reconcile_cross_margin_account()
     _write_margin_reconciliation_report(config, reconciliation_report)
     unimported_external_positions: list[dict[str, Any]] = []
@@ -4354,6 +4639,8 @@ def main():
         f"max_per_strategy={max_concurrent_per_strategy} "
         f"max_per_side={max_concurrent_per_side} "
         f"max_wallet_allocation={portfolio_policy.max_total_wallet_allocation_pct:.2f} "
+        f"book_notional_multiplier={portfolio_policy.book_notional_multiplier:.2f} "
+        f"min_margin_level_after_entry={portfolio_policy.min_margin_level_after_entry:.2f} "
         f"max_position_pct={portfolio_policy.max_position_wallet_pct:.2f} "
         f"max_position_quote={portfolio_policy.max_position_quote_notional:.2f}"
     )
@@ -4363,11 +4650,23 @@ def main():
         max_same_side=max_concurrent_per_side,
         max_same_strategy=max_concurrent_per_strategy,
     )
+    _apply_margin_metrics_to_portfolio_manager(
+        reconciliation_report=reconciliation_report,
+        portfolio_mgr=portfolio_mgr,
+    )
     _sync_reconciled_positions_to_portfolio_manager(executor, portfolio_mgr)
     if unimported_external_positions:
         _apply_reconciliation_entry_gate(
             reconciliation_report=reconciliation_report,
             portfolio_mgr=portfolio_mgr,
+        )
+    if deployment_model_coverage_error:
+        portfolio_mgr.trip_hard_limit(
+            "deployment_model_coverage_failed: " + deployment_model_coverage_error
+        )
+        tprint(
+            "New entries blocked because deployment model coverage failed; "
+            "existing imported positions will continue to be monitored."
         )
 
     # Setup scheduling
@@ -4391,6 +4690,7 @@ def main():
                 calibration_data,
                 strategy_asset_exclusions,
                 portfolio_mgr,
+                sheets_exporter,
             ),
             daemon=True,
         )
@@ -4464,6 +4764,10 @@ def main():
                 try:
                     reconciliation_report = executor.reconcile_cross_margin_account()
                     _write_margin_reconciliation_report(config, reconciliation_report)
+                    _apply_margin_metrics_to_portfolio_manager(
+                        reconciliation_report=reconciliation_report,
+                        portfolio_mgr=portfolio_mgr,
+                    )
                     _sync_reconciled_positions_to_portfolio_manager(
                         executor,
                         portfolio_mgr,
@@ -4494,6 +4798,43 @@ def main():
                 )
 
             # Fetch full universe only for closed hourly candles.
+            if deployment_model_coverage_error:
+                tprint(
+                    "Monitor-only fail-closed mode active: skipping data refresh, "
+                    "feature generation, model scoring, and new entries because "
+                    f"deployment model coverage failed: {deployment_model_coverage_error}"
+                )
+                _monitor_active_position_price_action(
+                    executor,
+                    exchange=executor.exchange,
+                    now=current_time,
+                    config=config,
+                    portfolio_mgr=portfolio_mgr,
+                    trade_logger=logger,
+                    sheets_exporter=sheets_exporter,
+                )
+                _maybe_send_daily_deployment_report(
+                    daily_reporter=daily_reporter,
+                    exchange=exchange,
+                    portfolio_mgr=portfolio_mgr,
+                    trade_logger=logger,
+                    config=config,
+                )
+                _maybe_export_google_sheets(
+                    sheets_exporter=sheets_exporter,
+                    trade_logger=logger,
+                    executor=executor,
+                    force=bool(args.run_once),
+                )
+                if args.run_once:
+                    executor.shutdown()
+                    break
+                _sleep_until_next_candle_close(
+                    timeframe_minutes=15,
+                    delay_seconds=fifteen_delay,
+                )
+                continue
+
             if (
                 (last_hourly_sync is None) or (latest_closed_hour > last_hourly_sync)
             ) and entry_context_fresh:
@@ -4539,6 +4880,7 @@ def main():
                     config=config,
                     portfolio_mgr=portfolio_mgr,
                     trade_logger=logger,
+                    sheets_exporter=sheets_exporter,
                 )
                 _maybe_send_daily_deployment_report(
                     daily_reporter=daily_reporter,
@@ -4546,6 +4888,12 @@ def main():
                     portfolio_mgr=portfolio_mgr,
                     trade_logger=logger,
                     config=config,
+                )
+                _maybe_export_google_sheets(
+                    sheets_exporter=sheets_exporter,
+                    trade_logger=logger,
+                    executor=executor,
+                    force=bool(args.run_once),
                 )
                 if args.run_once:
                     executor.shutdown()
@@ -4589,6 +4937,7 @@ def main():
                     config=config,
                     portfolio_mgr=portfolio_mgr,
                     trade_logger=logger,
+                    sheets_exporter=sheets_exporter,
                 )
                 _maybe_send_daily_deployment_report(
                     daily_reporter=daily_reporter,
@@ -4596,6 +4945,12 @@ def main():
                     portfolio_mgr=portfolio_mgr,
                     trade_logger=logger,
                     config=config,
+                )
+                _maybe_export_google_sheets(
+                    sheets_exporter=sheets_exporter,
+                    trade_logger=logger,
+                    executor=executor,
+                    force=bool(args.run_once),
                 )
                 if args.run_once:
                     executor.shutdown()
@@ -4672,6 +5027,12 @@ def main():
                 trade_logger=logger,
                 config=config,
             )
+            _maybe_export_google_sheets(
+                sheets_exporter=sheets_exporter,
+                trade_logger=logger,
+                executor=executor,
+                force=bool(args.run_once),
+            )
 
             if args.run_once:
                 executor.shutdown()
@@ -4711,6 +5072,7 @@ def run_challenger_monitor(
     calibration_data=None,
     strategy_asset_exclusions=None,
     portfolio_mgr: Optional[PortfolioManager] = None,
+    sheets_exporter: Optional[GoogleSheetsTradeExporter] = None,
 ):
     """
     calibration_data = calibration_data or {}
@@ -4742,6 +5104,7 @@ def run_challenger_monitor(
                 config=config,
                 portfolio_mgr=portfolio_mgr,
                 trade_logger=logger,
+                sheets_exporter=sheets_exporter,
             )
 
             time.sleep(interval)
@@ -4845,6 +5208,9 @@ def _evaluate_oco_policy(
                 if side == "long"
                 else (entry_price - bar_close) / max(abs(entry_price), 1e-12)
             )
+            position_state["current_price"] = bar_close
+            position_state["last_price"] = bar_close
+            position_state["current_price_ts"] = pd.Timestamp(bar_ts)
             position_state.setdefault("trade_recap_events", []).append(
                 {
                     "ts": pd.Timestamp(bar_ts).isoformat(),
@@ -4966,6 +5332,8 @@ def _evaluate_oco_policy(
             bars_in_trade=int(position_state.get("bars_in_trade", 0) or 0)
             + int(len(bars)),
             last_5m_eval_ts=last_bar_ts,
+            current_price=float(bars.iloc[-1]["close"]),
+            current_price_ts=last_bar_ts,
         )
     except Exception as e:
         tprint(f"  [STOP_LOSS] Error evaluating stop policy for {symbol}: {e}")

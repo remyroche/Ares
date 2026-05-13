@@ -2601,11 +2601,32 @@ def build_barriers(
         sl = sl * (1.0 - 0.15 * float(cfg.get("trail_sl_mult", 0.0)))
         sl = sl.clip(lower=sl_lo_eff, upper=float(cfg.get("sl_abs_hi_pct", 0.08)))
 
+    perp_liq_cap_mean = np.nan
+    if bool(cfg.get("use_perps", False)):
+        leverage = max(float(cfg.get("perp_liquidation_reference_leverage", 3.0)), 1.0)
+        maint_margin = max(float(cfg.get("perp_maintenance_margin_pct", 0.005)), 0.0)
+        fee_buffer = max(float(cfg.get("perp_liquidation_fee_buffer_pct", 0.003)), 0.0)
+        mark_dislocation = pd.DataFrame(0.0, index=sl.index, columns=sl.columns)
+        mark = artifacts.panel.get("mark_price")
+        if not isinstance(mark, pd.DataFrame):
+            mark = artifacts.panel.get("mark_close")
+        close = artifacts.panel.get("close")
+        if isinstance(mark, pd.DataFrame) and isinstance(close, pd.DataFrame):
+            mark_a = mark.reindex(index=sl.index, columns=sl.columns)
+            close_a = close.reindex(index=sl.index, columns=sl.columns)
+            mark_dislocation = ((mark_a / (close_a + EPS)) - 1.0).abs().fillna(0.0)
+        liq_wall_pct = max(0.0, (1.0 / leverage) - maint_margin - fee_buffer)
+        liq_wall = (liq_wall_pct - mark_dislocation).clip(lower=sl_lo_eff)
+        max_sl = (liq_wall / 3.0).clip(lower=sl_lo_eff)
+        sl = np.minimum(sl, max_sl).astype(np.float32)
+        perp_liq_cap_mean = float(np.nanmean(max_sl.values))
+
     out_stats = {
         "tp_mean": float(np.nanmean(tp.values)),
         "sl_mean": float(np.nanmean(sl.values)),
         "tp_floor_eff": float(tp_lo_eff),
         "sl_floor_eff": float(sl_lo_eff),
+        "perp_liquidation_sl_cap_mean": perp_liq_cap_mean,
         "bound_saturation": float(
             (
                 (tp.values <= float(tp_lo_eff + 1e-9))

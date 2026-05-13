@@ -71,6 +71,37 @@ PERP_FEATURE_KEYS = list(
         + SPOT_FOR_PERPS_META_FEATURE_KEYS
     )
 )
+PERP_TRADEABILITY_FEATURE_KEYS = [
+    "asset_funding_rate_mean_3d",
+    "asset_funding_rate_mean_7d",
+    "asset_funding_rate_mean_15d",
+    "asset_funding_rate_abs_mean_7d",
+    "asset_funding_z",
+    "asset_funding_trend_alignment",
+    "funding_rate_cross_asset_dispersion",
+    "asset_spread_proxy_p90_24h",
+    "asset_spread_proxy_p90_96h",
+    "asset_spread_proxy_p90_7d",
+    "asset_spread_proxy_p90_15d",
+    "asset_volume_depth_risk_p90_24h",
+    "asset_volume_depth_risk_p90_96h",
+    "asset_volume_depth_risk_p90_7d",
+    "asset_volume_depth_risk_p90_15d",
+    "asset_orderbook_imbalance_abs_mean_24h",
+    "asset_orderbook_imbalance_abs_mean_96h",
+    "asset_orderbook_imbalance_abs_mean_7d",
+    "asset_orderbook_imbalance_abs_mean_15d",
+    "asset_liquidity_stress_score_7d",
+    "global_liquidity_stress_score_7d",
+]
+LGBM_PERP_FEATURE_KEYS = list(
+    dict.fromkeys(
+        PERP_PRICE_RELATION_FEATURE_KEYS
+        + SPOT_FOR_PERPS_BASE_FEATURE_KEYS
+        + SPOT_FOR_PERPS_META_FEATURE_KEYS
+        + PERP_TRADEABILITY_FEATURE_KEYS
+    )
+)
 PERP_META_PRIMARY_FEATURE_KEYS = [
     "funding_abs_z",
     "funding_persistence",
@@ -635,6 +666,13 @@ CONTINUOUS_REGIME_FEATURES = {
     "xasset_mkt_ob_stress": {"family": "cross_asset_orderbook", "type": "continuous"},
 }
 
+CONTINUOUS_REGIME_FEATURES.update(
+    {
+        name: {"family": "perp_tradeability", "type": "continuous"}
+        for name in LGBM_PERP_FEATURE_KEYS
+    }
+)
+
 RIDGE_FEATURE_COLS = list(CONTINUOUS_REGIME_FEATURES.keys())
 
 CONTINUOUS_TRIGGER_COLS = [
@@ -932,6 +970,7 @@ TEST_FEATURE_KEYS = [
     "volatility_ratio_short_long",
     "volume_percentile",
 ]
+TEST_FEATURE_KEYS = list(dict.fromkeys(TEST_FEATURE_KEYS + LGBM_PERP_FEATURE_KEYS))
 
 CFG = {
     # persistence / fetch
@@ -3184,6 +3223,8 @@ CFG["PERP_META_PRIMARY_FEATURE_KEYS"] = PERP_META_PRIMARY_FEATURE_KEYS
 CFG["PERP_PRICE_RELATION_FEATURE_KEYS"] = PERP_PRICE_RELATION_FEATURE_KEYS
 CFG["SPOT_FOR_PERPS_BASE_FEATURE_KEYS"] = SPOT_FOR_PERPS_BASE_FEATURE_KEYS
 CFG["SPOT_FOR_PERPS_META_FEATURE_KEYS"] = SPOT_FOR_PERPS_META_FEATURE_KEYS
+CFG["PERP_TRADEABILITY_FEATURE_KEYS"] = PERP_TRADEABILITY_FEATURE_KEYS
+CFG["LGBM_PERP_FEATURE_KEYS"] = LGBM_PERP_FEATURE_KEYS
 CFG["CROSS_ASSET_BASE_FEATURE_KEYS"] = [
     "xasset_btc_ob_pressure",
     "xasset_eth_ob_pressure",

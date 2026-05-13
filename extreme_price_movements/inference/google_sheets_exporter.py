@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import json
 import os
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
 import numpy as np
 import pandas as pd
+import requests
 
 from extreme_price_movements.inference.trade_logger import TradeLogger
 from extreme_price_movements.utils import tprint
@@ -19,6 +18,65 @@ from extreme_price_movements.utils import tprint
 OPEN_TRADES_SHEET = "Open Trades"
 CLOSED_TRADES_SHEET = "Closed Trades"
 STRATEGY_METRICS_SHEET = "Strategy Metrics"
+SHEETS_WEBHOOK_URL_ENV = "SHEETS_WEBHOOK_URL"
+SHEETS_WEBHOOK_SECRET_ENV = "SHEETS_WEBHOOK_SECRET"
+SHEETS_WEBHOOK_TIMEOUT_SECONDS = 10
+
+
+def export_task_to_sheet(sheet_id: str, task: str, status: str, job_id: str) -> bool:
+    """Append a task status row to Google Sheets through an Apps Script webhook."""
+    print(
+        f"[DEBUG] Exporting task. Sheet ID: {sheet_id}, Task: {task}, "
+        f"Status: {status}, Job ID: {job_id}"
+    )
+
+    webhook_url = os.getenv(SHEETS_WEBHOOK_URL_ENV)
+    webhook_secret = os.getenv(SHEETS_WEBHOOK_SECRET_ENV)
+
+    if not webhook_url:
+        print(f"[SheetsExporter] ❌ Missing env var: {SHEETS_WEBHOOK_URL_ENV}")
+        return False
+
+    if not webhook_secret:
+        print(f"[SheetsExporter] ❌ Missing env var: {SHEETS_WEBHOOK_SECRET_ENV}")
+        return False
+
+    payload = {
+        "secret": webhook_secret,
+        "sheet_id": sheet_id,
+        "job_id": job_id,
+        "task": task,
+        "status": status,
+    }
+
+    try:
+        response = requests.post(
+            webhook_url,
+            json=payload,
+            timeout=SHEETS_WEBHOOK_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        print(f"[SheetsExporter] ❌ Failed to call Apps Script webhook: {exc}")
+        return False
+
+    try:
+        result = response.json()
+    except ValueError:
+        print(
+            "[SheetsExporter] ❌ Apps Script returned non-JSON response: "
+            f"{response.text[:500]}"
+        )
+        return False
+
+    if result.get("ok") is True:
+        print(f"[SheetsExporter] ✅ Exported task: {task}")
+        return True
+
+    print(f"[SheetsExporter] ❌ Apps Script rejected export: {result}")
+    return False
+
+
 
 OPEN_TRADE_COLUMNS = [
     "symbol",
@@ -50,6 +108,7 @@ OPEN_TRADE_COLUMNS = [
 CLOSED_TRADE_COLUMNS = [
     "exit_time",
     "entry_time",
+    "holding_time_hours",
     "symbol",
     "side",
     "strategy_id",
@@ -121,6 +180,14 @@ def _first_present(row: pd.Series, names: Iterable[str], default: Any = "") -> A
 def _parse_time(value: Any) -> pd.Timestamp:
     ts = pd.to_datetime(value, utc=True, errors="coerce")
     return pd.Timestamp(ts) if pd.notna(ts) else pd.NaT
+
+
+def _elapsed_hours(start: Any, end: Any) -> float:
+    start_ts = _parse_time(start)
+    end_ts = _parse_time(end)
+    if pd.isna(start_ts) or pd.isna(end_ts):
+        return np.nan
+    return float((end_ts - start_ts).total_seconds() / 3600.0)
 
 
 def _stringify_frame(df: pd.DataFrame) -> list[list[Any]]:
@@ -304,14 +371,24 @@ def build_closed_trades_table(trade_logs: pd.DataFrame) -> pd.DataFrame:
     exits = trade_logs[_is_exit_row(trade_logs)].copy()
     if exits.empty:
         return pd.DataFrame(columns=CLOSED_TRADE_COLUMNS)
-    exits["_exit_ts"] = pd.to_datetime(exits.get("timestamp"), utc=True, errors="coerce")
+    exits["_exit_ts"] = pd.to_datetime(
+        exits.get("timestamp"), utc=True, errors="coerce"
+    )
     exits = exits.sort_values("_exit_ts", ascending=False)
     rows = []
     for _, row in exits.iterrows():
+        exit_time = row.get("exit_time") or row.get("timestamp")
+        entry_time = row.get("entry_time")
+        holding_time_hours = _safe_float(row.get("holding_time_hours"))
+        if not np.isfinite(holding_time_hours):
+            holding_time_hours = _safe_float(row.get("time_in_trade_hours"))
+        if not np.isfinite(holding_time_hours):
+            holding_time_hours = _elapsed_hours(entry_time, exit_time)
         rows.append(
             {
-                "exit_time": row.get("timestamp"),
-                "entry_time": row.get("entry_time"),
+                "exit_time": exit_time,
+                "entry_time": entry_time,
+                "holding_time_hours": holding_time_hours,
                 "symbol": row.get("symbol"),
                 "side": row.get("side"),
                 "strategy_id": row.get("strategy_id"),
@@ -456,17 +533,16 @@ def build_google_sheets_trade_tables(
 
 @dataclass
 class GoogleSheetsTradeExporter:
-    """Push trade reporting tables to a Google spreadsheet when configured."""
+    """Push trade reporting tables to a Google spreadsheet through Apps Script."""
 
     spreadsheet_id: str
-    credentials_path: Optional[str] = None
-    service_account_json: Optional[str] = None
     enabled: bool = True
     min_interval_seconds: float = 300.0
-    timeout_seconds: float = 30.0
+    timeout_seconds: float = 10.0
+    webhook_url_env: str = SHEETS_WEBHOOK_URL_ENV
+    webhook_secret_env: str = SHEETS_WEBHOOK_SECRET_ENV
     _last_export_monotonic: float = field(default=0.0, init=False)
     _warned_disabled: bool = field(default=False, init=False)
-    _session: Any = field(default=None, init=False, repr=False)
 
     @classmethod
     def from_config(cls, config: Dict[str, Any]) -> "GoogleSheetsTradeExporter | None":
@@ -496,16 +572,6 @@ class GoogleSheetsTradeExporter:
             return None
         return cls(
             spreadsheet_id=spreadsheet_id,
-            credentials_path=str(
-                config.get("google_application_credentials")
-                or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
-            )
-            or None,
-            service_account_json=str(
-                config.get("google_service_account_json")
-                or os.environ.get("EPM_GOOGLE_SERVICE_ACCOUNT_JSON", "")
-            )
-            or None,
             enabled=enabled,
             min_interval_seconds=float(
                 config.get(
@@ -516,7 +582,10 @@ class GoogleSheetsTradeExporter:
             timeout_seconds=float(
                 config.get(
                     "google_sheets_export_timeout_seconds",
-                    os.environ.get("EPM_GOOGLE_SHEETS_TIMEOUT_SECONDS", 30.0),
+                    os.environ.get(
+                        "EPM_GOOGLE_SHEETS_TIMEOUT_SECONDS",
+                        SHEETS_WEBHOOK_TIMEOUT_SECONDS,
+                    ),
                 )
             ),
         )
@@ -532,105 +601,54 @@ class GoogleSheetsTradeExporter:
         now = time.monotonic()
         return (now - self._last_export_monotonic) >= float(self.min_interval_seconds)
 
-    def _credentials(self):
-        from google.oauth2 import service_account
-
-        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-        if self.service_account_json:
-            info_text = self.service_account_json
-            if info_text.lstrip().startswith("{"):
-                info = json.loads(info_text)
-            elif Path(info_text).exists():
-                info = json.loads(Path(info_text).read_text())
-            else:
-                info = json.loads(info_text)
-            return service_account.Credentials.from_service_account_info(
-                info,
-                scopes=scopes,
-            )
-        if self.credentials_path:
-            return service_account.Credentials.from_service_account_file(
-                self.credentials_path,
-                scopes=scopes,
-            )
-        raise RuntimeError(
-            "Google Sheets export requires GOOGLE_APPLICATION_CREDENTIALS or "
-            "EPM_GOOGLE_SERVICE_ACCOUNT_JSON."
-        )
-
-    def _authorized_session(self):
-        if self._session is not None:
-            return self._session
-        from google.auth.transport.requests import AuthorizedSession
-
-        self._session = AuthorizedSession(self._credentials())
-        return self._session
-
-    def _api_base(self) -> str:
-        return f"https://sheets.googleapis.com/v4/spreadsheets/{self.spreadsheet_id}"
-
-    def _existing_sheets(self) -> set[str]:
-        session = self._authorized_session()
-        response = session.get(
-            self._api_base(),
-            params={"fields": "sheets.properties.title"},
-            timeout=self.timeout_seconds,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        return {
-            str(sheet.get("properties", {}).get("title", ""))
-            for sheet in payload.get("sheets", [])
-        }
-
-    def _ensure_sheets(self, sheet_names: Iterable[str]) -> None:
-        existing = self._existing_sheets()
-        missing = [name for name in sheet_names if name not in existing]
-        if not missing:
-            return
-        requests = [{"addSheet": {"properties": {"title": name}}} for name in missing]
-        session = self._authorized_session()
-        response = session.post(
-            self._api_base() + ":batchUpdate",
-            json={"requests": requests},
-            timeout=self.timeout_seconds,
-        )
-        response.raise_for_status()
-
-    def _update_sheet(self, sheet_name: str, df: pd.DataFrame) -> None:
-        session = self._authorized_session()
-        escaped = sheet_name.replace("'", "''")
-        range_name = f"'{escaped}'!A1"
-        clear = session.post(
-            self._api_base() + f"/values/{range_name}:clear",
-            timeout=self.timeout_seconds,
-        )
-        clear.raise_for_status()
-        values = _stringify_frame(df)
-        update = session.put(
-            self._api_base() + f"/values/{range_name}",
-            params={"valueInputOption": "RAW"},
-            json={"range": range_name, "majorDimension": "ROWS", "values": values},
-            timeout=self.timeout_seconds,
-        )
-        update.raise_for_status()
-
     def export_tables(self, tables: Dict[str, pd.DataFrame], *, force: bool = False) -> bool:
         if not self.should_export(force=force):
             return False
+
+        webhook_url = os.getenv(self.webhook_url_env)
+        webhook_secret = os.getenv(self.webhook_secret_env)
+        if not webhook_url:
+            tprint(f"Google Sheets export missing env var: {self.webhook_url_env}")
+            return False
+        if not webhook_secret:
+            tprint(f"Google Sheets export missing env var: {self.webhook_secret_env}")
+            return False
+
+        payload = {
+            "secret": webhook_secret,
+            "sheet_id": self.spreadsheet_id,
+            "tables": {name: _stringify_frame(df) for name, df in tables.items()},
+        }
         try:
-            self._ensure_sheets(tables.keys())
-            for sheet_name, df in tables.items():
-                self._update_sheet(sheet_name, df)
+            response = requests.post(
+                webhook_url,
+                json=payload,
+                timeout=float(self.timeout_seconds),
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            tprint(f"Google Sheets trade export webhook failed: {exc}")
+            return False
+
+        try:
+            result = response.json()
+        except ValueError:
+            tprint(
+                "Google Sheets trade export webhook returned non-JSON response: "
+                f"{response.text[:500]}"
+            )
+            return False
+
+        if result.get("ok") is True:
             self._last_export_monotonic = time.monotonic()
             tprint(
                 "Google Sheets trade export complete: "
                 + ", ".join(f"{name}={len(df)}" for name, df in tables.items())
             )
             return True
-        except Exception as exc:
-            tprint(f"Google Sheets trade export failed: {type(exc).__name__}: {exc}")
-            return False
+
+        tprint(f"Google Sheets trade export rejected by webhook: {result}")
+        return False
 
     def export_trade_logger(
         self,

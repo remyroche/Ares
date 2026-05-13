@@ -20,6 +20,9 @@ def test_trade_logger_includes_required_parity_fields(tmp_path):
         "stop_price_updated": 99.0,
         "orderbook_snapshot": "top5",
         "net_pnl": 0.01,
+        "entry_time": "2026-05-12T09:00:00Z",
+        "exit_time": "2026-05-12T10:30:00Z",
+        "holding_time_hours": 1.5,
     }
     model_results = {"meta_pred": 0.8, "position_size": 0.5, "alpha_preds": {}}
     market_data = {"close": 100.0, "volume": 1234.0}
@@ -39,6 +42,9 @@ def test_trade_logger_includes_required_parity_fields(tmp_path):
         "stop_price_updated",
         "orderbook_snapshot",
         "net_pnl",
+        "entry_time",
+        "exit_time",
+        "holding_time_hours",
     }
     assert required.issubset(df.columns)
     assert df.loc[0, "strategy_id"] == "long_mr"
@@ -48,9 +54,20 @@ def test_trade_logger_includes_required_parity_fields(tmp_path):
     db_path = path.with_suffix(".sqlite")
     with sqlite3.connect(db_path) as conn:
         rows = conn.execute(
-            "SELECT strategy_id, orderbook_snapshot, net_pnl, lifecycle_event FROM trades"
+            "SELECT strategy_id, orderbook_snapshot, net_pnl, lifecycle_event, "
+            "entry_time, exit_time, holding_time_hours FROM trades"
         ).fetchall()
-    assert rows == [("long_mr", "top5", "0.01", "entry_recorded")]
+    assert rows == [
+        (
+            "long_mr",
+            "top5",
+            "0.01",
+            "entry_recorded",
+            "2026-05-12T09:00:00Z",
+            "2026-05-12T10:30:00Z",
+            "1.5",
+        )
+    ]
 
 
 def test_trade_logger_reads_sqlite_and_repairs_csv_schema(tmp_path):
@@ -77,3 +94,34 @@ def test_trade_logger_reads_sqlite_and_repairs_csv_schema(tmp_path):
     assert df.loc[0, "meta_pred"] == "0.8"
     assert df.loc[0, "trade_id"]
     assert pd.notna(pd.to_datetime(df.loc[0, "timestamp"], errors="coerce"))
+
+
+def test_trade_logger_persists_holding_time_to_csv_and_sqlite(tmp_path):
+    path = tmp_path / "trades.csv"
+    logger = TradeLogger(output_path=str(path), run_id="r1")
+
+    logger.log_trade_legacy(
+        symbol="ETH/USDT",
+        side="short",
+        action="exit",
+        size=2.0,
+        price=2000.0,
+        status="closed",
+        context={
+            "lifecycle_event": "exit_filled",
+            "entry_time": "2026-05-12T09:00:00Z",
+            "exit_time": "2026-05-12T11:30:00Z",
+            "holding_time_hours": 2.5,
+            "net_pnl_amount": 10.0,
+        },
+    )
+
+    df = pd.read_csv(path)
+    assert "holding_time_hours" in df.columns
+    assert float(df.loc[0, "holding_time_hours"]) == 2.5
+
+    with sqlite3.connect(path.with_suffix(".sqlite")) as conn:
+        rows = conn.execute(
+            'SELECT holding_time_hours FROM trades WHERE symbol = "ETH/USDT"'
+        ).fetchall()
+    assert rows == [("2.5",)]

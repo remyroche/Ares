@@ -1089,6 +1089,21 @@ def _closed_trade_metrics(
         if str(reason) == "stop_loss_filled" and stop_origin
         else reason
     )
+    entry_time = state.get("entry_time")
+    exit_time = pd.Timestamp.now(tz="UTC")
+    holding_time_hours = np.nan
+    try:
+        if entry_time is not None:
+            entry_ts = pd.Timestamp(entry_time)
+            if entry_ts.tzinfo is None:
+                entry_ts = entry_ts.tz_localize("UTC")
+            else:
+                entry_ts = entry_ts.tz_convert("UTC")
+            holding_time_hours = float(
+                (exit_time - entry_ts).total_seconds() / 3600.0
+            )
+    except Exception:
+        holding_time_hours = np.nan
     return {
         "symbol": symbol,
         "side": side,
@@ -1096,8 +1111,9 @@ def _closed_trade_metrics(
         "reason": reason_out,
         "exit_reason_detail": reason_detail,
         "stop_origin": stop_origin,
-        "entry_time": state.get("entry_time"),
-        "exit_time": pd.Timestamp.now(tz="UTC"),
+        "entry_time": entry_time,
+        "exit_time": exit_time,
+        "holding_time_hours": holding_time_hours,
         "entry_price": entry_price,
         "exit_price": exit_price,
         "entry_order_type": state.get("entry_order_type"),

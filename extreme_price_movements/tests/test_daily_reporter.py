@@ -6,6 +6,8 @@ import pandas as pd
 from extreme_price_movements.inference.daily_reporter import (
     DailyDeploymentReporter,
     _confidence_calibration_recap,
+    _format_trade_report,
+    _strategy_trade_recap,
 )
 from extreme_price_movements.inference.trade_logger import TradeLogger
 from extreme_price_movements.portfolio_manager import PortfolioManager
@@ -103,21 +105,19 @@ def test_daily_reporter_sends_balance_report_and_transfers_profit(
     )
 
     assert result["sent"] is True
-    assert result["amount_to_save"] == 5.0
-    assert exchange.transfers == [
-        {"type": "MARGIN_MAIN", "asset": "USDT", "amount": "5.00000000"}
-    ]
+    assert result["amount_to_save"] == 0.0
+    assert exchange.transfers == []
     assert _FakeSMTP.logins == [("sender@example.com", "app-password")]
     assert len(_FakeSMTP.sent_messages) == 1
     body = _FakeSMTP.sent_messages[0].get_content()
     assert "total_balance_usdt: 1100.00000000" in body
-    assert "previous_best_balance_usdt: 1000.00000000" in body
-    assert "amount_saved_to_spot_usdt: 5.00000000" in body
+    assert "previous_best_available_balance_usdt: 1000.00000000" in body
+    assert "amount_saved_to_spot_usdt: 0.00000000" in body
     assert "BTC/USDT" in body
 
     state = json.loads(Path(state_path).read_text())
     assert state["previous_best_balance_usdt"] == 1100.0
-    assert state["last_amount_saved_to_spot_usdt"] == 5.0
+    assert state["last_amount_saved_to_spot_usdt"] == 0.0
 
 
 def test_daily_reporter_respects_interval(tmp_path, monkeypatch):
@@ -252,6 +252,7 @@ def test_daily_report_body_includes_confidence_calibration_recap():
     body = reporter._build_body(
         now=pd.Timestamp("2026-01-02T00:01:00Z"),
         total_balance=1000.0,
+        available_balance=1000.0,
         previous_best_balance=950.0,
         amount_to_save=2.5,
         transfer_result={"success": True, "skipped": True},
@@ -270,3 +271,47 @@ def test_daily_report_body_includes_confidence_calibration_recap():
         "Confidence Calibration Recap"
     )
     assert body.index("Confidence Calibration Recap") < body.index("Net Strategy Recap")
+
+
+def test_daily_reporter_includes_holding_time_in_trade_report_and_recap():
+    trades = pd.DataFrame(
+        {
+            "timestamp": ["2026-05-12T11:30:00Z"],
+            "entry_time": ["2026-05-12T09:00:00Z"],
+            "exit_time": ["2026-05-12T11:30:00Z"],
+            "holding_time_hours": [2.5],
+            "symbol": ["ETH/USDT"],
+            "side": ["short"],
+            "strategy_id": ["short_mr"],
+            "status": ["closed"],
+            "net_pnl_amount": [10.0],
+            "entry_notional_quote": [100.0],
+        }
+    )
+
+    report = _format_trade_report(trades)
+    recap = _strategy_trade_recap(trades, total_balance=1000.0)
+
+    assert "holding_time_hours" in report
+    assert "2.5" in report
+    assert "avg_hold_hours=2.5000" in recap
+    assert "short_mr | 1 | 1 | 0 | 2.5000" in recap
+
+
+def test_daily_reporter_computes_holding_time_from_entry_and_exit_times():
+    trades = pd.DataFrame(
+        {
+            "timestamp": ["2026-05-12T11:30:00Z"],
+            "entry_time": ["2026-05-12T09:00:00Z"],
+            "exit_time": ["2026-05-12T11:30:00Z"],
+            "symbol": ["ETH/USDT"],
+            "strategy_id": ["short_mr"],
+            "status": ["closed"],
+            "net_pnl_amount": [10.0],
+            "entry_notional_quote": [100.0],
+        }
+    )
+
+    recap = _strategy_trade_recap(trades, total_balance=1000.0)
+
+    assert "avg_hold_hours=2.5000" in recap

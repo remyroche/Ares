@@ -1,4 +1,5 @@
 import os
+import time
 
 import numpy as np
 import pandas as pd
@@ -443,72 +444,131 @@ def _score_leaf_pairs_effect_support(
     dominant_support_max: float,
     min_effect_z: float,
     max_pairs: Optional[int],
+    max_pairs_per_tree: Optional[int] = None,
 ) -> Tuple[List[Tuple[str, float, float, float]], Dict[str, set]]:
+    start_time = time.perf_counter()
     pair_scores: List[Tuple[str, float, float, float]] = []
     keep_pairs_by_tree: Dict[str, set] = {}
+    n_rows = int(len(leaves_oos)) if leaves_oos is not None else 0
+    n_raw_cols = int(len(raw_cols)) if raw_cols is not None else 0
 
-    y_vals = pd.to_numeric(y_all, errors="coerce")
-    y_mu = float(y_vals.mean()) if y_vals.notna().any() else 0.0
-    y_sd = float(y_vals.std()) if y_vals.notna().any() else 0.0
+    try:
+        y_vals = pd.to_numeric(y_all, errors="coerce")
+        y_np = y_vals.to_numpy(dtype=np.float64, copy=False)
+    except Exception:
+        y_np = np.asarray(y_all, dtype=np.float64)
+
+    y_notna = ~np.isnan(y_np)
+    if bool(y_notna.any()):
+        y_mu = float(np.nanmean(y_np))
+        y_sd = float(np.nanstd(y_np, ddof=1))
+    else:
+        y_mu = 0.0
+        y_sd = 0.0
     y_sd = float(y_sd) if np.isfinite(y_sd) and y_sd > 1e-12 else 1.0
 
-    for raw_col in list(raw_cols):
-        try:
-            s = pd.to_numeric(leaves_oos[raw_col], errors="coerce")
-        except Exception:
-            continue
+    min_support_f = float(min_support)
+    max_support_f = float(max_support)
+    dominant_support_max_f = float(dominant_support_max)
+    min_effect_z_f = float(min_effect_z)
+    try:
+        max_pairs_per_tree_i = (
+            int(max_pairs_per_tree) if max_pairs_per_tree is not None else None
+        )
+    except Exception:
+        max_pairs_per_tree_i = None
 
-        try:
-            df_col = pd.DataFrame({'leaf': s, 'y': y_vals}).dropna()
-            if df_col.empty:
+    try:
+        for raw_col in list(raw_cols):
+            try:
+                leaf_vals = pd.to_numeric(
+                    leaves_oos[raw_col], errors="coerce"
+                ).to_numpy(dtype=np.float64, copy=False)
+            except Exception:
                 continue
 
-            n = len(df_col)
-            grouped = df_col.groupby('leaf')['y']
-
-            counts = grouped.count()
-            means = grouped.mean()
-
-            supports = counts / float(n)
-
-            for leaf_val, count in counts.items():
-                support = supports[leaf_val]
-
-                if support < float(min_support) or support > float(max_support):
-                    continue
-                if support > float(dominant_support_max):
-                    continue
-                if count < 5:
+            try:
+                valid_mask = (~np.isnan(leaf_vals)) & y_notna
+                if not bool(valid_mask.any()):
                     continue
 
-                leaf_mean = means[leaf_val]
-                effect_z = abs(leaf_mean - y_mu) / (y_sd + 1e-12)
-
-                if not np.isfinite(effect_z) or effect_z < float(min_effect_z):
+                leaf_valid = leaf_vals[valid_mask]
+                y_valid = y_np[valid_mask]
+                n = int(y_valid.size)
+                if n == 0:
                     continue
 
-                score = effect_z * np.sqrt(max(1e-12, support))
-                if not np.isfinite(score):
+                leaf_values, inverse = np.unique(leaf_valid, return_inverse=True)
+                counts = np.bincount(inverse).astype(np.float64, copy=False)
+                sums = np.bincount(inverse, weights=y_valid)
+                means = sums / counts
+                supports = counts / float(n)
+
+                effect_z = np.abs(means - y_mu) / (y_sd + 1e-12)
+                scores = effect_z * np.sqrt(np.maximum(1e-12, supports))
+
+                keep_mask = (
+                    (supports >= min_support_f)
+                    & (supports <= max_support_f)
+                    & (supports <= dominant_support_max_f)
+                    & (counts >= 5.0)
+                    & np.isfinite(effect_z)
+                    & (effect_z >= min_effect_z_f)
+                    & np.isfinite(scores)
+                )
+                if not bool(keep_mask.any()):
                     continue
 
-                pair_scores.append((str(raw_col), float(leaf_val), float(score), float(support)))
+                kept_idx = np.flatnonzero(keep_mask)
+                if max_pairs_per_tree_i is not None and max_pairs_per_tree_i > 0:
+                    order = np.argsort(scores[kept_idx])[::-1]
+                    kept_idx = kept_idx[order[:max_pairs_per_tree_i]]
 
-        except Exception:
-            continue
+                raw_col_str = str(raw_col)
+                for idx in kept_idx:
+                    pair_scores.append(
+                        (
+                            raw_col_str,
+                            float(leaf_values[idx]),
+                            float(scores[idx]),
+                            float(supports[idx]),
+                        )
+                    )
 
-    pair_scores_sorted = sorted(pair_scores, key=lambda x: x[2], reverse=True)
-    if max_pairs is not None:
-        try:
-            max_pairs = int(max_pairs)
-        except Exception:
-            max_pairs = None
-    if max_pairs is not None and max_pairs > 0:
-        pair_scores_sorted = pair_scores_sorted[: int(max_pairs)]
+            except Exception:
+                continue
 
-    for raw_col, leaf_val, _, _ in pair_scores_sorted:
-        keep_pairs_by_tree.setdefault(raw_col, set()).add(float(leaf_val))
+        pair_scores_sorted = sorted(pair_scores, key=lambda x: x[2], reverse=True)
+        n_pairs_before_global_cap = len(pair_scores_sorted)
+        if max_pairs is not None:
+            try:
+                max_pairs = int(max_pairs)
+            except Exception:
+                max_pairs = None
+        if max_pairs is not None and max_pairs > 0:
+            pair_scores_sorted = pair_scores_sorted[: int(max_pairs)]
 
-    return pair_scores_sorted, keep_pairs_by_tree
+        for raw_col, leaf_val, _, _ in pair_scores_sorted:
+            keep_pairs_by_tree.setdefault(raw_col, set()).add(float(leaf_val))
+
+        return pair_scores_sorted, keep_pairs_by_tree
+    finally:
+        elapsed = time.perf_counter() - start_time
+        n_pairs_after_global_cap = (
+            len(pair_scores_sorted) if "pair_scores_sorted" in locals() else 0
+        )
+        n_pairs_before = (
+            n_pairs_before_global_cap
+            if "n_pairs_before_global_cap" in locals()
+            else len(pair_scores)
+        )
+        tprint_info(
+            "_score_leaf_pairs_effect_support: "
+            f"n_rows={n_rows} n_raw_cols={n_raw_cols} "
+            f"n_pairs_before_global_cap={n_pairs_before} "
+            f"n_pairs_after_global_cap={n_pairs_after_global_cap} "
+            f"elapsed={elapsed:.3f}s"
+        )
 
 
 def _compute_memory_autocorr(returns: pd.Series, window: int) -> pd.Series:
@@ -3637,6 +3697,13 @@ def extract_regime_leaf_onehot_features(
             max_pairs = int(max_pairs) if max_pairs is not None else None
         except Exception:
             max_pairs = None
+        try:
+            max_pairs_per_tree = leaf_sel_cfg.get("max_pairs_per_tree")
+            max_pairs_per_tree = (
+                int(max_pairs_per_tree) if max_pairs_per_tree is not None else None
+            )
+        except Exception:
+            max_pairs_per_tree = None
 
         keep_pairs_by_tree = {}
         pair_scores_sorted: List[Tuple[str, float, float, float]] = []
@@ -3651,6 +3718,7 @@ def extract_regime_leaf_onehot_features(
                     dominant_support_max=dominant_support_max,
                     min_effect_z=min_effect_z,
                     max_pairs=max_pairs,
+                    max_pairs_per_tree=max_pairs_per_tree,
                 )
             except Exception:
                 keep_pairs_by_tree = {}

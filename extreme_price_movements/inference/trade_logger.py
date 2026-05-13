@@ -216,6 +216,33 @@ TRADE_LOG_COLUMNS = [
 ]
 
 
+def _derive_holding_time_hours(record: Dict[str, Any]) -> str:
+    """Return canonical holding time hours from explicit or timestamp fields."""
+    for key in ("holding_time_hours", "time_in_trade_hours"):
+        value = record.get(key)
+        if value is None or value == "":
+            continue
+        try:
+            out = float(value)
+            if np.isfinite(out):
+                return str(out)
+        except (TypeError, ValueError):
+            continue
+
+    entry_time = record.get("entry_time")
+    exit_time = record.get("exit_time") or record.get("timestamp")
+    if not entry_time or not exit_time:
+        return ""
+    entry_ts = pd.to_datetime(entry_time, utc=True, errors="coerce")
+    exit_ts = pd.to_datetime(exit_time, utc=True, errors="coerce")
+    if pd.isna(entry_ts) or pd.isna(exit_ts):
+        return ""
+    hours = float(
+        (pd.Timestamp(exit_ts) - pd.Timestamp(entry_ts)).total_seconds() / 3600.0
+    )
+    return str(hours) if np.isfinite(hours) else ""
+
+
 def _classify_trade_log_error(error: Any) -> str:
     """Return a stable execution-error category for reporting."""
     text = str(error or "").lower()
@@ -491,6 +518,9 @@ class TradeLogger:
         enriched["lifecycle_event"] = self._default_lifecycle_event(enriched)
         enriched["position_id"] = self._derive_position_id(enriched)
         enriched["trade_id"] = self._derive_trade_id(enriched)
+        holding_time_hours = _derive_holding_time_hours(enriched)
+        if holding_time_hours:
+            enriched["holding_time_hours"] = holding_time_hours
         if enriched.get("error"):
             classified_error = _classify_trade_log_error(enriched.get("error"))
             if not enriched.get("order_error_category") or (

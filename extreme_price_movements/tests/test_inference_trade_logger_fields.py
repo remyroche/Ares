@@ -125,3 +125,32 @@ def test_trade_logger_persists_holding_time_to_csv_and_sqlite(tmp_path):
             'SELECT holding_time_hours FROM trades WHERE symbol = "ETH/USDT"'
         ).fetchall()
     assert rows == [("2.5",)]
+
+
+def test_trade_logger_derives_holding_time_from_entry_and_exit_times(tmp_path):
+    path = tmp_path / "trades.csv"
+    logger = TradeLogger(output_path=str(path), run_id="r1")
+
+    logger.log_trade_legacy(
+        symbol="ETH/USDT",
+        side="short",
+        action="exit",
+        size=2.0,
+        price=2000.0,
+        status="closed",
+        context={
+            "lifecycle_event": "exit_filled",
+            "entry_time": "2026-05-12T09:00:00Z",
+            "exit_time": "2026-05-12T11:30:00Z",
+            "net_pnl_amount": 10.0,
+        },
+    )
+
+    df = pd.read_csv(path)
+    assert float(df.loc[0, "holding_time_hours"]) == 2.5
+
+    with sqlite3.connect(path.with_suffix(".sqlite")) as conn:
+        rows = conn.execute(
+            'SELECT holding_time_hours FROM trades WHERE symbol = "ETH/USDT"'
+        ).fetchall()
+    assert rows == [("2.5",)]

@@ -137,6 +137,7 @@ SIMPLE_DISCOVERY_SIZE_POWER = 1.0
 SIMPLE_DISCOVERY_LOCAL_BAND_WIDTH = 0.02
 SIMPLE_DISCOVERY_CONFIRMATION_BANDS = 5
 SIMPLE_DISCOVERY_CONFIRMATION_MIN_POSITIVE = 4
+SIMPLE_DISCOVERY_GROSS_PNL_SLIPPAGE_BUFFER = 0.007
 ASSET_DECISION_KEEP = "keep"
 ASSET_DECISION_DOWN_WEIGHT = "down_weight"
 ASSET_DECISION_BLACKLIST = "blacklist"
@@ -846,27 +847,53 @@ def apply_deployment_concurrency_constraints(
     return work.loc[selected].copy()
 
 
+def _slippage_adjusted_mean_gross_positive(metrics: Dict[str, Any]) -> bool:
+    """Return whether avg gross PnL remains positive after the slippage buffer."""
+    return (
+        float(
+            metrics.get(
+                "mean_gross_trade_slippage_adjusted",
+                metrics.get("mean_net_trade", 0.0),
+            )
+            or 0.0
+        )
+        > 0.0
+        and int(metrics.get("n_trades", 0) or 0) > 0
+    )
+
+
 def score_deployment_threshold_rows(rows: pd.DataFrame) -> Dict[str, Any]:
+    empty_metrics = {
+        "net_pnl": 0.0,
+        "mean_net_trade": 0.0,
+        "mean_gross_trade": 0.0,
+        "mean_gross_trade_slippage_adjusted": -float(
+            SIMPLE_DISCOVERY_GROSS_PNL_SLIPPAGE_BUFFER
+        ),
+        "gross_slippage_buffer": float(SIMPLE_DISCOVERY_GROSS_PNL_SLIPPAGE_BUFFER),
+        "hit_rate": 0.0,
+        "n_trades": 0,
+        "max_drawdown": 0.0,
+        "sortino": 0.0,
+    }
     if rows.empty or "net_gain" not in rows.columns:
-        return {
-            "net_pnl": 0.0,
-            "mean_net_trade": 0.0,
-            "hit_rate": 0.0,
-            "n_trades": 0,
-            "max_drawdown": 0.0,
-            "sortino": 0.0,
-        }
+        return dict(empty_metrics)
 
     gains = pd.to_numeric(rows["net_gain"], errors="coerce").dropna()
     if gains.empty:
-        return {
-            "net_pnl": 0.0,
-            "mean_net_trade": 0.0,
-            "hit_rate": 0.0,
-            "n_trades": 0,
-            "max_drawdown": 0.0,
-            "sortino": 0.0,
-        }
+        return dict(empty_metrics)
+
+    if "gross_gain" in rows.columns:
+        gross_gains = pd.to_numeric(rows.loc[gains.index, "gross_gain"], errors="coerce")
+        gross_gains = gross_gains.replace([np.inf, -np.inf], np.nan).dropna()
+    else:
+        gross_gains = pd.Series(dtype=np.float64)
+    mean_gross_trade = (
+        float(gross_gains.mean()) if len(gross_gains) else float(gains.mean())
+    )
+    mean_gross_trade_slippage_adjusted = float(
+        mean_gross_trade - SIMPLE_DISCOVERY_GROSS_PNL_SLIPPAGE_BUFFER
+    )
 
     cum = gains.cumsum()
     dd = cum - cum.cummax()
@@ -879,6 +906,11 @@ def score_deployment_threshold_rows(rows: pd.DataFrame) -> Dict[str, Any]:
     return {
         "net_pnl": float(gains.sum()),
         "mean_net_trade": float(gains.mean()),
+        "mean_gross_trade": float(mean_gross_trade),
+        "mean_gross_trade_slippage_adjusted": float(
+            mean_gross_trade_slippage_adjusted
+        ),
+        "gross_slippage_buffer": float(SIMPLE_DISCOVERY_GROSS_PNL_SLIPPAGE_BUFFER),
         "hit_rate": float((gains > 0).mean()),
         "n_trades": int(len(gains)),
         "max_drawdown": float(dd.min()) if len(dd) else 0.0,
@@ -997,6 +1029,7 @@ def _simulate_simple_tp_sl_rows(
     net_gain = gross_gain - fees
     rows = df_sub.copy()
     rows["net_gain"] = net_gain.astype(np.float32, copy=False)
+    rows["gross_gain"] = gross_gain.astype(np.float32, copy=False)
     rows["exit_bars"] = exit_bars.astype(np.int16, copy=False)
     rows["simple_sl_mult"] = float(sl_mult)
     rows["simple_tp_mult"] = float(tp_mult)
@@ -1112,6 +1145,10 @@ def discover_deployment_rank_threshold_simple_grid(
                         "band_lo": band_lo,
                         "band_hi": min(1.0, band_hi),
                         "mean_net_trade": 0.0,
+                        "mean_gross_trade": 0.0,
+                        "mean_gross_trade_slippage_adjusted": -float(
+                            SIMPLE_DISCOVERY_GROSS_PNL_SLIPPAGE_BUFFER
+                        ),
                         "n_trades": 0,
                         "positive": False,
                     }
@@ -1133,10 +1170,7 @@ def discover_deployment_rank_threshold_simple_grid(
                     max_concurrent_per_strategy=1_000_000,
                 )
                 scored_band = score_deployment_threshold_rows(selected_band)
-                positive = (
-                    float(scored_band.get("mean_net_trade", 0.0) or 0.0) > 0.0
-                    and int(scored_band.get("n_trades", 0) or 0) > 0
-                )
+                positive = _slippage_adjusted_mean_gross_positive(scored_band)
                 if positive:
                     next_positive_count += 1
                 next_band_metrics.append(
@@ -1145,6 +1179,15 @@ def discover_deployment_rank_threshold_simple_grid(
                         "band_hi": min(1.0, band_hi),
                         "mean_net_trade": float(
                             scored_band.get("mean_net_trade", 0.0) or 0.0
+                        ),
+                        "mean_gross_trade": float(
+                            scored_band.get("mean_gross_trade", 0.0) or 0.0
+                        ),
+                        "mean_gross_trade_slippage_adjusted": float(
+                            scored_band.get(
+                                "mean_gross_trade_slippage_adjusted", 0.0
+                            )
+                            or 0.0
                         ),
                         "n_trades": int(scored_band.get("n_trades", 0) or 0),
                         "positive": bool(positive),
@@ -1168,10 +1211,7 @@ def discover_deployment_rank_threshold_simple_grid(
                 max_concurrent_per_strategy=1_000_000,
             )
             cumulative_metrics = score_deployment_threshold_rows(selected_cumulative)
-            local_positive = (
-                float(local_metrics.get("mean_net_trade", 0.0) or 0.0) > 0.0
-                and int(local_metrics.get("n_trades", 0) or 0) > 0
-            )
+            local_positive = _slippage_adjusted_mean_gross_positive(local_metrics)
             local_confirmation_passed = bool(
                 local_positive and next_positive_count >= confirmation_min_positive
             )
@@ -1199,6 +1239,14 @@ def discover_deployment_rank_threshold_simple_grid(
                 "cumulative_mean_net_trade": float(
                     cumulative_metrics.get("mean_net_trade", 0.0)
                 ),
+                "cumulative_mean_gross_trade": float(
+                    cumulative_metrics.get("mean_gross_trade", 0.0)
+                ),
+                "cumulative_mean_gross_trade_slippage_adjusted": float(
+                    cumulative_metrics.get(
+                        "mean_gross_trade_slippage_adjusted", 0.0
+                    )
+                ),
                 "cumulative_hit_rate": float(cumulative_metrics.get("hit_rate", 0.0)),
                 "cumulative_n_trades": int(cumulative_metrics.get("n_trades", 0)),
                 "cumulative_max_drawdown": float(
@@ -1211,11 +1259,15 @@ def discover_deployment_rank_threshold_simple_grid(
             if not local_confirmation_passed:
                 continue
             if threshold_best is None or (
-                float(result["mean_net_trade"]),
+                float(result.get("mean_gross_trade_slippage_adjusted", 0.0)),
+                float(result.get("mean_gross_trade", 0.0)),
                 float(result["net_pnl"]),
                 int(result["n_trades"]),
             ) > (
-                float(threshold_best["mean_net_trade"]),
+                float(
+                    threshold_best.get("mean_gross_trade_slippage_adjusted", 0.0)
+                ),
+                float(threshold_best.get("mean_gross_trade", 0.0)),
                 float(threshold_best["net_pnl"]),
                 int(threshold_best["n_trades"]),
             ):
@@ -1227,6 +1279,13 @@ def discover_deployment_rank_threshold_simple_grid(
                 "objective": float("-inf"),
                 "net_pnl": 0.0,
                 "mean_net_trade": 0.0,
+                "mean_gross_trade": 0.0,
+                "mean_gross_trade_slippage_adjusted": -float(
+                    SIMPLE_DISCOVERY_GROSS_PNL_SLIPPAGE_BUFFER
+                ),
+                "gross_slippage_buffer": float(
+                    SIMPLE_DISCOVERY_GROSS_PNL_SLIPPAGE_BUFFER
+                ),
                 "hit_rate": 0.0,
                 "n_trades": 0,
                 "max_drawdown": 0.0,
@@ -1264,7 +1323,8 @@ def discover_deployment_rank_threshold_simple_grid(
             max(
                 threshold_candidates,
                 key=lambda r: (
-                    float(r.get("mean_net_trade", 0.0)),
+                    float(r.get("mean_gross_trade_slippage_adjusted", 0.0)),
+                    float(r.get("mean_gross_trade", 0.0)),
                     float(r.get("cumulative_mean_net_trade", 0.0)),
                     int(r.get("n_trades", 0)),
                 ),
@@ -1276,7 +1336,8 @@ def discover_deployment_rank_threshold_simple_grid(
             all_threshold_results or best_by_threshold,
             key=lambda r: (
                 int(r.get("next_band_positive_count", 0)),
-                float(r.get("mean_net_trade", 0.0)),
+                float(r.get("mean_gross_trade_slippage_adjusted", 0.0)),
+                float(r.get("mean_gross_trade", 0.0)),
                 float(r.get("cumulative_mean_net_trade", 0.0)),
             ),
         )
@@ -1286,7 +1347,7 @@ def discover_deployment_rank_threshold_simple_grid(
         float(r["deployment_rank_threshold"]) for r in profitable
     ]
     best["threshold_search"] = {
-        "method": "full_policy_rank_grid_simple_tp_sl_iq20_positive_mean_net_trade",
+        "method": "full_policy_rank_grid_simple_tp_sl_iq20_positive_slippage_adjusted_mean_gross_trade",
         "lo": float(lo),
         "hi": float(hi),
         "precision": float(precision),
@@ -1308,6 +1369,7 @@ def discover_deployment_rank_threshold_simple_grid(
         "simple_sl_mults": [float(x) for x in sl_mults],
         "simple_tp_mults": [float(x) for x in tp_mults],
         "simple_size_power": float(size_power),
+        "gross_slippage_buffer": float(SIMPLE_DISCOVERY_GROSS_PNL_SLIPPAGE_BUFFER),
         "simple_policy_count": int(len(simulated_policy_rows)),
         "best_by_threshold": best_by_threshold,
         "all_grid_result_count": int(len(all_threshold_results)),
@@ -1340,8 +1402,9 @@ def optimise_deployment_rank_threshold(
 
     The live portfolio layer handles cross-symbol/strategy capacity. This offline
     gate only forbids overlapping same-symbol trades, then selects the 20th
-    percentile of thresholds whose mean net trade is positive. That keeps the
-    top 80% of the profitable threshold band without overfitting to sparse,
+    percentile of thresholds whose avg gross PnL remains positive after a 0.7%
+    slippage/execution buffer. That keeps the top 80% of the acceptable
+    threshold band without overfitting to sparse,
     high-threshold pockets.
     """
     if rows.empty:
@@ -1429,12 +1492,7 @@ def optimise_deployment_rank_threshold(
     )
     threshold_grid = np.unique(np.round(np.clip(threshold_grid, lo, hi), 4))
     evaluated = [evaluate(float(t)) for t in threshold_grid]
-    profitable = [
-        r
-        for r in evaluated
-        if float(r.get("mean_net_trade", 0.0) or 0.0) > 0.0
-        and int(r.get("n_trades", 0) or 0) > 0
-    ]
+    profitable = [r for r in evaluated if _slippage_adjusted_mean_gross_positive(r)]
     if profitable:
         profitable_thresholds = np.asarray(
             [float(r["deployment_rank_threshold"]) for r in profitable],
@@ -1450,16 +1508,23 @@ def optimise_deployment_rank_threshold(
             )["deployment_rank_threshold"]
         )
         best = dict(evaluate(selected_threshold))
-        reason = "iq20_positive_mean_net_trade_band"
+        reason = "iq20_positive_slippage_adjusted_mean_gross_trade_band"
     else:
-        best = max(evaluated, key=lambda r: r["mean_net_trade"])
-        reason = "no_positive_mean_net_trade_fallback_best_mean"
+        best = max(
+            evaluated,
+            key=lambda r: (
+                r.get("mean_gross_trade_slippage_adjusted", 0.0),
+                r.get("mean_gross_trade", 0.0),
+                r["mean_net_trade"],
+            ),
+        )
+        reason = "no_positive_slippage_adjusted_mean_gross_trade_fallback_best_mean"
 
     profitable_threshold_list = [
         float(r["deployment_rank_threshold"]) for r in profitable
     ]
     best["threshold_search"] = {
-        "method": "grid_iq20_positive_mean_net_trade_symbol_only_concurrency",
+        "method": "grid_iq20_positive_slippage_adjusted_mean_gross_trade_symbol_only_concurrency",
         "lo": float(lo),
         "hi": float(hi),
         "precision": float(precision),
@@ -1483,6 +1548,7 @@ def optimise_deployment_rank_threshold(
         "cross_strategy_concurrency_enforced": False,
         "dynamic_threshold_enabled": False,
         "score_col": score_col,
+        "gross_slippage_buffer": float(SIMPLE_DISCOVERY_GROSS_PNL_SLIPPAGE_BUFFER),
         "threshold_space": "rank_percentile",
     }
     return best
@@ -1525,6 +1591,9 @@ def _build_deployment_threshold_rows(
         )
         return pd.DataFrame()
     rows["net_gain"] = raw_gains
+    gross_gains = np.asarray(metrics.get("gross_gains", []), dtype=np.float32)
+    if len(gross_gains) == len(rows):
+        rows["gross_gain"] = gross_gains
     rows["exit_bars"] = exit_bars
     return rows
 

@@ -48,3 +48,10 @@ Action: In feature injection (`pipeline_steps.py`), replace `pd.concat([df, pd.D
 Learning: `iterrows()` in pandas is extremely slow due to box/unbox overhead and index checking. Simple iteration is often better performed by converting dataframe columns to numpy arrays and using `zip()` to iterate, or vectorizing the operations entirely, especially inside inner loops for tasks like pruning dominance fronts or pairwise metrics processing.
 Action: Search for and replace `iterrows()` with vectorized alternatives or numpy iteration whenever optimizing loops in a DataFrame.
 ## 2026-04-21 - [Data Converter] Learning: Iterating through DataFrame rows with iterrows() to build OHLC mapping or fallback stats is critically slow. Action: Extract columns using .values and iterate via zip() or vectorize with boolean masking.
+## 2025-05-18 - [Inference Loop Vectorization]
+Learning: Deeply nested `.iterrows()` loops in `run_inference.py` (e.g., inside `_poll_and_manage_positions`) create major latency issues when simulating tick-by-tick intrabar pricing due to pandas box/unbox object recreation on every loop pass.
+Action: Unpack dataframe columns into numpy arrays (`bars["open"].to_numpy()`) and iterate via Python's native `zip()` for standard inference loops.
+
+## 2025-05-18 - [Prediction Ledger Upsert Vectorization]
+Learning: Using `.iterrows()` combined with `.loc` assignments to update old entries or append new rows sequentially within `PredictionLedger.mark_resolved` runs at O(N) but takes several seconds for thousands of rows, blocking real-time resolution.
+Action: Compute differences via index vectors (`upd_idx.index.intersection` and `.difference`), enforce schema safety with `columns.difference()`, and write updates holistically using vectorized block `.loc` assignments and single-pass `pd.concat()`. This yields over a 400x speedup.

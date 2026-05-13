@@ -11,6 +11,7 @@ import pickle
 import re
 import time
 import traceback
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -84,6 +85,7 @@ def _patch_lightgbm_sklearn_validation_compat() -> None:
 
 _patch_lightgbm_sklearn_validation_compat()
 from numba import njit, prange
+from sklearn.linear_model import Ridge
 from sklearn.metrics import average_precision_score, roc_auc_score
 
 os.environ.setdefault("LOKY_MAX_CPU_COUNT", "3")
@@ -120,6 +122,219 @@ from extreme_price_movements.universe import get_training_universe
 from extreme_price_movements.utils import tprint
 
 LOGGER = logging.getLogger(__name__)
+
+
+try:
+    import psutil
+except Exception:  # pragma: no cover - optional runtime dependency
+    psutil = None
+
+
+def _rss_mb() -> Optional[float]:
+    if psutil is None:
+        return None
+    try:
+        return float(psutil.Process(os.getpid()).memory_info().rss) / (1024.0 * 1024.0)
+    except Exception:
+        return None
+
+
+@contextmanager
+def stage_timer(name: str):
+    start = time.perf_counter()
+    rss_start = _rss_mb()
+    if rss_start is None:
+        tprint(f"[stage] {name}: start (RSS unavailable)")
+    else:
+        tprint(f"[stage] {name}: start rss={rss_start:.1f} MB")
+    try:
+        yield
+    finally:
+        elapsed = time.perf_counter() - start
+        rss_end = _rss_mb()
+        if rss_start is None or rss_end is None:
+            tprint(f"[stage] {name}: done elapsed={elapsed:.1f}s (RSS unavailable)")
+        else:
+            tprint(
+                f"[stage] {name}: done elapsed={elapsed:.1f}s "
+                f"rss={rss_end:.1f} MB delta={rss_end - rss_start:+.1f} MB"
+            )
+
+
+def build_training_view(
+    base_df: pd.DataFrame,
+    *,
+    feature_cols: Sequence[str],
+    target_cols: Sequence[str],
+    metadata_cols: Sequence[str],
+    copy: bool = False,
+) -> pd.DataFrame:
+    cols = list(dict.fromkeys([*metadata_cols, *feature_cols, *target_cols]))
+    missing = [c for c in cols if c not in base_df.columns]
+    if missing:
+        raise KeyError(f"Missing training view columns: {missing[:20]}")
+    view = base_df.loc[:, cols]
+    return view.copy() if copy else view
+
+
+
+LEAF_SCORING_DEFAULTS: Dict[str, Any] = {
+    "leaf_target_support_pct": 0.125,
+    "leaf_support_min_pct": 0.05,
+    "leaf_support_max_pct": 0.20,
+    "leaf_preferred_support_min_pct": 0.10,
+    "leaf_preferred_support_max_pct": 0.15,
+    "leaf_score_prior_n": 250,
+    "leaf_min_count": 50,
+    "leaf_min_fold_presence": 0.50,
+    "leaf_min_sign_consistency": 0.60,
+    "leaf_min_abs_tstat": 0.25,
+    "leaf_min_uplift": 0.0,
+    "leaf_min_symbol_diversity": 5,
+    "leaf_min_day_diversity": 10,
+    "leaf_max_single_symbol_share": 0.50,
+    "leaf_max_single_day_share": 0.25,
+    "max_leaf_candidates_per_tree": 20,
+    "max_leaf_candidates_per_fold": 500,
+    "max_leaf_candidates_per_side_target_horizon": 5000,
+    "max_stage_a2_candidates_per_side_target_horizon": 2000,
+    "max_stage_b_survivors_per_side_target_horizon": 500,
+    "max_stage_c_candidates_per_side_target_horizon": 200,
+    "max_learnability_candidates_per_side_target_horizon": 100,
+    "max_path_quality_candidates_per_side_target_horizon": 200,
+    "max_tbm_diagnostic_candidates_per_side_target_horizon": 100,
+    "max_final_diagnostic_candidates_per_side_target_horizon": 50,
+    "max_global_final_diagnostic_candidates": 200,
+    "max_stage_a1_mask_resolutions": 50000,
+    "stage_b_min_mean_net_ret": 0.0,
+    "stage_b_min_mean_uplift": 0.0,
+    "stage_b_min_positive_ic_fraction": 0.50,
+    "stage_b_min_sign_consistency": 0.60,
+    "stage_b_min_presence_freq": 0.50,
+    "stage_b_min_oos_ic": -0.01,
+    "stage_b_min_mask_ic_uplift": -0.005,
+    "stage_b_min_decile_spread_sharpe": -0.25,
+    "stage_b_max_std_support_pct": 0.10,
+    "stage_c_min_learnability_step_c_score": 0.0,
+    "stage_c_min_trade_path_quality_score": 0.0,
+    "stage_c_min_quality_stability_score": 0.0,
+    "stage_c_min_full_quality_score": 0.0,
+    "stage_c_min_composite_score": 0.0,
+    "stage_c_require_learnability": True,
+    "stage_c_require_path_quality": True,
+    "stage_c_require_quality_stability": True,
+    "stage_c_require_full_quality": True,
+    "stage_c_require_composite_score": True,
+    "cheap_score_weight_return": 0.35,
+    "cheap_score_weight_tstat": 0.20,
+    "cheap_score_weight_support": 0.15,
+    "cheap_score_weight_fold_stability": 0.15,
+    "cheap_score_weight_diversity": 0.10,
+    "cheap_score_weight_complexity_penalty": 0.05,
+    "stage_b_weight_mean_net_ret": 0.25,
+    "stage_b_weight_mean_uplift": 0.20,
+    "stage_b_weight_oos_ic": 0.20,
+    "stage_b_weight_sign_consistency": 0.15,
+    "stage_b_weight_support_quality": 0.10,
+    "stage_b_weight_decile_spread": 0.05,
+    "stage_b_weight_complexity_penalty": 0.05,
+    "cheap_return_scale": 0.0025,
+    "stage_b_return_scale": 0.003,
+    "stage_b_uplift_scale": 0.002,
+    "max_structural_depth_for_penalty": 6,
+    "base_composite_score_hurdle": 0.0,
+    "complexity_hurdle_per_depth": 0.02,
+    "low_support_extra_hurdle": 0.05,
+    "unstable_support_extra_hurdle": 0.05,
+    "max_mask_overlap_for_duplicate": 0.98,
+    "max_jaccard_overlap_for_duplicate": 0.95,
+    "max_same_family_rules_per_bucket": 50,
+    "final_holdout_enabled": True,
+    "final_holdout_frac": 0.15,
+    "final_holdout_min_days": 30,
+    "final_holdout_bootstrap_iters": 500,
+    "final_holdout_bootstrap_block": "day",
+    "final_holdout_min_active_count": 25,
+    "final_holdout_min_active_symbols": 5,
+    "final_holdout_min_active_days": 10,
+    "final_holdout_support_min_pct": 0.03,
+    "final_holdout_support_max_pct": 0.25,
+    "final_holdout_min_mean_uplift": 0.0,
+    "final_holdout_min_bootstrap_p10_uplift": -0.00025,
+    "holdout_uplift_scale": 0.002,
+    "holdout_return_scale": 0.003,
+    "min_incremental_portfolio_score": 0.005,
+    "max_portfolio_support_pct": 0.35,
+    "max_regime_concurrency": 3,
+    "max_final_regimes_per_side_horizon": 10,
+    "max_final_regimes_total": 40,
+    "max_final_jaccard_overlap": 0.35,
+    "max_final_containment_overlap": 0.60,
+    "min_feature_centroid_cosine_distance": 0.20,
+    "max_feature_family_jaccard": 0.70,
+    "min_final_novelty_score": 0.55,
+    "min_novel_standalone_quality_score": 0.50,
+    "enable_pareto_prefilter": True,
+    "pareto_top_k_backfill": 100,
+    "within_leaf_min_train_rows": 100,
+    "within_leaf_min_val_rows": 25,
+    "within_leaf_min_positive_rate": 0.05,
+    "within_leaf_max_positive_rate": 0.95,
+    "within_leaf_lgbm_num_leaves": 8,
+    "within_leaf_lgbm_max_depth": 3,
+    "within_leaf_lgbm_learning_rate": 0.03,
+    "within_leaf_lgbm_n_estimators": 50,
+    "within_leaf_max_features": 100,
+    "final_holdout_min_remaining_folds": 1,
+}
+
+
+def apply_leaf_scoring_defaults(cfg: Dict[str, Any], *, test_mode: bool = False) -> Dict[str, Any]:
+    for key, value in LEAF_SCORING_DEFAULTS.items():
+        cfg.setdefault(key, value)
+    if test_mode:
+        for key, cap in (
+            ("max_leaf_candidates_per_tree", 5),
+            ("max_leaf_candidates_per_side_target_horizon", 500),
+            ("max_stage_a2_candidates_per_side_target_horizon", 250),
+            ("max_stage_b_survivors_per_side_target_horizon", 100),
+            ("max_stage_c_candidates_per_side_target_horizon", 50),
+            ("max_final_diagnostic_candidates_per_side_target_horizon", 20),
+            ("max_global_final_diagnostic_candidates", 50),
+            ("max_stage_a1_mask_resolutions", 5000),
+            ("final_holdout_bootstrap_iters", 100),
+            ("max_final_regimes_total", 10),
+            ("max_final_regimes_per_side_horizon", 3),
+            ("pareto_top_k_backfill", 25),
+            ("within_leaf_lgbm_n_estimators", 20),
+            ("within_leaf_max_features", 50),
+        ):
+            cfg[key] = min(int(cfg.get(key, cap)), cap)
+    return cfg
+
+
+def log_stage_gate(
+    cfg: Dict[str, Any],
+    *,
+    stage: str,
+    input_count: int,
+    output_count: int,
+    start_time: float,
+    target_name: str = "",
+    horizon: Union[int, str] = "",
+    side: str = "",
+) -> None:
+    elapsed = time.perf_counter() - start_time
+    rss = _rss_mb()
+    rss_part = "" if rss is None else f" rss_gb={rss / 1024.0:.3f}"
+    tprint(
+        "stage_gate "
+        f"market_mode={cfg.get('market_mode', os.environ.get('EPM_MARKET_MODE', 'unknown'))} "
+        f"target_name={target_name} horizon={horizon} side={side} stage={stage} "
+        f"input_count={int(input_count)} output_count={int(output_count)} "
+        f"rejected_count={int(input_count) - int(output_count)} "
+        f"elapsed_sec={elapsed:.3f}{rss_part}"
+    )
 
 
 def normalize_market_mode(market_mode: str | None = None) -> str:
@@ -331,7 +546,7 @@ HARDCODED_FINAL_RULES: Tuple[Tuple[str, str, int], ...] = (
 
 
 def append_hardcoded_final_rules(df: Optional[pd.DataFrame]) -> pd.DataFrame:
-    out = pd.DataFrame() if df is None else df.copy()
+    out = pd.DataFrame() if df is None else df.copy(deep=False)
     existing = (
         set(out["canonical_key"].astype(str))
         if "canonical_key" in out.columns and not out.empty
@@ -402,13 +617,14 @@ def _with_expected_columns(
 ) -> pd.DataFrame:
     if df is None:
         return pd.DataFrame(columns=list(expected_columns))
-    work = df.copy()
-    for column in expected_columns:
+    expected = list(expected_columns)
+    existing = [column for column in df.columns if column in expected]
+    extras = [column for column in df.columns if column not in expected]
+    ordered = expected + extras
+    work = df.loc[:, existing + extras].copy(deep=False)
+    for column in expected:
         if column not in work.columns:
-            work[column] = pd.Series([np.nan] * len(work), index=work.index)
-    ordered = list(expected_columns) + [
-        column for column in work.columns if column not in expected_columns
-    ]
+            work[column] = np.nan
     return work.loc[:, ordered]
 
 
@@ -422,7 +638,7 @@ def atomic_to_csv(
     prepared = (
         _with_expected_columns(df, expected_columns)
         if expected_columns is not None
-        else (pd.DataFrame() if df is None else df.copy())
+        else (pd.DataFrame() if df is None else df.copy(deep=False))
     )
     with NamedTemporaryFile(
         mode="w",
@@ -443,7 +659,7 @@ def _ensure_registry_support_columns(df: Optional[pd.DataFrame]) -> pd.DataFrame
         return pd.DataFrame()
     if df.empty:
         return df
-    out = df.copy()
+    out = df.copy(deep=False)
     if "support_pct" not in out.columns and "mean_support_pct" in out.columns:
         out["support_pct"] = pd.to_numeric(
             out["mean_support_pct"], errors="coerce"
@@ -458,10 +674,9 @@ def _ensure_registry_support_columns(df: Optional[pd.DataFrame]) -> pd.DataFrame
 def _drop_duplicate_columns(df: Optional[pd.DataFrame]) -> pd.DataFrame:
     if df is None:
         return pd.DataFrame()
-    work = df.copy()
-    if work.columns.has_duplicates:
-        work = work.loc[:, ~work.columns.duplicated()].copy()
-    return work
+    if not df.columns.has_duplicates:
+        return df
+    return df.loc[:, ~df.columns.duplicated()].copy(deep=False)
 
 
 def _build_row_funnel_df(rows: Sequence[Dict[str, Any]]) -> pd.DataFrame:
@@ -591,7 +806,7 @@ def save_stage_a_step1_checkpoint(
                     "canonical_key": canonical_key,
                 }
             )
-    post_dedup_source_df = candidate_registry.copy()
+    post_dedup_source_df = candidate_registry.copy(deep=False)
     if not post_dedup_source_df.empty:
         post_dedup_source_df["canonical_key"] = post_dedup_source_df[
             "canonical_key"
@@ -3434,6 +3649,37 @@ def support_band_score(
     return float(1.0 - min(abs(s - target_support) / max(target_support, 1e-9), 1.0))
 
 
+def leaf_support_score(support_pct: float, cfg: Dict[str, Any]) -> float:
+    target = float(cfg.get("leaf_target_support_pct", 0.125))
+    preferred_min = float(cfg.get("leaf_preferred_support_min_pct", 0.10))
+    preferred_max = float(cfg.get("leaf_preferred_support_max_pct", 0.15))
+    support_distance = abs(float(support_pct) - target) / max(target, 1e-12)
+    support_quality = float(np.clip(1.0 - support_distance, 0.0, 1.0))
+    preferred_bonus = 1.0 if preferred_min <= float(support_pct) <= preferred_max else 0.0
+    return float(0.70 * support_quality + 0.30 * preferred_bonus)
+
+
+def compute_final_required_hurdle(row: pd.Series, cfg: Dict[str, Any]) -> float:
+    structural_depth = int(row.get("structural_depth", row.get("display_arity", 1)) or 1)
+    mean_support_pct = float(row.get("mean_support_pct", row.get("support_pct", np.nan)))
+    std_support_pct = float(row.get("std_support_pct", 0.0) or 0.0)
+    base_hurdle = float(cfg.get("base_composite_score_hurdle", 0.0))
+    complexity_hurdle = float(cfg.get("complexity_hurdle_per_depth", 0.02)) * max(
+        structural_depth - 1, 0
+    )
+    low_support_hurdle = (
+        float(cfg.get("low_support_extra_hurdle", 0.05))
+        if mean_support_pct < float(cfg.get("leaf_preferred_support_min_pct", 0.10))
+        else 0.0
+    )
+    unstable_support_hurdle = (
+        float(cfg.get("unstable_support_extra_hurdle", 0.05))
+        if std_support_pct > float(cfg.get("stage_b_max_std_support_pct", 0.10))
+        else 0.0
+    )
+    return float(base_hurdle + complexity_hurdle + low_support_hurdle + unstable_support_hurdle)
+
+
 def compute_rule_model_importance_score(
     path_gain_sum: float,
     leaf_value: float,
@@ -4259,6 +4505,111 @@ def build_walk_forward_folds(
     return folds
 
 
+
+
+def build_final_holdout_mask(
+    timestamps: np.ndarray,
+    *,
+    holdout_frac: float,
+    min_days: int,
+    embargo_bars: int,
+) -> np.ndarray:
+    """Reserve the latest chronological rows for untouched Stage E validation."""
+    n = int(len(timestamps))
+    mask = np.zeros(n, dtype=bool)
+    if n == 0 or holdout_frac <= 0:
+        return mask
+    ts = pd.to_datetime(pd.Series(timestamps), errors="coerce")
+    ts_int = ts.astype("int64", copy=False).to_numpy()
+    order = np.argsort(np.where(ts.notna().to_numpy(), ts_int, np.arange(n)))
+    frac_count = int(np.ceil(n * float(np.clip(holdout_frac, 0.0, 0.95))))
+    min_day_count = 0
+    if ts.notna().any() and min_days > 0:
+        max_ts = ts[ts.notna()].max()
+        cutoff_ts = max_ts - pd.Timedelta(days=int(min_days))
+        min_day_count = int((ts >= cutoff_ts).sum())
+    holdout_count = min(n, max(1, frac_count, min_day_count))
+    holdout_idx = order[-holdout_count:]
+    if ts.notna().any():
+        cutoff_holdout_ts = ts.iloc[holdout_idx].min()
+        mask = (ts >= cutoff_holdout_ts).to_numpy(dtype=bool)
+    else:
+        mask[holdout_idx] = True
+    tprint(
+        "Final untouched holdout built: "
+        f"rows={int(mask.sum())}/{n} frac={float(mask.mean()):.4f} "
+        f"min_days={int(min_days)} embargo_bars={int(embargo_bars)}"
+    )
+    return mask
+
+
+def _bars_to_timedelta(embargo_bars: int, timeframe: str = "1h") -> pd.Timedelta:
+    tf = str(timeframe or "1h").strip().lower()
+    match = re.match(r"^(\d+)?\s*([a-z]+)$", tf)
+    qty = int(match.group(1) or 1) if match else 1
+    unit = match.group(2) if match else "h"
+    if unit in {"m", "min", "mins", "minute", "minutes"}:
+        return pd.Timedelta(minutes=qty * int(embargo_bars))
+    if unit in {"h", "hr", "hour", "hours"}:
+        return pd.Timedelta(hours=qty * int(embargo_bars))
+    if unit in {"d", "day", "days"}:
+        return pd.Timedelta(days=qty * int(embargo_bars))
+    return pd.Timedelta(hours=int(embargo_bars))
+
+
+def build_final_holdout_training_exclusion_mask(
+    final_holdout_mask: np.ndarray,
+    embargo_bars: int,
+    timestamps: Optional[np.ndarray] = None,
+    timeframe: str = "1h",
+) -> np.ndarray:
+    """Exclude untouched holdout rows plus a timestamp-aware pre-holdout embargo."""
+    excluded = np.asarray(final_holdout_mask, dtype=bool).copy()
+    holdout_idx = np.flatnonzero(excluded)
+    if not holdout_idx.size or embargo_bars <= 0:
+        return excluded
+    if timestamps is not None and len(timestamps) == len(excluded):
+        ts = pd.to_datetime(pd.Series(timestamps), errors="coerce")
+        first_holdout_ts = ts[excluded & ts.notna().to_numpy()].min()
+        if pd.notna(first_holdout_ts):
+            embargo_start_ts = first_holdout_ts - _bars_to_timedelta(
+                int(embargo_bars), timeframe
+            )
+            embargo_mask = (
+                ts.notna().to_numpy()
+                & (ts >= embargo_start_ts).to_numpy()
+                & (ts < first_holdout_ts).to_numpy()
+            )
+            excluded |= embargo_mask
+            tprint(
+                "Final holdout timestamp embargo: "
+                f"start={embargo_start_ts} first_holdout={first_holdout_ts} "
+                f"embargo_rows={int(embargo_mask.sum())} timeframe={timeframe}"
+            )
+            return excluded
+    first_holdout = int(holdout_idx.min())
+    embargo_start = max(0, first_holdout - int(embargo_bars))
+    excluded[embargo_start:first_holdout] = True
+    tprint(
+        "WARNING: final holdout embargo fell back to row-count exclusion; "
+        "timestamp data unavailable"
+    )
+    return excluded
+
+def filter_folds_for_final_holdout(
+    folds: Sequence[Tuple[np.ndarray, np.ndarray]], excluded_mask: np.ndarray
+) -> List[Tuple[np.ndarray, np.ndarray]]:
+    excluded = np.asarray(excluded_mask, dtype=bool)
+    filtered: List[Tuple[np.ndarray, np.ndarray]] = []
+    for tr_idx, va_idx in folds:
+        tr = np.asarray(tr_idx, dtype=np.int64)
+        va = np.asarray(va_idx, dtype=np.int64)
+        tr = tr[(tr >= 0) & (tr < len(excluded)) & (~excluded[tr])]
+        va = va[(va >= 0) & (va < len(excluded)) & (~excluded[va])]
+        if tr.size and va.size:
+            filtered.append((tr, va))
+    return filtered
+
 def _cap_fold_indices(indices: np.ndarray, max_rows: int) -> np.ndarray:
     """Deterministically downsample a fold while preserving temporal order."""
     if max_rows <= 0 or indices.size <= max_rows:
@@ -4766,6 +5117,830 @@ class CanonicalRuleMaskResolver:
         return infer_rule_side(canonical_key)
 
 
+def _factorize_array(values: np.ndarray) -> np.ndarray:
+    _, codes = np.unique(values.astype(str), return_inverse=True)
+    return codes.astype(np.int32, copy=False)
+
+
+def build_stage_a_leaf_candidate_registry(
+    *,
+    keys: Sequence[str],
+    all_rules: Sequence[ExtractedRule],
+    resolver: Union[CanonicalRuleMaskResolver, DictionaryMaskResolver],
+    data: pd.DataFrame,
+    net_ret: np.ndarray,
+    target: np.ndarray,
+    folds: Sequence[Tuple[np.ndarray, np.ndarray]],
+    cfg: Dict[str, Any],
+    target_name: str,
+    horizon: int,
+    side: str,
+) -> pd.DataFrame:
+    start_time = time.perf_counter()
+    net_ret_arr = np.asarray(net_ret, dtype=np.float64)
+    target_arr = np.asarray(target, dtype=np.float64)
+    fold_id = np.full(len(net_ret_arr), -1, dtype=np.int32)
+    for f_idx, (_, va_idx) in enumerate(folds):
+        fold_id[np.asarray(va_idx, dtype=np.int64)] = int(f_idx)
+    input_key_count = len(keys)
+    mask_resolution_cap = int(cfg.get("max_stage_a1_mask_resolutions", 50000))
+    if mask_resolution_cap > 0 and input_key_count > mask_resolution_cap:
+        tprint(
+            "WARNING: stage_a1 mask resolution hard safety cap hit; "
+            f"truncating keys {input_key_count} -> {mask_resolution_cap}"
+        )
+        keys = list(keys)[:mask_resolution_cap]
+
+    valid_mask = np.isfinite(net_ret_arr) & np.isfinite(target_arr) & (fold_id >= 0)
+    valid_row_count = int(valid_mask.sum())
+    if valid_row_count == 0 or not keys:
+        log_stage_gate(
+            cfg,
+            stage="stage_a0_leaf_aggregate",
+            input_count=input_key_count,
+            output_count=0,
+            start_time=start_time,
+            target_name=target_name,
+            horizon=horizon,
+            side=side,
+        )
+        return pd.DataFrame()
+
+    fold_valid_rows = np.bincount(
+        fold_id[valid_mask], minlength=max(len(folds), 1)
+    ).astype(np.float64, copy=False)
+    fold_baseline_sums = np.bincount(
+        fold_id[valid_mask],
+        weights=net_ret_arr[valid_mask],
+        minlength=max(len(folds), 1),
+    )
+    fold_baseline = np.divide(
+        fold_baseline_sums,
+        np.maximum(fold_valid_rows, 1.0),
+        out=np.zeros_like(fold_baseline_sums, dtype=np.float64),
+        where=fold_valid_rows > 0,
+    )
+
+    symbol_id = _factorize_array(data["symbol"].to_numpy(copy=False)) if "symbol" in data.columns else np.zeros(len(net_ret_arr), dtype=np.int32)
+    if "timestamp" in data.columns:
+        day_values = pd.to_datetime(data["timestamp"], errors="coerce").dt.floor("D").astype(str).to_numpy()
+        day_id = _factorize_array(day_values)
+    else:
+        day_id = np.zeros(len(net_ret_arr), dtype=np.int32)
+
+    rule_meta: Dict[str, ExtractedRule] = {}
+    discovery_counts = collections.Counter()
+    for rule in all_rules:
+        discovery_counts[rule.canonical_key] += 1
+        rule_meta.setdefault(rule.canonical_key, rule)
+
+    rows: List[Dict[str, Any]] = []
+    prior_n = float(cfg.get("leaf_score_prior_n", 250))
+    cheap_return_scale = float(cfg.get("cheap_return_scale", 0.0025))
+    min_count_per_fold = max(1, int(cfg.get("leaf_min_count_per_fold", 5)))
+    masks_resolved = 0
+    for key in keys:
+        try:
+            active = np.asarray(resolver.get_mask(str(key)), dtype=bool) & valid_mask
+            masks_resolved += 1
+        except Exception:
+            continue
+        count = int(active.sum())
+        if count == 0:
+            continue
+        active_ret = net_ret_arr[active]
+        support_pct = float(count / max(valid_row_count, 1))
+        mean_net_ret = float(active_ret.mean())
+        sum_net_ret_sq = float(np.dot(active_ret, active_ret))
+        var_net_ret = max(sum_net_ret_sq / max(count, 1) - mean_net_ret**2, 0.0)
+        std_net_ret = float(np.sqrt(var_net_ret))
+        stderr_net_ret = std_net_ret / np.sqrt(max(count, 1))
+        tstat_net_ret = float(mean_net_ret / max(stderr_net_ret, 1e-12))
+
+        active_fold = fold_id[active]
+        in_fold = active_fold >= 0
+        fold_count = np.bincount(active_fold[in_fold], minlength=max(len(folds), 1)).astype(np.float64, copy=False)
+        fold_sum = np.bincount(active_fold[in_fold], weights=active_ret[in_fold], minlength=max(len(folds), 1))
+        fold_mean = np.divide(fold_sum, np.maximum(fold_count, 1.0), out=np.full_like(fold_sum, np.nan, dtype=np.float64), where=fold_count > 0)
+        fold_support = np.divide(fold_count, np.maximum(fold_valid_rows, 1.0), out=np.zeros_like(fold_count, dtype=np.float64), where=fold_valid_rows > 0)
+        fold_present = fold_count >= float(min_count_per_fold)
+        presence_freq = float(fold_present.mean()) if fold_present.size else 0.0
+        valid_fold_mean = np.isfinite(fold_mean) & fold_present
+        if valid_fold_mean.any():
+            sign_consistency = float(max(np.mean(fold_mean[valid_fold_mean] > 0), np.mean(fold_mean[valid_fold_mean] < 0)))
+            fold_uplift = fold_mean[valid_fold_mean] - fold_baseline[valid_fold_mean]
+            mean_uplift = float(np.nanmean(fold_uplift))
+            mean_baseline_ret = float(np.nanmean(fold_baseline[valid_fold_mean]))
+        else:
+            sign_consistency = 0.0
+            mean_uplift = np.nan
+            mean_baseline_ret = np.nan
+        std_support_pct = float(np.nanstd(fold_support)) if fold_support.size else 0.0
+
+        active_symbol = symbol_id[active]
+        symbol_counts = np.bincount(active_symbol)
+        unique_symbol_count = int(np.count_nonzero(symbol_counts))
+        max_single_symbol_share = float(symbol_counts.max() / max(count, 1)) if symbol_counts.size else 0.0
+        active_day = day_id[active]
+        day_counts = np.bincount(active_day)
+        unique_day_count = int(np.count_nonzero(day_counts))
+        max_single_day_share = float(day_counts.max() / max(count, 1)) if day_counts.size else 0.0
+
+        shrunk_mean_net_ret = float(mean_net_ret * count / (count + prior_n))
+        shrunk_mean_uplift = float((0.0 if not np.isfinite(mean_uplift) else mean_uplift) * count / (count + prior_n))
+        support_score = leaf_support_score(support_pct, cfg)
+        symbol_diversity_score = float(np.clip(unique_symbol_count / max(float(cfg.get("leaf_min_symbol_diversity", 5)), 1.0), 0.0, 1.0))
+        day_diversity_score = float(np.clip(unique_day_count / max(float(cfg.get("leaf_min_day_diversity", 10)), 1.0), 0.0, 1.0))
+        concentration_penalty = max(max_single_symbol_share, max_single_day_share)
+        diversity_score = float(np.clip(0.5 * symbol_diversity_score + 0.5 * day_diversity_score - 0.5 * concentration_penalty, 0.0, 1.0))
+        tstat_score = float(np.clip(abs(tstat_net_ret) / 3.0, 0.0, 1.0))
+        return_score = float(np.tanh(shrunk_mean_net_ret / max(cheap_return_scale, 1e-12)))
+        fold_stability_score = 0.5 * presence_freq + 0.5 * sign_consistency
+        complexity_penalty = float(np.clip(structural_depth_for_key(str(key)) / max(float(cfg.get("max_structural_depth_for_penalty", 6)), 1.0), 0.0, 1.0))
+        cheap_score = (
+            float(cfg.get("cheap_score_weight_return", 0.35)) * return_score
+            + float(cfg.get("cheap_score_weight_tstat", 0.20)) * tstat_score
+            + float(cfg.get("cheap_score_weight_support", 0.15)) * support_score
+            + float(cfg.get("cheap_score_weight_fold_stability", 0.15)) * fold_stability_score
+            + float(cfg.get("cheap_score_weight_diversity", 0.10)) * diversity_score
+            - float(cfg.get("cheap_score_weight_complexity_penalty", 0.05)) * complexity_penalty
+        )
+        reasons: List[str] = []
+        if count < int(cfg.get("leaf_min_count", 50)):
+            reasons.append("a1_count_too_low")
+        if support_pct < float(cfg.get("leaf_support_min_pct", 0.05)):
+            reasons.append("a1_support_too_low")
+        if support_pct > float(cfg.get("leaf_support_max_pct", 0.20)):
+            reasons.append("a1_support_too_high")
+        if presence_freq < float(cfg.get("leaf_min_fold_presence", 0.50)):
+            reasons.append("a1_fold_presence_too_low")
+        if sign_consistency < float(cfg.get("leaf_min_sign_consistency", 0.60)):
+            reasons.append("a1_sign_consistency_too_low")
+        if (not np.isfinite(mean_uplift)) or mean_uplift < float(cfg.get("leaf_min_uplift", 0.0)):
+            reasons.append("a1_uplift_too_low")
+        if abs(tstat_net_ret) < float(cfg.get("leaf_min_abs_tstat", 0.25)):
+            reasons.append("a1_tstat_too_low")
+        if unique_symbol_count < int(cfg.get("leaf_min_symbol_diversity", 5)):
+            reasons.append("a1_symbol_diversity_too_low")
+        if unique_day_count < int(cfg.get("leaf_min_day_diversity", 10)):
+            reasons.append("a1_day_diversity_too_low")
+        if max_single_symbol_share > float(cfg.get("leaf_max_single_symbol_share", 0.50)):
+            reasons.append("a1_symbol_concentration_too_high")
+        if max_single_day_share > float(cfg.get("leaf_max_single_day_share", 0.25)):
+            reasons.append("a1_day_concentration_too_high")
+
+        meta = rule_meta.get(str(key))
+        rows.append({
+            "canonical_key": str(key),
+            "source_tree": (
+                int(getattr(meta, "tree_index", getattr(meta, "tree_idx", getattr(meta, "tree", -1))))
+                if meta is not None
+                else -1
+            ),
+            "source_leaf": (
+                int(getattr(meta, "leaf_index", getattr(meta, "leaf_idx", getattr(meta, "leaf", -1))))
+                if meta is not None
+                else -1
+            ),
+            "source_target": target_name,
+            "source_horizon": int(horizon),
+            "side": side,
+            "count": count,
+            "support_pct": support_pct,
+            "mean_net_ret": mean_net_ret,
+            "shrunk_mean_net_ret": shrunk_mean_net_ret,
+            "mean_uplift": mean_uplift,
+            "shrunk_mean_uplift": shrunk_mean_uplift,
+            "tstat_net_ret": tstat_net_ret,
+            "presence_freq": presence_freq,
+            "sign_consistency": sign_consistency,
+            "support_score": support_score,
+            "diversity_score": diversity_score,
+            "cheap_score": float(cheap_score),
+            "mean_baseline_ret": mean_baseline_ret,
+            "std_support_pct": std_support_pct,
+            "unique_symbol_count": unique_symbol_count,
+            "unique_day_count": unique_day_count,
+            "max_single_symbol_share": max_single_symbol_share,
+            "max_single_day_share": max_single_day_share,
+            "discovery_count": int(discovery_counts[str(key)]),
+            "rejection_reason": "|".join(reasons),
+            "accepted": not reasons,
+        })
+
+    registry = pd.DataFrame.from_records(rows)
+    if registry.empty:
+        log_stage_gate(cfg, stage="stage_a1_cheap_leaf_gates", input_count=len(keys), output_count=0, start_time=start_time, target_name=target_name, horizon=horizon, side=side)
+        return registry
+    registry = registry.sort_values("cheap_score", ascending=False, kind="mergesort")
+    accepted = registry[registry["accepted"]].copy(deep=False)
+    if not accepted.empty:
+        per_tree_cap = int(cfg.get("max_leaf_candidates_per_tree", 20))
+        known_tree = accepted[accepted["source_tree"] != -1]
+        unknown_tree = accepted[accepted["source_tree"] == -1]
+        if not known_tree.empty:
+            known_tree = known_tree.groupby(
+                "source_tree", group_keys=False, sort=False
+            ).head(per_tree_cap)
+        accepted = pd.concat([known_tree, unknown_tree], ignore_index=True, copy=False)
+        accepted = accepted.sort_values("cheap_score", ascending=False, kind="mergesort")
+        global_cap = int(cfg.get("max_leaf_candidates_per_side_target_horizon", 5000))
+        accepted = accepted.head(global_cap)
+        registry.loc[~registry["canonical_key"].isin(set(accepted["canonical_key"])), "accepted"] = False
+        registry.loc[(registry["rejection_reason"] == "") & (~registry["accepted"]), "rejection_reason"] = "a1_cap_exceeded"
+    tprint(
+        f"stage_a1 masks_resolved={masks_resolved} rows={len(net_ret_arr)} "
+        f"elapsed={time.perf_counter() - start_time:.3f}s"
+    )
+    log_stage_gate(cfg, stage="stage_a1_cheap_leaf_gates", input_count=input_key_count, output_count=int(registry["accepted"].sum()), start_time=start_time, target_name=target_name, horizon=horizon, side=side)
+    return registry
+
+
+def compute_stage_b_score_and_rejection(row: Dict[str, Any], cfg: Dict[str, Any]) -> Tuple[float, str]:
+    mean_net_ret = float(row.get("mean_net_ret", np.nan))
+    directional_mean_ret = float(row.get("directional_mean_ret", mean_net_ret))
+    row_side = str(row.get("side", "")).lower()
+    # Stage B usually receives side-adjusted returns from process_side(), where
+    # shorts are negated before run_mining_stage().  Use the explicit directional
+    # metric as a defensive fallback for short rows from older/raw registries.
+    stage_b_mean_ret = (
+        directional_mean_ret
+        if row_side == "short"
+        and np.isfinite(directional_mean_ret)
+        and (not np.isfinite(mean_net_ret) or mean_net_ret <= 0.0)
+        else mean_net_ret
+    )
+    mean_uplift = float(row.get("mean_uplift", np.nan))
+    mean_oos_ic = float(row.get("mean_oos_ic", row.get("mean_ic", np.nan)))
+    sign_consistency = float(row.get("sign_consistency", 0.0) or 0.0)
+    mean_support_pct = float(row.get("mean_support_pct", np.nan))
+    min_support_actual = float(
+        row.get("min_support_actual_pct", row.get("min_support_actual", np.nan))
+    )
+    std_support_pct = float(row.get("std_support_pct", 0.0) or 0.0)
+    presence_freq = float(row.get("presence_freq", 0.0) or 0.0)
+    positive_ic_fraction = float(row.get("positive_ic_fraction", 0.0) or 0.0)
+    mask_ic_uplift = float(row.get("mask_ic_uplift", np.nan))
+    decile_spread_sharpe = float(row.get("decile_spread_sharpe", np.nan))
+    structural_depth = float(row.get("structural_depth", row.get("display_arity", 1)) or 1.0)
+
+    net_ret_score = float(np.tanh(stage_b_mean_ret / max(float(cfg.get("stage_b_return_scale", 0.003)), 1e-12)))
+    uplift_score = float(np.tanh(mean_uplift / max(float(cfg.get("stage_b_uplift_scale", 0.002)), 1e-12))) if np.isfinite(mean_uplift) else 0.0
+    ic_score = float(np.clip((mean_oos_ic + 0.05) / 0.10, 0.0, 1.0)) if np.isfinite(mean_oos_ic) else 0.0
+    support_score = leaf_support_score(mean_support_pct, cfg) if np.isfinite(mean_support_pct) else 0.0
+    decile_score = float(np.clip((decile_spread_sharpe + 0.5) / 2.0, 0.0, 1.0)) if np.isfinite(decile_spread_sharpe) else 0.0
+    complexity_penalty = float(np.clip(structural_depth / max(float(cfg.get("max_structural_depth_for_penalty", 6)), 1.0), 0.0, 1.0))
+    stage_b_score = (
+        float(cfg.get("stage_b_weight_mean_net_ret", 0.25)) * net_ret_score
+        + float(cfg.get("stage_b_weight_mean_uplift", 0.20)) * uplift_score
+        + float(cfg.get("stage_b_weight_oos_ic", 0.20)) * ic_score
+        + float(cfg.get("stage_b_weight_sign_consistency", 0.15)) * sign_consistency
+        + float(cfg.get("stage_b_weight_support_quality", 0.10)) * support_score
+        + float(cfg.get("stage_b_weight_decile_spread", 0.05)) * decile_score
+        - float(cfg.get("stage_b_weight_complexity_penalty", 0.05)) * complexity_penalty
+    )
+    reasons: List[str] = []
+    if mean_support_pct < float(cfg.get("leaf_support_min_pct", 0.05)):
+        reasons.append("b_support_too_low")
+    if mean_support_pct > float(cfg.get("leaf_support_max_pct", 0.20)):
+        reasons.append("b_support_too_high")
+    if min_support_actual < 0.5 * float(cfg.get("leaf_support_min_pct", 0.05)):
+        reasons.append("b_min_fold_support_too_low")
+    if std_support_pct > float(cfg.get("stage_b_max_std_support_pct", 0.10)):
+        reasons.append("b_support_instability_too_high")
+    if stage_b_mean_ret <= float(cfg.get("stage_b_min_mean_net_ret", 0.0)):
+        reasons.append("b_mean_net_ret_too_low")
+    if (not np.isfinite(mean_uplift)) or mean_uplift <= float(cfg.get("stage_b_min_mean_uplift", 0.0)):
+        reasons.append("b_uplift_too_low")
+    if sign_consistency < float(cfg.get("stage_b_min_sign_consistency", 0.60)):
+        reasons.append("b_sign_consistency_too_low")
+    if presence_freq < float(cfg.get("stage_b_min_presence_freq", 0.50)):
+        reasons.append("b_presence_freq_too_low")
+    if positive_ic_fraction < float(cfg.get("stage_b_min_positive_ic_fraction", 0.50)):
+        reasons.append("b_positive_ic_fraction_too_low")
+    if np.isfinite(mean_oos_ic) and mean_oos_ic < float(cfg.get("stage_b_min_oos_ic", -0.01)):
+        reasons.append("b_oos_ic_too_low")
+    if np.isfinite(mask_ic_uplift) and mask_ic_uplift < float(cfg.get("stage_b_min_mask_ic_uplift", -0.005)):
+        reasons.append("b_mask_ic_uplift_too_low")
+    if np.isfinite(decile_spread_sharpe) and decile_spread_sharpe < float(cfg.get("stage_b_min_decile_spread_sharpe", -0.25)):
+        reasons.append("b_decile_spread_too_low")
+    return float(stage_b_score), "|".join(reasons)
+
+
+def compute_stage_c_rejection(row: Dict[str, Any], cfg: Dict[str, Any]) -> str:
+    """Return pipe-delimited c_* rejection reasons for Stage C metrics."""
+    checks = [
+        (
+            "learnability_step_c_score",
+            "stage_c_min_learnability_step_c_score",
+            "stage_c_require_learnability",
+            "c_learnability_too_low",
+        ),
+        (
+            "trade_path_quality_score",
+            "stage_c_min_trade_path_quality_score",
+            "stage_c_require_path_quality",
+            "c_trade_path_quality_too_low",
+        ),
+        (
+            "quality_stability_score",
+            "stage_c_min_quality_stability_score",
+            "stage_c_require_quality_stability",
+            "c_quality_stability_too_low",
+        ),
+        (
+            "full_quality_score",
+            "stage_c_min_full_quality_score",
+            "stage_c_require_full_quality",
+            "c_full_quality_too_low",
+        ),
+        (
+            "composite_score",
+            "stage_c_min_composite_score",
+            "stage_c_require_composite_score",
+            "c_composite_score_too_low",
+        ),
+    ]
+    reasons: List[str] = []
+    for metric_col, threshold_key, required_key, reason in checks:
+        value = float(row.get(metric_col, np.nan))
+        threshold = float(cfg.get(threshold_key, 0.0))
+        required = bool(cfg.get(required_key, True))
+        if not np.isfinite(value):
+            if required:
+                reasons.append(reason)
+            continue
+        if value < threshold:
+            reasons.append(reason)
+    return "|".join(reasons)
+
+
+def pareto_front(df: pd.DataFrame, maximize_cols: Sequence[str], minimize_cols: Sequence[str]) -> pd.Series:
+    if df.empty:
+        return pd.Series(False, index=df.index)
+    values = []
+    for col in maximize_cols:
+        values.append(pd.to_numeric(df.get(col, np.nan), errors="coerce").fillna(-np.inf).to_numpy(dtype=float))
+    for col in minimize_cols:
+        values.append(-pd.to_numeric(df.get(col, np.nan), errors="coerce").fillna(np.inf).to_numpy(dtype=float))
+    if not values:
+        return pd.Series(True, index=df.index)
+    mat = np.vstack(values).T
+    is_front = np.ones(len(df), dtype=bool)
+    for i in range(len(df)):
+        if not is_front[i]:
+            continue
+        dominates_i = np.all(mat >= mat[i], axis=1) & np.any(mat > mat[i], axis=1)
+        if dominates_i.any():
+            is_front[i] = False
+    return pd.Series(is_front, index=df.index)
+
+
+def _safe_jaccard_and_containment(a: np.ndarray, b: np.ndarray, universe: np.ndarray) -> Tuple[float, float]:
+    aa = np.asarray(a, dtype=bool) & universe
+    bb = np.asarray(b, dtype=bool) & universe
+    inter = int(np.logical_and(aa, bb).sum())
+    union = int(np.logical_or(aa, bb).sum())
+    jaccard = float(inter / max(union, 1))
+    containment = float(inter / max(int(aa.sum()), 1))
+    return jaccard, containment
+
+
+def _extract_feature_family_set(
+    canonical_key: str, metadata: Optional[Sequence[FeatureMetadata]] = None
+) -> Set[str]:
+    """Extract feature families from a canonical rule, preferring metadata matches."""
+    meta_lookup: Dict[str, str] = {}
+    for meta in metadata or []:
+        family = meta.regime_family or meta.source_family or meta.group or "unknown"
+        meta_lookup[str(meta.feature_name)] = family
+        meta_lookup[str(meta.source_name)] = family
+    families: Set[str] = set()
+    condition_names: List[str] = []
+    try:
+        for cond in parse_slot_map(canonical_key, ("trigger", "location", "regime")).values():
+            parsed = parse_condition_string(cond)
+            if parsed is not None:
+                condition_names.append(parsed[0])
+    except Exception:
+        pass
+    condition_names.extend(
+        re.findall(r"([A-Za-z_][A-Za-z0-9_:.\-]*)\s*(?:==|<=|>=|<|>)", str(canonical_key))
+    )
+    for name in condition_names:
+        if name in meta_lookup:
+            families.add(str(meta_lookup[name]))
+            continue
+        base = name.split("__", 1)[0].split(":", 1)[0]
+        families.add(base)
+    if not families:
+        tokens = [tok.strip("() ") for tok in str(canonical_key).split("|") if tok.strip("() ") and tok.strip("() ") != "*"]
+        families.update(tok.split("==", 1)[0][:64] for tok in tokens[:3])
+    if not families:
+        families.add(str(canonical_key).split("|", 1)[0][:64])
+    return families
+
+def _compute_candidate_feature_centroids(
+    candidates: pd.DataFrame,
+    candidate_masks: Dict[str, np.ndarray],
+    X: np.ndarray,
+    final_holdout_mask: np.ndarray,
+) -> Dict[str, np.ndarray]:
+    centroids: Dict[str, np.ndarray] = {}
+    if X is None or X.size == 0:
+        return centroids
+    X_arr = np.asarray(X, dtype=np.float32)
+    holdout = np.asarray(final_holdout_mask, dtype=bool)
+    holdout_X = X_arr[holdout]
+    col_mean = np.nanmean(holdout_X, axis=0) if holdout_X.size else np.nanmean(X_arr, axis=0)
+    col_std = np.nanstd(holdout_X, axis=0) if holdout_X.size else np.nanstd(X_arr, axis=0)
+    col_std = np.where(np.isfinite(col_std) & (col_std > 1e-6), col_std, 1.0)
+    for key in candidates.get("canonical_key", pd.Series(dtype=str)).astype(str):
+        mask = candidate_masks.get(key)
+        if mask is None:
+            continue
+        active = np.asarray(mask, dtype=bool) & holdout
+        if int(active.sum()) == 0:
+            continue
+        centroid = np.nanmean((X_arr[active] - col_mean) / col_std, axis=0)
+        norm = float(np.linalg.norm(np.nan_to_num(centroid, nan=0.0)))
+        if norm > 1e-12:
+            centroids[key] = (np.nan_to_num(centroid, nan=0.0) / norm).astype(np.float32)
+    return centroids
+
+
+def compute_within_leaf_future_edge_learnability(
+    candidate_mask: np.ndarray,
+    X: np.ndarray,
+    y_edge: np.ndarray,
+    folds: Sequence[Tuple[np.ndarray, np.ndarray]],
+    cfg: Dict[str, Any],
+) -> Dict[str, Any]:
+    mask = np.asarray(candidate_mask, dtype=bool)
+    y = np.asarray(y_edge, dtype=np.float32)
+    X_arr = np.asarray(X, dtype=np.float32)
+    min_train = int(cfg.get("within_leaf_min_train_rows", 100))
+    min_val = int(cfg.get("within_leaf_min_val_rows", 25))
+    min_pos = float(cfg.get("within_leaf_min_positive_rate", 0.05))
+    max_pos = float(cfg.get("within_leaf_max_positive_rate", 0.95))
+    ic_vals: List[float] = []
+    spreads: List[float] = []
+    uplifts: List[float] = []
+    hit_lifts: List[float] = []
+    valid_folds = 0
+    for tr_idx, va_idx in folds:
+        tr = np.asarray(tr_idx, dtype=np.int64)
+        va = np.asarray(va_idx, dtype=np.int64)
+        active_tr = tr[(tr < len(mask)) & mask[tr] & np.isfinite(y[tr])]
+        active_va = va[(va < len(mask)) & mask[va] & np.isfinite(y[va])]
+        if active_tr.size < min_train or active_va.size < min_val:
+            continue
+        pos_rate = float(np.mean(y[active_tr] > 0.0))
+        if pos_rate < min_pos or pos_rate > max_pos:
+            continue
+        try:
+            model = LGBMRegressor(
+                objective="regression_l2",
+                num_leaves=int(cfg.get("within_leaf_lgbm_num_leaves", 8)),
+                max_depth=int(cfg.get("within_leaf_lgbm_max_depth", 3)),
+                learning_rate=float(cfg.get("within_leaf_lgbm_learning_rate", 0.03)),
+                n_estimators=int(cfg.get("within_leaf_lgbm_n_estimators", 50)),
+                min_data_in_leaf=max(25, int(0.05 * active_tr.size)),
+                verbosity=-1,
+                random_state=17,
+            )
+            model.fit(X_arr[active_tr], y[active_tr])
+            pred = np.asarray(model.predict(X_arr[active_va]), dtype=float)
+        except Exception:
+            x_tr = np.nan_to_num(X_arr[active_tr], nan=0.0)
+            x_va = np.nan_to_num(X_arr[active_va], nan=0.0)
+            max_features = max(1, int(cfg.get("within_leaf_max_features", 100)))
+            if x_tr.shape[1] > max_features:
+                variances = np.nanvar(x_tr, axis=0)
+                keep = np.argsort(variances)[-max_features:]
+                x_tr = x_tr[:, keep]
+                x_va = x_va[:, keep]
+            model = Ridge(alpha=1.0)
+            model.fit(x_tr, y[active_tr])
+            pred = np.asarray(model.predict(x_va), dtype=float)
+        yy = y[active_va].astype(float)
+        if len(np.unique(pred[np.isfinite(pred)])) > 1 and len(np.unique(yy[np.isfinite(yy)])) > 1:
+            ic = _safe_spearman(pred, yy)
+        else:
+            ic = np.nan
+        q = max(1, int(np.floor(0.30 * len(pred))))
+        order = np.argsort(pred)
+        bottom = yy[order[:q]]
+        top = yy[order[-q:]]
+        baseline = float(np.nanmean(yy))
+        spread = float(np.nanmean(top) - np.nanmean(bottom))
+        uplift = float(np.nanmean(top) - baseline)
+        hit_lift = float(np.nanmean(top > 0.0) - np.nanmean(yy > 0.0))
+        if np.isfinite(ic):
+            ic_vals.append(float(ic))
+        spreads.append(spread)
+        uplifts.append(uplift)
+        hit_lifts.append(hit_lift)
+        valid_folds += 1
+    mean_ic = float(np.nanmean(ic_vals)) if ic_vals else np.nan
+    pos_ic_frac = float(np.mean(np.asarray(ic_vals) > 0.0)) if ic_vals else 0.0
+    mean_spread = float(np.nanmean(spreads)) if spreads else np.nan
+    mean_uplift = float(np.nanmean(uplifts)) if uplifts else np.nan
+    hit_lift = float(np.nanmean(hit_lifts)) if hit_lifts else np.nan
+    ic_component = float(np.clip(((mean_ic if np.isfinite(mean_ic) else -0.02) + 0.02) / 0.08, 0.0, 1.0))
+    spread_component = float(np.tanh((mean_spread if np.isfinite(mean_spread) else 0.0) / 0.002))
+    uplift_component = float(np.tanh((mean_uplift if np.isfinite(mean_uplift) else 0.0) / 0.002))
+    hit_lift_component = float(np.clip((hit_lift if np.isfinite(hit_lift) else 0.0) / 0.10, 0.0, 1.0))
+    score = float(np.clip(0.25 * ic_component + 0.25 * spread_component + 0.20 * uplift_component + 0.15 * hit_lift_component + 0.15 * pos_ic_frac, 0.0, 1.0))
+    return {
+        "within_leaf_mean_ic": mean_ic,
+        "within_leaf_positive_ic_fraction": pos_ic_frac,
+        "within_leaf_mean_top_quantile_spread": mean_spread,
+        "within_leaf_mean_edge_uplift": mean_uplift,
+        "within_leaf_hit_lift": hit_lift,
+        "within_leaf_valid_folds": int(valid_folds),
+        "within_leaf_future_edge_learnability_score": score,
+        "learnability_definition": "within_leaf_future_edge",
+    }
+
+
+def _bootstrap_day_mean_uplift(
+    active_ret: np.ndarray,
+    active_day: np.ndarray,
+    baseline_ret: float,
+    iters: int,
+) -> Tuple[float, float, float]:
+    if active_ret.size == 0:
+        return np.nan, np.nan, np.nan
+    day_df = pd.DataFrame({"day": active_day.astype(str), "ret": active_ret.astype(float)})
+    day_means = day_df.groupby("day")["ret"].mean().to_numpy(dtype=float)
+    if day_means.size == 0:
+        return np.nan, np.nan, np.nan
+    rng = np.random.default_rng(1729)
+    samples = np.empty(max(1, int(iters)), dtype=float)
+    for i in range(samples.size):
+        draw = rng.choice(day_means, size=day_means.size, replace=True)
+        samples[i] = float(np.nanmean(draw) - baseline_ret)
+    return tuple(float(x) for x in np.nanpercentile(samples, [5, 10, 50]))
+
+
+def run_final_untouched_validation(
+    candidates: pd.DataFrame,
+    *,
+    resolver: Union[CanonicalRuleMaskResolver, DictionaryMaskResolver],
+    data: pd.DataFrame,
+    net_ret: np.ndarray,
+    target: np.ndarray,
+    final_holdout_mask: np.ndarray,
+    cfg: Dict[str, Any],
+    output_dir: Path,
+    target_name: str,
+    horizon: int,
+    side: str,
+) -> Tuple[pd.DataFrame, Dict[str, np.ndarray]]:
+    candidate_masks: Dict[str, np.ndarray] = {}
+    expected_cols = [
+        "canonical_key", "source_target", "source_horizon", "side", "final_holdout_rows",
+        "final_holdout_active_count", "final_holdout_support_pct", "final_holdout_active_symbols",
+        "final_holdout_active_days", "final_holdout_mean_net_ret", "final_holdout_mean_directional_ret",
+        "final_holdout_mean_uplift", "final_holdout_baseline_ret", "final_holdout_hit_rate",
+        "final_holdout_return_sign",
+        "final_holdout_sortino", "final_holdout_downside_std", "final_holdout_oos_ic",
+        "stage_c_trade_path_quality_score", "final_holdout_bootstrap_p05_mean_uplift",
+        "final_holdout_bootstrap_p10_mean_uplift", "final_holdout_bootstrap_p50_mean_uplift",
+        "holdout_edge_score", "final_holdout_pass", "final_holdout_rejection_reason",
+    ]
+    if candidates.empty or not bool(cfg.get("final_holdout_enabled", True)):
+        empty = atomic_to_csv(pd.DataFrame(columns=expected_cols), output_dir / "final_untouched_validation_audit.csv")
+        return empty, candidate_masks
+    holdout = np.asarray(final_holdout_mask, dtype=bool)
+    ret = np.asarray(net_ret, dtype=float)
+    tgt = np.asarray(target, dtype=float)
+    valid_holdout = holdout & np.isfinite(ret) & np.isfinite(tgt)
+    holdout_rows = int(valid_holdout.sum())
+    baseline_ret = float(np.nanmean(ret[valid_holdout])) if holdout_rows else np.nan
+    symbols = data["symbol"].to_numpy() if "symbol" in data.columns else np.array(["unknown"] * len(ret), dtype=object)
+    if "timestamp" in data.columns:
+        days = pd.to_datetime(data["timestamp"], errors="coerce").dt.floor("D").astype(str).to_numpy()
+    else:
+        days = np.arange(len(ret)).astype(str)
+    rows: List[Dict[str, Any]] = []
+    start = time.perf_counter()
+    for row in candidates.to_dict("records"):
+        key = str(row.get("canonical_key"))
+        try:
+            full_mask = np.asarray(resolver.get_mask(key), dtype=bool)
+        except Exception:
+            full_mask = np.zeros(len(ret), dtype=bool)
+        candidate_masks[key] = full_mask
+        active = full_mask & valid_holdout
+        active_count = int(active.sum())
+        row_side = str(row.get("side", side)).lower()
+        side_sign = -1.0 if side == "global" and row_side == "short" else 1.0
+        signed_ret = side_sign * ret
+        active_ret = signed_ret[active]
+        candidate_baseline_ret = (
+            float(np.nanmean(signed_ret[valid_holdout])) if holdout_rows else np.nan
+        )
+        support_pct = float(active_count / max(holdout_rows, 1))
+        active_symbols = int(pd.Series(symbols[active]).nunique()) if active_count else 0
+        active_days = int(pd.Series(days[active]).nunique()) if active_count else 0
+        mean_net = float(np.nanmean(active_ret)) if active_count else np.nan
+        mean_dir = mean_net
+        mean_uplift = float(mean_net - candidate_baseline_ret) if np.isfinite(mean_net) and np.isfinite(candidate_baseline_ret) else np.nan
+        hit_rate = float(np.nanmean(active_ret > 0.0)) if active_count else np.nan
+        downside = active_ret[active_ret < 0.0]
+        downside_std = float(np.sqrt(np.nanmean(np.square(downside)))) if downside.size else 0.0
+        sortino = float(mean_net / max(downside_std, 1e-12)) if np.isfinite(mean_net) else np.nan
+        binary = full_mask[valid_holdout].astype(float)
+        signed_tgt = side_sign * tgt
+        holdout_ic = _safe_spearman(binary, signed_tgt[valid_holdout]) if holdout_rows >= 3 and len(np.unique(binary)) > 1 else np.nan
+        p05, p10, p50 = _bootstrap_day_mean_uplift(active_ret, days[active], candidate_baseline_ret if np.isfinite(candidate_baseline_ret) else 0.0, int(cfg.get("final_holdout_bootstrap_iters", 500)))
+        reasons: List[str] = []
+        if active_count < int(cfg.get("final_holdout_min_active_count", 25)):
+            reasons.append("e_holdout_active_count_too_low")
+        if active_symbols < int(cfg.get("final_holdout_min_active_symbols", 5)):
+            reasons.append("e_holdout_symbol_diversity_too_low")
+        if active_days < int(cfg.get("final_holdout_min_active_days", 10)):
+            reasons.append("e_holdout_day_diversity_too_low")
+        if support_pct < float(cfg.get("final_holdout_support_min_pct", 0.03)):
+            reasons.append("e_holdout_support_too_low")
+        if support_pct > float(cfg.get("final_holdout_support_max_pct", 0.25)):
+            reasons.append("e_holdout_support_too_high")
+        if (not np.isfinite(mean_uplift)) or mean_uplift < float(cfg.get("final_holdout_min_mean_uplift", 0.0)):
+            reasons.append("e_holdout_uplift_too_low")
+        if (not np.isfinite(p10)) or p10 < float(cfg.get("final_holdout_min_bootstrap_p10_uplift", -0.00025)):
+            reasons.append("e_holdout_bootstrap_uplift_too_low")
+        if (not np.isfinite(mean_dir)) or mean_dir < 0.0:
+            reasons.append("e_holdout_directional_ret_too_low")
+        holdout_edge_score = (
+            0.35 * np.tanh((mean_uplift if np.isfinite(mean_uplift) else 0.0) / max(float(cfg.get("holdout_uplift_scale", 0.002)), 1e-12))
+            + 0.20 * np.tanh((mean_net if np.isfinite(mean_net) else 0.0) / max(float(cfg.get("holdout_return_scale", 0.003)), 1e-12))
+            + 0.15 * np.clip((sortino if np.isfinite(sortino) else 0.0) / 2.0, 0.0, 1.0)
+            + 0.15 * np.clip(((hit_rate if np.isfinite(hit_rate) else 0.5) - 0.5) / 0.15, 0.0, 1.0)
+            + 0.15 * np.clip(((p10 if np.isfinite(p10) else -0.001) + 0.001) / 0.003, 0.0, 1.0)
+        )
+        out = dict(row)
+        out.update({
+            "source_target": row.get("source_target", target_name), "source_horizon": row.get("source_horizon", horizon), "side": row.get("side", side),
+            "final_holdout_rows": holdout_rows, "final_holdout_active_count": active_count,
+            "final_holdout_support_pct": support_pct, "final_holdout_active_symbols": active_symbols,
+            "final_holdout_active_days": active_days, "final_holdout_mean_net_ret": mean_net,
+            "final_holdout_mean_directional_ret": mean_dir, "final_holdout_mean_uplift": mean_uplift,
+            "final_holdout_baseline_ret": candidate_baseline_ret, "final_holdout_hit_rate": hit_rate,
+            "final_holdout_return_sign": side_sign,
+            "final_holdout_sortino": sortino, "final_holdout_downside_std": downside_std,
+            "final_holdout_oos_ic": holdout_ic, "stage_c_trade_path_quality_score": row.get("trade_path_quality_score", np.nan),
+            "final_holdout_bootstrap_p05_mean_uplift": p05, "final_holdout_bootstrap_p10_mean_uplift": p10,
+            "final_holdout_bootstrap_p50_mean_uplift": p50, "holdout_edge_score": float(holdout_edge_score),
+            "final_holdout_pass": len(reasons) == 0, "final_holdout_rejection_reason": "|".join(reasons),
+        })
+        rows.append(out)
+    audit = pd.DataFrame(rows)
+    atomic_to_csv(audit, output_dir / "final_untouched_validation_audit.csv", expected_columns=expected_cols)
+    tprint(f"Stage E untouched validation: input={len(candidates)} holdout_pass={int(audit.get('final_holdout_pass', pd.Series(dtype=bool)).sum())} elapsed={time.perf_counter() - start:.2f}s")
+    return audit, candidate_masks
+
+
+def _portfolio_metrics(
+    selected_keys: Sequence[str],
+    candidate_masks: Dict[str, np.ndarray],
+    returns: np.ndarray,
+    universe: np.ndarray,
+    data_symbols: Optional[np.ndarray],
+    data_days: Optional[np.ndarray],
+    cfg: Dict[str, Any],
+    candidate_return_signs: Optional[Dict[str, float]] = None,
+) -> Dict[str, float]:
+    if not selected_keys:
+        return {"portfolio_score": 0.0, "portfolio_mean_ret": 0.0, "portfolio_mean_uplift_vs_baseline": 0.0, "portfolio_active_support_pct": 0.0, "portfolio_avg_pairwise_overlap": 0.0, "portfolio_max_pairwise_overlap": 0.0}
+    raw_signal = np.zeros(len(returns), dtype=float)
+    weighted_sum = np.zeros(len(returns), dtype=float)
+    signs = candidate_return_signs or {}
+    for key in selected_keys:
+        if key in candidate_masks:
+            mask_float = np.asarray(candidate_masks[key], dtype=bool).astype(float)
+            sign = float(signs.get(key, 1.0))
+            raw_signal += mask_float
+            weighted_sum += mask_float * sign * returns
+    max_conc = max(1, int(cfg.get("max_regime_concurrency", 3)))
+    scale = np.minimum(
+        1.0,
+        float(max_conc) / np.maximum(raw_signal, 1e-12),
+    )
+    effective_signal = raw_signal * scale
+    effective_weighted_sum = weighted_sum * scale
+    active = universe & (effective_signal > 0)
+    baseline = 0.0
+    weights = effective_signal[active]
+    raw_active_ret = np.divide(
+        effective_weighted_sum[active],
+        np.maximum(weights, 1e-12),
+        out=np.zeros_like(weights, dtype=float),
+        where=weights > 0,
+    )
+    pr = raw_active_ret
+    mean_ret = float(np.nanmean(pr)) if pr.size else 0.0
+    uplift = mean_ret - baseline
+    downside = raw_active_ret[raw_active_ret < 0.0]
+    downside_std = float(np.sqrt(np.nanmean(np.square(downside)))) if downside.size else 0.0
+    sortino = float(mean_ret / max(downside_std, 1e-12)) if pr.size else 0.0
+    hit = float(np.nanmean(pr > 0.0)) if pr.size else 0.0
+    support = float(active.sum() / max(int(universe.sum()), 1))
+    overlaps = []
+    for a, b in itertools.combinations(selected_keys, 2):
+        if a in candidate_masks and b in candidate_masks:
+            overlaps.append(_safe_jaccard_and_containment(candidate_masks[a], candidate_masks[b], universe)[0])
+    avg_overlap = float(np.mean(overlaps)) if overlaps else 0.0
+    max_overlap = float(np.max(overlaps)) if overlaps else 0.0
+    target_support = float(cfg.get("prune_target_support_pct", cfg.get("leaf_support_min_pct", 0.05)))
+    support_fit = float(np.clip(1.0 - abs(support - target_support) / max(target_support, 1e-12), 0.0, 1.0))
+    diversity = 1.0 - avg_overlap
+    score = float(0.30 * np.tanh(uplift / 0.002) + 0.25 * np.clip(sortino / 2.0, 0.0, 1.0) + 0.15 * np.clip((hit - 0.5) / 0.15, 0.0, 1.0) + 0.10 * support_fit + 0.10 * diversity - 0.10 * max_overlap)
+    return {"portfolio_score": score, "portfolio_mean_ret": mean_ret, "portfolio_mean_uplift_vs_baseline": uplift, "portfolio_downside_std": downside_std, "portfolio_sortino": sortino, "portfolio_hit_rate": hit, "portfolio_active_support_pct": support, "portfolio_max_drawdown_proxy": float(np.nanmin(np.cumsum(np.nan_to_num(pr, nan=0.0)))) if pr.size else 0.0, "portfolio_avg_pairwise_overlap": avg_overlap, "portfolio_max_pairwise_overlap": max_overlap}
+
+
+def select_diversified_final_regimes(
+    candidates: pd.DataFrame,
+    candidate_masks: Dict[str, np.ndarray],
+    feature_centroids: Dict[str, np.ndarray],
+    feature_family_sets: Dict[str, Set[str]],
+    returns: np.ndarray,
+    final_holdout_mask: np.ndarray,
+    cfg: Dict[str, Any],
+    candidate_return_signs: Optional[Dict[str, float]] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    if candidates.empty:
+        return candidates.copy(), pd.DataFrame()
+    df = candidates[candidates.get("final_holdout_pass", False).fillna(False)].copy()
+    if df.empty:
+        audit = candidates.copy()
+        audit["selected_for_final_registry"] = False
+        audit["selected_reason"] = "e_holdout_failed"
+        return audit.head(0), audit
+    sort_cols = [c for c in ["holdout_edge_score", "composite_score", "stage_b_score"] if c in df.columns]
+    df = df.sort_values(sort_cols, ascending=[False] * len(sort_cols), kind="mergesort") if sort_cols else df
+    df["pareto_front_member"] = pareto_front(df, ["holdout_edge_score", "quality_stability_score", "support_score"], ["structural_depth"])
+    if bool(cfg.get("enable_pareto_prefilter", True)):
+        backfill = int(cfg.get("pareto_top_k_backfill", 100))
+        keep_idx = set(df[df["pareto_front_member"]].index) | set(df.head(backfill).index)
+        df = df.loc[list(keep_idx)].sort_values(sort_cols, ascending=[False] * len(sort_cols), kind="mergesort") if sort_cols else df.loc[list(keep_idx)]
+    universe = np.asarray(final_holdout_mask, dtype=bool) & np.isfinite(returns)
+    selected_keys: List[str] = []
+    audit_rows: List[Dict[str, Any]] = []
+    min_inc = float(cfg.get("min_incremental_portfolio_score", 0.005))
+    max_support = float(cfg.get("max_portfolio_support_pct", 0.35))
+    max_total = int(cfg.get("max_final_regimes_total", 40))
+    max_bucket = int(cfg.get("max_final_regimes_per_side_horizon", 10))
+    bucket_counts: collections.Counter = collections.Counter()
+    for row in df.to_dict("records"):
+        key = str(row.get("canonical_key"))
+        bucket = (row.get("side"), row.get("source_target"), row.get("source_horizon"))
+        before = _portfolio_metrics(
+            selected_keys, candidate_masks, returns, universe, None, None, cfg, candidate_return_signs
+        )
+        after = _portfolio_metrics(
+            selected_keys + [key], candidate_masks, returns, universe, None, None, cfg, candidate_return_signs
+        )
+        inc = float(after["portfolio_score"] - before["portfolio_score"])
+        max_j = 0.0; max_cont = 0.0; min_cent = 1.0; max_family = 0.0
+        for winner in selected_keys:
+            j, cont = _safe_jaccard_and_containment(candidate_masks.get(key, np.zeros(len(returns), dtype=bool)), candidate_masks.get(winner, np.zeros(len(returns), dtype=bool)), universe)
+            max_j = max(max_j, j); max_cont = max(max_cont, cont)
+            c1 = feature_centroids.get(key); c2 = feature_centroids.get(winner)
+            if c1 is not None and c2 is not None:
+                min_cent = min(min_cent, float(1.0 - np.clip(np.dot(c1, c2), -1.0, 1.0)))
+            f1 = feature_family_sets.get(key, set()); f2 = feature_family_sets.get(winner, set())
+            if f1 or f2:
+                max_family = max(max_family, len(f1 & f2) / max(len(f1 | f2), 1))
+        novelty = float(np.clip(0.40 * (1 - max_j) + 0.25 * (1 - max_cont) + 0.25 * min_cent + 0.10 * (1 - max_family), 0.0, 1.0))
+        standalone = float(0.50 * float(row.get("holdout_edge_score", 0.0) or 0.0) + 0.25 * float(row.get("composite_score", 0.0) or 0.0) + 0.15 * float(row.get("quality_stability_score", 0.0) or 0.0) + 0.10 * float(row.get("support_score", 0.0) or 0.0))
+        inc_pass = inc >= min_inc and after.get("portfolio_active_support_pct", 0.0) <= max_support and after["portfolio_score"] >= before["portfolio_score"]
+        novel_pass = novelty >= float(cfg.get("min_final_novelty_score", 0.55)) and standalone >= float(cfg.get("min_novel_standalone_quality_score", 0.50)) and max_j <= float(cfg.get("max_final_jaccard_overlap", 0.35)) and max_cont <= float(cfg.get("max_final_containment_overlap", 0.60)) and min_cent >= float(cfg.get("min_feature_centroid_cosine_distance", 0.20)) and max_family <= float(cfg.get("max_feature_family_jaccard", 0.70))
+        reason = ""
+        selected = False
+        rejection: List[str] = []
+        if len(selected_keys) >= max_total or bucket_counts[bucket] >= max_bucket:
+            rejection.append("final_cap_reached")
+        elif inc_pass:
+            selected = True; reason = "incremental_portfolio_improvement"
+        elif novel_pass:
+            selected = True; reason = "novel_nonoverlapping"
+        else:
+            if inc < min_inc: rejection.append("final_no_incremental_portfolio_improvement")
+            if max_j > float(cfg.get("max_final_jaccard_overlap", 0.35)) or max_cont > float(cfg.get("max_final_containment_overlap", 0.60)): rejection.append("final_too_overlapping")
+            if min_cent < float(cfg.get("min_feature_centroid_cosine_distance", 0.20)): rejection.append("final_centroid_too_close")
+            if max_family > float(cfg.get("max_feature_family_jaccard", 0.70)): rejection.append("final_family_overlap_too_high")
+            if standalone < float(cfg.get("min_novel_standalone_quality_score", 0.50)): rejection.append("final_quality_too_low")
+        if selected:
+            selected_keys.append(key); bucket_counts[bucket] += 1
+        out = dict(row)
+        out.update({"selected_for_final_registry": selected, "selected_reason": reason, "incremental_portfolio_score": inc, "portfolio_score_before": before["portfolio_score"], "portfolio_score_after": after["portfolio_score"], "novelty_score": novelty, "max_jaccard_with_winners": max_j, "max_containment_with_winners": max_cont, "min_feature_centroid_distance_to_winners": min_cent, "max_feature_family_jaccard_with_winners": max_family, "standalone_quality_score": standalone, "final_selection_rejection_reason": "|".join(rejection)})
+        audit_rows.append(out)
+    audit = pd.DataFrame(audit_rows)
+    selected_df = audit[audit["selected_for_final_registry"].fillna(False)].copy()
+    return selected_df, audit
+
 class RuleScorer:
     def __init__(
         self,
@@ -4965,6 +6140,7 @@ class RuleScorer:
         path_time_to_mfe: Optional[np.ndarray] = None,
         path_time_to_mae: Optional[np.ndarray] = None,
         path_length: Optional[np.ndarray] = None,
+        compute_expensive_metrics: bool = True,
     ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """
         Score rules with optional bounded target support.
@@ -5338,118 +6514,129 @@ class RuleScorer:
             else np.nan
         )
 
-        path_obs = len(path_mfe_values)
-        if canonical_key in self._path_quality_cache:
-            path_quality = self._path_quality_cache[canonical_key]
-            path_quality_elapsed = 0.0
-        else:
-            path_quality_start = time.perf_counter()
-            path_quality = compute_trade_path_quality_metrics(
-                mfe=np.asarray(path_mfe_values, dtype=float),
-                mae=np.asarray(path_mae_values, dtype=float),
-                final_ret=np.asarray(path_final_ret_values, dtype=float),
-                time_to_mfe=np.asarray(path_time_to_mfe_values, dtype=float),
-                time_to_mae=np.asarray(path_time_to_mae_values, dtype=float),
-                path_length=np.asarray(path_length_values, dtype=float),
-                fold_id=np.asarray(path_fold_ids, dtype=int),
-            )
-            path_quality_elapsed = time.perf_counter() - path_quality_start
-            self._path_quality_cache[canonical_key] = path_quality
-        if path_quality_elapsed >= 1.0 or path_obs >= 5000:
-            pass  # Trade path quality calculation (logging removed)
-        trade_path_quality_score = float(
-            path_quality.get("trade_path_quality_score", np.nan)
-        )
-        quality_stability_score = float(
-            path_quality.get("quality_stability_score", np.nan)
-        )
-        path_smoothness_term = float(path_quality.get("path_smoothness_term", np.nan))
-        path_survivability_term = float(
-            path_quality.get("path_survivability_term", np.nan)
-        )
-        path_stability_term = float(path_quality.get("path_stability_term", np.nan))
-        path_realized_profit_consistency_term = float(
-            path_quality.get("path_realized_profit_consistency_term", np.nan)
-        )
-        path_trajectory_smoothness_term = float(
-            path_quality.get("path_trajectory_smoothness_term", np.nan)
-        )
-
         support_objective_score = self._compute_support_objective_score(
             mean_support_pct
         )
-
-        # Step A: economic edge (support and presence intentionally removed)
-        edge_ret_scale = float(self.cfg.get("score_edge_ret_scale", 0.002))
-        s_edge_ret = _safe_tanh_scale(max(directional_mean_ret, 0.0), edge_ret_scale)
-        s_edge_sign = float(np.clip(sign_consistency, 0.0, 1.0))
-        s_edge_vol = float(1.0 / (1.0 + max(std_net_ret, 0.0)))
-        s_edge = (
-            s_edge_ret * s_edge_sign * s_edge_vol if np.isfinite(s_edge_ret) else np.nan
-        )
-
-        # Step C: enhanced learnability score
-        ic_lo = float(self.cfg.get("step_c_ic_lo", -0.02))
-        ic_hi = float(self.cfg.get("step_c_ic_hi", 0.05))
-        ic_t_scale = float(self.cfg.get("step_c_ic_t_scale", 3.0))
-        spread_scale = float(self.cfg.get("step_c_spread_sharpe_scale", 2.0))
-        uplift_lo = float(self.cfg.get("step_c_uplift_lo", -0.01))
-        uplift_hi = float(self.cfg.get("step_c_uplift_hi", 0.03))
-        neutral_comp = float(self.cfg.get("score_component_neutral", 0.5))
-        eps_score = 1e-6
-
-        def _clip01(v: float) -> float:
-            if not np.isfinite(v):
-                return neutral_comp
-            return float(np.clip(v, 0.0, 1.0))
-
-        s_ic_mean = _clip01((mean_ic - ic_lo) / max(ic_hi - ic_lo, 1e-9))
-        s_ic_t = _clip01(_safe_tanh_scale(max(ic_tstat, 0.0), ic_t_scale))
-        s_ic_sign = _clip01(ic_sign_consistency)
-        s_spread = _clip01(
-            _safe_tanh_scale(max(decile_spread_sharpe, 0.0), spread_scale)
-        )
-        s_uplift = _clip01(
-            (mask_ic_uplift - uplift_lo) / max(uplift_hi - uplift_lo, 1e-9)
-        )
-        s_slope = _clip01(regression_slope_fit)
-
-        learnability_step_c_score = float(
-            (s_ic_mean + eps_score) ** 0.20
-            * (s_ic_t + eps_score) ** 0.15
-            * (s_ic_sign + eps_score) ** 0.15
-            * (s_spread + eps_score) ** 0.20
-            * (s_uplift + eps_score) ** 0.20
-            * (s_slope + eps_score) ** 0.10
-        )
-
-        s_path = (
-            float(np.clip(trade_path_quality_score, 0.0, 1.0))
-            if np.isfinite(trade_path_quality_score)
-            else neutral_comp
-        )
-        s_edge_use = s_edge if np.isfinite(s_edge) else neutral_comp
-        s_c_use = (
-            learnability_step_c_score
-            if np.isfinite(learnability_step_c_score)
-            else neutral_comp
-        )
-
-        if not np.isfinite(support_objective_score):
-            full_quality_score = -np.inf
-        else:
-            s_support_use = float(np.clip(support_objective_score, 0.0, 1.0))
-            # Final quality score with requested weights:
-            # edge 20%, path quality 35%, learnability 35%, support fit 10%.
-            w_a, w_b, w_c, w_s = 0.20, 0.35, 0.35, 0.10
-            full_quality_score = float(
-                (s_edge_use + eps_score) ** w_a
-                * (s_path + eps_score) ** w_b
-                * (s_c_use + eps_score) ** w_c
-                * (s_support_use + eps_score) ** w_s
+        if compute_expensive_metrics:
+            path_obs = len(path_mfe_values)
+            if canonical_key in self._path_quality_cache:
+                path_quality = self._path_quality_cache[canonical_key]
+                path_quality_elapsed = 0.0
+            else:
+                path_quality_start = time.perf_counter()
+                path_quality = compute_trade_path_quality_metrics(
+                    mfe=np.asarray(path_mfe_values, dtype=float),
+                    mae=np.asarray(path_mae_values, dtype=float),
+                    final_ret=np.asarray(path_final_ret_values, dtype=float),
+                    time_to_mfe=np.asarray(path_time_to_mfe_values, dtype=float),
+                    time_to_mae=np.asarray(path_time_to_mae_values, dtype=float),
+                    path_length=np.asarray(path_length_values, dtype=float),
+                    fold_id=np.asarray(path_fold_ids, dtype=int),
+                )
+                path_quality_elapsed = time.perf_counter() - path_quality_start
+                self._path_quality_cache[canonical_key] = path_quality
+            if path_quality_elapsed >= 1.0 or path_obs >= 5000:
+                pass  # Trade path quality calculation (logging removed)
+            trade_path_quality_score = float(
+                path_quality.get("trade_path_quality_score", np.nan)
             )
-        composite_score_step1 = full_quality_score
+            quality_stability_score = float(
+                path_quality.get("quality_stability_score", np.nan)
+            )
+            path_smoothness_term = float(path_quality.get("path_smoothness_term", np.nan))
+            path_survivability_term = float(
+                path_quality.get("path_survivability_term", np.nan)
+            )
+            path_stability_term = float(path_quality.get("path_stability_term", np.nan))
+            path_realized_profit_consistency_term = float(
+                path_quality.get("path_realized_profit_consistency_term", np.nan)
+            )
+            path_trajectory_smoothness_term = float(
+                path_quality.get("path_trajectory_smoothness_term", np.nan)
+            )
 
+            # Step A: economic edge (support and presence intentionally removed)
+            edge_ret_scale = float(self.cfg.get("score_edge_ret_scale", 0.002))
+            s_edge_ret = _safe_tanh_scale(max(directional_mean_ret, 0.0), edge_ret_scale)
+            s_edge_sign = float(np.clip(sign_consistency, 0.0, 1.0))
+            s_edge_vol = float(1.0 / (1.0 + max(std_net_ret, 0.0)))
+            s_edge = (
+                s_edge_ret * s_edge_sign * s_edge_vol if np.isfinite(s_edge_ret) else np.nan
+            )
+
+            # Step C: enhanced learnability score
+            ic_lo = float(self.cfg.get("step_c_ic_lo", -0.02))
+            ic_hi = float(self.cfg.get("step_c_ic_hi", 0.05))
+            ic_t_scale = float(self.cfg.get("step_c_ic_t_scale", 3.0))
+            spread_scale = float(self.cfg.get("step_c_spread_sharpe_scale", 2.0))
+            uplift_lo = float(self.cfg.get("step_c_uplift_lo", -0.01))
+            uplift_hi = float(self.cfg.get("step_c_uplift_hi", 0.03))
+            neutral_comp = float(self.cfg.get("score_component_neutral", 0.5))
+            eps_score = 1e-6
+
+            def _clip01(v: float) -> float:
+                if not np.isfinite(v):
+                    return neutral_comp
+                return float(np.clip(v, 0.0, 1.0))
+
+            s_ic_mean = _clip01((mean_ic - ic_lo) / max(ic_hi - ic_lo, 1e-9))
+            s_ic_t = _clip01(_safe_tanh_scale(max(ic_tstat, 0.0), ic_t_scale))
+            s_ic_sign = _clip01(ic_sign_consistency)
+            s_spread = _clip01(
+                _safe_tanh_scale(max(decile_spread_sharpe, 0.0), spread_scale)
+            )
+            s_uplift = _clip01(
+                (mask_ic_uplift - uplift_lo) / max(uplift_hi - uplift_lo, 1e-9)
+            )
+            s_slope = _clip01(regression_slope_fit)
+
+            learnability_step_c_score = float(
+                (s_ic_mean + eps_score) ** 0.20
+                * (s_ic_t + eps_score) ** 0.15
+                * (s_ic_sign + eps_score) ** 0.15
+                * (s_spread + eps_score) ** 0.20
+                * (s_uplift + eps_score) ** 0.20
+                * (s_slope + eps_score) ** 0.10
+            )
+
+            s_path = (
+                float(np.clip(trade_path_quality_score, 0.0, 1.0))
+                if np.isfinite(trade_path_quality_score)
+                else neutral_comp
+            )
+            s_edge_use = s_edge if np.isfinite(s_edge) else neutral_comp
+            s_c_use = (
+                learnability_step_c_score
+                if np.isfinite(learnability_step_c_score)
+                else neutral_comp
+            )
+
+            if not np.isfinite(support_objective_score):
+                full_quality_score = -np.inf
+            else:
+                s_support_use = float(np.clip(support_objective_score, 0.0, 1.0))
+                # Final quality score with requested weights:
+                # edge 20%, path quality 35%, learnability 35%, support fit 10%.
+                w_a, w_b, w_c, w_s = 0.20, 0.35, 0.35, 0.10
+                full_quality_score = float(
+                    (s_edge_use + eps_score) ** w_a
+                    * (s_path + eps_score) ** w_b
+                    * (s_c_use + eps_score) ** w_c
+                    * (s_support_use + eps_score) ** w_s
+                )
+            composite_score_step1 = full_quality_score
+
+        else:
+            trade_path_quality_score = np.nan
+            quality_stability_score = np.nan
+            path_smoothness_term = np.nan
+            path_survivability_term = np.nan
+            path_stability_term = np.nan
+            path_realized_profit_consistency_term = np.nan
+            path_trajectory_smoothness_term = np.nan
+            learnability_step_c_score = np.nan
+            full_quality_score = np.nan
+            composite_score_step1 = np.nan
         # Deconstruct for visibility
         slots = parse_slot_map(
             canonical_key,
@@ -5471,6 +6658,7 @@ class RuleScorer:
             "presence_freq_units": presence_freq,
             "sign_consistency": sign_consistency,
             "min_support_actual": int(present["support"].min()),
+            "min_support_actual_pct": float(present["support_pct"].min()),
             "mean_uplift": mean_uplift,
             "mean_baseline_ret": mean_baseline_ret,
             "mean_oos_ic": mean_oos_ic,
@@ -5521,7 +6709,16 @@ class RuleScorer:
             ),
         }
 
+        summary["support_score"] = leaf_support_score(mean_support_pct, self.cfg)
+        summary["diversity_score"] = np.nan
+        summary["stage_b_score"], summary["stage_b_rejection_reason"] = (
+            compute_stage_b_score_and_rejection(summary, self.cfg)
+        )
+        summary["composite_score"] = full_quality_score
+
         rejected: List[str] = []
+        if summary["stage_b_rejection_reason"]:
+            rejected.extend(summary["stage_b_rejection_reason"].split("|"))
         if summary["min_support_actual"] < int(
             self.cfg.get("min_support_count_validation", 10)
         ):
@@ -5573,6 +6770,7 @@ class RuleScorer:
         path_time_to_mfe: Optional[np.ndarray] = None,
         path_time_to_mae: Optional[np.ndarray] = None,
         path_length: Optional[np.ndarray] = None,
+        compute_expensive_metrics: bool = True,
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         resolver = resolver or self.mask_resolver
         if resolver is None:
@@ -5642,6 +6840,7 @@ class RuleScorer:
                 path_time_to_mfe=path_time_to_mfe,
                 path_time_to_mae=path_time_to_mae,
                 path_length=path_length,
+                compute_expensive_metrics=compute_expensive_metrics,
             )
             summaries.append(summary)
             audits.extend(fold_records)
@@ -5759,7 +6958,7 @@ class IndependentRulePruner:
         if df.empty:
             return df
 
-        df = df.copy()
+        df = df.copy(deep=False)
         # 1. Hard Gates: support bounds
         df["is_too_narrow"] = df["mean_support_pct"] < self.min_support_pct
         df["is_too_broad"] = df["mean_support_pct"] > self.max_support_pct
@@ -5934,7 +7133,13 @@ def select_stage_a_contexts(
     if registry is None or registry.empty:
         return pd.DataFrame(), pd.DataFrame(columns=["reason", "count"])
 
-    registry = registry.copy()
+    registry = registry.copy(deep=False)
+    if "selected_for_final_registry" in registry.columns:
+        registry = registry[registry["selected_for_final_registry"].fillna(False)]
+    elif "accepted" in registry.columns:
+        registry = registry[registry["accepted"].fillna(False)]
+    if registry.empty:
+        return pd.DataFrame(), pd.DataFrame(columns=["reason", "count"])
 
     def _resolve_metric_col(*base_names: str) -> pd.Series:
         for base_name in base_names:
@@ -6179,7 +7384,7 @@ def create_pre_global_registry(side_results: Dict[str, Any]) -> pd.DataFrame:
     if stage_a_selected is None or stage_a_selected.empty:
         stage_a_selected = pd.DataFrame()
     else:
-        stage_a_selected = stage_a_selected.copy()
+        stage_a_selected = stage_a_selected.copy(deep=False)
         stage_a_selected["origin_stage"] = "stage_a"
     return stage_a_selected
 
@@ -6285,6 +7490,8 @@ def run_mining_stage(
     candidate_registry_override: Optional[pd.DataFrame] = None,
     bounded_target: Optional[np.ndarray] = None,
     target_nan_reasons: Optional[np.ndarray] = None,
+    final_holdout_mask: Optional[np.ndarray] = None,
+    final_excluded_mask: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     """
     Run a single mining stage.
@@ -6334,6 +7541,26 @@ def run_mining_stage(
         Stage results including extracted rules and registries
     """
     output_dir.mkdir(parents=True, exist_ok=True)
+    if (final_holdout_mask is not None or final_excluded_mask is not None) and folds is not None:
+        holdout_bool = np.asarray(
+            final_holdout_mask if final_holdout_mask is not None else np.zeros(len(data), dtype=bool),
+            dtype=bool,
+        )
+        excluded_bool = np.asarray(
+            final_excluded_mask if final_excluded_mask is not None else holdout_bool,
+            dtype=bool,
+        )
+        leaked = 0
+        for fold in folds:
+            for idx in fold:
+                idx_arr = np.asarray(idx, dtype=np.int64)
+                idx_arr = idx_arr[(idx_arr >= 0) & (idx_arr < len(excluded_bool))]
+                leaked += int(excluded_bool[idx_arr].sum())
+        assert leaked == 0, "final holdout/embargo rows leaked into A/B/C/D scoring folds"
+        tprint(
+            f"Final holdout isolation assertion passed for {stage_name}: "
+            f"holdout_rows={int(holdout_bool.sum())} excluded_rows={int(excluded_bool.sum())}"
+        )
     tprint(f"--- RUNNING MINING STAGE: {stage_name} ---")
 
     # Log target provenance
@@ -6487,7 +7714,7 @@ def run_mining_stage(
 
     if candidate_registry_override is not None:
         tprint(f"{stage_name}: resuming from stored step1 outcome at {step1_input_dir}")
-        candidate_registry = candidate_registry_override.copy()
+        candidate_registry = candidate_registry_override.copy(deep=False)
         candidate_registry["preset"] = cfg.get("preset", "exploration")
         candidate_registry = atomic_to_csv(
             candidate_registry,
@@ -6520,9 +7747,9 @@ def run_mining_stage(
             candidate_registry = candidate_registry.merge(
                 assessment_df, on="canonical_key", how="left"
             )
-            accepted_registry = candidate_registry.copy()
+            accepted_registry = candidate_registry.copy(deep=False)
         else:
-            accepted_registry = candidate_registry.iloc[0:0].copy()
+            accepted_registry = candidate_registry.iloc[0:0].copy(deep=False)
         if "selected_for_final_registry" in accepted_registry.columns:
             accepted_registry = accepted_registry[
                 accepted_registry["selected_for_final_registry"].fillna(False)
@@ -7182,8 +8409,52 @@ def run_mining_stage(
 
     scorer = RuleScorer(metadata, cfg, mask_resolver=mask_resolver)
     unique_keys = sorted({rule.canonical_key for rule in all_extracted_rules})
+    leaf_candidate_registry = build_stage_a_leaf_candidate_registry(
+        keys=unique_keys,
+        all_rules=all_extracted_rules,
+        resolver=mask_resolver,
+        data=data,
+        net_ret=fwd_ret,
+        target=effective_target_oof,
+        folds=folds,
+        cfg=cfg,
+        target_name=target_name,
+        horizon=horizon,
+        side=explicit_side or "unknown",
+    )
+    atomic_to_csv(
+        leaf_candidate_registry,
+        output_dir / "leaf_candidate_registry.csv",
+        expected_columns=[
+            "canonical_key",
+            "source_tree",
+            "source_leaf",
+            "source_target",
+            "source_horizon",
+            "side",
+            "count",
+            "support_pct",
+            "mean_net_ret",
+            "shrunk_mean_net_ret",
+            "mean_uplift",
+            "shrunk_mean_uplift",
+            "tstat_net_ret",
+            "presence_freq",
+            "sign_consistency",
+            "support_score",
+            "diversity_score",
+            "cheap_score",
+            "rejection_reason",
+        ],
+    )
+    if not leaf_candidate_registry.empty and "accepted" in leaf_candidate_registry.columns:
+        unique_keys = leaf_candidate_registry.loc[
+            leaf_candidate_registry["accepted"].fillna(False), "canonical_key"
+        ].astype(str).tolist()
+        unique_keys = unique_keys[: int(cfg.get("max_stage_a2_candidates_per_side_target_horizon", 2000))]
+    unique_key_set = set(unique_keys)
     discovery_count_map = collections.Counter(
-        rule.canonical_key for rule in all_extracted_rules
+        rule.canonical_key for rule in all_extracted_rules if rule.canonical_key in unique_key_set
     )
     n_instances_map = discovery_count_map.copy()
     pipeline_stage_map = {
@@ -7219,6 +8490,7 @@ def run_mining_stage(
         path_time_to_mfe=path_arrays["time_to_mfe"],
         path_time_to_mae=path_arrays["time_to_mae"],
         path_length=path_arrays["path_length"],
+        compute_expensive_metrics=False,
     )
     scorer_elapsed = time.perf_counter() - scorer_start
     accepted_scored = (
@@ -7295,8 +8567,199 @@ def run_mining_stage(
                 f"{importance_col} ({before_count} -> {len(scorer_accepted)}, cutoff={cutoff:.6f})"
             )
 
+    stage_b_start = time.perf_counter()
     pruner = IndependentRulePruner(cfg)
     candidate_registry = pruner.prune(scorer_accepted)
+    if not candidate_registry.empty and "stage_b_score" in candidate_registry.columns:
+        candidate_registry = candidate_registry.sort_values(
+            "stage_b_score", ascending=False, kind="mergesort"
+        ).head(int(cfg.get("max_stage_b_survivors_per_side_target_horizon", 500)))
+    log_stage_gate(
+        cfg,
+        stage="stage_b_medium_scoring",
+        input_count=len(scorer_accepted),
+        output_count=len(candidate_registry),
+        start_time=stage_b_start,
+        target_name=target_name,
+        horizon=horizon,
+        side=explicit_side or "unknown",
+    )
+    stage_c_start = time.perf_counter()
+    precheck_input_count = len(candidate_registry)
+    if not candidate_registry.empty and "stage_b_score" in candidate_registry.columns:
+        mean_ret_for_precheck = pd.to_numeric(
+            candidate_registry.get("mean_net_ret", np.nan), errors="coerce"
+        )
+        if "directional_mean_ret" in candidate_registry.columns and "side" in candidate_registry.columns:
+            directional_ret_for_precheck = pd.to_numeric(
+                candidate_registry["directional_mean_ret"], errors="coerce"
+            )
+            short_raw_ret_fallback = (
+                candidate_registry["side"].astype(str).str.lower().eq("short")
+                & np.isfinite(directional_ret_for_precheck)
+                & (~np.isfinite(mean_ret_for_precheck) | (mean_ret_for_precheck <= 0.0))
+            )
+            mean_ret_for_precheck = mean_ret_for_precheck.where(
+                ~short_raw_ret_fallback, directional_ret_for_precheck
+            )
+        precheck = (
+            candidate_registry["mean_support_pct"].between(
+                float(cfg.get("leaf_support_min_pct", 0.05)),
+                float(cfg.get("leaf_support_max_pct", 0.20)),
+                inclusive="both",
+            )
+            & (candidate_registry["sign_consistency"] >= float(cfg.get("stage_b_min_sign_consistency", 0.60)))
+            & (candidate_registry["presence_freq"] >= float(cfg.get("stage_b_min_presence_freq", 0.50)))
+            & (mean_ret_for_precheck > 0.0)
+            & (candidate_registry["mean_uplift"] > 0.0)
+            & np.isfinite(candidate_registry["stage_b_score"])
+        )
+        candidate_registry = candidate_registry.loc[precheck].head(
+            int(cfg.get("max_stage_c_candidates_per_side_target_horizon", 200))
+        )
+    log_stage_gate(
+        cfg,
+        stage="stage_c_precheck",
+        input_count=precheck_input_count,
+        output_count=len(candidate_registry),
+        start_time=stage_c_start,
+        target_name=target_name,
+        horizon=horizon,
+        side=explicit_side or "unknown",
+    )
+    if not candidate_registry.empty:
+        stage_c_expensive_start = time.perf_counter()
+        stage_c_input_count = len(candidate_registry)
+        stage_c_keys = candidate_registry["canonical_key"].astype(str).tolist()
+        stage_c_registry, stage_c_audit = scorer.score_registry_oos(
+            keys=stage_c_keys,
+            fwd_ret=fwd_ret,
+            folds=folds,
+            resolver=mask_resolver,
+            parent_context_map=parent_context_map,
+            require_uplift_keys=require_uplift_keys,
+            discovery_count_map=discovery_count_map,
+            n_instances_map=n_instances_map,
+            pipeline_stage_map=pipeline_stage_map,
+            side_map=side_map,
+            bounded_target=effective_target_oof,
+            predictions=oof_predictions,
+            path_mfe=path_arrays["mfe"],
+            path_mae=path_arrays["mae"],
+            path_final_ret=path_arrays["final_ret"],
+            path_time_to_mfe=path_arrays["time_to_mfe"],
+            path_time_to_mae=path_arrays["time_to_mae"],
+            path_length=path_arrays["path_length"],
+            compute_expensive_metrics=True,
+        )
+        if not stage_c_registry.empty:
+            learnability_rows: List[Dict[str, Any]] = []
+            for key in stage_c_registry["canonical_key"].astype(str):
+                try:
+                    candidate_mask = np.asarray(mask_resolver.get_mask(key), dtype=bool)
+                    metrics = compute_within_leaf_future_edge_learnability(
+                        candidate_mask, X, fwd_ret, folds, cfg
+                    )
+                except Exception as exc:
+                    metrics = {
+                        "within_leaf_mean_ic": np.nan,
+                        "within_leaf_positive_ic_fraction": 0.0,
+                        "within_leaf_mean_top_quantile_spread": np.nan,
+                        "within_leaf_mean_edge_uplift": np.nan,
+                        "within_leaf_hit_lift": np.nan,
+                        "within_leaf_valid_folds": 0,
+                        "within_leaf_future_edge_learnability_score": 0.0,
+                        "learnability_definition": "within_leaf_future_edge",
+                        "within_leaf_learnability_error": str(exc)[:200],
+                    }
+                metrics["canonical_key"] = key
+                learnability_rows.append(metrics)
+            within_leaf_df = pd.DataFrame(learnability_rows)
+            stage_c_registry = stage_c_registry.rename(
+                columns={"learnability_step_c_score": "leaf_reconstructability_score"}
+            ).merge(within_leaf_df, on="canonical_key", how="left", validate="1:1")
+            stage_c_registry["learnability_step_c_score"] = stage_c_registry[
+                "within_leaf_future_edge_learnability_score"
+            ]
+            atomic_to_csv(
+                within_leaf_df,
+                output_dir / "within_leaf_future_edge_learnability_audit.csv",
+            )
+        atomic_to_csv(stage_c_audit, output_dir / "stage_c_expensive_metric_audit.csv")
+        if not stage_c_registry.empty:
+            stage_c_metric_cols = [
+                "canonical_key",
+                "learnability_step_c_score",
+                "within_leaf_mean_ic",
+                "within_leaf_positive_ic_fraction",
+                "within_leaf_mean_top_quantile_spread",
+                "within_leaf_mean_edge_uplift",
+                "within_leaf_hit_lift",
+                "within_leaf_valid_folds",
+                "within_leaf_future_edge_learnability_score",
+                "learnability_definition",
+                "leaf_reconstructability_score",
+                "trade_path_quality_score",
+                "quality_stability_score",
+                "path_smoothness_term",
+                "path_survivability_term",
+                "path_stability_term",
+                "path_realized_profit_consistency_term",
+                "path_trajectory_smoothness_term",
+                "full_quality_score",
+                "composite_score",
+                "support_score",
+                "diversity_score",
+            ]
+            stage_c_metric_cols = [c for c in stage_c_metric_cols if c in stage_c_registry.columns]
+            candidate_registry = candidate_registry.drop(
+                columns=[c for c in stage_c_metric_cols if c in candidate_registry.columns and c != "canonical_key"],
+                errors="ignore",
+            ).merge(
+                stage_c_registry.loc[:, stage_c_metric_cols],
+                on="canonical_key",
+                how="left",
+                validate="1:1",
+            )
+            candidate_registry["stage_c_rejection_reason"] = [
+                compute_stage_c_rejection(row, cfg)
+                for row in candidate_registry.to_dict("records")
+            ]
+            stage_c_rejections = collections.Counter(
+                reason
+                for reasons in candidate_registry["stage_c_rejection_reason"].fillna("")
+                for reason in str(reasons).split("|")
+                if reason
+            )
+            atomic_to_csv(
+                pd.DataFrame(
+                    list(stage_c_rejections.items()), columns=["reason", "count"]
+                ),
+                output_dir / "stage_c_rejection_summary.csv",
+                expected_columns=["reason", "count"],
+            )
+            candidate_registry = candidate_registry[
+                candidate_registry["stage_c_rejection_reason"].fillna("") == ""
+            ]
+            candidate_registry = candidate_registry.sort_values(
+                "composite_score", ascending=False, kind="mergesort"
+            ).head(int(cfg.get("max_stage_c_candidates_per_side_target_horizon", 200)))
+        log_stage_gate(
+            cfg,
+            stage="stage_c_expensive_scoring",
+            input_count=stage_c_input_count,
+            output_count=len(candidate_registry),
+            start_time=stage_c_expensive_start,
+            target_name=target_name,
+            horizon=horizon,
+            side=explicit_side or "unknown",
+        )
+
+    if not candidate_registry.empty and "composite_score" in candidate_registry.columns:
+        candidate_registry = candidate_registry.sort_values(
+            "composite_score", ascending=False, kind="mergesort"
+        ).head(int(cfg.get("max_final_diagnostic_candidates_per_side_target_horizon", 50)))
+
     candidate_registry["preset"] = cfg.get("preset", "exploration")
     candidate_registry = atomic_to_csv(
         candidate_registry,
@@ -7368,7 +8831,7 @@ def run_mining_stage(
             )
     else:
         accepted_registry = (
-            candidate_registry.iloc[0:0].copy()
+            candidate_registry.iloc[0:0].copy(deep=False)
             if run_step == "step1"
             else candidate_registry
         )
@@ -7391,6 +8854,150 @@ def run_mining_stage(
         bad_cols = [c for c in _cols if c.endswith("_x") or c.endswith("_y")]
         raise ValueError(f"Merge suffixes _x or _y detected in final registry: {bad_cols}")
 
+    stage_d_start = time.perf_counter()
+    max_final_diagnostic_candidates = int(
+        cfg.get("max_final_diagnostic_candidates_per_side_target_horizon", 50)
+    )
+    if not accepted_registry.empty:
+        if "composite_score" not in accepted_registry.columns:
+            accepted_registry["composite_score"] = np.nan
+        accepted_registry["required_hurdle"] = accepted_registry.apply(
+            lambda row: compute_final_required_hurdle(row, cfg), axis=1
+        )
+        accepted_registry["hurdle_excess"] = (
+            pd.to_numeric(accepted_registry.get("composite_score"), errors="coerce")
+            - accepted_registry["required_hurdle"]
+        )
+        final_reasons: List[str] = []
+        for _, row in accepted_registry.iterrows():
+            reasons: List[str] = []
+            composite = float(row.get("composite_score", np.nan))
+            support = float(row.get("mean_support_pct", row.get("support_pct", np.nan)))
+            if not np.isfinite(composite):
+                reasons.append("d_nonfinite_composite_score")
+            elif composite < float(row.get("required_hurdle", 0.0)):
+                reasons.append("d_required_hurdle_not_met")
+            if not (
+                float(cfg.get("leaf_support_min_pct", 0.05))
+                <= support
+                <= float(cfg.get("leaf_support_max_pct", 0.20))
+            ):
+                reasons.append("d_final_support_invalid")
+            if (
+                float(row.get("sign_consistency", 0.0) or 0.0)
+                < float(cfg.get("stage_b_min_sign_consistency", 0.60))
+                or float(row.get("presence_freq", 0.0) or 0.0)
+                < float(cfg.get("stage_b_min_presence_freq", 0.50))
+            ):
+                reasons.append("d_final_stability_invalid")
+            final_reasons.append("|".join(reasons))
+        accepted_registry["final_rejection_reason"] = final_reasons
+        accepted_registry["selected_for_final_registry"] = [
+            reason == "" for reason in final_reasons
+        ]
+        accepted_registry["accepted"] = accepted_registry["selected_for_final_registry"]
+        accepted_registry["rejection_reason"] = np.where(
+            accepted_registry["final_rejection_reason"] != "",
+            accepted_registry["final_rejection_reason"],
+            accepted_registry.get("rejection_reason", ""),
+        )
+
+    final_audit_registry = accepted_registry.sort_values(
+        "composite_score", ascending=False, kind="mergesort"
+    ).head(max_final_diagnostic_candidates) if not accepted_registry.empty else accepted_registry
+    final_registry = (
+        accepted_registry[accepted_registry["selected_for_final_registry"].fillna(False)]
+        .sort_values("composite_score", ascending=False, kind="mergesort")
+        .head(max_final_diagnostic_candidates)
+        if "selected_for_final_registry" in accepted_registry.columns
+        else accepted_registry.head(0)
+    )
+    log_stage_gate(
+        cfg,
+        stage="stage_d_final_diagnostics",
+        input_count=len(candidate_registry),
+        output_count=len(final_registry),
+        start_time=stage_d_start,
+        target_name=target_name,
+        horizon=horizon,
+        side=explicit_side or "unknown",
+    )
+
+    final_holdout_audit = pd.DataFrame()
+    diversified_audit = pd.DataFrame()
+    if bool(cfg.get("final_holdout_enabled", True)) and final_holdout_mask is not None:
+        stage_e_start = time.perf_counter()
+        tprint(
+            f"Stage E entering untouched validation: candidates={len(final_registry)} "
+            f"holdout_rows={int(np.asarray(final_holdout_mask, dtype=bool).sum())}"
+        )
+        final_holdout_audit, candidate_masks = run_final_untouched_validation(
+            final_registry,
+            resolver=mask_resolver,
+            data=data,
+            net_ret=fwd_ret,
+            target=primary_target,
+            final_holdout_mask=np.asarray(final_holdout_mask, dtype=bool),
+            cfg=cfg,
+            output_dir=output_dir,
+            target_name=target_name,
+            horizon=horizon,
+            side=explicit_side or "unknown",
+        )
+        holdout_passed = final_holdout_audit[
+            final_holdout_audit.get("final_holdout_pass", False).fillna(False)
+        ] if not final_holdout_audit.empty else final_holdout_audit
+        feature_centroids = _compute_candidate_feature_centroids(
+            holdout_passed, candidate_masks, X, np.asarray(final_holdout_mask, dtype=bool)
+        )
+        feature_family_sets = {
+            str(key): _extract_feature_family_set(str(key), metadata)
+            for key in holdout_passed.get("canonical_key", pd.Series(dtype=str)).astype(str)
+        }
+        candidate_return_signs = {
+            str(row.get("canonical_key")): 1.0
+            for row in holdout_passed.to_dict("records")
+        }
+        final_registry, diversified_audit = select_diversified_final_regimes(
+            holdout_passed,
+            candidate_masks,
+            feature_centroids,
+            feature_family_sets,
+            np.asarray(fwd_ret, dtype=float),
+            np.asarray(final_holdout_mask, dtype=bool),
+            cfg,
+            candidate_return_signs=candidate_return_signs,
+        )
+        if not diversified_audit.empty:
+            # New final quality score uses untouched holdout edge and within-leaf future-edge learnability.
+            diversified_audit["full_quality_score"] = (
+                0.30 * pd.to_numeric(diversified_audit.get("holdout_edge_score", 0.0), errors="coerce").fillna(0.0)
+                + 0.20 * pd.to_numeric(diversified_audit.get("trade_path_quality_score", 0.0), errors="coerce").fillna(0.0)
+                + 0.20 * pd.to_numeric(diversified_audit.get("within_leaf_future_edge_learnability_score", 0.0), errors="coerce").fillna(0.0)
+                + 0.15 * pd.to_numeric(diversified_audit.get("quality_stability_score", 0.0), errors="coerce").fillna(0.0)
+                + 0.10 * pd.to_numeric(diversified_audit.get("support_score", 0.0), errors="coerce").fillna(0.0)
+                + 0.05 * pd.to_numeric(diversified_audit.get("novelty_score", 0.0), errors="coerce").fillna(0.0)
+            )
+            if not final_registry.empty:
+                quality_map = diversified_audit.set_index("canonical_key")["full_quality_score"]
+                final_registry["full_quality_score"] = final_registry["canonical_key"].map(quality_map)
+        atomic_to_csv(
+            diversified_audit,
+            output_dir / "diversified_final_selection_audit.csv",
+        )
+        atomic_to_csv(
+            final_registry,
+            output_dir / "diversified_final_selection.csv",
+        )
+        tprint(
+            f"Stage E diversified selection: holdout_passed={len(holdout_passed)} "
+            f"pareto_candidates={int(diversified_audit.get('pareto_front_member', pd.Series(dtype=bool)).fillna(False).sum()) if not diversified_audit.empty else 0} "
+            f"final_selected={len(final_registry)} elapsed={time.perf_counter() - stage_e_start:.2f}s"
+        )
+    elif bool(cfg.get("final_holdout_enabled", True)):
+        tprint("WARNING: final_holdout_enabled=True but no final_holdout_mask was provided; final registry is research-only")
+        final_registry["research_only_no_final_holdout"] = True
+
     if "support_pct" in accepted_registry.columns:
         invalid_support = accepted_registry[~accepted_registry["support_pct"].between(0.0, 1.0, inclusive="both")]
         if not invalid_support.empty:
@@ -7405,18 +9012,23 @@ def run_mining_stage(
             if not invalid_auc.empty:
                 raise ValueError(f"Found {len(invalid_auc)} rows with {auc_col} out of [0, 1] bounds")
 
-    accepted_registry = atomic_to_csv(
-        accepted_registry,
-        output_dir / "accepted_rule_registry.csv",
-        expected_columns=list(candidate_registry.columns),
+    final_audit_registry = atomic_to_csv(
+        final_audit_registry,
+        output_dir / "accepted_rule_registry_audit.csv",
+        expected_columns=list(final_audit_registry.columns),
     )
-    atomic_to_csv(
-        accepted_registry,
+    accepted_registry = atomic_to_csv(
+        final_registry,
+        output_dir / "accepted_rule_registry.csv",
+        expected_columns=list(final_audit_registry.columns),
+    )
+    final_registry = atomic_to_csv(
+        final_registry,
         output_dir / "final_rule_registry.csv",
-        expected_columns=list(accepted_registry.columns),
+        expected_columns=list(final_audit_registry.columns),
     )
 
-    final_usage_df = collect_registry_feature_usage(accepted_registry, metadata)
+    final_usage_df = collect_registry_feature_usage(final_registry, metadata)
     export_coverage_sanity_report(
         metadata, split_usage_all, rule_usage_df, final_usage_df, output_dir
     )
@@ -7432,6 +9044,10 @@ def run_mining_stage(
         "candidate_registry": candidate_registry,
         "assessment_df": assessment_df,
         "accepted_registry": accepted_registry,
+        "final_audit_registry": final_audit_registry,
+        "final_holdout_audit": final_holdout_audit,
+        "diversified_final_selection_audit": diversified_audit,
+        "final_registry": final_registry,
         "output_dir": output_dir,
     }
 
@@ -7598,6 +9214,8 @@ def run_side_pipeline(
     bounded_target: Optional[np.ndarray] = None,
     bounded_target_surprisal: Optional[np.ndarray] = None,
     target_nan_reasons: Optional[np.ndarray] = None,
+    final_holdout_mask: Optional[np.ndarray] = None,
+    final_excluded_mask: Optional[np.ndarray] = None,
 ) -> Dict[str, pd.DataFrame]:
     """
     Run the full side pipeline (long or short).
@@ -7678,16 +9296,19 @@ def run_side_pipeline(
     # --- STAGE A: CONTEXT MINING ---
     tprint(f"STAGE A: Context Mining (Regime x Location) [{side}]")
     fp_a = FeatureProcessor()
-    X_a, metadata_a, audits_a = fp_a.prepare_features(
-        feature_dict,
-        data["timestamp"].to_numpy(),
-        data["symbol"].to_numpy(),
-        cfg,
-        active_groups=("regime", "location"),
-    )
-    X_assessor, metadata_assessor, assessor_feature_names = (
-        build_requested_assessor_feature_matrix(feature_dict, cfg)
-    )
+    with stage_timer(
+        f"candidate/rule generation: feature matrix {side} {target_name} H{horizon}"
+    ):
+        X_a, metadata_a, audits_a = fp_a.prepare_features(
+            feature_dict,
+            data["timestamp"].to_numpy(),
+            data["symbol"].to_numpy(),
+            cfg,
+            active_groups=("regime", "location"),
+        )
+        X_assessor, metadata_assessor, assessor_feature_names = (
+            build_requested_assessor_feature_matrix(feature_dict, cfg)
+        )
     tprint(
         "Assessor raw feature matrix: "
         f"requested_loaded={len(assessor_feature_names)} shape={X_assessor.shape}"
@@ -7775,13 +9396,35 @@ def run_side_pipeline(
             # but we explicitly slice it if needed. However, data length is assumed to match X_a length here
             # based on pipeline architecture.
 
-            hpo_results = run_short_hpo_for_target_horizon(
-                X=X_a,
-                y=side_fwd_ret[: len(X_a)],
-                vol=vol_array[: len(X_a)],
-                main_params=hpo_main_params,
-                seed=cfg.get("random_state", 42),
+            hpo_y = side_fwd_ret[: len(X_a)]
+            hpo_vol = vol_array[: len(X_a)]
+            hpo_allowed = (
+                np.isfinite(hpo_y)
+                & np.isfinite(hpo_vol)
+                & np.any(np.isfinite(X_a), axis=1)
             )
+            if final_excluded_mask is not None:
+                excluded_hpo = np.asarray(final_excluded_mask, dtype=bool)[: len(X_a)]
+                hpo_allowed &= ~excluded_hpo
+            elif final_holdout_mask is not None:
+                holdout_hpo = np.asarray(final_holdout_mask, dtype=bool)[: len(X_a)]
+                hpo_allowed &= ~holdout_hpo
+            if int(hpo_allowed.sum()) == 0:
+                raise ValueError("Dynamic HPO has zero rows after final holdout exclusion")
+            tprint(
+                f"Dynamic HPO final-holdout exclusion: input_rows={len(X_a)} "
+                f"kept_rows={int(hpo_allowed.sum())}"
+            )
+            with stage_timer(
+                f"HPO/training: dynamic HPO {side} {target_name} H{horizon}"
+            ):
+                hpo_results = run_short_hpo_for_target_horizon(
+                    X=X_a[hpo_allowed],
+                    y=hpo_y[hpo_allowed],
+                    vol=hpo_vol[hpo_allowed],
+                    main_params=hpo_main_params,
+                    seed=cfg.get("random_state", 42),
+                )
 
             best_cfg = hpo_results.get("best_final_result")
             if best_cfg and best_cfg.valid:
@@ -7792,12 +9435,12 @@ def run_side_pipeline(
                 )
 
                 # Update cfg for this side pipeline
-                cfg = cfg.copy()  # Avoid polluting other sides
+                cfg = cfg.copy()  # lightweight dict copy; avoid polluting other sides
                 cfg["hpo_best_alpha"] = best_cfg.cfg.alpha
                 cfg["hpo_min_gain_to_split"] = best_cfg.cfg.min_gain_to_split
 
-                # Use train_n if available, otherwise fallback to full X_a size
-                train_n = hpo_results.get("train_n", len(X_a))
+                # Use train_n if available, otherwise fallback to holdout/embargo-filtered HPO rows.
+                train_n = hpo_results.get("train_n", int(hpo_allowed.sum()))
                 miner_min_leaf_floor_frac = float(
                     cfg.get("miner_min_leaf_floor_frac", 0.05)
                 )
@@ -7926,33 +9569,36 @@ def run_side_pipeline(
     step1_input_dir: Optional[Path] = None
     candidate_registry_override: Optional[pd.DataFrame] = None
 
-    stage_a_result = run_mining_stage(
-        data,
-        side_fwd_ret,
-        side_fwd_ret_norm,
-        X_a,
-        metadata_a,
-        cfg,
-        stage_a_output_dir,
-        stage_a_spec.stage_name,
-        stage_a_spec.allowed_group_pairs,
-        slot_order=stage_a_spec.slot_order,
-        folds=folds,
-        mask_resolver=CanonicalRuleMaskResolver(X_a, metadata_a),
-        pipeline_stage_name="stage_a_context",
-        explicit_side=side,
-        target_name=target_name,
-        horizon=horizon,
-        primary_target_override=side_target,
-        sample_weight_surprisal_override=bounded_target_surprisal,
-        nuisance_feature_arrays=nuisance_feature_arrays,
-        nuisance_feature_resolution=nuisance_feature_resolution,
-        run_step=run_step,
-        step1_input_dir=step1_input_dir,
-        candidate_registry_override=candidate_registry_override,
-        bounded_target=bounded_target,
-        target_nan_reasons=target_nan_reasons,
-    )
+    with stage_timer(f"Stage A dedup: {side} {target_name} H{horizon}"):
+        stage_a_result = run_mining_stage(
+            data,
+            side_fwd_ret,
+            side_fwd_ret_norm,
+            X_a,
+            metadata_a,
+            cfg,
+            stage_a_output_dir,
+            stage_a_spec.stage_name,
+            stage_a_spec.allowed_group_pairs,
+            slot_order=stage_a_spec.slot_order,
+            folds=folds,
+            mask_resolver=CanonicalRuleMaskResolver(X_a, metadata_a),
+            pipeline_stage_name="stage_a_context",
+            explicit_side=side,
+            target_name=target_name,
+            horizon=horizon,
+            primary_target_override=side_target,
+            sample_weight_surprisal_override=bounded_target_surprisal,
+            nuisance_feature_arrays=nuisance_feature_arrays,
+            nuisance_feature_resolution=nuisance_feature_resolution,
+            run_step=run_step,
+            step1_input_dir=step1_input_dir,
+            candidate_registry_override=candidate_registry_override,
+            bounded_target=bounded_target,
+            target_nan_reasons=target_nan_reasons,
+            final_holdout_mask=final_holdout_mask,
+            final_excluded_mask=final_excluded_mask,
+        )
     log_stage_gate_diagnostics("Stage A", stage_a_result, cfg)
 
     if run_step == "step1":
@@ -8046,12 +9692,29 @@ def run_lgbm_mask_generation_pipeline(
         min_train_frac=float(cfg.get("cv_min_train_frac", 0.5)),
         embargo=int(cfg.get("cv_embargo", 0)),
     )
+    final_holdout_mask = np.zeros(len(data), dtype=bool)
+    final_excluded_mask = np.zeros(len(data), dtype=bool)
+    if bool(cfg.get("final_holdout_enabled", True)):
+        holdout_ts = data["timestamp"].to_numpy(copy=False) if "timestamp" in data.columns else np.arange(len(data))
+        holdout_embargo = int(cfg.get("final_holdout_embargo_bars", cfg.get("max_horizon", 0)))
+        final_holdout_mask = build_final_holdout_mask(
+            holdout_ts,
+            holdout_frac=float(cfg.get("final_holdout_frac", 0.15)),
+            min_days=int(cfg.get("final_holdout_min_days", 30)),
+            embargo_bars=holdout_embargo,
+        )
+        final_excluded_mask = build_final_holdout_training_exclusion_mask(
+            final_holdout_mask, holdout_embargo, holdout_ts, cfg.get("timeframe", "1h")
+        )
+        folds = filter_folds_for_final_holdout(folds, final_excluded_mask)
+        if len(folds) < int(cfg.get("final_holdout_min_remaining_folds", 1)):
+            raise ValueError("Too few folds remain after final holdout exclusion")
 
     long_results = run_side_pipeline(
-        "long", data, feature_dict, fwd_ret, fwd_ret_norm, cfg, folds, root_output_dir
+        "long", data, feature_dict, fwd_ret, fwd_ret_norm, cfg, folds, root_output_dir, final_holdout_mask=final_holdout_mask, final_excluded_mask=final_excluded_mask
     )
     short_results = run_side_pipeline(
-        "short", data, feature_dict, fwd_ret, fwd_ret_norm, cfg, folds, root_output_dir
+        "short", data, feature_dict, fwd_ret, fwd_ret_norm, cfg, folds, root_output_dir, final_holdout_mask=final_holdout_mask, final_excluded_mask=final_excluded_mask
     )
 
     long_pre_global_raw = create_pre_global_registry(long_results)
@@ -8366,13 +10029,13 @@ def load_step1_slice_basket(
         )
         if support_col is None:
             return df
-        out = df.copy()
+        out = df.copy(deep=False)
         out[support_col] = pd.to_numeric(out[support_col], errors="coerce")
         return out.loc[
             out[support_col].between(
                 float(support_min_pct), float(support_max_pct), inclusive="both"
             )
-        ].copy()
+        ].copy(deep=False)
 
     if post_dedup_path.exists():
         post_df = pd.read_csv(post_dedup_path)
@@ -8390,7 +10053,9 @@ def load_step1_slice_basket(
             cand_df = _filter_support_bounds(cand_df)
         if not cand_df.empty:
             cand_df["canonical_key"] = cand_df["canonical_key"].astype(str)
-            cand_df = cand_df.loc[~cand_df["canonical_key"].isin(selected_keys)].copy()
+            cand_df = cand_df.loc[
+                ~cand_df["canonical_key"].isin(selected_keys)
+            ].copy(deep=False)
             if "cheap_rank" in cand_df.columns:
                 cand_df["cheap_rank"] = pd.to_numeric(
                     cand_df["cheap_rank"], errors="coerce"
@@ -8410,8 +10075,10 @@ def load_step1_slice_basket(
         return pd.DataFrame()
 
     basket = pd.concat(frames, ignore_index=True, copy=False)
-    basket = basket.drop_duplicates(subset=["canonical_key"], keep="first").copy()
-    basket = basket.head(basket_size).copy()
+    basket = basket.drop_duplicates(subset=["canonical_key"], keep="first").copy(
+        deep=False
+    )
+    basket = basket.head(basket_size).copy(deep=False)
     basket["source_target"] = target_name
     basket["source_horizon"] = horizon
     basket["side"] = side
@@ -8488,6 +10155,75 @@ def run_lgbm_mask_generation_triad(
         min_train_frac=float(cfg.get("cv_min_train_frac", 0.5)),
         embargo=int(cfg.get("cv_embargo", 0)),
     )
+    final_holdout_mask = np.zeros(len(data), dtype=bool)
+    final_excluded_mask = np.zeros(len(data), dtype=bool)
+    if bool(cfg.get("final_holdout_enabled", True)):
+        holdout_timestamps = (
+            data["timestamp"].to_numpy(copy=False)
+            if "timestamp" in data.columns
+            else np.arange(len(data))
+        )
+        final_holdout_embargo_bars = int(
+            cfg.get(
+                "final_holdout_embargo_bars",
+                max([int(h) for h in horizons] or [int(cfg.get("max_horizon", 0))]),
+            )
+        )
+        final_holdout_mask = build_final_holdout_mask(
+            holdout_timestamps,
+            holdout_frac=float(cfg.get("final_holdout_frac", 0.15)),
+            min_days=int(cfg.get("final_holdout_min_days", 30)),
+            embargo_bars=final_holdout_embargo_bars,
+        )
+        final_excluded_mask = build_final_holdout_training_exclusion_mask(
+            final_holdout_mask,
+            final_holdout_embargo_bars,
+            holdout_timestamps,
+            cfg.get("timeframe", "1h"),
+        )
+        before_fold_rows = sum(len(tr) + len(va) for tr, va in folds)
+        folds = filter_folds_for_final_holdout(folds, final_excluded_mask)
+        after_fold_rows = sum(len(tr) + len(va) for tr, va in folds)
+        if len(folds) < int(cfg.get("final_holdout_min_remaining_folds", 1)):
+            raise ValueError("Too few folds remain after final holdout exclusion")
+        tprint(
+            "Final untouched holdout isolation: "
+            f"holdout_rows={int(final_holdout_mask.sum())} "
+            f"excluded_rows={int(final_excluded_mask.sum())} "
+            f"folds_remaining={len(folds)} "
+            f"fold_rows_before={before_fold_rows} fold_rows_after={after_fold_rows}"
+        )
+
+    # Keep only immutable event/price metadata needed by downstream mining and
+    # assessment instead of carrying any accidental full feature/debug columns.
+    training_metadata_cols = [
+        col
+        for col in (
+            "event_id",
+            "timestamp",
+            "symbol",
+            "t0",
+            "t1",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "atr",
+        )
+        if col in data.columns
+    ]
+    data_training_view = build_training_view(
+        data, feature_cols=[], target_cols=[], metadata_cols=training_metadata_cols
+    )
+    assert len(data_training_view) == len(data), "training view row count changed"
+    if "symbol" in data.columns:
+        assert set(data_training_view["symbol"].unique()) == set(
+            data["symbol"].unique()
+        ), "training view symbols changed"
+    if "timestamp" in data.columns:
+        assert data_training_view["timestamp"].min() == data["timestamp"].min()
+        assert data_training_view["timestamp"].max() == data["timestamp"].max()
 
     # Store results by (target_name, horizon, side)
     results_by_target_horizon: Dict[Tuple[str, int, str], Dict[str, Any]] = {}
@@ -8517,8 +10253,13 @@ def run_lgbm_mask_generation_triad(
             if target_name in triad_targets:
                 if horizon in triad_targets[target_name]:
                     bounded_target = triad_targets[target_name][horizon]
+                    target_non_null_count = int(np.isfinite(bounded_target).sum())
+                    assert len(bounded_target) == len(data_training_view), (
+                        f"target length changed for {target_name} H{horizon}"
+                    )
                     tprint(
                         f"Using bounded target array: shape={bounded_target.shape}, "
+                        f"valid={target_non_null_count}, "
                         f"range=[{np.nanmin(bounded_target):.3f}, {np.nanmax(bounded_target):.3f}]"
                     )
                 else:
@@ -8591,7 +10332,7 @@ def run_lgbm_mask_generation_triad(
                         else target_nan_reasons
                     ),
                     side=side,
-                    data=data,
+                    data=data_training_view,
                     feature_dict=feature_dict,
                     fwd_ret=fwd_ret,
                     fwd_ret_norm=fwd_ret_norm,
@@ -8602,6 +10343,8 @@ def run_lgbm_mask_generation_triad(
                     horizon=horizon,
                     bounded_target=bounded_target,
                     bounded_target_surprisal=bounded_target_surprisal,
+                    final_holdout_mask=final_holdout_mask,
+                    final_excluded_mask=final_excluded_mask,
                 )
 
                 # Store results
@@ -8621,7 +10364,7 @@ def run_lgbm_mask_generation_triad(
                         )
 
                     if not side_results.get("stage_a", pd.DataFrame()).empty:
-                        stage_a_with_prov = side_results["stage_a"].copy()
+                        stage_a_with_prov = side_results["stage_a"].copy(deep=False)
                         stage_a_with_prov["source_target"] = target_name
                         stage_a_with_prov["source_horizon"] = horizon
                         stage_a_with_prov["side"] = side
@@ -8677,6 +10420,41 @@ def run_lgbm_mask_generation_triad(
         )
 
         if not global_stage_a_pooled_registry.empty:
+            global_cap = int(cfg.get("max_global_final_diagnostic_candidates", 200))
+            global_sort_col: Optional[str] = None
+            for candidate_col in (
+                "composite_score",
+                "stage_b_score",
+                "cheap_score",
+                "final_candidate_rank_score",
+            ):
+                if candidate_col not in global_stage_a_pooled_registry.columns:
+                    continue
+                candidate_vals = pd.to_numeric(
+                    global_stage_a_pooled_registry[candidate_col], errors="coerce"
+                )
+                if np.isfinite(candidate_vals).any():
+                    global_sort_col = candidate_col
+                    break
+            if global_sort_col is not None:
+                global_stage_a_pooled_registry = (
+                    global_stage_a_pooled_registry.assign(
+                        _global_sort_value=pd.to_numeric(
+                            global_stage_a_pooled_registry[global_sort_col],
+                            errors="coerce",
+                        )
+                    )
+                    .sort_values("_global_sort_value", ascending=False, kind="mergesort")
+                    .drop(columns=["_global_sort_value"])
+                    .head(global_cap)
+                )
+            else:
+                global_stage_a_pooled_registry = global_stage_a_pooled_registry.head(global_cap)
+            tprint(
+                "Global consolidated final assessment cap: "
+                f"kept={len(global_stage_a_pooled_registry)} cap={global_cap} "
+                f"sort_col={global_sort_col}"
+            )
             assessor_x_runtime = assessor_x_ref if assessor_x_ref is not None else x_ref
             assessor_metadata_runtime = (
                 assessor_metadata_ref if assessor_metadata_ref else metadata_ref
@@ -8732,55 +10510,159 @@ def run_lgbm_mask_generation_triad(
             )
             
             # Pass all context necessary for sequential 'in bunches of 14' assessment
-            final_assessment_df = assessor.assess_rules(
-                global_stage_a_pooled_registry,
-                assessor_x_runtime,
-                data,
-                fwd_ret, # fallback
-                fwd_ret_norm, # fallback
-                folds,
-                step_mode="step2",
-                checkpoint_output_dir=root_output_dir,
-                triad_targets_map=assessment_targets,
-                output_dirs_map=global_horizon_target_dirs,
-                batch_size=1,
-                target_nan_reasons=target_nan_reasons,
-                skip_stage1_filtering=True,
-            )
+            with stage_timer("HPO/training: global final assessment"):
+                final_assessment_df = assessor.assess_rules(
+                    global_stage_a_pooled_registry,
+                    assessor_x_runtime,
+                    data_training_view,
+                    fwd_ret, # fallback
+                    fwd_ret_norm, # fallback
+                    folds,
+                    step_mode="step2",
+                    checkpoint_output_dir=root_output_dir,
+                    triad_targets_map=assessment_targets,
+                    output_dirs_map=global_horizon_target_dirs,
+                    batch_size=1,
+                    target_nan_reasons=target_nan_reasons,
+                    skip_stage1_filtering=True,
+                )
 
             if not final_assessment_df.empty:
                 if "selected_for_final_registry" in final_assessment_df.columns:
-                    final_rule_registry = final_assessment_df.loc[
+                    final_rule_candidates = final_assessment_df.loc[
                         final_assessment_df["selected_for_final_registry"].fillna(False)
                     ].copy()
                 else:
-                    final_rule_registry = final_assessment_df.loc[
+                    final_rule_candidates = final_assessment_df.loc[
                         final_assessment_df["is_structurally_sound"].fillna(False)
                     ].copy()
-                if "final_selection_order" in final_rule_registry.columns:
-                    final_rule_registry = final_rule_registry.sort_values(
+                if "final_selection_order" in final_rule_candidates.columns:
+                    final_rule_candidates = final_rule_candidates.sort_values(
                         "final_selection_order", ascending=True
                     ).reset_index(drop=True)
-                final_rule_registry["preset"] = cfg.get("preset", "triad_exploration")
-                final_rule_registry = _ensure_registry_support_columns(final_rule_registry)
-                final_rule_registry = append_hardcoded_final_rules(final_rule_registry)
-                atomic_to_csv(
-                    final_rule_registry,
-                    root_output_dir / "final_rule_registry.csv",
+                final_rule_candidates["preset"] = cfg.get("preset", "triad_exploration")
+                final_rule_candidates = _ensure_registry_support_columns(final_rule_candidates)
+                final_rule_candidates = append_hardcoded_final_rules(final_rule_candidates)
+
+                global_stage_e_audit = pd.DataFrame()
+                global_diversified_audit = pd.DataFrame()
+                final_rule_registry = final_rule_candidates.head(0).copy()
+                global_resolver = CanonicalRuleMaskResolver(
+                    resolver_x_runtime, resolver_metadata_runtime
                 )
-                atomic_to_csv(
-                    final_assessment_df,
-                    root_output_dir / "global_final_mask_assessment_audit.csv",
-                )
-                if hasattr(assessor, "rejection_summary") and assessor.rejection_summary:
-                    atomic_to_csv(
-                        pd.DataFrame(
-                            list(assessor.rejection_summary.items()),
-                            columns=["reason", "count"],
-                        ),
-                        root_output_dir / "global_mask_assessment_rejection_summary.csv",
-                        expected_columns=["reason", "count"],
+                if bool(cfg.get("final_holdout_enabled", True)):
+                    tprint(
+                        "Global Stage E entering untouched validation: "
+                        f"candidates={len(final_rule_candidates)} "
+                        f"holdout_rows={int(np.asarray(final_holdout_mask, dtype=bool).sum())}"
                     )
+                    global_stage_e_audit, global_candidate_masks = run_final_untouched_validation(
+                        final_rule_candidates,
+                        resolver=global_resolver,
+                        data=data_training_view,
+                        net_ret=fwd_ret,
+                        target=fwd_ret_norm,
+                        final_holdout_mask=np.asarray(final_holdout_mask, dtype=bool),
+                        cfg=cfg,
+                        output_dir=root_output_dir,
+                        target_name="global",
+                        horizon=0,
+                        side="global",
+                    )
+                    global_holdout_passed = (
+                        global_stage_e_audit[
+                            global_stage_e_audit.get("final_holdout_pass", False).fillna(False)
+                        ]
+                        if not global_stage_e_audit.empty
+                        else global_stage_e_audit
+                    )
+                    global_centroids = _compute_candidate_feature_centroids(
+                        global_holdout_passed,
+                        global_candidate_masks,
+                        resolver_x_runtime,
+                        np.asarray(final_holdout_mask, dtype=bool),
+                    )
+                    global_family_sets = {
+                        str(key): _extract_feature_family_set(
+                            str(key), resolver_metadata_runtime
+                        )
+                        for key in global_holdout_passed.get(
+                            "canonical_key", pd.Series(dtype=str)
+                        ).astype(str)
+                    }
+                    global_return_signs = {
+                        str(row.get("canonical_key")): (
+                            -1.0 if str(row.get("side", "global")).lower() == "short" else 1.0
+                        )
+                        for row in global_holdout_passed.to_dict("records")
+                    }
+                    final_rule_registry, global_diversified_audit = select_diversified_final_regimes(
+                        global_holdout_passed,
+                        global_candidate_masks,
+                        global_centroids,
+                        global_family_sets,
+                        np.asarray(fwd_ret, dtype=float),
+                        np.asarray(final_holdout_mask, dtype=bool),
+                        cfg,
+                        candidate_return_signs=global_return_signs,
+                    )
+                    atomic_to_csv(
+                        global_diversified_audit,
+                        root_output_dir / "diversified_final_selection_audit.csv",
+                    )
+                    atomic_to_csv(
+                        final_rule_registry,
+                        root_output_dir / "diversified_final_selection.csv",
+                    )
+                    tprint(
+                        "Global Stage E diversified selection: "
+                        f"holdout_passed={len(global_holdout_passed)} "
+                        f"pareto_candidates={int(global_diversified_audit.get('pareto_front_member', pd.Series(dtype=bool)).fillna(False).sum()) if not global_diversified_audit.empty else 0} "
+                        f"final_selected={len(final_rule_registry)}"
+                    )
+                else:
+                    final_rule_registry = final_rule_candidates.copy()
+                    final_rule_registry["research_only_no_final_holdout"] = True
+                with stage_timer("final registry/report writing"):
+                    if final_rule_registry.empty:
+                        final_rule_registry = pd.DataFrame(
+                            columns=[
+                                "canonical_key",
+                                "source_target",
+                                "source_horizon",
+                                "side",
+                                "preset",
+                            ]
+                        )
+                    registry_key_cols = [
+                        col
+                        for col in (
+                            "canonical_key",
+                            "source_target",
+                            "source_horizon",
+                            "side",
+                        )
+                        if col in final_rule_registry.columns
+                    ]
+                    assert len(final_rule_registry) == int(final_rule_registry.shape[0])
+                    assert final_rule_registry.empty or len(registry_key_cols) >= 1, "final registry missing key columns"
+                    atomic_to_csv(
+                        final_rule_registry,
+                        root_output_dir / "final_rule_registry.csv",
+                    )
+                    atomic_to_csv(
+                        final_assessment_df,
+                        root_output_dir / "global_final_mask_assessment_audit.csv",
+                    )
+                    if hasattr(assessor, "rejection_summary") and assessor.rejection_summary:
+                        atomic_to_csv(
+                            pd.DataFrame(
+                                list(assessor.rejection_summary.items()),
+                                columns=["reason", "count"],
+                            ),
+                            root_output_dir / "global_mask_assessment_rejection_summary.csv",
+                            expected_columns=["reason", "count"],
+                        )
                 tprint(f"Global consolidated assessment complete. {len(final_assessment_df)} rules assessed.")
                 return {
                     "results_by_target_horizon": {}, # Legacy compat
@@ -8849,9 +10731,37 @@ def run_lgbm_mask_generation_triad(
         combined_registry = pd.DataFrame()
 
     # Save combined registry
-    combined_registry["preset"] = cfg.get("preset", "triad_exploration")
-    combined_registry = append_hardcoded_final_rules(combined_registry)
-    combined_registry.to_csv(root_output_dir / "final_rule_registry.csv", index=False)
+    with stage_timer("final registry/report writing"):
+        if combined_registry.empty:
+            combined_registry = atomic_to_csv(
+                pd.DataFrame(
+                    columns=[
+                        "canonical_key",
+                        "source_target",
+                        "source_horizon",
+                        "side",
+                        "preset",
+                    ]
+                ),
+                root_output_dir / "final_rule_registry.csv",
+            )
+        else:
+            combined_registry["preset"] = cfg.get("preset", "triad_exploration")
+            combined_registry = append_hardcoded_final_rules(combined_registry)
+            if "selected_for_final_registry" in combined_registry.columns:
+                combined_registry = combined_registry[
+                    combined_registry["selected_for_final_registry"].fillna(False)
+                ]
+            registry_key_cols = [
+                col
+                for col in ("canonical_key", "source_target", "source_horizon", "side")
+                if col in combined_registry.columns
+            ]
+            assert len(combined_registry) == int(combined_registry.shape[0])
+            assert len(registry_key_cols) >= 1, "final registry missing key columns"
+            combined_registry = atomic_to_csv(
+                combined_registry, root_output_dir / "final_rule_registry.csv"
+            )
 
     # Summary statistics
     tprint("\nTRIAD TRAINING COMPLETE")
@@ -8915,14 +10825,7 @@ def run_lgbm_mask_generation_triad(
             candidate_df["rule_status"] = "candidate"
             discovery_frames.append(candidate_df)
         if discovery_frames:
-            all_results.append(
-                pd.concat(
-                    [_drop_duplicate_columns(df) for df in discovery_frames],
-                    axis=0,
-                    ignore_index=True,
-                    copy=False,
-                )
-            )
+            all_results.extend(_drop_duplicate_columns(df) for df in discovery_frames)
 
     # Merge discovery outputs
     merged_output = merge_discovery_outputs_across_targets(
@@ -15911,7 +17814,7 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
     )
     out.setdefault("n_folds", 5)
     out.setdefault("pairwise_top_n", 20)
-    return out
+    return apply_leaf_scoring_defaults(out, test_mode=bool(out.get("test_mode", False)))
 
 
 def apply_test_mode(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -16508,6 +18411,13 @@ if __name__ == "__main__":
     market_mode = normalize_market_mode("perps" if args.perps else args.market_mode)
     args.data_root = append_market_suffix(args.data_root, market_mode)
     args.output_dir = append_market_suffix(args.output_dir, market_mode)
+    expected_market_suffix = f"_{market_mode}"
+    assert str(args.data_root).rstrip("/\\").endswith(expected_market_suffix), (
+        "market-specific data root suffix was not preserved"
+    )
+    assert str(args.output_dir).rstrip("/\\").endswith(expected_market_suffix), (
+        "market-specific output suffix was not preserved"
+    )
     os.environ["EPM_MARKET_MODE"] = market_mode
     cfg["data_root"] = args.data_root
     cfg["output_dir"] = args.output_dir
@@ -16544,6 +18454,10 @@ if __name__ == "__main__":
     cfg["triad_target_names"] = TRIAD_DEFAULT_TARGET_NAMES
 
     cfg = apply_cfg_preset(cfg)
+    cfg = apply_leaf_scoring_defaults(
+        cfg,
+        test_mode=bool(args.test_mode or args.smoke_test or cfg.get("test_mode", False)),
+    )
 
     root_output_dir = build_run_output_dir(cfg)
     tprint(
@@ -16591,27 +18505,31 @@ if __name__ == "__main__":
         f"Pre-trim start_ts={start_ts} derived from planner horizon (floored to hour)"
     )
 
-    # 2. Load OHLCV
-    dfs_by_symbol: Dict[str, pd.DataFrame] = {}
-    for s in symbols:
-        try:
-            df = store.load(s, start_ts=start_ts)
-            if not df.empty:
-                dfs_by_symbol[s] = df
-        except Exception:
-            continue
+    # 2. Load OHLCV and construct the wide panel once.
+    with stage_timer("panel construction"):
+        dfs_by_symbol: Dict[str, pd.DataFrame] = {}
+        for s in symbols:
+            try:
+                df = store.load(s, start_ts=start_ts)
+                if not df.empty:
+                    dfs_by_symbol[s] = df
+            except Exception:
+                continue
 
-    if not dfs_by_symbol:
-        tprint("ERROR: No data loaded.")
-        exit(1)
+        if not dfs_by_symbol:
+            tprint("ERROR: No data loaded.")
+            exit(1)
 
-    panel = to_panel(dfs_by_symbol)
-    common_idx = panel["close"].index
-    common_syms = panel["close"].columns
+        panel = to_panel(dfs_by_symbol)
+        common_idx = panel["close"].index
+        common_syms = panel["close"].columns
 
     # 3. Prepare planner-bounded indices before loading features
     fwd_hours = int(cfg.get("mask_opt_forward_hours", 5))
-    fwd_ret_wide, fwd_ret_reasons_wide = generate_fwd_ret_with_reasons(panel, fwd_hours)
+    with stage_timer("target/label generation"):
+        fwd_ret_wide, fwd_ret_reasons_wide = generate_fwd_ret_with_reasons(
+            panel, fwd_hours
+        )
 
     common_idx = panel["close"].index
     common_syms = panel["close"].columns
@@ -16693,13 +18611,14 @@ if __name__ == "__main__":
         )
     if args.use_dynamic_hpo:
         cfg["use_dynamic_hpo"] = True
-    feat_dict_raw = load_features_selected(
-        ts=ts,
-        root_dir=os.path.dirname(os.path.dirname(feature_path)),
-        feature_keys=requested_feature_keys,
-        symbols=list(map(str, kept_syms)),
-        start_ts=start_ts,
-    )
+    with stage_timer("feature loading"):
+        feat_dict_raw = load_features_selected(
+            ts=ts,
+            root_dir=os.path.dirname(os.path.dirname(feature_path)),
+            feature_keys=requested_feature_keys,
+            symbols=list(map(str, kept_syms)),
+            start_ts=start_ts,
+        )
     if feat_dict_raw is None:
         feat_dict_raw = {}
     health_issues = _feature_snapshot_health_issues(feat_dict_raw)
@@ -17123,11 +19042,12 @@ if __name__ == "__main__":
 
     # Compute triad targets using data_final (long format)
     # compute_triad_targets_for_horizons expects a DataFrame with close, high, low, volume, atr columns
-    triad_results_by_horizon = compute_triad_targets_for_horizons(
-        df=data_final,
-        horizons=horizons,
-        atr_col="atr",
-    )
+    with stage_timer("target/label generation: triad targets"):
+        triad_results_by_horizon = compute_triad_targets_for_horizons(
+            df=data_final,
+            horizons=horizons,
+            atr_col="atr",
+        )
 
     # Convert to the format expected by run_lgbm_mask_generation_triad:
     # {target_name: {horizon: target_array}}
@@ -17258,12 +19178,13 @@ if __name__ == "__main__":
                 )
 
     # Run triad-target mask generation
-    run_lgbm_mask_generation_triad(
-        data_final,
-        feat_final,
-        triad_targets,
-        fwd_ret_final,
-        fwd_ret_norm_final,
-        triad_target_nan_reasons,
-        cfg,
-    )
+    with stage_timer("candidate/rule generation + training"):
+        run_lgbm_mask_generation_triad(
+            data_final,
+            feat_final,
+            triad_targets,
+            fwd_ret_final,
+            fwd_ret_norm_final,
+            triad_target_nan_reasons,
+            cfg,
+        )

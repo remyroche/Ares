@@ -23,6 +23,7 @@ def test_google_sheets_export_tables_split_open_closed_and_compute_unrealized():
                 "strategy_id": "s_long",
                 "expected_entry_price": "9990",
                 "realized_entry_price": "10000",
+                "holding_time_hours": "1.25",
                 "entry_notional_quote": "100",
                 "requested_base_amount": "0.01",
                 "effective_position_leverage": "2",
@@ -89,6 +90,9 @@ def test_google_sheets_export_tables_split_open_closed_and_compute_unrealized():
     strategy_metrics = tables[STRATEGY_METRICS_SHEET]
 
     assert list(open_trades["position_id"]) == ["pos-open"]
+    assert "holding_time_hours" in open_trades.columns
+    assert float(open_trades.iloc[0]["holding_time_hours"]) == 1.25
+    assert float(open_trades.iloc[0]["time_in_trade_hours"]) == 1.25
     assert float(open_trades.iloc[0]["current_unrealized_pnl"]) == 1.0
     assert float(open_trades.iloc[0]["current_unrealized_pnl_x_leverage"]) == 0.02
 
@@ -188,7 +192,9 @@ def test_export_task_to_sheet_returns_false_when_webhook_rejects(monkeypatch, ca
 
     monkeypatch.setenv("SHEETS_WEBHOOK_URL", "https://script.example/exec")
     monkeypatch.setenv("SHEETS_WEBHOOK_SECRET", "top-secret")
-    monkeypatch.setattr(exporter.requests, "post", lambda *args, **kwargs: FakeResponse())
+    monkeypatch.setattr(
+        exporter.requests, "post", lambda *args, **kwargs: FakeResponse()
+    )
 
     assert exporter.export_task_to_sheet("sheet-123", "task", "ok", "job-1") is False
     output = capsys.readouterr().out

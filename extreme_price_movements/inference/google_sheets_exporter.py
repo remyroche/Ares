@@ -77,12 +77,12 @@ def export_task_to_sheet(sheet_id: str, task: str, status: str, job_id: str) -> 
     return False
 
 
-
 OPEN_TRADE_COLUMNS = [
     "symbol",
     "side",
     "strategy_id",
     "entry_time",
+    "holding_time_hours",
     "time_in_trade_hours",
     "leverage",
     "entry_notional_quote",
@@ -207,9 +207,7 @@ def _stringify_frame(df: pd.DataFrame) -> list[list[Any]]:
 def _is_entry_row(df: pd.DataFrame) -> pd.Series:
     action = df.get("action", pd.Series("", index=df.index)).astype(str).str.lower()
     event = (
-        df.get("lifecycle_event", pd.Series("", index=df.index))
-        .astype(str)
-        .str.lower()
+        df.get("lifecycle_event", pd.Series("", index=df.index)).astype(str).str.lower()
     )
     status = df.get("status", pd.Series("", index=df.index)).astype(str).str.lower()
     return (
@@ -222,9 +220,7 @@ def _is_entry_row(df: pd.DataFrame) -> pd.Series:
 def _is_exit_row(df: pd.DataFrame) -> pd.Series:
     action = df.get("action", pd.Series("", index=df.index)).astype(str).str.lower()
     event = (
-        df.get("lifecycle_event", pd.Series("", index=df.index))
-        .astype(str)
-        .str.lower()
+        df.get("lifecycle_event", pd.Series("", index=df.index)).astype(str).str.lower()
     )
     status = df.get("status", pd.Series("", index=df.index)).astype(str).str.lower()
     has_realized_exit = pd.to_numeric(
@@ -256,7 +252,9 @@ def _closed_position_ids(df: pd.DataFrame) -> set[str]:
     return {str(v) for v in exits["position_id"].dropna() if str(v)}
 
 
-def _position_state_by_id(active_positions: Optional[Dict[str, Dict[str, Any]]]) -> Dict[str, Dict[str, Any]]:
+def _position_state_by_id(
+    active_positions: Optional[Dict[str, Dict[str, Any]]]
+) -> Dict[str, Dict[str, Any]]:
     out: Dict[str, Dict[str, Any]] = {}
     for symbol, state in (active_positions or {}).items():
         if not isinstance(state, dict):
@@ -294,23 +292,33 @@ def build_open_trades_table(
             _safe_float(_first_present(row, ["realized_entry_price", "entry_price"])),
         )
         current_price = _safe_float(
-            state.get("current_price", state.get("last_price", state.get("mark_price"))),
+            state.get(
+                "current_price", state.get("last_price", state.get("mark_price"))
+            ),
             _safe_float(row.get("ticker_mid")),
         )
         side = str(state.get("side") or row.get("side") or "").lower()
         direction = 1.0 if side == "long" else -1.0
-        size = _safe_float(state.get("size"), _safe_float(row.get("requested_base_amount")))
+        size = _safe_float(
+            state.get("size"), _safe_float(row.get("requested_base_amount"))
+        )
         if not np.isfinite(size) or size == 0.0:
             notional = _safe_float(row.get("entry_notional_quote"))
-            size = notional / max(entry_price, 1e-12) if np.isfinite(notional) else np.nan
+            size = (
+                notional / max(entry_price, 1e-12) if np.isfinite(notional) else np.nan
+            )
         unrealized = (
             direction * (current_price - entry_price) * size
-            if np.isfinite(current_price) and np.isfinite(entry_price) and np.isfinite(size)
+            if np.isfinite(current_price)
+            and np.isfinite(entry_price)
+            and np.isfinite(size)
             else np.nan
         )
         entry_notional = _safe_float(
             row.get("entry_notional_quote"),
-            entry_price * size if np.isfinite(entry_price) and np.isfinite(size) else np.nan,
+            entry_price * size
+            if np.isfinite(entry_price) and np.isfinite(size)
+            else np.nan,
         )
         unrealized_pct = (
             unrealized / max(abs(entry_notional), 1e-12)
@@ -321,22 +329,37 @@ def build_open_trades_table(
             _first_present(
                 row,
                 ["effective_position_leverage", "leverage_wallet_multiplier"],
-                state.get("effective_position_leverage", state.get("leverage_wallet_multiplier", 1.0)),
+                state.get(
+                    "effective_position_leverage",
+                    state.get("leverage_wallet_multiplier", 1.0),
+                ),
             ),
             1.0,
         )
-        entry_time = _parse_time(state.get("entry_time") or row.get("timestamp"))
+        entry_time = _parse_time(
+            state.get("entry_time") or row.get("entry_time") or row.get("timestamp")
+        )
+        holding_time_hours = _safe_float(
+            state.get("holding_time_hours"),
+            _safe_float(row.get("holding_time_hours")),
+        )
+        if not np.isfinite(holding_time_hours):
+            holding_time_hours = _safe_float(
+                state.get("time_in_trade_hours"),
+                _safe_float(row.get("time_in_trade_hours")),
+            )
+        if not np.isfinite(holding_time_hours) and pd.notna(entry_time):
+            holding_time_hours = float((now - entry_time).total_seconds() / 3600.0)
         rows.append(
             {
                 "symbol": symbol,
                 "side": side or row.get("side"),
-                "strategy_id": state.get("strategy_id") or state.get("bucket_key") or row.get("strategy_id"),
+                "strategy_id": state.get("strategy_id")
+                or state.get("bucket_key")
+                or row.get("strategy_id"),
                 "entry_time": entry_time,
-                "time_in_trade_hours": (
-                    float((now - entry_time).total_seconds() / 3600.0)
-                    if pd.notna(entry_time)
-                    else np.nan
-                ),
+                "holding_time_hours": holding_time_hours,
+                "time_in_trade_hours": holding_time_hours,
                 "leverage": leverage,
                 "entry_notional_quote": entry_notional,
                 "size": size,
@@ -357,7 +380,8 @@ def build_open_trades_table(
                 "rank_percentile": row.get("rank_percentile"),
                 "deployment_rank_threshold": row.get("deployment_rank_threshold"),
                 "stop_price": state.get("stop_price") or row.get("stop_price"),
-                "stop_reason": state.get("stop_reason") or row.get("exit_reason_detail"),
+                "stop_reason": state.get("stop_reason")
+                or row.get("exit_reason_detail"),
                 "last_update": state.get("last_update") or row.get("timestamp"),
                 "position_id": position_id,
             }
@@ -397,13 +421,17 @@ def build_closed_trades_table(trade_logs: pd.DataFrame) -> pd.DataFrame:
                 "entry_notional_quote": row.get("entry_notional_quote"),
                 "exit_notional_quote": row.get("exit_notional_quote"),
                 "expected_entry_price": row.get("expected_entry_price"),
-                "realized_entry_price": row.get("realized_entry_price") or row.get("actual_entry_price"),
-                "realized_exit_price": row.get("realized_exit_price") or row.get("actual_exit_price"),
+                "realized_entry_price": row.get("realized_entry_price")
+                or row.get("actual_entry_price"),
+                "realized_exit_price": row.get("realized_exit_price")
+                or row.get("actual_exit_price"),
                 "gross_pnl_amount": row.get("gross_pnl_amount"),
                 "net_pnl_amount": row.get("net_pnl_amount") or row.get("net_pnl"),
                 "gross_pnl_pct": row.get("gross_pnl_pct"),
                 "net_pnl_pct": row.get("net_pnl_pct"),
-                "leverage_adjusted_net_pnl_pct": row.get("leverage_adjusted_net_pnl_pct"),
+                "leverage_adjusted_net_pnl_pct": row.get(
+                    "leverage_adjusted_net_pnl_pct"
+                ),
                 "net_pnl_pct_wallet": row.get("net_pnl_pct_wallet"),
                 "mfe": row.get("mfe"),
                 "mae": row.get("mae"),
@@ -461,14 +489,21 @@ def build_strategy_metrics_table(
     work["net_pnl_amount_num"] = pd.to_numeric(work["net_pnl_amount"], errors="coerce")
     work["net_pnl_pct_num"] = pd.to_numeric(work["net_pnl_pct"], errors="coerce")
     lev_pct = pd.to_numeric(work["leverage_adjusted_net_pnl_pct"], errors="coerce")
-    leverage = pd.to_numeric(work.get("leverage", pd.Series(np.nan, index=work.index)), errors="coerce")
+    leverage = pd.to_numeric(
+        work.get("leverage", pd.Series(np.nan, index=work.index)), errors="coerce"
+    )
     work["net_pnl_pct_x_leverage_num"] = lev_pct.where(
         lev_pct.notna(),
         work["net_pnl_pct_num"] * leverage.fillna(1.0),
     )
     bankroll = pd.to_numeric(work["net_pnl_pct_wallet"], errors="coerce")
-    work["bankroll_pnl_pct_num"] = bankroll.where(bankroll.notna(), work["net_pnl_pct_x_leverage_num"])
-    expected_hit = pd.to_numeric(work.get("expected_hit_rate", pd.Series(np.nan, index=work.index)), errors="coerce")
+    work["bankroll_pnl_pct_num"] = bankroll.where(
+        bankroll.notna(), work["net_pnl_pct_x_leverage_num"]
+    )
+    expected_hit = pd.to_numeric(
+        work.get("expected_hit_rate", pd.Series(np.nan, index=work.index)),
+        errors="coerce",
+    )
     rows = []
     for strategy_id, grp_all in work.groupby("strategy_id", dropna=False, sort=False):
         for days in windows:
@@ -492,12 +527,18 @@ def build_strategy_metrics_table(
                     "strategy_id": strategy_id,
                     "window_days": int(days),
                     "closed_trades": int(len(grp)),
-                    "notional_net_pnl": float(grp["net_pnl_amount_num"].sum(skipna=True)),
-                    "notional_net_pnl_pct_sum": float(grp["net_pnl_pct_num"].sum(skipna=True)),
+                    "notional_net_pnl": float(
+                        grp["net_pnl_amount_num"].sum(skipna=True)
+                    ),
+                    "notional_net_pnl_pct_sum": float(
+                        grp["net_pnl_pct_num"].sum(skipna=True)
+                    ),
                     "notional_net_pnl_pct_x_leverage_sum": float(
                         grp["net_pnl_pct_x_leverage_num"].sum(skipna=True)
                     ),
-                    "bankroll_pnl_pct_sum": float(grp["bankroll_pnl_pct_num"].sum(skipna=True)),
+                    "bankroll_pnl_pct_sum": float(
+                        grp["bankroll_pnl_pct_num"].sum(skipna=True)
+                    ),
                     "hit_rate": hit_rate,
                     "expected_hit_rate": expected_rate,
                     "surprise_hit_rate": (
@@ -507,8 +548,12 @@ def build_strategy_metrics_table(
                     ),
                     "sortino": _sortino(grp["net_pnl_pct_num"]),
                     "avg_net_pnl_pct": float(grp["net_pnl_pct_num"].mean(skipna=True)),
-                    "avg_net_pnl_amount": float(grp["net_pnl_amount_num"].mean(skipna=True)),
-                    "max_drawdown_amount": _max_drawdown_amount(grp["net_pnl_amount_num"]),
+                    "avg_net_pnl_amount": float(
+                        grp["net_pnl_amount_num"].mean(skipna=True)
+                    ),
+                    "max_drawdown_amount": _max_drawdown_amount(
+                        grp["net_pnl_amount_num"]
+                    ),
                     "last_exit_time": grp["_exit_ts"].max(),
                 }
             )
@@ -568,7 +613,9 @@ class GoogleSheetsTradeExporter:
         if not enabled and not spreadsheet_id:
             return None
         if not spreadsheet_id:
-            tprint("Google Sheets export enabled but EPM_GOOGLE_SPREADSHEET_ID is missing.")
+            tprint(
+                "Google Sheets export enabled but EPM_GOOGLE_SPREADSHEET_ID is missing."
+            )
             return None
         return cls(
             spreadsheet_id=spreadsheet_id,
@@ -601,7 +648,9 @@ class GoogleSheetsTradeExporter:
         now = time.monotonic()
         return (now - self._last_export_monotonic) >= float(self.min_interval_seconds)
 
-    def export_tables(self, tables: Dict[str, pd.DataFrame], *, force: bool = False) -> bool:
+    def export_tables(
+        self, tables: Dict[str, pd.DataFrame], *, force: bool = False
+    ) -> bool:
         if not self.should_export(force=force):
             return False
 

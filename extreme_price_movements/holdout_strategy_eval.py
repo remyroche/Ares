@@ -52,6 +52,7 @@ from extreme_price_movements.regime_adaptor import (
     apply_regime_adaptor,
     load_regime_adaptor,
     regime_adaptor_inference_enabled,
+    resolve_market_file_path,
     safe_strategy_slug,
 )
 from extreme_price_movements.ridge_position_sizer import (
@@ -1078,6 +1079,7 @@ def evaluate_holdout_symbol(
             / safe_strategy_slug(strategy_id)
             / "regime_adaptor.json"
         )
+        adaptor_path = resolve_market_file_path(adaptor_path)
         if adaptor_path.exists():
             try:
                 adaptor = load_regime_adaptor(adaptor_path)

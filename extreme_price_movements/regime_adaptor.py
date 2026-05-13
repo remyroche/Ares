@@ -135,6 +135,48 @@ ASSET_BAD_RATE_THRESHOLD = float(REGIME_ADAPTOR_ASSET_BAD_RATE_THRESHOLD)
 REGIME_RATIO_CLIPS = {k: tuple(v) for k, v in REGIME_ADAPTOR_RATIO_CLIPS.items()}
 ROLLING_REGIME_LGBM_PARAMS = dict(REGIME_ADAPTOR_LGBM_CLASSIFIER_PARAMS)
 
+
+def normalize_market_mode(market_mode: str | None = None) -> str:
+    import os
+
+    mode = str(market_mode or os.environ.get("EPM_MARKET_MODE", "spot")).strip().lower()
+    if mode in {"perp", "perps", "future", "futures"}:
+        return "perps"
+    return "spot"
+
+
+def market_file_path(path: Path, market_mode: str | None = None) -> Path:
+    mode = normalize_market_mode(market_mode)
+    stem = path.stem
+    for suffix in ("_spot", "_perps", "_perp"):
+        if stem.endswith(suffix):
+            stem = stem[: -len(suffix)]
+            break
+    return path.with_name(f"{stem}_{mode}{path.suffix}")
+
+
+def _allow_legacy_market_fallback() -> bool:
+    import os
+
+    return str(
+        os.environ.get("EPM_ALLOW_LEGACY_MARKET_FALLBACK", "")
+    ).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }
+
+
+def resolve_market_file_path(path: Path, market_mode: str | None = None) -> Path:
+    mode_path = market_file_path(path, market_mode)
+    if mode_path.exists():
+        return mode_path
+    if _allow_legacy_market_fallback():
+        return path
+    return mode_path
+
 FEATURE_CANDIDATES: Dict[str, Tuple[str, ...]] = {
     "rv_24h": (
         "rv_24h",
@@ -5302,6 +5344,7 @@ def save_regime_adaptor_outputs(
     run_id: str,
     strategy_id: str,
     fit: RegimeAdaptorFit,
+    market_mode: str = "spot",
 ) -> Path:
     out_dir = (
         Path(data_root)
@@ -5312,7 +5355,9 @@ def save_regime_adaptor_outputs(
         / safe_strategy_slug(strategy_id)
     )
     out_dir.mkdir(parents=True, exist_ok=True)
-    artifact_path = out_dir / "regime_adaptor.json"
+    market_mode = normalize_market_mode(market_mode)
+    fit.artifact["market_mode"] = market_mode
+    artifact_path = market_file_path(out_dir / "regime_adaptor.json", market_mode)
     artifact_path.write_text(
         json.dumps(_jsonify(fit.artifact), indent=2, sort_keys=True)
     )
@@ -5324,13 +5369,19 @@ def save_regime_adaptor_outputs(
     ):
         if frame is None or frame.empty:
             continue
-        frame.to_parquet(out_dir / f"{name}.parquet", index=False)
-        (out_dir / f"{name}.json").write_text(frame.to_json(orient="records", indent=2))
+        frame.to_parquet(
+            market_file_path(out_dir / f"{name}.parquet", market_mode), index=False
+        )
+        market_file_path(out_dir / f"{name}.json", market_mode).write_text(
+            frame.to_json(orient="records", indent=2)
+        )
     return artifact_path
 
 
-def load_regime_adaptor(path: str | Path) -> Dict[str, Any]:
-    return json.loads(Path(path).read_text())
+def load_regime_adaptor(
+    path: str | Path, market_mode: str | None = None
+) -> Dict[str, Any]:
+    return json.loads(resolve_market_file_path(Path(path), market_mode).read_text())
 
 
 def _jsonify(value: Any) -> Any:

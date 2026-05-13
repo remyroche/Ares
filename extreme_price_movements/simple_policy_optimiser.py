@@ -31,6 +31,26 @@ except Exception:  # pragma: no cover
         print(msg)
 
 
+
+def normalize_market_mode(market_mode: str | None = None) -> str:
+    mode = str(market_mode or os.environ.get("EPM_MARKET_MODE", "spot")).strip().lower()
+    if mode in {"perp", "perps", "future", "futures"}:
+        return "perps"
+    return "spot"
+
+
+def append_market_suffix(path: str, market_mode: str | None = None) -> str:
+    norm = str(path).rstrip("/\\")
+    if market_mode is None and norm.endswith(("_spot", "_perps", "_perp")):
+        inferred_mode = "perps" if norm.endswith(("_perps", "_perp")) else "spot"
+        mode = normalize_market_mode(inferred_mode)
+    else:
+        mode = normalize_market_mode(market_mode)
+    for suffix in ("_spot", "_perps", "_perp"):
+        if norm.endswith(suffix):
+            return norm[: -len(suffix)] + f"_{mode}"
+    return f"{norm}_{mode}"
+
 # NO EXTERNAL IMPORTS ALLOWED
 # from extreme_price_movements.policy_optimiser import ...
 
@@ -2656,6 +2676,7 @@ def _fit_regime_adaptor_from_simple_policy(
     final_size_power: float,
     cost_pct: float,
     deployment_rank_threshold: float,
+    market_mode: str | None = None,
 ) -> Optional[Dict[str, Any]]:
     if len(df_policy_all) < 50 or len(trade_idx) < 10:
         return None
@@ -2792,6 +2813,7 @@ def _fit_regime_adaptor_from_simple_policy(
         run_id=run_id,
         strategy_id=strategy_id,
         fit=fit,
+        market_mode=market_mode,
     )
     logger.info(
         "[%s] Regime adaptor trained from simple_policy_optimiser: "
@@ -4620,7 +4642,13 @@ def run_simple_policy_optimisation(
     max_strategies: Optional[int] = None,
     n_trials: Optional[int] = None,
     strategy_ids: Optional[Sequence[str]] = None,
+    market_mode: str | None = None,
 ):
+    data_root = append_market_suffix(data_root, market_mode)
+    market_mode = normalize_market_mode(
+        "perps" if str(data_root).rstrip("/\\").endswith("_perps") else "spot"
+    )
+    os.environ["EPM_MARKET_MODE"] = market_mode
     artifacts_root = Path(data_root) / "artifacts"
     if run_id is None:
         candidates = [p for p in artifacts_root.iterdir() if p.is_dir()]
@@ -5067,6 +5095,7 @@ def run_simple_policy_optimisation(
             final_size_power=final_size_power,
             cost_pct=cost_pct,
             deployment_rank_threshold=deployment_rank_threshold,
+            market_mode=market_mode,
         )
         asset_metrics = build_asset_metrics_from_simulation(
             selected_rows=df_top,
@@ -5262,6 +5291,13 @@ if __name__ == "__main__":
         "--data_root", type=str, default="/Users/remyroche/Documents/Ares/data"
     )
     parser.add_argument("--run_id", type=str, default=None)
+    parser.add_argument(
+        "--market-mode",
+        choices=["spot", "perps"],
+        default="spot",
+        help="Market mode for data/artifact files (default: spot).",
+    )
+    parser.add_argument("--perps", action="store_true", help="Alias for --market-mode perps")
     parser.add_argument("--max-strategies", type=int, default=None)
     parser.add_argument("--n-trials", type=int, default=None)
     parser.add_argument("--strategy-ids", type=str, default="")
@@ -5273,4 +5309,5 @@ if __name__ == "__main__":
         max_strategies=args.max_strategies,
         n_trials=args.n_trials,
         strategy_ids=[s.strip() for s in args.strategy_ids.split(",") if s.strip()],
+        market_mode="perps" if args.perps else args.market_mode,
     )

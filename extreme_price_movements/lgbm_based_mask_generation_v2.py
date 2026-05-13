@@ -121,6 +121,22 @@ from extreme_price_movements.utils import tprint
 
 LOGGER = logging.getLogger(__name__)
 
+
+def normalize_market_mode(market_mode: str | None = None) -> str:
+    mode = str(market_mode or "spot").strip().lower()
+    if mode in {"perp", "perps", "future", "futures"}:
+        return "perps"
+    return "spot"
+
+
+def append_market_suffix(path: str, market_mode: str) -> str:
+    norm = str(path).rstrip("/\\")
+    mode = normalize_market_mode(market_mode)
+    for suffix in ("_spot", "_perps", "_perp"):
+        if norm.endswith(suffix):
+            return norm[: -len(suffix)] + f"_{mode}"
+    return f"{norm}_{mode}"
+
 # =============================================================================
 # TRIAD TARGET CONFIGURATION
 # =============================================================================
@@ -16471,9 +16487,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--market-mode",
-        choices=["spot", "perps", "auto"],
-        default="auto",
-        help="Regime feature mode. perps enables perp-native registry/features.",
+        choices=["spot", "perps"],
+        default="spot",
+        help="Market mode for data/features/output files (default: spot).",
     )
     parser.add_argument(
         "--perps",
@@ -16489,9 +16505,12 @@ if __name__ == "__main__":
     cfg["run_step"] = args.run_step
     if args.step1_dir:
         cfg["step1_dir"] = args.step1_dir
-    market_mode = "perps" if args.perps else args.market_mode
-    if market_mode == "auto":
-        market_mode = "perps" if str(args.data_root).rstrip("/").endswith("_perp") else "spot"
+    market_mode = normalize_market_mode("perps" if args.perps else args.market_mode)
+    args.data_root = append_market_suffix(args.data_root, market_mode)
+    args.output_dir = append_market_suffix(args.output_dir, market_mode)
+    os.environ["EPM_MARKET_MODE"] = market_mode
+    cfg["data_root"] = args.data_root
+    cfg["output_dir"] = args.output_dir
     cfg["market_mode"] = market_mode
     cfg["use_perps"] = market_mode == "perps"
     if cfg["use_perps"]:

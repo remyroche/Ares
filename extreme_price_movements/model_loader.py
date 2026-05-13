@@ -31,6 +31,37 @@ from extreme_price_movements.entry_policy import flatten_bucket_policy
 from extreme_price_movements.utils import tprint
 
 
+def _normalize_market_mode(market_mode: str | None = None) -> str:
+    mode = str(market_mode or os.environ.get("EPM_MARKET_MODE", "")).strip().lower()
+    if mode in {"perp", "perps", "future", "futures"}:
+        return "perps"
+    if mode == "spot":
+        return "spot"
+    return "perps" if str(market_mode or "").endswith(("_perp", "_perps")) else "spot"
+
+
+def _market_file_name(filename: str, market_mode: str | None = None) -> str:
+    mode = _normalize_market_mode(market_mode)
+    stem, ext = os.path.splitext(filename)
+    for suffix in ("_spot", "_perps", "_perp"):
+        if stem.endswith(suffix):
+            stem = stem[: -len(suffix)]
+            break
+    return f"{stem}_{mode}{ext}"
+
+
+def _allow_legacy_market_fallback() -> bool:
+    return str(
+        os.environ.get("EPM_ALLOW_LEGACY_MARKET_FALLBACK", "")
+    ).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }
+
+
 def find_latest_run_id(data_root: str) -> Optional[str]:
     """Find the latest run_id from the artifacts directory.
 
@@ -788,7 +819,9 @@ def load_booster_bundles(run_id: str, data_root: str) -> dict:
     return bundles
 
 
-def load_regime_adaptors(run_id: str, data_root: str) -> dict:
+def load_regime_adaptors(
+    run_id: str, data_root: str, market_mode: str | None = None
+) -> dict:
     model_dirs = _sizer_artifact_dirs(data_root, run_id)
     adaptor_dir = _first_existing_path(
         [os.path.join(model_dir, "regime_adaptors") for model_dir in model_dirs]
@@ -796,10 +829,15 @@ def load_regime_adaptors(run_id: str, data_root: str) -> dict:
     if adaptor_dir is None or not os.path.isdir(adaptor_dir):
         return {}
     adaptors = {}
+    market_mode = _normalize_market_mode(market_mode or data_root)
+    preferred_name = _market_file_name("regime_adaptor.json", market_mode)
     for root, _, files in os.walk(adaptor_dir):
-        if "regime_adaptor.json" not in files:
+        if preferred_name in files:
+            path = os.path.join(root, preferred_name)
+        elif _allow_legacy_market_fallback() and "regime_adaptor.json" in files:
+            path = os.path.join(root, "regime_adaptor.json")
+        else:
             continue
-        path = os.path.join(root, "regime_adaptor.json")
         try:
             with open(path, "r") as f:
                 payload = json.load(f)

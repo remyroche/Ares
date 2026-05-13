@@ -152,6 +152,26 @@ def _append_suffix(path: str, suffix: str) -> str:
     return f"{norm}{suffix}"
 
 
+
+def _normalize_market_mode(market_mode: str | None = None) -> str:
+    mode = str(market_mode or "spot").strip().lower()
+    if mode in {"perp", "perps", "future", "futures"}:
+        return "perps"
+    return "spot"
+
+
+def _market_suffix(market_mode: str) -> str:
+    return f"_{_normalize_market_mode(market_mode)}"
+
+
+def _append_market_suffix(path: str, market_mode: str) -> str:
+    norm = path.rstrip("/\\")
+    mode = _normalize_market_mode(market_mode)
+    for suffix in ("_spot", "_perps", "_perp"):
+        if norm.endswith(suffix):
+            return norm[: -len(suffix)] + f"_{mode}"
+    return f"{norm}{_market_suffix(mode)}"
+
 def _resolve_path(base_dir: str, path: str) -> str:
     if not path:
         return path
@@ -2867,6 +2887,7 @@ def run_strategies_selection(cfg, ts_override=None, store=None):
             max_strategies=len(top15_ids),
             n_trials=policy_trials,
             strategy_ids=top15_ids,
+            market_mode=selection_cfg.get("market_mode", "spot"),
         )
 
     policy_winners = [
@@ -3199,10 +3220,16 @@ def main():
         help="Pipeline mode to run",
     )
     parser.add_argument(
+        "--market-mode",
+        choices=["spot", "perps"],
+        default="spot",
+        help="Market mode for data/features/artifacts (default: spot).",
+    )
+    parser.add_argument(
         "-perps",
         "--perps",
         action="store_true",
-        help="Run pipeline in perps mode (isolated *_perp roots)",
+        help="Alias for --market-mode perps (isolated *_perps roots)",
     )
     parser.add_argument(
         "--force-feature-recompute",
@@ -3300,16 +3327,22 @@ def main():
         cfg["data_root"] = os.path.abspath(_epm_data_root)
         cfg["reports_root"] = os.path.join(os.path.abspath(_epm_data_root), "reports")
         tprint(f"EPM_DATA_ROOT override: data_root={cfg['data_root']}")
-    if args.perps:
-        cfg["use_perps"] = True
-        cfg["data_root"] = _append_suffix(cfg.get("data_root", "data"), "_perp")
-        cfg["reports_root"] = _append_suffix(
-            cfg.get("reports_root", "reports"), "_perp"
-        )
-        cfg["hf_data_dir"] = _append_suffix(
-            cfg.get("hf_data_dir", "15m_ohlcv"), "_perp"
-        )
-        os.environ["EPM_HF_DATA_DIR"] = str(cfg["hf_data_dir"])
+    market_mode = _normalize_market_mode("perps" if args.perps else args.market_mode)
+    cfg["market_mode"] = market_mode
+    cfg["use_perps"] = market_mode == "perps"
+    cfg["data_root"] = _append_market_suffix(cfg.get("data_root", "data"), market_mode)
+    cfg["reports_root"] = _append_market_suffix(
+        cfg.get("reports_root", "reports"), market_mode
+    )
+    cfg["hf_data_dir"] = _append_market_suffix(
+        cfg.get("hf_data_dir", "15m_ohlcv"), market_mode
+    )
+    os.environ["EPM_MARKET_MODE"] = market_mode
+    os.environ["EPM_HF_DATA_DIR"] = str(cfg["hf_data_dir"])
+    tprint(
+        f"Market mode: {market_mode} data_root={cfg['data_root']} reports_root={cfg['reports_root']}"
+    )
+    if cfg["use_perps"]:
         cfg = enable_perp_feature_keys(cfg)
         # Perp-mode fee model: 0.10% round-trip (5 bps/side).
         _apply_fee_model(cfg, PERP_ROUND_TRIP_FEE_PCT)

@@ -37,6 +37,54 @@ TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV = (
 TBM_GEOMETRY_GRID_CSV = REPORTS_DIR / "tbm_geometry_grid.csv"
 SAMPLE_WEIGHT_BEST_PARAMS_CSV = REPORTS_DIR / "sample_weight_best_params.csv"
 
+
+def normalize_market_mode(market_mode: str | None = None) -> str:
+    """Return the canonical market data mode used for persisted optimizer files."""
+    import os
+
+    mode = str(market_mode or os.environ.get("EPM_MARKET_MODE", "spot")).strip().lower()
+    if mode in {"perp", "perps", "futures", "future"}:
+        return "perps"
+    return "spot"
+
+
+def market_suffix(market_mode: str | None = None) -> str:
+    return f"_{normalize_market_mode(market_mode)}"
+
+
+def market_report_path(path: Path, market_mode: str | None = None) -> Path:
+    """Return the spot/perps-specific variant of a report path.
+
+    Existing market suffixes are replaced instead of appended, so callers can
+    safely pass either unsuffixed or already suffixed paths.
+    """
+    mode = normalize_market_mode(market_mode)
+    stem = path.stem
+    for suffix in ("_spot", "_perps", "_perp"):
+        if stem.endswith(suffix):
+            stem = stem[: -len(suffix)]
+            break
+    return path.with_name(f"{stem}_{mode}{path.suffix}")
+
+
+def _allow_legacy_market_fallback() -> bool:
+    import os
+
+    return str(os.environ.get("EPM_ALLOW_LEGACY_MARKET_FALLBACK", "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }
+
+
+def _market_preferred_paths(path: Path, market_mode: str | None = None) -> list[Path]:
+    mode_path = market_report_path(path, market_mode)
+    if _allow_legacy_market_fallback() and mode_path != path:
+        return [mode_path, path]
+    return [mode_path]
+
 # Bucket to strategy_id mapping (new convention)
 BUCKET_TO_STRATEGY_ID = {
     "MR_long": "long_mr",
@@ -152,7 +200,9 @@ def _read_best_params_csv(path: Path) -> Dict[str, Any]:
     return out
 
 
-def load_inference_candidate_mask_params_by_mode() -> Dict[str, Dict[str, Any]]:
+def load_inference_candidate_mask_params_by_mode(
+    market_mode: str | None = None,
+) -> Dict[str, Dict[str, Any]]:
     mode_to_path = {
         "price_up_tf": REPORTS_DIR
         / "inference_candidate_mask_best_params_price_up_tf.csv",
@@ -165,7 +215,7 @@ def load_inference_candidate_mask_params_by_mode() -> Dict[str, Dict[str, Any]]:
     }
     out: Dict[str, Dict[str, Any]] = {}
     for mode, path in mode_to_path.items():
-        row = _read_best_params_csv(path)
+        row = _read_best_params_csv(market_report_path(path, market_mode))
         if not row:
             continue
         row.setdefault("mode", mode)
@@ -177,6 +227,7 @@ def load_inference_candidate_mask_params_per_bucket(
     top_n: int = 2,
     ranking_metric: str = "score_for_best_params",
     classification_filter: str | None = None,
+    market_mode: str | None = None,
 ) -> list[dict[str, Any]]:
     """Load top-N dynamically generated strategy parameters from the mask-optimiser.
 
@@ -207,8 +258,12 @@ def load_inference_candidate_mask_params_per_bucket(
 
     path = None
     preferred_paths = [
-        INFERENCE_CANDIDATE_MASK_BEST_PARAMS_PER_BUCKET_CSV,
-        INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV,
+        p
+        for base_path in (
+            INFERENCE_CANDIDATE_MASK_BEST_PARAMS_PER_BUCKET_CSV,
+            INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV,
+        )
+        for p in _market_preferred_paths(base_path, market_mode)
     ]
     for candidate_path in preferred_paths:
         try:
@@ -218,24 +273,49 @@ def load_inference_candidate_mask_params_per_bucket(
         except OSError:
             continue
 
+    mode = normalize_market_mode(market_mode)
     candidate_paths: list[Path] = []
     if path is None:
+        output_roots = [Path(f"production_lgbm_outputs_{mode}")]
+        if _allow_legacy_market_fallback():
+            output_roots.append(Path("production_lgbm_outputs"))
+        for output_root in output_roots:
+            candidate_paths.extend(
+                Path(p)
+                for p in glob.glob(
+                    str(output_root / "run_*" / "final_rule_registry.csv")
+                )
+            )
         candidate_paths.extend(
             Path(p)
             for p in glob.glob(
                 str(
-                    Path("production_lgbm_outputs")
+                    Path("tmp")
+                    / f"lgbm_*{mode}*_run*"
                     / "run_*"
                     / "final_rule_registry.csv"
                 )
             )
         )
-        candidate_paths.extend(
-            Path(p)
-            for p in glob.glob(
-                str(Path("tmp") / "lgbm_*_run*" / "run_*" / "final_rule_registry.csv")
+        if _allow_legacy_market_fallback():
+            candidate_paths.extend(
+                Path(p)
+                for p in glob.glob(
+                    str(
+                        Path("tmp")
+                        / "lgbm_*_run*"
+                        / "run_*"
+                        / "final_rule_registry.csv"
+                    )
+                )
             )
-        )
+        opposite = "spot" if mode == "perps" else "perps"
+        candidate_paths = [
+            p
+            for p in candidate_paths
+            if f"_{opposite}" not in str(p)
+            and (opposite != "perps" or "_perp" not in str(p))
+        ]
 
     if path is None:
         if candidate_paths:
@@ -249,10 +329,22 @@ def load_inference_candidate_mask_params_per_bucket(
                     continue
         else:
             path = (
-                Path("production_lgbm_outputs") / "combined_accepted_rule_registry.csv"
+                Path(f"production_lgbm_outputs_{mode}")
+                / "combined_accepted_rule_registry.csv"
             )
             if not path.exists():
-                path = REPORTS_DIR / "lgbm_accepted_rule_registry.csv"
+                path = market_report_path(
+                    REPORTS_DIR / "lgbm_accepted_rule_registry.csv", mode
+                )
+            if _allow_legacy_market_fallback() and not path.exists():
+                legacy_path = (
+                    Path("production_lgbm_outputs") / "combined_accepted_rule_registry.csv"
+                )
+                path = (
+                    legacy_path
+                    if legacy_path.exists()
+                    else REPORTS_DIR / "lgbm_accepted_rule_registry.csv"
+                )
 
     if not path or not path.exists():
         return []
@@ -263,6 +355,11 @@ def load_inference_candidate_mask_params_per_bucket(
         return []
     if df.empty:
         return []
+    if "market_mode" in df.columns:
+        df = df[df["market_mode"].map(normalize_market_mode) == mode].copy()
+        if df.empty:
+            _log.warning("[params_store] No %s rows found in %s", mode, path)
+            return []
 
     # Ensure required columns exist
     if "side" not in df.columns:
@@ -922,8 +1019,10 @@ def apply_offline_optimizer_best_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
         _log.info(msg)
 
     merged = deepcopy(cfg)
+    market_mode = merged.get("market_mode")
 
-    cand = _read_best_params_csv(CANDIDATE_BEST_PARAMS_CSV)
+    cand_path = market_report_path(CANDIDATE_BEST_PARAMS_CSV, market_mode)
+    cand = _read_best_params_csv(cand_path)
     if cand:
         for key in (
             "train_extreme_pct_hourly",
@@ -935,18 +1034,25 @@ def apply_offline_optimizer_best_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
             if key in cand and cand[key] is not None:
                 merged[key] = cand[key]
 
-    # Incorporate mask_optimiser output (legacy single-file + new mode-specific files).
-    mask_opt = _read_best_params_csv(INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV)
+    # Incorporate mask_optimiser output from the active market-specific files.
+    mask_opt_path = market_report_path(
+        INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV, market_mode
+    )
+    mask_opt = _read_best_params_csv(mask_opt_path)
     if mask_opt:
         for key in ("family", "param", "z_hours", "conditioner_mode", "duration_hours"):
             if key in mask_opt and mask_opt[key] is not None:
                 merged[key] = mask_opt[key]
 
-    mode_mask_opt = load_inference_candidate_mask_params_by_mode()
+    mode_mask_opt = load_inference_candidate_mask_params_by_mode(
+        market_mode=market_mode
+    )
     if mode_mask_opt:
         merged["candidate_mask_params_by_mode"] = mode_mask_opt
 
-    dyn_strategies = load_inference_candidate_mask_params_per_bucket()
+    dyn_strategies = load_inference_candidate_mask_params_per_bucket(
+        market_mode=market_mode
+    )
     if dyn_strategies:
         _tprint(
             f"[params_store] Loaded {len(dyn_strategies)} dynamic strategies from mask_optimiser"
@@ -956,10 +1062,11 @@ def apply_offline_optimizer_best_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
         if "family" not in merged and len(dyn_strategies) > 0:
             merged.update(dyn_strategies[0].get("mask_params", {}))
 
-    tbm = _read_best_params_csv(TBM_BEST_PARAMS_CSV)
+    tbm_path = market_report_path(TBM_BEST_PARAMS_CSV, market_mode)
+    tbm = _read_best_params_csv(tbm_path)
     if tbm:
         _tprint(
-            f"[params_store] TBM best params loaded from {TBM_BEST_PARAMS_CSV}: "
+            f"[params_store] TBM best params loaded from {tbm_path}: "
             f"config_id={tbm.get('config_id','?')}  "
             f"base_atr_window={tbm.get('base_atr_window','?')}  "
             f"k_tp={tbm.get('k_tp','?')}  "
@@ -999,10 +1106,12 @@ def apply_offline_optimizer_best_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
         )
     else:
         _tprint(
-            f"[params_store] WARNING: TBM best params CSV not found or empty at {TBM_BEST_PARAMS_CSV} — using cfg defaults"
+            f"[params_store] WARNING: TBM best params CSV not found or empty at {tbm_path} — using cfg defaults"
         )
 
-    sw = _read_best_params_csv(SAMPLE_WEIGHT_BEST_PARAMS_CSV)
+    sw = _read_best_params_csv(
+        market_report_path(SAMPLE_WEIGHT_BEST_PARAMS_CSV, market_mode)
+    )
     if sw:
         if "component_alphas" in sw and isinstance(sw["component_alphas"], dict):
             merged["sample_weight_component_alphas"] = sw["component_alphas"]

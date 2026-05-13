@@ -20,6 +20,8 @@ from extreme_price_movements.offline_optimisers.params_store import (
     TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV,
     TBM_GEOMETRY_GRID_CSV,
     load_inference_candidate_mask_params_per_bucket,
+    market_report_path,
+    normalize_market_mode,
 )
 from extreme_price_movements.strategy_registry import normalize_strategy_horizon
 
@@ -136,9 +138,14 @@ def _build_side_horizon_best_params(cell_df: pd.DataFrame) -> pd.DataFrame:
     return out.reset_index(drop=True)
 
 
-def _write_inference_candidate_bucket_params() -> Path:
-    strategies = load_inference_candidate_mask_params_per_bucket(top_n=2)
-    out_path = REPORTS_DIR / "inference_candidate_mask_best_params_per_bucket.csv"
+def _write_inference_candidate_bucket_params(*, market_mode: str = "spot") -> Path:
+    strategies = load_inference_candidate_mask_params_per_bucket(
+        top_n=2, market_mode=market_mode
+    )
+    out_path = market_report_path(
+        REPORTS_DIR / "inference_candidate_mask_best_params_per_bucket.csv",
+        market_mode,
+    )
     if not strategies:
         pd.DataFrame().to_csv(out_path, index=False)
         return out_path
@@ -164,49 +171,70 @@ def _write_inference_candidate_bucket_params() -> Path:
     return out_path
 
 
-def regenerate_simple_tbm_reports(*, perps: bool = False) -> tuple[Path, Path, Path]:
-    if not TBM_GEOMETRY_GRID_CSV.exists():
-        raise FileNotFoundError(TBM_GEOMETRY_GRID_CSV)
-    if not TBM_BEST_PARAMS_PER_CELL_CSV.exists():
-        raise FileNotFoundError(TBM_BEST_PARAMS_PER_CELL_CSV)
+def _read_market_csv(path: Path, market_mode: str) -> tuple[pd.DataFrame, Path]:
+    mode_path = market_report_path(path, market_mode)
+    if not mode_path.exists():
+        raise FileNotFoundError(mode_path)
+    return pd.read_csv(mode_path), mode_path
 
-    grid_df = pd.read_csv(TBM_GEOMETRY_GRID_CSV)
-    cell_df = pd.read_csv(TBM_BEST_PARAMS_PER_CELL_CSV)
+
+def regenerate_simple_tbm_reports(
+    *, perps: bool = False, market_mode: str | None = None
+) -> tuple[Path, Path, Path]:
+    market_mode = normalize_market_mode("perps" if perps else market_mode)
+    grid_path = market_report_path(TBM_GEOMETRY_GRID_CSV, market_mode)
+    cell_path = market_report_path(TBM_BEST_PARAMS_PER_CELL_CSV, market_mode)
+    side_path = market_report_path(TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV, market_mode)
+
+    grid_df, grid_read_path = _read_market_csv(TBM_GEOMETRY_GRID_CSV, market_mode)
+    cell_df, cell_read_path = _read_market_csv(TBM_BEST_PARAMS_PER_CELL_CSV, market_mode)
 
     grid_df = _rewrite_geometry_grid(grid_df)
     cell_df = _rewrite_best_params_per_cell(cell_df)
     side_df = _build_side_horizon_best_params(cell_df)
     _assert_family_coverage(grid_df)
-    if perps:
-        grid_df["market_mode"] = "perps"
-        cell_df["market_mode"] = "perps"
+    grid_df["market_mode"] = market_mode
+    cell_df["market_mode"] = market_mode
+    side_df["market_mode"] = market_mode
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    grid_df.to_csv(TBM_GEOMETRY_GRID_CSV, index=False)
-    cell_df.to_csv(TBM_BEST_PARAMS_PER_CELL_CSV, index=False)
-    side_df.to_csv(TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV, index=False)
-    _write_inference_candidate_bucket_params()
-    if perps:
-        manifest = {
-            "market_mode": "perps",
-            "sl_liquidation_rule": "stop_loss_pct <= liquidation_wall_pct / 3 using mark price where available",
-        }
-        (REPORTS_DIR / "tbm_perps_mode_manifest.json").write_text(
-            json.dumps(manifest, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
-    return TBM_GEOMETRY_GRID_CSV, TBM_BEST_PARAMS_PER_CELL_CSV, TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV
+    grid_df.to_csv(grid_path, index=False)
+    cell_df.to_csv(cell_path, index=False)
+    side_df.to_csv(side_path, index=False)
+    _write_inference_candidate_bucket_params(market_mode=market_mode)
+    manifest = {
+        "market_mode": market_mode,
+        "input_geometry_grid": str(grid_read_path),
+        "input_best_params_per_cell": str(cell_read_path),
+    }
+    if market_mode == "perps":
+        manifest[
+            "sl_liquidation_rule"
+        ] = "stop_loss_pct <= liquidation_wall_pct / 3 using mark price where available"
+    (REPORTS_DIR / f"tbm_{market_mode}_mode_manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return grid_path, cell_path, side_path
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Regenerate simple TBM report tables")
     parser.add_argument(
+        "--market-mode",
+        choices=["spot", "perps"],
+        default="spot",
+        help="Market mode for TBM report files (default: spot).",
+    )
+    parser.add_argument(
         "--perps",
         action="store_true",
-        help="Annotate regenerated TBM tables as perp-mode outputs.",
+        help="Alias for --market-mode perps.",
     )
     args = parser.parse_args()
-    grid_path, cell_path, side_path = regenerate_simple_tbm_reports(perps=args.perps)
+    grid_path, cell_path, side_path = regenerate_simple_tbm_reports(
+        perps=args.perps, market_mode=args.market_mode
+    )
     print(f"rewrote {grid_path}")
     print(f"rewrote {cell_path}")
     print(f"rewrote {side_path}")

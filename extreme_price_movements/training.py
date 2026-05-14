@@ -4799,6 +4799,45 @@ def _save_event_index_artifact(
     np.savez_compressed(path, entry_ts_ns=ts_ns.astype(np.int64), symbol_id=sym_ids)
 
 
+def _prune_stale_tb_cache_by_hash(cfg: dict, run_id: str, active_hash: str) -> None:
+    """Remove TB cache payloads from older config hashes after labels were persisted."""
+    if not bool(cfg.get("label_prune_stale_tb_cache", True)):
+        return
+    active_hash = str(active_hash or "").strip()
+    if not active_hash:
+        return
+    root = _tb_cache_dir(cfg, run_id)
+    if not os.path.isdir(root):
+        return
+    keep_suffixes = (f"_{active_hash}.pkl", f"_{active_hash}.npz")
+    removed = 0
+    removed_bytes = 0
+    kept = 0
+    for fname in os.listdir(root):
+        if not (
+            (fname.startswith("tb_H") and fname.endswith(".pkl"))
+            or (fname.startswith("geom_H") and fname.endswith(".pkl"))
+            or (fname.startswith("events_H") and fname.endswith(".npz"))
+        ):
+            continue
+        if fname.endswith(keep_suffixes):
+            kept += 1
+            continue
+        path = os.path.join(root, fname)
+        try:
+            removed_bytes += int(os.path.getsize(path))
+            os.remove(path)
+            removed += 1
+        except Exception as exc:
+            tprint(f"WARNING: failed to prune stale TB cache {path}: {exc}")
+    if removed:
+        tprint(
+            "Pruned stale TB cache artifacts: "
+            f"removed={removed} kept={kept} freed_mb={removed_bytes / (1024**2):.1f} "
+            f"active_hash={active_hash}"
+        )
+
+
 def _choose_parallel_cells(n_cells: int, cfg: dict) -> int:
     if n_cells <= 1:
         return 1
@@ -7004,8 +7043,8 @@ def build_hourly_training_set_and_weights(
     is_to = lbl_vals == OUT_TO
     # timeout_weight is now a base scalar for the dynamic formula
     timeout_weight = float(cfg.get("timeout_weight", 0.4))
-    w_outcome[is_tp] = qual_vals[is_tp]
-    w_outcome[is_sl] = 1.0 - qual_vals[is_sl]
+    w_outcome[is_tp] = 1.0
+    w_outcome[is_sl] = 1.0
 
     # Dynamic TO weighting: wTO = 1 + 1.5 * (1 - s)^2 where s = (r - SL)/(TP - SL) normalized to [0,1]
     # Then scaled by timeout_weight (0.2)
@@ -7269,17 +7308,11 @@ def build_hourly_training_set_and_weights(
         event_sym.values if hasattr(event_sym, "values") else event_sym, dtype=object
     )
     _sym_codes, _sym_uniques = pd.factorize(sym_arr, sort=False)
-    # Store raw triple-barrier label (-1, 0, 1) for timeout analysis
-    _fee_rt = float(cfg.get("policy_fee_rt", 0.003))
-    _r_gross = np.asarray(pnl, dtype=np.float32)
-    _r_net = ((1.0 + _r_gross.astype(np.float64)) * (1.0 - _fee_rt) - 1.0).astype(
-        np.float32
-    )
     _dur_vals = np.asarray(
         (
             _policy_bars_vals
             if _policy_bars_vals is not None
-            else np.full(len(_r_gross), H, dtype=np.int16)
+            else np.full(len(pnl), H, dtype=np.int16)
         ),
         dtype=np.int16,
     )
@@ -7291,35 +7324,7 @@ def build_hourly_training_set_and_weights(
         ),
         dtype=np.int16,
     )
-    _is_mr = str(model_kind).lower() == "mr"
-    if _is_mr:
-        _mr_sl = np.clip(np.asarray(sl_vals, dtype=np.float64), 1e-6, None)
-        _mr_mae_ratio = np.clip(
-            np.asarray(mae_vals, dtype=np.float64) / _mr_sl, 0.0, 3.0
-        )
-        _mr_path_penalty = np.clip(1.0 - np.square(_mr_mae_ratio), 0.0, 1.0)
-        _mr_horizon_bars = max(float(cfg.get("mr_utility_horizon_bars", H)), 1.0)
-        _mr_velocity_penalty = np.exp(
-            -np.clip(_bars_to_mfe_vals.astype(np.float64), 0.0, None)
-            / (2.0 * _mr_horizon_bars)
-        )
-        _u_policy_gross = (
-            _r_gross.astype(np.float64) * _mr_path_penalty * _mr_velocity_penalty
-        ).astype(np.float32)
-        _u_policy_net = (
-            _r_net.astype(np.float64) * _mr_path_penalty * _mr_velocity_penalty
-        ).astype(np.float32)
-        _y_ret_target = _u_policy_net.astype(np.float32)
-    else:
-        _mr_path_penalty = np.ones(len(_r_gross), dtype=np.float64)
-        _mr_velocity_penalty = np.ones(len(_r_gross), dtype=np.float64)
-        _u_policy_gross = np.log1p(
-            np.clip(_r_gross.astype(np.float64), -0.999999, None)
-        ).astype(np.float32)
-        _u_policy_net = np.log1p(
-            np.clip(_r_net.astype(np.float64), -0.999999, None)
-        ).astype(np.float32)
-        _y_ret_target = pnl.astype(np.float32)
+    _y_ret_target = np.asarray(pnl, dtype=np.float32)
 
     parts = {
         "ts": ts_arr,
@@ -7334,34 +7339,10 @@ def build_hourly_training_set_and_weights(
         "__sl__": np.asarray(sl_vals, dtype=np.float32),
         "__is_timeout__": np.asarray(is_timeout, dtype=np.int8),
         "__quality__": np.asarray(qual_vals, dtype=np.float32),
-        "__u_policy__": _u_policy_gross,
     }
-    # Engine-identical policy labels (gross/net + utility + diagnostics)
-    parts["__r_policy_gross__"] = _r_gross
-    parts["__r_policy_net__"] = _r_net
-    parts["__u_policy_net__"] = _u_policy_net
     parts["__mae_ret__"] = np.asarray(mae_vals, dtype=np.float32)
     parts["__mfe_ret__"] = np.asarray(mfe_vals, dtype=np.float32)
     parts["__bars_to_mfe__"] = _bars_to_mfe_vals
-    parts["__mr_path_penalty__"] = np.asarray(_mr_path_penalty, dtype=np.float32)
-    parts["__mr_velocity_penalty__"] = np.asarray(
-        _mr_velocity_penalty, dtype=np.float32
-    )
-    parts["__early_inval__"] = np.asarray(
-        (lbl_vals == OUT_SL)
-        & (
-            np.asarray(
-                (
-                    _policy_bars_vals
-                    if _policy_bars_vals is not None
-                    else np.zeros(len(lbl_vals))
-                ),
-                dtype=np.int16,
-            )
-            <= int(cfg.get("kill_min_bars", 2))
-        ),
-        dtype=np.int8,
-    )
 
     if _policy_bars_vals is not None:
         parts["__bars_policy__"] = np.asarray(_policy_bars_vals, dtype=np.int16)
@@ -7376,63 +7357,7 @@ def build_hourly_training_set_and_weights(
 
     parts["__n_tp__"] = n_tp.astype(np.float32)
     parts["__n_sl__"] = n_sl.astype(np.float32)
-    parts["__n_res__"] = n_res.astype(np.float32)
     parts["__w_consensus__"] = w_consensus.astype(np.float32)
-
-    _close_at_entry = _fast_lookup_cached(
-        c, event_ts, event_sym, lookup_cache=lookup_cache
-    )
-    _close_vals = np.nan_to_num(_close_at_entry, nan=np.nan).astype(np.float32)
-    _close_safe = np.where(_close_vals > 0, _close_vals, np.nan)
-    _log_close_vals = np.log(_close_safe).astype(np.float32)
-    parts["__close__"] = np.nan_to_num(_close_vals, nan=0.0)
-    parts["__log_close__"] = np.nan_to_num(_log_close_vals, nan=0.0)
-
-    _blend_alpha = np.float32(0.7)
-    _n_events = len(event_ts)
-    if H > 0 and _n_events > 0:
-        _log_c_panel = np.log(c.where(c > 0)).astype(np.float32)
-        _fwd_ts = event_ts + pd.Timedelta(hours=int(H))
-        _log_close_fwd = _fast_lookup_cached(
-            _log_c_panel, _fwd_ts, event_sym, lookup_cache=lookup_cache
-        )
-        r_close_fwd = (_log_close_fwd - _log_close_vals).astype(np.float32)
-        _kalman_price = feats.get("kalman_price")
-        if _kalman_price is not None:
-            _kalman_price = _kalman_price.astype(np.float32)
-            _kalman_at_entry = _fast_lookup_cached(
-                _kalman_price, event_ts, event_sym, lookup_cache=lookup_cache
-            )
-            _kalman_fwd = _fast_lookup_cached(
-                _kalman_price, _fwd_ts, event_sym, lookup_cache=lookup_cache
-            )
-            r_kalman_fwd = (_kalman_fwd - _kalman_at_entry).astype(np.float32)
-            y_raw = (
-                _blend_alpha * r_close_fwd
-                + (np.float32(1.0) - _blend_alpha) * r_kalman_fwd
-            ).astype(np.float32)
-        else:
-            # Kalman features are helper features, not part of the label
-            # contract. Keep label generation usable for historical snapshots
-            # that predate Kalman feature persistence.
-            tprint(
-                "WARNING: kalman_price missing; using close-forward return only "
-                "for __y_blend_reg__ auxiliary target."
-            )
-            y_raw = r_close_fwd.astype(np.float32)
-        _sigma = parts.get("__barrier_pct__", None)
-        if _sigma is None:
-            _sigma = np.full(_n_events, np.float32(0.02))
-        y_normed = y_raw / (_sigma + np.float32(1e-8))
-        y_clipped = np.clip(y_normed, np.float32(-5.0), np.float32(5.0))
-        y_blend = (
-            np.float32(0.65) * np.arcsinh(y_clipped) + np.float32(0.35) * y_clipped
-        ).astype(np.float32)
-        parts["__y_blend_reg_raw__"] = y_raw
-        parts["__y_blend_reg__"] = y_blend
-    else:
-        parts["__y_blend_reg_raw__"] = np.zeros(_n_events, dtype=np.float32)
-        parts["__y_blend_reg__"] = np.zeros(_n_events, dtype=np.float32)
 
     lag_ts = ts_arr - np.timedelta64(1, "h")
     _feat_heartbeat_every = max(1, int(cfg.get("label_feature_heartbeat_every", 16)))
@@ -7534,21 +7459,14 @@ def build_hourly_training_set_and_weights(
         "__barrier_pct__",
         "__n_tp__",
         "__n_sl__",
-        "__n_res__",
         "__w_consensus__",
         "__bars_to_mfe__",
-        "__mr_path_penalty__",
-        "__mr_velocity_penalty__",
         "__regime_vol_12h__",
         "__regime_vol_48h__",
         "__regime_volume_12h__",
         "__regime_volume_48h__",
         "__regime_trend_12h__",
         "__regime_trend_48h__",
-        "__close__",
-        "__log_close__",
-        "__y_blend_reg__",
-        "__y_blend_reg_raw__",
     ]
     critical_cols = ["ts", "symbol", "y_bin", "y_ret", "w"] + diagnostic_cols
     df = df.dropna(
@@ -10102,12 +10020,14 @@ def generate_label_datasets(
         _manifest = {
             "run_id": run_id,
             "datasets": persisted_manifest,
+            "tb_cache_active_hash": cfg_hash,
         }
         with open(_manifest_path, "w") as _mf:
             json.dump(_manifest, _mf, indent=2, sort_keys=True)
         tprint(
             f"Wrote labels manifest with {len(persisted_manifest)} entries to {_manifest_path}"
         )
+        _prune_stale_tb_cache_by_hash(cfg, run_id, cfg_hash)
         return {}
 
     return datasets

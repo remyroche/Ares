@@ -16,6 +16,7 @@ from sklearn.preprocessing import RobustScaler
 from sklearn.metrics import log_loss, roc_auc_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeRegressor
+from sklearn.isotonic import IsotonicRegression
 
 from extreme_price_movements.config import (
     REGIME_ADAPTOR_ASSET_FEATURE_KEYS,
@@ -134,6 +135,27 @@ GLOBAL_BAD_RATE_THRESHOLD = float(REGIME_ADAPTOR_GLOBAL_BAD_RATE_THRESHOLD)
 ASSET_BAD_RATE_THRESHOLD = float(REGIME_ADAPTOR_ASSET_BAD_RATE_THRESHOLD)
 REGIME_RATIO_CLIPS = {k: tuple(v) for k, v in REGIME_ADAPTOR_RATIO_CLIPS.items()}
 ROLLING_REGIME_LGBM_PARAMS = dict(REGIME_ADAPTOR_LGBM_CLASSIFIER_PARAMS)
+MARKET_MODE_SUFFIXES = {"spot": "_spot", "perps": "_perps"}
+
+
+def _normalise_market_mode(market_mode: Optional[str] = None) -> str:
+    mode = str(market_mode or "").strip().lower()
+    if mode in {"perp", "perps", "futures"}:
+        return "perps"
+    return "spot"
+
+
+def _mode_stem(path: Path, market_mode: str) -> Path:
+    mode = _normalise_market_mode(market_mode)
+    return path.with_name(f"{path.stem}_{mode}{path.suffix}")
+
+
+def _write_json_with_mode_alias(path: Path, payload: Any, market_mode: str) -> None:
+    text = json.dumps(_jsonify(payload), indent=2, sort_keys=True)
+    path.write_text(text)
+    mode_path = _mode_stem(path, market_mode)
+    if mode_path != path:
+        mode_path.write_text(text)
 
 
 def normalize_market_mode(market_mode: str | None = None) -> str:
@@ -1717,6 +1739,12 @@ def _rank_weight(scores: np.ndarray) -> np.ndarray:
     return (1.0 + 0.5 * rank_in_top10).astype(np.float32)
 
 
+def _meta_correctness_sample_weight(scores: Sequence[float]) -> np.ndarray:
+    ranked = _rank_pct(np.asarray(scores, dtype=np.float64))
+    ranked = np.where(np.isfinite(ranked), ranked, 0.0)
+    return (0.01 + np.square(np.clip(ranked, 0.0, 1.0))).astype(np.float64)
+
+
 def _feature_effect_from_stats(pct: np.ndarray, stats: Dict[str, Any]) -> np.ndarray:
     centers = np.asarray(stats.get("spline_x", []), dtype=np.float64)
     values = np.asarray(stats.get("spline_y", []), dtype=np.float64)
@@ -2941,9 +2969,9 @@ def _objective(
     returns: np.ndarray,
     timestamps: Optional[np.ndarray],
 ) -> float:
-    raw_df = score_metrics(raw_scores, returns, timestamps, top_fracs=(0.01, 0.05))
-    adj_df = score_metrics(adjusted_scores, returns, timestamps, top_fracs=(0.01, 0.05))
-    weights = {0.01: 0.35, 0.05: 0.65}
+    raw_df = score_metrics(raw_scores, returns, timestamps, top_fracs=(0.30,))
+    adj_df = score_metrics(adjusted_scores, returns, timestamps, top_fracs=(0.30,))
+    weights = {0.30: 1.0}
     objective = 0.0
     weight_sum = 0.0
     for frac, weight in weights.items():
@@ -3736,13 +3764,7 @@ def _fit_lgbm_classifier(
     if len(np.unique(y_train.astype(int))) < 2:
         return float(np.nanmean(y_train))
     if LGBMClassifier is None:
-        from sklearn.linear_model import LogisticRegression
-
-        model = LogisticRegression(
-            max_iter=1000, random_state=42, class_weight="balanced"
-        )
-        model.fit(x_train, y_train.astype(int), sample_weight=sample_weight)
-        return model
+        return float(np.nanmean(y_train))
     model = LGBMClassifier(**params)
     fit_kwargs: Dict[str, Any] = {}
     if (
@@ -3760,6 +3782,26 @@ def _fit_lgbm_classifier(
     return model
 
 
+def _fit_isotonic_calibrator(
+    pred: np.ndarray,
+    y: np.ndarray,
+    sample_weight: Optional[np.ndarray] = None,
+) -> Optional[IsotonicRegression]:
+    p = np.asarray(pred, dtype=np.float64)
+    yy = np.asarray(y, dtype=int)
+    mask = np.isfinite(p) & np.isfinite(yy)
+    if int(np.sum(mask)) < 20 or len(np.unique(yy[mask])) < 2:
+        return None
+    kwargs: Dict[str, Any] = {}
+    if sample_weight is not None:
+        sw = np.asarray(sample_weight, dtype=np.float64)
+        if len(sw) == len(p):
+            kwargs["sample_weight"] = np.where(np.isfinite(sw[mask]), sw[mask], 1.0)
+    calibrator = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
+    calibrator.fit(p[mask], yy[mask].astype(float), **kwargs)
+    return calibrator
+
+
 def _predict_classifier(model: Any, x: pd.DataFrame) -> np.ndarray:
     if isinstance(model, (float, int, np.floating)):
         return np.full(len(x), float(model), dtype=np.float64)
@@ -3768,6 +3810,17 @@ def _predict_classifier(model: Any, x: pd.DataFrame) -> np.ndarray:
         if np.ndim(proba) == 2 and proba.shape[1] > 1:
             return np.asarray(proba[:, 1], dtype=np.float64)
     return np.clip(np.asarray(model.predict(x), dtype=np.float64), 0.0, 1.0)
+
+
+def _predict_classifier_calibrated(
+    model: Any,
+    x: pd.DataFrame,
+    calibrator: Optional[IsotonicRegression],
+) -> np.ndarray:
+    raw = np.clip(_predict_classifier(model, x), 1e-6, 1.0 - 1e-6)
+    if calibrator is None:
+        return raw
+    return np.clip(calibrator.predict(raw), 1e-6, 1.0 - 1e-6)
 
 
 def _tune_lgbm_classifier_params(
@@ -3832,14 +3885,55 @@ def _tune_lgbm_classifier_params(
                 .get("label_weight", pd.Series(1.0, index=frame.index[tr]))
                 .to_numpy(dtype=np.float64),
             )
-            pred = np.clip(
-                _predict_classifier(model, frame.iloc[te][list(features)]),
+            pred_tr = np.clip(
+                _predict_classifier(model, frame.iloc[tr][list(features)]),
                 1e-6,
-                1 - 1e-6,
+                1.0 - 1e-6,
             )
-            losses.append(
-                float(-np.mean(y_te * np.log(pred) + (1 - y_te) * np.log(1 - pred)))
+            calibrator = _fit_isotonic_calibrator(
+                pred_tr,
+                y_tr,
+                frame.iloc[tr]
+                .get("label_weight", pd.Series(1.0, index=frame.index[tr]))
+                .to_numpy(dtype=np.float64),
             )
+            pred = _predict_classifier_calibrated(
+                model, frame.iloc[te][list(features)], calibrator
+            )
+            if {
+                "meta_score_for_training",
+                "future_horizon_wallet_pnl",
+            }.issubset(frame.columns):
+                meta_te = pd.to_numeric(
+                    frame.iloc[te]["meta_score_for_training"], errors="coerce"
+                ).fillna(0.5).to_numpy(dtype=np.float64)
+                ret_te = pd.to_numeric(
+                    frame.iloc[te]["future_horizon_wallet_pnl"], errors="coerce"
+                ).fillna(0.0).to_numpy(dtype=np.float64)
+                combined = combine_meta_bad_regime_scores(
+                    meta_te,
+                    pred,
+                    pred,
+                    params={
+                        "global_weight": 1.0,
+                        "asset_weight": 0.0,
+                        "lambda_regime": 1.0,
+                        "gamma_global": 1.0,
+                        "gamma_asset": 1.0,
+                    },
+                )
+                baseline_m = _selection_metrics(meta_te, ret_te, top_frac=0.30)
+                candidate_m = _selection_metrics(
+                    combined["final_score"], ret_te, top_frac=0.30
+                )
+                obj = regime_acceptance_objective(candidate_m, baseline_m)
+                losses.append(-float(obj.get("objective", 0.0)))
+            else:
+                rank_w = frame.iloc[te].get(
+                    "label_weight", pd.Series(1.0, index=frame.index[te])
+                ).to_numpy(dtype=np.float64)
+                loss_vec = -(y_te * np.log(pred) + (1 - y_te) * np.log(1 - pred))
+                losses.append(float(np.average(loss_vec, weights=rank_w)))
         val = float(np.nanmean(losses)) if losses else float("inf")
         if val < best_seen["value"]:
             best_seen.update({"trial": int(trial.number), "value": val})
@@ -4102,6 +4196,36 @@ def fit_rolling_regime_adaptor(
             "global_features": global_features,
             "asset_features": asset_features,
         }
+    if LGBMClassifier is None:
+        return {
+            "schema_version": "rolling_bad_regime_v2",
+            "enabled": False,
+            "enable_regime_adaptor": False,
+            "reason": "lightgbm_unavailable_lgbm_only_modulation_required",
+            "global_features": global_features,
+            "asset_features": asset_features,
+        }
+    meta_score_col = (
+        "meta_p_calibrated"
+        if "meta_p_calibrated" in work.columns
+        else "meta_pred_calibrated"
+    )
+    if meta_score_col in work.columns:
+        work["meta_score_for_training"] = (
+            pd.to_numeric(work[meta_score_col], errors="coerce")
+            .fillna(0.5)
+            .clip(1e-6, 1.0 - 1e-6)
+        )
+    else:
+        work["meta_score_for_training"] = 0.5
+    work["meta_correctness_sample_weight"] = _meta_correctness_sample_weight(
+        work["meta_score_for_training"].to_numpy(dtype=np.float64)
+    )
+    if "future_horizon_wallet_pnl" not in work.columns:
+        work["future_horizon_wallet_pnl"] = 0.0
+    work["_regime_train_top50"] = (
+        _rank_pct(work["meta_score_for_training"].to_numpy(dtype=np.float64)) >= 0.50
+    )
     valid_label = work["bad_regime_label"].notna()
     no_trade_rows = int((~valid_label).sum())
     work_trainable = work.loc[valid_label].copy()
@@ -4127,12 +4251,18 @@ def fit_rolling_regime_adaptor(
         ].copy()
         if hwork.empty:
             continue
+        hwork_train = hwork[hwork["_regime_train_top50"].astype(bool)].copy()
+        if hwork_train.empty or len(hwork_train) < 40:
+            hwork_train = hwork.copy()
         # Global labels are one row per anchor/horizon to avoid contradictory labels
         # for identical global features.
-        global_df = hwork.groupby("anchor_date", as_index=False).agg(
+        global_df = hwork_train.groupby("anchor_date", as_index=False).agg(
             {
                 **{c: "mean" for c in global_features},
                 "bad_regime_label": ["mean", "count"],
+                "meta_correctness_sample_weight": "mean",
+                "meta_score_for_training": "mean",
+                "future_horizon_wallet_pnl": "mean",
             }
         )
         global_df.columns = [
@@ -4144,19 +4274,25 @@ def fit_rolling_regime_adaptor(
                 **{f"{c}_mean": c for c in global_features},
                 "bad_regime_label_mean": "bad_rate",
                 "bad_regime_label_count": "global_label_weight",
+                "meta_correctness_sample_weight_mean": "label_weight",
+                "meta_score_for_training_mean": "meta_score_for_training",
+                "future_horizon_wallet_pnl_mean": "future_horizon_wallet_pnl",
             }
         )
-        global_df["label_weight"] = global_df["global_label_weight"].astype(
-            np.float64
-        )
+        global_df["label_weight"] = pd.to_numeric(
+            global_df["label_weight"], errors="coerce"
+        ).fillna(1.0).astype(np.float64)
         global_df["global_bad_regime_label"] = (
             global_df["bad_rate"] >= float(global_bad_rate_threshold)
         ).astype(int)
         # Asset labels are one row per symbol/anchor/horizon, pooled across strategies.
-        asset_df = hwork.groupby(["symbol", "anchor_date"], as_index=False).agg(
+        asset_df = hwork_train.groupby(["symbol", "anchor_date"], as_index=False).agg(
             {
                 **{c: "mean" for c in asset_features},
                 "bad_regime_label": ["mean", "count"],
+                "meta_correctness_sample_weight": "mean",
+                "meta_score_for_training": "mean",
+                "future_horizon_wallet_pnl": "mean",
             }
         )
         asset_df.columns = [
@@ -4168,9 +4304,14 @@ def fit_rolling_regime_adaptor(
                 **{f"{c}_mean": c for c in asset_features},
                 "bad_regime_label_mean": "bad_rate",
                 "bad_regime_label_count": "asset_label_weight",
+                "meta_correctness_sample_weight_mean": "label_weight",
+                "meta_score_for_training_mean": "meta_score_for_training",
+                "future_horizon_wallet_pnl_mean": "future_horizon_wallet_pnl",
             }
         )
-        asset_df["label_weight"] = asset_df["asset_label_weight"].astype(np.float64)
+        asset_df["label_weight"] = pd.to_numeric(
+            asset_df["label_weight"], errors="coerce"
+        ).fillna(1.0).astype(np.float64)
         asset_df["asset_bad_regime_label"] = (
             asset_df["bad_rate"] >= float(asset_bad_rate_threshold)
         ).astype(int)
@@ -4206,6 +4347,7 @@ def fit_rolling_regime_adaptor(
                 model_df["anchor_date"].to_numpy(), len(model_df), n_splits=5
             )
             y = model_df[label_col].astype(int).to_numpy()
+            isotonic_calibration_rows: List[Dict[str, Any]] = []
             for tr, te in splits:
                 if len(tr) == 0 or len(te) == 0:
                     continue
@@ -4221,8 +4363,25 @@ def fit_rolling_regime_adaptor(
                     if "label_weight" in model_df.columns
                     else None,
                 )
-                pred_frame.loc[pred_frame.index[te], col] = _predict_classifier(
-                    model, model_df.iloc[te][list(features)]
+                train_raw = _predict_classifier(model, model_df.iloc[tr][list(features)])
+                calibrator = _fit_isotonic_calibrator(
+                    train_raw,
+                    y[tr],
+                    model_df.iloc[tr]["label_weight"].to_numpy(dtype=np.float64)
+                    if "label_weight" in model_df.columns
+                    else None,
+                )
+                pred_frame.loc[pred_frame.index[te], col] = _predict_classifier_calibrated(
+                    model, model_df.iloc[te][list(features)], calibrator
+                )
+                isotonic_calibration_rows.append(
+                    {
+                        "horizon_days": int(horizon),
+                        "scope": scope,
+                        "train_rows": int(len(tr)),
+                        "valid_rows": int(len(te)),
+                        "enabled": calibrator is not None,
+                    }
                 )
                 split_defs.append(
                     {
@@ -4240,6 +4399,9 @@ def fit_rolling_regime_adaptor(
                 y, pred_frame[col].to_numpy(dtype=np.float64)
             )
             params_by_model[f"{scope}_{horizon}d"] = best_params
+            params_by_model[f"{scope}_{horizon}d"]["_isotonic_oof_calibration"] = (
+                isotonic_calibration_rows
+            )
             if scope == "global":
                 work = work.merge(pred_frame, on=["anchor_date"], how="left")
             else:
@@ -4367,6 +4529,11 @@ def fit_rolling_regime_adaptor(
             "combination_grid": REGIME_ADAPTOR_COMBINATION_GRID,
             "objective_weights": REGIME_OBJECTIVE_WEIGHTS,
             "ratio_clips": REGIME_RATIO_CLIPS,
+            "classifier_family_required_for_modulation": "lightgbm",
+            "train_universe": "top_50pct_meta_model_oof_prediction",
+            "assessment_universe": "top_30pct_meta_model_oof_prediction",
+            "classification_sample_weight": "0.01 + rank(meta_model_oof_prediction)^2; period rows use mean individual trade weight",
+            "oof_probability_calibration": "isotonic_per_scope_horizon_fold_before_combination",
         },
         "feature_key_lists": {
             "global": list(global_features),
@@ -5344,8 +5511,9 @@ def save_regime_adaptor_outputs(
     run_id: str,
     strategy_id: str,
     fit: RegimeAdaptorFit,
-    market_mode: str = "spot",
+    market_mode: Optional[str] = None,
 ) -> Path:
+    mode = _normalise_market_mode(market_mode)
     out_dir = (
         Path(data_root)
         / "artifacts"
@@ -5355,12 +5523,10 @@ def save_regime_adaptor_outputs(
         / safe_strategy_slug(strategy_id)
     )
     out_dir.mkdir(parents=True, exist_ok=True)
-    market_mode = normalize_market_mode(market_mode)
-    fit.artifact["market_mode"] = market_mode
-    artifact_path = market_file_path(out_dir / "regime_adaptor.json", market_mode)
-    artifact_path.write_text(
-        json.dumps(_jsonify(fit.artifact), indent=2, sort_keys=True)
-    )
+    artifact_path = out_dir / "regime_adaptor.json"
+    artifact = dict(fit.artifact)
+    artifact["market_mode"] = mode
+    _write_json_with_mode_alias(artifact_path, artifact, mode)
     for name, frame in (
         ("regime_diagnostics_fixed", fit.fixed_diagnostics),
         ("regime_diagnostics_adaptive", fit.adaptive_diagnostics),
@@ -5369,12 +5535,17 @@ def save_regime_adaptor_outputs(
     ):
         if frame is None or frame.empty:
             continue
-        frame.to_parquet(
-            market_file_path(out_dir / f"{name}.parquet", market_mode), index=False
-        )
-        market_file_path(out_dir / f"{name}.json", market_mode).write_text(
-            frame.to_json(orient="records", indent=2)
-        )
+        parquet_path = out_dir / f"{name}.parquet"
+        json_path = out_dir / f"{name}.json"
+        frame.to_parquet(parquet_path, index=False)
+        mode_parquet_path = _mode_stem(parquet_path, mode)
+        if mode_parquet_path != parquet_path:
+            frame.to_parquet(mode_parquet_path, index=False)
+        json_text = frame.to_json(orient="records", indent=2)
+        json_path.write_text(json_text)
+        mode_json_path = _mode_stem(json_path, mode)
+        if mode_json_path != json_path:
+            mode_json_path.write_text(json_text)
     return artifact_path
 
 

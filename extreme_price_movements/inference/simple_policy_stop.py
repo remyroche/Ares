@@ -16,6 +16,8 @@ from typing import Any, Dict, Mapping, Optional
 import numpy as np
 import pandas as pd
 
+from extreme_price_movements.path_utils import mode_file_candidates
+
 SIMPLE_POLICY_SCHEMA = "simple_policy_v1"
 SIMPLE_POLICY_GENERATOR = "simple_policy_optimiser"
 ADVERSE_EXIT_MAX_SL_FRACTION = 0.75
@@ -208,14 +210,27 @@ def _iter_simple_policy_artifact_paths(data_root: str, run_id: Optional[str] = N
         # copies are accepted only after strict payload provenance validation.
         opt_root = run_dir / "simple_policy_optimiser"
         if opt_root.is_dir():
-            yield from opt_root.glob("*/best_policy_params.json")
+            seen: set[Path] = set()
+            for deployment_dir in opt_root.iterdir():
+                if not deployment_dir.is_dir():
+                    continue
+                canonical = deployment_dir / "best_policy_params.json"
+                for candidate in mode_file_candidates(canonical):
+                    if candidate.is_file() and candidate not in seen:
+                        seen.add(candidate)
+                        yield candidate
+                for candidate in sorted(deployment_dir.glob("best_policy_params*.json")):
+                    if candidate.is_file() and candidate not in seen:
+                        seen.add(candidate)
+                        yield candidate
         for rel in (
             "policy_params/best_policy_params.json",
             "best_policy_params.json",
         ):
             path = run_dir / rel
-            if path.is_file():
-                yield path
+            for candidate in mode_file_candidates(path):
+                if candidate.is_file():
+                    yield candidate
 
 
 def _artifact_params_source(path: Path, data_root: str) -> str:

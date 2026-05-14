@@ -22,6 +22,7 @@ import pandas as pd
 from scipy.interpolate import CubicSpline, UnivariateSpline
 from scipy.stats import rankdata, spearmanr
 from sklearn.isotonic import IsotonicRegression
+from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.metrics import average_precision_score, brier_score_loss, roc_auc_score
 from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
 
@@ -47,6 +48,16 @@ EBM_MAX_ROUNDS = int(os.environ.get("EPM_EBM_MAX_ROUNDS", "10"))
 EBM_PRESCREEN_MAX_FEATURES: int | None = None
 EBM_PRESCREEN_BASE_FEATURES = 200
 EBM_PRESCREEN_FEATURE_FRACTION = 0.25
+EBM_PRESCREEN_SPEARMAN_MIN_CONSISTENCY = 0.60
+EBM_PRESCREEN_BINNED_DEPENDENCE_BINS = int(
+    os.environ.get("EPM_EBM_PRESCREEN_BINNED_DEPENDENCE_BINS", "10")
+)
+EBM_PRESCREEN_BINNED_DEPENDENCE_WEIGHT = float(
+    os.environ.get("EPM_EBM_PRESCREEN_BINNED_DEPENDENCE_WEIGHT", "0.85")
+)
+EBM_PRESCREEN_SPEARMAN_WEIGHT = float(
+    os.environ.get("EPM_EBM_PRESCREEN_SPEARMAN_WEIGHT", "0.15")
+)
 EBM_TREE_FEATURE_CAP = 1200
 EBM_TREE_TARGET_RANK_CAP = 2000
 EBM_TREE_CORR_PRUNE_THRESHOLD = 0.96
@@ -56,8 +67,52 @@ EBM_TREE_LGBM_MAX_FIT_ROWS = int(
 )
 EBM_HPO_MAX_ROWS = int(os.environ.get("EPM_EBM_HPO_MAX_ROWS", "10000"))
 EBM_TREE_LGBM_EARLY_STOPPING_ROUNDS = 25
+EBM_PRUNE_MODEL_COUNT = int(os.environ.get("EPM_EBM_PRUNE_MODEL_COUNT", "3"))
 EBM_FINAL_MODEL_COUNT = int(os.environ.get("EPM_EBM_FINAL_MODEL_COUNT", "3"))
 EBM_HONEST_EVAL_MIN_MODELS = int(os.environ.get("EPM_EBM_HONEST_EVAL_MIN_MODELS", "3"))
+EBM_ROW_SUBSAMPLE_FRAC = float(os.environ.get("EPM_EBM_ROW_SUBSAMPLE_FRAC", "1.0"))
+EBM_LGBM_TREE_PRESENCE_EXTRA = float(
+    os.environ.get("EPM_EBM_LGBM_TREE_PRESENCE_EXTRA", "0.10")
+)
+EBM_LGBM_TREE_SIGN_EXTRA = float(
+    os.environ.get("EPM_EBM_LGBM_TREE_SIGN_EXTRA", "0.10")
+)
+EBM_SHAPE_AUDIT_MAX_FEATURES = int(
+    os.environ.get("EPM_EBM_SHAPE_AUDIT_MAX_FEATURES", "300")
+)
+EBM_SHAPE_AUDIT_TOP_MAS_PCT = float(
+    os.environ.get("EPM_EBM_SHAPE_AUDIT_TOP_MAS_PCT", "70")
+)
+EBM_PREGRID_CONTRIB_PRUNE_ENABLED = os.environ.get(
+    "EPM_EBM_PREGRID_CONTRIB_PRUNE_ENABLED", "1"
+).strip().lower() not in {"0", "false", "no", "off"}
+EBM_PREGRID_TREE_DROP_FRACTION = float(
+    os.environ.get("EPM_EBM_PREGRID_TREE_DROP_FRACTION", "0.30")
+)
+EBM_PREGRID_MIN_TREE_FEATURES = int(
+    os.environ.get("EPM_EBM_PREGRID_MIN_TREE_FEATURES", "120")
+)
+EBM_PRE_EBM_PROXY_PRUNE_ENABLED = os.environ.get(
+    "EPM_EBM_PRE_EBM_PROXY_PRUNE_ENABLED", "0"
+).strip().lower() not in {"0", "false", "no", "off"}
+EBM_PRE_EBM_RAW_KEEP_FRACTION = float(
+    os.environ.get("EPM_EBM_RAW_KEEP_FRACTION", "0.50")
+)
+EBM_PRE_EBM_TREE_KEEP_FRACTION = float(
+    os.environ.get("EPM_EBM_TREE_KEEP_FRACTION", "0.50")
+)
+EBM_PRE_EBM_TREE_MAX_PER_RAW = int(
+    os.environ.get("EPM_EBM_TREE_MAX_PER_RAW", "10")
+)
+EBM_PRE_EBM_PROXY_MAX_ROWS = int(
+    os.environ.get("EPM_EBM_PROXY_MAX_ROWS", "20000")
+)
+EBM_PRE_EBM_PERM_MAX_ROWS = int(
+    os.environ.get("EPM_EBM_PERM_MAX_ROWS", "8000")
+)
+EBM_PRE_EBM_PERM_MAX_FEATURES = int(
+    os.environ.get("EPM_EBM_PERM_MAX_FEATURES", "700")
+)
 EBM_HONEST_EVAL_MAX_J_STD = float(
     os.environ.get("EPM_EBM_HONEST_EVAL_MAX_J_STD", "0.015")
 )
@@ -65,8 +120,11 @@ EBM_HONEST_EVAL_MAX_PRED_DISAGREE = float(
     os.environ.get("EPM_EBM_HONEST_EVAL_MAX_PRED_DISAGREE", "0.020")
 )
 EBM_SALG_LIFT_COEF = float(os.environ.get("EPM_EBM_SALG_LIFT_COEF", "0.38"))
-EBM_J_SALG_WEIGHT = float(os.environ.get("EPM_EBM_J_SALG_WEIGHT", "0.75"))
-EBM_J_NDCG_WEIGHT = float(os.environ.get("EPM_EBM_J_NDCG_WEIGHT", "0.25"))
+EBM_J_SALG_WEIGHT = float(os.environ.get("EPM_EBM_J_SALG_WEIGHT", "0.20"))
+EBM_J_PRECISION_WEIGHT = float(os.environ.get("EPM_EBM_J_PRECISION_WEIGHT", "0.30"))
+EBM_J_MONOTONICITY_WEIGHT = float(os.environ.get("EPM_EBM_J_MONOTONICITY_WEIGHT", "0.20"))
+EBM_J_NDCG_WEIGHT = float(os.environ.get("EPM_EBM_J_NDCG_WEIGHT", "0.20"))
+EBM_J_SALG_NORM_DENOM = float(os.environ.get("EPM_EBM_J_SALG_NORM_DENOM", "1.50"))
 EBM_J_ROBUST_IQR_PENALTY = float(os.environ.get("EPM_EBM_J_ROBUST_IQR_PENALTY", "0.50"))
 EBM_TOP20_SALG_TOL = float(os.environ.get("EPM_EBM_TOP20_SALG_TOL", "0.05"))
 # Reserved for future explicit stability floor/tolerance tuning.
@@ -83,14 +141,44 @@ if EBM_SELECTED_FEATURES_MIN < EBM_MIN_FEATURES:
     )
 if EBM_FINAL_MODEL_COUNT < 1:
     raise ValueError("EPM_EBM_FINAL_MODEL_COUNT must be >= 1.")
+if EBM_PRUNE_MODEL_COUNT < 1:
+    raise ValueError("EPM_EBM_PRUNE_MODEL_COUNT must be >= 1.")
+EBM_ROW_SUBSAMPLE_FRAC = float(np.clip(EBM_ROW_SUBSAMPLE_FRAC, 0.01, 1.0))
+EBM_LGBM_TREE_PRESENCE_EXTRA = float(np.clip(EBM_LGBM_TREE_PRESENCE_EXTRA, 0.0, 1.0))
+EBM_LGBM_TREE_SIGN_EXTRA = float(np.clip(EBM_LGBM_TREE_SIGN_EXTRA, 0.0, 1.0))
+EBM_SHAPE_AUDIT_MAX_FEATURES = max(0, int(EBM_SHAPE_AUDIT_MAX_FEATURES))
+EBM_SHAPE_AUDIT_TOP_MAS_PCT = float(np.clip(EBM_SHAPE_AUDIT_TOP_MAS_PCT, 0.0, 100.0))
+EBM_PREGRID_TREE_DROP_FRACTION = float(
+    np.clip(EBM_PREGRID_TREE_DROP_FRACTION, 0.0, 0.90)
+)
+EBM_PREGRID_MIN_TREE_FEATURES = max(0, int(EBM_PREGRID_MIN_TREE_FEATURES))
+EBM_PRE_EBM_RAW_KEEP_FRACTION = float(
+    np.clip(EBM_PRE_EBM_RAW_KEEP_FRACTION, 0.05, 1.0)
+)
+EBM_PRE_EBM_TREE_KEEP_FRACTION = float(
+    np.clip(EBM_PRE_EBM_TREE_KEEP_FRACTION, 0.05, 1.0)
+)
+EBM_PRE_EBM_TREE_MAX_PER_RAW = max(1, int(EBM_PRE_EBM_TREE_MAX_PER_RAW))
+EBM_PRE_EBM_PROXY_MAX_ROWS = max(1000, int(EBM_PRE_EBM_PROXY_MAX_ROWS))
+EBM_PRE_EBM_PERM_MAX_ROWS = max(1000, int(EBM_PRE_EBM_PERM_MAX_ROWS))
+EBM_PRE_EBM_PERM_MAX_FEATURES = max(50, int(EBM_PRE_EBM_PERM_MAX_FEATURES))
 if EBM_HONEST_EVAL_MIN_MODELS > EBM_FINAL_MODEL_COUNT:
     tprint(
         "EBMOnLGBM: clamping EBM_HONEST_EVAL_MIN_MODELS to " "EBM_FINAL_MODEL_COUNT."
     )
     EBM_HONEST_EVAL_MIN_MODELS = EBM_FINAL_MODEL_COUNT
-_j_weight_sum = EBM_J_SALG_WEIGHT + EBM_J_NDCG_WEIGHT
+EBM_J_SALG_NORM_DENOM = max(1e-6, float(EBM_J_SALG_NORM_DENOM))
+_j_weight_sum = (
+    EBM_J_SALG_WEIGHT
+    + EBM_J_PRECISION_WEIGHT
+    + EBM_J_MONOTONICITY_WEIGHT
+    + EBM_J_NDCG_WEIGHT
+)
 if _j_weight_sum <= 0.0:
-    raise ValueError("EPM_EBM_J_SALG_WEIGHT + EPM_EBM_J_NDCG_WEIGHT must be > 0.")
+    raise ValueError(
+        "EPM_EBM_J_SALG_WEIGHT + EPM_EBM_J_PRECISION_WEIGHT + "
+        "EPM_EBM_J_MONOTONICITY_WEIGHT + EPM_EBM_J_NDCG_WEIGHT must be > 0."
+    )
 if abs(_j_weight_sum - 1.0) > 1e-6:
     tprint(
         "EBMOnLGBM: J weights do not sum to 1.0 "
@@ -118,22 +206,28 @@ EBM_OOF_DISTILLATION_PASSES = int(
     os.environ.get("EPM_EBM_OOF_DISTILLATION_PASSES", "1")
 )
 EBM_FOLD_PRESENCE_MIN_START = float(
-    os.environ.get("EPM_EBM_FOLD_PRESENCE_MIN_START", "0.20")
+    os.environ.get("EPM_EBM_FOLD_PRESENCE_MIN_START", "0.30")
 )
 EBM_FOLD_PRESENCE_MIN_STEP = float(
-    os.environ.get("EPM_EBM_FOLD_PRESENCE_MIN_STEP", "0.05")
+    os.environ.get("EPM_EBM_FOLD_PRESENCE_MIN_STEP", "0.10")
 )
 EBM_FOLD_PRESENCE_MIN_CAP = float(
-    os.environ.get("EPM_EBM_FOLD_PRESENCE_MIN_CAP", "0.80")
+    os.environ.get("EPM_EBM_FOLD_PRESENCE_MIN_CAP", "0.55")
+)
+EBM_FOLD_PRESENCE_FIRST_ROUND_RELIEF = float(
+    os.environ.get("EPM_EBM_FOLD_PRESENCE_FIRST_ROUND_RELIEF", "0.00")
 )
 EBM_SIGN_CONSISTENCY_MIN_START = float(
-    os.environ.get("EPM_EBM_SIGN_CONSISTENCY_MIN_START", "0.60")
+    os.environ.get("EPM_EBM_SIGN_CONSISTENCY_MIN_START", "0.65")
 )
 EBM_SIGN_CONSISTENCY_MIN_STEP = float(
     os.environ.get("EPM_EBM_SIGN_CONSISTENCY_MIN_STEP", "0.05")
 )
 EBM_SIGN_CONSISTENCY_MIN_CAP = float(
-    os.environ.get("EPM_EBM_SIGN_CONSISTENCY_MIN_CAP", "0.90")
+    os.environ.get("EPM_EBM_SIGN_CONSISTENCY_MIN_CAP", "0.75")
+)
+EBM_SIGN_CONSISTENCY_FIRST_ROUND_RELIEF = float(
+    os.environ.get("EPM_EBM_SIGN_CONSISTENCY_FIRST_ROUND_RELIEF", "0.00")
 )
 EBM_TOP_SLICE_TIEBREAKER_WEIGHT = float(
     os.environ.get("EPM_EBM_TOP_SLICE_TIEBREAKER_WEIGHT", "0.05")
@@ -214,6 +308,61 @@ def _candidate_gate_thresholds() -> tuple[float, float]:
         )
     )
     return min_lift, min_stability
+
+
+def _env_int(name: str, default: int, *, minimum: int | None = None) -> int:
+    value = int(os.environ.get(name, str(default)))
+    if minimum is not None:
+        value = max(int(minimum), value)
+    return value
+
+
+def _env_float(
+    name: str,
+    default: float,
+    *,
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> float:
+    value = float(os.environ.get(name, str(default)))
+    if minimum is not None:
+        value = max(float(minimum), value)
+    if maximum is not None:
+        value = min(float(maximum), value)
+    return value
+
+
+def _ebm_max_rounds() -> int:
+    return _env_int("EPM_EBM_MAX_ROUNDS", EBM_MAX_ROUNDS, minimum=1)
+
+
+def _ebm_prune_model_count() -> int:
+    return _env_int("EPM_EBM_PRUNE_MODEL_COUNT", EBM_PRUNE_MODEL_COUNT, minimum=1)
+
+
+def _ebm_final_model_count() -> int:
+    return _env_int("EPM_EBM_FINAL_MODEL_COUNT", EBM_FINAL_MODEL_COUNT, minimum=1)
+
+
+def _ebm_honest_eval_min_models() -> int:
+    return _env_int(
+        "EPM_EBM_HONEST_EVAL_MIN_MODELS",
+        EBM_HONEST_EVAL_MIN_MODELS,
+        minimum=1,
+    )
+
+
+def _ebm_row_subsample_frac() -> float:
+    return _env_float(
+        "EPM_EBM_ROW_SUBSAMPLE_FRAC",
+        EBM_ROW_SUBSAMPLE_FRAC,
+        minimum=0.01,
+        maximum=1.0,
+    )
+
+
+def _ebm_tree_lgbm_bundle_count(default: int) -> int:
+    return _env_int("EPM_EBM_TREE_LGBM_BUNDLE_COUNT", default, minimum=1)
 
 
 def _quiet_interpret_logging() -> None:
@@ -1281,16 +1430,111 @@ def _metric_salg(lift: float, stability: float) -> float:
     return float(stability + EBM_SALG_LIFT_COEF * (lift - 1.0))
 
 
+def _unit_interval(value: float) -> float:
+    if not np.isfinite(value):
+        return float("nan")
+    return float(np.clip(value, 0.0, 1.0))
+
+
+def _normalize_salg_for_objective(salg: float) -> float:
+    return _unit_interval(float(salg) / EBM_J_SALG_NORM_DENOM)
+
+
+def _normalize_precision_for_objective(precision: float, baseline_win_rate: float) -> float:
+    if not (np.isfinite(precision) and np.isfinite(baseline_win_rate)):
+        return float("nan")
+    denom = max(1.0 - float(baseline_win_rate), 1e-6)
+    return _unit_interval((float(precision) - float(baseline_win_rate)) / denom)
+
+
+def _bucket_monotonicity_score(
+    y_win: np.ndarray,
+    order: np.ndarray,
+) -> dict[str, float]:
+    yw = np.asarray(y_win, dtype=np.float64)
+    if len(yw) == 0:
+        return {
+            "rank_bucket_monotonicity": float("nan"),
+            "rank_bucket_monotonicity_violation": float("nan"),
+            "rank_bucket_win_rate_top10": float("nan"),
+            "rank_bucket_win_rate_10_15": float("nan"),
+            "rank_bucket_win_rate_15_20": float("nan"),
+            "rank_bucket_win_rate_20_25": float("nan"),
+            "rank_bucket_win_rate_25_30": float("nan"),
+        }
+    sorted_y = yw[np.asarray(order, dtype=np.int64)[::-1]]
+    n = len(sorted_y)
+    bounds = np.asarray(
+        [
+            0,
+            max(1, int(np.ceil(0.10 * n))),
+            max(1, int(np.ceil(0.15 * n))),
+            max(1, int(np.ceil(0.20 * n))),
+            max(1, int(np.ceil(0.25 * n))),
+            max(1, int(np.ceil(0.30 * n))),
+        ],
+        dtype=np.int64,
+    )
+    bounds = np.maximum.accumulate(np.clip(bounds, 0, n))
+    sums = np.concatenate([[0.0], np.cumsum(sorted_y, dtype=np.float64)])
+    bucket_n = np.maximum(bounds[1:] - bounds[:-1], 1)
+    rates = (sums[bounds[1:]] - sums[bounds[:-1]]) / bucket_n
+    diffs = rates[1:] - rates[:-1]
+    weights = np.asarray([0.25, 0.25, 0.25, 0.25], dtype=np.float64)
+    violation = float(np.sum(weights * np.maximum(diffs, 0.0)))
+    score = float(np.clip(1.0 - violation, 0.0, 1.0))
+    return {
+        "rank_bucket_monotonicity": score,
+        "rank_bucket_monotonicity_violation": violation,
+        "rank_bucket_win_rate_top10": float(rates[0]),
+        "rank_bucket_win_rate_10_15": float(rates[1]),
+        "rank_bucket_win_rate_15_20": float(rates[2]),
+        "rank_bucket_win_rate_20_25": float(rates[3]),
+        "rank_bucket_win_rate_25_30": float(rates[4]),
+    }
+
+
 def _metric_j_from_lift_stability_ndcg(
     lift: float,
     stability: float,
     ndcg: float,
 ) -> float:
-    """Top-20 model comparison J from SALG and NDCG."""
+    """Backward-compatible top-20 model comparison J."""
     salg = _metric_salg(lift, stability)
     if not (np.isfinite(salg) and np.isfinite(ndcg)):
         return float("nan")
-    return float(EBM_J_SALG_WEIGHT * salg + EBM_J_NDCG_WEIGHT * ndcg)
+    salg_norm = _normalize_salg_for_objective(salg)
+    ndcg_norm = _unit_interval(ndcg)
+    if not (np.isfinite(salg_norm) and np.isfinite(ndcg_norm)):
+        return float("nan")
+    return float(EBM_J_SALG_WEIGHT * salg_norm + EBM_J_NDCG_WEIGHT * ndcg_norm)
+
+
+def _metric_j_from_objective_components(
+    salg20: float,
+    precision10_norm: float,
+    precision20_norm: float,
+    precision30_norm: float,
+    monotonicity_norm: float,
+    ndcg30: float,
+) -> float:
+    """Normalized HPO objective: SALG20, precision, monotonicity, and NDCG@30."""
+    salg_norm = _normalize_salg_for_objective(float(salg20))
+    p10_norm = _unit_interval(float(precision10_norm))
+    p20_norm = _unit_interval(float(precision20_norm))
+    p30_norm = _unit_interval(float(precision30_norm))
+    precision_blend = 0.40 * p10_norm + 0.35 * p20_norm + 0.25 * p30_norm
+    mono_norm = _unit_interval(float(monotonicity_norm))
+    ndcg30_norm = _unit_interval(float(ndcg30))
+    vals = (salg_norm, p10_norm, p20_norm, p30_norm, mono_norm, ndcg30_norm)
+    if not all(np.isfinite(v) for v in vals):
+        return float("nan")
+    return float(
+        EBM_J_SALG_WEIGHT * salg_norm
+        + EBM_J_PRECISION_WEIGHT * precision_blend
+        + EBM_J_MONOTONICITY_WEIGHT * mono_norm
+        + EBM_J_NDCG_WEIGHT * ndcg30_norm
+    )
 
 
 def _metric_pack(
@@ -1324,6 +1568,19 @@ def _metric_pack(
             "hit_rate5": 0.0,
             "hit_rate20": 0.0,
             "hit_rate30": 0.0,
+            "mean_ret10": 0.0,
+            "mean_ret20": 0.0,
+            "baseline_win_rate": 0.0,
+            "precision10_norm": 0.0,
+            "precision20_norm": 0.0,
+            "precision30_norm": 0.0,
+            "rank_bucket_monotonicity": 0.0,
+            "rank_bucket_monotonicity_violation": 0.0,
+            "rank_bucket_win_rate_top10": 0.0,
+            "rank_bucket_win_rate_10_15": 0.0,
+            "rank_bucket_win_rate_15_20": 0.0,
+            "rank_bucket_win_rate_20_25": 0.0,
+            "rank_bucket_win_rate_25_30": 0.0,
             "hit_rate15": 0.0,
             "precision10": 0.0,
             "precision5": 0.0,
@@ -1336,6 +1593,9 @@ def _metric_pack(
             "ndcg20": 0.0,
             "ndcg@10": 0.0,
             "ndcg@20": 0.0,
+            "ndcg@30": 0.0,
+            "ndcg_at_30": 0.0,
+            "ndcg30": 0.0,
             "salg15": 0.0,
             "salg20": 0.0,
             "salg30": 0.0,
@@ -1378,6 +1638,7 @@ def _metric_pack(
     if classifier:
         yb = (y >= 0.5).astype(np.int8)
         base = float(np.mean(yb))
+        y_win = yb.astype(np.float64)
         top_rate15 = float(np.mean(yb[top15])) if len(top15) else 0.0
         top_rate30 = float(np.mean(yb[top30])) if len(top30) else 0.0
         hit_rate20 = float(np.mean(yb[top20])) if len(top20) else 0.0
@@ -1408,6 +1669,8 @@ def _metric_pack(
         )
     else:
         denom = float(np.mean(np.abs(y)) + 1e-6)
+        y_win = np.asarray(y > 0.0, dtype=np.float64)
+        base = float(np.mean(y_win))
         hit_rate5 = float(np.mean(y[top5])) if len(top5) else 0.0
         hit_rate10 = float(np.mean(y[top10])) if len(top10) else 0.0
         hit_rate20 = float(np.mean(y[top20])) if len(top20) else 0.0
@@ -1526,6 +1789,7 @@ def _metric_pack(
     ic15 = float(ic_metrics["ic_top"])
     ndcg10 = float(_ndcg_at_k(y, p, k=10))
     ndcg20 = float(_ndcg_at_k(y, p, k=20))
+    ndcg30 = float(_ndcg_at_k(y, p, k=30))
     # Tradable-calibrated ranking diagnostics over execution-like top slices.
     ndcg_top20pct = (
         float(_ndcg_at_k(y[top20], p[top20], k=min(20, len(top20))))
@@ -1540,10 +1804,20 @@ def _metric_pack(
     salg15 = _metric_salg(float(lift15), float(stability15))
     salg20 = _metric_salg(float(lift20), float(stability20))
     salg30 = _metric_salg(float(lift30), float(stability30))
-    j20 = _metric_j_from_lift_stability_ndcg(
-        float(lift20),
-        float(stability20),
-        float(ndcg20),
+    precision10_win = float(np.mean(y_win[top10])) if len(top10) else 0.0
+    precision20_win = float(np.mean(y_win[top20])) if len(top20) else 0.0
+    precision30_win = float(np.mean(y_win[top30])) if len(top30) else 0.0
+    precision10_norm = _normalize_precision_for_objective(precision10_win, base)
+    precision20_norm = _normalize_precision_for_objective(precision20_win, base)
+    precision30_norm = _normalize_precision_for_objective(precision30_win, base)
+    mono_metrics = _bucket_monotonicity_score(y_win, order)
+    j20 = _metric_j_from_objective_components(
+        float(salg20),
+        float(precision10_norm),
+        float(precision20_norm),
+        float(precision30_norm),
+        float(mono_metrics["rank_bucket_monotonicity"]),
+        float(ndcg30),
     )
     return {
         "lift15": float(lift15),
@@ -1554,14 +1828,29 @@ def _metric_pack(
         "hit_rate5": float(hit_rate5),
         "hit_rate10": float(hit_rate10),
         "hit_rate20": float(hit_rate20),
+        "mean_ret10": float(hit_rate10),
+        "mean_ret20": float(hit_rate20),
+        "baseline_win_rate": float(base),
+        "precision10_norm": float(precision10_norm),
+        "precision20_norm": float(precision20_norm),
+        "precision30_norm": float(precision30_norm),
+        "rank_bucket_monotonicity": float(mono_metrics["rank_bucket_monotonicity"]),
+        "rank_bucket_monotonicity_violation": float(
+            mono_metrics["rank_bucket_monotonicity_violation"]
+        ),
+        "rank_bucket_win_rate_top10": float(mono_metrics["rank_bucket_win_rate_top10"]),
+        "rank_bucket_win_rate_10_15": float(mono_metrics["rank_bucket_win_rate_10_15"]),
+        "rank_bucket_win_rate_15_20": float(mono_metrics["rank_bucket_win_rate_15_20"]),
+        "rank_bucket_win_rate_20_25": float(mono_metrics["rank_bucket_win_rate_20_25"]),
+        "rank_bucket_win_rate_25_30": float(mono_metrics["rank_bucket_win_rate_25_30"]),
         "hit_rate15": float(hit_rate15),
         "hit_rate30": float(hit_rate30),
         "hit_rate01": float(hit_rate01),
         "hit_rate005": float(hit_rate005),
         "precision5": float(hit_rate5),
-        "precision10": float(hit_rate10),
-        "precision20": float(hit_rate20),
-        "precision30": float(hit_rate30),
+        "precision10": float(precision10_win),
+        "precision20": float(precision20_win),
+        "precision30": float(precision30_win),
         "precision15": float(hit_rate15),
         "precision01": float(hit_rate01),
         "precision005": float(hit_rate005),
@@ -1570,6 +1859,9 @@ def _metric_pack(
         "ndcg@20": ndcg20,
         "ndcg_at_20": ndcg20,
         "ndcg20": ndcg20,
+        "ndcg@30": ndcg30,
+        "ndcg_at_30": ndcg30,
+        "ndcg30": ndcg30,
         "salg15": float(salg15),
         "salg20": float(salg20),
         "salg30": float(salg30),
@@ -1625,13 +1917,27 @@ def _metric_pack(
 
 
 def _fold_j(m: dict[str, float]) -> float:
-    lift20 = float(m.get("lift20", m.get("lift15", m.get("lift30", np.nan))))
-    stability20 = float(
-        m.get("stability20", m.get("stability15", m.get("stability30", np.nan)))
-    )
-    ndcg20 = float(m.get("ndcg20", m.get("ndcg_at_20", m.get("ndcg@20", np.nan))))
+    salg20 = float(m.get("salg20", float("nan")))
+    if not np.isfinite(salg20):
+        lift20 = float(m.get("lift20", m.get("lift15", m.get("lift30", np.nan))))
+        stability20 = float(
+            m.get("stability20", m.get("stability15", m.get("stability30", np.nan)))
+        )
+        salg20 = _metric_salg(lift20, stability20)
+    precision10_norm = float(m.get("precision10_norm", float("nan")))
+    precision20_norm = float(m.get("precision20_norm", float("nan")))
+    precision30_norm = float(m.get("precision30_norm", float("nan")))
+    monotonicity_norm = float(m.get("rank_bucket_monotonicity", float("nan")))
+    ndcg30 = float(m.get("ndcg30", m.get("ndcg_at_30", m.get("ndcg@30", np.nan))))
 
-    j = _metric_j_from_lift_stability_ndcg(lift20, stability20, ndcg20)
+    j = _metric_j_from_objective_components(
+        salg20,
+        precision10_norm,
+        precision20_norm,
+        precision30_norm,
+        monotonicity_norm,
+        ndcg30,
+    )
     if np.isfinite(j):
         return float(j)
 
@@ -1699,10 +2005,29 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
     hit_rate20 = _mean_metric(fold_metrics, "hit_rate20")
     hit_rate15 = _mean_metric(fold_metrics, "hit_rate15", "hit_rate30")
     hit_rate30 = _mean_metric(fold_metrics, "hit_rate30", "hit_rate15", "hit_rate20")
+    mean_ret10 = _mean_metric(fold_metrics, "mean_ret10", "hit_rate10")
+    mean_ret20 = _mean_metric(fold_metrics, "mean_ret20", "hit_rate20")
+    baseline_win_rate = _mean_metric(fold_metrics, "baseline_win_rate")
+    precision10_norm = _mean_metric(fold_metrics, "precision10_norm")
+    precision20_norm = _mean_metric(fold_metrics, "precision20_norm")
+    precision30_norm = _mean_metric(fold_metrics, "precision30_norm")
+    rank_bucket_monotonicity = _mean_metric(fold_metrics, "rank_bucket_monotonicity")
+    rank_bucket_monotonicity_violation = _mean_metric(
+        fold_metrics, "rank_bucket_monotonicity_violation"
+    )
+    rank_bucket_win_rate_top10 = _mean_metric(fold_metrics, "rank_bucket_win_rate_top10")
+    rank_bucket_win_rate_10_15 = _mean_metric(fold_metrics, "rank_bucket_win_rate_10_15")
+    rank_bucket_win_rate_15_20 = _mean_metric(fold_metrics, "rank_bucket_win_rate_15_20")
+    rank_bucket_win_rate_20_25 = _mean_metric(fold_metrics, "rank_bucket_win_rate_20_25")
+    rank_bucket_win_rate_25_30 = _mean_metric(fold_metrics, "rank_bucket_win_rate_25_30")
     precision01 = _mean_metric(fold_metrics, "precision01", "hit_rate01")
     precision005 = _mean_metric(fold_metrics, "precision005", "hit_rate005")
+    precision10 = _mean_metric(fold_metrics, "precision10")
+    precision20 = _mean_metric(fold_metrics, "precision20")
+    precision30 = _mean_metric(fold_metrics, "precision30")
     ndcg_at_10 = _mean_metric(fold_metrics, "ndcg_at_10", "ndcg@10")
     ndcg_at_20 = _mean_metric(fold_metrics, "ndcg20", "ndcg_at_20", "ndcg@20")
+    ndcg_at_30 = _mean_metric(fold_metrics, "ndcg30", "ndcg_at_30", "ndcg@30")
     ece_at_20 = _mean_metric(fold_metrics, "ece_top20", "ece_at_20", default=np.nan)
     ndcg_tradable_top20pct = _mean_metric(fold_metrics, "ndcg_tradable_top20pct")
     ndcg_tradable_top10pct = _mean_metric(fold_metrics, "ndcg_tradable_top10pct")
@@ -1717,6 +2042,18 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
     ndcg20_std = float(np.std(_ndcg20_fold, ddof=1)) if len(_ndcg20_fold) > 1 else 0.0
     ndcg20_p25 = (
         float(np.percentile(_ndcg20_fold, 25.0)) if len(_ndcg20_fold) > 0 else 0.0
+    )
+    _ndcg30_fold = np.asarray(
+        [
+            float(m.get("ndcg30", m.get("ndcg_at_30", m.get("ndcg@30", np.nan))))
+            for m in fold_metrics
+        ],
+        dtype=np.float64,
+    )
+    _ndcg30_fold = _ndcg30_fold[np.isfinite(_ndcg30_fold)]
+    ndcg30_std = float(np.std(_ndcg30_fold, ddof=1)) if len(_ndcg30_fold) > 1 else 0.0
+    ndcg30_p25 = (
+        float(np.percentile(_ndcg30_fold, 25.0)) if len(_ndcg30_fold) > 0 else 0.0
     )
     auc30 = _mean_metric(fold_metrics, "auc_correct_30", "auc_correct_15")
 
@@ -1752,10 +2089,13 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
     salg15 = _metric_salg(lift15, stability15)
     salg20 = _metric_salg(lift20, stability20)
     salg30 = _metric_salg(lift30, stability30)
-    j20_mean_metrics = _metric_j_from_lift_stability_ndcg(
-        lift20,
-        stability20,
-        ndcg_at_20,
+    j20_mean_metrics = _metric_j_from_objective_components(
+        salg20,
+        precision10_norm,
+        precision20_norm,
+        precision30_norm,
+        rank_bucket_monotonicity,
+        ndcg_at_30,
     )
 
     return {
@@ -1767,13 +2107,26 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
         "hit_rate5": hit_rate5,
         "hit_rate10": hit_rate10,
         "hit_rate20": hit_rate20,
+        "mean_ret10": mean_ret10,
+        "mean_ret20": mean_ret20,
+        "baseline_win_rate": baseline_win_rate,
+        "precision10_norm": precision10_norm,
+        "precision20_norm": precision20_norm,
+        "precision30_norm": precision30_norm,
+        "rank_bucket_monotonicity": rank_bucket_monotonicity,
+        "rank_bucket_monotonicity_violation": rank_bucket_monotonicity_violation,
+        "rank_bucket_win_rate_top10": rank_bucket_win_rate_top10,
+        "rank_bucket_win_rate_10_15": rank_bucket_win_rate_10_15,
+        "rank_bucket_win_rate_15_20": rank_bucket_win_rate_15_20,
+        "rank_bucket_win_rate_20_25": rank_bucket_win_rate_20_25,
+        "rank_bucket_win_rate_25_30": rank_bucket_win_rate_25_30,
         "hit_rate15": hit_rate15,
         "hit_rate30": hit_rate30,
         "precision5": hit_rate5,
-        "precision10": hit_rate10,
-        "precision20": hit_rate20,
+        "precision10": precision10,
+        "precision20": precision20,
         "precision15": hit_rate15,
-        "precision30": hit_rate30,
+        "precision30": precision30,
         "precision1": precision01,
         "precision01": precision01,
         "precision005": precision005,
@@ -1782,12 +2135,17 @@ def _aggregate_j(fold_metrics: list[dict[str, float]]) -> dict[str, float]:
         "ndcg20": ndcg_at_20,
         "ndcg@20": ndcg_at_20,
         "ndcg_at_20": ndcg_at_20,
+        "ndcg30": ndcg_at_30,
+        "ndcg@30": ndcg_at_30,
+        "ndcg_at_30": ndcg_at_30,
         "ece_top20": ece_at_20,
         "ece_at_20": ece_at_20,
         "ndcg_tradable_top20pct": ndcg_tradable_top20pct,
         "ndcg_tradable_top10pct": ndcg_tradable_top10pct,
         "ndcg20_std": ndcg20_std,
         "ndcg20_p25": ndcg20_p25,
+        "ndcg30_std": ndcg30_std,
+        "ndcg30_p25": ndcg30_p25,
         "auc_correct_30": auc30,
         "stability20": stability20,
         "stability30": stability30,
@@ -1830,15 +2188,47 @@ def _hpo_objective_from_aggregate(
                 "stability20", agg.get("stability15", agg.get("stability30", np.nan))
             )
         )
-        ndcg20 = float(
-            agg.get("ndcg20", agg.get("ndcg_at_20", agg.get("ndcg@20", np.nan)))
+        salg20 = _metric_salg(lift20, stability20)
+        baseline_win_rate = float(agg.get("baseline_win_rate", np.nan))
+        precision10_norm = float(agg.get("precision10_norm", np.nan))
+        if not np.isfinite(precision10_norm):
+            precision10_norm = _normalize_precision_for_objective(
+                float(agg.get("precision10", np.nan)), baseline_win_rate
+            )
+        precision20_norm = float(agg.get("precision20_norm", np.nan))
+        if not np.isfinite(precision20_norm):
+            precision20_norm = _normalize_precision_for_objective(
+                float(agg.get("precision20", np.nan)), baseline_win_rate
+            )
+        precision30_norm = float(agg.get("precision30_norm", np.nan))
+        if not np.isfinite(precision30_norm):
+            precision30_norm = _normalize_precision_for_objective(
+                float(agg.get("precision30", np.nan)), baseline_win_rate
+            )
+        monotonicity_norm = float(agg.get("rank_bucket_monotonicity", np.nan))
+        ndcg30 = float(
+            agg.get(
+                "ndcg30",
+                agg.get("ndcg_at_30", agg.get("ndcg@30", agg.get("ndcg20", np.nan))),
+            )
         )
-        base_score = _metric_j_from_lift_stability_ndcg(lift20, stability20, ndcg20)
+        base_score = _metric_j_from_objective_components(
+            salg20,
+            precision10_norm,
+            precision20_norm,
+            precision30_norm,
+            monotonicity_norm,
+            ndcg30,
+        )
     if not np.isfinite(base_score):
         return -999.0
 
     ndcg20 = float(agg.get("ndcg20", agg.get("ndcg_at_20", agg.get("ndcg@20", np.nan))))
+    ndcg30 = float(
+        agg.get("ndcg30", agg.get("ndcg_at_30", agg.get("ndcg@30", ndcg20)))
+    )
     ndcg20_p25 = float(agg.get("ndcg20_p25", float("nan")))
+    ndcg30_p25 = float(agg.get("ndcg30_p25", ndcg20_p25))
     ndcg20_floor = float(agg.get("pareto_ndcg20_floor", 0.0))
     precision_floor = float(agg.get("pareto_precision_floor", 0.0))
     precision15 = float(agg.get("precision15", agg.get("hit_rate15", float("nan"))))
@@ -1846,25 +2236,31 @@ def _hpo_objective_from_aggregate(
     salg20 = float(agg.get("salg20", float("nan")))
 
     penalty = 0.0
-    if np.isfinite(ndcg20) and ndcg20 < 0.05:
-        penalty += 0.05 - ndcg20
-    if np.isfinite(ndcg20) and np.isfinite(ndcg20_floor) and ndcg20 < ndcg20_floor:
-        penalty += ndcg20_floor - ndcg20
-    if np.isfinite(ndcg20_p25) and ndcg20_p25 < 0.03:
-        penalty += 0.03 - ndcg20_p25
+    if np.isfinite(ndcg30) and ndcg30 < 0.05:
+        penalty += 0.05 - ndcg30
+    if np.isfinite(ndcg30) and np.isfinite(ndcg20_floor) and ndcg30 < ndcg20_floor:
+        penalty += ndcg20_floor - ndcg30
+    if np.isfinite(ndcg30_p25) and ndcg30_p25 < 0.03:
+        penalty += 0.03 - ndcg30_p25
     if np.isfinite(precision15) and precision15 < precision_floor:
         penalty += precision_floor - precision15
     if np.isfinite(lift20) and lift20 < 1.0:
         penalty += 0.10 * (1.0 - lift20)
     if np.isfinite(salg20) and salg20 < 0.0:
         penalty += 0.10 * abs(salg20)
+    agg["J_penalty"] = float(penalty)
+    agg["J_robust_pre_penalty"] = float(base_score)
+    agg["J_robust_penalized"] = float(base_score - penalty)
 
     if str(objective_mode).lower() == "meta":
         ndcg10 = float(agg.get("ndcg_at_10", agg.get("ndcg@10", 0.0)))
         tradable_ndcg = float(
             agg.get("ndcg_tradable_top20pct", agg.get("ndcg_tradable_top10pct", 0.0))
         )
-        base_score += 0.02 * ndcg10 + 0.02 * tradable_ndcg
+        meta_bonus = 0.02 * ndcg10 + 0.02 * tradable_ndcg
+        agg["J_meta_bonus"] = float(meta_bonus)
+        base_score += meta_bonus
+        agg["J_robust_penalized"] = float(base_score - penalty)
 
     return float(base_score - penalty)
 
@@ -2466,6 +2862,40 @@ def _cap_stage_and_move_unused_to_fit_oof(
     return stage_indices
 
 
+def _subsample_stage_indices(
+    stage_indices: dict[str, np.ndarray],
+    y: np.ndarray,
+    *,
+    max_fraction: float,
+    random_state: int,
+    classifier: bool,
+) -> dict[str, np.ndarray]:
+    frac = float(np.clip(float(max_fraction), 0.01, 1.0))
+    if frac >= 0.999:
+        return stage_indices
+    n = len(y)
+    cap = max(1, int(np.ceil(frac * max(n, 1))))
+    out = dict(stage_indices)
+    for offset, stage_key in enumerate(("lgbm_prune", "hpo", "fit_oof"), start=1):
+        idx = np.asarray(out.get(stage_key, []), dtype=np.int32)
+        if len(idx) <= cap:
+            continue
+        keep_local = _stratified_subsample_indices(
+            np.asarray(y, dtype=np.float32)[idx],
+            max_n=cap,
+            random_state=int(random_state) + offset * 10007,
+            classifier=bool(classifier),
+        )
+        keep = np.sort(idx[keep_local].astype(np.int32))
+        out[stage_key] = keep
+        tprint(
+            "EBMOnLGBM stage budget: row-subsampled "
+            f"{stage_key} {len(idx)} -> {len(keep)} rows "
+            f"(fraction={frac:.0%}, cap={cap})."
+        )
+    return out
+
+
 def _looks_classifier_target(y: np.ndarray) -> bool:
     yy = np.asarray(y)
     unique = np.unique(yy[np.isfinite(yy)])
@@ -2825,6 +3255,116 @@ def _target_scores(X: np.ndarray, y: np.ndarray, cols: list[str]) -> np.ndarray:
     return _vectorized_spearman_scores(np.asarray(X, dtype=np.float32), y, signed=False)
 
 
+def _rank01_local(values: np.ndarray) -> np.ndarray:
+    vals = np.nan_to_num(
+        np.asarray(values, dtype=np.float64), nan=-np.inf, posinf=np.inf, neginf=-np.inf
+    )
+    finite = np.isfinite(vals)
+    out = np.zeros(len(vals), dtype=np.float32)
+    if int(np.sum(finite)) <= 1:
+        return out
+    finite_vals = vals[finite]
+    if float(np.nanmax(finite_vals) - np.nanmin(finite_vals)) <= 1e-12:
+        return out
+    out[finite] = pd.Series(finite_vals).rank(pct=True).to_numpy(dtype=np.float32)
+    return out
+
+
+def _binned_dependence_scores(
+    X: np.ndarray,
+    y: np.ndarray,
+    *,
+    classifier: bool,
+    n_bins: int | None = None,
+) -> np.ndarray:
+    arr = np.nan_to_num(
+        np.asarray(X, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0
+    )
+    yy = np.asarray(y, dtype=np.float32)
+    n, p = arr.shape
+    if p == 0 or n < 8:
+        return np.zeros(p, dtype=np.float32)
+    bins = max(3, int(n_bins or EBM_PRESCREEN_BINNED_DEPENDENCE_BINS))
+    eps = 1e-8
+    out = np.zeros(p, dtype=np.float32)
+    if classifier:
+        y_disc = np.asarray(yy >= 0.5, dtype=np.int8)
+        base = float(np.mean(y_disc))
+        if base <= eps or base >= 1.0 - eps:
+            return out
+        global_probs = np.array([1.0 - base, base], dtype=np.float64)
+        for j in range(p):
+            xj = arr[:, j]
+            if float(np.nanstd(xj)) <= 1e-8:
+                continue
+            edges = np.unique(
+                np.nanquantile(xj, np.linspace(0.0, 1.0, bins + 1)).astype(np.float32)
+            )
+            if len(edges) <= 2:
+                continue
+            xb = np.searchsorted(edges[1:-1], xj, side="right")
+            lift_score = 0.0
+            mi_score = 0.0
+            for b in range(len(edges) - 1):
+                mask = xb == b
+                cnt = int(np.sum(mask))
+                if cnt <= 1:
+                    continue
+                weight = cnt / float(n)
+                # Jeffreys smoothing keeps tiny bins from dominating.
+                pos = float(np.sum(y_disc[mask])) + 0.5
+                total = float(cnt) + 1.0
+                rate = pos / total
+                lift_score += weight * abs(rate - base)
+                probs = np.array([1.0 - rate, rate], dtype=np.float64)
+                mi_score += weight * float(
+                    np.sum(probs * np.log((probs + eps) / (global_probs + eps)))
+                )
+            out[j] = float(lift_score + mi_score)
+        return np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+
+    y_edges = np.unique(
+        np.nanquantile(yy, np.linspace(0.0, 1.0, bins + 1)).astype(np.float32)
+    )
+    if len(y_edges) <= 2:
+        y_disc = pd.Series(yy).rank(pct=True).to_numpy(dtype=np.float32)
+        y_disc = np.clip((y_disc * bins).astype(np.int32), 0, bins - 1)
+        n_y_bins = bins
+    else:
+        y_disc = np.searchsorted(y_edges[1:-1], yy, side="right")
+        n_y_bins = len(y_edges) - 1
+    global_counts = np.bincount(y_disc, minlength=n_y_bins).astype(np.float64) + 0.5
+    global_probs = global_counts / float(np.sum(global_counts))
+    y_mean = float(np.mean(yy))
+    y_scale = float(np.std(yy) + eps)
+    for j in range(p):
+        xj = arr[:, j]
+        if float(np.nanstd(xj)) <= 1e-8:
+            continue
+        edges = np.unique(
+            np.nanquantile(xj, np.linspace(0.0, 1.0, bins + 1)).astype(np.float32)
+        )
+        if len(edges) <= 2:
+            continue
+        xb = np.searchsorted(edges[1:-1], xj, side="right")
+        lift_score = 0.0
+        mi_score = 0.0
+        for b in range(len(edges) - 1):
+            mask = xb == b
+            cnt = int(np.sum(mask))
+            if cnt <= 1:
+                continue
+            weight = cnt / float(n)
+            lift_score += weight * abs(float(np.mean(yy[mask])) - y_mean) / y_scale
+            counts = np.bincount(y_disc[mask], minlength=n_y_bins).astype(np.float64) + 0.5
+            probs = counts / float(np.sum(counts))
+            mi_score += weight * float(
+                np.sum(probs * np.log((probs + eps) / (global_probs + eps)))
+            )
+        out[j] = float(lift_score + mi_score)
+    return np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+
+
 def _corr_prune(
     X: np.ndarray, y: np.ndarray, active: np.ndarray, thr: float, random_state: int
 ) -> np.ndarray:
@@ -2853,6 +3393,35 @@ def _corr_prune(
                 keep[j] = False
         keep[i] = True
     return active[keep]
+
+
+def _binned_dependence_target_screen(
+    X: np.ndarray,
+    y: np.ndarray,
+    active: np.ndarray,
+    max_features: int | None,
+    classifier: bool,
+) -> np.ndarray:
+    if max_features is None:
+        max_features = int(
+            EBM_PRESCREEN_BASE_FEATURES + EBM_PRESCREEN_FEATURE_FRACTION * len(active)
+        )
+    if max_features <= 0:
+        return active
+    if len(active) <= max_features:
+        return active
+    Xa = np.asarray(X, dtype=np.float32)[:, active]
+    binned = _binned_dependence_scores(Xa, y, classifier=classifier)
+    spearman = _target_scores(Xa, y, [str(i) for i in active])
+    binned_w = float(np.clip(EBM_PRESCREEN_BINNED_DEPENDENCE_WEIGHT, 0.0, 1.0))
+    spearman_w = float(np.clip(EBM_PRESCREEN_SPEARMAN_WEIGHT, 0.0, 1.0))
+    weight_sum = max(binned_w + spearman_w, 1e-6)
+    scores = (
+        binned_w * _rank01_local(binned)
+        + spearman_w * _rank01_local(spearman)
+    ) / weight_sum
+    order = np.argsort(scores)[::-1][:max_features]
+    return active[np.sort(order)]
 
 
 def _spearman_target_screen(
@@ -2919,8 +3488,14 @@ def _prescreen_features(
     active = np.arange(len(feature_names), dtype=np.int32)
     tprint(f"EBMOnLGBM prescreen: start with {len(active)} features.")
     tprint("EBMOnLGBM prescreen: EN soft-stage disabled.")
-    active = _spearman_target_screen(X, y, active, EBM_PRESCREEN_MAX_FEATURES)
-    tprint(f"EBMOnLGBM prescreen: Spearman target -> {len(active)}")
+    active = _binned_dependence_target_screen(
+        X,
+        y,
+        active,
+        EBM_PRESCREEN_MAX_FEATURES,
+        classifier=classifier,
+    )
+    tprint(f"EBMOnLGBM prescreen: binned dependence/Spearman target -> {len(active)}")
     active = _corr_prune(X, y, active, thr=0.98, random_state=random_state)
     tprint(f"EBMOnLGBM prescreen: corr prune #1 -> {len(active)}")
     active = _spearman_instability_screen(
@@ -2932,21 +3507,571 @@ def _prescreen_features(
     return active.astype(np.int32)
 
 
+def _rank01(values: np.ndarray) -> np.ndarray:
+    vals = np.nan_to_num(
+        np.asarray(values, dtype=np.float64), nan=-np.inf, posinf=np.inf, neginf=-np.inf
+    )
+    finite = np.isfinite(vals)
+    out = np.zeros(len(vals), dtype=np.float32)
+    if int(np.sum(finite)) <= 1:
+        return out
+    finite_vals = vals[finite]
+    if float(np.nanmax(finite_vals) - np.nanmin(finite_vals)) <= 1e-12:
+        return out
+    ranks = pd.Series(finite_vals).rank(pct=True).to_numpy(dtype=np.float32)
+    out[finite] = ranks
+    return out
+
+
+def _proxy_sample_indices(
+    y: np.ndarray,
+    *,
+    max_rows: int,
+    random_state: int,
+    classifier: bool,
+) -> np.ndarray:
+    if len(y) <= max_rows:
+        return np.arange(len(y), dtype=np.int32)
+    return _stratified_subsample_indices(
+        np.asarray(y),
+        max_n=max_rows,
+        random_state=random_state,
+        classifier=classifier,
+    ).astype(np.int32)
+
+
+def _fit_quantile_bin_edges(X: np.ndarray, n_bins: int = 8) -> list[np.ndarray]:
+    arr = np.nan_to_num(
+        np.asarray(X, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0
+    )
+    qs = np.linspace(0.0, 1.0, int(n_bins) + 1)
+    edges: list[np.ndarray] = []
+    for j in range(arr.shape[1]):
+        q = np.nanquantile(arr[:, j], qs).astype(np.float32)
+        q = np.unique(q)
+        edges.append(q)
+    return edges
+
+
+def _apply_quantile_bins(X: np.ndarray, edges: list[np.ndarray]) -> np.ndarray:
+    arr = np.nan_to_num(
+        np.asarray(X, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0
+    )
+    out = np.zeros(arr.shape, dtype=np.float32)
+    for j, e in enumerate(edges):
+        if len(e) <= 2:
+            continue
+        out[:, j] = np.searchsorted(e[1:-1], arr[:, j], side="right").astype(
+            np.float32
+        )
+        denom = max(float(len(e) - 2), 1.0)
+        out[:, j] = out[:, j] / denom
+    return out
+
+
+def _standardize_train_eval(
+    X_train: np.ndarray, X_eval: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    mu = np.nanmean(X_train, axis=0).astype(np.float32)
+    sd = np.nanstd(X_train, axis=0).astype(np.float32)
+    sd[sd < 1e-6] = 1.0
+    return (
+        np.nan_to_num((X_train - mu) / sd, nan=0.0, posinf=0.0, neginf=0.0),
+        np.nan_to_num((X_eval - mu) / sd, nan=0.0, posinf=0.0, neginf=0.0),
+    )
+
+
+def _proxy_metric_score(y_true: np.ndarray, pred: np.ndarray, classifier: bool) -> float:
+    yy = np.asarray(y_true)
+    pp = np.nan_to_num(np.asarray(pred, dtype=np.float32), nan=0.0)
+    if len(yy) < 8:
+        return 0.0
+    if classifier:
+        labels = np.asarray(yy >= 0.5, dtype=np.int8)
+        if len(np.unique(labels)) < 2:
+            return 0.0
+        try:
+            return float(roc_auc_score(labels, pp))
+        except Exception:
+            return 0.0
+    corr = spearmanr(yy, pp).correlation
+    return float(abs(corr)) if np.isfinite(corr) else 0.0
+
+
+def _fit_binned_linear_proxy(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_pred: np.ndarray,
+    *,
+    classifier: bool,
+    random_state: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    edges = _fit_quantile_bin_edges(X_train)
+    Xb_train = _apply_quantile_bins(X_train, edges)
+    Xb_pred = _apply_quantile_bins(X_pred, edges)
+    Xb_train, Xb_pred = _standardize_train_eval(Xb_train, Xb_pred)
+    if classifier and len(np.unique(np.asarray(y_train >= 0.5, dtype=np.int8))) >= 2:
+        model = LogisticRegression(
+            C=0.25,
+            penalty="l2",
+            solver="liblinear",
+            max_iter=200,
+            random_state=int(random_state),
+        )
+        model.fit(Xb_train, np.asarray(y_train >= 0.5, dtype=np.int8))
+        pred = model.predict_proba(Xb_pred)[:, 1].astype(np.float32)
+        coef = np.abs(np.asarray(model.coef_, dtype=np.float32).reshape(-1))
+        return pred, coef
+    model = Ridge(alpha=10.0, random_state=int(random_state))
+    model.fit(Xb_train, np.asarray(y_train, dtype=np.float32))
+    pred = np.asarray(model.predict(Xb_pred), dtype=np.float32)
+    coef = np.abs(np.asarray(model.coef_, dtype=np.float32).reshape(-1))
+    return pred, coef
+
+
+def _lightgbm_gain_and_permutation_scores(
+    X: np.ndarray,
+    y: np.ndarray,
+    *,
+    classifier: bool,
+    random_state: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    p = X.shape[1]
+    if p == 0 or len(y) < 200:
+        return np.zeros(p, dtype=np.float32), np.zeros(p, dtype=np.float32)
+    try:
+        import lightgbm as lgb
+
+        idx = _proxy_sample_indices(
+            y,
+            max_rows=EBM_PRE_EBM_PROXY_MAX_ROWS,
+            random_state=random_state,
+            classifier=classifier,
+        )
+        Xs = np.nan_to_num(
+            np.asarray(X, dtype=np.float32)[idx],
+            nan=0.0,
+            posinf=0.0,
+            neginf=0.0,
+        )
+        ys = np.asarray(y)[idx]
+        stratify = np.asarray(ys >= 0.5, dtype=np.int8) if classifier else None
+        if classifier and np.min(np.bincount(stratify, minlength=2)) < 2:
+            stratify = None
+        tr, va = train_test_split(
+            np.arange(len(ys)),
+            test_size=0.30,
+            random_state=random_state + 13,
+            stratify=stratify,
+        )
+        params = {
+            "objective": "binary" if classifier else "regression",
+            "metric": "binary_logloss" if classifier else "l2",
+            "max_depth": 3,
+            "num_leaves": 8,
+            "min_child_samples": max(20, int(0.01 * len(tr))),
+            "learning_rate": 0.05,
+            "feature_fraction": 0.75,
+            "bagging_fraction": 0.80,
+            "bagging_freq": 1,
+            "seed": int(random_state),
+            "num_threads": 1,
+            "verbosity": -1,
+        }
+        train_set = lgb.Dataset(Xs[tr], label=ys[tr], free_raw_data=False)
+        valid_set = lgb.Dataset(Xs[va], label=ys[va], reference=train_set)
+        booster = lgb.train(
+            params,
+            train_set,
+            valid_sets=[valid_set],
+            num_boost_round=150,
+            callbacks=[lgb.early_stopping(15, verbose=False)],
+        )
+        gain = np.asarray(
+            booster.feature_importance(importance_type="gain"), dtype=np.float32
+        )
+        pred_base = np.asarray(booster.predict(Xs[va]), dtype=np.float32)
+        base_score = _proxy_metric_score(ys[va], pred_base, classifier)
+        perm_scores = np.zeros(p, dtype=np.float32)
+        rng = np.random.default_rng(random_state + 29)
+        Xva = Xs[va].copy()
+        for j in range(p):
+            saved = Xva[:, j].copy()
+            Xva[:, j] = rng.permutation(Xva[:, j])
+            pred_perm = np.asarray(booster.predict(Xva), dtype=np.float32)
+            perm_scores[j] = max(
+                0.0, base_score - _proxy_metric_score(ys[va], pred_perm, classifier)
+            )
+            Xva[:, j] = saved
+        return gain.astype(np.float32), perm_scores.astype(np.float32)
+    except Exception as exc:
+        tprint(f"EBMOnLGBM pre-EBM raw proxy: LGBM scorer skipped ({exc}).")
+        return np.zeros(p, dtype=np.float32), np.zeros(p, dtype=np.float32)
+
+
+def _pre_ebm_raw_proxy_prune(
+    X_raw: np.ndarray,
+    y: np.ndarray,
+    feature_names: list[str],
+    active: np.ndarray,
+    *,
+    classifier: bool,
+    random_state: int,
+) -> tuple[np.ndarray, dict[str, float]]:
+    if (
+        not EBM_PRE_EBM_PROXY_PRUNE_ENABLED
+        or len(active) <= EBM_MIN_FEATURES
+        or len(active) <= 2
+    ):
+        return active.astype(np.int32), {str(name): 1.0 for name in feature_names}
+    try:
+        Xa = np.nan_to_num(
+            np.asarray(X_raw, dtype=np.float32)[:, active],
+            nan=0.0,
+            posinf=0.0,
+            neginf=0.0,
+        )
+        ya = np.asarray(y)
+        gain, perm = _lightgbm_gain_and_permutation_scores(
+            Xa, ya, classifier=classifier, random_state=random_state + 101
+        )
+        idx = _proxy_sample_indices(
+            ya,
+            max_rows=EBM_PRE_EBM_PROXY_MAX_ROWS,
+            random_state=random_state + 211,
+            classifier=classifier,
+        )
+        _pred, coef = _fit_binned_linear_proxy(
+            Xa[idx],
+            ya[idx],
+            Xa[idx],
+            classifier=classifier,
+            random_state=random_state + 307,
+        )
+        target = _target_scores(Xa, ya, [feature_names[int(i)] for i in active])
+        score = (
+            0.30 * _rank01(gain)
+            + 0.30 * _rank01(perm)
+            + 0.25 * _rank01(coef)
+            + 0.15 * _rank01(target)
+        )
+        keep_n = max(
+            EBM_MIN_FEATURES,
+            int(np.ceil(len(active) * EBM_PRE_EBM_RAW_KEEP_FRACTION)),
+        )
+        keep_n = min(keep_n, len(active))
+        keep_local = np.argsort(score)[-keep_n:]
+        kept = np.sort(active[keep_local]).astype(np.int32)
+        score_map = {
+            str(feature_names[int(active[i])]): float(score[i])
+            for i in range(len(active))
+        }
+        tprint(
+            "EBMOnLGBM pre-EBM raw proxy prune: "
+            f"{len(active)} -> {len(kept)} raw features "
+            f"(keep_frac={EBM_PRE_EBM_RAW_KEEP_FRACTION:.2f})."
+        )
+        return kept, score_map
+    except Exception as exc:
+        tprint(f"EBMOnLGBM pre-EBM raw proxy prune skipped ({exc}).")
+        return active.astype(np.int32), {str(name): 1.0 for name in feature_names}
+
+
+def _crossfit_raw_residual(
+    X_raw: np.ndarray,
+    y: np.ndarray,
+    *,
+    classifier: bool,
+    random_state: int,
+) -> np.ndarray:
+    if X_raw.shape[1] == 0 or len(y) < 200:
+        return np.asarray(y, dtype=np.float32) - float(np.mean(y))
+    y_arr = np.asarray(y, dtype=np.float32)
+    pred = np.full(len(y_arr), float(np.mean(y_arr)), dtype=np.float32)
+    y_split = np.asarray(y_arr >= 0.5, dtype=np.int8) if classifier else y_arr
+    splitter = (
+        StratifiedKFold(n_splits=2, shuffle=True, random_state=random_state)
+        if classifier
+        else KFold(n_splits=2, shuffle=True, random_state=random_state)
+    )
+    try:
+        for tr, va in splitter.split(np.zeros(len(y_split)), y_split):
+            if classifier and len(np.unique(y_split[tr])) < 2:
+                continue
+            pred_va, _coef = _fit_binned_linear_proxy(
+                X_raw[tr],
+                y_arr[tr],
+                X_raw[va],
+                classifier=classifier,
+                random_state=random_state + int(va[0]),
+            )
+            pred[va] = pred_va
+    except Exception as exc:
+        tprint(f"EBMOnLGBM pre-EBM tree proxy: raw residual fallback ({exc}).")
+    return (y_arr - pred).astype(np.float32)
+
+
+def _fold_sign_stability(
+    X: np.ndarray,
+    target: np.ndarray,
+    *,
+    classifier: bool,
+    random_state: int,
+) -> np.ndarray:
+    p = X.shape[1]
+    if p == 0:
+        return np.zeros(0, dtype=np.float32)
+    y_split = (
+        np.asarray(target >= 0.5, dtype=np.int8)
+        if classifier
+        else np.asarray(target, dtype=np.float32)
+    )
+    splitter = (
+        StratifiedKFold(n_splits=EBM_CV_SPLITS, shuffle=True, random_state=random_state)
+        if classifier
+        else KFold(n_splits=EBM_CV_SPLITS, shuffle=True, random_state=random_state)
+    )
+    signs = []
+    try:
+        for _tr, va in splitter.split(np.zeros(len(y_split)), y_split):
+            corr = _vectorized_spearman_scores(X[va], target[va], signed=True)
+            signs.append(np.sign(corr).astype(np.int8))
+    except Exception:
+        return np.ones(p, dtype=np.float32)
+    if not signs:
+        return np.ones(p, dtype=np.float32)
+    sign_arr = np.vstack(signs)
+    pos = np.sum(sign_arr > 0, axis=0)
+    neg = np.sum(sign_arr < 0, axis=0)
+    return (np.maximum(pos, neg) / float(sign_arr.shape[0])).astype(np.float32)
+
+
+def _assign_tree_parent_raw(
+    X_tree: np.ndarray,
+    X_raw: np.ndarray,
+    *,
+    random_state: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    n_tree = X_tree.shape[1]
+    if n_tree == 0 or X_raw.shape[1] == 0:
+        return np.full(n_tree, -1, dtype=np.int32), np.zeros(n_tree, dtype=np.float32)
+    rng = np.random.default_rng(random_state)
+    sub_n = min(len(X_tree), 4000)
+    sub = (
+        rng.choice(len(X_tree), size=sub_n, replace=False)
+        if len(X_tree) > sub_n
+        else np.arange(len(X_tree))
+    )
+    Xt = pd.DataFrame(X_tree[sub]).rank(pct=True).to_numpy(dtype=np.float32)
+    Xr = pd.DataFrame(X_raw[sub]).rank(pct=True).to_numpy(dtype=np.float32)
+    Xt, _ = _standardize_train_eval(Xt, Xt)
+    Xr, _ = _standardize_train_eval(Xr, Xr)
+    corr = np.abs((Xt.T @ Xr) / max(float(len(sub) - 1), 1.0))
+    corr = np.nan_to_num(corr, nan=0.0, posinf=0.0, neginf=0.0)
+    return (
+        np.argmax(corr, axis=1).astype(np.int32),
+        np.max(corr, axis=1).astype(np.float32),
+    )
+
+
+def _residual_permutation_scores(
+    X_tree: np.ndarray,
+    residual: np.ndarray,
+    candidate_local: np.ndarray,
+    *,
+    random_state: int,
+) -> np.ndarray:
+    p = X_tree.shape[1]
+    scores = np.zeros(p, dtype=np.float32)
+    if len(candidate_local) == 0 or len(residual) < 200:
+        return scores
+    rng = np.random.default_rng(random_state)
+    idx = _proxy_sample_indices(
+        residual,
+        max_rows=EBM_PRE_EBM_PERM_MAX_ROWS,
+        random_state=random_state + 17,
+        classifier=False,
+    )
+    cand = np.asarray(candidate_local, dtype=np.int32)
+    if len(cand) > EBM_PRE_EBM_PERM_MAX_FEATURES:
+        cand = cand[:EBM_PRE_EBM_PERM_MAX_FEATURES]
+    Xs = np.nan_to_num(X_tree[idx][:, cand], nan=0.0, posinf=0.0, neginf=0.0)
+    ys = np.asarray(residual, dtype=np.float32)[idx]
+    if len(ys) < 200:
+        return scores
+    tr, va = train_test_split(
+        np.arange(len(ys)), test_size=0.30, random_state=random_state + 23
+    )
+    Xtr, Xva = _standardize_train_eval(Xs[tr], Xs[va])
+    try:
+        model = Ridge(alpha=20.0, random_state=int(random_state))
+        model.fit(Xtr, ys[tr])
+        pred = np.asarray(model.predict(Xva), dtype=np.float32)
+        base_loss = float(np.mean((ys[va] - pred) ** 2))
+        Xperm = Xva.copy()
+        for local_pos, feature_idx in enumerate(cand):
+            saved = Xperm[:, local_pos].copy()
+            Xperm[:, local_pos] = rng.permutation(Xperm[:, local_pos])
+            pred_perm = np.asarray(model.predict(Xperm), dtype=np.float32)
+            loss = float(np.mean((ys[va] - pred_perm) ** 2))
+            scores[int(feature_idx)] = max(0.0, loss - base_loss)
+            Xperm[:, local_pos] = saved
+    except Exception as exc:
+        tprint(f"EBMOnLGBM pre-EBM tree proxy: residual permutation skipped ({exc}).")
+    return scores
+
+
+def _pre_ebm_tree_state_proxy_prune(
+    X_select: pd.DataFrame,
+    y: np.ndarray,
+    raw_feature_names_kept: list[str],
+    tree_feature_names: list[str],
+    raw_score_map: dict[str, float],
+    *,
+    classifier: bool,
+    random_state: int,
+) -> list[str]:
+    if (
+        not EBM_PRE_EBM_PROXY_PRUNE_ENABLED
+        or len(tree_feature_names) <= EBM_MIN_FEATURES
+    ):
+        return list(tree_feature_names)
+    try:
+        X_tree = np.nan_to_num(
+            X_select[tree_feature_names].to_numpy(dtype=np.float32),
+            nan=0.0,
+            posinf=0.0,
+            neginf=0.0,
+        )
+        X_raw = np.nan_to_num(
+            X_select[raw_feature_names_kept].to_numpy(dtype=np.float32)
+            if raw_feature_names_kept
+            else np.zeros((len(X_select), 0), dtype=np.float32),
+            nan=0.0,
+            posinf=0.0,
+            neginf=0.0,
+        )
+        y_arr = np.asarray(y, dtype=np.float32)
+        leaf_mask = np.asarray(["_leaf" in str(n) for n in tree_feature_names], dtype=bool)
+        nonzero_support = np.mean(np.abs(X_tree) > 1e-6, axis=0)
+        leaf_support = np.mean(X_tree > 0.01, axis=0)
+        support = np.where(leaf_mask, leaf_support, nonzero_support).astype(np.float32)
+        std = np.nanstd(X_tree, axis=0).astype(np.float32)
+        support_balance = np.sqrt(np.clip(support * (1.0 - support), 0.0, 0.25))
+        support_balance = np.where(
+            (~leaf_mask) & (support > 0.98) & (std > 1e-6),
+            0.50,
+            support_balance,
+        ).astype(np.float32)
+        effect_signed = _vectorized_spearman_scores(X_tree, y_arr, signed=True)
+        sign_stability = _fold_sign_stability(
+            X_tree,
+            y_arr,
+            classifier=classifier,
+            random_state=random_state + 401,
+        )
+        base_tree_score = (
+            np.abs(effect_signed) * support_balance * np.clip(sign_stability, 0.0, 1.0)
+        ).astype(np.float32)
+        support_ok = np.where(
+            leaf_mask,
+            (support >= 0.005) & (support <= 0.995),
+            np.ones_like(support, dtype=bool),
+        )
+        hygiene = (std > 1e-8) & support_ok
+        if not np.any(hygiene):
+            hygiene = std > 1e-8
+        parent_idx, parent_corr = _assign_tree_parent_raw(
+            X_tree, X_raw, random_state=random_state + 503
+        )
+        parent_groups: dict[int, list[int]] = {}
+        for j in np.where(hygiene)[0]:
+            group = int(parent_idx[j]) if parent_idx[j] >= 0 else -100000 - int(j)
+            parent_groups.setdefault(group, []).append(int(j))
+        capped = []
+        for _group, idxs in parent_groups.items():
+            idxs_sorted = sorted(
+                idxs, key=lambda ix: float(base_tree_score[ix]), reverse=True
+            )
+            capped.extend(idxs_sorted[:EBM_PRE_EBM_TREE_MAX_PER_RAW])
+        capped_idx = np.asarray(sorted(set(capped)), dtype=np.int32)
+        if len(capped_idx) == 0:
+            return list(tree_feature_names)
+        residual = _crossfit_raw_residual(
+            X_raw,
+            y_arr,
+            classifier=classifier,
+            random_state=random_state + 607,
+        )
+        incremental = _vectorized_spearman_scores(
+            X_tree[:, capped_idx], residual, signed=False
+        )
+        incremental_full = np.zeros(len(tree_feature_names), dtype=np.float32)
+        incremental_full[capped_idx] = incremental
+        candidate_order = capped_idx[
+            np.argsort(incremental_full[capped_idx] + base_tree_score[capped_idx])[::-1]
+        ]
+        perm = _residual_permutation_scores(
+            X_tree,
+            residual,
+            candidate_order,
+            random_state=random_state + 709,
+        )
+        raw_scores = np.asarray(
+            [float(raw_score_map.get(str(name), 0.0)) for name in raw_feature_names_kept],
+            dtype=np.float32,
+        )
+        parent_raw_score = np.zeros(len(tree_feature_names), dtype=np.float32)
+        valid_parent = (parent_idx >= 0) & (parent_idx < len(raw_scores))
+        parent_raw_score[valid_parent] = raw_scores[parent_idx[valid_parent]]
+        novelty = _rank01(base_tree_score) - parent_raw_score
+        novelty = np.maximum(novelty, 0.0) * (1.0 - np.clip(parent_corr, 0.0, 0.95))
+        final_score = np.zeros(len(tree_feature_names), dtype=np.float32)
+        final_score[capped_idx] = (
+            0.40 * _rank01(incremental_full[capped_idx])
+            + 0.40 * _rank01(perm[capped_idx])
+            + 0.20 * _rank01(novelty[capped_idx])
+        )
+        keep_n = max(
+            EBM_MIN_FEATURES,
+            int(np.ceil(len(tree_feature_names) * EBM_PRE_EBM_TREE_KEEP_FRACTION)),
+        )
+        keep_n = min(keep_n, len(capped_idx))
+        keep_local = capped_idx[np.argsort(final_score[capped_idx])[-keep_n:]]
+        kept_names = [tree_feature_names[int(i)] for i in np.sort(keep_local)]
+        tprint(
+            "EBMOnLGBM pre-EBM tree proxy prune: "
+            f"{len(tree_feature_names)} -> {len(kept_names)} tree-state features "
+            f"(per_raw_cap={EBM_PRE_EBM_TREE_MAX_PER_RAW}, "
+            f"keep_frac={EBM_PRE_EBM_TREE_KEEP_FRACTION:.2f}, "
+            f"candidate_after_cap={len(capped_idx)})."
+        )
+        return kept_names
+    except Exception as exc:
+        tprint(f"EBMOnLGBM pre-EBM tree proxy prune skipped ({exc}).")
+        return list(tree_feature_names)
+
+
 def _ebm_specs(pruning: bool, random_state: int) -> list[dict[str, Any]]:
     if pruning:
         pairs = [(3.0, 0.1), (3.0, 1.0), (6.0, 0.1), (6.0, 1.0)]
+        pairs = pairs[:_ebm_prune_model_count()]
         outer_bags = 1
         max_bins = 32
         learning_rate = 0.05
-        early_stopping_rounds = 25
-        smoothing_rounds = 10
+        early_stopping_rounds = int(
+            os.environ.get("EPM_EBM_PRUNE_EARLY_STOPPING_ROUNDS", "15")
+        )
+        smoothing_rounds = int(os.environ.get("EPM_EBM_PRUNE_SMOOTHING_ROUNDS", "5"))
     else:
         pairs = [(5.0, 0.01), (3.0, 0.1), (6.0, 0.1), (3.0, 1.0), (6.0, 1.0)]
-        outer_bags = 10
-        max_bins = 64
-        learning_rate = 0.01
-        early_stopping_rounds = 25
-        smoothing_rounds = 400
+        outer_bags = int(os.environ.get("EPM_EBM_FINAL_OUTER_BAGS", "10"))
+        max_bins = int(os.environ.get("EPM_EBM_FINAL_MAX_BINS", "64"))
+        learning_rate = float(os.environ.get("EPM_EBM_FINAL_LEARNING_RATE", "0.01"))
+        early_stopping_rounds = int(
+            os.environ.get("EPM_EBM_FINAL_EARLY_STOPPING_ROUNDS", "25")
+        )
+        smoothing_rounds = int(os.environ.get("EPM_EBM_FINAL_SMOOTHING_ROUNDS", "400"))
     specs = []
     for i, (l2, l1) in enumerate(pairs):
         specs.append(
@@ -3198,8 +4323,47 @@ def _feature_shape_score_components(
     pure_wiggle_deletes = 0
     smooth_penalties = 0
     spline_adjustments = 0
+    audit_mask = valid.copy()
+    audited_features = int(np.sum(audit_mask))
+    if EBM_SHAPE_AUDIT_MAX_FEATURES > 0 and audited_features > EBM_SHAPE_AUDIT_MAX_FEATURES:
+        raw_mask = np.asarray(
+            [not _is_lgbm_tree_feature_name(str(name)) for name in feature_names],
+            dtype=bool,
+        )
+        mas_cut = (
+            float(np.nanpercentile(mas[valid], EBM_SHAPE_AUDIT_TOP_MAS_PCT))
+            if np.any(valid)
+            else float("inf")
+        )
+        priority = valid & ((mas >= mas_cut) | raw_mask)
+        if int(np.sum(priority)) > EBM_SHAPE_AUDIT_MAX_FEATURES:
+            order = np.argsort(mas)[::-1]
+            keep = []
+            for idx in order:
+                if not priority[idx]:
+                    continue
+                keep.append(int(idx))
+                if len(keep) >= EBM_SHAPE_AUDIT_MAX_FEATURES:
+                    break
+        else:
+            keep = np.where(priority)[0].astype(int).tolist()
+            if len(keep) < EBM_SHAPE_AUDIT_MAX_FEATURES:
+                already = set(keep)
+                for idx in np.argsort(mas)[::-1]:
+                    if not valid[idx] or int(idx) in already:
+                        continue
+                    keep.append(int(idx))
+                    if len(keep) >= EBM_SHAPE_AUDIT_MAX_FEATURES:
+                        break
+        sampled_mask = np.zeros(n_features, dtype=bool)
+        sampled_mask[np.asarray(keep, dtype=np.int32)] = True
+        audit_mask = sampled_mask & valid
+        audited_features = int(np.sum(audit_mask))
+
     for fi, name in enumerate(feature_names):
         if not valid[fi]:
+            continue
+        if not audit_mask[fi]:
             continue
         folds = [
             shape_tensor[mi, fi].copy() for mi in range(n_models) if present[mi, fi]
@@ -3267,9 +4431,10 @@ def _feature_shape_score_components(
     )
     scores[delete_mask] = 0.0
 
-    if pure_wiggle_deletes or smooth_penalties or spline_adjustments:
+    if pure_wiggle_deletes or smooth_penalties or spline_adjustments or audited_features != int(np.sum(valid)):
         tprint(
             "EBMOnLGBM shape audit: "
+            f"audited={audited_features}/{int(np.sum(valid))}, "
             f"pure_wiggle_deleted={pure_wiggle_deletes}, "
             f"pure_wiggle_smoothed={smooth_penalties}, "
             f"spline_adjusted={spline_adjustments}."
@@ -3313,6 +4478,26 @@ def _post_hpo_manage_features(
     change model parameters and this audit may smooth unstable learned shapes,
     but it must not remove or replace selected raw/LGBM-derived features.
     """
+    if os.environ.get("EPM_EBM_POST_HPO_SHAPE_AUDIT", "1").strip().lower() in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }:
+        tprint(
+            "EBMOnLGBM: post-HPO shape management audit disabled "
+            "by EPM_EBM_POST_HPO_SHAPE_AUDIT=0."
+        )
+        return (
+            feature_names,
+            {},
+            {
+                "post_hpo_shape_dropped": 0.0,
+                "post_hpo_shape_smoothed": 0.0,
+                "post_hpo_shape_features": float(len(feature_names)),
+                "post_hpo_shape_audit_disabled": 1.0,
+            },
+        )
     if len(feature_names) <= EBM_MIN_FEATURES:
         return (
             feature_names,
@@ -3808,14 +4993,23 @@ def _robust_round_score_from_history(
 
 
 def _top20_round_quality(row: dict[str, Any]) -> float:
-    """Top20-focused SALG/NDCG quality score used as a tie-breaker."""
+    """Normalized objective quality score used as a tie-breaker."""
     salg20 = _round_salg20(row)
-    ndcg20 = _round_ndcg20(row)
-    if not np.isfinite(salg20):
-        salg20 = 0.0
-    if not np.isfinite(ndcg20):
-        ndcg20 = 0.0
-    return float(EBM_J_SALG_WEIGHT * salg20 + EBM_J_NDCG_WEIGHT * ndcg20)
+    ndcg30 = _round_ndcg30(row)
+    precision10_norm = _round_precision_norm(row, "10")
+    precision20_norm = _round_precision_norm(row, "20")
+    precision30_norm = _round_precision_norm(row, "30")
+    monotonicity_norm = _history_float(
+        row, ("rank_bucket_monotonicity", "normalized_rank_bucket_monotonicity"), 0.0
+    )
+    return _metric_j_from_objective_components(
+        salg20,
+        precision10_norm,
+        precision20_norm,
+        precision30_norm,
+        monotonicity_norm,
+        ndcg30,
+    )
 
 
 def _feature_bucket(n: int, bucket_size: int = 5) -> int:
@@ -3937,6 +5131,41 @@ def _round_ndcg20(row: dict[str, Any], default: float = 0.0) -> float:
         ),
         float(default),
     )
+
+
+def _round_ndcg30(row: dict[str, Any], default: float = 0.0) -> float:
+    return _history_float(
+        row,
+        (
+            "ndcg30",
+            "ndcg_at_30",
+            "ndcg@30",
+            "NDCG30",
+            "NDCG@30",
+            "ndcg_top30",
+        ),
+        float(default),
+    )
+
+
+def _round_precision_norm(row: dict[str, Any], suffix: str, default: float = 0.0) -> float:
+    value = _history_float(
+        row,
+        (f"precision{suffix}_norm", f"precision_at_{suffix}_norm"),
+        float("nan"),
+    )
+    if np.isfinite(value):
+        return float(value)
+    precision = _history_float(
+        row,
+        (f"precision{suffix}", f"Precision{suffix}", f"Precision@{suffix}"),
+        float("nan"),
+    )
+    baseline = _history_float(row, ("baseline_win_rate", "base_win_rate"), float("nan"))
+    value = _normalize_precision_for_objective(precision, baseline)
+    if np.isfinite(value):
+        return float(value)
+    return float(default)
 
 
 def _round_salg20(row: dict[str, Any]) -> float:
@@ -4569,7 +5798,9 @@ def _round_drop_fraction(round_id: int) -> float:
 
 
 def _round_presence_min(round_id: int) -> float:
-    first_round_relief = 0.10 if int(round_id) <= 1 else 0.0
+    first_round_relief = (
+        EBM_FOLD_PRESENCE_FIRST_ROUND_RELIEF if int(round_id) <= 1 else 0.0
+    )
     threshold = float(
         np.clip(
             EBM_FOLD_PRESENCE_MIN_START
@@ -4582,7 +5813,9 @@ def _round_presence_min(round_id: int) -> float:
 
 
 def _round_sign_consistency_min(round_id: int) -> float:
-    first_round_relief = 0.10 if int(round_id) <= 1 else 0.0
+    first_round_relief = (
+        EBM_SIGN_CONSISTENCY_FIRST_ROUND_RELIEF if int(round_id) <= 1 else 0.0
+    )
     threshold = float(
         np.clip(
             EBM_SIGN_CONSISTENCY_MIN_START
@@ -5336,10 +6569,12 @@ def _combine_ebm_feature_scores(
         if candidate_lgbm_mask.shape[0] == presence_threshold.shape[0]:
             lgbm_mask = candidate_lgbm_mask
             presence_threshold[lgbm_mask] = np.minimum(
-                presence_threshold[lgbm_mask] + 0.10, 1.0
+                presence_threshold[lgbm_mask] + EBM_LGBM_TREE_PRESENCE_EXTRA,
+                1.0,
             )
             sign_threshold[lgbm_mask] = np.minimum(
-                sign_threshold[lgbm_mask] + 0.10, 1.0
+                sign_threshold[lgbm_mask] + EBM_LGBM_TREE_SIGN_EXTRA,
+                1.0,
             )
     raw_mask = ~lgbm_mask
     presence_fail = presence < presence_threshold
@@ -5410,8 +6645,12 @@ def _combine_ebm_feature_scores(
             "sign_consistency_min": float(sign_min),
             "presence_fail_count": float(np.sum(presence_fail)),
             "sign_fail_count": float(np.sum(sign_fail)),
-            "lgbm_presence_min": float(min(presence_min + 0.10, 1.0)),
-            "lgbm_sign_consistency_min": float(min(sign_min + 0.10, 1.0)),
+            "lgbm_presence_min": float(
+                min(presence_min + EBM_LGBM_TREE_PRESENCE_EXTRA, 1.0)
+            ),
+            "lgbm_sign_consistency_min": float(
+                min(sign_min + EBM_LGBM_TREE_SIGN_EXTRA, 1.0)
+            ),
             "lgbm_presence_fail_count": float(np.sum(presence_fail & lgbm_mask)),
             "lgbm_sign_fail_count": float(np.sum(sign_fail & lgbm_mask)),
             "raw_presence_fail_count": float(np.sum(presence_fail & raw_mask)),
@@ -5697,6 +6936,11 @@ def _augment_with_tree_features(
             "min_child_pct": 0.15,
             "min_child_samples": max(2, int(0.15 * N)),
         },
+        {
+            "max_depth": 6,
+            "min_child_pct": 0.08,
+            "min_child_samples": max(2, int(0.08 * N)),
+        },
     ]
 
     models = []
@@ -5834,7 +7078,13 @@ def _augment_with_oof_tree_features(
                 "min_child_pct": 0.15,
                 "min_child_samples": max(2, int(0.15 * n_fold)),
             },
+            {
+                "max_depth": 6,
+                "min_child_pct": 0.08,
+                "min_child_samples": max(2, int(0.08 * n_fold)),
+            },
         ]
+        grid = grid[: _ebm_tree_lgbm_bundle_count(len(grid))]
         models = []
         for i, params in enumerate(grid):
             tprint(
@@ -6273,9 +7523,11 @@ def _fit_ebm_spec_on_cache(
         fold_feature_stats,
         len(fold_cache[0]["X_va"].columns) if fold_cache else 0,
     )
+    feature_names = list(fold_cache[0]["X_va"].columns) if fold_cache else []
     return {
         "spec": spec,
         "spec_i": int(spec_i),
+        "feature_names": feature_names,
         "oof": oof,
         "fold_metrics": fold_metrics,
         "shape_models": shape_models,
@@ -6338,6 +7590,7 @@ def _fit_round_oof(
     records: list[dict[str, Any]] = []
     spec_weights = np.asarray(sample_weight, dtype=np.float32).copy()
     prev_spec_oof = np.full(len(y), float(np.mean(y)), dtype=np.float32)
+    pregrid_pruned = False
     for spec_i, spec in enumerate(specs, start=1):
         for fold in fold_cache:
             fold["sw_sub"] = spec_weights[fold["sub"]]
@@ -6372,6 +7625,80 @@ def _fit_round_oof(
             f"(mean={float(np.mean(spec_weights)):.3f}, "
             f"p90={float(np.percentile(spec_weights, 90)):.3f})"
         )
+        if (
+            EBM_PREGRID_CONTRIB_PRUNE_ENABLED
+            and not pregrid_pruned
+            and spec_i == 1
+            and len(specs) > 1
+            and fold_cache
+        ):
+            current_features = list(rec.get("feature_names") or fold_cache[0]["X_va"].columns)
+            tree_mask = np.asarray(
+                [_is_lgbm_tree_feature_name(str(name)) for name in current_features],
+                dtype=bool,
+            )
+            n_tree = int(np.sum(tree_mask))
+            if n_tree > EBM_PREGRID_MIN_TREE_FEATURES:
+                binary_mask = _binary_feature_mask(fold_cache[0]["X_sub"])
+                base_scores, _bends, _is_cont, _mas = _feature_shape_score_components(
+                    rec.get("shape_models", []),
+                    current_features,
+                    binary_mask=binary_mask,
+                )
+                combined_scores, score_details = _combine_ebm_feature_scores(
+                    base_scores,
+                    rec.get("feature_eval_stats"),
+                    round_id,
+                    current_features,
+                )
+                combined_scores = np.nan_to_num(
+                    np.asarray(combined_scores, dtype=np.float32),
+                    nan=0.0,
+                    posinf=0.0,
+                    neginf=0.0,
+                )
+                tree_idx = np.where(tree_mask)[0]
+                n_tree_keep = max(
+                    EBM_PREGRID_MIN_TREE_FEATURES,
+                    int(np.ceil(n_tree * (1.0 - EBM_PREGRID_TREE_DROP_FRACTION))),
+                )
+                n_tree_keep = min(n_tree_keep, n_tree)
+                if n_tree_keep < n_tree and np.any(combined_scores[tree_idx] > 0.0):
+                    keep_tree_local = tree_idx[
+                        np.argsort(combined_scores[tree_idx])[-n_tree_keep:]
+                    ]
+                    keep_mask = ~tree_mask
+                    keep_mask[keep_tree_local] = True
+                    reduced_features = [
+                        feature
+                        for keep, feature in zip(keep_mask, current_features)
+                        if bool(keep)
+                    ]
+                    dropped = len(current_features) - len(reduced_features)
+                    if dropped > 0 and len(reduced_features) >= EBM_MIN_FEATURES:
+                        fold_cache = _build_ebm_fold_cache(
+                            X=X,
+                            y=y,
+                            sample_weight=sample_weight,
+                            groups=groups,
+                            y_split=y_split,
+                            splitter=splitter,
+                            classifier=classifier,
+                            random_state=random_state,
+                            round_id=round_id,
+                            build_tree_features=build_tree_features,
+                            active_features=reduced_features,
+                        )
+                        pregrid_pruned = True
+                        tprint(
+                            "    EBM round "
+                            f"{round_id}: pre-grid contribution prune dropped "
+                            f"{dropped} tree-state/weak features after spec 1 "
+                            f"({len(current_features)} -> {len(reduced_features)}; "
+                            f"tree {n_tree} -> {n_tree_keep}; "
+                            f"lgbm_presence_min={score_details.get('lgbm_presence_min', np.nan):.2f}, "
+                            f"lgbm_sign_min={score_details.get('lgbm_sign_consistency_min', np.nan):.2f})."
+                        )
     all_shape_models: list[Any] = []
     for rec in records:
         all_shape_models.extend(rec.get("shape_models", []))
@@ -6518,33 +7845,37 @@ def _fit_final_model(
     final_base_sample_weight = np.asarray(sample_weight, dtype=np.float32).copy()
     hpo_sample_weight = np.asarray(sample_weight, dtype=np.float32).copy()
     weight_transfer_metrics: dict[str, float | str] = {}
-    try:
-        pre_hpo_spec = dict(final_spec)
-        pre_hpo_spec["max_bins"] = min(int(pre_hpo_spec.get("max_bins", 48)), 48)
-        pre_hpo_spec["outer_bags"] = 1
-        pre_hpo_spec["smoothing_rounds"] = 100
-        hpo_sample_weight, _pre_hpo_oof = _oof_distilled_sample_weights(
-            cls,
-            Xs[final_active_cols],
-            y,
-            sample_weight,
-            fit_idx,
-            pre_hpo_spec,
-            {},
-            mode,
-            random_state=random_state + 22103,
-            passes=EBM_OOF_DISTILLATION_PASSES,
-            label="pre-HPO",
-        )
-        weight_transfer_metrics["hpo_weight_source"] = "fit_oof_oof_distilled"
-        weight_transfer_metrics["hpo_weight_mean"] = float(np.mean(hpo_sample_weight))
-        weight_transfer_metrics["hpo_weight_p90"] = float(
-            np.percentile(hpo_sample_weight, 90)
-        )
-    except Exception as exc:
-        hpo_sample_weight = np.asarray(sample_weight, dtype=np.float32).copy()
-        weight_transfer_metrics["hpo_weight_source"] = "base_weight_fallback"
-        tprint(f"EBMOnLGBM: pre-HPO OOF-only weight distillation skipped ({exc}).")
+    if EBM_OOF_DISTILLATION_PASSES <= 0:
+        weight_transfer_metrics["hpo_weight_source"] = "base_weight_distillation_disabled"
+        tprint("EBMOnLGBM: pre-HPO OOF-only weight distillation disabled.")
+    else:
+        try:
+            pre_hpo_spec = dict(final_spec)
+            pre_hpo_spec["max_bins"] = min(int(pre_hpo_spec.get("max_bins", 48)), 48)
+            pre_hpo_spec["outer_bags"] = 1
+            pre_hpo_spec["smoothing_rounds"] = 100
+            hpo_sample_weight, _pre_hpo_oof = _oof_distilled_sample_weights(
+                cls,
+                Xs[final_active_cols],
+                y,
+                sample_weight,
+                fit_idx,
+                pre_hpo_spec,
+                {},
+                mode,
+                random_state=random_state + 22103,
+                passes=EBM_OOF_DISTILLATION_PASSES,
+                label="pre-HPO",
+            )
+            weight_transfer_metrics["hpo_weight_source"] = "fit_oof_oof_distilled"
+            weight_transfer_metrics["hpo_weight_mean"] = float(np.mean(hpo_sample_weight))
+            weight_transfer_metrics["hpo_weight_p90"] = float(
+                np.percentile(hpo_sample_weight, 90)
+            )
+        except Exception as exc:
+            hpo_sample_weight = np.asarray(sample_weight, dtype=np.float32).copy()
+            weight_transfer_metrics["hpo_weight_source"] = "base_weight_fallback"
+            tprint(f"EBMOnLGBM: pre-HPO OOF-only weight distillation skipped ({exc}).")
 
     post_hpo_shape_metrics: dict[str, float] = {}
     shape_smoothing_policy: dict[str, int] = {}
@@ -6886,6 +8217,29 @@ def _fit_final_model(
                 "precision15",
                 float(agg.get("precision15", agg.get("hit_rate15", np.nan))),
             )
+            for metric_name in (
+                "baseline_win_rate",
+                "precision10",
+                "precision20",
+                "precision30",
+                "precision10_norm",
+                "precision20_norm",
+                "precision30_norm",
+                "rank_bucket_monotonicity",
+                "rank_bucket_monotonicity_violation",
+                "rank_bucket_win_rate_top10",
+                "rank_bucket_win_rate_10_15",
+                "rank_bucket_win_rate_15_20",
+                "rank_bucket_win_rate_20_25",
+                "rank_bucket_win_rate_25_30",
+                "ndcg30",
+                "ndcg30_std",
+                "ndcg30_p25",
+                "J_penalty",
+                "J_robust_pre_penalty",
+                "J_robust_penalized",
+            ):
+                trial.set_user_attr(metric_name, float(agg.get(metric_name, np.nan)))
             trial.set_user_attr(
                 "precision01",
                 float(agg.get("precision01", agg.get("precision1", np.nan))),
@@ -7127,31 +8481,36 @@ def _fit_final_model(
         mode,
     )
 
-    try:
-        final_sample_weight, _ = _oof_distilled_sample_weights(
-            cls,
-            Xs[final_active_cols],
-            y,
-            sample_weight,
-            fit_idx,
-            final_spec,
-            shape_smoothing_policy,
-            mode,
-            random_state=random_state + 33107,
-            passes=EBM_OOF_DISTILLATION_PASSES,
-            label="final",
-        )
-        weight_transfer_metrics["final_weight_source"] = "fit_oof_oof_distilled"
-        weight_transfer_metrics["final_weight_mean"] = float(
-            np.mean(final_sample_weight)
-        )
-        weight_transfer_metrics["final_weight_p90"] = float(
-            np.percentile(final_sample_weight, 90)
-        )
-    except Exception as exc:
+    if EBM_OOF_DISTILLATION_PASSES <= 0:
         final_sample_weight = np.asarray(sample_weight, dtype=np.float32).copy()
-        weight_transfer_metrics["final_weight_source"] = "base_weight_fallback"
-        tprint(f"EBMOnLGBM: final OOF-only weight distillation skipped ({exc}).")
+        weight_transfer_metrics["final_weight_source"] = "base_weight_distillation_disabled"
+        tprint("EBMOnLGBM: final OOF-only weight distillation disabled.")
+    else:
+        try:
+            final_sample_weight, _ = _oof_distilled_sample_weights(
+                cls,
+                Xs[final_active_cols],
+                y,
+                sample_weight,
+                fit_idx,
+                final_spec,
+                shape_smoothing_policy,
+                mode,
+                random_state=random_state + 33107,
+                passes=EBM_OOF_DISTILLATION_PASSES,
+                label="final",
+            )
+            weight_transfer_metrics["final_weight_source"] = "fit_oof_oof_distilled"
+            weight_transfer_metrics["final_weight_mean"] = float(
+                np.mean(final_sample_weight)
+            )
+            weight_transfer_metrics["final_weight_p90"] = float(
+                np.percentile(final_sample_weight, 90)
+            )
+        except Exception as exc:
+            final_sample_weight = np.asarray(sample_weight, dtype=np.float32).copy()
+            weight_transfer_metrics["final_weight_source"] = "base_weight_fallback"
+            tprint(f"EBMOnLGBM: final OOF-only weight distillation skipped ({exc}).")
 
     for i in range(1):
         t0 = time.perf_counter()
@@ -7216,21 +8575,34 @@ def _fit_final_model(
     )
     if model.oof_probs is None or len(model.oof_probs) != len(y):
         model.oof_probs = np.asarray(oof_probs, dtype=np.float32)
-    pre_distill_oof_probs = _final_stage_oof_predictions(
-        cls,
-        Xs[final_active_cols],
-        y,
-        final_base_sample_weight,
-        fit_idx,
-        final_spec,
-        shape_smoothing_policy,
-        mode,
-        random_state=random_state + 11701,
-    )
+    if EBM_OOF_DISTILLATION_PASSES <= 0:
+        pre_distill_oof_probs = np.asarray(model.oof_probs, dtype=np.float32)
+        tprint("EBMOnLGBM: pre-distill OOF comparison disabled.")
+    else:
+        pre_distill_oof_probs = _final_stage_oof_predictions(
+            cls,
+            Xs[final_active_cols],
+            y,
+            final_base_sample_weight,
+            fit_idx,
+            final_spec,
+            shape_smoothing_policy,
+            mode,
+            random_state=random_state + 11701,
+        )
     uncertainty_metrics: dict[str, float] = {}
     try:
         model.oof_probs_raw_ebm = np.asarray(model.oof_probs, dtype=np.float32).copy()
-        if (
+        if EBM_FINAL_UNCERTAINTY_MAX_ROWS <= 0:
+            model.oof_probs_en = model.oof_probs_raw_ebm.copy()
+            model.oof_probs_uncertainty_weighted = model.oof_probs_raw_ebm.copy()
+            uncertainty_metrics["uncertainty_oof_skipped_disabled"] = 1.0
+            uncertainty_metrics["uncertainty_oof_n"] = float(len(y))
+            tprint(
+                "EBMOnLGBM: uncertainty OOF feature generation disabled "
+                "by EPM_EBM_FINAL_UNCERTAINTY_MAX_ROWS=0."
+            )
+        elif (
             EBM_FINAL_UNCERTAINTY_MAX_ROWS > 0
             and len(y) > EBM_FINAL_UNCERTAINTY_MAX_ROWS
         ):
@@ -7641,6 +9013,13 @@ def train_ebm_on_lgbm_candidate(
         assets=assets,
         random_state=random_state + 701,
     )
+    stage_indices = _subsample_stage_indices(
+        stage_indices,
+        y_arr,
+        max_fraction=_ebm_row_subsample_frac(),
+        random_state=random_state + 3701,
+        classifier=classifier,
+    )
     stage_indices = _cap_stage_and_move_unused_to_fit_oof(
         stage_indices,
         y_arr,
@@ -7746,8 +9125,11 @@ def train_ebm_on_lgbm_candidate(
         dtype=np.int32,
     )
     raw_feature_set = set(map(str, raw_feature_names))
+    tree_feature_names = [
+        str(c) for c in X_select.columns if str(c) not in raw_feature_set
+    ]
     tree_active_full = np.asarray(
-        [i for i, c in enumerate(X_select.columns) if str(c) not in raw_feature_set],
+        [full_col_pos[str(c)] for c in tree_feature_names if str(c) in full_col_pos],
         dtype=np.int32,
     )
     active = np.unique(np.concatenate([raw_active_full, tree_active_full])).astype(
@@ -7769,7 +9151,7 @@ def train_ebm_on_lgbm_candidate(
     current_leaf_min_pct = 0.02
     current_constraints = None
 
-    for round_id in range(1, EBM_MAX_ROUNDS + 1):
+    for round_id in range(1, _ebm_max_rounds() + 1):
         if len(active) <= EBM_MIN_FEATURES:
             tprint(
                 f"EBMOnLGBM round {round_id}: feature floor reached ({len(active)})."
@@ -7935,10 +9317,21 @@ def train_ebm_on_lgbm_candidate(
         if top20_thresholds is not None:
             rec["n_top20_acceptable_specs"] = int(len(acceptable_round_records))
 
-        binary_mask = _binary_feature_mask(X_select[round_features])
+        scoring_features = [str(c) for c in best.get("feature_names", round_features)]
+        active_by_name = {str(X_select.columns[i]): int(i) for i in active}
+        scoring_active = np.asarray(
+            [active_by_name[name] for name in scoring_features if name in active_by_name],
+            dtype=np.int32,
+        )
+        if len(scoring_active) != len(scoring_features):
+            scoring_features = [str(X_select.columns[i]) for i in scoring_active]
+        if len(scoring_active) == 0:
+            scoring_features = list(round_features)
+            scoring_active = active.copy()
+        binary_mask = _binary_feature_mask(X_select[scoring_features])
         shape_models_for_scoring = best.get("shape_models", round_res["shape_models"])
         shape_scores, bends, is_cont, mas = _feature_shape_score_components(
-            shape_models_for_scoring, round_features, binary_mask=binary_mask
+            shape_models_for_scoring, scoring_features, binary_mask=binary_mask
         )
 
         cont_bends = bends[is_cont]
@@ -7954,17 +9347,17 @@ def train_ebm_on_lgbm_candidate(
         score_source = "shape"
         if not np.any(shape_scores > 0):
             shape_scores = _target_scores(
-                x_select_np[:, active], y_select, round_features
+                x_select_np[:, scoring_active], y_select, scoring_features
             )
             score_source = "target_fallback"
         shape_scores, eval_score_details = _combine_ebm_feature_scores(
             shape_scores,
             best.get("feature_eval_stats"),
             round_id,
-            round_features,
+            scoring_features,
         )
         top_contributors = _top_prediction_feature_contributors(
-            best.get("feature_eval_stats"), round_features, top_n=10
+            best.get("feature_eval_stats"), scoring_features, top_n=10
         )
         if top_contributors:
             rec["top_prediction_feature_contributors"] = top_contributors
@@ -7982,9 +9375,9 @@ def train_ebm_on_lgbm_candidate(
                 "this pruning round."
             )
             shape_scores = _target_scores(
-                x_select_np[:, active],
+                x_select_np[:, scoring_active],
                 y_select,
-                round_features,
+                scoring_features,
             )
             score_source = "ungated_target_fallback"
             eval_score_details["used_ungated_score_fallback"] = 1.0
@@ -8011,10 +9404,13 @@ def train_ebm_on_lgbm_candidate(
         else:
             eval_score_details["used_ungated_score_fallback"] = 0.0
         drop_frac = _round_drop_fraction(round_id)
-        keep_n = max(EBM_MIN_FEATURES, int(np.ceil(len(active) * (1.0 - drop_frac))))
-        keep_n = min(keep_n, len(active))
+        keep_n = max(
+            EBM_MIN_FEATURES,
+            int(np.ceil(len(scoring_active) * (1.0 - drop_frac))),
+        )
+        keep_n = min(keep_n, len(scoring_active))
         keep_local = np.argsort(shape_scores)[-keep_n:]
-        next_active = active[np.sort(keep_local)]
+        next_active = scoring_active[np.sort(keep_local)]
         start_features = [str(X_select.columns[i]) for i in active]
         end_features = [str(X_select.columns[i]) for i in next_active]
         n_tree_start = int(sum(c.startswith("lgbm_") for c in start_features))
@@ -8134,7 +9530,7 @@ def train_ebm_on_lgbm_candidate(
     )
     final_weights, _final_ess = _normalize_rank_based_weights(final_weights)
     mode_name = "classifier" if classifier else "regressor"
-    specs = _ebm_specs(pruning=False, random_state=random_state)[:EBM_FINAL_MODEL_COUNT]
+    specs = _ebm_specs(pruning=False, random_state=random_state)[:_ebm_final_model_count()]
     for spec in specs:
         spec["outer_bags"] = 1
     selected_features = _contribution_correlation_prune(
@@ -8148,7 +9544,7 @@ def train_ebm_on_lgbm_candidate(
         random_state=random_state + 7601,
     )
     _log_selected_features("post-pruning candidate", selected_features)
-    min_honest_models = max(1, min(len(specs), int(EBM_HONEST_EVAL_MIN_MODELS)))
+    min_honest_models = max(1, min(len(specs), int(_ebm_honest_eval_min_models())))
     tprint(
         f"EBMOnLGBM: fitting up to {len(specs)} honest eval EBMs on selected features "
         f"(adaptive_min={min_honest_models}, "

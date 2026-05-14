@@ -82,6 +82,40 @@ def get_perp_feature_names(horizons: Iterable[int] = HORIZONS) -> list[str]:
             "basis_funding_div",
         ]
     )
+    for h in (5, 10):
+        out.extend(
+            [
+                f"fund_pre_drift_{h}h",
+                f"fund_post_reversal_{h}h",
+                f"fund_ret_cond_sign_{h}h",
+                f"fund_payment_pressure_{h}h",
+                f"mark_gap_vol_{h}h",
+                f"premium_expansion_speed_{h}h",
+                f"mark_trigger_risk_{h}h",
+                f"carry_adj_ret_{h}h",
+                f"carry_adj_short_ret_{h}h",
+                f"basis_adjusted_trend_{h}h",
+                f"funding_crowded_mom_exhaustion_{h}h",
+                f"fund_high_neg_mom_{h}h",
+                f"persistent_pos_funding_failed_breakout_{h}h",
+                f"persistent_neg_funding_failed_breakdown_{h}h",
+                f"fund_flip_x_vol_expansion_{h}h",
+            ]
+        )
+    out.extend(
+        [
+            "fund_hours_to_next",
+            "fund_hours_since_last",
+            "fund_next_event_proximity_5h",
+            "fund_next_event_proximity_10h",
+            "premium_mean_reversion_halflife_24h",
+            "liq_buffer_long_mark_frac",
+            "liq_buffer_short_mark_frac",
+            "liq_buffer_atr",
+            "liq_stop_safety_long_atr",
+            "liq_stop_safety_short_atr",
+        ]
+    )
     return out
 
 
@@ -209,4 +243,3 @@ def compute_features(
     out["basis_funding_div"] = out["basis_pct_z"] - out["funding_z"]
 
     return out
-

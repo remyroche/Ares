@@ -29,6 +29,7 @@ from extreme_price_movements.simple_offset_generator import (
     build_policy_path_state_bundle,
     run_simple_offset_generator_from_sizer,
 )
+from extreme_price_movements.path_utils import mode_suffixed_path, resolve_market_mode
 from extreme_price_movements.utils import tprint
 
 EPS = 1e-9
@@ -40,6 +41,14 @@ POLICY_OPTIMISER_ASSESSMENT_FRAC = 0.05
 POLICY_OPTIMISER_DIAGNOSTIC_FRAC = 0.01
 POLICY_OPTIMISER_OFFSET_LIMITER_ENABLED = False
 logger = logging.getLogger(__name__)
+
+
+def _write_text_with_mode_alias(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    mode_path = mode_suffixed_path(path, resolve_market_mode())
+    if mode_path != path:
+        mode_path.write_text(text)
 
 
 def strategy_core_id(strategy_id: str) -> str:
@@ -793,8 +802,11 @@ def build_strategy_for_inference_payload(
     out_dir.mkdir(parents=True, exist_ok=True)
     text = json.dumps(payload, indent=2, default=float)
     path = out_dir / output_filename
-    path.write_text(text)
-    (Path(data_root) / "artifacts" / run_id / output_filename).write_text(text)
+    _write_text_with_mode_alias(path, text)
+    _write_text_with_mode_alias(
+        Path(data_root) / "artifacts" / run_id / output_filename,
+        text,
+    )
     tprint(
         f"Wrote strategy_for_inference selection -> {path} "
         f"(selected={len(selected)} rejected={len(rejected)})"
@@ -5105,9 +5117,11 @@ def run_policy_optimisation(
     out_dir = Path(data_root) / "artifacts" / run_id / "policy_params"
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / "best_policy_params.json"
-    path.write_text(json.dumps(payload, indent=2, default=float))
-    (Path(data_root) / "artifacts" / run_id / "best_policy_params.json").write_text(
-        json.dumps(payload, indent=2, default=float)
+    payload_text = json.dumps(payload, indent=2, default=float)
+    _write_text_with_mode_alias(path, payload_text)
+    _write_text_with_mode_alias(
+        Path(data_root) / "artifacts" / run_id / "best_policy_params.json",
+        payload_text,
     )
     strategy_final_acceptation(data_root, run_id, strategy_rows)
     tprint(f"POLICY OPTIMISER COMPLETE -> {path}")

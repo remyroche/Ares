@@ -19,6 +19,8 @@ import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr, ttest_rel, wilcoxon
 
+from extreme_price_movements.data_store import read_parquet_projected
+
 # Import both sizers
 from extreme_price_movements.simple_position_sizer import (
     run_simple_position_sizer_from_artifacts,
@@ -208,9 +210,21 @@ def run_comparison_on_strategy(
                 label_file = best_match
                 
     if label_file and label_file.exists():
-        full_df = pd.read_parquet(label_file)
-        if "__r_policy_net__" in full_df.columns:
-            full_df["return"] = full_df["__r_policy_net__"]
+        full_df = read_parquet_projected(
+            label_file,
+            [
+                "__ts__",
+                "__symbol__",
+                "__index__",
+                "__y_ret__",
+                "timestamp",
+                "symbol",
+                "index",
+                "return",
+            ],
+        )
+        if "__y_ret__" in full_df.columns:
+            full_df["return"] = full_df["__y_ret__"]
         if "__ts__" in full_df.columns:
             full_df["timestamp"] = full_df["__ts__"]
         if "__symbol__" in full_df.columns:

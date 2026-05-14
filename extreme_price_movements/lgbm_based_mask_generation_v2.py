@@ -582,6 +582,52 @@ def append_hardcoded_final_rules(df: Optional[pd.DataFrame]) -> pd.DataFrame:
     return pd.concat([out, manual_df.loc[:, out.columns]], ignore_index=True)
 
 
+def cap_final_registry_top_n(
+    df: Optional[pd.DataFrame],
+    cfg: Dict[str, Any],
+    *,
+    default_top_n: int = 20,
+) -> pd.DataFrame:
+    """Keep the shipped final strategy artifact bounded to the configured top N."""
+    out = pd.DataFrame() if df is None else df.copy()
+    if out.empty:
+        return out
+
+    top_n = int(cfg.get("final_registry_top_n", default_top_n) or default_top_n)
+    if top_n <= 0 or len(out) <= top_n:
+        return out
+
+    sort_candidates = [
+        ("final_selection_order", True),
+        ("final_candidate_rank_score", False),
+        ("regime_score", False),
+        ("composite_score", False),
+        ("ridge_pnl_raw", False),
+    ]
+    sort_cols = [col for col, _ in sort_candidates if col in out.columns]
+    ascending = [asc for col, asc in sort_candidates if col in out.columns]
+    if sort_cols:
+        working = out.copy()
+        for col, asc in zip(sort_cols, ascending):
+            values = pd.to_numeric(working[col], errors="coerce")
+            fill = np.inf if asc else -np.inf
+            working[col] = values.replace([np.inf, -np.inf], np.nan).fillna(fill)
+        out = working.sort_values(sort_cols + ["canonical_key"], ascending=ascending + [True])
+    elif "canonical_key" in out.columns:
+        out = out.sort_values("canonical_key")
+
+    return out.head(top_n).reset_index(drop=True)
+
+
+def market_suffixed_output_dir(output_dir: str, market_mode: str) -> str:
+    """Route spot/perps runs to distinct *_spot or *_perps artifact roots."""
+    path = Path(output_dir)
+    suffix = "_perps" if str(market_mode).lower() == "perps" else "_spot"
+    if path.name.endswith(("_perps", "_spot")):
+        return str(path)
+    return str(path.with_name(f"{path.name}{suffix}"))
+
+
 
 class TargetNaNReason:
     HORIZON_EXCEEDED = "horizon_exceeded"
@@ -9809,6 +9855,7 @@ def run_lgbm_mask_generation_pipeline(
     )
     combined_global_registry["preset"] = cfg.get("preset", "exploration")
     combined_global_registry = append_hardcoded_final_rules(combined_global_registry)
+    combined_global_registry = cap_final_registry_top_n(combined_global_registry, cfg)
     combined_global_registry.to_csv(
         root_output_dir / "combined_accepted_rule_registry.csv", index=False
     )
@@ -9951,7 +9998,7 @@ def build_global_stage_a_ridge_shortlist(
     metadata_ref: List[FeatureMetadata],
     cfg: Dict[str, Any],
 ) -> pd.DataFrame:
-    global_cap = int(cfg.get("global_ridge_candidate_cap", 120))
+    global_cap = int(cfg.get("global_ridge_candidate_cap", 200))
     if not pooled_step1_frames:
         return pd.DataFrame()
 
@@ -9989,9 +10036,38 @@ def build_global_stage_a_ridge_shortlist(
     pooled["cheap_rank"] = pd.to_numeric(pooled["cheap_rank"], errors="coerce").fillna(
         -np.inf
     )
+
+    def _score_series(col: str, default: float = np.nan) -> pd.Series:
+        if col in pooled.columns:
+            return pd.to_numeric(pooled[col], errors="coerce")
+        return pd.Series(default, index=pooled.index, dtype=float)
+
+    def _rank01(values: pd.Series, neutral: float = 0.5) -> pd.Series:
+        vals = pd.to_numeric(values, errors="coerce").replace([np.inf, -np.inf], np.nan)
+        if vals.notna().sum() == 0:
+            return pd.Series(neutral, index=pooled.index, dtype=float)
+        filled = vals.fillna(vals.median())
+        if filled.nunique(dropna=True) <= 1:
+            return pd.Series(neutral, index=pooled.index, dtype=float)
+        return filled.rank(method="average", pct=True).astype(float)
+
+    # Feature-based Step 1 proxy: reduce the 4 x top-100 slice baskets to the
+    # configured global pre-specialist pool before any per-rule LGBM training.
+    pooled["global_stage2_proxy_score"] = (
+        0.35 * _rank01(_score_series("learnability_step_c_score"))
+        + 0.25 * _rank01(_score_series("full_quality_score"))
+        + 0.20 * _rank01(_score_series("trade_path_quality_score"))
+        + 0.20 * _rank01(_score_series("cheap_rank"))
+    )
     pooled = pooled.sort_values(
-        ["cheap_rank", "source_target", "source_horizon", "side"],
-        ascending=[False, True, True, True],
+        [
+            "global_stage2_proxy_score",
+            "cheap_rank",
+            "source_target",
+            "source_horizon",
+            "side",
+        ],
+        ascending=[False, False, True, True, True],
     ).reset_index(drop=True)
 
     selected = pooled.head(global_cap).copy()
@@ -10009,7 +10085,7 @@ def load_step1_slice_basket(
     target_name: str,
     horizon: int,
     side: str,
-    basket_size: int = 15,
+    basket_size: int = 100,
     support_min_pct: float = SUPPORT_MIN,
     support_max_pct: float = SUPPORT_MAX,
 ) -> pd.DataFrame:
@@ -10387,7 +10463,7 @@ def run_lgbm_mask_generation_triad(
                     target_name=target_name,
                     horizon=horizon,
                     side=side,
-                    basket_size=int(cfg.get("global_ridge_per_slice_basket_size", 15)),
+                    basket_size=int(cfg.get("global_ridge_per_slice_basket_size", 100)),
                     support_min_pct=float(cfg.get("support_min_pct", SUPPORT_MIN)),
                     support_max_pct=float(cfg.get("max_support_pct", SUPPORT_MAX)),
                 )
@@ -10748,6 +10824,7 @@ def run_lgbm_mask_generation_triad(
         else:
             combined_registry["preset"] = cfg.get("preset", "triad_exploration")
             combined_registry = append_hardcoded_final_rules(combined_registry)
+            combined_registry = cap_final_registry_top_n(combined_registry, cfg)
             if "selected_for_final_registry" in combined_registry.columns:
                 combined_registry = combined_registry[
                     combined_registry["selected_for_final_registry"].fillna(False)
@@ -11839,6 +11916,14 @@ class MaskAssessor:
                     residualization_source_names.add(str(candidate))
                     break
         assessor_feature_names = test_keys_set | residualization_source_names
+        if bool(self.cfg.get("use_perps", False)):
+            assessor_feature_names |= set(self.cfg.get("PERP_FEATURE_KEYS", []))
+            assessor_feature_names |= set(
+                self.cfg.get("SPOT_FOR_PERPS_BASE_FEATURE_KEYS", [])
+            )
+            assessor_feature_names |= set(
+                self.cfg.get("SPOT_FOR_PERPS_META_FEATURE_KEYS", [])
+            )
         ridge_feats = [
             i
             for i, m in enumerate(self.metadata)
@@ -12193,6 +12278,7 @@ class MaskAssessor:
         result["parent_context_uplift"] = np.nan
         result["candidate_score"] = np.nan
         result["shallow_lgbm_oof_score"] = np.nan
+        result["weak_pass_score"] = np.nan
         result["final_selection_cluster_id"] = np.nan
         result["final_selection_lambda_jaccard"] = np.nan
         result["final_selection_lambda_containment"] = np.nan
@@ -12203,12 +12289,20 @@ class MaskAssessor:
                 result.get("composite_score", np.nan), errors="coerce"
             )
 
-        if "is_structurally_sound" in result.columns:
-            eligible = result[result["is_structurally_sound"].fillna(False).astype(bool)].copy()
+        selection_pool = result
+        if "stage2_rescored" in result.columns and result["stage2_rescored"].fillna(False).astype(bool).any():
+            selection_pool = result[
+                result["stage2_rescored"].fillna(False).astype(bool)
+            ].copy()
+
+        if "is_structurally_sound" in selection_pool.columns:
+            eligible = selection_pool[
+                selection_pool["is_structurally_sound"].fillna(False).astype(bool)
+            ].copy()
         else:
-            eligible = result.copy()
+            eligible = selection_pool.copy()
         if eligible.empty:
-            eligible = result.copy()
+            eligible = selection_pool.copy()
         if eligible.empty:
             return result
 
@@ -12275,13 +12369,39 @@ class MaskAssessor:
             + 0.25 * _num_series("decile_monotonic_spearman").fillna(0.0)
             + 0.25 * _rank01(_num_series("decile_spread_mean")).fillna(0.0)
         )
-        final_rank_score = candidate_score * np.clip(1.0 + shallow_lgbm_oof_score, 0.5, 1.5)
+        shallow_center = float(np.nanmedian(shallow_lgbm_oof_score))
+        shallow_mad = float(
+            np.nanmedian(np.abs(shallow_lgbm_oof_score - shallow_center))
+        )
+        if not np.isfinite(shallow_center):
+            shallow_center = 0.0
+        if not np.isfinite(shallow_mad) or shallow_mad <= 1e-12:
+            shallow_scale = float(
+                np.nanpercentile(shallow_lgbm_oof_score, 75)
+                - np.nanpercentile(shallow_lgbm_oof_score, 25)
+            )
+            shallow_scale = shallow_scale / 1.349 if np.isfinite(shallow_scale) else 0.0
+        else:
+            shallow_scale = 1.4826 * shallow_mad
+        if not np.isfinite(shallow_scale) or shallow_scale <= 1e-12:
+            shallow_scale = 1.0
+        shallow_lgbm_oof_score = pd.Series(
+            1.0 + (shallow_lgbm_oof_score - shallow_center) / shallow_scale,
+            index=eligible.index,
+            dtype=float,
+        ).clip(0.5, 2.5)
+        weak_pass_score = _rank01(_num_series("weak_filter_score"))
+        final_rank_score = (
+            0.75 * candidate_score * shallow_lgbm_oof_score
+            + 0.25 * weak_pass_score
+        )
 
         eligible["robust_edge_score"] = robust_edge_score.astype(float)
         eligible["pre_learnability_score"] = pre_learnability_score.astype(float)
         eligible["parent_context_uplift"] = parent_context_uplift.astype(float)
         eligible["candidate_score"] = candidate_score.astype(float)
         eligible["shallow_lgbm_oof_score"] = shallow_lgbm_oof_score.astype(float)
+        eligible["weak_pass_score"] = weak_pass_score.astype(float)
         eligible["final_candidate_rank_score"] = final_rank_score.astype(float)
         eligible["trade_composite_score"] = final_rank_score.astype(float)
         eligible["fold_stability"] = fold_stability.astype(float)
@@ -12329,7 +12449,20 @@ class MaskAssessor:
                 return 0.0
             return float(abs(np.clip(np.corrcoef(av, bv)[0, 1], -1.0, 1.0)))
 
+        side_by_idx = (
+            eligible["side"].astype(str).str.lower().to_dict()
+            if "side" in eligible.columns
+            else {}
+        )
+
+        def _same_side(idx_a: Any, idx_b: Any) -> bool:
+            side_a = side_by_idx.get(idx_a, "")
+            side_b = side_by_idx.get(idx_b, "")
+            return bool(side_a and side_b and side_a == side_b)
+
         def _pair_stats(idx_a: Any, idx_b: Any) -> Tuple[float, float, float, float]:
+            if side_by_idx and not _same_side(idx_a, idx_b):
+                return 0.0, 0.0, 0.0, 0.0
             key_a = str(eligible.loc[idx_a, "canonical_key"])
             key_b = str(eligible.loc[idx_b, "canonical_key"])
             mask_a = np.asarray(mask_lookup.get(key_a, np.asarray([], dtype=bool)), dtype=bool)
@@ -12401,19 +12534,45 @@ class MaskAssessor:
                 if clear_incremental:
                     cluster_survivors.append(challenger)
                     break
-        eligible = eligible.loc[cluster_survivors].copy()
+        cluster_survivor_set = set(cluster_survivors)
         for idx in eligible.index:
             eligible.loc[idx, "final_selection_cluster_id"] = cluster_ids.get(idx, -1)
+            eligible.loc[idx, "final_selection_cluster_survivor"] = idx in cluster_survivor_set
 
         def _select_for_lambdas(lambda_j: float, lambda_c: float, lambda_pnl: float) -> Tuple[List[Any], Dict[str, float]]:
             selected: List[Any] = []
             remaining = eligible.sort_values("final_candidate_rank_score", ascending=False).index.tolist()
-            top_n = int(self.cfg.get("final_registry_top_n", 40))
+            top_n = int(self.cfg.get("final_registry_top_n", 20))
+            min_per_side = int(self.cfg.get("final_registry_min_per_side", 6))
+            min_per_side = max(0, min(min_per_side, top_n // 2))
+            side_targets: Dict[str, int] = {}
+            if side_by_idx and min_per_side > 0:
+                counts_by_side = collections.Counter(side_by_idx.get(idx, "") for idx in remaining)
+                for side in ("long", "short"):
+                    available = int(counts_by_side.get(side, 0))
+                    if available > 0:
+                        side_targets[side] = min(min_per_side, available)
             coverage_bonus = float(self.cfg.get("final_selection_coverage_bonus", 0.10))
             while remaining and len(selected) < top_n:
                 best_idx = None
                 best_score = -np.inf
-                for idx in remaining:
+                selected_side_counts = collections.Counter(side_by_idx.get(idx, "") for idx in selected)
+                deficits = {
+                    side: max(0, target - int(selected_side_counts.get(side, 0)))
+                    for side, target in side_targets.items()
+                }
+                remaining_slots = top_n - len(selected)
+                if deficits and sum(deficits.values()) >= remaining_slots:
+                    candidate_indices = [
+                        idx
+                        for idx in remaining
+                        if deficits.get(side_by_idx.get(idx, ""), 0) > 0
+                    ]
+                else:
+                    candidate_indices = remaining
+                if not candidate_indices:
+                    candidate_indices = remaining
+                for idx in candidate_indices:
                     if not selected:
                         max_j = max_c = max_pnl = max_pred = 0.0
                     else:
@@ -12523,7 +12682,7 @@ class MaskAssessor:
                 "lambda_containment": 0.75,
                 "lambda_pnl_corr": 0.5,
             }
-            selected = eligible.head(int(self.cfg.get("final_registry_top_n", 40))).index.tolist()
+            selected = eligible.head(int(self.cfg.get("final_registry_top_n", 20))).index.tolist()
             frontier_score = np.asarray([0.0])
             knee_idx = 0
 
@@ -12547,7 +12706,9 @@ class MaskAssessor:
             "parent_context_uplift",
             "candidate_score",
             "shallow_lgbm_oof_score",
+            "weak_pass_score",
             "final_selection_cluster_id",
+            "final_selection_cluster_survivor",
         ]
         for col in copy_cols:
             result.loc[eligible.index, col] = eligible[col].to_numpy()
@@ -13204,7 +13365,7 @@ class MaskAssessor:
                     }
 
                     bucket_top_target = int(
-                        self.cfg.get("overlap_dedup_bucket_top_target", 15)
+                        self.cfg.get("overlap_dedup_bucket_top_target", 100)
                     )
                     dedup_scores = np.nan_to_num(preselection_scores, nan=0.0)
                     score_order = np.argsort(-dedup_scores)
@@ -13647,20 +13808,140 @@ class MaskAssessor:
         self.bucket_ridge_keys = collections.defaultdict(set)
 
         if True: # Keep a bounded robust candidate set before expensive specialist models.
-            tprint("Stage A: Selecting top bounded global pool before specialist models")
-            global_pool_sorted = sorted(
-                global_pool,
-                key=lambda item: (float(item[1]) if np.isfinite(float(item[1])) else -np.inf),
-                reverse=True,
+            tprint(
+                "Stage A: Selecting overlap-pruned global pool before specialist models "
+                f"(cap={max_ridge_candidates_total})"
             )
-            selected_pool = global_pool_sorted[:max_ridge_candidates_total]
-            rejected_pool = global_pool_sorted[max_ridge_candidates_total:]
-            for bucket_key, rank, canonical_key in selected_pool:
+            upstream_overlap_threshold = float(
+                self.cfg.get("ridge_upstream_overlap_threshold", 0.92)
+            )
+            upstream_containment_threshold = float(
+                self.cfg.get("ridge_upstream_containment_threshold", 0.96)
+            )
+
+            scored_pool: List[Tuple[float, Tuple[str, int], float, str, np.ndarray, int]] = []
+            for bucket_key, rank, canonical_key in global_pool:
+                if canonical_key in mask_cache:
+                    rule_mask = mask_cache[canonical_key]
+                elif self.mask_resolver:
+                    rule_mask = self.mask_resolver.get_mask(canonical_key)
+                    mask_cache[canonical_key] = rule_mask
+                else:
+                    rule_mask = self._get_mask_for_rule(canonical_key, X)
+                    mask_cache[canonical_key] = rule_mask
+                rule_mask = np.asarray(rule_mask, dtype=bool)
+                supp = int(rule_mask.sum())
+                if supp < 1:
+                    continue
+
+                support_pct = supp / max(len(rule_mask), 1)
+                if support_pct < (center - half_width):
+                    support_weight = 1.0 - penalty_strength * (
+                        center - half_width - support_pct
+                    ) / max(center - half_width, 1e-9)
+                elif support_pct < center:
+                    support_weight = 1.0 + boost_strength * (
+                        support_pct - (center - half_width)
+                    ) / max(half_width, 1e-9)
+                elif support_pct < (center + half_width):
+                    support_weight = 1.0 + boost_strength * (
+                        (center + half_width) - support_pct
+                    ) / max(half_width, 1e-9)
+                else:
+                    support_weight = 1.0 - penalty_strength * (
+                        support_pct - (center + half_width)
+                    ) / max(center + half_width, 1e-9)
+                support_weight = float(np.clip(support_weight, 0.1, 2.0))
+                family_bonus = family_rarity_bonus_by_key.get(bucket_key, {}).get(
+                    canonical_key, 0.0
+                )
+                try:
+                    rank_score_raw = float(rank)
+                except (TypeError, ValueError):
+                    rank_score_raw = -np.inf
+                rank_score = rank_score_raw if np.isfinite(rank_score_raw) else -np.inf
+                score = rank_score * (1.0 + support_weight) * (1.0 + family_bonus)
+                scored_pool.append(
+                    (score, bucket_key, rank_score, canonical_key, rule_mask, supp)
+                )
+
+            scored_pool.sort(key=lambda item: item[0], reverse=True)
+
+            def _same_side_overlap(
+                candidate: Tuple[float, Tuple[str, int], float, str, np.ndarray, int],
+                selected: Tuple[float, Tuple[str, int], float, str, np.ndarray, int],
+            ) -> Tuple[float, float]:
+                if candidate[1][0] != selected[1][0]:
+                    return 0.0, 0.0
+                supp_i = float(candidate[5])
+                supp_j = float(selected[5])
+                if min(supp_i, supp_j) <= 0.0:
+                    return 0.0, 0.0
+                supp_ratio = min(supp_i, supp_j) / max(supp_i, supp_j)
+                if supp_ratio < support_ratio_min:
+                    return 0.0, 0.0
+                inter = float(np.sum(candidate[4] & selected[4]))
+                f1 = 2.0 * inter / (supp_i + supp_j + 1e-9)
+                containment = inter / min(supp_i, supp_j)
+                return float(f1), float(containment)
+
+            selected_pool: List[
+                Tuple[float, Tuple[str, int], float, str, np.ndarray, int]
+            ] = []
+            overlap_rejected_pool: List[
+                Tuple[float, Tuple[str, int], float, str, np.ndarray, int]
+            ] = []
+            for candidate in scored_pool:
+                max_f1 = 0.0
+                max_containment = 0.0
+                for selected_candidate in selected_pool:
+                    f1, containment = _same_side_overlap(candidate, selected_candidate)
+                    max_f1 = max(max_f1, f1)
+                    max_containment = max(max_containment, containment)
+                    if (
+                        max_f1 >= upstream_overlap_threshold
+                        or max_containment >= upstream_containment_threshold
+                    ):
+                        break
+                if (
+                    max_f1 < upstream_overlap_threshold
+                    and max_containment < upstream_containment_threshold
+                ):
+                    selected_pool.append(candidate)
+                    if len(selected_pool) >= max_ridge_candidates_total:
+                        break
+                else:
+                    overlap_rejected_pool.append(candidate)
+
+            selected_keys = {(item[1], item[3]) for item in selected_pool}
+            if len(selected_pool) < max_ridge_candidates_total:
+                remaining_candidates = [
+                    item for item in scored_pool if (item[1], item[3]) not in selected_keys
+                ]
+                deficit = max_ridge_candidates_total - len(selected_pool)
+                refill = remaining_candidates[:deficit]
+                selected_pool.extend(refill)
+                selected_keys.update((item[1], item[3]) for item in refill)
+                if refill:
+                    tprint(
+                        "Stage A: Upstream overlap pruning refilled "
+                        f"{len(refill)} candidates to maintain specialist pool size"
+                    )
+
+            tprint(
+                "Stage A: Upstream overlap pruning selected "
+                f"{len(selected_pool)}/{len(scored_pool)} candidates "
+                f"(f1<{upstream_overlap_threshold:.2f}, containment<{upstream_containment_threshold:.2f}, within-side)"
+            )
+
+            for _, bucket_key, _, canonical_key, _, _ in selected_pool:
                 self.bucket_ridge_keys[bucket_key].add(canonical_key)
-            for bucket_key, _, canonical_key in rejected_pool:
+            for _, bucket_key, _, canonical_key, _, _ in scored_pool:
+                if (bucket_key, canonical_key) in selected_keys:
+                    continue
                 cheap_gate_result[(bucket_key, canonical_key)] = (
                     True,
-                    "outside_top_200_specialist_candidates",
+                    f"outside_top_{max_ridge_candidates_total}_overlap_pruned_specialist_candidates",
                 )
         else:
             # ----------------------------------------------------------------
@@ -13818,7 +14099,8 @@ class MaskAssessor:
             len(keys) for keys in self.bucket_ridge_keys.values()
         )
         tprint(
-            f"Stage A: Ridge regression selection complete - {total_ridge_selected} rules selected for final assessment"
+            "Stage A: Weak LGBM specialist pass selected "
+            f"{total_ridge_selected} rules for max_depth=3 assessment"
         )
 
         # 0. Infrastructure: Component Extraction
@@ -14615,13 +14897,16 @@ class MaskAssessor:
             assessment_df["stage1_ridge_pnl_raw"].rank(method="first", ascending=False).astype(np.int32)
         )
         assessment_df["stage1_weak_filter_rank"] = np.arange(1, len(assessment_df) + 1, dtype=np.int32)
-        survivor_frac = float(self.cfg.get("stage1_top_survivor_fraction", 0.70))
-        survivor_count = max(1, int(np.ceil(len(assessment_df) * survivor_frac)))
+        survivor_count = min(
+            len(assessment_df),
+            max(1, int(self.cfg.get("stage1_lgbm_top_n_for_strong", 100))),
+        )
         survivor_keys = set(
             assessment_df.head(survivor_count)["canonical_key"].astype(str).tolist()
         )
-        assessment_df["stage1_top70_survivor"] = assessment_df["canonical_key"].astype(str).isin(survivor_keys)
-        assessment_df["stage1_top60_weak_filter_survivor"] = assessment_df["stage1_top70_survivor"]
+        assessment_df["stage1_top100_survivor"] = assessment_df["canonical_key"].astype(str).isin(survivor_keys)
+        assessment_df["stage1_top70_survivor"] = assessment_df["stage1_top100_survivor"]
+        assessment_df["stage1_top60_weak_filter_survivor"] = assessment_df["stage1_top100_survivor"]
 
         selected_records_by_key = {
             str(record.get("canonical_key")): record for record in selected_records
@@ -14639,7 +14924,7 @@ class MaskAssessor:
         }
         strong_rescore_count = 0
         adaptive_enabled_global = bool(self.cfg.get("adaptive_tp_sl_enabled", False))
-        for df_idx in assessment_df.index[assessment_df["stage1_top70_survivor"]]:
+        for df_idx in assessment_df.index[assessment_df["stage1_top100_survivor"]]:
             canonical_key = str(assessment_df.at[df_idx, "canonical_key"])
             row_dict = selected_records_by_key.get(canonical_key)
             if row_dict is None:
@@ -14862,7 +15147,8 @@ class MaskAssessor:
 
         if strong_rescore_count > 0:
             tprint(
-                f"Stage A: Strong Step2 rescoring complete for {strong_rescore_count}/{survivor_count} stage1 survivors"
+                "Stage A: Strong Step2 rescoring complete for "
+                f"{strong_rescore_count}/{survivor_count} weak-pass top candidates"
             )
             
         # 6. Final Ranking Normalization
@@ -17770,7 +18056,7 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "drop_nuisance_features_from_miner": True,
             "drop_continuous_nuisance_parents_from_miner": True,
             "drop_location_nuisance_features_from_miner": False,
-            "global_ridge_candidate_cap": 120,
+            "global_ridge_candidate_cap": 200,
         },
         "production": {
             "min_feature_support": 5,
@@ -17800,7 +18086,7 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "drop_nuisance_features_from_miner": True,
             "drop_continuous_nuisance_parents_from_miner": True,
             "drop_location_nuisance_features_from_miner": False,
-            "global_ridge_candidate_cap": 120,
+            "global_ridge_candidate_cap": 200,
         },
     }
     if preset not in defaults:
@@ -18324,10 +18610,11 @@ if __name__ == "__main__":
     )
     from extreme_price_movements.pipeline_steps import _feature_snapshot_health_issues
 
+    default_data_root = "/Users/remyroche/Documents/Ares/data"
     parser = argparse.ArgumentParser(description="Full LGBM Mask Generation Run")
     parser.add_argument(
         "--data-root",
-        default="/Users/remyroche/Documents/Ares/data",
+        default=default_data_root,
         help="Data root path",
     )
     parser.add_argument("--feature-path", help="Optional feature path override")
@@ -18423,8 +18710,20 @@ if __name__ == "__main__":
     cfg["output_dir"] = args.output_dir
     cfg["market_mode"] = market_mode
     cfg["use_perps"] = market_mode == "perps"
+    cfg["offline_universe_no_api"] = True
     if cfg["use_perps"]:
         cfg = enable_perp_feature_keys(cfg)
+    cfg["overlap_dedup_bucket_top_target"] = 100
+    cfg["global_ridge_per_slice_basket_size"] = 100
+    cfg["global_ridge_candidate_cap"] = 200
+    cfg["max_ridge_candidates_total"] = 200
+    cfg["stage1_lgbm_top_n_for_strong"] = 100
+    cfg["step2_weak_max_depth"] = 3
+    cfg["step2_strong_max_depth"] = 4
+    cfg["final_registry_top_n"] = 20
+    cfg["final_registry_min_per_side"] = 6
+    cfg["ridge_upstream_overlap_threshold"] = 0.92
+    cfg["ridge_upstream_containment_threshold"] = 0.96
     cfg.setdefault("sliceplanner_outer_n_folds", 8)
     cfg.setdefault("sliceplanner_warmup_days", 90)
     

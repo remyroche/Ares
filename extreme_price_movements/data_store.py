@@ -30,7 +30,9 @@ SPOT_QUOTE_SUFFIXES = (
     "BTC",
     "ETH",
 )
-BINANCE_PUBLIC_DATA_BASE = "https://data.binance.vision/data/spot"
+BINANCE_PUBLIC_SPOT_DATA_BASE = "https://data.binance.vision/data/spot"
+BINANCE_PUBLIC_UM_FUTURES_DATA_BASE = "https://data.binance.vision/data/futures/um"
+BINANCE_PUBLIC_DATA_BASE = BINANCE_PUBLIC_SPOT_DATA_BASE
 _ARCHIVE_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"
@@ -401,7 +403,16 @@ def make_spot_exchange():
 
 
 def make_perp_exchange():
-    ex = _configure_exchange_http_pool(ccxt.binanceusdm({"enableRateLimit": True}))
+    _load_dotenv_if_present()
+    api_key = os.environ.get("BINANCE_API_KEY", "").strip()
+    api_secret = os.environ.get("BINANCE_API_SECRET", "").strip()
+    config: Dict[str, Any] = {
+        "enableRateLimit": True,
+        "options": {"fetchCurrencies": False, "defaultType": "future"},
+    }
+    if api_key and api_secret:
+        config.update({"apiKey": api_key, "secret": api_secret})
+    ex = _configure_exchange_http_pool(ccxt.binanceusdm(config))
     ex.load_markets()
     return ex
 
@@ -782,16 +793,17 @@ def _binance_public_kline_url(
     granularity: str,
     stamp: pd.Timestamp,
     interval: str = "1h",
+    data_base: str = BINANCE_PUBLIC_SPOT_DATA_BASE,
 ) -> str:
     if granularity == "monthly":
         suffix = stamp.strftime("%Y-%m")
         return (
-            f"{BINANCE_PUBLIC_DATA_BASE}/monthly/klines/{compact_symbol}/{interval}/"
+            f"{data_base}/monthly/klines/{compact_symbol}/{interval}/"
             f"{compact_symbol}-{interval}-{suffix}.zip"
         )
     suffix = stamp.strftime("%Y-%m-%d")
     return (
-        f"{BINANCE_PUBLIC_DATA_BASE}/daily/klines/{compact_symbol}/{interval}/"
+        f"{data_base}/daily/klines/{compact_symbol}/{interval}/"
         f"{compact_symbol}-{interval}-{suffix}.zip"
     )
 
@@ -832,6 +844,10 @@ def _read_binance_public_kline_archive(
         open_time = pd.to_numeric(df["open_time"], errors="coerce")
         if open_time.isna().all():
             return pd.DataFrame()
+        valid_open_time = open_time.notna()
+        if not bool(valid_open_time.all()):
+            df = df.loc[valid_open_time].copy()
+            open_time = open_time.loc[valid_open_time]
         time_unit = "us" if float(open_time.max()) >= 1e14 else "ms"
         ts = pd.to_datetime(open_time.astype("int64"), unit=time_unit, utc=True)
         ts_ms = (
@@ -874,6 +890,8 @@ def _fetch_orderbook_proxy_from_public_klines(
     symbol: str,
     since_ms: int,
     until_ms: int,
+    *,
+    data_base: str = BINANCE_PUBLIC_SPOT_DATA_BASE,
 ) -> pd.DataFrame:
     """Build hourly execution-friction proxies from Binance 1h kline summaries.
 
@@ -891,7 +909,13 @@ def _fetch_orderbook_proxy_from_public_klines(
     for granularity, stamp, _ in _iter_binance_public_aggtrade_archives(
         symbol, start_ts, end_ts
     ):
-        url = _binance_public_kline_url(compact, granularity, stamp, interval="1h")
+        url = _binance_public_kline_url(
+            compact,
+            granularity,
+            stamp,
+            interval="1h",
+            data_base=data_base,
+        )
         part = _read_binance_public_kline_archive(
             url, since_ms, until_ms, interval="1h"
         )
@@ -1313,10 +1337,17 @@ def fetch_hourly_orderbook_proxy(
     *,
     limit: int = 1000,
 ) -> pd.DataFrame:
+    exchange_id = str(getattr(exchange, "id", "") or "").lower()
+    data_base = (
+        BINANCE_PUBLIC_UM_FUTURES_DATA_BASE
+        if "usdm" in exchange_id or "future" in exchange_id
+        else BINANCE_PUBLIC_SPOT_DATA_BASE
+    )
     public_klines = _fetch_orderbook_proxy_from_public_klines(
         symbol,
         int(since_ms),
         int(until_ms),
+        data_base=data_base,
     )
     if public_klines is not None and not public_klines.empty:
         return normalize_orderbook_proxy_frame(public_klines)
@@ -1325,6 +1356,102 @@ def fetch_hourly_orderbook_proxy(
     # to aggTrades/trade pagination here; that path is too heavy for universe
     # backfills and is not needed for hourly snapshot features.
     return pd.DataFrame()
+
+
+def build_hourly_orderbook_proxy_from_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
+    """Fallback execution-friction proxy from local hourly OHLCV only.
+
+    This is less informative than Binance public kline summaries because local
+    OHLCV does not always include taker-flow or trade-count fields, but it keeps
+    orderbook proxy features finite for perps listings whose public archive is
+    unavailable or incomplete.
+    """
+    if df is None or df.empty:
+        return pd.DataFrame()
+    bars = df.copy()
+    if not isinstance(bars.index, pd.DatetimeIndex):
+        if "ts" in bars.columns:
+            bars.index = pd.to_datetime(bars["ts"], utc=True, errors="coerce")
+        else:
+            bars.index = pd.to_datetime(bars.index, utc=True, errors="coerce")
+    elif bars.index.tz is None:
+        bars.index = bars.index.tz_localize("UTC")
+    else:
+        bars.index = bars.index.tz_convert("UTC")
+    bars = bars[~bars.index.isna()].sort_index()
+    bars = bars[~bars.index.duplicated(keep="last")]
+    required = {"open", "high", "low", "close", "volume"}
+    if not required.issubset(set(bars.columns)):
+        return pd.DataFrame()
+
+    mid = pd.to_numeric(bars["close"], errors="coerce")
+    high = pd.to_numeric(bars["high"], errors="coerce")
+    low = pd.to_numeric(bars["low"], errors="coerce")
+    volume = pd.to_numeric(bars["volume"], errors="coerce").fillna(0.0)
+    quote_volume = pd.to_numeric(
+        bars.get("quote_volume", volume * mid), errors="coerce"
+    ).fillna(volume * mid)
+    trade_count = pd.to_numeric(
+        bars.get("trade_count", np.sqrt(volume.clip(lower=0.0)) + 1.0),
+        errors="coerce",
+    ).fillna(1.0)
+    buy_qty = pd.to_numeric(bars.get("taker_buy_base", volume * 0.5), errors="coerce")
+    buy_qty = buy_qty.fillna(volume * 0.5).clip(lower=0.0)
+    buy_notional = pd.to_numeric(
+        bars.get("taker_buy_quote", quote_volume * 0.5), errors="coerce"
+    )
+    buy_notional = buy_notional.fillna(quote_volume * 0.5).clip(lower=0.0)
+    sell_qty = (volume - buy_qty).clip(lower=0.0)
+    sell_notional = (quote_volume - buy_notional).clip(lower=0.0)
+
+    eps = 1e-9
+    imbalance = ((buy_qty - sell_qty) / (volume + eps)).clip(-1.0, 1.0)
+    mean_trade_qty = (volume / trade_count.replace(0.0, np.nan)).fillna(0.0)
+    hl_spread_bps = (((high - low) / (mid.abs() + eps)) * 1e4).fillna(0.0)
+    spread_bps = (
+        1.0 + 0.20 * hl_spread_bps + 0.05 * np.sqrt(trade_count.clip(lower=0.0))
+    ).clip(lower=1.0, upper=35.0)
+    half_spread = spread_bps / 2e4
+    base_depth = np.maximum(
+        volume / 6.0,
+        np.maximum(mean_trade_qty * 12.0, trade_count * mean_trade_qty * 0.15),
+    )
+    side_skew = (0.85 * imbalance).clip(-0.9, 0.9)
+    cum_bid_qty_l20 = (base_depth * (1.0 + side_skew)).clip(lower=0.0)
+    cum_ask_qty_l20 = (base_depth * (1.0 - side_skew)).clip(lower=0.0)
+    cum_bid_qty_l10 = (cum_bid_qty_l20 * 0.55).clip(lower=0.0)
+    cum_ask_qty_l10 = (cum_ask_qty_l20 * 0.55).clip(lower=0.0)
+    bid_qty_1 = np.maximum(
+        mean_trade_qty * (1.0 + 0.50 * imbalance), cum_bid_qty_l10 / 10.0
+    )
+    ask_qty_1 = np.maximum(
+        mean_trade_qty * (1.0 - 0.50 * imbalance), cum_ask_qty_l10 / 10.0
+    )
+
+    out = pd.DataFrame(index=bars.index)
+    out["best_bid"] = (mid * (1.0 - half_spread)).astype(np.float32)
+    out["best_ask"] = (mid * (1.0 + half_spread)).astype(np.float32)
+    out["mid"] = mid.astype(np.float32)
+    out["bid_qty_1"] = pd.Series(bid_qty_1, index=bars.index).astype(np.float32)
+    out["ask_qty_1"] = pd.Series(ask_qty_1, index=bars.index).astype(np.float32)
+    out["cum_bid_qty_l10"] = pd.Series(cum_bid_qty_l10, index=bars.index).astype(np.float32)
+    out["cum_ask_qty_l10"] = pd.Series(cum_ask_qty_l10, index=bars.index).astype(np.float32)
+    out["cum_bid_qty_l20"] = pd.Series(cum_bid_qty_l20, index=bars.index).astype(np.float32)
+    out["cum_ask_qty_l20"] = pd.Series(cum_ask_qty_l20, index=bars.index).astype(np.float32)
+    out["snapshot_ts"] = bars.index
+    out["trade_count_1h"] = trade_count.astype(np.float32)
+    out["buy_qty_1h"] = buy_qty.astype(np.float32)
+    out["sell_qty_1h"] = sell_qty.astype(np.float32)
+    out["notional_1h"] = quote_volume.astype(np.float32)
+    out["buy_notional_1h"] = buy_notional.astype(np.float32)
+    out["sell_notional_1h"] = sell_notional.astype(np.float32)
+    out["vwap_1h"] = (
+        (quote_volume / volume.replace(0.0, np.nan)).fillna(mid).astype(np.float32)
+    )
+    out["mean_trade_qty_1h"] = mean_trade_qty.astype(np.float32)
+    out["signed_flow_imbalance_1h"] = imbalance.astype(np.float32)
+    out["source"] = "local_ohlcv_summary"
+    return normalize_orderbook_proxy_frame(out.replace([np.inf, -np.inf], np.nan))
 
 
 @retry_with_backoff(retries=3, backoff_in_seconds=2)
@@ -2394,8 +2521,10 @@ def save_features(
     total = len(symbols)
     n_feats = len(feat_keys)
 
-    count = 0
-    for sym in symbols:
+    worker_count = max(1, int(save_workers or 1))
+    max_pending = max(1, worker_count * 2)
+
+    def _prepare_dataframe_symbol_payload(sym: str):
         cutoff_ts = None
         if min_timestamp_by_symbol:
             cutoff_ts = min_timestamp_by_symbol.get(sym)
@@ -2408,7 +2537,7 @@ def save_features(
                 col_data[k] = arrays[k][:, j]
 
         if not col_data:
-            continue
+            return None
 
         df_sym = pd.DataFrame(col_data, index=time_index)
         df_sym = df_sym.astype(np.float32, copy=False)
@@ -2420,24 +2549,81 @@ def save_features(
                 cutoff_ts = cutoff_ts.tz_localize(None)
             df_sym = df_sym[df_sym.index > cutoff_ts]
         if df_sym.empty:
-            continue
+            return None
 
         safe_sym = sym.replace("/", "_")
         final_path = os.path.join(out_dir, f"symbol={safe_sym}.parquet")
+        return final_path, sym, df_sym
+
+    def _write_dataframe_symbol_payload(payload) -> bool:
+        if payload is None:
+            return False
+        final_path, sym, df_sym = payload
         if replace_existing:
-            df_sym["__symbol__"] = sym
-            _atomic_write_parquet(df_sym, final_path)
-            _write_feature_metadata(final_path, sym, df_sym.index)
+            df_out = df_sym.copy()
+            df_out["__symbol__"] = sym
+            _atomic_write_parquet(df_out, final_path)
+            _write_feature_metadata(final_path, sym, df_out.index)
         else:
             append_symbol_features(final_path, sym, df_sym)
-        del df_sym
-        count += 1
+        return True
 
-        if count % 50 == 0:
-            tprint(f"Saved {count}/{total} symbols ({n_feats} features each)")
-        if count % 100 == 0:
-            _gc.collect()
+    count = 0
+    if worker_count == 1:
+        for sym in symbols:
+            payload = _prepare_dataframe_symbol_payload(sym)
+            wrote = _write_dataframe_symbol_payload(payload)
+            if payload is not None:
+                _, _, df_sym = payload
+                del df_sym
+            if wrote:
+                count += 1
 
+            if count % 50 == 0:
+                tprint(f"Saved {count}/{total} symbols ({n_feats} features each)")
+            if count % 100 == 0:
+                _gc.collect()
+    else:
+        tprint(
+            f"  Save parallelism enabled: workers={worker_count}, max_pending={max_pending}"
+        )
+        with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+            pending: dict[concurrent.futures.Future, pd.DataFrame] = {}
+            for sym in symbols:
+                payload = _prepare_dataframe_symbol_payload(sym)
+                if payload is None:
+                    continue
+                future = executor.submit(_write_dataframe_symbol_payload, payload)
+                pending[future] = payload[2]
+
+                if len(pending) >= max_pending:
+                    done, _ = concurrent.futures.wait(
+                        list(pending.keys()),
+                        return_when=concurrent.futures.FIRST_COMPLETED,
+                    )
+                    for fut in done:
+                        wrote = fut.result()
+                        df_sym = pending.pop(fut)
+                        del df_sym
+                        if wrote:
+                            count += 1
+                        if count % 50 == 0:
+                            tprint(
+                                f"Saved {count}/{total} symbols ({n_feats} features each)"
+                            )
+                        if count % 100 == 0:
+                            _gc.collect()
+
+            for fut in concurrent.futures.as_completed(list(pending.keys())):
+                wrote = fut.result()
+                df_sym = pending.pop(fut)
+                del df_sym
+                if wrote:
+                    count += 1
+                if count % 50 == 0:
+                    tprint(f"Saved {count}/{total} symbols ({n_feats} features each)")
+                if count % 100 == 0:
+                    _gc.collect()
     tprint(
         f"Feature save complete. {count}/{total} symbols saved ({n_feats} features)."
     )
@@ -3041,6 +3227,17 @@ def save_artifact_df(
     df.to_parquet(fpath, engine="pyarrow", compression="zstd")
 
 
+def read_parquet_projected(path: Union[str, os.PathLike], columns: List[str]) -> pd.DataFrame:
+    """Read only columns that exist in a parquet file."""
+    fpath = os.fspath(path)
+    try:
+        schema_cols = set(pq.ParquetFile(fpath).schema.names)
+        read_columns = [c for c in columns if c in schema_cols]
+    except Exception:
+        read_columns = list(columns)
+    return pd.read_parquet(fpath, columns=read_columns)
+
+
 def load_artifact_manifest(root_dir: str, run_id: str, category: str) -> dict | None:
     """Load the JSON manifest for a saved artifact category if present."""
     if category == "labels":
@@ -3059,7 +3256,11 @@ def load_artifact_manifest(root_dir: str, run_id: str, category: str) -> dict | 
 
 
 def load_artifact_df(
-    root_dir: str, run_id: str, category: str, name: str
+    root_dir: str,
+    run_id: str,
+    category: str,
+    name: str,
+    columns: Optional[List[str]] = None,
 ) -> pd.DataFrame:
     """
     Load an artifact DataFrame. Returns None if not found.
@@ -3067,7 +3268,10 @@ def load_artifact_df(
     fpath = os.path.join(root_dir, "artifacts", run_id, category, f"{name}.parquet")
     if os.path.exists(fpath):
         tprint(f"Loading artifact: {fpath}")
-        df = pd.read_parquet(fpath)
+        if columns is not None:
+            df = read_parquet_projected(fpath, columns)
+        else:
+            df = pd.read_parquet(fpath)
 
         # Normalize: ensure 'ts' and 'symbol' exist if their dunder versions do.
         # This fixes inconsistencies between training.py and pipeline_steps.py.

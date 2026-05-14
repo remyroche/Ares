@@ -9,6 +9,7 @@ This module loads all configuration needed for inference:
 
 import csv
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -53,6 +54,8 @@ def _load_inference_candidate_mask_params() -> Dict[str, Any]:
 
 # Default paths
 DEFAULT_DATA_ROOT = "data"
+DEFAULT_PERP_DATA_ROOT = "data_perp"
+DEFAULT_MARKET_MODE = os.environ.get("EPM_MARKET_MODE", "spot")
 DEFAULT_EXECUTION_ACCOUNT = "margin"
 DEFAULT_MARGIN_MODE = "cross"
 DEFAULT_LIVE_QUOTE_CURRENCY = "USDC"
@@ -94,6 +97,7 @@ def get_candidate_thresholds(thresholds_csv: Optional[str] = None) -> Dict[str, 
 def load_inference_config(
     data_root: Optional[str] = None,
     run_id: Optional[str] = None,
+    market_mode: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Load complete inference configuration.
 
@@ -110,8 +114,14 @@ def load_inference_config(
         - full_state: Complete training state
         - data_root: Data root path
     """
+    mode_raw = str(market_mode or DEFAULT_MARKET_MODE or "spot").strip().lower()
+    market_mode_norm = (
+        "perps"
+        if mode_raw in {"perp", "perps", "future", "futures", "swap"}
+        else "spot"
+    )
     if data_root is None:
-        data_root = DEFAULT_DATA_ROOT
+        data_root = DEFAULT_PERP_DATA_ROOT if market_mode_norm == "perps" else DEFAULT_DATA_ROOT
 
     # Find latest run ID if not provided
     if run_id is None:
@@ -144,7 +154,8 @@ def load_inference_config(
         "model_bundle": model_bundle,
         "full_state": full_state,
         "data_root": data_root,
-        "execution_account": DEFAULT_EXECUTION_ACCOUNT,
+        "market_mode": market_mode_norm,
+        "execution_account": "perps" if market_mode_norm == "perps" else DEFAULT_EXECUTION_ACCOUNT,
         "margin_mode": DEFAULT_MARGIN_MODE,
         "live_quote_currency": DEFAULT_LIVE_QUOTE_CURRENCY,
     }
@@ -582,6 +593,7 @@ def resolve_inference_universes(
     run_id: str,
     explicit_symbols: Optional[List[str]] = None,
     live_quote_currency: str = "USDC",
+    market_mode: str = "spot",
 ) -> Dict[str, List[str]]:
     """Resolve Step-9 download and tradable universes.
 
@@ -591,12 +603,33 @@ def resolve_inference_universes(
     ``BTC/USDC``.
     """
     live_quote_currency = str(live_quote_currency or "USDC").upper()
+    mode_raw = str(market_mode or "spot").strip().lower()
+    mode = "perps" if mode_raw in {"perp", "perps", "future", "futures", "swap"} else "spot"
     if explicit_symbols:
         live_symbols = sorted(
             {
                 convert_symbol_quote(_normalise_symbol(s), live_quote_currency)
                 for s in explicit_symbols
             }
+        )
+    elif mode == "perps":
+        markets = exchange.load_markets()
+        live_symbols = []
+        for symbol, meta in (markets or {}).items():
+            if not isinstance(meta, dict):
+                continue
+            quote = str(meta.get("quote") or "").upper()
+            if quote != live_quote_currency:
+                continue
+            if not bool(meta.get("active", True)):
+                continue
+            if not bool(meta.get("swap") or meta.get("future") or meta.get("contract")):
+                continue
+            base = str(meta.get("base") or str(symbol).split("/", 1)[0]).upper()
+            live_symbols.append(f"{base}/{live_quote_currency}")
+        live_symbols = sorted(set(live_symbols))
+        tprint(
+            f"Loaded {len(live_symbols)} active perp symbols for quote={live_quote_currency}"
         )
     else:
         live_symbols = get_margin_universe(

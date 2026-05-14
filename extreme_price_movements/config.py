@@ -63,12 +63,52 @@ SPOT_FOR_PERPS_META_FEATURE_KEYS = [
     "spot_perp_volume_ratio_24h",
     "spot_available",
 ]
+PERP_EVENT_RISK_FEATURE_KEYS = [
+    "fund_hours_to_next",
+    "fund_hours_since_last",
+    "fund_next_event_proximity_5h",
+    "fund_next_event_proximity_10h",
+    "premium_mean_reversion_halflife_24h",
+    "liq_buffer_long_mark_frac",
+    "liq_buffer_short_mark_frac",
+    "liq_buffer_atr",
+    "liq_stop_safety_long_atr",
+    "liq_stop_safety_short_atr",
+]
+for _h in (5, 10):
+    PERP_EVENT_RISK_FEATURE_KEYS.extend(
+        [
+            f"fund_pre_drift_{_h}h",
+            f"fund_post_reversal_{_h}h",
+            f"fund_ret_cond_sign_{_h}h",
+            f"fund_payment_pressure_{_h}h",
+            f"mark_gap_vol_{_h}h",
+            f"premium_expansion_speed_{_h}h",
+            f"mark_trigger_risk_{_h}h",
+            f"funding_crowded_mom_exhaustion_{_h}h",
+            f"fund_high_neg_mom_{_h}h",
+            f"persistent_pos_funding_failed_breakout_{_h}h",
+            f"persistent_neg_funding_failed_breakdown_{_h}h",
+            f"fund_flip_x_vol_expansion_{_h}h",
+        ]
+    )
+PERP_CARRY_ALPHA_FEATURE_KEYS = []
+for _h in (5, 10):
+    PERP_CARRY_ALPHA_FEATURE_KEYS.extend(
+        [
+            f"carry_adj_ret_{_h}h",
+            f"carry_adj_short_ret_{_h}h",
+            f"basis_adjusted_trend_{_h}h",
+        ]
+    )
 PERP_FEATURE_KEYS = list(
     dict.fromkeys(
         PERP_FEATURE_KEYS
         + PERP_PRICE_RELATION_FEATURE_KEYS
         + SPOT_FOR_PERPS_BASE_FEATURE_KEYS
         + SPOT_FOR_PERPS_META_FEATURE_KEYS
+        + PERP_EVENT_RISK_FEATURE_KEYS
+        + PERP_CARRY_ALPHA_FEATURE_KEYS
     )
 )
 PERP_TRADEABILITY_FEATURE_KEYS = [
@@ -103,13 +143,17 @@ LGBM_PERP_FEATURE_KEYS = list(
     )
 )
 PERP_META_PRIMARY_FEATURE_KEYS = [
+    "mark_price",
+    "index_price",
+    "premium_index",
     "funding_abs_z",
     "funding_persistence",
     "funding_z",
+    "fund_rate_mom_8h",
     "leverage_build",
     "squeeze_prob",
     "unwind",
-]
+] + PERP_EVENT_RISK_FEATURE_KEYS
 
 ORDERBOOK_BASE_FEATURE_KEYS = [
     # Directional book pressure
@@ -3159,8 +3203,8 @@ POSITION_SIZER_V2_LAYER0_CONFIG = {
     # Time scaling
     "bars_per_hour": 4,  # assume 15m bars default
     # --- Ridge candidate selection (global, all run modes) ---
-    # Max rules sent to Ridge learnability + PnL assessment (per side per horizon)
-    "max_ridge_candidates_total": 80,
+    # Max rules sent to the first per-rule LGBM specialist assessment.
+    "max_ridge_candidates_total": 200,
     # F1 overlap below this threshold is not penalised (diversity reward zone)
     "ridge_overlap_free_zone": 0.30,
     # Exponent applied to the cheap-rank score (higher = stronger preference for top-ranked)
@@ -3190,8 +3234,11 @@ POSITION_SIZER_V2_LAYER0_CONFIG = {
         0.65,
         0.60,
     ],
-    # Per-bucket structural dedup target (top-N kept per bucket before global Ridge cascade)
-    "overlap_dedup_bucket_top_target": 20,
+    # Per-bucket structural dedup target (top-N kept per bucket before global specialist cascade)
+    "overlap_dedup_bucket_top_target": 100,
+    "global_ridge_per_slice_basket_size": 100,
+    "global_ridge_candidate_cap": 200,
+    "stage1_lgbm_top_n_for_strong": 100,
     # --- Ridge validation criteria (research-grade vs production-grade) ---
     # Minimum gross PnL threshold to accept a rule (before fees)
     # Set to 0.0 to accept any positive gross PnL, higher values for stricter filtering
@@ -3208,9 +3255,7 @@ POSITION_SIZER_V2_LAYER0_CONFIG = {
 
 
 CFG["ORDERBOOK_BASE_FEATURE_KEYS"] = ORDERBOOK_BASE_FEATURE_KEYS
-CFG["FUNDING_BASE_FEATURE_KEYS"] = [
-    "fund_rate_mom_8h",
-]
+CFG["FUNDING_BASE_FEATURE_KEYS"] = []
 CFG["ORDERBOOK_FEATURE_KEYS"] = ORDERBOOK_FEATURE_KEYS
 CFG["ORDERBOOK_DIAGNOSTIC_ONLY_FEATURE_KEYS"] = ORDERBOOK_DIAGNOSTIC_ONLY_FEATURE_KEYS
 CFG["ORDERBOOK_EXCLUDED_STALE_FEATURE_KEYS"] = ORDERBOOK_EXCLUDED_STALE_FEATURE_KEYS
@@ -3225,6 +3270,8 @@ CFG["SPOT_FOR_PERPS_BASE_FEATURE_KEYS"] = SPOT_FOR_PERPS_BASE_FEATURE_KEYS
 CFG["SPOT_FOR_PERPS_META_FEATURE_KEYS"] = SPOT_FOR_PERPS_META_FEATURE_KEYS
 CFG["PERP_TRADEABILITY_FEATURE_KEYS"] = PERP_TRADEABILITY_FEATURE_KEYS
 CFG["LGBM_PERP_FEATURE_KEYS"] = LGBM_PERP_FEATURE_KEYS
+CFG["PERP_EVENT_RISK_FEATURE_KEYS"] = PERP_EVENT_RISK_FEATURE_KEYS
+CFG["PERP_CARRY_ALPHA_FEATURE_KEYS"] = PERP_CARRY_ALPHA_FEATURE_KEYS
 CFG["CROSS_ASSET_BASE_FEATURE_KEYS"] = [
     "xasset_btc_ob_pressure",
     "xasset_eth_ob_pressure",
@@ -3236,6 +3283,7 @@ CFG["FUNDING_META_FEATURE_KEYS"] = [
     "fund_rate",
     "fund_rate_ffill",
     "fund_rate_z_14d",
+    "fund_rate_mom_8h",
     "fund_rate_mom_24h",
     "fund_abs_z",
     "fund_abs_z_14d",

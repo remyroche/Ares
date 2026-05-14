@@ -32,6 +32,7 @@ from extreme_price_movements.inference.feature_generator import (
 )
 from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
 from extreme_price_movements.model_loader import load_bucket_params, load_model_bundle
+from extreme_price_movements.path_utils import resolve_mode_file
 from extreme_price_movements.offline_optimisers.params_store import (
     load_inference_candidate_mask_params_per_bucket,
 )
@@ -554,14 +555,15 @@ def _compute_policy_params(feature_df: pd.DataFrame, symbol: str) -> Dict[str, A
 
 
 def _load_best_policy_params(data_root: str, run_id: str) -> Optional[Dict[str, Any]]:
-    for candidate in [
+    candidates = [
         Path(data_root)
         / "artifacts"
         / run_id
         / "policy_params"
         / "best_policy_params.json",
         Path(data_root) / "artifacts" / run_id / "best_policy_params.json",
-    ]:
+    ]
+    for candidate in [resolve_mode_file(path) for path in candidates]:
         if not candidate.exists():
             continue
         try:
@@ -577,7 +579,7 @@ def _load_best_policy_params(data_root: str, run_id: str) -> Optional[Dict[str, 
 
 
 def _load_strategy_acceptation(data_root: str, run_id: str) -> Dict[str, Any]:
-    for candidate in [
+    candidates = [
         Path(data_root)
         / "artifacts"
         / run_id
@@ -589,7 +591,8 @@ def _load_strategy_acceptation(data_root: str, run_id: str) -> Dict[str, Any]:
         / "policy_params"
         / "strategy_final_acceptation.json",
         Path(data_root) / "artifacts" / run_id / "strategy_final_acceptation.json",
-    ]:
+    ]
+    for candidate in [resolve_mode_file(path) for path in candidates]:
         if not candidate.exists():
             continue
         try:

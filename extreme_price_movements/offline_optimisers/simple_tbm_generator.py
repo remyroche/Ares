@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -24,6 +25,27 @@ from extreme_price_movements.offline_optimisers.params_store import (
     normalize_market_mode,
 )
 from extreme_price_movements.strategy_registry import normalize_strategy_horizon
+
+MARKET_MODE_SUFFIXES = {"spot": "_spot", "perps": "_perps"}
+
+
+def _normalise_market_mode(*, perps: bool = False, market_mode: str | None = None) -> str:
+    mode = str(market_mode or "").strip().lower()
+    if mode in {"perp", "perps", "futures"} or perps:
+        return "perps"
+    return "spot"
+
+
+def _mode_path(path: Path, market_mode: str) -> Path:
+    mode = _normalise_market_mode(market_mode=market_mode)
+    return path.with_name(f"{path.stem}_{mode}{path.suffix}")
+
+
+def _existing_mode_input(path: Path, market_mode: str) -> Path:
+    mode_path = _mode_path(path, market_mode)
+    if mode_path.exists():
+        return mode_path
+    return path
 
 
 def _normalize_horizon_token(value: object) -> str:
@@ -139,8 +161,9 @@ def _build_side_horizon_best_params(cell_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _write_inference_candidate_bucket_params(*, market_mode: str = "spot") -> Path:
+    os.environ["EPM_MASK_STRATEGY_SKIP_REPORT_INPUTS"] = "1"
     strategies = load_inference_candidate_mask_params_per_bucket(
-        top_n=2, market_mode=market_mode
+        top_n=20, market_mode=market_mode
     )
     out_path = market_report_path(
         REPORTS_DIR / "inference_candidate_mask_best_params_per_bucket.csv",
@@ -162,9 +185,9 @@ def _write_inference_candidate_bucket_params(*, market_mode: str = "spot") -> Pa
         expected = {("long", 5), ("long", 10), ("short", 5), ("short", 10)}
         missing = expected.difference(set(counts.index.tolist()))
         if missing:
-            raise ValueError(f"Missing top-2 bucket coverage for: {sorted(missing)}")
-        if any(int(v) != 2 for v in counts.to_numpy()):
-            raise ValueError(f"Expected exactly 2 strategies per bucket, got counts={counts.to_dict()}")
+            raise ValueError(f"Missing top-5 bucket coverage for: {sorted(missing)}")
+        if any(int(v) > 20 for v in counts.to_numpy()):
+            raise ValueError(f"Expected at most 20 strategies per bucket, got counts={counts.to_dict()}")
 
     df = df.sort_values(["trade_side", "source_horizon", "adjusted_ranking_score"], ascending=[True, True, False]).reset_index(drop=True)
     df.to_csv(out_path, index=False)

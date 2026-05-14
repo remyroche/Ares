@@ -16,12 +16,21 @@ import hashlib
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import numpy as np
 import optuna
 import pandas as pd
+
+PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+if str(PACKAGE_ROOT) not in sys.path:
+    sys.path.insert(0, str(PACKAGE_ROOT))
+
+from extreme_price_movements.data_store import read_parquet_projected
+from extreme_price_movements.path_utils import resolve_mode_file
+from extreme_price_movements.slice_plan_store import decode_slice_plan_payload
 
 try:
     from extreme_price_movements.utils import tprint
@@ -57,6 +66,8 @@ def append_market_suffix(path: str, market_mode: str | None = None) -> str:
 logger = logging.getLogger(__name__)
 
 # Parameter grids (moved to Optuna suggest variables directly below)
+MARKET_MODE_SUFFIXES = {"spot": "_spot", "perps": "_perp"}
+LEGACY_MARKET_SUFFIXES = ("_spot", "_perps", "_perp")
 REPORTING_POLICY_RANK_THRESHOLD = 0.85
 REPORTING_POLICY_LABEL = "top_15"
 DEFAULT_FORWARD_BARS = 96
@@ -89,7 +100,7 @@ TRAILING_CLUSTER_FEATURE_RANGES: Dict[str, Tuple[float, float]] = {
     "giveback_beta": (0.3, 0.95),
 }
 STAGE2_CLUSTER_FEATURE_RANGES: Dict[str, Tuple[float, float]] = {
-    "sl_mult": (0.5, 3.0),
+    "sl_mult": (0.5, 3.5),
     "capital_protect_mfe_mult": (0.0, 3.0),
     "capital_protect_regression_frac": (0.0, 1.0),
     "adverse_exit_min_mae_atr": (ADVERSE_EXIT_MIN_MAE_ATR_FLOOR, 3.0),
@@ -134,6 +145,9 @@ DEPLOYMENT_MAX_CONCURRENT_PER_STRATEGY = max(
 SIMPLE_DISCOVERY_SL_MULTS = (0.8, 1.0, 1.2, 1.5)
 SIMPLE_DISCOVERY_TP_MULTS = (1.0, 1.5, 2.0, 2.5)
 SIMPLE_DISCOVERY_SIZE_POWER = 1.0
+SIMPLE_DISCOVERY_ROUND_TRIP_COST_PCT = float(
+    os.environ.get("EPM_POLICY_STAGE_A_ROUND_TRIP_COST_PCT", "0.007")
+)
 SIMPLE_DISCOVERY_LOCAL_BAND_WIDTH = 0.02
 SIMPLE_DISCOVERY_CONFIRMATION_BANDS = 5
 SIMPLE_DISCOVERY_CONFIRMATION_MIN_POSITIVE = 4
@@ -146,6 +160,42 @@ ASSET_DECISIONS = (
     ASSET_DECISION_DOWN_WEIGHT,
     ASSET_DECISION_BLACKLIST,
 )
+
+
+def _normalise_market_mode(market_mode: Optional[str] = None, *, perps: bool = False) -> str:
+    mode = str(market_mode or os.environ.get("EPM_MARKET_MODE", "")).strip().lower()
+    if mode in {"perp", "perps", "futures"} or perps:
+        return "perps"
+    return "spot"
+
+
+def _with_market_suffix(path: str | Path, market_mode: str) -> str:
+    norm = str(path).rstrip("/\\")
+    suffix = MARKET_MODE_SUFFIXES["perps" if market_mode == "perps" else "spot"]
+    for existing in LEGACY_MARKET_SUFFIXES:
+        if norm.endswith(existing):
+            norm = norm[: -len(existing)]
+            break
+    return f"{norm}{suffix}"
+
+
+def _resolve_market_data_root(data_root: str | Path, market_mode: str) -> str:
+    suffixed = Path(_with_market_suffix(data_root, market_mode))
+    if suffixed.exists():
+        return str(suffixed)
+    return str(data_root)
+
+
+def _mode_stem(path: Path, market_mode: str) -> Path:
+    return path.with_name(f"{path.stem}_{market_mode}{path.suffix}")
+
+
+def _write_text_with_mode_alias(path: Path, text: str, market_mode: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    mode_path = _mode_stem(path, market_mode)
+    if mode_path != path:
+        mode_path.write_text(text)
 
 
 def _policy_max_strategies_per_side() -> int:
@@ -1348,6 +1398,15 @@ def discover_deployment_rank_threshold_simple_grid(
     ]
     best["threshold_search"] = {
         "method": "full_policy_rank_grid_simple_tp_sl_iq20_positive_slippage_adjusted_mean_gross_trade",
+        "all_in_execution_cost_assumption_pct": float(
+            SIMPLE_DISCOVERY_ROUND_TRIP_COST_PCT
+        ),
+        "all_in_execution_cost_assumption_note": (
+            "threshold metadata assumption only; includes fees, slippage, spread, "
+            "and execution delay"
+        ),
+        "scoring_round_trip_cost_pct": float(cost_pct * 2.0),
+        "per_side_cost_pct": float(cost_pct),
         "lo": float(lo),
         "hi": float(hi),
         "precision": float(precision),
@@ -2405,6 +2464,60 @@ def _path_take(
     return tuple(arr[idx] for arr in paths)
 
 
+def _fetch_policy_paths(
+    df_subset: pd.DataFrame,
+    ds: Any,
+    *,
+    path_len: int = DEFAULT_FORWARD_BARS,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    n_events = len(df_subset)
+    f_op = np.full((n_events, path_len), np.nan, dtype=np.float32)
+    f_hi = np.full((n_events, path_len), np.nan, dtype=np.float32)
+    f_lo = np.full((n_events, path_len), np.nan, dtype=np.float32)
+    f_cl = np.full((n_events, path_len), np.nan, dtype=np.float32)
+
+    for symbol, group in df_subset.groupby("symbol"):
+        klines = ds.load(symbol)
+        if klines is None or len(klines) == 0:
+            continue
+        klines = klines.reset_index()
+        if "ts" not in klines.columns and "index" in klines.columns:
+            klines = klines.rename(columns={"index": "ts"})
+
+        k_ts = klines["ts"].astype("int64").values // 10**6
+        rel_pos_by_index = {
+            idx: pos for pos, idx in enumerate(df_subset.index.to_numpy())
+        }
+        for df_idx, row in group.iterrows():
+            rel_idx = rel_pos_by_index.get(df_idx)
+            if rel_idx is None:
+                continue
+            event_ts = int(pd.Timestamp(row["timestamp"]).timestamp() * 1000)
+
+            idx_arr = np.searchsorted(k_ts, event_ts)
+            if idx_arr >= len(k_ts):
+                continue
+            end_idx = min(idx_arr + path_len, len(klines))
+            actual_len = end_idx - idx_arr
+            if actual_len <= 0:
+                continue
+            opens = klines["open"].values[idx_arr:end_idx]
+            highs = klines["high"].values[idx_arr:end_idx]
+            lows = klines["low"].values[idx_arr:end_idx]
+            closes = klines["close"].values[idx_arr:end_idx]
+            f_op[rel_idx, :actual_len] = opens
+            f_hi[rel_idx, :actual_len] = highs
+            f_lo[rel_idx, :actual_len] = lows
+            f_cl[rel_idx, :actual_len] = closes
+            if actual_len < path_len:
+                last_close = closes[-1]
+                f_op[rel_idx, actual_len:] = last_close
+                f_hi[rel_idx, actual_len:] = last_close
+                f_lo[rel_idx, actual_len:] = last_close
+                f_cl[rel_idx, actual_len:] = last_close
+    return f_op, f_hi, f_lo, f_cl
+
+
 def _path_extrema_from_policy_paths(
     df_rows: pd.DataFrame,
     paths: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
@@ -2745,7 +2858,7 @@ def _fit_regime_adaptor_from_simple_policy(
     final_size_power: float,
     cost_pct: float,
     deployment_rank_threshold: float,
-    market_mode: str | None = None,
+    market_mode: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     if len(df_policy_all) < 50 or len(trade_idx) < 10:
         return None
@@ -2951,7 +3064,7 @@ def _suggest_stage2_params(
     trailing_stage_params: Dict[str, Any],
 ) -> Dict[str, Any]:
     params = dict(trailing_stage_params)
-    sl_mult = trial.suggest_float("sl_mult", 0.5, 3.0, step=0.1)
+    sl_mult = trial.suggest_float("sl_mult", 0.5, 3.5, step=0.1)
     adverse_mae_frac = trial.suggest_float(
         "adverse_exit_min_mae_sl_frac",
         0.20,
@@ -3032,6 +3145,7 @@ def _trial_metric_summary(metrics: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _policy_objective_scalar(metrics: Dict[str, Any], adv: Dict[str, Any]) -> float:
+    # Optimise deployable economics. Hit/win rate is tracked for diagnostics only.
     avg_std = 0.5 * float(adv.get("w_std", 10.0) or 10.0) + 0.5 * float(
         adv.get("m_std", 10.0) or 10.0
     )
@@ -3742,7 +3856,7 @@ def _load_slice_plan_source_validation(slice_plan_path: Path) -> Dict[str, Any]:
             "reason": "slice_plan_missing",
         }
     try:
-        payload = json.loads(slice_plan_path.read_text())
+        payload = decode_slice_plan_payload(json.loads(slice_plan_path.read_text()))
     except Exception as exc:
         return {
             "slice_plan_present": True,
@@ -3896,7 +4010,7 @@ def _load_policy_stage_view(slice_plan_path: Path) -> Tuple[Dict[str, Any], str]
     if not slice_plan_path.exists():
         return {}, "missing_slice_plan"
     try:
-        payload = json.loads(slice_plan_path.read_text())
+        payload = decode_slice_plan_payload(json.loads(slice_plan_path.read_text()))
     except Exception as exc:
         return {}, f"unreadable_slice_plan:{exc}"
 
@@ -4020,6 +4134,29 @@ def _filter_rows_to_stage_view(
     return out.loc[mask].copy()
 
 
+def _policy_quote_filter(market_mode: str) -> str:
+    default = "USDC" if _normalise_market_mode(market_mode) == "perps" else ""
+    return str(os.environ.get("EPM_POLICY_OOS_QUOTE_FILTER", default) or "").strip().upper()
+
+
+def _filter_policy_quote_rows(df: pd.DataFrame, market_mode: str) -> pd.DataFrame:
+    quote = _policy_quote_filter(market_mode)
+    if not quote or df.empty:
+        return df
+    out = _normalise_policy_input_columns(df)
+    sym_col = _symbol_col(out)
+    if sym_col is None:
+        return out.iloc[0:0].copy()
+    sym = out[sym_col].astype(str).str.upper()
+    mask = (
+        sym.str.endswith(f"/{quote}")
+        | sym.str.endswith(f"_{quote}")
+        | sym.str.endswith(f"-{quote}")
+        | sym.str.endswith(quote)
+    )
+    return out.loc[mask].copy()
+
+
 def _symbol_file_key(symbol: str) -> str:
     return str(symbol).replace("/", "_").replace(":", "_")
 
@@ -4132,7 +4269,28 @@ def _load_label_events_for_strategy(
     # Prefer the shorter horizon used by the current deployed meta model when present.
     preferred = [p for p in matches if p.stem.endswith("_5")]
     path = preferred[0] if preferred else matches[0]
-    return _normalise_policy_input_columns(pd.read_parquet(path))
+    cols = [
+        "__ts__",
+        "__symbol__",
+        "__y_ret__",
+        "__y_bin__",
+        "__y_outcome__",
+        "__barrier_pct__",
+        "__mfe_ret__",
+        "__mae_ret__",
+        "__bars_to_mfe__",
+        "__bars_policy__",
+        "timestamp",
+        "symbol",
+        "return",
+        "y_bin",
+        "exit_code",
+        "barrier_pct",
+        "mfe_ret",
+        "mae_ret",
+        "bars_to_mfe",
+    ]
+    return _normalise_policy_input_columns(read_parquet_projected(path, cols))
 
 
 def _add_default_policy_outcome_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -4163,6 +4321,7 @@ def _generate_policy_predictions_from_models(
     stage_view: Dict[str, Any],
     max_strategies: Optional[int],
     strategy_ids_allowlist: Optional[Set[str]] = None,
+    market_mode: str = "spot",
 ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, str]]:
     """Generate policy-slice predictions using the inference model bundle."""
     from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
@@ -4189,7 +4348,8 @@ def _generate_policy_predictions_from_models(
                 symbols=[],
             )
             label_source = "feature_events_no_labels"
-        events = _filter_rows_to_stage_view(events, stage_view).reset_index(drop=True)
+        events = _filter_rows_to_stage_view(events, stage_view)
+        events = _filter_policy_quote_rows(events, market_mode).reset_index(drop=True)
         if events.empty:
             continue
         events = _add_default_policy_outcome_columns(events)
@@ -4711,13 +4871,10 @@ def run_simple_policy_optimisation(
     max_strategies: Optional[int] = None,
     n_trials: Optional[int] = None,
     strategy_ids: Optional[Sequence[str]] = None,
-    market_mode: str | None = None,
+    market_mode: Optional[str] = None,
 ):
-    data_root = append_market_suffix(data_root, market_mode)
-    market_mode = normalize_market_mode(
-        "perps" if str(data_root).rstrip("/\\").endswith("_perps") else "spot"
-    )
-    os.environ["EPM_MARKET_MODE"] = market_mode
+    market_mode = _normalise_market_mode(market_mode)
+    data_root = _resolve_market_data_root(data_root, market_mode)
     artifacts_root = Path(data_root) / "artifacts"
     if run_id is None:
         candidates = [p for p in artifacts_root.iterdir() if p.is_dir()]
@@ -4777,6 +4934,14 @@ def run_simple_policy_optimisation(
                     stage_name,
                 )
                 continue
+            df = _filter_policy_quote_rows(df, market_mode)
+            if df.empty:
+                logger.info(
+                    "Precomputed meta OOF %s has no rows after policy quote filter %s.",
+                    pq_file,
+                    _policy_quote_filter(market_mode) or "<none>",
+                )
+                continue
             df = _ensure_regime_prediction_context(
                 df,
                 data_root=data_root,
@@ -4803,6 +4968,7 @@ def run_simple_policy_optimisation(
             strategy_ids_allowlist=(
                 strategy_ids_allowlist if strategy_ids_allowlist else None
             ),
+            market_mode=market_mode,
         )
         if not meta_oof:
             logger.error(
@@ -4811,13 +4977,14 @@ def run_simple_policy_optimisation(
             return
         meta_oof = {
             sid: _ensure_regime_prediction_context(
-                frame,
+                _filter_policy_quote_rows(frame, market_mode),
                 data_root=data_root,
                 run_id=run_id,
                 strategy_id=sid,
                 stage_view=stage_view,
             )
             for sid, frame in meta_oof.items()
+            if not _filter_policy_quote_rows(frame, market_mode).empty
         }
 
     n_trials = int(
@@ -4838,6 +5005,7 @@ def run_simple_policy_optimisation(
     strategy_top5_daily_weekly: list[dict[str, Any]] = []
     oos_results_json = {
         "generated_by": "simple_policy_optimiser",
+        "market_mode": market_mode,
         "run_id": run_id,
         "rank_threshold": None,
         "rank_slice": "full_policy_oos_for_threshold_discovery",
@@ -4908,58 +5076,13 @@ def run_simple_policy_optimisation(
         if n_policy < 10:
             continue
 
-        def _fetch_paths(df_subset):
-            n_events = len(df_subset)
-            path_len = DEFAULT_FORWARD_BARS  # 24 hours at 15m resolution
-            f_op = np.full((n_events, path_len), np.nan, dtype=np.float32)
-            f_hi = np.full((n_events, path_len), np.nan, dtype=np.float32)
-            f_lo = np.full((n_events, path_len), np.nan, dtype=np.float32)
-            f_cl = np.full((n_events, path_len), np.nan, dtype=np.float32)
-
-            for symbol, group in df_subset.groupby("symbol"):
-                klines = ds.load(symbol)
-                if klines is None or len(klines) == 0:
-                    continue
-                klines = klines.reset_index()
-                if "ts" not in klines.columns and "index" in klines.columns:
-                    klines = klines.rename(columns={"index": "ts"})
-
-                k_ts = klines["ts"].astype("int64").values // 10**6
-                rel_pos_by_index = {
-                    idx: pos for pos, idx in enumerate(df_subset.index.to_numpy())
-                }
-                for df_idx, row in group.iterrows():
-                    rel_idx = rel_pos_by_index.get(df_idx)
-                    if rel_idx is None:
-                        continue
-                    event_ts = int(pd.Timestamp(row["timestamp"]).timestamp() * 1000)
-
-                    idx_arr = np.searchsorted(k_ts, event_ts)
-                    if idx_arr < len(k_ts):
-                        end_idx = min(idx_arr + path_len, len(k_ts))
-                        actual_len = end_idx - idx_arr
-                        if actual_len > 0:
-                            opens = klines["open"].values[idx_arr:end_idx]
-                            highs = klines["high"].values[idx_arr:end_idx]
-                            lows = klines["low"].values[idx_arr:end_idx]
-                            closes = klines["close"].values[idx_arr:end_idx]
-                            f_op[rel_idx, :actual_len] = opens
-                            f_hi[rel_idx, :actual_len] = highs
-                            f_lo[rel_idx, :actual_len] = lows
-                            f_cl[rel_idx, :actual_len] = closes
-                            if actual_len < path_len:
-                                last_close = closes[-1]
-                                f_op[rel_idx, actual_len:] = last_close
-                                f_hi[rel_idx, actual_len:] = last_close
-                                f_lo[rel_idx, actual_len:] = last_close
-                                f_cl[rel_idx, actual_len:] = last_close
-            return f_op, f_hi, f_lo, f_cl
-
-        all_policy_paths = _fetch_paths(df_policy_all)
+        all_policy_paths = _fetch_policy_paths(df_policy_all, ds)
+        stage_a_round_trip_cost_pct = float(SIMPLE_DISCOVERY_ROUND_TRIP_COST_PCT)
+        stage_a_cost_pct = stage_a_round_trip_cost_pct / 2.0
         deployment_threshold_metrics = discover_deployment_rank_threshold_simple_grid(
             df_policy_all,
             all_policy_paths,
-            cost_pct=cost_pct,
+            cost_pct=stage_a_cost_pct,
             timestamp_col="timestamp",
             symbol_col="symbol",
             side_col="side",
@@ -4982,7 +5105,8 @@ def run_simple_policy_optimisation(
         logger.info(
             "[%s] Stage A threshold discovery selected rank>=%.4f from %s full "
             "policy rows -> %s Stage B optimisation rows. simple_sl=%.2f "
-            "simple_tp=%.2f mean_net_trade=%.6f n_trades=%s",
+            "simple_tp=%.2f mean_net_trade=%.6f n_trades=%s "
+            "stage_a_round_trip_cost=%.4f",
             strategy_id,
             deployment_rank_threshold,
             n_policy,
@@ -4991,6 +5115,7 @@ def run_simple_policy_optimisation(
             float(deployment_threshold_metrics.get("simple_tp_mult", np.nan)),
             float(deployment_threshold_metrics.get("mean_net_trade", np.nan)),
             int(deployment_threshold_metrics.get("n_trades", 0) or 0),
+            stage_a_round_trip_cost_pct,
         )
         if n < 10:
             logger.warning(
@@ -5316,18 +5441,19 @@ def run_simple_policy_optimisation(
     results_json["__cross_strategy_diagnostics__"] = {"ic_table": ic_rows}
 
     output_path = meta_oof_dir.parent / "policy_optimisation.json"
-    with open(output_path, "w") as f:
-        json.dump(_json_safe(results_json), f, indent=4)
+    results_text = json.dumps(_json_safe(results_json), indent=4)
+    _write_text_with_mode_alias(output_path, results_text, market_mode)
     logger.info(f"Saved policy optimisation results to {output_path}")
     oos_output_path = meta_oof_dir.parent / "policy_optimisation_oos_metrics.json"
-    with open(oos_output_path, "w") as f:
-        json.dump(_json_safe(oos_results_json), f, indent=4)
+    oos_text = json.dumps(_json_safe(oos_results_json), indent=4)
+    _write_text_with_mode_alias(oos_output_path, oos_text, market_mode)
     logger.info(f"Saved OOS policy metrics to {oos_output_path}")
 
     deployment_payload = _build_deployment_payload(
         run_id=run_id,
         oos_results_json=oos_results_json,
     )
+    deployment_payload["market_mode"] = market_mode
     policy_params_dir = meta_oof_dir.parent / "policy_params"
     policy_params_dir.mkdir(parents=True, exist_ok=True)
     deployment_text = json.dumps(_json_safe(deployment_payload), indent=2)
@@ -5341,14 +5467,218 @@ def run_simple_policy_optimisation(
         / "deployment"
         / "best_policy_params.json",
     ]:
-        deployment_path.parent.mkdir(parents=True, exist_ok=True)
-        deployment_path.write_text(deployment_text)
+        _write_text_with_mode_alias(deployment_path, deployment_text, market_mode)
         logger.info(f"Saved deployment policy contract to {deployment_path}")
     portfolio_policy_path = policy_params_dir / "portfolio_policy_config.json"
-    portfolio_policy_path.write_text(
-        json.dumps(_json_safe(_build_portfolio_policy_config_payload()), indent=2)
+    _write_text_with_mode_alias(
+        portfolio_policy_path,
+        json.dumps(_json_safe(_build_portfolio_policy_config_payload()), indent=2),
+        market_mode,
     )
     logger.info(f"Saved portfolio policy config to {portfolio_policy_path}")
+
+
+def _policy_params_from_deployment_strategy(
+    strategy: Dict[str, Any],
+    selection_rules: Dict[str, Any],
+) -> Tuple[Dict[str, Any], float, float]:
+    param_keys = (
+        "sl_mult",
+        "trailing_activation_mult",
+        "trailing_power",
+        "trailing_squash_divisor",
+        "giveback_beta",
+        "capital_protect_mfe_mult",
+        "capital_protect_regression_frac",
+        "adverse_exit_enabled",
+        "adverse_exit_min_mae_atr",
+        "adverse_exit_min_speed",
+        "adverse_exit_theta_quantile",
+        "adverse_exit_theta",
+        "adverse_exit_alpha",
+        "adverse_exit_beta",
+        "adverse_exit_delta",
+        "adverse_exit_fast_bars",
+        "adverse_exit_max_mfe_atr",
+    )
+    params = {k: strategy[k] for k in param_keys if k in strategy}
+    max_concurrent = strategy.get(
+        "max_concurrent_trades", selection_rules.get("max_concurrent_per_strategy")
+    )
+    if max_concurrent is not None:
+        params["max_concurrent_trades"] = int(max(1, float(max_concurrent)))
+    size_power = float(strategy.get("best_size_power", 1.0))
+    threshold = float(strategy.get("deployment_rank_threshold", 1.0))
+    return params, size_power, threshold
+
+
+def run_regime_adaptor_only_from_simple_policy(
+    data_root: str,
+    run_id: Optional[str],
+    *,
+    cost_pct: float = 0.0015,
+    strategy_ids: Optional[Sequence[str]] = None,
+    market_mode: Optional[str] = None,
+) -> Dict[str, Any]:
+    market_mode = _normalise_market_mode(market_mode)
+    data_root = _resolve_market_data_root(data_root, market_mode)
+    artifacts_root = Path(data_root) / "artifacts"
+    if run_id is None:
+        candidates = [p for p in artifacts_root.iterdir() if p.is_dir()]
+        if not candidates:
+            logger.error(f"No artifact runs found under {artifacts_root}")
+            return {}
+        run_id = max(candidates, key=lambda p: p.stat().st_mtime).name
+        logger.info(f"No run_id supplied; using latest artifact run {run_id}")
+    run_root = Path(data_root) / "artifacts" / str(run_id)
+    deployment_path = resolve_mode_file(
+        run_root / "simple_policy_optimiser" / "deployment" / "best_policy_params.json",
+        market_mode,
+    )
+    if not deployment_path.exists():
+        deployment_path = resolve_mode_file(
+            run_root / "policy_params" / "best_policy_params.json",
+            market_mode,
+        )
+    if not deployment_path.exists():
+        logger.error("No simple-policy deployment contract found under %s", run_root)
+        return {}
+
+    payload = json.loads(deployment_path.read_text())
+    selection_rules = payload.get("selection_rules", {})
+    allow = set(_expand_strategy_id_allowlist(strategy_ids or []))
+    strategies = [
+        s
+        for s in payload.get("strategies", [])
+        if bool(s.get("selected", True))
+        and (not allow or str(s.get("strategy_id")) in allow)
+    ]
+    if not strategies:
+        logger.warning("No selected simple-policy strategies found in %s", deployment_path)
+        return {}
+
+    from extreme_price_movements.data_store import PartitionedOHLCVStore
+    from extreme_price_movements.inference.parity import calibrated_score_and_threshold
+    from extreme_price_movements.simple_position_sizer import load_calibration_curves
+
+    slice_plan_path = run_root / "slices" / "slice_plan.json"
+    stage_view, stage_name = _load_policy_stage_view(slice_plan_path)
+    source_validation = _load_slice_plan_source_validation(slice_plan_path)
+    meta_oof_dir = run_root / "meta_oof"
+    ds = PartitionedOHLCVStore(data_root, timeframe="15m")
+    calibration_data = load_calibration_curves(data_root, str(run_id))
+    summaries: Dict[str, Any] = {
+        "generated_by": "simple_policy_regime_adaptor_only",
+        "market_mode": market_mode,
+        "run_id": str(run_id),
+        "deployment_policy_path": str(deployment_path),
+        "stage": stage_name,
+        "source_validation": source_validation,
+        "strategies": {},
+    }
+
+    for strategy in strategies:
+        strategy_id = str(strategy.get("strategy_id"))
+        meta_path = meta_oof_dir / f"meta_oof_{strategy_id}_clf.parquet"
+        if not meta_path.exists():
+            logger.warning("[%s] Missing meta OOF parquet %s", strategy_id, meta_path)
+            continue
+        df = pd.read_parquet(meta_path)
+        df = _filter_rows_to_stage_view(df, stage_view)
+        if df.empty:
+            logger.warning("[%s] No rows after policy slice filter.", strategy_id)
+            continue
+        df = _ensure_regime_prediction_context(
+            df,
+            data_root=data_root,
+            run_id=str(run_id),
+            strategy_id=strategy_id,
+            stage_view=stage_view,
+        )
+        if "clf" not in df.columns and "oof_p_tp" in df.columns:
+            df["clf"] = df["oof_p_tp"]
+        elif "clf" not in df.columns and "oof_pred" in df.columns:
+            df["clf"] = df["oof_pred"]
+        if "clf" not in df.columns:
+            logger.warning("[%s] Missing meta score column; skipped.", strategy_id)
+            continue
+        df["raw_meta_prediction"] = pd.to_numeric(df["clf"], errors="coerce")
+        df["calibrated_score"] = df["raw_meta_prediction"].map(
+            lambda raw_score: (
+                calibrated_score_and_threshold(
+                    raw_score=float(raw_score),
+                    strategy_id=strategy_id,
+                    calibration_data=calibration_data,
+                    default_threshold=1.0,
+                )[0]
+                if pd.notna(raw_score)
+                else np.nan
+            )
+        )
+        df["rank_pct"] = df["calibrated_score"].rank(method="max", pct=True)
+        df["strategy_id"] = strategy_id
+        if "side" not in df.columns:
+            df["side"] = -1 if strategy_id.startswith("short") else 1
+        df_policy_all = df.dropna(
+            subset=["timestamp", "symbol", "rank_pct", "calibrated_score"]
+        ).copy()
+        df_policy_all = df_policy_all.sort_values("timestamp").reset_index(drop=True)
+        if len(df_policy_all) < 50:
+            logger.warning("[%s] Too few policy rows: %s", strategy_id, len(df_policy_all))
+            continue
+        final_params, final_size_power, deployment_rank_threshold = (
+            _policy_params_from_deployment_strategy(strategy, selection_rules)
+        )
+        trade_idx = np.flatnonzero(
+            df_policy_all["rank_pct"].to_numpy(dtype=np.float32)
+            >= float(deployment_rank_threshold)
+        )
+        if len(trade_idx) < 10:
+            logger.warning(
+                "[%s] Too few rows above saved deployment threshold %.4f: %s",
+                strategy_id,
+                deployment_rank_threshold,
+                len(trade_idx),
+            )
+            continue
+        logger.info(
+            "[%s] Running regime adaptor only from saved simple policy: rows=%s "
+            "rank_threshold=%.4f candidates=%s params_hash=%s",
+            strategy_id,
+            len(df_policy_all),
+            deployment_rank_threshold,
+            len(trade_idx),
+            strategy.get("params_hash", ""),
+        )
+        all_policy_paths = _fetch_policy_paths(df_policy_all, ds)
+        summary = _fit_regime_adaptor_from_simple_policy(
+            data_root=data_root,
+            run_id=str(run_id),
+            strategy_id=strategy_id,
+            df_policy_all=df_policy_all,
+            all_policy_paths=all_policy_paths,
+            trade_idx=trade_idx,
+            final_params=final_params,
+            final_size_power=final_size_power,
+            cost_pct=cost_pct,
+            deployment_rank_threshold=deployment_rank_threshold,
+            market_mode=market_mode,
+        )
+        summaries["strategies"][strategy_id] = {
+            "regime_adaptor": summary,
+            "policy_rows": int(len(df_policy_all)),
+            "threshold_candidate_rows": int(len(trade_idx)),
+            "deployment_rank_threshold": float(deployment_rank_threshold),
+            "policy_params": _json_safe(final_params),
+            "best_size_power": float(final_size_power),
+        }
+
+    out_path = run_root / "simple_policy_optimiser" / "regime_adaptor_only_summary.json"
+    _write_text_with_mode_alias(
+        out_path, json.dumps(_json_safe(summaries), indent=2), market_mode
+    )
+    logger.info("Saved regime-adaptor-only summary to %s", out_path)
+    return summaries
 
 
 if __name__ == "__main__":
@@ -5370,13 +5700,31 @@ if __name__ == "__main__":
     parser.add_argument("--max-strategies", type=int, default=None)
     parser.add_argument("--n-trials", type=int, default=None)
     parser.add_argument("--strategy-ids", type=str, default="")
+    parser.add_argument("--regime-only", action="store_true")
+    parser.add_argument(
+        "--perps",
+        action="store_true",
+        help="Use *_perps data/features and write *_perps outputs. Default is *_spot.",
+    )
     args = parser.parse_args()
 
-    run_simple_policy_optimisation(
-        args.data_root,
-        args.run_id,
-        max_strategies=args.max_strategies,
-        n_trials=args.n_trials,
-        strategy_ids=[s.strip() for s in args.strategy_ids.split(",") if s.strip()],
-        market_mode="perps" if args.perps else args.market_mode,
+    cli_strategy_ids = [s.strip() for s in args.strategy_ids.split(",") if s.strip()]
+    cli_market_mode = _normalise_market_mode(
+        "perps" if args.perps else args.market_mode
     )
+    if args.regime_only:
+        run_regime_adaptor_only_from_simple_policy(
+            args.data_root,
+            args.run_id,
+            strategy_ids=cli_strategy_ids,
+            market_mode=cli_market_mode,
+        )
+    else:
+        run_simple_policy_optimisation(
+            args.data_root,
+            args.run_id,
+            max_strategies=args.max_strategies,
+            n_trials=args.n_trials,
+            strategy_ids=cli_strategy_ids,
+            market_mode=cli_market_mode,
+        )

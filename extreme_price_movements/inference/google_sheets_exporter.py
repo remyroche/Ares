@@ -15,6 +15,16 @@ from extreme_price_movements.inference.trade_logger import TradeLogger
 from extreme_price_movements.utils import tprint
 
 
+DEFAULT_GOOGLE_SHEETS_DEPLOYMENT_ID = (
+    "AKfycby4gOibAc7K3iAepbaxqU-2MQXaGsaOVkW_MfcihxxOGW3aKOib5fSvR386u8u519dUqw"
+)
+DEFAULT_GOOGLE_SHEETS_WEBHOOK_URL = (
+    "https://script.google.com/macros/s/"
+    f"{DEFAULT_GOOGLE_SHEETS_DEPLOYMENT_ID}/exec"
+)
+DEFAULT_GOOGLE_SHEETS_WEBHOOK_SECRET_NAME = "WEBHOOK_SECRET"
+DEFAULT_GOOGLE_SHEETS_WEBHOOK_SECRET = "Aground3-Onshore5-Rumble0-Handwash4-Dinner8"
+
 OPEN_TRADES_SHEET = "Open Trades"
 CLOSED_TRADES_SHEET = "Closed Trades"
 STRATEGY_METRICS_SHEET = "Strategy Metrics"
@@ -581,6 +591,11 @@ class GoogleSheetsTradeExporter:
     """Push trade reporting tables to a Google spreadsheet through Apps Script."""
 
     spreadsheet_id: str
+    credentials_path: Optional[str] = None
+    service_account_json: Optional[str] = None
+    webhook_url: Optional[str] = None
+    webhook_secret_name: str = DEFAULT_GOOGLE_SHEETS_WEBHOOK_SECRET_NAME
+    webhook_secret: Optional[str] = None
     enabled: bool = True
     min_interval_seconds: float = 300.0
     timeout_seconds: float = 10.0
@@ -595,13 +610,18 @@ class GoogleSheetsTradeExporter:
             config.get("google_spreadsheet_id")
             or os.environ.get("EPM_GOOGLE_SPREADSHEET_ID", "")
         ).strip()
+        webhook_url = str(
+            config.get("google_sheets_webhook_url")
+            or os.environ.get("EPM_GOOGLE_SHEETS_WEBHOOK_URL", "")
+            or DEFAULT_GOOGLE_SHEETS_WEBHOOK_URL
+        ).strip()
         enabled_raw = (
             config.get("google_sheets_export_enabled")
             if "google_sheets_export_enabled" in config
             else os.environ.get("EPM_GOOGLE_SHEETS_ENABLED")
         )
         if enabled_raw is None or str(enabled_raw).strip() == "":
-            enabled = bool(spreadsheet_id)
+            enabled = bool(spreadsheet_id or webhook_url)
         else:
             enabled = str(enabled_raw).strip().lower() not in {
                 "0",
@@ -610,15 +630,38 @@ class GoogleSheetsTradeExporter:
                 "off",
                 "disabled",
             }
-        if not enabled and not spreadsheet_id:
+        if not enabled and not spreadsheet_id and not webhook_url:
             return None
-        if not spreadsheet_id:
-            tprint(
-                "Google Sheets export enabled but EPM_GOOGLE_SPREADSHEET_ID is missing."
-            )
+        if not spreadsheet_id and not webhook_url:
+            tprint("Google Sheets export enabled but EPM_GOOGLE_SPREADSHEET_ID is missing.")
             return None
         return cls(
             spreadsheet_id=spreadsheet_id,
+            credentials_path=str(
+                config.get("google_application_credentials")
+                or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+            )
+            or None,
+            service_account_json=str(
+                config.get("google_service_account_json")
+                or os.environ.get("EPM_GOOGLE_SERVICE_ACCOUNT_JSON", "")
+            )
+            or None,
+            webhook_url=str(
+                webhook_url
+            )
+            or None,
+            webhook_secret_name=str(
+                config.get("google_sheets_webhook_secret_name")
+                or os.environ.get("EPM_GOOGLE_SHEETS_WEBHOOK_SECRET_NAME", "")
+                or DEFAULT_GOOGLE_SHEETS_WEBHOOK_SECRET_NAME
+            ),
+            webhook_secret=str(
+                config.get("google_sheets_webhook_secret")
+                or os.environ.get("EPM_GOOGLE_SHEETS_WEBHOOK_SECRET", "")
+                or DEFAULT_GOOGLE_SHEETS_WEBHOOK_SECRET
+            )
+            or None,
             enabled=enabled,
             min_interval_seconds=float(
                 config.get(
@@ -637,6 +680,26 @@ class GoogleSheetsTradeExporter:
             ),
         )
 
+    def _export_tables_webhook(self, tables: Dict[str, pd.DataFrame]) -> None:
+        if not self.webhook_url:
+            raise RuntimeError("Google Sheets webhook URL is missing.")
+        payload = {
+            "deployment_id": DEFAULT_GOOGLE_SHEETS_DEPLOYMENT_ID,
+            "sheets": {
+                name: _stringify_frame(df)
+                for name, df in tables.items()
+            },
+        }
+        if self.webhook_secret and self.webhook_secret_name:
+            payload[str(self.webhook_secret_name)] = self.webhook_secret
+            payload["webhook_secret"] = self.webhook_secret
+        response = requests.post(
+            self.webhook_url,
+            json=payload,
+            timeout=self.timeout_seconds,
+        )
+        response.raise_for_status()
+
     def should_export(self, *, force: bool = False) -> bool:
         if not self.enabled:
             if not self._warned_disabled:
@@ -654,49 +717,25 @@ class GoogleSheetsTradeExporter:
         if not self.should_export(force=force):
             return False
 
-        webhook_url = os.getenv(self.webhook_url_env)
-        webhook_secret = os.getenv(self.webhook_secret_env)
-        if not webhook_url:
-            tprint(f"Google Sheets export missing env var: {self.webhook_url_env}")
-            return False
-        if not webhook_secret:
-            tprint(f"Google Sheets export missing env var: {self.webhook_secret_env}")
-            return False
-
-        payload = {
-            "secret": webhook_secret,
-            "sheet_id": self.spreadsheet_id,
-            "tables": {name: _stringify_frame(df) for name, df in tables.items()},
-        }
         try:
-            response = requests.post(
-                webhook_url,
-                json=payload,
-                timeout=float(self.timeout_seconds),
-            )
-            response.raise_for_status()
-        except requests.RequestException as exc:
-            tprint(f"Google Sheets trade export webhook failed: {exc}")
-            return False
-
-        try:
-            result = response.json()
-        except ValueError:
-            tprint(
-                "Google Sheets trade export webhook returned non-JSON response: "
-                f"{response.text[:500]}"
-            )
-            return False
-
-        if result.get("ok") is True:
+            if self.webhook_url:
+                self._export_tables_webhook(tables)
+            else:
+                self._ensure_sheets(tables.keys())
+                for sheet_name, df in tables.items():
+                    self._update_sheet(sheet_name, df)
             self._last_export_monotonic = time.monotonic()
             tprint(
                 "Google Sheets trade export complete: "
                 + ", ".join(f"{name}={len(df)}" for name, df in tables.items())
             )
             return True
-
-        tprint(f"Google Sheets trade export rejected by webhook: {result}")
+        except requests.RequestException as exc:
+            tprint(f"Google Sheets trade export failed: {exc}")
+            return False
+        except Exception as exc:
+            tprint(f"Google Sheets trade export failed: {exc}")
+            return False
         return False
 
     def export_trade_logger(

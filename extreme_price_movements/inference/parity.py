@@ -19,6 +19,7 @@ from extreme_price_movements.simple_position_sizer import (
     calibrate_score,
     load_calibration_contract,
 )
+from extreme_price_movements.path_utils import mode_file_candidates
 from extreme_price_movements.utils import tprint
 
 LIVE_UNAVAILABLE_FEATURES: Set[str] = {
@@ -302,6 +303,7 @@ def load_strategy_for_inference_filter(
         base / "strategy_for_inference.json",
         base / "strategy_for_inference.csv",
     ]
+    paths = [candidate for path in paths for candidate in mode_file_candidates(path)]
 
     for path in paths:
         if not path.exists():
@@ -350,6 +352,7 @@ def load_strategy_asset_exclusion_filter(
         base / "ridge_sizer" / "strategy_for_inference.json",
         base / "strategy_for_inference.json",
     ]
+    paths = [candidate for path in paths for candidate in mode_file_candidates(path)]
     exclusions: Dict[str, Set[str]] = {}
     for path in paths:
         if not path.exists():
@@ -428,6 +431,7 @@ def load_policy_params_by_strategy(
         / "best_policy_params.json",
         Path(data_root) / "artifacts" / run_id / "best_policy_params.json",
     ]
+    paths = [candidate for path in paths for candidate in mode_file_candidates(path)]
     out: Dict[str, Dict[str, Any]] = {}
     for path in paths:
         if not path.exists():

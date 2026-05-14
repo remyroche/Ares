@@ -25,6 +25,7 @@ from extreme_price_movements.intraday_crypto_library import (
 )
 from extreme_price_movements.perp_features import (
     compute_features as compute_perp_features,
+    get_perp_feature_names,
 )
 from extreme_price_movements.time_utils import ensure_utc
 from extreme_price_movements.utils import tprint
@@ -47,6 +48,49 @@ EPS = 1e-12
 _PERP_FEATURE_COLLISION_RENAMES = {
     "ret1h": "ret1h_perp",
 }
+_PERP_NATIVE_TRANSFORM_SKIP_KEYS = {
+    _PERP_FEATURE_COLLISION_RENAMES.get(k, k) for k in get_perp_feature_names()
+}
+_PERP_NATIVE_TRANSFORM_SKIP_KEYS.update(
+    {
+        "mark_price",
+        "index_price",
+        "premium_index",
+        "mark_index_basis",
+        "mark_index_basis_z",
+        "mark_perp_dislocation",
+        "perp_index_basis",
+        "perp_index_basis_z",
+        "premium_index_z",
+        "premium_index_mom_8h",
+        "fund_rate",
+        "funding_rate",
+        "fund_rate_ffill",
+        "fund_rate_z_14d",
+        "fund_rate_mom_8h",
+        "fund_rate_mom_24h",
+        "fund_sign_persistence_3",
+        "fund_abs_z",
+        "basis_pct",
+        "basis_pct_z",
+        "basis_mom_4h",
+        "basis_fund_div_z",
+        "basis_dispersion_basket",
+        "basis_stretch",
+        "basis_funding_div",
+        "basis_funding_div_2h",
+        "basis_funding_div_4h",
+        "basis_funding_div_8h",
+        "spot_available",
+        "spot_perp_return_agreement_4h",
+        "funding_up_agree",
+        "basis_up_agree",
+        "oi_up_agree",
+        "leverage_build",
+        "unwind",
+        "squeeze_prob",
+    }
+)
 
 _INTRADAY_PERSISTED_KEY_SET = set(PERSISTED_INTRADAY_LIBRARY_COLUMNS)
 
@@ -2989,9 +3033,17 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         np.float32
     )
     feats["vov_fast_slow_ratio"] = (vov_fast / (vov_slow + 1e-12)).astype(np.float32)
+    vov_mean_20 = ff.numba_rolling_mean(vov_fast, 20)
+    feats["vol_of_vol"] = (
+        (ff.numba_rolling_std(vov_fast, 20) / (vov_mean_20.abs() + 1e-12))
+        .shift(1)
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+        .astype(np.float32)
+    )
     relu_vov_z = feats["vol_z"].clip(lower=0)
     feats["vov_interaction"] = (feats["vol_z"] * relu_vov_z).astype(np.float32)
-    del vov_fast, vov_slow, q25_20, q75_20, relu_vov_z
+    del vov_fast, vov_slow, vov_mean_20, q25_20, q75_20, relu_vov_z
 
     feats["accel_5h"] = (feats["ret5h"] - (feats["ret10h"] / 2.0)).astype(np.float32)
     feats["dlog_vol_5h"] = (v - v.shift(5)).astype(np.float32)
@@ -3610,6 +3662,178 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         .clip(0, 6)
         .astype(np.float32)
     )
+    hours_since_last = _broadcast_series(
+        pd.Series(np.mod(np.asarray(idx.hour, dtype=np.float32), 8.0), index=idx)
+    )
+    feats["fund_hours_to_next"] = hours_to_next.astype(np.float32)
+    feats["fund_hours_since_last"] = hours_since_last.astype(np.float32)
+    feats["fund_next_event_proximity_5h"] = (
+        (1.0 - (hours_to_next / 5.0)).clip(0.0, 1.0).astype(np.float32)
+    )
+    feats["fund_next_event_proximity_10h"] = (
+        (1.0 - (hours_to_next / 10.0)).clip(0.0, 1.0).astype(np.float32)
+    )
+
+    mark_gap = feats.get("mark_perp_dislocation", _zero_panel()).astype(np.float32)
+    mark_index_gap = feats.get("mark_index_basis", _zero_panel()).astype(np.float32)
+    premium_ref = feats.get("premium_index", _zero_panel()).astype(np.float32)
+    premium_phi_24 = _rolling_autocorr_df(premium_ref.fillna(0.0), 24)
+    premium_phi_safe = premium_phi_24.clip(lower=1e-4, upper=0.999)
+    premium_halflife = (
+        (-np.log(2.0) / np.log(premium_phi_safe))
+        .where(premium_phi_24 > 0.0, 0.0)
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+        .clip(0.0, 72.0)
+        .astype(np.float32)
+    )
+    feats["premium_mean_reversion_halflife_24h"] = premium_halflife
+
+    leverage = max(1.01, float(cfg.get("perp_feature_assumed_leverage", 3.0)))
+    maint_margin = max(0.0, float(cfg.get("perp_feature_maintenance_margin_frac", 0.005)))
+    round_fee_frac = max(0.0, float(cfg.get("perp_feature_round_fee_frac", 0.003)))
+    liq_move = max(0.01, (1.0 / leverage) - maint_margin - round_fee_frac)
+    sl_proxy = np.maximum(
+        raw_atr_pct.astype(np.float32),
+        float(cfg.get("perp_feature_min_stop_frac", 0.003)),
+    )
+    liq_wall_panel = pd.DataFrame(
+        liq_move, index=idx, columns=cols, dtype=np.float32
+    )
+    feats["liq_buffer_long_mark_frac"] = (
+        (liq_wall_panel + mark_gap).clip(0.0, 1.0).astype(np.float32)
+    )
+    feats["liq_buffer_short_mark_frac"] = (
+        (liq_wall_panel - mark_gap).clip(0.0, 1.0).astype(np.float32)
+    )
+    feats["liq_buffer_atr"] = (
+        (liq_wall_panel / (raw_atr_pct.abs() + eps))
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+        .clip(0.0, 100.0)
+        .astype(np.float32)
+    )
+    feats["liq_stop_safety_long_atr"] = (
+        ((feats["liq_buffer_long_mark_frac"] - 3.0 * sl_proxy) / (raw_atr_pct.abs() + eps))
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+        .clip(-100.0, 100.0)
+        .astype(np.float32)
+    )
+    feats["liq_stop_safety_short_atr"] = (
+        ((feats["liq_buffer_short_mark_frac"] - 3.0 * sl_proxy) / (raw_atr_pct.abs() + eps))
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+        .clip(-100.0, 100.0)
+        .astype(np.float32)
+    )
+
+    prior_high_24 = h_raw.shift(1).rolling(24, min_periods=6).max()
+    prior_low_24 = l_raw.shift(1).rolling(24, min_periods=6).min()
+    failed_breakout_up = (
+        ((h_raw > prior_high_24) & (c_raw < prior_high_24))
+        .fillna(False)
+        .astype(np.float32)
+    )
+    failed_breakdown = (
+        ((l_raw < prior_low_24) & (c_raw > prior_low_24))
+        .fillna(False)
+        .astype(np.float32)
+    )
+    vol_expansion_proxy = feats.get("vol_expansion_ratio", _zero_panel()).astype(
+        np.float32
+    )
+    fund_sign = np.sign(feats["fund_rate"]).astype(np.float32)
+    fund_flip = (
+        (fund_sign * fund_sign.shift(1) < 0.0).astype(np.float32).fillna(0.0)
+    )
+    pos_funding_persistence = feats["fund_sign_persistence_24h"].clip(0.0, 1.0)
+    neg_funding_persistence = (-feats["fund_sign_persistence_24h"]).clip(0.0, 1.0)
+
+    for _h in (5, 10):
+        ret_h = feats.get(f"ret{_h}h", feats["ret1h"].rolling(_h, min_periods=1).sum())
+        proximity = feats[f"fund_next_event_proximity_{_h}h"]
+        post_proximity = (1.0 - (hours_since_last / float(_h))).clip(0.0, 1.0)
+        carry_h = feats["fund_rate"] * (float(_h) / 8.0)
+
+        feats[f"fund_pre_drift_{_h}h"] = (
+            (ret_h * fund_sign * proximity).clip(-1.0, 1.0).astype(np.float32)
+        )
+        feats[f"fund_post_reversal_{_h}h"] = (
+            (-ret_h * fund_sign * post_proximity).clip(-1.0, 1.0).astype(np.float32)
+        )
+        feats[f"fund_ret_cond_sign_{_h}h"] = (
+            (ret_h * fund_sign).clip(-1.0, 1.0).astype(np.float32)
+        )
+        feats[f"fund_payment_pressure_{_h}h"] = (
+            (feats["fund_abs_z_14d"] * proximity).clip(0.0, 6.0).astype(np.float32)
+        )
+        feats[f"mark_gap_vol_{_h}h"] = (
+            mark_gap.rolling(_h, min_periods=max(2, _h // 2))
+            .std(ddof=0)
+            .fillna(0.0)
+            .clip(0.0, 0.10)
+            .astype(np.float32)
+        )
+        feats[f"premium_expansion_speed_{_h}h"] = (
+            _batch_roll_zscore(premium_ref.diff(_h), 14 * 24)
+            .clip(-6.0, 6.0)
+            .astype(np.float32)
+        )
+        feats[f"mark_trigger_risk_{_h}h"] = (
+            ((mark_gap.abs() + mark_index_gap.abs()) / (raw_atr_pct.abs() + eps))
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(0.0)
+            .clip(0.0, 50.0)
+            .astype(np.float32)
+        )
+        feats[f"carry_adj_ret_{_h}h"] = (
+            (ret_h - carry_h).clip(-1.0, 1.0).astype(np.float32)
+        )
+        feats[f"carry_adj_short_ret_{_h}h"] = (
+            ((-ret_h) + carry_h).clip(-1.0, 1.0).astype(np.float32)
+        )
+        basis_mom_h = feats["basis_pct"].diff(_h).fillna(0.0)
+        feats[f"basis_adjusted_trend_{_h}h"] = (
+            (ret_h - basis_mom_h).clip(-1.0, 1.0).astype(np.float32)
+        )
+        feats[f"funding_crowded_mom_exhaustion_{_h}h"] = (
+            (
+                feats["fund_abs_z_14d"].clip(0.0, 6.0)
+                * (-(ret_h * fund_sign)).clip(lower=0.0)
+            )
+            .clip(0.0, 6.0)
+            .astype(np.float32)
+        )
+        feats[f"fund_high_neg_mom_{_h}h"] = (
+            (feats["fund_rate_z_14d"].clip(lower=0.0) * (-ret_h).clip(lower=0.0))
+            .clip(0.0, 6.0)
+            .astype(np.float32)
+        )
+        feats[f"persistent_pos_funding_failed_breakout_{_h}h"] = (
+            (
+                pos_funding_persistence
+                * failed_breakout_up.rolling(_h, min_periods=1).max()
+            )
+            .clip(0.0, 1.0)
+            .astype(np.float32)
+        )
+        feats[f"persistent_neg_funding_failed_breakdown_{_h}h"] = (
+            (
+                neg_funding_persistence
+                * failed_breakdown.rolling(_h, min_periods=1).max()
+            )
+            .clip(0.0, 1.0)
+            .astype(np.float32)
+        )
+        feats[f"fund_flip_x_vol_expansion_{_h}h"] = (
+            (
+                fund_flip.rolling(_h, min_periods=1).max()
+                * vol_expansion_proxy.clip(0.0, 10.0)
+            )
+            .clip(0.0, 10.0)
+            .astype(np.float32)
+        )
 
     feats["ob_top_liquidity_usd_z"] = _batch_roll_zscore(
         np.log1p(close_panel * (feats["ob_imb_l1"].abs() + 1.0)), 24 * 7
@@ -6479,6 +6703,10 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         "cos_hod",
         "sin_dow",
         "cos_dow",
+        "hour_sin",
+        "hour_cos",
+        "dow_sin",
+        "dow_cos",
         "range_24h_pct",
         "range_12h_pct",
         "volatility_zscore",
@@ -6510,6 +6738,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         "dist_ema_fast_resid",
         "trend_pct_resid",
     }
+    skip_transform_set.update(k for k in _PERP_NATIVE_TRANSFORM_SKIP_KEYS if k in feats)
 
     position_sizer_keys = {
         "ATR_spike_ratio",

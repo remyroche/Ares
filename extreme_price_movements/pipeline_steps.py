@@ -31,6 +31,7 @@ from extreme_price_movements.data_store import (
     save_features,
     to_panel,
 )
+from extreme_price_movements.path_utils import resolve_mode_file
 from extreme_price_movements.engine import (
     _build_side_score_df,
     generate_hourly_signals,
@@ -60,13 +61,30 @@ from extreme_price_movements.offline_optimisers.params_store import (
 from extreme_price_movements.pnl import CostModel, trade_return_net
 from extreme_price_movements.pnl_asserts import assert_pos_w, assert_units
 from extreme_price_movements.position_sizer.runtime import load_ev_decomposition_bundle
-from extreme_price_movements.reports.bucket_report import (
-    report_base_training,
-    report_labels,
-    report_meta_training,
-    report_optimise,
-    report_ridge_sizer,
-)
+try:
+    from extreme_price_movements.reports.bucket_report import (
+        report_base_training,
+        report_labels,
+        report_meta_training,
+        report_optimise,
+        report_ridge_sizer,
+    )
+except ModuleNotFoundError:
+
+    def report_base_training(*args, **kwargs):
+        return None
+
+    def report_labels(*args, **kwargs):
+        return None
+
+    def report_meta_training(*args, **kwargs):
+        return None
+
+    def report_optimise(*args, **kwargs):
+        return None
+
+    def report_ridge_sizer(*args, **kwargs):
+        return None
 
 try:
     from extreme_price_movements.reports.report_generator import (
@@ -792,6 +810,113 @@ _DISABLED_PIPELINE_FEATURE_KEYS: tuple[str, ...] = (
     "base_model_margin",
     "base_model_abs_error_roll20",
 )
+RAW_FEATURE_SCHEMA_UNAVAILABLE_KEYS: tuple[str, ...] = (
+    # Listed in legacy/runtime feature configs, but not emitted as raw hourly
+    # feature-cache columns by compute_features_hourly().
+    "ATR_ratio_short_long",
+    "ATR_spike_ratio",
+    "S",
+    "abs_mkt_ret24h_z",
+    "atr_expansion_z",
+    "bar_direction_entropy",
+    "bidirectional_range_ratio",
+    "blowoff_risk_surprise",
+    "close_location_in_bar",
+    "close_position_in_range",
+    "coherence_24_z",
+    "dist_ema_fast_resid",
+    "dist_ema_fast_z",
+    "dist_vwap_norm_z",
+    "dist_vwap_resid",
+    "distance_to_local_high",
+    "distance_to_local_low",
+    "effort_gate",
+    "excess_6h_z",
+    "exh_qual_surprise",
+    "flow_persistence_z",
+    "gap_zscore",
+    "hurst_proxy_24",
+    "impulse_ratio_12",
+    "mae_2h",
+    "mfe_2h",
+    "micro_range_decay",
+    "mkt_rv_pct",
+    "mtf_div_mag",
+    "mtf_divergence",
+    "overext_surprise",
+    "range_decay",
+    "range_zscore",
+    "realized_vol_15m_realized_vol_2h",
+    "ret_max",
+    "ret_mean",
+    "ret_min",
+    "ret_pct5_24h",
+    "ret_pct95_24h",
+    "rsi_z",
+    "rv_max",
+    "rv_mean",
+    "rv_min",
+    "short_vol_state_over_long_vol_state",
+    "tail_risk_score",
+    "vol_shock_z",
+    "vol_state_1h",
+    "vol_z_z",
+    "volume_surprise_vs_state",
+)
+RAW_FEATURE_STRUCTURALLY_CONSTANT_KEYS: tuple[str, ...] = (
+    # These require true book-side depth/wall data or post-training prediction
+    # state. With the hourly OHLCV/taker-flow proxy they become all-zero
+    # columns, so keeping them in the raw cache makes the perps health report
+    # look much healthier than the usable signal really is.
+    "ffd_ctx_slope_04_12",
+    "ffd_ctx_slope_04_24",
+    "ffd_slope_04_12",
+    "ffd_slope_04_24",
+    "kf_snr_est",
+    "meta_abs_net_x_breakout",
+    "meta_abs_net_x_drawext",
+    "meta_abs_net_x_vov_ratio",
+    "meta_alignment",
+    "meta_signal_x_accel",
+    "mr_qual",
+    "ob_abs_flow_vs_book_l20",
+    "ob_book_absorption_score",
+    "ob_book_pressure_l10",
+    "ob_depth_decay_asym_l20",
+    "ob_flow_notional_imbalance_1h",
+    "ob_flow_notional_skew_z_24h",
+    "ob_flow_qty_imbalance_1h",
+    "ob_flow_toxicity_1h",
+    "ob_flow_vs_book_l10",
+    "ob_flow_vs_book_l20",
+    "ob_imb_accel_4",
+    "ob_imb_chg_1",
+    "ob_imb_near_far_delta",
+    "ob_l10_imbalance",
+    "ob_l1_imbalance",
+    "ob_l20_imbalance",
+    "ob_pressure_x_ret4h_sign",
+    "ob_trade_flow_imbalance_1h",
+    "ob_update_gap_flag",
+    "ob_wall_imb_l20",
+    "ob_wimb_l10",
+    "ob_wimb_l20",
+    "p_cusum_high",
+    "p_liq_low",
+    "p_vol_high",
+    "retest_accept",
+    "skew_12",
+    "skew_24",
+    "stage_mr",
+    "stage_tf",
+    "tf_qual",
+    "trail_act_vol_units",
+    "xasset_asset_minus_basket_ob_pressure",
+    "xasset_asset_minus_mkt_ob_pressure",
+    "xasset_btc_ob_pressure",
+    "xasset_eth_ob_pressure",
+)
+RAW_FEATURE_STRUCTURALLY_CONSTANT_PREFIXES: tuple[str, ...] = ("obw_",)
 TRAINING_RESIDUALIZATION_FEATURE_KEYS: tuple[str, ...] = (
     "ema50_ema200_spread_atr",
     "atr_change_rate",
@@ -1158,6 +1283,17 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
         "slope_last_n_bars",
     }
     keys.difference_update(offline_unavailable_keys)
+    keys = {k for k in keys if not str(k).startswith("recent_")}
+    keys.difference_update(RAW_FEATURE_SCHEMA_UNAVAILABLE_KEYS)
+    keys.difference_update(RAW_FEATURE_STRUCTURALLY_CONSTANT_KEYS)
+    keys = {
+        k
+        for k in keys
+        if not any(
+            str(k).startswith(prefix)
+            for prefix in RAW_FEATURE_STRUCTURALLY_CONSTANT_PREFIXES
+        )
+    }
     return {
         str(k) for k in keys if str(k) and str(k) not in _DISABLED_PIPELINE_FEATURE_KEYS
     }
@@ -1564,6 +1700,42 @@ def _generate_feature_health_reports(
         "constant_feature_rows": n_const_features,
         "interior_nan_feature_rows": n_interior_nan_features,
     }
+
+
+def _is_known_unusable_raw_feature_key(key: str) -> bool:
+    key_s = str(key)
+    return (
+        key_s in RAW_FEATURE_SCHEMA_UNAVAILABLE_KEYS
+        or key_s in RAW_FEATURE_STRUCTURALLY_CONSTANT_KEYS
+        or any(
+            key_s.startswith(prefix)
+            for prefix in RAW_FEATURE_STRUCTURALLY_CONSTANT_PREFIXES
+        )
+    )
+
+
+def _drop_known_unusable_raw_feature_keys(
+    features: dict[str, pd.DataFrame | np.ndarray],
+    *,
+    label: str,
+) -> dict[str, pd.DataFrame | np.ndarray]:
+    """Drop raw-cache columns that are unavailable or structurally constant.
+
+    Missing keys are still zero-filled at model-matrix assembly time when a
+    legacy artifact explicitly asks for them. The persisted raw snapshot should
+    only advertise features with real market variation.
+    """
+    if not features:
+        return features
+    dropped = sorted(k for k in features if _is_known_unusable_raw_feature_key(k))
+    if not dropped:
+        return features
+    tprint(
+        f"{label} dropping {len(dropped)} unusable raw feature keys before save: "
+        + ", ".join(dropped[:30])
+        + (" ..." if len(dropped) > 30 else "")
+    )
+    return {k: v for k, v in features.items() if k not in set(dropped)}
 
 
 def _feature_snapshot_health_issues(
@@ -2176,10 +2348,16 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         REPORTS_DIR as _OPT_REPORTS_DIR,
     )
 
-    _bucket_csv = (
-        _OPT_REPORTS_DIR / "inference_candidate_mask_best_params_per_bucket.csv"
+    _bucket_csv = resolve_mode_file(
+        _OPT_REPORTS_DIR / "inference_candidate_mask_best_params_per_bucket.csv",
+        "perps" if bool(cfg.get("use_perps", False)) else "spot",
     )
-    if _bucket_csv.exists():
+    _strategy_allowlist_env = (
+        os.getenv("EPM_LABEL_STRATEGY_IDS", "").strip()
+        or os.getenv("EPM_BASE_STRATEGY_IDS", "").strip()
+        or os.getenv("EPM_META_STRATEGY_IDS", "").strip()
+    )
+    if _bucket_csv.exists() and not _strategy_allowlist_env:
         import json as _json
 
         _bdf = pd.read_csv(_bucket_csv)
@@ -6686,7 +6864,18 @@ def run_feature_generation_step(
         loaded_syms,
         panel["close"].index,
     )
-    panel.update(microdata_panel)
+    for key, frame in microdata_panel.items():
+        existing = panel.get(key)
+        if (
+            isinstance(existing, pd.DataFrame)
+            and not existing.empty
+            and np.isfinite(existing.to_numpy(dtype=np.float32, copy=False)).any()
+        ):
+            tprint(
+                f"Keeping OHLCV-embedded {key}; sidecar only used when panel channel is missing."
+            )
+            continue
+        panel[key] = frame
     if microdata_panel:
         tprint(
             "Loaded saved microdata panels: "
@@ -6829,6 +7018,11 @@ def run_feature_generation_step(
                     }
                 else:
                     batch_backfill_keys = []
+
+                feats_chunk = _drop_known_unusable_raw_feature_keys(
+                    feats_chunk,
+                    label=batch_label,
+                )
 
                 batch_health_keys = (
                     tuple(
@@ -7015,6 +7209,11 @@ def run_feature_generation_step(
                 )
         elif force_full_recompute:
             tprint(f"Computed + saving full feature set: {len(feats)} keys")
+
+        feats = _drop_known_unusable_raw_feature_keys(
+            feats,
+            label="Feature snapshot",
+        )
 
         health_keys = (
             tuple(
@@ -7608,10 +7807,12 @@ def _active_stage_plan_key_hashes(cfg: dict, view: dict) -> np.ndarray | None:
     try:
         from extreme_price_movements.slice_plan_store import (
             _load_best_slice_plan_events,
+            load_slice_plan,
         )
 
-        with open(slice_plan_path, "r", encoding="utf-8") as f:
-            plan = json.load(f)
+        plan = load_slice_plan(slice_plan_path)
+        if not plan:
+            return None
         events = _load_best_slice_plan_events(data_root, run_id)
     except Exception as exc:
         tprint(f"Active stage exact plan-row filter unavailable: {exc}")

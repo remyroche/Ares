@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 
 from extreme_price_movements.data_store import load_artifact_manifest
+from extreme_price_movements.path_utils import mode_file_candidates
 from extreme_price_movements.inference.daily_reporter import DailyDeploymentReporter
 from extreme_price_movements.inference.data_fetcher import DataFetcher
 from extreme_price_movements.inference.parity import (
@@ -133,6 +134,11 @@ def _artifact_manifest_verified(ctx: DeploymentCheckContext) -> DeploymentCheckR
         run_dir / "policy_params" / "best_policy_params.json",
         run_dir / "best_policy_params.json",
     ]
+    policy_params_paths = [
+        candidate
+        for path in policy_params_paths
+        for candidate in mode_file_candidates(path)
+    ]
     strategy_filter_paths = [
         run_dir / "strategy_for_inference.json",
         run_dir / "policy_params" / "strategy_for_inference.json",
@@ -140,6 +146,11 @@ def _artifact_manifest_verified(ctx: DeploymentCheckContext) -> DeploymentCheckR
         run_dir / "strategy_for_inference.csv",
         run_dir / "policy_params" / "strategy_for_inference.csv",
         run_dir / "ridge_sizer" / "strategy_for_inference.csv",
+    ]
+    strategy_filter_paths = [
+        candidate
+        for path in strategy_filter_paths
+        for candidate in mode_file_candidates(path)
     ]
     sizer_params = run_dir / "ridge_sizer" / "strategy_params.json"
     calibration_contract = (

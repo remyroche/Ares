@@ -675,7 +675,7 @@ def test_live_executor_preserves_margin_order_params(monkeypatch):
     entry_order = exchange.orders[0]
     stop_order = exchange.orders[1]
     assert entry_order["params"]["marginMode"] == "cross"
-    assert entry_order["params"]["sideEffectType"] == "AUTO_BORROW_REPAY"
+    assert entry_order["params"]["sideEffectType"] == "NO_SIDE_EFFECT"
     assert stop_order["params"]["marginMode"] == "cross"
     assert stop_order["params"]["sideEffectType"] == "AUTO_REPAY"
 
@@ -1049,7 +1049,7 @@ def test_margin_executor_routes_entry_stop_cancel_and_close_params(monkeypatch):
         if order["type"] == "market" and order["side"] == "sell"
     ]
     assert entry_order["params"]["marginMode"] == "cross"
-    assert entry_order["params"]["sideEffectType"] == "AUTO_BORROW_REPAY"
+    assert entry_order["params"]["sideEffectType"] == "NO_SIDE_EFFECT"
     assert stop_orders[0]["params"]["marginMode"] == "cross"
     assert stop_orders[0]["params"]["sideEffectType"] == "AUTO_REPAY"
     assert exchange.canceled[0][2]["marginMode"] == "cross"

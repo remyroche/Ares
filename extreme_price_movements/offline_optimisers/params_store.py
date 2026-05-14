@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict
@@ -15,6 +16,7 @@ from extreme_price_movements.config import (
     CANON_SIDES,
     CANON_SIDE_HORIZON_CELLS,
 )
+from extreme_price_movements.path_utils import resolve_mode_file
 from extreme_price_movements.strategy_registry import normalize_strategy_horizon
 
 
@@ -178,6 +180,7 @@ def _parse_numeric_series(v: Any) -> np.ndarray:
 def _read_best_params_csv(path: Path) -> Dict[str, Any]:
     import pandas as pd
 
+    path = resolve_mode_file(path)
     if not path.exists():
         return {}
     df = pd.read_csv(path)
@@ -204,14 +207,18 @@ def load_inference_candidate_mask_params_by_mode(
     market_mode: str | None = None,
 ) -> Dict[str, Dict[str, Any]]:
     mode_to_path = {
-        "price_up_tf": REPORTS_DIR
-        / "inference_candidate_mask_best_params_price_up_tf.csv",
-        "price_up_mr": REPORTS_DIR
-        / "inference_candidate_mask_best_params_price_up_mr.csv",
-        "price_down_tf": REPORTS_DIR
-        / "inference_candidate_mask_best_params_price_down_tf.csv",
-        "price_down_mr": REPORTS_DIR
-        / "inference_candidate_mask_best_params_price_down_mr.csv",
+        "price_up_tf": resolve_mode_file(
+            REPORTS_DIR / "inference_candidate_mask_best_params_price_up_tf.csv",
+        ),
+        "price_up_mr": resolve_mode_file(
+            REPORTS_DIR / "inference_candidate_mask_best_params_price_up_mr.csv",
+        ),
+        "price_down_tf": resolve_mode_file(
+            REPORTS_DIR / "inference_candidate_mask_best_params_price_down_tf.csv",
+        ),
+        "price_down_mr": resolve_mode_file(
+            REPORTS_DIR / "inference_candidate_mask_best_params_price_down_mr.csv",
+        ),
     }
     out: Dict[str, Dict[str, Any]] = {}
     for mode, path in mode_to_path.items():
@@ -265,6 +272,12 @@ def load_inference_candidate_mask_params_per_bucket(
         )
         for p in _market_preferred_paths(base_path, market_mode)
     ]
+    if str(os.environ.get("EPM_MASK_STRATEGY_SKIP_REPORT_INPUTS", "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }:
+        preferred_paths = []
     for candidate_path in preferred_paths:
         try:
             if candidate_path.exists() and candidate_path.stat().st_size > 100:
@@ -615,10 +628,11 @@ def load_tbm_geometry_grid() -> Dict[str, Any]:
         "sl_base_grid": None,
         "atr_window": None,
     }
-    if not TBM_GEOMETRY_GRID_CSV.exists():
+    grid_path = resolve_mode_file(TBM_GEOMETRY_GRID_CSV)
+    if not grid_path.exists():
         return _empty
     try:
-        df = pd.read_csv(TBM_GEOMETRY_GRID_CSV)
+        df = pd.read_csv(grid_path)
         if df.empty:
             return _empty
 
@@ -763,10 +777,11 @@ def load_tbm_best_params_per_bucket() -> Dict[str, Dict[str, Any]]:
     """
     import pandas as pd
 
-    if not TBM_BEST_PARAMS_PER_BUCKET_CSV.exists():
+    path = resolve_mode_file(TBM_BEST_PARAMS_PER_BUCKET_CSV)
+    if not path.exists():
         return {}
     try:
-        df = pd.read_csv(TBM_BEST_PARAMS_PER_BUCKET_CSV)
+        df = pd.read_csv(path)
         if df.empty:
             return {}
         result: Dict[str, Dict[str, Any]] = {}
@@ -792,10 +807,11 @@ def load_tbm_best_params_per_cell() -> Dict[str, Dict[str, Any]]:
     """
     import pandas as pd
 
-    if not TBM_BEST_PARAMS_PER_CELL_CSV.exists():
+    path = resolve_mode_file(TBM_BEST_PARAMS_PER_CELL_CSV)
+    if not path.exists():
         return load_tbm_best_params_per_bucket()
     try:
-        df = pd.read_csv(TBM_BEST_PARAMS_PER_CELL_CSV)
+        df = pd.read_csv(path)
         if df.empty:
             return load_tbm_best_params_per_bucket()
         if "rank_in_cell" in df.columns:
@@ -827,10 +843,11 @@ def load_tbm_all_params_per_cell() -> Dict[str, list[Dict[str, Any]]]:
     """Load the full ranked per-cell TBM params set from tbm_best_params_per_cell.csv."""
     import pandas as pd
 
-    if not TBM_BEST_PARAMS_PER_CELL_CSV.exists():
+    path = resolve_mode_file(TBM_BEST_PARAMS_PER_CELL_CSV)
+    if not path.exists():
         return {}
     try:
-        df = pd.read_csv(TBM_BEST_PARAMS_PER_CELL_CSV)
+        df = pd.read_csv(path)
         if df.empty:
             return {}
         if "rank_in_cell" in df.columns:
@@ -876,10 +893,11 @@ def load_tbm_best_params_per_side_horizon() -> Dict[str, Dict[str, Any]]:
     """
     import pandas as pd
 
-    if not TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV.exists():
+    path = resolve_mode_file(TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV)
+    if not path.exists():
         return load_tbm_best_params_per_bucket()
     try:
-        df = pd.read_csv(TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV)
+        df = pd.read_csv(path)
         if df.empty:
             return load_tbm_best_params_per_bucket()
         if "rank_in_cell" in df.columns:
@@ -905,10 +923,11 @@ def load_tbm_all_params_per_side_horizon() -> Dict[str, list[Dict[str, Any]]]:
     """
     import pandas as pd
 
-    if not TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV.exists():
+    path = resolve_mode_file(TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV)
+    if not path.exists():
         return {}
     try:
-        df = pd.read_csv(TBM_BEST_PARAMS_PER_SIDE_HORIZON_CSV)
+        df = pd.read_csv(path)
         if df.empty:
             return {}
         if "rank_in_cell" in df.columns:
@@ -1050,8 +1069,19 @@ def apply_offline_optimizer_best_params(cfg: Dict[str, Any]) -> Dict[str, Any]:
     if mode_mask_opt:
         merged["candidate_mask_params_by_mode"] = mode_mask_opt
 
+    dyn_top_n = int(os.environ.get("EPM_MASK_STRATEGY_TOP_N", "2") or 2)
+    dyn_ranking_metric = str(
+        os.environ.get("EPM_MASK_STRATEGY_RANKING_METRIC", "score_for_best_params")
+        or "score_for_best_params"
+    )
+    dyn_class_filter = str(
+        os.environ.get("EPM_MASK_STRATEGY_CLASSIFICATION_FILTER", "") or ""
+    ).strip()
     dyn_strategies = load_inference_candidate_mask_params_per_bucket(
-        market_mode=market_mode
+        top_n=max(1, dyn_top_n),
+        ranking_metric=dyn_ranking_metric,
+        classification_filter=dyn_class_filter or None,
+        market_mode=market_mode,
     )
     if dyn_strategies:
         _tprint(

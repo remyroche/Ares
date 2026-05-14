@@ -27,6 +27,7 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.linear_model import ElasticNet, Ridge, RidgeClassifier
 from sklearn.preprocessing import RobustScaler
+from extreme_price_movements.data_store import read_parquet_projected
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -6630,10 +6631,22 @@ def run_simple_position_sizer_from_artifacts(
                     )
 
         if label_file and label_file.exists():
-            full_df = pd.read_parquet(label_file)
+            full_df = read_parquet_projected(
+                label_file,
+                [
+                    "__ts__",
+                    "__symbol__",
+                    "__index__",
+                    "__y_ret__",
+                    "timestamp",
+                    "symbol",
+                    "index",
+                    "return",
+                ],
+            )
             logger.info(f"Loaded full label coverage: {len(full_df)} rows.")
-            if "__r_policy_net__" in full_df.columns:
-                full_df["return"] = full_df["__r_policy_net__"]
+            if "__y_ret__" in full_df.columns:
+                full_df["return"] = full_df["__y_ret__"]
             if "__ts__" in full_df.columns:
                 full_df["timestamp"] = full_df["__ts__"]
             if "__symbol__" in full_df.columns:

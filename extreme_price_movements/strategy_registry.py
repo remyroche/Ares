@@ -167,14 +167,18 @@ def strategy_runtime_horizons(
     """Return the runtime horizons for a strategy.
 
     Priority:
-    1. explicit requested horizons from the CLI/caller
-    2. strategy-level source_horizon
+    1. strategy-level source_horizon
+    2. explicit requested horizons from the CLI/caller
     3. config label_horizons_hours
+
+    Dynamic mask strategies are mined for a specific source horizon. Once that
+    horizon is present on the strategy, label/model cells must not expand into
+    every globally requested horizon.
     """
-    if requested_horizons:
-        vals = [normalize_strategy_horizon(h) for h in requested_horizons]
-    elif strategy.get("source_horizon") is not None:
+    if strategy.get("source_horizon") is not None:
         vals = [normalize_strategy_horizon(strategy.get("source_horizon"))]
+    elif requested_horizons:
+        vals = [normalize_strategy_horizon(h) for h in requested_horizons]
     else:
         cfg_horizons = (cfg or {}).get("label_horizons_hours", [])
         vals = [normalize_strategy_horizon(h) for h in cfg_horizons]

@@ -25,6 +25,9 @@ def _event_symbol_count(events_df: Optional[pd.DataFrame]) -> int:
     return int(events_df["symbol"].nunique())
 
 
+_INDEX_ARRAY_MIN_COMPACT_LEN = 64
+
+
 def _default(obj):
     if hasattr(obj, "__dataclass_fields__"):
         return asdict(obj)
@@ -45,6 +48,82 @@ def _default(obj):
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 
+def _is_int_sequence(value: Any) -> bool:
+    if isinstance(value, np.ndarray):
+        return np.issubdtype(value.dtype, np.integer)
+    if not isinstance(value, (list, tuple)):
+        return False
+    return all(isinstance(x, (int, np.integer)) for x in value)
+
+
+def _int_sequence_to_ranges(values: Any) -> dict:
+    arr = np.asarray(values, dtype=np.int64)
+    if arr.size == 0:
+        return {"encoding": "int_ranges_v1", "count": 0, "ranges": []}
+
+    ranges: list[list[int]] = []
+    start = int(arr[0])
+    prev = start
+    for raw in arr[1:]:
+        current = int(raw)
+        if current == prev + 1:
+            prev = current
+            continue
+        ranges.append([start, prev + 1])
+        start = current
+        prev = current
+    ranges.append([start, prev + 1])
+    return {
+        "encoding": "int_ranges_v1",
+        "count": int(arr.size),
+        "ranges": ranges,
+    }
+
+
+def _ranges_to_int_list(payload: dict) -> list[int]:
+    values: list[int] = []
+    for raw_range in payload.get("ranges", []) or []:
+        if not isinstance(raw_range, list) or len(raw_range) != 2:
+            continue
+        start, stop = int(raw_range[0]), int(raw_range[1])
+        if stop <= start:
+            continue
+        values.extend(range(start, stop))
+    return values
+
+
+def _compact_json_indices(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: _compact_json_indices(v) for k, v in value.items()}
+    if _is_int_sequence(value):
+        seq_len = int(len(value))
+        if seq_len >= _INDEX_ARRAY_MIN_COMPACT_LEN:
+            return _int_sequence_to_ranges(value)
+        return [int(x) for x in value]
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, tuple):
+        return [_compact_json_indices(v) for v in value]
+    if isinstance(value, list):
+        return [_compact_json_indices(v) for v in value]
+    return value
+
+
+def _expand_compact_indices(value: Any) -> Any:
+    if isinstance(value, dict):
+        if value.get("encoding") == "int_ranges_v1":
+            return _ranges_to_int_list(value)
+        return {k: _expand_compact_indices(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_expand_compact_indices(v) for v in value]
+    return value
+
+
+def decode_slice_plan_payload(payload: dict) -> dict:
+    """Return a compatibility view with compact persisted index ranges expanded."""
+    return _expand_compact_indices(payload)
+
+
 def _deserialize_timestamp(val):
     if val is None:
         return None
@@ -60,7 +139,7 @@ def load_slice_plan(path: str) -> Optional[dict]:
         return None
     try:
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            return decode_slice_plan_payload(json.load(f))
     except Exception as e:
         tprint(f"Failed to load slice plan from {path}: {e}")
         return None
@@ -70,7 +149,7 @@ def save_slice_plan_atomic(path: str, payload: dict) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp_path = path + ".tmp"
     with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, default=_default, indent=2)
+        json.dump(payload, f, default=_default, separators=(",", ":"))
     os.replace(tmp_path, path)
 
 
@@ -281,16 +360,22 @@ def _with_all_symbol_planning(config: SlicePlannerConfig) -> SlicePlannerConfig:
 def _serialize_consumer_plan(cp: ConsumerSlicePlan) -> dict:
     return {
         "tag": cp.tag,
-        "fit_idx": cp.fit_idx.tolist() if cp.fit_idx is not None else [],
-        "predict_idx": cp.predict_idx.tolist() if cp.predict_idx is not None else [],
+        "fit_idx": (
+            _int_sequence_to_ranges(cp.fit_idx) if cp.fit_idx is not None else []
+        ),
+        "predict_idx": (
+            _int_sequence_to_ranges(cp.predict_idx)
+            if cp.predict_idx is not None
+            else []
+        ),
         "val_idx": (
-            getattr(cp, "val_idx", None).tolist()
+            _int_sequence_to_ranges(getattr(cp, "val_idx", None))
             if getattr(cp, "val_idx", None) is not None
             else None
         ),
         "symbols_fit": list(cp.symbols_fit) if cp.symbols_fit else [],
         "symbols_predict": list(cp.symbols_predict) if cp.symbols_predict else [],
-        "metadata": cp.metadata,
+        "metadata": _compact_json_indices(cp.metadata),
     }
 
 

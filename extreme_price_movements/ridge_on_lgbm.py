@@ -38,6 +38,7 @@ LEAF_MODEL_SPECS = (
     {"max_depth": 3, "leaf_frac": 0.08, "prefix": "LGBM_8P_LEAF"},
     {"max_depth": 4, "leaf_frac": 0.02, "prefix": "LGBM_D4_2P_LEAF"},
     {"max_depth": 4, "leaf_frac": 0.05, "prefix": "LGBM_D4_5P_LEAF"},
+    {"max_depth": 6, "leaf_frac": 0.08, "prefix": "LGBM_D6_8P_LEAF"},
 )
 
 DEFAULT_TREE_FEATURE_CONFIG: dict[str, Any] = {

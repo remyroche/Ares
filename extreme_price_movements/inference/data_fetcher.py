@@ -40,6 +40,11 @@ BACKOFF_BASE = 1.0
 RATE_LIMIT_DELAY = 0.1  # seconds between requests
 
 
+def _normalise_market_mode(market_mode: Optional[str] = None) -> str:
+    raw = str(market_mode or "spot").strip().lower()
+    return "perps" if raw in {"perp", "perps", "future", "futures", "swap"} else "spot"
+
+
 def classify_api_error(exc: Exception) -> str:
     """Classify exchange/API failures into stable operational buckets."""
     text = f"{exc.__class__.__name__} {exc}".lower()
@@ -94,14 +99,22 @@ def _sleep_for_api_error(exc: Exception, *, attempt: int) -> None:
 class DataFetcher:
     """Data fetcher with incremental updates for inference."""
 
-    def __init__(self, exchange: Any = None, data_root: str = "data"):
+    def __init__(
+        self, exchange: Any = None, data_root: str = "data", market_mode: str = "spot"
+    ):
         """Initialize the DataFetcher.
 
         Args:
             exchange: ccxt exchange instance (created if None)
             data_root: Root directory for data storage
         """
-        self.exchange = exchange if exchange is not None else make_spot_exchange()
+        self.market_mode = _normalise_market_mode(market_mode)
+        if exchange is not None:
+            self.exchange = exchange
+        elif self.market_mode == "perps":
+            self.exchange = make_perp_exchange()
+        else:
+            self.exchange = make_spot_exchange()
         self.data_root = data_root
         self.ohlcv_store = PartitionedOHLCVStore(data_root, timeframe="1h")
         self.orderbook_dir = Path(data_root) / "orderbook_hourly"
@@ -116,6 +129,11 @@ class DataFetcher:
         self._microdata_symbol_cache: Dict[
             str, tuple[Optional[float], Optional[float], Dict[str, pd.Series]]
         ] = {}
+
+    def _exchange_symbol(self, symbol: str) -> str:
+        if self.market_mode != "perps" or ":" in str(symbol):
+            return symbol
+        return _resolve_perp_symbol(self.exchange, symbol) or symbol
 
     def _invalidate_symbol_cache(self, symbol: str, *, microdata: bool = False) -> None:
         """Invalidate in-memory panel cache entries after local data writes."""
@@ -437,8 +455,9 @@ class DataFetcher:
                         f"[DataFetcher] retrying OHLCV {symbol} {timeframe}: "
                         f"attempt={attempt}/{MAX_RETRIES}"
                     )
+                exchange_symbol = self._exchange_symbol(symbol)
                 return self.exchange.fetch_ohlcv(
-                    symbol=symbol,
+                    symbol=exchange_symbol,
                     timeframe=timeframe,
                     since=since,
                     limit=limit,
@@ -1131,19 +1150,21 @@ class DataFetcher:
 
 
 # Backwards compatibility: Keep existing functions for non-class usage
-def make_exchange() -> Any:
-    """Create and return a Binance spot exchange instance.
+def make_exchange(market_mode: str = "spot") -> Any:
+    """Create and return a Binance exchange instance for spot or USD-M perps.
 
     Returns:
-        ccxt.binance exchange instance with rate limiting enabled
+        ccxt exchange instance with rate limiting enabled
     """
+    mode = _normalise_market_mode(market_mode)
     try:
-        ex = make_spot_exchange()
-        tprint("Created Binance spot exchange and loaded markets")
+        ex = make_perp_exchange() if mode == "perps" else make_spot_exchange()
+        label = "USD-M perp" if mode == "perps" else "spot"
+        tprint(f"Created Binance {label} exchange and loaded markets")
         return ex
     except Exception as exc:
         tprint(
-            f"Failed to create Binance spot exchange: {classify_api_error(exc)}: {exc}"
+            f"Failed to create Binance {mode} exchange: {classify_api_error(exc)}: {exc}"
         )
         raise
 

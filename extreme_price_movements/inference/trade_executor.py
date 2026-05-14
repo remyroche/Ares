@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 from extreme_price_movements import hf_data_loader
+from extreme_price_movements.data_store import _resolve_perp_symbol
 from extreme_price_movements.inference.parity import strategy_core_id
 from extreme_price_movements.inference.simple_policy_stop import (
     SimplePolicyStopDecision,
@@ -74,6 +75,15 @@ MODEL_AND_POLICY_CONTEXT_KEYS = (
     "safe_book_notional",
     "target_slot_notional",
     "current_margin_level",
+    "market_mode",
+    "perp_rank_number",
+    "perp_rank_x",
+    "perp_rank_leverage",
+    "perp_risk_cap_leverage",
+    "perp_effective_leverage",
+    "perp_stop_loss_pct",
+    "perp_full_wallet",
+    "perp_available_wallet",
     "position_size_before_liquidity",
     "position_size_after_liquidity",
     "policy_artifact_run_id",
@@ -128,6 +138,15 @@ EXECUTION_AUDIT_KEYS = (
     "safe_book_notional",
     "target_slot_notional",
     "current_margin_level",
+    "market_mode",
+    "perp_rank_number",
+    "perp_rank_x",
+    "perp_rank_leverage",
+    "perp_risk_cap_leverage",
+    "perp_effective_leverage",
+    "perp_stop_loss_pct",
+    "perp_full_wallet",
+    "perp_available_wallet",
     "max_chase_bps",
     "entry_limit_price",
 )
@@ -554,11 +573,23 @@ def _execution_account(config: Optional[Dict[str, Any]]) -> str:
     """Return configured execution account type for exchange routing."""
     cfg = config or {}
     raw = str(
-        cfg.get("execution_account", cfg.get("account_type", "margin")) or "margin"
+        cfg.get(
+            "execution_account",
+            cfg.get("account_type", cfg.get("market_mode", "margin")),
+        )
+        or "margin"
     ).lower()
+    if raw in {"perp", "perps", "future", "futures", "swap"}:
+        return "perps"
     if raw in {"margin", "cross_margin", "isolated_margin"}:
         return "margin"
     return "spot"
+
+
+def _exchange_symbol_for_config(exchange: Any, config: Optional[Dict[str, Any]], symbol: str) -> str:
+    if _execution_account(config) != "perps" or ":" in str(symbol):
+        return symbol
+    return _resolve_perp_symbol(exchange, symbol) or symbol
 
 
 def _margin_mode(config: Optional[Dict[str, Any]]) -> str:
@@ -576,19 +607,54 @@ def _margin_side_effect(config: Optional[Dict[str, Any]]) -> str:
     return raw if raw in allowed else "AUTO_BORROW_REPAY"
 
 
+def _is_one_x_margin_policy(config: Optional[Dict[str, Any]]) -> bool:
+    """Return True when live sizing is configured not to use wallet leverage."""
+    cfg = config or {}
+    try:
+        book_multiplier = float(cfg.get("book_notional_multiplier", 1.0))
+    except Exception:
+        book_multiplier = 1.0
+    try:
+        leverage_multiplier = float(cfg.get("leverage_wallet_multiplier", 1.0))
+    except Exception:
+        leverage_multiplier = 1.0
+    return book_multiplier <= 1.000001 and leverage_multiplier <= 1.000001
+
+
+def _opening_margin_side_effect(
+    config: Optional[Dict[str, Any]],
+    *,
+    side: Optional[str] = None,
+) -> str:
+    """Return Binance sideEffectType for opening margin orders.
+
+    At 1x, long entries should spend available quote balance rather than invoke
+    Binance borrow/pledge mechanics. Shorts still need AUTO_BORROW_REPAY unless
+    the account already holds the base asset, which is not the normal policy.
+    """
+    side_l = str(side or "").lower()
+    if side_l == "buy" and _is_one_x_margin_policy(config):
+        return "NO_SIDE_EFFECT"
+    return _margin_side_effect(config)
+
+
 def _order_params(
     config: Optional[Dict[str, Any]],
     *,
     reduce_only: bool = False,
+    side: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Build ccxt params for spot or margin order placement."""
-    if _execution_account(config) != "margin":
+    account = _execution_account(config)
+    if account == "perps":
+        return {"reduceOnly": True} if reduce_only else {}
+    if account != "margin":
         return {}
     params: Dict[str, Any] = {"marginMode": _margin_mode(config)}
     if reduce_only:
         params["sideEffectType"] = "AUTO_REPAY"
     else:
-        params["sideEffectType"] = _margin_side_effect(config)
+        params["sideEffectType"] = _opening_margin_side_effect(config, side=side)
     return params
 
 
@@ -639,6 +705,8 @@ def _reduce_order_param_variants(
 ) -> List[Dict[str, Any]]:
     """Return robust ccxt param variants for margin reduce/close orders."""
     base = _order_params(config, reduce_only=True)
+    if _execution_account(config) == "perps":
+        return _dedupe_param_variants([base, {}])
     if _execution_account(config) != "margin":
         return [base]
     margin_mode = _margin_mode(config)
@@ -671,6 +739,15 @@ def _create_reduce_stop_loss_order(
     config: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """Create a reduce/close STOP_LOSS order, retrying safe margin param variants."""
+    if _execution_account(config) == "perps":
+        return exchange.create_order(
+            symbol=symbol,
+            type="STOP_MARKET",
+            side=side,
+            amount=amount,
+            price=None,
+            params={"stopPrice": stop_price, "reduceOnly": True},
+        )
     last_exc: Optional[Exception] = None
     for params in _reduce_order_param_variants(config, side=side):
         try:
@@ -4877,7 +4954,8 @@ class TradeExecutor:
             Execution result dictionary
         """
         order_side = "buy" if side == "long" else "sell"
-        market = _load_market(self.exchange, symbol)
+        exchange_symbol = _exchange_symbol_for_config(self.exchange, self.config, symbol)
+        market = _load_market(self.exchange, exchange_symbol)
         expected_entry_price = float(price) if price is not None else np.nan
         live_barrier_frac = _safe_float(
             (trade_context or {}).get("barrier_frac")
@@ -4936,10 +5014,10 @@ class TradeExecutor:
                 }
 
             if not np.isfinite(expected_entry_price):
-                ticker = self.exchange.fetch_ticker(symbol)
+                ticker = self.exchange.fetch_ticker(exchange_symbol)
                 expected_entry_price = _safe_float(ticker.get("last"), default=np.nan)
             amount_base = self._quote_to_base_amount(
-                symbol,
+                exchange_symbol,
                 quote_size=float(size),
                 reference_price=expected_entry_price,
                 market=market,
@@ -4959,24 +5037,28 @@ class TradeExecutor:
 
             if price is not None and not force_market_entries:
                 entry_price_for_order = _exchange_precision(
-                    self.exchange, symbol, float(price), kind="price"
+                    self.exchange, exchange_symbol, float(price), kind="price"
                 )
                 order = self.exchange.create_order(
-                    symbol=symbol,
+                    symbol=exchange_symbol,
                     type="limit",
                     side=order_side,
                     amount=amount_base,
                     price=entry_price_for_order,
-                    params=_order_params(self.config, reduce_only=False),
+                    params=_order_params(
+                        self.config, reduce_only=False, side=order_side
+                    ),
                 )
                 entry_order_type = "limit"
             else:
                 order = self.exchange.create_order(
-                    symbol=symbol,
+                    symbol=exchange_symbol,
                     type="market",
                     side=order_side,
                     amount=amount_base,
-                    params=_order_params(self.config, reduce_only=False),
+                    params=_order_params(
+                        self.config, reduce_only=False, side=order_side
+                    ),
                 )
                 entry_order_type = "market"
             fallback_price = float(expected_entry_price)
@@ -4989,7 +5071,7 @@ class TradeExecutor:
                 entry_fee_currency,
                 entry_fee_source,
             ) = _fee_to_quote(
-                symbol,
+                exchange_symbol,
                 order.get("fee"),
                 price=entry_price,
             )
@@ -5007,7 +5089,7 @@ class TradeExecutor:
                 if np.isfinite(entry_price_delta) and np.isfinite(ohlcv_entry_price)
                 else np.nan
             )
-            base_fee = _filled_base_fee(order, symbol)
+            base_fee = _filled_base_fee(order, exchange_symbol)
             stop_amount_source = filled_amount
             if (
                 side == "long"
@@ -5017,7 +5099,7 @@ class TradeExecutor:
                 stop_amount_source = max((stop_amount_source - base_fee) * 0.999, 0.0)
             stop_amount = (
                 _exchange_precision(
-                    self.exchange, symbol, stop_amount_source, kind="amount"
+                    self.exchange, exchange_symbol, stop_amount_source, kind="amount"
                 )
                 if np.isfinite(stop_amount_source) and stop_amount_source > 0
                 else amount_base
@@ -5026,7 +5108,7 @@ class TradeExecutor:
             oco_result = None
             if bucket_key and self.oco_executor:
                 oco_result = self.oco_executor.place_oco_order(
-                    symbol=symbol,
+                    symbol=exchange_symbol,
                     side=side,
                     entry_price=entry_price,
                     size=stop_amount,
@@ -5035,7 +5117,7 @@ class TradeExecutor:
                 )
                 if isinstance(trade_context, dict):
                     with self.oco_executor._positions_lock:
-                        state = self.oco_executor.active_positions.get(symbol)
+                        state = self.oco_executor.active_positions.get(exchange_symbol)
                         if isinstance(state, dict):
                             canonical_policy_fields = {
                                 "stop_price": state.get("stop_price"),

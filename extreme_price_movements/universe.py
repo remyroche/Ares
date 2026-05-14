@@ -567,6 +567,7 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
         return apply_hardcoded_universe_exclusions(out)
 
     offline_universe = bool(cfg.get("offline_backtest_skip_universe_refresh", False))
+    offline_no_api = bool(cfg.get("offline_universe_no_api", False))
     if offline_universe:
         tprint(
             "Training universe: offline mode enabled, skipping margin refresh and live ticker ranking."
@@ -576,38 +577,43 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
         if not base_syms:
             base_syms = list(cfg.get("market_basket", []))
         # In offline mode, use all available symbols (no volume data to remove bottom 30).
-        # Perp mode keeps USDC and USDT contracts as distinct trainable markets.
+        # Perp mode deduplicates quote variants by base, preferring USDC over USDT.
         if bool(cfg.get("use_perps", False)):
             train_syms = deduplicate_symbols_by_base(list(set(base_syms)))
-            try:
-                mu = refresh_margin_universe_daily(None, quotes=("USDC",))
-                margin_usdc_bases = {
-                    sym.split("/", 1)[0]
-                    for sym in apply_hardcoded_universe_exclusions(mu.symbols)
-                    if "/" in sym
-                }
-                before_margin_base = len(train_syms)
-                train_syms = [
-                    sym
-                    for sym in train_syms
-                    if "/" in sym and sym.split("/", 1)[0] in margin_usdc_bases
-                ]
-                removed_margin_base = before_margin_base - len(train_syms)
-                if removed_margin_base > 0:
-                    tprint(
-                        "Perp offline universe margin-base filter removed "
-                        f"{removed_margin_base} symbols."
-                    )
-            except Exception as exc:
+            if offline_no_api:
                 tprint(
-                    "Warning: perp offline margin-base filter failed; "
-                    f"keeping local perp symbols: {_request_error_category(exc)}: {exc}"
+                    "Perp offline universe: no-network mode enabled; using local cached/store symbols directly."
                 )
+            else:
+                try:
+                    mu = refresh_margin_universe_daily(None, quotes=("USDC",))
+                    margin_usdc_bases = {
+                        sym.split("/", 1)[0]
+                        for sym in apply_hardcoded_universe_exclusions(mu.symbols)
+                        if "/" in sym
+                    }
+                    before_margin_base = len(train_syms)
+                    train_syms = [
+                        sym
+                        for sym in train_syms
+                        if "/" in sym and sym.split("/", 1)[0] in margin_usdc_bases
+                    ]
+                    removed_margin_base = before_margin_base - len(train_syms)
+                    if removed_margin_base > 0:
+                        tprint(
+                            "Perp offline universe margin-base filter removed "
+                            f"{removed_margin_base} symbols."
+                        )
+                except Exception as exc:
+                    tprint(
+                        "Warning: perp offline margin-base filter failed; "
+                        f"keeping local perp symbols: {_request_error_category(exc)}: {exc}"
+                    )
         else:
             train_syms = deduplicate_symbols_by_base(list(set(base_syms)))
-        train_syms = filter_symbols_without_perp_support(
-            apply_hardcoded_universe_exclusions(train_syms)
-        )
+        train_syms = apply_hardcoded_universe_exclusions(train_syms)
+        if not offline_no_api:
+            train_syms = filter_symbols_without_perp_support(train_syms)
         train_syms = filter_symbols_by_min_asset_existence_days(
             train_syms,
             store,

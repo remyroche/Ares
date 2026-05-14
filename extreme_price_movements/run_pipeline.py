@@ -66,6 +66,7 @@ from extreme_price_movements.data_store import (
     _compute_missing_hourly_ranges,
     _fetch_ccxt_history_paged,
     _resolve_perp_symbol,
+    build_hourly_orderbook_proxy_from_ohlcv,
     fetch_hourly_orderbook_proxy,
     make_perp_exchange,
     make_spot_exchange,
@@ -80,6 +81,7 @@ from extreme_price_movements.optimise import (
     run_optimise_from_ridge_oof,
     run_optimise_step,
 )
+from extreme_price_movements.path_utils import mode_file_candidates, resolve_mode_file
 from extreme_price_movements.pipeline_steps import (
     run_backtest_step,
     run_base_hpo_step,
@@ -145,32 +147,48 @@ def _apply_fee_model(cfg: dict, round_trip_fee_pct: float) -> None:
     cfg["use_exit_limit_orders"] = True
 
 
+MARKET_MODE_SUFFIXES = {"spot": "_spot", "perps": "_perp"}
+LEGACY_MARKET_SUFFIXES = ("_spot", "_perps", "_perp")
+
+
 def _append_suffix(path: str, suffix: str) -> str:
     norm = path.rstrip("/\\")
     if norm.endswith(suffix):
         return norm
     return f"{norm}{suffix}"
 
-
-
-def _normalize_market_mode(market_mode: str | None = None) -> str:
-    mode = str(market_mode or "spot").strip().lower()
-    if mode in {"perp", "perps", "future", "futures"}:
+def _market_mode_from_cfg(cfg: dict) -> str:
+    mode = str(cfg.get("market_mode") or "").strip().lower()
+    if mode in {"perp", "perps", "futures"}:
         return "perps"
-    return "spot"
+    if mode == "spot":
+        return "spot"
+    return "perps" if bool(cfg.get("use_perps", False)) else "spot"
 
 
-def _market_suffix(market_mode: str) -> str:
-    return f"_{_normalize_market_mode(market_mode)}"
+def _with_market_suffix(path: str, market_mode: str) -> str:
+    norm = str(path or "").rstrip("/\\")
+    suffix = MARKET_MODE_SUFFIXES["perps" if market_mode == "perps" else "spot"]
+    for existing in LEGACY_MARKET_SUFFIXES:
+        if norm.endswith(existing):
+            norm = norm[: -len(existing)]
+            break
+    return f"{norm}{suffix}"
 
 
-def _append_market_suffix(path: str, market_mode: str) -> str:
-    norm = path.rstrip("/\\")
-    mode = _normalize_market_mode(market_mode)
-    for suffix in ("_spot", "_perps", "_perp"):
-        if norm.endswith(suffix):
-            return norm[: -len(suffix)] + f"_{mode}"
-    return f"{norm}{_market_suffix(mode)}"
+def _apply_market_mode_paths(cfg: dict, market_mode: str) -> None:
+    mode = "perps" if market_mode == "perps" else "spot"
+    cfg["market_mode"] = mode
+    cfg["use_perps"] = mode == "perps"
+    for key, default in (
+        ("data_root", "data"),
+        ("reports_root", "reports"),
+        ("hf_data_dir", "15m_ohlcv"),
+    ):
+        cfg[key] = _with_market_suffix(str(cfg.get(key, default)), mode)
+    os.environ["EPM_MARKET_MODE"] = mode
+    os.environ["EPM_HF_DATA_DIR"] = str(cfg["hf_data_dir"])
+
 
 def _resolve_path(base_dir: str, path: str) -> str:
     if not path:
@@ -237,8 +255,9 @@ def _load_mask_params_by_mode(cfg: dict) -> dict:
             REPORTS_DIR as _OPT_REPORTS_DIR,
         )
 
-        _bucket_csv = (
-            _OPT_REPORTS_DIR / "inference_candidate_mask_best_params_per_bucket.csv"
+        _bucket_csv = resolve_mode_file(
+            _OPT_REPORTS_DIR / "inference_candidate_mask_best_params_per_bucket.csv",
+            _market_mode_from_cfg(cfg),
         )
         if _bucket_csv.exists():
             import json as _json
@@ -723,13 +742,25 @@ def run_download(cfg):
                     now_h,
                 )
             )
+            missing_ob_hours = int(
+                sum(
+                    max(
+                        0,
+                        int(
+                            (pd.Timestamp(range_end) - pd.Timestamp(range_start))
+                            / pd.Timedelta(hours=1)
+                        ),
+                    )
+                    for range_start, range_end in missing_ranges
+                )
+            )
             skip_reason = ""
-            if len(missing_ranges) < microdata_min_ranges:
+            if missing_ob_hours < microdata_min_ranges:
                 skip_reason = f"skip:insufficient_ranges<{microdata_min_ranges}"
                 missing_ranges = []
                 missing_ob_ranges = 0
             else:
-                missing_ob_ranges = len(missing_ranges)
+                missing_ob_ranges = missing_ob_hours
             if not missing_ranges:
                 ob_ok = existing_ob is not None and not existing_ob.empty
                 ob_io = skip_reason or "skip:no_missing"
@@ -753,6 +784,12 @@ def run_download(cfg):
                     )
                     if proxy_df is not None and not proxy_df.empty:
                         ob_frames.append(proxy_df)
+                if not ob_frames:
+                    local_ob = store.load(sym, start_ts=micro_since, end_ts=now_h)
+                    proxy_df = build_hourly_orderbook_proxy_from_ohlcv(local_ob)
+                    if proxy_df is not None and not proxy_df.empty:
+                        ob_frames.append(proxy_df)
+                        ob_io = "write:attempted_local_ohlcv"
             if existing_ob is not None and not existing_ob.empty:
                 ob_frames.insert(0, existing_ob)
             if missing_ranges and ob_frames:
@@ -802,11 +839,24 @@ def run_download(cfg):
                         now_h,
                     )
                 )
-                if len(funding_missing_ranges) < microdata_min_ranges:
+                missing_funding_points = int(
+                    sum(
+                        max(
+                            0,
+                            int(
+                                (pd.Timestamp(range_end) - pd.Timestamp(range_start))
+                                / pd.Timedelta(hours=8)
+                            )
+                            + 1,
+                        )
+                        for range_start, range_end in funding_missing_ranges
+                    )
+                )
+                if missing_funding_points < microdata_min_ranges:
                     funding_missing_ranges = []
                     missing_fr_ranges = 0
                 else:
-                    missing_fr_ranges = len(funding_missing_ranges)
+                    missing_fr_ranges = missing_funding_points
                 if not funding_missing_ranges:
                     fr_ok = True
                     fr_io = "skip:no_missing"
@@ -2377,6 +2427,11 @@ def _score_oof_frame(df: pd.DataFrame) -> dict[str, Any]:
         out[f"hit_rate{tag}"] = hit
         out[f"lift{tag}"] = float(hit / max(base_rate, 1e-12))
         out[f"ndcg{tag}"] = _ndcg_binary_at_k(y_v, score_v, frac)
+        if "y_ret" in df.columns:
+            y_ret = pd.to_numeric(df.loc[valid, "y_ret"], errors="coerce").to_numpy(float)
+            ret_vals = y_ret[idx] if len(idx) else np.asarray([], dtype=float)
+            ret_vals = ret_vals[np.isfinite(ret_vals)]
+            out[f"mean_ret{tag}"] = float(np.mean(ret_vals)) if len(ret_vals) else float("nan")
     if "timestamp" in df.columns:
         ts = pd.to_datetime(df.loc[valid, "timestamp"], errors="coerce")
         for frac in (0.10, 0.20, 0.30):
@@ -2440,6 +2495,13 @@ def _load_base_diag_metrics(cfg: dict, run_id: str) -> list[dict[str, Any]]:
             "source": "base_models_intermediate.alpha_fit_diagnostics",
             "hit_rate30": _first_finite(diag, "hit_rate30", "precision30", "prec30", "en_hit_rate30"),
             "lift30": _first_finite(diag, "lift30", "en_lift30", "Lift@30"),
+            "mean_ret30": _first_finite(
+                diag,
+                "mean_ret30",
+                "mean_return30_gross",
+                "mean_return30",
+                "top30_mean_ret",
+            ),
             "lift20": _first_finite(diag, "lift20", "Lift@20"),
             "hit_rate30_std": _first_finite(diag, "hit_rate30_weekly_std", "hit_rate30_daily_std", default=0.0),
             "ic": _first_finite(diag, "ic", "rank_ic", "ic_cs", "mean_ic"),
@@ -2529,10 +2591,17 @@ def _load_oof_strategy_metrics(
 
 def _strategy_metric_score(row: dict[str, Any]) -> float:
     hit30 = _first_finite(row, "hit_rate30", "precision30", "prec30", default=0.0)
-    lift30 = _first_finite(row, "lift30", "en_lift30", default=0.0)
+    mean_ret30 = _first_finite(
+        row,
+        "mean_ret30",
+        "mean_return30_gross",
+        "mean_return30",
+        "top30_mean_ret",
+        default=0.0,
+    )
     ndcg30 = _first_finite(row, "ndcg30", default=0.0)
     std30 = _first_finite(row, "hit_rate30_std", default=0.0)
-    score = 0.20 * hit30 + 0.20 * lift30 + 0.50 * ndcg30 - 0.25 * std30
+    score = 0.20 * hit30 + 0.20 * mean_ret30 + 0.50 * ndcg30 - 0.25 * std30
     if bool(row.get("degenerate", False)):
         score -= 1e6
     return float(score if np.isfinite(score) else -1e12)
@@ -2545,8 +2614,23 @@ def _write_metrics_csv(path: Path, rows: list[dict[str, Any]]) -> None:
 
 def _select_top_fraction(rows: list[dict[str, Any]], frac: float) -> list[str]:
     ranked = sorted(rows, key=lambda r: float(r.get("selection_score", -1e12)), reverse=True)
-    n = max(1, int(np.ceil(float(frac) * len(ranked)))) if ranked else 0
-    return [str(r["strategy_id"]) for r in ranked[:n]]
+    selected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for side in ("long", "short"):
+        side_rows = [r for r in ranked if str(r.get("side", "")) == side]
+        n_side = max(1, int(np.ceil(float(frac) * len(side_rows)))) if side_rows else 0
+        for row in side_rows[:n_side]:
+            sid = str(row["strategy_id"])
+            if sid not in seen:
+                selected.append(row)
+                seen.add(sid)
+    for row in ranked:
+        sid = str(row["strategy_id"])
+        if sid not in seen and str(row.get("side", "")) not in {"long", "short"}:
+            selected.append(row)
+            seen.add(sid)
+    selected.sort(key=lambda r: float(r.get("selection_score", -1e12)), reverse=True)
+    return [str(r["strategy_id"]) for r in selected]
 
 
 def _strategy_period_return_series(row: dict[str, Any]) -> dict[str, pd.Series]:
@@ -2677,6 +2761,11 @@ def _load_policy_winners(cfg: dict, run_id: str) -> list[str]:
         Path(cfg["data_root"]) / "artifacts" / run_id / "policy_params" / "strategy_for_inference.json",
         Path(cfg["data_root"]) / "artifacts" / run_id / "simple_policy_optimiser" / "deployment" / "best_policy_params.json",
     ]
+    candidates = [
+        candidate
+        for path in candidates
+        for candidate in mode_file_candidates(path, _market_mode_from_cfg(cfg))
+    ]
     for path in candidates:
         if not path.exists():
             continue
@@ -2706,23 +2795,27 @@ def _selection_profile_env(*, final: bool = False) -> dict[str, Any]:
             "EPM_META_HPO_TRIALS": "0",
             "EPM_EBM_HPO_TRIALS": "0",
             "EPM_EBM_MAX_ROUNDS": os.environ.get("EPM_EBM_MAX_ROUNDS", "1"),
-            "EPM_EBM_FINAL_MODEL_COUNT": "3",
-            "EPM_EBM_HONEST_EVAL_MIN_MODELS": "3",
+            "EPM_EBM_PRUNE_MODEL_COUNT": "1",
+            "EPM_EBM_ROW_SUBSAMPLE_FRAC": "0.50",
+            "EPM_EBM_FINAL_MODEL_COUNT": "1",
+            "EPM_EBM_HONEST_EVAL_MIN_MODELS": "1",
         }
     return {
         "EPM_MASK_STRATEGY_TOP_N": os.environ.get("EPM_MASK_STRATEGY_TOP_N", "999"),
-        "EPM_BASE_HPO_TRIALS": os.environ.get("EPM_BASE_HPO_TRIALS", "8"),
-        "EPM_META_HPO_TRIALS": os.environ.get("EPM_META_HPO_TRIALS", "8"),
-        "EPM_META_TOP_FRAC": os.environ.get("EPM_STRATEGY_SELECTION_BASE_TOP_FRAC", "0.33"),
-        "EPM_EBM_HPO_TRIALS": os.environ.get("EPM_EBM_HPO_TRIALS", "24"),
+        "EPM_BASE_HPO_TRIALS": "0",
+        "EPM_META_HPO_TRIALS": "0",
+        "EPM_META_TOP_FRAC": os.environ.get("EPM_STRATEGY_SELECTION_BASE_TOP_FRAC", "0.66"),
+        "EPM_EBM_HPO_TRIALS": "0",
         "EPM_EBM_RACE_MAX_ROWS": os.environ.get("EPM_EBM_RACE_MAX_ROWS", "60000"),
         "EPM_EBM_TREE_LGBM_MAX_FIT_ROWS": os.environ.get("EPM_EBM_TREE_LGBM_MAX_FIT_ROWS", "30000"),
         "EPM_EBM_HPO_MAX_ROWS": os.environ.get("EPM_EBM_HPO_MAX_ROWS", "10000"),
         "EPM_EBM_MAX_ROUNDS": os.environ.get("EPM_EBM_MAX_ROUNDS", "1"),
-        "EPM_EBM_FINAL_FIT_MAX_ROWS": os.environ.get("EPM_EBM_FINAL_FIT_MAX_ROWS", "1"),
+        "EPM_EBM_FINAL_FIT_MAX_ROWS": "0",
         "EPM_EBM_OOF_DISTILLATION_PASSES": os.environ.get("EPM_STRATEGY_SELECTION_SELF_DISTILL_ROUNDS", "1"),
-        "EPM_EBM_FINAL_MODEL_COUNT": os.environ.get("EPM_STRATEGY_SELECTION_EBM_PRUNE_MODELS", "3"),
-        "EPM_EBM_HONEST_EVAL_MIN_MODELS": os.environ.get("EPM_STRATEGY_SELECTION_EBM_PRUNE_MODELS", "3"),
+        "EPM_EBM_PRUNE_MODEL_COUNT": "1",
+        "EPM_EBM_ROW_SUBSAMPLE_FRAC": "0.50",
+        "EPM_EBM_FINAL_MODEL_COUNT": "1",
+        "EPM_EBM_HONEST_EVAL_MIN_MODELS": "1",
     }
 
 
@@ -2789,10 +2882,10 @@ def run_strategies_selection(cfg, ts_override=None, store=None):
     run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
     sel_dir = _strategy_selection_dir(cfg, run_id)
     assets = int(os.environ.get("EPM_STRATEGY_SELECTION_ASSETS", "100"))
-    base_top_frac = float(os.environ.get("EPM_STRATEGY_SELECTION_BASE_TOP_FRAC", "0.33"))
+    base_top_frac = float(os.environ.get("EPM_STRATEGY_SELECTION_BASE_TOP_FRAC", "0.66"))
     final_pool_n = int(os.environ.get("EPM_STRATEGY_SELECTION_FINAL_POOL_N", "15"))
-    inference_max_n = int(os.environ.get("EPM_STRATEGY_SELECTION_INFERENCE_MAX_N", "8"))
-    max_per_side = int(os.environ.get("EPM_STRATEGY_SELECTION_MAX_PER_SIDE", "4"))
+    inference_max_n = int(os.environ.get("EPM_STRATEGY_SELECTION_INFERENCE_MAX_N", "12"))
+    max_per_side = int(os.environ.get("EPM_STRATEGY_SELECTION_MAX_PER_SIDE", "8"))
     min_side_share = float(os.environ.get("EPM_STRATEGY_SELECTION_MIN_SIDE_SHARE", "0.40"))
     policy_trials = int(os.environ.get("EPM_STRATEGY_SELECTION_POLICY_TRIALS", "50"))
 
@@ -2887,7 +2980,7 @@ def run_strategies_selection(cfg, ts_override=None, store=None):
             max_strategies=len(top15_ids),
             n_trials=policy_trials,
             strategy_ids=top15_ids,
-            market_mode=selection_cfg.get("market_mode", "spot"),
+            market_mode=_market_mode_from_cfg(selection_cfg),
         )
 
     policy_winners = [
@@ -3327,25 +3420,29 @@ def main():
         cfg["data_root"] = os.path.abspath(_epm_data_root)
         cfg["reports_root"] = os.path.join(os.path.abspath(_epm_data_root), "reports")
         tprint(f"EPM_DATA_ROOT override: data_root={cfg['data_root']}")
-    market_mode = _normalize_market_mode("perps" if args.perps else args.market_mode)
-    cfg["market_mode"] = market_mode
-    cfg["use_perps"] = market_mode == "perps"
-    cfg["data_root"] = _append_market_suffix(cfg.get("data_root", "data"), market_mode)
-    cfg["reports_root"] = _append_market_suffix(
-        cfg.get("reports_root", "reports"), market_mode
-    )
-    cfg["hf_data_dir"] = _append_market_suffix(
-        cfg.get("hf_data_dir", "15m_ohlcv"), market_mode
-    )
-    os.environ["EPM_MARKET_MODE"] = market_mode
-    os.environ["EPM_HF_DATA_DIR"] = str(cfg["hf_data_dir"])
+    market_mode = "perps" if args.perps else "spot"
+    _apply_market_mode_paths(cfg, market_mode)
     tprint(
-        f"Market mode: {market_mode} data_root={cfg['data_root']} reports_root={cfg['reports_root']}"
+        f"Market mode: {cfg['market_mode']} "
+        f"(data_root={cfg['data_root']}, reports_root={cfg['reports_root']})"
     )
-    if cfg["use_perps"]:
+    if args.perps:
         cfg = enable_perp_feature_keys(cfg)
         # Perp-mode fee model: 0.10% round-trip (5 bps/side).
         _apply_fee_model(cfg, PERP_ROUND_TRIP_FEE_PCT)
+        cfg["feature_save_workers"] = max(
+            1,
+            int(
+                os.environ.get(
+                    "EPM_FEATURE_SAVE_WORKERS",
+                    cfg.get("feature_save_workers", 4),
+                )
+            ),
+        )
+    elif os.environ.get("EPM_FEATURE_SAVE_WORKERS"):
+        cfg["feature_save_workers"] = max(
+            1, int(os.environ["EPM_FEATURE_SAVE_WORKERS"])
+        )
 
     _configure_report_roots(cfg)
     cfg["optimise_use_ridge_oof"] = bool(args.optimise_use_ridge_oof)

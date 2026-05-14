@@ -110,6 +110,7 @@ class PortfolioManager:
         self.margin_total_assets_quote: Optional[float] = None
         self.margin_total_liabilities_quote: Optional[float] = None
         self.margin_level: Optional[float] = None
+        self.available_portfolio_value: Optional[float] = None
         self.cooldown_hours = cooldown_hours
         if max_same_side is not None:
             self.max_same_side = max(1, int(max_same_side))
@@ -420,6 +421,7 @@ class PortfolioManager:
             "book_notional_multiplier": float(self.book_notional_multiplier),
             "leverage_wallet_multiplier": float(self.leverage_wallet_multiplier),
             "min_margin_level_after_entry": float(self.min_margin_level_after_entry),
+            "available_wallet_quote": self.available_portfolio_value,
             "total_assets_quote": self.margin_total_assets_quote,
             "total_liabilities_quote": self.margin_total_liabilities_quote,
             "current_margin_level": self.margin_level,
@@ -608,6 +610,7 @@ class PortfolioManager:
         mode = str(margin_mode or "cross").lower()
         balance_params: Dict[str, Any] = {}
         position_params: Dict[str, Any] = {}
+        is_perps = account in {"perp", "perps", "future", "futures", "swap"}
         if account == "margin":
             balance_params = {"type": "margin", "marginMode": mode}
             position_params = {"type": "margin", "marginMode": mode}
@@ -639,6 +642,15 @@ class PortfolioManager:
             snapshot["used_balance"] = float(used.get(quote, np.nan))
             if np.isfinite(float(snapshot["total_balance"])):
                 self.portfolio_value = float(snapshot["total_balance"])
+                self.margin_total_assets_quote = float(snapshot["total_balance"])
+            if np.isfinite(float(snapshot["free_balance"])):
+                self.available_portfolio_value = float(snapshot["free_balance"])
+            elif is_perps and np.isfinite(float(snapshot["total_balance"])):
+                self.available_portfolio_value = float(snapshot["total_balance"])
+            if is_perps:
+                used_balance = float(snapshot["used_balance"])
+                if np.isfinite(used_balance):
+                    self.margin_total_liabilities_quote = used_balance
         except Exception as exc:
             category = _classify_api_error(exc)
             self.record_api_call(

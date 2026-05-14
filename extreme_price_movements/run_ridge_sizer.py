@@ -28,6 +28,7 @@ from typing import Dict, Optional
 import numpy as np
 import pandas as pd
 
+from extreme_price_movements.data_store import read_parquet_projected
 from extreme_price_movements.ridge_position_sizer import (
     RidgePositionSizer,
     prepare_policy_params_from_tpsl_optimiser,
@@ -831,7 +832,10 @@ def load_meta_oof_predictions(
                     )
 
                     if label_file:
-                        label_df = pd.read_parquet(label_file)
+                        label_df = read_parquet_projected(
+                            label_file,
+                            ["__ts__", "__symbol__", "ts", "timestamp", "symbol"],
+                        )
                         ts_col = (
                             "__ts__"
                             if "__ts__" in label_df.columns

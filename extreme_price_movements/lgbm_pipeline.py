@@ -74,6 +74,10 @@ LGBM_PERMUTATION_MAX_FEATURES = int(os.environ.get("EPM_LGBM_PERMUTATION_MAX_FEA
 LGBM_FINAL_FIT_MAX_ROWS = int(os.environ.get("EPM_LGBM_FINAL_FIT_MAX_ROWS", "200000"))
 LGBM_HPO_LEARNING_RATE = float(os.environ.get("EPM_LGBM_HPO_LEARNING_RATE", "0.02"))
 LGBM_FINAL_LEARNING_RATE = float(os.environ.get("EPM_LGBM_FINAL_LEARNING_RATE", "0.02"))
+LGBM_BASE_METRIC_TARGET_FRACTION = float(os.environ.get("EPM_LGBM_BASE_METRIC_TARGET_FRACTION", "0.30"))
+LGBM_META_METRIC_TARGET_FRACTION = float(os.environ.get("EPM_LGBM_META_METRIC_TARGET_FRACTION", os.environ.get("EPM_LGBM_METRIC_TARGET_FRACTION", "0.15")))
+LGBM_SALG_LIFT_COEF = float(os.environ.get("EPM_LGBM_SALG_LIFT_COEF", "0.38"))
+LGBM_J_SALG_NORM_DENOM = float(os.environ.get("EPM_LGBM_J_SALG_NORM_DENOM", "1.50"))
 LGBM_N_JOBS = int(os.environ.get("EPM_LGBM_N_JOBS", "3"))
 
 LGBM_CV_SPLITS = max(2, int(LGBM_CV_SPLITS))
@@ -82,6 +86,9 @@ LGBM_ROW_SUBSAMPLE_FRAC = float(np.clip(LGBM_ROW_SUBSAMPLE_FRAC, 0.01, 1.0))
 LGBM_FINAL_MODEL_COUNT = max(1, int(LGBM_FINAL_MODEL_COUNT))
 LGBM_OOF_DISTILLATION_PASSES = max(0, int(LGBM_OOF_DISTILLATION_PASSES))
 LGBM_META_RANK_BINS = max(2, int(LGBM_META_RANK_BINS))
+LGBM_BASE_METRIC_TARGET_FRACTION = float(np.clip(LGBM_BASE_METRIC_TARGET_FRACTION, 0.001, 0.5))
+LGBM_META_METRIC_TARGET_FRACTION = float(np.clip(LGBM_META_METRIC_TARGET_FRACTION, 0.001, 0.5))
+LGBM_J_SALG_NORM_DENOM = max(1e-6, float(LGBM_J_SALG_NORM_DENOM))
 
 LGBM_META_FEATURE_NAMES = [
     "lgbm_prob",
@@ -481,10 +488,27 @@ def _top_idx(order: np.ndarray, frac: float, n: int) -> np.ndarray:
     return np.asarray(order[-k:], dtype=np.int64)
 
 
+def _metric_salg(lift: float, stability: float) -> float:
+    if not (np.isfinite(lift) and np.isfinite(stability)):
+        return float("nan")
+    return float(stability + LGBM_SALG_LIFT_COEF * (lift - 1.0))
+
+
 def _unit_interval(value: float) -> float:
     if not np.isfinite(value):
         return 0.0
     return float(np.clip(value, 0.0, 1.0))
+
+
+def _normalize_salg_for_objective(salg: float) -> float:
+    return _unit_interval(float(salg) / LGBM_J_SALG_NORM_DENOM)
+
+
+def _target_top_fraction(objective_mode: str | None = "train_meta") -> float:
+    mode = _normalize_objective_mode(objective_mode)
+    if mode == "train_base":
+        return float(LGBM_BASE_METRIC_TARGET_FRACTION)
+    return float(LGBM_META_METRIC_TARGET_FRACTION)
 
 
 def _normalize_precision(precision: float, baseline: float) -> float:
@@ -525,46 +549,39 @@ def _ndcg_at_k(y_true: np.ndarray, pred: np.ndarray, k: int) -> float:
     return float(np.clip(dcg / idcg, 0.0, 1.0))
 
 
-def _bucket_monotonicity_score(y_win: np.ndarray, order: np.ndarray) -> dict[str, float]:
+def _bucket_monotonicity_score(y_win: np.ndarray, order: np.ndarray, *, top_frac: float = 0.20, n_buckets: int = 4) -> dict[str, float]:
     y = np.asarray(y_win, dtype=np.float64)
+    bucket_count = max(1, int(n_buckets))
+    top_frac_f = float(np.clip(top_frac, 0.001, 0.95))
+    empty = {
+        "rank_bucket_monotonicity": 0.0,
+        "rank_bucket_monotonicity_violation": 1.0,
+    }
+    for i in range(bucket_count):
+        lo = top_frac_f * i / bucket_count
+        hi = top_frac_f * (i + 1) / bucket_count
+        empty[f"rank_bucket_win_rate_{lo:.4f}_{hi:.4f}"] = 0.0
     if len(y) == 0:
-        return {
-            "rank_bucket_monotonicity": 0.0,
-            "rank_bucket_monotonicity_violation": 1.0,
-            "rank_bucket_win_rate_top10": 0.0,
-            "rank_bucket_win_rate_10_15": 0.0,
-            "rank_bucket_win_rate_15_20": 0.0,
-            "rank_bucket_win_rate_20_25": 0.0,
-            "rank_bucket_win_rate_25_30": 0.0,
-        }
+        return empty
     sorted_y = y[np.asarray(order, dtype=np.int64)[::-1]]
     n = len(sorted_y)
-    bounds = np.asarray(
-        [
-            0,
-            max(1, int(np.ceil(0.10 * n))),
-            max(1, int(np.ceil(0.15 * n))),
-            max(1, int(np.ceil(0.20 * n))),
-            max(1, int(np.ceil(0.25 * n))),
-            max(1, int(np.ceil(0.30 * n))),
-        ],
-        dtype=np.int64,
-    )
+    bounds_f = np.linspace(0.0, top_frac_f, bucket_count + 1)
+    bounds = np.asarray([0] + [max(1, int(np.ceil(frac * n))) for frac in bounds_f[1:]], dtype=np.int64)
     bounds = np.maximum.accumulate(np.clip(bounds, 0, n))
     sums = np.concatenate([[0.0], np.cumsum(sorted_y, dtype=np.float64)])
     bucket_n = np.maximum(bounds[1:] - bounds[:-1], 1)
     rates = (sums[bounds[1:]] - sums[bounds[:-1]]) / bucket_n
     diffs = rates[1:] - rates[:-1]
-    violation = float(np.mean(np.maximum(diffs, 0.0)))
-    return {
+    violation = float(np.mean(np.maximum(diffs, 0.0))) if len(diffs) else 0.0
+    out = {
         "rank_bucket_monotonicity": float(np.clip(1.0 - violation, 0.0, 1.0)),
         "rank_bucket_monotonicity_violation": violation,
-        "rank_bucket_win_rate_top10": float(rates[0]),
-        "rank_bucket_win_rate_10_15": float(rates[1]),
-        "rank_bucket_win_rate_15_20": float(rates[2]),
-        "rank_bucket_win_rate_20_25": float(rates[3]),
-        "rank_bucket_win_rate_25_30": float(rates[4]),
     }
+    for i, rate in enumerate(rates):
+        lo = top_frac_f * i / bucket_count
+        hi = top_frac_f * (i + 1) / bucket_count
+        out[f"rank_bucket_win_rate_{lo:.4f}_{hi:.4f}"] = float(rate)
+    return out
 
 
 def _grouped_top_stability(
@@ -664,6 +681,74 @@ def _groups_primary(groups: Any) -> Any:
     return groups
 
 
+
+def _slice_objective_components(
+    y: np.ndarray,
+    y_win: np.ndarray,
+    pred: np.ndarray,
+    ret: np.ndarray,
+    order: np.ndarray,
+    *,
+    classifier: bool,
+    baseline: float,
+    groups: Any,
+    target_frac: float,
+    prefix: str,
+) -> dict[str, float]:
+    target = float(np.clip(target_frac, 0.001, 0.95))
+    precision_fracs = tuple(float(np.clip(target * mult, 0.001, 0.95)) for mult in (1.0 / 3.0, 2.0 / 3.0, 1.0))
+    top_indices = [_top_idx(order, frac, len(y)) for frac in precision_fracs]
+    precision_vals = [float(np.mean(y_win[idx])) if len(idx) else 0.0 for idx in top_indices]
+    precision_norms = [_normalize_precision(v, baseline) for v in precision_vals]
+    target_top = top_indices[-1]
+    if classifier:
+        lift_target = precision_vals[-1] / max(baseline, 1e-6)
+    else:
+        denom = float(np.mean(np.abs(y))) + 1e-6
+        lift_target = float(np.mean(y[target_top]) / denom) if len(target_top) else 0.0
+    stability = _grouped_top_stability(y, pred, classifier, groups=_groups_primary(groups), frac=target)
+    stability_target = float(stability["stability"])
+    if stability_target <= 0.0:
+        top_vals = y_win[target_top] if len(target_top) else np.asarray([], dtype=np.float64)
+        stability_target = float(1.0 / (1.0 + np.std(top_vals))) if len(top_vals) else 0.0
+    mono = _bucket_monotonicity_score(y_win, order, top_frac=target, n_buckets=4)
+    salg_target = _metric_salg(float(lift_target), stability_target)
+    normalized_salg_target = _normalize_salg_for_objective(salg_target)
+    precision_blend = 0.40 * precision_norms[0] + 0.35 * precision_norms[1] + 0.25 * precision_norms[2]
+    objective = float(
+        0.25 * normalized_salg_target
+        + 0.20 * precision_blend
+        + 0.30 * float(mono["rank_bucket_monotonicity"])
+        + 0.25 * stability_target
+    )
+    ndcg_target = _ndcg_at_frac(ret, pred, frac=target)
+    out = {
+        f"{prefix}_target_frac": target,
+        f"{prefix}_precision_frac_1": precision_fracs[0],
+        f"{prefix}_precision_frac_2": precision_fracs[1],
+        f"{prefix}_precision_frac_3": precision_fracs[2],
+        f"{prefix}_precision_1": precision_vals[0],
+        f"{prefix}_precision_2": precision_vals[1],
+        f"{prefix}_precision_3": precision_vals[2],
+        f"{prefix}_precision_norm_1": precision_norms[0],
+        f"{prefix}_precision_norm_2": precision_norms[1],
+        f"{prefix}_precision_norm_3": precision_norms[2],
+        f"{prefix}_precision_blend": float(precision_blend),
+        f"{prefix}_lift": float(lift_target),
+        f"{prefix}_stability": float(stability_target),
+        f"{prefix}_stability_n_groups": float(stability.get("n_groups", 0.0)),
+        f"{prefix}_salg": float(salg_target),
+        f"{prefix}_normalized_salg": float(normalized_salg_target),
+        f"{prefix}_rank_bucket_monotonicity": float(mono["rank_bucket_monotonicity"]),
+        f"{prefix}_rank_bucket_monotonicity_violation": float(mono["rank_bucket_monotonicity_violation"]),
+        f"{prefix}_ndcg_at_target": float(ndcg_target),
+        f"{prefix}_J": objective,
+    }
+    for key, value in mono.items():
+        if key.startswith("rank_bucket_win_rate_"):
+            out[f"{prefix}_{key}"] = float(value)
+    return out
+
 def _metric_pack(
     y_true: np.ndarray,
     pred: np.ndarray,
@@ -750,7 +835,7 @@ def _metric_pack(
     ndcg15 = _ndcg_at_frac(ret, p, frac=0.15)
     ndcg20 = _ndcg_at_frac(ret, p, frac=0.20)
     ndcg30 = _ndcg_at_frac(ret, p, frac=0.30)
-    mono = _bucket_monotonicity_score(y_win, order)
+    mono = _bucket_monotonicity_score(y_win, order, top_frac=0.20)
     stability = _grouped_top_stability(y, p, classifier, groups=_groups_primary(grp), frac=0.20)
     stability20 = float(stability["stability"])
     if stability20 <= 0.0:
@@ -758,27 +843,53 @@ def _metric_pack(
         stability20 = float(1.0 / (1.0 + np.std(top_vals))) if len(top_vals) else 0.0
     net_return_blend = 0.60 * norm_ret10 + 0.40 * norm_ret20
     precision_blend = 0.60 * precision10_norm + 0.40 * precision20_norm
+    precision_blend_top10_20_30 = 0.40 * precision10_norm + 0.35 * precision20_norm + 0.25 * precision30_norm
     ndcg_blend = 0.60 * ndcg10 + 0.40 * ndcg20
-    j_base = float(0.25 * precision15 + 0.25 * precision30 + 0.25 * ndcg15 + 0.25 * ndcg30)
-    j_meta = float(
-        0.35 * net_return_blend
-        + 0.25 * precision_blend
-        + 0.15 * ndcg_blend
-        + 0.15 * float(mono["rank_bucket_monotonicity"])
-        + 0.10 * stability20
+    salg20 = _metric_salg(float(lift20), stability20)
+    normalized_salg20 = _normalize_salg_for_objective(salg20)
+    base_components = _slice_objective_components(
+        y,
+        y_win,
+        p,
+        ret,
+        order,
+        classifier=classifier,
+        baseline=baseline,
+        groups=grp,
+        target_frac=_target_top_fraction("train_base"),
+        prefix="base",
     )
+    meta_components = _slice_objective_components(
+        y,
+        y_win,
+        p,
+        ret,
+        order,
+        classifier=classifier,
+        baseline=baseline,
+        groups=grp,
+        target_frac=_target_top_fraction("train_meta"),
+        prefix="meta",
+    )
+    j_base = float(base_components["base_J"])
+    j_meta = float(meta_components["meta_J"])
     out = {
         "J_base": j_base,
         "J_meta": j_meta,
         "J_final": j_base,
         "J_Score": j_base,
         "selected_objective": j_base,
+        "base_target_frac": float(base_components["base_target_frac"]),
+        "meta_target_frac": float(meta_components["meta_target_frac"]),
         "net_return_blend": float(net_return_blend),
         "normalized_net_mean_ret10": float(norm_ret10),
         "normalized_net_mean_ret20": float(norm_ret20),
         "mean_ret10": float(mean_ret10),
         "mean_ret20": float(mean_ret20),
         "precision_blend": float(precision_blend),
+        "precision_blend_top10_20_30": float(precision_blend_top10_20_30),
+        "salg20": float(salg20),
+        "normalized_salg20": float(normalized_salg20),
         "precision10": float(precision10),
         "precision15": float(precision15),
         "precision20": float(precision20),
@@ -807,6 +918,8 @@ def _metric_pack(
         "brier": float(brier),
         "oof_std": float(np.std(p)),
     }
+    out.update(base_components)
+    out.update(meta_components)
     out.update(mono)
     return out
 
@@ -831,6 +944,96 @@ def _aggregate_j(fold_metrics: list[dict[str, float]], objective_mode: str | Non
     means.update({"J_final": robust, "selected_objective": robust, "selected_objective_mode": _normalize_objective_mode(objective_mode), "J_mean": float(np.mean(vals)), "J_std": std, "J_se": se, "J_median": float(q50), "J_iqr": float(q75 - q25), "J_robust": robust})
     return means
 
+
+
+def _record_lgbm_stage_metric_comparison(
+    metrics_out: dict[str, Any],
+    *,
+    candidate_metrics: dict[str, Any],
+    fit_oof_metrics: dict[str, Any] | None,
+    post_distill_metrics: dict[str, Any],
+) -> None:
+    metric_keys = (
+        "J_final",
+        "J_meta",
+        "J_base",
+        "J_Score",
+        "base_target_frac",
+        "meta_target_frac",
+        "base_salg",
+        "meta_salg",
+        "base_normalized_salg",
+        "meta_normalized_salg",
+        "base_precision_blend",
+        "meta_precision_blend",
+        "base_rank_bucket_monotonicity",
+        "meta_rank_bucket_monotonicity",
+        "base_stability",
+        "meta_stability",
+        "salg20",
+        "normalized_salg20",
+        "precision_blend_top10_20_30",
+        "precision10_norm",
+        "precision20_norm",
+        "precision30_norm",
+        "lift20",
+        "stability20",
+        "rank_bucket_monotonicity",
+        "ndcg_at_20",
+        "auc",
+        "brier",
+    )
+    stages = (
+        ("candidate_prune", candidate_metrics),
+        ("fit_oof", fit_oof_metrics or {}),
+        ("post_distill", post_distill_metrics),
+    )
+    rows: list[tuple[str, float | None, float | None, float | None]] = []
+    for key in metric_keys:
+        vals: list[float | None] = []
+        for stage_name, stage_metrics in stages:
+            value = stage_metrics.get(key)
+            try:
+                value_f = float(value)
+            except Exception:
+                value_f = float("nan")
+            if np.isfinite(value_f):
+                metrics_out[f"metric_stage_{stage_name}_{key}"] = value_f
+                vals.append(value_f)
+            else:
+                vals.append(None)
+        if vals[0] is not None and vals[1] is not None:
+            metrics_out[f"metric_stage_delta_candidate_prune_to_fit_oof_{key}"] = vals[1] - vals[0]
+        if vals[1] is not None and vals[2] is not None:
+            metrics_out[f"metric_stage_delta_fit_oof_to_post_distill_{key}"] = vals[2] - vals[1]
+        if any(v is not None for v in vals):
+            rows.append((key, vals[0], vals[1], vals[2]))
+    if not rows:
+        return
+    metric_w = max(len("Metric"), max(len(r[0]) for r in rows))
+    val_w = 14
+    lines = [
+        "LGBM stage metric comparison (candidate/prune -> fit_oof -> post-distill)",
+        (
+            f"{'Metric':<{metric_w}} | "
+            f"{'Cand/prune':>{val_w}} | "
+            f"{'Fit OOF':>{val_w}} | "
+            f"{'Post-distill':>{val_w}}"
+        ),
+        "-" * (metric_w + val_w * 3 + 9),
+    ]
+    for key, cand, fit, post in rows:
+        def _fmt(v: float | None) -> str:
+            return "-" if v is None else f"{v:.4f}"
+
+        lines.append(
+            f"{key:<{metric_w}} | "
+            f"{_fmt(cand):>{val_w}} | "
+            f"{_fmt(fit):>{val_w}} | "
+            f"{_fmt(post):>{val_w}}"
+        )
+    for line in lines:
+        tprint(line)
 
 def _stratified_subsample_indices(y: np.ndarray, max_n: int, random_state: int, classifier: bool) -> np.ndarray:
     n = len(y)
@@ -1639,7 +1842,8 @@ def _permutation_candidate_indices(gain: np.ndarray, split: np.ndarray, n_featur
         cap = min(200, max(40, int(np.ceil(0.35 * int(n_features)))))
     else:
         cap = int(n_features)
-    return np.asarray(np.argsort(quality)[:cap], dtype=np.int32)
+    idx = np.argsort(quality)[-cap:]
+    return np.asarray(np.sort(idx), dtype=np.int32)
 
 
 def _lgbm_stability_selection_pass(
@@ -1755,7 +1959,12 @@ def _lgbm_stability_selection_pass(
                 best_score = cfg_score
                 best_oof = cfg_oof.copy()
             distill = _compute_weight_distillation(y_arr, np.nan_to_num(cfg_oof, nan=float(np.mean(y_arr))), prev_oof, is_classifier=classifier, include_false_positive_focus=False)
-            fp_weight = _false_positive_avoidance_weight(y_arr, np.nan_to_num(cfg_oof, nan=float(np.mean(y_arr))), classifier=classifier, top_frac=0.20)
+            fp_weight = _false_positive_avoidance_weight(
+                y_arr,
+                np.nan_to_num(cfg_oof, nan=float(np.mean(y_arr))),
+                classifier=classifier,
+                top_frac=_target_top_fraction(objective_mode),
+            )
             current_weight, ess = _normalize_weights(base_weight * distill * fp_weight)
             prev_oof = np.nan_to_num(cfg_oof, nan=float(np.mean(y_arr))).astype(np.float32)
             tprint(f"LGBM stability grid seed={seed} config={cfg_i}/{len(configs)} score={cfg_score:.4f} ess={ess:.1f}")
@@ -2057,6 +2266,7 @@ def _oof_distilled_sample_weights_lgbm(
     random_state: int,
     passes: int,
     label: str,
+    objective_mode: str | None = "train_base",
 ) -> tuple[np.ndarray, np.ndarray]:
     base, _ = _normalize_weights(base_weight)
     current = base.copy()
@@ -2079,7 +2289,12 @@ def _oof_distilled_sample_weights_lgbm(
             random_state=random_state + pass_i * 7919,
         )
         distill = _compute_weight_distillation(y, last_oof, prev_oof, is_classifier=classifier, include_false_positive_focus=False)
-        fp_weight = _false_positive_avoidance_weight(y, last_oof, classifier=classifier, top_frac=0.20)
+        fp_weight = _false_positive_avoidance_weight(
+            y,
+            last_oof,
+            classifier=classifier,
+            top_frac=_target_top_fraction(objective_mode),
+        )
         current, ess = _normalize_weights(base * distill * fp_weight)
         prev_oof = last_oof.copy()
         tprint(
@@ -2164,6 +2379,7 @@ def _run_lgbm_hpo(
             },
         )
         fold_metrics: list[dict[str, float]] = []
+        fold_best_iterations: list[int] = []
         for step, (tr, va) in enumerate(splitter.split(np.zeros(len(y_split)), y_split)):
             model = _fit_lgbm_model(
                 X_sub.iloc[tr].reset_index(drop=True),
@@ -2175,6 +2391,9 @@ def _run_lgbm_hpo(
                 y_valid=y_sub[va],
                 early_stopping_rounds=75,
             )
+            best_iter = _model_num_iterations(model)
+            if best_iter > 0:
+                fold_best_iterations.append(int(best_iter))
             pred = _predict_lgbm_raw(model, X_sub.iloc[va].reset_index(drop=True), "classifier" if classifier else "regressor")
             fold_metrics.append(_metric_pack(y_sub[va], pred, classifier=classifier, groups=_groups_take(groups_sub, va), returns=ret_sub[va]))
             agg_step = _aggregate_j(fold_metrics, objective_mode=objective_mode)
@@ -2188,6 +2407,10 @@ def _run_lgbm_hpo(
                 trial.set_user_attr(key, float(value))
             except Exception:
                 pass
+        if fold_best_iterations:
+            trial.set_user_attr("hpo_fold_best_iterations", [int(v) for v in fold_best_iterations])
+            trial.set_user_attr("hpo_best_iteration_median", float(np.median(fold_best_iterations)))
+            trial.set_user_attr("hpo_best_iteration_p75", float(np.percentile(fold_best_iterations, 75)))
         return float(agg.get("J_final", -999.0))
 
     def early_stop_callback(study: Any, trial: Any) -> None:
@@ -2206,12 +2429,15 @@ def _run_lgbm_hpo(
         params = _default_hpo_params(random_state, classifier)
         return params, {"hpo_available": True, "hpo_completed_trials": 0, "hpo_best_value": np.nan, "hpo_objective_mode": _normalize_objective_mode(objective_mode)}
     best = study.best_trial
+    best_iterations = [int(v) for v in best.user_attrs.get("hpo_fold_best_iterations", []) if int(v) > 0]
+    final_n_estimators = int(np.percentile(best_iterations, 75)) if best_iterations else 1600
+    final_n_estimators = max(1, final_n_estimators)
     depth = int(best.params.get("max_depth", 4))
     best_params = _base_lgbm_params(
         random_state + 191,
         classifier=classifier,
         overrides={
-            "n_estimators": 1600,
+            "n_estimators": final_n_estimators,
             "learning_rate": LGBM_FINAL_LEARNING_RATE,
             "max_depth": depth,
             "num_leaves": int(2 ** depth),
@@ -2225,7 +2451,17 @@ def _run_lgbm_hpo(
         },
     )
     attrs = dict(best.user_attrs)
-    attrs.update({"hpo_available": True, "hpo_completed_trials": int(len(complete)), "hpo_best_trial": int(best.number), "hpo_best_value": float(best.value), "hpo_best_params": dict(best_params), "hpo_objective_mode": _normalize_objective_mode(objective_mode)})
+    attrs.update(
+        {
+            "hpo_available": True,
+            "hpo_completed_trials": int(len(complete)),
+            "hpo_best_trial": int(best.number),
+            "hpo_best_value": float(best.value),
+            "hpo_best_params": dict(best_params),
+            "hpo_objective_mode": _normalize_objective_mode(objective_mode),
+            "hpo_final_n_estimators": int(final_n_estimators),
+        }
+    )
     tprint(f"LGBM HPO complete: best_trial={best.number}, value={float(best.value):.4f}, params={json.dumps(best_params, sort_keys=True)}")
     return best_params, attrs
 
@@ -2322,6 +2558,7 @@ def train_lgbm_stability_candidate(
         random_state=random_state + 409,
         passes=LGBM_OOF_DISTILLATION_PASSES,
         label="candidate",
+        objective_mode=objective_mode,
     )
     eval_preds: list[np.ndarray] = []
     for i, cfg in enumerate(({"max_depth": 4, "reg_lambda": 5.0}, {"max_depth": 4, "reg_lambda": 15.0}, {"max_depth": 5, "reg_lambda": 5.0}, {"max_depth": 5, "reg_lambda": 15.0}), start=1):
@@ -2429,6 +2666,7 @@ def fit_lgbm_stability_full_model(
         random_state=random_state + 129,
         passes=LGBM_OOF_DISTILLATION_PASSES,
         label="pre_hpo",
+        objective_mode=objective_mode,
     )
     best_params, hpo_metrics = _run_lgbm_hpo(
         X_df.iloc[hpo_idx].reset_index(drop=True),
@@ -2456,6 +2694,7 @@ def fit_lgbm_stability_full_model(
             random_state=random_state + 33107,
             passes=LGBM_OOF_DISTILLATION_PASSES,
             label="final",
+            objective_mode=objective_mode,
         )
     else:
         final_weights = sw.copy()
@@ -2489,7 +2728,8 @@ def fit_lgbm_stability_full_model(
     model.meta_oof_features = meta_oof_features.reindex(columns=model.meta_feature_names, fill_value=0.0).astype(np.float32)
     final_metrics = _metric_pack(y_arr, final_oof, classifier=classifier, groups=stability_groups, returns=ret_arr)
     final_metrics.update(_aggregate_j(final_fold_metrics, objective_mode=objective_mode))
-    model.metrics = dict(metrics or {})
+    candidate_metrics = dict(metrics or {})
+    model.metrics = dict(candidate_metrics)
     model.metrics.update(hpo_metrics)
     model.metrics.update(final_metrics)
     model.metrics["feature_count"] = int(len(selected_features))
@@ -2507,12 +2747,22 @@ def fit_lgbm_stability_full_model(
     if len(hpo_pre_oof) == len(hpo_idx):
         hpo_pre_metrics = _metric_pack(y_arr[hpo_idx], hpo_pre_oof, classifier=classifier, groups=hpo_groups, returns=ret_arr[hpo_idx])
         model.metrics["pre_hpo_distill_selected_objective"] = _objective_value(hpo_pre_metrics, objective_mode)
+    fit_oof_metrics_for_stage: dict[str, Any] | None = None
     if pre_final_oof is not None and len(pre_final_oof) == n:
         pre_metrics = _metric_pack(y_arr, pre_final_oof, classifier=classifier, groups=stability_groups, returns=ret_arr)
+        pre_metrics.update(_aggregate_j([pre_metrics], objective_mode=objective_mode))
+        if LGBM_OOF_DISTILLATION_PASSES > 0:
+            fit_oof_metrics_for_stage = dict(pre_metrics)
         for key, value in pre_metrics.items():
             model.metrics[f"pre_final_distill_{key}"] = value
             if key in final_metrics:
                 model.metrics[f"distill_delta_{key}"] = float(final_metrics[key]) - float(value)
+    _record_lgbm_stage_metric_comparison(
+        model.metrics,
+        candidate_metrics=candidate_metrics,
+        fit_oof_metrics=fit_oof_metrics_for_stage,
+        post_distill_metrics=final_metrics,
+    )
     model.pruning_history = list(pruning_history or [])
     tprint(f"LGBM full fit done: J={model.metrics.get('J_final', 0.0):.4f}, features={len(selected_features)}.")
     return model

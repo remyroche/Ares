@@ -37,6 +37,32 @@ from extreme_price_movements.regime_adaptor import (
 from extreme_price_movements.utils import tprint
 
 
+def _extract_ebm_contract_model(model: Any) -> Any:
+    """Return the EBM contract-bearing model nested in a meta wrapper, if any."""
+    if model is None:
+        return None
+    if model.__class__.__name__ == "EBMOnLGBMModel":
+        return model
+    ebm_model = getattr(model, "ebm_model", None)
+    if ebm_model is not None and ebm_model.__class__.__name__ == "EBMOnLGBMModel":
+        return ebm_model
+    return None
+
+
+def _missing_ebm_raw_contract(model: Any, features: pd.DataFrame) -> list[str]:
+    """List required raw EBM features absent from a live inference frame."""
+    ebm_model = _extract_ebm_contract_model(model)
+    if ebm_model is None or not isinstance(features, pd.DataFrame):
+        return []
+    raw_features = [
+        str(c) for c in (getattr(ebm_model, "raw_selected_features", []) or [])
+    ]
+    if not raw_features:
+        return []
+    available = set(map(str, features.columns))
+    return [name for name in raw_features if name not in available]
+
+
 class ModelOrchestrator:
     """Orchestrates model inference pipeline with proper prediction order."""
 
@@ -483,12 +509,31 @@ class ModelOrchestrator:
             else:
                 feat_cols = list(features.columns)
 
+            missing_ebm_raw = _missing_ebm_raw_contract(meta_model, features)
+            if missing_ebm_raw:
+                reason = "missing_ebm_feature_contract"
+                self._last_results["meta_contract_error"] = {
+                    "key": key,
+                    "reason": reason,
+                    "missing_raw_features_count": len(missing_ebm_raw),
+                    "missing_raw_features_sample": missing_ebm_raw[:20],
+                }
+                tprint(
+                    f"Error predicting meta for {key}: {reason} "
+                    f"({len(missing_ebm_raw)} missing raw EBM features)."
+                )
+                return pd.Series(dtype=float)
+
             available_cols = [c for c in feat_cols if c in features.columns]
 
             if not available_cols:
                 return pd.Series(dtype=float)
 
-            X = features[available_cols].fillna(0)
+            ebm_contract_model = _extract_ebm_contract_model(meta_model)
+            if ebm_contract_model is not None:
+                X = features.fillna(0)
+            else:
+                X = features[available_cols].fillna(0)
             preds = meta_model.predict(X)
 
             return pd.Series(preds, index=features.index)

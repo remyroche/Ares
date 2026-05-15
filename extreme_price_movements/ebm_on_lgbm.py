@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import hashlib
 import inspect
 import json
 import logging
@@ -15,7 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterator, Optional
 
 import numpy as np
 import pandas as pd
@@ -660,6 +661,112 @@ class SplinePostProcessor:
             out = np.asarray(self.isotonic.predict(out), dtype=np.float32)
             out = np.clip(out, self.clip_lo, self.clip_hi)
         return out.astype(np.float32)
+
+
+def _hash_feature_names(names: Any) -> str:
+    """Return a stable short hash for an ordered feature-name contract."""
+    try:
+        values = [str(name) for name in (names or [])]
+    except Exception:
+        values = []
+    payload = json.dumps(values, sort_keys=False, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()[:16]
+
+
+def iter_ebm_models(obj: Any) -> Iterator[tuple[str, Any]]:
+    """Recursively find persisted EBM-on-LGBM models in nested artifacts.
+
+    The finder is intentionally class-name based so it also works with pickled
+    artifacts whose concrete classes have been imported from older module paths.
+    Weak residual wrappers are reported at their ``.ebm_model`` child when that
+    attribute is populated.
+    """
+    seen: set[int] = set()
+
+    def walk(value: Any, path: str) -> Iterator[tuple[str, Any]]:
+        if value is None:
+            return
+        value_id = id(value)
+        if value_id in seen:
+            return
+        seen.add(value_id)
+
+        class_name = value.__class__.__name__
+        if class_name == "EBMOnLGBMModel":
+            yield path, value
+            return
+        if class_name in {"WeakResidualMetaRegressor", "WeakResidualMetaClassifier"}:
+            ebm_model = getattr(value, "ebm_model", None)
+            if ebm_model is not None:
+                yield from walk(ebm_model, f"{path}.ebm_model")
+            return
+
+        if isinstance(value, dict):
+            for key, child in value.items():
+                yield from walk(child, f"{path}[{key!r}]")
+            return
+        if isinstance(value, (list, tuple)):
+            for idx, child in enumerate(value):
+                yield from walk(child, f"{path}[{idx}]")
+            return
+        if isinstance(
+            value,
+            (str, bytes, bytearray, int, float, bool, np.ndarray, pd.DataFrame, pd.Series),
+        ):
+            return
+        if inspect.ismodule(value) or inspect.isclass(value) or inspect.isfunction(value):
+            return
+
+        attrs = getattr(value, "__dict__", None)
+        if isinstance(attrs, dict):
+            for name, child in attrs.items():
+                if name.startswith("__") or child is value:
+                    continue
+                yield from walk(child, f"{path}.{name}")
+
+    yield from walk(obj, "state")
+
+
+def summarize_ebm_leaf_contract(model_path: str, model: Any) -> dict[str, Any]:
+    """Summarize the persisted feature/leaf-transform contract of one EBM model."""
+    selected_features = [
+        str(c) for c in (getattr(model, "selected_features", []) or [])
+    ]
+    raw_selected_features = [
+        str(c) for c in (getattr(model, "raw_selected_features", []) or [])
+    ]
+    tree_feature_names = [
+        str(c) for c in (getattr(model, "tree_feature_names", []) or [])
+    ]
+    tree_models = list(getattr(model, "tree_models", []) or [])
+    tree_feature_config = getattr(model, "tree_feature_config", {}) or {}
+    has_oof_tree_features = bool(
+        isinstance(tree_feature_config, dict)
+        and tree_feature_config.get("oof_tree_features")
+    )
+    return {
+        "model_path": str(model_path),
+        "mode": str(getattr(model, "mode", "")),
+        "selected_features_n": len(selected_features),
+        "raw_selected_features_n": len(raw_selected_features),
+        "tree_feature_names_n": len(tree_feature_names),
+        "tree_models_n": len(tree_models),
+        "has_tree_feature_scales": getattr(model, "tree_feature_scales", None)
+        is not None,
+        "has_tree_feature_config": isinstance(tree_feature_config, dict)
+        and bool(tree_feature_config),
+        "has_oof_tree_features": has_oof_tree_features,
+        "has_oof_tree_feature_config": has_oof_tree_features,
+        "selected_lgbm_features_n": sum(
+            1 for c in selected_features if c.startswith("lgbm_")
+        ),
+        "selected_raw_features_n": sum(
+            1 for c in selected_features if not c.startswith("lgbm_")
+        ),
+        "selected_feature_hash": _hash_feature_names(selected_features),
+        "raw_selected_feature_hash": _hash_feature_names(raw_selected_features),
+        "tree_feature_name_hash": _hash_feature_names(tree_feature_names),
+    }
 
 
 class EBMOnLGBMModel:

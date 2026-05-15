@@ -49,12 +49,11 @@ import argparse
 import hashlib
 import json
 import os
-import sys
 import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -83,7 +82,6 @@ from extreme_price_movements.inference.data_fetcher import (
     DataFetcher,
     classify_api_error,
     fetch_and_build_panel,
-    fetch_latest_ohlcv,
     make_exchange,
 )
 from extreme_price_movements.inference.feature_generator import (
@@ -92,7 +90,6 @@ from extreme_price_movements.inference.feature_generator import (
     generate_features,
     get_features_for_candidates,
     get_inference_required_feature_keys,
-    get_market_data,
     load_or_compute_features,
     raw_required_feature_keys,
 )
@@ -141,7 +138,6 @@ from extreme_price_movements.path_utils import mode_file_candidates
 from extreme_price_movements.inference.trade_executor import TradeExecutor
 from extreme_price_movements.inference.trade_logger import (
     TradeLogger,
-    log_trade_decision,
 )
 from extreme_price_movements.portfolio_manager import PortfolioManager
 from extreme_price_movements.utils import tprint
@@ -1417,8 +1413,7 @@ def _send_trade_close_email(
             f"decision_module: {closed_trade.get('decision_module')}",
             "stop_policy_params_source: "
             f"{closed_trade.get('stop_policy_params_source')}",
-            "stop_policy_params_hash: "
-            f"{closed_trade.get('stop_policy_params_hash')}",
+            f"stop_policy_params_hash: {closed_trade.get('stop_policy_params_hash')}",
             f"stop_policy_schema: {closed_trade.get('stop_policy_schema')}",
             f"stop_order_id: {closed_trade.get('stop_order_id')}",
             f"close_order_id: {closed_trade.get('close_order_id')}",
@@ -4741,7 +4736,6 @@ def _emit_inference_heartbeat(
 
 
 def main():
-    import argparse
 
     _configure_numba_threading_layer()
     parser = argparse.ArgumentParser()
@@ -5600,11 +5594,21 @@ def _evaluate_oco_policy(
                     position_state.update(refreshed)
                     stop_price = float(position_state.get("stop_price", stop_price))
 
-        for bar_ts, row in bars.iterrows():
-            bar_open = float(row["open"])
-            bar_high = float(row["high"])
-            bar_low = float(row["low"])
-            bar_close = float(row["close"])
+        # Bolt Optimization: Avoid pandas Series box/unbox overhead by
+        # unpacking columns as numpy arrays and zipping to iterate natively in Python
+        bar_ts_arr = bars.index.to_numpy()
+        open_arr = bars["open"].to_numpy()
+        high_arr = bars["high"].to_numpy()
+        low_arr = bars["low"].to_numpy()
+        close_arr = bars["close"].to_numpy()
+
+        for bar_ts, bar_open, bar_high, bar_low, bar_close in zip(
+            bar_ts_arr, open_arr, high_arr, low_arr, close_arr
+        ):
+            bar_open = float(bar_open)
+            bar_high = float(bar_high)
+            bar_low = float(bar_low)
+            bar_close = float(bar_close)
             price_dev_pct = (
                 (bar_close - entry_price) / max(abs(entry_price), 1e-12)
                 if side == "long"

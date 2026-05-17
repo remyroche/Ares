@@ -23,9 +23,9 @@ class PortfolioPolicyConfig:
     max_concurrent_per_strategy: Optional[int] = None
     reserved_position_slots: Optional[int] = None
 
-    max_total_wallet_allocation_pct: float = 0.75
+    max_total_wallet_allocation_pct: float = 0.95
     max_available_wallet_position_pct: float = 0.50
-    max_position_wallet_pct: float = 0.15
+    max_position_wallet_pct: float = 0.20
     max_position_quote_notional: float = 5000.0
     book_notional_multiplier: float = 1.0
     leverage_wallet_multiplier: float = 1.0
@@ -51,9 +51,9 @@ class PortfolioPolicyConfig:
     max_orderbook_slippage_bps: float = 50.0
     max_entry_friction_bps: float = 60.0
     max_spread_bps: float = 25.0
-    hard_max_spread_bps: float = 75.0
+    hard_max_spread_bps: float = 100.0
     min_liquidity_capacity_weight: float = 0.25
-    max_ticker_age_seconds: float = 30.0
+    max_ticker_age_seconds: float = 4.0
 
     max_signal_gap_bps_default: float = 150.0
     max_order_chase_bps: float = 30.0

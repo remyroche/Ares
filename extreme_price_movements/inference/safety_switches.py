@@ -22,6 +22,14 @@ class SafetySwitchDecision:
 class MarketKillSwitch:
     """Self-reversible market shock/depeg switch that blocks only new entries."""
 
+    _DEPRECATED_REASONS = {
+        "BTC_1H_MOVE_GT_7PCT",
+        "ETH_1H_MOVE_GT_7PCT",
+        "BTC_4H_MOVE_GT_10PCT",
+        "ETH_4H_MOVE_GT_10PCT",
+        "MARKET_MEDIAN_1H_MOVE_GT_5PCT",
+    }
+
     def __init__(
         self,
         path: str | Path = "data/live_state/market_kill_switch.json",
@@ -52,6 +60,16 @@ class MarketKillSwitch:
         if len(s) <= periods:
             return 0.0
         return float(s.iloc[-1] / max(float(s.iloc[-1 - periods]), 1e-12) - 1.0)
+
+    @staticmethod
+    def _basket_abs_move(basket_close: pd.DataFrame, periods: int) -> float:
+        if not isinstance(basket_close, pd.DataFrame) or len(basket_close) <= periods:
+            return 0.0
+        latest = basket_close.iloc[-1].astype(float)
+        prior = basket_close.iloc[-1 - periods].astype(float).replace(0.0, np.nan)
+        move = (latest / prior - 1.0).abs().replace([np.inf, -np.inf], np.nan)
+        mean_move = float(move.mean(skipna=True))
+        return mean_move if np.isfinite(mean_move) else 0.0
 
     def evaluate(
         self,
@@ -95,24 +113,19 @@ class MarketKillSwitch:
                 "eth_4h_move": eth_4h,
             }
         )
-        if not reason and btc_1h > 0.07:
-            reason = "BTC_1H_MOVE_GT_7PCT"
-        if not reason and eth_1h > 0.07:
-            reason = "ETH_1H_MOVE_GT_7PCT"
-        if not reason and btc_4h > 0.10:
-            reason = "BTC_4H_MOVE_GT_10PCT"
-        if not reason and eth_4h > 0.10:
-            reason = "ETH_4H_MOVE_GT_10PCT"
         if (
             not reason
             and isinstance(basket_close, pd.DataFrame)
             and len(basket_close) > 1
         ):
-            move = (basket_close.iloc[-1] / basket_close.iloc[-2] - 1.0).abs()
-            med = float(move.replace([np.inf, -np.inf], np.nan).median())
-            details["market_median_1h_abs_move"] = med
-            if med > 0.05:
-                reason = "MARKET_MEDIAN_1H_MOVE_GT_5PCT"
+            avg_1h = self._basket_abs_move(basket_close, 1)
+            avg_4h = self._basket_abs_move(basket_close, 4)
+            details["market_avg_1h_abs_move"] = avg_1h
+            details["market_avg_4h_abs_move"] = avg_4h
+            if avg_1h > 0.05:
+                reason = "MARKET_AVG_1H_MOVE_GT_5PCT"
+            elif avg_4h > 0.10:
+                reason = "MARKET_AVG_4H_MOVE_GT_10PCT"
 
         state = self._load_state()
         if reason:
@@ -130,6 +143,12 @@ class MarketKillSwitch:
             return SafetySwitchDecision(False, True, reason, details)
 
         if state.get("active"):
+            if state.get("reason") in self._DEPRECATED_REASONS:
+                state["active"] = False
+                state["recovered_at"] = now_ts.isoformat()
+                state["recovery_reason"] = "deprecated_market_kill_switch_reason"
+                self._write_state(state)
+                return SafetySwitchDecision(True, False, "allowed", details)
             halt_until = pd.to_datetime(
                 state.get("halt_until"), utc=True, errors="coerce"
             )

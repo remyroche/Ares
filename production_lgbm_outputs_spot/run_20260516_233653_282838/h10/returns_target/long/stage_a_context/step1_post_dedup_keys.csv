@@ -1,0 +1,13 @@
+side,source_horizon,cheap_rank,canonical_key
+long,0,1.0000715740960253,(*)|(dist_rolling_7d_high>0.24724466)|(range_24h_pct>0.071724296)
+long,0,1.000064395538766,(*)|(dist_weekly_vwap<=-0.072532386)|(rolling_range_20>-0.1067524)
+long,0,0.9944098405209344,(*)|(dist_weekly_vwap<=-0.043798238)|(prior_volatility>0.2236346)
+long,0,0.23973752279948748,(*)|(bars_in_high_vol_state_log_norm>1.68249)|(atr_percentile<=0.36644411)
+long,0,0.7825785271973619,(*)|(dist_rolling_7d_high>0.25267488&dist_weekly_vwap<=-0.083888762)|(*)
+long,0,0.7500093623779569,(*)|(dist_weekly_vwap<=-0.069069922)|(realized_volatility_24h>0.14666812)
+long,0,0.7809465694666994,(*)|(dist_weekly_vwap<=-0.076264307)|(prior_volatility>0.0076737665)
+long,0,1.000040075947392,(*)|(dist_weekly_vwap<=-0.049046133)|(realized_volatility_24h>0.27316645&up_down_return_mass_ratio_tanh<=1.5065269)
+long,0,0.6287222602566219,(*)|(*)|(compression_score<=0.030489033&prior_range>-0.016032662&range_24h_pct>0.039925903&return_autocorr_48<=0.15770586)
+long,0,0.4986818243241092,(*)|(loc_prior_bar_pos_48<=-0.021209568)|(compression_ratio>0.78803438&prior_range>0.3041507)
+long,0,0.8311267968247497,(*)|(dist_weekly_vwap<=-0.096748404)|(range_24h_pct>0.040685534)
+long,0,0.6559777575949701,(*)|(dist_rolling_7d_high<=0.36258617&dist_vwap_atr>0.012366674)|(direction_entropy_20<=-0.36517611)

@@ -1,0 +1,607 @@
+{
+  "cross_margin_residual_assets": [
+    "BNB"
+  ],
+  "dust_quote_threshold": 2.5,
+  "dust_to_bnb": {
+    "assets": [
+      "BB",
+      "CHZ",
+      "DASH",
+      "GPS",
+      "KERNEL",
+      "NIGHT",
+      "ORDI",
+      "SENT",
+      "XPL",
+      "ZKP"
+    ],
+    "candidate_assets": [
+      "BB",
+      "CHZ",
+      "DASH",
+      "FLOKI",
+      "GPS",
+      "KERNEL",
+      "NIGHT",
+      "ORDI",
+      "SENT",
+      "XPL",
+      "ZKP"
+    ],
+    "converted": true,
+    "convertible_assets": [
+      "BB",
+      "CHZ",
+      "DASH",
+      "GPS",
+      "KERNEL",
+      "NIGHT",
+      "ORDI",
+      "SENT",
+      "XPL",
+      "ZKP"
+    ],
+    "enabled": true,
+    "response": {
+      "totalServiceCharge": "0.00000688",
+      "totalTransfered": "0.00034656",
+      "transferResult": [
+        {
+          "amount": "0.160445",
+          "fromAsset": "BB",
+          "operateTime": "1778880192288",
+          "serviceChargeAmount": "0.00000015",
+          "targetAsset": "BNB",
+          "tranId": "372097207278",
+          "transferedAmount": "0.00000774"
+        },
+        {
+          "amount": "0.798125",
+          "fromAsset": "KERNEL",
+          "operateTime": "1778880192292",
+          "serviceChargeAmount": "0.00000151",
+          "targetAsset": "BNB",
+          "tranId": "372097207278",
+          "transferedAmount": "0.00007559"
+        },
+        {
+          "amount": "0.84325",
+          "fromAsset": "CHZ",
+          "operateTime": "1778880192293",
+          "serviceChargeAmount": "0.00000114",
+          "targetAsset": "BNB",
+          "tranId": "372097207278",
+          "transferedAmount": "0.00005708"
+        },
+        {
+          "amount": "0.7872",
+          "fromAsset": "NIGHT",
+          "operateTime": "1778880192293",
+          "serviceChargeAmount": "0.00000075",
+          "targetAsset": "BNB",
+          "tranId": "372097207278",
+          "transferedAmount": "0.00003799"
+        },
+        {
+          "amount": "0.141195",
+          "fromAsset": "XPL",
+          "operateTime": "1778880192293",
+          "serviceChargeAmount": "0.00000037",
+          "targetAsset": "BNB",
+          "tranId": "372097207278",
+          "transferedAmount": "0.00001863"
+        },
+        {
+          "amount": "1.004625",
+          "fromAsset": "GPS",
+          "operateTime": "1778880192293",
+          "serviceChargeAmount": "0.00000025",
+          "targetAsset": "BNB",
+          "tranId": "372097207278",
+          "transferedAmount": "0.00001285"
+        },
+        {
+          "amount": "0.00086605",
+          "fromAsset": "DASH",
+          "operateTime": "1778880192292",
+          "serviceChargeAmount": "0.00000111",
+          "targetAsset": "BNB",
+          "tranId": "372097207278",
+          "transferedAmount": "0.00005597"
+        },
+        {
+          "amount": "0.008499",
+          "fromAsset": "ORDI",
+          "operateTime": "1778880192291",
+          "serviceChargeAmount": "0.00000108",
+          "targetAsset": "BNB",
+          "tranId": "372097207278",
+          "transferedAmount": "0.00005433"
+        },
+        {
+          "amount": "0.58675",
+          "fromAsset": "SENT",
+          "operateTime": "1778880192292",
+          "serviceChargeAmount": "0.00000027",
+          "targetAsset": "BNB",
+          "tranId": "372097207278",
+          "transferedAmount": "0.00001365"
+        },
+        {
+          "amount": "0.11659",
+          "fromAsset": "ZKP",
+          "operateTime": "1778880192293",
+          "serviceChargeAmount": "0.00000025",
+          "targetAsset": "BNB",
+          "tranId": "372097207278",
+          "transferedAmount": "0.00001273"
+        }
+      ]
+    }
+  },
+  "execution_account": "margin",
+  "items": [
+    {
+      "amount": 0.160445,
+      "asset": "BB",
+      "classification": "dust_residual",
+      "debt": 0.0,
+      "free": 0.160445,
+      "imported_for_monitoring": false,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 0.0325,
+      "quote_value": 0.0052144625,
+      "side": "long",
+      "symbol": "BB/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 0.00401937,
+      "asset": "BNB",
+      "classification": "fee_token_or_collateral_residual",
+      "cleanup_skip_reason": "residual_asset_below_cleanup_cap_not_imported",
+      "debt": 1.037e-05,
+      "free": 0.00402974,
+      "gross_balance_quote_value": 2.7143925666000004,
+      "gross_debt_quote_value": 0.006985128300000001,
+      "imported_for_monitoring": false,
+      "interest": 1.037e-05,
+      "kind": "net_exposure",
+      "netted_balance_and_debt": true,
+      "price": 673.59,
+      "quote_value": 2.7074074383,
+      "side": "long",
+      "symbol": "BNB/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 0.84325,
+      "asset": "CHZ",
+      "classification": "dust_residual",
+      "debt": 0.0,
+      "free": 0.84325,
+      "imported_for_monitoring": false,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 0.04551,
+      "quote_value": 0.038376307500000005,
+      "side": "long",
+      "symbol": "CHZ/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 0.00086605,
+      "asset": "DASH",
+      "classification": "dust_residual",
+      "debt": 0.0,
+      "free": 0.00086605,
+      "imported_for_monitoring": false,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 43.52,
+      "quote_value": 0.037690496000000004,
+      "side": "long",
+      "symbol": "DASH/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 0.01,
+      "asset": "FLOKI",
+      "classification": "dust_residual",
+      "debt": 0.0,
+      "free": 0.01,
+      "imported_for_monitoring": false,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 3.295e-05,
+      "quote_value": 3.2950000000000003e-07,
+      "side": "long",
+      "symbol": "FLOKI/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 1.004625,
+      "asset": "GPS",
+      "classification": "dust_residual",
+      "debt": 0.0,
+      "free": 1.004625,
+      "imported_for_monitoring": false,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 0.00859,
+      "quote_value": 0.008629728750000001,
+      "side": "long",
+      "symbol": "GPS/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 342.67415,
+      "asset": "HOME",
+      "classification": "external_long_position",
+      "cleanup_skip_reason": "active_or_pending_trade_present",
+      "debt": 0.0,
+      "free": 0.67415,
+      "imported_for_monitoring": true,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 0.01755,
+      "quote_value": 6.0139313324999994,
+      "side": "long",
+      "symbol": "HOME/USDC",
+      "used": 342.0
+    },
+    {
+      "amount": 0.798125,
+      "asset": "KERNEL",
+      "classification": "dust_residual",
+      "debt": 0.0,
+      "free": 0.798125,
+      "imported_for_monitoring": false,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 0.0635,
+      "quote_value": 0.0506809375,
+      "side": "long",
+      "symbol": "KERNEL/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 0.085405,
+      "asset": "MANTA",
+      "classification": "dust_to_repay",
+      "debt": 0.085405,
+      "free": 0.0,
+      "imported_for_monitoring": false,
+      "interest": 0.0,
+      "kind": "debt",
+      "price": 0.07863,
+      "quote_value": 0.00671539515,
+      "side": "short",
+      "symbol": "MANTA/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 0.7872,
+      "asset": "NIGHT",
+      "classification": "dust_residual",
+      "debt": 0.0,
+      "free": 0.7872,
+      "imported_for_monitoring": false,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 0.03249,
+      "quote_value": 0.025576128,
+      "side": "long",
+      "symbol": "NIGHT/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 0.008499,
+      "asset": "ORDI",
+      "classification": "dust_residual",
+      "debt": 0.0,
+      "free": 0.008499,
+      "imported_for_monitoring": false,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 4.31,
+      "quote_value": 0.036630689999999994,
+      "side": "long",
+      "symbol": "ORDI/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 0.58675,
+      "asset": "SENT",
+      "classification": "dust_residual",
+      "debt": 0.0,
+      "free": 0.58675,
+      "imported_for_monitoring": false,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 0.01567,
+      "quote_value": 0.009194372499999999,
+      "side": "long",
+      "symbol": "SENT/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 39.8008786,
+      "asset": "USDC",
+      "classification": "quote_balance_available",
+      "debt": 0.0,
+      "free": 39.8008786,
+      "imported_for_monitoring": false,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 1.0,
+      "quote_value": 39.8008786,
+      "side": "long",
+      "symbol": "USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 0.141195,
+      "asset": "XPL",
+      "classification": "dust_residual",
+      "debt": 0.0,
+      "free": 0.141195,
+      "imported_for_monitoring": false,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 0.089,
+      "quote_value": 0.012566354999999998,
+      "side": "long",
+      "symbol": "XPL/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 0.11659,
+      "asset": "ZKP",
+      "classification": "dust_residual",
+      "debt": 0.0,
+      "free": 0.11659,
+      "imported_for_monitoring": false,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 0.0736,
+      "quote_value": 0.008581024,
+      "side": "long",
+      "symbol": "ZKP/USDC",
+      "used": 0.0
+    }
+  ],
+  "margin_mode": "cross",
+  "margin_repay_attempts": [
+    {
+      "asset": "MANTA",
+      "attempted": false,
+      "debt": 0.085405,
+      "free": 0.0,
+      "quote_value": 0.00671539515,
+      "reason": "dust_to_repay",
+      "skip_reason": "no_free_balance_to_repay",
+      "success": false
+    }
+  ],
+  "mode": "live-test",
+  "quote_currency": "USDC",
+  "residual_cleanup_cap_quote": 5.0,
+  "small_liability_exchange": {
+    "candidate_assets": [
+      "MANTA"
+    ],
+    "enabled": true,
+    "exchangeable_assets": [
+      "BNB",
+      "MANTA"
+    ],
+    "exchangeable_response": [
+      {
+        "asset": "BNB",
+        "interest": "0.00001037",
+        "liabilityAsset": "USDC",
+        "liabilityQty": "0.00698738",
+        "principal": "0"
+      },
+      {
+        "asset": "MANTA",
+        "interest": "0",
+        "liabilityAsset": "USDC",
+        "liabilityQty": "0.00671726",
+        "principal": "0.085405"
+      }
+    ],
+    "exchanged": false,
+    "liability_target_assets": [
+      "USDC"
+    ],
+    "reason": "unsupported_liability_target",
+    "supported_liability_targets": [
+      "USDT"
+    ],
+    "unsupported_liability_targets": [
+      "USDC"
+    ]
+  },
+  "small_position_cleanup": {
+    "attempts": [
+      {
+        "amount": 0.798125,
+        "asset": "KERNEL",
+        "attempted": false,
+        "classification": "dust_residual",
+        "price": 0.0635,
+        "quote_value": 0.0506809375,
+        "reason": "dust_residual",
+        "side": "long",
+        "skip_reason": "already_submitted_to_dust_conversion",
+        "success": false,
+        "symbol": "KERNEL/USDC"
+      },
+      {
+        "amount": 0.84325,
+        "asset": "CHZ",
+        "attempted": false,
+        "classification": "dust_residual",
+        "price": 0.04551,
+        "quote_value": 0.038376307500000005,
+        "reason": "dust_residual",
+        "side": "long",
+        "skip_reason": "already_submitted_to_dust_conversion",
+        "success": false,
+        "symbol": "CHZ/USDC"
+      },
+      {
+        "amount": 0.00086605,
+        "asset": "DASH",
+        "attempted": false,
+        "classification": "dust_residual",
+        "price": 43.52,
+        "quote_value": 0.037690496000000004,
+        "reason": "dust_residual",
+        "side": "long",
+        "skip_reason": "already_submitted_to_dust_conversion",
+        "success": false,
+        "symbol": "DASH/USDC"
+      },
+      {
+        "amount": 0.008499,
+        "asset": "ORDI",
+        "attempted": false,
+        "classification": "dust_residual",
+        "price": 4.31,
+        "quote_value": 0.036630689999999994,
+        "reason": "dust_residual",
+        "side": "long",
+        "skip_reason": "already_submitted_to_dust_conversion",
+        "success": false,
+        "symbol": "ORDI/USDC"
+      },
+      {
+        "amount": 0.7872,
+        "asset": "NIGHT",
+        "attempted": false,
+        "classification": "dust_residual",
+        "price": 0.03249,
+        "quote_value": 0.025576128,
+        "reason": "dust_residual",
+        "side": "long",
+        "skip_reason": "already_submitted_to_dust_conversion",
+        "success": false,
+        "symbol": "NIGHT/USDC"
+      },
+      {
+        "amount": 0.141195,
+        "asset": "XPL",
+        "attempted": false,
+        "classification": "dust_residual",
+        "price": 0.089,
+        "quote_value": 0.012566354999999998,
+        "reason": "dust_residual",
+        "side": "long",
+        "skip_reason": "already_submitted_to_dust_conversion",
+        "success": false,
+        "symbol": "XPL/USDC"
+      },
+      {
+        "amount": 0.58675,
+        "asset": "SENT",
+        "attempted": false,
+        "classification": "dust_residual",
+        "price": 0.01567,
+        "quote_value": 0.009194372499999999,
+        "reason": "dust_residual",
+        "side": "long",
+        "skip_reason": "already_submitted_to_dust_conversion",
+        "success": false,
+        "symbol": "SENT/USDC"
+      },
+      {
+        "amount": 1.004625,
+        "asset": "GPS",
+        "attempted": false,
+        "classification": "dust_residual",
+        "price": 0.00859,
+        "quote_value": 0.008629728750000001,
+        "reason": "dust_residual",
+        "side": "long",
+        "skip_reason": "already_submitted_to_dust_conversion",
+        "success": false,
+        "symbol": "GPS/USDC"
+      },
+      {
+        "amount": 0.11659,
+        "asset": "ZKP",
+        "attempted": false,
+        "classification": "dust_residual",
+        "price": 0.0736,
+        "quote_value": 0.008581024,
+        "reason": "dust_residual",
+        "side": "long",
+        "skip_reason": "already_submitted_to_dust_conversion",
+        "success": false,
+        "symbol": "ZKP/USDC"
+      },
+      {
+        "amount": 0.085405,
+        "asset": "MANTA",
+        "attempted": false,
+        "classification": "dust_to_repay",
+        "exchange_min_notional": 5.0,
+        "price": 0.07863,
+        "quote_value": 0.00671539515,
+        "reason": "dust_to_repay",
+        "side": "short",
+        "skip_reason": "below_exchange_min_notional_use_liability_api",
+        "success": false,
+        "symbol": "MANTA/USDC"
+      },
+      {
+        "amount": 0.160445,
+        "asset": "BB",
+        "attempted": false,
+        "classification": "dust_residual",
+        "price": 0.0325,
+        "quote_value": 0.0052144625,
+        "reason": "dust_residual",
+        "side": "long",
+        "skip_reason": "already_submitted_to_dust_conversion",
+        "success": false,
+        "symbol": "BB/USDC"
+      },
+      {
+        "amount": 0.01,
+        "asset": "FLOKI",
+        "attempted": false,
+        "classification": "dust_residual",
+        "exchange_min_notional": 1.0,
+        "price": 3.295e-05,
+        "quote_value": 3.2950000000000003e-07,
+        "reason": "dust_residual",
+        "side": "long",
+        "skip_reason": "below_exchange_min_notional_use_liability_api",
+        "success": false,
+        "symbol": "FLOKI/USDC"
+      }
+    ],
+    "candidate_count": 12,
+    "enabled": true,
+    "threshold_quote": 1.0
+  },
+  "summary": {
+    "active_positions_after_reconcile": 1,
+    "counts": {
+      "dust_residual": 11,
+      "dust_to_repay": 1,
+      "external_long_position": 1,
+      "fee_token_or_collateral_residual": 1,
+      "quote_balance_available": 1
+    },
+    "item_count": 15,
+    "skipped": false
+  },
+  "timestamp": "2026-05-15T21:23:06.747598+00:00"
+}

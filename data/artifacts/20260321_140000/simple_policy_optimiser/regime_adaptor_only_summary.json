@@ -1,0 +1,110 @@
+{
+  "generated_by": "simple_policy_regime_adaptor_only",
+  "run_id": "20260321_140000",
+  "deployment_policy_path": "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/simple_policy_optimiser/deployment/best_policy_params.json",
+  "stage": "policy_optimiser",
+  "source_validation": {
+    "slice_plan_present": true,
+    "slice_plan_version": 2,
+    "allocation_targets": {
+      "train_base": 0.7,
+      "train_meta": 0.7,
+      "sizer_train": 0.25,
+      "utility_policy_optimisation": 0.7,
+      "holdout_strategy_eval": 0.05
+    },
+    "train_base_n_plans": 96,
+    "train_meta_n_plans": 32,
+    "utility_policy_optimisation_n_plans": 32,
+    "policy_optimiser_holdout_n_plans": 16,
+    "policy_holdout_predict_roles": [
+      "outer_test"
+    ],
+    "policy_holdout_fit_predict_disjoint": true,
+    "policy_holdout_temporal_disjoint": true,
+    "policy_holdout_train_base_meta_fit_overlap_rows": 0,
+    "policy_holdout_train_base_meta_fit_disjoint": true,
+    "policy_overlap_check_scope": "within_policy_plan_indices_and_fit_end_before_predict_start",
+    "oos_policy_slice_verified": true,
+    "reason": "policy_holdout_predict_plans_present"
+  },
+  "strategies": {
+    "long_dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575": {
+      "regime_adaptor": {
+        "artifact_path": "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/long_dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575/regime_adaptor.json",
+        "research_enabled": true,
+        "inference_enabled": false,
+        "training_universe": "policy_candidate_mask_after_simple_policy_optimiser",
+        "outcome_source": "policy_realized_utility",
+        "target_counts": {
+          "-1": 1507,
+          "0": 1661,
+          "1": 946
+        },
+        "selection_score": 0.05899734081914507
+      },
+      "policy_rows": 29539,
+      "threshold_candidate_rows": 12529,
+      "deployment_rank_threshold": 0.58,
+      "policy_params": {
+        "sl_mult": 3.0,
+        "trailing_activation_mult": 1.0,
+        "trailing_power": 1.3,
+        "trailing_squash_divisor": 1.0,
+        "giveback_beta": 0.8,
+        "capital_protect_mfe_mult": 1.8,
+        "capital_protect_regression_frac": 0.9500000000000001,
+        "adverse_exit_enabled": true,
+        "adverse_exit_min_mae_atr": 0.9,
+        "adverse_exit_min_speed": 0.4,
+        "adverse_exit_theta_quantile": 0.95,
+        "adverse_exit_theta": 2.476013660430908,
+        "adverse_exit_alpha": 1.0,
+        "adverse_exit_beta": 1.0,
+        "adverse_exit_delta": 1.0,
+        "adverse_exit_fast_bars": 4,
+        "adverse_exit_max_mfe_atr": 0.25,
+        "max_concurrent_trades": 6
+      },
+      "best_size_power": 1.1
+    },
+    "short_dist_prior_day_low_0_023332626_loc_vwap_dev_z_48_-0_85210818_dist_ema_fast_0_003809185_ret24h_-1_0786834": {
+      "regime_adaptor": {
+        "artifact_path": "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/ridge_sizer/regime_adaptors/short_dist_prior_day_low_0_023332626_loc_vwap_dev_z_48_-0_85210818_dist_ema_fast_0_003809185_ret24h_-1_0786834/regime_adaptor.json",
+        "research_enabled": true,
+        "inference_enabled": false,
+        "training_universe": "policy_candidate_mask_after_simple_policy_optimiser",
+        "outcome_source": "policy_realized_utility",
+        "target_counts": {
+          "-1": 856,
+          "0": 928,
+          "1": 673
+        },
+        "selection_score": 0.0980506361477983
+      },
+      "policy_rows": 22309,
+      "threshold_candidate_rows": 5865,
+      "deployment_rank_threshold": 0.74,
+      "policy_params": {
+        "sl_mult": 2.8000000000000003,
+        "trailing_activation_mult": 2.0,
+        "trailing_power": 1.8,
+        "trailing_squash_divisor": 1.0,
+        "giveback_beta": 0.95,
+        "capital_protect_mfe_mult": 2.4000000000000004,
+        "capital_protect_regression_frac": 0.9500000000000001,
+        "adverse_exit_enabled": true,
+        "adverse_exit_min_mae_atr": 2.1,
+        "adverse_exit_min_speed": 0.30000000000000004,
+        "adverse_exit_theta_quantile": 0.8,
+        "adverse_exit_alpha": 1.0,
+        "adverse_exit_beta": 1.0,
+        "adverse_exit_delta": 1.0,
+        "adverse_exit_fast_bars": 4,
+        "adverse_exit_max_mfe_atr": 0.25,
+        "max_concurrent_trades": 6
+      },
+      "best_size_power": 1.1
+    }
+  }
+}

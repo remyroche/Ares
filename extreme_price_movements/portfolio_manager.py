@@ -42,6 +42,49 @@ def _classify_api_error(exc: Exception) -> str:
     return "api_error"
 
 
+def _coerce_float(value: Any, default: float = np.nan) -> float:
+    try:
+        out = float(value)
+        return out if np.isfinite(out) else default
+    except Exception:
+        return default
+
+
+def _kraken_futures_flex_margin_values(balance: Dict[str, Any]) -> Dict[str, float]:
+    """Return USD-valued Kraken Futures flex collateral fields.
+
+    Kraken Futures multi-collateral accounts expose balances by collateral
+    currency, e.g. EUR quantity, while account-level margin fields are already
+    USD-valued. Live perps sizing needs the latter when trading USD swaps.
+    """
+    if not isinstance(balance, dict):
+        return {}
+    info = balance.get("info")
+    accounts = info.get("accounts") if isinstance(info, dict) else None
+    flex = accounts.get("flex") if isinstance(accounts, dict) else None
+    if not isinstance(flex, dict):
+        return {}
+    return {
+        "margin_equity": _coerce_float(
+            flex.get("marginEquity"),
+            _coerce_float(flex.get("collateralValue")),
+        ),
+        "available_margin": _coerce_float(
+            flex.get("availableMargin"),
+            _coerce_float(flex.get("collateralValue")),
+        ),
+        "initial_margin": _coerce_float(
+            flex.get("initialMarginWithOrders"),
+            _coerce_float(flex.get("initialMargin"), 0.0),
+        ),
+        "maintenance_margin": _coerce_float(flex.get("maintenanceMargin"), 0.0),
+        "portfolio_value": _coerce_float(
+            flex.get("portfolioValue"),
+            _coerce_float(flex.get("balanceValue")),
+        ),
+    }
+
+
 @dataclass
 class Position:
     """Represents an open position."""
@@ -640,6 +683,19 @@ class PortfolioManager:
             snapshot["total_balance"] = float(total.get(quote, np.nan))
             snapshot["free_balance"] = float(free.get(quote, np.nan))
             snapshot["used_balance"] = float(used.get(quote, np.nan))
+            if is_perps and quote == "USD":
+                flex_values = _kraken_futures_flex_margin_values(balance)
+                if flex_values:
+                    margin_equity = flex_values.get("margin_equity", np.nan)
+                    available_margin = flex_values.get("available_margin", np.nan)
+                    initial_margin = flex_values.get("initial_margin", np.nan)
+                    if np.isfinite(float(margin_equity)):
+                        snapshot["total_balance"] = float(margin_equity)
+                    if np.isfinite(float(available_margin)):
+                        snapshot["free_balance"] = float(available_margin)
+                    if np.isfinite(float(initial_margin)):
+                        snapshot["used_balance"] = float(initial_margin)
+                    snapshot["kraken_futures_flex_margin"] = flex_values
             if np.isfinite(float(snapshot["total_balance"])):
                 self.portfolio_value = float(snapshot["total_balance"])
                 self.margin_total_assets_quote = float(snapshot["total_balance"])

@@ -228,31 +228,23 @@ def _avg_pnl_per_trade_from_strategy_row(row: Dict[str, Any]) -> float:
 
 
 def _select_top_strategy_rows_by_side(rows: Any) -> List[Dict[str, Any]]:
+    """Return all explicitly selected deployment rows.
+
+    Older policy artifacts were interpreted as "pick the best strategy per
+    side" because deployment only carried one long and one short. Newer
+    simple_policy_optimiser artifacts can intentionally deploy multiple
+    strategies per side, so an explicit strategy_for_inference contract must
+    not be collapsed here. Ranking/position caps still happen downstream.
+    """
     if not isinstance(rows, list):
         return []
-    best_by_side: Dict[str, tuple[float, Dict[str, Any]]] = {}
-    passthrough: List[Dict[str, Any]] = []
+    selected: List[Dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
         if row.get("selected") is False:
             continue
-        sid = (
-            row.get("strategy_for_inference")
-            or row.get("strategy_id")
-            or row.get("strategy")
-            or row.get("selected_strategy")
-        )
-        side = str(row.get("side") or strategy_side(str(sid or ""))).lower()
-        if side not in {"long", "short"}:
-            passthrough.append(row)
-            continue
-        score = _avg_pnl_per_trade_from_strategy_row(row)
-        current = best_by_side.get(side)
-        if current is None or score > current[0]:
-            best_by_side[side] = (score, row)
-    selected = [item[1] for _, item in sorted(best_by_side.items())]
-    selected.extend(passthrough)
+        selected.append(row)
     return selected
 
 
@@ -1020,7 +1012,8 @@ def validate_deployment_model_coverage(
         errors.append("no alpha/base models loaded")
     if not meta_keys:
         errors.append("no meta models loaded")
-    if ridge_sizer is None and not ridge_weights:
+    has_policy_params = bool(bucket_params or ridge_params_per_bucket)
+    if ridge_sizer is None and not ridge_weights and not has_policy_params:
         errors.append("no position sizer or ridge weights loaded")
     if selected_alpha and not bucket_params and not ridge_params_per_bucket:
         errors.append("no policy/sizer bucket params loaded")

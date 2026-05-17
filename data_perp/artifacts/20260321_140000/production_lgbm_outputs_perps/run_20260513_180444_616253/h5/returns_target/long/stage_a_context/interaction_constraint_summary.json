@@ -1,0 +1,22 @@
+{
+  "total_singletons": 108,
+  "total_constraints": 0,
+  "mode": "training permissive / validation strict",
+  "num_regime": 68,
+  "num_location": 40,
+  "num_regime_path_structure": 9,
+  "num_regime_orderbook": 2,
+  "num_regime_open_interest": 1,
+  "num_regime_momentum": 1,
+  "num_regime_context": 2,
+  "num_regime_cross_asset_orderbook": 3,
+  "num_regime_cross_asset": 2,
+  "num_regime_liquidity": 7,
+  "num_regime_volatility_term_structure": 4,
+  "num_regime_trend": 6,
+  "num_regime_mark_index": 8,
+  "num_regime_basis": 8,
+  "num_regime_compression": 4,
+  "num_regime_cross_sectional": 5,
+  "num_regime_volatility": 6
+}

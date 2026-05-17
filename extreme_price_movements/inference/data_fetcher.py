@@ -8,6 +8,7 @@ This module handles fetching OHLCV data for inference with:
 - Rate limiting between requests
 """
 
+import os
 import random
 import time
 import traceback
@@ -38,6 +39,39 @@ DEFAULT_LOOKBACK_HOURS = 24 * 60
 MAX_RETRIES = 3
 BACKOFF_BASE = 1.0
 RATE_LIMIT_DELAY = 0.1  # seconds between requests
+
+MICRODATA_FRAME_FIELDS = (
+    "funding_rate",
+    "open_interest",
+    "mark_price",
+    "index_price",
+    "premium_index",
+)
+
+PERP_OHLCV_EXTRA_FIELDS = (
+    "funding_rate",
+    "open_interest",
+    "spot_open",
+    "spot_high",
+    "spot_low",
+    "spot_close",
+    "spot_volume",
+    "mark_open",
+    "mark_high",
+    "mark_low",
+    "mark_close",
+    "mark_price",
+    "index_open",
+    "index_high",
+    "index_low",
+    "index_close",
+    "index_price",
+    "premium_index_open",
+    "premium_index_high",
+    "premium_index_low",
+    "premium_index_close",
+    "premium_index",
+)
 
 
 def _normalise_market_mode(market_mode: Optional[str] = None) -> str:
@@ -129,6 +163,7 @@ class DataFetcher:
         self._microdata_symbol_cache: Dict[
             str, tuple[Optional[float], Optional[float], Dict[str, pd.Series]]
         ] = {}
+        self._ticker_snapshot_cache: tuple[float, Dict[str, Dict[str, Any]]] | None = None
 
     def _exchange_symbol(self, symbol: str) -> str:
         if self.market_mode != "perps" or ":" in str(symbol):
@@ -236,9 +271,11 @@ class DataFetcher:
         if frp.exists():
             fr = pd.read_parquet(frp)
             fr.index = pd.to_datetime(fr.index, utc=True)
-            by_field["funding_rate"] = pd.to_numeric(
-                fr.get("funding_rate"), errors="coerce"
-            ).astype(np.float32)
+            for field_name in MICRODATA_FRAME_FIELDS:
+                if field_name in fr.columns:
+                    by_field[field_name] = pd.to_numeric(
+                        fr[field_name], errors="coerce"
+                    ).astype(np.float32)
             idx_union = fr.index if idx_union is None else idx_union.union(fr.index)
 
         self._microdata_symbol_cache[symbol] = (ob_mtime, fr_mtime, by_field)
@@ -271,6 +308,74 @@ class DataFetcher:
             return None, None
         return self._perp_exchange, perp_symbol
 
+    def _ticker_lookup_key(self, symbol: str) -> str:
+        try:
+            market = self.exchange.market(symbol)
+            market_id = str(market.get("id") or "").upper()
+            if market_id:
+                return market_id
+        except Exception:
+            pass
+        return str(symbol).replace("/", "").replace(":USD", "").upper()
+
+    def _public_ticker_snapshot_map(self) -> Dict[str, Dict[str, Any]]:
+        """Return a short-lived Kraken Futures ticker map keyed by exchange market id."""
+        now_mono = time.monotonic()
+        if (
+            self._ticker_snapshot_cache is not None
+            and now_mono - self._ticker_snapshot_cache[0] < 10.0
+        ):
+            return self._ticker_snapshot_cache[1]
+        out: Dict[str, Dict[str, Any]] = {}
+        if hasattr(self.exchange, "publicGetTickers"):
+            payload = self.exchange.publicGetTickers()
+            rows = payload.get("tickers") if isinstance(payload, dict) else None
+            if isinstance(rows, list):
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    market_id = str(row.get("symbol") or "").upper()
+                    if market_id:
+                        out[market_id] = row
+        self._ticker_snapshot_cache = (now_mono, out)
+        return out
+
+    def _fetch_live_derivative_snapshot(
+        self,
+        symbol: str,
+        *,
+        timestamp: pd.Timestamp,
+    ) -> pd.DataFrame:
+        if self.market_mode != "perps":
+            return pd.DataFrame()
+        ts = pd.Timestamp(timestamp)
+        if ts.tzinfo is None:
+            ts = ts.tz_localize("UTC")
+        else:
+            ts = ts.tz_convert("UTC")
+        row: Dict[str, float] = {}
+        try:
+            ticker_map = self._public_ticker_snapshot_map()
+            raw = ticker_map.get(self._ticker_lookup_key(symbol).upper())
+            if isinstance(raw, dict):
+                mapping = {
+                    "funding_rate": "fundingRate",
+                    "open_interest": "openInterest",
+                    "mark_price": "markPrice",
+                    "index_price": "indexPrice",
+                }
+                for out_col, src_col in mapping.items():
+                    value = pd.to_numeric(raw.get(src_col), errors="coerce")
+                    if pd.notna(value) and np.isfinite(float(value)):
+                        row[out_col] = float(value)
+                if "mark_price" in row and "index_price" in row and row["index_price"] > 0:
+                    row["premium_index"] = float(row["mark_price"] / row["index_price"] - 1.0)
+        except Exception as exc:
+            self._log_microdata_error(symbol, exc, context="microdata_ticker_snapshot")
+        if not row:
+            return pd.DataFrame()
+        return pd.DataFrame(row, index=pd.DatetimeIndex([ts.floor("1h")], name="ts"))
+
     def initialize_with_historical_data(
         self, symbols: List[str], lookback_hours: int = DEFAULT_LOOKBACK_HOURS
     ):
@@ -292,6 +397,27 @@ class DataFetcher:
         failed = 0
         total = len(symbols)
         tprint(f"Initializing historical data batch: symbols={total}")
+        fetch_timeout_seconds = float(
+            os.environ.get("EPM_STARTUP_OHLCV_FETCH_TIMEOUT_SECONDS", "45") or "45"
+        )
+
+        def fetch_with_timeout(
+            symbol_: str, start_: pd.Timestamp, end_: pd.Timestamp
+        ) -> pd.DataFrame:
+            executor = ThreadPoolExecutor(max_workers=1)
+            fut = executor.submit(self.fetch_ohlcv, symbol_, start_, end_)
+            try:
+                return fut.result(timeout=fetch_timeout_seconds)
+            except Exception as exc:
+                fut.cancel()
+                tprint(
+                    "Startup historical OHLCV fetch skipped after timeout/error: "
+                    f"symbol={symbol_} timeout={fetch_timeout_seconds:.1f}s "
+                    f"error={exc}"
+                )
+                return pd.DataFrame()
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
 
         for i, symbol in enumerate(symbols, start=1):
             if i == 1 or i == total or i % 25 == 0:
@@ -321,8 +447,8 @@ class DataFetcher:
                 last_ts = existing_data.index.max()
                 if (now - last_ts) > pd.Timedelta(hours=1):
                     # Fetch missing data
-                    missing_data = self.fetch_ohlcv(
-                        symbol, start=last_ts + pd.Timedelta(hours=1), end=now
+                    missing_data = fetch_with_timeout(
+                        symbol, last_ts + pd.Timedelta(hours=1), now
                     )
                     if (
                         missing_data is not None
@@ -342,7 +468,7 @@ class DataFetcher:
             else:
                 # No data - fetch from lookback
                 start = now - pd.Timedelta(hours=lookback_hours)
-                data = self.fetch_ohlcv(symbol, start=start, end=now)
+                data = fetch_with_timeout(symbol, start, now)
                 # Validate data is a proper DataFrame before saving
                 if isinstance(data, pd.DataFrame) and not (
                     hasattr(data, "empty") and data.empty
@@ -434,7 +560,12 @@ class DataFetcher:
         return df_1h
 
     def _fetch_with_retry(
-        self, symbol: str, timeframe: str, since: int, limit: int
+        self,
+        symbol: str,
+        timeframe: str,
+        since: int,
+        limit: int,
+        params: Optional[Dict[str, Any]] = None,
     ) -> List[List]:
         """Fetch OHLCV with retry logic and rate limiting.
 
@@ -461,6 +592,7 @@ class DataFetcher:
                     timeframe=timeframe,
                     since=since,
                     limit=limit,
+                    params=dict(params or {}),
                 )
             except Exception as exc:
                 last_exc = exc
@@ -665,6 +797,102 @@ class DataFetcher:
         if df.empty:
             return pd.DataFrame()
         df = df[~df.index.duplicated(keep="last")]
+        if self.market_mode == "perps":
+            api_symbol = self._exchange_symbol(symbol)
+            row_ts = pd.Timestamp(df.index.max())
+            derivative_snapshot = self._fetch_live_derivative_snapshot(
+                api_symbol,
+                timestamp=row_ts,
+            )
+            if isinstance(derivative_snapshot, pd.DataFrame) and not derivative_snapshot.empty:
+                aligned = derivative_snapshot.reindex(df.index).ffill().bfill()
+                for col in MICRODATA_FRAME_FIELDS:
+                    if col in aligned.columns:
+                        df[col] = pd.to_numeric(aligned[col], errors="coerce").astype(
+                            np.float32
+                        )
+            try:
+                mark_df = self._fetch_with_retry(
+                    api_symbol,
+                    timeframe="1h",
+                    since=int(row_ts.timestamp() * 1000),
+                    limit=1,
+                    params={"price": "mark"},
+                )
+                if mark_df:
+                    mark_row = pd.DataFrame(
+                        mark_df,
+                        columns=[
+                            "timestamp",
+                            "mark_open",
+                            "mark_high",
+                            "mark_low",
+                            "mark_close",
+                            "mark_volume",
+                        ],
+                    )
+                    mark_row["timestamp"] = pd.to_datetime(
+                        mark_row["timestamp"], unit="ms", utc=True
+                    )
+                    mark_row = mark_row.set_index("timestamp").reindex(df.index)
+                    for col in ("mark_open", "mark_high", "mark_low", "mark_close"):
+                        if col in mark_row.columns:
+                            df[col] = pd.to_numeric(
+                                mark_row[col], errors="coerce"
+                            ).astype(np.float32)
+                    if "mark_close" in df.columns:
+                        df["mark_price"] = df["mark_close"]
+            except Exception as exc:
+                self._log_microdata_error(symbol, exc, context="hourly_mark_ohlcv")
+            try:
+                index_price_type = (
+                    "spot"
+                    if str(getattr(self.exchange, "id", "")).lower()
+                    == "krakenfutures"
+                    else "index"
+                )
+                index_df = self._fetch_with_retry(
+                    api_symbol,
+                    timeframe="1h",
+                    since=int(row_ts.timestamp() * 1000),
+                    limit=1,
+                    params={"price": index_price_type},
+                )
+            except Exception:
+                try:
+                    index_df = self._fetch_with_retry(
+                        api_symbol,
+                        timeframe="1h",
+                        since=int(row_ts.timestamp() * 1000),
+                        limit=1,
+                        params={"price": "spot"},
+                    )
+                except Exception as exc:
+                    index_df = None
+                    self._log_microdata_error(symbol, exc, context="hourly_index_ohlcv")
+            if index_df:
+                index_row = pd.DataFrame(
+                    index_df,
+                    columns=[
+                        "timestamp",
+                        "index_open",
+                        "index_high",
+                        "index_low",
+                        "index_close",
+                        "index_volume",
+                    ],
+                )
+                index_row["timestamp"] = pd.to_datetime(
+                    index_row["timestamp"], unit="ms", utc=True
+                )
+                index_row = index_row.set_index("timestamp").reindex(df.index)
+                for col in ("index_open", "index_high", "index_low", "index_close"):
+                    if col in index_row.columns:
+                        df[col] = pd.to_numeric(index_row[col], errors="coerce").astype(
+                            np.float32
+                        )
+                if "index_close" in df.columns:
+                    df["index_price"] = df["index_close"]
         self.ohlcv_store.save_partitioned(symbol=symbol, df=df, defer_compact=True)
         self._merge_symbol_cache(symbol, df)
         return df
@@ -740,7 +968,11 @@ class DataFetcher:
                         last_data_time = time.monotonic()
                         if refresh_microdata:
                             try:
-                                self.update_microdata_symbol(sym)
+                                self.update_microdata_symbol(
+                                    sym,
+                                    start_ts=target_hour,
+                                    end_ts=target_hour,
+                                )
                                 self._invalidate_symbol_cache(sym, microdata=True)
                             except Exception as exc:
                                 self._log_microdata_error(
@@ -828,6 +1060,8 @@ class DataFetcher:
         backfill_fn: Optional[Any] = None,
         use_lightweight_probe: bool = True,
         refresh_microdata: bool = True,
+        microdata_start_ts: Optional[pd.Timestamp] = None,
+        microdata_end_ts: Optional[pd.Timestamp] = None,
     ) -> Dict[str, pd.DataFrame]:
         """Incrementally update a symbol universe using bounded worker fanout."""
         workers = max(1, min(int(max_workers), 32))
@@ -859,7 +1093,11 @@ class DataFetcher:
                     continue
                 if refresh_microdata:
                     try:
-                        self.update_microdata_symbol(sym)
+                        self.update_microdata_symbol(
+                            sym,
+                            start_ts=microdata_start_ts,
+                            end_ts=microdata_end_ts,
+                        )
                     except Exception as exc:
                         self._log_microdata_error(sym, exc, context="microdata_refresh")
                 if check_recent_gaps_days > 0 and self.has_recent_gap(
@@ -993,6 +1231,10 @@ class DataFetcher:
                 fr_df = pd.DataFrame(
                     [funding_exchange.fetch_funding_rate(funding_symbol)]
                 )
+            live_derivatives = self._fetch_live_derivative_snapshot(
+                funding_symbol,
+                timestamp=end_h,
+            )
             if fr_df is not None and not fr_df.empty:
                 if "funding_rate" in fr_df.columns and isinstance(
                     fr_df.index, pd.DatetimeIndex
@@ -1022,17 +1264,31 @@ class DataFetcher:
                 fr_df["funding_rate"] = pd.to_numeric(
                     fr_df["funding_rate"], errors="coerce"
                 ).astype(np.float32)
+            if (
+                live_derivatives is not None
+                and isinstance(live_derivatives, pd.DataFrame)
+                and not live_derivatives.empty
+            ):
+                if fr_df is not None and not fr_df.empty:
+                    fr_df = pd.concat([fr_df, live_derivatives], sort=True)
+                else:
+                    fr_df = live_derivatives
+            if fr_df is not None and not fr_df.empty:
+                fr_df.index = pd.to_datetime(fr_df.index, utc=True).floor("1h")
+                for col in MICRODATA_FRAME_FIELDS:
+                    if col in fr_df.columns:
+                        fr_df[col] = pd.to_numeric(fr_df[col], errors="coerce").astype(
+                            np.float32
+                        )
+                keep_cols = [col for col in MICRODATA_FRAME_FIELDS if col in fr_df.columns]
+                fr_df = fr_df[keep_cols]
                 if existing_funding is None and fr_path.exists():
                     existing_funding = pd.read_parquet(fr_path)
                 if existing_funding is not None and not existing_funding.empty:
-                    fr_df = (
-                        pd.concat([existing_funding, fr_df])
-                        .sort_index()
-                        .groupby(level=0)
-                        .last()
-                    )
+                    fr_df = pd.concat([existing_funding, fr_df], sort=True)
+                fr_df = fr_df.sort_index().groupby(level=0).last()
                 fr_df.to_parquet(fr_path)
-                out["funding"] = True
+                out["funding"] = "funding_rate" in fr_df.columns
         except Exception as exc:
             self._log_microdata_error(symbol, exc, context="microdata_funding")
         return out
@@ -1060,7 +1316,7 @@ class DataFetcher:
             "mean_trade_qty_1h": {},
             "signed_flow_imbalance_1h": {},
         }
-        funding_rate = {}
+        microdata_fields = {field_name: {} for field_name in MICRODATA_FRAME_FIELDS}
         for sym in symbols:
             sym_idx, by_field = self._load_microdata_symbol_cached(sym)
             if sym_idx is not None:
@@ -1069,9 +1325,10 @@ class DataFetcher:
                 series = by_field.get(f"orderbook_{field_name}")
                 if series is not None:
                     orderbook_fields[field_name][sym] = series
-            funding = by_field.get("funding_rate")
-            if funding is not None:
-                funding_rate[sym] = funding
+            for field_name in microdata_fields:
+                series = by_field.get(field_name)
+                if series is not None:
+                    microdata_fields[field_name][sym] = series
         if idx_union is None:
             return {}
         idx_union = pd.DatetimeIndex(idx_union).sort_values().unique()
@@ -1088,9 +1345,11 @@ class DataFetcher:
             out[f"orderbook_{field_name}"] = (
                 pd.DataFrame(by_symbol).reindex(idx_union).astype(np.float32)
             )
-        if funding_rate:
-            out["funding_rate"] = (
-                pd.DataFrame(funding_rate).reindex(idx_union).ffill().astype(np.float32)
+        for field_name, by_symbol in microdata_fields.items():
+            if not by_symbol:
+                continue
+            out[field_name] = (
+                pd.DataFrame(by_symbol).reindex(idx_union).ffill().astype(np.float32)
             )
         return out
 
@@ -1145,13 +1404,24 @@ class DataFetcher:
             f"cache_misses={cache_misses} lookback_hours={lookback_hours}"
         )
         panel = get_panel_from_dict(ohlcv_data)
-        panel.update(self._load_microdata_panel(symbols))
+        micro_panel = self._load_microdata_panel(symbols)
+        for key, frame in micro_panel.items():
+            existing = panel.get(key)
+            if (
+                isinstance(existing, pd.DataFrame)
+                and not existing.empty
+                and isinstance(frame, pd.DataFrame)
+                and not frame.empty
+            ):
+                panel[key] = frame.combine_first(existing).sort_index()
+            else:
+                panel[key] = frame
         return panel
 
 
 # Backwards compatibility: Keep existing functions for non-class usage
 def make_exchange(market_mode: str = "spot") -> Any:
-    """Create and return a Binance exchange instance for spot or USD-M perps.
+    """Create and return the configured exchange instance for spot or perps.
 
     Returns:
         ccxt exchange instance with rate limiting enabled
@@ -1159,12 +1429,15 @@ def make_exchange(market_mode: str = "spot") -> Any:
     mode = _normalise_market_mode(market_mode)
     try:
         ex = make_perp_exchange() if mode == "perps" else make_spot_exchange()
-        label = "USD-M perp" if mode == "perps" else "spot"
-        tprint(f"Created Binance {label} exchange and loaded markets")
+        label = "perp/swap" if mode == "perps" else "spot"
+        exchange_id = str(getattr(ex, "id", "exchange")).upper()
+        tprint(f"Created {exchange_id} {label} exchange and loaded markets")
         return ex
     except Exception as exc:
+        exchange_label = str(os.environ.get("EPM_EXCHANGE") or "binance").upper()
         tprint(
-            f"Failed to create Binance {mode} exchange: {classify_api_error(exc)}: {exc}"
+            f"Failed to create {exchange_label} {mode} exchange: "
+            f"{classify_api_error(exc)}: {exc}"
         )
         raise
 
@@ -1344,6 +1617,8 @@ def get_panel_from_dict(
         "close": pd.DataFrame(),
         "volume": pd.DataFrame(),
     }
+    for col in PERP_OHLCV_EXTRA_FIELDS:
+        panel[col] = pd.DataFrame()
 
     # Find common index (union of all datetimes)
     all_indexes = []
@@ -1386,7 +1661,7 @@ def get_panel_from_dict(
         if not df_not_empty:
             continue
 
-        for col in ["open", "high", "low", "close", "volume"]:
+        for col in ["open", "high", "low", "close", "volume", *PERP_OHLCV_EXTRA_FIELDS]:
             if col in df.columns:
                 series = df[col].rename(symbol)
                 panel[col] = panel[col].join(series, how="outer")

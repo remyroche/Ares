@@ -1,0 +1,64 @@
+{
+  "config": {
+    "lookback_h": 12,
+    "baseline_trigger": 0.08,
+    "trigger_sweep": [
+      0.06,
+      0.07,
+      0.08,
+      0.09,
+      0.1
+    ],
+    "decluster_h": 6,
+    "max_event_h": 72,
+    "entry_offsets_h": [
+      -12,
+      -6,
+      -4,
+      -2,
+      -1,
+      0,
+      1,
+      2,
+      4,
+      6,
+      12
+    ],
+    "directions": [
+      "follow",
+      "fade"
+    ],
+    "cost_stress_multipliers": [
+      1.0,
+      1.25,
+      1.5,
+      2.0
+    ]
+  },
+  "counts": {
+    "n_events": 51,
+    "n_policy_trades": 4488
+  },
+  "direction_report": {
+    "direction_mean_u": {
+      "fade": -0.003061826929791935,
+      "follow": 0.004313139623573208
+    },
+    "best_direction_overall": "follow",
+    "direction_gap": 0.007374966553365144
+  },
+  "verdict": {
+    "policy_profitable_at_any_offset": true,
+    "timing_sensitive": false,
+    "direction_ambiguous": false,
+    "gap_risk_material": false,
+    "cost_sensitivity_high": false,
+    "recommendations": {
+      "policy_profitable_at_any_offset": "If false, re-check policy params / optimize overfit under cost stress.",
+      "timing_sensitive": "If true, move entry timing earlier/later by best offset and retest OOS.",
+      "direction_ambiguous": "If true, add regime-conditioned direction model (fade vs follow).",
+      "gap_risk_material": "If true, include gap-through-stop repricing and widen buffers/limits.",
+      "cost_sensitivity_high": "If true, reduce turnover and tighten cost assumptions in training objective."
+    }
+  }
+}

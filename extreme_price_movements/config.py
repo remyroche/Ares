@@ -119,20 +119,6 @@ PERP_TRADEABILITY_FEATURE_KEYS = [
     "asset_funding_z",
     "asset_funding_trend_alignment",
     "funding_rate_cross_asset_dispersion",
-    "asset_spread_proxy_p90_24h",
-    "asset_spread_proxy_p90_96h",
-    "asset_spread_proxy_p90_7d",
-    "asset_spread_proxy_p90_15d",
-    "asset_volume_depth_risk_p90_24h",
-    "asset_volume_depth_risk_p90_96h",
-    "asset_volume_depth_risk_p90_7d",
-    "asset_volume_depth_risk_p90_15d",
-    "asset_orderbook_imbalance_abs_mean_24h",
-    "asset_orderbook_imbalance_abs_mean_96h",
-    "asset_orderbook_imbalance_abs_mean_7d",
-    "asset_orderbook_imbalance_abs_mean_15d",
-    "asset_liquidity_stress_score_7d",
-    "global_liquidity_stress_score_7d",
 ]
 LGBM_PERP_FEATURE_KEYS = list(
     dict.fromkeys(
@@ -155,7 +141,7 @@ PERP_META_PRIMARY_FEATURE_KEYS = [
     "unwind",
 ] + PERP_EVENT_RISK_FEATURE_KEYS
 
-ORDERBOOK_BASE_FEATURE_KEYS = [
+ORDERBOOK_RAW_BASE_FEATURE_KEYS = [
     # Directional book pressure
     "ob_microprice_premium_bps",
     "ob_l1_imbalance",
@@ -188,10 +174,29 @@ ORDERBOOK_BASE_FEATURE_KEYS = [
     "xasset_btc_ob_pressure",
     "xasset_eth_ob_pressure",
     "xasset_asset_minus_basket_ob_pressure",
+    "xasset_leverage_build_score",
     # Directional interaction
     "ob_pressure_x_ret4h_sign",
 ]
-ORDERBOOK_META_FEATURE_KEYS = [
+ORDERBOOK_NORMALIZED_BASE_FEATURE_KEYS = [
+    "ob_microprice_dev_bps_z_24h",
+    "ob_l1_imbalance_z_24h",
+    "ob_l10_imbalance_z_24h",
+    "ob_l20_imbalance_z_24h",
+    "ob_l10_abs_imbalance_z_7d",
+    "ob_book_pressure_l10_z_24h",
+    "ob_book_pressure_l10_z_7d",
+    "ob_depth_l10_to_qv_24h",
+    "ob_depth_l20_to_qv_24h",
+    "ob_depth_l20_to_qv_z_7d",
+    "ob_pressure_ret4h_agreement",
+    "ob_pressure_volume_agreement",
+    "xasset_asset_minus_mkt_ob_pressure_z_24h",
+]
+ORDERBOOK_BASE_FEATURE_KEYS = list(
+    dict.fromkeys(ORDERBOOK_NORMALIZED_BASE_FEATURE_KEYS)
+)
+ORDERBOOK_RAW_META_FEATURE_KEYS = [
     # Availability / staleness / data trust
     "ob_available",
     "ob_snapshot_age_sec",
@@ -236,14 +241,52 @@ ORDERBOOK_META_FEATURE_KEYS = [
     "xasset_eth_ob_pressure",
     "xasset_mkt_spread_bps",
     "xasset_mkt_depth_z",
-    "xasset_mkt_ob_stress",
     "xasset_ob_stress_basket",
     "xasset_asset_minus_basket_ob_pressure",
     "xasset_ob_liquidity_divergence",
     # Meta interactions
     "ob_spread_z_x_rv_24h",
     "ob_depth_z_x_rvol_z",
+    "asset_spread_proxy_p90_24h",
+    "asset_spread_proxy_p90_96h",
+    "asset_spread_proxy_p90_7d",
+    "asset_spread_proxy_p90_15d",
+    "asset_volume_depth_risk_p90_24h",
+    "asset_volume_depth_risk_p90_96h",
+    "asset_volume_depth_risk_p90_7d",
+    "asset_volume_depth_risk_p90_15d",
+    "asset_orderbook_imbalance_abs_mean_24h",
+    "asset_orderbook_imbalance_abs_mean_96h",
+    "asset_orderbook_imbalance_abs_mean_7d",
+    "asset_orderbook_imbalance_abs_mean_15d",
+    "asset_liquidity_stress_score_7d",
+    "global_liquidity_stress_score_7d",
 ]
+ORDERBOOK_NORMALIZED_META_FEATURE_KEYS = [
+    "ob_available",
+    "ob_spread_bps_z_24h",
+    "ob_spread_bps_z_7d",
+    "ob_mid_close_dislocation_bps_z_24h",
+    "ob_depth_l10_to_qv_24h",
+    "ob_depth_l20_to_qv_24h",
+    "ob_top_liquidity_to_qv_24h",
+    "ob_depth_l20_to_qv_z_7d",
+    "ob_depth_ratio_l1_l20",
+    "ob_depth_decay_asym_l20_z_7d",
+    "ob_abs_flow_vs_book_l20_z_24h",
+    "ob_notional_to_depth_l20_z_24h",
+    "ob_trade_size_to_l1_depth_z_24h",
+    "ob_spread_z_x_rv_24h",
+    "ob_depth_to_qv_z_x_rvol_z",
+    "xasset_mkt_spread_bps_z_24h",
+    "xasset_mkt_depth_to_qv_z",
+    "xasset_mkt_ob_stress_z_24h",
+    "xasset_ob_stress_basket_z_24h",
+    "xasset_ob_liquidity_divergence_z_24h",
+]
+ORDERBOOK_META_FEATURE_KEYS = list(
+    dict.fromkeys(ORDERBOOK_NORMALIZED_META_FEATURE_KEYS)
+)
 ORDERBOOK_DIAGNOSTIC_ONLY_FEATURE_KEYS = [
     "ob_slope_diff_l10",
     "ob_gap_up_bps_l10",
@@ -707,7 +750,10 @@ CONTINUOUS_REGIME_FEATURES = {
     "ob_depth_usd_l20_z": {"family": "orderbook", "type": "continuous"},
     "xasset_mkt_spread_bps": {"family": "cross_asset_orderbook", "type": "continuous"},
     "xasset_mkt_depth_z": {"family": "cross_asset_orderbook", "type": "continuous"},
-    "xasset_mkt_ob_stress": {"family": "cross_asset_orderbook", "type": "continuous"},
+    "xasset_mkt_ob_stress_z_24h": {
+        "family": "cross_asset_orderbook",
+        "type": "continuous",
+    },
 }
 
 CONTINUOUS_REGIME_FEATURES.update(
@@ -3259,9 +3305,6 @@ CFG["FUNDING_BASE_FEATURE_KEYS"] = []
 CFG["ORDERBOOK_FEATURE_KEYS"] = ORDERBOOK_FEATURE_KEYS
 CFG["ORDERBOOK_DIAGNOSTIC_ONLY_FEATURE_KEYS"] = ORDERBOOK_DIAGNOSTIC_ONLY_FEATURE_KEYS
 CFG["ORDERBOOK_EXCLUDED_STALE_FEATURE_KEYS"] = ORDERBOOK_EXCLUDED_STALE_FEATURE_KEYS
-CFG["meta_product_feature_keys"] += sorted(
-    set(ORDERBOOK_BASE_FEATURE_KEYS) & set(ORDERBOOK_META_FEATURE_KEYS)
-)
 CFG["CROSS_ASSET_FEATURE_KEYS"] = CROSS_ASSET_FEATURE_KEYS
 CFG["PERP_FEATURE_KEYS"] = PERP_FEATURE_KEYS
 CFG["PERP_META_PRIMARY_FEATURE_KEYS"] = PERP_META_PRIMARY_FEATURE_KEYS
@@ -3273,10 +3316,6 @@ CFG["LGBM_PERP_FEATURE_KEYS"] = LGBM_PERP_FEATURE_KEYS
 CFG["PERP_EVENT_RISK_FEATURE_KEYS"] = PERP_EVENT_RISK_FEATURE_KEYS
 CFG["PERP_CARRY_ALPHA_FEATURE_KEYS"] = PERP_CARRY_ALPHA_FEATURE_KEYS
 CFG["CROSS_ASSET_BASE_FEATURE_KEYS"] = [
-    "xasset_btc_ob_pressure",
-    "xasset_eth_ob_pressure",
-    "xasset_asset_minus_mkt_ob_pressure",
-    "xasset_leverage_build_score",
 ]
 CFG["ORDERBOOK_META_FEATURE_KEYS"] = ORDERBOOK_META_FEATURE_KEYS
 CFG["FUNDING_META_FEATURE_KEYS"] = [
@@ -3297,6 +3336,18 @@ CFG["FUNDING_META_FEATURE_KEYS"] = [
     "fund_extreme_duration_24h",
     "fund_rank_30d",
     "fund_countdown_pressure",
+    "basis_pct",
+    "basis_pct_z",
+    "basis_mom_4h",
+    "basis_fund_div_z",
+    "mark_index_basis_z",
+    "perp_index_basis_z",
+    "premium_index_z",
+    "premium_index_mom_8h",
+    "spot_perp_return_agreement_4h",
+    "spot_leads_perp_1h",
+    "spot_perp_vol_ratio_24h",
+    "spot_available",
 ]
 CFG["CROSS_ASSET_META_FEATURE_KEYS"] = [
     "xasset_fund_dispersion_basket",
@@ -3305,18 +3356,11 @@ CFG["CROSS_ASSET_META_FEATURE_KEYS"] = [
     "xasset_asset_minus_mkt_funding",
     "xasset_btc_funding_z",
     "xasset_btc_fund_z",
-    "xasset_ob_stress_basket",
-    "xasset_asset_minus_basket_ob_pressure",
-    "xasset_btc_ob_pressure",
-    "xasset_ob_liquidity_divergence",
 ]
 CFG["INTERACTION_META_FEATURE_KEYS"] = [
     "fund_abs_z_x_ret24h_sign",
     "fund_abs_z_x_rv_24h",
     "fund_z_x_trend_strength",
-    "ob_pressure_x_ret4h_sign",
-    "ob_spread_z_x_rv_24h",
-    "ob_depth_z_x_rvol_z",
 ]
 CFG["base_shared_feature_keys"] += [
     "ORDERBOOK_BASE_FEATURE_KEYS",
@@ -3423,10 +3467,16 @@ CFG["META_ORDERBOOK_BLOCKER_FEATURE_KEYS"] = [
     "obw_blocking_wall_distance_a30",
     "obw_path_depth_to_target_a30",
 ]
-CFG["meta_shared_feature_keys"] += [
-    "META_ORDERBOOK_WALL_FEATURE_KEYS",
-    "META_ORDERBOOK_BLOCKER_FEATURE_KEYS",
-]
+ORDERBOOK_META_FEATURE_KEYS = list(
+    dict.fromkeys(
+        ORDERBOOK_META_FEATURE_KEYS
+    )
+)
+ORDERBOOK_FEATURE_KEYS = sorted(
+    set(ORDERBOOK_BASE_FEATURE_KEYS) | set(ORDERBOOK_META_FEATURE_KEYS)
+)
+CFG["ORDERBOOK_META_FEATURE_KEYS"] = ORDERBOOK_META_FEATURE_KEYS
+CFG["ORDERBOOK_FEATURE_KEYS"] = ORDERBOOK_FEATURE_KEYS
 
 
 CFG["META_CROSS_SECTIONAL_REGIME_KEYS"] = [
@@ -3475,20 +3525,27 @@ CFG["meta_shared_feature_keys"] += ["META_CROSS_SECTIONAL_REGIME_KEYS"]
 
 
 CFG["META_RECENT_EFFECTIVENESS_FEATURE_KEYS"] = [
-    "recent_global_rolling_ic_30d",
-    "recent_global_model_ece_30d",
-    "recent_global_top15_calibration_error_30d",
-    "recent_global_abs_top15_calibration_error_30d",
-    "recent_global_top15_hit_rate_30d",
-    "recent_side_horizon_rolling_ic_30d",
-    "recent_side_horizon_model_ece_30d",
-    "recent_side_horizon_top15_hit_rate_30d",
-    "recent_bucket_rolling_ic_30d",
-    "recent_bucket_top15_hit_rate_30d",
-    "recent_bucket_n_top15_30d",
-    "recent_regime_rolling_ic_30d",
-    "recent_regime_model_ece_30d",
-    "recent_regime_top15_hit_rate_30d",
+    "recent_global_rolling_ic_2d",
+    "recent_global_rolling_ic_5d",
+    "recent_global_rolling_ic_15d",
+    "recent_global_confidence_surprise_2d",
+    "recent_global_confidence_surprise_5d",
+    "recent_global_confidence_surprise_15d",
+    "recent_global_model_ece_5d",
+    "recent_global_model_ece_15d",
+    "recent_global_top15_calibration_error_5d",
+    "recent_global_abs_top15_calibration_error_5d",
+    "recent_global_top15_hit_rate_5d",
+    "recent_side_horizon_rolling_ic_5d",
+    "recent_side_horizon_rolling_ic_15d",
+    "recent_side_horizon_model_ece_5d",
+    "recent_side_horizon_top15_hit_rate_5d",
+    "recent_bucket_rolling_ic_5d",
+    "recent_bucket_top15_hit_rate_5d",
+    "recent_bucket_n_top15_5d",
+    "recent_regime_rolling_ic_5d",
+    "recent_regime_model_ece_5d",
+    "recent_regime_top15_hit_rate_5d",
 ]
 CFG["meta_shared_feature_keys"] += ["META_RECENT_EFFECTIVENESS_FEATURE_KEYS"]
 
@@ -3609,7 +3666,6 @@ REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS = [
     "global_ebm_unc_dispersion_mean_7d",
     "global_ebm_conflict_mean_7d",
     "global_ebm_support_risk_mean_7d",
-    "global_liquidity_stress_score_7d",
 ]
 
 REGIME_ADAPTOR_ASSET_FEATURE_KEYS = [
@@ -3631,19 +3687,6 @@ REGIME_ADAPTOR_ASSET_FEATURE_KEYS = [
     "asset_funding_z",
     "asset_funding_side_alignment",
     "asset_funding_trend_alignment",
-    "asset_spread_proxy_p90_24h",
-    "asset_spread_proxy_p90_96h",
-    "asset_spread_proxy_p90_7d",
-    "asset_spread_proxy_p90_15d",
-    "asset_volume_depth_risk_p90_24h",
-    "asset_volume_depth_risk_p90_96h",
-    "asset_volume_depth_risk_p90_7d",
-    "asset_volume_depth_risk_p90_15d",
-    "asset_orderbook_imbalance_abs_mean_24h",
-    "asset_orderbook_imbalance_abs_mean_96h",
-    "asset_orderbook_imbalance_abs_mean_7d",
-    "asset_orderbook_imbalance_abs_mean_15d",
-    "asset_liquidity_stress_score_7d",
     "asset_ebm_unc_dispersion_mean_3d",
     "asset_ebm_unc_dispersion_mean_7d",
     "asset_ebm_unc_dispersion_mean_15d",
@@ -3738,6 +3781,7 @@ REGIME_ADAPTOR_FEATURE_ORDER = (
     REGIME_ADAPTOR_BASE_FEATURE_KEYS
     + REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS
     + REGIME_ADAPTOR_ASSET_FEATURE_KEYS
+    + REGIME_ADAPTOR_ORDERBOOK_FEATURE_KEYS
     + REGIME_ADAPTOR_STRATEGY_ASSET_FEATURE_KEYS
     + REGIME_ADAPTOR_EBM_CONSOLIDATED_FEATURE_KEYS
 )

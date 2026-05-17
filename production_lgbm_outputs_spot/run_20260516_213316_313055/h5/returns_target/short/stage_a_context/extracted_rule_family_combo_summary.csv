@@ -1,0 +1,15 @@
+families_combo,count
+context|liquidity,10
+compression|context|path_structure,5
+context|liquidity|path_structure,4
+context|path_structure|volatility,4
+context|liquidity|volatility_term_structure,3
+context|liquidity|volatility,3
+context|path_structure|trend,2
+compression|context|liquidity|path_structure,2
+compression|context|liquidity,2
+context|volatility_term_structure,1
+context|volatility,1
+compression|context|path_structure|trend,1
+compression|context,1
+context,1

@@ -1,5 +1,0 @@
-direction,bucket,ic_train,ic_val,sharpe,n_weights
-short,short_mr,,,,0
-short,short_tf,,,,4
-short,short_tf_early_inval,,,,3
-short,short_mr_early_inval,,,,0

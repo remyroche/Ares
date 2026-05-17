@@ -237,6 +237,60 @@ SCORER_REGISTRY_COLUMNS: List[str] = [
     "rejection_reason",
 ]
 
+ORDERBOOK_DERIVED_FEATURE_KEYS: Set[str] = {
+    "xasset_mkt_spread_bps",
+    "xasset_mkt_depth_z",
+    "xasset_mkt_ob_stress",
+    "asset_spread_proxy_p90_24h",
+    "asset_spread_proxy_p90_96h",
+    "asset_spread_proxy_p90_7d",
+    "asset_spread_proxy_p90_15d",
+    "asset_volume_depth_risk_p90_24h",
+    "asset_volume_depth_risk_p90_96h",
+    "asset_volume_depth_risk_p90_7d",
+    "asset_volume_depth_risk_p90_15d",
+    "asset_liquidity_stress_score_7d",
+    "global_liquidity_stress_score_7d",
+}
+
+ORDERBOOK_CFG_KEY_GROUPS: Tuple[str, ...] = (
+    "ORDERBOOK_BASE_FEATURE_KEYS",
+    "ORDERBOOK_FEATURE_KEYS",
+    "ORDERBOOK_META_FEATURE_KEYS",
+    "ORDERBOOK_DIAGNOSTIC_ONLY_FEATURE_KEYS",
+    "ORDERBOOK_EXCLUDED_STALE_FEATURE_KEYS",
+    "META_ORDERBOOK_WALL_FEATURE_KEYS",
+    "META_ORDERBOOK_BLOCKER_FEATURE_KEYS",
+)
+
+
+def _is_orderbook_based_feature_key(feature_name: str) -> bool:
+    name = str(feature_name)
+    lower = name.lower()
+    if (
+        lower.startswith("ob_")
+        or lower.startswith("orderbook_")
+        or "orderbook" in lower
+        or "_ob_" in lower
+        or lower.endswith("_ob_pressure")
+        or lower.endswith("_ob_stress")
+        or "spread_proxy" in lower
+        or "volume_depth_risk" in lower
+        or "liquidity_stress" in lower
+    ):
+        return True
+    if name in ORDERBOOK_DERIVED_FEATURE_KEYS:
+        return True
+    for cfg_key in ORDERBOOK_CFG_KEY_GROUPS:
+        if name in set(CFG.get(cfg_key, []) or []):
+            return True
+    family = str(CONTINUOUS_REGIME_FEATURES.get(name, {}).get("family", "")).lower()
+    return "orderbook" in family
+
+
+def _without_orderbook_feature_keys(feature_keys: Sequence[str]) -> List[str]:
+    return [key for key in feature_keys if not _is_orderbook_based_feature_key(key)]
+
 
 
 class TargetNaNReason:
@@ -2253,17 +2307,26 @@ class FeatureProcessor:
         # 2. Location Features
         if "location" in active_groups:
             # Continuous location features are the sole location source family.
-            _add_continuous_features_as_booleans(CONTINUOUS_LOCATION_COLS, "location")
+            _add_continuous_features_as_booleans(
+                _without_orderbook_feature_keys(CONTINUOUS_LOCATION_COLS), "location"
+            )
 
         # 3. Regime Features (continuous -> hybrid booleanize)
         if "regime" in active_groups:
             time_keys_set = set(TIME_FEATURE_KEYS)
-            regime_sources = sorted(list(set(RIDGE_FEATURE_COLS) - time_keys_set))
+            regime_sources = _without_orderbook_feature_keys(
+                sorted(list(set(RIDGE_FEATURE_COLS) - time_keys_set))
+            )
             _add_continuous_features_as_booleans(regime_sources, "regime")
 
         # 4. Extra Binary Features (e.g. Stage A Contexts)
         if extra_binary_features:
             for name, arr in extra_binary_features.items():
+                if _is_orderbook_based_feature_key(name):
+                    tprint(
+                        f"WARNING: skipping orderbook-based extra feature '{name}' in miner feature prep"
+                    )
+                    continue
                 if self._is_reserved_target_side_feature(name):
                     tprint(
                         f"WARNING: skipping reserved target-side extra feature '{name}' in miner feature prep"
@@ -17226,8 +17289,17 @@ if __name__ == "__main__":
             + list(CONTINUOUS_LOCATION_COLS)
         )
     )
+    requested_feature_keys_with_orderbook = requested_feature_keys
+    requested_feature_keys = _without_orderbook_feature_keys(
+        requested_feature_keys_with_orderbook
+    )
+    dropped_orderbook_feature_keys = sorted(
+        set(requested_feature_keys_with_orderbook) - set(requested_feature_keys)
+    )
     tprint(
-        f"Requested feature keys: {len(requested_feature_keys)} (TRIGGER features disabled)"
+        f"Requested feature keys: {len(requested_feature_keys)} "
+        f"(TRIGGER and orderbook features disabled; "
+        f"dropped_orderbook_keys={len(dropped_orderbook_feature_keys)})"
     )
 
     if args.boolean_only:
@@ -17259,7 +17331,9 @@ if __name__ == "__main__":
     # Check for missing features - RIDGE_FEATURE_COLS and FEATURE_SELECTION_KEYS are required,
     # but CONTINUOUS_LOCATION_COLS are optional (they'll be skipped if missing)
     required_keys = set(
-        list(CFG.get("FEATURE_SELECTION_KEYS", [])) + RIDGE_FEATURE_COLS
+        _without_orderbook_feature_keys(
+            list(CFG.get("FEATURE_SELECTION_KEYS", [])) + RIDGE_FEATURE_COLS
+        )
     )
     missing_required_keys = sorted(required_keys - set(feat_dict_raw))
     if missing_required_keys:

@@ -35,6 +35,30 @@ def test_ticker_snapshot_computes_spread_and_rejects_wide_spread():
     assert snap.reject_reason == "spread_above_hard_max"
 
 
+def test_ticker_snapshot_does_not_reject_old_exchange_trade_timestamp():
+    policy = PortfolioPolicyConfig(max_ticker_age_seconds=4.0)
+    snap = fetch_ticker_snapshot(
+        exchange=_Exchange(
+            {
+                "bid": 99.9,
+                "ask": 100.1,
+                "last": 100.0,
+                "timestamp": pd.Timestamp("2025-12-31", tz="UTC").timestamp() * 1000,
+            }
+        ),
+        symbol="BTC/USDC",
+        side="long",
+        policy=policy,
+        mode="live",
+        now=pd.Timestamp("2026-01-01", tz="UTC"),
+    )
+
+    assert not snap.hard_reject
+    assert snap.reject_reason is None
+    assert snap.details["exchange_ticker_age_seconds"] > 0
+    assert snap.details["ticker_fetch_latency_seconds"] == 0.0
+
+
 def test_long_orderbook_walks_asks_within_50bps():
     policy = PortfolioPolicyConfig()
     ex = _Exchange(

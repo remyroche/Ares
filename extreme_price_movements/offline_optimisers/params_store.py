@@ -82,7 +82,13 @@ def _allow_legacy_market_fallback() -> bool:
 
 
 def _market_preferred_paths(path: Path, market_mode: str | None = None) -> list[Path]:
+    mode = normalize_market_mode(market_mode)
     mode_path = market_report_path(path, market_mode)
+    # Most historical spot optimiser reports were written without a market suffix.
+    # Keep perps strict, but allow spot to read the unsuffixed spot report when a
+    # newer *_spot file has not been emitted yet.
+    if mode == "spot" and mode_path != path:
+        return [mode_path, path]
     if _allow_legacy_market_fallback() and mode_path != path:
         return [mode_path, path]
     return [mode_path]

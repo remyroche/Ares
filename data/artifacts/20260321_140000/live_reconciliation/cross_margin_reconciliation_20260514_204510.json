@@ -1,0 +1,192 @@
+{
+  "cross_margin_residual_assets": [
+    "BNB"
+  ],
+  "dust_quote_threshold": 2.5,
+  "dust_to_bnb": {
+    "assets": [
+      "GRT"
+    ],
+    "candidate_assets": [
+      "FLOKI",
+      "GRT"
+    ],
+    "converted": true,
+    "convertible_assets": [
+      "GRT"
+    ],
+    "enabled": true,
+    "response": {
+      "totalServiceCharge": "0.00000064",
+      "totalTransfered": "0.00003244",
+      "transferResult": [
+        {
+          "amount": "0.78625",
+          "fromAsset": "GRT",
+          "operateTime": "1778791510263",
+          "serviceChargeAmount": "0.00000064",
+          "targetAsset": "BNB",
+          "tranId": "371776182634",
+          "transferedAmount": "0.00003244"
+        }
+      ]
+    }
+  },
+  "execution_account": "margin",
+  "items": [
+    {
+      "amount": 0.00398843,
+      "asset": "BNB",
+      "classification": "fee_token_or_collateral_residual",
+      "cleanup_skip_reason": "residual_asset_below_cleanup_cap_not_imported",
+      "debt": 9.51e-06,
+      "free": 0.00399794,
+      "gross_balance_quote_value": 2.7160405184000003,
+      "gross_debt_quote_value": 0.0064607136,
+      "imported_for_monitoring": false,
+      "interest": 9.51e-06,
+      "kind": "net_exposure",
+      "netted_balance_and_debt": true,
+      "price": 679.36,
+      "quote_value": 2.7095798048,
+      "side": "long",
+      "symbol": "BNB/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 0.01,
+      "asset": "FLOKI",
+      "classification": "dust_residual",
+      "debt": 0.0,
+      "free": 0.01,
+      "imported_for_monitoring": false,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 3.525e-05,
+      "quote_value": 3.525e-07,
+      "side": "long",
+      "symbol": "FLOKI/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 0.78625,
+      "asset": "GRT",
+      "classification": "dust_residual",
+      "cleanup_skip_reason": "active_or_pending_trade_present",
+      "debt": 0.0,
+      "free": 0.78625,
+      "imported_for_monitoring": false,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 0.02813,
+      "quote_value": 0.0221172125,
+      "side": "long",
+      "symbol": "GRT/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 89.9,
+      "asset": "MANTA",
+      "classification": "external_short_position",
+      "cleanup_skip_reason": "active_or_pending_trade_present",
+      "debt": 89.9,
+      "free": 0.0,
+      "imported_for_monitoring": true,
+      "interest": 0.0,
+      "kind": "debt",
+      "price": 0.08639,
+      "quote_value": 7.766461,
+      "side": "short",
+      "symbol": "MANTA/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 50.15371841,
+      "asset": "USDC",
+      "classification": "quote_balance_available",
+      "debt": 0.0,
+      "free": 42.35489341,
+      "imported_for_monitoring": false,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 1.0,
+      "quote_value": 50.15371841,
+      "side": "long",
+      "symbol": "USDC",
+      "used": 7.798825
+    },
+    {
+      "amount": 61.841195000000006,
+      "asset": "XPL",
+      "classification": "external_long_position",
+      "cleanup_skip_reason": "active_or_pending_trade_present",
+      "debt": 0.0,
+      "free": 0.141195,
+      "imported_for_monitoring": true,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 0.0981,
+      "quote_value": 6.066621229500001,
+      "side": "long",
+      "symbol": "XPL/USDC",
+      "used": 61.7
+    }
+  ],
+  "margin_mode": "cross",
+  "mode": "live-test",
+  "quote_currency": "USDC",
+  "residual_cleanup_cap_quote": 5.0,
+  "small_liability_exchange": {
+    "candidate_assets": [],
+    "enabled": true,
+    "exchanged": false,
+    "reason": "no_candidate_assets"
+  },
+  "small_position_cleanup": {
+    "attempts": [
+      {
+        "amount": 0.78625,
+        "asset": "GRT",
+        "attempted": false,
+        "classification": "dust_residual",
+        "price": 0.02813,
+        "quote_value": 0.0221172125,
+        "reason": "dust_residual",
+        "side": "long",
+        "skip_reason": "already_submitted_to_dust_conversion",
+        "success": false,
+        "symbol": "GRT/USDC"
+      },
+      {
+        "amount": 0.01,
+        "asset": "FLOKI",
+        "attempted": false,
+        "classification": "dust_residual",
+        "exchange_min_notional": 1.0,
+        "price": 3.525e-05,
+        "quote_value": 3.525e-07,
+        "reason": "dust_residual",
+        "side": "long",
+        "skip_reason": "below_exchange_min_notional_use_liability_api",
+        "success": false,
+        "symbol": "FLOKI/USDC"
+      }
+    ],
+    "candidate_count": 2,
+    "enabled": true,
+    "threshold_quote": 1.0
+  },
+  "summary": {
+    "active_positions_after_reconcile": 2,
+    "counts": {
+      "dust_residual": 2,
+      "external_long_position": 1,
+      "external_short_position": 1,
+      "fee_token_or_collateral_residual": 1,
+      "quote_balance_available": 1
+    },
+    "item_count": 6,
+    "skipped": false
+  },
+  "timestamp": "2026-05-14T20:45:06.511972+00:00"
+}

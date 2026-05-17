@@ -1,5 +1,10 @@
 {
-  "last_attempt_ts": "2026-05-11T20:31:38.101292+00:00",
-  "last_error": "binance {\"code\":-1022,\"msg\":\"Signature for this request is not valid.\"}",
-  "last_error_category": "auth_or_permission"
+  "last_attempt_ts": "2026-05-17T10:30:16.696784+00:00",
+  "last_error": "binance {\"code\":-9000,\"msg\":\"PARAM_VALIDATE_FAIL[Unsupported target asset]\"}",
+  "last_error_category": "unsupported_liability_target",
+  "last_unsupported_liability_targets": [
+    "USDC"
+  ],
+  "last_unsupported_target_ts": "2026-05-17T10:30:16.696784+00:00",
+  "method_version": "small_liability_v5_target_guard"
 }

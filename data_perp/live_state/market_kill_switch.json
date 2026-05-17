@@ -1,0 +1,15 @@
+{
+  "active": true,
+  "details": {
+    "btc_1h_move": 0.0,
+    "btc_4h_move": 0.0,
+    "eth_1h_move": 0.05409508943557739,
+    "eth_4h_move": 0.05183285474777222,
+    "market_median_1h_abs_move": 0.05409508943557739
+  },
+  "halt_until": "2026-05-17T09:00:00+00:00",
+  "manual_reset_required": false,
+  "reason": "MARKET_MEDIAN_1H_MOVE_GT_5PCT",
+  "self_reversible": true,
+  "triggered_at": "2026-05-16T21:00:00+00:00"
+}

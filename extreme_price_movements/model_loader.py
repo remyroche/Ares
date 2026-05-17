@@ -249,6 +249,87 @@ def load_model_bundle(run_id: str, data_root: str) -> dict:
     return bundle
 
 
+def _positional_lgbm_input_features(
+    estimator: object,
+    feature_cols: list[str],
+) -> list[str]:
+    """Map LightGBM's internal fN names back to the external feature contract."""
+    selected = [str(c) for c in getattr(estimator, "selected_features", []) or []]
+    if not selected or not feature_cols:
+        return []
+    if not all(re.fullmatch(r"f\d+", name) for name in selected):
+        return []
+    named: list[str] = []
+    for name in selected:
+        idx = int(name[1:])
+        if idx < 0 or idx >= len(feature_cols):
+            return []
+        named.append(str(feature_cols[idx]))
+    return named
+
+
+def _attach_lgbm_input_feature_contracts(
+    model: object,
+    feature_cols: list[str],
+    saved_input_features: list[str] | None = None,
+    *,
+    max_depth: int = 5,
+) -> int:
+    """Attach named input aliases to nested LGBM stability models.
+
+    Older artifacts may persist the selected LightGBM features as positional
+    names (f0, f1, ...). Inference data is named, so the wrapper selects named
+    columns and renames them back to the internal positional contract.
+    """
+    feature_cols = [str(c) for c in (feature_cols or [])]
+    saved = [str(c) for c in (saved_input_features or []) if str(c)]
+    seen: set[int] = set()
+    attached = 0
+
+    def _walk(obj: object, depth: int) -> None:
+        nonlocal attached
+        if obj is None or depth > max_depth:
+            return
+        obj_id = id(obj)
+        if obj_id in seen:
+            return
+        seen.add(obj_id)
+
+        selected = [str(c) for c in getattr(obj, "selected_features", []) or []]
+        if selected:
+            named = (
+                saved
+                if len(saved) == len(selected)
+                else _positional_lgbm_input_features(obj, feature_cols)
+            )
+            if named:
+                try:
+                    setattr(obj, "input_feature_names", list(named))
+                    attached += 1
+                except Exception:
+                    pass
+
+        for attr in (
+            "best_model",
+            "estimator",
+            "model",
+            "clf",
+            "classifier",
+            "ebm_model",
+            "lgbm_model",
+            "base_model",
+            "meta_model",
+        ):
+            if hasattr(obj, attr):
+                try:
+                    _walk(getattr(obj, attr), depth + 1)
+                except Exception:
+                    pass
+
+    _walk(model, 0)
+    return attached
+
+
 def load_alpha_models(native_dir: str) -> dict:
     """Load alpha models from native format directories.
 
@@ -270,6 +351,37 @@ def load_alpha_models(native_dir: str) -> dict:
         }
     """
     alpha_models = {}
+
+    def _lgbm_named_input_features(
+        model: object,
+        feat_cols: list[str],
+    ) -> list[str]:
+        """Map internal LightGBM fN selected features back to named live columns."""
+        estimator = getattr(getattr(model, "best_model", None), "estimator", None)
+        selected = [str(c) for c in getattr(estimator, "selected_features", []) or []]
+        if not selected or not feat_cols:
+            return []
+        if not all(re.fullmatch(r"f\d+", name) for name in selected):
+            return []
+        named: list[str] = []
+        for name in selected:
+            idx = int(name[1:])
+            if idx < 0 or idx >= len(feat_cols):
+                return []
+            named.append(str(feat_cols[idx]))
+        return named
+
+    def _attach_lgbm_named_input_features(
+        model: object,
+        feat_cols: list[str],
+        saved_input_features: list[str] | None = None,
+    ) -> None:
+        estimator = getattr(getattr(model, "best_model", None), "estimator", None)
+        selected = [str(c) for c in getattr(estimator, "selected_features", []) or []]
+        saved = [str(c) for c in (saved_input_features or []) if str(c)]
+        named = saved if len(saved) == len(selected) else _lgbm_named_input_features(model, feat_cols)
+        if estimator is not None and named:
+            setattr(estimator, "input_feature_names", named)
 
     if not os.path.exists(native_dir):
         tprint(f"WARNING: Native directory does not exist: {native_dir}")
@@ -305,6 +417,7 @@ def load_alpha_models(native_dir: str) -> dict:
             sidecar_path = os.path.join(model_dir, "sidecar.pkl")
             columns_path = os.path.join(model_dir, "columns.json")
             feat_cols = []
+            saved_input_features = []
             if os.path.exists(sidecar_path):
                 with open(sidecar_path, "rb") as f:
                     sidecar = pickle.load(f)
@@ -326,8 +439,17 @@ def load_alpha_models(native_dir: str) -> dict:
                         or columns_info.get("columns")
                         or []
                     )
+                    saved_input_features = (
+                        columns_info.get("lgbm_selected_input_features") or []
+                    )
                 elif isinstance(columns_info, list):
                     feat_cols = columns_info
+            feat_cols = [str(c) for c in (feat_cols or [])]
+            _attach_lgbm_named_input_features(
+                model,
+                feat_cols,
+                saved_input_features=saved_input_features,
+            )
 
             model_info = {
                 "model": model,
@@ -426,11 +548,105 @@ def load_meta_models_from_pickle(trained_state_path: str) -> dict:
         meta_models = bundle.get("meta_models", {}) if isinstance(bundle, dict) else {}
         return _ensure_meta_aliases(meta_models)
 
+    def _load_meta_feature_contract() -> dict:
+        run_dir = os.path.dirname(os.path.dirname(trained_state_path))
+        path = os.path.join(run_dir, "meta_oof", "meta_feature_contract.json")
+        if not os.path.exists(path):
+            return {}
+        try:
+            with open(path, "r") as f:
+                payload = json.load(f)
+            rows = payload.get("meta_models", {}) if isinstance(payload, dict) else {}
+            return rows if isinstance(rows, dict) else {}
+        except Exception as e:
+            tprint(f"  WARNING: Failed to load meta feature contract {path}: {e}")
+            return {}
+
+    def _contract_aliases(key: str) -> set[str]:
+        key_s = str(key)
+        aliases = {key_s}
+        for suffix in ("_clf", "_reg", "_tbm_clf", "_early_inval"):
+            if key_s.endswith(suffix):
+                aliases.add(key_s[: -len(suffix)])
+            else:
+                aliases.add(f"{key_s}{suffix}")
+        if key_s.startswith(("long_", "short_")):
+            side, rest = key_s.split("_", 1)
+            aliases.add(rest)
+            for suffix in ("_clf", "_reg", "_tbm_clf", "_early_inval"):
+                aliases.add(f"{side}_{rest}{suffix}")
+                if rest.endswith(suffix):
+                    aliases.add(f"{side}_{rest[: -len(suffix)]}")
+        return aliases
+
+    def _attach_meta_feature_contracts(meta_models: dict) -> dict:
+        contracts = _load_meta_feature_contract()
+        if not meta_models or not contracts:
+            return meta_models
+        try:
+            from extreme_price_movements.ebm_on_lgbm import iter_ebm_models
+        except Exception:
+            iter_ebm_models = None
+
+        attached = 0
+        contract_keys = set(str(k) for k in contracts)
+        for model_key, model in meta_models.items():
+            row = None
+            for alias in _contract_aliases(str(model_key)):
+                if alias in contract_keys:
+                    row = contracts.get(alias)
+                    break
+            if not isinstance(row, dict):
+                continue
+            feature_columns = [
+                str(c) for c in (row.get("feature_columns") or []) if str(c)
+            ]
+            mapping = row.get("positional_feature_mapping") or {}
+            mapping = (
+                {str(k): str(v) for k, v in mapping.items() if str(k) and str(v)}
+                if isinstance(mapping, dict)
+                else {}
+            )
+            if not feature_columns or not mapping:
+                continue
+            try:
+                setattr(model, "feature_columns", feature_columns)
+                setattr(model, "meta_feature_columns_", feature_columns)
+                setattr(model, "positional_feature_mapping", mapping)
+                setattr(model, "meta_positional_feature_mapping_", mapping)
+                setattr(model, "meta_feature_contract_", row)
+                _attach_lgbm_input_feature_contracts(model, feature_columns)
+                if iter_ebm_models is not None:
+                    for _, ebm_model in iter_ebm_models(model):
+                        setattr(ebm_model, "feature_columns", feature_columns)
+                        setattr(ebm_model, "meta_feature_columns_", feature_columns)
+                        setattr(ebm_model, "positional_feature_mapping", mapping)
+                        setattr(
+                            ebm_model,
+                            "meta_positional_feature_mapping_",
+                            mapping,
+                        )
+                        setattr(ebm_model, "meta_feature_contract_", row)
+                        _attach_lgbm_input_feature_contracts(
+                            ebm_model,
+                            feature_columns,
+                        )
+                attached += 1
+            except Exception as e:
+                tprint(
+                    f"  WARNING: Failed to attach meta feature contract for "
+                    f"{model_key}: {e}"
+                )
+        if attached:
+            tprint(f"  Attached meta feature contracts to {attached} meta models")
+        return meta_models
+
     try:
         with open(trained_state_path, "rb") as f:
             state = pickle.load(f)
         meta_models = _extract_meta_models(state)
         if meta_models:
+            meta_models = _attach_meta_feature_contracts(meta_models)
             tprint(f"  Loaded {len(meta_models)} meta models")
             return meta_models
         tprint("  No meta_models found in trained state")
@@ -447,6 +663,7 @@ def load_meta_models_from_pickle(trained_state_path: str) -> dict:
         meta_state = joblib.load(meta_state_path)
         meta_models = _extract_meta_models(meta_state)
         if meta_models:
+            meta_models = _attach_meta_feature_contracts(meta_models)
             tprint(f"  Loaded {len(meta_models)} meta models from model_state_meta.pkl")
             return meta_models
         tprint("  No meta_models found in model_state_meta.pkl")
@@ -887,11 +1104,9 @@ def load_full_state(run_id: str, data_root: str) -> dict:
         if isinstance(state, dict):
             bundle = state.get("bundle", {})
             if isinstance(bundle, dict):
-                meta_models = bundle.get("meta_models", {})
-                if not isinstance(meta_models, dict) or len(meta_models) == 0:
-                    bundle["meta_models"] = load_meta_models_from_pickle(
-                        trained_state_path
-                    )
+                loaded_meta_models = load_meta_models_from_pickle(trained_state_path)
+                if loaded_meta_models:
+                    bundle["meta_models"] = loaded_meta_models
                 state["bundle"] = bundle
 
         # Also load ridge weights separately if not in state

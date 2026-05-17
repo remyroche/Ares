@@ -3621,6 +3621,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["xasset_mkt_spread_bps"] = _zero_panel()
     feats["xasset_mkt_depth_z"] = _zero_panel()
     feats["xasset_mkt_ob_stress"] = _zero_panel()
+    feats["xasset_mkt_ob_stress_z_24h"] = _zero_panel()
     feats["xasset_unwind_pressure"] = _zero_panel()
 
     # extended meta funding/orderbook feature set
@@ -3654,8 +3655,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         .clip(0.01, 0.99)
         .astype(np.float32)
     )
+    idx_hour = np.asarray(pd.DatetimeIndex(idx).hour, dtype=np.float32)
     hours_to_next = _broadcast_series(
-        pd.Series(np.mod(8 - (np.arange(len(idx)) % 8), 8), index=idx)
+        pd.Series(np.mod(8.0 - np.mod(idx_hour, 8.0), 8.0), index=idx)
     )
     feats["fund_countdown_pressure"] = (
         (feats["fund_abs_z_14d"] * (1.0 - hours_to_next / 8.0))
@@ -3663,7 +3665,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         .astype(np.float32)
     )
     hours_since_last = _broadcast_series(
-        pd.Series(np.mod(np.asarray(idx.hour, dtype=np.float32), 8.0), index=idx)
+        pd.Series(np.mod(idx_hour, 8.0), index=idx)
     )
     feats["fund_hours_to_next"] = hours_to_next.astype(np.float32)
     feats["fund_hours_since_last"] = hours_since_last.astype(np.float32)
@@ -4055,6 +4057,199 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             shift_bars=int(cfg.get("microstructure_shift_bars", 1)),
         )
         feats.update(ob_snapshot_feats)
+
+    def _prefer_nonzero_feature(name: str, fallback: pd.DataFrame) -> pd.DataFrame:
+        existing = feats.get(name)
+        if not isinstance(existing, pd.DataFrame):
+            return fallback.astype(np.float32)
+        values = existing.to_numpy(dtype=np.float32, copy=False)
+        if np.isfinite(values).any() and float(np.nansum(np.abs(values))) > 0.0:
+            return existing.astype(np.float32)
+        return fallback.astype(np.float32)
+
+    feats["ob_l1_imbalance"] = _prefer_nonzero_feature(
+        "ob_l1_imbalance", feats["ob_imb_l1"]
+    )
+    feats["ob_l10_imbalance"] = _prefer_nonzero_feature(
+        "ob_l10_imbalance", feats["ob_imb_l10"]
+    )
+    feats["ob_l20_imbalance"] = _prefer_nonzero_feature(
+        "ob_l20_imbalance", feats["ob_imb_l20"]
+    )
+    feats["ob_microprice_premium_bps"] = _prefer_nonzero_feature(
+        "ob_microprice_premium_bps", feats["ob_microprice_dev_bps"]
+    )
+
+    ob_volume_panel = (
+        panel.get("volume", np.exp(v)) if isinstance(panel, dict) else np.exp(v)
+    )
+    if isinstance(ob_volume_panel, pd.DataFrame):
+        ob_volume_panel = ob_volume_panel.reindex(index=idx, columns=cols)
+    else:
+        ob_volume_panel = pd.DataFrame(ob_volume_panel, index=idx, columns=cols)
+    ob_volume_panel = ob_volume_panel.fillna(0.0).astype(np.float32)
+    qv_24h = (
+        (close_panel * ob_volume_panel)
+        .replace([np.inf, -np.inf], np.nan)
+        .rolling(24, min_periods=6)
+        .sum()
+        .shift(1)
+        .fillna(0.0)
+        .astype(np.float32)
+    )
+
+    def _depth_notional_from_log_or_bps(
+        log_key: str, bid_key: str, ask_key: str
+    ) -> pd.DataFrame:
+        log_depth = feats.get(log_key)
+        if isinstance(log_depth, pd.DataFrame):
+            raw_depth = np.expm1(log_depth.clip(lower=0.0)).replace(
+                [np.inf, -np.inf], np.nan
+            )
+            if float(np.nansum(np.abs(raw_depth.to_numpy(dtype=np.float32)))) > 0.0:
+                return raw_depth.fillna(0.0).astype(np.float32)
+        bid = feats.get(bid_key)
+        ask = feats.get(ask_key)
+        if isinstance(bid, pd.DataFrame) and isinstance(ask, pd.DataFrame):
+            return (bid.fillna(0.0) + ask.fillna(0.0)).astype(np.float32)
+        return _zero_panel()
+
+    depth_l10 = _depth_notional_from_log_or_bps(
+        "ob_depth_usd_l10", "ob_bid_depth_10bps", "ob_ask_depth_10bps"
+    )
+    depth_l20 = _depth_notional_from_log_or_bps(
+        "ob_depth_usd_l20", "ob_bid_depth_25bps", "ob_ask_depth_25bps"
+    )
+    top_liquidity = _depth_notional_from_log_or_bps(
+        "ob_top_liquidity_usd", "ob_bid_depth_5bps", "ob_ask_depth_5bps"
+    )
+
+    def _depth_to_qv(depth: pd.DataFrame) -> pd.DataFrame:
+        return (
+            np.log1p(depth / (qv_24h + eps))
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(0.0)
+            .clip(0.0, 10.0)
+            .astype(np.float32)
+        )
+
+    feats["ob_spread_bps_z_24h"] = _batch_roll_zscore(
+        feats["ob_spread_bps"], 24
+    ).clip(-6, 6)
+    feats["ob_spread_z_24h"] = feats["ob_spread_bps_z_24h"].astype(np.float32)
+    feats["ob_spread_bps_z_7d"] = _batch_roll_zscore(
+        feats["ob_spread_bps"], 24 * 7
+    ).clip(-6, 6)
+    feats["ob_mid_close_dislocation_bps_z_24h"] = _batch_roll_zscore(
+        feats["ob_mid_close_dislocation_bps"], 24
+    ).clip(-6, 6)
+    feats["ob_microprice_dev_bps_z_24h"] = _batch_roll_zscore(
+        feats["ob_microprice_premium_bps"], 24
+    ).clip(-6, 6)
+    feats["ob_l1_imbalance_z_24h"] = _batch_roll_zscore(
+        feats["ob_l1_imbalance"], 24
+    ).clip(-6, 6)
+    feats["ob_l10_imbalance_z_24h"] = _batch_roll_zscore(
+        feats["ob_l10_imbalance"], 24
+    ).clip(-6, 6)
+    feats["ob_l20_imbalance_z_24h"] = _batch_roll_zscore(
+        feats["ob_l20_imbalance"], 24
+    ).clip(-6, 6)
+    feats["ob_l10_abs_imbalance_z_7d"] = _batch_roll_zscore(
+        feats["ob_l10_imbalance"].abs(), 24 * 7
+    ).clip(-6, 6)
+    feats["ob_book_pressure_l10_z_24h"] = _batch_roll_zscore(
+        feats["ob_book_pressure_l10"], 24
+    ).clip(-6, 6)
+    feats["ob_book_pressure_l10_z_7d"] = _batch_roll_zscore(
+        feats["ob_book_pressure_l10"], 24 * 7
+    ).clip(-6, 6)
+    feats["ob_depth_l10_to_qv_24h"] = _depth_to_qv(depth_l10)
+    feats["ob_depth_l20_to_qv_24h"] = _depth_to_qv(depth_l20)
+    feats["ob_top_liquidity_to_qv_24h"] = _depth_to_qv(top_liquidity)
+    feats["ob_top_liquidity_usd_z"] = _batch_roll_zscore(
+        np.log1p(top_liquidity), 24 * 7
+    ).clip(-6, 6)
+    feats["ob_depth_usd_l10_z"] = _batch_roll_zscore(
+        np.log1p(depth_l10), 24 * 7
+    ).clip(-6, 6)
+    feats["ob_depth_usd_l20_z"] = _batch_roll_zscore(
+        np.log1p(depth_l20), 24 * 7
+    ).clip(-6, 6)
+    feats["ob_depth_l20_to_qv_z_7d"] = _batch_roll_zscore(
+        feats["ob_depth_l20_to_qv_24h"], 24 * 7
+    ).clip(-6, 6)
+    feats["ob_pressure_ret4h_agreement"] = (
+        np.sign(feats["ob_book_pressure_l10_z_24h"])
+        * np.sign(feats.get("ret4h", _zero_panel()))
+    ).astype(np.float32)
+    feats["ob_pressure_volume_agreement"] = (
+        np.sign(feats["ob_book_pressure_l10_z_24h"])
+        * np.sign(feats.get("rvol_z", _zero_panel()))
+    ).astype(np.float32)
+    if basket:
+        mkt_ob_pressure = feats["ob_book_pressure_l10"][basket].mean(axis=1)
+        basket_spread_z_norm = feats["ob_spread_bps_z_24h"][basket].mean(axis=1)
+        basket_depth_to_qv_z = feats["ob_depth_l20_to_qv_z_7d"][basket].mean(axis=1)
+    else:
+        mkt_ob_pressure = feats["ob_book_pressure_l10"].mean(axis=1)
+        basket_spread_z_norm = feats["ob_spread_bps_z_24h"].mean(axis=1)
+        basket_depth_to_qv_z = feats["ob_depth_l20_to_qv_z_7d"].mean(axis=1)
+    feats["xasset_asset_minus_mkt_ob_pressure"] = (
+        feats["ob_book_pressure_l10"].sub(mkt_ob_pressure, axis=0).astype(np.float32)
+    )
+    feats["xasset_asset_minus_mkt_ob_pressure_z_24h"] = _batch_roll_zscore(
+        feats["xasset_asset_minus_mkt_ob_pressure"], 24
+    ).clip(-6, 6)
+    feats["xasset_btc_ob_pressure"] = _broadcast_series(
+        feats["ob_book_pressure_l10"].get(
+            _resolve_available_symbol("BTC/USDT") or "", mkt_ob_pressure
+        )
+    )
+    feats["xasset_eth_ob_pressure"] = _broadcast_series(
+        feats["ob_book_pressure_l10"].get(
+            _resolve_available_symbol("ETH/USDT") or "", mkt_ob_pressure
+        )
+    )
+    feats["xasset_asset_minus_basket_ob_pressure"] = _batch_roll_zscore(
+        feats["xasset_asset_minus_mkt_ob_pressure"], 24 * 7
+    ).clip(-6, 6)
+    feats["xasset_mkt_spread_bps_z_24h"] = _broadcast_series(basket_spread_z_norm)
+    feats["xasset_mkt_depth_to_qv_z"] = _broadcast_series(basket_depth_to_qv_z)
+    feats["xasset_mkt_ob_stress_z_24h"] = _broadcast_series(
+        (basket_spread_z_norm - basket_depth_to_qv_z).clip(-10, 10)
+    )
+    feats["xasset_ob_stress_basket_z_24h"] = feats[
+        "xasset_mkt_ob_stress_z_24h"
+    ].astype(np.float32)
+    feats["xasset_ob_liquidity_divergence_z_24h"] = (
+        feats["ob_depth_l20_to_qv_z_7d"].sub(basket_depth_to_qv_z, axis=0)
+    ).astype(np.float32)
+    feats["ob_depth_to_qv_z_x_rvol_z"] = (
+        (feats["ob_depth_l20_to_qv_z_7d"] * feats["rvol_z"])
+        .clip(-12, 12)
+        .astype(np.float32)
+    )
+    feats["ob_depth_decay_asym_l20_z_7d"] = _batch_roll_zscore(
+        feats["ob_bid_depth_decay_l20"] - feats["ob_ask_depth_decay_l20"], 24 * 7
+    ).clip(-6, 6)
+    flow_vs_book_l20 = feats.get("ob_abs_flow_vs_book_l20")
+    if not isinstance(flow_vs_book_l20, pd.DataFrame):
+        raw_flow_vs_book_l20 = feats.get("ob_flow_vs_book_l20")
+        flow_vs_book_l20 = (
+            raw_flow_vs_book_l20.abs()
+            if isinstance(raw_flow_vs_book_l20, pd.DataFrame)
+            else _zero_panel()
+        )
+    feats["ob_abs_flow_vs_book_l20_z_24h"] = _batch_roll_zscore(
+        flow_vs_book_l20, 24
+    ).clip(-6, 6)
+    feats["ob_notional_to_depth_l20_z_24h"] = _batch_roll_zscore(
+        feats.get("ob_notional_to_depth_l20", _zero_panel()), 24
+    ).clip(-6, 6)
+    feats["ob_trade_size_to_l1_depth_z_24h"] = _batch_roll_zscore(
+        feats.get("ob_trade_size_to_l1_depth", _zero_panel()), 24
+    ).clip(-6, 6)
 
     requested_obw = any(
         k.startswith("obw_") or k.startswith("_obw_") for k in requested_feature_set

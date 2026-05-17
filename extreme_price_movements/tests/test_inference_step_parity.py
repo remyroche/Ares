@@ -10,6 +10,21 @@ from extreme_price_movements.portfolio_manager import PortfolioManager
 
 def test_load_normalized_threshold_map_prefers_policy_deployment_rank(tmp_path):
     run_id = "run"
+    sizer_dir = tmp_path / "artifacts" / run_id / "simple_position_sizer"
+    sizer_dir.mkdir(parents=True)
+    (sizer_dir / "normalized_strategy_thresholds.json").write_text(
+        json.dumps(
+            {
+                "threshold_space": "rank_percentile",
+                "strategies": {
+                    "mr": {
+                        "normalized_threshold": 0.59,
+                        "viability_margin": 0.01,
+                    }
+                },
+            }
+        )
+    )
     policy_dir = tmp_path / "artifacts" / run_id / "policy_params"
     policy_dir.mkdir(parents=True)
     (policy_dir / "strategy_for_inference.json").write_text(
@@ -84,6 +99,57 @@ def test_load_lgbm_strategy_masks_prefers_embedded_strategy_contract(tmp_path):
     assert masks["mr"]["strategy_id"] == "long_mr"
 
 
+def test_load_lgbm_strategy_masks_fallback_filters_to_selected_strategies(
+    tmp_path, monkeypatch
+):
+    run_id = "run"
+    policy_dir = tmp_path / "artifacts" / run_id / "policy_params"
+    policy_dir.mkdir(parents=True)
+    (policy_dir / "strategy_for_inference.json").write_text(
+        json.dumps(
+            {
+                "strategies": [
+                    {
+                        "strategy_id": "long_selected",
+                        "canonical_strategy_id": "selected",
+                        "strategy_for_inference": "long_selected",
+                        "side": "long",
+                        "selected": True,
+                        "lgbm_regime_mask": {},
+                    }
+                ]
+            }
+        )
+    )
+
+    from extreme_price_movements.offline_optimisers import params_store
+
+    monkeypatch.setattr(
+        params_store,
+        "load_inference_candidate_mask_params_per_bucket",
+        lambda **_: [
+            {
+                "strategy_id": "selected",
+                "trade_side": "long",
+                "base_event_trigger": "selected_rule",
+                "mask_params": {"canonical_key": "selected_rule"},
+            },
+            {
+                "strategy_id": "unselected",
+                "trade_side": "short",
+                "base_event_trigger": "unselected_rule",
+                "mask_params": {"canonical_key": "unselected_rule"},
+            },
+        ],
+    )
+
+    masks = ri._load_lgbm_strategy_mask_rows(str(tmp_path), run_id)
+
+    assert {row["strategy_id"] for row in masks.values()} == {"selected"}
+    assert set(masks) >= {"selected", "long_selected"}
+    assert "unselected" not in masks
+
+
 def test_strategy_asset_exclusion_matches_across_usdt_usdc_quote():
     assert ri._is_symbol_blocked_for_strategy(
         "BTC/USDC",
@@ -126,7 +192,7 @@ class _DummyExecutor:
 
     def __init__(self):
         self.calls = []
-        self.config = {}
+        self.config = {"allow_live_batch_rank_fallback_for_debug": True}
 
     def get_cooldown_hours(self, bucket_key):
         return 0.0
@@ -424,9 +490,9 @@ def test_run_inference_step_sizes_from_calibrated_meta_policy_power(monkeypatch)
     assert len(results["trades"]) == 1
     # With PortfolioManager active, live rank-sizing supersedes legacy
     # calibrated policy sizing and symbol-underperformance downweights.
-    # Single-candidate rank is 1.0, so size reaches the reserved-slot 15%
-    # wallet cap, without a static leverage multiplier.
-    assert abs(executor.calls[0]["size"] - 1500.0) < 1e-9
+    # Single-candidate rank is 1.0, but sizing reserves book capacity across
+    # slots: 95% wallet / 10 max positions * rank multiplier 1.25 = 1187.5.
+    assert abs(executor.calls[0]["size"] - 1187.5) < 1e-9
 
 
 def test_portfolio_manager_hard_gates_require_manual_reset():

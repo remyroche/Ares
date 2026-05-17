@@ -1,3 +1,8 @@
 {
-  "last_attempt_ts": "2026-05-11T18:34:08.783678+00:00"
+  "last_assets": [
+    "HOME"
+  ],
+  "last_attempt_ts": "2026-05-16T21:45:15.962797+00:00",
+  "last_success_ts": "2026-05-16T21:45:15.962797+00:00",
+  "method_version": "margin_dust_v2_repeated_params"
 }

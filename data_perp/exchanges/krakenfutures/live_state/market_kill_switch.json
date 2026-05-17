@@ -1,0 +1,16 @@
+{
+  "active": false,
+  "details": {
+    "btc_1h_move": 0.15897715091705322,
+    "btc_4h_move": 0.15712547302246094,
+    "eth_1h_move": 0.061690449714660645,
+    "eth_4h_move": 0.05813562870025635
+  },
+  "halt_until": "2026-05-17T09:30:00+00:00",
+  "manual_reset_required": false,
+  "reason": "BTC_1H_MOVE_GT_7PCT",
+  "recovered_at": "2026-05-16T21:45:00+00:00",
+  "recovery_reason": "deprecated_market_kill_switch_reason",
+  "self_reversible": true,
+  "triggered_at": "2026-05-16T21:30:00+00:00"
+}

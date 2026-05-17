@@ -1,0 +1,47 @@
+{
+  "execution_account": "perps",
+  "items": [
+    {
+      "amount": 403.0,
+      "classification": "external_perp_position",
+      "entry_price": 0.03177995037220844,
+      "imported_for_monitoring": true,
+      "kind": "perp_position",
+      "quote_value": 12.80732,
+      "side": "short",
+      "symbol": "NIGHT/USD:USD"
+    },
+    {
+      "amount": 224.0,
+      "classification": "external_perp_position",
+      "entry_price": 0.03526,
+      "imported_for_monitoring": true,
+      "kind": "perp_position",
+      "quote_value": 7.8982399999999995,
+      "side": "long",
+      "symbol": "CGPT/USD:USD"
+    },
+    {
+      "amount": 18.4,
+      "classification": "external_perp_position",
+      "entry_price": 0.371,
+      "imported_for_monitoring": true,
+      "kind": "perp_position",
+      "quote_value": 6.8264,
+      "side": "short",
+      "symbol": "BERA/USD:USD"
+    }
+  ],
+  "margin_mode": "cross",
+  "mode": "live-test",
+  "quote_currency": "USD",
+  "summary": {
+    "active_positions_after_reconcile": 3,
+    "counts": {
+      "external_perp_position": 3
+    },
+    "item_count": 3,
+    "skipped": false
+  },
+  "timestamp": "2026-05-17T22:24:53.744257+00:00"
+}

@@ -1,0 +1,17 @@
+{
+  "cross_margin_residual_assets": [
+    "BNB"
+  ],
+  "dust_quote_threshold": 5.0,
+  "execution_account": "perps",
+  "items": [],
+  "margin_mode": "cross",
+  "mode": "shadow",
+  "quote_currency": "USD",
+  "residual_cleanup_cap_quote": 5.0,
+  "summary": {
+    "reason": "not_cross_margin_live",
+    "skipped": true
+  },
+  "timestamp": "2026-05-16T23:15:09.101842+00:00"
+}

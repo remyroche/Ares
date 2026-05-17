@@ -1,0 +1,42 @@
+{
+  "schema_version": "live_feature_layer_debug_v1",
+  "created_at": "2026-05-16T13:19:20.778374+00:00",
+  "run_id": "20260321_140000",
+  "symbol": "EPIC/USDC",
+  "side": "long",
+  "selected_strategy": "long_dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575",
+  "strategy_id": "dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575",
+  "decision_ts": "2026-05-16T13:10:32.062628+00:00",
+  "signal_bar_ts": "2026-05-16 12:00:00+00:00",
+  "base_pred": 0.34123152166844434,
+  "meta_pred": 0.49038124959968465,
+  "meta_prediction_source": "batch_meta_after_base_gate",
+  "calibrated_score": null,
+  "policy_rank_pct": null,
+  "rank_score_source": null,
+  "alpha_model_key": "long_dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575",
+  "meta_model_key": "long_dist_ema_fast_-0_0008298126_range_24h_pct_0_036314368_rsi_slope_1_1116575_clf",
+  "post_transform_candidate_features_n": 853,
+  "alpha_model_input_n": 454,
+  "meta_model_input_n": 456,
+  "alpha_diag": {},
+  "meta_diag": {
+    "raw_selected_features_n": 456,
+    "tree_feature_names_n": 139,
+    "missing_real_features": [],
+    "missing_tree_features": [],
+    "tree_feature_config_oof": true
+  },
+  "pre_causal_transform_status": "not_available_in_exact_live_decision_path; live path consumes cached/merged post-transform feature frames. Use replay comparison for reconstructed pre-CausalTransform values.",
+  "prediction_replay_note": "The stored model frames are exact for this decision row. If meta_prediction_source=batch_meta_after_base_gate, the live scalar prediction came from a batch call; use the ledger scalar as the prediction truth and these frames to inspect the row-level inputs.",
+  "files": {
+    "post_transform_candidate_features": "post_transform_candidate_features.parquet",
+    "alpha_model_input": "alpha_model_input.parquet",
+    "meta_model_input": "meta_model_input.parquet",
+    "alpha_ebm_raw_contract": "alpha_ebm_raw_contract.parquet",
+    "alpha_lgbm_tree_features": "alpha_lgbm_tree_features.parquet",
+    "meta_ebm_raw_contract": "meta_ebm_raw_contract.parquet",
+    "meta_lgbm_tree_features": "meta_lgbm_tree_features.parquet",
+    "model_layers_long": "model_layers_long.parquet"
+  }
+}

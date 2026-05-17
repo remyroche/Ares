@@ -1,0 +1,16 @@
+families_combo,count
+unknown,263
+context|unknown,108
+liquidity|unknown,25
+compression|unknown,21
+path_structure|unknown,18
+unknown|volatility,13
+context|liquidity|unknown,13
+context|path_structure|unknown,6
+momentum|path_structure|unknown,3
+context|unknown|volatility,3
+path_structure|unknown|volatility,2
+context|momentum|unknown,2
+trend|unknown,2
+context,1
+unknown|volatility_term_structure,1

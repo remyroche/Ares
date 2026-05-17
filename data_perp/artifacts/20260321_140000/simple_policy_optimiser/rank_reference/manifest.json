@@ -1,0 +1,62 @@
+{
+  "generated_by": "simple_policy_optimiser",
+  "market_mode": "perps",
+  "run_id": "20260321_140000",
+  "schema_version": "policy_rank_reference_v1",
+  "strategies": {
+    "long_dist_weekly_vwap_0_074823022_loc_prev_week_range_pos_48_0_48354843_mkt_ret_eq_24h_-0_43956268_volume_autocorr_48_-0_38378653": {
+      "created_at": "2026-05-16T19:49:09.388850+00:00",
+      "max_score": 0.99412602186203,
+      "min_score": 0.02299928106367588,
+      "n_rows": 6703,
+      "path": "simple_policy_optimiser/rank_reference/long_dist_weekly_vwap_0_074823022_loc_prev_week_range_pos_48_0_48354843_mkt_ret_eq_24h_-0_43956268_volume_autocorr_48_-0_38378653.parquet",
+      "rank_col": "rank_pct",
+      "score_col": "calibrated_score"
+    },
+    "long_loc_prev_week_range_pos_48_0_42586401_loc_vwap_dev_z_24_0_10701825_zscore_price_50_1_0128103_mkt_ret_eq_24h_-0_78752208_up_down_return_mass_ratio_tanh_1_1231147": {
+      "created_at": "2026-05-16T19:50:45.248063+00:00",
+      "max_score": 0.9957513809204102,
+      "min_score": 0.01912682317197323,
+      "n_rows": 6114,
+      "path": "simple_policy_optimiser/rank_reference/long_loc_prev_week_range_pos_48_0_42586401_loc_vwap_dev_z_24_0_10701825_zscore_price_50_1_0128103_mkt_ret_eq_24h_-0_78752208_up_down_return_mass_ratio_tanh_1_1231147.parquet",
+      "rank_col": "rank_pct",
+      "score_col": "calibrated_score"
+    },
+    "long_prior_range_0_84333628_range_24h_pct_0_10307747": {
+      "created_at": "2026-05-16T19:52:12.811843+00:00",
+      "max_score": 0.9925085306167603,
+      "min_score": 0.04415368288755417,
+      "n_rows": 4610,
+      "path": "simple_policy_optimiser/rank_reference/long_prior_range_0_84333628_range_24h_pct_0_10307747.parquet",
+      "rank_col": "rank_pct",
+      "score_col": "calibrated_score"
+    },
+    "short_dist_rolling_7d_high_0_13977644_mkt_ret_eq_24h_-0_56630391_rolling_range_20_-0_40672407": {
+      "created_at": "2026-05-16T19:53:25.926955+00:00",
+      "max_score": 0.9982926249504089,
+      "min_score": 0.016488268971443176,
+      "n_rows": 5710,
+      "path": "simple_policy_optimiser/rank_reference/short_dist_rolling_7d_high_0_13977644_mkt_ret_eq_24h_-0_56630391_rolling_range_20_-0_40672407.parquet",
+      "rank_col": "rank_pct",
+      "score_col": "calibrated_score"
+    },
+    "short_dist_rolling_7d_high_0_18961641_loc_swing_range_pos_48_0_666668_mkt_ret_eq_24h_-0_620763_symbol_minus_mkt_ret_24h_0_39961502_tail_asymmetry_q90_q10_atr_norm_0_46123043": {
+      "created_at": "2026-05-16T19:54:45.900545+00:00",
+      "max_score": 0.9938727617263794,
+      "min_score": 0.025327220559120178,
+      "n_rows": 6590,
+      "path": "simple_policy_optimiser/rank_reference/short_dist_rolling_7d_high_0_18961641_loc_swing_range_pos_48_0_666668_mkt_ret_eq_24h_-0_620763_symbol_minus_mkt_ret_24h_0_39961502_tail_asymmetry_q90_q10_atr_norm_0_46123043.parquet",
+      "rank_col": "rank_pct",
+      "score_col": "calibrated_score"
+    },
+    "short_loc_ema_stack_pos_24_0_43357179_compression_ratio_-0_33411601_mkt_ret_eq_24h_1_1280091_mkt_ret_eq_24h_-0_81129736_up_down_semivol_ratio_tanh_-0_39156261": {
+      "created_at": "2026-05-16T19:56:13.488832+00:00",
+      "max_score": 0.9991422295570374,
+      "min_score": 0.021319983527064323,
+      "n_rows": 7969,
+      "path": "simple_policy_optimiser/rank_reference/short_loc_ema_stack_pos_24_0_43357179_compression_ratio_-0_33411601_mkt_ret_eq_24h_1_1280091_mkt_ret_eq_24h_-0_81129736_up_down_semivol_ratio_tanh_-0_39156261.parquet",
+      "rank_col": "rank_pct",
+      "score_col": "calibrated_score"
+    }
+  }
+}

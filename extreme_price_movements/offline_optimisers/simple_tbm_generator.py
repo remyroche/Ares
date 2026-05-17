@@ -162,9 +162,23 @@ def _build_side_horizon_best_params(cell_df: pd.DataFrame) -> pd.DataFrame:
 
 def _write_inference_candidate_bucket_params(*, market_mode: str = "spot") -> Path:
     os.environ["EPM_MASK_STRATEGY_SKIP_REPORT_INPUTS"] = "1"
+    top_n = int(os.environ.get("EPM_MASK_STRATEGY_TOP_N", "20") or 20)
     strategies = load_inference_candidate_mask_params_per_bucket(
-        top_n=20, market_mode=market_mode
+        top_n=max(1, top_n), market_mode=market_mode
     )
+    strategy_ids_env = (
+        os.environ.get("EPM_MASK_STRATEGY_IDS", "").strip()
+        or os.environ.get("EPM_LABEL_STRATEGY_IDS", "").strip()
+    )
+    if strategy_ids_env:
+        requested_ids = [s.strip() for s in strategy_ids_env.split(",") if s.strip()]
+        requested = set(requested_ids)
+        strategies = [
+            s for s in strategies if str(s.get("strategy_id", "")).strip() in requested
+        ]
+        order = {sid: i for i, sid in enumerate(requested_ids)}
+        strategies.sort(key=lambda s: order.get(str(s.get("strategy_id", "")), 10**9))
+
     out_path = market_report_path(
         REPORTS_DIR / "inference_candidate_mask_best_params_per_bucket.csv",
         market_mode,
@@ -182,10 +196,6 @@ def _write_inference_candidate_bucket_params(*, market_mode: str = "spot") -> Pa
 
     if {"trade_side", "source_horizon"}.issubset(df.columns):
         counts = df.groupby(["trade_side", "source_horizon"]).size()
-        expected = {("long", 5), ("long", 10), ("short", 5), ("short", 10)}
-        missing = expected.difference(set(counts.index.tolist()))
-        if missing:
-            raise ValueError(f"Missing top-5 bucket coverage for: {sorted(missing)}")
         if any(int(v) > 20 for v in counts.to_numpy()):
             raise ValueError(f"Expected at most 20 strategies per bucket, got counts={counts.to_dict()}")
 

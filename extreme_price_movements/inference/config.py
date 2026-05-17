@@ -29,17 +29,23 @@ from extreme_price_movements.model_loader import (
 from extreme_price_movements.offline_optimisers.params_store import (
     INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV,
     apply_offline_optimizer_best_params,
+    market_report_path,
 )
 from extreme_price_movements.utils import tprint
 
 
-def _resolve_runtime_cfg() -> Dict[str, Any]:
+def _resolve_runtime_cfg(market_mode: Optional[str] = None) -> Dict[str, Any]:
     """Refresh runtime config from persisted offline optimiser outputs."""
-    return apply_offline_optimizer_best_params(dict(CFG))
+    cfg = dict(CFG)
+    if market_mode is not None:
+        cfg["market_mode"] = market_mode
+    return apply_offline_optimizer_best_params(cfg)
 
 
-def _load_inference_candidate_mask_params() -> Dict[str, Any]:
-    path = Path(INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV)
+def _load_inference_candidate_mask_params(
+    market_mode: Optional[str] = None,
+) -> Dict[str, Any]:
+    path = market_report_path(Path(INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV), market_mode)
     if not path.exists():
         return {}
     try:
@@ -58,10 +64,13 @@ DEFAULT_PERP_DATA_ROOT = "data_perp"
 DEFAULT_MARKET_MODE = os.environ.get("EPM_MARKET_MODE", "spot")
 DEFAULT_EXECUTION_ACCOUNT = "margin"
 DEFAULT_MARGIN_MODE = "cross"
-DEFAULT_LIVE_QUOTE_CURRENCY = "USDC"
+DEFAULT_LIVE_QUOTE_CURRENCY = os.environ.get("EPM_LIVE_QUOTE_CURRENCY", "USDC").upper()
 
 
-def get_candidate_thresholds(thresholds_csv: Optional[str] = None) -> Dict[str, float]:
+def get_candidate_thresholds(
+    thresholds_csv: Optional[str] = None,
+    market_mode: Optional[str] = None,
+) -> Dict[str, float]:
     """Load candidate thresholds from runtime config (populated by offline optimizer).
 
     Args:
@@ -73,7 +82,7 @@ def get_candidate_thresholds(thresholds_csv: Optional[str] = None) -> Dict[str, 
         - min_range_pct: Minimum 12h high/low range percentage
         - min_vol_zscore: Minimum volatility z-score threshold
     """
-    runtime_cfg = _resolve_runtime_cfg()
+    runtime_cfg = _resolve_runtime_cfg(market_mode)
     thresholds = {
         "extreme_pct": runtime_cfg.get("train_extreme_pct_hourly", 0.05),
         "min_move_12h_pct": runtime_cfg.get("train_min_move_12h_pct", 0.06),
@@ -81,7 +90,7 @@ def get_candidate_thresholds(thresholds_csv: Optional[str] = None) -> Dict[str, 
         "min_vol_zscore": runtime_cfg.get("train_min_vol_zscore", 1.5),
         "metric": runtime_cfg.get("train_candidate_metric", "ret12h"),
     }
-    infer_mask = _load_inference_candidate_mask_params()
+    infer_mask = _load_inference_candidate_mask_params(market_mode)
     if infer_mask:
         if infer_mask.get("train_extreme_pct_hourly"):
             thresholds["extreme_pct"] = float(infer_mask["train_extreme_pct_hourly"])
@@ -132,12 +141,15 @@ def load_inference_config(
     tprint(f"Loading inference config for run_id: {run_id}")
 
     # Load thresholds from runtime_cfg (populated by offline optimizer)
-    runtime_cfg = _resolve_runtime_cfg()
-    thresholds = get_candidate_thresholds()
+    runtime_cfg = _resolve_runtime_cfg(market_mode_norm)
+    runtime_cfg["market_mode"] = market_mode_norm
+    runtime_cfg["use_perps"] = market_mode_norm == "perps"
+    runtime_cfg["data_root"] = data_root
+    thresholds = get_candidate_thresholds(market_mode=market_mode_norm)
     tprint(f"Using thresholds: {thresholds}")
 
     # Load TBM params from runtime_cfg
-    tbm_params = get_tbm_params()
+    tbm_params = get_tbm_params(market_mode=market_mode_norm)
     tprint(f"Using TBM params: {tbm_params}")
 
     # Load model bundle
@@ -164,7 +176,7 @@ def load_inference_config(
     return config
 
 
-def get_tbm_params() -> Dict[str, Any]:
+def get_tbm_params(market_mode: Optional[str] = None) -> Dict[str, Any]:
     """Get TBM (Triple Barrier Model) parameters from runtime config.
 
     These parameters are populated by apply_offline_optimizer_best_params()
@@ -204,7 +216,7 @@ def get_tbm_params() -> Dict[str, Any]:
         "barrier_mode",
     ]
 
-    runtime_cfg = _resolve_runtime_cfg()
+    runtime_cfg = _resolve_runtime_cfg(market_mode)
     params = {}
     for key in tbm_keys:
         if key in runtime_cfg and runtime_cfg[key] is not None:
@@ -213,7 +225,7 @@ def get_tbm_params() -> Dict[str, Any]:
     return params
 
 
-def get_sample_weight_params() -> Dict[str, Any]:
+def get_sample_weight_params(market_mode: Optional[str] = None) -> Dict[str, Any]:
     """Get sample weight parameters from runtime config.
 
     These parameters are populated by apply_offline_optimizer_best_params()
@@ -240,7 +252,7 @@ def get_sample_weight_params() -> Dict[str, Any]:
         "sample_weight_recency_half_life_bars",
     ]
 
-    runtime_cfg = _resolve_runtime_cfg()
+    runtime_cfg = _resolve_runtime_cfg(market_mode)
     params = {}
     for key in sample_weight_keys:
         if key in runtime_cfg and runtime_cfg[key] is not None:
@@ -249,7 +261,7 @@ def get_sample_weight_params() -> Dict[str, Any]:
     return params
 
 
-def get_runtime_cfg() -> Dict[str, Any]:
+def get_runtime_cfg(market_mode: Optional[str] = None) -> Dict[str, Any]:
     """Get the full runtime config with all optimized parameters.
 
     Returns:
@@ -259,7 +271,7 @@ def get_runtime_cfg() -> Dict[str, Any]:
         - Sample weight parameters
         - All other config from CFG
     """
-    return _resolve_runtime_cfg()
+    return _resolve_runtime_cfg(market_mode)
 
 
 def get_inference_defaults() -> Dict[str, Any]:
@@ -605,7 +617,32 @@ def resolve_inference_universes(
     live_quote_currency = str(live_quote_currency or "USDC").upper()
     mode_raw = str(market_mode or "spot").strip().lower()
     mode = "perps" if mode_raw in {"perp", "perps", "future", "futures", "swap"} else "spot"
-    if explicit_symbols:
+    if explicit_symbols and mode == "perps":
+        markets = exchange.load_markets()
+        requested_bases = {
+            _normalise_symbol(s).split("/", 1)[0] for s in explicit_symbols if str(s)
+        }
+        live_symbols = []
+        for symbol, meta in (markets or {}).items():
+            if not isinstance(meta, dict):
+                continue
+            base = str(meta.get("base") or str(symbol).split("/", 1)[0]).upper()
+            if base not in requested_bases:
+                continue
+            quote = str(meta.get("quote") or "").upper()
+            settle = str(meta.get("settle") or "").upper()
+            if settle:
+                if settle != live_quote_currency:
+                    continue
+            elif quote != live_quote_currency:
+                continue
+            if meta.get("active", True) is False:
+                continue
+            if not bool(meta.get("swap")):
+                continue
+            live_symbols.append(str(symbol) if symbol else f"{base}/{live_quote_currency}")
+        live_symbols = sorted(set(live_symbols))
+    elif explicit_symbols:
         live_symbols = sorted(
             {
                 convert_symbol_quote(_normalise_symbol(s), live_quote_currency)
@@ -619,14 +656,18 @@ def resolve_inference_universes(
             if not isinstance(meta, dict):
                 continue
             quote = str(meta.get("quote") or "").upper()
-            if quote != live_quote_currency:
+            settle = str(meta.get("settle") or "").upper()
+            if settle:
+                if settle != live_quote_currency:
+                    continue
+            elif quote != live_quote_currency:
                 continue
-            if not bool(meta.get("active", True)):
+            if meta.get("active", True) is False:
                 continue
-            if not bool(meta.get("swap") or meta.get("future") or meta.get("contract")):
+            if not bool(meta.get("swap")):
                 continue
             base = str(meta.get("base") or str(symbol).split("/", 1)[0]).upper()
-            live_symbols.append(f"{base}/{live_quote_currency}")
+            live_symbols.append(str(symbol) if symbol else f"{base}/{live_quote_currency}")
         live_symbols = sorted(set(live_symbols))
         tprint(
             f"Loaded {len(live_symbols)} active perp symbols for quote={live_quote_currency}"

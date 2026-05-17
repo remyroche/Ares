@@ -58,6 +58,7 @@ def _window_stats(
         "n_valid": 0.0,
         "rolling_ic": np.nan,
         "model_ece": np.nan,
+        "confidence_surprise": np.nan,
         "top_hit_rate": np.nan,
         "top_calibration_error": np.nan,
         "abs_top_calibration_error": np.nan,
@@ -74,6 +75,10 @@ def _window_stats(
     out["n_valid"] = float(int(valid_all.sum()))
     out["rolling_ic"] = _spearman_corr(s, r)
     out["model_ece"] = _ece_from_hist(p, y)
+    pred_label = (p >= 0.5).astype(np.float32)
+    pred_conf = np.maximum(p, 1.0 - p)
+    hit = (pred_label == (y >= 0.5)).astype(np.float32)
+    out["confidence_surprise"] = float(np.nanmean(pred_conf - hit))
     valid = np.isfinite(s)
     if int(valid.sum()) < min_top_samples:
         return out
@@ -183,6 +188,18 @@ def _compute_scope_timeseries_vectorized(
         hist[prob_col].to_numpy(dtype=np.float32, copy=False)
         - hist[y_col].to_numpy(dtype=np.float32, copy=False)
     ).astype(np.float32)
+    pred_label = (
+        hist[prob_col].to_numpy(dtype=np.float32, copy=False) >= 0.5
+    ).astype(np.float32)
+    pred_conf = np.maximum(
+        hist[prob_col].to_numpy(dtype=np.float32, copy=False),
+        1.0 - hist[prob_col].to_numpy(dtype=np.float32, copy=False),
+    )
+    hit = (
+        pred_label
+        == (hist[y_col].to_numpy(dtype=np.float32, copy=False) >= 0.5)
+    ).astype(np.float32)
+    hist["_confidence_surprise"] = (pred_conf - hit).astype(np.float32)
     idxed = hist.set_index(label_available_ts_col, drop=False)
     out = pd.DataFrame({ts_col: hist[label_available_ts_col].values}, index=hist.index)
 
@@ -192,6 +209,7 @@ def _compute_scope_timeseries_vectorized(
     y = idxed[y_col]
     valid = idxed["_valid_all"]
     cal_abs = idxed["_cal_abs"]
+    confidence_surprise = idxed["_confidence_surprise"]
 
     for win in windows:
         sfx = win.lower()
@@ -234,6 +252,12 @@ def _compute_scope_timeseries_vectorized(
                 dtype=np.float32
             )
         )
+        out[f"confidence_surprise_{sfx}"] = (
+            confidence_surprise.rolling(win, closed="left")
+            .mean()
+            .where(enough)
+            .to_numpy(dtype=np.float32)
+        )
         out[f"{top_label}_hit_rate_{sfx}"] = top_hit.where(enough_top).to_numpy(
             dtype=np.float32
         )
@@ -271,6 +295,7 @@ def _add_scope_features(
     metrics = [
         "rolling_ic",
         "model_ece",
+        "confidence_surprise",
         f"{top_label}_hit_rate",
         f"{top_label}_calibration_error",
         f"abs_{top_label}_calibration_error",
@@ -315,6 +340,7 @@ def _add_scope_features(
                 "n_valid": raw["n_valid"],
                 "rolling_ic": raw["rolling_ic"],
                 "model_ece": raw["model_ece"],
+                "confidence_surprise": raw["confidence_surprise"],
                 f"{top_label}_hit_rate": raw["top_hit_rate"],
                 f"{top_label}_calibration_error": raw["top_calibration_error"],
                 f"abs_{top_label}_calibration_error": raw["abs_top_calibration_error"],
@@ -427,7 +453,12 @@ def standardize_recent_effectiveness_features(
             raw = np.log1p(raw.clip(lower=0.0))
         elif "hit_rate" in name or "realized_rate" in name:
             raw = raw.clip(0.0, 1.0)
-        elif "ece" in name or "calibration_error" in name or "cal_error" in name:
+        elif (
+            "ece" in name
+            or "calibration_error" in name
+            or "cal_error" in name
+            or "confidence_surprise" in name
+        ):
             raw = raw.clip(-1.0, 1.0)
         elif "rolling_ic" in name or "rank_ic" in name:
             raw = raw.clip(-1.0, 1.0)
@@ -448,7 +479,7 @@ def add_recent_effectiveness_features(
     bucket_col: str = "bucket",
     regime_col: str = "regime",
     symbol_col: str = "symbol",
-    windows: tuple[str, ...] = ("5D", "15D", "30D"),
+    windows: tuple[str, ...] = ("2D", "5D", "15D"),
     top_frac: float = 0.15,
     min_samples: int = 100,
     min_top_samples: int = 25,

@@ -1,0 +1,27 @@
+[
+  {
+    "n_samples": 253,
+    "base_rate": 0.2885375494071146,
+    "score_col": "oof_prob",
+    "target_col": "y_bin",
+    "hit_rate10": 0.46153846153846156,
+    "lift10": 1.5995785036880927,
+    "ndcg10": 0.47613812071427686,
+    "hit_rate20": 0.5490196078431373,
+    "lift20": 1.9027665860864895,
+    "ndcg20": 0.5319805365297172,
+    "hit_rate30": 0.4868421052631579,
+    "lift30": 1.6872746935832732,
+    "ndcg30": 0.5052271166308526,
+    "hit_rate10_monthly_std": 0.2721655269759087,
+    "hit_rate20_monthly_std": 0.08388704928078611,
+    "hit_rate30_monthly_std": 0.12895299054977719,
+    "strategy_id": "dist_prior_day_low_0_033441655_compression_score_0_55698758_ret24h_-1_0731928",
+    "side": "unknown",
+    "horizon": 10,
+    "source": "/Users/remyroche/Documents/Ares/data/artifacts/20260321_140000/oof/oof_dist_prior_day_low_0_033441655_compression_score_0_55698758_ret24h_-1_0731928_H10.parquet",
+    "layer": "base",
+    "hit_rate30_std": 0.12895299054977719,
+    "selection_score": 0.6496831670369598
+  }
+]

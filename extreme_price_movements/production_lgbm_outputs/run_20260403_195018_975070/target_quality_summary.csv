@@ -1,5 +1,0 @@
-target_name,horizon,entropy_reduction,median_support,structurally_sound_rule_count,production_rule_count,rule_count,overall_target_quality_score
-atr_norm_returns_target,3,,,0,0,20,0.0
-atr_norm_returns_target,10,,,0,0,20,0.0
-returns_target,3,,,0,0,20,0.0
-returns_target,10,,,0,0,20,0.0

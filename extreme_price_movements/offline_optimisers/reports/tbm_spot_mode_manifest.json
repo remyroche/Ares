@@ -1,0 +1,5 @@
+{
+  "input_best_params_per_cell": "/Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_best_params_per_cell_spot.csv",
+  "input_geometry_grid": "/Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_geometry_grid_spot.csv",
+  "market_mode": "spot"
+}

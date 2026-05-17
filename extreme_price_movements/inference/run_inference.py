@@ -47,8 +47,10 @@ def _configure_numba_threading_layer() -> None:
 
 import argparse
 import hashlib
+import inspect
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -77,7 +79,10 @@ from extreme_price_movements.inference.config import (
     load_inference_config,
     resolve_inference_universes,
 )
-from extreme_price_movements.data_store import _resolve_perp_symbol
+from extreme_price_movements.data_store import (
+    _load_local_env_if_present,
+    _resolve_perp_symbol,
+)
 from extreme_price_movements.inference.daily_reporter import DailyDeploymentReporter
 from extreme_price_movements.inference.data_fetcher import (
     DataFetcher,
@@ -88,6 +93,7 @@ from extreme_price_movements.inference.data_fetcher import (
 )
 from extreme_price_movements.inference.feature_generator import (
     _compute_policy_barrier_pct,
+    _required_tail_warmup_hours,
     compute_selector_features,
     generate_features,
     get_features_for_candidates,
@@ -95,6 +101,10 @@ from extreme_price_movements.inference.feature_generator import (
     get_market_data,
     load_or_compute_features,
     raw_required_feature_keys,
+)
+from extreme_price_movements.inference.feature_layer_debug import (
+    dump_live_feature_layers,
+    feature_layer_debug_enabled,
 )
 from extreme_price_movements.inference.google_sheets_exporter import (
     GoogleSheetsTradeExporter,
@@ -117,6 +127,10 @@ from extreme_price_movements.inference.parity import (
     validate_live_feature_contract,
     validate_meta_feature_contract_artifact,
     validate_required_feature_frames,
+)
+from extreme_price_movements.inference.policy_rank_reference import (
+    PolicyRankReferenceStore,
+    apply_policy_rank_percentile_gate,
 )
 from extreme_price_movements.inference.portfolio_policy import (
     PortfolioPolicyConfig,
@@ -145,6 +159,26 @@ from extreme_price_movements.inference.trade_logger import (
 )
 from extreme_price_movements.portfolio_manager import PortfolioManager
 from extreme_price_movements.utils import tprint
+
+
+def _get_features_for_candidates_at_ts(
+    feats: Dict[str, pd.DataFrame],
+    candidates: List[str],
+    *,
+    ts: Any,
+) -> pd.DataFrame:
+    """Call the feature slicer with timestamp support when the implementation has it."""
+    try:
+        sig = inspect.signature(get_features_for_candidates)
+        params = sig.parameters
+        accepts_ts = "ts" in params or any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
+        )
+    except (TypeError, ValueError):
+        accepts_ts = True
+    if accepts_ts:
+        return get_features_for_candidates(feats, candidates, ts=ts)
+    return get_features_for_candidates(feats, candidates)
 
 _FEATURE_COMPUTE_LOCK = threading.RLock()
 LIVE_TEST_RANK_THRESHOLD = 0.90
@@ -185,14 +219,14 @@ def _load_normalized_threshold_map(
     data_root: str, run_id: str
 ) -> Dict[str, Dict[str, Any]]:
     rows_out: Dict[str, Dict[str, Any]] = {}
-    path = (
-        Path(data_root)
-        / "artifacts"
-        / run_id
-        / "ridge_sizer"
-        / "normalized_strategy_thresholds.json"
-    )
-    if path.exists():
+    base = Path(data_root) / "artifacts" / run_id
+    threshold_paths = [
+        base / "simple_position_sizer" / "normalized_strategy_thresholds.json",
+        base / "ridge_sizer" / "normalized_strategy_thresholds.json",
+    ]
+    for path in threshold_paths:
+        if not path.exists():
+            continue
         try:
             payload = json.loads(path.read_text())
             rows = payload.get("strategies", {}) if isinstance(payload, dict) else {}
@@ -202,11 +236,22 @@ def _load_normalized_threshold_map(
                     if isinstance(row, dict):
                         row = dict(row)
                         row.setdefault("threshold_space", threshold_space)
-                        rows_out[str(sid)] = row
+                        row.setdefault("threshold_source", str(path))
+                        core = strategy_core_id(str(sid))
+                        aliases = {str(sid), core}
+                        if core:
+                            aliases.add(f"long_{core}")
+                            aliases.add(f"short_{core}")
+                        for alias in aliases:
+                            if alias:
+                                rows_out[str(alias)] = dict(row)
+                tprint(
+                    f"Loaded {len(rows)} normalized strategy thresholds from {path}"
+                )
+                break
         except Exception as exc:
             tprint(f"Could not load normalized strategy thresholds: {exc}")
 
-    base = Path(data_root) / "artifacts" / run_id
     strategy_paths = [
         base / "policy_params" / "strategy_for_inference.json",
         base / "strategy_for_inference.json",
@@ -265,6 +310,10 @@ def _load_normalized_threshold_map(
                     aliases.add(f"{side}_{core}")
                 for alias in aliases:
                     if alias:
+                        # strategy_for_inference.json is the source of truth for
+                        # deployable rank gates. Older sizing artifacts can be loaded
+                        # first, but must not override the optimiser deployment
+                        # threshold for a selected live strategy.
                         rows_out[str(alias)] = dict(nrow)
                 loaded += 1
             tprint(f"Loaded {loaded} deployment rank thresholds from {strategy_path}")
@@ -414,8 +463,46 @@ def _load_embedded_lgbm_strategy_mask_rows(
     return {}
 
 
+def _load_selected_strategy_cores(data_root: str, run_id: str) -> set[str]:
+    """Load selected deployment strategy cores from strategy_for_inference."""
+    base = Path(data_root) / "artifacts" / run_id
+    selected: set[str] = set()
+    for strategy_path in [
+        candidate
+        for path in (
+            base / "policy_params" / "strategy_for_inference.json",
+            base / "strategy_for_inference.json",
+        )
+        for candidate in mode_file_candidates(path)
+    ]:
+        if not strategy_path.exists():
+            continue
+        try:
+            payload = json.loads(strategy_path.read_text())
+        except Exception:
+            continue
+        strategies = payload.get("strategies", []) if isinstance(payload, dict) else []
+        if not isinstance(strategies, list):
+            continue
+        for row in strategies:
+            if not isinstance(row, dict) or row.get("selected") is False:
+                continue
+            sid = str(
+                row.get("strategy_for_inference")
+                or row.get("strategy_id")
+                or row.get("canonical_strategy_id")
+                or ""
+            )
+            core = strategy_core_id(sid)
+            if core:
+                selected.add(core)
+        if selected:
+            return selected
+    return selected
+
+
 def _load_lgbm_strategy_mask_rows(
-    data_root: str, run_id: str
+    data_root: str, run_id: str, market_mode: str = "spot"
 ) -> Dict[str, Dict[str, Any]]:
     embedded = _load_embedded_lgbm_strategy_mask_rows(data_root, run_id)
     if embedded:
@@ -437,10 +524,26 @@ def _load_lgbm_strategy_mask_rows(
         rows = load_inference_candidate_mask_params_per_bucket(
             top_n=99,
             ranking_metric="score_for_best_params",
+            market_mode=market_mode,
         )
     except Exception as exc:
         tprint(f"Could not load LGBM strategy mask rows: {exc}")
         return {}
+
+    selected_cores = _load_selected_strategy_cores(data_root, run_id)
+    if selected_cores:
+        before_count = len(rows)
+        rows = [
+            row
+            for row in rows
+            if isinstance(row, dict)
+            and strategy_core_id(str(row.get("strategy_id", "") or ""))
+            in selected_cores
+        ]
+        tprint(
+            "Filtered fallback LGBM strategy mask rows to selected "
+            f"strategy_for_inference cores: {before_count}->{len(rows)}"
+        )
 
     out: Dict[str, Dict[str, Any]] = {}
     for row in rows:
@@ -461,6 +564,7 @@ def _load_lgbm_strategy_mask_rows(
                 "effect": "strategy_candidate_masks_disabled",
                 "required_for": "pre_base_model_regime_gating",
                 "source_type": "legacy_final_rule_registry",
+                "market_mode": _normalise_market_mode(market_mode),
             },
         )
     else:
@@ -471,6 +575,7 @@ def _load_lgbm_strategy_mask_rows(
                 "alias_count": int(len(out)),
                 "status": "loaded",
                 "source_type": "legacy_final_rule_registry",
+                "market_mode": _normalise_market_mode(market_mode),
             },
         )
     tprint(f"Loaded {len(rows)} LGBM strategy mask row(s) for inference gating")
@@ -547,8 +652,14 @@ def _attach_rank_percentile_scores(
     decision_rows: List[Dict[str, Any]],
     *,
     score_key: str = "rank_score",
+    allow_live_batch_rank_fallback_for_debug: bool = False,
 ) -> None:
-    """Attach per-strategy percentile ranks for live rank-threshold gates."""
+    """Attach diagnostic per-strategy percentiles.
+
+    Production rank-percentile gates use policy-rank references instead. The
+    local live-batch fallback is debug-only because its population is not the
+    optimiser's policy slice.
+    """
     if not decision_rows:
         return
     by_strategy: Dict[str, List[int]] = {}
@@ -575,7 +686,7 @@ def _attach_rank_percentile_scores(
                 decision_rows[row_i]["sizer_rank_percentile"] = float(
                     np.clip(scores[local_i], 0.0, 1.0)
                 )
-            else:
+            elif allow_live_batch_rank_fallback_for_debug:
                 decision_rows[row_i]["sizer_rank_percentile"] = float(rank_out[local_i])
 
 
@@ -682,8 +793,25 @@ def _prediction_ledger_row(
         "side": side,
         "strategy_id": decision.get("strategy_id"),
         "raw_prediction_score": decision.get("raw_score"),
+        "base_pred": chain.get("base_pred"),
+        "meta_pred": chain.get("meta_pred", decision.get("raw_score")),
+        "calibrated_score": chain.get(
+            "calibrated_score", decision.get("calibrated_score")
+        ),
+        "base_train_rank_pct": chain.get("base_train_rank_pct"),
+        "meta_train_rank_pct": chain.get("meta_train_rank_pct"),
         "rank_score_source": chain.get(
             "rank_score_source", decision.get("rank_score_source")
+        ),
+        "policy_rank_pct": chain.get(
+            "policy_rank_pct", decision.get("policy_rank_pct")
+        ),
+        "policy_rank_reference_n": chain.get(
+            "policy_rank_reference_n", decision.get("policy_rank_reference_n")
+        ),
+        "policy_rank_reference_source": chain.get(
+            "policy_rank_reference_source",
+            decision.get("policy_rank_reference_source"),
         ),
         "historical_rank_pct": chain.get("meta_train_rank_pct"),
         "batch_rank_pct": decision.get("sizer_rank_percentile"),
@@ -952,6 +1080,14 @@ def _force_shadow_entry_for_integration(executor: Any) -> bool:
     }
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    """Return a bool from common environment flag spellings."""
+    value = os.getenv(name)
+    if value is None:
+        return bool(default)
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _subset_panel(
     panel: Dict[str, pd.DataFrame],
     symbols: List[str],
@@ -964,6 +1100,44 @@ def _subset_panel(
         cols = [c for c in keep if c in df.columns]
         if cols:
             out[key] = df.loc[:, cols]
+    return out
+
+
+def _lgbm_mask_required_feature_keys(
+    lgbm_strategy_mask_rows: Optional[Dict[str, Dict[str, Any]]],
+) -> set[str]:
+    """Extract raw feature names referenced by canonical LGBM mask rules."""
+    if not lgbm_strategy_mask_rows:
+        return set()
+    out: set[str] = set()
+    feature_cmp = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\b\s*(?:<=|>=|==|<|>)")
+    ignore = {
+        "and",
+        "or",
+        "not",
+        "true",
+        "false",
+        "nan",
+        "inf",
+    }
+    for row in lgbm_strategy_mask_rows.values():
+        if not isinstance(row, dict):
+            continue
+        mask_params = row.get("mask_params", {}) if isinstance(row.get("mask_params"), dict) else {}
+        raw_rules = [
+            row.get("base_event_trigger"),
+            row.get("canonical_key"),
+            mask_params.get("canonical_key"),
+            mask_params.get("base_event_trigger"),
+        ]
+        for rule in raw_rules:
+            text = str(rule or "")
+            if not text:
+                continue
+            for match in feature_cmp.finditer(text):
+                name = str(match.group(1) or "").strip()
+                if name and name.lower() not in ignore:
+                    out.add(name)
     return out
 
 
@@ -1003,25 +1177,62 @@ def _select_candidates_and_load_features(
 ]:
     with _FEATURE_COMPUTE_LOCK:
         timer = _StageTimer("candidate_feature_load")
-        raw_feature_keys = raw_required_feature_keys(required_feature_keys)
+        model_raw_feature_keys = raw_required_feature_keys(required_feature_keys)
+        mask_raw_feature_keys = _lgbm_mask_required_feature_keys(lgbm_strategy_mask_rows)
+        raw_feature_keys = set(model_raw_feature_keys) | set(mask_raw_feature_keys)
         selector_feats = compute_selector_features(panel, symbols)
         timer.mark("selector_features")
-        thresholds = get_candidate_thresholds()
+        thresholds = get_candidate_thresholds(
+            market_mode=(cfg or {}).get("market_mode") if isinstance(cfg, dict) else None
+        )
         min_range_pct = thresholds.get("min_range_pct")
         if thresholds.get("min_move_12h_pct") is not None:
             min_range_pct = None
         _ = min_range_pct
-        long_cands, short_cands = select_candidates(
-            panel=panel,
-            feats=selector_feats,
-            metric=str(thresholds.get("metric", "ret12h")),
+        long_cands: List[str] = []
+        short_cands: List[str] = []
+        if not lgbm_strategy_mask_rows:
+            long_cands, short_cands = select_candidates(
+                panel=panel,
+                feats=selector_feats,
+                metric=str(thresholds.get("metric", "ret12h")),
+            )
+            timer.mark("selector_candidates")
+        else:
+            tprint(
+                "Deployment LGBM masks are authoritative; "
+                "skipping legacy per-mode candidate selector."
+            )
+        model_feature_symbols = [
+            str(sym)
+            for sym in symbols
+            if str(sym) in panel.get("close", pd.DataFrame()).columns
+        ]
+        if not model_feature_symbols:
+            model_feature_symbols = list(symbols)
+        tprint(
+            "Live feature parity: computing model feature frame on the full "
+            f"tradable universe ({len(model_feature_symbols)} symbols), "
+            f"model_required={len(model_raw_feature_keys)} "
+            f"mask_required={len(mask_raw_feature_keys)}."
         )
-        timer.mark("selector_candidates")
+        model_feats = load_or_compute_features(
+            panel=_subset_panel(panel, model_feature_symbols),
+            basket_syms=model_feature_symbols,
+            run_id=run_id,
+            data_root=data_root,
+            cfg=cfg,
+            lookback_hours=lookback_hours,
+            required_feature_keys=raw_feature_keys,
+        )
+        timer.mark("model_features")
+        mask_eval_feats = dict(model_feats)
+        mask_eval_feats.update(selector_feats)
         strategy_candidate_masks: Dict[str, List[str]] = {}
         if lgbm_strategy_mask_rows:
             strategy_candidate_masks = build_strategy_candidate_masks(
                 panel,
-                selector_feats,
+                mask_eval_feats,
                 lgbm_strategy_mask_rows.values(),
             )
             timer.mark("lgbm_mask_eval")
@@ -1060,22 +1271,12 @@ def _select_candidates_and_load_features(
                 thresholds,
                 long_cands,
                 short_cands,
-                selector_feats,
+                model_feats,
                 strategy_candidate_masks,
             )
-        model_feats = load_or_compute_features(
-            panel=_subset_panel(panel, selected_symbols),
-            basket_syms=selected_symbols,
-            run_id=run_id,
-            data_root=data_root,
-            cfg=cfg,
-            lookback_hours=lookback_hours,
-            required_feature_keys=raw_feature_keys,
-        )
-        timer.mark("model_features")
         validate_required_feature_frames(
             model_feats,
-            raw_feature_keys,
+            model_raw_feature_keys,
             symbols=selected_symbols,
             strict=True,
         )
@@ -1360,6 +1561,10 @@ def _send_trade_close_email(
             f"meta_pred: {_format_float(closed_trade.get('meta_pred'), digits=6)}",
             f"meta_train_rank_pct: {_format_float(closed_trade.get('meta_train_rank_pct'), digits=6)}",
             f"rank_score_source: {closed_trade.get('rank_score_source')}",
+            f"policy_rank_pct: {_format_float(closed_trade.get('policy_rank_pct'), digits=6)}",
+            f"policy_rank_reference_n: {closed_trade.get('policy_rank_reference_n')}",
+            "policy_rank_reference_source: "
+            f"{closed_trade.get('policy_rank_reference_source')}",
             f"calibrated_score: {_format_float(closed_trade.get('calibrated_score'), digits=6)}",
             f"rank_percentile: {_format_float(closed_trade.get('rank_percentile'), digits=6)}",
             f"effective_threshold: {_format_float(closed_trade.get('effective_threshold'), digits=6)}",
@@ -1524,6 +1729,11 @@ def _send_trade_open_email(
             f"base_pred: {_format_float(predictions.get('base_pred'), digits=6)}",
             f"meta_pred: {_format_float(predictions.get('meta_pred'), digits=6)}",
             f"calibrated_score: {_format_float(decision.get('calibrated_score'), digits=6)}",
+            f"rank_score_source: {decision.get('rank_score_source')}",
+            f"policy_rank_pct: {_format_float(decision.get('policy_rank_pct'), digits=6)}",
+            f"policy_rank_reference_n: {decision.get('policy_rank_reference_n')}",
+            "policy_rank_reference_source: "
+            f"{decision.get('policy_rank_reference_source')}",
             f"rank_percentile: {_format_float(decision.get('rank_percentile'), digits=6)}",
             f"rank_threshold: {_format_float(decision.get('rank_threshold'), digits=6)}",
             "deployment_rank_threshold: "
@@ -1554,9 +1764,11 @@ def _write_margin_reconciliation_report(
 ) -> None:
     """Persist the startup cross-margin reconciliation report for auditability."""
     try:
-        data_root = Path(str(config.get("data_root", "data")))
+        data_root = Path(
+            str(config.get("live_data_root") or config.get("data_root", "data"))
+        )
         run_id = str(config.get("run_id", "latest"))
-        out_dir = data_root / "artifacts" / run_id / "live_reconciliation"
+        out_dir = data_root / "live_state" / "reconciliation" / run_id
         out_dir.mkdir(parents=True, exist_ok=True)
         stamp = pd.Timestamp.utcnow().strftime("%Y%m%d_%H%M%S")
         payload = json.dumps(report, indent=2, sort_keys=True)
@@ -1573,6 +1785,33 @@ def _write_margin_reconciliation_report(
         )
     except Exception as exc:
         tprint(f"Warning: could not save cross-margin reconciliation report: {exc}")
+
+
+def _safe_exchange_data_component(value: Any) -> str:
+    raw = str(value or "unknown").strip().lower()
+    safe = re.sub(r"[^a-z0-9_.=-]+", "_", raw)
+    safe = safe.strip("._")
+    return safe or "unknown"
+
+
+def _resolve_live_data_root(
+    *,
+    artifact_data_root: str,
+    exchange: Any,
+    market_mode: str,
+    explicit_live_data_root: Optional[str] = None,
+) -> str:
+    """Return the exchange-scoped root for live market cache and runtime state."""
+    explicit = explicit_live_data_root or os.environ.get("EPM_LIVE_DATA_ROOT")
+    if explicit:
+        return str(Path(explicit))
+    exchange_id = (
+        getattr(exchange, "id", None)
+        or os.environ.get("EPM_EXCHANGE")
+        or ("perps" if market_mode == "perps" else "spot")
+    )
+    exchange_key = _safe_exchange_data_component(exchange_id)
+    return str(Path(artifact_data_root) / "exchanges" / exchange_key)
 
 
 def _sync_reconciled_positions_to_portfolio_manager(
@@ -1693,14 +1932,52 @@ def _apply_margin_metrics_to_portfolio_manager(
     *,
     reconciliation_report: dict[str, Any],
     portfolio_mgr: PortfolioManager,
+    exchange: Optional[Any] = None,
+    config: Optional[dict[str, Any]] = None,
 ) -> dict[str, float]:
     """Sync margin-account gross assets/debt into PortfolioManager sizing state."""
 
-    metrics = _margin_account_metrics_from_reconciliation(reconciliation_report)
-    portfolio_mgr.update_margin_account_metrics(
-        total_assets_quote=metrics["total_assets_quote"],
-        total_liabilities_quote=metrics["total_liabilities_quote"],
+    runtime_config = config or {}
+    execution_account = str(runtime_config.get("execution_account") or "").lower()
+    market_mode = _normalise_market_mode(runtime_config.get("market_mode"))
+    is_perps = (
+        execution_account in {"perp", "perps", "future", "futures", "swap"}
+        or market_mode == "perps"
     )
+    if is_perps and exchange is not None:
+        quote_currency = str(runtime_config.get("live_quote_currency") or "USD").upper()
+        margin_mode = str(runtime_config.get("margin_mode") or "cross").lower()
+        snapshot = portfolio_mgr.fetch_exchange_snapshot(
+            exchange,
+            quote_currency=quote_currency,
+            execution_account=execution_account or "perps",
+            margin_mode=margin_mode,
+        )
+        total_assets = float(portfolio_mgr.margin_total_assets_quote or 0.0)
+        total_liabilities = float(portfolio_mgr.margin_total_liabilities_quote or 0.0)
+        equity_quote = max(total_assets - total_liabilities, 0.0)
+        margin_level = (
+            total_assets / max(total_liabilities, 1e-12)
+            if total_liabilities > 0.0
+            else float("inf")
+        )
+        metrics = {
+            "total_assets_quote": total_assets,
+            "total_liabilities_quote": total_liabilities,
+            "equity_quote": equity_quote,
+            "margin_level": margin_level,
+        }
+        if snapshot.get("errors"):
+            tprint(
+                "Perps wallet snapshot had errors while syncing sizing metrics: "
+                f"{snapshot.get('errors')}"
+            )
+    else:
+        metrics = _margin_account_metrics_from_reconciliation(reconciliation_report)
+        portfolio_mgr.update_margin_account_metrics(
+            total_assets_quote=metrics["total_assets_quote"],
+            total_liabilities_quote=metrics["total_liabilities_quote"],
+        )
     target_margin_level = float(portfolio_mgr.min_margin_level_after_entry)
     safe_surplus = max(
         metrics["total_assets_quote"]
@@ -2400,6 +2677,7 @@ def run_inference_step(
     portfolio_policy: Optional[PortfolioPolicyConfig] = None,
     prediction_ledger: Optional[PredictionLedger] = None,
     strategy_kill_switch: Optional[StrategyKillSwitch] = None,
+    policy_rank_reference_store: Optional[PolicyRankReferenceStore] = None,
 ) -> Dict[str, Any]:
     """Run a single inference step.
 
@@ -2438,7 +2716,32 @@ def run_inference_step(
     normalized_thresholds = normalized_thresholds or {}
     strategy_candidate_masks = strategy_candidate_masks or {}
     runtime_config = dict(getattr(executor, "config", {}) or {})
+    if policy_rank_reference_store is None:
+        policy_rank_reference_store = PolicyRankReferenceStore(
+            data_root=str(runtime_config.get("data_root", "data")),
+            run_id=str(
+                runtime_config.get("policy_artifact_run_id")
+                or runtime_config.get("run_id")
+                or "latest"
+            ),
+        )
+    allow_live_batch_rank_fallback_for_debug = bool(
+        runtime_config.get("allow_live_batch_rank_fallback_for_debug", False)
+    )
+    min_base_train_rank_cfg = runtime_config.get("inference_min_base_train_rank_pct")
+    try:
+        inference_min_base_train_rank_pct = (
+            None
+            if min_base_train_rank_cfg is None
+            else float(min_base_train_rank_cfg)
+        )
+    except (TypeError, ValueError):
+        inference_min_base_train_rank_pct = None
     live_test_mode = _is_live_test_mode(executor)
+    live_feature_layer_debug = feature_layer_debug_enabled(
+        runtime_config,
+        live_test_mode=live_test_mode,
+    )
     portfolio_policy = portfolio_policy or PortfolioPolicyConfig()
     if portfolio_mgr is None:
         portfolio_mgr = PortfolioManager.from_policy_config(
@@ -2499,7 +2802,7 @@ def run_inference_step(
     tprint(
         "Order selection policy: "
         f"top {max(1, int(max_entries_per_side))} per side, "
-        f"global entry cap={max(1, int(max_entries_total))}; "
+        f"global entry cap={max(0, int(max_entries_total))}; "
         "within each side candidates are sorted by threshold_score then calibrated_score"
     )
 
@@ -2509,7 +2812,9 @@ def run_inference_step(
             continue
 
         # Get features for candidates
-        candidate_features = get_features_for_candidates(feats, candidates)
+        candidate_features = _get_features_for_candidates_at_ts(
+            feats, candidates, ts=signal_bar_ts
+        )
         timer.mark(f"{side}_candidate_feature_matrix")
 
         # Defensive check: ensure candidate_features is a DataFrame
@@ -2735,6 +3040,28 @@ def run_inference_step(
                         )
                         continue
                     chain_results.update(base_gate.get(symbol, {}))
+                    if (
+                        live_feature_layer_debug
+                        and np.isfinite(_safe_float(chain_results.get("meta_pred")))
+                    ):
+                        try:
+                            dump_live_feature_layers(
+                                orchestrator=orchestrator,
+                                feature_row=candidate_features.loc[[symbol]],
+                                symbol=str(symbol),
+                                side=side,
+                                selected_strategy=str(selected_strategy),
+                                chain_results=chain_results,
+                                runtime_cfg=runtime_config,
+                                timestamp=now_utc,
+                                signal_bar_ts=signal_bar_ts,
+                                feature_universe_symbols=list(panel.get("close", pd.DataFrame()).columns),
+                            )
+                        except Exception as exc:
+                            tprint(
+                                "Warning: failed to persist live feature-layer "
+                                f"debug dump for {symbol} {side}/{strategy_id}: {exc}"
+                            )
                     if chain_results.get("action") != "enter":
                         if chain_results.get("action") == "no_meta_prediction":
                             side_metrics["meta_missing"] += 1
@@ -2864,7 +3191,7 @@ def run_inference_step(
                     chain_results["rank_score_source"] = (
                         "historical_meta_oof_percentile"
                         if np.isfinite(meta_hist_rank_pct)
-                        else "live_batch_percentile_fallback"
+                        else "missing_policy_rank_reference_percentile"
                     )
                     side_metrics["threshold_pass"] += 1
                     decision_rows.append(
@@ -2902,17 +3229,32 @@ def run_inference_step(
                         }
                     )
 
-            _attach_rank_percentile_scores(decision_rows)
+            _attach_rank_percentile_scores(
+                decision_rows,
+                allow_live_batch_rank_fallback_for_debug=allow_live_batch_rank_fallback_for_debug,
+            )
             filtered_decision_rows: List[Dict[str, Any]] = []
             for decision in decision_rows:
                 if str(decision.get("threshold_space", "")) == "calibrated_score":
                     filtered_decision_rows.append(decision)
                     continue
-                rank_pct = float(decision.get("sizer_rank_percentile", np.nan))
+                gate_allowed, gate_reason = apply_policy_rank_percentile_gate(
+                    decision,
+                    store=policy_rank_reference_store,
+                    allow_live_batch_rank_fallback_for_debug=allow_live_batch_rank_fallback_for_debug,
+                    inference_min_base_train_rank_pct=inference_min_base_train_rank_pct,
+                )
+                rank_pct = float(
+                    decision.get(
+                        "policy_rank_pct",
+                        decision.get("sizer_rank_percentile", np.nan),
+                    )
+                )
                 threshold = float(decision.get("effective_threshold", 1.0))
                 if np.isfinite(rank_pct):
                     rank_pct_all.append(rank_pct)
-                if not np.isfinite(rank_pct) or rank_pct < threshold:
+                if not gate_allowed:
+                    reject_reason = str(gate_reason or "rank_below_dynamic_threshold")
                     if (
                         prediction_ledger is not None
                         and _should_log_prediction_candidate(
@@ -2925,18 +3267,26 @@ def run_inference_step(
                                 timestamp=now_utc.isoformat(),
                                 side=str(decision.get("side", "")),
                                 portfolio_decision="rank_rejected",
-                                portfolio_reject_reason="rank_below_dynamic_threshold",
+                                portfolio_reject_reason=reject_reason,
                             )
                         )
                     tprint(
                         f"Rank-threshold block: {decision['symbol']} "
                         f"{decision['side']}/{decision['strategy_id']} "
-                        f"rank={rank_pct:.6f} threshold={threshold:.6f}"
+                        f"reason={reject_reason} rank={rank_pct:.6f} "
+                        f"threshold={threshold:.6f}"
                     )
                     continue
                 decision["threshold_score"] = rank_pct
                 chain_results = dict(decision["chain_results"])
                 chain_results["sizer_rank_percentile"] = rank_pct
+                chain_results["policy_rank_pct"] = decision.get("policy_rank_pct")
+                chain_results["policy_rank_reference_n"] = decision.get(
+                    "policy_rank_reference_n"
+                )
+                chain_results["policy_rank_reference_source"] = decision.get(
+                    "policy_rank_reference_source"
+                )
                 chain_results["effective_threshold"] = threshold
                 decision["chain_results"] = chain_results
                 filtered_decision_rows.append(decision)
@@ -2988,15 +3338,16 @@ def run_inference_step(
                         "kill switches"
                     )
                     continue
+            global_entry_cap = max(0, int(max_entries_total))
             tprint(
                 f"Top-{max(1, int(max_entries_per_side))} selection [{side}]: "
                 f"selected={len(decision_rows)} from ranked_decisions "
-                f"(global_remaining={max(0, int(max_entries_total) - total_entries_executed)})"
+                f"(global_remaining={max(0, global_entry_cap - total_entries_executed)})"
             )
             for decision in decision_rows:
-                if total_entries_executed >= max(1, int(max_entries_total)):
+                if total_entries_executed >= global_entry_cap:
                     tprint(
-                        f"Global entry cap reached ({total_entries_executed}/{max_entries_total}); skipping remaining ranked decisions"
+                        f"Global entry cap reached ({total_entries_executed}/{global_entry_cap}); skipping remaining ranked decisions"
                     )
                     break
                 symbol = str(decision["symbol"])
@@ -3127,6 +3478,34 @@ def run_inference_step(
                         requested_position_usdt,
                         float(info.get("position_size_cap", requested_position_usdt)),
                     )
+                    if live_test_mode and size > 0:
+                        live_test_min_notional = float(
+                            portfolio_policy.live_test_min_quote_notional
+                        )
+                        if size < live_test_min_notional:
+                            reject_reason = "below_live_test_min_notional_after_caps"
+                            if (
+                                prediction_ledger is not None
+                                and _should_log_prediction_candidate(
+                                    decision, policy=portfolio_policy
+                                )
+                            ):
+                                prediction_ledger_rows.append(
+                                    _prediction_ledger_row(
+                                        decision,
+                                        timestamp=now_utc.isoformat(),
+                                        side=side,
+                                        portfolio_decision="portfolio_rejected",
+                                        portfolio_reject_reason=reject_reason,
+                                    )
+                                )
+                            tprint(
+                                f"Portfolio block: {symbol} {side}/{strategy_id} "
+                                f"reason={reject_reason} size={size:.8f} "
+                                f"min_live_test_notional={live_test_min_notional:.8f}"
+                            )
+                            side_metrics["non_fatal_issues"] += 1
+                            continue
                     close = panel.get("close")
                     price = None
                     if close is not None and symbol in close.columns:
@@ -3163,6 +3542,13 @@ def run_inference_step(
                             "meta_train_rank_pct", ""
                         ),
                         "rank_score_source": chain_results.get("rank_score_source", ""),
+                        "policy_rank_pct": chain_results.get("policy_rank_pct", ""),
+                        "policy_rank_reference_n": chain_results.get(
+                            "policy_rank_reference_n", ""
+                        ),
+                        "policy_rank_reference_source": chain_results.get(
+                            "policy_rank_reference_source", ""
+                        ),
                         "sizer_rank_percentile": chain_results.get(
                             "sizer_rank_percentile", ""
                         ),
@@ -3227,13 +3613,14 @@ def run_inference_step(
                         )
                     ):
                         try:
+                            execution_precheck_ts = pd.Timestamp.now(tz="UTC")
                             ticker_snapshot = fetch_ticker_snapshot(
                                 exchange=executor.exchange,
                                 symbol=api_symbol,
                                 side=side,
                                 policy=portfolio_policy,
                                 mode=str(getattr(executor, "mode", "")),
-                                now=now_utc,
+                                now=execution_precheck_ts,
                             )
                             execution_snapshot.update(ticker_snapshot.to_dict())
                             if ticker_snapshot.hard_reject:
@@ -3716,6 +4103,13 @@ def run_inference_step(
                                 "meta_train_rank_pct"
                             ),
                             "rank_score_source": chain_results.get("rank_score_source"),
+                            "policy_rank_pct": chain_results.get("policy_rank_pct"),
+                            "policy_rank_reference_n": chain_results.get(
+                                "policy_rank_reference_n"
+                            ),
+                            "policy_rank_reference_source": chain_results.get(
+                                "policy_rank_reference_source"
+                            ),
                             "calibrated_score": decision.get("calibrated_score"),
                             "rank_percentile": chain_results.get(
                                 "sizer_rank_percentile"
@@ -4626,7 +5020,10 @@ def _monitor_active_position_price_action(
         for status in statuses.values()
         if isinstance(status, dict)
         and (
-            status.get("fetch_order_error")
+            (
+                status.get("fetch_order_error")
+                and not bool(status.get("reconciled_after_error"))
+            )
             or status.get("price_action_error")
             or status.get("error")
             or str(status.get("status", "")).startswith("unprotected_stop_")
@@ -4743,6 +5140,7 @@ def _emit_inference_heartbeat(
 def main():
     import argparse
 
+    _load_local_env_if_present()
     _configure_numba_threading_layer()
     parser = argparse.ArgumentParser()
     parser.add_argument("--live", action="store_true", help="Run live trading mode")
@@ -4770,8 +5168,8 @@ def main():
     parser.add_argument(
         "--challenger-interval",
         type=int,
-        default=900,
-        help="Position monitor interval in seconds (default: 900 = 15 min)",
+        default=300,
+        help="Position monitor interval in seconds (default: 300 = 5 min)",
     )
     parser.add_argument(
         "--lookback-hours",
@@ -4804,7 +5202,7 @@ def main():
     )
     parser.add_argument(
         "--live-quote-currency",
-        default=DEFAULT_LIVE_QUOTE_CURRENCY,
+        default=None,
         help=(
             "Quote currency to trade/download at inference time "
             f"(default: {DEFAULT_LIVE_QUOTE_CURRENCY})"
@@ -4819,7 +5217,15 @@ def main():
     parser.add_argument(
         "--data-root",
         default=None,
-        help="Data root containing artifacts and live market cache.",
+        help="Artifact data root containing trained models and policy outputs.",
+    )
+    parser.add_argument(
+        "--live-data-root",
+        default=None,
+        help=(
+            "Exchange-scoped root for live OHLCV, funding, orderbook, and runtime state. "
+            "Defaults to <data-root>/exchanges/<exchange-id>."
+        ),
     )
     parser.add_argument(
         "--run-id",
@@ -4830,6 +5236,14 @@ def main():
         "--run-once",
         action="store_true",
         help="Run one inference batch and exit after optional daily reporting.",
+    )
+    parser.add_argument(
+        "--allow-late-entries",
+        action="store_true",
+        help=(
+            "Temporarily allow new entries even when the latest closed hourly "
+            "context is older than the normal freshness window."
+        ),
     )
     args = parser.parse_args()
 
@@ -4842,17 +5256,48 @@ def main():
     config["market_mode"] = market_mode
     config["execution_account"] = "perps" if market_mode == "perps" else args.execution_account
     config["margin_mode"] = args.margin_mode
-    config["live_quote_currency"] = str(args.live_quote_currency or "USDC").upper()
+    config["live_quote_currency"] = str(
+        args.live_quote_currency
+        or os.environ.get("EPM_LIVE_QUOTE_CURRENCY")
+        or DEFAULT_LIVE_QUOTE_CURRENCY
+        or "USDC"
+    ).upper()
     config["max_position_pct"] = float(args.max_position_pct)
     if args.live_test:
         config["mode"] = "live-test"
     else:
         config["mode"] = "live" if args.live else "shadow"
+    config["allow_late_entries"] = bool(
+        args.allow_late_entries or _env_flag("EPM_ALLOW_LATE_ENTRIES")
+    )
+    if config["allow_late_entries"]:
+        tprint(
+            "WARNING: late-entry override enabled; entries may be placed with "
+            "hourly/15m context outside the normal freshness window."
+        )
+    runtime_cfg = dict(config.get("runtime_cfg") or get_runtime_cfg())
+    runtime_cfg["use_perps"] = config["market_mode"] == "perps"
+    runtime_cfg["market_mode"] = config["market_mode"]
+    runtime_cfg["data_root"] = config["data_root"]
+    config["runtime_cfg"] = runtime_cfg
     config.setdefault(
         "cross_margin_dust_quote_threshold",
         2.5 if _is_live_test_mode(config["mode"]) else 5.0,
     )
     exchange = make_exchange(config["market_mode"])
+    config["artifact_data_root"] = str(config["data_root"])
+    config["live_data_root"] = _resolve_live_data_root(
+        artifact_data_root=str(config["data_root"]),
+        exchange=exchange,
+        market_mode=config["market_mode"],
+        explicit_live_data_root=args.live_data_root,
+    )
+    Path(config["live_data_root"]).mkdir(parents=True, exist_ok=True)
+    tprint(
+        "Live data root resolved: "
+        f"artifact_data_root={config['artifact_data_root']} "
+        f"live_data_root={config['live_data_root']}"
+    )
     runtime_bucket_params = _attach_runtime_bucket_params(config)
     model_bundle = load_full_state(config["run_id"], config["data_root"])
     if isinstance(model_bundle, dict):
@@ -4890,7 +5335,7 @@ def main():
         config["data_root"], config["run_id"]
     )
     lgbm_strategy_mask_rows = _load_lgbm_strategy_mask_rows(
-        config["data_root"], config["run_id"]
+        config["data_root"], config["run_id"], market_mode=config["market_mode"]
     )
     validate_calibration_artifacts(
         config["data_root"], config["run_id"], calibration_data, strict=False
@@ -4915,20 +5360,20 @@ def main():
 
     # Initialize data fetcher with incremental updates
     data_fetcher = DataFetcher(
-        exchange, config["data_root"], market_mode=config["market_mode"]
+        exchange, config["live_data_root"], market_mode=config["market_mode"]
     )
     inference_defaults = get_inference_defaults()
     panel_warmup_hours = (
-        max(
-            int(inference_defaults["trend_sma_hours"]),
-            int(inference_defaults["gate_vol_lookback_hours"]),
+        _required_tail_warmup_hours(
+            lookback_hours=int(args.lookback_hours),
+            trend_sma_hours=int(inference_defaults["trend_sma_hours"]),
+            gate_vol_lookback_hours=int(inference_defaults["gate_vol_lookback_hours"]),
         )
-        + 72
     )
     panel_lookback_hours = max(int(args.lookback_hours), panel_warmup_hours)
 
     # Step 9 universe split:
-    # - download_symbols: full live Binance quote/margin universe, refreshed daily
+    # - download_symbols: full live exchange quote/margin universe, refreshed daily
     # - symbols: tradable subset restricted to the active training universe
     universe_state = resolve_inference_universes(
         exchange,
@@ -5014,13 +5459,13 @@ def main():
             portfolio_policy.leverage_wallet_multiplier
         )
     prediction_ledger = PredictionLedger(
-        Path(config["data_root"]) / "live_state" / "prediction_ledger.parquet"
+        Path(config["live_data_root"]) / "live_state" / "prediction_ledger.parquet"
     )
     market_kill_switch = MarketKillSwitch(
-        Path(config["data_root"]) / "live_state" / "market_kill_switch.json"
+        Path(config["live_data_root"]) / "live_state" / "market_kill_switch.json"
     )
     strategy_kill_switch = StrategyKillSwitch(
-        Path(config["data_root"]) / "live_state" / "strategy_kill_switches.json",
+        Path(config["live_data_root"]) / "live_state" / "strategy_kill_switches.json",
         observe_only=bool(config.get("strategy_kill_switch_observe_only", True)),
     )
     max_concurrent_per_strategy = (
@@ -5055,6 +5500,8 @@ def main():
     _apply_margin_metrics_to_portfolio_manager(
         reconciliation_report=reconciliation_report,
         portfolio_mgr=portfolio_mgr,
+        exchange=exchange,
+        config=config,
     )
     _sync_reconciled_positions_to_portfolio_manager(executor, portfolio_mgr)
     if unimported_external_positions:
@@ -5169,6 +5616,8 @@ def main():
                     _apply_margin_metrics_to_portfolio_manager(
                         reconciliation_report=reconciliation_report,
                         portfolio_mgr=portfolio_mgr,
+                        exchange=exchange,
+                        config=config,
                     )
                     _sync_reconciled_positions_to_portfolio_manager(
                         executor,
@@ -5190,12 +5639,13 @@ def main():
                     data_root=config["data_root"],
                     run_id=config["run_id"],
                     live_quote_currency=config["live_quote_currency"],
+                    market_mode=config["market_mode"],
                 )
                 download_symbols[:] = universe_state["download_symbols"]
                 symbols[:] = universe_state["tradable_symbols"]
                 last_universe_refresh_day = current_day
                 tprint(
-                    "Daily Binance universe refresh complete: "
+                    "Daily live universe refresh complete: "
                     f"download={len(download_symbols)} tradable={len(symbols)}"
                 )
 
@@ -5237,9 +5687,39 @@ def main():
                 )
                 continue
 
-            if (
-                (last_hourly_sync is None) or (latest_closed_hour > last_hourly_sync)
-            ) and entry_context_fresh:
+            hourly_sync_due = (last_hourly_sync is None) or (
+                latest_closed_hour > last_hourly_sync
+            )
+            late_entries_override = bool(config.get("allow_late_entries", False))
+            scoring_entries_allowed = bool(entry_context_fresh or late_entries_override)
+            if hourly_sync_due:
+                if not entry_context_fresh and late_entries_override:
+                    tprint(
+                        "Late-entry override active: allowing new entries despite "
+                        "stale entry context "
+                        f"(latest_15m={current_time}, "
+                        f"latest_15m_closed_at={current_close}, "
+                        f"latest_15m_age={fifteen_age_seconds:.0f}s, "
+                        f"max_15m_age={max_entry_15m_age_seconds:.0f}s, "
+                        f"target_hour={latest_closed_hour}, "
+                        f"closed_at={latest_closed_hour_close}, "
+                        f"hour_age={hourly_age_seconds:.0f}s, "
+                        f"max_hour_age={max_entry_hourly_age_seconds:.0f}s)."
+                    )
+                elif not scoring_entries_allowed:
+                    tprint(
+                        "Hourly context is stale for entries; refreshing data and "
+                        "running model scoring for diagnostics/parity only. New "
+                        "orders will be blocked by max_entries_total=0 "
+                        f"(latest_15m={current_time}, "
+                        f"latest_15m_closed_at={current_close}, "
+                        f"latest_15m_age={fifteen_age_seconds:.0f}s, "
+                        f"max_15m_age={max_entry_15m_age_seconds:.0f}s, "
+                        f"target_hour={latest_closed_hour}, "
+                        f"closed_at={latest_closed_hour_close}, "
+                        f"hour_age={hourly_age_seconds:.0f}s, "
+                        f"max_hour_age={max_entry_hourly_age_seconds:.0f}s)."
+                    )
                 refresh_microdata = bool(config.get("hourly_refresh_microdata", True))
                 data_fetcher.fetch_hourly_universe_once(
                     download_symbols,
@@ -5260,19 +5740,6 @@ def main():
                 )
                 last_hourly_sync = latest_closed_hour
                 did_hourly_refresh = True
-            elif (last_hourly_sync is None) or (latest_closed_hour > last_hourly_sync):
-                tprint(
-                    "Skipping hourly entry refresh: latest closed candle context is "
-                    f"stale for new entries (latest_15m={current_time}, "
-                    f"latest_15m_closed_at={current_close}, "
-                    f"latest_15m_age={fifteen_age_seconds:.0f}s, "
-                    f"max_15m_age={max_entry_15m_age_seconds:.0f}s, "
-                    f"target_hour={latest_closed_hour}, "
-                    f"closed_at={latest_closed_hour_close}, "
-                    f"hour_age={hourly_age_seconds:.0f}s, "
-                    f"max_hour_age={max_entry_hourly_age_seconds:.0f}s). "
-                    "Monitoring existing positions only until a fresh hourly close."
-                )
 
             if not did_hourly_refresh:
                 _monitor_active_position_price_action(
@@ -5372,9 +5839,14 @@ def main():
                 panel=tradable_panel,
                 symbols=symbols,
                 run_id=config["run_id"],
-                data_root=config["data_root"],
-                cfg=get_runtime_cfg(),
-                lookback_hours=args.lookback_hours,
+                data_root=str(config.get("live_data_root") or config["data_root"]),
+                cfg={
+                    **dict(config.get("runtime_cfg") or get_runtime_cfg()),
+                    "data_root": str(config.get("live_data_root") or config["data_root"]),
+                    "artifact_data_root": str(config["data_root"]),
+                    "live_data_root": str(config.get("live_data_root") or config["data_root"]),
+                },
+                lookback_hours=panel_lookback_hours,
                 required_feature_keys=required_feature_keys,
                 lgbm_strategy_mask_rows=lgbm_strategy_mask_rows,
             )
@@ -5400,6 +5872,11 @@ def main():
                 portfolio_policy=portfolio_policy,
                 prediction_ledger=prediction_ledger,
                 strategy_kill_switch=strategy_kill_switch,
+                max_entries_total=(
+                    int(config.get("max_entries_total", 4))
+                    if scoring_entries_allowed
+                    else 0
+                ),
             )
             loop_timer.mark("model_scoring_and_orders")
             tprint(
@@ -5478,7 +5955,7 @@ def run_challenger_monitor(
 ):
     """
     calibration_data = calibration_data or {}
-    Run position monitoring every 15 minutes by default.
+    Run position monitoring every 5 minutes by default.
 
     New entries are intentionally not evaluated here. The loop only monitors
     existing positions and applies the stop policy on closed 15m bars.
@@ -5490,7 +5967,7 @@ def run_challenger_monitor(
         executor: TradeExecutor instance
         logger: TradeLogger instance
         config: Configuration dictionary
-        interval: Check interval in seconds (default 900 = 15 min)
+        interval: Check interval in seconds (default 300 = 5 min)
     """
     while True:
         try:

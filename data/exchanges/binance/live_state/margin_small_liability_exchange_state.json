@@ -1,0 +1,8 @@
+{
+  "last_attempt_ts": "2026-05-17T16:46:00.177675+00:00",
+  "last_unsupported_liability_targets": [
+    "USDC"
+  ],
+  "last_unsupported_target_ts": "2026-05-17T16:46:00.177675+00:00",
+  "method_version": "small_liability_v5_target_guard"
+}

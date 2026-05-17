@@ -206,6 +206,15 @@ LEAF_SCORING_DEFAULTS: Dict[str, Any] = {
     "max_final_diagnostic_candidates_per_side_target_horizon": 50,
     "max_global_final_diagnostic_candidates": 200,
     "max_stage_a1_mask_resolutions": 50000,
+    "stage_b_selection_mode": "top_fraction",
+    "stage_b_top_fraction": 0.10,
+    "stage_b_min_top_n": 20,
+    "stage_c_precheck_selection_mode": "top_fraction",
+    "stage_c_precheck_top_fraction": 0.50,
+    "stage_c_precheck_min_top_n": 20,
+    "stage_c_selection_mode": "top_fraction",
+    "stage_c_top_fraction": 0.50,
+    "stage_c_min_top_n": 20,
     "stage_b_min_mean_net_ret": 0.0,
     "stage_b_min_mean_uplift": 0.0,
     "stage_b_min_positive_ic_fraction": 0.50,
@@ -266,6 +275,10 @@ LEAF_SCORING_DEFAULTS: Dict[str, Any] = {
     "min_incremental_portfolio_score": 0.005,
     "max_portfolio_support_pct": 0.35,
     "max_regime_concurrency": 3,
+    "target_final_regimes_total": 20,
+    "final_backfill_to_target": True,
+    "final_backfill_max_jaccard_overlap": 0.75,
+    "final_backfill_max_containment_overlap": 0.90,
     "max_final_regimes_per_side_horizon": 10,
     "max_final_regimes_total": 40,
     "max_final_jaccard_overlap": 0.35,
@@ -351,6 +364,146 @@ def append_market_suffix(path: str, market_mode: str) -> str:
         if norm.endswith(suffix):
             return norm[: -len(suffix)] + f"_{mode}"
     return f"{norm}_{mode}"
+
+
+def _has_local_market_data(path: str) -> bool:
+    root = Path(str(path))
+    return bool(
+        any((root / "features").glob("202[0-9]*"))
+        or any((root / "ohlcv").glob("symbol=*"))
+    )
+
+
+def resolve_market_read_root(base_path: str, suffixed_path: str, market_mode: str) -> str:
+    """Resolve the read root without forcing an empty synthetic spot suffix tree."""
+    mode = normalize_market_mode(market_mode)
+    if _has_local_market_data(suffixed_path):
+        return suffixed_path
+    if mode == "spot" and _has_local_market_data(base_path):
+        tprint(
+            "Spot market read root fallback: "
+            f"{suffixed_path} has no local generated data; using {base_path}"
+        )
+        return str(base_path).rstrip("/\\")
+    return suffixed_path
+
+
+_GENERATED_FEATURE_EXCLUDE_EXACT: Set[str] = {
+    "__symbol__",
+    "symbol",
+    "ts",
+    "timestamp",
+    "open_time",
+    "close_time",
+    "datetime",
+}
+
+
+_GENERATED_FEATURE_EXCLUDE_PREFIXES: Tuple[str, ...] = (
+    "__index_level_",
+    "target_",
+    "label_",
+    "oof_",
+    "pred_",
+    "prediction_",
+)
+
+
+_GENERATED_FEATURE_EXCLUDE_SUBSTRINGS: Tuple[str, ...] = (
+    "future",
+    "forward",
+    "fwd_",
+    "_fwd",
+    "triple_barrier",
+)
+
+
+def _is_generated_miner_feature_name(name: str) -> bool:
+    n = str(name)
+    low = n.lower()
+    if not n or n in _GENERATED_FEATURE_EXCLUDE_EXACT:
+        return False
+    if any(low.startswith(prefix) for prefix in _GENERATED_FEATURE_EXCLUDE_PREFIXES):
+        return False
+    if any(part in low for part in _GENERATED_FEATURE_EXCLUDE_SUBSTRINGS):
+        return False
+    if low.endswith("_surprisal") or low.endswith("_outcome"):
+        return False
+    return True
+
+
+def discover_generated_feature_columns(feature_path: Union[str, Path]) -> List[str]:
+    """Return the actual feature columns generated in a feature snapshot."""
+    try:
+        import pyarrow.parquet as pq
+    except Exception as exc:
+        tprint(f"WARNING: pyarrow schema discovery unavailable: {exc}")
+        return []
+
+    snapshot = Path(feature_path)
+    files = sorted(snapshot.glob("symbol=*.parquet"))
+    discovered: Set[str] = set()
+    for fpath in files:
+        try:
+            schema_names = pq.ParquetFile(fpath).schema.names
+        except Exception:
+            continue
+        for name in schema_names:
+            name = str(name)
+            if _is_generated_miner_feature_name(name):
+                discovered.add(name)
+    return sorted(discovered)
+
+
+def _classify_generated_miner_features(
+    generated_names: Sequence[str],
+) -> Tuple[List[str], List[str]]:
+    """Split generated columns into location-like and regime-like miner sources."""
+    location_known = set(CONTINUOUS_LOCATION_COLS)
+    location_prefixes = ("loc_",)
+    location_exact = {
+        "distance_to_ema",
+        "pullback_depth",
+        "dist_ema20_atr",
+        "dist_ema50_atr",
+        "dist_ema200_atr",
+        "dist_vwap_atr",
+        "dist_weekly_vwap",
+        "dist_prior_day_high",
+        "dist_prior_day_low",
+        "dist_rolling_7d_high",
+        "dist_local_swing",
+        "dist_range_mid_atr",
+        "dist_ma100_atr",
+        "zscore_price_50",
+        "zscore_price_200",
+    }
+    location: List[str] = []
+    regime: List[str] = []
+    for name in generated_names:
+        if name in location_known or name in location_exact or name.startswith(location_prefixes):
+            location.append(str(name))
+        else:
+            regime.append(str(name))
+    return sorted(dict.fromkeys(location)), sorted(dict.fromkeys(regime))
+
+
+def build_configured_feature_whitelist(cfg: Dict[str, Any]) -> List[str]:
+    """Return the narrow configured feature basket used by this mask miner."""
+    keys: List[str] = []
+    keys.extend(list(cfg.get("FEATURE_SELECTION_KEYS", [])))
+    keys.extend(list(cfg.get("test_feature_keys", TEST_FEATURE_KEYS)))
+    keys.extend(list(RIDGE_FEATURE_COLS))
+    keys.extend(list(CONTINUOUS_LOCATION_COLS))
+    keys.extend(list(cfg.get("PERP_FEATURE_KEYS", [])))
+    keys.extend(list(cfg.get("LGBM_PERP_FEATURE_KEYS", [])))
+    keys.extend(list(cfg.get("SPOT_FOR_PERPS_BASE_FEATURE_KEYS", [])))
+    keys.extend(list(cfg.get("SPOT_FOR_PERPS_META_FEATURE_KEYS", [])))
+    return sorted(
+        dict.fromkeys(
+            str(k) for k in keys if _is_generated_miner_feature_name(str(k))
+        )
+    )
 
 # =============================================================================
 # TRIAD TARGET CONFIGURATION
@@ -2489,12 +2642,21 @@ class FeatureProcessor:
         # 2. Location Features
         if "location" in active_groups:
             # Continuous location features are the sole location source family.
-            _add_continuous_features_as_booleans(CONTINUOUS_LOCATION_COLS, "location")
+            location_sources = cfg.get(
+                "miner_location_feature_keys", CONTINUOUS_LOCATION_COLS
+            )
+            _add_continuous_features_as_booleans(location_sources, "location")
 
         # 3. Regime Features (continuous -> hybrid booleanize)
         if "regime" in active_groups:
             time_keys_set = set(TIME_FEATURE_KEYS)
-            regime_sources = sorted(list(set(RIDGE_FEATURE_COLS) - time_keys_set))
+            regime_sources = cfg.get("miner_regime_feature_keys")
+            if regime_sources is None:
+                regime_sources = sorted(list(set(RIDGE_FEATURE_COLS) - time_keys_set))
+            else:
+                regime_sources = sorted(
+                    str(name) for name in regime_sources if str(name) not in time_keys_set
+                )
             _add_continuous_features_as_booleans(regime_sources, "regime")
 
         # 4. Extra Binary Features (e.g. Stage A Contexts)
@@ -5456,7 +5618,7 @@ def compute_stage_b_score_and_rejection(row: Dict[str, Any], cfg: Dict[str, Any]
         reasons.append("b_support_instability_too_high")
     if stage_b_mean_ret <= float(cfg.get("stage_b_min_mean_net_ret", 0.0)):
         reasons.append("b_mean_net_ret_too_low")
-    if (not np.isfinite(mean_uplift)) or mean_uplift <= float(cfg.get("stage_b_min_mean_uplift", 0.0)):
+    if np.isfinite(mean_uplift) and mean_uplift <= float(cfg.get("stage_b_min_mean_uplift", 0.0)):
         reasons.append("b_uplift_too_low")
     if sign_consistency < float(cfg.get("stage_b_min_sign_consistency", 0.60)):
         reasons.append("b_sign_consistency_too_low")
@@ -5525,10 +5687,15 @@ def pareto_front(df: pd.DataFrame, maximize_cols: Sequence[str], minimize_cols: 
     if df.empty:
         return pd.Series(False, index=df.index)
     values = []
+    def _numeric_col_or_default(col: str, default: float) -> pd.Series:
+        if col in df.columns:
+            return pd.to_numeric(df[col], errors="coerce").fillna(default)
+        return pd.Series(default, index=df.index, dtype=float)
+
     for col in maximize_cols:
-        values.append(pd.to_numeric(df.get(col, np.nan), errors="coerce").fillna(-np.inf).to_numpy(dtype=float))
+        values.append(_numeric_col_or_default(col, -np.inf).to_numpy(dtype=float))
     for col in minimize_cols:
-        values.append(-pd.to_numeric(df.get(col, np.nan), errors="coerce").fillna(np.inf).to_numpy(dtype=float))
+        values.append(-_numeric_col_or_default(col, np.inf).to_numpy(dtype=float))
     if not values:
         return pd.Series(True, index=df.index)
     mat = np.vstack(values).T
@@ -5540,6 +5707,45 @@ def pareto_front(df: pd.DataFrame, maximize_cols: Sequence[str], minimize_cols: 
         if dominates_i.any():
             is_front[i] = False
     return pd.Series(is_front, index=df.index)
+
+
+def ranked_top_fraction(
+    df: pd.DataFrame,
+    *,
+    score_cols: Sequence[str],
+    fraction: float,
+    min_n: int,
+    max_n: int,
+    mode: str = "top_fraction",
+) -> pd.DataFrame:
+    """Select highest-ranked rows while keeping absolute-gate diagnostics exported."""
+    if df.empty:
+        return df
+    mode = str(mode or "top_fraction").lower()
+    if mode in {"threshold", "absolute_threshold", "legacy"}:
+        return df.head(max_n) if max_n > 0 else df
+
+    ranked = df.copy()
+    sort_cols: List[str] = []
+    for col in score_cols:
+        if col in ranked.columns:
+            rank_col = f"__rank_{col}"
+            ranked[rank_col] = pd.to_numeric(ranked[col], errors="coerce").fillna(-np.inf)
+            sort_cols.append(rank_col)
+    if not sort_cols:
+        return ranked.head(max_n) if max_n > 0 else ranked
+
+    n = len(ranked)
+    frac = float(np.clip(fraction, 0.0, 1.0))
+    keep_n = int(np.ceil(n * frac)) if frac > 0 else n
+    keep_n = max(int(min_n), keep_n)
+    if max_n > 0:
+        keep_n = min(int(max_n), keep_n)
+    keep_n = min(n, max(1, keep_n))
+    ranked = ranked.sort_values(
+        sort_cols, ascending=[False] * len(sort_cols), kind="mergesort"
+    )
+    return ranked.head(keep_n).drop(columns=sort_cols, errors="ignore")
 
 
 def _safe_jaccard_and_containment(a: np.ndarray, b: np.ndarray, universe: np.ndarray) -> Tuple[float, float]:
@@ -5918,14 +6124,25 @@ def select_diversified_final_regimes(
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     if candidates.empty:
         return candidates.copy(), pd.DataFrame()
-    df = candidates[candidates.get("final_holdout_pass", False).fillna(False)].copy()
+    df = candidates.copy()
     if df.empty:
         audit = candidates.copy()
         audit["selected_for_final_registry"] = False
-        audit["selected_reason"] = "e_holdout_failed"
+        audit["selected_reason"] = "no_stage_e_candidates"
         return audit.head(0), audit
+    df["final_holdout_pass"] = df.get("final_holdout_pass", False).fillna(False).astype(bool)
+    if "holdout_edge_score" not in df.columns:
+        df["holdout_edge_score"] = 0.0
+    rejection_text = df.get("final_holdout_rejection_reason", pd.Series("", index=df.index)).fillna("").astype(str)
+    rejection_count = rejection_text.map(lambda x: 0 if not x else len([p for p in x.split("|") if p]))
+    df["stage_e_rank_score"] = (
+        pd.to_numeric(df.get("holdout_edge_score", 0.0), errors="coerce").fillna(0.0)
+        + 0.15 * df["final_holdout_pass"].astype(float)
+        - 0.03 * rejection_count.astype(float)
+    )
     sort_cols = [c for c in ["holdout_edge_score", "composite_score", "stage_b_score"] if c in df.columns]
-    df = df.sort_values(sort_cols, ascending=[False] * len(sort_cols), kind="mergesort") if sort_cols else df
+    sort_cols = ["final_holdout_pass", "stage_e_rank_score", *sort_cols]
+    df = df.sort_values(sort_cols, ascending=[False] * len(sort_cols), kind="mergesort")
     df["pareto_front_member"] = pareto_front(df, ["holdout_edge_score", "quality_stability_score", "support_score"], ["structural_depth"])
     if bool(cfg.get("enable_pareto_prefilter", True)):
         backfill = int(cfg.get("pareto_top_k_backfill", 100))
@@ -5937,6 +6154,7 @@ def select_diversified_final_regimes(
     min_inc = float(cfg.get("min_incremental_portfolio_score", 0.005))
     max_support = float(cfg.get("max_portfolio_support_pct", 0.35))
     max_total = int(cfg.get("max_final_regimes_total", 40))
+    target_total = min(max_total, int(cfg.get("target_final_regimes_total", 20)))
     max_bucket = int(cfg.get("max_final_regimes_per_side_horizon", 10))
     bucket_counts: collections.Counter = collections.Counter()
     for row in df.to_dict("records"):
@@ -5984,6 +6202,40 @@ def select_diversified_final_regimes(
         out.update({"selected_for_final_registry": selected, "selected_reason": reason, "incremental_portfolio_score": inc, "portfolio_score_before": before["portfolio_score"], "portfolio_score_after": after["portfolio_score"], "novelty_score": novelty, "max_jaccard_with_winners": max_j, "max_containment_with_winners": max_cont, "min_feature_centroid_distance_to_winners": min_cent, "max_feature_family_jaccard_with_winners": max_family, "standalone_quality_score": standalone, "final_selection_rejection_reason": "|".join(rejection)})
         audit_rows.append(out)
     audit = pd.DataFrame(audit_rows)
+    if (
+        bool(cfg.get("final_backfill_to_target", True))
+        and target_total > 0
+        and not audit.empty
+        and int(audit["selected_for_final_registry"].fillna(False).sum()) < target_total
+    ):
+        selected_keys = [
+            str(key)
+            for key in audit.loc[
+                audit["selected_for_final_registry"].fillna(False), "canonical_key"
+            ].astype(str)
+        ]
+        bucket_counts = collections.Counter()
+        for row in audit[audit["selected_for_final_registry"].fillna(False)].to_dict("records"):
+            bucket_counts[(row.get("side"), row.get("source_target"), row.get("source_horizon"))] += 1
+        backfill_max_j = float(cfg.get("final_backfill_max_jaccard_overlap", 0.75))
+        backfill_max_cont = float(cfg.get("final_backfill_max_containment_overlap", 0.90))
+        for idx, row in audit[~audit["selected_for_final_registry"].fillna(False)].iterrows():
+            if len(selected_keys) >= target_total:
+                break
+            key = str(row.get("canonical_key"))
+            bucket = (row.get("side"), row.get("source_target"), row.get("source_horizon"))
+            if bucket_counts[bucket] >= max_bucket:
+                continue
+            if selected_keys:
+                max_j = float(row.get("max_jaccard_with_winners", 0.0) or 0.0)
+                max_cont = float(row.get("max_containment_with_winners", 0.0) or 0.0)
+                if max_j > backfill_max_j or max_cont > backfill_max_cont:
+                    continue
+            selected_keys.append(key)
+            bucket_counts[bucket] += 1
+            audit.at[idx, "selected_for_final_registry"] = True
+            audit.at[idx, "selected_reason"] = "top_ranked_greedy_backfill"
+            audit.at[idx, "final_selection_rejection_reason"] = ""
     selected_df = audit[audit["selected_for_final_registry"].fillna(False)].copy()
     return selected_df, audit
 
@@ -8588,34 +8840,38 @@ def run_mining_stage(
         expected_columns=["rejection_reason", "count"],
     )
 
-    scorer_accepted = scored_registry[scored_registry["accepted"]]
+    stage_b_rank_pool = scored_registry.copy(deep=False)
     rule_importance_df = build_rule_model_importance_scores(all_extracted_rules)
-    if not rule_importance_df.empty and not scorer_accepted.empty:
-        scorer_accepted = scorer_accepted.merge(
+    if not rule_importance_df.empty and not stage_b_rank_pool.empty:
+        stage_b_rank_pool = stage_b_rank_pool.merge(
             rule_importance_df, on="canonical_key", how="left"
         )
-        importance_col = "rule_model_importance_score"
-        finite_importance = pd.to_numeric(
-            scorer_accepted[importance_col], errors="coerce"
+    if not stage_b_rank_pool.empty:
+        before_count = len(stage_b_rank_pool)
+        stage_b_rank_pool = ranked_top_fraction(
+            stage_b_rank_pool,
+            score_cols=[
+                "stage_b_score",
+                "rule_model_importance_score",
+                "mean_oos_ic",
+                "mask_ic_uplift",
+                "sign_consistency",
+            ],
+            fraction=float(cfg.get("stage_b_top_fraction", 0.10)),
+            min_n=int(cfg.get("stage_b_min_top_n", 20)),
+            max_n=int(cfg.get("max_stage_b_survivors_per_side_target_horizon", 500)),
+            mode=str(cfg.get("stage_b_selection_mode", "top_fraction")),
         )
-        finite_importance = finite_importance[np.isfinite(finite_importance)]
-        if len(finite_importance) >= 2:
-            cutoff = float(np.nanquantile(finite_importance, 0.30))
-            before_count = len(scorer_accepted)
-            scorer_accepted = scorer_accepted[
-                pd.to_numeric(scorer_accepted[importance_col], errors="coerce").fillna(
-                    -np.inf
-                )
-                > cutoff
-            ]
-            tprint(
-                f"Model-importance pre-pruner cut: removed bottom 30% by "
-                f"{importance_col} ({before_count} -> {len(scorer_accepted)}, cutoff={cutoff:.6f})"
-            )
+        tprint(
+            "Stage B rank selection: "
+            f"input={before_count} selected={len(stage_b_rank_pool)} "
+            f"mode={cfg.get('stage_b_selection_mode', 'top_fraction')} "
+            f"top_frac={float(cfg.get('stage_b_top_fraction', 0.10)):.3f}"
+        )
 
     stage_b_start = time.perf_counter()
     pruner = IndependentRulePruner(cfg)
-    candidate_registry = pruner.prune(scorer_accepted)
+    candidate_registry = pruner.prune(stage_b_rank_pool)
     if not candidate_registry.empty and "stage_b_score" in candidate_registry.columns:
         candidate_registry = candidate_registry.sort_values(
             "stage_b_score", ascending=False, kind="mergesort"
@@ -8623,7 +8879,7 @@ def run_mining_stage(
     log_stage_gate(
         cfg,
         stage="stage_b_medium_scoring",
-        input_count=len(scorer_accepted),
+        input_count=len(stage_b_rank_pool),
         output_count=len(candidate_registry),
         start_time=stage_b_start,
         target_name=target_name,
@@ -8633,35 +8889,30 @@ def run_mining_stage(
     stage_c_start = time.perf_counter()
     precheck_input_count = len(candidate_registry)
     if not candidate_registry.empty and "stage_b_score" in candidate_registry.columns:
-        mean_ret_for_precheck = pd.to_numeric(
-            candidate_registry.get("mean_net_ret", np.nan), errors="coerce"
+        candidate_registry = candidate_registry.loc[
+            np.isfinite(
+                pd.to_numeric(candidate_registry["stage_b_score"], errors="coerce")
+            )
+        ].copy(deep=False)
+        candidate_registry = ranked_top_fraction(
+            candidate_registry,
+            score_cols=[
+                "stage_b_score",
+                "rule_model_importance_score",
+                "mean_oos_ic",
+                "mask_ic_uplift",
+                "sign_consistency",
+            ],
+            fraction=float(cfg.get("stage_c_precheck_top_fraction", 0.50)),
+            min_n=int(cfg.get("stage_c_precheck_min_top_n", 20)),
+            max_n=int(cfg.get("max_stage_c_candidates_per_side_target_horizon", 200)),
+            mode=str(cfg.get("stage_c_precheck_selection_mode", "top_fraction")),
         )
-        if "directional_mean_ret" in candidate_registry.columns and "side" in candidate_registry.columns:
-            directional_ret_for_precheck = pd.to_numeric(
-                candidate_registry["directional_mean_ret"], errors="coerce"
-            )
-            short_raw_ret_fallback = (
-                candidate_registry["side"].astype(str).str.lower().eq("short")
-                & np.isfinite(directional_ret_for_precheck)
-                & (~np.isfinite(mean_ret_for_precheck) | (mean_ret_for_precheck <= 0.0))
-            )
-            mean_ret_for_precheck = mean_ret_for_precheck.where(
-                ~short_raw_ret_fallback, directional_ret_for_precheck
-            )
-        precheck = (
-            candidate_registry["mean_support_pct"].between(
-                float(cfg.get("leaf_support_min_pct", 0.05)),
-                float(cfg.get("leaf_support_max_pct", 0.20)),
-                inclusive="both",
-            )
-            & (candidate_registry["sign_consistency"] >= float(cfg.get("stage_b_min_sign_consistency", 0.60)))
-            & (candidate_registry["presence_freq"] >= float(cfg.get("stage_b_min_presence_freq", 0.50)))
-            & (mean_ret_for_precheck > 0.0)
-            & (candidate_registry["mean_uplift"] > 0.0)
-            & np.isfinite(candidate_registry["stage_b_score"])
-        )
-        candidate_registry = candidate_registry.loc[precheck].head(
-            int(cfg.get("max_stage_c_candidates_per_side_target_horizon", 200))
+        tprint(
+            "Stage C precheck rank selection: "
+            f"input={precheck_input_count} selected={len(candidate_registry)} "
+            f"mode={cfg.get('stage_c_precheck_selection_mode', 'top_fraction')} "
+            f"top_frac={float(cfg.get('stage_c_precheck_top_fraction', 0.50)):.3f}"
         )
     log_stage_gate(
         cfg,
@@ -8784,12 +9035,27 @@ def run_mining_stage(
                 output_dir / "stage_c_rejection_summary.csv",
                 expected_columns=["reason", "count"],
             )
-            candidate_registry = candidate_registry[
-                candidate_registry["stage_c_rejection_reason"].fillna("") == ""
-            ]
-            candidate_registry = candidate_registry.sort_values(
-                "composite_score", ascending=False, kind="mergesort"
-            ).head(int(cfg.get("max_stage_c_candidates_per_side_target_horizon", 200)))
+            stage_c_before_rank = len(candidate_registry)
+            candidate_registry = ranked_top_fraction(
+                candidate_registry,
+                score_cols=[
+                    "composite_score",
+                    "learnability_step_c_score",
+                    "trade_path_quality_score",
+                    "quality_stability_score",
+                    "stage_b_score",
+                ],
+                fraction=float(cfg.get("stage_c_top_fraction", 0.50)),
+                min_n=int(cfg.get("stage_c_min_top_n", 20)),
+                max_n=int(cfg.get("max_stage_c_candidates_per_side_target_horizon", 200)),
+                mode=str(cfg.get("stage_c_selection_mode", "top_fraction")),
+            )
+            tprint(
+                "Stage C expensive rank selection: "
+                f"input={stage_c_before_rank} selected={len(candidate_registry)} "
+                f"mode={cfg.get('stage_c_selection_mode', 'top_fraction')} "
+                f"top_frac={float(cfg.get('stage_c_top_fraction', 0.50)):.3f}"
+            )
         log_stage_gate(
             cfg,
             stage="stage_c_expensive_scoring",
@@ -8810,7 +9076,7 @@ def run_mining_stage(
     candidate_registry = atomic_to_csv(
         candidate_registry,
         output_dir / "candidate_rule_registry.csv",
-        expected_columns=list(scorer_accepted.columns) + ["preset"],
+        expected_columns=list(stage_b_rank_pool.columns) + ["preset"],
     )
     atomic_to_csv(
         candidate_registry,
@@ -9005,7 +9271,7 @@ def run_mining_stage(
             for row in holdout_passed.to_dict("records")
         }
         final_registry, diversified_audit = select_diversified_final_regimes(
-            holdout_passed,
+            final_holdout_audit,
             candidate_masks,
             feature_centroids,
             feature_family_sets,
@@ -9086,7 +9352,7 @@ def run_mining_stage(
         "all_extracted_rules": all_extracted_rules,
         "scored_registry": scored_registry,
         "parent_context_map": parent_context_map,
-        "scorer_accepted": scorer_accepted,
+        "scorer_accepted": stage_b_rank_pool,
         "candidate_registry": candidate_registry,
         "assessment_df": assessment_df,
         "accepted_registry": accepted_registry,
@@ -9134,7 +9400,8 @@ def _resolve_requested_assessor_source_names(
     ordered_names: List[str] = []
     seen: Set[str] = set()
 
-    for name in TEST_FEATURE_KEYS:
+    configured_names = cfg.get("miner_assessor_feature_keys", TEST_FEATURE_KEYS)
+    for name in configured_names:
         if name in available_names and name not in seen:
             ordered_names.append(str(name))
             seen.add(str(name))
@@ -10673,7 +10940,7 @@ def run_lgbm_mask_generation_triad(
                         for row in global_holdout_passed.to_dict("records")
                     }
                     final_rule_registry, global_diversified_audit = select_diversified_final_regimes(
-                        global_holdout_passed,
+                        global_stage_e_audit,
                         global_candidate_masks,
                         global_centroids,
                         global_family_sets,
@@ -11899,7 +12166,10 @@ class MaskAssessor:
             return cached
         # Exclude time-based features from ridge/assessor feature selection
         time_keys_set = set(TIME_FEATURE_KEYS)
-        test_keys_set = set(TEST_FEATURE_KEYS) - time_keys_set
+        configured_assessor_names = set(
+            self.cfg.get("miner_assessor_feature_keys", TEST_FEATURE_KEYS)
+        )
+        test_keys_set = configured_assessor_names - time_keys_set
         requested_columns = tuple(
             self.cfg.get(
                 "miner_target_residualization_columns",
@@ -18689,6 +18959,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     cfg = dict(CFG)
+    requested_data_root = args.data_root
     cfg["data_root"] = args.data_root
     cfg["output_dir"] = args.output_dir
     cfg["preset"] = args.preset
@@ -18696,12 +18967,15 @@ if __name__ == "__main__":
     if args.step1_dir:
         cfg["step1_dir"] = args.step1_dir
     market_mode = normalize_market_mode("perps" if args.perps else args.market_mode)
-    args.data_root = append_market_suffix(args.data_root, market_mode)
+    args.data_root = resolve_market_read_root(
+        requested_data_root, append_market_suffix(args.data_root, market_mode), market_mode
+    )
     args.output_dir = append_market_suffix(args.output_dir, market_mode)
     expected_market_suffix = f"_{market_mode}"
-    assert str(args.data_root).rstrip("/\\").endswith(expected_market_suffix), (
-        "market-specific data root suffix was not preserved"
-    )
+    if _has_local_market_data(append_market_suffix(requested_data_root, market_mode)):
+        assert str(args.data_root).rstrip("/\\").endswith(expected_market_suffix), (
+            "market-specific data root suffix was not preserved"
+        )
     assert str(args.output_dir).rstrip("/\\").endswith(expected_market_suffix), (
         "market-specific output suffix was not preserved"
     )
@@ -18880,24 +19154,68 @@ if __name__ == "__main__":
     tprint(
         f"Loading features from {feature_path} for {len(kept_syms)} planner-surviving symbols..."
     )
-    requested_feature_keys = sorted(
-        set(
-            list(cfg.get("FEATURE_SELECTION_KEYS", []))
-            + list(cfg.get("test_feature_keys", TEST_FEATURE_KEYS))
-            + (list(cfg.get("PERP_FEATURE_KEYS", [])) if cfg.get("use_perps") else [])
-            + (
-                list(cfg.get("SPOT_FOR_PERPS_BASE_FEATURE_KEYS", []))
-                if cfg.get("use_perps")
-                else []
-            )
-            + (
-                list(cfg.get("SPOT_FOR_PERPS_META_FEATURE_KEYS", []))
-                if cfg.get("use_perps")
-                else []
-            )
-            + list(RIDGE_FEATURE_COLS)
-            + list(CONTINUOUS_LOCATION_COLS)
+    generated_feature_keys = discover_generated_feature_columns(feature_path)
+    configured_feature_whitelist = build_configured_feature_whitelist(cfg)
+    if generated_feature_keys and configured_feature_whitelist:
+        generated_set = set(generated_feature_keys)
+        requested_feature_keys = sorted(
+            name for name in configured_feature_whitelist if name in generated_set
         )
+        missing_configured_generated = sorted(
+            set(configured_feature_whitelist) - generated_set
+        )
+        tprint(
+            "Configured/generated feature reconciliation: "
+            f"generated={len(generated_feature_keys)} configured={len(configured_feature_whitelist)} "
+            f"requested={len(requested_feature_keys)} missing_configured={len(missing_configured_generated)}"
+        )
+        if missing_configured_generated:
+            tprint(
+                "Configured/generated missing sample: "
+                f"{missing_configured_generated[:20]}"
+            )
+    else:
+        requested_feature_keys = sorted(
+            set(
+                list(cfg.get("FEATURE_SELECTION_KEYS", []))
+                + list(cfg.get("test_feature_keys", TEST_FEATURE_KEYS))
+                + (list(cfg.get("PERP_FEATURE_KEYS", [])) if cfg.get("use_perps") else [])
+                + (
+                    list(cfg.get("SPOT_FOR_PERPS_BASE_FEATURE_KEYS", []))
+                    if cfg.get("use_perps")
+                    else []
+                )
+                + (
+                    list(cfg.get("SPOT_FOR_PERPS_META_FEATURE_KEYS", []))
+                    if cfg.get("use_perps")
+                    else []
+                )
+                + list(RIDGE_FEATURE_COLS)
+                + list(CONTINUOUS_LOCATION_COLS)
+            )
+        )
+    requested_feature_set = set(requested_feature_keys)
+    time_feature_set = set(TIME_FEATURE_KEYS)
+    location_feature_keys = [
+        str(name) for name in CONTINUOUS_LOCATION_COLS if str(name) in requested_feature_set
+    ]
+    regime_feature_keys = [
+        str(name)
+        for name in RIDGE_FEATURE_COLS
+        if str(name) in requested_feature_set and str(name) not in time_feature_set
+    ]
+    assessor_feature_keys = [
+        str(name)
+        for name in cfg.get("test_feature_keys", TEST_FEATURE_KEYS)
+        if str(name) in requested_feature_set and str(name) not in time_feature_set
+    ]
+    cfg["miner_location_feature_keys"] = location_feature_keys
+    cfg["miner_regime_feature_keys"] = regime_feature_keys
+    cfg["miner_assessor_feature_keys"] = assessor_feature_keys
+    tprint(
+        "Miner configured whitelist features: "
+        f"total={len(requested_feature_keys)} location={len(location_feature_keys)} "
+        f"regime={len(regime_feature_keys)} assessor={len(assessor_feature_keys)}"
     )
     tprint(
         f"Requested feature keys: {len(requested_feature_keys)} (TRIGGER features disabled)"

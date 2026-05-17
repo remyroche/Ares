@@ -1,0 +1,2 @@
+within_leaf_mean_ic,within_leaf_positive_ic_fraction,within_leaf_mean_top_quantile_spread,within_leaf_mean_edge_uplift,within_leaf_hit_lift,within_leaf_valid_folds,within_leaf_future_edge_learnability_score,learnability_definition,canonical_key
+0.037946208254435725,0.75,0.000256401163478129,0.00037109806825562006,0.02551482376580455,4,0.40041955654547295,within_leaf_future_edge,(*)|(zscore_price_50>-0.12277962)|(atr_percentile>0.24625583&range_expansion_ratio<=0.19268638&up_down_semivol_ratio_tanh<=0.59148324)

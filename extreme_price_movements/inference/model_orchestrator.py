@@ -11,6 +11,7 @@ This module orchestrates the full inference chain:
 Returns full prediction chain results for each candidate.
 """
 
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -23,6 +24,7 @@ from extreme_price_movements.entry_policy import (
 )
 from extreme_price_movements.inference.feature_generator import (
     get_features_for_candidates,
+    is_model_derived_feature_key,
 )
 from extreme_price_movements.inference.parity import (
     LIVE_UNAVAILABLE_FEATURES,
@@ -43,6 +45,9 @@ def _extract_ebm_contract_model(model: Any) -> Any:
         return None
     if model.__class__.__name__ == "EBMOnLGBMModel":
         return model
+    best_model = getattr(model, "best_model", None)
+    if best_model is not None and best_model.__class__.__name__ == "EBMOnLGBMModel":
+        return best_model
     ebm_model = getattr(model, "ebm_model", None)
     if ebm_model is not None and ebm_model.__class__.__name__ == "EBMOnLGBMModel":
         return ebm_model
@@ -60,7 +65,81 @@ def _missing_ebm_raw_contract(model: Any, features: pd.DataFrame) -> list[str]:
     if not raw_features:
         return []
     available = set(map(str, features.columns))
-    return [name for name in raw_features if name not in available]
+    missing = [name for name in raw_features if name not in available]
+    positional_mapping = (
+        getattr(ebm_model, "positional_feature_mapping", None)
+        or getattr(ebm_model, "meta_positional_feature_mapping_", None)
+        or getattr(model, "positional_feature_mapping", None)
+        or getattr(model, "meta_positional_feature_mapping_", None)
+        or {}
+    )
+    if missing and isinstance(positional_mapping, dict) and positional_mapping:
+        still_missing: list[str] = []
+        for raw_name in missing:
+            real_name = str(positional_mapping.get(raw_name, ""))
+            if not real_name or real_name not in available:
+                still_missing.append(real_name or raw_name)
+        return still_missing
+    return missing
+
+
+def _synthetic_ebm_raw_features(model: Any) -> list[str]:
+    """Return an EBM f0/f1/... raw contract when the model uses one."""
+    ebm_model = _extract_ebm_contract_model(model)
+    if ebm_model is None:
+        return []
+    raw_features = [
+        str(c) for c in (getattr(ebm_model, "raw_selected_features", []) or [])
+    ]
+    if raw_features and all(re.fullmatch(r"f\d+", name) for name in raw_features):
+        return raw_features
+    return []
+
+
+def _alpha_prediction_frame_for_model(
+    model: Any,
+    aligned_features: pd.DataFrame,
+    feat_cols: List[str],
+) -> pd.DataFrame:
+    """Return the actual prediction frame expected by a persisted alpha model.
+
+    Most alpha model bundles keep ``feat_cols`` as the real feature contract.
+    Some older ModelRace/LGBM bundles persisted the inner stability model after
+    feature selection with synthetic ``fN`` names, where ``N`` is the position
+    in ``feat_cols``. Build that frame explicitly so inference, debug dumps, and
+    replay all exercise the same model input contract.
+    """
+    if aligned_features.empty or not feat_cols:
+        return aligned_features
+
+    feat_cols = [str(c) for c in feat_cols]
+    X = aligned_features.reindex(columns=feat_cols, fill_value=0.0).fillna(0.0)
+    inner = getattr(model, "best_model", model)
+    selected = [str(c) for c in (getattr(inner, "selected_features", []) or [])]
+    input_features = [
+        str(c) for c in (getattr(inner, "input_feature_names", []) or [])
+    ]
+    has_named_aliases = (
+        len(input_features) == len(selected)
+        and bool(input_features)
+        and input_features != selected
+    )
+    synthetic_selected = bool(selected) and all(
+        re.fullmatch(r"f\d+", name) is not None for name in selected
+    )
+    if synthetic_selected and not has_named_aliases:
+        mapped = pd.DataFrame(index=X.index)
+        for name in selected:
+            pos = int(name[1:])
+            real_name = feat_cols[pos] if pos < len(feat_cols) else ""
+            mapped[name] = X[real_name] if real_name in X.columns else 0.0
+        return mapped.replace([np.inf, -np.inf], 0.0).fillna(0.0)
+
+    synthetic_raw = _synthetic_ebm_raw_features(model)
+    if synthetic_raw and len(synthetic_raw) == len(feat_cols):
+        X = X.copy()
+        X.columns = synthetic_raw
+    return X
 
 
 class ModelOrchestrator:
@@ -375,7 +454,7 @@ class ModelOrchestrator:
             return pd.Series(dtype=float)
 
         # Get feature matrix
-        X = aligned_features.reindex(columns=feat_cols, fill_value=0.0).fillna(0.0)
+        X = _alpha_prediction_frame_for_model(model, aligned_features, feat_cols)
 
         # Predict
         try:
@@ -461,6 +540,101 @@ class ModelOrchestrator:
             tprint(f"Error computing disagreement features: {e}")
             return pd.Series(0.0, index=meta_data.index)
 
+    def _materialize_meta_model_derived_features(
+        self,
+        features: pd.DataFrame,
+        meta_model: Any,
+        *,
+        side: str,
+        kind: str,
+    ) -> pd.DataFrame:
+        """Build deterministic live values for train-time model-derived meta keys.
+
+        Raw market features must already be present in ``features``. This helper
+        only materializes columns derived from the base prediction itself. For
+        historical recent-effectiveness diagnostics, live cannot know the future
+        label at decision time, so we use the explicit neutral value instead of
+        letting EBM positional mapping silently consume unrelated columns.
+        """
+        if not isinstance(features, pd.DataFrame) or features.empty:
+            return features
+        feat_cols = [str(c) for c in (getattr(meta_model, "feature_columns", []) or [])]
+        if not feat_cols:
+            return features
+
+        out = features.copy()
+        kind_s = str(kind)
+        core = strategy_core_id(kind_s)
+        core_no_head = re.sub(r"_(?:clf|reg|tbm_clf|early_inval)$", "", core)
+        kind_no_head = re.sub(r"_(?:clf|reg|tbm_clf|early_inval)$", "", kind_s)
+        base_series: pd.Series | None = None
+        candidate_cols = [
+            kind_s,
+            kind_no_head,
+            core,
+            core_no_head,
+            f"{side}_{core}",
+            f"{side}_{core_no_head}",
+            getattr(meta_model, "meta_feature_contract_", {}).get(
+                "base_probability_column", ""
+            )
+            if isinstance(getattr(meta_model, "meta_feature_contract_", {}), dict)
+            else "",
+        ]
+        candidate_cols.extend([c for c in feat_cols if re.match(r"^pred_.*_H\d+$", c)])
+        candidate_cols.extend([c for c in feat_cols if re.match(r"^pred_H\d+$", c)])
+        for col in candidate_cols:
+            if col and col in out.columns:
+                base_series = pd.to_numeric(out[col], errors="coerce").astype(float)
+                break
+        if base_series is None:
+            return out
+
+        base_prob = base_series.clip(1e-6, 1.0 - 1e-6).astype(float)
+        base_logit = np.log(base_prob / (1.0 - base_prob))
+        added = 0
+        for col in feat_cols:
+            if col in out.columns:
+                continue
+            value: pd.Series | float | None = None
+            if re.match(r"^pred_logit(?:_H\d+)?$", col):
+                value = base_logit
+            elif re.match(r"^pred(?:_.*)?_H\d+(?:_ebm_raw|_ebm_en|_ebm_uncertainty_weighted)?$", col):
+                value = base_prob
+            elif re.match(r"^base_H\d+_ebm_(?:raw|en|uncertainty_weighted)$", col):
+                value = base_prob
+            elif col in {"base_model_score", "base_med_pred"}:
+                value = base_prob
+            elif col == "base_model_margin":
+                value = (base_prob - 0.5).abs()
+            elif col == "base_model_score_pct":
+                value = 0.5
+            elif col.startswith("base_prob_x_"):
+                src = col.removeprefix("base_prob_x_")
+                if src in out.columns:
+                    value = base_prob * pd.to_numeric(out[src], errors="coerce").fillna(0.0)
+                else:
+                    value = 0.0
+            elif col.startswith("base_med_x_"):
+                src = col.removeprefix("base_med_x_")
+                if src in out.columns:
+                    value = base_prob * pd.to_numeric(out[src], errors="coerce").fillna(0.0)
+                else:
+                    value = 0.0
+            elif is_model_derived_feature_key(col):
+                value = 0.0
+
+            if value is not None:
+                out[col] = value
+                added += 1
+        if added and not getattr(self, "_meta_model_derived_warned", False):
+            tprint(
+                "Meta inference: materialized model-derived contract columns "
+                f"from base prediction ({added} columns for {kind})."
+            )
+            self._meta_model_derived_warned = True
+        return out
+
     # =========================================================================
     # STEP 4: Meta Model Prediction
     # =========================================================================
@@ -481,6 +655,7 @@ class ModelOrchestrator:
         Returns:
             Series of meta predictions
         """
+        requested_kind = str(kind)
         key = str(kind)
         if key not in self.meta_models:
             side_key = f"{side}_{kind}"
@@ -508,6 +683,14 @@ class ModelOrchestrator:
                 feat_cols = meta_model.feature_columns
             else:
                 feat_cols = list(features.columns)
+            feat_cols = [str(c) for c in (feat_cols or [])]
+
+            features = self._materialize_meta_model_derived_features(
+                features,
+                meta_model,
+                side=side,
+                kind=requested_kind,
+            )
 
             missing_ebm_raw = _missing_ebm_raw_contract(meta_model, features)
             if missing_ebm_raw:
@@ -531,7 +714,7 @@ class ModelOrchestrator:
 
             ebm_contract_model = _extract_ebm_contract_model(meta_model)
             if ebm_contract_model is not None:
-                X = features.fillna(0)
+                X = features.reindex(columns=feat_cols, fill_value=0.0).fillna(0)
             else:
                 X = features[available_cols].fillna(0)
             preds = meta_model.predict(X)

@@ -54,11 +54,14 @@ def get_market_data(
 DEFAULT_TREND_SMA_HOURS = 24 * 14  # 14 days
 DEFAULT_GATE_VOL_LOOKBACK_HOURS = 24 * 7  # 7 days
 DEFAULT_GATE_TREND_THR = 0.0
+DEFAULT_CAUSAL_TRANSFORM_ROLL_WINDOW_HOURS = 24 * 30
+DEFAULT_IDENTITY_EWMA_WARMUP_HOURS = 24 * 60 * 5
 DEFAULT_TAIL_WARMUP_BUFFER_HOURS = 72
-LIVE_FEATURE_CACHE_VERSION = 3
+LIVE_FEATURE_CACHE_VERSION = 8
 _LIVE_FEATURE_MEMORY_CACHE: Dict[str, Dict[str, Any]] = {}
+_TRAINING_FEATURE_VARIATION_CACHE: Dict[tuple[str, str], Dict[str, bool]] = {}
 MODEL_DERIVED_FEATURE_RE = re.compile(
-    r"^(base_H\d+_|pred_H\d+|pred_.*_H\d+|pred_logit$|oof_ebm_unc_|base_med_|base_prob_|base_model_|prob_error|recent_prob_error_|recent_hit_rate_|recent_global_|recent_side_horizon_|recent_bucket_|recent_regime_|recent_meta_|recent_effectiveness_available$)"
+    r"^(base_H\d+_|pred_H\d+|pred_.*_H\d+|pred_logit$|oof_ebm_unc_|base_med_|base_prob_|base_model_|prob_error|recent_prob_error_|recent_hit_rate_|recent_global_|recent_side_horizon_|recent_bucket_|recent_regime_|recent_meta_|recent_base_meta_disagreement_|recent_base_internal_disagreement_|recent_prediction_disagreement_available_|recent_effectiveness_available$)"
 )
 
 
@@ -84,20 +87,58 @@ def _hash_values(values: Iterable[str]) -> str:
     return hashlib.sha256(payload).hexdigest()[:16]
 
 
+def _feature_runtime_cfg_hash(cfg: Optional[Dict[str, Any]]) -> str:
+    """Return a stable hash for feature-generation-relevant runtime config.
+
+    Live feature snapshots must not be reused across different runtime configs:
+    the feature pipeline reads optimizer/runtime fields from ``cfg``.  Omitting
+    this from the cache key can make a later live/replay run load a finite but
+    wrong transformed feature frame.
+    """
+
+    def _normalise(value: Any) -> Any:
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        if isinstance(value, (list, tuple)):
+            return [_normalise(v) for v in value]
+        if isinstance(value, dict):
+            return {
+                str(k): _normalise(v)
+                for k, v in sorted(value.items(), key=lambda item: str(item[0]))
+                if str(k)
+                not in {
+                    "full_state",
+                    "model_bundle",
+                    "bundle",
+                    "runtime_cfg",
+                }
+            }
+        return str(value)
+
+    payload = json.dumps(_normalise(cfg or {}), sort_keys=True, default=str).encode(
+        "utf-8"
+    )
+    return hashlib.sha256(payload).hexdigest()[:16]
+
+
 def _live_feature_cache_key(
     *,
     run_id: str,
     symbols: List[str],
     required_feature_keys: Set[str],
     lookback_hours: int,
+    cfg: Optional[Dict[str, Any]] = None,
+    data_root: Optional[str] = None,
 ) -> str:
     return "|".join(
         [
             str(LIVE_FEATURE_CACHE_VERSION),
             str(run_id),
             str(int(lookback_hours)),
+            str(data_root or ""),
             _hash_values(symbols),
             _hash_values(required_feature_keys),
+            _feature_runtime_cfg_hash(cfg),
         ]
     )
 
@@ -130,6 +171,8 @@ def _latest_feature_matrix(
             continue
         if end_ts in df.index:
             values = df.loc[end_ts, available]
+        elif _is_live_stale_sensitive_feature_key(key):
+            continue
         else:
             values = df.loc[:, available].ffill().iloc[-1]
         for sym, value in values.items():
@@ -152,6 +195,208 @@ def _matrix_to_feature_dict(
         values = matrix[key].to_numpy(dtype=np.float32, copy=False)[None, :]
         out[str(key)] = pd.DataFrame(values, index=ts_index, columns=matrix.index)
     return out
+
+
+def _feature_history_matrix(
+    feats: Dict[str, pd.DataFrame],
+    *,
+    symbols: List[str],
+    required_feature_keys: Set[str],
+    start_ts: Optional[pd.Timestamp],
+    end_ts: pd.Timestamp,
+) -> pd.DataFrame:
+    """Convert feature frames to a compact timestamp/symbol matrix.
+
+    The rolling live cache stores only transformed rows that extend beyond the
+    offline feature cache.  It intentionally uses a row MultiIndex so hourly
+    appends are small and restart-safe without rewriting the full historical
+    per-symbol feature store.
+    """
+    keys = sorted(required_feature_keys or set(feats.keys()))
+    frames: Dict[str, pd.Series] = {}
+    idx_union: Optional[pd.DatetimeIndex] = None
+    end = pd.Timestamp(end_ts)
+    start = pd.Timestamp(start_ts) if start_ts is not None else None
+    for key in keys:
+        df = feats.get(key)
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            continue
+        available = [sym for sym in symbols if sym in df.columns]
+        if not available:
+            continue
+        sliced = df.loc[:, available]
+        if start is not None:
+            sliced = sliced[sliced.index > start]
+        sliced = sliced[sliced.index <= end]
+        if sliced.empty:
+            continue
+        if idx_union is None:
+            idx_union = pd.DatetimeIndex(sliced.index)
+        else:
+            idx_union = idx_union.union(pd.DatetimeIndex(sliced.index))
+        frames[str(key)] = sliced.stack(dropna=False)
+
+    if not frames or idx_union is None or idx_union.empty:
+        return pd.DataFrame()
+
+    row_index = pd.MultiIndex.from_product(
+        [idx_union.sort_values(), symbols],
+        names=["timestamp", "symbol"],
+    )
+    matrix = pd.DataFrame(index=row_index)
+    for key, series in frames.items():
+        series.index = series.index.set_names(["timestamp", "symbol"])
+        matrix[key] = series.reindex(row_index).astype(np.float32)
+    return matrix
+
+
+def _history_matrix_to_feature_dict(
+    matrix: pd.DataFrame,
+    *,
+    symbols: List[str],
+) -> Dict[str, pd.DataFrame]:
+    if matrix is None or matrix.empty or not isinstance(matrix.index, pd.MultiIndex):
+        return {}
+    out: Dict[str, pd.DataFrame] = {}
+    matrix = matrix.copy()
+    matrix.index = matrix.index.set_names(["timestamp", "symbol"])
+    for key in matrix.columns:
+        series = matrix[key]
+        try:
+            df = series.unstack("symbol").reindex(columns=symbols)
+        except Exception:
+            continue
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            out[str(key)] = df.astype(np.float32)
+    return out
+
+
+def _load_live_feature_rolling_cache(
+    *,
+    cfg: Dict[str, Any],
+    run_id: str,
+    cache_key: str,
+    symbols: List[str],
+    start_ts: pd.Timestamp,
+    end_ts: pd.Timestamp,
+    required_feature_keys: Set[str],
+) -> Dict[str, pd.DataFrame]:
+    if not bool(cfg.get("live_feature_rolling_cache_enabled", True)):
+        return {}
+    cache_dir = _feature_snapshot_dir(cfg, run_id, cache_key)
+    meta_path = cache_dir / "rolling_meta.json"
+    data_path = cache_dir / "rolling_history.parquet"
+    if not (meta_path.exists() and data_path.exists()):
+        return {}
+    try:
+        meta = json.loads(meta_path.read_text())
+        if meta.get("version") != LIVE_FEATURE_CACHE_VERSION:
+            return {}
+        if meta.get("cache_key") != cache_key:
+            return {}
+        if meta.get("symbols_hash") != _hash_values(symbols):
+            return {}
+        if meta.get("required_hash") != _hash_values(required_feature_keys):
+            return {}
+        matrix = pd.read_parquet(data_path)
+    except Exception:
+        return {}
+    if matrix.empty or not isinstance(matrix.index, pd.MultiIndex):
+        return {}
+    missing = required_feature_keys.difference(str(c) for c in matrix.columns)
+    if missing:
+        return {}
+    try:
+        ts = pd.to_datetime(matrix.index.get_level_values("timestamp"), utc=True)
+        mask = (ts >= pd.Timestamp(start_ts)) & (ts <= pd.Timestamp(end_ts))
+        matrix = matrix.loc[mask]
+    except Exception:
+        return {}
+    if matrix.empty:
+        return {}
+    tprint(
+        "Loaded rolling live transformed feature cache: "
+        f"rows={len(matrix.index)} features={len(matrix.columns)} "
+        f"end_ts={meta.get('end_ts')}"
+    )
+    return _history_matrix_to_feature_dict(matrix, symbols=symbols)
+
+
+def _write_live_feature_rolling_cache(
+    *,
+    cfg: Dict[str, Any],
+    run_id: str,
+    cache_key: str,
+    feats: Dict[str, pd.DataFrame],
+    symbols: List[str],
+    end_ts: pd.Timestamp,
+    required_feature_keys: Set[str],
+    append_after_ts: Optional[pd.Timestamp],
+    keep_start_ts: pd.Timestamp,
+) -> None:
+    if not bool(cfg.get("live_feature_rolling_cache_enabled", True)):
+        return
+    try:
+        cache_dir = _feature_snapshot_dir(cfg, run_id, cache_key)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        new_matrix = _feature_history_matrix(
+            feats,
+            symbols=symbols,
+            required_feature_keys=required_feature_keys,
+            start_ts=append_after_ts,
+            end_ts=end_ts,
+        )
+        if new_matrix.empty:
+            return
+        data_path = cache_dir / "rolling_history.parquet"
+        if data_path.exists():
+            try:
+                old_matrix = pd.read_parquet(data_path)
+                if isinstance(old_matrix.index, pd.MultiIndex) and not old_matrix.empty:
+                    matrix = pd.concat([old_matrix, new_matrix], axis=0)
+                    matrix = matrix[~matrix.index.duplicated(keep="last")]
+                else:
+                    matrix = new_matrix
+            except Exception:
+                matrix = new_matrix
+        else:
+            matrix = new_matrix
+        try:
+            ts = pd.to_datetime(matrix.index.get_level_values("timestamp"), utc=True)
+            matrix = matrix.loc[ts >= pd.Timestamp(keep_start_ts)]
+        except Exception:
+            pass
+        matrix = matrix.sort_index()
+        tmp_data = cache_dir / "rolling_history.tmp.parquet"
+        matrix.to_parquet(tmp_data)
+        tmp_data.replace(data_path)
+        meta = {
+            "version": LIVE_FEATURE_CACHE_VERSION,
+            "cache_key": cache_key,
+            "feature_runtime_cfg_hash": _feature_runtime_cfg_hash(cfg),
+            "symbols_hash": _hash_values(symbols),
+            "required_hash": _hash_values(required_feature_keys),
+            "end_ts": pd.Timestamp(end_ts).isoformat(),
+            "append_after_ts": (
+                None
+                if append_after_ts is None
+                else pd.Timestamp(append_after_ts).isoformat()
+            ),
+            "keep_start_ts": pd.Timestamp(keep_start_ts).isoformat(),
+            "rows": int(len(matrix.index)),
+            "features": list(matrix.columns),
+            "symbols": list(symbols),
+        }
+        tmp_meta = cache_dir / "rolling_meta.tmp.json"
+        tmp_meta.write_text(json.dumps(meta))
+        tmp_meta.replace(cache_dir / "rolling_meta.json")
+        tprint(
+            "Persisted rolling live transformed feature cache: "
+            f"new_rows={len(new_matrix.index)} total_rows={len(matrix.index)} "
+            f"features={len(matrix.columns)} end_ts={end_ts}"
+        )
+    except Exception as exc:
+        tprint(f"Warning: failed to persist rolling live feature cache: {exc}")
 
 
 def _load_live_feature_snapshot(
@@ -220,6 +465,7 @@ def _write_live_feature_snapshot(
         meta = {
             "version": LIVE_FEATURE_CACHE_VERSION,
             "cache_key": cache_key,
+            "feature_runtime_cfg_hash": _feature_runtime_cfg_hash(cfg),
             "symbols_hash": _hash_values(symbols),
             "required_hash": _hash_values(required_feature_keys),
             "end_ts": pd.Timestamp(end_ts).isoformat(),
@@ -285,9 +531,17 @@ def _required_tail_warmup_hours(
     if tail_compute_hours is not None:
         return int(tail_compute_hours)
     # The lookback window is already covered by cached stored features. For
-    # incremental backfill we only need enough history to stabilize the
-    # rolling/gated feature computations for newly missing timestamps.
-    base_hours = max(int(trend_sma_hours), int(gate_vol_lookback_hours), 24 * 7)
+    # incremental backfill we still need enough history to stabilize both
+    # raw rolling/gated features and CausalFeatureTransformer's rolling
+    # standardization.  Using less than the transform window creates a live-vs-
+    # replay parity break around the cache/tail seam.
+    base_hours = max(
+        int(trend_sma_hours),
+        int(gate_vol_lookback_hours),
+        int(DEFAULT_CAUSAL_TRANSFORM_ROLL_WINDOW_HOURS),
+        int(DEFAULT_IDENTITY_EWMA_WARMUP_HOURS),
+        24 * 7,
+    )
     return base_hours + DEFAULT_TAIL_WARMUP_BUFFER_HOURS
 
 
@@ -314,7 +568,7 @@ def _merge_feature_dicts(
     new_feats: Dict[str, pd.DataFrame],
 ) -> Dict[str, pd.DataFrame]:
     merged: Dict[str, pd.DataFrame] = {}
-    all_keys = set(cached_feats.keys()) | set(new_feats.keys())
+    all_keys = sorted(set(cached_feats.keys()) | set(new_feats.keys()))
     for key in all_keys:
         left = cached_feats.get(key)
         right = new_feats.get(key)
@@ -327,6 +581,157 @@ def _merge_feature_dicts(
         elif isinstance(right, pd.DataFrame):
             merged[key] = right
     return merged
+
+
+def _cached_feature_coverage_end_ts(
+    cached_feats: Dict[str, pd.DataFrame],
+    required_feature_keys: Optional[Set[str]] = None,
+) -> Optional[pd.Timestamp]:
+    """Return the deterministic timestamp through which cached features cover.
+
+    The tail-backfill seam must not depend on dictionary insertion/hash order.
+    Use the minimum latest timestamp across cached required feature frames so
+    any stale cached feature triggers a tail recompute from a stable point.
+    """
+    if not cached_feats:
+        return None
+
+    required = set(required_feature_keys or set())
+    candidates: List[pd.Timestamp] = []
+    for key in sorted(cached_feats):
+        if required and key not in required:
+            continue
+        df = cached_feats.get(key)
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            continue
+        try:
+            idx = pd.DatetimeIndex(df.index)
+            if idx.empty:
+                continue
+            candidates.append(pd.Timestamp(idx.max()))
+        except Exception:
+            continue
+
+    # If none of the requested frames are present in the cache, fall back to the
+    # whole cache so missing requested keys can still be backfilled later.
+    if not candidates and required:
+        return _cached_feature_coverage_end_ts(cached_feats, None)
+    if not candidates:
+        return None
+    return min(candidates)
+
+
+def _is_live_stale_sensitive_feature_key(key: str) -> bool:
+    """Return True for features that must never be forward-filled indefinitely.
+
+    Orderbook and microstructure features are valid only when the live panel can
+    regenerate them for the current signal timestamp. If an old selected-feature
+    cache has these keys but stops before the live timestamp, carrying the last
+    finite value forward creates a train/inference parity break.
+    """
+    key_l = str(key or "").lower()
+    if key_l.startswith(("ob_", "obw_")):
+        return True
+    return "orderbook" in key_l or (key_l.startswith("xasset_") and "ob" in key_l)
+
+
+def _training_feature_has_variation(
+    *,
+    data_root: str,
+    run_id: str,
+    feature_key: str,
+) -> bool:
+    """Return whether the deployed training artifact saw this feature vary.
+
+    Live must not inject a varying model feature when the OOF/OOS artifact was
+    trained with that feature constant/neutral.  Liquidity checks still use
+    live orderbooks separately; this guard only controls ML model inputs.
+    """
+    cache_key = (str(data_root), str(run_id))
+    cached = _TRAINING_FEATURE_VARIATION_CACHE.get(cache_key)
+    if cached is None:
+        cached = {}
+        path = (
+            Path(data_root)
+            / "artifacts"
+            / str(run_id)
+            / "features"
+            / "feature_health_feature_detail.csv"
+        )
+        if path.exists():
+            try:
+                health = pd.read_csv(
+                    path,
+                    usecols=["feature", "is_all_nan", "is_constant_non_nan"],
+                )
+                health["feature"] = health["feature"].astype(str)
+                for feat, grp in health.groupby("feature", sort=False):
+                    all_nan = grp["is_all_nan"].astype(bool)
+                    constant = grp["is_constant_non_nan"].astype(bool)
+                    cached[str(feat)] = bool((~all_nan & ~constant).any())
+            except Exception as exc:
+                tprint(
+                    "WARNING: Failed to load training feature variation contract "
+                    f"from {path}: {exc}; allowing live feature materialization."
+                )
+        _TRAINING_FEATURE_VARIATION_CACHE[cache_key] = cached
+    if not cached:
+        return True
+    return bool(cached.get(str(feature_key), True))
+
+
+def _drop_stale_live_sensitive_features(
+    feats: Dict[str, pd.DataFrame],
+    *,
+    end_ts: pd.Timestamp,
+    required_feature_keys: Optional[Set[str]],
+) -> Dict[str, pd.DataFrame]:
+    """Drop required live-sensitive features that do not reach ``end_ts``.
+
+    Dropped keys are later reconstructed from current live panels or neutral
+    zero-filled by ``_synthesize_live_safe_feature_keys``. This is safer than
+    letting cached L2/orderbook values leak forward across days.
+    """
+    if not feats or not required_feature_keys:
+        return feats
+
+    end = pd.Timestamp(end_ts)
+    if end.tzinfo is None:
+        end = end.tz_localize("UTC")
+    else:
+        end = end.tz_convert("UTC")
+
+    out: Dict[str, pd.DataFrame] = {}
+    dropped: Dict[str, str] = {}
+    for key, df in feats.items():
+        if (
+            key in required_feature_keys
+            and _is_live_stale_sensitive_feature_key(key)
+            and isinstance(df, pd.DataFrame)
+            and not df.empty
+        ):
+            try:
+                idx = pd.to_datetime(df.index, utc=True, errors="coerce")
+                finite_idx = idx[~pd.isna(idx)]
+                max_ts = finite_idx.max() if len(finite_idx) else None
+            except Exception:
+                max_ts = None
+            if max_ts is None or pd.Timestamp(max_ts) < end:
+                dropped[str(key)] = (
+                    "missing_timestamp"
+                    if max_ts is None
+                    else pd.Timestamp(max_ts).isoformat()
+                )
+                continue
+        out[key] = df
+
+    if dropped:
+        sample = dict(list(sorted(dropped.items()))[:12])
+        tprint(
+            "Dropped stale live-sensitive orderbook features before inference "
+            f"materialization: n={len(dropped)} end_ts={end.isoformat()} sample={sample}"
+        )
+    return out
 
 
 def _compute_policy_barrier_pct(
@@ -389,6 +794,18 @@ def _backfill_missing_requested_keys(
     if not missing_keys:
         return merged_feats
 
+    # Live-sensitive orderbook/microstructure keys are handled by
+    # _synthesize_live_safe_feature_keys(), which materializes current live
+    # summaries where possible and neutralizes unavailable flow-only fields.
+    # Sending those keys through compute_features_hourly() can trigger a full
+    # historical feature rebuild during live inference, delaying entries long
+    # enough to make the signal stale.
+    compute_missing_keys = {
+        key for key in missing_keys if not _is_live_stale_sensitive_feature_key(key)
+    }
+    if not compute_missing_keys:
+        return merged_feats
+
     compute_panel: Dict[str, pd.DataFrame] = {}
     for key, df in panel.items():
         if isinstance(df, pd.DataFrame) and not df.empty:
@@ -397,7 +814,7 @@ def _backfill_missing_requested_keys(
         return merged_feats
 
     local_cfg = dict(cfg or {})
-    if _requires_gated_feature_generation(missing_keys):
+    if _requires_gated_feature_generation(compute_missing_keys):
         local_cfg["enable_gated_features"] = True
 
     # Compute only the missing keys, then merge them into the existing feature map.
@@ -413,7 +830,7 @@ def _backfill_missing_requested_keys(
         compute_panel,
         mkt_gates,
         local_cfg,
-        requested_feature_keys=sorted(missing_keys),
+        requested_feature_keys=sorted(compute_missing_keys),
     )
 
     if not missing_feats:
@@ -515,6 +932,8 @@ def load_or_compute_features(
         symbols=basket_syms,
         required_feature_keys=required_feature_keys,
         lookback_hours=lookback_hours,
+        cfg=cfg,
+        data_root=data_root,
     )
     if bool(cfg.get("live_feature_memory_cache_enabled", True)):
         memory_entry = _LIVE_FEATURE_MEMORY_CACHE.get(cache_key)
@@ -568,14 +987,27 @@ def load_or_compute_features(
             start_ts=start_ts,
             end_ts=end_ts,
         )
+    offline_cached_last_ts = _cached_feature_coverage_end_ts(
+        cached_feats,
+        required_feature_keys=required_feature_keys,
+    )
+    rolling_feats = _load_live_feature_rolling_cache(
+        cfg=cfg,
+        run_id=run_id,
+        cache_key=cache_key,
+        symbols=basket_syms,
+        start_ts=start_ts,
+        end_ts=end_ts,
+        required_feature_keys=required_feature_keys,
+    )
+    if rolling_feats:
+        cached_feats = _merge_feature_dicts(cached_feats, rolling_feats)
     timer.mark("load_cached_transformed_features")
 
-    cached_last_ts = None
-    if cached_feats:
-        for df in cached_feats.values():
-            if isinstance(df, pd.DataFrame) and not df.empty:
-                cached_last_ts = df.index.max()
-                break
+    cached_last_ts = _cached_feature_coverage_end_ts(
+        cached_feats,
+        required_feature_keys=required_feature_keys,
+    )
 
     need_tail_backfill = cached_last_ts is None or end_ts > cached_last_ts
     # Always layer the lightweight candidate-selector features on top of the
@@ -592,6 +1024,11 @@ def load_or_compute_features(
             f"Loaded stored inference features for {len(basket_syms)} symbols through {cached_last_ts}"
         )
         merged = _merge_feature_dicts(cached_feats, selector_feats)
+        merged = _drop_stale_live_sensitive_features(
+            merged,
+            end_ts=end_ts,
+            required_feature_keys=required_feature_keys,
+        )
         if required_feature_keys:
             missing = {k for k in required_feature_keys if k not in merged}
             merged = _backfill_missing_requested_keys(
@@ -605,7 +1042,13 @@ def load_or_compute_features(
                 merged, panel, basket_syms, required_feature_keys
             )
             merged = _synthesize_live_safe_feature_keys(
-                merged, panel, basket_syms, required_feature_keys
+                merged,
+                panel,
+                basket_syms,
+                required_feature_keys,
+                data_root=data_root,
+                run_id=run_id,
+                cfg=cfg,
             )
         merged = _slice_feature_window(merged, start_ts=start_ts, end_ts=end_ts)
         if bool(cfg.get("live_feature_memory_cache_enabled", True)):
@@ -618,6 +1061,21 @@ def load_or_compute_features(
             symbols=basket_syms,
             end_ts=end_ts,
             required_feature_keys=required_feature_keys,
+        )
+        _write_live_feature_rolling_cache(
+            cfg=cfg,
+            run_id=run_id,
+            cache_key=cache_key,
+            feats=merged,
+            symbols=basket_syms,
+            end_ts=end_ts,
+            required_feature_keys=required_feature_keys,
+            append_after_ts=(
+                offline_cached_last_ts
+                if offline_cached_last_ts is not None
+                else cached_last_ts
+            ),
+            keep_start_ts=start_ts,
         )
         timer.mark("feature_cache_ready_no_tail")
         return merged
@@ -679,6 +1137,11 @@ def load_or_compute_features(
     merged_feats = _merge_feature_dicts(cached_feats, full_tail_feats)
     merged_feats = _merge_feature_dicts(merged_feats, selector_feats)
     merged_feats = _slice_feature_window(merged_feats, start_ts=start_ts, end_ts=end_ts)
+    merged_feats = _drop_stale_live_sensitive_features(
+        merged_feats,
+        end_ts=end_ts,
+        required_feature_keys=required_feature_keys,
+    )
     if required_feature_keys:
         missing = {k for k in required_feature_keys if k not in merged_feats}
         merged_feats = _backfill_missing_requested_keys(
@@ -692,7 +1155,13 @@ def load_or_compute_features(
             merged_feats, panel, basket_syms, required_feature_keys
         )
         merged_feats = _synthesize_live_safe_feature_keys(
-            merged_feats, panel, basket_syms, required_feature_keys
+            merged_feats,
+            panel,
+            basket_syms,
+            required_feature_keys,
+            data_root=data_root,
+            run_id=run_id,
+            cfg=cfg,
         )
     if bool(cfg.get("live_feature_memory_cache_enabled", True)):
         _LIVE_FEATURE_MEMORY_CACHE[cache_key] = {
@@ -707,6 +1176,24 @@ def load_or_compute_features(
         symbols=basket_syms,
         end_ts=end_ts,
         required_feature_keys=required_feature_keys,
+    )
+    rolling_seed_hours = int(cfg.get("live_feature_rolling_cache_seed_hours", 24 * 14))
+    rolling_append_after_ts = cached_last_ts
+    if rolling_append_after_ts is None:
+        rolling_append_after_ts = max(
+            pd.Timestamp(start_ts),
+            pd.Timestamp(end_ts) - pd.Timedelta(hours=rolling_seed_hours),
+        )
+    _write_live_feature_rolling_cache(
+        cfg=cfg,
+        run_id=run_id,
+        cache_key=cache_key,
+        feats=merged_feats,
+        symbols=basket_syms,
+        end_ts=end_ts,
+        required_feature_keys=required_feature_keys,
+        append_after_ts=rolling_append_after_ts,
+        keep_start_ts=start_ts,
     )
     new_rows = 0
     if full_tail_feats:
@@ -1080,9 +1567,15 @@ def _materialize_live_orderbook_summary_features(
     basket_syms: List[str],
     required_feature_keys: Set[str],
     cfg: Optional[Dict[str, Any]] = None,
+    data_root: str | None = None,
+    run_id: str | None = None,
 ) -> Dict[str, pd.DataFrame]:
     """Compute live orderbook proxy features from saved hourly summary panels."""
     if not any(k.startswith(("ob_", "obw_")) for k in required_feature_keys):
+        return feats
+    if cfg is not None and not bool(
+        cfg.get("live_materialize_orderbook_model_features", True)
+    ):
         return feats
 
     zero_frame = _zero_frame_like_panel(panel, basket_syms)
@@ -1133,9 +1626,24 @@ def _materialize_live_orderbook_summary_features(
     close_aligned = close.reindex(index=idx, columns=cols).astype(np.float32)
     volume_aligned = volume.reindex(index=idx, columns=cols).astype(np.float32)
     available = (best_bid.notna() & best_ask.notna() & mid.notna()).astype(np.float32)
+    skipped_no_training_support: set[str] = set()
+
+    def has_training_support(name: str) -> bool:
+        if data_root is None or run_id is None:
+            return True
+        ok = _training_feature_has_variation(
+            data_root=str(data_root),
+            run_id=str(run_id),
+            feature_key=str(name),
+        )
+        if not ok:
+            skipped_no_training_support.add(str(name))
+        return ok
 
     def put(name: str, value: pd.DataFrame) -> None:
         if name in required_feature_keys or name in out:
+            if not has_training_support(name):
+                return
             out[name] = (
                 value.reindex(index=idx, columns=cols)
                 .replace([np.inf, -np.inf], np.nan)
@@ -1343,6 +1851,12 @@ def _materialize_live_orderbook_summary_features(
             "Materialized live orderbook summary features from hourly panels: "
             f"{len(produced)} required keys available"
         )
+    if skipped_no_training_support:
+        tprint(
+            "Kept live orderbook model features neutral because deployed "
+            "training feature health shows no variation: "
+            f"{sorted(skipped_no_training_support)[:20]}"
+        )
     return out
 
 
@@ -1351,6 +1865,10 @@ def _synthesize_live_safe_feature_keys(
     panel: Dict[str, pd.DataFrame],
     basket_syms: List[str],
     required_feature_keys: Optional[Set[str]],
+    *,
+    data_root: str | None = None,
+    run_id: str | None = None,
+    cfg: dict[str, Any] | None = None,
 ) -> Dict[str, pd.DataFrame]:
     """Materialize deterministic training fallbacks used by live-safe models."""
     if not required_feature_keys:
@@ -1362,6 +1880,9 @@ def _synthesize_live_safe_feature_keys(
         panel,
         basket_syms,
         required,
+        cfg=cfg,
+        data_root=data_root,
+        run_id=run_id,
     )
     missing = sorted(
         key for key in ({"p_exh_lag1", "retest_accept"} & required) if key not in feats
@@ -1410,13 +1931,24 @@ def _synthesize_live_safe_feature_keys(
         "ob_vwap_mid_gap_bps",
     }
     orderbook_prefix_zero_missing = sorted(
-        key for key in required if key not in feats and key.startswith("obw_")
+        key
+        for key in required
+        if key not in feats
+        and key.startswith(("ob_", "obw_"))
+        and key not in orderbook_aliases
     )
     orderbook_alias_missing = sorted(
         key for key in orderbook_aliases if key in required and key not in feats
     )
     orderbook_zero_missing = sorted(
         key for key in (orderbook_zero_fallbacks & required) if key not in feats
+    )
+    stale_sensitive_zero_missing = sorted(
+        key
+        for key in required
+        if key not in feats
+        and _is_live_stale_sensitive_feature_key(key)
+        and not key.startswith(("ob_", "obw_"))
     )
     if (
         not missing
@@ -1426,6 +1958,7 @@ def _synthesize_live_safe_feature_keys(
         and not orderbook_alias_missing
         and not orderbook_zero_missing
         and not orderbook_prefix_zero_missing
+        and not stale_sensitive_zero_missing
     ):
         return _ensure_required_symbol_columns(feats, panel, basket_syms, required)
 
@@ -1491,7 +2024,7 @@ def _synthesize_live_safe_feature_keys(
             )
         else:
             out[key] = zero_frame.copy()
-    for key in orderbook_zero_missing + orderbook_prefix_zero_missing:
+    for key in orderbook_zero_missing + orderbook_prefix_zero_missing + stale_sensitive_zero_missing:
         if key == "ob_available":
             availability = zero_frame.copy()
             for source in ("orderbook_mid", "orderbook_best_bid", "orderbook_best_ask"):
@@ -1511,7 +2044,7 @@ def _synthesize_live_safe_feature_keys(
     out = _ensure_required_symbol_columns(out, panel, basket_syms, required)
     tprint(
         "Synthesized live-safe training fallback features for inference: "
-        f"{(['barrier_pct'] if barrier_missing else []) + missing + calendar_missing + rolling_missing + orderbook_alias_missing + orderbook_zero_missing + orderbook_prefix_zero_missing}"
+        f"{(['barrier_pct'] if barrier_missing else []) + missing + calendar_missing + rolling_missing + orderbook_alias_missing + orderbook_zero_missing + orderbook_prefix_zero_missing + stale_sensitive_zero_missing}"
     )
     return out
 
@@ -1838,8 +2371,26 @@ def get_features_for_candidates(
                 # Skip if series is not a proper Series
                 if not isinstance(series, pd.Series):
                     continue
-                if ts is not None and ts in series.index:
-                    row[feat_name] = series.loc[ts]
+                if ts is not None:
+                    ts_utc = pd.Timestamp(ts)
+                    if ts_utc.tzinfo is None:
+                        ts_utc = ts_utc.tz_localize("UTC")
+                    else:
+                        ts_utc = ts_utc.tz_convert("UTC")
+                    series_index = pd.to_datetime(
+                        series.index, utc=True, errors="coerce"
+                    )
+                    series_at_or_before = series.loc[series_index <= ts_utc]
+                    finite_series = series_at_or_before.dropna()
+                    if finite_series.empty:
+                        continue
+                    if _is_live_stale_sensitive_feature_key(feat_name):
+                        latest_ts = pd.to_datetime(
+                            finite_series.index[-1], utc=True, errors="coerce"
+                        )
+                        if pd.isna(latest_ts) or pd.Timestamp(latest_ts) < ts_utc:
+                            continue
+                    row[feat_name] = finite_series.iloc[-1]
                 elif isinstance(series, (pd.DataFrame, pd.Series)) and not series.empty:
                     finite_series = series.dropna()
                     if finite_series.empty:

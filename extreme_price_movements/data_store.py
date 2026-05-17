@@ -141,6 +141,12 @@ def _load_dotenv_if_present(path: str = ".env") -> None:
         tprint(f"Could not load dotenv file {env_path}: {exc}")
 
 
+def _load_local_env_if_present() -> None:
+    """Load local dotenv files without overriding process env variables."""
+    _load_dotenv_if_present(".env.local")
+    _load_dotenv_if_present(".env")
+
+
 def _symbol_alias_candidates(symbol: str) -> list[str]:
     canonical = _normalize_spot_symbol(symbol)
     raw = str(symbol or "").upper().strip()
@@ -387,32 +393,94 @@ class FileLock:
                 tprint(f"Error releasing lock {self.lock_file}: {e}")
 
 
+def _configured_exchange_id() -> str:
+    raw = (
+        os.environ.get("EPM_EXCHANGE")
+        or os.environ.get("EXCHANGE_NAME")
+        or os.environ.get("PRIMARY_EXCHANGE")
+        or "binance"
+    )
+    exchange_id = str(raw or "binance").strip().lower()
+    if exchange_id in {"okx", "okex"}:
+        return "okx"
+    if exchange_id in {"kraken", "krakenfutures", "kraken_futures"}:
+        return "kraken"
+    return "binance"
+
+
+def _env_first(*names: str) -> str:
+    for name in names:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _exchange_auth_config(exchange_id: str) -> Dict[str, Any]:
+    if exchange_id == "okx":
+        api_key = _env_first("OKX_API_KEY")
+        api_secret = _env_first("OKX_API_SECRET", "OKX_SECRET_KEY")
+        passphrase = _env_first("OKX_API_PASSPHRASE", "OKX_PASSPHRASE", "OKX_PASSWORD")
+        auth: Dict[str, Any] = {}
+        if api_key and api_secret:
+            auth.update({"apiKey": api_key, "secret": api_secret})
+            if passphrase:
+                auth["password"] = passphrase
+        return auth
+    if exchange_id == "kraken":
+        api_key = _env_first("KRAKEN_API_KEY")
+        api_secret = _env_first("KRAKEN_API_SECRET")
+        return {"apiKey": api_key, "secret": api_secret} if api_key and api_secret else {}
+    api_key = _env_first("BINANCE_API_KEY")
+    api_secret = _env_first("BINANCE_API_SECRET")
+    return {"apiKey": api_key, "secret": api_secret} if api_key and api_secret else {}
+
+
+def _perp_exchange_auth_config(exchange_id: str) -> Dict[str, Any]:
+    if exchange_id == "kraken":
+        api_key = _env_first("KRAKENFUTURES_API_KEY", "KRAKEN_API_KEY")
+        api_secret = _env_first("KRAKENFUTURES_API_SECRET", "KRAKEN_API_SECRET")
+        return {"apiKey": api_key, "secret": api_secret} if api_key and api_secret else {}
+    return _exchange_auth_config(exchange_id)
+
+
 def make_spot_exchange():
-    _load_dotenv_if_present()
-    api_key = os.environ.get("BINANCE_API_KEY", "").strip()
-    api_secret = os.environ.get("BINANCE_API_SECRET", "").strip()
+    _load_local_env_if_present()
+    exchange_id = _configured_exchange_id()
     config: Dict[str, Any] = {
         "enableRateLimit": True,
+        "timeout": int(os.getenv("EPM_CCXT_TIMEOUT_MS", "20000") or "20000"),
         "options": {"fetchCurrencies": False},
     }
-    if api_key and api_secret:
-        config.update({"apiKey": api_key, "secret": api_secret})
-    ex = _configure_exchange_http_pool(ccxt.binance(config))
+    config.update(_exchange_auth_config(exchange_id))
+    if exchange_id == "okx":
+        config["options"].update({"defaultType": "spot"})
+        ex = _configure_exchange_http_pool(ccxt.okx(config))
+    elif exchange_id == "kraken":
+        ex = _configure_exchange_http_pool(ccxt.kraken(config))
+    else:
+        ex = _configure_exchange_http_pool(ccxt.binance(config))
     ex.load_markets()
     return ex
 
 
 def make_perp_exchange():
-    _load_dotenv_if_present()
-    api_key = os.environ.get("BINANCE_API_KEY", "").strip()
-    api_secret = os.environ.get("BINANCE_API_SECRET", "").strip()
+    _load_local_env_if_present()
+    exchange_id = _configured_exchange_id()
     config: Dict[str, Any] = {
         "enableRateLimit": True,
-        "options": {"fetchCurrencies": False, "defaultType": "future"},
+        "timeout": int(os.getenv("EPM_CCXT_TIMEOUT_MS", "20000") or "20000"),
+        "options": {"fetchCurrencies": False},
     }
-    if api_key and api_secret:
-        config.update({"apiKey": api_key, "secret": api_secret})
-    ex = _configure_exchange_http_pool(ccxt.binanceusdm(config))
+    config.update(_perp_exchange_auth_config(exchange_id))
+    if exchange_id == "okx":
+        config["options"].update({"defaultType": "swap"})
+        ex = _configure_exchange_http_pool(ccxt.okx(config))
+    elif exchange_id == "kraken":
+        ex = _configure_exchange_http_pool(ccxt.krakenfutures(config))
+    else:
+        config["options"].update({"defaultType": "future"})
+        ex = _configure_exchange_http_pool(ccxt.binanceusdm(config))
     ex.load_markets()
     return ex
 
@@ -423,7 +491,7 @@ def _resolve_perp_symbol(exchange, spot_symbol: str) -> Optional[str]:
     base, quote = spot_symbol.split("/", 1)
     quote = quote.split(":", 1)[0].upper()
     preferred_quotes = [quote]
-    for fallback_quote in ("USDC", "USDT"):
+    for fallback_quote in ("USD", "USDC", "USDT"):
         if fallback_quote != quote:
             preferred_quotes.append(fallback_quote)
     seen_quotes = set()

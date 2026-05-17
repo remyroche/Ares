@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterable, Set
 
-KNOWN_QUOTES = ("USDT", "USDC", "BUSD", "USD1", "FDUSD", "TUSD", "BTC", "ETH")
+KNOWN_QUOTES = ("USDT", "USDC", "BUSD", "USD1", "FDUSD", "TUSD", "USD", "BTC", "ETH")
 
 
 def normalise_symbol(symbol: str) -> str:

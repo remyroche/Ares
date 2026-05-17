@@ -1,0 +1,27 @@
+{
+  "execution_account": "perps",
+  "items": [
+    {
+      "amount": 403.0,
+      "classification": "external_perp_position",
+      "entry_price": 0.03177995037220844,
+      "imported_for_monitoring": true,
+      "kind": "perp_position",
+      "quote_value": 12.80732,
+      "side": "short",
+      "symbol": "NIGHT/USD:USD"
+    }
+  ],
+  "margin_mode": "cross",
+  "mode": "live-test",
+  "quote_currency": "USD",
+  "summary": {
+    "active_positions_after_reconcile": 1,
+    "counts": {
+      "external_perp_position": 1
+    },
+    "item_count": 1,
+    "skipped": false
+  },
+  "timestamp": "2026-05-17T21:55:29.240297+00:00"
+}

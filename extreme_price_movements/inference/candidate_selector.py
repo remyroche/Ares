@@ -16,6 +16,70 @@ from extreme_price_movements.inference.config import _resolve_runtime_cfg
 from extreme_price_movements.utils import tprint
 
 
+def _feature_to_panel_flat(
+    name: str,
+    value: Any,
+    close_df: pd.DataFrame,
+) -> Optional[np.ndarray]:
+    """Coerce a live feature into the flat panel shape expected by mask mining.
+
+    Live feature dictionaries can contain full feature panels as well as
+    latest-only symbol vectors. LGBM rule evaluation expects every raw feature to
+    share the same flattened ``timestamp x symbol`` length as the active price
+    panel, so latest-only vectors are placed on the latest row and left NaN
+    elsewhere.
+    """
+    idx = close_df.index
+    columns = close_df.columns
+    n_ts, n_syms = close_df.shape
+    expected = int(n_ts * n_syms)
+
+    try:
+        if isinstance(value, pd.DataFrame):
+            return (
+                value.reindex(index=idx, columns=columns)
+                .to_numpy(dtype=np.float32, copy=False)
+                .reshape(-1)
+            )
+
+        if isinstance(value, pd.Series):
+            series = pd.to_numeric(value, errors="coerce")
+            if series.index.equals(idx) or set(series.index).issubset(set(idx)):
+                arr_2d = np.repeat(
+                    series.reindex(idx).to_numpy(dtype=np.float32)[:, None],
+                    n_syms,
+                    axis=1,
+                )
+                return arr_2d.reshape(-1)
+            if series.index.equals(columns) or set(series.index).issubset(set(columns)):
+                arr_2d = np.full((n_ts, n_syms), np.nan, dtype=np.float32)
+                arr_2d[-1, :] = series.reindex(columns).to_numpy(dtype=np.float32)
+                return arr_2d.reshape(-1)
+
+        arr = np.asarray(value, dtype=np.float32)
+        if arr.shape == close_df.shape:
+            return arr.reshape(-1)
+        flat = arr.reshape(-1)
+        if flat.size == expected:
+            return flat.astype(np.float32, copy=False)
+        if flat.size == n_syms:
+            arr_2d = np.full((n_ts, n_syms), np.nan, dtype=np.float32)
+            arr_2d[-1, :] = flat
+            return arr_2d.reshape(-1)
+        if flat.size == n_ts:
+            return np.repeat(flat[:, None], n_syms, axis=1).reshape(-1)
+    except Exception as exc:
+        tprint(f"candidate_selector: failed to align mask feature {name}: {exc}")
+        return None
+
+    tprint(
+        "candidate_selector: skipping mask feature with incompatible shape "
+        f"name={name} size={np.asarray(value).size if value is not None else 0} "
+        f"expected={expected} n_ts={n_ts} n_syms={n_syms}"
+    )
+    return None
+
+
 def _fallback_rank_candidates(
     panel: Dict[str, pd.DataFrame],
     feats: Dict[str, pd.DataFrame],
@@ -155,10 +219,9 @@ def _build_mask_for_mode(
 
     feats_1d = {}
     for k, v in feats.items():
-        if hasattr(v, "to_numpy"):
-            feats_1d[k] = v.to_numpy(dtype=np.float32).ravel()
-        else:
-            feats_1d[k] = np.asarray(v, dtype=np.float32).ravel()
+        arr = _feature_to_panel_flat(str(k), v, close_df)
+        if arr is not None:
+            feats_1d[str(k)] = arr
 
     fp = FeatureProcessor()
     X, metadata, _ = fp.prepare_features(feats_1d, idx_flat, sym_flat, mask_cfg)
@@ -274,7 +337,14 @@ def _build_mask_for_mode(
     if not hasattr(_build_mask_for_mode, "_zc_cache"):
         _build_mask_for_mode._zc_cache = {}
     _zc_cache = _build_mask_for_mode._zc_cache
-    _zc_key = int(z_bars)
+    _zc_key = (
+        int(z_bars),
+        int(n_ts),
+        int(n_syms),
+        str(close_df.index[0]) if len(close_df.index) else "",
+        str(close_df.index[-1]) if len(close_df.index) else "",
+        tuple(map(str, close_df.columns)),
+    )
     if _zc_key in _zc_cache:
         zc = _zc_cache[_zc_key]
         tprint("candidate_selector: _compute_z_cache complete (cached).")
@@ -438,9 +508,17 @@ def build_strategy_candidate_masks(
             out[strategy_id] = []
             continue
         latest = mask_df.reindex(index=close.index, columns=close.columns).iloc[-1]
-        out[strategy_id] = (
-            latest[latest.fillna(False).astype(bool)].index.astype(str).tolist()
+        latest_bool = latest.fillna(False).astype(bool)
+        passed = latest_bool[latest_bool].index.astype(str).tolist()
+        denominator = int(latest_bool.shape[0])
+        side = str(strategy.get("trade_side") or strategy.get("side") or "")
+        support = (float(len(passed)) / float(denominator)) if denominator > 0 else 0.0
+        tprint(
+            "candidate_selector: strategy mask latest support "
+            f"side={side or 'unknown'} strategy_id={strategy_id} "
+            f"passed={len(passed)}/{denominator} support={support:.2%}"
         )
+        out[strategy_id] = passed
     return out
 
 

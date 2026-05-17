@@ -4,6 +4,7 @@ import json
 import os
 import pickle
 import platform
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -28,6 +29,10 @@ from .candidates import (
 from .config import CANON_HORIZONS
 from .data_store import save_artifact_df
 from .ebm_on_lgbm import train_ebm_on_lgbm_candidate
+from .lgbm_pipeline import (
+    fit_lgbm_stability_full_model,
+    train_lgbm_stability_candidate,
+)
 
 # from .spike_anatomy import SpikeAnatomyModel
 from .feature_selection_extreme_events import mdi_feature_selection_v3
@@ -150,6 +155,133 @@ def _resolve_base_reg_vol_normalizer(
     vol = np.where(np.isfinite(vol), np.abs(vol), np.nan).astype(np.float32, copy=False)
     vol = np.clip(vol, 1e-6, None)
     return vol, source
+
+
+def _is_lgbm_pipeline_backend(cfg: dict[str, Any] | None, *, meta: bool = False) -> bool:
+    cfg_local = cfg if isinstance(cfg, dict) else {}
+    key = "meta_model_backend" if meta else "base_model_backend"
+    backend = str(
+        cfg_local.get(key)
+        or cfg_local.get("model_backend")
+        or os.getenv("EPM_MODEL_BACKEND", "")
+        or os.getenv("EPM_TRAINING_MODEL_BACKEND", "")
+        or ""
+    ).strip().lower()
+    return backend in {
+        "lgbm",
+        "lgbm_pipeline",
+        "lgbm_stability",
+        "lgbm_stability_pipeline",
+    }
+
+
+def _build_mfe_mae_soft_label(
+    df_local: pd.DataFrame,
+    y_hard: np.ndarray,
+    *,
+    cfg: dict[str, Any] | None = None,
+    label: str = "base",
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Build an anchored soft TP/SL/timeout label from path quality.
+
+    The endpoint remains the hard first TP/SL/timeout event. The continuous label
+    only grades the MFE/MAE path quality observed before that endpoint.
+    """
+    cfg_local = cfg if isinstance(cfg, dict) else {}
+    y_ref = np.asarray(y_hard, dtype=np.float32).reshape(-1)
+    out_fallback = np.clip(np.nan_to_num(y_ref, nan=0.0), 0.0, 1.0).astype(np.float32)
+    required = {"__mfe_ret__", "__mae_ret__", "__barrier_pct__"}
+    missing = sorted(c for c in required if c not in df_local.columns)
+    if missing:
+        return out_fallback, {
+            "enabled": False,
+            "reason": "missing_columns",
+            "missing_columns": missing,
+        }
+    n = min(len(df_local), len(y_ref))
+    mfe = np.asarray(df_local["__mfe_ret__"].values[:n], dtype=np.float64)
+    mae_raw = np.asarray(df_local["__mae_ret__"].values[:n], dtype=np.float64)
+    trgt = np.asarray(df_local["__barrier_pct__"].values[:n], dtype=np.float64)
+    y_ref = y_ref[:n]
+    if "__is_timeout__" in df_local.columns:
+        is_timeout = np.asarray(df_local["__is_timeout__"].values[:n], dtype=float) > 0.5
+    else:
+        is_timeout = np.zeros(n, dtype=bool)
+
+    costs = float(
+        cfg_local.get(
+            "lgbm_soft_label_costs",
+            cfg_local.get("round_trip_fee_pct", cfg_local.get("fee_pct", 0.0)),
+        )
+        or 0.0
+    )
+    min_opportunity_mult = float(
+        cfg_local.get(
+            "lgbm_soft_label_min_opportunity_mult",
+            os.getenv("EPM_LGBM_SOFT_LABEL_MIN_OPPORTUNITY_MULT", "0.25"),
+        )
+    )
+    temperature = float(
+        cfg_local.get(
+            "lgbm_soft_label_temperature",
+            os.getenv("EPM_LGBM_SOFT_LABEL_TEMPERATURE", "0.20"),
+        )
+    )
+    eps = 1e-12
+    mfe = np.maximum(np.nan_to_num(mfe, nan=0.0, posinf=0.0, neginf=0.0), 0.0)
+    mae_clean = np.nan_to_num(mae_raw, nan=0.0, posinf=0.0, neginf=0.0)
+    finite_mae = mae_clean[np.isfinite(mae_clean)]
+    # Some historical artifacts store MAE as positive adverse excursion, while
+    # others store it as signed negative return. Support both encodings.
+    if finite_mae.size and float(np.nanmedian(finite_mae)) >= 0.0:
+        mae_abs = np.maximum(mae_clean, 0.0)
+        mae_encoding = "positive_abs"
+    else:
+        mae_abs = np.maximum(-mae_clean, 0.0)
+        mae_encoding = "signed_negative"
+    trgt = np.clip(np.nan_to_num(trgt, nan=0.0, posinf=0.0, neginf=0.0), 1e-12, None)
+
+    mfe_net = np.maximum(mfe - costs, 0.0)
+    ratio_score = mfe_net / (mfe_net + mae_abs + eps)
+    opportunity_score = np.clip(
+        mfe_net / (min_opportunity_mult * trgt + eps),
+        0.0,
+        1.0,
+    )
+    raw_score = ratio_score * opportunity_score
+    quality = 1.0 / (1.0 + np.exp(-np.clip((raw_score - 0.5) / max(temperature, eps), -60.0, 60.0)))
+    quality = np.clip(quality, 0.0, 1.0)
+
+    is_tp = (y_ref >= 0.5) & (~is_timeout)
+    is_sl = (y_ref < 0.5) & (~is_timeout)
+    y_soft = np.empty(n, dtype=np.float64)
+    y_soft[is_tp] = 0.65 + 0.35 * quality[is_tp]
+    y_soft[is_sl] = 0.35 * quality[is_sl]
+    y_soft[is_timeout] = np.clip(quality[is_timeout], 0.3, 0.7)
+    y_soft = np.clip(np.nan_to_num(y_soft, nan=0.5), 0.0, 1.0).astype(np.float32)
+    if n < len(out_fallback):
+        merged = out_fallback.copy()
+        merged[:n] = y_soft
+        y_soft = merged
+
+    stats = {
+        "enabled": True,
+        "label": str(label),
+        "n": int(len(y_soft)),
+        "tp_count": int(np.sum(is_tp)),
+        "sl_count": int(np.sum(is_sl)),
+        "timeout_count": int(np.sum(is_timeout)),
+        "quality_mean": float(np.mean(quality)) if len(quality) else float("nan"),
+        "quality_std": float(np.std(quality)) if len(quality) else float("nan"),
+        "soft_mean": float(np.mean(y_soft)) if len(y_soft) else float("nan"),
+        "soft_std": float(np.std(y_soft)) if len(y_soft) else float("nan"),
+        "hard_mean": float(np.mean(out_fallback)) if len(out_fallback) else float("nan"),
+        "costs": costs,
+        "min_opportunity_mult": min_opportunity_mult,
+        "temperature": temperature,
+        "mae_encoding": mae_encoding,
+    }
+    return y_soft, stats
 
 
 def _build_base_regression_target(
@@ -1857,6 +1989,7 @@ def _fit_direct_extratrees_base_model(
     X,
     X_full=None,
     y,
+    y_hard_ref=None,
     sample_weight=None,
     returns=None,
     groups=None,
@@ -1882,7 +2015,12 @@ def _fit_direct_extratrees_base_model(
     race = ModelRace(kind=kind_name, task="base", n_splits=n_splits)
     y = np.asarray(y, dtype=np.float64)
     y = np.clip(y, 0.0, 1.0)
-    y_hard = (y >= 0.5).astype(np.int8)
+    y_hard_source = y if y_hard_ref is None else np.asarray(y_hard_ref, dtype=np.float64)
+    if len(y_hard_source) != len(y):
+        raise ValueError(
+            f"{kind_name}: y_hard_ref length {len(y_hard_source)} != target length {len(y)}"
+        )
+    y_hard = (np.clip(y_hard_source, 0.0, 1.0) >= 0.5).astype(np.int8)
     returns_arr = y if returns is None else np.asarray(returns, dtype=np.float64)
     sample_weight_arr = (
         None if sample_weight is None else np.asarray(sample_weight, dtype=np.float64)
@@ -1933,9 +2071,12 @@ def _fit_direct_extratrees_base_model(
             copy=False,
         )
 
+    _is_meta_hpo = str(hpo_objective_mode).lower() == "meta" or str(
+        kind_name
+    ).startswith("meta_")
     tprint(
         f"Base model race [{kind_name}]: ExtraTrees training disabled; "
-        "training EBMOnLGBM candidate only."
+        "training configured specialist candidate only."
     )
     p_unweighted_all, p_weighted_all = compute_prevalences(y_hard, sample_weight_arr)
     race._used_sample_weight_ = sample_weight_arr is not None
@@ -1959,9 +2100,33 @@ def _fit_direct_extratrees_base_model(
     candidate_scores: dict[str, float] = {}
     candidate_oof: dict[str, np.ndarray] = {}
     _cfg_local = cfg if isinstance(cfg, dict) else {}
-    _is_meta_hpo = str(hpo_objective_mode).lower() == "meta" or str(
-        kind_name
-    ).startswith("meta_")
+    _backend_key = "meta_model_backend" if _is_meta_hpo else "base_model_backend"
+    _backend_raw = str(
+        _cfg_local.get(_backend_key)
+        or _cfg_local.get("model_backend")
+        or os.getenv("EPM_MODEL_BACKEND", "")
+        or os.getenv("EPM_TRAINING_MODEL_BACKEND", "")
+        or "ebm_on_lgbm"
+    ).strip().lower()
+    _backend_aliases = {
+        "ebm": "ebm_on_lgbm",
+        "ebm_only": "ebm_on_lgbm",
+        "ebm_on_lgbm_only": "ebm_on_lgbm",
+        "lgbm": "lgbm_pipeline",
+        "lgbm_stability": "lgbm_pipeline",
+        "lgbm_stability_pipeline": "lgbm_pipeline",
+    }
+    _backend = _backend_aliases.get(_backend_raw, _backend_raw)
+    if _backend not in {"ebm_on_lgbm", "lgbm_pipeline"}:
+        tprint(
+            f"Model Race [{kind_name}]: unknown backend {_backend_raw!r}; "
+            "falling back to ebm_on_lgbm."
+        )
+        _backend = "ebm_on_lgbm"
+    tprint(
+        f"Model Race [{kind_name}]: backend={_backend} "
+        f"(scope={'meta' if _is_meta_hpo else 'base'})."
+    )
     _ebm_hpo_trials_override = (
         _cfg_local.get("meta_hpo_trials")
         if _is_meta_hpo and _cfg_local.get("meta_hpo_trials") is not None
@@ -1985,7 +2150,12 @@ def _fit_direct_extratrees_base_model(
         np.asarray(X_full_np, dtype=np.float32),
         columns=[f"f{i}" for i in range(np.asarray(X_full_np).shape[1])],
     )
-    for candidate_name, trainer in (("ebm_on_lgbm", train_ebm_on_lgbm_candidate),):
+    _candidate_trainers = (
+        (("lgbm_pipeline", train_lgbm_stability_candidate),)
+        if _backend == "lgbm_pipeline"
+        else (("ebm_on_lgbm", train_ebm_on_lgbm_candidate),)
+    )
+    for candidate_name, trainer in _candidate_trainers:
         try:
             tprint(
                 f"Model Race [{kind_name}]: training {candidate_name} candidate "
@@ -2002,6 +2172,21 @@ def _fit_direct_extratrees_base_model(
                     assets=symbols_arr,
                     hpo_objective_mode=hpo_objective_mode,
                 )
+            elif candidate_name == "lgbm_pipeline":
+                result = trainer(
+                    _race_X_df,
+                    y,
+                    sample_weight=sample_weight_arr,
+                    random_state=42,
+                    mode="classifier",
+                    timestamps=groups_arr,
+                    assets=symbols_arr,
+                    returns=returns_arr,
+                    hard_labels=y_hard,
+                    hpo_objective_mode=(
+                        "train_meta" if _is_meta_hpo else "train_base"
+                    ),
+                )
             else:
                 result = trainer(
                     _race_X_df,
@@ -2014,27 +2199,43 @@ def _fit_direct_extratrees_base_model(
                 continue
             oof = np.asarray(result.get("oof_probs"), dtype=np.float32)
             finite = np.isfinite(oof)
+            finite_n = int(np.sum(finite))
             race_n = int(
                 result.get("metrics", {}).get(
                     "race_n", len(np.asarray(result.get("race_idx", [])))
                 )
             )
+            if race_n <= 0 and candidate_name == "lgbm_pipeline":
+                stage_indices = result.get("stage_indices", {})
+                if isinstance(stage_indices, dict):
+                    race_n = int(
+                        len(np.asarray(stage_indices.get("lgbm_select", [])))
+                    )
+            if candidate_name == "lgbm_pipeline" and race_n <= 0:
+                race_n = finite_n
             coverage_denom = race_n if race_n > 0 else len(oof)
             coverage = (
-                float(np.sum(finite)) / max(float(coverage_denom), 1.0)
+                float(finite_n) / max(float(coverage_denom), 1.0)
                 if len(oof)
                 else 0.0
             )
-            if coverage <= 0.10 or int(np.sum(finite)) <= 20:
+            insufficient = finite_n <= 20 or (
+                candidate_name != "lgbm_pipeline" and coverage <= 0.10
+            )
+            if insufficient:
                 tprint(
                     f"Model Race [{kind_name}]: {candidate_name} insufficient OOF "
-                    f"coverage ({int(np.sum(finite))}/{coverage_denom}={coverage:.1%}; "
+                    f"coverage ({finite_n}/{coverage_denom}={coverage:.1%}; "
                     f"full_n={len(oof)})."
                 )
                 continue
             score = float(
                 result.get("metrics", {}).get(
-                    "J_Score", result.get("metrics", {}).get("J_final_oof", 0.0)
+                    "J_Score",
+                    result.get("metrics", {}).get(
+                        "J_final_oof",
+                        result.get("metrics", {}).get("J_final", 0.0),
+                    ),
                 )
             )
             candidate_results[candidate_name] = result
@@ -2055,7 +2256,7 @@ def _fit_direct_extratrees_base_model(
             cfg.get("strategy_selection_final_retrain", False)
         ):
             tprint(
-                f"Model Race [{kind_name}]: no EBMOnLGBM candidate had sufficient "
+                f"Model Race [{kind_name}]: no {_backend} candidate had sufficient "
                 "OOF coverage in lightweight strategy-selection mode; skipping head."
             )
             return None, _base_fit_failure_payload(
@@ -2063,7 +2264,7 @@ def _fit_direct_extratrees_base_model(
                 training_diagnostics={"n_total": int(len(y_hard))},
             )
         raise RuntimeError(
-            f"Model Race [{kind_name}]: no EBMOnLGBM candidate "
+            f"Model Race [{kind_name}]: no {_backend} candidate "
             "had sufficient OOF coverage; ExtraTrees training is disabled."
         )
 
@@ -2202,7 +2403,8 @@ def _fit_direct_extratrees_base_model(
         x_full_fit_df = pd.DataFrame(
             x_full_fit_np, columns=[f"f{i}" for i in range(x_full_fit_np.shape[1])]
         )
-        y_bin_full = np.asarray(y >= 0.5, dtype=np.int8)
+        y_fit_full = np.asarray(y, dtype=np.float32)
+        y_bin_full = np.asarray(y_hard, dtype=np.int8)
         w_base_full = (
             np.ones(len(y_bin_full), dtype=np.float32)
             if sample_weight_arr is None
@@ -2225,35 +2427,72 @@ def _fit_direct_extratrees_base_model(
                 selected_feature_names=result.get("selected_feature_names"),
             )
         else:
-            from extreme_price_movements.ebm_on_lgbm import fit_ebm_on_lgbm_full_model
+            if winning_candidate == "lgbm_pipeline":
+                cand_model = fit_lgbm_stability_full_model(
+                    x_full_fit_df,
+                    y_fit_full,
+                    w_base_full,
+                    selected_features_from_cv=result.get("selected_features_from_cv"),
+                    random_state=42,
+                    mode="classifier",
+                    oof_probs=cand_oof_full,
+                    metrics=cand_metrics,
+                    pruning_history=result.get("pruning_history", []),
+                    selected_feature_names=result.get("selected_feature_names"),
+                    stage_indices=result.get("stage_indices"),
+                    timestamps=groups_arr,
+                    assets=symbols_arr,
+                    returns=returns_arr,
+                    hard_labels=y_bin_full,
+                    hpo_trials_override=(
+                        int(_ebm_hpo_trials_override)
+                        if _ebm_hpo_trials_override is not None
+                        else None
+                    ),
+                    hpo_patience_override=(
+                        int(_ebm_hpo_patience_override)
+                        if _ebm_hpo_patience_override is not None
+                        else None
+                    ),
+                    hpo_objective_mode=(
+                        result.get("hpo_objective_mode")
+                        or ("train_meta" if _is_meta_hpo else "train_base")
+                    ),
+                )
+            else:
+                from extreme_price_movements.ebm_on_lgbm import (
+                    fit_ebm_on_lgbm_full_model,
+                )
 
-            cand_model = fit_ebm_on_lgbm_full_model(
-                x_full_fit_df,
-                y_bin_full,
-                w_base_full,
-                result["selected_features_from_cv"],
-                random_state=42,
-                mode="classifier",
-                oof_probs=cand_oof_full,
-                metrics=cand_metrics,
-                pruning_history=result.get("pruning_history", []),
-                selected_feature_names=result.get("selected_feature_names"),
-                stage_indices=result.get("stage_indices"),
-                timestamps=groups_arr,
-                assets=symbols_arr,
-                tree_feature_bundle=result.get("tree_feature_bundle"),
-                hpo_objective_mode=result.get("hpo_objective_mode", hpo_objective_mode),
-                hpo_trials_override=(
-                    int(_ebm_hpo_trials_override)
-                    if _ebm_hpo_trials_override is not None
-                    else None
-                ),
-                hpo_patience_override=(
-                    int(_ebm_hpo_patience_override)
-                    if _ebm_hpo_patience_override is not None
-                    else None
-                ),
-            )
+                cand_model = fit_ebm_on_lgbm_full_model(
+                    x_full_fit_df,
+                    y_bin_full,
+                    w_base_full,
+                    result["selected_features_from_cv"],
+                    random_state=42,
+                    mode="classifier",
+                    oof_probs=cand_oof_full,
+                    metrics=cand_metrics,
+                    pruning_history=result.get("pruning_history", []),
+                    selected_feature_names=result.get("selected_feature_names"),
+                    stage_indices=result.get("stage_indices"),
+                    timestamps=groups_arr,
+                    assets=symbols_arr,
+                    tree_feature_bundle=result.get("tree_feature_bundle"),
+                    hpo_objective_mode=result.get(
+                        "hpo_objective_mode", hpo_objective_mode
+                    ),
+                    hpo_trials_override=(
+                        int(_ebm_hpo_trials_override)
+                        if _ebm_hpo_trials_override is not None
+                        else None
+                    ),
+                    hpo_patience_override=(
+                        int(_ebm_hpo_patience_override)
+                        if _ebm_hpo_patience_override is not None
+                        else None
+                    ),
+                )
     if cand_model is None:
         if bool(cfg.get("strategy_selection_mode", False)) and not bool(
             cfg.get("strategy_selection_final_retrain", False)
@@ -2341,7 +2580,9 @@ def _fit_direct_extratrees_base_model(
                 "mean_return10_gross": cand_mean_return10_gross,
                 "mean_return30_gross": cand_mean_return30_gross,
             }
-    final_win_score = float(final_cand_metrics.get("J_final_oof", win_score))
+    final_win_score = float(
+        final_cand_metrics.get("J_final_oof", final_cand_metrics.get("J_final", win_score))
+    )
     if not np.isfinite(final_win_score):
         final_win_score = win_score
 
@@ -2373,7 +2614,9 @@ def _fit_direct_extratrees_base_model(
             **cand_rank_return_metrics,
             "mean_return10_gross": cand_mean_return10_gross,
             "mean_return30_gross": cand_mean_return30_gross,
-            "J_final_oof": float(final_cand_metrics.get("J_final_oof", 0.0)),
+            "J_final_oof": float(
+                final_cand_metrics.get("J_final_oof", final_cand_metrics.get("J_final", 0.0))
+            ),
             "lift30": float(final_cand_metrics.get("lift30", 0.0)),
             "stability30": cand_stability30,
             "feature_count": int(final_cand_metrics.get("feature_count", 0)),
@@ -2399,8 +2642,28 @@ def _fit_direct_extratrees_base_model(
     }
     _dm_unc = race.detailed_metrics[winning_candidate]
     for _metric_key, _metric_val in final_cand_metrics.items():
-        if _metric_key.startswith("metric_stage_") or _metric_key.startswith(
-            "metrics_assessment_"
+        if (
+            _metric_key.startswith("metric_stage_")
+            or _metric_key.startswith("metrics_assessment_")
+            or _metric_key
+            in {
+                "auc",
+                "brier",
+                "ece",
+                "lift10",
+                "lift20",
+                "lift30",
+                "ndcg10",
+                "ndcg20",
+                "ndcg30",
+                "ndcg_at_10",
+                "ndcg_at_20",
+                "ndcg_at_30",
+                "J_base",
+                "J_meta",
+                "J_final",
+                "J_final_oof",
+            }
         ):
             _dm_unc[_metric_key] = _metric_val
     for _attr, _key in (
@@ -6269,6 +6532,8 @@ def _optimize_training_sample_weights(
 
     X_frame = select_test_feature_frame(X_frame)
     X_np = np.asarray(X_frame, dtype=np.float32)
+    components_full = {k: np.asarray(v, dtype=float) for k, v in components.items()}
+    opt_idx = None
 
     fixed_component_alphas = cfg.get("sample_weight_component_alphas")
     if "meta" in stage_l:
@@ -6331,8 +6596,16 @@ def _optimize_training_sample_weights(
     tprint(
         f"[{stage}] sample-weight optimization objective={res.objective_value:.5f} alphas={res.component_alphas}"
     )
-    log_weight_statistics(res.optimized_weights, era, f"{stage}_optimized")
-    return np.asarray(res.optimized_weights, dtype=np.float32)
+    if opt_idx is not None:
+        optimized_weights = combine_weights_safely(
+            components_full,
+            res.component_alphas,
+            min_n_eff_ratio=float(cfg.get("sample_weight_opt_min_n_eff_ratio", 0.30)),
+        )
+    else:
+        optimized_weights = res.optimized_weights
+    log_weight_statistics(optimized_weights, era, f"{stage}_optimized")
+    return np.asarray(optimized_weights, dtype=np.float32)
 
 
 def _categorize_missing_training_features(
@@ -14274,6 +14547,69 @@ def train_meta_models_from_artifacts(
             tprint(f"Meta {k}: skipped (only {len(df)} union samples)")
             continue
 
+        if "__ts__" in df.columns and "__symbol__" in df.columns:
+            _primary_label_key = f"train_{k}_{int(_strategy_primary_h)}"
+            _path_source_df = datasets.get(_primary_label_key)
+            if _path_source_df is None:
+                _path_source_df = horizon_dfs.get(int(_strategy_primary_h), (None,))[0]
+            _path_cols_to_align = [
+                "__mfe_ret__",
+                "__mae_ret__",
+                "__bars_to_mfe__",
+                "__barrier_pct__",
+                "__y_outcome__",
+                "exit_code",
+                "__early_inval__",
+                "__mr_path_penalty__",
+                "__mr_velocity_penalty__",
+            ]
+            if (
+                _path_source_df is not None
+                and "__ts__" in _path_source_df.columns
+                and "__symbol__" in _path_source_df.columns
+            ):
+                _aligned_path_cols = []
+                for _pc in _path_cols_to_align:
+                    if _pc not in _path_source_df.columns:
+                        continue
+                    _needs_align = _pc not in df.columns
+                    if not _needs_align and _pc != "__y_outcome__":
+                        try:
+                            _needs_align = not np.isfinite(
+                                np.asarray(df[_pc].values, dtype=np.float64)
+                            ).any()
+                        except Exception:
+                            _needs_align = False
+                    if not _needs_align:
+                        continue
+                    if _pc in {"__y_outcome__", "exit_code"}:
+                        _aligned = _align_values_by_ts_symbol_keys(
+                            df["__ts__"].values,
+                            df["__symbol__"].values,
+                            _path_source_df["__ts__"].values,
+                            _path_source_df["__symbol__"].values,
+                            _path_source_df[_pc].values,
+                            fill_value="",
+                            dtype=object,
+                        )
+                    else:
+                        _aligned = _align_values_by_ts_symbol_keys(
+                            df["__ts__"].values,
+                            df["__symbol__"].values,
+                            _path_source_df["__ts__"].values,
+                            _path_source_df["__symbol__"].values,
+                            _path_source_df[_pc].values,
+                            fill_value=np.nan,
+                            dtype=np.float32,
+                        )
+                    df[_pc] = _aligned
+                    _aligned_path_cols.append(_pc)
+                if _aligned_path_cols:
+                    tprint(
+                        f"  Meta {k}: aligned path-quality label columns from "
+                        f"{_primary_label_key}: {_aligned_path_cols}"
+                    )
+
         _meta_cap_env = os.getenv("EPM_META_FIT_MAX_SAMPLES")
         _meta_cap = int(
             _meta_cap_env
@@ -14629,58 +14965,75 @@ def train_meta_models_from_artifacts(
         # participate in base-model MDI; they must enter here so meta-head MDI
         # can consider them.
         configured_meta = list(_meta_feature_keys_for_kind(cfg, strat, kind=None))
+        _meta_backend_ebm_only = str(cfg.get("meta_model_backend", "")).lower() in {
+            "ebm_on_lgbm_only",
+            "ebm_only",
+        }
+        _meta_backend_lgbm_pipeline = (
+            str(cfg.get("meta_model_backend", "")).lower() == "lgbm_pipeline"
+        )
         _stage1_cap = int(
             cfg.get(
                 "meta_feature_stage1_rows",
                 max(_meta_hpo_max_rows, 12000),
             )
         )
-        df_stage1 = df
-        if _stage1_cap > 0 and len(df_stage1) > _stage1_cap:
-            _pre_stage1 = len(df_stage1)
-            df_stage1 = subsample_symbol_balanced(df_stage1, _stage1_cap)
+        if _meta_backend_lgbm_pipeline:
+            feat_cols_stage1 = list(dict.fromkeys(configured_meta))
+            X_stage1 = pd.DataFrame(index=df.index)
+            stage1_idx = np.asarray(df.index, dtype=np.int64)
             tprint(
-                f"  Meta {k}: stage1 raw-feature subset {_pre_stage1} -> {len(df_stage1)} rows "
-                f"(cap={_stage1_cap})"
+                f"  Meta {k}: skipping stage1 raw-feature injection for "
+                f"lgbm_pipeline; passing {len(feat_cols_stage1)} configured "
+                "meta keys to full-frame LGBM selection"
             )
-        df_stage1 = _inject_raw_meta_features(
-            df_stage1,
-            configured_meta,
-            f"__meta_stage1__{k}",
-        )
-        feat_source_map_stage1 = _resolve_meta_raw_sources(df_stage1, configured_meta)
-        feat_cols_stage1 = list(dict.fromkeys(feat_source_map_stage1.keys()))
-        missing_meta_keys = [
-            mk for mk in configured_meta if mk not in feat_source_map_stage1
-        ]
-        tprint(
-            f"  Meta {k}: stage1 resolved raw meta keys {len(feat_cols_stage1)}/{len(configured_meta)} "
-            f"(missing={len(missing_meta_keys)})"
-        )
-        if missing_meta_keys:
+        else:
+            df_stage1 = df
+            if _stage1_cap > 0 and len(df_stage1) > _stage1_cap:
+                _pre_stage1 = len(df_stage1)
+                df_stage1 = subsample_symbol_balanced(df_stage1, _stage1_cap)
+                tprint(
+                    f"  Meta {k}: stage1 raw-feature subset {_pre_stage1} -> {len(df_stage1)} rows "
+                    f"(cap={_stage1_cap})"
+                )
+            df_stage1 = _inject_raw_meta_features(
+                df_stage1,
+                configured_meta,
+                f"__meta_stage1__{k}",
+            )
+            feat_source_map_stage1 = _resolve_meta_raw_sources(
+                df_stage1, configured_meta
+            )
+            feat_cols_stage1 = list(dict.fromkeys(feat_source_map_stage1.keys()))
+            missing_meta_keys = [
+                mk for mk in configured_meta if mk not in feat_source_map_stage1
+            ]
             tprint(
-                f"    Meta {k}: missing raw meta keys (first 20): {missing_meta_keys[:20]}"
+                f"  Meta {k}: stage1 resolved raw meta keys {len(feat_cols_stage1)}/{len(configured_meta)} "
+                f"(missing={len(missing_meta_keys)})"
             )
-        if not feat_cols_stage1:
-            tprint(f"Meta {k}: skipped (no raw meta features found after stage1 load)")
-            continue
-        _feat_stage1_dict = {}
-        for mk in feat_cols_stage1:
-            _col_val = df_stage1[feat_source_map_stage1[mk]]
-            if isinstance(_col_val, pd.DataFrame):
-                _feat_stage1_dict[mk] = _col_val.iloc[:, 0].values
-            else:
-                _feat_stage1_dict[mk] = _col_val.values
-        X_stage1 = (
-            pd.DataFrame(_feat_stage1_dict, index=df_stage1.index)
-            .fillna(0.0)
-            .astype(np.float32)
-        )
-        stage1_idx = np.asarray(df_stage1.index, dtype=np.int64)
-        _meta_backend_ebm_only = str(cfg.get("meta_model_backend", "")).lower() in {
-            "ebm_on_lgbm_only",
-            "ebm_only",
-        }
+            if missing_meta_keys:
+                tprint(
+                    f"    Meta {k}: missing raw meta keys (first 20): {missing_meta_keys[:20]}"
+                )
+            if not feat_cols_stage1:
+                tprint(
+                    f"Meta {k}: skipped (no raw meta features found after stage1 load)"
+                )
+                continue
+            _feat_stage1_dict = {}
+            for mk in feat_cols_stage1:
+                _col_val = df_stage1[feat_source_map_stage1[mk]]
+                if isinstance(_col_val, pd.DataFrame):
+                    _feat_stage1_dict[mk] = _col_val.iloc[:, 0].values
+                else:
+                    _feat_stage1_dict[mk] = _col_val.values
+            X_stage1 = (
+                pd.DataFrame(_feat_stage1_dict, index=df_stage1.index)
+                .fillna(0.0)
+                .astype(np.float32)
+            )
+            stage1_idx = np.asarray(df_stage1.index, dtype=np.int64)
         _stage1_fs_dir = os.path.join(
             str(cfg.get("data_root", "data")),
             "artifacts",
@@ -14719,8 +15072,15 @@ def train_meta_models_from_artifacts(
                 f"  Meta {k}: skipping stage1 MDI preselection for EBM-only backend; "
                 f"passing {len(preselected_raw_keys)} raw meta features to EBM selector"
             )
+        elif _meta_backend_lgbm_pipeline:
+            preselected_raw_keys = set(feat_cols_stage1)
+            tprint(
+                f"  Meta {k}: skipping stage1 MDI preselection for lgbm_pipeline; "
+                f"passing {len(preselected_raw_keys)} raw meta features to LGBM selector"
+            )
         if (
             (not _meta_backend_ebm_only)
+            and (not _meta_backend_lgbm_pipeline)
             and include_meta_reg
             and len(X_stage1.columns) > 0
         ):
@@ -14743,6 +15103,7 @@ def train_meta_models_from_artifacts(
                 tprint(f"  Meta {k}: reg stage1 preselection failed ({_sel_exc})")
         if (
             (not _meta_backend_ebm_only)
+            and (not _meta_backend_lgbm_pipeline)
             and include_meta_clf
             and len(X_stage1.columns) > 0
         ):
@@ -15383,7 +15744,11 @@ def train_meta_models_from_artifacts(
             for c in (cfg.get("test_feature_keys", []) or [])
             if isinstance(c, str)
         ]
-        if _ridge_test_keys and not _meta_backend_ebm_only:
+        if (
+            _ridge_test_keys
+            and not _meta_backend_ebm_only
+            and not _meta_backend_lgbm_pipeline
+        ):
             _keep_preselected = set(_ridge_test_keys)
             _keep_preselected.update(
                 {
@@ -15396,6 +15761,8 @@ def train_meta_models_from_artifacts(
                     "base_model_abs_error_roll20",
                 }
             )
+            _keep_preselected.update(str(c) for c in tree_uncertainty_cols)
+            _keep_preselected.update(str(c) for c in recent_effectiveness_cols)
             _pre_n = len(meta_model_cols)
             _filtered_cols = [c for c in meta_model_cols if c in _keep_preselected]
             if _filtered_cols:
@@ -15499,6 +15866,7 @@ def train_meta_models_from_artifacts(
         if include_meta_clf and str(cfg.get("meta_model_backend", "")).lower() in {
             "ebm_on_lgbm_only",
             "ebm_only",
+            "lgbm_pipeline",
         }:
             _h_main_ebm = int(_strategy_primary_h)
             _ret_ebm = np.asarray(_ret_for_h_aligned(_h_main_ebm), dtype=np.float32)
@@ -15725,24 +16093,55 @@ def train_meta_models_from_artifacts(
                 y_hard: np.ndarray,
                 label: str,
             ) -> None:
+                _y_model = np.asarray(y_soft, dtype=np.float32)
+                _y_hard_arr = np.asarray(y_hard, dtype=np.float32)
+                if _is_lgbm_pipeline_backend(cfg, meta=True) and str(label).lower() in {
+                    "base-target",
+                    "tbm",
+                }:
+                    _y_model_soft, _soft_stats = _build_mfe_mae_soft_label(
+                        df.reset_index(drop=True),
+                        _y_hard_arr,
+                        cfg=cfg,
+                        label=f"meta:{head_key}:{label}",
+                    )
+                    if bool(_soft_stats.get("enabled", False)):
+                        _y_model = np.asarray(_y_model_soft, dtype=np.float32)
+                        tprint(
+                            f"Meta LGBM soft labels [{head_key}]: "
+                            f"hard_mean={float(_soft_stats.get('hard_mean', np.nan)):.4f}, "
+                            f"soft_mean={float(_soft_stats.get('soft_mean', np.nan)):.4f}, "
+                            f"soft_std={float(_soft_stats.get('soft_std', np.nan)):.4f}, "
+                            f"quality_mean={float(_soft_stats.get('quality_mean', np.nan)):.4f}, "
+                            f"tp/sl/to={int(_soft_stats.get('tp_count', 0))}/"
+                            f"{int(_soft_stats.get('sl_count', 0))}/"
+                            f"{int(_soft_stats.get('timeout_count', 0))}, "
+                            f"mae={_soft_stats.get('mae_encoding', 'unknown')}."
+                        )
+                    else:
+                        tprint(
+                            f"Meta LGBM soft labels [{head_key}]: disabled "
+                            f"({_soft_stats.get('reason', 'unknown')}); using provided label."
+                        )
                 _valid = (
                     _fit_mask_ebm
-                    & np.isfinite(y_soft)
-                    & np.isfinite(y_hard)
-                    & (np.asarray(y_hard) >= 0.0)
+                    & np.isfinite(_y_model)
+                    & np.isfinite(_y_hard_arr)
+                    & (_y_hard_arr >= 0.0)
                 )
                 if int(np.sum(_valid)) < int(
                     cfg.get("sample_weight_opt_min_samples", 400)
                 ):
                     tprint(
-                        f"Meta {head_key}: skipped EBMOnLGBM {label} head "
+                    f"Meta {head_key}: skipped specialist {label} head "
                         f"(valid={int(np.sum(_valid))})"
                     )
                     return
                 _race, _diag = _fit_direct_extratrees_base_model(
                     kind_name=f"meta_{head_key}",
                     X=X_meta_models.loc[_valid].reset_index(drop=True),
-                    y=np.asarray(y_soft, dtype=np.float32)[_valid],
+                    y=_y_model[_valid],
+                    y_hard_ref=_y_hard_arr[_valid],
                     sample_weight=_w_seed[_valid],
                     returns=_ret_ebm[_valid],
                     groups=(
@@ -15756,30 +16155,30 @@ def train_meta_models_from_artifacts(
                     hpo_objective_mode="meta",
                 )
                 if _race is None or getattr(_race, "oof_probs", None) is None:
-                    tprint(f"Meta {head_key}: EBMOnLGBM {label} head failed.")
+                    tprint(f"Meta {head_key}: specialist {label} head failed.")
                     return
                 _race.strategy_name = str(k)
                 _race.meta_source_strategy_id_ = str(k)
                 _race.meta_head_key_ = str(head_key)
                 _race.meta_head_label_ = str(label)
                 _race.valid_idx_ = np.flatnonzero(_valid).astype(np.int32)
-                _race.y_move = np.asarray(y_hard, dtype=np.float32)[_valid]
-                _race.y_move_soft = np.asarray(y_soft, dtype=np.float32)[_valid]
+                _race.y_move = _y_hard_arr[_valid]
+                _race.y_move_soft = _y_model[_valid]
                 _race.move_threshold = np.zeros(int(np.sum(_valid)), dtype=np.float32)
                 _persist_meta_feature_contract(head_key, _race, label=label)
                 meta_models[head_key] = _race
-                _bucket_y_ret[head_key] = np.asarray(y_soft, dtype=np.float32).copy()
+                _bucket_y_ret[head_key] = _y_model.copy()
                 _bucket_metadata[head_key] = _meta_bucket_metadata()
                 _meta_clf_failures.pop(str(k), None)
                 _write_immediate_meta_oof_export(
                     head_key,
                     _race,
-                    y_soft_head=np.asarray(y_soft, dtype=np.float32),
-                    y_hard_head=np.asarray(y_hard, dtype=np.float32),
+                    y_soft_head=_y_model,
+                    y_hard_head=_y_hard_arr,
                     label=label,
                 )
                 tprint(
-                    f"Meta {head_key}: fitted EBMOnLGBM {label} classifier "
+                    f"Meta {head_key}: fitted specialist {label} classifier "
                     f"(valid={int(np.sum(_valid))}, backend={getattr(_race, 'best_model_name', 'ebm_on_lgbm')})."
                 )
 
@@ -16239,10 +16638,18 @@ def train_meta_models_from_artifacts(
             and not bool(cfg.get("strategy_selection_final_retrain", False))
             and str(cfg.get("meta_model_backend", "")).lower() == "ebm_on_lgbm_only"
         )
+        _skip_legacy_meta_clf_for_lgbm_pipeline = _is_lgbm_pipeline_backend(
+            cfg, meta=True
+        )
         if _skip_legacy_meta_clf_for_selection:
             tprint(
                 f"Meta {side}_{k}: skipped legacy MetaClassifierModel in "
                 "lightweight strategy-selection EBM-only mode."
+            )
+        elif _skip_legacy_meta_clf_for_lgbm_pipeline:
+            tprint(
+                f"Meta {side}_{k}: skipped legacy WeakResidualMetaClassifier; "
+                "lgbm_pipeline mode uses only the LGBM pipeline selector/model."
             )
         elif include_meta_clf and not _ran_aligned_map_v2 and not _meta_ebm_heads_trained:
             # Magnitude sigmoid: very slight top-40% upweight (same alpha as regressors)
@@ -16508,15 +16915,19 @@ def train_meta_models_from_artifacts(
                     base_oof_pred=(
                         np.asarray(
                             X_meta_models[_base_prob_col].values, dtype=np.float32
-                        )
+                        )[_fit_mask_main]
                         if _base_prob_col is not None
                         and _base_prob_col in X_meta_models.columns
-                        else np.asarray(y_target_clf, dtype=np.float32)
+                        else np.asarray(y_target_clf, dtype=np.float32)[
+                            _fit_mask_main
+                        ]
                     ),
                     y_true_clf=(
-                        np.asarray(df["__y_bin__"].values, dtype=np.float32)
+                        np.asarray(df["__y_bin__"].values, dtype=np.float32)[
+                            _fit_mask_main
+                        ]
                         if "__y_bin__" in df.columns
-                        else np.asarray(_y_move, dtype=np.float32)
+                        else np.asarray(_y_move, dtype=np.float32)[_fit_mask_main]
                     ),
                     base_threshold=float(cfg.get("base_clf_threshold", 0.5)),
                 )
@@ -16662,15 +17073,21 @@ def train_meta_models_from_artifacts(
                         base_oof_pred=(
                             np.asarray(
                                 X_meta_models[_base_prob_col].values, dtype=np.float32
-                            )
+                            )[_fit_mask_main]
                             if _base_prob_col is not None
                             and _base_prob_col in X_meta_models.columns
-                            else np.asarray(y_target_clf, dtype=np.float32)
+                            else np.asarray(y_target_clf, dtype=np.float32)[
+                                _fit_mask_main
+                            ]
                         ),
                         y_true_clf=(
-                            np.asarray(df["__y_bin__"].values, dtype=np.float32)
+                            np.asarray(df["__y_bin__"].values, dtype=np.float32)[
+                                _fit_mask_main
+                            ]
                             if "__y_bin__" in df.columns
-                            else np.asarray(_y_move, dtype=np.float32)
+                            else np.asarray(_y_move, dtype=np.float32)[
+                                _fit_mask_main
+                            ]
                         ),
                         base_threshold=float(cfg.get("base_clf_threshold", 0.5)),
                     )
@@ -17228,16 +17645,25 @@ def train_meta_models_from_artifacts(
     os.makedirs(meta_oof_dir, exist_ok=True)
     # Make the artifact directory self-consistent for this run.
     # Re-runs should not leave stale classifier/regression heads behind.
-    try:
-        import glob as _glob
+    _preserve_existing_meta_oof = str(
+        os.environ.get("EPM_META_PRESERVE_EXISTING_OOF", "")
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    if _preserve_existing_meta_oof:
+        tprint(
+            "Meta OOF export: preserving existing meta_oof parquet files "
+            "(EPM_META_PRESERVE_EXISTING_OOF=1)."
+        )
+    else:
+        try:
+            import glob as _glob
 
-        for _p in _glob.glob(os.path.join(meta_oof_dir, "meta_oof_*.parquet")):
-            try:
-                os.remove(_p)
-            except Exception:
-                pass
-    except Exception:
-        pass
+            for _p in _glob.glob(os.path.join(meta_oof_dir, "meta_oof_*.parquet")):
+                try:
+                    os.remove(_p)
+                except Exception:
+                    pass
+        except Exception:
+            pass
     # Remove stale legacy outputs for disabled heads.
     try:
         import glob as _glob
@@ -20217,12 +20643,38 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     # still bounded inside EBMOnLGBM by its stage sampling/HPO/final-fit
                     # caps; `_fit_idx` remains the selector/diagnostic capped subset.
                     X_sel = X[selected_feats]
-                    y_fit = y
+                    y_fit_hard = np.asarray(y, dtype=np.float32)
+                    y_fit = y_fit_hard
+                    if _is_lgbm_pipeline_backend(cfg, meta=False):
+                        y_soft_fit, soft_stats = _build_mfe_mae_soft_label(
+                            df.reset_index(drop=True),
+                            y_fit_hard,
+                            cfg=cfg,
+                            label=f"base:{key}",
+                        )
+                        if bool(soft_stats.get("enabled", False)):
+                            y_fit = np.asarray(y_soft_fit, dtype=np.float32)
+                            tprint(
+                                f"Base LGBM soft labels [{key}]: "
+                                f"hard_mean={float(soft_stats.get('hard_mean', np.nan)):.4f}, "
+                                f"soft_mean={float(soft_stats.get('soft_mean', np.nan)):.4f}, "
+                                f"soft_std={float(soft_stats.get('soft_std', np.nan)):.4f}, "
+                                f"quality_mean={float(soft_stats.get('quality_mean', np.nan)):.4f}, "
+                                f"tp/sl/to={int(soft_stats.get('tp_count', 0))}/"
+                                f"{int(soft_stats.get('sl_count', 0))}/"
+                                f"{int(soft_stats.get('timeout_count', 0))}, "
+                                f"mae={soft_stats.get('mae_encoding', 'unknown')}."
+                            )
+                        else:
+                            tprint(
+                                f"Base LGBM soft labels [{key}]: disabled "
+                                f"({soft_stats.get('reason', 'unknown')}); using hard labels."
+                            )
                     y_ret_fit = y_ret
                     w_fit = w
                     cols = list(selected_feats)
 
-                    y_hard_check = (y_fit >= 0.5).astype(int)
+                    y_hard_check = (y_fit_hard >= 0.5).astype(int)
                     tprint(
                         f"  Class dist: 0={int((y_hard_check==0).sum())} ({(y_hard_check==0).mean()*100:.1f}%), "
                         f"1={int((y_hard_check==1).sum())} ({(y_hard_check==1).mean()*100:.1f}%)"
@@ -20250,6 +20702,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         X=X_sel,
                         X_full=X,
                         y=y_fit,
+                        y_hard_ref=y_fit_hard,
                         sample_weight=w_fit,
                         returns=y_ret_fit,
                         groups=groups,
@@ -21162,6 +21615,36 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     )
                     continue
                 _model_dir = os.path.join(models_dir, f"{side}_{k}_H{_h}")
+                _feat_cols_for_contract = [
+                    str(_c) for _c in (_v.get("feat_cols", []) or [])
+                ]
+                _lgbm_selected_model_features = []
+                _lgbm_selected_input_features = []
+                try:
+                    _estimator = getattr(
+                        getattr(_race, "best_model", None), "estimator", None
+                    )
+                    _selected = [
+                        str(_c)
+                        for _c in (getattr(_estimator, "selected_features", []) or [])
+                    ]
+                    if _selected and all(
+                        re.fullmatch(r"f\d+", _name) for _name in _selected
+                    ):
+                        _mapped = []
+                        for _name in _selected:
+                            _idx = int(_name[1:])
+                            if _idx < 0 or _idx >= len(_feat_cols_for_contract):
+                                _mapped = []
+                                break
+                            _mapped.append(_feat_cols_for_contract[_idx])
+                        if _mapped:
+                            _lgbm_selected_model_features = _selected
+                            _lgbm_selected_input_features = _mapped
+                            setattr(_estimator, "input_feature_names", list(_mapped))
+                except Exception:
+                    _lgbm_selected_model_features = []
+                    _lgbm_selected_input_features = []
                 _race.save_native(_model_dir)
                 import json as _json
 
@@ -21186,10 +21669,12 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 with open(os.path.join(_model_dir, "columns.json"), "w") as _cf:
                     _json.dump(
                         {
-                            "feat_cols": _v.get("feat_cols", []),
+                            "feat_cols": _feat_cols_for_contract,
                             "selected_features": _v.get(
-                                "selected_features", _v.get("feat_cols", [])
+                                "selected_features", _feat_cols_for_contract
                             ),
+                            "lgbm_selected_model_features": _lgbm_selected_model_features,
+                            "lgbm_selected_input_features": _lgbm_selected_input_features,
                             "fit_row_count": int(
                                 len(
                                     np.asarray(

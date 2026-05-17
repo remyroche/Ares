@@ -63,22 +63,30 @@ def fetch_ticker_snapshot(
     now: Optional[pd.Timestamp] = None,
 ) -> ExecutionSnapshot:
     """Fetch ticker and enforce touch/spread/freshness requirements."""
-    now_ts = pd.Timestamp(now if now is not None else pd.Timestamp.now(tz="UTC"))
+    request_started_ts = pd.Timestamp(
+        now if now is not None else pd.Timestamp.now(tz="UTC")
+    )
+    now_ts = request_started_ts
     if now_ts.tzinfo is None:
         now_ts = now_ts.tz_localize("UTC")
     else:
         now_ts = now_ts.tz_convert("UTC")
     ticker = exchange.fetch_ticker(symbol)
+    received_ts = (
+        now_ts
+        if now is not None
+        else pd.Timestamp.now(tz="UTC").tz_convert("UTC")
+    )
     bid = _safe_float(ticker.get("bid"))
     ask = _safe_float(ticker.get("ask"))
     last = _safe_float(ticker.get("last"))
     ts_raw = ticker.get("timestamp")
-    ticker_ts = now_ts
+    exchange_ticker_ts = None
     if ts_raw is not None:
         try:
-            ticker_ts = pd.to_datetime(float(ts_raw), unit="ms", utc=True)
+            exchange_ticker_ts = pd.to_datetime(float(ts_raw), unit="ms", utc=True)
         except Exception:
-            ticker_ts = now_ts
+            exchange_ticker_ts = None
 
     reject = None
     mid = spread_bps = None
@@ -91,8 +99,8 @@ def fetch_ticker_snapshot(
         spread_bps = (ask - bid) / max(mid, 1e-12) * 10000.0
 
     if reject is None and _is_live_mode(mode):
-        age = (now_ts - ticker_ts).total_seconds()
-        if age > float(policy.max_ticker_age_seconds):
+        local_age = (received_ts - now_ts).total_seconds()
+        if local_age > float(policy.max_ticker_age_seconds):
             reject = "stale_ticker"
 
     spread_weight = 1.0
@@ -122,7 +130,24 @@ def fetch_ticker_snapshot(
         liquidity_capacity_weight=spread_weight,
         hard_reject=reject is not None,
         reject_reason=reject,
-        details={"ticker_timestamp": ticker_ts.isoformat(), "side": side},
+        details={
+            "ticker_request_started_at": now_ts.isoformat(),
+            "ticker_received_at": received_ts.isoformat(),
+            "ticker_fetch_latency_seconds": float(
+                max((received_ts - now_ts).total_seconds(), 0.0)
+            ),
+            "exchange_ticker_timestamp": (
+                exchange_ticker_ts.isoformat()
+                if exchange_ticker_ts is not None
+                else None
+            ),
+            "exchange_ticker_age_seconds": (
+                float(max((received_ts - exchange_ticker_ts).total_seconds(), 0.0))
+                if exchange_ticker_ts is not None
+                else None
+            ),
+            "side": side,
+        },
     )
 
 

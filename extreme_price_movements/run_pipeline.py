@@ -17,13 +17,24 @@ from pathlib import Path
 _mpl_cfg = os.environ.setdefault("MPLCONFIGDIR", "/tmp/mplconfig_epm")
 os.environ.setdefault("MPLBACKEND", "Agg")
 #
-# Keep native thread pools conservative on Apple Silicon. The meta-training stack
-# mixes Arrow, OpenBLAS, OpenMP/joblib and Python worker pools; unrestricted
+# Keep native thread pools conservative on Apple Silicon. The older meta-training
+# stack mixes Arrow, OpenBLAS, OpenMP/joblib and Python worker pools; unrestricted
 # defaults have repeatedly produced EXC_BAD_ACCESS / SIGSEGV crashes under load.
-# Users can still override any of these via the environment.
+# Native LGBM training is different: capping OMP_THREAD_LIMIT at 1 silently forces
+# LightGBM's n_jobs>1 fits back to one OpenMP thread. Users can still override any
+# of these via the environment.
+_is_lgbm_pipeline_run = (
+    str(os.environ.get("EPM_MODEL_BACKEND", "")).strip().lower() == "lgbm_pipeline"
+    or "lgbm_pipeline" in {str(arg).strip().lower() for arg in sys.argv}
+)
+try:
+    _lgbm_threads = str(max(1, int(os.environ.get("EPM_LGBM_N_JOBS", "3") or "3")))
+except Exception:
+    _lgbm_threads = "3"
+_default_omp_threads = _lgbm_threads if _is_lgbm_pipeline_run else "1"
 for _thread_env, _default in (
-    ("OMP_NUM_THREADS", "1"),
-    ("OMP_THREAD_LIMIT", "1"),
+    ("OMP_NUM_THREADS", _default_omp_threads),
+    ("OMP_THREAD_LIMIT", _default_omp_threads),
     ("OPENBLAS_NUM_THREADS", "1"),
     ("MKL_NUM_THREADS", "1"),
     ("NUMEXPR_NUM_THREADS", "1"),
@@ -1506,6 +1517,24 @@ def run_inference_backtest(cfg, ts_override=None, store=None):
 
 def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=None):
     _maintenance_checkpoint("train:start")
+    _backend = str(
+        cfg.get("model_backend")
+        or os.getenv("EPM_MODEL_BACKEND", "")
+        or os.getenv("EPM_TRAINING_MODEL_BACKEND", "")
+        or "ebm_on_lgbm"
+    ).strip().lower()
+    _backend_aliases = {
+        "ebm": "ebm_on_lgbm",
+        "ebm_only": "ebm_on_lgbm",
+        "ebm_on_lgbm_only": "ebm_on_lgbm",
+        "lgbm": "lgbm_pipeline",
+        "lgbm_stability": "lgbm_pipeline",
+        "lgbm_stability_pipeline": "lgbm_pipeline",
+    }
+    _backend = _backend_aliases.get(_backend, _backend)
+    cfg["model_backend"] = _backend
+    cfg["base_model_backend"] = _backend
+    tprint(f"Train backend: {_backend}")
     _base_hpo_trials_env = os.getenv("EPM_BASE_HPO_TRIALS")
     if _base_hpo_trials_env:
         try:
@@ -2060,6 +2089,22 @@ def run_all(cfg, ts_override=None):
 def run_train_meta(cfg, ts_override=None, store=None):
     """Re-run only meta model training, reusing existing base models."""
     _maintenance_checkpoint("train_meta:start")
+    _backend = str(
+        cfg.get("model_backend")
+        or os.getenv("EPM_MODEL_BACKEND", "")
+        or os.getenv("EPM_TRAINING_MODEL_BACKEND", "")
+        or "ebm_on_lgbm"
+    ).strip().lower()
+    _backend_aliases = {
+        "ebm": "ebm_on_lgbm",
+        "ebm_only": "ebm_on_lgbm",
+        "ebm_on_lgbm_only": "ebm_on_lgbm",
+        "lgbm": "lgbm_pipeline",
+        "lgbm_stability": "lgbm_pipeline",
+        "lgbm_stability_pipeline": "lgbm_pipeline",
+    }
+    _backend = _backend_aliases.get(_backend, _backend)
+    cfg["model_backend"] = _backend
     cfg["meta_train_regression_bucket_model"] = False
     cfg.setdefault("meta_train_q20_regression", False)
     cfg["meta_train_q20_regression"] = False
@@ -2098,8 +2143,12 @@ def run_train_meta(cfg, ts_override=None, store=None):
         "no",
         "off",
     }
-    cfg["meta_model_backend"] = "ebm_on_lgbm_only"
-    cfg["meta_training_pipeline_version"] = "legacy"
+    cfg["meta_model_backend"] = (
+        "lgbm_pipeline" if _backend == "lgbm_pipeline" else "ebm_on_lgbm_only"
+    )
+    cfg["meta_training_pipeline_version"] = (
+        "lgbm_pipeline" if _backend == "lgbm_pipeline" else "legacy"
+    )
     cfg["meta_run_pre_risk_optimisation"] = False
     _enabled_heads = []
     if cfg["meta_train_base_target_clf_head"]:
@@ -2114,7 +2163,8 @@ def run_train_meta(cfg, ts_override=None, store=None):
         else "no classifier heads"
     )
     tprint(
-        "Meta training forced to EBMOnLGBM-only: regression/XGB/Ridge heads disabled; "
+        f"Meta training backend={cfg['meta_model_backend']}: "
+        "regression/XGB/Ridge heads disabled; "
         f"{_head_msg} enabled; top fraction={_meta_top_frac:.0%}."
     )
     _meta_hpo_trials_env = os.getenv("EPM_META_HPO_TRIALS")
@@ -3319,6 +3369,15 @@ def main():
         help="Market mode for data/features/artifacts (default: spot).",
     )
     parser.add_argument(
+        "--model-backend",
+        choices=["ebm_on_lgbm", "lgbm_pipeline"],
+        default=None,
+        help=(
+            "Training specialist backend for train_base/train_meta "
+            "(default: EPM_MODEL_BACKEND or ebm_on_lgbm)."
+        ),
+    )
+    parser.add_argument(
         "-perps",
         "--perps",
         action="store_true",
@@ -3445,6 +3504,15 @@ def main():
         )
 
     _configure_report_roots(cfg)
+    if args.model_backend:
+        cfg["model_backend"] = args.model_backend
+        cfg["base_model_backend"] = args.model_backend
+        cfg["meta_model_backend"] = (
+            "lgbm_pipeline"
+            if args.model_backend == "lgbm_pipeline"
+            else "ebm_on_lgbm_only"
+        )
+        tprint(f"CLI model backend override: {args.model_backend}")
     cfg["optimise_use_ridge_oof"] = bool(args.optimise_use_ridge_oof)
     cfg["slice_planner_preset"] = "robust" if bool(args.robust_mode) else "fast"
     cfg["train_full_inference_models"] = bool(args.robust_mode)

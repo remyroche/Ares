@@ -5,7 +5,10 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from extreme_price_movements.inference.candidate_selector import select_candidates
+from extreme_price_movements.inference.candidate_selector import (
+    build_strategy_candidate_masks,
+    select_candidates,
+)
 from extreme_price_movements.inference.feature_generator import (
     _synthesize_live_safe_feature_keys,
 )
@@ -15,6 +18,7 @@ from extreme_price_movements.inference.run_inference import (
     _monitor_active_position_price_action,
 )
 from extreme_price_movements.inference.simple_policy_stop import (
+    MIN_TRAILING_GIVEBACK_FRAC,
     SIMPLE_POLICY_GENERATOR,
     SIMPLE_POLICY_SCHEMA,
     SimplePolicyStopDecision,
@@ -26,6 +30,7 @@ from extreme_price_movements.inference.simple_policy_stop import (
 )
 from extreme_price_movements.inference.trade_executor import (
     OCOExecutor,
+    STOP_MIN_CURRENT_DISTANCE_PCT,
     TradeExecutor,
     _classify_exchange_error,
     _default_cross_margin_dust_quote_threshold,
@@ -237,7 +242,11 @@ def test_policy_optimiser_stop_decision_uses_max_favorable_giveback():
     )
     max_favorable_abs = 4.0
     dynamic = min((max_favorable_abs / (2.0 * 1.5)) ** 1.4, 1.0)
-    expected = 100.0 + max_favorable_abs - (max_favorable_abs * 0.8 * (1.0 - dynamic))
+    trail_amount = max(
+        max_favorable_abs * 0.8 * (1.0 - dynamic),
+        100.0 * MIN_TRAILING_GIVEBACK_FRAC,
+    )
+    expected = 100.0 + max_favorable_abs - trail_amount
 
     assert decision.reason == "trailing_profit"
     assert decision.stop_price == pytest.approx(expected)
@@ -262,6 +271,51 @@ def test_select_candidates_rejects_legacy_threshold_overrides():
             extreme_pct=0.25,
             metric="ret12h",
         )
+
+
+def test_lgbm_strategy_masks_align_latest_symbol_vectors_with_panel_features():
+    idx = pd.date_range("2026-03-01", periods=4, freq="1h", tz="UTC")
+    symbols = ["A", "B", "C"]
+    close = pd.DataFrame(
+        {
+            "A": [100.0, 101.0, 102.0, 103.0],
+            "B": [100.0, 99.0, 98.0, 97.0],
+            "C": [100.0, 100.0, 100.0, 100.0],
+        },
+        index=idx,
+    )
+    panel = {
+        "close": close,
+        "high": close * 1.01,
+        "low": close * 0.99,
+        "open": close,
+        "volume": pd.DataFrame(100.0, index=idx, columns=symbols),
+    }
+    feats = {
+        "ret12h": close.pct_change().fillna(0.0),
+        "latest_symbol_score": pd.Series(
+            {"A": 0.9, "B": 0.1, "C": 0.8}, dtype=float
+        ),
+        "panel_score": pd.DataFrame(
+            {
+                "A": [0.1, 0.2, 0.3, 0.9],
+                "B": [0.1, 0.2, 0.3, 0.9],
+                "C": [0.1, 0.2, 0.3, 0.2],
+            },
+            index=idx,
+        ),
+    }
+    strategies = [
+        {
+            "strategy_id": "long_test",
+            "trade_side": "long",
+            "base_event_trigger": "(*)|(latest_symbol_score>0.5&panel_score>0.5)|(*)",
+        }
+    ]
+
+    masks = build_strategy_candidate_masks(panel, feats, strategies)
+
+    assert masks["long_test"] == ["A"]
 
 
 def test_select_candidates_falls_back_when_optimized_masks_are_silent():
@@ -401,7 +455,33 @@ def test_shadow_executor_exposes_monitorable_open_positions():
     assert statuses["BTC/USDT"]["status"] == "open"
     assert statuses["BTC/USDT"]["mode"] == "shadow"
     assert statuses["BTC/USDT"]["stop_price"] < 100.0
+    assert statuses["BTC/USDT"]["stop_order_id"].startswith("shadow-stop-")
     assert executor.get_active_positions()["BTC/USDT"]["last_order_status"] == "open"
+
+
+def test_shadow_retry_missing_protective_stop_reattaches_synthetic_stop():
+    executor = TradeExecutor(
+        mode="shadow",
+        exchange=None,
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}
+        },
+    )
+
+    rec = executor.execute_trade(
+        "BTC/USDT", "long", 0.5, price=100.0, bucket_key="long_mr"
+    )
+    assert rec["status"] == "recorded"
+    executor.positions["BTC/USDT"].pop("stop_order_id", None)
+    retry = executor.retry_missing_protective_stop(
+        "BTC/USDT", executor.positions["BTC/USDT"]
+    )
+
+    assert retry["success"] is True
+    assert retry["mode"] == "shadow"
+    assert retry["simulated"] is True
+    assert retry["stop_order_id"].startswith("shadow-stop-")
+    assert executor.positions["BTC/USDT"]["protective_stop_attached"] is True
 
 
 def test_shadow_monitor_updates_stop_from_trailing_price_action():
@@ -612,6 +692,7 @@ def test_exchange_error_classifier_covers_binance_failure_modes():
         "OrderImmediatelyFillable": "trigger_price_rejected",
         "STRATEGY_INVALID_TRIGGER_PRICE": "trigger_price_rejected",
         "CONDITIONAL_ORDER_TRIGGER_REJECT": "trigger_price_rejected",
+        "krakenfutures fetchOrder() is not supported yet": "unsupported_exchange_method",
         "network timeout while sending order": "network_timeout",
         "cancel rejected by exchange": "cancel_failed",
         "Duplicate clientOrderId was sent": "duplicate_client_order_id",
@@ -1121,6 +1202,162 @@ def test_monitor_orders_once_classifies_fetch_order_timeout(monkeypatch):
     assert "BTC/USDT" in active_after_monitor
 
 
+def test_monitor_orders_once_falls_back_to_open_orders_when_fetch_order_unsupported(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
+        lambda *args, **kwargs: pd.DataFrame(),
+    )
+
+    class _ListOnlyStopExchange(_FilterAwareExchange):
+        def fetch_order(self, order_id, symbol, params=None):
+            raise RuntimeError(
+                "krakenfutures fetchOrder() is not supported yet, "
+                "consider using fetchOpenOrders() and fetchClosedOrders() instead"
+            )
+
+        def fetch_open_orders(self, symbol, since=None, limit=None, params=None):
+            return [
+                {**order, "status": "open"}
+                for order in self.orders
+                if order.get("type") == "STOP_LOSS"
+            ]
+
+    exchange = _ListOnlyStopExchange()
+    executor = TradeExecutor(
+        mode="live",
+        exchange=exchange,
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        config={"monitor_interval_seconds": 300},
+    )
+    try:
+        result = executor.execute_trade(
+            "BTC/USDT", "long", 100.0, price=100.0, bucket_key="long_mr"
+        )
+        assert result["success"]
+        statuses = executor.monitor_orders_once()
+        active_after_monitor = executor.get_active_positions()
+    finally:
+        executor.shutdown()
+
+    status = statuses["BTC/USDT"]
+    assert status["status"] == "open"
+    assert status["resolved_via"] == "fetch_open_orders"
+    assert status["reconciled_after_error"] is True
+    assert status["fetch_order_error_category"] == "unsupported_exchange_method"
+    assert "BTC/USDT" in active_after_monitor
+
+
+def test_perps_reconciliation_imports_existing_position_and_stop(monkeypatch):
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
+        lambda *args, **kwargs: pd.DataFrame(),
+    )
+
+    class _PerpsRestartExchange(_FilterAwareExchange):
+        id = "krakenfutures"
+
+        def __init__(self):
+            super().__init__()
+            self.markets = {
+                "NIGHT/USD:USD": {
+                    "active": True,
+                    "limits": {
+                        "amount": {"min": 1.0, "max": 1_000_000.0},
+                        "cost": {"min": 1.0, "max": 1_000_000.0},
+                    },
+                    "contract": True,
+                    "swap": True,
+                    "quote": "USD",
+                    "settle": "USD",
+                    "info": {"status": "TRADING"},
+                }
+            }
+
+        def fetch_positions(self, symbols=None, params=None):
+            return [
+                {
+                    "symbol": "NIGHT/USD:USD",
+                    "contracts": 201.0,
+                    "side": "short",
+                    "entryPrice": 0.0318,
+                    "contractSize": 1.0,
+                }
+            ]
+
+        def fetch_open_orders(self, symbol, since=None, limit=None, params=None):
+            return [
+                {
+                    "id": "stop-1",
+                    "symbol": symbol,
+                    "type": "stop",
+                    "side": "buy",
+                    "amount": 100.0,
+                    "status": "open",
+                    "reduceOnly": True,
+                    "info": {"order_id": "stop-1", "stopPrice": "0.03285"},
+                },
+                {
+                    "id": "stop-2",
+                    "symbol": symbol,
+                    "type": "stop",
+                    "side": "buy",
+                    "amount": 101.0,
+                    "status": "open",
+                    "reduceOnly": True,
+                    "info": {"order_id": "stop-2", "stopPrice": "0.03285"},
+                }
+            ]
+
+    params = _simple_policy_params(strategy_id="short_mr")
+    exchange = _PerpsRestartExchange()
+    executor = TradeExecutor(
+        mode="live-test",
+        exchange=exchange,
+        bucket_params={"simple_policy_stop_params_by_strategy": {"short_mr": params}},
+        config={
+            "execution_account": "perps",
+            "market_mode": "perps",
+            "live_quote_currency": "USD",
+            "monitor_interval_seconds": 300,
+        },
+    )
+    executor._load_pending_entry_context = lambda symbol: {
+        "symbol": symbol,
+        "status": "pending",
+        "action": "enter",
+        "strategy_id": "short_mr",
+        "actual_entry_price": 0.0318,
+        "stop_price": 0.03285,
+        "barrier_frac": 0.03301886792452832,
+        "barrier_pct": 0.03301886792452832,
+        "sl_mult": 1.0,
+        "stop_policy_params_source": params["params_source"],
+        "stop_policy_params_hash": params["params_hash"],
+        "stop_policy_schema": SIMPLE_POLICY_SCHEMA,
+        "timestamp": "2026-05-17T21:28:04Z",
+    }
+    try:
+        report = executor.reconcile_cross_margin_account()
+        statuses = executor.monitor_orders_once()
+        active = executor.get_active_positions()
+    finally:
+        executor.shutdown()
+
+    assert report["summary"]["skipped"] is False
+    assert report["summary"]["active_positions_after_reconcile"] == 1
+    assert report["items"][0]["classification"] == "external_perp_position"
+    assert report["items"][0]["imported_for_monitoring"] is True
+    assert active["NIGHT/USD:USD"]["stop_order_id"] == "stop-1"
+    assert active["NIGHT/USD:USD"]["stop_order_ids"] == ["stop-1", "stop-2"]
+    assert active["NIGHT/USD:USD"]["stop_order_coverage"] == pytest.approx(201.0)
+    assert active["NIGHT/USD:USD"]["stop_price"] == pytest.approx(0.03285)
+    assert active["NIGHT/USD:USD"]["external_position"] is True
+    assert statuses["NIGHT/USD:USD"]["status"] == "open"
+    assert statuses["NIGHT/USD:USD"]["stop_order_coverage"] == pytest.approx(201.0)
+
+
 def test_raw_stop_replacement_api_removed_from_live_executor(monkeypatch):
     monkeypatch.setattr(
         "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
@@ -1460,7 +1697,7 @@ def test_raw_stop_replacement_method_is_removed():
         "_replace_stop_order_" + "raw",
     )
 
-def test_strict_immediate_trigger_preflight_does_not_cancel_existing_stop(monkeypatch):
+def test_strict_immediate_trigger_preflight_repairs_candidate_before_replace(monkeypatch):
     monkeypatch.setattr(
         "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
         lambda *args, **kwargs: pd.DataFrame(),
@@ -1487,10 +1724,15 @@ def test_strict_immediate_trigger_preflight_does_not_cancel_existing_stop(monkey
             reason_detail="invalid local trigger side",
         )
         executor.update_position_policy_state("BTC/USDT", policy_stop_decision=decision)
-        assert state["stop_price"] == old_stop
-        assert state["stop_order_id"] == old_order_id
-        assert exchange.canceled == []
-        assert state["stop_update_error_category"] == "policy_stop_rejected_by_exchange"
+        assert state["stop_price"] == pytest.approx(100.0 * (1.0 - STOP_MIN_CURRENT_DISTANCE_PCT))
+        assert state["stop_price"] > old_stop
+        assert state["stop_order_id"] != old_order_id
+        assert exchange.canceled[0][0] == old_order_id
+        assert "stop_update_error_category" not in state
+        assert any(
+            event.get("event") == "simple_policy_stop_min_current_distance_adjusted"
+            for event in state.get("trade_recap_events", [])
+        )
     finally:
         executor.shutdown()
 
@@ -1586,12 +1828,14 @@ def test_live_replacement_uses_position_barrier_when_artifact_has_none(monkeypat
             index=pd.date_range("2026-01-01", periods=1, freq="15min", tz="UTC"),
         )
         _evaluate_oco_policy("BTC/USDT", state, bars, executor)
-        assert state["stop_price"] == old_stop
-        assert state["stop_order_id"] == old_order_id
-        assert exchange.canceled == []
-        assert state["stop_update_error_category"] == "policy_stop_rejected_by_exchange"
+        assert state["barrier_frac"] == pytest.approx(0.02)
+        assert state["stop_price"] == pytest.approx(100.0 * (1.0 - STOP_MIN_CURRENT_DISTANCE_PCT))
+        assert state["stop_price"] > old_stop
+        assert state["stop_order_id"] != old_order_id
+        assert exchange.canceled[0][0] == old_order_id
+        assert "stop_update_error_category" not in state
         assert any(
-            event.get("event") == "simple_policy_stop_rejected_by_exchange"
+            event.get("event") == "simple_policy_stop_min_current_distance_adjusted"
             for event in state.get("trade_recap_events", [])
         )
     finally:

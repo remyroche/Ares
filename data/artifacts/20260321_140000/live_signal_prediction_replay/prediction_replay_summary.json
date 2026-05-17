@@ -1,0 +1,32 @@
+{
+  "base_pred_delta": {
+    "max_abs": null,
+    "mean": null,
+    "mean_abs": null,
+    "n": 0
+  },
+  "calibrated_score_delta": {
+    "max_abs": 0.2944936320139031,
+    "mean": -0.26822762257863036,
+    "mean_abs": 0.26822762257863036,
+    "n": 3
+  },
+  "live_rank_score_source_counts": {
+    "policy_rank_reference_percentile": 3
+  },
+  "meta_pred_delta": {
+    "max_abs": 0.2944936320139031,
+    "mean": -0.26822762257863036,
+    "mean_abs": 0.26822762257863036,
+    "n": 3
+  },
+  "policy_rank_reference_available_rows": 3,
+  "rank_percentile_delta": {
+    "max_abs": 0.17934465910619035,
+    "mean": -0.15361513290600204,
+    "mean_abs": 0.15361513290600204,
+    "n": 3
+  },
+  "replay_rows_with_features": 3,
+  "rows": 3
+}

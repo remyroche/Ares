@@ -1,0 +1,6 @@
+{
+  "candidate_rules": 2002,
+  "post_dedup_rules": 100,
+  "buckets": 1,
+  "checkpoint_path": "production_lgbm_outputs_perps/run_20260513_190136_589718/h10/atr_norm_returns_target/long/stage_a_context/stage_a_step1_checkpoint.pkl"
+}

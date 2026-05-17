@@ -613,10 +613,12 @@ def _inject_orderbook_summary_features(
     if basket:
         mkt_ob_pressure = feats["ob_book_pressure_l10"][basket].mean(axis=1)
         mkt_spread_bps = feats["ob_spread_bps"][basket].mean(axis=1)
+        mkt_spread_z = feats["ob_spread_z_24h"][basket].mean(axis=1)
         mkt_depth_z = feats["ob_depth_usd_l20_z"][basket].mean(axis=1)
     else:
         mkt_ob_pressure = pd.Series(0.0, index=idx, dtype=np.float32)
         mkt_spread_bps = pd.Series(0.0, index=idx, dtype=np.float32)
+        mkt_spread_z = pd.Series(0.0, index=idx, dtype=np.float32)
         mkt_depth_z = pd.Series(0.0, index=idx, dtype=np.float32)
 
     feats["xasset_asset_minus_mkt_ob_pressure"] = (
@@ -664,6 +666,13 @@ def _inject_orderbook_summary_features(
         index=idx,
         columns=cols,
     )
+    feats["xasset_mkt_spread_bps_z_24h"] = pd.DataFrame(
+        np.repeat(
+            np.asarray(mkt_spread_z, dtype=np.float32)[:, None], len(cols), axis=1
+        ),
+        index=idx,
+        columns=cols,
+    )
     feats["median_spread_bps"] = pd.DataFrame(
         np.repeat(
             np.asarray(
@@ -695,10 +704,15 @@ def _inject_orderbook_summary_features(
         index=idx,
         columns=cols,
     )
-    feats["xasset_mkt_ob_stress"] = (
-        feats["xasset_mkt_spread_bps"] - feats["xasset_mkt_depth_z"]
-    ).astype(np.float32)
-    feats["xasset_ob_stress_basket"] = feats["xasset_mkt_ob_stress"].astype(np.float32)
+    normalized_mkt_ob_stress = (
+        feats["xasset_mkt_spread_bps_z_24h"] - feats["xasset_mkt_depth_z"]
+    ).clip(-10, 10)
+    feats["xasset_mkt_ob_stress_z_24h"] = normalized_mkt_ob_stress.astype(np.float32)
+    feats["xasset_ob_stress_basket_z_24h"] = normalized_mkt_ob_stress.astype(
+        np.float32
+    )
+    feats["xasset_mkt_ob_stress"] = normalized_mkt_ob_stress.astype(np.float32)
+    feats["xasset_ob_stress_basket"] = normalized_mkt_ob_stress.astype(np.float32)
     feats["xasset_asset_minus_basket_ob_pressure"] = ff.numba_rolling_zscore_fused(
         feats["xasset_asset_minus_mkt_ob_pressure"].astype(np.float32), 24 * 7
     ).astype(np.float32)
@@ -2463,6 +2477,9 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     if _label_symbols_override:
         _override_set = set(_label_symbols_override)
         _filtered_syms = [s for s in train_syms if s in _override_set]
+        _max_label_assets = int(cfg.get("planned_max_assets", 0) or 0)
+        if _max_label_assets > 0 and len(_filtered_syms) > _max_label_assets:
+            _filtered_syms = _filtered_syms[:_max_label_assets]
         tprint(
             f"Label symbol override active: requested={len(_label_symbols_override)} matched={len(_filtered_syms)}"
         )

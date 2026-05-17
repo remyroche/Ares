@@ -40,6 +40,83 @@ def test_market_kill_switch_self_recovers_after_halt(tmp_path):
     assert recovered.active is False
 
 
+def test_market_kill_switch_ignores_single_asset_spike_when_average_is_safe(tmp_path):
+    switch = MarketKillSwitch(tmp_path / "market_kill_switch.json")
+    decision = switch.evaluate(
+        now=pd.Timestamp("2026-05-10T12:00:00Z"),
+        usdc_usdt_ticker={"last": 1.0},
+        btc_close=pd.Series([100.0, 115.0]),
+        eth_close=pd.Series([100.0, 100.0]),
+        basket_close=pd.DataFrame(
+            {
+                "BTC/USD:USD": [100.0, 115.0],
+                "ETH/USD:USD": [100.0, 100.0],
+                "SOL/USD:USD": [100.0, 100.0],
+                "XRP/USD:USD": [100.0, 100.0],
+            }
+        ),
+    )
+    assert decision.allow_new_entries is True
+    assert decision.active is False
+    assert decision.reason == "allowed"
+    assert decision.details["btc_1h_move"] > 0.07
+    assert decision.details["market_avg_1h_abs_move"] < 0.05
+
+
+def test_market_kill_switch_triggers_on_average_market_spike(tmp_path):
+    switch = MarketKillSwitch(tmp_path / "market_kill_switch.json")
+    decision = switch.evaluate(
+        now=pd.Timestamp("2026-05-10T12:00:00Z"),
+        usdc_usdt_ticker={"last": 1.0},
+        btc_close=pd.Series([100.0, 106.0]),
+        eth_close=pd.Series([100.0, 106.0]),
+        basket_close=pd.DataFrame(
+            {
+                "BTC/USD:USD": [100.0, 106.0],
+                "ETH/USD:USD": [100.0, 106.0],
+                "SOL/USD:USD": [100.0, 106.0],
+                "XRP/USD:USD": [100.0, 106.0],
+            }
+        ),
+    )
+    assert decision.allow_new_entries is False
+    assert decision.active is True
+    assert decision.reason == "MARKET_AVG_1H_MOVE_GT_5PCT"
+
+
+def test_market_kill_switch_does_not_preserve_deprecated_per_asset_halt(tmp_path):
+    path = tmp_path / "market_kill_switch.json"
+    path.write_text(
+        """
+        {
+          "active": true,
+          "reason": "BTC_1H_MOVE_GT_7PCT",
+          "halt_until": "2026-05-11T00:00:00+00:00",
+          "details": {"btc_1h_move": 0.15}
+        }
+        """,
+        encoding="utf-8",
+    )
+    switch = MarketKillSwitch(path)
+    decision = switch.evaluate(
+        now=pd.Timestamp("2026-05-10T12:00:00Z"),
+        usdc_usdt_ticker={"last": 1.0},
+        btc_close=pd.Series([100.0, 115.0]),
+        eth_close=pd.Series([100.0, 100.0]),
+        basket_close=pd.DataFrame(
+            {
+                "BTC/USD:USD": [100.0, 115.0],
+                "ETH/USD:USD": [100.0, 100.0],
+                "SOL/USD:USD": [100.0, 100.0],
+                "XRP/USD:USD": [100.0, 100.0],
+            }
+        ),
+    )
+    assert decision.allow_new_entries is True
+    assert decision.active is False
+    assert decision.reason == "allowed"
+
+
 def test_strategy_kill_switch_observe_only_does_not_block(tmp_path):
     switch = StrategyKillSwitch(tmp_path / "strategy_kill_switches.json")
     switch.set_state("long_test", active=True, reason="weak_hit_rate")

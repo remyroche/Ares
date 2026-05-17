@@ -1,0 +1,341 @@
+{
+  "cross_margin_residual_assets": [
+    "BNB"
+  ],
+  "dust_quote_threshold": 2.5,
+  "dust_to_bnb": {
+    "candidate_assets": [
+      "DOT",
+      "UNI"
+    ],
+    "converted": false,
+    "enabled": true,
+    "last_success_ts": "2026-05-11T20:48:24.047225+00:00",
+    "reason": "cooldown_active"
+  },
+  "execution_account": "margin",
+  "items": [
+    {
+      "amount": 80.07609668,
+      "asset": "ALGO",
+      "classification": "external_short_position",
+      "cleanup_skip_reason": "active_or_pending_trade_present",
+      "debt": 80.07609668,
+      "free": 0.0,
+      "imported_for_monitoring": true,
+      "interest": 0.00538907,
+      "kind": "debt",
+      "price": 0.1214,
+      "quote_value": 9.721238136952,
+      "side": "short",
+      "symbol": "ALGO/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 0.01814174,
+      "asset": "BNB",
+      "classification": "fee_token_or_collateral_residual",
+      "debt": 0.0,
+      "free": 0.01814174,
+      "imported_for_monitoring": false,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 652.58,
+      "quote_value": 11.8389366892,
+      "side": "long",
+      "symbol": "BNB/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 4.9680072200000005,
+      "asset": "CVX",
+      "classification": "external_short_position",
+      "cleanup_skip_reason": "active_or_pending_trade_present",
+      "debt": 4.9680072200000005,
+      "free": 0.0,
+      "imported_for_monitoring": true,
+      "interest": 0.00200722,
+      "kind": "debt",
+      "price": 1.923,
+      "quote_value": 9.553477884060001,
+      "side": "short",
+      "symbol": "CVX/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 0.013065,
+      "asset": "DOT",
+      "classification": "dust_residual",
+      "debt": 0.0,
+      "free": 0.013065,
+      "imported_for_monitoring": false,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 1.314,
+      "quote_value": 0.01716741,
+      "side": "long",
+      "symbol": "DOT/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 291.35,
+      "asset": "FLOKI",
+      "classification": "dust_to_repay",
+      "debt": 291.36,
+      "free": 0.01,
+      "gross_balance_quote_value": 3.522e-07,
+      "gross_debt_quote_value": 0.0102616992,
+      "imported_for_monitoring": false,
+      "interest": 0.34,
+      "kind": "net_exposure",
+      "netted_balance_and_debt": true,
+      "price": 3.522e-05,
+      "quote_value": 0.010261347,
+      "side": "short",
+      "symbol": "FLOKI/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 0.022720380000000002,
+      "asset": "MASK",
+      "classification": "dust_to_repay",
+      "debt": 0.022720380000000002,
+      "free": 0.0,
+      "imported_for_monitoring": false,
+      "interest": 0.00138158,
+      "kind": "debt",
+      "price": 0.521,
+      "quote_value": 0.011837317980000001,
+      "side": "short",
+      "symbol": "MASK/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 0.0075395,
+      "asset": "UNI",
+      "classification": "dust_residual",
+      "cleanup_skip_reason": "active_or_pending_trade_present",
+      "debt": 0.0,
+      "free": 0.0075395,
+      "imported_for_monitoring": false,
+      "interest": 0.0,
+      "kind": "balance",
+      "price": 3.721,
+      "quote_value": 0.0280544795,
+      "side": "long",
+      "symbol": "UNI/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 7.87456364,
+      "asset": "USDC",
+      "classification": "quote_debt_liability",
+      "debt": 7.87456364,
+      "free": 9.712,
+      "imported_for_monitoring": false,
+      "interest": 7.46e-06,
+      "kind": "debt",
+      "price": 1.0,
+      "quote_value": 7.87456364,
+      "side": "short",
+      "symbol": "USDC",
+      "used": 69.046667
+    },
+    {
+      "amount": 78.758667,
+      "asset": "USDC",
+      "classification": "quote_balance_available",
+      "debt": 7.87456364,
+      "free": 9.712,
+      "imported_for_monitoring": false,
+      "interest": 7.46e-06,
+      "kind": "balance",
+      "price": 1.0,
+      "quote_value": 78.758667,
+      "side": "long",
+      "symbol": "USDC",
+      "used": 69.046667
+    },
+    {
+      "amount": 1.8489156800000046,
+      "asset": "VANRY",
+      "classification": "dust_to_repay",
+      "cleanup_skip_reason": "active_or_pending_trade_present",
+      "debt": 172.49139568,
+      "free": 170.64248,
+      "gross_balance_quote_value": 0.9736859908800001,
+      "gross_debt_quote_value": 0.9842359037500801,
+      "imported_for_monitoring": false,
+      "interest": 0.00835722,
+      "kind": "net_exposure",
+      "netted_balance_and_debt": true,
+      "price": 0.005706,
+      "quote_value": 0.010549912870080027,
+      "side": "short",
+      "symbol": "VANRY/USDC",
+      "used": 0.0
+    },
+    {
+      "amount": 800.63372041,
+      "asset": "XAI",
+      "classification": "external_short_position",
+      "cleanup_skip_reason": "active_or_pending_trade_present",
+      "debt": 800.63372041,
+      "free": 0.0,
+      "imported_for_monitoring": true,
+      "interest": 0.83372041,
+      "kind": "debt",
+      "price": 0.01165,
+      "quote_value": 9.327382842776501,
+      "side": "short",
+      "symbol": "XAI/USDC",
+      "used": 0.0
+    }
+  ],
+  "margin_mode": "cross",
+  "margin_repay_attempts": [
+    {
+      "asset": "FLOKI",
+      "attempted": true,
+      "debt": 291.36,
+      "error": "repayMargin(0.009): binance repayMargin is deprecated, please use repayCrossMargin or repayIsolatedMargin instead; repay_margin(0.009): binance repayMargin is deprecated, please use repayCrossMargin or repayIsolatedMargin instead; sapiPostMarginRepay(0.009): binance {\"code\":51077,\"msg\":\"Precision is over the maximum defined for this asset.\"}; sapi_post_margin_repay(0.009): binance {\"code\":51077,\"msg\":\"Precision is over the maximum defined for this asset.\"}; margin/repay(0.009): binance {\"code\":51077,\"msg\":\"Precision is over the maximum defined for this asset.\"}",
+      "error_category": "insufficient_balance",
+      "free": 0.01,
+      "quote_value": 0.010261347,
+      "reason": "net_dust_to_repay",
+      "repay_amount": 0.00999,
+      "success": false
+    },
+    {
+      "asset": "MASK",
+      "attempted": false,
+      "debt": 0.022720380000000002,
+      "free": 0.0,
+      "quote_value": 0.011837317980000001,
+      "reason": "dust_to_repay",
+      "skip_reason": "no_free_balance_to_repay",
+      "success": false
+    }
+  ],
+  "mode": "live-test",
+  "quote_currency": "USDC",
+  "small_liability_exchange": {
+    "batch_error": "binance {\"code\":-9000,\"msg\":\"PARAM_VALIDATE_FAIL[Unsupported target asset]\"}",
+    "batch_error_category": "unsupported_liability_target",
+    "batch_variant_errors": "array_query:unsupported_liability_target:binance {\"code\":-9000,\"msg\":\"PARAM_VALIDATE_FAIL[Unsupported target asset]\"} | comma_query:unsupported_liability_target:binance {\"code\":-9000,\"msg\":\"PARAM_VALIDATE_FAIL[Unsupported target asset]\"} | json_array_query:unsupported_liability_target:binance {\"code\":-9000,\"msg\":\"PARAM_VALIDATE_FAIL[Unsupported target asset]\"}",
+    "candidate_assets": [
+      "FLOKI",
+      "MASK"
+    ],
+    "enabled": true,
+    "error": "binance {\"code\":-9000,\"msg\":\"PARAM_VALIDATE_FAIL[Unsupported target asset]\"}",
+    "error_category": "unsupported_liability_target",
+    "exchangeable_assets": [
+      "ALGO",
+      "CVX",
+      "FLOKI",
+      "MASK",
+      "VANRY",
+      "XAI"
+    ],
+    "exchanged": false,
+    "failures": [
+      {
+        "asset": "FLOKI",
+        "error": "binance {\"code\":-9000,\"msg\":\"PARAM_VALIDATE_FAIL[Unsupported target asset]\"}",
+        "error_category": "unsupported_liability_target",
+        "variant_errors": "array_query:unsupported_liability_target:binance {\"code\":-9000,\"msg\":\"PARAM_VALIDATE_FAIL[Unsupported target asset]\"} | comma_query:unsupported_liability_target:binance {\"code\":-9000,\"msg\":\"PARAM_VALIDATE_FAIL[Unsupported target asset]\"} | json_array_query:unsupported_liability_target:binance {\"code\":-9000,\"msg\":\"PARAM_VALIDATE_FAIL[Unsupported target asset]\"}"
+      },
+      {
+        "asset": "MASK",
+        "error": "binance {\"code\":-9000,\"msg\":\"PARAM_VALIDATE_FAIL[Unsupported target asset]\"}",
+        "error_category": "unsupported_liability_target",
+        "variant_errors": "array_query:unsupported_liability_target:binance {\"code\":-9000,\"msg\":\"PARAM_VALIDATE_FAIL[Unsupported target asset]\"} | comma_query:unsupported_liability_target:binance {\"code\":-9000,\"msg\":\"PARAM_VALIDATE_FAIL[Unsupported target asset]\"} | json_array_query:unsupported_liability_target:binance {\"code\":-9000,\"msg\":\"PARAM_VALIDATE_FAIL[Unsupported target asset]\"}"
+      }
+    ],
+    "filtered_assets": [
+      "FLOKI",
+      "MASK"
+    ],
+    "liability_target_assets": [
+      "USDC"
+    ]
+  },
+  "small_position_cleanup": {
+    "attempts": [
+      {
+        "amount": 0.0075395,
+        "asset": "UNI",
+        "attempted": false,
+        "classification": "dust_residual",
+        "exchange_min_notional": 5.0,
+        "price": 3.721,
+        "quote_value": 0.0280544795,
+        "reason": "dust_residual",
+        "side": "long",
+        "skip_reason": "below_exchange_min_notional_use_liability_api",
+        "success": false,
+        "symbol": "UNI/USDC"
+      },
+      {
+        "amount": 0.013065,
+        "asset": "DOT",
+        "attempted": false,
+        "classification": "dust_residual",
+        "exchange_min_notional": 5.0,
+        "price": 1.314,
+        "quote_value": 0.01716741,
+        "reason": "dust_residual",
+        "side": "long",
+        "skip_reason": "below_exchange_min_notional_use_liability_api",
+        "success": false,
+        "symbol": "DOT/USDC"
+      },
+      {
+        "amount": 0.022720380000000002,
+        "asset": "MASK",
+        "attempted": false,
+        "classification": "dust_to_repay",
+        "exchange_min_notional": 5.0,
+        "price": 0.521,
+        "quote_value": 0.011837317980000001,
+        "reason": "dust_to_repay",
+        "side": "short",
+        "skip_reason": "below_exchange_min_notional_use_liability_api",
+        "success": false,
+        "symbol": "MASK/USDC"
+      },
+      {
+        "amount": 291.35,
+        "asset": "FLOKI",
+        "attempted": false,
+        "classification": "dust_to_repay",
+        "exchange_min_notional": 1.0,
+        "price": 3.522e-05,
+        "quote_value": 0.010261347,
+        "reason": "net_dust_to_repay",
+        "side": "short",
+        "skip_reason": "below_exchange_min_notional_use_liability_api",
+        "success": false,
+        "symbol": "FLOKI/USDC"
+      }
+    ],
+    "candidate_count": 4,
+    "enabled": true,
+    "threshold_quote": 1.0
+  },
+  "summary": {
+    "active_positions_after_reconcile": 3,
+    "counts": {
+      "dust_residual": 2,
+      "dust_to_repay": 3,
+      "external_short_position": 3,
+      "fee_token_or_collateral_residual": 1,
+      "quote_balance_available": 1,
+      "quote_debt_liability": 1
+    },
+    "item_count": 11,
+    "skipped": false
+  },
+  "timestamp": "2026-05-12T15:45:06.509900+00:00"
+}

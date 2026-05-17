@@ -1,0 +1,20 @@
+{
+  "horizons": [
+    5,
+    10
+  ],
+  "target_names": [
+    "returns_target",
+    "atr_norm_returns_target"
+  ],
+  "total_combinations": 4,
+  "completed_combinations": 4,
+  "total_rules": 0,
+  "deduplicated_rules": 0,
+  "cross_target_rules_count": 0,
+  "universal_rules_count": 0,
+  "merge_stats": {
+    "total_rules": 0,
+    "unique_canonical_keys": 0
+  }
+}

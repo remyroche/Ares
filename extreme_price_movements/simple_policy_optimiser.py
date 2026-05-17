@@ -29,6 +29,9 @@ if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
 
 from extreme_price_movements.data_store import read_parquet_projected
+from extreme_price_movements.inference.policy_rank_reference import (
+    persist_policy_rank_reference,
+)
 from extreme_price_movements.path_utils import resolve_mode_file
 from extreme_price_movements.slice_plan_store import decode_slice_plan_payload
 
@@ -92,6 +95,7 @@ ADVERSE_EXIT_FAST_BARS = 4
 ADVERSE_EXIT_MAX_MFE_ATR = 0.25
 ADVERSE_EXIT_MAX_SL_FRACTION = 0.75
 ADVERSE_EXIT_MIN_MAE_ATR_FLOOR = 0.1
+MIN_TRAILING_GIVEBACK_FRAC = 0.003
 TRAILING_CLUSTER_FEATURE_RANGES: Dict[str, Tuple[float, float]] = {
     "sl_mult": (0.5, 1.5),
     "trailing_activation_mult": (0.5, 2.5),
@@ -120,9 +124,9 @@ PORTFOLIO_POLICY_MAX_CONCURRENT_POSITIONS = 8
 PORTFOLIO_POLICY_CONCURRENT_FRACTION = 0.75
 PORTFOLIO_POLICY_MAX_CONCURRENT_PER_SIDE = None
 PORTFOLIO_POLICY_MAX_CONCURRENT_PER_STRATEGY = None
-PORTFOLIO_POLICY_MAX_TOTAL_WALLET_ALLOCATION_PCT = 0.75
+PORTFOLIO_POLICY_MAX_TOTAL_WALLET_ALLOCATION_PCT = 0.95
 PORTFOLIO_POLICY_MAX_AVAILABLE_WALLET_POSITION_PCT = 0.50
-PORTFOLIO_POLICY_MAX_POSITION_WALLET_PCT = 0.15
+PORTFOLIO_POLICY_MAX_POSITION_WALLET_PCT = 0.20
 PORTFOLIO_POLICY_MAX_POSITION_QUOTE_NOTIONAL = 5000.0
 PORTFOLIO_POLICY_BOOK_NOTIONAL_MULTIPLIER = 1.0
 PORTFOLIO_POLICY_LEVERAGE_WALLET_MULTIPLIER = 1.0
@@ -135,6 +139,9 @@ BASE_TO_META_TOP_FRAC = 0.40
 DEPLOYMENT_THRESHOLD_MIN = 0.50
 DEPLOYMENT_THRESHOLD_MAX = 0.99
 DEPLOYMENT_THRESHOLD_PRECISION = 0.01
+DEPLOYMENT_RANK_THRESHOLD_EXTRA_REQUIREMENT = float(
+    os.environ.get("EPM_POLICY_DEPLOYMENT_RANK_EXTRA_REQUIREMENT", "0.10")
+)
 DEPLOYMENT_MAX_CONCURRENT_PER_ASSET = 1
 DEPLOYMENT_MAX_CONCURRENT_PER_STRATEGY = max(
     1,
@@ -645,6 +652,10 @@ def simulate_and_score(
         trail_amount = (
             max_favorable[active_idx] * giveback_beta * (1.0 - dynamic_giveback)
         )
+        trail_amount = np.maximum(
+            trail_amount,
+            entry * MIN_TRAILING_GIVEBACK_FRAC,
+        )
 
         trail_level_long = entry + (max_favorable[active_idx] - trail_amount)
         trail_level_short = entry - (max_favorable[active_idx] - trail_amount)
@@ -898,15 +909,15 @@ def apply_deployment_concurrency_constraints(
 
 
 def _slippage_adjusted_mean_gross_positive(metrics: Dict[str, Any]) -> bool:
-    """Return whether avg gross PnL remains positive after the slippage buffer."""
+    """Return whether avg net PnL remains positive after Stage-A execution costs.
+
+    ``net_gain`` from the simple TP/SL simulator already includes the configured
+    Stage-A round-trip cost assumption. The gross slippage-adjusted field is
+    retained for diagnostics only; using it here would double-count the same
+    threshold-discovery cost and push deployment thresholds artificially high.
+    """
     return (
-        float(
-            metrics.get(
-                "mean_gross_trade_slippage_adjusted",
-                metrics.get("mean_net_trade", 0.0),
-            )
-            or 0.0
-        )
+        float(metrics.get("mean_net_trade", 0.0) or 0.0)
         > 0.0
         and int(metrics.get("n_trades", 0) or 0) > 0
     )
@@ -1397,7 +1408,7 @@ def discover_deployment_rank_threshold_simple_grid(
         float(r["deployment_rank_threshold"]) for r in profitable
     ]
     best["threshold_search"] = {
-        "method": "full_policy_rank_grid_simple_tp_sl_iq20_positive_slippage_adjusted_mean_gross_trade",
+        "method": "full_policy_rank_grid_simple_tp_sl_iq20_positive_mean_net_trade",
         "all_in_execution_cost_assumption_pct": float(
             SIMPLE_DISCOVERY_ROUND_TRIP_COST_PCT
         ),
@@ -4328,6 +4339,13 @@ def _generate_policy_predictions_from_models(
     from extreme_price_movements.model_loader import load_full_state
 
     full_state = load_full_state(run_id, data_root)
+    if str(os.environ.get("EPM_SIMPLE_POLICY_REGIME_ADAPTOR", "1")).strip().lower() in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }:
+        full_state["regime_adaptors"] = {}
     orchestrator = ModelOrchestrator(full_state, full_state)
     strategy_ids = sorted(str(sid) for sid in orchestrator.alpha_by_strategy.keys())
     if strategy_ids_allowlist:
@@ -4804,6 +4822,7 @@ def _build_portfolio_policy_config_payload() -> Dict[str, Any]:
     return {
         "schema_version": "portfolio_policy_v1",
         "max_concurrent_positions": PORTFOLIO_POLICY_MAX_CONCURRENT_POSITIONS,
+        "reserved_position_slots": DEPLOYMENT_MAX_CONCURRENT_PER_STRATEGY,
         "max_concurrent_per_side": PORTFOLIO_POLICY_MAX_CONCURRENT_PER_SIDE,
         "max_concurrent_per_strategy": PORTFOLIO_POLICY_MAX_CONCURRENT_PER_STRATEGY,
         "max_total_wallet_allocation_pct": (
@@ -4832,9 +4851,9 @@ def _build_portfolio_policy_config_payload() -> Dict[str, Any]:
         "orderbook_precheck_enabled": True,
         "max_orderbook_slippage_bps": 50.0,
         "max_spread_bps": 25.0,
-        "hard_max_spread_bps": 75.0,
+        "hard_max_spread_bps": 100.0,
         "min_liquidity_capacity_weight": 0.25,
-        "max_ticker_age_seconds": 30.0,
+        "max_ticker_age_seconds": 4.0,
         "max_signal_gap_bps_default": 150.0,
         "max_order_chase_bps": 30.0,
         "entry_order_timeout_seconds": 10.0,
@@ -4858,7 +4877,7 @@ def _build_portfolio_policy_config_payload() -> Dict[str, Any]:
         "liquidity": {
             "max_orderbook_slippage_bps": 50.0,
             "max_spread_bps": 25.0,
-            "hard_max_spread_bps": 75.0,
+            "hard_max_spread_bps": 100.0,
             "min_liquidity_capacity_weight": 0.25,
         },
     }
@@ -4872,8 +4891,13 @@ def run_simple_policy_optimisation(
     n_trials: Optional[int] = None,
     strategy_ids: Optional[Sequence[str]] = None,
     market_mode: Optional[str] = None,
+    enable_regime_adaptor: Optional[bool] = None,
 ):
     market_mode = _normalise_market_mode(market_mode)
+    if enable_regime_adaptor is None:
+        enable_regime_adaptor = str(
+            os.environ.get("EPM_SIMPLE_POLICY_REGIME_ADAPTOR", "1")
+        ).strip().lower() not in {"0", "false", "no", "off"}
     data_root = _resolve_market_data_root(data_root, market_mode)
     artifacts_root = Path(data_root) / "artifacts"
     if run_id is None:
@@ -4986,6 +5010,36 @@ def run_simple_policy_optimisation(
             for sid, frame in meta_oof.items()
             if not _filter_policy_quote_rows(frame, market_mode).empty
         }
+    elif strategy_ids_allowlist:
+        missing_strategy_ids = set(strategy_ids_allowlist).difference(meta_oof.keys())
+        if missing_strategy_ids:
+            logger.warning(
+                "Precomputed meta OOF is missing %s allowlisted strategy ids; "
+                "generating missing policy-slice predictions from inference models.",
+                len(missing_strategy_ids),
+            )
+            generated_oof, generated_sources = _generate_policy_predictions_from_models(
+                data_root=data_root,
+                run_id=run_id,
+                stage_view=stage_view,
+                max_strategies=None,
+                strategy_ids_allowlist=missing_strategy_ids,
+                market_mode=market_mode,
+            )
+            for sid, frame in generated_oof.items():
+                if sid in meta_oof:
+                    continue
+                filtered = _filter_policy_quote_rows(frame, market_mode)
+                if filtered.empty:
+                    continue
+                meta_oof[sid] = _ensure_regime_prediction_context(
+                    filtered,
+                    data_root=data_root,
+                    run_id=run_id,
+                    strategy_id=sid,
+                    stage_view=stage_view,
+                )
+                meta_oof_sources[sid] = generated_sources.get(sid, "model_generation")
 
     n_trials = int(
         n_trials
@@ -5076,6 +5130,29 @@ def run_simple_policy_optimisation(
         if n_policy < 10:
             continue
 
+        try:
+            ref_path = persist_policy_rank_reference(
+                df_policy_all,
+                data_root=data_root,
+                run_id=run_id,
+                strategy_id=strategy_id,
+                market_mode=market_mode,
+            )
+            logger.info(
+                "[%s] Persisted policy rank reference: path=%s rows=%s",
+                strategy_id,
+                ref_path,
+                n_policy,
+            )
+        except Exception as exc:
+            logger.error(
+                "[%s] Failed to persist policy rank reference; skipping strategy "
+                "to avoid non-reproducible live rank thresholds: %s",
+                strategy_id,
+                exc,
+            )
+            continue
+
         all_policy_paths = _fetch_policy_paths(df_policy_all, ds)
         stage_a_round_trip_cost_pct = float(SIMPLE_DISCOVERY_ROUND_TRIP_COST_PCT)
         stage_a_cost_pct = stage_a_round_trip_cost_pct / 2.0
@@ -5092,8 +5169,25 @@ def run_simple_policy_optimisation(
             hi=DEPLOYMENT_THRESHOLD_MAX,
             precision=DEPLOYMENT_THRESHOLD_PRECISION,
         )
-        deployment_rank_threshold = float(
+        raw_deployment_rank_threshold = float(
             deployment_threshold_metrics.get("deployment_rank_threshold", 1.0)
+        )
+        deployment_rank_threshold = float(
+            np.clip(
+                raw_deployment_rank_threshold
+                + DEPLOYMENT_RANK_THRESHOLD_EXTRA_REQUIREMENT,
+                0.0,
+                DEPLOYMENT_THRESHOLD_MAX,
+            )
+        )
+        deployment_threshold_metrics["raw_deployment_rank_threshold"] = float(
+            raw_deployment_rank_threshold
+        )
+        deployment_threshold_metrics["deployment_rank_threshold"] = float(
+            deployment_rank_threshold
+        )
+        deployment_threshold_metrics["deployment_rank_extra_requirement"] = float(
+            DEPLOYMENT_RANK_THRESHOLD_EXTRA_REQUIREMENT
         )
         trade_idx = np.flatnonzero(
             df_policy_all["rank_pct"].to_numpy(dtype=np.float32)
@@ -5103,12 +5197,15 @@ def run_simple_policy_optimisation(
         all_paths = _path_take(all_policy_paths, trade_idx)
         n = len(df_top)
         logger.info(
-            "[%s] Stage A threshold discovery selected rank>=%.4f from %s full "
+            "[%s] Stage A threshold discovery selected raw_rank>=%.4f; "
+            "deployed_rank>=%.4f after extra_requirement=%.4f from %s full "
             "policy rows -> %s Stage B optimisation rows. simple_sl=%.2f "
             "simple_tp=%.2f mean_net_trade=%.6f n_trades=%s "
             "stage_a_round_trip_cost=%.4f",
             strategy_id,
+            raw_deployment_rank_threshold,
             deployment_rank_threshold,
+            DEPLOYMENT_RANK_THRESHOLD_EXTRA_REQUIREMENT,
             n_policy,
             n,
             float(deployment_threshold_metrics.get("simple_sl_mult", np.nan)),
@@ -5278,19 +5375,25 @@ def run_simple_policy_optimisation(
         final_policy_deployment_metrics = score_deployment_threshold_rows(
             final_policy_threshold_rows
         )
-        regime_adaptor_summary = _fit_regime_adaptor_from_simple_policy(
-            data_root=data_root,
-            run_id=run_id,
-            strategy_id=strategy_id,
-            df_policy_all=df_policy_all,
-            all_policy_paths=all_policy_paths,
-            trade_idx=trade_idx,
-            final_params=final_params,
-            final_size_power=final_size_power,
-            cost_pct=cost_pct,
-            deployment_rank_threshold=deployment_rank_threshold,
-            market_mode=market_mode,
-        )
+        if enable_regime_adaptor:
+            regime_adaptor_summary = _fit_regime_adaptor_from_simple_policy(
+                data_root=data_root,
+                run_id=run_id,
+                strategy_id=strategy_id,
+                df_policy_all=df_policy_all,
+                all_policy_paths=all_policy_paths,
+                trade_idx=trade_idx,
+                final_params=final_params,
+                final_size_power=final_size_power,
+                cost_pct=cost_pct,
+                deployment_rank_threshold=deployment_rank_threshold,
+                market_mode=market_mode,
+            )
+        else:
+            regime_adaptor_summary = {
+                "status": "disabled",
+                "reason": "simple_policy_regime_adaptor_disabled",
+            }
         asset_metrics = build_asset_metrics_from_simulation(
             selected_rows=df_top,
             metrics=deployment_sim_metrics,
@@ -5696,15 +5799,17 @@ if __name__ == "__main__":
         default="spot",
         help="Market mode for data/artifact files (default: spot).",
     )
-    parser.add_argument("--perps", action="store_true", help="Alias for --market-mode perps")
+    parser.add_argument(
+        "--perps", action="store_true", help="Alias for --market-mode perps"
+    )
     parser.add_argument("--max-strategies", type=int, default=None)
     parser.add_argument("--n-trials", type=int, default=None)
     parser.add_argument("--strategy-ids", type=str, default="")
     parser.add_argument("--regime-only", action="store_true")
     parser.add_argument(
-        "--perps",
+        "--no-regime-adaptor",
         action="store_true",
-        help="Use *_perps data/features and write *_perps outputs. Default is *_spot.",
+        help="Skip fitting simple-policy regime adaptor artifacts.",
     )
     args = parser.parse_args()
 
@@ -5727,4 +5832,5 @@ if __name__ == "__main__":
             n_trials=args.n_trials,
             strategy_ids=cli_strategy_ids,
             market_mode=cli_market_mode,
+            enable_regime_adaptor=not args.no_regime_adaptor,
         )

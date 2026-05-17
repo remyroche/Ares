@@ -21,6 +21,7 @@ from extreme_price_movements.path_utils import mode_file_candidates
 SIMPLE_POLICY_SCHEMA = "simple_policy_v1"
 SIMPLE_POLICY_GENERATOR = "simple_policy_optimiser"
 ADVERSE_EXIT_MAX_SL_FRACTION = 0.75
+MIN_TRAILING_GIVEBACK_FRAC = 0.003
 
 REQUIRED_SIMPLE_POLICY_STOP_FIELDS = (
     "sl_mult",
@@ -835,6 +836,10 @@ def compute_simple_policy_stop_decision(
         trail_amount = (
             max_favorable_abs * validated.giveback_beta * (1.0 - dynamic_giveback)
         )
+        trail_amount = max(
+            float(trail_amount),
+            float(entry_price) * MIN_TRAILING_GIVEBACK_FRAC,
+        )
         locked_profit_abs = max_favorable_abs - trail_amount
         trail_stop = (
             entry_price + locked_profit_abs
@@ -850,7 +855,8 @@ def compute_simple_policy_stop_decision(
             detail = (
                 f"trailing_profit: mfe={float(mfe):.6g} activation={activation:.6g} "
                 f"giveback_beta={validated.giveback_beta:.6g} "
-                f"dynamic_giveback={dynamic_giveback:.6g}"
+                f"dynamic_giveback={dynamic_giveback:.6g} "
+                f"min_trailing_giveback_frac={MIN_TRAILING_GIVEBACK_FRAC:.6g}"
             )
 
     should_replace = (

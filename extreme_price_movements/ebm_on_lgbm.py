@@ -791,6 +791,37 @@ class EBMOnLGBMModel:
         self.metrics: dict[str, Any] = {}
         self.pruning_history: list[dict[str, Any]] = []
 
+    def _uses_raw_classifier_scores_for_parity(self) -> bool:
+        """Return whether persisted OOF state says raw EBM scores are canonical.
+
+        Some fitted classifier artifacts intentionally fall back from a collapsed
+        spline/isotonic postprocessor to raw EBM probabilities to preserve the
+        cross-sectional ranking used by policy optimisation.  That decision
+        must be artifact-level, not batch-size-dependent, otherwise a row scored
+        alone can differ from the same row scored inside the live batch.
+        """
+        if self.mode != "classifier":
+            return False
+        raw = getattr(self, "oof_probs_raw_ebm", None)
+        final = getattr(self, "oof_probs", None)
+        if raw is None or final is None:
+            return False
+        try:
+            raw_arr = np.asarray(raw, dtype=np.float64).reshape(-1)
+            final_arr = np.asarray(final, dtype=np.float64).reshape(-1)
+        except Exception:
+            return False
+        if raw_arr.shape != final_arr.shape or raw_arr.size < 2:
+            return False
+        mask = np.isfinite(raw_arr) & np.isfinite(final_arr)
+        if int(np.sum(mask)) < 2:
+            return False
+        raw_arr = raw_arr[mask]
+        final_arr = final_arr[mask]
+        if float(np.nanstd(raw_arr)) <= 1e-6:
+            return False
+        return bool(np.allclose(raw_arr, final_arr, rtol=1e-6, atol=1e-6))
+
     def _frame(self, X: Any) -> pd.DataFrame:
         if isinstance(X, pd.DataFrame):
             X_df = X.copy()
@@ -803,6 +834,44 @@ class EBMOnLGBMModel:
                 re.fullmatch(r"f\d+", name) is not None for name in raw_names
             )
             missing_raw = sum(1 for name in raw_names if name not in X_df.columns)
+            positional_mapping = (
+                getattr(self, "positional_feature_mapping", None)
+                or getattr(self, "meta_positional_feature_mapping_", None)
+                or {}
+            )
+            if (
+                synthetic_raw_contract
+                and missing_raw
+                and isinstance(positional_mapping, dict)
+                and positional_mapping
+            ):
+                mapped = pd.DataFrame(index=X_df.index)
+                missing_real: list[str] = []
+                for raw_name in raw_names:
+                    real_name = str(positional_mapping.get(raw_name, ""))
+                    if real_name and real_name in X_df.columns:
+                        mapped[raw_name] = X_df[real_name]
+                    else:
+                        mapped[raw_name] = 0.0
+                        missing_real.append(real_name or raw_name)
+                extra_cols = [c for c in X_df.columns if c not in set(positional_mapping.values())]
+                if extra_cols:
+                    X_df = pd.concat([mapped, X_df[extra_cols]], axis=1)
+                else:
+                    X_df = mapped
+                missing_raw = sum(1 for name in raw_names if name not in X_df.columns)
+                if not getattr(self, "_explicit_contract_warned", False):
+                    if missing_real:
+                        tprint(
+                            "EBMOnLGBM: applied explicit fN feature contract with "
+                            f"{len(missing_real)} missing real features zero-filled."
+                        )
+                    else:
+                        tprint(
+                            "EBMOnLGBM: applied explicit fN feature contract for "
+                            "inference."
+                        )
+                    self._explicit_contract_warned = True
             if (
                 synthetic_raw_contract
                 and missing_raw == len(raw_names)
@@ -856,11 +925,26 @@ class EBMOnLGBMModel:
             return np.full(len(X_df), fill, dtype=np.float32)
         preds: list[np.ndarray] = []
         raw_preds: list[np.ndarray] = []
+        use_raw_for_parity = self._uses_raw_classifier_scores_for_parity()
         for model, pp in zip(self.models, self.postprocessors):
             raw = _predict_raw_ebm(model, X_df, self.mode)
             raw_preds.append(raw)
-            preds.append(pp.predict(raw))
+            if use_raw_for_parity:
+                preds.append(raw)
+            else:
+                preds.append(pp.predict(raw))
         out = np.mean(np.vstack(preds), axis=0).astype(np.float32)
+        if (
+            use_raw_for_parity
+            and self.mode == "classifier"
+            and not getattr(self, "_raw_parity_scores_warned", False)
+        ):
+            tprint(
+                "EBMOnLGBM: using raw EBM probabilities for classifier inference "
+                "because persisted OOF final scores match raw EBM scores; this "
+                "keeps single-row replay and live batch scoring batch-invariant."
+            )
+            self._raw_parity_scores_warned = True
         if (
             self.mode == "classifier"
             and len(out) > 1
@@ -1019,6 +1103,7 @@ def _compute_soft_tree_features_ebm(
     all_features = []
     out_names = []
     forced_tree_value_count = 0
+    selected_name_fallback_values: dict[str, np.ndarray] = {}
     selected_names_str = (
         {str(name) for name in selected_names} if selected_names is not None else None
     )
@@ -1142,6 +1227,9 @@ def _compute_soft_tree_features_ebm(
 
             value_name = f"{model_prefix}_tree{ti}_value"
             tree_pred = np.sum(soft_leaves * leaf_values, axis=1)
+            if selected_names_str is not None:
+                for requested_name in selected_by_tree.get((model_prefix, ti), set()):
+                    selected_name_fallback_values[str(requested_name)] = tree_pred
             n_before_tree = len(out_names)
             emit_feature(value_name, tree_pred)
 
@@ -1174,6 +1262,20 @@ def _compute_soft_tree_features_ebm(
                 requested_tree_names.add(name)
         emitted = set(out_names)
         missing = requested_tree_names - emitted
+        recovered_missing = 0
+        for name in sorted(missing):
+            fallback_values = selected_name_fallback_values.get(name)
+            if fallback_values is None:
+                continue
+            if emit_feature(name, fallback_values, force=True):
+                recovered_missing += 1
+        if recovered_missing:
+            tprint(
+                "EBMOnLGBM: recovered missing selected soft-tree features with "
+                f"per-tree value fallbacks ({recovered_missing} recovered)."
+            )
+            emitted = set(out_names)
+            missing = requested_tree_names - emitted
         if missing:
             tprint(
                 "EBMOnLGBM: missing selected tree features during soft-tree generation "
@@ -4201,7 +4303,7 @@ def _ebm_specs(pruning: bool, random_state: int) -> list[dict[str, Any]]:
 
 
 def _predict_raw_ebm(model: Any, X: pd.DataFrame, mode: str) -> np.ndarray:
-    X_pred = _coerce_ebm_feature_types(X)
+    X_pred = _coerce_ebm_feature_types_for_model(model, X)
     if mode == "classifier" and hasattr(model, "predict_proba"):
         p = np.asarray(model.predict_proba(X_pred), dtype=np.float64)
         if p.ndim == 2 and p.shape[1] > 1:
@@ -4213,8 +4315,28 @@ def _predict_raw_ebm(model: Any, X: pd.DataFrame, mode: str) -> np.ndarray:
 def _binary_feature_mask(X: pd.DataFrame) -> np.ndarray:
     mask = np.zeros(X.shape[1], dtype=bool)
     for i, col in enumerate(X.columns):
-        vals = pd.unique(X[col].dropna())
-        if len(vals) <= 2:
+        series = X[col].dropna()
+        if series.empty:
+            continue
+        if pd.api.types.is_bool_dtype(series):
+            mask[i] = True
+            continue
+        vals = pd.unique(series)
+        if len(vals) > 2:
+            continue
+        try:
+            arr = np.asarray(vals, dtype=np.float64)
+        except Exception:
+            continue
+        if not np.all(np.isfinite(arr)):
+            continue
+        rounded = np.rint(arr)
+        # Do not infer "binary" from batch cardinality alone.  Live replay may
+        # score one row at a time; a single continuous value like 0.73 must not
+        # be rounded simply because it is the only observed value in that call.
+        if np.all(np.isclose(arr, rounded, rtol=0.0, atol=1e-6)) and set(
+            rounded.astype(int).tolist()
+        ).issubset({0, 1}):
             mask[i] = True
     return mask
 
@@ -4224,6 +4346,39 @@ def _coerce_ebm_feature_types(X: pd.DataFrame) -> pd.DataFrame:
     binary_mask = _binary_feature_mask(out)
     for col in out.columns[binary_mask]:
         out[col] = np.rint(out[col].to_numpy(dtype=np.float32)).astype(np.int8)
+    return out
+
+
+def _coerce_ebm_feature_types_for_model(model: Any, X: pd.DataFrame) -> pd.DataFrame:
+    """Coerce prediction features using the fitted EBM type contract.
+
+    `_coerce_ebm_feature_types` is intentionally data-driven for fitting and
+    training-time audits, but that is unsafe for live/replay inference: a single
+    replay row can make continuous 0/1-valued columns look binary while the live
+    batch leaves them continuous.  InterpretML persists `feature_types_in_`, so
+    prediction must honor that fitted contract and avoid batch-cardinality
+    inference.
+    """
+    out = X.copy()
+    feature_types = getattr(model, "feature_types_in_", None)
+    if feature_types is None:
+        feature_types = getattr(model, "feature_types", None)
+    if feature_types is None or len(feature_types) != out.shape[1]:
+        return out
+
+    for col, feature_type in zip(out.columns, feature_types):
+        type_name = str(feature_type or "").strip().lower()
+        if type_name in {"continuous", "quantile", "uniform", "winsorized"}:
+            continue
+        values = out[col].to_numpy(dtype=np.float32)
+        rounded = np.rint(values)
+        finite = np.isfinite(values)
+        if (
+            np.all(finite)
+            and np.all(np.isclose(values, rounded, rtol=0.0, atol=1e-6))
+            and set(np.unique(rounded).astype(int).tolist()).issubset({0, 1})
+        ):
+            out[col] = rounded.astype(np.int8)
     return out
 
 

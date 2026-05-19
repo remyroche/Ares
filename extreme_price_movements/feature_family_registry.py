@@ -247,6 +247,8 @@ def get_feature_family(feature_name: str) -> FeatureFamily:
         )
 
     lowered = base_name.lower()
+    if "_self_z_" in lowered or lowered.endswith("_self_z"):
+        return FeatureFamily.ALREADY_STANDARDIZED
     if lowered.startswith(("loc_", "dist_", "zscore_")):
         return FeatureFamily.BOUNDED_GEOMETRY
     if any(

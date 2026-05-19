@@ -85,8 +85,12 @@ for _h in (5, 10):
             f"mark_gap_vol_{_h}h",
             f"premium_expansion_speed_{_h}h",
             f"mark_trigger_risk_{_h}h",
+            f"mark_trigger_dislocation_{_h}h",
+            f"mark_trigger_dislocation_self_z_{_h}h",
             f"funding_crowded_mom_exhaustion_{_h}h",
+            f"funding_crowded_mom_exhaustion_self_z_{_h}h",
             f"fund_high_neg_mom_{_h}h",
+            f"fund_high_neg_mom_self_z_{_h}h",
             f"persistent_pos_funding_failed_breakout_{_h}h",
             f"persistent_neg_funding_failed_breakdown_{_h}h",
             f"fund_flip_x_vol_expansion_{_h}h",
@@ -97,8 +101,11 @@ for _h in (5, 10):
     PERP_CARRY_ALPHA_FEATURE_KEYS.extend(
         [
             f"carry_adj_ret_{_h}h",
+            f"carry_adj_ret_self_z_{_h}h",
             f"carry_adj_short_ret_{_h}h",
+            f"carry_adj_short_ret_self_z_{_h}h",
             f"basis_adjusted_trend_{_h}h",
+            f"basis_adjusted_trend_self_z_{_h}h",
         ]
     )
 PERP_FEATURE_KEYS = list(
@@ -762,6 +769,39 @@ CONTINUOUS_REGIME_FEATURES.update(
         for name in LGBM_PERP_FEATURE_KEYS
     }
 )
+for _h in (5, 10):
+    CONTINUOUS_REGIME_FEATURES.update(
+        {
+            f"carry_adj_ret_self_z_{_h}h": {
+                "family": "perp_carry",
+                "type": "continuous",
+            },
+            f"carry_adj_short_ret_self_z_{_h}h": {
+                "family": "perp_carry",
+                "type": "continuous",
+            },
+            f"basis_adjusted_trend_self_z_{_h}h": {
+                "family": "basis",
+                "type": "continuous",
+            },
+            f"funding_crowded_mom_exhaustion_self_z_{_h}h": {
+                "family": "funding",
+                "type": "continuous",
+            },
+            f"fund_high_neg_mom_self_z_{_h}h": {
+                "family": "funding",
+                "type": "continuous",
+            },
+            f"mark_trigger_dislocation_{_h}h": {
+                "family": "mark_index",
+                "type": "continuous",
+            },
+            f"mark_trigger_dislocation_self_z_{_h}h": {
+                "family": "mark_index",
+                "type": "continuous",
+            },
+        }
+    )
 
 RIDGE_FEATURE_COLS = list(CONTINUOUS_REGIME_FEATURES.keys())
 
@@ -4001,18 +4041,32 @@ PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS = {
     "mom_slow_z",
     "carry_adj_ret_5h",
     "carry_adj_ret_10h",
+    "carry_adj_ret_self_z_5h",
+    "carry_adj_ret_self_z_10h",
     "carry_adj_short_ret_5h",
     "carry_adj_short_ret_10h",
+    "carry_adj_short_ret_self_z_5h",
+    "carry_adj_short_ret_self_z_10h",
     "basis_adjusted_trend_5h",
     "basis_adjusted_trend_10h",
+    "basis_adjusted_trend_self_z_5h",
+    "basis_adjusted_trend_self_z_10h",
     "funding_crowded_mom_exhaustion_5h",
     "funding_crowded_mom_exhaustion_10h",
+    "funding_crowded_mom_exhaustion_self_z_5h",
+    "funding_crowded_mom_exhaustion_self_z_10h",
     "fund_high_neg_mom_5h",
     "fund_high_neg_mom_10h",
+    "fund_high_neg_mom_self_z_5h",
+    "fund_high_neg_mom_self_z_10h",
     "mark_gap_vol_5h",
     "mark_gap_vol_10h",
     "premium_expansion_speed_5h",
     "premium_expansion_speed_10h",
+    "mark_trigger_dislocation_5h",
+    "mark_trigger_dislocation_10h",
+    "mark_trigger_dislocation_self_z_5h",
+    "mark_trigger_dislocation_self_z_10h",
     "mark_trigger_risk_5h",
     "mark_trigger_risk_10h",
     # Orderbook: bps, notional-normalized, z-scored, or availability masks.

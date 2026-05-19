@@ -120,6 +120,18 @@ _FUNDING_EXACT_FEATURE_KEYS = {
     "fund_abs_z_x_ret24h_sign",
     "fund_abs_z_x_rv_24h",
     "fund_z_x_trend_strength",
+    "carry_adj_ret_5h",
+    "carry_adj_ret_10h",
+    "carry_adj_ret_self_z_5h",
+    "carry_adj_ret_self_z_10h",
+    "carry_adj_short_ret_5h",
+    "carry_adj_short_ret_10h",
+    "carry_adj_short_ret_self_z_5h",
+    "carry_adj_short_ret_self_z_10h",
+    "funding_crowded_mom_exhaustion_self_z_5h",
+    "funding_crowded_mom_exhaustion_self_z_10h",
+    "fund_high_neg_mom_self_z_5h",
+    "fund_high_neg_mom_self_z_10h",
 }
 _MARK_INDEX_PREFIXES = ("mark_", "premium_")
 _UNIVERSE_PREFIXES = (
@@ -4113,28 +4125,55 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 .clip(0.0, 6.0)
                 .astype(np.float32)
             )
+            carry_adj_ret_raw = ret_h - carry_h
+            carry_adj_short_raw = (-ret_h) + carry_h
             feats[f"carry_adj_ret_{_h}h"] = (
-                (ret_h - carry_h).clip(-1.0, 1.0).astype(np.float32)
+                carry_adj_ret_raw.clip(-1.0, 1.0).astype(np.float32)
             )
-            feats[f"carry_adj_short_ret_{_h}h"] = (
-                ((-ret_h) + carry_h).clip(-1.0, 1.0).astype(np.float32)
-            )
-            if "basis_pct" in feats:
-                basis_mom_h = feats["basis_pct"].diff(_h).fillna(0.0)
-                feats[f"basis_adjusted_trend_{_h}h"] = (
-                    (ret_h - basis_mom_h).clip(-1.0, 1.0).astype(np.float32)
-                )
-            feats[f"funding_crowded_mom_exhaustion_{_h}h"] = (
-                (
-                    feats["fund_abs_z_14d"].clip(0.0, 6.0)
-                    * (-(ret_h * fund_sign)).clip(lower=0.0)
-                )
-                .clip(0.0, 6.0)
+            feats[f"carry_adj_ret_self_z_{_h}h"] = (
+                _batch_roll_zscore(carry_adj_ret_raw, 14 * 24)
+                .clip(-6.0, 6.0)
                 .astype(np.float32)
             )
+            feats[f"carry_adj_short_ret_{_h}h"] = (
+                carry_adj_short_raw.clip(-1.0, 1.0).astype(np.float32)
+            )
+            feats[f"carry_adj_short_ret_self_z_{_h}h"] = (
+                _batch_roll_zscore(carry_adj_short_raw, 14 * 24)
+                .clip(-6.0, 6.0)
+                .astype(np.float32)
+            )
+            if "basis_pct" in feats:
+                basis_mom_h = feats["basis_pct"].diff(_h)
+                basis_adjusted_trend_raw = ret_h - basis_mom_h
+                feats[f"basis_adjusted_trend_{_h}h"] = (
+                    basis_adjusted_trend_raw.clip(-1.0, 1.0).astype(np.float32)
+                )
+                feats[f"basis_adjusted_trend_self_z_{_h}h"] = (
+                    _batch_roll_zscore(basis_adjusted_trend_raw, 14 * 24)
+                    .clip(-6.0, 6.0)
+                    .astype(np.float32)
+                )
+            funding_crowded_raw = feats["fund_abs_z_14d"].clip(0.0, 6.0) * (
+                -(ret_h * fund_sign)
+            ).clip(lower=0.0)
+            feats[f"funding_crowded_mom_exhaustion_{_h}h"] = (
+                funding_crowded_raw.clip(0.0, 6.0).astype(np.float32)
+            )
+            feats[f"funding_crowded_mom_exhaustion_self_z_{_h}h"] = (
+                _batch_roll_zscore(funding_crowded_raw, 14 * 24)
+                .clip(-6.0, 6.0)
+                .astype(np.float32)
+            )
+            fund_high_neg_raw = feats["fund_rate_z_14d"].clip(lower=0.0) * (
+                -ret_h
+            ).clip(lower=0.0)
             feats[f"fund_high_neg_mom_{_h}h"] = (
-                (feats["fund_rate_z_14d"].clip(lower=0.0) * (-ret_h).clip(lower=0.0))
-                .clip(0.0, 6.0)
+                fund_high_neg_raw.clip(0.0, 6.0).astype(np.float32)
+            )
+            feats[f"fund_high_neg_mom_self_z_{_h}h"] = (
+                _batch_roll_zscore(fund_high_neg_raw, 14 * 24)
+                .clip(-6.0, 6.0)
                 .astype(np.float32)
             )
             feats[f"persistent_pos_funding_failed_breakout_{_h}h"] = (
@@ -4176,8 +4215,22 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 .astype(np.float32)
             )
         if isinstance(mark_gap, pd.DataFrame) and isinstance(mark_index_gap, pd.DataFrame):
+            mark_trigger_dislocation_raw = mark_gap.abs() + mark_index_gap.abs()
+            mark_trigger_dislocation_h = (
+                mark_trigger_dislocation_raw.rolling(_h, min_periods=max(2, _h // 2))
+                .mean()
+                .clip(0.0, 0.10)
+            )
+            feats[f"mark_trigger_dislocation_{_h}h"] = (
+                mark_trigger_dislocation_h.astype(np.float32)
+            )
+            feats[f"mark_trigger_dislocation_self_z_{_h}h"] = (
+                _batch_roll_zscore(mark_trigger_dislocation_h, 14 * 24)
+                .clip(-6.0, 6.0)
+                .astype(np.float32)
+            )
             feats[f"mark_trigger_risk_{_h}h"] = (
-                ((mark_gap.abs() + mark_index_gap.abs()) / (raw_atr_pct.abs() + eps))
+                (mark_trigger_dislocation_raw / (raw_atr_pct.abs() + eps))
                 .replace([np.inf, -np.inf], np.nan)
                 .clip(0.0, 50.0)
                 .astype(np.float32)

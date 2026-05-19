@@ -58,13 +58,21 @@ from extreme_price_movements.simple_position_sizer import (  # noqa: E402
 
 def _normalise_symbol(symbol: object) -> str:
     text = str(symbol or "").upper().strip()
-    text = text.replace(":USDT", "").replace("-", "/").replace("_", "/")
+    perp_suffix = ""
+    for suffix in (":USDT", ":USDC", ":USD"):
+        if text.endswith(suffix):
+            perp_suffix = suffix
+            text = text[: -len(suffix)]
+            break
+    text = text.replace("-", "/").replace("_", "/")
     if "/" not in text:
         if text.endswith("USDC"):
             text = f"{text[:-4]}/USDC"
         elif text.endswith("USDT"):
             text = f"{text[:-4]}/USDT"
-    return text
+        elif text.endswith("USD"):
+            text = f"{text[:-3]}/USD"
+    return f"{text}{perp_suffix}" if perp_suffix and ":" not in text else text
 
 
 def _safe_float(value: Any) -> float:
@@ -115,6 +123,17 @@ def _load_recent_decisions(
             ledger["rank_score_source"].astype(str).eq(str(require_rank_source))
         ]
     ledger = ledger.sort_values("decision_ts").tail(max_rows).reset_index(drop=True)
+    live_defaults = {
+        "base_pred": "live_base_pred",
+        "meta_pred": "live_meta_pred",
+        "calibrated_score": "live_calibrated_score",
+        "normalized_rank_score": "live_rank_percentile",
+        "policy_rank_pct": "live_policy_rank_pct",
+        "rank_score_source": "live_rank_score_source",
+    }
+    for src, dst in live_defaults.items():
+        if src in ledger.columns and dst not in ledger.columns:
+            ledger[dst] = ledger[src]
 
     trades = _read_table(trades_path)
     if trades.empty:
@@ -175,7 +194,7 @@ def _load_recent_decisions(
     return pd.DataFrame(merged_rows)
 
 
-def _margin_cache_usdc_symbols(live_quote_currency: str = "USDC") -> set[str]:
+def _margin_cache_quote_symbols(live_quote_currency: str = "USDC") -> set[str]:
     """Best-effort offline mirror of the live margin universe resolver."""
     quote = str(live_quote_currency or "USDC").upper()
     cache_path = REPO_ROOT / "extreme_price_movements" / ".margin_universe_cache.json"
@@ -201,18 +220,19 @@ def _margin_cache_usdc_symbols(live_quote_currency: str = "USDC") -> set[str]:
     return out
 
 
-def _local_usdc_symbols(
+def _local_quote_symbols(
     data_root: Path,
     *,
     run_id: str | None = None,
     live_quote_currency: str = "USDC",
+    market_mode: str = "spot",
 ) -> list[str]:
     out: list[str] = []
     quote = str(live_quote_currency or "USDC").upper()
     for path in sorted((data_root / "ohlcv").glob("symbol=*")):
         name = path.name.replace("symbol=", "")
         symbol = _normalise_symbol(name)
-        if symbol.endswith(f"/{quote}"):
+        if symbol.endswith(f"/{quote}") or symbol.endswith(f"/{quote}:{quote}"):
             out.append(symbol)
     symbols = set(out)
     if run_id:
@@ -222,7 +242,9 @@ def _local_usdc_symbols(
             symbols = {
                 sym for sym in symbols if _normalise_symbol(sym).split("/", 1)[0] in trained_bases
             }
-        margin_symbols = _margin_cache_usdc_symbols(quote)
+        margin_symbols = (
+            set() if str(market_mode).lower() == "perps" else _margin_cache_quote_symbols(quote)
+        )
         if margin_symbols:
             symbols &= margin_symbols
     return sorted(symbols)
@@ -233,6 +255,7 @@ def _live_feature_cache_symbols_for_end(
     *,
     run_id: str,
     end_ts: pd.Timestamp,
+    live_quote_currency: str = "USDC",
 ) -> list[str]:
     """Return the exact symbol universe from a live feature cache for ``end_ts``."""
     root = Path("cache") / "inference_live_features" / str(run_id)
@@ -249,8 +272,15 @@ def _live_feature_cache_symbols_for_end(
             cache_end = cache_end.tz_localize("UTC") if cache_end.tzinfo is None else cache_end.tz_convert("UTC")
             if cache_end != target:
                 continue
+            quote = str(live_quote_currency or "USDC").upper()
             symbols = [_normalise_symbol(s) for s in (meta.get("symbols") or [])]
-            symbols = sorted({s for s in symbols if s.endswith("/USDC")})
+            symbols = sorted(
+                {
+                    s
+                    for s in symbols
+                    if s.endswith(f"/{quote}") or s.endswith(f"/{quote}:{quote}")
+                }
+            )
             if symbols:
                 candidates.append((len(symbols), symbols))
         except Exception:
@@ -441,6 +471,10 @@ def _score_row(
         "symbol": symbol,
         "side": side,
         "strategy_id": strategy_id,
+        "live_feature_contract_hash": row.get("feature_contract_hash"),
+        "live_feature_transform_contract_hash": row.get(
+            "feature_transform_contract_hash"
+        ),
         "live_base_pred": _safe_float(row.get("live_base_pred")),
         "live_meta_pred": _safe_float(row.get("live_meta_pred", row.get("raw_prediction_score"))),
         "live_calibrated_score": _safe_float(row.get("live_calibrated_score")),
@@ -601,6 +635,37 @@ def _parity_failures(
             missing = int(vals.isna().sum())
             if missing:
                 failures.append(f"missing_{col}_rows={missing}")
+        if "expected_feature_transform_contract_hash" in frame.columns:
+            expected = frame["expected_feature_transform_contract_hash"].astype(str)
+            live = (
+                frame["live_feature_transform_contract_hash"].astype(str)
+                if "live_feature_transform_contract_hash" in frame.columns
+                else pd.Series("", index=frame.index)
+            )
+            missing_hash = int(live.isin({"", "None", "nan", "NaN"}).sum())
+            if missing_hash:
+                failures.append(
+                    f"missing_live_feature_transform_contract_hash_rows={missing_hash}"
+                )
+            mismatch = int((live != expected).sum())
+            if mismatch:
+                failures.append(
+                    f"feature_transform_contract_hash_mismatch_rows={mismatch}"
+                )
+    required_replay_cols = (
+        "replay_base_pred",
+        "replay_meta_pred",
+        "replay_calibrated_score",
+        "replay_policy_rank_pct",
+    )
+    for col in required_replay_cols:
+        raw_vals = (
+            frame[col] if col in frame.columns else pd.Series(np.nan, index=frame.index)
+        )
+        vals = pd.to_numeric(raw_vals, errors="coerce")
+        missing = int(vals.isna().sum())
+        if missing:
+            failures.append(f"missing_{col}_rows={missing}")
     for col in (
         "base_pred_delta",
         "meta_pred_delta",
@@ -612,7 +677,11 @@ def _parity_failures(
         vals = pd.to_numeric(frame[col], errors="coerce").abs()
         finite = vals[np.isfinite(vals)]
         if finite.empty:
+            failures.append(f"{col}_finite_rows=0")
             continue
+        missing_delta = len(frame) - int(finite.size)
+        if missing_delta:
+            failures.append(f"{col}_missing_rows={missing_delta}")
         max_abs = float(finite.max())
         if max_abs > float(tolerance):
             failures.append(f"{col}_max_abs={max_abs:.12g}")
@@ -633,6 +702,11 @@ def main() -> int:
         choices=("spot", "perps"),
         default=None,
         help="Inference feature/config mode. Defaults to perps when roots contain 'perp', otherwise spot.",
+    )
+    parser.add_argument(
+        "--live-quote-currency",
+        default=None,
+        help="Live quote currency used for local symbol discovery. Defaults to USD in perps mode, otherwise USDC.",
     )
     parser.add_argument("--run-id", default="20260321_140000")
     parser.add_argument("--ledger", default="data/live_state/prediction_ledger.parquet", type=Path)
@@ -690,6 +764,11 @@ def main() -> int:
         if "perp" in f"{args.data_root} {artifact_data_root}".lower()
         else "spot"
     )
+    live_quote_currency = (
+        str(args.live_quote_currency).upper()
+        if args.live_quote_currency
+        else ("USD" if market_mode == "perps" else "USDC")
+    )
 
     decisions = _load_recent_decisions(
         ledger_path=args.ledger,
@@ -713,11 +792,17 @@ def main() -> int:
         args.data_root,
         run_id=args.run_id,
         end_ts=max_ts,
+        live_quote_currency=live_quote_currency,
     )
     symbol_source = "live_feature_cache"
     if not symbols:
-        symbols = _local_usdc_symbols(args.data_root, run_id=args.run_id)
-        symbol_source = "trained_margin_local_ohlcv"
+        symbols = _local_quote_symbols(
+            args.data_root,
+            run_id=args.run_id,
+            live_quote_currency=live_quote_currency,
+            market_mode=market_mode,
+        )
+        symbol_source = "local_ohlcv"
     if args.max_symbols and args.max_symbols > 0:
         decision_symbols = list(decisions["symbol"].dropna().map(_normalise_symbol).unique())
         extra = [s for s in symbols if s not in decision_symbols]
@@ -726,7 +811,7 @@ def main() -> int:
     end_ts = max_panel_ts
     print(
         f"Replaying {len(decisions)} live decisions from {min_ts} to {max_ts}; "
-        f"loading {len(symbols)} USDC symbols from {start_ts} to {end_ts} "
+        f"loading {len(symbols)} {live_quote_currency} symbols from {start_ts} to {end_ts} "
         f"(symbol_source={symbol_source})."
     )
     panel = _load_panel(
@@ -763,6 +848,19 @@ def main() -> int:
     runtime_cfg["data_root"] = str(args.data_root)
     runtime_cfg["artifact_data_root"] = str(artifact_data_root)
     runtime_cfg["live_data_root"] = str(args.data_root)
+    state_bundle = state.get("bundle", {}) if isinstance(state.get("bundle"), dict) else {}
+    runtime_cfg.setdefault("bundle", state_bundle)
+    for key in (
+        "feature_transform_contract",
+        "feature_transform_contract_hash",
+        "feature_transform_manifest",
+    ):
+        value = state.get(key)
+        if value is None:
+            value = state_bundle.get(key)
+        if value is not None:
+            feature_cfg[key] = value
+            runtime_cfg[key] = value
     feature_cfg["runtime_cfg"] = runtime_cfg
     feats = load_or_compute_features(
         panel,
@@ -788,6 +886,9 @@ def main() -> int:
         for _, row in decisions.iterrows()
     ]
     result = pd.DataFrame(rows)
+    expected_transform_hash = runtime_cfg.get("feature_transform_contract_hash")
+    if expected_transform_hash is not None:
+        result["expected_feature_transform_contract_hash"] = expected_transform_hash
     out_dir = args.output_dir or (
         args.data_root
         / "artifacts"

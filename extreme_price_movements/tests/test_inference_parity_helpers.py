@@ -41,7 +41,7 @@ def test_load_strategy_acceptance_filter_reads_policy_artifact(tmp_path):
     assert accepted == {"long_mr", "short_tf"}
 
 
-def test_deployment_strategy_filter_intersects_holdout_profitable_and_policy(tmp_path):
+def test_deployment_strategy_filter_keeps_explicit_strategy_for_inference_authoritative(tmp_path):
     run_id = "20260101_000000"
     art = tmp_path / "artifacts" / run_id
     (art / "ridge_sizer").mkdir(parents=True)
@@ -86,8 +86,7 @@ def test_deployment_strategy_filter_intersects_holdout_profitable_and_policy(tmp
     selected = resolve_deployment_strategy_filter(str(tmp_path), run_id)
     assert selected is not None
     assert "long_profitable" in selected
-    assert "unprofitable" not in selected
-    assert "long_unprofitable" not in selected
+    assert "long_unprofitable" in selected
 
 
 def test_deployment_strategy_filter_policy_selection_suffices_without_holdout(
@@ -180,7 +179,7 @@ def test_deployment_strategy_filter_uses_policy_when_sizer_allowlist_is_stale(
     assert selected == {"long_rule_a"}
 
 
-def test_deployment_strategy_filter_keeps_top_avg_pnl_per_trade_per_side(tmp_path):
+def test_deployment_strategy_filter_preserves_explicit_strategy_for_inference_rows(tmp_path):
     run_id = "20260101_000000"
     art = tmp_path / "artifacts" / run_id
     (art / "policy_params").mkdir(parents=True)
@@ -225,7 +224,7 @@ def test_deployment_strategy_filter_keeps_top_avg_pnl_per_trade_per_side(tmp_pat
 
     selected = resolve_deployment_strategy_filter(str(tmp_path), run_id)
 
-    assert selected == {"long_high", "short_high"}
+    assert selected == {"long_high", "long_low", "short_high", "short_low"}
 
 
 def test_strategy_asset_exclusion_filter_reads_strategy_for_inference(tmp_path):

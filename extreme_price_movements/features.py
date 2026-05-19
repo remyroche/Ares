@@ -13,6 +13,10 @@ from joblib import Memory
 from numba import njit, prange
 
 import extreme_price_movements.fast_funcs as ff
+from extreme_price_movements.config import (
+    PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS,
+    is_non_portable_feature_key,
+)
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
 from extreme_price_movements.frac_diff_adaptive import (
     find_min_ffd,
@@ -93,6 +97,191 @@ _PERP_NATIVE_TRANSFORM_SKIP_KEYS.update(
 )
 
 _INTRADAY_PERSISTED_KEY_SET = set(PERSISTED_INTRADAY_LIBRARY_COLUMNS)
+_LIVE_IMPOSSIBLE_OR_LEAKAGE_FEATURE_KEYS: set[str] = set()
+_ORDERBOOK_PREFIXES = ("ob_", "obw_", "_obw_", "xasset_ob_", "xasset_mkt_ob_")
+_FUNDING_PREFIXES = ("fund_", "funding_", "asset_funding", "xasset_fund")
+_SPOT_PREFIXES = ("spot_", "perp_minus_spot")
+_BASIS_PREFIXES = ("basis_",)
+_OPEN_INTEREST_PREFIXES = ("oi_",)
+_OPEN_INTEREST_EXACT_FEATURE_KEYS = {
+    "leverage_build",
+    "unwind",
+    "squeeze_prob",
+    "oi_up_agree",
+}
+_FUNDING_EXACT_FEATURE_KEYS = {
+    "basis_fund_div_z",
+    "basis_funding_div",
+    "basis_funding_div_2h",
+    "basis_funding_div_4h",
+    "basis_funding_div_8h",
+    "xasset_asset_minus_mkt_funding",
+    "xasset_asset_minus_basket_fund_z",
+    "fund_abs_z_x_ret24h_sign",
+    "fund_abs_z_x_rv_24h",
+    "fund_z_x_trend_strength",
+}
+_MARK_INDEX_PREFIXES = ("mark_", "premium_")
+_UNIVERSE_PREFIXES = (
+    "asset_minus_universe",
+    "asset_ret_vs_universe",
+    "cs_",
+    "market_breadth",
+    "market_dispersion",
+    "pct_assets_",
+    "median_asset_",
+    "top_decile_asset_",
+    "cross_asset_",
+    "avg_pair_corr",
+    "corr_concentration",
+    "ret_rank_universe",
+    "vol_surprise_rank",
+    "volatility_rank",
+    "momentum_percentile",
+)
+_BASKET_PREFIXES = ("mkt_", "btc_", "eth_", "symbol_minus_mkt", "asset_mom_minus_basket")
+_DATASET_SELECTED_PREFIXES = (
+    "s_mean_",
+    "s_std_",
+    "s_z_",
+    "s_pct_",
+    "s_bin3_",
+    "s_gt",
+    "reject_",
+    "retest_accept_",
+    "tf_qual_",
+    "mr_qual_",
+    "liquidity_",
+)
+_STATE_TUNED_PREFIXES = ("kf_", "kalman_", "price_state_", "vol_state_", "volume_state_")
+_NON_PORTABLE_DELETE_PREFIXES = (
+    "recent_",
+    "vp_",
+    "G_",
+)
+_NON_PORTABLE_DELETE_EXACT = {
+    "accept_gt66",
+    "retest_accept",
+    "reject_like",
+    "tf_qual",
+    "mr_qual",
+    "ambig",
+    "stage_tf",
+    "stage_blowoff",
+    "stage_mr",
+    "exh_qual",
+    "tf_tape",
+    "mr_tape",
+    "tf_minus_mr",
+    "price_innovation_z",
+    "rolling_std(price_innovation)",
+    "kalman_gain_1h",
+    "state_uncertainty_1h",
+    "realized_vol_minus_vol_state",
+    "log_volume_state_1h",
+    "volume_state_slope_1h",
+    "price_slope_x_volume_surprise",
+    "vol_state_x_volume_state",
+    "a_funding_proxy",
+    "asset_atr_level",
+    "asset_vol_level",
+    "asset_volume_30d",
+    "asset_atr_30d",
+}
+
+
+def _feature_source_requirements(name: str) -> set[str]:
+    """Return source families required for a feature to be semantically valid."""
+    key = str(name)
+    requirements: set[str] = set()
+    if (
+        is_non_portable_feature_key(key)
+        or key in _LIVE_IMPOSSIBLE_OR_LEAKAGE_FEATURE_KEYS
+        or key in _NON_PORTABLE_DELETE_EXACT
+        or key.startswith(_NON_PORTABLE_DELETE_PREFIXES)
+    ):
+        requirements.add("deleted")
+    if key.startswith(_ORDERBOOK_PREFIXES):
+        requirements.add("orderbook")
+    if key.startswith(_FUNDING_PREFIXES) or key in _FUNDING_EXACT_FEATURE_KEYS:
+        requirements.add("funding")
+    if key.startswith(_OPEN_INTEREST_PREFIXES) or key in _OPEN_INTEREST_EXACT_FEATURE_KEYS:
+        requirements.add("open_interest")
+    if (
+        key.startswith(_SPOT_PREFIXES)
+        or key.startswith(_BASIS_PREFIXES)
+        or key in {"spot_available", "spot_leads_perp_1h", "spot_perp_vol_ratio_24h"}
+    ):
+        requirements.add("spot")
+    if (
+        key.startswith(_MARK_INDEX_PREFIXES)
+        or key.startswith("perp_index_")
+        or key.startswith("liq_")
+        or key.startswith("mark_gap_")
+        or key.startswith("mark_trigger_")
+    ):
+        requirements.add("mark_index")
+    return requirements
+
+
+def _feature_portability_class(name: str) -> str:
+    key = str(name)
+    req = _feature_source_requirements(key)
+    if "deleted" in req:
+        return "live_impossible_or_leakage"
+    if "orderbook" in req:
+        return "exchange_microstructure_dependent"
+    if "funding" in req:
+        return "funding_exchange_dependent"
+    if "open_interest" in req:
+        return "open_interest_contract_dependent"
+    if "spot" in req or "mark_index" in req:
+        return "spot_perp_basis_dependent"
+    if key.startswith(_UNIVERSE_PREFIXES):
+        return "universe_dependent"
+    if key.startswith(_BASKET_PREFIXES):
+        return "basket_dependent"
+    if key.startswith(_DATASET_SELECTED_PREFIXES):
+        return "dataset_selected"
+    if key.startswith(_STATE_TUNED_PREFIXES):
+        return "state_tuned"
+    return "portable_if_same_bar_construction"
+
+
+def _is_feature_allowed_for_portability_mode(
+    name: str,
+    mode: str,
+    *,
+    fixed_basket: bool,
+    allow_volume_source_dependent: bool,
+    allow_dataset_selected: bool,
+    allow_state_tuned: bool,
+) -> bool:
+    if str(name) in PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS:
+        req = _feature_source_requirements(name)
+        if mode == "no_orderbook_source" and "orderbook" in req:
+            return False
+        if mode == "no_funding_source" and "funding" in req:
+            return False
+        return True
+    klass = _feature_portability_class(name)
+    if klass == "live_impossible_or_leakage":
+        return False
+    if mode in {"", "legacy", "off"}:
+        return True
+    if mode in {
+        "cross_asset_portable",
+        "cross_exchange_portable",
+        "same_exchange_perp",
+        "no_orderbook_source",
+        "no_funding_source",
+    }:
+        return klass in {
+            "portable_if_same_bar_construction",
+            "universe_dependent",
+            "basket_dependent",
+        }
+    return True
 
 
 def _broadcast_series_to_frame(
@@ -608,10 +797,18 @@ def compute_orderbook_wall_primitives(
 ) -> dict[str, pd.DataFrame]:
     """Compute side-agnostic order-book wall primitives and meta features.
 
-    Gracefully returns zero-filled features when depth snapshots are unavailable.
+    Returns no features when depth snapshots are unavailable or do not use the
+    expected exchange-portable summary schema.
     """
     eps = 1e-12
     idx, cols = close_panel.index, close_panel.columns
+    if not isinstance(orderbook_panel, pd.DataFrame) or orderbook_panel.empty:
+        return {}
+
+    req = {"cum_bid_qty_l20", "cum_ask_qty_l20", "best_bid", "best_ask"}
+    if not req.issubset(set(orderbook_panel.columns)):
+        return {}
+
     out: dict[str, pd.DataFrame] = {}
 
     def z() -> pd.DataFrame:
@@ -623,36 +820,6 @@ def compute_orderbook_wall_primitives(
     bands = {"r005": 0.005, "r010": 0.01, "r020": 0.02, "r030": 0.03}
     for b in ("a05", "a10", "a20", "a30"):
         bands[b] = np.nan
-
-    for b in bands:
-        out[f"obw_wall_skew_book_{b}"] = z()
-        out[f"obw_wall_skew_vol_{b}"] = z()
-        out[f"obw_wall_pressure_skew_{b}"] = z()
-        out[f"obw_band_depth_skew_vol_{b}"] = z()
-        out[f"_obw_bid_wall_to_vol_{b}"] = z()
-        out[f"_obw_ask_wall_to_vol_{b}"] = z()
-        out[f"_obw_bid_wall_pressure_{b}"] = z()
-        out[f"_obw_ask_wall_pressure_{b}"] = z()
-        out[f"_obw_bid_wall_distance_{b}"] = z()
-        out[f"_obw_ask_wall_distance_{b}"] = z()
-        out[f"_obw_bid_path_depth_to_target_{b}"] = z()
-        out[f"_obw_ask_path_depth_to_target_{b}"] = z()
-        if b.startswith("r"):
-            out[f"obw_wall_concentration_skew_{b}"] = z()
-
-    out["obw_nearest_bid_wall_to_vol"] = z()
-    out["obw_nearest_ask_wall_to_vol"] = z()
-    out["obw_nearest_wall_skew_vol"] = z()
-    out["obw_nearest_wall_distance_skew"] = z()
-
-    # If snapshot panel is not available in the expected wide format, return neutral zeros.
-    if not isinstance(orderbook_panel, pd.DataFrame) or orderbook_panel.empty:
-        return out
-
-    # Minimal fast path using available top-of-book cumulative proxies if present.
-    req = {"cum_bid_qty_l20", "cum_ask_qty_l20", "best_bid", "best_ask"}
-    if not req.issubset(set(orderbook_panel.columns)):
-        return out
 
     ob = orderbook_panel.copy()
     ob.index = pd.to_datetime(ob.index, utc=True)
@@ -730,6 +897,12 @@ def compute_orderbook_wall_primitives(
                 .fillna(0.0)
             )
 
+    for b in bands:
+        out.setdefault(f"_obw_bid_wall_distance_{b}", z())
+        out.setdefault(f"_obw_ask_wall_distance_{b}", z())
+        out.setdefault(f"_obw_bid_wall_pressure_{b}", out[f"_obw_bid_wall_to_vol_{b}"])
+        out.setdefault(f"_obw_ask_wall_pressure_{b}", out[f"_obw_ask_wall_to_vol_{b}"])
+
     out["obw_nearest_bid_wall_to_vol"] = out["_obw_bid_wall_to_vol_r030"].copy()
     out["obw_nearest_ask_wall_to_vol"] = out["_obw_ask_wall_to_vol_r030"].copy()
     out["obw_nearest_wall_skew_vol"] = (
@@ -779,7 +952,7 @@ def compute_orderbook_snapshot_features(
         if isinstance(atr_panel, pd.DataFrame)
         else pd.DataFrame(np.nan, index=idx, columns=cols)
     )
-    qv24 = (close_panel * volume_panel).rolling(24, min_periods=1).mean().shift(1)
+    qv24 = (close_panel * volume_panel).rolling(24, min_periods=6).sum().shift(1)
     out: dict[str, pd.DataFrame] = {}
 
     def blank(v: float = 0.0) -> pd.DataFrame:
@@ -813,6 +986,10 @@ def compute_orderbook_snapshot_features(
         "ob_imbalance_delta_1h",
         "ob_spread_delta_1h",
         "ob_depth_skew_delta_1h",
+        "ob_depth_l10_to_qv_24h",
+        "ob_depth_l20_to_qv_24h",
+        "ob_top_liquidity_to_qv_24h",
+        "ob_depth_l20_to_qv_z_7d",
     ]
     for bps in depth_bps:
         keys += [
@@ -821,14 +998,15 @@ def compute_orderbook_snapshot_features(
             f"ob_depth_skew_{bps}bps",
         ]
     for k in keys:
-        out[k] = blank(0.0)
+        out[k] = blank(np.nan)
+    out["ob_available"] = blank(0.0)
     out["ob_stale_flag"] = blank(1.0)
     out["ob_snapshot_age_min"] = blank(
         float(cfg.get("orderbook_missing_age_sentinel_min", np.nan))
     )
 
     if not isinstance(orderbook_panel, pd.DataFrame) or orderbook_panel.empty:
-        return out
+        return {}
     if not {"timestamp", "symbol", "side", "level", "price", "qty"}.issubset(
         orderbook_panel.columns
     ):
@@ -955,13 +1133,13 @@ def compute_orderbook_snapshot_features(
         out["ob_snapshot_age_min"][sym] = age_min.values
         out["ob_stale_flag"][sym] = stale.values
         out["ob_spread_bps"][sym] = (
-            (((m["ba"] - m["bb"]) / (m["mid"] + 1e-9)) * 1e4).fillna(0).values
+            (((m["ba"] - m["bb"]) / (m["mid"] + 1e-9)) * 1e4).values
         )
         out["ob_mid_vs_close_bps"][sym] = (
-            (((m["mid"] / (close_panel[sym] + 1e-9)) - 1.0) * 1e4).fillna(0).values
+            (((m["mid"] / (close_panel[sym] + 1e-9)) - 1.0) * 1e4).values
         )
         out["ob_l1_imbalance"][sym] = (
-            ((m["bi1"] - m["ai1"]) / (m["bi1"] + m["ai1"] + 1e-9)).fillna(0).values
+            ((m["bi1"] - m["ai1"]) / (m["bi1"] + m["ai1"] + 1e-9)).values
         )
         out["ob_l5_imbalance"][sym] = (
             ((m["bi5"] - m["ai5"]) / (m["bi5"] + m["ai5"] + 1e-9)).fillna(0).values
@@ -984,12 +1162,36 @@ def compute_orderbook_snapshot_features(
                 )
                 * 1e4
             )
-            .fillna(0)
+            .values
+        )
+        l10_depth_notional = (m["bi10"] + m["ai10"]) * m["mid"]
+        l20_depth_notional = (m["bi20"] + m["ai20"]) * m["mid"]
+        top_depth_notional = (m["bq1"] + m["aq1"]) * m["mid"]
+        out["ob_depth_l10_to_qv_24h"][sym] = (
+            (l10_depth_notional / (qv24[sym] + 1e-9))
+            .replace([np.inf, -np.inf], np.nan)
+            .clip(0.0, 100.0)
+            .values
+        )
+        out["ob_depth_l20_to_qv_24h"][sym] = (
+            (l20_depth_notional / (qv24[sym] + 1e-9))
+            .replace([np.inf, -np.inf], np.nan)
+            .clip(0.0, 100.0)
+            .values
+        )
+        out["ob_top_liquidity_to_qv_24h"][sym] = (
+            (top_depth_notional / (qv24[sym] + 1e-9))
+            .replace([np.inf, -np.inf], np.nan)
+            .clip(0.0, 100.0)
             .values
         )
         for bps in depth_bps:
-            out[f"ob_bid_depth_{bps}bps"][sym] = m[f"bd{bps}"].fillna(0).values
-            out[f"ob_ask_depth_{bps}bps"][sym] = m[f"ad{bps}"].fillna(0).values
+            out[f"ob_bid_depth_{bps}bps"][sym] = (
+                m[f"bd{bps}"] / (qv24[sym] + 1e-9)
+            ).values
+            out[f"ob_ask_depth_{bps}bps"][sym] = (
+                m[f"ad{bps}"] / (qv24[sym] + 1e-9)
+            ).values
             bd = out[f"ob_bid_depth_{bps}bps"][sym]
             ad = out[f"ob_ask_depth_{bps}bps"][sym]
             out[f"ob_depth_skew_{bps}bps"][sym] = ((bd - ad) / (bd + ad + 1e-9)).values
@@ -1024,24 +1226,27 @@ def compute_orderbook_snapshot_features(
             if k not in {"ob_available", "ob_snapshot_age_min", "ob_stale_flag"}
         ]
         for feat_name in dependent_ob_features:
-            out[feat_name].loc[~valid, sym] = 0.0
+            out[feat_name].loc[~valid, sym] = np.nan
     avail = out["ob_available"].astype(bool)
     out["ob_imbalance_delta_1h"] = (
         out["ob_l10_imbalance"]
         .diff(1)
-        .where(avail & avail.shift(1), 0.0)
+        .where(avail & avail.shift(1), np.nan)
         .astype(np.float32)
     )
     out["ob_spread_delta_1h"] = (
         out["ob_spread_bps"]
         .diff(1)
-        .where(avail & avail.shift(1), 0.0)
+        .where(avail & avail.shift(1), np.nan)
         .astype(np.float32)
     )
     ds_key = f"ob_depth_skew_{depth_bps[min(len(depth_bps) - 1, 2)]}bps"
     out["ob_depth_skew_delta_1h"] = (
-        out[ds_key].diff(1).where(avail & avail.shift(1), 0.0).astype(np.float32)
+        out[ds_key].diff(1).where(avail & avail.shift(1), np.nan).astype(np.float32)
     )
+    out["ob_depth_l20_to_qv_z_7d"] = _batch_roll_zscore(
+        out["ob_depth_l20_to_qv_24h"], 24 * 7
+    ).clip(-6.0, 6.0)
     return {k: v.astype(np.float32) for k, v in out.items()}
 
 
@@ -1863,7 +2068,13 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     spot_low_panel = panel.get("spot_low")
     spot_volume_panel = panel.get("spot_volume")
     mark_price_panel = panel.get("mark_price")
+    mark_open_panel = panel.get("mark_open")
+    mark_high_panel = panel.get("mark_high")
+    mark_low_panel = panel.get("mark_low")
     index_price_panel = panel.get("index_price")
+    index_open_panel = panel.get("index_open")
+    index_high_panel = panel.get("index_high")
+    index_low_panel = panel.get("index_low")
     premium_index_panel = panel.get("premium_index")
 
     if len(mkt_gates) == len(new_idx):
@@ -3046,6 +3257,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     del vov_fast, vov_slow, vov_mean_20, q25_20, q75_20, relu_vov_z
 
     feats["accel_5h"] = (feats["ret5h"] - (feats["ret10h"] / 2.0)).astype(np.float32)
+    feats["acceleration_of_move"] = ff.apply_to_frame(
+        feats["ret1h"], ff.slope_nb, 6
+    ).astype(np.float32)
     feats["dlog_vol_5h"] = (v - v.shift(5)).astype(np.float32)
     max_bar = ff.numba_rolling_max(feats["ret1h"].abs(), 5)
     sign_max_bar = np.sign(ff.numba_rolling_sum(feats["ret1h"], 5))
@@ -3090,166 +3304,224 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         idx_perp = perp_price_panel.index
         cols_perp = perp_price_panel.columns
 
-        def _perp_panel_or_default(frame, default):
-            if isinstance(frame, pd.DataFrame):
-                return (
-                    frame.reindex(index=idx_perp, columns=cols_perp)
-                    .ffill()
-                    .bfill()
+        def _portable_perp_panel(frame, *, positive: bool = True):
+            if not isinstance(frame, pd.DataFrame) or frame.empty:
+                return None
+            aligned = frame.reindex(index=idx_perp, columns=cols_perp).ffill()
+            aligned = aligned.replace([np.inf, -np.inf], np.nan).astype(np.float32)
+            if positive:
+                aligned = aligned.where(aligned > 0.0)
+            if not np.isfinite(aligned.to_numpy(dtype=np.float32, copy=False)).any():
+                return None
+            return aligned
+
+        def _first_portable_perp_panel(*frames, positive: bool = True):
+            for frame in frames:
+                aligned = _portable_perp_panel(frame, positive=positive)
+                if isinstance(aligned, pd.DataFrame):
+                    return aligned
+            return None
+
+        def _portable_funding_per_hour(frame) -> pd.DataFrame | None:
+            if not isinstance(frame, pd.DataFrame) or frame.empty:
+                return None
+            shifted = (
+                frame.reindex(index=idx_perp, columns=cols_perp)
+                .ffill()
+                .shift(max(int(cfg.get("funding_shift_bars", 1)), 0))
+                .replace([np.inf, -np.inf], np.nan)
+                .astype(np.float32)
+            )
+            hourly = pd.DataFrame(np.nan, index=idx_perp, columns=cols_perp, dtype=np.float32)
+            for _sym in cols_perp:
+                ser = shifted[_sym].dropna()
+                if ser.empty:
+                    continue
+                changes = ser[ser.ne(ser.shift(1))]
+                if len(changes.index) < 2:
+                    continue
+                delta_hours = pd.Series(changes.index).diff().dt.total_seconds().dropna() / 3600.0
+                interval_hours = float(delta_hours[(delta_hours > 0) & np.isfinite(delta_hours)].median())
+                if np.isfinite(interval_hours) and interval_hours > 0:
+                    hourly[_sym] = (shifted[_sym] / interval_hours).astype(np.float32)
+            if not np.isfinite(hourly.to_numpy(dtype=np.float32, copy=False)).any():
+                return None
+            return hourly
+
+        mark_panel = _portable_perp_panel(mark_price_panel)
+        index_panel = _portable_perp_panel(index_price_panel)
+        premium_panel = _portable_perp_panel(premium_index_panel, positive=False)
+        spot_price_panel_for_rel = _portable_perp_panel(spot_close_panel)
+        if not isinstance(spot_price_panel_for_rel, pd.DataFrame):
+            # Some derivative venues expose a perp index price but not a
+            # separate spot candle stream.  Use that index as the portable
+            # reference price so funding/OI/basis features remain available
+            # instead of silently dropping the whole perps feature block.
+            if isinstance(index_panel, pd.DataFrame):
+                spot_price_panel_for_rel = index_panel
+            elif isinstance(mark_panel, pd.DataFrame):
+                spot_price_panel_for_rel = mark_panel
+
+        if isinstance(mark_panel, pd.DataFrame):
+            feats["mark_price"] = mark_panel.astype(np.float32)
+            feats["mark_perp_dislocation"] = (
+                (mark_panel / (perp_price_panel + 1e-12)) - 1.0
+            ).clip(-0.05, 0.05).astype(np.float32)
+        if isinstance(index_panel, pd.DataFrame):
+            feats["index_price"] = index_panel.astype(np.float32)
+            feats["perp_index_basis"] = (
+                (perp_price_panel / (index_panel + 1e-12)) - 1.0
+            ).clip(-0.10, 0.10).astype(np.float32)
+            feats["perp_index_basis_z"] = _batch_roll_zscore(
+                feats["perp_index_basis"], 14 * 24
+            ).clip(-6, 6)
+        if isinstance(mark_panel, pd.DataFrame) and isinstance(index_panel, pd.DataFrame):
+            feats["mark_index_basis"] = (
+                (mark_panel / (index_panel + 1e-12)) - 1.0
+            ).clip(-0.10, 0.10).astype(np.float32)
+            feats["mark_index_basis_z"] = _batch_roll_zscore(
+                feats["mark_index_basis"], 14 * 24
+            ).clip(-6, 6)
+        if isinstance(premium_panel, pd.DataFrame):
+            feats["premium_index"] = premium_panel.astype(np.float32)
+            feats["premium_index_z"] = _batch_roll_zscore(
+                premium_panel, 14 * 24
+            ).clip(-6, 6)
+            feats["premium_index_mom_8h"] = _batch_roll_zscore(
+                premium_panel.diff(8), 14 * 24
+            ).clip(-6, 6)
+
+        if isinstance(spot_price_panel_for_rel, pd.DataFrame):
+            spot_available = spot_price_panel_for_rel.notna()
+            feats["spot_available"] = spot_available.astype(np.float32)
+            spot_log = _safe_log_df(spot_price_panel_for_rel, eps=safe_log_eps)
+            perp_log = _safe_log_df(perp_price_panel, eps=safe_log_eps)
+            feats["spot_ret1h"] = spot_log.diff(1).astype(np.float32)
+            feats["spot_ret4h"] = spot_log.diff(4).astype(np.float32)
+            feats["spot_ret24h"] = spot_log.diff(24).astype(np.float32)
+            feats["perp_minus_spot_ret1h"] = (
+                perp_log.diff(1) - spot_log.diff(1)
+            ).astype(np.float32)
+            feats["perp_minus_spot_ret4h"] = (
+                perp_log.diff(4) - spot_log.diff(4)
+            ).astype(np.float32)
+            feats["perp_minus_spot_ret24h"] = (
+                perp_log.diff(24) - spot_log.diff(24)
+            ).astype(np.float32)
+            feats["spot_perp_return_agreement_4h"] = (
+                np.sign(feats["spot_ret4h"]) * np.sign(perp_log.diff(4))
+            ).fillna(0.0).astype(np.float32)
+            feats["spot_leads_perp_1h"] = (
+                feats["spot_ret1h"].shift(1) - perp_log.diff(1)
+            ).astype(np.float32)
+            feats["spot_rv_24h"] = feats["spot_ret1h"].rolling(24, min_periods=6).std(
+                ddof=0
+            ).astype(np.float32)
+
+            spot_open = _first_portable_perp_panel(
+                spot_open_panel,
+                index_open_panel,
+                mark_open_panel,
+                spot_price_panel_for_rel,
+            )
+            spot_high = _first_portable_perp_panel(
+                spot_high_panel,
+                index_high_panel,
+                mark_high_panel,
+                spot_price_panel_for_rel,
+            )
+            spot_low = _first_portable_perp_panel(
+                spot_low_panel,
+                index_low_panel,
+                mark_low_panel,
+                spot_price_panel_for_rel,
+            )
+            spot_volume = _first_portable_perp_panel(
+                spot_volume_panel, volume_panel, positive=False
+            )
+            if isinstance(spot_volume, pd.DataFrame):
+                feats["spot_volume_z_24h"] = _batch_roll_zscore(spot_volume, 24).clip(
+                    -6, 6
+                )
+                spot_quote_volume = (
+                    spot_volume * spot_price_panel_for_rel
+                ).astype(np.float32)
+                feats["spot_quote_volume_z_24h"] = _batch_roll_zscore(
+                    spot_quote_volume, 24
+                ).clip(-6, 6)
+                perp_quote_volume = (volume_panel * perp_price_panel).astype(np.float32)
+                feats["spot_perp_volume_ratio_24h"] = (
+                    spot_quote_volume.rolling(24, min_periods=6).sum()
+                    / (perp_quote_volume.rolling(24, min_periods=6).sum() + 1e-12)
+                ).clip(0, 10).astype(np.float32)
+            if (
+                isinstance(spot_high, pd.DataFrame)
+                and isinstance(spot_low, pd.DataFrame)
+            ):
+                spot_range = (
+                    (spot_high - spot_low) / (spot_price_panel_for_rel + 1e-12)
+                ).clip(0, 1)
+                feats["spot_range_pct_24h"] = (
+                    spot_range.rolling(24, min_periods=6).mean().astype(np.float32)
+                )
+                prev_spot_high = spot_high.shift(1).rolling(24, min_periods=6).max()
+                prev_spot_low = spot_low.shift(1).rolling(24, min_periods=6).min()
+                feats["spot_breakout_up_24h"] = (
+                    (spot_price_panel_for_rel > prev_spot_high).astype(np.float32)
+                )
+                feats["spot_breakout_down_24h"] = (
+                    (spot_price_panel_for_rel < prev_spot_low).astype(np.float32)
+                )
+                feats["spot_liquidity_sweep_up"] = (
+                    (
+                        (spot_high > prev_spot_high)
+                        & (spot_price_panel_for_rel < prev_spot_high)
+                    )
+                    .fillna(False)
                     .astype(np.float32)
                 )
-            return default.copy().astype(np.float32)
-
-        spot_price_panel_for_rel = _perp_panel_or_default(
-            spot_close_panel, perp_price_panel
-        )
-        spot_price_panel_for_rel = spot_price_panel_for_rel.where(
-            spot_price_panel_for_rel > 0, perp_price_panel
-        )
-        mark_panel = _perp_panel_or_default(mark_price_panel, perp_price_panel)
-        mark_panel = mark_panel.where(mark_panel > 0, perp_price_panel)
-        index_panel = _perp_panel_or_default(index_price_panel, spot_price_panel_for_rel)
-        index_panel = index_panel.where(index_panel > 0, spot_price_panel_for_rel)
-        premium_panel = _perp_panel_or_default(
-            premium_index_panel,
-            pd.DataFrame(0.0, index=idx_perp, columns=cols_perp, dtype=np.float32),
-        )
-
-        feats["mark_price"] = mark_panel.astype(np.float32)
-        feats["index_price"] = index_panel.astype(np.float32)
-        feats["premium_index"] = premium_panel.astype(np.float32)
-        feats["mark_index_basis"] = ((mark_panel / (index_panel + 1e-12)) - 1.0).clip(
-            -0.10, 0.10
-        ).astype(np.float32)
-        feats["mark_index_basis_z"] = _batch_roll_zscore(
-            feats["mark_index_basis"], 14 * 24
-        ).clip(-6, 6)
-        feats["mark_perp_dislocation"] = (
-            (mark_panel / (perp_price_panel + 1e-12)) - 1.0
-        ).clip(-0.05, 0.05).astype(np.float32)
-        feats["perp_index_basis"] = (
-            (perp_price_panel / (index_panel + 1e-12)) - 1.0
-        ).clip(-0.10, 0.10).astype(np.float32)
-        feats["perp_index_basis_z"] = _batch_roll_zscore(
-            feats["perp_index_basis"], 14 * 24
-        ).clip(-6, 6)
-        feats["premium_index_z"] = _batch_roll_zscore(premium_panel, 14 * 24).clip(-6, 6)
-        feats["premium_index_mom_8h"] = _batch_roll_zscore(
-            premium_panel.diff(8), 14 * 24
-        ).clip(-6, 6)
-
-        spot_open = _perp_panel_or_default(spot_open_panel, spot_price_panel_for_rel)
-        spot_high = _perp_panel_or_default(spot_high_panel, spot_price_panel_for_rel)
-        spot_low = _perp_panel_or_default(spot_low_panel, spot_price_panel_for_rel)
-        spot_volume = _perp_panel_or_default(
-            spot_volume_panel,
-            pd.DataFrame(0.0, index=idx_perp, columns=cols_perp, dtype=np.float32),
-        )
-        spot_available = (
-            isinstance(spot_close_panel, pd.DataFrame)
-            and spot_close_panel.reindex(index=idx_perp, columns=cols_perp).notna()
-        )
-        if isinstance(spot_available, pd.DataFrame):
-            feats["spot_available"] = spot_available.astype(np.float32)
-        else:
-            feats["spot_available"] = pd.DataFrame(
-                0.0, index=idx_perp, columns=cols_perp, dtype=np.float32
-            )
-
-        spot_log = _safe_log_df(spot_price_panel_for_rel, eps=safe_log_eps)
-        perp_log = _safe_log_df(perp_price_panel, eps=safe_log_eps)
-        feats["spot_ret1h"] = spot_log.diff(1).astype(np.float32)
-        feats["spot_ret4h"] = spot_log.diff(4).astype(np.float32)
-        feats["spot_ret24h"] = spot_log.diff(24).astype(np.float32)
-        feats["perp_minus_spot_ret1h"] = (
-            perp_log.diff(1) - spot_log.diff(1)
-        ).astype(np.float32)
-        feats["perp_minus_spot_ret4h"] = (
-            perp_log.diff(4) - spot_log.diff(4)
-        ).astype(np.float32)
-        feats["perp_minus_spot_ret24h"] = (
-            perp_log.diff(24) - spot_log.diff(24)
-        ).astype(np.float32)
-        feats["spot_perp_return_agreement_4h"] = (
-            np.sign(feats["spot_ret4h"]) * np.sign(perp_log.diff(4))
-        ).fillna(0.0).astype(np.float32)
-        feats["spot_leads_perp_1h"] = (
-            feats["spot_ret1h"].shift(1) - perp_log.diff(1)
-        ).astype(np.float32)
-        feats["spot_rv_24h"] = feats["spot_ret1h"].rolling(24, min_periods=6).std(
-            ddof=0
-        ).astype(np.float32)
-        feats["spot_volume_z_24h"] = _batch_roll_zscore(spot_volume, 24).clip(-6, 6)
-        spot_quote_volume = (spot_volume * spot_price_panel_for_rel).astype(np.float32)
-        feats["spot_quote_volume_z_24h"] = _batch_roll_zscore(
-            spot_quote_volume, 24
-        ).clip(-6, 6)
-        spot_range = ((spot_high - spot_low) / (spot_price_panel_for_rel + 1e-12)).clip(
-            0, 1
-        )
-        feats["spot_range_pct_24h"] = (
-            spot_range.rolling(24, min_periods=6).mean().astype(np.float32)
-        )
-        prev_spot_high = spot_high.shift(1).rolling(24, min_periods=6).max()
-        prev_spot_low = spot_low.shift(1).rolling(24, min_periods=6).min()
-        feats["spot_breakout_up_24h"] = (
-            (spot_price_panel_for_rel > prev_spot_high).astype(np.float32)
-        )
-        feats["spot_breakout_down_24h"] = (
-            (spot_price_panel_for_rel < prev_spot_low).astype(np.float32)
-        )
-        feats["spot_liquidity_sweep_up"] = (
-            ((spot_high > prev_spot_high) & (spot_price_panel_for_rel < prev_spot_high))
-            .fillna(False)
-            .astype(np.float32)
-        )
-        feats["spot_liquidity_sweep_down"] = (
-            ((spot_low < prev_spot_low) & (spot_price_panel_for_rel > prev_spot_low))
-            .fillna(False)
-            .astype(np.float32)
-        )
-        perp_rv_24h = perp_log.diff(1).rolling(24, min_periods=6).std(ddof=0)
-        feats["spot_perp_vol_ratio_24h"] = (
-            feats["spot_rv_24h"] / (perp_rv_24h + 1e-12)
-        ).clip(0, 10).astype(np.float32)
-        perp_quote_volume = (volume_panel * perp_price_panel).astype(np.float32)
-        feats["spot_perp_volume_ratio_24h"] = (
-            spot_quote_volume.rolling(24, min_periods=6).sum()
-            / (perp_quote_volume.rolling(24, min_periods=6).sum() + 1e-12)
-        ).clip(0, 10).astype(np.float32)
+                feats["spot_liquidity_sweep_down"] = (
+                    (
+                        (spot_low < prev_spot_low)
+                        & (spot_price_panel_for_rel > prev_spot_low)
+                    )
+                    .fillna(False)
+                    .astype(np.float32)
+                )
+            perp_rv_24h = perp_log.diff(1).rolling(24, min_periods=6).std(ddof=0)
+            feats["spot_perp_vol_ratio_24h"] = (
+                feats["spot_rv_24h"] / (perp_rv_24h + 1e-12)
+            ).clip(0, 10).astype(np.float32)
 
         if isinstance(funding_panel, pd.DataFrame) and isinstance(
             oi_panel, pd.DataFrame
-        ):
+        ) and isinstance(spot_price_panel_for_rel, pd.DataFrame):
             tprint("Computing perp derivative features...")
-            if isinstance(spot_close_panel, pd.DataFrame):
-                spot_price_panel = spot_close_panel.reindex(
-                    index=perp_price_panel.index,
-                    columns=perp_price_panel.columns,
-                ).astype(np.float32)
-                spot_price_panel = spot_price_panel.where(
-                    spot_price_panel > 0, perp_price_panel
+            funding_aligned = _portable_funding_per_hour(funding_panel)
+            oi_aligned = (
+                oi_panel.reindex(index=perp_price_panel.index, columns=perp_price_panel.columns)
+                .ffill()
+                .replace([np.inf, -np.inf], np.nan)
+                .astype(np.float32)
+                .where(lambda frame: frame > 0.0)
+            )
+            if not isinstance(funding_aligned, pd.DataFrame):
+                tprint(
+                    "Perps mode enabled but funding interval could not be inferred; skipping perp derivatives block."
                 )
-            else:
-                spot_price_panel = perp_price_panel
-
-            funding_aligned = funding_panel.reindex(
-                index=perp_price_panel.index,
-                columns=perp_price_panel.columns,
-            )
-            oi_aligned = oi_panel.reindex(
-                index=perp_price_panel.index,
-                columns=perp_price_panel.columns,
-            )
 
             perp_buffers: dict[str, dict[str, pd.Series]] = {}
-            for sym in perp_price_panel.columns:
+            for sym in (
+                perp_price_panel.columns
+                if isinstance(funding_aligned, pd.DataFrame)
+                else []
+            ):
                 df_sym = pd.DataFrame(
                     {
                         "funding_rate": funding_aligned[sym],
                         "open_interest": oi_aligned[sym],
                         "perp_price": perp_price_panel[sym],
-                        "spot_price": spot_price_panel[sym],
+                        "spot_price": spot_price_panel_for_rel[sym],
                         "volume": volume_panel[sym],
                         "close": perp_price_panel[sym],
                     },
@@ -3280,7 +3552,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             tprint(f"Perp derivative features added: {len(perp_buffers)}")
         else:
             tprint(
-                "Perps mode enabled but funding/open_interest data missing; skipping perp derivatives block."
+                "Perps mode enabled but portable funding/open_interest/spot data missing; skipping perp derivatives block."
             )
 
     # --- Orderbook/Funding/Cross-Asset extensions (graceful with missing panels) ---
@@ -3322,93 +3594,94 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 resolved.append(mapped)
         return resolved
 
-    # funding-derived base building blocks
-    fund_aligned = _zero_panel()
+    # funding-derived base building blocks: only emit exchange-native funding
+    # features when a real funding panel is available.
+    fund_aligned = None
     if isinstance(funding_panel, pd.DataFrame):
         funding_shift_bars = int(
             cfg.get("funding_shift_bars", cfg.get("microstructure_shift_bars", 1))
         )
-        fund_aligned = (
+        fund_event_rate = (
             funding_panel.reindex(index=idx, columns=cols)
             .ffill()
             .shift(max(funding_shift_bars, 0))
-            .fillna(0.0)
+            .replace([np.inf, -np.inf], np.nan)
             .astype(np.float32)
         )
+        fund_hourly = pd.DataFrame(np.nan, index=idx, columns=cols, dtype=np.float32)
+        for _sym in cols:
+            ser = fund_event_rate[_sym].dropna()
+            if ser.empty:
+                continue
+            changes = ser[ser.ne(ser.shift(1))]
+            if len(changes.index) >= 2:
+                delta_hours = pd.Series(changes.index).diff().dt.total_seconds().dropna() / 3600.0
+                interval_hours = float(delta_hours[(delta_hours > 0) & np.isfinite(delta_hours)].median())
+                if np.isfinite(interval_hours) and interval_hours > 0:
+                    fund_hourly[_sym] = (fund_event_rate[_sym] / interval_hours).astype(np.float32)
+        if np.isfinite(fund_hourly.to_numpy(dtype=np.float32, copy=False)).any():
+            fund_aligned = fund_hourly.astype(np.float32)
 
-    feats["fund_rate"] = fund_aligned.clip(lower=-0.01, upper=0.01).astype(np.float32)
-    feats["funding_rate"] = feats["fund_rate"]
-    feats["fund_rate_z_14d"] = _batch_roll_zscore(feats["fund_rate"], 14 * 24).clip(
-        -6, 6
-    )
-    feats["fund_rate_mom_8h"] = _batch_roll_zscore(
-        feats["fund_rate"].diff(8), 14 * 24
-    ).clip(-6, 6)
-    feats["fund_rate_mom_24h"] = _batch_roll_zscore(
-        feats["fund_rate"].diff(24), 14 * 24
-    ).clip(-6, 6)
-    feats["fund_sign_persistence_3"] = (
-        np.sign(feats["fund_rate"])
-        .rolling(3, min_periods=1)
-        .mean()
-        .clip(-1, 1)
-        .astype(np.float32)
-    )
-    feats["fund_abs_z"] = feats["fund_rate_z_14d"].abs().clip(0, 6).astype(np.float32)
+    if isinstance(fund_aligned, pd.DataFrame):
+        feats["fund_rate"] = fund_aligned.clip(lower=-0.005, upper=0.005).astype(
+            np.float32
+        )
+        feats["funding_rate"] = feats["fund_rate"]
+        feats["fund_rate_z_14d"] = _batch_roll_zscore(
+            feats["fund_rate"], 14 * 24
+        ).clip(-6, 6)
+        feats["fund_rate_mom_8h"] = _batch_roll_zscore(
+            feats["fund_rate"].diff(8), 14 * 24
+        ).clip(-6, 6)
+        feats["fund_rate_mom_24h"] = _batch_roll_zscore(
+            feats["fund_rate"].diff(24), 14 * 24
+        ).clip(-6, 6)
+        feats["fund_sign_persistence_3"] = (
+            np.sign(feats["fund_rate"])
+            .rolling(3, min_periods=1)
+            .mean()
+            .clip(-1, 1)
+            .astype(np.float32)
+        )
+        feats["fund_abs_z"] = (
+            feats["fund_rate_z_14d"].abs().clip(0, 6).astype(np.float32)
+        )
 
     spot_panel = panel.get("spot_close") if isinstance(panel, dict) else None
-    if not isinstance(spot_panel, pd.DataFrame):
-        spot_panel = close_panel
-    spot_panel = (
-        spot_panel.reindex(index=idx, columns=cols).ffill().bfill().astype(np.float32)
-    )
-    basis_pct = ((close_panel - spot_panel) / (spot_panel + eps)).clip(-0.05, 0.05)
-    feats["basis_pct"] = basis_pct.astype(np.float32)
-    feats["basis_pct_z"] = _batch_roll_zscore(basis_pct, 14 * 24).clip(-6, 6)
-    feats["basis_mom_4h"] = _batch_roll_zscore(basis_pct.diff(4), 14 * 24).clip(-6, 6)
-    feats["basis_fund_div_z"] = (
-        (feats["basis_pct_z"] - feats["fund_rate_z_14d"])
-        .clip(-10, 10)
-        .astype(np.float32)
-    )
-
-    # default orderbook features fallback to neutral zeros when snapshots are missing
-    ob_default = _zero_panel()
-    ob_names = [
-        "ob_microprice_dev_bps",
-        "ob_microprice_ret_1",
-        "ob_imb_l1",
-        "ob_imb_l5",
-        "ob_imb_l10",
-        "ob_imb_l20",
-        "ob_wimb_l10",
-        "ob_wimb_l20",
-        "ob_slope_diff_l10",
-        "ob_bid_depth_decay_l20",
-        "ob_ask_depth_decay_l20",
-        "ob_wall_imb_l20",
-        "ob_gap_up_bps_l10",
-        "ob_gap_dn_bps_l10",
-        "ob_gap_skew_l10",
-        "ob_book_pressure_l10",
-        "ob_imb_chg_1",
-        "ob_imb_accel_4",
-        "ob_spread_bps",
-        "ob_spread_z_24h",
-        "ob_top_liquidity_usd",
-        "ob_depth_usd_l10",
-        "ob_depth_usd_l20",
-        "ob_depth_usd_z_24h",
-        "ob_depth_asym_stability_24h",
-        "ob_snapshot_age_sec",
-        "ob_update_gap_flag",
-        "ob_stale_flag",
-        "ob_mid_close_dislocation_bps",
-        "ob_liquidity_shock_z",
-    ]
-    for name in ob_names:
-        if name not in feats:
-            feats[name] = ob_default.copy()
+    if (
+        bool(cfg.get("use_perps", False))
+        and (not isinstance(spot_panel, pd.DataFrame) or spot_panel.empty)
+    ):
+        spot_panel = (
+            panel.get("index_price")
+            if isinstance(panel, dict) and isinstance(panel.get("index_price"), pd.DataFrame)
+            else panel.get("mark_price")
+            if isinstance(panel, dict)
+            else None
+        )
+    if isinstance(spot_panel, pd.DataFrame) and not spot_panel.empty:
+        spot_panel = (
+            spot_panel.reindex(index=idx, columns=cols)
+            .ffill()
+            .replace([np.inf, -np.inf], np.nan)
+            .astype(np.float32)
+        )
+        spot_panel = spot_panel.where(spot_panel > 0.0)
+        if np.isfinite(spot_panel.to_numpy(dtype=np.float32, copy=False)).any():
+            basis_pct = ((close_panel - spot_panel) / (spot_panel + eps)).clip(
+                -0.05, 0.05
+            )
+            feats["basis_pct"] = basis_pct.astype(np.float32)
+            feats["basis_pct_z"] = _batch_roll_zscore(basis_pct, 14 * 24).clip(-6, 6)
+            feats["basis_mom_4h"] = _batch_roll_zscore(
+                basis_pct.diff(4), 14 * 24
+            ).clip(-6, 6)
+            if "fund_rate_z_14d" in feats:
+                feats["basis_fund_div_z"] = (
+                    (feats["basis_pct_z"] - feats["fund_rate_z_14d"])
+                    .clip(-10, 10)
+                    .astype(np.float32)
+                )
 
     def _aligned_orderbook_field(field_name: str) -> pd.DataFrame | None:
         if not isinstance(panel, dict):
@@ -3433,6 +3706,13 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     ob_ask_qty_l10 = _aligned_orderbook_field("cum_ask_qty_l10")
     ob_bid_qty_l20 = _aligned_orderbook_field("cum_bid_qty_l20")
     ob_ask_qty_l20 = _aligned_orderbook_field("cum_ask_qty_l20")
+    ob_snapshot_age_sec = _aligned_orderbook_field("snapshot_age_sec")
+    ob_notional_1h = _aligned_orderbook_field("notional_1h")
+    ob_mean_trade_qty_1h = _aligned_orderbook_field("mean_trade_qty_1h")
+    quote_volume_24h = (close_panel * volume_panel).rolling(24, min_periods=6).sum().shift(1)
+    ob_l1_depth_notional = None
+    ob_l10_depth_notional = None
+    ob_l20_depth_notional = None
 
     if isinstance(ob_best_bid, pd.DataFrame) and isinstance(ob_best_ask, pd.DataFrame):
         if not isinstance(ob_mid, pd.DataFrame):
@@ -3441,25 +3721,23 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             ((ob_best_ask - ob_best_bid) / (ob_mid.abs() + eps)) * 1e4
         ).replace([np.inf, -np.inf], np.nan)
         available = (ob_best_bid.notna() & ob_best_ask.notna()).astype(np.float32)
-        feats["ob_spread_bps"] = spread_bps.fillna(0.0).clip(0, 1000).astype(np.float32)
+        feats["ob_spread_bps"] = spread_bps.clip(0, 1000).astype(np.float32)
         feats["ob_spread_z_24h"] = _batch_roll_zscore(feats["ob_spread_bps"], 24).clip(
             -6, 6
         )
         feats["ob_mid_close_dislocation_bps"] = (
             (((ob_mid - close_panel) / (close_panel.abs() + eps)) * 1e4)
             .replace([np.inf, -np.inf], np.nan)
-            .fillna(0.0)
             .clip(-1000, 1000)
             .astype(np.float32)
         )
         feats["ob_microprice_dev_bps"] = feats["ob_mid_close_dislocation_bps"].astype(
             np.float32
         )
-        feats["ob_snapshot_age_sec"] = (
-            (1.0 - available)
-            * float(cfg.get("orderbook_missing_age_sentinel_min", 60))
-            * 60.0
-        ).astype(np.float32)
+        if isinstance(ob_snapshot_age_sec, pd.DataFrame):
+            feats["ob_snapshot_age_sec"] = ob_snapshot_age_sec.where(
+                ob_snapshot_age_sec >= 0.0
+            ).astype(np.float32)
         feats["ob_update_gap_flag"] = (1.0 - available).astype(np.float32)
         feats["ob_stale_flag"] = (1.0 - available).astype(np.float32)
 
@@ -3470,19 +3748,20 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         feats["ob_imb_l1"] = (
             ((ob_bid_qty_1 - ob_ask_qty_1) / denom_l1)
             .replace([np.inf, -np.inf], np.nan)
-            .fillna(0.0)
             .clip(-1, 1)
             .astype(np.float32)
         )
         feats["ob_wimb_l10"] = feats["ob_imb_l1"].astype(np.float32)
         if isinstance(ob_mid, pd.DataFrame):
+            ob_l1_depth_notional = (
+                (ob_bid_qty_1 + ob_ask_qty_1) * ob_mid
+            ).replace([np.inf, -np.inf], np.nan)
             microprice = (ob_best_ask * ob_bid_qty_1 + ob_best_bid * ob_ask_qty_1) / (
                 ob_bid_qty_1 + ob_ask_qty_1 + eps
             )
             feats["ob_microprice_dev_bps"] = (
                 (((microprice - ob_mid) / (ob_mid.abs() + eps)) * 1e4)
                 .replace([np.inf, -np.inf], np.nan)
-                .fillna(0.0)
                 .clip(-1000, 1000)
                 .astype(np.float32)
             )
@@ -3507,6 +3786,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             depth_l10 = ((ob_bid_qty_l10 + ob_ask_qty_l10) * ob_mid).replace(
                 [np.inf, -np.inf], np.nan
             )
+            ob_l10_depth_notional = depth_l10
             feats["ob_depth_usd_l10"] = (
                 np.log1p(depth_l10.clip(lower=0.0)).fillna(0.0).astype(np.float32)
             )
@@ -3524,28 +3804,27 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         )
         feats["ob_wimb_l20"] = feats["ob_imb_l20"].astype(np.float32)
         feats["ob_wall_imb_l20"] = feats["ob_imb_l20"].astype(np.float32)
-        feats["ob_bid_depth_decay_l20"] = (
-            (ob_bid_qty_1 / (ob_bid_qty_l20.abs() + eps))
-            .replace([np.inf, -np.inf], np.nan)
-            .fillna(0.0)
-            .clip(0, 1)
-            .astype(np.float32)
-            if isinstance(ob_bid_qty_1, pd.DataFrame)
-            else ob_default.copy()
-        )
-        feats["ob_ask_depth_decay_l20"] = (
-            (ob_ask_qty_1 / (ob_ask_qty_l20.abs() + eps))
-            .replace([np.inf, -np.inf], np.nan)
-            .fillna(0.0)
-            .clip(0, 1)
-            .astype(np.float32)
-            if isinstance(ob_ask_qty_1, pd.DataFrame)
-            else ob_default.copy()
-        )
+        if isinstance(ob_bid_qty_1, pd.DataFrame):
+            feats["ob_bid_depth_decay_l20"] = (
+                (ob_bid_qty_1 / (ob_bid_qty_l20.abs() + eps))
+                .replace([np.inf, -np.inf], np.nan)
+                .fillna(0.0)
+                .clip(0, 1)
+                .astype(np.float32)
+            )
+        if isinstance(ob_ask_qty_1, pd.DataFrame):
+            feats["ob_ask_depth_decay_l20"] = (
+                (ob_ask_qty_1 / (ob_ask_qty_l20.abs() + eps))
+                .replace([np.inf, -np.inf], np.nan)
+                .fillna(0.0)
+                .clip(0, 1)
+                .astype(np.float32)
+            )
         if isinstance(ob_mid, pd.DataFrame):
             depth_l20 = ((ob_bid_qty_l20 + ob_ask_qty_l20) * ob_mid).replace(
                 [np.inf, -np.inf], np.nan
             )
+            ob_l20_depth_notional = depth_l20
             feats["ob_depth_usd_l20"] = (
                 np.log1p(depth_l20.clip(lower=0.0)).fillna(0.0).astype(np.float32)
             )
@@ -3562,173 +3841,230 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 else feats["ob_depth_usd_l20"]
             )
 
-    feats["ob_gap_skew_l10"] = (
-        feats["ob_gap_up_bps_l10"] - feats["ob_gap_dn_bps_l10"]
-    ).astype(np.float32)
-    feats["ob_book_pressure_l10"] = (
-        feats["ob_wimb_l10"] * feats["ob_microprice_dev_bps"]
-    ).astype(np.float32)
-    feats["ob_imb_chg_1"] = _batch_roll_zscore(feats["ob_imb_l10"].diff(1), 24)
-    feats["ob_imb_accel_4"] = _batch_roll_zscore(
-        feats["ob_imb_l10"].diff(1).diff(4), 24 * 7
-    )
+    if isinstance(ob_l1_depth_notional, pd.DataFrame):
+        feats["ob_top_liquidity_to_qv_24h"] = (
+            (ob_l1_depth_notional / (quote_volume_24h + eps))
+            .replace([np.inf, -np.inf], np.nan)
+            .clip(0.0, 100.0)
+            .astype(np.float32)
+        )
+    if isinstance(ob_l10_depth_notional, pd.DataFrame):
+        feats["ob_depth_l10_to_qv_24h"] = (
+            (ob_l10_depth_notional / (quote_volume_24h + eps))
+            .replace([np.inf, -np.inf], np.nan)
+            .clip(0.0, 100.0)
+            .astype(np.float32)
+        )
+    if isinstance(ob_l20_depth_notional, pd.DataFrame):
+        feats["ob_depth_l20_to_qv_24h"] = (
+            (ob_l20_depth_notional / (quote_volume_24h + eps))
+            .replace([np.inf, -np.inf], np.nan)
+            .clip(0.0, 100.0)
+            .astype(np.float32)
+        )
+        feats["ob_depth_l20_to_qv_z_7d"] = _batch_roll_zscore(
+            feats["ob_depth_l20_to_qv_24h"], 24 * 7
+        ).clip(-6.0, 6.0)
+        if isinstance(ob_notional_1h, pd.DataFrame):
+            feats["ob_notional_to_depth_l20_z_24h"] = _batch_roll_zscore(
+                (
+                    ob_notional_1h
+                    / (ob_l20_depth_notional.replace(0.0, np.nan) + eps)
+                )
+                .replace([np.inf, -np.inf], np.nan)
+                .clip(0.0, 100.0),
+                24,
+            ).clip(-6.0, 6.0)
+    if isinstance(ob_l1_depth_notional, pd.DataFrame) and isinstance(
+        ob_mean_trade_qty_1h, pd.DataFrame
+    ):
+        feats["ob_trade_size_to_l1_depth_z_24h"] = _batch_roll_zscore(
+            (
+                (ob_mean_trade_qty_1h * close_panel)
+                / (ob_l1_depth_notional.replace(0.0, np.nan) + eps)
+            )
+            .replace([np.inf, -np.inf], np.nan)
+            .clip(0.0, 100.0),
+            24,
+        ).clip(-6.0, 6.0)
+
+    if "ob_gap_up_bps_l10" in feats and "ob_gap_dn_bps_l10" in feats:
+        feats["ob_gap_skew_l10"] = (
+            feats["ob_gap_up_bps_l10"] - feats["ob_gap_dn_bps_l10"]
+        ).astype(np.float32)
+    if "ob_wimb_l10" in feats and "ob_microprice_dev_bps" in feats:
+        feats["ob_book_pressure_l10"] = (
+            feats["ob_wimb_l10"] * feats["ob_microprice_dev_bps"]
+        ).astype(np.float32)
+    if "ob_imb_l10" in feats:
+        feats["ob_imb_chg_1"] = _batch_roll_zscore(feats["ob_imb_l10"].diff(1), 24)
+        feats["ob_imb_accel_4"] = _batch_roll_zscore(
+            feats["ob_imb_l10"].diff(1).diff(4), 24 * 7
+        )
 
     # cross-asset basket extensions (available-symbol mean only)
     basket = _resolve_available_basket_symbols(list(cfg.get("market_basket", [])))
-    if basket:
-        mkt_ob_pressure = feats["ob_book_pressure_l10"][basket].mean(axis=1)
-        mkt_funding = feats["fund_rate_z_14d"][basket].mean(axis=1)
-    else:
-        mkt_ob_pressure = pd.Series(0.0, index=idx, dtype=np.float32)
-        mkt_funding = pd.Series(0.0, index=idx, dtype=np.float32)
-    feats["xasset_asset_minus_mkt_ob_pressure"] = (
-        feats["ob_book_pressure_l10"].sub(mkt_ob_pressure, axis=0).astype(np.float32)
-    )
-    feats["xasset_asset_minus_mkt_funding"] = (
-        feats["fund_rate_z_14d"]
-        .sub(mkt_funding, axis=0)
-        .clip(-10, 10)
-        .astype(np.float32)
-    )
-    feats["xasset_btc_ob_pressure"] = _broadcast_series(
-        feats["ob_book_pressure_l10"].get(
-            _resolve_available_symbol("BTC/USDT") or "", mkt_ob_pressure
+    if "ob_book_pressure_l10" in feats:
+        if basket:
+            mkt_ob_pressure = feats["ob_book_pressure_l10"][basket].mean(axis=1)
+        else:
+            mkt_ob_pressure = feats["ob_book_pressure_l10"].mean(axis=1)
+        feats["xasset_asset_minus_mkt_ob_pressure"] = (
+            feats["ob_book_pressure_l10"].sub(mkt_ob_pressure, axis=0).astype(np.float32)
         )
-    )
-    feats["xasset_eth_ob_pressure"] = _broadcast_series(
-        feats["ob_book_pressure_l10"].get(
-            _resolve_available_symbol("ETH/USDT") or "", mkt_ob_pressure
+        feats["xasset_btc_ob_pressure"] = _broadcast_series(
+            feats["ob_book_pressure_l10"].get(
+                _resolve_available_symbol("BTC/USDT") or "", mkt_ob_pressure
+            )
         )
-    )
-    feats["xasset_btc_funding_z"] = _broadcast_series(
-        feats["fund_rate_z_14d"].get(
-            _resolve_available_symbol("BTC/USDT") or "", mkt_funding
+        feats["xasset_eth_ob_pressure"] = _broadcast_series(
+            feats["ob_book_pressure_l10"].get(
+                _resolve_available_symbol("ETH/USDT") or "", mkt_ob_pressure
+            )
         )
-    )
-    lev_build = (
-        (feats["fund_rate_z_14d"] > 1).astype(np.float32)
-        + (feats["basis_pct_z"] > 1).astype(np.float32)
-        + (feats["ob_imb_l10"] > 0).astype(np.float32)
-    ) / 3.0
-    feats["xasset_leverage_build_score"] = lev_build.astype(np.float32)
-
-    feats["fund_time_to_next"] = _zero_panel()
-    feats["fund_countdown_sin"] = _zero_panel()
-    feats["fund_countdown_cos"] = _zero_panel()
-    feats["fund_dispersion_basket"] = _zero_panel()
-    feats["fund_extreme_share_basket"] = _zero_panel()
-    feats["basis_dispersion_basket"] = _zero_panel()
-    feats["xasset_mkt_spread_bps"] = _zero_panel()
-    feats["xasset_mkt_depth_z"] = _zero_panel()
-    feats["xasset_mkt_ob_stress"] = _zero_panel()
-    feats["xasset_mkt_ob_stress_z_24h"] = _zero_panel()
-    feats["xasset_unwind_pressure"] = _zero_panel()
+    if "fund_rate_z_14d" in feats:
+        if basket:
+            mkt_funding = feats["fund_rate_z_14d"][basket].mean(axis=1)
+        else:
+            mkt_funding = feats["fund_rate_z_14d"].mean(axis=1)
+        feats["xasset_asset_minus_mkt_funding"] = (
+            feats["fund_rate_z_14d"]
+            .sub(mkt_funding, axis=0)
+            .clip(-10, 10)
+            .astype(np.float32)
+        )
+        feats["xasset_btc_funding_z"] = _broadcast_series(
+            feats["fund_rate_z_14d"].get(
+                _resolve_available_symbol("BTC/USDT") or "", mkt_funding
+            )
+        )
+    lev_parts = []
+    if "fund_rate_z_14d" in feats:
+        lev_parts.append((feats["fund_rate_z_14d"] > 1).astype(np.float32))
+    if "basis_pct_z" in feats:
+        lev_parts.append((feats["basis_pct_z"] > 1).astype(np.float32))
+    if "ob_imb_l10" in feats:
+        lev_parts.append((feats["ob_imb_l10"] > 0).astype(np.float32))
+    if lev_parts:
+        lev_build = sum(lev_parts) / float(len(lev_parts))
+        feats["xasset_leverage_build_score"] = lev_build.astype(np.float32)
 
     # extended meta funding/orderbook feature set
-    feats["fund_rate_ffill"] = feats["fund_rate"].astype(np.float32)
-    feats["fund_abs_z_14d"] = (
-        feats["fund_rate_z_14d"].abs().clip(0, 6).astype(np.float32)
-    )
-    feats["fund_carry_24h"] = _batch_roll_zscore(
-        feats["fund_rate"].rolling(24, min_periods=1).sum(), 14 * 24
-    )
-    feats["fund_mom_8h"] = feats["fund_rate_mom_8h"].astype(np.float32)
-    feats["fund_mom_24h"] = feats["fund_rate_mom_24h"].astype(np.float32)
-    feats["fund_sign_persistence_24h"] = (
-        np.sign(feats["fund_rate"])
-        .rolling(24, min_periods=1)
-        .mean()
-        .clip(-1, 1)
-        .astype(np.float32)
-    )
-    feats["fund_extreme_duration_24h"] = (
-        (feats["fund_rate_z_14d"].abs() > 2)
-        .astype(np.float32)
-        .rolling(24, min_periods=1)
-        .mean()
-        .astype(np.float32)
-    )
-    feats["fund_rank_30d"] = (
-        feats["fund_rate"]
-        .rolling(24 * 30, min_periods=24)
-        .rank(pct=True)
-        .clip(0.01, 0.99)
-        .astype(np.float32)
-    )
+    if "fund_rate" in feats and "fund_rate_z_14d" in feats:
+        feats["fund_rate_ffill"] = feats["fund_rate"].astype(np.float32)
+        feats["fund_abs_z_14d"] = (
+            feats["fund_rate_z_14d"].abs().clip(0, 6).astype(np.float32)
+        )
+        feats["fund_carry_24h"] = _batch_roll_zscore(
+            feats["fund_rate"].rolling(24, min_periods=1).sum(), 14 * 24
+        )
+        feats["fund_mom_8h"] = feats["fund_rate_mom_8h"].astype(np.float32)
+        feats["fund_mom_24h"] = feats["fund_rate_mom_24h"].astype(np.float32)
+        feats["fund_sign_persistence_24h"] = (
+            np.sign(feats["fund_rate"])
+            .rolling(24, min_periods=1)
+            .mean()
+            .clip(-1, 1)
+            .astype(np.float32)
+        )
+        feats["fund_extreme_duration_24h"] = (
+            (feats["fund_rate_z_14d"].abs() > 2)
+            .astype(np.float32)
+            .rolling(24, min_periods=1)
+            .mean()
+            .astype(np.float32)
+        )
+        feats["fund_rank_30d"] = (
+            feats["fund_rate"]
+            .rolling(24 * 30, min_periods=24)
+            .rank(pct=True)
+            .clip(0.01, 0.99)
+            .astype(np.float32)
+        )
     idx_hour = np.asarray(pd.DatetimeIndex(idx).hour, dtype=np.float32)
     hours_to_next = _broadcast_series(
         pd.Series(np.mod(8.0 - np.mod(idx_hour, 8.0), 8.0), index=idx)
     )
-    feats["fund_countdown_pressure"] = (
-        (feats["fund_abs_z_14d"] * (1.0 - hours_to_next / 8.0))
-        .clip(0, 6)
-        .astype(np.float32)
-    )
     hours_since_last = _broadcast_series(
         pd.Series(np.mod(idx_hour, 8.0), index=idx)
     )
-    feats["fund_hours_to_next"] = hours_to_next.astype(np.float32)
-    feats["fund_hours_since_last"] = hours_since_last.astype(np.float32)
-    feats["fund_next_event_proximity_5h"] = (
-        (1.0 - (hours_to_next / 5.0)).clip(0.0, 1.0).astype(np.float32)
-    )
-    feats["fund_next_event_proximity_10h"] = (
-        (1.0 - (hours_to_next / 10.0)).clip(0.0, 1.0).astype(np.float32)
-    )
+    if "fund_abs_z_14d" in feats:
+        feats["fund_countdown_pressure"] = (
+            (feats["fund_abs_z_14d"] * (1.0 - hours_to_next / 8.0))
+            .clip(0, 6)
+            .astype(np.float32)
+        )
+        feats["fund_hours_to_next"] = hours_to_next.astype(np.float32)
+        feats["fund_hours_since_last"] = hours_since_last.astype(np.float32)
+        feats["fund_next_event_proximity_5h"] = (
+            (1.0 - (hours_to_next / 5.0)).clip(0.0, 1.0).astype(np.float32)
+        )
+        feats["fund_next_event_proximity_10h"] = (
+            (1.0 - (hours_to_next / 10.0)).clip(0.0, 1.0).astype(np.float32)
+        )
 
-    mark_gap = feats.get("mark_perp_dislocation", _zero_panel()).astype(np.float32)
-    mark_index_gap = feats.get("mark_index_basis", _zero_panel()).astype(np.float32)
-    premium_ref = feats.get("premium_index", _zero_panel()).astype(np.float32)
-    premium_phi_24 = _rolling_autocorr_df(premium_ref.fillna(0.0), 24)
-    premium_phi_safe = premium_phi_24.clip(lower=1e-4, upper=0.999)
-    premium_halflife = (
-        (-np.log(2.0) / np.log(premium_phi_safe))
-        .where(premium_phi_24 > 0.0, 0.0)
-        .replace([np.inf, -np.inf], np.nan)
-        .fillna(0.0)
-        .clip(0.0, 72.0)
-        .astype(np.float32)
-    )
-    feats["premium_mean_reversion_halflife_24h"] = premium_halflife
+    mark_gap = feats.get("mark_perp_dislocation")
+    mark_index_gap = feats.get("mark_index_basis")
+    premium_ref = feats.get("premium_index")
+    if isinstance(premium_ref, pd.DataFrame):
+        premium_phi_24 = _rolling_autocorr_df(premium_ref, 24)
+        premium_phi_safe = premium_phi_24.clip(lower=1e-4, upper=0.999)
+        premium_halflife = (
+            (-np.log(2.0) / np.log(premium_phi_safe))
+            .where(premium_phi_24 > 0.0)
+            .replace([np.inf, -np.inf], np.nan)
+            .clip(0.0, 72.0)
+            .astype(np.float32)
+        )
+        feats["premium_mean_reversion_halflife_24h"] = premium_halflife
 
-    leverage = max(1.01, float(cfg.get("perp_feature_assumed_leverage", 3.0)))
-    maint_margin = max(0.0, float(cfg.get("perp_feature_maintenance_margin_frac", 0.005)))
-    round_fee_frac = max(0.0, float(cfg.get("perp_feature_round_fee_frac", 0.003)))
-    liq_move = max(0.01, (1.0 / leverage) - maint_margin - round_fee_frac)
-    sl_proxy = np.maximum(
-        raw_atr_pct.astype(np.float32),
-        float(cfg.get("perp_feature_min_stop_frac", 0.003)),
-    )
-    liq_wall_panel = pd.DataFrame(
-        liq_move, index=idx, columns=cols, dtype=np.float32
-    )
-    feats["liq_buffer_long_mark_frac"] = (
-        (liq_wall_panel + mark_gap).clip(0.0, 1.0).astype(np.float32)
-    )
-    feats["liq_buffer_short_mark_frac"] = (
-        (liq_wall_panel - mark_gap).clip(0.0, 1.0).astype(np.float32)
-    )
-    feats["liq_buffer_atr"] = (
-        (liq_wall_panel / (raw_atr_pct.abs() + eps))
-        .replace([np.inf, -np.inf], np.nan)
-        .fillna(0.0)
-        .clip(0.0, 100.0)
-        .astype(np.float32)
-    )
-    feats["liq_stop_safety_long_atr"] = (
-        ((feats["liq_buffer_long_mark_frac"] - 3.0 * sl_proxy) / (raw_atr_pct.abs() + eps))
-        .replace([np.inf, -np.inf], np.nan)
-        .fillna(0.0)
-        .clip(-100.0, 100.0)
-        .astype(np.float32)
-    )
-    feats["liq_stop_safety_short_atr"] = (
-        ((feats["liq_buffer_short_mark_frac"] - 3.0 * sl_proxy) / (raw_atr_pct.abs() + eps))
-        .replace([np.inf, -np.inf], np.nan)
-        .fillna(0.0)
-        .clip(-100.0, 100.0)
-        .astype(np.float32)
-    )
+    if isinstance(mark_gap, pd.DataFrame):
+        leverage = max(1.01, float(cfg.get("perp_feature_assumed_leverage", 3.0)))
+        maint_margin = max(
+            0.0, float(cfg.get("perp_feature_maintenance_margin_frac", 0.005))
+        )
+        round_fee_frac = max(0.0, float(cfg.get("perp_feature_round_fee_frac", 0.003)))
+        liq_move = max(0.01, (1.0 / leverage) - maint_margin - round_fee_frac)
+        sl_proxy = np.maximum(
+            raw_atr_pct.astype(np.float32),
+            float(cfg.get("perp_feature_min_stop_frac", 0.003)),
+        )
+        liq_wall_panel = pd.DataFrame(
+            liq_move, index=idx, columns=cols, dtype=np.float32
+        )
+        feats["liq_buffer_long_mark_frac"] = (
+            (liq_wall_panel + mark_gap).clip(0.0, 1.0).astype(np.float32)
+        )
+        feats["liq_buffer_short_mark_frac"] = (
+            (liq_wall_panel - mark_gap).clip(0.0, 1.0).astype(np.float32)
+        )
+        feats["liq_buffer_atr"] = (
+            (liq_wall_panel / (raw_atr_pct.abs() + eps))
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(0.0)
+            .clip(0.0, 100.0)
+            .astype(np.float32)
+        )
+        feats["liq_stop_safety_long_atr"] = (
+            (
+                (feats["liq_buffer_long_mark_frac"] - 3.0 * sl_proxy)
+                / (raw_atr_pct.abs() + eps)
+            )
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(0.0)
+            .clip(-100.0, 100.0)
+            .astype(np.float32)
+        )
+        feats["liq_stop_safety_short_atr"] = (
+            (
+                (feats["liq_buffer_short_mark_frac"] - 3.0 * sl_proxy)
+                / (raw_atr_pct.abs() + eps)
+            )
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(0.0)
+            .clip(-100.0, 100.0)
+            .astype(np.float32)
+        )
 
     prior_high_24 = h_raw.shift(1).rolling(24, min_periods=6).max()
     prior_low_24 = l_raw.shift(1).rolling(24, min_periods=6).min()
@@ -3745,308 +4081,362 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     vol_expansion_proxy = feats.get("vol_expansion_ratio", _zero_panel()).astype(
         np.float32
     )
-    fund_sign = np.sign(feats["fund_rate"]).astype(np.float32)
-    fund_flip = (
-        (fund_sign * fund_sign.shift(1) < 0.0).astype(np.float32).fillna(0.0)
-    )
-    pos_funding_persistence = feats["fund_sign_persistence_24h"].clip(0.0, 1.0)
-    neg_funding_persistence = (-feats["fund_sign_persistence_24h"]).clip(0.0, 1.0)
+    if "fund_rate" in feats and "fund_sign_persistence_24h" in feats:
+        fund_sign = np.sign(feats["fund_rate"]).astype(np.float32)
+        fund_flip = (
+            (fund_sign * fund_sign.shift(1) < 0.0).astype(np.float32).fillna(0.0)
+        )
+        pos_funding_persistence = feats["fund_sign_persistence_24h"].clip(0.0, 1.0)
+        neg_funding_persistence = (-feats["fund_sign_persistence_24h"]).clip(0.0, 1.0)
 
+        for _h in (5, 10):
+            ret_h = feats.get(
+                f"ret{_h}h", feats["ret1h"].rolling(_h, min_periods=1).sum()
+            )
+            proximity = feats[f"fund_next_event_proximity_{_h}h"]
+            post_proximity = (1.0 - (hours_since_last / float(_h))).clip(0.0, 1.0)
+            carry_h = feats["fund_rate"] * (float(_h) / 8.0)
+
+            feats[f"fund_pre_drift_{_h}h"] = (
+                (ret_h * fund_sign * proximity).clip(-1.0, 1.0).astype(np.float32)
+            )
+            feats[f"fund_post_reversal_{_h}h"] = (
+                (-ret_h * fund_sign * post_proximity)
+                .clip(-1.0, 1.0)
+                .astype(np.float32)
+            )
+            feats[f"fund_ret_cond_sign_{_h}h"] = (
+                (ret_h * fund_sign).clip(-1.0, 1.0).astype(np.float32)
+            )
+            feats[f"fund_payment_pressure_{_h}h"] = (
+                (feats["fund_abs_z_14d"] * proximity)
+                .clip(0.0, 6.0)
+                .astype(np.float32)
+            )
+            feats[f"carry_adj_ret_{_h}h"] = (
+                (ret_h - carry_h).clip(-1.0, 1.0).astype(np.float32)
+            )
+            feats[f"carry_adj_short_ret_{_h}h"] = (
+                ((-ret_h) + carry_h).clip(-1.0, 1.0).astype(np.float32)
+            )
+            if "basis_pct" in feats:
+                basis_mom_h = feats["basis_pct"].diff(_h).fillna(0.0)
+                feats[f"basis_adjusted_trend_{_h}h"] = (
+                    (ret_h - basis_mom_h).clip(-1.0, 1.0).astype(np.float32)
+                )
+            feats[f"funding_crowded_mom_exhaustion_{_h}h"] = (
+                (
+                    feats["fund_abs_z_14d"].clip(0.0, 6.0)
+                    * (-(ret_h * fund_sign)).clip(lower=0.0)
+                )
+                .clip(0.0, 6.0)
+                .astype(np.float32)
+            )
+            feats[f"fund_high_neg_mom_{_h}h"] = (
+                (feats["fund_rate_z_14d"].clip(lower=0.0) * (-ret_h).clip(lower=0.0))
+                .clip(0.0, 6.0)
+                .astype(np.float32)
+            )
+            feats[f"persistent_pos_funding_failed_breakout_{_h}h"] = (
+                (
+                    pos_funding_persistence
+                    * failed_breakout_up.rolling(_h, min_periods=1).max()
+                )
+                .clip(0.0, 1.0)
+                .astype(np.float32)
+            )
+            feats[f"persistent_neg_funding_failed_breakdown_{_h}h"] = (
+                (
+                    neg_funding_persistence
+                    * failed_breakdown.rolling(_h, min_periods=1).max()
+                )
+                .clip(0.0, 1.0)
+                .astype(np.float32)
+            )
+            feats[f"fund_flip_x_vol_expansion_{_h}h"] = (
+                (
+                    fund_flip.rolling(_h, min_periods=1).max()
+                    * vol_expansion_proxy.clip(0.0, 10.0)
+                )
+                .clip(0.0, 10.0)
+                .astype(np.float32)
+            )
     for _h in (5, 10):
-        ret_h = feats.get(f"ret{_h}h", feats["ret1h"].rolling(_h, min_periods=1).sum())
-        proximity = feats[f"fund_next_event_proximity_{_h}h"]
-        post_proximity = (1.0 - (hours_since_last / float(_h))).clip(0.0, 1.0)
-        carry_h = feats["fund_rate"] * (float(_h) / 8.0)
+        if isinstance(mark_gap, pd.DataFrame):
+            feats[f"mark_gap_vol_{_h}h"] = (
+                mark_gap.rolling(_h, min_periods=max(2, _h // 2))
+                .std(ddof=0)
+                .clip(0.0, 0.10)
+                .astype(np.float32)
+            )
+        if isinstance(premium_ref, pd.DataFrame):
+            feats[f"premium_expansion_speed_{_h}h"] = (
+                _batch_roll_zscore(premium_ref.diff(_h), 14 * 24)
+                .clip(-6.0, 6.0)
+                .astype(np.float32)
+            )
+        if isinstance(mark_gap, pd.DataFrame) and isinstance(mark_index_gap, pd.DataFrame):
+            feats[f"mark_trigger_risk_{_h}h"] = (
+                ((mark_gap.abs() + mark_index_gap.abs()) / (raw_atr_pct.abs() + eps))
+                .replace([np.inf, -np.inf], np.nan)
+                .clip(0.0, 50.0)
+                .astype(np.float32)
+            )
 
-        feats[f"fund_pre_drift_{_h}h"] = (
-            (ret_h * fund_sign * proximity).clip(-1.0, 1.0).astype(np.float32)
+    if all(k in feats for k in ("ob_imb_l1", "ob_imb_l10", "ob_imb_l20")):
+        feats["ob_top_liquidity_usd_z"] = _batch_roll_zscore(
+            np.log1p(close_panel * (feats["ob_imb_l1"].abs() + 1.0)), 24 * 7
         )
-        feats[f"fund_post_reversal_{_h}h"] = (
-            (-ret_h * fund_sign * post_proximity).clip(-1.0, 1.0).astype(np.float32)
+        feats["ob_depth_usd_l10_z"] = _batch_roll_zscore(
+            np.log1p(close_panel * (feats["ob_imb_l10"].abs() + 1.0)), 24 * 7
         )
-        feats[f"fund_ret_cond_sign_{_h}h"] = (
-            (ret_h * fund_sign).clip(-1.0, 1.0).astype(np.float32)
+        feats["ob_depth_usd_l20_z"] = _batch_roll_zscore(
+            np.log1p(close_panel * (feats["ob_imb_l20"].abs() + 1.0)), 24 * 7
         )
-        feats[f"fund_payment_pressure_{_h}h"] = (
-            (feats["fund_abs_z_14d"] * proximity).clip(0.0, 6.0).astype(np.float32)
-        )
-        feats[f"mark_gap_vol_{_h}h"] = (
-            mark_gap.rolling(_h, min_periods=max(2, _h // 2))
-            .std(ddof=0)
-            .fillna(0.0)
-            .clip(0.0, 0.10)
-            .astype(np.float32)
-        )
-        feats[f"premium_expansion_speed_{_h}h"] = (
-            _batch_roll_zscore(premium_ref.diff(_h), 14 * 24)
-            .clip(-6.0, 6.0)
-            .astype(np.float32)
-        )
-        feats[f"mark_trigger_risk_{_h}h"] = (
-            ((mark_gap.abs() + mark_index_gap.abs()) / (raw_atr_pct.abs() + eps))
-            .replace([np.inf, -np.inf], np.nan)
-            .fillna(0.0)
-            .clip(0.0, 50.0)
-            .astype(np.float32)
-        )
-        feats[f"carry_adj_ret_{_h}h"] = (
-            (ret_h - carry_h).clip(-1.0, 1.0).astype(np.float32)
-        )
-        feats[f"carry_adj_short_ret_{_h}h"] = (
-            ((-ret_h) + carry_h).clip(-1.0, 1.0).astype(np.float32)
-        )
-        basis_mom_h = feats["basis_pct"].diff(_h).fillna(0.0)
-        feats[f"basis_adjusted_trend_{_h}h"] = (
-            (ret_h - basis_mom_h).clip(-1.0, 1.0).astype(np.float32)
-        )
-        feats[f"funding_crowded_mom_exhaustion_{_h}h"] = (
+        feats["ob_depth_ratio_l1_l20"] = (
             (
-                feats["fund_abs_z_14d"].clip(0.0, 6.0)
-                * (-(ret_h * fund_sign)).clip(lower=0.0)
+                (feats["ob_top_liquidity_usd_z"] + 10)
+                / (feats["ob_depth_usd_l20_z"] + 10 + eps)
             )
-            .clip(0.0, 6.0)
+            .clip(0, 1)
             .astype(np.float32)
         )
-        feats[f"fund_high_neg_mom_{_h}h"] = (
-            (feats["fund_rate_z_14d"].clip(lower=0.0) * (-ret_h).clip(lower=0.0))
-            .clip(0.0, 6.0)
-            .astype(np.float32)
+        feats["ob_imb_near_far_delta"] = (
+            (feats["ob_imb_l1"] - feats["ob_imb_l20"]).clip(-2, 2).astype(np.float32)
         )
-        feats[f"persistent_pos_funding_failed_breakout_{_h}h"] = (
-            (
-                pos_funding_persistence
-                * failed_breakout_up.rolling(_h, min_periods=1).max()
-            )
-            .clip(0.0, 1.0)
-            .astype(np.float32)
+    if "ob_bid_depth_decay_l20" in feats and "ob_ask_depth_decay_l20" in feats:
+        feats["ob_depth_decay_asym_l20"] = _batch_roll_zscore(
+            feats["ob_bid_depth_decay_l20"] - feats["ob_ask_depth_decay_l20"], 24 * 7
         )
-        feats[f"persistent_neg_funding_failed_breakdown_{_h}h"] = (
-            (
-                neg_funding_persistence
-                * failed_breakdown.rolling(_h, min_periods=1).max()
-            )
-            .clip(0.0, 1.0)
-            .astype(np.float32)
-        )
-        feats[f"fund_flip_x_vol_expansion_{_h}h"] = (
-            (
-                fund_flip.rolling(_h, min_periods=1).max()
-                * vol_expansion_proxy.clip(0.0, 10.0)
-            )
-            .clip(0.0, 10.0)
-            .astype(np.float32)
-        )
+    if "ob_wall_imb_l20" in feats:
+        feats["ob_wall_skew_l20"] = feats["ob_wall_imb_l20"].astype(np.float32)
 
-    feats["ob_top_liquidity_usd_z"] = _batch_roll_zscore(
-        np.log1p(close_panel * (feats["ob_imb_l1"].abs() + 1.0)), 24 * 7
-    )
-    feats["ob_depth_usd_l10_z"] = _batch_roll_zscore(
-        np.log1p(close_panel * (feats["ob_imb_l10"].abs() + 1.0)), 24 * 7
-    )
-    feats["ob_depth_usd_l20_z"] = _batch_roll_zscore(
-        np.log1p(close_panel * (feats["ob_imb_l20"].abs() + 1.0)), 24 * 7
-    )
-    feats["ob_depth_ratio_l1_l20"] = (
-        (
-            (feats["ob_top_liquidity_usd_z"] + 10)
-            / (feats["ob_depth_usd_l20_z"] + 10 + eps)
+    if "fund_rate_z_14d" in feats:
+        basket_fund_std = (
+            feats["fund_rate_z_14d"][basket].std(axis=1)
+            if basket
+            else feats["fund_rate_z_14d"].std(axis=1)
         )
-        .clip(0, 1)
-        .astype(np.float32)
-    )
-    feats["ob_imb_near_far_delta"] = (
-        (feats["ob_imb_l1"] - feats["ob_imb_l20"]).clip(-2, 2).astype(np.float32)
-    )
-    feats["ob_depth_decay_asym_l20"] = _batch_roll_zscore(
-        feats["ob_bid_depth_decay_l20"] - feats["ob_ask_depth_decay_l20"], 24 * 7
-    )
-    feats["ob_wall_skew_l20"] = feats["ob_wall_imb_l20"].astype(np.float32)
-
-    basket_fund_std = (
-        feats["fund_rate_z_14d"][basket].std(axis=1)
-        if basket
-        else pd.Series(0.0, index=idx)
-    )
-    feats["xasset_fund_dispersion_basket"] = _batch_roll_zscore(
-        _broadcast_series(basket_fund_std), 14 * 24
-    )
-    basket_ext_share = (
-        (feats["fund_rate_z_14d"][basket].abs() > 2).mean(axis=1)
-        if basket
-        else pd.Series(0.0, index=idx)
-    ).astype(np.float32)
-    feats["xasset_fund_extreme_share_basket"] = _broadcast_series(basket_ext_share)
-    feats["xasset_asset_minus_basket_fund_z"] = feats[
-        "xasset_asset_minus_mkt_funding"
-    ].astype(np.float32)
-    feats["xasset_btc_fund_z"] = (
-        feats["xasset_btc_funding_z"].clip(-6, 6).astype(np.float32)
-    )
-    basket_spread_z = (
-        feats["ob_spread_z_24h"][basket].mean(axis=1)
-        if basket
-        else feats["ob_spread_z_24h"].mean(axis=1)
-    )
-    basket_depth_z = (
-        feats["ob_depth_usd_l20_z"][basket].mean(axis=1)
-        if basket
-        else feats["ob_depth_usd_l20_z"].mean(axis=1)
-    )
-    feats["xasset_ob_stress_basket"] = _broadcast_series(
-        (basket_spread_z - basket_depth_z).clip(-10, 10)
-    )
-    feats["xasset_asset_minus_basket_ob_pressure"] = _batch_roll_zscore(
-        feats["xasset_asset_minus_mkt_ob_pressure"], 24 * 7
-    )
-    feats["xasset_ob_liquidity_divergence"] = (
-        feats["ob_depth_usd_l20_z"].sub(basket_depth_z, axis=0)
-    ).astype(np.float32)
+        feats["xasset_fund_dispersion_basket"] = _batch_roll_zscore(
+            _broadcast_series(basket_fund_std), 14 * 24
+        )
+        basket_ext_share = (
+            (feats["fund_rate_z_14d"][basket].abs() > 2).mean(axis=1)
+            if basket
+            else (feats["fund_rate_z_14d"].abs() > 2).mean(axis=1)
+        ).astype(np.float32)
+        feats["xasset_fund_extreme_share_basket"] = _broadcast_series(basket_ext_share)
+    if "xasset_asset_minus_mkt_funding" in feats:
+        feats["xasset_asset_minus_basket_fund_z"] = feats[
+            "xasset_asset_minus_mkt_funding"
+        ].astype(np.float32)
+    if "xasset_btc_funding_z" in feats:
+        feats["xasset_btc_fund_z"] = (
+            feats["xasset_btc_funding_z"].clip(-6, 6).astype(np.float32)
+        )
+    ob_depth_norm_z = feats.get("ob_depth_l20_to_qv_z_7d", feats.get("ob_depth_usd_l20_z"))
+    if "ob_spread_z_24h" in feats and isinstance(ob_depth_norm_z, pd.DataFrame):
+        basket_spread_z = (
+            feats["ob_spread_z_24h"][basket].mean(axis=1)
+            if basket
+            else feats["ob_spread_z_24h"].mean(axis=1)
+        )
+        basket_depth_z = (
+            ob_depth_norm_z[basket].mean(axis=1)
+            if basket
+            else ob_depth_norm_z.mean(axis=1)
+        )
+        feats["xasset_mkt_spread_bps_z_24h"] = _broadcast_series(basket_spread_z)
+        feats["xasset_mkt_depth_to_qv_z"] = _broadcast_series(basket_depth_z)
+        normalized_mkt_ob_stress = _batch_roll_zscore(
+            _broadcast_series((basket_spread_z - basket_depth_z).clip(-10, 10)),
+            24,
+        )
+        feats["xasset_mkt_ob_stress_z_24h"] = normalized_mkt_ob_stress.astype(
+            np.float32
+        )
+        feats["xasset_ob_stress_basket_z_24h"] = normalized_mkt_ob_stress.astype(
+            np.float32
+        )
+        feats["xasset_ob_stress_basket"] = _broadcast_series(
+            (basket_spread_z - basket_depth_z).clip(-10, 10)
+        )
+        feats["xasset_ob_liquidity_divergence"] = (
+            ob_depth_norm_z.sub(basket_depth_z, axis=0)
+        ).astype(np.float32)
+        feats["xasset_ob_liquidity_divergence_z_24h"] = _batch_roll_zscore(
+            feats["xasset_ob_liquidity_divergence"], 24
+        ).astype(np.float32)
+    if "xasset_asset_minus_mkt_ob_pressure" in feats:
+        feats["xasset_asset_minus_basket_ob_pressure"] = _batch_roll_zscore(
+            feats["xasset_asset_minus_mkt_ob_pressure"], 24 * 7
+        )
+        feats["xasset_asset_minus_mkt_ob_pressure_z_24h"] = _batch_roll_zscore(
+            feats["xasset_asset_minus_mkt_ob_pressure"], 24
+        ).clip(-6.0, 6.0)
 
     rv24z = _batch_roll_zscore(feats["rv_24h"], 14 * 24)
     trend_strength = feats.get("trend_strength_percentile", _zero_panel())
-    feats["fund_abs_z_x_ret24h_sign"] = (
-        (feats["fund_abs_z_14d"] * np.sign(feats["ret24h"]).astype(np.float32))
-        .clip(-6, 6)
-        .astype(np.float32)
-    )
-    feats["fund_abs_z_x_rv_24h"] = (
-        (feats["fund_abs_z_14d"] * rv24z).clip(-12, 12).astype(np.float32)
-    )
-    feats["fund_z_x_trend_strength"] = (
-        (feats["fund_rate_z_14d"] * trend_strength).clip(-6, 6).astype(np.float32)
-    )
-    feats["ob_pressure_x_ret4h_sign"] = _batch_roll_zscore(
-        feats["ob_book_pressure_l10"] * np.sign(feats["ret4h"]).astype(np.float32),
-        24 * 7,
-    )
-    feats["ob_spread_z_x_rv_24h"] = (
-        (feats["ob_spread_z_24h"] * rv24z).clip(-12, 12).astype(np.float32)
-    )
-    feats["ob_depth_z_x_rvol_z"] = (
-        (feats["ob_depth_usd_l20_z"] * feats["rvol_z"]).clip(-12, 12).astype(np.float32)
-    )
+    if "fund_abs_z_14d" in feats:
+        feats["fund_abs_z_x_ret24h_sign"] = (
+            (feats["fund_abs_z_14d"] * np.sign(feats["ret24h"]).astype(np.float32))
+            .clip(-6, 6)
+            .astype(np.float32)
+        )
+        feats["fund_abs_z_x_rv_24h"] = (
+            (feats["fund_abs_z_14d"] * rv24z).clip(-12, 12).astype(np.float32)
+        )
+    if "fund_rate_z_14d" in feats:
+        feats["fund_z_x_trend_strength"] = (
+            (feats["fund_rate_z_14d"] * trend_strength).clip(-6, 6).astype(np.float32)
+        )
+    if "ob_book_pressure_l10" in feats:
+        feats["ob_pressure_x_ret4h_sign"] = _batch_roll_zscore(
+            feats["ob_book_pressure_l10"] * np.sign(feats["ret4h"]).astype(np.float32),
+            24 * 7,
+        )
+    if "ob_spread_z_24h" in feats:
+        feats["ob_spread_z_x_rv_24h"] = (
+            (feats["ob_spread_z_24h"] * rv24z).clip(-12, 12).astype(np.float32)
+        )
+    if isinstance(ob_depth_norm_z, pd.DataFrame):
+        feats["ob_depth_z_x_rvol_z"] = (
+            (ob_depth_norm_z * feats["rvol_z"])
+            .clip(-12, 12)
+            .astype(np.float32)
+        )
+        feats["ob_depth_to_qv_z_x_rvol_z"] = feats["ob_depth_z_x_rvol_z"].astype(
+            np.float32
+        )
 
     # Canonical RegimeAdaptor aliases/aggregates.  These are point-in-time
     # rolling windows on the hourly feature panel, so day windows use 24 * days.
-    feats["asset_funding_rate_mean_3d"] = (
-        feats["fund_rate"]
-        .rolling(24 * 3, min_periods=24)
-        .mean()
-        .fillna(0.0)
-        .astype(np.float32)
-    )
-    feats["asset_funding_rate_mean_7d"] = (
-        feats["fund_rate"]
-        .rolling(24 * 7, min_periods=24)
-        .mean()
-        .fillna(0.0)
-        .astype(np.float32)
-    )
-    feats["asset_funding_rate_mean_15d"] = (
-        feats["fund_rate"]
-        .rolling(24 * 15, min_periods=24 * 3)
-        .mean()
-        .fillna(0.0)
-        .astype(np.float32)
-    )
-    feats["asset_funding_rate_abs_mean_7d"] = (
-        feats["fund_rate"]
-        .abs()
-        .rolling(24 * 7, min_periods=24)
-        .mean()
-        .fillna(0.0)
-        .astype(np.float32)
-    )
-    feats["asset_funding_z"] = feats["fund_rate_z_14d"].clip(-6, 6).astype(np.float32)
-    trend_proxy = np.sign(feats.get("ret24h", _zero_panel())).astype(np.float32)
-    feats["asset_funding_trend_alignment"] = (
-        (trend_proxy * feats["asset_funding_z"]).clip(-6, 6).astype(np.float32)
-    )
-    feats["funding_rate_cross_asset_dispersion"] = _broadcast_series(
-        feats["fund_rate_z_14d"].std(axis=1).fillna(0.0)
-    )
+    if "fund_rate" in feats and "fund_rate_z_14d" in feats:
+        feats["asset_funding_rate_mean_3d"] = (
+            feats["fund_rate"]
+            .rolling(24 * 3, min_periods=24)
+            .mean()
+            .fillna(0.0)
+            .astype(np.float32)
+        )
+        feats["asset_funding_rate_mean_7d"] = (
+            feats["fund_rate"]
+            .rolling(24 * 7, min_periods=24)
+            .mean()
+            .fillna(0.0)
+            .astype(np.float32)
+        )
+        feats["asset_funding_rate_mean_15d"] = (
+            feats["fund_rate"]
+            .rolling(24 * 15, min_periods=24 * 3)
+            .mean()
+            .fillna(0.0)
+            .astype(np.float32)
+        )
+        feats["asset_funding_rate_abs_mean_7d"] = (
+            feats["fund_rate"]
+            .abs()
+            .rolling(24 * 7, min_periods=24)
+            .mean()
+            .fillna(0.0)
+            .astype(np.float32)
+        )
+        feats["asset_funding_z"] = (
+            feats["fund_rate_z_14d"].clip(-6, 6).astype(np.float32)
+        )
+        trend_proxy = np.sign(feats.get("ret24h", _zero_panel())).astype(np.float32)
+        feats["asset_funding_trend_alignment"] = (
+            (trend_proxy * feats["asset_funding_z"]).clip(-6, 6).astype(np.float32)
+        )
+        feats["funding_rate_cross_asset_dispersion"] = _broadcast_series(
+            feats["fund_rate_z_14d"].std(axis=1).fillna(0.0)
+        )
 
-    spread_proxy = feats.get(
-        "ob_spread_bps", feats.get("ob_spread_z_24h", _zero_panel())
-    )
-    depth_proxy = feats.get(
-        "ob_depth_usd_l20", feats.get("ob_top_liquidity_usd", _zero_panel())
-    )
-    depth_risk = (1.0 / np.sqrt(1.0 + np.maximum(depth_proxy, 0.0))).astype(np.float32)
-    imb_proxy = (
-        feats.get(
-            "ob_imb_l10",
-            feats.get("ob_wimb_l10", feats.get("ob_book_pressure_l10", _zero_panel())),
-        )
-        .abs()
-        .astype(np.float32)
-    )
-    for _name, _panel in (
-        ("asset_spread_proxy_p90", spread_proxy),
-        ("asset_volume_depth_risk_p90", depth_risk),
-    ):
-        feats[f"{_name}_24h"] = (
-            _panel.rolling(24, min_periods=6)
-            .quantile(0.90)
-            .fillna(0.0)
-            .astype(np.float32)
-        )
-        feats[f"{_name}_96h"] = (
-            _panel.rolling(96, min_periods=24)
-            .quantile(0.90)
-            .fillna(0.0)
-            .astype(np.float32)
-        )
-        feats[f"{_name}_7d"] = (
-            _panel.rolling(24 * 7, min_periods=24)
-            .quantile(0.90)
-            .fillna(0.0)
-            .astype(np.float32)
-        )
-        feats[f"{_name}_15d"] = (
-            _panel.rolling(24 * 15, min_periods=24 * 3)
-            .quantile(0.90)
-            .fillna(0.0)
-            .astype(np.float32)
-        )
-    feats["asset_orderbook_imbalance_abs_mean_24h"] = (
-        imb_proxy.rolling(24, min_periods=6).mean().fillna(0.0).astype(np.float32)
-    )
-    feats["asset_orderbook_imbalance_abs_mean_96h"] = (
-        imb_proxy.rolling(96, min_periods=24).mean().fillna(0.0).astype(np.float32)
-    )
-    feats["asset_orderbook_imbalance_abs_mean_7d"] = (
-        imb_proxy.rolling(24 * 7, min_periods=24).mean().fillna(0.0).astype(np.float32)
-    )
-    feats["asset_orderbook_imbalance_abs_mean_15d"] = (
-        imb_proxy.rolling(24 * 15, min_periods=24 * 3)
-        .mean()
-        .fillna(0.0)
-        .astype(np.float32)
-    )
-    feats["asset_liquidity_stress_score_7d"] = (
-        (
-            _batch_roll_zscore(spread_proxy, 24 * 7)
-            + _batch_roll_zscore(depth_risk, 24 * 7)
-            + _batch_roll_zscore(imb_proxy, 24 * 7)
-        )
-        .div(3.0)
-        .fillna(0.0)
-        .astype(np.float32)
-    )
-    feats["global_liquidity_stress_score_7d"] = _broadcast_series(
-        feats["asset_liquidity_stress_score_7d"].mean(axis=1).fillna(0.0)
-    )
+    spread_proxy = feats.get("ob_spread_bps", feats.get("ob_spread_z_24h"))
+    depth_proxy = feats.get("ob_depth_usd_l20", feats.get("ob_top_liquidity_usd"))
+    imb_proxy = feats.get("ob_imb_l10", feats.get("ob_wimb_l10", feats.get("ob_book_pressure_l10")))
+    if isinstance(spread_proxy, pd.DataFrame) and isinstance(depth_proxy, pd.DataFrame):
+        depth_risk = (
+            1.0 / np.sqrt(1.0 + np.maximum(depth_proxy, 0.0))
+        ).astype(np.float32)
+        for _name, _panel in (
+            ("asset_spread_proxy_p90", spread_proxy),
+            ("asset_volume_depth_risk_p90", depth_risk),
+        ):
+            feats[f"{_name}_24h"] = (
+                _panel.rolling(24, min_periods=6)
+                .quantile(0.90)
+                .fillna(0.0)
+                .astype(np.float32)
+            )
+            feats[f"{_name}_96h"] = (
+                _panel.rolling(96, min_periods=24)
+                .quantile(0.90)
+                .fillna(0.0)
+                .astype(np.float32)
+            )
+            feats[f"{_name}_7d"] = (
+                _panel.rolling(24 * 7, min_periods=24)
+                .quantile(0.90)
+                .fillna(0.0)
+                .astype(np.float32)
+            )
+            feats[f"{_name}_15d"] = (
+                _panel.rolling(24 * 15, min_periods=24 * 3)
+                .quantile(0.90)
+                .fillna(0.0)
+                .astype(np.float32)
+            )
+        if isinstance(imb_proxy, pd.DataFrame):
+            imb_proxy = imb_proxy.abs().astype(np.float32)
+            feats["asset_orderbook_imbalance_abs_mean_24h"] = (
+                imb_proxy.rolling(24, min_periods=6)
+                .mean()
+                .fillna(0.0)
+                .astype(np.float32)
+            )
+            feats["asset_orderbook_imbalance_abs_mean_96h"] = (
+                imb_proxy.rolling(96, min_periods=24)
+                .mean()
+                .fillna(0.0)
+                .astype(np.float32)
+            )
+            feats["asset_orderbook_imbalance_abs_mean_7d"] = (
+                imb_proxy.rolling(24 * 7, min_periods=24)
+                .mean()
+                .fillna(0.0)
+                .astype(np.float32)
+            )
+            feats["asset_orderbook_imbalance_abs_mean_15d"] = (
+                imb_proxy.rolling(24 * 15, min_periods=24 * 3)
+                .mean()
+                .fillna(0.0)
+                .astype(np.float32)
+            )
+            feats["asset_liquidity_stress_score_7d"] = (
+                (
+                    _batch_roll_zscore(spread_proxy, 24 * 7)
+                    + _batch_roll_zscore(depth_risk, 24 * 7)
+                    + _batch_roll_zscore(imb_proxy, 24 * 7)
+                )
+                .div(3.0)
+                .fillna(0.0)
+                .astype(np.float32)
+            )
+            feats["global_liquidity_stress_score_7d"] = _broadcast_series(
+                feats["asset_liquidity_stress_score_7d"].mean(axis=1).fillna(0.0)
+            )
 
     orderbook_feature_keys = set(cfg.get("ORDERBOOK_FEATURE_KEYS", []))
-    if not orderbook_feature_keys and requested_feature_set:
-        orderbook_feature_keys = {
+    if requested_feature_set:
+        orderbook_feature_keys.update(
             k for k in requested_feature_set if k.startswith("ob_")
-        }
+        )
     should_compute_orderbook = bool(cfg.get("enable_orderbook_features", False)) and (
         not requested_feature_set
         or bool(orderbook_feature_keys.intersection(requested_feature_set))
     )
+    ob_snapshot_feats = {}
     if should_compute_orderbook:
         ob_snapshot_feats = compute_orderbook_snapshot_features(
             panel.get("orderbook_hourly") if isinstance(panel, dict) else None,
@@ -4057,6 +4447,20 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             shift_bars=int(cfg.get("microstructure_shift_bars", 1)),
         )
         feats.update(ob_snapshot_feats)
+    has_orderbook_snapshot_features = bool(ob_snapshot_feats)
+
+    if has_orderbook_snapshot_features:
+        snapshot_aliases = {
+            "ob_l1_imbalance": "ob_imb_l1",
+            "ob_l5_imbalance": "ob_imb_l5",
+            "ob_l10_imbalance": "ob_imb_l10",
+            "ob_l20_imbalance": "ob_imb_l20",
+            "ob_microprice_premium_bps": "ob_microprice_dev_bps",
+            "ob_mid_vs_close_bps": "ob_mid_close_dislocation_bps",
+        }
+        for src, dst in snapshot_aliases.items():
+            if isinstance(feats.get(src), pd.DataFrame) and dst not in feats:
+                feats[dst] = feats[src].astype(np.float32)
 
     def _prefer_nonzero_feature(name: str, fallback: pd.DataFrame) -> pd.DataFrame:
         existing = feats.get(name)
@@ -4067,189 +4471,91 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             return existing.astype(np.float32)
         return fallback.astype(np.float32)
 
-    feats["ob_l1_imbalance"] = _prefer_nonzero_feature(
-        "ob_l1_imbalance", feats["ob_imb_l1"]
-    )
-    feats["ob_l10_imbalance"] = _prefer_nonzero_feature(
-        "ob_l10_imbalance", feats["ob_imb_l10"]
-    )
-    feats["ob_l20_imbalance"] = _prefer_nonzero_feature(
-        "ob_l20_imbalance", feats["ob_imb_l20"]
-    )
-    feats["ob_microprice_premium_bps"] = _prefer_nonzero_feature(
-        "ob_microprice_premium_bps", feats["ob_microprice_dev_bps"]
-    )
-
-    ob_volume_panel = (
-        panel.get("volume", np.exp(v)) if isinstance(panel, dict) else np.exp(v)
-    )
-    if isinstance(ob_volume_panel, pd.DataFrame):
-        ob_volume_panel = ob_volume_panel.reindex(index=idx, columns=cols)
-    else:
-        ob_volume_panel = pd.DataFrame(ob_volume_panel, index=idx, columns=cols)
-    ob_volume_panel = ob_volume_panel.fillna(0.0).astype(np.float32)
-    qv_24h = (
-        (close_panel * ob_volume_panel)
-        .replace([np.inf, -np.inf], np.nan)
-        .rolling(24, min_periods=6)
-        .sum()
-        .shift(1)
-        .fillna(0.0)
-        .astype(np.float32)
-    )
-
-    def _depth_notional_from_log_or_bps(
-        log_key: str, bid_key: str, ask_key: str
-    ) -> pd.DataFrame:
-        log_depth = feats.get(log_key)
-        if isinstance(log_depth, pd.DataFrame):
-            raw_depth = np.expm1(log_depth.clip(lower=0.0)).replace(
-                [np.inf, -np.inf], np.nan
+    if has_orderbook_snapshot_features and all(
+        isinstance(feats.get(k), pd.DataFrame)
+        for k in ("ob_imb_l1", "ob_imb_l10", "ob_imb_l20")
+    ):
+        if "ob_l1_imbalance" in feats:
+            feats["ob_l1_imbalance"] = _prefer_nonzero_feature(
+                "ob_l1_imbalance", feats["ob_imb_l1"]
             )
-            if float(np.nansum(np.abs(raw_depth.to_numpy(dtype=np.float32)))) > 0.0:
-                return raw_depth.fillna(0.0).astype(np.float32)
-        bid = feats.get(bid_key)
-        ask = feats.get(ask_key)
-        if isinstance(bid, pd.DataFrame) and isinstance(ask, pd.DataFrame):
-            return (bid.fillna(0.0) + ask.fillna(0.0)).astype(np.float32)
-        return _zero_panel()
-
-    depth_l10 = _depth_notional_from_log_or_bps(
-        "ob_depth_usd_l10", "ob_bid_depth_10bps", "ob_ask_depth_10bps"
-    )
-    depth_l20 = _depth_notional_from_log_or_bps(
-        "ob_depth_usd_l20", "ob_bid_depth_25bps", "ob_ask_depth_25bps"
-    )
-    top_liquidity = _depth_notional_from_log_or_bps(
-        "ob_top_liquidity_usd", "ob_bid_depth_5bps", "ob_ask_depth_5bps"
-    )
-
-    def _depth_to_qv(depth: pd.DataFrame) -> pd.DataFrame:
-        return (
-            np.log1p(depth / (qv_24h + eps))
-            .replace([np.inf, -np.inf], np.nan)
-            .fillna(0.0)
-            .clip(0.0, 10.0)
-            .astype(np.float32)
-        )
-
-    feats["ob_spread_bps_z_24h"] = _batch_roll_zscore(
-        feats["ob_spread_bps"], 24
-    ).clip(-6, 6)
-    feats["ob_spread_z_24h"] = feats["ob_spread_bps_z_24h"].astype(np.float32)
-    feats["ob_spread_bps_z_7d"] = _batch_roll_zscore(
-        feats["ob_spread_bps"], 24 * 7
-    ).clip(-6, 6)
-    feats["ob_mid_close_dislocation_bps_z_24h"] = _batch_roll_zscore(
-        feats["ob_mid_close_dislocation_bps"], 24
-    ).clip(-6, 6)
-    feats["ob_microprice_dev_bps_z_24h"] = _batch_roll_zscore(
-        feats["ob_microprice_premium_bps"], 24
-    ).clip(-6, 6)
-    feats["ob_l1_imbalance_z_24h"] = _batch_roll_zscore(
-        feats["ob_l1_imbalance"], 24
-    ).clip(-6, 6)
-    feats["ob_l10_imbalance_z_24h"] = _batch_roll_zscore(
-        feats["ob_l10_imbalance"], 24
-    ).clip(-6, 6)
-    feats["ob_l20_imbalance_z_24h"] = _batch_roll_zscore(
-        feats["ob_l20_imbalance"], 24
-    ).clip(-6, 6)
-    feats["ob_l10_abs_imbalance_z_7d"] = _batch_roll_zscore(
-        feats["ob_l10_imbalance"].abs(), 24 * 7
-    ).clip(-6, 6)
-    feats["ob_book_pressure_l10_z_24h"] = _batch_roll_zscore(
-        feats["ob_book_pressure_l10"], 24
-    ).clip(-6, 6)
-    feats["ob_book_pressure_l10_z_7d"] = _batch_roll_zscore(
-        feats["ob_book_pressure_l10"], 24 * 7
-    ).clip(-6, 6)
-    feats["ob_depth_l10_to_qv_24h"] = _depth_to_qv(depth_l10)
-    feats["ob_depth_l20_to_qv_24h"] = _depth_to_qv(depth_l20)
-    feats["ob_top_liquidity_to_qv_24h"] = _depth_to_qv(top_liquidity)
-    feats["ob_top_liquidity_usd_z"] = _batch_roll_zscore(
-        np.log1p(top_liquidity), 24 * 7
-    ).clip(-6, 6)
-    feats["ob_depth_usd_l10_z"] = _batch_roll_zscore(
-        np.log1p(depth_l10), 24 * 7
-    ).clip(-6, 6)
-    feats["ob_depth_usd_l20_z"] = _batch_roll_zscore(
-        np.log1p(depth_l20), 24 * 7
-    ).clip(-6, 6)
-    feats["ob_depth_l20_to_qv_z_7d"] = _batch_roll_zscore(
-        feats["ob_depth_l20_to_qv_24h"], 24 * 7
-    ).clip(-6, 6)
-    feats["ob_pressure_ret4h_agreement"] = (
-        np.sign(feats["ob_book_pressure_l10_z_24h"])
-        * np.sign(feats.get("ret4h", _zero_panel()))
-    ).astype(np.float32)
-    feats["ob_pressure_volume_agreement"] = (
-        np.sign(feats["ob_book_pressure_l10_z_24h"])
-        * np.sign(feats.get("rvol_z", _zero_panel()))
-    ).astype(np.float32)
-    if basket:
-        mkt_ob_pressure = feats["ob_book_pressure_l10"][basket].mean(axis=1)
-        basket_spread_z_norm = feats["ob_spread_bps_z_24h"][basket].mean(axis=1)
-        basket_depth_to_qv_z = feats["ob_depth_l20_to_qv_z_7d"][basket].mean(axis=1)
-    else:
-        mkt_ob_pressure = feats["ob_book_pressure_l10"].mean(axis=1)
-        basket_spread_z_norm = feats["ob_spread_bps_z_24h"].mean(axis=1)
-        basket_depth_to_qv_z = feats["ob_depth_l20_to_qv_z_7d"].mean(axis=1)
-    feats["xasset_asset_minus_mkt_ob_pressure"] = (
-        feats["ob_book_pressure_l10"].sub(mkt_ob_pressure, axis=0).astype(np.float32)
-    )
-    feats["xasset_asset_minus_mkt_ob_pressure_z_24h"] = _batch_roll_zscore(
-        feats["xasset_asset_minus_mkt_ob_pressure"], 24
-    ).clip(-6, 6)
-    feats["xasset_btc_ob_pressure"] = _broadcast_series(
-        feats["ob_book_pressure_l10"].get(
-            _resolve_available_symbol("BTC/USDT") or "", mkt_ob_pressure
-        )
-    )
-    feats["xasset_eth_ob_pressure"] = _broadcast_series(
-        feats["ob_book_pressure_l10"].get(
-            _resolve_available_symbol("ETH/USDT") or "", mkt_ob_pressure
-        )
-    )
-    feats["xasset_asset_minus_basket_ob_pressure"] = _batch_roll_zscore(
-        feats["xasset_asset_minus_mkt_ob_pressure"], 24 * 7
-    ).clip(-6, 6)
-    feats["xasset_mkt_spread_bps_z_24h"] = _broadcast_series(basket_spread_z_norm)
-    feats["xasset_mkt_depth_to_qv_z"] = _broadcast_series(basket_depth_to_qv_z)
-    feats["xasset_mkt_ob_stress_z_24h"] = _broadcast_series(
-        (basket_spread_z_norm - basket_depth_to_qv_z).clip(-10, 10)
-    )
-    feats["xasset_ob_stress_basket_z_24h"] = feats[
-        "xasset_mkt_ob_stress_z_24h"
-    ].astype(np.float32)
-    feats["xasset_ob_liquidity_divergence_z_24h"] = (
-        feats["ob_depth_l20_to_qv_z_7d"].sub(basket_depth_to_qv_z, axis=0)
-    ).astype(np.float32)
-    feats["ob_depth_to_qv_z_x_rvol_z"] = (
-        (feats["ob_depth_l20_to_qv_z_7d"] * feats["rvol_z"])
-        .clip(-12, 12)
-        .astype(np.float32)
-    )
-    feats["ob_depth_decay_asym_l20_z_7d"] = _batch_roll_zscore(
-        feats["ob_bid_depth_decay_l20"] - feats["ob_ask_depth_decay_l20"], 24 * 7
-    ).clip(-6, 6)
-    flow_vs_book_l20 = feats.get("ob_abs_flow_vs_book_l20")
-    if not isinstance(flow_vs_book_l20, pd.DataFrame):
-        raw_flow_vs_book_l20 = feats.get("ob_flow_vs_book_l20")
-        flow_vs_book_l20 = (
-            raw_flow_vs_book_l20.abs()
-            if isinstance(raw_flow_vs_book_l20, pd.DataFrame)
-            else _zero_panel()
-        )
-    feats["ob_abs_flow_vs_book_l20_z_24h"] = _batch_roll_zscore(
-        flow_vs_book_l20, 24
-    ).clip(-6, 6)
-    feats["ob_notional_to_depth_l20_z_24h"] = _batch_roll_zscore(
-        feats.get("ob_notional_to_depth_l20", _zero_panel()), 24
-    ).clip(-6, 6)
-    feats["ob_trade_size_to_l1_depth_z_24h"] = _batch_roll_zscore(
-        feats.get("ob_trade_size_to_l1_depth", _zero_panel()), 24
-    ).clip(-6, 6)
+        else:
+            feats["ob_l1_imbalance"] = feats["ob_imb_l1"].astype(np.float32)
+        if "ob_l10_imbalance" in feats:
+            feats["ob_l10_imbalance"] = _prefer_nonzero_feature(
+                "ob_l10_imbalance", feats["ob_imb_l10"]
+            )
+        else:
+            feats["ob_l10_imbalance"] = feats["ob_imb_l10"].astype(np.float32)
+        if "ob_l20_imbalance" in feats:
+            feats["ob_l20_imbalance"] = _prefer_nonzero_feature(
+                "ob_l20_imbalance", feats["ob_imb_l20"]
+            )
+        else:
+            feats["ob_l20_imbalance"] = feats["ob_imb_l20"].astype(np.float32)
+        if "ob_microprice_dev_bps" in feats:
+            feats["ob_microprice_premium_bps"] = _prefer_nonzero_feature(
+                "ob_microprice_premium_bps", feats["ob_microprice_dev_bps"]
+            )
+        if "ob_spread_bps" in feats:
+            feats["ob_spread_bps_z_24h"] = _batch_roll_zscore(
+                feats["ob_spread_bps"], 24
+            ).clip(-6, 6)
+            feats["ob_spread_z_24h"] = feats["ob_spread_bps_z_24h"].astype(np.float32)
+            feats["ob_spread_bps_z_7d"] = _batch_roll_zscore(
+                feats["ob_spread_bps"], 24 * 7
+            ).clip(-6, 6)
+        if "ob_mid_close_dislocation_bps" in feats:
+            feats["ob_mid_close_dislocation_bps_z_24h"] = _batch_roll_zscore(
+                feats["ob_mid_close_dislocation_bps"], 24
+            ).clip(-6, 6)
+        if "ob_microprice_premium_bps" in feats:
+            feats["ob_microprice_dev_bps_z_24h"] = _batch_roll_zscore(
+                feats["ob_microprice_premium_bps"], 24
+            ).clip(-6, 6)
+        feats["ob_l1_imbalance_z_24h"] = _batch_roll_zscore(
+            feats["ob_l1_imbalance"], 24
+        ).clip(-6, 6)
+        feats["ob_l10_imbalance_z_24h"] = _batch_roll_zscore(
+            feats["ob_l10_imbalance"], 24
+        ).clip(-6, 6)
+        feats["ob_l20_imbalance_z_24h"] = _batch_roll_zscore(
+            feats["ob_l20_imbalance"], 24
+        ).clip(-6, 6)
+        feats["ob_l10_abs_imbalance_z_7d"] = _batch_roll_zscore(
+            feats["ob_l10_imbalance"].abs(), 24 * 7
+        ).clip(-6, 6)
+        if "ob_book_pressure_l10" in feats:
+            feats["ob_book_pressure_l10_z_24h"] = _batch_roll_zscore(
+                feats["ob_book_pressure_l10"], 24
+            ).clip(-6, 6)
+            feats["ob_book_pressure_l10_z_7d"] = _batch_roll_zscore(
+                feats["ob_book_pressure_l10"], 24 * 7
+            ).clip(-6, 6)
+        depth_norm_z = feats.get("ob_depth_l20_to_qv_z_7d")
+        spread_norm_z = feats.get("ob_spread_bps_z_24h", feats.get("ob_spread_z_24h"))
+        if isinstance(depth_norm_z, pd.DataFrame) and isinstance(spread_norm_z, pd.DataFrame):
+            basket_depth_z = (
+                depth_norm_z[basket].mean(axis=1)
+                if basket
+                else depth_norm_z.mean(axis=1)
+            )
+            basket_spread_z = (
+                spread_norm_z[basket].mean(axis=1)
+                if basket
+                else spread_norm_z.mean(axis=1)
+            )
+            feats["xasset_mkt_spread_bps_z_24h"] = _broadcast_series(basket_spread_z)
+            feats["xasset_mkt_depth_to_qv_z"] = _broadcast_series(basket_depth_z)
+            stress = _batch_roll_zscore(
+                _broadcast_series((basket_spread_z - basket_depth_z).clip(-10, 10)),
+                24,
+            ).clip(-6, 6)
+            feats["xasset_mkt_ob_stress_z_24h"] = stress.astype(np.float32)
+            feats["xasset_ob_stress_basket_z_24h"] = stress.astype(np.float32)
+            feats["xasset_ob_liquidity_divergence_z_24h"] = _batch_roll_zscore(
+                depth_norm_z.sub(basket_depth_z, axis=0), 24
+            ).clip(-6, 6)
 
     requested_obw = any(
         k.startswith("obw_") or k.startswith("_obw_") for k in requested_feature_set
@@ -4267,14 +4573,26 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         feats.update(wall_primitives)
     inferred_side_long = (feats.get("ret4h", _zero_panel()) >= 0).astype(np.float32)
     for band in ("r005", "r010", "r020", "r030", "a05", "a10", "a20", "a30"):
-        bid_to = feats.get(f"_obw_bid_wall_to_vol_{band}", _zero_panel())
-        ask_to = feats.get(f"_obw_ask_wall_to_vol_{band}", _zero_panel())
-        bid_p = feats.get(f"_obw_bid_wall_pressure_{band}", _zero_panel())
-        ask_p = feats.get(f"_obw_ask_wall_pressure_{band}", _zero_panel())
-        bid_d = feats.get(f"_obw_bid_wall_distance_{band}", _zero_panel())
-        ask_d = feats.get(f"_obw_ask_wall_distance_{band}", _zero_panel())
-        bid_path = feats.get(f"_obw_bid_path_depth_to_target_{band}", _zero_panel())
-        ask_path = feats.get(f"_obw_ask_path_depth_to_target_{band}", _zero_panel())
+        required_wall_keys = (
+            f"_obw_bid_wall_to_vol_{band}",
+            f"_obw_ask_wall_to_vol_{band}",
+            f"_obw_bid_wall_pressure_{band}",
+            f"_obw_ask_wall_pressure_{band}",
+            f"_obw_bid_wall_distance_{band}",
+            f"_obw_ask_wall_distance_{band}",
+            f"_obw_bid_path_depth_to_target_{band}",
+            f"_obw_ask_path_depth_to_target_{band}",
+        )
+        if not all(k in feats for k in required_wall_keys):
+            continue
+        bid_to = feats[f"_obw_bid_wall_to_vol_{band}"]
+        ask_to = feats[f"_obw_ask_wall_to_vol_{band}"]
+        bid_p = feats[f"_obw_bid_wall_pressure_{band}"]
+        ask_p = feats[f"_obw_ask_wall_pressure_{band}"]
+        bid_d = feats[f"_obw_bid_wall_distance_{band}"]
+        ask_d = feats[f"_obw_ask_wall_distance_{band}"]
+        bid_path = feats[f"_obw_bid_path_depth_to_target_{band}"]
+        ask_path = feats[f"_obw_ask_path_depth_to_target_{band}"]
         blocking_to = np.where(inferred_side_long > 0, ask_to, bid_to)
         support_to = np.where(inferred_side_long > 0, bid_to, ask_to)
         blocking_p = np.where(inferred_side_long > 0, ask_p, bid_p)
@@ -4503,7 +4821,10 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         ret24 - beta * pd.concat([btc4] * len(cols), axis=1).set_axis(cols, axis=1)
     ).astype(np.float32)
 
-    feats["rv_rel_universe"] = (rv24 / (rv24.median(axis=1) + 1e-12)).astype(np.float32)
+    feats["rv_rel_universe"] = rv24.div(
+        rv24.median(axis=1) + 1e-12,
+        axis=0,
+    ).astype(np.float32)
     feats["vol_surprise_rel_peers"] = (volz.sub(volz.median(axis=1), axis=0)).astype(
         np.float32
     )
@@ -5429,70 +5750,23 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 del candidates_table
                 # import gc; gc.collect() # Optional frequent GC
     else:
-        # Gated features disabled - provide zero fallbacks
-        tprint("Gated features disabled - providing zero fallbacks")
-        gate_window = int(cfg.get("accept_gate_window", 24))
-        # Zero fallbacks for core gated features
-        zero_panel = pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32)
-        feats["accept_gt66"] = zero_panel.copy()
-        feats["retest_accept"] = zero_panel.copy()
-        feats["reject_like"] = zero_panel.copy()
-        feats["tf_qual"] = zero_panel.copy()
-        feats["mr_qual"] = zero_panel.copy()
-        s_pct = zero_panel.copy()
-        s_bin3 = zero_panel.copy()
-        reject_like = zero_panel.copy()
+        tprint("Gated features disabled; gated feature keys are omitted")
 
-    # Re-bind standardized names for downstream dependencies
-    # These rely on the standard `gate_window` (e.g. 64) features being present
-    # Warning: If `select_gated_features` didn't select gt66/gt75, these might fall back or error?
-    # Actually, `select_gated_features` has fallback logic to ensure *some* gates are selected.
-    # But `s_gt66` specifically is used below.
-    # We should ensure s_gt66_64 exists if needed, or update this logic to use selected gates.
+    if cfg.get("enable_gated_features", False):
+        def get_feat(name):
+            if name in feats:
+                return feats[name]
+            raise KeyError(name)
 
-    # Safe getters since selection is dynamic
-    def get_feat(name, fallback_zeros=True):
-        if name in feats:
-            return feats[name]
-        if fallback_zeros:
-            return pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32)
-        raise KeyError(name)
+        s_pct = get_feat(f"s_pct_{gate_window}")
+        reject_like = get_feat(f"reject_pct_{gate_window}")
+        if f"s_gt66_{gate_window}" in feats:
+            feats["accept_gt66"] = feats[f"s_gt66_{gate_window}"]
+            feats["retest_accept"] = feats[f"s_gt66_{gate_window}"]
 
-    s_pct = get_feat(f"s_pct_{gate_window}")
-    s_bin3 = get_feat(f"s_bin3_{gate_window}")
+        feats["tf_qual"] = (s_pct * feats["tf_tape"]).astype(np.float32)
+        feats["mr_qual"] = (reject_like * feats["mr_tape"]).astype(np.float32)
 
-    # Dynamic selection might explicitly select gt66/gt75 or might select gt50/gt75.
-    # For backward compatibility variables, we ideally want specific thresholds if they exist,
-    # or the "best" available proxy?
-    # Let's check what was selected for 's' (accept_score) at gate_window.
-    # If gt66 not selected, try to find nearest? Or just use zeros?
-    # User code implies selection is for "feature table".
-    # But `feats["accept_gt66"]` might be used by Meta model expecting exactly that?
-    # If Meta model is retrained, it will use whatever is available.
-    # But hardcoded `accept_gt66` reference suggests we might want to force potential "standard" gates into feats?
-    # Compromise: `select_gated_features` picks the *best*.
-    # If we need specific ones for legacy logic, we might need to update legacy logic.
-    # For now, let's map `accept_gt66` to `s_gt66_{w}` ONLY if it exists.
-
-    # reject_like: reject gate percentile (MR counterpart to the trend gate score)
-    reject_like = get_feat(f"reject_pct_{gate_window}")
-
-    # Map strict gates if they exist
-    if f"s_gt66_{gate_window}" in feats:
-        feats["accept_gt66"] = feats[f"s_gt66_{gate_window}"]
-        feats["retest_accept"] = feats[f"s_gt66_{gate_window}"]  # Legacy alias
-    else:
-        # Fallback to whatever was selected as "broad" or "rare"?
-        pass
-
-    feats["tf_qual"] = (s_pct * feats["tf_tape"]).astype(np.float32)
-    feats["mr_qual"] = (reject_like * feats["mr_tape"]).astype(np.float32)
-
-    # Gate interactions with directional 2h path-risk block
-    dir_edge = feats.get(
-        "dir_path_edge_2h",
-        pd.DataFrame(0, index=c.index, columns=c.columns, dtype=np.float32),
-    )
     # 4/ Meta
     feats["rv_ratio_6_24"] = (feats["rv_6h"] / (feats["rv_24h"] + 1e-12)).astype(
         np.float32
@@ -5525,21 +5799,21 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         .astype(np.float32)
     )
 
-    # Meta Features using Gates
-    ambig_term = 1.0 - np.maximum(s_pct, reject_like)
-    feats["ambig"] = (ambig_term * feats["rv_ratio_6_24"]).astype(np.float32)
+    if cfg.get("enable_gated_features", False):
+        ambig_term = 1.0 - np.maximum(s_pct, reject_like)
+        feats["ambig"] = (ambig_term * feats["rv_ratio_6_24"]).astype(np.float32)
 
-    feats["stage_tf"] = (s_pct * feats["coherence_24"]).astype(np.float32)
-    feats["stage_blowoff"] = (
-        feats["blowoff_risk"] + feats["effort_gate"] + feats["stall_ext"]
-    ).astype(np.float32)
-    feats["stage_mr"] = (reject_like * (1.0 + feats["overext"])).astype(np.float32)
-    feats["exh_qual"] = (
-        feats["effort_gate"]
-        + feats["stall_ext"]
-        + feats["tail_fail"]
-        + feats["overext_weak"]
-    ).astype(np.float32)
+        feats["stage_tf"] = (s_pct * feats["coherence_24"]).astype(np.float32)
+        feats["stage_blowoff"] = (
+            feats["blowoff_risk"] + feats["effort_gate"] + feats["stall_ext"]
+        ).astype(np.float32)
+        feats["stage_mr"] = (reject_like * (1.0 + feats["overext"])).astype(np.float32)
+        feats["exh_qual"] = (
+            feats["effort_gate"]
+            + feats["stall_ext"]
+            + feats["tail_fail"]
+            + feats["overext_weak"]
+        ).astype(np.float32)
 
     feats["thrust_decay_4"] = (
         feats["ret1h"].abs() / (feats["ret4h"].abs() + 1e-12)
@@ -5654,43 +5928,36 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         0.0,
     ).astype(np.float32)
 
-    abs_net_score = s_pct + reject_like
-    feats["meta_abs_net_x_breakout"] = (
-        abs_net_score * np.abs(feats["breakout_24h"])
-    ).astype(np.float32)
-    feats["meta_abs_net_x_drawext"] = (
-        abs_net_score * np.abs(feats["draw_extreme_10h"])
-    ).astype(np.float32)
-    feats["meta_abs_net_x_vov_ratio"] = (
-        abs_net_score * (feats["vov_ratio"] - 1.0).clip(lower=0)
-    ).astype(np.float32)
-    # Safe meta_alignment computation
-    accept_diff = s_pct - reject_like
-    ret5h_safe = np.where(np.isfinite(feats["ret5h"]), feats["ret5h"], 0.0)
-    feats["meta_alignment"] = (np.sign(accept_diff) * np.sign(ret5h_safe)).astype(
-        np.float32
-    )
-    feats["meta_signal_x_accel"] = ((s_pct - reject_like) * feats["accel_5h"]).astype(
-        np.float32
-    )
+    if cfg.get("enable_gated_features", False):
+        abs_net_score = s_pct + reject_like
+        feats["meta_abs_net_x_breakout"] = (
+            abs_net_score * np.abs(feats["breakout_24h"])
+        ).astype(np.float32)
+        feats["meta_abs_net_x_drawext"] = (
+            abs_net_score * np.abs(feats["draw_extreme_10h"])
+        ).astype(np.float32)
+        feats["meta_abs_net_x_vov_ratio"] = (
+            abs_net_score * (feats["vov_ratio"] - 1.0).clip(lower=0)
+        ).astype(np.float32)
+        accept_diff = s_pct - reject_like
+        ret5h_safe = np.where(np.isfinite(feats["ret5h"]), feats["ret5h"], 0.0)
+        feats["meta_alignment"] = (np.sign(accept_diff) * np.sign(ret5h_safe)).astype(
+            np.float32
+        )
+        feats["meta_signal_x_accel"] = (
+            (s_pct - reject_like) * feats["accel_5h"]
+        ).astype(np.float32)
 
-    # Regime interactions using base-model agreement-weighted success signal.
-    base_agreement = (1.0 - np.abs(s_pct - reject_like)).clip(0.0, 1.0)
-    p_success_df = (((s_pct + reject_like) * 0.5) * base_agreement).astype(np.float32)
-    vol_high = feats.get(
-        "vol_high",
-        pd.DataFrame(0.0, index=c.index, columns=c.columns, dtype=np.float32),
-    )
-    cusum_high = feats.get(
-        "cusum_high",
-        pd.DataFrame(0.0, index=c.index, columns=c.columns, dtype=np.float32),
-    )
-    liq_low = feats.get(
-        "liq_low", pd.DataFrame(0.0, index=c.index, columns=c.columns, dtype=np.float32)
-    )
-    interaction_dict = add_interactions(p_success_df, vol_high, cusum_high, liq_low)
-    for ik, iv in interaction_dict.items():
-        feats[ik] = iv.astype(np.float32)
+        base_agreement = (1.0 - np.abs(s_pct - reject_like)).clip(0.0, 1.0)
+        p_success_df = (((s_pct + reject_like) * 0.5) * base_agreement).astype(
+            np.float32
+        )
+        if {"vol_high", "cusum_high", "liq_low"}.issubset(feats):
+            interaction_dict = add_interactions(
+                p_success_df, feats["vol_high"], feats["cusum_high"], feats["liq_low"]
+            )
+            for ik, iv in interaction_dict.items():
+                feats[ik] = iv.astype(np.float32)
 
     # Robust Score Calculation with clipping to prevent Inf/Overflow
     # We clip components to avoid exploding values when denominators are near zero
@@ -5976,13 +6243,33 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         np.float32
     )
 
-    # trend_retest_success_rate: How often do retests hold?
-    # Proxy: when price pulls back to EMA, does it bounce?
-    near_ema = (feats["dist_ema_fast"].abs() < 0.5).astype(
-        np.float32
-    )  # Within 0.5 ATR of EMA
-    ret_after_near = feats["ret4h"].shift(-4).fillna(0.0)  # Return 4h later
-    retest_success = (near_ema * (ret_after_near * trend_sign > 0)).astype(np.float32)
+    # trend_retest_success_rate: past-only proxy for whether EMA retests held.
+    # A retest attempt is a completed prior-bar EMA touch; success is evaluated
+    # from the already-observed follow-through, wick acceptance, and volume.
+    trend_sign_prev = trend_sign.shift(1).fillna(0.0)
+    near_ema = (feats["dist_ema_fast"].shift(1).abs() < 0.5).astype(np.float32)
+    bounce_observed = (
+        (feats["ret1h"].fillna(0.0) * trend_sign_prev) > 0.0
+    ).astype(np.float32)
+    wick_accept = (
+        (
+            feats.get(
+                "clv_mean_4",
+                pd.DataFrame(0.0, index=c_log.index, columns=c_log.columns),
+            ).fillna(0.0)
+            * trend_sign_prev
+        )
+        > 0.0
+    ).astype(np.float32)
+    volume_confirm = (
+        feats.get(
+            "rvol_z", pd.DataFrame(0.0, index=c_log.index, columns=c_log.columns)
+        ).fillna(0.0)
+        > 0.0
+    ).astype(np.float32)
+    retest_success = near_ema * (
+        0.50 * bounce_observed + 0.30 * wick_accept + 0.20 * volume_confirm
+    )
     retest_attempts = near_ema.rolling(48, min_periods=1).sum()
     retest_successes = retest_success.rolling(48, min_periods=1).sum()
     feats["trend_retest_success_rate"] = (
@@ -6323,28 +6610,28 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         np.float32
     )
 
-    # Trap strength: exhaustion + capitulation + failed continuation context.
-    feats["trap_strength"] = (
-        feats["volume_capitulation"]
-        * (1.0 + feats["overext"].clip(lower=0))
-        * (1.0 - s_pct)
-    ).astype(np.float32)
+    if cfg.get("enable_gated_features", False):
+        feats["trap_strength"] = (
+            feats["volume_capitulation"]
+            * (1.0 + feats["overext"].clip(lower=0))
+            * (1.0 - s_pct)
+        ).astype(np.float32)
 
-    # Composite entry quality across 2h/4h/8h context.
-    feats["entry_quality_composite"] = (
-        0.40 * s_pct
-        + 0.25 * feats["bounce_signal"]
-        + 0.20 * feats["retest_accept_score"]
-        + 0.15 * (1.0 - feats["ambig"].clip(0, 1))
-    ).astype(np.float32)
+        feats["entry_quality_composite"] = (
+            0.40 * s_pct
+            + 0.25 * feats["bounce_signal"]
+            + 0.20 * feats["retest_accept_score"]
+            + 0.15 * (1.0 - feats["ambig"].clip(0, 1))
+        ).astype(np.float32)
 
     # Specialist proxies at feature stage (actual specialist outputs are added in engine.py).
     feats["predicted_vol_6h"] = (
         (feats["rv_6h"] / (feats["rv_24h"] + 1e-12)).clip(0, 10)
     ).astype(np.float32)
-    feats["trap_quality"] = (
-        (1.0 / (1.0 + feats["trap_strength"])) * (1.0 - feats["ambig"].clip(0, 1))
-    ).astype(np.float32)
+    if cfg.get("enable_gated_features", False):
+        feats["trap_quality"] = (
+            (1.0 / (1.0 + feats["trap_strength"])) * (1.0 - feats["ambig"].clip(0, 1))
+        ).astype(np.float32)
 
     # =====================================================================
     # User Requested Features (Report 2026-02-10) - TF/MR/Alpha
@@ -6647,6 +6934,163 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             feats, lookback=720, min_history_fraction=0.25
         )
         feats.update(ts_feats)
+
+    portability_mode = str(cfg.get("feature_portability_mode", "legacy")).lower()
+    portability_strict = bool(
+        cfg.get("feature_portability_strict", portability_mode not in {"", "legacy", "off"})
+    )
+
+    def _panel_has_finite(frame: object, *, positive: bool = False) -> bool:
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            return False
+        aligned = frame.reindex(index=idx, columns=cols).replace([np.inf, -np.inf], np.nan)
+        if positive:
+            aligned = aligned.where(aligned > 0.0)
+        return bool(np.isfinite(aligned.to_numpy(dtype=np.float32, copy=False)).any())
+
+    orderbook_hourly = panel.get("orderbook_hourly") if isinstance(panel, dict) else None
+    has_l2_orderbook = (
+        isinstance(orderbook_hourly, pd.DataFrame)
+        and not orderbook_hourly.empty
+        and {"timestamp", "symbol", "side", "level", "price", "qty"}.issubset(
+            orderbook_hourly.columns
+        )
+    )
+    has_wide_orderbook = isinstance(panel, dict) and any(
+        str(k).startswith("orderbook_")
+        and isinstance(v, pd.DataFrame)
+        and not v.empty
+        for k, v in panel.items()
+    )
+    has_spot_reference = _panel_has_finite(spot_close_panel, positive=True)
+    if bool(cfg.get("use_perps", False)) and not has_spot_reference:
+        has_spot_reference = (
+            _panel_has_finite(index_price_panel, positive=True)
+            or _panel_has_finite(mark_price_panel, positive=True)
+        )
+    source_available = {
+        "orderbook": bool(has_l2_orderbook or has_wide_orderbook),
+        "funding": _panel_has_finite(funding_panel),
+        "open_interest": _panel_has_finite(oi_panel, positive=True),
+        "spot": has_spot_reference,
+        "mark_index": (
+            _panel_has_finite(mark_price_panel, positive=True)
+            or _panel_has_finite(index_price_panel, positive=True)
+            or _panel_has_finite(premium_index_panel)
+        ),
+    }
+
+    removed_by_policy: dict[str, str] = {}
+
+    def _drop_feature_for_policy(name: str, reason: str) -> bool:
+        removed_by_policy[name] = reason
+        return False
+
+    fixed_basket = bool(cfg.get("feature_portability_fixed_basket", False))
+    allow_volume_dependent = bool(
+        cfg.get("feature_portability_allow_volume_source_dependent", False)
+    )
+    allow_dataset_selected = bool(
+        cfg.get("feature_portability_allow_dataset_selected", False)
+    )
+    allow_state_tuned = bool(cfg.get("feature_portability_allow_state_tuned", False))
+
+    if portability_mode not in {"", "legacy", "off"}:
+        if requested_feature_set and portability_strict:
+            requested_policy_errors: dict[str, str] = {}
+            for name in requested_feature_set:
+                if not _is_feature_allowed_for_portability_mode(
+                    name,
+                    portability_mode,
+                    fixed_basket=fixed_basket,
+                    allow_volume_source_dependent=allow_volume_dependent,
+                    allow_dataset_selected=allow_dataset_selected,
+                    allow_state_tuned=allow_state_tuned,
+                ):
+                    requested_policy_errors[name] = (
+                        f"not allowed in feature_portability_mode={portability_mode}"
+                    )
+                    continue
+                reqs = _feature_source_requirements(name)
+                missing = sorted(
+                    req
+                    for req in reqs
+                    if req != "deleted" and not source_available.get(req, False)
+                )
+                if portability_mode == "no_orderbook_source" and "orderbook" in reqs:
+                    missing = sorted(set(missing) | {"orderbook"})
+                if portability_mode == "no_funding_source" and "funding" in reqs:
+                    missing = sorted(set(missing) | {"funding"})
+                if missing:
+                    requested_policy_errors[name] = (
+                        f"missing source(s): {', '.join(missing)}"
+                    )
+            if requested_policy_errors:
+                sample = ", ".join(
+                    f"{k} [{v}]" for k, v in list(sorted(requested_policy_errors.items()))[:20]
+                )
+                extra = (
+                    ""
+                    if len(requested_policy_errors) <= 20
+                    else f" (+{len(requested_policy_errors) - 20} more)"
+                )
+                raise ValueError(
+                    "Requested features violate the active feature portability policy: "
+                    f"{sample}{extra}"
+                )
+        filtered_feats: dict[str, pd.DataFrame] = {}
+        for name, value in feats.items():
+            if not _is_feature_allowed_for_portability_mode(
+                name,
+                portability_mode,
+                fixed_basket=fixed_basket,
+                allow_volume_source_dependent=allow_volume_dependent,
+                allow_dataset_selected=allow_dataset_selected,
+                allow_state_tuned=allow_state_tuned,
+            ):
+                _drop_feature_for_policy(
+                    name, f"not allowed in feature_portability_mode={portability_mode}"
+                )
+                continue
+            reqs = _feature_source_requirements(name)
+            missing = sorted(req for req in reqs if req != "deleted" and not source_available.get(req, False))
+            if portability_mode == "no_orderbook_source" and "orderbook" in reqs:
+                missing = sorted(set(missing) | {"orderbook"})
+            if portability_mode == "no_funding_source" and "funding" in reqs:
+                missing = sorted(set(missing) | {"funding"})
+            if missing:
+                _drop_feature_for_policy(name, f"missing source(s): {', '.join(missing)}")
+                continue
+            filtered_feats[name] = value
+        feats = filtered_feats
+        if removed_by_policy:
+            tprint(
+                f"Feature portability policy pruned {len(removed_by_policy)} features "
+                f"(mode={portability_mode})"
+            )
+            if requested_feature_set and portability_strict:
+                requested_removed = sorted(
+                    k for k in requested_feature_set if k in removed_by_policy
+                )
+                if requested_removed:
+                    sample = ", ".join(
+                        f"{k} [{removed_by_policy[k]}]" for k in requested_removed[:20]
+                    )
+                    extra = "" if len(requested_removed) <= 20 else f" (+{len(requested_removed) - 20} more)"
+                    raise ValueError(
+                        "Requested features violate the active feature portability policy: "
+                        f"{sample}{extra}"
+                    )
+    elif bool(cfg.get("use_perps", False)):
+        filtered_feats = {}
+        for name, value in feats.items():
+            reqs = _feature_source_requirements(name)
+            missing = sorted(req for req in reqs if req != "deleted" and not source_available.get(req, False))
+            if missing:
+                removed_by_policy[name] = f"missing source(s): {', '.join(missing)}"
+                continue
+            filtered_feats[name] = value
+        feats = filtered_feats
 
     if requested_feature_set:
         feats = {k: v for k, v in feats.items() if k in requested_feature_set}
@@ -7061,18 +7505,17 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         low_24 = None
 
         if _needs_feature(
+            "micro_range_decay", "range_decay", "choppiness_index_20", "accept_gt66"
+        ):
+            bar_range = h_raw - l_raw
+        if _needs_feature(
             "bar_direction_entropy",
             "realized_vol_15m_realized_vol_2h",
             "direction_entropy_20",
             "acceleration_of_move",
             "vol_regime_transition",
         ):
-            ret_1 = (c_log.shift(-1) / c_log - 1.0).fillna(0.0).astype(np.float32)
-
-        if _needs_feature(
-            "micro_range_decay", "range_decay", "choppiness_index_20", "accept_gt66"
-        ):
-            bar_range = h_raw - l_raw
+            ret_1 = c_log.diff(1).fillna(0.0).astype(np.float32)
 
         if _needs_feature("ATR_spike_ratio", "ATR_ratio_short_long"):
             atr_mean_24 = atr_base.rolling(24, min_periods=1).mean()
@@ -7092,19 +7535,21 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 ret_1, ff.binary_entropy_nb, 12
             ).astype(np.float32)
 
-        rv_1 = rv_2 = rv_24 = None
         if _needs_feature("realized_vol_15m_realized_vol_2h", "vol_regime_transition"):
             rv_1 = ff.apply_to_frame(ret_1, ff.realized_vol_nb, 1)
-            rv_2 = ff.apply_to_frame(ret_1, ff.realized_vol_nb, 2)
+            rv_8 = ff.apply_to_frame(ret_1, ff.realized_vol_nb, 8)
         if _needs_feature("realized_vol_15m_realized_vol_2h"):
             feats["realized_vol_15m_realized_vol_2h"] = (
-                (rv_1 / (rv_2 + 1e-9)).fillna(1.0).astype(np.float32)
-            )
+                (rv_1 / (rv_8 + 1e-9)).replace([np.inf, -np.inf], np.nan).fillna(1.0)
+            ).astype(np.float32)
         if _needs_feature("vol_regime_transition"):
             rv_24 = ff.apply_to_frame(ret_1, ff.realized_vol_nb, 24)
             rv24_mean_48 = rv_24.rolling(48, min_periods=1).mean()
             feats["vol_regime_transition"] = (
-                (rv_24 / (rv24_mean_48 + 1e-9)).fillna(1.0).astype(np.float32)
+                (rv_24 / (rv24_mean_48 + 1e-9))
+                .replace([np.inf, -np.inf], np.nan)
+                .fillna(1.0)
+                .astype(np.float32)
             )
 
         if _needs_feature("micro_range_decay"):
@@ -7273,15 +7718,15 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 ((c_raw - vwap_168) / (vwap_168 + 1e-9)).fillna(0.0).astype(np.float32)
             )
 
-        if _needs_feature("direction_entropy_20"):
-            feats["direction_entropy_20"] = ff.apply_to_frame(
-                ret_1, ff.binary_entropy_nb, 20
-            ).astype(np.float32)
-
         if _needs_feature("atr_change_rate"):
             feats["atr_change_rate"] = (
                 atr_base.pct_change().fillna(0.0).astype(np.float32)
             )
+
+        if _needs_feature("direction_entropy_20"):
+            feats["direction_entropy_20"] = ff.apply_to_frame(
+                np.sign(ret_1).astype(np.float32), ff.binary_entropy_nb, 20
+            ).astype(np.float32)
 
         if _needs_feature("acceleration_of_move"):
             feats["acceleration_of_move"] = ff.apply_to_frame(
@@ -7384,18 +7829,20 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 index=c_log.index, columns=c_log.columns, dtype=np.float32
             ).fillna(0.0)
 
-        del (
-            ret_1,
-            bar_range,
-            atr_mean_24,
-            rv_1,
-            rv_2,
-            rv_24,
-            high_12,
-            low_12,
-            high_24,
-            low_24,
-        )
+        for _tmp_name in (
+            "ret_1",
+            "bar_range",
+            "atr_mean_24",
+            "rv_1",
+            "rv_2",
+            "rv_24",
+            "high_12",
+            "low_12",
+            "high_24",
+            "low_24",
+        ):
+            if _tmp_name in locals():
+                del locals()[_tmp_name]
         # Now delete base price/volume DataFrames and intermediates after all features are computed
         del o, h, l, c, v
         del atr, dir_s, rv6, rv12, rv_ratio, mkt_gates
@@ -8638,7 +9085,9 @@ def build_position_sizer_feature_frame(
 
     # Model 3 additions
     vol_regime_transition = np.where(
-        rolling_mean_nb(rv_24, 48) > 1e-9, rv_24 / rolling_mean_nb(rv_24, 48), 1.0
+        rolling_mean_nb(rv_24, 48) > 1e-9,
+        rv_24 / rolling_mean_nb(rv_24, 48),
+        1.0,
     ).astype(np.float32)
     atr_ratio_short_long = np.where(
         rolling_mean_nb(atr, 24) > 1e-9,
@@ -8647,6 +9096,8 @@ def build_position_sizer_feature_frame(
     ).astype(np.float32)
 
     bar_direction_entropy = binary_entropy_nb(ret_1, 12).astype(np.float32)
+    direction_entropy_20 = binary_entropy_nb(ret_1, 20).astype(np.float32)
+    acceleration_of_move = slope_nb(ret_1, 6).astype(np.float32)
     wick_entropy = entropy_nb(wick_ratio_last_bar, 12).astype(np.float32)
     impulse_breakdown_score = np.where(ret_6 > 1e-9, ret_3 / ret_6, 0.0).astype(
         np.float32
@@ -8803,6 +9254,7 @@ def build_position_sizer_feature_frame(
         # --- NEW MODEL 2 ---
         "impulse_speed": impulse_speed,
         "impulse_acceleration": impulse_acceleration,
+        "acceleration_of_move": acceleration_of_move,
         "wick_cluster_ratio": wick_cluster_ratio,
         "rejection_bar_count": rejection_bar_count,
         "ATR_spike_ratio": atr_spike_ratio,
@@ -8818,6 +9270,7 @@ def build_position_sizer_feature_frame(
         "vol_regime_transition": vol_regime_transition,
         "ATR_ratio_short_long": atr_ratio_short_long,
         "bar_direction_entropy": bar_direction_entropy,
+        "direction_entropy_20": direction_entropy_20,
         "wick_entropy": wick_entropy,
         "impulse_breakdown_score": impulse_breakdown_score,
         "volume_volatility": volume_volatility,

@@ -28,6 +28,9 @@ from typing import Any, Optional
 import joblib
 
 from extreme_price_movements.entry_policy import flatten_bucket_policy
+from extreme_price_movements.feature_transform_contract import (
+    load_feature_transform_contract,
+)
 from extreme_price_movements.path_utils import resolve_mode_file
 from extreme_price_movements.utils import tprint
 
@@ -450,6 +453,16 @@ def load_alpha_models(native_dir: str) -> dict:
                 feat_cols,
                 saved_input_features=saved_input_features,
             )
+            attached_lgbm_contracts = _attach_lgbm_input_feature_contracts(
+                model,
+                feat_cols,
+                saved_input_features=saved_input_features,
+            )
+            if attached_lgbm_contracts:
+                tprint(
+                    "  Attached LGBM positional input contracts: "
+                    f"{dirname} nested_models={attached_lgbm_contracts}"
+                )
 
             model_info = {
                 "model": model,
@@ -1103,11 +1116,47 @@ def load_full_state(run_id: str, data_root: str) -> dict:
 
         if isinstance(state, dict):
             bundle = state.get("bundle", {})
-            if isinstance(bundle, dict):
-                loaded_meta_models = load_meta_models_from_pickle(trained_state_path)
-                if loaded_meta_models:
-                    bundle["meta_models"] = loaded_meta_models
-                state["bundle"] = bundle
+            if not isinstance(bundle, dict):
+                bundle = {}
+            for key in (
+                "feature_transform_contract",
+                "feature_transform_manifest",
+                "feature_transform_contract_hash",
+            ):
+                if key in state and key not in bundle:
+                    bundle[key] = state[key]
+            if (
+                "feature_transform_contract" not in bundle
+                or "feature_transform_contract_hash" not in bundle
+            ):
+                try:
+                    contract, manifest = load_feature_transform_contract(
+                        data_root, run_id
+                    )
+                    bundle.setdefault("feature_transform_contract", contract)
+                    if manifest:
+                        bundle.setdefault("feature_transform_manifest", manifest)
+                    bundle.setdefault(
+                        "feature_transform_contract_hash", contract.contract_hash
+                    )
+                    state.setdefault("feature_transform_contract", contract)
+                    if manifest:
+                        state.setdefault("feature_transform_manifest", manifest)
+                    state.setdefault(
+                        "feature_transform_contract_hash", contract.contract_hash
+                    )
+                    tprint(
+                        "Loaded feature transform contract from artifact root: "
+                        f"{contract.contract_hash}"
+                    )
+                except FileNotFoundError:
+                    pass
+                except Exception as exc:
+                    tprint(f"WARNING: could not load feature transform contract: {exc}")
+            loaded_meta_models = load_meta_models_from_pickle(trained_state_path)
+            if loaded_meta_models:
+                bundle["meta_models"] = loaded_meta_models
+            state["bundle"] = bundle
 
         # Also load ridge weights separately if not in state
         if "ridge_weights" not in state.get("bundle", {}):

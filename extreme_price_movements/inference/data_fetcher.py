@@ -360,7 +360,7 @@ class DataFetcher:
             if isinstance(raw, dict):
                 mapping = {
                     "funding_rate": "fundingRate",
-                    "open_interest": "openInterest",
+                    "open_interest": "openInterestValue",
                     "mark_price": "markPrice",
                     "index_price": "indexPrice",
                 }
@@ -368,6 +368,19 @@ class DataFetcher:
                     value = pd.to_numeric(raw.get(src_col), errors="coerce")
                     if pd.notna(value) and np.isfinite(float(value)):
                         row[out_col] = float(value)
+                if "open_interest" not in row:
+                    value = pd.to_numeric(raw.get("openInterest"), errors="coerce")
+                    ref_price = pd.to_numeric(
+                        raw.get("markPrice") or raw.get("indexPrice"), errors="coerce"
+                    )
+                    if (
+                        pd.notna(value)
+                        and np.isfinite(float(value))
+                        and pd.notna(ref_price)
+                        and np.isfinite(float(ref_price))
+                        and float(ref_price) > 0.0
+                    ):
+                        row["open_interest"] = float(value) * float(ref_price)
                 if "mark_price" in row and "index_price" in row and row["index_price"] > 0:
                     row["premium_index"] = float(row["mark_price"] / row["index_price"] - 1.0)
         except Exception as exc:

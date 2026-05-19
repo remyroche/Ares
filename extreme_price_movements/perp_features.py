@@ -137,11 +137,12 @@ def compute_features(
     out = pd.DataFrame(index=idx)
 
     funding = df["funding_rate"].astype(float)
-    oi = df["open_interest"].astype(float)
+    oi = df["open_interest"].astype(float).where(lambda s: s > 0.0)
     perp = df["perp_price"].astype(float)
     spot = df["spot_price"].astype(float)
     vol = df["volume"].astype(float)
     close = df["close"].astype(float) if "close" in df.columns else perp
+    quote_volume = (vol * perp).replace([np.inf, -np.inf], np.nan).where(lambda s: s > 0.0)
 
     basis = perp - spot
     basis_pct = _safe_div(basis, spot)
@@ -159,10 +160,11 @@ def compute_features(
     out["mom_slow"] = mom_slow
 
     out["funding_z"] = _rolling_zscore(funding, z_window_hours)
-    out["oi_z"] = _rolling_zscore(oi, z_window_hours)
+    log_oi = np.log(oi.replace(0, np.nan))
+    out["oi_z"] = _rolling_zscore(log_oi, z_window_hours)
     out["basis_pct_z"] = _rolling_zscore(basis_pct, z_window_hours)
 
-    out["oi_rank"] = _rolling_rank_pct(oi, z_window_hours)
+    out["oi_rank"] = _rolling_rank_pct(log_oi, z_window_hours)
     out["funding_abs_z"] = out["funding_z"].abs()
     out["basis_stretch"] = out["basis_pct_z"].abs()
 
@@ -175,20 +177,36 @@ def compute_features(
     ).std(ddof=0)
 
     horizons = tuple(sorted(set(int(h) for h in horizons)))
+    funding_delta_cols: list[str] = []
+    oi_delta_cols: list[str] = []
+    basis_delta_cols: list[str] = []
     for h in horizons:
-        out[f"funding_mom_{h}h"] = funding.diff(h)
-        out[f"oi_chg_{h}h"] = oi.diff(h)
-        out[f"oi_vel_{h}h"] = out[f"oi_chg_{h}h"] / float(h)
+        funding_delta = funding.diff(h)
+        oi_log_delta = log_oi.diff(h)
+        basis_delta = basis_pct.diff(h)
+        funding_delta_cols.append(f"_funding_delta_{h}h")
+        oi_delta_cols.append(f"_oi_log_delta_{h}h")
+        basis_delta_cols.append(f"_basis_delta_{h}h")
+        out[f"_funding_delta_{h}h"] = funding_delta
+        out[f"_oi_log_delta_{h}h"] = oi_log_delta
+        out[f"_basis_delta_{h}h"] = basis_delta
 
-        vol_sum_h = vol.rolling(h, min_periods=max(1, h)).sum()
-        out[f"oi_rel_vol_{h}h"] = _safe_div(out[f"oi_chg_{h}h"], vol_sum_h)
+        out[f"funding_mom_{h}h"] = _rolling_zscore(funding_delta, z_window_hours)
+        out[f"oi_chg_{h}h"] = oi_log_delta
+        out[f"oi_vel_{h}h"] = oi_log_delta / float(h)
 
-        out[f"basis_mom_{h}h"] = basis_pct.diff(h)
+        quote_volume_sum_h = quote_volume.rolling(h, min_periods=max(1, h)).sum()
+        oi_notional_delta = oi.diff(h)
+        out[f"oi_rel_vol_{h}h"] = _safe_div(oi_notional_delta, quote_volume_sum_h).clip(
+            -25.0, 25.0
+        )
+
+        out[f"basis_mom_{h}h"] = _rolling_zscore(basis_delta, z_window_hours)
         out[f"basis_funding_div_{h}h"] = out["basis_pct_z"] - out["funding_z"]
 
-    oi_up = pd.concat([(out[f"oi_chg_{h}h"] > 0).astype(float) for h in horizons], axis=1).mean(axis=1)
-    funding_up = pd.concat([(out[f"funding_mom_{h}h"] > 0).astype(float) for h in horizons], axis=1).mean(axis=1)
-    basis_up = pd.concat([(out[f"basis_mom_{h}h"] > 0).astype(float) for h in horizons], axis=1).mean(axis=1)
+    oi_up = pd.concat([(out[f"_oi_log_delta_{h}h"] > 0).astype(float) for h in horizons], axis=1).mean(axis=1)
+    funding_up = pd.concat([(out[f"_funding_delta_{h}h"] > 0).astype(float) for h in horizons], axis=1).mean(axis=1)
+    basis_up = pd.concat([(out[f"_basis_delta_{h}h"] > 0).astype(float) for h in horizons], axis=1).mean(axis=1)
 
     out["oi_up_agree"] = oi_up
     out["funding_up_agree"] = funding_up
@@ -201,17 +219,20 @@ def compute_features(
         mat = pd.concat([out[c] for c in cols], axis=1)
         return (mat.values * w).sum(axis=1)
 
-    out["funding_mom_w"] = _wavg(tuple(f"funding_mom_{h}h" for h in horizons))
-    out["oi_chg_w"] = _wavg(tuple(f"oi_chg_{h}h" for h in horizons))
-    out["basis_mom_w"] = _wavg(tuple(f"basis_mom_{h}h" for h in horizons))
+    funding_delta_w = _wavg(tuple(f"_funding_delta_{h}h" for h in horizons))
+    oi_delta_w = _wavg(tuple(f"_oi_log_delta_{h}h" for h in horizons))
+    basis_delta_w = _wavg(tuple(f"_basis_delta_{h}h" for h in horizons))
+    out["funding_mom_w"] = _rolling_zscore(pd.Series(funding_delta_w, index=idx), z_window_hours)
+    out["oi_chg_w"] = pd.Series(oi_delta_w, index=idx)
+    out["basis_mom_w"] = _rolling_zscore(pd.Series(basis_delta_w, index=idx), z_window_hours)
 
     out["leverage_build"] = (
         (out["oi_up_agree"] >= 2 / 3)
         & (out["funding_up_agree"] >= 2 / 3)
         & (out["basis_up_agree"] >= 2 / 3)
-        & (out["oi_chg_w"] > 0)
-        & (out["funding_mom_w"] > 0)
-        & (out["basis_mom_w"] > 0)
+            & (out["oi_chg_w"] > 0)
+            & (pd.Series(funding_delta_w, index=idx) > 0)
+            & (pd.Series(basis_delta_w, index=idx) > 0)
     ).astype(int)
 
     funding_extreme_z = 1.5
@@ -219,9 +240,9 @@ def compute_features(
 
     out["unwind"] = (
         (out["oi_chg_w"] < 0)
-        & (pd.concat([(out[f"oi_chg_{h}h"] < 0).astype(float) for h in horizons], axis=1).mean(axis=1) >= 2 / 3)
+        & (pd.concat([(out[f"_oi_log_delta_{h}h"] < 0).astype(float) for h in horizons], axis=1).mean(axis=1) >= 2 / 3)
         & (out["funding_abs_z"] > funding_extreme_z)
-        & (out["basis_mom_w"] < 0)
+        & (pd.Series(basis_delta_w, index=idx) < 0)
         & (out["basis_stretch"] > basis_stretch_z)
     ).astype(int)
 
@@ -241,5 +262,10 @@ def compute_features(
     out["squeeze_prob"] = squeeze_score
 
     out["basis_funding_div"] = out["basis_pct_z"] - out["funding_z"]
+    out.drop(
+        columns=[c for c in out.columns if c.startswith(("_funding_delta_", "_oi_log_delta_", "_basis_delta_"))],
+        inplace=True,
+        errors="ignore",
+    )
 
     return out

@@ -3058,7 +3058,6 @@ def _required_feature_keys() -> Tuple[str, ...]:
         "reversal_bar_strength",
         "climax_volume_ratio",
         "rejection_volume_ratio",
-        "bar_direction_entropy",
     )
 
 
@@ -4022,14 +4021,13 @@ def _simple_score_for_mode(
     vol = get("climax_volume_ratio")
     rev = get("reversal_bar_strength")
     rng = get("range_1_atr")
-    entropy = get("bar_direction_entropy")
 
     if mode == MODE_LONG:
         # Default to a balanced TF/reversal proxy for LONG
-        score = 0.35 * impulse + 0.20 * vol + 0.20 * rng - 0.15 * rev - 0.10 * entropy
+        score = 0.40 * impulse + 0.22 * vol + 0.22 * rng - 0.16 * rev
     elif mode == MODE_SHORT:
         # Default to a balanced TF/reversal proxy for SHORT
-        score = 0.35 * (-impulse) + 0.20 * vol + 0.20 * rng - 0.15 * rev - 0.10 * entropy
+        score = 0.40 * (-impulse) + 0.22 * vol + 0.22 * rng - 0.16 * rev
     else:
         score = np.zeros(n, dtype=np.float32)
 

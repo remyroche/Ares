@@ -219,7 +219,6 @@ FEATURE_CANDIDATES: Dict[str, Tuple[str, ...]] = {
         "rv_1h",
         "rv_2h",
         "realized_volatility_1h",
-        "realized_vol_15m_realized_vol_2h",
         "rv_1h_proxy",
         "ret1h_abs",
         "range_norm_12",
@@ -289,7 +288,6 @@ FEATURE_CANDIDATES: Dict[str, Tuple[str, ...]] = {
         "spectral_entropy_ret_24",
         "perm_entropy_ret_24",
         "shannon_entropy_ret_16",
-        "direction_entropy_20",
         "regime_transition_entropy_48h",
     ),
     "asset_volume_30d": (

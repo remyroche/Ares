@@ -26,6 +26,10 @@ from extreme_price_movements.inference.feature_generator import (
     get_features_for_candidates,
     is_model_derived_feature_key,
 )
+from extreme_price_movements.inference.feature_parity import (
+    FeatureParityError,
+    validate_final_model_matrix,
+)
 from extreme_price_movements.inference.parity import (
     LIVE_UNAVAILABLE_FEATURES,
     strategy_core_id,
@@ -277,8 +281,9 @@ class ModelOrchestrator:
 
         The alpha bundles were trained on a fixed feature contract. At
         inference time we first try to synthesize missing gated features from
-        the shared market columns, then fall back to zero-filled reindexing so
-        the model always receives the expected width.
+        the shared market columns. In strict feature-parity mode we then fail
+        closed if any trained column is still absent or non-finite; permissive
+        legacy mode keeps the previous zero-fill behavior.
         """
         if features.empty or not feat_cols:
             return features
@@ -318,7 +323,28 @@ class ModelOrchestrator:
                         np.float32
                     )
 
-        return aligned.reindex(columns=feat_cols, fill_value=0.0).fillna(0.0)
+        strict = bool(self.cfg.get("strict_feature_parity", True))
+        feat_cols_s = [str(c) for c in feat_cols]
+        if strict:
+            missing = [c for c in feat_cols_s if c not in aligned.columns]
+            if missing:
+                tprint(
+                    "Error aligning alpha feature contract: missing trained "
+                    f"features ({len(missing)}): {missing[:20]}"
+                )
+                return pd.DataFrame(index=features.index)
+            try:
+                return validate_final_model_matrix(
+                    aligned.reindex(columns=feat_cols_s),
+                    model_feature_cols=feat_cols_s,
+                    model_key="alpha",
+                    strict=True,
+                )
+            except FeatureParityError as exc:
+                tprint(f"Error aligning alpha feature contract: {exc}")
+                return pd.DataFrame(index=features.index)
+
+        return aligned.reindex(columns=feat_cols_s, fill_value=0.0).fillna(0.0)
 
     def _get_bucket_policy(self, side: str, kind: str) -> Dict[str, Any]:
         bucket_key = self._policy_bucket_key(side, kind)
@@ -707,16 +733,46 @@ class ModelOrchestrator:
                 )
                 return pd.Series(dtype=float)
 
-            available_cols = [c for c in feat_cols if c in features.columns]
-
-            if not available_cols:
-                return pd.Series(dtype=float)
-
-            ebm_contract_model = _extract_ebm_contract_model(meta_model)
-            if ebm_contract_model is not None:
-                X = features.reindex(columns=feat_cols, fill_value=0.0).fillna(0)
+            strict = bool(self.cfg.get("strict_feature_parity", True))
+            if strict:
+                missing = [c for c in feat_cols if c not in features.columns]
+                if missing:
+                    reason = "missing_meta_feature_contract"
+                    self._last_results["meta_contract_error"] = {
+                        "key": key,
+                        "reason": reason,
+                        "missing_features_count": len(missing),
+                        "missing_features_sample": missing[:20],
+                    }
+                    tprint(
+                        f"Error predicting meta for {key}: {reason} "
+                        f"({len(missing)} missing trained features)."
+                    )
+                    return pd.Series(dtype=float)
+                try:
+                    X = validate_final_model_matrix(
+                        features.reindex(columns=feat_cols),
+                        model_feature_cols=feat_cols,
+                        model_key=key,
+                        strict=True,
+                    )
+                except FeatureParityError as exc:
+                    self._last_results["meta_contract_error"] = {
+                        "key": key,
+                        "reason": "invalid_meta_feature_matrix",
+                        "details": getattr(exc, "report", {}),
+                    }
+                    tprint(f"Error predicting meta for {key}: {exc}")
+                    return pd.Series(dtype=float)
             else:
-                X = features[available_cols].fillna(0)
+                available_cols = [c for c in feat_cols if c in features.columns]
+                if not available_cols:
+                    return pd.Series(dtype=float)
+                ebm_contract_model = _extract_ebm_contract_model(meta_model)
+                if ebm_contract_model is not None:
+                    X = features.reindex(columns=feat_cols, fill_value=0.0).fillna(0)
+                else:
+                    X = features[available_cols].fillna(0)
             preds = meta_model.predict(X)
 
             return pd.Series(preds, index=features.index)

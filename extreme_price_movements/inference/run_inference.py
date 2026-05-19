@@ -787,6 +787,9 @@ def _prediction_ledger_row(
             decision.get("feature_available_ts")
         ),
         "feature_contract_hash": decision.get("feature_contract_hash"),
+        "feature_transform_contract_hash": decision.get(
+            "feature_transform_contract_hash"
+        ),
         "model_artifact_run_id": decision.get("model_artifact_run_id"),
         "policy_artifact_run_id": decision.get("policy_artifact_run_id"),
         "symbol": decision.get("symbol"),
@@ -2678,6 +2681,8 @@ def run_inference_step(
     prediction_ledger: Optional[PredictionLedger] = None,
     strategy_kill_switch: Optional[StrategyKillSwitch] = None,
     policy_rank_reference_store: Optional[PolicyRankReferenceStore] = None,
+    stale_entry_context: bool = False,
+    stale_entry_max_abs_signal_gap_bps: float | None = None,
 ) -> Dict[str, Any]:
     """Run a single inference step.
 
@@ -2770,6 +2775,12 @@ def run_inference_step(
             f"multiplied by book_notional_multiplier="
             f"{portfolio_policy.book_notional_multiplier:.2f}. "
             "Rank thresholds are loaded from the deployment policy artifacts."
+        )
+    if stale_entry_context:
+        tprint(
+            "Conditional stale-entry mode active: candidates may enter only after "
+            "ticker precheck confirms absolute current-mid vs signal-price move "
+            f"<= {float(stale_entry_max_abs_signal_gap_bps or 0.0):.2f} bps."
         )
 
     # Step 1: Select candidates. When the caller already selected candidates
@@ -3134,6 +3145,21 @@ def run_inference_step(
                         nrow.get("normalized_threshold", rank_threshold)
                     )
                     viability_margin = float(nrow.get("viability_margin", 0.0))
+                    policy_threshold_floor = float(
+                        np.clip(
+                            getattr(
+                                portfolio_policy,
+                                "initial_rank_threshold_floor",
+                                getattr(
+                                    portfolio_policy,
+                                    "initial_rank_threshold",
+                                    initial_rank_threshold,
+                                ),
+                            ),
+                            0.0,
+                            1.0,
+                        )
+                    )
                     if threshold_space == "calibrated_score":
                         effective_threshold = min(
                             1.0,
@@ -3150,7 +3176,11 @@ def run_inference_step(
                             continue
                     else:
                         effective_threshold = min(
-                            1.0, normalized_threshold + viability_margin
+                            1.0,
+                            max(
+                                policy_threshold_floor,
+                                normalized_threshold + viability_margin,
+                            ),
                         )
                         threshold_score = np.nan
                     rank_score = (
@@ -3184,6 +3214,10 @@ def run_inference_step(
                     chain_results["calibrated_score"] = calibrated_score
                     chain_results["rank_threshold"] = rank_threshold
                     chain_results["normalized_threshold"] = normalized_threshold
+                    chain_results["deployment_rank_threshold"] = normalized_threshold
+                    chain_results["initial_rank_threshold_floor"] = (
+                        policy_threshold_floor
+                    )
                     chain_results["viability_margin"] = viability_margin
                     chain_results["effective_threshold"] = effective_threshold
                     chain_results["base_train_rank_pct"] = base_hist_rank_pct
@@ -3208,6 +3242,8 @@ def run_inference_step(
                             "threshold_score": threshold_score,
                             "rank_threshold": rank_threshold,
                             "normalized_threshold": normalized_threshold,
+                            "deployment_rank_threshold": normalized_threshold,
+                            "initial_rank_threshold_floor": policy_threshold_floor,
                             "effective_threshold": effective_threshold,
                             "policy_sizing": policy_size,
                             "chain_results": chain_results,
@@ -3221,6 +3257,9 @@ def run_inference_step(
                             "feature_available_ts": feature_available_ts.isoformat(),
                             "feature_contract_hash": runtime_config.get(
                                 "feature_contract_hash"
+                            ),
+                            "feature_transform_contract_hash": runtime_config.get(
+                                "feature_transform_contract_hash"
                             ),
                             "model_artifact_run_id": artifact_run_id,
                             "policy_artifact_run_id": runtime_config.get(
@@ -3604,11 +3643,40 @@ def run_inference_step(
                         if getattr(executor, "exchange", None) is not None
                         else symbol
                     )
+                    if stale_entry_context and (
+                        getattr(executor, "exchange", None) is None or price is None
+                    ):
+                        reject_reason = "stale_entry_requires_ticker_and_signal_price"
+                        if (
+                            prediction_ledger is not None
+                            and _should_log_prediction_candidate(
+                                decision, policy=portfolio_policy
+                            )
+                        ):
+                            prediction_ledger_rows.append(
+                                _prediction_ledger_row(
+                                    decision,
+                                    timestamp=now_utc.isoformat(),
+                                    side=side,
+                                    portfolio_decision="price_gap_rejected",
+                                    portfolio_reject_reason=reject_reason,
+                                    execution_snapshot={
+                                        "stale_entry_context": True,
+                                    },
+                                )
+                            )
+                        tprint(
+                            f"Stale-entry block: {symbol} {side}/{strategy_id} "
+                            f"reason={reject_reason}"
+                        )
+                        side_metrics["non_fatal_issues"] += 1
+                        continue
                     if (
                         getattr(executor, "exchange", None) is not None
                         and price is not None
                         and (
-                            portfolio_policy.ticker_precheck_enabled
+                            stale_entry_context
+                            or portfolio_policy.ticker_precheck_enabled
                             or portfolio_policy.orderbook_precheck_enabled
                         )
                     ):
@@ -3650,6 +3718,58 @@ def run_inference_step(
                                 side_metrics["non_fatal_issues"] += 1
                                 continue
                             decision_mid = float(ticker_snapshot.mid or 0.0)
+                            if stale_entry_context:
+                                max_abs_gap_bps = float(
+                                    stale_entry_max_abs_signal_gap_bps
+                                    if stale_entry_max_abs_signal_gap_bps is not None
+                                    else 0.0
+                                )
+                                stale_abs_gap_bps = (
+                                    abs(decision_mid / max(float(price), 1e-12) - 1.0)
+                                    * 10000.0
+                                )
+                                execution_snapshot[
+                                    "stale_entry_context"
+                                ] = True
+                                execution_snapshot[
+                                    "stale_entry_abs_signal_gap_bps"
+                                ] = float(stale_abs_gap_bps)
+                                execution_snapshot[
+                                    "stale_entry_max_abs_signal_gap_bps"
+                                ] = float(max_abs_gap_bps)
+                                if (
+                                    not np.isfinite(stale_abs_gap_bps)
+                                    or stale_abs_gap_bps > max_abs_gap_bps
+                                ):
+                                    reject_reason = (
+                                        "stale_entry_price_moved_too_far"
+                                    )
+                                    if (
+                                        prediction_ledger is not None
+                                        and _should_log_prediction_candidate(
+                                            decision, policy=portfolio_policy
+                                        )
+                                    ):
+                                        prediction_ledger_rows.append(
+                                            _prediction_ledger_row(
+                                                decision,
+                                                timestamp=now_utc.isoformat(),
+                                                side=side,
+                                                portfolio_decision=(
+                                                    "price_gap_rejected"
+                                                ),
+                                                portfolio_reject_reason=reject_reason,
+                                                execution_snapshot=execution_snapshot,
+                                            )
+                                        )
+                                    tprint(
+                                        f"Stale-entry price block: {symbol} "
+                                        f"{side}/{strategy_id} "
+                                        f"abs_signal_gap_bps={stale_abs_gap_bps:.2f} "
+                                        f"max_abs_signal_gap_bps={max_abs_gap_bps:.2f}"
+                                    )
+                                    side_metrics["non_fatal_issues"] += 1
+                                    continue
                             gap_penalty, gap_info = compute_price_gap_rank_penalty(
                                 strategy_id=strategy_id,
                                 side=side,
@@ -5279,6 +5399,11 @@ def main():
     runtime_cfg["use_perps"] = config["market_mode"] == "perps"
     runtime_cfg["market_mode"] = config["market_mode"]
     runtime_cfg["data_root"] = config["data_root"]
+    runtime_cfg.setdefault(
+        "feature_portability_mode",
+        "cross_asset_portable",
+    )
+    runtime_cfg.setdefault("feature_portability_strict", True)
     config["runtime_cfg"] = runtime_cfg
     config.setdefault(
         "cross_margin_dust_quote_threshold",
@@ -5302,6 +5427,22 @@ def main():
     model_bundle = load_full_state(config["run_id"], config["data_root"])
     if isinstance(model_bundle, dict):
         model_bundle["bucket_params"] = runtime_bucket_params
+        loaded_bundle = (
+            model_bundle.get("bundle", {}) if isinstance(model_bundle.get("bundle"), dict) else {}
+        )
+        for key in (
+            "feature_transform_contract",
+            "feature_transform_contract_hash",
+            "feature_transform_manifest",
+        ):
+            value = model_bundle.get(key)
+            if value is None:
+                value = loaded_bundle.get(key)
+            if value is not None:
+                config[key] = value
+                runtime_cfg[key] = value
+        runtime_cfg.setdefault("bundle", loaded_bundle)
+        config["runtime_cfg"] = runtime_cfg
     effective_model_bundle = _effective_runtime_model_bundle(model_bundle, config)
     validate_live_feature_contract(effective_model_bundle, strict=True)
     accepted_strategies = resolve_deployment_strategy_filter(
@@ -5691,12 +5832,45 @@ def main():
                 latest_closed_hour > last_hourly_sync
             )
             late_entries_override = bool(config.get("allow_late_entries", False))
-            scoring_entries_allowed = bool(entry_context_fresh or late_entries_override)
+            stale_entry_gap_enabled = bool(
+                config.get("allow_stale_entries_if_price_gap_within_limit", True)
+            )
+            try:
+                stale_entry_max_abs_signal_gap_bps = float(
+                    config.get("stale_entry_max_abs_signal_gap_bps", 50.0)
+                )
+            except (TypeError, ValueError):
+                stale_entry_max_abs_signal_gap_bps = 50.0
+            stale_entry_gap_allowed = bool(
+                (not entry_context_fresh)
+                and stale_entry_gap_enabled
+                and stale_entry_max_abs_signal_gap_bps >= 0.0
+            )
+            scoring_entries_allowed = bool(
+                entry_context_fresh or late_entries_override or stale_entry_gap_allowed
+            )
             if hourly_sync_due:
                 if not entry_context_fresh and late_entries_override:
                     tprint(
                         "Late-entry override active: allowing new entries despite "
                         "stale entry context "
+                        f"(latest_15m={current_time}, "
+                        f"latest_15m_closed_at={current_close}, "
+                        f"latest_15m_age={fifteen_age_seconds:.0f}s, "
+                        f"max_15m_age={max_entry_15m_age_seconds:.0f}s, "
+                        f"target_hour={latest_closed_hour}, "
+                        f"closed_at={latest_closed_hour_close}, "
+                        f"hour_age={hourly_age_seconds:.0f}s, "
+                        f"max_hour_age={max_entry_hourly_age_seconds:.0f}s)."
+                    )
+                elif stale_entry_gap_allowed:
+                    tprint(
+                        "Hourly context is stale, but conditional stale-entry mode "
+                        "is active: data/model scoring and candidate selection will "
+                        "run; each candidate must pass ticker precheck and absolute "
+                        "current-mid vs signal-price movement "
+                        f"<= {stale_entry_max_abs_signal_gap_bps:.2f} bps before "
+                        "any order can be placed "
                         f"(latest_15m={current_time}, "
                         f"latest_15m_closed_at={current_close}, "
                         f"latest_15m_age={fifteen_age_seconds:.0f}s, "
@@ -5876,6 +6050,12 @@ def main():
                     int(config.get("max_entries_total", 4))
                     if scoring_entries_allowed
                     else 0
+                ),
+                stale_entry_context=bool(
+                    stale_entry_gap_allowed and not late_entries_override
+                ),
+                stale_entry_max_abs_signal_gap_bps=(
+                    stale_entry_max_abs_signal_gap_bps
                 ),
             )
             loop_timer.mark("model_scoring_and_orders")

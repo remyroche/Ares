@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from extreme_price_movements.feature_transform_contract import FeatureTransformContract
+from extreme_price_movements.feature_transform_contract import save_feature_transform_contract
 from extreme_price_movements.inference import feature_generator
 from extreme_price_movements.model_loader import load_full_state
 from extreme_price_movements.pipeline_steps import _drop_known_unusable_raw_feature_keys
@@ -124,6 +125,27 @@ def test_trained_state_embeds_contract_for_model_loader(tmp_path):
     assert loaded["feature_transform_contract_hash"] == contract.contract_hash
     assert loaded["bundle"]["feature_transform_contract"].contract_hash == contract.contract_hash
     assert loaded["bundle"]["feature_transform_manifest"] == manifest
+
+
+def test_model_loader_attaches_contract_from_artifact_root(tmp_path):
+    contract = _contract()
+    manifest = save_feature_transform_contract(contract, tmp_path, "run_a")
+    run_id = "run_a"
+    model_dir = tmp_path / "artifacts" / run_id / "models"
+    model_dir.mkdir(parents=True)
+    state = {
+        "ts_trained": run_id,
+        "bundle": {"alpha_models": {}, "meta_models": {}},
+        "risk_params": {},
+    }
+    with (model_dir / "trained_state.pkl").open("wb") as f:
+        pickle.dump(state, f)
+
+    loaded = load_full_state(run_id, str(tmp_path))
+
+    assert loaded["feature_transform_contract_hash"] == contract.contract_hash
+    assert loaded["feature_transform_manifest"]["contract_hash"] == manifest["contract_hash"]
+    assert loaded["bundle"]["feature_transform_contract"].contract_hash == contract.contract_hash
 
 
 def test_raw_compute_cfg_marks_contract_raw_mode():

@@ -74,6 +74,7 @@ LEGACY_MARKET_SUFFIXES = ("_spot", "_perps", "_perp")
 REPORTING_POLICY_RANK_THRESHOLD = 0.85
 REPORTING_POLICY_LABEL = "top_15"
 DEFAULT_FORWARD_BARS = 96
+DEFAULT_BAR_MINUTES = 15
 DEFAULT_CV_FOLDS = 3
 DEFAULT_N_TRIALS = 200
 OPTUNA_EARLY_STOP_NO_IMPROVEMENT = 50
@@ -261,6 +262,40 @@ def compute_position_size(rank_pct: np.ndarray, size_power: float) -> np.ndarray
     return 0.075 + 0.075 * (rank_pct**size_power)
 
 
+def _holding_time_metrics(
+    exit_bars: Sequence[Any] | np.ndarray,
+    *,
+    bar_minutes: int = DEFAULT_BAR_MINUTES,
+) -> Dict[str, float]:
+    bars = pd.to_numeric(pd.Series(exit_bars), errors="coerce").replace(
+        [np.inf, -np.inf], np.nan
+    )
+    bars = bars.dropna()
+    if bars.empty:
+        return {
+            "avg_holding_bars": 0.0,
+            "median_holding_bars": 0.0,
+            "p90_holding_bars": 0.0,
+            "max_holding_bars": 0.0,
+            "avg_holding_time_hours": 0.0,
+            "median_holding_time_hours": 0.0,
+            "p90_holding_time_hours": 0.0,
+            "max_holding_time_hours": 0.0,
+        }
+    bars = bars.clip(lower=0.0).astype(float)
+    hours = bars * float(bar_minutes) / 60.0
+    return {
+        "avg_holding_bars": float(bars.mean()),
+        "median_holding_bars": float(bars.median()),
+        "p90_holding_bars": float(bars.quantile(0.90)),
+        "max_holding_bars": float(bars.max()),
+        "avg_holding_time_hours": float(hours.mean()),
+        "median_holding_time_hours": float(hours.median()),
+        "p90_holding_time_hours": float(hours.quantile(0.90)),
+        "max_holding_time_hours": float(hours.max()),
+    }
+
+
 def _without_concurrency_param(params: Dict[str, Any]) -> Dict[str, Any]:
     """Return policy params that can be combined with an explicit concurrency."""
     out = dict(params)
@@ -383,6 +418,7 @@ def simulate_and_score(
             "raw_gains": np.array([], dtype=np.float32),
             "gross_gains": np.array([], dtype=np.float32),
             "sizes": np.array([], dtype=np.float32),
+            "exit_bars": np.array([], dtype=np.int16),
             "selected_mask": np.zeros(0, dtype=bool),
             "candidate_count": 0,
             "skipped_concurrency": 0,
@@ -397,6 +433,7 @@ def simulate_and_score(
                 and np.isfinite(float(adverse_exit_theta))
                 else np.nan
             ),
+            **_holding_time_metrics([]),
         }
 
     # 1. Entry
@@ -419,6 +456,7 @@ def simulate_and_score(
                 "raw_gains": np.array([], dtype=np.float32),
                 "gross_gains": np.array([], dtype=np.float32),
                 "sizes": np.array([], dtype=np.float32),
+                "exit_bars": np.array([], dtype=np.int16),
                 "selected_mask": np.zeros(0, dtype=bool),
                 "candidate_count": 0,
                 "skipped_concurrency": 0,
@@ -433,6 +471,7 @@ def simulate_and_score(
                     and np.isfinite(float(adverse_exit_theta))
                     else np.nan
                 ),
+                **_holding_time_metrics([]),
             }
 
     # 2. Position sizing (dynamically scaled)
@@ -740,6 +779,7 @@ def simulate_and_score(
     full_sl_exit_count = int(np.sum(selected_exit_reason == "full_sl"))
     capital_protect_exit_count = int(np.sum(selected_exit_reason == "capital_protect"))
     trailing_exit_count = int(np.sum(selected_exit_reason == "trailing"))
+    holding_metrics = _holding_time_metrics(selected_exit_bars)
 
     return {
         "net_pnl": float(np.sum(net_gain)),
@@ -762,6 +802,7 @@ def simulate_and_score(
         "adverse_exit_theta": (
             float(resolved_theta) if np.isfinite(resolved_theta) else np.nan
         ),
+        **holding_metrics,
     }
 
 
@@ -878,7 +919,7 @@ def apply_deployment_concurrency_constraints(
             )
             occupancy_raise = (
                 len(active_total_until)
-                * (1.0 - float(initial_rank_threshold))
+                * (0.90 - float(initial_rank_threshold))
                 / max(int(max_concurrent_total), 1)
             )
             side_penalty = float(side_crowding_penalty_max) * float(side_util) ** 2
@@ -936,6 +977,7 @@ def score_deployment_threshold_rows(rows: pd.DataFrame) -> Dict[str, Any]:
         "n_trades": 0,
         "max_drawdown": 0.0,
         "sortino": 0.0,
+        **_holding_time_metrics([]),
     }
     if rows.empty or "net_gain" not in rows.columns:
         return dict(empty_metrics)
@@ -963,6 +1005,11 @@ def score_deployment_threshold_rows(rows: pd.DataFrame) -> Dict[str, Any]:
         sortino = 100.0 if float(gains.mean()) > 0.0 else 0.0
     else:
         sortino = float(gains.mean() / np.sqrt(np.mean(downside**2)))
+    holding_metrics = (
+        _holding_time_metrics(rows.loc[gains.index, "exit_bars"])
+        if "exit_bars" in rows.columns
+        else _holding_time_metrics([])
+    )
 
     return {
         "net_pnl": float(gains.sum()),
@@ -976,6 +1023,7 @@ def score_deployment_threshold_rows(rows: pd.DataFrame) -> Dict[str, Any]:
         "n_trades": int(len(gains)),
         "max_drawdown": float(dd.min()) if len(dd) else 0.0,
         "sortino": float(sortino),
+        **holding_metrics,
     }
 
 
@@ -2220,6 +2268,7 @@ def calculate_advanced_metrics(
     selected_mask: Optional[np.ndarray] = None,
     gross_gains: Optional[np.ndarray] = None,
     exit_reasons: Optional[Sequence[Any]] = None,
+    exit_bars: Optional[Sequence[Any]] = None,
 ) -> dict:
     if len(raw_gains) == 0:
         return {}
@@ -2229,12 +2278,19 @@ def calculate_advanced_metrics(
         if exit_reasons is not None
         else np.full(len(raw_gains), "unknown", dtype=object)
     )
+    exit_bars_arr = (
+        np.asarray(exit_bars, dtype=np.float32)
+        if exit_bars is not None
+        else np.full(len(raw_gains), np.nan, dtype=np.float32)
+    )
     if selected_mask is not None:
         mask = np.asarray(selected_mask, dtype=bool)
         if len(mask) == len(df_sub):
             df_sub = df_sub.iloc[np.flatnonzero(mask)].copy()
         if len(mask) == len(exit_reasons_arr):
             exit_reasons_arr = exit_reasons_arr[mask]
+        if len(mask) == len(exit_bars_arr):
+            exit_bars_arr = exit_bars_arr[mask]
 
     if gross_gains is None:
         gross_gains_arr = np.full(len(raw_gains), np.nan, dtype=np.float32)
@@ -2246,15 +2302,17 @@ def calculate_advanced_metrics(
         or len(sizes) != len(df_sub)
         or len(gross_gains_arr) != len(df_sub)
         or len(exit_reasons_arr) != len(df_sub)
+        or len(exit_bars_arr) != len(df_sub)
     ):
         logger.warning(
             "Skipping advanced metrics due to length mismatch: "
-            "rows=%s gains=%s gross_gains=%s sizes=%s exit_reasons=%s",
+            "rows=%s gains=%s gross_gains=%s sizes=%s exit_reasons=%s exit_bars=%s",
             len(df_sub),
             len(raw_gains),
             len(gross_gains_arr),
             len(sizes),
             len(exit_reasons_arr),
+            len(exit_bars_arr),
         )
         return {}
 
@@ -2265,6 +2323,7 @@ def calculate_advanced_metrics(
             "gross_gain": gross_gains_arr,
             "size": sizes,
             "exit_reason": exit_reasons_arr,
+            "exit_bars": exit_bars_arr,
         }
     )
     df_trades = df_trades[np.isfinite(df_trades["net_gain"])]
@@ -2287,6 +2346,7 @@ def calculate_advanced_metrics(
 
     pnl_positive_rate = (df_trades["net_gain"] > 0).mean()
     exit_reason_counts = df_trades["exit_reason"].astype(str).value_counts()
+    holding_metrics = _holding_time_metrics(df_trades["exit_bars"])
 
     def _exit_count(reason: str) -> int:
         return int(exit_reason_counts.get(reason, 0))
@@ -2447,6 +2507,7 @@ def calculate_advanced_metrics(
             weekly_pnl_positive_rate, 0.90
         )
         - _series_quantile(weekly_pnl_positive_rate, 0.10),
+        **holding_metrics,
     }
 
 
@@ -3434,6 +3495,7 @@ def _optimise_policy_on_rows(
                 metrics.get("selected_mask"),
                 metrics.get("gross_gains"),
                 metrics.get("exit_reason"),
+                metrics.get("exit_bars"),
             )
             value = _policy_objective_scalar(metrics, adv)
             record = _trial_record_from_evaluation(
@@ -3656,6 +3718,7 @@ def _legacy_optimise_policy_on_rows(
             metrics.get("selected_mask"),
             metrics.get("gross_gains"),
             metrics.get("exit_reason"),
+            metrics.get("exit_bars"),
         )
         avg_std = 0.5 * float(adv.get("w_std", 10.0) or 10.0) + 0.5 * float(
             adv.get("m_std", 10.0) or 10.0
@@ -3724,6 +3787,7 @@ def _evaluate_policy_subsets(
             metrics.get("selected_mask"),
             metrics.get("gross_gains"),
             metrics.get("exit_reason"),
+            metrics.get("exit_bars"),
         )
         if not adv_metrics:
             continue
@@ -4032,13 +4096,7 @@ def _load_policy_stage_view(slice_plan_path: Path) -> Tuple[Dict[str, Any], str]
     if strict_policy_view:
         return strict_policy_view, "policy_optimiser"
 
-    views = payload.get("materialized_views", {})
-    views = views if isinstance(views, dict) else {}
-    for stage_name in ("utility_policy_optimisation", "holdout_strategy_eval"):
-        view = views.get(stage_name)
-        if isinstance(view, dict) and view:
-            return view, stage_name
-    return {}, "missing_policy_stage_view"
+    return {}, "missing_policy_optimiser_stage_view"
 
 
 def _stage_view_is_materialized(stage_view: Dict[str, Any]) -> bool:
@@ -4572,6 +4630,7 @@ def _build_deployment_payload(
     *,
     run_id: str,
     oos_results_json: Dict[str, Any],
+    available_strategy_ids: Optional[Set[str]] = None,
 ) -> Dict[str, Any]:
     """Select deployable strategies from the chronological OOS policy slice."""
     rows: List[Dict[str, Any]] = []
@@ -4703,7 +4762,23 @@ def _build_deployment_payload(
             "weekly_pnl_positive_rate_q90_q10_delta": selection_metrics.get(
                 "weekly_pnl_positive_rate_q90_q10_delta"
             ),
-            "avg_holding_time_hours": DEFAULT_FORWARD_BARS * 15.0 / 60.0,
+            "configured_max_holding_bars": float(DEFAULT_FORWARD_BARS),
+            "configured_max_holding_time_hours": (
+                DEFAULT_FORWARD_BARS * DEFAULT_BAR_MINUTES / 60.0
+            ),
+            "avg_holding_bars": selection_metrics.get("avg_holding_bars"),
+            "median_holding_bars": selection_metrics.get("median_holding_bars"),
+            "p90_holding_bars": selection_metrics.get("p90_holding_bars"),
+            "max_holding_bars": selection_metrics.get("max_holding_bars"),
+            "avg_holding_time_hours": selection_metrics.get(
+                "avg_holding_time_hours",
+                DEFAULT_FORWARD_BARS * DEFAULT_BAR_MINUTES / 60.0,
+            ),
+            "median_holding_time_hours": selection_metrics.get(
+                "median_holding_time_hours"
+            ),
+            "p90_holding_time_hours": selection_metrics.get("p90_holding_time_hours"),
+            "max_holding_time_hours": selection_metrics.get("max_holding_time_hours"),
             "avg_trades_per_day_at_top_1pct": float(
                 (metrics.get("top_1", {}).get("n_trades", 0.0) or 0.0)
                 / _elapsed_days(metrics.get("top_1", {}))
@@ -4725,6 +4800,8 @@ def _build_deployment_payload(
             "metrics": result,
         }
         reject_reasons: List[str] = []
+        if available_strategy_ids is not None and strategy_id not in available_strategy_ids:
+            reject_reasons.append("missing_trained_meta_model")
         if side not in {"long", "short"}:
             reject_reasons.append("unknown_side")
         if avg_pnl <= 0.0:
@@ -4792,6 +4869,7 @@ def _build_deployment_payload(
             "max_strategies_total": _policy_max_strategies_total(),
             "selection_metric": _policy_selection_metric(),
             "min_selection_metric_avg_net_pnl_per_trade": 0.0,
+            "requires_current_trained_meta_model": available_strategy_ids is not None,
             "runtime_rank_threshold_source": "policy_optimiser_pnl_concurrency",
             "runtime_rank_threshold_scope": (
                 "per_strategy_prediction_rank_with_per_asset_and_cross_asset_limits"
@@ -4812,9 +4890,33 @@ def _build_deployment_payload(
             "policy_optimized": len(oos_results_json.get("strategies", {})),
             "deployment_selected": len(selected),
             "deployment_rejected": len(rejected),
+            "trained_meta_model_covered": (
+                len(available_strategy_ids) if available_strategy_ids is not None else None
+            ),
         },
         "asset_exclusions": {},
     }
+
+
+def _available_strategy_ids_from_meta_oof(meta_oof_dir: Path) -> Optional[Set[str]]:
+    """Return strategies with current meta OOF artifacts for deployment gating.
+
+    Deployment should never select a strategy that cannot be scored by the
+    current trained meta bundle. The meta OOF files are produced with the meta
+    training run and are a cheap, deterministic proxy for that bundle's strategy
+    coverage when rebuilding deployment contracts.
+    """
+
+    if not meta_oof_dir.exists():
+        return None
+    ids: Set[str] = set()
+    prefix = "meta_oof_"
+    suffix = "_clf.parquet"
+    for path in meta_oof_dir.glob(f"{prefix}*{suffix}"):
+        name = path.name
+        if name.startswith(prefix) and name.endswith(suffix):
+            ids.add(name[len(prefix) : -len(suffix)])
+    return ids or None
 
 
 def _build_portfolio_policy_config_payload() -> Dict[str, Any]:
@@ -4918,6 +5020,14 @@ def run_simple_policy_optimisation(
             source_validation,
         )
     stage_view, stage_name = _load_policy_stage_view(slice_plan_path)
+    if stage_name != "policy_optimiser":
+        logger.error(
+            "simple_policy_optimiser requires stage_name='policy_optimiser'; "
+            "refusing fallback stage=%s path=%s",
+            stage_name,
+            slice_plan_path,
+        )
+        return
     if not _stage_view_is_materialized(stage_view):
         logger.error(
             "Policy optimiser requires a materialized SlicePlanner policy view. "
@@ -5555,6 +5665,7 @@ def run_simple_policy_optimisation(
     deployment_payload = _build_deployment_payload(
         run_id=run_id,
         oos_results_json=oos_results_json,
+        available_strategy_ids=_available_strategy_ids_from_meta_oof(meta_oof_dir),
     )
     deployment_payload["market_mode"] = market_mode
     policy_params_dir = meta_oof_dir.parent / "policy_params"

@@ -224,8 +224,6 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     df["prior_range"] = df["high"].rolling(32).max() - df["low"].rolling(32).min()
     df["prior_volatility"] = df["close"].pct_change(fill_method=None).rolling(32).std()
 
-    df["acceleration_of_move"] = df["close"].pct_change(fill_method=None).diff()
-
     # -----------------------------
     # Micro-regimes / Short Timeframe
     # -----------------------------
@@ -240,19 +238,6 @@ def build_regime_features(df: pd.DataFrame) -> pd.DataFrame:
     # Clip to avoid log(0) or log(<0)
     chop_ratio = (atr_sum_20 / range_20.replace(0, np.nan)).clip(lower=1e-6)
     df["choppiness_index_20"] = 100.0 * np.log10(chop_ratio) / np.log10(40)
-
-    # Direction Entropy 20: entropy of up/down signs over 40 bars
-    def _entropy(x):
-        if len(x) == 0:
-            return np.nan
-        p_up = (x > 0).sum() / len(x)
-        p_dn = (x < 0).sum() / len(x)
-        e = 0.0
-        if p_up > 0: e -= p_up * np.log2(p_up)
-        if p_dn > 0: e -= p_dn * np.log2(p_dn)
-        return e
-
-    df["direction_entropy_20"] = df["close"].diff().rolling(40).apply(_entropy, raw=True)
 
     # Volatility Term Structure
     std_20 = df["close"].pct_change(fill_method=None).rolling(40).std()

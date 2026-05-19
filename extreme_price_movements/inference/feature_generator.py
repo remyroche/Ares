@@ -18,6 +18,8 @@ import numpy as np
 import pandas as pd
 
 from extreme_price_movements.data_store import load_features_selected
+from extreme_price_movements.feature_transform_contract import FeatureTransformContract
+from extreme_price_movements.config import is_non_portable_feature_key
 from extreme_price_movements.features import (
     add_regime_gates,
     atr_percent,
@@ -57,7 +59,7 @@ DEFAULT_GATE_TREND_THR = 0.0
 DEFAULT_CAUSAL_TRANSFORM_ROLL_WINDOW_HOURS = 24 * 30
 DEFAULT_IDENTITY_EWMA_WARMUP_HOURS = 24 * 60 * 5
 DEFAULT_TAIL_WARMUP_BUFFER_HOURS = 72
-LIVE_FEATURE_CACHE_VERSION = 8
+LIVE_FEATURE_CACHE_VERSION = 12
 _LIVE_FEATURE_MEMORY_CACHE: Dict[str, Dict[str, Any]] = {}
 _TRAINING_FEATURE_VARIATION_CACHE: Dict[tuple[str, str], Dict[str, bool]] = {}
 MODEL_DERIVED_FEATURE_RE = re.compile(
@@ -152,6 +154,31 @@ def _feature_snapshot_dir(cfg: Dict[str, Any], run_id: str, cache_key: str) -> P
     )
     safe = hashlib.sha256(cache_key.encode("utf-8")).hexdigest()[:24]
     return root / safe
+
+
+def _feature_transform_contract_hash_from_cfg(
+    cfg: Optional[Dict[str, Any]],
+) -> str | None:
+    if not isinstance(cfg, dict):
+        return None
+    explicit = cfg.get("feature_transform_contract_hash")
+    if explicit:
+        return str(explicit)
+    contract = cfg.get("feature_transform_contract")
+    if isinstance(contract, FeatureTransformContract) and contract.contract_hash:
+        return str(contract.contract_hash)
+    bundle = cfg.get("bundle")
+    if isinstance(bundle, dict):
+        bundled_hash = bundle.get("feature_transform_contract_hash")
+        if bundled_hash:
+            return str(bundled_hash)
+        bundled_contract = bundle.get("feature_transform_contract")
+        if (
+            isinstance(bundled_contract, FeatureTransformContract)
+            and bundled_contract.contract_hash
+        ):
+            return str(bundled_contract.contract_hash)
+    return None
 
 
 def _latest_feature_matrix(
@@ -298,6 +325,12 @@ def _load_live_feature_rolling_cache(
             return {}
         if meta.get("required_hash") != _hash_values(required_feature_keys):
             return {}
+        expected_contract_hash = _feature_transform_contract_hash_from_cfg(cfg)
+        if (
+            expected_contract_hash
+            and meta.get("contract_hash") != expected_contract_hash
+        ):
+            return {}
         matrix = pd.read_parquet(data_path)
     except Exception:
         return {}
@@ -374,6 +407,7 @@ def _write_live_feature_rolling_cache(
             "version": LIVE_FEATURE_CACHE_VERSION,
             "cache_key": cache_key,
             "feature_runtime_cfg_hash": _feature_runtime_cfg_hash(cfg),
+            "contract_hash": _feature_transform_contract_hash_from_cfg(cfg),
             "symbols_hash": _hash_values(symbols),
             "required_hash": _hash_values(required_feature_keys),
             "end_ts": pd.Timestamp(end_ts).isoformat(),
@@ -427,6 +461,12 @@ def _load_live_feature_snapshot(
             return {}
         if meta.get("required_hash") != _hash_values(required_feature_keys):
             return {}
+        expected_contract_hash = _feature_transform_contract_hash_from_cfg(cfg)
+        if (
+            expected_contract_hash
+            and meta.get("contract_hash") != expected_contract_hash
+        ):
+            return {}
         matrix = pd.read_parquet(data_path)
     except Exception:
         return {}
@@ -466,6 +506,7 @@ def _write_live_feature_snapshot(
             "version": LIVE_FEATURE_CACHE_VERSION,
             "cache_key": cache_key,
             "feature_runtime_cfg_hash": _feature_runtime_cfg_hash(cfg),
+            "contract_hash": _feature_transform_contract_hash_from_cfg(cfg),
             "symbols_hash": _hash_values(symbols),
             "required_hash": _hash_values(required_feature_keys),
             "end_ts": pd.Timestamp(end_ts).isoformat(),
@@ -497,6 +538,41 @@ def raw_required_feature_keys(
         for key in (required_feature_keys or set())
         if str(key) and not is_model_derived_feature_key(str(key))
     }
+
+
+def _raw_feature_compute_cfg(cfg: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Return feature-compute cfg for raw panels without refitting transforms."""
+    out = dict(cfg or {})
+    if out.get("feature_transform_contract") is not None:
+        out["feature_transform_contract_raw_mode"] = True
+    return out
+
+
+def _transform_feature_panels_for_inference(
+    feats: Dict[str, pd.DataFrame],
+    cfg: Optional[Dict[str, Any]],
+    *,
+    strict: bool = True,
+    label: str = "inference",
+) -> Dict[str, pd.DataFrame]:
+    """Apply the fitted training transform contract to live feature panels."""
+    cfg = cfg or {}
+    contract = cfg.get("feature_transform_contract")
+    if not isinstance(contract, FeatureTransformContract):
+        bundle = cfg.get("bundle")
+        if isinstance(bundle, dict):
+            contract = bundle.get("feature_transform_contract")
+    if not isinstance(contract, FeatureTransformContract):
+        if strict:
+            raise RuntimeError(f"{label}: missing feature_transform_contract")
+        return feats
+    expected_contract_hash = _feature_transform_contract_hash_from_cfg(cfg)
+    if expected_contract_hash and expected_contract_hash != contract.contract_hash:
+        raise RuntimeError(
+            f"{label}: feature transform contract hash mismatch: "
+            f"{contract.contract_hash} != {expected_contract_hash}"
+        )
+    return contract.transform_panels(feats, strict=strict)
 
 
 def _requires_gated_feature_generation(
@@ -688,9 +764,9 @@ def _drop_stale_live_sensitive_features(
 ) -> Dict[str, pd.DataFrame]:
     """Drop required live-sensitive features that do not reach ``end_ts``.
 
-    Dropped keys are later reconstructed from current live panels or neutral
-    zero-filled by ``_synthesize_live_safe_feature_keys``. This is safer than
-    letting cached L2/orderbook values leak forward across days.
+    Dropped keys are later reconstructed from current live panels. Strict
+    portability modes reject missing orderbook/funding features rather than
+    neutralizing them.
     """
     if not feats or not required_feature_keys:
         return feats
@@ -919,8 +995,42 @@ def load_or_compute_features(
         return {}
 
     required_feature_keys = raw_required_feature_keys(required_feature_keys)
-    cfg_source = cfg.get("runtime_cfg", cfg) if isinstance(cfg, dict) else cfg
+    outer_cfg = cfg if isinstance(cfg, dict) else {}
+    cfg_source = outer_cfg.get("runtime_cfg", outer_cfg)
     cfg = dict(cfg_source or {})
+    # Runtime config is the primary feature-generation config, but model
+    # artifacts such as the fitted training transform contract often live on
+    # the outer inference config/full state.  Preserve them before tail
+    # recomputation so live/replay feature values use the same fitted
+    # parameters as training.
+    for key in (
+        "feature_transform_contract",
+        "feature_transform_contract_hash",
+        "feature_transform_manifest",
+    ):
+        if key in outer_cfg and key not in cfg:
+            cfg[key] = outer_cfg[key]
+    for bundle_key in ("bundle", "model_bundle", "full_state"):
+        bundle_value = outer_cfg.get(bundle_key)
+        if isinstance(bundle_value, dict) and "bundle" not in cfg:
+            cfg["bundle"] = bundle_value.get("bundle", bundle_value)
+        if isinstance(bundle_value, dict):
+            for key in (
+                "feature_transform_contract",
+                "feature_transform_contract_hash",
+                "feature_transform_manifest",
+            ):
+                if key in bundle_value and key not in cfg:
+                    cfg[key] = bundle_value[key]
+            inner_bundle = bundle_value.get("bundle")
+            if isinstance(inner_bundle, dict):
+                for key in (
+                    "feature_transform_contract",
+                    "feature_transform_contract_hash",
+                    "feature_transform_manifest",
+                ):
+                    if key in inner_bundle and key not in cfg:
+                        cfg[key] = inner_bundle[key]
     if _requires_gated_feature_generation(required_feature_keys):
         cfg["enable_gated_features"] = True
     cfg.setdefault("feature_transform_cache_enabled", False)
@@ -1105,8 +1215,8 @@ def load_or_compute_features(
     )
     tprint(
         "Live feature parity: tail backfill uses shared training/backtest "
-        "compute_features_hourly() and its CausalTransform skip logic; no separate "
-        "live-only transform is applied."
+        "compute_features_hourly(); fitted training transform parameters are "
+        "then applied to available raw feature panels."
     )
     mkt_df = compute_market_features(
         panel_tail, basket_syms, trend_sma_hours=trend_sma_hours
@@ -1121,11 +1231,18 @@ def load_or_compute_features(
     full_tail_feats, _, _ = compute_features_hourly(
         panel_tail,
         mkt_gates,
-        cfg,
+        _raw_feature_compute_cfg(cfg),
         requested_feature_keys=(
             sorted(required_feature_keys) if required_feature_keys else None
         ),
     )
+    if _feature_transform_contract_hash_from_cfg(cfg):
+        full_tail_feats = _transform_feature_panels_for_inference(
+            full_tail_feats,
+            cfg,
+            strict=False,
+            label="live_tail_backfill",
+        )
     timer.mark("compute_features_hourly_tail")
     if cached_last_ts is not None:
         full_tail_feats = {
@@ -1570,7 +1687,7 @@ def _materialize_live_orderbook_summary_features(
     data_root: str | None = None,
     run_id: str | None = None,
 ) -> Dict[str, pd.DataFrame]:
-    """Compute live orderbook proxy features from saved hourly summary panels."""
+    """Compute live orderbook features from saved hourly summary panels."""
     if not any(k.startswith(("ob_", "obw_")) for k in required_feature_keys):
         return feats
     if cfg is not None and not bool(
@@ -1625,37 +1742,31 @@ def _materialize_live_orderbook_summary_features(
 
     close_aligned = close.reindex(index=idx, columns=cols).astype(np.float32)
     volume_aligned = volume.reindex(index=idx, columns=cols).astype(np.float32)
+    quote_volume_24h = (
+        (close_aligned * volume_aligned).rolling(24, min_periods=6).sum().shift(1)
+    )
     available = (best_bid.notna() & best_ask.notna() & mid.notna()).astype(np.float32)
-    skipped_no_training_support: set[str] = set()
-
-    def has_training_support(name: str) -> bool:
-        if data_root is None or run_id is None:
-            return True
-        ok = _training_feature_has_variation(
-            data_root=str(data_root),
-            run_id=str(run_id),
-            feature_key=str(name),
-        )
-        if not ok:
-            skipped_no_training_support.add(str(name))
-        return ok
-
     def put(name: str, value: pd.DataFrame) -> None:
         if name in required_feature_keys or name in out:
-            if not has_training_support(name):
-                return
             out[name] = (
                 value.reindex(index=idx, columns=cols)
                 .replace([np.inf, -np.inf], np.nan)
-                .fillna(0.0)
                 .astype(np.float32)
             )
+
+    def broadcast_to_symbols(value: pd.Series) -> pd.DataFrame:
+        ser = pd.to_numeric(value, errors="coerce").reindex(idx)
+        return pd.DataFrame(
+            np.repeat(ser.to_numpy(dtype=np.float32)[:, None], len(cols), axis=1),
+            index=idx,
+            columns=cols,
+            dtype=np.float32,
+        )
 
     spread_bps = (((best_ask - best_bid) / (mid.abs() + eps)) * 1e4).clip(0, 1000)
     put("ob_available", available)
     put("ob_stale_flag", 1.0 - available)
     put("ob_update_gap_flag", 1.0 - available)
-    put("ob_snapshot_age_sec", (1.0 - available) * 3600.0)
     put("ob_spread_bps", spread_bps)
     put("ob_spread_z_24h", _rolling_zscore_frame(spread_bps, 24))
     mid_close_gap = (((mid - close_aligned) / (close_aligned.abs() + eps)) * 1e4).clip(
@@ -1678,6 +1789,10 @@ def _materialize_live_orderbook_summary_features(
         put("ob_microprice_dev_bps", microprice_bps)
         top_liq = (mid * (bid_qty_1 + ask_qty_1)).clip(lower=0.0)
         put("ob_top_liquidity_usd", np.log1p(top_liq))
+        put(
+            "ob_top_liquidity_to_qv_24h",
+            (top_liq / (quote_volume_24h + eps)).clip(0, 100),
+        )
 
     l10_imb = None
     if bid_qty_l10 is not None and ask_qty_l10 is not None:
@@ -1690,6 +1805,10 @@ def _materialize_live_orderbook_summary_features(
         put("ob_wimb_l10", l10_imb)
         put("ob_depth_usd_l10", np.log1p(depth_l10))
         put("ob_depth_usd_l10_z", _rolling_zscore_frame(np.log1p(depth_l10), 24 * 7))
+        put(
+            "ob_depth_l10_to_qv_24h",
+            (depth_l10 / (quote_volume_24h + eps)).clip(0, 100),
+        )
 
     l20_imb = None
     depth_l20 = None
@@ -1706,6 +1825,9 @@ def _materialize_live_orderbook_summary_features(
         depth_l20_z = _rolling_zscore_frame(np.log1p(depth_l20), 24 * 7)
         put("ob_depth_usd_l20_z", depth_l20_z)
         put("ob_depth_usd_z_24h", depth_l20_z)
+        depth_l20_to_qv = (depth_l20 / (quote_volume_24h + eps)).clip(0, 100)
+        put("ob_depth_l20_to_qv_24h", depth_l20_to_qv)
+        put("ob_depth_l20_to_qv_z_7d", _rolling_zscore_frame(depth_l20_to_qv, 24 * 7))
         if bid_qty_1 is not None:
             put("ob_bid_depth_decay_l20", (bid_qty_1 / (bid_qty_l20 + eps)).clip(0, 1))
         if ask_qty_1 is not None:
@@ -1765,6 +1887,10 @@ def _materialize_live_orderbook_summary_features(
         if depth_l20 is not None:
             notional_to_depth = (notional / (depth_l20 + eps)).clip(0, 100)
             put("ob_notional_to_depth_l20", notional_to_depth)
+            put(
+                "ob_notional_to_depth_l20_z_24h",
+                _rolling_zscore_frame(notional_to_depth, 24),
+            )
             if signed_flow is not None:
                 put(
                     "ob_flow_toxicity_1h",
@@ -1808,10 +1934,42 @@ def _materialize_live_orderbook_summary_features(
             _rolling_zscore_frame(np.log1p(mean_trade_qty.clip(lower=0.0)), 24 * 7),
         )
         if bid_qty_1 is not None and ask_qty_1 is not None:
+            trade_size_to_l1 = (
+                (mean_trade_qty * close_aligned)
+                / (mid * (bid_qty_1 + ask_qty_1) + eps)
+            ).clip(0, 100)
+            put("ob_trade_size_to_l1_depth", trade_size_to_l1)
             put(
-                "ob_trade_size_to_l1_depth",
-                (mean_trade_qty / (bid_qty_1 + ask_qty_1 + eps)).clip(0, 100),
+                "ob_trade_size_to_l1_depth_z_24h",
+                _rolling_zscore_frame(trade_size_to_l1, 24),
             )
+
+    depth_norm_z = out.get("ob_depth_l20_to_qv_z_7d")
+    spread_z = out.get("ob_spread_z_24h")
+    if isinstance(depth_norm_z, pd.DataFrame) and isinstance(spread_z, pd.DataFrame):
+        available_basket = [s for s in basket_syms if s in depth_norm_z.columns]
+        basket_depth_z = (
+            depth_norm_z[available_basket].mean(axis=1)
+            if available_basket
+            else depth_norm_z.mean(axis=1)
+        )
+        basket_spread_z = (
+            spread_z[available_basket].mean(axis=1)
+            if available_basket
+            else spread_z.mean(axis=1)
+        )
+        put("xasset_mkt_spread_bps_z_24h", broadcast_to_symbols(basket_spread_z))
+        put("xasset_mkt_depth_to_qv_z", broadcast_to_symbols(basket_depth_z))
+        stress = _rolling_zscore_frame(
+            broadcast_to_symbols((basket_spread_z - basket_depth_z).clip(-10, 10)),
+            24,
+        )
+        put("xasset_mkt_ob_stress_z_24h", stress)
+        put("xasset_ob_stress_basket_z_24h", stress)
+        put(
+            "xasset_ob_liquidity_divergence_z_24h",
+            _rolling_zscore_frame(depth_norm_z.sub(basket_depth_z, axis=0), 24),
+        )
 
     if l20_imb is not None:
         depth_proxy = out.get("ob_depth_usd_l20_z", zero_frame)
@@ -1851,12 +2009,6 @@ def _materialize_live_orderbook_summary_features(
             "Materialized live orderbook summary features from hourly panels: "
             f"{len(produced)} required keys available"
         )
-    if skipped_no_training_support:
-        tprint(
-            "Kept live orderbook model features neutral because deployed "
-            "training feature health shows no variation: "
-            f"{sorted(skipped_no_training_support)[:20]}"
-        )
     return out
 
 
@@ -1870,11 +2022,28 @@ def _synthesize_live_safe_feature_keys(
     run_id: str | None = None,
     cfg: dict[str, Any] | None = None,
 ) -> Dict[str, pd.DataFrame]:
-    """Materialize deterministic training fallbacks used by live-safe models."""
+    """Materialize deterministic derived live features.
+
+    Missing source-dependent model inputs are hard errors.  This function may
+    derive a feature from an available portable source, but it must not create
+    neutral or zero fallback columns.
+    """
     if not required_feature_keys:
         return feats
 
     required = set(required_feature_keys)
+    non_portable_required = sorted(k for k in required if is_non_portable_feature_key(k))
+    if non_portable_required:
+        sample = ", ".join(non_portable_required[:20])
+        extra = (
+            ""
+            if len(non_portable_required) <= 20
+            else f" (+{len(non_portable_required) - 20} more)"
+        )
+        raise ValueError(
+            "Live inference artifact requests non-portable feature keys that are "
+            f"deleted from the active feature contract: {sample}{extra}"
+        )
     feats = _materialize_live_orderbook_summary_features(
         feats,
         panel,
@@ -1899,36 +2068,14 @@ def _synthesize_live_safe_feature_keys(
         if key not in feats and re.fullmatch(r"rolling30d\([^)]+\)", key)
     )
     # Several historical orderbook features were trained from richer L2/aggtrade
-    # data. Live inference currently has hourly top-of-book plus cumulative-depth
-    # summaries, so synthesize aliases where possible and neutral zero-valued
-    # columns for flow-only fields that cannot be reconstructed causally.
+    # data. Live inference may only synthesize aliases from an equivalent source;
+    # unavailable orderbook fields are rejected.
     orderbook_aliases = {
         "ob_l1_imbalance": "ob_imb_l1",
         "ob_l10_imbalance": "ob_imb_l10",
         "ob_l20_imbalance": "ob_imb_l20",
         "ob_microprice_premium_bps": "ob_microprice_dev_bps",
         "ob_mid_vs_close_bps": "ob_mid_close_dislocation_bps",
-    }
-    orderbook_zero_fallbacks = {
-        "ob_abs_flow_vs_book_l20",
-        "ob_available",
-        "ob_book_absorption_score",
-        "ob_buy_notional_z_24h",
-        "ob_flow_notional_imbalance_1h",
-        "ob_flow_notional_skew_z_24h",
-        "ob_flow_qty_imbalance_1h",
-        "ob_flow_toxicity_1h",
-        "ob_flow_vs_book_l10",
-        "ob_flow_vs_book_l20",
-        "ob_kyle_lambda_1h",
-        "ob_mean_trade_qty_z_24h",
-        "ob_notional_to_depth_l20",
-        "ob_notional_z_24h",
-        "ob_sell_notional_z_24h",
-        "ob_trade_count_z_24h",
-        "ob_trade_flow_imbalance_1h",
-        "ob_trade_size_to_l1_depth",
-        "ob_vwap_mid_gap_bps",
     }
     orderbook_prefix_zero_missing = sorted(
         key
@@ -1940,9 +2087,7 @@ def _synthesize_live_safe_feature_keys(
     orderbook_alias_missing = sorted(
         key for key in orderbook_aliases if key in required and key not in feats
     )
-    orderbook_zero_missing = sorted(
-        key for key in (orderbook_zero_fallbacks & required) if key not in feats
-    )
+    orderbook_zero_missing: List[str] = []
     stale_sensitive_zero_missing = sorted(
         key
         for key in required
@@ -1950,6 +2095,19 @@ def _synthesize_live_safe_feature_keys(
         and _is_live_stale_sensitive_feature_key(key)
         and not key.startswith(("ob_", "obw_"))
     )
+    source_missing = (
+        missing
+        + orderbook_zero_missing
+        + orderbook_prefix_zero_missing
+        + stale_sensitive_zero_missing
+    )
+    if source_missing:
+        sample = ", ".join(sorted(source_missing)[:20])
+        extra = "" if len(source_missing) <= 20 else f" (+{len(source_missing) - 20} more)"
+        raise ValueError(
+            "Live inference requires features that cannot be materialized from "
+            f"portable live sources: {sample}{extra}"
+        )
     if (
         not missing
         and not barrier_missing
@@ -1964,7 +2122,7 @@ def _synthesize_live_safe_feature_keys(
 
     zero_frame = _zero_frame_like_panel(panel, basket_syms)
     if zero_frame is None:
-        return feats
+        raise ValueError("Cannot materialize derived live features without a close panel")
 
     out = dict(feats)
     close = panel.get("close")
@@ -1976,7 +2134,7 @@ def _synthesize_live_safe_feature_keys(
                 columns=zero_frame.columns,
             ).astype(np.float32)
         else:
-            out["barrier_pct"] = zero_frame.copy()
+            raise ValueError("barrier_pct is required but could not be computed")
     for key in rolling_missing:
         match = re.fullmatch(r"rolling30d\(([^)]+)\)", key)
         source = match.group(1) if match else ""
@@ -1986,30 +2144,29 @@ def _synthesize_live_safe_feature_keys(
                 source_df.rolling(24 * 30, min_periods=24).mean().astype(np.float32)
             )
         else:
-            out[key] = zero_frame.copy()
+            raise ValueError(f"{key} is required but source feature {source!r} is unavailable")
     for key in calendar_missing:
         match = re.fullmatch(r"timestamp\.dayofweek>=(\d+)", key)
-        if (
+        if not (
             match
             and isinstance(close, pd.DataFrame)
             and isinstance(close.index, pd.DatetimeIndex)
         ):
-            threshold = int(match.group(1))
-            idx = close.index
-            if idx.tz is None:
-                idx = idx.tz_localize("UTC")
-            else:
-                idx = idx.tz_convert("UTC")
-            weekend = pd.Series(
-                (idx.dayofweek >= threshold).astype(np.float32),
-                index=close.index,
-            )
-            out[key] = _broadcast_series_to_symbols(
-                weekend,
-                list(zero_frame.columns),
-            )
-    for key in missing:
-        out[key] = zero_frame.copy()
+            raise ValueError(f"{key} is required but timestamp calendar source is unavailable")
+        threshold = int(match.group(1))
+        idx = close.index
+        if idx.tz is None:
+            idx = idx.tz_localize("UTC")
+        else:
+            idx = idx.tz_convert("UTC")
+        weekend = pd.Series(
+            (idx.dayofweek >= threshold).astype(np.float32),
+            index=close.index,
+        )
+        out[key] = _broadcast_series_to_symbols(
+            weekend,
+            list(zero_frame.columns),
+        )
     for key in orderbook_alias_missing:
         source = orderbook_aliases[key]
         source_df = out.get(source)
@@ -2019,32 +2176,16 @@ def _synthesize_live_safe_feature_keys(
                     index=zero_frame.index,
                     columns=zero_frame.columns,
                 )
-                .fillna(0.0)
                 .astype(np.float32)
             )
         else:
-            out[key] = zero_frame.copy()
-    for key in orderbook_zero_missing + orderbook_prefix_zero_missing + stale_sensitive_zero_missing:
-        if key == "ob_available":
-            availability = zero_frame.copy()
-            for source in ("orderbook_mid", "orderbook_best_bid", "orderbook_best_ask"):
-                source_df = panel.get(source)
-                if isinstance(source_df, pd.DataFrame) and not source_df.empty:
-                    aligned = source_df.reindex(
-                        index=zero_frame.index,
-                        columns=zero_frame.columns,
-                    )
-                    availability = availability.mask(
-                        aligned.notna(),
-                        1.0,
-                    )
-            out[key] = availability.fillna(0.0).astype(np.float32)
-        else:
-            out[key] = zero_frame.copy()
+            raise ValueError(
+                f"{key} is required but equivalent source feature {source!r} is unavailable"
+            )
     out = _ensure_required_symbol_columns(out, panel, basket_syms, required)
     tprint(
-        "Synthesized live-safe training fallback features for inference: "
-        f"{(['barrier_pct'] if barrier_missing else []) + missing + calendar_missing + rolling_missing + orderbook_alias_missing + orderbook_zero_missing + orderbook_prefix_zero_missing + stale_sensitive_zero_missing}"
+        "Materialized derived live feature keys for inference: "
+        f"{(['barrier_pct'] if barrier_missing else []) + calendar_missing + rolling_missing + orderbook_alias_missing}"
     )
     return out
 
@@ -2055,10 +2196,10 @@ def _ensure_required_symbol_columns(
     basket_syms: List[str],
     required_feature_keys: Set[str],
 ) -> Dict[str, pd.DataFrame]:
-    """Add neutral columns for live symbols absent from cached feature frames."""
+    """Validate that required feature frames cover the current live symbols."""
     zero_frame = _zero_frame_like_panel(panel, basket_syms)
     if zero_frame is None:
-        return feats
+        raise ValueError("Cannot validate live feature symbols without a close panel")
     out = dict(feats)
     added: Dict[str, int] = {}
     for key in required_feature_keys:
@@ -2068,16 +2209,12 @@ def _ensure_required_symbol_columns(
         missing_cols = [sym for sym in zero_frame.columns if sym not in value.columns]
         if not missing_cols:
             continue
-        aligned = value.reindex(index=zero_frame.index)
-        for sym in missing_cols:
-            aligned[sym] = 0.0
-        out[key] = aligned.astype(np.float32, copy=False)
         added[key] = len(missing_cols)
     if added:
         sample = dict(list(sorted(added.items()))[:10])
-        tprint(
-            "Added neutral live symbol columns for required inference features: "
-            f"{sample}"
+        raise ValueError(
+            "Required inference features are missing live symbol columns; "
+            f"refusing neutral fallback columns: {sample}"
         )
     return out
 
@@ -2108,11 +2245,11 @@ def _synthesize_gated_feature_keys(
 
     close = panel.get("close")
     if not isinstance(close, pd.DataFrame) or close.empty:
-        return feats
+        raise ValueError("Gate-conditioned features are required but close panel is unavailable")
 
     valid_syms = [s for s in basket_syms if s in close.columns]
     if not valid_syms:
-        return feats
+        raise ValueError("Gate-conditioned features are required but no live symbols are available")
 
     out = dict(feats)
     close = close[valid_syms]
@@ -2142,14 +2279,18 @@ def _synthesize_gated_feature_keys(
         if marker not in feat_name:
             continue
         base_name, state = feat_name.rsplit(marker, 1)
-        if state not in {"0", "1"} or base_name not in out:
-            continue
+        if state not in {"0", "1"}:
+            raise ValueError(f"Unsupported gate-conditioned feature state in {feat_name}")
+        if base_name not in out:
+            raise ValueError(
+                f"{feat_name} is required but base feature {base_name!r} is unavailable"
+            )
         gate_df = gates.get(gate_name)
         base_df = out.get(base_name)
         if not isinstance(gate_df, pd.DataFrame) or not isinstance(
             base_df, pd.DataFrame
         ):
-            continue
+            raise ValueError(f"{feat_name} cannot be materialized from portable gate inputs")
         gate_aligned = gate_df.reindex(index=base_df.index, columns=base_df.columns)
         if state == "1":
             out[feat_name] = (base_df.astype(np.float32) * gate_aligned).astype(

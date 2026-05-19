@@ -2044,6 +2044,11 @@ def _fit_direct_extratrees_base_model(
                 failure_reason="no_numeric_features_after_filtering",
                 training_diagnostics={"n_total": int(len(y_hard))},
             )
+    _feature_names_for_fit = (
+        [str(c) for c in X.columns]
+        if hasattr(X, "columns")
+        else []
+    )
 
     if hasattr(X, "iloc"):
         try:
@@ -2056,9 +2061,22 @@ def _fit_direct_extratrees_base_model(
     X_np = np.nan_to_num(X_np_arr, nan=0.0, posinf=0.0, neginf=0.0).astype(
         np.float32, copy=False
     )
+    if len(_feature_names_for_fit) != int(X_np.shape[1]):
+        tprint(
+            f"Model Race [{kind_name}]: feature-name contract length mismatch "
+            f"({len(_feature_names_for_fit)} names vs {int(X_np.shape[1])} columns); "
+            "falling back to positional fN names."
+        )
+        _feature_names_for_fit = [f"f{i}" for i in range(int(X_np.shape[1]))]
 
     X_full_np = X_np
+    _feature_names_for_full_fit = list(_feature_names_for_fit)
     if X_full is not None:
+        _x_full_names = (
+            [str(c) for c in X_full.columns]
+            if hasattr(X_full, "columns")
+            else []
+        )
         if hasattr(X_full, "iloc"):
             try:
                 X_full_arr = X_full.to_numpy(dtype=np.float32, copy=False)
@@ -2070,6 +2088,20 @@ def _fit_direct_extratrees_base_model(
             np.float32,
             copy=False,
         )
+        if len(_x_full_names) == int(X_full_np.shape[1]):
+            _feature_names_for_full_fit = _x_full_names
+        elif len(_feature_names_for_fit) == int(X_full_np.shape[1]):
+            _feature_names_for_full_fit = list(_feature_names_for_fit)
+        else:
+            tprint(
+                f"Model Race [{kind_name}]: full-fit feature-name contract length "
+                f"mismatch ({len(_x_full_names)} X_full names, "
+                f"{len(_feature_names_for_fit)} train names, "
+                f"{int(X_full_np.shape[1])} columns); falling back to positional fN names."
+            )
+            _feature_names_for_full_fit = [
+                f"f{i}" for i in range(int(X_full_np.shape[1]))
+            ]
 
     _is_meta_hpo = str(hpo_objective_mode).lower() == "meta" or str(
         kind_name
@@ -2148,7 +2180,7 @@ def _fit_direct_extratrees_base_model(
 
     _race_X_df = pd.DataFrame(
         np.asarray(X_full_np, dtype=np.float32),
-        columns=[f"f{i}" for i in range(np.asarray(X_full_np).shape[1])],
+        columns=list(_feature_names_for_full_fit),
     )
     _candidate_trainers = (
         (("lgbm_pipeline", train_lgbm_stability_candidate),)
@@ -2401,7 +2433,7 @@ def _fit_direct_extratrees_base_model(
         )
         x_full_fit_np = np.asarray(X_full_np, dtype=np.float32)
         x_full_fit_df = pd.DataFrame(
-            x_full_fit_np, columns=[f"f{i}" for i in range(x_full_fit_np.shape[1])]
+            x_full_fit_np, columns=list(_feature_names_for_full_fit)
         )
         y_fit_full = np.asarray(y, dtype=np.float32)
         y_bin_full = np.asarray(y_hard, dtype=np.int8)
@@ -15570,7 +15602,6 @@ def train_meta_models_from_artifacts(
                     (
                         _c
                         for _c in [
-                            "direction_entropy_20",
                             "regime_transition_entropy_12h",
                         ]
                         if _c in X_meta_base.columns

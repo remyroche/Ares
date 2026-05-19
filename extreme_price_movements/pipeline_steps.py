@@ -832,7 +832,6 @@ RAW_FEATURE_SCHEMA_UNAVAILABLE_KEYS: tuple[str, ...] = (
     "S",
     "abs_mkt_ret24h_z",
     "atr_expansion_z",
-    "bar_direction_entropy",
     "bidirectional_range_ratio",
     "blowoff_risk_surprise",
     "close_location_in_bar",
@@ -860,7 +859,6 @@ RAW_FEATURE_SCHEMA_UNAVAILABLE_KEYS: tuple[str, ...] = (
     "overext_surprise",
     "range_decay",
     "range_zscore",
-    "realized_vol_15m_realized_vol_2h",
     "ret_max",
     "ret_mean",
     "ret_min",
@@ -931,6 +929,17 @@ RAW_FEATURE_STRUCTURALLY_CONSTANT_KEYS: tuple[str, ...] = (
     "xasset_eth_ob_pressure",
 )
 RAW_FEATURE_STRUCTURALLY_CONSTANT_PREFIXES: tuple[str, ...] = ("obw_",)
+RAW_FEATURE_NORMALIZED_REPLACEMENTS: dict[str, tuple[str, ...]] = {
+    "ob_spread_bps": (
+        "ob_spread_bps_z_24h",
+        "ob_spread_z_24h",
+    ),
+    "ob_depth_usd_l20": (
+        "ob_depth_usd_l20_z",
+        "ob_depth_l20_to_qv_24h",
+        "ob_depth_l20_to_qv_z_7d",
+    ),
+}
 TRAINING_RESIDUALIZATION_FEATURE_KEYS: tuple[str, ...] = (
     "ema50_ema200_spread_atr",
     "atr_change_rate",
@@ -1741,7 +1750,16 @@ def _drop_known_unusable_raw_feature_keys(
     """
     if not features:
         return features
-    dropped = sorted(k for k in features if _is_known_unusable_raw_feature_key(k))
+    feature_keys = {str(k) for k in features}
+    dropped_set = {
+        k for k in features if _is_known_unusable_raw_feature_key(str(k))
+    }
+    for raw_key, normalized_keys in RAW_FEATURE_NORMALIZED_REPLACEMENTS.items():
+        if raw_key in feature_keys and any(
+            k in feature_keys for k in normalized_keys
+        ):
+            dropped_set.add(raw_key)
+    dropped = sorted(dropped_set)
     if not dropped:
         return features
     tprint(

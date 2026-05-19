@@ -47,7 +47,7 @@ from scripts.replay_live_signal_predictions import (  # noqa: E402
     _live_feature_cache_symbols_for_end,
     _load_panel,
     _load_recent_decisions,
-    _local_usdc_symbols,
+    _local_quote_symbols,
     _normalise_symbol,
 )
 
@@ -422,6 +422,11 @@ def main() -> int:
     parser.add_argument("--trades", default="inference_trades.csv", type=Path)
     parser.add_argument("--decision-start", default="2026-05-15T21:20:00Z")
     parser.add_argument("--require-rank-source", default="policy_rank_reference_percentile")
+    parser.add_argument(
+        "--live-quote-currency",
+        default=None,
+        help="Live quote currency used for local symbol discovery. Defaults to USD in perps mode, otherwise USDC.",
+    )
     parser.add_argument("--max-rows", type=int, default=1)
     parser.add_argument(
         "--live-debug-dir",
@@ -444,6 +449,11 @@ def main() -> int:
     live_data_root = args.live_data_root or args.data_root
     market_mode = args.market_mode or (
         "perps" if "perp" in str(args.data_root).lower() else "spot"
+    )
+    live_quote_currency = (
+        str(args.live_quote_currency).upper()
+        if args.live_quote_currency
+        else ("USD" if market_mode == "perps" else "USDC")
     )
 
     live_debug_dir_arg = args.live_debug_dir
@@ -521,12 +531,18 @@ def main() -> int:
             live_data_root,
             run_id=args.run_id,
             end_ts=ts,
+            live_quote_currency=live_quote_currency,
         )
         if symbols:
             replay_feature_universe_source = "snapshot_cache_symbols"
     if not symbols:
-        symbols = _local_usdc_symbols(live_data_root, run_id=args.run_id)
-        replay_feature_universe_source = "local_usdc_symbols"
+        symbols = _local_quote_symbols(
+            live_data_root,
+            run_id=args.run_id,
+            live_quote_currency=live_quote_currency,
+            market_mode=market_mode,
+        )
+        replay_feature_universe_source = f"local_{live_quote_currency.lower()}_symbols"
     effective_lookback_hours = max(
         int(args.lookback_hours),
         _required_tail_warmup_hours(
@@ -561,6 +577,19 @@ def main() -> int:
     runtime_cfg["data_root"] = str(live_data_root)
     runtime_cfg["artifact_data_root"] = str(args.data_root)
     runtime_cfg["live_data_root"] = str(live_data_root)
+    state_bundle = state.get("bundle", {}) if isinstance(state.get("bundle"), dict) else {}
+    runtime_cfg.setdefault("bundle", state_bundle)
+    for key in (
+        "feature_transform_contract",
+        "feature_transform_contract_hash",
+        "feature_transform_manifest",
+    ):
+        value = state.get(key)
+        if value is None:
+            value = state_bundle.get(key)
+        if value is not None:
+            cfg_snapshot[key] = value
+            runtime_cfg[key] = value
     cfg_snapshot["runtime_cfg"] = runtime_cfg
     feature_cfg_snapshot = dict(runtime_cfg)
     snapshot_matrix, snapshot_meta, snapshot_dir = _load_snapshot_matrix(

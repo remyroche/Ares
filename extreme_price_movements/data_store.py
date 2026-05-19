@@ -2102,8 +2102,9 @@ class PartitionedOHLCVStore:
                         max(chunk_start_ms, oi_floor_ms),
                         chunk_end_ms,
                         value_keys=[
-                            "openInterestAmount",
                             "openInterestValue",
+                            "sumOpenInterestValue",
+                            "openInterestAmount",
                             "openInterest",
                             "sumOpenInterest",
                         ],
@@ -2173,10 +2174,10 @@ class PartitionedOHLCVStore:
                         tprint(f"WARN spot auxiliary OHLCV fetch failed for {symbol}: {exc}")
 
                 chunk["funding_rate"] = (
-                    funding.reindex(chunk.index).ffill().fillna(0.0).astype(np.float32)
+                    funding.reindex(chunk.index).ffill().astype(np.float32)
                 )
                 chunk["open_interest"] = (
-                    oi.reindex(chunk.index).ffill().fillna(0.0).astype(np.float32)
+                    oi.reindex(chunk.index).ffill().astype(np.float32)
                 )
                 if "mark_close" in chunk.columns:
                     chunk["mark_price"] = chunk["mark_close"]

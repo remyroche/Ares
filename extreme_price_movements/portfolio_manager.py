@@ -344,14 +344,14 @@ class PortfolioManager:
     ) -> float:
         """Calculate adjusted entry threshold based on current position count.
 
-        Formula: final_threshold = initial_threshold + (n_positions * (1 - initial_threshold)) / max_positions
+        Formula: final_threshold = initial_threshold + (n_positions * (0.90 - initial_threshold)) / max_positions
 
-        As more positions are open, threshold increases making entry harder.
+        As more positions are open, thresholds below 0.90 tighten toward 0.90.
         """
         n_positions = len([p for p in self.positions.values() if p.is_open])
 
-        # Formula: initial + (n_positions * (1 - initial)) / max_positions
-        adjustment = (n_positions * (1.0 - initial_threshold)) / self.max_positions
+        # Formula: initial + (n_positions * (0.90 - initial)) / max_positions
+        adjustment = (n_positions * (0.90 - initial_threshold)) / self.max_positions
         final_threshold = (
             initial_threshold
             + adjustment

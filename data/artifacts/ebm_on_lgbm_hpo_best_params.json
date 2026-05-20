@@ -1,29 +1,29 @@
 {
   "best_params": {
-    "greedy_ratio": 4.5190846141049885,
-    "learning_rate": 0.01,
-    "max_bins": 32,
-    "max_leaves": 3,
-    "reg_alpha": 0.8663615411621041,
-    "reg_lambda": 5.814250038659251,
+    "greedy_ratio": 0.6045214179297678,
+    "learning_rate": 0.04,
+    "max_bins": 22,
+    "max_leaves": 2,
+    "reg_alpha": 0.4258537496161686,
+    "reg_lambda": 1.0484230389036269,
     "smoothing_rounds": 100
   },
-  "best_trial_number": 23,
-  "best_value": 1.213250027595687,
+  "best_trial_number": 15,
+  "best_value": 0.8732366701133615,
   "metrics": {
-    "ece_top20": 0.04248584604569008,
-    "hpo_objective": 1.213250027595687,
-    "lift15": 1.9289547565079863,
-    "lift30": 1.6847647383993403,
+    "ece_top20": 0.011202255884806315,
+    "hpo_objective": 0.8732366701133615,
+    "lift15": 2.0660672660672663,
+    "lift30": 2.0660672660672663,
     "ndcg_at_10": 1.0,
-    "ndcg_at_20": 0.9878812373371537,
+    "ndcg_at_20": 1.0,
     "precision005": 1.0,
-    "precision01": 0.9814814814814815,
-    "precision15": 0.7877604166666666,
-    "stability15": 0.9444139032750493,
-    "stability30": 0.9006897873602222
+    "precision01": 1.0,
+    "precision15": 1.0,
+    "stability15": 1.0,
+    "stability30": 1.0
   },
-  "min_samples_leaf_pct": 0.04607066696901302,
+  "min_samples_leaf_pct": 0.027562500000000004,
   "schema_version": 1,
-  "updated_at_utc": "2026-05-12T03:18:03.072687+00:00"
+  "updated_at_utc": "2026-05-20T13:11:15.659636+00:00"
 }

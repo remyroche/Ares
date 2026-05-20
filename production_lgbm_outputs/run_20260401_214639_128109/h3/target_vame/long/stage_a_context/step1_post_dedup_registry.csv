@@ -1,7 +1,0 @@
-side,source_horizon,cheap_rank,canonical_key
-long,0,12.152689710601335,(*)|(loc_dist_ema20_atr_ts_bot30==0&loc_dist_ema50_atr_ts_band25_75==1)|(reg_atr_change_rate_ts_top40==0)
-long,0,12.286457184088489,(*)|(loc_dist_ema20_atr_ts_bot30==0)|(reg_atr_change_rate_ts_band25_75==1&reg_atr_change_rate_ts_top50==0&reg_atr_change_rate_ts_top60==0&reg_atr_change_rate_ts_top70==0&reg_atr_change_rate_ts_top80==0)
-long,0,5.2898749318082094,(*)|(loc_dist_ema20_atr_ts_top50==1)|(reg_atr_change_rate_ts_band40_60==1&reg_atr_change_rate_ts_top20==1)
-long,0,7.8838001408691865,(*)|(loc_dist_ema20_atr_ts_top60==0)|(reg_atr_change_rate_ts_band25_75==1&reg_atr_change_rate_ts_top20==1&reg_atr_change_rate_ts_top30==1&reg_atr_change_rate_ts_top40==1&reg_atr_change_rate_ts_top70==0)
-long,0,8.364810603407214,(*)|(loc_dist_ema20_atr_ts_top20==1)|(reg_atr_change_rate_ts_top40==1&reg_atr_change_rate_ts_top50==0)
-long,0,2.6787462206514805,(*)|(*)|(reg_atr_change_rate_ts_bot20==0&reg_atr_change_rate_ts_top60==1&reg_atr_change_rate_ts_top70==0)

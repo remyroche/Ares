@@ -1,6 +1,0 @@
-fold_id,seed,best_iteration,best_val_metric,max_depth,num_leaves,min_data_in_leaf,objective,alpha,metric,target_type,target_name,horizon,total_splits,total_gain,is_healthy_fold,health_reason
-0,42,80,0.004582944383275137,6,64,3750,quantile,0.65,quantile,quantile,returns_target,10,811,13321.569,True,healthy
-1,42,55,0.0037329946756101285,6,64,3750,quantile,0.65,quantile,quantile,returns_target,10,548,9463.775,True,healthy
-2,42,1,0.004080555982814795,6,64,3750,quantile,0.65,quantile,quantile,returns_target,10,10,151.11116,False,low_iterations_or_gain
-3,42,4,0.003259581397575834,6,64,3750,quantile,0.65,quantile,quantile,returns_target,10,40,704.8846,True,healthy
-4,42,44,0.003345846294643378,6,64,3750,quantile,0.65,quantile,quantile,returns_target,10,450,4953.505,True,healthy

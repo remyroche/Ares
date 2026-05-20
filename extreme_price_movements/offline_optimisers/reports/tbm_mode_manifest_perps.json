@@ -1,4 +1,0 @@
-{
-  "market_mode": "perps",
-  "sl_liquidation_rule": "stop_loss_pct <= liquidation_wall_pct / 3 using mark price where available"
-}

@@ -1,4 +1,0 @@
-fold_id,seed,best_iteration,best_val_metric,max_depth,num_leaves,min_data_in_leaf,objective,alpha,metric,target_type,target_name,horizon,total_splits,total_gain,is_healthy_fold,health_reason
-0,42,55,,6,64,34,quantile,0.09999999999999998,quantile,quantile,target_eff,3,608,155.29623,True,healthy
-1,42,4,,6,64,44,quantile,0.09999999999999998,quantile,quantile,target_eff,3,44,38.221924,True,healthy
-2,42,24,,6,64,44,quantile,0.09999999999999998,quantile,quantile,target_eff,3,268,87.14711,True,healthy

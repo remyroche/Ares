@@ -1,7 +1,0 @@
-reason,count
-deduplicated_overlap,320
-low_stability_floor,77
-high_tail_risk_top_decile,67
-low_mean_target_value_pctile,43
-low_lift,4
-missing_learnability,1

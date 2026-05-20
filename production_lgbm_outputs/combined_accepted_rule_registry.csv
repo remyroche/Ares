@@ -1,4 +1,0 @@
-canonical_key,side,mean_net_ret
-volatility_expansion|z=4,short,0.05
-structure|z=8|p=breakout,long,0.06
-compression_transition|z=8,mixed,0.02

@@ -1,3 +1,0 @@
-group,raw_source_features,generated_booleans,retained,dropped,drop_reason_all_zeros,drop_reason_all_ones,drop_reason_low_support,drop_reason_duplicate,support_min,support_p25,support_median,support_p75,support_max
-regime,3,54,54,0,0,0,0,0,77670.0,120710.0,202065.5,250658.0,327231.0
-location,4,72,72,0,0,0,0,0,77670.0,120710.0,202065.5,250658.0,327231.0

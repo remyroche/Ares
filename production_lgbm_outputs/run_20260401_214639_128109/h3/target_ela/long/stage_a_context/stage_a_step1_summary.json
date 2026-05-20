@@ -1,6 +1,0 @@
-{
-  "candidate_rules": 340,
-  "post_dedup_rules": 3,
-  "buckets": 1,
-  "checkpoint_path": "production_lgbm_outputs/run_20260401_214639_128109/h3/target_ela/long/stage_a_context/stage_a_step1_checkpoint.pkl"
-}

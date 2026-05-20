@@ -1,7 +1,0 @@
-stage_order,stage_name,gate_name,metric_name,threshold,input_count,rejected_count,passed_count
-1,scorer,below_hurdle,hurdle_excess,> 0,3074,463,1689
-1,scorer,low_support,min_support_actual,>= 10,3074,198,1689
-1,scorer,non_positive_directional_ret,directional_mean_ret,> 0,3074,463,1689
-2,pruner,beats_hurdle,hurdle_excess,> 0,1689,0,0
-2,pruner,is_too_broad,mean_support_pct,<= 0.2000,1689,12,0
-2,pruner,is_too_narrow,mean_support_pct,>= 0.0500,1689,722,0

@@ -1,6 +1,0 @@
-{
-  "candidate_rules": 26,
-  "post_dedup_rules": 26,
-  "buckets": 1,
-  "checkpoint_path": "/Users/remyroche/Documents/Ares/production_lgbm_outputs_spot/run_20260516_223312_987848/h5/atr_norm_returns_target/long/stage_a_context/stage_a_step1_checkpoint.pkl"
-}

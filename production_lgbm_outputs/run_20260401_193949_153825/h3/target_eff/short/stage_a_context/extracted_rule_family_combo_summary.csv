@@ -1,9 +1,0 @@
-regime_families_combo,count
-trend|volatility,785
-volatility,566
-trend|volatility|volatility_term_structure,38
-volatility|volatility_term_structure,37
-trend,20
-,17
-trend|volatility_term_structure,6
-volatility_term_structure,2

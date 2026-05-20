@@ -1,6 +1,0 @@
-stage,rows,symbols,fraction_of_prev
-side_input,81000,97,1.0
-stage_a_feature_matrix,81000,97,1.0
-stage_a_target_finite,72029,97,0.8892469135802469
-stage_a_any_feature_finite,81000,97,1.1245470574351997
-stage_a_complete_rows,72029,97,0.8892469135802469

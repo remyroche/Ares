@@ -53,8 +53,25 @@ Thumbs.db
 /data_quality/
 /crypto_analysis/
 /data/features/
+/data/artifacts/*/live_feature_layer_debug/
+/data/artifacts/*/live_feature_layer_compare*/
+/data/artifacts/*/historical_inference_parity*/
+/data/artifacts/*/live_feature_parity_control*/
+/data/artifacts/*/live_reconciliation/
+/data/artifacts/*/live_gap_diagnostics/
+/data_perp/features_raw/
+/data_spot/features_raw/
+/data_perp/artifacts/*/live_feature_layer_debug/
+/data_perp/artifacts/*/live_feature_layer_compare*/
+/data_perp/artifacts/*/live_reconciliation/
+/data_spot/artifacts/*/live_feature_layer_debug/
+/production_lgbm_outputs/
+/production_lgbm_outputs_spot/
+/production_lgbm_outputs_perps/
 /data/klines/
 /data/processed/
+/extreme_price_movements/15m_ohlcv/
+/extreme_price_movements/offline_optimisers/reports/
 
 # Database files
 *.db

@@ -1,4 +1,0 @@
-within_leaf_mean_ic,within_leaf_positive_ic_fraction,within_leaf_mean_top_quantile_spread,within_leaf_mean_edge_uplift,within_leaf_hit_lift,within_leaf_valid_folds,within_leaf_future_edge_learnability_score,learnability_definition,canonical_key
-0.057093520683910846,1.0,0.007448798315801032,0.004421626533539474,0.044524733140172176,4,0.9026646366320014,within_leaf_future_edge,(*)|(dist_rolling_7d_high>0.24724466)|(range_24h_pct>0.071724296)
-0.06170229056547574,1.0,0.008527465047873283,0.004725207439183049,0.05972315374065536,4,0.9359694087255268,within_leaf_future_edge,(*)|(dist_rolling_7d_high>0.28339523)|(range_24h_pct>0.062888861)
-0.06236714017140928,1.0,0.0032364394139682198,0.0013462707491587384,0.026016330804749063,4,0.7875235867793504,within_leaf_future_edge,(*)|(dist_prior_day_low>0.014885288&dist_range_mid_atr<=0.0045495415)|(ema50_slope>0.03509438&volume_zscore_48h>-0.028391892)

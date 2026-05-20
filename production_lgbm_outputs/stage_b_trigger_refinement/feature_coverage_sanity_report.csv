@@ -1,2 +1,0 @@
-feature_name,group,source_name,source_family,model_split_count,extracted_rule_count,final_registry_count,used_in_model,used_in_extracted_rules,used_in_final_registry
-ctx__95728724,context,ctx__95728724,context,5997,5997,0,True,True,False

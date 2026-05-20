@@ -1,5 +1,0 @@
-reason,count
-deduplicated_overlap,1412
-low_stability_floor,81
-low_lift,11
-"{""minimum_required"": 0.1, ""reason"": ""trade_rate_below_threshold_star_floor"", ""threshold_star"": 0.6, ""trades_per_symbol_day_above_threshold_star"": 0.08407460545193687}",1

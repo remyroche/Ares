@@ -1,3 +1,0 @@
-canonical_key,rule_id,fold_id,seed,feature_index,feature_name,group,source_name,source_family,normalized_value
-(*)|(*)|(reg_prior_volatility_ts_top20==1),a200cb099e86,1,42,0,reg_prior_volatility_ts_top20,regime,prior_volatility,context,1
-(*)|(*)|(reg_prior_volatility_ts_top50==1),b7a3a5b4cd2d,2,42,12,reg_prior_volatility_ts_top50,regime,prior_volatility,context,1

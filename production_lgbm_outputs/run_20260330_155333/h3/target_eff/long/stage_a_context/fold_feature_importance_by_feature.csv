@@ -1,3 +1,0 @@
-fold_id,seed,feature_name,group,regime_family,gain,split
-1,42,reg_prior_volatility_ts_top20,regime,context,1.136870003519419e-13,1
-2,42,reg_prior_volatility_ts_top50,regime,context,1.136870003519419e-13,1

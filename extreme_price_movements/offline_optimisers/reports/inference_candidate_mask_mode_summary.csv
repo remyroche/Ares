@@ -1,3 +1,0 @@
-mode,status,best_name,candidate_count,shortlist_count,best_shortlist_score,score_r,delta_r,N_r,S_r,D_r,event_count,active_days_fraction,events_per_day_mean,events_per_day_std,events_per_day_per_asset,primary_gain,primary_gain_is_nan,incremental_information_delta_auc,incremental_information_positive_fold_fraction,dispersion_to_edge_ratio,selected_delta_metric,decision,rationale
-long,mode_exception_long,,0,0,0.0,,,0.0,,,0,0.0,,,,0.0,,,,,,failed,
-short,mode_exception_short,,0,0,0.0,,,0.0,,,0,0.0,,,,0.0,,,,,,failed,

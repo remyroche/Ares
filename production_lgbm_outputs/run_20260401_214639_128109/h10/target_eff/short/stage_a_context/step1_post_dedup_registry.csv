@@ -1,5 +1,0 @@
-side,source_horizon,cheap_rank,canonical_key
-short,0,4.509606523823362,(*)|(*)|(reg_atr_change_rate_ts_band25_75==1&reg_atr_change_rate_ts_top30==1&reg_atr_change_rate_ts_top40==0)
-short,0,4.2897961385701455,(*)|(*)|(reg_atr_change_rate_ts_band40_60==1&reg_atr_change_rate_ts_top20==1&reg_atr_change_rate_ts_top50==1)
-short,0,5.986452647849048,(*)|(*)|(reg_atr_change_rate_ts_band20_80==1&reg_atr_change_rate_ts_top40==1&reg_atr_change_rate_ts_top50==1&reg_atr_change_rate_ts_top60==1&reg_atr_change_rate_ts_top70==0)
-short,0,10.195338481004375,(*)|(loc_dist_ema50_atr_ts_band20_80==1)|(reg_atr_change_rate_ts_top40==1&reg_atr_change_rate_ts_top50==0)

@@ -1,4 +1,0 @@
-side,source_horizon,cheap_rank,canonical_key
-long,0,15.61242689287161,(*)|(*)|(reg_atr_change_rate_ts_band30_70==1&reg_atr_change_rate_ts_bot50==1&reg_atr_change_rate_ts_top40==0)
-long,0,5.423627917365979,(*)|(loc_dist_ema20_atr_ts_band30_70==1&loc_dist_ema20_atr_ts_top60==0)|(reg_atr_change_rate_ts_top50==1)
-long,0,9.897740263407826,(*)|(*)|(reg_atr_change_rate_ts_band40_60==1&reg_atr_change_rate_ts_top50==0&reg_atr_change_rate_ts_top70==0)

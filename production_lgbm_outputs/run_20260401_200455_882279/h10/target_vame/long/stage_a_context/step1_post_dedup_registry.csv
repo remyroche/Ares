@@ -1,7 +1,0 @@
-side,source_horizon,cheap_rank,canonical_key
-long,0,14.430226598519951,(*)|(loc_dist_ema20_atr_ts_bot70==1&loc_dist_local_swing_ts_top60==1)|(reg_atr_change_rate_ts_top40==1)
-long,0,4.441247256389512,(*)|(loc_dist_ema20_atr_ts_bot20==0&loc_dist_ema20_atr_ts_top30==0&loc_dist_ema20_atr_ts_top40==0&loc_dist_ema20_atr_ts_top80==0&loc_dist_local_swing_ts_bot60==1)|(reg_atr_change_rate_ts_top70==0)
-long,0,12.399224861792261,(*)|(loc_dist_ema20_atr_ts_top50==1&loc_dist_local_swing_ts_bot60==1)|(reg_atr_change_rate_ts_top60==0)
-long,0,4.222632023286899,(*)|(loc_dist_ema20_atr_ts_band20_80==1&loc_dist_ema20_atr_ts_top40==0&loc_dist_local_swing_ts_bot60==1)|(*)
-long,0,10.3752429576595,(*)|(loc_dist_ema20_atr_ts_band20_80==1&loc_dist_ema20_atr_ts_top40==1&loc_dist_local_swing_ts_bot60==1)|(*)
-long,0,3.2043359712856847,(*)|(loc_dist_ema20_atr_ts_top50==0&loc_dist_local_swing_ts_bot60==1)|(reg_atr_change_rate_ts_top20==0)

@@ -1,2 +1,0 @@
-symbol,rows,n_features,nan_cells,nan_pct_overall,leading_nan_cells,interior_nan_cells,trailing_nan_cells,all_nan_features,constant_features,features_with_interior_nan
-0G/USDT,3679,623,0,0.0,0,0,0,0,24,0

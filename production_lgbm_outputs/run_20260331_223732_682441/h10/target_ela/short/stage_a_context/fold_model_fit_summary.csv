@@ -1,4 +1,0 @@
-fold_id,seed,best_iteration,best_val_metric,max_depth,num_leaves,min_data_in_leaf,objective,alpha,metric,target_type,target_name,horizon
-0,42,6,,6,64,68,quantile,0.09999999999999998,quantile,quantile,target_ela,10
-1,42,65,,6,64,86,quantile,0.09999999999999998,quantile,quantile,target_ela,10
-2,42,34,,6,64,86,quantile,0.09999999999999998,quantile,quantile,target_ela,10

@@ -1,1 +1,0 @@
-canonical_key,rule_type,composite_score,mean_net_ret,std_net_ret,mean_support_pct,std_support_pct,presence_freq,presence_freq_units,sign_consistency,n_folds,n_instances,min_support_actual,discovery_count,hurdle_excess,mean_uplift,mean_baseline_ret,accepted,rejection_reason

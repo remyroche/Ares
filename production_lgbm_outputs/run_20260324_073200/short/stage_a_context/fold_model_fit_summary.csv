@@ -1,6 +1,0 @@
-fold_id,seed,best_iteration,best_val_metric,max_depth,num_leaves,min_data_in_leaf,objective,metric
-0,42,401,,6,64,20,quantile,quantile
-1,42,126,,6,64,20,quantile,quantile
-2,42,72,,6,64,20,quantile,quantile
-3,42,1,,6,64,20,quantile,quantile
-4,42,1,,6,64,20,quantile,quantile

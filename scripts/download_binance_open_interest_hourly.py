@@ -230,6 +230,22 @@ def _download_symbol(
         ]
 
         output_path = output_dir / f"{symbol}.csv"
+        if output_path.exists():
+            existing = pd.read_csv(output_path)
+            if not existing.empty and "timestamp" in existing.columns:
+                existing["timestamp"] = pd.to_datetime(
+                    existing["timestamp"], utc=True, errors="coerce"
+                )
+                for col in ("sum_open_interest", "sum_open_interest_value"):
+                    if col in existing.columns:
+                        existing[col] = pd.to_numeric(existing[col], errors="coerce")
+                existing = existing.reindex(columns=df.columns)
+                df = pd.concat([existing, df], ignore_index=True)
+                df = (
+                    df.dropna(subset=["timestamp"])
+                    .drop_duplicates(subset=["timestamp"], keep="last")
+                    .sort_values("timestamp")
+                )
         df.to_csv(output_path, index=False)
         return SymbolResult(
             symbol=symbol,

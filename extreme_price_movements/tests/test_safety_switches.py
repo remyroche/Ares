@@ -117,6 +117,48 @@ def test_market_kill_switch_does_not_preserve_deprecated_per_asset_halt(tmp_path
     assert decision.reason == "allowed"
 
 
+def test_market_kill_switch_active_halt_reports_current_and_stored_details(tmp_path):
+    path = tmp_path / "market_kill_switch.json"
+    path.write_text(
+        """
+        {
+          "active": true,
+          "self_reversible": true,
+          "reason": "MARKET_AVG_1H_MOVE_GT_5PCT",
+          "triggered_at": "2026-05-10T11:00:00+00:00",
+          "halt_until": "2026-05-11T00:00:00+00:00",
+          "details": {
+            "btc_1h_move": 0.149,
+            "market_avg_1h_abs_move": 0.221
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    switch = MarketKillSwitch(path)
+    decision = switch.evaluate(
+        now=pd.Timestamp("2026-05-10T12:00:00Z"),
+        usdc_usdt_ticker={"last": 1.0},
+        btc_close=pd.Series([100.0, 101.0]),
+        eth_close=pd.Series([100.0, 101.0]),
+        basket_close=pd.DataFrame(
+            {
+                "BTC/USD:USD": [100.0, 101.0],
+                "ETH/USD:USD": [100.0, 101.0],
+                "SOL/USD:USD": [100.0, 101.0],
+                "XRP/USD:USD": [100.0, 101.0],
+            }
+        ),
+    )
+
+    assert decision.allow_new_entries is False
+    assert decision.active is True
+    assert decision.reason == "MARKET_AVG_1H_MOVE_GT_5PCT"
+    assert decision.details["halt_source"] == "stored_state"
+    assert decision.details["market_avg_1h_abs_move"] < 0.05
+    assert decision.details["stored_halt_details"]["market_avg_1h_abs_move"] == 0.221
+
+
 def test_strategy_kill_switch_observe_only_does_not_block(tmp_path):
     switch = StrategyKillSwitch(tmp_path / "strategy_kill_switches.json")
     switch.set_state("long_test", active=True, reason="weak_hit_rate")

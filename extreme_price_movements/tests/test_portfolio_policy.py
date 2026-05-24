@@ -1,9 +1,16 @@
 import json
 
+import pytest
+
 from extreme_price_movements.inference.portfolio_policy import (
     PortfolioPolicyConfig,
     compute_rank_based_position_size,
     load_portfolio_policy_config,
+    validate_portfolio_strategy_contract,
+)
+from extreme_price_movements.inference.training_live_parity_contract import (
+    load_training_live_parity_contract,
+    validate_training_live_parity_contract,
 )
 from extreme_price_movements.portfolio_manager import PortfolioManager
 
@@ -13,7 +20,7 @@ def test_portfolio_policy_defaults_resolve_to_8_and_dynamic_75pct_caps():
     assert policy.max_concurrent_positions == 8
     assert policy.max_concurrent_per_side is None
     assert policy.max_concurrent_per_strategy is None
-    assert policy.resolved_max_concurrent_per_side() == 6
+    assert policy.resolved_max_concurrent_per_side() == 8
     assert policy.resolved_max_concurrent_per_strategy() == 6
     assert policy.max_total_wallet_allocation_pct == 0.75
     assert policy.max_available_wallet_position_pct == 0.50
@@ -28,7 +35,7 @@ def test_portfolio_policy_loads_artifact_before_runtime(tmp_path):
     root = tmp_path / "data"
     path = root / "artifacts" / "RID" / "policy_params"
     path.mkdir(parents=True)
-    (path / "portfolio_policy_config.json").write_text(
+    (path / "optimized_portfolio_policy_config.json").write_text(
         json.dumps({"max_concurrent_positions": 12, "initial_rank_threshold": 0.93})
     )
     policy = load_portfolio_policy_config(
@@ -44,10 +51,19 @@ def test_portfolio_policy_loads_nested_artifact_sections_and_aliases(tmp_path):
     root = tmp_path / "data"
     path = root / "artifacts" / "RID" / "policy_params"
     path.mkdir(parents=True)
-    (path / "portfolio_policy_config.json").write_text(
+    (path / "optimized_portfolio_policy_config.json").write_text(
         json.dumps(
             {
                 "rank_sizing": {"rank_multiplier_min": 0.7},
+                "selection": {
+                    "occupancy_threshold_alpha": 0.3,
+                    "occupancy_threshold_power": 1.5,
+                    "threshold_viability_margin": 0.02,
+                },
+                "concurrency": {
+                    "max_new_entries_per_bar": 2,
+                    "max_concurrent_per_symbol": 1,
+                },
                 "liquidity": {"max_orderbook_slippage_bps": 40.0},
                 "symbol_underperformance_gates_enabled": True,
             }
@@ -55,15 +71,100 @@ def test_portfolio_policy_loads_nested_artifact_sections_and_aliases(tmp_path):
     )
     policy = load_portfolio_policy_config(data_root=str(root), run_id="RID")
     assert policy.rank_multiplier_min == 0.7
+    assert policy.occupancy_threshold_alpha == 0.3
+    assert policy.occupancy_threshold_power == 1.5
+    assert policy.threshold_viability_margin == 0.02
+    assert policy.max_new_entries_per_bar == 2
+    assert policy.max_concurrent_per_symbol == 1
     assert policy.max_orderbook_slippage_bps == 40.0
     assert policy.enable_symbol_underperformance_gates is True
+
+
+def test_portfolio_policy_loads_and_enforces_strategy_contract(tmp_path):
+    root = tmp_path / "data"
+    path = root / "artifacts" / "RID" / "policy_params"
+    path.mkdir(parents=True)
+    (path / "optimized_portfolio_policy_config.json").write_text(
+        json.dumps(
+            {
+                "strategy_contract": {
+                    "strategy_ids": ["long_alpha", "short_beta"],
+                    "strategy_cores": ["alpha", "beta"],
+                }
+            }
+        )
+    )
+
+    policy = load_portfolio_policy_config(data_root=str(root), run_id="RID")
+
+    assert policy.strategy_ids == ("long_alpha", "short_beta")
+    assert policy.strategy_cores == ("alpha", "beta")
+    assert validate_portfolio_strategy_contract(policy, ["short_beta", "long_alpha"])
+    with pytest.raises(ValueError, match="Portfolio strategy contract mismatch"):
+        validate_portfolio_strategy_contract(policy, ["long_alpha"])
+
+
+def test_portfolio_policy_does_not_fallback_to_legacy_flat_artifact(tmp_path):
+    root = tmp_path / "data"
+    path = root / "artifacts" / "RID" / "policy_params"
+    path.mkdir(parents=True)
+    (path / "portfolio_policy_config.json").write_text(
+        json.dumps({"max_concurrent_positions": 12, "initial_rank_threshold": 0.93})
+    )
+
+    policy = load_portfolio_policy_config(data_root=str(root), run_id="RID")
+
+    assert policy.max_concurrent_positions == 8
+    assert policy.initial_rank_threshold == 0.90
+
+
+def test_portfolio_policy_can_require_optimized_artifact(tmp_path):
+    root = tmp_path / "data"
+    (root / "artifacts" / "RID" / "policy_params").mkdir(parents=True)
+
+    with pytest.raises(FileNotFoundError, match="Optimized portfolio policy artifact"):
+        load_portfolio_policy_config(
+            data_root=str(root),
+            run_id="RID",
+            require_artifact=True,
+        )
+
+
+def test_training_live_parity_contract_can_be_required_and_validated(tmp_path):
+    root = tmp_path / "data"
+    path = root / "artifacts" / "RID" / "policy_params"
+    path.mkdir(parents=True)
+    (path / "training_live_parity_contract.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "training_live_parity_contract_v1",
+                "strategy_contract": {
+                    "strategy_ids": ["long_alpha", "short_beta"],
+                },
+            }
+        )
+    )
+
+    contract = load_training_live_parity_contract(
+        data_root=str(root),
+        run_id="RID",
+        require=True,
+    )
+
+    assert contract["_contract_sha256"]
+    assert validate_training_live_parity_contract(
+        contract,
+        active_strategy_ids=["short_beta", "long_alpha"],
+    )
+    with pytest.raises(ValueError, match="Training-live parity strategy contract"):
+        validate_training_live_parity_contract(contract, active_strategy_ids=["long_alpha"])
 
 
 def test_portfolio_manager_from_policy_config_enforces_caps():
     policy = PortfolioPolicyConfig()
     mgr = PortfolioManager.from_policy_config(policy, portfolio_value=10000.0)
     assert mgr.max_positions == 8
-    assert mgr.max_same_side == 6
+    assert mgr.max_same_side == 8
     assert mgr.max_same_strategy == 6
     assert mgr.max_portfolio_pct == 0.75
     assert mgr.max_position_usdt == 5000.0

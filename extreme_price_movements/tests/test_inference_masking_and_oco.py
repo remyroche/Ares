@@ -97,6 +97,24 @@ def _policy_decision(
     return SimplePolicyStopDecision(**kwargs)
 
 
+def test_trade_executor_fetch_margin_balance_uses_kraken_futures_flex_account():
+    class _Exchange:
+        id = "krakenfutures"
+
+        def __init__(self):
+            self.balance_params = None
+
+        def fetch_balance(self, params=None):
+            self.balance_params = params
+            return {"info": {"accounts": {"flex": {}}}}
+
+    exchange = _Exchange()
+    executor = TradeExecutor(mode="shadow", exchange=exchange)
+
+    assert executor._fetch_margin_balance() == {"info": {"accounts": {"flex": {}}}}
+    assert exchange.balance_params == {"type": "flex"}
+
+
 def test_synthesize_live_safe_timestamp_dayofweek_feature():
     idx = pd.date_range("2026-03-06", periods=4, freq="1d", tz="UTC")
     close = pd.DataFrame({"BTC/USDT": [1.0, 1.0, 1.0, 1.0]}, index=idx)
@@ -1356,6 +1374,81 @@ def test_perps_reconciliation_imports_existing_position_and_stop(monkeypatch):
     assert active["NIGHT/USD:USD"]["external_position"] is True
     assert statuses["NIGHT/USD:USD"]["status"] == "open"
     assert statuses["NIGHT/USD:USD"]["stop_order_coverage"] == pytest.approx(201.0)
+
+
+def test_perps_reconciliation_imports_orphan_position_with_artifact_stop(monkeypatch):
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
+        lambda *args, **kwargs: pd.DataFrame(),
+    )
+
+    class _OrphanPerpsExchange(_FilterAwareExchange):
+        id = "krakenfutures"
+
+        def __init__(self):
+            super().__init__()
+            self.markets = {
+                "STBL/USD:USD": {
+                    "active": True,
+                    "limits": {
+                        "amount": {"min": 1.0, "max": 1_000_000.0},
+                        "cost": {"min": 1.0, "max": 1_000_000.0},
+                    },
+                    "contract": True,
+                    "swap": True,
+                    "quote": "USD",
+                    "settle": "USD",
+                    "info": {"status": "TRADING"},
+                }
+            }
+
+        def fetch_positions(self, symbols=None, params=None):
+            return [
+                {
+                    "symbol": "STBL/USD:USD",
+                    "contracts": 207.0,
+                    "side": "short",
+                    "entryPrice": 0.03085,
+                    "contractSize": 1.0,
+                }
+            ]
+
+        def fetch_open_orders(self, symbol, since=None, limit=None, params=None):
+            return []
+
+    params = _simple_policy_params(strategy_id="short_mr")
+    exchange = _OrphanPerpsExchange()
+    executor = TradeExecutor(
+        mode="live-test",
+        exchange=exchange,
+        bucket_params={"simple_policy_stop_params_by_strategy": {"short_mr": params}},
+        config={
+            "execution_account": "perps",
+            "market_mode": "perps",
+            "live_quote_currency": "USD",
+            "monitor_interval_seconds": 300,
+        },
+    )
+    executor._load_pending_entry_context = lambda symbol: {}
+    try:
+        report = executor.reconcile_cross_margin_account()
+        active = executor.get_active_positions()
+    finally:
+        executor.shutdown()
+
+    assert report["summary"]["skipped"] is False
+    assert report["summary"]["active_positions_after_reconcile"] == 1
+    assert report["items"][0]["imported_for_monitoring"] is True
+    state = active["STBL/USD:USD"]
+    assert state["external_position"] is True
+    assert state["monitoring_only"] is True
+    assert state["strategy_id"] == "short_mr"
+    assert state["barrier_frac"] == pytest.approx(0.02)
+    assert state["sl_mult"] == pytest.approx(1.0)
+    assert state["stop_policy_params_hash"] == params["params_hash"]
+    assert state["reconciliation_barrier_source"] == "artifact_simple_policy_stop_params"
+    assert state["reconciliation_context_source"] == "artifact_fallback_external_position"
+    assert state.get("recovered_from_pending_trade_log") is not True
 
 
 def test_raw_stop_replacement_api_removed_from_live_executor(monkeypatch):

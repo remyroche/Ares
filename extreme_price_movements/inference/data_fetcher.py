@@ -26,10 +26,14 @@ from extreme_price_movements.data_store import (
     _compute_missing_hourly_ranges,
     _fetch_ccxt_history_paged,
     _resolve_perp_symbol,
+    build_hourly_orderbook_proxy_from_ohlcv,
+    exchange_data_component,
     fetch_hourly_orderbook_proxy,
     make_perp_exchange,
+    make_ohlcv_store,
     make_spot_exchange,
     normalize_orderbook_proxy_frame,
+    scoped_data_root,
 )
 from extreme_price_movements.utils import tprint
 
@@ -77,6 +81,20 @@ PERP_OHLCV_EXTRA_FIELDS = (
 def _normalise_market_mode(market_mode: Optional[str] = None) -> str:
     raw = str(market_mode or "spot").strip().lower()
     return "perps" if raw in {"perp", "perps", "future", "futures", "swap"} else "spot"
+
+
+def _is_exchange_scoped_data_root(
+    data_root: str | os.PathLike[str],
+    *,
+    exchange_id: Optional[str],
+    market_mode: str,
+) -> bool:
+    path = Path(data_root)
+    parts = path.parts
+    if len(parts) < 2 or parts[-2] != "exchanges":
+        return False
+    component = exchange_data_component(exchange_id, market_mode)
+    return parts[-1] == component
 
 
 def classify_api_error(exc: Exception) -> str:
@@ -150,9 +168,27 @@ class DataFetcher:
         else:
             self.exchange = make_spot_exchange()
         self.data_root = data_root
-        self.ohlcv_store = PartitionedOHLCVStore(data_root, timeframe="1h")
-        self.orderbook_dir = Path(data_root) / "orderbook_hourly"
-        self.funding_dir = Path(data_root) / "funding_hourly"
+        exchange_id = str(getattr(self.exchange, "id", "") or "").strip() or None
+        cfg = {
+            "data_root": data_root,
+            "exchange_id": exchange_id,
+            "market_mode": self.market_mode,
+        }
+        if _is_exchange_scoped_data_root(
+            data_root,
+            exchange_id=exchange_id,
+            market_mode=self.market_mode,
+        ):
+            market_data_root = Path(data_root)
+            self.ohlcv_store = PartitionedOHLCVStore(
+                root_dir=str(market_data_root),
+                timeframe="1h",
+            )
+        else:
+            self.ohlcv_store = make_ohlcv_store(cfg, timeframe="1h")
+            market_data_root = Path(scoped_data_root(cfg))
+        self.orderbook_dir = market_data_root / "orderbook_hourly"
+        self.funding_dir = market_data_root / "funding_hourly"
         self.orderbook_dir.mkdir(parents=True, exist_ok=True)
         self.funding_dir.mkdir(parents=True, exist_ok=True)
         self.api_error_counts: Dict[str, int] = {}
@@ -402,8 +438,8 @@ class DataFetcher:
             symbols: List of trading symbols
             lookback_hours: Number of hours to look back if no data exists
         """
-        # Get current time
         now = pd.Timestamp.now(tz="UTC")
+        latest_closed_hour = now.floor("h") - pd.Timedelta(hours=1)
 
         updated = 0
         skipped = 0
@@ -436,9 +472,25 @@ class DataFetcher:
             if i == 1 or i == total or i % 25 == 0:
                 tprint(f"Historical data init progress: {i}/{total}")
 
-            # Check existing data range
+            # Check only recent existing data. Startup only needs to know
+            # whether the live tail is current; loading four years per symbol
+            # makes every process restart expensive.
             try:
-                existing_data = self.ohlcv_store.load(symbol, start_ts=None, end_ts=now)
+                meta = getattr(self.ohlcv_store, "_read_meta", lambda _s: {})(symbol)
+                last_ts_ms = int((meta or {}).get("last_ts_ms", 0) or 0)
+                if last_ts_ms > 0:
+                    existing_data = pd.DataFrame(
+                        index=pd.DatetimeIndex(
+                            [pd.Timestamp(last_ts_ms, unit="ms", tz="UTC")]
+                        )
+                    )
+                else:
+                    tail_start = now - pd.Timedelta(
+                        hours=max(int(lookback_hours), 48)
+                    )
+                    existing_data = self.ohlcv_store.load(
+                        symbol, start_ts=tail_start, end_ts=now
+                    )
             except Exception as exc:
                 failed += 1
                 tprint(f"Error loading stored OHLCV for {symbol}: {exc}")
@@ -456,41 +508,17 @@ class DataFetcher:
                 existing_not_empty = False
 
             if existing_not_empty:
-                # Find gap from last timestamp to now
-                last_ts = existing_data.index.max()
-                if (now - last_ts) > pd.Timedelta(hours=1):
-                    # Fetch missing data
-                    missing_data = fetch_with_timeout(
-                        symbol, last_ts + pd.Timedelta(hours=1), now
-                    )
-                    if (
-                        missing_data is not None
-                        and isinstance(missing_data, (pd.DataFrame, pd.Series))
-                        and not (hasattr(missing_data, "empty") and missing_data.empty)
-                    ):
-                        # Resample and merge
-                        existing_data = self._resample_and_merge(
-                            existing_data, missing_data
-                        )
-                        self.ohlcv_store.save_partitioned(
-                            symbol=symbol, df=existing_data
-                        )
-                        updated += 1
-                else:
-                    skipped += 1
+                # Startup should only warm availability metadata. The hourly
+                # refresh path fetches the latest closed bar, and the explicit
+                # gap backfill path repairs older gaps. Doing catch-up work
+                # here rewrites many yearly partitions on every process start.
+                skipped += 1
             else:
-                # No data - fetch from lookback
-                start = now - pd.Timedelta(hours=lookback_hours)
-                data = fetch_with_timeout(symbol, start, now)
-                # Validate data is a proper DataFrame before saving
-                if isinstance(data, pd.DataFrame) and not (
-                    hasattr(data, "empty") and data.empty
-                ):
-                    self.ohlcv_store.save_partitioned(symbol=symbol, df=data)
-                    updated += 1
-                else:
-                    failed += 1
-                    tprint(f"Warning: No valid data returned for {symbol}; skipping")
+                # Do not bootstrap historical data during live startup. A
+                # symbol with no stored history cannot satisfy the strict model
+                # feature contract anyway, and the hourly refresh path will add
+                # the latest closed bar without rewriting existing partitions.
+                skipped += 1
         tprint(
             "Historical data init batch complete: "
             f"updated={updated} up_to_date={skipped} failed={failed}"
@@ -499,7 +527,7 @@ class DataFetcher:
     def fetch_ohlcv(
         self, symbol: str, start: pd.Timestamp, end: pd.Timestamp
     ) -> pd.DataFrame:
-        """Fetch 15m OHLCV and resample to 1h.
+        """Fetch strict closed 1h OHLCV for the inference hourly store.
 
         Args:
             symbol: Trading symbol (e.g., "BTC/USDT")
@@ -513,30 +541,42 @@ class DataFetcher:
         time.sleep(RATE_LIMIT_DELAY)
 
         try:
-            # Fetch 15m data from exchange
-            ohlcv_15m = self._fetch_with_retry(
+            hours = max(
+                1,
+                int(
+                    np.ceil(
+                        (
+                            pd.Timestamp(end).tz_convert("UTC")
+                            - pd.Timestamp(start).tz_convert("UTC")
+                        ).total_seconds()
+                        / 3600.0
+                    )
+                )
+                + 2,
+            )
+            ohlcv_1h = self._fetch_with_retry(
                 symbol,
-                timeframe="15m",
+                timeframe="1h",
                 since=int(start.timestamp() * 1000),
-                limit=1200,  # Max for 15m
+                limit=min(max(hours, 1), 1200),
             )
         except Exception as exc:
             self._record_api_error(symbol, exc, context="fetch_ohlcv")
             return pd.DataFrame()
 
         # Validate response
-        if ohlcv_15m is None:
+        if ohlcv_1h is None:
             tprint(f"  Warning: None returned for {symbol}, returning empty DataFrame")
             return pd.DataFrame()
-        if isinstance(ohlcv_15m, str):
-            tprint(f"  Warning: Error string returned for {symbol}: {ohlcv_15m[:100]}")
+        if isinstance(ohlcv_1h, str):
+            tprint(f"  Warning: Error string returned for {symbol}: {ohlcv_1h[:100]}")
             return pd.DataFrame()
-        if not isinstance(ohlcv_15m, list):
+        if not isinstance(ohlcv_1h, list):
             tprint(
-                f"  Warning: Unexpected type {type(ohlcv_15m)} for {symbol}, returning empty DataFrame"
+                f"  Warning: Unexpected type {type(ohlcv_1h)} for {symbol}, returning empty DataFrame"
             )
             return pd.DataFrame()
-        if len(ohlcv_15m) == 0:
+        if len(ohlcv_1h) == 0:
             tprint(
                 f"  Warning: Empty list returned for {symbol}, returning empty DataFrame"
             )
@@ -544,7 +584,7 @@ class DataFetcher:
 
         # Convert to DataFrame
         df = pd.DataFrame(
-            ohlcv_15m, columns=["timestamp", "open", "high", "low", "close", "volume"]
+            ohlcv_1h, columns=["timestamp", "open", "high", "low", "close", "volume"]
         )
         # Convert timestamp column to datetime with timezone
         timestamps = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
@@ -552,7 +592,18 @@ class DataFetcher:
         df.set_index("timestamp", inplace=True)
 
         # Filter to requested range
-        df = df[(df.index >= start) & (df.index <= end)]
+        start_ts = pd.Timestamp(start)
+        end_ts = pd.Timestamp(end)
+        if start_ts.tzinfo is None:
+            start_ts = start_ts.tz_localize("UTC")
+        else:
+            start_ts = start_ts.tz_convert("UTC")
+        if end_ts.tzinfo is None:
+            end_ts = end_ts.tz_localize("UTC")
+        else:
+            end_ts = end_ts.tz_convert("UTC")
+        df = df[(df.index >= start_ts) & (df.index <= end_ts)]
+        df = df[df.index == df.index.floor("h")]
 
         # Safely check for empty df
         try:
@@ -567,10 +618,7 @@ class DataFetcher:
         if is_empty:
             return pd.DataFrame()
 
-        # Resample to 1h
-        df_1h = self._resample_to_hourly(df)
-
-        return df_1h
+        return df[["open", "high", "low", "close", "volume"]].astype(np.float32)
 
     def _fetch_with_retry(
         self,
@@ -620,15 +668,13 @@ class DataFetcher:
         raise last_exc
 
     def _resample_to_hourly(self, df_15m: pd.DataFrame) -> pd.DataFrame:
-        """Calculate rolling 1h aggregation over 15m data to produce overlapping 1h bars.
-
-        This retains the 15m timestamps but computes OHLCV over the preceding 60 minutes.
+        """Aggregate intrahour candles into strict hourly bars on hour timestamps.
 
         Args:
             df_15m: DataFrame with 15m OHLCV data
 
         Returns:
-            DataFrame with 1h rolling OHLCV data on 15m timestamps
+            DataFrame with 1h OHLCV data on hourly timestamps
         """
         # Safely check df_15m
         try:
@@ -646,22 +692,15 @@ class DataFetcher:
         # Ensure we have a clean copy sorted by index
         df_15m = df_15m.copy().sort_index()
 
-        # We need a 60-minute rolling window, which is 4 bars for 15m data
-        # We use a time-based rolling window to be robust against missing data
-        # '1h' implies closing the window on the right and including the current row
-        rolling = df_15m.rolling("1h")
-
-        # Compute rolling OHLCV
-        df_1h = pd.DataFrame(index=df_15m.index)
-        df_1h["open"] = rolling["open"].apply(
-            lambda x: x.iloc[0] if len(x) > 0 else np.nan, raw=False
+        df_1h = df_15m.resample("1h", label="left", closed="left").agg(
+            {
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+                "volume": "sum",
+            }
         )
-        df_1h["high"] = rolling["high"].max()
-        df_1h["low"] = rolling["low"].min()
-        df_1h["close"] = rolling["close"].apply(
-            lambda x: x.iloc[-1] if len(x) > 0 else np.nan, raw=False
-        )
-        df_1h["volume"] = rolling["volume"].sum()
 
         # Drop rows with all NaN
         df_1h.dropna(how="all", inplace=True)
@@ -858,21 +897,18 @@ class DataFetcher:
             except Exception as exc:
                 self._log_microdata_error(symbol, exc, context="hourly_mark_ohlcv")
             try:
-                index_price_type = (
-                    "spot"
-                    if str(getattr(self.exchange, "id", "")).lower()
-                    == "krakenfutures"
-                    else "index"
-                )
+                exchange_id = str(getattr(self.exchange, "id", "")).lower()
+                price_type = "spot" if exchange_id == "krakenfutures" else "index"
                 index_df = self._fetch_with_retry(
                     api_symbol,
                     timeframe="1h",
                     since=int(row_ts.timestamp() * 1000),
                     limit=1,
-                    params={"price": index_price_type},
+                    params={"price": price_type},
                 )
             except Exception:
                 try:
+                    price_type = "spot"
                     index_df = self._fetch_with_retry(
                         api_symbol,
                         timeframe="1h",
@@ -884,27 +920,33 @@ class DataFetcher:
                     index_df = None
                     self._log_microdata_error(symbol, exc, context="hourly_index_ohlcv")
             if index_df:
-                index_row = pd.DataFrame(
+                prefix = "spot" if str(price_type) == "spot" else "index"
+                price_row = pd.DataFrame(
                     index_df,
                     columns=[
                         "timestamp",
-                        "index_open",
-                        "index_high",
-                        "index_low",
-                        "index_close",
-                        "index_volume",
+                        f"{prefix}_open",
+                        f"{prefix}_high",
+                        f"{prefix}_low",
+                        f"{prefix}_close",
+                        f"{prefix}_volume",
                     ],
                 )
-                index_row["timestamp"] = pd.to_datetime(
-                    index_row["timestamp"], unit="ms", utc=True
+                price_row["timestamp"] = pd.to_datetime(
+                    price_row["timestamp"], unit="ms", utc=True
                 )
-                index_row = index_row.set_index("timestamp").reindex(df.index)
-                for col in ("index_open", "index_high", "index_low", "index_close"):
-                    if col in index_row.columns:
-                        df[col] = pd.to_numeric(index_row[col], errors="coerce").astype(
+                price_row = price_row.set_index("timestamp").reindex(df.index)
+                for col in (
+                    f"{prefix}_open",
+                    f"{prefix}_high",
+                    f"{prefix}_low",
+                    f"{prefix}_close",
+                ):
+                    if col in price_row.columns:
+                        df[col] = pd.to_numeric(price_row[col], errors="coerce").astype(
                             np.float32
                         )
-                if "index_close" in df.columns:
+                if prefix == "index" and "index_close" in df.columns:
                     df["index_price"] = df["index_close"]
         self.ohlcv_store.save_partitioned(symbol=symbol, df=df, defer_compact=True)
         self._merge_symbol_cache(symbol, df)
@@ -940,16 +982,35 @@ class DataFetcher:
         empty = 0
         canceled = 0
         gap_backfills = 0
+        skipped_existing = 0
+        symbols_to_fetch: list[str] = []
+        for sym in symbols:
+            try:
+                cached_bar = self.ohlcv_store.load(
+                    sym,
+                    start_ts=target_hour,
+                    end_ts=target_hour + pd.Timedelta(hours=1),
+                )
+                if isinstance(cached_bar, pd.DataFrame) and not cached_bar.empty:
+                    hourly_index = pd.DatetimeIndex(cached_bar.index)
+                    if bool((hourly_index == target_hour).any()):
+                        skipped_existing += 1
+                        continue
+            except Exception:
+                pass
+            symbols_to_fetch.append(sym)
         tprint(
             "Hourly OHLCV universe batch start: "
-            f"symbols={len(symbols)} workers={workers} target_hour={target_hour}"
+            f"symbols={len(symbols)} fetch={len(symbols_to_fetch)} "
+            f"skipped_existing={skipped_existing} workers={workers} "
+            f"target_hour={target_hour}"
         )
         executor = ThreadPoolExecutor(max_workers=workers)
         futures = {
             executor.submit(
                 self.fetch_latest_hourly_symbol, sym, target_hour=target_hour
             ): sym
-            for sym in symbols
+            for sym in symbols_to_fetch
         }
         pending = set(futures.keys())
         last_data_time = time.monotonic()
@@ -1012,7 +1073,8 @@ class DataFetcher:
 
         tprint(
             "Hourly OHLCV universe batch complete: "
-            f"requested={len(symbols)} updated={len(out)} empty={empty} "
+            f"requested={len(symbols)} fetch={len(symbols_to_fetch)} "
+            f"skipped_existing={skipped_existing} updated={len(out)} empty={empty} "
             f"failed={failed} canceled={canceled} gap_backfills={gap_backfills} "
             f"dead_letters={len(self.dead_letter_symbols)} "
             f"errors={self.api_error_counts}"
@@ -1182,7 +1244,11 @@ class DataFetcher:
                 _compute_missing_hourly_ranges(existing_idx, start_h, end_h)
             )
             if len(missing_ob_ranges) < microdata_min_ranges:
-                missing_ob_ranges = []
+                missing_ob_ranges = [
+                    (range_start, range_end)
+                    for range_start, range_end in missing_ob_ranges
+                    if pd.Timestamp(range_end) >= end_h
+                ]
             ob_frames = []
             for range_start, range_end in missing_ob_ranges:
                 proxy_df = fetch_hourly_orderbook_proxy(
@@ -1191,6 +1257,17 @@ class DataFetcher:
                     int(range_start.value // 10**6),
                     int(range_end.value // 10**6),
                 )
+                if proxy_df is None or proxy_df.empty:
+                    local_ohlcv = self._load_ohlcv_symbol_cached(symbol, range_start)
+                    if (
+                        isinstance(local_ohlcv, pd.DataFrame)
+                        and not local_ohlcv.empty
+                    ):
+                        local_ohlcv = local_ohlcv.loc[
+                            (local_ohlcv.index >= range_start)
+                            & (local_ohlcv.index <= range_end)
+                        ]
+                        proxy_df = build_hourly_orderbook_proxy_from_ohlcv(local_ohlcv)
                 if proxy_df is not None and not proxy_df.empty:
                     ob_frames.append(proxy_df)
             if existing_ob is not None and not existing_ob.empty:

@@ -105,6 +105,26 @@ def test_transform_matrix_column_order_parity():
     assert np.allclose(actual.to_numpy(), expected.to_numpy(), equal_nan=True)
 
 
+def test_transform_matrix_refuses_nonfinite_contract_values():
+    panels = _panels()
+    contract = FeatureTransformContract.fit_from_panels(panels, _cfg(), "run_a", _fit_scope())
+    row = pd.DataFrame(
+        {
+            "range_24h_pct": [0.04],
+            "barrier_pct": [0.02],
+            "ret24h": [np.nan],
+            "atr_pct_raw": [0.01],
+        },
+        index=["AAA/USDC"],
+    )
+
+    with pytest.raises(ValueError, match="non-finite contracted raw columns"):
+        contract.transform_matrix(row, strict=True)
+
+    permissive = contract.transform_matrix(row, strict=True, require_finite=False)
+    assert np.isfinite(permissive.to_numpy()).all()
+
+
 def test_missing_feature_strictness():
     panels = _panels()
     contract = FeatureTransformContract.fit_from_panels(panels, _cfg(), "run_a", _fit_scope())

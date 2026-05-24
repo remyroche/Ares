@@ -118,6 +118,15 @@ TRADE_LOG_COLUMNS = [
     "meta_pred",
     "meta_confidence",
     "calibrated_score",
+    "estimated_hit_rate",
+    "estimated_hit_rate_source",
+    "estimated_hit_rate_calibration_n",
+    "estimated_ev_gross_return",
+    "estimated_ev_net_return",
+    "estimated_ev_cost_bps",
+    "estimated_ev_hit_rate",
+    "estimated_ev_source",
+    "estimated_ev_calibration_n",
     "rank_threshold",
     "rank_percentile",
     "deployment_rank_threshold",
@@ -131,6 +140,10 @@ TRADE_LOG_COLUMNS = [
     "rank_score_source",
     "sizer_rank_percentile",
     "effective_threshold",
+    "decision_audit_schema",
+    "model_prediction_audit",
+    "raw_data_audit",
+    "model_feature_audit",
     # Model predictions - Ridge position sizer
     "ridge_position_size",
     "ridge_confidence",
@@ -691,6 +704,26 @@ class TradeLogger:
             "meta_pred": model_results.get("meta_pred"),
             "meta_confidence": model_results.get("meta_confidence"),
             "calibrated_score": decision.get("calibrated_score"),
+            "estimated_hit_rate": decision.get("estimated_hit_rate")
+            or model_results.get("estimated_hit_rate"),
+            "estimated_hit_rate_source": decision.get("estimated_hit_rate_source")
+            or model_results.get("estimated_hit_rate_source"),
+            "estimated_hit_rate_calibration_n": decision.get(
+                "estimated_hit_rate_calibration_n"
+            )
+            or model_results.get("estimated_hit_rate_calibration_n"),
+            "estimated_ev_gross_return": decision.get("estimated_ev_gross_return")
+            or model_results.get("estimated_ev_gross_return"),
+            "estimated_ev_net_return": decision.get("estimated_ev_net_return")
+            or model_results.get("estimated_ev_net_return"),
+            "estimated_ev_cost_bps": decision.get("estimated_ev_cost_bps")
+            or model_results.get("estimated_ev_cost_bps"),
+            "estimated_ev_hit_rate": decision.get("estimated_ev_hit_rate")
+            or model_results.get("estimated_ev_hit_rate"),
+            "estimated_ev_source": decision.get("estimated_ev_source")
+            or model_results.get("estimated_ev_source"),
+            "estimated_ev_calibration_n": decision.get("estimated_ev_calibration_n")
+            or model_results.get("estimated_ev_calibration_n"),
             "rank_threshold": decision.get("rank_threshold"),
             "rank_percentile": decision.get("rank_percentile")
             or decision.get("sizer_rank_percentile"),
@@ -1215,6 +1248,13 @@ class TradeLogger:
             row["volatility_zscore"] = context.get("volatility_zscore", "")
             row["strategy_id"] = context.get("strategy_id", "")
             row["calibrated_score"] = context.get("calibrated_score", "")
+            row["estimated_hit_rate"] = context.get("estimated_hit_rate", "")
+            row["estimated_hit_rate_source"] = context.get(
+                "estimated_hit_rate_source", ""
+            )
+            row["estimated_hit_rate_calibration_n"] = context.get(
+                "estimated_hit_rate_calibration_n", ""
+            )
             row["rank_threshold"] = context.get("rank_threshold", "")
             row["rank_percentile"] = context.get(
                 "rank_percentile",

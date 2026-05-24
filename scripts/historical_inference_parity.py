@@ -1,0 +1,1031 @@
+#!/usr/bin/env python3
+"""Replay inference from historical local data and compare to training artifacts."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from extreme_price_movements.config import CFG  # noqa: E402
+from extreme_price_movements.data_store import exchange_data_component  # noqa: E402
+from extreme_price_movements.inference.config import load_inference_config  # noqa: E402
+from extreme_price_movements.inference.config import load_trained_symbol_universe  # noqa: E402
+from extreme_price_movements.inference.feature_generator import (  # noqa: E402
+    get_features_for_candidates,
+    get_inference_required_feature_keys,
+    load_or_compute_features,
+    raw_required_feature_keys,
+)
+from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator  # noqa: E402
+from extreme_price_movements.inference.parity import (  # noqa: E402
+    calibrated_score_and_threshold,
+    strategy_core_id,
+    strategy_id_matches,
+)
+from extreme_price_movements.inference.policy_rank_reference import (  # noqa: E402
+    policy_rank_pct_from_sorted_scores,
+    strategy_rank_reference_aliases,
+)
+from extreme_price_movements.inference.run_inference import (  # noqa: E402
+    _lgbm_mask_required_feature_keys,
+    _load_lgbm_strategy_mask_rows,
+)
+from extreme_price_movements.model_loader import load_full_state  # noqa: E402
+from extreme_price_movements.pipeline_steps import (  # noqa: E402
+    _load_external_kraken_spot_panels,
+)
+from extreme_price_movements.simple_position_sizer import load_calibration_curves  # noqa: E402
+from extreme_price_movements.utils import tprint  # noqa: E402
+from scripts.replay_live_signal_predictions import (  # noqa: E402
+    _load_panel,
+    _local_quote_symbols,
+    _normalise_symbol,
+)
+
+
+def _safe_float(value: Any) -> float:
+    try:
+        out = float(value)
+    except Exception:
+        return float("nan")
+    return out if np.isfinite(out) else float("nan")
+
+
+def _runtime_only_feature_key(feature: str) -> bool:
+    key = str(feature)
+    return bool(
+        key == "G_VOL"
+        or key == "barrier_pct"
+        or key.startswith("ret1h_G_VOL_")
+    )
+
+
+def _meta_oof_path(data_root: Path, run_id: str, strategy: str | None) -> Path:
+    root = data_root / "artifacts" / run_id / "meta_oof"
+    if strategy:
+        path = root / f"meta_oof_{strategy}_clf.parquet"
+        if path.exists():
+            return path
+    paths = sorted(root.glob("meta_oof_*_clf.parquet"))
+    if not paths:
+        raise FileNotFoundError(f"No meta_oof parquet files found in {root}")
+    return paths[0]
+
+
+def _strategy_from_meta_oof_path(path: Path) -> str:
+    name = path.stem
+    if name.startswith("meta_oof_"):
+        name = name[len("meta_oof_") :]
+    if name.endswith("_clf"):
+        name = name[: -len("_clf")]
+    return name
+
+
+def _historical_market_data_root(data_root: Path, market_mode: str) -> Path:
+    exchange_id = (
+        os.environ.get("EPM_EXCHANGE")
+        or os.environ.get("EXCHANGE_NAME")
+        or os.environ.get("PRIMARY_EXCHANGE")
+        or ""
+    )
+    component = exchange_data_component(exchange_id, market_mode)
+    exchange_root = Path(data_root) / "exchanges" / component
+    if (exchange_root / "ohlcv").exists():
+        return exchange_root
+    return Path(data_root)
+
+
+def _sample_oof_rows(
+    path: Path,
+    *,
+    sample_rows: int,
+    samples_per_symbol: int,
+    warmup_rows: int,
+    min_timestamp: str | None,
+) -> pd.DataFrame:
+    tprint(f"Loading OOF rows from {path}")
+    df = pd.read_parquet(path)
+    if df.empty:
+        return df
+    df = df.copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
+    df = df.dropna(subset=["timestamp", "symbol"]).sort_values("timestamp")
+    tprint(
+        "Loaded OOF rows: "
+        f"rows={len(df):,} symbols={df['symbol'].nunique():,} "
+        f"ts={df['timestamp'].min()}..{df['timestamp'].max()}"
+    )
+    if min_timestamp:
+        start = pd.Timestamp(min_timestamp)
+        start = start.tz_localize("UTC") if start.tzinfo is None else start.tz_convert("UTC")
+        df = df[df["timestamp"] >= start]
+        tprint(
+            "Applied min timestamp filter: "
+            f"min_timestamp={start} rows={len(df):,} symbols={df['symbol'].nunique():,}"
+        )
+    if df.empty:
+        return df
+    if samples_per_symbol and samples_per_symbol > 0:
+        parts = []
+        for _, group in df.groupby("symbol", sort=True):
+            group = group.sort_values("timestamp")
+            if warmup_rows and warmup_rows > 0:
+                group = group.iloc[int(warmup_rows) :]
+            if group.empty:
+                continue
+            n = min(int(samples_per_symbol), len(group))
+            idx = np.linspace(0, len(group) - 1, n).round().astype(int)
+            parts.append(group.iloc[idx])
+        if not parts:
+            return df.iloc[0:0].copy()
+        sampled = (
+            pd.concat(parts, axis=0)
+            .drop_duplicates(["timestamp", "symbol"])
+            .sort_values(["symbol", "timestamp"])
+            .reset_index(drop=True)
+        )
+        if sample_rows and sample_rows > 0 and len(sampled) > int(sample_rows):
+            idx = np.linspace(0, len(sampled) - 1, int(sample_rows)).round().astype(int)
+            sampled = sampled.iloc[idx].drop_duplicates(["timestamp", "symbol"]).reset_index(drop=True)
+        tprint(
+            "Selected sampled OOF rows by symbol: "
+            f"rows={len(sampled):,} symbols={sampled['symbol'].nunique():,} "
+            f"samples_per_symbol={samples_per_symbol} global_cap={sample_rows if sample_rows > 0 else 'none'}"
+        )
+        return sampled
+    # Keep rows spread across the latest available OOF segment rather than
+    # adjacent rows from one burst.
+    tail = df.tail(max(int(sample_rows) * 20, int(sample_rows)))
+    idx = np.linspace(0, len(tail) - 1, min(int(sample_rows), len(tail))).round().astype(int)
+    sampled = tail.iloc[idx].drop_duplicates(["timestamp", "symbol"]).reset_index(drop=True)
+    tprint(
+        "Selected sampled OOF rows from tail: "
+        f"rows={len(sampled):,} symbols={sampled['symbol'].nunique():,} "
+        f"global_cap={sample_rows}"
+    )
+    return sampled
+
+
+def _safe_strategy_filename(strategy_id: str) -> str:
+    sid = str(strategy_id or "").strip()
+    return "".join(ch if ch.isalnum() or ch in "_.=-" else "_" for ch in sid) or "unknown_strategy"
+
+
+def _policy_rank_reference_path(
+    data_root: Path,
+    run_id: str,
+    strategy_id: str,
+) -> Path:
+    root = data_root / "artifacts" / run_id / "simple_policy_optimiser" / "rank_reference"
+    for alias in strategy_rank_reference_aliases(strategy_id):
+        path = root / f"{_safe_strategy_filename(alias)}.parquet"
+        if path.exists():
+            return path
+    matches = sorted(root.glob(f"*{strategy_core_id(strategy_id)}*.parquet"))
+    if matches:
+        return matches[0]
+    raise FileNotFoundError(f"No policy rank reference found for {strategy_id} in {root}")
+
+
+def _sample_policy_rank_reference_rows(
+    data_root: Path,
+    run_id: str,
+    strategy_id: str,
+    *,
+    sample_rows: int,
+    min_timestamp: str | None,
+) -> pd.DataFrame:
+    path = _policy_rank_reference_path(data_root, run_id, strategy_id)
+    tprint(f"Loading policy rank-reference rows from {path}")
+    df = pd.read_parquet(path)
+    if df.empty:
+        return df
+    df = df.copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
+    df = df.dropna(subset=["timestamp", "symbol"]).sort_values(["timestamp", "symbol"])
+    if min_timestamp:
+        start = pd.Timestamp(min_timestamp)
+        start = start.tz_localize("UTC") if start.tzinfo is None else start.tz_convert("UTC")
+        df = df[df["timestamp"] >= start]
+    if sample_rows and sample_rows > 0 and len(df) > int(sample_rows):
+        # Keep dense timestamp batches so this exercises live cross-sectional
+        # ranking semantics instead of scoring one symbol per timestamp.
+        chosen_ts: list[pd.Timestamp] = []
+        total = 0
+        for ts, count in df.groupby("timestamp", sort=True).size().items():
+            chosen_ts.append(ts)
+            total += int(count)
+            if total >= int(sample_rows):
+                break
+        df = df[df["timestamp"].isin(chosen_ts)].copy()
+        if len(df) > int(sample_rows):
+            df = df.sort_values(["timestamp", "symbol"]).head(int(sample_rows))
+    tprint(
+        "Selected policy rank-reference rows: "
+        f"rows={len(df):,} symbols={df['symbol'].nunique():,} "
+        f"timestamps={df['timestamp'].nunique():,} global_cap={sample_rows if sample_rows > 0 else 'none'}"
+    )
+    return df.reset_index(drop=True)
+
+
+def _matches_allowed(model_key: str, allowed: set[str] | None) -> bool:
+    if allowed is None:
+        return True
+    key = str(model_key or "")
+    if strategy_id_matches(key, allowed):
+        return True
+    return any(
+        key == allowed_key
+        or key.startswith(f"{allowed_key}_")
+        or allowed_key.startswith(f"{key}_")
+        for allowed_key in allowed
+    )
+
+
+def _actual_estimator_feature_names(item: Any) -> set[str]:
+    names: set[str] = set()
+    seen: set[int] = set()
+
+    def visit(obj: Any, depth: int = 0) -> None:
+        if obj is None or depth > 5 or id(obj) in seen:
+            return
+        seen.add(id(obj))
+        for attr in ("feature_name_", "feature_names_in_"):
+            vals = getattr(obj, attr, None)
+            if vals is not None:
+                try:
+                    names.update(map(str, vals))
+                except Exception:
+                    pass
+        booster = getattr(obj, "booster_", None)
+        if booster is not None:
+            try:
+                names.update(map(str, booster.feature_name()))
+            except Exception:
+                pass
+        for attr in ("best_model", "model", "clf", "estimator", "base_model"):
+            try:
+                child = getattr(obj, attr, None)
+            except Exception:
+                child = None
+            if child is not None:
+                visit(child, depth + 1)
+        for attr in ("models", "estimators_", "calibrated_classifiers_"):
+            try:
+                children = getattr(obj, attr, None)
+            except Exception:
+                children = None
+            if isinstance(children, dict):
+                for child in children.values():
+                    visit(child, depth + 1)
+            elif isinstance(children, (list, tuple)):
+                for child in children:
+                    visit(child, depth + 1)
+
+    visit(item)
+    return names
+
+
+def _effective_selected_feature_names(item: Any) -> set[str]:
+    inner = getattr(item, "best_model", item)
+    selected = [str(c) for c in (getattr(inner, "selected_features", []) or [])]
+    if not selected:
+        return set()
+    input_features = [
+        str(c) for c in (getattr(inner, "input_feature_names", []) or [])
+    ]
+    if len(input_features) == len(selected) and input_features != selected:
+        return set(input_features)
+    return set(selected)
+
+
+def _feature_columns_for_state(
+    state: dict[str, Any],
+    strategy_id: str | None = None,
+) -> set[str]:
+    allowed = None
+    if strategy_id:
+        allowed = {str(strategy_id), strategy_core_id(str(strategy_id))}
+    keys: set[str] = set()
+    bundle = state.get("bundle", {}) if isinstance(state.get("bundle"), dict) else {}
+    for family in ("alpha_models", "meta_models"):
+        obj = bundle.get(family, {})
+        if not isinstance(obj, dict):
+            continue
+        stack = [
+            (str(model_key), model_value)
+            for model_key, model_value in obj.items()
+            if _matches_allowed(str(model_key), allowed)
+        ]
+        while stack:
+            path, item = stack.pop()
+            if isinstance(item, dict):
+                for candidate in (
+                    item.get("feat_cols"),
+                    item.get("feature_columns"),
+                    item.get("columns"),
+                ):
+                    if candidate:
+                        keys.update(map(str, candidate))
+                for nested_key, nested_value in item.items():
+                    nested_path = f"{path}_{nested_key}"
+                    if path in {"long", "short"}:
+                        keep_nested = _matches_allowed(nested_path, allowed)
+                    else:
+                        keep_nested = _matches_allowed(path, allowed) or _matches_allowed(
+                            nested_path,
+                            allowed,
+                        )
+                    if keep_nested:
+                        stack.append((nested_path, nested_value))
+            else:
+                effective_selected = _effective_selected_feature_names(item)
+                if effective_selected:
+                    keys.update(effective_selected)
+                else:
+                    for attr in ("feature_columns", "feature_names_in_"):
+                        vals = getattr(item, attr, None)
+                        if vals is not None:
+                            keys.update(map(str, vals))
+                actual_names = _actual_estimator_feature_names(item)
+                if actual_names:
+                    keys.update(actual_names)
+    return keys
+
+
+def _filter_lgbm_mask_rows_for_strategy(
+    rows: Any,
+    strategy_id: str,
+) -> dict[str, dict[str, Any]]:
+    if not isinstance(rows, dict):
+        return {}
+    allowed = {str(strategy_id), strategy_core_id(str(strategy_id))}
+    out: dict[str, dict[str, Any]] = {}
+    for key, row in rows.items():
+        if not isinstance(row, dict):
+            continue
+        candidates = {
+            str(key),
+            str(row.get("strategy_id") or ""),
+            str(row.get("strategy") or ""),
+            str(row.get("selected_strategy") or ""),
+            str(row.get("strategy_for_inference") or ""),
+        }
+        if any(candidate and strategy_id_matches(candidate, allowed) for candidate in candidates):
+            out[str(key)] = row
+    return out
+
+
+def _load_reference_feature_rows(
+    data_root: Path,
+    run_id: str,
+    samples: pd.DataFrame,
+    feature_keys: set[str],
+) -> dict[tuple[str, pd.Timestamp], pd.Series]:
+    out: dict[tuple[str, pd.Timestamp], pd.Series] = {}
+    features_root = data_root / "features" / run_id
+    groups = list(samples.groupby("symbol"))
+    tprint(
+        "Loading stored training feature rows: "
+        f"symbols={len(groups):,} requested_features={len(feature_keys):,}"
+    )
+    for idx, (symbol, group) in enumerate(groups, start=1):
+        if idx == 1 or idx % 25 == 0 or idx == len(groups):
+            tprint(f"  reference feature rows progress: {idx}/{len(groups)} symbols")
+        norm_symbol = _normalise_symbol(symbol)
+        path_keys = [
+            norm_symbol.replace("/", "_"),
+            norm_symbol.replace("/", "_").replace(":", "_"),
+        ]
+        path = next(
+            (features_root / f"symbol={key}.parquet" for key in path_keys if (features_root / f"symbol={key}.parquet").exists()),
+            features_root / f"symbol={path_keys[0]}.parquet",
+        )
+        if not path.exists():
+            continue
+        try:
+            cols = sorted(c for c in feature_keys if c)
+            df = pd.read_parquet(path, columns=cols)
+        except Exception:
+            df = pd.read_parquet(path)
+            keep = [c for c in df.columns if str(c) in feature_keys]
+            df = df[keep]
+        df.index = pd.to_datetime(df.index, utc=True, errors="coerce")
+        df = df.loc[pd.notna(df.index)]
+        for ts in group["timestamp"]:
+            ts = pd.Timestamp(ts)
+            ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+            if ts in df.index:
+                out[(norm_symbol, ts)] = df.loc[ts]
+    return out
+
+
+def _build_runtime_cfg(
+    *,
+    data_root: Path,
+    artifact_data_root: Path,
+    run_id: str,
+    market_mode: str,
+    state: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        feature_cfg = load_inference_config(
+            data_root=str(artifact_data_root),
+            run_id=run_id,
+            market_mode=market_mode,
+        )
+    except Exception:
+        feature_cfg = dict(CFG)
+    runtime_cfg = dict(feature_cfg.get("runtime_cfg") or feature_cfg)
+    runtime_cfg.update(
+        {
+            "use_perps": market_mode == "perps",
+            "market_mode": market_mode,
+            "data_root": str(data_root),
+            "artifact_data_root": str(artifact_data_root),
+            "live_data_root": str(data_root),
+            "offline_feature_data_root": str(artifact_data_root),
+            "live_feature_memory_cache_enabled": False,
+            "live_feature_snapshot_cache_enabled": False,
+            "live_feature_rolling_cache_enabled": False,
+            "live_feature_offline_cache_enabled": True,
+            "feature_transform_cache_enabled": False,
+            # Historical parity must replay the feature contract that the
+            # selected model was trained with, even when today's deployable
+            # config is stricter about portable feature admission.
+            "feature_portability_mode": "legacy",
+            "feature_portability_strict": False,
+            "historical_inference_parity_allow_legacy_deleted_keys": True,
+            "historical_inference_parity_allow_missing_live_sources": True,
+            "historical_inference_parity_preserve_cached_features": True,
+        }
+    )
+    bundle = state.get("bundle", {}) if isinstance(state.get("bundle"), dict) else {}
+    runtime_cfg.setdefault("bundle", bundle)
+    for key in (
+        "feature_transform_contract",
+        "feature_transform_contract_hash",
+        "feature_transform_manifest",
+    ):
+        value = state.get(key)
+        if value is None and isinstance(bundle, dict):
+            value = bundle.get(key)
+        if value is not None:
+            feature_cfg[key] = value
+            runtime_cfg[key] = value
+    feature_cfg["runtime_cfg"] = runtime_cfg
+    return feature_cfg
+
+
+def _root_for_exchange_scoped_data(data_root: Path) -> Path:
+    parts = data_root.parts
+    if len(parts) >= 2 and parts[-2] == "exchanges":
+        return Path(*parts[:-2])
+    return data_root
+
+
+def _attach_external_kraken_spot_panels(
+    panel: dict[str, pd.DataFrame],
+    *,
+    data_root: Path,
+    market_mode: str,
+) -> None:
+    close = panel.get("close")
+    if not isinstance(close, pd.DataFrame) or close.empty:
+        return
+    if str(market_mode).lower() not in {"perp", "perps"}:
+        return
+    if "kraken" not in str(data_root).lower():
+        return
+    cfg = {
+        "exchange_id": "kraken",
+        "exchange": "kraken",
+        "market_mode": "perps",
+        "data_root": str(_root_for_exchange_scoped_data(data_root)),
+    }
+    external_spot = _load_external_kraken_spot_panels(
+        cfg,
+        list(close.columns),
+        close.index,
+    )
+    if external_spot:
+        tprint(f"Loaded external Kraken spot panels for parity: fields={len(external_spot)}")
+    for key, frame in external_spot.items():
+        existing = panel.get(key)
+        if isinstance(existing, pd.DataFrame) and not existing.empty:
+            existing_count = int(existing.gt(0.0).sum().sum())
+            external_count = int(frame.gt(0.0).sum().sum())
+            if external_count <= existing_count:
+                continue
+        panel[key] = frame
+
+
+def _compare_features(
+    samples: pd.DataFrame,
+    fresh_feats: dict[str, pd.DataFrame],
+    reference_rows: dict[tuple[str, pd.Timestamp], pd.Series],
+    feature_keys: set[str],
+) -> pd.DataFrame:
+    started = time.monotonic()
+    fresh_by_feature: dict[str, pd.DataFrame] = {
+        str(feature): frame
+        for feature, frame in fresh_feats.items()
+        if str(feature) in feature_keys and isinstance(frame, pd.DataFrame) and not frame.empty
+    }
+    rows = []
+    total = len(samples)
+    tprint(
+        "Comparing feature values: "
+        f"samples={total:,} comparable_features={len(feature_keys):,} "
+        f"fresh_feature_matrices={len(fresh_by_feature):,}"
+    )
+    for i, (_, sample) in enumerate(samples.iterrows(), start=1):
+        if i == 1 or i % 100 == 0 or i == total:
+            elapsed = time.monotonic() - started
+            tprint(f"  feature parity progress: {i:,}/{total:,} samples elapsed={elapsed:.1f}s")
+        symbol = _normalise_symbol(sample["symbol"])
+        ts = pd.Timestamp(sample["timestamp"])
+        ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+        ref = reference_rows.get((symbol, ts), pd.Series(dtype=float))
+        for feature in sorted(feature_keys):
+            matrix = fresh_by_feature.get(feature)
+            fresh_has_value = (
+                matrix is not None and ts in matrix.index and symbol in matrix.columns
+            )
+            ref_has_value = feature in ref.index
+            if not fresh_has_value and not ref_has_value:
+                continue
+            fval = _safe_float(matrix.at[ts, symbol] if fresh_has_value else np.nan)
+            rval = _safe_float(ref.get(feature, np.nan))
+            fresh_finite = np.isfinite(fval)
+            ref_finite = np.isfinite(rval)
+            rows.append(
+                {
+                    "timestamp": ts,
+                    "symbol": symbol,
+                    "feature": feature,
+                    "inference_value": fval,
+                    "training_value": rval,
+                    "abs_diff": abs(fval - rval)
+                    if fresh_finite and ref_finite
+                    else np.nan,
+                    "inference_missing": (not fresh_finite) and ref_finite,
+                    "training_missing": fresh_finite and (not ref_finite),
+                    "both_missing": (not fresh_finite) and (not ref_finite),
+                }
+            )
+    out = pd.DataFrame(rows)
+    tprint(f"Feature value comparison complete: rows={len(out):,} elapsed={time.monotonic() - started:.1f}s")
+    return out
+
+
+def _score_predictions(
+    samples: pd.DataFrame,
+    fresh_feats: dict[str, pd.DataFrame],
+    orchestrator: ModelOrchestrator,
+    strategy_id: str,
+    *,
+    calibration_data: dict[str, dict[str, Any]] | None = None,
+    policy_rank_scores: np.ndarray | None = None,
+    prediction_universe_symbols: list[str] | None = None,
+) -> pd.DataFrame:
+    started = time.monotonic()
+    rows = []
+    side_default = "short" if strategy_id.startswith("short_") else "long"
+    total = len(samples)
+    tprint(f"Scoring final-fit predictions: samples={total:,} strategy={strategy_id}")
+    work = samples.copy()
+    work["timestamp"] = pd.to_datetime(work["timestamp"], utc=True, errors="coerce")
+    work["symbol_norm"] = work["symbol"].map(_normalise_symbol)
+    universe_symbols = (
+        list(dict.fromkeys(_normalise_symbol(symbol) for symbol in prediction_universe_symbols))
+        if prediction_universe_symbols
+        else None
+    )
+    model_strategy_id = strategy_id
+    core_strategy_id = strategy_core_id(strategy_id)
+    done = 0
+    for ts, group in work.groupby("timestamp", sort=True):
+        ts_started = time.monotonic()
+        sample_symbols = list(dict.fromkeys(group["symbol_norm"].dropna().astype(str).tolist()))
+        symbols = universe_symbols or sample_symbols
+        side_values = group.get("is_long")
+        if side_values is not None:
+            side = "long" if bool(side_values.astype(bool).mode().iloc[0]) else "short"
+        else:
+            side = side_default
+        feature_rows = get_features_for_candidates(fresh_feats, symbols, ts=ts)
+        alpha = pd.Series(dtype=float)
+        meta = pd.Series(dtype=float)
+        base_error = None
+        meta_error = None
+        if not feature_rows.empty:
+            try:
+                alpha = orchestrator.predict_alpha(feature_rows, side, model_strategy_id)
+            except Exception as exc:
+                base_error = str(exc)
+                alpha = pd.Series(index=feature_rows.index, data=np.nan, dtype=float)
+            try:
+                if isinstance(alpha, pd.Series) and not alpha.empty:
+                    meta_base = feature_rows.copy()
+                    meta_base[model_strategy_id] = alpha.reindex(meta_base.index)
+                    meta = orchestrator.predict_meta(
+                        meta_base,
+                        side,
+                        model_strategy_id or core_strategy_id,
+                    )
+                else:
+                    meta = pd.Series(index=feature_rows.index, data=np.nan, dtype=float)
+            except Exception as exc:
+                meta_error = str(exc)
+                meta = pd.Series(index=feature_rows.index, data=np.nan, dtype=float)
+        for _, sample in group.iterrows():
+            symbol = str(sample["symbol_norm"])
+            out = {
+                "timestamp": ts,
+                "symbol": symbol,
+                "side": side,
+                "strategy_id": strategy_id,
+                "feature_cols": int(feature_rows.shape[1]) if symbol in feature_rows.index else 0,
+                "oof_base_clf": _safe_float(sample.get("oof_base_clf")),
+                "oof_meta_clf": _safe_float(sample.get("oof_meta_clf")),
+                "oof_pred": _safe_float(sample.get("oof_pred")),
+            }
+            if feature_rows.empty or symbol not in feature_rows.index:
+                out["prediction_error"] = "missing_feature_row"
+                out["final_fit_base_pred"] = np.nan
+                out["final_fit_meta_pred"] = np.nan
+            else:
+                if base_error:
+                    out["base_prediction_error"] = base_error
+                if meta_error:
+                    out["meta_prediction_error"] = meta_error
+                out["final_fit_base_pred"] = _safe_float(alpha.get(symbol, np.nan))
+                out["final_fit_meta_pred"] = _safe_float(meta.get(symbol, np.nan))
+                out["chain_action"] = "meta_prediction" if np.isfinite(out["final_fit_meta_pred"]) else "no_meta_prediction"
+                out["chain_reason"] = "batched_meta_replay"
+            if np.isfinite(out.get("final_fit_meta_pred", np.nan)):
+                calibrated, _ = calibrated_score_and_threshold(
+                    raw_score=float(out["final_fit_meta_pred"]),
+                    strategy_id=strategy_id,
+                    calibration_data=calibration_data or {},
+                    default_threshold=1.0,
+                )
+                out["final_fit_calibrated_score"] = _safe_float(calibrated)
+                if policy_rank_scores is not None:
+                    out["final_fit_policy_rank_pct"] = _safe_float(
+                        policy_rank_pct_from_sorted_scores(policy_rank_scores, float(calibrated))
+                    )
+            out["base_pred_abs_diff_vs_oof"] = (
+                abs(out["final_fit_base_pred"] - out["oof_base_clf"])
+                if np.isfinite(out.get("final_fit_base_pred", np.nan))
+                and np.isfinite(out.get("oof_base_clf", np.nan))
+                else np.nan
+            )
+            oof_meta = out["oof_meta_clf"] if np.isfinite(out["oof_meta_clf"]) else out["oof_pred"]
+            out["meta_pred_abs_diff_vs_oof"] = (
+                abs(out["final_fit_meta_pred"] - oof_meta)
+                if np.isfinite(out.get("final_fit_meta_pred", np.nan))
+                and np.isfinite(oof_meta)
+                else np.nan
+            )
+            out["policy_calibrated_score_ref"] = _safe_float(sample.get("calibrated_score"))
+            out["policy_rank_pct_ref"] = _safe_float(sample.get("rank_pct"))
+            out["policy_calibrated_score_abs_diff"] = (
+                abs(out.get("final_fit_calibrated_score", np.nan) - out["policy_calibrated_score_ref"])
+                if np.isfinite(out.get("final_fit_calibrated_score", np.nan))
+                and np.isfinite(out["policy_calibrated_score_ref"])
+                else np.nan
+            )
+            out["policy_rank_pct_abs_diff"] = (
+                abs(out.get("final_fit_policy_rank_pct", np.nan) - out["policy_rank_pct_ref"])
+                if np.isfinite(out.get("final_fit_policy_rank_pct", np.nan))
+                and np.isfinite(out["policy_rank_pct_ref"])
+                else np.nan
+            )
+            rows.append(out)
+        done += len(group)
+        if done == len(group) or done % 5000 < len(group) or done == total:
+            elapsed = time.monotonic() - started
+            tprint(
+                "  prediction parity progress: "
+                f"{done:,}/{total:,} samples elapsed={elapsed:.1f}s "
+                f"last_ts_rows={len(group):,} pred_symbols={len(symbols):,} "
+                f"last_ts_time={time.monotonic() - ts_started:.2f}s"
+            )
+    out = pd.DataFrame(rows)
+    tprint(f"Prediction scoring complete: rows={len(out):,} elapsed={time.monotonic() - started:.1f}s")
+    return out
+
+
+def _summary(features: pd.DataFrame, preds: pd.DataFrame) -> dict[str, Any]:
+    common = features[
+        ~features["inference_missing"].astype(bool)
+        & ~features["training_missing"].astype(bool)
+    ]
+    mismatched = common[pd.to_numeric(common["abs_diff"], errors="coerce") > 1e-6]
+    return {
+        "feature_rows": int(len(features)),
+        "feature_common_rows": int(len(common)),
+        "feature_missing_inference": int(features["inference_missing"].sum()) if not features.empty else 0,
+        "feature_missing_training": int(features["training_missing"].sum()) if not features.empty else 0,
+        "feature_mismatches_gt_1e_6": int(len(mismatched)),
+        "feature_max_abs_diff": float(common["abs_diff"].max()) if not common.empty else None,
+        "feature_mean_abs_diff": float(common["abs_diff"].mean()) if not common.empty else None,
+        "prediction_rows": int(len(preds)),
+        "base_pred_max_abs_diff_vs_oof": float(preds["base_pred_abs_diff_vs_oof"].max())
+        if "base_pred_abs_diff_vs_oof" in preds and preds["base_pred_abs_diff_vs_oof"].notna().any()
+        else None,
+        "meta_pred_max_abs_diff_vs_oof": float(preds["meta_pred_abs_diff_vs_oof"].max())
+        if "meta_pred_abs_diff_vs_oof" in preds and preds["meta_pred_abs_diff_vs_oof"].notna().any()
+        else None,
+        "policy_calibrated_score_max_abs_diff": float(preds["policy_calibrated_score_abs_diff"].max())
+        if "policy_calibrated_score_abs_diff" in preds and preds["policy_calibrated_score_abs_diff"].notna().any()
+        else None,
+        "policy_rank_pct_max_abs_diff": float(preds["policy_rank_pct_abs_diff"].max())
+        if "policy_rank_pct_abs_diff" in preds and preds["policy_rank_pct_abs_diff"].notna().any()
+        else None,
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--data-root", type=Path, default=Path("data"))
+    parser.add_argument("--artifact-data-root", type=Path, default=None)
+    parser.add_argument("--run-id", default="20260321_140000")
+    parser.add_argument("--strategy-id", default=None)
+    parser.add_argument(
+        "--sample-source",
+        choices=("oof", "policy_rank_reference"),
+        default="oof",
+        help="Replay OOF rows or exact simple_policy_optimiser policy rank-reference rows.",
+    )
+    parser.add_argument("--market-mode", choices=("spot", "perps"), default="spot")
+    parser.add_argument("--live-quote-currency", default="USDC")
+    parser.add_argument("--sample-rows", type=int, default=12)
+    parser.add_argument(
+        "--samples-per-symbol",
+        type=int,
+        default=0,
+        help="Sample up to this many OOF rows per eligible symbol before optional global --sample-rows cap.",
+    )
+    parser.add_argument(
+        "--warmup-rows",
+        type=int,
+        default=0,
+        help="Skip this many earliest OOF rows per symbol before sampling.",
+    )
+    parser.add_argument("--lookback-hours", type=int, default=24 * 90)
+    parser.add_argument("--max-symbols", type=int, default=0)
+    parser.add_argument("--min-timestamp", default=None)
+    parser.add_argument("--output-dir", type=Path, default=None)
+    parser.add_argument(
+        "--basket-mode",
+        choices=("full", "sample"),
+        default="full",
+        help=(
+            "Use full local/trained basket for exact cross-asset feature parity, "
+            "or only sampled symbols for faster debugging with changed cross-asset values."
+        ),
+    )
+    parser.add_argument(
+        "--skip-predictions",
+        action="store_true",
+        help="Only compare training vs inference feature values; skip model scoring.",
+    )
+    parser.add_argument(
+        "--skip-feature-comparison",
+        action="store_true",
+        help="Skip per-cell feature parity rows; useful after full feature parity is already proven.",
+    )
+    args = parser.parse_args()
+
+    started = time.monotonic()
+    artifact_data_root = args.artifact_data_root or args.data_root
+    tprint(
+        "Starting historical inference parity: "
+        f"run_id={args.run_id} market_mode={args.market_mode} "
+        f"data_root={args.data_root} artifact_data_root={artifact_data_root}"
+    )
+    if args.sample_source == "policy_rank_reference":
+        if not args.strategy_id:
+            raise SystemExit("--strategy-id is required with --sample-source policy_rank_reference")
+        strategy_id = str(args.strategy_id)
+        tprint(f"Resolved strategy={strategy_id} sample_source=policy_rank_reference")
+        samples = _sample_policy_rank_reference_rows(
+            artifact_data_root,
+            args.run_id,
+            strategy_id,
+            sample_rows=args.sample_rows,
+            min_timestamp=args.min_timestamp,
+        )
+    else:
+        meta_path = _meta_oof_path(artifact_data_root, args.run_id, args.strategy_id)
+        strategy_id = _strategy_from_meta_oof_path(meta_path)
+        tprint(f"Resolved strategy={strategy_id} meta_oof={meta_path}")
+        samples = _sample_oof_rows(
+            meta_path,
+            sample_rows=args.sample_rows,
+            samples_per_symbol=args.samples_per_symbol,
+            warmup_rows=args.warmup_rows,
+            min_timestamp=args.min_timestamp,
+        )
+    if samples.empty:
+        raise SystemExit("No OOF rows selected for parity replay.")
+
+    min_ts = pd.Timestamp(samples["timestamp"].min())
+    max_ts = pd.Timestamp(samples["timestamp"].max())
+    sample_symbols = sorted({_normalise_symbol(s) for s in samples["symbol"]})
+    if args.basket_mode == "sample":
+        symbols = sample_symbols
+        tprint(
+            "Using sample-only basket. Cross-asset features can differ from training; "
+            "use this mode only for debugging speed."
+        )
+    else:
+        if args.market_mode == "perps":
+            trained_symbols = load_trained_symbol_universe(str(artifact_data_root), str(args.run_id))
+            symbols = sorted({_normalise_symbol(s) for s in trained_symbols})
+            tprint(
+                "Using trained perp universe for full-basket parity: "
+                f"symbols={len(symbols):,}"
+            )
+        else:
+            symbols = _local_quote_symbols(
+                args.data_root,
+                run_id=args.run_id,
+                live_quote_currency=args.live_quote_currency,
+                market_mode=args.market_mode,
+            )
+        if args.max_symbols and args.max_symbols > 0:
+            extras = [s for s in symbols if s not in sample_symbols]
+            symbols = sorted(set(sample_symbols + extras[: max(0, args.max_symbols - len(sample_symbols))]))
+        if not symbols:
+            symbols = sample_symbols
+    sample_span_hours = int(
+        np.ceil((max_ts - min_ts) / pd.Timedelta(hours=1))
+    )
+    effective_lookback_hours = max(int(args.lookback_hours), sample_span_hours + 1)
+    start_ts = min_ts - pd.Timedelta(hours=int(args.lookback_hours))
+    market_data_root = _historical_market_data_root(args.data_root, args.market_mode)
+    tprint(
+        f"Historical inference parity: strategy={strategy_id} samples={len(samples)} "
+        f"sample_symbols={len(sample_symbols)} basket_symbols={len(symbols)} "
+        f"window={start_ts}..{max_ts} "
+        f"effective_lookback_hours={effective_lookback_hours} basket_mode={args.basket_mode} "
+        f"market_data_root={market_data_root}"
+    )
+    panel_started = time.monotonic()
+    panel = _load_panel(
+        data_root=market_data_root,
+        symbols=symbols,
+        start_ts=start_ts,
+        end_ts=max_ts,
+    )
+    if not panel or "close" not in panel:
+        raise SystemExit("No historical OHLCV panel loaded.")
+    tprint(
+        "Loaded historical panel: "
+        f"fields={len(panel)} close_shape={panel['close'].shape} "
+        f"elapsed={time.monotonic() - panel_started:.1f}s"
+    )
+    _attach_external_kraken_spot_panels(
+        panel,
+        data_root=market_data_root,
+        market_mode=args.market_mode,
+    )
+
+    tprint("Loading trained model state and transform contract")
+    state = load_full_state(args.run_id, str(artifact_data_root))
+    feature_cfg = _build_runtime_cfg(
+        data_root=args.data_root,
+        artifact_data_root=artifact_data_root,
+        run_id=args.run_id,
+        market_mode=args.market_mode,
+        state=state,
+    )
+    required_keys = _feature_columns_for_state(state, strategy_id)
+    tprint(f"Initial required feature contract keys: {len(required_keys):,}")
+    try:
+        mask_rows = _load_lgbm_strategy_mask_rows(
+            str(artifact_data_root),
+            args.run_id,
+            market_mode=args.market_mode,
+        )
+        required_keys |= set(
+            _lgbm_mask_required_feature_keys(
+                _filter_lgbm_mask_rows_for_strategy(mask_rows, strategy_id)
+            )
+        )
+        tprint(f"Required keys after strategy-mask features: {len(required_keys):,}")
+    except Exception:
+        tprint("Strategy-mask feature key load failed; continuing with model feature contract only")
+        pass
+    feature_started = time.monotonic()
+    tprint(
+        "Loading/computing inference features: "
+        f"required_keys={len(required_keys):,} symbols={len(symbols):,} "
+        f"lookback_hours={effective_lookback_hours}"
+    )
+    fresh_feats = load_or_compute_features(
+        panel,
+        list(panel["close"].columns),
+        args.run_id,
+        str(market_data_root),
+        feature_cfg,
+        lookback_hours=effective_lookback_hours,
+        required_feature_keys=required_keys,
+    )
+    tprint(
+        "Inference feature load/compute complete: "
+        f"features={len(fresh_feats):,} elapsed={time.monotonic() - feature_started:.1f}s"
+    )
+    comparable_feature_keys = {
+        key for key in required_keys if not _runtime_only_feature_key(key)
+    }
+    if args.skip_feature_comparison:
+        tprint("Skipping feature value comparison by request")
+        feature_report = pd.DataFrame(
+            columns=[
+                "timestamp",
+                "symbol",
+                "feature",
+                "inference_value",
+                "training_value",
+                "abs_diff",
+                "inference_missing",
+                "training_missing",
+                "both_missing",
+            ]
+        )
+    else:
+        reference_rows = _load_reference_feature_rows(
+            artifact_data_root,
+            args.run_id,
+            samples,
+            comparable_feature_keys,
+        )
+        feature_report = _compare_features(
+            samples,
+            fresh_feats,
+            reference_rows,
+            comparable_feature_keys,
+        )
+    if args.skip_predictions:
+        tprint("Skipping prediction parity by request")
+        prediction_report = pd.DataFrame()
+    else:
+        runtime_cfg = feature_cfg.get("runtime_cfg", feature_cfg)
+        tprint("Initializing ModelOrchestrator for prediction parity")
+        orchestrator = ModelOrchestrator(
+            state,
+            runtime_cfg={"model_bundle": state.get("bundle", {}), **dict(runtime_cfg or {})},
+        )
+        calibration_data = load_calibration_curves(str(artifact_data_root), args.run_id)
+        policy_rank_scores = None
+        if args.sample_source == "policy_rank_reference":
+            ref_path = _policy_rank_reference_path(artifact_data_root, args.run_id, strategy_id)
+            ref = pd.read_parquet(ref_path, columns=["calibrated_score"])
+            policy_rank_scores = pd.to_numeric(
+                ref["calibrated_score"], errors="coerce"
+            ).to_numpy(dtype=np.float64)
+        prediction_report = _score_predictions(
+            samples,
+            fresh_feats,
+            orchestrator,
+            strategy_id,
+            calibration_data=calibration_data,
+            policy_rank_scores=policy_rank_scores,
+            prediction_universe_symbols=symbols if args.basket_mode == "full" else None,
+        )
+    summary = _summary(feature_report, prediction_report)
+    out_dir = args.output_dir or (
+        artifact_data_root / "artifacts" / args.run_id / "historical_inference_parity"
+    )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    feature_report.to_csv(out_dir / "feature_parity.csv", index=False)
+    prediction_report.to_csv(out_dir / "prediction_parity.csv", index=False)
+    (out_dir / "summary.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True, default=str) + "\n",
+        encoding="utf-8",
+    )
+    tprint(json.dumps(summary, indent=2, sort_keys=True, default=str))
+    tprint(f"Wrote {out_dir}")
+    tprint(f"Historical inference parity complete: elapsed={time.monotonic() - started:.1f}s")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

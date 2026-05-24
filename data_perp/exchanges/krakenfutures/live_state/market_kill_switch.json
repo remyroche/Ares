@@ -1,16 +1,18 @@
 {
   "active": false,
   "details": {
-    "btc_1h_move": 0.15897715091705322,
-    "btc_4h_move": 0.15712547302246094,
-    "eth_1h_move": 0.061690449714660645,
-    "eth_4h_move": 0.05813562870025635
+    "btc_1h_move": 0.149682879447937,
+    "btc_4h_move": 0.14908552169799805,
+    "eth_1h_move": 0.03443408012390137,
+    "eth_4h_move": 0.03463542461395264,
+    "market_avg_1h_abs_move": 0.22102524960493164,
+    "market_avg_4h_abs_move": 0.22313468183827506
   },
-  "halt_until": "2026-05-17T09:30:00+00:00",
+  "halt_until": "2026-05-22T18:30:00+00:00",
   "manual_reset_required": false,
-  "reason": "BTC_1H_MOVE_GT_7PCT",
-  "recovered_at": "2026-05-16T21:45:00+00:00",
-  "recovery_reason": "deprecated_market_kill_switch_reason",
+  "recovered_at": "2026-05-22T07:42:00+00:00",
+  "recovery_reason": "manual_clear_after_verified_current_market_metrics_normal",
+  "reason": "MARKET_AVG_1H_MOVE_GT_5PCT",
   "self_reversible": true,
-  "triggered_at": "2026-05-16T21:30:00+00:00"
+  "triggered_at": "2026-05-22T06:30:00+00:00"
 }

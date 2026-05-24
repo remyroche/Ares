@@ -33,6 +33,8 @@ from extreme_price_movements.inference.feature_generator import (  # noqa: E402
 from extreme_price_movements.inference.config import load_inference_config  # noqa: E402
 from extreme_price_movements.inference.model_orchestrator import (  # noqa: E402
     ModelOrchestrator,
+    _effective_alpha_feature_contract,
+    _effective_selected_feature_contract,
     _alpha_prediction_frame_for_model,
     _extract_ebm_contract_model,
     _synthetic_ebm_raw_features,
@@ -42,6 +44,9 @@ from extreme_price_movements.model_loader import load_full_state  # noqa: E402
 from extreme_price_movements.inference.run_inference import (  # noqa: E402
     _lgbm_mask_required_feature_keys,
     _load_lgbm_strategy_mask_rows,
+)
+from extreme_price_movements.inference.training_live_parity_contract import (  # noqa: E402
+    load_training_live_parity_contract,
 )
 from scripts.replay_live_signal_predictions import (  # noqa: E402
     _live_feature_cache_symbols_for_end,
@@ -224,10 +229,54 @@ def _alpha_input(orchestrator: ModelOrchestrator, feature_row: pd.DataFrame, sid
     if not isinstance(model_info, dict):
         return None, pd.DataFrame(), []
     model = model_info.get("model")
-    feat_cols = [str(c) for c in (model_info.get("feat_cols", []) or [])]
+    feat_cols = _alpha_contract_columns(model_info)
     X = orchestrator._align_alpha_feature_contract(feature_row, feat_cols)
     X = _alpha_prediction_frame_for_model(model, X, feat_cols)
     return model, X, feat_cols
+
+
+def _alpha_contract_columns(model_info: dict[str, Any] | None) -> list[str]:
+    if not isinstance(model_info, dict):
+        return []
+    cols = _effective_alpha_feature_contract(model_info)
+    if not cols:
+        cols = [str(c) for c in (model_info.get("feat_cols", []) or [])]
+    return [str(c) for c in cols]
+
+
+def _meta_contract_columns(model: Any) -> list[str]:
+    cols = _effective_selected_feature_contract(model)
+    if not cols and model is not None and hasattr(model, "feature_columns"):
+        cols = [str(c) for c in (getattr(model, "feature_columns", []) or [])]
+    return [str(c) for c in cols]
+
+
+def _model_contract_columns(
+    orchestrator: ModelOrchestrator,
+    *,
+    side: str,
+    model_strategy_id: str,
+) -> tuple[list[str], list[str], str]:
+    alpha_info = orchestrator.alpha_by_strategy.get(model_strategy_id) or orchestrator.alpha_by_strategy.get(
+        f"{side}_{model_strategy_id}"
+    )
+    alpha_cols = _alpha_contract_columns(alpha_info if isinstance(alpha_info, dict) else None)
+    selected = str(model_strategy_id)
+    core = strategy_core_id(selected)
+    meta_candidates = [
+        selected,
+        f"{selected}_clf",
+        f"{selected}_tbm_clf",
+        f"{side}_{core}",
+        f"{side}_{core}_clf",
+        f"{side}_{core}_tbm_clf",
+        core,
+        f"{core}_clf",
+        f"{core}_tbm_clf",
+    ]
+    meta_key = next((cand for cand in meta_candidates if cand in orchestrator.meta_models), meta_candidates[0])
+    meta_cols = _meta_contract_columns(orchestrator.meta_models.get(meta_key))
+    return alpha_cols, meta_cols, meta_key
 
 
 def _meta_input(orchestrator: ModelOrchestrator, feature_row: pd.DataFrame, side: str, model_strategy_id: str, base_pred: float) -> tuple[Any, pd.DataFrame, list[str], str]:
@@ -248,7 +297,7 @@ def _meta_input(orchestrator: ModelOrchestrator, feature_row: pd.DataFrame, side
     model = orchestrator.meta_models.get(key)
     if model is None:
         return None, pd.DataFrame(), [], key
-    feat_cols = [str(c) for c in (getattr(model, "feature_columns", []) or [])]
+    feat_cols = _meta_contract_columns(model)
     meta = feature_row.copy()
     # Mirror run_full_chain's base-pred injection for the selected strategy.
     meta[model_strategy_id] = float(base_pred)
@@ -507,16 +556,27 @@ def main() -> int:
     panel_end_ts = ts
 
     state = load_full_state(args.run_id, str(args.data_root))
-    required_keys = raw_required_feature_keys(
-        set(get_inference_required_feature_keys(state, None))
+    orchestrator = ModelOrchestrator(state, runtime_cfg={"model_bundle": state.get("bundle", {})})
+    alpha_contract_cols, meta_contract_cols, expected_meta_key = _model_contract_columns(
+        orchestrator,
+        side=side,
+        model_strategy_id=model_strategy_id,
     )
+    contract_required_keys = (
+        set(get_inference_required_feature_keys(state, None))
+        | set(alpha_contract_cols)
+        | set(meta_contract_cols)
+    )
+    required_keys = raw_required_feature_keys(contract_required_keys)
     try:
         mask_rows = _load_lgbm_strategy_mask_rows(
             str(args.data_root),
             args.run_id,
             market_mode=market_mode,
         )
-        required_keys |= set(_lgbm_mask_required_feature_keys(mask_rows))
+        required_keys |= raw_required_feature_keys(
+            set(_lgbm_mask_required_feature_keys(mask_rows))
+        )
     except Exception:
         pass
     summary_symbols = live_summary.get("feature_universe_symbols")
@@ -646,7 +706,6 @@ def main() -> int:
         features_mod.CausalFeatureTransformer = old_transform
 
     feature_row = get_features_for_candidates(post_feats, [symbol], ts=ts)
-    orchestrator = ModelOrchestrator(state, runtime_cfg={"model_bundle": state.get("bundle", {})})
     alpha_model, alpha_X, alpha_feat_cols = _alpha_input(orchestrator, feature_row, side, model_strategy_id)
     alpha_pred = float("nan")
     if alpha_model is not None and not alpha_X.empty:
@@ -739,6 +798,30 @@ def main() -> int:
             print(f"WARNING: meta tree-layer reconstruction failed: {exc}", file=sys.stderr)
     tree_cmp = pd.concat(tree_frames, ignore_index=True) if tree_frames else pd.DataFrame()
     live_replay_layers = _live_replay_layer_comparison(tree_cmp, live_debug_dir)
+    parity_contract = load_training_live_parity_contract(
+        data_root=str(args.data_root),
+        run_id=args.run_id,
+        require=False,
+    )
+    feature_delta_rows = int(
+        pd.to_numeric(feature_cmp["abs_snapshot_post_delta"], errors="coerce")
+        .fillna(0.0)
+        .gt(float(args.atol))
+        .sum()
+    )
+    live_replay_delta_rows = (
+        int(
+            pd.to_numeric(
+                live_replay_layers.get("abs_delta", pd.Series(dtype=float)),
+                errors="coerce",
+            )
+            .fillna(0.0)
+            .gt(float(args.atol))
+            .sum()
+        )
+        if not live_replay_layers.empty
+        else 0
+    )
 
     out_dir = args.output_dir or (
         args.data_root / "artifacts" / args.run_id / "live_feature_layer_compare"
@@ -761,6 +844,10 @@ def main() -> int:
         "live_data_root": str(live_data_root),
         "replay_feature_universe_n": int(len(symbols)),
         "replay_feature_universe_source": replay_feature_universe_source,
+        "required_feature_keys_n": int(len(required_keys)),
+        "alpha_contract_features_n": int(len(alpha_contract_cols)),
+        "meta_contract_features_n": int(len(meta_contract_cols)),
+        "expected_meta_model_key": expected_meta_key,
         "live_meta_pred": _safe_float(row.get("live_meta_pred", row.get("raw_prediction_score"))),
         "live_debug_alpha_input_pred": live_debug_alpha_input_pred,
         "live_debug_meta_input_pred": live_debug_meta_input_pred,
@@ -788,21 +875,11 @@ def main() -> int:
         "pre_transform_features": int(len(pre_feats)),
         "post_transform_features": int(len(post_feats)),
         "feature_compare_rows": int(len(feature_cmp)),
-        "snapshot_post_delta_nonzero_rows": int(
-            pd.to_numeric(feature_cmp["abs_snapshot_post_delta"], errors="coerce")
-            .fillna(0.0)
-            .gt(1e-9)
-            .sum()
-        ),
+        "snapshot_post_delta_gt_atol_rows": feature_delta_rows,
         "alpha_lgbm_tree_feature_rows": int((tree_cmp.get("layer", pd.Series(dtype=str)).astype(str) == "alpha_lgbm_tree").sum()) if not tree_cmp.empty else 0,
         "meta_lgbm_tree_feature_rows": int((tree_cmp.get("layer", pd.Series(dtype=str)).astype(str) == "meta_lgbm_tree").sum()) if not tree_cmp.empty else 0,
         "live_replay_layer_compare_rows": int(len(live_replay_layers)),
-        "live_replay_layer_delta_nonzero_rows": int(
-            pd.to_numeric(live_replay_layers.get("abs_delta", pd.Series(dtype=float)), errors="coerce")
-            .fillna(0.0)
-            .gt(1e-9)
-            .sum()
-        ) if not live_replay_layers.empty else 0,
+        "live_replay_layer_delta_gt_atol_rows": live_replay_delta_rows,
         "live_replay_layer_live_missing_rows": int(
             live_replay_layers.get("live_missing", pd.Series(dtype=bool)).fillna(False).sum()
         ) if not live_replay_layers.empty else 0,
@@ -813,6 +890,34 @@ def main() -> int:
             pd.to_numeric(live_replay_layers.get("abs_delta", pd.Series(dtype=float)), errors="coerce").max()
         ) if not live_replay_layers.empty else float("nan"),
         "meta_model_key": meta_key,
+        "training_live_parity_contract": {
+            "path": parity_contract.get("_contract_path"),
+            "sha256": parity_contract.get("_contract_sha256"),
+            "schema_version": parity_contract.get("schema_version"),
+            "strategy_contract": parity_contract.get("strategy_contract") or {},
+            "artifact_hashes": parity_contract.get("artifact_hashes") or {},
+        },
+        "parity_pass": bool(
+            feature_delta_rows == 0
+            and live_replay_delta_rows == 0
+            and (
+                not np.isfinite(live_debug_alpha_input_pred)
+                or not np.isfinite(_safe_float(row.get("base_pred")))
+                or abs(live_debug_alpha_input_pred - _safe_float(row.get("base_pred")))
+                <= float(args.atol)
+            )
+            and (
+                not np.isfinite(live_debug_meta_input_pred)
+                or not np.isfinite(
+                    _safe_float(row.get("live_meta_pred", row.get("raw_prediction_score")))
+                )
+                or abs(
+                    live_debug_meta_input_pred
+                    - _safe_float(row.get("live_meta_pred", row.get("raw_prediction_score")))
+                )
+                <= float(args.atol)
+            )
+        ),
         "outputs": {
             "features": str(out_dir / "feature_pre_post_snapshot_comparison.csv"),
             "lgbm_tree": str(out_dir / "lgbm_leaf_value_features.csv"),

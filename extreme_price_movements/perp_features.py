@@ -21,15 +21,29 @@ def _safe_div(numer: pd.Series, denom: pd.Series, eps: float = 1e-12) -> pd.Seri
 
 def _rolling_zscore(x: pd.Series, window: int, min_periods: Optional[int] = None) -> pd.Series:
     if min_periods is None:
-        min_periods = max(5, window // 5)
+        min_periods = min(window, max(5, 24 * 30 if window >= 24 * 30 else window // 5))
     m = x.rolling(window, min_periods=min_periods).mean()
     s = x.rolling(window, min_periods=min_periods).std(ddof=0)
     return _safe_div(x - m, s)
 
 
+def _rolling_robust_zscore(
+    x: pd.Series,
+    window: int,
+    min_periods: Optional[int] = None,
+) -> pd.Series:
+    if min_periods is None:
+        min_periods = min(window, max(24 * 7, window // 4))
+    median = x.rolling(window, min_periods=min_periods).median()
+    q75 = x.rolling(window, min_periods=min_periods).quantile(0.75)
+    q25 = x.rolling(window, min_periods=min_periods).quantile(0.25)
+    iqr = (q75 - q25).replace(0.0, np.nan)
+    return _safe_div(x - median, iqr)
+
+
 def _rolling_rank_pct(x: pd.Series, window: int, min_periods: Optional[int] = None) -> pd.Series:
     if min_periods is None:
-        min_periods = max(20, window // 2)
+        min_periods = min(window, max(20, 24 * 30 if window >= 24 * 30 else window // 2))
 
     def _rank_last(a: np.ndarray) -> float:
         last = a[-1]
@@ -41,11 +55,18 @@ def _rolling_rank_pct(x: pd.Series, window: int, min_periods: Optional[int] = No
 def get_perp_feature_names(horizons: Iterable[int] = HORIZONS) -> list[str]:
     out = [
         "basis",
+        "basis_frac",
         "basis_pct",
+        "basis_frac_z_14d",
+        "basis_frac_rank_30d",
         "ret1h",
         "mom_slow",
+        "funding_per_hour",
         "funding_z",
+        "funding_rank_30d",
         "oi_z",
+        "oi_value_log_1d_robust_z",
+        "oi_value_log_7d_robust_z",
         "basis_pct_z",
         "oi_rank",
         "funding_abs_z",
@@ -60,6 +81,8 @@ def get_perp_feature_names(horizons: Iterable[int] = HORIZONS) -> list[str]:
             [
                 f"funding_mom_{h}h",
                 f"oi_chg_{h}h",
+                f"oi_chg_z_{h}h",
+                f"oi_chg_{h}h_robust_z",
                 f"oi_vel_{h}h",
                 f"oi_rel_vol_{h}h",
                 f"basis_mom_{h}h",
@@ -76,7 +99,9 @@ def get_perp_feature_names(horizons: Iterable[int] = HORIZONS) -> list[str]:
             "oi_chg_w",
             "basis_mom_w",
             "leverage_build",
+            "leverage_build_score",
             "unwind",
+            "unwind_score",
             "mom_slow_z",
             "squeeze_prob",
             "basis_funding_div",
@@ -136,19 +161,55 @@ def compute_features(
     idx = df.index
     out = pd.DataFrame(index=idx)
 
-    funding = df["funding_rate"].astype(float)
-    oi = df["open_interest"].astype(float).where(lambda s: s > 0.0)
+    funding = (
+        df["funding_rate"]
+        .astype(float)
+        .replace([np.inf, -np.inf], np.nan)
+        .ffill()
+    )
     perp = df["perp_price"].astype(float)
     spot = df["spot_price"].astype(float)
+    mark = (
+        df["mark_price"].astype(float)
+        if "mark_price" in df.columns
+        else pd.Series(np.nan, index=idx)
+    )
+    contract_size = (
+        df["contract_size"].astype(float)
+        if "contract_size" in df.columns
+        else pd.Series(1.0, index=idx)
+    )
+    oi_native = (
+        df["open_interest"]
+        .astype(float)
+        .replace([np.inf, -np.inf], np.nan)
+        .where(lambda s: s > 0.0)
+        .ffill()
+    )
+    oi = (
+        df["open_interest_quote"]
+        .astype(float)
+        .replace([np.inf, -np.inf], np.nan)
+        .where(lambda s: s > 0.0)
+        .ffill()
+        if "open_interest_quote" in df.columns
+        else (oi_native * contract_size * mark)
+    ).replace([np.inf, -np.inf], np.nan).where(lambda s: s > 0.0)
     vol = df["volume"].astype(float)
     close = df["close"].astype(float) if "close" in df.columns else perp
-    quote_volume = (vol * perp).replace([np.inf, -np.inf], np.nan).where(lambda s: s > 0.0)
+    quote_volume = (
+        df["quote_volume"].astype(float)
+        if "quote_volume" in df.columns
+        else (vol * perp)
+    ).replace([np.inf, -np.inf], np.nan).where(lambda s: s > 0.0)
 
-    basis = perp - spot
-    basis_pct = _safe_div(basis, spot)
+    basis_pct = (perp / spot.replace(0.0, np.nan)) - 1.0
 
-    out["basis"] = basis
+    out["basis"] = basis_pct
+    out["basis_frac"] = basis_pct
     out["basis_pct"] = basis_pct
+    out["basis_frac_z_14d"] = _rolling_zscore(basis_pct, z_window_hours)
+    out["basis_frac_rank_30d"] = _rolling_rank_pct(basis_pct, 24 * 30)
 
     logp = np.log(close.replace(0, np.nan))
     ret1h = logp.diff(1)
@@ -159,16 +220,28 @@ def compute_features(
     mom_slow = mom_short - mom_long
     out["mom_slow"] = mom_slow
 
+    out["funding_per_hour"] = funding
     out["funding_z"] = _rolling_zscore(funding, z_window_hours)
+    out["funding_rank_30d"] = _rolling_rank_pct(funding, 24 * 30)
     log_oi = np.log(oi.replace(0, np.nan))
     out["oi_z"] = _rolling_zscore(log_oi, z_window_hours)
+    out["oi_value_log_1d_robust_z"] = _rolling_robust_zscore(
+        log_oi.rolling(24, min_periods=1).mean(),
+        24 * 30,
+        min_periods=24 * 7,
+    ).clip(-10.0, 10.0)
+    out["oi_value_log_7d_robust_z"] = _rolling_robust_zscore(
+        log_oi.rolling(24 * 7, min_periods=1).mean(),
+        24 * 30,
+        min_periods=24 * 7,
+    ).clip(-10.0, 10.0)
     out["basis_pct_z"] = _rolling_zscore(basis_pct, z_window_hours)
 
     out["oi_rank"] = _rolling_rank_pct(log_oi, z_window_hours)
     out["funding_abs_z"] = out["funding_z"].abs()
     out["basis_stretch"] = out["basis_pct_z"].abs()
 
-    out["funding_persistence"] = (funding > 0).astype(float).rolling(
+    out["funding_persistence"] = (out["funding_z"] > 0).astype(float).rolling(
         persistence_window_hours, min_periods=max(24, persistence_window_hours // 7)
     ).mean()
 
@@ -192,10 +265,16 @@ def compute_features(
         out[f"_basis_delta_{h}h"] = basis_delta
 
         out[f"funding_mom_{h}h"] = _rolling_zscore(funding_delta, z_window_hours)
-        out[f"oi_chg_{h}h"] = oi_log_delta
-        out[f"oi_vel_{h}h"] = oi_log_delta / float(h)
+        out[f"oi_chg_{h}h"] = _rolling_zscore(oi_log_delta, z_window_hours)
+        out[f"oi_chg_z_{h}h"] = out[f"oi_chg_{h}h"]
+        out[f"oi_chg_{h}h_robust_z"] = _rolling_robust_zscore(
+            oi_log_delta,
+            24 * 30,
+            min_periods=24 * 7,
+        ).clip(-10.0, 10.0)
+        out[f"oi_vel_{h}h"] = _rolling_zscore(oi_log_delta / float(h), z_window_hours)
 
-        quote_volume_sum_h = quote_volume.rolling(h, min_periods=max(1, h)).sum()
+        quote_volume_sum_h = quote_volume.fillna(0.0).rolling(h, min_periods=1).sum()
         oi_notional_delta = oi.diff(h)
         out[f"oi_rel_vol_{h}h"] = _safe_div(oi_notional_delta, quote_volume_sum_h).clip(
             -25.0, 25.0
@@ -223,28 +302,8 @@ def compute_features(
     oi_delta_w = _wavg(tuple(f"_oi_log_delta_{h}h" for h in horizons))
     basis_delta_w = _wavg(tuple(f"_basis_delta_{h}h" for h in horizons))
     out["funding_mom_w"] = _rolling_zscore(pd.Series(funding_delta_w, index=idx), z_window_hours)
-    out["oi_chg_w"] = pd.Series(oi_delta_w, index=idx)
+    out["oi_chg_w"] = _rolling_zscore(pd.Series(oi_delta_w, index=idx), z_window_hours)
     out["basis_mom_w"] = _rolling_zscore(pd.Series(basis_delta_w, index=idx), z_window_hours)
-
-    out["leverage_build"] = (
-        (out["oi_up_agree"] >= 2 / 3)
-        & (out["funding_up_agree"] >= 2 / 3)
-        & (out["basis_up_agree"] >= 2 / 3)
-            & (out["oi_chg_w"] > 0)
-            & (pd.Series(funding_delta_w, index=idx) > 0)
-            & (pd.Series(basis_delta_w, index=idx) > 0)
-    ).astype(int)
-
-    funding_extreme_z = 1.5
-    basis_stretch_z = 1.5
-
-    out["unwind"] = (
-        (out["oi_chg_w"] < 0)
-        & (pd.concat([(out[f"_oi_log_delta_{h}h"] < 0).astype(float) for h in horizons], axis=1).mean(axis=1) >= 2 / 3)
-        & (out["funding_abs_z"] > funding_extreme_z)
-        & (pd.Series(basis_delta_w, index=idx) < 0)
-        & (out["basis_stretch"] > basis_stretch_z)
-    ).astype(int)
 
     mom_slow_z = _rolling_zscore(out["mom_slow"], z_window_hours)
     out["mom_slow_z"] = mom_slow_z
@@ -252,10 +311,27 @@ def compute_features(
     def sigmoid(x: pd.Series) -> pd.Series:
         return 1.0 / (1.0 + np.exp(-x))
 
-    k = 1.5
+    oi_soft = sigmoid(out["oi_chg_w"])
+    funding_soft = sigmoid(out["funding_mom_w"])
+    basis_soft = sigmoid(out["basis_mom_w"])
+    leverage_components = pd.concat(
+        [oi_soft, funding_soft, basis_soft],
+        axis=1,
+    )
+    out["leverage_build"] = (
+        leverage_components.mean(axis=1, skipna=True)
+        .where(out["oi_chg_w"].notna())
+        .clip(0, 1)
+    )
+    out["leverage_build_score"] = out["leverage_build"]
+    out["unwind"] = (
+        sigmoid(-out["oi_chg_w"]) * sigmoid(out["funding_abs_z"]) * sigmoid(-out["basis_mom_w"])
+    ).clip(0, 1)
+    out["unwind_score"] = out["unwind"]
+
     oi_high = out["oi_rank"].clip(0, 1)
-    funding_ext = sigmoid(out["funding_abs_z"] - k)
-    basis_ext = sigmoid(out["basis_stretch"] - k)
+    funding_ext = out["funding_rank_30d"].sub(0.5).abs().mul(2.0).clip(0, 1)
+    basis_ext = out["basis_frac_rank_30d"].sub(0.5).abs().mul(2.0).clip(0, 1)
     mom_slowing = sigmoid(-mom_slow_z)
 
     squeeze_score = (oi_high * funding_ext * basis_ext * mom_slowing).pow(0.5)

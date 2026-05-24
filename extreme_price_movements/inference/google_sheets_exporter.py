@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import time
+from datetime import date, datetime
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Optional
 
@@ -200,6 +201,27 @@ def _elapsed_hours(start: Any, end: Any) -> float:
     return float((end_ts - start_ts).total_seconds() / 3600.0)
 
 
+def _sheet_json_safe(value: Any) -> Any:
+    """Return values that Apps Script JSON transport can serialize exactly once."""
+    if value is None:
+        return ""
+    if isinstance(value, pd.Timestamp):
+        return "" if pd.isna(value) else value.isoformat()
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, np.generic):
+        return _sheet_json_safe(value.item())
+    if isinstance(value, float):
+        return value if np.isfinite(value) else ""
+    if isinstance(value, (list, tuple)):
+        return [_sheet_json_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _sheet_json_safe(item) for key, item in value.items()}
+    if pd.isna(value):
+        return ""
+    return value
+
+
 def _stringify_frame(df: pd.DataFrame) -> list[list[Any]]:
     if df is None:
         return [[]]
@@ -211,7 +233,10 @@ def _stringify_frame(df: pd.DataFrame) -> list[list[Any]]:
             clean[col] = clean[col].dt.strftime("%Y-%m-%d %H:%M:%S%z")
     clean = clean.replace([np.inf, -np.inf], np.nan)
     clean = clean.where(pd.notna(clean), "")
-    return [list(clean.columns)] + clean.astype(object).values.tolist()
+    rows = clean.astype(object).values.tolist()
+    return [list(clean.columns)] + [
+        [_sheet_json_safe(value) for value in row] for row in rows
+    ]
 
 
 def _is_entry_row(df: pd.DataFrame) -> pd.Series:

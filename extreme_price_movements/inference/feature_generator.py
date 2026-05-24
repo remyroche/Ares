@@ -59,7 +59,7 @@ DEFAULT_GATE_TREND_THR = 0.0
 DEFAULT_CAUSAL_TRANSFORM_ROLL_WINDOW_HOURS = 24 * 30
 DEFAULT_IDENTITY_EWMA_WARMUP_HOURS = 24 * 60 * 5
 DEFAULT_TAIL_WARMUP_BUFFER_HOURS = 72
-LIVE_FEATURE_CACHE_VERSION = 12
+LIVE_FEATURE_CACHE_VERSION = 13
 _LIVE_FEATURE_MEMORY_CACHE: Dict[str, Dict[str, Any]] = {}
 _TRAINING_FEATURE_VARIATION_CACHE: Dict[tuple[str, str], Dict[str, bool]] = {}
 MODEL_DERIVED_FEATURE_RE = re.compile(
@@ -486,6 +486,8 @@ def _write_live_feature_snapshot(
     run_id: str,
     cache_key: str,
     feats: Dict[str, pd.DataFrame],
+    raw_panel: Optional[Dict[str, pd.DataFrame]] = None,
+    raw_start_ts: Optional[pd.Timestamp] = None,
     symbols: List[str],
     end_ts: pd.Timestamp,
     required_feature_keys: Set[str],
@@ -502,6 +504,43 @@ def _write_live_feature_snapshot(
         data_path = cache_dir / "latest.parquet"
         matrix.to_parquet(tmp_data)
         tmp_data.replace(data_path)
+        raw_panel_fields: List[str] = []
+        raw_panel_rows = 0
+        if bool(cfg.get("live_feature_snapshot_raw_panel_enabled", True)) and raw_panel:
+            raw_matrix_parts: List[pd.DataFrame] = []
+            for field, frame in raw_panel.items():
+                if not isinstance(frame, pd.DataFrame) or frame.empty:
+                    continue
+                cols = [sym for sym in symbols if sym in frame.columns]
+                if not cols:
+                    continue
+                field_frame = frame.loc[:, cols].copy()
+                field_frame.index = pd.to_datetime(
+                    field_frame.index, utc=True, errors="coerce"
+                )
+                field_frame = field_frame[~pd.isna(field_frame.index)]
+                if field_frame.empty:
+                    continue
+                if raw_start_ts is not None:
+                    field_frame = field_frame[
+                        field_frame.index >= pd.Timestamp(raw_start_ts)
+                    ]
+                field_frame = field_frame[field_frame.index <= pd.Timestamp(end_ts)]
+                field_frame = field_frame.sort_index()
+                if field_frame.empty:
+                    continue
+                field_frame = field_frame.stack(dropna=False).rename(str(field))
+                raw_matrix_parts.append(field_frame.to_frame())
+                raw_panel_fields.append(str(field))
+            if raw_matrix_parts:
+                raw_matrix = pd.concat(raw_matrix_parts, axis=1).sort_index()
+                raw_matrix.index = raw_matrix.index.set_names(["timestamp", "symbol"])
+                raw_matrix = raw_matrix[~raw_matrix.index.duplicated(keep="last")]
+                raw_panel_rows = int(len(raw_matrix.index))
+                tmp_raw = cache_dir / "raw_panel.tmp.parquet"
+                raw_path = cache_dir / "raw_panel.parquet"
+                raw_matrix.to_parquet(tmp_raw)
+                tmp_raw.replace(raw_path)
         meta = {
             "version": LIVE_FEATURE_CACHE_VERSION,
             "cache_key": cache_key,
@@ -512,6 +551,12 @@ def _write_live_feature_snapshot(
             "end_ts": pd.Timestamp(end_ts).isoformat(),
             "features": list(matrix.columns),
             "symbols": list(matrix.index),
+            "raw_panel_path": "raw_panel.parquet" if raw_panel_rows else None,
+            "raw_panel_fields": raw_panel_fields,
+            "raw_panel_rows": raw_panel_rows,
+            "raw_panel_start_ts": (
+                None if raw_start_ts is None else pd.Timestamp(raw_start_ts).isoformat()
+            ),
         }
         tmp_meta = cache_dir / "meta.tmp.json"
         tmp_meta.write_text(json.dumps(meta))
@@ -529,6 +574,20 @@ def is_model_derived_feature_key(key: str) -> bool:
     return bool(isinstance(key, str) and MODEL_DERIVED_FEATURE_RE.match(key))
 
 
+DELETED_INFERENCE_FEATURE_KEYS: Set[str] = {
+    "p_exh_lag1",
+    "retest_accept",
+    "vol_price_diverge",
+    "vortex_diff_14",
+    "vortex_diff_21",
+    "vortex_diff_34",
+    "z_breakout_dn_24",
+    "z_breakout_up_24",
+    "z_slope_change_24",
+    "z_sm_momentum_24",
+}
+
+
 def raw_required_feature_keys(
     required_feature_keys: Optional[Iterable[str]],
 ) -> Set[str]:
@@ -536,7 +595,9 @@ def raw_required_feature_keys(
     return {
         str(key)
         for key in (required_feature_keys or set())
-        if str(key) and not is_model_derived_feature_key(str(key))
+        if str(key)
+        and str(key) not in DELETED_INFERENCE_FEATURE_KEYS
+        and not is_model_derived_feature_key(str(key))
     }
 
 
@@ -545,6 +606,12 @@ def _raw_feature_compute_cfg(cfg: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     out = dict(cfg or {})
     if out.get("feature_transform_contract") is not None:
         out["feature_transform_contract_raw_mode"] = True
+    # Live inference must reproduce the saved model contract. Current config
+    # portability policy may be stricter than the artifact that was trained and
+    # deployed; strict source-panel and final-matrix gates below still reject
+    # genuinely unavailable, non-finite, or missing model inputs.
+    out["feature_portability_mode"] = "legacy"
+    out["feature_portability_strict"] = False
     return out
 
 
@@ -656,6 +723,40 @@ def _merge_feature_dicts(
             merged[key] = left
         elif isinstance(right, pd.DataFrame):
             merged[key] = right
+    return merged
+
+
+def _merge_feature_dicts_preserve_cached(
+    cached_feats: Dict[str, pd.DataFrame],
+    new_feats: Dict[str, pd.DataFrame],
+) -> Dict[str, pd.DataFrame]:
+    """Merge feature dictionaries while preserving cached training values."""
+    merged: Dict[str, pd.DataFrame] = {}
+    all_keys = sorted(set(cached_feats.keys()) | set(new_feats.keys()))
+    for key in all_keys:
+        left = cached_feats.get(key)
+        right = new_feats.get(key)
+        if isinstance(left, pd.DataFrame) and isinstance(right, pd.DataFrame):
+            df = left.combine_first(right).sort_index()
+            merged[key] = df
+        elif isinstance(left, pd.DataFrame):
+            merged[key] = left
+        elif isinstance(right, pd.DataFrame):
+            merged[key] = right
+    return merged
+
+
+def _merge_missing_feature_dicts(
+    cached_feats: Dict[str, pd.DataFrame],
+    new_feats: Dict[str, pd.DataFrame],
+) -> Dict[str, pd.DataFrame]:
+    """Merge feature dictionaries without replacing already-cached feature keys."""
+    if not new_feats:
+        return dict(cached_feats or {})
+    merged = dict(cached_feats or {})
+    for key, value in new_feats.items():
+        if key not in merged:
+            merged[key] = value
     return merged
 
 
@@ -889,7 +990,7 @@ def _backfill_missing_requested_keys(
     if not compute_panel:
         return merged_feats
 
-    local_cfg = dict(cfg or {})
+    local_cfg = _raw_feature_compute_cfg(cfg)
     if _requires_gated_feature_generation(compute_missing_keys):
         local_cfg["enable_gated_features"] = True
 
@@ -966,14 +1067,30 @@ def load_cached_features_for_inference(
     run_id: str,
     data_root: str,
     symbols: List[str],
+    feature_keys: Optional[Set[str]] = None,
     start_ts: Optional[pd.Timestamp] = None,
     end_ts: Optional[pd.Timestamp] = None,
 ) -> Dict[str, pd.DataFrame]:
     ts = pd.to_datetime(run_id, format="%Y%m%d_%H%M%S", utc=True)
-    feats = load_features_selected(ts, data_root, symbols=symbols)
-    if not isinstance(feats, dict):
+    # load_features_selected uses half-open parquet pushdown filters. Live and
+    # historical inference callers treat end_ts as inclusive, so pad the query
+    # boundary and keep the explicit inclusive slice below.
+    query_end_ts = (
+        pd.Timestamp(end_ts) + pd.Timedelta(microseconds=1)
+        if end_ts is not None
+        else None
+    )
+    feats = load_features_selected(
+        ts,
+        data_root,
+        feature_keys=sorted(feature_keys) if feature_keys else None,
+        symbols=symbols,
+        start_ts=start_ts,
+        end_ts=query_end_ts,
+    )
+    if not hasattr(feats, "items"):
         return {}
-    return _slice_feature_window(feats, start_ts=start_ts, end_ts=end_ts)
+    return _slice_feature_window(dict(feats), start_ts=start_ts, end_ts=end_ts)
 
 
 def load_or_compute_features(
@@ -1089,11 +1206,13 @@ def load_or_compute_features(
                 "Using in-memory live feature history as tail base: "
                 f"features={len(cached_feats)}"
             )
-    if not cached_feats:
+    offline_feature_data_root = str(cfg.get("offline_feature_data_root") or data_root)
+    if not cached_feats and bool(cfg.get("live_feature_offline_cache_enabled", True)):
         cached_feats = load_cached_features_for_inference(
             run_id=run_id,
-            data_root=data_root,
+            data_root=offline_feature_data_root,
             symbols=basket_syms,
+            feature_keys=required_feature_keys,
             start_ts=start_ts,
             end_ts=end_ts,
         )
@@ -1133,7 +1252,7 @@ def load_or_compute_features(
         tprint(
             f"Loaded stored inference features for {len(basket_syms)} symbols through {cached_last_ts}"
         )
-        merged = _merge_feature_dicts(cached_feats, selector_feats)
+        merged = _merge_missing_feature_dicts(cached_feats, selector_feats)
         merged = _drop_stale_live_sensitive_features(
             merged,
             end_ts=end_ts,
@@ -1168,6 +1287,8 @@ def load_or_compute_features(
             run_id=run_id,
             cache_key=cache_key,
             feats=merged,
+            raw_panel=panel,
+            raw_start_ts=start_ts,
             symbols=basket_syms,
             end_ts=end_ts,
             required_feature_keys=required_feature_keys,
@@ -1251,14 +1372,21 @@ def load_or_compute_features(
             if isinstance(df, pd.DataFrame) and not df.empty
         }
 
-    merged_feats = _merge_feature_dicts(cached_feats, full_tail_feats)
-    merged_feats = _merge_feature_dicts(merged_feats, selector_feats)
-    merged_feats = _slice_feature_window(merged_feats, start_ts=start_ts, end_ts=end_ts)
-    merged_feats = _drop_stale_live_sensitive_features(
-        merged_feats,
-        end_ts=end_ts,
-        required_feature_keys=required_feature_keys,
+    preserve_cached = bool(
+        cfg.get("historical_inference_parity_preserve_cached_features", False)
     )
+    if preserve_cached:
+        merged_feats = _merge_feature_dicts_preserve_cached(cached_feats, full_tail_feats)
+    else:
+        merged_feats = _merge_feature_dicts(cached_feats, full_tail_feats)
+    merged_feats = _merge_missing_feature_dicts(merged_feats, selector_feats)
+    merged_feats = _slice_feature_window(merged_feats, start_ts=start_ts, end_ts=end_ts)
+    if not preserve_cached:
+        merged_feats = _drop_stale_live_sensitive_features(
+            merged_feats,
+            end_ts=end_ts,
+            required_feature_keys=required_feature_keys,
+        )
     if required_feature_keys:
         missing = {k for k in required_feature_keys if k not in merged_feats}
         merged_feats = _backfill_missing_requested_keys(
@@ -1290,6 +1418,8 @@ def load_or_compute_features(
         run_id=run_id,
         cache_key=cache_key,
         feats=merged_feats,
+        raw_panel=panel,
+        raw_start_ts=start_ts,
         symbols=basket_syms,
         end_ts=end_ts,
         required_feature_keys=required_feature_keys,
@@ -1351,6 +1481,87 @@ def _meta_feature_columns(meta: Any) -> List[str]:
     return list(dict.fromkeys(out))
 
 
+def _effective_meta_feature_columns(meta: Any) -> List[str]:
+    """Return the actual selected meta-model input contract, when available.
+
+    Meta wrappers also carry the broad candidate feature matrix columns used
+    during training. Live source gating must not treat that broad matrix as the
+    prediction contract when the persisted winner selected a narrower named
+    subset.
+    """
+    for source in (getattr(meta, "best_model", None), meta):
+        if source is None:
+            continue
+        selected = [str(v) for v in (getattr(source, "selected_features", []) or [])]
+        if not selected:
+            continue
+        input_features = [
+            str(v) for v in (getattr(source, "input_feature_names", []) or [])
+        ]
+        if input_features and len(input_features) == len(selected):
+            return input_features
+        if all(re.fullmatch(r"f\d+", name) is not None for name in selected):
+            continue
+        return selected
+    return []
+
+
+def _meta_model_derived_raw_dependencies(feature_cols: Iterable[str]) -> Set[str]:
+    """Return live-computable source keys needed for derived meta inputs."""
+    deps: Set[str] = set()
+    for raw in feature_cols or []:
+        col = str(raw)
+        if col == "base_med_x_side_aligned_trend":
+            deps.update({"trend_slope_24h", "trend_t", "trend_pct", "trend_slope_72h", "trend_slope_48h"})
+        elif col == "base_med_x_vol_z":
+            deps.update({"vol_z24", "vol_z_4h", "vol_z", "volatility_zscore"})
+        elif col == "base_med_x_efficiency_ratio":
+            deps.update({"efficiency_ratio_20", "path_efficiency_24"})
+        elif col == "base_med_x_compression_score":
+            deps.add("compression_score")
+        elif col == "base_med_x_compression_x_vol_z":
+            deps.update({"compression_score", "vol_z24", "vol_z_4h", "vol_z", "volatility_zscore"})
+        elif col == "base_med_x_side_trend_x_vol_z":
+            deps.update(
+                {
+                    "trend_slope_24h",
+                    "trend_t",
+                    "trend_pct",
+                    "trend_slope_72h",
+                    "trend_slope_48h",
+                    "vol_z24",
+                    "vol_z_4h",
+                    "vol_z",
+                    "volatility_zscore",
+                }
+            )
+        elif col == "base_med_x_side_trend_x_efficiency":
+            deps.update(
+                {
+                    "trend_slope_24h",
+                    "trend_t",
+                    "trend_pct",
+                    "trend_slope_72h",
+                    "trend_slope_48h",
+                    "efficiency_ratio_20",
+                    "path_efficiency_24",
+                }
+            )
+        elif col == "base_med_x_trend_24h_x_trend_72h":
+            deps.update({"trend_slope_24h", "trend_t", "trend_pct", "trend_slope_72h", "trend_slope_48h"})
+        elif col == "base_med_x_vol_z_24h_minus_96h":
+            deps.update({"vol_z24", "vol_z_4h", "vol_z", "volatility_zscore"})
+        elif col == "base_prob_x_vol_regime":
+            deps.update({"regime_vol_score", "asset_vol_level"})
+        elif col == "base_prob_x_entropy":
+            deps.add("regime_transition_entropy_12h")
+        elif col.startswith("base_prob_x_"):
+            deps.add(col.removeprefix("base_prob_x_"))
+        elif col.startswith("base_med_x_"):
+            deps.add(col.removeprefix("base_med_x_"))
+    return {dep for dep in deps if dep and dep not in DELETED_INFERENCE_FEATURE_KEYS}
+
+
 def get_inference_required_feature_keys(
     model_bundle: Dict[str, Any],
     accepted_strategies: Optional[Iterable[str]] = None,
@@ -1368,6 +1579,28 @@ def get_inference_required_feature_keys(
         else {}
     )
 
+    def _effective_alpha_feature_cols(model_info: Dict[str, Any]) -> List[str]:
+        feat_cols = [
+            str(k)
+            for k in (model_info.get("feat_cols", []) or [])
+            if str(k) not in DELETED_INFERENCE_FEATURE_KEYS
+        ]
+        model = model_info.get("model")
+        inner = getattr(model, "best_model", model)
+        selected = [str(k) for k in (getattr(inner, "selected_features", []) or [])]
+        input_features = [
+            str(k) for k in (getattr(inner, "input_feature_names", []) or [])
+        ]
+        if selected:
+            if input_features and len(input_features) == len(selected):
+                return [
+                    k for k in input_features if k not in DELETED_INFERENCE_FEATURE_KEYS
+                ]
+            if all(re.fullmatch(r"f\d+", name) is not None for name in selected):
+                return feat_cols
+            return [k for k in selected if k not in DELETED_INFERENCE_FEATURE_KEYS]
+        return feat_cols
+
     alpha_models = bundle.get("alpha_models", {}) if isinstance(bundle, dict) else {}
     for key, value in alpha_models.items():
         if not _model_key_matches_allowed(str(key), allowed):
@@ -1375,26 +1608,35 @@ def get_inference_required_feature_keys(
         if not isinstance(value, dict):
             continue
         if "feat_cols" in value:
-            required.update(value.get("feat_cols", []) or [])
+            required.update(_effective_alpha_feature_cols(value))
             continue
         for nested_key, model_info in value.items():
             if not _model_key_matches_allowed(f"{key}_{nested_key}", allowed):
                 continue
             if isinstance(model_info, dict):
-                required.update(model_info.get("feat_cols", []) or [])
+                required.update(_effective_alpha_feature_cols(model_info))
 
     meta_models = bundle.get("meta_models", {}) if isinstance(bundle, dict) else {}
     for key, meta in meta_models.items():
         if not _model_key_matches_allowed(str(key), allowed):
             continue
-        meta_cols = _meta_feature_columns(meta)
+        meta_cols = _effective_meta_feature_columns(meta)
+        if not meta_cols:
+            meta_cols = _meta_feature_columns(meta)
         if meta_cols:
-            required.update(meta_cols)
+            required.update(
+                k for k in meta_cols if str(k) not in DELETED_INFERENCE_FEATURE_KEYS
+            )
+            required.update(_meta_model_derived_raw_dependencies(meta_cols))
             continue
         selected = getattr(meta, "selected_features", None)
         if selected:
             required.update(
-                str(v) for v in selected if str(v) and not re.fullmatch(r"f\d+", str(v))
+                str(v)
+                for v in selected
+                if str(v)
+                and str(v) not in DELETED_INFERENCE_FEATURE_KEYS
+                and not re.fullmatch(r"f\d+", str(v))
             )
 
     ridge_sizer = (
@@ -1404,7 +1646,14 @@ def get_inference_required_feature_keys(
         for attr in ("model_names_", "model_names_ridge_", "limit_offset_features_"):
             vals = getattr(ridge_sizer, attr, None)
             if vals:
-                required.update([v for v in vals if v != "sizer_score_oof"])
+                required.update(
+                    [
+                        v
+                        for v in vals
+                        if v != "sizer_score_oof"
+                        and str(v) not in DELETED_INFERENCE_FEATURE_KEYS
+                    ]
+                )
 
     booster_bundles = (
         model_bundle.get("booster_bundles", {})
@@ -1416,7 +1665,11 @@ def get_inference_required_feature_keys(
             if not _model_key_matches_allowed(str(key), allowed):
                 continue
             if isinstance(booster, dict):
-                required.update(booster.get("feature_keys", []) or [])
+                required.update(
+                    k
+                    for k in (booster.get("feature_keys", []) or [])
+                    if str(k) not in DELETED_INFERENCE_FEATURE_KEYS
+                )
 
     regime_adaptors = (
         model_bundle.get("regime_adaptors", {})
@@ -1433,10 +1686,14 @@ def get_inference_required_feature_keys(
                 mapping = adaptor.get("feature_mapping", {}) or {}
                 for value in mapping.values():
                     if isinstance(value, str):
-                        required.add(value)
+                        if value not in DELETED_INFERENCE_FEATURE_KEYS:
+                            required.add(value)
                     elif isinstance(value, dict):
                         required.update(
-                            str(v) for v in value.values() if isinstance(v, str)
+                            str(v)
+                            for v in value.values()
+                            if isinstance(v, str)
+                            and str(v) not in DELETED_INFERENCE_FEATURE_KEYS
                         )
 
     ridge_weights = bundle.get("ridge_weights", {}) if isinstance(bundle, dict) else {}
@@ -1449,7 +1706,11 @@ def get_inference_required_feature_keys(
         if not _model_key_matches_allowed(str(key), allowed):
             continue
         if isinstance(bucket_cfg, dict):
-            required.update(bucket_cfg.get("feature_names", []) or [])
+            required.update(
+                k
+                for k in (bucket_cfg.get("feature_names", []) or [])
+                if str(k) not in DELETED_INFERENCE_FEATURE_KEYS
+            )
 
     # Keep a small set of always-needed raw features used across inference glue.
     required.update(
@@ -1468,7 +1729,10 @@ def get_inference_required_feature_keys(
     return {
         k
         for k in required
-        if isinstance(k, str) and k and k not in LIVE_UNAVAILABLE_FEATURES
+        if isinstance(k, str)
+        and k
+        and k not in LIVE_UNAVAILABLE_FEATURES
+        and k not in DELETED_INFERENCE_FEATURE_KEYS
     }
 
 
@@ -1712,6 +1976,30 @@ def _materialize_live_orderbook_summary_features(
     cols = list(zero_frame.columns)
     shift_bars = int((cfg or {}).get("microstructure_shift_bars", 1))
     eps = 1e-12
+    preserve_cached = bool(
+        (cfg or {}).get("historical_inference_parity_preserve_cached_features", False)
+    )
+    broadcast_feature_keys = {
+        "xasset_mkt_spread_bps",
+        "xasset_mkt_depth_z",
+        "xasset_mkt_spread_bps_z_24h",
+        "xasset_mkt_depth_to_qv_z",
+        "xasset_mkt_ob_stress_z_24h",
+        "xasset_ob_stress_basket_z_24h",
+        "xasset_ob_stress_basket",
+        "xasset_mkt_ob_stress",
+        "median_spread_bps",
+        "pct_assets_wide_spread",
+    }
+
+    def complete_broadcast_columns(value: pd.DataFrame) -> pd.DataFrame:
+        frame = value.reindex(index=idx)
+        missing_cols = [col for col in cols if col not in frame.columns]
+        if missing_cols:
+            row_value = frame.ffill(axis=1).bfill(axis=1).iloc[:, 0]
+            for col in missing_cols:
+                frame[col] = row_value
+        return frame.reindex(index=idx, columns=cols).astype(np.float32)
 
     best_bid = _aligned_orderbook_panel_field(panel, "best_bid", idx, cols, shift_bars)
     best_ask = _aligned_orderbook_panel_field(panel, "best_ask", idx, cols, shift_bars)
@@ -1748,6 +2036,15 @@ def _materialize_live_orderbook_summary_features(
     available = (best_bid.notna() & best_ask.notna() & mid.notna()).astype(np.float32)
     def put(name: str, value: pd.DataFrame) -> None:
         if name in required_feature_keys or name in out:
+            existing = out.get(name)
+            if (
+                preserve_cached
+                and isinstance(existing, pd.DataFrame)
+                and not existing.empty
+            ):
+                if name in broadcast_feature_keys:
+                    out[name] = complete_broadcast_columns(existing)
+                return
             out[name] = (
                 value.reindex(index=idx, columns=cols)
                 .replace([np.inf, -np.inf], np.nan)
@@ -1774,6 +2071,7 @@ def _materialize_live_orderbook_summary_features(
     )
     put("ob_mid_close_dislocation_bps", mid_close_gap)
     put("ob_mid_vs_close_bps", mid_close_gap)
+    put("ob_mid_close_dislocation_bps_z_24h", _rolling_zscore_frame(mid_close_gap, 24))
 
     if bid_qty_1 is not None and ask_qty_1 is not None:
         l1_imb = ((bid_qty_1 - ask_qty_1) / (bid_qty_1 + ask_qty_1 + eps)).clip(-1, 1)
@@ -1787,6 +2085,7 @@ def _materialize_live_orderbook_summary_features(
         put("ob_imb_l1", l1_imb)
         put("ob_microprice_premium_bps", microprice_bps)
         put("ob_microprice_dev_bps", microprice_bps)
+        put("ob_microprice_dev_bps_z_24h", _rolling_zscore_frame(microprice_bps, 24))
         top_liq = (mid * (bid_qty_1 + ask_qty_1)).clip(lower=0.0)
         put("ob_top_liquidity_usd", np.log1p(top_liq))
         put(
@@ -1946,6 +2245,22 @@ def _materialize_live_orderbook_summary_features(
 
     depth_norm_z = out.get("ob_depth_l20_to_qv_z_7d")
     spread_z = out.get("ob_spread_z_24h")
+    depth_usd_z = out.get("ob_depth_usd_l20_z")
+    available_spread = [s for s in basket_syms if s in spread_bps.columns]
+    basket_spread_bps = (
+        spread_bps[available_spread].mean(axis=1)
+        if available_spread
+        else spread_bps.mean(axis=1)
+    )
+    put("xasset_mkt_spread_bps", broadcast_to_symbols(basket_spread_bps))
+    if isinstance(depth_usd_z, pd.DataFrame):
+        available_depth_usd = [s for s in basket_syms if s in depth_usd_z.columns]
+        basket_depth_usd_z = (
+            depth_usd_z[available_depth_usd].mean(axis=1)
+            if available_depth_usd
+            else depth_usd_z.mean(axis=1)
+        )
+        put("xasset_mkt_depth_z", broadcast_to_symbols(basket_depth_usd_z))
     if isinstance(depth_norm_z, pd.DataFrame) and isinstance(spread_z, pd.DataFrame):
         available_basket = [s for s in basket_syms if s in depth_norm_z.columns]
         basket_depth_z = (
@@ -2040,9 +2355,10 @@ def _synthesize_live_safe_feature_keys(
             if len(non_portable_required) <= 20
             else f" (+{len(non_portable_required) - 20} more)"
         )
-        raise ValueError(
-            "Live inference artifact requests non-portable feature keys that are "
-            f"deleted from the active feature contract: {sample}{extra}"
+        tprint(
+            "Live inference artifact requests source-dependent feature keys; "
+            "requiring live source panels plus strict finite model-matrix parity: "
+            f"{sample}{extra}"
         )
     feats = _materialize_live_orderbook_summary_features(
         feats,
@@ -2053,9 +2369,7 @@ def _synthesize_live_safe_feature_keys(
         data_root=data_root,
         run_id=run_id,
     )
-    missing = sorted(
-        key for key in ({"p_exh_lag1", "retest_accept"} & required) if key not in feats
-    )
+    missing: List[str] = []
     barrier_missing = "barrier_pct" in required and "barrier_pct" not in feats
     calendar_missing = sorted(
         key
@@ -2101,7 +2415,10 @@ def _synthesize_live_safe_feature_keys(
         + orderbook_prefix_zero_missing
         + stale_sensitive_zero_missing
     )
-    if source_missing:
+    allow_missing_live_sources = bool(
+        (cfg or {}).get("historical_inference_parity_allow_missing_live_sources", False)
+    )
+    if source_missing and not allow_missing_live_sources:
         sample = ", ".join(sorted(source_missing)[:20])
         extra = "" if len(source_missing) <= 20 else f" (+{len(source_missing) - 20} more)"
         raise ValueError(
@@ -2262,9 +2579,12 @@ def _synthesize_gated_feature_keys(
     trend_thr = np.maximum(rv.fillna(0.0) * np.sqrt(24.0) * 1.5, 0.005)
     g_trend_series = (ret24 > trend_thr).fillna(False).astype(np.float32)
 
-    if "G_VOL" in needed and "G_VOL" not in out:
+    requires_g_vol = "G_VOL" in needed or any("_G_VOL_" in key for key in needed)
+    requires_g_trend = "G_TREND" in needed or any("_G_TREND_" in key for key in needed)
+
+    if requires_g_vol and "G_VOL" not in out:
         out["G_VOL"] = _broadcast_series_to_symbols(g_vol_series, valid_syms)
-    if "G_TREND" in needed and "G_TREND" not in out:
+    if requires_g_trend and "G_TREND" not in out:
         out["G_TREND"] = _broadcast_series_to_symbols(g_trend_series, valid_syms)
 
     gates = {
@@ -2522,16 +2842,18 @@ def get_features_for_candidates(
                         series.index, utc=True, errors="coerce"
                     )
                     series_at_or_before = series.loc[series_index <= ts_utc]
-                    finite_series = series_at_or_before.dropna()
-                    if finite_series.empty:
+                    if series_at_or_before.empty:
                         continue
                     if _is_live_stale_sensitive_feature_key(feat_name):
                         latest_ts = pd.to_datetime(
-                            finite_series.index[-1], utc=True, errors="coerce"
+                            series_at_or_before.index[-1], utc=True, errors="coerce"
                         )
                         if pd.isna(latest_ts) or pd.Timestamp(latest_ts) < ts_utc:
                             continue
-                    row[feat_name] = finite_series.iloc[-1]
+                    # Preserve timestamped NaNs. LightGBM consumes missing values
+                    # natively, and dropping a NaN feature column turns a valid
+                    # training-time missing value into a contract mismatch.
+                    row[feat_name] = series_at_or_before.iloc[-1]
                 elif isinstance(series, (pd.DataFrame, pd.Series)) and not series.empty:
                     finite_series = series.dropna()
                     if finite_series.empty:

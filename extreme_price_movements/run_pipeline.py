@@ -72,16 +72,19 @@ import pandas as pd
 import extreme_price_movements.mask_optimiser as mask_opt
 from extreme_price_movements.config import CFG, enable_perp_feature_keys
 from extreme_price_movements.data_store import (
-    PartitionedOHLCVStore,
     _compute_missing_funding_ranges,
     _compute_missing_hourly_ranges,
     _fetch_ccxt_history_paged,
+    _has_sparse_perp_auxiliary_data,
     _resolve_perp_symbol,
     build_hourly_orderbook_proxy_from_ohlcv,
     fetch_hourly_orderbook_proxy,
+    exchange_data_component,
     make_perp_exchange,
+    make_ohlcv_store,
     make_spot_exchange,
     normalize_orderbook_proxy_frame,
+    scoped_data_root,
 )
 from extreme_price_movements.offline_optimisers.params_store import (
     apply_offline_optimizer_best_params,
@@ -404,7 +407,7 @@ def run_download(cfg):
     from extreme_price_movements.hf_data_loader import sync_15m_ohlcv_range
 
     tprint("STEP: DOWNLOAD START")
-    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+    store = make_ohlcv_store(cfg)
     use_perps = bool(cfg.get("use_perps", False))
     _check_complete = str(
         os.environ.get(
@@ -418,6 +421,18 @@ def run_download(cfg):
         )
         or 0.0
     )
+    _download_15m_enabled = str(
+        os.environ.get(
+            "EPM_DOWNLOAD_15M_ENABLED",
+            str(cfg.get("download_15m_enabled", True)),
+        )
+    ).strip().lower() in {"1", "true", "yes", "y", "on"}
+    _download_microdata_enabled = str(
+        os.environ.get(
+            "EPM_DOWNLOAD_MICRODATA_ENABLED",
+            str(cfg.get("download_microdata_enabled", True)),
+        )
+    ).strip().lower() in {"1", "true", "yes", "y", "on"}
 
     # --- Freshness check: skip download if data is < 6 days old ---
     import glob as _glob
@@ -467,20 +482,55 @@ def run_download(cfg):
             tprint(f"Funding exchange unavailable; skipping funding refresh: {exc}")
 
     if use_perps:
-        raw_perp_symbols = sorted(get_available_perp_spot_symbols(force_refresh=True))
-        mu = refresh_margin_universe_daily(None, quotes=("USDC",))
-        margin_usdc_bases = {
-            sym.split("/", 1)[0]
-            for sym in apply_hardcoded_universe_exclusions(mu.symbols)
-            if "/" in sym
-        }
-        sanitized_perp_symbols = apply_hardcoded_universe_exclusions(raw_perp_symbols)
-        perp_symbols = [
-            sym
-            for sym in sanitized_perp_symbols
-            if "/" in sym and sym.split("/", 1)[0] in margin_usdc_bases
-        ]
-        perp_symbols = deduplicate_symbols_by_base(perp_symbols)
+        exchange_id = str(cfg.get("exchange_id") or cfg.get("exchange") or "").lower()
+        if exchange_id == "binance":
+            raw_perp_symbols = sorted(get_available_perp_spot_symbols(force_refresh=True))
+            mu = refresh_margin_universe_daily(None, quotes=("USDC",))
+            margin_usdc_bases = {
+                sym.split("/", 1)[0]
+                for sym in apply_hardcoded_universe_exclusions(mu.symbols)
+                if "/" in sym
+            }
+            sanitized_perp_symbols = apply_hardcoded_universe_exclusions(raw_perp_symbols)
+            perp_symbols = [
+                sym
+                for sym in sanitized_perp_symbols
+                if "/" in sym and sym.split("/", 1)[0] in margin_usdc_bases
+            ]
+            universe_source = (
+                "active USDC/USDT perpetual markets intersected with USDC "
+                "margin spot bases"
+            )
+            universe_counts = (
+                f"{len(raw_perp_symbols)} raw perps, "
+                f"{len(sanitized_perp_symbols)} sanitized, "
+                f"{len(margin_usdc_bases)} margin bases"
+            )
+        else:
+            raw_perp_symbols = []
+            for market in getattr(ex, "markets", {}).values():
+                if not isinstance(market, dict):
+                    continue
+                if not bool(market.get("swap") or market.get("future")):
+                    continue
+                if market.get("active") is False:
+                    continue
+                symbol = str(market.get("symbol") or "").strip()
+                if not symbol or "/" not in symbol:
+                    continue
+                quote = str(market.get("quote") or symbol.split("/", 1)[1]).split(":", 1)[0]
+                if quote.upper() not in {"USD", "USDC", "USDT"}:
+                    continue
+                raw_perp_symbols.append(symbol)
+            sanitized_perp_symbols = apply_hardcoded_universe_exclusions(
+                sorted(set(raw_perp_symbols))
+            )
+            perp_symbols = deduplicate_symbols_by_base(sanitized_perp_symbols)
+            universe_source = f"active {exchange_id} perpetual markets"
+            universe_counts = (
+                f"{len(raw_perp_symbols)} raw exchange perps, "
+                f"{len(sanitized_perp_symbols)} sanitized"
+            )
         _perps_m = int(cfg.get("fetch_symbols_M", 0) or 0)
         fetch_syms = (
             perp_symbols[:_perps_m]
@@ -488,10 +538,8 @@ def run_download(cfg):
             else perp_symbols
         )
         tprint(
-            "Perps download universe source: active USDC/USDT perpetual markets "
-            "intersected with USDC margin spot bases "
-            f"({len(raw_perp_symbols)} raw perps, {len(sanitized_perp_symbols)} sanitized, "
-            f"{len(margin_usdc_bases)} margin bases, {len(fetch_syms)} before runtime slicing)"
+            f"Perps download universe source: {universe_source} "
+            f"({universe_counts}, {len(fetch_syms)} before runtime slicing)"
         )
     else:
         mu = refresh_margin_universe_daily(None, quotes=("USDC",))
@@ -687,6 +735,12 @@ def run_download(cfg):
     def _symbol_status_1h(sym: str) -> Tuple[bool, float]:
         try:
             df_local = store.load(sym)
+            if use_perps and _has_sparse_perp_auxiliary_data(
+                df_local,
+                since_ms=int(pd.Timestamp(since_1h).value // 10**6),
+                timeframe="1h",
+            ):
+                return False, 1e9
             return (
                 _panel_complete(df_local, since_1h, now_1h, "1h"),
                 _panel_missing_days(df_local, since_1h, now_1h, "1h"),
@@ -706,8 +760,9 @@ def run_download(cfg):
         except Exception:
             return False, 1e9
 
-    ob_dir = Path(cfg["data_root"]) / "orderbook_hourly"
-    fr_dir = Path(cfg["data_root"]) / "funding_hourly"
+    market_data_root = Path(scoped_data_root(cfg))
+    ob_dir = market_data_root / "orderbook_hourly"
+    fr_dir = market_data_root / "funding_hourly"
     ob_dir.mkdir(parents=True, exist_ok=True)
     fr_dir.mkdir(parents=True, exist_ok=True)
 
@@ -959,7 +1014,10 @@ def run_download(cfg):
     for i, sym in enumerate(fetch_syms):
         if _check_complete:
             complete_1h, missing_1h_days = _symbol_status_1h(sym)
-            complete_15m, missing_15m_days = _symbol_status_15m(sym)
+            if _download_15m_enabled:
+                complete_15m, missing_15m_days = _symbol_status_15m(sym)
+            else:
+                complete_15m, missing_15m_days = True, 0.0
         else:
             complete_1h, complete_15m = False, False
             missing_1h_days, missing_15m_days = 1e9, 1e9
@@ -985,7 +1043,10 @@ def run_download(cfg):
                 symbol_1h_status = f"fail:{e.__class__.__name__}"
                 tprint(f"  FAIL 1h {sym}: {e}")
 
-        if complete_15m:
+        if not _download_15m_enabled:
+            skip_15m += 1
+            symbol_15m_status = "skip:disabled"
+        elif complete_15m:
             skip_15m += 1
         elif missing_15m_days < _missing_lt_days:
             skip_15m += 1
@@ -1015,9 +1076,14 @@ def run_download(cfg):
                 symbol_15m_status = f"fail:{e.__class__.__name__}"
                 tprint(f"  FAIL 15m {sym}: {e}")
 
-        ob_ok, fr_ok, missing_ob_ranges, missing_fr_ranges, ob_io, fr_io = (
-            _update_symbol_microdata(sym)
-        )
+        if _download_microdata_enabled:
+            ob_ok, fr_ok, missing_ob_ranges, missing_fr_ranges, ob_io, fr_io = (
+                _update_symbol_microdata(sym)
+            )
+        else:
+            ob_ok, fr_ok = False, False
+            missing_ob_ranges, missing_fr_ranges = 0, 0
+            ob_io, fr_io = "skip:disabled", "skip:disabled"
         tprint(
             f"  [{i+1:04d}/{len(fetch_syms):04d}] {sym} "
             f"1h={symbol_1h_status} "
@@ -1134,6 +1200,47 @@ def run_labels(cfg, horizons=None, ts_override=None, store=None):
         return
 
     tprint(f"Labels mode. ts_sig={ts_sig} horizons={horizons}")
+    _rollout_env = os.getenv("EPM_POLICY_ROLLOUT_LABELING_ENABLE", "").strip().lower()
+    if _rollout_env:
+        cfg["policy_rollout_labeling_enable"] = _rollout_env not in {
+            "0",
+            "false",
+            "no",
+            "off",
+        }
+        tprint(
+            "Labels override: "
+            f"policy_rollout_labeling_enable={bool(cfg['policy_rollout_labeling_enable'])} "
+            "from EPM_POLICY_ROLLOUT_LABELING_ENABLE"
+        )
+    cfg.setdefault("use_noise_filter", False)
+    _noise_filter_env = os.getenv("EPM_LABEL_USE_NOISE_FILTER", "").strip().lower()
+    if _noise_filter_env:
+        cfg["use_noise_filter"] = _noise_filter_env not in {
+            "0",
+            "false",
+            "no",
+            "off",
+        }
+        tprint(
+            "Labels override: "
+            f"use_noise_filter={bool(cfg['use_noise_filter'])} "
+            "from EPM_LABEL_USE_NOISE_FILTER"
+        )
+    _noise_wick_env = os.getenv("EPM_LABEL_NOISE_FILTER_WICK_THR", "").strip()
+    if _noise_wick_env:
+        try:
+            cfg["noise_filter_wick_thr"] = float(_noise_wick_env)
+            tprint(
+                "Labels override: "
+                f"noise_filter_wick_thr={float(cfg['noise_filter_wick_thr']):.6f} "
+                "from EPM_LABEL_NOISE_FILTER_WICK_THR"
+            )
+        except ValueError:
+            tprint(
+                "WARNING: ignoring invalid EPM_LABEL_NOISE_FILTER_WICK_THR="
+                f"{_noise_wick_env!r}"
+            )
     cfg["label_skip_slice_planner"] = True
     cfg["label_persist_incremental"] = True
     cfg["label_parallel_enable"] = False
@@ -1216,9 +1323,7 @@ def run_labels(cfg, horizons=None, ts_override=None, store=None):
             )
 
     if store is None:
-        store = PartitionedOHLCVStore(
-            root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
-        )
+        store = make_ohlcv_store(cfg)
 
     # No exchange needed — data already in store, features already on disk
     run_label_generation_step_v2(ts_sig, None, cfg, store, None, horizons=horizons)
@@ -1257,9 +1362,7 @@ def run_features(
         tprint("Features mode: explicit feature symbols=" + ", ".join(feature_symbols))
 
     if store is None:
-        store = PartitionedOHLCVStore(
-            root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
-        )
+        store = make_ohlcv_store(cfg)
 
     # Pass None for margin_symbols to trigger auto-refresh in universe logic.
     # Explicit symbols use subset mode, which still loads basket/BTC/ETH context.
@@ -1321,9 +1424,7 @@ def run_backtest(cfg, ts_override=None, store=None):
 
     tprint(f"Backtest mode. ts_sig={ts_sig}")
     if store is None:
-        store = PartitionedOHLCVStore(
-            root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
-        )
+        store = make_ohlcv_store(cfg)
     run_backtest_step(ts_sig, None, cfg, store, state_file)
     tprint("BACKTEST PIPELINE COMPLETE")
     _maintenance_checkpoint("backtest:end")
@@ -1385,9 +1486,7 @@ def run_inference_backtest(cfg, ts_override=None, store=None):
 
     # Extract necessary components
     if store is None:
-        store = PartitionedOHLCVStore(
-            root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
-        )
+        store = make_ohlcv_store(cfg)
 
     # Load panel data
     tprint("Loading panel data...")
@@ -1621,9 +1720,7 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
     # TP/SL optimisation happens during label generation (see training.generate_label_datasets).
     # Check if labels already exist before refreshing to avoid unnecessary recomputation.
     if store is None:
-        store = PartitionedOHLCVStore(
-            root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
-        )
+        store = make_ohlcv_store(cfg)
     if not _label_artifacts_ready(cfg, ts_sig):
         tprint(
             "ERROR: Label artifacts are missing. Run 'labels' mode first to generate them."
@@ -1697,9 +1794,7 @@ def run_risk_opt(
 
     tprint(f"Risk Optimization mode. ts_sig={ts_sig}")
     if store is None:
-        store = PartitionedOHLCVStore(
-            root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
-        )
+        store = make_ohlcv_store(cfg)
     run_risk_optimization_step(ts_sig, None, cfg, store, state_file)
     tprint("RISK OPTIMIZATION COMPLETE")
 
@@ -1751,9 +1846,7 @@ def run_sizer(cfg, ts_override=None, store=None):
             try:
                 tprint("SIZER: running OOS backtest with updated sizer bundle...")
                 if store is None:
-                    store = PartitionedOHLCVStore(
-                        root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
-                    )
+                    store = make_ohlcv_store(cfg)
                 bt_cfg = dict(cfg)
                 bt_cfg["sizer_oos_mode"] = True
 
@@ -1932,7 +2025,7 @@ def run_all(cfg, ts_override=None):
     _maintenance_checkpoint("run_all:after_download")
 
     # Instantiate store once for use across steps
-    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+    store = make_ohlcv_store(cfg)
 
     run_features(cfg, ts_override=ts_override, store=store)
     _maintenance_checkpoint("run_all:after_features")
@@ -2291,9 +2384,7 @@ def run_train_meta(cfg, ts_override=None, store=None):
     from extreme_price_movements.main import train_daily_meta
 
     if store is None:
-        store = PartitionedOHLCVStore(
-            root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
-        )
+        store = make_ohlcv_store(cfg)
 
     if bool(cfg.get("meta_run_pre_risk_optimisation", False)):
         tprint("Optimising TP:SL before meta-training...")
@@ -2432,6 +2523,42 @@ def _ndcg_binary_at_k(y: np.ndarray, score: np.ndarray, frac: float) -> float:
     return float(dcg / max(idcg, 1e-12))
 
 
+def _synthetic_tp_sl_hit_metrics(
+    score: np.ndarray,
+    mfe: np.ndarray | None,
+    mae: np.ndarray | None,
+) -> dict[str, float]:
+    if mfe is None or mae is None:
+        return {}
+    score = np.asarray(score, dtype=float)
+    mfe = np.asarray(mfe, dtype=float)
+    mae = np.abs(np.asarray(mae, dtype=float))
+    n = min(len(score), len(mfe), len(mae))
+    if n < 20:
+        return {}
+    score = score[:n]
+    mfe = mfe[:n]
+    mae = mae[:n]
+    valid = np.isfinite(score) & np.isfinite(mfe) & np.isfinite(mae)
+    if int(valid.sum()) < 20:
+        return {}
+    score_v = score[valid]
+    mfe_v = mfe[valid]
+    mae_v = mae[valid]
+    order = np.argsort(score_v)
+    out: dict[str, float] = {}
+    for name, tp, sl in (("tp2_sl1", 0.02, 0.01), ("tp3_sl15", 0.03, 0.015)):
+        hit = (mfe_v >= tp) & (mae_v < sl)
+        for frac in (0.10, 0.30):
+            tag = str(int(round(frac * 100)))
+            k = max(1, int(np.ceil(frac * len(score_v))))
+            idx = order[-k:]
+            out[f"hit_rate_{name}_top{tag}"] = (
+                float(np.mean(hit[idx])) if len(idx) else float("nan")
+            )
+    return out
+
+
 def _score_oof_frame(df: pd.DataFrame) -> dict[str, Any]:
     score_col = next(
         (
@@ -2477,11 +2604,22 @@ def _score_oof_frame(df: pd.DataFrame) -> dict[str, Any]:
         out[f"hit_rate{tag}"] = hit
         out[f"lift{tag}"] = float(hit / max(base_rate, 1e-12))
         out[f"ndcg{tag}"] = _ndcg_binary_at_k(y_v, score_v, frac)
-        if "y_ret" in df.columns:
-            y_ret = pd.to_numeric(df.loc[valid, "y_ret"], errors="coerce").to_numpy(float)
+        ret_col = "y_ret" if "y_ret" in df.columns else ("return" if "return" in df.columns else None)
+        if ret_col is not None:
+            y_ret = pd.to_numeric(df.loc[valid, ret_col], errors="coerce").to_numpy(float)
             ret_vals = y_ret[idx] if len(idx) else np.asarray([], dtype=float)
             ret_vals = ret_vals[np.isfinite(ret_vals)]
             out[f"mean_ret{tag}"] = float(np.mean(ret_vals)) if len(ret_vals) else float("nan")
+    mfe_col = next((c for c in ("mfe_ret", "mfe", "__mfe_ret__", "__mfe__") if c in df.columns), None)
+    mae_col = next((c for c in ("mae_ret", "mae", "__mae_ret__", "__mae__") if c in df.columns), None)
+    if mfe_col is not None and mae_col is not None:
+        out.update(
+            _synthetic_tp_sl_hit_metrics(
+                score_v,
+                pd.to_numeric(df.loc[valid, mfe_col], errors="coerce").to_numpy(float),
+                pd.to_numeric(df.loc[valid, mae_col], errors="coerce").to_numpy(float),
+            )
+        )
     if "timestamp" in df.columns:
         ts = pd.to_datetime(df.loc[valid, "timestamp"], errors="coerce")
         for frac in (0.10, 0.20, 0.30):
@@ -2551,6 +2689,18 @@ def _load_base_diag_metrics(cfg: dict, run_id: str) -> list[dict[str, Any]]:
                 "mean_return30_gross",
                 "mean_return30",
                 "top30_mean_ret",
+            ),
+            "hit_rate_tp2_sl1_top10": _first_finite(
+                diag, "hit_rate_tp2_sl1_top10"
+            ),
+            "hit_rate_tp2_sl1_top30": _first_finite(
+                diag, "hit_rate_tp2_sl1_top30"
+            ),
+            "hit_rate_tp3_sl15_top10": _first_finite(
+                diag, "hit_rate_tp3_sl15_top10"
+            ),
+            "hit_rate_tp3_sl15_top30": _first_finite(
+                diag, "hit_rate_tp3_sl15_top30"
             ),
             "lift20": _first_finite(diag, "lift20", "Lift@20"),
             "hit_rate30_std": _first_finite(diag, "hit_rate30_weekly_std", "hit_rate30_daily_std", default=0.0),
@@ -2940,7 +3090,7 @@ def run_strategies_selection(cfg, ts_override=None, store=None):
     policy_trials = int(os.environ.get("EPM_STRATEGY_SELECTION_POLICY_TRIALS", "50"))
 
     if store is None:
-        store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+        store = make_ohlcv_store(cfg)
 
     selection_cfg = dict(cfg)
     selection_cfg["planned_max_assets"] = assets
@@ -3242,9 +3392,7 @@ def run_breakdown_diagnostics_integration(cfg: dict, ts_sig: pd.Timestamp) -> No
     if not os.path.exists(ohlc_path):
         # Try to create OHLC from store if missing
         try:
-            store = PartitionedOHLCVStore(
-                root_dir=cfg["data_root"], timeframe=cfg["timeframe"]
-            )
+            store = make_ohlcv_store(cfg)
             # Get a representative symbol for OHLC extraction (store has no list_symbols API).
             symbols = []
             ohlcv_dir = getattr(store, "ohlcv_dir", None)
@@ -3369,6 +3517,11 @@ def main():
         help="Market mode for data/features/artifacts (default: spot).",
     )
     parser.add_argument(
+        "--exchange",
+        default=None,
+        help="Exchange id for scoped data/model artifacts (default: EPM_EXCHANGE or binance).",
+    )
+    parser.add_argument(
         "--model-backend",
         choices=["ebm_on_lgbm", "lgbm_pipeline"],
         default=None,
@@ -3479,13 +3632,21 @@ def main():
         cfg["data_root"] = os.path.abspath(_epm_data_root)
         cfg["reports_root"] = os.path.join(os.path.abspath(_epm_data_root), "reports")
         tprint(f"EPM_DATA_ROOT override: data_root={cfg['data_root']}")
-    market_mode = "perps" if args.perps else "spot"
+    market_mode = "perps" if args.perps else args.market_mode
+    exchange_id = str(args.exchange or os.environ.get("EPM_EXCHANGE") or "binance").strip().lower()
+    if exchange_id in {"krakenfutures", "kraken_futures"}:
+        exchange_id = "kraken"
+    cfg["exchange_id"] = exchange_id
+    cfg["exchange"] = exchange_id
+    os.environ["EPM_EXCHANGE"] = exchange_id
     _apply_market_mode_paths(cfg, market_mode)
+    cfg["exchange_data_component"] = exchange_data_component(exchange_id, market_mode)
     tprint(
         f"Market mode: {cfg['market_mode']} "
+        f"exchange={exchange_id} scope={cfg['exchange_data_component']} "
         f"(data_root={cfg['data_root']}, reports_root={cfg['reports_root']})"
     )
-    if args.perps:
+    if market_mode == "perps":
         cfg = enable_perp_feature_keys(cfg)
         # Perp-mode fee model: 0.10% round-trip (5 bps/side).
         _apply_fee_model(cfg, PERP_ROUND_TRIP_FEE_PCT)
@@ -3501,6 +3662,14 @@ def main():
     elif os.environ.get("EPM_FEATURE_SAVE_WORKERS"):
         cfg["feature_save_workers"] = max(
             1, int(os.environ["EPM_FEATURE_SAVE_WORKERS"])
+        )
+    if os.environ.get("EPM_FEATURE_BACKFILL_SYMBOL_CHUNK_SIZE"):
+        cfg["feature_backfill_symbol_chunk_size"] = max(
+            1, int(os.environ["EPM_FEATURE_BACKFILL_SYMBOL_CHUNK_SIZE"])
+        )
+    if os.environ.get("EPM_FEATURE_BACKFILL_KEY_BATCH_SIZE"):
+        cfg["feature_backfill_key_batch_size"] = max(
+            1, int(os.environ["EPM_FEATURE_BACKFILL_KEY_BATCH_SIZE"])
         )
 
     _configure_report_roots(cfg)

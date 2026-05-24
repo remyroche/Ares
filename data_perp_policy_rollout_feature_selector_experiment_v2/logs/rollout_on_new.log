@@ -1,0 +1,115 @@
++run_variant:13> date -u '+%Y-%m-%d %H:%M:%S UTC'
++run_variant:13> echo '[2026-05-22 06:28:32 UTC] START variant=rollout_on_new run_id=20260522_101001 rollout=1 selector=new code_root=/Users/remyroche/Documents/Ares'
+[2026-05-22 06:28:32 UTC] START variant=rollout_on_new run_id=20260522_101001 rollout=1 selector=new code_root=/Users/remyroche/Documents/Ares
++run_variant:14> cd /Users/remyroche/Documents/Ares
++run_variant:15> export PYTHONUNBUFFERED=1
++run_variant:16> export PYTHONPATH=/Users/remyroche/Documents/Ares
++run_variant:17> export EPM_EXCHANGE=kraken
++run_variant:18> export EPM_DATA_ROOT=/Users/remyroche/Documents/Ares/data_perp_policy_rollout_feature_selector_experiment_v2/rollout_on_new
++run_variant:19> export EPM_MODEL_BACKEND=lgbm_pipeline
++run_variant:20> export EPM_POLICY_ROLLOUT_LABELING_ENABLE=1
++run_variant:21> export EPM_LABEL_STRATEGY_IDS=loc_ema_stack_pos_24_0_43357179_compression_ratio_-0_33411601_mkt_ret_eq_24h_1_1280091_mkt_ret_eq_24h_-0_81129736_up_down_semivol_ratio_tanh_-0_39156261
++run_variant:22> export EPM_BASE_STRATEGY_IDS=loc_ema_stack_pos_24_0_43357179_compression_ratio_-0_33411601_mkt_ret_eq_24h_1_1280091_mkt_ret_eq_24h_-0_81129736_up_down_semivol_ratio_tanh_-0_39156261
++run_variant:23> export EPM_META_STRATEGY_IDS=loc_ema_stack_pos_24_0_43357179_compression_ratio_-0_33411601_mkt_ret_eq_24h_1_1280091_mkt_ret_eq_24h_-0_81129736_up_down_semivol_ratio_tanh_-0_39156261
++run_variant:24> export EPM_POLICY_STRATEGY_IDS=short_loc_ema_stack_pos_24_0_43357179_compression_ratio_-0_33411601_mkt_ret_eq_24h_1_1280091_mkt_ret_eq_24h_-0_81129736_up_down_semivol_ratio_tanh_-0_39156261
++run_variant:25> export EPM_BASE_MAX_STRATEGY_IDS=1
++run_variant:26> export EPM_META_MAX_STRATEGY_IDS=1
++run_variant:27> export EPM_BASE_HPO_TRIALS=80
++run_variant:28> export EPM_META_HPO_TRIALS=80
++run_variant:29> export EPM_LGBM_HPO_TRIALS=80
++run_variant:30> export EPM_LGBM_N_JOBS=3
++run_variant:31> export EPM_LGBM_FINAL_MODEL_COUNT=3
++run_variant:32> export EPM_LGBM_MIN_OOF_DISTILLATION_PASSES=2
++run_variant:33> export EPM_LGBM_META_MIN_OOF_DISTILLATION_PASSES=2
++run_variant:34> python3 -u extreme_price_movements/run_pipeline.py labels --market-mode perps --exchange kraken --run-id 20260522_101001
+[2026-05-22 06:28:34 UTC] Entering function: retry_with_backoff in utils.py
+2026-05-22 08:28:35,121 - DataQualityFramework - INFO - ℹ️ ✅ Comprehensive duplicate analyzer integrated
+2026-05-22 08:28:35,121 - DataQualityFramework - INFO - ℹ️ 🔧 Unified Data Quality Framework initialized (singleton)
+[2026-05-22 08:28:35.122] PERFORMANCE: DataQualityFramework initialization took 0.002s
+2026-05-22 08:28:35,123 - System.tprint - INFO - ℹ️ DataQualityFramework initialization took 0.002s
+2026-05-22 08:28:35,300 - ares.registry - INFO - ℹ️ Registered step: data_download
+2026-05-22 08:28:35,304 - System.AdvancedQualityMetrics - INFO - ℹ️ 📊 AdvancedQualityMetrics initialized with tolerant parameters
+[2026-05-22 08:28:35.304] PERFORMANCE: AdvancedQualityMetrics initialization took 0.001s
+2026-05-22 08:28:35,305 - System.tprint - INFO - ℹ️ AdvancedQualityMetrics initialization took 0.001s
+2026-05-22 08:28:35,307 - DataCleaner - INFO - ℹ️ Using klines-specific gap thresholds: {<GapType.SMALL: 'small'>: 65, <GapType.MEDIUM: 'medium'>: 300, <GapType.LARGE: 'large'>: 1800, <GapType.CRITICAL: 'critical'>: 3600}
+[2026-05-22 08:28:35.308] PERFORMANCE: DataCleaner(klines) initialization took 0.001s
+2026-05-22 08:28:35,308 - System.tprint - INFO - ℹ️ DataCleaner(klines) initialization took 0.001s
+2026-05-22 08:28:35,309 - DataCleanerManager - INFO - ℹ️ 🔧 DataCleanerManager initialized (singleton)
+[2026-05-22 08:28:35.319] DEBUG: 🔧 [features_common.utils] Initializing common utilities module
+[2026-05-22 08:28:35.319] SUCCESS: ✅ [features_common.utils] Math validation utilities loaded
+2026-05-22 08:28:35,320 - System.tprint - INFO - ℹ️ ✅ [features_common.utils] Math validation utilities loaded
+[2026-05-22 08:28:35.320] DEBUG: 🔧 [features_common.utils] Common utilities module initialized
+2026-05-22 08:28:36,667 - src.utils.hardware.m1_gpu_utils.M1GPUManager - INFO - ℹ️ M1 GPU Manager initialized - M1: False, Generation: none, MPS: False
+2026-05-22 08:28:36,679 - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - WARNING - ⚠️ Non-M1 system detected - M1-specific optimizations disabled
+2026-05-22 08:28:36,680 - src.utils.hardware.m1_cpu_optimizer.M1CPUOptimizer - WARNING - ⚠️ M1-specific CPU optimizations disabled - non-M1 system detected
+[2026-05-22 06:28:36 UTC] EBMOnLGBM: J weights do not sum to 1.0 (sum=0.900000); using them as provided.
+[2026-05-22 06:28:36 UTC] GC: Collected 10 objects on startup.
+[2026-05-22 06:28:36 UTC] EPM_DATA_ROOT override: data_root=/Users/remyroche/Documents/Ares/data_perp_policy_rollout_feature_selector_experiment_v2/rollout_on_new
+[2026-05-22 06:28:36 UTC] Kraken perps: feature portability strict mode disabled so unavailable open-interest feature families are pruned instead of required.
+[2026-05-22 06:28:36 UTC] Market mode: perps exchange=kraken scope=krakenfutures (data_root=/Users/remyroche/Documents/Ares/data_perp_policy_rollout_feature_selector_experiment_v2/rollout_on_new_perp, reports_root=/Users/remyroche/Documents/Ares/data_perp_policy_rollout_feature_selector_experiment_v2/rollout_on_new/reports_perp)
+[2026-05-22 06:28:36 UTC] Planner preset: fast (full_inference_retrain=False)
+[2026-05-22 06:28:36 UTC] CACHE[labels:start]: skipped cache wipe (mem_avail=10.4GB)
+[2026-05-22 06:28:37 UTC] GC[labels:start]: collected=67
+[2026-05-22 06:28:37 UTC] Labels mode. ts_sig=2026-05-22 10:10:01+00:00 horizons=None
+[2026-05-22 06:28:37 UTC] Labels override: policy_rollout_labeling_enable=True from EPM_POLICY_ROLLOUT_LABELING_ENABLE
+[2026-05-22 06:28:37 UTC] Labels optimization mode: incremental_persist=True keep_all_if_lte=6 keep_top_n=6 geom_hb_every=4 geom_hb_secs=60 raw_tb_payload_cache_mb=2048 tb_workers=2 worker_mode=auto geom_payload=compact(tp_vals/sl_vals)
+2026-05-22 08:28:37,067 - params_store - INFO - ℹ️ [params_store] Loaded 4 strategies from /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/inference_candidate_mask_best_params_perps.csv (2 groups x top_2, ranked by score_for_best_params)
+[2026-05-22 06:28:37 UTC] [params_store] Loaded 4 dynamic strategies from mask_optimiser
+2026-05-22 08:28:37,068 - params_store - INFO - ℹ️ [params_store] Loaded 4 dynamic strategies from mask_optimiser
+[2026-05-22 06:28:37 UTC] [params_store] TBM best params loaded from /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_best_params_perps.csv: config_id=CFGAD67088D9C  base_atr_window=840  k_tp=1.102973  sl_as_tp_pct=0.75  tp_base_pct=0.012965  mode=optuna_s1_TF_long_H10  horizon_scaling=sqrt
+2026-05-22 08:28:37,070 - params_store - INFO - ℹ️ [params_store] TBM best params loaded from /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_best_params_perps.csv: config_id=CFGAD67088D9C  base_atr_window=840  k_tp=1.102973  sl_as_tp_pct=0.75  tp_base_pct=0.012965  mode=optuna_s1_TF_long_H10  horizon_scaling=sqrt
+[2026-05-22 06:28:37 UTC] [params_store] Injected into cfg: barrier_atr_window=840  barrier_k_tp=1.102973  barrier_mode=optuna_s1_TF_long_H10  barrier_sl_base_mult=0.75  barrier_sl_hi=0.06  barrier_sl_lo=0.005  barrier_sl_method=tp_pct  barrier_tp_abs_pct=0.012965  barrier_tp_base_pct=0.012965  barrier_tp_hi=0.06  barrier_tp_lo=0.005  barrier_tp_method=atr_norm  label_horizon_base=4  label_horizon_scaling=sqrt
+2026-05-22 08:28:37,071 - params_store - INFO - ℹ️ [params_store] Injected into cfg: barrier_atr_window=840  barrier_k_tp=1.102973  barrier_mode=optuna_s1_TF_long_H10  barrier_sl_base_mult=0.75  barrier_sl_hi=0.06  barrier_sl_lo=0.005  barrier_sl_method=tp_pct  barrier_tp_abs_pct=0.012965  barrier_tp_base_pct=0.012965  barrier_tp_hi=0.06  barrier_tp_lo=0.005  barrier_tp_method=atr_norm  label_horizon_base=4  label_horizon_scaling=sqrt
+2026-05-22 08:28:37,074 - params_store - INFO - ℹ️ [params_store] Loaded 4 strategies from /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/inference_candidate_mask_best_params_perps.csv (2 groups x top_2, ranked by score_for_best_params)
+[2026-05-22 06:28:37 UTC] Loaded 4 strategies with source_horizons=[10]
+[2026-05-22 06:28:37 UTC] Labels override: explicit strategy allowlist active after mask-param load; selected 1/1 strategies
+2026-05-22 08:28:37,081 - params_store - INFO - ℹ️ [params_store] Loaded 4 strategies from /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/inference_candidate_mask_best_params_perps.csv (2 groups x top_2, ranked by score_for_best_params)
+[2026-05-22 06:28:37 UTC] [params_store] Loaded 4 dynamic strategies from mask_optimiser
+2026-05-22 08:28:37,081 - params_store - INFO - ℹ️ [params_store] Loaded 4 dynamic strategies from mask_optimiser
+[2026-05-22 06:28:37 UTC] [params_store] TBM best params loaded from /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_best_params_perps.csv: config_id=CFGAD67088D9C  base_atr_window=840  k_tp=1.102973  sl_as_tp_pct=0.75  tp_base_pct=0.012965  mode=optuna_s1_TF_long_H10  horizon_scaling=sqrt
+2026-05-22 08:28:37,084 - params_store - INFO - ℹ️ [params_store] TBM best params loaded from /Users/remyroche/Documents/Ares/extreme_price_movements/offline_optimisers/reports/tbm_best_params_perps.csv: config_id=CFGAD67088D9C  base_atr_window=840  k_tp=1.102973  sl_as_tp_pct=0.75  tp_base_pct=0.012965  mode=optuna_s1_TF_long_H10  horizon_scaling=sqrt
+[2026-05-22 06:28:37 UTC] [params_store] Injected into cfg: barrier_atr_window=840  barrier_k_tp=1.102973  barrier_mode=optuna_s1_TF_long_H10  barrier_sl_base_mult=0.75  barrier_sl_hi=0.06  barrier_sl_lo=0.005  barrier_sl_method=tp_pct  barrier_tp_abs_pct=0.012965  barrier_tp_base_pct=0.012965  barrier_tp_hi=0.06  barrier_tp_lo=0.005  barrier_tp_method=atr_norm  label_horizon_base=4  label_horizon_scaling=sqrt
+2026-05-22 08:28:37,084 - params_store - INFO - ℹ️ [params_store] Injected into cfg: barrier_atr_window=840  barrier_k_tp=1.102973  barrier_mode=optuna_s1_TF_long_H10  barrier_sl_base_mult=0.75  barrier_sl_hi=0.06  barrier_sl_lo=0.005  barrier_sl_method=tp_pct  barrier_tp_abs_pct=0.012965  barrier_tp_base_pct=0.012965  barrier_tp_hi=0.06  barrier_tp_lo=0.005  barrier_tp_method=atr_norm  label_horizon_base=4  label_horizon_scaling=sqrt
+[2026-05-22 06:28:37 UTC] STEP: LABEL GENERATION START
+[2026-05-22 06:28:37 UTC] Labels universe source: local store symbols (306)
+[2026-05-22 06:28:37 UTC] Labels offline universe build: using local store symbols (306 symbols)
+[2026-05-22 06:28:37 UTC] Filtering 306 symbols by variance (Top 100%, stride=1)...
+/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.l1dcachesize'. Detail: [errno 1] Operation not permitted
+/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.l2cachesize'. Detail: [errno 1] Operation not permitted
+/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.l3cachesize'. Detail: [errno 1] Operation not permitted
+/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.optional.neon'. Detail: [errno 1] Operation not permitted
+[2026-05-22 06:28:38 UTC] Variance Filter: Kept 299/306 symbols.
+[2026-05-22 06:28:38 UTC] Variance Filter Reasons: load_error=0, too_few_rows=0, too_few_sampled_points=0, near_zero_variance=7, accepted=299
+[2026-05-22 06:28:38 UTC] Universe before dedup: 299 symbols
+[2026-05-22 06:28:38 UTC] Universe after base-asset dedup (USDC>USDT>BUSD>EUR): 299 symbols
+[2026-05-22 06:28:38 UTC] Entering function: __init__ in utils.py
+[2026-05-22 06:28:38 UTC] Entering function: __enter__ in utils.py
+[2026-05-22 06:28:38 UTC] START: Data Load
+[2026-05-22 06:28:42 UTC] Entering function: __exit__ in utils.py
+[2026-05-22 06:28:42 UTC] END: Data Load (4.25s)
+[2026-05-22 06:28:50 UTC] Label data load complete: symbols=299 horizons=[5, 10] label_persist_incremental=True
+[2026-05-22 06:28:50 UTC] DATA COVERAGE: 299 symbols, 36006 hourly bars, 1460 days (2022-05-21 to 2026-05-20), 45.2% non-NaN
+[2026-05-22 06:28:50 UTC] Entering function: compute_market_features in features.py
+[2026-05-22 06:28:50 UTC] Transforming Volume: Log -> EWMA(5)
+[2026-05-22 06:28:50 UTC] Entering function: numba_rolling_sum in fast_funcs.py
+[2026-05-22 06:28:50 UTC] Entering function: numba_rolling_sum in fast_funcs.py
+[2026-05-22 06:28:50 UTC] Entering function: add_regime_gates in features.py
+[2026-05-22 06:28:50 UTC] Entering function: numba_rolling_median in fast_funcs.py
+[2026-05-22 06:28:50 UTC] Label feature key scope: using 4 selected strategies
+[2026-05-22 06:28:50 UTC] Found 236 feature files in /Users/remyroche/Documents/Ares/data_perp_policy_rollout_feature_selector_experiment_v2/rollout_on_new_perp/features/20260522_101001. Selective load: keys=21, symbols=299
+[2026-05-22 06:28:51 UTC] Selective feature load progress: 25/236 files (10.6%) in 0.7s
+[2026-05-22 06:28:51 UTC] Selective feature load progress: 50/236 files (21.2%) in 1.3s
+[2026-05-22 06:28:52 UTC] Selective feature load progress: 75/236 files (31.8%) in 2.0s
+[2026-05-22 06:28:53 UTC] Selective feature load progress: 100/236 files (42.4%) in 2.6s
+[2026-05-22 06:28:53 UTC] Selective feature load progress: 125/236 files (53.0%) in 3.3s
+[2026-05-22 06:28:54 UTC] Selective feature load progress: 150/236 files (63.6%) in 4.0s
+[2026-05-22 06:28:55 UTC] Selective feature load progress: 175/236 files (74.2%) in 4.6s
+[2026-05-22 06:28:55 UTC] Selective feature load progress: 200/236 files (84.7%) in 5.3s
+[2026-05-22 06:28:56 UTC] Selective feature load progress: 225/236 files (95.3%) in 6.0s
+[2026-05-22 06:28:56 UTC] Selective feature load progress: 236/236 files (100.0%) in 6.4s
+[2026-05-22 06:28:56 UTC] Loaded raw arrays for 19 features. Returning LazyFeatureDict proxy.
+[2026-05-22 06:28:56 UTC] Lazy-assembling DataFrame for 'dist_ema_fast'...
+[2026-05-22 06:28:58 UTC] Lazy-assembling DataFrame for 'zscore_price_50'...
+[2026-05-22 06:29:00 UTC] Lazy-assembling DataFrame for 'loc_vwap_dev_z_24'...
+[2026-05-22 06:29:02 UTC] Lazy-assembling DataFrame for 'up_down_return_mass_ratio_tanh'...
+[2026-05-22 06:29:04 UTC] Lazy-assembling DataFrame for 'compression_ratio'...

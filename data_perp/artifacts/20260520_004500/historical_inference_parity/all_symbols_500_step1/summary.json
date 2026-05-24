@@ -1,0 +1,12 @@
+{
+  "base_pred_max_abs_diff_vs_oof": null,
+  "feature_common_rows": 520452,
+  "feature_max_abs_diff": NaN,
+  "feature_mean_abs_diff": NaN,
+  "feature_mismatches_gt_1e_6": 0,
+  "feature_missing_inference": 35257623,
+  "feature_missing_training": 0,
+  "feature_rows": 35778075,
+  "meta_pred_max_abs_diff_vs_oof": null,
+  "prediction_rows": 64465
+}

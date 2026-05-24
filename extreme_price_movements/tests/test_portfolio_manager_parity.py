@@ -124,6 +124,51 @@ def test_portfolio_manager_fetches_wallet_and_exchange_positions():
     assert pm.portfolio_value == 12345.0
 
 
+def test_portfolio_manager_uses_kraken_futures_flex_balance():
+    class _Exchange:
+        id = "krakenfutures"
+
+        def __init__(self):
+            self.balance_params = None
+            self.position_params = None
+
+        def fetch_balance(self, params=None):
+            self.balance_params = params
+            return {
+                "info": {
+                    "accounts": {
+                        "flex": {
+                            "marginEquity": "57.25",
+                            "availableMargin": "55.50",
+                            "initialMarginWithOrders": "1.75",
+                            "maintenanceMargin": "0.50",
+                        }
+                    }
+                }
+            }
+
+        def fetch_positions(self, symbols=None, params=None):
+            self.position_params = params
+            return []
+
+    exchange = _Exchange()
+    pm = PortfolioManager(portfolio_value=10000.0)
+
+    snapshot = pm.fetch_exchange_snapshot(
+        exchange,
+        quote_currency="USD",
+        execution_account="margin",
+        margin_mode="cross",
+    )
+
+    assert exchange.balance_params == {"type": "flex"}
+    assert exchange.position_params == {}
+    assert snapshot["total_balance"] == 57.25
+    assert snapshot["free_balance"] == 55.50
+    assert snapshot["used_balance"] == 1.75
+    assert snapshot["errors"] == []
+
+
 def test_portfolio_manager_records_private_api_failures():
     class _Exchange:
         def fetch_balance(self, params=None):

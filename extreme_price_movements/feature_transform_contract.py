@@ -304,7 +304,12 @@ class FeatureTransformContract:
                     out[str(col)] = df.astype(np.float32, copy=False)
         return out
 
-    def transform_matrix(self, X_raw: pd.DataFrame, strict: bool = True) -> pd.DataFrame:
+    def transform_matrix(
+        self,
+        X_raw: pd.DataFrame,
+        strict: bool = True,
+        require_finite: bool = True,
+    ) -> pd.DataFrame:
         self.validate_no_fit_required()
         missing = [c for c in self.raw_feature_cols if c not in X_raw.columns]
         if missing and strict:
@@ -313,6 +318,23 @@ class FeatureTransformContract:
                 + ", ".join(missing[:20])
             )
         matrix = X_raw.reindex(columns=self.raw_feature_cols)
+        if strict and require_finite:
+            try:
+                raw_values = matrix.astype(np.float32, copy=False)
+            except Exception as exc:
+                raise ValueError(
+                    "Feature transform matrix contains non-numeric contracted raw columns"
+                ) from exc
+            nonfinite = [
+                str(col)
+                for col in raw_values.columns
+                if not np.isfinite(raw_values[col].to_numpy(dtype=np.float32, copy=False)).all()
+            ]
+            if nonfinite:
+                raise ValueError(
+                    "Feature transform matrix contains non-finite contracted raw columns: "
+                    + ", ".join(nonfinite[:20])
+                )
         kind = str(self.transform_config.get("kind", "robust")).lower()
         if kind == "none":
             return matrix.reindex(columns=self.transformed_feature_cols).astype(
@@ -455,7 +477,7 @@ def validate_feature_transform_contract(
     def _is_post_transform_model_feature(name: str) -> bool:
         # These are deterministic model-input columns built after the transformed
         # feature view is loaded. They are not raw columns owned by this contract.
-        if name in {"p_exh_lag1", "G_VOL", "G_TREND"}:
+        if name in {"G_VOL", "G_TREND"}:
             return True
         return bool(re.match(r"^.+_G_(?:VOL|TREND)_[01]$", name))
 

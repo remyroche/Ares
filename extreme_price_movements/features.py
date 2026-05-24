@@ -18,6 +18,11 @@ from extreme_price_movements.config import (
     is_non_portable_feature_key,
 )
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
+from extreme_price_movements.features_residual import add_residual_features
+from extreme_price_movements.features_oi import (
+    compute_oi_features,
+    get_oi_feature_names,
+)
 from extreme_price_movements.frac_diff_adaptive import (
     find_min_ffd,
     frac_diff_ffd,
@@ -55,18 +60,22 @@ _PERP_FEATURE_COLLISION_RENAMES = {
 _PERP_NATIVE_TRANSFORM_SKIP_KEYS = {
     _PERP_FEATURE_COLLISION_RENAMES.get(k, k) for k in get_perp_feature_names()
 }
+_OI_FEATURE_KEYS = set(get_oi_feature_names())
+_PERP_NATIVE_TRANSFORM_SKIP_KEYS.update(_OI_FEATURE_KEYS)
 _PERP_NATIVE_TRANSFORM_SKIP_KEYS.update(
     {
         "mark_price",
         "index_price",
-        "premium_index",
+        "canonical_index",
+        "premium_proxy",
+        "premium_proxy_bps",
+        "premium_proxy_z",
+        "premium_proxy_mom_8h",
         "mark_index_basis",
         "mark_index_basis_z",
         "mark_perp_dislocation",
         "perp_index_basis",
         "perp_index_basis_z",
-        "premium_index_z",
-        "premium_index_mom_8h",
         "fund_rate",
         "funding_rate",
         "fund_rate_ffill",
@@ -99,15 +108,46 @@ _PERP_NATIVE_TRANSFORM_SKIP_KEYS.update(
 _INTRADAY_PERSISTED_KEY_SET = set(PERSISTED_INTRADAY_LIBRARY_COLUMNS)
 _LIVE_IMPOSSIBLE_OR_LEAKAGE_FEATURE_KEYS: set[str] = set()
 _ORDERBOOK_PREFIXES = ("ob_", "obw_", "_obw_", "xasset_ob_", "xasset_mkt_ob_")
-_FUNDING_PREFIXES = ("fund_", "funding_", "asset_funding", "xasset_fund")
+_FUNDING_PREFIXES = (
+    "fund_",
+    "funding_",
+    "asset_funding",
+    "xasset_fund",
+    "dist_funding_",
+    "range_per_funding_",
+)
 _SPOT_PREFIXES = ("spot_", "perp_minus_spot")
 _BASIS_PREFIXES = ("basis_",)
-_OPEN_INTEREST_PREFIXES = ("oi_",)
+_OPEN_INTEREST_PREFIXES = (
+    "oi_",
+    "oiw_",
+    "dist_oiw_",
+    "abs_ret_per_oi_",
+    "impact_per_oi_",
+)
 _OPEN_INTEREST_EXACT_FEATURE_KEYS = {
     "leverage_build",
     "unwind",
     "squeeze_prob",
     "oi_up_agree",
+}
+_PERP_VOLUME_REQUIRED_FEATURE_KEYS = {
+    "dist_vwap_norm",
+    "dist_vwap_12_atr",
+    "dist_vwap_24_atr",
+    "dist_vwap_96_atr",
+    "trapped_longs_12",
+    "trapped_longs_24",
+    "trapped_longs_96",
+    "vwap_zone_1d_atr",
+    "vwap_zone_7d_atr",
+    "dist_stack",
+    "distance_to_vwap",
+    "dist_vwap_atr",
+    "dist_weekly_vwap",
+    "z_vwap_12",
+    "z_vwap_24",
+    "z_dist_vwap_24",
 }
 _FUNDING_EXACT_FEATURE_KEYS = {
     "basis_fund_div_z",
@@ -173,7 +213,6 @@ _NON_PORTABLE_DELETE_PREFIXES = (
 )
 _NON_PORTABLE_DELETE_EXACT = {
     "accept_gt66",
-    "retest_accept",
     "reject_like",
     "tf_qual",
     "mr_qual",
@@ -185,7 +224,6 @@ _NON_PORTABLE_DELETE_EXACT = {
     "tf_tape",
     "mr_tape",
     "tf_minus_mr",
-    "price_innovation_z",
     "rolling_std(price_innovation)",
     "kalman_gain_1h",
     "state_uncertainty_1h",
@@ -217,12 +255,26 @@ def _feature_source_requirements(name: str) -> set[str]:
         requirements.add("orderbook")
     if key.startswith(_FUNDING_PREFIXES) or key in _FUNDING_EXACT_FEATURE_KEYS:
         requirements.add("funding")
-    if key.startswith(_OPEN_INTEREST_PREFIXES) or key in _OPEN_INTEREST_EXACT_FEATURE_KEYS:
+    if key in _OI_FEATURE_KEYS and ("funding" in key or key.startswith("crowded_")):
+        requirements.add("funding")
+    if (
+        key.startswith(_OPEN_INTEREST_PREFIXES)
+        or key in _OPEN_INTEREST_EXACT_FEATURE_KEYS
+        or key in _OI_FEATURE_KEYS
+    ):
         requirements.add("open_interest")
+    if (
+        key in _PERP_VOLUME_REQUIRED_FEATURE_KEYS
+        or key.startswith("dist_vwap_")
+        or key.startswith("trapped_longs_")
+        or key.startswith("vwap_zone_")
+        or key.startswith("oi_rel_vol_")
+    ):
+        requirements.add("volume")
     if (
         key.startswith(_SPOT_PREFIXES)
         or key.startswith(_BASIS_PREFIXES)
-        or key in {"spot_available", "spot_leads_perp_1h", "spot_perp_vol_ratio_24h"}
+        or key in {"basis", "spot_available", "spot_leads_perp_1h", "spot_perp_vol_ratio_24h"}
     ):
         requirements.add("spot")
     if (
@@ -231,6 +283,7 @@ def _feature_source_requirements(name: str) -> set[str]:
         or key.startswith("liq_")
         or key.startswith("mark_gap_")
         or key.startswith("mark_trigger_")
+        or key == "canonical_index"
     ):
         requirements.add("mark_index")
     return requirements
@@ -788,6 +841,64 @@ def _transform_volume(df):
     df_log = np.log(df + 1.0)
     df_den = ff.numba_ewma(df_log, 2.0 / 6.0, False)
     return df_den
+
+
+def _backfill_short_volume_gaps(
+    volume_df: pd.DataFrame,
+    open_df: pd.DataFrame | None = None,
+    close_df: pd.DataFrame | None = None,
+    *,
+    min_valid_fraction: float = 0.90,
+    max_gap: int = 3,
+) -> pd.DataFrame:
+    """Repair isolated historical volume gaps for otherwise complete symbols."""
+    clean = volume_df.astype(np.float32).replace([np.inf, -np.inf], np.nan)
+    clean = clean.where(clean > 0.0)
+    if open_df is not None and close_df is not None:
+        open_aligned = open_df.reindex_like(volume_df).astype(np.float32)
+        close_aligned = close_df.reindex_like(volume_df).astype(np.float32)
+        zero_no_trade = volume_df.eq(0.0) & open_aligned.eq(close_aligned)
+        prev_linked = (
+            zero_no_trade
+            & zero_no_trade.shift(1, fill_value=False)
+            & close_aligned.shift(1).eq(open_aligned)
+        )
+        next_linked = (
+            zero_no_trade
+            & zero_no_trade.shift(-1, fill_value=False)
+            & close_aligned.eq(open_aligned.shift(-1))
+        )
+        suspicious_zero_run = zero_no_trade & (prev_linked | next_linked)
+        clean = clean.mask(zero_no_trade & ~suspicious_zero_run, 0.0)
+    if clean.empty:
+        return clean
+    valid_fraction = clean.notna().mean(axis=0)
+    eligible_cols = list(valid_fraction[valid_fraction >= min_valid_fraction].index)
+    if not eligible_cols:
+        return clean
+
+    interpolated = clean[eligible_cols].interpolate(
+        method="time",
+        limit=max(0, int(max_gap)),
+        limit_area="inside",
+    )
+    repaired = clean.copy()
+    for col in eligible_cols:
+        missing = clean[col].isna().to_numpy()
+        if not missing.any():
+            continue
+        starts = np.flatnonzero(missing & np.r_[True, ~missing[:-1]])
+        ends = np.flatnonzero(missing & np.r_[~missing[1:], True])
+        fill_mask = np.zeros(len(missing), dtype=bool)
+        for start, end in zip(starts, ends):
+            if (end - start + 1) <= max_gap:
+                fill_mask[start : end + 1] = True
+        if fill_mask.any():
+            values = repaired[col].to_numpy(dtype=np.float32, copy=True)
+            interp_values = interpolated[col].to_numpy(dtype=np.float32, copy=False)
+            values[fill_mask] = interp_values[fill_mask]
+            repaired[col] = values
+    return repaired.astype(np.float32)
 
 
 def time_sin_cos(index: pd.DatetimeIndex):
@@ -1495,6 +1606,75 @@ def _kalman_local_level_df(
     )
 
 
+def _canonical_spot_index_from_ohlcv(
+    *,
+    spot_open: pd.DataFrame | None,
+    spot_high: pd.DataFrame | None,
+    spot_low: pd.DataFrame | None,
+    spot_close: pd.DataFrame | None,
+    spot_volume: pd.DataFrame | None,
+    safe_log_eps: float,
+    kalman_lambda: float,
+    bars_per_hour: int = 1,
+) -> pd.DataFrame | None:
+    if not isinstance(spot_close, pd.DataFrame) or spot_close.empty:
+        return None
+
+    def _align(frame: pd.DataFrame | None) -> pd.DataFrame | None:
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            return None
+        return (
+            frame.reindex(index=spot_close.index, columns=spot_close.columns)
+            .ffill()
+            .replace([np.inf, -np.inf], np.nan)
+            .astype(np.float32)
+        )
+
+    o = _align(spot_open)
+    h = _align(spot_high)
+    l = _align(spot_low)
+    c = _align(spot_close)
+    if c is None:
+        return None
+    fair_parts = [p for p in (c, o, h, l) if isinstance(p, pd.DataFrame)]
+    fair_price = (sum(fair_parts) / float(len(fair_parts))).where(lambda x: x > 0.0)
+    volume = _align(spot_volume)
+    if volume is None:
+        volume = pd.DataFrame(1.0, index=c.index, columns=c.columns, dtype=np.float32)
+    quote_volume = (volume * fair_price).replace([np.inf, -np.inf], np.nan).where(
+        lambda x: x > 0.0
+    )
+
+    def _vwap(window: int) -> pd.DataFrame:
+        minp = max(1, min(int(window), max(1, int(window) // 2)))
+        quote_sum = quote_volume.rolling(int(window), min_periods=minp).sum()
+        base_sum = (quote_volume / (fair_price + safe_log_eps)).rolling(
+            int(window), min_periods=minp
+        ).sum()
+        return (quote_sum / (base_sum + safe_log_eps)).where(lambda x: x > 0.0)
+
+    bph = max(1, int(bars_per_hour))
+    spot_vwap_1h = _vwap(bph)
+    spot_vwap_3h = _vwap(3 * bph)
+    spot_vwap_4h = _vwap(4 * bph)
+    del spot_vwap_3h
+    log_ref_raw = (
+        0.70 * _safe_log_df(spot_vwap_1h, eps=safe_log_eps)
+        + 0.30 * _safe_log_df(spot_vwap_4h, eps=safe_log_eps)
+    ).replace([np.inf, -np.inf], np.nan)
+    if not np.isfinite(log_ref_raw.to_numpy(dtype=np.float32, copy=False)).any():
+        return None
+    log_ref_kalman, _, _, _ = _kalman_local_level_df(log_ref_raw.ffill(), kalman_lambda)
+    log_canonical_index = (
+        0.30 * log_ref_raw + 0.70 * log_ref_kalman
+    ).replace([np.inf, -np.inf], np.nan)
+    canonical = np.exp(log_canonical_index).astype(np.float32)
+    canonical = canonical.where(canonical > 0.0)
+    if not np.isfinite(canonical.to_numpy(dtype=np.float32, copy=False)).any():
+        return None
+    return canonical.astype(np.float32)
+
+
 def _decile_monotonicity_score(signal_df: pd.DataFrame, ret_df: pd.DataFrame) -> float:
     """Cross-sectional decile monotonicity score using mean return per decile."""
     s = np.ascontiguousarray(signal_df.to_numpy(dtype=np.float64))
@@ -1916,6 +2096,43 @@ def _signed_log1p(x):
     return np.sign(x) * np.log1p(np.abs(x))
 
 
+@njit(parallel=True, cache=True)
+def _bars_since_price_memory_nb(
+    close: np.ndarray,
+    atr_pct: np.ndarray,
+    atr_mult: float,
+    max_lookback: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    n, m = close.shape
+    above = np.empty((n, m), dtype=np.float32)
+    below = np.empty((n, m), dtype=np.float32)
+    for j in prange(m):
+        for i in range(n):
+            c_i = close[i, j]
+            atr_i = atr_pct[i, j]
+            if not np.isfinite(c_i) or not np.isfinite(atr_i) or c_i <= 0.0:
+                above[i, j] = np.nan
+                below[i, j] = np.nan
+                continue
+            up_level = c_i * (1.0 + atr_mult * max(atr_i, 0.0))
+            dn_level = c_i * (1.0 - atr_mult * max(atr_i, 0.0))
+            last_above = max_lookback + 1
+            last_below = max_lookback + 1
+            start = max(0, i - max_lookback)
+            for k in range(i - 1, start - 1, -1):
+                c_k = close[k, j]
+                if np.isfinite(c_k):
+                    if last_above == max_lookback + 1 and c_k >= up_level:
+                        last_above = i - k
+                    if last_below == max_lookback + 1 and c_k <= dn_level:
+                        last_below = i - k
+                    if last_above != max_lookback + 1 and last_below != max_lookback + 1:
+                        break
+            above[i, j] = np.log1p(float(last_above))
+            below[i, j] = np.log1p(float(last_below))
+    return above, below
+
+
 def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     tprint("Features: compute base matrices")
     requested_feature_set = set(requested_feature_keys or [])
@@ -2087,7 +2304,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     index_open_panel = panel.get("index_open")
     index_high_panel = panel.get("index_high")
     index_low_panel = panel.get("index_low")
-    premium_index_panel = panel.get("premium_index")
 
     if len(mkt_gates) == len(new_idx):
         mkt_gates.index = new_idx
@@ -2175,10 +2391,26 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     # --- Liquidity Features (User Request) ---
     # Must compute before deleting h_raw, l_raw, c_raw, v_raw
     # Volume is in panel still, so we can access it
-    _v_raw = panel["volume"].astype(np.float32)
+    _v_raw = _backfill_short_volume_gaps(
+        panel["volume"].astype(np.float32),
+        panel["open"].astype(np.float32),
+        panel["close"].astype(np.float32),
+    )
     _v_raw.index = new_idx
+    _quote_volume_raw = (
+        panel.get("quote_volume").astype(np.float32)
+        if isinstance(panel, dict) and isinstance(panel.get("quote_volume"), pd.DataFrame)
+        else (c_raw * _v_raw).astype(np.float32)
+    )
+    _quote_volume_raw = (
+        _quote_volume_raw.reindex(index=new_idx, columns=c_raw.columns)
+        .replace([np.inf, -np.inf], np.nan)
+        .clip(lower=0.0)
+        .fillna(0.0)
+        .astype(np.float32)
+    )
     _rng = np.log(h_raw / np.maximum(l_raw, 1e-12)).astype(np.float32)
-    _dollar_vol = (c_raw * _v_raw).astype(np.float32)
+    _dollar_vol = _quote_volume_raw.astype(np.float32)
     _rng_sum_48 = _roll_sum("rng", _rng, 48)
     _dv_sum_48 = _roll_sum("dollar_vol", _dollar_vol, 48)
     _impact = (_rng_sum_48 / np.maximum(_dv_sum_48, 1e-12)).astype(np.float32)
@@ -2205,7 +2437,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     )
 
     del (
-        _v_raw,
         _rng,
         _dollar_vol,
         _rng_sum_48,
@@ -2238,10 +2469,12 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feature_columns = c.columns
     feature_shape = c.shape
     # 6. Transform Volume
-    v_raw = panel["volume"].astype(np.float32)
+    v_raw = _v_raw.reindex(index=new_idx, columns=c_raw.columns).astype(np.float32)
     v_raw.index = new_idx
-    # Raw log(volume_usd) — unnormalized, for asset identity
-    _raw_log_vol = np.log1p(v_raw).astype(np.float32)
+    # Canonical quote-notional volume. This is the only volume primitive used
+    # for cross-asset identity/state features; base volume is venue-specific.
+    quote_volume_raw = _quote_volume_raw.astype(np.float32)
+    _raw_log_vol = np.log1p(quote_volume_raw).astype(np.float32)
     v = _transform_volume(v_raw)
     intraday_library_feats = _compute_intraday_library_features_wide(
         open_df=o_raw,
@@ -2251,6 +2484,17 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         volume_df=v_raw,
         requested_feature_set=requested_feature_set,
     )
+    _feature_base_valid_mask = (
+        np.isfinite(o_raw)
+        & np.isfinite(h_raw)
+        & np.isfinite(l_raw)
+        & np.isfinite(c_raw)
+        & (o_raw > 0.0)
+        & (h_raw > 0.0)
+        & (l_raw > 0.0)
+        & (c_raw > 0.0)
+        & (h_raw >= l_raw)
+    ).to_numpy(dtype=bool, copy=False)
     del o_raw
     gc.collect()
 
@@ -2414,22 +2658,22 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     # Carry price becomes default base for many pre-existing features.
     c = c_carry
 
-    # --- Asset Identity Features (raw-scale, NOT cross-sectionally normalized) ---
-    # These provide "who is this asset" context without one-hot encoding.
-    # asset_atr_level: smooth baseline of raw ATR% over 60 days — stable volatility fingerprint
-    # asset_vol_level: smooth baseline of raw log(volume_usd) over 60 days — stable liquidity fingerprint
-    # Use EWMA (alpha=2/(1440+1)) as fast O(T*S) proxy for rolling median.
-    _ALPHA_IDENTITY = 2.0 / (24 * 60 + 1)  # EWMA alpha matching 60-day span
-    feats["asset_atr_level"] = ff.numba_ewma(
-        _raw_atr_pct, _ALPHA_IDENTITY, False
+    # --- Portable asset identity/state features ---
+    # Keep identity as within-symbol percentile/z-score, not absolute ATR or
+    # volume level. Absolute levels memorize asset/exchange liquidity regimes.
+    identity_window = 24 * 60
+    feats["asset_atr_level_pct"] = ff.numba_rolling_rank_pct(
+        _raw_atr_pct, identity_window
+    ).fillna(0.5).astype(np.float32)
+    feats["asset_vol_level_pct"] = ff.numba_rolling_rank_pct(
+        _raw_log_vol, identity_window
+    ).fillna(0.5).astype(np.float32)
+    feats["vol_state"] = _batch_roll_zscore(_raw_log_vol, identity_window).clip(
+        -6.0, 6.0
     ).astype(np.float32)
-    feats["asset_vol_level"] = ff.numba_ewma(
-        _raw_log_vol, _ALPHA_IDENTITY, False
-    ).astype(np.float32)
-    # vol_state: current log_vol / long-run level — >1 means elevated activity vs own baseline
-    feats["vol_state"] = (_raw_log_vol / (feats["asset_vol_level"] + 1e-9)).astype(
-        np.float32
-    )
+    # Backward-compatible names now carry the portable percentile values.
+    feats["asset_atr_level"] = feats["asset_atr_level_pct"].astype(np.float32)
+    feats["asset_vol_level"] = feats["asset_vol_level_pct"].astype(np.float32)
     del _raw_atr_pct, _raw_log_vol
 
     # --- D-Specific Feature Families ---
@@ -2875,19 +3119,328 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     h_16 = _roll_max("h", h, 16)
     l_16 = _roll_min("l", l, 16)
 
-    # range_XXh_pct is max_h - min_l. inputs are log-FFD, so diff is %-ish.
-    # Do NOT divide by c (FFD) as it crosses 0.
-    # Use np.where to handle cases where rolling windows produce NaN
-    feats["range_24h_pct"] = np.where(
-        np.isfinite(h_24) & np.isfinite(l_24), (h_24 - l_24), 0.0
-    ).astype(np.float32)
-    feats["range_12h_pct"] = np.where(
-        np.isfinite(h_12) & np.isfinite(l_12), (h_12 - l_12), 0.0
-    ).astype(np.float32)
-    feats["range_16h_pct"] = np.where(
-        np.isfinite(h_16) & np.isfinite(l_16), (h_16 - l_16), 0.0
-    ).astype(np.float32)
+    # Raw OHLC percentage range. Keep invalid/pre-listing windows as NaN:
+    # zero is a real low-volatility value and must not be used as missing-data
+    # filler, especially for sparse/new perp listings.
+    h_raw_24 = _roll_max("h_raw", h_raw, 24)
+    l_raw_24 = _roll_min("l_raw", l_raw, 24)
+    h_raw_12 = _roll_max("h_raw", h_raw, 12)
+    l_raw_12 = _roll_min("l_raw", l_raw, 12)
+    h_raw_16 = _roll_max("h_raw", h_raw, 16)
+    l_raw_16 = _roll_min("l_raw", l_raw, 16)
+
+    def _raw_range_pct(_hi: pd.DataFrame, _lo: pd.DataFrame) -> pd.DataFrame:
+        _denom = c_raw.where(c_raw > 0.0)
+        _out = ((_hi - _lo) / (_denom + 1e-12)).replace([np.inf, -np.inf], np.nan)
+        _valid = np.isfinite(_hi) & np.isfinite(_lo) & np.isfinite(_denom)
+        return _out.where(_valid).astype(np.float32)
+
+    feats["range_24h_pct"] = _raw_range_pct(h_raw_24, l_raw_24)
+    feats["range_12h_pct"] = _raw_range_pct(h_raw_12, l_raw_12)
+    feats["range_16h_pct"] = _raw_range_pct(h_raw_16, l_raw_16)
+
+    # Price memory, VWAP-zone, and support/resistance geometry.
+    # These are OHLCV-only and causal: all barriers/levels are shifted by one bar.
+    memory_lookback = int(cfg.get("price_memory_max_lookback_bars", 24 * 14))
+    close_memory = c_raw.to_numpy(dtype=np.float32, copy=False)
+    atr_memory = raw_atr_pct.to_numpy(dtype=np.float32, copy=False)
+    for _atr_mult in (1, 2, 3):
+        _above, _below = _bars_since_price_memory_nb(
+            close_memory,
+            atr_memory,
+            float(_atr_mult),
+            memory_lookback,
+        )
+        _above_df = pd.DataFrame(
+            _above, index=c_raw.index, columns=c_raw.columns
+        ).astype(np.float32)
+        _below_df = pd.DataFrame(
+            _below, index=c_raw.index, columns=c_raw.columns
+        ).astype(np.float32)
+        feats[f"log_bars_since_above_{_atr_mult}atr"] = _above_df
+        feats[f"log_bars_since_below_{_atr_mult}atr"] = _below_df
+        feats[f"memory_asymmetry_{_atr_mult}ATR"] = (_below_df - _above_df).astype(
+            np.float32
+        )
+    del close_memory, atr_memory
+
+    _feature_idx = c_raw.index
+    _feature_cols = c_raw.columns
+    _c_raw_arr = c_raw.to_numpy(dtype=np.float32, copy=False)
+    _atr_pct_arr = raw_atr_pct.to_numpy(dtype=np.float32, copy=False)
+    _atr_price_arr = np.maximum(_atr_pct_arr * _c_raw_arr, np.float32(1e-12))
+    _trend_speed_arr = (
+        feats["ret1h"].to_numpy(dtype=np.float32, copy=False)
+        / (_atr_pct_arr + np.float32(1e-12))
+    ).astype(np.float32, copy=False)
+
+    def _add_feature_frame(name: str, values: np.ndarray) -> None:
+        feats[name] = pd.DataFrame(
+            values.astype(np.float32, copy=False),
+            index=_feature_idx,
+            columns=_feature_cols,
+            copy=False,
+        )
+
+    _vwap_24_raw = ff.numba_rolling_vwap(c_raw, quote_volume_raw, 24).astype(
+        np.float32, copy=False
+    )
+    _vwap_168_raw = ff.numba_rolling_vwap(c_raw, quote_volume_raw, 24 * 7).astype(
+        np.float32, copy=False
+    )
+    _prev_day_vwap = _vwap_24_raw.shift(1)
+    _prev_week_vwap = _vwap_168_raw.shift(1)
+
+    _vwap_24_shift = _vwap_24_raw.shift(1)
+    _vwap_168_shift = _vwap_168_raw.shift(1)
+    _lower_day_vwap = _roll_min("vwap_24_shift", _vwap_24_shift, 24)
+    _upper_day_vwap = _roll_max("vwap_24_shift", _vwap_24_shift, 24)
+    _lower_week_vwap = _roll_min("vwap_168_shift", _vwap_168_shift, 24 * 7)
+    _upper_week_vwap = _roll_max("vwap_168_shift", _vwap_168_shift, 24 * 7)
+    _atr_1d_pct = _roll_mean("raw_atr_pct", raw_atr_pct, 24).shift(1)
+    _atr_7d_pct = _roll_mean("raw_atr_pct", raw_atr_pct, 24 * 7).shift(1)
+
+    _lower_day_vwap_arr = _lower_day_vwap.to_numpy(dtype=np.float32, copy=False)
+    _upper_day_vwap_arr = _upper_day_vwap.to_numpy(dtype=np.float32, copy=False)
+    _lower_week_vwap_arr = _lower_week_vwap.to_numpy(dtype=np.float32, copy=False)
+    _upper_week_vwap_arr = _upper_week_vwap.to_numpy(dtype=np.float32, copy=False)
+    _atr_1d_pct_arr = _atr_1d_pct.to_numpy(dtype=np.float32, copy=False)
+    _atr_7d_pct_arr = _atr_7d_pct.to_numpy(dtype=np.float32, copy=False)
+    _zone_1d = (
+        ((_c_raw_arr - _lower_day_vwap_arr) / (_upper_day_vwap_arr - _lower_day_vwap_arr + np.float32(1e-12)))
+        / (_atr_1d_pct_arr + np.float32(1e-12))
+    )
+    _zone_7d = (
+        ((_c_raw_arr - _lower_week_vwap_arr) / (_upper_week_vwap_arr - _lower_week_vwap_arr + np.float32(1e-12)))
+        / (_atr_7d_pct_arr + np.float32(1e-12))
+    )
+    _zone_1d[~np.isfinite(_zone_1d)] = np.nan
+    _zone_7d[~np.isfinite(_zone_7d)] = np.nan
+    _add_feature_frame("vwap_zone_1d_atr", _zone_1d)
+    _add_feature_frame("vwap_zone_7d_atr", _zone_7d)
+
+    if isinstance(oi_panel, pd.DataFrame) and not oi_panel.empty:
+        _oi_loc = (
+            oi_panel.reindex(index=_feature_idx, columns=_feature_cols)
+            .replace([np.inf, -np.inf], np.nan)
+            .where(lambda x: x > 0.0)
+            .astype(np.float32)
+        )
+        _delta_oi = _oi_loc.diff()
+        _price_for_oiw = c_raw.where(c_raw > 0.0).astype(np.float32)
+
+        def _add_oi_weighted_entry_distances(
+            prefix: str,
+            weight: pd.DataFrame,
+            windows: tuple[tuple[str, int], ...],
+        ) -> dict[str, pd.DataFrame]:
+            _weight = (
+                weight.replace([np.inf, -np.inf], np.nan)
+                .clip(lower=0.0)
+                .fillna(0.0)
+                .astype(np.float32)
+            )
+            _weighted_price = (_price_for_oiw * _weight).astype(np.float32)
+            _refs: dict[str, pd.DataFrame] = {}
+            for _suffix, _window in windows:
+                _num = _weighted_price.rolling(_window, min_periods=1).sum()
+                _den = _weight.rolling(_window, min_periods=1).sum()
+                _ref = (_num / _den.replace(0.0, np.nan)).replace(
+                    [np.inf, -np.inf], np.nan
+                )
+                _refs[_suffix] = _ref.astype(np.float32)
+                _ref_arr = _ref.to_numpy(dtype=np.float32, copy=False)
+                _dist = (_c_raw_arr - _ref_arr) / (_atr_price_arr + np.float32(1e-12))
+                _dist[~np.isfinite(_dist)] = np.nan
+                _add_feature_frame(
+                    f"{prefix}_entry_dist_{_suffix}_atr",
+                    np.clip(_dist, -100.0, 100.0),
+                )
+                _add_feature_frame(
+                    f"dist_{prefix}_{_suffix}_atr",
+                    np.clip(_dist, -100.0, 100.0),
+                )
+            return _refs
+
+        _pos_delta_refs = _add_oi_weighted_entry_distances(
+            "oiw_pos_delta",
+            _delta_oi,
+            (("1d", 24), ("7d", 24 * 7), ("14d", 24 * 14)),
+        )
+        _prev_oi = _oi_loc.shift(1)
+        _oi_intensity_weight = (_delta_oi / _prev_oi).replace(
+            [np.inf, -np.inf], np.nan
+        )
+        _add_oi_weighted_entry_distances(
+            "oiw_intensity",
+            _oi_intensity_weight,
+            (("12h", 12), ("1d", 24), ("7d", 24 * 7), ("96h", 96)),
+        )
+        _z_window = int(cfg.get("oi_weighted_price_z_window_bars", 96))
+        _delta_mean = _delta_oi.rolling(_z_window, min_periods=2).mean()
+        _delta_std = _delta_oi.rolling(_z_window, min_periods=2).std()
+        _z_delta_weight = ((_delta_oi - _delta_mean) / _delta_std).replace(
+            [np.inf, -np.inf], np.nan
+        )
+        _add_oi_weighted_entry_distances(
+            "oiw_z_delta",
+            _z_delta_weight,
+            (("12h", 12), ("1d", 24), ("7d", 24 * 7), ("96h", 96), ("14d", 24 * 14)),
+        )
+        if "1d" in _pos_delta_refs:
+            _entry_1d = _pos_delta_refs["1d"].shift(1)
+            _lower_oiw_1d = _entry_1d.rolling(24, min_periods=1).min()
+            _upper_oiw_1d = _entry_1d.rolling(24, min_periods=1).max()
+            _lower_oiw_1d_arr = _lower_oiw_1d.to_numpy(dtype=np.float32, copy=False)
+            _upper_oiw_1d_arr = _upper_oiw_1d.to_numpy(dtype=np.float32, copy=False)
+            _oiw_zone_1d = (
+                ((_c_raw_arr - _lower_oiw_1d_arr) / (_upper_oiw_1d_arr - _lower_oiw_1d_arr + np.float32(1e-12)))
+                / (_atr_1d_pct_arr + np.float32(1e-12))
+            )
+            _oiw_zone_1d[~np.isfinite(_oiw_zone_1d)] = np.nan
+            _add_feature_frame("oiw_entry_zone_1d_atr", np.clip(_oiw_zone_1d, -100.0, 100.0))
+            del _entry_1d, _lower_oiw_1d, _upper_oiw_1d
+            del _lower_oiw_1d_arr, _upper_oiw_1d_arr, _oiw_zone_1d
+        _abs_ret = feats["ret1h"].abs().replace([np.inf, -np.inf], np.nan).astype(np.float32)
+        _oi_scale = np.log1p(_oi_loc).replace([np.inf, -np.inf], np.nan)
+        feats["abs_ret_per_oi_z_24h"] = _batch_roll_zscore(
+            (_abs_ret / (_oi_scale + np.float32(1e-12))).clip(0.0, 100.0),
+            24,
+        ).astype(np.float32)
+        feats["impact_per_oi_intensity_z_24h"] = _batch_roll_zscore(
+            (_abs_ret / (_oi_intensity_weight.abs() + np.float32(1e-9))).clip(0.0, 100.0),
+            24,
+        ).astype(np.float32)
+        del _oi_loc, _delta_oi, _price_for_oiw
+        del _pos_delta_refs, _abs_ret, _oi_scale
+        del _prev_oi, _oi_intensity_weight, _z_window, _delta_mean, _delta_std
+        del _z_delta_weight
+
+    _prev_day_low = _roll_min("l_raw_shift", l_raw.shift(1), 24)
+    _prev_day_high = _roll_max("h_raw_shift", h_raw.shift(1), 24)
+    _prev_week_low = _roll_min("l_raw_shift", l_raw.shift(1), 24 * 7)
+    _prev_week_high = _roll_max("h_raw_shift", h_raw.shift(1), 24 * 7)
+
+    _prev_day_low_arr = _prev_day_low.to_numpy(dtype=np.float32, copy=False)
+    _prev_day_high_arr = _prev_day_high.to_numpy(dtype=np.float32, copy=False)
+    _donchian_zone_1d = (
+        ((_c_raw_arr - _prev_day_low_arr) / (_prev_day_high_arr - _prev_day_low_arr + np.float32(1e-12)))
+        / (_atr_1d_pct_arr + np.float32(1e-12))
+    )
+    _donchian_zone_1d[~np.isfinite(_donchian_zone_1d)] = np.nan
+    _add_feature_frame("donchian_zone_1d_atr", np.clip(_donchian_zone_1d, -100.0, 100.0))
+    del _prev_day_low_arr, _prev_day_high_arr, _donchian_zone_1d
+
+    if isinstance(funding_panel, pd.DataFrame) and not funding_panel.empty:
+        _fund_shift = int(cfg.get("funding_shift_bars", cfg.get("microstructure_shift_bars", 1)))
+        _fund_loc = (
+            funding_panel.reindex(index=_feature_idx, columns=_feature_cols)
+            .replace([np.inf, -np.inf], np.nan)
+            .shift(max(_fund_shift, 0))
+            .astype(np.float32)
+        )
+        _fund_abs_z_loc = _batch_roll_zscore(_fund_loc, 14 * 24).abs().clip(0.0, 6.0).astype(np.float32)
+        _fund_weighted_price = (_price_for_funding := c_raw.where(c_raw > 0.0).astype(np.float32)) * _fund_abs_z_loc.fillna(0.0)
+        for _suffix, _window in (("12h", 12), ("96h", 96)):
+            _num = _fund_weighted_price.rolling(_window, min_periods=1).sum()
+            _den = _fund_abs_z_loc.fillna(0.0).rolling(_window, min_periods=1).sum()
+            _ref = (_num / _den.replace(0.0, np.nan)).replace([np.inf, -np.inf], np.nan)
+            _ref_arr = _ref.to_numpy(dtype=np.float32, copy=False)
+            _dist = (_c_raw_arr - _ref_arr) / (_atr_price_arr + np.float32(1e-12))
+            _dist[~np.isfinite(_dist)] = np.nan
+            _add_feature_frame(
+                f"dist_funding_pressure_price_{_suffix}_atr",
+                np.clip(_dist, -100.0, 100.0),
+            )
+        if "range_24h_pct" in feats:
+            feats["range_per_funding_abs_z_24h"] = _batch_roll_zscore(
+                (feats["range_24h_pct"] / (_fund_abs_z_loc + np.float32(1e-6))).clip(0.0, 100.0),
+                24,
+            ).astype(np.float32)
+        del _fund_shift, _fund_loc, _fund_abs_z_loc, _fund_weighted_price
+        del _price_for_funding
+
+    def _vwap_support_resistance(level: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+        level_arr = level.to_numpy(dtype=np.float32, copy=False)
+        support_dist = np.where(
+            level_arr <= _c_raw_arr,
+            (_c_raw_arr - level_arr) / (_atr_price_arr + np.float32(1e-12)),
+            np.float32(100.0),
+        )
+        resistance_dist = np.where(
+            level_arr >= _c_raw_arr,
+            (level_arr - _c_raw_arr) / (_atr_price_arr + np.float32(1e-12)),
+            np.float32(100.0),
+        )
+        return (
+            np.clip(support_dist, 0.0, 100.0).astype(np.float32, copy=False),
+            np.clip(resistance_dist, 0.0, 100.0).astype(np.float32, copy=False),
+        )
+
+    def _channel_support_resistance(
+        support: pd.DataFrame, resistance: pd.DataFrame
+    ) -> tuple[np.ndarray, np.ndarray]:
+        support_arr = support.to_numpy(dtype=np.float32, copy=False)
+        resistance_arr = resistance.to_numpy(dtype=np.float32, copy=False)
+        support_dist = (_c_raw_arr - support_arr) / (_atr_price_arr + np.float32(1e-12))
+        resistance_dist = (resistance_arr - _c_raw_arr) / (_atr_price_arr + np.float32(1e-12))
+        return (
+            np.clip(support_dist, 0.0, 100.0).astype(np.float32, copy=False),
+            np.clip(resistance_dist, 0.0, 100.0).astype(np.float32, copy=False),
+        )
+
+    _sr_pairs: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    _sr_pairs["daily_vwap"] = _vwap_support_resistance(_prev_day_vwap)
+    _sr_pairs["weekly_vwap"] = _vwap_support_resistance(_prev_week_vwap)
+    _sr_pairs["daily_donchian"] = _channel_support_resistance(
+        _prev_day_low, _prev_day_high
+    )
+    _sr_pairs["weekly_donchian"] = _channel_support_resistance(
+        _prev_week_low, _prev_week_high
+    )
+
+    _support_arrays = []
+    _resistance_arrays = []
+    _eps_barrier = float(cfg.get("barrier_pressure_eps_atr", 0.05))
+    for _name, (_support_dist, _resistance_dist) in _sr_pairs.items():
+        _add_feature_frame(f"distance_to_support_{_name}_atr", _support_dist)
+        _add_feature_frame(f"distance_to_resistance_{_name}_atr", _resistance_dist)
+        _support_arrays.append(_support_dist)
+        _resistance_arrays.append(_resistance_dist)
+        _down_speed = np.maximum(-_trend_speed_arr, 0.0)
+        _up_speed = np.maximum(_trend_speed_arr, 0.0)
+        _support_denom = np.maximum(_support_dist, _eps_barrier)
+        _resistance_denom = np.maximum(_resistance_dist, _eps_barrier)
+        _add_feature_frame(
+            f"down_barrier_pressure_{_name}",
+            np.clip(_down_speed / _support_denom, 0.0, 100.0),
+        )
+        _add_feature_frame(
+            f"up_barrier_pressure_{_name}",
+            np.clip(_up_speed / _resistance_denom, 0.0, 100.0),
+        )
+        _add_feature_frame(
+            f"bars_to_support_{_name}",
+            np.clip(_support_dist / np.maximum(_down_speed, _eps_barrier), 0.0, 100.0),
+        )
+        _add_feature_frame(
+            f"bars_to_resistance_{_name}",
+            np.clip(_resistance_dist / np.maximum(_up_speed, _eps_barrier), 0.0, 100.0),
+        )
+
+    _add_feature_frame("distance_to_support_atr", np.minimum.reduce(_support_arrays))
+    _add_feature_frame("distance_to_resistance_atr", np.minimum.reduce(_resistance_arrays))
+
+    del _c_raw_arr, _atr_pct_arr, _atr_price_arr, _trend_speed_arr
+    del _vwap_24_raw, _vwap_168_raw, _vwap_24_shift, _vwap_168_shift
+    del _prev_day_vwap, _prev_week_vwap, _lower_day_vwap, _upper_day_vwap
+    del _lower_week_vwap, _upper_week_vwap, _atr_1d_pct, _atr_7d_pct
+    del _lower_day_vwap_arr, _upper_day_vwap_arr, _lower_week_vwap_arr, _upper_week_vwap_arr
+    del _atr_1d_pct_arr, _atr_7d_pct_arr, _zone_1d, _zone_7d
+    del _prev_day_low, _prev_day_high, _prev_week_low, _prev_week_high
+    del _support_arrays, _resistance_arrays, _sr_pairs
     del h_24, l_24, h_12, l_12, h_16, l_16
+    del h_raw_24, l_raw_24, h_raw_12, l_raw_12, h_raw_16, l_raw_16
 
     # Volatility Z-score (using Log-ATR robust z-score)
     # Baseline: 90 days. x = log(ATR/Close).
@@ -2901,9 +3454,14 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     )
     del vol_proxy, log_vol
 
-    feats["qv"] = (c * v).astype(np.float32)
-    feats["vol_z24_base"] = zscore_rolling(v, 24)
-    feats["vol_z_base"] = zscore_rolling(v, cfg["volz_n"])
+    log_quote_volume = np.log1p(quote_volume_raw).astype(np.float32)
+    feats["log_quote_volume"] = log_quote_volume.astype(np.float32)
+    feats["qv"] = log_quote_volume.astype(np.float32)
+    feats["quote_volume_z_30d"] = _batch_roll_robust_zscore(
+        [("quote_volume_z_30d", log_quote_volume)], 24 * 30
+    )["quote_volume_z_30d"].clip(-6.0, 6.0).astype(np.float32)
+    feats["vol_z24_base"] = zscore_rolling(log_quote_volume, 24)
+    feats["vol_z_base"] = zscore_rolling(log_quote_volume, cfg["volz_n"])
 
     ema_fast_base = ema(c, cfg["ema_fast"])
     ema_slow_base = ema(c, cfg["ema_slow"])
@@ -2965,7 +3523,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     # 5. Liquidity Shock (Amihud Proxy for long_tf)
     # |Ret| / (Volume * Price). Spikes indicate price moving on thin liquidity.
-    illiq_raw = (feats["ret1h"].abs() / ((v * c) + 1e-12)).replace(
+    illiq_raw = (feats["ret1h"].abs() / (quote_volume_raw + 1e-12)).replace(
         [np.inf, -np.inf], np.nan
     )
     feats["amihud_illiq"] = (
@@ -3031,7 +3589,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         columns=c.columns,
     ).astype(np.float32)
 
-    signed_vol = v * np.sign(c - o)
+    signed_vol = quote_volume_raw * np.sign(c - o)
     sv_abs = signed_vol.abs()
     ewma_sv_fast = ema(signed_vol, 6)
     ewma_sv_slow = ema(sv_abs, 24)
@@ -3067,7 +3625,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     fvg_bear = (l - h_prev2).clip(lower=0)
     feats["fvg"] = (fvg_bull - fvg_bear).astype(np.float32)
 
-    feats["churn"] = (v / ((c - o).abs() + 1e-12)).astype(np.float32)
+    feats["churn"] = (
+        log_quote_volume / ((c - o).abs() + 1e-12)
+    ).astype(np.float32)
     feats["slope"] = ((ema_fast_base - ema_slow_base) / (atr_base + 1e-12)).astype(
         np.float32
     )
@@ -3078,7 +3638,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     # v_power: Volume / Abs Price Change? Normalizing by c.abs() (FFD) is unstable if c~0.
     # Normalize by ATR base instead.
-    feats["v_power"] = (v / (atr_base + 1e-9)).astype(np.float32)
+    feats["v_power"] = (
+        log_quote_volume / ((atr_base / (c_raw + 1e-12)).abs() + 1e-9)
+    ).astype(np.float32)
     feats["signed_vol"] = signed_vol.astype(np.float32)
 
     atr_ema_f = ema(atr_base, 6)
@@ -3087,7 +3649,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         np.float32
     )
 
-    vwap_24 = ff.numba_rolling_vwap(c, v, 24).astype(np.float32)
+    vwap_24 = ff.numba_rolling_vwap(c, quote_volume_raw, 24).astype(np.float32)
 
     feats["dist_vwap_norm"] = ((c - vwap_24) / (atr_base + np.float32(1e-12))).astype(
         np.float32
@@ -3312,7 +3874,12 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     if bool(cfg.get("use_perps", False)):
         perp_price_panel = np.exp(c_log).astype(np.float32)
-        volume_panel = np.exp(v).astype(np.float32)
+        volume_panel = v_raw.reindex(index=c_log.index, columns=c_log.columns).astype(
+            np.float32
+        )
+        quote_volume_panel = quote_volume_raw.reindex(
+            index=c_log.index, columns=c_log.columns
+        ).astype(np.float32)
         idx_perp = perp_price_panel.index
         cols_perp = perp_price_panel.columns
 
@@ -3362,46 +3929,74 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
         mark_panel = _portable_perp_panel(mark_price_panel)
         index_panel = _portable_perp_panel(index_price_panel)
-        premium_panel = _portable_perp_panel(premium_index_panel, positive=False)
         spot_price_panel_for_rel = _portable_perp_panel(spot_close_panel)
-        if not isinstance(spot_price_panel_for_rel, pd.DataFrame):
-            # Some derivative venues expose a perp index price but not a
-            # separate spot candle stream.  Use that index as the portable
-            # reference price so funding/OI/basis features remain available
-            # instead of silently dropping the whole perps feature block.
-            if isinstance(index_panel, pd.DataFrame):
-                spot_price_panel_for_rel = index_panel
-            elif isinstance(mark_panel, pd.DataFrame):
-                spot_price_panel_for_rel = mark_panel
+        canonical_index_panel = _canonical_spot_index_from_ohlcv(
+            spot_open=_portable_perp_panel(spot_open_panel),
+            spot_high=_portable_perp_panel(spot_high_panel),
+            spot_low=_portable_perp_panel(spot_low_panel),
+            spot_close=spot_price_panel_for_rel,
+            spot_volume=_portable_perp_panel(spot_volume_panel, positive=False),
+            safe_log_eps=safe_log_eps,
+            kalman_lambda=float(cfg.get("canonical_index_kalman_lambda", 0.05)),
+            bars_per_hour=int(cfg.get("feature_bars_per_hour", 1)),
+        )
+        reference_price_panel_for_basis = (
+            canonical_index_panel
+            if isinstance(canonical_index_panel, pd.DataFrame)
+            else index_panel
+            if isinstance(index_panel, pd.DataFrame)
+            else spot_price_panel_for_rel
+        )
 
         if isinstance(mark_panel, pd.DataFrame):
             feats["mark_price"] = mark_panel.astype(np.float32)
             feats["mark_perp_dislocation"] = (
                 (mark_panel / (perp_price_panel + 1e-12)) - 1.0
             ).clip(-0.05, 0.05).astype(np.float32)
-        if isinstance(index_panel, pd.DataFrame):
-            feats["index_price"] = index_panel.astype(np.float32)
-            feats["perp_index_basis"] = (
-                (perp_price_panel / (index_panel + 1e-12)) - 1.0
+            feats["mark_vs_perp_bps"] = (
+                feats["mark_perp_dislocation"] * 1e4
+            ).clip(-1000, 1000).astype(np.float32)
+        if isinstance(canonical_index_panel, pd.DataFrame):
+            feats["canonical_index"] = canonical_index_panel.astype(np.float32)
+            feats["index_price"] = canonical_index_panel.astype(np.float32)
+            feats["premium_proxy"] = (
+                (perp_price_panel / (canonical_index_panel + 1e-12)) - 1.0
             ).clip(-0.10, 0.10).astype(np.float32)
+            feats["premium_proxy_bps"] = (feats["premium_proxy"] * 1e4).clip(
+                -1000, 1000
+            ).astype(np.float32)
+            feats["premium_proxy_z"] = _batch_roll_zscore(
+                feats["premium_proxy"], 14 * 24
+            ).clip(-6, 6)
+            feats["premium_proxy_mom_8h"] = _batch_roll_zscore(
+                feats["premium_proxy"].diff(8), 14 * 24
+            ).clip(-6, 6)
+            feats["perp_index_basis"] = (
+                (perp_price_panel / (canonical_index_panel + 1e-12)) - 1.0
+            ).clip(-0.10, 0.10).astype(np.float32)
+            feats["perp_vs_index_bps"] = (
+                feats["perp_index_basis"] * 1e4
+            ).clip(-1000, 1000).astype(np.float32)
             feats["perp_index_basis_z"] = _batch_roll_zscore(
                 feats["perp_index_basis"], 14 * 24
             ).clip(-6, 6)
-        if isinstance(mark_panel, pd.DataFrame) and isinstance(index_panel, pd.DataFrame):
+        elif isinstance(index_panel, pd.DataFrame):
+            feats["index_price"] = index_panel.astype(np.float32)
+        if isinstance(mark_panel, pd.DataFrame) and isinstance(reference_price_panel_for_basis, pd.DataFrame):
             feats["mark_index_basis"] = (
-                (mark_panel / (index_panel + 1e-12)) - 1.0
+                (mark_panel / (reference_price_panel_for_basis + 1e-12)) - 1.0
             ).clip(-0.10, 0.10).astype(np.float32)
+            feats["mark_vs_index_bps"] = (
+                feats["mark_index_basis"] * 1e4
+            ).clip(-1000, 1000).astype(np.float32)
             feats["mark_index_basis_z"] = _batch_roll_zscore(
                 feats["mark_index_basis"], 14 * 24
             ).clip(-6, 6)
-        if isinstance(premium_panel, pd.DataFrame):
-            feats["premium_index"] = premium_panel.astype(np.float32)
-            feats["premium_index_z"] = _batch_roll_zscore(
-                premium_panel, 14 * 24
-            ).clip(-6, 6)
-            feats["premium_index_mom_8h"] = _batch_roll_zscore(
-                premium_panel.diff(8), 14 * 24
-            ).clip(-6, 6)
+        if isinstance(feats.get("premium_proxy"), pd.DataFrame):
+            # Deliberately do not expose exchange-native premium aliases. All
+            # premium consumers use the canonical spot/index based
+            # premium_proxy family computed above.
+            pass
 
         if isinstance(spot_price_panel_for_rel, pd.DataFrame):
             spot_available = spot_price_panel_for_rel.notna()
@@ -3461,7 +4056,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 feats["spot_quote_volume_z_24h"] = _batch_roll_zscore(
                     spot_quote_volume, 24
                 ).clip(-6, 6)
-                perp_quote_volume = (volume_panel * perp_price_panel).astype(np.float32)
+                perp_quote_volume = quote_volume_panel.astype(np.float32)
                 feats["spot_perp_volume_ratio_24h"] = (
                     spot_quote_volume.rolling(24, min_periods=6).sum()
                     / (perp_quote_volume.rolling(24, min_periods=6).sum() + 1e-12)
@@ -3505,9 +4100,26 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 feats["spot_rv_24h"] / (perp_rv_24h + 1e-12)
             ).clip(0, 10).astype(np.float32)
 
+        oi_feature_panel = _portable_perp_panel(oi_panel)
+        if isinstance(oi_feature_panel, pd.DataFrame):
+            funding_feature_panel = (
+                _portable_funding_per_hour(funding_panel)
+                if isinstance(funding_panel, pd.DataFrame)
+                else None
+            )
+            oi_feats = compute_oi_features(
+                oi_native=oi_feature_panel,
+                price=perp_price_panel,
+                quote_volume=quote_volume_panel,
+                funding_rate=funding_feature_panel,
+                bars_per_day=24 * max(int(cfg.get("feature_bars_per_hour", 1)), 1),
+            )
+            feats.update(oi_feats)
+            tprint(f"OI feature block added: {len(oi_feats)}")
+
         if isinstance(funding_panel, pd.DataFrame) and isinstance(
             oi_panel, pd.DataFrame
-        ) and isinstance(spot_price_panel_for_rel, pd.DataFrame):
+        ) and isinstance(reference_price_panel_for_basis, pd.DataFrame):
             tprint("Computing perp derivative features...")
             funding_aligned = _portable_funding_per_hour(funding_panel)
             oi_aligned = (
@@ -3532,9 +4144,19 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                     {
                         "funding_rate": funding_aligned[sym],
                         "open_interest": oi_aligned[sym],
+                        "open_interest_quote": (
+                            oi_aligned[sym]
+                            * perp_price_panel[sym]
+                        ),
                         "perp_price": perp_price_panel[sym],
-                        "spot_price": spot_price_panel_for_rel[sym],
+                        "spot_price": reference_price_panel_for_basis[sym],
+                        **(
+                            {"mark_price": mark_panel[sym]}
+                            if isinstance(mark_panel, pd.DataFrame)
+                            else {}
+                        ),
                         "volume": volume_panel[sym],
+                        "quote_volume": quote_volume_panel[sym],
                         "close": perp_price_panel[sym],
                     },
                     index=perp_price_panel.index,
@@ -3572,6 +4194,10 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     idx = c_log.index
     cols = c_log.columns
     close_panel = np.exp(c_log).astype(np.float32)
+    volume_panel = v_raw.reindex(index=idx, columns=cols).astype(np.float32)
+    quote_volume_panel = quote_volume_raw.reindex(index=idx, columns=cols).astype(
+        np.float32
+    )
 
     def _zero_panel() -> pd.DataFrame:
         return pd.DataFrame(0.0, index=idx, columns=cols, dtype=np.float32)
@@ -3609,6 +4235,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     # funding-derived base building blocks: only emit exchange-native funding
     # features when a real funding panel is available.
     fund_aligned = None
+    funding_interval_hours = pd.DataFrame(np.nan, index=idx, columns=cols, dtype=np.float32)
+    hours_to_next = pd.DataFrame(np.nan, index=idx, columns=cols, dtype=np.float32)
+    hours_since_last = pd.DataFrame(np.nan, index=idx, columns=cols, dtype=np.float32)
     if isinstance(funding_panel, pd.DataFrame):
         funding_shift_bars = int(
             cfg.get("funding_shift_bars", cfg.get("microstructure_shift_bars", 1))
@@ -3631,17 +4260,39 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 interval_hours = float(delta_hours[(delta_hours > 0) & np.isfinite(delta_hours)].median())
                 if np.isfinite(interval_hours) and interval_hours > 0:
                     fund_hourly[_sym] = (fund_event_rate[_sym] / interval_hours).astype(np.float32)
+                    funding_interval_hours[_sym] = np.float32(interval_hours)
+                    event_idx = pd.DatetimeIndex(changes.index)
+                    event_ser = pd.Series(event_idx, index=event_idx)
+                    last_event = event_ser.reindex(idx, method="ffill")
+                    next_event = event_ser.shift(-1).reindex(idx, method="ffill")
+                    since = (
+                        (pd.Series(idx, index=idx) - last_event)
+                        .dt.total_seconds()
+                        .astype(float)
+                        / 3600.0
+                    )
+                    to_next = (
+                        (next_event - pd.Series(idx, index=idx))
+                        .dt.total_seconds()
+                        .astype(float)
+                        / 3600.0
+                    )
+                    hours_since_last[_sym] = since.clip(lower=0.0).astype(np.float32)
+                    hours_to_next[_sym] = to_next.clip(lower=0.0).astype(np.float32)
         if np.isfinite(fund_hourly.to_numpy(dtype=np.float32, copy=False)).any():
             fund_aligned = fund_hourly.astype(np.float32)
 
     if isinstance(fund_aligned, pd.DataFrame):
-        feats["fund_rate"] = fund_aligned.clip(lower=-0.005, upper=0.005).astype(
-            np.float32
-        )
+        feats["funding_per_hour"] = fund_aligned.astype(np.float32)
+        feats["fund_rate"] = feats["funding_per_hour"]
         feats["funding_rate"] = feats["fund_rate"]
         feats["fund_rate_z_14d"] = _batch_roll_zscore(
             feats["fund_rate"], 14 * 24
         ).clip(-6, 6)
+        feats["funding_per_hour_z"] = feats["fund_rate_z_14d"].astype(np.float32)
+        feats["funding_rank_30d"] = ff.numba_rolling_rank_pct(
+            feats["funding_per_hour"], 24 * 30
+        ).clip(0.01, 0.99).astype(np.float32)
         feats["fund_rate_mom_8h"] = _batch_roll_zscore(
             feats["fund_rate"].diff(8), 14 * 24
         ).clip(-6, 6)
@@ -3667,8 +4318,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         spot_panel = (
             panel.get("index_price")
             if isinstance(panel, dict) and isinstance(panel.get("index_price"), pd.DataFrame)
-            else panel.get("mark_price")
-            if isinstance(panel, dict)
             else None
         )
     if isinstance(spot_panel, pd.DataFrame) and not spot_panel.empty:
@@ -3685,12 +4334,23 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             )
             feats["basis_pct"] = basis_pct.astype(np.float32)
             feats["basis_pct_z"] = _batch_roll_zscore(basis_pct, 14 * 24).clip(-6, 6)
+            feats["basis_frac"] = feats["basis_pct"].astype(np.float32)
+            feats["basis_frac_z_14d"] = feats["basis_pct_z"].astype(np.float32)
+            feats["basis_frac_rank_30d"] = ff.numba_rolling_rank_pct(
+                feats["basis_pct"], 24 * 30
+            ).clip(0.01, 0.99).astype(np.float32)
+            feats["basis_per_atr"] = (
+                (basis_pct / (raw_atr_pct.abs() + eps))
+                .replace([np.inf, -np.inf], np.nan)
+                .clip(-50, 50)
+                .astype(np.float32)
+            )
             feats["basis_mom_4h"] = _batch_roll_zscore(
                 basis_pct.diff(4), 14 * 24
             ).clip(-6, 6)
             if "fund_rate_z_14d" in feats:
                 feats["basis_fund_div_z"] = (
-                    (feats["basis_pct_z"] - feats["fund_rate_z_14d"])
+                    (feats["basis_pct_z"] - feats["funding_per_hour_z"])
                     .clip(-10, 10)
                     .astype(np.float32)
                 )
@@ -3750,8 +4410,23 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             feats["ob_snapshot_age_sec"] = ob_snapshot_age_sec.where(
                 ob_snapshot_age_sec >= 0.0
             ).astype(np.float32)
+            expected_interval = float(
+                cfg.get("orderbook_expected_snapshot_interval_sec", 60.0)
+            )
+            stale_threshold = float(cfg.get("orderbook_stale_age_ratio", 3.0))
+            feats["ob_age_ratio"] = (
+                feats["ob_snapshot_age_sec"] / max(expected_interval, 1e-6)
+            ).clip(0.0, 1_000.0).astype(np.float32)
+            feats["ob_stale_flag"] = (
+                feats["ob_age_ratio"] > stale_threshold
+            ).astype(np.float32)
+        else:
+            feats["ob_stale_flag"] = (1.0 - available).astype(np.float32)
         feats["ob_update_gap_flag"] = (1.0 - available).astype(np.float32)
-        feats["ob_stale_flag"] = (1.0 - available).astype(np.float32)
+        feats["ob_available"] = available.astype(np.float32)
+        feats["ob_coverage_24h"] = available.rolling(24, min_periods=1).mean().astype(
+            np.float32
+        )
 
     if isinstance(ob_bid_qty_1, pd.DataFrame) and isinstance(
         ob_ask_qty_1, pd.DataFrame
@@ -3799,8 +4474,20 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 [np.inf, -np.inf], np.nan
             )
             ob_l10_depth_notional = depth_l10
-            feats["ob_depth_usd_l10"] = (
-                np.log1p(depth_l10.clip(lower=0.0)).fillna(0.0).astype(np.float32)
+            depth_l10_to_qv = (
+                (depth_l10 / (quote_volume_24h + eps))
+                .replace([np.inf, -np.inf], np.nan)
+                .clip(0.0, 100.0)
+            )
+            feats["ob_depth_quote_l10"] = depth_l10.astype(np.float32)
+            feats["ob_depth_usd_l10"] = depth_l10_to_qv.astype(np.float32)
+            feats["ob_depth_usd_l10_z"] = _batch_roll_zscore(
+                np.log1p(depth_l10.clip(lower=0.0)), 24 * 7
+            ).clip(-6.0, 6.0).astype(np.float32)
+            feats["ob_imb_10bps"] = feats["ob_imb_l10"].astype(np.float32)
+            feats["ob_depth_to_qv_10bps"] = depth_l10_to_qv.astype(np.float32)
+            feats["ob_depth_z_10bps"] = feats["ob_depth_usd_l10_z"].astype(
+                np.float32
             )
 
     if isinstance(ob_bid_qty_l20, pd.DataFrame) and isinstance(
@@ -3837,16 +4524,28 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 [np.inf, -np.inf], np.nan
             )
             ob_l20_depth_notional = depth_l20
-            feats["ob_depth_usd_l20"] = (
-                np.log1p(depth_l20.clip(lower=0.0)).fillna(0.0).astype(np.float32)
+            depth_l20_to_qv = (
+                (depth_l20 / (quote_volume_24h + eps))
+                .replace([np.inf, -np.inf], np.nan)
+                .clip(0.0, 100.0)
+            )
+            feats["ob_depth_quote_l20"] = depth_l20.astype(np.float32)
+            feats["ob_depth_usd_l20"] = depth_l20_to_qv.astype(np.float32)
+            feats["ob_depth_usd_l20_z"] = _batch_roll_zscore(
+                np.log1p(depth_l20.clip(lower=0.0)), 24 * 7
+            ).clip(-6.0, 6.0).astype(np.float32)
+            feats["ob_imb_25bps"] = feats["ob_imb_l20"].astype(np.float32)
+            feats["ob_depth_to_qv_25bps"] = depth_l20_to_qv.astype(np.float32)
+            feats["ob_depth_z_25bps"] = feats["ob_depth_usd_l20_z"].astype(
+                np.float32
             )
             feats["ob_top_liquidity_usd"] = (
-                np.log1p(
-                    (
-                        (ob_bid_qty_1.fillna(0.0) + ob_ask_qty_1.fillna(0.0)) * ob_mid
-                    ).clip(lower=0.0)
+                (
+                    ((ob_bid_qty_1 + ob_ask_qty_1) * ob_mid)
+                    / (quote_volume_24h + eps)
                 )
-                .fillna(0.0)
+                .replace([np.inf, -np.inf], np.nan)
+                .clip(0.0, 100.0)
                 .astype(np.float32)
                 if isinstance(ob_bid_qty_1, pd.DataFrame)
                 and isinstance(ob_ask_qty_1, pd.DataFrame)
@@ -3993,16 +4692,41 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             .clip(0.01, 0.99)
             .astype(np.float32)
         )
-    idx_hour = np.asarray(pd.DatetimeIndex(idx).hour, dtype=np.float32)
-    hours_to_next = _broadcast_series(
-        pd.Series(np.mod(8.0 - np.mod(idx_hour, 8.0), 8.0), index=idx)
-    )
-    hours_since_last = _broadcast_series(
-        pd.Series(np.mod(idx_hour, 8.0), index=idx)
-    )
     if "fund_abs_z_14d" in feats:
+        interval_safe = funding_interval_hours.where(funding_interval_hours > 0.0)
+        phase_reference_hours = float(
+            cfg.get("funding_phase_reference_interval_hours", 8.0)
+        )
+        if isinstance(idx, pd.DatetimeIndex):
+            idx_utc = idx.tz_localize("UTC") if idx.tz is None else idx.tz_convert("UTC")
+            hour_of_day = pd.Series(
+                idx_utc.hour + idx_utc.minute / 60.0,
+                index=idx,
+                dtype=np.float32,
+            )
+            fallback_phase = pd.DataFrame(
+                np.broadcast_to(
+                    ((hour_of_day % max(phase_reference_hours, 1.0)) / max(phase_reference_hours, 1.0))
+                    .to_numpy(dtype=np.float32)[:, None],
+                    hours_since_last.shape,
+                ),
+                index=idx,
+                columns=cols,
+                dtype=np.float32,
+            )
+        else:
+            fallback_phase = pd.DataFrame(0.0, index=idx, columns=cols, dtype=np.float32)
+        funding_phase = (hours_since_last / (interval_safe + eps)).where(
+            interval_safe > 1.0, fallback_phase
+        ).clip(0.0, 1.0)
+        phase_angle = 2.0 * np.pi * funding_phase
+        feats["funding_phase_sin"] = np.sin(phase_angle).astype(np.float32)
+        feats["funding_phase_cos"] = np.cos(phase_angle).astype(np.float32)
         feats["fund_countdown_pressure"] = (
-            (feats["fund_abs_z_14d"] * (1.0 - hours_to_next / 8.0))
+            (
+                feats["fund_abs_z_14d"]
+                * (1.0 - (hours_to_next / (interval_safe + eps))).clip(0.0, 1.0)
+            )
             .clip(0, 6)
             .astype(np.float32)
         )
@@ -4017,7 +4741,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     mark_gap = feats.get("mark_perp_dislocation")
     mark_index_gap = feats.get("mark_index_basis")
-    premium_ref = feats.get("premium_index")
+    premium_ref = feats.get("premium_proxy")
     if isinstance(premium_ref, pd.DataFrame):
         premium_phi_24 = _rolling_autocorr_df(premium_ref, 24)
         premium_phi_safe = premium_phi_24.clip(lower=1e-4, upper=0.999)
@@ -4237,15 +4961,18 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             )
 
     if all(k in feats for k in ("ob_imb_l1", "ob_imb_l10", "ob_imb_l20")):
-        feats["ob_top_liquidity_usd_z"] = _batch_roll_zscore(
-            np.log1p(close_panel * (feats["ob_imb_l1"].abs() + 1.0)), 24 * 7
-        )
-        feats["ob_depth_usd_l10_z"] = _batch_roll_zscore(
-            np.log1p(close_panel * (feats["ob_imb_l10"].abs() + 1.0)), 24 * 7
-        )
-        feats["ob_depth_usd_l20_z"] = _batch_roll_zscore(
-            np.log1p(close_panel * (feats["ob_imb_l20"].abs() + 1.0)), 24 * 7
-        )
+        if "ob_top_liquidity_usd_z" not in feats and "ob_top_liquidity_usd" in feats:
+            feats["ob_top_liquidity_usd_z"] = _batch_roll_zscore(
+                feats["ob_top_liquidity_usd"], 24 * 7
+            )
+        if "ob_depth_usd_l10_z" not in feats:
+            feats["ob_depth_usd_l10_z"] = _batch_roll_zscore(
+                feats["ob_imb_l10"].abs(), 24 * 7
+            )
+        if "ob_depth_usd_l20_z" not in feats:
+            feats["ob_depth_usd_l20_z"] = _batch_roll_zscore(
+                feats["ob_imb_l20"].abs(), 24 * 7
+            )
         feats["ob_depth_ratio_l1_l20"] = (
             (
                 (feats["ob_top_liquidity_usd_z"] + 10)
@@ -4917,8 +5644,10 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["pct_assets_above_ema_fast"] = _broadcast_series(
         (feats.get("dist_ema_fast", _zero_panel()) > 0).mean(axis=1).astype(np.float32)
     )
-    weekly_vwap = close_panel.mul(v).rolling(24 * 7, min_periods=24).sum() / (
-        v.rolling(24 * 7, min_periods=24).sum() + eps
+    weekly_vwap = close_panel.mul(quote_volume_raw).rolling(
+        24 * 7, min_periods=24
+    ).sum() / (
+        quote_volume_raw.rolling(24 * 7, min_periods=24).sum() + eps
     )
     feats["pct_assets_above_vwap"] = _broadcast_series(
         (close_panel > weekly_vwap).mean(axis=1).fillna(0.0).astype(np.float32)
@@ -5034,7 +5763,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             feats[f"dist_from_low_{k}h"] = dist_low.astype(np.float32)
 
     # Multi-day trend slopes (SMA-based, captures macro regime)
-    for k_trend in [48, 72, 120]:
+    for k_trend in [24, 48, 72, 120]:
         sma_k = ff.numba_rolling_mean(c_context, k_trend)
         feats[f"trend_slope_{k_trend}h"] = ((c_context - sma_k) / (atr + 1e-12)).astype(
             np.float32
@@ -5487,7 +6216,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["kf_snr_est"] = (q_score_df / (r_score_df + EPS)).astype(np.float32)
 
     # --- New Kalman Trends on Price, Realized Volatility, and Log Volume ---
-    log_price_df = np.log(c)
+    log_price_df = _safe_log_df(c_raw, eps=safe_log_eps).reindex(
+        index=c.index, columns=c.columns
+    )
     rv_input = feats.get("rv_24h", ff.numba_rolling_std(feats["ret1h"], 24)).astype(
         np.float32
     )
@@ -5815,7 +6546,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         reject_like = get_feat(f"reject_pct_{gate_window}")
         if f"s_gt66_{gate_window}" in feats:
             feats["accept_gt66"] = feats[f"s_gt66_{gate_window}"]
-            feats["retest_accept"] = feats[f"s_gt66_{gate_window}"]
 
         feats["tf_qual"] = (s_pct * feats["tf_tape"]).astype(np.float32)
         feats["mr_qual"] = (reject_like * feats["mr_tape"]).astype(np.float32)
@@ -5852,6 +6582,13 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         .astype(np.float32)
     )
 
+    feats["exh_qual"] = (
+        feats["effort_gate"]
+        + feats["stall_ext"]
+        + feats["tail_fail"]
+        + feats["overext_weak"]
+    ).astype(np.float32)
+
     if cfg.get("enable_gated_features", False):
         ambig_term = 1.0 - np.maximum(s_pct, reject_like)
         feats["ambig"] = (ambig_term * feats["rv_ratio_6_24"]).astype(np.float32)
@@ -5861,12 +6598,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             feats["blowoff_risk"] + feats["effort_gate"] + feats["stall_ext"]
         ).astype(np.float32)
         feats["stage_mr"] = (reject_like * (1.0 + feats["overext"])).astype(np.float32)
-        feats["exh_qual"] = (
-            feats["effort_gate"]
-            + feats["stall_ext"]
-            + feats["tail_fail"]
-            + feats["overext_weak"]
-        ).astype(np.float32)
 
     feats["thrust_decay_4"] = (
         feats["ret1h"].abs() / (feats["ret4h"].abs() + 1e-12)
@@ -6100,13 +6831,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     v_sum_12 = ff.numba_rolling_sum(v, 12)
     feats["vol_concentration_12"] = (v_max_12 / (v_sum_12 + 1e-12)).astype(np.float32)
 
-    # 4. Signed volume divergence: volume trend vs price trend disagreement
-    vol_trend = ff.numba_rolling_sum(v, 6) - _roll_sum("v", v, 24) / 4.0
-    price_trend = np.where(np.isfinite(feats["ret6h"]), feats["ret6h"], 0.0)
-    feats["vol_price_diverge"] = (
-        np.sign(vol_trend) * np.sign(price_trend) * -1.0
-    ).astype(np.float32)
-
     # 5. Alpha asymmetry-volatility features (MR/TF, long/short)
     neg_ret = feats["ret1h"].clip(upper=0)
     pos_ret = feats["ret1h"].clip(lower=0)
@@ -6166,97 +6890,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     # Volume entropy
     feats["volume_entropy_12"] = _rolling_shannon_entropy_df(v, window=12, bins=10)
     feats["volume_entropy_24"] = _rolling_shannon_entropy_df(v, window=24, bins=12)
-
-    # =====================================================================
-    # RESIDUALISED FEATURES — relative surprise, not absolute magnitude
-    # =====================================================================
-    # Rationale: low-conviction trades outperform high-conviction ones,
-    # meaning relative surprise matters, not absolute score.
-
-    # (a) Z-scored surprise signals: s_z = (s_t - rolling_mean) / rolling_std
-    #     Window = 48h (~2x max hold) to capture "unusual for recent regime"
-    RESID_WINDOW = 48
-
-    for feat_name in [
-        "rsi",
-        "dist_ema_fast",
-        "dist_vwap_norm",
-        "flow_persistence",
-        "excess_6h",
-        "vol_z",
-        "atr_expansion",
-        "coherence_24",
-    ]:
-        if feat_name in feats:
-            raw = feats[feat_name]
-            roll_mu = ff.numba_rolling_mean(raw, RESID_WINDOW)
-            roll_sd = ff.numba_rolling_std(raw, RESID_WINDOW)
-            feats[f"{feat_name}_z"] = (
-                ((raw - roll_mu) / (roll_sd + 1e-12))
-                .clip(-5, 5)
-                .fillna(0.0)
-                .astype(np.float32)
-            )
-
-    # (b) Rolling edge residual: how much is the model's current signal
-    #     deviating from its recent realised performance?
-    #     Proxy: z-score of composite scores (trend gate, reject, overext)
-    for comp_name in ["overext", "blowoff_risk", "exh_qual"]:
-        if comp_name in feats:
-            raw = feats[comp_name]
-            roll_mu = ff.numba_rolling_mean(raw, RESID_WINDOW)
-            roll_sd = ff.numba_rolling_std(raw, RESID_WINDOW)
-            feats[f"{comp_name}_surprise"] = (
-                ((raw - roll_mu) / (roll_sd + 1e-12))
-                .clip(-5, 5)
-                .fillna(0.0)
-                .astype(np.float32)
-            )
-
-    # (c) Residual distance from value vs market trend
-    #     dist_resid = dist_to_vwap - k * market_trend_strength
-    #     Stops MR entries that are "cheap" only because market is trending hard
-    mkt_trend_s = mkt_gates["mkt_trend"].reindex(c.index).astype(np.float32)
-    mkt_rv_s = mkt_gates["mkt_rv"].reindex(c.index).astype(np.float32)
-    # Normalised market trend strength (in vol units) as a Series
-    mkt_trend_z = mkt_trend_s / (mkt_rv_s * np.float32(np.sqrt(24)) + 1e-12)
-    mkt_trend_z_safe = np.where(np.isfinite(mkt_trend_z), mkt_trend_z, 0.0)
-
-    # Broadcast subtraction by aligning Series across rows using .sub(..., axis=0)
-    dist_vwap_norm_values = feats["dist_vwap_norm"].to_numpy()
-    dist_ema_fast_values = feats["dist_ema_fast"].to_numpy()
-    trend_pct_values = feats["trend_pct"].to_numpy()
-    mkt_trend_z_values = mkt_trend_z_safe[:, None]
-
-    feats["dist_vwap_resid"] = pd.DataFrame(
-        np.where(
-            np.isfinite(dist_vwap_norm_values) & np.isfinite(mkt_trend_z_values),
-            dist_vwap_norm_values - 0.5 * mkt_trend_z_values,
-            0.0,
-        ),
-        index=c.index,
-        columns=c.columns,
-    ).astype(np.float32)
-
-    feats["dist_ema_fast_resid"] = pd.DataFrame(
-        np.where(
-            np.isfinite(dist_ema_fast_values) & np.isfinite(mkt_trend_z_values),
-            dist_ema_fast_values - 0.5 * mkt_trend_z_values,
-            0.0,
-        ),
-        index=c.index,
-        columns=c.columns,
-    ).astype(np.float32)
-
-    feats["trend_pct_resid"] = pd.DataFrame(
-        np.where(
-            np.isfinite(trend_pct_values) & np.isfinite(mkt_trend_z_values),
-            trend_pct_values - 0.5 * mkt_trend_z_values,
-            0.0,
-        ),
-        index=c.index,
-        columns=c.columns,
-    ).astype(np.float32)
 
     # =====================================================================
     # OHLCV-Based Trend Quality Features (Report 2026-02-12)
@@ -6408,8 +7041,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     # reversion_target_distance: Distance to mean (upside potential for MR)
     # Using VWAP as mean proxy
-    vwap_proxy = (c * v).rolling(24, min_periods=1).sum() / (
-        v.rolling(24, min_periods=1).sum() + np.float32(1e-12)
+    vwap_proxy = (c * quote_volume_raw).rolling(24, min_periods=1).sum() / (
+        quote_volume_raw.rolling(24, min_periods=1).sum() + np.float32(1e-12)
     )
     feats["reversion_target_distance"] = ((vwap_proxy - c) / (atr_base + 1e-12)).astype(
         np.float32
@@ -6515,9 +7148,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     )
 
     # Regime interaction terms requested in config
-    feats["rsi_z_x_regime_vol"] = (
-        feats.get("rsi_z", 0.0) * feats["vol_regime_z"]
-    ).astype(np.float32)
     feats["vol_z_x_regime_trend"] = (feats["vol_z"] * feats["trend_regime"]).astype(
         np.float32
     )
@@ -6676,6 +7306,19 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             + 0.20 * feats["retest_accept_score"]
             + 0.15 * (1.0 - feats["ambig"].clip(0, 1))
         ).astype(np.float32)
+    else:
+        reject_context = _batch_roll_zscore(feats["reject_score"], 96).clip(-6, 6)
+        feats["trap_strength"] = (
+            feats["volume_capitulation"]
+            * (1.0 + feats["overext"].clip(lower=0))
+            * (1.0 + reject_context.clip(lower=0))
+        ).astype(np.float32)
+        feats["entry_quality_composite"] = (
+            0.40 * feats["accept_score"]
+            + 0.25 * feats["bounce_signal"]
+            + 0.20 * feats["retest_accept_score"]
+            + 0.15 * (1.0 / (1.0 + reject_context.clip(lower=0)))
+        ).astype(np.float32)
 
     # Specialist proxies at feature stage (actual specialist outputs are added in engine.py).
     feats["predicted_vol_6h"] = (
@@ -6684,6 +7327,10 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     if cfg.get("enable_gated_features", False):
         feats["trap_quality"] = (
             (1.0 / (1.0 + feats["trap_strength"])) * (1.0 - feats["ambig"].clip(0, 1))
+        ).astype(np.float32)
+    else:
+        feats["trap_quality"] = (
+            (1.0 / (1.0 + feats["trap_strength"])) * feats["accept_score"].clip(0, 1)
         ).astype(np.float32)
 
     # =====================================================================
@@ -6814,20 +7461,19 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     for n in [10, 16, 24]:
         feats[f"ker_{n}"] = ff.numba_ker(c_log, n).astype(np.float32)
 
-    # 2. Vortex Indicator
-    for n in [14, 21, 34]:
-        # Using smoothed log-prices (o, h, l, c_log)
-        feats[f"vortex_diff_{n}"] = ff.numba_vortex(h, l, c_log, n).astype(np.float32)
-
     # 3. ADX & Gated Features
     for n in [7, 10, 14]:
-        adx, dip, dim = ff.numba_adx(h, l, c_log, n)
-        feats[f"adx_{n}"] = adx.astype(np.float32)
-        feats[f"adx_di_plus_{n}"] = dip.astype(np.float32)
-        feats[f"adx_di_minus_{n}"] = dim.astype(np.float32)
+        adx_raw, dip_raw, dim_raw = ff.numba_adx(h_raw, l_raw, c_raw, n)
+        feats[f"adx_{n}"] = np.log1p(adx_raw.clip(lower=0.0)).astype(np.float32)
+        feats[f"adx_di_plus_{n}"] = np.log1p(dip_raw.clip(lower=0.0)).astype(
+            np.float32
+        )
+        feats[f"adx_di_minus_{n}"] = np.log1p(dim_raw.clip(lower=0.0)).astype(
+            np.float32
+        )
 
         # Gated features
-        feats[f"adx_{n}_gt25"] = (feats[f"adx_{n}"] > 25).astype(np.float32)
+        feats[f"adx_{n}_gt25"] = (adx_raw > 25).astype(np.float32)
         # Slope of ADX (is trend strengthening?)
         feats[f"adx_{n}_slope"] = feats[f"adx_{n}"].diff(1).astype(np.float32)
 
@@ -6835,7 +7481,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     # "Distance from the average entry price of the last N hours"
     # We use c_log and v (log-vol) for VWAP proxy in log-space
     for n in [12, 24, 96]:
-        vwap_n = ff.numba_rolling_vwap(c_log, v, n)
+        vwap_n = ff.numba_rolling_vwap(c_log, quote_volume_raw, n)
 
         # Distance normalized by ATR (atr_base is raw ATR, atr_ln is log-ATR)
         # Since we are in log-space, (c_log - vwap_log) is a percentage diff.
@@ -6866,21 +7512,21 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         np.float32
     )
 
-    sv = v * np.sign(c_log - c_log.shift(1))
-    press_base = ((c_log - o) / ((h - l) + 1e-9)) * v
+    sv = quote_volume_raw * np.sign(c_log - c_log.shift(1))
+    press_base = ((c_log - o) / ((h - l) + 1e-9)) * log_quote_volume
 
     for n in [12, 24]:
         atr_15m_n = ff.numba_ewma(tr_15m, 2.0 / (n + 1.0), False)
         feats[f"range_norm_{n}"] = (h_minus_l / (atr_15m_n + 1e-12)).astype(np.float32)
 
         sv_sum_n = ff.numba_rolling_sum(sv, n)
-        v_sum_n = ff.numba_rolling_sum(v, n)
+        v_sum_n = ff.numba_rolling_sum(quote_volume_raw, n)
         feats[f"sv_imb_{n}"] = (sv_sum_n / (v_sum_n + 1e-12)).astype(np.float32)
 
         feats[f"press_{n}"] = ff.numba_rolling_mean(press_base, n).astype(np.float32)
 
         feats[f"impact_{n}"] = ff.numba_rolling_mean(
-            c_log_diff1_abs / (v + 1e-9), n
+            c_log_diff1_abs / (quote_volume_raw + 1e-9), n
         ).astype(np.float32)
 
         ts_mean_n = ff.numba_rolling_mean(c_log_diff1, n)
@@ -6909,10 +7555,14 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             np.float32
         )
 
-        climax_vol_med_n = ff.apply_to_frame(v, ff._numba_rolling_median, n)
-        feats[f"climax_vol_{n}"] = (v / (climax_vol_med_n + 1e-12)).astype(np.float32)
+        climax_vol_med_n = ff.apply_to_frame(
+            log_quote_volume, ff._numba_rolling_median, n
+        )
+        feats[f"climax_vol_{n}"] = (
+            log_quote_volume / (climax_vol_med_n + 1e-12)
+        ).astype(np.float32)
 
-        vwap_z_n = ff.numba_rolling_vwap(c_log, v, n)
+        vwap_z_n = ff.numba_rolling_vwap(c_log, quote_volume_raw, n)
 
         diff_vwap = c_log - vwap_z_n
         std_vwap = ff.numba_rolling_std(diff_vwap, n)
@@ -7016,22 +7666,19 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         for k, v in panel.items()
     )
     has_spot_reference = _panel_has_finite(spot_close_panel, positive=True)
-    if bool(cfg.get("use_perps", False)) and not has_spot_reference:
-        has_spot_reference = (
-            _panel_has_finite(index_price_panel, positive=True)
-            or _panel_has_finite(mark_price_panel, positive=True)
-        )
     source_available = {
         "orderbook": bool(has_l2_orderbook or has_wide_orderbook),
         "funding": _panel_has_finite(funding_panel),
         "open_interest": _panel_has_finite(oi_panel, positive=True),
+        "volume": _panel_has_finite(quote_volume_raw, positive=True),
         "spot": has_spot_reference,
         "mark_index": (
             _panel_has_finite(mark_price_panel, positive=True)
             or _panel_has_finite(index_price_panel, positive=True)
-            or _panel_has_finite(premium_index_panel)
         ),
     }
+
+    residual_skip_transform_set = add_residual_features(feats, mkt_gates, cfg)
 
     removed_by_policy: dict[str, str] = {}
 
@@ -7274,7 +7921,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         "cumulative_delta_stall",
         "delta_stall_6",
         "vol_price_div",
-        "vol_price_diverge",
         "return_per_volume",
         "volume_trend_48",
     ]
@@ -7401,6 +8047,15 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         "dow_cos",
         "range_24h_pct",
         "range_12h_pct",
+        "adx_7",
+        "adx_10",
+        "adx_14",
+        "adx_di_plus_7",
+        "adx_di_plus_10",
+        "adx_di_plus_14",
+        "adx_di_minus_7",
+        "adx_di_minus_10",
+        "adx_di_minus_14",
         "volatility_zscore",
         "breakout_24h",
         "draw_sym_10h",
@@ -7412,7 +8067,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         "G_LIQ_GREAT",
         "G_LIQ_EXCEL",
         "mtf_divergence",
-        "vol_price_diverge",
         "meta_alignment",
         # Residualised features — already z-scored, don't double-transform
         "rsi_z",
@@ -7430,13 +8084,13 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         "dist_ema_fast_resid",
         "trend_pct_resid",
     }
+    skip_transform_set.update(residual_skip_transform_set)
     skip_transform_set.update(k for k in _PERP_NATIVE_TRANSFORM_SKIP_KEYS if k in feats)
 
     position_sizer_keys = {
         "ATR_spike_ratio",
         "ATR_ratio_short_long",
         "bar_direction_entropy",
-        "realized_vol_15m_realized_vol_2h",
         "micro_range_decay",
         "range_decay",
         "vol_regime_transition",
@@ -7563,7 +8217,6 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             bar_range = h_raw - l_raw
         if _needs_feature(
             "bar_direction_entropy",
-            "realized_vol_15m_realized_vol_2h",
             "direction_entropy_20",
             "acceleration_of_move",
             "vol_regime_transition",
@@ -7588,13 +8241,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 ret_1, ff.binary_entropy_nb, 12
             ).astype(np.float32)
 
-        if _needs_feature("realized_vol_15m_realized_vol_2h", "vol_regime_transition"):
+        if _needs_feature("vol_regime_transition"):
             rv_1 = ff.apply_to_frame(ret_1, ff.realized_vol_nb, 1)
             rv_8 = ff.apply_to_frame(ret_1, ff.realized_vol_nb, 8)
-        if _needs_feature("realized_vol_15m_realized_vol_2h"):
-            feats["realized_vol_15m_realized_vol_2h"] = (
-                (rv_1 / (rv_8 + 1e-9)).replace([np.inf, -np.inf], np.nan).fillna(1.0)
-            ).astype(np.float32)
         if _needs_feature("vol_regime_transition"):
             rv_24 = ff.apply_to_frame(ret_1, ff.realized_vol_nb, 24)
             rv24_mean_48 = rv_24.rolling(48, min_periods=1).mean()
@@ -7646,7 +8295,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             )
 
         if _needs_feature("distance_to_vwap", "dist_vwap_atr"):
-            vwap_24 = ff.numba_rolling_vwap(c_raw, v_raw, 24).astype(
+            vwap_24 = ff.numba_rolling_vwap(c_raw, quote_volume_raw, 24).astype(
                 np.float32, copy=False
             )
             feats["distance_to_vwap"] = (
@@ -7694,26 +8343,26 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             )
 
         if _needs_feature("climax_volume_ratio"):
-            vol_mean_24 = v_raw.rolling(24, min_periods=1).mean()
-            vol_max_6 = v_raw.rolling(6, min_periods=1).max()
+            vol_mean_24 = quote_volume_raw.rolling(24, min_periods=1).mean()
+            vol_max_6 = quote_volume_raw.rolling(6, min_periods=1).max()
             feats["climax_volume_ratio"] = (
                 (vol_max_6 / (vol_mean_24 + 1e-9)).fillna(1.0).astype(np.float32)
             )
         if _needs_feature("volume_z_12", "volume_z_24"):
-            vol_mean_12 = v_raw.rolling(12, min_periods=1).mean()
-            vol_std_12 = v_raw.rolling(12, min_periods=1).std()
-            vol_mean_24 = v_raw.rolling(24, min_periods=1).mean()
-            vol_std_24 = v_raw.rolling(24, min_periods=1).std()
+            vol_mean_12 = log_quote_volume.rolling(12, min_periods=1).mean()
+            vol_std_12 = log_quote_volume.rolling(12, min_periods=1).std()
+            vol_mean_24 = log_quote_volume.rolling(24, min_periods=1).mean()
+            vol_std_24 = log_quote_volume.rolling(24, min_periods=1).std()
             if _needs_feature("volume_z_12"):
                 feats["volume_z_12"] = np.where(
                     vol_std_12 > 1e-9,
-                    (v_raw - vol_mean_12) / vol_std_12,
+                    (log_quote_volume - vol_mean_12) / vol_std_12,
                     0.0,
                 ).astype(np.float32)
             if _needs_feature("volume_z_24"):
                 volume_z_24 = np.where(
                     vol_std_24 > 1e-9,
-                    (v_raw - vol_mean_24) / vol_std_24,
+                    (log_quote_volume - vol_mean_24) / vol_std_24,
                     0.0,
                 ).astype(np.float32)
                 feats["volume_z_24"] = volume_z_24
@@ -7764,7 +8413,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             ).astype(np.float32)
 
         if _needs_feature("dist_weekly_vwap"):
-            vwap_168 = ff.numba_rolling_vwap(c_raw, v_raw, 168).astype(
+            vwap_168 = ff.numba_rolling_vwap(c_raw, quote_volume_raw, 168).astype(
                 np.float32, copy=False
             )
             feats["dist_weekly_vwap"] = (
@@ -7837,12 +8486,12 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             )
 
         if _needs_feature("volume_trend_48"):
-            feats["volume_trend_48"] = ff.apply_to_frame(v_raw, slope_nb, 48).astype(
-                np.float32
-            )
+            feats["volume_trend_48"] = ff.apply_to_frame(
+                log_quote_volume, slope_nb, 48
+            ).astype(np.float32)
 
         if _needs_feature("volume_autocorr_48"):
-            feats["volume_autocorr_48"] = _rolling_autocorr_df(v_raw, 48)
+            feats["volume_autocorr_48"] = _rolling_autocorr_df(log_quote_volume, 48)
 
         if _needs_feature("volatility_of_volatility_48"):
             roll_std_4h = ff.apply_to_frame(c_raw, rolling_std_nb, 4)
@@ -7909,6 +8558,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             k.startswith("cs_rank_")
             or k.startswith("cs_rz_")
             or k.startswith("ts_pct_")
+            or k.endswith(("_ts_resid", "_mkt_resid", "_bench_resid", "_peer_resid", "_surprise"))
         ):
             skip_transform_set.add(k)
 
@@ -7959,13 +8609,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         "z_intrabar_range_atr",
         "z_compression_expansion",
         "z_volume",
-        "z_breakout_up_24",
-        "z_breakout_dn_24",
         "z_dist_ema_24",
         "z_dist_vwap_24",
         "z_atr_norm_ret_24",
-        "z_sm_momentum_24",
-        "z_slope_change_24",
         "z_path_efficiency_24",
     ):
         # 1. Volatility / Range
@@ -7993,28 +8639,11 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
         # 2. Volume
         if _needs_feature("z_volume"):
-            z_items.append(("z_volume", v_raw))
+            z_items.append(("z_volume", log_quote_volume))
 
-        # 3. Breakout / Structure (using z=24 as standard)
+        # 3. Structure location (using z=24 as standard)
         z_win = 24
-        if _needs_feature(
-            "z_breakout_up_24", "z_breakout_dn_24", "z_dist_ema_24", "z_dist_vwap_24"
-        ):
-            trailing_high_24 = _roll_max("high", h_raw, z_win).shift(1)
-            trailing_low_24 = _roll_min("low", l_raw, z_win).shift(1)
-
-            if _needs_feature("z_breakout_up_24"):
-                ast_breakout_up = ((c_raw - trailing_high_24) / safe_close_vol).astype(
-                    np.float32
-                )
-                z_items.append(("z_breakout_up_24", ast_breakout_up))
-
-            if _needs_feature("z_breakout_dn_24"):
-                ast_breakout_dn = ((trailing_low_24 - c_raw) / safe_close_vol).astype(
-                    np.float32
-                )
-                z_items.append(("z_breakout_dn_24", ast_breakout_dn))
-
+        if _needs_feature("z_dist_ema_24", "z_dist_vwap_24"):
             # Stretch Location (EMA/VWAP)
             if _needs_feature("z_dist_ema_24"):
                 ema_24 = (ff.numba_ema_nan_safe(c_raw.to_numpy(), z_win)).astype(
@@ -8033,22 +8662,10 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 z_items.append(("z_dist_vwap_24", ast_dist_vwap))
 
         # 4. Momentum (ATR-normalized)
-        if _needs_feature("z_atr_norm_ret_24", "z_sm_momentum_24", "z_slope_change_24"):
+        if _needs_feature("z_atr_norm_ret_24"):
             ret_24 = (c_raw / c_raw.shift(z_win) - 1.0).astype(np.float32)
             ast_atr_norm_ret = (ret_24 / atr_base.clip(lower=1e-6)).astype(np.float32)
-
-            if _needs_feature("z_atr_norm_ret_24"):
-                z_items.append(("z_atr_norm_ret_24", ast_atr_norm_ret))
-
-            if _needs_feature("z_sm_momentum_24"):
-                ret_8 = (c_raw / c_raw.shift(8) - 1.0).astype(np.float32)
-                z_items.append(
-                    ("z_sm_momentum_24", (ret_8 - ret_24).astype(np.float32))
-                )
-
-            if _needs_feature("z_slope_change_24"):
-                ast_slope_change = (ret_24 - ret_24.shift(1)).astype(np.float32)
-                z_items.append(("z_slope_change_24", ast_slope_change))
+            z_items.append(("z_atr_norm_ret_24", ast_atr_norm_ret))
 
         # 5. Path Structure (Efficiency Ratio)
         if _needs_feature("z_path_efficiency_24"):
@@ -8067,6 +8684,26 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         for k in feats:
             if k.startswith("z_"):
                 skip_transform_set.add(k)
+
+    def _source_mask_from_panel(
+        frame: object, *, positive: bool = False, ffill_limit: int | None = None
+    ) -> np.ndarray:
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            return np.zeros(feature_shape, dtype=bool)
+        aligned = frame.reindex(index=idx, columns=cols).replace([np.inf, -np.inf], np.nan)
+        if ffill_limit is not None:
+            aligned = aligned.ffill(limit=max(0, int(ffill_limit)))
+        if positive:
+            aligned = aligned.where(aligned > 0.0)
+        return np.isfinite(aligned.to_numpy(dtype=np.float32, copy=False))
+
+    _feature_funding_mask = _source_mask_from_panel(funding_panel, ffill_limit=12)
+    _feature_oi_mask = _source_mask_from_panel(oi_panel, positive=True, ffill_limit=24)
+    _feature_volume_mask = _source_mask_from_panel(quote_volume_raw, positive=True)
+    _feature_spot_mask = _source_mask_from_panel(spot_close_panel, positive=True)
+    _feature_mark_mask = _source_mask_from_panel(mark_price_panel, positive=True)
+    _feature_index_mask = _source_mask_from_panel(index_price_panel, positive=True)
+    _feature_mark_index_mask = _feature_mark_mask | _feature_index_mask
 
     del h_raw, l_raw, c_raw, v_raw, atr_base
     gc.collect()
@@ -8091,17 +8728,60 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             if _is_boolean_like_feature(arr):
                 skip_transform_set.add(k)
 
+    active_skip_transform_set = {k for k in skip_transform_set if k in feats}
     tprint(
-        f"CausalTransform workset: {len(feats) - len(skip_transform_set)} transform, {len(skip_transform_set)} skipped"
+        f"CausalTransform workset: {len(feats) - len(active_skip_transform_set)} transform, "
+        f"{len(active_skip_transform_set)} skipped"
     )
 
     chunk_size = int(cfg.get("transform_chunk_size", 50))
     feats = transformer.transform_batch(
-        feats, skip_keys=skip_transform_set, chunk_size=chunk_size
+        feats, skip_keys=active_skip_transform_set, chunk_size=chunk_size
     )
 
     del transformer
     gc.collect()
+
+    def _availability_mask_for_feature(name: str) -> np.ndarray:
+        mask = _feature_base_valid_mask
+        reqs = _feature_source_requirements(name)
+        if "funding" in reqs:
+            mask = mask & _feature_funding_mask
+        if "open_interest" in reqs:
+            mask = mask & _feature_oi_mask
+        if "volume" in reqs:
+            mask = mask & _feature_volume_mask
+        if "spot" in reqs:
+            mask = mask & _feature_spot_mask
+        if "mark_index" in reqs:
+            key = str(name)
+            if (
+                key == "mark_price"
+                or key == "mark_perp_dislocation"
+                or key == "mark_vs_perp_bps"
+                or key.startswith("mark_trigger_")
+                or key.startswith("liq_")
+            ):
+                source_mask = _feature_mark_mask
+            elif (
+                key == "mark_index_basis"
+                or key == "mark_index_basis_z"
+                or key == "mark_vs_index_bps"
+                or key.startswith("mark_gap_")
+            ):
+                source_mask = _feature_mark_mask & _feature_index_mask
+            elif (
+                key == "canonical_index"
+                or key.startswith("premium_")
+                or key.startswith("perp_index_")
+            ):
+                source_mask = _feature_index_mask
+            elif key == "index_price":
+                source_mask = _feature_index_mask
+            else:
+                source_mask = _feature_mark_index_mask
+            mask = mask & source_mask
+        return mask
 
     # Final check for Inf/NaN (numpy arrays now)
     tprint("Features: performing final Inf/NaN check")
@@ -8119,15 +8799,21 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             feats[k] = arr
 
         values = arr.to_numpy() if isinstance(arr, pd.DataFrame) else np.asarray(arr)
-        if not np.isfinite(values).all():
-            n_bad = int((~np.isfinite(values)).sum())
-            tprint(f"  WARNING: {k} has {n_bad} non-finite values, replacing with 0")
-            clean = np.nan_to_num(values, nan=0.0, posinf=0.0, neginf=0.0)
-            feats[k] = (
-                pd.DataFrame(clean, index=arr.index, columns=arr.columns)
-                if isinstance(arr, pd.DataFrame)
-                else clean
-            )
+        if values.ndim == 2 and values.shape == feature_shape:
+            valid_mask = _availability_mask_for_feature(k)
+            if not bool(valid_mask.all()):
+                values = values.copy()
+                values[~valid_mask] = np.nan
+        if np.isinf(values).any():
+            n_bad = int(np.isinf(values).sum())
+            tprint(f"  WARNING: {k} has {n_bad} infinite values, replacing with NaN")
+            values = values.copy()
+            values[~np.isfinite(values)] = np.nan
+        feats[k] = (
+            pd.DataFrame(values, index=arr.index, columns=arr.columns)
+            if isinstance(arr, pd.DataFrame)
+            else values
+        )
 
     for k in (
         "atr_pct",
@@ -9283,7 +9969,6 @@ def build_position_sizer_feature_frame(
         # --- NEW MODEL 1 ---
         "range_last_3bars_impulse_range": range_last_3bars_impulse_range,
         "volatility_contraction_ratio": volatility_contraction_ratio,
-        "realized_vol_15m_realized_vol_2h": realized_vol_15m_2h,
         "micro_range_decay": micro_range_decay,
         "wick_ratio_last_bar": wick_ratio_last_bar,
         "close_position_in_range": close_position_in_range,

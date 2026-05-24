@@ -3504,13 +3504,9 @@ def _compute_z_cache(
         # Features that specifically depend on z
         if z == 24 or z == (24 * bph):
             mapping.update({
-                "z_breakout_up_24": "breakout_distance_up_atr",
-                "z_breakout_dn_24": "breakout_distance_down_atr",
                 "z_dist_ema_24": "distance_from_ema_atr",
                 "z_dist_vwap_24": "distance_from_vwap_atr",
                 "z_atr_norm_ret_24": "atr_normalized_trailing_return",
-                "z_sm_momentum_24": "short_minus_long_momentum",
-                "z_slope_change_24": "slope_change",
                 "z_path_efficiency_24": "path_efficiency_ratio",
             })
 

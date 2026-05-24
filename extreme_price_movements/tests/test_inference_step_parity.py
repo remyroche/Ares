@@ -1,6 +1,7 @@
 import json
 
 import pandas as pd
+import pytest
 
 from extreme_price_movements.inference import run_inference as ri
 from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
@@ -160,6 +161,19 @@ def test_strategy_asset_exclusion_matches_across_usdt_usdc_quote():
 
 class _DummyOrchestrator:
     bucket_params = {}
+    alpha_by_strategy = {
+        "long_mr": {"feat_cols": ["dummy"]},
+        "short_mr": {"feat_cols": ["dummy"]},
+    }
+
+    def _align_alpha_feature_contract(self, features, feat_cols):
+        return features.reindex(columns=feat_cols)
+
+    def predict_alpha(self, features, side, kind):
+        return pd.Series(0.9, index=features.index, dtype=float)
+
+    def predict_meta(self, features, side, kind):
+        return pd.Series(0.9, index=features.index, dtype=float)
 
     def run_full_chain(self, symbol, side, features, panel=None):
         return {
@@ -174,6 +188,16 @@ class _DummyOrchestrator:
 
 class _NoEntryOrchestrator:
     bucket_params = {}
+    alpha_by_strategy = {"long_mr": {"feat_cols": ["dummy"]}}
+
+    def _align_alpha_feature_contract(self, features, feat_cols):
+        return features.reindex(columns=feat_cols)
+
+    def predict_alpha(self, features, side, kind):
+        return pd.Series(0.9, index=features.index, dtype=float)
+
+    def predict_meta(self, features, side, kind):
+        return pd.Series(0.9, index=features.index, dtype=float)
 
     def run_full_chain(self, symbol, side, features, panel=None):
         return {
@@ -325,6 +349,181 @@ def test_run_inference_step_applies_strategy_rank_and_portfolio_caps(monkeypatch
     assert executor.calls[0]["size"] <= 1500.0 + 1e-9
 
 
+def test_run_inference_step_global_auction_executes_best_cross_side_first(monkeypatch):
+    idx = pd.date_range("2026-03-01", periods=3, freq="1h", tz="UTC")
+    close = pd.DataFrame(
+        {"LONG/USDT": [100.0] * len(idx), "SHORT/USDT": [100.0] * len(idx)},
+        index=idx,
+    )
+    panel = {
+        "close": close,
+        "high": close,
+        "low": close,
+        "open": close,
+        "volume": close,
+    }
+    feats = {"ret12h": close.pct_change().fillna(0.0)}
+
+    monkeypatch.setattr(
+        ri, "select_candidates", lambda **kwargs: (["LONG/USDT"], ["SHORT/USDT"])
+    )
+    monkeypatch.setattr(
+        ri,
+        "get_features_for_candidates",
+        lambda feats, candidates: pd.DataFrame(
+            {"dummy": [1.0] * len(candidates)}, index=candidates
+        ),
+    )
+
+    def _gate(decision, **kwargs):
+        score = 0.99 if decision["side"] == "short" else 0.80
+        decision["policy_rank_pct"] = score
+        decision["sizer_rank_percentile"] = score
+        decision["threshold_score"] = score
+        decision["normalized_rank_score"] = score
+        chain = dict(decision.get("chain_results") or {})
+        chain["policy_rank_pct"] = score
+        chain["sizer_rank_percentile"] = score
+        chain["normalized_rank_score"] = score
+        decision["chain_results"] = chain
+        return True, None
+
+    monkeypatch.setattr(ri, "apply_policy_rank_percentile_gate", _gate)
+
+    executor = _DummyExecutor()
+    results = ri.run_inference_step(
+        orchestrator=_DummyOrchestrator(),
+        panel=panel,
+        feats=feats,
+        thresholds={"metric": "ret12h"},
+        executor=executor,
+        logger=_DummyLogger(),
+        accepted_strategies={"long_mr", "short_mr"},
+        calibration_data={
+            "long_mr": {
+                "p75_threshold": 0.5,
+                "calibration_curve": [(0.0, 0.0), (1.0, 1.0)],
+            },
+            "short_mr": {
+                "p75_threshold": 0.5,
+                "calibration_curve": [(0.0, 0.0), (1.0, 1.0)],
+            },
+        },
+        portfolio_mgr=PortfolioManager(portfolio_value=10000.0, max_positions=1),
+        initial_rank_threshold=0.5,
+        max_entries_total=1,
+    )
+
+    assert [call["symbol"] for call in executor.calls] == ["SHORT/USDT"]
+    assert results["trades"][0]["side"] == "short"
+
+
+def test_run_inference_step_rejects_portfolio_strategy_contract_mismatch(monkeypatch):
+    idx = pd.date_range("2026-03-01", periods=3, freq="1h", tz="UTC")
+    close = pd.DataFrame({"LONG/USDT": [100.0] * len(idx)}, index=idx)
+    panel = {
+        "close": close,
+        "high": close,
+        "low": close,
+        "open": close,
+        "volume": close,
+    }
+    feats = {"ret12h": close.pct_change().fillna(0.0)}
+
+    monkeypatch.setattr(ri, "select_candidates", lambda **kwargs: (["LONG/USDT"], []))
+
+    with pytest.raises(ValueError, match="Portfolio strategy contract mismatch"):
+        ri.run_inference_step(
+            orchestrator=_DummyOrchestrator(),
+            panel=panel,
+            feats=feats,
+            thresholds={"metric": "ret12h"},
+            executor=_DummyExecutor(),
+            logger=_DummyLogger(),
+            accepted_strategies={"long_mr"},
+            portfolio_policy=ri.PortfolioPolicyConfig(strategy_ids=("short_mr",)),
+        )
+
+
+def test_portfolio_contract_strategy_filter_overrides_manifest_filter():
+    policy = ri.PortfolioPolicyConfig(strategy_ids=("long_contract", "short_contract"))
+
+    selected = ri._resolve_portfolio_contract_strategy_filter(
+        policy,
+        {"long_manifest"},
+    )
+
+    assert selected == {"long_contract", "short_contract"}
+
+
+def test_portfolio_contract_strategy_filter_can_use_cores_without_manifest():
+    policy = ri.PortfolioPolicyConfig(strategy_cores=("core_a", "core_b"))
+
+    selected = ri._resolve_portfolio_contract_strategy_filter(policy, set())
+
+    assert selected == {"core_a", "core_b"}
+
+
+def test_run_inference_step_global_auction_keeps_ticker_liquidity_gate(monkeypatch):
+    idx = pd.date_range("2026-03-01", periods=3, freq="1h", tz="UTC")
+    close = pd.DataFrame({"WIDE/USDT": [100.0] * len(idx)}, index=idx)
+    panel = {
+        "close": close,
+        "high": close,
+        "low": close,
+        "open": close,
+        "volume": close,
+    }
+    feats = {"ret12h": close.pct_change().fillna(0.0)}
+
+    monkeypatch.setattr(ri, "select_candidates", lambda **kwargs: (["WIDE/USDT"], []))
+    monkeypatch.setattr(
+        ri,
+        "get_features_for_candidates",
+        lambda feats, candidates: pd.DataFrame(
+            {"dummy": [1.0] * len(candidates)}, index=candidates
+        ),
+    )
+
+    class _WideSpreadExchange:
+        markets = {"WIDE/USDT": {"limits": {"cost": {"min": 1.0}}}}
+
+        def fetch_ticker(self, symbol):
+            return {"bid": 100.0, "ask": 103.0, "last": 101.5}
+
+        def fetch_order_book(self, symbol):
+            return {"asks": [[103.0, 100.0]], "bids": [[100.0, 100.0]]}
+
+        def market(self, symbol):
+            return self.markets[symbol]
+
+    executor = _DummyExecutor()
+    executor.exchange = _WideSpreadExchange()
+    executor.config = {"allow_live_batch_rank_fallback_for_debug": True}
+
+    results = ri.run_inference_step(
+        orchestrator=_DummyOrchestrator(),
+        panel=panel,
+        feats=feats,
+        thresholds={"metric": "ret12h"},
+        executor=executor,
+        logger=_DummyLogger(),
+        accepted_strategies={"long_mr"},
+        calibration_data={
+            "long_mr": {
+                "p75_threshold": 0.5,
+                "calibration_curve": [(0.0, 0.0), (1.0, 1.0)],
+            }
+        },
+        portfolio_mgr=PortfolioManager(portfolio_value=10000.0),
+        initial_rank_threshold=0.5,
+    )
+
+    assert executor.calls == []
+    assert results["trades"] == []
+    assert results["side_metrics"]["long"]["non_fatal_issues"] >= 1
+
+
 def test_run_inference_step_blocks_strategy_kill_switch(monkeypatch, tmp_path):
     idx = pd.date_range("2026-03-01", periods=3, freq="1h", tz="UTC")
     close = pd.DataFrame({"BTC/USDT": [100.0, 100.0, 100.0]}, index=idx)
@@ -469,6 +668,7 @@ def test_run_inference_step_sizes_from_calibrated_meta_policy_power(monkeypatch)
 
     executor = _DummyExecutor()
     portfolio_mgr = PortfolioManager(portfolio_value=10000.0)
+    portfolio_policy = ri.PortfolioPolicyConfig()
 
     results = ri.run_inference_step(
         orchestrator=_PolicySizingOrchestrator(),
@@ -485,14 +685,28 @@ def test_run_inference_step_sizes_from_calibrated_meta_policy_power(monkeypatch)
             }
         },
         portfolio_mgr=portfolio_mgr,
+        portfolio_policy=portfolio_policy,
     )
 
     assert len(results["trades"]) == 1
     # With PortfolioManager active, live rank-sizing supersedes legacy
-    # calibrated policy sizing and symbol-underperformance downweights.
-    # Single-candidate rank is 1.0, but sizing reserves book capacity across
-    # slots: 95% wallet / 10 max positions * rank multiplier 1.25 = 1187.5.
-    assert abs(executor.calls[0]["size"] - 1187.5) < 1e-9
+    # calibrated policy sizing and symbol-underperformance downweights. A
+    # single-candidate auction rank is 1.0, so the default global-auction policy
+    # fills one reserved slot, capped by max_position_wallet_pct.
+    expected_slot_size = (
+        10000.0
+        * portfolio_policy.max_total_wallet_allocation_pct
+        / float(
+            portfolio_policy.reserved_position_slots
+            or portfolio_policy.max_concurrent_positions
+        )
+    )
+    expected_size = min(
+        expected_slot_size,
+        10000.0 * portfolio_policy.max_position_wallet_pct,
+        portfolio_policy.max_position_quote_notional,
+    )
+    assert abs(executor.calls[0]["size"] - expected_size) < 1e-9
 
 
 def test_portfolio_manager_hard_gates_require_manual_reset():

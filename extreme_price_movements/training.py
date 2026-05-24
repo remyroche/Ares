@@ -125,6 +125,86 @@ from .weak_residual_meta_learner import (
     save_weak_meta_outputs,
 )
 
+
+def _recent_feature_availability_filter(
+    df: pd.DataFrame,
+    feature_cols: Sequence[str],
+    *,
+    cfg: dict[str, Any] | None = None,
+    context: str = "training",
+) -> list[str]:
+    """Keep only features with enough finite coverage on the optimiser tail."""
+
+    cols = [str(c) for c in feature_cols if str(c) in df.columns]
+    if not cols or df.empty:
+        return cols
+    cfg = cfg or {}
+    min_coverage = float(
+        cfg.get(
+            "lgbm_feature_recent_min_coverage",
+            os.environ.get("EPM_LGBM_FEATURE_RECENT_MIN_COVERAGE", "0.85"),
+        )
+    )
+    tail_months = int(
+        cfg.get(
+            "simple_policy_optimiser_tail_months",
+            cfg.get(
+                "policy_optimiser_tail_months",
+                cfg.get(
+                    "simple_policy_optimiser_months",
+                    cfg.get(
+                        "lgbm_feature_recent_tail_months",
+                        os.environ.get("EPM_LGBM_FEATURE_RECENT_TAIL_MONTHS", "4"),
+                    ),
+                ),
+            ),
+        )
+    )
+    min_rows = int(
+        cfg.get(
+            "lgbm_feature_recent_min_rows",
+            os.environ.get("EPM_LGBM_FEATURE_RECENT_MIN_ROWS", "200"),
+        )
+    )
+    row_mask = np.ones(len(df), dtype=bool)
+    window_desc = "all rows"
+    if "ts" in df.columns:
+        ts = pd.to_datetime(df["ts"], utc=True, errors="coerce")
+        if ts.notna().any():
+            end_ts = ts.max()
+            try:
+                start_ts = end_ts - pd.DateOffset(months=max(1, tail_months))
+            except Exception:
+                start_ts = end_ts - pd.Timedelta(days=30 * max(1, tail_months))
+            candidate = (ts >= start_ts) & (ts <= end_ts)
+            if int(candidate.sum()) >= min(min_rows, len(df)):
+                row_mask = candidate.to_numpy(dtype=bool)
+                window_desc = f"{start_ts} -> {end_ts}"
+    sample = df.loc[row_mask, cols]
+    if sample.empty:
+        return cols
+    numeric = sample.apply(pd.to_numeric, errors="coerce")
+    arr = numeric.to_numpy(dtype=np.float32, copy=False)
+    coverage = np.isfinite(arr).mean(axis=0)
+    kept = [c for c, rate in zip(cols, coverage) if float(rate) >= min_coverage]
+    removed = sorted(
+        ((c, float(rate)) for c, rate in zip(cols, coverage) if float(rate) < min_coverage),
+        key=lambda item: (item[1], item[0]),
+    )
+    if removed:
+        preview = ", ".join(f"{name}={rate:.1%}" for name, rate in removed[:20])
+        tprint(
+            f"{context}: recent feature availability filter kept {len(kept)}/{len(cols)} "
+            f"features at >= {min_coverage:.0%} coverage on {int(row_mask.sum())} rows "
+            f"({window_desc}); removed {len(removed)}. Lowest coverage: {preview}"
+        )
+    else:
+        tprint(
+            f"{context}: recent feature availability filter kept all {len(cols)} features "
+            f"at >= {min_coverage:.0%} coverage on {int(row_mask.sum())} rows ({window_desc})"
+        )
+    return kept
+
 _EXP_INPUT_CLIP = 60.0
 _EXP_OUTPUT_MAX = 1e12
 
@@ -912,6 +992,12 @@ def _build_optimal_candidate_mask(panel, feats, cfg):
 
     close_df = panel["close"]
     n_ts, n_syms = close_df.shape
+    valid_data_mask = close_df.replace([np.inf, -np.inf], np.nan).gt(0.0)
+    for _valid_col in ("open", "high", "low"):
+        _valid_df = panel.get(_valid_col)
+        if isinstance(_valid_df, pd.DataFrame):
+            valid_data_mask &= _valid_df.replace([np.inf, -np.inf], np.nan).gt(0.0)
+    valid_data_mask = valid_data_mask.fillna(False).astype(bool)
 
     idx_flat = np.repeat(close_df.index.to_numpy(), n_syms)
     sym_flat = np.tile(close_df.columns.to_numpy(), n_ts)
@@ -1212,6 +1298,15 @@ def _build_optimal_candidate_mask(panel, feats, cfg):
                     mask_df = pd.DataFrame(
                         False, index=close_df.index, columns=close_df.columns
                     )
+
+        pre_valid_hits = int(mask_df.sum().sum()) if mask_df is not None else 0
+        mask_df = (mask_df & valid_data_mask).fillna(False).astype(bool)
+        post_valid_hits = int(mask_df.sum().sum())
+        if post_valid_hits != pre_valid_hits:
+            tprint(
+                f"[DIAGNOSTIC] Strategy {strat_id} valid-OHLC gate: "
+                f"{pre_valid_hits:,} -> {post_valid_hits:,} active triggers"
+            )
 
         mask_by_strategy[strat_id] = mask_df
 
@@ -1982,6 +2077,52 @@ def _avg_trades_per_day_global(scores, k_frac, timestamps):
     return float(k / max(n_days, 1))
 
 
+def _synthetic_tp_sl_hit_metrics_for_score(
+    score,
+    mfe,
+    mae,
+    *,
+    specs: tuple[tuple[str, float, float], ...] = (
+        ("tp2_sl1", 0.02, 0.01),
+        ("tp3_sl15", 0.03, 0.015),
+    ),
+) -> dict[str, float]:
+    """Conservative top-bucket hit rates from MFE/MAE for fixed TP/SL pairs."""
+    if score is None or mfe is None or mae is None:
+        return {}
+    try:
+        score_arr = np.asarray(score, dtype=np.float64)
+        mfe_arr = np.asarray(mfe, dtype=np.float64)
+        mae_arr = np.asarray(mae, dtype=np.float64)
+    except Exception:
+        return {}
+    n = min(len(score_arr), len(mfe_arr), len(mae_arr))
+    if n < 20:
+        return {}
+    score_arr = score_arr[:n]
+    mfe_arr = mfe_arr[:n]
+    mae_arr = mae_arr[:n]
+    mae_abs = np.abs(mae_arr)
+    valid = np.isfinite(score_arr) & np.isfinite(mfe_arr) & np.isfinite(mae_abs)
+    if int(np.sum(valid)) < 20:
+        return {}
+    score_v = score_arr[valid]
+    mfe_v = mfe_arr[valid]
+    mae_v = mae_abs[valid]
+    order = np.argsort(score_v)
+    out: dict[str, float] = {}
+    for name, tp, sl in specs:
+        hit = (mfe_v >= float(tp)) & (mae_v < float(sl))
+        for frac in (0.10, 0.30):
+            tag = str(int(round(frac * 100)))
+            k = max(1, int(np.ceil(frac * len(score_v))))
+            idx = order[-k:]
+            out[f"hit_rate_{name}_top{tag}"] = (
+                float(np.mean(hit[idx])) if len(idx) else float("nan")
+            )
+    return out
+
+
 def _fit_direct_extratrees_base_model(
     *,
     kind_name,
@@ -1992,6 +2133,8 @@ def _fit_direct_extratrees_base_model(
     y_hard_ref=None,
     sample_weight=None,
     returns=None,
+    mfe=None,
+    mae=None,
     groups=None,
     symbols=None,
     n_splits: int = 2,
@@ -2022,6 +2165,8 @@ def _fit_direct_extratrees_base_model(
         )
     y_hard = (np.clip(y_hard_source, 0.0, 1.0) >= 0.5).astype(np.int8)
     returns_arr = y if returns is None else np.asarray(returns, dtype=np.float64)
+    mfe_arr = None if mfe is None else np.asarray(mfe, dtype=np.float64)
+    mae_arr = None if mae is None else np.asarray(mae, dtype=np.float64)
     sample_weight_arr = (
         None if sample_weight is None else np.asarray(sample_weight, dtype=np.float64)
     )
@@ -2126,6 +2271,12 @@ def _fit_direct_extratrees_base_model(
         returns_arr
         if returns_arr is not None and len(returns_arr) == len(y_hard)
         else None
+    )
+    mfe_eval_full = (
+        mfe_arr if mfe_arr is not None and len(mfe_arr) == len(y_hard) else None
+    )
+    mae_eval_full = (
+        mae_arr if mae_arr is not None and len(mae_arr) == len(y_hard) else None
     )
 
     candidate_results: dict[str, dict[str, Any]] = {}
@@ -2405,6 +2556,11 @@ def _fit_direct_extratrees_base_model(
     cand_mean_return10_gross = _mean_return_top_gross(0.10)
     cand_mean_return30_gross = _mean_return_top_gross(0.30)
     cand_rank_return_metrics = _candidate_rank_return_metrics()
+    cand_synthetic_hit_metrics = _synthetic_tp_sl_hit_metrics_for_score(
+        cand_oof_full,
+        mfe_eval_full,
+        mae_eval_full,
+    )
     cand_stability30 = float(cand_metrics.get("stability30", float("nan")))
 
     tprint(
@@ -2415,6 +2571,10 @@ def _fit_direct_extratrees_base_model(
         f"stability30={cand_stability30:.4f}, "
         f"mean_return10_gross={cand_mean_return10_gross:.6f}, "
         f"mean_return30_gross={cand_mean_return30_gross:.6f}, "
+        f"hit_tp2_sl1_top10={cand_synthetic_hit_metrics.get('hit_rate_tp2_sl1_top10', float('nan')):.4f}, "
+        f"hit_tp2_sl1_top30={cand_synthetic_hit_metrics.get('hit_rate_tp2_sl1_top30', float('nan')):.4f}, "
+        f"hit_tp3_sl15_top10={cand_synthetic_hit_metrics.get('hit_rate_tp3_sl15_top10', float('nan')):.4f}, "
+        f"hit_tp3_sl15_top30={cand_synthetic_hit_metrics.get('hit_rate_tp3_sl15_top30', float('nan')):.4f}, "
         f"AUC={cand_auc:.4f}, Brier={cand_brier:.4f}, ECE={cand_ece:.4f}."
     )
 
@@ -2612,6 +2772,24 @@ def _fit_direct_extratrees_base_model(
                 "mean_return10_gross": cand_mean_return10_gross,
                 "mean_return30_gross": cand_mean_return30_gross,
             }
+            cand_synthetic_hit_metrics = {
+                **cand_synthetic_hit_metrics,
+                **_synthetic_tp_sl_hit_metrics_for_score(
+                    cand_oof_final[_assess_idx],
+                    (
+                        mfe_eval_full[_assess_idx]
+                        if mfe_eval_full is not None
+                        and len(mfe_eval_full) >= len(cand_oof_final)
+                        else None
+                    ),
+                    (
+                        mae_eval_full[_assess_idx]
+                        if mae_eval_full is not None
+                        and len(mae_eval_full) >= len(cand_oof_final)
+                        else None
+                    ),
+                ),
+            }
     final_win_score = float(
         final_cand_metrics.get("J_final_oof", final_cand_metrics.get("J_final", win_score))
     )
@@ -2644,6 +2822,7 @@ def _fit_direct_extratrees_base_model(
             "Brier": cand_brier,
             "ECE": cand_ece,
             **cand_rank_return_metrics,
+            **cand_synthetic_hit_metrics,
             "mean_return10_gross": cand_mean_return10_gross,
             "mean_return30_gross": cand_mean_return30_gross,
             "J_final_oof": float(
@@ -2695,6 +2874,14 @@ def _fit_direct_extratrees_base_model(
                 "J_meta",
                 "J_final",
                 "J_final_oof",
+                "final_fit_train_rows",
+                "final_fit_train_rows_total",
+                "final_fit_used_all_rows",
+                "oof_distillation_passes",
+                "min_oof_distillation_passes",
+                "meta_min_oof_distillation_passes",
+                "final_model_count",
+                "final_ensemble_sequential_distillation",
             }
         ):
             _dm_unc[_metric_key] = _metric_val
@@ -4609,6 +4796,252 @@ def _base_model_report_entry(
     }
 
 
+def _extract_model_feature_importance_rows(
+    model_obj: Any,
+    *,
+    feature_names: Sequence[str] | None = None,
+    stage: str,
+    model_id: str,
+    side: str | None = None,
+    strategy_id: str | None = None,
+    horizon: int | None = None,
+    candidate_name: str | None = None,
+    is_winner: bool | None = None,
+) -> list[dict[str, Any]]:
+    """Return one row per selected feature with split/gain importance when available.
+
+    The training stack can hold several estimator shapes:
+    - LGBMStabilityModel with ``models`` and ``selected_features``.
+    - MetaClassifierModel/MetaModel with ``model={'models': [...]}``.
+    - sklearn/XGBoost/LightGBM estimators directly.
+    This helper keeps reporting model-agnostic and does not affect fitting.
+    """
+
+    def _names_from_owner(owner: Any) -> list[str]:
+        if feature_names is not None and len(feature_names) > 0:
+            return [str(x) for x in feature_names]
+        names = getattr(owner, "selected_features", None)
+        if names:
+            return [str(x) for x in names]
+        names = getattr(owner, "feature_names_in_", None)
+        if names is not None:
+            return [str(x) for x in list(names)]
+        return []
+
+    def _unwrap_models(owner: Any) -> tuple[list[Any], list[str], str]:
+        names = _names_from_owner(owner)
+        if isinstance(owner, dict):
+            models = owner.get("models")
+            if isinstance(models, list):
+                return list(models), names, str(owner.get("kind") or "dict_models")
+            model = owner.get("model")
+            if model is not None:
+                return [model], names, str(owner.get("kind") or type(model).__name__)
+        if hasattr(owner, "model") and not hasattr(owner, "booster_"):
+            inner = getattr(owner, "model", None)
+            if isinstance(inner, dict):
+                inner_models = inner.get("models")
+                if isinstance(inner_models, list):
+                    return list(inner_models), names, str(inner.get("kind") or type(owner).__name__)
+                inner_model = inner.get("model")
+                if inner_model is not None:
+                    return [inner_model], names, str(inner.get("kind") or type(inner_model).__name__)
+            elif inner is not None and inner is not owner:
+                return [inner], names, type(inner).__name__
+        models = getattr(owner, "models", None)
+        if isinstance(models, list) and models:
+            return list(models), names, type(owner).__name__
+        return [owner], names, type(owner).__name__
+
+    def _feature_names_from_booster(est: Any, fallback: list[str]) -> list[str]:
+        try:
+            booster = getattr(est, "booster_", None)
+            if booster is not None and hasattr(booster, "feature_name"):
+                names = [str(x) for x in booster.feature_name()]
+                if names:
+                    return names
+        except Exception:
+            pass
+        try:
+            booster = est.get_booster() if hasattr(est, "get_booster") else None
+            if booster is not None:
+                names = getattr(booster, "feature_names", None)
+                if names:
+                    return [str(x) for x in names]
+        except Exception:
+            pass
+        return list(fallback)
+
+    def _aligned(values: Any, names: list[str]) -> np.ndarray:
+        arr = np.asarray(values, dtype=np.float64).reshape(-1)
+        if len(names) <= 0:
+            return arr
+        if arr.size < len(names):
+            out = np.zeros(len(names), dtype=np.float64)
+            out[: arr.size] = arr
+            return out
+        if arr.size > len(names):
+            return arr[: len(names)]
+        return arr
+
+    estimators, names, model_type = _unwrap_models(model_obj)
+    names = [str(x) for x in names]
+    if not estimators:
+        return []
+
+    gain_by_feature: dict[str, float] = {n: 0.0 for n in names}
+    split_by_feature: dict[str, float] = {n: 0.0 for n in names}
+    generic_by_feature: dict[str, float] = {n: 0.0 for n in names}
+    observed_features: set[str] = set(names)
+
+    for est in estimators:
+        if est is None:
+            continue
+        est_names = _feature_names_from_booster(est, names)
+        if not est_names:
+            est_names = names
+        observed_features.update(est_names)
+
+        try:
+            booster = getattr(est, "booster_", None)
+            if booster is not None and hasattr(booster, "feature_importance"):
+                gain = _aligned(booster.feature_importance(importance_type="gain"), est_names)
+                split = _aligned(booster.feature_importance(importance_type="split"), est_names)
+                for i, feat in enumerate(est_names[: len(gain)]):
+                    gain_by_feature[str(feat)] = gain_by_feature.get(str(feat), 0.0) + float(gain[i])
+                for i, feat in enumerate(est_names[: len(split)]):
+                    split_by_feature[str(feat)] = split_by_feature.get(str(feat), 0.0) + float(split[i])
+                continue
+        except Exception:
+            pass
+
+        try:
+            booster = est.get_booster() if hasattr(est, "get_booster") else None
+            if booster is not None:
+                gain_score = booster.get_score(importance_type="gain")
+                split_score = booster.get_score(importance_type="weight")
+                for key, val in (gain_score or {}).items():
+                    feat = str(key)
+                    if feat.startswith("f"):
+                        try:
+                            idx = int(feat[1:])
+                            if 0 <= idx < len(est_names):
+                                feat = est_names[idx]
+                        except Exception:
+                            pass
+                    gain_by_feature[feat] = gain_by_feature.get(feat, 0.0) + float(val)
+                    observed_features.add(feat)
+                for key, val in (split_score or {}).items():
+                    feat = str(key)
+                    if feat.startswith("f"):
+                        try:
+                            idx = int(feat[1:])
+                            if 0 <= idx < len(est_names):
+                                feat = est_names[idx]
+                        except Exception:
+                            pass
+                    split_by_feature[feat] = split_by_feature.get(feat, 0.0) + float(val)
+                    observed_features.add(feat)
+                continue
+        except Exception:
+            pass
+
+        try:
+            if hasattr(est, "feature_importances_"):
+                vals = _aligned(getattr(est, "feature_importances_"), est_names)
+                for i, feat in enumerate(est_names[: len(vals)]):
+                    generic_by_feature[str(feat)] = generic_by_feature.get(str(feat), 0.0) + float(vals[i])
+                continue
+        except Exception:
+            pass
+
+    ordered_features = [n for n in names if n in observed_features]
+    ordered_features.extend(sorted(observed_features.difference(ordered_features)))
+    if not ordered_features:
+        return []
+    total_gain = float(sum(max(gain_by_feature.get(f, 0.0), 0.0) for f in ordered_features))
+    total_split = float(sum(max(split_by_feature.get(f, 0.0), 0.0) for f in ordered_features))
+    total_generic = float(sum(max(generic_by_feature.get(f, 0.0), 0.0) for f in ordered_features))
+    gain_rank = {
+        f: i + 1
+        for i, f in enumerate(
+            sorted(ordered_features, key=lambda x: gain_by_feature.get(x, 0.0), reverse=True)
+        )
+    }
+    split_rank = {
+        f: i + 1
+        for i, f in enumerate(
+            sorted(ordered_features, key=lambda x: split_by_feature.get(x, 0.0), reverse=True)
+        )
+    }
+    rows = []
+    for pos, feat in enumerate(ordered_features, start=1):
+        gain = float(gain_by_feature.get(feat, 0.0))
+        split = float(split_by_feature.get(feat, 0.0))
+        generic = float(generic_by_feature.get(feat, 0.0))
+        rows.append(
+            {
+                "stage": str(stage),
+                "model_id": str(model_id),
+                "model_type": str(model_type),
+                "side": "" if side is None else str(side),
+                "strategy_id": "" if strategy_id is None else str(strategy_id),
+                "horizon": "" if horizon is None else int(horizon),
+                "candidate_name": "" if candidate_name is None else str(candidate_name),
+                "is_winner": bool(is_winner) if is_winner is not None else None,
+                "selected_feature_position": int(pos),
+                "selected_feature_count": int(len(ordered_features)),
+                "feature": str(feat),
+                "gain": gain,
+                "gain_share": float(gain / total_gain) if total_gain > 0 else 0.0,
+                "gain_rank": int(gain_rank.get(feat, len(ordered_features))),
+                "split": split,
+                "split_share": float(split / total_split) if total_split > 0 else 0.0,
+                "split_rank": int(split_rank.get(feat, len(ordered_features))),
+                "importance": generic,
+                "importance_share": float(generic / total_generic) if total_generic > 0 else 0.0,
+                "used_by_model": bool((gain > 0.0) or (split > 0.0) or (generic > 0.0)),
+            }
+        )
+    return rows
+
+
+def _feature_importance_summary(rows: Sequence[dict[str, Any]], top_n: int = 20) -> dict[str, Any]:
+    if not rows:
+        return {
+            "selected_feature_count": 0,
+            "used_feature_count": 0,
+            "top_gain_features": [],
+            "top_split_features": [],
+        }
+    used = [r for r in rows if bool(r.get("used_by_model"))]
+    top_gain = sorted(rows, key=lambda r: float(r.get("gain", 0.0)), reverse=True)[:top_n]
+    top_split = sorted(rows, key=lambda r: float(r.get("split", 0.0)), reverse=True)[:top_n]
+    return {
+        "selected_feature_count": int(rows[0].get("selected_feature_count", len(rows))),
+        "used_feature_count": int(len(used)),
+        "used_feature_fraction": float(len(used) / max(len(rows), 1)),
+        "top_gain_features": [
+            {
+                "feature": str(r.get("feature")),
+                "gain": float(r.get("gain", 0.0)),
+                "gain_share": float(r.get("gain_share", 0.0)),
+            }
+            for r in top_gain
+            if float(r.get("gain", 0.0)) > 0.0
+        ],
+        "top_split_features": [
+            {
+                "feature": str(r.get("feature")),
+                "split": float(r.get("split", 0.0)),
+                "split_share": float(r.get("split_share", 0.0)),
+            }
+            for r in top_split
+            if float(r.get("split", 0.0)) > 0.0
+        ],
+    }
+
+
 def _meta_report_entry(
     name, meta_model, y_target, y_ret, base_score, groups, y_per_horizon=None
 ):
@@ -4839,6 +5272,8 @@ def save_quality_gate_artifacts(
     run_id,
     base_quality_rows=None,
     meta_quality_rows=None,
+    base_feature_rows=None,
+    meta_feature_rows=None,
 ):
     data_root = str(cfg.get("data_root", "data"))
     out_dir = os.path.join(data_root, "artifacts", str(run_id), "quality_reports")
@@ -4878,6 +5313,8 @@ def save_quality_gate_artifacts(
 
     _safe_normalize(base_quality_rows, "base_model_detailed_metrics.csv")
     _safe_normalize(meta_quality_rows, "meta_model_detailed_metrics.csv")
+    _safe_normalize(base_feature_rows, "base_model_feature_importance.csv")
+    _safe_normalize(meta_feature_rows, "meta_model_feature_importance.csv")
 
     return gate_path
 
@@ -5626,6 +6063,7 @@ def _write_base_meta_contract_manifest(
         "version": 1,
         "run_id": str(run_id),
         "primary_only": True,
+        "exchange_contract": dict(cfg.get("training_exchange_contract", {}) or {}),
         "base_models_intermediate_path": os.path.join(
             artifacts_root, "base_models_intermediate.pkl"
         ),
@@ -6656,7 +7094,6 @@ def _categorize_missing_training_features(
         "downside_pred",
         "edge_minus_downside",
         "abs_edge_pred",
-        "p_exh_lag1",
         "prob_error",
     }
     runtime_prefixes = (
@@ -6950,7 +7387,7 @@ def build_hourly_training_set_and_weights(
     # Keep diagnostics actionable: raw market columns are materially different
     # from later-stage artifacts or symbolic config group names.
     _orig_feat_keys = list(feat_keys)
-    feat_keys = [k for k in feat_keys if (k in feats or k == "p_exh_lag1")]
+    feat_keys = [k for k in feat_keys if k in feats]
     _missing_feats = sorted(list(set(_orig_feat_keys) - set(feat_keys)))
     if _missing_feats:
         _missing_by_kind = _categorize_missing_training_features(_missing_feats, cfg)
@@ -7686,20 +8123,8 @@ def build_hourly_training_set_and_weights(
         # row/column indexers with mismatched lengths late in materialization.
         _chunk_lookup_cache = {}
 
-        if p_exh_hist is not None:
-            _parts["p_exh_lag1"] = np.nan_to_num(
-                _fast_lookup_cached(
-                    p_exh_hist, _lag_ts, _event_sym, lookup_cache=_chunk_lookup_cache
-                ),
-                nan=0.0,
-            ).astype(np.float32)
-        else:
-            _parts["p_exh_lag1"] = np.zeros(len(_event_ts), dtype=np.float32)
-
         _feat_t0 = time.time()
         for _feat_i, k in enumerate(feat_keys, start=1):
-            if k == "p_exh_lag1":
-                continue
             if k in feats:
                 _parts[k] = _fast_lookup_cached(
                     feats[k], _event_ts, _event_sym, lookup_cache=_chunk_lookup_cache
@@ -7783,7 +8208,16 @@ def build_hourly_training_set_and_weights(
         df["__y_lbl__"].values.astype(np.int8) if "__y_lbl__" in df.columns else None
     )
 
-    feat_cols = [c for c in df.columns if c not in critical_cols]
+    feat_cols_all = [c for c in df.columns if c not in critical_cols]
+    feat_cols = _recent_feature_availability_filter(
+        df,
+        feat_cols_all,
+        cfg=cfg,
+        context="base training feature matrix",
+    )
+    dropped_feature_cols = [c for c in feat_cols_all if c not in set(feat_cols)]
+    if dropped_feature_cols:
+        df.drop(columns=dropped_feature_cols, inplace=True, errors="ignore")
     if feat_cols:
         df[feat_cols] = df[feat_cols].fillna(0)
     if df.empty:
@@ -9614,7 +10048,15 @@ def build_grid_aggregated_tb_cache(panel, feats, cfg, horizons, strategies=None)
 
 
 def generate_label_datasets(
-    panel, feats, mkt_gates, cfg, syms, ts, p_exh_hist, horizons=None
+    panel,
+    feats,
+    mkt_gates,
+    cfg,
+    syms,
+    ts,
+    p_exh_hist,
+    horizons=None,
+    row_availability: pd.DataFrame | None = None,
 ):
     tprint(f"Entering function: generate_label_datasets in training.py")
     run_id = str(
@@ -9633,6 +10075,31 @@ def generate_label_datasets(
         f"horizons={requested_horizons if requested_horizons is not None else 'per_strategy'} "
         f"incremental_persist={incremental_persist}"
     )
+
+    def _apply_row_availability(df: pd.DataFrame, name: str) -> pd.DataFrame:
+        if row_availability is None or df.empty:
+            return df
+        if "__ts__" not in df.columns or "__symbol__" not in df.columns:
+            return df
+        idx = pd.to_datetime(df["__ts__"], utc=True, errors="coerce").dt.floor("h")
+        syms_arr = df["__symbol__"].astype(str).to_numpy()
+        avail = row_availability.reindex(index=idx)
+        vals = avail.to_numpy(dtype=bool, na_value=False)
+        col_pos = {str(col): i for i, col in enumerate(avail.columns)}
+        keep = np.zeros(len(df), dtype=bool)
+        for row_i, symbol in enumerate(syms_arr):
+            j = col_pos.get(str(symbol))
+            if j is not None and row_i < vals.shape[0]:
+                keep[row_i] = bool(vals[row_i, j])
+        if bool(keep.all()):
+            return df
+        before = len(df)
+        out = df.loc[keep].copy()
+        tprint(
+            f"Perp row market-data filter applied to {name}: "
+            f"{before:,}->{len(out):,} rows"
+        )
+        return out
 
     def _persist_label_artifact(name: str, df: pd.DataFrame) -> None:
         save_artifact_df(df, cfg["data_root"], run_id, "labels", name)
@@ -9744,8 +10211,9 @@ def generate_label_datasets(
                 f"{len(_requested_ids)} strategies"
             )
 
-    # Pre-calculate Microstructure Noise Filter (Costly rolling operations, shared across all models)
-    if bool(cfg.get("use_noise_filter", True)) and cached_cand_mask is not None:
+    # Optional microstructure noise filter. Disabled by default so label support
+    # is governed by strategy masks and required market-data coverage only.
+    if bool(cfg.get("use_noise_filter", False)) and cached_cand_mask is not None:
         tprint("Pre-computing Microstructure Noise Filter...")
         from extreme_price_movements.fast_funcs import numba_rolling_mean_parallel
 
@@ -10214,6 +10682,7 @@ def generate_label_datasets(
                         else f"train_{k}_{H}_{variant}"
                     )
                     df_out = _downcast_label_dataset_df(df_out, copy=False)
+                    df_out = _apply_row_availability(df_out, _ds_key)
                     if incremental_persist:
                         _persist_label_artifact(_ds_key, df_out)
                         if variant in {"tight", "wide"}:
@@ -10244,6 +10713,7 @@ def generate_label_datasets(
                     f"train_{k}_{H}" if variant is None else f"train_{k}_{H}_{variant}"
                 )
                 df_out = _downcast_label_dataset_df(df_out, copy=False)
+                df_out = _apply_row_availability(df_out, _ds_key)
                 if incremental_persist:
                     _persist_label_artifact(_ds_key, df_out)
                     if variant in {"tight", "wide"}:
@@ -11329,6 +11799,66 @@ def train_meta_models_from_artifacts(
                 tprint(f"Meta training: failed to load saved OOF artifact {path}: {e}")
         return None
 
+    def _validate_saved_base_oof_provenance(
+        df_oof: pd.DataFrame, strategy_id: str, horizon: int
+    ) -> None:
+        if not bool(cfg.get("meta_require_distilled_base_oof", True)):
+            return
+        required_cols = (
+            "base_oof_source",
+            "base_oof_distillation_passes",
+            "base_final_fit_used_all_rows",
+        )
+        missing = [col for col in required_cols if col not in df_oof.columns]
+        if missing:
+            raise RuntimeError(
+                "Meta training requires base OOF exported after the final LGBM "
+                f"full fit with self-distillation provenance for {strategy_id} "
+                f"H={int(horizon)}; missing columns={missing}. Re-run train_base."
+            )
+        min_passes = int(
+            cfg.get(
+                "meta_min_base_oof_distillation_passes",
+                cfg.get("lgbm_min_oof_distillation_passes", 2),
+            )
+            or 2
+        )
+        passes = pd.to_numeric(
+            df_oof["base_oof_distillation_passes"], errors="coerce"
+        ).to_numpy(dtype=float)
+        finite_passes = passes[np.isfinite(passes)]
+        if finite_passes.size == 0 or float(np.nanmin(finite_passes)) < float(
+            min_passes
+        ):
+            min_observed = (
+                float(np.nanmin(finite_passes)) if finite_passes.size else float("nan")
+            )
+            raise RuntimeError(
+                "Meta training requires predictions from the second round of base "
+                f"self-distillation before full-fit handoff for {strategy_id} "
+                f"H={int(horizon)}; observed_min_passes={min_observed}, "
+                f"required={min_passes}. Re-run train_base."
+            )
+        final_flags = df_oof["base_final_fit_used_all_rows"]
+        if not bool(pd.Series(final_flags).astype(bool).all()):
+            raise RuntimeError(
+                "Meta training requires base OOF from final models fit on all "
+                f"eligible pre-policy rows for {strategy_id} H={int(horizon)}. "
+                "Re-run train_base with LGBM_FINAL_FIT_USE_ALL_ROWS enabled."
+            )
+        sources = set(df_oof["base_oof_source"].astype(str).dropna().unique())
+        if "post_full_fit_oof_after_lgbm_self_distillation" not in sources:
+            raise RuntimeError(
+                "Meta training found base OOF with unexpected provenance for "
+                f"{strategy_id} H={int(horizon)}: sources={sorted(sources)}"
+            )
+        tprint(
+            "Meta training: verified saved base OOF provenance for "
+            f"{strategy_id} H={int(horizon)} "
+            f"(min_distillation_passes={int(np.nanmin(finite_passes))}, "
+            "source=post_full_fit_oof_after_lgbm_self_distillation)."
+        )
+
     def _collect_horizon_oof(trade_side, strategy_id):
         conf_local = _alpha_conf_for_strategy(trade_side, strategy_id)
         _strategy_local = _strategy_cfg_map.get(
@@ -11382,6 +11912,9 @@ def train_meta_models_from_artifacts(
                 if saved_is_preferred:
                     source_df = saved_oof_df.reset_index(drop=True).copy()
                     source_df.attrs.update(saved_oof_df.attrs)
+                    _validate_saved_base_oof_provenance(
+                        source_df, strategy_id, h_local
+                    )
                     oof_local = np.asarray(
                         source_df["oof_prob"].values, dtype=np.float32
                     )
@@ -15184,6 +15717,17 @@ def train_meta_models_from_artifacts(
         if not feat_cols:
             tprint(f"Meta {k}: skipped (no raw meta features found in dataset)")
             continue
+        feat_cols = _recent_feature_availability_filter(
+            df,
+            feat_cols,
+            cfg=cfg,
+            context=f"meta {k} raw feature matrix",
+        )
+        if not feat_cols:
+            tprint(
+                f"Meta {k}: skipped (no raw meta features meet recent coverage threshold)"
+            )
+            continue
 
         # Bulk initialize to avoid fragmentation PerformanceWarnings
         _feat_dict = {}
@@ -16065,6 +16609,11 @@ def train_meta_models_from_artifacts(
                         ("__y_outcome__", "exit_code"),
                         ("exit_code", "exit_code"),
                         ("__barrier_pct__", "barrier_pct"),
+                        ("__mfe_ret__", "mfe_ret"),
+                        ("__mae_ret__", "mae_ret"),
+                        ("__mfe__", "mfe"),
+                        ("__mae__", "mae"),
+                        ("__bars_to_mfe__", "bars_to_mfe"),
                     ):
                         if _src in df.columns and _dst not in _out.columns:
                             _out[_dst] = np.asarray(df[_src].values)[_valid_idx]
@@ -16175,6 +16724,16 @@ def train_meta_models_from_artifacts(
                     y_hard_ref=_y_hard_arr[_valid],
                     sample_weight=_w_seed[_valid],
                     returns=_ret_ebm[_valid],
+                    mfe=(
+                        np.asarray(df["__mfe_ret__"], dtype=np.float64)[_valid]
+                        if "__mfe_ret__" in df.columns
+                        else None
+                    ),
+                    mae=(
+                        np.asarray(df["__mae_ret__"], dtype=np.float64)[_valid]
+                        if "__mae_ret__" in df.columns
+                        else None
+                    ),
                     groups=(
                         np.asarray(meta_groups)[_valid]
                         if meta_groups is not None
@@ -19299,9 +19858,46 @@ def train_meta_models_from_artifacts(
                         )
         _meta_head_metrics[_mhk] = _mr
     _augment_meta_head_metrics_from_oof_exports()
+    _meta_feature_rows_for_export = []
+    for _mhk, _mhm in meta_models.items():
+        _rows = _extract_model_feature_importance_rows(
+            _mhm,
+            stage="train_meta",
+            model_id=str(_mhk),
+            side=str(_mhk).split("_", 1)[0] if "_" in str(_mhk) else "",
+            strategy_id=(
+                str(_mhk).split("_", 1)[1].removesuffix("_clf")
+                if "_" in str(_mhk)
+                else str(_mhk)
+            ),
+            is_winner=True,
+        )
+        if not _rows:
+            continue
+        _meta_feature_rows_for_export.extend(_rows)
+        _summary = _feature_importance_summary(_rows)
+        _metric_entry = _meta_head_metrics.setdefault(str(_mhk), {})
+        _metric_entry["feature_importance"] = _summary
+        _metric_entry["selected_feature_count"] = _summary.get(
+            "selected_feature_count", 0
+        )
+        _metric_entry["used_feature_count"] = _summary.get("used_feature_count", 0)
     if _meta_head_metrics:
         with open(os.path.join(meta_oof_dir, "meta_head_metrics.json"), "w") as _f:
             json.dump(_meta_head_metrics, _f, indent=2)
+    if _meta_feature_rows_for_export:
+        try:
+            _meta_fi_df = pd.DataFrame(_meta_feature_rows_for_export)
+            _meta_fi_csv = os.path.join(meta_oof_dir, "meta_model_feature_importance.csv")
+            _meta_fi_json = os.path.join(meta_oof_dir, "meta_model_feature_importance.json")
+            _meta_fi_df.to_csv(_meta_fi_csv, index=False)
+            _meta_fi_df.to_json(_meta_fi_json, orient="records", indent=2)
+            tprint(
+                f"Saved meta feature importance report to {_meta_fi_csv} "
+                f"rows={len(_meta_fi_df)}"
+            )
+        except Exception as _exc:
+            tprint(f"Warning: failed to save meta feature importance report: {_exc}")
 
     with open(os.path.join(meta_oof_dir, "meta_export_summary.json"), "w") as _f:
         json.dump(_export_summary, _f, indent=2)
@@ -19636,6 +20232,18 @@ def train_meta_models_from_artifacts(
 def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True):
     tprint(f"Entering function: train_models_from_artifacts in training.py")
     tprint(f"train_base={train_base}, train_meta={train_meta}")
+    exchange_contract = dict(cfg.get("training_exchange_contract", {}) or {})
+    if not exchange_contract.get("exchange_id") or not exchange_contract.get("market_mode"):
+        raise ValueError(
+            "Training contract violation: per-exchange training requires "
+            "training_exchange_contract with exchange_id and market_mode."
+        )
+    tprint(
+        "Training exchange contract: "
+        f"exchange={exchange_contract.get('exchange_id')} "
+        f"mode={exchange_contract.get('market_mode')} "
+        f"scope={exchange_contract.get('exchange_data_component')}"
+    )
     cfg = _resolve_training_cfg_with_offline_optimisers(cfg)
     _strategy_ids_env = ""
     _strategy_ids_label = ""
@@ -19903,6 +20511,16 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 y=y[_fit_idx],
                 sample_weight=w[_fit_idx],
                 returns=y_ret[_fit_idx],
+                mfe=(
+                    np.asarray(df_variant["__mfe_ret__"], dtype=np.float64)[_fit_idx]
+                    if "__mfe_ret__" in df_variant.columns
+                    else None
+                ),
+                mae=(
+                    np.asarray(df_variant["__mae_ret__"], dtype=np.float64)[_fit_idx]
+                    if "__mae_ret__" in df_variant.columns
+                    else None
+                ),
                 groups=groups,
                 symbols=symbols,
                 n_splits=2,
@@ -20092,6 +20710,16 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             y=y[_fit_idx],
             sample_weight=w[_fit_idx],
             returns=y_ret[_fit_idx],
+            mfe=(
+                np.asarray(df_variant["__mfe_ret__"], dtype=np.float64)[_fit_idx]
+                if "__mfe_ret__" in df_variant.columns
+                else None
+            ),
+            mae=(
+                np.asarray(df_variant["__mae_ret__"], dtype=np.float64)[_fit_idx]
+                if "__mae_ret__" in df_variant.columns
+                else None
+            ),
             groups=groups,
             symbols=symbols,
             n_splits=2,
@@ -20312,7 +20940,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
 
                     # Also include "causal_cols" if feature_key fallback logic was used, but
                     # here we know we used the explicit keys.
-                    # Note: build_hourly_training_set_and_weights adds gate columns G_VOL/G_TREND and p_exh_lag1.
+                    # Note: build_hourly_training_set_and_weights adds gate columns G_VOL/G_TREND.
                     # We should allow those too.
                     # And interaction toggles? apply_interaction_toggles creates columns like "col_G_0".
                     # If "col" is in allowed_keys, "col_G_0" should be allowed.
@@ -20325,7 +20953,6 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     valid_cols = []
                     # Always keep market gates/lags/specialist scores if they are standard inputs
                     std_inputs = {
-                        "p_exh_lag1",
                         "G_VOL",
                         "G_TREND",
                         "mkt_ret24h",
@@ -20736,6 +21363,16 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         y_hard_ref=y_fit_hard,
                         sample_weight=w_fit,
                         returns=y_ret_fit,
+                        mfe=(
+                            np.asarray(df["__mfe_ret__"], dtype=np.float64)
+                            if "__mfe_ret__" in df.columns
+                            else None
+                        ),
+                        mae=(
+                            np.asarray(df["__mae_ret__"], dtype=np.float64)
+                            if "__mae_ret__" in df.columns
+                            else None
+                        ),
                         groups=groups,
                         symbols=symbols,
                         n_splits=2,
@@ -21552,6 +22189,50 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     if hasattr(_race, "detailed_metrics")
                     else {}
                 )
+                _payload_len = int(np.sum(_finite_oof_mask))
+                _base_oof_distill_passes = int(
+                    _dm_best.get(
+                        "oof_distillation_passes",
+                        _dm_best.get("actual_oof_distillation_passes", -1),
+                    )
+                    or -1
+                )
+                _base_final_fit_used_all_rows = bool(
+                    _dm_best.get("final_fit_used_all_rows", False)
+                )
+                _estimator_metrics = {}
+                try:
+                    _estimator_metrics = dict(getattr(_race.best_model, "metrics", {}) or {})
+                except Exception:
+                    _estimator_metrics = {}
+                if _base_oof_distill_passes < 0:
+                    _base_oof_distill_passes = int(
+                        _estimator_metrics.get(
+                            "oof_distillation_passes",
+                            _estimator_metrics.get("actual_oof_distillation_passes", -1),
+                        )
+                        or -1
+                    )
+                if not _base_final_fit_used_all_rows:
+                    _base_final_fit_used_all_rows = bool(
+                        _estimator_metrics.get("final_fit_used_all_rows", False)
+                    )
+                _payload["base_oof_source"] = np.full(
+                    _payload_len,
+                    "post_full_fit_oof_after_lgbm_self_distillation",
+                    dtype=object,
+                )
+                _payload["base_oof_distillation_passes"] = np.full(
+                    _payload_len, _base_oof_distill_passes, dtype=np.int16
+                )
+                _payload["base_final_fit_used_all_rows"] = np.full(
+                    _payload_len, _base_final_fit_used_all_rows, dtype=bool
+                )
+                tprint(
+                    f"  Base OOF provenance for {k} H{_h}: "
+                    f"distillation_passes={_base_oof_distill_passes}, "
+                    f"final_fit_used_all_rows={_base_final_fit_used_all_rows}"
+                )
                 for _metric_key, _metric_vals in _dm_best.items():
                     if _metric_key in (
                         "oof_sigma_trees",
@@ -21617,6 +22298,16 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         _payload["y_ret"] = np.asarray(
                             _df_oof["__y_ret__"], dtype=np.float32
                         )[: len(_df_oof)]
+                    for _src, _dst in (
+                        ("__mfe_ret__", "mfe_ret"),
+                        ("__mae_ret__", "mae_ret"),
+                        ("__mfe__", "mfe"),
+                        ("__mae__", "mae"),
+                    ):
+                        if _src in _df_oof.columns and _dst not in _payload:
+                            _payload[_dst] = np.asarray(
+                                _df_oof[_src], dtype=np.float32
+                            )[: len(_df_oof)]
 
                 # Only store oof_raw if explicitly configured (saves ~50% storage per model)
                 if cfg.get("save_oof_raw", False):
@@ -21984,6 +22675,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
 
     # Extended per-model quality report (base + meta) — per horizon per bucket.
     base_quality_rows = []
+    base_feature_rows = []
     strategies = get_strategies(cfg)
     for strat in strategies:
         side = strat["trade_side"]
@@ -22052,6 +22744,28 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     conf.get("downstream_blocked", False)
                 )
                 entry["variant"] = "primary"
+                if cand_name == race.best_model_name:
+                    _feature_rows = _extract_model_feature_importance_rows(
+                        getattr(race, "best_model", None),
+                        stage="train_base",
+                        model_id=f"{side}_{kind}_H{H_rep}:{cand_name}",
+                        feature_names=h_info.get("selected_features"),
+                        side=side,
+                        strategy_id=kind,
+                        horizon=int(H_rep),
+                        candidate_name=cand_name,
+                        is_winner=True,
+                    )
+                    if _feature_rows:
+                        base_feature_rows.extend(_feature_rows)
+                        _feature_summary = _feature_importance_summary(_feature_rows)
+                        entry["feature_importance"] = _feature_summary
+                        entry["selected_feature_count"] = _feature_summary.get(
+                            "selected_feature_count", 0
+                        )
+                        entry["used_feature_count"] = _feature_summary.get(
+                            "used_feature_count", 0
+                        )
                 base_quality_rows.append(entry)
 
     for (side, kind, horizon, variant), variant_info in (
@@ -22094,9 +22808,32 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             entry["variant"] = str(variant)
             entry["is_winner"] = cand_name == race.best_model_name
             entry["downstream_blocked"] = False
+            if cand_name == race.best_model_name:
+                _feature_rows = _extract_model_feature_importance_rows(
+                    getattr(race, "best_model", None),
+                    stage="train_base",
+                    model_id=f"{side}_{kind}_H{int(horizon)}_{variant}:{cand_name}",
+                    feature_names=variant_info.get("selected_features"),
+                    side=side,
+                    strategy_id=kind,
+                    horizon=int(horizon),
+                    candidate_name=cand_name,
+                    is_winner=True,
+                )
+                if _feature_rows:
+                    base_feature_rows.extend(_feature_rows)
+                    _feature_summary = _feature_importance_summary(_feature_rows)
+                    entry["feature_importance"] = _feature_summary
+                    entry["selected_feature_count"] = _feature_summary.get(
+                        "selected_feature_count", 0
+                    )
+                    entry["used_feature_count"] = _feature_summary.get(
+                        "used_feature_count", 0
+                    )
             base_quality_rows.append(entry)
 
     meta_quality_rows = []
+    meta_feature_rows = []
     for key, meta in meta_models.items():
         if not key or "_" not in key:
             continue
@@ -22135,11 +22872,28 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     "clf_prec_39": best_rec.get("prec_39", 0),
                     "clf_ic_stability_mean": best_rec.get("ic_stability_mean", 0),
                 }
+            _feature_rows = _extract_model_feature_importance_rows(
+                meta,
+                stage="train_meta",
+                model_id=key,
+                side=side,
+                strategy_id=kind,
+                candidate_name=clf_metrics.get("clf_winner"),
+                is_winner=True,
+            )
+            _feature_summary = _feature_importance_summary(_feature_rows)
+            if _feature_rows:
+                meta_feature_rows.extend(_feature_rows)
             meta_quality_rows.append(
                 {
                     "model": key,
                     "passed": True,
                     "metrics": clf_metrics,
+                    "feature_importance": _feature_summary,
+                    "selected_feature_count": _feature_summary.get(
+                        "selected_feature_count", 0
+                    ),
+                    "used_feature_count": _feature_summary.get("used_feature_count", 0),
                 }
             )
             continue
@@ -22220,17 +22974,34 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
         _y_per_h_rpt = {h: v[:n] for h, v in _y_per_h_rpt.items()}
         if groups is not None:
             groups = np.asarray(groups)[:n]
-        meta_quality_rows.append(
-            _meta_report_entry(
-                key,
-                meta,
-                y_target,
-                y_ret,
-                base_score,
-                groups,
-                y_per_horizon=_y_per_h_rpt,
-            )
+        _meta_entry = _meta_report_entry(
+            key,
+            meta,
+            y_target,
+            y_ret,
+            base_score,
+            groups,
+            y_per_horizon=_y_per_h_rpt,
         )
+        _feature_rows = _extract_model_feature_importance_rows(
+            meta,
+            stage="train_meta",
+            model_id=key,
+            side=side,
+            strategy_id=kind,
+            is_winner=True,
+        )
+        if _feature_rows:
+            meta_feature_rows.extend(_feature_rows)
+            _feature_summary = _feature_importance_summary(_feature_rows)
+            _meta_entry["feature_importance"] = _feature_summary
+            _meta_entry["selected_feature_count"] = _feature_summary.get(
+                "selected_feature_count", 0
+            )
+            _meta_entry["used_feature_count"] = _feature_summary.get(
+                "used_feature_count", 0
+            )
+        meta_quality_rows.append(_meta_entry)
 
     winners_base = sorted(
         [r for r in base_quality_rows if r.get("is_winner")],
@@ -22276,6 +23047,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
         _run_id,
         base_quality_rows=base_quality_rows,
         meta_quality_rows=meta_quality_rows,
+        base_feature_rows=base_feature_rows,
+        meta_feature_rows=meta_feature_rows,
     )
     print_training_gate_report(gate_report)
 

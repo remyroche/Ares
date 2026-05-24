@@ -28,7 +28,7 @@
   "max_spread_bps": 25.0,
   "hard_max_spread_bps": 100.0,
   "min_liquidity_capacity_weight": 0.25,
-  "max_ticker_age_seconds": 30.0,
+  "max_ticker_age_seconds": 4.0,
   "max_signal_gap_bps_default": 150.0,
   "max_order_chase_bps": 30.0,
   "entry_order_timeout_seconds": 10.0,

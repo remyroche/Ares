@@ -813,6 +813,48 @@ def _meta_predict_or_fallback(
             None,
         )
 
+    def _selected_features_for_model(model):
+        selected = getattr(model, "selected_features", None)
+        if selected:
+            return list(selected)
+        best = getattr(model, "best_model", None)
+        selected = getattr(best, "selected_features", None)
+        if selected:
+            return list(selected)
+        estimator = getattr(best, "estimator", None)
+        selected = getattr(estimator, "selected_features", None)
+        if selected:
+            return list(selected)
+        selected = getattr(estimator, "input_feature_names", None)
+        if selected:
+            return list(selected)
+        return []
+
+    def _enrich_meta_frame(X_meta):
+        X_meta = X_meta.copy()
+        num = grp_df.select_dtypes(include=[np.number, bool])
+        for col in num.columns:
+            if col not in X_meta.columns:
+                X_meta[col] = num[col].values
+        label_s = str(label or "")
+        label_variants = [label_s]
+        if label_s.startswith(f"{side_key}_"):
+            label_variants.append(label_s[len(side_key) + 1 :])
+        for h in CANON_HORIZONS:
+            ph = mr_h_preds.get(f"pred_H{h}")
+            if ph is None:
+                ph = tf_h_preds.get(f"pred_H{h}")
+            if ph is None:
+                ph = mr_h_preds.get(f"pred_mr_H{h}")
+            if ph is None:
+                ph = tf_h_preds.get(f"pred_tf_H{h}")
+            if ph is None:
+                continue
+            for lbl in label_variants:
+                if lbl:
+                    X_meta[f"pred_{lbl}_H{h}"] = np.asarray(ph, dtype=np.float32)
+        return X_meta
+
     # Use optimized meta prediction if available
     if _USE_OPTIMIZED_PREDICTIONS:
         try:
@@ -826,16 +868,18 @@ def _meta_predict_or_fallback(
             X_meta = meta_combiner.prepare_meta_features_fast(
                 p_alpha, mr_h_preds, tf_h_preds, grp_df, cfg
             )
+            X_meta = _enrich_meta_frame(X_meta)
 
             # Check feature coverage
             X_all = X_meta
-            if meta_model.selected_features:
+            selected_features = _selected_features_for_model(meta_model)
+            if selected_features:
                 available = set(X_meta.columns)
                 # Convert selected_features to list if it's not already
                 selected_features_list = (
-                    list(meta_model.selected_features)
-                    if not isinstance(meta_model.selected_features, list)
-                    else meta_model.selected_features
+                    list(selected_features)
+                    if not isinstance(selected_features, list)
+                    else selected_features
                 )
                 selected = set(selected_features_list)
                 coverage = len(selected & available) / len(selected)
@@ -910,7 +954,12 @@ def _meta_predict_or_fallback(
     # In some cases select_dtypes might miss bools/ints, but it should get most.
     # Just to be safe, we pass all numeric columns that the meta model might need.
     num = grp_df.select_dtypes(include=[np.number, bool]).copy()
-    X_meta = meta_model.prepare_meta_features(p_alpha, num, pred_col_name="pred_logit")
+    if hasattr(meta_model, "prepare_meta_features"):
+        X_meta = meta_model.prepare_meta_features(p_alpha, num, pred_col_name="pred_logit")
+    else:
+        X_meta = num.copy()
+        X_meta["pred_logit"] = p_alpha
+    X_meta = _enrich_meta_frame(X_meta)
 
     # REPLICATE training.py derived feature logic
     # 1. Per-horizon logit features
@@ -1060,9 +1109,10 @@ def _meta_predict_or_fallback(
             X_meta["trend_regime_diff"] = (t12 - t48).astype(np.float32)
 
     X_all_legacy = X_meta
-    if meta_model.selected_features:
+    selected_features = _selected_features_for_model(meta_model)
+    if selected_features:
         available = set(X_meta.columns)
-        selected = set(meta_model.selected_features)
+        selected = set(selected_features)
         present = selected & available
         missing = selected - available
         coverage = len(present) / max(len(selected), 1)
@@ -1086,7 +1136,7 @@ def _meta_predict_or_fallback(
                 f"  Meta {side_key}_{label}: {len(missing)} features missing "
                 f"(coverage {coverage:.0%}), filling with 0"
             )
-        X_meta = X_meta.reindex(columns=meta_model.selected_features, fill_value=0.0)
+        X_meta = X_meta.reindex(columns=selected_features, fill_value=0.0)
 
     if hasattr(meta_model, "predict_proba"):
         probs = meta_model.predict_proba(X_meta)
@@ -1121,6 +1171,7 @@ def _build_side_score_df(
     tradeable_candidates=None,
 ):
     _dbg = bool(cfg.get("debug_signal_generation", False))
+    current_positions_syms = set(current_positions_syms or [])
     if ts_sig not in mkt_gates.index:
         if _dbg:
             tprint(f"    SideScoreDiag ts={ts_sig} drop=missing_mkt_gate")
@@ -1167,6 +1218,38 @@ def _build_side_score_df(
     alpha_models = model_bundle["alpha_models"]
     meta_models = model_bundle["meta_models"]
     spike_model = model_bundle.get("spike_model")
+
+    def _strategy_side_from_key(strategy_key, fallback=""):
+        key = str(strategy_key or "")
+        if key.startswith("long_"):
+            return "long"
+        if key.startswith("short_"):
+            return "short"
+        fb = str(fallback or "").lower()
+        return fb if fb in {"long", "short"} else ""
+
+    def _iter_strategy_alpha_entries(alpha_registry):
+        entries = []
+        if not isinstance(alpha_registry, dict):
+            return entries
+        for key, value in alpha_registry.items():
+            key_s = str(key)
+            if key_s in {"long", "short"} and isinstance(value, dict):
+                if "mr" in value or "tf" in value:
+                    continue
+                for sid, info in value.items():
+                    if isinstance(info, dict) and info.get("model") is not None:
+                        sid_s = str(sid)
+                        full_sid = sid_s if sid_s.startswith(f"{key_s}_") else f"{key_s}_{sid_s}"
+                        entries.append((key_s, full_sid, info))
+                continue
+            if isinstance(value, dict) and value.get("model") is not None:
+                side = _strategy_side_from_key(key_s, value.get("trade_side", ""))
+                if side:
+                    entries.append((side, key_s, value))
+        return entries
+
+    strategy_alpha_entries = _iter_strategy_alpha_entries(alpha_models)
 
     # Determine trend direction (Best vs Worst) for each candidate
     trend_map = {}
@@ -1239,10 +1322,29 @@ def _build_side_score_df(
         return pd.DataFrame()
 
     bundle_feature_keys = set(cfg.get("spike_feature_keys", []))
-    bundle_feature_keys |= _meta_feature_keys_union(cfg)
-    bundle_feature_keys |= set(cfg.get("meta_feature_keys", []))
-    bundle_feature_keys |= set(cfg.get("mr_meta_feature_keys", []))
-    bundle_feature_keys |= set(cfg.get("tf_meta_feature_keys", []))
+    if not strategy_alpha_entries:
+        bundle_feature_keys |= _meta_feature_keys_union(cfg)
+        bundle_feature_keys |= set(cfg.get("meta_feature_keys", []))
+        bundle_feature_keys |= set(cfg.get("mr_meta_feature_keys", []))
+        bundle_feature_keys |= set(cfg.get("tf_meta_feature_keys", []))
+        for _meta_model in meta_models.values() if isinstance(meta_models, dict) else []:
+            for _obj in (
+                _meta_model,
+                getattr(_meta_model, "best_model", None),
+                getattr(getattr(_meta_model, "best_model", None), "estimator", None),
+            ):
+                if _obj is None:
+                    continue
+                for _attr in (
+                    "selected_features",
+                    "selected_features_",
+                    "feature_names_",
+                    "feature_cols",
+                    "input_feature_names",
+                ):
+                    _vals = getattr(_obj, _attr, None)
+                    if isinstance(_vals, (list, tuple, set)):
+                        bundle_feature_keys |= {str(v) for v in _vals if isinstance(v, str) and v}
     bundle_feature_keys |= {
         "rv_12h",
         "rv_24h",
@@ -1280,6 +1382,10 @@ def _build_side_score_df(
             bundle_feature_keys |= set(_h_info.get("feat_cols", []) or [])
         for _h_info in (m_bundle["tf"].get("models_by_h", {}) or {}).values():
             bundle_feature_keys |= set(_h_info.get("feat_cols", []) or [])
+    for _, _, _strategy_info in strategy_alpha_entries:
+        bundle_feature_keys |= set(_strategy_info.get("feat_cols", []) or [])
+        for _h_info in (_strategy_info.get("models_by_h", {}) or {}).values():
+            bundle_feature_keys |= set(_h_info.get("feat_cols", []) or [])
 
     base_df = pd.DataFrame(index=pd.Index(valid_symbols, name="symbol"))
     base_df["mkt_ret24h"] = float(mrk["mkt_ret24h"])
@@ -1291,7 +1397,6 @@ def _build_side_score_df(
     base_df["trend_dir"] = pd.Series(
         {sym: int(trend_map[sym]) for sym in valid_symbols}, dtype=np.int8
     )
-
     base_df["p_exh_lag1"] = 0.5
 
     for k in sorted(bundle_feature_keys):
@@ -1458,6 +1563,102 @@ def _build_side_score_df(
         for c in cfg.get("position_sizer_regime_feature_keys", [])
         if isinstance(c, str) and c
     ]
+    if strategy_alpha_entries:
+        for side_key, strategy_key, strategy_info in strategy_alpha_entries:
+            grp = df_all[df_all["side_key"] == side_key].copy()
+            if grp.empty:
+                continue
+            by_h = strategy_info.get("models_by_h", {}) or {}
+            h_preds = {}
+            preds = []
+            if by_h:
+                for _h, _h_info in sorted(by_h.items(), key=lambda kv: int(kv[0])):
+                    _model = _h_info.get("model")
+                    _fcols = [str(c) for c in (_h_info.get("feat_cols") or strategy_info.get("feat_cols") or [])]
+                    if _model is None or not _fcols:
+                        continue
+                    _X = (
+                        grp.reindex(columns=_fcols, fill_value=0.0)
+                        .fillna(0.0)
+                        .replace([np.inf, -np.inf], 0.0)
+                        .astype(np.float32)
+                    )
+                    _p = np.asarray(_model.predict(_X), dtype=np.float64).reshape(-1)
+                    preds.append(_p)
+                    h_preds[f"pred_H{int(_h)}"] = _p
+                    h_preds[f"pred_mr_H{int(_h)}"] = _p
+                    h_preds[f"pred_tf_H{int(_h)}"] = _p
+            if preds:
+                p_alpha = np.mean(preds, axis=0)
+            else:
+                _model = strategy_info.get("model")
+                _fcols = [str(c) for c in (strategy_info.get("feat_cols") or [])]
+                if _model is None or not _fcols:
+                    continue
+                _X = (
+                    grp.reindex(columns=_fcols, fill_value=0.0)
+                    .fillna(0.0)
+                    .replace([np.inf, -np.inf], 0.0)
+                    .astype(np.float32)
+                )
+                p_alpha = np.asarray(_model.predict(_X), dtype=np.float64).reshape(-1)
+                h = int(strategy_info.get("H", 0) or 0)
+                if h:
+                    h_preds[f"pred_H{h}"] = p_alpha
+                    h_preds[f"pred_mr_H{h}"] = p_alpha
+                    h_preds[f"pred_tf_H{h}"] = p_alpha
+
+            # Native lgbm_pipeline strategies are scored directly from the
+            # base alpha head trained on the strategy soft labels. The
+            # downstream policy code still expects the legacy score_mr/score_tf
+            # column names, so p_alpha is aliased into both names below.
+            score = np.asarray(p_alpha, dtype=np.float64).reshape(-1)
+            fallback_mask = np.zeros(len(score), dtype=bool)
+            meta_disabled_rows = 0
+            for i, idx in enumerate(grp.index):
+                if i >= len(score) or not np.isfinite(score[i]):
+                    meta_disabled_rows += 1
+                    continue
+                _row = {
+                    "symbol": grp.loc[idx, "symbol"],
+                    "side_key": side_key,
+                    "strategy_id": strategy_key,
+                    "score_mr": float(score[i]),
+                    "score_tf": float(score[i]),
+                    "reg_mr_live": float(p_alpha[i]),
+                    "reg_tf_live": float(p_alpha[i]),
+                    "trend_dir": int(grp.loc[idx, "trend_dir"]),
+                    "trap_quality": float(grp.loc[idx, "trap_quality"]),
+                    "predicted_vol_6h": float(grp.loc[idx, "predicted_vol_6h"]),
+                    "used_fallback_mr": bool(fallback_mask[i]) if i < len(fallback_mask) else False,
+                    "used_fallback_tf": bool(fallback_mask[i]) if i < len(fallback_mask) else False,
+                }
+                for _name, _vals in h_preds.items():
+                    if i < len(_vals):
+                        _row[_name] = float(_vals[i])
+                for _cn in _ps_runtime_cols:
+                    if _cn in grp.columns:
+                        try:
+                            _row[_cn] = float(grp.loc[idx, _cn])
+                        except Exception:
+                            _row[_cn] = 0.0
+                for _cn in grp.columns:
+                    if _cn in _row:
+                        continue
+                    try:
+                        _val = grp.loc[idx, _cn]
+                        if isinstance(_val, (bool, int, float, np.integer, np.floating)) and np.isfinite(float(_val)):
+                            _row[_cn] = float(_val)
+                    except Exception:
+                        continue
+                score_rows.append(_row)
+            if _dbg and meta_disabled_rows:
+                tprint(
+                    f"    SideScoreDiag ts={ts_sig} strategy={strategy_key} "
+                    f"drop=meta_disabled rows={meta_disabled_rows} side={side_key}"
+                )
+        return pd.DataFrame(score_rows)
+
     for side_key, grp in df_all.groupby("side_key"):
         m_bundle = alpha_models.get(side_key)
         if not m_bundle or not m_bundle.get("mr") or not m_bundle.get("tf"):
@@ -1999,6 +2200,9 @@ def generate_hourly_signals(
                     }
 
         if potential_signal:
+            if row.get("strategy_id"):
+                potential_signal["strategy_id"] = str(row["strategy_id"])
+                potential_signal["strategy_for_inference"] = str(row["strategy_id"])
             # Keep EV-decomposition runtime features on each order.
             for _cn in _ps_runtime_cols:
                 if _cn in row:

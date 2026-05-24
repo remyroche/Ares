@@ -90,6 +90,7 @@ class CausalFeatureTransformer:
             return mat.copy()
 
         mat = np.ascontiguousarray(mat, dtype=np.float32)
+        input_bad = ~np.isfinite(mat)
 
         do_arcsinh = (family == FeatureFamily.RISK_NORMALIZED_CONTINUOUS)
         do_zscore = (family == FeatureFamily.RISK_NORMALIZED_CONTINUOUS)
@@ -105,6 +106,8 @@ class CausalFeatureTransformer:
 
         if do_clip:
             np.clip(mat, -self.sigma_k, self.sigma_k, out=mat)
+        if input_bad.any():
+            mat[input_bad] = np.nan
 
         return mat
 

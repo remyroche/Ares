@@ -1,4 +1,11 @@
 {
-  "last_attempt_ts": "2026-05-17T22:11:34.828752+00:00",
+  "last_assets": [
+    "CAKE",
+    "ICP",
+    "MET",
+    "RENDER"
+  ],
+  "last_attempt_ts": "2026-05-18T19:00:10.884122+00:00",
+  "last_success_ts": "2026-05-18T19:00:10.884122+00:00",
   "method_version": "margin_dust_v2_repeated_params"
 }

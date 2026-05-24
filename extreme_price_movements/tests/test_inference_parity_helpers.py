@@ -489,6 +489,32 @@ def test_required_feature_keys_can_be_limited_to_deployment_strategies():
     assert "vov_mad_20_G_VOL_0" not in required
 
 
+def test_required_feature_keys_use_effective_alpha_contract():
+    class _AlphaInner:
+        selected_features = ["kept_feature"]
+        input_feature_names = ["kept_feature"]
+
+    class _AlphaModel:
+        best_model = _AlphaInner()
+
+    bundle = {
+        "bundle": {
+            "alpha_models": {
+                "long_rule": {
+                    "model": _AlphaModel(),
+                    "feat_cols": ["kept_feature", "dropped_feature"],
+                }
+            },
+            "meta_models": {},
+        }
+    }
+
+    required = get_inference_required_feature_keys(bundle, {"long_rule"})
+
+    assert "kept_feature" in required
+    assert "dropped_feature" not in required
+
+
 def test_required_feature_keys_use_meta_contract_columns_not_positional_names():
     class _Meta:
         selected_features = ["f0", "f1"]

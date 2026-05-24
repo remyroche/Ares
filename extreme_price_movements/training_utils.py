@@ -46,6 +46,19 @@ _BASE_META_ONLY_EXACT = {
     "pers_24",
     "ts_24",
     "prog_eff_24",
+    "vwap_zone_7d_atr",
+    "distance_to_support_weekly_vwap_atr",
+    "distance_to_resistance_weekly_vwap_atr",
+    "distance_to_support_weekly_donchian_atr",
+    "distance_to_resistance_weekly_donchian_atr",
+    "down_barrier_pressure_weekly_vwap",
+    "up_barrier_pressure_weekly_vwap",
+    "bars_to_support_weekly_vwap",
+    "bars_to_resistance_weekly_vwap",
+    "down_barrier_pressure_weekly_donchian",
+    "up_barrier_pressure_weekly_donchian",
+    "bars_to_support_weekly_donchian",
+    "bars_to_resistance_weekly_donchian",
 }
 
 _BASE_LOCATION_PREFIXES = (
@@ -97,13 +110,9 @@ _META_SHARED_BASELIKE_EXACT = {
     "z_intrabar_range_atr",
     "z_compression_expansion",
     "z_volume",
-    "z_breakout_up_24",
-    "z_breakout_dn_24",
     "z_dist_ema_24",
     "z_dist_vwap_24",
     "z_atr_norm_ret_24",
-    "z_sm_momentum_24",
-    "z_slope_change_24",
     "z_path_efficiency_24",
 }
 

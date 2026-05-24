@@ -6,6 +6,7 @@ import pandas as pd
 from extreme_price_movements.inference.policy_rank_reference import (
     PolicyRankReferenceStore,
     apply_policy_rank_percentile_gate,
+    persist_auction_rank_reference,
     persist_policy_rank_reference,
     policy_rank_pct_from_sorted_scores,
 )
@@ -74,6 +75,16 @@ def test_live_gate_uses_policy_rank_pct_not_meta_train_rank(tmp_path):
         market_mode="spot",
     )
     store = PolicyRankReferenceStore(data_root=tmp_path, run_id="run_a")
+    persist_auction_rank_reference(
+        pd.DataFrame(
+            {
+                "calibrated_score": [0.05, 0.15, 0.25, 0.35, 0.45],
+                "strategy_id": ["s"] * 5,
+            }
+        ),
+        data_root=tmp_path,
+        run_id="run_a",
+    )
 
     rejected = {
         "strategy_id": "long_demo",
@@ -81,7 +92,7 @@ def test_live_gate_uses_policy_rank_pct_not_meta_train_rank(tmp_path):
         "threshold_space": "rank_percentile",
         "calibrated_score": 0.25,
         "meta_train_rank_pct": 0.95,
-        "effective_threshold": 0.58,
+        "effective_threshold": 0.70,
         "chain_results": {"meta_train_rank_pct": 0.95},
     }
     assert apply_policy_rank_percentile_gate(rejected, store=store) == (
@@ -102,7 +113,55 @@ def test_live_gate_uses_policy_rank_pct_not_meta_train_rank(tmp_path):
     }
     assert apply_policy_rank_percentile_gate(accepted, store=store) == (True, None)
     assert accepted["policy_rank_pct"] == 0.6
+    assert accepted["normalized_rank_score"] == 0.6
+    assert accepted["auction_rank_score_source"] == "cross_strategy_auction_reference"
     assert accepted["rank_score_source"] == "policy_rank_reference_percentile"
+
+
+def test_live_gate_can_require_cross_strategy_auction_rank(tmp_path):
+    df = pd.DataFrame(
+        {
+            "strategy_id": ["short_demo"] * 5,
+            "calibrated_score": [0.10, 0.20, 0.30, 0.40, 0.90],
+            "rank_pct": [0.2, 0.4, 0.6, 0.8, 1.0],
+        }
+    )
+    persist_policy_rank_reference(
+        df,
+        data_root=tmp_path,
+        run_id="run_a",
+        strategy_id="short_demo",
+        market_mode="perp",
+    )
+    persist_auction_rank_reference(
+        pd.DataFrame(
+            {
+                "calibrated_score": [0.60, 0.70, 0.80, 0.90],
+                "strategy_id": ["long_a", "long_b", "short_demo", "long_c"],
+            }
+        ),
+        data_root=tmp_path,
+        run_id="run_a",
+    )
+    store = PolicyRankReferenceStore(data_root=tmp_path, run_id="run_a")
+    decision = {
+        "strategy_id": "short_demo",
+        "side": "short",
+        "threshold_space": "rank_percentile",
+        "calibrated_score": 0.40,
+        "effective_threshold": 0.50,
+        "chain_results": {},
+    }
+
+    assert apply_policy_rank_percentile_gate(
+        decision,
+        store=store,
+        require_cross_strategy_auction_rank=True,
+    ) == (False, "rank_below_dynamic_threshold")
+    assert decision["policy_rank_pct"] == 0.8
+    assert decision["normalized_rank_score"] == 0.0
+    assert decision["threshold_rank_score"] == 0.0
+    assert decision["threshold_rank_score_source"] == "cross_strategy_auction_reference"
 
 
 def test_missing_policy_rank_reference_fails_closed(tmp_path):

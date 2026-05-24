@@ -1,0 +1,222 @@
+[
+  {
+    "strategy_key": "long_dist_weekly_vwap_0_074823022_loc_prev_week_range_pos_48_0_48354843_mkt_ret_eq_24h_-0_43956268_volume_autocorr_48_-0_38378653",
+    "strategy_id": "dist_weekly_vwap_0_074823022_loc_prev_week_range_pos_48_0_48354843_mkt_ret_eq_24h_-0_43956268_volume_autocorr_48_-0_38378653",
+    "label_source": "labels",
+    "rows": 73264,
+    "valid_rows_basis_excluded": 13700,
+    "valid_pct_basis_excluded": 0.1869949770692291,
+    "features_orig": 59,
+    "features_basis_excluded": 55,
+    "features_portable": 55,
+    "valid_rows_portable_filter": 13700,
+    "valid_pct_portable_filter": 0.1869949770692291,
+    "top": [
+      [
+        "innovation_z_x_zr_3h",
+        53859,
+        73.51
+      ],
+      [
+        "oi_rel_vol_2h",
+        29927,
+        40.85
+      ],
+      [
+        "dist_vwap_norm",
+        6644,
+        9.07
+      ],
+      [
+        "tail_asymmetry_q90_q10_atr_norm",
+        4799,
+        6.55
+      ],
+      [
+        "vwap_zone_1d_atr",
+        2995,
+        4.09
+      ],
+      [
+        "dist_vwap_96_atr",
+        831,
+        1.13
+      ],
+      [
+        "ffd_diff_1_04",
+        245,
+        0.33
+      ],
+      [
+        "trend_pct_base",
+        245,
+        0.33
+      ]
+    ]
+  },
+  {
+    "strategy_key": "long_loc_prev_week_range_pos_48_0_42586401_loc_vwap_dev_z_24_0_10701825_zscore_price_50_1_0128103_mkt_ret_eq_24h_-0_78752208_up_down_return_mass_ratio_tanh_1_1231147",
+    "strategy_id": "loc_prev_week_range_pos_48_0_42586401_loc_vwap_dev_z_24_0_10701825_zscore_price_50_1_0128103_mkt_ret_eq_24h_-0_78752208_up_down_return_mass_ratio_tanh_1_1231147",
+    "label_source": "labels",
+    "rows": 54176,
+    "valid_rows_basis_excluded": 36201,
+    "valid_pct_basis_excluded": 0.6682110159480212,
+    "features_orig": 103,
+    "features_basis_excluded": 96,
+    "features_portable": 96,
+    "valid_rows_portable_filter": 36201,
+    "valid_pct_portable_filter": 0.6682110159480212,
+    "top": [
+      [
+        "oi_rel_vol_2h",
+        17856,
+        32.96
+      ],
+      [
+        "oi_rel_vol_4h",
+        13783,
+        25.44
+      ],
+      [
+        "oi_rel_vol_8h",
+        9460,
+        17.46
+      ],
+      [
+        "tail_asymmetry_q90_q10_atr_norm",
+        2037,
+        3.76
+      ],
+      [
+        "trend_pct_mkt_resid",
+        189,
+        0.35
+      ],
+      [
+        "ffd_diff_4_04",
+        186,
+        0.34
+      ],
+      [
+        "ext_atrExp",
+        185,
+        0.34
+      ],
+      [
+        "retest_quality",
+        185,
+        0.34
+      ]
+    ]
+  },
+  {
+    "strategy_key": "short_dist_rolling_7d_high_0_13977644_mkt_ret_eq_24h_-0_56630391_rolling_range_20_-0_40672407",
+    "strategy_id": "dist_rolling_7d_high_0_13977644_mkt_ret_eq_24h_-0_56630391_rolling_range_20_-0_40672407",
+    "label_source": "labels",
+    "rows": 67094,
+    "valid_rows_basis_excluded": 62211,
+    "valid_pct_basis_excluded": 0.92722151012013,
+    "features_orig": 116,
+    "features_basis_excluded": 113,
+    "features_portable": 113,
+    "valid_rows_portable_filter": 62211,
+    "valid_pct_portable_filter": 0.92722151012013,
+    "top": [
+      [
+        "oi_rel_vol_8h",
+        4459,
+        6.65
+      ],
+      [
+        "dist_vwap_12_atr",
+        2183,
+        3.25
+      ],
+      [
+        "dist_stack",
+        514,
+        0.77
+      ],
+      [
+        "ret24h_bench_resid",
+        344,
+        0.51
+      ],
+      [
+        "dist_vwap_norm",
+        319,
+        0.48
+      ],
+      [
+        "trend_pct_mkt_resid",
+        285,
+        0.42
+      ],
+      [
+        "vwap_zone_1d_atr",
+        233,
+        0.35
+      ],
+      [
+        "ffd_diff_8_04",
+        218,
+        0.32
+      ]
+    ]
+  },
+  {
+    "strategy_key": "short_loc_ema_stack_pos_24_0_43357179_compression_ratio_-0_33411601_mkt_ret_eq_24h_1_1280091_mkt_ret_eq_24h_-0_81129736_up_down_semivol_ratio_tanh_-0_39156261",
+    "strategy_id": "loc_ema_stack_pos_24_0_43357179_compression_ratio_-0_33411601_mkt_ret_eq_24h_1_1280091_mkt_ret_eq_24h_-0_81129736_up_down_semivol_ratio_tanh_-0_39156261",
+    "label_source": "labels",
+    "rows": 76188,
+    "valid_rows_basis_excluded": 71653,
+    "valid_pct_basis_excluded": 0.9404761904761905,
+    "features_orig": 88,
+    "features_basis_excluded": 84,
+    "features_portable": 84,
+    "valid_rows_portable_filter": 71653,
+    "valid_pct_portable_filter": 0.9404761904761905,
+    "top": [
+      [
+        "trapped_longs_12",
+        3994,
+        5.24
+      ],
+      [
+        "dist_vwap_norm",
+        878,
+        1.15
+      ],
+      [
+        "dist_vwap_24_atr",
+        826,
+        1.08
+      ],
+      [
+        "tail_asymmetry_q90_q10_atr_norm",
+        430,
+        0.56
+      ],
+      [
+        "oi_chg_4h",
+        331,
+        0.43
+      ],
+      [
+        "ret24h_bench_resid",
+        331,
+        0.43
+      ],
+      [
+        "oi_chg_2h",
+        331,
+        0.43
+      ],
+      [
+        "trend_pct_mkt_resid",
+        267,
+        0.35
+      ]
+    ]
+  }
+]

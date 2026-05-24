@@ -1,0 +1,2 @@
+timestamp,symbol,side,strategy_id,feature_cols,oof_base_clf,oof_meta_clf,oof_pred,final_fit_base_pred,final_fit_meta_pred,chain_action,chain_reason,base_pred_abs_diff_vs_oof,meta_pred_abs_diff_vs_oof
+2026-05-15 18:00:00+00:00,ARB/USD:USD,short,short_dist_rolling_7d_high_0_13977644_mkt_ret_eq_24h_-0_56630391_rolling_range_20_-0_40672407,883,0.542554497718811,0.8620775938034058,0.8620775938034058,0.5154010484418821,,no_meta_prediction,meta_prediction_missing_no_base_fallback,0.027153449276928976,

@@ -85,6 +85,10 @@ def _kraken_futures_flex_margin_values(balance: Dict[str, Any]) -> Dict[str, flo
     }
 
 
+def _exchange_id(exchange: Any) -> str:
+    return str(getattr(exchange, "id", "") or "").strip().lower()
+
+
 @dataclass
 class Position:
     """Represents an open position."""
@@ -135,6 +139,9 @@ class PortfolioManager:
         book_notional_multiplier: float = 1.0,
         leverage_wallet_multiplier: float = 1.0,
         min_margin_level_after_entry: float = 2.5,
+        occupancy_threshold_alpha: float = 1.0,
+        occupancy_threshold_power: float = 1.0,
+        threshold_viability_margin: float = 0.0,
         max_daily_loss_pct: float = 0.10,
         max_weekly_loss_pct: float = 0.20,
         max_consecutive_losing_trades: int = 5,
@@ -150,6 +157,9 @@ class PortfolioManager:
         self.min_margin_level_after_entry = max(
             float(min_margin_level_after_entry), 1.0
         )
+        self.occupancy_threshold_alpha = max(float(occupancy_threshold_alpha), 0.0)
+        self.occupancy_threshold_power = max(float(occupancy_threshold_power), 0.0)
+        self.threshold_viability_margin = max(float(threshold_viability_margin), 0.0)
         self.margin_total_assets_quote: Optional[float] = None
         self.margin_total_liabilities_quote: Optional[float] = None
         self.margin_level: Optional[float] = None
@@ -211,6 +221,9 @@ class PortfolioManager:
             book_notional_multiplier=policy.book_notional_multiplier,
             leverage_wallet_multiplier=policy.leverage_wallet_multiplier,
             min_margin_level_after_entry=policy.min_margin_level_after_entry,
+            occupancy_threshold_alpha=policy.occupancy_threshold_alpha,
+            occupancy_threshold_power=policy.occupancy_threshold_power,
+            threshold_viability_margin=policy.threshold_viability_margin,
             max_same_side=max_same_side,
             max_same_strategy=max_same_strategy,
             portfolio_value=portfolio_value,
@@ -344,17 +357,22 @@ class PortfolioManager:
     ) -> float:
         """Calculate adjusted entry threshold based on current position count.
 
-        Formula: final_threshold = initial_threshold + (n_positions * (0.90 - initial_threshold)) / max_positions
+        Formula: final_threshold = initial_threshold + occupancy * (1.0 - initial_threshold)
 
-        As more positions are open, thresholds below 0.90 tighten toward 0.90.
+        As more positions are open, thresholds tighten toward 1.0.
         """
         n_positions = len([p for p in self.positions.values() if p.is_open])
 
-        # Formula: initial + (n_positions * (0.90 - initial)) / max_positions
-        adjustment = (n_positions * (0.90 - initial_threshold)) / self.max_positions
+        occupancy = n_positions / max(self.max_positions, 1)
+        adjustment = (
+            self.occupancy_threshold_alpha
+            * occupancy**self.occupancy_threshold_power
+            * (1.0 - initial_threshold)
+        )
         final_threshold = (
             initial_threshold
             + adjustment
+            + float(self.threshold_viability_margin)
             + float(side_penalty)
             + float(strategy_penalty)
         )
@@ -654,9 +672,14 @@ class PortfolioManager:
         balance_params: Dict[str, Any] = {}
         position_params: Dict[str, Any] = {}
         is_perps = account in {"perp", "perps", "future", "futures", "swap"}
+        is_kraken_futures = _exchange_id(exchange) == "krakenfutures"
         if account == "margin":
             balance_params = {"type": "margin", "marginMode": mode}
             position_params = {"type": "margin", "marginMode": mode}
+        if is_kraken_futures:
+            is_perps = True
+            balance_params = {"type": "flex"}
+            position_params = {}
         snapshot: Dict[str, Any] = {
             "quote_currency": quote,
             "execution_account": account,

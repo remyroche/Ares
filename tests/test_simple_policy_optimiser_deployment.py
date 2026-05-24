@@ -1,4 +1,9 @@
-from extreme_price_movements.simple_policy_optimiser import _build_deployment_payload
+import pandas as pd
+
+from extreme_price_movements.simple_policy_optimiser import (
+    _build_deployment_payload,
+    _finalise_simple_policy_candidates,
+)
 
 
 def _result(avg_pnl: float, *, holding: dict | None = None) -> dict:
@@ -78,3 +83,25 @@ def test_deployment_payload_persists_realized_holding_time_metrics():
     assert strategy["median_holding_time_hours"] == 3.0
     assert strategy["p90_holding_time_hours"] == 12.0
     assert strategy["max_holding_time_hours"] == 24.0
+
+
+def test_candidate_finalise_splits_strategy_rank_from_cross_strategy_score():
+    rows = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                ["2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"]
+            ),
+            "symbol": ["LOW_CAL", "HIGH_CAL"],
+            "strategy_rank_pct": [0.91, 0.55],
+            "normalized_rank_score": [0.91, 0.55],
+            "calibrated_score": [0.10, 0.99],
+        }
+    )
+
+    out = _finalise_simple_policy_candidates([rows], rank_floor=0.0)
+
+    by_symbol = out.set_index("symbol")
+    assert by_symbol.loc["LOW_CAL", "strategy_rank_pct"] == 0.91
+    assert by_symbol.loc["HIGH_CAL", "strategy_rank_pct"] == 0.55
+    assert by_symbol.loc["LOW_CAL", "normalized_rank_score"] == 0.5
+    assert by_symbol.loc["HIGH_CAL", "normalized_rank_score"] == 1.0

@@ -873,7 +873,22 @@ class DailyDeploymentReporter:
                     "elapsed_hours": elapsed_hours,
                 }
 
-        snapshot = portfolio_mgr.fetch_exchange_snapshot(exchange)
+        market_mode = str(cfg.get("market_mode") or cfg.get("mode") or "").lower()
+        execution_account = str(cfg.get("execution_account") or "").lower()
+        is_perps = (
+            market_mode == "perps"
+            or execution_account in {"perp", "perps", "future", "futures", "swap"}
+        )
+        snapshot = portfolio_mgr.fetch_exchange_snapshot(
+            exchange,
+            quote_currency=str(
+                cfg.get("live_quote_currency")
+                or cfg.get("quote_currency")
+                or ("USD" if is_perps else "USDC")
+            ).upper(),
+            execution_account=execution_account or ("perps" if is_perps else "margin"),
+            margin_mode=str(cfg.get("margin_mode") or "cross").lower(),
+        )
         total_balance = _coerce_float(snapshot.get("total_balance"))
         if not np.isfinite(total_balance):
             tprint("[DailyReporter] Skipping daily report: total balance unavailable")

@@ -170,6 +170,39 @@ def test_fetch_incremental_universe_triggers_backfill_on_recent_gaps(monkeypatch
     assert backfill_calls == ["B/USDT"]
 
 
+def test_data_fetcher_does_not_rescope_exchange_scoped_live_root(tmp_path):
+    class _Exchange:
+        id = "krakenfutures"
+
+    live_root = tmp_path / "data_perp" / "exchanges" / "krakenfutures"
+    fetcher = DataFetcher(
+        exchange=_Exchange(),
+        data_root=str(live_root),
+        market_mode="perps",
+    )
+
+    assert fetcher.ohlcv_store.root_dir == str(live_root)
+    assert fetcher.orderbook_dir == live_root / "orderbook_hourly"
+    assert fetcher.funding_dir == live_root / "funding_hourly"
+
+
+def test_data_fetcher_scopes_artifact_root_by_exchange(tmp_path):
+    class _Exchange:
+        id = "krakenfutures"
+
+    artifact_root = tmp_path / "data_perp"
+    expected_root = artifact_root / "exchanges" / "krakenfutures"
+    fetcher = DataFetcher(
+        exchange=_Exchange(),
+        data_root=str(artifact_root),
+        market_mode="perps",
+    )
+
+    assert fetcher.ohlcv_store.root_dir == str(expected_root)
+    assert fetcher.orderbook_dir == expected_root / "orderbook_hourly"
+    assert fetcher.funding_dir == expected_root / "funding_hourly"
+
+
 def test_fetch_incremental_universe_respects_lightweight_probe(monkeypatch):
     fetcher = DataFetcher(exchange=object(), data_root="data")
     calls = []
@@ -263,7 +296,7 @@ def test_fetch_hourly_universe_once_saves_latest_closed_candle(tmp_path, monkeyp
     target_hour = pd.Timestamp("2026-01-01 12:00:00", tz="UTC")
 
     class _Exchange:
-        def fetch_ohlcv(self, symbol, timeframe, since=None, limit=None):
+        def fetch_ohlcv(self, symbol, timeframe, since=None, limit=None, params=None):
             assert timeframe == "1h"
             assert limit == 1
             if symbol == "B/USDT":

@@ -4,6 +4,7 @@ import gc as _gc
 import glob
 import json
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -40,6 +41,7 @@ _ARCHIVE_USER_AGENT = (
 HTTP_POOL_MAXSIZE = int(os.getenv("EPM_HTTP_POOL_MAXSIZE", "64") or "64")
 HTTP_POOL_CONNECTIONS = int(os.getenv("EPM_HTTP_POOL_CONNECTIONS", "64") or "64")
 _PUBLIC_DATA_SESSION: requests.Session | None = None
+_KRAKEN_FUNDING_EXPORT_CACHE: dict[tuple[str, str], pd.Series] = {}
 
 
 def _configure_requests_session_pool(session: Any) -> None:
@@ -408,6 +410,62 @@ def _configured_exchange_id() -> str:
     return "binance"
 
 
+def exchange_data_component(exchange_id: Optional[str] = None, market_mode: str = "spot") -> str:
+    raw = str(exchange_id or _configured_exchange_id() or "binance").strip().lower()
+    raw = raw.replace("-", "_")
+    mode = str(market_mode or "spot").strip().lower()
+    if raw in {"okx", "okex"}:
+        return "okx"
+    if raw in {"krakenfutures", "kraken_futures"}:
+        return "krakenfutures"
+    if raw == "kraken":
+        return "krakenfutures" if mode in {"perp", "perps", "future", "futures", "swap"} else "kraken"
+    if raw in {"binanceusdm", "binance_usdm", "binance-futures"}:
+        return "binanceusdm"
+    if raw == "binance":
+        return "binanceusdm" if mode in {"perp", "perps", "future", "futures", "swap"} else "binance"
+    return re.sub(r"[^a-z0-9_]+", "_", raw).strip("_") or "exchange"
+
+
+def exchange_data_root(
+    data_root: str,
+    exchange_id: Optional[str] = None,
+    market_mode: str = "spot",
+) -> str:
+    return os.path.join(
+        str(data_root),
+        "exchanges",
+        exchange_data_component(exchange_id, market_mode),
+    )
+
+
+def use_exchange_scoped_data(cfg: Optional[Dict[str, Any]] = None) -> bool:
+    cfg = cfg or {}
+    raw = os.environ.get(
+        "EPM_EXCHANGE_SCOPED_DATA",
+        str(cfg.get("exchange_scoped_data", True)),
+    )
+    return str(raw).strip().lower() not in {"0", "false", "no", "n", "off"}
+
+
+def scoped_data_root(cfg: Dict[str, Any]) -> str:
+    root = str(cfg.get("data_root", "data"))
+    if not use_exchange_scoped_data(cfg):
+        return root
+    return exchange_data_root(
+        root,
+        cfg.get("exchange_id") or cfg.get("exchange"),
+        cfg.get("market_mode") or ("perps" if cfg.get("use_perps") else "spot"),
+    )
+
+
+def make_ohlcv_store(cfg: Dict[str, Any], *, timeframe: Optional[str] = None):
+    return PartitionedOHLCVStore(
+        root_dir=scoped_data_root(cfg),
+        timeframe=timeframe or cfg.get("timeframe", "1h"),
+    )
+
+
 def _env_first(*names: str) -> str:
     for name in names:
         value = os.environ.get(name, "").strip()
@@ -617,6 +675,433 @@ def _fetch_ccxt_history_paged(
     df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True).dt.floor("h")
     out = df.groupby("ts")["value"].last().sort_index().astype(np.float32)
     return out
+
+
+def _fetch_kraken_futures_historical_funding_rates(
+    exchange,
+    perp_symbol: str,
+    since_ms: int,
+    until_ms: int,
+) -> pd.Series:
+    product_id = _kraken_futures_product_id(exchange, perp_symbol)
+    if not product_id:
+        return pd.Series(dtype=np.float32)
+    export_funding = _fetch_kraken_futures_exported_funding_rates(
+        product_id, since_ms, until_ms
+    )
+    url = "https://futures.kraken.com/derivatives/api/v3/historical-funding-rates"
+    headers = {"User-Agent": _ARCHIVE_USER_AGENT}
+    try:
+        response = _public_data_session().get(
+            url,
+            params={"symbol": product_id},
+            timeout=30,
+            headers=headers,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except Exception as exc:
+        tprint(f"WARN Kraken historical funding fetch failed for {perp_symbol}: {exc}")
+        return export_funding
+
+    rows: list[tuple[pd.Timestamp, float]] = []
+    for item in payload.get("rates", []) if isinstance(payload, dict) else []:
+        if not isinstance(item, dict):
+            continue
+        ts = pd.to_datetime(item.get("timestamp"), utc=True, errors="coerce")
+        if pd.isna(ts):
+            continue
+        ts_ms = int(ts.value // 10**6)
+        if ts_ms < int(since_ms) or ts_ms >= int(until_ms):
+            continue
+        value = item.get("relativeFundingRate", item.get("fundingRate"))
+        try:
+            rate = float(value)
+        except Exception:
+            continue
+        if np.isfinite(rate):
+            rows.append((ts.floor("h"), rate))
+    if not rows:
+        return export_funding
+    df = pd.DataFrame(rows, columns=["ts", "value"])
+    api_funding = df.groupby("ts")["value"].last().sort_index().astype(np.float32)
+    if export_funding.empty:
+        return api_funding
+    combined = pd.concat([export_funding, api_funding])
+    return combined.groupby(level=0).last().sort_index().astype(np.float32)
+
+
+def _fetch_kraken_futures_exported_funding_rates(
+    product_id: str,
+    since_ms: int,
+    until_ms: int,
+) -> pd.Series:
+    export_path = os.getenv("EPM_KRAKEN_FUNDING_EXPORT_ZIP", "").strip()
+    if not export_path:
+        export_path = os.path.join(
+            os.getcwd(),
+            "data_perp",
+            "exchanges",
+            "krakenfutures",
+            "reference",
+            "kraken_funding_rates_export_20260216.zip",
+        )
+    if not export_path or not os.path.exists(export_path):
+        return pd.Series(dtype=np.float32)
+
+    product_id = str(product_id or "").strip().upper()
+    if not product_id:
+        return pd.Series(dtype=np.float32)
+    cache_key = (os.path.abspath(export_path), product_id)
+    cached = _KRAKEN_FUNDING_EXPORT_CACHE.get(cache_key)
+    if cached is None:
+        member = f"exports/{product_id}.csv"
+        try:
+            with zipfile.ZipFile(export_path) as zf:
+                if member not in set(zf.namelist()):
+                    _KRAKEN_FUNDING_EXPORT_CACHE[cache_key] = pd.Series(dtype=np.float32)
+                    return _KRAKEN_FUNDING_EXPORT_CACHE[cache_key]
+                with zf.open(member) as fp:
+                    raw = pd.read_csv(fp, usecols=["timestamp", "relative_rate"])
+        except Exception as exc:
+            tprint(f"WARN Kraken funding export read failed for {product_id}: {exc}")
+            _KRAKEN_FUNDING_EXPORT_CACHE[cache_key] = pd.Series(dtype=np.float32)
+            return _KRAKEN_FUNDING_EXPORT_CACHE[cache_key]
+        ts = pd.to_datetime(raw["timestamp"], utc=True, errors="coerce").dt.floor("h")
+        values = pd.to_numeric(raw["relative_rate"], errors="coerce")
+        valid = ts.notna() & np.isfinite(values.to_numpy(dtype=np.float64, copy=False))
+        if not bool(valid.any()):
+            cached = pd.Series(dtype=np.float32)
+        else:
+            cached = (
+                pd.DataFrame({"ts": ts[valid], "value": values[valid]})
+                .groupby("ts")["value"]
+                .last()
+                .sort_index()
+                .astype(np.float32)
+            )
+        _KRAKEN_FUNDING_EXPORT_CACHE[cache_key] = cached
+    if cached.empty:
+        return pd.Series(dtype=np.float32)
+    start = pd.to_datetime(int(since_ms), unit="ms", utc=True)
+    end = pd.to_datetime(int(until_ms), unit="ms", utc=True)
+    return cached[(cached.index >= start) & (cached.index < end)].astype(np.float32)
+
+
+def _kraken_futures_product_id(exchange, perp_symbol: str) -> str:
+    try:
+        market = exchange.market(perp_symbol)
+        market_id = str(market.get("id") or "").strip()
+        if market_id:
+            return market_id
+    except Exception:
+        pass
+    text = str(perp_symbol or "").strip()
+    if "/" in text:
+        base, quote = text.split("/", 1)
+        quote = quote.split(":", 1)[0]
+        base = "XBT" if base.upper() == "BTC" else base.upper()
+        return f"PF_{base}{quote.upper()}"
+    return text.replace("/", "").replace(":", "").upper()
+
+
+def _drop_suspicious_zero_volume_carry_rows(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or "volume" not in df.columns:
+        return df
+    volume = pd.to_numeric(df["volume"], errors="coerce")
+    open_ = pd.to_numeric(df["open"], errors="coerce")
+    close = pd.to_numeric(df["close"], errors="coerce")
+    zero_no_trade = volume.eq(0.0) & open_.eq(close)
+    invalid_zero = volume.isna() | volume.lt(0.0) | (volume.eq(0.0) & ~open_.eq(close))
+    prev_linked = zero_no_trade & zero_no_trade.shift(1, fill_value=False) & close.shift(1).eq(open_)
+    next_linked = zero_no_trade & zero_no_trade.shift(-1, fill_value=False) & close.eq(open_.shift(-1))
+    suspicious = invalid_zero | (zero_no_trade & (prev_linked | next_linked))
+    return df.loc[~suspicious]
+
+
+def _fetch_kraken_futures_chart_ohlcv(
+    exchange,
+    perp_symbol: str,
+    tick_type: str,
+    since_ms: int,
+    until_ms: int,
+    *,
+    timeframe: str = "1h",
+) -> pd.DataFrame:
+    product_id = _kraken_futures_product_id(exchange, perp_symbol)
+    if not product_id:
+        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+    frame_ms = max(_timeframe_ms(timeframe), 1)
+    frame_seconds = max(1, int(frame_ms // 1000))
+    cursor_s = max(0, int(since_ms // 1000))
+    until_s = max(cursor_s, int((until_ms + 999) // 1000))
+    # The charts endpoint caps responses around 2,000 candles. Keep windows
+    # below that cap and use explicit from/to seconds, which Kraken documents
+    # through the Charts API family and accepts on the public endpoint.
+    chunk_seconds = max(frame_seconds, frame_seconds * 1800)
+    url = f"https://futures.kraken.com/api/charts/v1/{tick_type}/{product_id}/{timeframe}"
+    headers = {"User-Agent": _ARCHIVE_USER_AGENT}
+    rows: list[dict[str, Any]] = []
+    while cursor_s < until_s:
+        end_s = min(cursor_s + chunk_seconds, until_s)
+        try:
+            response = _public_data_session().get(
+                url,
+                params={"from": cursor_s, "to": end_s},
+                timeout=30,
+                headers=headers,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except Exception as exc:
+            tprint(
+                f"WARN Kraken {tick_type} chart fetch failed for {perp_symbol}: {exc}"
+            )
+            break
+        candles = payload.get("candles", []) if isinstance(payload, dict) else []
+        max_seen_s = cursor_s
+        for candle in candles:
+            if not isinstance(candle, dict):
+                continue
+            ts_raw = candle.get("time")
+            try:
+                ts_ms = int(float(ts_raw))
+            except Exception:
+                continue
+            if ts_ms < int(since_ms) or ts_ms >= int(until_ms):
+                continue
+            ts = pd.to_datetime(ts_ms, unit="ms", utc=True).floor("h")
+            row: dict[str, Any] = {"ts": ts}
+            ok = True
+            for col in ("open", "high", "low", "close"):
+                try:
+                    row[col] = float(candle.get(col))
+                except Exception:
+                    ok = False
+                    break
+            if ok:
+                try:
+                    row["volume"] = float(candle.get("volume"))
+                except Exception:
+                    if row["open"] == row["close"]:
+                        row["volume"] = 0.0
+                    else:
+                        ok = False
+            if ok and (row["volume"] < 0.0 or (row["volume"] == 0.0 and row["open"] != row["close"])):
+                ok = False
+            if ok:
+                rows.append(row)
+                max_seen_s = max(max_seen_s, int(ts_ms // 1000))
+        if max_seen_s <= cursor_s:
+            cursor_s = end_s + frame_seconds
+        else:
+            cursor_s = max_seen_s + frame_seconds
+        time.sleep(float(getattr(exchange, "rateLimit", 100)) / 1000.0)
+    if not rows:
+        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+    df = pd.DataFrame(rows).drop_duplicates("ts").set_index("ts").sort_index()
+    df = _drop_suspicious_zero_volume_carry_rows(df)
+    return df.astype(np.float32)
+
+
+def _coerce_kraken_chart_timestamp_ms(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        if isinstance(value, (int, float, np.integer, np.floating)):
+            raw = float(value)
+            if not np.isfinite(raw):
+                return None
+            if raw > 10_000_000_000:
+                return int(raw)
+            return int(raw * 1000)
+        text = str(value).strip()
+        if not text:
+            return None
+        if re.fullmatch(r"-?\d+(\.\d+)?", text):
+            raw = float(text)
+            if raw > 10_000_000_000:
+                return int(raw)
+            return int(raw * 1000)
+        ts = pd.Timestamp(text, tz="UTC")
+        return int(ts.value // 10**6)
+    except Exception:
+        return None
+
+
+def _extract_kraken_chart_rows(payload: Any) -> list[tuple[int, float]]:
+    rows: list[tuple[int, float]] = []
+    timestamp_keys = (
+        "time",
+        "timestamp",
+        "date",
+        "datetime",
+        "ts",
+        "x",
+        "bucket",
+    )
+    value_keys = (
+        "openInterest",
+        "open_interest",
+        "openInterestValue",
+        "value",
+        "y",
+        "close",
+    )
+
+    def visit(node: Any) -> None:
+        if isinstance(node, dict):
+            ts_values = node.get("timestamp")
+            data_values = node.get("data")
+            if isinstance(ts_values, list) and isinstance(data_values, list):
+                for ts_raw, data_raw in zip(ts_values, data_values):
+                    ts = _coerce_kraken_chart_timestamp_ms(ts_raw)
+                    val = None
+                    if isinstance(data_raw, (list, tuple)):
+                        for item in reversed(data_raw):
+                            try:
+                                candidate = float(item)
+                            except Exception:
+                                continue
+                            if np.isfinite(candidate):
+                                val = candidate
+                                break
+                    else:
+                        try:
+                            candidate = float(data_raw)
+                            if np.isfinite(candidate):
+                                val = candidate
+                        except Exception:
+                            val = None
+                    if ts is not None and val is not None:
+                        rows.append((ts, val))
+                return
+            ts = None
+            val = None
+            for key in timestamp_keys:
+                if key in node:
+                    ts = _coerce_kraken_chart_timestamp_ms(node.get(key))
+                    if ts is not None:
+                        break
+            for key in value_keys:
+                if key in node:
+                    try:
+                        val = float(node.get(key))
+                    except Exception:
+                        val = None
+                    if val is not None and np.isfinite(val):
+                        break
+            if ts is not None and val is not None and np.isfinite(val):
+                rows.append((ts, val))
+                return
+            for value in node.values():
+                visit(value)
+            return
+        if isinstance(node, (list, tuple)):
+            if len(node) >= 2:
+                ts = _coerce_kraken_chart_timestamp_ms(node[0])
+                val = None
+                for item in node[1:]:
+                    try:
+                        candidate = float(item)
+                    except Exception:
+                        continue
+                    if np.isfinite(candidate):
+                        val = candidate
+                        break
+                if ts is not None and val is not None:
+                    rows.append((ts, val))
+                    return
+            for item in node:
+                visit(item)
+
+    visit(payload)
+    return rows
+
+
+def _fetch_kraken_futures_open_interest_analytics(
+    exchange,
+    perp_symbol: str,
+    since_ms: int,
+    until_ms: int,
+    *,
+    timeframe: str = "1h",
+) -> pd.Series:
+    product_id = _kraken_futures_product_id(exchange, perp_symbol)
+    if not product_id:
+        return pd.Series(dtype=np.float32)
+    base_url = (
+        "https://futures.kraken.com/api/charts/v1/analytics/"
+        f"{product_id}/open-interest"
+    )
+    frame_ms = _timeframe_ms(timeframe)
+    interval_seconds = max(60, int(frame_ms // 1000))
+    headers = {"User-Agent": _ARCHIVE_USER_AGENT}
+    cursor_ms = int(max(0, since_ms))
+    rows: list[tuple[int, float]] = []
+    empty_advance_ms = 2000 * frame_ms
+    while cursor_ms < int(until_ms):
+        params = {
+            "since": int(cursor_ms // 1000),
+            "interval": interval_seconds,
+        }
+        response = None
+        for attempt in range(4):
+            try:
+                response = _public_data_session().get(
+                    base_url,
+                    params=params,
+                    timeout=30,
+                    headers=headers,
+                )
+                if response.status_code == 429:
+                    time.sleep(2.0 + attempt)
+                    continue
+                response.raise_for_status()
+                break
+            except Exception as exc:
+                if attempt >= 3:
+                    tprint(
+                        f"WARN Kraken OI analytics fetch failed for {perp_symbol} "
+                        f"({product_id}): {exc}"
+                    )
+                    response = None
+                    break
+                time.sleep(1.0 + attempt)
+        if response is None:
+            break
+        try:
+            payload = response.json()
+        except Exception as exc:
+            tprint(
+                f"WARN Kraken OI analytics JSON parse failed for {perp_symbol} "
+                f"({product_id}): {exc}"
+            )
+            break
+        batch_rows = [
+            (ts, val)
+            for ts, val in _extract_kraken_chart_rows(payload)
+            if since_ms <= ts < until_ms and np.isfinite(val)
+        ]
+        if batch_rows:
+            rows.extend(batch_rows)
+            max_seen = max(ts for ts, _ in batch_rows)
+            next_cursor = max_seen + frame_ms
+        else:
+            next_cursor = cursor_ms + empty_advance_ms
+        result = payload.get("result") if isinstance(payload, dict) else None
+        more = bool(result.get("more")) if isinstance(result, dict) else True
+        if not more and not batch_rows:
+            break
+        if next_cursor <= cursor_ms:
+            next_cursor = cursor_ms + frame_ms
+        cursor_ms = next_cursor
+        time.sleep(float(getattr(exchange, "rateLimit", 100)) / 1000.0)
+    if not rows:
+        return pd.Series(dtype=np.float32)
+    df = pd.DataFrame(rows, columns=["ts", "value"])
+    df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True).dt.floor("h")
+    return df.groupby("ts")["value"].last().sort_index().astype(np.float32)
 
 
 def _coerce_trade_side_sign(item: dict) -> float:
@@ -1522,6 +2007,107 @@ def build_hourly_orderbook_proxy_from_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
     return normalize_orderbook_proxy_frame(out.replace([np.inf, -np.inf], np.nan))
 
 
+def _kraken_charts_resolution(timeframe: str) -> str:
+    text = str(timeframe or "1h").strip().lower()
+    if text.endswith("m"):
+        minutes = int(float(text[:-1] or 1))
+        return f"{minutes}m"
+    if text.endswith("h"):
+        hours = int(float(text[:-1] or 1))
+        return f"{hours}h"
+    if text.endswith("d"):
+        days = int(float(text[:-1] or 1))
+        return f"{days}d"
+    try:
+        minutes = int(float(text))
+        return f"{minutes}m"
+    except Exception:
+        return "1h"
+
+
+def _fetch_kraken_futures_charts_ohlcv(
+    exchange,
+    symbol: str,
+    since_ms: int,
+    until_ms: int,
+    *,
+    timeframe: str = "1h",
+    tick_type: str = "trade",
+) -> pd.DataFrame:
+    product_id = _kraken_futures_product_id(exchange, symbol)
+    if not product_id:
+        return pd.DataFrame(
+            columns=["ts", "open", "high", "low", "close", "volume"]
+        ).set_index(pd.DatetimeIndex([], tz="UTC", name="ts"))
+    tick = str(tick_type or "trade")
+    resolution = _kraken_charts_resolution(timeframe)
+    url = (
+        "https://futures.kraken.com/api/charts/v1/"
+        f"{tick}/{product_id}/{resolution}"
+    )
+    params = {
+        "from": int(max(0, since_ms) // 1000),
+        "to": int(max(0, until_ms) // 1000),
+    }
+    response = _public_data_session().get(
+        url,
+        params=params,
+        timeout=60,
+        headers={"User-Agent": _ARCHIVE_USER_AGENT},
+    )
+    response.raise_for_status()
+    payload = response.json()
+    candles = payload.get("candles") if isinstance(payload, dict) else None
+    if not isinstance(candles, list) or not candles:
+        return pd.DataFrame(
+            columns=["ts", "open", "high", "low", "close", "volume"]
+        ).set_index(pd.DatetimeIndex([], tz="UTC", name="ts"))
+
+    rows = []
+    for candle in candles:
+        if not isinstance(candle, dict):
+            continue
+        ts = _coerce_kraken_chart_timestamp_ms(candle.get("time"))
+        if ts is None or ts < since_ms or ts >= until_ms:
+            continue
+        try:
+            open_ = float(candle.get("open"))
+            high = float(candle.get("high"))
+            low = float(candle.get("low"))
+            close = float(candle.get("close"))
+            try:
+                volume = float(candle.get("volume"))
+            except Exception:
+                if open_ == close:
+                    volume = 0.0
+                else:
+                    continue
+            if volume < 0.0 or (volume == 0.0 and open_ != close):
+                continue
+            rows.append(
+                (
+                    ts,
+                    open_,
+                    high,
+                    low,
+                    close,
+                    volume,
+                )
+            )
+        except Exception:
+            continue
+    if not rows:
+        return pd.DataFrame(
+            columns=["ts", "open", "high", "low", "close", "volume"]
+        ).set_index(pd.DatetimeIndex([], tz="UTC", name="ts"))
+
+    df = pd.DataFrame(rows, columns=["ts", "open", "high", "low", "close", "volume"])
+    df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
+    df = df.drop_duplicates("ts").set_index("ts").sort_index()
+    df = _drop_suspicious_zero_volume_carry_rows(df)
+    return df.astype(np.float32)
+
+
 @retry_with_backoff(retries=3, backoff_in_seconds=2)
 def _fetch_ohlcv_paged(
     exchange,
@@ -1532,6 +2118,19 @@ def _fetch_ohlcv_paged(
     limit=1000,
     params: Optional[dict] = None,
 ):
+    exchange_id = str(getattr(exchange, "id", "") or "").lower()
+    if "krakenfutures" in exchange_id:
+        price_name = str((params or {}).get("price") or "trade")
+        tick_type = "trade" if price_name in {"", "trade", "last"} else price_name
+        return _fetch_kraken_futures_charts_ohlcv(
+            exchange,
+            symbol,
+            since_ms,
+            until_ms,
+            timeframe=timeframe,
+            tick_type=tick_type,
+        )
+
     # Reduced logging: entry log removed
     out = []
     since = since_ms
@@ -1572,6 +2171,76 @@ def _fetch_ohlcv_paged(
     return df
 
 
+def _timeframe_ms(timeframe: str) -> int:
+    text = str(timeframe or "1h").strip().lower()
+    if text.endswith("m"):
+        return int(float(text[:-1] or 1) * 60_000)
+    if text.endswith("h"):
+        return int(float(text[:-1] or 1) * 3_600_000)
+    if text.endswith("d"):
+        return int(float(text[:-1] or 1) * 86_400_000)
+    # Kraken spot CCXT uses numeric-minute timeframes in a few call paths.
+    try:
+        return int(float(text) * 60_000)
+    except Exception:
+        return 3_600_000
+
+
+def _download_backfill_internal_gaps_enabled() -> bool:
+    raw = os.getenv("EPM_DOWNLOAD_BACKFILL_INTERNAL_GAPS", "1")
+    return str(raw).strip().lower() not in {"0", "false", "no", "n", "off"}
+
+
+def _perp_side_data_enabled() -> bool:
+    raw = os.getenv("EPM_PERP_SIDE_DATA_ENABLED", "1")
+    return str(raw).strip().lower() not in {"0", "false", "no", "n", "off"}
+
+
+def _has_internal_time_gaps(index: pd.DatetimeIndex, timeframe: str) -> bool:
+    if index is None or len(index) < 2:
+        return False
+    idx = pd.DatetimeIndex(index)
+    if idx.tz is None:
+        idx = idx.tz_localize("UTC")
+    else:
+        idx = idx.tz_convert("UTC")
+    idx = idx.dropna().drop_duplicates().sort_values()
+    if len(idx) < 2:
+        return False
+    frame_ms = max(_timeframe_ms(timeframe), 1)
+    vals = idx.view("i8") // 1_000_000
+    return bool(np.any(np.diff(vals) > int(frame_ms * 1.5)))
+
+
+def _ohlcv_fetch_profile(exchange, timeframe: str, requested_limit: int) -> tuple[int, int]:
+    exchange_id = str(getattr(exchange, "id", "") or "").lower()
+    frame_ms = max(_timeframe_ms(timeframe), 1)
+    limit = int(requested_limit or 1000)
+    if "krakenfutures" in exchange_id:
+        # Kraken Futures charts v1 caps responses at 2,000 candles. Keep each
+        # outer window within that cap; larger windows silently return only the
+        # first 2,000 candles and create deterministic internal gaps.
+        limit = 2000
+        chunk_ms = max(limit * frame_ms, frame_ms)
+        return limit, chunk_ms
+    env_days = os.getenv("EPM_OHLCV_CHUNK_DAYS")
+    if env_days:
+        try:
+            return limit, max(int(pd.Timedelta(days=float(env_days)).total_seconds() * 1000), frame_ms)
+        except Exception:
+            pass
+    return limit, int(pd.Timedelta(days=7).total_seconds() * 1000)
+
+
+def _kraken_spot_ohlcv_floor_ms(exchange, now_ms: int, timeframe: str) -> int | None:
+    exchange_id = str(getattr(exchange, "id", "") or "").lower()
+    if exchange_id != "kraken":
+        return None
+    # Kraken spot /public/OHLC returns only the most recent 720 candles,
+    # regardless of `since`. Older spot backfill needs another data source.
+    return int(now_ms) - (720 * _timeframe_ms(timeframe))
+
+
 def fetch_ohlcv_all_7d_chunks(
     exchange,
     symbol,
@@ -1580,7 +2249,7 @@ def fetch_ohlcv_all_7d_chunks(
     limit=1000,
     params: Optional[dict] = None,
 ):
-    chunk_ms = int(pd.Timedelta(days=7).total_seconds() * 1000)
+    limit, chunk_ms = _ohlcv_fetch_profile(exchange, timeframe, limit)
     now_ms = int(pd.Timestamp.utcnow().value // 10**6)
 
     start = since_ms
@@ -1605,6 +2274,410 @@ def _recent_history_floor_ms(env_name: str, default_days: float) -> int:
     days = float(os.getenv(env_name, str(default_days)) or default_days)
     floor_ts = pd.Timestamp.utcnow() - pd.Timedelta(days=max(days, 0.0))
     return int(floor_ts.value // 10**6)
+
+
+def _perp_auxiliary_backfill_enabled() -> bool:
+    raw = os.getenv("EPM_PERP_BACKFILL_MISSING_AUX", "1")
+    return str(raw).strip().lower() not in {"0", "false", "no", "n", "off"}
+
+
+def _perp_side_history_days(default_days: float = 3650.0) -> float:
+    raw = os.getenv(
+        "EPM_PERP_SIDE_HISTORY_DAYS",
+        os.getenv("EPM_PERP_AUX_HISTORY_DAYS", str(default_days)),
+    )
+    try:
+        return max(float(raw), 0.0)
+    except Exception:
+        return float(default_days)
+
+
+def _has_sparse_perp_auxiliary_data(
+    frame: pd.DataFrame,
+    *,
+    since_ms: int,
+    timeframe: str,
+) -> bool:
+    """Return True when OHLCV timestamps exist but perp auxiliary data is absent.
+
+    Incremental downloads used to consider a symbol complete once close candles
+    were present. That leaves mark/OI/funding/spot columns permanently empty if
+    side-data fetching was added later or failed transiently, which then leaks
+    into trained feature contracts. Treat those rows as incomplete so forced or
+    completeness-checked downloads revisit the historical chunks.
+    """
+    if frame is None or frame.empty:
+        return False
+    if not _perp_auxiliary_backfill_enabled() or not _perp_side_data_enabled():
+        return False
+    idx = frame.index
+    if not isinstance(idx, pd.DatetimeIndex):
+        try:
+            idx = pd.to_datetime(idx, utc=True, errors="coerce")
+        except Exception:
+            return False
+    idx = pd.DatetimeIndex(idx)
+    if idx.tz is None:
+        idx = idx.tz_localize("UTC")
+    else:
+        idx = idx.tz_convert("UTC")
+    since_ts = pd.to_datetime(int(since_ms), unit="ms", utc=True)
+    window_mask = idx >= since_ts
+    if not bool(np.any(window_mask)):
+        return False
+    check_mask = np.asarray(window_mask, dtype=bool)
+    close_mask = np.ones(len(frame), dtype=bool)
+    if "close" in frame.columns:
+        close_vals = pd.to_numeric(frame["close"], errors="coerce").to_numpy(
+            dtype=np.float64, copy=False
+        )
+        close_mask = np.isfinite(close_vals)
+    check_mask = check_mask & close_mask
+    if not bool(np.any(check_mask)):
+        return False
+    min_coverage = float(os.getenv("EPM_PERP_AUX_MIN_COVERAGE", "0.80") or 0.80)
+    min_coverage = float(np.clip(min_coverage, 0.0, 1.0))
+
+    idx_ms = idx.view("i8") // 1_000_000
+    required_groups = (
+        (
+            "mark",
+            ("mark_close", "mark_price"),
+            _recent_history_floor_ms("EPM_MARK_HISTORY_DAYS", _perp_side_history_days()),
+        ),
+        (
+            "spot",
+            ("spot_close",),
+            _recent_history_floor_ms("EPM_SPOT_HISTORY_DAYS", _perp_side_history_days()),
+        ),
+        (
+            "funding",
+            ("funding_rate",),
+            _recent_history_floor_ms("EPM_FUNDING_HISTORY_DAYS", _perp_side_history_days()),
+        ),
+        (
+            "open_interest",
+            ("open_interest",),
+            _recent_history_floor_ms(
+                "EPM_OPEN_INTEREST_HISTORY_DAYS", _perp_side_history_days()
+            ),
+        ),
+    )
+    sparse_groups: list[str] = []
+    group_coverages: dict[str, float] = {}
+    for group_name, cols, floor_ms in required_groups:
+        group_check = check_mask.copy()
+        if floor_ms is not None:
+            group_check &= idx_ms >= int(floor_ms)
+        if not bool(np.any(group_check)):
+            continue
+        present = [col for col in cols if col in frame.columns]
+        if not present:
+            sparse_groups.append(group_name)
+            group_coverages[group_name] = 0.0
+            continue
+        finite_union = np.zeros(len(frame), dtype=bool)
+        for col in present:
+            vals = pd.to_numeric(frame.loc[group_check, col], errors="coerce")
+            finite_union[group_check] |= np.isfinite(
+                vals.to_numpy(dtype=np.float64, copy=False)
+            )
+        coverage = float(finite_union[group_check].mean())
+        group_coverages[group_name] = coverage
+        if coverage < min_coverage:
+            sparse_groups.append(group_name)
+    if sparse_groups:
+        tprint(
+            "Detected sparse perp auxiliary data "
+            f"groups={sparse_groups} coverage={group_coverages}; "
+            "backfilling side-data history."
+        )
+        return True
+    return False
+
+
+def _perp_auxiliary_missing_ranges(
+    frame: pd.DataFrame,
+    *,
+    since_ms: int,
+    timeframe: str,
+) -> list[tuple[int, int]]:
+    """Return contiguous timestamp ranges where existing OHLCV lacks aux columns."""
+    if frame is None or frame.empty:
+        return []
+    idx = frame.index
+    if not isinstance(idx, pd.DatetimeIndex):
+        try:
+            idx = pd.to_datetime(idx, utc=True, errors="coerce")
+        except Exception:
+            return []
+    idx = pd.DatetimeIndex(idx)
+    if idx.tz is None:
+        idx = idx.tz_localize("UTC")
+    else:
+        idx = idx.tz_convert("UTC")
+    frame = frame.copy()
+    frame.index = idx
+    since_ts = pd.to_datetime(int(since_ms), unit="ms", utc=True)
+    check = idx >= since_ts
+    if "close" in frame.columns:
+        close_vals = pd.to_numeric(frame["close"], errors="coerce").to_numpy(
+            dtype=np.float64, copy=False
+        )
+        check &= np.isfinite(close_vals)
+    if not bool(np.any(check)):
+        return []
+
+    idx_ms = idx.view("i8") // 1_000_000
+    required_groups = (
+        (
+            ("mark_close", "mark_price"),
+            _recent_history_floor_ms("EPM_MARK_HISTORY_DAYS", _perp_side_history_days()),
+        ),
+        (
+            ("spot_close",),
+            _recent_history_floor_ms("EPM_SPOT_HISTORY_DAYS", _perp_side_history_days()),
+        ),
+        (
+            ("funding_rate",),
+            _recent_history_floor_ms("EPM_FUNDING_HISTORY_DAYS", _perp_side_history_days()),
+        ),
+        (
+            ("open_interest",),
+            _recent_history_floor_ms(
+                "EPM_OPEN_INTEREST_HISTORY_DAYS", _perp_side_history_days()
+            ),
+        ),
+    )
+    missing = np.zeros(len(frame), dtype=bool)
+    for cols, floor_ms in required_groups:
+        group_check = check.copy()
+        if floor_ms is not None:
+            group_check &= idx_ms >= int(floor_ms)
+        if not bool(np.any(group_check)):
+            continue
+        present = [col for col in cols if col in frame.columns]
+        if not present:
+            missing |= group_check
+            continue
+        group_finite = np.zeros(len(frame), dtype=bool)
+        for col in present:
+            vals = pd.to_numeric(frame[col], errors="coerce").to_numpy(
+                dtype=np.float64, copy=False
+            )
+            group_finite |= np.isfinite(vals)
+        missing |= group_check & (~group_finite)
+
+    missing_idx = idx[missing]
+    if len(missing_idx) == 0:
+        return []
+
+    frame_ms = max(_timeframe_ms(timeframe), 1)
+    values_ms = missing_idx.view("i8") // 1_000_000
+    ranges: list[tuple[int, int]] = []
+    start_ms = int(values_ms[0])
+    prev_ms = int(values_ms[0])
+    # Merge valid islands inside a Kraken charts-sized request. Sparse aux data
+    # often alternates between available and missing hourly rows; treating each
+    # island as a separate backfill range makes the official endpoints the
+    # bottleneck without improving parity.
+    merge_gap_ms = max(frame_ms * 1800, frame_ms)
+    for raw_ms in values_ms[1:]:
+        current_ms = int(raw_ms)
+        if current_ms - prev_ms <= merge_gap_ms:
+            prev_ms = current_ms
+            continue
+        ranges.append((max(int(since_ms), start_ms), prev_ms + frame_ms))
+        start_ms = current_ms
+        prev_ms = current_ms
+    ranges.append((max(int(since_ms), start_ms), prev_ms + frame_ms))
+    return [(s, e) for s, e in ranges if e > s]
+
+
+def _enrich_perp_auxiliary_chunk(
+    *,
+    chunk: pd.DataFrame,
+    exchange,
+    symbol: str,
+    perp_symbol: str,
+    spot_exchange,
+    timeframe: str,
+    now_ms: int,
+    side_data_enabled: bool,
+    disabled_extra_ohlcv: set[str],
+    supports_oi_history: bool,
+    exchange_id: str,
+) -> pd.DataFrame:
+    if chunk is None or chunk.empty:
+        return pd.DataFrame()
+    chunk = chunk.sort_index().copy()
+    chunk = chunk[~chunk.index.duplicated(keep="last")]
+    chunk_start_ms = int(chunk.index.min().value // 10**6)
+    chunk_end_ms = int((chunk.index.max() + pd.Timedelta(milliseconds=_timeframe_ms(timeframe))).value // 10**6)
+    chunk_end_ms = min(chunk_end_ms, now_ms)
+
+    funding = pd.Series(dtype=np.float32)
+    funding_floor_ms = _recent_history_floor_ms(
+        "EPM_FUNDING_HISTORY_DAYS", _perp_side_history_days()
+    )
+    if side_data_enabled and "krakenfutures" in exchange_id and chunk_end_ms >= funding_floor_ms:
+        funding = _fetch_kraken_futures_historical_funding_rates(
+            exchange,
+            perp_symbol,
+            max(chunk_start_ms, funding_floor_ms),
+            chunk_end_ms,
+        )
+    if (
+        funding.empty
+        and
+        side_data_enabled
+        and hasattr(exchange, "fetch_funding_rate_history")
+        and chunk_end_ms >= funding_floor_ms
+    ):
+        funding = _fetch_ccxt_history_paged(
+            exchange.fetch_funding_rate_history,
+            perp_symbol,
+            max(chunk_start_ms, funding_floor_ms),
+            chunk_end_ms,
+            value_keys=["fundingRate", "funding_rate", "rate"],
+            exchange=exchange,
+            limit=1000,
+        )
+
+    oi = pd.Series(dtype=np.float32)
+    oi_floor_ms = _recent_history_floor_ms(
+        "EPM_OPEN_INTEREST_HISTORY_DAYS", _perp_side_history_days()
+    )
+    if side_data_enabled and "krakenfutures" in exchange_id and chunk_end_ms >= oi_floor_ms:
+        oi = _fetch_kraken_futures_open_interest_analytics(
+            exchange,
+            perp_symbol,
+            max(chunk_start_ms, oi_floor_ms),
+            chunk_end_ms,
+            timeframe=timeframe,
+        )
+    if (
+        oi.empty
+        and side_data_enabled
+        and supports_oi_history
+        and hasattr(exchange, "fetch_open_interest_history")
+        and chunk_end_ms >= oi_floor_ms
+    ):
+        oi = _fetch_ccxt_history_paged(
+            exchange.fetch_open_interest_history,
+            perp_symbol,
+            max(chunk_start_ms, oi_floor_ms),
+            chunk_end_ms,
+            value_keys=[
+                "openInterestValue",
+                "sumOpenInterestValue",
+                "openInterestAmount",
+                "openInterest",
+                "sumOpenInterest",
+            ],
+            exchange=exchange,
+            timeframe=timeframe,
+            limit=500,
+        )
+
+    def _align_ohlcv(extra_df: pd.DataFrame, prefix: str) -> None:
+        if extra_df is None or extra_df.empty:
+            return
+        extra = extra_df.reindex(chunk.index).ffill()
+        for src_col in ("open", "high", "low", "close", "volume"):
+            if src_col in extra.columns:
+                chunk[f"{prefix}_{src_col}"] = pd.to_numeric(
+                    extra[src_col], errors="coerce"
+                ).astype(np.float32)
+
+    price_sources = (
+        (("mark", "mark"), ("spot", "spot"))
+        if "krakenfutures" in exchange_id
+        else (
+            ("mark", "mark"),
+            ("index", "index"),
+            ("premiumIndex", "premium_index"),
+        )
+    )
+    for price_name, prefix in price_sources:
+        if not side_data_enabled:
+            break
+        if price_name in disabled_extra_ohlcv:
+            continue
+        try:
+            if "krakenfutures" in exchange_id:
+                price_df = _fetch_kraken_futures_chart_ohlcv(
+                    exchange,
+                    perp_symbol,
+                    price_name,
+                    chunk_start_ms,
+                    chunk_end_ms,
+                    timeframe=timeframe,
+                )
+            else:
+                price_df = _fetch_ohlcv_paged(
+                    exchange,
+                    perp_symbol,
+                    chunk_start_ms,
+                    chunk_end_ms,
+                    timeframe=timeframe,
+                    limit=1000,
+                    params={"price": price_name},
+                )
+            _align_ohlcv(price_df, prefix)
+        except Exception as exc:
+            if "Invalid tick type" in str(exc):
+                disabled_extra_ohlcv.add(price_name)
+            tprint(f"WARN perp {price_name} OHLCV fetch failed for {symbol}: {exc}")
+
+    if side_data_enabled and spot_exchange is not None and "spot_close" not in chunk.columns:
+        try:
+            spot_floor_ms = _kraken_spot_ohlcv_floor_ms(spot_exchange, now_ms, timeframe)
+            if spot_floor_ms is None or chunk_end_ms > spot_floor_ms:
+                spot_symbol = None
+                if "/" in symbol:
+                    base, raw_quote = symbol.split("/", 1)
+                    quote = raw_quote.split(":", 1)[0].upper()
+                    spot_candidates = []
+                    for candidate_quote in ("USDC", "USD", "USDT", quote):
+                        candidate = f"{base}/{candidate_quote}"
+                        if candidate not in spot_candidates:
+                            spot_candidates.append(candidate)
+                    for candidate in spot_candidates:
+                        if candidate in getattr(spot_exchange, "markets", {}):
+                            spot_symbol = candidate
+                            break
+                if spot_symbol is None and symbol in getattr(spot_exchange, "markets", {}):
+                    spot_symbol = symbol
+                if spot_symbol is None:
+                    normalized = _normalize_spot_symbol(symbol)
+                    if normalized in getattr(spot_exchange, "markets", {}):
+                        spot_symbol = normalized
+                if spot_symbol is not None:
+                    spot_chunk_start_ms = chunk_start_ms
+                    if spot_floor_ms is not None:
+                        spot_chunk_start_ms = max(spot_chunk_start_ms, spot_floor_ms)
+                    spot_df = _fetch_ohlcv_paged(
+                        spot_exchange,
+                        spot_symbol,
+                        spot_chunk_start_ms,
+                        chunk_end_ms,
+                        timeframe=timeframe,
+                        limit=1000,
+                    )
+                    _align_ohlcv(spot_df, "spot")
+        except Exception as exc:
+            tprint(f"WARN spot auxiliary OHLCV fetch failed for {symbol}: {exc}")
+
+    chunk["funding_rate"] = funding.reindex(chunk.index).ffill().astype(np.float32)
+    chunk["open_interest"] = oi.reindex(chunk.index).ffill().astype(np.float32)
+    if "mark_close" in chunk.columns:
+        chunk["mark_price"] = chunk["mark_close"]
+    if "index_close" in chunk.columns:
+        chunk["index_price"] = chunk["index_close"]
+    if "premium_index_close" in chunk.columns:
+        chunk["premium_index"] = chunk["premium_index_close"]
+    return chunk
 
 
 class PartitionedOHLCVStore:
@@ -1801,6 +2874,19 @@ class PartitionedOHLCVStore:
             if end_ts is not None:
                 df = df[df.index <= end_ts]
 
+            try:
+                from extreme_price_movements.kraken_actual_data import (
+                    overlay_actual_volume_sidecar,
+                )
+
+                df = overlay_actual_volume_sidecar(
+                    df,
+                    root_dir=self.root_dir,
+                    symbol=symbol,
+                )
+            except Exception as exc:
+                tprint(f"WARN actual volume overlay skipped for {symbol}: {exc}")
+
             return self._downcast(df)
         except Exception as e:
             tprint(f"Error loading {symbol}: {e}")
@@ -1883,6 +2969,13 @@ class PartitionedOHLCVStore:
             if not defer_compact:
                 self.compact_partition(symbol, year)
 
+        try:
+            last_ts = pd.to_datetime(df_reset["ts"], utc=True).max()
+            if pd.notna(last_ts):
+                self._write_meta(symbol, {"last_ts_ms": int(last_ts.value // 10**6)})
+        except Exception:
+            pass
+
     def compact_partition(self, symbol: str, year: int):
         sym_dir = self._get_symbol_dir(symbol)
         part_dir = os.path.join(sym_dir, f"year={year}")
@@ -1893,6 +2986,17 @@ class PartitionedOHLCVStore:
         files = glob.glob(os.path.join(part_dir, "*.parquet"))
         if not files:
             return
+        # Compact files are the historical base; part files are incremental
+        # updates. Read part files last so duplicate timestamp merges preserve
+        # the newest auxiliary backfill values deterministically.
+        files = sorted(
+            files,
+            key=lambda path: (
+                0 if os.path.basename(path).startswith("compact-") else 1,
+                os.path.getmtime(path),
+                path,
+            ),
+        )
 
         dfs = []
         for f in files:
@@ -1907,7 +3011,30 @@ class PartitionedOHLCVStore:
         merged = pd.concat(dfs)
         if "ts" in merged.columns:
             merged["ts"] = pd.to_datetime(merged["ts"], utc=True)
-            merged = merged.sort_values("ts").drop_duplicates("ts", keep="last")
+            frame_ns = max(_timeframe_ms(self.timeframe), 1) * 1_000_000
+            ts_ns = merged["ts"].astype("int64")
+            aligned = (ts_ns % frame_ns) == 0
+            dropped = int((~aligned).sum())
+            if dropped:
+                tprint(
+                    f"Dropping {dropped} off-{self.timeframe}-grid rows during "
+                    f"compaction for {symbol} {year}"
+                )
+                merged = merged.loc[aligned].copy()
+            if merged.empty:
+                return
+            # Incremental auxiliary backfills write full rows with newly
+            # populated columns. Merge duplicate timestamps column-wise so an
+            # older OHLCV row cannot discard newer sparse auxiliary values.
+            merged = (
+                merged.sort_values("ts", kind="mergesort")
+                .groupby("ts", as_index=False, sort=True)
+                .last()
+            )
+            aux_cols = ["funding_rate", "open_interest"]
+            present_aux_cols = [col for col in aux_cols if col in merged.columns]
+            if present_aux_cols:
+                merged[present_aux_cols] = merged[present_aux_cols].ffill()
 
         ts_min = int(merged["ts"].min().value // 10**9)
         ts_max = int(merged["ts"].max().value // 10**9)
@@ -1960,21 +3087,73 @@ class PartitionedOHLCVStore:
             # Check metadata first to avoid IO
             meta = self._read_meta(symbol)
             last_ts_ms = meta.get("last_ts_ms", 0)
+            existing_idx = pd.DatetimeIndex([])
 
             if last_ts_ms > 0:
-                start_ms = last_ts_ms + 1
+                existing_frame = self.load(symbol)
+                existing_idx = existing_frame.index
+                if _has_sparse_perp_auxiliary_data(
+                    existing_frame,
+                    since_ms=since_ms,
+                    timeframe=self.timeframe,
+                ):
+                    auxiliary_only_ranges = _perp_auxiliary_missing_ranges(
+                        existing_frame,
+                        since_ms=since_ms,
+                        timeframe=self.timeframe,
+                    )
+                    tprint(
+                        f"Detected incomplete perp auxiliary data for {symbol}; "
+                        f"backfilling {len(auxiliary_only_ranges)} missing aux range(s)"
+                    )
+                    start_ms = last_ts_ms + 1
+                elif (
+                    _download_backfill_internal_gaps_enabled()
+                    and not existing_idx.empty
+                    and _has_internal_time_gaps(existing_idx, self.timeframe)
+                ):
+                    tprint(
+                        f"Detected internal OHLCV gaps for {symbol}; "
+                        "backfilling from requested start instead of last_ts_ms"
+                    )
+                    start_ms = since_ms
+                else:
+                    start_ms = last_ts_ms + 1
             else:
                 # Fallback to load index if no meta
                 # Here load() without args is fine, but we might want to check just the last file?
                 # For simplicity, keep as is, but maybe optimize load(columns=['ts'])
-                existing_idx = self.load(symbol, columns=["ts"]).index
-                if not existing_idx.empty:
+                if existing_idx.empty:
+                    existing_idx = self.load(symbol, columns=["ts"]).index
+                if (
+                    _download_backfill_internal_gaps_enabled()
+                    and not existing_idx.empty
+                    and _has_internal_time_gaps(existing_idx, self.timeframe)
+                ):
+                    tprint(
+                        f"Detected internal OHLCV gaps for {symbol}; "
+                        "backfilling from requested start"
+                    )
+                    start_ms = since_ms
+                elif not existing_idx.empty:
                     last_ts = existing_idx.max()
                     start_ms = int(last_ts.value // 10**6) + 1
+                    if int(existing_idx.min().value // 10**6) > since_ms:
+                        start_ms = since_ms
                 else:
                     start_ms = since_ms
 
             now_ms = int(pd.Timestamp.utcnow().value // 10**6)
+            spot_floor_ms = _kraken_spot_ohlcv_floor_ms(exchange, now_ms, self.timeframe)
+            if spot_floor_ms is not None and start_ms < spot_floor_ms:
+                floor_dt = pd.to_datetime(spot_floor_ms, unit="ms", utc=True).strftime(
+                    "%Y-%m-%d %H:%M"
+                )
+                tprint(
+                    "Kraken spot OHLC is limited to the most recent 720 candles; "
+                    f"clamping {symbol} spot start to {floor_dt}"
+                )
+                start_ms = spot_floor_ms
 
             if start_ms >= now_ms:
                 return self.load(symbol)
@@ -2029,31 +3208,147 @@ class PartitionedOHLCVStore:
         with FileLock(lock_path):
             meta = self._read_meta(symbol)
             last_ts_ms = meta.get("last_ts_ms", 0)
+            existing_idx = pd.DatetimeIndex([])
+            auxiliary_only_ranges: list[tuple[int, int]] = []
 
             if last_ts_ms > 0:
-                start_ms = last_ts_ms + 1
+                existing_frame = self.load(symbol)
+                existing_idx = existing_frame.index
+                if not existing_idx.empty and _has_sparse_perp_auxiliary_data(
+                    existing_frame,
+                    since_ms=since_ms,
+                    timeframe=self.timeframe,
+                ):
+                    auxiliary_only_ranges = _perp_auxiliary_missing_ranges(
+                        existing_frame,
+                        since_ms=since_ms,
+                        timeframe=self.timeframe,
+                    )
+                    tprint(
+                        f"Detected incomplete perp auxiliary data for {symbol}; "
+                        f"backfilling {len(auxiliary_only_ranges)} missing aux range(s)"
+                    )
+                    start_ms = last_ts_ms + 1
+                elif (
+                    _download_backfill_internal_gaps_enabled()
+                    and not existing_idx.empty
+                    and _has_internal_time_gaps(existing_idx, self.timeframe)
+                ):
+                    tprint(
+                        f"Detected internal perp OHLCV gaps for {symbol}; "
+                        "backfilling from requested start instead of last_ts_ms"
+                    )
+                    start_ms = since_ms
+                elif (
+                    not existing_idx.empty
+                    and int(existing_idx.min().value // 10**6) > since_ms
+                ):
+                    start_ms = since_ms
+                else:
+                    start_ms = last_ts_ms + 1
             else:
-                existing_idx = self.load(symbol, columns=["ts"]).index
-                if not existing_idx.empty:
+                if existing_idx.empty:
+                    existing_frame = self.load(symbol)
+                    existing_idx = existing_frame.index
+                if (
+                    _download_backfill_internal_gaps_enabled()
+                    and not existing_idx.empty
+                    and _has_internal_time_gaps(existing_idx, self.timeframe)
+                ):
+                    tprint(
+                        f"Detected internal perp OHLCV gaps for {symbol}; "
+                        "backfilling from requested start"
+                    )
+                    start_ms = since_ms
+                elif (
+                    not existing_idx.empty
+                    and _has_sparse_perp_auxiliary_data(
+                        existing_frame,
+                        since_ms=since_ms,
+                        timeframe=self.timeframe,
+                    )
+                ):
+                    auxiliary_only_ranges = _perp_auxiliary_missing_ranges(
+                        existing_frame,
+                        since_ms=since_ms,
+                        timeframe=self.timeframe,
+                    )
+                    tprint(
+                        f"Detected incomplete perp auxiliary data for {symbol}; "
+                        f"backfilling {len(auxiliary_only_ranges)} missing aux range(s)"
+                    )
                     start_ms = int(existing_idx.max().value // 10**6) + 1
+                elif not existing_idx.empty:
+                    start_ms = int(existing_idx.max().value // 10**6) + 1
+                    if int(existing_idx.min().value // 10**6) > since_ms:
+                        start_ms = since_ms
                 else:
                     start_ms = since_ms
 
             now_ms = int(pd.Timestamp.utcnow().value // 10**6)
-            if start_ms >= now_ms:
-                return self.load(symbol)
 
             perp_symbol = _resolve_perp_symbol(exchange, symbol)
             if not perp_symbol:
                 raise ValueError(f"No perp symbol found for {symbol}")
 
+            touched_years = set()
+            has_new_data = False
+            side_data_enabled = _perp_side_data_enabled()
+            exchange_has = getattr(exchange, "has", {}) or {}
+            supports_oi_history = bool(exchange_has.get("fetchOpenInterestHistory"))
+            disabled_extra_ohlcv: set[str] = set()
+            exchange_id = str(getattr(exchange, "id", "") or "").lower()
+            if "kraken" in exchange_id:
+                # Kraken Futures rejects native index/premium OHLCV tick types for
+                # many USD swaps. Avoid retrying known-bad native reference ticks
+                # on every symbol/chunk; spot/index gaps remain explicit missing
+                # source data for strict feature contracts.
+                disabled_extra_ohlcv.update({"index", "premiumIndex"})
+            if auxiliary_only_ranges:
+                tprint(
+                    f"FETCH perp aux gaps: {symbol} ({perp_symbol}) "
+                    f"ranges={len(auxiliary_only_ranges)}"
+                )
+                for range_start_ms, range_end_ms in auxiliary_only_ranges:
+                    range_start = pd.to_datetime(range_start_ms, unit="ms", utc=True)
+                    range_end = pd.to_datetime(range_end_ms, unit="ms", utc=True)
+                    existing_chunk = existing_frame.loc[
+                        (existing_frame.index >= range_start)
+                        & (existing_frame.index < range_end)
+                    ].copy()
+                    if existing_chunk.empty:
+                        continue
+                    chunk = _enrich_perp_auxiliary_chunk(
+                        chunk=existing_chunk,
+                        exchange=exchange,
+                        symbol=symbol,
+                        perp_symbol=perp_symbol,
+                        spot_exchange=spot_exchange,
+                        timeframe=self.timeframe,
+                        now_ms=now_ms,
+                        side_data_enabled=side_data_enabled,
+                        disabled_extra_ohlcv=disabled_extra_ohlcv,
+                        supports_oi_history=supports_oi_history,
+                        exchange_id=exchange_id,
+                    )
+                    if chunk.empty:
+                        continue
+                    fresh = self._downcast(chunk)
+                    self.save_partitioned(symbol, fresh, defer_compact=True)
+                    touched_years.update(fresh.index.year.unique())
+                    has_new_data = True
+                for yr in sorted(touched_years):
+                    self.compact_partition(symbol, int(yr))
+                if start_ms >= now_ms:
+                    return self.load(symbol)
+
+            if start_ms >= now_ms:
+                return self.load(symbol)
+
             start_dt = pd.to_datetime(start_ms, unit="ms", utc=True).strftime(
                 "%Y-%m-%d %H:%M"
             )
             tprint(f"FETCH perp incr: {symbol} ({perp_symbol}) from {start_dt}")
-
-            touched_years = set()
-            has_new_data = False
             for chunk_df in fetch_ohlcv_all_7d_chunks(
                 exchange, perp_symbol, start_ms, timeframe=self.timeframe, limit=1000
             ):
@@ -2074,9 +3369,24 @@ class PartitionedOHLCVStore:
 
                 funding = pd.Series(dtype=np.float32)
                 funding_floor_ms = _recent_history_floor_ms(
-                    "EPM_FUNDING_HISTORY_DAYS", 30.0
+                    "EPM_FUNDING_HISTORY_DAYS", _perp_side_history_days()
                 )
                 if (
+                    side_data_enabled
+                    and "krakenfutures" in exchange_id
+                    and chunk_end_ms >= funding_floor_ms
+                ):
+                    funding = _fetch_kraken_futures_historical_funding_rates(
+                        exchange,
+                        perp_symbol,
+                        max(chunk_start_ms, funding_floor_ms),
+                        chunk_end_ms,
+                    )
+                if (
+                    funding.empty
+                    and
+                    side_data_enabled
+                    and
                     hasattr(exchange, "fetch_funding_rate_history")
                     and chunk_end_ms >= funding_floor_ms
                 ):
@@ -2091,9 +3401,24 @@ class PartitionedOHLCVStore:
                     )
 
                 oi = pd.Series(dtype=np.float32)
-                oi_floor_ms = _recent_history_floor_ms("EPM_OPEN_INTEREST_HISTORY_DAYS", 30.0)
+                oi_floor_ms = _recent_history_floor_ms(
+                    "EPM_OPEN_INTEREST_HISTORY_DAYS", _perp_side_history_days()
+                )
+                if side_data_enabled and "krakenfutures" in exchange_id and chunk_end_ms >= oi_floor_ms:
+                    oi = _fetch_kraken_futures_open_interest_analytics(
+                        exchange,
+                        perp_symbol,
+                        max(chunk_start_ms, oi_floor_ms),
+                        chunk_end_ms,
+                        timeframe=self.timeframe,
+                    )
                 if (
-                    hasattr(exchange, "fetch_open_interest_history")
+                    oi.empty
+                    and
+                    side_data_enabled
+                    and
+                    supports_oi_history
+                    and hasattr(exchange, "fetch_open_interest_history")
                     and chunk_end_ms >= oi_floor_ms
                 ):
                     oi = _fetch_ccxt_history_paged(
@@ -2123,53 +3448,92 @@ class PartitionedOHLCVStore:
                                 extra[src_col], errors="coerce"
                             ).astype(np.float32)
 
-                for price_name, prefix in (
-                    ("mark", "mark"),
-                    ("index", "index"),
-                    ("premiumIndex", "premium_index"),
-                ):
+                price_sources = (
+                    (("mark", "mark"), ("spot", "spot"))
+                    if "krakenfutures" in exchange_id
+                    else (
+                        ("mark", "mark"),
+                        ("index", "index"),
+                        ("premiumIndex", "premium_index"),
+                    )
+                )
+                for price_name, prefix in price_sources:
+                    if not side_data_enabled:
+                        break
+                    if price_name in disabled_extra_ohlcv:
+                        continue
                     try:
-                        price_df = _fetch_ohlcv_paged(
-                            exchange,
-                            perp_symbol,
-                            chunk_start_ms,
-                            chunk_end_ms,
-                            timeframe=self.timeframe,
-                            limit=1000,
-                            params={"price": price_name},
-                        )
-                        _align_ohlcv(price_df, prefix)
-                    except Exception as exc:
-                        tprint(
-                            f"WARN perp {price_name} OHLCV fetch failed for {symbol}: {exc}"
-                        )
-
-                if spot_exchange is not None:
-                    try:
-                        spot_symbol = None
-                        if "/" in symbol:
-                            base, _quote = symbol.split("/", 1)
-                            usdc_symbol = f"{base}/USDC"
-                            if usdc_symbol in getattr(spot_exchange, "markets", {}):
-                                spot_symbol = usdc_symbol
-                        if spot_symbol is None and symbol in getattr(
-                            spot_exchange, "markets", {}
-                        ):
-                            spot_symbol = symbol
-                        if spot_symbol is None:
-                            normalized = _normalize_spot_symbol(symbol)
-                            if normalized in getattr(spot_exchange, "markets", {}):
-                                spot_symbol = normalized
-                        if spot_symbol is not None:
-                            spot_df = _fetch_ohlcv_paged(
-                                spot_exchange,
-                                spot_symbol,
+                        if "krakenfutures" in exchange_id:
+                            price_df = _fetch_kraken_futures_chart_ohlcv(
+                                exchange,
+                                perp_symbol,
+                                price_name,
+                                chunk_start_ms,
+                                chunk_end_ms,
+                                timeframe=self.timeframe,
+                            )
+                        else:
+                            price_df = _fetch_ohlcv_paged(
+                                exchange,
+                                perp_symbol,
                                 chunk_start_ms,
                                 chunk_end_ms,
                                 timeframe=self.timeframe,
                                 limit=1000,
+                                params={"price": price_name},
                             )
-                            _align_ohlcv(spot_df, "spot")
+                        _align_ohlcv(price_df, prefix)
+                    except Exception as exc:
+                        if "Invalid tick type" in str(exc):
+                            disabled_extra_ohlcv.add(price_name)
+                        tprint(
+                            f"WARN perp {price_name} OHLCV fetch failed for {symbol}: {exc}"
+                        )
+
+                if (
+                    side_data_enabled
+                    and spot_exchange is not None
+                    and "spot_close" not in chunk.columns
+                ):
+                    try:
+                        spot_floor_ms = _kraken_spot_ohlcv_floor_ms(
+                            spot_exchange, now_ms, self.timeframe
+                        )
+                        if spot_floor_ms is None or chunk_end_ms > spot_floor_ms:
+                            spot_symbol = None
+                            if "/" in symbol:
+                                base, raw_quote = symbol.split("/", 1)
+                                quote = raw_quote.split(":", 1)[0].upper()
+                                spot_candidates = []
+                                for candidate_quote in ("USDC", "USD", "USDT", quote):
+                                    candidate = f"{base}/{candidate_quote}"
+                                    if candidate not in spot_candidates:
+                                        spot_candidates.append(candidate)
+                                for candidate in spot_candidates:
+                                    if candidate in getattr(spot_exchange, "markets", {}):
+                                        spot_symbol = candidate
+                                        break
+                            if spot_symbol is None and symbol in getattr(
+                                spot_exchange, "markets", {}
+                            ):
+                                spot_symbol = symbol
+                            if spot_symbol is None:
+                                normalized = _normalize_spot_symbol(symbol)
+                                if normalized in getattr(spot_exchange, "markets", {}):
+                                    spot_symbol = normalized
+                            if spot_symbol is not None:
+                                spot_chunk_start_ms = chunk_start_ms
+                                if spot_floor_ms is not None:
+                                    spot_chunk_start_ms = max(spot_chunk_start_ms, spot_floor_ms)
+                                spot_df = _fetch_ohlcv_paged(
+                                    spot_exchange,
+                                    spot_symbol,
+                                    spot_chunk_start_ms,
+                                    chunk_end_ms,
+                                    timeframe=self.timeframe,
+                                    limit=1000,
+                                )
+                                _align_ohlcv(spot_df, "spot")
                     except Exception as exc:
                         tprint(f"WARN spot auxiliary OHLCV fetch failed for {symbol}: {exc}")
 

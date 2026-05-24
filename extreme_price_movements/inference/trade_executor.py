@@ -89,6 +89,7 @@ def _validate_policy_stop_provenance(state: Dict[str, Any]) -> List[str]:
         missing.append("stop_price")
     return missing
 
+
 MODEL_AND_POLICY_CONTEXT_KEYS = (
     "base_pred",
     "base_rank_pct",
@@ -189,6 +190,10 @@ EXECUTION_AUDIT_KEYS = (
     "perp_available_wallet",
     "max_chase_bps",
     "entry_limit_price",
+    "decision_audit_schema",
+    "model_prediction_audit",
+    "raw_data_audit",
+    "model_feature_audit",
 )
 
 
@@ -699,7 +704,9 @@ def _configured_exchange_id(config: Optional[Dict[str, Any]] = None) -> str:
     return "binance"
 
 
-def _exchange_symbol_for_config(exchange: Any, config: Optional[Dict[str, Any]], symbol: str) -> str:
+def _exchange_symbol_for_config(
+    exchange: Any, config: Optional[Dict[str, Any]], symbol: str
+) -> str:
     if _execution_account(config) != "perps" or ":" in str(symbol):
         return symbol
     return _resolve_perp_symbol(exchange, symbol) or symbol
@@ -778,7 +785,10 @@ def _order_params(
 
 def _cancel_params(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Build ccxt params for spot or margin order cancellation."""
-    if _execution_account(config) == "perps" and _configured_exchange_id(config) == "okx":
+    if (
+        _execution_account(config) == "perps"
+        and _configured_exchange_id(config) == "okx"
+    ):
         return {"tdMode": _margin_mode(config)}
     if _execution_account(config) != "margin":
         return {}
@@ -1279,7 +1289,9 @@ def _position_entry_price(position: Dict[str, Any]) -> float:
     return np.nan
 
 
-def _position_quote_value(position: Dict[str, Any], amount: float, entry_price: float) -> float:
+def _position_quote_value(
+    position: Dict[str, Any], amount: float, entry_price: float
+) -> float:
     """Return absolute notional quote value for sizing/reconciliation reports."""
     info = _position_info(position)
     for key in ("notional", "notionalUsd", "cost", "value", "quoteValue"):
@@ -1298,6 +1310,31 @@ def _position_quote_value(position: Dict[str, Any], amount: float, entry_price: 
     if np.isfinite(entry_price) and entry_price > 0.0:
         return float(abs(amount) * entry_price * contract_size)
     return np.nan
+
+
+def _fetch_open_exchange_positions(
+    exchange: Any,
+    config: Optional[Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    """Return currently open exchange positions keyed by unified symbol."""
+    fetch_positions = getattr(exchange, "fetch_positions", None)
+    if not callable(fetch_positions):
+        return {}
+    try:
+        raw_positions = fetch_positions([], _cancel_params(config))
+    except TypeError:
+        raw_positions = fetch_positions(_cancel_params(config))
+    out: Dict[str, Dict[str, Any]] = {}
+    for position in raw_positions or []:
+        if not isinstance(position, dict):
+            continue
+        signed_amount = _position_contracts(position)
+        if abs(float(signed_amount)) <= 0.0:
+            continue
+        symbol = _position_symbol(position, exchange)
+        if symbol:
+            out[str(symbol)] = position
+    return out
 
 
 def _fetch_open_protective_stop_orders(
@@ -1579,9 +1616,7 @@ def _closed_trade_metrics(
                 entry_ts = entry_ts.tz_localize("UTC")
             else:
                 entry_ts = entry_ts.tz_convert("UTC")
-            holding_time_hours = float(
-                (exit_time - entry_ts).total_seconds() / 3600.0
-            )
+            holding_time_hours = float((exit_time - entry_ts).total_seconds() / 3600.0)
     except Exception:
         holding_time_hours = np.nan
     return {
@@ -1605,6 +1640,17 @@ def _closed_trade_metrics(
         "base_train_rank_pct": state.get("base_train_rank_pct"),
         "base_gate_top_frac": state.get("base_gate_top_frac"),
         "meta_pred": state.get("meta_pred"),
+        "estimated_hit_rate": state.get("estimated_hit_rate"),
+        "estimated_hit_rate_source": state.get("estimated_hit_rate_source"),
+        "estimated_hit_rate_calibration_n": state.get(
+            "estimated_hit_rate_calibration_n"
+        ),
+        "estimated_ev_gross_return": state.get("estimated_ev_gross_return"),
+        "estimated_ev_net_return": state.get("estimated_ev_net_return"),
+        "estimated_ev_cost_bps": state.get("estimated_ev_cost_bps"),
+        "estimated_ev_hit_rate": state.get("estimated_ev_hit_rate"),
+        "estimated_ev_source": state.get("estimated_ev_source"),
+        "estimated_ev_calibration_n": state.get("estimated_ev_calibration_n"),
         "meta_train_rank_pct": state.get("meta_train_rank_pct"),
         "rank_score_source": state.get("rank_score_source"),
         "calibrated_score": state.get("calibrated_score"),
@@ -1732,7 +1778,9 @@ class OCOExecutor:
             ):
                 candidates.append(sid_s)
         if not candidates:
-            candidates = [str(sid) for sid in self.simple_policy_stop_params_by_strategy]
+            candidates = [
+                str(sid) for sid in self.simple_policy_stop_params_by_strategy
+            ]
         return sorted(candidates)[0] if candidates else ""
 
     def get_cooldown_hours(self, bucket_key: Optional[str] = None) -> float:
@@ -1995,6 +2043,8 @@ class OCOExecutor:
                 config=self.config,
             )
             position_state["stop_order_id"] = stop_order.get("id")
+            if position_state["stop_order_id"]:
+                position_state["stop_order_ids"] = [position_state["stop_order_id"]]
 
         except Exception as e:
             stop_order_error = str(e)
@@ -2257,12 +2307,11 @@ class OCOExecutor:
                     error_category=_classify_exchange_error(price_exc),
                     error=str(price_exc),
                 )
-            if (
-                np.isfinite(current_price)
-                and current_price > 0.0
-            ):
-                adjusted_stop, adjusted, boundary = _adjust_stop_to_min_current_distance(
-                    side, float(stop_price), float(current_price)
+            if np.isfinite(current_price) and current_price > 0.0:
+                adjusted_stop, adjusted, boundary = (
+                    _adjust_stop_to_min_current_distance(
+                        side, float(stop_price), float(current_price)
+                    )
                 )
                 if adjusted:
                     adjusted_stop = _exchange_precision(
@@ -2314,11 +2363,13 @@ class OCOExecutor:
                             side=side,
                             require_metadata=True,
                         )
-                        recompute_valid, recompute_reason = _validate_policy_stop_decision(
-                            recompute_decision,
-                            require_should_replace=True,
-                            position_state=state,
-                            artifact_params=artifact_params,
+                        recompute_valid, recompute_reason = (
+                            _validate_policy_stop_decision(
+                                recompute_decision,
+                                require_should_replace=True,
+                                position_state=state,
+                                artifact_params=artifact_params,
+                            )
                         )
                         if recompute_valid:
                             recompute_stop_price = _exchange_precision(
@@ -2359,7 +2410,9 @@ class OCOExecutor:
                         recompute_decision is not None
                         and np.isfinite(recompute_stop_price)
                         and recompute_stop_price > 0.0
-                        and _stop_side_is_valid(side, recompute_stop_price, current_price)
+                        and _stop_side_is_valid(
+                            side, recompute_stop_price, current_price
+                        )
                     ):
                         _append_position_event(
                             state,
@@ -2397,7 +2450,9 @@ class OCOExecutor:
                             recompute_validation_error=recompute_reason,
                             recompute_error=recompute_error,
                         )
-                        existing_stop_price = _safe_float(state.get("stop_price"), np.nan)
+                        existing_stop_price = _safe_float(
+                            state.get("stop_price"), np.nan
+                        )
                         existing_stop_order_id = state.get("stop_order_id")
                         if (
                             existing_stop_order_id
@@ -2471,6 +2526,7 @@ class OCOExecutor:
                 ) <= max(abs(float(stop_price)) * 1e-4, 1e-8):
                     state["stop_price"] = float(existing_stop)
                     state["stop_order_id"] = existing_id
+                    state["stop_order_ids"] = [existing_id] if existing_id else []
                     state.pop("stop_update_error", None)
                     state.pop("stop_update_error_category", None)
                     _append_position_event(
@@ -2553,6 +2609,9 @@ class OCOExecutor:
             )
             state["stop_price"] = stop_price
             state["stop_order_id"] = new_stop_order.get("id")
+            state["stop_order_ids"] = (
+                [state["stop_order_id"]] if state.get("stop_order_id") else []
+            )
             state["size"] = amount
             stop_reason = state.get("stop_reason", "stop_replaced")
             stop_detail = state.get("stop_reason_detail", stop_reason)
@@ -2716,6 +2775,11 @@ class OCOExecutor:
                             )
                             state["stop_price"] = float(recompute_stop_price)
                             state["stop_order_id"] = retry_order.get("id")
+                            state["stop_order_ids"] = (
+                                [state["stop_order_id"]]
+                                if state.get("stop_order_id")
+                                else []
+                            )
                             state["size"] = amount
                             state["stop_reason"] = recompute_decision.reason
                             state["stop_reason_detail"] = (
@@ -2809,6 +2873,11 @@ class OCOExecutor:
                         )
                         state["stop_price"] = old_stop_price
                         state["stop_order_id"] = restore_order.get("id")
+                        state["stop_order_ids"] = (
+                            [state["stop_order_id"]]
+                            if state.get("stop_order_id")
+                            else []
+                        )
                         state["stop_reason_detail"] = (
                             str(state.get("stop_reason_detail") or "")
                             + "; restored_previous_stop_after_replace_failure"
@@ -2908,6 +2977,7 @@ class OCOExecutor:
                 float(existing_stop) - float(stop_price)
             ) <= max(abs(float(stop_price)) * 1e-4, 1e-8):
                 state["stop_order_id"] = existing_id
+                state["stop_order_ids"] = [existing_id] if existing_id else []
                 state["stop_price"] = float(existing_stop)
                 state.pop("stop_update_error", None)
                 state.pop("stop_update_error_category", None)
@@ -3191,8 +3261,8 @@ class OCOExecutor:
                             self.active_positions.pop(symbol, None)
                         continue
                     if any(status in terminal_bad for status in order_statuses):
-                        state["stop_order_error"] = (
-                            "multi_stop_order_" + ",".join(order_statuses)
+                        state["stop_order_error"] = "multi_stop_order_" + ",".join(
+                            order_statuses
                         )
                         repair = self._reattach_protective_stop(
                             symbol, state, previous_status="multi_stop_order_terminal"
@@ -3217,7 +3287,9 @@ class OCOExecutor:
                         "stop_order_ids": stop_order_ids,
                         "stop_order_coverage": float(stop_coverage),
                     }
-                    if any(bool(meta.get("reconciled_after_error")) for meta in fetch_metas):
+                    if any(
+                        bool(meta.get("reconciled_after_error")) for meta in fetch_metas
+                    ):
                         statuses[symbol]["reconciled_after_error"] = True
                     resolved_via = sorted(
                         {
@@ -3289,9 +3361,70 @@ class OCOExecutor:
                         statuses[symbol]["repaired_after_status"] = status
                         statuses[symbol]["stop_order_id"] = repair.get("stop_order_id")
                     else:
-                            statuses[symbol]["status"] = f"unprotected_stop_{status}"
+                        statuses[symbol]["status"] = f"unprotected_stop_{status}"
             except Exception as exc:
                 category = _classify_exchange_error(exc)
+                if category == "unsupported_exchange_method":
+                    try:
+                        open_positions = _fetch_open_exchange_positions(
+                            self.exchange, self.config
+                        )
+                    except Exception as pos_exc:
+                        open_positions = {}
+                        statuses[symbol] = {
+                            "status": "error",
+                            "error_category": category,
+                            "error": str(exc),
+                            "position_reconcile_error_category": _classify_exchange_error(
+                                pos_exc
+                            ),
+                            "position_reconcile_error": str(pos_exc),
+                        }
+                        tprint(
+                            f"Error monitoring stop order for {symbol}: "
+                            f"{category}: {exc}; position reconciliation failed: "
+                            f"{_classify_exchange_error(pos_exc)}: {pos_exc}"
+                        )
+                        continue
+                    if symbol not in open_positions:
+                        state["exit_reason"] = "exchange_position_absent"
+                        _append_position_event(
+                            state,
+                            "exchange_position_absent_after_stop_lookup_failure",
+                            stop_order_id=stop_order_id,
+                            fetch_order_error=str(exc),
+                            fetch_order_error_category=category,
+                        )
+                        statuses[symbol] = {
+                            "status": "closed",
+                            "closed_via": "exchange_position_absent",
+                            "fetch_order_error_category": category,
+                            "fetch_order_error": str(exc),
+                            "stop_order_id": stop_order_id,
+                        }
+                        with self._positions_lock:
+                            self.active_positions.pop(symbol, None)
+                        continue
+                    repair = self._reattach_protective_stop(
+                        symbol, state, previous_status="stop_order_missing_from_lists"
+                    )
+                    statuses[symbol] = {
+                        "status": (
+                            "open"
+                            if repair.get("success")
+                            else "unprotected_stop_missing_from_lists"
+                        ),
+                        "stop_repair": repair,
+                        "stop_order_id": stop_order_id,
+                    }
+                    if repair.get("success"):
+                        statuses[symbol]["reconciled_after_error"] = True
+                        statuses[symbol]["fetch_order_error_category"] = category
+                        statuses[symbol]["fetch_order_error"] = str(exc)
+                    else:
+                        statuses[symbol]["error_category"] = category
+                        statuses[symbol]["error"] = str(exc)
+                    continue
                 statuses[symbol] = {
                     "status": "error",
                     "error_category": category,
@@ -3375,11 +3508,14 @@ class TradeExecutor:
         """Fetch cross-margin balances through ccxt with Binance fallbacks."""
         if self.exchange is None:
             return {}
-        attempts = (
-            {"type": "margin", "marginMode": "cross"},
-            {"type": "margin"},
-            {},
-        )
+        if _exchange_id(self.exchange) == "krakenfutures":
+            attempts = ({"type": "flex"}, {})
+        else:
+            attempts = (
+                {"type": "margin", "marginMode": "cross"},
+                {"type": "margin"},
+                {},
+            )
         last_error: Optional[Exception] = None
         for params in attempts:
             try:
@@ -4611,6 +4747,9 @@ class TradeExecutor:
         if not np.isfinite(entry_price) or entry_price <= 0.0:
             return False
         pending_context = self._load_pending_entry_context(symbol)
+        if not isinstance(pending_context, dict):
+            pending_context = {}
+        had_pending_context = bool(pending_context)
         pending_strategy = ""
         original_pending_strategy = ""
         if pending_context:
@@ -4647,12 +4786,60 @@ class TradeExecutor:
                     pending_context[dst_key] = artifact_params.get(src_key)
             if not pending_context.get("sl_mult") and artifact_params.get("sl_mult"):
                 pending_context["sl_mult"] = artifact_params.get("sl_mult")
+            artifact_barrier = _safe_float(
+                artifact_params.get("barrier_frac")
+                or artifact_params.get("barrier_pct"),
+                default=np.nan,
+            )
+            context_barrier = _safe_float(
+                pending_context.get("barrier_frac")
+                or pending_context.get("barrier_pct"),
+                default=np.nan,
+            )
+            if (
+                not (np.isfinite(context_barrier) and context_barrier > 0.0)
+                and np.isfinite(artifact_barrier)
+                and artifact_barrier > 0.0
+            ):
+                pending_context["barrier_frac"] = float(artifact_barrier)
+                pending_context["barrier_pct"] = float(artifact_barrier)
+                pending_context["reconciliation_barrier_source"] = (
+                    "artifact_simple_policy_stop_params"
+                )
             pending_context["strategy_id"] = pending_strategy
             if fallback_strategy_used:
                 pending_context["reconciliation_strategy_fallback_used"] = True
                 pending_context["reconciliation_original_strategy_id"] = (
                     original_pending_strategy or "unknown"
                 )
+        fallback_barrier = _safe_float(
+            self.config.get("external_reconciliation_fallback_barrier_frac")
+            or self.config.get("external_margin_reconciliation_fallback_barrier_frac"),
+            default=np.nan,
+        )
+        if not (np.isfinite(fallback_barrier) and fallback_barrier > 0.0):
+            fallback_barrier = 0.02
+        context_barrier = _safe_float(
+            pending_context.get("barrier_frac")
+            or pending_context.get("barrier_pct"),
+            default=np.nan,
+        )
+        if (
+            not (np.isfinite(context_barrier) and context_barrier > 0.0)
+            and pending_strategy
+            and artifact_params
+            and np.isfinite(fallback_barrier)
+            and fallback_barrier > 0.0
+        ):
+            pending_context["barrier_frac"] = float(fallback_barrier)
+            pending_context["barrier_pct"] = float(fallback_barrier)
+            pending_context["reconciliation_barrier_source"] = (
+                "config_default_external_reconciliation_barrier"
+            )
+            tprint(
+                f"Using reconciliation fallback barrier for external {symbol}: "
+                f"strategy_id={pending_strategy} barrier_frac={fallback_barrier:.6g}"
+            )
         sl_mult = _safe_float((pending_context or {}).get("sl_mult"), default=np.nan)
         pending_barrier = _safe_float(
             (pending_context or {}).get("barrier_frac")
@@ -4814,9 +5001,18 @@ class TradeExecutor:
             "reconciliation_original_strategy_id": (
                 original_pending_strategy or "unknown"
             ),
+            "reconciliation_barrier_source": pending_context.get(
+                "reconciliation_barrier_source"
+            ),
+            "reconciliation_context_source": (
+                "pending_trade_log"
+                if had_pending_context
+                else "artifact_fallback_external_position"
+            ),
         }
-        if pending_context:
+        if had_pending_context:
             state["recovered_from_pending_trade_log"] = True
+        if pending_context:
             for key in tuple(EXECUTION_AUDIT_KEYS) + MODEL_AND_POLICY_CONTEXT_KEYS:
                 if key in pending_context and pending_context.get(key) not in (
                     "",
@@ -4891,7 +5087,9 @@ class TradeExecutor:
                     order.get("id") for order in adopted_stop_orders if order.get("id")
                 ]
                 oco_state["stop_order_ids"] = stop_order_ids
-                oco_state["stop_order_id"] = stop_order_ids[0] if stop_order_ids else None
+                oco_state["stop_order_id"] = (
+                    stop_order_ids[0] if stop_order_ids else None
+                )
                 adopted_stop_order = adopted_stop_orders[0]
                 adopted_stop = _safe_float(
                     adopted_stop_order.get("stopPrice")
@@ -5067,6 +5265,7 @@ class TradeExecutor:
 
         counts: Dict[str, int] = {}
         import_positions = bool(self.config.get("import_external_perp_positions", True))
+        exchange_symbols: set[str] = set()
         for position in raw_positions or []:
             if not isinstance(position, dict):
                 continue
@@ -5077,6 +5276,7 @@ class TradeExecutor:
             symbol = _position_symbol(position, self.exchange)
             if not symbol:
                 continue
+            exchange_symbols.add(str(symbol))
             side = _position_side(position, signed_amount)
             entry_price = _position_entry_price(position)
             quote_value = _position_quote_value(position, amount, entry_price)
@@ -5119,10 +5319,39 @@ class TradeExecutor:
                 counts.get(str(item["classification"]), 0) + 1
             )
 
+        stale_tracked: List[str] = []
+        if self.oco_executor is not None:
+            with self.oco_executor._positions_lock:
+                tracked_symbols = list(self.oco_executor.active_positions.keys())
+                for tracked_symbol in tracked_symbols:
+                    if str(tracked_symbol) in exchange_symbols:
+                        continue
+                    stale_state = self.oco_executor.active_positions.pop(
+                        tracked_symbol, None
+                    )
+                    stale_tracked.append(str(tracked_symbol))
+                    if isinstance(stale_state, dict):
+                        _append_position_event(
+                            stale_state,
+                            "removed_after_perps_reconcile_absent",
+                            reason="exchange_position_absent",
+                        )
+            if stale_tracked:
+                with self._state_lock:
+                    for tracked_symbol in stale_tracked:
+                        self.positions.pop(tracked_symbol, None)
+                report["stale_tracked_positions_removed"] = stale_tracked
+                tprint(
+                    "Perps reconciliation removed locally tracked positions absent "
+                    f"from exchange snapshot: {stale_tracked}"
+                )
+
         report["summary"] = {
             "skipped": False,
             "item_count": len(report["items"]),
             "counts": counts,
+            "exchange_open_symbols": sorted(exchange_symbols),
+            "stale_tracked_positions_removed": stale_tracked,
             "active_positions_after_reconcile": len(self.get_active_positions()),
         }
         tprint(
@@ -5613,7 +5842,9 @@ class TradeExecutor:
     def _fallback_simple_policy_strategy_id(self, side: Optional[str]) -> str:
         """Pick a deterministic deployed simple-policy strategy for unknown imports."""
         if self.oco_executor is not None:
-            resolver = getattr(self.oco_executor, "_fallback_simple_policy_strategy_id", None)
+            resolver = getattr(
+                self.oco_executor, "_fallback_simple_policy_strategy_id", None
+            )
             if callable(resolver):
                 return str(resolver(side) or "")
         side_l = str(side or "").lower().strip()
@@ -5626,7 +5857,9 @@ class TradeExecutor:
             ):
                 candidates.append(sid_s)
         if not candidates:
-            candidates = [str(sid) for sid in self.simple_policy_stop_params_by_strategy]
+            candidates = [
+                str(sid) for sid in self.simple_policy_stop_params_by_strategy
+            ]
         return sorted(candidates)[0] if candidates else ""
 
     def get_cooldown_hours(self, bucket_key: Optional[str] = None) -> float:
@@ -5767,7 +6000,9 @@ class TradeExecutor:
             Execution result dictionary
         """
         order_side = "buy" if side == "long" else "sell"
-        exchange_symbol = _exchange_symbol_for_config(self.exchange, self.config, symbol)
+        exchange_symbol = _exchange_symbol_for_config(
+            self.exchange, self.config, symbol
+        )
         market = _load_market(self.exchange, exchange_symbol)
         expected_entry_price = float(price) if price is not None else np.nan
         live_barrier_frac = _safe_float(
@@ -6478,6 +6713,7 @@ class TradeExecutor:
                 before_id = state.get("stop_order_id")
                 stop_order_id = str(before_id or _shadow_stop_order_id(symbol, state))
                 state["stop_order_id"] = stop_order_id
+                state["stop_order_ids"] = [stop_order_id]
                 state["protective_stop_mode"] = "shadow"
                 state["protective_stop_attached"] = True
                 state["last_order_status"] = "open"

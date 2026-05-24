@@ -17,6 +17,7 @@ POLICY_RANK_REFERENCE_GENERATOR = "simple_policy_optimiser"
 POLICY_RANK_REFERENCE_DIR = "rank_reference"
 POLICY_RANK_REFERENCE_SCORE_COL = "calibrated_score"
 POLICY_RANK_REFERENCE_RANK_COL = "rank_pct"
+AUCTION_RANK_REFERENCE_FILE = "cross_strategy_auction.parquet"
 
 
 def _safe_strategy_filename(strategy_id: str) -> str:
@@ -161,6 +162,79 @@ def persist_policy_rank_reference(
     return out_path
 
 
+def persist_auction_rank_reference(
+    candidates: pd.DataFrame,
+    *,
+    data_root: str | Path,
+    run_id: str,
+    market_mode: str | None = None,
+    score_col: str = POLICY_RANK_REFERENCE_SCORE_COL,
+) -> Path:
+    """Persist the cross-strategy score population used by portfolio auction."""
+    if score_col not in candidates.columns:
+        raise ValueError(f"auction rank reference missing score column: {score_col}")
+    out_dir = _rank_reference_root(data_root, run_id)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / AUCTION_RANK_REFERENCE_FILE
+    ref = candidates.copy()
+    ref[score_col] = pd.to_numeric(ref[score_col], errors="coerce")
+    ref = ref.dropna(subset=[score_col])
+    if ref.empty:
+        raise ValueError("auction rank reference has no finite rows")
+    cols = [score_col]
+    for optional_col in (
+        "timestamp",
+        "symbol",
+        "side",
+        "strategy_id",
+        "strategy_rank_pct",
+        "normalized_rank_score",
+        "market_mode",
+    ):
+        if optional_col in ref.columns and optional_col not in cols:
+            cols.append(optional_col)
+    if market_mode is not None and "market_mode" not in ref.columns:
+        ref["market_mode"] = str(market_mode)
+        cols.append("market_mode")
+    ref = ref[cols].copy()
+    tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
+    ref.to_parquet(tmp_path, index=False)
+    os.replace(tmp_path, out_path)
+
+    manifest_path = out_dir / "manifest.json"
+    if manifest_path.exists():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            manifest = {}
+    else:
+        manifest = {}
+    manifest.update(
+        {
+            "schema_version": POLICY_RANK_REFERENCE_SCHEMA_VERSION,
+            "generated_by": POLICY_RANK_REFERENCE_GENERATOR,
+            "run_id": str(run_id),
+            "market_mode": str(market_mode or ""),
+        }
+    )
+    scores = ref[score_col].to_numpy(dtype=np.float64)
+    manifest["auction"] = {
+        "path": str(out_path.relative_to(Path(data_root) / "artifacts" / str(run_id))),
+        "n_rows": int(len(ref)),
+        "score_col": score_col,
+        "rank_col": "normalized_rank_score",
+        "min_score": float(np.nanmin(scores)),
+        "max_score": float(np.nanmax(scores)),
+        "created_at": pd.Timestamp.now(tz="UTC").isoformat(),
+    }
+    tmp_manifest = manifest_path.with_suffix(".json.tmp")
+    tmp_manifest.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    os.replace(tmp_manifest, manifest_path)
+    return out_path
+
+
 @dataclass(frozen=True)
 class PolicyRankLookupResult:
     policy_rank_pct: float
@@ -179,6 +253,7 @@ class PolicyRankReferenceStore:
         self.manifest_path = self.root / "manifest.json"
         self._manifest: dict[str, Any] | None = None
         self._cache: dict[str, tuple[np.ndarray, str, str]] = {}
+        self._auction_cache: tuple[np.ndarray, str] | None = None
 
     @property
     def manifest(self) -> dict[str, Any]:
@@ -242,6 +317,41 @@ class PolicyRankReferenceStore:
         rank = policy_rank_pct_from_sorted_scores(scores, float(calibrated_score))
         return PolicyRankLookupResult(rank, int(scores.size), source, alias)
 
+    def _load_auction_scores(self) -> tuple[np.ndarray, str] | None:
+        if self._auction_cache is not None:
+            return self._auction_cache
+        entry = self.manifest.get("auction")
+        if not isinstance(entry, dict):
+            return None
+        rel_path = str(entry.get("path") or "")
+        path = self.data_root / "artifacts" / self.run_id / rel_path
+        score_col = str(entry.get("score_col") or POLICY_RANK_REFERENCE_SCORE_COL)
+        try:
+            frame = pd.read_parquet(path, columns=[score_col])
+            scores = pd.to_numeric(frame[score_col], errors="coerce").to_numpy(
+                dtype=np.float64
+            )
+        except Exception:
+            return None
+        scores = scores[np.isfinite(scores)]
+        if scores.size == 0:
+            return None
+        scores.sort()
+        self._auction_cache = (scores, str(path))
+        return self._auction_cache
+
+    def lookup_auction(
+        self,
+        *,
+        calibrated_score: float,
+    ) -> PolicyRankLookupResult:
+        loaded = self._load_auction_scores()
+        if loaded is None:
+            return PolicyRankLookupResult(float("nan"), 0, "", "cross_strategy")
+        scores, source = loaded
+        rank = policy_rank_pct_from_sorted_scores(scores, float(calibrated_score))
+        return PolicyRankLookupResult(rank, int(scores.size), source, "cross_strategy")
+
 
 def apply_policy_rank_percentile_gate(
     decision: Dict[str, Any],
@@ -249,6 +359,7 @@ def apply_policy_rank_percentile_gate(
     store: PolicyRankReferenceStore | None,
     allow_live_batch_rank_fallback_for_debug: bool = False,
     inference_min_base_train_rank_pct: float | None = None,
+    require_cross_strategy_auction_rank: bool = False,
 ) -> tuple[bool, str | None]:
     """Populate and enforce the live rank-percentile gate for one decision row."""
     threshold_space = str(decision.get("threshold_space") or "rank_percentile")
@@ -305,6 +416,56 @@ def apply_policy_rank_percentile_gate(
         }
     )
 
+    auction = (
+        store.lookup_auction(
+            calibrated_score=float(decision.get("calibrated_score", np.nan))
+        )
+        if store is not None
+        else PolicyRankLookupResult(float("nan"), 0, "", "cross_strategy")
+    )
+    threshold_rank_pct = policy_rank_pct
+    threshold_rank_source = rank_source
+    if np.isfinite(auction.policy_rank_pct):
+        auction_rank_pct = float(np.clip(auction.policy_rank_pct, 0.0, 1.0))
+        decision["normalized_rank_score"] = auction_rank_pct
+        decision["auction_rank_pct"] = auction_rank_pct
+        decision["auction_rank_reference_n"] = int(auction.n_rows)
+        decision["auction_rank_reference_source"] = auction.source
+        decision["auction_rank_score_source"] = "cross_strategy_auction_reference"
+        decision["threshold_score"] = auction_rank_pct
+        threshold_rank_pct = auction_rank_pct
+        threshold_rank_source = "cross_strategy_auction_reference"
+        chain.update(
+            {
+                "normalized_rank_score": auction_rank_pct,
+                "auction_rank_pct": auction_rank_pct,
+                "auction_rank_reference_n": int(auction.n_rows),
+                "auction_rank_reference_source": auction.source,
+                "auction_rank_score_source": "cross_strategy_auction_reference",
+            }
+        )
+    else:
+        decision["normalized_rank_score"] = policy_rank_pct
+        decision["auction_rank_pct"] = np.nan
+        decision["auction_rank_reference_n"] = int(auction.n_rows)
+        decision["auction_rank_reference_source"] = auction.source
+        decision["auction_rank_score_source"] = (
+            "missing_cross_strategy_auction_reference"
+        )
+        threshold_rank_source = "policy_rank_reference_percentile"
+        chain.update(
+            {
+                "normalized_rank_score": policy_rank_pct,
+                "auction_rank_pct": np.nan,
+                "auction_rank_reference_n": int(auction.n_rows),
+                "auction_rank_reference_source": auction.source,
+                "auction_rank_score_source": "missing_cross_strategy_auction_reference",
+            }
+        )
+        if require_cross_strategy_auction_rank:
+            decision["chain_results"] = chain
+            return False, "missing_cross_strategy_auction_reference"
+
     floor = inference_min_base_train_rank_pct
     if floor is not None:
         try:
@@ -323,7 +484,11 @@ def apply_policy_rank_percentile_gate(
             return False, "base_train_rank_below_floor"
 
     threshold = float(decision.get("effective_threshold", 1.0))
+    decision["threshold_rank_score"] = threshold_rank_pct
+    decision["threshold_rank_score_source"] = threshold_rank_source
+    chain["threshold_rank_score"] = threshold_rank_pct
+    chain["threshold_rank_score_source"] = threshold_rank_source
     decision["chain_results"] = chain
-    if not np.isfinite(policy_rank_pct) or policy_rank_pct < threshold:
+    if not np.isfinite(threshold_rank_pct) or threshold_rank_pct < threshold:
         return False, "rank_below_dynamic_threshold"
     return True, None

@@ -153,11 +153,23 @@ class MarketKillSwitch:
                 state.get("halt_until"), utc=True, errors="coerce"
             )
             if pd.notna(halt_until) and now_ts < halt_until:
+                active_details = dict(details)
+                active_details.update(
+                    {
+                        "halt_source": "stored_state",
+                        "stored_halt_reason": str(
+                            state.get("reason") or "market_kill_switch_active"
+                        ),
+                        "stored_halt_triggered_at": state.get("triggered_at"),
+                        "stored_halt_until": halt_until.isoformat(),
+                        "stored_halt_details": dict(state.get("details") or {}),
+                    }
+                )
                 return SafetySwitchDecision(
                     False,
                     True,
                     str(state.get("reason") or "market_kill_switch_active"),
-                    dict(state.get("details") or {}),
+                    active_details,
                 )
             state["active"] = False
             state["recovered_at"] = now_ts.isoformat()

@@ -1,0 +1,12 @@
+{
+  "base_pred_max_abs_diff_vs_oof": 0.09830426282832405,
+  "feature_common_rows": 255000,
+  "feature_max_abs_diff": 0.0,
+  "feature_mean_abs_diff": 0.0,
+  "feature_mismatches_gt_1e_6": 0,
+  "feature_missing_inference": 0,
+  "feature_missing_training": 0,
+  "feature_rows": 255000,
+  "meta_pred_max_abs_diff_vs_oof": 0.511953727380041,
+  "prediction_rows": 500
+}

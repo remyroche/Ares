@@ -1,7 +1,10 @@
+import numpy as np
 import pandas as pd
 
 from extreme_price_movements.ebm_on_lgbm import EBMOnLGBMModel
-from extreme_price_movements.inference.feature_generator import get_features_for_candidates
+from extreme_price_movements.inference.feature_generator import (
+    get_features_for_candidates,
+)
 from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
 from extreme_price_movements.inference.trade_executor import TradeExecutor
 
@@ -35,7 +38,9 @@ def test_model_orchestrator_uses_flattened_ridge_weights():
         },
         index=["BTC/USDT"],
     )
-    position, confidence = orchestrator.compute_ridge_position_size(features, "long", "mr")
+    position, confidence = orchestrator.compute_ridge_position_size(
+        features, "long", "mr"
+    )
     assert position.index.tolist() == ["BTC/USDT"]
     assert abs(float(position.iloc[0]) - 0.0) < 1e-12
     assert 0.0 <= float(confidence["confidence"]) <= 1.0
@@ -130,10 +135,188 @@ def test_predict_alpha_maps_model_race_lgbm_fn_contract_from_feat_cols_positions
     assert model.seen_values == {"f1": 1.0, "f3": 3.0}
 
 
-def test_get_features_for_candidates_uses_asof_not_future_latest():
-    idx = pd.to_datetime(
-        ["2026-01-01T00:00:00Z", "2026-01-01T02:00:00Z"], utc=True
+def test_predict_alpha_strict_mode_refuses_nonfinite_lgbm_training_frame():
+    class CapturingAlphaModel:
+        def __init__(self):
+            self.seen_values = None
+
+        def predict(self, X):
+            self.seen_values = X.iloc[0].to_dict()
+            return [0.6] * len(X)
+
+    model = CapturingAlphaModel()
+    orchestrator = ModelOrchestrator(
+        {
+            "alpha_models": {
+                "long_demo": {
+                    "model": model,
+                    "feat_cols": ["finite", "missing", "infinite"],
+                }
+            }
+        },
+        {"strict_feature_parity": True},
     )
+    features = pd.DataFrame(
+        {"finite": [1.5], "missing": [np.nan], "infinite": [np.inf]},
+        index=["AAA/USDC"],
+    )
+
+    preds = orchestrator.predict_alpha(features, "long", "long_demo")
+
+    assert preds.empty
+    assert model.seen_values is None
+
+
+def test_predict_alpha_strict_mode_drops_only_nonfinite_rows():
+    class CapturingAlphaModel:
+        def __init__(self):
+            self.seen_index = None
+            self.seen_values = None
+
+        def predict(self, X):
+            self.seen_index = list(X.index)
+            self.seen_values = X.to_dict("index")
+            return [0.6] * len(X)
+
+    model = CapturingAlphaModel()
+    orchestrator = ModelOrchestrator(
+        {
+            "alpha_models": {
+                "long_demo": {
+                    "model": model,
+                    "feat_cols": ["finite", "maybe_missing"],
+                }
+            }
+        },
+        {"strict_feature_parity": True},
+    )
+    features = pd.DataFrame(
+        {"finite": [1.5, 2.5], "maybe_missing": [np.nan, 3.5]},
+        index=["BAD/USDC", "GOOD/USDC"],
+    )
+
+    preds = orchestrator.predict_alpha(features, "long", "long_demo")
+
+    assert list(preds.index) == ["GOOD/USDC"]
+    assert float(preds.iloc[0]) == 0.6
+    assert model.seen_index == ["GOOD/USDC"]
+    assert model.seen_values == {"GOOD/USDC": {"finite": 2.5, "maybe_missing": 3.5}}
+
+
+def test_predict_meta_materializes_rsi_regime_interaction():
+    class CapturingMetaModel:
+        feature_columns = [
+            "pred_H10",
+            "rsi_z",
+            "regime_vol_score",
+            "rsi_z_x_regime_vol",
+        ]
+
+        def __init__(self):
+            self.seen_values = None
+
+        def predict(self, X):
+            self.seen_values = X.iloc[0].to_dict()
+            return [0.55] * len(X)
+
+    model = CapturingMetaModel()
+    orchestrator = ModelOrchestrator(
+        {"meta_models": {"long_demo_clf": model}},
+        {"strict_feature_parity": True},
+    )
+    features = pd.DataFrame(
+        {
+            "pred_H10": [0.6],
+            "rsi_z": [2.0],
+            "regime_vol_score": [3.0],
+        },
+        index=["AAA/USDC"],
+    )
+
+    preds = orchestrator.predict_meta(features, "long", "long_demo")
+
+    assert float(preds.iloc[0]) == 0.55
+    assert np.isclose(model.seen_values["pred_H10"], 0.6)
+    assert model.seen_values["rsi_z"] == 2.0
+    assert model.seen_values["regime_vol_score"] == 3.0
+    assert model.seen_values["rsi_z_x_regime_vol"] == 6.0
+
+
+def test_predict_meta_materializes_training_meta_interactions():
+    class CapturingMetaModel:
+        feature_columns = [
+            "pred_H10",
+            "pred_demo_H10_vote_entropy",
+            "base_med_x_side_aligned_trend",
+            "base_med_x_efficiency_ratio",
+            "base_med_x_vol_z_24h_minus_96h",
+            "base_prob_x_vol_regime",
+            "base_prob_x_entropy",
+        ]
+
+        def __init__(self):
+            self.seen_values = None
+
+        def predict(self, X):
+            self.seen_values = X.iloc[0].to_dict()
+            return [0.61] * len(X)
+
+    model = CapturingMetaModel()
+    orchestrator = ModelOrchestrator(
+        {"meta_models": {"long_demo_clf": model}},
+        {"strict_feature_parity": True},
+    )
+    features = pd.DataFrame(
+        {
+            "pred_H10": [0.8],
+            "pred_H10_vote_entropy": [0.15],
+            "trend_slope_72h": [2.0],
+            "efficiency_ratio_20": [0.25],
+            "vol_z24": [1.5],
+            "volatility_zscore": [0.5],
+            "regime_vol_score": [3.0],
+            "regime_transition_entropy_12h": [0.4],
+        },
+        index=["AAA/USDC"],
+    )
+
+    preds = orchestrator.predict_meta(features, "long", "long_demo")
+
+    assert float(preds.iloc[0]) == 0.61
+    assert np.isclose(model.seen_values["pred_demo_H10_vote_entropy"], 0.15)
+    assert np.isclose(model.seen_values["base_med_x_side_aligned_trend"], 1.6)
+    assert np.isclose(model.seen_values["base_med_x_efficiency_ratio"], 0.2)
+    assert np.isclose(model.seen_values["base_med_x_vol_z_24h_minus_96h"], 0.8)
+    assert np.isclose(model.seen_values["base_prob_x_vol_regime"], 2.4)
+    assert np.isclose(model.seen_values["base_prob_x_entropy"], 0.32)
+
+
+def test_predict_meta_refuses_missing_rank_percentile_context():
+    class CapturingMetaModel:
+        feature_columns = ["pred_H10", "base_model_score_pct"]
+
+        def __init__(self):
+            self.called = False
+
+        def predict(self, X):
+            self.called = True
+            return [0.5] * len(X)
+
+    model = CapturingMetaModel()
+    orchestrator = ModelOrchestrator(
+        {"meta_models": {"long_demo_clf": model}},
+        {"strict_feature_parity": True},
+    )
+    features = pd.DataFrame({"pred_H10": [0.8]}, index=["AAA/USDC"])
+
+    preds = orchestrator.predict_meta(features, "long", "long_demo")
+
+    assert preds.empty
+    assert model.called is False
+
+
+def test_get_features_for_candidates_uses_asof_not_future_latest():
+    idx = pd.to_datetime(["2026-01-01T00:00:00Z", "2026-01-01T02:00:00Z"], utc=True)
     feats = {
         "ret1h": pd.DataFrame({"AAA/USDC": [1.0, 99.0]}, index=idx),
     }
@@ -145,3 +328,19 @@ def test_get_features_for_candidates_uses_asof_not_future_latest():
     )
 
     assert row.loc["AAA/USDC", "ret1h"] == 1.0
+
+
+def test_get_features_for_candidates_preserves_timestamped_nan():
+    idx = pd.to_datetime(["2026-01-01T00:00:00Z", "2026-01-01T01:00:00Z"], utc=True)
+    feats = {
+        "basis": pd.DataFrame({"AAA/USDC": [1.0, np.nan]}, index=idx),
+    }
+
+    row = get_features_for_candidates(
+        feats,
+        ["AAA/USDC"],
+        ts=pd.Timestamp("2026-01-01T01:00:00Z"),
+    )
+
+    assert "basis" in row.columns
+    assert pd.isna(row.loc["AAA/USDC", "basis"])

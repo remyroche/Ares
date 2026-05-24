@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -21,11 +21,11 @@ class PortfolioPolicyConfig:
     max_concurrent_positions: int = 8
     max_concurrent_per_side: Optional[int] = None
     max_concurrent_per_strategy: Optional[int] = None
-    reserved_position_slots: Optional[int] = None
+    reserved_position_slots: Optional[int] = 5
 
-    max_total_wallet_allocation_pct: float = 0.95
+    max_total_wallet_allocation_pct: float = 0.75
     max_available_wallet_position_pct: float = 0.50
-    max_position_wallet_pct: float = 0.20
+    max_position_wallet_pct: float = 0.15
     max_position_quote_notional: float = 5000.0
     book_notional_multiplier: float = 1.0
     leverage_wallet_multiplier: float = 1.0
@@ -37,6 +37,12 @@ class PortfolioPolicyConfig:
     initial_rank_threshold: float = 0.90
     initial_rank_threshold_floor: float = 0.90
     dynamic_threshold_enabled: bool = True
+    threshold_viability_margin: float = 0.0
+    occupancy_threshold_alpha: float = 1.0
+    occupancy_threshold_power: float = 1.0
+    portfolio_policy_version: str = "global_auction_v1"
+    max_new_entries_per_bar: int = 4
+    max_concurrent_per_symbol: int = 1
 
     side_crowding_penalty_max: float = 0.03
     strategy_crowding_penalty_max: float = 0.03
@@ -62,11 +68,13 @@ class PortfolioPolicyConfig:
 
     top_prediction_ledger_pct: float = 0.15
     enable_symbol_underperformance_gates: bool = False
+    strategy_ids: Tuple[str, ...] = ()
+    strategy_cores: Tuple[str, ...] = ()
 
     def resolved_max_concurrent_per_side(self) -> int:
         if self.max_concurrent_per_side is not None:
             return int(self.max_concurrent_per_side)
-        return int(0.75 * self.max_concurrent_positions)
+        return int(self.max_concurrent_positions)
 
     def resolved_max_concurrent_per_strategy(self) -> int:
         if self.max_concurrent_per_strategy is not None:
@@ -89,19 +97,73 @@ def _coerce_value(value: Any, default: Any) -> Any:
     return value
 
 
-def _load_artifact_payload(data_root: str, run_id: str) -> Dict[str, Any]:
-    path = (
-        Path(data_root)
-        / "artifacts"
-        / str(run_id)
-        / "policy_params"
-        / "portfolio_policy_config.json"
+def _normalise_strategy_ids(values: Any) -> Tuple[str, ...]:
+    if values is None:
+        return ()
+    if isinstance(values, str):
+        raw_values = [values]
+    elif isinstance(values, Sequence):
+        raw_values = list(values)
+    else:
+        return ()
+    return tuple(
+        sorted({str(value).strip() for value in raw_values if str(value).strip()})
     )
-    path = resolve_mode_file(path)
-    if not path.exists():
-        return {}
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    return payload if isinstance(payload, dict) else {}
+
+
+def _strategy_core(strategy_id: str) -> str:
+    sid = str(strategy_id or "").strip()
+    for prefix in ("long_", "short_"):
+        if sid.startswith(prefix):
+            sid = sid[len(prefix) :]
+            break
+    return sid
+
+
+def validate_portfolio_strategy_contract(
+    policy: PortfolioPolicyConfig,
+    active_strategy_ids: Optional[Sequence[str]],
+    *,
+    strict: bool = True,
+) -> bool:
+    """Validate that live inference uses the co-optimised strategy set."""
+    contracted = set(_normalise_strategy_ids(policy.strategy_ids))
+    contracted_cores = set(_normalise_strategy_ids(policy.strategy_cores))
+    if not contracted and not contracted_cores:
+        return True
+    active = set(_normalise_strategy_ids(active_strategy_ids))
+    if not active:
+        if strict:
+            raise ValueError(
+                "Portfolio policy declares a strategy contract but inference has "
+                "no active strategy set to validate."
+            )
+        return False
+    active_cores = {_strategy_core(strategy_id) for strategy_id in active}
+    if contracted and active != contracted:
+        if strict:
+            raise ValueError(
+                "Portfolio strategy contract mismatch: "
+                f"active={sorted(active)} expected={sorted(contracted)}"
+            )
+        return False
+    if contracted_cores and active_cores != contracted_cores:
+        if strict:
+            raise ValueError(
+                "Portfolio strategy-core contract mismatch: "
+                f"active={sorted(active_cores)} expected={sorted(contracted_cores)}"
+            )
+        return False
+    return True
+
+
+def _load_artifact_payload(data_root: str, run_id: str) -> Dict[str, Any]:
+    base = Path(data_root) / "artifacts" / str(run_id) / "policy_params"
+    path = resolve_mode_file(base / "optimized_portfolio_policy_config.json")
+    if path.exists():
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
+    return {}
 
 
 def load_portfolio_policy_config(
@@ -109,6 +171,7 @@ def load_portfolio_policy_config(
     data_root: str,
     run_id: str,
     runtime_cfg: Optional[Dict[str, Any]] = None,
+    require_artifact: bool = False,
 ) -> PortfolioPolicyConfig:
     """Load portfolio policy using artifact -> runtime -> dataclass precedence."""
     defaults = PortfolioPolicyConfig()
@@ -116,8 +179,43 @@ def load_portfolio_policy_config(
     valid = {f.name for f in fields(PortfolioPolicyConfig)}
     aliases = {
         "symbol_underperformance_gates_enabled": "enable_symbol_underperformance_gates",
+        "global_threshold_floor": "initial_rank_threshold_floor",
+        "max_signal_gap_bps": "max_signal_gap_bps_default",
     }
     nested_sections = {
+        "concurrency": {
+            "max_concurrent_positions",
+            "max_concurrent_per_side",
+            "max_concurrent_per_strategy",
+            "max_concurrent_per_symbol",
+            "max_new_entries_per_bar",
+        },
+        "allocation": {
+            "max_total_wallet_allocation_pct",
+            "max_available_wallet_position_pct",
+            "max_position_wallet_pct",
+            "max_position_quote_notional",
+            "book_notional_multiplier",
+            "leverage_wallet_multiplier",
+            "min_margin_level_after_entry",
+        },
+        "selection": {
+            "global_threshold_floor",
+            "initial_rank_threshold",
+            "initial_rank_threshold_floor",
+            "threshold_viability_margin",
+            "occupancy_threshold_alpha",
+            "occupancy_threshold_power",
+        },
+        "sizing": {
+            "rank_multiplier_min",
+            "rank_multiplier_max",
+            "rank_size_power",
+        },
+        "friction": {
+            "max_signal_gap_bps_default",
+            "min_liquidity_capacity_weight",
+        },
         "rank_sizing": {
             "book_notional_multiplier",
             "leverage_wallet_multiplier",
@@ -133,16 +231,38 @@ def load_portfolio_policy_config(
             "hard_max_spread_bps",
             "min_liquidity_capacity_weight",
         },
+        "strategy_contract": {
+            "strategy_ids",
+            "strategy_cores",
+        },
     }
 
     runtime_cfg = runtime_cfg or {}
-    for source in (runtime_cfg, _load_artifact_payload(data_root, run_id)):
+    artifact_payload = _load_artifact_payload(data_root, run_id)
+    if require_artifact and not artifact_payload:
+        path = (
+            Path(data_root)
+            / "artifacts"
+            / str(run_id)
+            / "policy_params"
+            / "optimized_portfolio_policy_config.json"
+        )
+        raise FileNotFoundError(
+            "Optimized portfolio policy artifact is required for live inference: "
+            f"{path}"
+        )
+    for source in (runtime_cfg, artifact_payload):
         for section, keys in nested_sections.items():
             nested = source.get(section)
             if isinstance(nested, dict):
                 for key in keys:
                     if key in nested:
-                        values[key] = _coerce_value(nested[key], values.get(key))
+                        target = aliases.get(key, key)
+                        values[target] = _coerce_value(nested[key], values.get(target))
+                        if key == "global_threshold_floor":
+                            values["initial_rank_threshold"] = _coerce_value(
+                                nested[key], values.get("initial_rank_threshold")
+                            )
         for key, value in source.items():
             key = aliases.get(key, key)
             if key not in valid:
@@ -150,6 +270,10 @@ def load_portfolio_policy_config(
             values[key] = _coerce_value(value, values.get(key))
 
     values["max_concurrent_positions"] = max(1, int(values["max_concurrent_positions"]))
+    values["max_new_entries_per_bar"] = max(1, int(values["max_new_entries_per_bar"]))
+    values["max_concurrent_per_symbol"] = max(
+        1, int(values["max_concurrent_per_symbol"])
+    )
     if values.get("reserved_position_slots") is not None:
         values["reserved_position_slots"] = max(
             1, int(values["reserved_position_slots"])
@@ -171,6 +295,8 @@ def load_portfolio_policy_config(
     values["min_margin_level_after_entry"] = max(
         1.0, float(values.get("min_margin_level_after_entry", 2.5))
     )
+    values["strategy_ids"] = _normalise_strategy_ids(values.get("strategy_ids"))
+    values["strategy_cores"] = _normalise_strategy_ids(values.get("strategy_cores"))
     return PortfolioPolicyConfig(**{k: values[k] for k in valid})
 
 
@@ -217,7 +343,11 @@ def compute_rank_based_position_size(
             else np.nan
         )
         sl_pct = sl_raw * 100.0 if np.isfinite(sl_raw) and sl_raw <= 1.0 else sl_raw
-        risk_cap = 100.0 / (1.5 * sl_pct) if np.isfinite(sl_pct) and sl_pct > 0 else float("inf")
+        risk_cap = (
+            100.0 / (1.5 * sl_pct)
+            if np.isfinite(sl_pct) and sl_pct > 0
+            else float("inf")
+        )
         leverage = min(rank_leverage, risk_cap)
         leverage = max(float(leverage), 0.0) if np.isfinite(leverage) else rank_leverage
         leverage_power = leverage**1.5
@@ -260,7 +390,9 @@ def compute_rank_based_position_size(
             "open_equity_allocation": open_notional,
             "remaining_total_notional": max(wallet * leverage - open_notional, 0.0),
             "open_position_count": int(open_positions or 0),
-            "reserved_position_slots": int(policy.reserved_position_slots or policy.max_concurrent_positions),
+            "reserved_position_slots": int(
+                policy.reserved_position_slots or policy.max_concurrent_positions
+            ),
             "remaining_position_slots": None,
             "available_wallet": available_wallet,
             "available_wallet_position_cap": available_wallet_size,
@@ -360,12 +492,13 @@ def compute_rank_based_position_size(
         if open_positions is not None and np.isfinite(float(open_positions))
         else int(np.floor(open_notional / max(target_slot_notional, 1e-9)))
     )
-    open_position_count = max(0, min(open_position_count, policy.max_concurrent_positions))
+    open_position_count = max(
+        0, min(open_position_count, policy.max_concurrent_positions)
+    )
     remaining_position_slots = max(reserved_slots - open_position_count, 1)
     reserved_slot_notional = safe_book_notional / float(reserved_slots)
-    remaining_slot_notional = (
-        max(safe_book_notional - open_notional, 0.0)
-        / float(remaining_position_slots)
+    remaining_slot_notional = max(safe_book_notional - open_notional, 0.0) / float(
+        remaining_position_slots
     )
     slot_cap_notional = max(0.0, min(reserved_slot_notional, remaining_slot_notional))
     rank_slot_fraction = rank_multiplier / max(float(policy.rank_multiplier_max), 1e-9)

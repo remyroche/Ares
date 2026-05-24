@@ -14,29 +14,26 @@ from extreme_price_movements.feature_selection_extreme_events import (
 def compute_tf_weights(df: pd.DataFrame, cfg: dict) -> np.ndarray:
     """
     Computes sample weights for TF model favoring continuation.
-    w_tf = 1 + a*(1 - p_exh_lag1) + b*clip(|trend_pct|) + c*G_TREND
+    w_tf = 1 + b*clip(|trend_pct|) + c*G_TREND
     Downweight high vol.
     """
     tprint(f"Entering function: compute_tf_weights in model_tf.py")
-    a = 2.0
     b = 1.0
     c = 1.0
     cap = 0.05
 
-    p_exh = df.get("p_exh_lag1", 0.0)
     trend = df.get("a_trend", df.get("trend_pct", 0.0)).abs().clip(upper=cap) * 100 # scale up? trend is usually small pct
     g_trend = df.get("G_TREND", 0.0)
     g_vol = df.get("G_VOL", 0.0)
 
     try:
         # Diagnostic logging for weights inputs
-        p_exh_mean = p_exh.mean() if hasattr(p_exh, "mean") else p_exh
         trend_mean = trend.mean() if hasattr(trend, "mean") else trend
-        tprint(f"TF Weights inputs: p_exh mean={p_exh_mean:.4f}, trend mean={trend_mean:.4f}")
+        tprint(f"TF Weights inputs: trend mean={trend_mean:.4f}")
     except Exception as e:
         tprint(f"TF Weights inputs logging failed: {e}")
 
-    w = 1.0 + (a * (1.0 - p_exh)) + (b * trend) + (c * g_trend)
+    w = 1.0 + (b * trend) + (c * g_trend)
     w *= (1.0 - 0.3 * g_vol)
 
     w = w.clip(0.25, 4.0)

@@ -34,6 +34,7 @@ from extreme_price_movements.config import (
     CONTINUOUS_TRIGGER_COLS,
     LOC_CONTINUOUS_FAMILY_MAP,
     RIDGE_FEATURE_COLS,
+    TEST_FEATURE_KEYS,
     TIME_FEATURE_KEYS,
 )
 from extreme_price_movements.data_store import (

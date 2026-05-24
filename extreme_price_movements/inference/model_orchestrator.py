@@ -36,11 +36,28 @@ from extreme_price_movements.inference.parity import (
     strategy_id_matches,
     strategy_side,
 )
+from extreme_price_movements.meta_training.trade_filtering import (
+    rolling_asset_percentile,
+)
 from extreme_price_movements.regime_adaptor import (
     apply_regime_adaptor,
     regime_adaptor_inference_enabled,
 )
 from extreme_price_movements.utils import tprint
+
+
+DELETED_MODEL_FEATURE_KEYS = {
+    "p_exh_lag1",
+    "retest_accept",
+    "vol_price_diverge",
+    "vortex_diff_14",
+    "vortex_diff_21",
+    "vortex_diff_34",
+    "z_breakout_dn_24",
+    "z_breakout_up_24",
+    "z_slope_change_24",
+    "z_sm_momentum_24",
+}
 
 
 def _extract_ebm_contract_model(model: Any) -> Any:
@@ -87,6 +104,24 @@ def _missing_ebm_raw_contract(model: Any, features: pd.DataFrame) -> list[str]:
     return missing
 
 
+def _effective_selected_feature_contract(model: Any) -> list[str]:
+    """Return the feature contract actually consumed by a selected inner model.
+
+    Older ModelRace wrappers persist a broad ``feature_columns`` list from the
+    candidate matrix. The winning LGBMStabilityModel then selects a much smaller
+    named subset. Inference validation must use the selected inner contract;
+    otherwise stale, unused wrapper columns become false hard requirements.
+    """
+    inner = getattr(model, "best_model", model)
+    selected = [str(c) for c in (getattr(inner, "selected_features", []) or [])]
+    if not selected:
+        return []
+    input_features = [str(c) for c in (getattr(inner, "input_feature_names", []) or [])]
+    if len(input_features) == len(selected) and input_features != selected:
+        return input_features
+    return selected
+
+
 def _synthetic_ebm_raw_features(model: Any) -> list[str]:
     """Return an EBM f0/f1/... raw contract when the model uses one."""
     ebm_model = _extract_ebm_contract_model(model)
@@ -117,12 +152,19 @@ def _alpha_prediction_frame_for_model(
         return aligned_features
 
     feat_cols = [str(c) for c in feat_cols]
-    X = aligned_features.reindex(columns=feat_cols, fill_value=0.0).fillna(0.0)
+    X = aligned_features.reindex(columns=feat_cols)
+    try:
+        X = validate_final_model_matrix(
+            X,
+            model_feature_cols=feat_cols,
+            model_key="alpha_feature_contract",
+            strict=True,
+        )
+    except FeatureParityError:
+        raise
     inner = getattr(model, "best_model", model)
     selected = [str(c) for c in (getattr(inner, "selected_features", []) or [])]
-    input_features = [
-        str(c) for c in (getattr(inner, "input_feature_names", []) or [])
-    ]
+    input_features = [str(c) for c in (getattr(inner, "input_feature_names", []) or [])]
     has_named_aliases = (
         len(input_features) == len(selected)
         and bool(input_features)
@@ -136,14 +178,91 @@ def _alpha_prediction_frame_for_model(
         for name in selected:
             pos = int(name[1:])
             real_name = feat_cols[pos] if pos < len(feat_cols) else ""
-            mapped[name] = X[real_name] if real_name in X.columns else 0.0
-        return mapped.replace([np.inf, -np.inf], 0.0).fillna(0.0)
+            mapped[name] = X[real_name] if real_name in X.columns else np.nan
+        return validate_final_model_matrix(
+            mapped,
+            model_feature_cols=selected,
+            model_key="alpha_synthetic_feature_contract",
+            strict=True,
+        )
 
     synthetic_raw = _synthetic_ebm_raw_features(model)
     if synthetic_raw and len(synthetic_raw) == len(feat_cols):
         X = X.copy()
         X.columns = synthetic_raw
     return X
+
+
+def _effective_alpha_feature_contract(model_info: Dict[str, Any]) -> List[str]:
+    """Return the real raw feature contract consumed by an alpha model.
+
+    Older alpha bundles keep the broad pre-selection feature list in
+    ``feat_cols`` while the persisted LGBM stability model stores the actual
+    selected feature contract. Strict inference parity must validate the latter
+    when it is expressed as real feature names. Synthetic ``fN`` contracts still
+    need the broad feature list so they can be mapped by position.
+    """
+    if not isinstance(model_info, dict):
+        return []
+    feat_cols = [
+        str(c)
+        for c in (model_info.get("feat_cols", []) or [])
+        if str(c) not in DELETED_MODEL_FEATURE_KEYS
+    ]
+    model = model_info.get("model")
+    inner = getattr(model, "best_model", model)
+    selected = [str(c) for c in (getattr(inner, "selected_features", []) or [])]
+    input_features = [
+        str(c) for c in (getattr(inner, "input_feature_names", []) or [])
+    ]
+    if selected:
+        if input_features and len(input_features) == len(selected):
+            return [c for c in input_features if c not in DELETED_MODEL_FEATURE_KEYS]
+        if all(re.fullmatch(r"f\d+", name) is not None for name in selected):
+            return feat_cols
+        return [c for c in selected if c not in DELETED_MODEL_FEATURE_KEYS]
+    return feat_cols
+
+
+def _strict_finite_model_matrix(
+    X: pd.DataFrame,
+    *,
+    model_feature_cols: List[str],
+    model_key: str,
+) -> pd.DataFrame:
+    """Return a strict final model matrix; never fill or drop bad model inputs."""
+    cols = [str(c) for c in model_feature_cols]
+    if X is None or not isinstance(X, pd.DataFrame) or X.empty:
+        return validate_final_model_matrix(
+            X,
+            model_feature_cols=cols,
+            model_key=model_key,
+            strict=True,
+        )
+    X = X.reindex(columns=cols)
+    try:
+        X_float = X.astype(np.float32, copy=False)
+    except Exception:
+        return validate_final_model_matrix(
+            X,
+            model_feature_cols=cols,
+            model_key=model_key,
+            strict=True,
+        )
+    values = X_float.to_numpy(dtype=np.float32, copy=False)
+    if np.isfinite(values).all():
+        return validate_final_model_matrix(
+            X_float,
+            model_feature_cols=cols,
+            model_key=model_key,
+            strict=True,
+        )
+    return validate_final_model_matrix(
+        X_float,
+        model_feature_cols=cols,
+        model_key=model_key,
+        strict=True,
+    )
 
 
 class ModelOrchestrator:
@@ -324,7 +443,9 @@ class ModelOrchestrator:
                     )
 
         strict = bool(self.cfg.get("strict_feature_parity", True))
-        feat_cols_s = [str(c) for c in feat_cols]
+        feat_cols_s = [
+            str(c) for c in feat_cols if str(c) not in DELETED_MODEL_FEATURE_KEYS
+        ]
         if strict:
             missing = [c for c in feat_cols_s if c not in aligned.columns]
             if missing:
@@ -334,15 +455,40 @@ class ModelOrchestrator:
                 )
                 return pd.DataFrame(index=features.index)
             try:
-                return validate_final_model_matrix(
-                    aligned.reindex(columns=feat_cols_s),
+                model_matrix = aligned.reindex(columns=feat_cols_s)
+                return _strict_finite_model_matrix(
+                    model_matrix,
                     model_feature_cols=feat_cols_s,
                     model_key="alpha",
-                    strict=True,
                 )
             except FeatureParityError as exc:
-                tprint(f"Error aligning alpha feature contract: {exc}")
-                return pd.DataFrame(index=features.index)
+                report = getattr(exc, "report", {}) or {}
+                errors = set(report.get("global_errors") or [])
+                if "model_matrix_nonfinite" not in errors:
+                    tprint(f"Error aligning alpha feature contract: {exc}")
+                    return pd.DataFrame(index=features.index)
+                matrix_float = model_matrix.astype(np.float32, copy=False)
+                values = matrix_float.to_numpy(dtype=np.float32, copy=False)
+                row_ok = np.isfinite(values).all(axis=1)
+                valid_rows = int(row_ok.sum())
+                if valid_rows <= 0:
+                    tprint(f"Error aligning alpha feature contract: {exc}")
+                    return pd.DataFrame(index=features.index)
+                dropped_rows = int(len(row_ok) - valid_rows)
+                tprint(
+                    "Alpha inference: dropped "
+                    f"{dropped_rows}/{len(row_ok)} rows with non-finite trained "
+                    f"features; predicting {valid_rows} strict rows."
+                )
+                try:
+                    return _strict_finite_model_matrix(
+                        matrix_float.loc[row_ok],
+                        model_feature_cols=feat_cols_s,
+                        model_key="alpha",
+                    )
+                except FeatureParityError as exc2:
+                    tprint(f"Error aligning alpha feature contract: {exc2}")
+                    return pd.DataFrame(index=features.index)
 
         return aligned.reindex(columns=feat_cols_s, fill_value=0.0).fillna(0.0)
 
@@ -417,7 +563,7 @@ class ModelOrchestrator:
         if self.alpha_by_strategy:
             for sid, model_info in self.alpha_by_strategy.items():
                 if isinstance(model_info, dict):
-                    columns[sid] = model_info.get("feat_cols", [])
+                    columns[sid] = _effective_alpha_feature_contract(model_info)
             return columns
 
         for side in ["long", "short"]:
@@ -431,7 +577,7 @@ class ModelOrchestrator:
             for kind, model_info in side_models.items():
                 if not isinstance(model_info, dict):
                     continue
-                feat_cols = model_info.get("feat_cols", [])
+                feat_cols = _effective_alpha_feature_contract(model_info)
                 columns[f"{side}_{kind}"] = feat_cols
 
         return columns
@@ -467,7 +613,7 @@ class ModelOrchestrator:
             return pd.Series(dtype=float)
 
         model = model_info.get("model")
-        feat_cols = model_info.get("feat_cols", [])
+        feat_cols = _effective_alpha_feature_contract(model_info)
 
         if model is None:
             tprint(f"Warning: Model not loaded for {key}")
@@ -601,11 +747,13 @@ class ModelOrchestrator:
             core_no_head,
             f"{side}_{core}",
             f"{side}_{core_no_head}",
-            getattr(meta_model, "meta_feature_contract_", {}).get(
-                "base_probability_column", ""
-            )
-            if isinstance(getattr(meta_model, "meta_feature_contract_", {}), dict)
-            else "",
+            (
+                getattr(meta_model, "meta_feature_contract_", {}).get(
+                    "base_probability_column", ""
+                )
+                if isinstance(getattr(meta_model, "meta_feature_contract_", {}), dict)
+                else ""
+            ),
         ]
         candidate_cols.extend([c for c in feat_cols if re.match(r"^pred_.*_H\d+$", c)])
         candidate_cols.extend([c for c in feat_cols if re.match(r"^pred_H\d+$", c)])
@@ -618,6 +766,59 @@ class ModelOrchestrator:
 
         base_prob = base_series.clip(1e-6, 1.0 - 1e-6).astype(float)
         base_logit = np.log(base_prob / (1.0 - base_prob))
+        base_entropy = -(
+            base_prob * np.log(base_prob)
+            + (1.0 - base_prob) * np.log(1.0 - base_prob)
+        )
+
+        def _first_existing_col(names: list[str]) -> str | None:
+            for name in names:
+                if name in out.columns:
+                    return name
+            return None
+
+        def _numeric_col(name: str) -> pd.Series:
+            return pd.to_numeric(out[name], errors="coerce").astype(float)
+
+        def _symbol_values() -> np.ndarray | None:
+            for name in ("__symbol__", "symbol"):
+                if name in out.columns:
+                    return out[name].astype(str).to_numpy()
+            if isinstance(out.index, pd.MultiIndex):
+                for name in ("__symbol__", "symbol", "asset"):
+                    if name in (out.index.names or []):
+                        return out.index.get_level_values(name).astype(str).to_numpy()
+            if out.index.name in {"__symbol__", "symbol", "asset"}:
+                return out.index.astype(str).to_numpy()
+            return None
+
+        def _timestamp_values() -> pd.Series | None:
+            for name in ("__ts__", "timestamp"):
+                if name in out.columns:
+                    ts = pd.to_datetime(out[name], errors="coerce", utc=True)
+                    return pd.Series(ts, index=out.index)
+            if isinstance(out.index, pd.MultiIndex):
+                for name in ("__ts__", "timestamp"):
+                    if name in (out.index.names or []):
+                        ts = pd.to_datetime(
+                            out.index.get_level_values(name), errors="coerce", utc=True
+                        )
+                        return pd.Series(ts, index=out.index)
+            if out.index.name in {"__ts__", "timestamp"}:
+                ts = pd.to_datetime(out.index, errors="coerce", utc=True)
+                return pd.Series(ts, index=out.index)
+            return None
+
+        side_sign = 1.0 if str(side).lower() == "long" else -1.0
+        trend24_col = _first_existing_col(["trend_slope_24h", "trend_t", "trend_pct"])
+        trend72_col = _first_existing_col(["trend_slope_72h", "trend_slope_48h"])
+        vol24_col = _first_existing_col(["vol_z24", "vol_z_4h", "vol_z"])
+        vol96_col = _first_existing_col(["volatility_zscore", "vol_z"])
+        trend_src = trend72_col or trend24_col
+        vol_src = vol96_col or vol24_col
+        eff_col = _first_existing_col(["efficiency_ratio_20", "path_efficiency_24"])
+        comp_col = _first_existing_col(["compression_score"])
+
         added = 0
         for col in feat_cols:
             if col in out.columns:
@@ -625,7 +826,10 @@ class ModelOrchestrator:
             value: pd.Series | float | None = None
             if re.match(r"^pred_logit(?:_H\d+)?$", col):
                 value = base_logit
-            elif re.match(r"^pred(?:_.*)?_H\d+(?:_ebm_raw|_ebm_en|_ebm_uncertainty_weighted)?$", col):
+            elif re.match(
+                r"^pred(?:_.*)?_H\d+(?:_ebm_raw|_ebm_en|_ebm_uncertainty_weighted)?$",
+                col,
+            ):
                 value = base_prob
             elif re.match(r"^base_H\d+_ebm_(?:raw|en|uncertainty_weighted)$", col):
                 value = base_prob
@@ -634,21 +838,90 @@ class ModelOrchestrator:
             elif col == "base_model_margin":
                 value = (base_prob - 0.5).abs()
             elif col == "base_model_score_pct":
-                value = 0.5
+                symbols = _symbol_values()
+                timestamps = _timestamp_values()
+                if symbols is not None and timestamps is not None:
+                    window = int(self.cfg.get("meta_trade_rank_window", 240))
+                    rank_pct = rolling_asset_percentile(
+                        base_prob.to_numpy(dtype=np.float32),
+                        symbols,
+                        timestamps,
+                        window=window,
+                    )
+                    value = pd.Series(rank_pct, index=out.index)
+            elif col == "rsi_z_x_regime_vol":
+                if {"rsi_z", "regime_vol_score"}.issubset(out.columns):
+                    value = _numeric_col("rsi_z") * _numeric_col("regime_vol_score")
+            elif col == "base_med_x_side_aligned_trend":
+                if trend_src is not None:
+                    value = base_prob * side_sign * _numeric_col(trend_src)
+            elif col == "base_med_x_vol_z":
+                if vol_src is not None:
+                    value = base_prob * _numeric_col(vol_src)
+            elif col == "base_med_x_efficiency_ratio":
+                if eff_col is not None:
+                    value = base_prob * _numeric_col(eff_col)
+            elif col == "base_med_x_compression_score":
+                if comp_col is not None:
+                    value = base_prob * _numeric_col(comp_col)
+            elif col == "base_med_x_compression_x_vol_z":
+                if comp_col is not None and vol_src is not None:
+                    value = base_prob * _numeric_col(comp_col) * _numeric_col(vol_src)
+            elif col == "base_med_x_side_trend_x_vol_z":
+                if trend_src is not None and vol_src is not None:
+                    value = (
+                        base_prob
+                        * side_sign
+                        * _numeric_col(trend_src)
+                        * _numeric_col(vol_src)
+                    )
+            elif col == "base_med_x_side_trend_x_efficiency":
+                if trend_src is not None and eff_col is not None:
+                    value = (
+                        base_prob
+                        * side_sign
+                        * _numeric_col(trend_src)
+                        * _numeric_col(eff_col)
+                    )
+            elif col == "base_med_x_trend_24h_x_trend_72h":
+                if trend24_col is not None and trend72_col is not None:
+                    value = base_prob * _numeric_col(trend24_col) * _numeric_col(
+                        trend72_col
+                    )
+            elif col == "base_med_x_vol_z_24h_minus_96h":
+                if vol24_col is not None and vol96_col is not None:
+                    value = base_prob * (_numeric_col(vol24_col) - _numeric_col(vol96_col))
+            elif col == "base_prob_x_vol_regime":
+                src = _first_existing_col(["regime_vol_score", "asset_vol_level"])
+                if src is not None:
+                    value = base_prob * _numeric_col(src)
+            elif col == "base_prob_x_entropy":
+                src = _first_existing_col(["regime_transition_entropy_12h"])
+                if src is not None:
+                    value = base_prob * _numeric_col(src)
+            elif re.match(r"^pred_.*_H\d+_vote_entropy$", col):
+                horizon_match = re.search(r"_H(\d+)_vote_entropy$", col)
+                h = horizon_match.group(1) if horizon_match else ""
+                src = _first_existing_col(
+                    [
+                        f"pred_H{h}_vote_entropy",
+                        f"base_H{h}_vote_entropy",
+                        "oof_tree_vote_entropy",
+                        "vote_entropy",
+                    ]
+                )
+                if src is not None:
+                    value = _numeric_col(src)
+                else:
+                    value = base_entropy
             elif col.startswith("base_prob_x_"):
                 src = col.removeprefix("base_prob_x_")
                 if src in out.columns:
-                    value = base_prob * pd.to_numeric(out[src], errors="coerce").fillna(0.0)
-                else:
-                    value = 0.0
+                    value = base_prob * _numeric_col(src)
             elif col.startswith("base_med_x_"):
                 src = col.removeprefix("base_med_x_")
                 if src in out.columns:
-                    value = base_prob * pd.to_numeric(out[src], errors="coerce").fillna(0.0)
-                else:
-                    value = 0.0
-            elif is_model_derived_feature_key(col):
-                value = 0.0
+                    value = base_prob * _numeric_col(src)
 
             if value is not None:
                 out[col] = value
@@ -705,11 +978,18 @@ class ModelOrchestrator:
 
         # Get feature columns from meta model
         try:
-            if hasattr(meta_model, "feature_columns"):
+            effective_cols = _effective_selected_feature_contract(meta_model)
+            if effective_cols:
+                feat_cols = effective_cols
+            elif hasattr(meta_model, "feature_columns"):
                 feat_cols = meta_model.feature_columns
             else:
                 feat_cols = list(features.columns)
-            feat_cols = [str(c) for c in (feat_cols or [])]
+            feat_cols = [
+                str(c)
+                for c in (feat_cols or [])
+                if str(c) not in DELETED_MODEL_FEATURE_KEYS
+            ]
 
             features = self._materialize_meta_model_derived_features(
                 features,
@@ -746,16 +1026,46 @@ class ModelOrchestrator:
                     }
                     tprint(
                         f"Error predicting meta for {key}: {reason} "
-                        f"({len(missing)} missing trained features)."
+                        f"({len(missing)} missing trained features): {missing[:20]}"
                     )
                     return pd.Series(dtype=float)
                 try:
-                    X = validate_final_model_matrix(
-                        features.reindex(columns=feat_cols),
-                        model_feature_cols=feat_cols,
-                        model_key=key,
-                        strict=True,
-                    )
+                    model_matrix = features.reindex(columns=feat_cols)
+                    try:
+                        X = _strict_finite_model_matrix(
+                            model_matrix,
+                            model_feature_cols=feat_cols,
+                            model_key=key,
+                        )
+                    except FeatureParityError as exc:
+                        report = getattr(exc, "report", {}) or {}
+                        errors = set(report.get("global_errors") or [])
+                        if "model_matrix_nonfinite" not in errors:
+                            raise
+                        matrix_float = model_matrix.astype(np.float32, copy=False)
+                        values = matrix_float.to_numpy(dtype=np.float32, copy=False)
+                        row_ok = np.isfinite(values).all(axis=1)
+                        valid_rows = int(row_ok.sum())
+                        if valid_rows <= 0:
+                            raise
+                        dropped_rows = int(len(row_ok) - valid_rows)
+                        self._last_results["meta_contract_error"] = {
+                            "key": key,
+                            "reason": "dropped_nonfinite_meta_rows",
+                            "dropped_rows": dropped_rows,
+                            "valid_rows": valid_rows,
+                            "details": report,
+                        }
+                        tprint(
+                            f"Meta inference for {key}: dropped {dropped_rows}/"
+                            f"{len(row_ok)} rows with non-finite trained features; "
+                            f"predicting {valid_rows} strict rows."
+                        )
+                        X = _strict_finite_model_matrix(
+                            matrix_float.loc[row_ok],
+                            model_feature_cols=feat_cols,
+                            model_key=key,
+                        )
                 except FeatureParityError as exc:
                     self._last_results["meta_contract_error"] = {
                         "key": key,
@@ -775,7 +1085,7 @@ class ModelOrchestrator:
                     X = features[available_cols].fillna(0)
             preds = meta_model.predict(X)
 
-            return pd.Series(preds, index=features.index)
+            return pd.Series(preds, index=X.index)
         except Exception as e:
             tprint(f"Error predicting meta for {key}: {e}")
             return pd.Series(dtype=float)

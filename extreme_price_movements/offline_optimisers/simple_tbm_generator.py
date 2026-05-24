@@ -147,6 +147,42 @@ def _assert_family_coverage(grid_df: pd.DataFrame) -> None:
     }
     if missing:
         raise ValueError(f"Missing tight/wide families for cells: {missing}")
+
+
+def _fill_missing_family_fallbacks(grid_df: pd.DataFrame) -> pd.DataFrame:
+    """Clone fallback geometry when optimizer output has only one family.
+
+    Kraken perp optimisation can legitimately fall back to a single global
+    geometry when per-cell feasible sets are empty. The downstream simple TBM
+    reports still expect both family labels per side/horizon cell, so keep the
+    same validated geometry and mark the cloned rows explicitly.
+    """
+    out = grid_df.copy()
+    if "family" not in out.columns or "cell_key" not in out.columns:
+        return out
+    clones: list[pd.Series] = []
+    for cell_key, cell_df in out.groupby("cell_key", sort=False):
+        families = {str(v) for v in cell_df["family"].dropna().astype(str)}
+        missing = {"tight", "wide"} - families
+        if not missing:
+            continue
+        template = cell_df.iloc[0].copy()
+        for family in sorted(missing):
+            row = template.copy()
+            row["family"] = family
+            row["family_fallback_cloned"] = True
+            if "config_id" in row.index:
+                row["config_id"] = f"{row['config_id']}_{family}_fallback"
+            clones.append(row)
+    if not clones:
+        if "family_fallback_cloned" not in out.columns:
+            out["family_fallback_cloned"] = False
+        return out
+    if "family_fallback_cloned" not in out.columns:
+        out["family_fallback_cloned"] = False
+    return pd.concat([out, pd.DataFrame(clones)], ignore_index=True, sort=False)
+
+
 def _build_side_horizon_best_params(cell_df: pd.DataFrame) -> pd.DataFrame:
     out = cell_df.copy()
     out["cell_key"] = out["cell_key"].map(_to_side_horizon)
@@ -222,7 +258,7 @@ def regenerate_simple_tbm_reports(
     grid_df, grid_read_path = _read_market_csv(TBM_GEOMETRY_GRID_CSV, market_mode)
     cell_df, cell_read_path = _read_market_csv(TBM_BEST_PARAMS_PER_CELL_CSV, market_mode)
 
-    grid_df = _rewrite_geometry_grid(grid_df)
+    grid_df = _fill_missing_family_fallbacks(_rewrite_geometry_grid(grid_df))
     cell_df = _rewrite_best_params_per_cell(cell_df)
     side_df = _build_side_horizon_best_params(cell_df)
     _assert_family_coverage(grid_df)

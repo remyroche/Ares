@@ -18,17 +18,21 @@ from extreme_price_movements.config import (
     CANON_HORIZONS,
     HELPER_BASE_FEATURES,
     POSITION_SIZER_V2_FEATURE_CONFIG,
+    is_non_portable_feature_key,
 )
 from extreme_price_movements.data_store import (
     _atomic_write_parquet,
     _ensure_feature_frame_index,
     _write_feature_metadata,
+    exchange_data_component,
     get_feature_bounds,
     load_artifact_df,
     load_features,
     load_features_selected,
     save_artifact_df,
     save_features,
+    scoped_data_root,
+    use_exchange_scoped_data,
     to_panel,
 )
 from extreme_price_movements.path_utils import resolve_mode_file
@@ -46,6 +50,7 @@ from extreme_price_movements.features import (
     compute_features_hourly,
     compute_market_features,
 )
+from extreme_price_movements.features_residual import add_residual_features
 from extreme_price_movements.inference.data_fetcher import DataFetcher
 from extreme_price_movements.intraday_crypto_library import (
     INTRADAY_TRIGGER_COLUMNS,
@@ -176,11 +181,19 @@ def _load_saved_microdata_for_symbols(
     data_root: str,
     symbols: list[str],
     index: pd.Index,
+    cfg: dict | None = None,
 ) -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
-    funding_by_symbol: dict[str, pd.Series] = {}
+    sidecar_by_column: dict[str, dict[str, pd.Series]] = {
+        "funding_rate": {},
+        "open_interest": {},
+        "mark_price": {},
+        "index_price": {},
+        "premium_index": {},
+    }
     orderbook_by_symbol: dict[str, pd.DataFrame] = {}
-    funding_dir = os.path.join(data_root, "funding_hourly")
-    orderbook_dir = os.path.join(data_root, "orderbook_hourly")
+    market_data_root = scoped_data_root(cfg or {"data_root": data_root})
+    funding_dir = os.path.join(market_data_root, "funding_hourly")
+    orderbook_dir = os.path.join(market_data_root, "orderbook_hourly")
     target_index = pd.to_datetime(index, utc=True)
 
     for symbol in symbols:
@@ -191,12 +204,14 @@ def _load_saved_microdata_for_symbols(
         if os.path.exists(fr_path):
             try:
                 fr = pd.read_parquet(fr_path)
-                if not fr.empty and "funding_rate" in fr.columns:
+                if not fr.empty:
                     fr.index = pd.to_datetime(fr.index, utc=True, errors="coerce")
                     fr = fr[~fr.index.duplicated(keep="last")].sort_index()
-                    funding_by_symbol[symbol] = pd.to_numeric(
-                        fr["funding_rate"], errors="coerce"
-                    ).astype(np.float32)
+                    for col in sidecar_by_column:
+                        if col in fr.columns:
+                            sidecar_by_column[col][symbol] = pd.to_numeric(
+                                fr[col], errors="coerce"
+                            ).astype(np.float32)
             except Exception as exc:
                 tprint(f"WARN funding panel load failed for {symbol}: {exc}")
 
@@ -211,15 +226,258 @@ def _load_saved_microdata_for_symbols(
                 tprint(f"WARN orderbook panel load failed for {symbol}: {exc}")
 
     panel_updates: dict[str, pd.DataFrame] = {}
-    if funding_by_symbol:
-        panel_updates["funding_rate"] = (
-            pd.DataFrame(funding_by_symbol)
-            .reindex(index=target_index, columns=symbols)
-            .ffill()
-            .fillna(0.0)
+    for col, by_symbol in sidecar_by_column.items():
+        if by_symbol:
+            panel_updates[col] = (
+                pd.DataFrame(by_symbol)
+                .reindex(index=target_index, columns=symbols)
+                .ffill()
+                .astype(np.float32)
+            )
+    return panel_updates, orderbook_by_symbol
+
+
+def _kraken_external_spot_panels_enabled(cfg: dict) -> bool:
+    exchange = str(cfg.get("exchange_id") or cfg.get("exchange") or "").lower()
+    if exchange not in {"kraken", "krakenfutures", "kraken_futures"}:
+        return False
+    if str(cfg.get("market_mode") or "").lower() not in {"perps", "perp"}:
+        return False
+    raw = os.environ.get(
+        "EPM_KRAKEN_EXTERNAL_SPOT_PANELS",
+        str(cfg.get("kraken_external_spot_panels", True)),
+    )
+    return str(raw).strip().lower() not in {"0", "false", "no", "n", "off"}
+
+
+def _kraken_external_spot_manifest_path(cfg: dict) -> str:
+    spot_root = os.path.join("data_spot", "exchanges", "kraken", "ohlcv")
+    manifest_dir = os.path.join(scoped_data_root(cfg), "manifests")
+    manifest_candidates = [
+        os.path.join(manifest_dir, "kraken_dual_market_verified_universe_latest.json"),
+        os.path.join(manifest_dir, "kraken_dual_market_universe_latest.json"),
+        os.path.join(manifest_dir, "kraken_dual_market_download_latest.json"),
+    ]
+    manifest_path = next((path for path in manifest_candidates if os.path.exists(path)), "")
+    if not os.path.isdir(spot_root) or not manifest_path:
+        return ""
+    return manifest_path
+
+
+def _kraken_spot_symbol_by_perp_key(cfg: dict) -> dict[str, str]:
+    manifest_path = _kraken_external_spot_manifest_path(cfg)
+    if not manifest_path:
+        return {}
+
+    try:
+        manifest = json.load(open(manifest_path, "r", encoding="utf-8"))
+    except Exception as exc:
+        tprint(f"WARN external Kraken spot manifest load failed: {exc}")
+        return {}
+
+    return {
+        str(item.get("perp_symbol", "")).replace("/", "_"): str(item.get("spot_symbol", "")).replace("/", "_")
+        for item in manifest.get("symbols", [])
+        if item.get("perp_symbol") and item.get("spot_symbol")
+    }
+
+
+def _load_external_kraken_spot_ohlcv(
+    cfg: dict,
+    symbol: str,
+    *,
+    start_ts: pd.Timestamp | None = None,
+    end_ts: pd.Timestamp | None = None,
+) -> pd.DataFrame:
+    if not _kraken_external_spot_panels_enabled(cfg):
+        return pd.DataFrame()
+    spot_by_perp = _kraken_spot_symbol_by_perp_key(cfg)
+    spot_key = spot_by_perp.get(str(symbol).replace("/", "_"))
+    if not spot_key:
+        return pd.DataFrame()
+    symbol_dir = os.path.join(
+        "data_spot", "exchanges", "kraken", "ohlcv", f"symbol={spot_key}"
+    )
+    files = sorted(glob.glob(os.path.join(symbol_dir, "**", "*.parquet"), recursive=True))
+    if not files:
+        return pd.DataFrame()
+    try:
+        frames = [pd.read_parquet(path) for path in files]
+        raw = pd.concat(frames, ignore_index=True)
+        raw["ts"] = pd.to_datetime(raw["ts"], utc=True, errors="coerce")
+        raw = raw.dropna(subset=["ts"]).sort_values("ts")
+        raw["ts_hour"] = raw["ts"].dt.floor("h")
+        hourly = (
+            raw.groupby("ts_hour", sort=True)
+            .agg(
+                open=("open", "first"),
+                high=("high", "max"),
+                low=("low", "min"),
+                close=("close", "last"),
+                volume=("volume", "sum"),
+            )
             .astype(np.float32)
         )
-    return panel_updates, orderbook_by_symbol
+        if start_ts is not None:
+            start_ts = pd.Timestamp(start_ts)
+            start_ts = start_ts.tz_localize("UTC") if start_ts.tzinfo is None else start_ts.tz_convert("UTC")
+            hourly = hourly[hourly.index >= start_ts]
+        if end_ts is not None:
+            end_ts = pd.Timestamp(end_ts)
+            end_ts = end_ts.tz_localize("UTC") if end_ts.tzinfo is None else end_ts.tz_convert("UTC")
+            hourly = hourly[hourly.index <= end_ts]
+        return hourly
+    except Exception as exc:
+        tprint(f"WARN external Kraken spot load failed for {symbol}: {exc}")
+        return pd.DataFrame()
+
+
+def _load_external_kraken_spot_panels(
+    cfg: dict,
+    symbols: list[str],
+    index: pd.Index,
+) -> dict[str, pd.DataFrame]:
+    if not _kraken_external_spot_panels_enabled(cfg):
+        return {}
+
+    target_index = pd.to_datetime(index, utc=True)
+    cols = {"open": {}, "high": {}, "low": {}, "close": {}, "volume": {}}
+
+    for symbol in symbols:
+        hourly = _load_external_kraken_spot_ohlcv(cfg, symbol)
+        if hourly.empty:
+            continue
+        try:
+            hourly = hourly.reindex(target_index).astype(np.float32)
+            for col in cols:
+                cols[col][symbol] = pd.to_numeric(hourly[col], errors="coerce").astype(np.float32)
+        except Exception as exc:
+            tprint(f"WARN external Kraken spot load failed for {symbol}: {exc}")
+
+    out = {}
+    for col, data in cols.items():
+        if data:
+            out[f"spot_{col}"] = pd.DataFrame(data, index=target_index).reindex(
+                index=target_index, columns=symbols
+            )
+    if out:
+        total = int(out["spot_close"].gt(0.0).sum().sum()) if "spot_close" in out else 0
+        tprint(
+            f"Loaded external Kraken spot panels for {len(out.get('spot_close', pd.DataFrame()).columns)} symbols "
+            f"({total:,} positive spot-close cells)."
+        )
+    return out
+
+
+def _symbol_to_sidecar_filename(symbol: str) -> str:
+    return str(symbol).replace("/", "_").replace(":", "_")
+
+
+def _requires_perp_market_data_row_filter(cfg: dict) -> bool:
+    market_mode = str(
+        cfg.get("market_mode") or ("perps" if cfg.get("use_perps") else "spot")
+    ).strip().lower()
+    if market_mode not in {"perp", "perps", "future", "futures", "swap"}:
+        return False
+    raw = os.environ.get(
+        "EPM_REQUIRE_PERP_ROW_MARKET_DATA",
+        str(cfg.get("require_perp_row_market_data", True)),
+    )
+    return str(raw).strip().lower() not in {"0", "false", "no", "n", "off"}
+
+
+def _perp_required_market_data_mask(
+    cfg: dict,
+    panel: dict[str, pd.DataFrame],
+    symbols: list[str],
+) -> pd.DataFrame | None:
+    if not _requires_perp_market_data_row_filter(cfg):
+        return None
+    close = panel.get("close")
+    if not isinstance(close, pd.DataFrame) or close.empty:
+        return None
+    index = pd.to_datetime(close.index, utc=True)
+    symbols = [str(s) for s in symbols]
+    mask = pd.DataFrame(True, index=index, columns=symbols)
+    for field in ("open", "high", "low", "close", "volume"):
+        frame = panel.get(field)
+        if isinstance(frame, pd.DataFrame):
+            mask &= frame.reindex(index=index, columns=symbols).notna()
+        else:
+            mask &= False
+
+    sidecar_root = os.path.join(scoped_data_root(cfg), "funding_hourly")
+    funding_ok: dict[str, pd.Series] = {}
+    oi_ok: dict[str, pd.Series] = {}
+    for symbol in symbols:
+        path = os.path.join(sidecar_root, f"{_symbol_to_sidecar_filename(symbol)}.parquet")
+        if os.path.exists(path):
+            try:
+                side = pd.read_parquet(path)
+                side.index = pd.to_datetime(side.index, utc=True, errors="coerce").floor("h")
+                side = side[~side.index.isna()]
+                side = side[~side.index.duplicated(keep="last")].sort_index()
+                funding = pd.to_numeric(side.get("funding_rate"), errors="coerce")
+                oi = pd.to_numeric(side.get("open_interest"), errors="coerce")
+                funding_ok[symbol] = funding.notna().reindex(index).fillna(False)
+                oi_ok[symbol] = oi.notna().reindex(index).fillna(False)
+                continue
+            except Exception as exc:
+                tprint(f"WARN perp row data filter sidecar load failed for {symbol}: {exc}")
+        funding_panel = panel.get("funding_rate")
+        oi_panel = panel.get("open_interest")
+        if isinstance(funding_panel, pd.DataFrame) and symbol in funding_panel.columns:
+            funding_ok[symbol] = (
+                pd.to_numeric(funding_panel[symbol], errors="coerce")
+                .notna()
+                .reindex(index)
+                .fillna(False)
+            )
+        else:
+            funding_ok[symbol] = pd.Series(False, index=index)
+        if isinstance(oi_panel, pd.DataFrame) and symbol in oi_panel.columns:
+            oi_ok[symbol] = (
+                pd.to_numeric(oi_panel[symbol], errors="coerce")
+                .notna()
+                .reindex(index)
+                .fillna(False)
+            )
+        else:
+            oi_ok[symbol] = pd.Series(False, index=index)
+
+    funding_mask = pd.DataFrame(funding_ok, index=index).reindex(columns=symbols).fillna(False)
+    oi_mask = pd.DataFrame(oi_ok, index=index).reindex(columns=symbols).fillna(False)
+    combined = (mask & funding_mask & oi_mask).astype(bool)
+    before = int(mask.sum().sum())
+    after = int(combined.sum().sum())
+    tprint(
+        "Perp row market-data filter: requiring native OHLCV + funding_rate + "
+        f"open_interest rows ({before:,}->{after:,} eligible symbol-hours)."
+    )
+    return combined
+
+
+def _filter_label_frame_by_market_data_mask(
+    df: pd.DataFrame,
+    availability: pd.DataFrame | None,
+) -> pd.DataFrame:
+    if availability is None or df.empty:
+        return df
+    ts_col = "__ts__" if "__ts__" in df.columns else "timestamp" if "timestamp" in df.columns else None
+    sym_col = "__symbol__" if "__symbol__" in df.columns else "symbol" if "symbol" in df.columns else None
+    if ts_col is None or sym_col is None:
+        return df
+    idx = pd.to_datetime(df[ts_col], utc=True, errors="coerce").dt.floor("h")
+    syms = df[sym_col].astype(str).to_numpy()
+    avail = availability.reindex(index=idx)
+    keep = np.zeros(len(df), dtype=bool)
+    col_pos = {str(col): i for i, col in enumerate(avail.columns)}
+    vals = avail.to_numpy(dtype=bool, na_value=False)
+    for row_i, symbol in enumerate(syms):
+        j = col_pos.get(str(symbol))
+        if j is not None and row_i < vals.shape[0]:
+            keep[row_i] = bool(vals[row_i, j])
+    return df.loc[keep].copy()
 
 
 def _refresh_microdata_for_feature_window(
@@ -227,6 +485,7 @@ def _refresh_microdata_for_feature_window(
     symbols: list[str],
     start_ts: pd.Timestamp,
     end_ts: pd.Timestamp,
+    cfg: dict | None = None,
 ) -> None:
     if not symbols:
         return
@@ -244,7 +503,10 @@ def _refresh_microdata_for_feature_window(
         "Refreshing saved microdata for feature window: "
         f"symbols={len(symbols)} start={start_ts} end={end_ts}"
     )
-    fetcher = DataFetcher(data_root=data_root)
+    fetcher = DataFetcher(
+        data_root=data_root,
+        market_mode=(cfg or {}).get("market_mode", "spot"),
+    )
     ok = 0
     failed = 0
     for i, symbol in enumerate(symbols, start=1):
@@ -351,6 +613,19 @@ def _resolve_available_basket_symbols(
         if mapped and mapped not in resolved:
             resolved.append(mapped)
     return resolved
+
+
+def _resolve_available_symbol_by_base(
+    available_cols: list[str],
+    base: str,
+) -> str | None:
+    target = str(base).upper()
+    for sym in available_cols:
+        text = str(sym)
+        sym_base = text.split("/", 1)[0] if "/" in text else text
+        if sym_base.upper() == target:
+            return text
+    return None
 
 
 def _inject_orderbook_summary_features(
@@ -547,8 +822,10 @@ def _inject_orderbook_summary_features(
 
         store("ob_available", symbol, available)
         store("ob_snapshot_age_sec", symbol, age_sec)
+        store("ob_age_ratio", symbol, (age_sec / max(stale_seconds, 1.0)).clip(0.0, 1_000.0))
         store("ob_update_gap_flag", symbol, (age_sec > 5400).astype(np.float32))
         store("ob_stale_flag", symbol, stale_flag)
+        store("ob_coverage_24h", symbol, available.rolling(24, min_periods=1).mean())
         store("ob_spread_bps", symbol, spread_bps)
         store("ob_microprice_premium_bps", symbol, microprice_premium_bps)
         store("ob_mid_close_dislocation_bps", symbol, dislocation_bps)
@@ -564,6 +841,8 @@ def _inject_orderbook_summary_features(
         store("ob_depth_usd_l20", symbol, depth_usd_l20)
         store("ob_depth_usd_l10_z", symbol, depth_l10_z)
         store("ob_depth_usd_l20_z", symbol, depth_l20_z)
+        store("ob_depth_z_10bps", symbol, depth_l10_z)
+        store("ob_depth_z_25bps", symbol, depth_l20_z)
         store("ob_depth_usd_z_24h", symbol, depth_z)
         store("ob_spread_z_24h", symbol, spread_z)
         store("ob_liquidity_shock_z", symbol, liquidity_shock_z)
@@ -624,15 +903,17 @@ def _inject_orderbook_summary_features(
     feats["xasset_asset_minus_mkt_ob_pressure"] = (
         feats["ob_book_pressure_l10"].sub(mkt_ob_pressure, axis=0).astype(np.float32)
     )
+    btc_col = _resolve_available_symbol_by_base(cols, "BTC")
+    eth_col = _resolve_available_symbol_by_base(cols, "ETH")
     btc_pressure = (
-        feats["ob_book_pressure_l10"].get("BTC/USDC")
-        if "BTC/USDC" in feats["ob_book_pressure_l10"].columns
-        else feats["ob_book_pressure_l10"].get("BTC/USDT", mkt_ob_pressure)
+        feats["ob_book_pressure_l10"].get(btc_col, mkt_ob_pressure)
+        if btc_col
+        else mkt_ob_pressure
     )
     eth_pressure = (
-        feats["ob_book_pressure_l10"].get("ETH/USDC")
-        if "ETH/USDC" in feats["ob_book_pressure_l10"].columns
-        else feats["ob_book_pressure_l10"].get("ETH/USDT", mkt_ob_pressure)
+        feats["ob_book_pressure_l10"].get(eth_col, mkt_ob_pressure)
+        if eth_col
+        else mkt_ob_pressure
     )
     feats["xasset_btc_ob_pressure"] = pd.DataFrame(
         np.repeat(
@@ -716,11 +997,18 @@ def _inject_orderbook_summary_features(
     feats["xasset_asset_minus_basket_ob_pressure"] = ff.numba_rolling_zscore_fused(
         feats["xasset_asset_minus_mkt_ob_pressure"].astype(np.float32), 24 * 7
     ).astype(np.float32)
+    feats["xasset_asset_minus_mkt_ob_pressure_z_24h"] = feats[
+        "xasset_asset_minus_basket_ob_pressure"
+    ].astype(np.float32)
     feats["xasset_ob_liquidity_divergence"] = (
         feats["ob_depth_usd_l20_z"].sub(
             feats["ob_depth_usd_l20_z"].mean(axis=1), axis=0
         )
     ).astype(np.float32)
+    feats["xasset_ob_liquidity_divergence_z_24h"] = feats[
+        "xasset_ob_liquidity_divergence"
+    ].astype(np.float32)
+    feats["xasset_mkt_depth_to_qv_z"] = feats["xasset_mkt_depth_z"].astype(np.float32)
 
     rv24z = (
         ff.numba_rolling_zscore_fused(rv24h_panel.astype(np.float32), 14 * 24)
@@ -752,6 +1040,50 @@ def _inject_orderbook_summary_features(
         .clip(-12, 12)
         .astype(np.float32)
     )
+    feats["ob_depth_to_qv_z_x_rvol_z"] = feats["ob_depth_z_x_rvol_z"].astype(
+        np.float32
+    )
+    feats["ob_spread_bps_z_24h"] = feats["ob_spread_z_24h"].astype(np.float32)
+    feats["ob_spread_bps_z_7d"] = ff.numba_rolling_zscore_fused(
+        feats["ob_spread_bps"].astype(np.float32), 24 * 7
+    ).astype(np.float32)
+    feats["ob_l1_imbalance_z_24h"] = ff.numba_rolling_zscore_fused(
+        feats["ob_l1_imbalance"].astype(np.float32), 24
+    ).astype(np.float32)
+    feats["ob_microprice_dev_bps_z_24h"] = ff.numba_rolling_zscore_fused(
+        feats["ob_microprice_premium_bps"].astype(np.float32), 24
+    ).astype(np.float32)
+    feats["ob_mid_close_dislocation_bps_z_24h"] = ff.numba_rolling_zscore_fused(
+        feats["ob_mid_close_dislocation_bps"].astype(np.float32), 24
+    ).astype(np.float32)
+    quote_volume_24h = (close_panel * volume_panel).rolling(24, min_periods=6).sum().shift(1)
+    feats["ob_top_liquidity_to_qv_24h"] = (
+        feats["ob_top_liquidity_usd"]
+        .div(quote_volume_24h.abs() + eps)
+        .replace([np.inf, -np.inf], np.nan)
+        .astype(np.float32)
+    )
+    feats["ob_depth_l10_to_qv_24h"] = (
+        feats["ob_depth_usd_l10"]
+        .div(quote_volume_24h.abs() + eps)
+        .replace([np.inf, -np.inf], np.nan)
+        .astype(np.float32)
+    )
+    feats["ob_depth_l20_to_qv_24h"] = (
+        feats["ob_depth_usd_l20"]
+        .div(quote_volume_24h.abs() + eps)
+        .replace([np.inf, -np.inf], np.nan)
+        .astype(np.float32)
+    )
+    feats["ob_depth_l20_to_qv_z_7d"] = ff.numba_rolling_zscore_fused(
+        feats["ob_depth_l20_to_qv_24h"].astype(np.float32), 24 * 7
+    ).astype(np.float32)
+    feats["ob_notional_to_depth_l20_z_24h"] = ff.numba_rolling_zscore_fused(
+        feats["ob_notional_to_depth_l20"].astype(np.float32), 24
+    ).astype(np.float32)
+    feats["ob_trade_size_to_l1_depth_z_24h"] = ff.numba_rolling_zscore_fused(
+        feats["ob_trade_size_to_l1_depth"].astype(np.float32), 24
+    ).astype(np.float32)
     if isinstance(ret24h_panel, pd.DataFrame):
         feats["ob_mid_close_dislocation_bps"] = (
             feats["ob_mid_close_dislocation_bps"]
@@ -771,11 +1103,26 @@ def _compute_features_hourly_runtime(
     runtime_cfg = dict(cfg)
     runtime_cfg["enable_orderbook_features"] = False
     runtime_cfg["enable_orderbook_wall_features"] = False
+    effective_requested_feature_keys = (
+        [str(k) for k in requested_feature_keys]
+        if requested_feature_keys is not None
+        else sorted(_expected_feature_keys_from_cfg(cfg))
+    )
+    effective_requested_feature_keys = [
+        k
+        for k in effective_requested_feature_keys
+        if _is_feature_allowed_by_runtime_portability_policy(k, cfg)
+    ]
+    compute_requested_feature_keys = [
+        str(k)
+        for k in effective_requested_feature_keys
+        if "orderbook" not in epm_features._feature_source_requirements(str(k))
+    ]
     feats, feat_index, feat_columns = compute_features_hourly(
         panel,
         mkt_gates,
         runtime_cfg,
-        requested_feature_keys=requested_feature_keys,
+        requested_feature_keys=compute_requested_feature_keys,
     )
     feats = _inject_orderbook_summary_features(
         feats,
@@ -797,9 +1144,35 @@ def _compute_features_hourly_runtime(
         panel,
         orderbook_by_symbol,
         cfg,
-        requested_feature_keys=requested_feature_keys,
+        requested_feature_keys=effective_requested_feature_keys,
     )
+    add_residual_features(feats, mkt_gates, cfg)
+    requested_set = {str(k) for k in effective_requested_feature_keys}
+    feats = {k: v for k, v in feats.items() if k in requested_set}
     return feats, feat_index, feat_columns
+
+
+def _is_feature_allowed_by_runtime_portability_policy(name: str, cfg: dict) -> bool:
+    portability_mode = str(cfg.get("feature_portability_mode", "")).strip().lower()
+    if portability_mode in {"", "legacy", "off"}:
+        return True
+    checker = getattr(epm_features, "_is_feature_allowed_for_portability_mode", None)
+    if checker is None:
+        return not is_non_portable_feature_key(name)
+    return bool(
+        checker(
+            str(name),
+            portability_mode,
+            fixed_basket=bool(cfg.get("feature_portability_fixed_basket", False)),
+            allow_volume_source_dependent=bool(
+                cfg.get("feature_portability_allow_volume_source_dependent", False)
+            ),
+            allow_dataset_selected=bool(
+                cfg.get("feature_portability_allow_dataset_selected", False)
+            ),
+            allow_state_tuned=bool(cfg.get("feature_portability_allow_state_tuned", False)),
+        )
+    )
 
 
 # Priority order for quote-currency deduplication.
@@ -833,7 +1206,6 @@ RAW_FEATURE_SCHEMA_UNAVAILABLE_KEYS: tuple[str, ...] = (
     "abs_mkt_ret24h_z",
     "atr_expansion_z",
     "bidirectional_range_ratio",
-    "blowoff_risk_surprise",
     "close_location_in_bar",
     "close_position_in_range",
     "coherence_24_z",
@@ -845,7 +1217,6 @@ RAW_FEATURE_SCHEMA_UNAVAILABLE_KEYS: tuple[str, ...] = (
     "distance_to_local_low",
     "effort_gate",
     "excess_6h_z",
-    "exh_qual_surprise",
     "flow_persistence_z",
     "gap_zscore",
     "hurst_proxy_24",
@@ -856,7 +1227,6 @@ RAW_FEATURE_SCHEMA_UNAVAILABLE_KEYS: tuple[str, ...] = (
     "mkt_rv_pct",
     "mtf_div_mag",
     "mtf_divergence",
-    "overext_surprise",
     "range_decay",
     "range_zscore",
     "ret_max",
@@ -916,7 +1286,6 @@ RAW_FEATURE_STRUCTURALLY_CONSTANT_KEYS: tuple[str, ...] = (
     "p_cusum_high",
     "p_liq_low",
     "p_vol_high",
-    "retest_accept",
     "skew_12",
     "skew_24",
     "stage_mr",
@@ -1218,7 +1587,6 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
         "downside_pred",
         "edge_minus_downside",
         "abs_edge_pred",
-        "p_exh_lag1",
         # Recent effectiveness diagnostics depend on prediction/outcome
         # artifacts produced after base/meta training, not raw market panels.
         "recent_bucket_n_top15_30d",
@@ -1317,9 +1685,22 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
             for prefix in RAW_FEATURE_STRUCTURALLY_CONSTANT_PREFIXES
         )
     }
-    return {
+    keys = {
         str(k) for k in keys if str(k) and str(k) not in _DISABLED_PIPELINE_FEATURE_KEYS
     }
+    group_ref_names = {
+        str(k)
+        for k, v in cfg.items()
+        if str(k).endswith("_FEATURE_KEYS") and isinstance(v, (list, tuple))
+    }
+    keys.difference_update(group_ref_names)
+    if str(cfg.get("feature_portability_mode", "")).strip().lower() not in {
+        "",
+        "legacy",
+        "off",
+    }:
+        keys = {k for k in keys if _is_feature_allowed_by_runtime_portability_policy(k, cfg)}
+    return keys
 
 
 def _labeling_feature_keys(cfg) -> set[str]:
@@ -2276,13 +2657,21 @@ def _load_close_panel_for_symbols(
         if len(df) < min_rows:
             skipped_log.append(f"{s}: Insufficient data ({len(df)} rows < {min_rows})")
             continue
-        last_ts = df.index[-1]
+        close = pd.to_numeric(df.get("close"), errors="coerce")
+        valid_close_rows = int(close.notna().sum())
+        if valid_close_rows < min_rows:
+            skipped_log.append(
+                f"{s}: Insufficient valid close data "
+                f"({valid_close_rows} rows < {min_rows})"
+            )
+            continue
+        last_ts = close.dropna().index[-1] if close.notna().any() else df.index[-1]
         if (data_end_ts - last_ts).days > 180:
             skipped_log.append(
                 f"{s}: Stale data (Last: {last_ts}, Target: {data_end_ts})"
             )
             continue
-        ser = df["close"].tail(24 * lookback_days).rename(s)
+        ser = close.tail(24 * lookback_days).rename(s)
         close_map[s] = ser
         loaded_syms.append(s)
     if not close_map:
@@ -2392,7 +2781,10 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     if _bucket_csv.exists() and not _strategy_allowlist_env:
         import json as _json
 
-        _bdf = pd.read_csv(_bucket_csv)
+        try:
+            _bdf = pd.read_csv(_bucket_csv)
+        except pd.errors.EmptyDataError:
+            _bdf = pd.DataFrame()
         if not _bdf.empty and "strategy_id" in _bdf.columns:
             _strategies = []
             for _, _row in _bdf.iterrows():
@@ -2636,6 +3028,7 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         if isinstance(v, pd.DataFrame)
     }
     feats = _align_features_to_panel(feats, panel, valid_syms)
+    perp_row_availability = _perp_required_market_data_mask(cfg, panel, valid_syms)
     _label_close = panel.get("close")
     _label_data_end_ts = pd.Timestamp(ts_sig)
     if isinstance(_label_close, pd.DataFrame) and not _label_close.empty:
@@ -2665,7 +3058,21 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         _label_data_end_ts,
         None,
         horizons=horizons,
+        row_availability=perp_row_availability,
     )
+    if perp_row_availability is not None:
+        for name in list(datasets.keys()):
+            before_rows = len(datasets[name])
+            datasets[name] = _filter_label_frame_by_market_data_mask(
+                datasets[name],
+                perp_row_availability,
+            )
+            after_rows = len(datasets[name])
+            if after_rows != before_rows:
+                tprint(
+                    f"Perp row market-data filter applied to {name}: "
+                    f"{before_rows:,}->{after_rows:,} rows"
+                )
 
     # Use SlicePlanner to determine walk-forward test set and exclude it from training data
     if bool(cfg.get("label_skip_slice_planner", False)):
@@ -2694,18 +3101,34 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         n_ts = len(_idx)
         n_syms = len(_syms)
 
-        # Flattened grid
-        t0_array = np.repeat(_idx, n_syms)
-        sym_array = np.tile(_syms, n_ts)
+        if perp_row_availability is not None:
+            event_avail = perp_row_availability.reindex(index=_idx, columns=_syms).fillna(False)
+            row_idx, col_idx = np.where(event_avail.to_numpy(dtype=bool))
+            events = pd.DataFrame(
+                {
+                    "event_id": np.arange(len(row_idx), dtype=np.int64),
+                    "symbol": _syms.to_numpy()[col_idx],
+                    "t0": _idx.to_numpy()[row_idx],
+                    "t1": _idx.to_numpy()[row_idx],
+                }
+            )
+            tprint(
+                "SlicePlanner baseline events restricted to rows with native OHLCV, "
+                f"funding_rate, and open_interest: {len(events):,} events"
+            )
+        else:
+            # Flattened grid
+            t0_array = np.repeat(_idx, n_syms)
+            sym_array = np.tile(_syms, n_ts)
 
-        events = pd.DataFrame(
-            {
-                "event_id": np.arange(len(t0_array), dtype=np.int64),
-                "symbol": sym_array,
-                "t0": t0_array,
-                "t1": t0_array,
-            }
-        )
+            events = pd.DataFrame(
+                {
+                    "event_id": np.arange(len(t0_array), dtype=np.int64),
+                    "symbol": sym_array,
+                    "t0": t0_array,
+                    "t1": t0_array,
+                }
+            )
 
         # SAVE EVENTS FOR DOWNSTREAM
         _events_path = os.path.join(
@@ -3069,7 +3492,82 @@ def run_training_step(
     ts_sig, cfg, store=None, margin_symbols=None, base_only=False, meta_only=False
 ):
     """Train all models from label artifacts. Saves trained state to disk."""
+    market_mode = str(
+        cfg.get("market_mode") or ("perps" if cfg.get("use_perps") else "spot")
+    ).strip().lower()
+    exchange_id = str(
+        cfg.get("exchange_id") or cfg.get("exchange") or os.environ.get("EPM_EXCHANGE") or "binance"
+    ).strip().lower()
+    if exchange_id in {"krakenfutures", "kraken_futures"}:
+        exchange_id = "kraken"
+    expected_scope = exchange_data_component(exchange_id, market_mode)
+    data_root_norm = os.path.normpath(str(cfg.get("data_root", "data")))
+    scoped_root_norm = os.path.normpath(scoped_data_root({**cfg, "exchange_id": exchange_id, "market_mode": market_mode}))
+    if not use_exchange_scoped_data(cfg):
+        raise ValueError(
+            "Training contract violation: exchange_scoped_data must be enabled "
+            f"for per-exchange models (exchange={exchange_id}, mode={market_mode})."
+        )
+    cfg["exchange_id"] = exchange_id
+    cfg["exchange"] = exchange_id
+    cfg["exchange_data_component"] = expected_scope
+    cfg["training_exchange_contract"] = {
+        "exchange_id": exchange_id,
+        "market_mode": market_mode,
+        "exchange_data_component": expected_scope,
+        "data_root": data_root_norm,
+        "scoped_market_data_root": scoped_root_norm,
+        "exchange_scoped_data": True,
+    }
+    _allowlist_env_name = "EPM_META_STRATEGY_IDS" if meta_only else "EPM_BASE_STRATEGY_IDS"
+    _strategy_ids_env = str(os.environ.get(_allowlist_env_name, "")).strip()
+    _preselected_strategy_ids = [
+        str(s.get("strategy_id", "")).strip()
+        for s in (cfg.get("strategies") or [])
+        if isinstance(s, dict) and str(s.get("strategy_id", "")).strip()
+    ]
     cfg = apply_offline_optimizer_best_params(dict(cfg))
+    if _strategy_ids_env or _preselected_strategy_ids:
+        requested_ids = [
+            s.strip() for s in _strategy_ids_env.split(",") if s.strip()
+        ] or _preselected_strategy_ids
+        requested_set = set(requested_ids)
+        all_strategies = get_strategies(cfg)
+        selected_strategies = [
+            s
+            for s in all_strategies
+            if str(s.get("strategy_id", "")).strip() in requested_set
+        ]
+        if selected_strategies:
+            order = {sid: i for i, sid in enumerate(requested_ids)}
+            selected_strategies.sort(
+                key=lambda s: order.get(str(s.get("strategy_id", "")), 10**9)
+            )
+            cfg["strategies"] = selected_strategies
+            missing_ids = [
+                sid
+                for sid in requested_ids
+                if sid
+                not in {
+                    str(s.get("strategy_id", "")).strip()
+                    for s in selected_strategies
+                }
+            ]
+            tprint(
+                "Training step: explicit strategy allowlist preserved after "
+                f"offline params reload; selected {len(selected_strategies)}/"
+                f"{len(requested_ids)} strategies"
+            )
+            if missing_ids:
+                tprint(
+                    "WARNING: training-step strategy allowlist missing after "
+                    f"offline params reload: {missing_ids}"
+                )
+        else:
+            tprint(
+                "WARNING: training-step strategy allowlist matched no strategies "
+                "after offline params reload; using loaded registry"
+            )
     cfg = ensure_training_residualization_feature_keys(cfg)
     planner_preset = str(cfg.get("slice_planner_preset", "fast")).lower()
     cfg["slice_planner_preset"] = "robust" if planner_preset == "robust" else "fast"
@@ -3365,6 +3863,7 @@ def run_training_step(
         "ts_trained": ts_sig,
         "bundle": trained_bundle,
         "risk_params": default_risk,
+        "training_exchange_contract": cfg.get("training_exchange_contract", {}),
     }
 
     state_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "models")
@@ -3377,6 +3876,10 @@ def run_training_step(
         pickle.load(f)
     os.replace(tmp_state_path, state_path)
     tprint(f"Saved trained state atomically to {state_path}")
+    contract_path = os.path.join(state_dir, "training_exchange_contract.json")
+    with open(contract_path, "w", encoding="utf-8") as f:
+        json.dump(cfg.get("training_exchange_contract", {}), f, indent=2, sort_keys=True)
+    tprint(f"Saved training exchange contract to {contract_path}")
 
     # Log summary
     bundle = trained_bundle
@@ -4069,7 +4572,6 @@ def run_base_hpo_step(ts_sig, cfg):
         )
         base_req_keys.update(
             {
-                "p_exh_lag1",
                 "G_VOL",
                 "G_TREND",
                 "mkt_ret24h",
@@ -4089,7 +4591,6 @@ def run_base_hpo_step(ts_sig, cfg):
 
         allowed_keys = set(strat.get("feature_keys") or [])
         std_inputs = {
-            "p_exh_lag1",
             "G_VOL",
             "G_TREND",
             "mkt_ret24h",
@@ -4533,17 +5034,35 @@ def _extract_required_features(bundle, cfg):
         nonlocal model_feature_count
         if _model is None:
             return
-        for _attr in (
-            "selected_features",
-            "selected_features_",
-            "feature_names_",
-            "feature_cols",
+        seen_objs = []
+        for _obj in (
+            _model,
+            getattr(_model, "best_model", None),
+            getattr(getattr(_model, "best_model", None), "estimator", None),
         ):
-            _vals = getattr(_model, _attr, None)
-            if isinstance(_vals, (list, tuple, set)):
-                _added = {str(v) for v in _vals if isinstance(v, str) and v}
-                model_feature_count += len(_added)
-                _req.update(_added)
+            if _obj is not None and id(_obj) not in seen_objs:
+                seen_objs.append(id(_obj))
+        objs = [_model]
+        _best = getattr(_model, "best_model", None)
+        if _best is not None:
+            objs.append(_best)
+            _est = getattr(_best, "estimator", None)
+            if _est is not None:
+                objs.append(_est)
+        for _obj in objs:
+            for _attr in (
+                "selected_features",
+                "selected_features_",
+                "feature_names_",
+                "feature_cols",
+                "input_feature_names",
+            ):
+                _vals = getattr(_obj, _attr, None)
+                if isinstance(_vals, (list, tuple, set)):
+                    _added = {str(v) for v in _vals if isinstance(v, str) and v}
+                    model_feature_count += len(_added)
+                    _req.update(_added)
+        return
 
     def _add_alpha_stack(_req, _alpha_models):
         nonlocal model_feature_count
@@ -4551,6 +5070,26 @@ def _extract_required_features(bundle, cfg):
             return
         for _side_bundle in _alpha_models.values():
             if not isinstance(_side_bundle, dict):
+                continue
+            if "model" in _side_bundle or "feat_cols" in _side_bundle:
+                _feat_cols = {
+                    str(v)
+                    for v in _side_bundle.get("feat_cols", [])
+                    if isinstance(v, str) and v
+                }
+                model_feature_count += len(_feat_cols)
+                _req.update(_feat_cols)
+                _by_h = _side_bundle.get("models_by_h", {})
+                if isinstance(_by_h, dict):
+                    for _info in _by_h.values():
+                        if isinstance(_info, dict):
+                            _feat_cols_h = {
+                                str(v)
+                                for v in _info.get("feat_cols", [])
+                                if isinstance(v, str) and v
+                            }
+                            model_feature_count += len(_feat_cols_h)
+                            _req.update(_feat_cols_h)
                 continue
             for _kind_bundle in _side_bundle.values():
                 if not isinstance(_kind_bundle, dict):
@@ -4573,6 +5112,24 @@ def _extract_required_features(bundle, cfg):
                             }
                             model_feature_count += len(_feat_cols_h)
                             _req.update(_feat_cols_h)
+
+    def _has_native_alpha_stack(_alpha_models) -> bool:
+        if not isinstance(_alpha_models, dict):
+            return False
+        for _key, _value in _alpha_models.items():
+            if not isinstance(_value, dict):
+                continue
+            if "model" in _value or "feat_cols" in _value:
+                return True
+            if str(_key) in {"long", "short"} and not (
+                "mr" in _value or "tf" in _value
+            ):
+                for _info in _value.values():
+                    if isinstance(_info, dict) and (
+                        "model" in _info or "feat_cols" in _info
+                    ):
+                        return True
+        return False
 
     # Minimal runtime essentials for candidate generation, backtest windowing, and regime boundaries.
     req_feats = {
@@ -4608,9 +5165,11 @@ def _extract_required_features(bundle, cfg):
     req_feats.update({"sin_hod", "cos_hod"})
 
     if isinstance(bundle, dict):
-        _add_alpha_stack(req_feats, bundle.get("alpha_models", {}))
+        _alpha_models = bundle.get("alpha_models", {})
+        _native_alpha_stack = _has_native_alpha_stack(_alpha_models)
+        _add_alpha_stack(req_feats, _alpha_models)
         _meta_models = bundle.get("meta_models", {})
-        if isinstance(_meta_models, dict):
+        if isinstance(_meta_models, dict) and not _native_alpha_stack:
             for _meta in _meta_models.values():
                 _add_model_feature_cols(req_feats, _meta)
         _spike = bundle.get("spike_models", {})
@@ -4967,7 +5526,14 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
         # Materialize runtime-required matrices once, before the hourly loop.
         # This avoids repeated lazy assembly in the hot signal-generation path.
         _materialize_keys = sorted(set(req_feats) | {"atr_pct"})
-        feats.materialize(_materialize_keys, progress_every=20)
+        _max_materialize = int(cfg.get("backtest_max_prematerialize_features", 500) or 500)
+        if len(_materialize_keys) <= _max_materialize:
+            feats.materialize(_materialize_keys, progress_every=20)
+        else:
+            tprint(
+                "Skipping grouped feature pre-materialization: "
+                f"{len(_materialize_keys)} keys exceeds cap {_max_materialize}; using lazy access."
+            )
 
     # Compute stable regime boundaries for meta-models
     cfg["granular_regime_boundaries"] = compute_regime_boundaries(feats)
@@ -5458,13 +6024,31 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                     pol.get("max_hold_hours_eff", rp.get("max_hold_hours", 24))
                 )
 
-                # Initialize CCXT exchange for 15m precision if enabled
+                # Initialize CCXT exchange for 15m precision if enabled.
                 exchange = None
                 if cfg.get("use_15m_precision", False):
                     try:
                         import ccxt
 
-                        exchange = ccxt.binance()
+                        exchange_id = str(
+                            cfg.get("exchange_id")
+                            or cfg.get("exchange")
+                            or os.environ.get("EPM_EXCHANGE")
+                            or "binance"
+                        ).strip().lower()
+                        market_mode = str(
+                            cfg.get("market_mode")
+                            or ("perps" if cfg.get("use_perps") else "spot")
+                        ).strip().lower()
+                        ccxt_id = exchange_id
+                        if exchange_id == "kraken" and market_mode in {"perp", "perps", "swap", "future", "futures"}:
+                            ccxt_id = "krakenfutures"
+                        elif exchange_id in {"krakenfutures", "kraken_futures"}:
+                            ccxt_id = "krakenfutures"
+                        elif exchange_id == "binance" and market_mode in {"perp", "perps", "swap", "future", "futures"}:
+                            ccxt_id = "binanceusdm"
+                        exchange_cls = getattr(ccxt, ccxt_id)
+                        exchange = exchange_cls()
                     except Exception as e:
                         tprint(f"WARNING: Failed to initialize CCXT exchange: {e}")
 
@@ -5537,6 +6121,11 @@ def run_backtest_step(ts_sig, margin_symbols, cfg, store, state_file):
                     "symbol": sym,
                     "side": side,
                     "dom": dom,
+                    "strategy_id": order.get("strategy_id", f"{side}_{dom}"),
+                    "strategy_for_inference": order.get(
+                        "strategy_for_inference",
+                        order.get("strategy_id", f"{side}_{dom}"),
+                    ),
                     "asset": sym,
                     "t_entry": int(entry_ts.value),
                     "t_exit": int(exit_ts.value),
@@ -6710,7 +7299,7 @@ def run_feature_generation_step(
             ts_sig=ts_sig,
             lookback_days=lookback_days,
             end_ts=feature_data_end_ts,
-            min_rows=24 * 15 if explicit_feature_subset else 24 * 60,
+            min_rows=24 * 15 if explicit_feature_subset else 24 * 120,
         )
         tprint(
             f"Close-only cache precheck loaded {len(loaded_close_syms)} symbols. "
@@ -6788,19 +7377,45 @@ def run_feature_generation_step(
                     f"already_covered={tail_cutoff_stats['already_covered']}"
                 )
             else:
-                _n_syms = len(close_panel_light.columns)
-                _n_feats = len(expected_keys)
-                tprint(
-                    f"Features already exist and cover full target period: "
-                    f"{_n_feats} features × {_n_syms} symbols. Skipping recomputation."
-                )
-                _generate_feature_health_reports(
-                    ts_sig, cfg["data_root"], allowed_symbols=train_syms
-                )
-                tprint("STEP: FEATURE GENERATION COMPLETE (cached)")
-                return
+                if not os.environ.get("EPM_FEATURE_BACKFILL_KEYS", "").strip():
+                    _n_syms = len(close_panel_light.columns)
+                    _n_feats = len(expected_keys)
+                    tprint(
+                        f"Features already exist and cover full target period: "
+                        f"{_n_feats} features × {_n_syms} symbols. Skipping recomputation."
+                    )
+                    _generate_feature_health_reports(
+                        ts_sig, cfg["data_root"], allowed_symbols=loaded_close_syms
+                    )
+                    tprint("STEP: FEATURE GENERATION COMPLETE (cached)")
+                    return
         else:
             backfill_keys = sorted(expected_keys)
+    elif not existing_files and not force_full_recompute:
+        backfill_keys = sorted(expected_keys)
+        tprint(
+            f"No existing feature cache found for {ts_sig}; "
+            "streaming all expected features in chunked non-force mode."
+        )
+
+    explicit_backfill_keys_raw = os.environ.get("EPM_FEATURE_BACKFILL_KEYS", "").strip()
+    if explicit_backfill_keys_raw and not force_full_recompute:
+        explicit_backfill_keys = sorted(
+            {
+                k.strip()
+                for k in explicit_backfill_keys_raw.replace("\n", ",").split(",")
+                if k.strip()
+            }
+        )
+        if explicit_backfill_keys:
+            backfill_keys = explicit_backfill_keys
+            full_rewrite_symbols_for_backfill = set(train_syms)
+            precomputed_tail_cutoffs = {}
+            tail_cutoff_stats = None
+            tprint(
+                "Explicit feature backfill key override: "
+                f"{len(backfill_keys)} keys"
+            )
 
     # 3. Load Data
     dfs = {}
@@ -6830,7 +7445,6 @@ def run_feature_generation_step(
         )
         for s in syms_to_load:
             df = store.load(s, end_ts=feature_data_end_ts)
-
             # Constraints Check
             if df.empty:
                 skipped_log.append(f"{s}: Empty DataFrame")
@@ -6839,15 +7453,33 @@ def run_feature_generation_step(
             # Check length. Full-universe runs keep the mature-history guard;
             # explicit backfills allow newer listings and emit leading NaNs for
             # long-window features until enough history accrues.
-            min_rows = 24 * 15 if explicit_feature_subset else 24 * 60
+            min_rows = 24 * 15 if explicit_feature_subset else 24 * 120
             if len(df) < min_rows:
                 skipped_log.append(
                     f"{s}: Insufficient data ({len(df)} rows < {min_rows})"
                 )
                 continue
+            valid_close_rows = (
+                int(pd.to_numeric(df.get("close"), errors="coerce").notna().sum())
+                if "close" in df.columns
+                else 0
+            )
+            if valid_close_rows < min_rows:
+                skipped_log.append(
+                    f"{s}: Insufficient valid close data "
+                    f"({valid_close_rows} rows < {min_rows})"
+                )
+                continue
 
             # Check recent data freshness?
-            last_ts = df.index[-1]
+            valid_close = (
+                pd.to_numeric(df["close"], errors="coerce")
+                if "close" in df.columns
+                else pd.Series(dtype=float)
+            )
+            last_ts = (
+                valid_close.dropna().index[-1] if valid_close.notna().any() else df.index[-1]
+            )
             if (feature_data_end_ts - last_ts).days > 180:
                 skipped_log.append(
                     f"{s}: Stale data (Last: {last_ts}, Target: {feature_data_end_ts})"
@@ -6883,6 +7515,21 @@ def run_feature_generation_step(
     # 3. Compute Features (Panel)
     tprint("Constructing Panel...")
     panel = to_panel(dfs)
+    external_spot_panel = _load_external_kraken_spot_panels(
+        cfg, loaded_syms, panel["close"].index
+    )
+    for key, frame in external_spot_panel.items():
+        existing = panel.get(key)
+        if isinstance(existing, pd.DataFrame) and not existing.empty:
+            existing_count = int(existing.gt(0.0).sum().sum())
+            external_count = int(frame.gt(0.0).sum().sum())
+            if external_count <= existing_count:
+                continue
+            tprint(
+                f"Replacing sparse embedded {key} with external Kraken spot panel "
+                f"({existing_count:,}->{external_count:,} positive cells)."
+            )
+        panel[key] = frame
     if (
         bool(cfg.get("feature_refresh_microdata_before_compute", False))
         and "close" in panel
@@ -6893,11 +7540,13 @@ def run_feature_generation_step(
             loaded_syms,
             panel["close"].index.min(),
             panel["close"].index.max(),
+            cfg,
         )
     microdata_panel, orderbook_by_symbol = _load_saved_microdata_for_symbols(
         cfg["data_root"],
         loaded_syms,
         panel["close"].index,
+        cfg,
     )
     for key, frame in microdata_panel.items():
         existing = panel.get(key)
@@ -6906,10 +7555,37 @@ def run_feature_generation_step(
             and not existing.empty
             and np.isfinite(existing.to_numpy(dtype=np.float32, copy=False)).any()
         ):
+            existing_aligned = existing.reindex(index=frame.index, columns=frame.columns)
+            if key in {"open_interest", "mark_price", "index_price"}:
+                existing_count = int(
+                    existing_aligned.replace([np.inf, -np.inf], np.nan)
+                    .where(lambda x: x > 0.0)
+                    .count()
+                    .sum()
+                )
+                sidecar_count = int(
+                    frame.replace([np.inf, -np.inf], np.nan)
+                    .where(lambda x: x > 0.0)
+                    .count()
+                    .sum()
+                )
+            else:
+                existing_count = int(
+                    existing_aligned.replace([np.inf, -np.inf], np.nan).count().sum()
+                )
+                sidecar_count = int(
+                    frame.replace([np.inf, -np.inf], np.nan).count().sum()
+                )
+            if sidecar_count <= existing_count:
+                tprint(
+                    f"Keeping OHLCV-embedded {key}; sidecar coverage "
+                    f"{sidecar_count:,}<={existing_count:,} cells."
+                )
+                continue
             tprint(
-                f"Keeping OHLCV-embedded {key}; sidecar only used when panel channel is missing."
+                f"Replacing sparse OHLCV-embedded {key} with sidecar panel "
+                f"({existing_count:,}->{sidecar_count:,} cells)."
             )
-            continue
         panel[key] = frame
     if microdata_panel:
         tprint(
@@ -6974,12 +7650,40 @@ def run_feature_generation_step(
 
         for ci, start in enumerate(range(0, len(all_syms), chunk_size), start=1):
             chunk_syms = all_syms[start : start + chunk_size]
+            context_syms = list(chunk_syms)
+            all_syms_by_base: dict[str, str] = {}
+            for available_sym in all_syms:
+                available_text = str(available_sym)
+                available_base = (
+                    available_text.split("/", 1)[0]
+                    if "/" in available_text
+                    else available_text
+                )
+                all_syms_by_base.setdefault(available_base.upper(), available_text)
+
+            def add_context_symbol(raw_symbol: object) -> None:
+                raw_text = str(raw_symbol or "")
+                if not raw_text:
+                    return
+                resolved = raw_text if raw_text in all_syms else None
+                if resolved is None:
+                    raw_base = raw_text.split("/", 1)[0] if "/" in raw_text else raw_text
+                    resolved = all_syms_by_base.get(raw_base.upper())
+                if resolved and resolved not in context_syms:
+                    context_syms.append(resolved)
+
+            for sym in cfg.get("market_basket", []):
+                add_context_symbol(sym)
+            for key in ("primary_benchmark", "benchmark_1", "bench1_symbol"):
+                add_context_symbol(cfg.get(key, "") or "")
+            add_context_symbol("BTC")
+            add_context_symbol("ETH")
             tprint(
                 f"[Feature chunk {ci}/{total_chunks}] symbols={len(chunk_syms)} "
                 f"({chunk_syms[0]} .. {chunk_syms[-1]})"
             )
             panel_chunk_source = {
-                k: v.reindex(columns=chunk_syms).copy()
+                k: v.reindex(columns=context_syms).copy()
                 for k, v in panel.items()
                 if isinstance(v, pd.DataFrame)
             }
@@ -7021,7 +7725,7 @@ def run_feature_generation_step(
                 panel_chunk = {k: v.copy() for k, v in panel_chunk_source.items()}
                 orderbook_chunk = {
                     sym: orderbook_by_symbol[sym]
-                    for sym in chunk_syms
+                    for sym in context_syms
                     if sym in orderbook_by_symbol
                 }
                 compute_t0 = time.perf_counter()
@@ -7053,6 +7757,22 @@ def run_feature_generation_step(
                     }
                 else:
                     batch_backfill_keys = []
+
+                if context_syms != chunk_syms:
+                    chunk_col_index = pd.Index(chunk_syms)
+                    feats_chunk = {
+                        k: (
+                            v.reindex(columns=chunk_col_index)
+                            if isinstance(v, pd.DataFrame)
+                            else (
+                                v[:, : len(chunk_syms)]
+                                if isinstance(v, np.ndarray) and v.ndim == 2
+                                else v
+                            )
+                        )
+                        for k, v in feats_chunk.items()
+                    }
+                    feat_columns = chunk_syms
 
                 feats_chunk = _drop_known_unusable_raw_feature_keys(
                     feats_chunk,
@@ -7211,6 +7931,8 @@ def run_feature_generation_step(
                 feat_index = output_index
             feat_columns = keep_cols
 
+        add_residual_features(feats, mkt_gates, cfg)
+
         if backfill_keys and not force_full_recompute:
             backfill_set = set(backfill_keys)
             selected_backfill_keys = requested_feature_keys or []
@@ -7323,14 +8045,14 @@ def run_feature_generation_step(
             panel_close=completeness_panel,
         )
         _generate_feature_health_reports(
-            ts_sig, cfg["data_root"], allowed_symbols=train_syms
+            ts_sig, cfg["data_root"], allowed_symbols=loaded_syms
         )
         health_feats = load_features_for_stage_or_all(
             cfg,
             ts_sig,
             cfg["data_root"],
             feature_keys=FEATURE_HEALTH_CRITICAL_KEYS,
-            symbols=train_syms,
+            symbols=loaded_syms,
         )
         if health_feats is None:
             raise RuntimeError(
@@ -7736,7 +8458,6 @@ def _base_training_feature_requirements_from_hpo(cfg, datasets, default_req_keys
         return default_req_keys
 
     std_inputs = {
-        "p_exh_lag1",
         "G_VOL",
         "G_TREND",
         "mkt_ret24h",

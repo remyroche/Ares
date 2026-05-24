@@ -1,4 +1,5 @@
 import glob
+import json
 import os
 import random
 import re
@@ -35,12 +36,13 @@ HARDCODED_EXCLUDED_SYMBOLS = frozenset(
         "MANTRA/USDC",
     }
 )
-DEDUP_QUOTES = ("USDC", "USDT")
+DEDUP_QUOTES = ("USD", "USDC", "USDT")
 DEDUP_QUOTE_PRIORITY = {quote: rank for rank, quote in enumerate(DEDUP_QUOTES)}
 SUPPORTED_TRAINING_QUOTES = frozenset(DEDUP_QUOTES)
 SPOT_QUOTE_SUFFIXES = (
     "USDT",
     "USDC",
+    "USD",
     "BUSD",
     "USD1",
     "FDUSD",
@@ -156,12 +158,12 @@ def _is_supported_training_symbol(symbol: str) -> bool:
     if not norm or "/" not in norm:
         return False
     _base, quote = norm.rsplit("/", 1)
-    return quote in SUPPORTED_TRAINING_QUOTES
+    return quote.split(":", 1)[0] in SUPPORTED_TRAINING_QUOTES
 
 
 def _is_valid_spot_symbol_format(symbol: str) -> bool:
     norm = _normalize_symbol(symbol)
-    return bool(re.fullmatch(r"[A-Z0-9]+/[A-Z0-9]+", norm or ""))
+    return bool(re.fullmatch(r"[A-Z0-9]+/[A-Z0-9]+(:[A-Z0-9]+)?", norm or ""))
 
 
 def deduplicate_symbols_by_base(symbols: list[str]) -> list[str]:
@@ -179,10 +181,11 @@ def deduplicate_symbols_by_base(symbols: list[str]) -> list[str]:
             passthrough.add(symbol)
             continue
         base, quote = symbol.rsplit("/", 1)
-        if not base or quote not in DEDUP_QUOTE_PRIORITY:
+        quote_key = quote.split(":", 1)[0]
+        if not base or quote_key not in DEDUP_QUOTE_PRIORITY:
             passthrough.add(symbol)
             continue
-        rank = DEDUP_QUOTE_PRIORITY[quote]
+        rank = DEDUP_QUOTE_PRIORITY[quote_key]
         current = best_by_base.get(base)
         if (
             current is None
@@ -566,21 +569,102 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
             out.append(raw.replace("_", "/", 1))
         return apply_hardcoded_universe_exclusions(out)
 
+    def _kraken_dual_market_manifest_symbols(_cfg):
+        if str(_cfg.get("exchange_id") or _cfg.get("exchange") or "").lower() != "kraken":
+            return []
+        data_root = str(_cfg.get("data_root") or "data_perp")
+        manifest_dir = os.path.join(
+            data_root,
+            "exchanges",
+            "krakenfutures",
+            "manifests",
+        )
+        for filename in (
+            "kraken_dual_market_universe_latest.json",
+            "kraken_dual_market_verified_universe_latest.json",
+        ):
+            path = os.path.join(manifest_dir, filename)
+            if not os.path.exists(path):
+                continue
+            try:
+                with open(path, "r", encoding="utf-8") as fp:
+                    payload = json.load(fp)
+            except Exception as exc:
+                tprint(f"Warning: failed to load Kraken universe manifest {path}: {exc}")
+                continue
+            symbols = [
+                str(item.get("perp_symbol") or "")
+                for item in payload.get("symbols", [])
+                if item.get("perp_symbol")
+            ]
+            if symbols:
+                return apply_hardcoded_universe_exclusions(symbols)
+        return []
+
+    def _filter_kraken_symbols_with_positive_open_interest(symbols, _cfg):
+        if not symbols:
+            return symbols
+        data_root = str(_cfg.get("data_root") or "data_perp")
+        funding_dir = os.path.join(
+            data_root,
+            "exchanges",
+            "krakenfutures",
+            "funding_hourly",
+        )
+        kept: list[str] = []
+        removed: list[str] = []
+        for sym in symbols:
+            key = str(sym).replace("/", "_").replace(":", "_")
+            path = os.path.join(funding_dir, f"{key}.parquet")
+            if not os.path.exists(path):
+                removed.append(str(sym))
+                continue
+            try:
+                df = pd.read_parquet(path, columns=["open_interest"])
+                oi = pd.to_numeric(df["open_interest"], errors="coerce")
+            except Exception:
+                removed.append(str(sym))
+                continue
+            if bool((oi > 0).any()):
+                kept.append(str(sym))
+            else:
+                removed.append(str(sym))
+        if removed:
+            tprint(
+                "Kraken perp offline universe removed "
+                f"{len(removed)} symbols without positive open_interest."
+            )
+        return kept
+
     offline_universe = bool(cfg.get("offline_backtest_skip_universe_refresh", False))
     offline_no_api = bool(cfg.get("offline_universe_no_api", False))
+    is_kraken_perps = (
+        bool(cfg.get("use_perps", False))
+        and str(cfg.get("exchange_id") or cfg.get("exchange") or "").lower() == "kraken"
+    )
     if offline_universe:
         tprint(
             "Training universe: offline mode enabled, skipping margin refresh and live ticker ranking."
         )
         local_syms = _local_store_symbols(store)
-        base_syms = margin_symbols if margin_symbols is not None else local_syms
+        kraken_manifest_syms = _kraken_dual_market_manifest_symbols(cfg) if is_kraken_perps else []
+        base_syms = (
+            margin_symbols
+            if margin_symbols is not None
+            else (kraken_manifest_syms or local_syms)
+        )
         if not base_syms:
             base_syms = list(cfg.get("market_basket", []))
         # In offline mode, use all available symbols (no volume data to remove bottom 30).
         # Perp mode deduplicates quote variants by base, preferring USDC over USDT.
         if bool(cfg.get("use_perps", False)):
             train_syms = deduplicate_symbols_by_base(list(set(base_syms)))
-            if offline_no_api:
+            if is_kraken_perps:
+                tprint(
+                    "Kraken perp offline universe: using Kraken dual-market/local symbols "
+                    "without Binance margin-base filtering."
+                )
+            elif offline_no_api:
                 tprint(
                     "Perp offline universe: no-network mode enabled; using local cached/store symbols directly."
                 )
@@ -612,13 +696,15 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
         else:
             train_syms = deduplicate_symbols_by_base(list(set(base_syms)))
         train_syms = apply_hardcoded_universe_exclusions(train_syms)
-        if not offline_no_api:
+        if (not offline_no_api) and (not is_kraken_perps):
             train_syms = filter_symbols_without_perp_support(train_syms)
         train_syms = filter_symbols_by_min_asset_existence_days(
             train_syms,
             store,
             min_days=int(cfg.get("min_asset_existence_days", MIN_ASSET_EXISTENCE_DAYS)),
         )
+        if is_kraken_perps:
+            train_syms = _filter_kraken_symbols_with_positive_open_interest(train_syms, cfg)
         M = int(cfg.get("fetch_symbols_M", 9999))
         if len(train_syms) > M:
             tprint(

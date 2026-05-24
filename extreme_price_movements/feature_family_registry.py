@@ -213,6 +213,11 @@ _EXPLICIT_FAMILY_NAMES = {
 def get_feature_family(feature_name: str) -> FeatureFamily:
     name = str(feature_name or "")
     base_name = name
+    lowered = base_name.lower()
+    if lowered.endswith(
+        ("_ts_resid", "_mkt_resid", "_bench_resid", "_peer_resid", "_surprise")
+    ):
+        return FeatureFamily.ALREADY_STANDARDIZED
     if base_name in {"price_minus_state_z", "price_innovation_z"}:
         return FeatureFamily.ALREADY_STANDARDIZED
     if base_name == "kalman_gain_1h":
@@ -246,7 +251,24 @@ def get_feature_family(feature_name: str) -> FeatureFamily:
             "FEATURE_FAMILY_REGISTRY or handled in get_feature_family()."
         )
 
-    lowered = base_name.lower()
+    if lowered in {
+        "asset_atr_level",
+        "asset_atr_level_pct",
+        "asset_vol_level",
+        "asset_vol_level_pct",
+        "funding_rank_30d",
+        "basis_frac_rank_30d",
+        "oi_rank",
+        "ob_available",
+        "ob_coverage_24h",
+    }:
+        return FeatureFamily.BOUNDED_GEOMETRY
+    if lowered == "vol_state":
+        return FeatureFamily.ALREADY_STANDARDIZED
+    if lowered == "quote_volume_z_30d":
+        return FeatureFamily.ALREADY_STANDARDIZED
+    if lowered in {"qv", "log_quote_volume"}:
+        return FeatureFamily.RISK_NORMALIZED_CONTINUOUS
     if "_self_z_" in lowered or lowered.endswith("_self_z"):
         return FeatureFamily.ALREADY_STANDARDIZED
     if lowered.startswith(("loc_", "dist_", "zscore_")):

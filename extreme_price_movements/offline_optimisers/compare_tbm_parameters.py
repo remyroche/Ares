@@ -1710,7 +1710,10 @@ def _read_symbol_parquet_file(
         df = df.drop(columns=["year"])
 
     if not isinstance(df.index, pd.DatetimeIndex):
-        if "timestamp" in df.columns:
+        if "ts" in df.columns:
+            df["ts"] = pd.to_datetime(df["ts"], utc=True)
+            df = df.set_index("ts")
+        elif "timestamp" in df.columns:
             df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
             df = df.set_index("timestamp")
         else:

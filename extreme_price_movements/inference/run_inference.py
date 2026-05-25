@@ -5832,6 +5832,32 @@ def run_inference_step(
                     decision.get("threshold_score", decision.get("calibrated_score")),
                 )
             )
+
+            def _log_global_auction_skip(
+                stage: str,
+                reason: str,
+                *,
+                extra: Optional[Dict[str, Any]] = None,
+            ) -> None:
+                details: Dict[str, Any] = {
+                    "rank": rank_for_size,
+                    "threshold": threshold_for_size,
+                    "size": decision.get("size"),
+                }
+                if extra:
+                    details.update(extra)
+                compact = " ".join(
+                    f"{k}={v}"
+                    for k, v in details.items()
+                    if v is not None and v != ""
+                )
+                tprint(
+                    "Global auction skip: "
+                    f"{symbol} {side}/{strategy_id} stage={stage} "
+                    f"reason={reason}"
+                    + (f" {compact}" if compact else "")
+                )
+
             symbol_block_reason = _symbol_entry_block_reason(
                 symbol,
                 now=now_utc,
@@ -5843,6 +5869,7 @@ def run_inference_step(
                 side_metrics["non_fatal_issues"] = (
                     int(side_metrics.get("non_fatal_issues", 0)) + 1
                 )
+                _log_global_auction_skip("symbol_entry_block", symbol_block_reason)
                 _commit_global_side_metrics()
                 continue
             side_metrics["cooldown_pass"] = (
@@ -5890,6 +5917,18 @@ def run_inference_step(
                     side_metrics["non_fatal_issues"] = (
                         int(side_metrics.get("non_fatal_issues", 0)) + 1
                     )
+                    _log_global_auction_skip(
+                        "portfolio_pre_liquidity",
+                        str(info.get("reason") or "portfolio_rejected"),
+                        extra={
+                            "requested_position_size": requested_position_usdt,
+                            "position_size_cap": info.get("position_size_cap"),
+                            "n_positions_before": info.get("n_positions_before"),
+                            "constraints": ",".join(
+                                str(x) for x in info.get("constraints_checked", []) or []
+                            ),
+                        },
+                    )
                     _commit_global_side_metrics()
                     continue
                 side_metrics["portfolio_pass"] = (
@@ -5903,6 +5942,7 @@ def run_inference_step(
                 side_metrics["non_fatal_issues"] = (
                     int(side_metrics.get("non_fatal_issues", 0)) + 1
                 )
+                _log_global_auction_skip("sizing", "invalid_or_zero_size", extra={"computed_size": size})
                 _commit_global_side_metrics()
                 continue
             close = panel.get("close")
@@ -5939,6 +5979,14 @@ def run_inference_step(
             if stale_entry_context and (exchange is None or price is None):
                 side_metrics["non_fatal_issues"] = (
                     int(side_metrics.get("non_fatal_issues", 0)) + 1
+                )
+                _log_global_auction_skip(
+                    "stale_entry_precheck",
+                    "missing_exchange_or_signal_price",
+                    extra={
+                        "has_exchange": exchange is not None,
+                        "signal_price": price,
+                    },
                 )
                 _commit_global_side_metrics()
                 continue
@@ -5985,6 +6033,14 @@ def run_inference_step(
                         side_metrics["non_fatal_issues"] = (
                             int(side_metrics.get("non_fatal_issues", 0)) + 1
                         )
+                        _log_global_auction_skip(
+                            "ticker_precheck",
+                            str(ticker_snapshot.reject_reason or "ticker_rejected"),
+                            extra={
+                                "spread_bps": ticker_snapshot.spread_bps,
+                                "mid": ticker_snapshot.mid,
+                            },
+                        )
                         _commit_global_side_metrics()
                         continue
                     decision_mid = float(ticker_snapshot.mid or 0.0)
@@ -6029,6 +6085,16 @@ def run_inference_step(
                             side_metrics["non_fatal_issues"] = (
                                 int(side_metrics.get("non_fatal_issues", 0)) + 1
                             )
+                            _log_global_auction_skip(
+                                "stale_entry_price_gap",
+                                "stale_entry_price_moved_too_far",
+                                extra={
+                                    "abs_gap_bps": stale_abs_gap_bps,
+                                    "max_abs_gap_bps": max_abs_gap_bps,
+                                    "signal_price": price,
+                                    "decision_mid": decision_mid,
+                                },
+                            )
                             _commit_global_side_metrics()
                             continue
                     gap_penalty, gap_info = compute_price_gap_rank_penalty(
@@ -6063,6 +6129,16 @@ def run_inference_step(
                             )
                         side_metrics["non_fatal_issues"] = (
                             int(side_metrics.get("non_fatal_issues", 0)) + 1
+                        )
+                        _log_global_auction_skip(
+                            "price_gap_penalty",
+                            "rank_below_dynamic_threshold_after_price_gap",
+                            extra={
+                                "adjusted_rank": adjusted_rank,
+                                "gap_penalty": gap_penalty,
+                                "signal_price": price,
+                                "decision_mid": decision_mid,
+                            },
                         )
                         _commit_global_side_metrics()
                         continue
@@ -6109,6 +6185,15 @@ def run_inference_step(
                                 )
                             side_metrics["non_fatal_issues"] = (
                                 int(side_metrics.get("non_fatal_issues", 0)) + 1
+                            )
+                            _log_global_auction_skip(
+                                "orderbook_precheck",
+                                str(book_snapshot.reject_reason or "orderbook_rejected"),
+                                extra={
+                                    "capacity_quote": book_snapshot.orderbook_capacity_quote_within_slippage,
+                                    "capacity_weight": book_snapshot.liquidity_capacity_weight,
+                                    "expected_slippage_bps": book_snapshot.expected_fill_slippage_bps,
+                                },
                             )
                             _commit_global_side_metrics()
                             continue
@@ -6200,6 +6285,22 @@ def run_inference_step(
                                 side_metrics["non_fatal_issues"] = (
                                     int(side_metrics.get("non_fatal_issues", 0)) + 1
                                 )
+                                _log_global_auction_skip(
+                                    "portfolio_post_liquidity",
+                                    str(
+                                        info.get("reason")
+                                        or "post_liquidity_portfolio_rejected"
+                                    ),
+                                    extra={
+                                        "requested_position_size": size,
+                                        "position_size_cap": info.get("position_size_cap"),
+                                        "n_positions_before": info.get("n_positions_before"),
+                                        "constraints": ",".join(
+                                            str(x)
+                                            for x in info.get("constraints_checked", []) or []
+                                        ),
+                                    },
+                                )
                                 _commit_global_side_metrics()
                                 continue
                         execution_snapshot["liquidity_capacity_weight"] = float(
@@ -6239,6 +6340,10 @@ def run_inference_step(
                     side_metrics["non_fatal_issues"] = (
                         int(side_metrics.get("non_fatal_issues", 0)) + 1
                     )
+                    _log_global_auction_skip(
+                        "execution_precheck_exception",
+                        f"{classify_api_error(exc)}: {exc}",
+                    )
                     _commit_global_side_metrics()
                     continue
             exchange_min_notional = _exchange_min_notional_for_symbol(
@@ -6266,6 +6371,14 @@ def run_inference_step(
                     )
                 side_metrics["non_fatal_issues"] = (
                     int(side_metrics.get("non_fatal_issues", 0)) + 1
+                )
+                _log_global_auction_skip(
+                    "exchange_filter",
+                    "below_exchange_min_notional",
+                    extra={
+                        "computed_size": size,
+                        "exchange_min_notional": exchange_min_notional,
+                    },
                 )
                 _commit_global_side_metrics()
                 continue

@@ -30,6 +30,68 @@ def test_lgbm_hpo_path_smooth_cap_is_10():
     assert 0.0 <= lp.LGBM_HPO_PATH_SMOOTH_MAX <= 10.0
 
 
+def test_tail_control_metric_math_and_week_asset_tails(monkeypatch):
+    monkeypatch.setattr(lp, "LGBM_TAIL_WEEK_MIN_ROWS", 8)
+    monkeypatch.setattr(lp, "LGBM_TAIL_ASSET_MIN_ROWS", 8)
+    n = 80
+    y = np.asarray([1] * 20 + [0] * 20 + [1, 0] * 20, dtype=np.float32)
+    pred = np.linspace(0.0, 1.0, n, dtype=np.float32)
+    groups = {
+        "week": np.asarray(["good"] * 40 + ["bad"] * 40, dtype=object),
+        "asset": np.asarray(["A"] * 40 + ["B"] * 40, dtype=object),
+    }
+    metrics = lp._tail_control_metrics(
+        y,
+        pred,
+        baseline=float(np.mean(y)),
+        groups=groups,
+        target_frac=0.20,
+    )
+    assert metrics["tail_control_score"] == pytest.approx(metrics["robust_tail_score"])
+    assert metrics["tail_week_group_count"] == 2
+    assert metrics["tail_asset_group_count"] == 2
+    assert metrics["tail_week_20_score"] <= metrics["weekly_score_at_k_mean"]
+    assert metrics["tail_asset_20_score"] <= metrics["asset_score_at_k_mean"]
+
+
+def test_tail_control_week_fallback_to_rolling(monkeypatch):
+    monkeypatch.setattr(lp, "LGBM_TAIL_WEEK_MIN_ROWS", 9999)
+    monkeypatch.setattr(lp, "LGBM_TAIL_ROLLING_ROWS", 20)
+    n = 60
+    y = np.tile([0, 1], n // 2).astype(np.float32)
+    pred = np.linspace(0.0, 1.0, n, dtype=np.float32)
+    groups = {"week": np.asarray(["too_small"] * n, dtype=object)}
+    metrics = lp._tail_control_metrics(
+        y,
+        pred,
+        baseline=float(np.mean(y)),
+        groups=groups,
+        target_frac=0.20,
+    )
+    assert metrics["tail_week_group_count"] == 3
+
+
+def test_tail_control_objective_selection_and_penalty(monkeypatch):
+    monkeypatch.setattr(lp, "LGBM_OBJECTIVE", "tail_control")
+    metrics = {
+        "J_base": 0.1,
+        "base_tail_control_score": 0.7,
+        "meta_tail_control_score": 0.4,
+    }
+    assert lp._objective_value(metrics, "train_base") == pytest.approx(0.7)
+    assert lp._objective_value(metrics, "train_meta") == pytest.approx(0.4)
+    out = lp._apply_overfit_gap_penalty(
+        {"base_tail_control_score": 0.9},
+        {"base_tail_control_score": 0.7},
+        objective_mode="train_base",
+        penalty=0.5,
+        deadband=0.0,
+        gap_cap=1.0,
+    )
+    assert out["base_tail_control_score"] == pytest.approx(0.6)
+    assert out["tail_control_score"] == pytest.approx(0.6)
+
+
 def test_apply_overfit_gap_penalty_basic_no_gap_and_cap():
     out = lp._apply_overfit_gap_penalty(
         {"J_base": 0.80},
@@ -228,6 +290,30 @@ def test_combined_gain_split_instability_weighting_and_disable(monkeypatch):
     assert disabled["importance_instability"] == 0.0
     assert disabled["gain_instability"] == 0.0
     assert disabled["split_instability"] == 0.0
+
+
+def test_reduced_hpo_param_set_excludes_bynode_and_delta(monkeypatch):
+    source = Path(lp.__file__).read_text(encoding="utf-8")
+    assert 'LGBM_HPO_PARAM_SET == "full"' in source
+    assert '"feature_fraction_bynode": bynode_fraction' in source
+    assert '"max_delta_step": max_delta_step' in source
+    assert 'best_params["feature_fraction_bynode"]' in source
+    assert 'best_params["max_delta_step"]' in source
+
+
+def test_tail_control_feature_selection_disables_importance_penalty(monkeypatch):
+    monkeypatch.setattr(lp, "LGBM_FEATURE_SELECTION_OBJECTIVE", "tail_control")
+    monkeypatch.setattr(lp, "LGBM_IMPORTANCE_INSTABILITY_ENABLE", True)
+    monkeypatch.setattr(lp, "LGBM_IMPORTANCE_INSTABILITY_PENALTY", 0.5)
+    info = {"importance_instability": 1.0}
+    penalty = (
+        float(lp.LGBM_IMPORTANCE_INSTABILITY_PENALTY)
+        * float(info["importance_instability"])
+        if lp.LGBM_IMPORTANCE_INSTABILITY_ENABLE
+        and lp.LGBM_FEATURE_SELECTION_OBJECTIVE != "tail_control"
+        else 0.0
+    )
+    assert penalty == 0.0
 
 
 def test_lgbm_candidate_smoke_includes_importance_penalty_metrics(monkeypatch):

@@ -344,11 +344,11 @@ def _downcast_numeric_frame(df: pd.DataFrame) -> pd.DataFrame:
 def _resolve_ts_sig(cfg: dict, ts_override=None) -> pd.Timestamp:
     if ts_override:
         try:
-            _ts_str = (
-                str(ts_override).split("_v")[0]
-                if "_v" in str(ts_override)
-                else str(ts_override)
-            )
+            _raw_ts = str(ts_override)
+            _ts_str = _raw_ts.split("_v")[0] if "_v" in _raw_ts else _raw_ts
+            _match = re.match(r"^(\d{8}_\d{6})", _ts_str)
+            if _match:
+                _ts_str = _match.group(1)
             ts_sig = pd.to_datetime(_ts_str, format="%Y%m%d_%H%M%S").tz_localize("UTC")
         except ValueError:
             ts_sig = pd.Timestamp(ts_override).tz_localize("UTC")
@@ -1724,13 +1724,20 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
     if ts_sig is None:
         tprint("ERROR: No feature directories found. Run feature_generation first.")
         return
+    source_ts_sig = (
+        _resolve_ts_sig(cfg, cfg.get("artifact_source_run_id"))
+        if cfg.get("artifact_source_run_id")
+        else ts_sig
+    )
+    if source_ts_sig is None:
+        source_ts_sig = ts_sig
 
     # Slice Plan Injection
     try:
         slice_plan = load_or_build_slice_plan(
-            cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
+            cfg, source_ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
         )
-        _attach_feature_availability_policy_view(cfg, slice_plan, ts_sig)
+        _attach_feature_availability_policy_view(cfg, slice_plan, source_ts_sig)
         if "train_base" in slice_plan.get("materialized_views", {}):
             stage_view = slice_plan["materialized_views"]["train_base"]
             stage_view = apply_stage_usage_limits(
@@ -1787,7 +1794,7 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
     # Check if labels already exist before refreshing to avoid unnecessary recomputation.
     if store is None:
         store = make_ohlcv_store(cfg)
-    if not _label_artifacts_ready(cfg, ts_sig):
+    if not _label_artifacts_ready(cfg, source_ts_sig):
         tprint(
             "ERROR: Label artifacts are missing. Run 'labels' mode first to generate them."
         )
@@ -2380,13 +2387,20 @@ def run_train_meta(cfg, ts_override=None, store=None):
     if ts_sig is None:
         tprint("ERROR: No feature directories found.")
         return
+    source_ts_sig = (
+        _resolve_ts_sig(cfg, cfg.get("artifact_source_run_id"))
+        if cfg.get("artifact_source_run_id")
+        else ts_sig
+    )
+    if source_ts_sig is None:
+        source_ts_sig = ts_sig
 
     # Slice Plan Injection
     try:
         slice_plan = load_or_build_slice_plan(
-            cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
+            cfg, source_ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
         )
-        _attach_feature_availability_policy_view(cfg, slice_plan, ts_sig)
+        _attach_feature_availability_policy_view(cfg, slice_plan, source_ts_sig)
         if "train_meta" in slice_plan.get("materialized_views", {}):
             stage_view = slice_plan["materialized_views"]["train_meta"]
             stage_view = apply_stage_usage_limits(
@@ -3699,6 +3713,21 @@ def main():
         cfg["data_root"] = os.path.abspath(_epm_data_root)
         cfg["reports_root"] = os.path.join(os.path.abspath(_epm_data_root), "reports")
         tprint(f"EPM_DATA_ROOT override: data_root={cfg['data_root']}")
+    _source_run_id = str(
+        os.environ.get("EPM_ARTIFACT_SOURCE_RUN_ID")
+        or os.environ.get("EPM_SOURCE_RUN_ID")
+        or ""
+    ).strip()
+    if _source_run_id:
+        cfg["artifact_source_run_id"] = _source_run_id
+        cfg["label_source_run_id"] = _source_run_id
+        cfg["feature_source_run_id"] = _source_run_id
+        tprint(
+            "Artifact source override: "
+            f"labels/features/slices will read from run_id={_source_run_id}"
+        )
+    if args.run_id_override:
+        cfg["output_run_id"] = str(args.run_id_override).strip()
     market_mode = "perps" if args.perps else args.market_mode
     exchange_id = str(args.exchange or os.environ.get("EPM_EXCHANGE") or "binance").strip().lower()
     if exchange_id in {"krakenfutures", "kraken_futures"}:

@@ -3579,8 +3579,36 @@ def run_training_step(
         f"full_inference_retrain={cfg['train_full_inference_models']})"
     )
 
-    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    run_id = str(cfg.get("output_run_id") or ts_sig.strftime("%Y%m%d_%H%M%S")).strip()
     cfg["run_id"] = run_id
+    source_run_id = str(
+        cfg.get("artifact_source_run_id")
+        or cfg.get("label_source_run_id")
+        or ts_sig.strftime("%Y%m%d_%H%M%S")
+    ).strip()
+    feature_source_run_id = str(
+        cfg.get("feature_source_run_id")
+        or cfg.get("artifact_source_run_id")
+        or source_run_id
+    ).strip()
+    source_run_ts = source_run_id[:15]
+    feature_run_ts = feature_source_run_id[:15]
+    source_ts_sig = (
+        pd.to_datetime(source_run_ts, format="%Y%m%d_%H%M%S", utc=True)
+        if source_run_id and source_run_id != run_id
+        else ts_sig
+    )
+    feature_ts_sig = (
+        pd.to_datetime(feature_run_ts, format="%Y%m%d_%H%M%S", utc=True)
+        if feature_source_run_id and feature_source_run_id != run_id
+        else ts_sig
+    )
+    if source_run_id != run_id or feature_source_run_id != run_id:
+        tprint(
+            "Training artifact source override: "
+            f"output_run_id={run_id}, label_source_run_id={source_run_id}, "
+            f"feature_source_run_id={feature_source_run_id}"
+        )
     datasets = {}
 
     # 1. Load label artifacts
@@ -3588,7 +3616,7 @@ def run_training_step(
 
     from extreme_price_movements.data_store import load_artifact_manifest
 
-    labels_manifest = load_artifact_manifest(cfg["data_root"], run_id, "labels") or {}
+    labels_manifest = load_artifact_manifest(cfg["data_root"], source_run_id, "labels") or {}
     available_label_names = set((labels_manifest.get("datasets") or {}).keys())
 
     # Alpha models (Dynamic Strategies from get_strategies)
@@ -3611,7 +3639,7 @@ def run_training_step(
             return cached
         if available_label_names and name not in available_label_names:
             return None
-        df_local = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+        df_local = load_artifact_df(cfg["data_root"], source_run_id, "labels", name)
         df_local = _filter_artifact_by_stage_view(df_local, cfg)
         if isinstance(df_local, pd.DataFrame) and not df_local.empty:
             _max_assets = int(cfg.get("planned_max_assets", 0) or 0)
@@ -3752,7 +3780,7 @@ def run_training_step(
         )
         req_keys = _base_training_feature_requirements_from_hpo(cfg, datasets, req_keys)
 
-    datasets = inject_features_into_datasets(datasets, ts_sig, cfg, req_keys)
+    datasets = inject_features_into_datasets(datasets, feature_ts_sig, cfg, req_keys)
 
     # 2. Train models
     # run_id is injected before loading artifacts so stage plan-row filtering can resolve
@@ -3970,6 +3998,30 @@ def run_training_step(
             _invalidate_downstream_oof_layers(cfg["data_root"], run_id, "meta")
     except Exception as _e_oof:
         tprint(f"WARNING: OOF consolidation failed: {_e_oof}")
+
+    try:
+        from extreme_price_movements.lgbm_pipeline import export_tail_control_reports
+
+        compare_ids = [
+            v.strip()
+            for v in str(os.environ.get("EPM_TAIL_CONTROL_COMPARE_RUN_IDS", "")).split(",")
+            if v.strip()
+        ]
+        source_compare = str(cfg.get("artifact_source_run_id") or "").strip()
+        if source_compare and source_compare != run_id and source_compare not in compare_ids:
+            compare_ids.insert(0, source_compare)
+        report_paths = export_tail_control_reports(
+            cfg["data_root"],
+            run_id,
+            compare_run_ids=compare_ids,
+            target_strategy_id=os.environ.get("EPM_TAIL_CONTROL_STRATEGY_ID", ""),
+        )
+        tprint(
+            "Tail-control reports saved: "
+            f"{report_paths.get('per_model_metrics_csv')}"
+        )
+    except Exception as _e_tail:
+        tprint(f"WARNING: tail-control report export failed: {_e_tail}")
 
     tprint("STEP: MODEL TRAINING COMPLETE")
     return state

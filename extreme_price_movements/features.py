@@ -4350,6 +4350,21 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                         .astype(float)
                         / 3600.0
                     )
+                    # At the live edge the next funding observation is not present
+                    # in the panel yet. Infer the next scheduled event from the
+                    # historical interval and the last known event so event-risk
+                    # features remain finite at inference.
+                    missing_next = to_next.isna() & since.notna()
+                    if bool(missing_next.any()):
+                        since_missing = since.loc[missing_next].clip(lower=0.0)
+                        remainder = np.mod(since_missing.to_numpy(dtype=float), interval_hours)
+                        inferred_to_next = interval_hours - remainder
+                        inferred_to_next = np.where(
+                            np.isclose(inferred_to_next, 0.0),
+                            interval_hours,
+                            inferred_to_next,
+                        )
+                        to_next.loc[missing_next] = inferred_to_next
                     hours_since_last[_sym] = since.clip(lower=0.0).astype(np.float32)
                     hours_to_next[_sym] = to_next.clip(lower=0.0).astype(np.float32)
         if np.isfinite(fund_hourly.to_numpy(dtype=np.float32, copy=False)).any():
@@ -4918,7 +4933,10 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 (ret_h * fund_sign).clip(-1.0, 1.0).astype(np.float32)
             )
             feats[f"fund_payment_pressure_{_h}h"] = (
-                (feats["fund_abs_z_14d"] * proximity)
+                (
+                    feats["fund_abs_z_14d"].fillna(0.0)
+                    * proximity.fillna(0.0)
+                )
                 .clip(0.0, 6.0)
                 .astype(np.float32)
             )

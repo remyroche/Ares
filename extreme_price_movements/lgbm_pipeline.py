@@ -115,6 +115,16 @@ LGBM_BASE_METRIC_TARGET_FRACTION = float(os.environ.get("EPM_LGBM_BASE_METRIC_TA
 LGBM_META_METRIC_TARGET_FRACTION = float(os.environ.get("EPM_LGBM_META_METRIC_TARGET_FRACTION", os.environ.get("EPM_LGBM_METRIC_TARGET_FRACTION", "0.15")))
 LGBM_SALG_LIFT_COEF = float(os.environ.get("EPM_LGBM_SALG_LIFT_COEF", "0.38"))
 LGBM_J_SALG_NORM_DENOM = float(os.environ.get("EPM_LGBM_J_SALG_NORM_DENOM", "1.50"))
+LGBM_OBJECTIVE = str(os.environ.get("EPM_LGBM_OBJECTIVE", "default")).strip().lower()
+LGBM_HPO_PARAM_SET = str(os.environ.get("EPM_LGBM_HPO_PARAM_SET", "full")).strip().lower()
+LGBM_FEATURE_SELECTION_OBJECTIVE = str(
+    os.environ.get("EPM_LGBM_FEATURE_SELECTION_OBJECTIVE", "")
+).strip().lower()
+LGBM_TAIL_WEEK_MIN_ROWS = int(os.environ.get("EPM_LGBM_TAIL_WEEK_MIN_ROWS", "20"))
+LGBM_TAIL_ASSET_MIN_ROWS = int(os.environ.get("EPM_LGBM_TAIL_ASSET_MIN_ROWS", "20"))
+LGBM_TAIL_ROLLING_ROWS = int(os.environ.get("EPM_LGBM_TAIL_ROLLING_ROWS", "1000"))
+LGBM_TAIL_LIFT_NORM_DENOM = float(os.environ.get("EPM_LGBM_TAIL_LIFT_NORM_DENOM", "2.0"))
+LGBM_TAIL_WORST_FEATURE_PENALTY = float(os.environ.get("EPM_LGBM_TAIL_WORST_FEATURE_PENALTY", "0.05"))
 LGBM_N_JOBS = int(os.environ.get("EPM_LGBM_N_JOBS", "3"))
 
 LGBM_CV_SPLITS = max(2, int(LGBM_CV_SPLITS))
@@ -149,6 +159,15 @@ LGBM_META_RANK_BINS = max(2, int(LGBM_META_RANK_BINS))
 LGBM_BASE_METRIC_TARGET_FRACTION = float(np.clip(LGBM_BASE_METRIC_TARGET_FRACTION, 0.001, 0.5))
 LGBM_META_METRIC_TARGET_FRACTION = float(np.clip(LGBM_META_METRIC_TARGET_FRACTION, 0.001, 0.5))
 LGBM_J_SALG_NORM_DENOM = max(1e-6, float(LGBM_J_SALG_NORM_DENOM))
+if LGBM_OBJECTIVE not in {"default", "tail_control"}:
+    LGBM_OBJECTIVE = "default"
+if LGBM_HPO_PARAM_SET not in {"full", "reduced"}:
+    LGBM_HPO_PARAM_SET = "full"
+LGBM_TAIL_WEEK_MIN_ROWS = max(1, int(LGBM_TAIL_WEEK_MIN_ROWS))
+LGBM_TAIL_ASSET_MIN_ROWS = max(1, int(LGBM_TAIL_ASSET_MIN_ROWS))
+LGBM_TAIL_ROLLING_ROWS = max(8, int(LGBM_TAIL_ROLLING_ROWS))
+LGBM_TAIL_LIFT_NORM_DENOM = max(1e-6, float(LGBM_TAIL_LIFT_NORM_DENOM))
+LGBM_TAIL_WORST_FEATURE_PENALTY = float(np.clip(LGBM_TAIL_WORST_FEATURE_PENALTY, 0.0, 1.0))
 
 LGBM_META_FEATURE_NAMES = [
     "lgbm_prob",
@@ -840,6 +859,15 @@ def _distillation_passes_for_objective(objective_mode: str | None = "train_base"
 
 def _objective_value(metrics: dict[str, float], objective_mode: str | None = "train_base") -> float:
     mode = _normalize_objective_mode(objective_mode)
+    if LGBM_OBJECTIVE == "tail_control":
+        prefix = "meta" if mode == "train_meta" else "base"
+        value = metrics.get(
+            f"{prefix}_tail_control_score",
+            metrics.get("tail_control_score", metrics.get("J_final", np.nan)),
+        )
+        if not np.isfinite(float(value)):
+            return -999.0
+        return float(value)
     key = "J_meta" if mode == "train_meta" else "J_base"
     value = metrics.get(key, metrics.get("J_final", np.nan))
     if not np.isfinite(float(value)):
@@ -878,6 +906,12 @@ def _apply_overfit_gap_penalty(
     out["J_final"] = float(j_penalized)
     out["selected_objective"] = float(j_penalized)
     mode = _normalize_objective_mode(objective_mode)
+    if LGBM_OBJECTIVE == "tail_control":
+        prefix = "meta" if mode == "train_meta" else "base"
+        out[f"{prefix}_tail_control_score_raw"] = float(j_valid)
+        out[f"{prefix}_tail_control_score"] = float(j_penalized)
+        out["tail_control_score_raw"] = float(j_valid)
+        out["tail_control_score"] = float(j_penalized)
     if mode == "train_meta":
         out["J_meta"] = float(j_penalized)
     else:
@@ -978,6 +1012,12 @@ def _normalize_precision(precision: float, baseline: float) -> float:
     if not (np.isfinite(precision) and np.isfinite(baseline)):
         return 0.0
     return _unit_interval((float(precision) - float(baseline)) / max(1.0 - float(baseline), 1e-6))
+
+
+def _normalize_lift(lift: float) -> float:
+    if not np.isfinite(lift):
+        return 0.0
+    return _unit_interval((float(lift) - 1.0) / LGBM_TAIL_LIFT_NORM_DENOM)
 
 
 def _normalize_return(value: float, scale: float) -> float:
@@ -1212,6 +1252,215 @@ def _slice_objective_components(
             out[f"{prefix}_{key}"] = float(value)
     return out
 
+
+def _tail_control_slice_metrics(
+    y_win: np.ndarray,
+    pred: np.ndarray,
+    *,
+    baseline: float,
+    target_frac: float,
+) -> dict[str, float]:
+    yy = np.asarray(y_win, dtype=np.float64)
+    pp = np.asarray(pred, dtype=np.float64)
+    m = np.isfinite(yy) & np.isfinite(pp)
+    yy = yy[m]
+    pp = pp[m]
+    if len(yy) < 8:
+        return {
+            "precision_blend": 0.0,
+            "rank_bucket_monotonicity": 0.0,
+            "hit_rate_at_target": 0.0,
+            "lift_at_target": 0.0,
+            "lift_at_target_norm": 0.0,
+            "score_at_k": 0.0,
+            "n_rows": float(len(yy)),
+        }
+    target = float(np.clip(target_frac, 0.001, 0.95))
+    order = np.argsort(pp)
+    precision_fracs = tuple(
+        float(np.clip(target * mult, 0.001, 0.95))
+        for mult in (1.0 / 3.0, 2.0 / 3.0, 1.0)
+    )
+    top_indices = [_top_idx(order, frac, len(yy)) for frac in precision_fracs]
+    precision_vals = [float(np.mean(yy[idx])) if len(idx) else 0.0 for idx in top_indices]
+    precision_norms = [_normalize_precision(v, baseline) for v in precision_vals]
+    hit_rate = precision_vals[-1]
+    hit_norm = precision_norms[-1]
+    lift = float(hit_rate / max(float(baseline), 1e-6))
+    lift_norm = _normalize_lift(lift)
+    mono = _bucket_monotonicity_score(yy, order, top_frac=target, n_buckets=4)
+    precision_blend = float(
+        0.40 * precision_norms[0]
+        + 0.35 * precision_norms[1]
+        + 0.25 * precision_norms[2]
+    )
+    rank_mono = float(mono["rank_bucket_monotonicity"])
+    return {
+        "precision_blend": precision_blend,
+        "rank_bucket_monotonicity": rank_mono,
+        "hit_rate_at_target": float(hit_norm),
+        "hit_rate_at_target_raw": float(hit_rate),
+        "lift_at_target": float(lift_norm),
+        "lift_at_target_raw": float(lift),
+        "lift_at_target_norm": float(lift_norm),
+        "score_at_k": float(precision_blend + rank_mono),
+        "n_rows": float(len(yy)),
+    }
+
+
+def _tail_group_values(
+    y_win: np.ndarray,
+    pred: np.ndarray,
+    group_values: Any,
+    *,
+    baseline: float,
+    target_frac: float,
+    min_rows: int,
+) -> list[dict[str, float]]:
+    groups = np.asarray(group_values, dtype=object)
+    yy = np.asarray(y_win, dtype=np.float64)
+    pp = np.asarray(pred, dtype=np.float64)
+    n = min(len(yy), len(pp), len(groups))
+    if n <= 0:
+        return []
+    yy = yy[:n]
+    pp = pp[:n]
+    groups = groups[:n]
+    out: list[dict[str, float]] = []
+    for group in pd.unique(pd.Series(groups).astype(str)):
+        mask = groups.astype(str) == str(group)
+        if int(np.sum(mask)) < int(min_rows):
+            continue
+        metrics = _tail_control_slice_metrics(
+            yy[mask],
+            pp[mask],
+            baseline=baseline,
+            target_frac=target_frac,
+        )
+        metrics["group"] = str(group)  # type: ignore[assignment]
+        out.append(metrics)
+    return out
+
+
+def _tail_rolling_values(
+    y_win: np.ndarray,
+    pred: np.ndarray,
+    *,
+    baseline: float,
+    target_frac: float,
+    window_rows: int = LGBM_TAIL_ROLLING_ROWS,
+) -> list[dict[str, float]]:
+    yy = np.asarray(y_win, dtype=np.float64)
+    pp = np.asarray(pred, dtype=np.float64)
+    n = min(len(yy), len(pp))
+    if n < 8:
+        return []
+    window = max(8, min(int(window_rows), n))
+    out: list[dict[str, float]] = []
+    start = 0
+    bucket = 0
+    while start < n:
+        end = min(n, start + window)
+        if end - start >= 8:
+            metrics = _tail_control_slice_metrics(
+                yy[start:end],
+                pp[start:end],
+                baseline=baseline,
+                target_frac=target_frac,
+            )
+            metrics["group"] = f"rolling_{bucket:04d}"  # type: ignore[assignment]
+            out.append(metrics)
+        start = end
+        bucket += 1
+    return out
+
+
+def _bottom_tail_mean(records: list[dict[str, float]], key: str = "score_at_k") -> float:
+    vals = np.asarray(
+        [float(r.get(key, np.nan)) for r in records if np.isfinite(float(r.get(key, np.nan)))],
+        dtype=np.float64,
+    )
+    if len(vals) == 0:
+        return 0.0
+    n_tail = max(1, int(np.ceil(0.20 * len(vals))))
+    return float(np.mean(np.sort(vals)[:n_tail]))
+
+
+def _tail_control_metrics(
+    y_win: np.ndarray,
+    pred: np.ndarray,
+    *,
+    baseline: float,
+    groups: Any,
+    target_frac: float,
+) -> dict[str, float]:
+    global_metrics = _tail_control_slice_metrics(
+        y_win,
+        pred,
+        baseline=baseline,
+        target_frac=target_frac,
+    )
+    week_records: list[dict[str, float]] = []
+    asset_records: list[dict[str, float]] = []
+    if isinstance(groups, dict):
+        if groups.get("week") is not None:
+            week_records = _tail_group_values(
+                y_win,
+                pred,
+                groups["week"],
+                baseline=baseline,
+                target_frac=target_frac,
+                min_rows=LGBM_TAIL_WEEK_MIN_ROWS,
+            )
+        if groups.get("asset") is not None:
+            asset_records = _tail_group_values(
+                y_win,
+                pred,
+                groups["asset"],
+                baseline=baseline,
+                target_frac=target_frac,
+                min_rows=LGBM_TAIL_ASSET_MIN_ROWS,
+            )
+    if not week_records:
+        week_records = _tail_rolling_values(
+            y_win,
+            pred,
+            baseline=baseline,
+            target_frac=target_frac,
+            window_rows=LGBM_TAIL_ROLLING_ROWS,
+        )
+    mean_score = float(
+        0.40 * float(global_metrics["precision_blend"])
+        + 0.20 * float(global_metrics["hit_rate_at_target"])
+        + 0.20 * float(global_metrics["lift_at_target"])
+        + 0.20 * float(global_metrics["rank_bucket_monotonicity"])
+    )
+    tail_week = _bottom_tail_mean(week_records)
+    tail_asset = _bottom_tail_mean(asset_records) if asset_records else float(global_metrics["score_at_k"])
+    robust_tail = float(0.70 * mean_score + 0.15 * tail_week + 0.15 * tail_asset)
+    return {
+        "tail_precision_blend": float(global_metrics["precision_blend"]),
+        "tail_rank_bucket_monotonicity": float(global_metrics["rank_bucket_monotonicity"]),
+        "hit_rate_at_target": float(global_metrics["hit_rate_at_target"]),
+        "hit_rate_at_target_raw": float(global_metrics.get("hit_rate_at_target_raw", 0.0)),
+        "lift_at_target": float(global_metrics["lift_at_target"]),
+        "lift_at_target_raw": float(global_metrics.get("lift_at_target_raw", 0.0)),
+        "weekly_score_at_k_mean": float(
+            np.mean([float(r["score_at_k"]) for r in week_records]) if week_records else 0.0
+        ),
+        "asset_score_at_k_mean": float(
+            np.mean([float(r["score_at_k"]) for r in asset_records]) if asset_records else float(global_metrics["score_at_k"])
+        ),
+        "mean_score": mean_score,
+        "tail_week_20_score": tail_week,
+        "tail_asset_20_score": tail_asset,
+        "robust_tail_score": robust_tail,
+        "tail_control_score": robust_tail,
+        "tail_week_group_count": float(len(week_records)),
+        "tail_asset_group_count": float(len(asset_records)),
+    }
+
+
 def _metric_pack(
     y_true: np.ndarray,
     pred: np.ndarray,
@@ -1334,6 +1583,20 @@ def _metric_pack(
         target_frac=_target_top_fraction("train_meta"),
         prefix="meta",
     )
+    tail_base_components = _tail_control_metrics(
+        y_win,
+        p,
+        baseline=baseline,
+        groups=grp,
+        target_frac=_target_top_fraction("train_base"),
+    )
+    tail_meta_components = _tail_control_metrics(
+        y_win,
+        p,
+        baseline=baseline,
+        groups=grp,
+        target_frac=_target_top_fraction("train_meta"),
+    )
     j_base = float(base_components["base_J"])
     j_meta = float(meta_components["meta_J"])
     out = {
@@ -1383,6 +1646,11 @@ def _metric_pack(
     }
     out.update(base_components)
     out.update(meta_components)
+    out.update({f"base_{k}": float(v) for k, v in tail_base_components.items()})
+    out.update({f"meta_{k}": float(v) for k, v in tail_meta_components.items()})
+    mode_for_tail = _normalize_objective_mode("train_meta" if _target_top_fraction("train_meta") < _target_top_fraction("train_base") else "train_base")
+    selected_tail = tail_meta_components if mode_for_tail == "train_meta" else tail_base_components
+    out.update({k: float(v) for k, v in selected_tail.items()})
     out.update(mono)
     return out
 
@@ -3551,6 +3819,21 @@ def _lgbm_stability_selection_pass(
     norm_perm = _rank01(np.maximum(median_perm, 0.0))
     prelim_quality = 0.50 * norm_perm + 0.25 * positive_perm_rate + 0.15 * presence_rate + 0.10 * direction_stability
     redundancy = _redundancy_penalty(Xf, features, prelim_quality, random_state=random_state + 677)
+    worst_context_activity_penalty = np.zeros(p, dtype=np.float32)
+    if LGBM_FEATURE_SELECTION_OBJECTIVE == "tail_control" and len(all_fit_gain_focus) >= 2:
+        fit_quality = np.asarray(fit_scores, dtype=np.float64)
+        valid_fit = np.isfinite(fit_quality)
+        if np.any(valid_fit):
+            n_tail = max(1, int(np.ceil(0.20 * int(np.sum(valid_fit)))))
+            valid_idx = np.where(valid_fit)[0]
+            worst_idx = valid_idx[np.argsort(fit_quality[valid_idx])[:n_tail]]
+            gain_focus_all = np.vstack(all_fit_gain_focus).astype(np.float32)
+            split_focus_all = np.vstack(all_fit_split_focus).astype(np.float32)
+            focus_all = 0.5 * gain_focus_all + 0.5 * split_focus_all
+            all_mean = np.mean(focus_all[valid_idx], axis=0)
+            worst_mean = np.mean(focus_all[worst_idx], axis=0)
+            excess = np.maximum(worst_mean - all_mean, 0.0)
+            worst_context_activity_penalty = _rank01(excess).astype(np.float32)
     feature_score = (
         0.40 * norm_perm
         + 0.20 * positive_perm_rate
@@ -3559,6 +3842,7 @@ def _lgbm_stability_selection_pass(
         + 0.075 * gain_rank_score
         + 0.075 * split_rank_score
         - 0.10 * redundancy
+        - float(LGBM_TAIL_WORST_FEATURE_PENALTY) * worst_context_activity_penalty
     ).astype(np.float32)
     perm_filter_applies = permutation_evaluated_rate > 0.0
     hard_drop = (
@@ -3585,6 +3869,7 @@ def _lgbm_stability_selection_pass(
             "topk_gain_focus_std": gain_focus_std,
             "topk_split_focus_mean": split_focus_mean,
             "topk_split_focus_std": split_focus_std,
+            "worst_context_activity_penalty": worst_context_activity_penalty,
             "selected_in_top_model_count": top_count,
             "redundancy_penalty": redundancy,
             "hard_drop": hard_drop.astype(bool),
@@ -3601,6 +3886,7 @@ def _lgbm_stability_selection_pass(
     importance_penalty = (
         float(LGBM_IMPORTANCE_INSTABILITY_PENALTY) * importance_instability
         if LGBM_IMPORTANCE_INSTABILITY_ENABLE
+        and LGBM_FEATURE_SELECTION_OBJECTIVE != "tail_control"
         else 0.0
     )
     agg_all["J_final_pre_importance_instability_penalty"] = raw_j_final
@@ -3613,6 +3899,12 @@ def _lgbm_stability_selection_pass(
     )
     agg_all["topk_focus_effective_rows_mean"] = (
         float(np.mean(topk_effective_rows)) if topk_effective_rows else 0.0
+    )
+    agg_all["feature_selection_objective"] = (
+        LGBM_FEATURE_SELECTION_OBJECTIVE or "default"
+    )
+    agg_all["worst_context_activity_penalty_mean"] = float(
+        np.mean(worst_context_activity_penalty) if len(worst_context_activity_penalty) else 0.0
     )
     agg_all["J_final"] = float(raw_j_final - importance_penalty)
     agg_all["selected_objective"] = agg_all["J_final"]
@@ -4036,6 +4328,7 @@ def _run_lgbm_hpo(
         f"rows={len(y_sub)}/{len(y_arr)}, features={len(features)}, trials={int(max_trials)}, "
         f"row_subsample_frac={hpo_frac:.3f}, max_rows={int(LGBM_HPO_MAX_ROWS)}, "
         f"patience={int(patience)}, objective={_normalize_objective_mode(objective_mode)}, "
+        f"param_set={LGBM_HPO_PARAM_SET}, "
         "fold_mode=interleaved_spread, cegb_enabled=False, "
         f"path_smooth_max={float(LGBM_HPO_PATH_SMOOTH_MAX):.3g}, "
         f"final_min_estimators={int(LGBM_HPO_FINAL_MIN_ESTIMATORS)}."
@@ -4048,6 +4341,16 @@ def _run_lgbm_hpo(
         path_smooth = (
             trial.suggest_float("path_smooth", 0.0, LGBM_HPO_PATH_SMOOTH_MAX)
             if LGBM_HPO_PATH_SMOOTH_MAX > 0.0
+            else 0.0
+        )
+        bynode_fraction = (
+            trial.suggest_float("feature_fraction_bynode", 0.5, 1.0)
+            if LGBM_HPO_PARAM_SET == "full"
+            else 1.0
+        )
+        max_delta_step = (
+            trial.suggest_float("max_delta_step", 0.0, 5.0)
+            if LGBM_HPO_PARAM_SET == "full"
             else 0.0
         )
         params = _base_lgbm_params(
@@ -4069,11 +4372,11 @@ def _run_lgbm_hpo(
                 "subsample": subsample,
                 "subsample_freq": 1,
                 "colsample_bytree": trial.suggest_float("colsample_bytree", 0.40, 0.80),
-                "feature_fraction_bynode": trial.suggest_float("feature_fraction_bynode", 0.5, 1.0),
+                "feature_fraction_bynode": bynode_fraction,
                 "extra_trees": False,
                 "path_smooth": path_smooth,
                 "scale_pos_weight": trial.suggest_float("scale_pos_weight", 0.25, 4.0, log=True),
-                "max_delta_step": trial.suggest_float("max_delta_step", 0.0, 5.0),
+                "max_delta_step": max_delta_step,
             },
         )
         fold_metrics: list[dict[str, float]] = []
@@ -4280,16 +4583,19 @@ def _run_lgbm_hpo(
             "subsample": float(best.params.get("subsample", 0.75)),
             "subsample_freq": 1,
             "colsample_bytree": float(best.params.get("colsample_bytree", 0.70)),
-            "feature_fraction_bynode": float(best.params.get("feature_fraction_bynode", 1.0)),
             "extra_trees": False,
             "path_smooth": min(
                 float(best.params.get("path_smooth", 0.0)),
                 float(LGBM_HPO_PATH_SMOOTH_MAX),
             ),
             "scale_pos_weight": float(best.params.get("scale_pos_weight", 1.0)),
-            "max_delta_step": float(best.params.get("max_delta_step", 0.0)),
         },
     )
+    if LGBM_HPO_PARAM_SET == "full":
+        best_params["feature_fraction_bynode"] = float(
+            best.params.get("feature_fraction_bynode", 1.0)
+        )
+        best_params["max_delta_step"] = float(best.params.get("max_delta_step", 0.0))
     attrs = dict(best.user_attrs)
     attrs.update(
         {
@@ -4299,6 +4605,7 @@ def _run_lgbm_hpo(
             "hpo_best_value": float(best.value),
             "hpo_best_params": dict(best_params),
             "hpo_objective_mode": _normalize_objective_mode(objective_mode),
+            "hpo_param_set": LGBM_HPO_PARAM_SET,
             "hpo_final_n_estimators": int(final_n_estimators),
         }
     )
@@ -4965,12 +5272,256 @@ def train_lgbm_stability_pipeline(
     )
 
 
+def _first_present(columns: set[str], candidates: tuple[str, ...]) -> str | None:
+    for col in candidates:
+        if col in columns:
+            return col
+    return None
+
+
+def tail_control_frames_from_oof(
+    df: pd.DataFrame,
+    *,
+    model: str,
+    layer: str,
+    target_frac: float,
+) -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame]:
+    cols = set(map(str, df.columns))
+    score_col = _first_present(
+        cols,
+        (
+            "oof_pred",
+            "oof_prob",
+            "oof_raw",
+            "oof_meta_clf",
+            "oof_base_clf",
+            "score",
+            "pred",
+        ),
+    )
+    y_col = _first_present(cols, ("y_bin", "y_move", "target", "label"))
+    ret_col = _first_present(cols, ("y_ret", "return", "ret", "target_ret"))
+    if score_col is None or y_col is None:
+        raise ValueError(
+            f"{model}: cannot compute tail-control metrics; missing score or target column"
+        )
+    work = df.copy()
+    pred = pd.to_numeric(work[score_col], errors="coerce").to_numpy(dtype=np.float64)
+    y = pd.to_numeric(work[y_col], errors="coerce").to_numpy(dtype=np.float64)
+    if ret_col is not None:
+        ret = pd.to_numeric(work[ret_col], errors="coerce").to_numpy(dtype=np.float64)
+    else:
+        ret = y
+    m = np.isfinite(pred) & np.isfinite(y) & np.isfinite(ret)
+    pred = pred[m]
+    y = y[m]
+    ret = ret[m]
+    y_win = (y >= 0.5).astype(np.float64)
+    baseline = float(np.mean(y_win)) if len(y_win) else 0.0
+    timestamps = (
+        pd.to_datetime(work.loc[m, "timestamp"], utc=True, errors="coerce")
+        if "timestamp" in work.columns
+        else pd.Series([pd.NaT] * int(np.sum(m)))
+    )
+    assets = (
+        work.loc[m, "symbol"].astype(str).to_numpy(dtype=object)
+        if "symbol" in work.columns
+        else np.asarray(["__all__"] * int(np.sum(m)), dtype=object)
+    )
+    groups = _stability_group_bundle(len(y_win), timestamps=timestamps, assets=assets)
+    summary = _tail_control_metrics(
+        y_win,
+        pred,
+        baseline=baseline,
+        groups=groups,
+        target_frac=target_frac,
+    )
+    summary.update(
+        {
+            "model": str(model),
+            "layer": str(layer),
+            "target_frac": float(target_frac),
+            "n_rows": int(len(y_win)),
+            "baseline_win_rate": baseline,
+            "score_col": str(score_col),
+            "target_col": str(y_col),
+            "return_col": str(ret_col or ""),
+        }
+    )
+    week_records: list[dict[str, Any]] = []
+    asset_records: list[dict[str, Any]] = []
+    if groups and groups.get("week") is not None:
+        for rec in _tail_group_values(
+            y_win,
+            pred,
+            groups["week"],
+            baseline=baseline,
+            target_frac=target_frac,
+            min_rows=LGBM_TAIL_WEEK_MIN_ROWS,
+        ):
+            rec.update({"model": str(model), "layer": str(layer), "period_type": "week"})
+            week_records.append(rec)
+    if not week_records:
+        for rec in _tail_rolling_values(
+            y_win,
+            pred,
+            baseline=baseline,
+            target_frac=target_frac,
+            window_rows=LGBM_TAIL_ROLLING_ROWS,
+        ):
+            rec.update({"model": str(model), "layer": str(layer), "period_type": "rolling"})
+            week_records.append(rec)
+    if groups and groups.get("asset") is not None:
+        for rec in _tail_group_values(
+            y_win,
+            pred,
+            groups["asset"],
+            baseline=baseline,
+            target_frac=target_frac,
+            min_rows=LGBM_TAIL_ASSET_MIN_ROWS,
+        ):
+            rec.update({"model": str(model), "layer": str(layer), "period_type": "asset"})
+            asset_records.append(rec)
+    return summary, pd.DataFrame(week_records), pd.DataFrame(asset_records)
+
+
+def export_tail_control_reports(
+    data_root: str | os.PathLike[str],
+    run_id: str,
+    *,
+    compare_run_ids: list[str] | None = None,
+    target_strategy_id: str | None = None,
+) -> dict[str, str]:
+    root = Path(data_root) / "artifacts" / str(run_id)
+    out_dir = root / "tail_control_reports"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    target = str(target_strategy_id or os.environ.get("EPM_TAIL_CONTROL_STRATEGY_ID", "")).strip()
+
+    def _include(path: Path) -> bool:
+        return not target or target in path.name
+
+    summaries: list[dict[str, Any]] = []
+    week_frames: list[pd.DataFrame] = []
+    asset_frames: list[pd.DataFrame] = []
+    for layer, glob_pat, frac in (
+        ("base", "oof/oof_*_H*.parquet", LGBM_BASE_METRIC_TARGET_FRACTION),
+        ("meta", "meta_oof/meta_oof_*_clf.parquet", LGBM_META_METRIC_TARGET_FRACTION),
+    ):
+        for path in sorted(root.glob(glob_pat)):
+            if not _include(path):
+                continue
+            try:
+                df = pd.read_parquet(path)
+                summary, week_df, asset_df = tail_control_frames_from_oof(
+                    df,
+                    model=path.stem,
+                    layer=layer,
+                    target_frac=frac,
+                )
+                summaries.append(summary)
+                if not week_df.empty:
+                    week_frames.append(week_df)
+                if not asset_df.empty:
+                    asset_frames.append(asset_df)
+            except Exception as exc:
+                summaries.append(
+                    {
+                        "model": path.stem,
+                        "layer": layer,
+                        "error": str(exc),
+                        "tail_control_score": np.nan,
+                    }
+                )
+    per_model = pd.DataFrame(summaries)
+    per_week = pd.concat(week_frames, ignore_index=True) if week_frames else pd.DataFrame()
+    per_asset = pd.concat(asset_frames, ignore_index=True) if asset_frames else pd.DataFrame()
+    if not per_model.empty:
+        per_model.insert(0, "run_id", str(run_id))
+    if not per_week.empty:
+        per_week.insert(0, "run_id", str(run_id))
+    if not per_asset.empty:
+        per_asset.insert(0, "run_id", str(run_id))
+    summary_rows = []
+    if not per_model.empty:
+        for layer, part in per_model.groupby("layer", dropna=False):
+            vals = pd.to_numeric(part.get("tail_control_score"), errors="coerce")
+            summary_rows.append(
+                {
+                    "run_id": str(run_id),
+                    "layer": str(layer),
+                    "models": int(len(part)),
+                    "mean_tail_control_score": float(vals.mean()) if vals.notna().any() else np.nan,
+                    "max_tail_control_score": float(vals.max()) if vals.notna().any() else np.nan,
+                }
+            )
+    trial_summary = pd.DataFrame(summary_rows)
+    paths = {
+        "per_model_metrics_csv": str(out_dir / "per_model_metrics.csv"),
+        "per_model_metrics_json": str(out_dir / "per_model_metrics.json"),
+        "per_week_metrics_csv": str(out_dir / "per_week_metrics.csv"),
+        "per_asset_metrics_csv": str(out_dir / "per_asset_metrics.csv"),
+        "trial_summary_csv": str(out_dir / "trial_summary.csv"),
+        "trial_summary_json": str(out_dir / "trial_summary.json"),
+    }
+    per_model.to_csv(paths["per_model_metrics_csv"], index=False)
+    per_model.to_json(paths["per_model_metrics_json"], orient="records", indent=2)
+    per_week.to_csv(paths["per_week_metrics_csv"], index=False)
+    per_asset.to_csv(paths["per_asset_metrics_csv"], index=False)
+    trial_summary.to_csv(paths["trial_summary_csv"], index=False)
+    trial_summary.to_json(paths["trial_summary_json"], orient="records", indent=2)
+
+    compare_ids = [str(v).strip() for v in (compare_run_ids or []) if str(v).strip()]
+    if compare_ids:
+        frames = [per_model]
+        for other in compare_ids:
+            other_path = (
+                Path(data_root)
+                / "artifacts"
+                / other
+                / "tail_control_reports"
+                / "per_model_metrics.csv"
+            )
+            if other_path.exists():
+                frames.append(pd.read_csv(other_path))
+            else:
+                other_root = Path(data_root) / "artifacts" / other
+                other_summaries: list[dict[str, Any]] = []
+                for layer, glob_pat, frac in (
+                    ("base", "oof/oof_*_H*.parquet", LGBM_BASE_METRIC_TARGET_FRACTION),
+                    ("meta", "meta_oof/meta_oof_*_clf.parquet", LGBM_META_METRIC_TARGET_FRACTION),
+                ):
+                    for path in sorted(other_root.glob(glob_pat)):
+                        if not _include(path):
+                            continue
+                        try:
+                            df = pd.read_parquet(path)
+                            summary, _, _ = tail_control_frames_from_oof(
+                                df,
+                                model=path.stem,
+                                layer=layer,
+                                target_frac=frac,
+                            )
+                            summary["run_id"] = other
+                            other_summaries.append(summary)
+                        except Exception:
+                            continue
+                if other_summaries:
+                    frames.append(pd.DataFrame(other_summaries))
+        comparison = pd.concat(frames, ignore_index=True) if frames else per_model
+        comparison_path = out_dir / "comparison_table.csv"
+        comparison.to_csv(comparison_path, index=False)
+        paths["comparison_table_csv"] = str(comparison_path)
+    return paths
+
+
 __all__ = [
     "LGBMStabilityModel",
     "FeatureSelectionResult",
     "train_lgbm_stability_candidate",
     "fit_lgbm_stability_full_model",
     "train_lgbm_stability_pipeline",
+    "tail_control_frames_from_oof",
+    "export_tail_control_reports",
     "train_base",
     "train_meta",
     "LGBM_META_FEATURE_NAMES",

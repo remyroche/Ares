@@ -1850,6 +1850,72 @@ def _select_candidates_and_load_features(
         )
 
 
+def _targeted_recent_gap_backfill(
+    data_fetcher: DataFetcher,
+    symbols: Iterable[str],
+    *,
+    days: int,
+    max_symbols: int,
+    label: str,
+) -> Dict[str, str]:
+    """Run bounded recent 15m repair for a small symbol set only."""
+    if days <= 0:
+        return {}
+    unique_symbols: List[str] = []
+    seen: set[str] = set()
+    for symbol in symbols:
+        sym = str(symbol).strip()
+        if not sym or sym in seen:
+            continue
+        seen.add(sym)
+        unique_symbols.append(sym)
+    if not unique_symbols:
+        return {}
+    limit = max(0, int(max_symbols))
+    if limit > 0 and len(unique_symbols) > limit:
+        tprint(
+            f"Targeted recent-gap 15m backfill [{label}]: limiting "
+            f"{len(unique_symbols)} symbols to {limit}"
+        )
+        unique_symbols = unique_symbols[:limit]
+
+    results: Dict[str, str] = {}
+    checked = 0
+    skipped = 0
+    backfilled = 0
+    failed = 0
+    start = time.monotonic()
+    for symbol in unique_symbols:
+        checked += 1
+        try:
+            if not data_fetcher.has_recent_gap(symbol, days=days):
+                skipped += 1
+                results[symbol] = "no_recent_gap"
+                continue
+            frame = data_fetcher.trigger_gap_backfill(symbol, days=days)
+            if hasattr(data_fetcher, "_invalidate_symbol_cache"):
+                data_fetcher._invalidate_symbol_cache(symbol, microdata=False)
+            backfilled += 1
+            if isinstance(frame, pd.DataFrame):
+                results[symbol] = f"backfilled_rows={len(frame)}"
+            else:
+                results[symbol] = "backfilled"
+        except Exception as exc:
+            failed += 1
+            results[symbol] = f"failed:{classify_api_error(exc)}"
+            tprint(
+                f"Targeted recent-gap 15m backfill [{label}] failed for "
+                f"{symbol}: {classify_api_error(exc)}: {exc}"
+            )
+    elapsed = time.monotonic() - start
+    tprint(
+        f"Targeted recent-gap 15m backfill [{label}] complete: "
+        f"checked={checked} skipped_no_gap={skipped} backfilled={backfilled} "
+        f"failed={failed} days={days} elapsed={elapsed:.2f}s"
+    )
+    return results
+
+
 def _is_symbol_cooldown_blocked(
     symbol: str,
     *,
@@ -6879,7 +6945,7 @@ def _monitor_active_position_price_action(
     trade_logger: Optional[TradeLogger] = None,
     sheets_exporter: Optional[GoogleSheetsTradeExporter] = None,
 ) -> Dict[str, Dict[str, Any]]:
-    """Monitor active positions and apply closed-15m trailing/stop updates."""
+    """Monitor active positions and apply closed-5m trailing/stop updates."""
     statuses: Dict[str, Dict[str, Any]] = {}
     active_positions = (
         executor.get_active_positions()
@@ -6949,10 +7015,15 @@ def _monitor_active_position_price_action(
         now_ts = now_ts.tz_convert("UTC")
 
     cfg = dict(config or getattr(executor, "config", {}) or {})
-    monitor_delay = float(cfg.get("fifteen_minute_ohlcv_delay_seconds", 5.0))
-    latest_closed_15m = _latest_closed_candle_start(
+    monitor_delay = float(
+        cfg.get(
+            "five_minute_ohlcv_delay_seconds",
+            cfg.get("fifteen_minute_ohlcv_delay_seconds", 5.0),
+        )
+    )
+    latest_closed_5m = _latest_closed_candle_start(
         now_ts,
-        timeframe_minutes=15,
+        timeframe_minutes=5,
         delay_seconds=monitor_delay,
     )
     cached_5m: Dict[str, pd.DataFrame] = {}
@@ -7009,7 +7080,7 @@ def _monitor_active_position_price_action(
                     pd.Timestamp(last_eval_ts) - pd.Timedelta(minutes=15),
                 )
             start_time = max(start_time, now_ts - pd.Timedelta(hours=8))
-            end_time = latest_closed_15m
+            end_time = latest_closed_5m
             if start_time >= end_time:
                 continue
 
@@ -7018,7 +7089,7 @@ def _monitor_active_position_price_action(
                 ohlcv_5m = hf_data_loader.fetch_specific_period(
                     exchange,
                     symbol,
-                    "15m",
+                    "5m",
                     start_time,
                     end_time,
                     use_cache=True,
@@ -7034,7 +7105,7 @@ def _monitor_active_position_price_action(
                 continue
 
             bars = pd.DataFrame(ohlcv_5m)
-            bars = bars[bars.index <= latest_closed_15m]
+            bars = bars[bars.index <= latest_closed_5m]
             if bars.empty:
                 continue
             before_stop = float(position_state.get("stop_price", np.nan))
@@ -7114,7 +7185,7 @@ def _monitor_active_position_price_action(
         except Exception as exc:
             errors += 1
             tprint(
-                f"  Error evaluating 15m price action for {symbol}: "
+                f"  Error evaluating 5m price action for {symbol}: "
                 f"{classify_api_error(exc)}: {exc}"
             )
             statuses.setdefault(symbol, {})["price_action_error"] = str(exc)
@@ -7946,13 +8017,23 @@ def main():
                         f"max_hour_age={max_entry_hourly_age_seconds:.0f}s)."
                     )
                 refresh_microdata = bool(config.get("hourly_refresh_microdata", True))
+                hourly_gap_backfill_days = int(
+                    config.get("hourly_refresh_recent_gap_backfill_days", 0) or 0
+                )
+                if hourly_gap_backfill_days > 0:
+                    tprint(
+                        "Hourly refresh recent-gap 15m backfill is enabled: "
+                        f"days={hourly_gap_backfill_days}. This can be slow for "
+                        "large universes and should normally be reserved for "
+                        "targeted repair jobs, not pre-scoring live refresh."
+                    )
                 hourly_refresh_result = data_fetcher.fetch_hourly_universe_once(
                     download_symbols,
                     max_workers=int(config.get("hourly_ohlcv_workers", 16)),
                     no_progress_timeout_seconds=float(
                         config.get("hourly_ohlcv_no_progress_timeout_seconds", 60.0)
                     ),
-                    check_recent_gaps_days=7,
+                    check_recent_gaps_days=hourly_gap_backfill_days,
                     refresh_microdata=refresh_microdata,
                     target_hour=latest_closed_hour,
                 )
@@ -7971,6 +8052,38 @@ def main():
                 )
                 last_hourly_sync = latest_closed_hour
                 did_hourly_refresh = True
+                active_gap_days = int(
+                    config.get("active_position_recent_gap_backfill_days", 1) or 0
+                )
+                if active_gap_days > 0:
+                    try:
+                        active_gap_symbols = sorted(
+                            str(sym)
+                            for sym in (
+                                executor.get_active_positions().keys()
+                                if hasattr(executor, "get_active_positions")
+                                else []
+                            )
+                        )
+                        if active_gap_symbols:
+                            _targeted_recent_gap_backfill(
+                                data_fetcher,
+                                active_gap_symbols,
+                                days=active_gap_days,
+                                max_symbols=int(
+                                    config.get(
+                                        "active_position_recent_gap_backfill_max_symbols",
+                                        8,
+                                    )
+                                    or 8
+                                ),
+                                label="active_positions",
+                            )
+                    except Exception as exc:
+                        tprint(
+                            "Active-position targeted 15m backfill failed: "
+                            f"{classify_api_error(exc)}: {exc}"
+                        )
 
             if not did_hourly_refresh:
                 _monitor_active_position_price_action(
@@ -8089,6 +8202,55 @@ def main():
                 lgbm_strategy_mask_rows=lgbm_strategy_mask_rows,
                 feature_context_symbols=feature_context_symbols,
             )
+            candidate_gap_days = int(
+                config.get("candidate_recent_gap_backfill_days", 1) or 0
+            )
+            candidate_gap_results: Dict[str, str] = {}
+            if candidate_gap_days > 0 and (long_cands or short_cands):
+                candidate_gap_results = _targeted_recent_gap_backfill(
+                    data_fetcher,
+                    list(long_cands) + list(short_cands),
+                    days=candidate_gap_days,
+                    max_symbols=int(
+                        config.get("candidate_recent_gap_backfill_max_symbols", 24)
+                        or 24
+                    ),
+                    label="post_mask_candidates",
+                )
+                if any(
+                    str(status).startswith("backfilled")
+                    for status in candidate_gap_results.values()
+                ) and bool(
+                    config.get("candidate_recent_gap_backfill_rerun_on_update", True)
+                ):
+                    tprint(
+                        "Targeted candidate 15m backfill changed local data; "
+                        "reloading panel and recomputing candidate features for "
+                        "this cycle."
+                    )
+                    panel = data_fetcher.get_panel(
+                        download_symbols, lookback_hours=panel_lookback_hours
+                    )
+                    tradable_panel = _subset_panel(panel, symbols)
+                    (
+                        thresholds,
+                        long_cands,
+                        short_cands,
+                        features,
+                        strategy_candidate_masks,
+                    ) = _select_candidates_and_load_features(
+                        panel=panel,
+                        symbols=symbols,
+                        run_id=config["run_id"],
+                        data_root=str(
+                            config.get("live_data_root") or config["data_root"]
+                        ),
+                        cfg=feature_runtime_cfg,
+                        lookback_hours=panel_lookback_hours,
+                        required_feature_keys=required_feature_keys,
+                        lgbm_strategy_mask_rows=lgbm_strategy_mask_rows,
+                        feature_context_symbols=feature_context_symbols,
+                    )
             loop_timer.mark("candidate_and_feature_load")
 
             results = run_inference_step(
@@ -8336,7 +8498,7 @@ def _evaluate_oco_policy(
             position_state.setdefault("trade_recap_events", []).append(
                 {
                     "ts": pd.Timestamp(bar_ts).isoformat(),
-                    "event": "price_bar_15m",
+                    "event": "price_bar_5m",
                     "open": bar_open,
                     "high": bar_high,
                     "low": bar_low,

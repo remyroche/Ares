@@ -8,6 +8,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Optional, Sequence
 
@@ -30,6 +31,7 @@ from .config import CANON_HORIZONS
 from .data_store import save_artifact_df
 from .ebm_on_lgbm import train_ebm_on_lgbm_candidate
 from .lgbm_pipeline import (
+    _is_lgbm_model_derived_meta_feature,
     fit_lgbm_stability_full_model,
     train_lgbm_stability_candidate,
 )
@@ -126,18 +128,189 @@ from .weak_residual_meta_learner import (
 )
 
 
+def _symbol_feature_filename(symbol: str) -> str:
+    return f"symbol={str(symbol).replace('/', '_')}.parquet"
+
+
+def _stage_period_mask(index: pd.Index, stage_view: dict[str, Any]) -> np.ndarray:
+    ts = pd.to_datetime(index, utc=True, errors="coerce")
+    mask = np.ones(len(ts), dtype=bool)
+    periods = stage_view.get("allowed_periods")
+    if isinstance(periods, list) and periods:
+        mask = np.zeros(len(ts), dtype=bool)
+        for period in periods:
+            if not isinstance(period, dict):
+                continue
+            start = pd.to_datetime(period.get("start_ts"), utc=True, errors="coerce")
+            end = pd.to_datetime(period.get("end_ts"), utc=True, errors="coerce")
+            if pd.isna(start) or pd.isna(end):
+                continue
+            mask |= np.asarray((ts >= start) & (ts < end), dtype=bool)
+        return mask
+    start_raw = stage_view.get("allowed_start_ts")
+    end_raw = stage_view.get("allowed_end_ts")
+    if start_raw:
+        start = pd.to_datetime(start_raw, utc=True, errors="coerce")
+        if not pd.isna(start):
+            mask &= np.asarray(ts >= start, dtype=bool)
+    if end_raw:
+        end = pd.to_datetime(end_raw, utc=True, errors="coerce")
+        if not pd.isna(end):
+            mask &= np.asarray(ts <= end, dtype=bool)
+    return mask
+
+
+def _feature_store_availability_matrix(
+    feature_cols: Sequence[str],
+    *,
+    cfg: dict[str, Any],
+) -> tuple[np.ndarray | None, int, str]:
+    """Build a finite matrix on the strict simple_policy_optimiser feature slice."""
+
+    stage_view = cfg.get("_feature_availability_stage_view")
+    run_id = str(cfg.get("_feature_availability_run_id") or "").strip()
+    data_root = str(cfg.get("data_root") or "").strip()
+    if not isinstance(stage_view, dict) or not stage_view or not run_id or not data_root:
+        return None, 0, ""
+    feature_root = Path(data_root) / "features" / run_id
+    if not feature_root.exists():
+        return None, 0, f"feature_root_missing:{feature_root}"
+
+    symbols = stage_view.get("symbols") or stage_view.get("allowed_symbols") or []
+    symbols = [str(s) for s in symbols if str(s).strip()]
+    if not symbols:
+        return None, 0, "policy_slice_has_no_symbols"
+
+    cols = [str(c) for c in feature_cols]
+    parquet_filters = None
+    periods = stage_view.get("allowed_periods")
+    if isinstance(periods, list) and periods:
+        filter_groups = []
+        for period in periods:
+            if not isinstance(period, dict):
+                continue
+            start = pd.to_datetime(period.get("start_ts"), utc=True, errors="coerce")
+            end = pd.to_datetime(period.get("end_ts"), utc=True, errors="coerce")
+            if pd.isna(start) or pd.isna(end):
+                continue
+            filter_groups.append(
+                [
+                    ("ts", ">=", start.to_pydatetime()),
+                    ("ts", "<", end.to_pydatetime()),
+                ]
+            )
+        if filter_groups:
+            parquet_filters = filter_groups
+    else:
+        filter_group = []
+        start_raw = stage_view.get("allowed_start_ts")
+        end_raw = stage_view.get("allowed_end_ts")
+        if start_raw:
+            start = pd.to_datetime(start_raw, utc=True, errors="coerce")
+            if not pd.isna(start):
+                filter_group.append(("ts", ">=", start.to_pydatetime()))
+        if end_raw:
+            end = pd.to_datetime(end_raw, utc=True, errors="coerce")
+            if not pd.isna(end):
+                filter_group.append(("ts", "<=", end.to_pydatetime()))
+        if filter_group:
+            parquet_filters = filter_group
+
+    parts: list[np.ndarray] = []
+    loaded_symbols = 0
+    missing_symbols = 0
+    try:
+        import pyarrow.parquet as pq
+    except Exception:
+        pq = None
+    for symbol in symbols:
+        path = feature_root / _symbol_feature_filename(symbol)
+        if not path.exists():
+            missing_symbols += 1
+            continue
+        try:
+            if pq is not None:
+                schema_names = set(pq.ParquetFile(path).schema_arrow.names)
+            else:
+                schema_names = set(pd.read_parquet(path).columns)
+            present_cols = [c for c in cols if c in schema_names]
+            read_kwargs: dict[str, Any] = {}
+            if parquet_filters is not None and "ts" in schema_names:
+                read_kwargs["filters"] = parquet_filters
+            if present_cols:
+                try:
+                    frame = pd.read_parquet(path, columns=present_cols, **read_kwargs)
+                except Exception:
+                    frame = pd.read_parquet(path, columns=present_cols)
+            else:
+                try:
+                    frame = pd.read_parquet(path, columns=[], **read_kwargs)
+                except Exception:
+                    frame = pd.read_parquet(path, columns=[])
+            row_mask = _stage_period_mask(frame.index, stage_view)
+            if not bool(row_mask.any()):
+                continue
+            row_n = int(row_mask.sum())
+            matrix = np.zeros((row_n, len(cols)), dtype=bool)
+            if present_cols:
+                sub = frame.loc[row_mask, present_cols]
+                present_idx = [cols.index(c) for c in present_cols]
+                try:
+                    values = sub.to_numpy(dtype=np.float32, copy=False)
+                except (TypeError, ValueError):
+                    values = sub.apply(pd.to_numeric, errors="coerce").to_numpy(
+                        dtype=np.float32, copy=False
+                    )
+                matrix[:, present_idx] = np.isfinite(values)
+            parts.append(matrix)
+            loaded_symbols += 1
+            if loaded_symbols == 1 or loaded_symbols % 25 == 0:
+                tprint(
+                    "Feature availability reference: scanned "
+                    f"{loaded_symbols}/{len(symbols)} symbols "
+                    f"(rows={sum(int(p.shape[0]) for p in parts)}, "
+                    f"missing_symbols={missing_symbols})"
+                )
+        except Exception as exc:
+            missing_symbols += 1
+            tprint(f"Feature availability reference: failed loading {path}: {exc}")
+            continue
+    if not parts:
+        return None, 0, (
+            f"no_policy_feature_rows loaded_symbols={loaded_symbols} "
+            f"missing_symbols={missing_symbols}"
+        )
+    finite = np.vstack(parts)
+    desc = (
+        f"simple_policy_optimiser feature slice; loaded_symbols={loaded_symbols}, "
+        f"missing_symbols={missing_symbols}, start={stage_view.get('allowed_start_ts')}, "
+        f"end={stage_view.get('allowed_end_ts')}"
+    )
+    return finite, int(finite.shape[0]), desc
+
+
 def _recent_feature_availability_filter(
     df: pd.DataFrame,
     feature_cols: Sequence[str],
     *,
     cfg: dict[str, Any] | None = None,
     context: str = "training",
+    exempt_features: Optional[set[str]] = None,
 ) -> list[str]:
-    """Keep only features with enough finite coverage on the optimiser tail."""
+    """Keep features whose joint finite coverage is sufficient on optimiser tail."""
 
-    cols = [str(c) for c in feature_cols if str(c) in df.columns]
-    if not cols or df.empty:
-        return cols
+    all_cols = [str(c) for c in feature_cols if str(c) in df.columns]
+    if not all_cols or df.empty:
+        return all_cols
+    exempt = {str(c) for c in (exempt_features or set()) if str(c) in set(all_cols)}
+    cols = [c for c in all_cols if c not in exempt]
+    if not cols:
+        if exempt:
+            tprint(
+                f"{context}: feature availability filter exempted all "
+                f"{len(exempt)} model-derived features from raw coverage."
+            )
+        return all_cols
     cfg = cfg or {}
     min_coverage = float(
         cfg.get(
@@ -166,6 +339,140 @@ def _recent_feature_availability_filter(
             os.environ.get("EPM_LGBM_FEATURE_RECENT_MIN_ROWS", "200"),
         )
     )
+    store_finite, store_rows, store_desc = _feature_store_availability_matrix(
+        cols,
+        cfg=cfg,
+    )
+    if store_finite is not None and int(store_rows) >= min_rows:
+        finite = np.asarray(store_finite, dtype=bool)
+        feature_coverage = finite.mean(axis=0)
+        missing = ~finite
+        active = np.ones(len(cols), dtype=bool)
+        removed_iter: list[tuple[str, float]] = []
+        removed_group_iter: list[dict[str, Any]] = []
+        stopped_no_gain = False
+        missing_count = missing.sum(axis=1).astype(np.int32, copy=False)
+        joint_coverage = float((missing_count == 0).mean()) if len(cols) else 1.0
+        n_rows = max(int(len(finite)), 1)
+
+        def _best_group_removal() -> tuple[np.ndarray | None, float, int]:
+            active_idx_inner = np.flatnonzero(active)
+            blocker_rows = missing_count > 0
+            if len(active_idx_inner) == 0 or not bool(blocker_rows.any()):
+                return None, 0.0, 0
+            active_missing = missing[np.ix_(blocker_rows, active_idx_inner)]
+            if active_missing.size == 0:
+                return None, 0.0, 0
+            packed = np.packbits(active_missing, axis=1)
+            _, first_idx, counts = np.unique(
+                packed, axis=0, return_index=True, return_counts=True
+            )
+            order = np.argsort(counts)[::-1][:256]
+            best_group: np.ndarray | None = None
+            best_gain = 0.0
+            best_score = -1.0
+            best_size = 0
+            for pos in order:
+                local_mask = np.asarray(active_missing[int(first_idx[pos])], dtype=bool)
+                group_size = int(local_mask.sum())
+                if group_size <= 0:
+                    continue
+                gain = float(counts[pos]) / float(n_rows)
+                score = gain / float(group_size)
+                if (
+                    score > best_score
+                    or (np.isclose(score, best_score) and gain > best_gain)
+                    or (
+                        np.isclose(score, best_score)
+                        and np.isclose(gain, best_gain)
+                        and (best_size == 0 or group_size < best_size)
+                    )
+                ):
+                    best_group = active_idx_inner[local_mask]
+                    best_gain = gain
+                    best_score = score
+                    best_size = group_size
+            return best_group, best_gain, best_size
+
+        while len(cols) and int(active.sum()) > 0 and joint_coverage < min_coverage:
+            active_idx = np.flatnonzero(active)
+            single_blocker = missing_count == 1
+            if bool(single_blocker.any()):
+                removal_gain = (
+                    missing[np.ix_(single_blocker, active_idx)]
+                    .sum(axis=0)
+                    .astype(np.float64)
+                    / float(len(finite))
+                )
+            else:
+                removal_gain = np.zeros(len(active_idx), dtype=np.float64)
+            active_cov = feature_coverage[active_idx]
+            best_gain = float(np.max(removal_gain))
+            if best_gain <= 0.0:
+                group_idx, group_gain, group_size = _best_group_removal()
+                if group_idx is None or group_gain <= 0.0:
+                    stopped_no_gain = True
+                    break
+                missing_rates = 1.0 - feature_coverage[group_idx]
+                order = np.argsort(missing_rates)[::-1]
+                group_idx = group_idx[order]
+                removed_group_iter.append(
+                    {
+                        "features": [cols[int(i)] for i in group_idx[:25]],
+                        "feature_count": int(group_size),
+                        "gain": float(group_gain),
+                    }
+                )
+                for idx in group_idx:
+                    removed_iter.append((cols[int(idx)], float(1.0 - feature_coverage[int(idx)])))
+                active[group_idx] = False
+                missing_count -= missing[:, group_idx].sum(axis=1).astype(np.int32, copy=False)
+                joint_coverage = float((missing_count == 0).mean()) if active.any() else 1.0
+                continue
+            else:
+                best_local = np.flatnonzero(np.isclose(removal_gain, best_gain))
+                worst_local = int(best_local[np.argmin(active_cov[best_local])])
+            worst_idx = int(active_idx[worst_local])
+            removed_iter.append((cols[worst_idx], float(1.0 - active_cov[worst_local])))
+            active[worst_idx] = False
+            missing_count -= missing[:, worst_idx].astype(np.int32, copy=False)
+            joint_coverage = float((missing_count == 0).mean()) if active.any() else 1.0
+        active_kept = {c for c, is_active in zip(cols, active) if bool(is_active)}
+        kept = [c for c in all_cols if c in exempt or c in active_kept]
+        removed_initial = sorted(
+            (
+                (c, float(1.0 - rate))
+                for c, rate in zip(cols, feature_coverage)
+                if float(rate) < min_coverage
+            ),
+            key=lambda item: (-item[1], item[0]),
+        )
+        removed = removed_iter
+        if removed:
+            preview = ", ".join(f"{name}=missing:{rate:.1%}" for name, rate in removed[:20])
+            tprint(
+                f"{context}: policy-slice complete-case feature availability filter kept "
+                f"{len(kept)}/{len(all_cols)} features with {joint_coverage:.1%} complete rows "
+                f"(target>={min_coverage:.0%}) on {store_rows} rows ({store_desc}); "
+                f"exempt_model_derived={len(exempt)}, "
+                f"greedy-min-removal pruned {len(removed_iter)}, "
+                f"group_steps={len(removed_group_iter)}, "
+                f"stopped_no_gain={stopped_no_gain}. Removed: {preview}"
+            )
+        else:
+            tprint(
+                f"{context}: policy-slice complete-case feature availability filter kept all "
+                f"{len(all_cols)} features with {joint_coverage:.1%} complete rows "
+                f"(target>={min_coverage:.0%}) on {store_rows} rows ({store_desc}); "
+                f"exempt_model_derived={len(exempt)}, "
+                f"stopped_no_gain={stopped_no_gain}"
+            )
+        return kept
+    if store_desc:
+        tprint(
+            f"{context}: policy-slice feature availability reference unavailable "
+            f"({store_desc}); falling back to in-memory training rows."
+        )
     row_mask = np.ones(len(df), dtype=bool)
     window_desc = "all rows"
     if "ts" in df.columns:
@@ -180,28 +487,163 @@ def _recent_feature_availability_filter(
             if int(candidate.sum()) >= min(min_rows, len(df)):
                 row_mask = candidate.to_numpy(dtype=bool)
                 window_desc = f"{start_ts} -> {end_ts}"
+    price_candidates = (
+        "close",
+        "price",
+        "mark_price",
+        "index_price",
+        "perp_close",
+        "spot_close",
+        "__close__",
+    )
+    price_masks: list[np.ndarray] = []
+    price_sources: list[str] = []
+    for pc in price_candidates:
+        if pc not in df.columns:
+            continue
+        arr = pd.to_numeric(df[pc], errors="coerce").to_numpy(dtype=np.float64, copy=False)
+        mask = np.isfinite(arr) & (arr > 0.0)
+        if int((row_mask & mask).sum()) >= min(min_rows, int(row_mask.sum())):
+            price_masks.append(mask)
+            price_sources.append(pc)
+    if price_masks:
+        price_mask = np.logical_or.reduce(price_masks)
+        priced_rows = row_mask & price_mask
+        if int(priced_rows.sum()) >= min(min_rows, int(row_mask.sum())):
+            row_mask = priced_rows
+            window_desc = f"{window_desc}; price-valid rows via {','.join(price_sources)}"
     sample = df.loc[row_mask, cols]
     if sample.empty:
-        return cols
+        return all_cols
     numeric = sample.apply(pd.to_numeric, errors="coerce")
     arr = numeric.to_numpy(dtype=np.float32, copy=False)
-    coverage = np.isfinite(arr).mean(axis=0)
-    kept = [c for c, rate in zip(cols, coverage) if float(rate) >= min_coverage]
-    removed = sorted(
-        ((c, float(rate)) for c, rate in zip(cols, coverage) if float(rate) < min_coverage),
-        key=lambda item: (item[1], item[0]),
+    finite = np.isfinite(arr)
+    feature_coverage = finite.mean(axis=0)
+    missing = ~finite
+    active = np.ones(len(cols), dtype=bool)
+    removed_iter: list[tuple[str, float]] = []
+    removed_group_iter: list[dict[str, Any]] = []
+    stopped_no_gain = False
+    missing_count = missing.sum(axis=1).astype(np.int32, copy=False)
+    joint_coverage = float((missing_count == 0).mean()) if len(cols) else 1.0
+    n_rows = max(int(len(finite)), 1)
+
+    def _best_group_removal() -> tuple[np.ndarray | None, float, int]:
+        active_idx_inner = np.flatnonzero(active)
+        blocker_rows = missing_count > 0
+        if len(active_idx_inner) == 0 or not bool(blocker_rows.any()):
+            return None, 0.0, 0
+        active_missing = missing[np.ix_(blocker_rows, active_idx_inner)]
+        if active_missing.size == 0:
+            return None, 0.0, 0
+        packed = np.packbits(active_missing, axis=1)
+        _, first_idx, counts = np.unique(
+            packed, axis=0, return_index=True, return_counts=True
+        )
+        order = np.argsort(counts)[::-1][:256]
+        best_group: np.ndarray | None = None
+        best_gain = 0.0
+        best_score = -1.0
+        best_size = 0
+        for pos in order:
+            local_mask = np.asarray(active_missing[int(first_idx[pos])], dtype=bool)
+            group_size = int(local_mask.sum())
+            if group_size <= 0:
+                continue
+            gain = float(counts[pos]) / float(n_rows)
+            score = gain / float(group_size)
+            if (
+                score > best_score
+                or (np.isclose(score, best_score) and gain > best_gain)
+                or (
+                    np.isclose(score, best_score)
+                    and np.isclose(gain, best_gain)
+                    and (best_size == 0 or group_size < best_size)
+                )
+            ):
+                best_group = active_idx_inner[local_mask]
+                best_gain = gain
+                best_score = score
+                best_size = group_size
+        return best_group, best_gain, best_size
+
+    while len(cols) and int(active.sum()) > 0 and joint_coverage < min_coverage:
+        active_idx = np.flatnonzero(active)
+        single_blocker = missing_count == 1
+        if bool(single_blocker.any()):
+            removal_gain = (
+                missing[np.ix_(single_blocker, active_idx)]
+                .sum(axis=0)
+                .astype(np.float64)
+                / float(len(finite))
+            )
+        else:
+            removal_gain = np.zeros(len(active_idx), dtype=np.float64)
+        active_cov = feature_coverage[active_idx]
+        best_gain = float(np.max(removal_gain))
+        if best_gain <= 0.0:
+            group_idx, group_gain, group_size = _best_group_removal()
+            if group_idx is None or group_gain <= 0.0:
+                stopped_no_gain = True
+                break
+            missing_rates = 1.0 - feature_coverage[group_idx]
+            order = np.argsort(missing_rates)[::-1]
+            group_idx = group_idx[order]
+            removed_group_iter.append(
+                {
+                    "features": [cols[int(i)] for i in group_idx[:25]],
+                    "feature_count": int(group_size),
+                    "gain": float(group_gain),
+                }
+            )
+            for idx in group_idx:
+                removed_iter.append((cols[int(idx)], float(1.0 - feature_coverage[int(idx)])))
+            active[group_idx] = False
+            missing_count -= missing[:, group_idx].sum(axis=1).astype(np.int32, copy=False)
+            joint_coverage = float((missing_count == 0).mean()) if active.any() else 1.0
+            continue
+        else:
+            best_local = np.flatnonzero(np.isclose(removal_gain, best_gain))
+            worst_local = int(best_local[np.argmin(active_cov[best_local])])
+        worst_idx = int(active_idx[worst_local])
+        removed_iter.append(
+            (
+                cols[worst_idx],
+                float(1.0 - active_cov[worst_local]),
+            )
+        )
+        active[worst_idx] = False
+        missing_count -= missing[:, worst_idx].astype(np.int32, copy=False)
+        joint_coverage = float((missing_count == 0).mean()) if active.any() else 1.0
+    active_kept = {c for c, is_active in zip(cols, active) if bool(is_active)}
+    kept = [c for c in all_cols if c in exempt or c in active_kept]
+    removed_initial = sorted(
+        (
+            (c, float(1.0 - rate))
+            for c, rate in zip(cols, feature_coverage)
+            if float(rate) < min_coverage
+        ),
+        key=lambda item: (-item[1], item[0]),
     )
+    removed = removed_iter
     if removed:
-        preview = ", ".join(f"{name}={rate:.1%}" for name, rate in removed[:20])
+        preview = ", ".join(f"{name}=missing:{rate:.1%}" for name, rate in removed[:20])
         tprint(
-            f"{context}: recent feature availability filter kept {len(kept)}/{len(cols)} "
-            f"features at >= {min_coverage:.0%} coverage on {int(row_mask.sum())} rows "
-            f"({window_desc}); removed {len(removed)}. Lowest coverage: {preview}"
+            f"{context}: recent complete-case feature availability filter kept "
+            f"{len(kept)}/{len(all_cols)} features with {joint_coverage:.1%} complete rows "
+            f"(target>={min_coverage:.0%}) on {int(row_mask.sum())} rows ({window_desc}); "
+            f"exempt_model_derived={len(exempt)}, "
+            f"greedy-min-removal pruned {len(removed_iter)}, "
+            f"group_steps={len(removed_group_iter)}, "
+            f"stopped_no_gain={stopped_no_gain}. Removed: {preview}"
         )
     else:
         tprint(
-            f"{context}: recent feature availability filter kept all {len(cols)} features "
-            f"at >= {min_coverage:.0%} coverage on {int(row_mask.sum())} rows ({window_desc})"
+            f"{context}: recent complete-case feature availability filter kept all "
+            f"{len(all_cols)} features with {joint_coverage:.1%} complete rows "
+            f"(target>={min_coverage:.0%}) on {int(row_mask.sum())} rows ({window_desc}); "
+            f"exempt_model_derived={len(exempt)}, "
+            f"stopped_no_gain={stopped_no_gain}"
         )
     return kept
 
@@ -2194,6 +2636,11 @@ def _fit_direct_extratrees_base_model(
         if hasattr(X, "columns")
         else []
     )
+    X_raw_for_availability = (
+        X.copy()
+        if hasattr(X, "copy") and hasattr(X, "columns")
+        else None
+    )
 
     if hasattr(X, "iloc"):
         try:
@@ -2216,12 +2663,15 @@ def _fit_direct_extratrees_base_model(
 
     X_full_np = X_np
     _feature_names_for_full_fit = list(_feature_names_for_fit)
+    X_full_raw_for_availability = X_raw_for_availability
     if X_full is not None:
         _x_full_names = (
             [str(c) for c in X_full.columns]
             if hasattr(X_full, "columns")
             else []
         )
+        if hasattr(X_full, "copy") and hasattr(X_full, "columns"):
+            X_full_raw_for_availability = X_full.copy()
         if hasattr(X_full, "iloc"):
             try:
                 X_full_arr = X_full.to_numpy(dtype=np.float32, copy=False)
@@ -2333,6 +2783,51 @@ def _fit_direct_extratrees_base_model(
         np.asarray(X_full_np, dtype=np.float32),
         columns=list(_feature_names_for_full_fit),
     )
+    if (
+        X_full_raw_for_availability is not None
+        and hasattr(X_full_raw_for_availability, "columns")
+        and len(getattr(X_full_raw_for_availability, "columns", []))
+        == len(_feature_names_for_full_fit)
+    ):
+        _race_X_availability_df = pd.DataFrame(X_full_raw_for_availability).copy()
+        _race_X_availability_df.columns = list(_feature_names_for_full_fit)
+    else:
+        _race_X_availability_df = _race_X_df
+    if _backend == "lgbm_pipeline":
+        _before_cols = list(_race_X_df.columns)
+        _availability_exempt = (
+            {
+                str(c)
+                for c in _before_cols
+                if _is_lgbm_model_derived_meta_feature(str(c))
+            }
+            if _is_meta_hpo
+            else set()
+        )
+        _kept_cols = _recent_feature_availability_filter(
+            _race_X_availability_df,
+            _before_cols,
+            cfg=_cfg_local,
+            context=f"LGBM model race {kind_name}",
+            exempt_features=_availability_exempt,
+        )
+        if not _kept_cols:
+            tprint(
+                f"Model Race [{kind_name}]: no features meet policy-slice "
+                "complete-case availability threshold."
+            )
+            return None, _base_fit_failure_payload(
+                failure_reason="no_features_after_policy_slice_availability_filter",
+                training_diagnostics={"n_total": int(len(y_hard))},
+            )
+        if len(_kept_cols) < len(_before_cols):
+            _race_X_df = _race_X_df.reindex(columns=_kept_cols)
+            _feature_names_for_full_fit = list(_kept_cols)
+            X_full_np = _race_X_df.to_numpy(dtype=np.float32, copy=False)
+            tprint(
+                f"Model Race [{kind_name}]: policy-slice availability pruning "
+                f"{len(_before_cols)} -> {len(_kept_cols)} features before LGBM prescreen."
+            )
     _candidate_trainers = (
         (("lgbm_pipeline", train_lgbm_stability_candidate),)
         if _backend == "lgbm_pipeline"
@@ -8215,6 +8710,12 @@ def build_hourly_training_set_and_weights(
         cfg=cfg,
         context="base training feature matrix",
     )
+    if not feat_cols:
+        tprint(
+            "No rows generated for training set: "
+            "no features meet recent complete-case availability threshold"
+        )
+        return empty_out
     dropped_feature_cols = [c for c in feat_cols_all if c not in set(feat_cols)]
     if dropped_feature_cols:
         df.drop(columns=dropped_feature_cols, inplace=True, errors="ignore")
@@ -16313,6 +16814,13 @@ def train_meta_models_from_artifacts(
         meta_model_cols.extend(
             [c for c in recent_effectiveness_cols if c in X_meta_base.columns]
         )
+        meta_model_cols.extend(
+            [
+                c
+                for c in cfg.get("META_BASE_PERFORMANCE_FEATURE_KEYS", [])
+                if isinstance(c, str) and c in X_meta_base.columns
+            ]
+        )
         meta_model_cols = list(dict.fromkeys(meta_model_cols))
         _ridge_test_keys = [
             str(c)
@@ -22745,11 +23253,16 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 )
                 entry["variant"] = "primary"
                 if cand_name == race.best_model_name:
+                    _best_model_obj = getattr(race, "best_model", None)
+                    _report_feature_names = (
+                        list(getattr(_best_model_obj, "selected_features", []) or [])
+                        or h_info.get("selected_features")
+                    )
                     _feature_rows = _extract_model_feature_importance_rows(
-                        getattr(race, "best_model", None),
+                        _best_model_obj,
                         stage="train_base",
                         model_id=f"{side}_{kind}_H{H_rep}:{cand_name}",
-                        feature_names=h_info.get("selected_features"),
+                        feature_names=_report_feature_names,
                         side=side,
                         strategy_id=kind,
                         horizon=int(H_rep),
@@ -22809,11 +23322,16 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             entry["is_winner"] = cand_name == race.best_model_name
             entry["downstream_blocked"] = False
             if cand_name == race.best_model_name:
+                _best_model_obj = getattr(race, "best_model", None)
+                _report_feature_names = (
+                    list(getattr(_best_model_obj, "selected_features", []) or [])
+                    or variant_info.get("selected_features")
+                )
                 _feature_rows = _extract_model_feature_importance_rows(
-                    getattr(race, "best_model", None),
+                    _best_model_obj,
                     stage="train_base",
                     model_id=f"{side}_{kind}_H{int(horizon)}_{variant}:{cand_name}",
-                    feature_names=variant_info.get("selected_features"),
+                    feature_names=_report_feature_names,
                     side=side,
                     strategy_id=kind,
                     horizon=int(horizon),

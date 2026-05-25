@@ -33,7 +33,10 @@ from extreme_price_movements.inference.trade_executor import (
     STOP_MIN_CURRENT_DISTANCE_PCT,
     TradeExecutor,
     _classify_exchange_error,
+    _create_reduce_stop_loss_order,
     _default_cross_margin_dust_quote_threshold,
+    _protective_stop_trigger_matches_policy,
+    _stop_trigger_reference_price,
 )
 from extreme_price_movements.optimise import _select_candidate_trade_mask
 
@@ -546,6 +549,45 @@ def test_shadow_monitor_updates_stop_from_trailing_price_action():
     assert statuses["BTC/USDT"]["price_action"]["stop_price_after"] > initial_stop
 
 
+def test_shadow_monitor_uses_closed_5m_price_action():
+    executor = TradeExecutor(
+        mode="shadow",
+        exchange=None,
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}
+        },
+    )
+    rec = executor.execute_trade(
+        "BTC/USDT", "long", 0.5, price=100.0, bucket_key="long_mr"
+    )
+    assert rec["status"] == "recorded"
+    initial_stop = executor.get_active_positions()["BTC/USDT"]["stop_price"]
+    bars = pd.DataFrame(
+        {
+            "open": [100.0, 102.0],
+            "high": [102.0, 106.0],
+            "low": [100.0, 102.0],
+            "close": [102.0, 105.0],
+        },
+        index=pd.date_range("2026-03-01 00:00", periods=2, freq="5min", tz="UTC"),
+    )
+    executor.positions["BTC/USDT"]["entry_time"] = pd.Timestamp(
+        "2026-03-01 00:00", tz="UTC"
+    )
+    executor.positions["BTC/USDT"]["ohlcv_5m_latest"] = bars
+
+    statuses = _monitor_active_position_price_action(
+        executor,
+        exchange=None,
+        now=pd.Timestamp("2026-03-01 00:10:06", tz="UTC"),
+    )
+    updated = executor.get_active_positions()["BTC/USDT"]
+
+    assert updated["stop_price"] > initial_stop
+    assert updated["last_5m_eval_ts"] == pd.Timestamp("2026-03-01 00:05", tz="UTC")
+    assert statuses["BTC/USDT"]["price_action"]["bars_evaluated"] == 2
+
+
 def test_shadow_monitor_keeps_updating_after_initial_eight_hour_window():
     executor = TradeExecutor(
         mode="shadow",
@@ -717,6 +759,74 @@ def test_exchange_error_classifier_covers_binance_failure_modes():
     }
     for message, expected in cases.items():
         assert _classify_exchange_error(RuntimeError(message)) == expected
+
+
+def test_kraken_futures_stop_orders_trigger_on_last_price():
+    class _KrakenFuturesExchange:
+        id = "krakenfutures"
+
+        def __init__(self):
+            self.created_order = None
+
+        def create_order(self, **kwargs):
+            self.created_order = dict(kwargs)
+            return {"id": "stop-1", **kwargs}
+
+    exchange = _KrakenFuturesExchange()
+    _create_reduce_stop_loss_order(
+        exchange,
+        symbol="XPL/USD:USD",
+        side="buy",
+        amount=79.0,
+        stop_price=0.0804,
+        config={"execution_account": "perps"},
+    )
+
+    assert exchange.created_order["type"] == "market"
+    assert exchange.created_order["params"]["reduceOnly"] is True
+    assert exchange.created_order["params"]["triggerSignal"] == "last"
+    assert exchange.created_order["params"]["stopLossPrice"] == pytest.approx(0.0804)
+
+
+def test_kraken_futures_stop_trigger_reference_uses_last_not_mark():
+    class _KrakenFuturesExchange:
+        id = "krakenfutures"
+
+    price, source = _stop_trigger_reference_price(
+        _KrakenFuturesExchange(),
+        {
+            "last": 0.0810,
+            "close": 0.0809,
+            "markPrice": 0.0803,
+            "info": {"markPrice": "0.0802"},
+        },
+        {"execution_account": "perps"},
+    )
+
+    assert price == pytest.approx(0.0810)
+    assert source == "last"
+
+
+def test_kraken_futures_existing_mark_stop_does_not_match_policy():
+    class _KrakenFuturesExchange:
+        id = "krakenfutures"
+
+    mark_stop = {"info": {"triggerSignal": "mark", "stopPrice": "0.0804"}}
+    last_stop = {"info": {"triggerSignal": "last", "stopPrice": "0.0804"}}
+
+    cfg = {"execution_account": "perps"}
+    assert (
+        _protective_stop_trigger_matches_policy(
+            _KrakenFuturesExchange(), mark_stop, cfg
+        )
+        is False
+    )
+    assert (
+        _protective_stop_trigger_matches_policy(
+            _KrakenFuturesExchange(), last_stop, cfg
+        )
+        is True
+    )
 
 
 def test_live_executor_converts_quote_notional_to_base_amount(monkeypatch):

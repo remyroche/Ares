@@ -1,0 +1,15 @@
+[
+  {
+    "strategy_id": "loc_ema_stack_pos_24_0_43357179_compression_ratio_-0_33411601_mkt_ret_eq_24h_1_1280091_mkt_ret_eq_24h_-0_81129736_up_down_semivol_ratio_tanh_-0_39156261",
+    "rows": [
+      {
+        "pipeline": "meta_clf_only",
+        "utility": 0.0321590650535617,
+        "wallet_pnl": 0.2203588011089379
+      }
+    ],
+    "winner": "meta_clf_only",
+    "winner_wallet_pnl": 0.2203588011089379,
+    "winner_utility": 0.0321590650535617
+  }
+]

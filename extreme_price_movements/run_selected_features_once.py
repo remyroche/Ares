@@ -5,18 +5,23 @@ import gc
 
 import pandas as pd
 
-from extreme_price_movements.config import CFG
+from extreme_price_movements.config import CFG, enable_perp_feature_keys
 from extreme_price_movements.data_store import (
-    PartitionedOHLCVStore,
+    exchange_data_component,
+    make_ohlcv_store,
     save_features,
     to_panel,
 )
 from extreme_price_movements.features import (
     add_regime_gates,
-    compute_features_hourly,
     compute_market_features,
 )
+from extreme_price_movements.pipeline_steps import (
+    _compute_features_hourly_runtime,
+    _load_saved_microdata_for_symbols,
+)
 from extreme_price_movements.run_pipeline import (
+    _apply_market_mode_paths,
     _configure_report_roots,
     _normalize_cfg_paths,
 )
@@ -28,10 +33,35 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--ts", required=True, help="Timestamp in YYYYMMDD_HHMMSS")
     parser.add_argument("--key", action="append", required=True, help="Feature key")
+    parser.add_argument(
+        "--market-mode",
+        choices=["spot", "perps"],
+        default="spot",
+        help="Market mode for data/features roots.",
+    )
+    parser.add_argument(
+        "--exchange",
+        default=None,
+        help="Exchange id for scoped market-data loading.",
+    )
+    parser.add_argument(
+        "--overwrite-selected",
+        action="store_true",
+        help="Overwrite existing cells for the requested feature keys only.",
+    )
     args = parser.parse_args()
 
     cfg = dict(CFG)
     _normalize_cfg_paths(cfg)
+    exchange_id = str(args.exchange or cfg.get("exchange_id") or cfg.get("exchange") or "binance").strip().lower()
+    if exchange_id in {"krakenfutures", "kraken_futures"}:
+        exchange_id = "kraken"
+    cfg["exchange_id"] = exchange_id
+    cfg["exchange"] = exchange_id
+    _apply_market_mode_paths(cfg, args.market_mode)
+    cfg["exchange_data_component"] = exchange_data_component(exchange_id, args.market_mode)
+    if args.market_mode == "perps":
+        cfg = enable_perp_feature_keys(cfg)
     _configure_report_roots(cfg)
     cfg["skip_feature_snapshot_validation"] = True
     cfg["skip_feature_postsave_checks"] = True
@@ -43,7 +73,7 @@ def main() -> None:
         f"keys={len(feature_keys)} data_root={cfg['data_root']}"
     )
 
-    store = PartitionedOHLCVStore(root_dir=cfg["data_root"], timeframe=cfg["timeframe"])
+    store = make_ohlcv_store(cfg, timeframe=cfg["timeframe"])
     train_syms = get_training_universe(None, cfg, store, ts_sig=ts_sig)
     lookback_days = max(180, int(cfg["fetch_years"] * 365))
 
@@ -61,6 +91,21 @@ def main() -> None:
 
     tprint(f"Loaded symbols={len(dfs)}")
     panel = to_panel(dfs)
+    microdata_panel, orderbook_by_symbol = _load_saved_microdata_for_symbols(
+        cfg["data_root"],
+        list(panel["close"].columns),
+        panel["close"].index,
+        cfg,
+    )
+    for key, frame in microdata_panel.items():
+        panel[key] = frame
+    if microdata_panel:
+        tprint(
+            "Loaded saved microdata panels: "
+            + ", ".join(f"{k}={v.shape}" for k, v in microdata_panel.items())
+        )
+    if orderbook_by_symbol:
+        tprint(f"Loaded saved orderbook sidecars: {len(orderbook_by_symbol)} symbols")
     market = compute_market_features(panel, cfg["market_basket"])
     gates = add_regime_gates(
         market, cfg["gate_vol_lookback_hours"], cfg["gate_trend_thr"]
@@ -78,10 +123,16 @@ def main() -> None:
             for key, value in panel.items()
             if isinstance(value, pd.DataFrame)
         }
-        feats, feat_index, feat_columns = compute_features_hourly(
+        orderbook_chunk = {
+            sym: orderbook_by_symbol[sym]
+            for sym in chunk_syms
+            if sym in orderbook_by_symbol
+        }
+        feats, feat_index, feat_columns = _compute_features_hourly_runtime(
             panel_chunk,
             gates.copy(),
             cfg,
+            orderbook_chunk,
             requested_feature_keys=feature_keys,
         )
         missing = [key for key in feature_keys if key not in feats]
@@ -96,6 +147,7 @@ def main() -> None:
             feat_index=feat_index,
             feat_columns=feat_columns,
             save_workers=int(cfg.get("feature_save_workers", 2)),
+            overwrite_columns=set(feature_keys) if args.overwrite_selected else None,
         )
         del panel_chunk, feats
         gc.collect()

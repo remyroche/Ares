@@ -3233,10 +3233,12 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             prefix: str,
             weight: pd.DataFrame,
             windows: tuple[tuple[str, int], ...],
+            *,
+            emit_dist_alias: bool = True,
         ) -> dict[str, pd.DataFrame]:
             _weight = (
                 weight.replace([np.inf, -np.inf], np.nan)
-                .clip(lower=0.0)
+                .abs()
                 .fillna(0.0)
                 .astype(np.float32)
             )
@@ -3251,20 +3253,21 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 _refs[_suffix] = _ref.astype(np.float32)
                 _ref_arr = _ref.to_numpy(dtype=np.float32, copy=False)
                 _dist = (_c_raw_arr - _ref_arr) / (_atr_price_arr + np.float32(1e-12))
-                _dist[~np.isfinite(_dist)] = np.nan
+                _dist[~np.isfinite(_dist)] = 0.0
                 _add_feature_frame(
                     f"{prefix}_entry_dist_{_suffix}_atr",
                     np.clip(_dist, -100.0, 100.0),
                 )
-                _add_feature_frame(
-                    f"dist_{prefix}_{_suffix}_atr",
-                    np.clip(_dist, -100.0, 100.0),
-                )
+                if emit_dist_alias:
+                    _add_feature_frame(
+                        f"dist_{prefix}_{_suffix}_atr",
+                        np.clip(_dist, -100.0, 100.0),
+                    )
             return _refs
 
         _pos_delta_refs = _add_oi_weighted_entry_distances(
             "oiw_pos_delta",
-            _delta_oi,
+            _delta_oi.clip(lower=0.0),
             (("1d", 24), ("7d", 24 * 7), ("14d", 24 * 14)),
         )
         _prev_oi = _oi_loc.shift(1)
@@ -3287,8 +3290,71 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             _z_delta_weight,
             (("12h", 12), ("1d", 24), ("7d", 24 * 7), ("96h", 96), ("14d", 24 * 14)),
         )
+        _pos_delta_weight = _delta_oi.clip(lower=0.0).fillna(0.0).astype(np.float32)
+        _neg_delta_weight = (-_delta_oi.clip(upper=0.0)).fillna(0.0).astype(np.float32)
+        _abs_delta_weight = (_pos_delta_weight + _neg_delta_weight).astype(np.float32)
+        _abs_weighted_price = (_price_for_oiw * _abs_delta_weight).astype(np.float32)
+        _num_abs_12h = _abs_weighted_price.rolling(12, min_periods=1).sum()
+        _den_abs_12h = _abs_delta_weight.rolling(12, min_periods=1).sum()
+        _ref_abs_12h = (_num_abs_12h / _den_abs_12h.replace(0.0, np.nan)).replace(
+            [np.inf, -np.inf], np.nan
+        )
+        _dist_abs_12h = (_c_raw_arr - _ref_abs_12h.to_numpy(dtype=np.float32, copy=False)) / (
+            _atr_price_arr + np.float32(1e-12)
+        )
+        _dist_abs_12h[~np.isfinite(_dist_abs_12h)] = 0.0
+        _add_feature_frame("dist_oiw_abs_delta_12h_atr", np.clip(_dist_abs_12h, -100.0, 100.0))
+
+        _pos_weighted_price = (_price_for_oiw * _pos_delta_weight).astype(np.float32)
+        _neg_weighted_price = (_price_for_oiw * _neg_delta_weight).astype(np.float32)
+        _num_pos_12h = _pos_weighted_price.rolling(12, min_periods=1).sum()
+        _den_pos_12h = _pos_delta_weight.rolling(12, min_periods=1).sum()
+        _num_neg_12h = _neg_weighted_price.rolling(12, min_periods=1).sum()
+        _den_neg_12h = _neg_delta_weight.rolling(12, min_periods=1).sum()
+        _ref_pos_12h = (_num_pos_12h / _den_pos_12h.replace(0.0, np.nan)).replace(
+            [np.inf, -np.inf], np.nan
+        )
+        _ref_neg_12h = (_num_neg_12h / _den_neg_12h.replace(0.0, np.nan)).replace(
+            [np.inf, -np.inf], np.nan
+        )
+        _pos_dist_12h = (_c_raw_arr - _ref_pos_12h.to_numpy(dtype=np.float32, copy=False)) / (
+            _atr_price_arr + np.float32(1e-12)
+        )
+        _neg_dist_12h = (_c_raw_arr - _ref_neg_12h.to_numpy(dtype=np.float32, copy=False)) / (
+            _atr_price_arr + np.float32(1e-12)
+        )
+        _pos_dist_12h[~np.isfinite(_pos_dist_12h)] = 0.0
+        _neg_dist_12h[~np.isfinite(_neg_dist_12h)] = 0.0
+        _den_pos_12h_arr = _den_pos_12h.to_numpy(dtype=np.float32, copy=False)
+        _den_neg_12h_arr = _den_neg_12h.to_numpy(dtype=np.float32, copy=False)
+        _den_abs_12h_arr = _den_abs_12h.to_numpy(dtype=np.float32, copy=False)
+        _signed_delta_dist_12h = (
+            (_den_pos_12h_arr * _pos_dist_12h - _den_neg_12h_arr * _neg_dist_12h)
+            / (_den_abs_12h_arr + np.float32(1e-12))
+        )
+        _signed_delta_dist_12h[~np.isfinite(_signed_delta_dist_12h)] = 0.0
+        _add_feature_frame(
+            "dist_oiw_signed_delta_12h_atr",
+            np.clip(_signed_delta_dist_12h, -100.0, 100.0),
+        )
+        for _suffix, _window in (("24h", 24), ("96h", 96)):
+            _pos_sum = _pos_delta_weight.rolling(_window, min_periods=1).sum()
+            _neg_sum = _neg_delta_weight.rolling(_window, min_periods=1).sum()
+            _abs_sum = _pos_sum + _neg_sum
+            _balance = ((_pos_sum - _neg_sum) / (_abs_sum + np.float32(1e-12))).replace(
+                [np.inf, -np.inf], 0.0
+            ).fillna(0.0)
+            _add_feature_frame(
+                f"oi_expansion_compression_balance_{_suffix}",
+                np.clip(_balance.to_numpy(dtype=np.float32, copy=False), -1.0, 1.0),
+            )
+        _num_abs_1d = _abs_weighted_price.rolling(24, min_periods=1).sum()
+        _den_abs_1d = _abs_delta_weight.rolling(24, min_periods=1).sum()
+        _ref_abs_1d = (_num_abs_1d / _den_abs_1d.replace(0.0, np.nan)).replace(
+            [np.inf, -np.inf], np.nan
+        )
         if "1d" in _pos_delta_refs:
-            _entry_1d = _pos_delta_refs["1d"].shift(1)
+            _entry_1d = _ref_abs_1d.ffill().shift(1)
             _lower_oiw_1d = _entry_1d.rolling(24, min_periods=1).min()
             _upper_oiw_1d = _entry_1d.rolling(24, min_periods=1).max()
             _lower_oiw_1d_arr = _lower_oiw_1d.to_numpy(dtype=np.float32, copy=False)
@@ -3297,7 +3363,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 ((_c_raw_arr - _lower_oiw_1d_arr) / (_upper_oiw_1d_arr - _lower_oiw_1d_arr + np.float32(1e-12)))
                 / (_atr_1d_pct_arr + np.float32(1e-12))
             )
-            _oiw_zone_1d[~np.isfinite(_oiw_zone_1d)] = np.nan
+            _oiw_zone_1d[~np.isfinite(_oiw_zone_1d)] = 0.0
             _add_feature_frame("oiw_entry_zone_1d_atr", np.clip(_oiw_zone_1d, -100.0, 100.0))
             del _entry_1d, _lower_oiw_1d, _upper_oiw_1d
             del _lower_oiw_1d_arr, _upper_oiw_1d_arr, _oiw_zone_1d
@@ -3315,6 +3381,13 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         del _pos_delta_refs, _abs_ret, _oi_scale
         del _prev_oi, _oi_intensity_weight, _z_window, _delta_mean, _delta_std
         del _z_delta_weight
+        del _pos_delta_weight, _neg_delta_weight, _abs_delta_weight, _abs_weighted_price
+        del _num_abs_12h, _den_abs_12h, _ref_abs_12h, _dist_abs_12h
+        del _num_abs_1d, _den_abs_1d, _ref_abs_1d
+        del _pos_weighted_price, _neg_weighted_price, _num_pos_12h, _den_pos_12h
+        del _num_neg_12h, _den_neg_12h, _ref_pos_12h, _ref_neg_12h
+        del _pos_dist_12h, _neg_dist_12h, _den_pos_12h_arr, _den_neg_12h_arr
+        del _den_abs_12h_arr, _signed_delta_dist_12h
 
     _prev_day_low = _roll_min("l_raw_shift", l_raw.shift(1), 24)
     _prev_day_high = _roll_max("h_raw_shift", h_raw.shift(1), 24)
@@ -3347,7 +3420,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             _ref = (_num / _den.replace(0.0, np.nan)).replace([np.inf, -np.inf], np.nan)
             _ref_arr = _ref.to_numpy(dtype=np.float32, copy=False)
             _dist = (_c_raw_arr - _ref_arr) / (_atr_price_arr + np.float32(1e-12))
-            _dist[~np.isfinite(_dist)] = np.nan
+            _dist[~np.isfinite(_dist)] = 0.0
             _add_feature_frame(
                 f"dist_funding_pressure_price_{_suffix}_atr",
                 np.clip(_dist, -100.0, 100.0),

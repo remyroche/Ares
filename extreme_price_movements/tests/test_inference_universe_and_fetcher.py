@@ -321,6 +321,34 @@ def test_fetch_hourly_universe_once_saves_latest_closed_candle(tmp_path, monkeyp
     assert fetcher.api_error_counts["timeout"] == 1
 
 
+def test_fetch_hourly_universe_once_can_skip_recent_gap_backfill(tmp_path, monkeypatch):
+    target_hour = pd.Timestamp("2026-01-01 12:00:00", tz="UTC")
+
+    class _Exchange:
+        def fetch_ohlcv(self, symbol, timeframe, since=None, limit=None, params=None):
+            return [[int(target_hour.timestamp() * 1000), 1.0, 2.0, 0.5, 1.5, 10.0]]
+
+    fetcher = DataFetcher(exchange=_Exchange(), data_root=str(tmp_path))
+    gap_checks = []
+    backfills = []
+    monkeypatch.setattr(
+        fetcher, "has_recent_gap", lambda symbol, days=7: gap_checks.append(symbol) or True
+    )
+    monkeypatch.setattr(
+        fetcher, "trigger_gap_backfill", lambda symbol, days=7, backfill_fn=None: backfills.append(symbol)
+    )
+
+    fetcher.fetch_hourly_universe_once(
+        ["A/USDT"],
+        max_workers=1,
+        target_hour=target_hour,
+        check_recent_gaps_days=0,
+    )
+
+    assert gap_checks == []
+    assert backfills == []
+
+
 def test_load_microdata_panel_preserves_saved_orderbook_fields(tmp_path):
     fetcher = DataFetcher(exchange=object(), data_root=str(tmp_path))
     idx = pd.date_range("2026-01-01", periods=2, freq="1h", tz="UTC")

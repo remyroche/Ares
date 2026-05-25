@@ -89,19 +89,6 @@
   "strategies": [
     {
       "trade_side": "short",
-      "strategy_id": "loc_ema_stack_pos_24_0_43357179_compression_ratio_-0_33411601_mkt_ret_eq_24h_1_1280091_mkt_ret_eq_24h_-0_81129736_up_down_semivol_ratio_tanh_-0_39156261",
-      "horizons": [
-        10
-      ],
-      "oof_files": [
-        "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260523_015947/oof/oof_loc_ema_stack_pos_24_0_43357179_compression_ratio_-0_33411601_mkt_ret_eq_24h_1_1280091_mkt_ret_eq_24h_-0_81129736_up_down_semivol_ratio_tanh_-0_39156261_H10.parquet"
-      ],
-      "native_model_dirs": [
-        "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260523_015947/models/native/short_loc_ema_stack_pos_24_0_43357179_compression_ratio_-0_33411601_mkt_ret_eq_24h_1_1280091_mkt_ret_eq_24h_-0_81129736_up_down_semivol_ratio_tanh_-0_39156261_H10"
-      ]
-    },
-    {
-      "trade_side": "short",
       "strategy_id": "dist_rolling_7d_high_0_13977644_mkt_ret_eq_24h_-0_56630391_rolling_range_20_-0_40672407",
       "horizons": [
         10
@@ -111,6 +98,19 @@
       ],
       "native_model_dirs": [
         "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260523_015947/models/native/short_dist_rolling_7d_high_0_13977644_mkt_ret_eq_24h_-0_56630391_rolling_range_20_-0_40672407_H10"
+      ]
+    },
+    {
+      "trade_side": "short",
+      "strategy_id": "loc_ema_stack_pos_24_0_43357179_compression_ratio_-0_33411601_mkt_ret_eq_24h_1_1280091_mkt_ret_eq_24h_-0_81129736_up_down_semivol_ratio_tanh_-0_39156261",
+      "horizons": [
+        10
+      ],
+      "oof_files": [
+        "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260523_015947/oof/oof_loc_ema_stack_pos_24_0_43357179_compression_ratio_-0_33411601_mkt_ret_eq_24h_1_1280091_mkt_ret_eq_24h_-0_81129736_up_down_semivol_ratio_tanh_-0_39156261_H10.parquet"
+      ],
+      "native_model_dirs": [
+        "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260523_015947/models/native/short_loc_ema_stack_pos_24_0_43357179_compression_ratio_-0_33411601_mkt_ret_eq_24h_1_1280091_mkt_ret_eq_24h_-0_81129736_up_down_semivol_ratio_tanh_-0_39156261_H10"
       ]
     },
     {

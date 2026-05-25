@@ -8,6 +8,11 @@ DATA_ROOT="${DATA_ROOT:-data_perp}"
 LOG_DIR="${LOG_DIR:-logs}"
 RESTART_DELAY_SECONDS="${RESTART_DELAY_SECONDS:-30}"
 MAX_RESTARTS="${MAX_RESTARTS:-0}"
+INFERENCE_INTERVAL="${INFERENCE_INTERVAL:-60}"
+CHALLENGER_INTERVAL="${CHALLENGER_INTERVAL:-60}"
+EPM_EXCHANGE="${EPM_EXCHANGE:-kraken}"
+LIVE_DATA_ROOT="${LIVE_DATA_ROOT:-}"
+PYTHON_BIN="${PYTHON_BIN:-/Library/Frameworks/Python.framework/Versions/3.11/bin/python3}"
 
 mkdir -p "$LOG_DIR"
 
@@ -18,22 +23,31 @@ pid_file="$LOG_DIR/live_test_supervisor.pid"
 echo "$$" > "$pid_file"
 
 restart_count=0
-echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] supervisor_start pid=$$ run_id=$RUN_ID data_root=$DATA_ROOT" | tee -a "$supervisor_log"
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] supervisor_start pid=$$ run_id=$RUN_ID data_root=$DATA_ROOT exchange=$EPM_EXCHANGE inference_interval=$INFERENCE_INTERVAL challenger_interval=$CHALLENGER_INTERVAL" | tee -a "$supervisor_log"
 
 while true; do
   child_stamp="$(date -u +%Y%m%d_%H%M%S)"
   child_log="$LOG_DIR/live_test_kraken_perps_${child_stamp}.log"
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] child_start restart_count=$restart_count log=$child_log" | tee -a "$supervisor_log"
 
+  live_data_args=()
+  if [[ -n "$LIVE_DATA_ROOT" ]]; then
+    live_data_args=(--live-data-root "$LIVE_DATA_ROOT")
+  fi
+
   env \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=. \
     MPLCONFIGDIR=/private/tmp/ares_mplconfig \
-    python3 -u -m extreme_price_movements.inference.run_inference \
+    EPM_EXCHANGE="$EPM_EXCHANGE" \
+    "$PYTHON_BIN" -u -m extreme_price_movements.inference.run_inference \
       --live-test \
       --perps \
       --data-root "$DATA_ROOT" \
       --run-id "$RUN_ID" \
+      --inference-interval "$INFERENCE_INTERVAL" \
+      --challenger-interval "$CHALLENGER_INTERVAL" \
+      "${live_data_args[@]}" \
       >> "$child_log" 2>&1
 
   exit_code=$?

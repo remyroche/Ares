@@ -1,9 +1,9 @@
 {
   "auction": {
-    "created_at": "2026-05-24T16:43:15.102831+00:00",
-    "max_score": 0.9795059561729431,
-    "min_score": 0.045971356332302094,
-    "n_rows": 582629,
+    "created_at": "2026-05-25T18:00:38.895131+00:00",
+    "max_score": 0.9688583016395569,
+    "min_score": 0.04725596681237221,
+    "n_rows": 986440,
     "path": "simple_policy_optimiser/rank_reference/cross_strategy_auction.parquet",
     "rank_col": "normalized_rank_score",
     "score_col": "calibrated_score"
@@ -14,37 +14,37 @@
   "schema_version": "policy_rank_reference_v1",
   "strategies": {
     "long_dist_weekly_vwap_0_074823022_loc_prev_week_range_pos_48_0_48354843_mkt_ret_eq_24h_-0_43956268_volume_autocorr_48_-0_38378653": {
-      "created_at": "2026-05-24T16:24:36.714348+00:00",
-      "max_score": 0.9795059561729431,
-      "min_score": 0.04759855568408966,
-      "n_rows": 192658,
+      "created_at": "2026-05-25T17:32:54.308793+00:00",
+      "max_score": 0.9688583016395569,
+      "min_score": 0.10746941715478897,
+      "n_rows": 242442,
       "path": "simple_policy_optimiser/rank_reference/long_dist_weekly_vwap_0_074823022_loc_prev_week_range_pos_48_0_48354843_mkt_ret_eq_24h_-0_43956268_volume_autocorr_48_-0_38378653.parquet",
       "rank_col": "rank_pct",
       "score_col": "calibrated_score"
     },
     "long_loc_prev_week_range_pos_48_0_42586401_loc_vwap_dev_z_24_0_10701825_zscore_price_50_1_0128103_mkt_ret_eq_24h_-0_78752208_up_down_return_mass_ratio_tanh_1_1231147": {
-      "created_at": "2026-05-24T16:28:14.758209+00:00",
-      "max_score": 0.9512180089950562,
-      "min_score": 0.06780751794576645,
-      "n_rows": 169924,
+      "created_at": "2026-05-25T17:39:01.315150+00:00",
+      "max_score": 0.9674659967422485,
+      "min_score": 0.10004419088363647,
+      "n_rows": 243665,
       "path": "simple_policy_optimiser/rank_reference/long_loc_prev_week_range_pos_48_0_42586401_loc_vwap_dev_z_24_0_10701825_zscore_price_50_1_0128103_mkt_ret_eq_24h_-0_78752208_up_down_return_mass_ratio_tanh_1_1231147.parquet",
       "rank_col": "rank_pct",
       "score_col": "calibrated_score"
     },
     "short_dist_rolling_7d_high_0_13977644_mkt_ret_eq_24h_-0_56630391_rolling_range_20_-0_40672407": {
-      "created_at": "2026-05-24T16:31:01.722492+00:00",
-      "max_score": 0.9702951908111572,
-      "min_score": 0.045971356332302094,
-      "n_rows": 214934,
+      "created_at": "2026-05-25T17:42:56.823822+00:00",
+      "max_score": 0.956606924533844,
+      "min_score": 0.04854484647512436,
+      "n_rows": 257412,
       "path": "simple_policy_optimiser/rank_reference/short_dist_rolling_7d_high_0_13977644_mkt_ret_eq_24h_-0_56630391_rolling_range_20_-0_40672407.parquet",
       "rank_col": "rank_pct",
       "score_col": "calibrated_score"
     },
     "short_loc_ema_stack_pos_24_0_43357179_compression_ratio_-0_33411601_mkt_ret_eq_24h_1_1280091_mkt_ret_eq_24h_-0_81129736_up_down_semivol_ratio_tanh_-0_39156261": {
-      "created_at": "2026-05-24T16:41:59.125152+00:00",
-      "max_score": 0.9120055437088013,
-      "min_score": 0.07197872549295425,
-      "n_rows": 5113,
+      "created_at": "2026-05-25T17:52:42.200854+00:00",
+      "max_score": 0.9430965185165405,
+      "min_score": 0.04725596681237221,
+      "n_rows": 242921,
       "path": "simple_policy_optimiser/rank_reference/short_loc_ema_stack_pos_24_0_43357179_compression_ratio_-0_33411601_mkt_ret_eq_24h_1_1280091_mkt_ret_eq_24h_-0_81129736_up_down_semivol_ratio_tanh_-0_39156261.parquet",
       "rank_col": "rank_pct",
       "score_col": "calibrated_score"

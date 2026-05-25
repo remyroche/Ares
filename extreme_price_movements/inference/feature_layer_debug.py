@@ -147,6 +147,12 @@ def _resolve_meta_input(
     meta[selected] = float(base_pred)
     if core:
         meta[core] = float(base_pred)
+    meta = orchestrator._materialize_alpha_model_meta_features(
+        meta,
+        model,
+        side=side,
+        kind=selected,
+    )
     meta = orchestrator._materialize_meta_model_derived_features(
         meta,
         model,

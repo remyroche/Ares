@@ -71,6 +71,7 @@ LGBM_HPO_MAX_ROWS = int(os.environ.get("EPM_LGBM_HPO_MAX_ROWS", "10000"))
 LGBM_HPO_ROW_SUBSAMPLE_FRAC = float(os.environ.get("EPM_LGBM_HPO_ROW_SUBSAMPLE_FRAC", os.environ.get("EPM_LGBM_ROW_SUBSAMPLE_FRAC", "1.0")))
 LGBM_HPO_TRIALS = int(os.environ.get("EPM_LGBM_HPO_TRIALS", "200"))
 LGBM_HPO_EARLY_STOP_PATIENCE = int(os.environ.get("EPM_LGBM_HPO_EARLY_STOP_PATIENCE", "50"))
+LGBM_HPO_FINAL_MIN_ESTIMATORS = int(os.environ.get("EPM_LGBM_HPO_FINAL_MIN_ESTIMATORS", "800"))
 LGBM_FINAL_MODEL_COUNT = int(os.environ.get("EPM_LGBM_FINAL_MODEL_COUNT", "3"))
 LGBM_OOF_DISTILLATION_PASSES = int(os.environ.get("EPM_LGBM_OOF_DISTILLATION_PASSES", "1"))
 LGBM_MIN_OOF_DISTILLATION_PASSES = int(os.environ.get("EPM_LGBM_MIN_OOF_DISTILLATION_PASSES", "2"))
@@ -109,6 +110,7 @@ LGBM_IMPORTANCE_TOPK_FOCUS_SOFTNESS = float(os.environ.get("EPM_LGBM_IMPORTANCE_
 LGBM_FINAL_FIT_MAX_ROWS = int(os.environ.get("EPM_LGBM_FINAL_FIT_MAX_ROWS", "0"))
 LGBM_HPO_LEARNING_RATE = float(os.environ.get("EPM_LGBM_HPO_LEARNING_RATE", "0.02"))
 LGBM_FINAL_LEARNING_RATE = float(os.environ.get("EPM_LGBM_FINAL_LEARNING_RATE", "0.02"))
+LGBM_HPO_PATH_SMOOTH_MAX = float(os.environ.get("EPM_LGBM_HPO_PATH_SMOOTH_MAX", "10.0"))
 LGBM_BASE_METRIC_TARGET_FRACTION = float(os.environ.get("EPM_LGBM_BASE_METRIC_TARGET_FRACTION", "0.30"))
 LGBM_META_METRIC_TARGET_FRACTION = float(os.environ.get("EPM_LGBM_META_METRIC_TARGET_FRACTION", os.environ.get("EPM_LGBM_METRIC_TARGET_FRACTION", "0.15")))
 LGBM_SALG_LIFT_COEF = float(os.environ.get("EPM_LGBM_SALG_LIFT_COEF", "0.38"))
@@ -138,6 +140,8 @@ LGBM_IMPORTANCE_INSTABILITY_MATERIAL_TOP_FRAC = float(np.clip(LGBM_IMPORTANCE_IN
 LGBM_IMPORTANCE_INSTABILITY_CV_CAP = max(1e-6, float(LGBM_IMPORTANCE_INSTABILITY_CV_CAP))
 LGBM_IMPORTANCE_TOPK_FOCUS_SOFTNESS = max(1e-6, float(LGBM_IMPORTANCE_TOPK_FOCUS_SOFTNESS))
 LGBM_FINAL_MODEL_COUNT = max(1, int(LGBM_FINAL_MODEL_COUNT))
+LGBM_HPO_FINAL_MIN_ESTIMATORS = max(1, int(LGBM_HPO_FINAL_MIN_ESTIMATORS))
+LGBM_HPO_PATH_SMOOTH_MAX = float(np.clip(LGBM_HPO_PATH_SMOOTH_MAX, 0.0, 10.0))
 LGBM_OOF_DISTILLATION_PASSES = max(0, int(LGBM_OOF_DISTILLATION_PASSES))
 LGBM_MIN_OOF_DISTILLATION_PASSES = max(0, int(LGBM_MIN_OOF_DISTILLATION_PASSES))
 LGBM_META_MIN_OOF_DISTILLATION_PASSES = max(0, int(LGBM_META_MIN_OOF_DISTILLATION_PASSES))
@@ -181,7 +185,30 @@ LGBM_META_FEATURE_NAMES = [
     "rank_bin_lift_oof",
     "rank_bin_net_ret_oof",
     "rank_bin_se_oof",
+    "regime_centroid_similarity_train",
+    "feature_drift_psi_core",
+    "feature_drift_cov_shift",
 ]
+
+
+def _is_lgbm_model_derived_meta_feature(name: str) -> bool:
+    """Return true for meta diagnostics unavailable in the raw coverage slice."""
+    key = str(name)
+    if key in LGBM_META_FEATURE_NAMES:
+        return True
+    if key in {
+        "pred_logit",
+        "regime_centroid_similarity_train",
+        "feature_drift_psi_core",
+        "feature_drift_cov_shift",
+    }:
+        return True
+    return key.startswith(
+        (
+            "pred_",
+            "base_H",
+        )
+    )
 
 
 @dataclass
@@ -210,6 +237,7 @@ class LGBMStabilityModel:
     allow_missing_features_at_inference: bool = False
     feature_stats_train: dict[str, dict[str, float]] = field(default_factory=dict)
     input_feature_names: list[str] = field(default_factory=list)
+    drift_reference: dict[str, Any] = field(default_factory=dict)
 
     def _frame(self, X: Any) -> pd.DataFrame:
         if isinstance(X, pd.DataFrame):
@@ -342,6 +370,11 @@ class LGBMStabilityModel:
             mode=self.mode,
             rank_bin_stats=self.rank_bin_stats_oof,
         )
+        _append_feature_drift_meta_features(
+            features,
+            X_df,
+            self.drift_reference,
+        )
         return features.reindex(columns=self.meta_feature_names, fill_value=0.0).astype(np.float32)
 
     def get_training_meta_features(self) -> pd.DataFrame:
@@ -446,16 +479,37 @@ def _feature_selection_oi_present_mask(
 def _recent_feature_coverage_survivors(
     X_raw: pd.DataFrame,
     timestamps: Any,
+    exempt_features: Optional[set[str]] = None,
 ) -> tuple[list[str], dict[str, Any]]:
-    cols = [str(c) for c in X_raw.columns]
+    all_cols = [str(c) for c in X_raw.columns]
+    exempt = {str(c) for c in (exempt_features or set()) if str(c) in set(all_cols)}
+    cols = [c for c in all_cols if c not in exempt]
     diagnostics: dict[str, Any] = {
         "feature_recent_min_coverage": float(LGBM_FEATURE_RECENT_MIN_COVERAGE),
         "feature_recent_tail_months": int(LGBM_FEATURE_RECENT_TAIL_MONTHS),
-        "feature_recent_input_count": int(len(cols)),
+        "feature_recent_input_count": int(len(all_cols)),
+        "feature_recent_coverage_input_count": int(len(cols)),
+        "feature_recent_exempt_model_derived_count": int(len(exempt)),
+        "feature_recent_exempt_model_derived_preview": sorted(exempt)[:25],
     }
-    if not cols or X_raw.empty:
-        diagnostics["feature_recent_survivor_count"] = 0
-        return cols, diagnostics
+    if X_raw.empty:
+        diagnostics["feature_recent_survivor_count"] = int(len(all_cols))
+        return all_cols, diagnostics
+    if not cols:
+        diagnostics.update(
+            {
+                "feature_recent_row_count": int(len(X_raw)),
+                "feature_recent_survivor_count": int(len(all_cols)),
+                "feature_recent_removed_count": 0,
+                "feature_recent_removed_iterative_count": 0,
+                "feature_recent_removed_group_count": 0,
+                "feature_recent_removed_groups": [],
+                "feature_recent_joint_coverage": 1.0,
+                "feature_recent_stopped_no_gain": False,
+                "feature_recent_removed_lowest": [],
+            }
+        )
+        return all_cols, diagnostics
     row_mask = np.ones(len(X_raw), dtype=bool)
     if timestamps is not None:
         ts = pd.to_datetime(np.asarray(timestamps), utc=True, errors="coerce")
@@ -474,29 +528,152 @@ def _recent_feature_coverage_survivors(
                 row_mask = np.asarray(candidate, dtype=bool)
                 diagnostics["feature_recent_window_start"] = str(start_ts)
                 diagnostics["feature_recent_window_end"] = str(end_ts)
+    price_candidates = (
+        "close",
+        "price",
+        "mark_price",
+        "index_price",
+        "perp_close",
+        "spot_close",
+        "__close__",
+    )
+    price_masks: list[np.ndarray] = []
+    price_sources: list[str] = []
+    for pc in price_candidates:
+        if pc not in X_raw.columns:
+            continue
+        arr = pd.to_numeric(X_raw[pc], errors="coerce").to_numpy(
+            dtype=np.float64, copy=False
+        )
+        mask = np.isfinite(arr) & (arr > 0.0)
+        if int((row_mask & mask).sum()) >= min(200, int(row_mask.sum())):
+            price_masks.append(mask)
+            price_sources.append(pc)
+    if price_masks:
+        price_mask = np.logical_or.reduce(price_masks)
+        priced_rows = row_mask & price_mask
+        if int(priced_rows.sum()) >= min(200, int(row_mask.sum())):
+            row_mask = priced_rows
+            diagnostics["feature_recent_price_sources"] = price_sources
     sample = X_raw.iloc[np.flatnonzero(row_mask)][cols].apply(
         pd.to_numeric, errors="coerce"
     )
     arr = sample.to_numpy(dtype=np.float32, copy=False)
-    coverage = np.isfinite(arr).mean(axis=0)
-    survivors = [
-        c
-        for c, rate in zip(cols, coverage)
-        if float(rate) >= LGBM_FEATURE_RECENT_MIN_COVERAGE
-    ]
-    removed = sorted(
+    finite = np.isfinite(arr)
+    feature_coverage = finite.mean(axis=0)
+    missing = ~finite
+    active = np.ones(len(cols), dtype=bool)
+    missing_count = missing.sum(axis=1).astype(np.int32, copy=False)
+    joint_coverage = float((missing_count == 0).mean()) if cols else 1.0
+    removed_iter: list[tuple[str, float]] = []
+    removed_group_iter: list[dict[str, Any]] = []
+    stopped_no_gain = False
+    n_rows = max(int(len(finite)), 1)
+
+    def _best_group_removal() -> tuple[np.ndarray | None, float, int]:
+        """Find a correlated missingness group whose removal unlocks rows."""
+        active_idx_inner = np.flatnonzero(active)
+        blocker_rows = missing_count > 0
+        if len(active_idx_inner) == 0 or not bool(blocker_rows.any()):
+            return None, 0.0, 0
+        active_missing = missing[np.ix_(blocker_rows, active_idx_inner)]
+        if active_missing.size == 0:
+            return None, 0.0, 0
+        packed = np.packbits(active_missing, axis=1)
+        _, first_idx, counts = np.unique(
+            packed, axis=0, return_index=True, return_counts=True
+        )
+        order = np.argsort(counts)[::-1][:256]
+        best_group: np.ndarray | None = None
+        best_gain = 0.0
+        best_score = -1.0
+        best_size = 0
+        for pos in order:
+            local_mask = np.asarray(active_missing[int(first_idx[pos])], dtype=bool)
+            group_size = int(local_mask.sum())
+            if group_size <= 0:
+                continue
+            gain = float(counts[pos]) / float(n_rows)
+            score = gain / float(group_size)
+            if (
+                score > best_score
+                or (np.isclose(score, best_score) and gain > best_gain)
+                or (
+                    np.isclose(score, best_score)
+                    and np.isclose(gain, best_gain)
+                    and (best_size == 0 or group_size < best_size)
+                )
+            ):
+                best_group = active_idx_inner[local_mask]
+                best_gain = gain
+                best_score = score
+                best_size = group_size
+        return best_group, best_gain, best_size
+
+    while int(active.sum()) > 0 and joint_coverage < LGBM_FEATURE_RECENT_MIN_COVERAGE:
+        active_idx = np.flatnonzero(active)
+        single_blocker = missing_count == 1
+        if bool(single_blocker.any()):
+            removal_gain = (
+                missing[np.ix_(single_blocker, active_idx)]
+                .sum(axis=0)
+                .astype(np.float64)
+                / float(len(finite))
+            )
+        else:
+            removal_gain = np.zeros(len(active_idx), dtype=np.float64)
+        active_cov = feature_coverage[active_idx]
+        best_gain = float(np.max(removal_gain))
+        if best_gain <= 0.0:
+            group_idx, group_gain, group_size = _best_group_removal()
+            if group_idx is None or group_gain <= 0.0:
+                stopped_no_gain = True
+                break
+            missing_rates = 1.0 - feature_coverage[group_idx]
+            order = np.argsort(missing_rates)[::-1]
+            group_idx = group_idx[order]
+            removed_group_iter.append(
+                {
+                    "features": [cols[int(i)] for i in group_idx[:25]],
+                    "feature_count": int(group_size),
+                    "gain": float(group_gain),
+                }
+            )
+            for idx in group_idx:
+                removed_iter.append((cols[int(idx)], float(1.0 - feature_coverage[int(idx)])))
+            active[group_idx] = False
+            missing_count -= missing[:, group_idx].sum(axis=1).astype(np.int32, copy=False)
+            joint_coverage = float((missing_count == 0).mean()) if active.any() else 1.0
+            continue
+        else:
+            best_local = np.flatnonzero(np.isclose(removal_gain, best_gain))
+            worst_local = int(best_local[np.argmin(active_cov[best_local])])
+        worst_idx = int(active_idx[worst_local])
+        removed_iter.append((cols[worst_idx], float(1.0 - active_cov[worst_local])))
+        active[worst_idx] = False
+        missing_count -= missing[:, worst_idx].astype(np.int32, copy=False)
+        joint_coverage = float((missing_count == 0).mean()) if active.any() else 1.0
+    active_survivors = {c for c, is_active in zip(cols, active) if bool(is_active)}
+    survivors = [c for c in all_cols if c in exempt or c in active_survivors]
+    removed_by_feature = sorted(
         (
-            (c, float(rate))
-            for c, rate in zip(cols, coverage)
+            (c, float(1.0 - rate))
+            for c, rate in zip(cols, feature_coverage)
             if float(rate) < LGBM_FEATURE_RECENT_MIN_COVERAGE
         ),
-        key=lambda item: (item[1], item[0]),
+        key=lambda item: (-item[1], item[0]),
     )
+    removed = removed_iter
     diagnostics.update(
         {
             "feature_recent_row_count": int(row_mask.sum()),
             "feature_recent_survivor_count": int(len(survivors)),
             "feature_recent_removed_count": int(len(removed)),
+            "feature_recent_removed_iterative_count": int(len(removed_iter)),
+            "feature_recent_removed_group_count": int(len(removed_group_iter)),
+            "feature_recent_removed_groups": removed_group_iter[:10],
+            "feature_recent_joint_coverage": float(joint_coverage),
+            "feature_recent_stopped_no_gain": bool(stopped_no_gain),
             "feature_recent_removed_lowest": removed[:25],
         }
     )
@@ -1263,6 +1440,14 @@ def _record_lgbm_stage_metric_comparison(
         "precision20_norm",
         "precision30_norm",
         "lift20",
+        "lift30",
+        "lift10",
+        "mean_return10_gross",
+        "mean_return30_gross",
+        "hit_tp2_sl1_top10",
+        "hit_tp2_sl1_top30",
+        "hit_tp3_sl15_top10",
+        "hit_tp3_sl15_top30",
         "stability20",
         "rank_bucket_monotonicity",
         "ndcg_at_20",
@@ -2524,6 +2709,209 @@ def _feature_importances(model: Any, n_features: int) -> tuple[np.ndarray, np.nd
     return gain, split
 
 
+def _top_cumulative_importance_feature_names(
+    feature_names: list[str],
+    gain_importance: np.ndarray,
+    split_importance: np.ndarray | None = None,
+    *,
+    cumulative_fraction: float = 0.50,
+) -> list[str]:
+    names = [str(name) for name in feature_names]
+    if not names:
+        return []
+    gain = np.asarray(gain_importance, dtype=np.float64)
+    split = (
+        np.zeros(len(names), dtype=np.float64)
+        if split_importance is None
+        else np.asarray(split_importance, dtype=np.float64)
+    )
+    if gain.shape[0] < len(names):
+        gain = np.pad(gain, (0, len(names) - gain.shape[0]))
+    if split.shape[0] < len(names):
+        split = np.pad(split, (0, len(names) - split.shape[0]))
+    score = np.nan_to_num(gain[: len(names)], nan=0.0, posinf=0.0, neginf=0.0)
+    if float(score.sum()) <= 0.0:
+        score = np.nan_to_num(split[: len(names)], nan=0.0, posinf=0.0, neginf=0.0)
+    if float(score.sum()) <= 0.0:
+        return names[: min(len(names), max(1, int(np.ceil(0.10 * len(names)))))]
+    order = np.argsort(score)[::-1]
+    cum = np.cumsum(score[order])
+    total = float(cum[-1])
+    threshold = float(np.clip(cumulative_fraction, 0.01, 1.0)) * total
+    keep_count = int(np.searchsorted(cum, threshold, side="left") + 1)
+    keep_count = min(len(names), max(1, keep_count))
+    selected_idx = set(int(i) for i in order[:keep_count])
+    return [name for i, name in enumerate(names) if i in selected_idx]
+
+
+def _safe_corr_matrix(values: np.ndarray) -> np.ndarray:
+    arr = np.asarray(values, dtype=np.float64)
+    if arr.ndim != 2 or arr.shape[1] == 0:
+        return np.zeros((0, 0), dtype=np.float32)
+    if arr.shape[1] == 1:
+        return np.ones((1, 1), dtype=np.float32)
+    arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+    if arr.shape[0] < 2:
+        return np.eye(arr.shape[1], dtype=np.float32)
+    corr = np.corrcoef(arr, rowvar=False)
+    corr = np.nan_to_num(corr, nan=0.0, posinf=0.0, neginf=0.0)
+    if corr.ndim != 2:
+        return np.eye(arr.shape[1], dtype=np.float32)
+    np.fill_diagonal(corr, 1.0)
+    return corr.astype(np.float32)
+
+
+def _fit_feature_drift_reference(
+    X_ref: pd.DataFrame,
+    feature_names: list[str],
+    *,
+    bins: int = 10,
+) -> dict[str, Any]:
+    features = [str(c) for c in feature_names if str(c) in X_ref.columns]
+    if not features:
+        return {}
+    ref = X_ref.loc[:, features].astype(np.float32, copy=False)
+    values = ref.to_numpy(dtype=np.float32, copy=False)
+    mean = np.nanmean(values, axis=0)
+    std = np.nanstd(values, axis=0)
+    mean = np.where(np.isfinite(mean), mean, 0.0).astype(np.float32)
+    std = np.where(np.isfinite(std) & (std > 1e-6), std, 1.0).astype(np.float32)
+    z = (values - mean) / std
+    centroid_raw = np.nanmean(values / std, axis=0)
+    centroid_raw = np.nan_to_num(centroid_raw, nan=0.0, posinf=0.0, neginf=0.0)
+    centroid_norm = float(np.linalg.norm(centroid_raw))
+    centroid = (
+        centroid_raw / centroid_norm
+        if centroid_norm > 1e-12
+        else np.zeros(len(features), dtype=np.float32)
+    )
+    edges_by_feature: dict[str, list[float]] = {}
+    ref_props_by_feature: dict[str, list[float]] = {}
+    bins = max(2, int(bins))
+    for feature in features:
+        series = pd.to_numeric(ref[feature], errors="coerce").replace(
+            [np.inf, -np.inf], np.nan
+        )
+        vals = series.dropna().to_numpy(dtype=np.float64)
+        if vals.size < max(10, bins):
+            continue
+        quantiles = np.linspace(0.0, 1.0, bins + 1)
+        edges = np.unique(np.nanquantile(vals, quantiles))
+        if edges.size < 3:
+            continue
+        edges[0] = -np.inf
+        edges[-1] = np.inf
+        counts, _ = np.histogram(vals, bins=edges)
+        props = counts.astype(np.float64) / max(float(counts.sum()), 1.0)
+        edges_by_feature[feature] = [float(v) for v in edges]
+        ref_props_by_feature[feature] = [float(v) for v in props]
+    return {
+        "feature_names": features,
+        "mean": mean.astype(np.float32),
+        "std": std.astype(np.float32),
+        "centroid": centroid.astype(np.float32),
+        "corr": _safe_corr_matrix(z),
+        "psi_edges": edges_by_feature,
+        "psi_ref_props": ref_props_by_feature,
+        "bins": int(bins),
+        "fit_rows": int(len(ref)),
+    }
+
+
+def _feature_drift_values(
+    X_current: pd.DataFrame,
+    reference: dict[str, Any] | None,
+) -> dict[str, float]:
+    if not reference:
+        return {
+            "regime_centroid_similarity_train": 1.0,
+            "feature_drift_psi_core": 0.0,
+            "feature_drift_cov_shift": 0.0,
+        }
+    ref_features = [str(c) for c in reference.get("feature_names", [])]
+    features = [name for name in ref_features if name in X_current.columns]
+    if not features:
+        return {
+            "regime_centroid_similarity_train": 0.0,
+            "feature_drift_psi_core": 0.0,
+            "feature_drift_cov_shift": 0.0,
+        }
+    Xc = X_current.loc[:, features].astype(np.float32, copy=False)
+    values = Xc.to_numpy(dtype=np.float32, copy=False)
+    ref_pos = {name: i for i, name in enumerate(ref_features)}
+    idx = np.asarray([ref_pos[name] for name in features], dtype=np.int32)
+    mean = np.asarray(reference.get("mean", np.zeros(len(ref_features))), dtype=np.float32)[idx]
+    std = np.asarray(reference.get("std", np.ones(len(ref_features))), dtype=np.float32)[idx]
+    std = np.where(np.isfinite(std) & (std > 1e-6), std, 1.0).astype(np.float32)
+    z = (values - mean) / std
+    cur_centroid = np.nanmean(values / std, axis=0)
+    cur_centroid = np.nan_to_num(cur_centroid, nan=0.0, posinf=0.0, neginf=0.0)
+    cur_norm = float(np.linalg.norm(cur_centroid))
+    ref_centroid = np.asarray(reference.get("centroid", np.zeros(len(ref_features))), dtype=np.float32)[idx]
+    ref_norm = float(np.linalg.norm(ref_centroid))
+    if cur_norm > 1e-12 and ref_norm > 1e-12:
+        centroid_similarity = float(
+            np.clip(np.dot(cur_centroid / cur_norm, ref_centroid / ref_norm), -1.0, 1.0)
+        )
+    else:
+        centroid_similarity = 0.0
+    psi_vals: list[float] = []
+    eps = 1e-6
+    edges_by_feature = reference.get("psi_edges", {}) or {}
+    ref_props_by_feature = reference.get("psi_ref_props", {}) or {}
+    for feature in features:
+        edges = edges_by_feature.get(feature)
+        ref_props = ref_props_by_feature.get(feature)
+        if not edges or not ref_props:
+            continue
+        vals = pd.to_numeric(Xc[feature], errors="coerce").replace(
+            [np.inf, -np.inf], np.nan
+        ).dropna().to_numpy(dtype=np.float64)
+        if vals.size == 0:
+            continue
+        counts, _ = np.histogram(vals, bins=np.asarray(edges, dtype=np.float64))
+        cur_props = counts.astype(np.float64) / max(float(counts.sum()), 1.0)
+        ref_arr = np.asarray(ref_props, dtype=np.float64)
+        m = min(len(ref_arr), len(cur_props))
+        if m == 0:
+            continue
+        psi = np.sum((cur_props[:m] - ref_arr[:m]) * np.log((cur_props[:m] + eps) / (ref_arr[:m] + eps)))
+        if np.isfinite(psi):
+            psi_vals.append(float(psi))
+    psi_core = float(np.nanmean(psi_vals)) if psi_vals else 0.0
+    cur_corr = _safe_corr_matrix(z)
+    ref_corr_full = np.asarray(reference.get("corr", np.eye(len(ref_features))), dtype=np.float32)
+    ref_corr = (
+        ref_corr_full[np.ix_(idx, idx)]
+        if ref_corr_full.ndim == 2 and ref_corr_full.shape[0] >= len(ref_features)
+        else np.eye(len(features), dtype=np.float32)
+    )
+    if cur_corr.shape == ref_corr.shape and cur_corr.size:
+        cov_shift = float(np.linalg.norm(cur_corr - ref_corr, ord="fro") / max(cur_corr.shape[0], 1))
+    else:
+        cov_shift = 0.0
+    return {
+        "regime_centroid_similarity_train": centroid_similarity,
+        "feature_drift_psi_core": psi_core,
+        "feature_drift_cov_shift": cov_shift,
+    }
+
+
+def _append_feature_drift_meta_features(
+    meta_features: pd.DataFrame,
+    X_current: pd.DataFrame,
+    reference: dict[str, Any] | None,
+) -> None:
+    values = _feature_drift_values(X_current, reference)
+    n = len(meta_features)
+    for name in (
+        "regime_centroid_similarity_train",
+        "feature_drift_psi_core",
+        "feature_drift_cov_shift",
+    ):
+        meta_features[name] = np.full(n, float(values.get(name, 0.0)), dtype=np.float32)
+
+
 def _normalize_importance_vector(
     values: np.ndarray,
     *,
@@ -3484,6 +3872,22 @@ def _cross_val_oof_lgbm_with_meta_features(
         oof[va] = pred
         metrics.append(_metric_pack(y_metric[va], pred, classifier=classifier, groups=_groups_take(groups, va), returns=ret_arr[va]))
         fold_meta = _lgbm_meta_features_from_models([model], X_va, mode=mode, rank_bin_stats=None)
+        gain_imp, split_imp = _feature_importances(model, len(features))
+        drift_features = _top_cumulative_importance_feature_names(
+            features,
+            gain_imp,
+            split_imp,
+            cumulative_fraction=0.50,
+        )
+        fold_drift_reference = _fit_feature_drift_reference(
+            X_tr,
+            drift_features,
+        )
+        _append_feature_drift_meta_features(
+            fold_meta,
+            X_va,
+            fold_drift_reference,
+        )
         meta_features.iloc[va] = fold_meta.to_numpy(dtype=np.float32)
         tprint(
             f"LGBM final OOF/meta fold {fold_i}/{n_splits} complete: "
@@ -3632,14 +4036,20 @@ def _run_lgbm_hpo(
         f"rows={len(y_sub)}/{len(y_arr)}, features={len(features)}, trials={int(max_trials)}, "
         f"row_subsample_frac={hpo_frac:.3f}, max_rows={int(LGBM_HPO_MAX_ROWS)}, "
         f"patience={int(patience)}, objective={_normalize_objective_mode(objective_mode)}, "
-        "fold_mode=interleaved_spread."
+        "fold_mode=interleaved_spread, cegb_enabled=False, "
+        f"path_smooth_max={float(LGBM_HPO_PATH_SMOOTH_MAX):.3g}, "
+        f"final_min_estimators={int(LGBM_HPO_FINAL_MIN_ESTIMATORS)}."
     )
 
     def objective(trial: Any) -> float:
         trial_t0 = time.perf_counter()
         depth = trial.suggest_int("max_depth", 3, 6)
         subsample = trial.suggest_float("subsample", 0.60, 0.80)
-        cegb_effective = trial.suggest_float("cegb_effective_split_penalty", 0.0, 2.0)
+        path_smooth = (
+            trial.suggest_float("path_smooth", 0.0, LGBM_HPO_PATH_SMOOTH_MAX)
+            if LGBM_HPO_PATH_SMOOTH_MAX > 0.0
+            else 0.0
+        )
         params = _base_lgbm_params(
             random_state + trial.number * 101,
             classifier=classifier,
@@ -3660,12 +4070,10 @@ def _run_lgbm_hpo(
                 "subsample_freq": 1,
                 "colsample_bytree": trial.suggest_float("colsample_bytree", 0.40, 0.80),
                 "feature_fraction_bynode": trial.suggest_float("feature_fraction_bynode", 0.5, 1.0),
-                "extra_trees": trial.suggest_categorical("extra_trees", [False, True]),
-                "path_smooth": trial.suggest_float("path_smooth", 0.0, 20.0),
+                "extra_trees": False,
+                "path_smooth": path_smooth,
                 "scale_pos_weight": trial.suggest_float("scale_pos_weight", 0.25, 4.0, log=True),
                 "max_delta_step": trial.suggest_float("max_delta_step", 0.0, 5.0),
-                "cegb_tradeoff": 1.0,
-                "cegb_penalty_split": cegb_effective,
             },
         )
         fold_metrics: list[dict[str, float]] = []
@@ -3844,8 +4252,14 @@ def _run_lgbm_hpo(
         return params, {"hpo_available": True, "hpo_completed_trials": 0, "hpo_best_value": np.nan, "hpo_objective_mode": _normalize_objective_mode(objective_mode)}
     best = study.best_trial
     best_iterations = [int(v) for v in best.user_attrs.get("hpo_fold_best_iterations", []) if int(v) > 0]
-    final_n_estimators = int(np.percentile(best_iterations, 75)) if best_iterations else 1600
-    final_n_estimators = max(1, final_n_estimators)
+    raw_final_n_estimators = int(np.percentile(best_iterations, 75)) if best_iterations else 1600
+    final_n_estimators = max(int(LGBM_HPO_FINAL_MIN_ESTIMATORS), raw_final_n_estimators)
+    if raw_final_n_estimators < int(LGBM_HPO_FINAL_MIN_ESTIMATORS):
+        tprint(
+            "LGBM HPO final estimator guard: "
+            f"best_trial={best.number} requested n_estimators={raw_final_n_estimators}; "
+            f"using min={int(LGBM_HPO_FINAL_MIN_ESTIMATORS)}."
+        )
     depth = int(best.params.get("max_depth", 4))
     best_params = _base_lgbm_params(
         random_state + 191,
@@ -3867,12 +4281,13 @@ def _run_lgbm_hpo(
             "subsample_freq": 1,
             "colsample_bytree": float(best.params.get("colsample_bytree", 0.70)),
             "feature_fraction_bynode": float(best.params.get("feature_fraction_bynode", 1.0)),
-            "extra_trees": bool(best.params.get("extra_trees", False)),
-            "path_smooth": float(best.params.get("path_smooth", 0.0)),
+            "extra_trees": False,
+            "path_smooth": min(
+                float(best.params.get("path_smooth", 0.0)),
+                float(LGBM_HPO_PATH_SMOOTH_MAX),
+            ),
             "scale_pos_weight": float(best.params.get("scale_pos_weight", 1.0)),
             "max_delta_step": float(best.params.get("max_delta_step", 0.0)),
-            "cegb_tradeoff": 1.0,
-            "cegb_penalty_split": float(best.params.get("cegb_effective_split_penalty", 0.0)),
         },
     )
     attrs = dict(best.user_attrs)
@@ -3930,19 +4345,49 @@ def train_lgbm_stability_candidate(
     if oi_metadata_cols:
         X_df = X_df.drop(columns=[c for c in oi_metadata_cols if c in X_df.columns], errors="ignore")
         X_raw_df = X_raw_df.drop(columns=[c for c in oi_metadata_cols if c in X_raw_df.columns], errors="ignore")
+    coverage_exempt_features = (
+        {
+            str(c)
+            for c in X_df.columns
+            if _is_lgbm_model_derived_meta_feature(str(c))
+        }
+        if objective_mode == "train_meta"
+        else set()
+    )
     coverage_survivors, coverage_diagnostics = _recent_feature_coverage_survivors(
         X_raw_df.reindex(columns=list(X_df.columns)),
         timestamps,
+        exempt_features=coverage_exempt_features,
     )
     if len(coverage_survivors) < len(X_df.columns):
         removed_preview = coverage_diagnostics.get("feature_recent_removed_lowest", [])[:10]
         tprint(
-            "LGBM recent feature availability filter: "
+            "LGBM recent complete-case feature availability filter "
+            "(in-memory post-upstream feature set): "
             f"{len(X_df.columns)} -> {len(coverage_survivors)} features "
-            f"(min={LGBM_FEATURE_RECENT_MIN_COVERAGE:.0%}); "
+            f"(target>={LGBM_FEATURE_RECENT_MIN_COVERAGE:.0%}, "
+            f"joint={float(coverage_diagnostics.get('feature_recent_joint_coverage', float('nan'))):.1%}, "
+            f"rows={int(coverage_diagnostics.get('feature_recent_row_count', 0))}, "
+            f"exempt_model_derived={int(coverage_diagnostics.get('feature_recent_exempt_model_derived_count', 0))}, "
+            f"greedy_removed={int(coverage_diagnostics.get('feature_recent_removed_iterative_count', 0))}, "
+            f"stopped_no_gain={bool(coverage_diagnostics.get('feature_recent_stopped_no_gain', False))}); "
             f"lowest removed={removed_preview}"
         )
         X_df = X_df.reindex(columns=coverage_survivors)
+    else:
+        tprint(
+            "LGBM recent complete-case feature availability filter "
+            "(in-memory post-upstream feature set): "
+            f"kept all {X_df.shape[1]} features "
+            f"(target>={LGBM_FEATURE_RECENT_MIN_COVERAGE:.0%}, "
+            f"joint={float(coverage_diagnostics.get('feature_recent_joint_coverage', float('nan'))):.1%}, "
+            f"rows={int(coverage_diagnostics.get('feature_recent_row_count', 0))}, "
+            f"exempt_model_derived={int(coverage_diagnostics.get('feature_recent_exempt_model_derived_count', 0))}, "
+            f"window={coverage_diagnostics.get('feature_recent_window_start', 'all')} -> "
+            f"{coverage_diagnostics.get('feature_recent_window_end', 'all')}, "
+            f"price_sources={coverage_diagnostics.get('feature_recent_price_sources', [])}, "
+            f"stopped_no_gain={bool(coverage_diagnostics.get('feature_recent_stopped_no_gain', False))})"
+        )
     if X_df.shape[1] < 2:
         tprint(
             "LGBM stability candidate skipped: fewer than 2 features meet recent coverage threshold."
@@ -4339,6 +4784,35 @@ def fit_lgbm_stability_full_model(
             f"{len(y_fit)} rows in {time.perf_counter() - fit_t0:.1f}s; "
             f"updated all-row sequential weights ess={final_ensemble_ess:.1f}."
         )
+    split_importance_sum = np.zeros(len(selected_features), dtype=np.float64)
+    gain_importance_sum = np.zeros(len(selected_features), dtype=np.float64)
+    for fitted in model.models:
+        gain_imp, split_imp = _feature_importances(fitted, len(selected_features))
+        gain_importance_sum += np.asarray(gain_imp, dtype=np.float64)
+        split_importance_sum += np.asarray(split_imp, dtype=np.float64)
+    final_used_feature_count = int(np.sum(split_importance_sum > 0.0))
+    final_gain_feature_count = int(np.sum(gain_importance_sum > 0.0))
+    drift_feature_names = _top_cumulative_importance_feature_names(
+        selected_features,
+        gain_importance_sum,
+        split_importance_sum,
+        cumulative_fraction=0.50,
+    )
+    model.drift_reference = _fit_feature_drift_reference(
+        X_fit,
+        drift_feature_names,
+    )
+    tprint(
+        "LGBM final fitted feature usage: "
+        f"selected={len(selected_features)}, split_used={final_used_feature_count}, "
+        f"gain_used={final_gain_feature_count}."
+    )
+    if len(selected_features) and final_used_feature_count <= max(5, int(0.05 * len(selected_features))):
+        tprint(
+            "WARNING: LGBM final fit used very few selected features; "
+            f"selected={len(selected_features)}, split_used={final_used_feature_count}, "
+            "check CEGB/path_smooth/min_split_gain and final HPO params."
+        )
     final_weights = sequential_weights.astype(np.float32)
     final_oof, final_fold_metrics, meta_oof_features = _cross_val_oof_lgbm_with_meta_features(
         X_df,
@@ -4367,6 +4841,17 @@ def fit_lgbm_stability_full_model(
     model.metrics["final_fit_train_rows"] = int(len(fit_idx))
     model.metrics["final_fit_train_rows_total"] = int(n)
     model.metrics["final_fit_used_all_rows"] = bool(len(fit_idx) == n)
+    model.metrics["final_fit_split_used_feature_count"] = int(final_used_feature_count)
+    model.metrics["final_fit_gain_used_feature_count"] = int(final_gain_feature_count)
+    model.metrics["feature_drift_reference_feature_count"] = int(
+        len(model.drift_reference.get("feature_names", []))
+    )
+    model.metrics["feature_drift_reference_fit_rows"] = int(
+        model.drift_reference.get("fit_rows", 0)
+    )
+    model.metrics["feature_drift_reference_features_preview"] = list(
+        model.drift_reference.get("feature_names", [])[:50]
+    )
     model.metrics["final_model_count"] = int(LGBM_FINAL_MODEL_COUNT)
     model.metrics["final_ensemble_sequential_distillation"] = True
     model.metrics["oof_distillation_passes"] = int(distill_passes)
@@ -4398,6 +4883,27 @@ def fit_lgbm_stability_full_model(
         fit_oof_metrics=fit_oof_metrics_for_stage,
         post_distill_metrics=final_metrics,
     )
+    try:
+        cand_auc = float(candidate_metrics.get("auc", np.nan))
+        final_auc = float(final_metrics.get("auc", np.nan))
+        cand_lift30 = float(candidate_metrics.get("lift30", np.nan))
+        final_lift30 = float(final_metrics.get("lift30", np.nan))
+        if (
+            (np.isfinite(cand_auc) and np.isfinite(final_auc) and final_auc + 0.05 < cand_auc)
+            or (
+                np.isfinite(cand_lift30)
+                and np.isfinite(final_lift30)
+                and final_lift30 + 0.20 < cand_lift30
+            )
+        ):
+            tprint(
+                "WARNING: LGBM final/post-distill metrics materially trail pre-final race metrics: "
+                f"candidate_auc={cand_auc:.4f}, final_auc={final_auc:.4f}, "
+                f"candidate_lift30={cand_lift30:.4f}, final_lift30={final_lift30:.4f}, "
+                f"split_used={final_used_feature_count}/{len(selected_features)}."
+            )
+    except Exception:
+        pass
     model.pruning_history = list(pruning_history or [])
     tprint(
         f"LGBM full fit done: J={model.metrics.get('J_final', 0.0):.4f}, "

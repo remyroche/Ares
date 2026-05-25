@@ -1,151 +1,191 @@
 {
-  "invalid_rows": 237778,
+  "invalid_rows": 61014,
   "rows": 680190,
   "stage": "alpha",
   "strategy_id": "long_loc_prev_week_range_pos_48_0_42586401_loc_vwap_dev_z_24_0_10701825_zscore_price_50_1_0128103_mkt_ret_eq_24h_-0_78752208_up_down_return_mass_ratio_tanh_1_1231147",
   "top_invalid_symbols": [
     {
-      "bad_pct": 0.9860627177700348,
-      "invalid_rows": 2830,
+      "bad_pct": 1.0,
+      "invalid_rows": 2870,
       "rows": 2870,
-      "symbol": "GBP/USD:USD"
+      "symbol": "CFX/USD:USD"
     },
     {
-      "bad_pct": 0.9055749128919861,
-      "invalid_rows": 2599,
-      "rows": 2870,
-      "symbol": "OMI/USD:USD"
-    },
-    {
-      "bad_pct": 0.8993031358885017,
-      "invalid_rows": 2581,
-      "rows": 2870,
-      "symbol": "LCAP/USD:USD"
-    },
-    {
-      "bad_pct": 0.8951219512195122,
-      "invalid_rows": 2569,
-      "rows": 2870,
-      "symbol": "T/USD:USD"
-    },
-    {
-      "bad_pct": 0.89198606271777,
-      "invalid_rows": 2560,
-      "rows": 2870,
-      "symbol": "ZIG/USD:USD"
-    },
-    {
-      "bad_pct": 0.886411149825784,
-      "invalid_rows": 2544,
-      "rows": 2870,
-      "symbol": "2Z/USD:USD"
-    },
-    {
-      "bad_pct": 0.886411149825784,
-      "invalid_rows": 2544,
-      "rows": 2870,
-      "symbol": "EUR/USD:USD"
-    },
-    {
-      "bad_pct": 0.8763066202090593,
-      "invalid_rows": 2515,
+      "bad_pct": 1.0,
+      "invalid_rows": 2870,
       "rows": 2870,
       "symbol": "GAS/USD:USD"
     },
     {
-      "bad_pct": 0.854006968641115,
-      "invalid_rows": 2451,
+      "bad_pct": 1.0,
+      "invalid_rows": 2870,
       "rows": 2870,
-      "symbol": "METIS/USD:USD"
+      "symbol": "HYPE/USD:USD"
     },
     {
-      "bad_pct": 0.845993031358885,
-      "invalid_rows": 2428,
+      "bad_pct": 1.0,
+      "invalid_rows": 2870,
       "rows": 2870,
-      "symbol": "LQTY/USD:USD"
+      "symbol": "NEO/USD:USD"
     },
     {
-      "bad_pct": 0.8456445993031358,
-      "invalid_rows": 2427,
+      "bad_pct": 1.0,
+      "invalid_rows": 2870,
       "rows": 2870,
-      "symbol": "USDC/USD:USD"
+      "symbol": "VELO/USD:USD"
     },
     {
-      "bad_pct": 0.8439024390243902,
-      "invalid_rows": 2422,
+      "bad_pct": 1.0,
+      "invalid_rows": 2870,
       "rows": 2870,
-      "symbol": "USDT/USD:USD"
+      "symbol": "VET/USD:USD"
     },
     {
-      "bad_pct": 0.837630662020906,
-      "invalid_rows": 2404,
+      "bad_pct": 0.9895470383275261,
+      "invalid_rows": 2840,
       "rows": 2870,
-      "symbol": "COW/USD:USD"
+      "symbol": "GBP/USD:USD"
     },
     {
-      "bad_pct": 0.8365853658536585,
-      "invalid_rows": 2401,
+      "bad_pct": 0.705226480836237,
+      "invalid_rows": 2024,
       "rows": 2870,
-      "symbol": "MIRA/USD:USD"
+      "symbol": "OMI/USD:USD"
     },
     {
-      "bad_pct": 0.8341463414634146,
-      "invalid_rows": 2394,
+      "bad_pct": 0.6379790940766551,
+      "invalid_rows": 1831,
       "rows": 2870,
-      "symbol": "SUN/USD:USD"
+      "symbol": "ZIG/USD:USD"
     },
     {
-      "bad_pct": 0.8337979094076655,
-      "invalid_rows": 2393,
+      "bad_pct": 0.621602787456446,
+      "invalid_rows": 1784,
       "rows": 2870,
       "symbol": "GTC/USD:USD"
     },
     {
-      "bad_pct": 0.8257839721254355,
-      "invalid_rows": 2370,
+      "bad_pct": 0.5101045296167247,
+      "invalid_rows": 1464,
       "rows": 2870,
-      "symbol": "BNT/USD:USD"
+      "symbol": "USDC/USD:USD"
     },
     {
-      "bad_pct": 0.8118466898954704,
-      "invalid_rows": 2330,
+      "bad_pct": 0.47491289198606274,
+      "invalid_rows": 1363,
       "rows": 2870,
-      "symbol": "FLUX/USD:USD"
+      "symbol": "MIRA/USD:USD"
     },
     {
-      "bad_pct": 0.7954703832752613,
-      "invalid_rows": 2283,
+      "bad_pct": 0.41986062717770034,
+      "invalid_rows": 1205,
+      "rows": 2870,
+      "symbol": "2Z/USD:USD"
+    },
+    {
+      "bad_pct": 0.4094076655052265,
+      "invalid_rows": 1175,
+      "rows": 2870,
+      "symbol": "T/USD:USD"
+    },
+    {
+      "bad_pct": 0.3804878048780488,
+      "invalid_rows": 1092,
+      "rows": 2870,
+      "symbol": "LCAP/USD:USD"
+    },
+    {
+      "bad_pct": 0.37700348432055747,
+      "invalid_rows": 1082,
+      "rows": 2870,
+      "symbol": "USDT/USD:USD"
+    },
+    {
+      "bad_pct": 0.3463414634146341,
+      "invalid_rows": 994,
+      "rows": 2870,
+      "symbol": "OPEN/USD:USD"
+    },
+    {
+      "bad_pct": 0.3400696864111498,
+      "invalid_rows": 976,
+      "rows": 2870,
+      "symbol": "METIS/USD:USD"
+    },
+    {
+      "bad_pct": 0.3383275261324042,
+      "invalid_rows": 971,
+      "rows": 2870,
+      "symbol": "EUR/USD:USD"
+    },
+    {
+      "bad_pct": 0.3362369337979094,
+      "invalid_rows": 965,
       "rows": 2870,
       "symbol": "STBL/USD:USD"
-    },
-    {
-      "bad_pct": 0.7710801393728223,
-      "invalid_rows": 2213,
-      "rows": 2870,
-      "symbol": "AUCTION/USD:USD"
     }
   ],
   "top_nonfinite_features": [
     {
-      "bad_pct": 0.34597391905202957,
-      "bad_rows": 235328,
-      "feature": "oi_rel_vol_2h",
+      "bad_pct": 0.08518061129978388,
+      "bad_rows": 57939,
+      "feature": "dist_oiw_intensity_96h_atr",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.03176759434863788,
+      "bad_rows": 21608,
+      "feature": "impact_per_oi_intensity_z_24h",
       "likely_root_cause": "raw_source_missing_or_sparse",
       "missing_column": false,
       "source_family": "open_interest"
     },
     {
-      "bad_pct": 0.06982313765271468,
-      "bad_rows": 47493,
-      "feature": "dist_vwap_norm",
+      "bad_pct": 0.03174407150943119,
+      "bad_rows": 21592,
+      "feature": "abs_ret_per_oi_z_24h",
       "likely_root_cause": "raw_source_missing_or_sparse",
       "missing_column": false,
-      "source_family": "ohlcv_volume"
+      "source_family": "open_interest"
     },
     {
-      "bad_pct": 0.008494685308516738,
-      "bad_rows": 5778,
-      "feature": "ret24h_bench_resid",
+      "bad_pct": 0.030876666813684412,
+      "bad_rows": 21002,
+      "feature": "oiw_pos_delta_entry_dist_7d_atr",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.025331157470706713,
+      "bad_rows": 17230,
+      "feature": "donchian_zone_1d_atr",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.007161234360987371,
+      "bad_rows": 4871,
+      "feature": "oi_z",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.007149472941384025,
+      "bad_rows": 4863,
+      "feature": "oi_chg_4h",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.00692453579147003,
+      "bad_rows": 4710,
+      "feature": "ffd_rv_12_04",
       "likely_root_cause": "feature_computation_or_source_window_gap",
       "missing_column": false,
       "source_family": "derived_feature"
@@ -153,7 +193,39 @@
     {
       "bad_pct": 0.00692453579147003,
       "bad_rows": 4710,
-      "feature": "ffd_rv_24_04",
+      "feature": "ffd_rv_6h_04",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.006915714726767521,
+      "bad_rows": 4704,
+      "feature": "ext_excess",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.006915714726767521,
+      "bad_rows": 4704,
+      "feature": "ffd_diff_1_04",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.006915714726767521,
+      "bad_rows": 4704,
+      "feature": "ffd_strength_04",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.006915714726767521,
+      "bad_rows": 4704,
+      "feature": "stall_ext_corr",
       "likely_root_cause": "feature_computation_or_source_window_gap",
       "missing_column": false,
       "source_family": "derived_feature"
@@ -169,7 +241,79 @@
     {
       "bad_pct": 0.006906893662065011,
       "bad_rows": 4698,
-      "feature": "ret28h",
+      "feature": "pullback_8",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.006906893662065011,
+      "bad_rows": 4698,
+      "feature": "clv_pullback",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.006906893662065011,
+      "bad_rows": 4698,
+      "feature": "pullback_48",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.006906893662065011,
+      "bad_rows": 4698,
+      "feature": "pullback_4",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.006906893662065011,
+      "bad_rows": 4698,
+      "feature": "pullback_2",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.006906893662065011,
+      "bad_rows": 4698,
+      "feature": "dist_from_high_120h",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.006906893662065011,
+      "bad_rows": 4698,
+      "feature": "zr_12h_x_range_z_48h",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.006906893662065011,
+      "bad_rows": 4698,
+      "feature": "pb_accel",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.006906893662065011,
+      "bad_rows": 4698,
+      "feature": "ffd_dist_ema_slow_04",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.006906893662065011,
+      "bad_rows": 4698,
+      "feature": "trend_x_trending",
       "likely_root_cause": "feature_computation_or_source_window_gap",
       "missing_column": false,
       "source_family": "derived_feature"
@@ -185,7 +329,15 @@
     {
       "bad_pct": 0.006906893662065011,
       "bad_rows": 4698,
-      "feature": "accel_5h",
+      "feature": "retest_quality",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.006906893662065011,
+      "bad_rows": 4698,
+      "feature": "carry_adj_ret_self_z_10h",
       "likely_root_cause": "feature_computation_or_source_window_gap",
       "missing_column": false,
       "source_family": "derived_feature"
@@ -207,9 +359,9 @@
       "source_family": "derived_feature"
     },
     {
-      "bad_pct": 0.0026566106529058056,
-      "bad_rows": 1807,
-      "feature": "dist_ema_fast_mkt_resid",
+      "bad_pct": 0.002663961540157897,
+      "bad_rows": 1812,
+      "feature": "rsi_ts_resid",
       "likely_root_cause": "feature_computation_or_source_window_gap",
       "missing_column": false,
       "source_family": "derived_feature"
@@ -223,6 +375,54 @@
       "source_family": "derived_feature"
     },
     {
+      "bad_pct": 0.0026566106529058056,
+      "bad_rows": 1807,
+      "feature": "dist_ema_fast_mkt_resid",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.002369926050074244,
+      "bad_rows": 1612,
+      "feature": "flow_persistence",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.0023552242755700615,
+      "bad_rows": 1602,
+      "feature": "rsi_slope_base",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.0023331716138137873,
+      "bad_rows": 1587,
+      "feature": "ffd_d4_05",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.0023184698393096045,
+      "bad_rows": 1577,
+      "feature": "ffd_diff_2_05",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.002311118952057513,
+      "bad_rows": 1572,
+      "feature": "mr_failure",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
       "bad_pct": 0.002311118952057513,
       "bad_rows": 1572,
       "feature": "trend_t",
@@ -231,9 +431,25 @@
       "source_family": "derived_feature"
     },
     {
-      "bad_pct": 0.002303768064805422,
-      "bad_rows": 1567,
-      "feature": "body_ratio",
+      "bad_pct": 0.002311118952057513,
+      "bad_rows": 1572,
+      "feature": "trend_overextension_z",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.002311118952057513,
+      "bad_rows": 1572,
+      "feature": "breakout_t",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.002311118952057513,
+      "bad_rows": 1572,
+      "feature": "tail_score",
       "likely_root_cause": "feature_computation_or_source_window_gap",
       "missing_column": false,
       "source_family": "derived_feature"
@@ -241,15 +457,7 @@
     {
       "bad_pct": 0.002303768064805422,
       "bad_rows": 1567,
-      "feature": "slope",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 0.002303768064805422,
-      "bad_rows": 1567,
-      "feature": "signed_vol",
+      "feature": "zr_6h",
       "likely_root_cause": "feature_computation_or_source_window_gap",
       "missing_column": false,
       "source_family": "derived_feature"
@@ -265,7 +473,7 @@
     {
       "bad_pct": 0.002303768064805422,
       "bad_rows": 1567,
-      "feature": "ffd_range_24_05",
+      "feature": "wick_ratio_4h_max",
       "likely_root_cause": "feature_computation_or_source_window_gap",
       "missing_column": false,
       "source_family": "derived_feature"
@@ -273,7 +481,7 @@
     {
       "bad_pct": 0.002303768064805422,
       "bad_rows": 1567,
-      "feature": "zr_6h_x_range_z_24h",
+      "feature": "wick_body_ratio",
       "likely_root_cause": "feature_computation_or_source_window_gap",
       "missing_column": false,
       "source_family": "derived_feature"
@@ -281,252 +489,44 @@
     {
       "bad_pct": 0.002303768064805422,
       "bad_rows": 1567,
-      "feature": "dist_ema_slow_base",
+      "feature": "thrust_decay_4",
       "likely_root_cause": "feature_computation_or_source_window_gap",
       "missing_column": false,
       "source_family": "derived_feature"
     },
     {
-      "bad_pct": 0.0008909275349534689,
-      "bad_rows": 606,
-      "feature": "ffd_diff_8_06",
+      "bad_pct": 0.002303768064805422,
+      "bad_rows": 1567,
+      "feature": "slope",
       "likely_root_cause": "feature_computation_or_source_window_gap",
       "missing_column": false,
       "source_family": "derived_feature"
     },
     {
-      "bad_pct": 0.0008821064702509593,
-      "bad_rows": 600,
-      "feature": "vol_shock_asym_4_12",
+      "bad_pct": 0.002303768064805422,
+      "bad_rows": 1567,
+      "feature": "flow_ratio",
       "likely_root_cause": "feature_computation_or_source_window_gap",
       "missing_column": false,
       "source_family": "derived_feature"
     },
     {
-      "bad_pct": 0.000880636292800541,
-      "bad_rows": 599,
-      "feature": "progress",
+      "bad_pct": 0.002303768064805422,
+      "bad_rows": 1567,
+      "feature": "signed_vol",
       "likely_root_cause": "feature_computation_or_source_window_gap",
       "missing_column": false,
       "source_family": "derived_feature"
     },
     {
-      "bad_pct": 0.000880636292800541,
-      "bad_rows": 599,
-      "feature": "down_up_vol_ratio_24",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 0.0008791661153501228,
-      "bad_rows": 598,
-      "feature": "ffd_ema_spread_06",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 0.0003660741851541481,
-      "bad_rows": 249,
-      "feature": "oi_chg_2h",
-      "likely_root_cause": "raw_source_missing_or_sparse",
-      "missing_column": false,
-      "source_family": "open_interest"
-    },
-    {
-      "bad_pct": 0.00019112306855437452,
-      "bad_rows": 130,
-      "feature": "funding_per_hour_mkt_resid",
-      "likely_root_cause": "raw_source_missing_or_sparse",
-      "missing_column": false,
-      "source_family": "funding"
-    },
-    {
-      "bad_pct": 5.2926388215057555e-05,
-      "bad_rows": 36,
-      "feature": "adx_14",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 3.38140813596201e-05,
-      "bad_rows": 23,
-      "feature": "adx_di_plus_14",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 3.087372645878358e-05,
-      "bad_rows": 21,
-      "feature": "lr_12h",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 2.2052661756273983e-05,
-      "bad_rows": 15,
-      "feature": "climax_range_12",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 2.0582484305855718e-05,
-      "bad_rows": 14,
-      "feature": "tail_asymmetry_q90_q10_atr_norm",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 1.617195195460092e-05,
-      "bad_rows": 11,
-      "feature": "dir_path_risk_long_2h",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 1.4701774504182654e-05,
-      "bad_rows": 10,
-      "feature": "true_range_percentile",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 1.4701774504182654e-05,
-      "bad_rows": 10,
-      "feature": "atr_change_rate",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 1.4701774504182654e-05,
-      "bad_rows": 10,
-      "feature": "atr_percentile",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 1.4701774504182654e-05,
-      "bad_rows": 10,
-      "feature": "funding_per_hour",
-      "likely_root_cause": "raw_source_missing_or_sparse",
-      "missing_column": false,
-      "source_family": "funding"
-    },
-    {
-      "bad_pct": 1.4701774504182654e-05,
-      "bad_rows": 10,
-      "feature": "atr_compression_ratio",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 1.4701774504182654e-05,
-      "bad_rows": 10,
-      "feature": "loc_session_pos_24",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 1.3231597053764389e-05,
-      "bad_rows": 9,
-      "feature": "memory_asymmetry_2ATR",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 1.3231597053764389e-05,
-      "bad_rows": 9,
-      "feature": "mark_perp_dislocation",
-      "likely_root_cause": "raw_source_missing_or_sparse",
-      "missing_column": false,
-      "source_family": "mark_price"
-    },
-    {
-      "bad_pct": 1.3231597053764389e-05,
-      "bad_rows": 9,
-      "feature": "range_12h_pct",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 1.3231597053764389e-05,
-      "bad_rows": 9,
-      "feature": "log_bars_since_above_2atr",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 1.3231597053764389e-05,
-      "bad_rows": 9,
-      "feature": "bars_in_high_vol_state_log_norm",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 1.3231597053764389e-05,
-      "bad_rows": 9,
-      "feature": "delta_stall_6",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 1.3231597053764389e-05,
-      "bad_rows": 9,
-      "feature": "ffd_vol_price_corr_10h_04",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 1.3231597053764389e-05,
-      "bad_rows": 9,
-      "feature": "tail_against",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 1.3231597053764389e-05,
-      "bad_rows": 9,
-      "feature": "dist_range_mid_atr",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 1.3231597053764389e-05,
-      "bad_rows": 9,
-      "feature": "breakout_24h",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 1.3231597053764389e-05,
-      "bad_rows": 9,
-      "feature": "up_down_semivol_ratio_tanh",
+      "bad_pct": 0.002303768064805422,
+      "bad_rows": 1567,
+      "feature": "ret5h",
       "likely_root_cause": "feature_computation_or_source_window_gap",
       "missing_column": false,
       "source_family": "derived_feature"
     }
   ],
-  "valid_pct": 0.6504241461944457,
-  "valid_rows": 442412
+  "valid_pct": 0.9102985930401799,
+  "valid_rows": 619176
 }

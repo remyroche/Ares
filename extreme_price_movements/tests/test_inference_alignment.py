@@ -291,6 +291,71 @@ def test_predict_meta_materializes_training_meta_interactions():
     assert np.isclose(model.seen_values["base_prob_x_entropy"], 0.32)
 
 
+def test_predict_meta_materializes_alpha_drift_features_for_parity():
+    class AlphaModel:
+        def __init__(self):
+            self.seen_index = None
+
+        def transform_meta_features(self, X):
+            self.seen_index = list(X.index)
+            return pd.DataFrame(
+                {
+                    "regime_centroid_similarity_train": [0.91, 0.87],
+                    "feature_drift_psi_core": [0.12, 0.18],
+                    "feature_drift_cov_shift": [0.03, 0.04],
+                },
+                index=X.index,
+            )
+
+    class CapturingMetaModel:
+        feature_columns = [
+            "long_demo",
+            "regime_centroid_similarity_train",
+            "feature_drift_psi_core",
+            "feature_drift_cov_shift",
+        ]
+
+        def __init__(self):
+            self.seen = None
+
+        def predict(self, X):
+            self.seen = X.copy()
+            return [0.5] * len(X)
+
+    alpha = AlphaModel()
+    meta = CapturingMetaModel()
+    orchestrator = ModelOrchestrator(
+        {
+            "alpha_models": {
+                "long_demo": {
+                    "model": alpha,
+                    "feat_cols": ["ret24h"],
+                }
+            },
+            "meta_models": {"long_demo_clf": meta},
+        },
+        {"strict_feature_parity": True},
+    )
+    features = pd.DataFrame(
+        {
+            "long_demo": [0.6, 0.7],
+            "ret24h": [0.01, -0.02],
+        },
+        index=["AAA/USDC", "BBB/USDC"],
+    )
+
+    preds = orchestrator.predict_meta(features, "long", "long_demo")
+
+    assert list(preds.index) == ["AAA/USDC", "BBB/USDC"]
+    assert alpha.seen_index == ["AAA/USDC", "BBB/USDC"]
+    assert np.allclose(
+        meta.seen["regime_centroid_similarity_train"].to_numpy(),
+        [0.91, 0.87],
+    )
+    assert np.allclose(meta.seen["feature_drift_psi_core"].to_numpy(), [0.12, 0.18])
+    assert np.allclose(meta.seen["feature_drift_cov_shift"].to_numpy(), [0.03, 0.04])
+
+
 def test_predict_meta_refuses_missing_rank_percentile_context():
     class CapturingMetaModel:
         feature_columns = ["pred_H10", "base_model_score_pct"]

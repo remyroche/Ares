@@ -3671,7 +3671,10 @@ def get_feature_bounds(
 
 
 def append_symbol_features(
-    parquet_path: str, symbol: str, new_data: pd.DataFrame
+    parquet_path: str,
+    symbol: str,
+    new_data: pd.DataFrame,
+    overwrite_columns: set[str] | None = None,
 ) -> int:
     if new_data.empty:
         return 0
@@ -3718,6 +3721,7 @@ def append_symbol_features(
                     existing = existing.drop(columns=["__symbol__"])
 
         incoming_cols = list(new_data.columns)
+        overwrite_columns = set(str(c) for c in (overwrite_columns or set()))
         all_cols = sorted(
             set(incoming_cols)
             | (set(existing.columns) if existing is not None else set())
@@ -3744,6 +3748,7 @@ def append_symbol_features(
                     columns=drop_cols, errors="ignore"
                 )
                 new_data = new_data.drop(columns=drop_cols, errors="ignore")
+                incoming_cols = list(new_data.columns)
 
             combined = existing_aligned.reindex(
                 existing_aligned.index.union(new_data.index)
@@ -3752,12 +3757,19 @@ def append_symbol_features(
             # non-missing cells and only fill new rows, new columns, or NaNs.
             # Rewriting already-populated cells makes reruns expensive and can
             # mask earlier run provenance.
-            target = combined.loc[new_data.index, new_data.columns]
-            write_mask = target.isna()
-            combined.loc[new_data.index, new_data.columns] = target.where(
-                ~write_mask,
-                new_data,
-            )
+            overwrite_cols = [
+                c for c in incoming_cols if c in overwrite_columns and c in new_data.columns
+            ]
+            fill_cols = [c for c in incoming_cols if c not in overwrite_columns]
+            if fill_cols:
+                target = combined.loc[new_data.index, fill_cols]
+                write_mask = target.isna()
+                combined.loc[new_data.index, fill_cols] = target.where(
+                    ~write_mask,
+                    new_data[fill_cols],
+                )
+            if overwrite_cols:
+                combined.loc[new_data.index, overwrite_cols] = new_data[overwrite_cols]
         else:
             before_rows = 0
             combined = new_data
@@ -3784,6 +3796,7 @@ def save_features(
     feat_columns: list | None = None,
     save_workers: int | None = None,
     replace_existing: bool = False,
+    overwrite_columns: set[str] | list[str] | tuple[str, ...] | None = None,
 ):
     """
     Save generated features to disk (Per-Symbol), streaming one symbol at a time.
@@ -3797,6 +3810,7 @@ def save_features(
     ts_str = ts.strftime("%Y%m%d_%H%M%S")
     out_dir = os.path.join(root_dir, "features", ts_str)
     os.makedirs(out_dir, exist_ok=True)
+    overwrite_columns = set(str(c) for c in (overwrite_columns or set()))
 
     tprint(f"Saving features to {out_dir}...")
 
@@ -3877,7 +3891,12 @@ def save_features(
                 _atomic_write_parquet(df_out, final_path)
                 _write_feature_metadata(final_path, sym, df_out.index)
             else:
-                append_symbol_features(final_path, sym, df_sym)
+                append_symbol_features(
+                    final_path,
+                    sym,
+                    df_sym,
+                    overwrite_columns=overwrite_columns,
+                )
             return True
 
         count = 0
@@ -3998,7 +4017,12 @@ def save_features(
             _atomic_write_parquet(df_out, final_path)
             _write_feature_metadata(final_path, sym, df_out.index)
         else:
-            append_symbol_features(final_path, sym, df_sym)
+            append_symbol_features(
+                final_path,
+                sym,
+                df_sym,
+                overwrite_columns=overwrite_columns,
+            )
         return True
 
     count = 0

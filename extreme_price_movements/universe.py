@@ -580,8 +580,8 @@ def get_training_universe(margin_symbols, cfg, store, ts_sig=None):
             "manifests",
         )
         for filename in (
-            "kraken_dual_market_universe_latest.json",
             "kraken_dual_market_verified_universe_latest.json",
+            "kraken_dual_market_universe_latest.json",
         ):
             path = os.path.join(manifest_dir, filename)
             if not os.path.exists(path):

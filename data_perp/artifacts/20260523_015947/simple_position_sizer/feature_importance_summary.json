@@ -1,0 +1,39 @@
+{
+  "generated_by": "simple_position_sizer",
+  "run_id": "20260523_015947",
+  "schema_version": "v1",
+  "strategies": {
+    "dist_rolling_7d_high_0_13977644_mkt_ret_eq_24h_-0_56630391_rolling_range_20_-0_40672407": {
+      "barrier_clf_top10": [],
+      "elasticnet_top10": [],
+      "extratrees_top10": [],
+      "winner_model": "et",
+      "winner_pred_prefix_share": null,
+      "winner_top10": []
+    },
+    "dist_weekly_vwap_0_074823022_loc_prev_week_range_pos_48_0_48354843_mkt_ret_eq_24h_-0_43956268_volume_autocorr_48_-0_38378653": {
+      "barrier_clf_top10": [],
+      "elasticnet_top10": [],
+      "extratrees_top10": [],
+      "winner_model": "et",
+      "winner_pred_prefix_share": null,
+      "winner_top10": []
+    },
+    "loc_ema_stack_pos_24_0_43357179_compression_ratio_-0_33411601_mkt_ret_eq_24h_1_1280091_mkt_ret_eq_24h_-0_81129736_up_down_semivol_ratio_tanh_-0_39156261": {
+      "barrier_clf_top10": [],
+      "elasticnet_top10": [],
+      "extratrees_top10": [],
+      "winner_model": "et",
+      "winner_pred_prefix_share": null,
+      "winner_top10": []
+    },
+    "loc_prev_week_range_pos_48_0_42586401_loc_vwap_dev_z_24_0_10701825_zscore_price_50_1_0128103_mkt_ret_eq_24h_-0_78752208_up_down_return_mass_ratio_tanh_1_1231147": {
+      "barrier_clf_top10": [],
+      "elasticnet_top10": [],
+      "extratrees_top10": [],
+      "winner_model": "et",
+      "winner_pred_prefix_share": null,
+      "winner_top10": []
+    }
+  }
+}

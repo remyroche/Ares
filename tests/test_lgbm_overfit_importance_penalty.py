@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import pytest
+from pathlib import Path
 
 import extreme_price_movements.lgbm_pipeline as lp
 
@@ -16,6 +17,17 @@ def test_distillation_passes_apply_to_base_and_meta(monkeypatch):
     monkeypatch.setattr(lp, "LGBM_OOF_DISTILLATION_PASSES", 4)
     assert lp._distillation_passes_for_objective("train_base") == 4
     assert lp._distillation_passes_for_objective("train_meta") == 4
+
+
+def test_lgbm_hpo_does_not_search_extra_trees():
+    source = Path(lp.__file__).read_text(encoding="utf-8")
+
+    assert 'suggest_categorical("extra_trees"' not in source
+    assert "suggest_categorical('extra_trees'" not in source
+
+
+def test_lgbm_hpo_path_smooth_cap_is_10():
+    assert 0.0 <= lp.LGBM_HPO_PATH_SMOOTH_MAX <= 10.0
 
 
 def test_apply_overfit_gap_penalty_basic_no_gap_and_cap():
@@ -113,6 +125,49 @@ def test_feature_selection_oi_mask_prefers_explicit_availability():
     assert diagnostics["feature_selection_oi_filter_enforced"] is True
     assert diagnostics["feature_selection_oi_present_rows_total"] == 2
     assert "__open_interest_available__" in drop_cols
+
+
+def test_train_meta_recent_coverage_exempts_model_derived_features(monkeypatch):
+    n = 240
+    timestamps = pd.date_range("2026-01-01", periods=n, freq="h", tz="UTC")
+    X = pd.DataFrame(
+        {
+            "raw_good": np.ones(n, dtype=np.float32),
+            "raw_bad": np.where(np.arange(n) < 30, 1.0, np.nan).astype(np.float32),
+            "feature_drift_psi_core": np.full(n, np.nan, dtype=np.float32),
+            "variance_proxy": np.full(n, np.nan, dtype=np.float32),
+            "leaf_count_p10": np.full(n, np.nan, dtype=np.float32),
+            "contrib_entropy": np.full(n, np.nan, dtype=np.float32),
+            "score_path_std": np.full(n, np.nan, dtype=np.float32),
+            "base_prob_x_vol_regime": np.full(n, np.nan, dtype=np.float32),
+            "base_model_score_pct": np.full(n, np.nan, dtype=np.float32),
+            "oof_ebm_unc_demo": np.full(n, np.nan, dtype=np.float32),
+            "pred_demo_H10_vote_entropy": np.full(n, np.nan, dtype=np.float32),
+        }
+    )
+    monkeypatch.setattr(lp, "LGBM_FEATURE_RECENT_MIN_COVERAGE", 0.90)
+
+    survivors, diagnostics = lp._recent_feature_coverage_survivors(
+        X,
+        timestamps,
+        exempt_features={
+            c for c in X.columns if lp._is_lgbm_model_derived_meta_feature(c)
+        },
+    )
+
+    assert "raw_good" in survivors
+    assert "raw_bad" not in survivors
+    assert "feature_drift_psi_core" in survivors
+    assert "variance_proxy" in survivors
+    assert "leaf_count_p10" in survivors
+    assert "contrib_entropy" in survivors
+    assert "score_path_std" in survivors
+    assert "base_prob_x_vol_regime" not in survivors
+    assert "base_model_score_pct" not in survivors
+    assert "oof_ebm_unc_demo" not in survivors
+    assert "pred_demo_H10_vote_entropy" in survivors
+    assert diagnostics["feature_recent_exempt_model_derived_count"] == 6
+    assert diagnostics["feature_recent_joint_coverage"] == pytest.approx(1.0)
 
 
 def test_bounded_importance_instability_properties():

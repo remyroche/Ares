@@ -283,10 +283,17 @@ LEAF_SCORING_DEFAULTS: Dict[str, Any] = {
     "max_final_regimes_total": 40,
     "max_final_jaccard_overlap": 0.35,
     "max_final_containment_overlap": 0.60,
+    "enable_final_centroid_preclustering": True,
+    "final_centroid_cluster_similarity_threshold": 0.95,
+    "final_centroid_cluster_top_k_per_cluster": 1,
     "min_feature_centroid_cosine_distance": 0.20,
     "max_feature_family_jaccard": 0.70,
     "min_final_novelty_score": 0.55,
     "min_novel_standalone_quality_score": 0.50,
+    "enable_regime_drift_diagnostics": True,
+    "regime_drift_max_support_abs_delta": 0.05,
+    "regime_drift_min_centroid_similarity": 0.50,
+    "regime_drift_min_train_active_count": 50,
     "enable_pareto_prefilter": True,
     "pareto_top_k_backfill": 100,
     "within_leaf_min_train_rows": 100,
@@ -562,6 +569,86 @@ MINER_TARGET_RESIDUALIZATION_COLUMNS: Tuple[str, ...] = (
     "volatility_autocorr_48",
 )
 
+MINER_BROAD_MARKET_REGIME_NUISANCE_COLUMNS: Tuple[str, ...] = (
+    # Broad market direction/beta. These may explain the target, but should not
+    # become direct alpha-mask clauses.
+    "mkt_ret_eq_1h",
+    "mkt_ret_eq_4h",
+    "mkt_ret_eq_24h",
+    "btc_ret_1h",
+    "btc_ret_4h",
+    "btc_ret_24h",
+    "eth_ret_1h",
+    "eth_ret_4h",
+    "eth_ret_24h",
+    "eth_btc_ret_1h",
+    "eth_btc_ret_4h",
+    "eth_btc_ret_24h",
+    "btc_ret_4h_pct",
+    "btc_ret_24h_pct",
+    "btc_ret_48h_pct",
+    # Broadcast cross-asset market state. Asset-relative/cross-sectional ranks
+    # stay available to the miner.
+    "market_breadth_1h",
+    "market_breadth_4h",
+    "market_breadth_24h",
+    "market_breadth_7d",
+    "market_breadth_15d",
+    "pct_assets_up_1h",
+    "pct_assets_up_4h",
+    "pct_assets_up_24h",
+    "pct_assets_above_ema_fast",
+    "pct_assets_above_vwap",
+    "market_dispersion_1h",
+    "market_dispersion_4h",
+    "market_dispersion_24h",
+    "cs_dispersion_ret_4h",
+    "cs_dispersion_ret_24h",
+    "cs_ret_dispersion_4h_pct",
+    "cs_ret_dispersion_24h_pct",
+    "cross_asset_return_dispersion_24h",
+    "cross_asset_return_dispersion_7d",
+    "cross_asset_vol_dispersion_24h",
+    "cross_asset_vol_dispersion_7d",
+    "cross_asset_vol_dispersion_15d",
+    "avg_pair_corr_24h",
+    "corr_concentration_24h",
+    "median_rvol_z",
+    "pct_assets_high_rvol",
+    "median_spread_bps",
+    "pct_assets_wide_spread",
+    "median_volume_z",
+    "btc_rv_ratio_1h24h_pct",
+    "btc_rv_ratio_4h24h_pct",
+    "eth_rv_ratio_1h24h_pct",
+    "eth_rv_ratio_4h24h_pct",
+    "funding_rate_cross_asset_dispersion",
+    # Broadcast market OI/order-book state. Relative OI/order-book features stay
+    # available as direct regime candidates.
+    "mkt_oi_z_30d",
+    "mkt_oi_chg_z_24h",
+    "mkt_oi_breadth_rising_24h",
+    "mkt_oi_dispersion_24h",
+    "xasset_mkt_spread_bps",
+    "xasset_mkt_spread_bps_z_24h",
+    "xasset_mkt_depth_z",
+    "xasset_mkt_depth_to_qv_z",
+    "xasset_mkt_ob_stress",
+    "xasset_mkt_ob_stress_z_24h",
+    "xasset_ob_stress_basket",
+    "xasset_ob_stress_basket_z_24h",
+    "xasset_fund_dispersion_basket",
+    "xasset_fund_extreme_share_basket",
+    "xasset_btc_funding_z",
+    "xasset_btc_fund_z",
+    "xasset_btc_ob_pressure",
+    "xasset_eth_ob_pressure",
+)
+
+MINER_OPTIONAL_TARGET_RESIDUALIZATION_COLUMNS: Tuple[str, ...] = (
+    MINER_BROAD_MARKET_REGIME_NUISANCE_COLUMNS
+)
+
 MINER_TARGET_RESIDUALIZATION_ALIAS_MAP: Dict[str, Tuple[str, ...]] = {
     "ema50_ema200_spread_continuous": (
         "ema50_ema200_spread_continuous",
@@ -613,6 +700,7 @@ MINER_NUISANCE_REGIME_SOURCE_NAMES: Set[str] = {
     "volatility_of_volatility_48",
     "trend_strength_percentile",
     "volatility_autocorr_48",
+    *MINER_BROAD_MARKET_REGIME_NUISANCE_COLUMNS,
 }
 
 MINER_CONTINUOUS_PASSTHROUGH_SOURCE_NAMES: Set[str] = {
@@ -1111,6 +1199,14 @@ def _resolve_miner_nuisance_feature_arrays(
             MINER_TARGET_RESIDUALIZATION_COLUMNS,
         )
     )
+    optional_columns = tuple(
+        cfg.get(
+            "miner_optional_target_residualization_columns",
+            MINER_OPTIONAL_TARGET_RESIDUALIZATION_COLUMNS,
+        )
+    )
+    optional_set = {str(name) for name in optional_columns}
+    requested_columns = tuple(dict.fromkeys((*requested_columns, *optional_columns)))
     resolved: Dict[str, str] = {}
     arrays: Dict[str, np.ndarray] = {}
     missing: List[str] = []
@@ -1121,6 +1217,8 @@ def _resolve_miner_nuisance_feature_arrays(
         )
         resolved_name = next((name for name in candidates if name in feature_dict), None)
         if resolved_name is None:
+            if requested_name in optional_set:
+                continue
             missing.append(requested_name)
             continue
         resolved[requested_name] = str(resolved_name)
@@ -5803,22 +5901,163 @@ def _compute_candidate_feature_centroids(
         return centroids
     X_arr = np.asarray(X, dtype=np.float32)
     holdout = np.asarray(final_holdout_mask, dtype=bool)
-    holdout_X = X_arr[holdout]
-    col_mean = np.nanmean(holdout_X, axis=0) if holdout_X.size else np.nanmean(X_arr, axis=0)
-    col_std = np.nanstd(holdout_X, axis=0) if holdout_X.size else np.nanstd(X_arr, axis=0)
-    col_std = np.where(np.isfinite(col_std) & (col_std > 1e-6), col_std, 1.0)
+    col_mean, col_std = _fit_active_row_centroid_scaler(X_arr, holdout)
     for key in candidates.get("canonical_key", pd.Series(dtype=str)).astype(str):
         mask = candidate_masks.get(key)
         if mask is None:
             continue
         active = np.asarray(mask, dtype=bool) & holdout
-        if int(active.sum()) == 0:
+        centroid = _compute_normalized_active_row_centroid(
+            X_arr, active, col_mean, col_std
+        )
+        if centroid is None:
             continue
-        centroid = np.nanmean((X_arr[active] - col_mean) / col_std, axis=0)
-        norm = float(np.linalg.norm(np.nan_to_num(centroid, nan=0.0)))
-        if norm > 1e-12:
-            centroids[key] = (np.nan_to_num(centroid, nan=0.0) / norm).astype(np.float32)
+        centroids[key] = centroid
     return centroids
+
+
+def _fit_active_row_centroid_scaler(
+    X_arr: np.ndarray,
+    basis_mask: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    basis = np.asarray(basis_mask, dtype=bool)
+    if basis.shape[0] != X_arr.shape[0]:
+        basis = np.zeros(X_arr.shape[0], dtype=bool)
+    basis_X = X_arr[basis]
+    if basis_X.size:
+        col_mean = np.nanmean(basis_X, axis=0)
+        col_std = np.nanstd(basis_X, axis=0)
+    else:
+        col_mean = np.nanmean(X_arr, axis=0)
+        col_std = np.nanstd(X_arr, axis=0)
+    col_mean = np.where(np.isfinite(col_mean), col_mean, 0.0).astype(np.float32)
+    col_std = np.where(np.isfinite(col_std) & (col_std > 1e-6), col_std, 1.0).astype(
+        np.float32
+    )
+    return col_mean, col_std
+
+
+def _compute_normalized_active_row_centroid(
+    X_arr: np.ndarray,
+    active_mask: np.ndarray,
+    col_mean: np.ndarray,
+    col_std: np.ndarray,
+) -> Optional[np.ndarray]:
+    active = np.asarray(active_mask, dtype=bool)
+    if active.shape[0] != X_arr.shape[0] or int(active.sum()) == 0:
+        return None
+    centroid = np.nanmean((X_arr[active] - col_mean) / col_std, axis=0)
+    centroid = np.nan_to_num(centroid, nan=0.0, posinf=0.0, neginf=0.0)
+    norm = float(np.linalg.norm(centroid))
+    if norm <= 1e-12:
+        return None
+    return (centroid / norm).astype(np.float32, copy=False)
+
+
+def _compute_regime_drift_metrics(
+    *,
+    full_mask: np.ndarray,
+    valid_train: np.ndarray,
+    valid_holdout: np.ndarray,
+    signed_ret: np.ndarray,
+    symbols: np.ndarray,
+    days: np.ndarray,
+    cfg: Dict[str, Any],
+    X_arr: Optional[np.ndarray] = None,
+    train_centroid_mean: Optional[np.ndarray] = None,
+    train_centroid_std: Optional[np.ndarray] = None,
+) -> Dict[str, Any]:
+    train_active = np.asarray(full_mask, dtype=bool) & np.asarray(valid_train, dtype=bool)
+    holdout_active = np.asarray(full_mask, dtype=bool) & np.asarray(valid_holdout, dtype=bool)
+    train_count = int(train_active.sum())
+    holdout_count = int(holdout_active.sum())
+    train_rows = int(np.asarray(valid_train, dtype=bool).sum())
+    holdout_rows = int(np.asarray(valid_holdout, dtype=bool).sum())
+    train_support = float(train_count / max(train_rows, 1))
+    holdout_support = float(holdout_count / max(holdout_rows, 1))
+    support_delta = float(holdout_support - train_support)
+    support_ratio = float(holdout_support / max(train_support, 1e-12))
+
+    train_ret = np.asarray(signed_ret, dtype=float)[train_active]
+    holdout_ret = np.asarray(signed_ret, dtype=float)[holdout_active]
+    train_mean = float(np.nanmean(train_ret)) if train_count else np.nan
+    holdout_mean = float(np.nanmean(holdout_ret)) if holdout_count else np.nan
+    return_delta = (
+        float(holdout_mean - train_mean)
+        if np.isfinite(holdout_mean) and np.isfinite(train_mean)
+        else np.nan
+    )
+    train_hit = float(np.nanmean(train_ret > 0.0)) if train_count else np.nan
+    holdout_hit = float(np.nanmean(holdout_ret > 0.0)) if holdout_count else np.nan
+    hit_delta = (
+        float(holdout_hit - train_hit)
+        if np.isfinite(holdout_hit) and np.isfinite(train_hit)
+        else np.nan
+    )
+
+    centroid_similarity = np.nan
+    if (
+        X_arr is not None
+        and train_centroid_mean is not None
+        and train_centroid_std is not None
+        and train_count > 0
+        and holdout_count > 0
+    ):
+        train_centroid = _compute_normalized_active_row_centroid(
+            X_arr, train_active, train_centroid_mean, train_centroid_std
+        )
+        holdout_centroid = _compute_normalized_active_row_centroid(
+            X_arr, holdout_active, train_centroid_mean, train_centroid_std
+        )
+        if train_centroid is not None and holdout_centroid is not None:
+            centroid_similarity = float(
+                np.clip(np.dot(train_centroid, holdout_centroid), -1.0, 1.0)
+            )
+    centroid_distance = (
+        float(1.0 - centroid_similarity) if np.isfinite(centroid_similarity) else np.nan
+    )
+
+    train_symbols = int(pd.Series(symbols[train_active]).nunique()) if train_count else 0
+    holdout_symbols = int(pd.Series(symbols[holdout_active]).nunique()) if holdout_count else 0
+    train_days = int(pd.Series(days[train_active]).nunique()) if train_count else 0
+    holdout_days = int(pd.Series(days[holdout_active]).nunique()) if holdout_count else 0
+
+    reasons: List[str] = []
+    if train_count < int(cfg.get("regime_drift_min_train_active_count", 50)):
+        reasons.append("drift_train_support_too_low")
+    if abs(support_delta) > float(cfg.get("regime_drift_max_support_abs_delta", 0.05)):
+        reasons.append("drift_support_shift_high")
+    if (
+        np.isfinite(centroid_similarity)
+        and centroid_similarity < float(cfg.get("regime_drift_min_centroid_similarity", 0.50))
+    ):
+        reasons.append("drift_active_centroid_shift_high")
+    if train_count > 0 and holdout_count == 0:
+        reasons.append("drift_disappears_in_holdout")
+
+    return {
+        "regime_drift_train_rows": train_rows,
+        "regime_drift_train_active_count": train_count,
+        "regime_drift_train_support_pct": train_support,
+        "regime_drift_holdout_support_pct": holdout_support,
+        "regime_drift_support_abs_delta": abs(support_delta),
+        "regime_drift_support_ratio": support_ratio,
+        "regime_drift_train_active_symbols": train_symbols,
+        "regime_drift_train_active_days": train_days,
+        "regime_drift_holdout_active_symbols": holdout_symbols,
+        "regime_drift_holdout_active_days": holdout_days,
+        "regime_drift_train_mean_net_ret": train_mean,
+        "regime_drift_holdout_mean_net_ret": holdout_mean,
+        "regime_drift_mean_net_ret_delta": return_delta,
+        "regime_drift_train_hit_rate": train_hit,
+        "regime_drift_holdout_hit_rate": holdout_hit,
+        "regime_drift_hit_rate_delta": hit_delta,
+        "regime_drift_active_centroid_similarity": centroid_similarity,
+        "regime_drift_active_centroid_distance": centroid_distance,
+        "regime_drift_warning_count": len(reasons),
+        "regime_drift_flag": bool(reasons),
+        "regime_drift_reasons": "|".join(reasons),
+    }
 
 
 def compute_within_leaf_future_edge_learnability(
@@ -5949,6 +6188,7 @@ def run_final_untouched_validation(
     target_name: str,
     horizon: int,
     side: str,
+    X: Optional[np.ndarray] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, np.ndarray]]:
     candidate_masks: Dict[str, np.ndarray] = {}
     expected_cols = [
@@ -5961,6 +6201,17 @@ def run_final_untouched_validation(
         "stage_c_trade_path_quality_score", "final_holdout_bootstrap_p05_mean_uplift",
         "final_holdout_bootstrap_p10_mean_uplift", "final_holdout_bootstrap_p50_mean_uplift",
         "holdout_edge_score", "final_holdout_pass", "final_holdout_rejection_reason",
+        "regime_drift_train_rows", "regime_drift_train_active_count",
+        "regime_drift_train_support_pct", "regime_drift_holdout_support_pct",
+        "regime_drift_support_abs_delta", "regime_drift_support_ratio",
+        "regime_drift_train_active_symbols", "regime_drift_train_active_days",
+        "regime_drift_holdout_active_symbols", "regime_drift_holdout_active_days",
+        "regime_drift_train_mean_net_ret", "regime_drift_holdout_mean_net_ret",
+        "regime_drift_mean_net_ret_delta", "regime_drift_train_hit_rate",
+        "regime_drift_holdout_hit_rate", "regime_drift_hit_rate_delta",
+        "regime_drift_active_centroid_similarity",
+        "regime_drift_active_centroid_distance", "regime_drift_warning_count",
+        "regime_drift_flag", "regime_drift_reasons",
     ]
     if candidates.empty or not bool(cfg.get("final_holdout_enabled", True)):
         empty = atomic_to_csv(pd.DataFrame(columns=expected_cols), output_dir / "final_untouched_validation_audit.csv")
@@ -5969,8 +6220,20 @@ def run_final_untouched_validation(
     ret = np.asarray(net_ret, dtype=float)
     tgt = np.asarray(target, dtype=float)
     valid_holdout = holdout & np.isfinite(ret) & np.isfinite(tgt)
+    valid_train = (~holdout) & np.isfinite(ret) & np.isfinite(tgt)
     holdout_rows = int(valid_holdout.sum())
     baseline_ret = float(np.nanmean(ret[valid_holdout])) if holdout_rows else np.nan
+    X_arr = (
+        np.asarray(X, dtype=np.float32)
+        if X is not None and np.asarray(X).size
+        else None
+    )
+    train_centroid_mean: Optional[np.ndarray] = None
+    train_centroid_std: Optional[np.ndarray] = None
+    if bool(cfg.get("enable_regime_drift_diagnostics", True)) and X_arr is not None:
+        train_centroid_mean, train_centroid_std = _fit_active_row_centroid_scaler(
+            X_arr, valid_train
+        )
     symbols = data["symbol"].to_numpy() if "symbol" in data.columns else np.array(["unknown"] * len(ret), dtype=object)
     if "timestamp" in data.columns:
         days = pd.to_datetime(data["timestamp"], errors="coerce").dt.floor("D").astype(str).to_numpy()
@@ -6032,6 +6295,22 @@ def run_final_untouched_validation(
             + 0.15 * np.clip(((hit_rate if np.isfinite(hit_rate) else 0.5) - 0.5) / 0.15, 0.0, 1.0)
             + 0.15 * np.clip(((p10 if np.isfinite(p10) else -0.001) + 0.001) / 0.003, 0.0, 1.0)
         )
+        drift_metrics = (
+            _compute_regime_drift_metrics(
+                full_mask=full_mask,
+                valid_train=valid_train,
+                valid_holdout=valid_holdout,
+                signed_ret=signed_ret,
+                symbols=symbols,
+                days=days,
+                cfg=cfg,
+                X_arr=X_arr,
+                train_centroid_mean=train_centroid_mean,
+                train_centroid_std=train_centroid_std,
+            )
+            if bool(cfg.get("enable_regime_drift_diagnostics", True))
+            else {}
+        )
         out = dict(row)
         out.update({
             "source_target": row.get("source_target", target_name), "source_horizon": row.get("source_horizon", horizon), "side": row.get("side", side),
@@ -6047,6 +6326,7 @@ def run_final_untouched_validation(
             "final_holdout_bootstrap_p50_mean_uplift": p50, "holdout_edge_score": float(holdout_edge_score),
             "final_holdout_pass": len(reasons) == 0, "final_holdout_rejection_reason": "|".join(reasons),
         })
+        out.update(drift_metrics)
         rows.append(out)
     audit = pd.DataFrame(rows)
     atomic_to_csv(audit, output_dir / "final_untouched_validation_audit.csv", expected_columns=expected_cols)
@@ -6112,6 +6392,102 @@ def _portfolio_metrics(
     return {"portfolio_score": score, "portfolio_mean_ret": mean_ret, "portfolio_mean_uplift_vs_baseline": uplift, "portfolio_downside_std": downside_std, "portfolio_sortino": sortino, "portfolio_hit_rate": hit, "portfolio_active_support_pct": support, "portfolio_max_drawdown_proxy": float(np.nanmin(np.cumsum(np.nan_to_num(pr, nan=0.0)))) if pr.size else 0.0, "portfolio_avg_pairwise_overlap": avg_overlap, "portfolio_max_pairwise_overlap": max_overlap}
 
 
+def _cluster_final_candidates_by_active_centroid(
+    candidates: pd.DataFrame,
+    feature_centroids: Dict[str, np.ndarray],
+    cfg: Dict[str, Any],
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Cluster highly similar final candidates before greedy portfolio selection."""
+    if candidates.empty or not bool(cfg.get("enable_final_centroid_preclustering", True)):
+        out = candidates.copy()
+        out["final_centroid_cluster_id"] = np.arange(len(out), dtype=int)
+        out["final_centroid_cluster_size"] = 1
+        out["final_centroid_cluster_rank"] = 1
+        out["final_centroid_cluster_survivor"] = True
+        out["final_centroid_cluster_max_similarity"] = 0.0
+        return out, out
+
+    df = candidates.copy()
+    keys = df.get("canonical_key", pd.Series(dtype=str)).astype(str).tolist()
+    n = len(keys)
+    parent = list(range(n))
+
+    def _find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def _union(i: int, j: int) -> None:
+        ri, rj = _find(i), _find(j)
+        if ri != rj:
+            parent[rj] = ri
+
+    threshold = float(cfg.get("final_centroid_cluster_similarity_threshold", 0.92))
+    similarity_cache: Dict[Tuple[int, int], float] = {}
+    for i in range(n):
+        ci = feature_centroids.get(keys[i])
+        if ci is None:
+            continue
+        for j in range(i + 1, n):
+            cj = feature_centroids.get(keys[j])
+            if cj is None:
+                continue
+            sim = float(np.clip(np.dot(ci, cj), -1.0, 1.0))
+            similarity_cache[(i, j)] = sim
+            if sim >= threshold:
+                _union(i, j)
+
+    clusters_by_root: Dict[int, List[int]] = collections.defaultdict(list)
+    for i in range(n):
+        clusters_by_root[_find(i)].append(i)
+    clusters = sorted(clusters_by_root.values(), key=lambda idxs: min(idxs))
+
+    cluster_id_by_pos: Dict[int, int] = {}
+    cluster_size_by_pos: Dict[int, int] = {}
+    cluster_rank_by_pos: Dict[int, int] = {}
+    cluster_survivor_by_pos: Dict[int, bool] = {}
+    cluster_max_similarity_by_pos: Dict[int, float] = {}
+    top_k = max(1, int(cfg.get("final_centroid_cluster_top_k_per_cluster", 1)))
+    for cluster_id, positions in enumerate(clusters):
+        ordered = sorted(positions)
+        survivor_set = set(ordered[:top_k])
+        for rank, pos in enumerate(ordered, start=1):
+            cluster_id_by_pos[pos] = cluster_id
+            cluster_size_by_pos[pos] = len(ordered)
+            cluster_rank_by_pos[pos] = rank
+            cluster_survivor_by_pos[pos] = pos in survivor_set
+            sims = [
+                similarity_cache.get((min(pos, other), max(pos, other)), np.nan)
+                for other in ordered
+                if other != pos
+            ]
+            finite_sims = [float(v) for v in sims if np.isfinite(v)]
+            cluster_max_similarity_by_pos[pos] = (
+                float(max(finite_sims)) if finite_sims else 0.0
+            )
+
+    df["final_centroid_cluster_id"] = [cluster_id_by_pos[i] for i in range(n)]
+    df["final_centroid_cluster_size"] = [cluster_size_by_pos[i] for i in range(n)]
+    df["final_centroid_cluster_rank"] = [cluster_rank_by_pos[i] for i in range(n)]
+    df["final_centroid_cluster_survivor"] = [
+        cluster_survivor_by_pos[i] for i in range(n)
+    ]
+    df["final_centroid_cluster_max_similarity"] = [
+        cluster_max_similarity_by_pos[i] for i in range(n)
+    ]
+    survivors = df[df["final_centroid_cluster_survivor"].fillna(False)].copy()
+    clustered = int((df["final_centroid_cluster_size"] > 1).sum())
+    if clustered:
+        tprint(
+            "Final centroid pre-clustering: "
+            f"input={len(df)} survivors={len(survivors)} "
+            f"clusters={len(clusters)} clustered_members={clustered} "
+            f"threshold={threshold:.3f}"
+        )
+    return df, survivors
+
+
 def select_diversified_final_regimes(
     candidates: pd.DataFrame,
     candidate_masks: Dict[str, np.ndarray],
@@ -6148,6 +6524,9 @@ def select_diversified_final_regimes(
         backfill = int(cfg.get("pareto_top_k_backfill", 100))
         keep_idx = set(df[df["pareto_front_member"]].index) | set(df.head(backfill).index)
         df = df.loc[list(keep_idx)].sort_values(sort_cols, ascending=[False] * len(sort_cols), kind="mergesort") if sort_cols else df.loc[list(keep_idx)]
+    centroid_cluster_audit, df = _cluster_final_candidates_by_active_centroid(
+        df, feature_centroids, cfg
+    )
     universe = np.asarray(final_holdout_mask, dtype=bool) & np.isfinite(returns)
     selected_keys: List[str] = []
     audit_rows: List[Dict[str, Any]] = []
@@ -6236,6 +6615,26 @@ def select_diversified_final_regimes(
             audit.at[idx, "selected_for_final_registry"] = True
             audit.at[idx, "selected_reason"] = "top_ranked_greedy_backfill"
             audit.at[idx, "final_selection_rejection_reason"] = ""
+    if not centroid_cluster_audit.empty:
+        cluster_losers = centroid_cluster_audit[
+            ~centroid_cluster_audit["final_centroid_cluster_survivor"].fillna(False)
+        ].copy()
+        if not cluster_losers.empty:
+            cluster_losers["selected_for_final_registry"] = False
+            cluster_losers["selected_reason"] = ""
+            cluster_losers["incremental_portfolio_score"] = np.nan
+            cluster_losers["portfolio_score_before"] = np.nan
+            cluster_losers["portfolio_score_after"] = np.nan
+            cluster_losers["novelty_score"] = np.nan
+            cluster_losers["max_jaccard_with_winners"] = np.nan
+            cluster_losers["max_containment_with_winners"] = np.nan
+            cluster_losers["min_feature_centroid_distance_to_winners"] = np.nan
+            cluster_losers["max_feature_family_jaccard_with_winners"] = np.nan
+            cluster_losers["standalone_quality_score"] = np.nan
+            cluster_losers["final_selection_rejection_reason"] = (
+                "final_centroid_cluster_non_survivor"
+            )
+            audit = pd.concat([audit, cluster_losers], ignore_index=True, sort=False)
     selected_df = audit[audit["selected_for_final_registry"].fillna(False)].copy()
     return selected_df, audit
 
@@ -9255,6 +9654,7 @@ def run_mining_stage(
             target_name=target_name,
             horizon=horizon,
             side=explicit_side or "unknown",
+            X=X,
         )
         holdout_passed = final_holdout_audit[
             final_holdout_audit.get("final_holdout_pass", False).fillna(False)
@@ -10911,6 +11311,7 @@ def run_lgbm_mask_generation_triad(
                         target_name="global",
                         horizon=0,
                         side="global",
+                        X=resolver_x_runtime,
                     )
                     global_holdout_passed = (
                         global_stage_e_audit[
@@ -18323,6 +18724,9 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "miner_target_residualization_columns": list(
                 MINER_TARGET_RESIDUALIZATION_COLUMNS
             ),
+            "miner_optional_target_residualization_columns": list(
+                MINER_OPTIONAL_TARGET_RESIDUALIZATION_COLUMNS
+            ),
             "drop_nuisance_features_from_miner": True,
             "drop_continuous_nuisance_parents_from_miner": True,
             "drop_location_nuisance_features_from_miner": False,
@@ -18352,6 +18756,9 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "residualise_target_for_miner": True,
             "miner_target_residualization_columns": list(
                 MINER_TARGET_RESIDUALIZATION_COLUMNS
+            ),
+            "miner_optional_target_residualization_columns": list(
+                MINER_OPTIONAL_TARGET_RESIDUALIZATION_COLUMNS
             ),
             "drop_nuisance_features_from_miner": True,
             "drop_continuous_nuisance_parents_from_miner": True,

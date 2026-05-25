@@ -121,6 +121,86 @@ MINER_TARGET_RESIDUALIZATION_COLUMNS: Tuple[str, ...] = (
     "volatility_autocorr_48",
 )
 
+MINER_BROAD_MARKET_REGIME_NUISANCE_COLUMNS: Tuple[str, ...] = (
+    # Broad market direction/beta. These may explain the target, but should not
+    # become direct alpha-mask clauses.
+    "mkt_ret_eq_1h",
+    "mkt_ret_eq_4h",
+    "mkt_ret_eq_24h",
+    "btc_ret_1h",
+    "btc_ret_4h",
+    "btc_ret_24h",
+    "eth_ret_1h",
+    "eth_ret_4h",
+    "eth_ret_24h",
+    "eth_btc_ret_1h",
+    "eth_btc_ret_4h",
+    "eth_btc_ret_24h",
+    "btc_ret_4h_pct",
+    "btc_ret_24h_pct",
+    "btc_ret_48h_pct",
+    # Broadcast cross-asset market state. Asset-relative/cross-sectional ranks
+    # stay available to the miner.
+    "market_breadth_1h",
+    "market_breadth_4h",
+    "market_breadth_24h",
+    "market_breadth_7d",
+    "market_breadth_15d",
+    "pct_assets_up_1h",
+    "pct_assets_up_4h",
+    "pct_assets_up_24h",
+    "pct_assets_above_ema_fast",
+    "pct_assets_above_vwap",
+    "market_dispersion_1h",
+    "market_dispersion_4h",
+    "market_dispersion_24h",
+    "cs_dispersion_ret_4h",
+    "cs_dispersion_ret_24h",
+    "cs_ret_dispersion_4h_pct",
+    "cs_ret_dispersion_24h_pct",
+    "cross_asset_return_dispersion_24h",
+    "cross_asset_return_dispersion_7d",
+    "cross_asset_vol_dispersion_24h",
+    "cross_asset_vol_dispersion_7d",
+    "cross_asset_vol_dispersion_15d",
+    "avg_pair_corr_24h",
+    "corr_concentration_24h",
+    "median_rvol_z",
+    "pct_assets_high_rvol",
+    "median_spread_bps",
+    "pct_assets_wide_spread",
+    "median_volume_z",
+    "btc_rv_ratio_1h24h_pct",
+    "btc_rv_ratio_4h24h_pct",
+    "eth_rv_ratio_1h24h_pct",
+    "eth_rv_ratio_4h24h_pct",
+    "funding_rate_cross_asset_dispersion",
+    # Broadcast market OI/order-book state. Relative OI/order-book features stay
+    # available as direct regime candidates.
+    "mkt_oi_z_30d",
+    "mkt_oi_chg_z_24h",
+    "mkt_oi_breadth_rising_24h",
+    "mkt_oi_dispersion_24h",
+    "xasset_mkt_spread_bps",
+    "xasset_mkt_spread_bps_z_24h",
+    "xasset_mkt_depth_z",
+    "xasset_mkt_depth_to_qv_z",
+    "xasset_mkt_ob_stress",
+    "xasset_mkt_ob_stress_z_24h",
+    "xasset_ob_stress_basket",
+    "xasset_ob_stress_basket_z_24h",
+    "xasset_fund_dispersion_basket",
+    "xasset_fund_extreme_share_basket",
+    "xasset_btc_funding_z",
+    "xasset_btc_fund_z",
+    "xasset_btc_ob_pressure",
+    "xasset_eth_ob_pressure",
+)
+
+MINER_OPTIONAL_TARGET_RESIDUALIZATION_COLUMNS: Tuple[str, ...] = (
+    MINER_BROAD_MARKET_REGIME_NUISANCE_COLUMNS
+)
+
 MINER_TARGET_RESIDUALIZATION_ALIAS_MAP: Dict[str, Tuple[str, ...]] = {
     "ema50_ema200_spread_continuous": (
         "ema50_ema200_spread_continuous",
@@ -172,6 +252,7 @@ MINER_NUISANCE_REGIME_SOURCE_NAMES: Set[str] = {
     "volatility_of_volatility_48",
     "trend_strength_percentile",
     "volatility_autocorr_48",
+    *MINER_BROAD_MARKET_REGIME_NUISANCE_COLUMNS,
 }
 
 MINER_CONTINUOUS_PASSTHROUGH_SOURCE_NAMES: Set[str] = {
@@ -625,6 +706,14 @@ def _resolve_miner_nuisance_feature_arrays(
             MINER_TARGET_RESIDUALIZATION_COLUMNS,
         )
     )
+    optional_columns = tuple(
+        cfg.get(
+            "miner_optional_target_residualization_columns",
+            MINER_OPTIONAL_TARGET_RESIDUALIZATION_COLUMNS,
+        )
+    )
+    optional_set = {str(name) for name in optional_columns}
+    requested_columns = tuple(dict.fromkeys((*requested_columns, *optional_columns)))
     resolved: Dict[str, str] = {}
     arrays: Dict[str, np.ndarray] = {}
     missing: List[str] = []
@@ -635,6 +724,8 @@ def _resolve_miner_nuisance_feature_arrays(
         )
         resolved_name = next((name for name in candidates if name in feature_dict), None)
         if resolved_name is None:
+            if requested_name in optional_set:
+                continue
             missing.append(requested_name)
             continue
         resolved[requested_name] = str(resolved_name)
@@ -16515,6 +16606,9 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "miner_target_residualization_columns": list(
                 MINER_TARGET_RESIDUALIZATION_COLUMNS
             ),
+            "miner_optional_target_residualization_columns": list(
+                MINER_OPTIONAL_TARGET_RESIDUALIZATION_COLUMNS
+            ),
             "drop_nuisance_features_from_miner": True,
             "drop_continuous_nuisance_parents_from_miner": True,
             "drop_location_nuisance_features_from_miner": False,
@@ -16545,6 +16639,9 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "residualise_target_for_miner": True,
             "miner_target_residualization_columns": list(
                 MINER_TARGET_RESIDUALIZATION_COLUMNS
+            ),
+            "miner_optional_target_residualization_columns": list(
+                MINER_OPTIONAL_TARGET_RESIDUALIZATION_COLUMNS
             ),
             "drop_nuisance_features_from_miner": True,
             "drop_continuous_nuisance_parents_from_miner": True,

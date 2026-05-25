@@ -1,0 +1,15 @@
+{
+  "schema_version": "v1",
+  "generated_by": "simple_position_sizer",
+  "run_id": "20260523_015947",
+  "threshold_space": "rank_percentile",
+  "strategies": {
+    "loc_ema_stack_pos_24_0_43357179_compression_ratio_-0_33411601_mkt_ret_eq_24h_1_1280091_mkt_ret_eq_24h_-0_81129736_up_down_semivol_ratio_tanh_-0_39156261": {
+      "normalized_threshold": 0.595,
+      "viability_margin": 0.01,
+      "base_rank_threshold": 0.7,
+      "quality_rank": 1.0,
+      "selection_frac": 0.3
+    }
+  }
+}

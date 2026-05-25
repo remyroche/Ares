@@ -5,6 +5,7 @@ import pytest
 
 from extreme_price_movements.inference.feature_generator import (
     get_inference_required_feature_keys,
+    raw_required_feature_keys,
 )
 from extreme_price_movements.inference.parity import (
     apply_strategy_acceptance_filter,
@@ -532,6 +533,22 @@ def test_required_feature_keys_use_meta_contract_columns_not_positional_names():
     assert "ret24h" in required
     assert "base_probability_long_rule" in required
     assert "f0" not in required
+
+
+def test_raw_required_feature_keys_exclude_drift_meta_features():
+    required = raw_required_feature_keys(
+        {
+            "ret24h",
+            "regime_centroid_similarity_train",
+            "feature_drift_psi_core",
+            "feature_drift_cov_shift",
+        }
+    )
+
+    assert "ret24h" in required
+    assert "regime_centroid_similarity_train" not in required
+    assert "feature_drift_psi_core" not in required
+    assert "feature_drift_cov_shift" not in required
 
 
 def test_live_contract_rejects_target_derived_active_alpha_features():

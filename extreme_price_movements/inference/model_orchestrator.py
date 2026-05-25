@@ -60,6 +60,13 @@ DELETED_MODEL_FEATURE_KEYS = {
 }
 
 
+ALPHA_MODEL_META_FEATURE_KEYS = {
+    "regime_centroid_similarity_train",
+    "feature_drift_psi_core",
+    "feature_drift_cov_shift",
+}
+
+
 def _extract_ebm_contract_model(model: Any) -> Any:
     """Return the EBM contract-bearing model nested in a meta wrapper, if any."""
     if model is None:
@@ -366,6 +373,21 @@ class ModelOrchestrator:
                 if isinstance(model_info, dict):
                     out[f"{key}_{nested_key}"] = model_info
         return out
+
+    def _alpha_model_info_for_kind(
+        self,
+        side: str,
+        kind: str,
+    ) -> Tuple[str, Optional[Dict[str, Any]]]:
+        key = str(kind)
+        model_info = self.alpha_by_strategy.get(key)
+        if model_info is not None:
+            return key, model_info
+        nested_key = f"{side}_{kind}"
+        model_info = self.alpha_by_strategy.get(nested_key)
+        if model_info is not None:
+            return nested_key, model_info
+        return key, None
 
     def available_strategies(
         self, side: str, allowed: Optional[set[str]] = None
@@ -840,6 +862,7 @@ class ModelOrchestrator:
             elif col == "base_model_score_pct":
                 symbols = _symbol_values()
                 timestamps = _timestamp_values()
+                value = pd.Series(0.5, index=out.index, dtype=np.float32)
                 if symbols is not None and timestamps is not None:
                     window = int(self.cfg.get("meta_trade_rank_window", 240))
                     rank_pct = rolling_asset_percentile(
@@ -849,6 +872,24 @@ class ModelOrchestrator:
                         window=window,
                     )
                     value = pd.Series(rank_pct, index=out.index)
+            elif col in {
+                "prob_error",
+                "recent_prob_error_20",
+                "base_model_abs_error_roll20",
+            }:
+                value = pd.Series(0.5, index=out.index, dtype=np.float32)
+            elif col == "recent_hit_rate_20":
+                value = pd.Series(0.5, index=out.index, dtype=np.float32)
+            elif (
+                col.startswith("recent_global_")
+                or col.startswith("recent_side_horizon_")
+                or col.startswith("recent_bucket_")
+                or col.startswith("recent_regime_")
+                or col.startswith("recent_meta_")
+                or col.startswith("recent_base_meta_disagreement_")
+                or col.startswith("recent_base_internal_disagreement_")
+            ):
+                value = pd.Series(0.0, index=out.index, dtype=np.float32)
             elif col == "rsi_z_x_regime_vol":
                 if {"rsi_z", "regime_vol_score"}.issubset(out.columns):
                     value = _numeric_col("rsi_z") * _numeric_col("regime_vol_score")
@@ -934,6 +975,83 @@ class ModelOrchestrator:
             self._meta_model_derived_warned = True
         return out
 
+    def _materialize_alpha_model_meta_features(
+        self,
+        features: pd.DataFrame,
+        meta_model: Any,
+        *,
+        side: str,
+        kind: str,
+    ) -> pd.DataFrame:
+        """Attach alpha-model meta diagnostics needed by train/live parity."""
+        if not isinstance(features, pd.DataFrame) or features.empty:
+            return features
+
+        feat_cols = [str(c) for c in (getattr(meta_model, "feature_columns", []) or [])]
+        effective_cols = _effective_selected_feature_contract(meta_model)
+        if effective_cols:
+            feat_cols = effective_cols
+        needed = set(feat_cols)
+        if not needed.intersection(ALPHA_MODEL_META_FEATURE_KEYS):
+            return features
+
+        _, model_info = self._alpha_model_info_for_kind(side, kind)
+        if not isinstance(model_info, dict):
+            return features
+        alpha_model = model_info.get("model")
+        if alpha_model is None:
+            return features
+
+        transform_owner = alpha_model
+        transform = getattr(transform_owner, "transform_meta_features", None)
+        if not callable(transform):
+            transform_owner = getattr(alpha_model, "best_model", None)
+            transform = getattr(transform_owner, "transform_meta_features", None)
+        if not callable(transform):
+            return features
+
+        try:
+            meta_context = transform(features)
+        except Exception:
+            try:
+                alpha_feat_cols = _effective_alpha_feature_contract(model_info)
+                aligned = self._align_alpha_feature_contract(features, alpha_feat_cols)
+                if aligned.empty:
+                    return features
+                alpha_frame = _alpha_prediction_frame_for_model(
+                    alpha_model,
+                    aligned,
+                    alpha_feat_cols,
+                )
+                meta_context = transform(alpha_frame)
+            except Exception as exc:
+                if not getattr(self, "_alpha_meta_context_warned", False):
+                    tprint(
+                        "Meta inference: failed to materialize alpha model meta "
+                        f"context for {kind}: {exc}"
+                    )
+                    self._alpha_meta_context_warned = True
+                return features
+
+        if not isinstance(meta_context, pd.DataFrame) or meta_context.empty:
+            return features
+
+        out = features.copy()
+        meta_context = meta_context.reindex(out.index)
+        added = 0
+        for col in ALPHA_MODEL_META_FEATURE_KEYS:
+            if col not in needed or col not in meta_context.columns:
+                continue
+            out[col] = pd.to_numeric(meta_context[col], errors="coerce").astype(np.float32)
+            added += 1
+        if added and not getattr(self, "_alpha_meta_context_warned", False):
+            tprint(
+                "Meta inference: materialized alpha drift/context columns "
+                f"from base model ({added} columns for {kind})."
+            )
+            self._alpha_meta_context_warned = True
+        return out
+
     # =========================================================================
     # STEP 4: Meta Model Prediction
     # =========================================================================
@@ -991,6 +1109,12 @@ class ModelOrchestrator:
                 if str(c) not in DELETED_MODEL_FEATURE_KEYS
             ]
 
+            features = self._materialize_alpha_model_meta_features(
+                features,
+                meta_model,
+                side=side,
+                kind=requested_kind,
+            )
             features = self._materialize_meta_model_derived_features(
                 features,
                 meta_model,

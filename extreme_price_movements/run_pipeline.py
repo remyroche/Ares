@@ -384,6 +384,71 @@ def _choose_policy_stage_view(materialized: dict) -> Optional[dict]:
     return None
 
 
+def _strict_policy_optimiser_stage_view(slice_plan: dict) -> Optional[dict]:
+    """Return the exact final policy-optimiser prediction slice."""
+    consumers = slice_plan.get("consumer_plans", {})
+    if not isinstance(consumers, dict):
+        return None
+    plans = consumers.get("policy_optimiser", [])
+    if not isinstance(plans, list) or not plans:
+        return None
+
+    allowed_periods: list[dict[str, str]] = []
+    symbols: set[str] = set()
+    for plan in plans:
+        if not isinstance(plan, dict):
+            continue
+        meta = plan.get("metadata", {})
+        meta = meta if isinstance(meta, dict) else {}
+        start = meta.get("predict_actual_start") or meta.get("predict_start")
+        end = meta.get("predict_actual_end") or meta.get("predict_end")
+        if start and end:
+            allowed_periods.append({"start_ts": str(start), "end_ts": str(end)})
+        for symbol in plan.get("symbols_predict", []) or []:
+            symbols.add(str(symbol))
+    if not allowed_periods:
+        return None
+
+    starts = [
+        pd.to_datetime(p["start_ts"], utc=True, errors="coerce")
+        for p in allowed_periods
+    ]
+    ends = [
+        pd.to_datetime(p["end_ts"], utc=True, errors="coerce")
+        for p in allowed_periods
+    ]
+    starts = [ts for ts in starts if not pd.isna(ts)]
+    ends = [ts for ts in ends if not pd.isna(ts)]
+    return {
+        "stage_name": "policy_optimiser",
+        "source_roles": ["policy_optimiser"],
+        "symbols": sorted(symbols),
+        "allowed_symbols": sorted(symbols),
+        "allowed_periods": allowed_periods,
+        "allowed_start_ts": min(starts).isoformat() if starts else None,
+        "allowed_end_ts": max(ends).isoformat() if ends else None,
+        "n_plans": int(len(plans)),
+        "policy_source": "consumer_predict_plans",
+    }
+
+
+def _attach_feature_availability_policy_view(cfg: dict, slice_plan: dict, ts_sig: pd.Timestamp) -> None:
+    """Use the simple_policy_optimiser slice for feature coverage pruning."""
+    policy_view = _strict_policy_optimiser_stage_view(slice_plan)
+    if not policy_view:
+        tprint("Feature availability reference: strict policy_optimiser slice unavailable; using training rows.")
+        return
+    cfg["_feature_availability_stage_view"] = policy_view
+    cfg["_feature_availability_run_id"] = ts_sig.strftime("%Y%m%d_%H%M%S")
+    periods = policy_view.get("allowed_periods") or []
+    symbols = policy_view.get("symbols") or []
+    tprint(
+        "Feature availability reference: using strict simple_policy_optimiser "
+        f"slice (periods={len(periods)}, symbols={len(symbols)}, "
+        f"start={policy_view.get('allowed_start_ts')}, end={policy_view.get('allowed_end_ts')})."
+    )
+
+
 def _find_latest_feature_ts(data_root):
     """Find the latest feature timestamp directory."""
     import glob
@@ -1665,6 +1730,7 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
         slice_plan = load_or_build_slice_plan(
             cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
         )
+        _attach_feature_availability_policy_view(cfg, slice_plan, ts_sig)
         if "train_base" in slice_plan.get("materialized_views", {}):
             stage_view = slice_plan["materialized_views"]["train_base"]
             stage_view = apply_stage_usage_limits(
@@ -2320,6 +2386,7 @@ def run_train_meta(cfg, ts_override=None, store=None):
         slice_plan = load_or_build_slice_plan(
             cfg, ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
         )
+        _attach_feature_availability_policy_view(cfg, slice_plan, ts_sig)
         if "train_meta" in slice_plan.get("materialized_views", {}):
             stage_view = slice_plan["materialized_views"]["train_meta"]
             stage_view = apply_stage_usage_limits(
@@ -3695,6 +3762,15 @@ def main():
     cfg["planned_max_assets"] = args.planned_max_assets
     cfg["planned_max_months"] = args.planned_max_months
     cfg["refresh_slice_plan"] = bool(args.refresh_slice_plan)
+    if str(os.environ.get("EPM_DISABLE_REGIME_ADAPTORS", "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }:
+        cfg["regime_adaptor.enabled"] = False
+        tprint("Regime adaptors disabled by EPM_DISABLE_REGIME_ADAPTORS.")
     if args.mode == "download":
         run_download(cfg)
     elif args.mode == "labels":

@@ -157,6 +157,9 @@ LONG_HORIZON_PERP_META_FEATURE_KEYS = [
 VOLUME_FREE_PERP_BASE_FEATURE_KEYS = [
     "dist_oiw_intensity_12h_atr",
     "dist_oiw_z_delta_12h_atr",
+    "dist_oiw_signed_delta_12h_atr",
+    "dist_oiw_abs_delta_12h_atr",
+    "oi_expansion_compression_balance_24h",
     "dist_funding_pressure_price_12h_atr",
     "oiw_entry_zone_1d_atr",
     "donchian_zone_1d_atr",
@@ -167,6 +170,7 @@ VOLUME_FREE_PERP_BASE_FEATURE_KEYS = [
 VOLUME_FREE_PERP_META_FEATURE_KEYS = [
     "dist_oiw_intensity_96h_atr",
     "dist_oiw_z_delta_96h_atr",
+    "oi_expansion_compression_balance_96h",
     "dist_funding_pressure_price_96h_atr",
 ]
 PERP_FEATURE_KEYS = list(
@@ -181,6 +185,7 @@ PERP_FEATURE_KEYS = list(
         + LONG_HORIZON_PERP_META_FEATURE_KEYS
         + VOLUME_FREE_PERP_BASE_FEATURE_KEYS
         + VOLUME_FREE_PERP_META_FEATURE_KEYS
+        + ["xasset_asset_minus_mkt_funding"]
     )
 )
 RESIDUAL_FEATURE_KEYS = residual_feature_names(include_legacy_aliases=True)
@@ -196,8 +201,13 @@ RESIDUAL_BASE_FEATURE_KEYS = [
     "flow_persistence_ts_resid",
     "excess_6h_ts_resid",
     "funding_per_hour_mkt_resid",
+    "xasset_funding_ts_resid",
+    "funding_1d_chg_peer_resid",
+    "asset_minus_mkt_oi_1d_ts_resid",
     "ob_pressure_mkt_resid",
     "ob_imbalance_mkt_resid",
+    "xasset_ob_pressure_ts_resid",
+    "xasset_ob_liquidity_peer_resid",
     "volume_price_corr_ts_resid",
 ]
 RESIDUAL_META_FEATURE_KEYS = [
@@ -215,8 +225,15 @@ RESIDUAL_META_FEATURE_KEYS = [
     "grind_score_surprise",
     "chop_score_surprise",
     "fund_abs_z_mkt_resid",
+    "xasset_funding_peer_resid",
+    "funding_1d_chg_ts_resid",
+    "asset_minus_mkt_oi_7d_ts_resid",
+    "asset_minus_mkt_oi_1d_peer_resid",
+    "asset_minus_mkt_oi_7d_peer_resid",
     "ob_spread_mkt_resid",
     "ob_depth_mkt_resid",
+    "xasset_ob_pressure_peer_resid",
+    "xasset_ob_liquidity_ts_resid",
     "path_efficiency_24_ts_resid",
 ]
 PERP_TRADEABILITY_FEATURE_KEYS = [
@@ -238,6 +255,7 @@ LGBM_PERP_FEATURE_KEYS = list(
         + LONG_HORIZON_PERP_META_FEATURE_KEYS
         + VOLUME_FREE_PERP_BASE_FEATURE_KEYS
         + VOLUME_FREE_PERP_META_FEATURE_KEYS
+        + ["xasset_asset_minus_mkt_funding"]
     )
 )
 PERP_META_PRIMARY_FEATURE_KEYS = [
@@ -519,6 +537,9 @@ OI_WEIGHTED_LOCATION_BASE_FEATURE_KEYS = [
     "oiw_z_delta_entry_dist_1d_atr",
     "dist_oiw_intensity_12h_atr",
     "dist_oiw_z_delta_12h_atr",
+    "dist_oiw_signed_delta_12h_atr",
+    "dist_oiw_abs_delta_12h_atr",
+    "oi_expansion_compression_balance_24h",
     "dist_funding_pressure_price_12h_atr",
     "oiw_entry_zone_1d_atr",
     "donchian_zone_1d_atr",
@@ -532,6 +553,7 @@ OI_WEIGHTED_LOCATION_META_FEATURE_KEYS = [
     "oiw_z_delta_entry_dist_14d_atr",
     "dist_oiw_intensity_96h_atr",
     "dist_oiw_z_delta_96h_atr",
+    "oi_expansion_compression_balance_96h",
     "dist_funding_pressure_price_96h_atr",
 ]
 
@@ -968,6 +990,74 @@ CONTINUOUS_REGIME_FEATURES.update(
     {
         name: {"family": "residual", "type": "continuous"}
         for name in RESIDUAL_FEATURE_KEYS
+    }
+)
+CONTINUOUS_REGIME_FEATURES.update(
+    {
+        "symbol_minus_mkt_ret_1h": {
+            "family": "asset_relative_return",
+            "type": "continuous",
+        },
+        "symbol_minus_mkt_ret_4h": {
+            "family": "asset_relative_return",
+            "type": "continuous",
+        },
+        "symbol_minus_mkt_ret_24h": {
+            "family": "asset_relative_return",
+            "type": "continuous",
+        },
+        "asset_minus_universe_median_ret_4h": {
+            "family": "asset_relative_return",
+            "type": "continuous",
+        },
+        "asset_minus_universe_median_ret_24h": {
+            "family": "asset_relative_return",
+            "type": "continuous",
+        },
+        "asset_minus_universe_median_ret_48h": {
+            "family": "asset_relative_return",
+            "type": "continuous",
+        },
+        "asset_mom_minus_basket_mom_4h": {
+            "family": "asset_relative_return",
+            "type": "continuous",
+        },
+        "asset_mom_minus_basket_mom_24h": {
+            "family": "asset_relative_return",
+            "type": "continuous",
+        },
+        "asset_ret_vs_universe_4h": {
+            "family": "asset_relative_return",
+            "type": "continuous",
+        },
+        "asset_ret_vs_universe_24h": {
+            "family": "asset_relative_return",
+            "type": "continuous",
+        },
+        "asset_ret_vs_universe_48h": {
+            "family": "asset_relative_return",
+            "type": "continuous",
+        },
+        "xasset_asset_minus_mkt_funding": {
+            "family": "asset_relative_funding",
+            "type": "continuous",
+        },
+        "xasset_asset_minus_basket_fund_z": {
+            "family": "asset_relative_funding",
+            "type": "continuous",
+        },
+        "xasset_asset_minus_mkt_ob_pressure": {
+            "family": "asset_relative_orderbook",
+            "type": "continuous",
+        },
+        "xasset_asset_minus_basket_ob_pressure": {
+            "family": "asset_relative_orderbook",
+            "type": "continuous",
+        },
+        "xasset_asset_minus_mkt_ob_pressure_z_24h": {
+            "family": "asset_relative_orderbook",
+            "type": "continuous",
+        },
     }
 )
 for _h in (5, 10):
@@ -4609,6 +4699,28 @@ NON_PORTABLE_GROUP_KEYS = {
     "META_SELF_FEATURE_KEYS",
     "META_RECENT_DISAGREEMENT_FEATURE_KEYS",
 }
+
+MODEL_DERIVED_META_PERFORMANCE_GROUP_KEYS = {
+    "META_RECENT_EFFECTIVENESS_FEATURE_KEYS",
+    "META_BASE_PERFORMANCE_FEATURE_KEYS",
+    "META_SELF_FEATURE_KEYS",
+    "META_RECENT_DISAGREEMENT_FEATURE_KEYS",
+}
+MODEL_DERIVED_META_PERFORMANCE_FEATURE_KEYS = set()
+for _group_key in MODEL_DERIVED_META_PERFORMANCE_GROUP_KEYS:
+    MODEL_DERIVED_META_PERFORMANCE_FEATURE_KEYS.update(
+        str(_feature_key)
+        for _feature_key in CFG.get(_group_key, [])
+        if isinstance(_feature_key, str) and _feature_key
+    )
+
+# These are generated from base/meta OOF predictions during meta training, not
+# raw exchange-specific panels. Keep them in portable configs even though their
+# names intentionally use recent_* prefixes.
+PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(
+    MODEL_DERIVED_META_PERFORMANCE_GROUP_KEYS
+    | MODEL_DERIVED_META_PERFORMANCE_FEATURE_KEYS
+)
 
 
 def is_non_portable_feature_key(name: object) -> bool:

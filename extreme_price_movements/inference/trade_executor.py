@@ -685,6 +685,24 @@ def _exchange_id(exchange: Any) -> str:
     return str(getattr(exchange, "id", "") or "").strip().lower()
 
 
+def _stop_trigger_reference_price(
+    exchange: Any,
+    ticker: Dict[str, Any],
+    config: Optional[Dict[str, Any]],
+) -> Tuple[float, str]:
+    """Return the live price that matches the stop trigger submitted to exchange."""
+    ticker = ticker if isinstance(ticker, dict) else {}
+    for key in ("last", "close"):
+        value = _safe_float(ticker.get(key), default=np.nan)
+        if np.isfinite(value) and value > 0.0:
+            return float(value), key
+    bid = _safe_float(ticker.get("bid"), default=np.nan)
+    ask = _safe_float(ticker.get("ask"), default=np.nan)
+    if np.isfinite(bid) and bid > 0.0 and np.isfinite(ask) and ask > 0.0:
+        return float((bid + ask) / 2.0), "bid_ask_mid"
+    return np.nan, "unavailable"
+
+
 def _configured_exchange_id(config: Optional[Dict[str, Any]] = None) -> str:
     cfg = config or {}
     raw = (
@@ -909,7 +927,7 @@ def _create_reduce_stop_loss_order(
                 params={
                     "stopLossPrice": stop_price,
                     "reduceOnly": True,
-                    "triggerSignal": "mark",
+                    "triggerSignal": "last",
                 },
             )
         return exchange.create_order(
@@ -1051,6 +1069,36 @@ def _order_stop_price(order: Dict[str, Any]) -> float:
         or order.get("price"),
         default=np.nan,
     )
+
+
+def _order_trigger_signal(order: Dict[str, Any]) -> str:
+    """Extract the exchange stop trigger source when present."""
+    info = order.get("info") if isinstance(order.get("info"), dict) else {}
+    raw = (
+        order.get("triggerSignal")
+        or order.get("trigger_signal")
+        or order.get("triggerSource")
+        or order.get("trigger_source")
+        or info.get("triggerSignal")
+        or info.get("trigger_signal")
+        or info.get("triggerSource")
+        or info.get("trigger_source")
+    )
+    return str(raw or "").strip().lower()
+
+
+def _protective_stop_trigger_matches_policy(
+    exchange: Any,
+    order: Dict[str, Any],
+    config: Optional[Dict[str, Any]],
+) -> bool:
+    """Return whether an existing protective stop uses the configured trigger."""
+    if (
+        _execution_account(config) != "perps"
+        or _exchange_id(exchange) != "krakenfutures"
+    ):
+        return True
+    return _order_trigger_signal(order) == "last"
 
 
 def _is_stop_loss_order(order: Dict[str, Any]) -> bool:
@@ -1979,9 +2027,12 @@ class OCOExecutor:
             self.exchange, symbol, float(stop_price), kind="price"
         )
         current_price = np.nan
+        current_price_source = "unavailable"
         try:
             ticker = self.exchange.fetch_ticker(symbol)
-            current_price = _safe_float(ticker.get("last"), default=np.nan)
+            current_price, current_price_source = _stop_trigger_reference_price(
+                self.exchange, ticker, self.config
+            )
         except Exception as price_exc:
             _append_position_event(
                 position_state,
@@ -2003,6 +2054,7 @@ class OCOExecutor:
                     original_stop=float(stop_price),
                     adjusted_stop=float(adjusted_stop),
                     current_price=float(current_price),
+                    current_price_source=current_price_source,
                     min_distance_pct=STOP_MIN_CURRENT_DISTANCE_PCT,
                     boundary=float(boundary),
                 )
@@ -2012,6 +2064,7 @@ class OCOExecutor:
                     "entry stop does not satisfy min current-price distance: "
                     f"side={side} stop={float(stop_price):.8g} "
                     f"current={float(current_price):.8g} "
+                    f"current_source={current_price_source} "
                     f"min_distance_pct={STOP_MIN_CURRENT_DISTANCE_PCT:.6g}"
                 )
                 tprint(f"Refusing STOP_LOSS for {symbol}: {error}")
@@ -2296,9 +2349,12 @@ class OCOExecutor:
                 self.exchange, symbol, float(decision.stop_price), kind="price"
             )
             current_price = np.nan
+            current_price_source = "unavailable"
             try:
                 ticker = self.exchange.fetch_ticker(symbol)
-                current_price = _safe_float(ticker.get("last"), default=np.nan)
+                current_price, current_price_source = _stop_trigger_reference_price(
+                    self.exchange, ticker, self.config
+                )
             except Exception as price_exc:
                 _append_position_event(
                     state,
@@ -2324,6 +2380,7 @@ class OCOExecutor:
                         original_stop=float(stop_price),
                         adjusted_stop=float(adjusted_stop),
                         current_price=float(current_price),
+                        current_price_source=current_price_source,
                         min_distance_pct=STOP_MIN_CURRENT_DISTANCE_PCT,
                         boundary=float(boundary),
                         stop_reason=getattr(decision, "reason", None),
@@ -2400,6 +2457,7 @@ class OCOExecutor:
                                     attempt=0,
                                     adjusted_stop=float(recompute_stop_price),
                                     current_price=float(current_price),
+                                    current_price_source=current_price_source,
                                     min_distance_pct=STOP_MIN_CURRENT_DISTANCE_PCT,
                                     boundary=float(recompute_boundary),
                                 )
@@ -2421,6 +2479,7 @@ class OCOExecutor:
                             original_candidate_stop=original_stop_price,
                             recomputed_stop=float(recompute_stop_price),
                             current_price=float(current_price),
+                            current_price_source=current_price_source,
                             stop_reason=recompute_decision.reason,
                             reason_detail=recompute_decision.reason_detail,
                             params_source=recompute_decision.params_source,
@@ -2441,6 +2500,7 @@ class OCOExecutor:
                             error_category="policy_stop_rejected_by_exchange",
                             reject_reason="LOCAL_STOP_SIDE_INVALID",
                             current_price=float(current_price),
+                            current_price_source=current_price_source,
                             candidate_stop=original_stop_price,
                             recomputed_stop=(
                                 float(recompute_stop_price)
@@ -2476,6 +2536,7 @@ class OCOExecutor:
                                 existing_stop_order_id=str(existing_stop_order_id),
                                 original_candidate_stop=original_stop_price,
                                 current_price=float(current_price),
+                                current_price_source=current_price_source,
                                 recomputed_stop=(
                                     float(recompute_stop_price)
                                     if np.isfinite(recompute_stop_price)
@@ -2499,6 +2560,7 @@ class OCOExecutor:
                             reason="policy_stop_crossed_no_valid_exchange_stop",
                             original_candidate_stop=original_stop_price,
                             current_price=float(current_price),
+                            current_price_source=current_price_source,
                             recomputed_stop=(
                                 float(recompute_stop_price)
                                 if np.isfinite(recompute_stop_price)
@@ -2685,7 +2747,9 @@ class OCOExecutor:
             ):
                 try:
                     ticker = self.exchange.fetch_ticker(symbol)
-                    current_price = _safe_float(ticker.get("last"), default=np.nan)
+                    current_price, current_price_source = _stop_trigger_reference_price(
+                        self.exchange, ticker, self.config
+                    )
                     if np.isfinite(current_price) and current_price > 0.0:
                         live_bar = pd.DataFrame(
                             [
@@ -2747,6 +2811,7 @@ class OCOExecutor:
                                     state,
                                     "stop_recompute_after_exchange_reject_min_current_distance_adjusted",
                                     current_price=float(current_price),
+                                    current_price_source=current_price_source,
                                     adjusted_stop=float(recompute_stop_price),
                                     min_distance_pct=STOP_MIN_CURRENT_DISTANCE_PCT,
                                     boundary=float(recompute_boundary),
@@ -2810,6 +2875,7 @@ class OCOExecutor:
                                 ),
                                 recomputed_stop=float(recompute_stop_price),
                                 current_price=float(current_price),
+                                current_price_source=current_price_source,
                                 stop_order_id=state.get("stop_order_id"),
                                 stop_reason=recompute_decision.reason,
                                 reason_detail=recompute_decision.reason_detail,
@@ -2827,6 +2893,7 @@ class OCOExecutor:
                             state,
                             "stop_recompute_after_exchange_reject_skipped",
                             current_price=float(current_price),
+                            current_price_source=current_price_source,
                             recomputed_stop=(
                                 float(recompute_stop_price)
                                 if np.isfinite(recompute_stop_price)
@@ -4866,6 +4933,29 @@ class TradeExecutor:
                         pending_context["reconciliation_stop_source"] = (
                             "existing_exchange_stop_loss"
                         )
+                        order_ts = (
+                            order.get("datetime")
+                            or order.get("timestamp")
+                            or (
+                                order.get("info", {}).get("receivedTime")
+                                if isinstance(order.get("info"), dict)
+                                else None
+                            )
+                            or (
+                                order.get("info", {}).get("lastUpdateTime")
+                                if isinstance(order.get("info"), dict)
+                                else None
+                            )
+                        )
+                        if (
+                            order_ts not in ("", None)
+                            and not pending_context.get("entry_time")
+                            and not pending_context.get("timestamp")
+                        ):
+                            pending_context["entry_time"] = order_ts
+                            pending_context["reconciliation_entry_time_source"] = (
+                                "existing_exchange_stop_loss_time"
+                            )
                         break
             except Exception as exc:
                 tprint(
@@ -5043,6 +5133,11 @@ class TradeExecutor:
                     stop_px = _order_stop_price(order)
                     if not (np.isfinite(stop_px) and stop_px > 0.0):
                         continue
+                    if not _protective_stop_trigger_matches_policy(
+                        self.exchange, order, self.config
+                    ):
+                        mismatched_stop_orders.append(order)
+                        continue
                     if np.isfinite(stop_price) and abs(
                         stop_px - float(stop_price)
                     ) > max(abs(float(stop_price)) * 1e-4, 1e-8):
@@ -5079,7 +5174,8 @@ class TradeExecutor:
                             tprint(
                                 f"Cancelled mismatched recovered STOP_LOSS for "
                                 f"{symbol}: order_id={order_id} "
-                                f"expected_stop={float(stop_price):.12g}"
+                                f"expected_stop={float(stop_price):.12g} "
+                                f"trigger_signal={_order_trigger_signal(order) or 'unknown'}"
                             )
 
             if adopted_stop_orders:

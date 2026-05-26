@@ -220,7 +220,9 @@ def _iter_simple_policy_artifact_paths(data_root: str, run_id: Optional[str] = N
                     if candidate.is_file() and candidate not in seen:
                         seen.add(candidate)
                         yield candidate
-                for candidate in sorted(deployment_dir.glob("best_policy_params*.json")):
+                for candidate in sorted(
+                    deployment_dir.glob("best_policy_params*.json")
+                ):
                     if candidate.is_file() and candidate not in seen:
                         seen.add(candidate)
                         yield candidate
@@ -709,10 +711,13 @@ def compute_simple_policy_stop_decision(
 
     bars = _latest_bars(latest_market_state)
     if not bars.empty:
-        for _, row in bars.iterrows():
+        highs = bars.get("high", pd.Series(np.nan, index=bars.index)).to_numpy()
+        lows = bars.get("low", pd.Series(np.nan, index=bars.index)).to_numpy()
+
+        for h, l in zip(highs, lows):
             bars_in_trade += 1
-            high = _safe_float(row.get("high"), default=np.nan)
-            low = _safe_float(row.get("low"), default=np.nan)
+            high = _safe_float(h, default=np.nan)
+            low = _safe_float(l, default=np.nan)
             if side_l == "long":
                 if np.isfinite(high):
                     peak_price = max(peak_price, high)

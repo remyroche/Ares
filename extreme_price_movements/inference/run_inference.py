@@ -51,7 +51,6 @@ import inspect
 import json
 import os
 import re
-import sys
 import threading
 import time
 from datetime import datetime, timezone
@@ -88,7 +87,6 @@ from extreme_price_movements.inference.data_fetcher import (
     DataFetcher,
     classify_api_error,
     fetch_and_build_panel,
-    fetch_latest_ohlcv,
     make_exchange,
 )
 from extreme_price_movements.inference.feature_generator import (
@@ -98,7 +96,6 @@ from extreme_price_movements.inference.feature_generator import (
     generate_features,
     get_features_for_candidates,
     get_inference_required_feature_keys,
-    get_market_data,
     load_or_compute_features,
     raw_required_feature_keys,
 )
@@ -168,7 +165,6 @@ from extreme_price_movements.path_utils import mode_file_candidates
 from extreme_price_movements.inference.trade_executor import TradeExecutor
 from extreme_price_movements.inference.trade_logger import (
     TradeLogger,
-    log_trade_decision,
 )
 from extreme_price_movements.portfolio_manager import PortfolioManager
 from extreme_price_movements.utils import tprint
@@ -814,7 +810,9 @@ def _persist_source_parity_report(
         out_dir = Path(data_root) / "artifacts" / str(run_id) / "live_source_parity"
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / f"{stamp}_{label}.json"
-        out_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+        out_path.write_text(
+            json.dumps(report, indent=2, sort_keys=True), encoding="utf-8"
+        )
         return out_path
     except Exception as exc:
         tprint(f"Warning: failed to persist source parity report: {exc}")
@@ -963,9 +961,7 @@ def _load_strategy_ev_calibration(data_root: str, run_id: str) -> Dict[str, Any]
                         float(fees.mean()) if np.isfinite(fees).any() else None
                     ),
                     "mean_slippage_bps": (
-                        float(slippage.mean())
-                        if np.isfinite(slippage).any()
-                        else None
+                        float(slippage.mean()) if np.isfinite(slippage).any() else None
                     ),
                     "hit_rate": float((net > 0.0).mean()),
                     "count": int(len(bucket_df)),
@@ -1035,7 +1031,12 @@ def _estimated_hit_rate_from_meta_prediction(
             "estimated_hit_rate_calibration_n": 0,
         }
     sid = str(strategy_id or "")
-    candidates = [sid, f"{sid}_clf", strategy_core_id(sid), f"{strategy_core_id(sid)}_clf"]
+    candidates = [
+        sid,
+        f"{sid}_clf",
+        strategy_core_id(sid),
+        f"{strategy_core_id(sid)}_clf",
+    ]
     curve = None
     for key in candidates:
         if key and key in calibration:
@@ -2675,8 +2676,7 @@ def _send_trade_close_email(
             f"decision_module: {closed_trade.get('decision_module')}",
             "stop_policy_params_source: "
             f"{closed_trade.get('stop_policy_params_source')}",
-            "stop_policy_params_hash: "
-            f"{closed_trade.get('stop_policy_params_hash')}",
+            f"stop_policy_params_hash: {closed_trade.get('stop_policy_params_hash')}",
             f"stop_policy_schema: {closed_trade.get('stop_policy_schema')}",
             f"stop_order_id: {closed_trade.get('stop_order_id')}",
             f"close_order_id: {closed_trade.get('close_order_id')}",
@@ -2896,7 +2896,10 @@ def _sync_reconciled_positions_to_portfolio_manager(
     for symbol, state in active_positions.items():
         if not isinstance(state, dict):
             continue
-        if not bool(state.get("external_position")) or symbol in portfolio_mgr.positions:
+        if (
+            not bool(state.get("external_position"))
+            or symbol in portfolio_mgr.positions
+        ):
             continue
         try:
             portfolio_mgr.record_position_open(
@@ -3431,7 +3434,9 @@ def _select_top_base_prediction_symbols(
     if isinstance(model_info, dict):
         feat_cols = list(model_info.get("feat_cols") or [])
         if feat_cols:
-            missing_cols = [col for col in feat_cols if col not in candidate_features.columns]
+            missing_cols = [
+                col for col in feat_cols if col not in candidate_features.columns
+            ]
             if missing_cols:
                 tprint(
                     f"Base feature contract block for {side}/{strategy_core_id(strategy_id)}: "
@@ -3876,9 +3881,7 @@ def run_inference_step(
         validate_training_live_parity_contract(
             parity_contract,
             active_strategy_ids=(
-                sorted(accepted_strategies)
-                if accepted_strategies is not None
-                else []
+                sorted(accepted_strategies) if accepted_strategies is not None else []
             ),
             strict=True,
         )
@@ -4527,9 +4530,7 @@ def run_inference_step(
                 chain_results["effective_threshold"] = threshold
                 decision["chain_results"] = chain_results
                 decision["normalized_rank_score"] = rank_pct
-                decision["portfolio_priority"] = _candidate_portfolio_priority(
-                    decision
-                )
+                decision["portfolio_priority"] = _candidate_portfolio_priority(decision)
                 filtered_decision_rows.append(decision)
             decision_rows = filtered_decision_rows
             decision_rows.sort(
@@ -5847,15 +5848,12 @@ def run_inference_step(
                 if extra:
                     details.update(extra)
                 compact = " ".join(
-                    f"{k}={v}"
-                    for k, v in details.items()
-                    if v is not None and v != ""
+                    f"{k}={v}" for k, v in details.items() if v is not None and v != ""
                 )
                 tprint(
                     "Global auction skip: "
                     f"{symbol} {side}/{strategy_id} stage={stage} "
-                    f"reason={reason}"
-                    + (f" {compact}" if compact else "")
+                    f"reason={reason}" + (f" {compact}" if compact else "")
                 )
 
             symbol_block_reason = _symbol_entry_block_reason(
@@ -5925,7 +5923,8 @@ def run_inference_step(
                             "position_size_cap": info.get("position_size_cap"),
                             "n_positions_before": info.get("n_positions_before"),
                             "constraints": ",".join(
-                                str(x) for x in info.get("constraints_checked", []) or []
+                                str(x)
+                                for x in info.get("constraints_checked", []) or []
                             ),
                         },
                     )
@@ -5942,7 +5941,9 @@ def run_inference_step(
                 side_metrics["non_fatal_issues"] = (
                     int(side_metrics.get("non_fatal_issues", 0)) + 1
                 )
-                _log_global_auction_skip("sizing", "invalid_or_zero_size", extra={"computed_size": size})
+                _log_global_auction_skip(
+                    "sizing", "invalid_or_zero_size", extra={"computed_size": size}
+                )
                 _commit_global_side_metrics()
                 continue
             close = panel.get("close")
@@ -6188,7 +6189,9 @@ def run_inference_step(
                             )
                             _log_global_auction_skip(
                                 "orderbook_precheck",
-                                str(book_snapshot.reject_reason or "orderbook_rejected"),
+                                str(
+                                    book_snapshot.reject_reason or "orderbook_rejected"
+                                ),
                                 extra={
                                     "capacity_quote": book_snapshot.orderbook_capacity_quote_within_slippage,
                                     "capacity_weight": book_snapshot.liquidity_capacity_weight,
@@ -6293,11 +6296,16 @@ def run_inference_step(
                                     ),
                                     extra={
                                         "requested_position_size": size,
-                                        "position_size_cap": info.get("position_size_cap"),
-                                        "n_positions_before": info.get("n_positions_before"),
+                                        "position_size_cap": info.get(
+                                            "position_size_cap"
+                                        ),
+                                        "n_positions_before": info.get(
+                                            "n_positions_before"
+                                        ),
                                         "constraints": ",".join(
                                             str(x)
-                                            for x in info.get("constraints_checked", []) or []
+                                            for x in info.get("constraints_checked", [])
+                                            or []
                                         ),
                                     },
                                 )
@@ -6453,9 +6461,7 @@ def run_inference_step(
                     "estimated_ev_net_return": chain_results.get(
                         "estimated_ev_net_return"
                     ),
-                    "estimated_ev_cost_bps": chain_results.get(
-                        "estimated_ev_cost_bps"
-                    ),
+                    "estimated_ev_cost_bps": chain_results.get("estimated_ev_cost_bps"),
                     "estimated_ev_hit_rate": chain_results.get("estimated_ev_hit_rate"),
                     "estimated_ev_source": chain_results.get("estimated_ev_source"),
                     "estimated_ev_calibration_n": chain_results.get(
@@ -7427,7 +7433,6 @@ def _emit_inference_heartbeat(
 
 
 def main():
-    import argparse
 
     _load_local_env_if_present()
     _configure_numba_threading_layer()
@@ -8595,11 +8600,19 @@ def _evaluate_oco_policy(
                     position_state.update(refreshed)
                     stop_price = float(position_state.get("stop_price", stop_price))
 
-        for bar_ts, row in bars.iterrows():
-            bar_open = float(row["open"])
-            bar_high = float(row["high"])
-            bar_low = float(row["low"])
-            bar_close = float(row["close"])
+        bar_indices = bars.index.to_numpy()
+        bar_opens = bars["open"].to_numpy()
+        bar_highs = bars["high"].to_numpy()
+        bar_lows = bars["low"].to_numpy()
+        bar_closes = bars["close"].to_numpy()
+
+        for bar_ts, b_open, b_high, b_low, b_close in zip(
+            bar_indices, bar_opens, bar_highs, bar_lows, bar_closes
+        ):
+            bar_open = float(b_open)
+            bar_high = float(b_high)
+            bar_low = float(b_low)
+            bar_close = float(b_close)
             price_dev_pct = (
                 (bar_close - entry_price) / max(abs(entry_price), 1e-12)
                 if side == "long"

@@ -138,7 +138,11 @@ def _entry_adverse_slippage_bps(expected_fill, realized_entry, side) -> float:
     """Positive means a worse entry than expected."""
     expected_fill = _numeric(expected_fill)
     realized_entry = _numeric(realized_entry)
-    if not np.isfinite(expected_fill) or not np.isfinite(realized_entry) or expected_fill <= 0:
+    if (
+        not np.isfinite(expected_fill)
+        or not np.isfinite(realized_entry)
+        or expected_fill <= 0
+    ):
         return np.nan
     if _side_sign(side) > 0:
         return (realized_entry / expected_fill - 1.0) * 10000.0
@@ -149,7 +153,11 @@ def _exit_adverse_slippage_bps(expected_exit, realized_exit, side) -> float:
     """Positive means a worse exit than expected."""
     expected_exit = _numeric(expected_exit)
     realized_exit = _numeric(realized_exit)
-    if not np.isfinite(expected_exit) or not np.isfinite(realized_exit) or expected_exit <= 0:
+    if (
+        not np.isfinite(expected_exit)
+        or not np.isfinite(realized_exit)
+        or expected_exit <= 0
+    ):
         return np.nan
     if _side_sign(side) > 0:
         return (expected_exit / realized_exit - 1.0) * 10000.0
@@ -175,7 +183,12 @@ def _bps_value(value: float) -> float:
 
 def _unit_warnings(row: pd.Series) -> str:
     warnings = []
-    for col in ("net_pnl_pct", "gross_pnl_pct", "gross_to_net_cost_pct", "expected_net"):
+    for col in (
+        "net_pnl_pct",
+        "gross_pnl_pct",
+        "gross_to_net_cost_pct",
+        "expected_net",
+    ):
         if col not in row or pd.isna(row[col]) or row[col] == "":
             continue
         value = _numeric(row[col])
@@ -194,7 +207,15 @@ def _truthy(value) -> bool:
     if pd.isna(value):
         return False
     if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "y", "filled", "traded", "accepted"}
+        return value.strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "y",
+            "filled",
+            "traded",
+            "accepted",
+        }
     return bool(value)
 
 
@@ -235,7 +256,13 @@ def _normalise_times(df: pd.DataFrame) -> pd.DataFrame:
         out["timestamp"] = out["decision_ts"]
     if "signal_bar_ts" not in out.columns:
         out["signal_bar_ts"] = out.get("timestamp", pd.NaT)
-    for col in ("timestamp", "decision_ts", "signal_bar_ts", "lifecycle_entry_ts", "lifecycle_exit_ts"):
+    for col in (
+        "timestamp",
+        "decision_ts",
+        "signal_bar_ts",
+        "lifecycle_entry_ts",
+        "lifecycle_exit_ts",
+    ):
         if col in out.columns:
             out[col] = pd.to_datetime(out[col], utc=True, errors="coerce")
     if "symbol" in out.columns:
@@ -274,22 +301,45 @@ def collapse_trade_lifecycle(trade_log: pd.DataFrame) -> pd.DataFrame:
             + src.get("timestamp", pd.NaT).astype(str)
         )
 
-    action_all = src.get("action", pd.Series("", index=src.index)).astype(str).str.lower()
-    event_all = src.get("lifecycle_event", pd.Series("", index=src.index)).astype(str).str.lower()
+    action_all = (
+        src.get("action", pd.Series("", index=src.index)).astype(str).str.lower()
+    )
+    event_all = (
+        src.get("lifecycle_event", pd.Series("", index=src.index))
+        .astype(str)
+        .str.lower()
+    )
     entry_mask = (action_all == "enter") | event_all.str.contains("entry", na=False)
     stop_to_entry_position: dict[str, object] = {}
     order_to_entry_position: dict[str, object] = {}
-    for _, row in src.loc[entry_mask].iterrows():
-        pos = row.get("position_id")
+
+    entries_df = src.loc[entry_mask]
+    pos_arr = entries_df.get(
+        "position_id", pd.Series(np.nan, index=entries_df.index)
+    ).to_numpy()
+    stop_arr = entries_df.get(
+        "stop_order_id", pd.Series(np.nan, index=entries_df.index)
+    ).to_numpy()
+    tp_arr = entries_df.get(
+        "take_profit_order_id", pd.Series(np.nan, index=entries_df.index)
+    ).to_numpy()
+    oco_arr = entries_df.get(
+        "oco_id", pd.Series(np.nan, index=entries_df.index)
+    ).to_numpy()
+    ex_arr = entries_df.get(
+        "exchange_order_id", pd.Series(np.nan, index=entries_df.index)
+    ).to_numpy()
+
+    for pos, stop_id, tp_id, oco_id, ex_id in zip(
+        pos_arr, stop_arr, tp_arr, oco_arr, ex_arr
+    ):
         if pd.isna(pos) or pos == "":
             continue
-        for key in ("stop_order_id", "take_profit_order_id", "oco_id"):
-            val = row.get(key)
+        for val in (stop_id, tp_id, oco_id):
             join_id = _normalise_join_id(val)
             if join_id:
                 stop_to_entry_position[join_id] = pos
-        val = row.get("exchange_order_id")
-        join_id = _normalise_join_id(val)
+        join_id = _normalise_join_id(ex_id)
         if join_id:
             order_to_entry_position[join_id] = pos
 
@@ -319,13 +369,25 @@ def collapse_trade_lifecycle(trade_log: pd.DataFrame) -> pd.DataFrame:
     for position_id, grp in src.sort_values("timestamp").groupby(
         "_lifecycle_position_id", dropna=False
     ):
-        action = grp.get("action", pd.Series("", index=grp.index)).astype(str).str.lower()
-        event = grp.get("lifecycle_event", pd.Series("", index=grp.index)).astype(str).str.lower()
-        status = grp.get("status", pd.Series("", index=grp.index)).astype(str).str.lower()
+        action = (
+            grp.get("action", pd.Series("", index=grp.index)).astype(str).str.lower()
+        )
+        event = (
+            grp.get("lifecycle_event", pd.Series("", index=grp.index))
+            .astype(str)
+            .str.lower()
+        )
+        status = (
+            grp.get("status", pd.Series("", index=grp.index)).astype(str).str.lower()
+        )
         entry_grp = grp[(action == "enter") | event.str.contains("entry", na=False)]
-        exit_grp = grp[(action == "exit") | event.str.contains("exit", na=False) | status.isin({"closed", "completed"})]
-        entry = (entry_grp.iloc[0] if not entry_grp.empty else grp.iloc[0])
-        exit_ = (exit_grp.iloc[-1] if not exit_grp.empty else pd.Series(dtype=object))
+        exit_grp = grp[
+            (action == "exit")
+            | event.str.contains("exit", na=False)
+            | status.isin({"closed", "completed"})
+        ]
+        entry = entry_grp.iloc[0] if not entry_grp.empty else grp.iloc[0]
+        exit_ = exit_grp.iloc[-1] if not exit_grp.empty else pd.Series(dtype=object)
         base = entry.to_dict()
         base["position_id"] = position_id
         if "exchange_order_id" in base:
@@ -333,7 +395,9 @@ def collapse_trade_lifecycle(trade_log: pd.DataFrame) -> pd.DataFrame:
         base["lifecycle_entry_ts"] = _first_present(entry, ["timestamp", "decision_ts"])
         base["was_traded"] = not _is_failed_trade_lifecycle(entry)
         if not exit_.empty:
-            base["lifecycle_exit_ts"] = _first_present(exit_, ["timestamp", "decision_ts"])
+            base["lifecycle_exit_ts"] = _first_present(
+                exit_, ["timestamp", "decision_ts"]
+            )
             for col in (
                 "realized_exit_price",
                 "actual_exit_price",
@@ -366,7 +430,11 @@ def _normalise_oos_policy(oos_policy: Optional[pd.DataFrame]) -> Optional[pd.Dat
         return None
     oos = _normalise_times(oos_policy)
     aliases = {
-        "oos_expected_net_bps": ["oos_expected_net_bps", "expected_net_bps", "policy_expected_net_bps"],
+        "oos_expected_net_bps": [
+            "oos_expected_net_bps",
+            "expected_net_bps",
+            "policy_expected_net_bps",
+        ],
         "oos_expected_net_for_same_policy": [
             "oos_expected_net_for_same_policy",
             "oos_expected_net",
@@ -382,10 +450,28 @@ def _normalise_oos_policy(oos_policy: Optional[pd.DataFrame]) -> Optional[pd.Dat
                 if name in oos.columns:
                     oos[out_col] = oos[name]
                     break
-    if "oos_expected_net_bps" not in oos.columns and "oos_expected_net_for_same_policy" in oos.columns:
-        oos["oos_expected_net_bps"] = pd.to_numeric(oos["oos_expected_net_for_same_policy"], errors="coerce") * 10000.0
-    keep = [c for c in _JOIN_KEYS + ["timestamp", "oos_expected_net_bps", "oos_expected_net_for_same_policy", "oos_selected"] if c in oos.columns]
-    return oos.loc[:, keep].drop_duplicates([c for c in _JOIN_KEYS if c in keep], keep="last")
+    if (
+        "oos_expected_net_bps" not in oos.columns
+        and "oos_expected_net_for_same_policy" in oos.columns
+    ):
+        oos["oos_expected_net_bps"] = (
+            pd.to_numeric(oos["oos_expected_net_for_same_policy"], errors="coerce")
+            * 10000.0
+        )
+    keep = [
+        c
+        for c in _JOIN_KEYS
+        + [
+            "timestamp",
+            "oos_expected_net_bps",
+            "oos_expected_net_for_same_policy",
+            "oos_selected",
+        ]
+        if c in oos.columns
+    ]
+    return oos.loc[:, keep].drop_duplicates(
+        [c for c in _JOIN_KEYS if c in keep], keep="last"
+    )
 
 
 def _join_oos(
@@ -405,7 +491,11 @@ def _join_oos(
     if not needs.any() or "timestamp" not in oos.columns:
         return out
     # Asof fallback against OOS timestamp, grouped by symbol/side/strategy_id.
-    group_cols = [c for c in ["symbol", "side", "strategy_id"] if c in out.columns and c in oos.columns]
+    group_cols = [
+        c
+        for c in ["symbol", "side", "strategy_id"]
+        if c in out.columns and c in oos.columns
+    ]
     for idx, row in out.loc[needs].iterrows():
         cand = oos.copy()
         for col in group_cols:
@@ -414,14 +504,23 @@ def _join_oos(
             continue
         deltas = (cand["timestamp"] - row["signal_bar_ts"]).abs()
         best_idx = deltas.idxmin()
-        if pd.notna(deltas.loc[best_idx]) and deltas.loc[best_idx] <= oos_join_tolerance:
-            for col in ("oos_expected_net_bps", "oos_expected_net_for_same_policy", "oos_selected"):
+        if (
+            pd.notna(deltas.loc[best_idx])
+            and deltas.loc[best_idx] <= oos_join_tolerance
+        ):
+            for col in (
+                "oos_expected_net_bps",
+                "oos_expected_net_for_same_policy",
+                "oos_selected",
+            ):
                 if col in cand.columns:
                     out.at[idx, col] = cand.loc[best_idx, col]
     return out
 
 
-def _realized_cost_bps(row: pd.Series, default_expected_fee_bps: float, *, allow_legacy_cost_features: bool) -> tuple[float, float]:
+def _realized_cost_bps(
+    row: pd.Series, default_expected_fee_bps: float, *, allow_legacy_cost_features: bool
+) -> tuple[float, float]:
     fee = _numeric(_first_present(row, ["realized_fee_bps", "fees_bps"]))
     if not np.isfinite(fee):
         fee = _numeric(_first_present(row, ["gross_to_net_cost_pct"])) * 10000.0
@@ -452,14 +551,42 @@ def _base_replay_table(
     rows = []
     for _, row in src.iterrows():
         side = _first_present(row, ["side"], "long")
-        signal_price = _numeric(_first_present(row, ["signal_price", "ohlcv_entry_price", "entry_price"]))
-        decision_mid = _numeric(_first_present(row, ["decision_mid", "ticker_mid", "signal_price"], signal_price))
-        expected_fill = _numeric(_first_present(row, ["expected_fill_price", "expected_entry_price", "entry_price"], decision_mid))
-        realized_entry = _numeric(_first_present(row, ["realized_entry_price", "actual_entry_price", "entry_price"], expected_fill))
-        realized_exit = _numeric(_first_present(row, ["realized_exit_price", "actual_exit_price", "exit_price"]))
-        expected_exit = _numeric(_first_present(row, ["expected_exit_price", "oos_exit_price", "signal_exit_price"]))
+        signal_price = _numeric(
+            _first_present(row, ["signal_price", "ohlcv_entry_price", "entry_price"])
+        )
+        decision_mid = _numeric(
+            _first_present(
+                row, ["decision_mid", "ticker_mid", "signal_price"], signal_price
+            )
+        )
+        expected_fill = _numeric(
+            _first_present(
+                row,
+                ["expected_fill_price", "expected_entry_price", "entry_price"],
+                decision_mid,
+            )
+        )
+        realized_entry = _numeric(
+            _first_present(
+                row,
+                ["realized_entry_price", "actual_entry_price", "entry_price"],
+                expected_fill,
+            )
+        )
+        realized_exit = _numeric(
+            _first_present(
+                row, ["realized_exit_price", "actual_exit_price", "exit_price"]
+            )
+        )
+        expected_exit = _numeric(
+            _first_present(
+                row, ["expected_exit_price", "oos_exit_price", "signal_exit_price"]
+            )
+        )
         realized_cost_bps, extra_cost_bps = _realized_cost_bps(
-            row, default_expected_fee_bps, allow_legacy_cost_features=allow_legacy_cost_features
+            row,
+            default_expected_fee_bps,
+            allow_legacy_cost_features=allow_legacy_cost_features,
         )
         realized_net_bps = _bps_value(_first_present(row, ["realized_trade_net_bps"]))
         if not np.isfinite(realized_net_bps):
@@ -468,17 +595,62 @@ def _base_replay_table(
             )
         if not np.isfinite(realized_net_bps):
             raw = _side_return(realized_entry, realized_exit, side)
-            realized_net_bps = raw * 10000.0 - realized_cost_bps if np.isfinite(raw) else np.nan
+            realized_net_bps = (
+                raw * 10000.0 - realized_cost_bps if np.isfinite(raw) else np.nan
+            )
         oos_bps = _numeric(_first_present(row, ["oos_expected_net_bps"]))
         if not np.isfinite(oos_bps):
             oos_bps = _fraction_to_bps(
-                _first_present(row, ["oos_expected_net_for_same_policy", "oos_expected_net", "expected_net"])
+                _first_present(
+                    row,
+                    [
+                        "oos_expected_net_for_same_policy",
+                        "oos_expected_net",
+                        "expected_net",
+                    ],
+                )
             )
-        rank_score = _numeric(_first_present(row, ["rank_score", "adjusted_rank_score", "calibrated_score", "normalized_rank_score", "meta_pred"]))
-        rank_pct = _numeric(_first_present(row, ["rank_percentile", "sizer_rank_percentile", "base_rank_pct", "meta_train_rank_pct"]))
-        threshold = _numeric(_first_present(row, ["threshold", "final_threshold", "effective_threshold", "rank_threshold", "deployment_rank_threshold"]))
+        rank_score = _numeric(
+            _first_present(
+                row,
+                [
+                    "rank_score",
+                    "adjusted_rank_score",
+                    "calibrated_score",
+                    "normalized_rank_score",
+                    "meta_pred",
+                ],
+            )
+        )
+        rank_pct = _numeric(
+            _first_present(
+                row,
+                [
+                    "rank_percentile",
+                    "sizer_rank_percentile",
+                    "base_rank_pct",
+                    "meta_train_rank_pct",
+                ],
+            )
+        )
+        threshold = _numeric(
+            _first_present(
+                row,
+                [
+                    "threshold",
+                    "final_threshold",
+                    "effective_threshold",
+                    "rank_threshold",
+                    "deployment_rank_threshold",
+                ],
+            )
+        )
         entry_drag = _entry_adverse_slippage_bps(expected_fill, realized_entry, side)
-        exit_drag = _exit_adverse_slippage_bps(expected_exit, realized_exit, side) if np.isfinite(expected_exit) else np.nan
+        exit_drag = (
+            _exit_adverse_slippage_bps(expected_exit, realized_exit, side)
+            if np.isfinite(expected_exit)
+            else np.nan
+        )
         was_traded = _truthy(_first_present(row, ["was_traded"], True))
         rows.append(
             {
@@ -490,12 +662,20 @@ def _base_replay_table(
                 "strategy_id": row.get("strategy_id"),
                 "position_id": row.get("position_id"),
                 "trade_id": row.get("trade_id"),
-                "lifecycle_entry_ts": row.get("lifecycle_entry_ts", row.get("timestamp")),
+                "lifecycle_entry_ts": row.get(
+                    "lifecycle_entry_ts", row.get("timestamp")
+                ),
                 "lifecycle_exit_ts": row.get("lifecycle_exit_ts", pd.NaT),
                 "was_traded": was_traded,
-                "portfolio_decision": _first_present(row, ["portfolio_decision"], "traded" if was_traded else "rejected"),
-                "portfolio_reject_reason": _first_present(row, ["portfolio_reject_reason"], ""),
-                "liquidity_reject_reason": _first_present(row, ["liquidity_reject_reason"], ""),
+                "portfolio_decision": _first_present(
+                    row, ["portfolio_decision"], "traded" if was_traded else "rejected"
+                ),
+                "portfolio_reject_reason": _first_present(
+                    row, ["portfolio_reject_reason"], ""
+                ),
+                "liquidity_reject_reason": _first_present(
+                    row, ["liquidity_reject_reason"], ""
+                ),
                 "rank_score": rank_score,
                 "rank_percentile": rank_pct,
                 "threshold": threshold,
@@ -507,12 +687,30 @@ def _base_replay_table(
                 "entry_drag_bps": entry_drag,
                 "exit_drag_bps": exit_drag,
                 "fees_bps": realized_cost_bps,
-                "spread_bps": _numeric(_first_present(row, ["spread_bps", "ticker_spread_bps"])),
-                "expected_total_entry_friction_bps": _numeric(_first_present(row, ["expected_total_entry_friction_bps", "expected_fill_slippage_bps"])),
-                "exit_reason": str(_first_present(row, ["exit_reason", "exit_reason_detail"], "")),
-                "holding_bars": _numeric(_first_present(row, ["holding_bars", "duration", "duration_bars"])),
-                "oos_expected_net_for_same_policy": oos_bps / 10000.0 if np.isfinite(oos_bps) else np.nan,
-                "realized_net": realized_net_bps / 10000.0 if np.isfinite(realized_net_bps) else np.nan,
+                "spread_bps": _numeric(
+                    _first_present(row, ["spread_bps", "ticker_spread_bps"])
+                ),
+                "expected_total_entry_friction_bps": _numeric(
+                    _first_present(
+                        row,
+                        [
+                            "expected_total_entry_friction_bps",
+                            "expected_fill_slippage_bps",
+                        ],
+                    )
+                ),
+                "exit_reason": str(
+                    _first_present(row, ["exit_reason", "exit_reason_detail"], "")
+                ),
+                "holding_bars": _numeric(
+                    _first_present(row, ["holding_bars", "duration", "duration_bars"])
+                ),
+                "oos_expected_net_for_same_policy": oos_bps / 10000.0
+                if np.isfinite(oos_bps)
+                else np.nan,
+                "realized_net": realized_net_bps / 10000.0
+                if np.isfinite(realized_net_bps)
+                else np.nan,
                 "oos_expected_net_bps": oos_bps,
                 "realized_trade_net_bps": realized_net_bps,
                 "realized_extra_cost_bps": extra_cost_bps,
@@ -621,9 +819,15 @@ def attach_forward_outcomes(
         side = row.get("side")
         for h in horizons:
             fut = _future_price(close, ts, symbol, int(h))
-            out.at[idx, f"signal_forward_return_{h}bar"] = _side_return(row.get(price_col_signal), fut, side)
-            out.at[idx, f"decision_mid_forward_return_{h}bar"] = _side_return(row.get(price_col_decision), fut, side)
-            out.at[idx, f"fill_forward_return_{h}bar"] = _side_return(row.get(price_col_fill), fut, side)
+            out.at[idx, f"signal_forward_return_{h}bar"] = _side_return(
+                row.get(price_col_signal), fut, side
+            )
+            out.at[idx, f"decision_mid_forward_return_{h}bar"] = _side_return(
+                row.get(price_col_decision), fut, side
+            )
+            out.at[idx, f"fill_forward_return_{h}bar"] = _side_return(
+                row.get(price_col_fill), fut, side
+            )
             out.at[idx, f"signal_forward_mfe_{h}bar"] = _future_extreme_return(
                 high if _side_sign(side) > 0 else low,
                 ts,
@@ -663,9 +867,15 @@ def attach_forward_outcomes(
     h = int(primary_horizon)
     oos_cost = _numeric_series(out, "oos_assumed_cost_bps", 0.0).fillna(0.0)
     fees = _numeric_series(out, "fees_bps", 0.0).fillna(0.0)
-    out["signal_forward_net_bps"] = _numeric_series(out, f"signal_forward_return_{h}bar") * 10000.0 - oos_cost
-    out["decision_mid_forward_net_bps"] = _numeric_series(out, f"decision_mid_forward_return_{h}bar") * 10000.0 - oos_cost
-    out["fill_forward_net_bps"] = _numeric_series(out, f"fill_forward_return_{h}bar") * 10000.0 - fees
+    out["signal_forward_net_bps"] = (
+        _numeric_series(out, f"signal_forward_return_{h}bar") * 10000.0 - oos_cost
+    )
+    out["decision_mid_forward_net_bps"] = (
+        _numeric_series(out, f"decision_mid_forward_return_{h}bar") * 10000.0 - oos_cost
+    )
+    out["fill_forward_net_bps"] = (
+        _numeric_series(out, f"fill_forward_return_{h}bar") * 10000.0 - fees
+    )
     out["primary_horizon_bars"] = h
     out["bar_minutes"] = int(bar_minutes)
     return _apply_decomposition(out)
@@ -683,12 +893,26 @@ def _apply_decomposition(replay: pd.DataFrame) -> pd.DataFrame:
         if col not in out.columns:
             out[col] = np.nan
         out[col] = pd.to_numeric(out[col], errors="coerce")
-    out["prediction_or_regime_gap_bps"] = out["oos_expected_net_bps"] - out["signal_forward_net_bps"]
-    out["decision_delay_gap_bps"] = out["signal_forward_net_bps"] - out["decision_mid_forward_net_bps"]
-    out["entry_execution_gap_bps"] = out["decision_mid_forward_net_bps"] - out["fill_forward_net_bps"]
-    out["exit_policy_execution_gap_bps"] = out["fill_forward_net_bps"] - out["realized_trade_net_bps"]
-    out["extra_cost_gap_bps"] = _numeric_series(out, "realized_extra_cost_bps") - _numeric_series(out, "oos_assumed_cost_bps", 0.0).fillna(0.0)
-    traded_raw = out["was_traded"] if "was_traded" in out.columns else pd.Series(True, index=out.index)
+    out["prediction_or_regime_gap_bps"] = (
+        out["oos_expected_net_bps"] - out["signal_forward_net_bps"]
+    )
+    out["decision_delay_gap_bps"] = (
+        out["signal_forward_net_bps"] - out["decision_mid_forward_net_bps"]
+    )
+    out["entry_execution_gap_bps"] = (
+        out["decision_mid_forward_net_bps"] - out["fill_forward_net_bps"]
+    )
+    out["exit_policy_execution_gap_bps"] = (
+        out["fill_forward_net_bps"] - out["realized_trade_net_bps"]
+    )
+    out["extra_cost_gap_bps"] = _numeric_series(
+        out, "realized_extra_cost_bps"
+    ) - _numeric_series(out, "oos_assumed_cost_bps", 0.0).fillna(0.0)
+    traded_raw = (
+        out["was_traded"]
+        if "was_traded" in out.columns
+        else pd.Series(True, index=out.index)
+    )
     traded = traded_raw.map(_truthy)
     out["selection_gap_bps"] = np.where(
         (~traded) & (out["signal_forward_net_bps"] > 0),
@@ -709,10 +933,20 @@ def _apply_decomposition(replay: pd.DataFrame) -> pd.DataFrame:
     out["signal_outcome_gap_bps"] = out["prediction_or_regime_gap_bps"]
     out["entry_slippage_bps"] = out.get("entry_drag_bps", np.nan)
     out["extra_fees_funding_borrow_bps"] = out.get("extra_cost_gap_bps", np.nan)
-    exit_reason = out["exit_reason"] if "exit_reason" in out.columns else pd.Series("", index=out.index)
-    exit_drag = out["exit_drag_bps"] if "exit_drag_bps" in out.columns else pd.Series(np.nan, index=out.index)
+    exit_reason = (
+        out["exit_reason"]
+        if "exit_reason" in out.columns
+        else pd.Series("", index=out.index)
+    )
+    exit_drag = (
+        out["exit_drag_bps"]
+        if "exit_drag_bps" in out.columns
+        else pd.Series(np.nan, index=out.index)
+    )
     out["stop_execution_mismatch_bps"] = np.where(
-        exit_reason.astype(str).isin({"stop_loss", "trailing_stop", "early_invalidation"}),
+        exit_reason.astype(str).isin(
+            {"stop_loss", "trailing_stop", "early_invalidation"}
+        ),
         exit_drag,
         0.0,
     )
@@ -725,8 +959,18 @@ def _apply_decomposition(replay: pd.DataFrame) -> pd.DataFrame:
     has_fill_forward = out["fill_forward_net_bps"].notna()
     has_realized_trade = out["realized_trade_net_bps"].notna()
     realized_exit = _numeric_series(out, "realized_exit_price")
-    lifecycle_exit = pd.to_datetime(out.get("lifecycle_exit_ts", pd.Series(pd.NaT, index=out.index)), utc=True, errors="coerce")
-    out["is_unresolved_trade"] = traded & has_signal_forward & realized_exit.isna() & lifecycle_exit.isna() & ~has_realized_trade
+    lifecycle_exit = pd.to_datetime(
+        out.get("lifecycle_exit_ts", pd.Series(pd.NaT, index=out.index)),
+        utc=True,
+        errors="coerce",
+    )
+    out["is_unresolved_trade"] = (
+        traded
+        & has_signal_forward
+        & realized_exit.isna()
+        & lifecycle_exit.isna()
+        & ~has_realized_trade
+    )
     out["diagnostic_complete"] = (
         has_oos_expected
         & has_signal_forward
@@ -747,7 +991,11 @@ def build_live_replay_table(
     """Build one row per live trade and compute available decomposition fields."""
     if live_trades is None or live_trades.empty:
         return pd.DataFrame(columns=LIVE_REPLAY_COLUMNS + DECOMPOSITION_COLUMNS)
-    src = collapse_trade_lifecycle(live_trades) if "lifecycle_event" in live_trades.columns or "action" in live_trades.columns else live_trades
+    src = (
+        collapse_trade_lifecycle(live_trades)
+        if "lifecycle_event" in live_trades.columns or "action" in live_trades.columns
+        else live_trades
+    )
     out = _base_replay_table(
         src,
         oos_policy=oos_policy,
@@ -756,7 +1004,9 @@ def build_live_replay_table(
         allow_legacy_cost_features=allow_legacy_cost_features,
     )
     out = _apply_decomposition(out)
-    cols = list(dict.fromkeys(LIVE_REPLAY_COLUMNS + DECOMPOSITION_COLUMNS + list(out.columns)))
+    cols = list(
+        dict.fromkeys(LIVE_REPLAY_COLUMNS + DECOMPOSITION_COLUMNS + list(out.columns))
+    )
     return out.reindex(columns=cols)
 
 
@@ -802,7 +1052,11 @@ def _merge_trade_lifecycle_on_nonempty_keys(
             suffixes=("", "_trade"),
         )
         merged.index = out.loc[left_mask].index
-        matched = merged[[c for c in merged.columns if c.endswith("_trade")]].notna().any(axis=1)
+        matched = (
+            merged[[c for c in merged.columns if c.endswith("_trade")]]
+            .notna()
+            .any(axis=1)
+        )
         if not bool(matched.any()):
             continue
         for col in merged.columns:
@@ -831,7 +1085,12 @@ def build_live_candidate_replay_table(
         return pd.DataFrame(columns=LIVE_REPLAY_COLUMNS + DECOMPOSITION_COLUMNS)
     candidates = _normalise_times(prediction_ledger)
     if "was_traded" not in candidates.columns:
-        candidates["was_traded"] = candidates.get("portfolio_decision", "").astype(str).str.lower().isin({"trade", "traded", "accepted", "filled"})
+        candidates["was_traded"] = (
+            candidates.get("portfolio_decision", "")
+            .astype(str)
+            .str.lower()
+            .isin({"trade", "traded", "accepted", "filled"})
+        )
     if trade_log is not None and not trade_log.empty:
         trades = collapse_trade_lifecycle(trade_log)
         for df in (candidates, trades):
@@ -850,8 +1109,12 @@ def build_live_candidate_replay_table(
                 merge_keys,
             )
         else:
-            keys = [c for c in _JOIN_KEYS if c in candidates.columns and c in trades.columns]
-            candidates = candidates.merge(trades, on=keys, how="left", suffixes=("", "_trade"))
+            keys = [
+                c for c in _JOIN_KEYS if c in candidates.columns and c in trades.columns
+            ]
+            candidates = candidates.merge(
+                trades, on=keys, how="left", suffixes=("", "_trade")
+            )
         candidates = _coalesce_trade_suffix_columns(candidates)
     replay = _base_replay_table(
         candidates,
@@ -861,10 +1124,16 @@ def build_live_candidate_replay_table(
         allow_legacy_cost_features=False,
     )
     replay = _apply_decomposition(replay)
-    cols = list(dict.fromkeys(LIVE_REPLAY_COLUMNS + DECOMPOSITION_COLUMNS + list(replay.columns)))
+    cols = list(
+        dict.fromkeys(
+            LIVE_REPLAY_COLUMNS + DECOMPOSITION_COLUMNS + list(replay.columns)
+        )
+    )
     replay = replay.reindex(columns=cols)
     if forward_close is not None:
-        replay = attach_forward_outcomes(replay, close=forward_close, high=forward_high, low=forward_low)
+        replay = attach_forward_outcomes(
+            replay, close=forward_close, high=forward_high, low=forward_low
+        )
     return replay
 
 
@@ -881,7 +1150,9 @@ def summarize_gap_decomposition(replay: pd.DataFrame) -> pd.DataFrame:
         "residual_bps",
     ]
     if replay is None or replay.empty:
-        return pd.DataFrame(columns=["component", "mean_bps", "median_bps", "sum_bps", "non_null"])
+        return pd.DataFrame(
+            columns=["component", "mean_bps", "median_bps", "sum_bps", "non_null"]
+        )
     rows = []
     for col in cols:
         if col not in replay.columns:

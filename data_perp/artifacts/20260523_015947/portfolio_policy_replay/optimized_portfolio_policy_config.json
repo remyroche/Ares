@@ -15,10 +15,10 @@
     ]
   },
   "selection": {
-    "global_threshold_floor": 0.72,
+    "global_threshold_floor": 0.8600000000000001,
     "threshold_viability_margin": 0.05,
-    "occupancy_threshold_alpha": 0.7311693067923991,
-    "occupancy_threshold_power": 0.8292903603451716
+    "occupancy_threshold_alpha": 0.3329279394425814,
+    "occupancy_threshold_power": 0.5384297304584814
   },
   "concurrency": {
     "max_concurrent_positions": 8,
@@ -31,9 +31,9 @@
     "max_total_wallet_allocation_pct": 0.8
   },
   "sizing": {
-    "rank_size_power": 1.1945733581973659,
-    "rank_multiplier_min": 0.5,
-    "rank_multiplier_max": 1.0
+    "rank_size_power": 1.2284499549234666,
+    "rank_multiplier_min": 0.75,
+    "rank_multiplier_max": 2.0
   },
   "friction": {
     "max_signal_gap_bps": null,

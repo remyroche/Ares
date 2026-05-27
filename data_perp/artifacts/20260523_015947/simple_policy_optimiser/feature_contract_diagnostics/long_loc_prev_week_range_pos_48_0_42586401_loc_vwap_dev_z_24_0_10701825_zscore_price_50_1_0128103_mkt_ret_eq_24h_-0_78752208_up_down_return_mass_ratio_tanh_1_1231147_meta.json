@@ -1,6 +1,6 @@
 {
-  "feature_contract_count": 67,
-  "invalid_rows": 4007,
+  "feature_contract_count": 50,
+  "invalid_rows": 1817,
   "meta_model_key": "long_loc_prev_week_range_pos_48_0_42586401_loc_vwap_dev_z_24_0_10701825_zscore_price_50_1_0128103_mkt_ret_eq_24h_-0_78752208_up_down_return_mass_ratio_tanh_1_1231147_clf",
   "rows": 247672,
   "rows_after_base_gate": 247672,
@@ -8,52 +8,40 @@
   "strategy_id": "long_loc_prev_week_range_pos_48_0_42586401_loc_vwap_dev_z_24_0_10701825_zscore_price_50_1_0128103_mkt_ret_eq_24h_-0_78752208_up_down_return_mass_ratio_tanh_1_1231147",
   "top_invalid_symbols": [
     {
-      "bad_pct": 0.46853146853146854,
-      "invalid_rows": 134,
-      "rows": 286,
-      "symbol": "RIVER/USD:USD"
-    },
-    {
-      "bad_pct": 0.4093161546085233,
-      "invalid_rows": 413,
-      "rows": 1009,
-      "symbol": "SUSHI/USD:USD"
-    },
-    {
-      "bad_pct": 0.3072429906542056,
-      "invalid_rows": 263,
-      "rows": 856,
-      "symbol": "STRK/USD:USD"
-    },
-    {
-      "bad_pct": 0.26666666666666666,
-      "invalid_rows": 88,
+      "bad_pct": 0.6484848484848484,
+      "invalid_rows": 214,
       "rows": 330,
       "symbol": "OMI/USD:USD"
     },
     {
-      "bad_pct": 0.2574430823117338,
-      "invalid_rows": 147,
+      "bad_pct": 0.5871212121212122,
+      "invalid_rows": 155,
+      "rows": 264,
+      "symbol": "GTC/USD:USD"
+    },
+    {
+      "bad_pct": 0.5699300699300699,
+      "invalid_rows": 163,
+      "rows": 286,
+      "symbol": "RIVER/USD:USD"
+    },
+    {
+      "bad_pct": 0.3365650969529086,
+      "invalid_rows": 243,
+      "rows": 722,
+      "symbol": "ZBT/USD:USD"
+    },
+    {
+      "bad_pct": 0.24390243902439024,
+      "invalid_rows": 110,
+      "rows": 451,
+      "symbol": "2Z/USD:USD"
+    },
+    {
+      "bad_pct": 0.22066549912434325,
+      "invalid_rows": 126,
       "rows": 571,
       "symbol": "MON/USD:USD"
-    },
-    {
-      "bad_pct": 0.2282453637660485,
-      "invalid_rows": 160,
-      "rows": 701,
-      "symbol": "TRX/USD:USD"
-    },
-    {
-      "bad_pct": 0.2235294117647059,
-      "invalid_rows": 76,
-      "rows": 340,
-      "symbol": "ZIG/USD:USD"
-    },
-    {
-      "bad_pct": 0.22238805970149253,
-      "invalid_rows": 149,
-      "rows": 670,
-      "symbol": "SPX/USD:USD"
     },
     {
       "bad_pct": 0.20782608695652174,
@@ -62,120 +50,116 @@
       "symbol": "LCAP/USD:USD"
     },
     {
-      "bad_pct": 0.1925207756232687,
-      "invalid_rows": 139,
-      "rows": 722,
-      "symbol": "ZBT/USD:USD"
+      "bad_pct": 0.1807909604519774,
+      "invalid_rows": 96,
+      "rows": 531,
+      "symbol": "MIRA/USD:USD"
     },
     {
-      "bad_pct": 0.1464393179538616,
-      "invalid_rows": 146,
-      "rows": 997,
-      "symbol": "ZRO/USD:USD"
+      "bad_pct": 0.16793893129770993,
+      "invalid_rows": 110,
+      "rows": 655,
+      "symbol": "OPEN/USD:USD"
     },
     {
-      "bad_pct": 0.14298978644382543,
-      "invalid_rows": 154,
-      "rows": 1077,
-      "symbol": "ICP/USD:USD"
+      "bad_pct": 0.1460843373493976,
+      "invalid_rows": 97,
+      "rows": 664,
+      "symbol": "SOON/USD:USD"
     },
     {
-      "bad_pct": 0.14285714285714285,
-      "invalid_rows": 102,
-      "rows": 714,
-      "symbol": "NIGHT/USD:USD"
+      "bad_pct": 0.10601427115188583,
+      "invalid_rows": 104,
+      "rows": 981,
+      "symbol": "XPL/USD:USD"
     },
     {
-      "bad_pct": 0.14110871130309574,
-      "invalid_rows": 196,
-      "rows": 1389,
-      "symbol": "RUNE/USD:USD"
+      "bad_pct": 0.07702523240371846,
+      "invalid_rows": 58,
+      "rows": 753,
+      "symbol": "METIS/USD:USD"
     },
     {
-      "bad_pct": 0.1366120218579235,
-      "invalid_rows": 125,
-      "rows": 915,
-      "symbol": "TRUMP/USD:USD"
+      "bad_pct": 0.06829268292682927,
+      "invalid_rows": 42,
+      "rows": 615,
+      "symbol": "EUR/USD:USD"
     },
     {
-      "bad_pct": 0.12685337726523888,
-      "invalid_rows": 77,
-      "rows": 607,
-      "symbol": "ESPORTS/USD:USD"
+      "bad_pct": 0.028913963328631876,
+      "invalid_rows": 41,
+      "rows": 1418,
+      "symbol": "SUN/USD:USD"
     },
     {
-      "bad_pct": 0.11280214861235452,
-      "invalid_rows": 126,
-      "rows": 1117,
-      "symbol": "PAXG/USD:USD"
+      "bad_pct": 0.011374407582938388,
+      "invalid_rows": 12,
+      "rows": 1055,
+      "symbol": "COW/USD:USD"
     },
     {
-      "bad_pct": 0.0916988416988417,
-      "invalid_rows": 95,
-      "rows": 1036,
-      "symbol": "LPT/USD:USD"
+      "bad_pct": 0.005892255892255892,
+      "invalid_rows": 7,
+      "rows": 1188,
+      "symbol": "SXT/USD:USD"
     },
     {
-      "bad_pct": 0.09108159392789374,
-      "invalid_rows": 48,
-      "rows": 527,
-      "symbol": "FET/USD:USD"
+      "bad_pct": 0.0,
+      "invalid_rows": 0,
+      "rows": 1527,
+      "symbol": "1INCH/USD:USD"
     },
     {
-      "bad_pct": 0.08591549295774648,
-      "invalid_rows": 61,
-      "rows": 710,
-      "symbol": "DYDX/USD:USD"
+      "bad_pct": 0.0,
+      "invalid_rows": 0,
+      "rows": 593,
+      "symbol": "AAVE/USD:USD"
+    },
+    {
+      "bad_pct": 0.0,
+      "invalid_rows": 0,
+      "rows": 547,
+      "symbol": "ADA/USD:USD"
+    },
+    {
+      "bad_pct": 0.0,
+      "invalid_rows": 0,
+      "rows": 1451,
+      "symbol": "AEVO/USD:USD"
     }
   ],
   "top_nonfinite_features": [
     {
-      "bad_pct": 0.011733260118220873,
-      "bad_rows": 2906,
-      "feature": "amihud_z_peer_resid",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 0.0027415291191575956,
-      "bad_rows": 679,
-      "feature": "ret48h_bench_resid",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 0.002353919700248716,
-      "bad_rows": 583,
-      "feature": "oi_trend_15d_robust_z",
+      "bad_pct": 0.004728027391065603,
+      "bad_rows": 1171,
+      "feature": "oi_1d_chg_z",
       "likely_root_cause": "raw_source_missing_or_sparse",
       "missing_column": false,
       "source_family": "open_interest"
     },
     {
-      "bad_pct": 0.0006863916793178075,
-      "bad_rows": 170,
-      "feature": "funding_mean_10d_robust_z",
-      "likely_root_cause": "raw_source_missing_or_sparse",
-      "missing_column": false,
-      "source_family": "funding"
-    },
-    {
-      "bad_pct": 0.00037953422268161116,
-      "bad_rows": 94,
-      "feature": "oi_vol_7d_robust_z",
+      "bad_pct": 0.00315336412674828,
+      "bad_rows": 781,
+      "feature": "asset_minus_mkt_oi_7d_ts_resid",
       "likely_root_cause": "raw_source_missing_or_sparse",
       "missing_column": false,
       "source_family": "open_interest"
     },
     {
-      "bad_pct": 0.0003674214283407087,
-      "bad_rows": 91,
-      "feature": "price_rv_10d_robust_z",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "bad_pct": 0.000524887754772441,
+      "bad_rows": 130,
+      "feature": "asset_minus_mkt_oi_1d_peer_resid",
+      "likely_root_cause": "raw_source_missing_or_sparse",
       "missing_column": false,
-      "source_family": "derived_feature"
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.0003956846151361478,
+      "bad_rows": 98,
+      "feature": "oi_vol_15d_robust_z",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
     },
     {
       "bad_pct": 0.0003674214283407087,
@@ -186,30 +170,6 @@
       "source_family": "derived_feature"
     },
     {
-      "bad_pct": 0.0003674214283407087,
-      "bad_rows": 91,
-      "feature": "price_rv_7d_robust_z",
-      "likely_root_cause": "feature_computation_or_source_window_gap",
-      "missing_column": false,
-      "source_family": "derived_feature"
-    },
-    {
-      "bad_pct": 0.000351271035886172,
-      "bad_rows": 87,
-      "feature": "cs_rank_oi_value_z_30d",
-      "likely_root_cause": "raw_source_missing_or_sparse",
-      "missing_column": false,
-      "source_family": "open_interest"
-    },
-    {
-      "bad_pct": 0.0002584062792725863,
-      "bad_rows": 64,
-      "feature": "funding_vol_7d_robust_z",
-      "likely_root_cause": "raw_source_missing_or_sparse",
-      "missing_column": false,
-      "source_family": "funding"
-    },
-    {
       "bad_pct": 5.652637359087826e-05,
       "bad_rows": 14,
       "feature": "asset_minus_mkt_oi_1d",
@@ -218,6 +178,6 @@
       "source_family": "open_interest"
     }
   ],
-  "valid_pct": 0.983821344358668,
-  "valid_rows": 243665
+  "valid_pct": 0.9926636842275267,
+  "valid_rows": 245855
 }

@@ -506,7 +506,7 @@ def _write_live_feature_snapshot(
         tmp_data.replace(data_path)
         raw_panel_fields: List[str] = []
         raw_panel_rows = 0
-        if bool(cfg.get("live_feature_snapshot_raw_panel_enabled", True)) and raw_panel:
+        if bool(cfg.get("live_feature_snapshot_raw_panel_enabled", False)) and raw_panel:
             raw_matrix_parts: List[pd.DataFrame] = []
             for field, frame in raw_panel.items():
                 if not isinstance(frame, pd.DataFrame) or frame.empty:
@@ -2817,6 +2817,36 @@ def get_features_for_candidates(
     """
     if not candidates:
         return pd.DataFrame()
+
+    if ts is not None:
+        ts_utc = pd.Timestamp(ts)
+        if ts_utc.tzinfo is None:
+            ts_utc = ts_utc.tz_localize("UTC")
+        else:
+            ts_utc = ts_utc.tz_convert("UTC")
+
+        candidate_index = [str(sym) for sym in candidates]
+        out = pd.DataFrame(index=pd.Index(candidate_index, name="symbol"))
+        has_feature = pd.Series(False, index=out.index)
+        for feat_name, feat_df in feats.items():
+            if not isinstance(feat_df, pd.DataFrame) or feat_df.empty:
+                continue
+            available = [sym for sym in candidate_index if sym in feat_df.columns]
+            if not available:
+                continue
+            feat_index = pd.to_datetime(feat_df.index, utc=True, errors="coerce")
+            valid_positions = np.flatnonzero(feat_index <= ts_utc)
+            if valid_positions.size == 0:
+                continue
+            latest_pos = int(valid_positions[-1])
+            if _is_live_stale_sensitive_feature_key(feat_name):
+                latest_ts = feat_index[latest_pos]
+                if pd.isna(latest_ts) or pd.Timestamp(latest_ts) < ts_utc:
+                    continue
+            values = feat_df.iloc[latest_pos].reindex(available)
+            out.loc[available, feat_name] = values.to_numpy(copy=False)
+            has_feature.loc[available] = True
+        return out.loc[has_feature]
 
     # Collect features for all candidates at timestamp
     feature_rows = []

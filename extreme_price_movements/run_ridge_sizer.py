@@ -228,6 +228,10 @@ def load_base_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataF
     # Load all parquet files (exclude _tight/_wide/_balanced variants)
     raw_dfs = {}
     for parquet_file in base_oof_dir.glob("oof_*.parquet"):
+        if parquet_file.name == "base_oof_all.parquet" or parquet_file.stem.endswith(
+            "_all"
+        ):
+            continue
         if any(
             suffix in parquet_file.stem for suffix in ("_tight", "_wide", "_balanced")
         ):

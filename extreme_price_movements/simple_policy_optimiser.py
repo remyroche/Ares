@@ -6185,7 +6185,7 @@ def run_simple_policy_optimisation(
     market_mode = _normalise_market_mode(market_mode)
     if enable_regime_adaptor is None:
         enable_regime_adaptor = str(
-            os.environ.get("EPM_SIMPLE_POLICY_REGIME_ADAPTOR", "1")
+            os.environ.get("EPM_SIMPLE_POLICY_REGIME_ADAPTOR", "0")
         ).strip().lower() not in {"0", "false", "no", "off"}
     data_root = _resolve_market_data_root(data_root, market_mode)
     artifacts_root = Path(data_root) / "artifacts"
@@ -7308,5 +7308,5 @@ if __name__ == "__main__":
             n_trials=args.n_trials,
             strategy_ids=cli_strategy_ids,
             market_mode=cli_market_mode,
-            enable_regime_adaptor=not args.no_regime_adaptor,
+            enable_regime_adaptor=False if args.no_regime_adaptor else None,
         )

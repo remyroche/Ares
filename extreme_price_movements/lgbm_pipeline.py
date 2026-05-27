@@ -95,10 +95,10 @@ LGBM_PERMUTATION_MAX_ROWS = int(os.environ.get("EPM_LGBM_PERMUTATION_MAX_ROWS", 
 LGBM_PERMUTATION_TOP_CONFIGS = int(os.environ.get("EPM_LGBM_PERMUTATION_TOP_CONFIGS", "2"))
 LGBM_PERMUTATION_SKIP_STRONG_TOP_FRAC = float(os.environ.get("EPM_LGBM_PERMUTATION_SKIP_STRONG_TOP_FRAC", "0.10"))
 LGBM_PERMUTATION_SKIP_WEAK_BOTTOM_FRAC = float(os.environ.get("EPM_LGBM_PERMUTATION_SKIP_WEAK_BOTTOM_FRAC", "0.50"))
-LGBM_OVERFIT_GAP_PENALTY = float(os.environ.get("EPM_LGBM_OVERFIT_GAP_PENALTY", "0.15"))
+LGBM_OVERFIT_GAP_PENALTY = float(os.environ.get("EPM_LGBM_OVERFIT_GAP_PENALTY", "0.0"))
 LGBM_OVERFIT_GAP_DEADBAND = float(os.environ.get("EPM_LGBM_OVERFIT_GAP_DEADBAND", "0.02"))
 LGBM_OVERFIT_GAP_CAP = float(os.environ.get("EPM_LGBM_OVERFIT_GAP_CAP", "0.50"))
-LGBM_IMPORTANCE_INSTABILITY_ENABLE = os.environ.get("EPM_LGBM_IMPORTANCE_INSTABILITY_ENABLE", "1") == "1"
+LGBM_IMPORTANCE_INSTABILITY_ENABLE = os.environ.get("EPM_LGBM_IMPORTANCE_INSTABILITY_ENABLE", "0") == "1"
 LGBM_IMPORTANCE_INSTABILITY_PENALTY = float(os.environ.get("EPM_LGBM_IMPORTANCE_INSTABILITY_PENALTY", "0.15"))
 LGBM_IMPORTANCE_INSTABILITY_GAIN_WEIGHT = float(os.environ.get("EPM_LGBM_IMPORTANCE_INSTABILITY_GAIN_WEIGHT", "0.70"))
 LGBM_IMPORTANCE_INSTABILITY_SPLIT_WEIGHT = float(os.environ.get("EPM_LGBM_IMPORTANCE_INSTABILITY_SPLIT_WEIGHT", "0.30"))
@@ -2903,6 +2903,347 @@ def _save_lgbm_meta_features(model: LGBMStabilityModel, output_path: str | os.Pa
     model.metrics["lgbm_meta_feature_schema_path"] = str(schema_path)
 
 
+def _json_sanitize(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, (float, np.floating)):
+        out = float(value)
+        return out if np.isfinite(out) else None
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (pd.Timestamp,)):
+        return value.isoformat()
+    if isinstance(value, np.ndarray):
+        return [_json_sanitize(v) for v in value.tolist()]
+    if isinstance(value, (list, tuple)):
+        return [_json_sanitize(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): _json_sanitize(v) for k, v in value.items()}
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
+    return str(value)
+
+
+def _summary_stats(values: Any) -> dict[str, Any]:
+    arr = np.asarray(values, dtype=np.float64).reshape(-1)
+    n = int(arr.size)
+    finite = np.isfinite(arr)
+    finite_arr = arr[finite]
+    out: dict[str, Any] = {
+        "n": n,
+        "finite_n": int(finite_arr.size),
+        "nonfinite_n": int(n - finite_arr.size),
+        "nonfinite_rate": float((n - finite_arr.size) / max(n, 1)),
+    }
+    if finite_arr.size == 0:
+        out.update(
+            {
+                "mean": None,
+                "std": None,
+                "min": None,
+                "q01": None,
+                "q05": None,
+                "q10": None,
+                "q25": None,
+                "q50": None,
+                "q75": None,
+                "q90": None,
+                "q95": None,
+                "q99": None,
+                "max": None,
+            }
+        )
+        return out
+    qs = np.quantile(
+        finite_arr,
+        [0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99],
+    )
+    out.update(
+        {
+            "mean": float(np.mean(finite_arr)),
+            "std": float(np.std(finite_arr)),
+            "min": float(np.min(finite_arr)),
+            "q01": float(qs[0]),
+            "q05": float(qs[1]),
+            "q10": float(qs[2]),
+            "q25": float(qs[3]),
+            "q50": float(qs[4]),
+            "q75": float(qs[5]),
+            "q90": float(qs[6]),
+            "q95": float(qs[7]),
+            "q99": float(qs[8]),
+            "max": float(np.max(finite_arr)),
+        }
+    )
+    return out
+
+
+def _feature_distribution_summary(
+    X: pd.DataFrame,
+    feature_names: list[str],
+) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    for feature in feature_names:
+        if feature not in X.columns:
+            continue
+        out[str(feature)] = _summary_stats(X[feature].to_numpy(dtype=np.float64, copy=False))
+    return out
+
+
+def _compact_covariance_reference(X: pd.DataFrame, feature_names: list[str]) -> dict[str, Any]:
+    cols = [str(c) for c in feature_names if str(c) in X.columns]
+    if not cols:
+        return {"features": [], "feature_count": 0}
+    frame = X.loc[:, cols].astype(np.float64, copy=False)
+    frame = frame.replace([np.inf, -np.inf], np.nan)
+    finite_rate = np.isfinite(frame.to_numpy(dtype=np.float64, copy=False)).mean(axis=0)
+    frame = frame.fillna(frame.median(numeric_only=True)).fillna(0.0)
+    if len(frame) < 2 or len(cols) < 2:
+        return {
+            "features": cols,
+            "feature_count": int(len(cols)),
+            "finite_rate": {c: float(finite_rate[i]) for i, c in enumerate(cols)},
+        }
+    corr = frame.corr().to_numpy(dtype=np.float64)
+    upper = corr[np.triu_indices_from(corr, k=1)]
+    return {
+        "features": cols,
+        "feature_count": int(len(cols)),
+        "finite_rate": {c: float(finite_rate[i]) for i, c in enumerate(cols)},
+        "abs_corr_upper_summary": _summary_stats(np.abs(upper)),
+        "corr_upper_summary": _summary_stats(upper),
+    }
+
+
+def _reference_sample_frame(
+    *,
+    timestamps: Any,
+    assets: Any,
+    oof_probs: np.ndarray | None,
+    meta_oof_features: pd.DataFrame | None,
+    returns: np.ndarray | None,
+    y_metric: np.ndarray,
+    max_rows: int,
+) -> pd.DataFrame:
+    n = len(y_metric)
+    frame = pd.DataFrame(index=np.arange(n))
+    if timestamps is not None and len(timestamps) == n:
+        frame["timestamp"] = np.asarray(timestamps)
+    if assets is not None and len(assets) == n:
+        frame["asset"] = np.asarray(assets).astype(str)
+    if oof_probs is not None and len(oof_probs) == n:
+        score = np.asarray(oof_probs, dtype=np.float32)
+        frame["score"] = score
+        frame["rank_pct"] = _safe_rank_pct(score).astype(np.float32)
+        frame["raw_logit"] = np.log(
+            np.clip(score.astype(np.float64), 1e-7, 1.0 - 1e-7)
+            / np.clip(1.0 - score.astype(np.float64), 1e-7, 1.0)
+        ).astype(np.float32)
+    frame["target"] = np.asarray(y_metric, dtype=np.float32)
+    if returns is not None and len(returns) == n:
+        frame["return"] = np.asarray(returns, dtype=np.float32)
+    diag_cols = (
+        "prob_uncertainty",
+        "rare_leaf_fraction",
+        "leaf_count_p10",
+        "leaf_count_min",
+        "leaf_weight_p10",
+        "contrib_top1_abs_share",
+        "contrib_top3_abs_share",
+        "contrib_entropy",
+        "regime_centroid_similarity_train",
+        "feature_drift_psi_core",
+        "feature_drift_cov_shift",
+    )
+    if meta_oof_features is not None:
+        for col in diag_cols:
+            if col in meta_oof_features.columns:
+                frame[col] = np.asarray(meta_oof_features[col], dtype=np.float32)
+    if max_rows > 0 and len(frame) > max_rows:
+        idx = np.linspace(0, len(frame) - 1, num=max_rows, dtype=np.int64)
+        frame = frame.iloc[idx].reset_index(drop=True)
+    return frame.reset_index(drop=True)
+
+
+def _save_lgbm_reference_artifacts(
+    model: LGBMStabilityModel,
+    output_dir: str | os.PathLike[str] | None,
+    *,
+    X_reference: pd.DataFrame,
+    split_importance_sum: np.ndarray,
+    gain_importance_sum: np.ndarray,
+    y_metric: np.ndarray,
+    returns: np.ndarray | None,
+    timestamps: Any,
+    assets: Any,
+    objective_mode: str,
+    mode: str,
+) -> None:
+    if not output_dir:
+        return
+    path = Path(output_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    selected_features = list(map(str, model.selected_features))
+    core_50 = _top_cumulative_importance_feature_names(
+        selected_features,
+        gain_importance_sum,
+        split_importance_sum,
+        cumulative_fraction=0.50,
+    )
+    core_80 = _top_cumulative_importance_feature_names(
+        selected_features,
+        gain_importance_sum,
+        split_importance_sum,
+        cumulative_fraction=0.80,
+    )
+    oof = np.asarray(model.oof_probs, dtype=np.float32) if model.oof_probs is not None else None
+    raw_logit = None
+    rank_pct = None
+    if oof is not None and len(oof):
+        clipped = np.clip(oof.astype(np.float64), 1e-7, 1.0 - 1e-7)
+        raw_logit = np.log(clipped / (1.0 - clipped))
+        rank_pct = _safe_rank_pct(oof)
+    meta_oof = model.meta_oof_features
+    uncertainty_score = None
+    if meta_oof is not None and oof is not None and len(meta_oof) == len(oof):
+        prob_uncertainty = 1.0 - (2.0 * np.abs(oof.astype(np.float64) - 0.5))
+        leaf_uncertainty = np.zeros(len(meta_oof), dtype=np.float64)
+        if "rare_leaf_fraction" in meta_oof.columns:
+            leaf_uncertainty += np.asarray(meta_oof["rare_leaf_fraction"], dtype=np.float64)
+        if "leaf_count_p10" in meta_oof.columns:
+            support = np.asarray(meta_oof["leaf_count_p10"], dtype=np.float64)
+            finite = np.isfinite(support)
+            scale = float(np.nanpercentile(support[finite], 75.0)) if np.any(finite) else 1.0
+            if not np.isfinite(scale) or scale <= 1e-6:
+                scale = 1.0
+            leaf_uncertainty += np.clip(1.0 - support / scale, 0.0, 1.0)
+        contrib_uncertainty = np.zeros(len(meta_oof), dtype=np.float64)
+        if "contrib_entropy" in meta_oof.columns:
+            contrib_uncertainty += np.asarray(meta_oof["contrib_entropy"], dtype=np.float64)
+        if "contrib_top1_abs_share" in meta_oof.columns:
+            contrib_uncertainty += 1.0 - np.asarray(meta_oof["contrib_top1_abs_share"], dtype=np.float64)
+        regime_distance = np.zeros(len(meta_oof), dtype=np.float64)
+        if "regime_centroid_similarity_train" in meta_oof.columns:
+            regime_distance = 1.0 - np.asarray(meta_oof["regime_centroid_similarity_train"], dtype=np.float64)
+        uncertainty_score = (
+            0.35 * prob_uncertainty
+            + 0.35 * leaf_uncertainty
+            + 0.20 * contrib_uncertainty
+            + 0.10 * regime_distance
+        )
+    summary = {
+        "schema_version": 1,
+        "objective_mode": str(objective_mode),
+        "mode": str(mode),
+        "selected_features_count": int(len(selected_features)),
+        "selected_features": selected_features,
+        "core_50_features": list(core_50),
+        "core_80_features": list(core_80),
+        "split_importance": {f: float(v) for f, v in zip(selected_features, split_importance_sum)},
+        "gain_importance": {f: float(v) for f, v in zip(selected_features, gain_importance_sum)},
+        "feature_distribution_core_50": _feature_distribution_summary(X_reference, list(core_50)),
+        "feature_distribution_core_80": _feature_distribution_summary(X_reference, list(core_80)),
+        "feature_cov_shift_reference": _compact_covariance_reference(X_reference, list(core_50)),
+        "prediction_reference": {
+            "score": _summary_stats(oof) if oof is not None else {},
+            "raw_logit": _summary_stats(raw_logit) if raw_logit is not None else {},
+            "rank_pct": _summary_stats(rank_pct) if rank_pct is not None else {},
+            "topq_thresholds": {
+                "top10": float(np.nanquantile(oof, 0.90)) if oof is not None and len(oof) else None,
+                "top30": float(np.nanquantile(oof, 0.70)) if oof is not None and len(oof) else None,
+                "top40": float(np.nanquantile(oof, 0.60)) if oof is not None and len(oof) else None,
+            },
+        },
+        "leaf_reference": {
+            col: _summary_stats(meta_oof[col].to_numpy(dtype=np.float64, copy=False))
+            for col in (
+                "rare_leaf_fraction",
+                "leaf_count_p10",
+                "leaf_count_min",
+                "leaf_weight_p10",
+            )
+            if meta_oof is not None and col in meta_oof.columns
+        },
+        "contribution_reference": {
+            col: _summary_stats(meta_oof[col].to_numpy(dtype=np.float64, copy=False))
+            for col in (
+                "contrib_top1_abs_share",
+                "contrib_top3_abs_share",
+                "contrib_entropy",
+                "contrib_balance",
+                "num_material_contrib_features",
+            )
+            if meta_oof is not None and col in meta_oof.columns
+        },
+        "regime_reference": {
+            col: _summary_stats(meta_oof[col].to_numpy(dtype=np.float64, copy=False))
+            for col in ("regime_centroid_similarity_train",)
+            if meta_oof is not None and col in meta_oof.columns
+        },
+        "uncertainty_reference": {
+            "prob_uncertainty": _summary_stats(
+                1.0 - 2.0 * np.abs(oof.astype(np.float64) - 0.5)
+            )
+            if oof is not None
+            else {},
+            "uncertainty_score": _summary_stats(uncertainty_score)
+            if uncertainty_score is not None
+            else {},
+        },
+    }
+    summary_path = path / "lgbm_reference_summary.json"
+    summary_path.write_text(
+        json.dumps(_json_sanitize(summary), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    sample_max = int(os.environ.get("EPM_LGBM_REFERENCE_SAMPLE_MAX_ROWS", "50000"))
+    sample = _reference_sample_frame(
+        timestamps=timestamps,
+        assets=assets,
+        oof_probs=oof,
+        meta_oof_features=meta_oof,
+        returns=returns,
+        y_metric=y_metric,
+        max_rows=sample_max,
+    )
+    sample_path = path / "lgbm_reference_sample.parquet"
+    saved_sample_path = sample_path
+    try:
+        sample.to_parquet(sample_path)
+    except Exception as exc:
+        saved_sample_path = sample_path.with_suffix(".pkl")
+        sample.to_pickle(saved_sample_path)
+        tprint(f"WARNING: failed to write LGBM reference sample as parquet ({exc}); wrote pickle to {saved_sample_path}.")
+    manifest = {
+        "schema_version": 1,
+        "objective_mode": str(objective_mode),
+        "summary_path": str(summary_path),
+        "sample_path": str(saved_sample_path),
+        "selected_features_count": int(len(selected_features)),
+        "core_50_feature_count": int(len(core_50)),
+        "core_80_feature_count": int(len(core_80)),
+        "oof_rows": int(len(oof)) if oof is not None else 0,
+        "reference_rows": int(len(X_reference)),
+    }
+    manifest_path = path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(_json_sanitize(manifest), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    model.metrics["lgbm_reference_artifact_dir"] = str(path)
+    model.metrics["lgbm_reference_summary_path"] = str(summary_path)
+    model.metrics["lgbm_reference_sample_path"] = str(saved_sample_path)
+    tprint(
+        "LGBM reference artifacts saved: "
+        f"{path} (core50={len(core_50)}, core80={len(core_80)}, sample_rows={len(sample)})."
+    )
+
+
 def _false_positive_avoidance_weight(
     y_true: np.ndarray,
     pred: np.ndarray,
@@ -4944,6 +5285,7 @@ def fit_lgbm_stability_full_model(
     hpo_patience_override: int | None = None,
     hpo_objective_mode: str = "train_base",
     meta_feature_output_path: str | os.PathLike[str] | None = None,
+    reference_artifact_dir: str | os.PathLike[str] | None = None,
 ) -> Optional[LGBMStabilityModel]:
     t0 = time.perf_counter()
     objective_mode = _normalize_objective_mode(hpo_objective_mode)
@@ -5171,6 +5513,23 @@ def fit_lgbm_stability_full_model(
     model.metrics["lgbm_meta_feature_count"] = int(len(model.meta_feature_names))
     meta_path = meta_feature_output_path or os.environ.get("EPM_LGBM_META_FEATURE_OUTPUT_PATH")
     _save_lgbm_meta_features(model, meta_path)
+    ref_dir = reference_artifact_dir or os.environ.get("EPM_LGBM_REFERENCE_ARTIFACT_DIR")
+    if ref_dir is None and meta_path:
+        meta_path_obj = Path(meta_path)
+        ref_dir = meta_path_obj.parent / "lgbm_reference" / meta_path_obj.stem
+    _save_lgbm_reference_artifacts(
+        model,
+        ref_dir,
+        X_reference=X_fit,
+        split_importance_sum=split_importance_sum,
+        gain_importance_sum=gain_importance_sum,
+        y_metric=y_metric,
+        returns=ret_arr,
+        timestamps=timestamps,
+        assets=assets,
+        objective_mode=objective_mode,
+        mode=mode,
+    )
     fit_oof_metrics_for_stage: dict[str, Any] | None = None
     if pre_final_oof is not None and len(pre_final_oof) == n:
         pre_metrics = _metric_pack(y_metric, pre_final_oof, classifier=classifier, groups=stability_groups, returns=ret_arr)
@@ -5233,6 +5592,7 @@ def train_lgbm_stability_pipeline(
     hpo_patience_override: int | None = None,
     hpo_objective_mode: str = "train_base",
     meta_feature_output_path: str | os.PathLike[str] | None = None,
+    reference_artifact_dir: str | os.PathLike[str] | None = None,
 ) -> Optional[LGBMStabilityModel]:
     objective_mode = _normalize_objective_mode(hpo_objective_mode)
     candidate = train_lgbm_stability_candidate(
@@ -5269,6 +5629,7 @@ def train_lgbm_stability_pipeline(
         hpo_patience_override=hpo_patience_override,
         hpo_objective_mode=objective_mode,
         meta_feature_output_path=meta_feature_output_path,
+        reference_artifact_dir=reference_artifact_dir,
     )
 
 

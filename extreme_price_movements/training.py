@@ -2565,6 +2565,28 @@ def _synthetic_tp_sl_hit_metrics_for_score(
     return out
 
 
+def _lgbm_reference_artifact_dir(cfg: Any, kind_name: Any, objective_mode: str) -> str | None:
+    if not isinstance(cfg, dict):
+        return None
+    data_root = str(cfg.get("data_root") or "").strip()
+    run_id = str(cfg.get("run_id") or cfg.get("_label_artifact_run_id") or "default").strip()
+    if not data_root or not run_id:
+        return None
+    objective = str(objective_mode or "").lower()
+    layer = "meta" if objective == "train_meta" or str(kind_name).startswith("meta_") else "base"
+    safe_kind = re.sub(r"[^A-Za-z0-9_.=-]+", "_", str(kind_name or "model")).strip("_")
+    if not safe_kind:
+        safe_kind = "model"
+    return os.path.join(
+        data_root,
+        "artifacts",
+        run_id,
+        "lgbm_reference",
+        layer,
+        safe_kind[:180],
+    )
+
+
 def _fit_direct_extratrees_base_model(
     *,
     kind_name,
@@ -3115,6 +3137,12 @@ def _fit_direct_extratrees_base_model(
             )
         else:
             if winning_candidate == "lgbm_pipeline":
+                _lgbm_ref_dir = _lgbm_reference_artifact_dir(
+                    cfg,
+                    kind_name,
+                    result.get("hpo_objective_mode")
+                    or ("train_meta" if _is_meta_hpo else "train_base"),
+                )
                 cand_model = fit_lgbm_stability_full_model(
                     x_full_fit_df,
                     y_fit_full,
@@ -3145,6 +3173,7 @@ def _fit_direct_extratrees_base_model(
                         result.get("hpo_objective_mode")
                         or ("train_meta" if _is_meta_hpo else "train_base")
                     ),
+                    reference_artifact_dir=_lgbm_ref_dir,
                 )
             else:
                 from extreme_price_movements.ebm_on_lgbm import (
@@ -23073,6 +23102,47 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
         )
         os.makedirs(os.path.dirname(_intermediate_path), exist_ok=True)
         import pickle as _pkl_save
+
+        if bool(cfg.get("merge_existing_base_models", False)) and os.path.exists(
+            _intermediate_path
+        ):
+            try:
+                with open(_intermediate_path, "rb") as _f:
+                    _existing_bundle = _pkl_save.load(_f)
+                _existing_alpha = _existing_bundle.get("alpha_models", {}) or {}
+                if isinstance(_existing_alpha, dict):
+                    _merged_alpha = dict(_existing_alpha)
+                    for _side, _models_by_strategy in (final_models or {}).items():
+                        _side_key = str(_side)
+                        _merged_side = dict(_merged_alpha.get(_side_key, {}) or {})
+                        if isinstance(_models_by_strategy, dict):
+                            _merged_side.update(_models_by_strategy)
+                        _merged_alpha[_side_key] = _merged_side
+                    final_models = _merged_alpha
+                if not base_variant_models:
+                    base_variant_models = _existing_bundle.get("base_variant_models", {}) or {}
+                if not spike_models:
+                    spike_models = _existing_bundle.get("spike_models", {}) or {}
+                if not specialist_models:
+                    specialist_models = _existing_bundle.get("specialist_models", {}) or {}
+                _existing_blocked = set(
+                    str(s) for s in (_existing_bundle.get("blocked_strategy_ids", []) or [])
+                )
+                degenerate_strategy_ids = set(str(s) for s in degenerate_strategy_ids) | _existing_blocked
+                _existing_diag = _existing_bundle.get("alpha_fit_diagnostics", {}) or {}
+                if isinstance(_existing_diag, dict):
+                    _merged_diag = dict(_existing_diag)
+                    _merged_diag.update(alpha_fit_diagnostics or {})
+                    alpha_fit_diagnostics = _merged_diag
+                tprint(
+                    "Base models intermediate merge enabled: preserved existing "
+                    f"models from {_intermediate_path}"
+                )
+            except Exception as exc:
+                tprint(
+                    "WARNING: failed to merge existing base_models_intermediate.pkl; "
+                    f"continuing with newly trained models only: {exc}"
+                )
 
         _base_bundle = {
             "alpha_models": final_models,

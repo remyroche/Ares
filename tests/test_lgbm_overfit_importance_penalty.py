@@ -30,6 +30,11 @@ def test_lgbm_hpo_path_smooth_cap_is_10():
     assert 0.0 <= lp.LGBM_HPO_PATH_SMOOTH_MAX <= 10.0
 
 
+def test_lgbm_penalties_default_to_current_winner_setup():
+    assert lp.LGBM_OVERFIT_GAP_PENALTY == pytest.approx(0.0)
+    assert lp.LGBM_IMPORTANCE_INSTABILITY_ENABLE is False
+
+
 def test_tail_control_metric_math_and_week_asset_tails(monkeypatch):
     monkeypatch.setattr(lp, "LGBM_TAIL_WEEK_MIN_ROWS", 8)
     monkeypatch.setattr(lp, "LGBM_TAIL_ASSET_MIN_ROWS", 8)

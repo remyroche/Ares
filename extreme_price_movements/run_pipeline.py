@@ -1720,6 +1720,10 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
                 f"WARNING: invalid EPM_BASE_MAX_STRATEGY_IDS={_base_max_strats_env!r}: {e}"
             )
     _base_strategy_ids_env = os.getenv("EPM_BASE_STRATEGY_IDS", "")
+    _merge_existing_base_env = str(os.getenv("EPM_MERGE_EXISTING_BASE_MODELS", "")).strip().lower()
+    if _merge_existing_base_env in {"1", "true", "yes", "on"}:
+        cfg["merge_existing_base_models"] = True
+        tprint("Base override: merge_existing_base_models=True")
     ts_sig = _resolve_ts_sig(cfg, ts_override)
     if ts_sig is None:
         tprint("ERROR: No feature directories found. Run feature_generation first.")
@@ -2485,7 +2489,7 @@ def run_train_meta(cfg, ts_override=None, store=None):
 
         import joblib
 
-        run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+        run_id = str(cfg.get("output_run_id") or ts_sig.strftime("%Y%m%d_%H%M%S")).strip()
         models_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "models")
         os.makedirs(models_dir, exist_ok=True)
         meta_state_path = os.path.join(models_dir, "model_state_meta.pkl")

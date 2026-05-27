@@ -68,7 +68,14 @@ class PredictionLedger:
         out = new if old.empty else pd.concat([old, new], ignore_index=True, sort=False)
         subset = [
             c
-            for c in ("timestamp", "signal_bar_ts", "symbol", "side", "strategy_id")
+            for c in (
+                "timestamp",
+                "signal_bar_ts",
+                "symbol",
+                "side",
+                "strategy_id",
+                "meta_head_hash",
+            )
             if c in out.columns
         ]
         if subset:
@@ -94,7 +101,14 @@ class PredictionLedger:
             return
         key_cols = [
             c
-            for c in ("timestamp", "signal_bar_ts", "symbol", "side", "strategy_id")
+            for c in (
+                "timestamp",
+                "signal_bar_ts",
+                "symbol",
+                "side",
+                "strategy_id",
+                "meta_head_hash",
+            )
             if c in old.columns and c in updates.columns
         ]
         if not key_cols:

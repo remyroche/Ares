@@ -1,0 +1,8 @@
+{
+  "data_root": "/Users/remyroche/Documents/Ares/data_perp",
+  "exchange_data_component": "krakenfutures",
+  "exchange_id": "kraken",
+  "exchange_scoped_data": true,
+  "market_mode": "perps",
+  "scoped_market_data_root": "/Users/remyroche/Documents/Ares/data_perp/exchanges/krakenfutures"
+}

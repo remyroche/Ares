@@ -1,0 +1,30 @@
+{
+  "accepted_symbols": [
+    "AAA/USDC",
+    "BBB/USDC",
+    "CCC/USDC"
+  ],
+  "contract_hash": null,
+  "end_ts": "2026-05-15T02:00:00+00:00",
+  "global_errors": [],
+  "mode": "strict",
+  "ok": true,
+  "per_symbol_errors": {},
+  "rejected_symbols": [],
+  "required_source_groups": {},
+  "run_id": "",
+  "scope": "symbol",
+  "source_rejection_summary": {
+    "accepted_symbol_count": 3,
+    "by_feature": [],
+    "by_group": [],
+    "by_source_key": [],
+    "missing_source_keys": [],
+    "rejected_symbol_count": 0,
+    "sample_symbols_by_feature": {},
+    "sample_symbols_by_group": {},
+    "sample_symbols_by_source_key": {},
+    "stale_source_keys": []
+  },
+  "state_contract_hash": null
+}

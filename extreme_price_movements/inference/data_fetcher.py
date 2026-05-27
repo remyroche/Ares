@@ -1047,7 +1047,7 @@ class DataFetcher:
                                     start_ts=target_hour,
                                     end_ts=target_hour,
                                 )
-                                self._invalidate_symbol_cache(sym, microdata=True)
+                                self._microdata_symbol_cache.pop(sym, None)
                             except Exception as exc:
                                 self._log_microdata_error(
                                     sym, exc, context="microdata_refresh"

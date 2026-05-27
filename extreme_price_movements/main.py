@@ -648,7 +648,7 @@ def train_daily_base(ts_sig, margin_symbols, cfg, store, ex):
 def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
     """Train only meta models, loading base models from intermediate state."""
     tprint("DAILY META TRAINING START")
-    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    run_id = str(cfg.get("output_run_id") or ts_sig.strftime("%Y%m%d_%H%M%S")).strip()
     from extreme_price_movements.pipeline_steps import (
         ensure_training_residualization_feature_keys,
     )
@@ -918,7 +918,23 @@ def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
             "proceeding without symbol filtering"
         )
 
-    cfg["_feature_snapshot_ts"] = ts_sig
+    feature_snapshot_ts = ts_sig
+    feature_source_run_id = str(cfg.get("feature_source_run_id") or "").strip()
+    if feature_source_run_id:
+        try:
+            feature_snapshot_ts = pd.to_datetime(
+                feature_source_run_id[:15], format="%Y%m%d_%H%M%S"
+            ).tz_localize("UTC")
+            tprint(
+                "Meta training: raw feature snapshot redirected to "
+                f"feature_source_run_id={feature_source_run_id}"
+            )
+        except Exception as exc:
+            tprint(
+                "WARNING: failed to parse feature_source_run_id for meta raw "
+                f"feature loading ({feature_source_run_id!r}): {exc}; using {ts_sig}."
+            )
+    cfg["_feature_snapshot_ts"] = feature_snapshot_ts
     tprint(
         "Meta training: deferring raw meta feature loading to per-bucket two-stage loading "
         "(MDI/HPO subset first, selected-feature full rows second)."

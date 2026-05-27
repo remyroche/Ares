@@ -599,6 +599,74 @@ def _confidence_calibration_recap(trades: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 
+def _dynamic_strategy_performance_recap(config: Dict[str, Any]) -> str:
+    root = Path(
+        str(
+            config.get("live_data_root")
+            or config.get("data_root")
+            or "data"
+        )
+    )
+    path = root / "live_state" / "dynamic_strategy_performance.json"
+    if not path.exists():
+        return "  unavailable: dynamic performance report has not been written yet"
+    try:
+        payload = json.loads(path.read_text())
+    except Exception as exc:
+        return f"  unavailable: could not read {path}: {exc}"
+    strategies = payload.get("strategies", {})
+    if not isinstance(strategies, dict) or not strategies:
+        reason = payload.get("reason", "no_strategy_rows")
+        return f"  unavailable: {reason}"
+    rows = list(strategies.values())
+    rows.sort(
+        key=lambda row: (
+            _coerce_float(row.get("inference_drift_score_21d"), default=-1.0),
+            _coerce_float(row.get("inference_drift_score"), default=-1.0),
+        ),
+        reverse=True,
+    )
+    lines = [
+        f"  updated_at: {payload.get('updated_at', '')}",
+        "  top30 strategy x meta-head diagnostics:",
+    ]
+    for row in rows[:30]:
+        sid = row.get("strategy_id", "")
+        mh = str(row.get("meta_head_hash", ""))[:8]
+        mult = _coerce_float(row.get("threshold_multiplier"), default=1.0)
+        recent_hit = _coerce_float(row.get("recent_weighted_hit_rate_21d"))
+        expected_hit = _coerce_float(row.get("expected_hit_rate_oos_top40"))
+        drift7 = _coerce_float(row.get("inference_drift_score_7d"))
+        drift21 = _coerce_float(row.get("inference_drift_score_21d"))
+        uncertainty7 = _coerce_float(row.get("uncertainty_score_ratio_7d"))
+        uncertainty21 = _coerce_float(row.get("uncertainty_score_ratio_21d"))
+        perf7 = _coerce_float(row.get("dynamic_performance_hit_ratio_7d"))
+        perf21 = _coerce_float(row.get("dynamic_performance_hit_ratio_21d"))
+        reason = row.get("reason", "")
+        lines.append(
+            "  "
+            f"{sid}#{mh}: mult={mult:.3f} "
+            f"hit21={recent_hit:.3f} expected={expected_hit:.3f} "
+            f"drift7={drift7:.3f} drift21={drift21:.3f} "
+            f"uncert_ratio7={uncertainty7:.3f} "
+            f"uncert_ratio21={uncertainty21:.3f} "
+            f"perf_ratio7={perf7:.3f} perf_ratio21={perf21:.3f} "
+            f"reason={reason}"
+        )
+    if payload.get("history_backfill_required"):
+        lines.append(
+            "  history_backfill_required: true "
+            "(multiplier remains neutral until enough resolved recent outcomes exist)"
+        )
+    parity = payload.get("parity_loading_checker", {})
+    if parity:
+        lines.append(
+            "  parity_loading_checker: "
+            f"status={parity.get('status')} sample_rate={parity.get('sample_rate')}"
+        )
+    return "\n".join(lines)
+
+
 def _model_drift_summary(trades: pd.DataFrame) -> str:
     if trades.empty:
         return "Model drift summary: no trades in reporting window."
@@ -809,7 +877,9 @@ class DailyDeploymentReporter:
         amount_to_save: float,
         transfer_result: Dict[str, Any],
         trades: pd.DataFrame,
+        config: Optional[Dict[str, Any]] = None,
     ) -> str:
+        cfg = dict(config or {})
         return "\n".join(
             [
                 "Extreme price movement deployment daily report",
@@ -826,6 +896,9 @@ class DailyDeploymentReporter:
                 "",
                 "Model Drift And Execution",
                 _model_drift_summary(trades),
+                "",
+                "Dynamic Strategy Performance",
+                _dynamic_strategy_performance_recap(cfg),
                 "",
                 "Confidence Calibration Recap",
                 _confidence_calibration_recap(trades),
@@ -968,6 +1041,7 @@ class DailyDeploymentReporter:
             amount_to_save=amount_to_save,
             transfer_result=transfer_result,
             trades=trades,
+            config=cfg,
         )
         email_result = self._send_email(
             subject=str(subject), body=body, recipient=recipient, config=cfg

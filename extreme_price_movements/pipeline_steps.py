@@ -4636,7 +4636,7 @@ def run_base_hpo_step(ts_sig, cfg):
         )
         strategy_datasets = inject_features_into_datasets(
             strategy_datasets,
-            ts_sig,
+            feature_ts_sig,
             cfg,
             sorted(base_req_keys),
         )

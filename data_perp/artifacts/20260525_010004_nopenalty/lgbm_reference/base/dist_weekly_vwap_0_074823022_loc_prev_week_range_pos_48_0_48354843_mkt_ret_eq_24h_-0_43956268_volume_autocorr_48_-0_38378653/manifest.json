@@ -1,0 +1,11 @@
+{
+  "core_50_feature_count": 7,
+  "core_80_feature_count": 31,
+  "objective_mode": "train_base",
+  "oof_rows": 437991,
+  "reference_rows": 437991,
+  "sample_path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260525_010004_nopenalty/lgbm_reference/base/dist_weekly_vwap_0_074823022_loc_prev_week_range_pos_48_0_48354843_mkt_ret_eq_24h_-0_43956268_volume_autocorr_48_-0_38378653/lgbm_reference_sample.parquet",
+  "schema_version": 1,
+  "selected_features_count": 76,
+  "summary_path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260525_010004_nopenalty/lgbm_reference/base/dist_weekly_vwap_0_074823022_loc_prev_week_range_pos_48_0_48354843_mkt_ret_eq_24h_-0_43956268_volume_autocorr_48_-0_38378653/lgbm_reference_summary.json"
+}

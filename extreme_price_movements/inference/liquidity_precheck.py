@@ -105,9 +105,7 @@ def fetch_ticker_snapshot(
 
     spread_weight = 1.0
     if reject is None and spread_bps is not None:
-        if spread_bps >= policy.hard_max_spread_bps:
-            reject = "spread_above_hard_max"
-        elif spread_bps > policy.max_spread_bps:
+        if spread_bps > policy.max_spread_bps:
             spread_weight = 1.0 - (
                 (spread_bps - policy.max_spread_bps)
                 / max(policy.hard_max_spread_bps - policy.max_spread_bps, 1e-12)
@@ -208,14 +206,7 @@ def evaluate_orderbook_liquidity(
     ask = _safe_float(ticker_snapshot.ask)
     spread = float(ticker_snapshot.spread_bps or 0.0)
     half_spread_bps = max(0.0, spread / 2.0)
-    friction_slippage_cap_bps = max(
-        0.0,
-        float(policy.max_entry_friction_bps) - half_spread_bps,
-    )
-    effective_slippage_cap_bps = min(
-        float(policy.max_orderbook_slippage_bps),
-        friction_slippage_cap_bps,
-    )
+    effective_slippage_cap_bps = max(0.0, float(policy.max_orderbook_slippage_bps))
     if side == "long":
         best_touch = ask
         max_walk_price = ask * (1.0 + effective_slippage_cap_bps / 10000.0)
@@ -257,8 +248,6 @@ def evaluate_orderbook_liquidity(
         reject = "no_orderbook_capacity_within_slippage"
     elif np.isfinite(fill_slip) and fill_slip > policy.max_orderbook_slippage_bps:
         reject = "orderbook_slippage_above_cap"
-    elif np.isfinite(total_friction) and total_friction > policy.max_entry_friction_bps:
-        reject = "entry_friction_above_cap"
     elif liq_weight < policy.min_liquidity_capacity_weight:
         reject = "liquidity_capacity_weight_below_min"
 
@@ -287,6 +276,7 @@ def evaluate_orderbook_liquidity(
             "half_spread_bps": float(half_spread_bps),
             "max_entry_friction_bps": float(policy.max_entry_friction_bps),
             "effective_orderbook_slippage_cap_bps": float(effective_slippage_cap_bps),
+            "entry_friction_gate": "ev_haircut",
         },
     )
 

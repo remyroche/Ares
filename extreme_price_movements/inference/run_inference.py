@@ -54,6 +54,7 @@ import re
 import sys
 import threading
 import time
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
@@ -84,6 +85,10 @@ from extreme_price_movements.data_store import (
     _resolve_perp_symbol,
 )
 from extreme_price_movements.inference.daily_reporter import DailyDeploymentReporter
+from extreme_price_movements.inference.dynamic_strategy_performance import (
+    StrategyPerformanceMonitor,
+    meta_head_hash,
+)
 from extreme_price_movements.inference.data_fetcher import (
     DataFetcher,
     classify_api_error,
@@ -195,11 +200,120 @@ def _get_features_for_candidates_at_ts(
 
 
 _FEATURE_COMPUTE_LOCK = threading.RLock()
+BASE_TO_META_TOP_FRAC = 0.40
 LIVE_TEST_RANK_THRESHOLD = 0.90
+LIVE_TEST_THRESHOLD_RELAXATION = 0.06
+AUCTION_EV_MIN_NET_RETURN = float(os.getenv("EPM_AUCTION_EV_MIN_NET_RETURN", "0.002"))
+AUCTION_EV_MAX_NET_RETURN = float(os.getenv("EPM_AUCTION_EV_MAX_NET_RETURN", "0.006"))
+AUCTION_EV_MIN_HIT_RATE = float(os.getenv("EPM_AUCTION_EV_MIN_HIT_RATE", "0.60"))
 LOSING_TRADE_COOLDOWN_HOURS = 12.0
 _HISTORICAL_SCORE_RANK_CACHE: Dict[tuple[str, str, str, str], np.ndarray] = {}
 _META_HIT_RATE_CALIBRATION_CACHE: Dict[tuple[str, str], Dict[str, Any]] = {}
 _STRATEGY_EV_CALIBRATION_CACHE: Dict[tuple[str, str], Dict[str, Any]] = {}
+
+
+def _finite_positive_float(value: Any) -> float:
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return float("nan")
+    return out if np.isfinite(out) and out > 0.0 else float("nan")
+
+
+def _fetch_live_closeable_price(
+    symbol: str,
+    side: str,
+    executor: TradeExecutor,
+) -> Dict[str, Any]:
+    """Return the live top-of-book price at which the position can be closed.
+
+    This intentionally differs from the Kraken stop trigger reference. Protective
+    stops are submitted with triggerSignal=last, but live MFE/trailing should use
+    the currently closeable futures touch: bid for long exits, ask for short exits.
+    """
+    exchange = getattr(executor, "exchange", None)
+    side_l = str(side or "").lower()
+    if exchange is None or side_l not in {"long", "short"}:
+        return {"price": np.nan, "source": "unavailable"}
+
+    ticker: Dict[str, Any] = {}
+    try:
+        ticker_raw = exchange.fetch_ticker(symbol)
+        if isinstance(ticker_raw, dict):
+            ticker = ticker_raw
+    except Exception as exc:
+        ticker = {"_ticker_error": f"{classify_api_error(exc)}: {exc}"}
+
+    touch_key = "bid" if side_l == "long" else "ask"
+    price = _finite_positive_float(ticker.get(touch_key))
+    if np.isfinite(price):
+        return {
+            "price": float(price),
+            "source": f"ticker_{touch_key}",
+            "bid": _finite_positive_float(ticker.get("bid")),
+            "ask": _finite_positive_float(ticker.get("ask")),
+            "last": _finite_positive_float(ticker.get("last")),
+            "timestamp": ticker.get("timestamp"),
+        }
+
+    try:
+        orderbook = exchange.fetch_order_book(symbol)
+        levels_key = "bids" if side_l == "long" else "asks"
+        levels = orderbook.get(levels_key) if isinstance(orderbook, dict) else None
+        if isinstance(levels, list) and levels:
+            price = _finite_positive_float(levels[0][0])
+            if np.isfinite(price):
+                return {
+                    "price": float(price),
+                    "source": f"orderbook_best_{touch_key}",
+                    "bid": (
+                        float(price)
+                        if touch_key == "bid"
+                        else _finite_positive_float(ticker.get("bid"))
+                    ),
+                    "ask": (
+                        float(price)
+                        if touch_key == "ask"
+                        else _finite_positive_float(ticker.get("ask"))
+                    ),
+                    "last": _finite_positive_float(ticker.get("last")),
+                    "timestamp": orderbook.get("timestamp"),
+                    "ticker_error": ticker.get("_ticker_error"),
+                }
+    except Exception as exc:
+        return {
+            "price": np.nan,
+            "source": "unavailable",
+            "ticker_error": ticker.get("_ticker_error"),
+            "orderbook_error": f"{classify_api_error(exc)}: {exc}",
+        }
+
+    return {
+        "price": np.nan,
+        "source": "unavailable",
+        "bid": _finite_positive_float(ticker.get("bid")),
+        "ask": _finite_positive_float(ticker.get("ask")),
+        "last": _finite_positive_float(ticker.get("last")),
+        "timestamp": ticker.get("timestamp"),
+        "ticker_error": ticker.get("_ticker_error"),
+    }
+
+
+def _position_policy_entry_price(position_state: Mapping[str, Any]) -> tuple[float, str]:
+    """Return the theoretical entry reference used for policy MFE/MAE parity."""
+    for key in (
+        "policy_entry_price",
+        "theoretical_entry_price",
+        "ohlcv_entry_price",
+        "signal_price",
+        "expected_entry_price",
+        "decision_mid",
+        "entry_price",
+    ):
+        value = _finite_positive_float(position_state.get(key))
+        if np.isfinite(value):
+            return float(value), key
+    return float("nan"), "unavailable"
 
 
 class _StageTimer:
@@ -222,6 +336,42 @@ class _StageTimer:
 def _is_live_test_mode(mode_or_executor: Any) -> bool:
     mode = getattr(mode_or_executor, "mode", mode_or_executor)
     return str(mode or "").strip().lower() in {"live-test", "live_test", "livetest"}
+
+
+def _apply_live_test_threshold_relaxation(
+    policy: PortfolioPolicyConfig,
+    *,
+    live_test_mode: bool,
+) -> PortfolioPolicyConfig:
+    """Relax rank gates in live-test only to speed end-to-end order-path tests."""
+    if not live_test_mode:
+        return policy
+    delta = float(LIVE_TEST_THRESHOLD_RELAXATION)
+    relaxed_initial = float(np.clip(policy.initial_rank_threshold - delta, 0.0, 1.0))
+    relaxed_floor = float(
+        np.clip(policy.initial_rank_threshold_floor - delta, 0.0, 1.0)
+    )
+    relaxed_viability_margin = float(
+        max(float(policy.threshold_viability_margin) - delta, 0.0)
+    )
+    if (
+        relaxed_initial == float(policy.initial_rank_threshold)
+        and relaxed_floor == float(policy.initial_rank_threshold_floor)
+        and relaxed_viability_margin == float(policy.threshold_viability_margin)
+    ):
+        return policy
+    tprint(
+        "LIVE-TEST threshold relaxation active: "
+        f"initial_rank_threshold {policy.initial_rank_threshold:.4f}->{relaxed_initial:.4f}, "
+        f"floor {policy.initial_rank_threshold_floor:.4f}->{relaxed_floor:.4f}, "
+        f"viability_margin {policy.threshold_viability_margin:.4f}->{relaxed_viability_margin:.4f}"
+    )
+    return replace(
+        policy,
+        initial_rank_threshold=relaxed_initial,
+        initial_rank_threshold_floor=relaxed_floor,
+        threshold_viability_margin=relaxed_viability_margin,
+    )
 
 
 def _order_identifier(order_payload: Any) -> str:
@@ -752,7 +902,8 @@ def _should_log_prediction_candidate(
         rank = _safe_float(decision.get("threshold_score"))
     if not np.isfinite(rank):
         return False
-    return rank >= float(1.0 - policy.top_prediction_ledger_pct)
+    ledger_pct = max(float(policy.top_prediction_ledger_pct), 0.40)
+    return rank >= float(1.0 - ledger_pct)
 
 
 def _max_feature_timestamp(feats: Dict[str, pd.DataFrame]) -> Optional[pd.Timestamp]:
@@ -1160,6 +1311,93 @@ def _estimated_ev_from_strategy_prediction(
     }
 
 
+def _ev_adjusted_prediction_after_entry_friction(
+    *,
+    calibrated_score: Any,
+    strategy_id: str,
+    side: str,
+    calibration: Mapping[str, Any],
+    live_entry_friction_bps: Any,
+    policy_rank_reference_store: Optional[PolicyRankReferenceStore],
+) -> Dict[str, Any]:
+    """Subtract live spread/slippage from EV and map the result back to score/rank."""
+    try:
+        score = float(calibrated_score)
+    except (TypeError, ValueError):
+        score = float("nan")
+    try:
+        friction_bps = float(live_entry_friction_bps)
+    except (TypeError, ValueError):
+        friction_bps = float("nan")
+    if not np.isfinite(score):
+        return {"ev_adjusted_source": "calibrated_score_non_finite"}
+    if not np.isfinite(friction_bps) or friction_bps < 0.0:
+        friction_bps = 0.0
+    sid = str(strategy_id or "")
+    curve = None
+    for key in (sid, strategy_core_id(sid)):
+        if key and key in calibration:
+            curve = calibration[key]
+            break
+    if not curve:
+        return {
+            "ev_adjusted_entry_friction_bps": float(friction_bps),
+            "ev_adjusted_source": "missing_strategy_ev_curve",
+        }
+    net_points: list[tuple[float, float, int]] = []
+    for row in curve:
+        if not isinstance(row, Mapping):
+            continue
+        try:
+            x = float(row.get("mean_score"))
+            y = float(row.get("mean_net_return"))
+            n = int(row.get("count") or 0)
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(x) and np.isfinite(y):
+            net_points.append((x, y, n))
+    if not net_points:
+        return {
+            "ev_adjusted_entry_friction_bps": float(friction_bps),
+            "ev_adjusted_source": "empty_strategy_ev_curve",
+        }
+    xs, ys = _weighted_isotonic_points(net_points)
+    if len(xs) == 0 or len(ys) == 0:
+        return {
+            "ev_adjusted_entry_friction_bps": float(friction_bps),
+            "ev_adjusted_source": "empty_strategy_ev_curve",
+        }
+    current_net_ev = float(np.interp(score, xs, ys))
+    adjusted_net_ev = current_net_ev - float(friction_bps) / 10000.0
+    if np.nanmax(ys) <= np.nanmin(ys):
+        adjusted_score = float(score)
+    else:
+        adjusted_score = float(np.interp(adjusted_net_ev, ys, xs))
+    adjusted_score = float(np.clip(adjusted_score, float(np.nanmin(xs)), float(np.nanmax(xs))))
+    adjusted_rank = float("nan")
+    rank_n = 0
+    rank_source = ""
+    if policy_rank_reference_store is not None:
+        lookup = policy_rank_reference_store.lookup(
+            strategy_id=sid,
+            calibrated_score=adjusted_score,
+            side=side,
+        )
+        adjusted_rank = float(lookup.policy_rank_pct)
+        rank_n = int(lookup.n_rows)
+        rank_source = str(lookup.source)
+    return {
+        "ev_adjusted_entry_friction_bps": float(friction_bps),
+        "ev_adjusted_net_return_before_friction": current_net_ev,
+        "ev_adjusted_net_return_after_friction": adjusted_net_ev,
+        "ev_adjusted_calibrated_score": adjusted_score,
+        "ev_adjusted_rank_score": adjusted_rank if np.isfinite(adjusted_rank) else None,
+        "ev_adjusted_rank_reference_n": rank_n,
+        "ev_adjusted_rank_reference_source": rank_source,
+        "ev_adjusted_source": "strategy_ev_curve_inverse_after_live_entry_friction",
+    }
+
+
 def _prediction_ledger_row(
     decision: Dict[str, Any],
     *,
@@ -1211,6 +1449,8 @@ def _prediction_ledger_row(
         "symbol": decision.get("symbol"),
         "side": side,
         "strategy_id": decision.get("strategy_id"),
+        "meta_model_key": chain.get("meta_model_key", decision.get("meta_model_key")),
+        "meta_head_hash": chain.get("meta_head_hash", decision.get("meta_head_hash")),
         "raw_prediction_score": decision.get("raw_score"),
         "base_pred": chain.get("base_pred"),
         "meta_pred": chain.get("meta_pred", decision.get("raw_score")),
@@ -1283,6 +1523,32 @@ def _prediction_ledger_row(
         "adjusted_rank_score": snap.get("adjusted_rank_score", normalized_rank),
         "initial_rank_threshold": decision.get("rank_threshold"),
         "final_threshold": final_threshold,
+        "dynamic_performance_multiplier": chain.get(
+            "dynamic_performance_multiplier",
+            decision.get("dynamic_performance_multiplier"),
+        ),
+        "dynamic_performance_reason": chain.get(
+            "dynamic_performance_reason",
+            decision.get("dynamic_performance_reason"),
+        ),
+        "dynamic_performance_expected_hit_rate": chain.get(
+            "dynamic_performance_expected_hit_rate",
+            decision.get("dynamic_performance_expected_hit_rate"),
+        ),
+        "dynamic_performance_recent_hit_rate": chain.get(
+            "dynamic_performance_recent_hit_rate",
+            decision.get("dynamic_performance_recent_hit_rate"),
+        ),
+        "dynamic_performance_recent_n": chain.get(
+            "dynamic_performance_recent_n",
+            decision.get("dynamic_performance_recent_n"),
+        ),
+        "inference_drift_score": chain.get(
+            "inference_drift_score", decision.get("inference_drift_score")
+        ),
+        "uncertainty_score": chain.get(
+            "uncertainty_score", decision.get("uncertainty_score")
+        ),
         "passed_rank_gate": bool(
             np.isfinite(normalized_rank)
             and np.isfinite(final_threshold)
@@ -2041,6 +2307,22 @@ def _candidate_portfolio_priority(decision: Mapping[str, Any]) -> float:
     )
     friction_penalty = max(float(expected_friction_bps), 0.0) / 10000.0
     return float(surplus - float(penalty) - friction_penalty)
+
+
+def _auction_ev_target_for_occupancy(
+    *,
+    open_positions: int,
+    policy: PortfolioPolicyConfig,
+) -> float:
+    """Progressively require more realised EV as portfolio capacity fills."""
+    max_positions = max(int(getattr(policy, "max_concurrent_positions", 1) or 1), 1)
+    occupancy = float(np.clip(int(open_positions) / max_positions, 0.0, 1.0))
+    progress = occupancy
+    lo = float(AUCTION_EV_MIN_NET_RETURN)
+    hi = float(AUCTION_EV_MAX_NET_RETURN)
+    if hi < lo:
+        lo, hi = hi, lo
+    return float(lo + (hi - lo) * progress)
 
 
 def _candidate_expected_friction(decision: Mapping[str, Any]) -> float:
@@ -3414,7 +3696,7 @@ def _select_top_base_prediction_symbols(
     side: str,
     strategy_id: str,
     *,
-    top_frac: float = 0.25,
+    top_frac: float = BASE_TO_META_TOP_FRAC,
 ) -> Dict[str, Dict[str, float]]:
     """Rank base-model predictions and keep only the top fraction for meta."""
     if not hasattr(orchestrator, "predict_alpha"):
@@ -3779,6 +4061,7 @@ def run_inference_step(
     max_entries_total: int = 4,
     portfolio_policy: Optional[PortfolioPolicyConfig] = None,
     prediction_ledger: Optional[PredictionLedger] = None,
+    dynamic_performance_monitor: Optional[StrategyPerformanceMonitor] = None,
     strategy_kill_switch: Optional[StrategyKillSwitch] = None,
     policy_rank_reference_store: Optional[PolicyRankReferenceStore] = None,
     stale_entry_context: bool = False,
@@ -3856,6 +4139,10 @@ def run_inference_step(
     except (TypeError, ValueError):
         inference_min_base_train_rank_pct = None
     live_test_mode = _is_live_test_mode(executor)
+    try:
+        starting_active_position_count = len(executor.get_active_positions())
+    except Exception:
+        starting_active_position_count = 0
     live_feature_layer_debug = feature_layer_debug_enabled(
         runtime_config,
         live_test_mode=live_test_mode,
@@ -3872,6 +4159,11 @@ def run_inference_step(
         sorted(accepted_strategies) if accepted_strategies is not None else None,
         strict=True,
     )
+    if dynamic_performance_monitor is not None:
+        try:
+            dynamic_performance_monitor.refresh(now=now_utc)
+        except Exception as exc:
+            tprint(f"Dynamic strategy performance refresh failed: {exc}")
     if isinstance(parity_contract, dict) and parity_contract:
         validate_training_live_parity_contract(
             parity_contract,
@@ -4330,6 +4622,89 @@ def run_inference_step(
                             1.0,
                         )
                     )
+                    auction_ev_open_positions = (
+                        int(starting_active_position_count) + int(total_entries_executed)
+                    )
+                    auction_ev_target = _auction_ev_target_for_occupancy(
+                        open_positions=auction_ev_open_positions,
+                        policy=portfolio_policy,
+                    )
+                    auction_ev_gate = policy_rank_reference_store.auction_threshold_for_ev(
+                        target_mean_net_return=auction_ev_target,
+                        min_hit_rate=AUCTION_EV_MIN_HIT_RATE,
+                        fallback_threshold=1.0,
+                    )
+                    strategy_ev_threshold = (
+                        policy_rank_reference_store.strategy_threshold_for_ev(
+                            strategy_id=strategy_id,
+                            side=side,
+                            target_mean_net_return=auction_ev_target,
+                            min_hit_rate=AUCTION_EV_MIN_HIT_RATE,
+                            fallback_threshold=1.0,
+                        )
+                    )
+                    strategy_ev_gate = policy_rank_reference_store.strategy_ev_gate(
+                        strategy_id=strategy_id,
+                        side=side,
+                        target_mean_net_return=auction_ev_target,
+                        min_hit_rate=AUCTION_EV_MIN_HIT_RATE,
+                    )
+                    if not strategy_ev_threshold.enabled:
+                        tprint(
+                            f"Strategy EV threshold block: {symbol} {side}/{strategy_id} "
+                            f"reason={strategy_ev_threshold.reason} "
+                            f"best_avg_net={strategy_ev_threshold.mean_net_return:.6f} "
+                            f"target={strategy_ev_threshold.target_mean_net_return:.6f} "
+                            f"best_hit={strategy_ev_threshold.hit_rate:.6f} "
+                            f"min_hit={strategy_ev_threshold.target_hit_rate:.6f}"
+                        )
+                        continue
+                    meta_contracts = _model_feature_contracts_for_audit(
+                        orchestrator,
+                        side=side,
+                        strategy_id=strategy_id,
+                    )
+                    meta_model_key = str(meta_contracts.get("meta_model_key") or "")
+                    _, meta_model_for_hash = _resolve_meta_model_for_audit(
+                        orchestrator,
+                        side=side,
+                        strategy_id=strategy_id,
+                    )
+                    meta_hash = meta_head_hash(
+                        meta_model_key=meta_model_key,
+                        meta_model=meta_model_for_hash,
+                        feature_contract=list(meta_contracts.get("meta_features") or []),
+                    )
+                    dynamic_state = (
+                        dynamic_performance_monitor.threshold_multiplier(
+                            strategy_id, meta_hash
+                        )
+                        if dynamic_performance_monitor is not None
+                        else None
+                    )
+                    dynamic_multiplier = float(
+                        getattr(dynamic_state, "multiplier", 1.0) or 1.0
+                    )
+                    dynamic_multiplier = float(
+                        np.clip(dynamic_multiplier, 0.8, 1.2)
+                    )
+                    raw_strategy_threshold = float(
+                        np.clip(strategy_ev_threshold.threshold, 0.0, 1.0)
+                    )
+                    policy_threshold_floor = float(
+                        np.clip(raw_strategy_threshold * dynamic_multiplier, 0.0, 1.0)
+                    )
+                    if dynamic_performance_monitor is not None:
+                        tprint(
+                            f"Dynamic performance threshold: {symbol} {side}/{strategy_id} "
+                            f"meta_hash={meta_hash} raw={raw_strategy_threshold:.6f} "
+                            f"mult={dynamic_multiplier:.3f} "
+                            f"adjusted={policy_threshold_floor:.6f} "
+                            f"recent_hit={_safe_float(getattr(dynamic_state, 'recent_hit_rate', np.nan)):.4f} "
+                            f"expected_hit={_safe_float(getattr(dynamic_state, 'expected_hit_rate', np.nan)):.4f} "
+                            f"n={int(getattr(dynamic_state, 'recent_n', 0) or 0)} "
+                            f"reason={getattr(dynamic_state, 'reason', '')}"
+                        )
                     if threshold_space == "calibrated_score":
                         effective_threshold = min(
                             1.0,
@@ -4345,13 +4720,7 @@ def run_inference_step(
                             )
                             continue
                     else:
-                        effective_threshold = min(
-                            1.0,
-                            max(
-                                policy_threshold_floor,
-                                normalized_threshold + viability_margin,
-                            ),
-                        )
+                        effective_threshold = policy_threshold_floor
                         threshold_score = np.nan
                     rank_score = (
                         float(meta_hist_rank_pct)
@@ -4381,12 +4750,96 @@ def run_inference_step(
                         )
                         continue
                     chain_results["strategy_id"] = strategy_id
+                    chain_results["meta_model_key"] = meta_model_key
+                    chain_results["meta_head_hash"] = meta_hash
                     chain_results["calibrated_score"] = calibrated_score
                     chain_results["rank_threshold"] = rank_threshold
                     chain_results["normalized_threshold"] = normalized_threshold
                     chain_results["deployment_rank_threshold"] = normalized_threshold
                     chain_results["initial_rank_threshold_floor"] = (
                         policy_threshold_floor
+                    )
+                    chain_results["auction_ev_threshold"] = float(
+                        auction_ev_gate.threshold
+                    )
+                    chain_results["auction_ev_threshold_enabled"] = bool(
+                        auction_ev_gate.enabled
+                    )
+                    chain_results["auction_ev_threshold_reason"] = (
+                        auction_ev_gate.reason
+                    )
+                    chain_results["auction_ev_target_mean_net_return"] = float(
+                        auction_ev_gate.target_mean_net_return
+                    )
+                    chain_results["auction_ev_target_hit_rate"] = float(
+                        auction_ev_gate.target_hit_rate
+                    )
+                    chain_results["auction_ev_threshold_mean_net_return"] = float(
+                        auction_ev_gate.mean_net_return
+                    )
+                    chain_results["auction_ev_threshold_hit_rate"] = float(
+                        auction_ev_gate.hit_rate
+                    )
+                    chain_results["auction_ev_threshold_n_trades"] = int(
+                        auction_ev_gate.n_trades
+                    )
+                    chain_results["strategy_ev_threshold"] = float(
+                        strategy_ev_threshold.threshold
+                    )
+                    chain_results["strategy_ev_threshold_before_dynamic"] = float(
+                        raw_strategy_threshold
+                    )
+                    chain_results["dynamic_performance_multiplier"] = float(
+                        dynamic_multiplier
+                    )
+                    chain_results["dynamic_performance_reason"] = (
+                        getattr(dynamic_state, "reason", "disabled")
+                        if dynamic_state is not None
+                        else "disabled"
+                    )
+                    chain_results["dynamic_performance_expected_hit_rate"] = float(
+                        getattr(dynamic_state, "expected_hit_rate", np.nan)
+                        if dynamic_state is not None
+                        else np.nan
+                    )
+                    chain_results["dynamic_performance_recent_hit_rate"] = float(
+                        getattr(dynamic_state, "recent_hit_rate", np.nan)
+                        if dynamic_state is not None
+                        else np.nan
+                    )
+                    chain_results["dynamic_performance_recent_n"] = int(
+                        getattr(dynamic_state, "recent_n", 0) or 0
+                    )
+                    chain_results["strategy_ev_threshold_enabled"] = bool(
+                        strategy_ev_threshold.enabled
+                    )
+                    chain_results["strategy_ev_threshold_reason"] = (
+                        strategy_ev_threshold.reason
+                    )
+                    chain_results["strategy_ev_threshold_mean_net_return"] = float(
+                        strategy_ev_threshold.mean_net_return
+                    )
+                    chain_results["strategy_ev_threshold_hit_rate"] = float(
+                        strategy_ev_threshold.hit_rate
+                    )
+                    chain_results["strategy_ev_threshold_n_trades"] = int(
+                        strategy_ev_threshold.n_trades
+                    )
+                    chain_results["strategy_ev_gate_allowed"] = bool(
+                        strategy_ev_gate.allowed
+                    )
+                    chain_results["strategy_ev_gate_reason"] = strategy_ev_gate.reason
+                    chain_results["strategy_ev_avg_net_return"] = float(
+                        strategy_ev_gate.mean_net_return
+                    )
+                    chain_results["strategy_ev_hit_rate"] = float(
+                        strategy_ev_gate.hit_rate
+                    )
+                    chain_results["strategy_ev_target_mean_net_return"] = float(
+                        strategy_ev_gate.target_mean_net_return
+                    )
+                    chain_results["strategy_ev_min_hit_rate"] = float(
+                        strategy_ev_gate.min_hit_rate
                     )
                     chain_results["viability_margin"] = viability_margin
                     chain_results["effective_threshold"] = effective_threshold
@@ -4406,6 +4859,8 @@ def run_inference_step(
                             "side": side,
                             "size": size,
                             "strategy_id": strategy_id,
+                            "meta_model_key": meta_model_key,
+                            "meta_head_hash": meta_hash,
                             "raw_score": raw_score,
                             "calibrated_score": calibrated_score,
                             "threshold_space": threshold_space or "rank_percentile",
@@ -4418,6 +4873,82 @@ def run_inference_step(
                             "normalized_threshold": normalized_threshold,
                             "deployment_rank_threshold": normalized_threshold,
                             "initial_rank_threshold_floor": policy_threshold_floor,
+                            "auction_ev_threshold": float(auction_ev_gate.threshold),
+                            "auction_ev_threshold_enabled": bool(
+                                auction_ev_gate.enabled
+                            ),
+                            "auction_ev_threshold_reason": auction_ev_gate.reason,
+                            "auction_ev_target_mean_net_return": float(
+                                auction_ev_gate.target_mean_net_return
+                            ),
+                            "auction_ev_target_hit_rate": float(
+                                auction_ev_gate.target_hit_rate
+                            ),
+                            "auction_ev_threshold_mean_net_return": float(
+                                auction_ev_gate.mean_net_return
+                            ),
+                            "auction_ev_threshold_hit_rate": float(
+                                auction_ev_gate.hit_rate
+                            ),
+                            "auction_ev_threshold_n_trades": int(
+                                auction_ev_gate.n_trades
+                            ),
+                            "strategy_ev_threshold": float(
+                                strategy_ev_threshold.threshold
+                            ),
+                            "strategy_ev_threshold_before_dynamic": float(
+                                raw_strategy_threshold
+                            ),
+                            "dynamic_performance_multiplier": float(
+                                dynamic_multiplier
+                            ),
+                            "dynamic_performance_reason": (
+                                getattr(dynamic_state, "reason", "disabled")
+                                if dynamic_state is not None
+                                else "disabled"
+                            ),
+                            "dynamic_performance_expected_hit_rate": float(
+                                getattr(dynamic_state, "expected_hit_rate", np.nan)
+                                if dynamic_state is not None
+                                else np.nan
+                            ),
+                            "dynamic_performance_recent_hit_rate": float(
+                                getattr(dynamic_state, "recent_hit_rate", np.nan)
+                                if dynamic_state is not None
+                                else np.nan
+                            ),
+                            "dynamic_performance_recent_n": int(
+                                getattr(dynamic_state, "recent_n", 0) or 0
+                            ),
+                            "strategy_ev_threshold_enabled": bool(
+                                strategy_ev_threshold.enabled
+                            ),
+                            "strategy_ev_threshold_reason": (
+                                strategy_ev_threshold.reason
+                            ),
+                            "strategy_ev_threshold_mean_net_return": float(
+                                strategy_ev_threshold.mean_net_return
+                            ),
+                            "strategy_ev_threshold_hit_rate": float(
+                                strategy_ev_threshold.hit_rate
+                            ),
+                            "strategy_ev_threshold_n_trades": int(
+                                strategy_ev_threshold.n_trades
+                            ),
+                            "strategy_ev_gate_allowed": bool(
+                                strategy_ev_gate.allowed
+                            ),
+                            "strategy_ev_gate_reason": strategy_ev_gate.reason,
+                            "strategy_ev_avg_net_return": float(
+                                strategy_ev_gate.mean_net_return
+                            ),
+                            "strategy_ev_hit_rate": float(strategy_ev_gate.hit_rate),
+                            "strategy_ev_target_mean_net_return": float(
+                                strategy_ev_gate.target_mean_net_return
+                            ),
+                            "strategy_ev_min_hit_rate": float(
+                                strategy_ev_gate.min_hit_rate
+                            ),
                             "effective_threshold": effective_threshold,
                             "policy_sizing": policy_size,
                             "chain_results": chain_results,
@@ -4457,12 +4988,13 @@ def run_inference_step(
                     allow_live_batch_rank_fallback_for_debug=allow_live_batch_rank_fallback_for_debug,
                     inference_min_base_train_rank_pct=inference_min_base_train_rank_pct,
                     require_cross_strategy_auction_rank=require_cross_strategy_auction_rank,
+                    use_auction_rank_for_threshold=False,
                 )
                 rank_pct = float(
                     decision.get(
-                        "normalized_rank_score",
+                        "threshold_rank_score",
                         decision.get(
-                            "threshold_rank_score",
+                            "threshold_score",
                             decision.get(
                                 "policy_rank_pct",
                                 decision.get("sizer_rank_percentile", np.nan),
@@ -4502,7 +5034,9 @@ def run_inference_step(
                 chain_results["sizer_rank_percentile"] = decision.get(
                     "sizer_rank_percentile"
                 )
-                chain_results["normalized_rank_score"] = rank_pct
+                chain_results["normalized_rank_score"] = decision.get(
+                    "normalized_rank_score", rank_pct
+                )
                 chain_results["policy_rank_pct"] = decision.get("policy_rank_pct")
                 chain_results["auction_rank_pct"] = decision.get("auction_rank_pct")
                 chain_results["auction_rank_reference_n"] = decision.get(
@@ -4526,7 +5060,10 @@ def run_inference_step(
                 )
                 chain_results["effective_threshold"] = threshold
                 decision["chain_results"] = chain_results
-                decision["normalized_rank_score"] = rank_pct
+                decision["threshold_score"] = rank_pct
+                decision["normalized_rank_score"] = decision.get(
+                    "normalized_rank_score", rank_pct
+                )
                 decision["portfolio_priority"] = _candidate_portfolio_priority(
                     decision
                 )
@@ -4671,6 +5208,21 @@ def run_inference_step(
                         side=side,
                         strategy_id=strategy_id,
                     )
+                    perp_rank = (
+                        _perp_rank_context(
+                            data_root=runtime_config["data_root"],
+                            run_id=runtime_config["run_id"],
+                            side=side,
+                            strategy_id=strategy_id,
+                            score=float(
+                                chain_results.get("meta_pred")
+                                or decision.get("calibrated_score")
+                                or rank_for_size
+                            ),
+                        )
+                        if _is_perps_config(runtime_config)
+                        else {}
+                    )
                     sizing_audit = compute_rank_based_position_size(
                         wallet_value=float(capacity["wallet_value"]),
                         open_notional=float(capacity["open_notional"]),
@@ -4683,7 +5235,11 @@ def run_inference_step(
                         total_assets_quote=capacity.get("total_assets_quote"),
                         total_liabilities_quote=capacity.get("total_liabilities_quote"),
                         open_positions=capacity.get("open_positions"),
-                        market_mode="spot",
+                        market_mode=runtime_config.get("market_mode", "spot"),
+                        available_wallet_value=capacity.get("available_wallet_quote"),
+                        stop_loss_pct=live_barrier_pct,
+                        rank_number=perp_rank.get("rank_number"),
+                        rank_x=perp_rank.get("rank_x"),
                     )
                     requested_position_usdt = float(
                         sizing_audit["size_after_liquidity"]
@@ -5090,6 +5646,73 @@ def run_inference_step(
                                     )
                                     side_metrics["non_fatal_issues"] += 1
                                     continue
+                                live_entry_friction_bps = _safe_float(
+                                    book_snapshot.expected_total_entry_friction_bps,
+                                    0.0,
+                                )
+                                ev_adjusted = (
+                                    _ev_adjusted_prediction_after_entry_friction(
+                                        calibrated_score=decision.get(
+                                            "calibrated_score"
+                                        ),
+                                        strategy_id=strategy_id,
+                                        side=side,
+                                        calibration=strategy_ev_calibration,
+                                        live_entry_friction_bps=live_entry_friction_bps,
+                                        policy_rank_reference_store=(
+                                            policy_rank_reference_store
+                                        ),
+                                    )
+                                )
+                                chain_results.update(ev_adjusted)
+                                execution_snapshot.update(ev_adjusted)
+                                ev_rank = _safe_float(
+                                    ev_adjusted.get("ev_adjusted_rank_score"), np.nan
+                                )
+                                if np.isfinite(ev_rank):
+                                    adjusted_rank = min(
+                                        float(adjusted_rank), float(ev_rank)
+                                    )
+                                    execution_snapshot["adjusted_rank_score"] = float(
+                                        adjusted_rank
+                                    )
+                                    chain_results[
+                                        "threshold_rank_score_after_friction_ev"
+                                    ] = float(adjusted_rank)
+                                    if adjusted_rank < float(
+                                        decision["effective_threshold"]
+                                    ):
+                                        if (
+                                            prediction_ledger is not None
+                                            and _should_log_prediction_candidate(
+                                                decision, policy=portfolio_policy
+                                            )
+                                        ):
+                                            prediction_ledger_rows.append(
+                                                _prediction_ledger_row(
+                                                    decision,
+                                                    timestamp=now_utc.isoformat(),
+                                                    side=side,
+                                                    portfolio_decision=(
+                                                        "liquidity_rejected"
+                                                    ),
+                                                    liquidity_reject_reason=(
+                                                        "rank_below_dynamic_threshold_after_live_friction_ev"
+                                                    ),
+                                                    execution_snapshot=(
+                                                        execution_snapshot
+                                                    ),
+                                                )
+                                            )
+                                        tprint(
+                                            f"Live-friction EV block: {symbol} "
+                                            f"{side}/{strategy_id} "
+                                            f"adjusted_rank={adjusted_rank:.6f} "
+                                            f"threshold={float(decision['effective_threshold']):.6f} "
+                                            f"entry_friction_bps={live_entry_friction_bps:.2f}"
+                                        )
+                                        side_metrics["non_fatal_issues"] += 1
+                                        continue
                                 if portfolio_mgr is not None:
                                     capacity = portfolio_mgr.get_portfolio_capacity(
                                         side=side,
@@ -5452,6 +6075,24 @@ def run_inference_step(
                         )
                         side_metrics["non_fatal_issues"] += 1
                         continue
+                    sizing_context = chain_results.get("portfolio_rank_sizing", {}) or {}
+                    perp_sizing_context = {
+                        key: sizing_context.get(key)
+                        for key in (
+                            "leverage_wallet_multiplier",
+                            "book_notional_multiplier",
+                            "perp_rank_number",
+                            "perp_rank_x",
+                            "perp_rank_leverage",
+                            "perp_risk_cap_leverage",
+                            "perp_effective_leverage",
+                            "perp_stop_loss_pct",
+                            "perp_full_wallet",
+                            "perp_available_wallet",
+                            "orderbook_capacity_quote_within_slippage",
+                        )
+                        if key in sizing_context
+                    }
                     trade_result = _execute_trade_with_optional_context(
                         executor,
                         symbol=symbol,
@@ -5551,6 +6192,7 @@ def run_inference_step(
                             "barrier_pct": live_barrier_pct,
                             "barrier_frac": live_barrier_pct,
                             **trade_audit,
+                            **perp_sizing_context,
                         },
                         execution_kwargs={
                             "execution_snapshot": execution_snapshot,
@@ -5922,6 +6564,14 @@ def run_inference_step(
                         str(info.get("reason") or "portfolio_rejected"),
                         extra={
                             "requested_position_size": requested_position_usdt,
+                            "portfolio_final_threshold": info.get("final_threshold"),
+                            "portfolio_initial_threshold": info.get(
+                                "initial_threshold"
+                            ),
+                            "portfolio_rank_score": info.get("rank_score"),
+                            "threshold_viability_margin": getattr(
+                                portfolio_mgr, "threshold_viability_margin", None
+                            ),
                             "position_size_cap": info.get("position_size_cap"),
                             "n_positions_before": info.get("n_positions_before"),
                             "constraints": ",".join(
@@ -6197,6 +6847,72 @@ def run_inference_step(
                             )
                             _commit_global_side_metrics()
                             continue
+                        live_entry_friction_bps = _safe_float(
+                            book_snapshot.expected_total_entry_friction_bps,
+                            0.0,
+                        )
+                        ev_adjusted = _ev_adjusted_prediction_after_entry_friction(
+                            calibrated_score=decision.get("calibrated_score"),
+                            strategy_id=strategy_id,
+                            side=side,
+                            calibration=strategy_ev_calibration,
+                            live_entry_friction_bps=live_entry_friction_bps,
+                            policy_rank_reference_store=policy_rank_reference_store,
+                        )
+                        chain_results.update(ev_adjusted)
+                        execution_snapshot.update(ev_adjusted)
+                        ev_rank = _safe_float(
+                            ev_adjusted.get("ev_adjusted_rank_score"), np.nan
+                        )
+                        if np.isfinite(ev_rank):
+                            adjusted_rank = min(float(adjusted_rank), float(ev_rank))
+                            execution_snapshot["adjusted_rank_score"] = float(
+                                adjusted_rank
+                            )
+                            chain_results["threshold_rank_score_after_friction_ev"] = (
+                                float(adjusted_rank)
+                            )
+                            if adjusted_rank < threshold_for_size:
+                                if (
+                                    prediction_ledger is not None
+                                    and _should_log_prediction_candidate(
+                                        decision, policy=portfolio_policy
+                                    )
+                                ):
+                                    prediction_ledger_rows.append(
+                                        _prediction_ledger_row(
+                                            decision,
+                                            timestamp=now_utc.isoformat(),
+                                            side=side,
+                                            portfolio_decision="liquidity_rejected",
+                                            liquidity_reject_reason=(
+                                                "rank_below_dynamic_threshold_after_live_friction_ev"
+                                            ),
+                                            execution_snapshot=execution_snapshot,
+                                        )
+                                    )
+                                side_metrics["non_fatal_issues"] = (
+                                    int(side_metrics.get("non_fatal_issues", 0)) + 1
+                                )
+                                _log_global_auction_skip(
+                                    "live_friction_ev",
+                                    "rank_below_dynamic_threshold_after_live_friction_ev",
+                                    extra={
+                                        "adjusted_rank": adjusted_rank,
+                                        "entry_friction_bps": live_entry_friction_bps,
+                                        "ev_before": ev_adjusted.get(
+                                            "ev_adjusted_net_return_before_friction"
+                                        ),
+                                        "ev_after": ev_adjusted.get(
+                                            "ev_adjusted_net_return_after_friction"
+                                        ),
+                                        "ev_adjusted_score": ev_adjusted.get(
+                                            "ev_adjusted_calibrated_score"
+                                        ),
+                                    },
+                                )
+                                _commit_global_side_metrics()
+                                continue
                         if portfolio_mgr is not None:
                             capacity = portfolio_mgr.get_portfolio_capacity(
                                 side=side,
@@ -6429,6 +7145,24 @@ def run_inference_step(
                 resolved_bucket_key = resolver(bucket_key, side)
                 if resolved_bucket_key:
                     bucket_key = str(resolved_bucket_key)
+            sizing_context = chain_results.get("portfolio_rank_sizing", {}) or {}
+            perp_sizing_context = {
+                key: sizing_context.get(key)
+                for key in (
+                    "leverage_wallet_multiplier",
+                    "book_notional_multiplier",
+                    "perp_rank_number",
+                    "perp_rank_x",
+                    "perp_rank_leverage",
+                    "perp_risk_cap_leverage",
+                    "perp_effective_leverage",
+                    "perp_stop_loss_pct",
+                    "perp_full_wallet",
+                    "perp_available_wallet",
+                    "orderbook_capacity_quote_within_slippage",
+                )
+                if key in sizing_context
+            }
             trade_result = _execute_trade_with_optional_context(
                 executor,
                 symbol=symbol,
@@ -6470,6 +7204,7 @@ def run_inference_step(
                     "barrier_pct": live_barrier_pct,
                     "barrier_frac": live_barrier_pct,
                     **trade_audit,
+                    **perp_sizing_context,
                 },
                 execution_kwargs=execution_kwargs,
             )
@@ -6677,6 +7412,10 @@ def run_inference_loop(
         run_id=run_id,
         runtime_cfg=config,
         require_artifact=_is_live_test_mode(mode) or str(mode).lower() == "live",
+    )
+    portfolio_policy = _apply_live_test_threshold_relaxation(
+        portfolio_policy,
+        live_test_mode=_is_live_test_mode(mode),
     )
     parity_contract = config.get("training_live_parity_contract")
     if not isinstance(parity_contract, dict) or not parity_contract:
@@ -7273,6 +8012,13 @@ def _monitor_active_position_price_action(
                 "stop_price_after": after_stop,
                 "peak_price": after_position.get("peak_price"),
                 "mfe": after_position.get("mfe"),
+                "current_price": after_position.get("current_price"),
+                "current_price_source": after_position.get("current_price_source"),
+                "policy_entry_price": after_position.get("policy_entry_price"),
+                "policy_entry_price_source": after_position.get(
+                    "policy_entry_price_source"
+                ),
+                "realized_entry_price": after_position.get("entry_price"),
                 "last_5m_eval_ts": after_position.get("last_5m_eval_ts"),
             }
             if np.isfinite(before_stop) and np.isfinite(after_stop):
@@ -7457,8 +8203,8 @@ def main():
     parser.add_argument(
         "--challenger-interval",
         type=int,
-        default=300,
-        help="Position monitor interval in seconds (default: 300 = 5 min)",
+        default=60,
+        help="Position monitor interval in seconds (default: 60 = 1 min)",
     )
     parser.add_argument(
         "--lookback-hours",
@@ -7624,6 +8370,10 @@ def main():
         runtime_cfg=config,
         require_artifact=_is_live_test_mode(config["mode"])
         or str(config["mode"]).lower() == "live",
+    )
+    portfolio_policy = _apply_live_test_threshold_relaxation(
+        portfolio_policy,
+        live_test_mode=_is_live_test_mode(config["mode"]),
     )
     parity_contract = load_training_live_parity_contract(
         data_root=config["data_root"],
@@ -7835,6 +8585,15 @@ def main():
         )
     prediction_ledger = PredictionLedger(
         Path(config["live_data_root"]) / "live_state" / "prediction_ledger.parquet"
+    )
+    dynamic_performance_monitor = StrategyPerformanceMonitor(
+        data_root=str(config["data_root"]),
+        run_id=str(config["run_id"]),
+        live_data_root=str(config["live_data_root"]),
+        ledger_path=prediction_ledger.path,
+        lookback_days=int(config.get("dynamic_strategy_performance_lookback_days", 21)),
+        top_fraction=float(config.get("dynamic_strategy_performance_top_fraction", 0.40)),
+        min_resolved=int(config.get("dynamic_strategy_performance_min_resolved", 20)),
     )
     market_kill_switch = MarketKillSwitch(
         Path(config["live_data_root"]) / "live_state" / "market_kill_switch.json"
@@ -8385,6 +9144,7 @@ def main():
                 strategy_candidate_masks=strategy_candidate_masks,
                 portfolio_policy=portfolio_policy,
                 prediction_ledger=prediction_ledger,
+                dynamic_performance_monitor=dynamic_performance_monitor,
                 strategy_kill_switch=strategy_kill_switch,
                 max_entries_total=(
                     int(config.get("max_entries_total", 4))
@@ -8473,7 +9233,7 @@ def run_challenger_monitor(
 ):
     """
     calibration_data = calibration_data or {}
-    Run position monitoring every 5 minutes by default.
+    Run position monitoring every minute by default.
 
     New entries are intentionally not evaluated here. The loop only monitors
     existing positions and applies the stop policy on closed 15m bars.
@@ -8485,7 +9245,7 @@ def run_challenger_monitor(
         executor: TradeExecutor instance
         logger: TradeLogger instance
         config: Configuration dictionary
-        interval: Check interval in seconds (default 300 = 5 min)
+        interval: Check interval in seconds (default 60 = 1 min)
     """
     while True:
         try:
@@ -8542,7 +9302,15 @@ def _evaluate_oco_policy(
             return
 
         side = str(position_state.get("side", "long")).lower()
-        entry_price = float(position_state.get("entry_price", 0.0) or 0.0)
+        realized_entry_price = float(position_state.get("entry_price", 0.0) or 0.0)
+        entry_price, entry_price_source = _position_policy_entry_price(position_state)
+        if not (np.isfinite(entry_price) and entry_price > 0.0):
+            entry_price = realized_entry_price
+            entry_price_source = "entry_price"
+        if np.isfinite(entry_price) and entry_price > 0.0:
+            position_state["policy_entry_price"] = float(entry_price)
+            position_state.setdefault("theoretical_entry_price", float(entry_price))
+            position_state["policy_entry_price_source"] = entry_price_source
         bucket_key = position_state.get("bucket_key", "")
         if hasattr(executor, "get_simple_policy_stop_params"):
             params = dict(executor.get_simple_policy_stop_params(bucket_key) or {})
@@ -8617,6 +9385,13 @@ def _evaluate_oco_policy(
                     "low": bar_low,
                     "close": bar_close,
                     "price_dev_pct": float(price_dev_pct),
+                    "policy_entry_price": float(entry_price),
+                    "policy_entry_price_source": entry_price_source,
+                    "realized_entry_price": (
+                        float(realized_entry_price)
+                        if np.isfinite(realized_entry_price)
+                        else None
+                    ),
                     "stop_price": float(stop_price),
                     "stop_reason": stop_reason,
                 }
@@ -8632,16 +9407,13 @@ def _evaluate_oco_policy(
                         position_state.setdefault("trade_recap_events", []).append(
                             {
                                 "ts": pd.Timestamp(bar_ts).isoformat(),
-                                "event": "stop_touch_waiting_exchange_fill",
+                                "event": "stop_touch_deferred_to_exchange_order",
                                 "bar_low": bar_low,
                                 "stop_price": float(stop_price),
                                 "stop_reason": stop_reason,
                             }
                         )
-                        return {
-                            "status": "stop_touch_waiting_exchange_fill",
-                            "reason": exit_reason,
-                        }
+                        continue
                     return executor.close_position(
                         symbol, price=float(stop_price), reason=exit_reason
                     )
@@ -8653,19 +9425,105 @@ def _evaluate_oco_policy(
                         position_state.setdefault("trade_recap_events", []).append(
                             {
                                 "ts": pd.Timestamp(bar_ts).isoformat(),
-                                "event": "stop_touch_waiting_exchange_fill",
+                                "event": "stop_touch_deferred_to_exchange_order",
                                 "bar_high": bar_high,
                                 "stop_price": float(stop_price),
                                 "stop_reason": stop_reason,
                             }
                         )
-                        return {
-                            "status": "stop_touch_waiting_exchange_fill",
-                            "reason": exit_reason,
-                        }
+                        continue
                     return executor.close_position(
                         symbol, price=float(stop_price), reason=exit_reason
                     )
+
+        live_closeable_snapshot: Dict[str, Any] = {}
+        live_closeable_price = float("nan")
+        if live_mode:
+            live_closeable_snapshot = _fetch_live_closeable_price(
+                symbol, side, executor
+            )
+            live_closeable_price = _finite_positive_float(
+                live_closeable_snapshot.get("price")
+            )
+            if np.isfinite(live_closeable_price):
+                if side == "long":
+                    peak_price = max(peak_price, live_closeable_price)
+                    mfe = max(
+                        mfe,
+                        (live_closeable_price - entry_price)
+                        / max(abs(entry_price), 1e-12),
+                    )
+                    mae = max(
+                        mae,
+                        (entry_price - live_closeable_price)
+                        / max(abs(entry_price), 1e-12),
+                    )
+                else:
+                    peak_price = min(peak_price, live_closeable_price)
+                    mfe = max(
+                        mfe,
+                        (entry_price - live_closeable_price)
+                        / max(abs(entry_price), 1e-12),
+                    )
+                    mae = max(
+                        mae,
+                        (live_closeable_price - entry_price)
+                        / max(abs(entry_price), 1e-12),
+                    )
+                position_state["current_price"] = float(live_closeable_price)
+                position_state["last_price"] = float(live_closeable_price)
+                position_state["current_price_source"] = str(
+                    live_closeable_snapshot.get("source") or "live_closeable_touch"
+                )
+                position_state["current_price_ts"] = pd.Timestamp.now(tz="UTC")
+                position_state.setdefault("trade_recap_events", []).append(
+                    {
+                        "ts": position_state["current_price_ts"].isoformat(),
+                        "event": "live_closeable_price_sample",
+                        "side": side,
+                        "price": float(live_closeable_price),
+                        "source": position_state["current_price_source"],
+                        "policy_entry_price": float(entry_price),
+                        "policy_entry_price_source": entry_price_source,
+                        "realized_entry_price": (
+                            float(realized_entry_price)
+                            if np.isfinite(realized_entry_price)
+                            else None
+                        ),
+                        "bid": (
+                            float(live_closeable_snapshot.get("bid"))
+                            if np.isfinite(
+                                _finite_positive_float(
+                                    live_closeable_snapshot.get("bid")
+                                )
+                            )
+                            else None
+                        ),
+                        "ask": (
+                            float(live_closeable_snapshot.get("ask"))
+                            if np.isfinite(
+                                _finite_positive_float(
+                                    live_closeable_snapshot.get("ask")
+                                )
+                            )
+                            else None
+                        ),
+                        "last": (
+                            float(live_closeable_snapshot.get("last"))
+                            if np.isfinite(
+                                _finite_positive_float(
+                                    live_closeable_snapshot.get("last")
+                                )
+                            )
+                            else None
+                        ),
+                        "mfe": float(mfe),
+                        "mae": float(mae),
+                        "peak_price": float(peak_price),
+                    }
+                )
+                if len(position_state.get("trade_recap_events", [])) > 500:
+                    del position_state["trade_recap_events"][:-500]
 
         require_metadata = True
         decision = None
@@ -8673,6 +9531,8 @@ def _evaluate_oco_policy(
             decision = compute_simple_policy_stop_decision(
                 state={
                     **position_state,
+                    "entry_price": entry_price,
+                    "realized_entry_price": realized_entry_price,
                     "peak_price": peak_price,
                     "mfe": mfe,
                     "mae": mae,
@@ -8720,6 +9580,22 @@ def _evaluate_oco_policy(
         decision_mae = (
             decision.mae if decision is not None and decision.mae is not None else mae
         )
+        final_current_price = (
+            float(live_closeable_price)
+            if np.isfinite(live_closeable_price)
+            else float(bars.iloc[-1]["close"])
+        )
+        final_current_price_ts = (
+            pd.Timestamp(position_state.get("current_price_ts"))
+            if np.isfinite(live_closeable_price)
+            and position_state.get("current_price_ts") is not None
+            else last_bar_ts
+        )
+        final_current_price_source = (
+            str(live_closeable_snapshot.get("source") or "live_closeable_touch")
+            if np.isfinite(live_closeable_price)
+            else "trade_5m_close"
+        )
         executor.update_position_policy_state(
             symbol,
             policy_stop_decision=decision,
@@ -8729,8 +9605,11 @@ def _evaluate_oco_policy(
             bars_in_trade=int(position_state.get("bars_in_trade", 0) or 0)
             + int(len(bars)),
             last_5m_eval_ts=last_bar_ts,
-            current_price=float(bars.iloc[-1]["close"]),
-            current_price_ts=last_bar_ts,
+            current_price=final_current_price,
+            current_price_source=final_current_price_source,
+            policy_entry_price=float(entry_price),
+            policy_entry_price_source=entry_price_source,
+            current_price_ts=final_current_price_ts,
         )
     except Exception as e:
         tprint(f"  [STOP_LOSS] Error evaluating stop policy for {symbol}: {e}")

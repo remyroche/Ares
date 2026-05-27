@@ -11,6 +11,7 @@ import hmac
 import json
 import os
 import threading
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -145,6 +146,8 @@ STOP_MIN_CURRENT_DISTANCE_PCT = 0.003
 EXECUTION_AUDIT_KEYS = (
     "signal_price",
     "decision_mid",
+    "theoretical_entry_price",
+    "policy_entry_price",
     "signal_gap_bps",
     "bid",
     "ask",
@@ -155,6 +158,7 @@ EXECUTION_AUDIT_KEYS = (
     "ticker_mid",
     "ticker_spread_bps",
     "expected_fill_price",
+    "expected_entry_price",
     "expected_fill_slippage_bps",
     "expected_total_entry_friction_bps",
     "orderbook_side",
@@ -218,6 +222,16 @@ def _safe_float(value: Any, default: float = np.nan) -> float:
     except (TypeError, ValueError):
         return default
     return out if np.isfinite(out) else default
+
+
+def _first_finite_price(source: Optional[Dict[str, Any]], keys: Sequence[str]) -> float:
+    if not isinstance(source, dict):
+        return np.nan
+    for key in keys:
+        value = _safe_float(source.get(key), default=np.nan)
+        if np.isfinite(value) and value > 0.0:
+            return float(value)
+    return np.nan
 
 
 def _execution_audit_fields(source: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -325,6 +339,79 @@ def _adjust_stop_to_min_current_distance(
     if side_l == "short" and stop_price < boundary:
         return float(boundary), True, float(boundary)
     return float(stop_price), False, float(boundary)
+
+
+def _stop_improves_existing(side: str, candidate: float, existing: float) -> bool:
+    if not (np.isfinite(candidate) and np.isfinite(existing)):
+        return False
+    side_l = str(side or "").lower()
+    return candidate > existing if side_l == "long" else candidate < existing
+
+
+def _exchange_valid_giveback_fallback_stop(
+    exchange: Any,
+    symbol: str,
+    *,
+    side: str,
+    policy_stop: float,
+    existing_stop: float,
+    current_price: float,
+    config: Optional[Dict[str, Any]],
+) -> Tuple[float, float, float, str]:
+    """Return a monotonic fallback stop clipped to an exchange-valid trigger side."""
+    if not (
+        np.isfinite(policy_stop)
+        and policy_stop > 0.0
+        and np.isfinite(existing_stop)
+        and existing_stop > 0.0
+        and np.isfinite(current_price)
+        and current_price > 0.0
+    ):
+        return np.nan, np.nan, np.nan, ""
+    if not _stop_improves_existing(side, policy_stop, existing_stop):
+        return np.nan, np.nan, np.nan, ""
+
+    distance_modes: List[Tuple[float, str]] = [
+        (STOP_MIN_CURRENT_DISTANCE_PCT, "standard_min_distance")
+    ]
+    # Kraken Futures stop orders use triggerSignal=last. For very coarse ticks,
+    # the conservative min-distance boundary can round back to the invalid side
+    # even though a trigger-side stop is placeable and still reduces risk.
+    if (
+        _exchange_id(exchange) == "krakenfutures"
+        or _configured_exchange_id(config) == "krakenfutures"
+    ):
+        distance_modes.append((0.0, "kraken_trigger_side"))
+
+    for min_distance_pct, mode in distance_modes:
+        adjusted, _, boundary = _adjust_stop_to_min_current_distance(
+            side,
+            float(policy_stop),
+            float(current_price),
+            min_distance_pct=float(min_distance_pct),
+        )
+        if not np.isfinite(adjusted) or adjusted <= 0.0:
+            continue
+        candidate = _exchange_precision(exchange, symbol, float(adjusted), kind="price")
+        if not (
+            np.isfinite(candidate)
+            and candidate > 0.0
+            and _stop_side_is_valid(
+                side,
+                float(candidate),
+                float(current_price),
+                min_distance_pct=float(min_distance_pct),
+            )
+            and _stop_improves_existing(side, float(candidate), float(existing_stop))
+        ):
+            continue
+        return (
+            float(candidate),
+            float(boundary) if np.isfinite(boundary) else np.nan,
+            float(min_distance_pct),
+            mode,
+        )
+    return np.nan, np.nan, np.nan, ""
 
 
 def _validate_policy_stop_decision(
@@ -781,6 +868,7 @@ def _order_params(
     *,
     reduce_only: bool = False,
     side: Optional[str] = None,
+    leverage: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Build ccxt params for spot or margin order placement."""
     account = _execution_account(config)
@@ -788,6 +876,10 @@ def _order_params(
         params: Dict[str, Any] = {}
         if _configured_exchange_id(config) == "okx":
             params["tdMode"] = _margin_mode(config)
+        if not reduce_only and _configured_exchange_id(config) == "krakenfutures":
+            lev = _safe_float(leverage, default=np.nan)
+            if np.isfinite(lev) and lev > 1.0:
+                params["leverage"] = float(lev)
         if reduce_only:
             params["reduceOnly"] = True
         return params
@@ -799,6 +891,56 @@ def _order_params(
     else:
         params["sideEffectType"] = _opening_margin_side_effect(config, side=side)
     return params
+
+
+def _perp_entry_leverage_from_context(
+    trade_context: Optional[Dict[str, Any]],
+    config: Optional[Dict[str, Any]],
+) -> float:
+    """Return the intended perps entry leverage from sizing/audit context."""
+    ctx = trade_context or {}
+    for key in ("perp_effective_leverage", "leverage_wallet_multiplier"):
+        lev = _safe_float(ctx.get(key), default=np.nan)
+        if np.isfinite(lev) and lev > 0.0:
+            return float(lev)
+    lev = _safe_float((config or {}).get("leverage_wallet_multiplier"), default=np.nan)
+    return float(lev) if np.isfinite(lev) and lev > 0.0 else 1.0
+
+
+def _set_perp_leverage_best_effort(
+    exchange: Any,
+    *,
+    symbol: str,
+    leverage: float,
+    config: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Set exchange leverage where ccxt supports it, without blocking implicit-margin venues."""
+    if _execution_account(config) != "perps":
+        return {"attempted": False, "reason": "not_perps"}
+    lev = _safe_float(leverage, default=np.nan)
+    if not np.isfinite(lev) or lev <= 1.0:
+        return {"attempted": False, "reason": "leverage_lte_1", "leverage": lev}
+    set_leverage = getattr(exchange, "set_leverage", None)
+    if not callable(set_leverage):
+        return {"attempted": False, "reason": "set_leverage_unavailable", "leverage": lev}
+    params: Dict[str, Any] = {}
+    if _configured_exchange_id(config) == "okx":
+        params["mgnMode"] = _margin_mode(config)
+    try:
+        result = set_leverage(float(lev), symbol, params)
+        return {
+            "attempted": True,
+            "success": True,
+            "leverage": float(lev),
+            "result": result,
+        }
+    except Exception as exc:
+        return {
+            "attempted": True,
+            "success": False,
+            "leverage": float(lev),
+            "error": f"{type(exc).__name__}: {exc}",
+        }
 
 
 def _cancel_params(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -2514,7 +2656,106 @@ class OCOExecutor:
                             state.get("stop_price"), np.nan
                         )
                         existing_stop_order_id = state.get("stop_order_id")
-                        if (
+                        fallback_policy_stop = _safe_float(
+                            getattr(decision, "requested_policy_stop", None),
+                            default=np.nan,
+                        )
+                        if not np.isfinite(fallback_policy_stop):
+                            fallback_policy_stop = _safe_float(
+                                requested_stop, default=np.nan
+                            )
+                        if not np.isfinite(fallback_policy_stop):
+                            fallback_policy_stop = original_stop_price
+                        (
+                            fallback_stop_price,
+                            fallback_boundary,
+                            fallback_min_distance_pct,
+                            fallback_mode,
+                        ) = _exchange_valid_giveback_fallback_stop(
+                            self.exchange,
+                            symbol,
+                            side=side,
+                            policy_stop=float(fallback_policy_stop),
+                            existing_stop=float(existing_stop_price),
+                            current_price=float(current_price),
+                            config=self.config,
+                        )
+                        if np.isfinite(fallback_stop_price):
+                            entry_price = _safe_float(
+                                state.get("entry_price"), default=np.nan
+                            )
+                            profit_locking = False
+                            if np.isfinite(entry_price) and entry_price > 0.0:
+                                profit_locking = (
+                                    fallback_stop_price > entry_price
+                                    if side == "long"
+                                    else fallback_stop_price < entry_price
+                                )
+                            fallback_detail = (
+                                "exchange_valid_giveback_fallback: "
+                                f"policy_stop={float(fallback_policy_stop):.8g} "
+                                f"fallback_stop={float(fallback_stop_price):.8g} "
+                                f"existing_stop={float(existing_stop_price):.8g} "
+                                f"current={float(current_price):.8g} "
+                                f"boundary={float(fallback_boundary):.8g} "
+                                f"min_distance_pct={float(fallback_min_distance_pct):.6g} "
+                                f"mode={fallback_mode} "
+                                f"profit_locking={bool(profit_locking)}"
+                            )
+                            _append_position_event(
+                                state,
+                                "exchange_valid_giveback_fallback_stop",
+                                original_candidate_stop=original_stop_price,
+                                policy_stop=float(fallback_policy_stop),
+                                fallback_stop=float(fallback_stop_price),
+                                existing_stop=float(existing_stop_price),
+                                current_price=float(current_price),
+                                current_price_source=current_price_source,
+                                boundary=(
+                                    float(fallback_boundary)
+                                    if np.isfinite(fallback_boundary)
+                                    else None
+                                ),
+                                min_distance_pct=(
+                                    float(fallback_min_distance_pct)
+                                    if np.isfinite(fallback_min_distance_pct)
+                                    else None
+                                ),
+                                fallback_mode=fallback_mode,
+                                profit_locking=bool(profit_locking),
+                                recomputed_stop=(
+                                    float(recompute_stop_price)
+                                    if np.isfinite(recompute_stop_price)
+                                    else None
+                                ),
+                                recompute_validation_error=recompute_reason,
+                                recompute_error=recompute_error,
+                            )
+                            tprint(
+                                f"Using exchange-valid giveback fallback for {symbol}: "
+                                f"policy={float(fallback_policy_stop):.8g} "
+                                f"fallback={float(fallback_stop_price):.8g} "
+                                f"existing={float(existing_stop_price):.8g} "
+                                f"current={float(current_price):.8g} "
+                                f"mode={fallback_mode} "
+                                f"profit_locking={bool(profit_locking)}"
+                            )
+                            decision = replace(
+                                decision,
+                                should_replace=True,
+                                stop_price=float(fallback_stop_price),
+                                requested_policy_stop=float(fallback_policy_stop),
+                                reason="exchange_valid_giveback_fallback",
+                                reason_detail=fallback_detail,
+                            )
+                            stop_price = float(fallback_stop_price)
+                            state["stop_reason"] = decision.reason
+                            state["stop_reason_detail"] = decision.reason_detail
+                            state["requested_policy_stop"] = float(
+                                fallback_policy_stop
+                            )
+                            state["final_placed_stop"] = float(fallback_stop_price)
+                        elif (
                             existing_stop_order_id
                             and np.isfinite(existing_stop_price)
                             and _stop_side_is_valid(
@@ -2546,36 +2787,37 @@ class OCOExecutor:
                                 recompute_error=recompute_error,
                             )
                             return
-                        tprint(
-                            f"Rejected simple-policy SL for {symbol} before cancel: "
-                            f"candidate={original_stop_price:.8g} "
-                            f"current={current_price:.8g}; "
-                            "canonical recompute did not produce a valid replacement "
-                            "and no valid existing exchange stop is known; "
-                            "closing position with software policy stop"
-                        )
-                        _append_position_event(
-                            state,
-                            "software_policy_stop_close",
-                            reason="policy_stop_crossed_no_valid_exchange_stop",
-                            original_candidate_stop=original_stop_price,
-                            current_price=float(current_price),
-                            current_price_source=current_price_source,
-                            recomputed_stop=(
-                                float(recompute_stop_price)
-                                if np.isfinite(recompute_stop_price)
-                                else None
-                            ),
-                            recompute_validation_error=recompute_reason,
-                            recompute_error=recompute_error,
-                        )
-                        self._close_position(
-                            symbol,
-                            state,
-                            float(current_price),
-                            "software_policy_stop_close",
-                        )
-                        return
+                        else:
+                            tprint(
+                                f"Rejected simple-policy SL for {symbol} before cancel: "
+                                f"candidate={original_stop_price:.8g} "
+                                f"current={current_price:.8g}; "
+                                "canonical recompute did not produce a valid replacement "
+                                "and no valid existing exchange stop is known; "
+                                "closing position with software policy stop"
+                            )
+                            _append_position_event(
+                                state,
+                                "software_policy_stop_close",
+                                reason="policy_stop_crossed_no_valid_exchange_stop",
+                                original_candidate_stop=original_stop_price,
+                                current_price=float(current_price),
+                                current_price_source=current_price_source,
+                                recomputed_stop=(
+                                    float(recompute_stop_price)
+                                    if np.isfinite(recompute_stop_price)
+                                    else None
+                                ),
+                                recompute_validation_error=recompute_reason,
+                                recompute_error=recompute_error,
+                            )
+                            self._close_position(
+                                symbol,
+                                state,
+                                float(current_price),
+                                "software_policy_stop_close",
+                            )
+                            return
 
             existing_stops = _fetch_open_protective_stop_orders(
                 self.exchange, symbol=symbol, position_side=side, config=self.config
@@ -4800,6 +5042,79 @@ class TradeExecutor:
                 return True
         return bool(self._load_pending_entry_context(symbol_s))
 
+    def _fetch_reconciled_entry_fill(
+        self,
+        symbol: str,
+        *,
+        side: str,
+        amount: float,
+        before_ts: Optional[pd.Timestamp],
+    ) -> Dict[str, Any]:
+        """Best-effort private fill lookup for an already-open reconciled position."""
+        fetch_my_trades = getattr(self.exchange, "fetch_my_trades", None)
+        if not callable(fetch_my_trades):
+            return {}
+        side_l = str(side or "").lower()
+        expected_side = "buy" if side_l == "long" else "sell"
+        end_ts = pd.Timestamp(before_ts) if before_ts is not None else pd.Timestamp.now(tz="UTC")
+        if end_ts.tzinfo is None:
+            end_ts = end_ts.tz_localize("UTC")
+        else:
+            end_ts = end_ts.tz_convert("UTC")
+        since = int((end_ts - pd.Timedelta(hours=36)).timestamp() * 1000)
+        try:
+            trades = fetch_my_trades(symbol, since=since, limit=100)
+        except Exception as exc:
+            return {
+                "error": str(exc),
+                "error_category": _classify_exchange_error(exc),
+            }
+        candidates: List[Dict[str, Any]] = []
+        for trade in trades or []:
+            if not isinstance(trade, dict):
+                continue
+            if str(trade.get("side") or "").lower() != expected_side:
+                continue
+            px = _safe_float(trade.get("price"), default=np.nan)
+            qty = abs(_safe_float(trade.get("amount"), default=np.nan))
+            ts_raw = trade.get("timestamp")
+            try:
+                trade_ts = pd.to_datetime(float(ts_raw), unit="ms", utc=True)
+            except Exception:
+                trade_ts = pd.to_datetime(trade.get("datetime"), utc=True, errors="coerce")
+            if not (np.isfinite(px) and px > 0.0 and np.isfinite(qty) and qty > 0.0):
+                continue
+            if pd.isna(trade_ts):
+                continue
+            if trade_ts > end_ts + pd.Timedelta(minutes=15):
+                continue
+            amount_gap = abs(qty - abs(float(amount))) / max(abs(float(amount)), 1e-12)
+            candidates.append(
+                {
+                    "price": float(px),
+                    "amount": float(qty),
+                    "timestamp": pd.Timestamp(trade_ts),
+                    "amount_gap": float(amount_gap),
+                    "id": trade.get("id"),
+                }
+            )
+        if not candidates:
+            return {"checked": True, "matched": False}
+        candidates.sort(key=lambda row: (row["amount_gap"], abs((end_ts - row["timestamp"]).total_seconds())))
+        best = candidates[0]
+        if best["amount_gap"] > 0.25:
+            return {"checked": True, "matched": False, "best_amount_gap": best["amount_gap"]}
+        return {
+            "checked": True,
+            "matched": True,
+            "price": best["price"],
+            "amount": best["amount"],
+            "timestamp": best["timestamp"].isoformat(),
+            "id": best.get("id"),
+            "source": "fetch_my_trades",
+            "amount_gap": best["amount_gap"],
+        }
+
     def _track_external_margin_position(
         self,
         *,
@@ -4830,6 +5145,36 @@ class TradeExecutor:
             )
             if np.isfinite(pending_entry) and pending_entry > 0.0:
                 entry_price = float(pending_entry)
+        realized_entry_price = float(entry_price)
+        policy_entry_price = _first_finite_price(
+            pending_context,
+            (
+                "policy_entry_price",
+                "theoretical_entry_price",
+                "ohlcv_entry_price",
+                "signal_price",
+                "expected_entry_price",
+                "decision_mid",
+            ),
+        )
+        policy_entry_price_source = "entry_price"
+        if np.isfinite(policy_entry_price) and policy_entry_price > 0.0:
+            for key in (
+                "policy_entry_price",
+                "theoretical_entry_price",
+                "ohlcv_entry_price",
+                "signal_price",
+                "expected_entry_price",
+                "decision_mid",
+            ):
+                if abs(
+                    _safe_float(pending_context.get(key), default=np.nan)
+                    - float(policy_entry_price)
+                ) <= max(abs(float(policy_entry_price)) * 1e-12, 1e-12):
+                    policy_entry_price_source = key
+                    break
+        else:
+            policy_entry_price = float(entry_price)
         pending_strategy = self.resolve_simple_policy_strategy_id(
             pending_strategy, side
         )
@@ -5058,11 +5403,44 @@ class TradeExecutor:
                     break
                 except Exception:
                     continue
+        fill_lookup = self._fetch_reconciled_entry_fill(
+            symbol,
+            side=side,
+            amount=float(amount),
+            before_ts=entry_ts,
+        )
+        if isinstance(fill_lookup, dict) and fill_lookup.get("matched"):
+            fill_price = _safe_float(fill_lookup.get("price"), default=np.nan)
+            if np.isfinite(fill_price) and fill_price > 0.0:
+                entry_price = float(fill_price)
+                realized_entry_price = float(fill_price)
+                if policy_entry_price_source == "entry_price":
+                    policy_entry_price = float(fill_price)
+                try:
+                    fill_ts = pd.Timestamp(fill_lookup.get("timestamp"))
+                    if fill_ts.tzinfo is None:
+                        fill_ts = fill_ts.tz_localize("UTC")
+                    else:
+                        fill_ts = fill_ts.tz_convert("UTC")
+                    entry_ts = fill_ts
+                except Exception:
+                    pass
+                pending_context["reconciliation_entry_fill_source"] = fill_lookup.get(
+                    "source", "fetch_my_trades"
+                )
+                pending_context["reconciliation_entry_fill_id"] = fill_lookup.get("id")
+                pending_context["reconciliation_entry_fill_amount"] = fill_lookup.get(
+                    "amount"
+                )
         state = {
             "side": side,
             "size": float(amount),
             "quote_size": float(quote_value),
             "entry_price": float(entry_price),
+            "realized_entry_price": float(realized_entry_price),
+            "theoretical_entry_price": float(policy_entry_price),
+            "policy_entry_price": float(policy_entry_price),
+            "policy_entry_price_source": policy_entry_price_source,
             "timestamp": datetime.now(),
             "entry_time": entry_ts,
             "bucket_key": "external_margin_reconciliation",
@@ -5099,6 +5477,15 @@ class TradeExecutor:
                 if had_pending_context
                 else "artifact_fallback_external_position"
             ),
+            "reconciliation_entry_fill_source": pending_context.get(
+                "reconciliation_entry_fill_source"
+            ),
+            "reconciliation_entry_fill_id": pending_context.get(
+                "reconciliation_entry_fill_id"
+            ),
+            "reconciliation_entry_fill_amount": pending_context.get(
+                "reconciliation_entry_fill_amount"
+            ),
         }
         if had_pending_context:
             state["recovered_from_pending_trade_log"] = True
@@ -5120,6 +5507,61 @@ class TradeExecutor:
                     "sl_mult": float(sl_mult),
                 }
             )
+            existing_oco_state: Dict[str, Any] = {}
+            try:
+                with self.oco_executor._positions_lock:
+                    existing_raw = self.oco_executor.active_positions.get(symbol)
+                    if isinstance(existing_raw, dict):
+                        existing_oco_state = dict(existing_raw)
+            except Exception:
+                existing_oco_state = {}
+            if existing_oco_state:
+                existing_side = str(existing_oco_state.get("side") or "").lower()
+                existing_entry = _safe_float(
+                    existing_oco_state.get("entry_price"), default=np.nan
+                )
+                same_position = (
+                    existing_side == str(side).lower()
+                    and np.isfinite(existing_entry)
+                    and np.isfinite(entry_price)
+                    and abs(existing_entry - float(entry_price))
+                    <= max(abs(float(entry_price)) * 1e-6, 1e-12)
+                )
+                if same_position:
+                    for key in (
+                        "peak_price",
+                        "mfe",
+                        "mae",
+                        "policy_entry_price",
+                        "policy_entry_price_source",
+                        "theoretical_entry_price",
+                        "realized_entry_price",
+                        "stop_price",
+                        "stop_order_id",
+                        "stop_order_ids",
+                        "stop_reason",
+                        "stop_reason_detail",
+                        "requested_policy_stop",
+                        "final_placed_stop",
+                        "current_price",
+                        "current_price_source",
+                        "last_price",
+                        "current_price_ts",
+                        "bars_in_trade",
+                        "last_5m_eval_ts",
+                        "trade_recap_events",
+                    ):
+                        if key in existing_oco_state:
+                            oco_state[key] = existing_oco_state[key]
+                    tprint(
+                        f"Preserved live price-action state while reconciling "
+                        f"{symbol}: mfe={_safe_float(oco_state.get('mfe'), 0.0):.6g} "
+                        f"peak_price={_safe_float(oco_state.get('peak_price'), np.nan):.12g} "
+                        f"stop_price={_safe_float(oco_state.get('stop_price'), np.nan):.12g}"
+                    )
+                    preserved_stop = _safe_float(oco_state.get("stop_price"), np.nan)
+                    if np.isfinite(preserved_stop) and preserved_stop > 0.0:
+                        stop_price = float(preserved_stop)
             adopted_stop_orders: List[Dict[str, Any]] = []
             mismatched_stop_orders: List[Dict[str, Any]] = []
             try:
@@ -6166,6 +6608,28 @@ class TradeExecutor:
                 reference_price=expected_entry_price,
                 market=market,
             )
+            entry_leverage = _perp_entry_leverage_from_context(
+                trade_context, self.config
+            )
+            leverage_set_result = _set_perp_leverage_best_effort(
+                self.exchange,
+                symbol=exchange_symbol,
+                leverage=entry_leverage,
+                config=self.config,
+            )
+            if _execution_account(self.config) == "perps":
+                tprint(
+                    f"Perps entry leverage: symbol={symbol} "
+                    f"leverage={entry_leverage:.4g} "
+                    f"set_attempted={leverage_set_result.get('attempted')} "
+                    f"set_success={leverage_set_result.get('success')}"
+                )
+                if leverage_set_result.get("error"):
+                    tprint(
+                        f"Perps set_leverage result for {symbol}: "
+                        f"{leverage_set_result.get('error')}; "
+                        "continuing with leveraged order params/implicit margin"
+                    )
 
             force_market_entries = bool(
                 self.config.get("force_market_entry_orders", False)
@@ -6190,7 +6654,10 @@ class TradeExecutor:
                     amount=amount_base,
                     price=entry_price_for_order,
                     params=_order_params(
-                        self.config, reduce_only=False, side=order_side
+                        self.config,
+                        reduce_only=False,
+                        side=order_side,
+                        leverage=entry_leverage,
                     ),
                 )
                 entry_order_type = "limit"
@@ -6201,7 +6668,10 @@ class TradeExecutor:
                     side=order_side,
                     amount=amount_base,
                     params=_order_params(
-                        self.config, reduce_only=False, side=order_side
+                        self.config,
+                        reduce_only=False,
+                        side=order_side,
+                        leverage=entry_leverage,
                     ),
                 )
                 entry_order_type = "market"
@@ -6223,6 +6693,23 @@ class TradeExecutor:
                 ohlcv_reference_price,
                 default=_safe_float(price, default=np.nan),
             )
+            theoretical_entry_price = _first_finite_price(
+                trade_context,
+                (
+                    "theoretical_entry_price",
+                    "policy_entry_price",
+                    "ohlcv_entry_price",
+                    "signal_price",
+                    "expected_entry_price",
+                    "decision_mid",
+                ),
+            )
+            if not (np.isfinite(theoretical_entry_price) and theoretical_entry_price > 0.0):
+                theoretical_entry_price = (
+                    float(ohlcv_entry_price)
+                    if np.isfinite(ohlcv_entry_price) and ohlcv_entry_price > 0.0
+                    else float(expected_entry_price)
+                )
             entry_price_delta = (
                 float(entry_price) - float(ohlcv_entry_price)
                 if np.isfinite(ohlcv_entry_price)
@@ -6292,6 +6779,9 @@ class TradeExecutor:
                                     "entry_fee_source": entry_fee_source,
                                     "entry_order_type": entry_order_type,
                                     "ohlcv_entry_price": ohlcv_entry_price,
+                                    "theoretical_entry_price": theoretical_entry_price,
+                                    "policy_entry_price": theoretical_entry_price,
+                                    "realized_entry_price": entry_price,
                                     "entry_price_delta_vs_ohlcv": entry_price_delta,
                                     "entry_price_delta_vs_ohlcv_pct": entry_price_delta_pct,
                                 }
@@ -6317,6 +6807,9 @@ class TradeExecutor:
                     "entry_fee_currency": entry_fee_currency,
                     "entry_fee_source": entry_fee_source,
                     "entry_price": entry_price,
+                    "realized_entry_price": entry_price,
+                    "theoretical_entry_price": theoretical_entry_price,
+                    "policy_entry_price": theoretical_entry_price,
                     "ohlcv_entry_price": ohlcv_entry_price,
                     "entry_price_delta_vs_ohlcv": entry_price_delta,
                     "entry_price_delta_vs_ohlcv_pct": entry_price_delta_pct,
@@ -6350,6 +6843,8 @@ class TradeExecutor:
                     "entry_fee_currency": entry_fee_currency,
                     "entry_fee_source": entry_fee_source,
                     "expected_entry_price": expected_entry_price,
+                    "theoretical_entry_price": theoretical_entry_price,
+                    "policy_entry_price": theoretical_entry_price,
                     "realized_entry_price": entry_price,
                     "ohlcv_entry_price": ohlcv_entry_price,
                     "entry_price_delta_vs_ohlcv": entry_price_delta,
@@ -6376,6 +6871,8 @@ class TradeExecutor:
                 "entry_fee_source": entry_fee_source,
                 "price": entry_price,
                 "expected_entry_price": expected_entry_price,
+                "theoretical_entry_price": theoretical_entry_price,
+                "policy_entry_price": theoretical_entry_price,
                 "realized_entry_price": entry_price,
                 "ohlcv_entry_price": ohlcv_entry_price,
                 "entry_price_delta_vs_ohlcv": entry_price_delta,
@@ -6463,6 +6960,23 @@ class TradeExecutor:
             ohlcv_reference_price,
             default=_safe_float(price, default=np.nan),
         )
+        theoretical_entry_price = _first_finite_price(
+            trade_context,
+            (
+                "theoretical_entry_price",
+                "policy_entry_price",
+                "ohlcv_entry_price",
+                "signal_price",
+                "expected_entry_price",
+                "decision_mid",
+            ),
+        )
+        if not (np.isfinite(theoretical_entry_price) and theoretical_entry_price > 0.0):
+            theoretical_entry_price = (
+                float(ohlcv_entry_price)
+                if np.isfinite(ohlcv_entry_price) and ohlcv_entry_price > 0.0
+                else float(entry_price)
+            )
         entry_price_delta = (
             float(entry_price) - float(ohlcv_entry_price)
             if np.isfinite(ohlcv_entry_price)
@@ -6519,6 +7033,8 @@ class TradeExecutor:
             "size": size,
             "price": price,
             "expected_entry_price": expected_entry_price,
+            "theoretical_entry_price": theoretical_entry_price,
+            "policy_entry_price": theoretical_entry_price,
             "realized_entry_price": entry_price,
             "ohlcv_entry_price": ohlcv_entry_price,
             "entry_price_delta_vs_ohlcv": entry_price_delta,
@@ -6558,6 +7074,9 @@ class TradeExecutor:
                 "side": side,
                 "size": size,
                 "entry_price": entry_price,
+                "realized_entry_price": entry_price,
+                "theoretical_entry_price": theoretical_entry_price,
+                "policy_entry_price": theoretical_entry_price,
                 "ohlcv_entry_price": ohlcv_entry_price,
                 "entry_price_delta_vs_ohlcv": entry_price_delta,
                 "entry_price_delta_vs_ohlcv_pct": entry_price_delta_pct,
@@ -6901,6 +7420,9 @@ class TradeExecutor:
         bars_in_trade: Optional[int] = None,
         last_5m_eval_ts: Optional[pd.Timestamp] = None,
         current_price: Optional[float] = None,
+        current_price_source: Optional[str] = None,
+        policy_entry_price: Optional[float] = None,
+        policy_entry_price_source: Optional[str] = None,
         current_price_ts: Optional[pd.Timestamp] = None,
     ) -> None:
         """Persist monitor state and apply policy-authorised stop decisions only."""
@@ -6926,6 +7448,13 @@ class TradeExecutor:
                 if current_price is not None and np.isfinite(current_price):
                     state["current_price"] = float(current_price)
                     state["last_price"] = float(current_price)
+                if current_price_source:
+                    state["current_price_source"] = str(current_price_source)
+                if policy_entry_price is not None and np.isfinite(policy_entry_price):
+                    state["policy_entry_price"] = float(policy_entry_price)
+                    state.setdefault("theoretical_entry_price", float(policy_entry_price))
+                if policy_entry_price_source:
+                    state["policy_entry_price_source"] = str(policy_entry_price_source)
                 if current_price_ts is not None:
                     state["current_price_ts"] = pd.Timestamp(current_price_ts)
                 if bars_in_trade is not None:
@@ -7022,6 +7551,13 @@ class TradeExecutor:
             if current_price is not None and np.isfinite(current_price):
                 state["current_price"] = float(current_price)
                 state["last_price"] = float(current_price)
+            if current_price_source:
+                state["current_price_source"] = str(current_price_source)
+            if policy_entry_price is not None and np.isfinite(policy_entry_price):
+                state["policy_entry_price"] = float(policy_entry_price)
+                state.setdefault("theoretical_entry_price", float(policy_entry_price))
+            if policy_entry_price_source:
+                state["policy_entry_price_source"] = str(policy_entry_price_source)
             if current_price_ts is not None:
                 state["current_price_ts"] = pd.Timestamp(current_price_ts)
             if bars_in_trade is not None:

@@ -243,6 +243,30 @@ class PolicyRankLookupResult:
     strategy_id: str
 
 
+@dataclass(frozen=True)
+class AuctionEvThresholdResult:
+    threshold: float
+    target_mean_net_return: float
+    target_hit_rate: float
+    mean_net_return: float
+    hit_rate: float
+    n_trades: int
+    source: str
+    enabled: bool = True
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class StrategyEvGateResult:
+    allowed: bool
+    target_mean_net_return: float
+    min_hit_rate: float
+    mean_net_return: float
+    hit_rate: float
+    source: str
+    reason: str = ""
+
+
 class PolicyRankReferenceStore:
     """Lazy loader for simple_policy_optimiser policy-rank CDF artifacts."""
 
@@ -254,6 +278,9 @@ class PolicyRankReferenceStore:
         self._manifest: dict[str, Any] | None = None
         self._cache: dict[str, tuple[np.ndarray, str, str]] = {}
         self._auction_cache: tuple[np.ndarray, str] | None = None
+        self._auction_ev_threshold_table: pd.DataFrame | None = None
+        self._strategy_ev_threshold_tables: dict[str, pd.DataFrame] | None = None
+        self._strategy_ev_gate_table: dict[str, dict[str, Any]] | None = None
 
     @property
     def manifest(self) -> dict[str, Any]:
@@ -352,6 +379,547 @@ class PolicyRankReferenceStore:
         rank = policy_rank_pct_from_sorted_scores(scores, float(calibrated_score))
         return PolicyRankLookupResult(rank, int(scores.size), source, "cross_strategy")
 
+    def _load_auction_ev_threshold_table(self) -> pd.DataFrame:
+        """Load or build the global-auction threshold -> EV/hit-rate map."""
+        if self._auction_ev_threshold_table is not None:
+            return self._auction_ev_threshold_table
+        policy_path = (
+            self.data_root
+            / "artifacts"
+            / self.run_id
+            / "policy_params"
+            / "best_policy_params.json"
+        )
+        try:
+            params = json.loads(policy_path.read_text(encoding="utf-8"))
+            rows: list[dict[str, Any]] = []
+            for strategy in params.get("strategies") or []:
+                metrics = dict(strategy.get("deployment_threshold_metrics") or {})
+                search = dict(metrics.get("threshold_search") or {})
+                for item in search.get("best_by_threshold") or []:
+                    threshold = item.get("deployment_rank_threshold")
+                    mean_net = item.get(
+                        "cumulative_mean_net_trade", item.get("mean_net_trade")
+                    )
+                    hit_rate = item.get("cumulative_hit_rate", item.get("hit_rate"))
+                    n_trades = item.get("cumulative_n_trades", item.get("n_trades"))
+                    try:
+                        threshold_f = float(threshold)
+                        mean_f = float(mean_net)
+                        hit_f = float(hit_rate)
+                        n_i = int(n_trades)
+                    except (TypeError, ValueError):
+                        continue
+                    if (
+                        np.isfinite(threshold_f)
+                        and np.isfinite(mean_f)
+                        and np.isfinite(hit_f)
+                        and n_i > 0
+                    ):
+                        rows.append(
+                            {
+                                "threshold": threshold_f,
+                                "mean_net_return": mean_f,
+                                "hit_rate": hit_f,
+                                "n_trades": n_i,
+                                "source": str(policy_path),
+                            }
+                        )
+            if rows:
+                raw = pd.DataFrame(rows)
+                grouped_rows: list[dict[str, Any]] = []
+                for threshold, group in raw.groupby("threshold"):
+                    weights = pd.to_numeric(group["n_trades"], errors="coerce").fillna(
+                        0.0
+                    )
+                    weight_sum = float(weights.sum())
+                    if weight_sum <= 0:
+                        continue
+                    grouped_rows.append(
+                        {
+                            "threshold": float(threshold),
+                            "mean_net_return": float(
+                                (
+                                    pd.to_numeric(
+                                        group["mean_net_return"], errors="coerce"
+                                    ).fillna(0.0)
+                                    * weights
+                                ).sum()
+                                / weight_sum
+                            ),
+                            "hit_rate": float(
+                                (
+                                    pd.to_numeric(group["hit_rate"], errors="coerce")
+                                    .fillna(0.0)
+                                    .mul(weights)
+                                ).sum()
+                                / weight_sum
+                            ),
+                            "n_trades": int(weight_sum),
+                            "source": str(policy_path),
+                        }
+                    )
+                if grouped_rows:
+                    self._auction_ev_threshold_table = pd.DataFrame(
+                        grouped_rows
+                    ).sort_values("threshold")
+                    return self._auction_ev_threshold_table
+        except Exception:
+            pass
+        path = (
+            self.data_root
+            / "artifacts"
+            / self.run_id
+            / "simple_policy_optimiser"
+            / "simple_policy_candidates.parquet"
+        )
+        try:
+            frame = pd.read_parquet(
+                path,
+                columns=["auction_rank_score", "normalized_rank_score", "net_return"],
+            )
+        except Exception:
+            self._auction_ev_threshold_table = pd.DataFrame()
+            return self._auction_ev_threshold_table
+        rank_col = (
+            "auction_rank_score"
+            if "auction_rank_score" in frame.columns
+            else "normalized_rank_score"
+        )
+        work = frame[[rank_col, "net_return"]].copy()
+        work[rank_col] = pd.to_numeric(work[rank_col], errors="coerce")
+        work["net_return"] = pd.to_numeric(work["net_return"], errors="coerce")
+        work = work.replace([np.inf, -np.inf], np.nan).dropna()
+        if work.empty:
+            self._auction_ev_threshold_table = pd.DataFrame()
+            return self._auction_ev_threshold_table
+        thresholds = np.unique(np.round(work[rank_col].to_numpy(dtype=float), 4))
+        thresholds = thresholds[(thresholds >= 0.0) & (thresholds <= 1.0)]
+        rows: list[dict[str, Any]] = []
+        returns = work["net_return"].to_numpy(dtype=float)
+        ranks = work[rank_col].to_numpy(dtype=float)
+        for threshold in thresholds:
+            mask = ranks >= float(threshold)
+            n = int(mask.sum())
+            if n <= 0:
+                continue
+            selected = returns[mask]
+            rows.append(
+                {
+                    "threshold": float(threshold),
+                    "mean_net_return": float(np.nanmean(selected)),
+                    "hit_rate": float(np.nanmean(selected > 0.0)),
+                    "n_trades": n,
+                    "source": str(path),
+                }
+            )
+        self._auction_ev_threshold_table = pd.DataFrame(rows).sort_values(
+            "threshold"
+        )
+        return self._auction_ev_threshold_table
+
+    def auction_threshold_for_ev(
+        self,
+        *,
+        target_mean_net_return: float,
+        min_hit_rate: float = 0.60,
+        fallback_threshold: float = 1.0,
+    ) -> AuctionEvThresholdResult:
+        """Return the lowest global-auction floor meeting EV and hit-rate constraints."""
+        target = float(target_mean_net_return)
+        hit_target = float(min_hit_rate)
+        table = self._load_auction_ev_threshold_table()
+        if table.empty:
+            return AuctionEvThresholdResult(
+                threshold=float(fallback_threshold),
+                target_mean_net_return=target,
+                target_hit_rate=hit_target,
+                mean_net_return=float("nan"),
+                hit_rate=float("nan"),
+                n_trades=0,
+                source="",
+                enabled=False,
+                reason="missing_auction_ev_threshold_table",
+            )
+        ok = table[
+            (pd.to_numeric(table["mean_net_return"], errors="coerce") >= target)
+            & (pd.to_numeric(table["hit_rate"], errors="coerce") >= hit_target)
+        ]
+        if ok.empty:
+            best = table.sort_values(
+                ["mean_net_return", "hit_rate", "threshold"],
+                ascending=[False, False, True],
+            ).iloc[0]
+            return AuctionEvThresholdResult(
+                threshold=float(fallback_threshold),
+                target_mean_net_return=target,
+                target_hit_rate=hit_target,
+                mean_net_return=float(best.get("mean_net_return", np.nan)),
+                hit_rate=float(best.get("hit_rate", np.nan)),
+                n_trades=int(best.get("n_trades", 0)),
+                source=str(best.get("source", "")),
+                enabled=False,
+                reason="no_threshold_meets_ev_and_hit_rate_constraints",
+            )
+        row = ok.sort_values("threshold").iloc[0]
+        return AuctionEvThresholdResult(
+            threshold=float(row["threshold"]),
+            target_mean_net_return=target,
+            target_hit_rate=hit_target,
+            mean_net_return=float(row["mean_net_return"]),
+            hit_rate=float(row["hit_rate"]),
+            n_trades=int(row["n_trades"]),
+            source=str(row.get("source", "")),
+            enabled=True,
+            reason="auction_ev_threshold",
+        )
+
+    def _load_strategy_ev_threshold_tables(self) -> dict[str, pd.DataFrame]:
+        """Load per-strategy threshold -> EV/hit-rate maps from policy replay output."""
+        if self._strategy_ev_threshold_tables is not None:
+            return self._strategy_ev_threshold_tables
+        policy_path = (
+            self.data_root
+            / "artifacts"
+            / self.run_id
+            / "policy_params"
+            / "best_policy_params.json"
+        )
+        deployed_rows: dict[str, dict[str, Any]] = {}
+        try:
+            params = json.loads(policy_path.read_text(encoding="utf-8"))
+            for strategy in params.get("strategies") or []:
+                sid = str(strategy.get("strategy_id") or "").strip()
+                if not sid:
+                    continue
+                try:
+                    threshold_f = float(strategy.get("deployment_rank_threshold"))
+                    mean_f = float(strategy.get("avg_net_pnl_per_trade"))
+                    hit_f = float(
+                        strategy.get(
+                            "pnl_positive_rate",
+                            strategy.get("hit_rate"),
+                        )
+                    )
+                except (TypeError, ValueError):
+                    continue
+                if not (
+                    np.isfinite(threshold_f)
+                    and np.isfinite(mean_f)
+                    and np.isfinite(hit_f)
+                ):
+                    continue
+                try:
+                    n_i = int(
+                        strategy.get(
+                            "trade_count",
+                            strategy.get(
+                                "n_trades",
+                                strategy.get(
+                                    "deployment_trades",
+                                    strategy.get("candidate_rows", 0),
+                                ),
+                            ),
+                        )
+                    )
+                except (TypeError, ValueError):
+                    n_i = 0
+                deployed_rows[sid] = {
+                    "threshold": float(np.clip(threshold_f, 0.0, 1.0)),
+                    "mean_net_return": mean_f,
+                    "hit_rate": hit_f,
+                    "n_trades": max(0, n_i),
+                    "source": str(policy_path),
+                }
+        except Exception:
+            deployed_rows = {}
+        candidates_path = (
+            self.data_root
+            / "artifacts"
+            / self.run_id
+            / "simple_policy_optimiser"
+            / "simple_policy_candidates.parquet"
+        )
+        try:
+            frame = pd.read_parquet(
+                candidates_path,
+                columns=["strategy_id", "side", "strategy_rank_pct", "net_return"],
+            )
+            frame["strategy_id"] = frame["strategy_id"].astype(str)
+            frame["side"] = frame["side"].astype(str).str.lower()
+            frame["strategy_rank_pct"] = pd.to_numeric(
+                frame["strategy_rank_pct"], errors="coerce"
+            )
+            frame["net_return"] = pd.to_numeric(frame["net_return"], errors="coerce")
+            frame = frame.replace([np.inf, -np.inf], np.nan).dropna(
+                subset=["strategy_id", "strategy_rank_pct", "net_return"]
+            )
+            frame = frame[
+                (frame["strategy_rank_pct"] >= 0.0)
+                & (frame["strategy_rank_pct"] <= 1.0)
+            ]
+            out: dict[str, pd.DataFrame] = {}
+            for sid, group in frame.groupby("strategy_id", sort=False):
+                ranks = group["strategy_rank_pct"].to_numpy(dtype=np.float64)
+                returns = group["net_return"].to_numpy(dtype=np.float64)
+                if ranks.size == 0:
+                    continue
+                thresholds = np.unique(np.round(ranks, 4))
+                thresholds = thresholds[(thresholds >= 0.0) & (thresholds <= 1.0)]
+                rows: list[dict[str, Any]] = []
+                for threshold in thresholds:
+                    mask = ranks >= float(threshold)
+                    n = int(mask.sum())
+                    if n <= 0:
+                        continue
+                    selected = returns[mask]
+                    rows.append(
+                        {
+                            "threshold": float(threshold),
+                            "mean_net_return": float(np.nanmean(selected)),
+                            "hit_rate": float(np.nanmean(selected > 0.0)),
+                            "n_trades": n,
+                            "source": str(candidates_path),
+                        }
+                    )
+                deployed = deployed_rows.get(str(sid))
+                if deployed is not None:
+                    rows.append(deployed)
+                if not rows:
+                    continue
+                side = None
+                side_values = [
+                    str(x).strip().lower()
+                    for x in group["side"].dropna().unique().tolist()
+                ]
+                if len(side_values) == 1 and side_values[0] in {"long", "short"}:
+                    side = side_values[0]
+                table = (
+                    pd.DataFrame(rows)
+                    .sort_values(
+                        ["threshold", "mean_net_return", "hit_rate"],
+                        ascending=[True, False, False],
+                    )
+                    .drop_duplicates(subset=["threshold"], keep="first")
+                    .sort_values("threshold")
+                )
+                for alias in strategy_rank_reference_aliases(str(sid), side):
+                    if alias:
+                        out[str(alias)] = table
+            if out:
+                self._strategy_ev_threshold_tables = out
+                return self._strategy_ev_threshold_tables
+        except Exception:
+            pass
+        out: dict[str, pd.DataFrame] = {}
+        try:
+            params = json.loads(policy_path.read_text(encoding="utf-8"))
+            for strategy in params.get("strategies") or []:
+                sid = str(strategy.get("strategy_id") or "").strip()
+                if not sid:
+                    continue
+                side = str(strategy.get("side") or "").strip().lower() or None
+                metrics = dict(strategy.get("deployment_threshold_metrics") or {})
+                search = dict(metrics.get("threshold_search") or {})
+                rows: list[dict[str, Any]] = []
+                for item in search.get("best_by_threshold") or []:
+                    threshold = item.get("deployment_rank_threshold")
+                    mean_net = item.get(
+                        "cumulative_mean_net_trade", item.get("mean_net_trade")
+                    )
+                    hit_rate = item.get("cumulative_hit_rate", item.get("hit_rate"))
+                    n_trades = item.get("cumulative_n_trades", item.get("n_trades"))
+                    try:
+                        threshold_f = float(threshold)
+                        mean_f = float(mean_net)
+                        hit_f = float(hit_rate)
+                        n_i = int(n_trades)
+                    except (TypeError, ValueError):
+                        continue
+                    if (
+                        np.isfinite(threshold_f)
+                        and np.isfinite(mean_f)
+                        and np.isfinite(hit_f)
+                        and n_i > 0
+                    ):
+                        rows.append(
+                            {
+                                "threshold": threshold_f,
+                                "mean_net_return": mean_f,
+                                "hit_rate": hit_f,
+                                "n_trades": n_i,
+                                "source": str(policy_path),
+                            }
+                        )
+                deployed = deployed_rows.get(sid)
+                if deployed is not None:
+                    rows.append(deployed)
+                if not rows:
+                    continue
+                frame = pd.DataFrame(rows).sort_values("threshold")
+                for alias in strategy_rank_reference_aliases(sid, side):
+                    if alias:
+                        out[str(alias)] = frame
+        except Exception:
+            out = {}
+        self._strategy_ev_threshold_tables = out
+        return self._strategy_ev_threshold_tables
+
+    def strategy_threshold_for_ev(
+        self,
+        *,
+        strategy_id: str,
+        side: str | None = None,
+        target_mean_net_return: float,
+        min_hit_rate: float = 0.60,
+        fallback_threshold: float = 1.0,
+    ) -> AuctionEvThresholdResult:
+        """Return the lowest per-strategy rank floor meeting EV and hit-rate constraints."""
+        tables = self._load_strategy_ev_threshold_tables()
+        table = None
+        for alias in strategy_rank_reference_aliases(strategy_id, side):
+            table = tables.get(alias)
+            if table is not None:
+                break
+        target = float(target_mean_net_return)
+        hit_target = float(min_hit_rate)
+        if table is None or table.empty:
+            return AuctionEvThresholdResult(
+                threshold=float(fallback_threshold),
+                target_mean_net_return=target,
+                target_hit_rate=hit_target,
+                mean_net_return=float("nan"),
+                hit_rate=float("nan"),
+                n_trades=0,
+                source="",
+                enabled=False,
+                reason="missing_strategy_ev_threshold_table",
+            )
+        ok = table[
+            (pd.to_numeric(table["mean_net_return"], errors="coerce") >= target)
+            & (pd.to_numeric(table["hit_rate"], errors="coerce") >= hit_target)
+        ]
+        if ok.empty:
+            best = table.sort_values(
+                ["mean_net_return", "hit_rate", "threshold"],
+                ascending=[False, False, True],
+            ).iloc[0]
+            return AuctionEvThresholdResult(
+                threshold=float(fallback_threshold),
+                target_mean_net_return=target,
+                target_hit_rate=hit_target,
+                mean_net_return=float(best.get("mean_net_return", np.nan)),
+                hit_rate=float(best.get("hit_rate", np.nan)),
+                n_trades=int(best.get("n_trades", 0)),
+                source=str(best.get("source", "")),
+                enabled=False,
+                reason="no_strategy_threshold_meets_ev_and_hit_rate_constraints",
+            )
+        row = ok.sort_values("threshold").iloc[0]
+        return AuctionEvThresholdResult(
+            threshold=float(row["threshold"]),
+            target_mean_net_return=target,
+            target_hit_rate=hit_target,
+            mean_net_return=float(row["mean_net_return"]),
+            hit_rate=float(row["hit_rate"]),
+            n_trades=int(row["n_trades"]),
+            source=str(row.get("source", "")),
+            enabled=True,
+            reason="strategy_ev_threshold",
+        )
+
+    def _load_strategy_ev_gate_table(self) -> dict[str, dict[str, Any]]:
+        if self._strategy_ev_gate_table is not None:
+            return self._strategy_ev_gate_table
+        path = (
+            self.data_root
+            / "artifacts"
+            / self.run_id
+            / "policy_params"
+            / "best_policy_params.json"
+        )
+        out: dict[str, dict[str, Any]] = {}
+        try:
+            params = json.loads(path.read_text(encoding="utf-8"))
+            for strategy in params.get("strategies") or []:
+                sid = str(strategy.get("strategy_id") or "")
+                if not sid:
+                    continue
+                try:
+                    mean_net = float(strategy.get("avg_net_pnl_per_trade"))
+                    hit_rate = float(
+                        strategy.get(
+                            "pnl_positive_rate",
+                            strategy.get("hit_rate"),
+                        )
+                    )
+                except (TypeError, ValueError):
+                    continue
+                if not (np.isfinite(mean_net) and np.isfinite(hit_rate)):
+                    continue
+                row = {
+                    "strategy_id": sid,
+                    "mean_net_return": mean_net,
+                    "hit_rate": hit_rate,
+                    "source": str(path),
+                }
+                aliases = strategy_rank_reference_aliases(
+                    sid,
+                    str(strategy.get("side") or "").strip().lower() or None,
+                )
+                aliases.append(strategy_core_id(sid))
+                for alias in aliases:
+                    if alias:
+                        out[str(alias)] = row
+            self._strategy_ev_gate_table = out
+        except Exception:
+            self._strategy_ev_gate_table = {}
+        return self._strategy_ev_gate_table
+
+    def strategy_ev_gate(
+        self,
+        *,
+        strategy_id: str,
+        side: str | None = None,
+        target_mean_net_return: float,
+        min_hit_rate: float = 0.60,
+    ) -> StrategyEvGateResult:
+        table = self._load_strategy_ev_gate_table()
+        row = None
+        for alias in strategy_rank_reference_aliases(strategy_id, side):
+            row = table.get(alias)
+            if row is not None:
+                break
+        target = float(target_mean_net_return)
+        hit_target = float(min_hit_rate)
+        if row is None:
+            return StrategyEvGateResult(
+                allowed=False,
+                target_mean_net_return=target,
+                min_hit_rate=hit_target,
+                mean_net_return=float("nan"),
+                hit_rate=float("nan"),
+                source="",
+                reason="missing_strategy_policy_ev_metrics",
+            )
+        mean_net = float(row.get("mean_net_return", np.nan))
+        hit_rate = float(row.get("hit_rate", np.nan))
+        allowed = (
+            np.isfinite(mean_net)
+            and np.isfinite(hit_rate)
+            and mean_net >= target
+            and hit_rate >= hit_target
+        )
+        return StrategyEvGateResult(
+            allowed=bool(allowed),
+            target_mean_net_return=target,
+            min_hit_rate=hit_target,
+            mean_net_return=mean_net,
+            hit_rate=hit_rate,
+            source=str(row.get("source", "")),
+            reason="strategy_ev_gate_pass" if allowed else "strategy_ev_gate_failed",
+        )
+
 
 def apply_policy_rank_percentile_gate(
     decision: Dict[str, Any],
@@ -360,6 +928,7 @@ def apply_policy_rank_percentile_gate(
     allow_live_batch_rank_fallback_for_debug: bool = False,
     inference_min_base_train_rank_pct: float | None = None,
     require_cross_strategy_auction_rank: bool = False,
+    use_auction_rank_for_threshold: bool = True,
 ) -> tuple[bool, str | None]:
     """Populate and enforce the live rank-percentile gate for one decision row."""
     threshold_space = str(decision.get("threshold_space") or "rank_percentile")
@@ -432,9 +1001,10 @@ def apply_policy_rank_percentile_gate(
         decision["auction_rank_reference_n"] = int(auction.n_rows)
         decision["auction_rank_reference_source"] = auction.source
         decision["auction_rank_score_source"] = "cross_strategy_auction_reference"
-        decision["threshold_score"] = auction_rank_pct
-        threshold_rank_pct = auction_rank_pct
-        threshold_rank_source = "cross_strategy_auction_reference"
+        if use_auction_rank_for_threshold:
+            decision["threshold_score"] = auction_rank_pct
+            threshold_rank_pct = auction_rank_pct
+            threshold_rank_source = "cross_strategy_auction_reference"
         chain.update(
             {
                 "normalized_rank_score": auction_rank_pct,

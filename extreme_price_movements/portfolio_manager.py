@@ -729,7 +729,12 @@ class PortfolioManager:
             if is_perps:
                 used_balance = float(snapshot["used_balance"])
                 if np.isfinite(used_balance):
-                    self.margin_total_liabilities_quote = used_balance
+                    snapshot["used_initial_margin_quote"] = used_balance
+                # Futures ``used`` balance is initial margin, not borrowed debt.
+                # Open notional is already tracked separately through positions;
+                # treating initial margin as a liability double-counts it and can
+                # collapse remaining capacity to zero.
+                self.margin_total_liabilities_quote = 0.0
         except Exception as exc:
             category = _classify_api_error(exc)
             self.record_api_call(

@@ -48,3 +48,7 @@ Action: In feature injection (`pipeline_steps.py`), replace `pd.concat([df, pd.D
 Learning: `iterrows()` in pandas is extremely slow due to box/unbox overhead and index checking. Simple iteration is often better performed by converting dataframe columns to numpy arrays and using `zip()` to iterate, or vectorizing the operations entirely, especially inside inner loops for tasks like pruning dominance fronts or pairwise metrics processing.
 Action: Search for and replace `iterrows()` with vectorized alternatives or numpy iteration whenever optimizing loops in a DataFrame.
 ## 2026-04-21 - [Data Converter] Learning: Iterating through DataFrame rows with iterrows() to build OHLC mapping or fallback stats is critically slow. Action: Extract columns using .values and iterate via zip() or vectorize with boolean masking.
+
+## 2026-05-30 - Vectorized DataFrame Updates for Live Ledger
+Learning: Using `.iterrows()` combined with individual `.loc` assignments inside a loop to update a Pandas DataFrame is extremely inefficient, especially as the prediction ledger grows. This sequential operation results in repeated bounds checking and slow updates.
+Action: Replaced `.iterrows()` with a vectorized approach in `PredictionLedger.mark_resolved()`. Used index matching (`upd_idx.index.intersection`) and bulk `.loc` assignments to update common rows, while utilizing `pd.concat` to efficiently append new rows. Ensure schema evolution handles missing columns gracefully with `pd.NA`.

@@ -32,6 +32,10 @@ LIVE_UNAVAILABLE_FEATURES: Set[str] = {
     "move_threshold",
     "bars_to_mfe",
     "reg_weight",
+    "prob_error",
+    "recent_prob_error_20",
+    "recent_hit_rate_20",
+    "base_model_abs_error_roll20",
 }
 
 
@@ -110,6 +114,9 @@ def _model_meta_feature_columns(model: Any) -> List[str]:
     for source in (model, getattr(model, "best_model", None)):
         if source is None:
             continue
+        selected = getattr(source, "selected_features", None)
+        if selected:
+            return list(dict.fromkeys(str(v) for v in selected if str(v)))
         raw = getattr(source, "meta_feature_columns_", None)
         if raw:
             vals.extend(str(v) for v in raw if str(v))
@@ -845,13 +852,22 @@ def validate_meta_feature_contract_artifact(
         if missing_mapping:
             errors.append(f"{key}: missing positional mappings {missing_mapping[:5]}")
 
-        unavailable = sorted(set(feature_columns) & LIVE_UNAVAILABLE_FEATURES)
+        raw_selected = _model_raw_selected_features(meta_models.get(key))
+        selected_feature_columns: List[str] = []
+        if raw_selected:
+            for feat in raw_selected:
+                feat_s = str(feat)
+                selected_feature_columns.append(str(mapping.get(feat_s, feat_s)))
+        else:
+            selected_feature_columns = feature_columns
+
+        unavailable = sorted(set(selected_feature_columns) & LIVE_UNAVAILABLE_FEATURES)
         if unavailable:
             errors.append(f"{key}: live-unavailable meta features {unavailable}")
 
         positional_required = [
             feat
-            for feat in _model_raw_selected_features(meta_models.get(key))
+            for feat in raw_selected
             if _looks_positional_feature(feat)
         ]
         missing_required = sorted(
@@ -864,7 +880,16 @@ def validate_meta_feature_contract_artifact(
             )
 
         model_contract_cols = _model_meta_feature_columns(meta_models.get(key))
-        if model_contract_cols and model_contract_cols != feature_columns:
+        if raw_selected:
+            missing_selected = sorted(
+                set(selected_feature_columns) - set(feature_columns)
+            )
+            if missing_selected:
+                errors.append(
+                    f"{key}: selected model features absent from artifact "
+                    f"{missing_selected[:5]}"
+                )
+        elif model_contract_cols and model_contract_cols != feature_columns:
             errors.append(
                 f"{key}: loaded model meta feature columns differ from artifact"
             )
@@ -927,6 +952,10 @@ def validate_live_feature_contract(
                 )
 
     for meta in _meta_models(model_bundle).values():
+        selected = _model_raw_selected_features(meta)
+        if selected:
+            active_features.update(str(v) for v in selected)
+            continue
         meta_cols = _model_meta_feature_columns(meta)
         if meta_cols:
             active_features.update(meta_cols)
@@ -1068,13 +1097,34 @@ def validate_required_feature_frames(
     required = {str(key) for key in (required_feature_keys or set()) if str(key)}
     if not required:
         return True
-    feature_map = features if isinstance(features, dict) else {}
+    is_lazy_feature_map = hasattr(features, "keys") and hasattr(
+        features, "raw_symbols_for_key"
+    )
+    feature_map = (
+        features
+        if isinstance(features, dict) or is_lazy_feature_map
+        else {}
+    )
     missing_keys = sorted(key for key in required if key not in feature_map)
     invalid_keys: List[str] = []
     missing_symbol_keys: Dict[str, List[str]] = {}
     symbol_list = [str(sym) for sym in (symbols or []) if str(sym)]
 
     for key in sorted(required - set(missing_keys)):
+        if is_lazy_feature_map:
+            if symbol_list:
+                try:
+                    available_symbols = {
+                        str(sym) for sym in feature_map.raw_symbols_for_key(key)
+                    }
+                except Exception:
+                    available_symbols = set()
+                missing_symbols = [
+                    sym for sym in symbol_list if sym not in available_symbols
+                ]
+                if missing_symbols:
+                    missing_symbol_keys[key] = missing_symbols[:10]
+            continue
         value = feature_map.get(key)
         if isinstance(value, pd.Series):
             if value.dropna().empty:

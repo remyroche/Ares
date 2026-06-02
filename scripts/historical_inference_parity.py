@@ -20,9 +20,11 @@ if str(REPO_ROOT) not in sys.path:
 
 from extreme_price_movements.config import CFG  # noqa: E402
 from extreme_price_movements.data_store import exchange_data_component  # noqa: E402
+from extreme_price_movements.inference.config import get_inference_defaults  # noqa: E402
 from extreme_price_movements.inference.config import load_inference_config  # noqa: E402
 from extreme_price_movements.inference.config import load_trained_symbol_universe  # noqa: E402
 from extreme_price_movements.inference.feature_generator import (  # noqa: E402
+    _required_tail_warmup_hours,
     get_features_for_candidates,
     get_inference_required_feature_keys,
     load_or_compute_features,
@@ -41,6 +43,7 @@ from extreme_price_movements.inference.policy_rank_reference import (  # noqa: E
 from extreme_price_movements.inference.run_inference import (  # noqa: E402
     _lgbm_mask_required_feature_keys,
     _load_lgbm_strategy_mask_rows,
+    _select_candidates_and_load_features,
 )
 from extreme_price_movements.model_loader import load_full_state  # noqa: E402
 from extreme_price_movements.pipeline_steps import (  # noqa: E402
@@ -70,6 +73,47 @@ def _runtime_only_feature_key(feature: str) -> bool:
         or key == "barrier_pct"
         or key.startswith("ret1h_G_VOL_")
     )
+
+
+def _requires_benchmark_residual(required_keys: set[str]) -> bool:
+    return any(str(key).endswith("_bench_resid") for key in required_keys or set())
+
+
+def _benchmark_context_symbols(
+    required_keys: set[str],
+    *,
+    market_mode: str,
+    live_quote_currency: str = "USDC",
+) -> list[str]:
+    if not _requires_benchmark_residual(required_keys):
+        return []
+    quote = str(live_quote_currency or "USDC").upper()
+    if str(market_mode).lower() == "perps":
+        return ["BTC/USD:USD"]
+    return [f"BTC/{quote}", "BTC/USDT", "BTC/USD"]
+
+
+def _add_required_context_symbols(
+    symbols: list[str],
+    required_keys: set[str],
+    *,
+    market_mode: str,
+    live_quote_currency: str = "USDC",
+) -> list[str]:
+    if not symbols:
+        return symbols
+    out = list(dict.fromkeys(_normalise_symbol(sym) for sym in symbols))
+    present = set(out)
+    for sym in _benchmark_context_symbols(
+        required_keys,
+        market_mode=market_mode,
+        live_quote_currency=live_quote_currency,
+    ):
+        norm = _normalise_symbol(sym)
+        if norm not in present:
+            out.append(norm)
+            present.add(norm)
+    return sorted(out)
 
 
 def _meta_oof_path(data_root: Path, run_id: str, strategy: str | None) -> Path:
@@ -311,7 +355,7 @@ def _effective_selected_feature_names(item: Any) -> set[str]:
     return set(selected)
 
 
-def _feature_columns_for_state(
+def _legacy_feature_columns_for_state(
     state: dict[str, Any],
     strategy_id: str | None = None,
 ) -> set[str]:
@@ -363,6 +407,53 @@ def _feature_columns_for_state(
                 if actual_names:
                     keys.update(actual_names)
     return keys
+
+
+def _feature_columns_for_state(
+    state: dict[str, Any],
+    strategy_id: str | None = None,
+) -> set[str]:
+    """Return decision-used feature keys for replay.
+
+    Live inference already knows how to scope a deployed head to the raw
+    features used by its base/meta models.  Historical replay should use that
+    same resolver first; the older recursive collector is intentionally kept as
+    a fallback only, because it can pull in the full union feature contract and
+    force unnecessary historical feature materialization.
+    """
+
+    allowed = None
+    if strategy_id:
+        allowed = [str(strategy_id), strategy_core_id(str(strategy_id))]
+    legacy_keys = _legacy_feature_columns_for_state(state, strategy_id)
+    try:
+        live_keys = set(
+            get_inference_required_feature_keys(
+                state,
+                accepted_strategies=allowed,
+            )
+        )
+    except Exception as exc:
+        tprint(
+            "Live decision feature resolver failed; falling back to legacy "
+            f"state scan: {exc}"
+        )
+        live_keys = set()
+    live_keys = {str(k) for k in live_keys if str(k)}
+    if live_keys:
+        dropped = len(legacy_keys - live_keys)
+        added = len(live_keys - legacy_keys)
+        tprint(
+            "Using live decision feature resolver: "
+            f"keys={len(live_keys):,} legacy_union={len(legacy_keys):,} "
+            f"legacy_only_dropped={dropped:,} live_only_added={added:,}"
+        )
+        return live_keys
+    tprint(
+        "Using legacy replay feature resolver: "
+        f"keys={len(legacy_keys):,}"
+    )
+    return legacy_keys
 
 
 def _filter_lgbm_mask_rows_for_strategy(
@@ -439,6 +530,9 @@ def _build_runtime_cfg(
     run_id: str,
     market_mode: str,
     state: dict[str, Any],
+    feature_source_run_id: str | None = None,
+    disable_rolling_cache: bool = False,
+    disable_offline_cache: bool = False,
 ) -> dict[str, Any]:
     try:
         feature_cfg = load_inference_config(
@@ -458,8 +552,9 @@ def _build_runtime_cfg(
             "live_data_root": str(data_root),
             "offline_feature_data_root": str(artifact_data_root),
             "live_feature_memory_cache_enabled": False,
+            "live_feature_return_latest_only": False,
             "live_feature_snapshot_cache_enabled": False,
-            "live_feature_rolling_cache_enabled": False,
+            "live_feature_rolling_cache_enabled": True,
             "live_feature_offline_cache_enabled": True,
             "feature_transform_cache_enabled": False,
             # Historical parity must replay the feature contract that the
@@ -472,6 +567,12 @@ def _build_runtime_cfg(
             "historical_inference_parity_preserve_cached_features": True,
         }
     )
+    if feature_source_run_id:
+        runtime_cfg["offline_feature_run_id"] = str(feature_source_run_id)
+    if disable_rolling_cache:
+        runtime_cfg["live_feature_rolling_cache_enabled"] = False
+    if disable_offline_cache:
+        runtime_cfg["live_feature_offline_cache_enabled"] = False
     bundle = state.get("bundle", {}) if isinstance(state.get("bundle"), dict) else {}
     runtime_cfg.setdefault("bundle", bundle)
     for key in (
@@ -539,11 +640,14 @@ def _compare_features(
     feature_keys: set[str],
 ) -> pd.DataFrame:
     started = time.monotonic()
-    fresh_by_feature: dict[str, pd.DataFrame] = {
-        str(feature): frame
-        for feature, frame in fresh_feats.items()
-        if str(feature) in feature_keys and isinstance(frame, pd.DataFrame) and not frame.empty
-    }
+    lazy_lookup = hasattr(fresh_feats, "latest_values_at")
+    fresh_by_feature: dict[str, pd.DataFrame] = {}
+    if not lazy_lookup:
+        fresh_by_feature = {
+            str(feature): frame
+            for feature, frame in fresh_feats.items()
+            if str(feature) in feature_keys and isinstance(frame, pd.DataFrame) and not frame.empty
+        }
     rows = []
     total = len(samples)
     tprint(
@@ -562,12 +666,19 @@ def _compare_features(
         for feature in sorted(feature_keys):
             matrix = fresh_by_feature.get(feature)
             fresh_has_value = (
-                matrix is not None and ts in matrix.index and symbol in matrix.columns
+                feature in fresh_feats
+                if lazy_lookup
+                else matrix is not None and ts in matrix.index and symbol in matrix.columns
             )
             ref_has_value = feature in ref.index
             if not fresh_has_value and not ref_has_value:
                 continue
-            fval = _safe_float(matrix.at[ts, symbol] if fresh_has_value else np.nan)
+            if lazy_lookup and feature in fresh_feats:
+                values = fresh_feats.latest_values_at(feature, [symbol], ts)
+                fval = _safe_float(values.get(symbol, np.nan))
+                fresh_has_value = np.isfinite(fval)
+            else:
+                fval = _safe_float(matrix.at[ts, symbol] if fresh_has_value else np.nan)
             rval = _safe_float(ref.get(feature, np.nan))
             fresh_finite = np.isfinite(fval)
             ref_finite = np.isfinite(rval)
@@ -788,6 +899,30 @@ def main() -> int:
         help="Skip this many earliest OOF rows per symbol before sampling.",
     )
     parser.add_argument("--lookback-hours", type=int, default=24 * 90)
+    parser.add_argument(
+        "--feature-source-run-id",
+        default=None,
+        help="Override the offline selected-feature run id used for parity reference loading.",
+    )
+    parser.add_argument(
+        "--disable-rolling-cache",
+        action="store_true",
+        help="Do not merge persisted live rolling feature cache into the replay feature set.",
+    )
+    parser.add_argument(
+        "--disable-offline-cache",
+        action="store_true",
+        help="Disable selected offline feature cache and force live-style feature recompute.",
+    )
+    parser.add_argument(
+        "--feature-load-path",
+        choices=("direct", "inference_candidate"),
+        default="direct",
+        help=(
+            "direct calls load_or_compute_features; inference_candidate routes "
+            "through run_inference._select_candidates_and_load_features."
+        ),
+    )
     parser.add_argument("--max-symbols", type=int, default=0)
     parser.add_argument("--min-timestamp", default=None)
     parser.add_argument("--output-dir", type=Path, default=None)
@@ -809,6 +944,15 @@ def main() -> int:
         "--skip-feature-comparison",
         action="store_true",
         help="Skip per-cell feature parity rows; useful after full feature parity is already proven.",
+    )
+    parser.add_argument(
+        "--score-full-universe",
+        action="store_true",
+        help=(
+            "Score every symbol in the feature basket at each sampled timestamp. "
+            "By default, replay scores only sampled rows while still computing "
+            "features with the requested basket context."
+        ),
     )
     args = parser.parse_args()
 
@@ -877,8 +1021,18 @@ def main() -> int:
     sample_span_hours = int(
         np.ceil((max_ts - min_ts) / pd.Timedelta(hours=1))
     )
-    effective_lookback_hours = max(int(args.lookback_hours), sample_span_hours + 1)
-    start_ts = min_ts - pd.Timedelta(hours=int(args.lookback_hours))
+    inference_defaults = get_inference_defaults()
+    min_warmup_hours = _required_tail_warmup_hours(
+        lookback_hours=int(args.lookback_hours),
+        trend_sma_hours=int(inference_defaults["trend_sma_hours"]),
+        gate_vol_lookback_hours=int(inference_defaults["gate_vol_lookback_hours"]),
+    )
+    effective_lookback_hours = max(
+        int(args.lookback_hours),
+        sample_span_hours + 1,
+        int(min_warmup_hours),
+    )
+    start_ts = min_ts - pd.Timedelta(hours=int(effective_lookback_hours))
     market_data_root = _historical_market_data_root(args.data_root, args.market_mode)
     tprint(
         f"Historical inference parity: strategy={strategy_id} samples={len(samples)} "
@@ -915,39 +1069,121 @@ def main() -> int:
         run_id=args.run_id,
         market_mode=args.market_mode,
         state=state,
+        feature_source_run_id=args.feature_source_run_id,
+        disable_rolling_cache=bool(args.disable_rolling_cache),
+        disable_offline_cache=bool(args.disable_offline_cache),
     )
     required_keys = _feature_columns_for_state(state, strategy_id)
     tprint(f"Initial required feature contract keys: {len(required_keys):,}")
+    lgbm_strategy_mask_rows: dict[str, dict[str, Any]] = {}
     try:
         mask_rows = _load_lgbm_strategy_mask_rows(
             str(artifact_data_root),
             args.run_id,
             market_mode=args.market_mode,
         )
+        lgbm_strategy_mask_rows = _filter_lgbm_mask_rows_for_strategy(
+            mask_rows,
+            strategy_id,
+        )
         required_keys |= set(
-            _lgbm_mask_required_feature_keys(
-                _filter_lgbm_mask_rows_for_strategy(mask_rows, strategy_id)
-            )
+            _lgbm_mask_required_feature_keys(lgbm_strategy_mask_rows)
         )
         tprint(f"Required keys after strategy-mask features: {len(required_keys):,}")
     except Exception:
         tprint("Strategy-mask feature key load failed; continuing with model feature contract only")
         pass
+    before_context_symbols = len(symbols)
+    symbols = _add_required_context_symbols(
+        symbols,
+        required_keys,
+        market_mode=args.market_mode,
+        live_quote_currency=args.live_quote_currency,
+    )
+    if len(symbols) != before_context_symbols:
+        tprint(
+            "Added required benchmark context symbols for residual feature parity: "
+            f"{before_context_symbols}->{len(symbols)}"
+        )
+        close_cols = set(str(c) for c in panel.get("close", pd.DataFrame()).columns)
+        missing_panel_symbols = [sym for sym in symbols if sym not in close_cols]
+        if missing_panel_symbols:
+            panel_started = time.monotonic()
+            tprint(
+                "Reloading historical panel with required benchmark context: "
+                f"missing={missing_panel_symbols[:5]}"
+            )
+            panel = _load_panel(
+                data_root=market_data_root,
+                symbols=symbols,
+                start_ts=start_ts,
+                end_ts=max_ts,
+            )
+            if not panel or "close" not in panel:
+                raise SystemExit("No historical OHLCV panel loaded after context expansion.")
+            tprint(
+                "Reloaded historical panel: "
+                f"fields={len(panel)} close_shape={panel['close'].shape} "
+                f"elapsed={time.monotonic() - panel_started:.1f}s"
+            )
+            _attach_external_kraken_spot_panels(
+                panel,
+                data_root=market_data_root,
+                market_mode=args.market_mode,
+            )
     feature_started = time.monotonic()
     tprint(
         "Loading/computing inference features: "
         f"required_keys={len(required_keys):,} symbols={len(symbols):,} "
-        f"lookback_hours={effective_lookback_hours}"
+        f"lookback_hours={effective_lookback_hours} "
+        f"feature_load_path={args.feature_load_path}"
     )
-    fresh_feats = load_or_compute_features(
-        panel,
-        list(panel["close"].columns),
-        args.run_id,
-        str(market_data_root),
-        feature_cfg,
-        lookback_hours=effective_lookback_hours,
-        required_feature_keys=required_keys,
-    )
+    feature_path_audit: dict[str, Any] = {
+        "feature_load_path": args.feature_load_path,
+        "disable_offline_cache": bool(args.disable_offline_cache),
+        "disable_rolling_cache": bool(args.disable_rolling_cache),
+        "feature_source_run_id": args.feature_source_run_id,
+    }
+    if args.feature_load_path == "inference_candidate":
+        (
+            thresholds,
+            long_candidates,
+            short_candidates,
+            fresh_feats,
+            strategy_candidate_masks,
+        ) = _select_candidates_and_load_features(
+            panel=panel,
+            symbols=symbols,
+            run_id=args.run_id,
+            data_root=str(market_data_root),
+            cfg=feature_cfg,
+            lookback_hours=effective_lookback_hours,
+            required_feature_keys=required_keys,
+            lgbm_strategy_mask_rows=lgbm_strategy_mask_rows,
+            feature_context_symbols=symbols,
+            model_features_required=not bool(args.skip_predictions),
+        )
+        feature_path_audit.update(
+            {
+                "thresholds": thresholds,
+                "long_candidates": int(len(long_candidates)),
+                "short_candidates": int(len(short_candidates)),
+                "strategy_masks": {
+                    str(k): int(len(v or []))
+                    for k, v in (strategy_candidate_masks or {}).items()
+                },
+            }
+        )
+    else:
+        fresh_feats = load_or_compute_features(
+            panel,
+            list(panel["close"].columns),
+            args.run_id,
+            str(market_data_root),
+            feature_cfg,
+            lookback_hours=effective_lookback_hours,
+            required_feature_keys=required_keys,
+        )
     tprint(
         "Inference feature load/compute complete: "
         f"features={len(fresh_feats):,} elapsed={time.monotonic() - feature_started:.1f}s"
@@ -973,7 +1209,7 @@ def main() -> int:
     else:
         reference_rows = _load_reference_feature_rows(
             artifact_data_root,
-            args.run_id,
+            str(args.feature_source_run_id or args.run_id),
             samples,
             comparable_feature_keys,
         )
@@ -1008,7 +1244,7 @@ def main() -> int:
             strategy_id,
             calibration_data=calibration_data,
             policy_rank_scores=policy_rank_scores,
-            prediction_universe_symbols=symbols if args.basket_mode == "full" else None,
+            prediction_universe_symbols=symbols if args.score_full_universe else None,
         )
     summary = _summary(feature_report, prediction_report)
     out_dir = args.output_dir or (
@@ -1019,6 +1255,10 @@ def main() -> int:
     prediction_report.to_csv(out_dir / "prediction_parity.csv", index=False)
     (out_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True, default=str) + "\n",
+        encoding="utf-8",
+    )
+    (out_dir / "feature_path_audit.json").write_text(
+        json.dumps(feature_path_audit, indent=2, sort_keys=True, default=str) + "\n",
         encoding="utf-8",
     )
     tprint(json.dumps(summary, indent=2, sort_keys=True, default=str))

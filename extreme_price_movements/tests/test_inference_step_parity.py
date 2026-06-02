@@ -151,6 +151,39 @@ def test_load_lgbm_strategy_masks_fallback_filters_to_selected_strategies(
     assert "unselected" not in masks
 
 
+def test_lgbm_strategy_mask_coverage_fails_closed_for_missing_selected_strategy():
+    with pytest.raises(RuntimeError, match="regime masks missing"):
+        ri._validate_lgbm_strategy_mask_coverage(
+            {
+                "long_present": {
+                    "strategy_id": "present",
+                    "base_event_trigger": "(*)|(x>0)|(*)",
+                }
+            },
+            {"long_missing"},
+        )
+
+
+def test_lgbm_strategy_mask_coverage_accepts_side_alias_for_selected_strategy():
+    ri._validate_lgbm_strategy_mask_coverage(
+        {
+            "long_selected": {
+                "strategy_id": "selected",
+                "base_event_trigger": "(*)|(x>0)|(*)",
+            }
+        },
+        {"long_selected"},
+    )
+
+
+def test_lgbm_strategy_mask_coverage_fails_closed_for_missing_trigger():
+    with pytest.raises(RuntimeError, match="missing base_event_trigger"):
+        ri._validate_lgbm_strategy_mask_coverage(
+            {"long_selected": {"strategy_id": "selected"}},
+            {"long_selected"},
+        )
+
+
 def test_strategy_asset_exclusion_matches_across_usdt_usdc_quote():
     assert ri._is_symbol_blocked_for_strategy(
         "BTC/USDC",

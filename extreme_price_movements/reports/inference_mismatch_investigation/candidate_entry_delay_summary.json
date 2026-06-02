@@ -1,0 +1,14 @@
+{
+  "available": true,
+  "entry_execution_source_counts": {
+    "delayed_1m_intraminute_proxy": 18534,
+    "theoretical_15m_open": 1492
+  },
+  "max_minutes": 7.0,
+  "median_minutes": 7.0,
+  "min_minutes": 7.0,
+  "minutes_value_counts": {
+    "7.0": 20026
+  },
+  "non_null": 20026
+}

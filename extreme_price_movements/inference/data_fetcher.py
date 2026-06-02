@@ -10,6 +10,7 @@ This module handles fetching OHLCV data for inference with:
 
 import os
 import random
+import threading
 import time
 import traceback
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
@@ -76,6 +77,24 @@ PERP_OHLCV_EXTRA_FIELDS = (
     "premium_index_close",
     "premium_index",
 )
+
+
+def _read_int_env(
+    name: str,
+    default: int,
+    *,
+    minimum: int = 1,
+    maximum: Optional[int] = None,
+) -> int:
+    raw = os.environ.get(name)
+    try:
+        value = int(raw) if raw not in (None, "") else int(default)
+    except (TypeError, ValueError):
+        value = int(default)
+    value = max(int(minimum), value)
+    if maximum is not None:
+        value = min(int(maximum), value)
+    return value
 
 
 def _normalise_market_mode(market_mode: Optional[str] = None) -> str:
@@ -200,6 +219,7 @@ class DataFetcher:
             str, tuple[Optional[float], Optional[float], Dict[str, pd.Series]]
         ] = {}
         self._ticker_snapshot_cache: tuple[float, Dict[str, Dict[str, Any]]] | None = None
+        self._ticker_snapshot_lock = threading.Lock()
 
     def _exchange_symbol(self, symbol: str) -> str:
         if self.market_mode != "perps" or ":" in str(symbol):
@@ -362,19 +382,26 @@ class DataFetcher:
             and now_mono - self._ticker_snapshot_cache[0] < 10.0
         ):
             return self._ticker_snapshot_cache[1]
-        out: Dict[str, Dict[str, Any]] = {}
-        if hasattr(self.exchange, "publicGetTickers"):
-            payload = self.exchange.publicGetTickers()
-            rows = payload.get("tickers") if isinstance(payload, dict) else None
-            if isinstance(rows, list):
-                for row in rows:
-                    if not isinstance(row, dict):
-                        continue
-                    market_id = str(row.get("symbol") or "").upper()
-                    if market_id:
-                        out[market_id] = row
-        self._ticker_snapshot_cache = (now_mono, out)
-        return out
+        with self._ticker_snapshot_lock:
+            now_mono = time.monotonic()
+            if (
+                self._ticker_snapshot_cache is not None
+                and now_mono - self._ticker_snapshot_cache[0] < 10.0
+            ):
+                return self._ticker_snapshot_cache[1]
+            out: Dict[str, Dict[str, Any]] = {}
+            if hasattr(self.exchange, "publicGetTickers"):
+                payload = self.exchange.publicGetTickers()
+                rows = payload.get("tickers") if isinstance(payload, dict) else None
+                if isinstance(rows, list):
+                    for row in rows:
+                        if not isinstance(row, dict):
+                            continue
+                        market_id = str(row.get("symbol") or "").upper()
+                        if market_id:
+                            out[market_id] = row
+            self._ticker_snapshot_cache = (now_mono, out)
+            return out
 
     def _fetch_live_derivative_snapshot(
         self,
@@ -845,7 +872,7 @@ class DataFetcher:
         )
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
         df = df.set_index("timestamp").sort_index()
-        df = df[df.index <= target_hour]
+        df = df[df.index == target_hour]
         if df.empty:
             return pd.DataFrame()
         df = df[~df.index.duplicated(keep="last")]
@@ -957,6 +984,7 @@ class DataFetcher:
         symbols: List[str],
         *,
         max_workers: int = 16,
+        microdata_max_workers: Optional[int] = None,
         no_progress_timeout_seconds: float = 60.0,
         target_hour: Optional[pd.Timestamp] = None,
         check_recent_gaps_days: int = 7,
@@ -968,7 +996,22 @@ class DataFetcher:
         The batch uses bounded fanout and stops waiting when no symbol has
         produced new OHLCV for ``no_progress_timeout_seconds``.
         """
-        workers = max(1, min(int(max_workers), 32))
+        worker_cap = _read_int_env(
+            "EPM_HOURLY_OHLCV_MAX_WORKERS",
+            64,
+            minimum=1,
+            maximum=128,
+        )
+        workers = max(1, min(int(max_workers), worker_cap))
+        if microdata_max_workers is None:
+            microdata_workers = _read_int_env(
+                "EPM_HOURLY_MICRODATA_WORKERS",
+                min(workers, 24),
+                minimum=1,
+                maximum=worker_cap,
+            )
+        else:
+            microdata_workers = max(1, min(int(microdata_max_workers), worker_cap))
         if target_hour is None:
             target_hour = pd.Timestamp.now(tz="UTC").floor("h") - pd.Timedelta(hours=1)
         target_hour = pd.Timestamp(target_hour)
@@ -983,6 +1026,10 @@ class DataFetcher:
         canceled = 0
         gap_backfills = 0
         skipped_existing = 0
+        microdata_symbols: list[str] = []
+        microdata_refreshed = 0
+        microdata_failed = 0
+        microdata_canceled = 0
         symbols_to_fetch: list[str] = []
         for sym in symbols:
             try:
@@ -1003,8 +1050,10 @@ class DataFetcher:
             "Hourly OHLCV universe batch start: "
             f"symbols={len(symbols)} fetch={len(symbols_to_fetch)} "
             f"skipped_existing={skipped_existing} workers={workers} "
+            f"worker_cap={worker_cap} microdata_workers={microdata_workers} "
             f"target_hour={target_hour}"
         )
+        started_at = time.monotonic()
         executor = ThreadPoolExecutor(max_workers=workers)
         futures = {
             executor.submit(
@@ -1041,17 +1090,7 @@ class DataFetcher:
                         out[sym] = df
                         last_data_time = time.monotonic()
                         if refresh_microdata:
-                            try:
-                                self.update_microdata_symbol(
-                                    sym,
-                                    start_ts=target_hour,
-                                    end_ts=target_hour,
-                                )
-                                self._microdata_symbol_cache.pop(sym, None)
-                            except Exception as exc:
-                                self._log_microdata_error(
-                                    sym, exc, context="microdata_refresh"
-                                )
+                            microdata_symbols.append(sym)
                     else:
                         empty += 1
                     if check_recent_gaps_days > 0 and self.has_recent_gap(
@@ -1071,11 +1110,69 @@ class DataFetcher:
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
 
+        if refresh_microdata and microdata_symbols:
+            microdata_workers = max(
+                1, min(int(microdata_workers), len(microdata_symbols), worker_cap)
+            )
+            tprint(
+                "Hourly microdata refresh batch start: "
+                f"symbols={len(microdata_symbols)} workers={microdata_workers} "
+                f"target_hour={target_hour}"
+            )
+            micro_executor = ThreadPoolExecutor(max_workers=microdata_workers)
+            micro_futures = {
+                micro_executor.submit(
+                    self.update_microdata_symbol,
+                    sym,
+                    start_ts=target_hour,
+                    end_ts=target_hour,
+                ): sym
+                for sym in microdata_symbols
+            }
+            micro_pending = set(micro_futures.keys())
+            last_microdata_time = time.monotonic()
+            try:
+                while micro_pending:
+                    done, micro_pending = wait(
+                        micro_pending, timeout=1.0, return_when=FIRST_COMPLETED
+                    )
+                    if not done:
+                        quiet_for = time.monotonic() - last_microdata_time
+                        if quiet_for >= float(no_progress_timeout_seconds):
+                            microdata_canceled = len(micro_pending)
+                            for fut in micro_pending:
+                                fut.cancel()
+                            tprint(
+                                "Hourly microdata no-progress timeout: "
+                                f"quiet_for={quiet_for:.1f}s "
+                                f"canceled={microdata_canceled}"
+                            )
+                            break
+                        continue
+                    for fut in done:
+                        sym = micro_futures[fut]
+                        try:
+                            fut.result()
+                            self._microdata_symbol_cache.pop(sym, None)
+                            microdata_refreshed += 1
+                            last_microdata_time = time.monotonic()
+                        except Exception as exc:
+                            microdata_failed += 1
+                            self._log_microdata_error(
+                                sym, exc, context="microdata_refresh"
+                            )
+            finally:
+                micro_executor.shutdown(wait=False, cancel_futures=True)
+
         tprint(
             "Hourly OHLCV universe batch complete: "
             f"requested={len(symbols)} fetch={len(symbols_to_fetch)} "
             f"skipped_existing={skipped_existing} updated={len(out)} empty={empty} "
             f"failed={failed} canceled={canceled} gap_backfills={gap_backfills} "
+            f"microdata_refreshed={microdata_refreshed} "
+            f"microdata_failed={microdata_failed} "
+            f"microdata_canceled={microdata_canceled} "
+            f"elapsed={time.monotonic() - started_at:.3f}s "
             f"dead_letters={len(self.dead_letter_symbols)} "
             f"errors={self.api_error_counts}"
         )

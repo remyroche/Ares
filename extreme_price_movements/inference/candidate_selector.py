@@ -196,24 +196,19 @@ def _rescue_rank_candidates(
     return long_candidates, short_candidates
 
 
-def _build_mask_for_mode(
+def _prepare_shared_mask_context(
     panel: Dict[str, pd.DataFrame],
     feats: Dict[str, pd.DataFrame],
     mask_cfg: Dict[str, Any],
-) -> pd.DataFrame:
+) -> Dict[str, Any]:
+    """Build the expensive LGBM rule resolver once for a live inference cycle."""
     from extreme_price_movements.lgbm_based_mask_generation import (
-        FeatureProcessor,
         CanonicalRuleMaskResolver,
-    )
-    from extreme_price_movements.mask_optimiser import (
-        _compute_z_cache,
-        _generate_event_masks,
-        _generate_event_masks_fast,
+        FeatureProcessor,
     )
 
     close_df = panel["close"]
     n_ts, n_syms = close_df.shape
-
     idx_flat = np.repeat(close_df.index.to_numpy(), n_syms)
     sym_flat = np.tile(close_df.columns.to_numpy(), n_ts)
 
@@ -227,8 +222,31 @@ def _build_mask_for_mode(
     X, metadata, _ = fp.prepare_features(feats_1d, idx_flat, sym_flat, mask_cfg)
     resolver = CanonicalRuleMaskResolver(X, metadata, raw_feature_lookup=feats_1d)
     tprint(
-        f"candidate_selector: CanonicalRuleMaskResolver initialized for mask_cfg name {mask_cfg.get('name')}"
+        "candidate_selector: shared CanonicalRuleMaskResolver initialized "
+        f"features={len(feats_1d)} rows={int(n_ts * n_syms)}"
     )
+    return {"feats_1d": feats_1d, "resolver": resolver}
+
+
+def _build_mask_for_mode(
+    panel: Dict[str, pd.DataFrame],
+    feats: Dict[str, pd.DataFrame],
+    mask_cfg: Dict[str, Any],
+    prepared_context: Optional[Dict[str, Any]] = None,
+) -> pd.DataFrame:
+    from extreme_price_movements.mask_optimiser import (
+        _compute_z_cache,
+        _generate_event_masks,
+        _generate_event_masks_fast,
+    )
+
+    close_df = panel["close"]
+    n_ts, n_syms = close_df.shape
+
+    if prepared_context is None:
+        prepared_context = _prepare_shared_mask_context(panel, feats, mask_cfg)
+    feats_1d = dict(prepared_context.get("feats_1d") or {})
+    resolver = prepared_context.get("resolver")
 
     def _normalize_legacy_base_event(base_event: str) -> str:
         base_event = str(base_event or "").strip()
@@ -237,7 +255,7 @@ def _build_mask_for_mode(
         return base_event
 
     base = _normalize_legacy_base_event(mask_cfg.get("base_event_trigger", ""))
-    if base:
+    if base and resolver is not None:
         try:
             mask_1d = resolver.get_mask(base)
             mask_2d = mask_1d.reshape((n_ts, n_syms))
@@ -478,6 +496,7 @@ def build_strategy_candidate_masks(
     if not isinstance(close, pd.DataFrame) or close.empty:
         return out
 
+    prepared_strategies: List[Tuple[Dict[str, Any], str, Dict[str, Any]]] = []
     for strategy in strategies:
         if not isinstance(strategy, dict):
             continue
@@ -495,8 +514,25 @@ def build_strategy_candidate_masks(
         if canonical_key:
             mask_cfg.setdefault("base_event_trigger", canonical_key)
             mask_cfg.setdefault("canonical_key", canonical_key)
+        prepared_strategies.append((strategy, strategy_id, mask_cfg))
+
+    shared_context: Optional[Dict[str, Any]] = None
+    if prepared_strategies:
         try:
-            mask_df = _build_mask_for_mode(panel, feats, mask_cfg)
+            shared_context = _prepare_shared_mask_context(
+                panel, feats, prepared_strategies[0][2]
+            )
+        except Exception as exc:
+            tprint(
+                "candidate_selector: shared mask context init failed; "
+                f"falling back to per-strategy preparation: {exc}"
+            )
+
+    for strategy, strategy_id, mask_cfg in prepared_strategies:
+        try:
+            mask_df = _build_mask_for_mode(
+                panel, feats, mask_cfg, prepared_context=shared_context
+            )
         except Exception as exc:
             tprint(
                 "candidate_selector: strategy mask failed "

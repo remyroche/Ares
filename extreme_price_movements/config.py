@@ -2,6 +2,7 @@
 from extreme_price_movements.perp_features import get_perp_feature_names
 from extreme_price_movements.features_oi import (
     get_oi_feature_names,
+    get_oi_normalized_feature_names,
     get_oi_trading_feature_names,
 )
 from extreme_price_movements.features_residual import residual_feature_names
@@ -133,6 +134,7 @@ for _h in (5, 10):
         ]
     )
 OI_TRADING_FEATURE_KEYS = get_oi_trading_feature_names()
+OI_NORMALIZED_FEATURE_KEYS = get_oi_normalized_feature_names()
 OI_FEATURE_KEYS = get_oi_feature_names()
 LONG_HORIZON_PERP_META_FEATURE_KEYS = [
     "funding_mean_7d_robust_z",
@@ -2012,7 +2014,10 @@ CFG = {
     "accept_gate_percentile_mode": "approx",
     "enable_gated_features": False,
     "feature_backfill_symbol_chunk_size": 100,
-    "feature_backfill_key_batch_size": 100,
+    # By default compute all missing feature keys once per symbol chunk. Setting
+    # EPM_FEATURE_BACKFILL_KEY_BATCH_SIZE can re-enable smaller save batches for
+    # very memory-constrained repair runs.
+    "feature_backfill_key_batch_size": 0,
     # base feature windows (used for base/fast/slow variants)
     "atr_n": 14,
     "rsi_n": 14,
@@ -3674,6 +3679,7 @@ CFG["PERP_EVENT_RISK_FEATURE_KEYS"] = PERP_EVENT_RISK_FEATURE_KEYS
 CFG["PERP_CARRY_ALPHA_FEATURE_KEYS"] = PERP_CARRY_ALPHA_FEATURE_KEYS
 CFG["OI_FEATURE_KEYS"] = OI_FEATURE_KEYS
 CFG["OI_TRADING_FEATURE_KEYS"] = OI_TRADING_FEATURE_KEYS
+CFG["OI_NORMALIZED_FEATURE_KEYS"] = OI_NORMALIZED_FEATURE_KEYS
 CFG["LONG_HORIZON_PERP_META_FEATURE_KEYS"] = LONG_HORIZON_PERP_META_FEATURE_KEYS
 CFG["VOLUME_FREE_PERP_BASE_FEATURE_KEYS"] = VOLUME_FREE_PERP_BASE_FEATURE_KEYS
 CFG["VOLUME_FREE_PERP_META_FEATURE_KEYS"] = VOLUME_FREE_PERP_META_FEATURE_KEYS
@@ -3971,6 +3977,47 @@ CFG["META_RECENT_DISAGREEMENT_FEATURE_KEYS"] = [
 ]
 CFG["meta_shared_feature_keys"] += ["META_RECENT_DISAGREEMENT_FEATURE_KEYS"]
 
+CFG["META_MODEL_UNCERTAINTY_FEATURE_KEYS"] = [
+    "feature_drift_psi_core",
+    "regime_centroid_similarity_train",
+    "regime_centroid_similarity_train_pc0",
+    "regime_centroid_similarity_train_pc1",
+    "regime_centroid_similarity_train_pc2",
+    "regime_centroid_similarity_train_window_mean",
+    "regime_centroid_similarity_train_window_p10",
+    "feature_drift_psi_core_50",
+    "feature_drift_psi_core_80",
+    "mahalanobis_mean_shift",
+    "frobenius_corr_shift",
+    "feature_drift_cov_shift",
+    "inference_drift_score",
+    "uncertainty_score",
+    "rare_leaf_low_support_score",
+    "contribution_drift_score",
+    "pred_std_norm",
+    "pred_std_robust_norm",
+    "leaf_support_mean_frac",
+    "leaf_support_mean_log",
+    "leaf_support_median_frac",
+    "leaf_support_q25_frac",
+    "reg_pred_std_robust_norm",
+    "reg_pred_range_q90_q10_norm",
+    "reg_leaf_support_mean_frac",
+    "reg_leaf_support_mean_log",
+    "reg_leaf_support_q25_frac",
+    "reg_rare_leaf_low_support_score",
+    "shap_archetype_id",
+    "shap_archetype_is_bad",
+    "shap_archetype_is_good",
+    "shap_archetype_is_neutral",
+    "distance_to_archetype_centroid",
+    "distance_to_nearest_bad_archetype",
+    "archetype_oof_bad_rate_lift",
+    "distance_to_bad_archetype",
+    "distance_to_good_archetype",
+]
+CFG["meta_shared_feature_keys"] += ["META_MODEL_UNCERTAINTY_FEATURE_KEYS"]
+
 
 # =============================================================================
 # Rolling RegimeAdaptor config (next-few-days bad-regime detector)
@@ -4004,13 +4051,56 @@ REGIME_ADAPTOR_BASE_FEATURE_KEYS = [
     "ebm_unc_support_adjusted_uncertainty",
     "ebm_unc_uncertainty_weight",
     "ebm_unc_friction_weight",
+    "regime_centroid_similarity_train",
+    "regime_centroid_similarity_train_pc0",
+    "regime_centroid_similarity_train_pc1",
+    "regime_centroid_similarity_train_pc2",
+    "regime_centroid_similarity_train_window_mean",
+    "regime_centroid_similarity_train_window_p10",
+    "feature_drift_psi_core",
+    "feature_drift_psi_core_50",
+    "feature_drift_psi_core_80",
+    "mahalanobis_mean_shift",
+    "frobenius_corr_shift",
+    "feature_drift_cov_shift",
+    "inference_drift_score",
+    "uncertainty_score",
+    "rare_leaf_low_support_score",
+    "contribution_drift_score",
 ]
 
 REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS = [
     "market_breadth_24h",
     "market_breadth_7d",
     "market_breadth_15d",
+    "mkt_ret_eq_5d",
+    "mkt_ret_eq_10d",
+    "mkt_ret_eq_15d",
+    "mkt_ret_eq_30d",
+    "market_index_slope_5d",
+    "market_index_slope_10d",
+    "market_index_slope_15d",
+    "market_index_slope_30d",
+    "market_breadth_5d",
+    "market_breadth_10d",
+    "market_breadth_30d",
+    "pct_assets_positive_return_5d",
+    "pct_assets_positive_return_10d",
+    "pct_assets_positive_return_15d",
+    "pct_assets_positive_return_30d",
+    "pct_assets_above_5d_ema",
+    "pct_assets_above_10d_ema",
+    "pct_assets_above_15d_ema",
+    "pct_assets_above_30d_ema",
     "cross_asset_return_dispersion_24h",
+    "cross_asset_return_dispersion_5d",
+    "cross_asset_return_dispersion_10d",
+    "cross_asset_return_dispersion_15d",
+    "cross_asset_return_dispersion_30d",
+    "cross_sectional_return_dispersion_5d",
+    "cross_sectional_return_dispersion_10d",
+    "cross_sectional_return_dispersion_15d",
+    "cross_sectional_return_dispersion_30d",
     "cross_asset_return_dispersion_7d",
     "cross_asset_vol_dispersion_24h",
     "cross_asset_vol_dispersion_7d",
@@ -4021,6 +4111,9 @@ REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS = [
     "top_decile_asset_rv_7d",
     "cross_asset_correlation_7d",
     "cross_asset_correlation_30d",
+    "corr_asset_market_return_24h_20d",
+    "beta_asset_market_20d",
+    "avg_pairwise_corr_universe_20d",
     "btc_eth_trend_proxy",
     "btc_eth_vol_proxy",
     "funding_rate_cross_asset_dispersion",
@@ -4030,6 +4123,70 @@ REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS = [
 ]
 
 REGIME_ADAPTOR_ASSET_FEATURE_KEYS = [
+    "realized_vol_5d",
+    "realized_vol_10d",
+    "realized_vol_15d",
+    "realized_vol_30d",
+    "range_atr_regime_5d",
+    "range_atr_regime_10d",
+    "range_atr_regime_15d",
+    "range_atr_regime_30d",
+    "vol_zscore_5d",
+    "vol_zscore_10d",
+    "vol_zscore_15d",
+    "vol_zscore_30d",
+    "vol_of_vol_5d",
+    "vol_of_vol_10d",
+    "vol_of_vol_15d",
+    "vol_of_vol_30d",
+    "quote_volume_realized_vol_5d",
+    "quote_volume_realized_vol_10d",
+    "quote_volume_realized_vol_15d",
+    "quote_volume_realized_vol_30d",
+    "aggregate_relative_volume_5d",
+    "aggregate_relative_volume_10d",
+    "aggregate_relative_volume_15d",
+    "aggregate_relative_volume_30d",
+    "quote_volume_zscore_5d",
+    "quote_volume_zscore_10d",
+    "quote_volume_zscore_15d",
+    "quote_volume_zscore_30d",
+    "price_ema_gap_5d",
+    "price_ema_gap_10d",
+    "price_ema_gap_15d",
+    "price_ema_gap_30d",
+    "ema_slope_atr_5d",
+    "ema_slope_atr_10d",
+    "ema_slope_atr_15d",
+    "ema_slope_atr_30d",
+    "ema_stack_score_5d",
+    "ema_stack_score_10d",
+    "ema_stack_score_15d",
+    "ema_stack_score_30d",
+    "trend_consistency_5d",
+    "trend_consistency_10d",
+    "trend_consistency_15d",
+    "trend_consistency_30d",
+    "distance_to_5d_high",
+    "distance_to_10d_high",
+    "distance_to_15d_high",
+    "distance_to_30d_high",
+    "distance_to_5d_low",
+    "distance_to_10d_low",
+    "distance_to_15d_low",
+    "distance_to_30d_low",
+    "distance_to_5d_ema",
+    "distance_to_10d_ema",
+    "distance_to_15d_ema",
+    "distance_to_30d_ema",
+    "drawdown_from_5d_high_atr",
+    "drawdown_from_10d_high_atr",
+    "drawdown_from_15d_high_atr",
+    "drawdown_from_30d_high_atr",
+    "percentile_rank_in_recent_range_5d",
+    "percentile_rank_in_recent_range_10d",
+    "percentile_rank_in_recent_range_15d",
+    "percentile_rank_in_recent_range_30d",
     "asset_rv_mean_24h",
     "asset_rv_mean_96h",
     "asset_rv_mean_7d",
@@ -4705,6 +4862,7 @@ MODEL_DERIVED_META_PERFORMANCE_GROUP_KEYS = {
     "META_BASE_PERFORMANCE_FEATURE_KEYS",
     "META_SELF_FEATURE_KEYS",
     "META_RECENT_DISAGREEMENT_FEATURE_KEYS",
+    "META_MODEL_UNCERTAINTY_FEATURE_KEYS",
 }
 MODEL_DERIVED_META_PERFORMANCE_FEATURE_KEYS = set()
 for _group_key in MODEL_DERIVED_META_PERFORMANCE_GROUP_KEYS:
@@ -4782,6 +4940,7 @@ for _name in (
     "META_BASE_PERFORMANCE_FEATURE_KEYS",
     "META_SELF_FEATURE_KEYS",
     "META_RECENT_DISAGREEMENT_FEATURE_KEYS",
+    "META_MODEL_UNCERTAINTY_FEATURE_KEYS",
 ):
     CFG[_name] = _portable_feature_list(CFG.get(_name, []))
 

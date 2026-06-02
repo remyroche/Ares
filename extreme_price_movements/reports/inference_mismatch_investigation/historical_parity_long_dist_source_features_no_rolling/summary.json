@@ -1,0 +1,14 @@
+{
+  "base_pred_max_abs_diff_vs_oof": null,
+  "feature_common_rows": 50,
+  "feature_max_abs_diff": NaN,
+  "feature_mean_abs_diff": NaN,
+  "feature_mismatches_gt_1e_6": 0,
+  "feature_missing_inference": 0,
+  "feature_missing_training": 1786,
+  "feature_rows": 1836,
+  "meta_pred_max_abs_diff_vs_oof": null,
+  "policy_calibrated_score_max_abs_diff": 1.1398097299331056e-08,
+  "policy_rank_pct_max_abs_diff": 3.936542928001385e-05,
+  "prediction_rows": 3
+}

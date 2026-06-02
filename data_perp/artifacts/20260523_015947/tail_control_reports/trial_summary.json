@@ -1,0 +1,16 @@
+[
+  {
+    "run_id":"20260523_015947",
+    "layer":"base",
+    "models":34,
+    "mean_tail_control_score":0.5883050965,
+    "max_tail_control_score":0.6484433214
+  },
+  {
+    "run_id":"20260523_015947",
+    "layer":"meta",
+    "models":4,
+    "mean_tail_control_score":0.3595363055,
+    "max_tail_control_score":0.3723362472
+  }
+]

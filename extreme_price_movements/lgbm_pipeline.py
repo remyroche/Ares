@@ -80,6 +80,7 @@ LGBM_FINAL_FIT_USE_ALL_ROWS = os.environ.get("EPM_LGBM_FINAL_FIT_USE_ALL_ROWS", 
 LGBM_META_RANK_BINS = int(os.environ.get("EPM_LGBM_META_RANK_BINS", "10"))
 LGBM_DIRECTION_STABILITY_MIN = float(os.environ.get("EPM_LGBM_DIRECTION_STABILITY_MIN", "0.75"))
 LGBM_DIRECTION_MAX_ROWS = int(os.environ.get("EPM_LGBM_DIRECTION_MAX_ROWS", "5000"))
+LGBM_STABILITY_CONFIGS = int(os.environ.get("EPM_LGBM_STABILITY_CONFIGS", "4"))
 LGBM_SELECTION_SE_MULT = float(os.environ.get("EPM_LGBM_SELECTION_SE_MULT", "0.75"))
 LGBM_POSITIVE_PERM_RATE_MIN = float(os.environ.get("EPM_LGBM_POSITIVE_PERM_RATE_MIN", "0.50"))
 LGBM_LOW_PRESENCE_RATE = float(os.environ.get("EPM_LGBM_LOW_PRESENCE_RATE", "0.20"))
@@ -138,6 +139,7 @@ LGBM_RELIEF_RESCUE_FRAC = float(np.clip(LGBM_RELIEF_RESCUE_FRAC, 0.01, 1.0))
 LGBM_RELIEF_ANCHOR_MAX_ROWS = max(1, int(LGBM_RELIEF_ANCHOR_MAX_ROWS))
 LGBM_RELIEF_NEIGHBOR_CANDIDATES = max(2, int(LGBM_RELIEF_NEIGHBOR_CANDIDATES))
 LGBM_RELIEF_NEIGHBORS = max(1, int(LGBM_RELIEF_NEIGHBORS))
+LGBM_STABILITY_CONFIGS = max(1, int(LGBM_STABILITY_CONFIGS))
 LGBM_OVERFIT_GAP_PENALTY = float(np.clip(LGBM_OVERFIT_GAP_PENALTY, 0.0, 2.0))
 LGBM_OVERFIT_GAP_DEADBAND = float(np.clip(LGBM_OVERFIT_GAP_DEADBAND, 0.0, 1.0))
 LGBM_OVERFIT_GAP_CAP = float(np.clip(LGBM_OVERFIT_GAP_CAP, 0.0, 2.0))
@@ -3866,6 +3868,7 @@ def _lgbm_stability_selection_pass(
     for depth in (4, 5):
         for l2 in (5.0, 15.0):
             configs.append({"max_depth": depth, "num_leaves": 2 ** depth, "reg_lambda": l2})
+    configs = configs[: min(len(configs), int(LGBM_STABILITY_CONFIGS))]
     n_fits = 0
     used_count = np.zeros(p, dtype=np.float32)
     top_used_count = np.zeros(p, dtype=np.float32)
@@ -3881,7 +3884,8 @@ def _lgbm_stability_selection_pass(
     base_weight = np.asarray(sample_weight, dtype=np.float32)
     current_weight = base_weight.copy()
     prev_oof: np.ndarray | None = None
-    splitter, y_split = _splitter(y_metric, classifier, random_state, n_splits=3)
+    stability_splits = max(2, int(LGBM_CV_SPLITS))
+    splitter, y_split = _splitter(y_metric, classifier, random_state, n_splits=stability_splits)
     dir_t0 = time.perf_counter()
     round_direction, round_margin = _direction_vectors_binned_mi(
         Xf,
@@ -3909,7 +3913,7 @@ def _lgbm_stability_selection_pass(
     topk_contrib_available_flags: list[float] = []
     topk_effective_rows: list[float] = []
     config_records: list[dict[str, Any]] = []
-    total_fits = len(seeds) * len(configs) * 3
+    total_fits = len(seeds) * len(configs) * stability_splits
     tprint(
         "LGBM stability selection pass started: "
         f"rows={len(y_arr)}, features={p}, seeds={len(seeds)}, "
@@ -3926,7 +3930,7 @@ def _lgbm_stability_selection_pass(
                 fold_t0 = time.perf_counter()
                 tprint(
                     "LGBM stability fit started: "
-                    f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/3, "
+                    f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/{stability_splits}, "
                     f"train_rows={len(tr)}, valid_rows={len(va)}, features={p}."
                 )
                 params = _base_lgbm_params(int(seed) + cfg_i * 1000 + fold_i, classifier=classifier, overrides=cfg)
@@ -3939,7 +3943,7 @@ def _lgbm_stability_selection_pass(
                 )
                 tprint(
                     "LGBM stability fit model complete: "
-                    f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/3, "
+                    f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/{stability_splits}, "
                     f"model_fit_elapsed={time.perf_counter() - fold_t0:.1f}s."
                 )
                 mode_name = "classifier" if classifier else "regressor"
@@ -4075,7 +4079,7 @@ def _lgbm_stability_selection_pass(
             fold_i = int(fold_rec.get("fold_i", 0))
             tprint(
                 "LGBM stability permutation started: "
-                f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/3, "
+                f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/{stability_splits}, "
                 f"candidate_features={len(candidate_idx)}."
             )
             perm = _permutation_delta_j(
@@ -4098,7 +4102,7 @@ def _lgbm_stability_selection_pass(
             permuted_features += int(len(candidate_idx))
             tprint(
                 "LGBM stability permutation complete: "
-                f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/3."
+                f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/{stability_splits}."
             )
     tprint(
         "LGBM stability permutation audit complete: "
@@ -4662,7 +4666,11 @@ def _run_lgbm_hpo(
     sw_sub = sample_weight[idx]
     ret_sub = _as_returns(y_metric, returns)[idx]
     groups_sub = _groups_take(groups, idx)
-    splitter, y_split = _interleaved_spread_splitter(y_metric_sub, classifier, n_splits=3)
+    splitter, y_split = _interleaved_spread_splitter(
+        y_metric_sub,
+        classifier,
+        n_splits=max(2, int(LGBM_CV_SPLITS)),
+    )
     best_seen = {"value": -np.inf, "trial": -1}
     tprint(
         "LGBM HPO started: "
@@ -4970,6 +4978,9 @@ def train_lgbm_stability_candidate(
     returns: Any = None,
     hard_labels: Optional[np.ndarray] = None,
     hpo_objective_mode: str = "train_base",
+    preset_feature_names: Optional[list[str]] = None,
+    preset_best_params: Optional[dict[str, Any]] = None,
+    preset_source: str | None = None,
 ) -> Optional[dict[str, Any]]:
     objective_mode = _normalize_objective_mode(hpo_objective_mode)
     distill_passes = _distillation_passes_for_objective(objective_mode)
@@ -5133,54 +5144,95 @@ def train_lgbm_stability_candidate(
     ret_eval = ret_race[eval_local]
     eval_groups = _groups_take(race_groups, eval_local)
     tprint(f"LGBM candidate split: select={len(y_select)}, eval={len(y_eval)}, features={X_select.shape[1]}.")
-    uni_features, uni_stats = _univariate_directional_filter(X_select, y_metric_select, classifier=classifier, groups=select_groups, returns=ret_select, random_state=random_state + 101, objective_mode=objective_mode)
-    tprint(f"LGBM candidate after univariate filter: {len(uni_features)} features.")
-    score_map = dict(zip(uni_stats["feature"].astype(str), uni_stats["univariate_j"].astype(float)))
-    relief_features, relief_stats = _relief_rescue_filter(
-        X_select,
-        y_metric_select,
-        uni_features,
-        classifier=classifier,
-        random_state=random_state + 151,
-    )
-    relief_score_map: dict[str, float] = {}
-    if not relief_stats.empty:
-        ranked = relief_stats["relief_score"].rank(pct=True).to_numpy(dtype=np.float32)
-        relief_score_map = dict(zip(relief_stats["feature"].astype(str), ranked))
-        for feature in relief_features:
-            score_map[feature] = max(
-                float(score_map.get(feature, 0.0)),
-                float(relief_score_map.get(feature, 0.0)),
+    preset_features = [str(c) for c in (preset_feature_names or []) if str(c).strip()]
+    if preset_features:
+        missing_preset = [c for c in preset_features if c not in X_df.columns]
+        if missing_preset:
+            tprint(
+                "LGBM candidate preset rejected: "
+                f"{len(missing_preset)} selected features are missing; "
+                f"examples={missing_preset[:20]}."
             )
-    feature_order = {str(c): i for i, c in enumerate(X_select.columns)}
-    precluster_features = sorted(
-        set(uni_features).union(relief_features),
-        key=lambda c: feature_order.get(str(c), len(feature_order)),
-    )
-    tprint(
-        "LGBM candidate after ReliefF rescue: "
-        f"univariate={len(uni_features)}, rescued={len(relief_features)}, "
-        f"precluster={len(precluster_features)} features."
-    )
-    cluster_features = _redundancy_cluster_filter(
-        X_select,
-        precluster_features,
-        score_map,
-        random_state=random_state + 211,
-    )
-    tprint(f"LGBM candidate after redundancy clustering: {len(cluster_features)} features.")
-    selected_features, history, feature_stats, prune_oof, prune_metrics = _iterative_feature_prune(
-        X_select,
-        y_select,
-        sw_select,
-        cluster_features,
-        classifier=classifier,
-        groups=select_groups,
-        returns=ret_select,
-        metric_y=y_metric_select,
-        random_state=random_state + 307,
-        objective_mode=objective_mode,
-    )
+            return None
+        selected_features = list(preset_features)
+        uni_features = list(selected_features)
+        relief_features = []
+        precluster_features = list(selected_features)
+        cluster_features = list(selected_features)
+        uni_stats = pd.DataFrame(
+            {
+                "feature": selected_features,
+                "univariate_j": np.full(len(selected_features), np.nan),
+                "source": "native_preset",
+            }
+        )
+        relief_stats = pd.DataFrame()
+        history = [
+            {
+                "round": 0,
+                "source": "native_preset",
+                "selected_features": list(selected_features),
+                "preset_source": str(preset_source or ""),
+            }
+        ]
+        feature_stats = pd.DataFrame({"feature": selected_features})
+        prune_metrics = {
+            "feature_selection_source": "native_preset",
+            "feature_pruning_rounds_completed": 0,
+        }
+        tprint(
+            "LGBM candidate using native preset features; "
+            f"selected={len(selected_features)}, source={preset_source or 'unknown'}."
+        )
+    else:
+        uni_features, uni_stats = _univariate_directional_filter(X_select, y_metric_select, classifier=classifier, groups=select_groups, returns=ret_select, random_state=random_state + 101, objective_mode=objective_mode)
+        tprint(f"LGBM candidate after univariate filter: {len(uni_features)} features.")
+        score_map = dict(zip(uni_stats["feature"].astype(str), uni_stats["univariate_j"].astype(float)))
+        relief_features, relief_stats = _relief_rescue_filter(
+            X_select,
+            y_metric_select,
+            uni_features,
+            classifier=classifier,
+            random_state=random_state + 151,
+        )
+        relief_score_map: dict[str, float] = {}
+        if not relief_stats.empty:
+            ranked = relief_stats["relief_score"].rank(pct=True).to_numpy(dtype=np.float32)
+            relief_score_map = dict(zip(relief_stats["feature"].astype(str), ranked))
+            for feature in relief_features:
+                score_map[feature] = max(
+                    float(score_map.get(feature, 0.0)),
+                    float(relief_score_map.get(feature, 0.0)),
+                )
+        feature_order = {str(c): i for i, c in enumerate(X_select.columns)}
+        precluster_features = sorted(
+            set(uni_features).union(relief_features),
+            key=lambda c: feature_order.get(str(c), len(feature_order)),
+        )
+        tprint(
+            "LGBM candidate after ReliefF rescue: "
+            f"univariate={len(uni_features)}, rescued={len(relief_features)}, "
+            f"precluster={len(precluster_features)} features."
+        )
+        cluster_features = _redundancy_cluster_filter(
+            X_select,
+            precluster_features,
+            score_map,
+            random_state=random_state + 211,
+        )
+        tprint(f"LGBM candidate after redundancy clustering: {len(cluster_features)} features.")
+        selected_features, history, feature_stats, prune_oof, prune_metrics = _iterative_feature_prune(
+            X_select,
+            y_select,
+            sw_select,
+            cluster_features,
+            classifier=classifier,
+            groups=select_groups,
+            returns=ret_select,
+            metric_y=y_metric_select,
+            random_state=random_state + 307,
+            objective_mode=objective_mode,
+        )
     if not selected_features:
         tprint("LGBM candidate rejected: no selected features.")
         return None
@@ -5189,7 +5241,9 @@ def train_lgbm_stability_candidate(
         f"{len(selected_features)} after {len(history)} prune rounds; "
         f"preview={selected_features[:10]}."
     )
-    base_params = _default_hpo_params(random_state + 401, classifier)
+    base_params = dict(preset_best_params or _default_hpo_params(random_state + 401, classifier))
+    if preset_best_params:
+        tprint("LGBM candidate using native preset best_params; HPO is skipped for base preset candidate scoring.")
     final_weights, _ = _oof_distilled_sample_weights_lgbm(
         X_select,
         y_select,
@@ -5206,17 +5260,27 @@ def train_lgbm_stability_candidate(
         objective_mode=objective_mode,
     )
     eval_preds: list[np.ndarray] = []
-    for i, cfg in enumerate(({"max_depth": 4, "reg_lambda": 5.0}, {"max_depth": 4, "reg_lambda": 15.0}, {"max_depth": 5, "reg_lambda": 5.0}, {"max_depth": 5, "reg_lambda": 15.0}), start=1):
+    eval_configs = (
+        [dict(base_params)]
+        if preset_best_params
+        else [
+            {"max_depth": 4, "reg_lambda": 5.0},
+            {"max_depth": 4, "reg_lambda": 15.0},
+            {"max_depth": 5, "reg_lambda": 5.0},
+            {"max_depth": 5, "reg_lambda": 15.0},
+        ][: min(4, int(LGBM_STABILITY_CONFIGS))]
+    )
+    for i, cfg in enumerate(eval_configs, start=1):
         fit_t0 = time.perf_counter()
         tprint(
-            f"LGBM candidate eval ensemble model {i}/4 started: "
+            f"LGBM candidate eval ensemble model {i}/{len(eval_configs)} started: "
             f"rows={len(y_select)}, features={len(selected_features)}, cfg={cfg}."
         )
-        params = _base_lgbm_params(random_state + 500 + i, classifier=classifier, overrides=cfg)
+        params = dict(cfg) if preset_best_params else _base_lgbm_params(random_state + 500 + i, classifier=classifier, overrides=cfg)
         model = _fit_lgbm_model(X_select[selected_features], y_select, final_weights, classifier=classifier, params=params)
         eval_preds.append(_predict_lgbm_raw(model, X_eval[selected_features], mode))
         tprint(
-            f"LGBM candidate eval ensemble model {i}/4 complete: "
+            f"LGBM candidate eval ensemble model {i}/{len(eval_configs)} complete: "
             f"elapsed={time.perf_counter() - fit_t0:.1f}s."
         )
     eval_pred = np.mean(np.vstack(eval_preds), axis=0).astype(np.float32)
@@ -5235,6 +5299,10 @@ def train_lgbm_stability_candidate(
     metrics["candidate_elapsed_sec"] = float(time.perf_counter() - t0)
     metrics["hpo_objective_mode"] = objective_mode
     metrics["oof_distillation_passes"] = int(distill_passes)
+    if preset_features:
+        metrics["feature_selection_source"] = "native_preset"
+        metrics["native_preset_source"] = str(preset_source or "")
+        metrics["native_preset_hpo_reused"] = bool(preset_best_params)
     metrics.update(oi_diagnostics)
     metrics.update(coverage_diagnostics)
     metrics["feature_selection_sample_policy"] = "stratified_spread_across_ordered_rows"
@@ -5286,6 +5354,8 @@ def fit_lgbm_stability_full_model(
     hpo_objective_mode: str = "train_base",
     meta_feature_output_path: str | os.PathLike[str] | None = None,
     reference_artifact_dir: str | os.PathLike[str] | None = None,
+    preset_best_params: Optional[dict[str, Any]] = None,
+    preset_source: str | None = None,
 ) -> Optional[LGBMStabilityModel]:
     t0 = time.perf_counter()
     objective_mode = _normalize_objective_mode(hpo_objective_mode)
@@ -5348,21 +5418,35 @@ def fit_lgbm_stability_full_model(
     stability_groups = _stability_group_bundle(n, timestamps=timestamps, assets=assets)
     hpo_groups = _groups_take(stability_groups, hpo_idx)
     hpo_weights, _ = _normalize_weights(sw[hpo_idx])
-    tprint("LGBM full fit HPO using base sample weights; pre-HPO OOF distillation skipped.")
-    best_params, hpo_metrics = _run_lgbm_hpo(
-        X_df.iloc[hpo_idx].reset_index(drop=True),
-        y_arr[hpo_idx],
-        hpo_weights,
-        selected_features,
-        classifier=classifier,
-        groups=hpo_groups,
-        returns=ret_arr[hpo_idx],
-        metric_y=y_metric[hpo_idx],
-        random_state=random_state + 131,
-        max_trials=LGBM_HPO_TRIALS if hpo_trials_override is None else int(hpo_trials_override),
-        patience=LGBM_HPO_EARLY_STOP_PATIENCE if hpo_patience_override is None else int(hpo_patience_override),
-        objective_mode=objective_mode,
-    )
+    if preset_best_params:
+        best_params = dict(preset_best_params)
+        hpo_metrics = {
+            "hpo_available": True,
+            "hpo_reused_from_native_preset": True,
+            "hpo_objective_mode": objective_mode,
+            "hpo_best_params": dict(best_params),
+            "native_preset_source": str(preset_source or ""),
+        }
+        tprint(
+            "LGBM full fit using native preset best_params; "
+            f"skipping HPO, source={preset_source or 'unknown'}."
+        )
+    else:
+        tprint("LGBM full fit HPO using base sample weights; pre-HPO OOF distillation skipped.")
+        best_params, hpo_metrics = _run_lgbm_hpo(
+            X_df.iloc[hpo_idx].reset_index(drop=True),
+            y_arr[hpo_idx],
+            hpo_weights,
+            selected_features,
+            classifier=classifier,
+            groups=hpo_groups,
+            returns=ret_arr[hpo_idx],
+            metric_y=y_metric[hpo_idx],
+            random_state=random_state + 131,
+            max_trials=LGBM_HPO_TRIALS if hpo_trials_override is None else int(hpo_trials_override),
+            patience=LGBM_HPO_EARLY_STOP_PATIENCE if hpo_patience_override is None else int(hpo_patience_override),
+            objective_mode=objective_mode,
+        )
     if distill_passes > 0:
         final_weights, pre_final_oof = _oof_distilled_sample_weights_lgbm(
             X_df,

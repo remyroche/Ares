@@ -1,0 +1,532 @@
+{
+  "invalid_rows": 90579,
+  "rows": 91174,
+  "stage": "alpha",
+  "strategy_id": "long_pullback_depth_-0_46066526_compression_score_-0_4311325_oi_rank_0_29613096",
+  "top_invalid_symbols": [
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 737,
+      "rows": 737,
+      "symbol": "SPELL/USD:USD"
+    },
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 673,
+      "rows": 673,
+      "symbol": "CYBER/USD:USD"
+    },
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 650,
+      "rows": 650,
+      "symbol": "ARKM/USD:USD"
+    },
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 641,
+      "rows": 641,
+      "symbol": "METIS/USD:USD"
+    },
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 621,
+      "rows": 621,
+      "symbol": "AUCTION/USD:USD"
+    },
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 590,
+      "rows": 590,
+      "symbol": "ANIME/USD:USD"
+    },
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 587,
+      "rows": 587,
+      "symbol": "OGN/USD:USD"
+    },
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 574,
+      "rows": 574,
+      "symbol": "SSV/USD:USD"
+    },
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 570,
+      "rows": 570,
+      "symbol": "DOG/USD:USD"
+    },
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 554,
+      "rows": 554,
+      "symbol": "GAS/USD:USD"
+    },
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 540,
+      "rows": 540,
+      "symbol": "BICO/USD:USD"
+    },
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 539,
+      "rows": 539,
+      "symbol": "RARE/USD:USD"
+    },
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 530,
+      "rows": 530,
+      "symbol": "VINE/USD:USD"
+    },
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 524,
+      "rows": 524,
+      "symbol": "POWR/USD:USD"
+    },
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 513,
+      "rows": 513,
+      "symbol": "ANKR/USD:USD"
+    },
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 504,
+      "rows": 504,
+      "symbol": "C98/USD:USD"
+    },
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 503,
+      "rows": 503,
+      "symbol": "OXT/USD:USD"
+    },
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 501,
+      "rows": 501,
+      "symbol": "LQTY/USD:USD"
+    },
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 498,
+      "rows": 498,
+      "symbol": "ME/USD:USD"
+    },
+    {
+      "bad_pct": 1.0,
+      "invalid_rows": 494,
+      "rows": 494,
+      "symbol": "AXS/USD:USD"
+    }
+  ],
+  "top_nonfinite_features": [
+    {
+      "bad_pct": 0.9352446969530788,
+      "bad_rows": 85270,
+      "feature": "unwind_score",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.7252286836159432,
+      "bad_rows": 66122,
+      "feature": "oi_rel_vol_2h",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.7236273499023844,
+      "bad_rows": 65976,
+      "feature": "oi_rel_vol_4h",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.7217298791322088,
+      "bad_rows": 65803,
+      "feature": "oi_rel_vol_8h",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.721038892666769,
+      "bad_rows": 65740,
+      "feature": "z_vwap_12",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "ohlcv_volume"
+    },
+    {
+      "bad_pct": 0.7158400421172703,
+      "bad_rows": 65266,
+      "feature": "dist_stack",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.7154780968258495,
+      "bad_rows": 65233,
+      "feature": "z_vwap_24",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "ohlcv_volume"
+    },
+    {
+      "bad_pct": 0.7151161515344286,
+      "bad_rows": 65200,
+      "feature": "dist_vwap_norm",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "ohlcv_volume"
+    },
+    {
+      "bad_pct": 0.7150613113387588,
+      "bad_rows": 65195,
+      "feature": "trapped_longs_24",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "ohlcv_volume"
+    },
+    {
+      "bad_pct": 0.7150613113387588,
+      "bad_rows": 65195,
+      "feature": "dist_vwap_12_atr",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "ohlcv_volume"
+    },
+    {
+      "bad_pct": 0.7150613113387588,
+      "bad_rows": 65195,
+      "feature": "dist_vwap_24_atr",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "ohlcv_volume"
+    },
+    {
+      "bad_pct": 0.7150613113387588,
+      "bad_rows": 65195,
+      "feature": "dist_vwap_96_atr",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "ohlcv_volume"
+    },
+    {
+      "bad_pct": 0.7150613113387588,
+      "bad_rows": 65195,
+      "feature": "trapped_longs_12",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "ohlcv_volume"
+    },
+    {
+      "bad_pct": 0.7139864435036304,
+      "bad_rows": 65097,
+      "feature": "vwap_zone_1d_atr",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "ohlcv_volume"
+    },
+    {
+      "bad_pct": 0.7114857305810867,
+      "bad_rows": 64869,
+      "feature": "dist_weekly_vwap",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "ohlcv_volume"
+    },
+    {
+      "bad_pct": 0.7114857305810867,
+      "bad_rows": 64869,
+      "feature": "dist_vwap_atr",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "ohlcv_volume"
+    },
+    {
+      "bad_pct": 0.4826595301292035,
+      "bad_rows": 44006,
+      "feature": "loc_vwap_dev_z_48",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "ohlcv_volume"
+    },
+    {
+      "bad_pct": 0.4826595301292035,
+      "bad_rows": 44006,
+      "feature": "loc_vwap_dev_z_24",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "ohlcv_volume"
+    },
+    {
+      "bad_pct": 0.1055783447035339,
+      "bad_rows": 9626,
+      "feature": "dist_oiw_intensity_12h_atr",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.031105358983920854,
+      "bad_rows": 2836,
+      "feature": "funding_1d_chg_peer_resid",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "funding"
+    },
+    {
+      "bad_pct": 0.023285147081404785,
+      "bad_rows": 2123,
+      "feature": "asset_minus_mkt_oi_1d_ts_resid",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.02298901002478777,
+      "bad_rows": 2096,
+      "feature": "oiw_pos_delta_entry_dist_1d_atr",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.02298901002478777,
+      "bad_rows": 2096,
+      "feature": "oiw_intensity_entry_dist_1d_atr",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.022670936889902824,
+      "bad_rows": 2067,
+      "feature": "impact_per_oi_intensity_z_24h",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.022221247285410313,
+      "bad_rows": 2026,
+      "feature": "dist_oiw_signed_delta_12h_atr",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.022221247285410313,
+      "bad_rows": 2026,
+      "feature": "oi_expansion_compression_balance_24h",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.022221247285410313,
+      "bad_rows": 2026,
+      "feature": "oiw_z_delta_entry_dist_1d_atr",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.022221247285410313,
+      "bad_rows": 2026,
+      "feature": "oiw_entry_zone_1d_atr",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.022221247285410313,
+      "bad_rows": 2026,
+      "feature": "oi_expansion_compression_balance_96h",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.022221247285410313,
+      "bad_rows": 2026,
+      "feature": "dist_oiw_abs_delta_12h_atr",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.02221027924627635,
+      "bad_rows": 2025,
+      "feature": "xasset_funding_ts_resid",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "funding"
+    },
+    {
+      "bad_pct": 0.02221027924627635,
+      "bad_rows": 2025,
+      "feature": "oiw_pos_delta_entry_dist_7d_atr",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.02221027924627635,
+      "bad_rows": 2025,
+      "feature": "xasset_ob_pressure_ts_resid",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.02221027924627635,
+      "bad_rows": 2025,
+      "feature": "oiw_z_delta_entry_dist_7d_atr",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.02221027924627635,
+      "bad_rows": 2025,
+      "feature": "range_per_funding_abs_z_24h",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "funding"
+    },
+    {
+      "bad_pct": 0.02221027924627635,
+      "bad_rows": 2025,
+      "feature": "oiw_pos_delta_entry_dist_14d_atr",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.02221027924627635,
+      "bad_rows": 2025,
+      "feature": "oiw_intensity_entry_dist_7d_atr",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.02221027924627635,
+      "bad_rows": 2025,
+      "feature": "donchian_zone_1d_atr",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.02221027924627635,
+      "bad_rows": 2025,
+      "feature": "oiw_z_delta_entry_dist_14d_atr",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.02221027924627635,
+      "bad_rows": 2025,
+      "feature": "xasset_ob_liquidity_peer_resid",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.02054313729791388,
+      "bad_rows": 1873,
+      "feature": "dist_oiw_z_delta_12h_atr",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.012821637747603483,
+      "bad_rows": 1169,
+      "feature": "dist_oiw_intensity_96h_atr",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.010233180511988066,
+      "bad_rows": 933,
+      "feature": "price_minus_state_z",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.007491170728497159,
+      "bad_rows": 683,
+      "feature": "ret24h_bench_resid",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.005593699958321451,
+      "bad_rows": 510,
+      "feature": "trend_pct_mkt_resid",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.005034329962489306,
+      "bad_rows": 459,
+      "feature": "ffd_diff_8_04",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.004990457805953452,
+      "bad_rows": 455,
+      "feature": "ffd_diff_4_04",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.004946585649417597,
+      "bad_rows": 451,
+      "feature": "ffd_rv_24h_04",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.004946585649417597,
+      "bad_rows": 451,
+      "feature": "ffd_diff_2_04",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.004946585649417597,
+      "bad_rows": 451,
+      "feature": "ffd_rv_2h_04",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    }
+  ],
+  "valid_pct": 0.00652598328470836,
+  "valid_rows": 595
+}

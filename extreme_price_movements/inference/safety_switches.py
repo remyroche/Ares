@@ -35,10 +35,12 @@ class MarketKillSwitch:
         path: str | Path = "data/live_state/market_kill_switch.json",
         *,
         halt_hours: float = 12.0,
+        min_market_basket_assets: int = 20,
     ):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.halt_hours = float(halt_hours)
+        self.min_market_basket_assets = int(max(min_market_basket_assets, 1))
 
     def _load_state(self) -> Dict[str, Any]:
         if not self.path.exists():
@@ -60,6 +62,22 @@ class MarketKillSwitch:
         if len(s) <= periods:
             return 0.0
         return float(s.iloc[-1] / max(float(s.iloc[-1 - periods]), 1e-12) - 1.0)
+
+    @staticmethod
+    def _market_basket_close(basket_close: pd.DataFrame) -> pd.DataFrame:
+        """Use broad non-BTC/ETH context for market-wide shock detection."""
+        if not isinstance(basket_close, pd.DataFrame) or basket_close.empty:
+            return pd.DataFrame()
+        keep_cols = []
+        for col in basket_close.columns:
+            text = str(col).upper()
+            base = text.split("/", 1)[0].split("_", 1)[0]
+            if base in {"BTC", "ETH"}:
+                continue
+            keep_cols.append(col)
+        if not keep_cols:
+            return pd.DataFrame(index=basket_close.index)
+        return basket_close.loc[:, keep_cols]
 
     @staticmethod
     def _basket_abs_move(basket_close: pd.DataFrame, periods: int) -> float:
@@ -101,25 +119,23 @@ class MarketKillSwitch:
                 if mid < 0.98 or mid > 1.02:
                     reason = "USDC_USDT_DEPEG"
 
-        btc_1h = abs(self._ret(btc_close, 1))
-        eth_1h = abs(self._ret(eth_close, 1))
-        btc_4h = abs(self._ret(btc_close, 4))
-        eth_4h = abs(self._ret(eth_close, 4))
-        details.update(
-            {
-                "btc_1h_move": btc_1h,
-                "eth_1h_move": eth_1h,
-                "btc_4h_move": btc_4h,
-                "eth_4h_move": eth_4h,
-            }
-        )
         if (
             not reason
             and isinstance(basket_close, pd.DataFrame)
             and len(basket_close) > 1
         ):
-            avg_1h = self._basket_abs_move(basket_close, 1)
-            avg_4h = self._basket_abs_move(basket_close, 4)
+            market_basket_close = self._market_basket_close(basket_close)
+            market_basket_assets = int(market_basket_close.shape[1])
+            details["market_basket_assets"] = market_basket_assets
+            details["market_basket_min_assets"] = int(self.min_market_basket_assets)
+            if market_basket_assets < self.min_market_basket_assets:
+                details["market_basket_status"] = "insufficient_breadth"
+                avg_1h = 0.0
+                avg_4h = 0.0
+            else:
+                details["market_basket_status"] = "broad_non_btc_eth"
+                avg_1h = self._basket_abs_move(market_basket_close, 1)
+                avg_4h = self._basket_abs_move(market_basket_close, 4)
             details["market_avg_1h_abs_move"] = avg_1h
             details["market_avg_4h_abs_move"] = avg_4h
             if avg_1h > 0.05:

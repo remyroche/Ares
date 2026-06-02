@@ -39,6 +39,10 @@ from extreme_price_movements.inference.parity import (
 from extreme_price_movements.meta_training.trade_filtering import (
     rolling_asset_percentile,
 )
+from extreme_price_movements.model_drift_features import (
+    MODEL_DRIFT_FEATURE_KEYS,
+    transform_model_drift_features,
+)
 from extreme_price_movements.regime_adaptor import (
     apply_regime_adaptor,
     regime_adaptor_inference_enabled,
@@ -61,10 +65,42 @@ DELETED_MODEL_FEATURE_KEYS = {
 
 
 ALPHA_MODEL_META_FEATURE_KEYS = {
-    "regime_centroid_similarity_train",
+    *MODEL_DRIFT_FEATURE_KEYS,
     "feature_drift_psi_core",
-    "feature_drift_cov_shift",
 }
+
+
+LGBM_DIAGNOSTIC_LEDGER_KEYS = {
+    *MODEL_DRIFT_FEATURE_KEYS,
+    "feature_drift_psi_core",
+    "rare_leaf_fraction",
+    "leaf_count_p10",
+    "leaf_count_min",
+    "leaf_weight_p10",
+    "contrib_top1_abs_share",
+    "contrib_top3_abs_share",
+    "contrib_entropy",
+    "contrib_balance",
+    "num_material_contrib_features",
+    "prob_uncertainty",
+}
+
+
+def _first_row_diagnostics(frame: Any) -> Dict[str, float]:
+    if not isinstance(frame, pd.DataFrame) or frame.empty:
+        return {}
+    row = frame.iloc[0]
+    out: Dict[str, float] = {}
+    for key in LGBM_DIAGNOSTIC_LEDGER_KEYS:
+        if key not in row.index:
+            continue
+        try:
+            value = float(row[key])
+        except Exception:
+            continue
+        if np.isfinite(value):
+            out[key] = value
+    return out
 
 
 def _extract_ebm_contract_model(model: Any) -> Any:
@@ -119,7 +155,7 @@ def _effective_selected_feature_contract(model: Any) -> list[str]:
     named subset. Inference validation must use the selected inner contract;
     otherwise stale, unused wrapper columns become false hard requirements.
     """
-    inner = getattr(model, "best_model", model)
+    inner = _selected_feature_owner(model)
     selected = [str(c) for c in (getattr(inner, "selected_features", []) or [])]
     if not selected:
         return []
@@ -127,6 +163,75 @@ def _effective_selected_feature_contract(model: Any) -> list[str]:
     if len(input_features) == len(selected) and input_features != selected:
         return input_features
     return selected
+
+
+def _model_drift_feature_alias_source(name: str) -> str | None:
+    """Return the unprefixed drift/context source for a meta feature alias."""
+    name_s = str(name)
+    drift_keys = set(MODEL_DRIFT_FEATURE_KEYS)
+    drift_keys.add("feature_drift_psi_core")
+    for key in sorted(drift_keys, key=len, reverse=True):
+        if name_s == key:
+            return key
+        if name_s.endswith(f"_{key}") and re.match(
+            r"^(?:pred(?:_.*)?_H\d+|base_H\d+)_", name_s
+        ):
+            return key
+    if name_s.endswith("_reg_rare_leaf_low_support_score") and re.match(
+        r"^(?:pred(?:_.*)?_H\d+|base_H\d+)_", name_s
+    ):
+        return "rare_leaf_low_support_score"
+    return None
+
+
+def _materialize_model_drift_feature_aliases(
+    frame: pd.DataFrame,
+    needed: set[str],
+) -> tuple[pd.DataFrame, int]:
+    """Populate prefixed meta drift aliases from artifact-backed base columns."""
+    if not isinstance(frame, pd.DataFrame) or frame.empty or not needed:
+        return frame, 0
+    out = frame
+    added = 0
+    for col in sorted(needed):
+        if col in out.columns:
+            continue
+        src = _model_drift_feature_alias_source(col)
+        if src is None:
+            continue
+        source_candidates = [src]
+        if src == "feature_drift_psi_core":
+            source_candidates.extend(["feature_drift_psi_core_80", "feature_drift_psi_core_50"])
+        for source in source_candidates:
+            if source in out.columns:
+                out[col] = pd.to_numeric(out[source], errors="coerce").astype(np.float32)
+                added += 1
+                break
+    return out, added
+
+
+def _selected_feature_owner(model: Any) -> Any:
+    """Return the nested estimator that owns the real selected feature contract."""
+    current = getattr(model, "best_model", model)
+    seen: set[int] = set()
+    for _ in range(8):
+        if current is None:
+            return model
+        obj_id = id(current)
+        if obj_id in seen:
+            return current
+        seen.add(obj_id)
+        selected = getattr(current, "selected_features", None)
+        if selected:
+            return current
+        for attr in ("estimator", "model", "clf", "classifier"):
+            child = getattr(current, attr, None)
+            if child is not None and child is not current:
+                current = child
+                break
+        else:
+            return current
+    return current
 
 
 def _synthetic_ebm_raw_features(model: Any) -> list[str]:
@@ -169,7 +274,7 @@ def _alpha_prediction_frame_for_model(
         )
     except FeatureParityError:
         raise
-    inner = getattr(model, "best_model", model)
+    inner = _selected_feature_owner(model)
     selected = [str(c) for c in (getattr(inner, "selected_features", []) or [])]
     input_features = [str(c) for c in (getattr(inner, "input_feature_names", []) or [])]
     has_named_aliases = (
@@ -217,7 +322,7 @@ def _effective_alpha_feature_contract(model_info: Dict[str, Any]) -> List[str]:
         if str(c) not in DELETED_MODEL_FEATURE_KEYS
     ]
     model = model_info.get("model")
-    inner = getattr(model, "best_model", model)
+    inner = _selected_feature_owner(model)
     selected = [str(c) for c in (getattr(inner, "selected_features", []) or [])]
     input_features = [
         str(c) for c in (getattr(inner, "input_feature_names", []) or [])
@@ -742,21 +847,26 @@ class ModelOrchestrator:
         side: str,
         kind: str,
     ) -> pd.DataFrame:
-        """Build deterministic live values for train-time model-derived meta keys.
+        """Build deterministic live values for causal model-derived meta keys.
 
         Raw market features must already be present in ``features``. This helper
-        only materializes columns derived from the base prediction itself. For
-        historical recent-effectiveness diagnostics, live cannot know the future
-        label at decision time, so we use the explicit neutral value instead of
-        letting EBM positional mapping silently consume unrelated columns.
+        only materializes columns derived from the current base prediction itself.
+        In strict parity mode, train-time performance diagnostics that require
+        future labels or unavailable rank context are intentionally left missing
+        so meta prediction fails closed instead of receiving neutral constants.
         """
         if not isinstance(features, pd.DataFrame) or features.empty:
             return features
-        feat_cols = [str(c) for c in (getattr(meta_model, "feature_columns", []) or [])]
+        effective_cols = _effective_selected_feature_contract(meta_model)
+        if effective_cols:
+            feat_cols = effective_cols
+        else:
+            feat_cols = [str(c) for c in (getattr(meta_model, "feature_columns", []) or [])]
         if not feat_cols:
             return features
 
         out = features.copy()
+        strict_parity = bool(self.cfg.get("strict_feature_parity", False))
         kind_s = str(kind)
         core = strategy_core_id(kind_s)
         core_no_head = re.sub(r"_(?:clf|reg|tbm_clf|early_inval)$", "", core)
@@ -859,10 +969,11 @@ class ModelOrchestrator:
                 value = base_prob
             elif col == "base_model_margin":
                 value = (base_prob - 0.5).abs()
+            elif re.match(r"^(?:pred(?:_.*)?_H\d+|base_H\d+)_(?:vote_margin|vote_top_gap)$", col):
+                value = (2.0 * (base_prob - 0.5).abs()).astype(np.float32)
             elif col == "base_model_score_pct":
                 symbols = _symbol_values()
                 timestamps = _timestamp_values()
-                value = pd.Series(0.5, index=out.index, dtype=np.float32)
                 if symbols is not None and timestamps is not None:
                     window = int(self.cfg.get("meta_trade_rank_window", 240))
                     rank_pct = rolling_asset_percentile(
@@ -872,14 +983,21 @@ class ModelOrchestrator:
                         window=window,
                     )
                     value = pd.Series(rank_pct, index=out.index)
+                elif strict_parity:
+                    value = None
+                else:
+                    value = pd.Series(0.5, index=out.index, dtype=np.float32)
             elif col in {
                 "prob_error",
                 "recent_prob_error_20",
                 "base_model_abs_error_roll20",
             }:
-                value = pd.Series(0.5, index=out.index, dtype=np.float32)
-            elif col == "recent_hit_rate_20":
-                value = pd.Series(0.5, index=out.index, dtype=np.float32)
+                if not strict_parity:
+                    value = pd.Series(0.5, index=out.index, dtype=np.float32)
+            elif col.startswith("recent_hit_rate_"):
+                if not strict_parity:
+                    neutral = 0.5 if col == "recent_hit_rate_20" else 0.0
+                    value = pd.Series(neutral, index=out.index, dtype=np.float32)
             elif (
                 col.startswith("recent_global_")
                 or col.startswith("recent_side_horizon_")
@@ -889,7 +1007,8 @@ class ModelOrchestrator:
                 or col.startswith("recent_base_meta_disagreement_")
                 or col.startswith("recent_base_internal_disagreement_")
             ):
-                value = pd.Series(0.0, index=out.index, dtype=np.float32)
+                if not strict_parity:
+                    value = pd.Series(0.0, index=out.index, dtype=np.float32)
             elif col == "rsi_z_x_regime_vol":
                 if {"rsi_z", "regime_vol_score"}.issubset(out.columns):
                     value = _numeric_col("rsi_z") * _numeric_col("regime_vol_score")
@@ -940,7 +1059,7 @@ class ModelOrchestrator:
                 src = _first_existing_col(["regime_transition_entropy_12h"])
                 if src is not None:
                     value = base_prob * _numeric_col(src)
-            elif re.match(r"^pred_.*_H\d+_vote_entropy$", col):
+            elif re.match(r"^(?:pred(?:_.*)?_H\d+|base_H\d+)_vote_entropy$", col):
                 horizon_match = re.search(r"_H(\d+)_vote_entropy$", col)
                 h = horizon_match.group(1) if horizon_match else ""
                 src = _first_existing_col(
@@ -967,6 +1086,8 @@ class ModelOrchestrator:
             if value is not None:
                 out[col] = value
                 added += 1
+        out, alias_added = _materialize_model_drift_feature_aliases(out, set(feat_cols))
+        added += alias_added
         if added and not getattr(self, "_meta_model_derived_warned", False):
             tprint(
                 "Meta inference: materialized model-derived contract columns "
@@ -1044,12 +1165,64 @@ class ModelOrchestrator:
                 continue
             out[col] = pd.to_numeric(meta_context[col], errors="coerce").astype(np.float32)
             added += 1
+        if (
+            "feature_drift_psi_core" in needed
+            and "feature_drift_psi_core" not in out.columns
+            and "feature_drift_psi_core_80" in meta_context.columns
+        ):
+            out["feature_drift_psi_core"] = pd.to_numeric(
+                meta_context["feature_drift_psi_core_80"], errors="coerce"
+            ).astype(np.float32)
+            added += 1
+        out, alias_added = _materialize_model_drift_feature_aliases(out, needed)
+        added += alias_added
         if added and not getattr(self, "_alpha_meta_context_warned", False):
             tprint(
                 "Meta inference: materialized alpha drift/context columns "
                 f"from base model ({added} columns for {kind})."
             )
             self._alpha_meta_context_warned = True
+        return out
+
+    def _materialize_meta_model_drift_features(
+        self,
+        features: pd.DataFrame,
+        meta_model: Any,
+    ) -> pd.DataFrame:
+        """Attach this meta model's own artifact-backed drift features."""
+        if not isinstance(features, pd.DataFrame) or features.empty:
+            return features
+        state = getattr(meta_model, "model_drift_state_", None)
+        if not isinstance(state, dict) or not bool(state.get("enabled", False)):
+            return features
+        out = features.copy()
+        drift = transform_model_drift_features(
+            out,
+            state,
+            model=meta_model,
+            index=out.index,
+        )
+        if drift.empty:
+            return out
+        added = 0
+        for col in drift.columns:
+            if col not in out.columns:
+                out[col] = pd.to_numeric(drift[col], errors="coerce").astype(np.float32)
+                added += 1
+        # Backward-compatible aggregate alias used by older feature contracts.
+        if "feature_drift_psi_core" not in out.columns and "feature_drift_psi_core_80" in out.columns:
+            out["feature_drift_psi_core"] = out["feature_drift_psi_core_80"]
+            added += 1
+        effective_cols = _effective_selected_feature_contract(meta_model)
+        needed = set(effective_cols or [str(c) for c in (getattr(meta_model, "feature_columns", []) or [])])
+        out, alias_added = _materialize_model_drift_feature_aliases(out, needed)
+        added += alias_added
+        if added and not getattr(self, "_meta_drift_context_warned", False):
+            tprint(
+                "Meta inference: materialized meta-model drift columns "
+                f"from artifact state ({added} columns)."
+            )
+            self._meta_drift_context_warned = True
         return out
 
     # =========================================================================
@@ -1114,6 +1287,10 @@ class ModelOrchestrator:
                 meta_model,
                 side=side,
                 kind=requested_kind,
+            )
+            features = self._materialize_meta_model_drift_features(
+                features,
+                meta_model,
             )
             features = self._materialize_meta_model_derived_features(
                 features,
@@ -1207,6 +1384,17 @@ class ModelOrchestrator:
                     X = features.reindex(columns=feat_cols, fill_value=0.0).fillna(0)
                 else:
                     X = features[available_cols].fillna(0)
+            self._last_meta_diagnostics = {}
+            transform_meta = getattr(meta_model, "transform_meta_features", None)
+            if callable(transform_meta):
+                try:
+                    self._last_meta_diagnostics = _first_row_diagnostics(
+                        transform_meta(X)
+                    )
+                except Exception as exc:
+                    self._last_meta_diagnostics = {
+                        "lgbm_diagnostics_error": str(exc)[:240]
+                    }
             preds = meta_model.predict(X)
 
             return pd.Series(preds, index=X.index)
@@ -1480,7 +1668,11 @@ class ModelOrchestrator:
                     applied.get("eligible", np.ones(len(final_preds), dtype=bool)),
                     dtype=bool,
                 )
-                if (
+                if "error_risk_adjusted_score" in applied:
+                    final_preds = np.asarray(
+                        applied["error_risk_adjusted_score"], dtype=float
+                    )
+                elif (
                     "combined_score" in applied
                     and "deployment_score_pre_rank" in applied
                 ):
@@ -1511,6 +1703,10 @@ class ModelOrchestrator:
                     "local_batch_rank",
                     "score_delta_from_regime_adjustment",
                     "live_required_columns_available",
+                    "error_risk_score",
+                    "error_risk_rank_score",
+                    "safety_rank_score",
+                    "score_multiplier",
                 ):
                     if key in applied:
                         arr = np.asarray(applied[key], dtype=float)
@@ -1520,6 +1716,7 @@ class ModelOrchestrator:
                     "rank_scope",
                     "regime_disabled_reason",
                     "missing_live_p_bad_regime_columns",
+                    "error_risk_disabled_reason",
                 ):
                     if key in applied:
                         vals = np.asarray(applied[key]).astype(str)
@@ -1760,6 +1957,11 @@ class ModelOrchestrator:
             results["reason"] = "meta_prediction_non_finite_no_base_fallback"
             return results
         results["meta_pred"] = meta_pred_val
+        meta_diagnostics = dict(getattr(self, "_last_meta_diagnostics", {}) or {})
+        if meta_diagnostics:
+            results["lgbm_diagnostics"] = meta_diagnostics
+            for diag_key, diag_value in meta_diagnostics.items():
+                results[diag_key] = diag_value
 
         # Merge Meta Model with Base Model Predictions
         # Final Prediction = Base Prediction + (Meta Prediction * Volatility Scale)
@@ -1804,9 +2006,10 @@ class ModelOrchestrator:
 
         results["orchestrator_position_size"] = position_val
         if position_val <= 0:
-            position_val = 0.05
-            results["position_size"] = position_val
-            results["sizing_source"] = "meta_policy_placeholder"
+            results["action"] = "no_entry"
+            results["reason"] = "position_sizer_rejected"
+            results["sizing_source"] = "position_sizer_rejected"
+            return results
         else:
             results["sizing_source"] = "legacy_orchestrator_diagnostic"
 

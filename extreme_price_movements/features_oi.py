@@ -26,7 +26,16 @@ OI_INTERNAL_FEATURE_KEYS = [
     "funding_1d_chg_z_90d",
 ]
 
-OI_TRADING_FEATURE_KEYS = [
+OI_ALIAS_FEATURE_KEYS = [
+    "oi_value_log_z_30d",
+    "oi_value_log_z_90d",
+    "oi_value_1d_log_chg_z_90d",
+    "oi_value_3d_log_chg_z_90d",
+    "oi_value_7d_log_chg_z_90d",
+    "oi_value_7d_log_chg_z_180d",
+]
+
+OI_NORMALIZED_FEATURE_KEYS = [
     "oi_value_1d_chg_z_90d",
     "oi_value_3d_chg_z_90d",
     "oi_value_7d_chg_z_90d",
@@ -34,12 +43,17 @@ OI_TRADING_FEATURE_KEYS = [
     "oi_value_z_30d",
     "oi_value_z_90d",
     "oi_value_pct_90d",
+    "oi_value_log_1d_robust_z",
+    "oi_value_log_7d_robust_z",
+    *OI_ALIAS_FEATURE_KEYS,
+]
+
+OI_TRADING_FEATURE_KEYS = [
+    *OI_NORMALIZED_FEATURE_KEYS,
     "log_oi_to_volume_1d",
     "log_oi_to_volume_7d",
     "oi_to_volume_1d_z_90d",
     "oi_to_volume_7d_z_180d",
-    "oi_value_log_1d_robust_z",
-    "oi_value_log_7d_robust_z",
     "oi_chg_2h_robust_z",
     "oi_chg_4h_robust_z",
     "oi_chg_8h_robust_z",
@@ -91,22 +105,16 @@ OI_TRADING_FEATURE_KEYS = [
     "price_rv_15d_robust_z",
 ]
 
-OI_ALIAS_FEATURE_KEYS = [
-    "oi_value_log_z_30d",
-    "oi_value_log_z_90d",
-    "oi_value_1d_log_chg_z_90d",
-    "oi_value_3d_log_chg_z_90d",
-    "oi_value_7d_log_chg_z_90d",
-    "oi_value_7d_log_chg_z_180d",
-]
-
-
 def get_oi_internal_feature_names() -> list[str]:
     return list(OI_INTERNAL_FEATURE_KEYS)
 
 
 def get_oi_trading_feature_names() -> list[str]:
     return list(OI_TRADING_FEATURE_KEYS)
+
+
+def get_oi_normalized_feature_names() -> list[str]:
+    return list(OI_NORMALIZED_FEATURE_KEYS)
 
 
 def get_oi_feature_names() -> list[str]:

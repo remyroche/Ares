@@ -58,6 +58,8 @@ TRADE_LOG_COLUMNS = [
     "requested_base_amount",
     "entry_time",
     "exit_time",
+    "decision_to_entry_seconds",
+    "signal_to_entry_seconds",
     "entry_notional_quote",
     "exit_notional_quote",
     "holding_time_hours",
@@ -82,7 +84,17 @@ TRADE_LOG_COLUMNS = [
     "ticker_spread_bps",
     "expected_fill_price",
     "expected_fill_slippage_bps",
+    "orderbook_slippage_bps",
+    "slippage_bps",
+    "entry_gap_bps",
+    "entry_slippage_proxy_bps",
+    "adverse_signal_gap_bps",
     "expected_total_entry_friction_bps",
+    "expected_friction_drag_bps",
+    "entry_delay_effect_bps",
+    "entry_delay_adverse_bps",
+    "entry_delay_abs_bps",
+    "gross_to_net_friction_drag_bps",
     "realized_fee_bps",
     "realized_funding_bps",
     "realized_borrow_bps",
@@ -643,6 +655,8 @@ class TradeLogger:
             or decision.get("base_amount"),
             "entry_time": decision.get("entry_time"),
             "exit_time": decision.get("exit_time"),
+            "decision_to_entry_seconds": decision.get("decision_to_entry_seconds"),
+            "signal_to_entry_seconds": decision.get("signal_to_entry_seconds"),
             "entry_notional_quote": decision.get("entry_notional_quote"),
             "exit_notional_quote": decision.get("exit_notional_quote"),
             "holding_time_hours": decision.get("holding_time_hours")
@@ -665,6 +679,14 @@ class TradeLogger:
             "expected_fill_slippage_bps": decision.get("expected_fill_slippage_bps"),
             "expected_total_entry_friction_bps": decision.get(
                 "expected_total_entry_friction_bps"
+            ),
+            "expected_friction_drag_bps": decision.get("expected_friction_drag_bps")
+            or decision.get("expected_total_entry_friction_bps"),
+            "entry_delay_effect_bps": decision.get("entry_delay_effect_bps"),
+            "entry_delay_adverse_bps": decision.get("entry_delay_adverse_bps"),
+            "entry_delay_abs_bps": decision.get("entry_delay_abs_bps"),
+            "gross_to_net_friction_drag_bps": decision.get(
+                "gross_to_net_friction_drag_bps"
             ),
             "orderbook_side": decision.get("orderbook_side"),
             "best_touch": decision.get("best_touch"),
@@ -1293,8 +1315,41 @@ class TradeLogger:
             row["expected_fill_slippage_bps"] = context.get(
                 "expected_fill_slippage_bps", ""
             )
+            row["orderbook_slippage_bps"] = context.get(
+                "orderbook_slippage_bps",
+                context.get("expected_fill_slippage_bps", ""),
+            )
+            row["slippage_bps"] = context.get(
+                "slippage_bps",
+                context.get("expected_fill_slippage_bps", ""),
+            )
+            row["entry_gap_bps"] = context.get(
+                "entry_gap_bps",
+                context.get("adverse_signal_gap_bps", ""),
+            )
+            row["entry_slippage_proxy_bps"] = context.get(
+                "entry_slippage_proxy_bps",
+                context.get("expected_fill_slippage_bps", ""),
+            )
+            row["adverse_signal_gap_bps"] = context.get(
+                "adverse_signal_gap_bps", ""
+            )
             row["expected_total_entry_friction_bps"] = context.get(
                 "expected_total_entry_friction_bps", ""
+            )
+            row["expected_friction_drag_bps"] = context.get(
+                "expected_friction_drag_bps",
+                context.get("expected_total_entry_friction_bps", ""),
+            )
+            row["entry_delay_effect_bps"] = context.get("entry_delay_effect_bps", "")
+            row["entry_delay_adverse_bps"] = context.get("entry_delay_adverse_bps", "")
+            row["entry_delay_abs_bps"] = context.get("entry_delay_abs_bps", "")
+            row["decision_to_entry_seconds"] = context.get(
+                "decision_to_entry_seconds", ""
+            )
+            row["signal_to_entry_seconds"] = context.get("signal_to_entry_seconds", "")
+            row["gross_to_net_friction_drag_bps"] = context.get(
+                "gross_to_net_friction_drag_bps", ""
             )
             row["orderbook_side"] = context.get("orderbook_side", "")
             row["best_touch"] = context.get("best_touch", "")

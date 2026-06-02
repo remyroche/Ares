@@ -452,11 +452,15 @@ def scoped_data_root(cfg: Dict[str, Any]) -> str:
     root = str(cfg.get("data_root", "data"))
     if not use_exchange_scoped_data(cfg):
         return root
-    return exchange_data_root(
-        root,
+    component = exchange_data_component(
         cfg.get("exchange_id") or cfg.get("exchange"),
         cfg.get("market_mode") or ("perps" if cfg.get("use_perps") else "spot"),
     )
+    norm_root = os.path.normpath(root)
+    parts = norm_root.split(os.sep)
+    if len(parts) >= 2 and parts[-2] == "exchanges" and parts[-1] == component:
+        return root
+    return os.path.join(root, "exchanges", component)
 
 
 def make_ohlcv_store(cfg: Dict[str, Any], *, timeframe: Optional[str] = None):
@@ -2104,7 +2108,11 @@ def _fetch_kraken_futures_charts_ohlcv(
     df = pd.DataFrame(rows, columns=["ts", "open", "high", "low", "close", "volume"])
     df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
     df = df.drop_duplicates("ts").set_index("ts").sort_index()
-    df = _drop_suspicious_zero_volume_carry_rows(df)
+    # Kraken Futures explicitly returns zero-volume 1m carry candles for
+    # inactive minutes. Keep them for delayed-entry execution proxies so an
+    # illiquid but published minute does not silently fall back to 15m open.
+    if _timeframe_ms(timeframe) > 60_000:
+        df = _drop_suspicious_zero_volume_carry_rows(df)
     return df.astype(np.float32)
 
 
@@ -4332,6 +4340,80 @@ class LazyFeatureDict:
             return self[k]
         except KeyError:
             return default
+
+    def has_raw_key(self, k):
+        return k in self._raw or k in self._assembled
+
+    def raw_symbols_for_key(self, k):
+        if k in self._assembled:
+            frame = self._assembled.get(k)
+            return set(frame.columns) if isinstance(frame, pd.DataFrame) else set()
+        payload = self._raw.get(k)
+        if isinstance(payload, dict):
+            return set(str(sym) for sym in payload.keys())
+        return set()
+
+    def latest_values_at(self, k, symbols, ts, *, stale_sensitive=False):
+        """Return feature values for symbols at or before ts without wide assembly."""
+        ts_utc = pd.Timestamp(ts)
+        if ts_utc.tzinfo is None:
+            ts_utc = ts_utc.tz_localize("UTC")
+        else:
+            ts_utc = ts_utc.tz_convert("UTC")
+        symbol_index = pd.Index([str(sym) for sym in symbols], name="symbol")
+        out = pd.Series(np.nan, index=symbol_index, dtype=np.float32)
+        if k in self._assembled:
+            frame = self._assembled.get(k)
+            if not isinstance(frame, pd.DataFrame) or frame.empty:
+                return out
+            available = [sym for sym in symbol_index if sym in frame.columns]
+            if not available:
+                return out
+            idx = pd.to_datetime(frame.index, utc=True, errors="coerce")
+            positions = np.flatnonzero(idx <= ts_utc)
+            if positions.size == 0:
+                return out
+            pos = int(positions[-1])
+            latest_ts = idx[pos]
+            if stale_sensitive and (pd.isna(latest_ts) or pd.Timestamp(latest_ts) < ts_utc):
+                return out
+            out.loc[available] = frame.iloc[pos].reindex(available).to_numpy(
+                dtype=np.float32, copy=False
+            )
+            return out
+        payload = self._raw.get(k)
+        if not isinstance(payload, dict):
+            return out
+        for sym in symbol_index:
+            item = payload.get(sym)
+            if item is None:
+                continue
+            if isinstance(item, tuple) and len(item) == 2:
+                idx_vals, val_array = item
+            else:
+                idx_vals = self._symbol_indices.get(sym)
+                val_array = item
+            if idx_vals is None:
+                continue
+            normalized_idx, normalized_vals, _ = _normalize_feature_index(
+                idx_vals,
+                val_array,
+            )
+            if normalized_idx is None or normalized_vals is None:
+                continue
+            idx = pd.to_datetime(normalized_idx, utc=True, errors="coerce")
+            positions = np.flatnonzero(idx <= ts_utc)
+            if positions.size == 0:
+                continue
+            pos = int(positions[-1])
+            latest_ts = idx[pos]
+            if stale_sensitive and (pd.isna(latest_ts) or pd.Timestamp(latest_ts) < ts_utc):
+                continue
+            try:
+                out.at[sym] = np.float32(normalized_vals[pos])
+            except Exception:
+                out.at[sym] = np.nan
+        return out
 
     def items(self):
         for k in self.keys():

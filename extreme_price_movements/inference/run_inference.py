@@ -57,7 +57,7 @@ import time
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -98,6 +98,8 @@ from extreme_price_movements.inference.data_fetcher import (
 )
 from extreme_price_movements.inference.feature_generator import (
     _compute_policy_barrier_pct,
+    _feature_runtime_cfg_hash,
+    _hash_values,
     _required_tail_warmup_hours,
     compute_selector_features,
     generate_features,
@@ -200,11 +202,34 @@ def _get_features_for_candidates_at_ts(
 
 
 _FEATURE_COMPUTE_LOCK = threading.RLock()
+_CANDIDATE_FEATURE_CYCLE_CACHE: Dict[str, Dict[str, Any]] = {}
 BASE_TO_META_TOP_FRAC = 0.40
 LIVE_TEST_RANK_THRESHOLD = 0.90
 LIVE_TEST_THRESHOLD_RELAXATION = 0.06
 AUCTION_EV_MIN_NET_RETURN = float(os.getenv("EPM_AUCTION_EV_MIN_NET_RETURN", "0.002"))
 AUCTION_EV_MAX_NET_RETURN = float(os.getenv("EPM_AUCTION_EV_MAX_NET_RETURN", "0.006"))
+
+
+def _raise_if_policy_export_invalid(data_root: str, run_id: str) -> None:
+    base = Path(data_root) / "artifacts" / run_id
+    for marker_path in mode_file_candidates(
+        base / "simple_policy_optimiser" / "policy_export_invalid.json"
+    ):
+        if not marker_path.exists():
+            continue
+        reason = ""
+        try:
+            payload = json.loads(marker_path.read_text())
+            if isinstance(payload, dict):
+                reason = str(payload.get("reason") or "")
+        except Exception:
+            reason = ""
+        suffix = f": {reason}" if reason else ""
+        raise RuntimeError(
+            f"Refusing to load policy artifacts for run_id={run_id}; "
+            f"strict simple_policy_optimiser export is marked invalid at "
+            f"{marker_path}{suffix}"
+        )
 AUCTION_EV_MIN_HIT_RATE = float(os.getenv("EPM_AUCTION_EV_MIN_HIT_RATE", "0.60"))
 LOSING_TRADE_COOLDOWN_HOURS = 12.0
 _HISTORICAL_SCORE_RANK_CACHE: Dict[tuple[str, str, str, str], np.ndarray] = {}
@@ -300,15 +325,17 @@ def _fetch_live_closeable_price(
 
 
 def _position_policy_entry_price(position_state: Mapping[str, Any]) -> tuple[float, str]:
-    """Return the theoretical entry reference used for policy MFE/MAE parity."""
+    """Return the fill reference used for live policy MFE/MAE accounting."""
     for key in (
+        "realized_entry_price",
+        "actual_entry_price",
+        "entry_price",
         "policy_entry_price",
         "theoretical_entry_price",
         "ohlcv_entry_price",
         "signal_price",
         "expected_entry_price",
         "decision_mid",
-        "entry_price",
     ):
         value = _finite_positive_float(position_state.get(key))
         if np.isfinite(value):
@@ -384,6 +411,7 @@ def _order_identifier(order_payload: Any) -> str:
 def _load_normalized_threshold_map(
     data_root: str, run_id: str
 ) -> Dict[str, Dict[str, Any]]:
+    _raise_if_policy_export_invalid(data_root, run_id)
     rows_out: Dict[str, Dict[str, Any]] = {}
     base = Path(data_root) / "artifacts" / run_id
     threshold_paths = [
@@ -488,6 +516,7 @@ def _load_normalized_threshold_map(
 
 
 def _load_policy_selection_rules(data_root: str, run_id: str) -> Dict[str, Any]:
+    _raise_if_policy_export_invalid(data_root, run_id)
     base = Path(data_root) / "artifacts" / run_id
     for strategy_path in [
         candidate
@@ -580,6 +609,7 @@ def _normalise_embedded_lgbm_mask_row(row: Dict[str, Any]) -> Optional[Dict[str,
 def _load_embedded_lgbm_strategy_mask_rows(
     data_root: str, run_id: str
 ) -> Dict[str, Dict[str, Any]]:
+    _raise_if_policy_export_invalid(data_root, run_id)
     base = Path(data_root) / "artifacts" / run_id
     for strategy_path in [
         candidate
@@ -627,6 +657,7 @@ def _load_embedded_lgbm_strategy_mask_rows(
 
 def _load_selected_strategy_cores(data_root: str, run_id: str) -> set[str]:
     """Load selected deployment strategy cores from strategy_for_inference."""
+    _raise_if_policy_export_invalid(data_root, run_id)
     base = Path(data_root) / "artifacts" / run_id
     selected: set[str] = set()
     for strategy_path in [
@@ -782,6 +813,47 @@ def _load_lgbm_strategy_mask_rows(
         )
     tprint(f"Loaded {len(rows)} LGBM strategy mask row(s) for inference gating")
     return out
+
+
+def _validate_lgbm_strategy_mask_coverage(
+    lgbm_strategy_mask_rows: Mapping[str, Mapping[str, Any]],
+    accepted_strategies: Optional[set[str]],
+) -> None:
+    """Fail closed when deployed LGBM strategies lack pre-base regime masks."""
+    selected = {
+        strategy_core_id(str(sid))
+        for sid in (accepted_strategies or set())
+        if str(sid).strip()
+    }
+    if not selected:
+        return
+    rows = [
+        row
+        for row in (lgbm_strategy_mask_rows or {}).values()
+        if isinstance(row, Mapping)
+    ]
+    row_cores = {
+        strategy_core_id(str(row.get("strategy_id") or ""))
+        for row in rows
+        if str(row.get("strategy_id") or "").strip()
+    }
+    missing = sorted(core for core in selected if core not in row_cores)
+    if missing:
+        raise RuntimeError(
+            "LGBM strategy regime masks missing for accepted strategies: "
+            f"{missing}. Refusing to fall back to legacy candidate masks."
+        )
+    missing_triggers = sorted(
+        strategy_core_id(str(row.get("strategy_id") or ""))
+        for row in rows
+        if strategy_core_id(str(row.get("strategy_id") or "")) in selected
+        and not str(row.get("base_event_trigger") or "").strip()
+    )
+    if missing_triggers:
+        raise RuntimeError(
+            "LGBM strategy regime mask rows are missing base_event_trigger for "
+            f"{missing_triggers}"
+        )
 
 
 def _strategy_mask_symbols(
@@ -1388,6 +1460,7 @@ def _ev_adjusted_prediction_after_entry_friction(
         rank_source = str(lookup.source)
     return {
         "ev_adjusted_entry_friction_bps": float(friction_bps),
+        "ev_adjusted_initial_calibrated_score": float(score),
         "ev_adjusted_net_return_before_friction": current_net_ev,
         "ev_adjusted_net_return_after_friction": adjusted_net_ev,
         "ev_adjusted_calibrated_score": adjusted_score,
@@ -1396,6 +1469,37 @@ def _ev_adjusted_prediction_after_entry_friction(
         "ev_adjusted_rank_reference_source": rank_source,
         "ev_adjusted_source": "strategy_ev_curve_inverse_after_live_entry_friction",
     }
+
+
+def _adverse_signal_gap_bps(*, side: str, signal_price: Any, decision_mid: Any) -> float:
+    signal = _safe_float(signal_price, np.nan)
+    mid = _safe_float(decision_mid, np.nan)
+    if not (np.isfinite(signal) and signal > 0.0 and np.isfinite(mid) and mid > 0.0):
+        return 0.0
+    side_s = str(side).lower()
+    if side_s == "long":
+        return float(max(mid / signal - 1.0, 0.0) * 10000.0)
+    if side_s == "short":
+        return float(max(signal / mid - 1.0, 0.0) * 10000.0)
+    return 0.0
+
+
+def _live_entry_adverse_hourly_close_gate(runtime_config: Dict[str, Any]) -> Tuple[bool, float]:
+    enabled_raw = os.environ.get(
+        "EPM_ADVERSE_HOURLY_CLOSE_ENTRY_GATE_ENABLED",
+        runtime_config.get("adverse_hourly_close_entry_gate_enabled", True),
+    )
+    enabled = str(enabled_raw).strip().lower() not in {"0", "false", "no", "off"}
+    try:
+        gate_bps = float(
+            os.environ.get(
+                "EPM_ADVERSE_HOURLY_CLOSE_ENTRY_GATE_BPS",
+                runtime_config.get("adverse_hourly_close_entry_gate_bps", 150.0),
+            )
+        )
+    except (TypeError, ValueError):
+        gate_bps = 150.0
+    return bool(enabled and gate_bps >= 0.0), float(gate_bps)
 
 
 def _prediction_ledger_row(
@@ -1413,6 +1517,7 @@ def _prediction_ledger_row(
     """Build a durable top-candidate audit row without mutating inference state."""
     chain = dict(decision.get("chain_results") or {})
     snap = dict(execution_snapshot or {})
+    snap_details = snap.get("details") if isinstance(snap.get("details"), dict) else {}
     sizing = dict(chain.get("portfolio_rank_sizing") or {})
     trade = dict(trade_result or {})
     normalized_rank = _safe_float(
@@ -1428,7 +1533,18 @@ def _prediction_ledger_row(
         chain.get("effective_threshold", decision.get("effective_threshold", np.nan))
     )
     order = trade.get("order") if isinstance(trade.get("order"), dict) else {}
-    return {
+    entry_notional_quote = _safe_float(
+        trade.get("entry_notional_quote", trade.get("size")), np.nan
+    )
+    entry_fee_quote = _safe_float(trade.get("entry_fee_quote"), np.nan)
+    entry_fee_bps = (
+        float(entry_fee_quote) / max(abs(float(entry_notional_quote)), 1e-12) * 10000.0
+        if np.isfinite(entry_fee_quote)
+        and np.isfinite(entry_notional_quote)
+        and abs(float(entry_notional_quote)) > 0.0
+        else np.nan
+    )
+    row = {
         "timestamp": timestamp,
         "decision_ts": _diagnostic_timestamp(decision.get("decision_ts"), timestamp),
         "signal_bar_ts": _diagnostic_timestamp(
@@ -1446,6 +1562,24 @@ def _prediction_ledger_row(
         ),
         "model_artifact_run_id": decision.get("model_artifact_run_id"),
         "policy_artifact_run_id": decision.get("policy_artifact_run_id"),
+        "model_feature_audit_schema": chain.get("model_feature_audit_schema"),
+        "model_feature_snapshot_hash": chain.get("model_feature_snapshot_hash"),
+        "base_model_key": chain.get("base_model_key"),
+        "meta_model_feature_key": chain.get("meta_model_feature_key"),
+        "base_model_feature_count": chain.get("base_model_feature_count"),
+        "meta_model_feature_count": chain.get("meta_model_feature_count"),
+        "base_model_features_json": chain.get("base_model_features_json"),
+        "meta_model_features_json": chain.get("meta_model_features_json"),
+        "base_model_feature_values_json": chain.get(
+            "base_model_feature_values_json"
+        ),
+        "meta_model_feature_values_json": chain.get(
+            "meta_model_feature_values_json"
+        ),
+        "model_feature_value_sources_json": chain.get(
+            "model_feature_value_sources_json"
+        ),
+        "model_feature_missing_json": chain.get("model_feature_missing_json"),
         "symbol": decision.get("symbol"),
         "side": side,
         "strategy_id": decision.get("strategy_id"),
@@ -1566,24 +1700,92 @@ def _prediction_ledger_row(
         ),
         "portfolio_decision": portfolio_decision,
         "portfolio_reject_reason": portfolio_reject_reason,
-        "ticker_bid": snap.get("bid"),
-        "ticker_ask": snap.get("ask"),
-        "ticker_mid": snap.get("mid"),
-        "spread_bps": snap.get("spread_bps"),
+        "ticker_bid": snap.get("ticker_bid", snap.get("bid")),
+        "ticker_ask": snap.get("ticker_ask", snap.get("ask")),
+        "ticker_mid": snap.get("ticker_mid", snap.get("mid")),
+        "ticker_last": snap.get("ticker_last", snap.get("last")),
+        "ticker_request_started_at": snap_details.get("ticker_request_started_at"),
+        "ticker_received_at": snap_details.get("ticker_received_at"),
+        "ticker_fetch_latency_seconds": snap_details.get(
+            "ticker_fetch_latency_seconds"
+        ),
+        "exchange_ticker_timestamp": snap_details.get("exchange_ticker_timestamp"),
+        "exchange_ticker_age_seconds": snap_details.get(
+            "exchange_ticker_age_seconds"
+        ),
+        "spread_bps": snap.get("spread_bps", snap.get("ticker_spread_bps")),
+        "ticker_spread_bps": snap.get("ticker_spread_bps", snap.get("spread_bps")),
+        "orderbook_side": snap.get("orderbook_side"),
+        "best_touch": snap.get("best_touch"),
+        "max_walk_price": snap.get("max_walk_price"),
+        "intended_quote_size": snap.get("intended_quote_size"),
         "orderbook_capacity_quote_within_slippage": snap.get(
             "orderbook_capacity_quote_within_slippage"
         ),
         "max_orderbook_slippage_bps": snap.get("max_orderbook_slippage_bps"),
+        "spread_weight": snap.get("spread_weight"),
+        "depth_weight": snap.get("depth_weight"),
+        "half_spread_bps": snap_details.get("half_spread_bps"),
+        "effective_orderbook_slippage_cap_bps": snap_details.get(
+            "effective_orderbook_slippage_cap_bps"
+        ),
+        "max_entry_friction_bps": snap_details.get("max_entry_friction_bps"),
+        "entry_friction_formula": snap_details.get("entry_friction_formula"),
+        "entry_friction_gate": snap_details.get("entry_friction_gate"),
+        "theoretical_entry_price": snap.get("theoretical_entry_price"),
+        "policy_entry_price": snap.get("policy_entry_price"),
+        "expected_entry_price": snap.get("expected_entry_price"),
         "expected_fill_price": snap.get("expected_fill_price"),
         "expected_fill_slippage_bps": snap.get("expected_fill_slippage_bps"),
+        "orderbook_slippage_bps": snap.get(
+            "orderbook_slippage_bps",
+            snap.get("expected_fill_slippage_bps"),
+        ),
+        "slippage_bps": snap.get(
+            "slippage_bps",
+            snap.get("expected_fill_slippage_bps"),
+        ),
+        "entry_gap_bps": snap.get(
+            "entry_gap_bps",
+            snap.get("adverse_signal_gap_bps"),
+        ),
+        "entry_slippage_proxy_bps": snap.get(
+            "entry_slippage_proxy_bps",
+            snap.get("expected_fill_slippage_bps"),
+        ),
+        "adverse_signal_gap_bps": snap.get("adverse_signal_gap_bps"),
         "expected_total_entry_friction_bps": snap.get(
             "expected_total_entry_friction_bps"
         ),
+        "expected_friction_drag_bps": snap.get(
+            "expected_friction_drag_bps",
+            snap.get("expected_total_entry_friction_bps"),
+        ),
+        "entry_delay_effect_bps": trade.get("entry_delay_effect_bps"),
+        "entry_delay_adverse_bps": trade.get("entry_delay_adverse_bps"),
+        "entry_delay_abs_bps": trade.get("entry_delay_abs_bps"),
+        "decision_to_entry_seconds": trade.get("decision_to_entry_seconds"),
+        "signal_to_entry_seconds": trade.get("signal_to_entry_seconds"),
+        "gross_to_net_friction_drag_bps": trade.get(
+            "gross_to_net_friction_drag_bps"
+        ),
+        "entry_notional_quote": entry_notional_quote,
+        "base_amount": trade.get("base_amount"),
+        "entry_fee_quote": trade.get("entry_fee_quote"),
+        "entry_fee_cost": trade.get("entry_fee_cost"),
+        "entry_fee_currency": trade.get("entry_fee_currency"),
+        "entry_fee_source": trade.get("entry_fee_source"),
+        "entry_fee_bps": entry_fee_bps,
         "liquidity_capacity_weight": snap.get("liquidity_capacity_weight"),
         "liquidity_reject_reason": liquidity_reject_reason,
         "signal_price": snap.get("signal_price"),
-        "decision_mid": snap.get("decision_mid", snap.get("mid")),
+        "decision_mid": snap.get(
+            "decision_mid", snap.get("ticker_mid", snap.get("mid"))
+        ),
         "signal_gap_bps": snap.get("signal_gap_bps"),
+        "max_chase_bps": snap.get("max_chase_bps"),
+        "entry_limit_price": snap.get("entry_limit_price"),
+        "limit_price": snap.get("limit_price"),
         "was_traded": bool(was_traded),
         "position_id": trade.get("position_id"),
         "order_id": trade.get("order_id") or order.get("id"),
@@ -1591,7 +1793,7 @@ def _prediction_ledger_row(
         "entry_price_actual": trade.get("realized_entry_price"),
         "realized_entry_price": trade.get("realized_entry_price"),
         "realized_exit_price": trade.get("realized_exit_price"),
-        "realized_fee_bps": trade.get("realized_fee_bps"),
+        "realized_fee_bps": trade.get("realized_fee_bps", entry_fee_bps),
         "realized_funding_bps": trade.get("realized_funding_bps"),
         "realized_borrow_bps": trade.get("realized_borrow_bps"),
         "outcome_status": None,
@@ -1600,6 +1802,26 @@ def _prediction_ledger_row(
         "ambiguous_both_hit": None,
         "resolved_at": None,
     }
+    lgbm_diagnostics = chain.get("lgbm_diagnostics")
+    if not isinstance(lgbm_diagnostics, dict):
+        lgbm_diagnostics = {}
+    for diag_key in (
+        "feature_drift_psi_core",
+        "feature_drift_cov_shift",
+        "regime_centroid_similarity_train",
+        "rare_leaf_fraction",
+        "leaf_count_p10",
+        "leaf_count_min",
+        "leaf_weight_p10",
+        "contrib_top1_abs_share",
+        "contrib_top3_abs_share",
+        "contrib_entropy",
+        "contrib_balance",
+        "num_material_contrib_features",
+        "prob_uncertainty",
+    ):
+        row[diag_key] = chain.get(diag_key, lgbm_diagnostics.get(diag_key))
+    return row
 
 
 def _historical_score_paths(
@@ -1793,6 +2015,30 @@ def _attach_runtime_bucket_params(config: Dict[str, Any]) -> Dict[str, Any]:
     return bucket_params
 
 
+def _resolve_live_feature_source_run_id(config: Dict[str, Any]) -> Optional[str]:
+    """Return the selected-feature source run for live feature fallback.
+
+    The live rolling transformed-feature cache is keyed by the active run and
+    exact feature contract. Offline selected-feature lookup is only a fallback
+    for missing historical rows, so it must follow explicit artifact/source
+    provenance instead of stale run-specific defaults.
+    """
+
+    for value in (
+        config.get("live_feature_source_run_id"),
+        config.get("feature_source_run_id"),
+        config.get("artifact_source_run_id"),
+        os.getenv("EPM_LIVE_FEATURE_SOURCE_RUN_ID"),
+        os.getenv("EPM_FEATURE_SOURCE_RUN_ID"),
+        os.getenv("EPM_ARTIFACT_SOURCE_RUN_ID"),
+        os.getenv("EPM_SOURCE_RUN_ID"),
+    ):
+        text = str(value or "").strip()
+        if text:
+            return text
+    return None
+
+
 def _force_shadow_entry_for_integration(executor: Any) -> bool:
     """Return True only for explicit shadow-mode integration smoke passes."""
     if getattr(executor, "mode", None) != "shadow":
@@ -1827,6 +2073,152 @@ def _subset_panel(
         cols = [c for c in keep if c in df.columns]
         if cols:
             out[key] = df.loc[:, cols]
+    return out
+
+
+def _latest_only_panel(
+    panel: Dict[str, pd.DataFrame],
+    symbols: List[str],
+) -> Dict[str, pd.DataFrame]:
+    """Return only the latest timestamp needed for live mask decisions."""
+    out: Dict[str, pd.DataFrame] = {}
+    close = panel.get("close")
+    latest_ts = None
+    if isinstance(close, pd.DataFrame) and not close.empty:
+        latest_ts = close.index.max()
+    keep = [str(s) for s in symbols]
+    for key, df in panel.items():
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            continue
+        cols = [c for c in keep if c in df.columns]
+        if not cols:
+            continue
+        if latest_ts is not None and latest_ts in df.index:
+            out[key] = df.loc[[latest_ts], cols]
+        else:
+            out[key] = df.loc[:, cols].tail(1)
+    return out
+
+
+def _latest_only_features(
+    feats: Dict[str, pd.DataFrame],
+    *,
+    latest_ts: Optional[pd.Timestamp],
+    symbols: List[str],
+) -> Dict[str, pd.DataFrame]:
+    """Align live mask features to a single latest timestamp/symbol row."""
+    out: Dict[str, pd.DataFrame] = {}
+    keep = [str(s) for s in symbols]
+    ts_index = None
+    if latest_ts is not None:
+        ts_index = pd.DatetimeIndex([pd.Timestamp(latest_ts)])
+    if hasattr(feats, "latest_values_at"):
+        ts_utc = None
+        if latest_ts is not None:
+            ts_utc = pd.Timestamp(latest_ts)
+            if ts_utc.tzinfo is None:
+                ts_utc = ts_utc.tz_localize("UTC")
+            else:
+                ts_utc = ts_utc.tz_convert("UTC")
+        raw_payloads = getattr(feats, "_raw", {})
+        assembled_payloads = getattr(feats, "_assembled", {})
+        symbol_indices = getattr(feats, "_symbol_indices", {})
+        latest_pos_by_symbol: dict[str, int] = {}
+        if ts_utc is not None:
+            for sym in keep:
+                idx_vals = symbol_indices.get(sym)
+                if idx_vals is None:
+                    continue
+                idx = pd.to_datetime(idx_vals, utc=True, errors="coerce")
+                positions = np.flatnonzero(idx <= ts_utc)
+                if positions.size:
+                    latest_pos_by_symbol[sym] = int(positions[-1])
+        for key in feats.keys():
+            frame = assembled_payloads.get(key) if isinstance(assembled_payloads, dict) else None
+            if isinstance(frame, pd.DataFrame) and not frame.empty:
+                cols = [c for c in keep if c in frame.columns]
+                if not cols:
+                    continue
+                idx = pd.to_datetime(frame.index, utc=True, errors="coerce")
+                positions = (
+                    np.flatnonzero(idx <= ts_utc)
+                    if ts_utc is not None
+                    else np.arange(len(frame.index))
+                )
+                if positions.size == 0:
+                    continue
+                pos = int(positions[-1])
+                latest = frame.iloc[[pos]].loc[:, cols]
+                if ts_index is not None:
+                    latest = latest.copy()
+                    latest.index = ts_index
+                out[str(key)] = latest
+                continue
+            payload = raw_payloads.get(key) if isinstance(raw_payloads, dict) else None
+            if isinstance(payload, dict) and ts_utc is not None:
+                cols: list[str] = []
+                vals: list[float] = []
+                for sym in keep:
+                    item = payload.get(sym)
+                    if item is None:
+                        continue
+                    if isinstance(item, tuple) and len(item) == 2:
+                        idx_vals, val_array = item
+                        idx = pd.to_datetime(idx_vals, utc=True, errors="coerce")
+                        positions = np.flatnonzero(idx <= ts_utc)
+                        if positions.size == 0:
+                            continue
+                        pos = int(positions[-1])
+                    else:
+                        val_array = item
+                        pos = latest_pos_by_symbol.get(sym)
+                        if pos is None:
+                            continue
+                    arr = np.asarray(val_array)
+                    if pos >= len(arr):
+                        continue
+                    cols.append(sym)
+                    vals.append(float(arr[pos]))
+                if cols:
+                    out[str(key)] = pd.DataFrame([vals], columns=cols, index=ts_index)
+                continue
+            raw_symbols = set()
+            if hasattr(feats, "raw_symbols_for_key"):
+                try:
+                    raw_symbols = set(str(sym) for sym in feats.raw_symbols_for_key(key))
+                except Exception:
+                    raw_symbols = set()
+            cols = [sym for sym in keep if not raw_symbols or sym in raw_symbols]
+            if not cols or latest_ts is None:
+                continue
+            try:
+                values = feats.latest_values_at(key, cols, latest_ts)
+            except Exception:
+                continue
+            if values is None or len(values) == 0:
+                continue
+            latest = pd.DataFrame(
+                [pd.Series(values).reindex(cols).to_numpy()],
+                columns=cols,
+                index=ts_index,
+            )
+            out[str(key)] = latest
+        return out
+    for key in feats.keys():
+        df = feats.get(key)
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            continue
+        cols = [c for c in keep if c in df.columns]
+        if not cols:
+            continue
+        if latest_ts is not None and latest_ts in df.index:
+            latest = df.loc[[latest_ts], cols]
+        else:
+            latest = df.loc[:, cols].tail(1)
+            if ts_index is not None:
+                latest = latest.copy()
+                latest.index = ts_index
+        out[str(key)] = latest
     return out
 
 
@@ -1872,6 +2264,44 @@ def _lgbm_mask_required_feature_keys(
     return out
 
 
+def _symbols_with_required_feature_coverage(
+    feats: Dict[str, pd.DataFrame],
+    required_feature_keys: set[str],
+    symbols: List[str],
+) -> tuple[List[str], Dict[str, List[str]]]:
+    """Return candidate symbols that have all required feature columns available."""
+    symbol_list = [str(sym) for sym in symbols if str(sym)]
+    if not required_feature_keys or not symbol_list:
+        return symbol_list, {}
+    missing_by_symbol: Dict[str, List[str]] = {}
+    if hasattr(feats, "raw_symbols_for_key"):
+        for key in sorted(required_feature_keys):
+            try:
+                available = {str(sym) for sym in feats.raw_symbols_for_key(key)}
+            except Exception:
+                available = set()
+            if not available:
+                for sym in symbol_list:
+                    missing_by_symbol.setdefault(sym, []).append(str(key))
+                continue
+            for sym in symbol_list:
+                if sym not in available:
+                    missing_by_symbol.setdefault(sym, []).append(str(key))
+    else:
+        for key in sorted(required_feature_keys):
+            value = feats.get(key) if hasattr(feats, "get") else None
+            if not isinstance(value, pd.DataFrame) or value.empty:
+                for sym in symbol_list:
+                    missing_by_symbol.setdefault(sym, []).append(str(key))
+                continue
+            columns = {str(col) for col in value.columns}
+            for sym in symbol_list:
+                if sym not in columns:
+                    missing_by_symbol.setdefault(sym, []).append(str(key))
+    allowed = [sym for sym in symbol_list if sym not in missing_by_symbol]
+    return allowed, missing_by_symbol
+
+
 def _effective_runtime_model_bundle(
     full_state: Dict[str, Any],
     config: Dict[str, Any],
@@ -1911,6 +2341,78 @@ def _training_context_symbols_for_live_universe(
     return sorted(out)
 
 
+def _candidate_feature_cycle_cache_key(
+    *,
+    panel: Dict[str, pd.DataFrame],
+    symbols: List[str],
+    run_id: str,
+    data_root: str,
+    cfg: Dict[str, Any],
+    lookback_hours: int,
+    raw_feature_keys: set[str],
+    lgbm_strategy_mask_rows: Optional[Dict[str, Dict[str, Any]]],
+    feature_context_symbols: Optional[List[str]],
+    model_features_required: bool = True,
+) -> Optional[str]:
+    close = panel.get("close") if isinstance(panel, dict) else None
+    if not isinstance(close, pd.DataFrame) or close.empty:
+        return None
+    cfg_for_hash = {
+        str(k): v
+        for k, v in (cfg or {}).items()
+        if str(k) not in {"live_feature_cycle_cache_bypass"}
+    }
+    strategy_payload = []
+    for sid, row in sorted((lgbm_strategy_mask_rows or {}).items()):
+        if not isinstance(row, dict):
+            continue
+        strategy_payload.append(
+            {
+                "strategy_id": str(sid),
+                "side": str(row.get("trade_side") or row.get("side") or ""),
+                "canonical_key": str(
+                    row.get("base_event_trigger") or row.get("canonical_key") or ""
+                ),
+                "mask_params": row.get("mask_params") or {},
+            }
+        )
+    payload = {
+        "run_id": str(run_id),
+        "data_root": str(data_root),
+        "lookback_hours": int(lookback_hours),
+        "latest_ts": pd.Timestamp(close.index.max()).isoformat(),
+        "symbols_hash": _hash_values(symbols),
+        "feature_context_symbols_hash": _hash_values(feature_context_symbols or symbols),
+        "raw_feature_keys_hash": _hash_values(raw_feature_keys),
+        "model_features_required": bool(model_features_required),
+        "cfg_hash": _feature_runtime_cfg_hash(cfg_for_hash),
+        "strategies": strategy_payload,
+    }
+    encoded = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:24]
+
+
+def _copy_candidate_feature_cycle_entry(
+    entry: Dict[str, Any],
+) -> tuple[
+    Dict[str, float],
+    List[str],
+    List[str],
+    Dict[str, pd.DataFrame],
+    Dict[str, List[str]],
+]:
+    return (
+        dict(entry.get("thresholds") or {}),
+        list(entry.get("long_cands") or []),
+        list(entry.get("short_cands") or []),
+        dict(entry.get("features") or {}),
+        {
+            str(k): list(v or [])
+            for k, v in (entry.get("strategy_candidate_masks") or {}).items()
+        },
+    )
+
+
 def _select_candidates_and_load_features(
     *,
     panel: Dict[str, pd.DataFrame],
@@ -1922,6 +2424,7 @@ def _select_candidates_and_load_features(
     required_feature_keys: Optional[set[str]],
     lgbm_strategy_mask_rows: Optional[Dict[str, Dict[str, Any]]] = None,
     feature_context_symbols: Optional[List[str]] = None,
+    model_features_required: bool = True,
 ) -> tuple[
     Dict[str, float],
     List[str],
@@ -1935,7 +2438,35 @@ def _select_candidates_and_load_features(
         mask_raw_feature_keys = _lgbm_mask_required_feature_keys(
             lgbm_strategy_mask_rows
         )
-        raw_feature_keys = set(model_raw_feature_keys) | set(mask_raw_feature_keys)
+        raw_feature_keys = set(mask_raw_feature_keys)
+        if model_features_required:
+            raw_feature_keys |= set(model_raw_feature_keys)
+        cache_key = None
+        if bool((cfg or {}).get("live_feature_cycle_cache_enabled", True)) and not bool(
+            (cfg or {}).get("live_feature_cycle_cache_bypass", False)
+        ):
+            cache_key = _candidate_feature_cycle_cache_key(
+                panel=panel,
+                symbols=symbols,
+                run_id=run_id,
+                data_root=data_root,
+                cfg=cfg,
+                lookback_hours=lookback_hours,
+                raw_feature_keys=raw_feature_keys,
+                lgbm_strategy_mask_rows=lgbm_strategy_mask_rows,
+                feature_context_symbols=feature_context_symbols,
+                model_features_required=model_features_required,
+            )
+            if cache_key and cache_key in _CANDIDATE_FEATURE_CYCLE_CACHE:
+                cached = _CANDIDATE_FEATURE_CYCLE_CACHE[cache_key]
+                tprint(
+                    "Loaded cached hourly candidate feature/mask matrix: "
+                    f"key={cache_key} "
+                    f"features={len(cached.get('features') or {})} "
+                    f"strategies={len(cached.get('strategy_candidate_masks') or {})}"
+                )
+                timer.mark("hourly_feature_matrix_cache_hit")
+                return _copy_candidate_feature_cycle_entry(cached)
         selector_feats = compute_selector_features(panel, symbols)
         timer.mark("selector_features")
         thresholds = get_candidate_thresholds(
@@ -1949,6 +2480,7 @@ def _select_candidates_and_load_features(
         _ = min_range_pct
         long_cands: List[str] = []
         short_cands: List[str] = []
+        candidate_feats: Dict[str, pd.DataFrame] = dict(selector_feats)
         if not lgbm_strategy_mask_rows:
             long_cands, short_cands = select_candidates(
                 panel=panel,
@@ -1961,6 +2493,7 @@ def _select_candidates_and_load_features(
                 "Deployment LGBM masks are authoritative; "
                 "skipping legacy per-mode candidate selector."
             )
+        strategy_candidate_masks: Dict[str, List[str]] = {}
         tradable_symbol_set = {str(sym) for sym in symbols}
         context_symbols = [
             str(sym).strip()
@@ -1974,6 +2507,151 @@ def _select_candidates_and_load_features(
         ]
         if not model_feature_symbols:
             model_feature_symbols = list(context_symbols or symbols)
+        if (
+            lgbm_strategy_mask_rows
+            and bool((cfg or {}).get("live_pre_mask_before_model_features", True))
+            and mask_raw_feature_keys
+        ):
+            mask_panel = _latest_only_panel(panel, model_feature_symbols)
+            mask_close = mask_panel.get("close")
+            mask_latest_ts = (
+                mask_close.index.max()
+                if isinstance(mask_close, pd.DataFrame) and not mask_close.empty
+                else None
+            )
+            if mask_raw_feature_keys.issubset(set(selector_feats)):
+                pre_mask_feats = _latest_only_features(
+                    selector_feats,
+                    latest_ts=mask_latest_ts,
+                    symbols=model_feature_symbols,
+                )
+                timer.mark("lgbm_pre_mask_features_selector")
+            else:
+                missing_pre_mask = sorted(mask_raw_feature_keys - set(selector_feats))
+                tprint(
+                    "LGBM pre-mask requires computed mask-only features: "
+                    f"missing {len(missing_pre_mask)} keys: {missing_pre_mask[:12]}"
+                )
+                pre_mask_feats = load_or_compute_features(
+                    panel=_subset_panel(panel, model_feature_symbols),
+                    basket_syms=model_feature_symbols,
+                    run_id=run_id,
+                    data_root=data_root,
+                    cfg={
+                        **(cfg or {}),
+                        "live_feature_return_latest_only": True,
+                        "live_feature_cache_namespace": "mask",
+                    },
+                    lookback_hours=lookback_hours,
+                    required_feature_keys=mask_raw_feature_keys,
+                )
+                pre_mask_feats = _latest_only_features(
+                    pre_mask_feats,
+                    latest_ts=mask_latest_ts,
+                    symbols=model_feature_symbols,
+                )
+                pre_mask_feats.update(
+                    _latest_only_features(
+                        selector_feats,
+                        latest_ts=mask_latest_ts,
+                        symbols=model_feature_symbols,
+                    )
+                )
+                timer.mark("lgbm_pre_mask_features_computed")
+            candidate_feats = pre_mask_feats
+            strategy_candidate_masks = build_strategy_candidate_masks(
+                mask_panel,
+                pre_mask_feats,
+                lgbm_strategy_mask_rows.values(),
+            )
+            timer.mark("lgbm_pre_mask_eval")
+            non_empty_masks = sum(
+                1 for symbols_ in strategy_candidate_masks.values() if symbols_
+            )
+            tprint(
+                "LGBM strategy masks latest pre-pass: "
+                f"strategies={len(strategy_candidate_masks)} "
+                f"non_empty={non_empty_masks}"
+            )
+            if non_empty_masks == 0:
+                result = (
+                    thresholds,
+                    long_cands,
+                    short_cands,
+                    pre_mask_feats,
+                    strategy_candidate_masks,
+                )
+                if cache_key:
+                    _CANDIDATE_FEATURE_CYCLE_CACHE.clear()
+                    _CANDIDATE_FEATURE_CYCLE_CACHE[cache_key] = {
+                        "thresholds": thresholds,
+                        "long_cands": long_cands,
+                        "short_cands": short_cands,
+                        "features": pre_mask_feats,
+                        "strategy_candidate_masks": strategy_candidate_masks,
+                    }
+                return result
+            if not model_features_required:
+                mask_long: set[str] = set()
+                mask_short: set[str] = set()
+                for strategy_id, passed_symbols in strategy_candidate_masks.items():
+                    row = lgbm_strategy_mask_rows.get(strategy_id, {}) or {}
+                    side = str(row.get("trade_side") or row.get("side") or "").lower()
+                    if side == "long":
+                        mask_long.update(str(sym) for sym in passed_symbols)
+                    elif side == "short":
+                        mask_short.update(str(sym) for sym in passed_symbols)
+                before_long = len(long_cands)
+                before_short = len(short_cands)
+                long_cands = sorted(set(long_cands).union(mask_long))
+                short_cands = sorted(set(short_cands).union(mask_short))
+                if mask_long or mask_short:
+                    tprint(
+                        "Deployment LGBM masks expanded mask-only candidate universe: "
+                        f"long {before_long}->{len(long_cands)} "
+                        f"short {before_short}->{len(short_cands)} "
+                        f"mask_pass_long={len(mask_long)} "
+                        f"mask_pass_short={len(mask_short)}"
+                    )
+                result = (
+                    thresholds,
+                    long_cands,
+                    short_cands,
+                    candidate_feats,
+                    strategy_candidate_masks,
+                )
+                if cache_key:
+                    _CANDIDATE_FEATURE_CYCLE_CACHE.clear()
+                    _CANDIDATE_FEATURE_CYCLE_CACHE[cache_key] = {
+                        "thresholds": thresholds,
+                        "long_cands": long_cands,
+                        "short_cands": short_cands,
+                        "features": candidate_feats,
+                        "strategy_candidate_masks": strategy_candidate_masks,
+                    }
+                return result
+        if not model_features_required:
+            result = (
+                thresholds,
+                long_cands,
+                short_cands,
+                candidate_feats,
+                strategy_candidate_masks,
+            )
+            if cache_key:
+                _CANDIDATE_FEATURE_CYCLE_CACHE.clear()
+                _CANDIDATE_FEATURE_CYCLE_CACHE[cache_key] = {
+                    "thresholds": thresholds,
+                    "long_cands": long_cands,
+                    "short_cands": short_cands,
+                    "features": candidate_feats,
+                    "strategy_candidate_masks": strategy_candidate_masks,
+                }
+            return result
+        stable_feature_universe = bool(
+            (cfg or {}).get("live_feature_stable_model_universe_enabled", True)
+        )
+        source_allowed_model_symbols = list(model_feature_symbols)
         close_panel = panel.get("close") if isinstance(panel, dict) else None
         if isinstance(close_panel, pd.DataFrame) and not close_panel.empty:
             source_report = validate_required_source_panels(
@@ -1993,6 +2671,7 @@ def _select_candidates_and_load_features(
             accepted_source_symbols = [
                 str(sym) for sym in source_report.get("accepted_symbols", [])
             ]
+            source_allowed_model_symbols = accepted_source_symbols
             if len(accepted_source_symbols) != len(model_feature_symbols):
                 source_summary = source_report.get("source_rejection_summary") or {}
                 tprint(
@@ -2004,7 +2683,16 @@ def _select_candidates_and_load_features(
                     f"stale_sources={source_summary.get('stale_source_keys', [])[:10]} "
                     f"report={report_path}"
                 )
-                model_feature_symbols = accepted_source_symbols
+                if stable_feature_universe:
+                    tprint(
+                        "Live feature cache: keeping stable model feature universe "
+                        f"for compute/cache ({len(model_feature_symbols)} symbols); "
+                        f"source-eligible symbols for masks/orders={len(accepted_source_symbols)}"
+                    )
+                else:
+                    model_feature_symbols = accepted_source_symbols
+        if not source_allowed_model_symbols:
+            source_allowed_model_symbols = list(model_feature_symbols)
         tprint(
             "Live feature parity: computing model feature frame on the full "
             f"tradable universe ({len(model_feature_symbols)} symbols), "
@@ -2016,16 +2704,40 @@ def _select_candidates_and_load_features(
             basket_syms=model_feature_symbols,
             run_id=run_id,
             data_root=data_root,
-            cfg=cfg,
+            cfg={
+                **(cfg or {}),
+                "live_feature_cache_namespace": "model",
+                # Keep the selected-feature cache lazy for model scoring.  The
+                # candidate matrix builder can pull latest-row vectors directly
+                # from LazyFeatureDict; forcing latest-only frames here
+                # materializes hundreds of full feature DataFrames before the
+                # candidate set is even known.
+                "live_feature_return_latest_only": False,
+            },
             lookback_hours=lookback_hours,
             required_feature_keys=raw_feature_keys,
         )
         timer.mark("model_features")
-        mask_eval_feats = dict(model_feats)
-        mask_eval_feats.update(selector_feats)
-        strategy_candidate_masks: Dict[str, List[str]] = {}
         if lgbm_strategy_mask_rows:
-            mask_panel = _subset_panel(panel, model_feature_symbols)
+            mask_panel = _latest_only_panel(panel, model_feature_symbols)
+            mask_close = mask_panel.get("close")
+            mask_latest_ts = (
+                mask_close.index.max()
+                if isinstance(mask_close, pd.DataFrame) and not mask_close.empty
+                else None
+            )
+            mask_eval_feats = _latest_only_features(
+                model_feats,
+                latest_ts=mask_latest_ts,
+                symbols=model_feature_symbols,
+            )
+            mask_eval_feats.update(
+                _latest_only_features(
+                    selector_feats,
+                    latest_ts=mask_latest_ts,
+                    symbols=model_feature_symbols,
+                )
+            )
             strategy_candidate_masks = build_strategy_candidate_masks(
                 mask_panel,
                 mask_eval_feats,
@@ -2061,7 +2773,7 @@ def _select_candidates_and_load_features(
                     f"mask_pass_long={len(mask_long)} "
                     f"mask_pass_short={len(mask_short)}"
                 )
-        allowed_model_symbols = set(model_feature_symbols)
+        allowed_model_symbols = set(source_allowed_model_symbols)
         if allowed_model_symbols:
             before_long = len(long_cands)
             before_short = len(short_cands)
@@ -2093,13 +2805,72 @@ def _select_candidates_and_load_features(
                 }
         selected_symbols = sorted(set(long_cands + short_cands))
         if not selected_symbols:
-            return (
+            result = (
                 thresholds,
                 long_cands,
                 short_cands,
                 model_feats,
                 strategy_candidate_masks,
             )
+            if cache_key:
+                _CANDIDATE_FEATURE_CYCLE_CACHE.clear()
+                _CANDIDATE_FEATURE_CYCLE_CACHE[cache_key] = {
+                    "thresholds": thresholds,
+                    "long_cands": long_cands,
+                    "short_cands": short_cands,
+                    "features": model_feats,
+                    "strategy_candidate_masks": strategy_candidate_masks,
+                }
+            return result
+        feature_covered_symbols, missing_feature_by_symbol = (
+            _symbols_with_required_feature_coverage(
+                model_feats,
+                model_raw_feature_keys,
+                selected_symbols,
+            )
+        )
+        if len(feature_covered_symbols) != len(selected_symbols):
+            covered = set(feature_covered_symbols)
+            before_long = len(long_cands)
+            before_short = len(short_cands)
+            long_cands = [sym for sym in long_cands if sym in covered]
+            short_cands = [sym for sym in short_cands if sym in covered]
+            if strategy_candidate_masks:
+                strategy_candidate_masks = {
+                    sid: [sym for sym in syms if sym in covered]
+                    for sid, syms in strategy_candidate_masks.items()
+                }
+            sample_missing = {
+                sym: keys[:5]
+                for sym, keys in list(missing_feature_by_symbol.items())[:8]
+            }
+            tprint(
+                "Live feature parity: removed candidates missing required "
+                "model feature columns "
+                f"long {before_long}->{len(long_cands)} "
+                f"short {before_short}->{len(short_cands)} "
+                f"rejected={len(missing_feature_by_symbol)} "
+                f"sample={sample_missing}"
+            )
+            selected_symbols = sorted(set(long_cands + short_cands))
+            if not selected_symbols:
+                result = (
+                    thresholds,
+                    long_cands,
+                    short_cands,
+                    model_feats,
+                    strategy_candidate_masks,
+                )
+                if cache_key:
+                    _CANDIDATE_FEATURE_CYCLE_CACHE.clear()
+                    _CANDIDATE_FEATURE_CYCLE_CACHE[cache_key] = {
+                        "thresholds": thresholds,
+                        "long_cands": long_cands,
+                        "short_cands": short_cands,
+                        "features": model_feats,
+                        "strategy_candidate_masks": strategy_candidate_masks,
+                    }
+                return result
         validate_required_feature_frames(
             model_feats,
             model_raw_feature_keys,
@@ -2107,13 +2878,28 @@ def _select_candidates_and_load_features(
             strict=True,
         )
         timer.mark("validate_model_features")
-        return (
+        result = (
             thresholds,
             long_cands,
             short_cands,
             model_feats,
             strategy_candidate_masks,
         )
+        if cache_key:
+            _CANDIDATE_FEATURE_CYCLE_CACHE.clear()
+            _CANDIDATE_FEATURE_CYCLE_CACHE[cache_key] = {
+                "thresholds": thresholds,
+                "long_cands": long_cands,
+                "short_cands": short_cands,
+                "features": model_feats,
+                "strategy_candidate_masks": strategy_candidate_masks,
+            }
+            tprint(
+                "Cached hourly candidate feature/mask matrix: "
+                f"key={cache_key} features={len(model_feats)} "
+                f"strategies={len(strategy_candidate_masks)}"
+            )
+        return result
 
 
 def _targeted_recent_gap_backfill(
@@ -2564,6 +3350,74 @@ def _model_feature_audit_for_trade(
             if source == "missing":
                 out["missing"][scope].append(str(feat_name))
     return _json_safe_audit_value(out)
+
+
+def _audit_json_dumps(value: Any) -> str:
+    return json.dumps(
+        _json_safe_audit_value(value),
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+
+
+def _model_feature_ledger_snapshot_for_decision(
+    *,
+    orchestrator: Any,
+    side: str,
+    strategy_id: str,
+    symbol: str,
+    candidate_features: Optional[pd.DataFrame],
+    feats: Dict[str, pd.DataFrame],
+    chain_results: Dict[str, Any],
+    signal_bar_ts: Optional[Any],
+) -> Dict[str, Any]:
+    """Return compact selected-model-feature snapshots for the prediction ledger."""
+    audit = _model_feature_audit_for_trade(
+        orchestrator=orchestrator,
+        side=side,
+        strategy_id=strategy_id,
+        symbol=symbol,
+        candidate_features=candidate_features,
+        feats=feats,
+        chain_results=chain_results,
+        signal_bar_ts=signal_bar_ts,
+    )
+    base_values = audit.get("base") if isinstance(audit.get("base"), dict) else {}
+    meta_values = audit.get("meta") if isinstance(audit.get("meta"), dict) else {}
+    sources = audit.get("sources") if isinstance(audit.get("sources"), dict) else {}
+    missing = audit.get("missing") if isinstance(audit.get("missing"), dict) else {}
+    payload = {
+        "schema": "selected_model_features_v1",
+        "symbol": symbol,
+        "side": side,
+        "strategy_id": strategy_id,
+        "base_model_key": audit.get("base_model_key"),
+        "meta_model_key": audit.get("meta_model_key"),
+        "base_features": list(base_values.keys()),
+        "meta_features": list(meta_values.keys()),
+        "base_values": base_values,
+        "meta_values": meta_values,
+        "sources": sources,
+        "missing": missing,
+    }
+    snapshot_json = _audit_json_dumps(payload)
+    return {
+        "model_feature_audit_schema": "selected_model_features_v1",
+        "model_feature_snapshot_hash": hashlib.sha256(
+            snapshot_json.encode("utf-8")
+        ).hexdigest(),
+        "base_model_key": audit.get("base_model_key"),
+        "meta_model_feature_key": audit.get("meta_model_key"),
+        "base_model_feature_count": len(base_values),
+        "meta_model_feature_count": len(meta_values),
+        "base_model_features_json": _audit_json_dumps(list(base_values.keys())),
+        "meta_model_features_json": _audit_json_dumps(list(meta_values.keys())),
+        "base_model_feature_values_json": _audit_json_dumps(base_values),
+        "meta_model_feature_values_json": _audit_json_dumps(meta_values),
+        "model_feature_value_sources_json": _audit_json_dumps(sources),
+        "model_feature_missing_json": _audit_json_dumps(missing),
+    }
 
 
 def _raw_data_audit_for_trade(
@@ -3147,6 +4001,23 @@ def _resolve_live_data_root(
     )
     exchange_key = _safe_exchange_data_component(exchange_id)
     return str(Path(artifact_data_root) / "exchanges" / exchange_key)
+
+
+def _resolve_prediction_ledger_path(
+    *,
+    live_data_root: str | Path,
+    run_id: str,
+    explicit_path: Optional[str | Path] = None,
+    run_scoped: bool = False,
+) -> Path:
+    """Resolve the prediction ledger path, optionally namespaced by artifact run."""
+    explicit = explicit_path or os.environ.get("EPM_PREDICTION_LEDGER_PATH")
+    if explicit:
+        return Path(explicit)
+    state_dir = Path(live_data_root) / "live_state"
+    if bool(run_scoped) or _env_flag("EPM_RUN_SCOPED_PREDICTION_LEDGER", False):
+        return state_dir / "prediction_ledgers" / str(run_id) / "prediction_ledger.parquet"
+    return state_dir / "prediction_ledger.parquet"
 
 
 def _sync_reconciled_positions_to_portfolio_manager(
@@ -4131,6 +5002,9 @@ def run_inference_step(
             executor_mode in {"live", "live-test", "live_test", "paper", "shadow_live"},
         )
     )
+    adverse_hourly_close_gate_enabled, adverse_hourly_close_gate_bps = (
+        _live_entry_adverse_hourly_close_gate(runtime_config)
+    )
     min_base_train_rank_cfg = runtime_config.get("inference_min_base_train_rank_pct")
     try:
         inference_min_base_train_rank_pct = (
@@ -4216,6 +5090,12 @@ def run_inference_step(
             "Conditional stale-entry mode active: candidates may enter only after "
             "ticker precheck confirms absolute current-mid vs signal-price move "
             f"<= {float(stale_entry_max_abs_signal_gap_bps or 0.0):.2f} bps."
+        )
+    if adverse_hourly_close_gate_enabled:
+        tprint(
+            "Adverse hourly-close entry gate active: candidates are rejected when "
+            "current mid has moved against the hourly close by "
+            f">= {adverse_hourly_close_gate_bps:.2f} bps."
         )
     global_auction_enabled = str(
         getattr(portfolio_policy, "portfolio_policy_version", "")
@@ -4586,7 +5466,13 @@ def run_inference_step(
                     )
                     run_cfg = getattr(executor, "config", {}) or {}
                     artifact_data_root = str(run_cfg.get("data_root", "data"))
-                    artifact_run_id = str(run_cfg.get("run_id", "latest"))
+                    artifact_run_id = str(
+                        run_cfg.get("model_artifact_run_id")
+                        or run_cfg.get("run_id", "latest")
+                    )
+                    policy_artifact_run_id = str(
+                        run_cfg.get("policy_artifact_run_id") or artifact_run_id
+                    )
                     meta_hist_rank_pct = _historical_prediction_rank_pct(
                         raw_score,
                         data_root=artifact_data_root,
@@ -4850,6 +5736,24 @@ def run_inference_step(
                         if np.isfinite(meta_hist_rank_pct)
                         else "missing_policy_rank_reference_percentile"
                     )
+                    try:
+                        chain_results.update(
+                            _model_feature_ledger_snapshot_for_decision(
+                                orchestrator=orchestrator,
+                                side=side,
+                                strategy_id=strategy_id,
+                                symbol=symbol,
+                                candidate_features=candidate_features.loc[[symbol]],
+                                feats=feats,
+                                chain_results=chain_results,
+                                signal_bar_ts=signal_bar_ts,
+                            )
+                        )
+                    except Exception as exc:
+                        tprint(
+                            "Warning: failed to build selected model feature ledger "
+                            f"snapshot for {symbol} {side}/{strategy_id}: {exc}"
+                        )
                     chain_results.update(estimated_hit_rate)
                     chain_results.update(estimated_ev)
                     side_metrics["threshold_pass"] += 1
@@ -4967,9 +5871,7 @@ def run_inference_step(
                                 "feature_transform_contract_hash"
                             ),
                             "model_artifact_run_id": artifact_run_id,
-                            "policy_artifact_run_id": runtime_config.get(
-                                "policy_artifact_run_id", artifact_run_id
-                            ),
+                            "policy_artifact_run_id": policy_artifact_run_id,
                         }
                     )
 
@@ -5165,8 +6067,11 @@ def run_inference_step(
                 if symbol_block_reason:
                     if (
                         prediction_ledger is not None
-                        and _should_log_prediction_candidate(
-                            decision, policy=portfolio_policy
+                        and (
+                            trade_success
+                            or _should_log_prediction_candidate(
+                                decision, policy=portfolio_policy
+                            )
                         )
                     ):
                         prediction_ledger_rows.append(
@@ -5388,6 +6293,8 @@ def run_inference_step(
                         "effective_threshold": chain_results.get(
                             "effective_threshold", ""
                         ),
+                        "model_artifact_run_id": decision.get("model_artifact_run_id"),
+                        "policy_artifact_run_id": decision.get("policy_artifact_run_id"),
                         "ridge_confidence": chain_results.get("ridge_confidence", ""),
                     }
                     features_log = {}
@@ -5472,6 +6379,7 @@ def run_inference_step(
                             stale_entry_context
                             or portfolio_policy.ticker_precheck_enabled
                             or portfolio_policy.orderbook_precheck_enabled
+                            or adverse_hourly_close_gate_enabled
                         )
                     ):
                         try:
@@ -5569,6 +6477,57 @@ def run_inference_step(
                             )
                             adjusted_rank = max(rank_for_size - float(gap_penalty), 0.0)
                             execution_snapshot.update(gap_info)
+                            adverse_gap_bps = _adverse_signal_gap_bps(
+                                side=side,
+                                signal_price=price,
+                                decision_mid=decision_mid,
+                            )
+                            execution_snapshot["adverse_signal_gap_bps"] = float(
+                                adverse_gap_bps
+                            )
+                            execution_snapshot["adverse_hourly_close_gap_bps"] = float(
+                                adverse_gap_bps
+                            )
+                            execution_snapshot[
+                                "adverse_hourly_close_gate_bps"
+                            ] = float(adverse_hourly_close_gate_bps)
+                            if (
+                                adverse_hourly_close_gate_enabled
+                                and (
+                                    not np.isfinite(adverse_gap_bps)
+                                    or adverse_gap_bps >= adverse_hourly_close_gate_bps
+                                )
+                            ):
+                                reject_reason = "adverse_hourly_close_gap_too_large"
+                                if (
+                                    prediction_ledger is not None
+                                    and _should_log_prediction_candidate(
+                                        decision, policy=portfolio_policy
+                                    )
+                                ):
+                                    prediction_ledger_rows.append(
+                                        _prediction_ledger_row(
+                                            decision,
+                                            timestamp=now_utc.isoformat(),
+                                            side=side,
+                                            portfolio_decision="price_gap_rejected",
+                                            portfolio_reject_reason=reject_reason,
+                                            execution_snapshot=execution_snapshot,
+                                        )
+                                    )
+                                tprint(
+                                    f"Adverse hourly-close block: {symbol} "
+                                    f"{side}/{strategy_id} "
+                                    f"adverse_gap_bps={adverse_gap_bps:.2f} "
+                                    f"gate_bps={adverse_hourly_close_gate_bps:.2f} "
+                                    f"hourly_close={float(price):.10g} "
+                                    f"decision_mid={decision_mid:.10g}"
+                                )
+                                side_metrics["non_fatal_issues"] += 1
+                                continue
+                            chain_results["initial_calibrated_score"] = decision.get(
+                                "calibrated_score"
+                            )
                             execution_snapshot["price_gap_penalty"] = float(gap_penalty)
                             execution_snapshot["adjusted_rank_score"] = float(
                                 adjusted_rank
@@ -5599,6 +6558,37 @@ def run_inference_step(
                                 )
                                 side_metrics["non_fatal_issues"] += 1
                                 continue
+                            if not portfolio_policy.orderbook_precheck_enabled:
+                                ev_adjusted = _ev_adjusted_prediction_after_entry_friction(
+                                    calibrated_score=decision.get("calibrated_score"),
+                                    strategy_id=strategy_id,
+                                    side=side,
+                                    calibration=strategy_ev_calibration,
+                                    live_entry_friction_bps=float(adverse_gap_bps),
+                                    policy_rank_reference_store=policy_rank_reference_store,
+                                )
+                                chain_results.update(ev_adjusted)
+                                execution_snapshot.update(ev_adjusted)
+                                chain_results["adjusted_calibrated_score"] = (
+                                    ev_adjusted.get("ev_adjusted_calibrated_score")
+                                )
+                                execution_snapshot["adjusted_calibrated_score"] = (
+                                    ev_adjusted.get("ev_adjusted_calibrated_score")
+                                )
+                                ev_rank = _safe_float(
+                                    ev_adjusted.get("ev_adjusted_rank_score"), np.nan
+                                )
+                                if np.isfinite(ev_rank):
+                                    adjusted_rank = min(float(adjusted_rank), float(ev_rank))
+                                    execution_snapshot["adjusted_rank_score"] = float(
+                                        adjusted_rank
+                                    )
+                                    chain_results["threshold_rank_score_after_friction_ev"] = (
+                                        float(adjusted_rank)
+                                    )
+                                    if adjusted_rank < threshold_for_size:
+                                        side_metrics["non_fatal_issues"] += 1
+                                        continue
                             if portfolio_policy.orderbook_precheck_enabled:
                                 book_snapshot = evaluate_orderbook_liquidity(
                                     exchange=executor.exchange,
@@ -5649,7 +6639,7 @@ def run_inference_step(
                                 live_entry_friction_bps = _safe_float(
                                     book_snapshot.expected_total_entry_friction_bps,
                                     0.0,
-                                )
+                                ) + float(adverse_gap_bps)
                                 ev_adjusted = (
                                     _ev_adjusted_prediction_after_entry_friction(
                                         calibrated_score=decision.get(
@@ -5666,6 +6656,12 @@ def run_inference_step(
                                 )
                                 chain_results.update(ev_adjusted)
                                 execution_snapshot.update(ev_adjusted)
+                                chain_results["adjusted_calibrated_score"] = (
+                                    ev_adjusted.get("ev_adjusted_calibrated_score")
+                                )
+                                execution_snapshot["adjusted_calibrated_score"] = (
+                                    ev_adjusted.get("ev_adjusted_calibrated_score")
+                                )
                                 ev_rank = _safe_float(
                                     ev_adjusted.get("ev_adjusted_rank_score"), np.nan
                                 )
@@ -5827,6 +6823,12 @@ def run_inference_step(
                                     decision_mid=decision_mid,
                                     policy=portfolio_policy,
                                 )
+                                execution_snapshot["max_chase_bps"] = (
+                                    portfolio_policy.max_order_chase_bps
+                                )
+                                execution_snapshot["entry_limit_price"] = (
+                                    execution_limit_price
+                                )
                         except Exception as exc:
                             if (
                                 prediction_ledger is not None
@@ -5956,6 +6958,13 @@ def run_inference_step(
                                     "liquidity_capacity_weight",
                                     "expected_fill_slippage_bps",
                                     "expected_total_entry_friction_bps",
+                                    "expected_friction_drag_bps",
+                                    "entry_delay_effect_bps",
+                                    "entry_delay_adverse_bps",
+                                    "entry_delay_abs_bps",
+                                    "decision_to_entry_seconds",
+                                    "signal_to_entry_seconds",
+                                    "gross_to_net_friction_drag_bps",
                                     "orderbook_side",
                                     "best_touch",
                                     "max_walk_price",
@@ -6192,6 +7201,8 @@ def run_inference_step(
                             "barrier_pct": live_barrier_pct,
                             "barrier_frac": live_barrier_pct,
                             **trade_audit,
+                            "decision_ts": decision.get("decision_ts"),
+                            "signal_bar_ts": decision.get("signal_bar_ts"),
                             **perp_sizing_context,
                         },
                         execution_kwargs={
@@ -6291,6 +7302,24 @@ def run_inference_step(
                             entry_price_delta_vs_ohlcv_pct=trade_result.get(
                                 "entry_price_delta_vs_ohlcv_pct"
                             ),
+                            entry_delay_effect_bps=trade_result.get(
+                                "entry_delay_effect_bps"
+                            ),
+                            entry_delay_adverse_bps=trade_result.get(
+                                "entry_delay_adverse_bps"
+                            ),
+                            entry_delay_abs_bps=trade_result.get(
+                                "entry_delay_abs_bps"
+                            ),
+                            decision_to_entry_seconds=trade_result.get(
+                                "decision_to_entry_seconds"
+                            ),
+                            signal_to_entry_seconds=trade_result.get(
+                                "signal_to_entry_seconds"
+                            ),
+                            expected_friction_drag_bps=trade_result.get(
+                                "expected_friction_drag_bps"
+                            ),
                             spread_proxy_pct=trade_result.get("spread_proxy_pct"),
                             orderbook_snapshot=trade_result.get("orderbook_snapshot"),
                             stop_price=trade_result.get("stop_price"),
@@ -6328,8 +7357,11 @@ def run_inference_step(
                         )
                     if (
                         prediction_ledger is not None
-                        and _should_log_prediction_candidate(
-                            decision, policy=portfolio_policy
+                        and (
+                            trade_success
+                            or _should_log_prediction_candidate(
+                                decision, policy=portfolio_policy
+                            )
                         )
                     ):
                         prediction_ledger_rows.append(
@@ -6647,6 +7679,7 @@ def run_inference_step(
                     stale_entry_context
                     or portfolio_policy.ticker_precheck_enabled
                     or portfolio_policy.orderbook_precheck_enabled
+                    or adverse_hourly_close_gate_enabled
                 )
             ):
                 try:
@@ -6756,6 +7789,63 @@ def run_inference_step(
                     )
                     adjusted_rank = max(rank_for_size - float(gap_penalty), 0.0)
                     execution_snapshot.update(gap_info)
+                    adverse_gap_bps = _adverse_signal_gap_bps(
+                        side=side,
+                        signal_price=price,
+                        decision_mid=decision_mid,
+                    )
+                    execution_snapshot["adverse_signal_gap_bps"] = float(
+                        adverse_gap_bps
+                    )
+                    execution_snapshot["adverse_hourly_close_gap_bps"] = float(
+                        adverse_gap_bps
+                    )
+                    execution_snapshot["adverse_hourly_close_gate_bps"] = float(
+                        adverse_hourly_close_gate_bps
+                    )
+                    if (
+                        adverse_hourly_close_gate_enabled
+                        and (
+                            not np.isfinite(adverse_gap_bps)
+                            or adverse_gap_bps >= adverse_hourly_close_gate_bps
+                        )
+                    ):
+                        if (
+                            prediction_ledger is not None
+                            and _should_log_prediction_candidate(
+                                decision, policy=portfolio_policy
+                            )
+                        ):
+                            prediction_ledger_rows.append(
+                                _prediction_ledger_row(
+                                    decision,
+                                    timestamp=now_utc.isoformat(),
+                                    side=side,
+                                    portfolio_decision="price_gap_rejected",
+                                    portfolio_reject_reason=(
+                                        "adverse_hourly_close_gap_too_large"
+                                    ),
+                                    execution_snapshot=execution_snapshot,
+                                )
+                            )
+                        side_metrics["non_fatal_issues"] = (
+                            int(side_metrics.get("non_fatal_issues", 0)) + 1
+                        )
+                        _log_global_auction_skip(
+                            "adverse_hourly_close_gap",
+                            "adverse_hourly_close_gap_too_large",
+                            extra={
+                                "adverse_gap_bps": adverse_gap_bps,
+                                "gate_bps": adverse_hourly_close_gate_bps,
+                                "hourly_close": price,
+                                "decision_mid": decision_mid,
+                            },
+                        )
+                        _commit_global_side_metrics()
+                        continue
+                    chain_results["initial_calibrated_score"] = decision.get(
+                        "calibrated_score"
+                    )
                     execution_snapshot["price_gap_penalty"] = float(gap_penalty)
                     execution_snapshot["adjusted_rank_score"] = float(adjusted_rank)
                     if adjusted_rank < threshold_for_size:
@@ -6792,6 +7882,40 @@ def run_inference_step(
                         )
                         _commit_global_side_metrics()
                         continue
+                    if not portfolio_policy.orderbook_precheck_enabled:
+                        ev_adjusted = _ev_adjusted_prediction_after_entry_friction(
+                            calibrated_score=decision.get("calibrated_score"),
+                            strategy_id=strategy_id,
+                            side=side,
+                            calibration=strategy_ev_calibration,
+                            live_entry_friction_bps=float(adverse_gap_bps),
+                            policy_rank_reference_store=policy_rank_reference_store,
+                        )
+                        chain_results.update(ev_adjusted)
+                        execution_snapshot.update(ev_adjusted)
+                        chain_results["adjusted_calibrated_score"] = ev_adjusted.get(
+                            "ev_adjusted_calibrated_score"
+                        )
+                        execution_snapshot["adjusted_calibrated_score"] = (
+                            ev_adjusted.get("ev_adjusted_calibrated_score")
+                        )
+                        ev_rank = _safe_float(
+                            ev_adjusted.get("ev_adjusted_rank_score"), np.nan
+                        )
+                        if np.isfinite(ev_rank):
+                            adjusted_rank = min(float(adjusted_rank), float(ev_rank))
+                            execution_snapshot["adjusted_rank_score"] = float(
+                                adjusted_rank
+                            )
+                            chain_results["threshold_rank_score_after_friction_ev"] = (
+                                float(adjusted_rank)
+                            )
+                            if adjusted_rank < threshold_for_size:
+                                side_metrics["non_fatal_issues"] = (
+                                    int(side_metrics.get("non_fatal_issues", 0)) + 1
+                                )
+                                _commit_global_side_metrics()
+                                continue
                     if portfolio_policy.orderbook_precheck_enabled:
                         book_snapshot = evaluate_orderbook_liquidity(
                             exchange=exchange,
@@ -6850,7 +7974,7 @@ def run_inference_step(
                         live_entry_friction_bps = _safe_float(
                             book_snapshot.expected_total_entry_friction_bps,
                             0.0,
-                        )
+                        ) + float(adverse_gap_bps)
                         ev_adjusted = _ev_adjusted_prediction_after_entry_friction(
                             calibrated_score=decision.get("calibrated_score"),
                             strategy_id=strategy_id,
@@ -6861,6 +7985,12 @@ def run_inference_step(
                         )
                         chain_results.update(ev_adjusted)
                         execution_snapshot.update(ev_adjusted)
+                        chain_results["adjusted_calibrated_score"] = ev_adjusted.get(
+                            "ev_adjusted_calibrated_score"
+                        )
+                        execution_snapshot["adjusted_calibrated_score"] = (
+                            ev_adjusted.get("ev_adjusted_calibrated_score")
+                        )
                         ev_rank = _safe_float(
                             ev_adjusted.get("ev_adjusted_rank_score"), np.nan
                         )
@@ -7034,6 +8164,10 @@ def run_inference_step(
                             decision_mid=decision_mid,
                             policy=portfolio_policy,
                         )
+                        execution_snapshot["max_chase_bps"] = (
+                            portfolio_policy.max_order_chase_bps
+                        )
+                        execution_snapshot["entry_limit_price"] = execution_limit_price
                 except Exception as exc:
                     if (
                         prediction_ledger is not None
@@ -7199,10 +8333,24 @@ def run_inference_step(
                     "policy_rank_pct": chain_results.get("policy_rank_pct"),
                     "auction_rank_pct": chain_results.get("auction_rank_pct"),
                     "calibrated_score": decision.get("calibrated_score"),
+                    "initial_calibrated_score": chain_results.get(
+                        "initial_calibrated_score"
+                    ),
+                    "adjusted_calibrated_score": chain_results.get(
+                        "adjusted_calibrated_score"
+                    ),
+                    "adverse_signal_gap_bps": execution_snapshot.get(
+                        "adverse_signal_gap_bps"
+                    ),
+                    "ev_adjusted_entry_friction_bps": chain_results.get(
+                        "ev_adjusted_entry_friction_bps"
+                    ),
                     "rank_percentile": chain_results.get("sizer_rank_percentile"),
                     "effective_threshold": chain_results.get("effective_threshold"),
                     "barrier_pct": live_barrier_pct,
                     "barrier_frac": live_barrier_pct,
+                    "decision_ts": decision.get("decision_ts"),
+                    "signal_bar_ts": decision.get("signal_bar_ts"),
                     **trade_audit,
                     **perp_sizing_context,
                 },
@@ -7238,17 +8386,34 @@ def run_inference_step(
                 "policy_rank_pct": chain_results.get("policy_rank_pct"),
                 "auction_rank_pct": chain_results.get("auction_rank_pct"),
                 "calibrated_score": decision.get("calibrated_score"),
+                "initial_calibrated_score": chain_results.get(
+                    "initial_calibrated_score"
+                ),
+                "adjusted_calibrated_score": chain_results.get(
+                    "adjusted_calibrated_score"
+                ),
+                "adverse_signal_gap_bps": execution_snapshot.get(
+                    "adverse_signal_gap_bps"
+                ),
+                "ev_adjusted_entry_friction_bps": chain_results.get(
+                    "ev_adjusted_entry_friction_bps"
+                ),
                 "rank_percentile": chain_results.get("sizer_rank_percentile"),
                 "effective_threshold": chain_results.get("effective_threshold"),
+                "model_artifact_run_id": decision.get("model_artifact_run_id"),
+                "policy_artifact_run_id": decision.get("policy_artifact_run_id"),
             }
             features_log = {
                 **trade_audit,
+                **dict(execution_snapshot or {}),
                 "signal_price": float(price) if price is not None else None,
                 "adjusted_rank_score": adjusted_rank,
                 "final_threshold": threshold_for_size,
                 "position_size_after_liquidity": size,
                 "barrier_pct": live_barrier_pct,
                 "barrier_frac": live_barrier_pct,
+                "decision_ts": decision.get("decision_ts"),
+                "signal_bar_ts": decision.get("signal_bar_ts"),
             }
             if portfolio_mgr is not None and trade_success:
                 portfolio_mgr.record_position_open(
@@ -7290,6 +8455,20 @@ def run_inference_step(
                     entry_price_delta_vs_ohlcv_pct=trade_result.get(
                         "entry_price_delta_vs_ohlcv_pct"
                     ),
+                    entry_delay_effect_bps=trade_result.get("entry_delay_effect_bps"),
+                    entry_delay_adverse_bps=trade_result.get(
+                        "entry_delay_adverse_bps"
+                    ),
+                    entry_delay_abs_bps=trade_result.get("entry_delay_abs_bps"),
+                    decision_to_entry_seconds=trade_result.get(
+                        "decision_to_entry_seconds"
+                    ),
+                    signal_to_entry_seconds=trade_result.get(
+                        "signal_to_entry_seconds"
+                    ),
+                    expected_friction_drag_bps=trade_result.get(
+                        "expected_friction_drag_bps"
+                    ),
                     spread_proxy_pct=trade_result.get("spread_proxy_pct"),
                     orderbook_snapshot=trade_result.get("orderbook_snapshot"),
                     stop_price=trade_result.get("stop_price"),
@@ -7316,6 +8495,29 @@ def run_inference_step(
                     lifecycle_event="entry_rejected",
                     status="failed",
                     error=trade_result.get("error", ""),
+                )
+            if (
+                prediction_ledger is not None
+                and (
+                    trade_success
+                    or _should_log_prediction_candidate(decision, policy=portfolio_policy)
+                )
+            ):
+                prediction_ledger_rows.append(
+                    _prediction_ledger_row(
+                        decision,
+                        timestamp=now_utc.isoformat(),
+                        side=side,
+                        portfolio_decision=(
+                            "traded" if trade_success else "order_rejected"
+                        ),
+                        portfolio_reject_reason=(
+                            None if trade_success else order_error_category
+                        ),
+                        execution_snapshot=execution_snapshot,
+                        was_traded=trade_success,
+                        trade_result=trade_result,
+                    )
                 )
             if trade_success:
                 side_metrics["executed"] = int(side_metrics.get("executed", 0)) + 1
@@ -8263,6 +9465,22 @@ def main():
         ),
     )
     parser.add_argument(
+        "--prediction-ledger-path",
+        default=None,
+        help=(
+            "Explicit prediction ledger parquet path. Overrides "
+            "EPM_RUN_SCOPED_PREDICTION_LEDGER."
+        ),
+    )
+    parser.add_argument(
+        "--run-scoped-prediction-ledger",
+        action="store_true",
+        help=(
+            "Write prediction ledger rows under "
+            "<live-data-root>/live_state/prediction_ledgers/<run-id>/."
+        ),
+    )
+    parser.add_argument(
         "--run-id",
         default=None,
         help="Artifact run id to load. Defaults to latest when omitted.",
@@ -8340,6 +9558,8 @@ def main():
         f"artifact_data_root={config['artifact_data_root']} "
         f"live_data_root={config['live_data_root']}"
     )
+    config["prediction_ledger_path"] = args.prediction_ledger_path
+    config["run_scoped_prediction_ledger"] = bool(args.run_scoped_prediction_ledger)
     runtime_bucket_params = _attach_runtime_bucket_params(config)
     model_bundle = load_full_state(config["run_id"], config["data_root"])
     if isinstance(model_bundle, dict):
@@ -8456,6 +9676,19 @@ def main():
     lgbm_strategy_mask_rows = _load_lgbm_strategy_mask_rows(
         config["data_root"], config["run_id"], market_mode=config["market_mode"]
     )
+    deployment_mask_coverage_error: str | None = None
+    try:
+        _validate_lgbm_strategy_mask_coverage(
+            lgbm_strategy_mask_rows,
+            accepted_strategies,
+        )
+    except Exception as exc:
+        deployment_mask_coverage_error = str(exc)
+        tprint(
+            "CRITICAL: deployment LGBM strategy mask coverage failed; live "
+            "inference will start in monitor-only fail-closed mode until mask "
+            f"artifacts are fixed: {deployment_mask_coverage_error}"
+        )
     validate_calibration_artifacts(
         config["data_root"], config["run_id"], calibration_data, strict=False
     )
@@ -8475,6 +9708,13 @@ def main():
             "CRITICAL: deployment model coverage failed; live inference will "
             "start in monitor-only fail-closed mode until artifacts are fixed: "
             f"{deployment_model_coverage_error}"
+        )
+    if deployment_mask_coverage_error:
+        previous_coverage_error = deployment_model_coverage_error
+        deployment_model_coverage_error = (
+            f"{previous_coverage_error}; {deployment_mask_coverage_error}"
+            if previous_coverage_error
+            else deployment_mask_coverage_error
         )
 
     # Initialize data fetcher with incremental updates
@@ -8497,6 +9737,7 @@ def main():
         data_root=config["data_root"],
         run_id=config["run_id"],
         explicit_symbols=args.symbols,
+        accepted_strategy_ids=accepted_strategies,
         live_quote_currency=config["live_quote_currency"],
         market_mode=config["market_mode"],
     )
@@ -8539,7 +9780,7 @@ def main():
         bucket_params=runtime_bucket_params,
         config=config,
     )
-    logger = TradeLogger()
+    logger = TradeLogger(run_id=str(config.get("run_id") or "latest"))
     sheets_exporter = GoogleSheetsTradeExporter.from_config(config)
     reconciliation_report = executor.reconcile_cross_margin_account()
     _write_margin_reconciliation_report(config, reconciliation_report)
@@ -8583,9 +9824,14 @@ def main():
         executor.config["leverage_wallet_multiplier"] = float(
             portfolio_policy.leverage_wallet_multiplier
         )
-    prediction_ledger = PredictionLedger(
-        Path(config["live_data_root"]) / "live_state" / "prediction_ledger.parquet"
+    prediction_ledger_path = _resolve_prediction_ledger_path(
+        live_data_root=config["live_data_root"],
+        run_id=str(config["run_id"]),
+        explicit_path=config.get("prediction_ledger_path"),
+        run_scoped=bool(config.get("run_scoped_prediction_ledger", False)),
     )
+    tprint(f"Prediction ledger path resolved: {prediction_ledger_path}")
+    prediction_ledger = PredictionLedger(prediction_ledger_path)
     dynamic_performance_monitor = StrategyPerformanceMonitor(
         data_root=str(config["data_root"]),
         run_id=str(config["run_id"]),
@@ -8772,6 +10018,7 @@ def main():
                     exchange,
                     data_root=config["data_root"],
                     run_id=config["run_id"],
+                    accepted_strategy_ids=accepted_strategies,
                     live_quote_currency=config["live_quote_currency"],
                     market_mode=config["market_mode"],
                 )
@@ -8899,9 +10146,45 @@ def main():
                         "large universes and should normally be reserved for "
                         "targeted repair jobs, not pre-scoring live refresh."
                     )
+                try:
+                    active_position_symbols_for_refresh = sorted(
+                        str(sym)
+                        for sym in (
+                            executor.get_active_positions().keys()
+                            if hasattr(executor, "get_active_positions")
+                            else []
+                        )
+                    )
+                except Exception:
+                    active_position_symbols_for_refresh = []
+                if bool(config.get("hourly_fetch_model_universe_only", True)):
+                    hourly_fetch_symbols = sorted(
+                        set(feature_context_symbols or symbols or download_symbols)
+                        .union(symbols)
+                        .union(active_position_symbols_for_refresh)
+                    )
+                    tprint(
+                        "Hourly refresh scoped to model context: "
+                        f"fetch={len(hourly_fetch_symbols)} "
+                        f"download_universe={len(download_symbols)} "
+                        f"active_positions={len(active_position_symbols_for_refresh)}"
+                    )
+                else:
+                    hourly_fetch_symbols = list(download_symbols)
                 hourly_refresh_result = data_fetcher.fetch_hourly_universe_once(
-                    download_symbols,
-                    max_workers=int(config.get("hourly_ohlcv_workers", 16)),
+                    hourly_fetch_symbols,
+                    max_workers=int(
+                        os.environ.get(
+                            "EPM_HOURLY_OHLCV_WORKERS",
+                            config.get("hourly_ohlcv_workers", 32),
+                        )
+                    ),
+                    microdata_max_workers=int(
+                        os.environ.get(
+                            "EPM_HOURLY_MICRODATA_WORKERS",
+                            config.get("hourly_microdata_workers", 24),
+                        )
+                    ),
                     no_progress_timeout_seconds=float(
                         config.get("hourly_ohlcv_no_progress_timeout_seconds", 60.0)
                     ),
@@ -8917,7 +10200,8 @@ def main():
                 loop_timer.mark("hourly_fetch")
                 tprint(
                     "Hourly data refresh complete: "
-                    f"ohlcv_symbols={len(download_symbols)} "
+                    f"ohlcv_symbols={len(hourly_fetch_symbols)} "
+                    f"download_universe_symbols={len(download_symbols)} "
                     f"updated_symbols={hourly_refresh_updates} "
                     f"target_hour={latest_closed_hour} "
                     f"microdata_refresh_enabled={refresh_microdata}"
@@ -8989,8 +10273,15 @@ def main():
                 )
                 continue
 
+            if bool(config.get("hourly_fetch_model_universe_only", True)):
+                panel_symbols = sorted(
+                    set(feature_context_symbols or symbols or download_symbols)
+                    .union(symbols)
+                )
+            else:
+                panel_symbols = list(download_symbols)
             panel = data_fetcher.get_panel(
-                download_symbols, lookback_hours=panel_lookback_hours
+                panel_symbols, lookback_hours=panel_lookback_hours
             )
             loop_timer.mark("panel_load")
             tradable_panel = _subset_panel(panel, symbols)
@@ -9049,10 +10340,16 @@ def main():
                 **dict(config.get("runtime_cfg") or get_runtime_cfg()),
                 "data_root": str(config.get("live_data_root") or config["data_root"]),
                 "artifact_data_root": str(config["data_root"]),
+                "offline_feature_data_root": str(config["data_root"]),
                 "live_data_root": str(
                     config.get("live_data_root") or config["data_root"]
                 ),
             }
+            live_feature_source_run_id = _resolve_live_feature_source_run_id(config)
+            if live_feature_source_run_id:
+                feature_runtime_cfg["live_feature_source_run_id"] = str(
+                    live_feature_source_run_id
+                )
             if hourly_refresh_updates > 0:
                 feature_runtime_cfg["live_feature_cache_raw_refresh_token"] = (
                     f"{latest_closed_hour.isoformat()}:{hourly_refresh_updates}"
@@ -9101,7 +10398,7 @@ def main():
                         "this cycle."
                     )
                     panel = data_fetcher.get_panel(
-                        download_symbols, lookback_hours=panel_lookback_hours
+                        panel_symbols, lookback_hours=panel_lookback_hours
                     )
                     tradable_panel = _subset_panel(panel, symbols)
                     (
@@ -9117,7 +10414,10 @@ def main():
                         data_root=str(
                             config.get("live_data_root") or config["data_root"]
                         ),
-                        cfg=feature_runtime_cfg,
+                        cfg={
+                            **feature_runtime_cfg,
+                            "live_feature_cycle_cache_bypass": True,
+                        },
                         lookback_hours=panel_lookback_hours,
                         required_feature_keys=required_feature_keys,
                         lgbm_strategy_mask_rows=lgbm_strategy_mask_rows,
@@ -9159,6 +10459,7 @@ def main():
             loop_timer.mark("model_scoring_and_orders")
             tprint(
                 f"Inference batch complete: download_symbols={len(download_symbols)} "
+                f"panel_symbols={len(panel_symbols)} "
                 f"tradable_symbols={len(symbols)} "
                 f"candidates={len(long_cands) + len(short_cands)} "
                 f"trades={len(results['trades'])}"

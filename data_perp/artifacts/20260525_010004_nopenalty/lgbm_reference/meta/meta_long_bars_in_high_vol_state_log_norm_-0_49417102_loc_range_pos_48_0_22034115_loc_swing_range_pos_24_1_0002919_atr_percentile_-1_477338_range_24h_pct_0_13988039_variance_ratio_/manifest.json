@@ -1,0 +1,11 @@
+{
+  "core_50_feature_count": 7,
+  "core_80_feature_count": 45,
+  "objective_mode": "train_meta",
+  "oof_rows": 55130,
+  "reference_rows": 55130,
+  "sample_path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260525_010004_nopenalty/lgbm_reference/meta/meta_long_bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_/lgbm_reference_sample.parquet",
+  "schema_version": 1,
+  "selected_features_count": 102,
+  "summary_path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260525_010004_nopenalty/lgbm_reference/meta/meta_long_bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_/lgbm_reference_summary.json"
+}

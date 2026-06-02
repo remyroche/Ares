@@ -1,0 +1,8 @@
+rejection_reason,count
+b_mask_ic_uplift_too_low,895
+b_sign_consistency_too_low,843
+b_min_fold_support_too_low,43
+b_support_too_low,23
+b_positive_ic_fraction_too_low,34
+b_oos_ic_too_low,8
+b_support_instability_too_high,3

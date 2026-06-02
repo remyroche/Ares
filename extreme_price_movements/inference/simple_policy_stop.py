@@ -74,6 +74,15 @@ _ARTIFACT_AUDIT_FIELDS = {
     "stage2_selection_method",
     "adverse_exit_disabled_reason",
 }
+
+
+def _policy_export_invalid_marker(run_dir: Path) -> Optional[Path]:
+    for marker_path in mode_file_candidates(
+        run_dir / "simple_policy_optimiser" / "policy_export_invalid.json"
+    ):
+        if marker_path.exists():
+            return marker_path
+    return None
 _ALLOWED_SIMPLE_POLICY_STOP_FIELDS = (
     set(SIMPLE_POLICY_STOP_PARAM_KEYS) | _ARTIFACT_AUDIT_FIELDS
 )
@@ -207,6 +216,12 @@ def _iter_simple_policy_artifact_paths(data_root: str, run_id: Optional[str] = N
     for run_dir in run_dirs:
         if not run_dir.is_dir():
             continue
+        invalid_marker = _policy_export_invalid_marker(run_dir)
+        if invalid_marker is not None:
+            raise SimplePolicyStopParamsError(
+                f"Refusing to load simple policy params for {run_dir.name}; "
+                f"strict optimiser export is marked invalid at {invalid_marker}"
+            )
         # Prefer the canonical optimiser namespace. Historical deployment
         # copies are accepted only after strict payload provenance validation.
         opt_root = run_dir / "simple_policy_optimiser"

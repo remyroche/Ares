@@ -1,0 +1,7 @@
+{
+  "folds": [],
+  "accepted": true,
+  "selection_reason": "fixed_policy_config_no_optimisation",
+  "fixed_policy_config_path": "data_perp/artifacts/20260525_010004_nopenalty/policy_params/optimized_portfolio_policy_config.json",
+  "candidate_rows": 729
+}

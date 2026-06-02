@@ -1,0 +1,11 @@
+{
+  "core_50_feature_count": 11,
+  "core_80_feature_count": 34,
+  "objective_mode": "train_base",
+  "oof_rows": 163938,
+  "reference_rows": 163938,
+  "sample_path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260525_010004_nopenalty/lgbm_reference/base/asset_vol_level_pct_0_20587213_compression_score_-0_99787366/lgbm_reference_sample.parquet",
+  "schema_version": 1,
+  "selected_features_count": 72,
+  "summary_path": "/Users/remyroche/Documents/Ares/data_perp/artifacts/20260525_010004_nopenalty/lgbm_reference/base/asset_vol_level_pct_0_20587213_compression_score_-0_99787366/lgbm_reference_summary.json"
+}

@@ -126,6 +126,181 @@ class PortfolioPolicyParams:
         )
 
 
+def portfolio_policy_params_from_live_config(
+    payload: Dict[str, Any],
+) -> PortfolioPolicyParams:
+    """Load replay params from the deployed live portfolio-policy JSON shape."""
+    payload = payload if isinstance(payload, dict) else {}
+    selection = payload.get("selection", {})
+    concurrency = payload.get("concurrency", {})
+    allocation = payload.get("allocation", {})
+    sizing = payload.get("sizing", {})
+    friction = payload.get("friction", {})
+    guardrails = payload.get("guardrails", {})
+    contract = payload.get("strategy_contract", {})
+    if not isinstance(selection, dict):
+        selection = {}
+    if not isinstance(concurrency, dict):
+        concurrency = {}
+    if not isinstance(allocation, dict):
+        allocation = {}
+    if not isinstance(sizing, dict):
+        sizing = {}
+    if not isinstance(friction, dict):
+        friction = {}
+    if not isinstance(guardrails, dict):
+        guardrails = {}
+    if not isinstance(contract, dict):
+        contract = {}
+
+    missing = object()
+
+    def _section_get(section: Dict[str, Any], key: str, default: Any) -> Any:
+        value = section.get(key, missing)
+        return default if value is missing else value
+
+    def _none_or_int(value: Any) -> Optional[int]:
+        if value is None:
+            return None
+        return int(value)
+
+    def _none_or_float(value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        return float(value)
+
+    return PortfolioPolicyParams(
+        max_concurrent_positions=int(
+            _section_get(
+                concurrency,
+                "max_concurrent_positions",
+                PortfolioPolicyParams.max_concurrent_positions,
+            )
+        ),
+        max_concurrent_per_side=_none_or_int(
+            _section_get(
+                concurrency,
+                "max_concurrent_per_side",
+                PortfolioPolicyParams.max_concurrent_per_side,
+            )
+        ),
+        max_concurrent_per_strategy=_none_or_int(
+            _section_get(
+                concurrency,
+                "max_concurrent_per_strategy",
+                PortfolioPolicyParams.max_concurrent_per_strategy,
+            )
+        ),
+        max_concurrent_per_symbol=int(
+            _section_get(
+                concurrency,
+                "max_concurrent_per_symbol",
+                PortfolioPolicyParams.max_concurrent_per_symbol,
+            )
+        ),
+        max_new_entries_per_bar=int(
+            _section_get(
+                concurrency,
+                "max_new_entries_per_bar",
+                PortfolioPolicyParams.max_new_entries_per_bar,
+            )
+        ),
+        max_total_wallet_allocation_pct=float(
+            _section_get(
+                allocation,
+                "max_total_wallet_allocation_pct",
+                PortfolioPolicyParams.max_total_wallet_allocation_pct,
+            )
+        ),
+        global_threshold_floor=float(
+            _section_get(
+                selection,
+                "global_threshold_floor",
+                PortfolioPolicyParams.global_threshold_floor,
+            )
+        ),
+        threshold_viability_margin=float(
+            _section_get(
+                selection,
+                "threshold_viability_margin",
+                PortfolioPolicyParams.threshold_viability_margin,
+            )
+        ),
+        occupancy_threshold_alpha=float(
+            _section_get(
+                selection,
+                "occupancy_threshold_alpha",
+                PortfolioPolicyParams.occupancy_threshold_alpha,
+            )
+        ),
+        occupancy_threshold_power=float(
+            _section_get(
+                selection,
+                "occupancy_threshold_power",
+                PortfolioPolicyParams.occupancy_threshold_power,
+            )
+        ),
+        rank_size_power=float(
+            _section_get(sizing, "rank_size_power", PortfolioPolicyParams.rank_size_power)
+        ),
+        rank_multiplier_min=float(
+            _section_get(
+                sizing,
+                "rank_multiplier_min",
+                PortfolioPolicyParams.rank_multiplier_min,
+            )
+        ),
+        rank_multiplier_max=float(
+            _section_get(
+                sizing,
+                "rank_multiplier_max",
+                PortfolioPolicyParams.rank_multiplier_max,
+            )
+        ),
+        max_signal_gap_bps=_none_or_float(
+            _section_get(
+                friction,
+                "max_signal_gap_bps",
+                PortfolioPolicyParams.max_signal_gap_bps,
+            )
+        ),
+        min_liquidity_capacity_weight=_none_or_float(
+            _section_get(
+                friction,
+                "min_liquidity_capacity_weight",
+                PortfolioPolicyParams.min_liquidity_capacity_weight,
+            )
+        ),
+        max_side_concentration=_none_or_float(
+            _section_get(
+                guardrails,
+                "max_side_concentration",
+                PortfolioPolicyParams.max_side_concentration,
+            )
+        ),
+        max_strategy_concentration=_none_or_float(
+            _section_get(
+                guardrails,
+                "max_strategy_concentration",
+                PortfolioPolicyParams.max_strategy_concentration,
+            )
+        ),
+        portfolio_policy_version=str(
+            payload.get(
+                "portfolio_policy_version",
+                PortfolioPolicyParams.portfolio_policy_version,
+            )
+        ),
+        strategy_ids=tuple(str(v) for v in contract.get("strategy_ids", ()) or ()),
+        strategy_cores=tuple(str(v) for v in contract.get("strategy_cores", ()) or ()),
+    )
+
+
+def load_portfolio_policy_params(path: str | Path) -> PortfolioPolicyParams:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    return portfolio_policy_params_from_live_config(payload)
+
+
 @dataclass
 class OpenPosition:
     symbol: str
@@ -1680,6 +1855,8 @@ def run_portfolio_policy_replay(
     candidate_path: Optional[str | Path] = None,
     output_dir: Optional[str | Path] = None,
     max_evaluations: Optional[int] = None,
+    fixed_policy_config_path: Optional[str | Path] = None,
+    ev_curve_candidate_path: Optional[str | Path] = None,
 ) -> Dict[str, Any]:
     run_root = Path(data_root) / "artifacts" / str(run_id)
     if candidate_path is None:
@@ -1715,17 +1892,39 @@ def run_portfolio_policy_replay(
             }
         )
     )
-    params, validation_report = walk_forward_validate(
-        candidates,
-        max_evaluations=max_evaluations,
-        market_mode=market_mode,
-    )
+    if fixed_policy_config_path is not None:
+        fixed_policy_config_path = Path(fixed_policy_config_path)
+        params = load_portfolio_policy_params(fixed_policy_config_path)
+        validation_report = {
+            "folds": [],
+            "accepted": True,
+            "selection_reason": "fixed_policy_config_no_optimisation",
+            "fixed_policy_config_path": str(fixed_policy_config_path),
+            "candidate_rows": int(len(candidates)),
+        }
+    else:
+        params, validation_report = walk_forward_validate(
+            candidates,
+            max_evaluations=max_evaluations,
+            market_mode=market_mode,
+        )
     params = replace(
         params,
-        strategy_ids=strategy_ids,
-        strategy_cores=strategy_cores,
+        strategy_ids=tuple(params.strategy_ids) or strategy_ids,
+        strategy_cores=tuple(params.strategy_cores) or strategy_cores,
     )
-    ev_curve = fit_monotone_ev_curve(candidates)
+    ev_curve_source_path = candidate_path
+    ev_curve_candidates = candidates
+    if ev_curve_candidate_path is not None:
+        ev_curve_source_path = Path(ev_curve_candidate_path)
+        if not ev_curve_source_path.exists():
+            raise FileNotFoundError(
+                f"EV-curve candidate table not found: {ev_curve_source_path}"
+            )
+        ev_curve_candidates = normalise_candidate_table(
+            pd.read_parquet(ev_curve_source_path)
+        )
+    ev_curve = fit_monotone_ev_curve(ev_curve_candidates)
     decisions, equity, metrics = replay_candidates(
         candidates,
         params,
@@ -1793,6 +1992,15 @@ def run_portfolio_policy_replay(
         "candidate_path": str(candidate_path),
         "market_mode": market_mode,
         "run_id": str(run_id),
+        "policy_replay_mode": (
+            "fixed_policy_config" if fixed_policy_config_path is not None else "optimised"
+        ),
+        "fixed_policy_config_path": (
+            str(fixed_policy_config_path)
+            if fixed_policy_config_path is not None
+            else None
+        ),
+        "ev_curve_candidate_path": str(ev_curve_source_path),
         "optimized_params": config_payload,
         "global_auction_metrics": metrics,
         "live_baseline_metrics": baseline_metrics,
@@ -1811,53 +2019,54 @@ def run_portfolio_policy_replay(
         json.dumps(_json_safe(validation_report), indent=2),
         encoding="utf-8",
     )
-    policy_params_dir = run_root / "policy_params"
-    policy_params_dir.mkdir(parents=True, exist_ok=True)
-    policy_config_path = policy_params_dir / "optimized_portfolio_policy_config.json"
-    policy_config_path.write_text(
-        json.dumps(_json_safe(config_payload), indent=2),
-        encoding="utf-8",
-    )
-    try:
-        model_bundle = load_full_state(str(run_id), str(data_root))
-        contract = build_training_live_parity_contract(
-            data_root=str(data_root),
-            run_id=str(run_id),
-            market_mode=market_mode,
-            model_bundle=model_bundle,
-            strategy_ids=strategy_ids,
-            portfolio_payload=config_payload,
+    if fixed_policy_config_path is None:
+        policy_params_dir = run_root / "policy_params"
+        policy_params_dir.mkdir(parents=True, exist_ok=True)
+        policy_config_path = policy_params_dir / "optimized_portfolio_policy_config.json"
+        policy_config_path.write_text(
+            json.dumps(_json_safe(config_payload), indent=2),
+            encoding="utf-8",
         )
-        persist_training_live_parity_contract(
-            contract,
-            data_root=str(data_root),
-            run_id=str(run_id),
-        )
-    except Exception as exc:
-        model_dir = run_root / "models"
-        if model_dir.exists() and any(model_dir.glob("*.pkl")):
-            raise RuntimeError(
-                "portfolio_policy_replay completed but failed to write the "
-                "training-live parity contract"
-            ) from exc
-        contract = {
-            "schema_version": "training_live_parity_contract_v1",
-            "generated_by": "portfolio_policy_replay",
-            "run_id": str(run_id),
-            "market_mode": market_mode,
-            "strategy_contract": {
-                "strategy_ids": list(strategy_ids),
-                "strategy_cores": list(strategy_cores),
-            },
-            "model_contracts": {},
-            "portfolio_policy": config_payload,
-            "contract_warning": "model_artifacts_missing",
-        }
-        persist_training_live_parity_contract(
-            contract,
-            data_root=str(data_root),
-            run_id=str(run_id),
-        )
+        try:
+            model_bundle = load_full_state(str(run_id), str(data_root))
+            contract = build_training_live_parity_contract(
+                data_root=str(data_root),
+                run_id=str(run_id),
+                market_mode=market_mode,
+                model_bundle=model_bundle,
+                strategy_ids=strategy_ids,
+                portfolio_payload=config_payload,
+            )
+            persist_training_live_parity_contract(
+                contract,
+                data_root=str(data_root),
+                run_id=str(run_id),
+            )
+        except Exception as exc:
+            model_dir = run_root / "models"
+            if model_dir.exists() and any(model_dir.glob("*.pkl")):
+                raise RuntimeError(
+                    "portfolio_policy_replay completed but failed to write the "
+                    "training-live parity contract"
+                ) from exc
+            contract = {
+                "schema_version": "training_live_parity_contract_v1",
+                "generated_by": "portfolio_policy_replay",
+                "run_id": str(run_id),
+                "market_mode": market_mode,
+                "strategy_contract": {
+                    "strategy_ids": list(strategy_ids),
+                    "strategy_cores": list(strategy_cores),
+                },
+                "model_contracts": {},
+                "portfolio_policy": config_payload,
+                "contract_warning": "model_artifacts_missing",
+            }
+            persist_training_live_parity_contract(
+                contract,
+                data_root=str(data_root),
+                run_id=str(run_id),
+            )
     return report
 
 
@@ -1879,6 +2088,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--candidate-path", default=None)
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--max-evaluations", type=int, default=None)
+    parser.add_argument("--fixed-policy-config-path", default=None)
+    parser.add_argument("--ev-curve-candidate-path", default=None)
     args = parser.parse_args(argv)
     run_id = args.run_id or _latest_run_id(args.data_root)
     report = run_portfolio_policy_replay(
@@ -1888,6 +2099,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         candidate_path=args.candidate_path,
         output_dir=args.output_dir,
         max_evaluations=args.max_evaluations,
+        fixed_policy_config_path=args.fixed_policy_config_path,
+        ev_curve_candidate_path=args.ev_curve_candidate_path,
     )
     print(json.dumps(_json_safe({"run_id": run_id, "report": report}), indent=2))
     return 0

@@ -1,0 +1,78 @@
+{
+  "elapsed_seconds": 235.26690020800743,
+  "generated_by": "scripts/generate_policy_oos_predictions.py",
+  "market_mode": "perps",
+  "policy_predict_start": "2026-01-22T10:00:00+00:00",
+  "requested_strategy_ids": [
+    "asset_minus_mkt_oi_1d_peer_resid_0_34164831_oi_expansion_compression_balance_24h_0_42287597",
+    "asset_vol_level_pct_0_20587213_compression_score_-0_99787366",
+    "bars_in_high_vol_state_log_norm_-0_38407263_pullback_depth_1_8353814_pullback_depth_-0_90359813_asset_funding_rate_abs_mean_7d_0_000011711979_variance_ratio_10_48_-0_27143899",
+    "bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828",
+    "bollinger_band_width_-0_0062114433_oi_value_z_90d_0_082444385_price_rv_15d_robust_z_0_060036644",
+    "dist_ema20_atr_-0_92271453_loc_bb_channel_pos_48_0_60767579_leverage_build_score_0_45107844_return_autocorr_48_1_18643_rolling_range_20_-0_25967735",
+    "loc_bb_channel_pos_48_0_63256526_zscore_price_200_-0_64289832_xasset_asset_minus_basket_fund_z_0_1707595",
+    "long_asset_vol_level_pct_0_20587213_compression_score_-0_99787366",
+    "long_bars_in_high_vol_state_log_norm_-0_38407263_pullback_depth_1_8353814_pullback_depth_-0_90359813_asset_funding_rate_abs_mean_7d_0_000011711979_variance_ratio_10_48_-0_27143899",
+    "long_bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828",
+    "long_dist_ema20_atr_-0_92271453_loc_bb_channel_pos_48_0_60767579_leverage_build_score_0_45107844_return_autocorr_48_1_18643_rolling_range_20_-0_25967735",
+    "long_loc_bb_channel_pos_48_0_63256526_zscore_price_200_-0_64289832_xasset_asset_minus_basket_fund_z_0_1707595",
+    "short_asset_minus_mkt_oi_1d_peer_resid_0_34164831_oi_expansion_compression_balance_24h_0_42287597",
+    "short_bollinger_band_width_-0_0062114433_oi_value_z_90d_0_082444385_price_rv_15d_robust_z_0_060036644"
+  ],
+  "run_id": "20260525_010004_nopenalty",
+  "source_artifact_preflight_path": "data_perp/exchanges/krakenfutures_perp/artifacts/20260525_010004_nopenalty/policy_oos_predictions/preflight_report.json",
+  "source_model_fit_end": "2024-09-08T04:00:00+00:00",
+  "source_model_state_path": "data_perp/exchanges/krakenfutures_perp/artifacts/20260525_010004_nopenalty/models/model_state_meta.pkl",
+  "source_model_state_sha256": "3b19d54aca1298e10d177c90560839bd804e960df602ca97020d1893f55204c8",
+  "written": [
+    {
+      "max_timestamp": "2026-05-21T23:00:00+00:00",
+      "min_timestamp": "2026-01-22T10:00:00+00:00",
+      "path": "data_perp/exchanges/krakenfutures_perp/artifacts/20260525_010004_nopenalty/policy_oos_predictions/policy_oos_long_asset_vol_level_pct_0_20587213_compression_score_-0_99787366_clf.parquet",
+      "rows": 31439,
+      "strategy_id": "long_asset_vol_level_pct_0_20587213_compression_score_-0_99787366"
+    },
+    {
+      "max_timestamp": "2026-05-21T23:00:00+00:00",
+      "min_timestamp": "2026-01-22T10:00:00+00:00",
+      "path": "data_perp/exchanges/krakenfutures_perp/artifacts/20260525_010004_nopenalty/policy_oos_predictions/policy_oos_long_bars_in_high_vol_state_log_norm_-0_38407263_pullback_depth_1_8353814_pullback_depth_-0_90359813_asset_funding_rate_abs_mean_7d_0_000011711979_variance_ratio_10_48_-0_27143899_clf.parquet",
+      "rows": 48623,
+      "strategy_id": "long_bars_in_high_vol_state_log_norm_-0_38407263_pullback_depth_1_8353814_pullback_depth_-0_90359813_asset_funding_rate_abs_mean_7d_0_000011711979_variance_ratio_10_48_-0_27143899"
+    },
+    {
+      "max_timestamp": "2026-05-21T23:00:00+00:00",
+      "min_timestamp": "2026-01-22T10:00:00+00:00",
+      "path": "data_perp/exchanges/krakenfutures_perp/artifacts/20260525_010004_nopenalty/policy_oos_predictions/policy_oos_long_bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828_clf.parquet",
+      "rows": 32634,
+      "strategy_id": "long_bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828"
+    },
+    {
+      "max_timestamp": "2026-05-21T23:00:00+00:00",
+      "min_timestamp": "2026-01-22T10:00:00+00:00",
+      "path": "data_perp/exchanges/krakenfutures_perp/artifacts/20260525_010004_nopenalty/policy_oos_predictions/policy_oos_long_dist_ema20_atr_-0_92271453_loc_bb_channel_pos_48_0_60767579_leverage_build_score_0_45107844_return_autocorr_48_1_18643_rolling_range_20_-0_25967735_clf.parquet",
+      "rows": 40331,
+      "strategy_id": "long_dist_ema20_atr_-0_92271453_loc_bb_channel_pos_48_0_60767579_leverage_build_score_0_45107844_return_autocorr_48_1_18643_rolling_range_20_-0_25967735"
+    },
+    {
+      "max_timestamp": "2026-05-21T23:00:00+00:00",
+      "min_timestamp": "2026-01-22T10:00:00+00:00",
+      "path": "data_perp/exchanges/krakenfutures_perp/artifacts/20260525_010004_nopenalty/policy_oos_predictions/policy_oos_long_loc_bb_channel_pos_48_0_63256526_zscore_price_200_-0_64289832_xasset_asset_minus_basket_fund_z_0_1707595_clf.parquet",
+      "rows": 40484,
+      "strategy_id": "long_loc_bb_channel_pos_48_0_63256526_zscore_price_200_-0_64289832_xasset_asset_minus_basket_fund_z_0_1707595"
+    },
+    {
+      "max_timestamp": "2026-05-21T23:00:00+00:00",
+      "min_timestamp": "2026-01-22T10:00:00+00:00",
+      "path": "data_perp/exchanges/krakenfutures_perp/artifacts/20260525_010004_nopenalty/policy_oos_predictions/policy_oos_short_asset_minus_mkt_oi_1d_peer_resid_0_34164831_oi_expansion_compression_balance_24h_0_42287597_clf.parquet",
+      "rows": 26522,
+      "strategy_id": "short_asset_minus_mkt_oi_1d_peer_resid_0_34164831_oi_expansion_compression_balance_24h_0_42287597"
+    },
+    {
+      "max_timestamp": "2026-05-21T23:00:00+00:00",
+      "min_timestamp": "2026-01-22T10:00:00+00:00",
+      "path": "data_perp/exchanges/krakenfutures_perp/artifacts/20260525_010004_nopenalty/policy_oos_predictions/policy_oos_short_bollinger_band_width_-0_0062114433_oi_value_z_90d_0_082444385_price_rv_15d_robust_z_0_060036644_clf.parquet",
+      "rows": 24527,
+      "strategy_id": "short_bollinger_band_width_-0_0062114433_oi_value_z_90d_0_082444385_price_rv_15d_robust_z_0_060036644"
+    }
+  ]
+}

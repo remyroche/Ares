@@ -6,6 +6,7 @@ import pandas as pd
 from extreme_price_movements.inference.policy_rank_reference import (
     PolicyRankReferenceStore,
     apply_policy_rank_percentile_gate,
+    invalidate_auction_rank_reference,
     persist_auction_rank_reference,
     persist_policy_rank_reference,
     policy_rank_pct_from_sorted_scores,
@@ -20,6 +21,8 @@ def test_persist_policy_rank_reference_manifest(tmp_path):
             "strategy_id": ["long_demo"] * 3,
             "calibrated_score": [0.1, 0.4, 0.8],
             "rank_pct": [1 / 3, 2 / 3, 1.0],
+            "policy_oos_generation_source": ["generated_from_train_meta_state:labels"] * 3,
+            "policy_oos_source_model_fit_end": ["2026-01-19T06:00:00+00:00"] * 3,
         }
     )
 
@@ -49,6 +52,102 @@ def test_persist_policy_rank_reference_manifest(tmp_path):
     assert row["rank_col"] == "rank_pct"
     assert row["min_score"] == 0.1
     assert row["max_score"] == 0.8
+    assert row["policy_oos_contract"]["policy_oos_generation_source"] == (
+        "generated_from_train_meta_state:labels"
+    )
+    assert row["policy_oos_contract"]["rank_normalization"] == (
+        "policy_rank_reference_percentile_from_policy_oos_clf"
+    )
+    assert manifest["policy_oos_contract"]["policy_oos_generation_source"] == (
+        "generated_from_train_meta_state:labels"
+    )
+    assert manifest["policy_oos_contract"]["rank_normalization"] == (
+        "policy_rank_reference_percentile_from_policy_oos_clf"
+    )
+
+
+def test_policy_rank_reference_bad_policy_oos_contract_fails_closed(tmp_path):
+    df = pd.DataFrame(
+        {
+            "strategy_id": ["long_demo"] * 3,
+            "calibrated_score": [0.1, 0.4, 0.8],
+            "rank_pct": [1 / 3, 2 / 3, 1.0],
+            "policy_oos_generation_source": ["generated_from_train_meta_state:labels"] * 3,
+            "policy_oos_source_model_fit_end": ["2026-01-19T06:00:00+00:00"] * 3,
+        }
+    )
+    persist_policy_rank_reference(
+        df,
+        data_root=tmp_path,
+        run_id="run_a",
+        strategy_id="long_demo",
+        market_mode="spot",
+    )
+    manifest_path = (
+        tmp_path
+        / "artifacts"
+        / "run_a"
+        / "simple_policy_optimiser"
+        / "rank_reference"
+        / "manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text())
+    manifest["strategies"]["long_demo"]["policy_oos_contract"][
+        "policy_oos_generation_source"
+    ] = "generated_from_inference_models:labels"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    store = PolicyRankReferenceStore(data_root=tmp_path, run_id="run_a")
+    result = store.lookup(
+        strategy_id="long_demo",
+        calibrated_score=0.4,
+        side="long",
+    )
+
+    assert np.isnan(result.policy_rank_pct)
+    assert result.n_rows == 0
+
+
+def test_policy_rank_reference_bad_manifest_policy_oos_contract_fails_closed(tmp_path):
+    df = pd.DataFrame(
+        {
+            "strategy_id": ["long_demo"] * 3,
+            "calibrated_score": [0.1, 0.4, 0.8],
+            "rank_pct": [1 / 3, 2 / 3, 1.0],
+            "policy_oos_generation_source": ["generated_from_train_meta_state:labels"] * 3,
+            "policy_oos_source_model_fit_end": ["2026-01-19T06:00:00+00:00"] * 3,
+        }
+    )
+    persist_policy_rank_reference(
+        df,
+        data_root=tmp_path,
+        run_id="run_a",
+        strategy_id="long_demo",
+        market_mode="spot",
+    )
+    manifest_path = (
+        tmp_path
+        / "artifacts"
+        / "run_a"
+        / "simple_policy_optimiser"
+        / "rank_reference"
+        / "manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text())
+    manifest["policy_oos_contract"]["policy_oos_generation_source"] = (
+        "generated_from_inference_models:labels"
+    )
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    store = PolicyRankReferenceStore(data_root=tmp_path, run_id="run_a")
+    result = store.lookup(
+        strategy_id="long_demo",
+        calibrated_score=0.4,
+        side="long",
+    )
+
+    assert np.isnan(result.policy_rank_pct)
+    assert result.n_rows == 0
 
 
 def test_policy_rank_pct_searchsorted_right():
@@ -162,6 +261,57 @@ def test_live_gate_can_require_cross_strategy_auction_rank(tmp_path):
     assert decision["normalized_rank_score"] == 0.0
     assert decision["threshold_rank_score"] == 0.0
     assert decision["threshold_rank_score_source"] == "cross_strategy_auction_reference"
+
+
+def test_invalidate_auction_rank_reference_clears_manifest_entry(tmp_path):
+    persist_policy_rank_reference(
+        pd.DataFrame(
+            {
+                "strategy_id": ["long_a"] * 2,
+                "calibrated_score": [0.60, 0.70],
+                "rank_pct": [0.5, 1.0],
+            }
+        ),
+        data_root=tmp_path,
+        run_id="run_a",
+        strategy_id="long_a",
+    )
+    persist_auction_rank_reference(
+        pd.DataFrame(
+            {
+                "calibrated_score": [0.60, 0.70],
+                "strategy_id": ["long_a", "short_b"],
+            }
+        ),
+        data_root=tmp_path,
+        run_id="run_a",
+    )
+    manifest_path = (
+        tmp_path
+        / "artifacts"
+        / "run_a"
+        / "simple_policy_optimiser"
+        / "rank_reference"
+        / "manifest.json"
+    )
+    assert "auction" in json.loads(manifest_path.read_text())
+
+    invalidate_auction_rank_reference(
+        data_root=tmp_path,
+        run_id="run_a",
+        market_mode="perps",
+        reason="test_new_export",
+    )
+
+    manifest = json.loads(manifest_path.read_text())
+    assert "auction" not in manifest
+    assert "strategies" not in manifest
+    assert manifest["previous_auction"]["n_rows"] == 2
+    assert manifest["previous_strategy_count"] == 1
+    assert manifest["auction_invalidated_reason"] == "test_new_export"
+
+    store = PolicyRankReferenceStore(data_root=tmp_path, run_id="run_a")
+    assert store.lookup_auction(calibrated_score=0.7).n_rows == 0
 
 
 def test_missing_policy_rank_reference_fails_closed(tmp_path):

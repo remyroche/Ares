@@ -55,6 +55,11 @@ from .meta_training.utility_smooth import (
     smooth_utility_loss,
 )
 from .metrics import calculate_selection_score
+from .model_drift_features import (
+    MODEL_DRIFT_FEATURE_KEYS,
+    fit_model_drift_state,
+    transform_model_drift_features,
+)
 from .model_race import ModelRace, _safe_binary_calibrate
 from .model_scoring import (
     avg_trades_per_day,
@@ -1795,13 +1800,19 @@ def _safe_spearman(x, y):
 _BASE_REG_UNCERTAINTY_KEYS: tuple[str, ...] = (
     "reg_pred_mean",
     "reg_pred_std_robust",
+    "reg_pred_std_robust_norm",
     "reg_pred_snr",
     "reg_pred_range_q90_q10",
+    "reg_pred_range_q90_q10_norm",
     "reg_sign_entropy",
     "reg_sign_margin",
     "reg_pos_vote_frac",
     "reg_leaf_support_mean",
+    "reg_leaf_support_mean_frac",
+    "reg_leaf_support_mean_log",
     "reg_leaf_support_q25",
+    "reg_leaf_support_q25_frac",
+    "reg_rare_leaf_low_support_score",
     "reg_leaf_target_iqr_mean",
     "reg_leaf_centroid_dist_rel_mean",
     "reg_leaf_centroid_dist_rel_std",
@@ -2091,13 +2102,22 @@ def _compute_reg_head_interactions(
         dtype=np.float32,
     )
     clf_std = np.asarray(
-        clf_dm.get("oof_tree_pred_std", np.full(n, np.nan, dtype=np.float32)),
+        clf_dm.get(
+            "oof_tree_pred_std_norm",
+            clf_dm.get("oof_tree_pred_std", np.full(n, np.nan, dtype=np.float32)),
+        ),
         dtype=np.float32,
     )
     reg_q50 = np.asarray(reg_features.get("reg_q50"), dtype=np.float32)
     reg_snr = np.asarray(reg_features.get("reg_pred_snr"), dtype=np.float32)
     reg_entropy = np.asarray(reg_features.get("reg_sign_entropy"), dtype=np.float32)
-    reg_std = np.asarray(reg_features.get("reg_pred_std_robust"), dtype=np.float32)
+    reg_std = np.asarray(
+        reg_features.get(
+            "reg_pred_std_robust_norm",
+            reg_features.get("reg_pred_std_robust"),
+        ),
+        dtype=np.float32,
+    )
     clf_center = np.asarray((2.0 * clf_prob) - 1.0, dtype=np.float32)
     reg_sign = np.sign(reg_q50).astype(np.float32)
     clf_sign = np.sign(clf_center).astype(np.float32)
@@ -2148,8 +2168,12 @@ def _compute_base_reg_head_oof_features(
     q90 = _safe_nanpercentile_rows(tree_preds, 90.0, fallback=np.nan)
     reg_mean = np.nanmean(tree_preds, axis=1).astype(np.float32)
     reg_std_robust = _robust_sigma_rows(tree_preds)
-    reg_snr = (np.abs(reg_mean) / (reg_std_robust + eps)).astype(np.float32)
     reg_range = (q90 - q10).astype(np.float32)
+    y_scale = float(np.nanpercentile(y_tr, 90) - np.nanpercentile(y_tr, 10))
+    y_scale = max(y_scale, float(np.nanstd(y_tr)), 1e-6)
+    reg_std_robust_norm = np.clip(reg_std_robust / y_scale, 0.0, 10.0).astype(np.float32)
+    reg_range_norm = np.clip(reg_range / y_scale, 0.0, 10.0).astype(np.float32)
+    reg_snr = (np.abs(reg_mean) / (reg_std_robust + eps)).astype(np.float32)
     pos_vote_frac = np.nanmean((tree_preds > 0.0).astype(np.float32), axis=1).astype(
         np.float32
     )
@@ -2183,6 +2207,15 @@ def _compute_base_reg_head_oof_features(
 
     leaf_support_mean = np.nanmean(leaf_support, axis=1).astype(np.float32)
     leaf_support_q25 = np.nanpercentile(leaf_support, 25.0, axis=1).astype(np.float32)
+    train_rows = max(float(len(X_tr)), 1.0)
+    leaf_support_mean_frac = np.clip(leaf_support_mean / train_rows, 0.0, 1.0).astype(np.float32)
+    leaf_support_q25_frac = np.clip(leaf_support_q25 / train_rows, 0.0, 1.0).astype(np.float32)
+    leaf_support_mean_log = (
+        np.log1p(np.maximum(leaf_support_mean, 0.0)) / np.log1p(train_rows)
+    ).astype(np.float32)
+    rare_leaf_low_support = np.clip(
+        1.0 - leaf_support_q25_frac / 0.05, 0.0, 1.0
+    ).astype(np.float32)
     leaf_target_iqr_mean = np.nanmean(leaf_target_iqr, axis=1).astype(np.float32)
     leaf_centroid_dist_mean = np.nanmean(leaf_centroid_dist, axis=1).astype(np.float32)
     leaf_centroid_dist_rel = leaf_centroid_dist / (
@@ -2198,13 +2231,19 @@ def _compute_base_reg_head_oof_features(
     out = {
         "reg_pred_mean": reg_mean,
         "reg_pred_std_robust": reg_std_robust,
+        "reg_pred_std_robust_norm": reg_std_robust_norm,
         "reg_pred_snr": reg_snr,
         "reg_pred_range_q90_q10": reg_range,
+        "reg_pred_range_q90_q10_norm": reg_range_norm,
         "reg_sign_entropy": sign_entropy,
         "reg_sign_margin": sign_margin,
         "reg_pos_vote_frac": pos_vote_frac,
         "reg_leaf_support_mean": leaf_support_mean,
+        "reg_leaf_support_mean_frac": leaf_support_mean_frac,
+        "reg_leaf_support_mean_log": leaf_support_mean_log,
         "reg_leaf_support_q25": leaf_support_q25,
+        "reg_leaf_support_q25_frac": leaf_support_q25_frac,
+        "reg_rare_leaf_low_support_score": rare_leaf_low_support,
         "reg_leaf_target_iqr_mean": leaf_target_iqr_mean,
         "reg_leaf_centroid_dist_rel_mean": leaf_centroid_dist_rel_mean,
         "reg_leaf_centroid_dist_rel_std": leaf_centroid_dist_rel_std,
@@ -2591,6 +2630,7 @@ def _fit_direct_extratrees_base_model(
     *,
     kind_name,
     hpo_scope_key=None,
+    native_scope_key=None,
     X,
     X_full=None,
     y,
@@ -2855,6 +2895,13 @@ def _fit_direct_extratrees_base_model(
         if _backend == "lgbm_pipeline"
         else (("ebm_on_lgbm", train_ebm_on_lgbm_candidate),)
     )
+    _native_lgbm_preset = None
+    if _backend == "lgbm_pipeline" and not _is_meta_hpo:
+        _native_lgbm_preset = _load_native_lgbm_training_preset(
+            _cfg_local,
+            scope_key=str(native_scope_key or hpo_scope_key or kind_name),
+            objective_mode="train_base",
+        )
     for candidate_name, trainer in _candidate_trainers:
         try:
             tprint(
@@ -2885,6 +2932,21 @@ def _fit_direct_extratrees_base_model(
                     hard_labels=y_hard,
                     hpo_objective_mode=(
                         "train_meta" if _is_meta_hpo else "train_base"
+                    ),
+                    preset_feature_names=(
+                        (_native_lgbm_preset or {}).get("selected_features")
+                        if _native_lgbm_preset
+                        else None
+                    ),
+                    preset_best_params=(
+                        (_native_lgbm_preset or {}).get("best_params")
+                        if _native_lgbm_preset
+                        else None
+                    ),
+                    preset_source=(
+                        (_native_lgbm_preset or {}).get("source")
+                        if _native_lgbm_preset
+                        else None
                     ),
                 )
             else:
@@ -3174,6 +3236,16 @@ def _fit_direct_extratrees_base_model(
                         or ("train_meta" if _is_meta_hpo else "train_base")
                     ),
                     reference_artifact_dir=_lgbm_ref_dir,
+                    preset_best_params=(
+                        (_native_lgbm_preset or {}).get("best_params")
+                        if _native_lgbm_preset
+                        else None
+                    ),
+                    preset_source=(
+                        (_native_lgbm_preset or {}).get("source")
+                        if _native_lgbm_preset
+                        else None
+                    ),
                 )
             else:
                 from extreme_price_movements.ebm_on_lgbm import (
@@ -6545,6 +6617,7 @@ def _write_base_meta_contract_manifest(
         "oof_ebm_unc_uncertainty_weight",
         "oof_sigma_trees",
         "oof_sigma_robust",
+        *[f"oof_{k}" for k in MODEL_DRIFT_FEATURE_KEYS],
         *[f"oof_tree_{k}" for k in ModelRace._TREE_UNCERTAINTY_KEYS],
         *_BASE_REG_UNCERTAINTY_KEYS,
         *_BASE_REG_INTERACTION_KEYS,
@@ -6616,6 +6689,138 @@ def _write_base_meta_contract_manifest(
         json.dump(manifest, f, indent=2)
     tprint(f"Base/meta compatibility contract written to {path}")
     return path
+
+
+def _stage_fit_bounds_from_cfg(cfg: dict[str, Any]) -> tuple[Any, Any]:
+    stage_view = cfg.get("_active_stage_view") or {}
+    return (
+        stage_view.get("allowed_start_ts") or stage_view.get("fit_start"),
+        stage_view.get("allowed_end_ts") or stage_view.get("fit_end"),
+    )
+
+
+def _write_base_artifact_policy_oos_provenance(
+    cfg: dict[str, Any],
+    *,
+    run_id: str,
+    artifact_path: str,
+    contract_path: str,
+) -> None:
+    try:
+        from extreme_price_movements.policy_oos_provenance import (
+            parquet_timestamp_bounds,
+            sha256_file,
+            write_source_artifact_provenance_manifest,
+        )
+
+        run_root = Path(str(cfg["data_root"])) / "artifacts" / str(run_id)
+        slice_plan_path = run_root / "slices" / "slice_plan.json"
+        fit_start, fit_end = parquet_timestamp_bounds(
+            [run_root / "oof" / "base_oof_all.parquet"]
+        )
+        if fit_start is None or fit_end is None:
+            fit_start, fit_end = _stage_fit_bounds_from_cfg(cfg)
+        manifest_path = write_source_artifact_provenance_manifest(
+            artifact_path=Path(artifact_path),
+            run_root=run_root,
+            slice_plan_path=slice_plan_path,
+            source_slice_role="base_model_fit",
+            source_model_fit_start=fit_start,
+            source_model_fit_end=fit_end,
+            feature_contract_hash=sha256_file(Path(contract_path)),
+            generated_from_final_fit_bundle=bool(
+                cfg.get("train_full_inference_models", False)
+            ),
+            extra={
+                "generated_by": "train_base",
+                "stage_name": (cfg.get("_active_stage_view") or {}).get(
+                    "stage_name", "train_base"
+                ),
+                "model_backend": cfg.get("model_backend"),
+            },
+        )
+        tprint(f"Base artifact policy-OOS provenance written to {manifest_path}")
+    except Exception as exc:
+        tprint(f"WARNING: failed to write base artifact policy-OOS provenance: {exc}")
+
+
+def _load_native_lgbm_training_preset(
+    cfg: dict[str, Any] | None,
+    *,
+    scope_key: str,
+    objective_mode: str,
+) -> dict[str, Any] | None:
+    """Load selected features and best params from a prior native LGBM model.
+
+    This opt-in path is base-only: it reuses the feature/HPO contract selected by
+    the source run while still rebuilding OOF/self-distilled predictions on the
+    guarded training slice.
+    """
+
+    cfg_local = cfg if isinstance(cfg, dict) else {}
+    use_preset = str(
+        os.getenv(
+            "EPM_LGBM_USE_NATIVE_PRESET",
+            cfg_local.get("lgbm_use_native_preset", ""),
+        )
+    ).strip().lower() in {"1", "true", "yes", "y", "on"}
+    if not use_preset:
+        return None
+    if str(objective_mode or "").strip().lower() in {"train_meta", "meta"}:
+        return None
+    source_run_id = str(
+        os.getenv("EPM_LGBM_NATIVE_PRESET_SOURCE_RUN_ID", "")
+        or cfg_local.get("lgbm_native_preset_source_run_id")
+        or cfg_local.get("artifact_source_run_id")
+        or ""
+    ).strip()
+    if not source_run_id:
+        return None
+    model_path = (
+        Path(str(cfg_local.get("data_root", "data")))
+        / "artifacts"
+        / source_run_id
+        / "models"
+        / "native"
+        / str(scope_key)
+        / "model.joblib"
+    )
+    if not model_path.exists():
+        tprint(f"LGBM native preset not found for {scope_key}: {model_path}")
+        return None
+    try:
+        import joblib
+
+        model = joblib.load(model_path)
+        selected = [str(c) for c in (getattr(model, "selected_features", []) or [])]
+        params = dict(getattr(model, "best_params", {}) or {})
+        metrics = dict(getattr(model, "metrics", {}) or {})
+        if not selected:
+            selected = [str(c) for c in (metrics.get("selected_features", []) or [])]
+        if not params:
+            params = dict(
+                metrics.get("best_params")
+                or metrics.get("hpo_best_params")
+                or {}
+            )
+        if not selected or not params:
+            raise ValueError(
+                f"selected_features={len(selected)} best_params={bool(params)}"
+            )
+        tprint(
+            f"LGBM native preset loaded for {scope_key}: "
+            f"features={len(selected)}, params={len(params)}, source={model_path}"
+        )
+        return {
+            "selected_features": selected,
+            "best_params": params,
+            "source": str(model_path),
+            "source_run_id": source_run_id,
+        }
+    except Exception as exc:
+        raise RuntimeError(
+            f"Failed to load native LGBM preset for {scope_key} from {model_path}: {exc}"
+        ) from exc
 
 
 def _payload_put_oof_vector(
@@ -6709,6 +6914,14 @@ def _append_base_oof_contract_uncertainty(
                 out_key = f"oof_{out_key}"
             if out_key.startswith("oof_ebm_unc_"):
                 _payload_put_oof_vector(payload, out_key, vals, n, finite_mask)
+        drift_feats = getattr(owner, "oof_model_drift_features", None)
+        if isinstance(drift_feats, dict):
+            for raw_key, vals in drift_feats.items():
+                out_key = str(raw_key)
+                if not out_key.startswith("oof_"):
+                    out_key = f"oof_{out_key}"
+                if out_key in {f"oof_{k}" for k in MODEL_DRIFT_FEATURE_KEYS}:
+                    _payload_put_oof_vector(payload, out_key, vals, n, finite_mask)
 
     for attr, key in (
         ("oof_probs_raw_ebm", "oof_prob_ebm_raw"),
@@ -6766,6 +6979,12 @@ def _append_base_oof_contract_uncertainty(
             if default_vec is None:
                 default_vec = np.full(n, np.nan, dtype=np.float32)
             payload[key] = default_vec[:n][finite_mask].astype(np.float32, copy=False)
+
+    for key in [f"oof_{k}" for k in MODEL_DRIFT_FEATURE_KEYS]:
+        _payload_put_oof_vector(payload, key, from_sources(key), n, finite_mask)
+        if key not in payload:
+            neutral = 1.0 if "similarity" in key else 0.0
+            payload[key] = np.full(finite_count, neutral, dtype=np.float32)
 
     for key, vals in ((reg_head or {}).get("oof_features", {}) or {}).items():
         _payload_put_oof_vector(payload, str(key), vals, n, finite_mask)
@@ -10595,16 +10814,100 @@ def generate_label_datasets(
     )
     datasets = {}
     incremental_persist = bool(cfg.get("label_persist_incremental", False))
+    incremental_only_missing = bool(
+        cfg.get("label_incremental_only_missing", incremental_persist)
+    )
     persisted_manifest: dict[str, dict[str, object]] = {}
     base_variant_buffer: dict[tuple[str, int], dict[str, pd.DataFrame]] = {}
+    labels_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "labels")
+    existing_label_max_ts: dict[str, pd.Timestamp] = {}
     # None means "use each strategy's own source_horizon"; only an explicit
     # caller/CLI horizon list should override strategy-level horizons.
     requested_horizons = list(horizons) if horizons else None
     tprint(
         f"Label dataset builder: symbols={len(syms)} "
         f"horizons={requested_horizons if requested_horizons is not None else 'per_strategy'} "
-        f"incremental_persist={incremental_persist}"
+        f"incremental_persist={incremental_persist} "
+        f"incremental_only_missing={incremental_only_missing}"
     )
+
+    def _existing_label_path(name: str) -> str:
+        return os.path.join(labels_dir, f"{name}.parquet")
+
+    def _base_label_name_for_variant(name: str) -> str:
+        if name.endswith("_tight") or name.endswith("_wide"):
+            return name.rsplit("_", 1)[0]
+        return name
+
+    def _existing_max_ts_for_name(name: str) -> pd.Timestamp | None:
+        candidates = [name]
+        base_name = _base_label_name_for_variant(name)
+        if base_name != name:
+            candidates.append(base_name)
+        for candidate in candidates:
+            if candidate in existing_label_max_ts:
+                return existing_label_max_ts[candidate]
+            path = _existing_label_path(candidate)
+            if not os.path.exists(path):
+                existing_label_max_ts[candidate] = None
+                continue
+            try:
+                cols = set(pd.read_parquet(path, columns=[]).columns)
+            except Exception:
+                cols = set()
+            ts_col = "__ts__"
+            try:
+                df_ts = pd.read_parquet(path, columns=[ts_col])
+            except Exception:
+                try:
+                    df_ts = pd.read_parquet(path, columns=["timestamp"])
+                    ts_col = "timestamp"
+                except Exception:
+                    existing_label_max_ts[candidate] = None
+                    continue
+            if df_ts.empty or ts_col not in df_ts.columns:
+                existing_label_max_ts[candidate] = None
+                continue
+            max_ts = pd.to_datetime(df_ts[ts_col], utc=True, errors="coerce").max()
+            max_ts = None if pd.isna(max_ts) else pd.Timestamp(max_ts)
+            existing_label_max_ts[candidate] = max_ts
+            return max_ts
+        return None
+
+    def _merge_incremental_label_frame(name: str, df: pd.DataFrame) -> pd.DataFrame:
+        path = _existing_label_path(name)
+        if not incremental_persist or not os.path.exists(path):
+            return df
+        try:
+            old = pd.read_parquet(path)
+        except Exception as exc:
+            tprint(
+                f"WARNING: failed to read existing label artifact for incremental merge "
+                f"{name}: {exc}; writing new frame only."
+            )
+            return df
+        if old.empty:
+            return df
+        merged = pd.concat([old, df], axis=0, ignore_index=True)
+        subset = [c for c in ("__ts__", "__symbol__") if c in merged.columns]
+        if subset:
+            merged = merged.drop_duplicates(subset=subset, keep="last")
+            merged = merged.sort_values(subset, kind="mergesort").reset_index(drop=True)
+        return _downcast_label_dataset_df(merged, copy=False)
+
+    def _filter_to_missing_label_period(name: str, df: pd.DataFrame) -> pd.DataFrame:
+        if not incremental_only_missing or df.empty or "__ts__" not in df.columns:
+            return df
+        max_ts = _existing_max_ts_for_name(name)
+        if max_ts is None:
+            return df
+        ts_vals = pd.to_datetime(df["__ts__"], utc=True, errors="coerce")
+        out = df.loc[ts_vals > max_ts].copy()
+        tprint(
+            f"Incremental labels: {name} existing_max={max_ts} "
+            f"new_rows={len(out):,}/{len(df):,}"
+        )
+        return out
 
     def _apply_row_availability(df: pd.DataFrame, name: str) -> pd.DataFrame:
         if row_availability is None or df.empty:
@@ -10632,6 +10935,32 @@ def generate_label_datasets(
         return out
 
     def _persist_label_artifact(name: str, df: pd.DataFrame) -> None:
+        df = _filter_to_missing_label_period(name, df)
+        if df.empty:
+            max_ts = _existing_max_ts_for_name(name)
+            path = _existing_label_path(name)
+            if os.path.exists(path):
+                try:
+                    import pyarrow.parquet as _pq
+
+                    old_cols = list(_pq.ParquetFile(path).schema.names)
+                except Exception:
+                    old_cols = []
+                try:
+                    old_n = len(pd.read_parquet(path, columns=["__ts__"]))
+                except Exception:
+                    old_n = 0
+                persisted_manifest[name] = {
+                    "file": f"{name}.parquet",
+                    "rows": int(old_n),
+                    "columns": old_cols,
+                }
+            tprint(
+                f"Incremental labels: {name} has no rows beyond existing_max={max_ts}; "
+                "kept existing artifact."
+            )
+            return
+        df = _merge_incremental_label_frame(name, df)
         save_artifact_df(df, cfg["data_root"], run_id, "labels", name)
         persisted_manifest[name] = {
             "file": f"{name}.parquet",
@@ -10861,6 +11190,22 @@ def generate_label_datasets(
                         geom_cache[(int(H), s_id)] = _downcast_geom_payload(
                             pickle.load(fh)
                         )
+                    _tb_labels = tb_cache[(int(H), s_id)][0]
+                    _required_tb_end = ts - pd.Timedelta(hours=int(H) + 8)
+                    _tb_max = (
+                        pd.Timestamp(_tb_labels.index.max())
+                        if hasattr(_tb_labels, "index") and len(_tb_labels.index)
+                        else None
+                    )
+                    if _tb_max is None or _tb_max < _required_tb_end:
+                        tprint(
+                            f"TB cache stale for H={H} strategy_id={s_id}: "
+                            f"max={_tb_max} required>={_required_tb_end}; rebuilding."
+                        )
+                        tb_cache.pop((int(H), s_id), None)
+                        geom_cache.pop((int(H), s_id), None)
+                        missing_cells.append((int(H), s_id))
+                        continue
                     continue
                 except Exception as _e_cache:
                     tprint(
@@ -10957,6 +11302,17 @@ def generate_label_datasets(
         if not _hs:
             return None
         min_h = int(min(_hs))
+        if incremental_only_missing:
+            _base_key = f"train_{_strategy['strategy_id']}_{min_h}"
+            _existing_max = _existing_max_ts_for_name(_base_key)
+            if _existing_max is not None:
+                # Label timestamps are entry timestamps, one bar after the event
+                # timestamp. Start from the prior event bar so appends are exact.
+                ts_start = max(ts_start, _existing_max - pd.Timedelta(hours=1))
+                tprint(
+                    f"Incremental labels: strategy_id={_strategy['strategy_id']} "
+                    f"event_start={ts_start} from existing label max={_existing_max}"
+                )
         ts_end_adj = ts - pd.Timedelta(hours=min_h + 8)
         _strategy_mask = mask_by_strategy.get(
             _strategy["strategy_id"], cached_cand_mask
@@ -11673,6 +12029,92 @@ def train_meta_models_from_artifacts(
             "Ignoring meta_geometry_train_variants=True. Meta training is enforced primary-only."
         )
 
+    _meta_checkpoint_state = None
+    _meta_checkpoint_state_loaded = False
+
+    def _resolve_meta_checkpoint_state_path() -> str | None:
+        _run_id = str(
+            cfg.get("output_run_id") or cfg.get("run_id") or ""
+        ).strip()
+        if not _run_id:
+            return None
+        return os.path.join(
+            str(cfg.get("data_root", "data")),
+            "artifacts",
+            _run_id,
+            "models",
+            "model_state_meta.pkl",
+        )
+
+    def _load_meta_checkpoint_state(_path: str) -> dict:
+        nonlocal _meta_checkpoint_state, _meta_checkpoint_state_loaded
+        if _meta_checkpoint_state_loaded:
+            return dict(_meta_checkpoint_state or {})
+        _meta_checkpoint_state_loaded = True
+        _state = {}
+        try:
+            import joblib as _joblib
+
+            if os.path.exists(_path):
+                _loaded = _joblib.load(_path)
+                if isinstance(_loaded, dict):
+                    _state = _loaded
+        except Exception as _exc:
+            tprint(f"Meta incremental checkpoint: existing state load skipped ({_exc})")
+            _state = {}
+        if not isinstance(_state.get("bundle"), dict):
+            _state["bundle"] = {}
+        if not isinstance(_state["bundle"].get("meta_models"), dict):
+            _state["bundle"]["meta_models"] = {}
+        _meta_checkpoint_state = _state
+        return dict(_state)
+
+    def _checkpoint_meta_models_incremental(reason: str) -> None:
+        if not bool(cfg.get("meta_incremental_checkpoint_enabled", True)):
+            return
+        if not meta_models:
+            return
+        _path = _resolve_meta_checkpoint_state_path()
+        if not _path:
+            return
+        try:
+            import joblib as _joblib
+
+            os.makedirs(os.path.dirname(_path), exist_ok=True)
+            _state = _load_meta_checkpoint_state(_path)
+            _bundle = dict(_state.get("bundle") or {})
+            _existing_meta = dict(_bundle.get("meta_models") or {})
+            _existing_meta.update(dict(meta_models))
+            _bundle["meta_models"] = _existing_meta
+            if meta_gate_results:
+                _bundle["meta_strategy_gate_results"] = list(meta_gate_results)
+            _blocked = sorted(
+                str(s) for s in (cfg.get("_meta_blocked_strategy_ids") or [])
+            )
+            if _blocked:
+                _bundle["meta_blocked_strategy_ids"] = _blocked
+                _bundle["blocked_strategy_ids"] = sorted(
+                    {
+                        *(_bundle.get("blocked_strategy_ids", []) or []),
+                        *_blocked,
+                    }
+                )
+            _state["bundle"] = _bundle
+            _state["ts_trained"] = _state.get("ts_trained") or str(
+                cfg.get("output_run_id") or cfg.get("run_id") or ""
+            )
+            _tmp_path = f"{_path}.tmp"
+            _joblib.dump(_state, _tmp_path)
+            _joblib.load(_tmp_path)
+            os.replace(_tmp_path, _path)
+            _meta_checkpoint_state = _state
+            tprint(
+                "Meta incremental checkpoint saved: "
+                f"{len(_existing_meta)} model entries to {_path} ({reason})."
+            )
+        except Exception as _exc:
+            tprint(f"WARNING: Meta incremental checkpoint failed ({reason}): {_exc}")
+
     # Load optimize policy params dynamically (for policy-aligned targets/selection context)
     _run_id_for_policy = str(cfg.get("run_id", ""))
     _policy_params_blob = (
@@ -12334,6 +12776,7 @@ def train_meta_models_from_artifacts(
     ) -> None:
         if not bool(cfg.get("meta_require_distilled_base_oof", True)):
             return
+        strategy_selection_mode = bool(cfg.get("strategy_selection_mode", False))
         required_cols = (
             "base_oof_source",
             "base_oof_distillation_passes",
@@ -12353,6 +12796,8 @@ def train_meta_models_from_artifacts(
             )
             or 2
         )
+        if strategy_selection_mode:
+            min_passes = min(min_passes, 1)
         passes = pd.to_numeric(
             df_oof["base_oof_distillation_passes"], errors="coerce"
         ).to_numpy(dtype=float)
@@ -12370,17 +12815,32 @@ def train_meta_models_from_artifacts(
                 f"required={min_passes}. Re-run train_base."
             )
         final_flags = df_oof["base_final_fit_used_all_rows"]
-        if not bool(pd.Series(final_flags).astype(bool).all()):
+        if (
+            not strategy_selection_mode
+            and not bool(pd.Series(final_flags).astype(bool).all())
+        ):
             raise RuntimeError(
                 "Meta training requires base OOF from final models fit on all "
                 f"eligible pre-policy rows for {strategy_id} H={int(horizon)}. "
                 "Re-run train_base with LGBM_FINAL_FIT_USE_ALL_ROWS enabled."
             )
         sources = set(df_oof["base_oof_source"].astype(str).dropna().unique())
-        if "post_full_fit_oof_after_lgbm_self_distillation" not in sources:
+        has_expected_source = "post_full_fit_oof_after_lgbm_self_distillation" in sources
+        has_lightweight_source = any(
+            ("lightweight" in source.lower() or "strategy_selection" in source.lower())
+            for source in sources
+        )
+        if not has_expected_source and not (
+            strategy_selection_mode and has_lightweight_source
+        ):
             raise RuntimeError(
                 "Meta training found base OOF with unexpected provenance for "
                 f"{strategy_id} H={int(horizon)}: sources={sorted(sources)}"
+            )
+        if strategy_selection_mode and not bool(pd.Series(final_flags).astype(bool).all()):
+            tprint(
+                "Meta training: accepting lightweight strategy-selection base OOF "
+                f"for {strategy_id} H={int(horizon)}."
             )
         tprint(
             "Meta training: verified saved base OOF provenance for "
@@ -12532,7 +12992,10 @@ def train_meta_models_from_artifacts(
         for owner in (race, getattr(race, "best_model", None)):
             feats = getattr(owner, "oof_uncertainty_features", None)
             if not isinstance(feats, dict):
-                continue
+                feats = {}
+            drift_feats = getattr(owner, "oof_model_drift_features", None)
+            if isinstance(drift_feats, dict):
+                feats = {**feats, **drift_feats}
             aliases = [key]
             if key.startswith("oof_"):
                 aliases.append(key[4:])
@@ -12549,15 +13012,22 @@ def train_meta_models_from_artifacts(
     _TREE_UNCERTAINTY_KEYS = (
         "pred_mean",
         "pred_std",
+        "pred_std_norm",
         "pred_cv",
         "pred_std_robust",
+        "pred_std_robust_norm",
         "vote_entropy",
         "vote_margin",
         "vote_top_gap",
         "leaf_support_mean",
+        "leaf_support_mean_frac",
+        "leaf_support_mean_log",
         "leaf_support_median",
+        "leaf_support_median_frac",
         "leaf_support_std",
         "leaf_support_q25",
+        "leaf_support_q25_frac",
+        "rare_leaf_low_support_score",
         "leaf_target_std_mean",
         "leaf_target_iqr_mean",
         "leaf_centroid_dist_mean",
@@ -12648,6 +13118,28 @@ def train_meta_models_from_artifacts(
                     vec_h = np.asarray(ds_h[oof_col].values, dtype=np.float32)
                 else:
                     vec_h = _race_sigma_vector(race, oof_col, len(ds_h))
+                aligned = _align_values_by_ts_symbol_keys(
+                    df_union["__ts__"].values,
+                    df_union["__symbol__"].values,
+                    ds_h["__ts__"].values,
+                    ds_h["__symbol__"].values,
+                    vec_h,
+                    fill_value=np.nan,
+                    dtype=np.float32,
+                )
+                out[f"pred_{strategy_id}_H{int(h)}_{feat_key}"] = aligned
+                out[f"pred_H{int(h)}_{feat_key}"] = aligned
+                out[f"base_H{int(h)}_{feat_key}"] = aligned
+            for feat_key in MODEL_DRIFT_FEATURE_KEYS:
+                oof_col = f"oof_{feat_key}"
+                if saved_oof_preferred:
+                    if oof_col not in ds_h.columns:
+                        continue
+                    vec_h = np.asarray(ds_h[oof_col].values, dtype=np.float32)
+                else:
+                    vec_h = _race_sigma_vector(race, oof_col, len(ds_h))
+                if not np.isfinite(vec_h).any():
+                    continue
                 aligned = _align_values_by_ts_symbol_keys(
                     df_union["__ts__"].values,
                     df_union["__symbol__"].values,
@@ -16320,7 +16812,7 @@ def train_meta_models_from_artifacts(
             tprint(
                 f"  Meta {k}: primary tree uncertainty features materialized="
                 f"{len(tree_uncertainty_cols)} columns from "
-                f"{len(_BASE_CLF_UNCERTAINTY_ALIAS_KEYS) + len(_TREE_UNCERTAINTY_KEYS) + len(_BASE_EBM_UNCERTAINTY_KEYS) + len(_BASE_REG_UNCERTAINTY_KEYS) + len(_BASE_REG_INTERACTION_KEYS)} "
+                f"{len(_BASE_CLF_UNCERTAINTY_ALIAS_KEYS) + len(_TREE_UNCERTAINTY_KEYS) + len(MODEL_DRIFT_FEATURE_KEYS) + len(_BASE_EBM_UNCERTAINTY_KEYS) + len(_BASE_REG_UNCERTAINTY_KEYS) + len(_BASE_REG_INTERACTION_KEYS)} "
                 f"primary clf/reg families; sample={tree_uncertainty_cols[:8]}"
             )
 
@@ -16813,6 +17305,51 @@ def train_meta_models_from_artifacts(
                     f"failed: {_recent_exc}"
                 )
 
+        _meta_model_drift_state = None
+        meta_model_drift_cols: list[str] = []
+        if bool(cfg.get("model_drift_features_enabled", True)):
+            try:
+                _drift_source_cols = [
+                    str(c)
+                    for c in X_meta_base.columns
+                    if str(c) not in set(MODEL_DRIFT_FEATURE_KEYS)
+                    and str(c) != "feature_drift_psi_core"
+                    and pd.api.types.is_numeric_dtype(X_meta_base[c])
+                ]
+                _meta_model_drift_state = fit_model_drift_state(
+                    X_meta_base[_drift_source_cols],
+                    feature_columns=_drift_source_cols,
+                    model=None,
+                    max_core_features=int(cfg.get("model_drift_max_core_features", 80)),
+                    window=int(cfg.get("model_drift_window", 240)),
+                )
+                _meta_drift_df = transform_model_drift_features(
+                    X_meta_base[_drift_source_cols],
+                    _meta_model_drift_state,
+                    model=None,
+                    index=X_meta_base.index,
+                )
+                if not _meta_drift_df.empty:
+                    for _c in _meta_drift_df.columns:
+                        X_meta_base[_c] = np.asarray(_meta_drift_df[_c], dtype=np.float32)
+                    X_meta_base["feature_drift_psi_core"] = np.asarray(
+                        _meta_drift_df["feature_drift_psi_core_80"], dtype=np.float32
+                    )
+                    meta_model_drift_cols = list(_meta_drift_df.columns) + [
+                        "feature_drift_psi_core"
+                    ]
+                    tprint(
+                        f"  Meta {k}: added {len(meta_model_drift_cols)} "
+                        "artifact-backed meta model drift features."
+                    )
+            except Exception as _meta_drift_exc:
+                _meta_model_drift_state = None
+                meta_model_drift_cols = []
+                tprint(
+                    f"  Meta {k}: warning meta model drift feature generation "
+                    f"failed: {_meta_drift_exc}"
+                )
+
         meta_model_cols = []
         meta_model_cols.extend(
             [
@@ -16843,6 +17380,7 @@ def train_meta_models_from_artifacts(
         meta_model_cols.extend(
             [c for c in recent_effectiveness_cols if c in X_meta_base.columns]
         )
+        meta_model_cols.extend([c for c in meta_model_drift_cols if c in X_meta_base.columns])
         meta_model_cols.extend(
             [
                 c
@@ -16974,6 +17512,19 @@ def train_meta_models_from_artifacts(
             np.asarray(_trade_mask, dtype=bool), "post-rank/trade fit mask"
         )
 
+        def _attach_model_drift_state(_model_obj: Any) -> Any:
+            if _model_obj is not None and isinstance(_meta_model_drift_state, dict):
+                try:
+                    setattr(_model_obj, "model_drift_state_", _meta_model_drift_state)
+                    setattr(
+                        _model_obj,
+                        "model_drift_feature_columns_",
+                        [str(c) for c in meta_model_drift_cols],
+                    )
+                except Exception:
+                    pass
+            return _model_obj
+
         _meta_ebm_heads_trained = False
         if include_meta_clf and str(cfg.get("meta_model_backend", "")).lower() in {
             "ebm_on_lgbm_only",
@@ -17055,6 +17606,7 @@ def train_meta_models_from_artifacts(
                     "tree_uncertainty_cols": [
                         str(c) for c in retained_tree_uncertainty_cols
                     ],
+                    "model_drift_cols": [str(c) for c in meta_model_drift_cols],
                     "meta_interaction_cols": [str(c) for c in meta_interaction_cols],
                     "base_probability_column": (
                         str(_base_prob_col) if _base_prob_col is not None else ""
@@ -17073,6 +17625,8 @@ def train_meta_models_from_artifacts(
                         _positional_map,
                     )
                     setattr(race_obj, "meta_feature_contract_", _contract_row)
+                    if isinstance(_meta_model_drift_state, dict):
+                        setattr(race_obj, "model_drift_state_", _meta_model_drift_state)
                     _best_model = getattr(race_obj, "best_model", None)
                     if _best_model is not None:
                         setattr(
@@ -17090,6 +17644,12 @@ def train_meta_models_from_artifacts(
                             "meta_feature_contract_",
                             _contract_row,
                         )
+                        if isinstance(_meta_model_drift_state, dict):
+                            setattr(
+                                _best_model,
+                                "model_drift_state_",
+                                _meta_model_drift_state,
+                            )
                 except Exception as _contract_exc:
                     tprint(
                         f"Meta {head_key}: warning failed to attach feature "
@@ -17170,6 +17730,11 @@ def train_meta_models_from_artifacts(
                         _base_arr = np.asarray(_base_med_vals, dtype=np.float32)
                     if _base_arr is not None and len(_base_arr) > int(np.max(_valid_idx)):
                         _out["oof_base_clf"] = _base_arr[_valid_idx]
+                    for _drift_col in meta_model_drift_cols:
+                        if _drift_col in X_meta_models.columns:
+                            _out[f"oof_{_drift_col}"] = np.asarray(
+                                X_meta_models[_drift_col].values, dtype=np.float32
+                            )[_valid_idx]
                     for _attr, _col in (
                         ("oof_probs_raw_ebm", "oof_ebm_raw"),
                         ("oof_probs_en", "oof_ebm_en"),
@@ -17304,6 +17869,7 @@ def train_meta_models_from_artifacts(
                     y_hard_head=_y_hard_arr,
                     label=label,
                 )
+                _checkpoint_meta_models_incremental(head_key)
                 tprint(
                     f"Meta {head_key}: fitted specialist {label} classifier "
                     f"(valid={int(np.sum(_valid))}, backend={getattr(_race, 'best_model_name', 'ebm_on_lgbm')})."
@@ -17536,6 +18102,7 @@ def train_meta_models_from_artifacts(
                 y_per_horizon=None,
                 y_binary=np.asarray(_y_bin_reg, dtype=float)[_fit_mask_main],
             )
+            _attach_model_drift_state(meta_reg)
             meta_models[_h_label] = meta_reg
             _bucket_y_ret[_h_label] = _y_reg.copy()
             tprint(f"Meta {_h_label}: fitted ({_time.monotonic()-_t0_meta:.1f}s).")
@@ -17594,6 +18161,7 @@ def train_meta_models_from_artifacts(
                     ),
                     y_per_horizon=None,
                 )
+                _attach_model_drift_state(meta_q20_reg)
                 meta_models[f"{k}_q20_reg"] = meta_q20_reg
                 _bucket_y_ret[f"{k}_q20_reg"] = _ret_q20.copy()
                 _md_q20_reg = {}
@@ -18058,6 +18626,7 @@ def train_meta_models_from_artifacts(
                     ),
                     base_threshold=float(cfg.get("base_clf_threshold", 0.5)),
                 )
+                _attach_model_drift_state(meta_clf)
                 meta_models[f"{_k_prefix}clf"] = meta_clf
                 _bucket_y_ret[f"{_k_prefix}clf"] = _y_move_soft.copy()
 
@@ -18219,6 +18788,7 @@ def train_meta_models_from_artifacts(
                         base_threshold=float(cfg.get("base_clf_threshold", 0.5)),
                     )
                     meta_clf = _meta_clf_fallback
+                    _attach_model_drift_state(meta_clf)
                     meta_models[f"{k}_clf"] = meta_clf
                     _bucket_y_ret[f"{k}_clf"] = _y_move_soft.copy()
                     _md = {}
@@ -18379,6 +18949,7 @@ def train_meta_models_from_artifacts(
                     _cal_head.model = _refit_model
                     _cal_head.oof_probs = _cal_score.copy()
                     _cal_head.valid_idx_ = np.where(_vm)[0]
+                    _attach_model_drift_state(_cal_head)
 
                     meta_models[f"{k}_cal_reg"] = _cal_head
                     _bucket_y_ret[f"{k}_cal_reg"] = _cal_score.copy()
@@ -18474,6 +19045,7 @@ def train_meta_models_from_artifacts(
                         use_calibration=bool(cfg.get("meta_clf_use_calibration", True)),
                         move_horizon=int(_mid_h),
                     )
+                    _attach_model_drift_state(meta_q20_clf)
                     meta_models[f"{k}_q20_clf"] = meta_q20_clf
                     _bucket_y_ret[f"{k}_q20_clf"] = _ret_q20.copy()
 
@@ -19346,6 +19918,14 @@ def train_meta_models_from_artifacts(
                     oof_df[f"oof_{_uk}"] = _trim_1d(
                         np.asarray(_uv, dtype=np.float32), n_rows
                     )
+            for _uk, _uv in (
+                getattr(meta_obj, "oof_model_drift_features", {}) or {}
+            ).items():
+                if _uv is not None and len(_uv) >= int(n_rows):
+                    _name = str(_uk)
+                    if not _name.startswith("oof_"):
+                        _name = f"oof_{_name}"
+                    oof_df[_name] = _trim_1d(np.asarray(_uv, dtype=np.float32), n_rows)
         except Exception:
             return oof_df
         return oof_df
@@ -21894,6 +22474,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     race, base_fit_diag = _fit_direct_extratrees_base_model(
                         kind_name=k,
                         hpo_scope_key=key,
+                        native_scope_key=f"{side}_{k}_H{H}",
                         X=X_sel,
                         X_full=X,
                         y=y_fit,
@@ -22696,6 +23277,56 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     "oof_prob": _oof_full[:_n][_finite_oof_mask],
                     "index": np.arange(_n, dtype=np.int32)[_finite_oof_mask],
                 }
+                if _df_oof is not None and bool(
+                    cfg.get("model_drift_features_enabled", True)
+                ):
+                    _drift_feat_cols = [
+                        str(_c)
+                        for _c in (_v.get("feat_cols", []) or [])
+                        if str(_c) in _df_oof.columns
+                    ]
+                    if _drift_feat_cols:
+                        try:
+                            _drift_state = fit_model_drift_state(
+                                _df_oof[_drift_feat_cols],
+                                feature_columns=_drift_feat_cols,
+                                model=_race,
+                                max_core_features=int(
+                                    cfg.get("model_drift_max_core_features", 80)
+                                ),
+                                window=int(cfg.get("model_drift_window", 240)),
+                            )
+                            setattr(_race, "model_drift_state_", _drift_state)
+                            _drift_df = transform_model_drift_features(
+                                _df_oof[_drift_feat_cols],
+                                _drift_state,
+                                model=_race,
+                                index=_df_oof.index,
+                            )
+                            if not _drift_df.empty:
+                                setattr(
+                                    _race,
+                                    "oof_model_drift_features",
+                                    {
+                                        str(_c): np.asarray(
+                                            _drift_df[_c], dtype=np.float32
+                                        )
+                                        for _c in _drift_df.columns
+                                    },
+                                )
+                                for _c in _drift_df.columns:
+                                    _payload[f"oof_{_c}"] = np.asarray(
+                                        _drift_df[_c], dtype=np.float32
+                                    )
+                                tprint(
+                                    f"  Base OOF drift features for {k} H{_h}: "
+                                    f"{len(_drift_df.columns)} columns"
+                                )
+                        except Exception as _drift_exc:
+                            tprint(
+                                f"WARNING: failed to build base model drift features "
+                                f"for {k} H{_h}: {_drift_exc}"
+                            )
                 _stage_labels = getattr(_race, "oof_stage_labels_", None)
                 if _stage_labels is not None and len(_stage_labels) >= _n:
                     _payload["oof_stage"] = np.asarray(_stage_labels, dtype=object)[
@@ -23159,7 +23790,15 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             _pkl_save.load(_f)
         os.replace(_tmp_intermediate_path, _intermediate_path)
         tprint(f"Base models intermediate saved to {_intermediate_path}")
-        _write_base_meta_contract_manifest(cfg, _run_id, final_models)
+        _base_contract_path = _write_base_meta_contract_manifest(
+            cfg, _run_id, final_models
+        )
+        _write_base_artifact_policy_oos_provenance(
+            cfg,
+            run_id=_run_id,
+            artifact_path=_intermediate_path,
+            contract_path=_base_contract_path,
+        )
 
     # Load base models if train_base=False (meta-only mode)
     if not train_base:

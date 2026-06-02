@@ -126,7 +126,19 @@ def _strategy_side(row: Dict[str, Any]) -> str:
     return "unknown"
 
 
-def _load_lgbm_mask_contracts_for_deployment() -> Dict[str, Dict[str, Any]]:
+def _require_lgbm_mask_contracts_for_deployment() -> bool:
+    raw = os.environ.get("EPM_REQUIRE_LGBM_REGIME_MASK_CONTRACTS")
+    if raw is not None:
+        return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+    return str(os.environ.get("EPM_MODEL_BACKEND", "")).strip().lower() in {
+        "lgbm",
+        "lgbm_pipeline",
+    }
+
+
+def _load_lgbm_mask_contracts_for_deployment(
+    market_mode: Optional[str] = None,
+) -> Dict[str, Dict[str, Any]]:
     """Load LGBM rule-mask contracts so deployment is independent of registry discovery."""
     try:
         from extreme_price_movements.offline_optimisers.params_store import (
@@ -140,6 +152,7 @@ def _load_lgbm_mask_contracts_for_deployment() -> Dict[str, Dict[str, Any]]:
         rows = load_inference_candidate_mask_params_per_bucket(
             top_n=99,
             ranking_metric="score_for_best_params",
+            market_mode=market_mode or resolve_market_mode(),
         )
     except Exception as exc:
         tprint(f"[deployment] could not load LGBM mask contracts: {exc}")
@@ -530,10 +543,14 @@ def build_strategy_for_inference_payload(
     data_root: str,
     run_id: str,
     output_filename: str = "strategy_for_inference.json",
+    market_mode: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Select deployable strategies and persist the live inference contract."""
     enriched: List[Dict[str, Any]] = []
-    lgbm_mask_contracts = _load_lgbm_mask_contracts_for_deployment()
+    lgbm_mask_contracts = _load_lgbm_mask_contracts_for_deployment(
+        market_mode=market_mode,
+    )
+    require_lgbm_mask_contracts = _require_lgbm_mask_contracts_for_deployment()
     tolerance = 1e-6
     for row in strategy_rows:
         if not isinstance(row, dict):
@@ -585,6 +602,10 @@ def build_strategy_for_inference_payload(
             enriched_row["deployment_reject_reasons"].append("empty_trade_outcomes")
         if bool(row.get("no_finite_sizer_oof", False)):
             enriched_row["deployment_reject_reasons"].append("no_finite_sizer_oof")
+        if require_lgbm_mask_contracts and not lgbm_mask_contract:
+            enriched_row["deployment_reject_reasons"].append(
+                "missing_lgbm_mask_contract"
+            )
         baseline_net_pnl = _safe_float(row.get("baseline_net_pnl"), np.nan)
         final_net_pnl = _safe_float(row.get("final_net_pnl"), np.nan)
         baseline_pf = _safe_float(row.get("baseline_profit_factor"), np.nan)
@@ -661,6 +682,7 @@ def build_strategy_for_inference_payload(
         "schema_version": "v2",
         "generated_by": "policy_optimiser",
         "run_id": run_id,
+        "requires_lgbm_regime_mask_contract": require_lgbm_mask_contracts,
         "selection_rules": {
             "min_avg_net_pnl_per_trade": MIN_DEPLOYMENT_AVG_NET_PNL_PER_TRADE,
             "max_strategies_per_side": MAX_DEPLOYMENT_STRATEGIES_PER_SIDE,

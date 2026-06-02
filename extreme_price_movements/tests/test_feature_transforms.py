@@ -90,5 +90,6 @@ def test_transform_batch_preserves_mixed_2d_widths():
     assert np.nanstd(out["loc_range_pos_24"]) > 0.0
     assert np.nanstd(out["prior_volatility"]) > 0.0
 
+
 if __name__ == "__main__":
     test_causal_feature_transformer_equivalence()

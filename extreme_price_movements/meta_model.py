@@ -27,6 +27,7 @@ from extreme_price_movements.feature_selection_extreme_events import (
     mdi_feature_selection_v3,
     mdi_feature_selection_v4_topk,
 )
+from extreme_price_movements.model_drift_features import transform_model_drift_features
 from extreme_price_movements.path_utils import resolve_reports_dir
 from extreme_price_movements.policy_ml import (
     MetaClassifierSelectionConfig,
@@ -2403,6 +2404,15 @@ class MetaModel:
             pass
         return result
 
+    def transform_meta_features(self, X):
+        """Generate artifact-backed drift features for the fitted meta head."""
+        return transform_model_drift_features(
+            X,
+            getattr(self, "model_drift_state_", None),
+            model=self,
+            index=getattr(X, "index", None),
+        )
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # Meta Classifier Model — binary "magnitude move" head
@@ -4300,3 +4310,12 @@ class MetaClassifierModel:
         except Exception:
             pass
         return result
+
+    def transform_meta_features(self, X):
+        """Generate artifact-backed drift features for the fitted meta classifier."""
+        return transform_model_drift_features(
+            X,
+            getattr(self, "model_drift_state_", None),
+            model=self,
+            index=getattr(X, "index", None),
+        )

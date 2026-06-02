@@ -548,10 +548,93 @@ def _label_manifest_symbol_sources(
     return out
 
 
-def load_trained_symbol_universe(data_root: str, run_id: str) -> Set[str]:
+def _oof_strategy_id_from_col(column: str) -> str:
+    col = str(column or "")
+    if not col.startswith("oof_"):
+        return ""
+    body = col[len("oof_") :]
+    if "_H" not in body:
+        return ""
+    if body.endswith("_sigma") or body.endswith("_robust_sigma"):
+        return ""
+    return body.split("_H", 1)[0]
+
+
+def _base_oof_symbol_sources(
+    run_dir: Path,
+    accepted_strategy_ids: Optional[Set[str]],
+) -> List[Tuple[str, Path, Set[str]]]:
+    """Read trained symbols from active base OOF prediction columns."""
+    from extreme_price_movements.inference.parity import strategy_id_matches
+
+    path = run_dir / "oof" / "base_oof_all.parquet"
+    if not path.exists():
+        return []
+    try:
+        import pyarrow.parquet as pq
+
+        columns = list(pq.read_schema(path).names)
+    except Exception:
+        try:
+            columns = list(pd.read_parquet(path, columns=["symbol"]).columns)
+        except Exception as exc:
+            tprint(f"Warning: failed to inspect base OOF columns {path}: {exc}")
+            return []
+    strategy_cols: List[Tuple[str, str]] = []
+    for col in columns:
+        sid = _oof_strategy_id_from_col(str(col))
+        if not sid:
+            continue
+        if accepted_strategy_ids is not None and not strategy_id_matches(
+            sid, accepted_strategy_ids
+        ):
+            continue
+        strategy_cols.append((sid, str(col)))
+    if not strategy_cols or "symbol" not in columns:
+        return []
+    out: List[Tuple[str, Path, Set[str]]] = []
+    try:
+        frame = pd.read_parquet(path, columns=["symbol"] + [col for _, col in strategy_cols])
+    except Exception as exc:
+        tprint(f"Warning: failed to load base OOF trained symbols {path}: {exc}")
+        return []
+    for sid, col in strategy_cols:
+        try:
+            mask = frame[col].notna()
+            symbols = {
+                _normalise_symbol(str(sym))
+                for sym in frame.loc[mask, "symbol"].dropna().unique().tolist()
+            }
+            symbols.discard("")
+            if symbols:
+                out.append((f"base_oof:{sid}", path, symbols))
+        except Exception as exc:
+            tprint(f"Warning: failed to inspect base OOF symbols for {sid}: {exc}")
+    return out
+
+
+def load_trained_symbol_universe(
+    data_root: str,
+    run_id: str,
+    accepted_strategy_ids: Optional[Set[str]] = None,
+) -> Set[str]:
     """Load symbols covered by the training artifacts for the active run."""
     run_dir = Path(data_root) / "artifacts" / str(run_id)
     sources: List[Tuple[str, Path, Set[str]]] = []
+    oof_sources = _base_oof_symbol_sources(run_dir, accepted_strategy_ids)
+    if oof_sources:
+        union: Set[str] = set()
+        for _, _, symbols in oof_sources:
+            union.update(symbols)
+        source_sizes = ", ".join(
+            f"{label}={len(symbols)}" for label, _, symbols in oof_sources
+        )
+        tprint(
+            "Trained symbol source sizes from active base OOF columns: "
+            f"{source_sizes}; union={len(union)}"
+        )
+        return union
+
     csv_candidates = [
         run_dir / "features" / "feature_health_symbol_summary.csv",
         run_dir / "feature_health_symbol_summary.csv",
@@ -604,6 +687,7 @@ def resolve_inference_universes(
     data_root: str,
     run_id: str,
     explicit_symbols: Optional[List[str]] = None,
+    accepted_strategy_ids: Optional[Set[str]] = None,
     live_quote_currency: str = "USDC",
     market_mode: str = "spot",
 ) -> Dict[str, List[str]]:
@@ -676,7 +760,9 @@ def resolve_inference_universes(
         live_symbols = get_margin_universe(
             exchange, force_refresh=True, quote_currency=live_quote_currency
         )
-    trained_symbols = load_trained_symbol_universe(data_root, run_id)
+    trained_symbols = load_trained_symbol_universe(
+        data_root, run_id, accepted_strategy_ids=accepted_strategy_ids
+    )
     if trained_symbols:
         trained_bases = symbol_bases(trained_symbols)
         tradable_symbols = sorted(

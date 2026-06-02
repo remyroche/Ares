@@ -1,0 +1,1433 @@
+{
+  "accepted_symbols": [
+    "1INCH/USD:USD",
+    "AAVE/USD:USD",
+    "ADA/USD:USD",
+    "AEVO/USD:USD",
+    "ALGO/USD:USD",
+    "ALICE/USD:USD",
+    "ALT/USD:USD",
+    "ANKR/USD:USD",
+    "APE/USD:USD",
+    "API3/USD:USD",
+    "APT/USD:USD",
+    "AR/USD:USD",
+    "ARB/USD:USD",
+    "ARKM/USD:USD",
+    "ASTR/USD:USD",
+    "ATOM/USD:USD",
+    "AVAX/USD:USD",
+    "AXS/USD:USD",
+    "BAND/USD:USD",
+    "BAT/USD:USD",
+    "BCH/USD:USD",
+    "BICO/USD:USD",
+    "BIGTIME/USD:USD",
+    "BLUR/USD:USD",
+    "BNB/USD:USD",
+    "BONK/USD:USD",
+    "BTC/USD:BTC",
+    "BTC/USD:USD",
+    "CELR/USD:USD",
+    "CFX/USD:USD",
+    "CHZ/USD:USD",
+    "COMP/USD:USD",
+    "COTI/USD:USD",
+    "CRV/USD:USD",
+    "CTSI/USD:USD",
+    "CVX/USD:USD",
+    "DASH/USD:USD",
+    "DOGE/USD:USD",
+    "DOT/USD:USD",
+    "DYDX/USD:USD",
+    "DYM/USD:USD",
+    "EGLD/USD:USD",
+    "ENA/USD:USD",
+    "ENJ/USD:USD",
+    "ENS/USD:USD",
+    "ETC/USD:USD",
+    "ETH/USD:ETH",
+    "ETH/USD:USD",
+    "FET/USD:USD",
+    "FIL/USD:USD",
+    "FLOKI/USD:USD",
+    "FLR/USD:USD",
+    "GALA/USD:USD",
+    "GMT/USD:USD",
+    "GMX/USD:USD",
+    "GRT/USD:USD",
+    "HBAR/USD:USD",
+    "HFT/USD:USD",
+    "ICP/USD:USD",
+    "IMX/USD:USD",
+    "INJ/USD:USD",
+    "JASMY/USD:USD",
+    "JTO/USD:USD",
+    "JUP/USD:USD",
+    "KAS/USD:USD",
+    "KAVA/USD:USD",
+    "KSM/USD:USD",
+    "LDO/USD:USD",
+    "LINK/USD:USD",
+    "LPT/USD:USD",
+    "LRC/USD:USD",
+    "LSK/USD:USD",
+    "LTC/USD:LTC",
+    "LTC/USD:USD",
+    "MANA/USD:USD",
+    "MEW/USD:USD",
+    "MINA/USD:USD",
+    "MNT/USD:USD",
+    "NEAR/USD:USD",
+    "NMR/USD:USD",
+    "NOT/USD:USD",
+    "ONDO/USD:USD",
+    "OP/USD:USD",
+    "PAXG/USD:USD",
+    "PENDLE/USD:USD",
+    "PEPE/USD:USD",
+    "POPCAT/USD:USD",
+    "POWR/USD:USD",
+    "PYTH/USD:USD",
+    "QNT/USD:USD",
+    "RARE/USD:USD",
+    "RENDER/USD:USD",
+    "REZ/USD:USD",
+    "RUNE/USD:USD",
+    "SAND/USD:USD",
+    "SEI/USD:USD",
+    "SHIB/USD:USD",
+    "SNX/USD:USD",
+    "SOL/USD:USD",
+    "SPELL/USD:USD",
+    "STG/USD:USD",
+    "STORJ/USD:USD",
+    "STRK/USD:USD",
+    "STX/USD:USD",
+    "SUI/USD:USD",
+    "SUPER/USD:USD",
+    "SUSHI/USD:USD",
+    "T/USD:USD",
+    "TAO/USD:USD",
+    "TIA/USD:USD",
+    "TLM/USD:USD",
+    "TNSR/USD:USD",
+    "TON/USD:USD",
+    "TRU/USD:USD",
+    "TRX/USD:USD",
+    "TURBO/USD:USD",
+    "UMA/USD:USD",
+    "UNI/USD:USD",
+    "W/USD:USD",
+    "WIF/USD:USD",
+    "WLD/USD:USD",
+    "XLM/USD:USD",
+    "XMR/USD:USD",
+    "XRP/USD:USD",
+    "XTZ/USD:USD",
+    "YFI/USD:USD",
+    "YGG/USD:USD",
+    "ZEC/USD:USD",
+    "ZK/USD:USD",
+    "ZRO/USD:USD",
+    "ZRX/USD:USD"
+  ],
+  "contract_hash": null,
+  "end_ts": "2026-01-23T10:00:00+00:00",
+  "global_errors": [],
+  "mode": "strict",
+  "ok": false,
+  "per_symbol_errors": {
+    "AUCTION/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-22T03:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "BEAM/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-22T14:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "BNT/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-23T04:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "C98/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-23T04:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "CHR/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-23T07:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "ETHFI/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-23T06:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "FLOW/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-23T07:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "GTC/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-19T05:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "ICX/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-22T20:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "MOG/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-21T16:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "MOVR/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-22T22:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "NEO/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-23T04:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "OGN/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-22T20:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "PORTAL/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-23T06:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "QTUM/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-23T06:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "RLC/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-23T06:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "SAGA/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-23T01:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "SYN/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-23T06:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "USDC/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2025-12-30T18:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "USDT/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-21T19:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    },
+    "WOO/USD:USD": {
+      "missing_or_stale_source_panels": [
+        {
+          "alternatives": [
+            {
+              "missing": [
+                "quote_volume"
+              ],
+              "sources": [
+                "quote_volume"
+              ],
+              "stale": {}
+            },
+            {
+              "missing": [],
+              "sources": [
+                "volume",
+                "close"
+              ],
+              "stale": {
+                "volume": "2026-01-22T20:00:00+00:00"
+              }
+            }
+          ],
+          "features": [
+            "dist_stack",
+            "dist_vwap_12_atr",
+            "dist_vwap_24_atr",
+            "dist_vwap_96_atr",
+            "dist_vwap_atr",
+            "dist_vwap_norm",
+            "dist_weekly_vwap",
+            "oi_rel_vol_2h",
+            "oi_rel_vol_4h",
+            "oi_rel_vol_8h",
+            "trapped_longs_12",
+            "trapped_longs_24",
+            "vwap_zone_1d_atr",
+            "z_vwap_12",
+            "z_vwap_24"
+          ],
+          "group": "perp_volume"
+        }
+      ]
+    }
+  },
+  "rejected_symbols": [
+    "AUCTION/USD:USD",
+    "BEAM/USD:USD",
+    "BNT/USD:USD",
+    "C98/USD:USD",
+    "CHR/USD:USD",
+    "ETHFI/USD:USD",
+    "FLOW/USD:USD",
+    "GTC/USD:USD",
+    "ICX/USD:USD",
+    "MOG/USD:USD",
+    "MOVR/USD:USD",
+    "NEO/USD:USD",
+    "OGN/USD:USD",
+    "PORTAL/USD:USD",
+    "QTUM/USD:USD",
+    "RLC/USD:USD",
+    "SAGA/USD:USD",
+    "SYN/USD:USD",
+    "USDC/USD:USD",
+    "USDT/USD:USD",
+    "WOO/USD:USD"
+  ],
+  "required_source_groups": {
+    "funding": [
+      "carry_adj_ret_10h",
+      "carry_adj_ret_5h",
+      "carry_adj_ret_self_z_10h",
+      "carry_adj_ret_self_z_5h",
+      "carry_adj_short_ret_10h",
+      "carry_adj_short_ret_5h",
+      "carry_adj_short_ret_self_z_10h",
+      "carry_adj_short_ret_self_z_5h",
+      "dist_funding_pressure_price_12h_atr",
+      "dist_funding_pressure_price_96h_atr",
+      "fund_abs_z_x_rv_24h",
+      "fund_high_neg_mom_5h",
+      "fund_pre_drift_10h",
+      "fund_pre_drift_5h",
+      "fund_z_x_trend_strength",
+      "funding_1d_chg_peer_resid",
+      "funding_1d_chg_ts_resid",
+      "funding_mean_15d_robust_z",
+      "funding_mom_2h",
+      "funding_mom_w",
+      "funding_per_hour",
+      "funding_per_hour_mkt_resid",
+      "funding_rank_30d",
+      "funding_up_agree",
+      "range_per_funding_abs_z_24h",
+      "xasset_asset_minus_basket_fund_z",
+      "xasset_btc_fund_z",
+      "xasset_funding_ts_resid"
+    ],
+    "mark": [
+      "mark_perp_dislocation",
+      "mark_vs_perp_bps"
+    ],
+    "open_interest": [
+      "leverage_build_score",
+      "oi_3d_x_funding",
+      "oi_7d_x_funding",
+      "oi_chg_2h",
+      "oi_chg_4h",
+      "oi_chg_8h",
+      "oi_chg_z_2h",
+      "oi_chg_z_4h",
+      "oi_chg_z_8h",
+      "oi_expansion_compression_balance_24h",
+      "oi_expansion_compression_balance_96h",
+      "oi_rank",
+      "oi_rel_vol_2h",
+      "oi_rel_vol_4h",
+      "oi_rel_vol_8h",
+      "oi_to_volume_7d_z_180d",
+      "oi_trend_10d_robust_z",
+      "oi_up_agree",
+      "oi_value_3d_log_chg_z_90d",
+      "oi_value_7d_chg_z_180d",
+      "oi_value_7d_log_chg_z_90d",
+      "oi_vel_2h",
+      "oi_vel_4h",
+      "oi_vel_8h",
+      "oi_z",
+      "unwind_score"
+    ],
+    "orderbook": [
+      "ob_depth_l10_to_qv_24h",
+      "ob_depth_l20_to_qv_24h",
+      "ob_depth_l20_to_qv_z_7d",
+      "ob_imbalance_mkt_resid",
+      "ob_microprice_dev_bps_z_24h",
+      "ob_pressure_mkt_resid"
+    ],
+    "perp_volume": [
+      "dist_stack",
+      "dist_vwap_12_atr",
+      "dist_vwap_24_atr",
+      "dist_vwap_96_atr",
+      "dist_vwap_atr",
+      "dist_vwap_norm",
+      "dist_weekly_vwap",
+      "oi_rel_vol_2h",
+      "oi_rel_vol_4h",
+      "oi_rel_vol_8h",
+      "trapped_longs_12",
+      "trapped_longs_24",
+      "vwap_zone_1d_atr",
+      "z_vwap_12",
+      "z_vwap_24"
+    ]
+  },
+  "run_id": "",
+  "scope": "symbol",
+  "source_rejection_summary": {
+    "accepted_symbol_count": 131,
+    "by_feature": [
+      {
+        "count": 21,
+        "key": "dist_stack"
+      },
+      {
+        "count": 21,
+        "key": "dist_vwap_12_atr"
+      },
+      {
+        "count": 21,
+        "key": "dist_vwap_24_atr"
+      },
+      {
+        "count": 21,
+        "key": "dist_vwap_96_atr"
+      },
+      {
+        "count": 21,
+        "key": "dist_vwap_atr"
+      },
+      {
+        "count": 21,
+        "key": "dist_vwap_norm"
+      },
+      {
+        "count": 21,
+        "key": "dist_weekly_vwap"
+      },
+      {
+        "count": 21,
+        "key": "oi_rel_vol_2h"
+      },
+      {
+        "count": 21,
+        "key": "oi_rel_vol_4h"
+      },
+      {
+        "count": 21,
+        "key": "oi_rel_vol_8h"
+      },
+      {
+        "count": 21,
+        "key": "trapped_longs_12"
+      },
+      {
+        "count": 21,
+        "key": "trapped_longs_24"
+      },
+      {
+        "count": 21,
+        "key": "vwap_zone_1d_atr"
+      },
+      {
+        "count": 21,
+        "key": "z_vwap_12"
+      },
+      {
+        "count": 21,
+        "key": "z_vwap_24"
+      }
+    ],
+    "by_group": [
+      {
+        "count": 21,
+        "key": "perp_volume"
+      }
+    ],
+    "by_source_key": [
+      {
+        "count": 21,
+        "key": "quote_volume"
+      },
+      {
+        "count": 21,
+        "key": "volume"
+      }
+    ],
+    "missing_source_keys": [
+      {
+        "count": 21,
+        "key": "quote_volume"
+      }
+    ],
+    "rejected_symbol_count": 21,
+    "sample_symbols_by_feature": {
+      "dist_stack": [
+        "AUCTION/USD:USD",
+        "BEAM/USD:USD",
+        "BNT/USD:USD",
+        "C98/USD:USD",
+        "CHR/USD:USD"
+      ],
+      "dist_vwap_12_atr": [
+        "AUCTION/USD:USD",
+        "BEAM/USD:USD",
+        "BNT/USD:USD",
+        "C98/USD:USD",
+        "CHR/USD:USD"
+      ],
+      "dist_vwap_24_atr": [
+        "AUCTION/USD:USD",
+        "BEAM/USD:USD",
+        "BNT/USD:USD",
+        "C98/USD:USD",
+        "CHR/USD:USD"
+      ],
+      "dist_vwap_96_atr": [
+        "AUCTION/USD:USD",
+        "BEAM/USD:USD",
+        "BNT/USD:USD",
+        "C98/USD:USD",
+        "CHR/USD:USD"
+      ],
+      "dist_vwap_atr": [
+        "AUCTION/USD:USD",
+        "BEAM/USD:USD",
+        "BNT/USD:USD",
+        "C98/USD:USD",
+        "CHR/USD:USD"
+      ],
+      "dist_vwap_norm": [
+        "AUCTION/USD:USD",
+        "BEAM/USD:USD",
+        "BNT/USD:USD",
+        "C98/USD:USD",
+        "CHR/USD:USD"
+      ],
+      "dist_weekly_vwap": [
+        "AUCTION/USD:USD",
+        "BEAM/USD:USD",
+        "BNT/USD:USD",
+        "C98/USD:USD",
+        "CHR/USD:USD"
+      ],
+      "oi_rel_vol_2h": [
+        "AUCTION/USD:USD",
+        "BEAM/USD:USD",
+        "BNT/USD:USD",
+        "C98/USD:USD",
+        "CHR/USD:USD"
+      ],
+      "oi_rel_vol_4h": [
+        "AUCTION/USD:USD",
+        "BEAM/USD:USD",
+        "BNT/USD:USD",
+        "C98/USD:USD",
+        "CHR/USD:USD"
+      ],
+      "oi_rel_vol_8h": [
+        "AUCTION/USD:USD",
+        "BEAM/USD:USD",
+        "BNT/USD:USD",
+        "C98/USD:USD",
+        "CHR/USD:USD"
+      ],
+      "trapped_longs_12": [
+        "AUCTION/USD:USD",
+        "BEAM/USD:USD",
+        "BNT/USD:USD",
+        "C98/USD:USD",
+        "CHR/USD:USD"
+      ],
+      "trapped_longs_24": [
+        "AUCTION/USD:USD",
+        "BEAM/USD:USD",
+        "BNT/USD:USD",
+        "C98/USD:USD",
+        "CHR/USD:USD"
+      ],
+      "vwap_zone_1d_atr": [
+        "AUCTION/USD:USD",
+        "BEAM/USD:USD",
+        "BNT/USD:USD",
+        "C98/USD:USD",
+        "CHR/USD:USD"
+      ],
+      "z_vwap_12": [
+        "AUCTION/USD:USD",
+        "BEAM/USD:USD",
+        "BNT/USD:USD",
+        "C98/USD:USD",
+        "CHR/USD:USD"
+      ],
+      "z_vwap_24": [
+        "AUCTION/USD:USD",
+        "BEAM/USD:USD",
+        "BNT/USD:USD",
+        "C98/USD:USD",
+        "CHR/USD:USD"
+      ]
+    },
+    "sample_symbols_by_group": {
+      "perp_volume": [
+        "AUCTION/USD:USD",
+        "BEAM/USD:USD",
+        "BNT/USD:USD",
+        "C98/USD:USD",
+        "CHR/USD:USD",
+        "ETHFI/USD:USD",
+        "FLOW/USD:USD",
+        "GTC/USD:USD",
+        "ICX/USD:USD",
+        "MOG/USD:USD"
+      ]
+    },
+    "sample_symbols_by_source_key": {
+      "quote_volume": [
+        "AUCTION/USD:USD",
+        "BEAM/USD:USD",
+        "BNT/USD:USD",
+        "C98/USD:USD",
+        "CHR/USD:USD"
+      ],
+      "volume": [
+        "AUCTION/USD:USD",
+        "BEAM/USD:USD",
+        "BNT/USD:USD",
+        "C98/USD:USD",
+        "CHR/USD:USD"
+      ]
+    },
+    "stale_source_keys": [
+      {
+        "count": 21,
+        "key": "volume"
+      }
+    ]
+  },
+  "state_contract_hash": null
+}

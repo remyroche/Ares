@@ -380,6 +380,46 @@ def test_predict_meta_refuses_missing_rank_percentile_context():
     assert model.called is False
 
 
+def test_run_full_chain_fails_closed_when_position_sizer_rejects(monkeypatch):
+    orchestrator = ModelOrchestrator({}, {"strict_feature_parity": True})
+
+    monkeypatch.setattr(
+        orchestrator,
+        "predict_alpha",
+        lambda features, side, kind: pd.Series([0.8], index=features.index),
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "predict_meta",
+        lambda features, side, kind: pd.Series([0.7], index=features.index),
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "compute_ridge_position_size",
+        lambda features, side, kind: (
+            pd.Series([0.0], index=features.index),
+            {"confidence": 0.0},
+        ),
+    )
+
+    called_entry_policy = {"value": False}
+
+    def _entry_policy(*args, **kwargs):
+        called_entry_policy["value"] = True
+        return {}
+
+    monkeypatch.setattr(orchestrator, "compute_entry_policy", _entry_policy)
+
+    features = pd.DataFrame({"ret1h": [0.01]}, index=["AAA/USDC"])
+    result = orchestrator.run_full_chain("AAA/USDC", "long", features, kind="demo")
+
+    assert result["action"] == "no_entry"
+    assert result["reason"] == "position_sizer_rejected"
+    assert result["sizing_source"] == "position_sizer_rejected"
+    assert result["position_size"] == 0.0
+    assert called_entry_policy["value"] is False
+
+
 def test_get_features_for_candidates_uses_asof_not_future_latest():
     idx = pd.to_datetime(["2026-01-01T00:00:00Z", "2026-01-01T02:00:00Z"], utc=True)
     feats = {

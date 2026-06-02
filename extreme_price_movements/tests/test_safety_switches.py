@@ -41,7 +41,10 @@ def test_market_kill_switch_self_recovers_after_halt(tmp_path):
 
 
 def test_market_kill_switch_ignores_single_asset_spike_when_average_is_safe(tmp_path):
-    switch = MarketKillSwitch(tmp_path / "market_kill_switch.json")
+    switch = MarketKillSwitch(
+        tmp_path / "market_kill_switch.json",
+        min_market_basket_assets=2,
+    )
     decision = switch.evaluate(
         now=pd.Timestamp("2026-05-10T12:00:00Z"),
         usdc_usdt_ticker={"last": 1.0},
@@ -59,12 +62,40 @@ def test_market_kill_switch_ignores_single_asset_spike_when_average_is_safe(tmp_
     assert decision.allow_new_entries is True
     assert decision.active is False
     assert decision.reason == "allowed"
-    assert decision.details["btc_1h_move"] > 0.07
+    assert "btc_1h_move" not in decision.details
+    assert "eth_1h_move" not in decision.details
     assert decision.details["market_avg_1h_abs_move"] < 0.05
 
 
+def test_market_kill_switch_ignores_btc_eth_only_market_move(tmp_path):
+    switch = MarketKillSwitch(
+        tmp_path / "market_kill_switch.json",
+        min_market_basket_assets=2,
+    )
+    decision = switch.evaluate(
+        now=pd.Timestamp("2026-05-10T12:00:00Z"),
+        usdc_usdt_ticker={"last": 1.0},
+        btc_close=pd.Series([100.0, 115.0]),
+        eth_close=pd.Series([100.0, 112.0]),
+        basket_close=pd.DataFrame(
+            {
+                "BTC/USD:USD": [100.0, 115.0],
+                "ETH/USD:USD": [100.0, 112.0],
+            }
+        ),
+    )
+    assert decision.allow_new_entries is True
+    assert decision.active is False
+    assert decision.reason == "allowed"
+    assert decision.details["market_basket_assets"] == 0
+    assert decision.details["market_basket_status"] == "insufficient_breadth"
+
+
 def test_market_kill_switch_triggers_on_average_market_spike(tmp_path):
-    switch = MarketKillSwitch(tmp_path / "market_kill_switch.json")
+    switch = MarketKillSwitch(
+        tmp_path / "market_kill_switch.json",
+        min_market_basket_assets=2,
+    )
     decision = switch.evaluate(
         now=pd.Timestamp("2026-05-10T12:00:00Z"),
         usdc_usdt_ticker={"last": 1.0},
@@ -97,7 +128,7 @@ def test_market_kill_switch_does_not_preserve_deprecated_per_asset_halt(tmp_path
         """,
         encoding="utf-8",
     )
-    switch = MarketKillSwitch(path)
+    switch = MarketKillSwitch(path, min_market_basket_assets=2)
     decision = switch.evaluate(
         now=pd.Timestamp("2026-05-10T12:00:00Z"),
         usdc_usdt_ticker={"last": 1.0},
@@ -135,7 +166,7 @@ def test_market_kill_switch_active_halt_reports_current_and_stored_details(tmp_p
         """,
         encoding="utf-8",
     )
-    switch = MarketKillSwitch(path)
+    switch = MarketKillSwitch(path, min_market_basket_assets=2)
     decision = switch.evaluate(
         now=pd.Timestamp("2026-05-10T12:00:00Z"),
         usdc_usdt_ticker={"last": 1.0},

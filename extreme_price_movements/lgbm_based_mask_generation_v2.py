@@ -103,6 +103,7 @@ from extreme_price_movements.config import (
 from extreme_price_movements.data_store import (
     PartitionedOHLCVStore,
     load_features_selected,
+    scoped_data_root,
     to_panel,
 )
 from extreme_price_movements.hpo_lgbm_regime_miner import (
@@ -180,7 +181,7 @@ def build_training_view(
 
 LEAF_SCORING_DEFAULTS: Dict[str, Any] = {
     "leaf_target_support_pct": 0.125,
-    "leaf_support_min_pct": 0.05,
+    "leaf_support_min_pct": 0.10,
     "leaf_support_max_pct": 0.20,
     "leaf_preferred_support_min_pct": 0.10,
     "leaf_preferred_support_max_pct": 0.15,
@@ -306,6 +307,7 @@ LEAF_SCORING_DEFAULTS: Dict[str, Any] = {
     "within_leaf_lgbm_n_estimators": 50,
     "within_leaf_max_features": 100,
     "final_holdout_min_remaining_folds": 1,
+    "drop_short_horizon_regime_features_from_miner": True,
 }
 
 
@@ -386,9 +388,9 @@ def resolve_market_read_root(base_path: str, suffixed_path: str, market_mode: st
     mode = normalize_market_mode(market_mode)
     if _has_local_market_data(suffixed_path):
         return suffixed_path
-    if mode == "spot" and _has_local_market_data(base_path):
+    if _has_local_market_data(base_path):
         tprint(
-            "Spot market read root fallback: "
+            f"{mode} market read root fallback: "
             f"{suffixed_path} has no local generated data; using {base_path}"
         )
         return str(base_path).rstrip("/\\")
@@ -702,6 +704,64 @@ MINER_NUISANCE_REGIME_SOURCE_NAMES: Set[str] = {
     "volatility_autocorr_48",
     *MINER_BROAD_MARKET_REGIME_NUISANCE_COLUMNS,
 }
+
+MINER_SHORT_HORIZON_REGIME_SOURCE_NAMES: Set[str] = {
+    "mark_vs_perp_bps",
+    "mark_perp_dislocation",
+    "basis_pct",
+    "basis_frac",
+    "basis_per_atr",
+    "basis_stretch",
+    "basis_funding_div",
+    "basis_fund_div_z",
+    "ob_imbalance_mkt_resid",
+    "ob_depth_usd_l20_z",
+    "ob_depth_z_10bps",
+    "ob_depth_z_25bps",
+    "ob_spread_z_24h",
+    "ob_depth_mkt_resid",
+    "ob_pressure_mkt_resid",
+    "ob_spread_mkt_resid",
+    "ob_imbalance_mkt_resid",
+    "xasset_mkt_spread_bps",
+    "xasset_mkt_depth_z",
+    "xasset_mkt_ob_stress",
+    "xasset_mkt_ob_stress_z_24h",
+    "xasset_ob_pressure_ts_resid",
+    "xasset_ob_pressure_peer_resid",
+    "xasset_ob_liquidity_ts_resid",
+    "xasset_ob_liquidity_peer_resid",
+}
+
+MINER_SHORT_HORIZON_REGIME_PREFIXES: Tuple[str, ...] = (
+    "ob_",
+    "xasset_ob_",
+)
+
+MINER_SHORT_HORIZON_REGIME_PATTERNS: Tuple[re.Pattern[str], ...] = tuple(
+    re.compile(pattern)
+    for pattern in (
+        r"(^|_)(15m|1h|2h|4h|5h|6h|8h|10h|12h)($|_)",
+        r"(^|_)ret(1h|2h|4h|8h)($|_)",
+        r"(^|_)mom_(2h|4h|8h)($|_)",
+        r"(^|_)chg_(2h|4h|8h)($|_)",
+        r"(^|_)vel_(2h|4h|8h)($|_)",
+        r"(^|_)rel_vol_(2h|4h|8h)($|_)",
+        r"(^|_)self_z_(5h|10h)($|_)",
+    )
+)
+
+
+def _is_short_horizon_regime_source(source_name: str, cfg: Dict[str, Any]) -> bool:
+    if not bool(cfg.get("drop_short_horizon_regime_features_from_miner", True)):
+        return False
+    source = str(source_name)
+    if source in MINER_SHORT_HORIZON_REGIME_SOURCE_NAMES:
+        return True
+    if any(source.startswith(prefix) for prefix in MINER_SHORT_HORIZON_REGIME_PREFIXES):
+        return True
+    return any(pattern.search(source) for pattern in MINER_SHORT_HORIZON_REGIME_PATTERNS)
+
 
 MINER_CONTINUOUS_PASSTHROUGH_SOURCE_NAMES: Set[str] = {
     "atr_compression_ratio",
@@ -1210,12 +1270,24 @@ def _resolve_miner_nuisance_feature_arrays(
     resolved: Dict[str, str] = {}
     arrays: Dict[str, np.ndarray] = {}
     missing: List[str] = []
+    skipped_short_horizon: List[str] = []
     for requested_name in requested_columns:
         requested_name = str(requested_name)
+        if _is_short_horizon_regime_source(requested_name, cfg):
+            skipped_short_horizon.append(requested_name)
+            continue
         candidates = MINER_TARGET_RESIDUALIZATION_ALIAS_MAP.get(
             requested_name, (requested_name,)
         )
-        resolved_name = next((name for name in candidates if name in feature_dict), None)
+        resolved_name = next(
+            (
+                name
+                for name in candidates
+                if name in feature_dict
+                and not _is_short_horizon_regime_source(str(name), cfg)
+            ),
+            None,
+        )
         if resolved_name is None:
             if requested_name in optional_set:
                 continue
@@ -1224,9 +1296,15 @@ def _resolve_miner_nuisance_feature_arrays(
         resolved[requested_name] = str(resolved_name)
         arrays[requested_name] = np.asarray(feature_dict[resolved_name], dtype=np.float32)
     if missing:
-        raise KeyError(
+        tprint(
             "Missing residualisation nuisance columns for miner target: "
             + ", ".join(missing)
+            + "; continuing with available nuisance columns."
+        )
+    if skipped_short_horizon:
+        tprint(
+            "Skipped short-horizon/tactical residualisation columns for miner target: "
+            + ", ".join(sorted(dict.fromkeys(skipped_short_horizon)))
         )
     return resolved, arrays
 
@@ -1234,6 +1312,8 @@ def _resolve_miner_nuisance_feature_arrays(
 def _should_drop_miner_nuisance_source(
     source_name: str, group_name: str, cfg: Dict[str, Any]
 ) -> bool:
+    if group_name == "regime" and _is_short_horizon_regime_source(source_name, cfg):
+        return True
     if not bool(cfg.get("drop_nuisance_features_from_miner", True)):
         return False
     if group_name == "regime" and source_name in MINER_NUISANCE_REGIME_SOURCE_NAMES:
@@ -3784,7 +3864,7 @@ class InteractionModel:
 
         min_leaf_frac = float(self.cfg.get("lgbm_min_leaf_frac", 0.001))
         miner_min_leaf_floor_frac = float(
-            self.cfg.get("miner_min_leaf_floor_frac", 0.05)
+            self.cfg.get("miner_min_leaf_floor_frac", 0.06)
         )
         effective_min_leaf_frac = max(min_leaf_frac, miner_min_leaf_floor_frac)
         min_data_in_leaf = max(10, int(effective_min_leaf_frac * X_tr.shape[0]))
@@ -6096,7 +6176,7 @@ def compute_within_leaf_future_edge_learnability(
                 max_depth=int(cfg.get("within_leaf_lgbm_max_depth", 3)),
                 learning_rate=float(cfg.get("within_leaf_lgbm_learning_rate", 0.03)),
                 n_estimators=int(cfg.get("within_leaf_lgbm_n_estimators", 50)),
-                min_data_in_leaf=max(25, int(0.05 * active_tr.size)),
+                min_data_in_leaf=max(25, int(0.06 * active_tr.size)),
                 verbosity=-1,
                 random_state=17,
             )
@@ -9990,7 +10070,7 @@ def run_side_pipeline(
             + json.dumps(nuisance_feature_resolution, sort_keys=True)
         )
     tprint(
-        f"Miner nuisance drop flags: drop_nuisance={bool(cfg.get('drop_nuisance_features_from_miner', True))} drop_location={bool(cfg.get('drop_location_nuisance_features_from_miner', False))} drop_continuous_parents={bool(cfg.get('drop_continuous_nuisance_parents_from_miner', True))}"
+        f"Miner nuisance drop flags: drop_nuisance={bool(cfg.get('drop_nuisance_features_from_miner', True))} drop_location={bool(cfg.get('drop_location_nuisance_features_from_miner', False))} drop_continuous_parents={bool(cfg.get('drop_continuous_nuisance_parents_from_miner', True))} drop_short_horizon_regime={bool(cfg.get('drop_short_horizon_regime_features_from_miner', True))}"
     )
 
     side_output_dir = root_output_dir / side
@@ -10155,7 +10235,7 @@ def run_side_pipeline(
                 # Use train_n if available, otherwise fallback to holdout/embargo-filtered HPO rows.
                 train_n = hpo_results.get("train_n", int(hpo_allowed.sum()))
                 miner_min_leaf_floor_frac = float(
-                    cfg.get("miner_min_leaf_floor_frac", 0.05)
+                    cfg.get("miner_min_leaf_floor_frac", 0.06)
                 )
                 cfg["hpo_min_data_in_leaf"] = max(
                     25,
@@ -17980,6 +18060,7 @@ def select_top_diverse_rules(
 
             base_regime_score = float(row.get(score_col, 0.0))
             worst_penalty = float(row.get("worst_penalty", 0.0))
+            pairwise_effective_overlap = 0.0
 
             eligible_pairwise_overlaps = []
             for s_idx in selected_idx:
@@ -18730,6 +18811,7 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "drop_nuisance_features_from_miner": True,
             "drop_continuous_nuisance_parents_from_miner": True,
             "drop_location_nuisance_features_from_miner": False,
+            "drop_short_horizon_regime_features_from_miner": True,
             "global_ridge_candidate_cap": 200,
         },
         "production": {
@@ -18763,6 +18845,7 @@ def apply_cfg_preset(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "drop_nuisance_features_from_miner": True,
             "drop_continuous_nuisance_parents_from_miner": True,
             "drop_location_nuisance_features_from_miner": False,
+            "drop_short_horizon_regime_features_from_miner": True,
             "global_ridge_candidate_cap": 200,
         },
     }
@@ -19359,9 +19442,31 @@ if __name__ == "__main__":
         help="Market mode for data/features/output files (default: spot).",
     )
     parser.add_argument(
+        "--exchange-id",
+        default=os.environ.get("EPM_EXCHANGE", ""),
+        help="Exchange id for exchange-scoped local data, e.g. kraken.",
+    )
+    parser.add_argument(
+        "--offline-universe",
+        action="store_true",
+        help="Build the training universe from local data without live refresh.",
+    )
+    parser.add_argument(
         "--perps",
         action="store_true",
         help="Alias for --market-mode perps.",
+    )
+    parser.add_argument(
+        "--final-registry-top-n",
+        type=int,
+        default=20,
+        help="Number of final registry strategies to keep.",
+    )
+    parser.add_argument(
+        "--final-registry-min-per-side",
+        type=int,
+        default=6,
+        help="Minimum long/short strategies to target in the final registry.",
     )
     args = parser.parse_args()
 
@@ -19391,6 +19496,10 @@ if __name__ == "__main__":
     cfg["output_dir"] = args.output_dir
     cfg["market_mode"] = market_mode
     cfg["use_perps"] = market_mode == "perps"
+    if args.exchange_id:
+        cfg["exchange_id"] = str(args.exchange_id).strip().lower()
+    if args.offline_universe:
+        cfg["offline_backtest_skip_universe_refresh"] = True
     cfg["offline_universe_no_api"] = True
     if cfg["use_perps"]:
         cfg = enable_perp_feature_keys(cfg)
@@ -19401,11 +19510,28 @@ if __name__ == "__main__":
     cfg["stage1_lgbm_top_n_for_strong"] = 100
     cfg["step2_weak_max_depth"] = 3
     cfg["step2_strong_max_depth"] = 4
-    cfg["final_registry_top_n"] = 20
-    cfg["final_registry_min_per_side"] = 6
+    cfg["miner_min_leaf_floor_frac"] = max(
+        0.06, float(cfg.get("miner_min_leaf_floor_frac", 0.0) or 0.0)
+    )
+    cfg["n_folds"] = max(6, int(cfg.get("n_folds", 5) or 5))
+    cfg["fold_train_row_cap"] = max(
+        100_000, int(cfg.get("fold_train_row_cap", 75_000) or 75_000)
+    )
+    cfg["fold_val_row_cap"] = max(
+        20_000, int(cfg.get("fold_val_row_cap", 15_000) or 15_000)
+    )
+    cfg["final_registry_top_n"] = int(args.final_registry_top_n)
+    cfg["final_registry_min_per_side"] = int(args.final_registry_min_per_side)
+    cfg["target_final_regimes_total"] = int(args.final_registry_top_n)
+    cfg["max_final_regimes_total"] = max(
+        int(cfg.get("max_final_regimes_total", 40) or 40),
+        int(args.final_registry_top_n),
+    )
     cfg["ridge_upstream_overlap_threshold"] = 0.92
     cfg["ridge_upstream_containment_threshold"] = 0.96
-    cfg.setdefault("sliceplanner_outer_n_folds", 8)
+    cfg["sliceplanner_outer_n_folds"] = max(
+        10, int(cfg.get("sliceplanner_outer_n_folds", 8) or 8)
+    )
     cfg.setdefault("sliceplanner_warmup_days", 90)
     
     # Adaptive TP/SL configuration
@@ -19449,8 +19575,10 @@ if __name__ == "__main__":
         tprint(f"Step1 input dir: {args.step1_dir}")
 
     # 1. Data Store & Symbols
+    ohlcv_root = scoped_data_root(cfg)
+    tprint(f"OHLCV scoped root: {ohlcv_root}")
     store = PartitionedOHLCVStore(
-        root_dir=cfg["data_root"], timeframe=cfg.get("timeframe", "1h")
+        root_dir=ohlcv_root, timeframe=cfg.get("timeframe", "1h")
     )
     symbols = list_preload_training_symbols(store, cfg, max_symbols=args.max_symbols)
     tprint(f"Selected {len(symbols)} pre-load training-universe symbols")

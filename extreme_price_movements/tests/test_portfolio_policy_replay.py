@@ -5,7 +5,9 @@ import pandas as pd
 from extreme_price_movements.portfolio_policy_replay import (
     DEFAULT_OFFLINE_PRICE_GAP_BPS,
     PortfolioPolicyParams,
+    load_portfolio_policy_params,
     normalise_candidate_table,
+    portfolio_policy_params_from_live_config,
     replay_candidates,
     run_portfolio_policy_replay,
 )
@@ -160,6 +162,34 @@ def test_replay_defaults_missing_offline_price_gap_to_50_bps():
     assert normalised["price_gap_bps"].iloc[0] == DEFAULT_OFFLINE_PRICE_GAP_BPS
 
 
+def test_portfolio_policy_params_round_trip_live_config(tmp_path):
+    params = PortfolioPolicyParams(
+        max_concurrent_positions=7,
+        max_concurrent_per_side=None,
+        max_concurrent_per_strategy=3,
+        max_new_entries_per_bar=2,
+        max_total_wallet_allocation_pct=0.8,
+        global_threshold_floor=0.45,
+        threshold_viability_margin=0.05,
+        occupancy_threshold_alpha=0.1,
+        occupancy_threshold_power=2.0,
+        rank_size_power=2.2,
+        rank_multiplier_min=0.5,
+        rank_multiplier_max=1.0,
+        max_signal_gap_bps=150.0,
+        strategy_ids=("long_a", "short_b"),
+        strategy_cores=("a", "b"),
+    )
+    payload = params.to_live_config()
+    loaded = portfolio_policy_params_from_live_config(payload)
+
+    assert loaded == params
+
+    path = tmp_path / "optimized_portfolio_policy_config.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    assert load_portfolio_policy_params(path) == params
+
+
 def test_run_portfolio_policy_replay_writes_contract_and_live_loader_reads_it(tmp_path):
     data_root = tmp_path / "data"
     run_id = "test-run"
@@ -217,3 +247,52 @@ def test_run_portfolio_policy_replay_writes_contract_and_live_loader_reads_it(tm
     assert (
         loaded.initial_rank_threshold == payload["selection"]["global_threshold_floor"]
     )
+
+
+def test_run_portfolio_policy_replay_can_use_fixed_policy_config_and_ev_source(tmp_path):
+    data_root = tmp_path / "data"
+    run_id = "test-run"
+    run_root = data_root / "artifacts" / run_id
+    candidate_dir = run_root / "simple_policy_optimiser"
+    candidate_dir.mkdir(parents=True)
+    holdout_candidate_path = candidate_dir / "holdout_candidates.parquet"
+    ev_candidate_path = candidate_dir / "policy_window_candidates.parquet"
+    rows = pd.DataFrame(
+        [
+            _candidate("2026-02-01 00:00", "BTC/USD", "long", "L_a", 0.95),
+            _candidate("2026-02-01 00:00", "ETH/USD", "short", "S_a", 0.94),
+        ]
+    )
+    rows.to_parquet(holdout_candidate_path, index=False)
+    rows.assign(net_return=[0.10, 0.20], gross_return=[0.11, 0.21]).to_parquet(
+        ev_candidate_path,
+        index=False,
+    )
+    fixed = PortfolioPolicyParams(
+        max_concurrent_positions=1,
+        max_concurrent_per_side=None,
+        max_concurrent_per_strategy=None,
+        max_new_entries_per_bar=1,
+        global_threshold_floor=0.50,
+        threshold_viability_margin=0.0,
+        min_position_size=0.01,
+        strategy_ids=("L_a", "S_a"),
+        strategy_cores=("a",),
+    )
+    fixed_config_path = run_root / "policy_params" / "optimized_portfolio_policy_config.json"
+    fixed_config_path.parent.mkdir(parents=True)
+    fixed_config_path.write_text(json.dumps(fixed.to_live_config()), encoding="utf-8")
+
+    report = run_portfolio_policy_replay(
+        data_root=str(data_root),
+        run_id=run_id,
+        candidate_path=holdout_candidate_path,
+        output_dir=run_root / "holdout_replay",
+        fixed_policy_config_path=fixed_config_path,
+        ev_curve_candidate_path=ev_candidate_path,
+    )
+
+    assert report["policy_replay_mode"] == "fixed_policy_config"
+    assert report["walk_forward"]["selection_reason"] == "fixed_policy_config_no_optimisation"
+    assert report["ev_curve_candidate_path"] == str(ev_candidate_path)
+    assert report["optimized_params"]["concurrency"]["max_concurrent_positions"] == 1

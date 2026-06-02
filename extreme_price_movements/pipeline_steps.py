@@ -1175,6 +1175,101 @@ def _is_feature_allowed_by_runtime_portability_policy(name: str, cfg: dict) -> b
     )
 
 
+def _available_feature_sources_for_panel(
+    panel: dict[str, pd.DataFrame],
+    symbols: list[str],
+) -> dict[str, bool]:
+    """Mirror feature-builder source availability for requested-key filtering."""
+
+    close = panel.get("close")
+    if not isinstance(close, pd.DataFrame) or close.empty:
+        idx = pd.Index([])
+        cols = pd.Index(symbols)
+    else:
+        idx = close.index
+        cols = pd.Index(symbols)
+
+    def _has_finite(frame: object, *, positive: bool = False) -> bool:
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            return False
+        aligned = frame.reindex(index=idx, columns=cols).replace([np.inf, -np.inf], np.nan)
+        if positive:
+            aligned = aligned.where(aligned > 0.0)
+        return bool(np.isfinite(aligned.to_numpy(dtype=np.float32, copy=False)).any())
+
+    volume = panel.get("quote_volume")
+    if not isinstance(volume, pd.DataFrame) and isinstance(close, pd.DataFrame):
+        raw_volume = panel.get("volume")
+        if isinstance(raw_volume, pd.DataFrame):
+            volume = close.reindex(index=idx, columns=cols) * raw_volume.reindex(
+                index=idx, columns=cols
+            )
+
+    orderbook_hourly = panel.get("orderbook_hourly")
+    has_l2_orderbook = (
+        isinstance(orderbook_hourly, pd.DataFrame)
+        and not orderbook_hourly.empty
+        and {"timestamp", "symbol", "side", "level", "price", "qty"}.issubset(
+            orderbook_hourly.columns
+        )
+    )
+    has_wide_orderbook = any(
+        str(k).startswith("orderbook_") and isinstance(v, pd.DataFrame) and not v.empty
+        for k, v in panel.items()
+    )
+    return {
+        "orderbook": bool(has_l2_orderbook or has_wide_orderbook),
+        "funding": _has_finite(panel.get("funding_rate")),
+        "open_interest": _has_finite(panel.get("open_interest"), positive=True),
+        "volume": _has_finite(volume, positive=True),
+        "spot": _has_finite(panel.get("spot_close"), positive=True),
+        "mark_index": (
+            _has_finite(panel.get("mark_price"), positive=True)
+            or _has_finite(panel.get("index_price"), positive=True)
+        ),
+    }
+
+
+def _filter_requested_feature_keys_for_runtime_sources(
+    requested_keys: list[str] | tuple[str, ...] | set[str] | None,
+    cfg: dict,
+    panel: dict[str, pd.DataFrame],
+    symbols: list[str],
+) -> tuple[list[str], dict[str, str]]:
+    if not requested_keys:
+        return [], {}
+    portability_mode = str(cfg.get("feature_portability_mode", "")).strip().lower()
+    strict = bool(
+        cfg.get("feature_portability_strict", portability_mode not in {"", "legacy", "off"})
+    )
+    if portability_mode in {"", "legacy", "off"} or not strict:
+        return [str(k) for k in requested_keys if str(k)], {}
+
+    source_available = _available_feature_sources_for_panel(panel, symbols)
+    req_getter = getattr(epm_features, "_feature_source_requirements", None)
+    allowed: list[str] = []
+    skipped: dict[str, str] = {}
+    for key in [str(k) for k in requested_keys if str(k)]:
+        if not _is_feature_allowed_by_runtime_portability_policy(key, cfg):
+            skipped[key] = f"not_allowed:{portability_mode}"
+            continue
+        reqs = set(req_getter(key) if req_getter else set())
+        missing = sorted(
+            req
+            for req in reqs
+            if req != "deleted" and not source_available.get(req, False)
+        )
+        if portability_mode == "no_orderbook_source" and "orderbook" in reqs:
+            missing = sorted(set(missing) | {"orderbook"})
+        if portability_mode == "no_funding_source" and "funding" in reqs:
+            missing = sorted(set(missing) | {"funding"})
+        if missing:
+            skipped[key] = "missing_source:" + ",".join(missing)
+            continue
+        allowed.append(key)
+    return allowed, skipped
+
+
 # Priority order for quote-currency deduplication.
 #
 # Keep this aligned with universe.py: USDC is the training/default quote. The
@@ -7246,7 +7341,13 @@ def run_feature_generation_step(
 ):
     tprint("STEP: FEATURE GENERATION START")
     tprint(f"Target Timestamp: {ts_sig}")
-    feature_end_lag_days = int(cfg.get("feature_generation_end_lag_days", 3))
+    feature_end_lag_days = int(
+        os.environ.get(
+            "EPM_FEATURE_END_LAG_DAYS",
+            cfg.get("feature_generation_end_lag_days", 3),
+        )
+        or 0
+    )
     feature_data_end_ts = (
         pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=max(feature_end_lag_days, 0))
     ).floor("h")
@@ -7366,21 +7467,41 @@ def run_feature_generation_step(
             )
             miss_keys = scan["missing_keys"] if scan else list(expected_keys)
             partial_keys = scan["partial_keys"] if scan else []
-            backfill_keys = sorted(set(miss_keys + partial_keys))
+            critical_set = set(FEATURE_HEALTH_CRITICAL_KEYS)
+            critical_miss_keys = sorted(k for k in miss_keys if k in critical_set)
+            critical_partial_keys = sorted(k for k in partial_keys if k in critical_set)
+            ignored_miss_keys = sorted(k for k in miss_keys if k not in critical_set)
+            ignored_partial_keys = sorted(k for k in partial_keys if k not in critical_set)
             stale_symbols_for_backfill = (
                 list(scan.get("stale_symbols", [])) if scan else []
+            )
+            uncovered_symbols_for_backfill = (
+                list(scan.get("uncovered_symbols", [])) if scan else []
             )
             full_rewrite_symbols_for_backfill = (
                 set(scan.get("full_rewrite_symbols", [])) if scan else set()
             )
+            computable_expected_keys = sorted(
+                set(expected_keys) - set(ignored_miss_keys) - set(ignored_partial_keys)
+            )
             if full_rewrite_symbols_for_backfill:
-                backfill_keys = sorted(expected_keys)
+                backfill_keys = computable_expected_keys
+            elif stale_symbols_for_backfill or uncovered_symbols_for_backfill:
+                backfill_keys = computable_expected_keys
+            else:
+                backfill_keys = sorted(set(critical_miss_keys + critical_partial_keys))
             if backfill_keys:
                 tprint(
                     f"Feature cache incomplete for {ts_sig}: "
                     f"missing={len(miss_keys)} partial={len(partial_keys)}. "
                     "Backfilling missing/partial features only."
                 )
+                if ignored_miss_keys or ignored_partial_keys:
+                    tprint(
+                        "Feature cache precheck ignored non-critical incomplete keys: "
+                        f"missing={len(ignored_miss_keys)} "
+                        f"partial={len(ignored_partial_keys)}"
+                    )
                 if scan:
                     tprint(
                         f"Cache scan summary: files={scan['file_count']} "
@@ -7698,7 +7819,7 @@ def run_feature_generation_step(
             f"{len(all_syms)} symbols, chunk_size={chunk_size}, chunks={total_chunks}"
         )
 
-        key_batch_size = int(cfg.get("feature_backfill_key_batch_size", 192))
+        key_batch_size = int(cfg.get("feature_backfill_key_batch_size", 0) or 0)
 
         for ci, start in enumerate(range(0, len(all_syms), chunk_size), start=1):
             chunk_syms = all_syms[start : start + chunk_size]
@@ -7751,7 +7872,29 @@ def run_feature_generation_step(
                 tprint(
                     f"[Feature chunk {ci}/{total_chunks}] requested_keys={len(chunk_requested_keys)}"
                 )
-            if backfill_keys and not force_full_recompute and chunk_requested_keys:
+                filtered_keys, skipped_keys = _filter_requested_feature_keys_for_runtime_sources(
+                    chunk_requested_keys,
+                    cfg,
+                    panel_chunk_source,
+                    context_syms,
+                )
+                if skipped_keys:
+                    reason_counts: dict[str, int] = {}
+                    for reason in skipped_keys.values():
+                        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+                    tprint(
+                        f"[Feature chunk {ci}/{total_chunks}] skipped "
+                        f"{len(skipped_keys)} requested keys outside active "
+                        f"feature source/portability contract: {reason_counts}"
+                    )
+                    chunk_requested_keys = filtered_keys
+            if (
+                backfill_keys
+                and not force_full_recompute
+                and chunk_requested_keys
+                and key_batch_size > 0
+                and len(chunk_requested_keys) > key_batch_size
+            ):
                 key_batches = [
                     chunk_requested_keys[i : i + key_batch_size]
                     for i in range(0, len(chunk_requested_keys), key_batch_size)

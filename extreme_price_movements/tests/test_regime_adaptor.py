@@ -102,6 +102,122 @@ def test_regime_adaptor_training_live_parity(tmp_path):
     assert np.array_equal(training_apply["eligible"], live_apply["eligible"])
 
 
+def test_error_risk_adaptor_soft_modulates_only_inside_training_domain():
+    from extreme_price_movements import regime_adaptor as ra
+
+    n = 1600
+    rng = np.random.RandomState(11)
+    ts = pd.date_range("2025-01-01", periods=n, freq="h", tz="UTC")
+    symbols = np.asarray([f"S{i % 6}_USDT" for i in range(n)], dtype=object)
+    x = rng.normal(0.0, 1.0, n).astype(np.float32)
+    frame = pd.DataFrame(
+        {
+            "rv_24h": rng.lognormal(-4.0, 0.2, n).astype(np.float32),
+            "ret1h": rng.normal(0.0, 0.01, n).astype(np.float32),
+            "adx_14": rng.uniform(5, 35, n).astype(np.float32),
+            "trend_regime": rng.normal(0.0, 1.0, n).astype(np.float32),
+            "dist_ema_fast": x,
+            "rvol_z": rng.normal(0.0, 1.0, n).astype(np.float32),
+            "base_H10_pred_std": (np.abs(x) + rng.rand(n) * 0.05).astype(np.float32),
+            "base_H10_leaf_support_q25": (100.0 - 20.0 * x).astype(np.float32),
+            "mkt_ret_eq_5d": rng.normal(0.0, 0.02, n).astype(np.float32),
+            "market_breadth_5d": rng.rand(n).astype(np.float32),
+            "realized_vol_5d": rng.lognormal(-4.0, 0.3, n).astype(np.float32),
+        }
+    )
+    pred = pd.Series(-x + rng.normal(0.0, 0.2, n)).rank(pct=True).to_numpy()
+    returns = (0.01 * (-x) + rng.normal(0.0, 0.002, n)).astype(np.float32)
+    frame["y_bin"] = (returns > 0.0).astype(np.float32)
+
+    fit = fit_regime_adaptor(
+        frame,
+        pred,
+        returns,
+        ts,
+        symbols,
+        strategy_id="long_error_risk_test",
+        model_name="unit",
+        policy_candidate_mask=np.ones(n, dtype=bool),
+        policy_returns=returns,
+        deployment_rank_threshold=0.85,
+    )
+
+    error_model = fit.artifact.get("error_risk_model", {})
+    if ra.LGBMClassifier is None:
+        assert error_model["enabled"] is False
+        assert error_model["reason"] == "lightgbm_unavailable"
+        return
+
+    assert error_model["artifact_version"] == "error_risk_v1"
+    assert error_model["soft_only"] is True
+    assert error_model["hard_gates_enabled"] is False
+    label_race = error_model["label_race"]
+    raced_labels = {
+        row["label"]
+        for row in label_race["candidates"]
+        if not row.get("skipped", False)
+    }
+    assert {"correctedness", "meta_head_label"}.issubset(raced_labels)
+    assert label_race["deployment_acceptance_metric"] == "realized_net_policy_utility"
+    assert label_race["label_winner"] in raced_labels
+    hpo = error_model["hpo"]
+    assert hpo["params"]["max_depth"] == 3
+    for key in (
+        "precision_blend_topq",
+        "achieved_vs_expected_calibration_score",
+        "rank_bucket_monotonicity",
+        "week_asset_stability",
+        "expected_policy_utility_topq",
+        "overconfidence_under_drift_penalty",
+        "topq_eligible_rows",
+    ):
+        assert key in hpo["components"]
+    assert hpo["components"]["topq_eligible_rows"] < n
+    feature_selection = error_model["feature_selection"]
+    assert feature_selection["topq_scope"] == (
+        "explicit_policy_rows_above_deployment_rank_threshold"
+    )
+    assert feature_selection["deployment_rank_threshold"] == 0.85
+    winner_components = feature_selection["winner_components"]
+    assert winner_components["topq_eligible_rows"] < n
+    assert winner_components["topq_upper_quantile_weight"] == 0.50
+    assert winner_components["topq_middle_quantile_weight"] == 0.35
+    assert winner_components["topq_lower_quantile_weight"] == 0.15
+    assert error_model["archetype_features_deployable"] is True
+    assert error_model["error_archetypes"]["enabled"] is True
+    for col in (
+        "shap_archetype_id",
+        "shap_archetype_is_bad",
+        "shap_archetype_is_good",
+        "shap_archetype_is_neutral",
+        "distance_to_archetype_centroid",
+        "distance_to_nearest_bad_archetype",
+        "archetype_oof_bad_rate_lift",
+        "distance_to_bad_archetype",
+        "distance_to_good_archetype",
+    ):
+        assert col in error_model["features"]
+        assert col in error_model["required_feature_columns"]
+    assert error_model["archetype_signature_model"]["booster_model_str"]
+    assert "safety_rank_score = 1 - error_risk_rank_score" in error_model[
+        "error_to_safety_formula"
+    ]
+    assert ra.regime_adaptor_inference_enabled({}, fit.artifact) is bool(
+        error_model["enabled"]
+    )
+
+    applied = apply_regime_adaptor(frame, pred, fit.artifact, ts, symbols)
+    assert "error_risk_adjusted_score" in applied
+    multiplier = applied["score_multiplier"]
+    assert np.nanmin(multiplier) >= 0.9 - 1e-9
+    assert np.nanmax(multiplier) <= 1.1 + 1e-9
+
+    low_pred = np.full(n, -1.0, dtype=np.float64)
+    outside = apply_regime_adaptor(frame, low_pred, fit.artifact, ts, symbols)
+    assert not np.any(outside["error_risk_applied"])
+    assert np.allclose(outside["error_risk_adjusted_score"], low_pred)
+
+
 def test_bad_regime_panel_is_pooled_and_strict_point_in_time():
     from extreme_price_movements.regime_adaptor import (
         build_rolling_bad_regime_panel,

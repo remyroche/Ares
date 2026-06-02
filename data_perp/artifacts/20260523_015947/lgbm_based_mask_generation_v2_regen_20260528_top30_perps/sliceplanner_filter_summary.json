@@ -1,0 +1,9 @@
+{
+  "sliceplanner_applied": true,
+  "preset": "fast",
+  "rows_before": 4205091,
+  "rows_after": 259200,
+  "symbols_before": 237,
+  "symbols_after": 124,
+  "row_fraction_kept": 0.061639569750095775
+}

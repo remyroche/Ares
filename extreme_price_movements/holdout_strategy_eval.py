@@ -80,6 +80,35 @@ def _fill_nonfinite(values: np.ndarray, neutral: float = 0.0) -> np.ndarray:
     return arr
 
 
+def _has_deployed_meta_model(
+    orchestrator: ModelOrchestrator, *, side: str, strategy_id: str
+) -> bool:
+    meta_models = getattr(orchestrator, "meta_models", {}) or {}
+    if not isinstance(meta_models, dict) or not meta_models:
+        return False
+    core = strategy_id
+    candidates = {
+        str(strategy_id),
+        f"{strategy_id}_clf",
+        f"{strategy_id}_tbm_clf",
+        f"{side}_{strategy_id}",
+        f"{side}_{strategy_id}_clf",
+        f"{side}_{strategy_id}_tbm_clf",
+    }
+    core_no_head = re.sub(r"^(?:long|short)_", "", core)
+    candidates.update(
+        {
+            core_no_head,
+            f"{core_no_head}_clf",
+            f"{core_no_head}_tbm_clf",
+            f"{side}_{core_no_head}",
+            f"{side}_{core_no_head}_clf",
+            f"{side}_{core_no_head}_tbm_clf",
+        }
+    )
+    return bool(candidates.intersection(set(str(k) for k in meta_models.keys())))
+
+
 _FEATURE_FRAME_CACHE: dict[tuple[str, str, tuple[str, ...]], pd.DataFrame] = {}
 _COMPATIBLE_SYMBOLS_CACHE: dict[tuple[str, str, tuple[str, ...]], List[str]] = {}
 
@@ -1069,6 +1098,23 @@ def evaluate_holdout_symbol(
             )
             continue
 
+        score_source = "alpha"
+        if _has_deployed_meta_model(orchestrator, side=side, strategy_id=strategy_id):
+            meta_base = feature_df.copy()
+            meta_base[strategy_id] = score_series.reindex(meta_base.index)
+            meta_base[alpha_strategy_id] = score_series.reindex(meta_base.index)
+            meta_base["__symbol__"] = panel_symbol
+            meta_base["__ts__"] = pd.DatetimeIndex(meta_base.index)
+            meta_scores = orchestrator.predict_meta(meta_base, side, strategy_id)
+            if meta_scores.empty:
+                tprint(
+                    f"Holdout eval strategy skipped: symbol={symbol} "
+                    f"strategy_id={strategy_id} reason=no_deployed_meta_scores"
+                )
+                continue
+            score_series = meta_scores
+            score_source = "meta"
+
         aligned_scores = score_series.reindex(
             pd.DatetimeIndex(outcomes["timestamp"].values)
         )
@@ -1163,6 +1209,7 @@ def evaluate_holdout_symbol(
                 "side": side,
                 "threshold_pct": threshold_pct,
                 "selection_frac": frac,
+                "score_source": score_source,
                 "n_trades": int(len(raw_returns)),
                 "selected_trades": int(len(opt_rets)),
             }

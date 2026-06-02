@@ -54,6 +54,7 @@ from extreme_price_movements.calibration import (
     safe_clip_proba,
 )
 from extreme_price_movements.metrics import calculate_selection_score
+from extreme_price_movements.model_drift_features import transform_model_drift_features
 from extreme_price_movements.model_scoring import (
     AlphaRankConfig,
     alpha_objective_logloss,
@@ -372,15 +373,22 @@ class ModelRace(BaseEstimator, ClassifierMixin):
     _TREE_UNCERTAINTY_KEYS = (
         "pred_mean",
         "pred_std",
+        "pred_std_norm",
         "pred_cv",
         "pred_std_robust",
+        "pred_std_robust_norm",
         "vote_entropy",
         "vote_margin",
         "vote_top_gap",
         "leaf_support_mean",
+        "leaf_support_mean_frac",
+        "leaf_support_mean_log",
         "leaf_support_median",
+        "leaf_support_median_frac",
         "leaf_support_std",
         "leaf_support_q25",
+        "leaf_support_q25_frac",
+        "rare_leaf_low_support_score",
         "leaf_target_std_mean",
         "leaf_target_iqr_mean",
         "leaf_centroid_dist_mean",
@@ -477,8 +485,22 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
         pred_mean = tree_preds.mean(axis=1).astype(np.float32)
         pred_std = tree_preds.std(axis=1).astype(np.float32)
-        pred_cv = (pred_std / (np.abs(pred_mean) + eps)).astype(np.float32)
         pred_std_robust = np.asarray(robust_sigma(tree_preds), dtype=np.float32)
+        tree_min = float(np.nanmin(tree_preds)) if np.isfinite(tree_preds).any() else 0.0
+        tree_max = float(np.nanmax(tree_preds)) if np.isfinite(tree_preds).any() else 1.0
+        if tree_min >= -eps and tree_max <= 1.0 + eps:
+            pred_std_norm = np.clip(pred_std / 0.5, 0.0, 1.0).astype(np.float32)
+            pred_std_robust_norm = np.clip(
+                pred_std_robust / 0.5, 0.0, 1.0
+            ).astype(np.float32)
+        else:
+            pred_scale = float(np.nanpercentile(tree_preds, 90) - np.nanpercentile(tree_preds, 10))
+            pred_scale = max(pred_scale, float(np.nanstd(tree_preds)), 1e-6)
+            pred_std_norm = np.clip(pred_std / pred_scale, 0.0, 10.0).astype(np.float32)
+            pred_std_robust_norm = np.clip(
+                pred_std_robust / pred_scale, 0.0, 10.0
+            ).astype(np.float32)
+        pred_cv = (pred_std_norm / (np.abs(pred_mean) + eps)).astype(np.float32)
 
         # Binary-vote uncertainty features.
         votes = tree_preds
@@ -526,6 +548,17 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         leaf_support_median = np.nanmedian(leaf_support, axis=1).astype(np.float32)
         leaf_support_std = np.nanstd(leaf_support, axis=1).astype(np.float32)
         leaf_support_q25 = np.nanpercentile(leaf_support, 25, axis=1).astype(np.float32)
+        train_rows = float(len(X_train)) if X_train is not None and len(X_train) else float(n)
+        train_rows = max(train_rows, 1.0)
+        leaf_support_mean_frac = np.clip(leaf_support_mean / train_rows, 0.0, 1.0).astype(np.float32)
+        leaf_support_median_frac = np.clip(leaf_support_median / train_rows, 0.0, 1.0).astype(np.float32)
+        leaf_support_q25_frac = np.clip(leaf_support_q25 / train_rows, 0.0, 1.0).astype(np.float32)
+        leaf_support_mean_log = (
+            np.log1p(np.maximum(leaf_support_mean, 0.0)) / np.log1p(train_rows)
+        ).astype(np.float32)
+        rare_leaf_low_support_score = np.clip(
+            1.0 - leaf_support_q25_frac / 0.05, 0.0, 1.0
+        ).astype(np.float32)
         leaf_target_std_mean = np.nanmean(leaf_target_std, axis=1).astype(np.float32)
         leaf_target_iqr_mean = np.nanmean(leaf_target_iqr, axis=1).astype(np.float32)
         leaf_centroid_dist_mean = np.nanmean(leaf_centroid_dist, axis=1).astype(
@@ -553,15 +586,22 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         return {
             "pred_mean": pred_mean,
             "pred_std": pred_std,
+            "pred_std_norm": pred_std_norm,
             "pred_cv": pred_cv,
             "pred_std_robust": pred_std_robust,
+            "pred_std_robust_norm": pred_std_robust_norm,
             "vote_entropy": vote_entropy,
             "vote_margin": vote_margin,
             "vote_top_gap": vote_top_gap,
             "leaf_support_mean": leaf_support_mean,
+            "leaf_support_mean_frac": leaf_support_mean_frac,
+            "leaf_support_mean_log": leaf_support_mean_log,
             "leaf_support_median": leaf_support_median,
+            "leaf_support_median_frac": leaf_support_median_frac,
             "leaf_support_std": leaf_support_std,
             "leaf_support_q25": leaf_support_q25,
+            "leaf_support_q25_frac": leaf_support_q25_frac,
+            "rare_leaf_low_support_score": rare_leaf_low_support_score,
             "leaf_target_std_mean": leaf_target_std_mean,
             "leaf_target_iqr_mean": leaf_target_iqr_mean,
             "leaf_centroid_dist_mean": leaf_centroid_dist_mean,
@@ -1599,6 +1639,15 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             leaf_context=getattr(self, "best_model_leaf_context_", None),
         )
 
+    def transform_meta_features(self, X):
+        """Generate artifact-backed drift/context features for downstream heads."""
+        return transform_model_drift_features(
+            X,
+            getattr(self, "model_drift_state_", None),
+            model=self,
+            index=getattr(X, "index", None),
+        )
+
     def strip_for_serialization(self):
         """Drop heavy internals not needed for inference or meta training."""
         for attr in ["race_sample_frac", "race_early_stopping_rounds", "n_splits"]:
@@ -1640,6 +1689,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             "platt_calibrator_": getattr(self, "platt_calibrator_", None),
             "classes_": getattr(self.best_model, "classes_", np.array([0, 1])),
             "best_model_leaf_context_": getattr(self, "best_model_leaf_context_", None),
+            "model_drift_state_": getattr(self, "model_drift_state_", None),
+            "oof_model_drift_features": getattr(self, "oof_model_drift_features", None),
             "model_file": fmt,
         }
         with open(os.path.join(directory, "sidecar.pkl"), "wb") as f:
@@ -1682,4 +1733,6 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         obj.calibrator_ = sc.get("calibrator_")
         obj.platt_calibrator_ = sc.get("platt_calibrator_")
         obj.best_model_leaf_context_ = sc.get("best_model_leaf_context_")
+        obj.model_drift_state_ = sc.get("model_drift_state_")
+        obj.oof_model_drift_features = sc.get("oof_model_drift_features")
         return obj

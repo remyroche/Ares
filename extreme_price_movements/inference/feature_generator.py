@@ -9,7 +9,10 @@ This module generates features for inference:
 
 import hashlib
 import json
+import os
 import re
+import resource
+import shutil
 import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
@@ -18,6 +21,7 @@ import numpy as np
 import pandas as pd
 
 from extreme_price_movements.data_store import load_features_selected
+import extreme_price_movements.fast_funcs as ff
 from extreme_price_movements.feature_transform_contract import FeatureTransformContract
 from extreme_price_movements.config import is_non_portable_feature_key
 from extreme_price_movements.features import (
@@ -26,10 +30,12 @@ from extreme_price_movements.features import (
     compute_features_hourly,
     compute_market_features,
 )
+from extreme_price_movements.features_residual import add_residual_features
 from extreme_price_movements.inference.parity import (
     LIVE_UNAVAILABLE_FEATURES,
     strategy_id_matches,
 )
+from extreme_price_movements.inference.live_zscore_state import live_zscore_state_path
 from extreme_price_movements.regime_adaptor import regime_adaptor_inference_enabled
 from extreme_price_movements.utils import tprint
 
@@ -59,12 +65,54 @@ DEFAULT_GATE_TREND_THR = 0.0
 DEFAULT_CAUSAL_TRANSFORM_ROLL_WINDOW_HOURS = 24 * 30
 DEFAULT_IDENTITY_EWMA_WARMUP_HOURS = 24 * 60 * 5
 DEFAULT_TAIL_WARMUP_BUFFER_HOURS = 72
-LIVE_FEATURE_CACHE_VERSION = 13
+LIVE_FEATURE_CACHE_VERSION = 15
 _LIVE_FEATURE_MEMORY_CACHE: Dict[str, Dict[str, Any]] = {}
 _TRAINING_FEATURE_VARIATION_CACHE: Dict[tuple[str, str], Dict[str, bool]] = {}
+ORDERBOOK_RESIDUAL_FEATURE_KEYS = {
+    "ob_pressure_mkt_resid",
+    "ob_spread_mkt_resid",
+    "ob_depth_mkt_resid",
+    "ob_imbalance_mkt_resid",
+    "xasset_ob_pressure_ts_resid",
+    "xasset_ob_pressure_peer_resid",
+    "xasset_ob_liquidity_ts_resid",
+    "xasset_ob_liquidity_peer_resid",
+}
+MARKET_WIDE_FEATURE_KEYS = {
+    "G_VOL",
+    "G_TREND",
+    "mkt_rv_pct",
+    "abs_mkt_ret24h_z",
+    "mkt_volume_z_24",
+    "regime_trend_score",
+    "regime_vol_score",
+    "regime_liquidity_score",
+}
 MODEL_DERIVED_FEATURE_RE = re.compile(
-    r"^(base_H\d+_|pred_H\d+|pred_.*_H\d+|pred_logit$|oof_ebm_unc_|base_med_|base_prob_|base_model_|regime_centroid_similarity_train$|feature_drift_|prob_error|recent_prob_error_|recent_hit_rate_|recent_global_|recent_side_horizon_|recent_bucket_|recent_regime_|recent_meta_|recent_base_meta_disagreement_|recent_base_internal_disagreement_|recent_prediction_disagreement_available_|recent_effectiveness_available$)"
+    r"^(base_H\d+_|pred_H\d+|pred_.*_H\d+|pred_logit$|oof_ebm_unc_|base_med_|base_prob_|base_model_|regime_centroid_similarity_train|feature_drift_|inference_drift_score$|uncertainty_score$|rare_leaf_low_support_score$|contribution_drift_score$|mahalanobis_mean_shift$|frobenius_corr_shift$|prob_error|recent_prob_error_|recent_hit_rate_|recent_global_|recent_side_horizon_|recent_bucket_|recent_regime_|recent_meta_|recent_base_meta_disagreement_|recent_base_internal_disagreement_|recent_prediction_disagreement_available_|recent_effectiveness_available$)"
 )
+
+
+def _copy_feature_mapping(feats: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
+    if hasattr(feats, "_raw") and hasattr(feats, "_assembled") and hasattr(feats, "copy"):
+        return feats.copy()
+    return dict(feats or {})
+
+
+def _requires_live_orderbook_features(required_feature_keys: Set[str]) -> bool:
+    return any(
+        k.startswith(("ob_", "obw_")) or k in ORDERBOOK_RESIDUAL_FEATURE_KEYS
+        for k in required_feature_keys
+    )
+
+
+def _lazy_feature_symbols(feats: Dict[str, pd.DataFrame], key: str) -> Set[str]:
+    if hasattr(feats, "raw_symbols_for_key"):
+        try:
+            return set(feats.raw_symbols_for_key(key))
+        except Exception:
+            return set()
+    return set()
 
 
 class _StageTimer:
@@ -77,11 +125,22 @@ class _StageTimer:
 
     def mark(self, stage: str) -> None:
         now = time.perf_counter()
+        rss = _process_rss_mb()
         tprint(
             f"[Timing] {self.label}.{stage}: "
-            f"stage={now - self.last:.3f}s total={now - self.start:.3f}s"
+            f"stage={now - self.last:.3f}s total={now - self.start:.3f}s "
+            f"rss={rss:.1f}MB"
         )
         self.last = now
+
+
+def _process_rss_mb() -> float:
+    try:
+        rss = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    except Exception:
+        return float("nan")
+    # macOS reports bytes, Linux reports KiB.
+    return rss / (1024.0 * 1024.0) if rss > 10_000_000 else rss / 1024.0
 
 
 def _hash_values(values: Iterable[str]) -> str:
@@ -113,6 +172,29 @@ def _feature_runtime_cfg_hash(cfg: Optional[Dict[str, Any]]) -> str:
                     "model_bundle",
                     "bundle",
                     "runtime_cfg",
+                    # This token changes when the hourly source panels are
+                    # refreshed. Including it in the cache key prevents the
+                    # rolling transformed-feature cache from carrying forward
+                    # across hours, which defeats incremental live tails.
+                    "live_feature_cache_raw_refresh_token",
+                    # Cycle-local cache controls are operational. They change
+                    # whether this invocation may use in-process cache entries,
+                    # not the transformed feature values themselves. Including
+                    # them in the persisted value-cache key makes targeted
+                    # same-cycle backfill/replay paths seed a parallel rolling
+                    # cache and rewrite the full tail.
+                    "live_feature_cycle_cache_bypass",
+                    "live_feature_cycle_cache_enabled",
+                    "live_feature_memory_cache_enabled",
+                    "live_feature_return_latest_only",
+                    "live_feature_snapshot_cache_enabled",
+                    "live_feature_rolling_cache_enabled",
+                    "live_feature_rolling_cache_seed_hours",
+                    # Operational append-only state controls how the same
+                    # feature values are computed; it must not invalidate the
+                    # persisted value cache.
+                    "live_causal_transform_state_enabled",
+                    "live_causal_transform_state_path",
                 }
             }
         return str(value)
@@ -121,6 +203,17 @@ def _feature_runtime_cfg_hash(cfg: Optional[Dict[str, Any]]) -> str:
         "utf-8"
     )
     return hashlib.sha256(payload).hexdigest()[:16]
+
+
+def _live_feature_cache_namespace(cfg: Optional[Dict[str, Any]]) -> str:
+    namespace = ""
+    if isinstance(cfg, dict):
+        namespace = str(cfg.get("live_feature_cache_namespace") or "").strip()
+    return namespace or "default"
+
+
+def _live_feature_meta_namespace(meta: Dict[str, Any]) -> str:
+    return str((meta or {}).get("cache_namespace") or "default")
 
 
 def _live_feature_cache_key(
@@ -135,11 +228,13 @@ def _live_feature_cache_key(
     return "|".join(
         [
             str(LIVE_FEATURE_CACHE_VERSION),
+            _live_feature_cache_namespace(cfg),
             str(run_id),
             str(int(lookback_hours)),
             str(data_root or ""),
             _hash_values(symbols),
             _hash_values(required_feature_keys),
+            str(_feature_transform_contract_hash_from_cfg(cfg) or ""),
             _feature_runtime_cfg_hash(cfg),
         ]
     )
@@ -154,6 +249,180 @@ def _feature_snapshot_dir(cfg: Dict[str, Any], run_id: str, cache_key: str) -> P
     )
     safe = hashlib.sha256(cache_key.encode("utf-8")).hexdigest()[:24]
     return root / safe
+
+
+def _feature_snapshot_root(cfg: Dict[str, Any], run_id: str) -> Path:
+    return Path(
+        cfg.get(
+            "live_feature_snapshot_cache_dir",
+            f"cache/inference_live_features/{run_id}",
+        )
+    )
+
+
+def _prune_stale_live_feature_cache_dirs(
+    *,
+    cfg: Dict[str, Any],
+    run_id: str,
+    active_cache_dir: Path,
+    active_meta: Dict[str, Any],
+) -> None:
+    """Remove persisted live feature caches that cannot serve this contract.
+
+    Live inference only needs the active feature/symbol/transform contract.
+    Old cache-key directories from prior universe or config experiments are
+    cheap to regenerate and otherwise keep getting scanned by cross-key
+    fallback.
+    """
+    if not bool(cfg.get("live_feature_prune_stale_cache_dirs", True)):
+        return
+    root = _feature_snapshot_root(cfg, run_id)
+    if not root.exists():
+        return
+    active_cache_dir = active_cache_dir.resolve()
+    active_contract = {
+        "version": active_meta.get("version"),
+        "cache_namespace": _live_feature_meta_namespace(active_meta),
+        "contract_hash": active_meta.get("contract_hash"),
+        "symbols_hash": active_meta.get("symbols_hash"),
+        "required_hash": active_meta.get("required_hash"),
+    }
+    max_removed = int(cfg.get("live_feature_prune_stale_cache_dirs_max", 8) or 8)
+    removed = 0
+    scanned = 0
+    for candidate in sorted(root.iterdir()):
+        if removed >= max_removed:
+            break
+        if not candidate.is_dir():
+            continue
+        try:
+            if candidate.resolve() == active_cache_dir:
+                continue
+        except Exception:
+            continue
+        scanned += 1
+        meta_path = (
+            candidate / "rolling_meta.json"
+            if (candidate / "rolling_meta.json").exists()
+            else candidate / "meta.json"
+        )
+        if not meta_path.exists():
+            continue
+        try:
+            meta = json.loads(meta_path.read_text())
+        except Exception:
+            continue
+        candidate_contract = {
+            "version": meta.get("version"),
+            "cache_namespace": _live_feature_meta_namespace(meta),
+            "contract_hash": meta.get("contract_hash"),
+            "symbols_hash": meta.get("symbols_hash"),
+            "required_hash": meta.get("required_hash"),
+        }
+        if candidate_contract == active_contract:
+            continue
+        try:
+            shutil.rmtree(candidate)
+            removed += 1
+        except Exception as exc:
+            tprint(f"Warning: failed to prune stale live feature cache {candidate}: {exc}")
+    if removed:
+        tprint(
+            "Pruned stale live feature cache directories: "
+            f"removed={removed} scanned={scanned} active={active_cache_dir.name}"
+        )
+
+
+def _live_feature_recompute_past_allowed(cfg: Optional[Dict[str, Any]]) -> bool:
+    """Return whether live feature cache writers may replace old partitions."""
+    if not isinstance(cfg, dict):
+        return False
+    if os.getenv("EPM_LIVE_FEATURE_RECOMPUTE_PAST", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+    }:
+        return True
+    value = cfg.get("live_feature_recompute_past")
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y"}
+    return bool(value)
+
+
+def _rolling_partition_root(cache_dir: Path) -> Path:
+    return cache_dir / "rolling_history_parts"
+
+
+def _rolling_partition_name(ts: pd.Timestamp) -> str:
+    stamp = pd.Timestamp(ts)
+    if stamp.tzinfo is None:
+        stamp = stamp.tz_localize("UTC")
+    else:
+        stamp = stamp.tz_convert("UTC")
+    return stamp.strftime("%Y%m%dT%H%M%SZ.parquet")
+
+
+def _rolling_partition_path(cache_dir: Path, ts: pd.Timestamp) -> Path:
+    stamp = pd.Timestamp(ts)
+    if stamp.tzinfo is None:
+        stamp = stamp.tz_localize("UTC")
+    else:
+        stamp = stamp.tz_convert("UTC")
+    return (
+        _rolling_partition_root(cache_dir)
+        / stamp.strftime("%Y%m%d")
+        / _rolling_partition_name(stamp)
+    )
+
+
+def _offline_feature_lookup_run_id(cfg: Dict[str, Any], run_id: str) -> str:
+    for key in (
+        "live_feature_source_run_id",
+        "offline_feature_run_id",
+        "feature_source_run_id",
+    ):
+        value = cfg.get(key)
+        if value:
+            return str(value)
+    env_value = (
+        os.getenv("EPM_LIVE_FEATURE_SOURCE_RUN_ID")
+        or os.getenv("EPM_FEATURE_SOURCE_RUN_ID")
+        or os.getenv("EPM_ARTIFACT_SOURCE_RUN_ID")
+    )
+    return str(env_value or run_id)
+
+
+def _offline_feature_lookup_data_root(cfg: Dict[str, Any], data_root: str) -> str:
+    for key in (
+        "offline_feature_data_root",
+        "feature_data_root",
+        "artifact_data_root",
+    ):
+        value = cfg.get(key)
+        if value:
+            return str(value)
+    env_value = os.getenv("EPM_LIVE_FEATURE_DATA_ROOT")
+    return str(env_value or data_root)
+
+
+def _offline_feature_lookup_data_roots(data_root: str) -> List[str]:
+    roots: List[str] = []
+
+    def _add(path: str | Path) -> None:
+        text = str(path)
+        if text and text not in roots:
+            roots.append(text)
+
+    root_path = Path(data_root)
+    _add(root_path)
+    parts = root_path.parts
+    if len(parts) >= 2 and parts[-2] == "exchanges":
+        _add(Path(*parts[:-2]))
+    env_root = os.getenv("EPM_DATA_ROOT")
+    if env_root:
+        _add(env_root)
+    return roots
 
 
 def _feature_transform_contract_hash_from_cfg(
@@ -224,6 +493,19 @@ def _matrix_to_feature_dict(
     return out
 
 
+def _latest_only_feature_dict(
+    feats: Dict[str, pd.DataFrame],
+    *,
+    symbols: List[str],
+    end_ts: pd.Timestamp,
+    required_feature_keys: Set[str],
+) -> Dict[str, pd.DataFrame]:
+    matrix = _latest_feature_matrix(feats, symbols, end_ts, required_feature_keys)
+    if matrix.empty:
+        return {}
+    return _matrix_to_feature_dict(matrix, end_ts=end_ts)
+
+
 def _feature_history_matrix(
     feats: Dict[str, pd.DataFrame],
     *,
@@ -240,7 +522,7 @@ def _feature_history_matrix(
     per-symbol feature store.
     """
     keys = sorted(required_feature_keys or set(feats.keys()))
-    frames: Dict[str, pd.Series] = {}
+    frames: Dict[str, pd.DataFrame] = {}
     idx_union: Optional[pd.DatetimeIndex] = None
     end = pd.Timestamp(end_ts)
     start = pd.Timestamp(start_ts) if start_ts is not None else None
@@ -261,7 +543,7 @@ def _feature_history_matrix(
             idx_union = pd.DatetimeIndex(sliced.index)
         else:
             idx_union = idx_union.union(pd.DatetimeIndex(sliced.index))
-        frames[str(key)] = sliced.stack(dropna=False)
+        frames[str(key)] = sliced.astype(np.float32, copy=False)
 
     if not frames or idx_union is None or idx_union.empty:
         return pd.DataFrame()
@@ -270,11 +552,14 @@ def _feature_history_matrix(
         [idx_union.sort_values(), symbols],
         names=["timestamp", "symbol"],
     )
-    matrix = pd.DataFrame(index=row_index)
-    for key, series in frames.items():
-        series.index = series.index.set_names(["timestamp", "symbol"])
-        matrix[key] = series.reindex(row_index).astype(np.float32)
-    return matrix
+    ordered_index = row_index.levels[0]
+    aligned: Dict[str, np.ndarray] = {}
+    for key, frame in frames.items():
+        df = frame.reindex(index=ordered_index, columns=symbols)
+        aligned[key] = np.ascontiguousarray(
+            df.to_numpy(dtype=np.float32, copy=False)
+        ).reshape(-1)
+    return pd.DataFrame(aligned, index=row_index, dtype=np.float32)
 
 
 def _history_matrix_to_feature_dict(
@@ -285,17 +570,41 @@ def _history_matrix_to_feature_dict(
     if matrix is None or matrix.empty or not isinstance(matrix.index, pd.MultiIndex):
         return {}
     out: Dict[str, pd.DataFrame] = {}
-    matrix = matrix.copy()
-    matrix.index = matrix.index.set_names(["timestamp", "symbol"])
+    ts_values = pd.DatetimeIndex(matrix.index.get_level_values("timestamp")).unique()
+    ts_values = ts_values.sort_values()
+    row_index = pd.MultiIndex.from_product(
+        [ts_values, symbols], names=["timestamp", "symbol"]
+    )
+    matrix = matrix.reindex(row_index)
+    n_ts = len(ts_values)
+    n_symbols = len(symbols)
     for key in matrix.columns:
-        series = matrix[key]
         try:
-            df = series.unstack("symbol").reindex(columns=symbols)
+            values = matrix[key].to_numpy(dtype=np.float32, copy=False).reshape(
+                n_ts, n_symbols
+            )
+            df = pd.DataFrame(values, index=ts_values, columns=symbols, copy=False)
         except Exception:
             continue
         if isinstance(df, pd.DataFrame) and not df.empty:
-            out[str(key)] = df.astype(np.float32)
+            out[str(key)] = df
     return out
+
+
+def _read_live_feature_matrix_parquet(
+    path: Path,
+    required_feature_keys: Set[str],
+) -> pd.DataFrame:
+    columns = sorted(str(k) for k in (required_feature_keys or set()) if str(k))
+    if columns:
+        try:
+            return pd.read_parquet(path, columns=columns)
+        except Exception:
+            # Older cache files or parquet engines may not support partial reads
+            # for the requested column set. Fall back to full read and let the
+            # caller's required-column validation fail closed if needed.
+            pass
+    return pd.read_parquet(path)
 
 
 def _load_live_feature_rolling_cache(
@@ -310,28 +619,124 @@ def _load_live_feature_rolling_cache(
 ) -> Dict[str, pd.DataFrame]:
     if not bool(cfg.get("live_feature_rolling_cache_enabled", True)):
         return {}
-    cache_dir = _feature_snapshot_dir(cfg, run_id, cache_key)
-    meta_path = cache_dir / "rolling_meta.json"
-    data_path = cache_dir / "rolling_history.parquet"
-    if not (meta_path.exists() and data_path.exists()):
+    current_cache_dir = _feature_snapshot_dir(cfg, run_id, cache_key)
+    root_dir = _feature_snapshot_root(cfg, run_id)
+    expected_symbols_hash = _hash_values(symbols)
+    expected_required_hash = _hash_values(required_feature_keys)
+    expected_contract_hash = _feature_transform_contract_hash_from_cfg(cfg)
+    expected_namespace = _live_feature_cache_namespace(cfg)
+    required_feature_key_set = {str(k) for k in required_feature_keys if str(k)}
+    allow_cross_key = bool(
+        cfg.get("live_feature_rolling_cache_cross_key_fallback_enabled", True)
+    )
+    allow_model_superset_for_mask = bool(
+        cfg.get("live_feature_rolling_cache_model_superset_for_mask_enabled", True)
+    )
+    candidate_meta_paths: List[Path] = [current_cache_dir / "rolling_meta.json"]
+    if allow_cross_key and root_dir.exists():
+        try:
+            for meta_path in sorted(
+                root_dir.glob("*/rolling_meta.json"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            ):
+                if meta_path not in candidate_meta_paths:
+                    candidate_meta_paths.append(meta_path)
+        except Exception:
+            pass
+    if not any(path.exists() for path in candidate_meta_paths):
         return {}
     try:
-        meta = json.loads(meta_path.read_text())
-        if meta.get("version") != LIVE_FEATURE_CACHE_VERSION:
+        frames: List[pd.DataFrame] = []
+        loaded_metas: List[Dict[str, Any]] = []
+        rejected_meta_paths = 0
+        for meta_path in candidate_meta_paths:
+            if not meta_path.exists():
+                continue
+            cache_dir = meta_path.parent
+            try:
+                meta = json.loads(meta_path.read_text())
+            except Exception:
+                rejected_meta_paths += 1
+                continue
+            if meta.get("version") != LIVE_FEATURE_CACHE_VERSION:
+                rejected_meta_paths += 1
+                continue
+            meta_namespace = _live_feature_meta_namespace(meta)
+            namespace_ok = meta_namespace == expected_namespace or (
+                allow_model_superset_for_mask
+                and expected_namespace == "mask"
+                and meta_namespace == "model"
+            )
+            if not namespace_ok:
+                rejected_meta_paths += 1
+                continue
+            if meta_path == candidate_meta_paths[0] and meta.get("cache_key") != cache_key:
+                rejected_meta_paths += 1
+                continue
+            if meta.get("symbols_hash") != expected_symbols_hash:
+                rejected_meta_paths += 1
+                continue
+            meta_features = {str(k) for k in (meta.get("features") or []) if str(k)}
+            required_ok = meta.get("required_hash") == expected_required_hash or (
+                bool(meta_features)
+                and required_feature_key_set.issubset(meta_features)
+            )
+            if not required_ok:
+                rejected_meta_paths += 1
+                continue
+            if (
+                expected_contract_hash
+                and meta.get("contract_hash") != expected_contract_hash
+            ):
+                rejected_meta_paths += 1
+                continue
+            partitions = [
+                item
+                for item in (meta.get("partitions") or [])
+                if isinstance(item, dict) and item.get("path") and item.get("ts")
+            ]
+            start_bound = pd.Timestamp(start_ts)
+            end_bound = pd.Timestamp(end_ts)
+            loaded_for_meta = 0
+            for item in partitions:
+                try:
+                    part_ts = pd.Timestamp(item.get("ts"))
+                except Exception:
+                    continue
+                if part_ts < start_bound or part_ts > end_bound:
+                    continue
+                part_path = Path(str(item.get("path")))
+                if not part_path.is_absolute():
+                    part_path = cache_dir / part_path
+                if not part_path.exists():
+                    continue
+                part = _read_live_feature_matrix_parquet(
+                    part_path, required_feature_keys
+                )
+                if isinstance(part, pd.DataFrame) and not part.empty:
+                    frames.append(part)
+                    loaded_for_meta += 1
+            legacy_data_path = cache_dir / "rolling_history.parquet"
+            if loaded_for_meta == 0 and legacy_data_path.exists():
+                part = _read_live_feature_matrix_parquet(
+                    legacy_data_path, required_feature_keys
+                )
+                if isinstance(part, pd.DataFrame) and not part.empty:
+                    frames.append(part)
+                    loaded_for_meta += 1
+            if loaded_for_meta > 0:
+                loaded_metas.append(meta)
+        if frames:
+            matrix = pd.concat(frames, axis=0).sort_index()
+            matrix = matrix[~matrix.index.duplicated(keep="last")]
+        else:
+            if rejected_meta_paths:
+                tprint(
+                    "Rolling live transformed feature cache miss: "
+                    f"checked={len(candidate_meta_paths)} rejected={rejected_meta_paths}"
+                )
             return {}
-        if meta.get("cache_key") != cache_key:
-            return {}
-        if meta.get("symbols_hash") != _hash_values(symbols):
-            return {}
-        if meta.get("required_hash") != _hash_values(required_feature_keys):
-            return {}
-        expected_contract_hash = _feature_transform_contract_hash_from_cfg(cfg)
-        if (
-            expected_contract_hash
-            and meta.get("contract_hash") != expected_contract_hash
-        ):
-            return {}
-        matrix = pd.read_parquet(data_path)
     except Exception:
         return {}
     if matrix.empty or not isinstance(matrix.index, pd.MultiIndex):
@@ -350,7 +755,9 @@ def _load_live_feature_rolling_cache(
     tprint(
         "Loaded rolling live transformed feature cache: "
         f"rows={len(matrix.index)} features={len(matrix.columns)} "
-        f"end_ts={meta.get('end_ts')}"
+        f"end_ts={max((m.get('end_ts') for m in loaded_metas), default=None)} "
+        f"cache_dirs={len(loaded_metas)} "
+        f"partitions={sum(len(m.get('partitions') or []) for m in loaded_metas)}"
     )
     return _history_matrix_to_feature_dict(matrix, symbols=symbols)
 
@@ -372,40 +779,140 @@ def _write_live_feature_rolling_cache(
     try:
         cache_dir = _feature_snapshot_dir(cfg, run_id, cache_key)
         cache_dir.mkdir(parents=True, exist_ok=True)
+        recompute_past = _live_feature_recompute_past_allowed(cfg)
+        meta_path = cache_dir / "rolling_meta.json"
+        expected_symbols_hash = _hash_values(symbols)
+        expected_required_hash = _hash_values(required_feature_keys)
+        expected_contract_hash = _feature_transform_contract_hash_from_cfg(cfg)
+        expected_namespace = _live_feature_cache_namespace(cfg)
+        old_meta: Dict[str, Any] = {}
+        try:
+            if meta_path.exists():
+                old_meta = json.loads(meta_path.read_text())
+        except Exception:
+            old_meta = {}
+        fallback_cursor_meta: Dict[str, Any] = {}
+        if not old_meta and bool(
+            cfg.get("live_feature_rolling_cache_cross_key_fallback_enabled", True)
+        ):
+            root_dir = _feature_snapshot_root(cfg, run_id)
+            try:
+                candidate_paths = sorted(
+                    root_dir.glob("*/rolling_meta.json"),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
+            except Exception:
+                candidate_paths = []
+            for candidate_meta_path in candidate_paths:
+                if candidate_meta_path == meta_path:
+                    continue
+                try:
+                    candidate_meta = json.loads(candidate_meta_path.read_text())
+                except Exception:
+                    continue
+                if candidate_meta.get("version") != LIVE_FEATURE_CACHE_VERSION:
+                    continue
+                if _live_feature_meta_namespace(candidate_meta) != expected_namespace:
+                    continue
+                if candidate_meta.get("symbols_hash") != expected_symbols_hash:
+                    continue
+                if candidate_meta.get("required_hash") != expected_required_hash:
+                    continue
+                if (
+                    expected_contract_hash
+                    and candidate_meta.get("contract_hash") != expected_contract_hash
+                ):
+                    continue
+                fallback_cursor_meta = candidate_meta
+                break
+        effective_append_after_ts = append_after_ts
+        cursor_meta = old_meta or fallback_cursor_meta
+        if not recompute_past and cursor_meta:
+            try:
+                old_end_ts = pd.Timestamp(cursor_meta.get("end_ts"))
+                if pd.notna(old_end_ts) and (
+                    effective_append_after_ts is None
+                    or pd.Timestamp(effective_append_after_ts) < old_end_ts
+                ):
+                    effective_append_after_ts = old_end_ts
+            except Exception:
+                pass
         new_matrix = _feature_history_matrix(
             feats,
             symbols=symbols,
             required_feature_keys=required_feature_keys,
-            start_ts=append_after_ts,
+            start_ts=effective_append_after_ts,
             end_ts=end_ts,
         )
         if new_matrix.empty:
             return
-        data_path = cache_dir / "rolling_history.parquet"
-        if data_path.exists():
+        if isinstance(new_matrix.index, pd.MultiIndex):
             try:
-                old_matrix = pd.read_parquet(data_path)
-                if isinstance(old_matrix.index, pd.MultiIndex) and not old_matrix.empty:
-                    matrix = pd.concat([old_matrix, new_matrix], axis=0)
-                    matrix = matrix[~matrix.index.duplicated(keep="last")]
-                else:
-                    matrix = new_matrix
+                ts = pd.to_datetime(
+                    new_matrix.index.get_level_values("timestamp"), utc=True
+                )
+                new_matrix = new_matrix.loc[ts >= pd.Timestamp(keep_start_ts)]
             except Exception:
-                matrix = new_matrix
-        else:
-            matrix = new_matrix
-        try:
-            ts = pd.to_datetime(matrix.index.get_level_values("timestamp"), utc=True)
-            matrix = matrix.loc[ts >= pd.Timestamp(keep_start_ts)]
-        except Exception:
-            pass
-        matrix = matrix.sort_index()
-        tmp_data = cache_dir / "rolling_history.tmp.parquet"
-        matrix.to_parquet(tmp_data)
-        tmp_data.replace(data_path)
+                pass
+        if new_matrix.empty:
+            return
+        existing_partitions: Dict[str, Dict[str, Any]] = {}
+        for item in old_meta.get("partitions") or []:
+            if isinstance(item, dict) and item.get("ts") and item.get("path"):
+                existing_partitions[str(item["ts"])] = dict(item)
+        written_rows = 0
+        skipped_existing = 0
+        partition_items = dict(existing_partitions)
+        ts_values = pd.to_datetime(
+            new_matrix.index.get_level_values("timestamp"), utc=True
+        )
+        for ts_value in sorted(pd.DatetimeIndex(ts_values).unique()):
+            part_mask = ts_values == ts_value
+            part = new_matrix.loc[part_mask].sort_index()
+            if part.empty:
+                continue
+            partition_path = _rolling_partition_path(cache_dir, ts_value)
+            rel_path = partition_path.relative_to(cache_dir).as_posix()
+            ts_iso = pd.Timestamp(ts_value).isoformat()
+            if partition_path.exists() and not recompute_past:
+                skipped_existing += int(len(part.index))
+                existing = partition_items.get(ts_iso)
+                if not existing:
+                    partition_items[ts_iso] = {
+                        "ts": ts_iso,
+                        "path": rel_path,
+                        "rows": int(len(part.index)),
+                    }
+                continue
+            partition_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_data = partition_path.with_suffix(".tmp.parquet")
+            part.to_parquet(tmp_data)
+            tmp_data.replace(partition_path)
+            written_rows += int(len(part.index))
+            partition_items[ts_iso] = {
+                "ts": ts_iso,
+                "path": rel_path,
+                "rows": int(len(part.index)),
+            }
+        if written_rows == 0 and skipped_existing > 0:
+            tprint(
+                "Rolling live transformed feature cache already has immutable "
+                f"timestamp partitions for {skipped_existing} candidate rows; "
+                "skipping rewrite."
+            )
+        partition_list = [
+            item
+            for _, item in sorted(
+                partition_items.items(),
+                key=lambda pair: pd.Timestamp(pair[0]),
+            )
+            if pd.Timestamp(item["ts"]) >= pd.Timestamp(keep_start_ts)
+        ]
         meta = {
             "version": LIVE_FEATURE_CACHE_VERSION,
             "cache_key": cache_key,
+            "cache_namespace": expected_namespace,
             "feature_runtime_cfg_hash": _feature_runtime_cfg_hash(cfg),
             "contract_hash": _feature_transform_contract_hash_from_cfg(cfg),
             "symbols_hash": _hash_values(symbols),
@@ -413,21 +920,32 @@ def _write_live_feature_rolling_cache(
             "end_ts": pd.Timestamp(end_ts).isoformat(),
             "append_after_ts": (
                 None
-                if append_after_ts is None
-                else pd.Timestamp(append_after_ts).isoformat()
+                if effective_append_after_ts is None
+                else pd.Timestamp(effective_append_after_ts).isoformat()
             ),
             "keep_start_ts": pd.Timestamp(keep_start_ts).isoformat(),
-            "rows": int(len(matrix.index)),
-            "features": list(matrix.columns),
+            "rows": int(sum(int(item.get("rows", 0) or 0) for item in partition_list)),
+            "new_rows": int(written_rows),
+            "skipped_existing_rows": int(skipped_existing),
+            "partitioned": True,
+            "partitions": partition_list,
+            "features": list(new_matrix.columns),
             "symbols": list(symbols),
         }
         tmp_meta = cache_dir / "rolling_meta.tmp.json"
         tmp_meta.write_text(json.dumps(meta))
         tmp_meta.replace(cache_dir / "rolling_meta.json")
+        _prune_stale_live_feature_cache_dirs(
+            cfg=cfg,
+            run_id=run_id,
+            active_cache_dir=cache_dir,
+            active_meta=meta,
+        )
         tprint(
             "Persisted rolling live transformed feature cache: "
-            f"new_rows={len(new_matrix.index)} total_rows={len(matrix.index)} "
-            f"features={len(matrix.columns)} end_ts={end_ts}"
+            f"written_rows={written_rows} skipped_existing={skipped_existing} "
+            f"partitions={len(partition_list)} features={len(new_matrix.columns)} "
+            f"end_ts={end_ts}"
         )
     except Exception as exc:
         tprint(f"Warning: failed to persist rolling live feature cache: {exc}")
@@ -455,6 +973,8 @@ def _load_live_feature_snapshot(
             return {}
         if meta.get("cache_key") != cache_key:
             return {}
+        if _live_feature_meta_namespace(meta) != _live_feature_cache_namespace(cfg):
+            return {}
         if pd.Timestamp(meta.get("end_ts")) != pd.Timestamp(end_ts):
             return {}
         if meta.get("symbols_hash") != _hash_values(symbols):
@@ -467,7 +987,7 @@ def _load_live_feature_snapshot(
             and meta.get("contract_hash") != expected_contract_hash
         ):
             return {}
-        matrix = pd.read_parquet(data_path)
+        matrix = _read_live_feature_matrix_parquet(data_path, required_feature_keys)
     except Exception:
         return {}
     missing = required_feature_keys.difference(str(c) for c in matrix.columns)
@@ -507,7 +1027,8 @@ def _write_live_feature_snapshot(
         raw_panel_fields: List[str] = []
         raw_panel_rows = 0
         if bool(cfg.get("live_feature_snapshot_raw_panel_enabled", False)) and raw_panel:
-            raw_matrix_parts: List[pd.DataFrame] = []
+            raw_frames: Dict[str, pd.DataFrame] = {}
+            raw_idx_union: Optional[pd.DatetimeIndex] = None
             for field, frame in raw_panel.items():
                 if not isinstance(frame, pd.DataFrame) or frame.empty:
                     continue
@@ -529,13 +1050,29 @@ def _write_live_feature_snapshot(
                 field_frame = field_frame.sort_index()
                 if field_frame.empty:
                     continue
-                field_frame = field_frame.stack(dropna=False).rename(str(field))
-                raw_matrix_parts.append(field_frame.to_frame())
+                raw_frames[str(field)] = field_frame.astype(np.float32, copy=False)
+                raw_idx_union = (
+                    pd.DatetimeIndex(field_frame.index)
+                    if raw_idx_union is None
+                    else raw_idx_union.union(pd.DatetimeIndex(field_frame.index))
+                )
                 raw_panel_fields.append(str(field))
-            if raw_matrix_parts:
-                raw_matrix = pd.concat(raw_matrix_parts, axis=1).sort_index()
-                raw_matrix.index = raw_matrix.index.set_names(["timestamp", "symbol"])
-                raw_matrix = raw_matrix[~raw_matrix.index.duplicated(keep="last")]
+            if raw_frames and raw_idx_union is not None and not raw_idx_union.empty:
+                raw_index = raw_idx_union.sort_values()
+                raw_row_index = pd.MultiIndex.from_product(
+                    [raw_index, symbols], names=["timestamp", "symbol"]
+                )
+                raw_aligned = {
+                    field: np.ascontiguousarray(
+                        frame.reindex(index=raw_index, columns=symbols).to_numpy(
+                            dtype=np.float32, copy=False
+                        )
+                    ).reshape(-1)
+                    for field, frame in raw_frames.items()
+                }
+                raw_matrix = pd.DataFrame(
+                    raw_aligned, index=raw_row_index, dtype=np.float32
+                )
                 raw_panel_rows = int(len(raw_matrix.index))
                 tmp_raw = cache_dir / "raw_panel.tmp.parquet"
                 raw_path = cache_dir / "raw_panel.parquet"
@@ -544,6 +1081,7 @@ def _write_live_feature_snapshot(
         meta = {
             "version": LIVE_FEATURE_CACHE_VERSION,
             "cache_key": cache_key,
+            "cache_namespace": _live_feature_cache_namespace(cfg),
             "feature_runtime_cfg_hash": _feature_runtime_cfg_hash(cfg),
             "contract_hash": _feature_transform_contract_hash_from_cfg(cfg),
             "symbols_hash": _hash_values(symbols),
@@ -561,6 +1099,12 @@ def _write_live_feature_snapshot(
         tmp_meta = cache_dir / "meta.tmp.json"
         tmp_meta.write_text(json.dumps(meta))
         tmp_meta.replace(cache_dir / "meta.json")
+        _prune_stale_live_feature_cache_dirs(
+            cfg=cfg,
+            run_id=run_id,
+            active_cache_dir=cache_dir,
+            active_meta=meta,
+        )
         tprint(
             "Persisted live transformed feature snapshot: "
             f"symbols={len(matrix.index)} features={len(matrix.columns)} end_ts={end_ts}"
@@ -632,7 +1176,7 @@ def _transform_feature_panels_for_inference(
     if not isinstance(contract, FeatureTransformContract):
         if strict:
             raise RuntimeError(f"{label}: missing feature_transform_contract")
-        return feats
+        return out
     expected_contract_hash = _feature_transform_contract_hash_from_cfg(cfg)
     if expected_contract_hash and expected_contract_hash != contract.contract_hash:
         raise RuntimeError(
@@ -664,6 +1208,41 @@ def _requires_gated_feature_generation(
     return False
 
 
+def _is_gate_feature_key(key: str) -> bool:
+    key_s = str(key or "")
+    return key_s in {"G_VOL", "G_TREND"} or "_G_VOL_" in key_s or "_G_TREND_" in key_s
+
+
+def _gate_feature_base_key(key: str) -> Optional[str]:
+    key_s = str(key or "")
+    for gate_name in ("G_VOL", "G_TREND"):
+        marker = f"_{gate_name}_"
+        if marker in key_s:
+            base_name, state = key_s.rsplit(marker, 1)
+            if state in {"0", "1"} and base_name:
+                return base_name
+    return None
+
+
+def _is_calendar_feature_key(key: str) -> bool:
+    return bool(re.fullmatch(r"timestamp\.dayofweek>=\d+", str(key or "")))
+
+
+def _is_rolling30d_feature_key(key: str) -> bool:
+    return bool(re.fullmatch(r"rolling30d\([^)]+\)", str(key or "")))
+
+
+def _is_live_synthesized_feature_key(key: str) -> bool:
+    """Return True for keys handled by cheap deterministic live materializers."""
+    key_s = str(key or "")
+    return (
+        _is_gate_feature_key(key_s)
+        or _is_calendar_feature_key(key_s)
+        or _is_rolling30d_feature_key(key_s)
+        or key_s == "barrier_pct"
+    )
+
+
 def _required_tail_warmup_hours(
     lookback_hours: int,
     trend_sma_hours: int,
@@ -693,6 +1272,11 @@ def _slice_feature_window(
     start_ts: Optional[pd.Timestamp] = None,
     end_ts: Optional[pd.Timestamp] = None,
 ) -> Dict[str, pd.DataFrame]:
+    # LazyFeatureDict from data_store already applies parquet timestamp filters
+    # during load. Iterating items here would materialize every requested wide
+    # feature matrix, which makes tiny parity/replay probes unnecessarily slow.
+    if hasattr(feats, "_raw") and hasattr(feats, "_symbol_indices"):
+        return feats
     out: Dict[str, pd.DataFrame] = {}
     for key, df in feats.items():
         if not isinstance(df, pd.DataFrame) or df.empty:
@@ -710,6 +1294,20 @@ def _merge_feature_dicts(
     cached_feats: Dict[str, pd.DataFrame],
     new_feats: Dict[str, pd.DataFrame],
 ) -> Dict[str, pd.DataFrame]:
+    if hasattr(cached_feats, "_raw") and hasattr(cached_feats, "_assembled"):
+        if not new_feats:
+            return _copy_feature_mapping(cached_feats)
+        if not any(
+            isinstance(v, pd.DataFrame) and not v.empty for v in new_feats.values()
+        ):
+            return _copy_feature_mapping(cached_feats)
+    if hasattr(new_feats, "_raw") and hasattr(new_feats, "_assembled"):
+        if not cached_feats:
+            return _copy_feature_mapping(new_feats)
+        if not any(
+            isinstance(v, pd.DataFrame) and not v.empty for v in cached_feats.values()
+        ):
+            return _copy_feature_mapping(new_feats)
     merged: Dict[str, pd.DataFrame] = {}
     all_keys = sorted(set(cached_feats.keys()) | set(new_feats.keys()))
     for key in all_keys:
@@ -752,12 +1350,54 @@ def _merge_missing_feature_dicts(
 ) -> Dict[str, pd.DataFrame]:
     """Merge feature dictionaries without replacing already-cached feature keys."""
     if not new_feats:
-        return dict(cached_feats or {})
-    merged = dict(cached_feats or {})
+        return _copy_feature_mapping(cached_feats)
+    merged = _copy_feature_mapping(cached_feats)
     for key, value in new_feats.items():
         if key not in merged:
             merged[key] = value
+            continue
+        # Avoid materializing LazyFeatureDict entries just to decide whether a
+        # cheap selector feature should replace them.  If the key exists in the
+        # selected-feature cache, preserve that training-aligned value.
+        if hasattr(merged, "_raw") and hasattr(merged, "_assembled"):
+            continue
+        existing = merged.get(key)
+        if not isinstance(existing, pd.DataFrame) or existing.empty:
+            merged[key] = value
     return merged
+
+
+def _slice_tail_features_for_cache_append(
+    tail_feats: Dict[str, pd.DataFrame],
+    cached_feats: Dict[str, pd.DataFrame],
+    cached_last_ts: Optional[pd.Timestamp],
+) -> Dict[str, pd.DataFrame]:
+    """Keep full tail history for feature keys that are absent from the cache.
+
+    Existing cached keys only need rows after ``cached_last_ts``. Newly
+    materialized keys, however, need enough tail history to satisfy the replay
+    window and downstream rolling/ranking diagnostics. Slicing every key by the
+    cache cursor drops those newly added keys entirely when the cache is current
+    for other features, which then forces the expensive shared-feature fallback.
+    """
+    if cached_last_ts is None:
+        return {
+            str(key): df
+            for key, df in (tail_feats or {}).items()
+            if isinstance(df, pd.DataFrame) and not df.empty
+        }
+    out: Dict[str, pd.DataFrame] = {}
+    for key, df in (tail_feats or {}).items():
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            continue
+        cached_df = (cached_feats or {}).get(key)
+        if isinstance(cached_df, pd.DataFrame) and not cached_df.empty:
+            sliced = df[df.index > cached_last_ts]
+        else:
+            sliced = df
+        if isinstance(sliced, pd.DataFrame) and not sliced.empty:
+            out[str(key)] = sliced
+    return out
 
 
 def _cached_feature_coverage_end_ts(
@@ -772,6 +1412,18 @@ def _cached_feature_coverage_end_ts(
     """
     if not cached_feats:
         return None
+
+    if hasattr(cached_feats, "_symbol_indices"):
+        candidates = []
+        for idx_vals in getattr(cached_feats, "_symbol_indices", {}).values():
+            try:
+                idx = pd.DatetimeIndex(pd.to_datetime(idx_vals, utc=True, errors="coerce"))
+                idx = idx[pd.notna(idx)]
+                if not idx.empty:
+                    candidates.append(pd.Timestamp(idx.max()))
+            except Exception:
+                continue
+        return min(candidates) if candidates else None
 
     required = set(required_feature_keys or set())
     candidates: List[pd.Timestamp] = []
@@ -870,7 +1522,7 @@ def _drop_stale_live_sensitive_features(
     neutralizing them.
     """
     if not feats or not required_feature_keys:
-        return feats
+        return _copy_feature_mapping(feats)
 
     end = pd.Timestamp(end_ts)
     if end.tzinfo is None:
@@ -878,29 +1530,27 @@ def _drop_stale_live_sensitive_features(
     else:
         end = end.tz_convert("UTC")
 
-    out: Dict[str, pd.DataFrame] = {}
+    out = _copy_feature_mapping(feats)
     dropped: Dict[str, str] = {}
-    for key, df in feats.items():
-        if (
-            key in required_feature_keys
-            and _is_live_stale_sensitive_feature_key(key)
-            and isinstance(df, pd.DataFrame)
-            and not df.empty
-        ):
-            try:
-                idx = pd.to_datetime(df.index, utc=True, errors="coerce")
-                finite_idx = idx[~pd.isna(idx)]
-                max_ts = finite_idx.max() if len(finite_idx) else None
-            except Exception:
-                max_ts = None
-            if max_ts is None or pd.Timestamp(max_ts) < end:
-                dropped[str(key)] = (
-                    "missing_timestamp"
-                    if max_ts is None
-                    else pd.Timestamp(max_ts).isoformat()
-                )
-                continue
-        out[key] = df
+    for key in sorted(str(k) for k in required_feature_keys if _is_live_stale_sensitive_feature_key(str(k))):
+        if key not in out:
+            continue
+        df = out.get(key)
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            continue
+        try:
+            idx = pd.to_datetime(df.index, utc=True, errors="coerce")
+            finite_idx = idx[~pd.isna(idx)]
+            max_ts = finite_idx.max() if len(finite_idx) else None
+        except Exception:
+            max_ts = None
+        if max_ts is None or pd.Timestamp(max_ts) < end:
+            dropped[str(key)] = (
+                "missing_timestamp"
+                if max_ts is None
+                else pd.Timestamp(max_ts).isoformat()
+            )
+            out.pop(key, None)
 
     if dropped:
         sample = dict(list(sorted(dropped.items()))[:12])
@@ -977,11 +1627,44 @@ def _backfill_missing_requested_keys(
     # Sending those keys through compute_features_hourly() can trigger a full
     # historical feature rebuild during live inference, delaying entries long
     # enough to make the signal stale.
-    compute_missing_keys = {
-        key for key in missing_keys if not _is_live_stale_sensitive_feature_key(key)
-    }
+    compute_missing_keys: Set[str] = set()
+    skipped_missing_keys: Set[str] = set()
+    for key in missing_keys:
+        key_s = str(key)
+        gate_base = _gate_feature_base_key(key_s)
+        if key_s in {"G_VOL", "G_TREND"}:
+            skipped_missing_keys.add(key_s)
+            continue
+        if gate_base is not None and gate_base in merged_feats:
+            skipped_missing_keys.add(key_s)
+            continue
+        if (
+            _is_live_stale_sensitive_feature_key(key_s)
+            or _is_calendar_feature_key(key_s)
+            or _is_rolling30d_feature_key(key_s)
+            or key_s == "barrier_pct"
+            or is_non_portable_feature_key(key_s)
+        ):
+            skipped_missing_keys.add(key_s)
+            continue
+        compute_missing_keys.add(key_s)
     if not compute_missing_keys:
+        skipped = sorted(skipped_missing_keys or {str(key) for key in missing_keys})
+        tprint(
+            "Skipping shared feature backfill for live-synthesized/source-dependent "
+            f"missing keys: n={len(skipped)} sample={skipped[:12]}"
+        )
         return merged_feats
+    if skipped_missing_keys:
+        skipped = sorted(skipped_missing_keys)
+        tprint(
+            "Shared feature backfill will skip live-synthesized/source-dependent "
+            f"missing keys: n={len(skipped)} sample={skipped[:12]}"
+        )
+    tprint(
+        "Backfilling missing shared feature keys via compute_features_hourly: "
+        f"n={len(compute_missing_keys)} sample={sorted(compute_missing_keys)[:20]}"
+    )
 
     compute_panel: Dict[str, pd.DataFrame] = {}
     for key, df in panel.items():
@@ -1071,7 +1754,10 @@ def load_cached_features_for_inference(
     start_ts: Optional[pd.Timestamp] = None,
     end_ts: Optional[pd.Timestamp] = None,
 ) -> Dict[str, pd.DataFrame]:
-    ts = pd.to_datetime(run_id, format="%Y%m%d_%H%M%S", utc=True)
+    run_id_s = str(run_id or "")
+    match = re.match(r"^(\d{8}_\d{6})", run_id_s)
+    parse_value = match.group(1) if match else run_id_s
+    ts = pd.to_datetime(parse_value, format="%Y%m%d_%H%M%S", utc=True)
     # load_features_selected uses half-open parquet pushdown filters. Live and
     # historical inference callers treat end_ts as inclusive, so pad the query
     # boundary and keep the explicit inclusive slice below.
@@ -1080,17 +1766,23 @@ def load_cached_features_for_inference(
         if end_ts is not None
         else None
     )
-    feats = load_features_selected(
-        ts,
-        data_root,
-        feature_keys=sorted(feature_keys) if feature_keys else None,
-        symbols=symbols,
-        start_ts=start_ts,
-        end_ts=query_end_ts,
-    )
-    if not hasattr(feats, "items"):
-        return {}
-    return _slice_feature_window(dict(feats), start_ts=start_ts, end_ts=end_ts)
+    for root in _offline_feature_lookup_data_roots(data_root):
+        feats = load_features_selected(
+            ts,
+            root,
+            feature_keys=sorted(feature_keys) if feature_keys else None,
+            symbols=symbols,
+            start_ts=start_ts,
+            end_ts=query_end_ts,
+        )
+        if hasattr(feats, "items"):
+            if root != str(data_root):
+                tprint(
+                    "Loaded offline selected features from fallback data root: "
+                    f"{root}"
+                )
+            return _slice_feature_window(feats, start_ts=start_ts, end_ts=end_ts)
+    return {}
 
 
 def load_or_compute_features(
@@ -1115,6 +1807,14 @@ def load_or_compute_features(
     outer_cfg = cfg if isinstance(cfg, dict) else {}
     cfg_source = outer_cfg.get("runtime_cfg", outer_cfg)
     cfg = dict(cfg_source or {})
+    for key, value in outer_cfg.items():
+        key_s = str(key)
+        if (
+            key_s.startswith("live_feature_")
+            or key_s.startswith("historical_inference_")
+            or key_s.startswith("live_causal_transform_")
+        ) and key_s not in cfg:
+            cfg[key_s] = value
     # Runtime config is the primary feature-generation config, but model
     # artifacts such as the fitted training transform contract often live on
     # the outer inference config/full state.  Preserve them before tail
@@ -1151,6 +1851,12 @@ def load_or_compute_features(
     if _requires_gated_feature_generation(required_feature_keys):
         cfg["enable_gated_features"] = True
     cfg.setdefault("feature_transform_cache_enabled", False)
+    if bool(cfg.get("live_causal_transform_state_enabled", True)):
+        cfg["live_causal_transform_state_enabled"] = True
+        cfg.setdefault(
+            "live_causal_transform_state_path",
+            str(live_zscore_state_path(data_root, run_id)),
+        )
 
     end_ts = close.index.max()
     start_ts = end_ts - pd.Timedelta(hours=lookback_hours)
@@ -1191,13 +1897,18 @@ def load_or_compute_features(
             _LIVE_FEATURE_MEMORY_CACHE[cache_key] = {
                 "end_ts": end_ts,
                 "feats": snapshot_feats,
+                "latest_only": True,
             }
         timer.mark("snapshot_cache_hit")
         return snapshot_feats
 
     cached_feats = {}
     memory_entry = _LIVE_FEATURE_MEMORY_CACHE.get(cache_key)
-    if isinstance(memory_entry, dict) and isinstance(memory_entry.get("feats"), dict):
+    if (
+        isinstance(memory_entry, dict)
+        and isinstance(memory_entry.get("feats"), dict)
+        and not bool(memory_entry.get("latest_only", False))
+    ):
         cached_feats = _slice_feature_window(
             memory_entry["feats"], start_ts=start_ts, end_ts=end_ts
         )
@@ -1206,20 +1917,6 @@ def load_or_compute_features(
                 "Using in-memory live feature history as tail base: "
                 f"features={len(cached_feats)}"
             )
-    offline_feature_data_root = str(cfg.get("offline_feature_data_root") or data_root)
-    if not cached_feats and bool(cfg.get("live_feature_offline_cache_enabled", True)):
-        cached_feats = load_cached_features_for_inference(
-            run_id=run_id,
-            data_root=offline_feature_data_root,
-            symbols=basket_syms,
-            feature_keys=required_feature_keys,
-            start_ts=start_ts,
-            end_ts=end_ts,
-        )
-    offline_cached_last_ts = _cached_feature_coverage_end_ts(
-        cached_feats,
-        required_feature_keys=required_feature_keys,
-    )
     rolling_feats = _load_live_feature_rolling_cache(
         cfg=cfg,
         run_id=run_id,
@@ -1231,6 +1928,40 @@ def load_or_compute_features(
     )
     if rolling_feats:
         cached_feats = _merge_feature_dicts(cached_feats, rolling_feats)
+
+    rolling_cached_last_ts = _cached_feature_coverage_end_ts(
+        cached_feats,
+        required_feature_keys=required_feature_keys,
+    )
+    offline_feature_run_id = _offline_feature_lookup_run_id(cfg, run_id)
+    offline_feature_data_root = _offline_feature_lookup_data_root(cfg, data_root)
+    need_offline_cache = (
+        rolling_cached_last_ts is None
+        or pd.Timestamp(rolling_cached_last_ts) < pd.Timestamp(end_ts)
+    )
+    if need_offline_cache and (
+        offline_feature_run_id != str(run_id)
+        or offline_feature_data_root != str(data_root)
+    ):
+        tprint(
+            "Live feature offline cache source override: "
+            f"run_id={offline_feature_run_id} data_root={offline_feature_data_root}"
+        )
+    if need_offline_cache and bool(cfg.get("live_feature_offline_cache_enabled", True)):
+        offline_feats = load_cached_features_for_inference(
+            run_id=offline_feature_run_id,
+            data_root=offline_feature_data_root,
+            symbols=basket_syms,
+            feature_keys=required_feature_keys,
+            start_ts=start_ts,
+            end_ts=end_ts,
+        )
+        if offline_feats:
+            cached_feats = _merge_feature_dicts(offline_feats, cached_feats)
+    offline_cached_last_ts = _cached_feature_coverage_end_ts(
+        cached_feats,
+        required_feature_keys=required_feature_keys,
+    )
     timer.mark("load_cached_transformed_features")
 
     cached_last_ts = _cached_feature_coverage_end_ts(
@@ -1248,6 +1979,20 @@ def load_or_compute_features(
         selector_feats["barrier_pct"] = policy_barrier
     timer.mark("compute_selector_features")
 
+    if (
+        need_tail_backfill
+        and _live_feature_cache_namespace(cfg) == "model"
+        and not bool(cfg.get("live_model_feature_tail_recompute_enabled", False))
+    ):
+        raise RuntimeError(
+            "Live model feature cache is stale or incomplete for the requested "
+            f"model contract: cached_last_ts={cached_last_ts} target_end_ts={end_ts} "
+            f"required_features={len(required_feature_keys or [])}. Run the "
+            "incremental training-path feature update for the artifact source "
+            "run before live scoring, or explicitly enable "
+            "live_model_feature_tail_recompute_enabled for replay/audit mode."
+        )
+
     if not need_tail_backfill:
         tprint(
             f"Loaded stored inference features for {len(basket_syms)} symbols through {cached_last_ts}"
@@ -1259,14 +2004,6 @@ def load_or_compute_features(
             required_feature_keys=required_feature_keys,
         )
         if required_feature_keys:
-            missing = {k for k in required_feature_keys if k not in merged}
-            merged = _backfill_missing_requested_keys(
-                panel=panel,
-                basket_syms=basket_syms,
-                cfg=cfg,
-                merged_feats=merged,
-                missing_keys=missing,
-            )
             merged = _synthesize_gated_feature_keys(
                 merged, panel, basket_syms, required_feature_keys
             )
@@ -1279,9 +2016,15 @@ def load_or_compute_features(
                 run_id=run_id,
                 cfg=cfg,
             )
+            missing = {k for k in required_feature_keys if k not in merged}
+            merged = _backfill_missing_requested_keys(
+                panel=panel,
+                basket_syms=basket_syms,
+                cfg=cfg,
+                merged_feats=merged,
+                missing_keys=missing,
+            )
         merged = _slice_feature_window(merged, start_ts=start_ts, end_ts=end_ts)
-        if bool(cfg.get("live_feature_memory_cache_enabled", True)):
-            _LIVE_FEATURE_MEMORY_CACHE[cache_key] = {"end_ts": end_ts, "feats": merged}
         _write_live_feature_snapshot(
             cfg=cfg,
             run_id=run_id,
@@ -1293,23 +2036,38 @@ def load_or_compute_features(
             end_ts=end_ts,
             required_feature_keys=required_feature_keys,
         )
-        _write_live_feature_rolling_cache(
-            cfg=cfg,
-            run_id=run_id,
-            cache_key=cache_key,
-            feats=merged,
-            symbols=basket_syms,
-            end_ts=end_ts,
-            required_feature_keys=required_feature_keys,
-            append_after_ts=(
-                offline_cached_last_ts
-                if offline_cached_last_ts is not None
-                else cached_last_ts
-            ),
-            keep_start_ts=start_ts,
-        )
+        if cached_last_ts is None or pd.Timestamp(cached_last_ts) < pd.Timestamp(end_ts):
+            _write_live_feature_rolling_cache(
+                cfg=cfg,
+                run_id=run_id,
+                cache_key=cache_key,
+                feats=merged,
+                symbols=basket_syms,
+                end_ts=end_ts,
+                required_feature_keys=required_feature_keys,
+                append_after_ts=(
+                    offline_cached_last_ts
+                    if offline_cached_last_ts is not None
+                    else cached_last_ts
+                ),
+                keep_start_ts=start_ts,
+            )
+        return_feats = merged
+        if bool(cfg.get("live_feature_return_latest_only", True)):
+            return_feats = _latest_only_feature_dict(
+                merged,
+                symbols=basket_syms,
+                end_ts=end_ts,
+                required_feature_keys=required_feature_keys,
+            ) or merged
+        if bool(cfg.get("live_feature_memory_cache_enabled", True)):
+            _LIVE_FEATURE_MEMORY_CACHE[cache_key] = {
+                "end_ts": end_ts,
+                "feats": return_feats,
+                "latest_only": bool(return_feats is not merged),
+            }
         timer.mark("feature_cache_ready_no_tail")
-        return merged
+        return return_feats
 
     tail_warmup_hours = _required_tail_warmup_hours(
         lookback_hours=lookback_hours,
@@ -1364,13 +2122,26 @@ def load_or_compute_features(
             strict=False,
             label="live_tail_backfill",
         )
+    market_tail_feats = _market_wide_feature_frames(
+        mkt_gates,
+        basket_syms,
+        required_feature_keys,
+    )
+    if market_tail_feats and _feature_transform_contract_hash_from_cfg(cfg):
+        market_tail_feats = _transform_feature_panels_for_inference(
+            market_tail_feats,
+            cfg,
+            strict=False,
+            label="live_tail_market_wide",
+        )
+    full_tail_feats = _merge_missing_feature_dicts(full_tail_feats, market_tail_feats)
     timer.mark("compute_features_hourly_tail")
     if cached_last_ts is not None:
-        full_tail_feats = {
-            key: df[df.index > cached_last_ts]
-            for key, df in full_tail_feats.items()
-            if isinstance(df, pd.DataFrame) and not df.empty
-        }
+        full_tail_feats = _slice_tail_features_for_cache_append(
+            full_tail_feats,
+            cached_feats,
+            cached_last_ts,
+        )
 
     preserve_cached = bool(
         cfg.get("historical_inference_parity_preserve_cached_features", False)
@@ -1388,14 +2159,6 @@ def load_or_compute_features(
             required_feature_keys=required_feature_keys,
         )
     if required_feature_keys:
-        missing = {k for k in required_feature_keys if k not in merged_feats}
-        merged_feats = _backfill_missing_requested_keys(
-            panel=panel,
-            basket_syms=basket_syms,
-            cfg=cfg,
-            merged_feats=merged_feats,
-            missing_keys=missing,
-        )
         merged_feats = _synthesize_gated_feature_keys(
             merged_feats, panel, basket_syms, required_feature_keys
         )
@@ -1408,11 +2171,14 @@ def load_or_compute_features(
             run_id=run_id,
             cfg=cfg,
         )
-    if bool(cfg.get("live_feature_memory_cache_enabled", True)):
-        _LIVE_FEATURE_MEMORY_CACHE[cache_key] = {
-            "end_ts": end_ts,
-            "feats": merged_feats,
-        }
+        missing = {k for k in required_feature_keys if k not in merged_feats}
+        merged_feats = _backfill_missing_requested_keys(
+            panel=panel,
+            basket_syms=basket_syms,
+            cfg=cfg,
+            merged_feats=merged_feats,
+            missing_keys=missing,
+        )
     _write_live_feature_snapshot(
         cfg=cfg,
         run_id=run_id,
@@ -1450,7 +2216,21 @@ def load_or_compute_features(
                 break
     tprint(f"Loaded cached features and backfilled {new_rows} new timestamps")
     timer.mark("merge_and_cache_features")
-    return merged_feats
+    return_feats = merged_feats
+    if bool(cfg.get("live_feature_return_latest_only", True)):
+        return_feats = _latest_only_feature_dict(
+            merged_feats,
+            symbols=basket_syms,
+            end_ts=end_ts,
+            required_feature_keys=required_feature_keys,
+        ) or merged_feats
+    if bool(cfg.get("live_feature_memory_cache_enabled", True)):
+        _LIVE_FEATURE_MEMORY_CACHE[cache_key] = {
+            "end_ts": end_ts,
+            "feats": return_feats,
+            "latest_only": bool(return_feats is not merged_feats),
+        }
+    return return_feats
 
 
 def _model_key_matches_allowed(
@@ -1775,7 +2555,7 @@ def _compute_per_symbol_features(
         is_empty = True
 
     if is_empty:
-        return feats
+        return out
 
     # Filter to basket symbols
     valid_syms = [s for s in basket_syms if s in close.columns]
@@ -1790,6 +2570,10 @@ def _compute_per_symbol_features(
         if volume is not None
         else pd.DataFrame(1.0, index=c.index, columns=c.columns)
     )
+    c = c.astype(np.float32, copy=False)
+    h = h.astype(np.float32, copy=False)
+    l = l.astype(np.float32, copy=False)
+    v = v.astype(np.float32, copy=False)
 
     # Compute ret24h (24-hour returns)
     ret24h = c / c.shift(24) - 1.0
@@ -1808,15 +2592,15 @@ def _compute_per_symbol_features(
     feats["ret1h"] = ret1h.astype(np.float32)
 
     # Compute range_12h_pct (12-hour high-low range)
-    h_12 = h.rolling(12).max()
-    l_12 = l.rolling(12).min()
+    h_12 = _mask_rolling_min_periods(ff.numba_rolling_max(h, 12), h, 12, 12)
+    l_12 = _mask_rolling_min_periods(ff.numba_rolling_min(l, 12), l, 12, 12)
     range_12h_pct = (h_12 - l_12) / (c + 1e-12)
     feats["range_12h_pct"] = range_12h_pct.astype(np.float32)
 
     # LGBM deployment masks are saved as raw-feature predicates. Keep this
     # selector-side subset aligned with the feature names used in those masks.
-    h_24 = h.rolling(24, min_periods=1).max()
-    l_24 = l.rolling(24, min_periods=1).min()
+    h_24 = ff.numba_rolling_max(h, 24)
+    l_24 = ff.numba_rolling_min(l, 24)
     range_24h_pct = (h_24 - l_24) / (c + 1e-12)
     feats["range_24h_pct"] = range_24h_pct.astype(np.float32)
 
@@ -1824,13 +2608,9 @@ def _compute_per_symbol_features(
     dist_prior_day_low = (c - prev_low_24) / (c + 1e-12)
     feats["dist_prior_day_low"] = dist_prior_day_low.fillna(0.0).astype(np.float32)
 
-    tr_components = [
-        (h - l).abs(),
-        (h - c.shift(1)).abs(),
-        (l - c.shift(1)).abs(),
-    ]
-    tr = pd.concat(tr_components, axis=0).groupby(level=0).max()
-    atr = tr.rolling(14, min_periods=1).mean().replace(0.0, np.nan)
+    prev_c = c.shift(1)
+    tr = np.maximum(np.maximum((h - l).abs(), (h - prev_c).abs()), (l - prev_c).abs())
+    atr = ff.numba_rolling_mean(tr.astype(np.float32), 14).replace(0.0, np.nan)
     ema_fast = c.ewm(span=10, adjust=False, min_periods=1).mean()
     dist_ema_fast = (c - ema_fast) / (atr + 1e-12)
     feats["dist_ema_fast"] = (
@@ -1838,16 +2618,14 @@ def _compute_per_symbol_features(
     )
 
     delta = c.diff()
-    gain = delta.clip(lower=0.0).rolling(14, min_periods=1).mean()
-    loss = (-delta.clip(upper=0.0)).rolling(14, min_periods=1).mean()
+    gain = ff.numba_rolling_mean(delta.clip(lower=0.0).astype(np.float32), 14)
+    loss = ff.numba_rolling_mean((-delta.clip(upper=0.0)).astype(np.float32), 14)
     rs = gain / (loss + 1e-12)
     rsi = 100.0 - (100.0 / (1.0 + rs))
     feats["rsi_slope"] = rsi.diff(3).fillna(0.0).astype(np.float32)
 
-    rolling_notional = (c * v).rolling(48, min_periods=1).sum()
-    rolling_volume = v.rolling(48, min_periods=1).sum()
-    vwap_48 = rolling_notional / (rolling_volume + 1e-12)
-    session_stdev_48 = c.rolling(48, min_periods=2).std()
+    vwap_48 = ff.numba_rolling_vwap(c, v, 48)
+    session_stdev_48 = ff.numba_rolling_std(c, 48)
     loc_vwap_dev_z_48 = (c - vwap_48) / (
         np.maximum(session_stdev_48, atr * 0.5) + 1e-12
     )
@@ -1858,18 +2636,35 @@ def _compute_per_symbol_features(
     )
 
     # Compute volatility (24-hour rolling std of returns)
-    rv_24h = ret1h.rolling(24).std()
+    rv_24h = _mask_rolling_min_periods(
+        ff.numba_rolling_std(ret1h.astype(np.float32), 24), ret1h, 24, 24
+    )
 
     # Compute volatility z-score (relative to 90-day rolling window)
-    rv_24h_mean = rv_24h.rolling(24 * 90, min_periods=100).mean()
-    rv_24h_std = rv_24h.rolling(24 * 90, min_periods=100).std()
+    rv_24h_mean = _mask_rolling_min_periods(
+        ff.numba_rolling_mean(rv_24h.astype(np.float32), 24 * 90),
+        rv_24h,
+        24 * 90,
+        100,
+    )
+    rv_24h_std = _mask_rolling_min_periods(
+        ff.numba_rolling_std(rv_24h.astype(np.float32), 24 * 90),
+        rv_24h,
+        24 * 90,
+        100,
+    )
     volatility_zscore = (rv_24h - rv_24h_mean) / (rv_24h_std + 1e-12)
     feats["volatility_zscore"] = volatility_zscore.astype(np.float32)
 
     # Compute choppiness index (simplified version)
     # Uses 24-hour rolling sum of absolute returns / rolling max-min
-    sum_abs_ret = ret1h.abs().rolling(24).sum()
-    high_low_range = h.rolling(24).max() - l.rolling(24).min()
+    sum_abs_ret = _mask_rolling_min_periods(
+        ff.numba_rolling_sum(ret1h.abs().astype(np.float32), 24), ret1h, 24, 24
+    )
+    high_low_range = (
+        _mask_rolling_min_periods(ff.numba_rolling_max(h, 24), h, 24, 24)
+        - _mask_rolling_min_periods(ff.numba_rolling_min(l, 24), l, 24, 24)
+    )
     chop_score = sum_abs_ret / (np.log(high_low_range + 1e-12) + 1e-12)
     # Normalize to 0-1 range (approximate)
     chop_score = 1 - np.clip(chop_score / 50, 0, 1)
@@ -1895,8 +2690,49 @@ def _broadcast_series_to_symbols(
     series: pd.Series,
     columns: List[str],
 ) -> pd.DataFrame:
-    values = np.repeat(series.to_numpy(dtype=np.float32)[:, None], len(columns), axis=1)
-    return pd.DataFrame(values, index=series.index, columns=columns)
+    values = np.ascontiguousarray(series.to_numpy(dtype=np.float32))
+    return pd.DataFrame(
+        np.broadcast_to(values[:, None], (len(series.index), len(columns))),
+        index=series.index,
+        columns=columns,
+        copy=False,
+    )
+
+
+def _market_wide_feature_frames(
+    mkt_gates: pd.DataFrame,
+    basket_syms: List[str],
+    required_feature_keys: Optional[Set[str]],
+) -> Dict[str, pd.DataFrame]:
+    if not isinstance(mkt_gates, pd.DataFrame) or mkt_gates.empty:
+        return {}
+    required = set(required_feature_keys or set())
+    if not required:
+        return {}
+    out: Dict[str, pd.DataFrame] = {}
+    for key in sorted(str(k) for k in required if str(k) in mkt_gates.columns):
+        if key not in mkt_gates.columns:
+            continue
+        out[key] = _broadcast_series_to_symbols(
+            pd.to_numeric(mkt_gates[key], errors="coerce").astype(np.float32),
+            basket_syms,
+        )
+    return out
+
+
+def _rolling_valid_counts(df: pd.DataFrame, window: int) -> pd.DataFrame:
+    return ff.numba_rolling_sum(df.notna().astype(np.float32), int(window))
+
+
+def _mask_rolling_min_periods(
+    values: pd.DataFrame,
+    source: pd.DataFrame,
+    window: int,
+    min_periods: int,
+) -> pd.DataFrame:
+    if int(min_periods) <= 1:
+        return values
+    return values.where(_rolling_valid_counts(source, int(window)) >= float(min_periods))
 
 
 def _zero_frame_like_panel(
@@ -1914,8 +2750,15 @@ def _zero_frame_like_panel(
 
 def _rolling_zscore_frame(df: pd.DataFrame, window: int) -> pd.DataFrame:
     values = df.astype(np.float32)
-    mean = values.rolling(window, min_periods=max(4, min(window, 24))).mean()
-    std = values.rolling(window, min_periods=max(4, min(window, 24))).std(ddof=0)
+    min_periods = max(4, min(window, 24))
+    counts = _rolling_valid_counts(values, int(window))
+    mean = _mask_rolling_min_periods(
+        ff.numba_rolling_mean(values, int(window)), values, int(window), min_periods
+    )
+    std = _mask_rolling_min_periods(
+        ff.numba_rolling_std(values, int(window)), values, int(window), min_periods
+    )
+    std = std * np.sqrt(((counts - 1.0) / counts).clip(lower=0.0))
     return (
         ((values - mean) / (std + 1e-6))
         .replace([np.inf, -np.inf], np.nan)
@@ -1952,7 +2795,7 @@ def _materialize_live_orderbook_summary_features(
     run_id: str | None = None,
 ) -> Dict[str, pd.DataFrame]:
     """Compute live orderbook features from saved hourly summary panels."""
-    if not any(k.startswith(("ob_", "obw_")) for k in required_feature_keys):
+    if not _requires_live_orderbook_features(required_feature_keys):
         return feats
     if cfg is not None and not bool(
         cfg.get("live_materialize_orderbook_model_features", True)
@@ -1971,11 +2814,26 @@ def _materialize_live_orderbook_summary_features(
     ):
         return feats
 
-    out = dict(feats)
+    out = _copy_feature_mapping(feats)
     idx = zero_frame.index
     cols = list(zero_frame.columns)
     shift_bars = int((cfg or {}).get("microstructure_shift_bars", 1))
     eps = 1e-12
+    required_residuals = set(required_feature_keys).intersection(
+        ORDERBOOK_RESIDUAL_FEATURE_KEYS
+    )
+    residual_source_feature_keys = {
+        "ob_microprice_premium_bps",
+        "ob_flow_notional_imbalance_1h",
+        "ob_book_pressure_l10",
+        "ob_l10_imbalance",
+        "ob_imb_l10",
+        "ob_spread_z_24h",
+        "ob_depth_usd_l20_z",
+        "ob_depth_l20_to_qv_z_7d",
+        "xasset_ob_liquidity_divergence_z_24h",
+        "xasset_asset_minus_mkt_ob_pressure_z_24h",
+    }
     preserve_cached = bool(
         (cfg or {}).get("historical_inference_parity_preserve_cached_features", False)
     )
@@ -2001,6 +2859,17 @@ def _materialize_live_orderbook_summary_features(
                 frame[col] = row_value
         return frame.reindex(index=idx, columns=cols).astype(np.float32)
 
+    def training_neutral_frame(name: str) -> Optional[pd.DataFrame]:
+        if not (data_root and run_id and name in required_feature_keys):
+            return None
+        if _training_feature_has_variation(
+            data_root=str(data_root),
+            run_id=str(run_id),
+            feature_key=name,
+        ):
+            return None
+        return zero_frame.astype(np.float32)
+
     best_bid = _aligned_orderbook_panel_field(panel, "best_bid", idx, cols, shift_bars)
     best_ask = _aligned_orderbook_panel_field(panel, "best_ask", idx, cols, shift_bars)
     mid = _aligned_orderbook_panel_field(panel, "mid", idx, cols, shift_bars)
@@ -2024,18 +2893,42 @@ def _materialize_live_orderbook_summary_features(
     )
 
     if best_bid is None or best_ask is None:
-        return feats
+        neutralized = 0
+        for name in sorted(
+            k
+            for k in required_feature_keys
+            if k.startswith(("ob_", "obw_")) or k in ORDERBOOK_RESIDUAL_FEATURE_KEYS
+        ):
+            neutral = training_neutral_frame(name)
+            if neutral is not None:
+                out[name] = neutral
+                neutralized += 1
+        if neutralized:
+            tprint(
+                "Materialized neutral live orderbook model features because the "
+                "training artifact had no variation: "
+                f"{neutralized} required keys"
+            )
+        return out
     if mid is None:
         mid = ((best_bid + best_ask) * 0.5).astype(np.float32)
 
     close_aligned = close.reindex(index=idx, columns=cols).astype(np.float32)
     volume_aligned = volume.reindex(index=idx, columns=cols).astype(np.float32)
+    quote_volume_source = (close_aligned * volume_aligned).astype(np.float32)
     quote_volume_24h = (
-        (close_aligned * volume_aligned).rolling(24, min_periods=6).sum().shift(1)
+        _mask_rolling_min_periods(
+            ff.numba_rolling_sum(quote_volume_source, 24),
+            quote_volume_source,
+            24,
+            6,
+        ).shift(1)
     )
     available = (best_bid.notna() & best_ask.notna() & mid.notna()).astype(np.float32)
     def put(name: str, value: pd.DataFrame) -> None:
-        if name in required_feature_keys or name in out:
+        if name in required_feature_keys or name in out or (
+            required_residuals and name in residual_source_feature_keys
+        ):
             existing = out.get(name)
             if (
                 preserve_cached
@@ -2045,6 +2938,10 @@ def _materialize_live_orderbook_summary_features(
                 if name in broadcast_feature_keys:
                     out[name] = complete_broadcast_columns(existing)
                 return
+            neutral = training_neutral_frame(name)
+            if neutral is not None:
+                out[name] = neutral
+                return
             out[name] = (
                 value.reindex(index=idx, columns=cols)
                 .replace([np.inf, -np.inf], np.nan)
@@ -2053,19 +2950,23 @@ def _materialize_live_orderbook_summary_features(
 
     def broadcast_to_symbols(value: pd.Series) -> pd.DataFrame:
         ser = pd.to_numeric(value, errors="coerce").reindex(idx)
+        values = np.ascontiguousarray(ser.to_numpy(dtype=np.float32))
         return pd.DataFrame(
-            np.repeat(ser.to_numpy(dtype=np.float32)[:, None], len(cols), axis=1),
+            np.broadcast_to(values[:, None], (len(idx), len(cols))),
             index=idx,
             columns=cols,
-            dtype=np.float32,
+            copy=False,
         )
 
     spread_bps = (((best_ask - best_bid) / (mid.abs() + eps)) * 1e4).clip(0, 1000)
+    spread_z_24h = _rolling_zscore_frame(spread_bps, 24)
     put("ob_available", available)
     put("ob_stale_flag", 1.0 - available)
     put("ob_update_gap_flag", 1.0 - available)
     put("ob_spread_bps", spread_bps)
-    put("ob_spread_z_24h", _rolling_zscore_frame(spread_bps, 24))
+    put("ob_spread_z_24h", spread_z_24h)
+    put("ob_spread_bps_z_24h", spread_z_24h)
+    put("ob_spread_bps_z_7d", _rolling_zscore_frame(spread_bps, 24 * 7))
     mid_close_gap = (((mid - close_aligned) / (close_aligned.abs() + eps)) * 1e4).clip(
         -1000, 1000
     )
@@ -2316,8 +3217,37 @@ def _materialize_live_orderbook_summary_features(
         )
         put("obw_nearest_wall_distance_skew", (spread_bps / 100.0).clip(0, 1))
 
+    if required_residuals:
+        # Cached offline-selected feature panels can contain all-NaN residual
+        # placeholders when their live primitives were missing. Compute these
+        # aliases on a scoped orderbook-only mapping anchored to the live panel
+        # index/columns, then copy only requested residuals back. Calling the
+        # generic residual builder on the full mixed mapping would materialize
+        # unrelated residual families and can anchor rolling windows to an
+        # already-sliced latest-row frame.
+        residual_inputs: Dict[str, pd.DataFrame] = {"__anchor__": zero_frame}
+        for key in residual_source_feature_keys:
+            frame = out.get(key)
+            if isinstance(frame, pd.DataFrame) and not frame.empty:
+                residual_inputs[key] = (
+                    frame.reindex(index=idx, columns=cols)
+                    .replace([np.inf, -np.inf], np.nan)
+                    .astype(np.float32)
+                )
+        add_residual_features(residual_inputs, None, cfg or {})
+        for key in required_residuals:
+            frame = residual_inputs.get(key)
+            if isinstance(frame, pd.DataFrame) and not frame.empty:
+                out[key] = (
+                    frame.reindex(index=idx, columns=cols)
+                    .replace([np.inf, -np.inf], np.nan)
+                    .astype(np.float32)
+                )
+
     produced = sorted(
-        k for k in required_feature_keys if k in out and k.startswith(("ob_", "obw_"))
+        k
+        for k in required_feature_keys
+        if k in out and (k.startswith(("ob_", "obw_")) or k in ORDERBOOK_RESIDUAL_FEATURE_KEYS)
     )
     if produced:
         tprint(
@@ -2441,7 +3371,7 @@ def _synthesize_live_safe_feature_keys(
     if zero_frame is None:
         raise ValueError("Cannot materialize derived live features without a close panel")
 
-    out = dict(feats)
+    out = _copy_feature_mapping(feats)
     close = panel.get("close")
     if barrier_missing:
         policy_barrier = _compute_policy_barrier_pct(panel, basket_syms, {})
@@ -2457,9 +3387,12 @@ def _synthesize_live_safe_feature_keys(
         source = match.group(1) if match else ""
         source_df = out.get(source)
         if isinstance(source_df, pd.DataFrame) and not source_df.empty:
-            out[key] = (
-                source_df.rolling(24 * 30, min_periods=24).mean().astype(np.float32)
-            )
+            out[key] = _mask_rolling_min_periods(
+                ff.numba_rolling_mean(source_df.astype(np.float32), 24 * 30),
+                source_df,
+                24 * 30,
+                24,
+            ).astype(np.float32)
         else:
             raise ValueError(f"{key} is required but source feature {source!r} is unavailable")
     for key in calendar_missing:
@@ -2517,7 +3450,13 @@ def _ensure_required_symbol_columns(
     zero_frame = _zero_frame_like_panel(panel, basket_syms)
     if zero_frame is None:
         raise ValueError("Cannot validate live feature symbols without a close panel")
-    out = dict(feats)
+    out = _copy_feature_mapping(feats)
+    if hasattr(out, "_raw") and hasattr(out, "_assembled"):
+        # Lazy selected-feature caches can surface missing symbol/feature cells
+        # as NaNs when the model matrix is built.  Materializing hundreds of
+        # wide matrices here only to add NaN columns defeats the live cache hit
+        # path and does not improve strict downstream validation.
+        return out
     added: Dict[str, int] = {}
     for key in required_feature_keys:
         value = out.get(key)
@@ -2527,11 +3466,25 @@ def _ensure_required_symbol_columns(
         if not missing_cols:
             continue
         added[key] = len(missing_cols)
+        aligned = value.reindex(index=zero_frame.index)
+        if str(key) in MARKET_WIDE_FEATURE_KEYS:
+            seed = aligned.reindex(columns=[c for c in aligned.columns if c in value.columns])
+            if not seed.empty:
+                row_value = seed.ffill(axis=1).bfill(axis=1).iloc[:, 0]
+                out[key] = _broadcast_series_to_symbols(
+                    row_value.astype(np.float32),
+                    list(zero_frame.columns),
+                )
+                continue
+        for sym in missing_cols:
+            aligned[sym] = np.nan
+        out[key] = aligned.reindex(columns=zero_frame.columns)
     if added:
         sample = dict(list(sorted(added.items()))[:10])
-        raise ValueError(
+        tprint(
             "Required inference features are missing live symbol columns; "
-            f"refusing neutral fallback columns: {sample}"
+            "materialized NaN columns so strict candidate-level finite checks "
+            f"can fail closed: {sample}"
         )
     return out
 
@@ -2568,11 +3521,19 @@ def _synthesize_gated_feature_keys(
     if not valid_syms:
         raise ValueError("Gate-conditioned features are required but no live symbols are available")
 
-    out = dict(feats)
+    out = _copy_feature_mapping(feats)
     close = close[valid_syms]
     ret1h = close.pct_change()
-    rv = ret1h.rolling(24, min_periods=12).std().mean(axis=1)
-    rv_med = rv.rolling(24 * 7, min_periods=48).median()
+    rv_frame = _mask_rolling_min_periods(
+        ff.numba_rolling_std(ret1h.astype(np.float32), 24), ret1h, 24, 12
+    )
+    rv = rv_frame.mean(axis=1)
+    rv_med = _mask_rolling_min_periods(
+        ff.numba_rolling_median(rv.astype(np.float32), 24 * 7).to_frame("rv"),
+        rv.to_frame("rv"),
+        24 * 7,
+        48,
+    )["rv"]
     g_vol_series = (rv > rv_med).fillna(False).astype(np.float32)
 
     ret24 = close.pct_change(24).abs().mean(axis=1)
@@ -2828,6 +3789,21 @@ def get_features_for_candidates(
         candidate_index = [str(sym) for sym in candidates]
         out = pd.DataFrame(index=pd.Index(candidate_index, name="symbol"))
         has_feature = pd.Series(False, index=out.index)
+        if hasattr(feats, "latest_values_at"):
+            for feat_name in feats.keys():
+                values = feats.latest_values_at(
+                    feat_name,
+                    candidate_index,
+                    ts_utc,
+                    stale_sensitive=_is_live_stale_sensitive_feature_key(feat_name),
+                )
+                finite = values.notna()
+                if not bool(finite.any()):
+                    continue
+                out.loc[values.index, feat_name] = values.to_numpy(copy=False)
+                has_feature.loc[finite.index[finite]] = True
+            return out.loc[has_feature]
+
         for feat_name, feat_df in feats.items():
             if not isinstance(feat_df, pd.DataFrame) or feat_df.empty:
                 continue

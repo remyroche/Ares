@@ -1,0 +1,17 @@
+{
+  "artifact_path": "data_perp/artifacts/20260525_010004_nopenalty/models/model_state_meta.pkl",
+  "artifact_sha256": "3b19d54aca1298e10d177c90560839bd804e960df602ca97020d1893f55204c8",
+  "base_models_intermediate_path": "data_perp/artifacts/20260525_010004_nopenalty/base_models_intermediate.pkl",
+  "feature_contract_hash": "476124dabd197d308f6bd10e8c4deddbd307e0ee2b71faf9ffa896a57e3b9278",
+  "generated_by": "train_meta",
+  "generated_from_final_fit_bundle": false,
+  "model_backend": "lgbm_pipeline",
+  "run_root": "data_perp/artifacts/20260525_010004_nopenalty",
+  "schema_version": "policy_oos_source_artifact_provenance_v1",
+  "slice_plan_path": "data_perp/artifacts/20260525_010004_nopenalty/slices/slice_plan.json",
+  "slice_plan_sha256": "cac2b4002b35633efc2a08ca7a377c973d4c59948770851641e7fd8a1bb6bc2f",
+  "source_model_fit_end": "2024-09-08T04:00:00+00:00",
+  "source_model_fit_start": "2023-03-07T11:00:00+00:00",
+  "source_slice_role": "meta_model_fit",
+  "stage_name": "train_meta"
+}

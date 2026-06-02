@@ -1,9 +1,9 @@
 {
   "last_amount_saved_to_spot_usdt": 0.0,
-  "last_available_balance_usdt": 54.37072821109702,
-  "last_report_ts": "2026-05-26T18:45:07.762449+00:00",
-  "last_total_balance_usdt": 56.974752468956915,
-  "last_trade_report_ts": "2026-05-26T18:45:07.762449+00:00",
+  "last_available_balance_usdt": 54.4721,
+  "last_report_ts": "2026-06-02T09:59:29.273510+00:00",
+  "last_total_balance_usdt": 54.4721,
+  "last_trade_report_ts": "2026-06-02T09:59:29.273510+00:00",
   "last_transfer_result": {
     "reason": "transfer_disabled",
     "skipped": true,

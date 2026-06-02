@@ -57,6 +57,49 @@ try:
 except Exception:
     pass
 
+_is_strategy_selection_run = "strategies_selection" in {
+    str(arg).strip().lower() for arg in sys.argv
+}
+
+
+def _set_strategy_selection_lgbm_defaults() -> None:
+    """Set faster LGBM feature-selection defaults before lgbm_pipeline imports."""
+    if not _is_strategy_selection_run:
+        return
+    defaults = {
+        "EPM_LGBM_CV_SPLITS": "2",
+        "EPM_LGBM_RACE_MAX_ROWS": "30000",
+        "EPM_LGBM_UNIVARIATE_MAX_ROWS": "6000",
+        "EPM_LGBM_UNIVARIATE_ROW_SUBSAMPLE_FRAC": "0.35",
+        "EPM_LGBM_RELIEF_REPEATS": "1",
+        "EPM_LGBM_RELIEF_RESCUE_MAX": "30",
+        "EPM_LGBM_RELIEF_RESCUE_MIN": "8",
+        "EPM_LGBM_RELIEF_ANCHOR_MAX_ROWS": "256",
+        "EPM_LGBM_RELIEF_NEIGHBOR_CANDIDATES": "768",
+        "EPM_LGBM_DIRECTION_MAX_ROWS": "1500",
+        "EPM_LGBM_MAX_ROUNDS": "6",
+        "EPM_LGBM_STABILITY_CONFIGS": "2",
+        "EPM_LGBM_MIN_FEATURES": "24",
+        "EPM_LGBM_SELECTED_FEATURES_MIN": "40",
+        "EPM_LGBM_SELECTED_FEATURES_MAX": "120",
+        "EPM_LGBM_PERMUTATION_TOP_CONFIGS": "1",
+        "EPM_LGBM_PERMUTATION_MAX_FEATURES": "20",
+        "EPM_LGBM_PERMUTATION_MAX_ROWS": "5000",
+        "EPM_LGBM_PERMUTATION_REPEATS": "1",
+        "EPM_LGBM_HPO_TRIALS": "0",
+        "EPM_LGBM_HPO_MAX_ROWS": "3000",
+        "EPM_LGBM_FINAL_MODEL_COUNT": "1",
+        "EPM_LGBM_OOF_DISTILLATION_PASSES": "0",
+        "EPM_LGBM_MIN_OOF_DISTILLATION_PASSES": "2",
+        "EPM_LGBM_META_MIN_OOF_DISTILLATION_PASSES": "2",
+    }
+    for key, value in defaults.items():
+        override_key = f"EPM_STRATEGY_SELECTION_{key.removeprefix('EPM_')}"
+        os.environ.setdefault(key, os.environ.get(override_key, value))
+
+
+_set_strategy_selection_lgbm_defaults()
+
 # Add parent directory to Python path to allow imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
@@ -263,6 +306,7 @@ def _load_mask_params_by_mode(cfg: dict) -> dict:
         top_n=max(1, _strategy_top_n),
         ranking_metric=_strategy_ranking_metric,
         classification_filter=_strategy_class_filter or None,
+        market_mode=_market_mode_from_cfg(cfg),
     )
     if not strategies:
         from extreme_price_movements.offline_optimisers.params_store import (
@@ -328,6 +372,55 @@ def _load_mask_params_by_mode(cfg: dict) -> dict:
         tprint("WARNING: No strategies loaded — will fall back to legacy strategies.")
 
     return dict(cfg.get("candidate_mask_params_by_mode", {}) or {})
+
+
+def _maybe_set_strategy_selection_mask_source(cfg: dict) -> None:
+    """Prefer the latest generated LGBM mask registry for strategy-selection runs."""
+    if str(os.environ.get("EPM_MASK_STRATEGY_SOURCE_CSV", "")).strip():
+        return
+    if str(os.environ.get("EPM_STRATEGY_SELECTION_AUTO_MASK_SOURCE", "1")).strip().lower() in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }:
+        return
+    try:
+        min_candidates = int(
+            os.environ.get("EPM_STRATEGY_SELECTION_MIN_MASK_CANDIDATES", "10") or "10"
+        )
+    except Exception:
+        min_candidates = 10
+    artifacts_root = Path(str(cfg.get("data_root", "data"))) / "artifacts"
+    candidates = [
+        p
+        for p in artifacts_root.glob(
+            "*/lgbm_based_mask_generation*/run_*/final_rule_registry*.csv"
+        )
+        if p.is_file()
+    ]
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    for path in candidates:
+        try:
+            df = pd.read_csv(path, usecols=["canonical_key"])
+        except Exception:
+            continue
+        n_rows = int(len(df))
+        n_parseable = int(df["canonical_key"].astype(str).str.contains("|", regex=False).sum())
+        if n_rows < min_candidates:
+            continue
+        if n_parseable != n_rows:
+            tprint(
+                "STRATEGY SELECTION: skipping generated LGBM mask registry with "
+                f"non-parseable keys {path} ({n_parseable}/{n_rows} parseable)."
+            )
+            continue
+        os.environ["EPM_MASK_STRATEGY_SOURCE_CSV"] = str(path)
+        tprint(
+            "STRATEGY SELECTION: using generated LGBM mask registry "
+            f"{path} ({n_rows} candidates)."
+        )
+        return
 
 
 def _downcast_numeric_frame(df: pd.DataFrame) -> pd.DataFrame:
@@ -727,7 +820,9 @@ def run_download(cfg):
         f"partition={_part_id}/{_part_count}, max={_max_symbols if _max_symbols > 0 else 'all'})"
     )
 
-    fetch_years = cfg.get("fetch_years", 3)
+    fetch_years = float(
+        os.environ.get("EPM_DOWNLOAD_FETCH_YEARS", cfg.get("fetch_years", 3)) or 3
+    )
     since = pd.Timestamp.utcnow() - pd.Timedelta(days=int(fetch_years * 365))
     since_ms = int(since.value // 10**6)
     now_utc = pd.Timestamp.now(tz="UTC")
@@ -2501,6 +2596,11 @@ def run_train_meta(cfg, ts_override=None, store=None):
         joblib.load(tmp_meta_state_path)
         os.replace(tmp_meta_state_path, meta_state_path)
         tprint(f"Meta model state saved atomically to {meta_state_path} using joblib")
+        _write_meta_artifact_policy_oos_provenance(
+            cfg,
+            run_id=run_id,
+            meta_state_path=meta_state_path,
+        )
 
         # Free memory before moving on
         del result
@@ -2531,6 +2631,70 @@ def _json_safe(obj):
     if isinstance(obj, pd.Timestamp):
         return obj.isoformat()
     return obj
+
+
+def _stage_fit_bounds_from_cfg(cfg: dict):
+    stage_view = cfg.get("_active_stage_view") or {}
+    return (
+        stage_view.get("allowed_start_ts") or stage_view.get("fit_start"),
+        stage_view.get("allowed_end_ts") or stage_view.get("fit_end"),
+    )
+
+
+def _write_meta_artifact_policy_oos_provenance(
+    cfg: dict,
+    *,
+    run_id: str,
+    meta_state_path: str,
+) -> None:
+    try:
+        from extreme_price_movements.policy_oos_provenance import (
+            parquet_timestamp_bounds,
+            sha256_file,
+            write_source_artifact_provenance_manifest,
+        )
+
+        run_root = Path(str(cfg["data_root"])) / "artifacts" / str(run_id)
+        slice_plan_path = run_root / "slices" / "slice_plan.json"
+        meta_feature_contract_path = run_root / "meta_oof" / "meta_feature_contract.json"
+        fit_start, fit_end = parquet_timestamp_bounds(
+            sorted((run_root / "meta_oof").glob("meta_oof_*.parquet"))
+        )
+        if fit_start is None or fit_end is None:
+            fit_start, fit_end = _stage_fit_bounds_from_cfg(cfg)
+        feature_contract_hash = (
+            sha256_file(meta_feature_contract_path)
+            if meta_feature_contract_path.exists()
+            else ""
+        )
+        manifest_path = write_source_artifact_provenance_manifest(
+            artifact_path=Path(meta_state_path),
+            run_root=run_root,
+            slice_plan_path=slice_plan_path,
+            source_slice_role="meta_model_fit",
+            source_model_fit_start=fit_start,
+            source_model_fit_end=fit_end,
+            feature_contract_hash=feature_contract_hash,
+            generated_from_final_fit_bundle=bool(
+                cfg.get("train_full_inference_models", False)
+            ),
+            extra={
+                "generated_by": "train_meta",
+                "stage_name": (cfg.get("_active_stage_view") or {}).get(
+                    "stage_name", "train_meta"
+                ),
+                "model_backend": cfg.get("model_backend"),
+                "base_models_intermediate_path": str(
+                    Path(str(cfg["data_root"]))
+                    / "artifacts"
+                    / str(run_id)
+                    / "base_models_intermediate.pkl"
+                ),
+            },
+        )
+        tprint(f"Meta artifact policy-OOS provenance written to {manifest_path}")
+    except Exception as exc:
+        tprint(f"WARNING: failed to write meta artifact policy-OOS provenance: {exc}")
 
 
 @contextmanager
@@ -2868,8 +3032,9 @@ def _load_oof_strategy_metrics(
             break
     if layer == "base":
         seen = {r["strategy_id"] for r in rows}
+        allowed = set(_strategy_id_list(strategies))
         for row in _load_base_diag_metrics(cfg, run_id):
-            if row["strategy_id"] not in seen:
+            if row["strategy_id"] in allowed and row["strategy_id"] not in seen:
                 rows.append(row)
     return rows
 
@@ -3069,6 +3234,32 @@ def _load_policy_winners(cfg: dict, run_id: str) -> list[str]:
 
 
 def _selection_profile_env(*, final: bool = False) -> dict[str, Any]:
+    lgbm_fast_selection_env = {
+        "EPM_LGBM_CV_SPLITS": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_CV_SPLITS", "2"),
+        "EPM_LGBM_RACE_MAX_ROWS": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_RACE_MAX_ROWS", "30000"),
+        "EPM_LGBM_UNIVARIATE_MAX_ROWS": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_UNIVARIATE_MAX_ROWS", "6000"),
+        "EPM_LGBM_UNIVARIATE_ROW_SUBSAMPLE_FRAC": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_UNIVARIATE_ROW_SUBSAMPLE_FRAC", "0.35"),
+        "EPM_LGBM_RELIEF_REPEATS": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_RELIEF_REPEATS", "1"),
+        "EPM_LGBM_RELIEF_RESCUE_MAX": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_RELIEF_RESCUE_MAX", "30"),
+        "EPM_LGBM_RELIEF_RESCUE_MIN": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_RELIEF_RESCUE_MIN", "8"),
+        "EPM_LGBM_RELIEF_ANCHOR_MAX_ROWS": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_RELIEF_ANCHOR_MAX_ROWS", "256"),
+        "EPM_LGBM_RELIEF_NEIGHBOR_CANDIDATES": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_RELIEF_NEIGHBOR_CANDIDATES", "768"),
+        "EPM_LGBM_DIRECTION_MAX_ROWS": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_DIRECTION_MAX_ROWS", "1500"),
+        "EPM_LGBM_MAX_ROUNDS": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_MAX_ROUNDS", "6"),
+        "EPM_LGBM_MIN_FEATURES": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_MIN_FEATURES", "24"),
+        "EPM_LGBM_SELECTED_FEATURES_MIN": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_SELECTED_FEATURES_MIN", "40"),
+        "EPM_LGBM_SELECTED_FEATURES_MAX": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_SELECTED_FEATURES_MAX", "120"),
+        "EPM_LGBM_PERMUTATION_TOP_CONFIGS": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_PERMUTATION_TOP_CONFIGS", "1"),
+        "EPM_LGBM_PERMUTATION_MAX_FEATURES": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_PERMUTATION_MAX_FEATURES", "20"),
+        "EPM_LGBM_PERMUTATION_MAX_ROWS": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_PERMUTATION_MAX_ROWS", "5000"),
+        "EPM_LGBM_PERMUTATION_REPEATS": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_PERMUTATION_REPEATS", "1"),
+        "EPM_LGBM_HPO_TRIALS": "0",
+        "EPM_LGBM_HPO_MAX_ROWS": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_HPO_MAX_ROWS", "3000"),
+        "EPM_LGBM_FINAL_MODEL_COUNT": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_FINAL_MODEL_COUNT", "1"),
+        "EPM_LGBM_OOF_DISTILLATION_PASSES": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_OOF_DISTILLATION_PASSES", "0"),
+        "EPM_LGBM_MIN_OOF_DISTILLATION_PASSES": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_MIN_OOF_DISTILLATION_PASSES", "1"),
+        "EPM_LGBM_META_MIN_OOF_DISTILLATION_PASSES": os.environ.get("EPM_STRATEGY_SELECTION_LGBM_META_MIN_OOF_DISTILLATION_PASSES", "1"),
+    }
     if final:
         return {
             "EPM_MASK_STRATEGY_TOP_N": os.environ.get("EPM_MASK_STRATEGY_TOP_N", "999"),
@@ -3084,6 +3275,7 @@ def _selection_profile_env(*, final: bool = False) -> dict[str, Any]:
             "EPM_EBM_ROW_SUBSAMPLE_FRAC": "0.50",
             "EPM_EBM_FINAL_MODEL_COUNT": "1",
             "EPM_EBM_HONEST_EVAL_MIN_MODELS": "1",
+            **lgbm_fast_selection_env,
         }
     return {
         "EPM_MASK_STRATEGY_TOP_N": os.environ.get("EPM_MASK_STRATEGY_TOP_N", "999"),
@@ -3101,7 +3293,64 @@ def _selection_profile_env(*, final: bool = False) -> dict[str, Any]:
         "EPM_EBM_ROW_SUBSAMPLE_FRAC": "0.50",
         "EPM_EBM_FINAL_MODEL_COUNT": "1",
         "EPM_EBM_HONEST_EVAL_MIN_MODELS": "1",
+        **lgbm_fast_selection_env,
     }
+
+
+def _apply_strategy_selection_no_penalty(cfg: dict) -> None:
+    """Disable selector-side penalty terms for strategy-selection audit runs."""
+    if os.environ.get("EPM_STRATEGY_SELECTION_NO_PENALTY", "").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }:
+        return
+    for key in (
+        "base_selector_cfg",
+        "meta_selector_cfg",
+        "aux_mae_selector_cfg",
+        "aux_mfe_selector_cfg",
+    ):
+        sel_cfg = cfg.get(key)
+        if not isinstance(sel_cfg, dict):
+            continue
+        sel_cfg["selector_interaction_corr_penalty"] = False
+        sel_cfg["selector_family_penalty"] = False
+        sel_cfg["interaction"] = 0.0
+    tprint(
+        "STRATEGY SELECTION: no-penalty selector mode enabled "
+        "(interaction/family selector penalties disabled)."
+    )
+
+
+def _apply_training_no_penalty(cfg: dict) -> None:
+    """Disable selector-side penalty terms for explicit training audit runs."""
+    if os.environ.get("EPM_TRAINING_NO_PENALTY", "").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }:
+        return
+    for key in (
+        "base_selector_cfg",
+        "meta_selector_cfg",
+        "aux_mae_selector_cfg",
+        "aux_mfe_selector_cfg",
+    ):
+        sel_cfg = cfg.get(key)
+        if not isinstance(sel_cfg, dict):
+            continue
+        sel_cfg["selector_interaction_corr_penalty"] = False
+        sel_cfg["selector_family_penalty"] = False
+        sel_cfg["interaction"] = 0.0
+    tprint(
+        "TRAINING: no-penalty selector mode enabled "
+        "(interaction/family selector penalties disabled)."
+    )
 
 
 def _run_final_retraining_layers(
@@ -3183,6 +3432,8 @@ def run_strategies_selection(cfg, ts_override=None, store=None):
     selection_cfg["strategy_selection_mode"] = True
     selection_cfg["meta_filter_saved_oof_to_active_symbols"] = True
     selection_cfg["mask_strategy_top_n"] = int(os.environ.get("EPM_MASK_STRATEGY_TOP_N", "999"))
+    _apply_strategy_selection_no_penalty(selection_cfg)
+    _maybe_set_strategy_selection_mask_source(selection_cfg)
     if assets <= 10:
         selection_cfg["min_train_samples"] = int(
             os.environ.get("EPM_STRATEGY_SELECTION_MIN_TRAIN_SAMPLES", "100")
@@ -3795,6 +4046,8 @@ def main():
     cfg["planned_max_assets"] = args.planned_max_assets
     cfg["planned_max_months"] = args.planned_max_months
     cfg["refresh_slice_plan"] = bool(args.refresh_slice_plan)
+    if args.mode in {"train", "base_training", "train_base", "meta_training", "train_meta"}:
+        _apply_training_no_penalty(cfg)
     if str(os.environ.get("EPM_DISABLE_REGIME_ADAPTORS", "")).strip().lower() in {
         "1",
         "true",

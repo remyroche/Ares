@@ -69,6 +69,14 @@ def market_report_path(path: Path, market_mode: str | None = None) -> Path:
     return path.with_name(f"{stem}_{mode}{path.suffix}")
 
 
+def _safe_strategy_id_from_rule(rule_key: str) -> str:
+    import re
+
+    safe_id = re.sub(r"[^a-zA-Z0-9_\-]", "_", str(rule_key))
+    safe_id = re.sub(r"_+", "_", safe_id)
+    return safe_id.strip("_")
+
+
 def _allow_legacy_market_fallback() -> bool:
     import os
 
@@ -254,6 +262,8 @@ def load_inference_candidate_mask_params_per_bucket(
                             "learnability_step_c_score", "stage2_score", "mask_oof_corr"
         classification_filter: Filter by production_classification (e.g., "production",
                             "research", or None for all). Default None allows all.
+        market_mode: Market mode to filter/select market-specific strategy registries.
+                     Set EPM_MASK_STRATEGY_SOURCE_CSV to force an explicit registry.
 
     Returns:
         List of strategy dicts, each with keys:
@@ -270,20 +280,32 @@ def load_inference_candidate_mask_params_per_bucket(
     _log = _logging.getLogger("params_store")
 
     path = None
-    preferred_paths = [
-        p
-        for base_path in (
-            INFERENCE_CANDIDATE_MASK_BEST_PARAMS_PER_BUCKET_CSV,
-            INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV,
-        )
-        for p in _market_preferred_paths(base_path, market_mode)
-    ]
-    if str(os.environ.get("EPM_MASK_STRATEGY_SKIP_REPORT_INPUTS", "")).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-    }:
-        preferred_paths = []
+    forced_source_csv = str(os.environ.get("EPM_MASK_STRATEGY_SOURCE_CSV", "")).strip()
+    if forced_source_csv:
+        forced_path = Path(forced_source_csv).expanduser()
+        if forced_path.exists() and forced_path.stat().st_size > 100:
+            path = forced_path
+        else:
+            _log.warning(
+                "[params_store] EPM_MASK_STRATEGY_SOURCE_CSV=%s is missing or empty",
+                forced_source_csv,
+            )
+    preferred_paths = []
+    if path is None:
+        preferred_paths = [
+            p
+            for base_path in (
+                INFERENCE_CANDIDATE_MASK_BEST_PARAMS_PER_BUCKET_CSV,
+                INFERENCE_CANDIDATE_MASK_BEST_PARAMS_CSV,
+            )
+            for p in _market_preferred_paths(base_path, market_mode)
+        ]
+        if str(os.environ.get("EPM_MASK_STRATEGY_SKIP_REPORT_INPUTS", "")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }:
+            preferred_paths = []
     for candidate_path in preferred_paths:
         try:
             if candidate_path.exists() and candidate_path.stat().st_size > 100:
@@ -414,8 +436,18 @@ def load_inference_candidate_mask_params_per_bucket(
         ranking_metric = "ranking_score"
         _log.info("[params_store] ranking_metric fallback to 'ranking_score'")
 
+    registry_ranking_fallbacks = (
+        "stage_e_rank_score",
+        "final_selection_frontier_score",
+        "final_candidate_rank_score",
+        "standalone_quality_score",
+        "composite_score",
+        "directional_mean_ret",
+        "mean_net_ret",
+        "mean_uplift",
+    )
     if ranking_metric not in df.columns:
-        for _fallback in ("directional_mean_ret", "mean_net_ret", "mean_uplift"):
+        for _fallback in registry_ranking_fallbacks:
             if _fallback in df.columns:
                 ranking_metric = _fallback
                 _log.info(
@@ -443,7 +475,7 @@ def load_inference_candidate_mask_params_per_bucket(
             df_sorted = df_sorted.drop(columns=["_ranking_metric_value"])
 
     if ranking_metric not in df.columns:
-        for _fallback in ("directional_mean_ret", "mean_net_ret", "mean_uplift"):
+        for _fallback in registry_ranking_fallbacks:
             if _fallback not in df.columns:
                 continue
             metric_values = pd.to_numeric(df[_fallback], errors="coerce")
@@ -541,7 +573,7 @@ def load_inference_candidate_mask_params_per_bucket(
 
             selected_indices.append(best_idx)
             row = remaining.loc[best_idx]
-            key = str(row.get("canonical_key", ""))
+            key = str(row.get("base_event_trigger", "") or row.get("canonical_key", ""))
             side_val = str(row.get("side", "long")).lower()
             if side_val == "mixed":
                 side_val = "long"
@@ -549,11 +581,8 @@ def load_inference_candidate_mask_params_per_bucket(
                 remaining = remaining.drop(index=best_idx)
                 continue
 
-            import re
-
-            safe_id = re.sub(r"[^a-zA-Z0-9_\-]", "_", key)
-            safe_id = re.sub(r"_+", "_", safe_id)
-            safe_id = safe_id.strip("_")
+            explicit_strategy_id = str(row.get("strategy_id", "") or "").strip()
+            safe_id = explicit_strategy_id or _safe_strategy_id_from_rule(key)
 
             move_bucket = ""
             explicit_move_bucket = str(row.get("move_bucket", "")).strip().lower()
@@ -570,6 +599,7 @@ def load_inference_candidate_mask_params_per_bucket(
                 "strategy_id": safe_id,
                 "trade_side": side_val,
                 "base_event_trigger": key,
+                "canonical_key": key,
                 "mask_params": {"canonical_key": key},
                 "source_target": str(row.get("source_target", "")).strip(),
                 "source_horizon": normalize_strategy_horizon(

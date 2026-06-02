@@ -20,8 +20,9 @@ import logging
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 import numpy as np
 import optuna
@@ -32,10 +33,15 @@ if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
 
 from extreme_price_movements.data_store import (
+    PartitionedOHLCVStore,
+    _fetch_ohlcv_paged,
     exchange_data_component,
+    make_perp_exchange,
+    make_spot_exchange,
     read_parquet_projected,
 )
 from extreme_price_movements.inference.policy_rank_reference import (
+    invalidate_auction_rank_reference,
     persist_auction_rank_reference,
     persist_policy_rank_reference,
 )
@@ -167,8 +173,20 @@ DEPLOYMENT_THRESHOLD_PRECISION = 0.01
 DEPLOYMENT_RANK_THRESHOLD_EXTRA_REQUIREMENT = float(
     os.environ.get("EPM_POLICY_DEPLOYMENT_RANK_EXTRA_REQUIREMENT", "0.0")
 )
+DEPLOYMENT_LOCAL_CANDIDATE_HIT_GUARD_ENABLED = _env_flag(
+    "EPM_POLICY_LOCAL_CANDIDATE_HIT_GUARD_ENABLED", True
+)
+DEPLOYMENT_LOCAL_CANDIDATE_MIN_NET_HIT_RATE = float(
+    os.environ.get("EPM_POLICY_LOCAL_CANDIDATE_MIN_NET_HIT_RATE", "0.50")
+)
+DEPLOYMENT_LOCAL_CANDIDATE_MIN_ROWS = int(
+    os.environ.get("EPM_POLICY_LOCAL_CANDIDATE_MIN_ROWS", "50")
+)
 PORTFOLIO_CANDIDATE_EXPORT_NORMALIZED_RANK_FLOOR = float(
     os.environ.get("EPM_PORTFOLIO_CANDIDATE_EXPORT_RANK_FLOOR", "0.80")
+)
+SIMPLE_POLICY_MIN_EXECUTION_PATH_COVERAGE = float(
+    os.environ.get("EPM_SIMPLE_POLICY_MIN_EXECUTION_PATH_COVERAGE", "0.95")
 )
 DEPLOYMENT_MAX_CONCURRENT_PER_ASSET = 1
 DEPLOYMENT_MAX_CONCURRENT_PER_STRATEGY = max(
@@ -181,7 +199,7 @@ SIMPLE_DISCOVERY_SL_MULTS = (0.8, 1.0, 1.2, 1.5)
 SIMPLE_DISCOVERY_TP_MULTS = (1.0, 1.5, 2.0, 2.5)
 SIMPLE_DISCOVERY_SIZE_POWER = 1.0
 DEFAULT_POLICY_ROUND_TRIP_COST_PCT = float(
-    os.environ.get("EPM_SIMPLE_POLICY_ROUND_TRIP_COST_PCT", "0.005")
+    os.environ.get("EPM_SIMPLE_POLICY_ROUND_TRIP_COST_PCT", "0.002")
 )
 DEFAULT_POLICY_PER_SIDE_COST_PCT = DEFAULT_POLICY_ROUND_TRIP_COST_PCT / 2.0
 SIMPLE_DISCOVERY_ROUND_TRIP_COST_PCT = float(
@@ -210,6 +228,41 @@ ASSET_DECISIONS = (
 _POLICY_KLINES_CACHE: Dict[
     Tuple[str, str], Tuple[pd.Timestamp, pd.Timestamp, pd.DataFrame]
 ] = {}
+_POLICY_1M_KLINES_CACHE: Dict[
+    Tuple[str, str], Tuple[pd.Timestamp, pd.Timestamp, pd.DataFrame]
+] = {}
+POLICY_DELAYED_ENTRY_MINUTES = int(
+    os.environ.get("EPM_SIMPLE_POLICY_DELAYED_ENTRY_MINUTES", "10")
+)
+POLICY_DELAYED_ENTRY_ALPHA = float(
+    os.environ.get("EPM_SIMPLE_POLICY_DELAYED_ENTRY_ALPHA", "0.5")
+)
+POLICY_DELAYED_ENTRY_MIN_RANK = float(
+    os.environ.get("EPM_SIMPLE_POLICY_DELAYED_ENTRY_MIN_RANK", "0.50")
+)
+POLICY_DELAYED_ENTRY_FALLBACK_MINUTES = max(
+    0, int(os.environ.get("EPM_SIMPLE_POLICY_DELAYED_ENTRY_FALLBACK_MINUTES", "3") or "3")
+)
+POLICY_DELAYED_ENTRY_WORKERS = max(
+    1, int(os.environ.get("EPM_SIMPLE_POLICY_1M_WORKERS", "4") or "4")
+)
+POLICY_REQUIRE_1M_EXECUTION = _env_flag("EPM_SIMPLE_POLICY_REQUIRE_1M_EXECUTION", False)
+POLICY_MIN_1M_EXECUTION_COVERAGE = min(
+    1.0,
+    max(
+        0.0,
+        float(os.environ.get("EPM_SIMPLE_POLICY_MIN_1M_EXECUTION_COVERAGE", "0.95") or "0.95"),
+    ),
+)
+POLICY_STOP_EXIT_BASE_GAP_BPS = float(
+    os.environ.get("EPM_SIMPLE_POLICY_STOP_EXIT_BASE_GAP_BPS", "15.0")
+)
+POLICY_STOP_EXIT_ALPHA_THROUGH = float(
+    os.environ.get("EPM_SIMPLE_POLICY_STOP_EXIT_ALPHA_THROUGH", "0.05")
+)
+POLICY_STOP_EXIT_MAX_GAP_BPS = float(
+    os.environ.get("EPM_SIMPLE_POLICY_STOP_EXIT_MAX_GAP_BPS", "75.0")
+)
 
 
 def _normalise_market_mode(
@@ -256,6 +309,7 @@ def _runtime_exchange_context(
 
 def _policy_market_data_root(data_root: str | Path, market_mode: str) -> str:
     """Return the exchange-scoped root used for live-equivalent OHLCV replay."""
+    root = Path(data_root)
     exchange_id = (
         os.environ.get("EPM_EXCHANGE")
         or os.environ.get("EXCHANGE_NAME")
@@ -263,7 +317,13 @@ def _policy_market_data_root(data_root: str | Path, market_mode: str) -> str:
         or ""
     )
     component = exchange_data_component(exchange_id, market_mode)
-    exchange_root = Path(data_root) / "exchanges" / component
+    exchange_root = root / "exchanges" / component
+    if _normalise_market_mode(market_mode) == "perps" and (
+        exchange_root / "ohlcv"
+    ).exists():
+        return str(exchange_root)
+    if (root / "ohlcv").exists():
+        return str(root)
     if (exchange_root / "ohlcv").exists():
         return str(exchange_root)
     return str(data_root)
@@ -331,6 +391,32 @@ def _expand_strategy_id_allowlist(strategy_ids: Sequence[str]) -> Set[str]:
     return expanded
 
 
+def _strategy_id_matches_allowlist(strategy_id: str, allowlist: Optional[Set[str]]) -> bool:
+    """Match exact strategy ids plus unique trained ids with appended hash suffixes."""
+    if not allowlist:
+        return True
+    sid = str(strategy_id)
+    sid_side = "long" if sid.startswith("long_") else "short" if sid.startswith("short_") else None
+    sid_core = sid[len(sid_side) + 1 :] if sid_side else sid
+    if sid in allowlist:
+        return True
+    for allowed in allowlist:
+        aid = str(allowed)
+        if not aid:
+            continue
+        aid_side = "long" if aid.startswith("long_") else "short" if aid.startswith("short_") else None
+        aid_core = aid[len(aid_side) + 1 :] if aid_side else aid
+        if aid_side is None and sid_core == aid_core:
+            return True
+        if aid_side is not None and sid_side == aid_side and sid_core == aid_core:
+            return True
+        if sid.startswith(f"{aid}_"):
+            return True
+        if aid_side is None and sid_core.startswith(f"{aid_core}_"):
+            return True
+    return False
+
+
 def compute_position_size(rank_pct: np.ndarray, size_power: float) -> np.ndarray:
     """Position size formula: size = 0.075 + (0.15 - 0.075) * rank_pct ** size_power"""
     rank_pct = np.asarray(rank_pct, dtype=np.float32)
@@ -392,6 +478,98 @@ def _ranked_trade_confidence(rank_pct: np.ndarray) -> np.ndarray:
     """Confidence used by adverse exits: ranked confidence centered at 0.5."""
     rank = np.asarray(rank_pct, dtype=np.float32)
     return np.clip(rank - np.float32(0.5), 0.0, 0.5).astype(np.float32, copy=False)
+
+
+def stop_exit_proxy_15m(
+    side: str,
+    stop_px: float,
+    candle_high: float,
+    candle_low: float,
+    base_gap_bps: float = POLICY_STOP_EXIT_BASE_GAP_BPS,
+    alpha_through: float = POLICY_STOP_EXIT_ALPHA_THROUGH,
+    max_gap_bps: float = POLICY_STOP_EXIT_MAX_GAP_BPS,
+) -> Tuple[bool, float]:
+    base_gap = float(stop_px) * float(base_gap_bps) / 10000.0
+    max_gap = float(stop_px) * float(max_gap_bps) / 10000.0
+
+    if side == "long":
+        if float(candle_low) > float(stop_px):
+            return False, float("nan")
+        through = max(float(stop_px) - float(candle_low), 0.0)
+        gap = min(base_gap + float(alpha_through) * through, max_gap)
+        return True, float(stop_px) - gap
+
+    if side == "short":
+        if float(candle_high) < float(stop_px):
+            return False, float("nan")
+        through = max(float(candle_high) - float(stop_px), 0.0)
+        gap = min(base_gap + float(alpha_through) * through, max_gap)
+        return True, float(stop_px) + gap
+
+    raise ValueError(side)
+
+
+def _stop_exit_proxy_15m_array(
+    *,
+    side: np.ndarray,
+    stop_px: np.ndarray,
+    candle_high: np.ndarray,
+    candle_low: np.ndarray,
+    base_gap_bps: float = POLICY_STOP_EXIT_BASE_GAP_BPS,
+    alpha_through: float = POLICY_STOP_EXIT_ALPHA_THROUGH,
+    max_gap_bps: float = POLICY_STOP_EXIT_MAX_GAP_BPS,
+) -> Tuple[np.ndarray, np.ndarray]:
+    side_arr = np.asarray(side, dtype=np.float32)
+    stop = np.asarray(stop_px, dtype=np.float64)
+    high = np.asarray(candle_high, dtype=np.float64)
+    low = np.asarray(candle_low, dtype=np.float64)
+    is_long = side_arr >= 0.0
+    is_short = ~is_long
+    finite = np.isfinite(stop) & (stop > 0.0) & np.isfinite(high) & np.isfinite(low)
+    hit = finite & ((is_long & (low <= stop)) | (is_short & (high >= stop)))
+    through = np.where(is_long, np.maximum(stop - low, 0.0), np.maximum(high - stop, 0.0))
+    gap = np.minimum(
+        stop * float(base_gap_bps) / 10000.0 + float(alpha_through) * through,
+        stop * float(max_gap_bps) / 10000.0,
+    )
+    exit_px = np.where(is_long, stop - gap, stop + gap)
+    exit_px = np.where(hit & np.isfinite(exit_px) & (exit_px > 0.0), exit_px, np.nan)
+    return hit, exit_px.astype(np.float32, copy=False)
+
+
+def _adverse_exit_fill_proxy_array(
+    *,
+    side: np.ndarray,
+    exit_px: np.ndarray,
+    candle_high: Optional[np.ndarray] = None,
+    candle_low: Optional[np.ndarray] = None,
+    trigger: str = "close",
+    base_gap_bps: float = POLICY_STOP_EXIT_BASE_GAP_BPS,
+    alpha_through: float = POLICY_STOP_EXIT_ALPHA_THROUGH,
+    max_gap_bps: float = POLICY_STOP_EXIT_MAX_GAP_BPS,
+) -> np.ndarray:
+    """Worsen every simulated exit fill relative to the ideal exit level."""
+    side_arr = np.asarray(side, dtype=np.float32)
+    px = np.asarray(exit_px, dtype=np.float64)
+    is_long = side_arr >= 0.0
+    finite = np.isfinite(px) & (px > 0.0)
+    through = np.zeros_like(px, dtype=np.float64)
+    if trigger == "favorable" and candle_high is not None and candle_low is not None:
+        high = np.asarray(candle_high, dtype=np.float64)
+        low = np.asarray(candle_low, dtype=np.float64)
+        through = np.where(is_long, np.maximum(high - px, 0.0), np.maximum(px - low, 0.0))
+    elif trigger == "adverse" and candle_high is not None and candle_low is not None:
+        high = np.asarray(candle_high, dtype=np.float64)
+        low = np.asarray(candle_low, dtype=np.float64)
+        through = np.where(is_long, np.maximum(px - low, 0.0), np.maximum(high - px, 0.0))
+    gap = np.minimum(
+        px * float(base_gap_bps) / 10000.0 + float(alpha_through) * through,
+        px * float(max_gap_bps) / 10000.0,
+    )
+    filled = np.where(is_long, px - gap, px + gap)
+    return np.where(finite & np.isfinite(filled) & (filled > 0.0), filled, np.nan).astype(
+        np.float32, copy=False
+    )
 
 
 def _adverse_log_exit_scores(
@@ -494,6 +672,8 @@ def simulate_and_score(
     Fully self-contained, vectorized, bar-by-bar simulator.
     Checks TP/SL pessimistically, computes fees properly per trade.
     """
+    input_row_count = int(len(df_sub))
+    input_valid_entry_mask = np.ones(input_row_count, dtype=bool)
     n_trades, max_bars = f_opens.shape
     if n_trades == 0:
         return {
@@ -505,8 +685,10 @@ def simulate_and_score(
             "gross_gains": np.array([], dtype=np.float32),
             "sizes": np.array([], dtype=np.float32),
             "exit_bars": np.array([], dtype=np.int16),
-            "selected_mask": np.zeros(0, dtype=bool),
+            "selected_mask": np.zeros(input_row_count, dtype=bool),
             "candidate_count": 0,
+            "input_candidate_count": int(input_row_count),
+            "valid_entry_count": 0,
             "skipped_concurrency": 0,
             "skipped_concurrency_total": 0,
             "skipped_concurrency_per_asset": 0,
@@ -526,8 +708,10 @@ def simulate_and_score(
 
     # 1. Entry
     entry_prices = f_opens[:, 0].copy()
-    valid_entry = np.isfinite(entry_prices) & (entry_prices > 0.0)
+    finite_close_path = np.isfinite(f_closes).any(axis=1)
+    valid_entry = np.isfinite(entry_prices) & (entry_prices > 0.0) & finite_close_path
     if not np.all(valid_entry):
+        input_valid_entry_mask = valid_entry.copy()
         df_sub = df_sub.iloc[np.flatnonzero(valid_entry)].copy()
         f_opens = f_opens[valid_entry]
         f_highs = f_highs[valid_entry]
@@ -545,8 +729,10 @@ def simulate_and_score(
                 "gross_gains": np.array([], dtype=np.float32),
                 "sizes": np.array([], dtype=np.float32),
                 "exit_bars": np.array([], dtype=np.int16),
-                "selected_mask": np.zeros(0, dtype=bool),
+                "selected_mask": np.zeros(input_row_count, dtype=bool),
                 "candidate_count": 0,
+                "input_candidate_count": int(input_row_count),
+                "valid_entry_count": 0,
                 "skipped_concurrency": 0,
                 "skipped_concurrency_total": 0,
                 "skipped_concurrency_per_asset": 0,
@@ -651,12 +837,27 @@ def simulate_and_score(
         )
         sl_hit = sl_hit_long | sl_hit_short
 
-        # Update exits for hits
         hit_indices = active_idx[sl_hit]
-        exit_rets[hit_indices] = -(sl_dist[hit_indices] / entry_prices[hit_indices])
-        exit_bars[hit_indices] = j
-        exit_reason[hit_indices] = "full_sl"
-        active[hit_indices] = False
+        if len(hit_indices) > 0:
+            stop_px = np.where(
+                is_long_arr[hit_indices],
+                entry_prices[hit_indices] - sl_dist[hit_indices],
+                entry_prices[hit_indices] + sl_dist[hit_indices],
+            )
+            filled, exit_px = _stop_exit_proxy_15m_array(
+                side=side[hit_indices],
+                stop_px=stop_px,
+                candle_high=f_highs[hit_indices, j],
+                candle_low=f_lows[hit_indices, j],
+            )
+            filled_idx = hit_indices[filled]
+            if len(filled_idx) > 0:
+                exit_rets[filled_idx] = side[filled_idx] * (
+                    exit_px[filled] / entry_prices[filled_idx] - 1.0
+                )
+                exit_bars[filled_idx] = j
+                exit_reason[filled_idx] = "full_sl"
+                active[filled_idx] = False
 
         # Re-filter active
         active_idx = np.where(active)[0]
@@ -712,8 +913,15 @@ def simulate_and_score(
                     if np.any(finite_close):
                         finite_hit = hit[finite_close]
                         close_px_f = close_px[finite_close]
+                        fill_px = _adverse_exit_fill_proxy_array(
+                            side=side[finite_hit],
+                            exit_px=close_px_f,
+                            candle_high=f_highs[finite_hit, j],
+                            candle_low=f_lows[finite_hit, j],
+                            trigger="adverse",
+                        )
                         exit_rets[finite_hit] = side[finite_hit] * (
-                            close_px_f / entry_prices[finite_hit] - 1.0
+                            fill_px / entry_prices[finite_hit] - 1.0
                         )
                         exit_bars[finite_hit] = j
                         exit_reason[finite_hit] = "adverse_exit"
@@ -750,20 +958,36 @@ def simulate_and_score(
                 )
                 if np.any(cap_hit_long):
                     hit = protected_idx[cap_hit_long]
-                    exit_rets[hit] = (
-                        eff_sl_long[cap_hit_long] - protected_entry[cap_hit_long]
-                    ) / protected_entry[cap_hit_long]
-                    exit_bars[hit] = j
-                    exit_reason[hit] = "capital_protect"
-                    active[hit] = False
+                    filled, exit_px = _stop_exit_proxy_15m_array(
+                        side=side[hit],
+                        stop_px=eff_sl_long[cap_hit_long],
+                        candle_high=f_highs[hit, j],
+                        candle_low=f_lows[hit, j],
+                    )
+                    filled_hit = hit[filled]
+                    if len(filled_hit) > 0:
+                        exit_rets[filled_hit] = (
+                            exit_px[filled] - entry_prices[filled_hit]
+                        ) / entry_prices[filled_hit]
+                        exit_bars[filled_hit] = j
+                        exit_reason[filled_hit] = "capital_protect"
+                        active[filled_hit] = False
                 if np.any(cap_hit_short):
                     hit = protected_idx[cap_hit_short]
-                    exit_rets[hit] = (
-                        protected_entry[cap_hit_short] - eff_sl_short[cap_hit_short]
-                    ) / protected_entry[cap_hit_short]
-                    exit_bars[hit] = j
-                    exit_reason[hit] = "capital_protect"
-                    active[hit] = False
+                    filled, exit_px = _stop_exit_proxy_15m_array(
+                        side=side[hit],
+                        stop_px=eff_sl_short[cap_hit_short],
+                        candle_high=f_highs[hit, j],
+                        candle_low=f_lows[hit, j],
+                    )
+                    filled_hit = hit[filled]
+                    if len(filled_hit) > 0:
+                        exit_rets[filled_hit] = (
+                            entry_prices[filled_hit] - exit_px[filled]
+                        ) / entry_prices[filled_hit]
+                        exit_bars[filled_hit] = j
+                        exit_reason[filled_hit] = "capital_protect"
+                        active[filled_hit] = False
 
             active_idx = np.where(active)[0]
             if len(active_idx) == 0:
@@ -801,15 +1025,27 @@ def simulate_and_score(
         )
         trail_hit = trail_hit_long | trail_hit_short
 
-        exit_rets[active_idx[trail_hit_long]] = (
-            trail_level_long[trail_hit_long] - entry[trail_hit_long]
-        ) / entry[trail_hit_long]
-        exit_rets[active_idx[trail_hit_short]] = (
-            entry[trail_hit_short] - trail_level_short[trail_hit_short]
-        ) / entry[trail_hit_short]
-        exit_bars[active_idx[trail_hit]] = j
-        exit_reason[active_idx[trail_hit]] = "trailing"
-        active[active_idx[trail_hit]] = False
+        trail_indices = active_idx[trail_hit]
+        if len(trail_indices) > 0:
+            trail_stop = np.where(
+                is_long_arr[trail_indices],
+                trail_level_long[trail_hit],
+                trail_level_short[trail_hit],
+            )
+            filled, exit_px = _stop_exit_proxy_15m_array(
+                side=side[trail_indices],
+                stop_px=trail_stop,
+                candle_high=f_highs[trail_indices, j],
+                candle_low=f_lows[trail_indices, j],
+            )
+            filled_idx = trail_indices[filled]
+            if len(filled_idx) > 0:
+                exit_rets[filled_idx] = side[filled_idx] * (
+                    exit_px[filled] / entry_prices[filled_idx] - 1.0
+                )
+                exit_bars[filled_idx] = j
+                exit_reason[filled_idx] = "trailing"
+                active[filled_idx] = False
 
         # Keep legacy trailing/capital semantics: this bar's favorable excursion
         # is available for the next bar, not for same-bar stop promotion.
@@ -827,7 +1063,14 @@ def simulate_and_score(
         )
         v_ent = entry_prices[end_idx].astype(np.float64, copy=False)
         v_s = side[end_idx]
-        exit_rets[end_idx] = v_s * (b_close / v_ent - 1.0)
+        fill_px = _adverse_exit_fill_proxy_array(
+            side=v_s,
+            exit_px=b_close,
+            trigger="close",
+        )
+        exit_rets[end_idx] = v_s * (
+            fill_px.astype(np.float64, copy=False) / v_ent - 1.0
+        )
         exit_bars[end_idx] = last_pos.astype(np.int16, copy=False)
         exit_reason[end_idx] = "timeout"
 
@@ -898,6 +1141,10 @@ def simulate_and_score(
         sizes = sizes[selected_mask]
     selected_exit_bars = exit_bars[selected_mask]
     selected_exit_reason = exit_reason[selected_mask]
+    selected_input_mask = selected_mask
+    if len(input_valid_entry_mask) != len(selected_mask):
+        selected_input_mask = np.zeros(len(input_valid_entry_mask), dtype=bool)
+        selected_input_mask[np.flatnonzero(input_valid_entry_mask)] = selected_mask
     adverse_exit_count = int(np.sum(selected_exit_reason == "adverse_exit"))
     full_sl_exit_count = int(np.sum(selected_exit_reason == "full_sl"))
     capital_protect_exit_count = int(np.sum(selected_exit_reason == "capital_protect"))
@@ -914,8 +1161,10 @@ def simulate_and_score(
         "sizes": sizes,
         "exit_bars": selected_exit_bars,
         "exit_reason": selected_exit_reason.tolist(),
-        "selected_mask": selected_mask,
+        "selected_mask": selected_input_mask,
         "candidate_count": candidate_count,
+        "input_candidate_count": int(input_row_count),
+        "valid_entry_count": int(candidate_count),
         "skipped_concurrency": int(candidate_count - int(np.sum(selected_mask))),
         "skipped_concurrency_total": int(skipped_concurrency_total),
         "skipped_concurrency_per_asset": int(skipped_concurrency_per_asset),
@@ -1288,7 +1537,8 @@ def _simulate_simple_tp_sl_rows(
         return pd.DataFrame()
 
     entry_prices = f_opens[:, 0].astype(np.float32, copy=True)
-    valid_entry = np.isfinite(entry_prices) & (entry_prices > 0.0)
+    finite_close_path = np.isfinite(f_closes).any(axis=1)
+    valid_entry = np.isfinite(entry_prices) & (entry_prices > 0.0) & finite_close_path
     if not np.any(valid_entry):
         return pd.DataFrame()
     if not np.all(valid_entry):
@@ -1331,7 +1581,12 @@ def _simulate_simple_tp_sl_rows(
     finite_close = np.isfinite(close_rows)
     last_pos = np.maximum(np.sum(finite_close, axis=1) - 1, 0)
     b_close = close_rows[np.arange(n_trades), last_pos].astype(np.float32, copy=False)
-    exit_rets = side * (b_close / entry_prices - 1.0)
+    b_fill = _adverse_exit_fill_proxy_array(
+        side=side,
+        exit_px=b_close,
+        trigger="close",
+    )
+    exit_rets = side * (b_fill / entry_prices - 1.0)
     exit_bars = last_pos.astype(np.int16, copy=False)
 
     if max_bars > 1:
@@ -1362,11 +1617,44 @@ def _simulate_simple_tp_sl_rows(
         sl_first = sl_any & (first_sl <= first_tp)
         tp_first = tp_any & ~sl_first
         if np.any(sl_first):
-            exit_rets[sl_first] = -(sl_dist[sl_first] / entry_prices[sl_first])
+            sl_idx = np.flatnonzero(sl_first)
+            stop_px = np.where(
+                is_long_arr[sl_idx],
+                entry_prices[sl_idx] - sl_dist[sl_idx],
+                entry_prices[sl_idx] + sl_dist[sl_idx],
+            )
+            candle_pos = first_sl[sl_idx].astype(np.int64, copy=False)
+            filled, exit_px = _stop_exit_proxy_15m_array(
+                side=side[sl_idx],
+                stop_px=stop_px,
+                candle_high=f_highs[sl_idx, candle_pos],
+                candle_low=f_lows[sl_idx, candle_pos],
+            )
+            filled_idx = sl_idx[filled]
+            if len(filled_idx) > 0:
+                exit_rets[filled_idx] = side[filled_idx] * (
+                    exit_px[filled] / entry_prices[filled_idx] - 1.0
+                )
             exit_bars[sl_first] = first_sl[sl_first]
         if np.any(tp_first):
-            exit_rets[tp_first] = tp_dist[tp_first] / entry_prices[tp_first]
-            exit_bars[tp_first] = first_tp[tp_first]
+            tp_idx = np.flatnonzero(tp_first)
+            target_px = np.where(
+                is_long_arr[tp_idx],
+                entry_prices[tp_idx] + tp_dist[tp_idx],
+                entry_prices[tp_idx] - tp_dist[tp_idx],
+            )
+            candle_pos = first_tp[tp_idx].astype(np.int64, copy=False)
+            fill_px = _adverse_exit_fill_proxy_array(
+                side=side[tp_idx],
+                exit_px=target_px,
+                candle_high=f_highs[tp_idx, candle_pos],
+                candle_low=f_lows[tp_idx, candle_pos],
+                trigger="favorable",
+            )
+            exit_rets[tp_idx] = side[tp_idx] * (
+                fill_px / entry_prices[tp_idx] - 1.0
+            )
+            exit_bars[tp_idx] = first_tp[tp_idx]
 
     fees = sizes * cost_pct + sizes * (1.0 + exit_rets) * cost_pct
     gross_gain = sizes * exit_rets
@@ -2095,7 +2383,33 @@ def _build_simple_policy_candidate_rows(
                 best_params.get("trailing_squash_divisor", 2.0) or 2.0
             ),
             "policy_giveback_beta": float(best_params.get("giveback_beta", 0.5) or 0.5),
-            "price_gap_bps": 50.0,
+            "theoretical_entry_price": pd.to_numeric(
+                rows.get("theoretical_entry_price", pd.Series(entry_prices)),
+                errors="coerce",
+            ).to_numpy(dtype=np.float64),
+            "delayed_entry_ts": rows.get("delayed_entry_ts", pd.Series(pd.NaT, index=rows.index)),
+            "delayed_entry_effective_ts": rows.get(
+                "delayed_entry_effective_ts", pd.Series(pd.NaT, index=rows.index)
+            ),
+            "entry_execution_source": rows.get(
+                "entry_execution_source",
+                pd.Series("theoretical_15m_open", index=rows.index),
+            ).astype(str).to_numpy(),
+            "entry_gap_bps": pd.to_numeric(
+                rows.get("entry_gap_bps", pd.Series(np.nan, index=rows.index)),
+                errors="coerce",
+            ).to_numpy(dtype=np.float64),
+            "entry_slippage_proxy_bps": pd.to_numeric(
+                rows.get(
+                    "entry_slippage_proxy_bps",
+                    pd.Series(np.nan, index=rows.index),
+                ),
+                errors="coerce",
+            ).to_numpy(dtype=np.float64),
+            "price_gap_bps": pd.to_numeric(
+                rows.get("entry_gap_bps", pd.Series(np.nan, index=rows.index)),
+                errors="coerce",
+            ).fillna(50.0).abs().to_numpy(dtype=np.float64),
             "expected_friction_bps": fees_bps,
             "liquidity_capacity_weight": 1.0,
             "orderbook_slippage_bps": 0.0,
@@ -2103,6 +2417,27 @@ def _build_simple_policy_candidate_rows(
             "mtm_path_gross_returns": mtm_path_gross_returns,
         }
     )
+    delay_cols = [
+        "entry_delay_minutes",
+        "entry_delay_target_minutes",
+        "entry_delay_fallback_minutes",
+        "entry_delay_actual_minutes",
+        "delay_window_candle_count",
+        "delay_window_open",
+        "delay_window_high",
+        "delay_window_low",
+        "delay_window_close",
+        "delay_window_range_bps",
+        "delay_entry_ref_gap_bps",
+        "delay_close_gap_bps",
+        "delay_max_adverse_bps",
+        "delay_max_favorable_bps",
+    ]
+    for col in delay_cols:
+        if col in rows.columns:
+            out[col] = pd.to_numeric(rows[col], errors="coerce").to_numpy(
+                dtype=np.float64
+            )
     return out.replace([np.inf, -np.inf], np.nan).dropna(
         subset=[
             "timestamp",
@@ -2159,12 +2494,675 @@ def _finalise_simple_policy_candidates(
     ).reset_index(drop=True)
 
 
+def _write_delay_rejection_reports(
+    candidate_table: pd.DataFrame,
+    *,
+    output_dir: Path,
+) -> None:
+    if candidate_table.empty:
+        return
+    output_dir.mkdir(parents=True, exist_ok=True)
+    rows = candidate_table.copy()
+    adverse = pd.to_numeric(
+        rows.get(
+            "delay_entry_ref_gap_bps",
+            rows.get("entry_gap_bps", pd.Series(np.nan, index=rows.index)),
+        ),
+        errors="coerce",
+    )
+    rows["entry_adverse_bps"] = adverse.clip(lower=0.0)
+    rows["entry_favorable_bps"] = (-adverse).clip(lower=0.0)
+    rows["net_return"] = pd.to_numeric(rows.get("net_return"), errors="coerce")
+    rows["gross_return"] = pd.to_numeric(rows.get("gross_return"), errors="coerce")
+    rows["strategy_id"] = rows.get("strategy_id", "__unknown__").astype(str)
+
+    summary_rows: List[Dict[str, Any]] = []
+    groups: List[Tuple[str, pd.DataFrame]] = [("__global__", rows)]
+    groups.extend(list(rows.groupby("strategy_id", sort=True)))
+    for group_name, group in groups:
+        if group.empty:
+            continue
+        for threshold_bps in (50.0, 100.0, 150.0):
+            kept = group.loc[group["entry_adverse_bps"].fillna(0.0) < threshold_bps]
+            rejected = len(group) - len(kept)
+            summary_rows.append(
+                {
+                    "strategy_id": group_name,
+                    "reject_adverse_entry_threshold_bps": threshold_bps,
+                    "kept_rows": int(len(kept)),
+                    "rejected_rows": int(rejected),
+                    "rejected_fraction": float(rejected / max(len(group), 1)),
+                    "net_hit_rate": float((kept["net_return"] > 0.0).mean())
+                    if len(kept)
+                    else float("nan"),
+                    "gross_hit_rate": float((kept["gross_return"] > 0.0).mean())
+                    if len(kept)
+                    else float("nan"),
+                    "mean_net_return": float(kept["net_return"].mean())
+                    if len(kept)
+                    else float("nan"),
+                    "mean_gross_return": float(kept["gross_return"].mean())
+                    if len(kept)
+                    else float("nan"),
+                    "mean_entry_adverse_bps": float(kept["entry_adverse_bps"].mean())
+                    if len(kept)
+                    else float("nan"),
+                    "mean_entry_favorable_bps": float(kept["entry_favorable_bps"].mean())
+                    if len(kept)
+                    else float("nan"),
+                    "mean_delay_max_adverse_bps": float(
+                        pd.to_numeric(
+                            kept.get("delay_max_adverse_bps"), errors="coerce"
+                        ).mean()
+                    )
+                    if len(kept) and "delay_max_adverse_bps" in kept.columns
+                    else float("nan"),
+                }
+            )
+    sim = pd.DataFrame(summary_rows)
+    sim_path = output_dir / "delay_adverse_rejection_simulations.csv"
+    sim.to_csv(sim_path, index=False)
+    (output_dir / "delay_adverse_rejection_simulations.json").write_text(
+        json.dumps(_json_safe(summary_rows), indent=2)
+    )
+
+    breakdown_cols = [
+        "strategy_id",
+        "symbol",
+        "timestamp",
+        "side",
+        "normalized_rank_score",
+        "net_return",
+        "gross_return",
+        "entry_adverse_bps",
+        "entry_favorable_bps",
+        "entry_gap_bps",
+        "entry_slippage_proxy_bps",
+        "entry_delay_minutes",
+        "delay_window_candle_count",
+        "delay_window_range_bps",
+        "delay_entry_ref_gap_bps",
+        "delay_close_gap_bps",
+        "delay_max_adverse_bps",
+        "delay_max_favorable_bps",
+    ]
+    present_cols = [col for col in breakdown_cols if col in rows.columns]
+    rows[present_cols].to_csv(output_dir / "delay_price_move_breakdown.csv", index=False)
+
+
+def _candidate_band_metrics(
+    rows: pd.DataFrame,
+    *,
+    rank_col: str,
+    group_name: str,
+    strategy_id: str,
+    band_lo: float,
+    band_hi: float,
+    selection_type: str,
+) -> Dict[str, Any]:
+    net = pd.to_numeric(rows.get("net_return"), errors="coerce")
+    gross = pd.to_numeric(rows.get("gross_return"), errors="coerce")
+    rank = pd.to_numeric(rows.get(rank_col), errors="coerce")
+    out: Dict[str, Any] = {
+        "group": group_name,
+        "strategy_id": strategy_id,
+        "rank_col": rank_col,
+        "selection_type": selection_type,
+        "band_lo": float(band_lo),
+        "band_hi": float(band_hi),
+        "row_count": int(len(rows)),
+        "rank_min": float(rank.min()) if len(rank.dropna()) else None,
+        "rank_max": float(rank.max()) if len(rank.dropna()) else None,
+        "net_hit_rate": float((net > 0.0).mean()) if len(net.dropna()) else None,
+        "gross_hit_rate": float((gross > 0.0).mean()) if len(gross.dropna()) else None,
+        "mean_net_return": float(net.mean()) if len(net.dropna()) else None,
+        "median_net_return": float(net.median()) if len(net.dropna()) else None,
+        "p10_net_return": float(net.quantile(0.10)) if len(net.dropna()) else None,
+        "p90_net_return": float(net.quantile(0.90)) if len(net.dropna()) else None,
+        "mean_gross_return": float(gross.mean()) if len(gross.dropna()) else None,
+        "median_gross_return": float(gross.median()) if len(gross.dropna()) else None,
+    }
+    if "entry_adverse_bps" in rows.columns:
+        adverse = pd.to_numeric(rows["entry_adverse_bps"], errors="coerce")
+        out["mean_entry_adverse_bps"] = (
+            float(adverse.mean()) if len(adverse.dropna()) else None
+        )
+    elif "delay_entry_ref_gap_bps" in rows.columns:
+        adverse = pd.to_numeric(rows["delay_entry_ref_gap_bps"], errors="coerce").clip(
+            lower=0.0
+        )
+        out["mean_entry_adverse_bps"] = (
+            float(adverse.mean()) if len(adverse.dropna()) else None
+        )
+    return out
+
+
+def _write_rank_threshold_band_reports(
+    candidate_table: pd.DataFrame,
+    *,
+    output_dir: Path,
+    band_width: float = 0.05,
+) -> None:
+    """Persist rank-band economics for threshold audits.
+
+    The exported candidate table is the exact table consumed by portfolio replay
+    and live rank references, so these reports answer whether marginal rows near
+    a threshold have standalone edge before higher-rank rows can compensate them.
+    """
+    if candidate_table.empty:
+        return
+    output_dir.mkdir(parents=True, exist_ok=True)
+    rows = candidate_table.copy()
+    rows["strategy_id"] = rows.get("strategy_id", "__unknown__").astype(str)
+    for col in ("net_return", "gross_return"):
+        if col in rows.columns:
+            rows[col] = pd.to_numeric(rows[col], errors="coerce")
+    rank_cols: List[str] = []
+    for col in ("auction_rank_score", "normalized_rank_score", "strategy_rank_pct"):
+        if col in rows.columns and col not in rank_cols:
+            rank_cols.append(col)
+            rows[col] = pd.to_numeric(rows[col], errors="coerce")
+    if not rank_cols:
+        return
+
+    band_width = float(np.clip(band_width, 1e-6, 1.0))
+    starts = np.arange(0.0, 1.0, band_width)
+    starts = np.unique(np.round(starts, 10))
+    report_rows: List[Dict[str, Any]] = []
+    groups: List[Tuple[str, str, pd.DataFrame]] = [
+        ("global", "__global__", rows)
+    ]
+    groups.extend(
+        ("strategy", str(strategy_id), group)
+        for strategy_id, group in rows.groupby("strategy_id", sort=True)
+    )
+
+    for rank_col in rank_cols:
+        for group_name, strategy_id, group in groups:
+            rank = pd.to_numeric(group[rank_col], errors="coerce")
+            for lo in starts:
+                hi = min(1.0, float(lo + band_width))
+                if hi >= 1.0:
+                    local_mask = (rank >= lo) & (rank <= hi)
+                else:
+                    local_mask = (rank >= lo) & (rank < hi)
+                local = group.loc[local_mask]
+                if not local.empty:
+                    report_rows.append(
+                        _candidate_band_metrics(
+                            local,
+                            rank_col=rank_col,
+                            group_name=group_name,
+                            strategy_id=strategy_id,
+                            band_lo=float(lo),
+                            band_hi=float(hi),
+                            selection_type="local_band",
+                        )
+                    )
+                cumulative = group.loc[rank >= lo]
+                if not cumulative.empty:
+                    report_rows.append(
+                        _candidate_band_metrics(
+                            cumulative,
+                            rank_col=rank_col,
+                            group_name=group_name,
+                            strategy_id=strategy_id,
+                            band_lo=float(lo),
+                            band_hi=1.0,
+                            selection_type="cumulative_at_or_above",
+                        )
+                    )
+
+    report = pd.DataFrame(report_rows)
+    csv_path = output_dir / "rank_threshold_band_report.csv"
+    json_path = output_dir / "rank_threshold_band_report.json"
+    report.to_csv(csv_path, index=False)
+    json_path.write_text(json.dumps(_json_safe(report_rows), indent=2))
+
+
+def _write_simple_policy_candidate_metadata(
+    candidate_table: pd.DataFrame,
+    *,
+    output_path: Path,
+) -> None:
+    """Persist execution-model metadata for candidate artifact audits."""
+    metadata: Dict[str, Any] = {
+        "generated_by": "simple_policy_optimiser",
+        "schema": "simple_policy_candidate_metadata_v1",
+        "configured_delayed_entry_minutes": int(POLICY_DELAYED_ENTRY_MINUTES),
+        "configured_delayed_entry_fallback_minutes": int(
+            POLICY_DELAYED_ENTRY_FALLBACK_MINUTES
+        ),
+        "configured_delayed_entry_alpha": float(POLICY_DELAYED_ENTRY_ALPHA),
+        "configured_delayed_entry_min_rank": float(POLICY_DELAYED_ENTRY_MIN_RANK),
+        "row_count": int(len(candidate_table)),
+    }
+    if candidate_table.empty:
+        output_path.write_text(json.dumps(_json_safe(metadata), indent=2))
+        return
+    if {"timestamp", "delayed_entry_ts"}.issubset(candidate_table.columns):
+        ts = pd.to_datetime(candidate_table["timestamp"], utc=True, errors="coerce")
+        delayed = pd.to_datetime(
+            candidate_table["delayed_entry_ts"],
+            utc=True,
+            errors="coerce",
+        )
+        delay_minutes = ((delayed - ts).dt.total_seconds() / 60.0).dropna()
+        metadata["artifact_entry_delay_minutes"] = {
+            "non_null": int(delay_minutes.size),
+            "min": float(delay_minutes.min()) if not delay_minutes.empty else None,
+            "median": float(delay_minutes.median()) if not delay_minutes.empty else None,
+            "max": float(delay_minutes.max()) if not delay_minutes.empty else None,
+            "value_counts": {
+                str(float(k)): int(v)
+                for k, v in delay_minutes.round(6).value_counts().sort_index().items()
+            },
+        }
+        if not delay_minutes.empty:
+            mismatch = delay_minutes.sub(float(POLICY_DELAYED_ENTRY_MINUTES)).abs() > 1e-9
+            metadata["artifact_entry_delay_matches_config"] = bool(not mismatch.any())
+            metadata["artifact_entry_delay_mismatch_rows"] = int(mismatch.sum())
+    if "entry_delay_actual_minutes" in candidate_table.columns:
+        actual_delay = pd.to_numeric(
+            candidate_table["entry_delay_actual_minutes"],
+            errors="coerce",
+        ).dropna()
+        metadata["artifact_entry_actual_delay_minutes"] = {
+            "non_null": int(actual_delay.size),
+            "min": float(actual_delay.min()) if not actual_delay.empty else None,
+            "median": float(actual_delay.median()) if not actual_delay.empty else None,
+            "max": float(actual_delay.max()) if not actual_delay.empty else None,
+            "value_counts": {
+                str(float(k)): int(v)
+                for k, v in actual_delay.round(6).value_counts().sort_index().items()
+            },
+        }
+    if "entry_delay_fallback_minutes" in candidate_table.columns:
+        fallback_delay = pd.to_numeric(
+            candidate_table["entry_delay_fallback_minutes"],
+            errors="coerce",
+        ).dropna()
+        metadata["artifact_entry_delay_fallback_minutes"] = {
+            "non_null": int(fallback_delay.size),
+            "min": float(fallback_delay.min()) if not fallback_delay.empty else None,
+            "median": float(fallback_delay.median()) if not fallback_delay.empty else None,
+            "max": float(fallback_delay.max()) if not fallback_delay.empty else None,
+            "value_counts": {
+                str(float(k)): int(v)
+                for k, v in fallback_delay.round(6).value_counts().sort_index().items()
+            },
+        }
+    if "entry_execution_source" in candidate_table.columns:
+        source_counts = (
+            candidate_table["entry_execution_source"]
+            .fillna("missing")
+            .astype(str)
+            .value_counts()
+            .to_dict()
+        )
+        metadata["entry_execution_source_counts"] = source_counts
+        delayed_count = int(source_counts.get("delayed_1m_intraminute_proxy", 0))
+        metadata["delayed_1m_execution_rows"] = delayed_count
+        metadata["delayed_1m_execution_coverage"] = (
+            float(delayed_count / len(candidate_table)) if len(candidate_table) else None
+        )
+    if "delay_window_candle_count" in candidate_table.columns:
+        counts = pd.to_numeric(
+            candidate_table["delay_window_candle_count"],
+            errors="coerce",
+        ).dropna()
+        metadata["delay_window_candle_count"] = {
+            "non_null": int(counts.size),
+            "min": float(counts.min()) if not counts.empty else None,
+            "median": float(counts.median()) if not counts.empty else None,
+            "max": float(counts.max()) if not counts.empty else None,
+            "value_counts": {
+                str(float(k)): int(v)
+                for k, v in counts.round(6).value_counts().sort_index().items()
+            },
+        }
+        expected_min = float(POLICY_DELAYED_ENTRY_MINUTES + 1)
+        metadata["delay_window_complete_rows"] = int((counts >= expected_min).sum())
+        metadata["delay_window_expected_min_candles"] = expected_min
+    output_path.write_text(json.dumps(_json_safe(metadata), indent=2))
+
+
+def _validate_delayed_entry_execution_coverage(
+    candidate_table: pd.DataFrame,
+    *,
+    artifact_label: str,
+) -> None:
+    """Fail fast when strict policy optimisation requires real 1m delayed entries."""
+    if (
+        candidate_table.empty
+        or not POLICY_REQUIRE_1M_EXECUTION
+        or not _env_flag("EPM_SIMPLE_POLICY_1M_EXECUTION_ENABLED", True)
+    ):
+        return
+    if "entry_execution_source" not in candidate_table.columns:
+        raise RuntimeError(
+            f"{artifact_label} missing entry_execution_source while "
+            "EPM_SIMPLE_POLICY_REQUIRE_1M_EXECUTION=1"
+        )
+    sources = candidate_table["entry_execution_source"].fillna("missing").astype(str)
+    delayed_rows = int((sources == "delayed_1m_intraminute_proxy").sum())
+    coverage = float(delayed_rows / len(candidate_table)) if len(candidate_table) else 0.0
+    if coverage + 1e-12 < float(POLICY_MIN_1M_EXECUTION_COVERAGE):
+        counts = sources.value_counts().to_dict()
+        raise RuntimeError(
+            f"{artifact_label} has insufficient delayed 1m execution coverage: "
+            f"{coverage:.2%} ({delayed_rows}/{len(candidate_table)}) below "
+            f"EPM_SIMPLE_POLICY_MIN_1M_EXECUTION_COVERAGE="
+            f"{POLICY_MIN_1M_EXECUTION_COVERAGE:.2%}; "
+            f"entry_execution_source_counts={counts}. Refusing to optimise against "
+            "theoretical_15m_open fallback rows."
+        )
+
+
+def _write_policy_export_invalid_marker(
+    output_dir: Path,
+    *,
+    run_id: str,
+    market_mode: str,
+    reason: BaseException,
+) -> None:
+    marker_path = output_dir / "policy_export_invalid.json"
+    marker_path.parent.mkdir(parents=True, exist_ok=True)
+    marker_payload = {
+        "schema": "extreme_price_movements.simple_policy.policy_export_invalid.v1",
+        "run_id": str(run_id),
+        "market_mode": str(market_mode),
+        "reason": str(reason),
+        "generated_at_utc": pd.Timestamp.utcnow().isoformat(),
+    }
+    marker_path.write_text(json.dumps(_json_safe(marker_payload), indent=2) + "\n")
+
+
+def _write_policy_export_failure_diagnostics(
+    candidate_table: pd.DataFrame,
+    output_dir: Path,
+    *,
+    run_id: str,
+    market_mode: str,
+) -> None:
+    if candidate_table.empty:
+        return
+    output_dir.mkdir(parents=True, exist_ok=True)
+    sources = (
+        candidate_table.get(
+            "entry_execution_source",
+            pd.Series("missing", index=candidate_table.index),
+        )
+        .fillna("missing")
+        .astype(str)
+    )
+    fallback = candidate_table.loc[sources != "delayed_1m_intraminute_proxy"].copy()
+    delayed = int((sources == "delayed_1m_intraminute_proxy").sum())
+    total = int(len(candidate_table))
+    summary: Dict[str, Any] = {
+        "schema": "extreme_price_movements.simple_policy.strict_export_failure_diagnostics.v1",
+        "run_id": str(run_id),
+        "market_mode": str(market_mode),
+        "row_count": total,
+        "delayed_1m_execution_rows": delayed,
+        "delayed_1m_execution_coverage": float(delayed / max(total, 1)),
+        "entry_execution_source_counts": {
+            str(k): int(v) for k, v in sources.value_counts(dropna=False).items()
+        },
+        "fallback_rows": int(len(fallback)),
+    }
+    if not fallback.empty:
+        summary["fallback_by_strategy"] = {
+            str(k): int(v)
+            for k, v in fallback.get(
+                "strategy_id", pd.Series("__missing__", index=fallback.index)
+            )
+            .fillna("__missing__")
+            .astype(str)
+            .value_counts()
+            .items()
+        }
+        summary["fallback_by_symbol_top25"] = {
+            str(k): int(v)
+            for k, v in fallback.get(
+                "symbol", pd.Series("__missing__", index=fallback.index)
+            )
+            .fillna("__missing__")
+            .astype(str)
+            .value_counts()
+            .head(25)
+            .items()
+        }
+        if "timestamp" in fallback.columns:
+            ts = pd.to_datetime(fallback["timestamp"], utc=True, errors="coerce")
+            summary["fallback_time_range"] = {
+                "min": ts.min().isoformat() if ts.notna().any() else None,
+                "max": ts.max().isoformat() if ts.notna().any() else None,
+            }
+            by_day = ts.dt.floor("D").value_counts().sort_index()
+            summary["fallback_by_day_top25"] = {
+                k.isoformat(): int(v)
+                for k, v in by_day.sort_values(ascending=False).head(25).items()
+            }
+    cols = [
+        "strategy_id",
+        "symbol",
+        "timestamp",
+        "side",
+        "strategy_rank_pct",
+        "normalized_rank_score",
+        "calibrated_score",
+        "entry_execution_source",
+        "theoretical_entry_price",
+        "entry_price",
+        "delayed_entry_ts",
+        "delayed_entry_effective_ts",
+        "entry_delay_target_minutes",
+        "entry_delay_fallback_minutes",
+        "entry_delay_actual_minutes",
+        "delay_window_candle_count",
+        "delay_window_open",
+        "delay_window_high",
+        "delay_window_low",
+        "delay_window_close",
+        "entry_gap_bps",
+        "entry_slippage_proxy_bps",
+        "delay_entry_ref_gap_bps",
+        "delay_close_gap_bps",
+        "delay_max_adverse_bps",
+        "delay_max_favorable_bps",
+        "net_return",
+        "gross_return",
+    ]
+    present = [col for col in cols if col in fallback.columns]
+    if present:
+        fallback[present].to_parquet(
+            output_dir / "policy_export_invalid_fallback_rows.parquet",
+            index=False,
+        )
+    (output_dir / "policy_export_invalid_summary.json").write_text(
+        json.dumps(_json_safe(summary), indent=2) + "\n"
+    )
+
+
+def _clear_policy_export_invalid_marker(output_dir: Path) -> None:
+    for name in (
+        "policy_export_invalid.json",
+        "policy_export_invalid_summary.json",
+        "policy_export_invalid_fallback_rows.parquet",
+    ):
+        path = output_dir / name
+        if path.exists():
+            path.unlink()
+
+
 def _safe_float(x: Any, default: float = 0.0) -> float:
     try:
         val = float(x)
         return val if np.isfinite(val) else default
     except Exception:
         return default
+
+
+def _apply_local_candidate_hit_rate_guard(
+    deployment_payload: Dict[str, Any],
+    candidate_table: pd.DataFrame,
+    *,
+    candidate_path: Path,
+) -> Dict[str, Any]:
+    """Raise deployment thresholds until exported OOS candidates clear hit floor."""
+    if not DEPLOYMENT_LOCAL_CANDIDATE_HIT_GUARD_ENABLED:
+        return {"enabled": False, "reason": "disabled"}
+    if candidate_table.empty or "strategy_id" not in candidate_table.columns:
+        return {"enabled": True, "reason": "empty_candidate_table"}
+    rank_col = next(
+        (
+            col
+            for col in ("auction_rank_score", "normalized_rank_score")
+            if col in candidate_table.columns
+        ),
+        None,
+    )
+    if rank_col is None or "net_return" not in candidate_table.columns:
+        return {
+            "enabled": True,
+            "reason": "missing_rank_or_net_return",
+            "rank_col": rank_col,
+        }
+
+    target_hit = float(np.clip(DEPLOYMENT_LOCAL_CANDIDATE_MIN_NET_HIT_RATE, 0.0, 1.0))
+    min_rows = int(max(1, DEPLOYMENT_LOCAL_CANDIDATE_MIN_ROWS))
+    precision = float(max(DEPLOYMENT_THRESHOLD_PRECISION, 1e-6))
+    summary: Dict[str, Any] = {
+        "enabled": True,
+        "min_net_hit_rate": target_hit,
+        "min_rows": min_rows,
+        "rank_col": rank_col,
+        "candidate_path": str(candidate_path),
+        "strategies": {},
+    }
+
+    for strategy in deployment_payload.get("strategies", []) or []:
+        if not isinstance(strategy, dict):
+            continue
+        strategy_id = str(strategy.get("strategy_id", "")).strip()
+        if not strategy_id:
+            continue
+        current_threshold = float(
+            np.clip(
+                _safe_float(
+                    strategy.get("deployment_rank_threshold"),
+                    DEPLOYMENT_THRESHOLD_MAX,
+                ),
+                DEPLOYMENT_THRESHOLD_MIN,
+                DEPLOYMENT_THRESHOLD_MAX,
+            )
+        )
+        rows = candidate_table.loc[
+            candidate_table["strategy_id"].astype(str) == strategy_id
+        ].copy()
+        rows[rank_col] = pd.to_numeric(rows.get(rank_col), errors="coerce")
+        rows["net_return"] = pd.to_numeric(rows.get("net_return"), errors="coerce")
+        rows[rank_col] = rows[rank_col].replace([np.inf, -np.inf], np.nan)
+        rows["net_return"] = rows["net_return"].replace([np.inf, -np.inf], np.nan)
+        rows = rows.dropna(subset=[rank_col, "net_return"])
+        if rows.empty:
+            summary["strategies"][strategy_id] = {
+                "previous_threshold": current_threshold,
+                "selected_threshold": current_threshold,
+                "reason": "no_candidate_rows",
+            }
+            continue
+
+        grid = np.arange(
+            current_threshold,
+            DEPLOYMENT_THRESHOLD_MAX + precision / 2.0,
+            precision,
+            dtype=np.float64,
+        )
+        grid = np.unique(
+            np.round(np.clip(grid, current_threshold, DEPLOYMENT_THRESHOLD_MAX), 4)
+        )
+        threshold_rows: list[dict[str, Any]] = []
+        selected: dict[str, Any] | None = None
+        for threshold in grid:
+            subset = rows.loc[rows[rank_col] >= float(threshold)]
+            if subset.empty:
+                continue
+            net = pd.to_numeric(subset["net_return"], errors="coerce").dropna()
+            if net.empty:
+                continue
+            item = {
+                "deployment_rank_threshold": float(threshold),
+                "n_candidates": int(len(net)),
+                "net_hit_rate": float((net > 0.0).mean()),
+                "mean_net_return": float(net.mean()),
+            }
+            threshold_rows.append(item)
+            if (
+                selected is None
+                and item["n_candidates"] >= min_rows
+                and item["net_hit_rate"] >= target_hit
+            ):
+                selected = item
+
+        if selected is None:
+            selected = (
+                max(
+                    threshold_rows,
+                    key=lambda item: (
+                        float(item.get("net_hit_rate", 0.0)),
+                        float(item.get("mean_net_return", 0.0)),
+                        int(item.get("n_candidates", 0)),
+                    ),
+                )
+                if threshold_rows
+                else {
+                    "deployment_rank_threshold": current_threshold,
+                    "n_candidates": 0,
+                    "net_hit_rate": float("nan"),
+                    "mean_net_return": float("nan"),
+                }
+            )
+            reason = "no_threshold_met_min_net_hit_rate_best_available"
+        else:
+            reason = "lowest_threshold_meeting_min_net_hit_rate"
+
+        selected_threshold = float(
+            max(current_threshold, selected["deployment_rank_threshold"])
+        )
+        strategy["deployment_rank_threshold"] = selected_threshold
+        strategy["local_candidate_hit_rate_guard"] = {
+            "enabled": True,
+            "rank_col": rank_col,
+            "previous_threshold": current_threshold,
+            "selected_threshold": selected_threshold,
+            "min_net_hit_rate": target_hit,
+            "min_rows": min_rows,
+            "selected_n_candidates": int(selected.get("n_candidates", 0) or 0),
+            "selected_net_hit_rate": float(selected.get("net_hit_rate", np.nan)),
+            "selected_mean_net_return": float(selected.get("mean_net_return", np.nan)),
+            "reason": reason,
+        }
+        summary["strategies"][strategy_id] = dict(
+            strategy["local_candidate_hit_rate_guard"]
+        )
+        logger.info(
+            "[%s] Local candidate hit-rate guard: threshold %.4f -> %.4f "
+            "net_hit=%.4f n=%s target=%.4f rank_col=%s",
+            strategy_id,
+            current_threshold,
+            selected_threshold,
+            _safe_float(selected.get("net_hit_rate"), np.nan),
+            int(selected.get("n_candidates", 0) or 0),
+            target_hit,
+            rank_col,
+        )
+
+    deployment_payload.setdefault("selection_rules", {})[
+        "local_candidate_hit_rate_guard"
+    ] = summary
+    return summary
 
 
 def _clean_series(s: pd.Series) -> pd.Series:
@@ -3056,6 +4054,491 @@ def _load_policy_klines_cached(
     return loaded.loc[(loaded.index >= start) & (loaded.index <= end)]
 
 
+def _policy_execution_1m_data_root(data_root: str, market_mode: str) -> Path:
+    return Path(_policy_market_data_root(data_root, market_mode)) / "execution_1m"
+
+
+def _policy_execution_exchange(market_mode: str):
+    return make_perp_exchange() if _normalise_market_mode(market_mode) == "perps" else make_spot_exchange()
+
+
+def _missing_minute_ranges(
+    needed_ts: pd.DatetimeIndex,
+    existing_idx: pd.DatetimeIndex,
+) -> List[Tuple[pd.Timestamp, pd.Timestamp]]:
+    if len(needed_ts) == 0:
+        return []
+    needed = pd.DatetimeIndex(needed_ts)
+    needed = needed.tz_localize("UTC") if needed.tz is None else needed.tz_convert("UTC")
+    needed = needed.floor("min").unique().sort_values()
+    if len(existing_idx):
+        existing = pd.DatetimeIndex(existing_idx)
+        existing = (
+            existing.tz_localize("UTC")
+            if existing.tz is None
+            else existing.tz_convert("UTC")
+        )
+        existing = existing.floor("min").unique()
+    else:
+        existing = pd.DatetimeIndex([], tz="UTC")
+    missing = needed.difference(existing)
+    if len(missing) == 0:
+        return []
+    ranges: List[Tuple[pd.Timestamp, pd.Timestamp]] = []
+    start = missing[0]
+    prev = missing[0]
+    for ts in missing[1:]:
+        if ts - prev > pd.Timedelta(minutes=1):
+            ranges.append((start, prev + pd.Timedelta(minutes=1)))
+            start = ts
+        prev = ts
+    ranges.append((start, prev + pd.Timedelta(minutes=1)))
+    return ranges
+
+
+def _coalesce_minute_ranges(
+    ranges: List[Tuple[pd.Timestamp, pd.Timestamp]],
+    *,
+    bucket_minutes: int,
+) -> List[Tuple[pd.Timestamp, pd.Timestamp]]:
+    """Group sparse missing 1m points into stable fetch windows.
+
+    Kraken Futures can return complete 1m carry candles for a broad window,
+    while a cache populated by many tiny windows can still be sparse. Fetching
+    bucketed windows also avoids thousands of single-minute requests.
+    """
+    if not ranges:
+        return []
+    bucket_minutes = max(int(bucket_minutes or 0), 1)
+    bucket_ns = int(pd.Timedelta(minutes=bucket_minutes).value)
+    grouped: Dict[Tuple[int, int], Tuple[pd.Timestamp, pd.Timestamp]] = {}
+    for start, end in ranges:
+        start = pd.Timestamp(start)
+        end = pd.Timestamp(end)
+        if start.tzinfo is None:
+            start = start.tz_localize("UTC")
+        else:
+            start = start.tz_convert("UTC")
+        if end.tzinfo is None:
+            end = end.tz_localize("UTC")
+        else:
+            end = end.tz_convert("UTC")
+        cursor_ns = (start.value // bucket_ns) * bucket_ns
+        while cursor_ns < end.value:
+            bucket_start = pd.Timestamp(cursor_ns, tz="UTC")
+            bucket_end = bucket_start + pd.Timedelta(minutes=bucket_minutes)
+            key = (int(bucket_start.value), int(bucket_end.value))
+            grouped[key] = (bucket_start, bucket_end)
+            cursor_ns += bucket_ns
+    return [grouped[key] for key in sorted(grouped)]
+
+
+def _load_policy_1m_klines_cached(
+    symbol: str,
+    store: PartitionedOHLCVStore,
+    *,
+    needed_ts: pd.DatetimeIndex,
+    market_mode: str,
+) -> pd.DataFrame:
+    needed = pd.DatetimeIndex(needed_ts)
+    if len(needed) == 0:
+        return pd.DataFrame()
+    if needed.tz is None:
+        needed = needed.tz_localize("UTC")
+    else:
+        needed = needed.tz_convert("UTC")
+    start = needed.min().floor("min")
+    end = (needed.max().ceil("min") + pd.Timedelta(minutes=1))
+    root_key = str(getattr(store, "root_dir", ""))
+    cache_key = (root_key, str(symbol))
+    cached = _POLICY_1M_KLINES_CACHE.get(cache_key)
+    if cached is not None:
+        cached_start, cached_end, cached_df = cached
+        if start >= cached_start and end <= cached_end:
+            if cached_df.empty or not isinstance(cached_df.index, pd.DatetimeIndex):
+                cached_idx = pd.DatetimeIndex([], tz="UTC")
+            else:
+                cached_idx = cached_df.index
+            missing_cached = _missing_minute_ranges(needed, cached_idx)
+            if not missing_cached or not _env_flag("EPM_SIMPLE_POLICY_1M_DOWNLOAD", True):
+                if cached_df.empty or not isinstance(cached_df.index, pd.DatetimeIndex):
+                    return cached_df
+                return cached_df.loc[(cached_df.index >= start) & (cached_df.index <= end)]
+
+    loaded = store.load(
+        symbol,
+        columns=["ts", "open", "high", "low", "close"],
+        start_ts=start,
+        end_ts=end,
+    )
+    if loaded is None:
+        loaded = pd.DataFrame()
+    if loaded.empty or not isinstance(loaded.index, pd.DatetimeIndex):
+        loaded_idx = pd.DatetimeIndex([], tz="UTC")
+    else:
+        loaded_idx = loaded.index
+    missing_ranges = _missing_minute_ranges(needed, loaded_idx)
+    if missing_ranges and _env_flag("EPM_SIMPLE_POLICY_1M_DOWNLOAD", True):
+        try:
+            exchange = _policy_execution_exchange(market_mode)
+            touched_years: Set[int] = set()
+            fetch_bucket_minutes = int(
+                os.environ.get("EPM_SIMPLE_POLICY_1M_FETCH_BUCKET_MINUTES", "60")
+                or "60"
+            )
+            fetch_ranges = _coalesce_minute_ranges(
+                missing_ranges,
+                bucket_minutes=fetch_bucket_minutes,
+            )
+            for dl_start, dl_end in fetch_ranges:
+                since_ms = int(pd.Timestamp(dl_start).value // 10**6)
+                until_ms = int(pd.Timestamp(dl_end).value // 10**6)
+                chunk = _fetch_ohlcv_paged(
+                    exchange,
+                    symbol,
+                    since_ms,
+                    until_ms,
+                    timeframe="1m",
+                    limit=1000,
+                )
+                if chunk is None or chunk.empty:
+                    continue
+                fresh = chunk.loc[
+                    (chunk.index >= dl_start) & (chunk.index <= dl_end)
+                ].copy()
+                if fresh.empty:
+                    continue
+                store.save_partitioned(symbol, store._downcast(fresh), defer_compact=True)
+                touched_years.update(int(y) for y in fresh.index.year.unique())
+            for year in sorted(touched_years):
+                try:
+                    store.compact_partition(symbol, int(year))
+                except Exception as exc:
+                    logger.warning("[%s] 1m compaction failed for %s: %s", symbol, year, exc)
+            loaded = store.load(
+                symbol,
+                columns=["ts", "open", "high", "low", "close"],
+                start_ts=start,
+                end_ts=end,
+            )
+            if loaded is None:
+                loaded = pd.DataFrame()
+        except Exception as exc:
+            logger.warning(
+                "[%s] Failed to download incremental 1m execution candles: %s",
+                symbol,
+                exc,
+            )
+    if loaded is None:
+        loaded = pd.DataFrame()
+    if not loaded.empty and isinstance(loaded.index, pd.DatetimeIndex):
+        loaded = loaded.sort_index()
+    _POLICY_1M_KLINES_CACHE[cache_key] = (start, end, loaded)
+    if loaded.empty or not isinstance(loaded.index, pd.DatetimeIndex):
+        return loaded
+    return loaded.loc[(loaded.index >= start) & (loaded.index <= end)]
+
+
+def _apply_delayed_entry_execution_model(
+    rows: pd.DataFrame,
+    paths: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    *,
+    data_root: str,
+    market_mode: str,
+) -> Tuple[pd.DataFrame, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    if rows.empty or "timestamp" not in rows.columns or "symbol" not in rows.columns:
+        return rows, paths
+    if not _env_flag("EPM_SIMPLE_POLICY_1M_EXECUTION_ENABLED", True):
+        return rows, paths
+    out_rows = rows.copy()
+    f_opens, f_highs, f_lows, f_closes = (arr.copy() for arr in paths)
+    n = len(out_rows)
+    if f_opens.shape[0] != n:
+        return rows, paths
+    rank = (
+        pd.to_numeric(out_rows.get("rank_pct"), errors="coerce")
+        .fillna(-np.inf)
+        .to_numpy(dtype=np.float64)
+    )
+    eligible = rank >= float(POLICY_DELAYED_ENTRY_MIN_RANK)
+    if not bool(np.any(eligible)):
+        return out_rows, (f_opens, f_highs, f_lows, f_closes)
+
+    timestamps = pd.to_datetime(out_rows["timestamp"], utc=True, errors="coerce")
+    delayed_ts = (timestamps + pd.Timedelta(minutes=int(POLICY_DELAYED_ENTRY_MINUTES))).dt.floor("min")
+    out_rows["delayed_entry_ts"] = delayed_ts
+    original_entry = f_opens[:, 0].astype(np.float64, copy=True)
+    out_rows["theoretical_entry_price"] = original_entry
+    out_rows["entry_gap_bps"] = np.nan
+    out_rows["entry_slippage_proxy_bps"] = np.nan
+    out_rows["entry_execution_source"] = "theoretical_15m_open"
+    out_rows["entry_delay_minutes"] = float(POLICY_DELAYED_ENTRY_MINUTES)
+    out_rows["entry_delay_target_minutes"] = float(POLICY_DELAYED_ENTRY_MINUTES)
+    out_rows["entry_delay_fallback_minutes"] = np.nan
+    out_rows["entry_delay_actual_minutes"] = np.nan
+    out_rows["delayed_entry_effective_ts"] = pd.Series(
+        pd.NaT, index=out_rows.index, dtype="datetime64[ns, UTC]"
+    )
+    out_rows["delay_window_candle_count"] = np.nan
+    out_rows["delay_window_open"] = np.nan
+    out_rows["delay_window_high"] = np.nan
+    out_rows["delay_window_low"] = np.nan
+    out_rows["delay_window_close"] = np.nan
+    out_rows["delay_window_range_bps"] = np.nan
+    out_rows["delay_entry_ref_gap_bps"] = np.nan
+    out_rows["delay_close_gap_bps"] = np.nan
+    out_rows["delay_max_adverse_bps"] = np.nan
+    out_rows["delay_max_favorable_bps"] = np.nan
+
+    side = (
+        pd.to_numeric(out_rows.get("side", pd.Series(np.ones(n))), errors="coerce")
+        .fillna(1.0)
+        .to_numpy(dtype=np.float64)
+    )
+
+    def _resolve_symbol_entries(item: Tuple[str, pd.DataFrame]) -> Optional[Dict[str, Any]]:
+        symbol, group = item
+        store = PartitionedOHLCVStore(
+            str(_policy_execution_1m_data_root(data_root, market_mode)),
+            timeframe="1m",
+        )
+        idx = group.index.to_numpy(dtype=np.int64)
+        group_start_ts = timestamps.loc[group.index].dt.floor("min")
+        group_delayed_ts = delayed_ts.loc[group.index]
+        fallback_delta = pd.Timedelta(minutes=int(POLICY_DELAYED_ENTRY_FALLBACK_MINUTES))
+        needed_parts = []
+        for start_ts, end_ts in zip(group_start_ts, group_delayed_ts):
+            if pd.isna(start_ts) or pd.isna(end_ts):
+                continue
+            fetch_end_ts = pd.Timestamp(end_ts) + fallback_delta
+            needed_parts.append(
+                pd.date_range(
+                    pd.Timestamp(start_ts),
+                    fetch_end_ts,
+                    freq="1min",
+                    tz="UTC",
+                )
+            )
+        needed = (
+            pd.DatetimeIndex(np.concatenate([part.to_numpy() for part in needed_parts]))
+            if needed_parts
+            else pd.DatetimeIndex([], tz="UTC")
+        )
+        if len(needed) == 0:
+            return None
+        klines = _load_policy_1m_klines_cached(
+            str(symbol),
+            store,
+            needed_ts=needed,
+            market_mode=market_mode,
+        )
+        if klines is None or klines.empty or not isinstance(klines.index, pd.DatetimeIndex):
+            return None
+        ref_col = str(os.environ.get("EPM_SIMPLE_POLICY_DELAYED_ENTRY_REF", "open")).lower()
+        if ref_col not in klines.columns:
+            ref_col = "open"
+        selected_ref: List[float] = []
+        selected_high: List[float] = []
+        selected_low: List[float] = []
+        selected_close: List[float] = []
+        selected_effective_ts: List[pd.Timestamp] = []
+        selected_fallback_minutes: List[float] = []
+        for target_ts in group_delayed_ts:
+            found_ref = found_high = found_low = found_close = float("nan")
+            found_ts = pd.NaT
+            found_fallback = float("nan")
+            if not pd.isna(target_ts):
+                base_ts = pd.Timestamp(target_ts)
+                for fallback_minute in range(
+                    int(POLICY_DELAYED_ENTRY_FALLBACK_MINUTES) + 1
+                ):
+                    candidate_ts = base_ts + pd.Timedelta(minutes=fallback_minute)
+                    if candidate_ts not in klines.index:
+                        continue
+                    candle = klines.loc[candidate_ts]
+                    if isinstance(candle, pd.DataFrame):
+                        candle = candle.iloc[-1]
+                    ref_val = pd.to_numeric(
+                        pd.Series([candle.get(ref_col, np.nan)]), errors="coerce"
+                    ).iloc[0]
+                    high_val = pd.to_numeric(
+                        pd.Series([candle.get("high", np.nan)]), errors="coerce"
+                    ).iloc[0]
+                    low_val = pd.to_numeric(
+                        pd.Series([candle.get("low", np.nan)]), errors="coerce"
+                    ).iloc[0]
+                    close_val = pd.to_numeric(
+                        pd.Series([candle.get("close", np.nan)]), errors="coerce"
+                    ).iloc[0]
+                    if (
+                        np.isfinite(ref_val)
+                        and float(ref_val) > 0.0
+                        and np.isfinite(high_val)
+                        and np.isfinite(low_val)
+                    ):
+                        found_ref = float(ref_val)
+                        found_high = float(high_val)
+                        found_low = float(low_val)
+                        found_close = float(close_val) if np.isfinite(close_val) else float("nan")
+                        found_ts = candidate_ts
+                        found_fallback = float(fallback_minute)
+                        break
+            selected_ref.append(found_ref)
+            selected_high.append(found_high)
+            selected_low.append(found_low)
+            selected_close.append(found_close)
+            selected_effective_ts.append(found_ts)
+            selected_fallback_minutes.append(found_fallback)
+        ref = np.asarray(selected_ref, dtype=np.float64)
+        high = np.asarray(selected_high, dtype=np.float64)
+        low = np.asarray(selected_low, dtype=np.float64)
+        close = np.asarray(selected_close, dtype=np.float64)
+        effective_ts = np.asarray(selected_effective_ts, dtype=object)
+        fallback_minutes = np.asarray(selected_fallback_minutes, dtype=np.float64)
+        valid = np.isfinite(ref) & (ref > 0.0) & np.isfinite(high) & np.isfinite(low)
+        if not bool(np.any(valid)):
+            return None
+        row_idx = idx[valid]
+        is_long = side[row_idx] >= 0.0
+        entry_ref = ref[valid]
+        entry_high = high[valid]
+        entry_low = low[valid]
+        entry_effective_ts = effective_ts[valid]
+        entry_fallback_minutes = fallback_minutes[valid]
+        fill_px = np.where(
+            is_long,
+            entry_ref
+            + float(POLICY_DELAYED_ENTRY_ALPHA) * np.maximum(entry_high - entry_ref, 0.0),
+            entry_ref
+            - float(POLICY_DELAYED_ENTRY_ALPHA) * np.maximum(entry_ref - entry_low, 0.0),
+        )
+        valid_fill = np.isfinite(fill_px) & (fill_px > 0.0)
+        if not bool(np.any(valid_fill)):
+            return None
+        row_idx = row_idx[valid_fill]
+        entry_effective_ts = entry_effective_ts[valid_fill]
+        entry_fallback_minutes = entry_fallback_minutes[valid_fill]
+        window_stats: Dict[str, List[float]] = {
+            "delay_window_candle_count": [],
+            "delay_window_open": [],
+            "delay_window_high": [],
+            "delay_window_low": [],
+            "delay_window_close": [],
+            "delay_window_range_bps": [],
+            "delay_entry_ref_gap_bps": [],
+            "delay_close_gap_bps": [],
+            "delay_max_adverse_bps": [],
+            "delay_max_favorable_bps": [],
+        }
+        effective_ts_by_row = {
+            int(j): pd.Timestamp(ts) for j, ts in zip(row_idx, entry_effective_ts)
+        }
+        for j in row_idx:
+            start_ts = group_start_ts.loc[j] if j in group_start_ts.index else pd.NaT
+            end_ts = effective_ts_by_row.get(int(j), pd.NaT)
+            signal_px = float(original_entry[j])
+            side_j = float(side[j])
+            if pd.isna(start_ts) or pd.isna(end_ts) or not np.isfinite(signal_px) or signal_px <= 0.0:
+                for values in window_stats.values():
+                    values.append(float("nan"))
+                continue
+            window = klines.loc[
+                (klines.index >= pd.Timestamp(start_ts))
+                & (klines.index <= pd.Timestamp(end_ts))
+            ]
+            if window.empty:
+                for values in window_stats.values():
+                    values.append(float("nan"))
+                continue
+            w_open = pd.to_numeric(window["open"], errors="coerce").to_numpy(dtype=np.float64)
+            w_high = pd.to_numeric(window["high"], errors="coerce").to_numpy(dtype=np.float64)
+            w_low = pd.to_numeric(window["low"], errors="coerce").to_numpy(dtype=np.float64)
+            w_close = pd.to_numeric(window["close"], errors="coerce").to_numpy(dtype=np.float64)
+            finite_high = w_high[np.isfinite(w_high) & (w_high > 0.0)]
+            finite_low = w_low[np.isfinite(w_low) & (w_low > 0.0)]
+            finite_close = w_close[np.isfinite(w_close) & (w_close > 0.0)]
+            finite_open = w_open[np.isfinite(w_open) & (w_open > 0.0)]
+            if len(finite_high) == 0 or len(finite_low) == 0 or len(finite_close) == 0:
+                for values in window_stats.values():
+                    values.append(float("nan"))
+                continue
+            if side_j >= 0.0:
+                adverse_path = (finite_high / signal_px - 1.0) * 10000.0
+                favorable_path = (finite_low / signal_px - 1.0) * 10000.0
+            else:
+                adverse_path = (1.0 - finite_low / signal_px) * 10000.0
+                favorable_path = (1.0 - finite_high / signal_px) * 10000.0
+            close_gap = side_j * (finite_close[-1] / signal_px - 1.0) * 10000.0
+            range_bps = (float(np.nanmax(finite_high)) / max(float(np.nanmin(finite_low)), 1e-12) - 1.0) * 10000.0
+            window_stats["delay_window_candle_count"].append(float(len(window)))
+            window_stats["delay_window_open"].append(float(finite_open[0]) if len(finite_open) else float("nan"))
+            window_stats["delay_window_high"].append(float(np.nanmax(finite_high)))
+            window_stats["delay_window_low"].append(float(np.nanmin(finite_low)))
+            window_stats["delay_window_close"].append(float(finite_close[-1]))
+            window_stats["delay_window_range_bps"].append(float(range_bps))
+            window_stats["delay_entry_ref_gap_bps"].append(float("nan"))
+            window_stats["delay_close_gap_bps"].append(float(close_gap))
+            window_stats["delay_max_adverse_bps"].append(float(max(0.0, np.nanmax(adverse_path))))
+            window_stats["delay_max_favorable_bps"].append(float(max(0.0, -np.nanmin(favorable_path))))
+        return {
+            "row_idx": row_idx,
+            "fill_px": fill_px[valid_fill],
+            "entry_ref": entry_ref[valid_fill],
+            "effective_ts": entry_effective_ts,
+            "fallback_minutes": entry_fallback_minutes,
+            "window_stats": window_stats,
+        }
+
+    groups = list(out_rows.loc[eligible].groupby("symbol", sort=False))
+    results: List[Optional[Dict[str, Any]]] = []
+    workers = min(int(POLICY_DELAYED_ENTRY_WORKERS), max(len(groups), 1))
+    if workers > 1 and len(groups) > 1:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(_resolve_symbol_entries, item) for item in groups]
+            for future in as_completed(futures):
+                results.append(future.result())
+    else:
+        results = [_resolve_symbol_entries(item) for item in groups]
+
+    for result in results:
+        if not result:
+            continue
+        row_idx = np.asarray(result["row_idx"], dtype=np.int64)
+        fill_px = np.asarray(result["fill_px"], dtype=np.float64)
+        entry_ref = np.asarray(result["entry_ref"], dtype=np.float64)
+        effective_ts = np.asarray(result.get("effective_ts", []), dtype=object)
+        fallback_minutes = np.asarray(
+            result.get("fallback_minutes", []), dtype=np.float64
+        )
+        old_entry = original_entry[row_idx]
+        f_opens[row_idx, 0] = fill_px.astype(np.float32, copy=False)
+        out_rows.loc[row_idx, "entry_execution_source"] = "delayed_1m_intraminute_proxy"
+        if len(effective_ts) == len(row_idx):
+            out_rows.loc[row_idx, "delayed_entry_effective_ts"] = effective_ts
+        if len(fallback_minutes) == len(row_idx):
+            out_rows.loc[row_idx, "entry_delay_fallback_minutes"] = fallback_minutes
+            out_rows.loc[row_idx, "entry_delay_actual_minutes"] = (
+                float(POLICY_DELAYED_ENTRY_MINUTES) + fallback_minutes
+            )
+        out_rows.loc[row_idx, "entry_gap_bps"] = (
+            side[row_idx] * (fill_px / np.maximum(old_entry, 1e-12) - 1.0) * 10000.0
+        )
+        out_rows.loc[row_idx, "entry_slippage_proxy_bps"] = (
+            np.abs(fill_px / np.maximum(entry_ref, 1e-12) - 1.0) * 10000.0
+        )
+        out_rows.loc[row_idx, "delay_entry_ref_gap_bps"] = (
+            side[row_idx] * (entry_ref / np.maximum(old_entry, 1e-12) - 1.0) * 10000.0
+        )
+        window_stats = result.get("window_stats") or {}
+        for col, values in window_stats.items():
+            if col not in out_rows.columns:
+                continue
+            vals = np.asarray(values, dtype=np.float64)
+            if len(vals) == len(row_idx):
+                out_rows.loc[row_idx, col] = vals
+    return out_rows, (f_opens, f_highs, f_lows, f_closes)
+
+
 def _fetch_policy_paths(
     df_subset: pd.DataFrame,
     ds: Any,
@@ -3138,6 +4621,49 @@ def _fetch_policy_paths(
             dtype=np.float32
         )[src_idx]
     return f_op, f_hi, f_lo, f_cl
+
+
+def _policy_path_finite_mask(
+    paths: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> np.ndarray:
+    if not paths:
+        return np.asarray([], dtype=bool)
+    f_opens, f_highs, f_lows, f_closes = paths
+    if f_opens.ndim != 2 or f_opens.shape[0] == 0:
+        return np.asarray([], dtype=bool)
+    mask = np.isfinite(f_opens).all(axis=1) & (f_opens[:, 0] > 0.0)
+    for arr in (f_highs, f_lows, f_closes):
+        if arr.shape != f_opens.shape:
+            return np.zeros(f_opens.shape[0], dtype=bool)
+        mask &= np.isfinite(arr).all(axis=1)
+    return mask
+
+
+def _policy_path_coverage(
+    paths: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> Tuple[int, int, float]:
+    mask = _policy_path_finite_mask(paths)
+    total = int(mask.size)
+    finite = int(mask.sum()) if total else 0
+    coverage = float(finite / total) if total else 0.0
+    return finite, total, coverage
+
+
+def _assert_policy_path_coverage(
+    *,
+    strategy_id: str,
+    paths: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> Tuple[int, int, float]:
+    finite, total, coverage = _policy_path_coverage(paths)
+    min_coverage = float(np.clip(SIMPLE_POLICY_MIN_EXECUTION_PATH_COVERAGE, 0.0, 1.0))
+    if total <= 0 or coverage < min_coverage:
+        raise RuntimeError(
+            f"[{strategy_id}] insufficient executable policy path coverage: "
+            f"{finite}/{total} rows ({coverage:.2%}) below required "
+            f"{min_coverage:.2%}. Refusing policy optimisation because execution "
+            "delay/slippage/stop replay would be mostly missing."
+        )
+    return finite, total, coverage
 
 
 def _path_extrema_from_policy_paths(
@@ -3578,6 +5104,7 @@ def _fit_regime_adaptor_from_simple_policy(
         mae=mae,
         t_mfe=t_mfe,
         t_mae=t_mae,
+        deployment_rank_threshold=deployment_rank_threshold,
     )
     fit.artifact["foundation"] = "simple_policy_optimiser"
     fit.artifact["prediction_context"] = {
@@ -4541,6 +6068,9 @@ def _load_slice_plan_source_validation(slice_plan_path: Path) -> Dict[str, Any]:
     holdout_temporal_disjoint = []
     holdout_tail_months = []
     holdout_all_symbols = []
+    policy_fit_ends = []
+    policy_predict_starts = []
+    policy_predict_ends = []
     for plan in policy_plans:
         if not isinstance(plan, dict):
             continue
@@ -4560,8 +6090,17 @@ def _load_slice_plan_source_validation(slice_plan_path: Path) -> Dict[str, Any]:
             utc=True,
             errors="coerce",
         )
+        predict_end = pd.to_datetime(
+            meta.get("predict_actual_end") or meta.get("predict_end"),
+            utc=True,
+            errors="coerce",
+        )
         if not pd.isna(fit_end) and not pd.isna(predict_start):
             holdout_temporal_disjoint.append(fit_end < predict_start)
+            policy_fit_ends.append(fit_end)
+            policy_predict_starts.append(predict_start)
+        if not pd.isna(predict_end):
+            policy_predict_ends.append(predict_end)
     policy_temporal_disjoint = bool(policy_plans) and all(
         holdout_temporal_disjoint or [True]
     )
@@ -4590,6 +6129,15 @@ def _load_slice_plan_source_validation(slice_plan_path: Path) -> Dict[str, Any]:
         "policy_optimiser_holdout_n_plans": int(policy_holdout_n),
         "exchange_context": payload.get("exchange_context", {}),
         "policy_optimiser_tail_months": sorted(set(holdout_tail_months)),
+        "policy_optimiser_fit_end": (
+            max(policy_fit_ends).isoformat() if policy_fit_ends else None
+        ),
+        "policy_optimiser_predict_start": (
+            min(policy_predict_starts).isoformat() if policy_predict_starts else None
+        ),
+        "policy_optimiser_predict_end": (
+            max(policy_predict_ends).isoformat() if policy_predict_ends else None
+        ),
         "policy_optimiser_all_symbols": bool(holdout_all_symbols)
         and all(holdout_all_symbols),
         "policy_holdout_predict_roles": sorted(set(holdout_predict_roles)),
@@ -4714,12 +6262,15 @@ def _normalise_policy_input_columns(df: pd.DataFrame) -> pd.DataFrame:
     rename_map = {
         "__ts__": "timestamp",
         "__symbol__": "symbol",
+        "__y_ret__": "return",
+        "__y_outcome__": "y_outcome",
         "__barrier_pct__": "barrier_pct",
         "__mfe_ret__": "mfe_ret",
         "__mae_ret__": "mae_ret",
         "__u_policy_net__": "u_policy_net",
         "__u_policy__": "u_policy",
         "__bars_to_mfe__": "bars_to_mfe",
+        "__bars_policy__": "bars_policy",
         "__mr_path_penalty__": "mr_path_penalty",
         "__mr_velocity_penalty__": "mr_velocity_penalty",
         "__early_inval__": "early_inval",
@@ -4842,6 +6393,59 @@ def _feature_path_for_symbol(feature_dir: Path, symbol: str) -> Path:
     return candidates[0]
 
 
+def _policy_feature_dirs(data_root: str | Path, run_id: str) -> List[Path]:
+    """Return feature handoff directories usable by simple_policy generation."""
+    root = Path(data_root)
+    run_ids = [str(run_id)]
+    source_run_id = str(os.environ.get("EPM_ARTIFACT_SOURCE_RUN_ID", "") or "").strip()
+    if source_run_id and source_run_id not in run_ids:
+        run_ids.append(source_run_id)
+
+    roots: List[Path] = [root]
+    env_root = str(os.environ.get("EPM_DATA_ROOT", "") or "").strip()
+    if env_root:
+        roots.append(Path(env_root))
+    exchange_id = (
+        str(
+            os.environ.get("EPM_EXCHANGE")
+            or os.environ.get("EXCHANGE_NAME")
+            or os.environ.get("PRIMARY_EXCHANGE")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
+    market_mode = _normalise_market_mode(os.environ.get("EPM_MARKET_MODE"))
+    if exchange_id:
+        component = exchange_data_component(exchange_id, market_mode)
+        roots.extend([base / "exchanges" / component for base in list(roots)])
+    for parent in root.parents:
+        if parent.name.startswith("data"):
+            roots.append(parent)
+
+    out: List[Path] = []
+    seen: Set[Path] = set()
+    for base in roots:
+        for rid in run_ids:
+            candidate = base / "features" / rid
+            if candidate not in seen:
+                seen.add(candidate)
+                out.append(candidate)
+    return out
+
+
+def _feature_path_for_symbol_from_dirs(
+    feature_dirs: Sequence[Path],
+    symbol: str,
+) -> Path:
+    fallback = _feature_path_for_symbol(feature_dirs[0], symbol) if feature_dirs else Path()
+    for feature_dir in feature_dirs:
+        path = _feature_path_for_symbol(feature_dir, symbol)
+        if path.exists():
+            return path
+    return fallback
+
+
 def _load_feature_rows_for_events(
     events: pd.DataFrame,
     *,
@@ -4854,10 +6458,10 @@ def _load_feature_rows_for_events(
     if "timestamp" not in events.columns or "symbol" not in events.columns:
         return pd.DataFrame()
 
-    feature_dir = Path(data_root) / "features" / run_id
+    feature_dirs = _policy_feature_dirs(data_root, run_id)
     parts: List[pd.DataFrame] = []
     for symbol, grp in events.groupby("symbol", sort=False):
-        path = _feature_path_for_symbol(feature_dir, str(symbol))
+        path = _feature_path_for_symbol_from_dirs(feature_dirs, str(symbol))
         if not path.exists():
             continue
         feats = pd.read_parquet(path)
@@ -5199,19 +6803,32 @@ def _add_alpha_model_uncertainty_context(
     out = meta_base.copy()
     h = int(horizon)
     core = strategy_core_id(str(strategy_id))
-    prob = pd.to_numeric(
-        unc.get("lgbm_prob", out.get(str(strategy_id), np.nan)), errors="coerce"
-    ).astype(float)
-    entropy = pd.to_numeric(
-        unc.get("entropy", -(prob.clip(1e-6, 1.0 - 1e-6) * np.log(prob.clip(1e-6, 1.0 - 1e-6)) + (1.0 - prob.clip(1e-6, 1.0 - 1e-6)) * np.log((1.0 - prob).clip(1e-6, 1.0 - 1e-6)))),
-        errors="coerce",
-    ).astype(float)
-    variance = pd.to_numeric(unc.get("variance_proxy", 0.0), errors="coerce").astype(float)
+
+    def _unc_series(key: str, default: Any) -> pd.Series:
+        raw = unc.get(key, default)
+        if isinstance(raw, pd.Series):
+            series = raw.reindex(out.index)
+        elif isinstance(raw, (pd.Index, np.ndarray, list, tuple)):
+            series = pd.Series(raw, index=out.index[: len(raw)]).reindex(out.index)
+        else:
+            series = pd.Series(raw, index=out.index)
+        return pd.to_numeric(series, errors="coerce").astype(float)
+
+    prob = _unc_series("lgbm_prob", out.get(str(strategy_id), np.nan))
+    prob_clip = prob.clip(1e-6, 1.0 - 1e-6)
+    entropy = _unc_series(
+        "entropy",
+        -(
+            prob_clip * np.log(prob_clip)
+            + (1.0 - prob_clip) * np.log((1.0 - prob).clip(1e-6, 1.0 - 1e-6))
+        ),
+    )
+    variance = _unc_series("variance_proxy", 0.0)
     pred_std = np.sqrt(np.maximum(variance.to_numpy(dtype=float), 0.0))
     margin = (2.0 * np.abs(prob.to_numpy(dtype=float) - 0.5)).astype(np.float32)
-    support = pd.to_numeric(unc.get("leaf_count_p10", 0.0), errors="coerce").astype(float)
-    leaf_depth = pd.to_numeric(unc.get("leaf_depth_mean", 0.0), errors="coerce").astype(float)
-    leaf_value = pd.to_numeric(unc.get("leaf_value_abs_mean", 0.0), errors="coerce").astype(float)
+    support = _unc_series("leaf_count_p10", 0.0)
+    leaf_depth = _unc_series("leaf_depth_mean", 0.0)
+    leaf_value = _unc_series("leaf_value_abs_mean", 0.0)
     values: Dict[str, Any] = {
         "pred_mean": prob.to_numpy(dtype=np.float32),
         "pred_std": pred_std.astype(np.float32),
@@ -5288,7 +6905,9 @@ def _load_feature_events_from_stage_view(
     symbols: Iterable[str],
 ) -> pd.DataFrame:
     """Build candidate events directly from feature parquet rows in the policy slice."""
-    feature_dir = Path(data_root) / "features" / run_id
+    feature_dirs = _policy_feature_dirs(data_root, run_id)
+    existing_dirs = [path for path in feature_dirs if path.exists()]
+    feature_dir = existing_dirs[0] if existing_dirs else (feature_dirs[0] if feature_dirs else Path())
     rows: List[pd.DataFrame] = []
     allowed_symbols = [str(sym) for sym in symbols]
     if not allowed_symbols:
@@ -5342,12 +6961,44 @@ def _load_label_events_for_strategy(
     run_id: str,
     strategy_id: str,
 ) -> pd.DataFrame:
-    labels_dir = Path(data_root) / "artifacts" / run_id / "labels"
-    matches = [
-        path
-        for path in sorted(labels_dir.glob("train_*.parquet"))
-        if _label_file_strategy_id(path) == strategy_id
-    ]
+    data_root_path = Path(data_root)
+    source_run_id = str(os.environ.get("EPM_ARTIFACT_SOURCE_RUN_ID", "") or "").strip()
+    candidate_run_ids = [str(run_id)]
+    if source_run_id and source_run_id not in candidate_run_ids:
+        candidate_run_ids.append(source_run_id)
+
+    candidate_roots: List[Path] = [data_root_path]
+    env_data_root = str(os.environ.get("EPM_DATA_ROOT", "") or "").strip()
+    if env_data_root:
+        candidate_roots.append(Path(env_data_root))
+    # When simple_policy is invoked with an exchange-scoped data root such as
+    # data_perp/exchanges/krakenfutures, labels still live under data_perp/artifacts.
+    for parent in data_root_path.parents:
+        if parent.name.startswith("data"):
+            candidate_roots.append(parent)
+
+    seen_dirs: Set[Path] = set()
+    label_dirs: List[Path] = []
+    for root in candidate_roots:
+        for rid in candidate_run_ids:
+            label_dir = root / "artifacts" / rid / "labels"
+            if label_dir not in seen_dirs:
+                seen_dirs.add(label_dir)
+                label_dirs.append(label_dir)
+
+    strategy_candidates = {
+        str(strategy_id),
+        strategy_core_id(str(strategy_id)),
+    }
+    matches: List[Path] = []
+    for labels_dir in label_dirs:
+        if not labels_dir.exists():
+            continue
+        matches.extend(
+            path
+            for path in sorted(labels_dir.glob("train_*.parquet"))
+            if _label_file_strategy_id(path) in strategy_candidates
+        )
     if not matches:
         return pd.DataFrame()
     # Prefer the shorter horizon used by the current deployed meta model when present.
@@ -5398,6 +7049,24 @@ def _add_default_policy_outcome_columns(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _allow_feature_only_policy_replay() -> bool:
+    return str(
+        os.environ.get("EPM_SIMPLE_POLICY_ALLOW_FEATURE_ONLY_REPLAY", "0")
+    ).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _allow_meta_oof_policy_source() -> bool:
+    return str(
+        os.environ.get("EPM_SIMPLE_POLICY_ALLOW_META_OOF_POLICY_SOURCE", "0")
+    ).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _allow_final_fit_policy_generation() -> bool:
+    return str(
+        os.environ.get("EPM_SIMPLE_POLICY_ALLOW_FINAL_FIT_POLICY_GENERATION", "0")
+    ).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _generate_policy_predictions_from_models(
     *,
     data_root: str,
@@ -5406,11 +7075,17 @@ def _generate_policy_predictions_from_models(
     max_strategies: Optional[int],
     strategy_ids_allowlist: Optional[Set[str]] = None,
     market_mode: str = "spot",
+    full_state_override: Optional[Dict[str, Any]] = None,
+    source_tag: str = "generated_from_inference_models",
 ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, str]]:
     """Generate policy-slice predictions using the inference model bundle."""
     from extreme_price_movements.model_loader import load_full_state
 
-    full_state = load_full_state(run_id, data_root)
+    full_state = (
+        full_state_override
+        if isinstance(full_state_override, dict)
+        else load_full_state(run_id, data_root)
+    )
     if str(os.environ.get("EPM_SIMPLE_POLICY_REGIME_ADAPTOR", "1")).strip().lower() in {
         "0",
         "false",
@@ -5421,16 +7096,34 @@ def _generate_policy_predictions_from_models(
     orchestrator = ModelOrchestrator(full_state, full_state)
     strategy_ids = sorted(str(sid) for sid in orchestrator.alpha_by_strategy.keys())
     if strategy_ids_allowlist:
-        strategy_ids = [sid for sid in strategy_ids if sid in strategy_ids_allowlist]
+        strategy_ids = [
+            sid
+            for sid in strategy_ids
+            if _strategy_id_matches_allowlist(sid, strategy_ids_allowlist)
+        ]
     if max_strategies is not None:
         strategy_ids = strategy_ids[: int(max_strategies)]
 
     generated: Dict[str, pd.DataFrame] = {}
     sources: Dict[str, str] = {}
+    allow_feature_only_replay = _allow_feature_only_policy_replay()
     for strategy_id in strategy_ids:
         events = _load_label_events_for_strategy(data_root, run_id, strategy_id)
         label_source = "labels"
         if events.empty:
+            if not allow_feature_only_replay:
+                logger.warning(
+                    "[%s] Skipping final-fit policy prediction generation: no "
+                    "label-backed policy events were found for this deployed "
+                    "strategy id. Feature-only rows are not valid for executable "
+                    "simple-policy optimisation because they do not carry the "
+                    "forward return/path columns needed to score delayed entry, "
+                    "stop, trailing, spread, slippage, and fees. Set "
+                    "EPM_SIMPLE_POLICY_ALLOW_FEATURE_ONLY_REPLAY=1 only for "
+                    "diagnostic score dumps.",
+                    strategy_id,
+                )
+                continue
             events = _load_feature_events_from_stage_view(
                 data_root=data_root,
                 run_id=run_id,
@@ -5551,6 +7244,21 @@ def _generate_policy_predictions_from_models(
         materialize_meta = getattr(
             orchestrator, "_materialize_meta_model_derived_features", None
         )
+        materialize_alpha_context = getattr(
+            orchestrator, "_materialize_alpha_model_meta_features", None
+        )
+        materialize_meta_drift = getattr(
+            orchestrator, "_materialize_meta_model_drift_features", None
+        )
+        if callable(materialize_alpha_context) and meta_model is not None:
+            meta_base = materialize_alpha_context(
+                meta_base,
+                meta_model,
+                side=side,
+                kind=strategy_id,
+            )
+        if callable(materialize_meta_drift) and meta_model is not None:
+            meta_base = materialize_meta_drift(meta_base, meta_model)
         if callable(materialize_meta) and meta_model is not None:
             meta_base = materialize_meta(
                 meta_base,
@@ -5635,8 +7343,234 @@ def _generate_policy_predictions_from_models(
         )
         events["base_gate_top_frac"] = float(BASE_TO_META_TOP_FRAC)
         generated[strategy_id] = events
-        sources[strategy_id] = f"generated_from_inference_models:{label_source}"
+        sources[strategy_id] = f"{source_tag}:{label_source}"
     return generated, sources
+
+
+def _policy_prediction_source_label(source: Optional[str]) -> str:
+    source_text = str(source or "").strip()
+    source_name = Path(source_text).name
+    if "/policy_oos_predictions/" in source_text or source_text.startswith(
+        "policy_oos_predictions:"
+    ) or source_name.startswith(
+        "policy_oos_"
+    ):
+        return "verified policy-OOS predictions"
+    if source_text == "generated_from_inference_models:feature_events_no_labels":
+        return "diagnostic final-fit predictions on feature-only rows, not executable policy evidence"
+    if source_text.startswith("generated_from_inference_models"):
+        return "diagnostic final-fit inference model predictions, not OOS evidence"
+    if "/meta_oof/" in source_text or source_name.startswith("meta_oof_"):
+        return "meta_oof training-window OOF predictions, not policy-OOS evidence"
+    return source_text or "unknown"
+
+
+def _policy_prediction_source_uses_policy_oos(source: Optional[str]) -> bool:
+    return _policy_prediction_source_label(source) == "verified policy-OOS predictions"
+
+
+def _policy_prediction_source_uses_precomputed_meta_oof(source: Optional[str]) -> bool:
+    return _policy_prediction_source_label(source) == (
+        "meta_oof training-window OOF predictions, not policy-OOS evidence"
+    )
+
+
+def _validate_policy_prediction_oos_contract(
+    df: pd.DataFrame,
+    *,
+    source_validation: Dict[str, Any],
+    source_path: Path,
+) -> Tuple[bool, Dict[str, Any]]:
+    def _manifest_path_for_policy_oos(path: Path) -> Path:
+        return path.with_suffix(".manifest.json")
+
+    def _load_policy_oos_manifest(path: Path) -> Dict[str, Any]:
+        manifest_path = _manifest_path_for_policy_oos(path)
+        if not manifest_path.exists():
+            return {
+                "manifest_path": str(manifest_path),
+                "manifest_present": False,
+            }
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            return {
+                "manifest_path": str(manifest_path),
+                "manifest_present": True,
+                "manifest_read_error": str(exc),
+            }
+        if not isinstance(payload, dict):
+            payload = {}
+        payload["manifest_path"] = str(manifest_path)
+        payload["manifest_present"] = True
+        return payload
+
+    if "timestamp" in df.columns:
+        ts_col = "timestamp"
+    elif "__ts__" in df.columns:
+        ts_col = "__ts__"
+    else:
+        ts_col = None
+    if ts_col is None:
+        return False, {
+            "source": str(source_path),
+            "valid_policy_oos_source": False,
+            "reason": "missing_timestamp_column",
+        }
+    ts = pd.to_datetime(df[ts_col], utc=True, errors="coerce")
+    ts = ts.dropna()
+    if ts.empty:
+        return False, {
+            "source": str(source_path),
+            "valid_policy_oos_source": False,
+            "reason": "no_valid_timestamps",
+        }
+    fit_end = pd.to_datetime(
+        source_validation.get("policy_optimiser_fit_end"), utc=True, errors="coerce"
+    )
+    predict_start = pd.to_datetime(
+        source_validation.get("policy_optimiser_predict_start"),
+        utc=True,
+        errors="coerce",
+    )
+    predict_end = pd.to_datetime(
+        source_validation.get("policy_optimiser_predict_end"), utc=True, errors="coerce"
+    )
+    min_ts = ts.min()
+    max_ts = ts.max()
+    temporal_disjoint = bool(pd.notna(fit_end) and min_ts > fit_end)
+    starts_in_policy = bool(pd.notna(predict_start) and min_ts >= predict_start)
+    ends_in_policy = bool(pd.notna(predict_end) and max_ts <= predict_end)
+    manifest = _load_policy_oos_manifest(source_path)
+    manifest_present = bool(manifest.get("manifest_present", False))
+    manifest_error = manifest.get("manifest_read_error")
+    source_model_fit_end = pd.to_datetime(
+        manifest.get("source_model_fit_end"), utc=True, errors="coerce"
+    )
+    generated_from_final_fit = bool(manifest.get("generated_from_final_fit_bundle"))
+    model_provenance = str(manifest.get("model_provenance") or "")
+    prediction_source = str(manifest.get("prediction_source") or "")
+    candidate_rows_source = str(manifest.get("candidate_rows_source") or "")
+    executable_path_source = str(manifest.get("executable_path_source") or "")
+    rank_normalization = str(manifest.get("rank_normalization") or "")
+    source_model_state_sha256 = str(manifest.get("source_model_state_sha256") or "")
+    preflight = manifest.get("source_artifact_preflight")
+    preflight_valid = bool(
+        isinstance(preflight, dict) and preflight.get("valid") is True
+    )
+    scoring_contract_ok = (
+        model_provenance == "train_meta_frozen_model_state"
+        and prediction_source.startswith("generated_from_train_meta_state")
+        and candidate_rows_source == "policy_slice_feature_events"
+        and executable_path_source
+        == "simple_policy_optimiser_recomputes_from_ohlcv_and_execution_1m"
+        and "rank" in rank_normalization.lower()
+        and bool(source_model_state_sha256)
+        and preflight_valid
+    )
+    model_before_policy = bool(
+        pd.notna(source_model_fit_end)
+        and pd.notna(predict_start)
+        and source_model_fit_end < predict_start
+    )
+    model_not_after_fit_end = bool(
+        pd.notna(source_model_fit_end)
+        and pd.notna(fit_end)
+        and source_model_fit_end <= fit_end
+    )
+    manifest_oos_safe = (
+        manifest_present
+        and not manifest_error
+        and model_before_policy
+        and model_not_after_fit_end
+        and not generated_from_final_fit
+        and scoring_contract_ok
+    )
+    ok = temporal_disjoint and starts_in_policy and ends_in_policy and manifest_oos_safe
+    reason = "ok" if ok else "prediction_timestamps_not_strict_policy_oos"
+    if temporal_disjoint and starts_in_policy and ends_in_policy and not manifest_oos_safe:
+        if not manifest_present:
+            reason = "missing_policy_oos_manifest"
+        elif manifest_error:
+            reason = "unreadable_policy_oos_manifest"
+        elif (
+            not model_before_policy
+            or not model_not_after_fit_end
+            or generated_from_final_fit
+        ):
+            reason = "policy_oos_model_manifest_not_oos_safe"
+        elif not scoring_contract_ok:
+            reason = "policy_oos_scoring_contract_mismatch"
+        else:
+            reason = "policy_oos_model_manifest_not_oos_safe"
+    return ok, {
+        "source": str(source_path),
+        "valid_policy_oos_source": bool(ok),
+        "reason": reason,
+        "row_count": int(len(df)),
+        "timestamp_column": ts_col,
+        "min_timestamp": min_ts.isoformat(),
+        "max_timestamp": max_ts.isoformat(),
+        "policy_fit_end": fit_end.isoformat() if pd.notna(fit_end) else None,
+        "policy_predict_start": (
+            predict_start.isoformat() if pd.notna(predict_start) else None
+        ),
+        "policy_predict_end": predict_end.isoformat() if pd.notna(predict_end) else None,
+        "temporal_disjoint_from_train": temporal_disjoint,
+        "starts_in_policy_prediction_window": starts_in_policy,
+        "ends_in_policy_prediction_window": ends_in_policy,
+        "manifest_path": str(manifest.get("manifest_path", "")),
+        "manifest_present": manifest_present,
+        "manifest_read_error": manifest_error,
+        "source_model_fit_end": (
+            source_model_fit_end.isoformat()
+            if pd.notna(source_model_fit_end)
+            else None
+        ),
+        "generated_from_final_fit_bundle": generated_from_final_fit,
+        "model_temporal_disjoint_from_policy_oos": model_before_policy,
+        "model_fit_end_not_after_policy_fit_end": model_not_after_fit_end,
+        "model_provenance": model_provenance or None,
+        "prediction_source": prediction_source or None,
+        "candidate_rows_source": candidate_rows_source or None,
+        "executable_path_source": executable_path_source or None,
+        "rank_normalization": rank_normalization or None,
+        "source_model_state_sha256": source_model_state_sha256 or None,
+        "source_artifact_preflight_valid": preflight_valid,
+        "scoring_contract_ok": scoring_contract_ok,
+    }
+
+
+def _summarize_policy_prediction_sources(
+    strategy_ids: Iterable[str], sources: Dict[str, str]
+) -> Dict[str, Any]:
+    actual_sources = {str(sid): str(sources.get(sid, "unknown")) for sid in strategy_ids}
+    actual_source_labels = {
+        sid: _policy_prediction_source_label(source)
+        for sid, source in actual_sources.items()
+    }
+    actual_uses_precomputed = {
+        sid: _policy_prediction_source_uses_precomputed_meta_oof(source)
+        for sid, source in actual_sources.items()
+    }
+    labels = sorted(set(actual_source_labels.values()))
+    return {
+        "source": labels[0] if len(labels) == 1 else "mixed prediction sources",
+        "actual_sources": actual_sources,
+        "actual_source_labels": actual_source_labels,
+        "uses_policy_oos": bool(
+            any(
+                _policy_prediction_source_uses_policy_oos(v)
+                for v in actual_sources.values()
+            )
+        ),
+        "uses_policy_oos_by_strategy": {
+            sid: _policy_prediction_source_uses_policy_oos(source)
+            for sid, source in actual_sources.items()
+        },
+        "uses_precomputed_meta_oof": bool(any(actual_uses_precomputed.values())),
+        "uses_precomputed_meta_oof_by_strategy": actual_uses_precomputed,
+    }
 
 
 def _strategy_side(strategy_id: str) -> str:
@@ -5698,26 +7632,25 @@ def _policy_runtime_params(best_params: Dict[str, Any]) -> Dict[str, Any]:
     return params
 
 
-def _load_lgbm_mask_contracts_for_deployment() -> Dict[str, Dict[str, Any]]:
-    """Load the LGBM rule-mask contracts needed to rebuild live regime masks."""
-    try:
-        from extreme_price_movements.offline_optimisers.params_store import (
-            load_inference_candidate_mask_params_per_bucket,
-        )
-    except Exception as exc:
-        tprint(f"[deployment] could not import LGBM mask contract loader: {exc}")
-        return {}
+def _deployment_contract_aliases(strategy_id: str, side: str = "") -> Set[str]:
+    sid = str(strategy_id or "").strip()
+    aliases: Set[str] = set()
+    if sid:
+        aliases.add(sid)
+    core = sid
+    if sid.startswith("long_"):
+        core = sid.split("long_", 1)[1]
+    elif sid.startswith("short_"):
+        core = sid.split("short_", 1)[1]
+    if core:
+        aliases.add(core)
+    side = str(side or "").strip().lower()
+    if side in {"long", "short"} and core:
+        aliases.add(f"{side}_{core}")
+    return {alias for alias in aliases if alias}
 
-    try:
-        rows = load_inference_candidate_mask_params_per_bucket(
-            top_n=99,
-            ranking_metric="score_for_best_params",
-        )
-    except Exception as exc:
-        tprint(f"[deployment] could not load LGBM mask contracts: {exc}")
-        return {}
 
-    contracts: Dict[str, Dict[str, Any]] = {}
+def _normalise_lgbm_mask_contract_row(row: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
     keep_keys = {
         "strategy_id",
         "trade_side",
@@ -5733,39 +7666,111 @@ def _load_lgbm_mask_contracts_for_deployment() -> Dict[str, Dict[str, Any]]:
         "ranking_score",
         "ranking_score_norm",
         "adjusted_ranking_score",
+        "stage_e_rank_score",
+        "market_mode",
     }
+    sid = str(row.get("strategy_id", "") or "").strip()
+    if not sid:
+        return "", {}
+    contract = {k: row.get(k) for k in keep_keys if k in row}
+    mask_params = dict(contract.get("mask_params", {}) or {})
+    canonical_key = str(
+        contract.get("base_event_trigger")
+        or contract.get("canonical_key")
+        or mask_params.get("canonical_key")
+        or ""
+    ).strip()
+    if canonical_key:
+        contract["base_event_trigger"] = canonical_key
+        contract["canonical_key"] = canonical_key
+        mask_params.setdefault("canonical_key", canonical_key)
+    contract["mask_params"] = mask_params
+    return sid, contract
+
+
+def _load_source_run_lgbm_mask_contract_rows(
+    market_mode: str = "spot",
+) -> List[Dict[str, Any]]:
+    """Load exact rule-mask provenance from the artifact source run when present."""
+    source_run_id = str(os.environ.get("EPM_ARTIFACT_SOURCE_RUN_ID", "") or "").strip()
+    if not source_run_id:
+        return []
+    data_root = Path(str(os.environ.get("EPM_DATA_ROOT", "data") or "data"))
+    mode = normalize_market_mode(market_mode)
+    candidates = [
+        data_root
+        / "artifacts"
+        / source_run_id
+        / f"policy_oos_retrain_strategy_source_{mode}.csv",
+        data_root / "artifacts" / source_run_id / "policy_oos_retrain_strategy_source.csv",
+    ]
+    for path in candidates:
+        try:
+            if not path.exists() or path.stat().st_size <= 100:
+                continue
+            df = pd.read_csv(path)
+        except Exception as exc:
+            tprint(f"[deployment] could not read source-run LGBM mask contracts {path}: {exc}")
+            continue
+        if df.empty:
+            continue
+        if "market_mode" in df.columns:
+            df = df[df["market_mode"].map(normalize_market_mode) == mode].copy()
+            if df.empty:
+                continue
+        rows = df.to_dict("records")
+        tprint(
+            "[deployment] loaded source-run LGBM mask contracts: "
+            f"path={path} rows={len(rows)}"
+        )
+        return rows
+    return []
+
+
+def _require_lgbm_mask_contracts_for_deployment() -> bool:
+    raw = os.environ.get("EPM_REQUIRE_LGBM_REGIME_MASK_CONTRACTS")
+    if raw is not None:
+        return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+    return str(os.environ.get("EPM_MODEL_BACKEND", "")).strip().lower() in {
+        "lgbm",
+        "lgbm_pipeline",
+    }
+
+
+def _load_lgbm_mask_contracts_for_deployment(
+    market_mode: str = "spot",
+) -> Dict[str, Dict[str, Any]]:
+    """Load the LGBM rule-mask contracts needed to rebuild live regime masks."""
+    try:
+        from extreme_price_movements.offline_optimisers.params_store import (
+            load_inference_candidate_mask_params_per_bucket,
+        )
+    except Exception as exc:
+        tprint(f"[deployment] could not import LGBM mask contract loader: {exc}")
+        return {}
+
+    try:
+        rows = load_inference_candidate_mask_params_per_bucket(
+            top_n=99,
+            ranking_metric="score_for_best_params",
+            market_mode=market_mode,
+        )
+    except Exception as exc:
+        tprint(f"[deployment] could not load LGBM mask contracts: {exc}")
+        return {}
+
+    rows = list(rows or []) + _load_source_run_lgbm_mask_contract_rows(market_mode)
+
+    contracts: Dict[str, Dict[str, Any]] = {}
     for row in rows:
         if not isinstance(row, dict):
             continue
-        sid = str(row.get("strategy_id", "") or "")
+        sid, contract = _normalise_lgbm_mask_contract_row(row)
         if not sid:
             continue
-        contract = {k: row.get(k) for k in keep_keys if k in row}
-        mask_params = dict(contract.get("mask_params", {}) or {})
-        canonical_key = str(
-            contract.get("base_event_trigger")
-            or contract.get("canonical_key")
-            or mask_params.get("canonical_key")
-            or ""
-        )
-        if canonical_key:
-            contract["base_event_trigger"] = canonical_key
-            contract["canonical_key"] = canonical_key
-            mask_params.setdefault("canonical_key", canonical_key)
-        contract["mask_params"] = mask_params
-        aliases = {sid}
-        core = sid
-        if sid.startswith("long_"):
-            core = sid.split("long_", 1)[1]
-        elif sid.startswith("short_"):
-            core = sid.split("short_", 1)[1]
-        aliases.add(core)
         side = str(row.get("trade_side", row.get("side", "")) or "").lower()
-        if side in {"long", "short"} and core:
-            aliases.add(f"{side}_{core}")
-        for alias in aliases:
-            if alias:
-                contracts[str(alias)] = dict(contract)
+        for alias in _deployment_contract_aliases(sid, side):
+            contracts[str(alias)] = dict(contract)
     tprint(
         "[deployment] loaded LGBM mask contracts for strategy_for_inference: "
         f"rows={len(rows)} aliases={len(contracts)}"
@@ -5778,11 +7783,15 @@ def _build_deployment_payload(
     run_id: str,
     oos_results_json: Dict[str, Any],
     available_strategy_ids: Optional[Set[str]] = None,
+    market_mode: str = "spot",
 ) -> Dict[str, Any]:
     """Select deployable strategies from the chronological OOS policy slice."""
     rows: List[Dict[str, Any]] = []
     rejected: List[Dict[str, Any]] = []
-    lgbm_mask_contracts = _load_lgbm_mask_contracts_for_deployment()
+    lgbm_mask_contracts = _load_lgbm_mask_contracts_for_deployment(
+        market_mode=market_mode,
+    )
+    require_lgbm_mask_contracts = _require_lgbm_mask_contracts_for_deployment()
     for strategy_id, result in oos_results_json.get("strategies", {}).items():
         if not isinstance(result, dict):
             continue
@@ -5958,6 +7967,8 @@ def _build_deployment_payload(
             reject_reasons.append(f"{selection_metric_name}_net_pnl_not_positive")
         if not np.isfinite(float(row["selection_rank"])):
             reject_reasons.append("non_finite_selection_rank")
+        if require_lgbm_mask_contracts and not lgbm_mask_contract:
+            reject_reasons.append("missing_lgbm_mask_contract")
         if reject_reasons:
             row["reject_reasons"] = reject_reasons
             rejected.append(row)
@@ -6020,11 +8031,12 @@ def _build_deployment_payload(
             "selection_metric": _policy_selection_metric(),
             "min_selection_metric_avg_net_pnl_per_trade": 0.0,
             "requires_current_trained_meta_model": available_strategy_ids is not None,
+            "requires_lgbm_regime_mask_contract": require_lgbm_mask_contracts,
             "runtime_rank_threshold_source": "policy_optimiser_pnl_concurrency",
             "runtime_rank_threshold_scope": (
                 "per_strategy_prediction_rank_with_per_asset_and_cross_asset_limits"
             ),
-            "ranking_space": "calibrated_score per-strategy rank percentiles",
+            "ranking_space": "rank-normalized score per-strategy rank percentiles",
             "deployment_threshold_bounds": {
                 "lo": DEPLOYMENT_THRESHOLD_MIN,
                 "hi": DEPLOYMENT_THRESHOLD_MAX,
@@ -6040,6 +8052,9 @@ def _build_deployment_payload(
             "policy_optimized": len(oos_results_json.get("strategies", {})),
             "deployment_selected": len(selected),
             "deployment_rejected": len(rejected),
+            "lgbm_mask_contract_covered": int(
+                sum(1 for row in selected if row.get("lgbm_regime_mask"))
+            ),
             "trained_meta_model_covered": (
                 len(available_strategy_ids)
                 if available_strategy_ids is not None
@@ -6172,6 +8187,43 @@ def _write_training_live_parity_contract(
     )
 
 
+def _deployment_selected_strategy_ids(
+    deployment_payload: Mapping[str, Any],
+) -> List[str]:
+    """Return the live-selected strategy IDs from a deployment payload."""
+    ids: List[str] = []
+    seen: Set[str] = set()
+    for row in deployment_payload.get("strategies", []) or []:
+        if not isinstance(row, Mapping) or row.get("selected") is False:
+            continue
+        sid = str(
+            row.get("strategy_for_inference")
+            or row.get("strategy_id")
+            or row.get("canonical_strategy_id")
+            or ""
+        ).strip()
+        if not sid or sid in seen:
+            continue
+        seen.add(sid)
+        ids.append(sid)
+    return sorted(ids)
+
+
+def _apply_deployment_strategy_contract(
+    payload: Dict[str, Any],
+    strategy_ids: Sequence[str],
+) -> Dict[str, Any]:
+    """Narrow a live policy artifact contract to the deployed strategy set."""
+    out = dict(payload or {})
+    ids = sorted({str(sid).strip() for sid in strategy_ids if str(sid).strip()})
+    cores = sorted({strategy_core_id(sid) for sid in ids})
+    contract = dict(out.get("strategy_contract") or {})
+    contract["strategy_ids"] = ids
+    contract["strategy_cores"] = cores
+    out["strategy_contract"] = contract
+    return out
+
+
 def run_simple_policy_optimisation(
     data_root: str,
     run_id: str,
@@ -6196,9 +8248,16 @@ def run_simple_policy_optimisation(
             return
         run_id = max(candidates, key=lambda p: p.stat().st_mtime).name
         logger.info(f"No run_id supplied; using latest artifact run {run_id}")
-    meta_oof_dir = Path(data_root) / "artifacts" / run_id / "meta_oof"
+    run_root = Path(data_root) / "artifacts" / run_id
+    meta_oof_dir = run_root / "meta_oof"
+    policy_oos_dir = Path(
+        os.environ.get(
+            "EPM_SIMPLE_POLICY_OOS_PREDICTIONS_DIR",
+            str(run_root / "policy_oos_predictions"),
+        )
+    )
     slice_plan_path = (
-        Path(data_root) / "artifacts" / run_id / "slices" / "slice_plan.json"
+        run_root / "slices" / "slice_plan.json"
     )
     source_validation = _load_slice_plan_source_validation(slice_plan_path)
     runtime_exchange_context = _runtime_exchange_context(data_root, market_mode)
@@ -6217,6 +8276,12 @@ def run_simple_policy_optimisation(
             "Policy OOS source is not fully verifiable from slice_plan.json: %s",
             source_validation,
         )
+    invalidate_auction_rank_reference(
+        data_root=data_root,
+        run_id=run_id,
+        market_mode=market_mode,
+        reason="simple_policy_optimiser_started_new_candidate_export",
+    )
     stage_view, stage_name = _load_policy_stage_view(slice_plan_path)
     if stage_name != "policy_optimiser":
         logger.error(
@@ -6238,6 +8303,10 @@ def run_simple_policy_optimisation(
 
     meta_oof: Dict[str, pd.DataFrame] = {}
     meta_oof_sources: Dict[str, str] = {}
+    source_contracts: Dict[str, Dict[str, Any]] = {}
+    use_policy_oos_predictions = str(
+        os.environ.get("EPM_SIMPLE_POLICY_USE_POLICY_OOS_PREDICTIONS", "1")
+    ).strip().lower() in {"1", "true", "yes", "on"}
     use_precomputed_meta_oof = str(
         os.environ.get("EPM_SIMPLE_POLICY_USE_PRECOMPUTED_META_OOF", "0")
     ).strip().lower() in {"1", "true", "yes", "on"}
@@ -6249,14 +8318,77 @@ def run_simple_policy_optimisation(
     strategy_ids_allowlist = _expand_strategy_id_allowlist(
         list(strategy_ids or []) + env_strategy_ids
     )
-    if use_precomputed_meta_oof and meta_oof_dir.exists():
+
+    if use_policy_oos_predictions and policy_oos_dir.exists():
+        policy_oos_paths = sorted(policy_oos_dir.glob("policy_oos_*_clf.parquet"))
+        if not policy_oos_paths:
+            policy_oos_paths = sorted(policy_oos_dir.glob("policy_oos_*.parquet"))
+        for pq_file in policy_oos_paths:
+            strategy_id = pq_file.stem.replace("policy_oos_", "")
+            if strategy_id.endswith("_tbm_clf"):
+                strategy_id = strategy_id[: -len("_tbm_clf")]
+            elif strategy_id.endswith("_clf"):
+                strategy_id = strategy_id[: -len("_clf")]
+            if not _strategy_id_matches_allowlist(strategy_id, strategy_ids_allowlist):
+                continue
+            if strategy_id in meta_oof:
+                continue
+            df = pd.read_parquet(pq_file)
+            valid_source, contract = _validate_policy_prediction_oos_contract(
+                df,
+                source_validation=source_validation,
+                source_path=pq_file,
+            )
+            source_contracts[strategy_id] = contract
+            if not valid_source:
+                logger.error(
+                    "Refusing policy-OOS prediction source %s for %s: %s",
+                    pq_file,
+                    strategy_id,
+                    contract,
+                )
+                continue
+            df = _filter_rows_to_stage_view(df, stage_view)
+            if df.empty:
+                logger.info(
+                    "Policy-OOS predictions %s have no rows in policy slice %s.",
+                    pq_file,
+                    stage_name,
+                )
+                continue
+            df = _filter_policy_quote_rows(df, market_mode)
+            if df.empty:
+                logger.info(
+                    "Policy-OOS predictions %s have no rows after policy quote filter %s.",
+                    pq_file,
+                    _policy_quote_filter(market_mode) or "<none>",
+                )
+                continue
+            df = _ensure_regime_prediction_context(
+                df,
+                data_root=data_root,
+                run_id=run_id,
+                strategy_id=strategy_id,
+                stage_view=stage_view,
+            )
+            meta_oof[strategy_id] = df
+            meta_oof_sources[strategy_id] = str(pq_file)
+            if max_strategies is not None and len(meta_oof) >= int(max_strategies):
+                break
+
+    if (
+        not meta_oof
+        and use_precomputed_meta_oof
+        and meta_oof_dir.exists()
+        and _allow_meta_oof_policy_source()
+    ):
         for pq_file in sorted(meta_oof_dir.glob("meta_oof_*_clf.parquet")):
             strategy_id = pq_file.stem.replace("meta_oof_", "")
             if strategy_id.endswith("_tbm_clf"):
                 strategy_id = strategy_id[: -len("_tbm_clf")]
             elif strategy_id.endswith("_clf"):
                 strategy_id = strategy_id[: -len("_clf")]
-            if strategy_ids_allowlist and strategy_id not in strategy_ids_allowlist:
+            if not _strategy_id_matches_allowlist(strategy_id, strategy_ids_allowlist):
                 continue
             if strategy_id in meta_oof:
                 continue
@@ -6288,13 +8420,31 @@ def run_simple_policy_optimisation(
             meta_oof_sources[strategy_id] = str(pq_file)
             if max_strategies is not None and len(meta_oof) >= int(max_strategies):
                 break
+    elif use_precomputed_meta_oof and not _allow_meta_oof_policy_source():
+        logger.error(
+            "Refusing EPM_SIMPLE_POLICY_USE_PRECOMPUTED_META_OOF for policy-OOS "
+            "optimisation. meta_oof is training-window OOF, not policy-OOS. Set "
+            "EPM_SIMPLE_POLICY_ALLOW_META_OOF_POLICY_SOURCE=1 only for diagnostics."
+        )
 
     if not meta_oof:
+        if not _allow_final_fit_policy_generation():
+            logger.error(
+                "No verified policy-OOS prediction parquet was found under %s. "
+                "Refusing final-fit model generation for policy OOS metrics because "
+                "those models may have seen the policy slice. Generate "
+                "artifacts/%s/policy_oos_predictions/policy_oos_<strategy>_clf.parquet "
+                "with train_end < prediction_start, or set "
+                "EPM_SIMPLE_POLICY_ALLOW_FINAL_FIT_POLICY_GENERATION=1 only for "
+                "diagnostic score dumps.",
+                policy_oos_dir,
+                run_id,
+            )
+            return
         logger.info(
-            "Generating policy-slice predictions from final full-fit inference "
-            "models for stage %s (precomputed meta OOF enabled=%s).",
+            "Generating diagnostic policy-slice predictions from final full-fit "
+            "inference models for stage %s.",
             stage_name,
-            use_precomputed_meta_oof,
         )
         meta_oof, meta_oof_sources = _generate_policy_predictions_from_models(
             data_root=data_root,
@@ -6323,13 +8473,28 @@ def run_simple_policy_optimisation(
             if not _filter_policy_quote_rows(frame, market_mode).empty
         }
     elif strategy_ids_allowlist:
-        missing_strategy_ids = set(strategy_ids_allowlist).difference(meta_oof.keys())
+        missing_strategy_ids = {
+            sid
+            for sid in set(strategy_ids_allowlist)
+            if not any(
+                _strategy_id_matches_allowlist(existing_sid, {sid})
+                for existing_sid in meta_oof.keys()
+            )
+        }
         if missing_strategy_ids:
             logger.warning(
-                "Precomputed meta OOF is missing %s allowlisted strategy ids; "
-                "generating missing policy-slice predictions from inference models.",
+                "Verified policy-OOS predictions are missing %s allowlisted "
+                "strategy ids; generating missing diagnostic policy-slice "
+                "predictions from inference models.",
                 len(missing_strategy_ids),
             )
+            if not _allow_final_fit_policy_generation():
+                logger.error(
+                    "Refusing final-fit generation for missing policy-OOS "
+                    "strategies: %s",
+                    sorted(missing_strategy_ids),
+                )
+                return
             generated_oof, generated_sources = _generate_policy_predictions_from_models(
                 data_root=data_root,
                 run_id=run_id,
@@ -6369,6 +8534,9 @@ def run_simple_policy_optimisation(
         timeframe="15m",
     )
     calibration_data = load_calibration_curves(data_root, run_id)
+    prediction_source_summary = _summarize_policy_prediction_sources(
+        meta_oof.keys(), meta_oof_sources
+    )
 
     results_json = {}
     strategy_top5_daily_weekly: list[dict[str, Any]] = []
@@ -6386,15 +8554,14 @@ def run_simple_policy_optimisation(
         "cv_folds": DEFAULT_CV_FOLDS,
         "n_trials_per_fit": n_trials,
         "prediction_source": {
-            "source": (
-                "precomputed meta_oof parquet OOS/OOF predictions"
-                if use_precomputed_meta_oof
-                else "final full-fit inference model predictions on policy holdout"
-            ),
+            **prediction_source_summary,
             "slice_plan_path": str(slice_plan_path),
+            "policy_oos_predictions_dir": str(policy_oos_dir),
+            "source_contracts": source_contracts,
             **source_validation,
             "not_model_refit": True,
-            "uses_precomputed_meta_oof": bool(use_precomputed_meta_oof),
+            "requested_policy_oos_predictions": bool(use_policy_oos_predictions),
+            "requested_precomputed_meta_oof": bool(use_precomputed_meta_oof),
         },
         "strategies": {},
     }
@@ -6476,12 +8643,31 @@ def run_simple_policy_optimisation(
 
         t_paths = time.perf_counter()
         all_policy_paths = _fetch_policy_paths(df_policy_all, ds)
+        df_policy_all, all_policy_paths = _apply_delayed_entry_execution_model(
+            df_policy_all,
+            all_policy_paths,
+            data_root=data_root,
+            market_mode=market_mode,
+        )
+        finite_path_rows, total_path_rows, path_coverage = _assert_policy_path_coverage(
+            strategy_id=strategy_id,
+            paths=all_policy_paths,
+        )
         logger.info(
-            "[%s] Policy path matrix built: rows=%s shape=%s finite_entries=%s elapsed=%.1fs",
+            "[%s] Policy path matrix built: rows=%s shape=%s finite_entries=%s "
+            "finite_path_rows=%s coverage=%.2f%% delayed_1m_entries=%s elapsed=%.1fs",
             strategy_id,
             len(df_policy_all),
             tuple(all_policy_paths[0].shape),
             int(np.isfinite(all_policy_paths[0][:, 0]).sum()),
+            int(finite_path_rows),
+            100.0 * float(path_coverage),
+            int(
+                (
+                    df_policy_all.get("entry_execution_source", pd.Series(dtype=object))
+                    == "delayed_1m_intraminute_proxy"
+                ).sum()
+            ),
             time.perf_counter() - t_paths,
         )
         stage_a_round_trip_cost_pct = float(SIMPLE_DISCOVERY_ROUND_TRIP_COST_PCT)
@@ -6806,12 +8992,15 @@ def run_simple_policy_optimisation(
                 "score_column": "clf",
                 "score_normalization": "calibrated_score_and_threshold",
                 "deployment_score_column": "calibrated_score",
-                "source": (
-                    "precomputed meta_oof parquet OOS/OOF predictions"
-                    if use_precomputed_meta_oof
-                    else "final full-fit inference model predictions on policy holdout"
+                "source": _policy_prediction_source_label(
+                    meta_oof_sources.get(strategy_id)
                 ),
-                "uses_precomputed_meta_oof": bool(use_precomputed_meta_oof),
+                "requested_precomputed_meta_oof": bool(use_precomputed_meta_oof),
+                "uses_precomputed_meta_oof": (
+                    _policy_prediction_source_uses_precomputed_meta_oof(
+                        meta_oof_sources.get(strategy_id)
+                    )
+                ),
                 "oos_oof_columns_used": [
                     c
                     for c in ["oof_meta_clf", "oof_pred", "oof_p_move", "oof_base_clf"]
@@ -6916,12 +9105,50 @@ def run_simple_policy_optimisation(
     _write_text_with_mode_alias(oos_output_path, oos_text, market_mode)
     logger.info(f"Saved OOS policy metrics to {oos_output_path}")
 
+    auction_reference_table = _finalise_simple_policy_candidates(
+        simple_policy_candidate_frames,
+        rank_floor=0.0,
+    )
+    candidate_table = _finalise_simple_policy_candidates(simple_policy_candidate_frames)
+    candidate_path = (
+        meta_oof_dir.parent
+        / "simple_policy_optimiser"
+        / "simple_policy_candidates.parquet"
+    )
+    if not candidate_table.empty:
+        try:
+            _validate_delayed_entry_execution_coverage(
+                candidate_table,
+                artifact_label=str(candidate_path),
+            )
+        except RuntimeError as exc:
+            _write_policy_export_failure_diagnostics(
+                candidate_table,
+                candidate_path.parent,
+                run_id=run_id,
+                market_mode=market_mode,
+            )
+            _write_policy_export_invalid_marker(
+                candidate_path.parent,
+                run_id=run_id,
+                market_mode=market_mode,
+                reason=exc,
+            )
+            raise
+        _clear_policy_export_invalid_marker(candidate_path.parent)
+
     deployment_payload = _build_deployment_payload(
         run_id=run_id,
         oos_results_json=oos_results_json,
         available_strategy_ids=_available_strategy_ids_from_meta_oof(meta_oof_dir),
+        market_mode=market_mode,
     )
     deployment_payload["market_mode"] = market_mode
+    _apply_local_candidate_hit_rate_guard(
+        deployment_payload,
+        candidate_table,
+        candidate_path=candidate_path,
+    )
     policy_params_dir = meta_oof_dir.parent / "policy_params"
     policy_params_dir.mkdir(parents=True, exist_ok=True)
     deployment_text = json.dumps(_json_safe(deployment_payload), indent=2)
@@ -6945,19 +9172,17 @@ def run_simple_policy_optimisation(
     )
     logger.info(f"Saved portfolio policy config to {portfolio_policy_path}")
 
-    auction_reference_table = _finalise_simple_policy_candidates(
-        simple_policy_candidate_frames,
-        rank_floor=0.0,
-    )
-    candidate_table = _finalise_simple_policy_candidates(simple_policy_candidate_frames)
-    candidate_path = (
-        meta_oof_dir.parent
-        / "simple_policy_optimiser"
-        / "simple_policy_candidates.parquet"
-    )
     if not candidate_table.empty:
         candidate_path.parent.mkdir(parents=True, exist_ok=True)
         candidate_table.to_parquet(candidate_path, index=False)
+        candidate_metadata_path = (
+            candidate_path.parent / "simple_policy_candidates_metadata.json"
+        )
+        _write_simple_policy_candidate_metadata(
+            candidate_table,
+            output_path=candidate_metadata_path,
+        )
+        logger.info("Saved simple policy candidate metadata to %s", candidate_metadata_path)
         auction_ref_path = persist_auction_rank_reference(
             auction_reference_table,
             data_root=data_root,
@@ -6969,6 +9194,19 @@ def run_simple_policy_optimisation(
             candidate_path,
             len(candidate_table),
             auction_ref_path,
+        )
+        _write_delay_rejection_reports(
+            candidate_table,
+            output_dir=candidate_path.parent,
+        )
+        _write_rank_threshold_band_reports(
+            candidate_table,
+            output_dir=candidate_path.parent,
+        )
+        logger.info(
+            "Saved delayed-entry price move breakdown, adverse rejection "
+            "simulations, and rank-threshold band reports under %s",
+            candidate_path.parent,
         )
         if not _env_flag("EPM_SIMPLE_POLICY_RUN_PORTFOLIO_REPLAY", True):
             logger.info(
@@ -6999,17 +9237,36 @@ def run_simple_policy_optimisation(
                 optimized_portfolio_payload = json.loads(
                     optimized_portfolio_path.read_text(encoding="utf-8")
                 )
-            _write_training_live_parity_contract(
-                data_root=data_root,
-                run_id=run_id,
-                market_mode=market_mode,
-                strategy_ids=sorted(
+            deployed_strategy_ids = _deployment_selected_strategy_ids(
+                deployment_payload
+            )
+            if not deployed_strategy_ids:
+                deployed_strategy_ids = sorted(
                     {
                         str(sid)
                         for sid in candidate_table["strategy_id"].dropna().unique()
                         if str(sid).strip()
                     }
-                ),
+                )
+            if optimized_portfolio_payload:
+                optimized_portfolio_payload = _apply_deployment_strategy_contract(
+                    optimized_portfolio_payload,
+                    deployed_strategy_ids,
+                )
+                optimized_portfolio_path.write_text(
+                    json.dumps(_json_safe(optimized_portfolio_payload), indent=2),
+                    encoding="utf-8",
+                )
+                logger.info(
+                    "Updated live portfolio policy strategy contract to deployed "
+                    "strategy set: %s strategies",
+                    len(deployed_strategy_ids),
+                )
+            _write_training_live_parity_contract(
+                data_root=data_root,
+                run_id=run_id,
+                market_mode=market_mode,
+                strategy_ids=deployed_strategy_ids,
                 deployment_payload=deployment_payload,
                 portfolio_payload=optimized_portfolio_payload,
             )
@@ -7219,6 +9476,12 @@ def run_regime_adaptor_only_from_simple_policy(
             strategy.get("params_hash", ""),
         )
         all_policy_paths = _fetch_policy_paths(df_policy_all, ds)
+        df_policy_all, all_policy_paths = _apply_delayed_entry_execution_model(
+            df_policy_all,
+            all_policy_paths,
+            data_root=data_root,
+            market_mode=market_mode,
+        )
         summary = _fit_regime_adaptor_from_simple_policy(
             data_root=data_root,
             run_id=str(run_id),
@@ -7277,7 +9540,7 @@ if __name__ == "__main__":
         default=DEFAULT_POLICY_ROUND_TRIP_COST_PCT,
         help=(
             "All-in round-trip execution cost used by policy optimisation. "
-            "Default is 0.005 for 0.5%%."
+            "Default is 0.002 for 0.2%%."
         ),
     )
     parser.add_argument(

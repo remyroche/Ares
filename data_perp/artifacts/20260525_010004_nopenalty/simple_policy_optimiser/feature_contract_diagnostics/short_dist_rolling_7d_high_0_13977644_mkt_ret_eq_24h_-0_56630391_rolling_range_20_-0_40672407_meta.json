@@ -1,0 +1,247 @@
+{
+  "feature_contract_count": 64,
+  "invalid_rows": 9306,
+  "meta_model_key": "short_dist_rolling_7d_high_0_13977644_mkt_ret_eq_24h_-0_56630391_rolling_range_20_-0_40672407_clf",
+  "rows": 261746,
+  "rows_after_base_gate": 261746,
+  "stage": "meta",
+  "strategy_id": "short_dist_rolling_7d_high_0_13977644_mkt_ret_eq_24h_-0_56630391_rolling_range_20_-0_40672407",
+  "top_invalid_symbols": [
+    {
+      "bad_pct": 0.9914089347079038,
+      "invalid_rows": 1154,
+      "rows": 1164,
+      "symbol": "LAYER/USD:USD"
+    },
+    {
+      "bad_pct": 0.9595959595959596,
+      "invalid_rows": 95,
+      "rows": 99,
+      "symbol": "GBP/USD:USD"
+    },
+    {
+      "bad_pct": 0.8319623971797885,
+      "invalid_rows": 708,
+      "rows": 851,
+      "symbol": "OMI/USD:USD"
+    },
+    {
+      "bad_pct": 0.7244897959183674,
+      "invalid_rows": 710,
+      "rows": 980,
+      "symbol": "GTC/USD:USD"
+    },
+    {
+      "bad_pct": 0.6927578639356254,
+      "invalid_rows": 947,
+      "rows": 1367,
+      "symbol": "2Z/USD:USD"
+    },
+    {
+      "bad_pct": 0.6684824902723735,
+      "invalid_rows": 859,
+      "rows": 1285,
+      "symbol": "USDC/USD:USD"
+    },
+    {
+      "bad_pct": 0.636963696369637,
+      "invalid_rows": 386,
+      "rows": 606,
+      "symbol": "ZIG/USD:USD"
+    },
+    {
+      "bad_pct": 0.46855828220858897,
+      "invalid_rows": 611,
+      "rows": 1304,
+      "symbol": "XPL/USD:USD"
+    },
+    {
+      "bad_pct": 0.4332874828060523,
+      "invalid_rows": 630,
+      "rows": 1454,
+      "symbol": "SOON/USD:USD"
+    },
+    {
+      "bad_pct": 0.34763948497854075,
+      "invalid_rows": 243,
+      "rows": 699,
+      "symbol": "RIVER/USD:USD"
+    },
+    {
+      "bad_pct": 0.2765237020316027,
+      "invalid_rows": 245,
+      "rows": 886,
+      "symbol": "MOG/USD:USD"
+    },
+    {
+      "bad_pct": 0.2608326253186066,
+      "invalid_rows": 307,
+      "rows": 1177,
+      "symbol": "MIRA/USD:USD"
+    },
+    {
+      "bad_pct": 0.25653798256537985,
+      "invalid_rows": 412,
+      "rows": 1606,
+      "symbol": "USDT/USD:USD"
+    },
+    {
+      "bad_pct": 0.2528180354267311,
+      "invalid_rows": 314,
+      "rows": 1242,
+      "symbol": "METIS/USD:USD"
+    },
+    {
+      "bad_pct": 0.22263313609467456,
+      "invalid_rows": 301,
+      "rows": 1352,
+      "symbol": "OPEN/USD:USD"
+    },
+    {
+      "bad_pct": 0.191129883843717,
+      "invalid_rows": 181,
+      "rows": 947,
+      "symbol": "MON/USD:USD"
+    },
+    {
+      "bad_pct": 0.18436154949784792,
+      "invalid_rows": 257,
+      "rows": 1394,
+      "symbol": "BIGTIME/USD:USD"
+    },
+    {
+      "bad_pct": 0.1774447949526814,
+      "invalid_rows": 225,
+      "rows": 1268,
+      "symbol": "COW/USD:USD"
+    },
+    {
+      "bad_pct": 0.17205169628432956,
+      "invalid_rows": 213,
+      "rows": 1238,
+      "symbol": "ZBT/USD:USD"
+    },
+    {
+      "bad_pct": 0.1662921348314607,
+      "invalid_rows": 148,
+      "rows": 890,
+      "symbol": "EUR/USD:USD"
+    }
+  ],
+  "top_nonfinite_features": [
+    {
+      "bad_pct": 0.025520924866091553,
+      "bad_rows": 6680,
+      "feature": "price_x_oi_1d",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.01907956568581755,
+      "bad_rows": 4994,
+      "feature": "oi_1d_x_funding",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.01791431387681187,
+      "bad_rows": 4689,
+      "feature": "oi_1d_chg_z",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.01597350102771389,
+      "bad_rows": 4181,
+      "feature": "oi_3d_x_funding_1d_chg",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.014288661526823714,
+      "bad_rows": 3740,
+      "feature": "funding_1d_chg_ts_resid",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "funding"
+    },
+    {
+      "bad_pct": 0.006739358003560704,
+      "bad_rows": 1764,
+      "feature": "oi_3d_x_funding",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.0031175261513069923,
+      "bad_rows": 816,
+      "feature": "asset_minus_mkt_oi_7d_ts_resid",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.0025597334820780453,
+      "bad_rows": 670,
+      "feature": "oi_trend_7d_robust_z",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.0014212251572134817,
+      "bad_rows": 372,
+      "feature": "oi_value_z_30d",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.0010659188679101113,
+      "bad_rows": 279,
+      "feature": "asset_minus_mkt_oi_1d_peer_resid",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.000855791492515645,
+      "bad_rows": 224,
+      "feature": "asset_minus_mkt_oi_7d",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "open_interest"
+    },
+    {
+      "bad_pct": 0.0007258945695445203,
+      "bad_rows": 190,
+      "feature": "price_rv_15d_robust_z",
+      "likely_root_cause": "feature_computation_or_source_window_gap",
+      "missing_column": false,
+      "source_family": "derived_feature"
+    },
+    {
+      "bad_pct": 0.000611279637511175,
+      "bad_rows": 160,
+      "feature": "funding_vol_7d_robust_z",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "funding"
+    },
+    {
+      "bad_pct": 0.0005654336646978369,
+      "bad_rows": 148,
+      "feature": "funding_mom_4h",
+      "likely_root_cause": "raw_source_missing_or_sparse",
+      "missing_column": false,
+      "source_family": "funding"
+    }
+  ],
+  "valid_pct": 0.9644464480832563,
+  "valid_rows": 252440
+}

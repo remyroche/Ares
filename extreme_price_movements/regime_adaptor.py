@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
@@ -10,6 +11,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 from scipy.stats import linregress
+from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.linear_model import ElasticNet
 from sklearn.preprocessing import RobustScaler
@@ -19,6 +21,7 @@ from sklearn.tree import DecisionTreeRegressor
 from sklearn.isotonic import IsotonicRegression
 
 from extreme_price_movements.config import (
+    CFG,
     REGIME_ADAPTOR_ASSET_FEATURE_KEYS,
     REGIME_ADAPTOR_COMBINATION_GRID,
     REGIME_ADAPTOR_EBM_CONSOLIDATED_FEATURE_KEYS,
@@ -34,10 +37,12 @@ from extreme_price_movements.config import (
     REGIME_ADAPTOR_ROLLING_PRIOR_FEATURE_KEYS,
     REGIME_ADAPTOR_STRATEGY_ASSET_FEATURE_KEYS,
 )
+from extreme_price_movements.path_utils import resolve_mode_file
 
 try:
-    from lightgbm import LGBMClassifier, early_stopping
+    from lightgbm import Booster, LGBMClassifier, early_stopping
 except Exception:  # pragma: no cover - optional runtime dependency fallback.
+    Booster = None  # type: ignore[assignment]
     LGBMClassifier = None  # type: ignore[assignment]
     early_stopping = None  # type: ignore[assignment]
 
@@ -136,6 +141,112 @@ ASSET_BAD_RATE_THRESHOLD = float(REGIME_ADAPTOR_ASSET_BAD_RATE_THRESHOLD)
 REGIME_RATIO_CLIPS = {k: tuple(v) for k, v in REGIME_ADAPTOR_RATIO_CLIPS.items()}
 ROLLING_REGIME_LGBM_PARAMS = dict(REGIME_ADAPTOR_LGBM_CLASSIFIER_PARAMS)
 MARKET_MODE_SUFFIXES = {"spot": "_spot", "perps": "_perps"}
+ERROR_RISK_MIN_ROWS = 1000
+ERROR_RISK_MIN_BAD_ROWS = 100
+ERROR_RISK_MIN_GOOD_ROWS = 100
+ERROR_RISK_MIN_WEEKS = 8
+ERROR_RISK_MIN_ASSETS = 5
+ERROR_RISK_TARGET_FEATURES = 10
+ERROR_RISK_MAX_FEATURES = 10
+ERROR_RISK_MODEL_PARAMS = {
+    "objective": "binary",
+    "max_depth": 3,
+    "num_leaves": 8,
+    "n_estimators": 80,
+    "min_child_samples": 60,
+    "reg_alpha": 0.5,
+    "reg_lambda": 25.0,
+    "learning_rate": 0.04,
+    "subsample": 0.85,
+    "colsample_bytree": 0.80,
+    "random_state": 42,
+    "verbosity": -1,
+    "class_weight": "balanced",
+}
+ERROR_ARCHETYPE_FEATURES = (
+    "shap_archetype_id",
+    "shap_archetype_is_bad",
+    "shap_archetype_is_good",
+    "shap_archetype_is_neutral",
+    "distance_to_archetype_centroid",
+    "distance_to_nearest_bad_archetype",
+    "archetype_oof_bad_rate_lift",
+    "distance_to_bad_archetype",
+    "distance_to_good_archetype",
+)
+ERROR_RISK_DRIFT_TOKENS = (
+    "drift",
+    "psi_core",
+    "cov_shift",
+    "mahalanobis",
+    "frobenius",
+    "regime_centroid_similarity",
+    "inference_drift_score",
+    "contribution_drift_score",
+)
+ERROR_RISK_UNCERTAINTY_TOKENS = (
+    "unc",
+    "uncertainty",
+    "pred_std",
+    "pred_cv",
+    "leaf_support",
+    "rare_leaf",
+    "low_support",
+    "vote_entropy",
+    "vote_margin",
+    "support",
+)
+ERROR_ARCHETYPE_SPARSIFY_MIN_FEATURES = 8
+ERROR_ARCHETYPE_SPARSIFY_MAX_FEATURES = 64
+ERROR_ARCHETYPE_SPARSIFY_DROP_FRACTION = 0.50
+
+
+def _expand_cfg_feature_group_refs(keys: Sequence[Any], cfg: Dict[str, Any]) -> List[str]:
+    expanded: List[str] = []
+
+    def visit(value: Any, seen: set[str]) -> None:
+        if isinstance(value, str):
+            if value in seen:
+                return
+            nested = cfg.get(value)
+            if isinstance(nested, list):
+                visit(nested, seen | {value})
+            else:
+                expanded.append(value)
+            return
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                visit(item, set(seen))
+
+    visit(list(keys or []), set())
+    return list(dict.fromkeys(str(k) for k in expanded if str(k)))
+
+
+def _configured_error_risk_feature_names() -> set[str]:
+    groups = (
+        "base_shared_feature_keys",
+        "base_long_feature_keys",
+        "base_short_feature_keys",
+        "meta_shared_feature_keys",
+        "meta_product_feature_keys",
+        "meta_reg_feature_keys",
+        "meta_clf_feature_keys",
+        "meta_mfe_feature_keys",
+        "meta_mae_feature_keys",
+        "meta_asym_feature_keys",
+        "META_MODEL_UNCERTAINTY_FEATURE_KEYS",
+        "REGIME_ADAPTOR_BASE_FEATURE_KEYS",
+        "REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS",
+        "REGIME_ADAPTOR_ASSET_FEATURE_KEYS",
+        "REGIME_ADAPTOR_ORDERBOOK_FEATURE_KEYS",
+        "REGIME_ADAPTOR_STRATEGY_ASSET_FEATURE_KEYS",
+        "REGIME_ADAPTOR_EBM_CONSOLIDATED_FEATURE_KEYS",
+        "REGIME_ADAPTOR_ROLLING_PRIOR_FEATURE_KEYS",
+    )
+    out: set[str] = set()
+    for group in groups:
+        out.update(_expand_cfg_feature_group_refs(CFG.get(group, []), CFG))
+    return out
 
 
 def _normalise_market_mode(market_mode: Optional[str] = None) -> str:
@@ -529,6 +640,7 @@ class RegimeAdaptorFit:
     regime_logit_offset_oof: Optional[np.ndarray] = None
     trust_score_oof: Optional[np.ndarray] = None
     trust_proba_oof: Optional[np.ndarray] = None
+    error_risk_diagnostics: Optional[pd.DataFrame] = None
 
 
 def safe_strategy_slug(strategy_id: str) -> str:
@@ -561,7 +673,13 @@ def regime_adaptor_inference_enabled(
     separate so artifacts can keep diagnostics while deployment stays opt-in.
     """
     artifact = artifact or {}
-    if not bool(artifact.get("enable_regime_adaptor", False)):
+    error_risk = artifact.get("error_risk_model", {})
+    error_risk_enabled = bool(
+        isinstance(error_risk, dict)
+        and error_risk.get("enabled", False)
+        and artifact.get("enable_error_risk_gate", False)
+    )
+    if not bool(artifact.get("enable_regime_adaptor", False)) and not error_risk_enabled:
         return False
 
     cfg = runtime_cfg or {}
@@ -582,6 +700,11 @@ def regime_adaptor_inference_enabled(
         explicit_cfg = _coerce_optional_bool(nested.get("inference_enabled"))
     if explicit_cfg is not None:
         return bool(explicit_cfg)
+
+    if error_risk_enabled and str(
+        artifact.get("error_risk_inference_integration_mode", "")
+    ).strip().lower() in {"soft_modulator", "error_risk_soft_modulator"}:
+        return True
 
     mode = None
     if isinstance(cfg, dict):
@@ -841,6 +964,15 @@ def build_regime_feature_frame(
         ] = f"rolling30d({_first_col(feature_frame, FEATURE_CANDIDATES[key])})"
 
     ordered = {key: out[key] for key in REGIME_FEATURE_ORDER if key in out}
+    for key in (
+        "asset_volume_30d",
+        "asset_atr_30d",
+        "asset_funding_z",
+        "asset_funding_side_alignment",
+        "asset_funding_trend_alignment",
+    ):
+        if key in out and key not in ordered:
+            ordered[key] = out[key]
     return pd.DataFrame(ordered), mapping
 
 
@@ -2627,6 +2759,1761 @@ def _fit_trust_model(
     return spec, oof, trust_score, y
 
 
+def _error_risk_feature_pool(
+    regime_df: pd.DataFrame,
+    feature_frame: pd.DataFrame,
+) -> Tuple[pd.DataFrame, List[str]]:
+    """Build the soft error-risk candidate matrix from live-computable features."""
+    n = len(regime_df)
+    parts: Dict[str, np.ndarray] = {}
+    preferred = list(
+        dict.fromkeys(
+            [
+                *[c for c in REGIME_FEATURE_ORDER if c in regime_df.columns],
+                *[c for c in NEW_REGIME_FEATURES if c in regime_df.columns],
+            ]
+        )
+    )
+    for col in preferred:
+        parts[str(col)] = pd.to_numeric(regime_df[col], errors="coerce").to_numpy(
+            dtype=np.float32
+        )
+    direct_tokens = (
+        *ERROR_RISK_UNCERTAINTY_TOKENS,
+        "leaf_",
+        "vote_",
+        "pred_mean",
+        *ERROR_RISK_DRIFT_TOKENS,
+        "dispersion",
+        "brittleness",
+        "mkt_ret_eq_",
+        "market_breadth_",
+        "pct_assets_",
+        "cross_asset_",
+        "avg_pairwise_corr",
+        "avg_pair_corr",
+        "beta_asset_market",
+        "corr_asset_market",
+        "realized_vol_",
+        "vol_of_vol_",
+        "vol_zscore_",
+        "quote_volume_zscore_",
+        "aggregate_relative_volume_",
+        "price_ema_gap_",
+        "ema_slope_atr_",
+        "ema_stack_score_",
+        "trend_consistency_",
+        "distance_to_",
+        "drawdown_from_",
+        "percentile_rank_in_recent_range_",
+    )
+    blocked = {
+        "timestamp",
+        "ts",
+        "symbol",
+        "strategy_id",
+        "side",
+        "return",
+        "u_policy",
+        "u_policy_net",
+        "rank_pct",
+        "calibrated_score",
+        "raw_meta_prediction",
+        "net_gain",
+        "gross_gain",
+    }
+    configured_features = _configured_error_risk_feature_names()
+    for col in feature_frame.columns:
+        name = str(col)
+        low = name.lower()
+        if low in blocked or "future" in low or "label" in low or "outcome" in low:
+            continue
+        if name not in configured_features and not any(tok in low for tok in direct_tokens):
+            continue
+        try:
+            if not pd.api.types.is_numeric_dtype(feature_frame[col]):
+                continue
+            vals = pd.to_numeric(feature_frame[col], errors="coerce").to_numpy(
+                dtype=np.float32
+            )[:n]
+            if len(vals) == n and np.isfinite(vals).any():
+                parts.setdefault(name, vals)
+        except Exception:
+            continue
+    if not parts:
+        return pd.DataFrame(index=regime_df.index), []
+    out = pd.DataFrame(parts, index=regime_df.index).replace([np.inf, -np.inf], np.nan)
+    finite_share = out.notna().mean(axis=0)
+    nunique = out.nunique(dropna=True)
+    keep = [
+        str(c)
+        for c in out.columns
+        if float(finite_share.get(c, 0.0)) >= 0.70 and int(nunique.get(c, 0)) > 1
+    ]
+    out = out.reindex(columns=keep).apply(pd.to_numeric, errors="coerce")
+    for col in keep:
+        vals = out[col].to_numpy(dtype=np.float64)
+        finite = np.isfinite(vals)
+        fill = float(np.nanmedian(vals[finite])) if finite.any() else 0.0
+        out[col] = np.where(finite, vals, fill).astype(np.float32)
+    return out, keep
+
+
+def _feature_schema_hash(features: Sequence[str]) -> str:
+    payload = json.dumps([str(f) for f in features], separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _chronological_dev_acceptance_indices(
+    timestamps: Optional[np.ndarray], n: int, acceptance_frac: float = 0.25
+) -> Tuple[np.ndarray, np.ndarray]:
+    if n <= 1:
+        return np.arange(n, dtype=int), np.array([], dtype=int)
+    if timestamps is None or len(timestamps) < n:
+        split = int(max(1, min(n - 1, math.floor(n * (1.0 - acceptance_frac)))))
+        return np.arange(split, dtype=int), np.arange(split, n, dtype=int)
+    ts = pd.to_datetime(np.asarray(timestamps)[:n], utc=True, errors="coerce")
+    order = np.argsort(np.where(pd.isna(ts), np.arange(n, dtype=np.int64), ts.view("int64")))
+    split_pos = int(max(1, min(n - 1, math.floor(n * (1.0 - acceptance_frac)))))
+    dev = np.sort(order[:split_pos])
+    acc = np.sort(order[split_pos:])
+    return dev.astype(int), acc.astype(int)
+
+
+def _week_labels(timestamps: Optional[np.ndarray], n: int) -> np.ndarray:
+    if timestamps is None or len(timestamps) < n:
+        return np.asarray([f"row_{i // max(1, n // 10)}" for i in range(n)], dtype=object)
+    ts = pd.to_datetime(np.asarray(timestamps)[:n], utc=True, errors="coerce")
+    ser = pd.Series(ts).dt.tz_convert(None)
+    return ser.dt.to_period("W").astype(str).to_numpy(dtype=object)
+
+
+def _error_risk_support(
+    y_bad: np.ndarray,
+    timestamps: Optional[np.ndarray],
+    symbols: np.ndarray,
+) -> Dict[str, Any]:
+    n = int(len(y_bad))
+    weeks = _week_labels(timestamps, n)
+    return {
+        "rows": n,
+        "bad_rows": int(np.sum(y_bad == 1)),
+        "good_rows": int(np.sum(y_bad == 0)),
+        "weeks": int(len(set(str(w) for w in weeks))),
+        "assets": int(len(set(str(s) for s in np.asarray(symbols).astype(str)[:n]))),
+    }
+
+
+def _error_risk_support_ok(support: Dict[str, Any]) -> Tuple[bool, str]:
+    checks = (
+        ("rows", ERROR_RISK_MIN_ROWS),
+        ("bad_rows", ERROR_RISK_MIN_BAD_ROWS),
+        ("good_rows", ERROR_RISK_MIN_GOOD_ROWS),
+        ("weeks", ERROR_RISK_MIN_WEEKS),
+        ("assets", ERROR_RISK_MIN_ASSETS),
+    )
+    for key, threshold in checks:
+        if int(support.get(key, 0)) < int(threshold):
+            return False, f"insufficient_error_risk_training_support:{key}"
+    return True, "ok"
+
+
+def _scaled_positive(value: float, scale: float = 1.0) -> float:
+    if not np.isfinite(value):
+        return 0.5
+    return float(np.clip(0.5 + 0.5 * np.tanh(float(value) / max(scale, EPS)), 0.0, 1.0))
+
+
+def _deployment_topq_mask(
+    scores: Optional[np.ndarray],
+    n: int,
+    deployment_rank_threshold: Optional[float],
+) -> np.ndarray:
+    if scores is None or len(scores) < n or deployment_rank_threshold is None:
+        return np.ones(n, dtype=bool)
+    score_rank = _rank_pct(np.asarray(scores, dtype=np.float64)[:n])
+    threshold = float(deployment_rank_threshold)
+    if not np.isfinite(threshold):
+        return np.ones(n, dtype=bool)
+    return score_rank >= float(np.clip(threshold, 0.0, 1.0))
+
+
+def _precision_blend_topq(
+    safety_score: np.ndarray,
+    y_bad: np.ndarray,
+    *,
+    eligible_mask: Optional[np.ndarray] = None,
+) -> float:
+    n = min(len(safety_score), len(y_bad))
+    eligible = (
+        np.asarray(eligible_mask, dtype=bool)[:n]
+        if eligible_mask is not None and len(eligible_mask) >= n
+        else np.ones(n, dtype=bool)
+    )
+    df = pd.DataFrame(
+        {"safety": safety_score[:n], "good": 1 - np.asarray(y_bad[:n], dtype=int)}
+    ).replace(
+        [np.inf, -np.inf], np.nan
+    )
+    df = df.loc[eligible].dropna()
+    if len(df) < 3:
+        return 0.5
+    df["rank"] = df["safety"].rank(method="first", pct=True)
+    bands = (
+        (df["rank"] >= 2.0 / 3.0, 0.50),
+        ((df["rank"] >= 1.0 / 3.0) & (df["rank"] < 2.0 / 3.0), 0.35),
+        (df["rank"] < 1.0 / 3.0, 0.15),
+    )
+    value = 0.0
+    weight_sum = 0.0
+    for mask, weight in bands:
+        if bool(mask.any()):
+            value += float(weight) * float(df.loc[mask, "good"].mean())
+            weight_sum += float(weight)
+    return float(value / max(weight_sum, EPS)) if weight_sum else 0.5
+
+
+def _rank_bucket_monotonicity(
+    safety_score: np.ndarray,
+    y_bad: np.ndarray,
+    *,
+    eligible_mask: Optional[np.ndarray] = None,
+) -> float:
+    n = min(len(safety_score), len(y_bad))
+    eligible = (
+        np.asarray(eligible_mask, dtype=bool)[:n]
+        if eligible_mask is not None and len(eligible_mask) >= n
+        else np.ones(n, dtype=bool)
+    )
+    df = pd.DataFrame(
+        {"safety": safety_score[:n], "good": 1 - np.asarray(y_bad[:n], dtype=int)}
+    ).replace(
+        [np.inf, -np.inf], np.nan
+    )
+    df = df.loc[eligible].dropna()
+    if len(df) < 20:
+        return 0.5
+    try:
+        df["bucket"] = pd.qcut(
+            df["safety"].rank(method="first"), 5, labels=False, duplicates="drop"
+        )
+        rates = df.groupby("bucket", sort=True)["good"].mean().to_numpy(dtype=float)
+        if len(rates) < 2 or np.nanstd(rates) <= EPS:
+            return 0.5
+        corr = float(np.corrcoef(np.arange(len(rates)), rates)[0, 1])
+        return float(np.clip((corr + 1.0) * 0.5, 0.0, 1.0))
+    except Exception:
+        return 0.5
+
+
+def _worst_quintile_weekly_utility_score(
+    safety_score: np.ndarray,
+    returns: np.ndarray,
+    timestamps: Optional[np.ndarray],
+    *,
+    eligible_mask: Optional[np.ndarray] = None,
+) -> float:
+    n = min(len(safety_score), len(returns))
+    if n == 0:
+        return 0.5
+    rank = _rank_pct(safety_score[:n])
+    eligible = (
+        np.asarray(eligible_mask, dtype=bool)[:n]
+        if eligible_mask is not None and len(eligible_mask) >= n
+        else np.ones(n, dtype=bool)
+    )
+    keep = (rank >= 0.70) & eligible
+    weeks = _week_labels(timestamps, n)
+    frame = pd.DataFrame({"week": weeks, "ret": np.asarray(returns[:n], dtype=float), "keep": keep})
+    frame = frame[np.isfinite(frame["ret"]) & frame["keep"]]
+    if frame.empty:
+        return 0.5
+    weekly = frame.groupby("week", sort=True)["ret"].sum().to_numpy(dtype=float)
+    if len(weekly) == 0:
+        return 0.5
+    k = max(1, int(math.ceil(len(weekly) * 0.20)))
+    worst = float(np.mean(np.sort(weekly)[:k]))
+    scale = float(np.nanmedian(np.abs(weekly))) if np.isfinite(weekly).any() else 1.0
+    return _scaled_positive(worst, max(scale, 1e-4))
+
+
+def _error_risk_objective_components(
+    safety_score: np.ndarray,
+    y_bad: np.ndarray,
+    returns: np.ndarray,
+    timestamps: Optional[np.ndarray],
+    feature_count: int,
+    *,
+    scores: Optional[np.ndarray] = None,
+    deployment_rank_threshold: Optional[float] = None,
+) -> Dict[str, float]:
+    n = min(len(safety_score), len(y_bad), len(returns))
+    eligible = _deployment_topq_mask(scores, n, deployment_rank_threshold)
+    y = np.asarray(y_bad[:n], dtype=int)
+    precision = _precision_blend_topq(safety_score[:n], y, eligible_mask=eligible)
+    overall_good = float(np.mean(1 - y[eligible])) if np.any(eligible) else 0.5
+    top = (_rank_pct(safety_score[:n]) >= 0.70) & eligible
+    top_good = float(np.mean((1 - y)[top])) if np.any(top) else overall_good
+    lift = float(np.clip(top_good / max(overall_good, EPS), 0.0, 2.0) / 2.0)
+    mono = _rank_bucket_monotonicity(safety_score[:n], y, eligible_mask=eligible)
+    worst_week = _worst_quintile_weekly_utility_score(
+        safety_score[:n], returns[:n], timestamps, eligible_mask=eligible
+    )
+    penalty = max(0.0, (int(feature_count) - ERROR_RISK_TARGET_FEATURES) / 10.0)
+    score = (
+        0.45 * precision
+        + 0.20 * lift
+        + 0.20 * mono
+        + 0.15 * worst_week
+        - 0.15 * penalty
+    )
+    return {
+        "feature_selection_score": float(score),
+        "precision_blend_topq": float(precision),
+        "lift_topq": float(lift),
+        "rank_bucket_monotonicity": float(mono),
+        "bottom_20pct_weeks_avg_pnl": float(worst_week),
+        "feature_count_penalty": float(penalty),
+        "topq_eligible_rows": int(np.sum(eligible)),
+        "topq_upper_quantile_weight": 0.50,
+        "topq_middle_quantile_weight": 0.35,
+        "topq_lower_quantile_weight": 0.15,
+    }
+
+
+def _select_error_risk_features(
+    x: pd.DataFrame,
+    y_bad: np.ndarray,
+    returns: np.ndarray,
+    timestamps: Optional[np.ndarray],
+    *,
+    scores: Optional[np.ndarray] = None,
+    deployment_rank_threshold: Optional[float] = None,
+) -> Tuple[List[str], Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    yy = np.asarray(y_bad, dtype=int)
+    for col in x.columns:
+        vals = pd.to_numeric(x[col], errors="coerce").to_numpy(dtype=np.float64)
+        finite = np.isfinite(vals)
+        if int(np.sum(finite)) < 50 or len(np.unique(vals[finite])) < 2:
+            continue
+        try:
+            risk_rank = _rank_pct(vals)
+            corr = _safe_corr(risk_rank, yy.astype(float))
+            safety = 1.0 - risk_rank if corr > 0 else risk_rank
+            comps = _error_risk_objective_components(
+                safety,
+                yy,
+                returns,
+                timestamps,
+                1,
+                scores=scores,
+                deployment_rank_threshold=deployment_rank_threshold,
+            )
+            rows.append(
+                {
+                    "feature": str(col),
+                    "direction": "higher_is_bad" if corr > 0 else "higher_is_safe",
+                    "abs_corr_bad": abs(float(corr)) if np.isfinite(corr) else 0.0,
+                    **comps,
+                }
+            )
+        except Exception:
+            continue
+    rows = sorted(
+        rows,
+        key=lambda r: (
+            float(r.get("feature_selection_score", 0.0)),
+            float(r.get("abs_corr_bad", 0.0)),
+        ),
+        reverse=True,
+    )
+    selected = [str(r["feature"]) for r in rows[:ERROR_RISK_MAX_FEATURES]]
+    selected = _ensure_error_risk_family_access(selected, rows)
+    return selected, {
+        "target_features": ERROR_RISK_TARGET_FEATURES,
+        "max_features": ERROR_RISK_MAX_FEATURES,
+        "deployment_rank_threshold": (
+            None if deployment_rank_threshold is None else float(deployment_rank_threshold)
+        ),
+        "topq_scope": "explicit_policy_rows_above_deployment_rank_threshold",
+        "selected_features": selected,
+        "drift_family_selected": any(
+            _feature_matches_any_token(f, ERROR_RISK_DRIFT_TOKENS) for f in selected
+        ),
+        "uncertainty_family_selected": any(
+            _feature_matches_any_token(f, ERROR_RISK_UNCERTAINTY_TOKENS) for f in selected
+        ),
+        "candidate_feature_scores": rows[:100],
+    }
+
+
+def _feature_matches_any_token(name: str, tokens: Sequence[str]) -> bool:
+    low = str(name).lower()
+    return any(str(tok).lower() in low for tok in tokens)
+
+
+def _ensure_error_risk_family_access(
+    selected: Sequence[str],
+    ranked_rows: Sequence[Dict[str, Any]],
+) -> List[str]:
+    out = list(dict.fromkeys(str(f) for f in selected))
+
+    def ensure_family(tokens: Sequence[str]) -> None:
+        nonlocal out
+        if any(_feature_matches_any_token(f, tokens) for f in out):
+            return
+        for row in ranked_rows:
+            feat = str(row.get("feature", ""))
+            if not feat or feat in out or not _feature_matches_any_token(feat, tokens):
+                continue
+            if len(out) < ERROR_RISK_MAX_FEATURES:
+                out.append(feat)
+            elif out:
+                out[-1] = feat
+            return
+
+    ensure_family(ERROR_RISK_DRIFT_TOKENS)
+    ensure_family(ERROR_RISK_UNCERTAINTY_TOKENS)
+    return out[:ERROR_RISK_MAX_FEATURES]
+
+
+def _calibration_score(pred_error: np.ndarray, y_bad: np.ndarray) -> float:
+    p = np.clip(np.asarray(pred_error, dtype=np.float64), 1e-6, 1.0 - 1e-6)
+    y = np.asarray(y_bad, dtype=np.float64)
+    finite = np.isfinite(p) & np.isfinite(y)
+    if int(np.sum(finite)) < 20:
+        return 0.5
+    p = p[finite]
+    y = y[finite]
+    try:
+        frame = pd.DataFrame({"p": p, "y": y})
+        frame["bucket"] = pd.qcut(
+            frame["p"].rank(method="first"),
+            5,
+            labels=False,
+            duplicates="drop",
+        )
+        ece = 0.0
+        for _, grp in frame.groupby("bucket", sort=True):
+            ece += (len(grp) / len(frame)) * abs(float(grp["p"].mean() - grp["y"].mean()))
+        return float(np.clip(1.0 - ece, 0.0, 1.0))
+    except Exception:
+        brier = float(np.nanmean(np.square(p - y)))
+        return float(np.clip(1.0 - 4.0 * brier, 0.0, 1.0))
+
+
+def _week_asset_stability_score(
+    safety_score: np.ndarray,
+    returns: np.ndarray,
+    timestamps: Optional[np.ndarray],
+    symbols: np.ndarray,
+    *,
+    eligible_mask: Optional[np.ndarray] = None,
+) -> float:
+    n = min(len(safety_score), len(returns), len(symbols))
+    if n == 0:
+        return 0.5
+    eligible = (
+        np.asarray(eligible_mask, dtype=bool)[:n]
+        if eligible_mask is not None and len(eligible_mask) >= n
+        else np.ones(n, dtype=bool)
+    )
+    keep = (_rank_pct(safety_score[:n]) >= 0.70) & eligible
+    frame = pd.DataFrame(
+        {
+            "week": _week_labels(timestamps, n),
+            "symbol": np.asarray(symbols).astype(str)[:n],
+            "ret": np.asarray(returns[:n], dtype=np.float64),
+            "keep": keep,
+        }
+    ).replace([np.inf, -np.inf], np.nan).dropna(subset=["ret"])
+    vals: List[float] = []
+    for _, grp in frame.groupby("week", sort=True):
+        if bool(grp["keep"].any()):
+            vals.append(float(grp.loc[grp["keep"], "ret"].mean()))
+    for _, grp in frame.groupby("symbol", sort=False):
+        if len(grp) >= 3 and bool(grp["keep"].any()):
+            vals.append(float(grp.loc[grp["keep"], "ret"].mean()))
+    arr = np.asarray(vals, dtype=np.float64)
+    arr = arr[np.isfinite(arr)]
+    if len(arr) < 2:
+        return 0.5
+    mean = float(np.nanmean(arr))
+    std = float(np.nanstd(arr))
+    return float(np.clip(0.5 + mean / (2.0 * (std + abs(mean) + 1e-6)), 0.0, 1.0))
+
+
+def _expected_policy_utility_topq_score(
+    safety_score: np.ndarray,
+    returns: np.ndarray,
+    *,
+    eligible_mask: Optional[np.ndarray] = None,
+) -> float:
+    n = min(len(safety_score), len(returns))
+    if n == 0:
+        return 0.5
+    eligible = (
+        np.asarray(eligible_mask, dtype=bool)[:n]
+        if eligible_mask is not None and len(eligible_mask) >= n
+        else np.ones(n, dtype=bool)
+    )
+    keep = (_rank_pct(safety_score[:n]) >= 0.70) & eligible
+    r = np.asarray(returns[:n], dtype=np.float64)
+    vals = r[keep & np.isfinite(r)]
+    if len(vals) == 0:
+        return 0.5
+    scale = float(np.nanmedian(np.abs(r[eligible & np.isfinite(r)])))
+    return _scaled_positive(float(np.nanmean(vals)), max(scale, 1e-4))
+
+
+def _overconfidence_under_drift_penalty(
+    pred_error: np.ndarray,
+    safety_score: np.ndarray,
+    x: pd.DataFrame,
+) -> float:
+    drift_cols = [
+        c
+        for c in x.columns
+        if any(tok in str(c).lower() for tok in ("drift", "psi", "cov_shift", "rare_leaf"))
+    ]
+    if not drift_cols or len(pred_error) == 0:
+        return 0.0
+    drift = x[drift_cols].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=np.float64)
+    drift_score = np.nanmean(np.abs(drift), axis=1)
+    finite = np.isfinite(drift_score)
+    if int(np.sum(finite)) < 20:
+        return 0.0
+    high_drift = drift_score >= np.nanquantile(drift_score[finite], 0.80)
+    confident_safe = np.asarray(safety_score, dtype=np.float64) >= 0.80
+    high_risk = np.asarray(pred_error, dtype=np.float64) >= 0.50
+    return float(np.mean(high_drift & confident_safe & high_risk))
+
+
+def _error_risk_hpo_components(
+    pred_error: np.ndarray,
+    y_bad: np.ndarray,
+    returns: np.ndarray,
+    timestamps: Optional[np.ndarray],
+    symbols: np.ndarray,
+    x: pd.DataFrame,
+    *,
+    scores: Optional[np.ndarray] = None,
+    deployment_rank_threshold: Optional[float] = None,
+) -> Dict[str, float]:
+    n = min(len(pred_error), len(y_bad), len(returns), len(symbols), len(x))
+    eligible = _deployment_topq_mask(scores, n, deployment_rank_threshold)
+    pred = np.clip(np.asarray(pred_error[:n], dtype=np.float64), 1e-6, 1.0 - 1e-6)
+    y = np.asarray(y_bad[:n], dtype=int)
+    safety = 1.0 - _rank_pct(pred)
+    precision = _precision_blend_topq(safety, y, eligible_mask=eligible)
+    calib = _calibration_score(pred[eligible], y[eligible]) if np.any(eligible) else 0.5
+    mono = _rank_bucket_monotonicity(safety, y, eligible_mask=eligible)
+    stability = _week_asset_stability_score(
+        safety, returns[:n], timestamps, symbols[:n], eligible_mask=eligible
+    )
+    utility = _expected_policy_utility_topq_score(
+        safety, returns[:n], eligible_mask=eligible
+    )
+    penalty = _overconfidence_under_drift_penalty(pred, safety, x.iloc[:n])
+    score = (
+        0.35 * precision
+        + 0.20 * calib
+        + 0.15 * mono
+        + 0.15 * stability
+        + 0.10 * utility
+        - 0.05 * penalty
+    )
+    return {
+        "hpo_score": float(score),
+        "precision_blend_topq": float(precision),
+        "achieved_vs_expected_calibration_score": float(calib),
+        "rank_bucket_monotonicity": float(mono),
+        "week_asset_stability": float(stability),
+        "expected_policy_utility_topq": float(utility),
+        "overconfidence_under_drift_penalty": float(penalty),
+        "topq_eligible_rows": int(np.sum(eligible)),
+    }
+
+
+def _error_risk_hpo_param_grid() -> List[Dict[str, Any]]:
+    return [
+        {"n_estimators": 80, "learning_rate": 0.03, "num_leaves": 6, "min_child_samples": 80, "reg_lambda": 35.0, "reg_alpha": 1.0},
+        {"n_estimators": 120, "learning_rate": 0.025, "num_leaves": 8, "min_child_samples": 100, "reg_lambda": 50.0, "reg_alpha": 1.5},
+        {"n_estimators": 160, "learning_rate": 0.02, "num_leaves": 8, "min_child_samples": 140, "reg_lambda": 75.0, "reg_alpha": 2.0},
+        {"n_estimators": 100, "learning_rate": 0.02, "num_leaves": 5, "min_child_samples": 120, "reg_lambda": 60.0, "reg_alpha": 2.5, "subsample": 0.75, "colsample_bytree": 0.75},
+    ]
+
+
+def _fit_error_risk_lgbm(
+    x_train: pd.DataFrame,
+    y_train: np.ndarray,
+    params: Optional[Dict[str, Any]] = None,
+) -> Optional[LGBMClassifier]:
+    if LGBMClassifier is None:
+        return None
+    p = dict(ERROR_RISK_MODEL_PARAMS)
+    if params:
+        p.update(params)
+    p["max_depth"] = 3
+    p["num_leaves"] = min(int(p.get("num_leaves", 8)), 8)
+    model = LGBMClassifier(**p)
+    model.fit(x_train, y_train)
+    return model
+
+
+def _error_risk_oof_with_archetypes(
+    x_dev: pd.DataFrame,
+    y_dev: np.ndarray,
+    selected_features: Sequence[str],
+    timestamps: Optional[np.ndarray],
+    *,
+    params: Optional[Dict[str, Any]] = None,
+    signature_x_dev: Optional[pd.DataFrame] = None,
+    signature_features: Optional[Sequence[str]] = None,
+) -> Tuple[np.ndarray, pd.DataFrame, List[Dict[str, Any]]]:
+    oof = np.full(len(x_dev), 0.5, dtype=np.float64)
+    oof_arch = _transform_error_archetype_features(
+        np.zeros((len(x_dev), 0), dtype=np.float32), {}, index=x_dev.index
+    ).reset_index(drop=True)
+    fold_rows: List[Dict[str, Any]] = []
+    split_source = timestamps if timestamps is not None else np.arange(len(x_dev))
+    sig_x = signature_x_dev.reset_index(drop=True) if signature_x_dev is not None else x_dev
+    sig_features = [str(f) for f in (signature_features or selected_features) if str(f) in sig_x.columns]
+    if not sig_features:
+        sig_x = x_dev
+        sig_features = [str(f) for f in selected_features]
+    for fold_i, (tr, va) in enumerate(_walk_forward_splits(split_source, len(x_dev), 5), start=1):
+        if len(np.unique(y_dev[tr])) < 2:
+            continue
+        signature_model = _fit_error_risk_lgbm(
+            sig_x.iloc[tr][sig_features], y_dev[tr], params=params
+        )
+        if signature_model is None:
+            continue
+        contrib_tr = _lgbm_contrib_matrix(
+            signature_model, sig_x.iloc[tr], sig_features
+        )
+        contrib_va = _lgbm_contrib_matrix(
+            signature_model, sig_x.iloc[va], sig_features
+        )
+        contrib_tr_sparse, contrib_va_sparse, sparse_features, sparsify_report = (
+            _sparsify_contrib_signature(
+                contrib_tr,
+                sig_features,
+                apply_contrib=contrib_va,
+            )
+        )
+        fold_arch_spec = _fit_error_archetype_spec(
+            contrib_tr_sparse,
+            y_dev[tr],
+            contribution_source="lgbm_pred_contrib_fold_pure",
+            contribution_features=sparse_features,
+        )
+        fold_arch_spec["sparsification"] = sparsify_report
+        arch_tr = _transform_error_archetype_features(contrib_tr_sparse, fold_arch_spec)
+        arch_va = _transform_error_archetype_features(contrib_va_sparse, fold_arch_spec)
+        fold_x_tr = pd.concat(
+            [x_dev.iloc[tr].reset_index(drop=True), arch_tr.reset_index(drop=True)],
+            axis=1,
+        )
+        fold_x_va = pd.concat(
+            [x_dev.iloc[va].reset_index(drop=True), arch_va.reset_index(drop=True)],
+            axis=1,
+        )
+        model = _fit_error_risk_lgbm(fold_x_tr, y_dev[tr], params=params)
+        if model is None:
+            continue
+        oof[va] = np.clip(model.predict_proba(fold_x_va)[:, 1], 1e-6, 1.0 - 1e-6)
+        oof_arch.iloc[va, :] = arch_va.to_numpy(dtype=np.float32, copy=False)
+        fold_rows.append(
+            {
+                "fold": int(fold_i),
+                "train_rows": int(len(tr)),
+                "validation_rows": int(len(va)),
+                "archetypes_enabled": bool(fold_arch_spec.get("enabled", False)),
+                "archetype_signature_feature_count": int(len(sig_features)),
+                "archetype_sparse_feature_count": int(len(sparse_features)),
+                "archetype_sparsification": _jsonify(sparsify_report),
+            }
+        )
+    return oof, oof_arch, fold_rows
+
+
+def _lgbm_contrib_matrix(
+    model: LGBMClassifier,
+    x: pd.DataFrame,
+    features: Sequence[str],
+) -> Optional[np.ndarray]:
+    try:
+        raw = np.asarray(
+            model.booster_.predict(x[list(features)], pred_contrib=True),
+            dtype=np.float64,
+        )
+        if raw.ndim != 2 or raw.shape[0] != len(x):
+            return None
+        # LightGBM appends the expected-value/bias column last.
+        return raw[:, : len(features)]
+    except Exception:
+        return None
+
+
+def _sparsify_contrib_signature(
+    train_contrib: Optional[np.ndarray],
+    contribution_features: Sequence[str],
+    *,
+    apply_contrib: Optional[np.ndarray] = None,
+) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], List[str], Dict[str, Any]]:
+    if train_contrib is None:
+        return train_contrib, apply_contrib, list(contribution_features), {
+            "enabled": False,
+            "reason": "missing_contributions",
+        }
+    raw = np.asarray(train_contrib, dtype=np.float64)
+    features = [str(f) for f in contribution_features]
+    if raw.ndim != 2 or raw.shape[1] != len(features):
+        return train_contrib, apply_contrib, features, {
+            "enabled": False,
+            "reason": "shape_mismatch",
+        }
+    n_features = raw.shape[1]
+    min_keep = min(int(ERROR_ARCHETYPE_SPARSIFY_MIN_FEATURES), n_features)
+    max_keep = min(int(ERROR_ARCHETYPE_SPARSIFY_MAX_FEATURES), n_features)
+    target_keep = max(
+        min_keep,
+        min(max_keep, int(math.ceil(n_features * (1.0 - ERROR_ARCHETYPE_SPARSIFY_DROP_FRACTION)))),
+    )
+    if n_features <= target_keep:
+        return train_contrib, apply_contrib, features, {
+            "enabled": False,
+            "reason": "already_compact",
+            "original_feature_count": int(n_features),
+            "kept_feature_count": int(n_features),
+            "removed_feature_count": 0,
+        }
+    importance = np.nanmean(np.abs(raw), axis=0)
+    importance = np.where(np.isfinite(importance), importance, 0.0)
+    keep_idx = np.argsort(importance)[::-1][:target_keep]
+    keep_idx = np.sort(keep_idx)
+    kept_features = [features[int(i)] for i in keep_idx]
+    removed_features = [
+        {"feature": features[int(i)], "mean_abs_contribution": float(importance[int(i)])}
+        for i in np.argsort(importance)[: max(0, n_features - target_keep)]
+    ][:50]
+    sparse_train = raw[:, keep_idx]
+    sparse_apply = None
+    if apply_contrib is not None:
+        app = np.asarray(apply_contrib, dtype=np.float64)
+        sparse_apply = app[:, keep_idx] if app.ndim == 2 and app.shape[1] == n_features else apply_contrib
+    return sparse_train, sparse_apply, kept_features, {
+        "enabled": True,
+        "method": "drop_low_mean_abs_contribution",
+        "drop_fraction": float(ERROR_ARCHETYPE_SPARSIFY_DROP_FRACTION),
+        "original_feature_count": int(n_features),
+        "kept_feature_count": int(len(kept_features)),
+        "removed_feature_count": int(n_features - len(kept_features)),
+        "removed_bottom_features_sample": removed_features,
+    }
+
+
+def _fit_error_archetype_spec(
+    train_contrib: Optional[np.ndarray],
+    y_bad: np.ndarray,
+    *,
+    contribution_source: str = "lgbm_pred_contrib",
+    contribution_features: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    if train_contrib is None:
+        return {"enabled": False, "reason": "missing_contributions"}
+    contrib = np.asarray(train_contrib, dtype=np.float64)
+    y = np.asarray(y_bad, dtype=int)
+    if contrib.ndim != 2 or len(contrib) != len(y) or len(y) < 100:
+        return {"enabled": False, "reason": "insufficient_contribution_rows"}
+    finite_rows = np.isfinite(contrib).all(axis=1)
+    if int(np.sum(finite_rows)) < 100 or len(np.unique(y[finite_rows])) < 2:
+        return {"enabled": False, "reason": "insufficient_finite_or_label_support"}
+    contrib = contrib[finite_rows]
+    y = y[finite_rows]
+    center = np.nanmedian(contrib, axis=0)
+    q25 = np.nanquantile(contrib, 0.25, axis=0)
+    q75 = np.nanquantile(contrib, 0.75, axis=0)
+    scale = np.where(np.abs(q75 - q25) > EPS, q75 - q25, 1.0)
+    x = np.clip((contrib - center) / scale, -12.0, 12.0)
+    n_clusters = int(min(8, max(2, round(math.sqrt(len(x) / 40.0)))))
+    if len(x) < n_clusters * 20:
+        n_clusters = max(2, len(x) // 20)
+    if n_clusters < 2:
+        return {"enabled": False, "reason": "insufficient_cluster_support"}
+    try:
+        km = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        labels = km.fit_predict(x)
+    except Exception as exc:
+        return {"enabled": False, "reason": f"kmeans_failed:{exc}"}
+    global_bad = float(np.mean(y)) if len(y) else 0.5
+    cluster_rows: List[Dict[str, Any]] = []
+    bad_ids: List[int] = []
+    good_ids: List[int] = []
+    for cid in range(n_clusters):
+        mask = labels == cid
+        count = int(np.sum(mask))
+        bad_rate = float(np.mean(y[mask])) if count else global_bad
+        lift = float(bad_rate / max(global_bad, EPS))
+        centroid = np.asarray(km.cluster_centers_[cid], dtype=np.float64)
+        top_features: List[Dict[str, Any]] = []
+        if contribution_features is not None and len(contribution_features) == len(centroid):
+            order = np.argsort(np.abs(centroid))[::-1][:8]
+            top_features = [
+                {
+                    "feature": str(contribution_features[int(i)]),
+                    "centroid_z": float(centroid[int(i)]),
+                    "abs_centroid_z": float(abs(centroid[int(i)])),
+                }
+                for i in order
+            ]
+        row = {
+            "cluster_id": int(cid),
+            "stable_archetype_id": f"new_cluster_{int(cid)}",
+            "count": count,
+            "bad_rate": bad_rate,
+            "bad_rate_lift": lift,
+            "top_contribution_features": top_features,
+        }
+        cluster_rows.append(row)
+        if count >= 10 and bad_rate >= global_bad + 0.05:
+            bad_ids.append(int(cid))
+        if count >= 10 and bad_rate <= global_bad - 0.05:
+            good_ids.append(int(cid))
+    if not bad_ids:
+        bad_ids = [int(max(cluster_rows, key=lambda r: r["bad_rate"])["cluster_id"])]
+    if not good_ids:
+        good_ids = [int(min(cluster_rows, key=lambda r: r["bad_rate"])["cluster_id"])]
+    return {
+        "enabled": True,
+        "contribution_source": contribution_source,
+        "center": center.astype(float).tolist(),
+        "scale": scale.astype(float).tolist(),
+        "centroids": np.asarray(km.cluster_centers_, dtype=float).tolist(),
+        "contribution_features": [str(f) for f in (contribution_features or [])],
+        "global_bad_rate": global_bad,
+        "clusters": cluster_rows,
+        "bad_cluster_ids": bad_ids,
+        "good_cluster_ids": good_ids,
+        "features": list(ERROR_ARCHETYPE_FEATURES),
+    }
+
+
+def _transform_error_archetype_features(
+    contrib: Optional[np.ndarray],
+    spec: Dict[str, Any],
+    *,
+    index: Optional[pd.Index] = None,
+) -> pd.DataFrame:
+    n = 0 if contrib is None else int(np.asarray(contrib).shape[0])
+    idx = index if index is not None else pd.RangeIndex(n)
+    neutral = pd.DataFrame(
+        {
+            "shap_archetype_id": np.zeros(n, dtype=np.float32),
+            "shap_archetype_is_bad": np.zeros(n, dtype=np.float32),
+            "shap_archetype_is_good": np.zeros(n, dtype=np.float32),
+            "shap_archetype_is_neutral": np.ones(n, dtype=np.float32),
+            "distance_to_archetype_centroid": np.zeros(n, dtype=np.float32),
+            "distance_to_nearest_bad_archetype": np.zeros(n, dtype=np.float32),
+            "archetype_oof_bad_rate_lift": np.ones(n, dtype=np.float32),
+            "distance_to_bad_archetype": np.zeros(n, dtype=np.float32),
+            "distance_to_good_archetype": np.zeros(n, dtype=np.float32),
+        },
+        index=idx,
+    )
+    if contrib is None or not bool(spec.get("enabled", False)):
+        return neutral
+    raw = np.asarray(contrib, dtype=np.float64)
+    centroids = np.asarray(spec.get("centroids", []), dtype=np.float64)
+    center = np.asarray(spec.get("center", []), dtype=np.float64)
+    scale = np.asarray(spec.get("scale", []), dtype=np.float64)
+    if (
+        raw.ndim != 2
+        or centroids.ndim != 2
+        or raw.shape[1] != centroids.shape[1]
+        or len(center) != raw.shape[1]
+        or len(scale) != raw.shape[1]
+    ):
+        return neutral
+    x = np.clip((raw - center) / np.where(np.abs(scale) > EPS, scale, 1.0), -12.0, 12.0)
+    x = np.where(np.isfinite(x), x, 0.0)
+    dists = np.sqrt(np.sum(np.square(x[:, None, :] - centroids[None, :, :]), axis=2))
+    nearest = np.argmin(dists, axis=1)
+    nearest_dist = dists[np.arange(len(x)), nearest]
+    bad_ids = [int(i) for i in spec.get("bad_cluster_ids", []) if 0 <= int(i) < centroids.shape[0]]
+    good_ids = [int(i) for i in spec.get("good_cluster_ids", []) if 0 <= int(i) < centroids.shape[0]]
+    bad_set = set(bad_ids)
+    good_set = set(good_ids)
+    is_bad = np.asarray([int(i) in bad_set for i in nearest], dtype=np.float32)
+    is_good = np.asarray([int(i) in good_set for i in nearest], dtype=np.float32)
+    is_neutral = np.asarray(
+        [(int(i) not in bad_set and int(i) not in good_set) for i in nearest],
+        dtype=np.float32,
+    )
+    bad_dist = np.min(dists[:, bad_ids], axis=1) if bad_ids else nearest_dist
+    good_dist = np.min(dists[:, good_ids], axis=1) if good_ids else nearest_dist
+    lift_by_id = {
+        int(row.get("cluster_id", -1)): float(row.get("bad_rate_lift", 1.0))
+        for row in spec.get("clusters", [])
+        if isinstance(row, dict)
+    }
+    lift = np.asarray([lift_by_id.get(int(cid), 1.0) for cid in nearest], dtype=np.float64)
+    return pd.DataFrame(
+        {
+            "shap_archetype_id": nearest.astype(np.float32),
+            "shap_archetype_is_bad": is_bad,
+            "shap_archetype_is_good": is_good,
+            "shap_archetype_is_neutral": is_neutral,
+            "distance_to_archetype_centroid": nearest_dist.astype(np.float32),
+            "distance_to_nearest_bad_archetype": bad_dist.astype(np.float32),
+            "archetype_oof_bad_rate_lift": lift.astype(np.float32),
+            "distance_to_bad_archetype": bad_dist.astype(np.float32),
+            "distance_to_good_archetype": good_dist.astype(np.float32),
+        },
+        index=idx,
+    )
+
+
+def _augment_error_features_with_archetypes(
+    base_x: pd.DataFrame,
+    model_spec: Dict[str, Any],
+) -> pd.DataFrame:
+    if not bool(model_spec.get("archetype_features_deployable", False)):
+        return base_x
+    signature = model_spec.get("archetype_signature_model", {})
+    archetypes = model_spec.get("error_archetypes", {})
+    if Booster is None or not isinstance(signature, dict) or not isinstance(archetypes, dict):
+        return base_x
+    base_features = [str(f) for f in signature.get("features", [])]
+    model_str = str(signature.get("booster_model_str", "") or "")
+    if not model_str or not base_features or any(f not in base_x.columns for f in base_features):
+        return base_x
+    try:
+        booster = Booster(model_str=model_str)
+        x_sig = base_x[base_features].apply(pd.to_numeric, errors="coerce")
+        medians = signature.get("feature_medians", {})
+        for col in base_features:
+            x_sig[col] = x_sig[col].replace([np.inf, -np.inf], np.nan).fillna(
+                float(medians.get(col, 0.0))
+            )
+        raw = np.asarray(booster.predict(x_sig, pred_contrib=True), dtype=np.float64)
+        if raw.ndim != 2 or raw.shape[0] != len(base_x):
+            return base_x
+        contrib = raw[:, : len(base_features)]
+        arch = _transform_error_archetype_features(
+            contrib, archetypes, index=base_x.index
+        )
+        return pd.concat([base_x, arch], axis=1)
+    except Exception:
+        return base_x
+
+
+def _predict_error_risk_model(x: pd.DataFrame, model_spec: Dict[str, Any]) -> np.ndarray:
+    n = len(x)
+    if n == 0:
+        return np.array([], dtype=np.float64)
+    if Booster is None:
+        return np.full(n, 0.5, dtype=np.float64)
+    model_str = str(model_spec.get("booster_model_str", "") or "")
+    features = [str(f) for f in model_spec.get("features", [])]
+    if not model_str or not features:
+        return np.full(n, 0.5, dtype=np.float64)
+    try:
+        booster = Booster(model_str=model_str)
+        mat = x.reindex(columns=features).apply(pd.to_numeric, errors="coerce")
+        medians = model_spec.get("feature_medians", {})
+        for col in features:
+            mat[col] = mat[col].replace([np.inf, -np.inf], np.nan).fillna(
+                float(medians.get(col, 0.0))
+            )
+        pred = np.asarray(booster.predict(mat[features]), dtype=np.float64).reshape(-1)
+        if len(pred) != n:
+            return np.full(n, 0.5, dtype=np.float64)
+        return np.clip(np.where(np.isfinite(pred), pred, 0.5), 1e-6, 1.0 - 1e-6)
+    except Exception:
+        return np.full(n, 0.5, dtype=np.float64)
+
+
+def _lgbm_feature_importance_report(
+    model: Optional[LGBMClassifier],
+    features: Sequence[str],
+) -> List[Dict[str, Any]]:
+    if model is None or not hasattr(model, "booster_"):
+        return []
+    try:
+        split = np.asarray(model.booster_.feature_importance(importance_type="split"), dtype=float)
+        gain = np.asarray(model.booster_.feature_importance(importance_type="gain"), dtype=float)
+    except Exception:
+        return []
+    rows: List[Dict[str, Any]] = []
+    for i, name in enumerate(features):
+        rows.append(
+            {
+                "feature": str(name),
+                "split_importance": float(split[i]) if i < len(split) else 0.0,
+                "gain_importance": float(gain[i]) if i < len(gain) else 0.0,
+            }
+        )
+    return sorted(
+        rows,
+        key=lambda r: (float(r.get("gain_importance", 0.0)), float(r.get("split_importance", 0.0))),
+        reverse=True,
+    )
+
+
+def _derive_meta_head_error_label(
+    feature_frame: pd.DataFrame,
+    outcome: np.ndarray,
+    n: int,
+) -> Optional[Tuple[np.ndarray, Dict[str, Any]]]:
+    candidates = (
+        "__y_bin__",
+        "y_bin",
+        "y_move",
+        "y_move_soft",
+        "reg_target_positive",
+        "meta_head_label",
+        "target",
+    )
+    for col in candidates:
+        if col not in feature_frame.columns:
+            continue
+        vals = pd.to_numeric(feature_frame[col], errors="coerce").to_numpy(dtype=np.float64)[:n]
+        finite = np.isfinite(vals)
+        if int(np.sum(finite)) < max(50, int(0.25 * n)):
+            continue
+        y_good = np.where(vals >= 0.5, 1, 0).astype(int)
+        y_bad = 1 - y_good
+        y_bad[~finite] = (np.asarray(outcome[:n], dtype=np.float64)[~finite] <= 0.0).astype(int)
+        if len(np.unique(y_bad[np.isfinite(vals)])) < 2:
+            continue
+        return y_bad.astype(int), {
+            "source_column": str(col),
+            "interpretation": "meta_head_positive_label_inverted_to_error_risk",
+            "finite_rows": int(np.sum(finite)),
+            "bad_rate": float(np.mean(y_bad)),
+        }
+    return None
+
+
+def _error_risk_win_rate_report(
+    baseline_score: np.ndarray,
+    adjusted_score: np.ndarray,
+    returns: np.ndarray,
+    timestamps: Optional[np.ndarray],
+    symbols: np.ndarray,
+) -> Dict[str, Any]:
+    n = min(len(baseline_score), len(adjusted_score), len(returns), len(symbols))
+    base_top = _rank_pct(baseline_score[:n]) >= 0.70
+    adj_top = _rank_pct(adjusted_score[:n]) >= 0.70
+    r = np.asarray(returns[:n], dtype=np.float64)
+
+    def stats(mask: np.ndarray) -> Dict[str, float]:
+        vals = r[mask & np.isfinite(r)]
+        return {
+            "trade_count": int(len(vals)),
+            "win_rate": float(np.mean(vals > 0.0)) if len(vals) else 0.0,
+            "mean_utility": float(np.mean(vals)) if len(vals) else 0.0,
+            "sum_utility": float(np.sum(vals)) if len(vals) else 0.0,
+        }
+
+    base = stats(base_top)
+    adj = stats(adj_top)
+    return {
+        "baseline_meta_head_only": base,
+        "error_risk_modulated": adj,
+        "delta_win_rate": float(adj["win_rate"] - base["win_rate"]),
+        "delta_mean_utility": float(adj["mean_utility"] - base["mean_utility"]),
+        "delta_sum_utility": float(adj["sum_utility"] - base["sum_utility"]),
+        "delta_trade_count": int(adj["trade_count"] - base["trade_count"]),
+    }
+
+
+def _error_analysis_table(
+    x: pd.DataFrame,
+    y_bad: np.ndarray,
+    shap_values: Optional[np.ndarray] = None,
+) -> pd.DataFrame:
+    rows: List[Dict[str, Any]] = []
+    yy = np.asarray(y_bad, dtype=int)
+    bad = yy == 1
+    good = yy == 0
+    for j, col in enumerate(x.columns):
+        vals = pd.to_numeric(x[col], errors="coerce").to_numpy(dtype=np.float64)
+        finite = np.isfinite(vals)
+        if int(np.sum(finite)) < 20:
+            continue
+        try:
+            dec = pd.qcut(
+                pd.Series(vals[finite]).rank(method="first"),
+                10,
+                labels=False,
+                duplicates="drop",
+            )
+            bad_rates = (
+                pd.DataFrame({"decile": dec, "bad": yy[finite]})
+                .groupby("decile", sort=True)["bad"]
+                .mean()
+                .to_dict()
+            )
+        except Exception:
+            bad_rates = {}
+        bad_vals = vals[bad & finite]
+        good_vals = vals[good & finite]
+        delta_mean = float(np.nanmean(bad_vals) - np.nanmean(good_vals)) if len(bad_vals) and len(good_vals) else 0.0
+        delta_median = float(np.nanmedian(bad_vals) - np.nanmedian(good_vals)) if len(bad_vals) and len(good_vals) else 0.0
+        psi = _psi_1d(good_vals, bad_vals)
+        shap_error_lift = 1.0
+        directional_delta = 0.0
+        if shap_values is not None and shap_values.ndim == 2 and j < shap_values.shape[1]:
+            sv = np.asarray(shap_values[:, j], dtype=np.float64)
+            shap_error_lift = float(
+                np.nanmean(np.abs(sv[bad])) / (np.nanmean(np.abs(sv[good])) + 1e-12)
+            ) if np.any(bad) and np.any(good) else 1.0
+            directional_delta = float(np.nanmean(sv[bad]) - np.nanmean(sv[good])) if np.any(bad) and np.any(good) else 0.0
+        rows.append(
+            {
+                "feature": str(col),
+                "bad_rate_by_decile": {str(k): float(v) for k, v in bad_rates.items()},
+                "delta_mean": delta_mean,
+                "delta_median": delta_median,
+                "psi_bad_vs_good": float(psi),
+                "shap_error_lift": shap_error_lift,
+                "directional_delta": directional_delta,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _bucket_bad_rate_dict(rank_values: np.ndarray, y_bad: np.ndarray) -> Dict[str, float]:
+    try:
+        frame = pd.DataFrame({"rank": rank_values, "bad": y_bad}).replace(
+            [np.inf, -np.inf], np.nan
+        ).dropna()
+        if frame.empty:
+            return {}
+        frame["bucket"] = pd.qcut(
+            frame["rank"].rank(method="first"),
+            5,
+            labels=False,
+            duplicates="drop",
+        )
+        return {
+            str(k): float(v)
+            for k, v in frame.groupby("bucket", sort=True)["bad"].mean().to_dict().items()
+        }
+    except Exception:
+        return {}
+
+
+def _fit_error_risk_isotonic_calibrator(
+    pred_error: np.ndarray,
+    y_bad: np.ndarray,
+) -> Dict[str, Any]:
+    p = np.asarray(pred_error, dtype=np.float64)
+    y = np.asarray(y_bad, dtype=np.float64)
+    finite = np.isfinite(p) & np.isfinite(y)
+    if int(np.sum(finite)) < 20 or len(np.unique(y[finite].astype(int))) < 2:
+        return {"enabled": False, "method": "isotonic", "reason": "insufficient_acceptance_support"}
+    try:
+        iso = IsotonicRegression(out_of_bounds="clip", y_min=1e-6, y_max=1.0 - 1e-6)
+        iso.fit(np.clip(p[finite], 1e-6, 1.0 - 1e-6), y[finite])
+        return {
+            "enabled": True,
+            "method": "isotonic",
+            "fit_slice": "policy_acceptance_holdout",
+            "n": int(np.sum(finite)),
+            "bad_rate": float(np.mean(y[finite])),
+            "x_thresholds": np.asarray(iso.X_thresholds_, dtype=float).tolist(),
+            "y_thresholds": np.asarray(iso.y_thresholds_, dtype=float).tolist(),
+        }
+    except Exception as exc:
+        return {"enabled": False, "method": "isotonic", "reason": f"fit_failed:{exc}"}
+
+
+def _apply_error_risk_calibrator(pred_error: np.ndarray, spec: Dict[str, Any]) -> np.ndarray:
+    p = np.clip(np.asarray(pred_error, dtype=np.float64), 1e-6, 1.0 - 1e-6)
+    if not isinstance(spec, dict) or not bool(spec.get("enabled", False)):
+        return p
+    xs = np.asarray(spec.get("x_thresholds", []), dtype=np.float64)
+    ys = np.asarray(spec.get("y_thresholds", []), dtype=np.float64)
+    if xs.ndim != 1 or ys.ndim != 1 or len(xs) == 0 or len(xs) != len(ys):
+        return p
+    order = np.argsort(xs)
+    xs = xs[order]
+    ys = ys[order]
+    return np.clip(np.interp(p, xs, ys, left=ys[0], right=ys[-1]), 1e-6, 1.0 - 1e-6)
+
+
+def _psi_1d(good_vals: np.ndarray, bad_vals: np.ndarray, bins: int = 10) -> float:
+    good_vals = np.asarray(good_vals, dtype=np.float64)
+    bad_vals = np.asarray(bad_vals, dtype=np.float64)
+    good_vals = good_vals[np.isfinite(good_vals)]
+    bad_vals = bad_vals[np.isfinite(bad_vals)]
+    if len(good_vals) < 5 or len(bad_vals) < 5:
+        return 0.0
+    edges = np.unique(np.quantile(good_vals, np.linspace(0.0, 1.0, bins + 1)))
+    if len(edges) < 3:
+        return 0.0
+    good_hist, _ = np.histogram(good_vals, bins=edges)
+    bad_hist, _ = np.histogram(bad_vals, bins=edges)
+    gp = np.maximum(good_hist / max(np.sum(good_hist), 1), 1e-6)
+    bp = np.maximum(bad_hist / max(np.sum(bad_hist), 1), 1e-6)
+    return float(np.sum((bp - gp) * np.log(bp / gp)))
+
+
+def _segment_acceptance(
+    baseline_score: np.ndarray,
+    adjusted_score: np.ndarray,
+    returns: np.ndarray,
+    timestamps: Optional[np.ndarray],
+    symbols: np.ndarray,
+) -> Dict[str, Any]:
+    base_top = _rank_pct(baseline_score) >= 0.70
+    adj_top = _rank_pct(adjusted_score) >= 0.70
+    r = np.asarray(returns, dtype=np.float64)
+    base_ret = r[base_top & np.isfinite(r)]
+    adj_ret = r[adj_top & np.isfinite(r)]
+    base_sum = float(np.sum(base_ret)) if len(base_ret) else 0.0
+    adj_sum = float(np.sum(adj_ret)) if len(adj_ret) else 0.0
+    base_win_rate = float(np.mean(base_ret > 0.0)) if len(base_ret) else 0.0
+    adj_win_rate = float(np.mean(adj_ret > 0.0)) if len(adj_ret) else 0.0
+    weeks = _week_labels(timestamps, len(r))
+    frame = pd.DataFrame(
+        {
+            "week": weeks,
+            "symbol": np.asarray(symbols).astype(str)[: len(r)],
+            "ret": r,
+            "base": base_top,
+            "adj": adj_top,
+        }
+    ).replace([np.inf, -np.inf], np.nan).dropna(subset=["ret"])
+    weekly = []
+    for _, grp in frame.groupby("week", sort=True):
+        weekly.append(
+            float(grp.loc[grp["adj"], "ret"].sum() - grp.loc[grp["base"], "ret"].sum())
+        )
+    asset_delta = []
+    for _, grp in frame.groupby("symbol", sort=False):
+        if len(grp) < 3:
+            continue
+        asset_delta.append(
+            float(grp.loc[grp["adj"], "ret"].sum() - grp.loc[grp["base"], "ret"].sum())
+        )
+    weekly_arr = np.asarray(weekly, dtype=float)
+    asset_arr = np.asarray(asset_delta, dtype=float)
+    worst_quintile_weekly_delta = 0.0
+    if len(weekly_arr):
+        k = max(1, int(math.ceil(len(weekly_arr) * 0.20)))
+        worst_quintile_weekly_delta = float(np.mean(np.sort(weekly_arr)[:k]))
+    max_asset_loss_delta = float(np.min(asset_arr)) if len(asset_arr) else 0.0
+    base_dd = _drawdown(base_ret)
+    adj_dd = _drawdown(adj_ret)
+    accepted = bool(
+        adj_sum >= base_sum
+        and worst_quintile_weekly_delta >= -0.05 * max(abs(base_sum), 1e-6)
+        and max_asset_loss_delta >= -0.10 * max(abs(base_sum), 1e-6)
+        and adj_dd <= base_dd * 1.10 + 1e-9
+    )
+    return {
+        "accepted": accepted,
+        "aggregate_delta_utility": float(adj_sum - base_sum),
+        "baseline_realized_net_pnl": base_sum,
+        "adjusted_realized_net_pnl": adj_sum,
+        "baseline_win_rate": base_win_rate,
+        "adjusted_win_rate": adj_win_rate,
+        "win_rate_delta": float(adj_win_rate - base_win_rate),
+        "baseline_trade_count": int(len(base_ret)),
+        "adjusted_trade_count": int(len(adj_ret)),
+        "worst_quintile_weekly_pnl_delta": worst_quintile_weekly_delta,
+        "max_asset_bucket_delta": max_asset_loss_delta,
+        "baseline_max_drawdown": float(base_dd),
+        "adjusted_max_drawdown": float(adj_dd),
+        "max_drawdown_delta": float(adj_dd - base_dd),
+        "turnover_delta": float(np.mean(adj_top) - np.mean(base_top)),
+        "concentration_delta": 0.0,
+    }
+
+
+def _fit_error_risk_model(
+    regime_df: pd.DataFrame,
+    feature_frame: pd.DataFrame,
+    scores: np.ndarray,
+    outcome: np.ndarray,
+    timestamps: Optional[np.ndarray],
+    symbols: np.ndarray,
+    *,
+    deployment_rank_threshold: Optional[float] = None,
+) -> Tuple[Dict[str, Any], Optional[pd.DataFrame]]:
+    n = len(regime_df)
+    y_bad = (np.asarray(outcome, dtype=np.float64) <= 0.0).astype(int)[:n]
+    symbol_arr = np.asarray(symbols).astype(str)[:n]
+    support = _error_risk_support(y_bad, timestamps, symbol_arr)
+    support_ok, support_reason = _error_risk_support_ok(support)
+    x_all, candidate_features = _error_risk_feature_pool(regime_df, feature_frame.iloc[:n])
+    base_artifact: Dict[str, Any] = {
+        "artifact_version": "error_risk_v1",
+        "enabled": False,
+        "soft_only": True,
+        "reason": support_reason if not support_ok else "not_fit",
+        "training_support": support,
+        "candidate_feature_count": int(len(candidate_features)),
+        "score_modulation_formula": "meta_pred * (0.9 + 0.2 * safety_rank_score)",
+        "error_to_safety_formula": "safety_rank_score = 1 - error_risk_rank_score",
+        "hard_gates_enabled": False,
+        "archetype_features_deployable": False,
+    }
+    if not support_ok or LGBMClassifier is None or x_all.empty:
+        if LGBMClassifier is None:
+            base_artifact["reason"] = "lightgbm_unavailable"
+        elif x_all.empty:
+            base_artifact["reason"] = "no_error_risk_features"
+        return base_artifact, None
+    dev_idx, acc_idx = _chronological_dev_acceptance_indices(timestamps, n, 0.25)
+    if len(dev_idx) < 50 or len(acc_idx) < 20:
+        base_artifact["reason"] = "insufficient_acceptance_holdout"
+        return base_artifact, None
+    dev_support = _error_risk_support(
+        y_bad[dev_idx],
+        timestamps[dev_idx] if timestamps is not None else None,
+        symbol_arr[dev_idx],
+    )
+    dev_ok, dev_reason = _error_risk_support_ok(dev_support)
+    if not dev_ok:
+        base_artifact["reason"] = f"insufficient_error_risk_dev_support:{dev_reason}"
+        base_artifact["dev_support"] = dev_support
+        return base_artifact, None
+    outcome_arr = np.asarray(outcome, dtype=np.float64)[:n]
+    score_arr = np.asarray(scores, dtype=np.float64)[:n]
+    label_candidates: List[Dict[str, Any]] = [
+        {
+            "name": "correctedness",
+            "y_bad": y_bad,
+            "details": {
+                "source_column": "policy_realized_utility",
+                "interpretation": "bad_when_realized_policy_utility_le_0",
+                "bad_rate": float(np.mean(y_bad)) if len(y_bad) else 0.0,
+            },
+        }
+    ]
+    meta_label = _derive_meta_head_error_label(feature_frame.iloc[:n], outcome_arr, n)
+    if meta_label is not None:
+        meta_y_bad, meta_details = meta_label
+        label_candidates.append(
+            {"name": "meta_head_label", "y_bad": meta_y_bad, "details": meta_details}
+        )
+
+    label_race_rows: List[Dict[str, Any]] = []
+    best_run: Optional[Dict[str, Any]] = None
+    for label_spec in label_candidates:
+        label_name = str(label_spec["name"])
+        yy_all = np.asarray(label_spec["y_bad"], dtype=int)[:n]
+        yy_dev = yy_all[dev_idx]
+        if len(np.unique(yy_dev)) < 2:
+            label_race_rows.append(
+                {
+                    "label": label_name,
+                    "skipped": True,
+                    "reason": "single_class_dev_label",
+                }
+            )
+            continue
+        selected, fs = _select_error_risk_features(
+            x_all.iloc[dev_idx],
+            yy_dev,
+            outcome_arr[dev_idx],
+            timestamps[dev_idx] if timestamps is not None else None,
+            scores=score_arr[dev_idx],
+            deployment_rank_threshold=deployment_rank_threshold,
+        )
+        if not selected:
+            label_race_rows.append(
+                {"label": label_name, "skipped": True, "reason": "no_selected_features"}
+            )
+            continue
+        x_dev_candidate = x_all.iloc[dev_idx][selected].reset_index(drop=True)
+        x_signature_candidate = x_all.iloc[dev_idx].reset_index(drop=True)
+        signature_features_candidate = [str(c) for c in x_signature_candidate.columns]
+        final_cols_candidate = list(selected) + list(ERROR_ARCHETYPE_FEATURES)
+        ts_dev_candidate = timestamps[dev_idx] if timestamps is not None else None
+        for param_i, params_i in enumerate(_error_risk_hpo_param_grid()):
+            oof_i, arch_i, fold_rows_i = _error_risk_oof_with_archetypes(
+                x_dev_candidate,
+                yy_dev,
+                selected,
+                ts_dev_candidate,
+                params=params_i,
+                signature_x_dev=x_signature_candidate,
+                signature_features=signature_features_candidate,
+            )
+            safety_i = 1.0 - _rank_pct(oof_i)
+            fs_components = _error_risk_objective_components(
+                safety_i,
+                yy_dev,
+                outcome_arr[dev_idx],
+                ts_dev_candidate,
+                len(final_cols_candidate),
+                scores=score_arr[dev_idx],
+                deployment_rank_threshold=deployment_rank_threshold,
+            )
+            hpo_i = _error_risk_hpo_components(
+                oof_i,
+                yy_dev,
+                outcome_arr[dev_idx],
+                ts_dev_candidate,
+                symbol_arr[dev_idx],
+                pd.concat(
+                    [x_dev_candidate.reset_index(drop=True), arch_i.reset_index(drop=True)],
+                    axis=1,
+                ),
+                scores=score_arr[dev_idx],
+                deployment_rank_threshold=deployment_rank_threshold,
+            )
+            row = {
+                "label": label_name,
+                "skipped": False,
+                "param_index": int(param_i),
+                "params": params_i,
+                "selected_features": selected,
+                "folds": fold_rows_i,
+                "feature_selection_score": float(fs_components["feature_selection_score"]),
+                **{f"fs_{k}": v for k, v in fs_components.items()},
+                **hpo_i,
+            }
+            label_race_rows.append(row)
+            if best_run is None or float(row["hpo_score"]) > float(best_run["hpo_score"]):
+                best_run = {
+                    **row,
+                    "label_details": label_spec.get("details", {}),
+                    "feature_selection": fs,
+                    "y_bad_all": yy_all,
+                    "y_bad_dev": yy_dev,
+                    "x_dev": x_dev_candidate,
+                    "x_signature_dev": x_signature_candidate,
+                    "oof": oof_i,
+                    "oof_arch": arch_i,
+                    "selected_features": selected,
+                    "signature_features": signature_features_candidate,
+                    "params": params_i,
+                }
+
+    if best_run is None:
+        base_artifact["reason"] = "label_race_failed"
+        base_artifact["label_race"] = {"candidates": label_race_rows}
+        return base_artifact, None
+
+    selected_features = [str(f) for f in best_run["selected_features"]]
+    fs = dict(best_run["feature_selection"])
+    best_params = dict(best_run["params"])
+    x_dev = best_run["x_dev"]
+    x_signature_dev = best_run["x_signature_dev"]
+    signature_features = [str(f) for f in best_run["signature_features"]]
+    y_bad_train = np.asarray(best_run["y_bad_all"], dtype=int)
+    y_dev = np.asarray(best_run["y_bad_dev"], dtype=int)
+    ts_dev = timestamps[dev_idx] if timestamps is not None else None
+    oof = np.asarray(best_run["oof"], dtype=np.float64)
+    oof_arch = best_run["oof_arch"]
+    oof_rank = _rank_pct(oof)
+    safety_oof = 1.0 - oof_rank
+    final_feature_columns = list(selected_features) + list(ERROR_ARCHETYPE_FEATURES)
+    hpo_components = _error_risk_hpo_components(
+        oof,
+        y_dev,
+        outcome_arr[dev_idx],
+        ts_dev,
+        symbol_arr[dev_idx],
+        pd.concat([x_dev.reset_index(drop=True), oof_arch.reset_index(drop=True)], axis=1),
+        scores=score_arr[dev_idx],
+        deployment_rank_threshold=deployment_rank_threshold,
+    )
+    fs_components = _error_risk_objective_components(
+        safety_oof,
+        y_dev,
+        outcome_arr[dev_idx],
+        ts_dev,
+        len(final_feature_columns),
+        scores=score_arr[dev_idx],
+        deployment_rank_threshold=deployment_rank_threshold,
+    )
+    fs["winner_components"] = fs_components
+    fs["label_winner"] = str(best_run.get("label", "correctedness"))
+    signature_model = _fit_error_risk_lgbm(
+        x_signature_dev[signature_features], y_dev, params=best_params
+    )
+    if signature_model is None:
+        base_artifact["reason"] = "signature_fit_failed"
+        return base_artifact, None
+    contrib_dev = _lgbm_contrib_matrix(signature_model, x_signature_dev, signature_features)
+    contrib_dev_sparse, _, sparse_signature_features, sparsify_report = (
+        _sparsify_contrib_signature(contrib_dev, signature_features)
+    )
+    archetype_spec = _fit_error_archetype_spec(
+        contrib_dev_sparse,
+        y_dev,
+        contribution_source="lgbm_pred_contrib",
+        contribution_features=sparse_signature_features,
+    )
+    archetype_spec["sparsification"] = sparsify_report
+    archetype_spec["full_signature_feature_count"] = int(len(signature_features))
+    arch_dev = _transform_error_archetype_features(contrib_dev_sparse, archetype_spec)
+    x_dev_final = pd.concat(
+        [x_dev.reset_index(drop=True), arch_dev.reset_index(drop=True)],
+        axis=1,
+    )
+    final_model = _fit_error_risk_lgbm(
+        x_dev_final[final_feature_columns], y_dev, params=best_params
+    )
+    if final_model is None:
+        base_artifact["reason"] = "fit_failed"
+        return base_artifact, None
+    x_acc = x_all.iloc[acc_idx][selected_features].reset_index(drop=True)
+    x_acc_signature = x_all.iloc[acc_idx][signature_features].reset_index(drop=True)
+    contrib_acc = _lgbm_contrib_matrix(signature_model, x_acc_signature, signature_features)
+    _, contrib_acc_sparse, _, _ = _sparsify_contrib_signature(
+        contrib_dev,
+        signature_features,
+        apply_contrib=contrib_acc,
+    )
+    arch_acc = _transform_error_archetype_features(contrib_acc_sparse, archetype_spec)
+    x_acc_final = pd.concat(
+        [x_acc.reset_index(drop=True), arch_acc.reset_index(drop=True)],
+        axis=1,
+    )
+    acc_prob = np.clip(
+        final_model.predict_proba(x_acc_final[final_feature_columns])[:, 1],
+        1e-6,
+        1.0 - 1e-6,
+    )
+    y_acc = y_bad_train[acc_idx]
+    calibrator_spec = _fit_error_risk_isotonic_calibrator(acc_prob, y_acc)
+    oof_calibrated = _apply_error_risk_calibrator(oof, calibrator_spec)
+    acc_prob_calibrated = _apply_error_risk_calibrator(acc_prob, calibrator_spec)
+    oof_rank_calibrated = _rank_pct(oof_calibrated)
+    risk_ref = _fit_percentile(oof_calibrated)
+    acc_risk_rank = _apply_percentile(acc_prob_calibrated, risk_ref)
+    acc_safety = 1.0 - acc_risk_rank
+    acc_multiplier = 0.9 + 0.2 * acc_safety
+    score_arr = np.asarray(scores, dtype=np.float64)[:n]
+    adjusted_acc = score_arr[acc_idx] * acc_multiplier
+    acceptance = _segment_acceptance(
+        score_arr[acc_idx],
+        adjusted_acc,
+        outcome_arr[acc_idx],
+        timestamps[acc_idx] if timestamps is not None else None,
+        symbol_arr[acc_idx],
+    )
+    shap_values = None
+    contribution_source = "unavailable"
+    try:
+        shap_raw = np.asarray(
+            final_model.booster_.predict(
+                x_acc_final[final_feature_columns], pred_contrib=True
+            ),
+            dtype=np.float64,
+        )
+        if shap_raw.ndim == 2 and shap_raw.shape[1] >= len(final_feature_columns):
+            shap_values = shap_raw[:, : len(final_feature_columns)]
+            contribution_source = "lgbm_pred_contrib"
+    except Exception:
+        shap_values = None
+    diagnostics = _error_analysis_table(
+        x_acc_final[final_feature_columns], y_bad_train[acc_idx], shap_values
+    )
+    medians = {
+        col: float(np.nanmedian(x_dev_final[col].to_numpy(dtype=np.float64)))
+        for col in final_feature_columns
+    }
+    signature_medians = {
+        col: float(np.nanmedian(x_dev[col].to_numpy(dtype=np.float64)))
+        for col in selected_features
+    }
+    min_meta_pred = float(np.nanmin(score_arr[dev_idx])) if len(dev_idx) else 0.0
+    feature_importance = _lgbm_feature_importance_report(final_model, final_feature_columns)
+    win_rate_report = _error_risk_win_rate_report(
+        score_arr[acc_idx],
+        adjusted_acc,
+        outcome_arr[acc_idx],
+        timestamps[acc_idx] if timestamps is not None else None,
+        symbol_arr[acc_idx],
+    )
+    archetype_contents = [
+        {
+            "cluster_id": int(row.get("cluster_id", -1)),
+            "count": int(row.get("count", 0)),
+            "bad_rate": float(row.get("bad_rate", 0.0)),
+            "bad_rate_lift": float(row.get("bad_rate_lift", 1.0)),
+            "role": (
+                "bad"
+                if int(row.get("cluster_id", -1)) in set(archetype_spec.get("bad_cluster_ids", []))
+                else (
+                    "good"
+                    if int(row.get("cluster_id", -1)) in set(archetype_spec.get("good_cluster_ids", []))
+                    else "neutral"
+                )
+            ),
+            "top_contribution_features": row.get("top_contribution_features", []),
+        }
+        for row in archetype_spec.get("clusters", [])
+        if isinstance(row, dict)
+    ]
+    artifact = {
+        **base_artifact,
+        "enabled": bool(acceptance.get("accepted", False)),
+        "reason": "accepted" if acceptance.get("accepted", False) else "acceptance_guard_failed",
+        "features": final_feature_columns,
+        "base_features": selected_features,
+        "archetype_signature_features": signature_features,
+        "archetype_signature_feature_count": int(len(signature_features)),
+        "archetype_sparse_signature_features": sparse_signature_features,
+        "archetype_sparse_signature_feature_count": int(len(sparse_signature_features)),
+        "archetype_feature_columns": list(ERROR_ARCHETYPE_FEATURES),
+        "required_feature_columns": final_feature_columns,
+        "training_feature_schema_hash": _feature_schema_hash(final_feature_columns),
+        "feature_medians": medians,
+        "booster_model_str": final_model.booster_.model_to_string(),
+        "archetype_signature_model": {
+            "model_type": "lgbm_signature_model",
+            "features": signature_features,
+            "sparse_contribution_features": sparse_signature_features,
+            "sparsification": _jsonify(sparsify_report),
+            "feature_medians": {
+                col: float(np.nanmedian(x_signature_dev[col].to_numpy(dtype=np.float64)))
+                for col in signature_features
+            },
+            "booster_model_str": signature_model.booster_.model_to_string(),
+        },
+        "risk_rank_reference": risk_ref.astype(float).tolist(),
+        "feature_selection": fs,
+        "hpo": {
+            "fixed_max_depth": 3,
+            "objective": (
+                "0.35*precision_blend_topq + 0.20*achieved_vs_expected_calibration_score "
+                "+ 0.15*rank_bucket_monotonicity + 0.15*week_asset_stability "
+                "+ 0.10*expected_policy_utility_topq - 0.05*overconfidence_under_drift_penalty"
+            ),
+            "hpo_score": float(hpo_components["hpo_score"]),
+            "components": hpo_components,
+            "params": {**ERROR_RISK_MODEL_PARAMS, **best_params, "max_depth": 3},
+            "candidates": _jsonify(label_race_rows),
+        },
+        "calibration": {
+            "error_prob_oof_mean": float(np.nanmean(oof_calibrated)),
+            "error_prob_oof_raw_mean": float(np.nanmean(oof)),
+            "error_prob_oof_bad_rate": float(np.nanmean(y_dev)),
+            "brier_score": float(np.nanmean(np.square(oof_calibrated - y_dev))),
+            "raw_brier_score": float(np.nanmean(np.square(oof - y_dev))),
+            "bucket_bad_rate": _bucket_bad_rate_dict(oof_rank_calibrated, y_dev),
+            "raw_bucket_bad_rate": _bucket_bad_rate_dict(oof_rank, y_dev),
+            "error_prob_calibrator": _jsonify(calibrator_spec),
+        },
+        "label_race": {
+            "label_winner": str(best_run.get("label", "correctedness")),
+            "winner_details": _jsonify(best_run.get("label_details", {})),
+            "candidates": _jsonify(label_race_rows),
+            "deployment_acceptance_metric": "realized_net_policy_utility",
+        },
+        "training_domain": {
+            "min_meta_pred": min_meta_pred,
+            "deployment_rank_threshold": None if deployment_rank_threshold is None else float(deployment_rank_threshold),
+            "tradeable_required": True,
+            "policy_selected_required": True,
+        },
+        "acceptance": acceptance,
+        "reporting": {
+            "features_used": list(final_feature_columns),
+            "base_features_used": list(selected_features),
+            "archetype_signature_features_used": list(signature_features),
+            "archetype_signature_feature_count": int(len(signature_features)),
+            "archetype_sparse_signature_features_used": list(sparse_signature_features),
+            "archetype_sparse_signature_feature_count": int(len(sparse_signature_features)),
+            "archetype_features_used": list(ERROR_ARCHETYPE_FEATURES),
+            "feature_importance": feature_importance,
+            "win_rate_vs_meta_head_only": win_rate_report,
+            "improvement_over_meta_head_only": {
+                "delta_realized_net_pnl": float(
+                    acceptance.get("aggregate_delta_utility", 0.0)
+                ),
+                "delta_win_rate": float(win_rate_report.get("delta_win_rate", 0.0)),
+                "delta_mean_utility": float(
+                    win_rate_report.get("delta_mean_utility", 0.0)
+                ),
+            },
+            "archetype_contents": archetype_contents,
+        },
+        "contribution_source": contribution_source,
+        "error_archetypes": {
+            **_jsonify(archetype_spec),
+            "fold_pure_oof": True,
+            "deployable_features": list(ERROR_ARCHETYPE_FEATURES),
+            "contents": archetype_contents,
+        },
+        "archetype_features_deployable": bool(archetype_spec.get("enabled", False)),
+    }
+    return artifact, diagnostics
+
+
+def _apply_error_risk_model(
+    regime_df: pd.DataFrame,
+    feature_frame: pd.DataFrame,
+    scores: np.ndarray,
+    artifact: Dict[str, Any],
+) -> Dict[str, np.ndarray]:
+    n = len(scores)
+    model_spec = artifact.get("error_risk_model", {})
+    if not isinstance(model_spec, dict) or not bool(model_spec.get("enabled", False)):
+        return {
+            "error_risk_score": np.full(n, 0.5, dtype=np.float64),
+            "error_risk_rank_score": np.full(n, 0.5, dtype=np.float64),
+            "safety_rank_score": np.full(n, 0.5, dtype=np.float64),
+            "score_multiplier": np.ones(n, dtype=np.float64),
+            "error_risk_adjusted_score": np.asarray(scores, dtype=np.float64),
+            "error_risk_applied": np.zeros(n, dtype=bool),
+            "error_risk_disabled_reason": np.repeat("artifact_disabled", n),
+        }
+    x_all, _ = _error_risk_feature_pool(regime_df, feature_frame.iloc[:n])
+    x_all = _augment_error_features_with_archetypes(x_all, model_spec)
+    features = [str(f) for f in model_spec.get("features", [])]
+    missing = [f for f in features if f not in x_all.columns]
+    score = np.asarray(scores, dtype=np.float64)[:n]
+    if missing:
+        return {
+            "error_risk_score": np.full(n, 0.5, dtype=np.float64),
+            "error_risk_rank_score": np.full(n, 0.5, dtype=np.float64),
+            "safety_rank_score": np.full(n, 0.5, dtype=np.float64),
+            "score_multiplier": np.ones(n, dtype=np.float64),
+            "error_risk_adjusted_score": score,
+            "error_risk_applied": np.zeros(n, dtype=bool),
+            "error_risk_disabled_reason": np.repeat("missing_required_features", n),
+        }
+    risk_prob_raw = _predict_error_risk_model(x_all, model_spec)
+    risk_prob = _apply_error_risk_calibrator(
+        risk_prob_raw,
+        (model_spec.get("calibration", {}) or {}).get("error_prob_calibrator", {}),
+    )
+    ref = np.asarray(model_spec.get("risk_rank_reference", []), dtype=np.float64)
+    risk_rank = _apply_percentile(risk_prob, ref)
+    safety_rank = 1.0 - risk_rank
+    domain = model_spec.get("training_domain", {})
+    min_meta_pred = float(domain.get("min_meta_pred", -np.inf))
+    in_domain = np.isfinite(score) & (score >= min_meta_pred)
+    multiplier = np.where(in_domain, 0.9 + 0.2 * safety_rank, 1.0)
+    adjusted = score * multiplier
+    return {
+        "error_risk_score": risk_prob.astype(np.float64),
+        "error_risk_rank_score": risk_rank.astype(np.float64),
+        "safety_rank_score": safety_rank.astype(np.float64),
+        "score_multiplier": multiplier.astype(np.float64),
+        "error_risk_adjusted_score": adjusted.astype(np.float64),
+        "error_risk_applied": in_domain.astype(bool),
+        "error_risk_disabled_reason": np.where(
+            in_domain, "", "outside_error_risk_training_domain"
+        ).astype(object),
+    }
+
+
 def apply_regime_adaptor(
     feature_frame: pd.DataFrame,
     pred_calibrated: Sequence[float],
@@ -2808,6 +4695,7 @@ def apply_regime_adaptor(
     deployment[~eligible] = -np.inf
     rank = _rank_pct(np.where(np.isfinite(deployment), deployment, np.nan)).copy()
     rank[~np.isfinite(deployment)] = 0.0
+    error_risk = _apply_error_risk_model(regime_df, feature_frame.iloc[:n], score, artifact)
     return {
         "regime_weight": weight.astype(np.float64),
         "eligible": eligible,
@@ -2817,6 +4705,7 @@ def apply_regime_adaptor(
         "trust_score": trust_score.astype(np.float64),
         "trust_proba_good_neutral_bad": trust_proba.astype(np.float64),
         "trust_multiplier": trust_multiplier.astype(np.float64),
+        **error_risk,
     }
 
 
@@ -4625,6 +6514,7 @@ def fit_regime_adaptor(
     mae: Optional[Sequence[float]] = None,
     t_mfe: Optional[Sequence[float]] = None,
     t_mae: Optional[Sequence[float]] = None,
+    deployment_rank_threshold: Optional[float] = None,
 ) -> RegimeAdaptorFit:
     n = min(len(feature_frame), len(pred_calibrated), len(returns))
     frame_n = feature_frame.iloc[:n].copy()
@@ -4753,6 +6643,15 @@ def fit_regime_adaptor(
         t_mfe=t_mfe_arr,
         t_mae=t_mae_arr,
     )
+    error_risk_model, error_risk_diagnostics = _fit_error_risk_model(
+        regime_df,
+        frame_n,
+        scores,
+        outcome,
+        ts,
+        sy,
+        deployment_rank_threshold=deployment_rank_threshold,
+    )
     artifact = {
         "schema_version": "v1",
         "strategy_id": str(strategy_id),
@@ -4796,6 +6695,11 @@ def fit_regime_adaptor(
         "asset_gates": [],
         "retired_asset_gates": asset_gates,
         "trust_model": _jsonify(trust_model),
+        "error_risk_model": _jsonify(error_risk_model),
+        "enable_error_risk_gate": bool(error_risk_model.get("enabled", False)),
+        "error_risk_inference_integration_mode": (
+            "soft_modulator" if bool(error_risk_model.get("enabled", False)) else "disabled"
+        ),
         "trust_gate_threshold": -0.35,
         "outcome_source": outcome_source,
         "outcome_cost_pct": outcome_cost_pct,
@@ -4903,6 +6807,7 @@ def fit_regime_adaptor(
         deployment_score_rank_oof=final_applied["deployment_score_rank"],
         trust_score_oof=trust_score_oof,
         trust_proba_oof=trust_proba_oof,
+        error_risk_diagnostics=error_risk_diagnostics,
     )
 
 
@@ -5240,6 +7145,14 @@ def _empty_artifact(
             "symbols": {},
         },
         "trust_model": {"enabled": False, "reason": "empty_artifact"},
+        "error_risk_model": {
+            "artifact_version": "error_risk_v1",
+            "enabled": False,
+            "reason": "empty_artifact",
+            "soft_only": True,
+        },
+        "enable_error_risk_gate": False,
+        "error_risk_inference_integration_mode": "disabled",
         "trust_gate_threshold": -0.35,
         "elastic_net": {
             "coef": [],
@@ -5504,6 +7417,138 @@ def audit_rolling_regime_readiness(
     }
 
 
+def _archetype_centroid_stable_hash(
+    features: Sequence[str],
+    centroid: Sequence[float],
+) -> str:
+    vec = np.asarray(centroid, dtype=np.float64)
+    if vec.ndim != 1:
+        return "arch_unknown"
+    order = np.argsort(np.abs(vec))[::-1][:12]
+    payload = [
+        [str(features[int(i)]), round(float(vec[int(i)]), 4)]
+        for i in order
+        if int(i) < len(features)
+    ]
+    digest = hashlib.sha1(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()[:12]
+    return f"arch_{digest}"
+
+
+def _match_archetypes_to_previous(
+    artifact: Dict[str, Any],
+    previous_artifact: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    model = artifact.get("error_risk_model", {}) if isinstance(artifact, dict) else {}
+    if not isinstance(model, dict):
+        return artifact
+    spec = model.get("error_archetypes", {})
+    if not isinstance(spec, dict) or not bool(spec.get("enabled", False)):
+        return artifact
+    features = [str(f) for f in spec.get("contribution_features", [])]
+    centroids = np.asarray(spec.get("centroids", []), dtype=np.float64)
+    clusters = [r for r in spec.get("clusters", []) if isinstance(r, dict)]
+    if centroids.ndim != 2 or not features or not clusters:
+        return artifact
+
+    prev_spec: Dict[str, Any] = {}
+    if isinstance(previous_artifact, dict):
+        prev_model = previous_artifact.get("error_risk_model", {})
+        if isinstance(prev_model, dict) and isinstance(prev_model.get("error_archetypes"), dict):
+            prev_spec = prev_model.get("error_archetypes", {})
+    prev_features = [str(f) for f in prev_spec.get("contribution_features", [])]
+    prev_centroids = np.asarray(prev_spec.get("centroids", []), dtype=np.float64)
+    prev_clusters = [r for r in prev_spec.get("clusters", []) if isinstance(r, dict)]
+    prev_by_cluster = {
+        int(r.get("cluster_id", -1)): r
+        for r in prev_clusters
+        if int(r.get("cluster_id", -1)) >= 0
+    }
+    common = sorted(set(features).intersection(prev_features))
+    feature_pos = {f: i for i, f in enumerate(features)}
+    prev_pos = {f: i for i, f in enumerate(prev_features)}
+    used_prev: set[int] = set()
+    rows_by_cluster: Dict[int, Dict[str, Any]] = {}
+    match_rows: List[Dict[str, Any]] = []
+
+    for row in clusters:
+        cid = int(row.get("cluster_id", -1))
+        centroid = centroids[cid] if 0 <= cid < centroids.shape[0] else np.zeros(0)
+        stable_id = _archetype_centroid_stable_hash(features, centroid)
+        best_prev = -1
+        best_sim = float("nan")
+        status = "new"
+        if (
+            0 <= cid < centroids.shape[0]
+            and len(common) >= 3
+            and prev_centroids.ndim == 2
+            and prev_centroids.shape[0] > 0
+        ):
+            cur = np.asarray([centroids[cid, feature_pos[f]] for f in common], dtype=np.float64)
+            cur_norm = float(np.linalg.norm(cur))
+            for prev_i in range(prev_centroids.shape[0]):
+                if prev_i in used_prev:
+                    continue
+                prv = np.asarray(
+                    [prev_centroids[prev_i, prev_pos[f]] for f in common],
+                    dtype=np.float64,
+                )
+                denom = cur_norm * float(np.linalg.norm(prv))
+                sim = float(np.dot(cur, prv) / denom) if denom > EPS else -1.0
+                if not np.isfinite(best_sim) or sim > best_sim:
+                    best_sim = sim
+                    best_prev = int(prev_i)
+            if best_prev >= 0 and best_sim >= 0.70:
+                used_prev.add(best_prev)
+                prior_row = prev_by_cluster.get(best_prev, {})
+                stable_id = str(
+                    prior_row.get("stable_archetype_id")
+                    or prior_row.get("archetype_stable_id")
+                    or f"prev_cluster_{best_prev}"
+                )
+                status = "matched_previous"
+        row["stable_archetype_id"] = stable_id
+        row["previous_cluster_id"] = None if best_prev < 0 else int(best_prev)
+        row["previous_centroid_similarity"] = None if not np.isfinite(best_sim) else float(best_sim)
+        row["survival_status"] = status
+        rows_by_cluster[cid] = row
+        match_rows.append(
+            {
+                "cluster_id": cid,
+                "stable_archetype_id": stable_id,
+                "previous_cluster_id": row["previous_cluster_id"],
+                "previous_centroid_similarity": row["previous_centroid_similarity"],
+                "survival_status": status,
+            }
+        )
+
+    spec["clusters"] = clusters
+    spec["stable_id_matching"] = {
+        "method": "centroid_cosine_similarity_on_common_contribution_features",
+        "similarity_threshold": 0.70,
+        "common_feature_count": int(len(common)),
+        "matches": match_rows,
+    }
+    for container in (
+        spec.get("contents", []),
+        model.get("reporting", {}).get("archetype_contents", []),
+    ):
+        if not isinstance(container, list):
+            continue
+        for content_row in container:
+            if not isinstance(content_row, dict):
+                continue
+            src = rows_by_cluster.get(int(content_row.get("cluster_id", -1)))
+            if not src:
+                continue
+            content_row["stable_archetype_id"] = src.get("stable_archetype_id")
+            content_row["previous_cluster_id"] = src.get("previous_cluster_id")
+            content_row["previous_centroid_similarity"] = src.get("previous_centroid_similarity")
+            content_row["survival_status"] = src.get("survival_status")
+    model["error_archetypes"] = spec
+    artifact["error_risk_model"] = model
+    return artifact
+
+
 def save_regime_adaptor_outputs(
     data_root: str,
     run_id: str,
@@ -5524,12 +7569,41 @@ def save_regime_adaptor_outputs(
     artifact_path = out_dir / "regime_adaptor.json"
     artifact = dict(fit.artifact)
     artifact["market_mode"] = mode
+    previous_artifact: Optional[Dict[str, Any]] = None
+    previous_path = resolve_mode_file(artifact_path, mode)
+    if previous_path.exists():
+        try:
+            previous_artifact = json.loads(previous_path.read_text(encoding="utf-8"))
+        except Exception:
+            previous_artifact = None
+    artifact = _match_archetypes_to_previous(artifact, previous_artifact)
     _write_json_with_mode_alias(artifact_path, artifact, mode)
+    error_risk = artifact.get("error_risk_model", {})
+    if isinstance(error_risk, dict):
+        report = {
+            "strategy_id": str(strategy_id),
+            "market_mode": mode,
+            "enabled": bool(error_risk.get("enabled", False)),
+            "reason": str(error_risk.get("reason", "")),
+            "label_race": error_risk.get("label_race", {}),
+            "hpo": error_risk.get("hpo", {}),
+            "feature_selection": error_risk.get("feature_selection", {}),
+            "reporting": error_risk.get("reporting", {}),
+            "acceptance": error_risk.get("acceptance", {}),
+            "error_archetypes": error_risk.get("error_archetypes", {}),
+        }
+        report_path = out_dir / "error_risk_report.json"
+        report_text = json.dumps(_jsonify(report), indent=2)
+        report_path.write_text(report_text)
+        mode_report_path = _mode_stem(report_path, mode)
+        if mode_report_path != report_path:
+            mode_report_path.write_text(report_text)
     for name, frame in (
         ("regime_diagnostics_fixed", fit.fixed_diagnostics),
         ("regime_diagnostics_adaptive", fit.adaptive_diagnostics),
         ("regime_asset_diagnostics", fit.asset_diagnostics),
         ("regime_before_after_metrics", fit.metrics),
+        ("error_risk_diagnostics", fit.error_risk_diagnostics),
     ):
         if frame is None or frame.empty:
             continue

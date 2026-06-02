@@ -483,6 +483,25 @@ class StrategyPerformanceMonitor:
         return float((vals > 0.0).mean())
 
     def _drift_metrics(self, recent: pd.DataFrame, baseline: pd.DataFrame, *, now_ts: pd.Timestamp) -> dict[str, Any]:
+        def _mean_col(frame: pd.DataFrame, *cols: str) -> float:
+            for col in cols:
+                if col not in frame.columns:
+                    continue
+                vals = pd.to_numeric(frame[col], errors="coerce").replace(
+                    [np.inf, -np.inf], np.nan
+                )
+                vals = vals.dropna()
+                if not vals.empty:
+                    return float(vals.mean())
+            return float("nan")
+
+        def _delta_col(*cols: str) -> float:
+            recent_val = _mean_col(recent, *cols)
+            base_val = _mean_col(baseline, *cols)
+            if np.isfinite(recent_val) and np.isfinite(base_val):
+                return float(recent_val - base_val)
+            return float("nan")
+
         score_col_recent = next((c for c in ("calibrated_score", "meta_pred", "raw_prediction_score") if c in recent.columns), None)
         score_col_base = next((c for c in ("calibrated_score", "meta_pred", "score") if c in baseline.columns), None)
         rank_col_recent = next((c for c in ("policy_rank_pct", "normalized_rank_score", "meta_train_rank_pct") if c in recent.columns), None)
@@ -519,20 +538,48 @@ class StrategyPerformanceMonitor:
         if score_col_recent:
             p = pd.to_numeric(recent[score_col_recent], errors="coerce")
             score_uncertainty = float((1.0 - (p - 0.5).abs() * 2.0).replace([np.inf, -np.inf], np.nan).mean())
-        uncertainty_score = score_uncertainty
+        logged_uncertainty = _mean_col(recent, "uncertainty_score", "prob_uncertainty")
+        uncertainty_score = (
+            logged_uncertainty if np.isfinite(logged_uncertainty) else score_uncertainty
+        )
+        feature_drift_psi = _mean_col(
+            recent,
+            "feature_drift_psi_core_50",
+            "feature_drift_psi_core",
+        )
+        feature_drift_cov_shift = _mean_col(recent, "feature_drift_cov_shift")
+        contribution_drift_jsd = _delta_col("contrib_balance")
+        contrib_top1_abs_share_drift = _delta_col("contrib_top1_abs_share")
+        contrib_entropy_drift = _delta_col("contrib_entropy")
+        rare_leaf_fraction_drift = _delta_col("rare_leaf_fraction")
+        leaf_support_drift = _delta_col("leaf_count_p10")
+        regime_centroid_similarity = _mean_col(
+            recent, "regime_centroid_similarity_train"
+        )
+        regime_centroid_similarity_drift = (
+            float(1.0 - regime_centroid_similarity)
+            if np.isfinite(regime_centroid_similarity)
+            else float("nan")
+        )
         drift_parts = [
             prediction_score_psi,
             rank_pct_psi,
             abs(topq_threshold_drift),
+            feature_drift_psi,
+            feature_drift_cov_shift,
+            abs(rare_leaf_fraction_drift),
+            abs(leaf_support_drift),
         ]
         drift_parts = [float(x) for x in drift_parts if np.isfinite(float(x))]
         inference_drift_score = (
             float(np.mean(drift_parts)) if drift_parts else float("nan")
         )
         return {
-            "feature_drift_psi_core_50": float("nan"),
-            "feature_drift_psi_core_80": float("nan"),
-            "feature_drift_cov_shift": float("nan"),
+            "feature_drift_psi_core_50": feature_drift_psi,
+            "feature_drift_psi_core_80": _mean_col(
+                recent, "feature_drift_psi_core_80", "feature_drift_psi_core"
+            ),
+            "feature_drift_cov_shift": feature_drift_cov_shift,
             "prediction_score_psi": prediction_score_psi,
             "raw_logit_psi": raw_logit_psi,
             "rank_pct_psi": rank_pct_psi,
@@ -541,16 +588,16 @@ class StrategyPerformanceMonitor:
             "topq_strategy_mix_drift": strategy_mix_drift,
             "topq_symbol_mix_drift": symbol_mix_drift,
             "topq_regime_mix_drift": float("nan"),
-            "contribution_drift_jsd": float("nan"),
-            "contrib_top1_abs_share_drift": float("nan"),
-            "contrib_entropy_drift": float("nan"),
-            "rare_leaf_fraction_drift": float("nan"),
-            "leaf_support_drift": float("nan"),
-            "regime_centroid_similarity_drift": float("nan"),
+            "contribution_drift_jsd": contribution_drift_jsd,
+            "contrib_top1_abs_share_drift": contrib_top1_abs_share_drift,
+            "contrib_entropy_drift": contrib_entropy_drift,
+            "rare_leaf_fraction_drift": rare_leaf_fraction_drift,
+            "leaf_support_drift": leaf_support_drift,
+            "regime_centroid_similarity_drift": regime_centroid_similarity_drift,
             "z_prob_uncertainty": score_uncertainty,
-            "z_leaf_or_support_uncertainty": float("nan"),
-            "z_contribution_uncertainty": float("nan"),
-            "z_regime_distance": float("nan"),
+            "z_leaf_or_support_uncertainty": _mean_col(recent, "rare_leaf_fraction"),
+            "z_contribution_uncertainty": _mean_col(recent, "contrib_entropy"),
+            "z_regime_distance": regime_centroid_similarity_drift,
             "uncertainty_score": uncertainty_score,
             "uncertainty_score_ratio_7d": float("nan"),
             "uncertainty_score_ratio_21d": float("nan"),
@@ -558,9 +605,34 @@ class StrategyPerformanceMonitor:
             "inference_drift_score_7d": inference_drift_score,
             "inference_drift_score_21d": inference_drift_score,
             "drift_component_status": {
-                "feature_drift": "not_available_from_prediction_ledger",
-                "contribution_drift": "not_available_from_prediction_ledger",
-                "leaf_support": "not_available_from_prediction_ledger",
-                "uncertainty": "score_distance_proxy_only_until_lgbm_uncertainty_logged",
+                "feature_drift": (
+                    "available_from_prediction_ledger"
+                    if np.isfinite(feature_drift_psi)
+                    or np.isfinite(feature_drift_cov_shift)
+                    else "not_available_from_prediction_ledger"
+                ),
+                "contribution_drift": (
+                    "available_from_prediction_ledger"
+                    if any(
+                        np.isfinite(x)
+                        for x in (
+                            contribution_drift_jsd,
+                            contrib_top1_abs_share_drift,
+                            contrib_entropy_drift,
+                        )
+                    )
+                    else "not_available_from_prediction_ledger"
+                ),
+                "leaf_support": (
+                    "available_from_prediction_ledger"
+                    if np.isfinite(rare_leaf_fraction_drift)
+                    or np.isfinite(leaf_support_drift)
+                    else "not_available_from_prediction_ledger"
+                ),
+                "uncertainty": (
+                    "lgbm_uncertainty_logged"
+                    if np.isfinite(logged_uncertainty)
+                    else "score_distance_proxy_only_until_lgbm_uncertainty_logged"
+                ),
             },
         }

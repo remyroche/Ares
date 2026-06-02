@@ -3,6 +3,10 @@ import json
 import pandas as pd
 
 from extreme_price_movements.data_store import PartitionedOHLCVStore
+from scripts.historical_inference_parity import (
+    _add_required_context_symbols,
+    _build_runtime_cfg,
+)
 from scripts.replay_live_signal_predictions import (
     _live_feature_cache_symbols_for_end,
     _load_panel,
@@ -127,6 +131,46 @@ def test_live_feature_cache_symbols_prefers_smallest_matching_universe(tmp_path,
     )
 
     assert symbols == sorted(small_symbols)
+
+
+def test_historical_parity_adds_benchmark_context_for_residual_features():
+    symbols = _add_required_context_symbols(
+        ["AAA/USD:USD"],
+        {"ret4h_bench_resid"},
+        market_mode="perps",
+    )
+
+    assert "AAA/USD:USD" in symbols
+    assert "BTC/USD:USD" in symbols
+
+
+def test_historical_parity_keeps_sample_basket_without_residual_features():
+    symbols = _add_required_context_symbols(
+        ["AAA/USD:USD"],
+        {"ret24h"},
+        market_mode="perps",
+    )
+
+    assert symbols == ["AAA/USD:USD"]
+
+
+def test_historical_parity_uses_rolling_cache_not_latest_snapshot(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "scripts.historical_inference_parity.load_inference_config",
+        lambda **kwargs: {"runtime_cfg": {}},
+    )
+    cfg = _build_runtime_cfg(
+        data_root=tmp_path / "data",
+        artifact_data_root=tmp_path / "artifacts",
+        run_id="run_a",
+        market_mode="perps",
+        state={"bundle": {}},
+    )
+    runtime_cfg = cfg["runtime_cfg"]
+
+    assert runtime_cfg["live_feature_snapshot_cache_enabled"] is False
+    assert runtime_cfg["live_feature_rolling_cache_enabled"] is True
+    assert runtime_cfg["live_feature_return_latest_only"] is False
 
 
 def test_load_panel_preserves_perp_ohlcv_extras_and_overlays_microdata(tmp_path):

@@ -2277,6 +2277,74 @@ def _numba_rolling_zscore_parallel(mat, window, eps=1e-12):
 
 
 @jit(nopython=True, parallel=True, cache=True)
+def _numba_live_zscore_update(
+    latest,
+    active,
+    buffer,
+    valid,
+    ptr,
+    count,
+    K,
+    K_set,
+    sum_d,
+    sum_d_sq,
+    out,
+):
+    """Append one latest row to persisted rolling z-score state.
+
+    Shapes:
+      latest/out: (n_features, n_symbols)
+      active: (n_features,)
+      state arrays: feature/symbol/window or feature/symbol
+    """
+    n_features, n_symbols = latest.shape
+    window = buffer.shape[2]
+    for f in prange(n_features):
+        if not active[f]:
+            for s in range(n_symbols):
+                out[f, s] = latest[f, s]
+            continue
+        for s in range(n_symbols):
+            val = latest[f, s]
+            p = ptr[f, s]
+
+            if valid[f, s, p]:
+                old_d = float(buffer[f, s, p]) - K[f, s]
+                sum_d[f, s] -= old_d
+                sum_d_sq[f, s] -= old_d * old_d
+                count[f, s] -= 1
+
+            if np.isfinite(val):
+                if not K_set[f, s]:
+                    K[f, s] = float(val)
+                    K_set[f, s] = True
+                d = float(val) - K[f, s]
+                buffer[f, s, p] = val
+                valid[f, s, p] = True
+                sum_d[f, s] += d
+                sum_d_sq[f, s] += d * d
+                count[f, s] += 1
+            else:
+                valid[f, s, p] = False
+
+            ptr[f, s] = (p + 1) % window
+
+            c = count[f, s]
+            if c > 1 and np.isfinite(val):
+                var_num = sum_d_sq[f, s] - (sum_d[f, s] * sum_d[f, s]) / c
+                if var_num <= 1e-15:
+                    out[f, s] = 0.0
+                else:
+                    std = np.sqrt(var_num / (c - 1))
+                    mean_d = sum_d[f, s] / c
+                    out[f, s] = ((float(val) - K[f, s]) - mean_d) / (std + 1e-9)
+            elif c == 1 and np.isfinite(val):
+                out[f, s] = 0.0
+            else:
+                out[f, s] = np.nan
+
+
+@jit(nopython=True, parallel=True, cache=True)
 def _numba_causal_clip_parallel(mat, lo_mat, hi_mat):
     n_rows, n_cols = mat.shape
     out = np.empty((n_rows, n_cols), dtype=np.float32)

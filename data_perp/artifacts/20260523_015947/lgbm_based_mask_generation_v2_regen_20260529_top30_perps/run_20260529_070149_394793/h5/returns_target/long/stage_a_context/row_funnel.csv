@@ -1,0 +1,6 @@
+stage,rows,symbols,fraction_of_prev
+side_input,257136,117,1.0
+stage_a_feature_matrix,257136,117,1.0
+stage_a_target_finite,257136,117,1.0
+stage_a_any_feature_finite,257136,117,1.0
+stage_a_complete_rows,257136,117,1.0

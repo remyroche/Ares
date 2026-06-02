@@ -160,7 +160,19 @@ EXECUTION_AUDIT_KEYS = (
     "expected_fill_price",
     "expected_entry_price",
     "expected_fill_slippage_bps",
+    "orderbook_slippage_bps",
+    "slippage_bps",
+    "entry_gap_bps",
+    "entry_slippage_proxy_bps",
+    "adverse_signal_gap_bps",
     "expected_total_entry_friction_bps",
+    "expected_friction_drag_bps",
+    "entry_delay_effect_bps",
+    "entry_delay_adverse_bps",
+    "entry_delay_abs_bps",
+    "decision_to_entry_seconds",
+    "signal_to_entry_seconds",
+    "gross_to_net_friction_drag_bps",
     "orderbook_side",
     "best_touch",
     "max_walk_price",
@@ -520,6 +532,56 @@ def _append_position_event(
             **clean_payload,
         }
     )
+
+
+def _order_filled_amount(order: Optional[Dict[str, Any]]) -> float:
+    """Extract filled amount from common ccxt/exchange order payload fields."""
+    if not isinstance(order, dict):
+        return np.nan
+    info = order.get("info") if isinstance(order.get("info"), dict) else {}
+    for value in (
+        order.get("filled"),
+        info.get("filled"),
+        info.get("filledSize"),
+        info.get("filled_size"),
+    ):
+        amount = _safe_float(value, default=np.nan)
+        if np.isfinite(amount):
+            return float(amount)
+    return np.nan
+
+
+def _position_absent_reconciliation_mode(
+    state: Optional[Dict[str, Any]],
+    *,
+    stop_order: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Classify why a locally tracked perp position disappeared from exchange state."""
+    state = state if isinstance(state, dict) else {}
+    explicit_values = (
+        state.get("exit_reason"),
+        state.get("closed_via"),
+        state.get("reconciliation_mode"),
+        state.get("close_mode"),
+    )
+    if any("liquidat" in str(value or "").lower() for value in explicit_values):
+        return "liquidated"
+
+    order_statuses: List[str] = []
+    if isinstance(stop_order, dict):
+        order_statuses.append(str(stop_order.get("status") or "").lower())
+        info = stop_order.get("info") if isinstance(stop_order.get("info"), dict) else {}
+        order_statuses.append(str(info.get("status") or "").lower())
+    order_statuses.append(str(state.get("last_order_status") or "").lower())
+    order_statuses = [status for status in order_statuses if status]
+    filled = _order_filled_amount(stop_order)
+    if not np.isfinite(filled):
+        filled = _safe_float(state.get("last_order_filled"), default=np.nan)
+    terminal_stop_fill = any(status in {"closed", "filled"} for status in order_statuses)
+    active_stop = any(status in {"open", "new", "untouched"} for status in order_statuses)
+    if active_stop and not terminal_stop_fill and (not np.isfinite(filled) or filled <= 0.0):
+        return "suspected_liquidation"
+    return "exchange_position_absent"
 
 
 def _format_trade_recap(events: Any) -> str:
@@ -1656,6 +1718,15 @@ def _directional_price_gap_bps(
     return float((actual_price / reference_price - 1.0) * 10000.0)
 
 
+def _timestamp_delta_seconds(start: Any, end: Any) -> float:
+    start_ts = pd.to_datetime(start, utc=True, errors="coerce")
+    end_ts = pd.to_datetime(end, utc=True, errors="coerce")
+    if pd.isna(start_ts) or pd.isna(end_ts):
+        return np.nan
+    out = float((pd.Timestamp(end_ts) - pd.Timestamp(start_ts)).total_seconds())
+    return out if np.isfinite(out) else np.nan
+
+
 def _wallet_scaled_pnl_fields(
     *,
     state: Dict[str, Any],
@@ -1818,6 +1889,8 @@ def _closed_trade_metrics(
         "stop_origin": stop_origin,
         "entry_time": entry_time,
         "exit_time": exit_time,
+        "decision_to_entry_seconds": state.get("decision_to_entry_seconds"),
+        "signal_to_entry_seconds": state.get("signal_to_entry_seconds"),
         "holding_time_hours": holding_time_hours,
         "entry_price": entry_price,
         "exit_price": exit_price,
@@ -1871,6 +1944,11 @@ def _closed_trade_metrics(
         "fees_verified": fees_verified,
         "gross_to_net_cost_quote": gross_to_net_cost,
         "gross_to_net_cost_pct": gross_to_net_cost_pct,
+        "gross_to_net_friction_drag_bps": (
+            float(gross_to_net_cost_pct) * 10000.0
+            if np.isfinite(gross_to_net_cost_pct)
+            else np.nan
+        ),
         "pnl_scope": "position_notional_excluding_wallet_equity_borrow_interest",
         "mfe": mfe_value,
         "mae": mae_value,
@@ -2866,7 +2944,13 @@ class OCOExecutor:
                     text = str(exc).lower()
                     already_done = any(
                         token in text
-                        for token in ("not found", "unknown order", "filled", "closed")
+                        for token in (
+                            "not found",
+                            "notfound",
+                            "unknown order",
+                            "filled",
+                            "closed",
+                        )
                     ) or str(state.get("last_order_status") or "").lower() in {
                         "canceled",
                         "cancelled",
@@ -3696,17 +3780,22 @@ class OCOExecutor:
                         )
                         continue
                     if symbol not in open_positions:
-                        state["exit_reason"] = "exchange_position_absent"
+                        close_mode = _position_absent_reconciliation_mode(state)
+                        state["exit_reason"] = close_mode
+                        state["reconciliation_mode"] = close_mode
                         _append_position_event(
                             state,
                             "exchange_position_absent_after_stop_lookup_failure",
                             stop_order_id=stop_order_id,
                             fetch_order_error=str(exc),
                             fetch_order_error_category=category,
+                            reason=close_mode,
+                            reconciliation_mode=close_mode,
                         )
                         statuses[symbol] = {
                             "status": "closed",
-                            "closed_via": "exchange_position_absent",
+                            "closed_via": close_mode,
+                            "reconciliation_mode": close_mode,
                             "fetch_order_error_category": category,
                             "fetch_order_error": str(exc),
                             "stop_order_id": stop_order_id,
@@ -5414,8 +5503,8 @@ class TradeExecutor:
             if np.isfinite(fill_price) and fill_price > 0.0:
                 entry_price = float(fill_price)
                 realized_entry_price = float(fill_price)
-                if policy_entry_price_source == "entry_price":
-                    policy_entry_price = float(fill_price)
+                policy_entry_price = float(fill_price)
+                policy_entry_price_source = "realized_entry_price"
                 try:
                     fill_ts = pd.Timestamp(fill_lookup.get("timestamp"))
                     if fill_ts.tzinfo is None:
@@ -5858,6 +5947,7 @@ class TradeExecutor:
             )
 
         stale_tracked: List[str] = []
+        stale_tracked_details: List[Dict[str, Any]] = []
         if self.oco_executor is not None:
             with self.oco_executor._positions_lock:
                 tracked_symbols = list(self.oco_executor.active_positions.keys())
@@ -5869,19 +5959,35 @@ class TradeExecutor:
                     )
                     stale_tracked.append(str(tracked_symbol))
                     if isinstance(stale_state, dict):
+                        close_mode = _position_absent_reconciliation_mode(stale_state)
+                        stale_state["exit_reason"] = close_mode
+                        stale_state["reconciliation_mode"] = close_mode
                         _append_position_event(
                             stale_state,
                             "removed_after_perps_reconcile_absent",
-                            reason="exchange_position_absent",
+                            reason=close_mode,
+                            reconciliation_mode=close_mode,
+                        )
+                        stale_tracked_details.append(
+                            {
+                                "symbol": str(tracked_symbol),
+                                "reconciliation_mode": close_mode,
+                                "side": stale_state.get("side"),
+                                "amount": stale_state.get("amount"),
+                                "entry_price": stale_state.get("entry_price"),
+                                "stop_order_id": stale_state.get("stop_order_id"),
+                                "last_order_status": stale_state.get("last_order_status"),
+                            }
                         )
             if stale_tracked:
                 with self._state_lock:
                     for tracked_symbol in stale_tracked:
                         self.positions.pop(tracked_symbol, None)
                 report["stale_tracked_positions_removed"] = stale_tracked
+                report["stale_tracked_positions_removed_details"] = stale_tracked_details
                 tprint(
                     "Perps reconciliation removed locally tracked positions absent "
-                    f"from exchange snapshot: {stale_tracked}"
+                    f"from exchange snapshot: {stale_tracked_details or stale_tracked}"
                 )
 
         report["summary"] = {
@@ -5890,6 +5996,7 @@ class TradeExecutor:
             "counts": counts,
             "exchange_open_symbols": sorted(exchange_symbols),
             "stale_tracked_positions_removed": stale_tracked,
+            "stale_tracked_positions_removed_details": stale_tracked_details,
             "active_positions_after_reconcile": len(self.get_active_positions()),
         }
         tprint(
@@ -6720,6 +6827,25 @@ class TradeExecutor:
                 if np.isfinite(entry_price_delta) and np.isfinite(ohlcv_entry_price)
                 else np.nan
             )
+            entry_delay_adverse_bps = _directional_price_gap_bps(
+                side=side,
+                actual_price=float(entry_price),
+                reference_price=float(theoretical_entry_price),
+            )
+            entry_delay_effect_bps = (
+                -float(entry_delay_adverse_bps)
+                if np.isfinite(entry_delay_adverse_bps)
+                else np.nan
+            )
+            entry_ts = pd.Timestamp.now(tz="UTC")
+            decision_to_entry_seconds = _timestamp_delta_seconds(
+                (trade_context or {}).get("decision_ts"),
+                entry_ts,
+            )
+            signal_to_entry_seconds = _timestamp_delta_seconds(
+                (trade_context or {}).get("signal_bar_ts"),
+                entry_ts,
+            )
             base_fee = _filled_base_fee(order, exchange_symbol)
             stop_amount_source = filled_amount
             if (
@@ -6784,6 +6910,18 @@ class TradeExecutor:
                                     "realized_entry_price": entry_price,
                                     "entry_price_delta_vs_ohlcv": entry_price_delta,
                                     "entry_price_delta_vs_ohlcv_pct": entry_price_delta_pct,
+                                    "entry_delay_adverse_bps": entry_delay_adverse_bps,
+                                    "entry_delay_effect_bps": entry_delay_effect_bps,
+                                    "entry_delay_abs_bps": (
+                                        abs(float(entry_delay_adverse_bps))
+                                        if np.isfinite(entry_delay_adverse_bps)
+                                        else np.nan
+                                    ),
+                                    "decision_to_entry_seconds": decision_to_entry_seconds,
+                                    "signal_to_entry_seconds": signal_to_entry_seconds,
+                                    "expected_friction_drag_bps": trade_context.get(
+                                        "expected_total_entry_friction_bps"
+                                    ),
                                 }
                             )
 
@@ -6813,7 +6951,20 @@ class TradeExecutor:
                     "ohlcv_entry_price": ohlcv_entry_price,
                     "entry_price_delta_vs_ohlcv": entry_price_delta,
                     "entry_price_delta_vs_ohlcv_pct": entry_price_delta_pct,
-                    "timestamp": datetime.now(),
+                    "entry_delay_adverse_bps": entry_delay_adverse_bps,
+                    "entry_delay_effect_bps": entry_delay_effect_bps,
+                    "entry_delay_abs_bps": (
+                        abs(float(entry_delay_adverse_bps))
+                        if np.isfinite(entry_delay_adverse_bps)
+                        else np.nan
+                    ),
+                    "decision_to_entry_seconds": decision_to_entry_seconds,
+                    "signal_to_entry_seconds": signal_to_entry_seconds,
+                    "expected_friction_drag_bps": (trade_context or {}).get(
+                        "expected_total_entry_friction_bps"
+                    ),
+                    "timestamp": entry_ts,
+                    "entry_time": entry_ts,
                     "bucket_key": bucket_key,
                     "partial_fill": partial_fill,
                     "entry_order_type": entry_order_type,
@@ -6849,6 +7000,18 @@ class TradeExecutor:
                     "ohlcv_entry_price": ohlcv_entry_price,
                     "entry_price_delta_vs_ohlcv": entry_price_delta,
                     "entry_price_delta_vs_ohlcv_pct": entry_price_delta_pct,
+                    "entry_delay_adverse_bps": entry_delay_adverse_bps,
+                    "entry_delay_effect_bps": entry_delay_effect_bps,
+                    "entry_delay_abs_bps": (
+                        abs(float(entry_delay_adverse_bps))
+                        if np.isfinite(entry_delay_adverse_bps)
+                        else np.nan
+                    ),
+                    "decision_to_entry_seconds": decision_to_entry_seconds,
+                    "signal_to_entry_seconds": signal_to_entry_seconds,
+                    "expected_friction_drag_bps": (trade_context or {}).get(
+                        "expected_total_entry_friction_bps"
+                    ),
                     "partial_fill": partial_fill,
                     "entry_order_type": entry_order_type,
                     **canonical_stop_fields,
@@ -6877,6 +7040,18 @@ class TradeExecutor:
                 "ohlcv_entry_price": ohlcv_entry_price,
                 "entry_price_delta_vs_ohlcv": entry_price_delta,
                 "entry_price_delta_vs_ohlcv_pct": entry_price_delta_pct,
+                "entry_delay_adverse_bps": entry_delay_adverse_bps,
+                "entry_delay_effect_bps": entry_delay_effect_bps,
+                "entry_delay_abs_bps": (
+                    abs(float(entry_delay_adverse_bps))
+                    if np.isfinite(entry_delay_adverse_bps)
+                    else np.nan
+                ),
+                "decision_to_entry_seconds": decision_to_entry_seconds,
+                "signal_to_entry_seconds": signal_to_entry_seconds,
+                "expected_friction_drag_bps": (trade_context or {}).get(
+                    "expected_total_entry_friction_bps"
+                ),
                 "stop_price": (
                     oco_result.get("stop_price")
                     if isinstance(oco_result, dict)
@@ -6987,6 +7162,25 @@ class TradeExecutor:
             if np.isfinite(entry_price_delta) and np.isfinite(ohlcv_entry_price)
             else np.nan
         )
+        entry_delay_adverse_bps = _directional_price_gap_bps(
+            side=side,
+            actual_price=float(entry_price),
+            reference_price=float(theoretical_entry_price),
+        )
+        entry_delay_effect_bps = (
+            -float(entry_delay_adverse_bps)
+            if np.isfinite(entry_delay_adverse_bps)
+            else np.nan
+        )
+        now_ts = pd.Timestamp.now(tz="UTC")
+        decision_to_entry_seconds = _timestamp_delta_seconds(
+            (trade_context or {}).get("decision_ts"),
+            now_ts,
+        )
+        signal_to_entry_seconds = _timestamp_delta_seconds(
+            (trade_context or {}).get("signal_bar_ts"),
+            now_ts,
+        )
         try:
             live_barrier_frac = _safe_float(
                 (trade_context or {}).get("barrier_frac")
@@ -7040,6 +7234,18 @@ class TradeExecutor:
             "entry_price_delta_vs_ohlcv": entry_price_delta,
             "entry_price_delta_vs_ohlcv_pct": entry_price_delta_pct,
             "price_slippage_pct": 0.0,
+            "entry_delay_adverse_bps": entry_delay_adverse_bps,
+            "entry_delay_effect_bps": entry_delay_effect_bps,
+            "entry_delay_abs_bps": (
+                abs(float(entry_delay_adverse_bps))
+                if np.isfinite(entry_delay_adverse_bps)
+                else np.nan
+            ),
+            "decision_to_entry_seconds": decision_to_entry_seconds,
+            "signal_to_entry_seconds": signal_to_entry_seconds,
+            "expected_friction_drag_bps": (trade_context or {}).get(
+                "expected_total_entry_friction_bps"
+            ),
             "spread_proxy_pct": 0.0,
             "status": "recorded",
             "bucket_key": bucket_key,
@@ -7053,8 +7259,6 @@ class TradeExecutor:
             "stop_policy_params_hash": initial_stop_decision.params_hash,
             "stop_policy_schema": initial_stop_decision.params_schema,
         }
-
-        now_ts = pd.Timestamp.now(tz="UTC")
         shadow_stop_state = {
             "side": side,
             "entry_time": now_ts,
@@ -7080,6 +7284,18 @@ class TradeExecutor:
                 "ohlcv_entry_price": ohlcv_entry_price,
                 "entry_price_delta_vs_ohlcv": entry_price_delta,
                 "entry_price_delta_vs_ohlcv_pct": entry_price_delta_pct,
+                "entry_delay_adverse_bps": entry_delay_adverse_bps,
+                "entry_delay_effect_bps": entry_delay_effect_bps,
+                "entry_delay_abs_bps": (
+                    abs(float(entry_delay_adverse_bps))
+                    if np.isfinite(entry_delay_adverse_bps)
+                    else np.nan
+                ),
+                "decision_to_entry_seconds": decision_to_entry_seconds,
+                "signal_to_entry_seconds": signal_to_entry_seconds,
+                "expected_friction_drag_bps": (trade_context or {}).get(
+                    "expected_total_entry_friction_bps"
+                ),
                 "timestamp": now_ts,
                 "entry_time": now_ts,
                 "bucket_key": bucket_key,

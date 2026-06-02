@@ -20,6 +20,73 @@ POLICY_RANK_REFERENCE_RANK_COL = "rank_pct"
 AUCTION_RANK_REFERENCE_FILE = "cross_strategy_auction.parquet"
 
 
+def _constant_string_value(frame: pd.DataFrame, column: str) -> str:
+    if column not in frame.columns or frame.empty:
+        return ""
+    values = (
+        frame[column]
+        .dropna()
+        .astype(str)
+        .map(str.strip)
+    )
+    values = values[values != ""].drop_duplicates()
+    if len(values) == 1:
+        return str(values.iloc[0])
+    return ""
+
+
+def _policy_oos_contract_from_frame(frame: pd.DataFrame) -> dict[str, Any]:
+    generation_source = _constant_string_value(frame, "policy_oos_generation_source")
+    source_fit_end = _constant_string_value(frame, "policy_oos_source_model_fit_end")
+    if not generation_source and not source_fit_end:
+        return {}
+    return {
+        "schema_version": "policy_rank_reference_policy_oos_contract_v1",
+        "policy_oos_generation_source": generation_source or None,
+        "policy_oos_source_model_fit_end": source_fit_end or None,
+        "rank_normalization": "policy_rank_reference_percentile_from_policy_oos_clf",
+    }
+
+
+def _policy_oos_contract_valid(entry: dict[str, Any]) -> bool:
+    contract = entry.get("policy_oos_contract")
+    if not isinstance(contract, dict) or not contract:
+        # Legacy rank references did not persist scorer provenance. They remain
+        # readable until regenerated, but regenerated references fail closed if
+        # their explicit contract is wrong.
+        return True
+    source = str(contract.get("policy_oos_generation_source") or "")
+    rank_norm = str(contract.get("rank_normalization") or "")
+    return bool(
+        source.startswith("generated_from_train_meta_state")
+        and "policy_rank_reference_percentile" in rank_norm
+    )
+
+
+def _manifest_policy_oos_contract(
+    strategies: dict[str, Any],
+) -> dict[str, Any]:
+    contracts: list[dict[str, Any]] = []
+    for entry in strategies.values():
+        if not isinstance(entry, dict):
+            continue
+        contract = entry.get("policy_oos_contract")
+        if isinstance(contract, dict) and contract:
+            contracts.append(dict(contract))
+    if not contracts:
+        return {}
+    first = contracts[0]
+    if all(contract == first for contract in contracts[1:]):
+        return first
+    return {
+        "schema_version": "policy_rank_reference_policy_oos_contract_v1",
+        "policy_oos_generation_source": "generated_from_train_meta_state:mixed",
+        "policy_oos_source_model_fit_end": "mixed",
+        "rank_normalization": "policy_rank_reference_percentile_from_policy_oos_clf",
+        "strategy_contract_count": len(contracts),
+    }
+
+
 def _safe_strategy_filename(strategy_id: str) -> str:
     """Keep artifact names readable while preventing path separators."""
     sid = str(strategy_id or "").strip()
@@ -153,7 +220,13 @@ def persist_policy_rank_reference(
         "max_score": float(np.nanmax(scores)),
         "created_at": pd.Timestamp.now(tz="UTC").isoformat(),
     }
+    policy_oos_contract = _policy_oos_contract_from_frame(df_policy_all)
+    if policy_oos_contract:
+        strategies[sid]["policy_oos_contract"] = policy_oos_contract
     manifest["strategies"] = strategies
+    manifest_policy_contract = _manifest_policy_oos_contract(strategies)
+    if manifest_policy_contract:
+        manifest["policy_oos_contract"] = manifest_policy_contract
     tmp_manifest = manifest_path.with_suffix(".json.tmp")
     tmp_manifest.write_text(
         json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
@@ -235,6 +308,47 @@ def persist_auction_rank_reference(
     return out_path
 
 
+def invalidate_auction_rank_reference(
+    *,
+    data_root: str | Path,
+    run_id: str,
+    market_mode: str | None = None,
+    reason: str,
+) -> None:
+    """Clear stale cross-strategy auction manifest entries before a fresh export."""
+    out_dir = _rank_reference_root(data_root, run_id)
+    manifest_path = out_dir / "manifest.json"
+    if not manifest_path.exists():
+        return
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    if not isinstance(manifest, dict):
+        return
+    previous = manifest.pop("auction", None)
+    previous_strategies = manifest.pop("strategies", None)
+    manifest.update(
+        {
+            "schema_version": POLICY_RANK_REFERENCE_SCHEMA_VERSION,
+            "generated_by": POLICY_RANK_REFERENCE_GENERATOR,
+            "run_id": str(run_id),
+            "market_mode": str(market_mode or manifest.get("market_mode") or ""),
+            "auction_invalidated_at": pd.Timestamp.now(tz="UTC").isoformat(),
+            "auction_invalidated_reason": str(reason),
+        }
+    )
+    if previous is not None:
+        manifest["previous_auction"] = previous
+    if isinstance(previous_strategies, dict):
+        manifest["previous_strategy_count"] = len(previous_strategies)
+    tmp_manifest = manifest_path.with_suffix(".json.tmp")
+    tmp_manifest.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    os.replace(tmp_manifest, manifest_path)
+
+
 @dataclass(frozen=True)
 class PolicyRankLookupResult:
     policy_rank_pct: float
@@ -308,6 +422,14 @@ class PolicyRankReferenceStore:
     ) -> tuple[np.ndarray, str, str] | None:
         alias, entry = self._strategy_entry(strategy_id, side)
         if not alias or not isinstance(entry, dict):
+            return None
+        manifest_contract = self.manifest.get("policy_oos_contract")
+        if isinstance(manifest_contract, dict) and manifest_contract:
+            if not _policy_oos_contract_valid(
+                {"policy_oos_contract": manifest_contract}
+            ):
+                return None
+        if not _policy_oos_contract_valid(entry):
             return None
         if alias in self._cache:
             return self._cache[alias]

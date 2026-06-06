@@ -222,6 +222,58 @@ def _group_metrics(df: pd.DataFrame, *, scope: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _group_metrics_by_strategy_id(df: pd.DataFrame, *, scope: str) -> pd.DataFrame:
+    rows: List[Dict[str, Any]] = []
+    for strategy_id, sub in df.groupby("strategy_id", sort=True):
+        row = _metrics(sub, scope=scope, strategy=str(strategy_id))
+        row["strategy_id"] = str(strategy_id)
+        row["strategy_short"] = _short_strategy(strategy_id)
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _summarise_numeric(series: pd.Series, prefix: str) -> Dict[str, Any]:
+    s = pd.to_numeric(series, errors="coerce")
+    out = {f"{prefix}_non_null": int(s.notna().sum())}
+    if s.notna().any():
+        out[f"{prefix}_mean"] = float(s.mean())
+        out[f"{prefix}_median"] = float(s.median())
+        out[f"{prefix}_p90"] = float(s.quantile(0.90))
+    return out
+
+
+def _delay_window_summary(df: pd.DataFrame) -> pd.DataFrame:
+    rows: List[Dict[str, Any]] = []
+    groups: List[tuple[str, str, pd.DataFrame]] = [("global", "global", df)]
+    groups.extend(
+        (str(strategy_id), _short_strategy(strategy_id), sub)
+        for strategy_id, sub in df.groupby("strategy_id", sort=True)
+    )
+    for strategy_id, strategy_short, sub in groups:
+        if sub.empty:
+            continue
+        source = sub.get("entry_execution_source", pd.Series(index=sub.index, dtype=object))
+        row: Dict[str, Any] = {
+            "strategy_id": strategy_id,
+            "strategy_short": strategy_short,
+            "n": int(len(sub)),
+            "delayed_1m_rows": int((source == "delayed_1m_intraminute_proxy").sum()),
+            "theoretical_15m_open_rows": int((source == "theoretical_15m_open").sum()),
+            "delayed_1m_fill_rate": float((source == "delayed_1m_intraminute_proxy").mean()),
+        }
+        row.update(_summarise_numeric(sub.get("entry_delay_minutes"), "entry_delay_minutes"))
+        row.update(_summarise_numeric(sub.get("delay_window_candle_count"), "delay_window_candle_count"))
+        row.update(_summarise_numeric(sub.get("delay_window_range_bps"), "delay_window_range_bps"))
+        row.update(_summarise_numeric(sub.get("entry_gap_bps"), "entry_gap_bps"))
+        row.update(_summarise_numeric(sub.get("entry_slippage_proxy_bps"), "entry_slippage_proxy_bps"))
+        row.update(_summarise_numeric(sub.get("delay_close_gap_bps"), "delay_close_gap_bps"))
+        row.update(_summarise_numeric(sub.get("delay_max_adverse_bps"), "delay_max_adverse_bps"))
+        row.update(_summarise_numeric(sub.get("delay_max_favorable_bps"), "delay_max_favorable_bps"))
+        row.update(_summarise_numeric(sub.get("liquidity_capacity_weight"), "liquidity_capacity_weight"))
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def _load_execution_attribution(policy_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     attr_dir = policy_dir / "execution_attribution"
     global_path = attr_dir / "global_summary.csv"
@@ -375,6 +427,8 @@ def _write_markdown(
     delay_sensitivity: pd.DataFrame,
     thresholds: pd.DataFrame,
     candidate_delay_summary: Dict[str, Any],
+    strategy_metrics: pd.DataFrame,
+    delay_window_summary: pd.DataFrame,
 ) -> None:
     global_rows = global_metrics[global_metrics["strategy_short"].eq("global")]
     latest = global_rows.set_index("scope").to_dict("index")
@@ -410,6 +464,48 @@ def _write_markdown(
                 delay_sensitivity.to_markdown(index=False),
             ]
         )
+    if isinstance(strategy_metrics, pd.DataFrame) and not strategy_metrics.empty:
+        cols = [
+            "strategy_id",
+            "n",
+            "net_hit_rate",
+            "gross_hit_rate",
+            "net_bps_mean",
+            "gross_bps_mean",
+            "friction_drag_bps_mean",
+            "delayed_1m_fill_rate",
+        ]
+        present = [c for c in cols if c in strategy_metrics.columns]
+        lines.extend(
+            [
+                "",
+                "## Per Strategy-ID Candidate Metrics",
+                "",
+                strategy_metrics[present].to_markdown(index=False),
+            ]
+        )
+    if isinstance(delay_window_summary, pd.DataFrame) and not delay_window_summary.empty:
+        cols = [
+            "strategy_id",
+            "n",
+            "delayed_1m_rows",
+            "theoretical_15m_open_rows",
+            "delay_window_candle_count_median",
+            "entry_gap_bps_mean",
+            "entry_slippage_proxy_bps_mean",
+            "delay_max_adverse_bps_mean",
+            "delay_max_favorable_bps_mean",
+            "liquidity_capacity_weight_mean",
+        ]
+        present = [c for c in cols if c in delay_window_summary.columns]
+        lines.extend(
+            [
+                "",
+                "## Delay Window and Liquidity Summary",
+                "",
+                delay_window_summary[present].to_markdown(index=False),
+            ]
+        )
     lines.extend(
         [
             "",
@@ -419,12 +515,20 @@ def _write_markdown(
             json.dumps(ledger_summary, indent=2, sort_keys=True, default=str),
             "```",
             "",
+            "## Live Market/Stop Order Contract",
+            "",
+            "- Live entries refuse to place an unprotected order unless exact simple-policy stop params and barrier context are loaded for the strategy.",
+            "- In live mode, the entry order may be forced to `market`; the execution path extracts the realized exchange fill and stores it as `entry_price`/`realized_entry_price`.",
+            "- Theoretical/policy/ohlcv entry prices are retained separately as audit fields (`theoretical_entry_price`, `policy_entry_price`, `ohlcv_entry_price`) and used to compute `entry_delay_adverse_bps` and entry-price deltas.",
+            "- Initial STOP_LOSS and trailing/replace decisions in `simple_policy_stop.py` use the live position state's `entry_price`, which is the realized fill for live entries. This avoids stops that are accidentally too close to a worse live fill, but means optimiser replay assumptions must be tuned to match live fill distributions.",
+            "- Position monitoring can classify rejected protective stops through `trigger_price_rejected` or `order_rejected`; the prediction ledger only contains portfolio-level rejection reasons, so exchange-level rejection counts still require trade-executor/order logs.",
+            "",
             "## Findings",
             "",
             "- OOS simple-policy candidates contain delayed-entry gross/net returns, theoretical entry, delayed entry, entry-gap, expected friction, fee, slippage, and orderbook-slippage fields.",
             "- The candidate artifact delay summary above is measured directly from `delayed_entry_ts - timestamp`; if it differs from the current code default, the artifact must be regenerated before treating its policy metrics as current-code evidence.",
             "- The proper no-delay-vs-delayed comparison is sourced from `execution_attribution/global_summary.csv` and `execution_attribution/per_strategy.csv`. The candidate-table same-exit price-gap columns are diagnostic only and must not be interpreted as a valid no-delay policy replay.",
-            "- The final candidate parquet does not contain the full delay-window breakdown columns (`delay_close_gap_bps`, `delay_max_adverse_bps`, `delay_max_favorable_bps`), so this audit cannot yet reproduce the full within-window path decomposition from that parquet alone.",
+            "- The final candidate parquet contains the t+10 delay-window fields (`delay_close_gap_bps`, `delay_max_adverse_bps`, `delay_max_favorable_bps`, `delay_window_range_bps`, and `delay_window_candle_count`); the delay-window summary above is computed directly from those fields.",
             "- Live ledger currently has sparse realized entry timing: `signal_to_entry_seconds` and `decision_to_entry_seconds` are mostly absent for untraded rows. That is acceptable for rejected candidates but means execution-delay realism must be evaluated on traded rows plus trade logs, not solely the prediction ledger.",
             "- Rejected order analysis is represented through portfolio/liquidity rejection reasons. Exchange-level rejected market/stop order counts require trade-executor logs or exchange order history, which are not fully represented in `prediction_ledger.parquet`.",
         ],
@@ -463,6 +567,17 @@ def main() -> None:
         ],
         ignore_index=True,
     )
+    strategy_metrics = pd.concat(
+        [
+            _group_metrics_by_strategy_id(candidates, scope="all_local_candidates"),
+            _group_metrics_by_strategy_id(
+                candidates[candidates["passes_deployment_rank"]],
+                scope="passes_current_deployment_rank",
+            ),
+        ],
+        ignore_index=True,
+    )
+    delay_windows = _delay_window_summary(candidates)
     delay_sens = _delay_sensitivity_from_attribution(global_attr, strategy_attr)
     adverse_sens = _adverse_rejection_sensitivity(candidates)
     slippage_sens = _extra_cost_sensitivity(candidates, label="extra_slippage")
@@ -471,6 +586,8 @@ def main() -> None:
 
     threshold_frame.to_csv(out_dir / "execution_assumption_matrix.csv", index=False)
     global_metrics.to_csv(out_dir / "execution_realism_oos_breakdown.csv", index=False)
+    strategy_metrics.to_csv(out_dir / "execution_realism_by_strategy_id.csv", index=False)
+    delay_windows.to_csv(out_dir / "delay_window_summary.csv", index=False)
     delay_sens.to_csv(out_dir / "execution_delay_sensitivity.csv", index=False)
     adverse_sens.to_csv(out_dir / "adverse_entry_gap_rejection_sensitivity.csv", index=False)
     slippage_sens.to_csv(out_dir / "slippage_sensitivity.csv", index=False)
@@ -491,6 +608,10 @@ def main() -> None:
         delay_sensitivity=delay_sens,
         thresholds=threshold_frame,
         candidate_delay_summary=candidate_delay,
+        strategy_metrics=strategy_metrics[
+            strategy_metrics["scope"].eq("passes_current_deployment_rank")
+        ],
+        delay_window_summary=delay_windows,
     )
     _write_markdown(
         out_dir / "fill_quality_report.md",
@@ -502,6 +623,10 @@ def main() -> None:
         delay_sensitivity=delay_sens,
         thresholds=threshold_frame,
         candidate_delay_summary=candidate_delay,
+        strategy_metrics=strategy_metrics[
+            strategy_metrics["scope"].eq("passes_current_deployment_rank")
+        ],
+        delay_window_summary=delay_windows,
     )
     print(f"Wrote execution realism audit to {out_dir}")
 

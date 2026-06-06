@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from extreme_price_movements.config import CFG  # noqa: E402
-from extreme_price_movements.data_store import PartitionedOHLCVStore  # noqa: E402
+from extreme_price_movements.data_store import (  # noqa: E402
+    PartitionedOHLCVStore,
+    scoped_data_root,
+)
 from extreme_price_movements.features import (  # noqa: E402
     add_regime_gates,
     compute_features_hourly,
@@ -41,7 +45,11 @@ from extreme_price_movements.inference.data_fetcher import (  # noqa: E402
 )
 from extreme_price_movements.inference.symbol_mapping import symbol_bases  # noqa: E402
 from extreme_price_movements.inference.model_orchestrator import (  # noqa: E402
+    DELETED_MODEL_FEATURE_KEYS,
+    FeatureParityError,
     ModelOrchestrator,
+    _effective_selected_feature_contract,
+    _strict_finite_model_matrix,
 )
 from extreme_price_movements.inference.parity import (  # noqa: E402
     calibrated_score_and_threshold,
@@ -89,6 +97,152 @@ def _read_table(path: Path) -> pd.DataFrame:
     if path.suffix.lower() == ".parquet":
         return pd.read_parquet(path)
     return pd.read_csv(path)
+
+
+def _logged_decision_feature_keys(decisions: pd.DataFrame) -> set[str]:
+    """Return exact feature keys logged by live inference for replay decisions."""
+    keys: set[str] = set()
+    for col in ("base_model_features_json", "meta_model_features_json"):
+        if col not in decisions.columns:
+            continue
+        for raw in decisions[col].dropna():
+            try:
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+            except Exception:
+                continue
+            if isinstance(parsed, list):
+                keys.update(str(v) for v in parsed if str(v))
+            elif isinstance(parsed, dict):
+                keys.update(str(v) for v in parsed.keys() if str(v))
+    return keys
+
+
+def _json_mapping(raw: Any) -> dict[str, Any]:
+    try:
+        parsed = json.loads(raw) if isinstance(raw, str) else raw
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _feature_value_delta_summary(
+    *,
+    logged_values_raw: Any,
+    feature_row: pd.DataFrame,
+    symbol: str,
+) -> dict[str, Any]:
+    logged_values = _json_mapping(logged_values_raw)
+    if not logged_values or feature_row.empty or symbol not in feature_row.index:
+        return {
+            "count": 0,
+            "max_abs": float("nan"),
+            "mean_abs": float("nan"),
+            "worst_feature": "",
+        }
+    deltas: list[tuple[str, float]] = []
+    row = feature_row.loc[symbol]
+    for key, live_value in logged_values.items():
+        if key not in row.index:
+            continue
+        live_float = _safe_float(live_value)
+        replay_float = _safe_float(row.get(key))
+        if np.isfinite(live_float) and np.isfinite(replay_float):
+            deltas.append((str(key), abs(replay_float - live_float)))
+    if not deltas:
+        return {
+            "count": 0,
+            "max_abs": float("nan"),
+            "mean_abs": float("nan"),
+            "worst_feature": "",
+        }
+    worst_feature, max_abs = max(deltas, key=lambda item: item[1])
+    return {
+        "count": len(deltas),
+        "max_abs": float(max_abs),
+        "mean_abs": float(np.mean([delta for _, delta in deltas])),
+        "worst_feature": worst_feature,
+    }
+
+
+def _logged_values_frame(raw: Any, *, symbol: str) -> pd.DataFrame:
+    values = _json_mapping(raw)
+    if not values:
+        return pd.DataFrame(index=[symbol])
+    row: dict[str, float] = {}
+    for key, value in values.items():
+        val = _safe_float(value)
+        row[str(key)] = val if np.isfinite(val) else np.nan
+    return pd.DataFrame([row], index=[symbol], dtype=np.float32)
+
+
+def _resolve_meta_model(
+    orchestrator: ModelOrchestrator,
+    *,
+    side: str,
+    strategy_id: str,
+) -> tuple[str, Any]:
+    meta_models = getattr(orchestrator, "meta_models", {}) or {}
+    core = strategy_core_id(str(strategy_id))
+    candidates = [
+        str(strategy_id),
+        core,
+        f"{side}_{strategy_id}",
+        f"{side}_{core}",
+        f"{strategy_id}_clf",
+        f"{core}_clf",
+        f"{side}_{strategy_id}_clf",
+        f"{side}_{core}_clf",
+        f"{strategy_id}_tbm_clf",
+        f"{core}_tbm_clf",
+        f"{side}_{strategy_id}_tbm_clf",
+        f"{side}_{core}_tbm_clf",
+    ]
+    for key in candidates:
+        if key in meta_models:
+            return key, meta_models.get(key)
+    return str(strategy_id), None
+
+
+def _predict_exact_logged_meta_input(
+    *,
+    orchestrator: ModelOrchestrator,
+    side: str,
+    strategy_id: str,
+    logged_meta_frame: pd.DataFrame,
+) -> float:
+    if logged_meta_frame.empty:
+        return float("nan")
+    _, meta_model = _resolve_meta_model(
+        orchestrator,
+        side=side,
+        strategy_id=strategy_id,
+    )
+    if meta_model is None:
+        return float("nan")
+    feat_cols = _effective_selected_feature_contract(meta_model)
+    if not feat_cols and hasattr(meta_model, "feature_columns"):
+        feat_cols = [str(c) for c in (getattr(meta_model, "feature_columns", []) or [])]
+    feat_cols = [
+        str(c)
+        for c in (feat_cols or [])
+        if str(c) not in DELETED_MODEL_FEATURE_KEYS
+    ]
+    if not feat_cols:
+        return float("nan")
+    missing = [c for c in feat_cols if c not in logged_meta_frame.columns]
+    if missing:
+        return float("nan")
+    try:
+        X = _strict_finite_model_matrix(
+            logged_meta_frame.reindex(columns=feat_cols),
+            model_feature_cols=feat_cols,
+            model_key=str(strategy_id),
+        )
+    except FeatureParityError:
+        return float("nan")
+    pred = meta_model.predict(X)
+    arr = np.asarray(pred, dtype=float).reshape(-1)
+    return _safe_float(arr[0]) if arr.size else float("nan")
 
 
 def _load_recent_decisions(
@@ -220,16 +374,42 @@ def _margin_cache_quote_symbols(live_quote_currency: str = "USDC") -> set[str]:
     return out
 
 
+def _market_data_root(
+    data_root: Path,
+    *,
+    market_mode: str = "spot",
+    exchange_id: str = "krakenfutures",
+) -> Path:
+    """Resolve the exchange-scoped market-data root used by live inference."""
+    cfg = {
+        "data_root": str(data_root),
+        "exchange_id": exchange_id,
+        "exchange": exchange_id,
+        "market_mode": market_mode,
+        "use_perps": str(market_mode).lower() == "perps",
+    }
+    scoped = Path(scoped_data_root(cfg))
+    if (scoped / "ohlcv").exists() or not (Path(data_root) / "ohlcv").exists():
+        return scoped
+    return Path(data_root)
+
+
 def _local_quote_symbols(
     data_root: Path,
     *,
     run_id: str | None = None,
     live_quote_currency: str = "USDC",
     market_mode: str = "spot",
+    exchange_id: str = "krakenfutures",
 ) -> list[str]:
     out: list[str] = []
     quote = str(live_quote_currency or "USDC").upper()
-    for path in sorted((data_root / "ohlcv").glob("symbol=*")):
+    market_root = _market_data_root(
+        data_root,
+        market_mode=market_mode,
+        exchange_id=exchange_id,
+    )
+    for path in sorted((market_root / "ohlcv").glob("symbol=*")):
         name = path.name.replace("symbol=", "")
         symbol = _normalise_symbol(name)
         if symbol.endswith(f"/{quote}") or symbol.endswith(f"/{quote}:{quote}"):
@@ -299,8 +479,15 @@ def _load_panel(
     symbols: list[str],
     start_ts: pd.Timestamp,
     end_ts: pd.Timestamp,
+    market_mode: str = "spot",
+    exchange_id: str = "krakenfutures",
 ) -> dict[str, pd.DataFrame]:
-    store = PartitionedOHLCVStore(str(data_root), timeframe="1h")
+    market_root = _market_data_root(
+        data_root,
+        market_mode=market_mode,
+        exchange_id=exchange_id,
+    )
+    store = PartitionedOHLCVStore(str(market_root), timeframe="1h")
     panel_fields = (
         "open",
         "high",
@@ -331,7 +518,7 @@ def _load_panel(
     # reconstructs orderbook-derived model features as zeros and reports false
     # train/live parity breaks.
     microdata = _load_microdata_panel(
-        data_root=data_root,
+        data_root=market_root,
         symbols=symbols,
         start_ts=start_ts,
         end_ts=end_ts,
@@ -498,6 +685,91 @@ def _score_row(
         out["live_calibration_threshold"] = live_cal_threshold
     if feature_row.empty:
         return out
+    base_delta_summary = _feature_value_delta_summary(
+        logged_values_raw=row.get("base_model_feature_values_json"),
+        feature_row=feature_row,
+        symbol=symbol,
+    )
+    meta_delta_summary = _feature_value_delta_summary(
+        logged_values_raw=row.get("meta_model_feature_values_json"),
+        feature_row=feature_row,
+        symbol=symbol,
+    )
+    out.update(
+        {
+            "base_feature_value_common_count": base_delta_summary["count"],
+            "base_feature_value_max_abs_delta": base_delta_summary["max_abs"],
+            "base_feature_value_mean_abs_delta": base_delta_summary["mean_abs"],
+            "base_feature_value_worst_feature": base_delta_summary["worst_feature"],
+            "meta_feature_value_common_count": meta_delta_summary["count"],
+            "meta_feature_value_max_abs_delta": meta_delta_summary["max_abs"],
+            "meta_feature_value_mean_abs_delta": meta_delta_summary["mean_abs"],
+            "meta_feature_value_worst_feature": meta_delta_summary["worst_feature"],
+        }
+    )
+    logged_base_frame = _logged_values_frame(
+        row.get("base_model_feature_values_json"),
+        symbol=symbol,
+    )
+    logged_meta_frame = _logged_values_frame(
+        row.get("meta_model_feature_values_json"),
+        symbol=symbol,
+    )
+    try:
+        if not logged_base_frame.empty:
+            logged_base_pred = orchestrator.predict_alpha(
+                logged_base_frame,
+                side,
+                model_strategy_id,
+            )
+            out["logged_base_input_pred"] = (
+                _safe_float(logged_base_pred.iloc[0])
+                if isinstance(logged_base_pred, pd.Series)
+                and not logged_base_pred.empty
+                else float("nan")
+            )
+        else:
+            out["logged_base_input_pred"] = float("nan")
+    except Exception:
+        out["logged_base_input_pred"] = float("nan")
+    try:
+        if not logged_meta_frame.empty:
+            out["logged_meta_input_pred"] = _predict_exact_logged_meta_input(
+                orchestrator=orchestrator,
+                side=side,
+                strategy_id=model_strategy_id,
+                logged_meta_frame=logged_meta_frame,
+            )
+        else:
+            out["logged_meta_input_pred"] = float("nan")
+    except Exception:
+        out["logged_meta_input_pred"] = float("nan")
+    out["logged_base_input_pred_delta"] = (
+        out["logged_base_input_pred"] - out["live_base_pred"]
+    )
+    out["logged_meta_input_pred_delta"] = (
+        out["logged_meta_input_pred"] - out["live_meta_pred"]
+    )
+    logged_meta_cal, logged_meta_cal_threshold = calibrated_score_and_threshold(
+        raw_score=out["logged_meta_input_pred"],
+        strategy_id=core_strategy_id,
+        calibration_data=calibration_data,
+        default_threshold=1.0,
+    )
+    logged_meta_rank = rank_store.lookup(
+        strategy_id=strategy_id,
+        side=side,
+        calibrated_score=logged_meta_cal,
+    )
+    out["logged_meta_input_calibrated_score"] = logged_meta_cal
+    out["logged_meta_input_calibration_threshold"] = logged_meta_cal_threshold
+    out["logged_meta_input_policy_rank_pct"] = logged_meta_rank.policy_rank_pct
+    out["logged_meta_input_calibrated_score_delta"] = (
+        logged_meta_cal - out["live_calibrated_score"]
+    )
+    out["logged_meta_input_rank_percentile_delta"] = (
+        logged_meta_rank.policy_rank_pct - out["live_policy_rank_pct"]
+    )
     try:
         alpha_pred = orchestrator.predict_alpha(
             feature_row.loc[[symbol]],
@@ -521,6 +793,21 @@ def _score_row(
     if not np.isfinite(replay_base):
         replay_base = replay_base_direct
     replay_meta = _safe_float(chain.get("meta_pred"))
+    replay_meta_model_input = getattr(orchestrator, "_last_meta_model_input", None)
+    replay_meta_input_delta_summary = (
+        _feature_value_delta_summary(
+            logged_values_raw=row.get("meta_model_feature_values_json"),
+            feature_row=replay_meta_model_input,
+            symbol=symbol,
+        )
+        if isinstance(replay_meta_model_input, pd.DataFrame)
+        else {
+            "count": 0,
+            "max_abs": float("nan"),
+            "mean_abs": float("nan"),
+            "worst_feature": "",
+        }
+    )
     replay_cal, replay_cal_threshold = calibrated_score_and_threshold(
         raw_score=replay_meta,
         strategy_id=core_strategy_id,
@@ -544,6 +831,18 @@ def _score_row(
             "replay_policy_rank_pct": rank_lookup.policy_rank_pct,
             "replay_policy_rank_reference_n": rank_lookup.n_rows,
             "replay_policy_rank_reference_source": rank_lookup.source,
+            "replay_meta_model_input_common_count": replay_meta_input_delta_summary[
+                "count"
+            ],
+            "replay_meta_model_input_max_abs_delta": replay_meta_input_delta_summary[
+                "max_abs"
+            ],
+            "replay_meta_model_input_mean_abs_delta": replay_meta_input_delta_summary[
+                "mean_abs"
+            ],
+            "replay_meta_model_input_worst_feature": replay_meta_input_delta_summary[
+                "worst_feature"
+            ],
             "base_pred_delta": replay_base - out["live_base_pred"],
             "meta_pred_delta": replay_meta - out["live_meta_pred"],
             "calibrated_score_delta": replay_cal - out["live_calibrated_score"],
@@ -574,6 +873,10 @@ def _summary(frame: pd.DataFrame) -> dict[str, Any]:
         "meta_pred_delta",
         "calibrated_score_delta",
         "rank_percentile_delta",
+        "logged_base_input_pred_delta",
+        "logged_meta_input_pred_delta",
+        "logged_meta_input_calibrated_score_delta",
+        "logged_meta_input_rank_percentile_delta",
     ):
         if col not in frame:
             continue
@@ -704,9 +1007,22 @@ def main() -> int:
         help="Inference feature/config mode. Defaults to perps when roots contain 'perp', otherwise spot.",
     )
     parser.add_argument(
+        "--exchange-id",
+        default="krakenfutures",
+        help="Exchange component used for exchange-scoped market data.",
+    )
+    parser.add_argument(
         "--live-quote-currency",
         default=None,
         help="Live quote currency used for local symbol discovery. Defaults to USD in perps mode, otherwise USDC.",
+    )
+    parser.add_argument(
+        "--live-feature-source-run-id",
+        default=None,
+        help=(
+            "Training-path selected-feature run id to use as authoritative "
+            "model feature source. Defaults to EPM_LIVE_FEATURE_SOURCE_RUN_ID."
+        ),
     )
     parser.add_argument("--run-id", default="20260321_140000")
     parser.add_argument("--ledger", default="data/live_state/prediction_ledger.parquet", type=Path)
@@ -801,6 +1117,7 @@ def main() -> int:
             run_id=args.run_id,
             live_quote_currency=live_quote_currency,
             market_mode=market_mode,
+            exchange_id=args.exchange_id,
         )
         symbol_source = "local_ohlcv"
     if args.max_symbols and args.max_symbols > 0:
@@ -819,12 +1136,28 @@ def main() -> int:
         symbols=symbols,
         start_ts=start_ts,
         end_ts=end_ts,
+        market_mode=market_mode,
+        exchange_id=args.exchange_id,
     )
     if not panel or "close" not in panel:
         raise SystemExit("No OHLCV panel could be loaded.")
 
     state = load_full_state(args.run_id, str(artifact_data_root))
-    required_keys = raw_required_feature_keys(get_inference_required_feature_keys(state, None))
+    accepted_strategy_keys: set[str] = set()
+    for _, decision in decisions.iterrows():
+        side = str(decision.get("side") or "").lower()
+        core = strategy_core_id(str(decision.get("strategy_id") or ""))
+        if core:
+            accepted_strategy_keys.add(core)
+            if side in {"long", "short"}:
+                accepted_strategy_keys.add(f"{side}_{core}")
+                accepted_strategy_keys.add(f"{side}_{core}_clf")
+    logged_feature_keys = _logged_decision_feature_keys(decisions)
+    required_keys = raw_required_feature_keys(logged_feature_keys)
+    if not required_keys:
+        required_keys = raw_required_feature_keys(
+            get_inference_required_feature_keys(state, accepted_strategy_keys)
+        )
     try:
         mask_rows = _load_lgbm_strategy_mask_rows(
             str(artifact_data_root),
@@ -847,7 +1180,18 @@ def main() -> int:
     runtime_cfg["market_mode"] = market_mode
     runtime_cfg["data_root"] = str(args.data_root)
     runtime_cfg["artifact_data_root"] = str(artifact_data_root)
+    runtime_cfg["offline_feature_data_root"] = str(artifact_data_root)
     runtime_cfg["live_data_root"] = str(args.data_root)
+    live_feature_source_run_id = (
+        args.live_feature_source_run_id
+        or os.getenv("EPM_LIVE_FEATURE_SOURCE_RUN_ID")
+    )
+    if live_feature_source_run_id:
+        runtime_cfg["live_feature_source_run_id"] = str(live_feature_source_run_id)
+        runtime_cfg["live_feature_cache_namespace"] = "model"
+        runtime_cfg["live_feature_prefer_offline_cache"] = True
+        runtime_cfg["live_feature_offline_cache_enabled"] = True
+        runtime_cfg["live_feature_return_latest_only"] = True
     state_bundle = state.get("bundle", {}) if isinstance(state.get("bundle"), dict) else {}
     runtime_cfg.setdefault("bundle", state_bundle)
     for key in (

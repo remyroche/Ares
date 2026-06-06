@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import extreme_price_movements.fast_funcs as ff
+from extreme_price_movements.inference.live_zscore_state import RawRollingFeatureState
 
 def test_numba_rolling_mean_correctness():
     np.random.seed(42)
@@ -71,6 +72,47 @@ def test_numba_rolling_sum_correctness():
     actual = ff.numba_rolling_sum(df, 10)
 
     pd.testing.assert_frame_equal(expected, actual, atol=1e-4)
+
+
+def test_raw_rolling_feature_state_append_matches_vectorized():
+    np.random.seed(7)
+    data = np.random.randn(32, 4).astype(np.float32)
+    data[5, 1] = np.nan
+    data[17, 2] = np.nan
+    index = pd.date_range("2026-01-01", periods=data.shape[0], freq="h", tz="UTC")
+    columns = [f"S{i}" for i in range(data.shape[1])]
+    frame = pd.DataFrame(data, index=index, columns=columns)
+    window = 8
+    seed_rows = 24
+
+    expected = {
+        "sum": ff.numba_rolling_sum(frame, window),
+        "mean": ff.numba_rolling_mean(frame, window),
+        "std": ff.apply_to_frame(frame, ff._numba_rolling_std_nan_safe, window),
+        "max": ff.numba_rolling_max(frame, window),
+        "min": ff.numba_rolling_min(frame, window),
+    }
+    for op in ("sum", "mean", "std", "max", "min"):
+        state = RawRollingFeatureState(
+            op=op,
+            name="x",
+            symbols=columns,
+            window=window,
+        )
+        state.seed_from_frame(data[:seed_rows], index[:seed_rows])
+        out = []
+        for pos in range(seed_rows, data.shape[0]):
+            out.append(state.update(data[pos], timestamp=index[pos].isoformat()))
+        actual_tail = pd.DataFrame(
+            np.asarray(out, dtype=np.float32),
+            index=index[seed_rows:],
+            columns=columns,
+        )
+        pd.testing.assert_frame_equal(
+            expected[op].iloc[seed_rows:].astype(np.float32),
+            actual_tail.astype(np.float32),
+            atol=1e-4,
+        )
 
 def test_numba_rolling_max_correctness():
     np.random.seed(42)

@@ -27,7 +27,7 @@ def main() -> int:
     root = Path("/Users/remyroche/Documents/Ares")
     os.chdir(root)
 
-    run_id = os.environ.get("RUN_ID", "20260523_015947")
+    run_id = os.environ.get("RUN_ID", "20260525_010004_nopenalty")
     data_root = os.environ.get("DATA_ROOT", "data_perp")
     log_dir = Path(os.environ.get("LOG_DIR", "logs"))
     restart_delay = float(os.environ.get("RESTART_DELAY_SECONDS", "30"))
@@ -71,6 +71,7 @@ def main() -> int:
             data_root,
             "--run-id",
             run_id,
+            "--run-scoped-prediction-ledger",
             "--inference-interval",
             inference_interval,
             "--challenger-interval",
@@ -85,6 +86,28 @@ def main() -> int:
                 "PYTHONPATH": ".",
                 "MPLCONFIGDIR": "/private/tmp/ares_mplconfig",
                 "EPM_EXCHANGE": exchange,
+                "EPM_DATA_ROOT": data_root,
+                "EPM_ARTIFACT_SOURCE_RUN_ID": os.environ.get(
+                    "EPM_ARTIFACT_SOURCE_RUN_ID", "20260523_015947"
+                ),
+                "EPM_MODEL_BACKEND": os.environ.get(
+                    "EPM_MODEL_BACKEND", "lgbm_pipeline"
+                ),
+                "EPM_DISABLE_REGIME_ADAPTORS": os.environ.get(
+                    "EPM_DISABLE_REGIME_ADAPTORS", "1"
+                ),
+                "EPM_SIMPLE_POLICY_REGIME_ADAPTOR": os.environ.get(
+                    "EPM_SIMPLE_POLICY_REGIME_ADAPTOR", "0"
+                ),
+                "EPM_LIVE_FEATURE_LAYER_DEBUG": os.environ.get(
+                    "EPM_LIVE_FEATURE_LAYER_DEBUG", "1"
+                ),
+                "EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_SELECTED_CACHE": os.environ.get(
+                    "EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_SELECTED_CACHE", "1"
+                ),
+                "EPM_RUN_SCOPED_PREDICTION_LEDGER": os.environ.get(
+                    "EPM_RUN_SCOPED_PREDICTION_LEDGER", "1"
+                ),
             }
         )
         with child_log.open("ab") as fh:

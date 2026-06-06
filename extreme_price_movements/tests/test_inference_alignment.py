@@ -7,6 +7,10 @@ from extreme_price_movements.inference.feature_generator import (
 )
 from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
 from extreme_price_movements.inference.trade_executor import TradeExecutor
+from extreme_price_movements.model_drift_features import (
+    fit_model_drift_state,
+    transform_model_drift_features,
+)
 
 
 def test_model_orchestrator_uses_flattened_ridge_weights():
@@ -354,6 +358,134 @@ def test_predict_meta_materializes_alpha_drift_features_for_parity():
     )
     assert np.allclose(meta.seen["feature_drift_psi_core"].to_numpy(), [0.12, 0.18])
     assert np.allclose(meta.seen["feature_drift_cov_shift"].to_numpy(), [0.03, 0.04])
+
+
+def test_predict_meta_overwrites_stale_alpha_drift_aliases():
+    class AlphaModel:
+        def transform_meta_features(self, X):
+            return pd.DataFrame(
+                {
+                    "rare_leaf_low_support_score": [0.25],
+                    "regime_centroid_similarity_train_pc0": [0.75],
+                    "regime_centroid_similarity_train_window_p10": [0.66],
+                },
+                index=X.index,
+            )
+
+    class CapturingMetaModel:
+        feature_columns = [
+            "long_demo",
+            "pred_H10_rare_leaf_low_support_score",
+            "pred_H10_regime_centroid_similarity_train_pc0",
+            "pred_H10_regime_centroid_similarity_train_window_p10",
+        ]
+
+        def __init__(self):
+            self.seen = None
+
+        def predict(self, X):
+            self.seen = X.copy()
+            return [0.5] * len(X)
+
+    meta = CapturingMetaModel()
+    orchestrator = ModelOrchestrator(
+        {
+            "alpha_models": {
+                "long_demo": {"model": AlphaModel(), "feat_cols": ["ret24h"]}
+            },
+            "meta_models": {"long_demo_clf": meta},
+        },
+        {"strict_feature_parity": True},
+    )
+    features = pd.DataFrame(
+        {
+            "long_demo": [0.6],
+            "ret24h": [0.01],
+            "pred_H10_rare_leaf_low_support_score": [9.0],
+            "pred_H10_regime_centroid_similarity_train_pc0": [9.0],
+            "pred_H10_regime_centroid_similarity_train_window_p10": [9.0],
+        },
+        index=["AAA/USDC"],
+    )
+
+    preds = orchestrator.predict_meta(features, "long", "long_demo")
+
+    assert float(preds.iloc[0]) == 0.5
+    assert np.isclose(meta.seen["pred_H10_rare_leaf_low_support_score"].iloc[0], 0.25)
+    assert np.isclose(
+        meta.seen["pred_H10_regime_centroid_similarity_train_pc0"].iloc[0],
+        0.75,
+    )
+    assert np.isclose(
+        meta.seen["pred_H10_regime_centroid_similarity_train_window_p10"].iloc[0],
+        0.66,
+    )
+
+
+def test_predict_meta_overwrites_stale_meta_drift_features():
+    class CapturingMetaModel:
+        feature_columns = [
+            "long_demo",
+            "ret24h",
+            "regime_centroid_similarity_train",
+            "feature_drift_cov_shift",
+            "pred_H5_feature_drift_cov_shift",
+        ]
+
+        def __init__(self):
+            self.seen = None
+            train = pd.DataFrame(
+                {"ret24h": np.linspace(-1.0, 1.0, 20, dtype=np.float32)}
+            )
+            self.model_drift_state_ = fit_model_drift_state(
+                train,
+                feature_columns=["ret24h"],
+                window=5,
+            )
+
+        def predict(self, X):
+            self.seen = X.copy()
+            return [0.5] * len(X)
+
+    meta = CapturingMetaModel()
+    orchestrator = ModelOrchestrator(
+        {
+            "alpha_models": {},
+            "meta_models": {"long_demo_clf": meta},
+        },
+        {"strict_feature_parity": True},
+    )
+    features = pd.DataFrame(
+        {
+            "long_demo": [0.6],
+            "ret24h": [0.25],
+            "regime_centroid_similarity_train": [9.0],
+            "feature_drift_cov_shift": [9.0],
+        },
+        index=["AAA/USDC"],
+    )
+    expected = transform_model_drift_features(
+        features[["ret24h"]],
+        meta.model_drift_state_,
+        index=features.index,
+    )
+
+    preds = orchestrator.predict_meta(features, "long", "long_demo")
+
+    assert float(preds.iloc[0]) == 0.5
+    assert np.isclose(
+        meta.seen["regime_centroid_similarity_train"].iloc[0],
+        expected["regime_centroid_similarity_train"].iloc[0],
+    )
+    assert np.isclose(
+        meta.seen["feature_drift_cov_shift"].iloc[0],
+        expected["feature_drift_cov_shift"].iloc[0],
+    )
+    assert np.isclose(
+        meta.seen["pred_H5_feature_drift_cov_shift"].iloc[0],
+        expected["feature_drift_cov_shift"].iloc[0],
+    )
+    assert not np.isclose(meta.seen["feature_drift_cov_shift"].iloc[0], 9.0)
 
 
 def test_predict_meta_refuses_missing_rank_percentile_context():

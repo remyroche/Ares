@@ -283,6 +283,18 @@ def _load_mask_params_by_mode(cfg: dict) -> dict:
     """
     merged = apply_offline_optimizer_best_params(dict(cfg))
     cfg.update(merged)
+    if str(os.environ.get("EPM_SKIP_MASK_STRATEGY_PARAMS", "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }:
+        tprint(
+            "Mask strategy params load skipped by EPM_SKIP_MASK_STRATEGY_PARAMS=1; "
+            "using configured/static strategy registry."
+        )
+        return dict(cfg.get("candidate_mask_params_by_mode", {}) or {})
 
     # Populate strategies from final_rule_registry.csv
     _strategy_top_n = int(
@@ -372,6 +384,225 @@ def _load_mask_params_by_mode(cfg: dict) -> dict:
         tprint("WARNING: No strategies loaded — will fall back to legacy strategies.")
 
     return dict(cfg.get("candidate_mask_params_by_mode", {}) or {})
+
+
+def _truthy_env(name: str, default: str = "") -> bool:
+    return str(os.environ.get(name, default)).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }
+
+
+def _maybe_extend_training_stage_to_latest(stage_view: dict, *, stage_name: str) -> dict:
+    """Opt-in retraining override: keep stage start/symbols, remove stale OOS cutoff."""
+    if not _truthy_env("EPM_TRAIN_EXTEND_TO_LATEST"):
+        return stage_view
+    view = dict(stage_view or {})
+    original_end = view.get("allowed_end_ts") or view.get("fit_end")
+    original_periods = view.get("allowed_periods")
+    view.pop("allowed_end_ts", None)
+    view.pop("fit_end", None)
+    view.pop("allowed_periods", None)
+    view["disable_exact_plan_row_filter"] = True
+    view["extended_to_latest"] = True
+    view["stage_name"] = view.get("stage_name") or stage_name
+    tprint(
+        f"{stage_name}: EPM_TRAIN_EXTEND_TO_LATEST=1; preserving "
+        f"start={view.get('allowed_start_ts') or view.get('fit_start') or 'artifact-start'} "
+        f"and symbols={len(view.get('symbols') or []) or 'ALL'}, removing "
+        f"end={original_end or 'none'} and "
+        f"allowed_periods={'yes' if original_periods else 'no'}."
+    )
+    return view
+
+
+def _strategy_source_run_id(cfg: dict) -> str:
+    return str(
+        os.environ.get("EPM_STRATEGY_SOURCE_RUN_ID", "")
+        or os.environ.get("EPM_LGBM_NATIVE_PRESET_SOURCE_RUN_ID", "")
+        or cfg.get("strategy_source_run_id")
+        or cfg.get("lgbm_native_preset_source_run_id")
+        or cfg.get("artifact_source_run_id")
+        or cfg.get("run_id")
+        or ""
+    ).strip()
+
+
+def _strategy_aliases(strategy_id: str, trade_side: str | None = None) -> set[str]:
+    raw = str(strategy_id or "").strip()
+    aliases = {raw} if raw else set()
+    for prefix in ("long_", "short_"):
+        if raw.startswith(prefix):
+            aliases.add(raw[len(prefix) :])
+    side = str(trade_side or "").strip().lower()
+    base_ids = list(aliases)
+    if side in {"long", "short"}:
+        aliases.update({f"{side}_{sid}" for sid in base_ids if sid})
+    return {sid for sid in aliases if sid}
+
+
+def _load_policy_strategy_overrides(cfg: dict, source_run_id: str) -> dict[str, dict]:
+    policy_path = (
+        Path(str(cfg.get("data_root", "data")))
+        / "artifacts"
+        / str(source_run_id)
+        / "policy_params"
+        / "strategy_for_inference_perps.json"
+    )
+    if not policy_path.exists():
+        return {}
+    try:
+        payload = json.loads(policy_path.read_text())
+    except Exception as exc:
+        tprint(f"WARNING: failed to read policy strategy overrides {policy_path}: {exc}")
+        return {}
+    out: dict[str, dict] = {}
+    for row in payload.get("strategies", []) or []:
+        if not isinstance(row, dict):
+            continue
+        mask = dict(row.get("lgbm_regime_mask", {}) or {})
+        side = str(row.get("side") or mask.get("trade_side") or "").strip().lower()
+        raw_sid = str(
+            row.get("canonical_strategy_id")
+            or row.get("strategy_id")
+            or mask.get("strategy_id")
+            or ""
+        ).strip()
+        if side in {"long", "short"} and raw_sid.startswith(f"{side}_"):
+            sid = raw_sid[len(side) + 1 :]
+        else:
+            sid = raw_sid
+        canonical_key = str(
+            mask.get("canonical_key")
+            or mask.get("base_event_trigger")
+            or row.get("base_event_trigger")
+            or ""
+        ).strip()
+        if not sid or not canonical_key:
+            continue
+        strategy = {
+            "strategy_id": sid,
+            "trade_side": "short" if side == "short" else "long",
+            "base_event_trigger": canonical_key,
+            "regime_filters": [],
+            "source_horizon": int(mask.get("source_horizon") or 5),
+            "mask_params": dict(mask.get("mask_params", {}) or {"canonical_key": canonical_key}),
+        }
+        if mask.get("source_target"):
+            strategy["source_target"] = mask.get("source_target")
+        for alias in _strategy_aliases(sid, strategy["trade_side"]):
+            out[alias] = dict(strategy)
+    return out
+
+
+def _load_contract_strategies(cfg: dict, source_run_id: str) -> dict[str, dict]:
+    contract_path = (
+        Path(str(cfg.get("data_root", "data")))
+        / "artifacts"
+        / str(source_run_id)
+        / "base_meta_contract.json"
+    )
+    if not contract_path.exists():
+        return {}
+    try:
+        payload = json.loads(contract_path.read_text())
+    except Exception as exc:
+        tprint(f"WARNING: failed to read strategy contract {contract_path}: {exc}")
+        return {}
+    policy_overrides = _load_policy_strategy_overrides(cfg, source_run_id)
+    out: dict[str, dict] = {}
+    for row in payload.get("strategies", []) or []:
+        if not isinstance(row, dict):
+            continue
+        sid = str(row.get("strategy_id") or "").strip()
+        side = str(row.get("trade_side") or "").strip().lower()
+        if not sid or side not in {"long", "short"}:
+            continue
+        override = None
+        for alias in _strategy_aliases(sid, side):
+            if alias in policy_overrides:
+                override = policy_overrides[alias]
+                break
+        if override is None:
+            # The base/meta contract alone tells us the artifact strategy id and
+            # side, but not the original canonical mask expression used to
+            # generate labels. Do not invent a mask for retraining.
+            continue
+        horizons = row.get("horizons") or [override.get("source_horizon", 5)]
+        strategy = dict(override)
+        strategy["strategy_id"] = sid
+        strategy["trade_side"] = "short" if side == "short" else "long"
+        strategy["source_horizon"] = int(horizons[0] if horizons else 5)
+        for alias in _strategy_aliases(sid, side):
+            out[alias] = dict(strategy)
+    return out
+
+
+def _select_explicit_strategies(
+    cfg: dict,
+    requested_ids: Sequence[str],
+    *,
+    env_label: str,
+) -> tuple[list[dict], list[str]]:
+    from extreme_price_movements.strategy_registry import get_strategies
+
+    requested_ids = [str(s).strip() for s in requested_ids if str(s).strip()]
+    requested_set = set(requested_ids)
+    selected: list[dict] = []
+    selected_aliases: set[str] = set()
+    for strategy in get_strategies(cfg):
+        aliases = _strategy_aliases(
+            str(strategy.get("strategy_id", "")).strip(),
+            str(strategy.get("trade_side", "")).strip(),
+        )
+        if aliases & requested_set:
+            selected.append(strategy)
+            selected_aliases.update(aliases)
+
+    missing = [sid for sid in requested_ids if sid not in selected_aliases]
+    if missing:
+        source_run_id = _strategy_source_run_id(cfg)
+        hydrated = _load_contract_strategies(cfg, source_run_id) if source_run_id else {}
+        for sid in list(missing):
+            strategy = hydrated.get(sid)
+            if strategy is None:
+                continue
+            aliases = _strategy_aliases(
+                str(strategy.get("strategy_id", "")).strip(),
+                str(strategy.get("trade_side", "")).strip(),
+            )
+            if aliases & selected_aliases:
+                selected_aliases.update(aliases)
+                continue
+            selected.append(strategy)
+            selected_aliases.update(aliases)
+        missing = [sid for sid in requested_ids if sid not in selected_aliases]
+        if hydrated:
+            tprint(
+                f"{env_label}: hydrated {len(selected_aliases & requested_set)}/"
+                f"{len(requested_ids)} requested strategies from source contract "
+                f"run_id={source_run_id}"
+            )
+
+    order: dict[str, int] = {}
+    for i, sid in enumerate(requested_ids):
+        order[sid] = i
+        side = "short" if sid.startswith("short_") else "long" if sid.startswith("long_") else ""
+        for alias in _strategy_aliases(sid, side):
+            order.setdefault(alias, i)
+    selected.sort(
+        key=lambda s: min(
+            order.get(alias, 10**9)
+            for alias in _strategy_aliases(
+                str(s.get("strategy_id", "")).strip(),
+                str(s.get("trade_side", "")).strip(),
+            )
+        )
+    )
+    return selected, missing
 
 
 def _maybe_set_strategy_selection_mask_source(cfg: dict) -> None:
@@ -1318,10 +1549,36 @@ def _gc_checkpoint(tag: str) -> int:
     return collected
 
 
-def _cache_checkpoint(tag: str) -> None:
-    """Clear known runtime cache directories only if memory is running low."""
+def _clear_runtime_cache_dir(cdir: str) -> None:
+    """Clear pipeline scratch cache without deleting live inference feature state."""
     import shutil
 
+    preserve_live_cache = os.environ.get("EPM_CLEAR_LIVE_INFERENCE_CACHE", "0") not in {
+        "1",
+        "true",
+        "TRUE",
+        "yes",
+    }
+    if not preserve_live_cache or os.path.basename(cdir) != "cache":
+        shutil.rmtree(cdir)
+        return
+
+    for name in os.listdir(cdir):
+        path = os.path.join(cdir, name)
+        if name == "inference_live_features":
+            tprint(
+                "CACHE: preserving live inference feature cache "
+                f"{path}; set EPM_CLEAR_LIVE_INFERENCE_CACHE=1 to wipe it"
+            )
+            continue
+        if os.path.isdir(path) and not os.path.islink(path):
+            shutil.rmtree(path)
+        else:
+            os.unlink(path)
+
+
+def _cache_checkpoint(tag: str) -> None:
+    """Clear known runtime cache directories only if memory is running low."""
     import psutil
 
     mem = psutil.virtual_memory()
@@ -1340,7 +1597,7 @@ def _cache_checkpoint(tag: str) -> None:
     for cdir in cache_dirs:
         if os.path.exists(cdir):
             try:
-                shutil.rmtree(cdir)
+                _clear_runtime_cache_dir(cdir)
                 tprint(f"CACHE[{tag}]: cleared {cdir}")
             except Exception as e:
                 tprint(f"CACHE[{tag}]: failed {cdir}: {e}")
@@ -1403,6 +1660,21 @@ def run_labels(cfg, horizons=None, ts_override=None, store=None):
             )
     cfg["label_skip_slice_planner"] = True
     cfg["label_persist_incremental"] = True
+    _label_persist_incremental_env = os.getenv(
+        "EPM_LABEL_PERSIST_INCREMENTAL", ""
+    ).strip()
+    if _label_persist_incremental_env:
+        cfg["label_persist_incremental"] = _label_persist_incremental_env.lower() not in {
+            "0",
+            "false",
+            "no",
+            "off",
+        }
+        tprint(
+            "Labels override: "
+            f"label_persist_incremental={bool(cfg['label_persist_incremental'])} "
+            "from EPM_LABEL_PERSIST_INCREMENTAL"
+        )
     cfg["label_parallel_enable"] = False
     cfg["label_tb_cache_parallel"] = False
     cfg["label_tb_cache_workers"] = 1
@@ -1411,6 +1683,21 @@ def run_labels(cfg, horizons=None, ts_override=None, store=None):
     cfg.setdefault("label_geom_heartbeat_every", 4)
     cfg.setdefault("label_geom_heartbeat_secs", 60.0)
     cfg.setdefault("label_raw_tb_payload_cache_mb", 2048.0)
+    _label_incremental_only_env = os.getenv(
+        "EPM_LABEL_INCREMENTAL_ONLY_MISSING", ""
+    ).strip()
+    if _label_incremental_only_env:
+        cfg["label_incremental_only_missing"] = _label_incremental_only_env.lower() not in {
+            "0",
+            "false",
+            "no",
+            "off",
+        }
+        tprint(
+            "Labels override: "
+            f"label_incremental_only_missing={bool(cfg['label_incremental_only_missing'])} "
+            "from EPM_LABEL_INCREMENTAL_ONLY_MISSING"
+        )
     _tb_worker_target = 2
     _tb_worker_mode = "auto"
     _tb_worker_fallback_avail_mb = 6144.0
@@ -1446,41 +1733,37 @@ def run_labels(cfg, horizons=None, ts_override=None, store=None):
         or os.getenv("EPM_META_STRATEGY_IDS", "").strip()
     )
     if _label_strategy_ids_env:
-        from extreme_price_movements.strategy_registry import get_strategies
-
         requested_ids = [
             s.strip() for s in _label_strategy_ids_env.split(",") if s.strip()
         ]
-        requested_set = set(requested_ids)
-        all_strategies = get_strategies(cfg)
-        selected_strategies = [
-            s
-            for s in all_strategies
-            if str(s.get("strategy_id", "")).strip() in requested_set
-        ]
-        found_ids = {str(s.get("strategy_id", "")).strip() for s in selected_strategies}
-        missing_ids = [s for s in requested_ids if s not in found_ids]
+        selected_strategies, missing_ids = _select_explicit_strategies(
+            cfg,
+            requested_ids,
+            env_label="EPM_LABEL_STRATEGY_IDS",
+        )
         if missing_ids:
-            tprint(
-                "WARNING: EPM_LABEL_STRATEGY_IDS requested strategies not found after "
-                f"mask-param load: {missing_ids}"
+            msg = (
+                "EPM_LABEL_STRATEGY_IDS requested strategies not found after "
+                f"mask-param/source-contract load: {missing_ids}"
             )
+            if _truthy_env("EPM_REQUIRE_STRATEGY_ALLOWLIST"):
+                raise RuntimeError(msg)
+            tprint(f"WARNING: {msg}")
         if selected_strategies:
-            order = {sid: i for i, sid in enumerate(requested_ids)}
-            selected_strategies.sort(
-                key=lambda s: order.get(str(s.get("strategy_id", "")), 10**9)
-            )
             cfg["strategies"] = selected_strategies
             tprint(
                 "Labels override: explicit strategy allowlist active after "
-                f"mask-param load; selected {len(selected_strategies)}/"
+                f"mask-param/source-contract load; selected {len(selected_strategies)}/"
                 f"{len(requested_ids)} strategies"
             )
         else:
-            tprint(
-                "WARNING: EPM_LABEL_STRATEGY_IDS matched no mask-loaded strategies; "
-                "falling back to configured strategy list"
+            msg = (
+                "EPM_LABEL_STRATEGY_IDS matched no configured/source-contract "
+                "strategies; falling back to configured strategy list"
             )
+            if _truthy_env("EPM_REQUIRE_STRATEGY_ALLOWLIST"):
+                raise RuntimeError(msg)
+            tprint(f"WARNING: {msg}")
 
     if store is None:
         store = make_ohlcv_store(cfg)
@@ -1780,7 +2063,7 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
         cfg.get("model_backend")
         or os.getenv("EPM_MODEL_BACKEND", "")
         or os.getenv("EPM_TRAINING_MODEL_BACKEND", "")
-        or "ebm_on_lgbm"
+        or "lgbm_pipeline"
     ).strip().lower()
     _backend_aliases = {
         "ebm": "ebm_on_lgbm",
@@ -1844,6 +2127,10 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
                 max_assets=cfg.get("planned_max_assets"),
                 max_months=cfg.get("planned_max_months"),
             )
+            stage_view = _maybe_extend_training_stage_to_latest(
+                stage_view,
+                stage_name="train_base",
+            )
             cfg["_active_stage_view"] = stage_view
         else:
             tprint(f"Warning: stage train_base not found in materialized_views")
@@ -1853,41 +2140,37 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
     tprint(f"Train mode. ts_sig={ts_sig} base_only={base_only} meta_only={meta_only}")
     _load_mask_params_by_mode(cfg)
     if _base_strategy_ids_env.strip():
-        from extreme_price_movements.strategy_registry import get_strategies
-
         requested_ids = [
             s.strip() for s in _base_strategy_ids_env.split(",") if s.strip()
         ]
-        requested_set = set(requested_ids)
-        all_strategies = get_strategies(cfg)
-        selected_strategies = [
-            s
-            for s in all_strategies
-            if str(s.get("strategy_id", "")).strip() in requested_set
-        ]
-        found_ids = {str(s.get("strategy_id", "")).strip() for s in selected_strategies}
-        missing_ids = [s for s in requested_ids if s not in found_ids]
+        selected_strategies, missing_ids = _select_explicit_strategies(
+            cfg,
+            requested_ids,
+            env_label="EPM_BASE_STRATEGY_IDS",
+        )
         if missing_ids:
-            tprint(
-                "WARNING: EPM_BASE_STRATEGY_IDS requested strategies not found after "
-                f"mask-param load: {missing_ids}"
+            msg = (
+                "EPM_BASE_STRATEGY_IDS requested strategies not found after "
+                f"mask-param/source-contract load: {missing_ids}"
             )
+            if _truthy_env("EPM_REQUIRE_STRATEGY_ALLOWLIST"):
+                raise RuntimeError(msg)
+            tprint(f"WARNING: {msg}")
         if selected_strategies:
-            order = {sid: i for i, sid in enumerate(requested_ids)}
-            selected_strategies.sort(
-                key=lambda s: order.get(str(s.get("strategy_id", "")), 10**9)
-            )
             cfg["strategies"] = selected_strategies
             tprint(
                 "Base override: explicit strategy allowlist active after "
-                f"mask-param load; selected {len(selected_strategies)}/"
+                f"mask-param/source-contract load; selected {len(selected_strategies)}/"
                 f"{len(requested_ids)} strategies"
             )
         else:
-            tprint(
-                "WARNING: EPM_BASE_STRATEGY_IDS matched no mask-loaded strategies; "
-                "falling back to configured strategy list"
+            msg = (
+                "EPM_BASE_STRATEGY_IDS matched no configured/source-contract "
+                "strategies; falling back to configured strategy list"
             )
+            if _truthy_env("EPM_REQUIRE_STRATEGY_ALLOWLIST"):
+                raise RuntimeError(msg)
+            tprint(f"WARNING: {msg}")
 
     # TP/SL optimisation happens during label generation (see training.generate_label_datasets).
     # Check if labels already exist before refreshing to avoid unnecessary recomputation.
@@ -1993,6 +2276,10 @@ def run_sizer(cfg, ts_override=None, store=None):
                 stage_view,
                 max_assets=cfg.get("planned_max_assets"),
                 max_months=cfg.get("planned_max_months"),
+            )
+            stage_view = _maybe_extend_training_stage_to_latest(
+                stage_view,
+                stage_name="train_meta",
             )
             cfg["_active_stage_view"] = stage_view
         else:
@@ -2358,7 +2645,7 @@ def run_train_meta(cfg, ts_override=None, store=None):
         cfg.get("model_backend")
         or os.getenv("EPM_MODEL_BACKEND", "")
         or os.getenv("EPM_TRAINING_MODEL_BACKEND", "")
-        or "ebm_on_lgbm"
+        or "lgbm_pipeline"
     ).strip().lower()
     _backend_aliases = {
         "ebm": "ebm_on_lgbm",
@@ -2515,41 +2802,37 @@ def run_train_meta(cfg, ts_override=None, store=None):
 
     _load_mask_params_by_mode(cfg)
     if _meta_strategy_ids_env.strip():
-        from extreme_price_movements.strategy_registry import get_strategies
-
         requested_ids = [
             s.strip() for s in _meta_strategy_ids_env.split(",") if s.strip()
         ]
-        requested_set = set(requested_ids)
-        all_strategies = get_strategies(cfg)
-        selected_strategies = [
-            s
-            for s in all_strategies
-            if str(s.get("strategy_id", "")).strip() in requested_set
-        ]
-        found_ids = {str(s.get("strategy_id", "")).strip() for s in selected_strategies}
-        missing_ids = [s for s in requested_ids if s not in found_ids]
+        selected_strategies, missing_ids = _select_explicit_strategies(
+            cfg,
+            requested_ids,
+            env_label="EPM_META_STRATEGY_IDS",
+        )
         if missing_ids:
-            tprint(
-                "WARNING: EPM_META_STRATEGY_IDS requested strategies not found after "
-                f"mask-param load: {missing_ids}"
+            msg = (
+                "EPM_META_STRATEGY_IDS requested strategies not found after "
+                f"mask-param/source-contract load: {missing_ids}"
             )
+            if _truthy_env("EPM_REQUIRE_STRATEGY_ALLOWLIST"):
+                raise RuntimeError(msg)
+            tprint(f"WARNING: {msg}")
         if selected_strategies:
-            order = {sid: i for i, sid in enumerate(requested_ids)}
-            selected_strategies.sort(
-                key=lambda s: order.get(str(s.get("strategy_id", "")), 10**9)
-            )
             cfg["strategies"] = selected_strategies
             tprint(
                 "Meta override: explicit strategy allowlist active after "
-                f"mask-param load; selected {len(selected_strategies)}/"
+                f"mask-param/source-contract load; selected {len(selected_strategies)}/"
                 f"{len(requested_ids)} strategies"
             )
         else:
-            tprint(
-                "WARNING: EPM_META_STRATEGY_IDS matched no mask-loaded strategies; "
-                "falling back to configured strategy list"
+            msg = (
+                "EPM_META_STRATEGY_IDS matched no configured/source-contract "
+                "strategies; falling back to configured strategy list"
             )
+            if _truthy_env("EPM_REQUIRE_STRATEGY_ALLOWLIST"):
+                raise RuntimeError(msg)
+            tprint(f"WARNING: {msg}")
     _meta_max_strategy_ids = int(cfg.get("meta_max_strategy_ids", 0) or 0)
     if _meta_max_strategy_ids > 0:
         from extreme_price_movements.strategy_registry import get_strategies
@@ -3327,13 +3610,8 @@ def _apply_strategy_selection_no_penalty(cfg: dict) -> None:
 
 def _apply_training_no_penalty(cfg: dict) -> None:
     """Disable selector-side penalty terms for explicit training audit runs."""
-    if os.environ.get("EPM_TRAINING_NO_PENALTY", "").strip().lower() not in {
-        "1",
-        "true",
-        "yes",
-        "y",
-        "on",
-    }:
+    env_value = os.environ.get("EPM_TRAINING_NO_PENALTY", "1").strip().lower()
+    if env_value in {"0", "false", "no", "n", "off"}:
         return
     for key in (
         "base_selector_cfg",
@@ -3694,7 +3972,6 @@ def clear_caches():
     """Force garbage collection and clear the on-disk caches before a run."""
     import gc
     import os
-    import shutil
 
     # 1. Force Python garbage collection
     collected = gc.collect()
@@ -3710,7 +3987,7 @@ def clear_caches():
     for cdir in cache_dirs:
         if os.path.exists(cdir):
             try:
-                shutil.rmtree(cdir)
+                _clear_runtime_cache_dir(cdir)
                 tprint(f"CACHE: Cleared directory {cdir}")
             except Exception as e:
                 tprint(f"CACHE: Failed to clear {cdir}: {e}")
@@ -4021,6 +4298,50 @@ def main():
     if os.environ.get("EPM_FEATURE_BACKFILL_KEY_BATCH_SIZE"):
         cfg["feature_backfill_key_batch_size"] = max(
             1, int(os.environ["EPM_FEATURE_BACKFILL_KEY_BATCH_SIZE"])
+        )
+    if os.environ.get("EPM_FEATURE_BACKFILL_COMPUTE_WORKERS"):
+        cfg["feature_backfill_compute_workers"] = min(
+            2, max(1, int(os.environ["EPM_FEATURE_BACKFILL_COMPUTE_WORKERS"]))
+        )
+    if os.environ.get("EPM_FEATURE_TAIL_COMPUTE_WARMUP_HOURS"):
+        cfg["feature_tail_compute_warmup_hours"] = max(
+            1, int(os.environ["EPM_FEATURE_TAIL_COMPUTE_WARMUP_HOURS"])
+        )
+    if os.environ.get("EPM_FEATURE_CAUSAL_STATE_PATH"):
+        cfg["feature_causal_transform_state_path"] = os.environ[
+            "EPM_FEATURE_CAUSAL_STATE_PATH"
+        ]
+    if os.environ.get("EPM_FEATURE_CAUSAL_STATE"):
+        cfg["feature_causal_transform_state_enabled"] = (
+            os.environ["EPM_FEATURE_CAUSAL_STATE"].strip().lower()
+            not in {"0", "false", "no", "off"}
+        )
+    if os.environ.get("EPM_FEATURE_CAUSAL_STATE_IGNORE_STALE_MIN_REQUIRED"):
+        cfg["feature_causal_transform_state_ignore_stale_min_required"] = (
+            os.environ["EPM_FEATURE_CAUSAL_STATE_IGNORE_STALE_MIN_REQUIRED"]
+            .strip()
+            .lower()
+            not in {"0", "false", "no", "off"}
+        )
+    if os.environ.get("EPM_FEATURE_RAW_ROLLING_STATE_PATH"):
+        cfg["feature_raw_rolling_state_path"] = os.environ[
+            "EPM_FEATURE_RAW_ROLLING_STATE_PATH"
+        ]
+    if os.environ.get("EPM_FEATURE_RAW_ROLLING_STATE"):
+        cfg["feature_raw_rolling_state_enabled"] = (
+            os.environ["EPM_FEATURE_RAW_ROLLING_STATE"].strip().lower()
+            not in {"0", "false", "no", "off"}
+        )
+    if os.environ.get("EPM_FEATURE_RAW_ROLLING_STATE_MIN_WINDOW"):
+        cfg["feature_raw_rolling_state_min_window"] = max(
+            1, int(os.environ["EPM_FEATURE_RAW_ROLLING_STATE_MIN_WINDOW"])
+        )
+    if os.environ.get("EPM_FEATURE_RAW_ROLLING_STATE_SPARSE_PREFIX"):
+        cfg["feature_raw_rolling_state_sparse_prefix_enabled"] = (
+            os.environ["EPM_FEATURE_RAW_ROLLING_STATE_SPARSE_PREFIX"]
+            .strip()
+            .lower()
+            not in {"0", "false", "no", "off"}
         )
 
     _configure_report_roots(cfg)

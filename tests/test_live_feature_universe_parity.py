@@ -57,6 +57,60 @@ def test_model_features_are_computed_on_full_tradable_universe(monkeypatch):
     assert captured["panel_symbols"] == symbols
 
 
+def test_strategy_mask_candidates_require_finite_deployed_contract():
+    idx = pd.date_range("2026-06-03 09:00", periods=1, freq="1h", tz="UTC")
+    feats = {
+        "good_feature": pd.DataFrame(
+            {"AAA/USD:USD": [1.0], "BBB/USD:USD": [2.0]},
+            index=idx,
+        ),
+        "sparse_feature": pd.DataFrame(
+            {"AAA/USD:USD": [np.nan], "BBB/USD:USD": [3.0]},
+            index=idx,
+        ),
+    }
+
+    filtered, diagnostics = run_inference._filter_strategy_masks_by_finite_model_contract(
+        feats,
+        {
+            "long_sparse": ["AAA/USD:USD", "BBB/USD:USD"],
+            "short_good": ["AAA/USD:USD"],
+        },
+        {
+            "long_sparse": ["good_feature", "sparse_feature"],
+            "short_good": ["good_feature"],
+        },
+        latest_ts=idx[-1],
+    )
+
+    assert filtered["long_sparse"] == ["BBB/USD:USD"]
+    assert filtered["short_good"] == ["AAA/USD:USD"]
+    assert diagnostics["long_sparse"]["rejected"] == 1
+    assert diagnostics["long_sparse"]["top_nonfinite_features"][0]["feature"] == "sparse_feature"
+
+
+def test_stale_model_feature_detail_does_not_materialize_lazy_cache():
+    idx = pd.date_range("2026-06-03 08:00", periods=2, freq="1h", tz="UTC")
+    lazy = LazyFeatureDict(
+        {
+            "model_feature": {
+                "AAA/USD:USD": (idx, np.array([1.0, 2.0], dtype=np.float32)),
+            }
+        }
+    )
+
+    detail = feature_generator._cached_feature_stale_detail(
+        lazy,
+        {"model_feature"},
+        pd.Timestamp("2026-06-03 10:00", tz="UTC"),
+        coverage_symbols=["AAA/USD:USD"],
+    )
+
+    assert detail == ["model_feature=2026-06-03 09:00:00+00:00"]
+    assert lazy._assembled == {}
+    assert "model_feature" in lazy._raw
+
+
 def test_candidate_loader_can_stop_after_mask_features(monkeypatch):
     symbols = ["AAA/USDC", "BBB/USDC", "CCC/USDC"]
     idx = pd.date_range("2026-05-15", periods=3, freq="1h", tz="UTC")
@@ -217,7 +271,7 @@ def test_live_orderbook_model_features_stay_neutral_without_training_support(tmp
         {"ob_spread_bps"},
         data_root=str(tmp_path),
         run_id=run_id,
-        cfg={},
+        cfg={"live_materialize_orderbook_model_features": True},
     )
 
     assert "ob_spread_bps" in materialized
@@ -293,13 +347,72 @@ def test_live_orderbook_residual_features_materialize_from_summary_primitives():
         panel,
         symbols,
         required,
-        cfg={"market_basket": ["BTC/USDT", "ETH/USDT"]},
+        cfg={
+            "live_materialize_orderbook_model_features": True,
+            "market_basket": ["BTC/USDT", "ETH/USDT"],
+        },
     )
 
     assert required.issubset(materialized)
     for key in sorted(required):
         tail = materialized[key].iloc[-1].to_numpy(dtype=np.float32)
         assert np.isfinite(tail).any(), key
+
+
+def test_live_orderbook_residual_preserves_populated_cached_feature_in_parity_mode():
+    idx = pd.date_range("2026-05-01", periods=32, freq="1h", tz="UTC")
+    symbols = ["BTC/USD:USD", "ETH/USD:USD", "AAA/USD:USD"]
+    close = pd.DataFrame(
+        {
+            sym: 100.0 + i + np.arange(len(idx), dtype=np.float32) * 0.1
+            for i, sym in enumerate(symbols)
+        },
+        index=idx,
+        dtype=np.float32,
+    )
+    volume = pd.DataFrame(
+        {sym: 1000.0 + i for i, sym in enumerate(symbols)},
+        index=idx,
+        dtype=np.float32,
+    )
+    cached = pd.DataFrame(
+        {"AAA/USD:USD": np.linspace(-0.2, 0.3, len(idx), dtype=np.float32)},
+        index=idx,
+        dtype=np.float32,
+    )
+    panel = {
+        "close": close,
+        "volume": volume,
+        "orderbook_best_bid": (close * 0.999).astype(np.float32),
+        "orderbook_best_ask": (close * 1.001).astype(np.float32),
+        "orderbook_mid": close.astype(np.float32),
+        "orderbook_bid_qty_1": pd.DataFrame(10.0, index=idx, columns=symbols),
+        "orderbook_ask_qty_1": pd.DataFrame(9.0, index=idx, columns=symbols),
+        "orderbook_cum_bid_qty_l10": pd.DataFrame(80.0, index=idx, columns=symbols),
+        "orderbook_cum_ask_qty_l10": pd.DataFrame(75.0, index=idx, columns=symbols),
+        "orderbook_cum_bid_qty_l20": pd.DataFrame(140.0, index=idx, columns=symbols),
+        "orderbook_cum_ask_qty_l20": pd.DataFrame(130.0, index=idx, columns=symbols),
+        "orderbook_buy_notional_1h": (close * volume * 0.55).astype(np.float32),
+        "orderbook_sell_notional_1h": (close * volume * 0.45).astype(np.float32),
+    }
+
+    materialized = feature_generator._materialize_live_orderbook_summary_features(
+        {"ob_imbalance_mkt_resid": cached},
+        panel,
+        symbols,
+        {"ob_imbalance_mkt_resid"},
+        cfg={
+            "live_materialize_orderbook_model_features": True,
+            "historical_inference_parity_preserve_cached_features": True,
+            "market_basket": ["BTC/USD:USD", "ETH/USD:USD"],
+        },
+    )
+
+    pd.testing.assert_series_equal(
+        materialized["ob_imbalance_mkt_resid"]["AAA/USD:USD"],
+        cached["AAA/USD:USD"],
+        check_names=False,
+    )
 
 
 def test_market_regime_scores_broadcast_to_required_live_symbols():
@@ -581,6 +694,133 @@ def test_live_feature_cache_key_ignores_cycle_cache_controls():
     assert key_a == key_b
 
 
+def test_live_feature_cache_key_ignores_coverage_symbols():
+    base = {
+        "run_id": "run_a",
+        "symbols": ["AAA/USDC", "BBB/USDC"],
+        "required_feature_keys": {"ret24h"},
+        "lookback_hours": 24 * 60,
+    }
+
+    key_a = feature_generator._live_feature_cache_key(
+        **base,
+        cfg={
+            "train_min_range_pct": 0.06,
+            "live_feature_coverage_symbols": ["AAA/USDC"],
+        },
+    )
+    key_b = feature_generator._live_feature_cache_key(
+        **base,
+        cfg={
+            "train_min_range_pct": 0.06,
+            "live_feature_coverage_symbols": ["BBB/USDC"],
+        },
+    )
+
+    assert key_a == key_b
+
+
+def test_lazy_feature_coverage_can_ignore_source_rejected_symbols():
+    fresh_ts = pd.Timestamp("2026-06-03 06:00", tz="UTC")
+    stale_ts = pd.Timestamp("2026-06-02 21:00", tz="UTC")
+    feats = LazyFeatureDict(
+        raw_data_buffers={
+            "ret24h": {
+                "AAA/USDC": np.array([1.0], dtype=np.float32),
+                "BBB/USDC": np.array([2.0], dtype=np.float32),
+            }
+        },
+        symbol_indices={
+            "AAA/USDC": np.array([fresh_ts.to_datetime64()]),
+            "BBB/USDC": np.array([stale_ts.to_datetime64()]),
+        },
+    )
+
+    assert feature_generator._cached_feature_coverage_end_ts(
+        feats,
+        required_feature_keys={"ret24h"},
+    ) == stale_ts
+    assert feature_generator._cached_feature_coverage_end_ts(
+        feats,
+        required_feature_keys={"ret24h"},
+        coverage_symbols=["AAA/USDC"],
+    ) == fresh_ts
+
+
+def test_lazy_feature_coverage_ignores_stale_symbol_index_without_payload():
+    fresh_ts = pd.Timestamp("2026-06-03 06:00", tz="UTC")
+    stale_ts = pd.Timestamp("2026-06-02 21:00", tz="UTC")
+    feats = LazyFeatureDict(
+        raw_data_buffers={
+            "ret24h": {
+                "AAA/USDC": np.array([1.0], dtype=np.float32),
+            }
+        },
+        symbol_indices={
+            "AAA/USDC": np.array([fresh_ts.to_datetime64()]),
+            "BBB/USDC": np.array([stale_ts.to_datetime64()]),
+        },
+    )
+
+    assert feature_generator._cached_feature_coverage_end_ts(
+        feats,
+        required_feature_keys={"ret24h"},
+        coverage_symbols=["AAA/USDC", "BBB/USDC"],
+    ) == fresh_ts
+
+
+def test_lazy_feature_coverage_keeps_stale_symbol_when_payload_exists():
+    fresh_ts = pd.Timestamp("2026-06-03 06:00", tz="UTC")
+    stale_ts = pd.Timestamp("2026-06-02 21:00", tz="UTC")
+    feats = LazyFeatureDict(
+        raw_data_buffers={
+            "ret24h": {
+                "AAA/USDC": np.array([1.0], dtype=np.float32),
+                "BBB/USDC": np.array([2.0], dtype=np.float32),
+            }
+        },
+        symbol_indices={
+            "AAA/USDC": np.array([fresh_ts.to_datetime64()]),
+            "BBB/USDC": np.array([stale_ts.to_datetime64()]),
+        },
+    )
+
+    assert feature_generator._cached_feature_coverage_end_ts(
+        feats,
+        required_feature_keys={"ret24h"},
+        coverage_symbols=["AAA/USDC", "BBB/USDC"],
+    ) == stale_ts
+
+
+def test_lazy_feature_coverage_uses_materialized_frame_after_assembly():
+    fresh_ts = pd.Timestamp("2026-06-03 06:00", tz="UTC")
+    stale_ts = pd.Timestamp("2026-06-02 21:00", tz="UTC")
+    feats = LazyFeatureDict(
+        raw_data_buffers={
+            "ret24h": {
+                "AAA/USDC": np.array([1.0], dtype=np.float32),
+                "BBB/USDC": np.array([2.0], dtype=np.float32),
+            }
+        },
+        symbol_indices={
+            "AAA/USDC": np.array([fresh_ts.to_datetime64()]),
+            "BBB/USDC": np.array([stale_ts.to_datetime64()]),
+        },
+    )
+
+    assert feature_generator._cached_feature_coverage_end_ts(
+        feats,
+        required_feature_keys={"ret24h"},
+        coverage_symbols=["AAA/USDC", "BBB/USDC"],
+    ) == stale_ts
+    _ = feats["ret24h"]
+    assert feature_generator._cached_feature_coverage_end_ts(
+        feats,
+        required_feature_keys={"ret24h"},
+        coverage_symbols=["AAA/USDC", "BBB/USDC"],
+    ) == fresh_ts
+
+
 def test_live_feature_cache_key_splits_mask_and_model_namespaces():
     base = {
         "run_id": "run_a",
@@ -641,6 +881,42 @@ def test_prediction_ledger_row_persists_live_execution_fee_diagnostics():
     assert row["realized_fee_bps"] == pytest.approx(20.0)
     assert row["decision_to_entry_seconds"] == 12.5
     assert row["signal_to_entry_seconds"] == 612.5
+
+
+def test_prediction_ledger_row_falls_back_to_snapshot_fee_and_order_id_for_replay():
+    row = run_inference._prediction_ledger_row(
+        {
+            "symbol": "BTC/USD:USD",
+            "strategy_id": "long_demo",
+            "raw_score": 0.72,
+            "rank_threshold": 0.65,
+            "effective_threshold": 0.65,
+            "chain_results": {
+                "normalized_rank_score": 0.88,
+                "meta_head_hash": "head123",
+            },
+        },
+        timestamp="2026-05-30T12:00:00Z",
+        side="long",
+        portfolio_decision="traded",
+        execution_snapshot={"expected_fill_price": 100.0, "fee_bps": 7.0},
+        was_traded=True,
+        trade_result={
+            "order": {"id": "order-123"},
+            "realized_entry_price": 101.0,
+            "entry_notional_quote": 250.0,
+            "base_amount": 2.475,
+            "entry_fee_source": "missing",
+            "decision_to_entry_seconds": 12.5,
+            "signal_to_entry_seconds": 300.0,
+        },
+    )
+
+    assert row["entry_fee_bps"] == pytest.approx(7.0)
+    assert row["fee_bps"] == pytest.approx(7.0)
+    assert row["realized_fee_bps"] == pytest.approx(7.0)
+    assert row["order_id"] == "order-123"
+    assert row["position_id"] == "order-123"
 
 
 def test_prediction_ledger_row_persists_selected_model_feature_snapshot():
@@ -732,6 +1008,91 @@ def test_model_feature_ledger_snapshot_uses_selected_base_and_meta_contracts_onl
     assert json.loads(snapshot["meta_model_feature_values_json"])["long_demo"] == 0.61
 
 
+def test_model_feature_ledger_snapshot_resolves_side_prefixed_meta_clf_key():
+    class DummyModel:
+        def __init__(self, selected_features):
+            self.selected_features = selected_features
+
+    class DummyOrchestrator:
+        alpha_by_strategy = {
+            "short_demo": {
+                "model": DummyModel(["ret24h"]),
+                "feat_cols": ["ret24h"],
+            }
+        }
+        meta_models = {
+            "short_demo_clf": DummyModel(["demo", "pred_demo_H5", "pred_logit_H5", "ret24h"]),
+        }
+
+    snapshot = run_inference._model_feature_ledger_snapshot_for_decision(
+        orchestrator=DummyOrchestrator(),
+        side="short",
+        strategy_id="demo",
+        symbol="BTC/USD:USD",
+        candidate_features=pd.DataFrame({"ret24h": [0.04]}, index=["BTC/USD:USD"]),
+        feats={},
+        chain_results={"base_pred": 0.61},
+        signal_bar_ts="2026-05-30T12:00:00Z",
+    )
+
+    assert snapshot["meta_model_feature_key"] == "short_demo_clf"
+    assert snapshot["meta_model_feature_count"] == 4
+    values = json.loads(snapshot["meta_model_feature_values_json"])
+    assert values["demo"] == 0.61
+    assert values["pred_demo_H5"] == 0.61
+    assert values["ret24h"] == 0.04
+    assert values["pred_logit_H5"] > 0.0
+
+
+def test_model_feature_ledger_snapshot_prefers_exact_meta_model_input_matrix():
+    class DummyModel:
+        def __init__(self, selected_features):
+            self.selected_features = selected_features
+
+    class DummyOrchestrator:
+        alpha_by_strategy = {
+            "long_demo": {
+                "model": DummyModel(["ret24h"]),
+                "feat_cols": ["ret24h"],
+            }
+        }
+        meta_models = {
+            "long_demo": DummyModel(
+                ["long_demo", "feature_drift_cov_shift", "ret24h"]
+            ),
+        }
+
+    snapshot = run_inference._model_feature_ledger_snapshot_for_decision(
+        orchestrator=DummyOrchestrator(),
+        side="long",
+        strategy_id="long_demo",
+        symbol="BTC/USD:USD",
+        candidate_features=pd.DataFrame(
+            {
+                "ret24h": [0.04],
+                "feature_drift_cov_shift": [0.10],
+            },
+            index=["BTC/USD:USD"],
+        ),
+        meta_model_input_features=pd.DataFrame(
+            {
+                "long_demo": [0.61],
+                "feature_drift_cov_shift": [0.90],
+                "ret24h": [0.04],
+            },
+            index=["BTC/USD:USD"],
+        ),
+        feats={},
+        chain_results={"base_pred": 0.61},
+        signal_bar_ts="2026-05-30T12:00:00Z",
+    )
+
+    values = json.loads(snapshot["meta_model_feature_values_json"])
+    assert values["feature_drift_cov_shift"] == 0.90
+    assert values["long_demo"] == 0.61
+    assert values["ret24h"] == 0.04
+
+
 def test_prediction_ledger_path_supports_run_scoped_override(monkeypatch, tmp_path):
     monkeypatch.delenv("EPM_PREDICTION_LEDGER_PATH", raising=False)
     monkeypatch.delenv("EPM_RUN_SCOPED_PREDICTION_LEDGER", raising=False)
@@ -772,6 +1133,23 @@ def test_prediction_ledger_path_supports_run_scoped_override(monkeypatch, tmp_pa
     )
 
 
+def test_scored_prediction_candidate_logged_for_audit_below_legacy_top_floor(monkeypatch):
+    monkeypatch.delenv("EPM_LOG_ALL_PREDICTION_CANDIDATES", raising=False)
+    monkeypatch.delenv("EPM_LOG_ALL_SCORED_PREDICTION_CANDIDATES", raising=False)
+    policy = run_inference.PortfolioPolicyConfig(top_prediction_ledger_pct=0.15)
+
+    assert run_inference._should_log_prediction_candidate(
+        {"sizer_rank_percentile": 0.589},
+        policy=policy,
+    )
+
+    monkeypatch.setenv("EPM_LOG_ALL_SCORED_PREDICTION_CANDIDATES", "0")
+    assert not run_inference._should_log_prediction_candidate(
+        {"sizer_rank_percentile": 0.589},
+        policy=policy,
+    )
+
+
 def test_offline_feature_lookup_accepts_artifact_source_run_id(monkeypatch):
     monkeypatch.setenv("EPM_ARTIFACT_SOURCE_RUN_ID", "20260523_015947")
 
@@ -779,6 +1157,140 @@ def test_offline_feature_lookup_accepts_artifact_source_run_id(monkeypatch):
         feature_generator._offline_feature_lookup_run_id({}, "20260525_010004_nopenalty")
         == "20260523_015947"
     )
+
+
+def test_offline_feature_lookup_accepts_parity_contract_feature_source(monkeypatch):
+    monkeypatch.delenv("EPM_LIVE_FEATURE_SOURCE_RUN_ID", raising=False)
+    monkeypatch.delenv("EPM_FEATURE_SOURCE_RUN_ID", raising=False)
+    monkeypatch.delenv("EPM_ARTIFACT_SOURCE_RUN_ID", raising=False)
+
+    assert (
+        feature_generator._offline_feature_lookup_run_id(
+            {
+                "training_live_parity_contract": {
+                    "feature_source": {"run_id": "20260523_015947"}
+                }
+            },
+            "20260525_010004_nopenalty",
+        )
+        == "20260523_015947"
+    )
+
+
+def test_model_feature_source_override_prefers_offline_cache(monkeypatch):
+    idx = pd.date_range("2026-06-04 10:00", periods=2, freq="1h", tz="UTC")
+    symbols = ["AAA/USD:USD"]
+    panel = {
+        "close": pd.DataFrame({"AAA/USD:USD": [100.0, 101.0]}, index=idx),
+    }
+    rolling = {
+        "feat_a": pd.DataFrame({"AAA/USD:USD": [1.0, 1.0]}, index=idx),
+    }
+    snapshot = {
+        "feat_a": pd.DataFrame({"AAA/USD:USD": [0.5]}, index=idx[-1:]),
+    }
+    offline = {
+        "feat_a": pd.DataFrame({"AAA/USD:USD": [2.0, 2.0]}, index=idx),
+    }
+    captured_offline_request = {}
+
+    monkeypatch.setattr(
+        feature_generator,
+        "_load_live_feature_snapshot",
+        lambda **kwargs: snapshot,
+    )
+    monkeypatch.setattr(
+        feature_generator,
+        "_load_live_feature_rolling_cache",
+        lambda **kwargs: rolling,
+    )
+    monkeypatch.setattr(
+        feature_generator,
+        "load_cached_features_for_inference",
+        lambda **kwargs: captured_offline_request.update(kwargs) or offline,
+    )
+    monkeypatch.setattr(feature_generator, "_compute_per_symbol_features", lambda *a, **k: {})
+    monkeypatch.setattr(
+        feature_generator,
+        "_compute_policy_barrier_pct",
+        lambda *a, **k: pd.DataFrame(),
+    )
+    monkeypatch.setattr(feature_generator, "_write_live_feature_snapshot", lambda **kwargs: None)
+    monkeypatch.setattr(feature_generator, "_write_live_feature_rolling_cache", lambda **kwargs: None)
+
+    feats = feature_generator.load_or_compute_features(
+        panel=panel,
+        basket_syms=symbols,
+        run_id="deploy_run",
+        data_root="data_perp/exchanges/krakenfutures",
+        cfg={
+            "live_feature_cache_namespace": "model",
+            "live_feature_offline_cache_enabled": True,
+            "training_live_parity_contract": {
+                "feature_source": {"run_id": "feature_run"}
+            },
+        },
+        lookback_hours=2,
+        required_feature_keys={"feat_a"},
+    )
+
+    assert float(feats["feat_a"].loc[idx[-1], "AAA/USD:USD"]) == 2.0
+    assert pd.Timestamp(captured_offline_request["start_ts"]) == idx[-1]
+    assert pd.Timestamp(captured_offline_request["end_ts"]) == idx[-1]
+
+
+def test_model_feature_source_override_does_not_backfill_missing_offline_keys(monkeypatch):
+    idx = pd.date_range("2026-06-04 10:00", periods=2, freq="1h", tz="UTC")
+    symbols = ["AAA/USD:USD"]
+    panel = {
+        "close": pd.DataFrame({"AAA/USD:USD": [100.0, 101.0]}, index=idx),
+    }
+    rolling_called = {"value": False}
+
+    def fail_rolling(**kwargs):
+        rolling_called["value"] = True
+        return {
+            "feat_missing": pd.DataFrame(
+                {"AAA/USD:USD": [9.0, 9.0]},
+                index=idx,
+            )
+        }
+
+    monkeypatch.setattr(feature_generator, "_load_live_feature_rolling_cache", fail_rolling)
+    monkeypatch.setattr(
+        feature_generator,
+        "load_cached_features_for_inference",
+        lambda **kwargs: {
+            "feat_a": pd.DataFrame({"AAA/USD:USD": [2.0]}, index=idx[-1:]),
+        },
+    )
+    monkeypatch.setattr(feature_generator, "_compute_per_symbol_features", lambda *a, **k: {})
+    monkeypatch.setattr(
+        feature_generator,
+        "_compute_policy_barrier_pct",
+        lambda *a, **k: pd.DataFrame(),
+    )
+    monkeypatch.setattr(feature_generator, "_write_live_feature_snapshot", lambda **kwargs: None)
+    monkeypatch.setattr(feature_generator, "_write_live_feature_rolling_cache", lambda **kwargs: None)
+
+    with pytest.raises(RuntimeError, match="selected-feature cache is incomplete"):
+        feature_generator.load_or_compute_features(
+            panel=panel,
+            basket_syms=symbols,
+            run_id="deploy_run",
+            data_root="data_perp/exchanges/krakenfutures",
+            cfg={
+                "live_feature_cache_namespace": "model",
+                "live_feature_offline_cache_enabled": True,
+                "training_live_parity_contract": {
+                    "feature_source": {"run_id": "feature_run"}
+                },
+            },
+            lookback_hours=2,
+            required_feature_keys={"feat_a", "feat_missing"},
+        )
+
+    assert rolling_called["value"] is False
 
 
 def test_offline_feature_lookup_roots_fall_back_from_exchange_scope(monkeypatch):
@@ -992,6 +1504,26 @@ def test_run_inference_feature_source_prefers_artifact_source(monkeypatch):
     assert run_id == "20260523_015947"
 
 
+def test_model_feature_offline_cache_defaults_to_feature_source(monkeypatch):
+    monkeypatch.delenv("EPM_LIVE_FEATURE_SOURCE_RUN_ID", raising=False)
+    monkeypatch.delenv("EPM_FEATURE_SOURCE_RUN_ID", raising=False)
+    monkeypatch.delenv("EPM_ARTIFACT_SOURCE_RUN_ID", raising=False)
+
+    cfg = {
+        "training_live_parity_contract": {
+            "feature_source": {"run_id": "20260523_015947"}
+        }
+    }
+
+    assert run_inference._model_feature_offline_cache_enabled(cfg) is True
+    assert (
+        run_inference._model_feature_offline_cache_enabled(
+            {**cfg, "live_model_feature_offline_cache_enabled": False}
+        )
+        is False
+    )
+
+
 def test_live_feature_restart_uses_model_superset_rolling_cache_before_offline(
     monkeypatch,
     tmp_path,
@@ -1070,6 +1602,124 @@ def test_live_feature_restart_uses_model_superset_rolling_cache_before_offline(
     assert latest.index[-1] == idx[-1]
 
 
+def test_mask_feature_source_override_does_not_load_offline_selected_cache(monkeypatch):
+    symbols = ["AAA/USD:USD"]
+    idx = pd.date_range("2026-06-04 07:00", periods=6, freq="1h", tz="UTC")
+    close = pd.DataFrame(
+        {"AAA/USD:USD": [97.0, 98.0, 99.0, 100.0, 101.0, 102.0]},
+        index=idx,
+    )
+    panel = {
+        "close": close,
+        "high": close * 1.01,
+        "low": close * 0.99,
+        "volume": pd.DataFrame(1000.0, index=idx, columns=symbols),
+    }
+    stale_idx = idx[:-1]
+    stale_cache = {
+        "ret1h": pd.DataFrame(
+            {"AAA/USD:USD": [0.0, 0.01, 0.01, 0.01, 0.01]},
+            index=stale_idx,
+        )
+    }
+    computed = {"ret1h": close.pct_change().astype(np.float32)}
+    captured_tail = {}
+
+    monkeypatch.setattr(feature_generator, "_load_live_feature_snapshot", lambda **kwargs: {})
+    monkeypatch.setattr(
+        feature_generator,
+        "_load_live_feature_rolling_cache",
+        lambda **kwargs: stale_cache,
+    )
+
+    def fail_offline(**kwargs):
+        raise AssertionError("mask namespace should not load selected offline features")
+
+    monkeypatch.setattr(feature_generator, "load_cached_features_for_inference", fail_offline)
+    monkeypatch.setattr(feature_generator, "_compute_per_symbol_features", lambda *a, **k: {})
+    monkeypatch.setattr(
+        feature_generator,
+        "_compute_policy_barrier_pct",
+        lambda *a, **k: pd.DataFrame(),
+    )
+    def fake_compute_features_hourly(panel_tail, *args, **kwargs):
+        captured_tail["first_ts"] = panel_tail["close"].index.min()
+        return (
+            {"ret1h": panel_tail["close"].pct_change().astype(np.float32)},
+            {},
+            {},
+        )
+
+    monkeypatch.setattr(
+        feature_generator,
+        "compute_features_hourly",
+        fake_compute_features_hourly,
+    )
+    monkeypatch.setattr(feature_generator, "_write_live_feature_snapshot", lambda **kwargs: None)
+    monkeypatch.setattr(feature_generator, "_write_live_feature_rolling_cache", lambda **kwargs: None)
+
+    feats = feature_generator.load_or_compute_features(
+        panel=panel,
+        basket_syms=symbols,
+        run_id="deploy_run",
+        data_root="data_perp/exchanges/krakenfutures",
+        cfg={
+            "live_feature_cache_namespace": "mask",
+            "live_feature_offline_cache_enabled": True,
+            "training_live_parity_contract": {
+                "feature_source": {"run_id": "feature_run"}
+            },
+            "live_mask_feature_tail_warmup_hours": 1,
+        },
+        lookback_hours=3,
+        required_feature_keys={"ret1h"},
+    )
+
+    assert captured_tail["first_ts"] == idx[-3]
+    assert "ret1h" in feats
+    assert feats["ret1h"].index[-1] == idx[-1]
+    assert float(feats["ret1h"].loc[idx[-1], "AAA/USD:USD"]) == pytest.approx(
+        102.0 / 101.0 - 1.0
+    )
+
+
+def test_live_feature_cache_prune_does_not_delete_other_namespace(tmp_path):
+    root = tmp_path / "live_feature_cache"
+    model_dir = root / "model_cache"
+    mask_dir = root / "mask_cache"
+    model_dir.mkdir(parents=True)
+    mask_dir.mkdir(parents=True)
+    (model_dir / "rolling_meta.json").write_text(
+        json.dumps(
+            {
+                "version": feature_generator.LIVE_FEATURE_CACHE_VERSION,
+                "cache_namespace": "model",
+                "contract_hash": None,
+                "symbols_hash": "symbols_a",
+                "required_hash": "model_required",
+            }
+        )
+    )
+    active_meta = {
+        "version": feature_generator.LIVE_FEATURE_CACHE_VERSION,
+        "cache_namespace": "mask",
+        "contract_hash": None,
+        "symbols_hash": "symbols_a",
+        "required_hash": "mask_required",
+    }
+    (mask_dir / "rolling_meta.json").write_text(json.dumps(active_meta))
+
+    feature_generator._prune_stale_live_feature_cache_dirs(
+        cfg={"live_feature_snapshot_cache_dir": str(root)},
+        run_id="run_a",
+        active_cache_dir=mask_dir,
+        active_meta=active_meta,
+    )
+
+    assert model_dir.exists()
+    assert mask_dir.exists()
+
+
 def test_cached_feature_coverage_uses_stalest_required_frame():
     idx = pd.date_range("2026-05-15", periods=4, freq="1h", tz="UTC")
     feats = {
@@ -1097,3 +1747,67 @@ def test_merge_feature_dicts_is_deterministic_sorted_order():
     )
 
     assert list(merged) == ["a_feature", "m_feature", "z_feature"]
+
+
+def test_live_causal_transform_fast_path_uses_hybrid_state_for_overlap(tmp_path):
+    idx = pd.date_range("2026-06-01", periods=10, freq="1h", tz="UTC")
+    columns = ["AAA/USD:USD", "BBB/USD:USD"]
+    raw = pd.DataFrame(
+        {
+            "AAA/USD:USD": np.linspace(-0.04, 0.05, len(idx)),
+            "BBB/USD:USD": np.linspace(0.03, -0.02, len(idx)),
+        },
+        index=idx,
+    ).astype(np.float32)
+    state_path = tmp_path / "causal_zscore_state.npz"
+    cfg = {
+        "live_causal_transform_state_enabled": True,
+        "live_causal_transform_state_path": str(state_path),
+        "feature_causal_transform_state_bootstrap_max_rows": 100,
+        "feature_causal_transform_min_required_ts": idx[3].isoformat(),
+    }
+
+    first = features._apply_causal_transform_live_state_or_batch(
+        {"ret24h": raw.iloc[:6].copy()},
+        cfg,
+        feature_index=idx[:6],
+        feature_columns=columns,
+        skip_transform_set=set(),
+    )
+    assert np.isfinite(first["ret24h"].to_numpy()).all()
+
+    second = features._apply_causal_transform_live_state_or_batch(
+        {"ret24h": raw.copy()},
+        cfg,
+        feature_index=idx,
+        feature_columns=columns,
+        skip_transform_set=set(),
+    )
+
+    from extreme_price_movements.inference.live_zscore_state import RollingZScoreState
+
+    expected_state = RollingZScoreState(
+        ["ret24h"],
+        columns,
+        window=24 * 30,
+        sigma_k=2.0537489106318225,
+        winsor_qt=0.02,
+    )
+    expected_rows = []
+    for ts, row in raw.iterrows():
+        expected_rows.append(
+            expected_state.update({"ret24h": row.to_numpy()}, timestamp=ts.isoformat())[
+                "ret24h"
+            ]
+        )
+    expected = np.vstack(expected_rows)
+
+    # Rows after the saved state timestamp should be produced by the persisted
+    # state update, while the overlapping prefix can still be filled by the
+    # vectorized batch path for cache writeback.
+    np.testing.assert_allclose(
+        second["ret24h"].iloc[6:].to_numpy(),
+        expected[6:],
+        rtol=1e-6,
+        atol=1e-6,
+    )

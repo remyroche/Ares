@@ -249,6 +249,42 @@ def test_run_portfolio_policy_replay_writes_contract_and_live_loader_reads_it(tm
     )
 
 
+def test_run_portfolio_policy_replay_can_skip_live_artifact_persistence(tmp_path):
+    data_root = tmp_path / "data"
+    run_id = "test-run"
+    run_root = data_root / "artifacts" / run_id
+    candidate_dir = run_root / "simple_policy_optimiser"
+    candidate_dir.mkdir(parents=True)
+    candidate_path = candidate_dir / "simple_policy_candidates.parquet"
+    pd.DataFrame(
+        [
+            _candidate("2026-01-01 00:00", "BTC/USD", "long", "L_a", 0.95),
+            _candidate("2026-01-01 01:00", "ETH/USD", "short", "S_a", 0.94),
+            _candidate("2026-01-02 00:00", "SOL/USD", "long", "L_a", 0.93),
+        ]
+    ).to_parquet(candidate_path, index=False)
+
+    output_dir = tmp_path / "isolated_replay"
+    report = run_portfolio_policy_replay(
+        data_root=str(data_root),
+        run_id=run_id,
+        candidate_path=candidate_path,
+        output_dir=output_dir,
+        max_evaluations=2,
+        persist_live_artifacts=False,
+    )
+
+    assert report["generated_by"] == "portfolio_policy_replay"
+    assert (output_dir / "portfolio_policy_replay_report.json").exists()
+    assert (output_dir / "optimized_portfolio_policy_config.json").exists()
+    assert not (
+        run_root / "policy_params" / "optimized_portfolio_policy_config.json"
+    ).exists()
+    assert not (
+        run_root / "policy_params" / "training_live_parity_contract.json"
+    ).exists()
+
+
 def test_run_portfolio_policy_replay_can_use_fixed_policy_config_and_ev_source(tmp_path):
     data_root = tmp_path / "data"
     run_id = "test-run"

@@ -1,10 +1,12 @@
 import gc
 import glob
+import hashlib
 import json
 import os
 import pickle
 import re
 import time
+from typing import Sequence
 
 import joblib
 import numpy as np
@@ -23,12 +25,14 @@ from extreme_price_movements.config import (
 from extreme_price_movements.data_store import (
     _atomic_write_parquet,
     _ensure_feature_frame_index,
+    _feature_schema_names,
     _write_feature_metadata,
     exchange_data_component,
     get_feature_bounds,
     load_artifact_df,
     load_features,
     load_features_selected,
+    read_symbol_features,
     save_artifact_df,
     save_features,
     scoped_data_root,
@@ -66,6 +70,70 @@ from extreme_price_movements.offline_optimisers.params_store import (
 from extreme_price_movements.pnl import CostModel, trade_return_net
 from extreme_price_movements.pnl_asserts import assert_pos_w, assert_units
 from extreme_price_movements.position_sizer.runtime import load_ev_decomposition_bundle
+
+
+def _truthy_env(name: str, default: str = "") -> bool:
+    return str(os.environ.get(name, default)).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }
+
+
+def _strategy_aliases(strategy_id: str, trade_side: str | None = None) -> set[str]:
+    raw = str(strategy_id or "").strip()
+    aliases = {raw} if raw else set()
+    for prefix in ("long_", "short_"):
+        if raw.startswith(prefix):
+            aliases.add(raw[len(prefix) :])
+    side = str(trade_side or "").strip().lower()
+    if side in {"long", "short"}:
+        aliases.update({f"{side}_{sid}" for sid in list(aliases) if sid})
+    return {sid for sid in aliases if sid}
+
+
+def _select_strategies_by_alias(
+    strategies: Sequence[dict],
+    requested_ids: Sequence[str],
+) -> tuple[list[dict], list[str]]:
+    requested = [str(s).strip() for s in requested_ids if str(s).strip()]
+    requested_set = set(requested)
+    selected: list[dict] = []
+    found_aliases: set[str] = set()
+    for strategy in strategies:
+        aliases = _strategy_aliases(
+            str(strategy.get("strategy_id", "")).strip(),
+            str(strategy.get("trade_side", "")).strip(),
+        )
+        if aliases & requested_set:
+            selected.append(strategy)
+            found_aliases.update(aliases)
+    order: dict[str, int] = {}
+    for i, sid in enumerate(requested):
+        order[sid] = i
+        side = (
+            "short"
+            if sid.startswith("short_")
+            else "long"
+            if sid.startswith("long_")
+            else ""
+        )
+        for alias in _strategy_aliases(sid, side):
+            order.setdefault(alias, i)
+    selected.sort(
+        key=lambda s: min(
+            order.get(alias, 10**9)
+            for alias in _strategy_aliases(
+                str(s.get("strategy_id", "")).strip(),
+                str(s.get("trade_side", "")).strip(),
+            )
+        )
+    )
+    return selected, [sid for sid in requested if sid not in found_aliases]
+
+
 try:
     from extreme_price_movements.reports.bucket_report import (
         report_base_training,
@@ -193,12 +261,14 @@ def _load_saved_microdata_for_symbols(
     orderbook_by_symbol: dict[str, pd.DataFrame] = {}
     market_data_root = scoped_data_root(cfg or {"data_root": data_root})
     funding_dir = os.path.join(market_data_root, "funding_hourly")
+    open_interest_dir = os.path.join(market_data_root, "open_interest_hourly")
     orderbook_dir = os.path.join(market_data_root, "orderbook_hourly")
     target_index = pd.to_datetime(index, utc=True)
 
     for symbol in symbols:
         key = _safe_symbol_file_key(symbol)
         fr_path = os.path.join(funding_dir, f"{key}.parquet")
+        oi_path = os.path.join(open_interest_dir, f"{key}.parquet")
         ob_path = os.path.join(orderbook_dir, f"{key}.parquet")
 
         if os.path.exists(fr_path):
@@ -214,6 +284,37 @@ def _load_saved_microdata_for_symbols(
                             ).astype(np.float32)
             except Exception as exc:
                 tprint(f"WARN funding panel load failed for {symbol}: {exc}")
+        if os.path.exists(oi_path):
+            try:
+                oi = pd.read_parquet(oi_path)
+                if not oi.empty:
+                    oi.index = pd.to_datetime(oi.index, utc=True, errors="coerce")
+                    oi = oi[~oi.index.duplicated(keep="last")].sort_index()
+                    oi_col = None
+                    for candidate in (
+                        "open_interest",
+                        "openInterestValue",
+                        "sumOpenInterestValue",
+                        "openInterestAmount",
+                        "openInterest",
+                        "sumOpenInterest",
+                    ):
+                        if candidate in oi.columns:
+                            oi_col = candidate
+                            break
+                    if oi_col is not None:
+                        oi_series = pd.to_numeric(
+                            oi[oi_col], errors="coerce"
+                        ).astype(np.float32)
+                        existing = sidecar_by_column["open_interest"].get(symbol)
+                        if existing is not None:
+                            sidecar_by_column["open_interest"][symbol] = (
+                                existing.combine_first(oi_series)
+                            )
+                        else:
+                            sidecar_by_column["open_interest"][symbol] = oi_series
+            except Exception as exc:
+                tprint(f"WARN open-interest panel load failed for {symbol}: {exc}")
 
         if os.path.exists(ob_path):
             try:
@@ -885,6 +986,15 @@ def _inject_orderbook_summary_features(
             .astype(np.float32)
         )
 
+    required_summary_keys = {
+        "ob_book_pressure_l10",
+        "ob_spread_bps",
+        "ob_spread_z_24h",
+        "ob_depth_usd_l20_z",
+    }
+    if not required_summary_keys.issubset(feats):
+        return feats
+
     basket = _resolve_available_basket_symbols(
         cols,
         list(cfg.get("market_basket", [])),
@@ -1178,6 +1288,7 @@ def _is_feature_allowed_by_runtime_portability_policy(name: str, cfg: dict) -> b
 def _available_feature_sources_for_panel(
     panel: dict[str, pd.DataFrame],
     symbols: list[str],
+    orderbook_by_symbol: dict[str, pd.DataFrame] | None = None,
 ) -> dict[str, bool]:
     """Mirror feature-builder source availability for requested-key filtering."""
 
@@ -1217,8 +1328,15 @@ def _available_feature_sources_for_panel(
         str(k).startswith("orderbook_") and isinstance(v, pd.DataFrame) and not v.empty
         for k, v in panel.items()
     )
+    has_saved_orderbook = False
+    if orderbook_by_symbol:
+        has_saved_orderbook = any(
+            isinstance(orderbook_by_symbol.get(sym), pd.DataFrame)
+            and not orderbook_by_symbol[sym].empty
+            for sym in symbols
+        )
     return {
-        "orderbook": bool(has_l2_orderbook or has_wide_orderbook),
+        "orderbook": bool(has_l2_orderbook or has_wide_orderbook or has_saved_orderbook),
         "funding": _has_finite(panel.get("funding_rate")),
         "open_interest": _has_finite(panel.get("open_interest"), positive=True),
         "volume": _has_finite(volume, positive=True),
@@ -1235,6 +1353,7 @@ def _filter_requested_feature_keys_for_runtime_sources(
     cfg: dict,
     panel: dict[str, pd.DataFrame],
     symbols: list[str],
+    orderbook_by_symbol: dict[str, pd.DataFrame] | None = None,
 ) -> tuple[list[str], dict[str, str]]:
     if not requested_keys:
         return [], {}
@@ -1245,7 +1364,11 @@ def _filter_requested_feature_keys_for_runtime_sources(
     if portability_mode in {"", "legacy", "off"} or not strict:
         return [str(k) for k in requested_keys if str(k)], {}
 
-    source_available = _available_feature_sources_for_panel(panel, symbols)
+    source_available = _available_feature_sources_for_panel(
+        panel,
+        symbols,
+        orderbook_by_symbol=orderbook_by_symbol,
+    )
     req_getter = getattr(epm_features, "_feature_source_requirements", None)
     allowed: list[str] = []
     skipped: dict[str, str] = {}
@@ -1286,6 +1409,33 @@ FEATURE_HEALTH_CRITICAL_KEYS: tuple[str, ...] = (
     "prior_volatility",
     "trend_acceleration",
 )
+FEATURE_HEALTH_NATURALLY_SPARSE_LATEST_KEYS: tuple[str, ...] = (
+    # Session-VWAP deviation is undefined for symbols whose latest session has
+    # no valid volume/VWAP path. This should not fail snapshot completeness once
+    # the timestamp and feature schema are present; downstream masks treat NaN
+    # comparisons as non-passing.
+    "loc_vwap_dev_z_24",
+)
+
+
+def _feature_backfill_all_incomplete_keys_enabled() -> bool:
+    """Return whether incremental feature backfill should warm the full contract."""
+    return os.environ.get("EPM_FEATURE_BACKFILL_ALL_INCOMPLETE_KEYS", "0").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _feature_missing_columns_recent_tail_enabled() -> bool:
+    """Return whether missing feature columns should use bounded-tail backfill."""
+    raw = os.environ.get("EPM_FEATURE_MISSING_COLUMNS_RECENT_TAIL")
+    if raw is None:
+        return _feature_backfill_all_incomplete_keys_enabled()
+    return raw.lower() in {"1", "true", "yes", "on"}
+
+
 _DISABLED_PIPELINE_FEATURE_KEYS: tuple[str, ...] = (
     "base_model_score",
     "base_model_score_pct",
@@ -2201,6 +2351,63 @@ def _generate_feature_health_reports(
     }
 
 
+def _feature_health_reports_current(
+    ts_sig: pd.Timestamp, data_root: str, allowed_symbols: list[str] | None = None
+) -> bool:
+    """Return true when existing feature health reports are newer than inputs."""
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    in_dir = os.path.join(data_root, "features", run_id)
+    out_dir = os.path.join(data_root, "artifacts", run_id, "features")
+    summary_path = os.path.join(out_dir, "feature_health_symbol_summary.csv")
+    detail_path = os.path.join(out_dir, "feature_health_feature_detail.csv")
+    if not (os.path.exists(summary_path) and os.path.exists(detail_path)):
+        return False
+
+    files = sorted(glob.glob(os.path.join(in_dir, "symbol=*.parquet")))
+    if allowed_symbols is not None:
+        allowed_set = set(
+            apply_hardcoded_universe_exclusions([str(s) for s in allowed_symbols])
+        )
+        filtered_files = []
+        for f in files:
+            sym_from_file = (
+                os.path.basename(f)
+                .replace("symbol=", "")
+                .replace(".parquet", "")
+                .replace("_", "/", 1)
+            )
+            sym_norm = apply_hardcoded_universe_exclusions([sym_from_file])
+            if sym_norm and sym_norm[0] in allowed_set:
+                filtered_files.append(f)
+        files = filtered_files
+    if not files:
+        return False
+
+    input_mtimes: list[float] = []
+    for fpath in files:
+        try:
+            input_mtimes.append(os.path.getmtime(fpath))
+        except OSError:
+            return False
+        for extra in glob.glob(fpath + ".deltas/part-*.parquet"):
+            try:
+                input_mtimes.append(os.path.getmtime(extra))
+            except OSError:
+                return False
+        for extra in glob.glob(fpath + ".deltas.duckdb*"):
+            try:
+                input_mtimes.append(os.path.getmtime(extra))
+            except OSError:
+                return False
+    if not input_mtimes:
+        return False
+    try:
+        report_mtime = min(os.path.getmtime(summary_path), os.path.getmtime(detail_path))
+    except OSError:
+        return False
+    return report_mtime >= max(input_mtimes)
+
+
 def _is_known_unusable_raw_feature_key(key: str) -> bool:
     key_s = str(key)
     return (
@@ -2438,6 +2645,143 @@ def _enforce_feature_snapshot_completeness(
     }
 
 
+def _feature_cache_scan_manifest_path(in_dir: str) -> str:
+    return os.path.join(in_dir, "_feature_cache_scan_manifest.json")
+
+
+def _stable_hash_json(payload: object) -> str:
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+def _feature_required_bounds_from_close(
+    panel_close: pd.DataFrame,
+) -> dict[str, tuple[pd.Timestamp, pd.Timestamp]]:
+    required_bounds: dict[str, tuple[pd.Timestamp, pd.Timestamp]] = {}
+    for s in [str(s) for s in panel_close.columns]:
+        ser = panel_close[s]
+        valid_idx = ser.index[ser.notna()]
+        if len(valid_idx) == 0:
+            continue
+        req_first = pd.Timestamp(valid_idx[0])
+        req_last = pd.Timestamp(valid_idx[-1])
+        if req_first.tzinfo is not None:
+            req_first = req_first.tz_localize(None)
+        if req_last.tzinfo is not None:
+            req_last = req_last.tz_localize(None)
+        required_bounds[s] = (req_first, req_last)
+    return required_bounds
+
+
+def _feature_required_bounds_signature(
+    required_bounds: dict[str, tuple[pd.Timestamp, pd.Timestamp]],
+) -> str:
+    return _stable_hash_json(
+        [
+            [sym, pd.Timestamp(first).isoformat(), pd.Timestamp(last).isoformat()]
+            for sym, (first, last) in sorted(required_bounds.items())
+        ]
+    )
+
+
+def _feature_cache_input_signature(in_dir: str) -> dict[str, object]:
+    """Cheap invalidation signature for feature cache scan manifests."""
+    paths: list[str] = []
+    paths.extend(glob.glob(os.path.join(in_dir, "symbol=*.parquet")))
+    paths.extend(glob.glob(os.path.join(in_dir, "symbol=*.parquet.meta.json")))
+    paths.extend(glob.glob(os.path.join(in_dir, "symbol=*.parquet.deltas", "part-*.parquet")))
+    paths.extend(glob.glob(os.path.join(in_dir, "symbol=*.parquet.deltas.duckdb*")))
+    rel_entries: list[tuple[str, int, int]] = []
+    max_mtime_ns = 0
+    total_size = 0
+    for path in sorted(set(paths)):
+        try:
+            st = os.stat(path)
+        except OSError:
+            continue
+        rel = os.path.relpath(path, in_dir)
+        mtime_ns = int(getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9)))
+        size = int(st.st_size)
+        max_mtime_ns = max(max_mtime_ns, mtime_ns)
+        total_size += size
+        rel_entries.append((rel, mtime_ns, size))
+    return {
+        "path_count": len(rel_entries),
+        "max_mtime_ns": max_mtime_ns,
+        "total_size": total_size,
+        "entries_hash": _stable_hash_json(rel_entries),
+    }
+
+
+def _load_feature_cache_scan_manifest(
+    *,
+    in_dir: str,
+    expected_keys: set[str],
+    required_bounds: dict[str, tuple[pd.Timestamp, pd.Timestamp]],
+    input_signature: dict[str, object],
+) -> dict | None:
+    manifest_path = _feature_cache_scan_manifest_path(in_dir)
+    if not os.path.exists(manifest_path):
+        return None
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as handle:
+            manifest = json.load(handle)
+    except Exception:
+        return None
+    expected_hash = _stable_hash_json(sorted(str(k) for k in expected_keys))
+    bounds_hash = _feature_required_bounds_signature(required_bounds)
+    if manifest.get("version") != 1:
+        return None
+    if manifest.get("expected_keys_hash") != expected_hash:
+        return None
+    if manifest.get("required_bounds_hash") != bounds_hash:
+        return None
+    if manifest.get("input_signature") != input_signature:
+        return None
+    result = manifest.get("scan")
+    if not isinstance(result, dict):
+        return None
+    result = dict(result)
+    result["from_manifest"] = True
+    result["manifest_path"] = manifest_path
+    return result
+
+
+def _write_feature_cache_scan_manifest(
+    *,
+    in_dir: str,
+    expected_keys: set[str],
+    required_bounds: dict[str, tuple[pd.Timestamp, pd.Timestamp]],
+    input_signature: dict[str, object],
+    scan: dict,
+) -> None:
+    manifest_path = _feature_cache_scan_manifest_path(in_dir)
+    tmp_path = manifest_path + ".tmp"
+    payload = {
+        "version": 1,
+        "created_at": pd.Timestamp.utcnow().isoformat(),
+        "expected_keys_hash": _stable_hash_json(sorted(str(k) for k in expected_keys)),
+        "required_bounds_hash": _feature_required_bounds_signature(required_bounds),
+        "input_signature": input_signature,
+        "scan": {
+            k: v
+            for k, v in scan.items()
+            if k not in {"from_manifest", "manifest_path"}
+        },
+    }
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, sort_keys=True)
+        os.replace(tmp_path, manifest_path)
+    except Exception as exc:
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
+        tprint(f"Warning: failed to write feature cache scan manifest: {exc}")
+
+
 def _scan_feature_cache_light(
     ts_sig: pd.Timestamp,
     data_root: str,
@@ -2456,20 +2800,34 @@ def _scan_feature_cache_light(
     if not files:
         return None
 
-    ref_symbols = [str(s) for s in panel_close.columns]
-    required_bounds: dict[str, tuple[pd.Timestamp, pd.Timestamp]] = {}
-    for s in ref_symbols:
-        ser = panel_close[s]
-        valid_idx = ser.index[ser.notna()]
-        if len(valid_idx) == 0:
-            continue
-        req_first = pd.Timestamp(valid_idx[0])
-        req_last = pd.Timestamp(valid_idx[-1])
-        if req_first.tzinfo is not None:
-            req_first = req_first.tz_localize(None)
-        if req_last.tzinfo is not None:
-            req_last = req_last.tz_localize(None)
-        required_bounds[s] = (req_first, req_last)
+    def _read_target_feature_row(fpath: str, columns: list[str], ts: pd.Timestamp) -> pd.DataFrame:
+        # Parquet pushdown uses an exclusive end bound. Add one microsecond so
+        # the exact hourly target row is included after conversion to pydatetime.
+        end_ts = pd.Timestamp(ts) + pd.Timedelta(microseconds=1)
+        return read_symbol_features(
+            fpath,
+            columns=columns,
+            start_ts=ts,
+            end_ts=end_ts,
+        )
+
+    required_bounds = _feature_required_bounds_from_close(panel_close)
+    input_signature = _feature_cache_input_signature(in_dir)
+    cached_scan = _load_feature_cache_scan_manifest(
+        in_dir=in_dir,
+        expected_keys=expected_keys,
+        required_bounds=required_bounds,
+        input_signature=input_signature,
+    )
+    if cached_scan is not None:
+        tprint(
+            "Feature cache scan manifest hit: "
+            f"files={cached_scan.get('file_count')} "
+            f"required_symbols={cached_scan.get('required_symbol_count')} "
+            f"available_expected_keys={cached_scan.get('available_key_count')}/{len(expected_keys)} "
+            f"stale_symbols={len(cached_scan.get('stale_symbols', []) or [])}"
+        )
+        return cached_scan
 
     key_symbol_counts: dict[str, int] = {k: 0 for k in expected_keys}
     present_symbols: set[str] = set()
@@ -2478,6 +2836,7 @@ def _scan_feature_cache_light(
     full_rewrite_symbols: set[str] = set()
     all_nan_symbol_keys: dict[str, set[str]] = {}
 
+    scan_start = time.time()
     total_files = len(files)
     progress_every = 100 if total_files >= 500 else 50
     for i, fpath in enumerate(files, start=1):
@@ -2502,35 +2861,43 @@ def _scan_feature_cache_light(
                 stale_symbols.add(sym)
                 full_rewrite_symbols.add(sym)
 
-        try:
-            schema_names = set(pq.ParquetFile(fpath).schema.names)
-        except Exception:
-            schema_names = set()
-            if sym in required_bounds:
-                stale_symbols.add(sym)
-                full_rewrite_symbols.add(sym)
+        schema_names = _feature_schema_names(fpath)
+        if not schema_names and sym in required_bounds:
+            stale_symbols.add(sym)
+            full_rewrite_symbols.add(sym)
         feat_cols = [c for c in schema_names if c in expected_keys]
-        non_all_nan_cols = set(feat_cols)
+        covered_cols = set(feat_cols)
         if sym in required_bounds and feat_cols:
             try:
-                sample_df = pd.read_parquet(fpath, columns=feat_cols)
-                non_all_nan_cols = {
-                    c
-                    for c in feat_cols
-                    if c in sample_df.columns and not bool(sample_df[c].isna().all())
-                }
+                _, req_last = required_bounds[sym]
+                sample_df = _read_target_feature_row(
+                    fpath,
+                    feat_cols,
+                    req_last,
+                )
+                non_all_nan_cols: set[str] = set()
+                stale_cols: set[str] = set()
+                for c in feat_cols:
+                    if c not in sample_df.columns:
+                        continue
+                    col = sample_df[c]
+                    if sample_df.empty or bool(col.isna().all()):
+                        continue
+                    non_all_nan_cols.add(c)
+                covered_cols = non_all_nan_cols - stale_cols
                 empty_cols = set(feat_cols) - non_all_nan_cols
-                if empty_cols:
+                if empty_cols or stale_cols:
                     stale_symbols.add(sym)
                     full_rewrite_symbols.add(sym)
-                    all_nan_symbol_keys[sym] = set(empty_cols)
+                    all_nan_symbol_keys[sym] = set(empty_cols).union(stale_cols)
             except Exception:
                 stale_symbols.add(sym)
                 full_rewrite_symbols.add(sym)
-                non_all_nan_cols = set()
+                covered_cols = set()
 
-        for c in non_all_nan_cols:
-            key_symbol_counts[c] += 1
+        if sym in required_bounds:
+            for c in covered_cols:
+                key_symbol_counts[c] += 1
         if sym in required_bounds and (
             not expected_keys.issubset(schema_names)
             or len(all_nan_symbol_keys.get(sym, set())) > 0
@@ -2540,7 +2907,8 @@ def _scan_feature_cache_light(
         if i % progress_every == 0 or i == total_files:
             tprint(
                 f"Feature cache scan progress: {i}/{total_files} files "
-                f"({(i / total_files) * 100:.1f}%)"
+                f"({(i / total_files) * 100:.1f}%) "
+                f"elapsed={time.time() - scan_start:.1f}s"
             )
 
     required_set = set(required_bounds.keys())
@@ -2564,7 +2932,13 @@ def _scan_feature_cache_light(
     available_key_count = sum(
         1 for k in expected_keys if key_symbol_counts.get(k, 0) > 0
     )
-    return {
+    tprint(
+        "Feature cache scan complete: "
+        f"files={total_files} required_symbols={required_n} "
+        f"available_expected_keys={available_key_count}/{len(expected_keys)} "
+        f"stale_symbols={len(stale_symbols)} elapsed={time.time() - scan_start:.1f}s"
+    )
+    result = {
         "in_dir": in_dir,
         "file_count": total_files,
         "required_symbol_count": required_n,
@@ -2577,6 +2951,42 @@ def _scan_feature_cache_light(
         "partial_keys": sorted(partial_keys),
         "all_nan_symbol_keys": {k: sorted(v) for k, v in all_nan_symbol_keys.items()},
     }
+    _write_feature_cache_scan_manifest(
+        in_dir=in_dir,
+        expected_keys=expected_keys,
+        required_bounds=required_bounds,
+        input_signature=input_signature,
+        scan=result,
+    )
+    return result
+
+
+def _feature_time_coverage_backfill_keys(
+    expected_keys: set[str],
+    missing_keys: list[str],
+) -> list[str]:
+    """Keys to append when feature files are missing the target timestamp."""
+    return sorted(set(expected_keys) - set(missing_keys))
+
+
+def _chunked_partial_backfill_is_fully_covered(symbols_to_compute: Sequence[str]) -> bool:
+    """Return true only when a partial backfill has no remaining symbol work."""
+    return len(symbols_to_compute) == 0
+
+
+def _feature_scan_has_broad_target_gap(scan: dict | None) -> bool:
+    """Return True when many required symbols have sparse/null target rows."""
+    if not scan:
+        return False
+    required_n = int(scan.get("required_symbol_count", 0) or 0)
+    if required_n <= 0:
+        return False
+    affected_n = len(scan.get("all_nan_symbol_keys", {}) or {})
+    partial_n = len(scan.get("partial_keys", []) or [])
+    available_n = int(scan.get("available_key_count", 0) or 0)
+    min_affected = max(1, int(np.ceil(required_n * 0.5)))
+    min_partial = max(3, int(np.ceil(max(available_n, 1) * 0.25)))
+    return affected_n >= min_affected and partial_n >= min_partial
 
 
 def _build_tail_only_backfill_cutoffs(
@@ -2607,11 +3017,32 @@ def _build_tail_only_backfill_cutoffs(
         "missing_backfill_columns": 0,
         "structural_or_interior": 0,
         "already_covered": 0,
+        "tail_bound_fastpath": 0,
+        "target_row_fastpath": 0,
     }
 
     if not backfill_set:
         return cutoffs, stats
 
+    def _read_target_feature_row(fpath: str, columns: list[str], ts: pd.Timestamp) -> pd.DataFrame:
+        end_ts = pd.Timestamp(ts) + pd.Timedelta(microseconds=1)
+        return read_symbol_features(
+            fpath,
+            columns=columns,
+            start_ts=ts,
+            end_ts=end_ts,
+        )
+
+    cutoff_start = time.time()
+    try:
+        recent_scan_hours = int(
+            os.environ.get("EPM_FEATURE_TAIL_CUTOFF_LOOKBACK_HOURS", "336")
+        )
+    except Exception:
+        recent_scan_hours = 336
+    recent_scan_hours = max(1, recent_scan_hours)
+    recent_scan_fallbacks = 0
+    missing_columns_recent_tail = _feature_missing_columns_recent_tail_enabled()
     for sym in panel_close.columns:
         sym = str(sym)
         ser = panel_close[sym]
@@ -2631,14 +3062,9 @@ def _build_tail_only_backfill_cutoffs(
             stats["missing_symbol_file"] += 1
             continue
 
-        try:
-            schema_names = set(pq.ParquetFile(fpath).schema.names)
-        except Exception:
+        schema_names = _feature_schema_names(fpath)
+        if not schema_names:
             stats["structural_or_interior"] += 1
-            continue
-
-        if not backfill_set.issubset(schema_names):
-            stats["missing_backfill_columns"] += 1
             continue
 
         first_ts, last_ts = get_feature_bounds(fpath)
@@ -2655,14 +3081,104 @@ def _build_tail_only_backfill_cutoffs(
             stats["structural_or_interior"] += 1
             continue
 
-        if last_ts >= req_last:
-            # Already covered for this symbol and key set.
-            stats["already_covered"] += 1
+        if not backfill_set.issubset(schema_names):
+            if missing_columns_recent_tail:
+                recent_cutoff = max(
+                    pd.Timestamp(req_first),
+                    pd.Timestamp(req_last) - pd.Timedelta(hours=recent_scan_hours),
+                )
+                cutoffs[sym] = pd.Timestamp(recent_cutoff)
+                stats["eligible_tail_only"] += 1
+                recent_scan_fallbacks += 1
+                continue
+            stats["missing_backfill_columns"] += 1
             continue
 
-        cutoffs[sym] = pd.Timestamp(last_ts)
+        if pd.Timestamp(last_ts) < pd.Timestamp(req_last):
+            # Pure tail gap: the feature file stops before the required target
+            # row. Appending rows after the stored file bound is sufficient and
+            # avoids scanning every requested feature column for its last valid
+            # value, which is extremely expensive for full-contract hourly
+            # backfills.
+            cutoffs[sym] = pd.Timestamp(last_ts)
+            stats["eligible_tail_only"] += 1
+            stats["tail_bound_fastpath"] += 1
+            continue
+
+        backfill_cols = sorted(backfill_set)
+        try:
+            target_df = _read_target_feature_row(
+                fpath,
+                backfill_cols,
+                req_last,
+            )
+            if (
+                not target_df.empty
+                and backfill_set.issubset(target_df.columns)
+                and target_df[backfill_cols].notna().all(axis=None)
+            ):
+                stats["already_covered"] += 1
+                continue
+
+            if len(backfill_set) >= 128:
+                # Wide full-contract target repair: if the target row exists
+                # but is sparse, append a replacement target row. Scanning
+                # every feature's recent last-valid timestamp is unnecessary
+                # and can dominate live-hour reconciliation.
+                cutoffs[sym] = pd.Timestamp(req_last) - pd.Timedelta(microseconds=1)
+                stats["eligible_tail_only"] += 1
+                stats["target_row_fastpath"] += 1
+                continue
+
+            recent_start = max(
+                pd.Timestamp(first_ts),
+                pd.Timestamp(last_ts) - pd.Timedelta(hours=recent_scan_hours),
+            )
+            feature_tail_df = read_symbol_features(
+                fpath,
+                columns=backfill_cols,
+                start_ts=recent_start,
+            )
+            if feature_tail_df.empty or not all(
+                c in feature_tail_df.columns
+                and feature_tail_df[c].last_valid_index() is not None
+                for c in backfill_cols
+            ):
+                recent_scan_fallbacks += 1
+                feature_tail_df = read_symbol_features(fpath, columns=backfill_cols)
+            last_valid_by_feature: list[pd.Timestamp] = []
+            for c in backfill_cols:
+                if c not in feature_tail_df.columns:
+                    continue
+                last_valid = feature_tail_df[c].last_valid_index()
+                if last_valid is None:
+                    stats["missing_backfill_columns"] += 1
+                    last_valid_by_feature = []
+                    break
+                last_valid_ts = pd.Timestamp(last_valid)
+                if last_valid_ts.tzinfo is not None:
+                    last_valid_ts = last_valid_ts.tz_localize(None)
+                last_valid_by_feature.append(last_valid_ts)
+        except Exception:
+            stats["structural_or_interior"] += 1
+            continue
+        if not last_valid_by_feature:
+            continue
+
+        feature_last_ts = min(last_valid_by_feature)
+        cutoffs[sym] = pd.Timestamp(feature_last_ts)
         stats["eligible_tail_only"] += 1
 
+    tprint(
+        "Tail-only backfill cutoff scan complete: "
+        f"symbols={len(panel_close.columns)} keys={len(backfill_set)} "
+        f"eligible={stats['eligible_tail_only']} "
+        f"already_covered={stats['already_covered']} "
+        f"tail_bound_fastpath={stats['tail_bound_fastpath']} "
+        f"target_row_fastpath={stats['target_row_fastpath']} "
+        f"recent_fallbacks={recent_scan_fallbacks} "
+        f"elapsed={time.time() - cutoff_start:.1f}s"
+    )
     return cutoffs, stats
 
 
@@ -2692,8 +3208,28 @@ def _validate_feature_snapshot_completeness(
     missing_keys = list(scan.get("missing_keys", []))
     partial_keys = list(scan.get("partial_keys", []))
     critical_set = set(FEATURE_HEALTH_CRITICAL_KEYS)
-    critical_missing_keys = sorted(k for k in missing_keys if k in critical_set)
-    critical_partial_keys = sorted(k for k in partial_keys if k in critical_set)
+    naturally_sparse_latest_set = set(FEATURE_HEALTH_NATURALLY_SPARSE_LATEST_KEYS)
+    all_nan_latest_keys: set[str] = set()
+    for keys in (scan.get("all_nan_symbol_keys", {}) or {}).values():
+        all_nan_latest_keys.update(str(k) for k in keys)
+    sparse_critical_missing_keys = sorted(
+        k
+        for k in missing_keys
+        if k in critical_set
+        and k in naturally_sparse_latest_set
+        and k in all_nan_latest_keys
+    )
+    critical_missing_keys = sorted(
+        k
+        for k in missing_keys
+        if k in critical_set and k not in set(sparse_critical_missing_keys)
+    )
+    sparse_critical_partial_keys = sorted(
+        k for k in partial_keys if k in critical_set and k in naturally_sparse_latest_set
+    )
+    critical_partial_keys = sorted(
+        k for k in partial_keys if k in critical_set and k not in naturally_sparse_latest_set
+    )
     noncritical_missing_keys = sorted(k for k in missing_keys if k not in critical_set)
     noncritical_partial_keys = sorted(k for k in partial_keys if k not in critical_set)
     remaining_missing_keys = int(len(critical_missing_keys))
@@ -2714,6 +3250,15 @@ def _validate_feature_snapshot_completeness(
                 else ""
             )
         )
+    allowed_sparse_critical_keys = sorted(
+        set(sparse_critical_missing_keys).union(sparse_critical_partial_keys)
+    )
+    if allowed_sparse_critical_keys:
+        tprint(
+            "Feature snapshot validation allowed naturally sparse latest critical keys: "
+            + ", ".join(allowed_sparse_critical_keys[:20])
+            + (" ..." if len(allowed_sparse_critical_keys) > 20 else "")
+        )
     if any(
         (
             remaining_missing_symbols,
@@ -2729,6 +3274,57 @@ def _validate_feature_snapshot_completeness(
             f"critical_missing_keys={remaining_missing_keys} "
             f"critical_partial_keys={remaining_partial_keys}"
         )
+
+
+def _max_valid_close_ts(panel_close: pd.DataFrame | None) -> pd.Timestamp | None:
+    """Return the latest timestamp with at least one non-null close value."""
+    if panel_close is None or panel_close.empty:
+        return None
+    valid_rows = panel_close.notna().any(axis=1)
+    if not bool(valid_rows.any()):
+        return None
+    out = pd.Timestamp(panel_close.index[valid_rows][-1])
+    if out.tzinfo is None:
+        out = out.tz_localize("UTC")
+    else:
+        out = out.tz_convert("UTC")
+    return out
+
+
+def _feature_generation_requires_target_end(cfg: dict, feature_end_lag_days: int) -> bool:
+    raw = os.environ.get("EPM_FEATURE_REQUIRE_TARGET_END")
+    if raw is not None and str(raw).strip():
+        return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(cfg.get("feature_generation_require_target_end", False)) or feature_end_lag_days == 0
+
+
+def _check_feature_source_target_coverage(
+    panel_close: pd.DataFrame | None,
+    requested_end_ts: pd.Timestamp,
+    *,
+    require_target_end: bool,
+    label: str,
+) -> None:
+    """Warn or fail when source OHLCV cannot support the requested feature end."""
+    available_end_ts = _max_valid_close_ts(panel_close)
+    requested = pd.Timestamp(requested_end_ts)
+    if requested.tzinfo is None:
+        requested = requested.tz_localize("UTC")
+    else:
+        requested = requested.tz_convert("UTC")
+    if available_end_ts is not None and available_end_ts >= requested:
+        return
+
+    msg = (
+        f"{label}: source OHLCV only covers "
+        f"{available_end_ts.isoformat() if available_end_ts is not None else 'none'} "
+        f"but requested feature end is {requested.isoformat()}. "
+        "Run the incremental data download/fetch before feature generation, "
+        "or lower the requested feature end."
+    )
+    if require_target_end:
+        raise RuntimeError(msg)
+    tprint("WARNING: " + msg)
 
 
 def _load_close_panel_for_symbols(
@@ -2795,15 +3391,14 @@ def _derive_symbol_backfill_keys(
     for sym in symbols:
         safe_sym = str(sym).replace("/", "_")
         fpath = os.path.join(in_dir, f"symbol={safe_sym}.parquet")
-        try:
-            schema_names = set(pq.ParquetFile(fpath).schema.names)
-        except Exception:
+        schema_names = _feature_schema_names(fpath)
+        if not schema_names:
             return sorted(expected_keys)
         missing_keys.update(expected_keys - schema_names)
         present_keys = sorted(expected_keys.intersection(schema_names))
         if present_keys:
             try:
-                sample_df = pd.read_parquet(fpath, columns=present_keys)
+                sample_df = read_symbol_features(fpath, columns=present_keys)
             except Exception:
                 return sorted(expected_keys)
             for c in present_keys:
@@ -2858,7 +3453,19 @@ def _resolve_available_context_symbols(
 
 
 def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizons=None):
-    cfg = apply_offline_optimizer_best_params(dict(cfg))
+    _preselected_strategy_defs = [
+        dict(s)
+        for s in (cfg.get("strategies") or [])
+        if isinstance(s, dict) and str(s.get("strategy_id", "")).strip()
+    ]
+    if _truthy_env("EPM_SKIP_MASK_STRATEGY_PARAMS"):
+        cfg = dict(cfg)
+        tprint(
+            "Labels: skipping offline optimiser mask/strategy params because "
+            "EPM_SKIP_MASK_STRATEGY_PARAMS is set"
+        )
+    else:
+        cfg = apply_offline_optimizer_best_params(dict(cfg))
 
     from extreme_price_movements.offline_optimisers.params_store import (
         REPORTS_DIR as _OPT_REPORTS_DIR,
@@ -2873,6 +3480,46 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         or os.getenv("EPM_BASE_STRATEGY_IDS", "").strip()
         or os.getenv("EPM_META_STRATEGY_IDS", "").strip()
     )
+    if _strategy_allowlist_env or _preselected_strategy_defs:
+        requested_ids = [
+            s.strip() for s in _strategy_allowlist_env.split(",") if s.strip()
+        ] or [
+            str(s.get("strategy_id", "")).strip()
+            for s in _preselected_strategy_defs
+            if str(s.get("strategy_id", "")).strip()
+        ]
+        selected_strategies, missing_ids = _select_strategies_by_alias(
+            get_strategies(cfg),
+            requested_ids,
+        )
+        if not selected_strategies and _preselected_strategy_defs:
+            selected_strategies, missing_ids = _select_strategies_by_alias(
+                _preselected_strategy_defs,
+                requested_ids,
+            )
+        if selected_strategies:
+            cfg["strategies"] = selected_strategies
+            tprint(
+                "Labels: explicit strategy allowlist preserved after offline "
+                f"params reload; selected {len(selected_strategies)}/"
+                f"{len(requested_ids)} strategies"
+            )
+            if missing_ids:
+                msg = (
+                    "label-generation strategy allowlist missing after offline "
+                    f"params reload: {missing_ids}"
+                )
+                if _truthy_env("EPM_REQUIRE_STRATEGY_ALLOWLIST"):
+                    raise RuntimeError(msg)
+                tprint(f"WARNING: {msg}")
+        else:
+            msg = (
+                "label-generation strategy allowlist matched no strategies after "
+                "offline params reload"
+            )
+            if _truthy_env("EPM_REQUIRE_STRATEGY_ALLOWLIST"):
+                raise RuntimeError(msg)
+            tprint(f"WARNING: {msg}")
     if _bucket_csv.exists() and not _strategy_allowlist_env:
         import json as _json
 
@@ -3078,12 +3725,40 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
 
     # Keep feature-key selection consistent with the shared cache/feature generation logic.
     label_feature_keys = _labeling_feature_keys(cfg)
+    label_feature_start_ts = None
+    if bool(cfg.get("label_persist_incremental", False)):
+        existing_label_maxima: list[pd.Timestamp] = []
+        for _existing_label_path in glob.glob(os.path.join(_labels_dir, "train_*.parquet")):
+            try:
+                _existing_ts = pd.read_parquet(_existing_label_path, columns=["__ts__"])
+            except Exception:
+                continue
+            if _existing_ts.empty or "__ts__" not in _existing_ts.columns:
+                continue
+            _max_ts = pd.to_datetime(
+                _existing_ts["__ts__"], utc=True, errors="coerce"
+            ).max()
+            if pd.notna(_max_ts):
+                existing_label_maxima.append(pd.Timestamp(_max_ts))
+        if existing_label_maxima:
+            # Incremental label generation only appends rows beyond the oldest
+            # existing dataset tail.  Load a small overlap so duplicate-tail
+            # rows can be safely coalesced while avoiding full-history feature
+            # reads from parquet/delta stores.
+            label_feature_start_ts = min(existing_label_maxima) - pd.Timedelta(hours=2)
+            tprint(
+                "Incremental labels: bounded feature load from "
+                f"{label_feature_start_ts} based on "
+                f"{len(existing_label_maxima)} existing label artifacts "
+                f"(oldest max={min(existing_label_maxima)})"
+            )
     feats = load_features_for_stage_or_all(
         cfg,
         ts_sig,
         cfg["data_root"],
         feature_keys=sorted(label_feature_keys),
         symbols=train_syms,
+        start_ts=label_feature_start_ts,
     )
     if feats is None or len(feats) == 0:
         tprint("ERROR: Features not found. Run feature_generation first.")
@@ -3269,19 +3944,39 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
             )
 
     dataset_manifest: dict[str, dict[str, object]] = {}
-    for name in list(datasets.keys()):
-        df = datasets[name]
-        tprint(f"Saving label dataset {name}: rows={len(df)} cols={len(df.columns)}")
-        save_artifact_df(df, cfg["data_root"], run_id, "labels", name)
-        dataset_manifest[name] = {
-            "file": f"{name}.parquet",
-            "rows": int(len(df)),
-            "columns": list(df.columns),
-        }
-        del datasets[name]
-        if bool(cfg.get("label_gc_after_each_dataset", True)):
-            gc.collect()
-        tprint(f"Saved label dataset {name} and released in-memory frame")
+    if bool(cfg.get("label_persist_incremental", False)):
+        _manifest_path_existing = os.path.join(
+            cfg["data_root"], "artifacts", run_id, "labels", "labels_manifest.json"
+        )
+        try:
+            with open(_manifest_path_existing, "r", encoding="utf-8") as _mf:
+                _existing_manifest = json.load(_mf)
+            dataset_manifest = dict(_existing_manifest.get("datasets") or {})
+        except Exception:
+            dataset_manifest = {}
+        for name in list(datasets.keys()):
+            df = datasets[name]
+            tprint(
+                f"Incremental labels: not re-saving returned tail frame for {name} "
+                f"(rows={len(df)}); merged artifact was already persisted by label builder."
+            )
+            del datasets[name]
+            if bool(cfg.get("label_gc_after_each_dataset", True)):
+                gc.collect()
+    else:
+        for name in list(datasets.keys()):
+            df = datasets[name]
+            tprint(f"Saving label dataset {name}: rows={len(df)} cols={len(df.columns)}")
+            save_artifact_df(df, cfg["data_root"], run_id, "labels", name)
+            dataset_manifest[name] = {
+                "file": f"{name}.parquet",
+                "rows": int(len(df)),
+                "columns": list(df.columns),
+            }
+            del datasets[name]
+            if bool(cfg.get("label_gc_after_each_dataset", True)):
+                gc.collect()
+            tprint(f"Saved label dataset {name} and released in-memory frame")
 
     _manifest_payload = {
         "run_id": run_id,
@@ -3311,22 +4006,29 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         tprint(f"WARNING: labels_manifest write failed: {_me}")
 
     try:
-        _active_manifest_names = set((_manifest_payload.get("datasets") or {}).keys())
-        _obsolete_train_files = sorted(
-            _fname
-            for _fname in _existing_train_files
-            if _fname.endswith(".parquet")
-            and _fname[: -len(".parquet")] not in _active_manifest_names
-        )
-        for _fname in _obsolete_train_files:
-            _fp = os.path.join(_labels_dir, _fname)
-            if not os.path.exists(_fp):
-                continue
-            os.remove(_fp)
-        if _obsolete_train_files:
+        _obsolete_train_files: list[str] = []
+        if bool(cfg.get("label_persist_incremental", False)):
             tprint(
-                f"Removed {len(_obsolete_train_files)} obsolete label parquet files after successful regeneration"
+                "Incremental labels: preserving pre-existing label parquet files "
+                "outside the active manifest."
             )
+        else:
+            _active_manifest_names = set((_manifest_payload.get("datasets") or {}).keys())
+            _obsolete_train_files = sorted(
+                _fname
+                for _fname in _existing_train_files
+                if _fname.endswith(".parquet")
+                and _fname[: -len(".parquet")] not in _active_manifest_names
+            )
+            for _fname in _obsolete_train_files:
+                _fp = os.path.join(_labels_dir, _fname)
+                if not os.path.exists(_fp):
+                    continue
+                os.remove(_fp)
+            if _obsolete_train_files:
+                tprint(
+                    f"Removed {len(_obsolete_train_files)} obsolete label parquet files after successful regeneration"
+                )
     except Exception as _cleanup_exc:
         tprint(f"WARNING: obsolete label artifact cleanup failed: {_cleanup_exc}")
 
@@ -3621,48 +4323,46 @@ def run_training_step(
         for s in (cfg.get("strategies") or [])
         if isinstance(s, dict) and str(s.get("strategy_id", "")).strip()
     ]
-    cfg = apply_offline_optimizer_best_params(dict(cfg))
+    if _truthy_env("EPM_SKIP_MASK_STRATEGY_PARAMS"):
+        cfg = dict(cfg)
+        tprint(
+            "Training step: skipping offline optimiser mask/strategy params because "
+            "EPM_SKIP_MASK_STRATEGY_PARAMS is set"
+        )
+    else:
+        cfg = apply_offline_optimizer_best_params(dict(cfg))
     if _strategy_ids_env or _preselected_strategy_ids:
         requested_ids = [
             s.strip() for s in _strategy_ids_env.split(",") if s.strip()
         ] or _preselected_strategy_ids
-        requested_set = set(requested_ids)
         all_strategies = get_strategies(cfg)
-        selected_strategies = [
-            s
-            for s in all_strategies
-            if str(s.get("strategy_id", "")).strip() in requested_set
-        ]
+        selected_strategies, missing_ids = _select_strategies_by_alias(
+            all_strategies,
+            requested_ids,
+        )
         if selected_strategies:
-            order = {sid: i for i, sid in enumerate(requested_ids)}
-            selected_strategies.sort(
-                key=lambda s: order.get(str(s.get("strategy_id", "")), 10**9)
-            )
             cfg["strategies"] = selected_strategies
-            missing_ids = [
-                sid
-                for sid in requested_ids
-                if sid
-                not in {
-                    str(s.get("strategy_id", "")).strip()
-                    for s in selected_strategies
-                }
-            ]
             tprint(
                 "Training step: explicit strategy allowlist preserved after "
                 f"offline params reload; selected {len(selected_strategies)}/"
                 f"{len(requested_ids)} strategies"
             )
             if missing_ids:
-                tprint(
-                    "WARNING: training-step strategy allowlist missing after "
-                    f"offline params reload: {missing_ids}"
+                msg = (
+                    "training-step strategy allowlist missing after offline params "
+                    f"reload: {missing_ids}"
                 )
+                if _truthy_env("EPM_REQUIRE_STRATEGY_ALLOWLIST"):
+                    raise RuntimeError(msg)
+                tprint(f"WARNING: {msg}")
         else:
-            tprint(
-                "WARNING: training-step strategy allowlist matched no strategies "
-                "after offline params reload; using loaded registry"
+            msg = (
+                "training-step strategy allowlist matched no strategies after "
+                "offline params reload; using loaded registry"
             )
+            if _truthy_env("EPM_REQUIRE_STRATEGY_ALLOWLIST"):
+                raise RuntimeError(msg)
+            tprint(f"WARNING: {msg}")
     cfg = ensure_training_residualization_feature_keys(cfg)
     planner_preset = str(cfg.get("slice_planner_preset", "fast")).lower()
     cfg["slice_planner_preset"] = "robust" if planner_preset == "robust" else "fast"
@@ -3875,6 +4575,7 @@ def run_training_step(
         )
         req_keys = _base_training_feature_requirements_from_hpo(cfg, datasets, req_keys)
 
+    cfg["_feature_snapshot_ts"] = feature_ts_sig
     datasets = inject_features_into_datasets(datasets, feature_ts_sig, cfg, req_keys)
 
     # 2. Train models
@@ -7348,14 +8049,23 @@ def run_feature_generation_step(
         )
         or 0
     )
-    feature_data_end_ts = (
-        pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=max(feature_end_lag_days, 0))
-    ).floor("h")
+    explicit_feature_end_ts = os.environ.get("EPM_FEATURE_END_TS", "").strip()
+    if explicit_feature_end_ts:
+        feature_data_end_ts = pd.to_datetime(
+            explicit_feature_end_ts, utc=True, errors="raise"
+        ).floor("h")
+    else:
+        feature_data_end_ts = (
+            pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=max(feature_end_lag_days, 0))
+        ).floor("h")
     if feature_data_end_ts < pd.Timestamp(ts_sig):
         feature_data_end_ts = pd.Timestamp(ts_sig)
     tprint(
         f"Feature data window end: {feature_data_end_ts} "
         f"(artifact run-id remains {ts_sig.strftime('%Y%m%d_%H%M%S')})"
+    )
+    require_feature_target_end = _feature_generation_requires_target_end(
+        cfg, feature_end_lag_days
     )
 
     # Check if feature files already exist for this timestamp (lightweight check only).
@@ -7458,6 +8168,12 @@ def run_feature_generation_step(
             f"Close-only cache precheck loaded {len(loaded_close_syms)} symbols. "
             f"Skipped {len(skipped_close)}."
         )
+        _check_feature_source_target_coverage(
+            close_panel_light,
+            feature_data_end_ts,
+            require_target_end=require_feature_target_end,
+            label="Feature close-only precheck",
+        )
         if close_panel_light is not None and not close_panel_light.empty:
             scan = _scan_feature_cache_light(
                 ts_sig=ts_sig,
@@ -7467,41 +8183,136 @@ def run_feature_generation_step(
             )
             miss_keys = scan["missing_keys"] if scan else list(expected_keys)
             partial_keys = scan["partial_keys"] if scan else []
+            missing_symbols_for_backfill = (
+                list(scan.get("missing_symbols", [])) if scan else []
+            )
             critical_set = set(FEATURE_HEALTH_CRITICAL_KEYS)
-            critical_miss_keys = sorted(k for k in miss_keys if k in critical_set)
-            critical_partial_keys = sorted(k for k in partial_keys if k in critical_set)
-            ignored_miss_keys = sorted(k for k in miss_keys if k not in critical_set)
-            ignored_partial_keys = sorted(k for k in partial_keys if k not in critical_set)
+            backfill_all_incomplete_keys = (
+                _feature_backfill_all_incomplete_keys_enabled()
+            )
+            naturally_sparse_latest_set = set(FEATURE_HEALTH_NATURALLY_SPARSE_LATEST_KEYS)
+            all_nan_latest_keys: set[str] = set()
+            if scan:
+                for keys in (scan.get("all_nan_symbol_keys", {}) or {}).values():
+                    all_nan_latest_keys.update(str(k) for k in keys)
+            sparse_critical_miss_keys = sorted(
+                k
+                for k in miss_keys
+                if k in critical_set
+                and k in naturally_sparse_latest_set
+                and k in all_nan_latest_keys
+            )
+            sparse_critical_partial_keys = sorted(
+                k
+                for k in partial_keys
+                if k in critical_set and k in naturally_sparse_latest_set
+            )
+            critical_miss_keys = sorted(
+                k
+                for k in miss_keys
+                if k in critical_set and k not in set(sparse_critical_miss_keys)
+            )
+            critical_partial_keys = sorted(
+                k
+                for k in partial_keys
+                if k in critical_set and k not in set(sparse_critical_partial_keys)
+            )
+            ignored_miss_keys = sorted(
+                set(k for k in miss_keys if k not in critical_set)
+                | set(sparse_critical_miss_keys)
+            )
+            ignored_partial_keys = sorted(
+                set(k for k in partial_keys if k not in critical_set)
+                | set(sparse_critical_partial_keys)
+            )
             stale_symbols_for_backfill = (
                 list(scan.get("stale_symbols", [])) if scan else []
             )
             uncovered_symbols_for_backfill = (
                 list(scan.get("uncovered_symbols", [])) if scan else []
             )
+            broad_target_gap_for_backfill = _feature_scan_has_broad_target_gap(scan)
             full_rewrite_symbols_for_backfill = (
                 set(scan.get("full_rewrite_symbols", [])) if scan else set()
             )
-            computable_expected_keys = sorted(
-                set(expected_keys) - set(ignored_miss_keys) - set(ignored_partial_keys)
-            )
-            if full_rewrite_symbols_for_backfill:
-                backfill_keys = computable_expected_keys
-            elif stale_symbols_for_backfill or uncovered_symbols_for_backfill:
-                backfill_keys = computable_expected_keys
+            if backfill_all_incomplete_keys:
+                computable_expected_keys = sorted(
+                    set(expected_keys).intersection(set(miss_keys) | set(partial_keys))
+                )
+                stale_expected_keys = computable_expected_keys
             else:
-                backfill_keys = sorted(set(critical_miss_keys + critical_partial_keys))
+                computable_expected_keys = sorted(
+                    set(expected_keys)
+                    - set(ignored_miss_keys)
+                    - set(ignored_partial_keys)
+                )
+                stale_expected_keys = sorted(
+                    set(critical_miss_keys + critical_partial_keys)
+                )
+            if (
+                missing_symbols_for_backfill
+                or uncovered_symbols_for_backfill
+                or broad_target_gap_for_backfill
+            ):
+                # A symbol/time coverage gap means the target timestamp is absent
+                # or sparsely populated in otherwise valid feature files. In that
+                # case selected-model parity requires appending the whole computable
+                # snapshot for the new timestamp, not only the health-critical
+                # feature subset.
+                backfill_keys = _feature_time_coverage_backfill_keys(
+                    expected_keys,
+                    miss_keys,
+                )
+            elif stale_symbols_for_backfill or uncovered_symbols_for_backfill:
+                # Per-column stale tails without symbol/time gaps should not expand to
+                # the whole feature contract, especially when the stale keys were
+                # explicitly classified as non-critical and ignored.
+                backfill_keys = stale_expected_keys
+            else:
+                backfill_keys = stale_expected_keys
+            explicit_backfill_keys_raw_precheck = os.environ.get(
+                "EPM_FEATURE_BACKFILL_KEYS", ""
+            ).strip()
+            if explicit_backfill_keys_raw_precheck and not force_full_recompute:
+                explicit_backfill_keys_precheck = sorted(
+                    {
+                        k.strip()
+                        for k in explicit_backfill_keys_raw_precheck.replace("\n", ",").split(",")
+                        if k.strip()
+                    }
+                )
+                if explicit_backfill_keys_precheck:
+                    backfill_keys = explicit_backfill_keys_precheck
+                    full_rewrite_symbols_for_backfill = set()
+                    tprint(
+                        "Explicit feature backfill key override (precheck): "
+                        f"{len(backfill_keys)} keys"
+                    )
             if backfill_keys:
                 tprint(
                     f"Feature cache incomplete for {ts_sig}: "
                     f"missing={len(miss_keys)} partial={len(partial_keys)}. "
                     "Backfilling missing/partial features only."
                 )
-                if ignored_miss_keys or ignored_partial_keys:
+                if backfill_all_incomplete_keys:
                     tprint(
-                        "Feature cache precheck ignored non-critical incomplete keys: "
-                        f"missing={len(ignored_miss_keys)} "
-                        f"partial={len(ignored_partial_keys)}"
+                        "Feature cache precheck full-contract mode enabled: "
+                        f"backfilling {len(backfill_keys)} incomplete keys "
+                        "including non-critical selected-model features."
                     )
+                if ignored_miss_keys or ignored_partial_keys:
+                    if backfill_all_incomplete_keys:
+                        tprint(
+                            "Feature cache precheck included non-critical incomplete keys: "
+                            f"missing={len(ignored_miss_keys)} "
+                            f"partial={len(ignored_partial_keys)}"
+                        )
+                    else:
+                        tprint(
+                            "Feature cache precheck ignored non-critical incomplete keys: "
+                            f"missing={len(ignored_miss_keys)} "
+                            f"partial={len(ignored_partial_keys)}"
+                        )
                 if scan:
                     tprint(
                         f"Cache scan summary: files={scan['file_count']} "
@@ -7541,6 +8352,18 @@ def run_feature_generation_step(
                     panel_close=close_panel_light,
                     backfill_keys=backfill_keys,
                 )
+                if (
+                    tail_cutoff_stats.get("missing_symbol_file", 0) == 0
+                    and tail_cutoff_stats.get("missing_backfill_columns", 0) == 0
+                    and tail_cutoff_stats.get("structural_or_interior", 0) == 0
+                ):
+                    if full_rewrite_symbols_for_backfill:
+                        tprint(
+                            "Tail-only cutoff scan found no structural issues; "
+                            f"clearing {len(full_rewrite_symbols_for_backfill)} broad "
+                            "full-rewrite classifications from cache scan."
+                        )
+                    full_rewrite_symbols_for_backfill = set()
                 tprint(
                     "Tail-only backfill cutoffs (preload): "
                     f"eligible={tail_cutoff_stats['eligible_tail_only']} "
@@ -7557,9 +8380,19 @@ def run_feature_generation_step(
                         f"Features already exist and cover full target period: "
                         f"{_n_feats} features × {_n_syms} symbols. Skipping recomputation."
                     )
-                    _generate_feature_health_reports(
+                    if bool(cfg.get("skip_feature_postsave_checks", False)):
+                        tprint(
+                            "Feature health report skipped because "
+                            "skip_feature_postsave_checks is enabled."
+                        )
+                    elif _feature_health_reports_current(
                         ts_sig, cfg["data_root"], allowed_symbols=loaded_close_syms
-                    )
+                    ):
+                        tprint("Feature health report current; skipping regeneration.")
+                    else:
+                        _generate_feature_health_reports(
+                            ts_sig, cfg["data_root"], allowed_symbols=loaded_close_syms
+                        )
                     tprint("STEP: FEATURE GENERATION COMPLETE (cached)")
                     return
         else:
@@ -7572,6 +8405,7 @@ def run_feature_generation_step(
         )
 
     explicit_backfill_keys_raw = os.environ.get("EPM_FEATURE_BACKFILL_KEYS", "").strip()
+    explicit_backfill_keys_active = False
     if explicit_backfill_keys_raw and not force_full_recompute:
         explicit_backfill_keys = sorted(
             {
@@ -7581,10 +8415,22 @@ def run_feature_generation_step(
             }
         )
         if explicit_backfill_keys:
+            explicit_backfill_keys_active = True
             backfill_keys = explicit_backfill_keys
-            full_rewrite_symbols_for_backfill = set(train_syms)
-            precomputed_tail_cutoffs = {}
-            tail_cutoff_stats = None
+            full_rewrite_symbols_for_backfill = set()
+            if close_panel_light is not None and not close_panel_light.empty:
+                (
+                    precomputed_tail_cutoffs,
+                    tail_cutoff_stats,
+                ) = _build_tail_only_backfill_cutoffs(
+                    ts_sig=ts_sig,
+                    data_root=cfg["data_root"],
+                    panel_close=close_panel_light,
+                    backfill_keys=backfill_keys,
+                )
+            else:
+                precomputed_tail_cutoffs = {}
+                tail_cutoff_stats = None
             tprint(
                 "Explicit feature backfill key override: "
                 f"{len(backfill_keys)} keys"
@@ -7806,11 +8652,58 @@ def run_feature_generation_step(
                 f"structural_or_interior={tail_stats['structural_or_interior']} "
                 f"already_covered={tail_stats['already_covered']}"
             )
+            if full_rewrite_symbols_for_backfill and not force_full_recompute:
+                tprint(
+                    "Chunked partial backfill: ignoring "
+                    f"{len(full_rewrite_symbols_for_backfill)} stale full-rewrite "
+                    "classifications because partial-key backfills must not "
+                    "replace existing base feature files. Missing columns are "
+                    "handled by append/delta storage or by an explicit full "
+                    "contract recompute."
+                )
+                full_rewrite_symbols_for_backfill = set()
         else:
             tail_cutoffs = {}
             tprint("Chunked processing: Full recompute mode (no tail cutoffs)")
 
-        all_syms = list(panel["close"].columns)
+        if backfill_keys and not force_full_recompute:
+            write_needed = set(tail_cutoffs) | set(full_rewrite_symbols_for_backfill)
+            tprint(
+                "Chunked partial backfill write-needed: "
+                f"tail_cutoffs={len(tail_cutoffs)} "
+                f"full_rewrite={len(full_rewrite_symbols_for_backfill)} "
+                f"write_needed={len(write_needed)} "
+                f"panel_symbols={len(panel['close'].columns)}"
+            )
+            all_syms = [s for s in panel["close"].columns if s in write_needed]
+            skipped_compute = len(panel["close"].columns) - len(all_syms)
+            if skipped_compute > 0:
+                tprint(
+                    "Chunked partial backfill: skipping compute for "
+                    f"{skipped_compute} already-covered symbols"
+                )
+                if _chunked_partial_backfill_is_fully_covered(all_syms):
+                    tprint(
+                        "Chunked partial backfill: all requested feature rows are already covered; "
+                        "skipping recomputation."
+                    )
+                    if bool(cfg.get("skip_feature_postsave_checks", False)):
+                        tprint(
+                            "Feature health report skipped because "
+                            "skip_feature_postsave_checks is enabled."
+                        )
+                    elif _feature_health_reports_current(
+                        ts_sig, cfg["data_root"], allowed_symbols=loaded_close_syms
+                    ):
+                        tprint("Feature health report current; skipping regeneration.")
+                    else:
+                        _generate_feature_health_reports(
+                            ts_sig, cfg["data_root"], allowed_symbols=loaded_close_syms
+                        )
+                    tprint("STEP: FEATURE GENERATION COMPLETE (cached)")
+                    return
+        else:
+            all_syms = list(panel["close"].columns)
         total_chunks = (len(all_syms) + chunk_size - 1) // chunk_size
         unresolved_union: set[str] = set()
         total_saved_keys = 0
@@ -7851,24 +8744,35 @@ def run_feature_generation_step(
                 add_context_symbol(cfg.get(key, "") or "")
             add_context_symbol("BTC")
             add_context_symbol("ETH")
+            orderbook_chunk = {
+                sym: orderbook_by_symbol[sym]
+                for sym in context_syms
+                if sym in orderbook_by_symbol
+            }
             tprint(
                 f"[Feature chunk {ci}/{total_chunks}] symbols={len(chunk_syms)} "
                 f"({chunk_syms[0]} .. {chunk_syms[-1]})"
             )
             panel_chunk_source = {
-                k: v.reindex(columns=context_syms).copy()
+                k: v.reindex(columns=context_syms, copy=False)
                 for k, v in panel.items()
                 if isinstance(v, pd.DataFrame)
             }
             chunk_requested_keys = None
             if backfill_keys and not force_full_recompute:
-                chunk_requested_keys = _derive_symbol_backfill_keys(
-                    ts_sig=ts_sig,
-                    data_root=cfg["data_root"],
-                    expected_keys=backfill_set,
-                    symbols=chunk_syms,
-                    full_rewrite_symbols=full_rewrite_symbols_for_backfill,
+                chunk_write_needed = any(
+                    s in tail_cutoffs or s in full_rewrite_symbols_for_backfill
+                    for s in chunk_syms
                 )
+                if chunk_write_needed:
+                    # The preload tail-cutoff scan has already proven that
+                    # these symbols need tail rows for the active backfill
+                    # keys.  Re-reading every symbol parquet here is both
+                    # expensive and wrong for tail-only gaps because the keys
+                    # exist in schema even when the newest rows are missing.
+                    chunk_requested_keys = sorted(backfill_set)
+                else:
+                    chunk_requested_keys = []
                 tprint(
                     f"[Feature chunk {ci}/{total_chunks}] requested_keys={len(chunk_requested_keys)}"
                 )
@@ -7877,6 +8781,7 @@ def run_feature_generation_step(
                     cfg,
                     panel_chunk_source,
                     context_syms,
+                    orderbook_by_symbol=orderbook_chunk,
                 )
                 if skipped_keys:
                     reason_counts: dict[str, int] = {}
@@ -7888,6 +8793,12 @@ def run_feature_generation_step(
                         f"feature source/portability contract: {reason_counts}"
                     )
                     chunk_requested_keys = filtered_keys
+                if not chunk_requested_keys:
+                    tprint(
+                        f"[Feature chunk {ci}/{total_chunks}] no requested keys remain; "
+                        "skipping feature compute for this chunk."
+                    )
+                    continue
             if (
                 backfill_keys
                 and not force_full_recompute
@@ -7903,9 +8814,22 @@ def run_feature_generation_step(
                 key_batches = [chunk_requested_keys]
 
             if backfill_keys and not force_full_recompute:
-                chunk_cutoffs = {
-                    s: tail_cutoffs[s] for s in chunk_syms if s in tail_cutoffs
-                }
+                no_write_cutoff = pd.Timestamp(feature_data_end_ts)
+                if no_write_cutoff.tzinfo is not None:
+                    no_write_cutoff = no_write_cutoff.tz_localize(None)
+                chunk_cutoffs = {}
+                for s in chunk_syms:
+                    if s in tail_cutoffs:
+                        chunk_cutoffs[s] = tail_cutoffs[s]
+                    elif s in full_rewrite_symbols_for_backfill:
+                        # No cutoff: this symbol has a structural/interior issue
+                        # and must be rewritten over the loaded feature window.
+                        continue
+                    else:
+                        # Already-covered symbols are included in the compute
+                        # panel for cross-sectional/market context only. Do not
+                        # rewrite their historical warmup rows.
+                        chunk_cutoffs[s] = no_write_cutoff
             else:
                 chunk_cutoffs = None
 
@@ -7917,12 +8841,87 @@ def run_feature_generation_step(
                 )
                 if key_batch is not None:
                     tprint(f"{batch_label} computing requested_keys={len(key_batch)}")
-                panel_chunk = {k: v.copy() for k, v in panel_chunk_source.items()}
-                orderbook_chunk = {
-                    sym: orderbook_by_symbol[sym]
-                    for sym in context_syms
-                    if sym in orderbook_by_symbol
-                }
+                    if len(key_batch) == 0:
+                        tprint(f"{batch_label} empty requested key batch; skipping.")
+                        continue
+                panel_chunk = dict(panel_chunk_source)
+                compute_cfg = cfg
+                if backfill_keys and not force_full_recompute:
+                    compute_cfg = dict(cfg)
+                    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+                    state_root = cfg.get("feature_causal_transform_state_path") or os.path.join(
+                        cfg["data_root"],
+                        "artifacts",
+                        run_id,
+                        "feature_transform_state",
+                        "causal_transform_state.npz",
+                    )
+                    raw_state_root = cfg.get("feature_raw_rolling_state_path") or os.path.join(
+                        cfg["data_root"],
+                        "artifacts",
+                        run_id,
+                        "feature_transform_state",
+                        "raw_rolling_state.npz",
+                    )
+                    requested_hash_src = "\n".join(
+                        [str(k) for k in (key_batch or [])]
+                    )
+                    compute_cfg["feature_causal_transform_state_enabled"] = (
+                        os.getenv("EPM_FEATURE_CAUSAL_STATE", "1").lower()
+                        not in {"0", "false", "no", "off"}
+                    )
+                    compute_cfg["feature_causal_transform_state_path"] = state_root
+                    compute_cfg["feature_causal_transform_state_scope"] = (
+                        f"run_id={run_id}|training_path_selected_features"
+                    )
+                    compute_cfg["feature_raw_rolling_state_enabled"] = bool(
+                        cfg.get("feature_raw_rolling_state_enabled", False)
+                    ) or (
+                        os.getenv("EPM_FEATURE_RAW_ROLLING_STATE", "0").lower()
+                        not in {"0", "false", "no", "off"}
+                    )
+                    compute_cfg["feature_raw_rolling_state_path"] = raw_state_root
+                    compute_cfg["feature_raw_rolling_state_scope"] = (
+                        f"run_id={run_id}|training_path_selected_features"
+                    )
+                    compute_cfg["feature_raw_rolling_state_sparse_prefix_enabled"] = bool(
+                        cfg.get(
+                            "feature_raw_rolling_state_sparse_prefix_enabled",
+                            os.getenv(
+                                "EPM_FEATURE_RAW_ROLLING_STATE_SPARSE_PREFIX",
+                                "1",
+                            ).lower()
+                            not in {"0", "false", "no", "off"},
+                        )
+                    )
+                    compute_cfg[
+                        "feature_causal_transform_state_ignore_stale_min_required"
+                    ] = bool(
+                        cfg.get(
+                            "feature_causal_transform_state_ignore_stale_min_required",
+                            os.getenv(
+                                "EPM_FEATURE_CAUSAL_STATE_IGNORE_STALE_MIN_REQUIRED",
+                                "1",
+                            ).lower()
+                            not in {"0", "false", "no", "off"},
+                        )
+                    )
+                    compute_cfg["feature_causal_transform_requested_hash"] = (
+                        hashlib.sha1(requested_hash_src.encode("utf-8")).hexdigest()
+                        if requested_hash_src
+                        else "all"
+                    )
+                    if chunk_cutoffs:
+                        cutoff_values = [
+                            pd.Timestamp(v)
+                            for v in chunk_cutoffs.values()
+                            if v is not None
+                        ]
+                        if cutoff_values:
+                            min_required_ts = min(cutoff_values)
+                            compute_cfg[
+                                "feature_causal_transform_min_required_ts"
+                            ] = min_required_ts.isoformat()
                 compute_t0 = time.perf_counter()
                 (
                     feats_chunk,
@@ -7931,7 +8930,7 @@ def run_feature_generation_step(
                 ) = _compute_features_hourly_runtime(
                     panel_chunk,
                     mkt_gates.copy(),
-                    cfg,
+                    compute_cfg,
                     orderbook_chunk,
                     requested_feature_keys=key_batch,
                 )
@@ -7987,6 +8986,25 @@ def run_feature_generation_step(
                     feats_chunk,
                     critical_keys=batch_health_keys,
                 )
+                if batch_backfill_keys and chunk_health_issues:
+                    constant_health_issues = [
+                        issue
+                        for issue in chunk_health_issues
+                        if str(issue).startswith("constant:")
+                    ]
+                    fatal_health_issues = [
+                        issue
+                        for issue in chunk_health_issues
+                        if not str(issue).startswith("constant:")
+                    ]
+                    if constant_health_issues:
+                        tprint(
+                            f"{batch_label} treating chunk-local constant health issues "
+                            "as diagnostics during incremental backfill: "
+                            + ", ".join(constant_health_issues[:30])
+                            + (" ..." if len(constant_health_issues) > 30 else "")
+                        )
+                    chunk_health_issues = fatal_health_issues
                 if chunk_health_issues:
                     raise RuntimeError(
                         "Feature chunk health validation failed before save: "
@@ -8033,17 +9051,34 @@ def run_feature_generation_step(
                 tprint(f"{batch_label} saving {len(feats_chunk)} keys")
                 if feats_chunk:
                     save_t0 = time.perf_counter()
+                    replace_existing_batch = bool(force_full_recompute)
+                    if (
+                        backfill_keys
+                        and not force_full_recompute
+                        and len(key_batches) == 1
+                        and chunk_syms
+                        and all(s in full_rewrite_symbols_for_backfill for s in chunk_syms)
+                        and set(backfill_keys) >= set(expected_keys)
+                    ):
+                        replace_existing_batch = True
+                        tprint(
+                            f"{batch_label} structural full-rewrite chunk: "
+                            "replacing base feature files instead of appending "
+                            "full-history deltas."
+                        )
                     save_features(
                         feats_chunk,
                         ts_sig,
                         cfg["data_root"],
                         min_timestamp_by_symbol=(
-                            chunk_cutoffs if chunk_cutoffs else None
+                            None
+                            if replace_existing_batch
+                            else (chunk_cutoffs if chunk_cutoffs else None)
                         ),
                         feat_index=feat_index,
                         feat_columns=feat_columns,
                         save_workers=int(cfg.get("feature_save_workers", 2)),
-                        replace_existing=bool(force_full_recompute),
+                        replace_existing=replace_existing_batch,
                     )
                     save_dt = time.perf_counter() - save_t0
                     tprint(
@@ -8215,6 +9250,12 @@ def run_feature_generation_step(
         if close_panel_light is not None and not close_panel_light.empty
         else panel_close_ref
     )
+    _check_feature_source_target_coverage(
+        completeness_panel,
+        feature_data_end_ts,
+        require_target_end=require_feature_target_end,
+        label="Feature post-save validation",
+    )
     snapshot_expected_keys = {k for k in expected_keys if not str(k).startswith("oof_")}
     skip_snapshot_validation = bool(cfg.get("skip_feature_snapshot_validation", False))
     skip_postsave_checks = bool(cfg.get("skip_feature_postsave_checks", False))
@@ -8239,29 +9280,37 @@ def run_feature_generation_step(
             expected_keys=snapshot_expected_keys,
             panel_close=completeness_panel,
         )
-        _generate_feature_health_reports(
-            ts_sig, cfg["data_root"], allowed_symbols=loaded_syms
-        )
-        health_feats = load_features_for_stage_or_all(
-            cfg,
-            ts_sig,
-            cfg["data_root"],
-            feature_keys=FEATURE_HEALTH_CRITICAL_KEYS,
-            symbols=loaded_syms,
-        )
-        if health_feats is None:
-            raise RuntimeError(
-                "Feature snapshot health validation failed: critical feature files "
-                "could not be loaded after generation."
+        if is_incremental_backfill and os.getenv(
+            "EPM_FEATURE_INCREMENTAL_SKIP_HEALTH_LOAD", "1"
+        ).lower() not in {"0", "false", "no", "off"}:
+            tprint(
+                "Incremental backfill mode: snapshot validation passed; skipping "
+                "full health report and selective feature reload."
             )
-        health_issues = _feature_snapshot_health_issues(health_feats)
-        if health_issues:
-            raise RuntimeError(
-                "Feature snapshot health validation failed after generation: "
-                + ", ".join(health_issues)
-                + ". Re-run features mode with --force-feature-recompute after fixing "
-                "the underlying feature channel."
+        else:
+            _generate_feature_health_reports(
+                ts_sig, cfg["data_root"], allowed_symbols=loaded_syms
             )
+            health_feats = load_features_for_stage_or_all(
+                cfg,
+                ts_sig,
+                cfg["data_root"],
+                feature_keys=FEATURE_HEALTH_CRITICAL_KEYS,
+                symbols=loaded_syms,
+            )
+            if health_feats is None:
+                raise RuntimeError(
+                    "Feature snapshot health validation failed: critical feature files "
+                    "could not be loaded after generation."
+                )
+            health_issues = _feature_snapshot_health_issues(health_feats)
+            if health_issues:
+                raise RuntimeError(
+                    "Feature snapshot health validation failed after generation: "
+                    + ", ".join(health_issues)
+                    + ". Re-run features mode with --force-feature-recompute after fixing "
+                    "the underlying feature channel."
+                )
     tprint("STEP: FEATURE GENERATION COMPLETE")
 
 
@@ -8804,6 +9853,12 @@ def _active_stage_plan_key_hashes(cfg: dict, view: dict) -> np.ndarray | None:
 def _filter_artifact_by_stage_plan_rows(
     df: pd.DataFrame, cfg: dict, view: dict
 ) -> pd.DataFrame:
+    if bool((view or {}).get("disable_exact_plan_row_filter", False)):
+        tprint(
+            f"[{(view or {}).get('stage_name', 'stage')}] Exact plan-row filter "
+            "disabled by active stage view."
+        )
+        return df
     key_hashes = _active_stage_plan_key_hashes(cfg, view)
     if key_hashes is None or len(key_hashes) == 0:
         return df

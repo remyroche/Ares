@@ -12,6 +12,8 @@ Returns full prediction chain results for each candidate.
 """
 
 import re
+import resource
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -62,6 +64,14 @@ DELETED_MODEL_FEATURE_KEYS = {
     "z_slope_change_24",
     "z_sm_momentum_24",
 }
+
+
+def _process_rss_mb() -> float:
+    try:
+        rss = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    except Exception:
+        return float("nan")
+    return rss / (1024.0 * 1024.0) if rss > 10_000_000 else rss / 1024.0
 
 
 ALPHA_MODEL_META_FEATURE_KEYS = {
@@ -187,6 +197,8 @@ def _model_drift_feature_alias_source(name: str) -> str | None:
 def _materialize_model_drift_feature_aliases(
     frame: pd.DataFrame,
     needed: set[str],
+    *,
+    overwrite: bool = False,
 ) -> tuple[pd.DataFrame, int]:
     """Populate prefixed meta drift aliases from artifact-backed base columns."""
     if not isinstance(frame, pd.DataFrame) or frame.empty or not needed:
@@ -194,7 +206,7 @@ def _materialize_model_drift_feature_aliases(
     out = frame
     added = 0
     for col in sorted(needed):
-        if col in out.columns:
+        if col in out.columns and not overwrite:
             continue
         src = _model_drift_feature_alias_source(col)
         if src is None:
@@ -208,6 +220,20 @@ def _materialize_model_drift_feature_aliases(
                 added += 1
                 break
     return out, added
+
+
+def _required_model_drift_sources(needed: set[str]) -> set[str]:
+    """Return unprefixed drift/context columns required by direct or aliased keys."""
+    sources: set[str] = set()
+    for col in needed:
+        col_s = str(col)
+        if col_s in ALPHA_MODEL_META_FEATURE_KEYS:
+            sources.add(col_s)
+            continue
+        src = _model_drift_feature_alias_source(col_s)
+        if src is not None:
+            sources.add(src)
+    return sources
 
 
 def _selected_feature_owner(model: Any) -> Any:
@@ -746,18 +772,44 @@ class ModelOrchestrator:
             tprint(f"Warning: Model not loaded for {key}")
             return pd.Series(dtype=float)
 
+        timing_enabled = bool(self.cfg.get("inference_model_timing_enabled", True))
+        t0 = time.perf_counter()
         aligned_features = self._align_alpha_feature_contract(features, feat_cols)
+        if timing_enabled:
+            tprint(
+                "[Timing] model.alpha_align: "
+                f"key={key} rows_in={len(features.index)} "
+                f"rows_out={len(aligned_features.index)} features={len(feat_cols)} "
+                f"stage={time.perf_counter() - t0:.3f}s rss={_process_rss_mb():.1f}MB"
+            )
 
         if aligned_features.empty:
             tprint(f"Warning: No matching features for {key}")
             return pd.Series(dtype=float)
 
         # Get feature matrix
+        matrix_t0 = time.perf_counter()
         X = _alpha_prediction_frame_for_model(model, aligned_features, feat_cols)
+        if timing_enabled:
+            tprint(
+                "[Timing] model.alpha_matrix: "
+                f"key={key} shape={getattr(X, 'shape', None)} "
+                f"stage={time.perf_counter() - matrix_t0:.3f}s "
+                f"rss={_process_rss_mb():.1f}MB"
+            )
 
         # Predict
         try:
+            pred_t0 = time.perf_counter()
             preds = model.predict(X)
+            if timing_enabled:
+                tprint(
+                    "[Timing] model.alpha_predict: "
+                    f"key={key} rows={len(aligned_features.index)} "
+                    f"stage={time.perf_counter() - pred_t0:.3f}s "
+                    f"total={time.perf_counter() - t0:.3f}s "
+                    f"rss={_process_rss_mb():.1f}MB"
+                )
             return pd.Series(preds, index=aligned_features.index)
         except Exception as e:
             tprint(f"Error predicting alpha for {key}: {e}")
@@ -1113,7 +1165,8 @@ class ModelOrchestrator:
         if effective_cols:
             feat_cols = effective_cols
         needed = set(feat_cols)
-        if not needed.intersection(ALPHA_MODEL_META_FEATURE_KEYS):
+        needed_sources = _required_model_drift_sources(needed)
+        if not needed_sources.intersection(ALPHA_MODEL_META_FEATURE_KEYS):
             return features
 
         _, model_info = self._alpha_model_info_for_kind(side, kind)
@@ -1161,10 +1214,50 @@ class ModelOrchestrator:
         meta_context = meta_context.reindex(out.index)
         added = 0
         for col in ALPHA_MODEL_META_FEATURE_KEYS:
-            if col not in needed or col not in meta_context.columns:
+            if col not in needed_sources or col not in meta_context.columns:
                 continue
-            out[col] = pd.to_numeric(meta_context[col], errors="coerce").astype(np.float32)
-            added += 1
+            if col in needed:
+                out[col] = pd.to_numeric(meta_context[col], errors="coerce").astype(np.float32)
+                added += 1
+            for alias in sorted(needed):
+                if _model_drift_feature_alias_source(alias) != col:
+                    continue
+                out[str(alias)] = pd.to_numeric(
+                    meta_context[col], errors="coerce"
+                ).astype(np.float32)
+                added += 1
+        if (
+            "feature_drift_psi_core" in needed_sources
+            and "feature_drift_psi_core_80" in meta_context.columns
+            and "feature_drift_psi_core" not in meta_context.columns
+        ):
+            source = pd.to_numeric(
+                meta_context["feature_drift_psi_core_80"], errors="coerce"
+            ).astype(np.float32)
+            if "feature_drift_psi_core" in needed:
+                out["feature_drift_psi_core"] = source
+                added += 1
+            for alias in sorted(needed):
+                if _model_drift_feature_alias_source(alias) != "feature_drift_psi_core":
+                    continue
+                out[str(alias)] = source
+                added += 1
+        elif (
+            "feature_drift_psi_core" in needed_sources
+            and "feature_drift_psi_core" in meta_context.columns
+        ):
+            source = pd.to_numeric(
+                meta_context["feature_drift_psi_core"], errors="coerce"
+            ).astype(np.float32)
+            for alias in sorted(needed):
+                if (
+                    alias in out.columns
+                    or _model_drift_feature_alias_source(alias)
+                    != "feature_drift_psi_core"
+                ):
+                    continue
+                out[str(alias)] = source
+                added += 1
         if (
             "feature_drift_psi_core" in needed
             and "feature_drift_psi_core" not in out.columns
@@ -1174,7 +1267,11 @@ class ModelOrchestrator:
                 meta_context["feature_drift_psi_core_80"], errors="coerce"
             ).astype(np.float32)
             added += 1
-        out, alias_added = _materialize_model_drift_feature_aliases(out, needed)
+        out, alias_added = _materialize_model_drift_feature_aliases(
+            out,
+            needed,
+            overwrite=False,
+        )
         added += alias_added
         if added and not getattr(self, "_alpha_meta_context_warned", False):
             tprint(
@@ -1204,18 +1301,30 @@ class ModelOrchestrator:
         )
         if drift.empty:
             return out
+        effective_cols = _effective_selected_feature_contract(meta_model)
+        needed = set(
+            effective_cols
+            or [str(c) for c in (getattr(meta_model, "feature_columns", []) or [])]
+        )
+        needed_sources = _required_model_drift_sources(needed)
         added = 0
         for col in drift.columns:
-            if col not in out.columns:
-                out[col] = pd.to_numeric(drift[col], errors="coerce").astype(np.float32)
-                added += 1
+            if col not in needed_sources:
+                continue
+            out[col] = pd.to_numeric(drift[col], errors="coerce").astype(np.float32)
+            added += 1
         # Backward-compatible aggregate alias used by older feature contracts.
-        if "feature_drift_psi_core" not in out.columns and "feature_drift_psi_core_80" in out.columns:
+        if (
+            "feature_drift_psi_core" in needed
+            and "feature_drift_psi_core_80" in out.columns
+        ):
             out["feature_drift_psi_core"] = out["feature_drift_psi_core_80"]
             added += 1
-        effective_cols = _effective_selected_feature_contract(meta_model)
-        needed = set(effective_cols or [str(c) for c in (getattr(meta_model, "feature_columns", []) or [])])
-        out, alias_added = _materialize_model_drift_feature_aliases(out, needed)
+        out, alias_added = _materialize_model_drift_feature_aliases(
+            out,
+            needed,
+            overwrite=True,
+        )
         added += alias_added
         if added and not getattr(self, "_meta_drift_context_warned", False):
             tprint(
@@ -1247,6 +1356,9 @@ class ModelOrchestrator:
         """
         requested_kind = str(kind)
         key = str(kind)
+        self._last_meta_model_key = None
+        self._last_meta_model_input = None
+        self._last_meta_model_features = []
         if key not in self.meta_models:
             side_key = f"{side}_{kind}"
             clf_key = f"{key}_clf"
@@ -1269,6 +1381,8 @@ class ModelOrchestrator:
 
         # Get feature columns from meta model
         try:
+            timing_enabled = bool(self.cfg.get("inference_model_timing_enabled", True))
+            t0 = time.perf_counter()
             effective_cols = _effective_selected_feature_contract(meta_model)
             if effective_cols:
                 feat_cols = effective_cols
@@ -1281,6 +1395,32 @@ class ModelOrchestrator:
                 for c in (feat_cols or [])
                 if str(c) not in DELETED_MODEL_FEATURE_KEYS
             ]
+            stale_model_derived_cols = []
+            for col in feat_cols:
+                if col not in features.columns or not is_model_derived_feature_key(col):
+                    continue
+                col_s = str(col)
+                # Bare base-score aliases are the causal source used to build
+                # downstream interactions. Drift/context diagnostics derived
+                # from model artifacts are recomputed below instead.
+                if re.match(
+                    r"^(?:pred(?:_.*)?_H\d+|base_H\d+)"
+                    r"(?:_ebm_raw|_ebm_en|_ebm_uncertainty_weighted)?$",
+                    col_s,
+                ):
+                    continue
+                stale_model_derived_cols.append(col_s)
+            if stale_model_derived_cols:
+                features = features.drop(columns=stale_model_derived_cols).copy()
+                if timing_enabled and not getattr(
+                    self, "_stale_meta_model_derived_warned", False
+                ):
+                    tprint(
+                        "Meta inference: dropped stale precomputed model-derived "
+                        "feature columns before artifact-backed materialization "
+                        f"(sample={stale_model_derived_cols[:12]})."
+                    )
+                    self._stale_meta_model_derived_warned = True
 
             features = self._materialize_alpha_model_meta_features(
                 features,
@@ -1298,6 +1438,15 @@ class ModelOrchestrator:
                 side=side,
                 kind=requested_kind,
             )
+            if timing_enabled:
+                tprint(
+                    "[Timing] model.meta_materialize: "
+                    f"key={key} rows={len(features.index)} "
+                    f"features_available={len(features.columns)} "
+                    f"contract_features={len(feat_cols)} "
+                    f"stage={time.perf_counter() - t0:.3f}s "
+                    f"rss={_process_rss_mb():.1f}MB"
+                )
 
             missing_ebm_raw = _missing_ebm_raw_contract(meta_model, features)
             if missing_ebm_raw:
@@ -1315,6 +1464,7 @@ class ModelOrchestrator:
                 return pd.Series(dtype=float)
 
             strict = bool(self.cfg.get("strict_feature_parity", True))
+            matrix_t0 = time.perf_counter()
             if strict:
                 missing = [c for c in feat_cols if c not in features.columns]
                 if missing:
@@ -1384,18 +1534,44 @@ class ModelOrchestrator:
                     X = features.reindex(columns=feat_cols, fill_value=0.0).fillna(0)
                 else:
                     X = features[available_cols].fillna(0)
+            if timing_enabled:
+                tprint(
+                    "[Timing] model.meta_matrix: "
+                    f"key={key} shape={getattr(X, 'shape', None)} "
+                    f"strict={strict} stage={time.perf_counter() - matrix_t0:.3f}s "
+                    f"rss={_process_rss_mb():.1f}MB"
+                )
+            self._last_meta_model_key = key
+            self._last_meta_model_features = [str(c) for c in list(X.columns)]
+            self._last_meta_model_input = X.copy()
             self._last_meta_diagnostics = {}
             transform_meta = getattr(meta_model, "transform_meta_features", None)
             if callable(transform_meta):
                 try:
+                    diag_t0 = time.perf_counter()
                     self._last_meta_diagnostics = _first_row_diagnostics(
                         transform_meta(X)
                     )
+                    if timing_enabled:
+                        tprint(
+                            "[Timing] model.meta_diagnostics: "
+                            f"key={key} stage={time.perf_counter() - diag_t0:.3f}s "
+                            f"rss={_process_rss_mb():.1f}MB"
+                        )
                 except Exception as exc:
                     self._last_meta_diagnostics = {
                         "lgbm_diagnostics_error": str(exc)[:240]
                     }
+            pred_t0 = time.perf_counter()
             preds = meta_model.predict(X)
+            if timing_enabled:
+                tprint(
+                    "[Timing] model.meta_predict: "
+                    f"key={key} rows={len(X.index)} "
+                    f"stage={time.perf_counter() - pred_t0:.3f}s "
+                    f"total={time.perf_counter() - t0:.3f}s "
+                    f"rss={_process_rss_mb():.1f}MB"
+                )
 
             return pd.Series(preds, index=X.index)
         except Exception as e:

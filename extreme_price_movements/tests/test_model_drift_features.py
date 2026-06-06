@@ -44,3 +44,30 @@ def test_model_drift_score_increases_for_shifted_rows():
         in_domain["regime_centroid_similarity_train"].mean()
     )
 
+
+def test_model_drift_features_are_row_stable_across_batch_shapes():
+    rng = np.random.default_rng(11)
+    x_train = pd.DataFrame(
+        rng.normal(size=(180, 5)).astype(np.float32),
+        columns=[f"f{i}" for i in range(5)],
+    )
+    state = fit_model_drift_state(
+        x_train,
+        feature_columns=list(x_train.columns),
+        window=20,
+    )
+    batch = x_train.iloc[10:18].copy()
+    batch_drift = transform_model_drift_features(batch, state, index=batch.index)
+
+    for idx in batch.index:
+        single = transform_model_drift_features(
+            batch.loc[[idx]],
+            state,
+            index=pd.Index([idx]),
+        )
+        assert np.allclose(
+            batch_drift.loc[idx].to_numpy(dtype=np.float32),
+            single.iloc[0].to_numpy(dtype=np.float32),
+            rtol=0.0,
+            atol=1e-7,
+        )

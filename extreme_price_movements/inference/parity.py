@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
@@ -43,6 +44,25 @@ def _bundle_payload(model_bundle: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(model_bundle, dict):
         return {}
     return model_bundle.get("bundle", model_bundle)
+
+
+def _policy_artifact_bases(data_root: str, run_id: str) -> List[Path]:
+    """Return policy artifact roots, with explicit replay override first."""
+    bases: List[Path] = []
+    override = str(os.environ.get("EPM_INFERENCE_POLICY_ARTIFACT_ROOT", "") or "").strip()
+    if override:
+        bases.append(Path(override))
+    bases.append(Path(data_root) / "artifacts" / run_id)
+
+    out: List[Path] = []
+    seen: Set[str] = set()
+    for base in bases:
+        key = str(base)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(base)
+    return out
 
 
 def _alpha_strategy_index(model_bundle: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -293,15 +313,18 @@ def load_strategy_for_inference_filter(
     can still write the root artifact, but it is no longer mandatory for live
     inference readiness.
     """
-    base = Path(data_root) / "artifacts" / run_id
-    paths = [
-        base / "policy_params" / "strategy_for_inference.json",
-        base / "ridge_sizer" / "strategy_for_inference.json",
-        base / "policy_params" / "strategy_for_inference.csv",
-        base / "ridge_sizer" / "strategy_for_inference.csv",
-        base / "strategy_for_inference.json",
-        base / "strategy_for_inference.csv",
-    ]
+    paths = []
+    for base in _policy_artifact_bases(data_root, run_id):
+        paths.extend(
+            [
+                base / "policy_params" / "strategy_for_inference.json",
+                base / "ridge_sizer" / "strategy_for_inference.json",
+                base / "policy_params" / "strategy_for_inference.csv",
+                base / "ridge_sizer" / "strategy_for_inference.csv",
+                base / "strategy_for_inference.json",
+                base / "strategy_for_inference.csv",
+            ]
+        )
     paths = [candidate for path in paths for candidate in mode_file_candidates(path)]
 
     for path in paths:
@@ -345,12 +368,15 @@ def load_strategy_asset_exclusion_filter(
     data_root: str, run_id: str
 ) -> Dict[str, Set[str]]:
     """Load per-strategy symbols excluded by policy optimiser asset diagnostics."""
-    base = Path(data_root) / "artifacts" / run_id
-    paths = [
-        base / "policy_params" / "strategy_for_inference.json",
-        base / "ridge_sizer" / "strategy_for_inference.json",
-        base / "strategy_for_inference.json",
-    ]
+    paths = []
+    for base in _policy_artifact_bases(data_root, run_id):
+        paths.extend(
+            [
+                base / "policy_params" / "strategy_for_inference.json",
+                base / "ridge_sizer" / "strategy_for_inference.json",
+                base / "strategy_for_inference.json",
+            ]
+        )
     paths = [candidate for path in paths for candidate in mode_file_candidates(path)]
     exclusions: Dict[str, Set[str]] = {}
     for path in paths:
@@ -422,14 +448,14 @@ def load_policy_params_by_strategy(
     data_root: str, run_id: str
 ) -> Dict[str, Dict[str, Any]]:
     """Load best policy optimiser params keyed by full and core strategy ids."""
-    paths = [
-        Path(data_root)
-        / "artifacts"
-        / run_id
-        / "policy_params"
-        / "best_policy_params.json",
-        Path(data_root) / "artifacts" / run_id / "best_policy_params.json",
-    ]
+    paths = []
+    for base in _policy_artifact_bases(data_root, run_id):
+        paths.extend(
+            [
+                base / "policy_params" / "best_policy_params.json",
+                base / "best_policy_params.json",
+            ]
+        )
     paths = [candidate for path in paths for candidate in mode_file_candidates(path)]
     out: Dict[str, Dict[str, Any]] = {}
     for path in paths:

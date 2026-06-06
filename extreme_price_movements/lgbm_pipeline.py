@@ -49,6 +49,28 @@ except Exception:  # pragma: no cover - standalone fallback
 
 
 LGBM_CV_SPLITS = int(os.environ.get("EPM_LGBM_CV_SPLITS", "3"))
+LGBM_CV_MODE = str(os.environ.get("EPM_LGBM_CV_MODE", "")).strip().lower()
+LGBM_PURGED_CV = os.environ.get("EPM_LGBM_PURGED_CV", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+}
+LGBM_PURGE_HOURS = float(os.environ.get("EPM_LGBM_PURGE_HOURS", "10"))
+LGBM_RECENCY_WEIGHTING = os.environ.get("EPM_LGBM_RECENCY_WEIGHTING", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+}
+LGBM_BASE_RECENCY_HALF_LIFE_DAYS = float(
+    os.environ.get("EPM_LGBM_BASE_RECENCY_HALF_LIFE_DAYS", "365")
+)
+LGBM_META_RECENCY_HALF_LIFE_DAYS = float(
+    os.environ.get("EPM_LGBM_META_RECENCY_HALF_LIFE_DAYS", "182.5")
+)
 LGBM_RACE_MAX_ROWS = int(os.environ.get("EPM_LGBM_RACE_MAX_ROWS", "120000"))
 LGBM_RACE_EVAL_FRACTION = float(os.environ.get("EPM_LGBM_RACE_EVAL_FRACTION", "0.3333333333"))
 LGBM_MIN_FEATURES = int(os.environ.get("EPM_LGBM_MIN_FEATURES", "40"))
@@ -129,6 +151,11 @@ LGBM_TAIL_WORST_FEATURE_PENALTY = float(os.environ.get("EPM_LGBM_TAIL_WORST_FEAT
 LGBM_N_JOBS = int(os.environ.get("EPM_LGBM_N_JOBS", "3"))
 
 LGBM_CV_SPLITS = max(2, int(LGBM_CV_SPLITS))
+if LGBM_CV_MODE not in {"", "shuffled", "purged_time"}:
+    LGBM_CV_MODE = "shuffled"
+LGBM_PURGE_HOURS = max(0.0, float(LGBM_PURGE_HOURS))
+LGBM_BASE_RECENCY_HALF_LIFE_DAYS = max(1e-6, float(LGBM_BASE_RECENCY_HALF_LIFE_DAYS))
+LGBM_META_RECENCY_HALF_LIFE_DAYS = max(1e-6, float(LGBM_META_RECENCY_HALF_LIFE_DAYS))
 LGBM_RACE_EVAL_FRACTION = float(np.clip(LGBM_RACE_EVAL_FRACTION, 0.10, 0.50))
 LGBM_ROW_SUBSAMPLE_FRAC = float(np.clip(LGBM_ROW_SUBSAMPLE_FRAC, 0.01, 1.0))
 LGBM_RELIEF_REPEATS = max(1, int(LGBM_RELIEF_REPEATS))
@@ -429,6 +456,85 @@ def _validate_input_lengths(
     for name, arr in (("sample_weight", sample_weight), ("timestamps", timestamps), ("assets", assets), ("returns", returns)):
         if arr is not None and len(np.asarray(arr)) != n:
             raise ValueError(f"{name} must have the same length as y; got len({name})={len(np.asarray(arr))} and len(y)={n}")
+
+
+def _timestamp_ns(timestamps: Any, n: int) -> np.ndarray | None:
+    if timestamps is None:
+        return None
+    arr = np.asarray(timestamps)
+    if len(arr) != int(n):
+        return None
+    ts = pd.to_datetime(arr, utc=True, errors="coerce")
+    valid = pd.Series(ts).notna().to_numpy(dtype=bool)
+    if not bool(np.any(valid)):
+        return None
+    ns = pd.Series(ts).astype("int64").to_numpy(dtype=np.int64)
+    ns[~valid] = np.iinfo(np.int64).min
+    return ns
+
+
+def _recency_half_life_days(objective_mode: str | None) -> float:
+    return (
+        float(LGBM_META_RECENCY_HALF_LIFE_DAYS)
+        if _normalize_objective_mode(objective_mode) == "train_meta"
+        else float(LGBM_BASE_RECENCY_HALF_LIFE_DAYS)
+    )
+
+
+def _recency_decay_from_timestamps(
+    timestamps: Any,
+    n: int,
+    *,
+    objective_mode: str | None,
+) -> np.ndarray | None:
+    if not bool(LGBM_RECENCY_WEIGHTING):
+        return None
+    ns = _timestamp_ns(timestamps, n)
+    if ns is None:
+        return None
+    valid = ns != np.iinfo(np.int64).min
+    latest_ns = int(np.max(ns[valid]))
+    age_days = (float(latest_ns) - ns.astype(np.float64)) / float(24 * 3600 * 1_000_000_000)
+    age_days[~valid] = float(np.nanmax(age_days[valid])) if bool(np.any(valid)) else 0.0
+    half_life = _recency_half_life_days(objective_mode)
+    decay = np.power(0.5, np.maximum(age_days, 0.0) / max(half_life, 1e-6))
+    return np.clip(decay, 1e-6, 1.0).astype(np.float32)
+
+
+def _apply_recency_sample_weight(
+    base_weight: np.ndarray,
+    timestamps: Any,
+    *,
+    objective_mode: str | None,
+) -> tuple[np.ndarray, bool]:
+    w = np.asarray(base_weight, dtype=np.float32)
+    decay = _recency_decay_from_timestamps(timestamps, len(w), objective_mode=objective_mode)
+    if decay is None:
+        return w, False
+    out, _ = _normalize_weights(w * decay)
+    return out.astype(np.float32), True
+
+
+def _recency_shrink_weight_towards_one(
+    weights: np.ndarray,
+    timestamps: Any,
+    *,
+    objective_mode: str | None,
+) -> np.ndarray:
+    w = np.asarray(weights, dtype=np.float32)
+    decay = _recency_decay_from_timestamps(timestamps, len(w), objective_mode=objective_mode)
+    if decay is None:
+        return w
+    return (1.0 + (w - 1.0) * decay).astype(np.float32)
+
+
+def _take_aligned(values: Any, idx: np.ndarray, n: int) -> Any:
+    if values is None:
+        return None
+    arr = np.asarray(values)
+    if len(arr) != int(n):
+        return None
+    return arr[np.asarray(idx, dtype=np.int32)]
 
 
 def _feature_selection_oi_present_mask(
@@ -1947,6 +2053,69 @@ class _PrecomputedSplitter:
         del X, y, groups
         for tr, va in self._folds:
             yield tr, va
+
+
+def _purged_time_splitter(
+    y: np.ndarray,
+    classifier: bool,
+    random_state: int,
+    *,
+    timestamps: Any,
+    n_splits: int = LGBM_CV_SPLITS,
+    purge_hours: float = LGBM_PURGE_HOURS,
+) -> tuple[Any, np.ndarray]:
+    y_arr = np.asarray(y)
+    n = len(y_arr)
+    y_split = np.asarray(y_arr >= 0.5, dtype=np.int8) if classifier else np.asarray(y_arr, dtype=np.float32)
+    ns = _timestamp_ns(timestamps, n)
+    if ns is None or n < 2:
+        return _splitter(y_arr, classifier, random_state, n_splits=n_splits)
+    valid = ns != np.iinfo(np.int64).min
+    unique_ts = np.asarray(sorted(np.unique(ns[valid]).tolist()), dtype=np.int64)
+    n_splits_local = max(2, min(int(n_splits), int(len(unique_ts))))
+    if len(unique_ts) < n_splits_local:
+        return _splitter(y_arr, classifier, random_state, n_splits=n_splits)
+    purge_ns = int(max(0.0, float(purge_hours)) * 3600.0 * 1_000_000_000.0)
+    ts_blocks = np.array_split(unique_ts, n_splits_local)
+    all_idx = np.arange(n, dtype=np.int32)
+    folds: list[tuple[np.ndarray, np.ndarray]] = []
+    for block in ts_blocks:
+        if len(block) == 0:
+            continue
+        lo = int(np.min(block))
+        hi = int(np.max(block))
+        va_mask = valid & (ns >= lo) & (ns <= hi)
+        tr_mask = valid & ((ns < lo - purge_ns) | (ns > hi + purge_ns))
+        va = all_idx[va_mask]
+        tr = all_idx[tr_mask]
+        if len(va) == 0 or len(tr) == 0:
+            continue
+        if classifier and len(np.unique(y_split[tr])) < 2:
+            continue
+        folds.append((tr.astype(np.int32, copy=False), va.astype(np.int32, copy=False)))
+    if len(folds) < 2:
+        return _splitter(y_arr, classifier, random_state, n_splits=n_splits)
+    return _PrecomputedSplitter(folds), y_split
+
+
+def _cv_splitter(
+    y: np.ndarray,
+    classifier: bool,
+    random_state: int,
+    *,
+    timestamps: Any = None,
+    n_splits: int = LGBM_CV_SPLITS,
+) -> tuple[Any, np.ndarray]:
+    if bool(LGBM_PURGED_CV) or LGBM_CV_MODE == "purged_time":
+        return _purged_time_splitter(
+            y,
+            classifier,
+            random_state,
+            timestamps=timestamps,
+            n_splits=n_splits,
+            purge_hours=LGBM_PURGE_HOURS,
+        )
+    return _splitter(y, classifier, random_state, n_splits=n_splits)
 
 
 def _interleaved_spread_splitter(
@@ -4410,6 +4579,7 @@ def _cross_val_oof_lgbm(
     classifier: bool,
     params: dict[str, Any],
     groups: Any = None,
+    timestamps: Any = None,
     returns: Any = None,
     metric_y: np.ndarray | None = None,
     random_state: int,
@@ -4420,7 +4590,13 @@ def _cross_val_oof_lgbm(
     y_arr = np.asarray(y)
     y_metric = np.asarray(metric_y if metric_y is not None else y_arr)
     ret_arr = _as_returns(y_metric, returns)
-    splitter, y_split = _splitter(y_metric, classifier, random_state, n_splits=n_splits)
+    splitter, y_split = _cv_splitter(
+        y_metric,
+        classifier,
+        random_state,
+        timestamps=timestamps,
+        n_splits=n_splits,
+    )
     oof = np.full(len(y_arr), np.nan, dtype=np.float32)
     metrics: list[dict[str, float]] = []
     tprint(
@@ -4466,6 +4642,7 @@ def _cross_val_oof_lgbm_with_meta_features(
     classifier: bool,
     params: dict[str, Any],
     groups: Any = None,
+    timestamps: Any = None,
     returns: Any = None,
     metric_y: np.ndarray | None = None,
     random_state: int,
@@ -4476,7 +4653,13 @@ def _cross_val_oof_lgbm_with_meta_features(
     y_arr = np.asarray(y)
     y_metric = np.asarray(metric_y if metric_y is not None else y_arr)
     ret_arr = _as_returns(y_metric, returns)
-    splitter, y_split = _splitter(y_metric, classifier, random_state, n_splits=n_splits)
+    splitter, y_split = _cv_splitter(
+        y_metric,
+        classifier,
+        random_state,
+        timestamps=timestamps,
+        n_splits=n_splits,
+    )
     oof = np.full(len(y_arr), np.nan, dtype=np.float32)
     metrics: list[dict[str, float]] = []
     meta_features = pd.DataFrame(index=np.arange(len(y_arr)), columns=LGBM_META_FEATURE_NAMES, dtype=np.float32)
@@ -4559,6 +4742,7 @@ def _oof_distilled_sample_weights_lgbm(
     classifier: bool,
     params: dict[str, Any],
     groups: Any = None,
+    timestamps: Any = None,
     returns: Any = None,
     metric_y: np.ndarray | None = None,
     random_state: int,
@@ -4584,6 +4768,7 @@ def _oof_distilled_sample_weights_lgbm(
             classifier=classifier,
             params=params,
             groups=groups,
+            timestamps=timestamps,
             returns=returns,
             metric_y=y_metric,
             random_state=random_state + pass_i * 7919,
@@ -4594,6 +4779,16 @@ def _oof_distilled_sample_weights_lgbm(
             last_oof,
             classifier=classifier,
             top_frac=_target_top_fraction(objective_mode),
+        )
+        distill = _recency_shrink_weight_towards_one(
+            distill,
+            timestamps,
+            objective_mode=objective_mode,
+        )
+        fp_weight = _recency_shrink_weight_towards_one(
+            fp_weight,
+            timestamps,
+            objective_mode=objective_mode,
         )
         current, ess = _normalize_weights(base * distill * fp_weight)
         prev_oof = last_oof.copy()
@@ -5060,6 +5255,17 @@ def train_lgbm_stability_candidate(
     )
     sw = np.ones(n, dtype=np.float32) if sample_weight is None else np.asarray(sample_weight, dtype=np.float32)
     sw, _ = _normalize_weights(sw)
+    sw, recency_applied = _apply_recency_sample_weight(
+        sw,
+        timestamps,
+        objective_mode=objective_mode,
+    )
+    if recency_applied:
+        tprint(
+            "LGBM candidate recency sample weighting enabled: "
+            f"objective={objective_mode}, half_life_days={_recency_half_life_days(objective_mode):.1f}, "
+            "distillation_multipliers_shrink_to_one=yes."
+        )
     stage_indices = _stage_partition_indices(y_metric, timestamps=timestamps, assets=assets, random_state=random_state + 701)
     stage_indices = _subsample_stage_indices(stage_indices, y_metric, max_fraction=LGBM_ROW_SUBSAMPLE_FRAC, random_state=random_state + 3701, classifier=classifier)
     if oi_present_mask is not None:
@@ -5252,6 +5458,7 @@ def train_lgbm_stability_candidate(
         classifier=classifier,
         params=base_params,
         groups=select_groups,
+        timestamps=_take_aligned(timestamps, race_idx[select_local], n),
         returns=ret_select,
         metric_y=y_metric_select,
         random_state=random_state + 409,
@@ -5303,6 +5510,12 @@ def train_lgbm_stability_candidate(
         metrics["feature_selection_source"] = "native_preset"
         metrics["native_preset_source"] = str(preset_source or "")
         metrics["native_preset_hpo_reused"] = bool(preset_best_params)
+    metrics["recency_weighting_enabled"] = bool(LGBM_RECENCY_WEIGHTING)
+    metrics["recency_sample_weight_applied"] = bool(recency_applied)
+    metrics["recency_half_life_days"] = float(_recency_half_life_days(objective_mode))
+    metrics["cv_mode"] = "purged_time" if (bool(LGBM_PURGED_CV) or LGBM_CV_MODE == "purged_time") else "shuffled"
+    metrics["cv_splits"] = int(LGBM_CV_SPLITS)
+    metrics["purge_hours"] = float(LGBM_PURGE_HOURS if (bool(LGBM_PURGED_CV) or LGBM_CV_MODE == "purged_time") else 0.0)
     metrics.update(oi_diagnostics)
     metrics.update(coverage_diagnostics)
     metrics["feature_selection_sample_policy"] = "stratified_spread_across_ordered_rows"
@@ -5383,6 +5596,17 @@ def fit_lgbm_stability_full_model(
             X_df[col] = 0.0
     sw = np.ones(n, dtype=np.float32) if sample_weight is None else np.asarray(sample_weight, dtype=np.float32)
     sw, _ = _normalize_weights(sw)
+    sw, recency_applied = _apply_recency_sample_weight(
+        sw,
+        timestamps,
+        objective_mode=objective_mode,
+    )
+    if recency_applied:
+        tprint(
+            "LGBM recency sample weighting enabled: "
+            f"objective={objective_mode}, half_life_days={_recency_half_life_days(objective_mode):.1f}, "
+            "distillation_multipliers_shrink_to_one=yes."
+        )
     if stage_indices is None:
         all_idx = np.arange(n, dtype=np.int32)
         stage_indices = {"lgbm_select": all_idx, "hpo": all_idx, "fit_oof": all_idx}
@@ -5456,6 +5680,7 @@ def fit_lgbm_stability_full_model(
             classifier=classifier,
             params=best_params,
             groups=stability_groups,
+            timestamps=timestamps,
             returns=ret_arr,
             metric_y=y_metric,
             random_state=random_state + 33107,
@@ -5510,6 +5735,16 @@ def fit_lgbm_stability_full_model(
             classifier=classifier,
             top_frac=_target_top_fraction(objective_mode),
         )
+        distill = _recency_shrink_weight_towards_one(
+            distill,
+            timestamps,
+            objective_mode=objective_mode,
+        )
+        fp_weight = _recency_shrink_weight_towards_one(
+            fp_weight,
+            timestamps,
+            objective_mode=objective_mode,
+        )
         sequential_weights, final_ensemble_ess = _normalize_weights(sequential_weight_base * distill * fp_weight)
         prev_ensemble_pred = running_ensemble_pred.copy()
         tprint(
@@ -5555,6 +5790,7 @@ def fit_lgbm_stability_full_model(
         classifier=classifier,
         params=best_params,
         groups=stability_groups,
+        timestamps=timestamps,
         returns=ret_arr,
         metric_y=y_metric,
         random_state=random_state + 11701,
@@ -5591,6 +5827,12 @@ def fit_lgbm_stability_full_model(
     model.metrics["min_oof_distillation_passes"] = int(LGBM_MIN_OOF_DISTILLATION_PASSES)
     model.metrics["meta_min_oof_distillation_passes"] = int(LGBM_META_MIN_OOF_DISTILLATION_PASSES)
     model.metrics["final_ensemble_sequential_weight_ess"] = float(final_ensemble_ess)
+    model.metrics["recency_weighting_enabled"] = bool(LGBM_RECENCY_WEIGHTING)
+    model.metrics["recency_sample_weight_applied"] = bool(recency_applied)
+    model.metrics["recency_half_life_days"] = float(_recency_half_life_days(objective_mode))
+    model.metrics["cv_mode"] = "purged_time" if (bool(LGBM_PURGED_CV) or LGBM_CV_MODE == "purged_time") else "shuffled"
+    model.metrics["cv_splits"] = int(LGBM_CV_SPLITS)
+    model.metrics["purge_hours"] = float(LGBM_PURGE_HOURS if (bool(LGBM_PURGED_CV) or LGBM_CV_MODE == "purged_time") else 0.0)
     model.metrics["best_params"] = dict(best_params)
     model.metrics["hpo_objective_mode"] = objective_mode
     model.metrics["lgbm_meta_feature_names"] = list(model.meta_feature_names)

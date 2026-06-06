@@ -51,6 +51,8 @@ CANONICAL_STOP_POSITION_FIELDS = {
     "stop_policy_params_source",
     "stop_policy_params_hash",
     "stop_policy_schema",
+    "stop_trigger_signal",
+    "stop_trigger_reference_source",
 }
 
 
@@ -149,6 +151,13 @@ EXECUTION_AUDIT_KEYS = (
     "theoretical_entry_price",
     "policy_entry_price",
     "signal_gap_bps",
+    "signal_bar_close_ts",
+    "signal_close_to_decision_seconds",
+    "signal_to_decision_seconds",
+    "max_signal_close_to_entry_seconds",
+    "signal_to_entry_alert_seconds",
+    "stale_signal_age_gate_enabled",
+    "stale_signal_age_gate_exceeded",
     "bid",
     "ask",
     "mid",
@@ -164,6 +173,13 @@ EXECUTION_AUDIT_KEYS = (
     "slippage_bps",
     "entry_gap_bps",
     "entry_slippage_proxy_bps",
+    "hourly_close_to_latest_decision_price_bps",
+    "decision_price_to_fill_bps",
+    "latest_decision_price",
+    "entry_price_attribution_schema",
+    "spread_proxy_bps",
+    "orderbook_live_slippage_bps",
+    "fee_bps",
     "adverse_signal_gap_bps",
     "expected_total_entry_friction_bps",
     "expected_friction_drag_bps",
@@ -217,6 +233,22 @@ def _is_live_execution_mode(mode: str) -> bool:
     return str(mode or "").strip().lower() in LIVE_EXECUTION_MODES
 
 
+def _config_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return bool(default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return bool(value)
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in {"1", "true", "yes", "y", "on"}:
+            return True
+        if text in {"0", "false", "no", "n", "off"}:
+            return False
+    return bool(default)
+
+
 def _default_cross_margin_dust_quote_threshold(mode: str) -> float:
     """Return mode-specific dust threshold for margin reconciliation."""
     mode_l = str(mode or "").strip().lower()
@@ -259,8 +291,15 @@ def _execution_audit_fields(source: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         out["ticker_mid"] = source.get("mid")
     if "spread_bps" in source and "ticker_spread_bps" not in out:
         out["ticker_spread_bps"] = source.get("spread_bps")
+    if "spread_bps" in source and "spread_proxy_bps" not in out:
+        out["spread_proxy_bps"] = source.get("spread_bps")
     if "expected_fill_price" in source and "expected_entry_price" not in out:
         out["expected_entry_price"] = source.get("expected_fill_price")
+    if (
+        "expected_fill_slippage_bps" in source
+        and "orderbook_live_slippage_bps" not in out
+    ):
+        out["orderbook_live_slippage_bps"] = source.get("expected_fill_slippage_bps")
     return out
 
 
@@ -386,9 +425,9 @@ def _exchange_valid_giveback_fallback_stop(
     distance_modes: List[Tuple[float, str]] = [
         (STOP_MIN_CURRENT_DISTANCE_PCT, "standard_min_distance")
     ]
-    # Kraken Futures stop orders use triggerSignal=last. For very coarse ticks,
-    # the conservative min-distance boundary can round back to the invalid side
-    # even though a trigger-side stop is placeable and still reduces risk.
+    # Kraken Futures stops use executable side-aware triggers. For very coarse
+    # ticks, the conservative min-distance boundary can round back to the invalid
+    # side even though a trigger-side stop is placeable and still reduces risk.
     if (
         _exchange_id(exchange) == "krakenfutures"
         or _configured_exchange_id(config) == "krakenfutures"
@@ -838,9 +877,21 @@ def _stop_trigger_reference_price(
     exchange: Any,
     ticker: Dict[str, Any],
     config: Optional[Dict[str, Any]],
+    *,
+    position_side: Optional[str] = None,
 ) -> Tuple[float, str]:
     """Return the live price that matches the stop trigger submitted to exchange."""
     ticker = ticker if isinstance(ticker, dict) else {}
+    if (
+        _execution_account(config) == "perps"
+        and _exchange_id(exchange) == "krakenfutures"
+    ):
+        side = str(position_side or "").strip().lower()
+        trigger_key = "bid" if side == "long" else "ask" if side == "short" else ""
+        if trigger_key:
+            value = _safe_float(ticker.get(trigger_key), default=np.nan)
+            if np.isfinite(value) and value > 0.0:
+                return float(value), trigger_key
     for key in ("last", "close"):
         value = _safe_float(ticker.get(key), default=np.nan)
         if np.isfinite(value) and value > 0.0:
@@ -1122,6 +1173,7 @@ def _create_reduce_stop_loss_order(
                 },
             )
         if _exchange_id(exchange) == "krakenfutures":
+            trigger_signal = _kraken_futures_stop_trigger_signal_for_reduce_side(side)
             return exchange.create_order(
                 symbol=symbol,
                 type="market",
@@ -1131,7 +1183,7 @@ def _create_reduce_stop_loss_order(
                 params={
                     "stopLossPrice": stop_price,
                     "reduceOnly": True,
-                    "triggerSignal": "last",
+                    "triggerSignal": trigger_signal,
                 },
             )
         return exchange.create_order(
@@ -1291,10 +1343,32 @@ def _order_trigger_signal(order: Dict[str, Any]) -> str:
     return str(raw or "").strip().lower()
 
 
+def _kraken_futures_stop_trigger_signal_for_reduce_side(side: str) -> str:
+    """Return the executable trigger for a Kraken Futures reduce stop."""
+    reduce_side = str(side or "").strip().lower()
+    if reduce_side == "sell":
+        return "bid"
+    if reduce_side == "buy":
+        return "ask"
+    return "last"
+
+
+def _kraken_futures_stop_trigger_signal_for_position_side(side: str) -> str:
+    """Return the executable trigger for a Kraken Futures position stop."""
+    position_side = str(side or "").strip().lower()
+    if position_side == "long":
+        return "bid"
+    if position_side == "short":
+        return "ask"
+    return "last"
+
+
 def _protective_stop_trigger_matches_policy(
     exchange: Any,
     order: Dict[str, Any],
     config: Optional[Dict[str, Any]],
+    *,
+    position_side: Optional[str] = None,
 ) -> bool:
     """Return whether an existing protective stop uses the configured trigger."""
     if (
@@ -1302,7 +1376,13 @@ def _protective_stop_trigger_matches_policy(
         or _exchange_id(exchange) != "krakenfutures"
     ):
         return True
-    return _order_trigger_signal(order) == "last"
+    expected = _kraken_futures_stop_trigger_signal_for_position_side(
+        str(position_side or "")
+    )
+    if expected == "last":
+        side = str(order.get("side") or "").lower()
+        expected = _kraken_futures_stop_trigger_signal_for_reduce_side(side)
+    return _order_trigger_signal(order) == expected
 
 
 def _is_stop_loss_order(order: Dict[str, Any]) -> bool:
@@ -1727,6 +1807,135 @@ def _timestamp_delta_seconds(start: Any, end: Any) -> float:
     return out if np.isfinite(out) else np.nan
 
 
+def _signal_bar_close_ts_from_context(ctx: Dict[str, Any]) -> pd.Timestamp | None:
+    close_ts = pd.to_datetime(ctx.get("signal_bar_close_ts"), utc=True, errors="coerce")
+    if not pd.isna(close_ts):
+        return pd.Timestamp(close_ts)
+    signal_ts = pd.to_datetime(ctx.get("signal_bar_ts"), utc=True, errors="coerce")
+    if pd.isna(signal_ts):
+        return None
+    return pd.Timestamp(signal_ts) + pd.Timedelta(hours=1)
+
+
+def _hard_stale_signal_entry_gate_enabled(
+    config: Optional[Dict[str, Any]],
+    *,
+    mode: str,
+) -> bool:
+    cfg = config or {}
+    default = _is_live_execution_mode(mode)
+    raw = os.environ.get(
+        "EPM_HARD_STALE_SIGNAL_ENTRY_GATE_ENABLED",
+        cfg.get("hard_stale_signal_entry_gate_enabled", default),
+    )
+    return _config_bool(raw, default=default)
+
+
+def _max_signal_close_to_entry_seconds(config: Optional[Dict[str, Any]]) -> float:
+    cfg = config or {}
+    raw = os.environ.get(
+        "EPM_MAX_SIGNAL_CLOSE_TO_ENTRY_SECONDS",
+        cfg.get("max_signal_close_to_entry_seconds", 900.0),
+    )
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return 900.0
+
+
+def _stale_signal_entry_reject(
+    *,
+    trade_context: Dict[str, Any],
+    now: pd.Timestamp,
+    config: Optional[Dict[str, Any]],
+    mode: str,
+) -> Dict[str, Any] | None:
+    if not _hard_stale_signal_entry_gate_enabled(config, mode=mode):
+        return None
+    limit_seconds = _max_signal_close_to_entry_seconds(config)
+    if not np.isfinite(limit_seconds) or limit_seconds < 0.0:
+        return None
+    close_ts = _signal_bar_close_ts_from_context(trade_context)
+    if close_ts is None:
+        return None
+    age_seconds = _timestamp_delta_seconds(close_ts, now)
+    if not (np.isfinite(age_seconds) and age_seconds > limit_seconds):
+        return None
+    signal_to_entry_seconds = _timestamp_delta_seconds(
+        trade_context.get("signal_bar_ts"),
+        now,
+    )
+    return {
+        "success": False,
+        "status": "rejected",
+        "error": "stale_signal_age_exceeded",
+        "error_category": "stale_signal_age_exceeded",
+        "portfolio_reject_reason": "stale_signal_age_exceeded",
+        "signal_bar_ts": trade_context.get("signal_bar_ts"),
+        "signal_bar_close_ts": close_ts.isoformat(),
+        "signal_close_to_decision_seconds": age_seconds,
+        "signal_close_to_entry_seconds": age_seconds,
+        "signal_to_entry_seconds": signal_to_entry_seconds,
+        "max_signal_close_to_entry_seconds": limit_seconds,
+        "stale_signal_age_gate_enabled": True,
+        "stale_signal_age_gate_exceeded": True,
+    }
+
+
+def _entry_price_attribution_fields(
+    *,
+    side: str,
+    theoretical_entry_price: float,
+    decision_price: float,
+    fill_price: float,
+    trade_context: Optional[Dict[str, Any]],
+    entry_fee_quote: float = np.nan,
+    entry_notional_quote: float = np.nan,
+) -> Dict[str, Any]:
+    hourly_to_decision_bps = _directional_price_gap_bps(
+        side=side,
+        actual_price=float(decision_price),
+        reference_price=float(theoretical_entry_price),
+    )
+    decision_to_fill_bps = _directional_price_gap_bps(
+        side=side,
+        actual_price=float(fill_price),
+        reference_price=float(decision_price),
+    )
+    ctx = dict(trade_context or {})
+    spread_proxy_bps = _safe_float(
+        ctx.get("ticker_spread_bps", ctx.get("spread_bps")),
+        default=np.nan,
+    )
+    orderbook_live_slippage_bps = _safe_float(
+        ctx.get("orderbook_slippage_bps", ctx.get("expected_fill_slippage_bps")),
+        default=np.nan,
+    )
+    fee_bps = (
+        float(entry_fee_quote) / max(abs(float(entry_notional_quote)), 1e-12) * 10000.0
+        if np.isfinite(entry_fee_quote)
+        and np.isfinite(entry_notional_quote)
+        and abs(float(entry_notional_quote)) > 0.0
+        else _safe_float(ctx.get("fee_bps", ctx.get("realized_fee_bps")), default=np.nan)
+    )
+    return {
+        "latest_decision_price": (
+            float(decision_price)
+            if np.isfinite(decision_price) and decision_price > 0.0
+            else np.nan
+        ),
+        "hourly_close_to_latest_decision_price_bps": hourly_to_decision_bps,
+        "decision_price_to_fill_bps": decision_to_fill_bps,
+        "spread_proxy_bps": spread_proxy_bps,
+        "orderbook_live_slippage_bps": orderbook_live_slippage_bps,
+        "fee_bps": fee_bps,
+        "entry_price_attribution_schema": (
+            "side_aware_bps: hourly_close_to_latest_decision_price + "
+            "decision_price_to_fill + spread_proxy + orderbook_live_slippage + fees"
+        ),
+    }
+
+
 def _wallet_scaled_pnl_fields(
     *,
     state: Dict[str, Any],
@@ -1959,6 +2168,8 @@ def _closed_trade_metrics(
         "policy_parity_ok": policy_parity_ok,
         "stop_price": state.get("stop_price"),
         "stop_order_id": state.get("stop_order_id"),
+        "stop_trigger_signal": state.get("stop_trigger_signal"),
+        "stop_trigger_reference_source": state.get("stop_trigger_reference_source"),
         "close_order_id": order.get("id"),
         "close_order_status": order.get("status"),
         "close_order_type": order.get("type"),
@@ -2251,7 +2462,7 @@ class OCOExecutor:
         try:
             ticker = self.exchange.fetch_ticker(symbol)
             current_price, current_price_source = _stop_trigger_reference_price(
-                self.exchange, ticker, self.config
+                self.exchange, ticker, self.config, position_side=side
             )
         except Exception as price_exc:
             _append_position_event(
@@ -2300,6 +2511,17 @@ class OCOExecutor:
                 }
         position_state["size"] = amount
         position_state["stop_price"] = stop_price
+        reduce_side = "sell" if side == "long" else "buy"
+        stop_trigger_signal = (
+            _kraken_futures_stop_trigger_signal_for_reduce_side(reduce_side)
+            if _execution_account(self.config) == "perps"
+            and _exchange_id(self.exchange) == "krakenfutures"
+            else None
+        )
+        if stop_trigger_signal:
+            position_state["stop_trigger_signal"] = stop_trigger_signal
+        if current_price_source and current_price_source != "unavailable":
+            position_state["stop_trigger_reference_source"] = current_price_source
 
         stop_order_error = None
         stop_order_error_category = None
@@ -2310,7 +2532,7 @@ class OCOExecutor:
             stop_order = _create_reduce_stop_loss_order(
                 self.exchange,
                 symbol=symbol,
-                side="sell" if side == "long" else "buy",
+                side=reduce_side,
                 amount=amount,
                 stop_price=stop_price,
                 config=self.config,
@@ -2318,6 +2540,9 @@ class OCOExecutor:
             position_state["stop_order_id"] = stop_order.get("id")
             if position_state["stop_order_id"]:
                 position_state["stop_order_ids"] = [position_state["stop_order_id"]]
+            actual_trigger_signal = _order_trigger_signal(stop_order)
+            if actual_trigger_signal:
+                position_state["stop_trigger_signal"] = actual_trigger_signal
 
         except Exception as e:
             stop_order_error = str(e)
@@ -2380,6 +2605,7 @@ class OCOExecutor:
         if position_state.get("stop_order_id"):
             tprint(
                 f"Placed STOP_LOSS for {symbol}: SL={stop_price:.8g} "
+                f"trigger={position_state.get('stop_trigger_signal') or 'unknown'} "
                 f"barrier_frac={barrier_frac:.6g} sl_mult={sl_mult:.6g}"
             )
 
@@ -2393,6 +2619,10 @@ class OCOExecutor:
             "size": amount,
             "bucket_key": bucket_key,
             "stop_order_id": position_state.get("stop_order_id"),
+            "stop_trigger_signal": position_state.get("stop_trigger_signal"),
+            "stop_trigger_reference_source": position_state.get(
+                "stop_trigger_reference_source"
+            ),
             "barrier_frac": float(barrier_frac),
             "barrier_pct": float(barrier_frac),
             "sl_mult": float(sl_mult),
@@ -2573,7 +2803,7 @@ class OCOExecutor:
             try:
                 ticker = self.exchange.fetch_ticker(symbol)
                 current_price, current_price_source = _stop_trigger_reference_price(
-                    self.exchange, ticker, self.config
+                    self.exchange, ticker, self.config, position_side=side
                 )
             except Exception as price_exc:
                 _append_position_event(
@@ -3000,6 +3230,11 @@ class OCOExecutor:
             state["stop_order_ids"] = (
                 [state["stop_order_id"]] if state.get("stop_order_id") else []
             )
+            actual_trigger_signal = _order_trigger_signal(new_stop_order)
+            if actual_trigger_signal:
+                state["stop_trigger_signal"] = actual_trigger_signal
+            if current_price_source and current_price_source != "unavailable":
+                state["stop_trigger_reference_source"] = current_price_source
             state["size"] = amount
             stop_reason = state.get("stop_reason", "stop_replaced")
             stop_detail = state.get("stop_reason_detail", stop_reason)
@@ -3017,6 +3252,10 @@ class OCOExecutor:
                 requested_policy_stop=state.get("requested_policy_stop"),
                 final_placed_stop=float(stop_price),
                 stop_order_id=state.get("stop_order_id"),
+                stop_trigger_signal=state.get("stop_trigger_signal"),
+                stop_trigger_reference_source=state.get(
+                    "stop_trigger_reference_source"
+                ),
                 strategy_id=state.get("strategy_id"),
                 params_source=state.get("stop_policy_params_source"),
                 params_hash=state.get("stop_policy_params_hash"),
@@ -3074,7 +3313,7 @@ class OCOExecutor:
                 try:
                     ticker = self.exchange.fetch_ticker(symbol)
                     current_price, current_price_source = _stop_trigger_reference_price(
-                        self.exchange, ticker, self.config
+                        self.exchange, ticker, self.config, position_side=side
                     )
                     if np.isfinite(current_price) and current_price > 0.0:
                         live_bar = pd.DataFrame(
@@ -3171,6 +3410,13 @@ class OCOExecutor:
                                 if state.get("stop_order_id")
                                 else []
                             )
+                            actual_trigger_signal = _order_trigger_signal(retry_order)
+                            if actual_trigger_signal:
+                                state["stop_trigger_signal"] = actual_trigger_signal
+                            if current_price_source and current_price_source != "unavailable":
+                                state["stop_trigger_reference_source"] = (
+                                    current_price_source
+                                )
                             state["size"] = amount
                             state["stop_reason"] = recompute_decision.reason
                             state["stop_reason_detail"] = (
@@ -3203,6 +3449,10 @@ class OCOExecutor:
                                 current_price=float(current_price),
                                 current_price_source=current_price_source,
                                 stop_order_id=state.get("stop_order_id"),
+                                stop_trigger_signal=state.get("stop_trigger_signal"),
+                                stop_trigger_reference_source=state.get(
+                                    "stop_trigger_reference_source"
+                                ),
                                 stop_reason=recompute_decision.reason,
                                 reason_detail=recompute_decision.reason_detail,
                                 params_source=recompute_decision.params_source,
@@ -3237,7 +3487,9 @@ class OCOExecutor:
             if canceled_existing and np.isfinite(old_stop_price):
                 try:
                     ticker = self.exchange.fetch_ticker(symbol)
-                    current_price = _safe_float(ticker.get("last"), default=np.nan)
+                    current_price, current_price_source = _stop_trigger_reference_price(
+                        self.exchange, ticker, self.config, position_side=side
+                    )
                     restore_ok = not np.isfinite(current_price)
                     if side == "long" and np.isfinite(current_price):
                         restore_ok = _stop_side_is_valid(
@@ -3271,6 +3523,13 @@ class OCOExecutor:
                             if state.get("stop_order_id")
                             else []
                         )
+                        actual_trigger_signal = _order_trigger_signal(restore_order)
+                        if actual_trigger_signal:
+                            state["stop_trigger_signal"] = actual_trigger_signal
+                        if current_price_source and current_price_source != "unavailable":
+                            state["stop_trigger_reference_source"] = (
+                                current_price_source
+                            )
                         state["stop_reason_detail"] = (
                             str(state.get("stop_reason_detail") or "")
                             + "; restored_previous_stop_after_replace_failure"
@@ -3280,6 +3539,10 @@ class OCOExecutor:
                             "stop_restored",
                             restored_stop=float(old_stop_price),
                             stop_order_id=state.get("stop_order_id"),
+                            stop_trigger_signal=state.get("stop_trigger_signal"),
+                            stop_trigger_reference_source=state.get(
+                                "stop_trigger_reference_source"
+                            ),
                         )
                 except Exception as restore_exc:
                     state["stop_restore_error"] = str(restore_exc)
@@ -3366,12 +3629,22 @@ class OCOExecutor:
         ):
             existing_id = existing.get("id")
             existing_stop = _order_stop_price(existing)
+            if not _protective_stop_trigger_matches_policy(
+                self.exchange,
+                existing,
+                self.config,
+                position_side=str(state.get("side", "long")).lower(),
+            ):
+                continue
             if np.isfinite(existing_stop) and abs(
                 float(existing_stop) - float(stop_price)
             ) <= max(abs(float(stop_price)) * 1e-4, 1e-8):
                 state["stop_order_id"] = existing_id
                 state["stop_order_ids"] = [existing_id] if existing_id else []
                 state["stop_price"] = float(existing_stop)
+                actual_trigger_signal = _order_trigger_signal(existing)
+                if actual_trigger_signal:
+                    state["stop_trigger_signal"] = actual_trigger_signal
                 state.pop("stop_update_error", None)
                 state.pop("stop_update_error_category", None)
                 _append_position_event(
@@ -3380,11 +3653,16 @@ class OCOExecutor:
                     previous_stop_order_id=before_id,
                     stop_order_id=existing_id,
                     stop_price=float(existing_stop),
+                    stop_trigger_signal=state.get("stop_trigger_signal"),
                 )
                 return {
                     "success": True,
                     "stop_order_id": existing_id,
                     "stop_price": float(existing_stop),
+                    "stop_trigger_signal": state.get("stop_trigger_signal"),
+                    "stop_trigger_reference_source": state.get(
+                        "stop_trigger_reference_source"
+                    ),
                     "adopted_existing_stop": True,
                 }
         cancelled = _cancel_open_protective_stop_orders(
@@ -5665,7 +5943,7 @@ class TradeExecutor:
                     if not (np.isfinite(stop_px) and stop_px > 0.0):
                         continue
                     if not _protective_stop_trigger_matches_policy(
-                        self.exchange, order, self.config
+                        self.exchange, order, self.config, position_side=side
                     ):
                         mismatched_stop_orders.append(order)
                         continue
@@ -6597,6 +6875,31 @@ class TradeExecutor:
                 if v is not None
             }
         )
+        stale_reject = _stale_signal_entry_reject(
+            trade_context=audit_context,
+            now=now_utc,
+            config=self.config,
+            mode=self.mode,
+        )
+        if stale_reject is not None:
+            tprint(
+                "[STALE_SIGNAL_ENTRY_BLOCK] "
+                f"{symbol} {side} signal_close_to_entry_seconds="
+                f"{_safe_float(stale_reject.get('signal_close_to_entry_seconds'), default=np.nan):.1f} "
+                f"limit_seconds="
+                f"{_safe_float(stale_reject.get('max_signal_close_to_entry_seconds'), default=np.nan):.1f} "
+                f"signal_bar_ts={stale_reject.get('signal_bar_ts')} "
+                f"signal_bar_close_ts={stale_reject.get('signal_bar_close_ts')}"
+            )
+            return {
+                **stale_reject,
+                "symbol": symbol,
+                "side": side,
+                "size": position_value,
+                "bucket_key": bucket_key,
+                **audit_context,
+                "stale_signal_age_gate_exceeded": True,
+            }
         effective_price = float(limit_price) if limit_price is not None else price
 
         if _is_live_execution_mode(self.mode):
@@ -6846,6 +7149,44 @@ class TradeExecutor:
                 (trade_context or {}).get("signal_bar_ts"),
                 entry_ts,
             )
+            decision_price = _first_finite_price(
+                trade_context,
+                (
+                    "decision_mid",
+                    "ticker_mid",
+                    "mid",
+                    "expected_entry_price",
+                    "expected_fill_price",
+                ),
+            )
+            if not (np.isfinite(decision_price) and decision_price > 0.0):
+                decision_price = float(expected_entry_price)
+            entry_attribution = _entry_price_attribution_fields(
+                side=side,
+                theoretical_entry_price=float(theoretical_entry_price),
+                decision_price=float(decision_price),
+                fill_price=float(entry_price),
+                trade_context=trade_context,
+                entry_fee_quote=entry_fee_quote,
+                entry_notional_quote=float(entry_price) * float(filled_amount),
+            )
+            signal_to_entry_alert_seconds = _safe_float(
+                (trade_context or {}).get("signal_to_entry_alert_seconds"),
+                default=600.0,
+            )
+            if (
+                np.isfinite(signal_to_entry_seconds)
+                and np.isfinite(signal_to_entry_alert_seconds)
+                and signal_to_entry_seconds > signal_to_entry_alert_seconds
+            ):
+                tprint(
+                    "[STALE_SIGNAL_ENTRY_ALERT] "
+                    f"{symbol} {side} signal_to_entry_seconds="
+                    f"{signal_to_entry_seconds:.1f} "
+                    f"alert_seconds={signal_to_entry_alert_seconds:.1f} "
+                    f"signal_bar_ts={(trade_context or {}).get('signal_bar_ts')} "
+                    f"signal_bar_close_ts={(trade_context or {}).get('signal_bar_close_ts')}"
+                )
             base_fee = _filled_base_fee(order, exchange_symbol)
             stop_amount_source = filled_amount
             if (
@@ -6919,6 +7260,7 @@ class TradeExecutor:
                                     ),
                                     "decision_to_entry_seconds": decision_to_entry_seconds,
                                     "signal_to_entry_seconds": signal_to_entry_seconds,
+                                    **entry_attribution,
                                     "expected_friction_drag_bps": trade_context.get(
                                         "expected_total_entry_friction_bps"
                                     ),
@@ -6960,6 +7302,7 @@ class TradeExecutor:
                     ),
                     "decision_to_entry_seconds": decision_to_entry_seconds,
                     "signal_to_entry_seconds": signal_to_entry_seconds,
+                    **entry_attribution,
                     "expected_friction_drag_bps": (trade_context or {}).get(
                         "expected_total_entry_friction_bps"
                     ),
@@ -7009,6 +7352,7 @@ class TradeExecutor:
                     ),
                     "decision_to_entry_seconds": decision_to_entry_seconds,
                     "signal_to_entry_seconds": signal_to_entry_seconds,
+                    **entry_attribution,
                     "expected_friction_drag_bps": (trade_context or {}).get(
                         "expected_total_entry_friction_bps"
                     ),
@@ -7049,6 +7393,7 @@ class TradeExecutor:
                 ),
                 "decision_to_entry_seconds": decision_to_entry_seconds,
                 "signal_to_entry_seconds": signal_to_entry_seconds,
+                **entry_attribution,
                 "expected_friction_drag_bps": (trade_context or {}).get(
                     "expected_total_entry_friction_bps"
                 ),
@@ -7181,6 +7526,42 @@ class TradeExecutor:
             (trade_context or {}).get("signal_bar_ts"),
             now_ts,
         )
+        decision_price = _first_finite_price(
+            trade_context,
+            (
+                "decision_mid",
+                "ticker_mid",
+                "mid",
+                "expected_entry_price",
+                "expected_fill_price",
+            ),
+        )
+        if not (np.isfinite(decision_price) and decision_price > 0.0):
+            decision_price = float(expected_entry_price)
+        entry_attribution = _entry_price_attribution_fields(
+            side=side,
+            theoretical_entry_price=float(theoretical_entry_price),
+            decision_price=float(decision_price),
+            fill_price=float(entry_price),
+            trade_context=trade_context,
+        )
+        signal_to_entry_alert_seconds = _safe_float(
+            (trade_context or {}).get("signal_to_entry_alert_seconds"),
+            default=600.0,
+        )
+        if (
+            np.isfinite(signal_to_entry_seconds)
+            and np.isfinite(signal_to_entry_alert_seconds)
+            and signal_to_entry_seconds > signal_to_entry_alert_seconds
+        ):
+            tprint(
+                "[STALE_SIGNAL_ENTRY_ALERT] "
+                f"{symbol} {side} signal_to_entry_seconds="
+                f"{signal_to_entry_seconds:.1f} "
+                f"alert_seconds={signal_to_entry_alert_seconds:.1f} "
+                f"signal_bar_ts={(trade_context or {}).get('signal_bar_ts')} "
+                f"signal_bar_close_ts={(trade_context or {}).get('signal_bar_close_ts')}"
+            )
         try:
             live_barrier_frac = _safe_float(
                 (trade_context or {}).get("barrier_frac")
@@ -7243,6 +7624,7 @@ class TradeExecutor:
             ),
             "decision_to_entry_seconds": decision_to_entry_seconds,
             "signal_to_entry_seconds": signal_to_entry_seconds,
+            **entry_attribution,
             "expected_friction_drag_bps": (trade_context or {}).get(
                 "expected_total_entry_friction_bps"
             ),
@@ -7293,6 +7675,7 @@ class TradeExecutor:
                 ),
                 "decision_to_entry_seconds": decision_to_entry_seconds,
                 "signal_to_entry_seconds": signal_to_entry_seconds,
+                **entry_attribution,
                 "expected_friction_drag_bps": (trade_context or {}).get(
                     "expected_total_entry_friction_bps"
                 ),
@@ -7848,8 +8231,20 @@ class TradeExecutor:
 
     def shutdown(self):
         """Shutdown executor and cleanup resources."""
-        if self.oco_executor:
+        close_on_shutdown = _config_bool(
+            self.config.get(
+                "close_positions_on_shutdown",
+                os.environ.get("EPM_CLOSE_POSITIONS_ON_SHUTDOWN"),
+            ),
+            default=False,
+        )
+        if self.oco_executor and close_on_shutdown:
             self.oco_executor.close_all_positions()
+        elif self.oco_executor:
+            tprint(
+                "TradeExecutor shutdown: preserving active positions; set "
+                "close_positions_on_shutdown=true to flatten on shutdown"
+            )
         tprint("TradeExecutor shutdown complete")
 
 

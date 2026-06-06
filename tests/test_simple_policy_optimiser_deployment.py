@@ -11,8 +11,12 @@ from extreme_price_movements.simple_policy_optimiser import (
     _assert_policy_path_coverage,
     _apply_delayed_entry_execution_model,
     _apply_deployment_strategy_contract,
+    _assert_deployment_has_selected_strategies,
+    _apply_local_candidate_hit_rate_guard,
     _build_deployment_payload,
     _deployment_selected_strategy_ids,
+    _filter_candidates_to_deployment_strategies,
+    _filter_policy_quote_rows,
     _finalise_simple_policy_candidates,
     _load_feature_rows_for_events,
     _load_policy_1m_klines_cached,
@@ -23,6 +27,7 @@ from extreme_price_movements.simple_policy_optimiser import (
     _strategy_id_matches_allowlist,
     _summarize_policy_prediction_sources,
     _validate_delayed_entry_execution_coverage,
+    _validate_policy_rows_in_trained_universe,
     _validate_policy_prediction_oos_contract,
     _write_policy_export_failure_diagnostics,
     _write_rank_threshold_band_reports,
@@ -103,6 +108,61 @@ def test_live_portfolio_contract_uses_selected_deployment_strategies_only():
         "short_beta",
     ]
     assert narrowed["strategy_contract"]["strategy_cores"] == ["alpha", "beta"]
+
+
+def test_portfolio_replay_refuses_empty_deployment_selection(tmp_path):
+    deployment_payload = {
+        "strategies": [],
+        "rejected_strategies": [
+            {
+                "strategy_id": "long_missing_mask",
+                "regime_mask_source": "missing_lgbm_mask_contract",
+            }
+        ],
+    }
+
+    with pytest.raises(RuntimeError, match="No deployable strategies selected"):
+        _assert_deployment_has_selected_strategies(
+            deployment_payload,
+            candidate_path=tmp_path / "simple_policy_candidates.parquet",
+        )
+
+
+def test_portfolio_replay_candidates_filter_to_selected_strategies():
+    candidates = pd.DataFrame(
+        {
+            "strategy_id": ["long_a", "short_b", "long_rejected"],
+            "symbol": ["BTC/USD:USD", "ETH/USD:USD", "SOL/USD:USD"],
+        }
+    )
+
+    filtered = _filter_candidates_to_deployment_strategies(
+        candidates,
+        ["long_a", "short_b"],
+    )
+
+    assert filtered["strategy_id"].tolist() == ["long_a", "short_b"]
+
+
+def test_policy_quote_filter_infers_homogeneous_kraken_perp_quote(monkeypatch):
+    monkeypatch.delenv("EPM_EXCHANGE", raising=False)
+    monkeypatch.delenv("EXCHANGE_NAME", raising=False)
+    monkeypatch.delenv("PRIMARY_EXCHANGE", raising=False)
+    monkeypatch.delenv("EPM_POLICY_OOS_QUOTE_FILTER", raising=False)
+    rows = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                ["2026-01-22T10:00:00Z", "2026-01-22T10:00:00Z"],
+                utc=True,
+            ),
+            "symbol": ["BTC/USD:USD", "SOL/USD:USD"],
+            "clf": [0.7, 0.8],
+        }
+    )
+
+    filtered = _filter_policy_quote_rows(rows, "perps")
+
+    assert filtered["symbol"].tolist() == ["BTC/USD:USD", "SOL/USD:USD"]
 
 
 def test_policy_market_data_root_prefers_exchange_for_perps(tmp_path, monkeypatch):
@@ -420,6 +480,34 @@ def test_policy_prediction_source_label_distinguishes_requested_from_actual():
     )
     assert _policy_prediction_source_label(policy_oos) == "verified policy-OOS predictions"
     assert _policy_prediction_source_uses_policy_oos(policy_oos) is True
+
+
+def test_policy_rows_must_be_inside_trained_universe(tmp_path, monkeypatch):
+    df = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(["2026-01-01T00:00:00Z"] * 2),
+            "symbol": ["AAA/USD:USD", "ZZZ/USD:USD"],
+            "clf": [0.9, 0.8],
+        }
+    )
+
+    def fake_universe(data_root, run_id):
+        return {"AAA/USD:USD"}
+
+    monkeypatch.setattr(
+        "extreme_price_movements.simple_policy_optimiser.load_trained_symbol_universe",
+        fake_universe,
+    )
+    ok, report = _validate_policy_rows_in_trained_universe(
+        df,
+        data_root=tmp_path,
+        run_id="run_a",
+        source_path=tmp_path / "policy_oos_demo.parquet",
+    )
+
+    assert ok is False
+    assert report["reason"] == "policy_oos_symbols_outside_trained_universe"
+    assert report["outside_sample"] == ["ZZZ/USD:USD"]
 
 
 def test_diagnostic_policy_sources_are_opt_in(monkeypatch):
@@ -855,6 +943,175 @@ def test_rank_threshold_band_report_separates_local_from_cumulative(tmp_path):
     assert local_80["mean_net_return"] < 0.0
     assert int(cumulative_80["row_count"]) == 4
     assert cumulative_80["mean_net_return"] > 0.0
+
+
+def test_local_candidate_guard_requires_lower_band_gross_hit_and_ev(tmp_path, monkeypatch):
+    import extreme_price_movements.simple_policy_optimiser as spo
+
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_ROWS", 2)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_NET_HIT_RATE", 0.50)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_GROSS_HIT_RATE", 0.60)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_MEAN_NET_RETURN", 0.002)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_BAND_WIDTH", 0.05)
+
+    deployment_payload = {
+        "strategies": [
+            {
+                "strategy_id": "long_a",
+                "strategy_for_inference": "long_a",
+                "selected": True,
+                "deployment_rank_threshold": 0.80,
+            }
+        ],
+        "rejected_strategies": [],
+    }
+    candidates = pd.DataFrame(
+        {
+            "strategy_id": ["long_a"] * 6,
+            "auction_rank_score": [0.81, 0.82, 0.86, 0.87, 0.91, 0.92],
+            "net_return": [-0.001, 0.001, 0.003, 0.004, 0.002, 0.003],
+            "gross_return": [-0.0005, 0.0015, 0.004, 0.005, 0.003, 0.004],
+        }
+    )
+
+    summary = _apply_local_candidate_hit_rate_guard(
+        deployment_payload,
+        candidates,
+        candidate_path=tmp_path / "simple_policy_candidates.parquet",
+    )
+
+    guard = summary["strategies"]["long_a"]
+    assert guard["passed"] is True
+    assert np.isclose(guard["selected_threshold"], 0.82)
+    assert np.isclose(guard["selected_local_band_lo"], 0.82)
+    assert np.isclose(guard["selected_local_band_hi"], 0.87)
+    assert guard["selected_gross_hit_rate"] == 1.0
+    assert guard["selected_mean_net_return"] >= 0.002
+    assert deployment_payload["strategies"][0]["deployment_rank_threshold"] == 0.82
+    assert deployment_payload["rejected_strategies"] == []
+
+
+def test_local_candidate_guard_searches_upward_for_passing_band(
+    tmp_path, monkeypatch
+):
+    import extreme_price_movements.simple_policy_optimiser as spo
+
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_ROWS", 4)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_NET_HIT_RATE", 0.50)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_GROSS_HIT_RATE", 0.55)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_MEAN_NET_RETURN", 0.002)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_BAND_WIDTH", 0.05)
+    monkeypatch.setattr(spo, "DEPLOYMENT_THRESHOLD_PRECISION", 0.01)
+
+    deployment_payload = {
+        "strategies": [
+            {
+                "strategy_id": "long_dist",
+                "strategy_for_inference": "long_dist",
+                "selected": True,
+                "deployment_rank_threshold": 0.90,
+            }
+        ],
+        "rejected_strategies": [],
+    }
+    candidates = pd.DataFrame(
+        {
+            "strategy_id": ["long_dist"] * 8,
+            "auction_rank_score": [
+                0.901,
+                0.912,
+                0.921,
+                0.934,
+                0.951,
+                0.962,
+                0.973,
+                0.984,
+            ],
+            # The 0.90-0.95 band has positive EV but only 50% gross hit.
+            # The 0.95-1.00 band has 75% gross hit and clears all floors.
+            "net_return": [
+                -0.010,
+                0.030,
+                -0.006,
+                0.025,
+                -0.004,
+                0.018,
+                0.022,
+                0.026,
+            ],
+            "gross_return": [
+                -0.008,
+                0.032,
+                -0.004,
+                0.027,
+                -0.002,
+                0.020,
+                0.024,
+                0.028,
+            ],
+        }
+    )
+
+    summary = _apply_local_candidate_hit_rate_guard(
+        deployment_payload,
+        candidates,
+        candidate_path=tmp_path / "simple_policy_candidates.parquet",
+    )
+
+    guard = summary["strategies"]["long_dist"]
+    assert guard["passed"] is True
+    assert np.isclose(guard["selected_threshold"], 0.93)
+    assert np.isclose(guard["selected_local_band_lo"], 0.93)
+    assert np.isclose(guard["selected_local_band_hi"], 0.98)
+    assert guard["selected_gross_hit_rate"] >= 0.55
+    assert guard["selected_mean_net_return"] >= 0.002
+    assert deployment_payload["strategies"][0]["deployment_rank_threshold"] == 0.93
+    assert deployment_payload["rejected_strategies"] == []
+
+
+def test_local_candidate_guard_rejects_strategy_when_no_lower_band_meets_floor(
+    tmp_path, monkeypatch
+):
+    import extreme_price_movements.simple_policy_optimiser as spo
+
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_ROWS", 2)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_NET_HIT_RATE", 0.50)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_GROSS_HIT_RATE", 0.60)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_MEAN_NET_RETURN", 0.002)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_BAND_WIDTH", 0.05)
+
+    deployment_payload = {
+        "strategies": [
+            {
+                "strategy_id": "long_a",
+                "strategy_for_inference": "long_a",
+                "selected": True,
+                "deployment_rank_threshold": 0.80,
+            }
+        ],
+        "rejected_strategies": [],
+    }
+    candidates = pd.DataFrame(
+        {
+            "strategy_id": ["long_a"] * 4,
+            "auction_rank_score": [0.81, 0.82, 0.86, 0.87],
+            "net_return": [-0.001, 0.001, 0.001, 0.001],
+            "gross_return": [-0.0005, 0.0015, 0.0015, 0.0015],
+        }
+    )
+
+    summary = _apply_local_candidate_hit_rate_guard(
+        deployment_payload,
+        candidates,
+        candidate_path=tmp_path / "simple_policy_candidates.parquet",
+    )
+
+    guard = summary["strategies"]["long_a"]
+    assert guard["passed"] is False
+    assert deployment_payload["strategies"] == []
+    assert deployment_payload["rejected_strategies"][0]["reject_reasons"] == [
+        "local_lower_band_hit_or_ev_floor_not_met"
+    ]
 
 
 def test_policy_feature_loader_falls_back_to_source_run(tmp_path, monkeypatch):

@@ -15,6 +15,8 @@ from extreme_price_movements.feature_family_registry import (
 
 LIVE_ZSCORE_STATE_VERSION = 1
 DEFAULT_LIVE_ZSCORE_STATE_FILE = "causal_zscore_state.npz"
+LIVE_RAW_ROLLING_STATE_VERSION = 1
+DEFAULT_LIVE_RAW_ROLLING_STATE_FILE = "raw_rolling_state.npz"
 
 
 def live_zscore_state_path(data_root: str | Path, run_id: str) -> Path:
@@ -25,6 +27,212 @@ def live_zscore_state_path(data_root: str | Path, run_id: str) -> Path:
         / "live_state"
         / DEFAULT_LIVE_ZSCORE_STATE_FILE
     )
+
+
+def live_raw_rolling_state_path(data_root: str | Path, run_id: str) -> Path:
+    return (
+        Path(data_root)
+        / "artifacts"
+        / str(run_id)
+        / "live_state"
+        / DEFAULT_LIVE_RAW_ROLLING_STATE_FILE
+    )
+
+
+class RawRollingFeatureState:
+    """Stateful latest-row rolling primitives for live append-only features."""
+
+    VERSION = LIVE_RAW_ROLLING_STATE_VERSION
+    SUPPORTED_OPS = {"sum", "mean", "std", "max", "min"}
+
+    def __init__(
+        self,
+        *,
+        op: str,
+        name: str,
+        symbols,
+        window: int,
+        last_timestamp: str | None = None,
+    ):
+        op = str(op)
+        if op not in self.SUPPORTED_OPS:
+            raise ValueError(f"Unsupported raw rolling op: {op}")
+        self.op = op
+        self.name = str(name)
+        self.symbols = [str(s) for s in symbols]
+        self.window = int(window)
+        self.last_timestamp = last_timestamp
+        if self.window <= 0:
+            raise ValueError("RawRollingFeatureState window must be positive")
+        n_symbols = len(self.symbols)
+        self.buffer = np.empty((n_symbols, self.window), dtype=np.float32)
+        self.valid = np.zeros((n_symbols, self.window), dtype=np.bool_)
+        self.ptr = np.zeros(n_symbols, dtype=np.int32)
+        self.count = np.zeros(n_symbols, dtype=np.int32)
+        self.sum = np.zeros(n_symbols, dtype=np.float64)
+        self.sum_sq = np.zeros(n_symbols, dtype=np.float64)
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "version": self.VERSION,
+            "op": self.op,
+            "name": self.name,
+            "symbol_order": list(self.symbols),
+            "window": int(self.window),
+            "last_timestamp": self.last_timestamp,
+        }
+
+    def metadata_matches(
+        self,
+        *,
+        op: str | None = None,
+        name: str | None = None,
+        symbols=None,
+        window: int | None = None,
+    ) -> bool:
+        if op is not None and str(op) != self.op:
+            return False
+        if name is not None and str(name) != self.name:
+            return False
+        if symbols is not None and [str(s) for s in symbols] != self.symbols:
+            return False
+        if window is not None and int(window) != self.window:
+            return False
+        return True
+
+    def update(self, raw_values, timestamp: Any | None = None) -> np.ndarray:
+        arr = np.asarray(raw_values, dtype=np.float32).reshape(-1)
+        if arr.shape[0] != len(self.symbols):
+            raise ValueError(
+                f"Rolling input {self.name!r} has {arr.shape[0]} symbols; "
+                f"expected {len(self.symbols)}"
+            )
+        out = np.full(len(self.symbols), np.nan, dtype=np.float32)
+        for j, val in enumerate(arr):
+            slot = int(self.ptr[j])
+            if bool(self.valid[j, slot]):
+                old = float(self.buffer[j, slot])
+                if np.isfinite(old):
+                    self.sum[j] -= old
+                    self.sum_sq[j] -= old * old
+                    self.count[j] = max(int(self.count[j]) - 1, 0)
+            if np.isfinite(float(val)):
+                self.buffer[j, slot] = float(val)
+                self.valid[j, slot] = True
+                self.sum[j] += float(val)
+                self.sum_sq[j] += float(val) * float(val)
+                self.count[j] += 1
+            else:
+                self.buffer[j, slot] = np.nan
+                self.valid[j, slot] = False
+            self.ptr[j] = (slot + 1) % self.window
+            n = int(self.count[j])
+            if n <= 0:
+                continue
+            if self.op == "sum":
+                out[j] = np.float32(self.sum[j])
+            elif self.op == "mean":
+                out[j] = np.float32(self.sum[j] / max(n, 1))
+            elif self.op == "max":
+                vals = self.buffer[j, self.valid[j, :]]
+                if vals.size:
+                    out[j] = np.float32(np.nanmax(vals))
+            elif self.op == "min":
+                vals = self.buffer[j, self.valid[j, :]]
+                if vals.size:
+                    out[j] = np.float32(np.nanmin(vals))
+            elif n > 1:
+                var = (self.sum_sq[j] - (self.sum[j] * self.sum[j] / n)) / (n - 1)
+                out[j] = np.float32(np.sqrt(max(var, 0.0)))
+        if timestamp is not None:
+            self.last_timestamp = str(timestamp)
+        return out
+
+    def seed_from_frame(self, values, index) -> None:
+        arr = np.asarray(values, dtype=np.float32)
+        if arr.ndim != 2:
+            raise ValueError("seed_from_frame expects a 2D array")
+        if arr.shape[1] != len(self.symbols):
+            raise ValueError(
+                f"Rolling seed has {arr.shape[1]} symbols; expected {len(self.symbols)}"
+            )
+        start = max(0, arr.shape[0] - self.window)
+        for pos in range(start, arr.shape[0]):
+            ts = None
+            if index is not None:
+                ts = pd_timestamp_iso(index[pos])
+            self.update(arr[pos, :], timestamp=ts)
+
+    def save(self, path: str | Path) -> None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        metadata = json.dumps(self.metadata(), sort_keys=True)
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        np.savez_compressed(
+            tmp_path,
+            metadata=np.asarray(metadata),
+            buffer=self.buffer,
+            valid=self.valid,
+            ptr=self.ptr,
+            count=self.count,
+            sum=self.sum,
+            sum_sq=self.sum_sq,
+        )
+        npz_tmp = tmp_path
+        if not npz_tmp.exists() and tmp_path.with_suffix(tmp_path.suffix + ".npz").exists():
+            npz_tmp = tmp_path.with_suffix(tmp_path.suffix + ".npz")
+        npz_tmp.replace(path)
+
+    @classmethod
+    def load(
+        cls,
+        path: str | Path,
+        *,
+        op: str | None = None,
+        name: str | None = None,
+        symbols=None,
+        window: int | None = None,
+    ) -> "RawRollingFeatureState | None":
+        path = Path(path)
+        if not path.exists():
+            return None
+        try:
+            with np.load(path, allow_pickle=False) as data:
+                meta = json.loads(str(data["metadata"].item()))
+                if int(meta.get("version", -1)) != cls.VERSION:
+                    return None
+                state = cls(
+                    op=str(meta.get("op")),
+                    name=str(meta.get("name")),
+                    symbols=meta.get("symbol_order", []),
+                    window=int(meta.get("window")),
+                    last_timestamp=meta.get("last_timestamp"),
+                )
+                if not state.metadata_matches(
+                    op=op,
+                    name=name,
+                    symbols=symbols,
+                    window=window,
+                ):
+                    return None
+                state.buffer[...] = data["buffer"]
+                state.valid[...] = data["valid"]
+                state.ptr[...] = data["ptr"]
+                state.count[...] = data["count"]
+                state.sum[...] = data["sum"]
+                state.sum_sq[...] = data["sum_sq"]
+                return state
+        except Exception:
+            return None
+
+
+def pd_timestamp_iso(value: Any) -> str:
+    try:
+        import pandas as pd
+
+        return pd.Timestamp(value).isoformat()
+    except Exception:
+        return str(value)
 
 
 class RollingZScoreState:

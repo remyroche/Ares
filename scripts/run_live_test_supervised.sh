@@ -3,7 +3,7 @@ set -u
 
 cd /Users/remyroche/Documents/Ares || exit 1
 
-RUN_ID="${RUN_ID:-20260523_015947}"
+RUN_ID="${RUN_ID:-20260525_010004_nopenalty}"
 DATA_ROOT="${DATA_ROOT:-data_perp}"
 LOG_DIR="${LOG_DIR:-logs}"
 RESTART_DELAY_SECONDS="${RESTART_DELAY_SECONDS:-30}"
@@ -40,11 +40,20 @@ while true; do
     PYTHONPATH=. \
     MPLCONFIGDIR=/private/tmp/ares_mplconfig \
     EPM_EXCHANGE="$EPM_EXCHANGE" \
+    EPM_DATA_ROOT="$DATA_ROOT" \
+    EPM_ARTIFACT_SOURCE_RUN_ID="${EPM_ARTIFACT_SOURCE_RUN_ID:-20260523_015947}" \
+    EPM_MODEL_BACKEND="${EPM_MODEL_BACKEND:-lgbm_pipeline}" \
+    EPM_DISABLE_REGIME_ADAPTORS="${EPM_DISABLE_REGIME_ADAPTORS:-1}" \
+    EPM_SIMPLE_POLICY_REGIME_ADAPTOR="${EPM_SIMPLE_POLICY_REGIME_ADAPTOR:-0}" \
+    EPM_LIVE_FEATURE_LAYER_DEBUG="${EPM_LIVE_FEATURE_LAYER_DEBUG:-1}" \
+    EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_SELECTED_CACHE="${EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_SELECTED_CACHE:-1}" \
+    EPM_RUN_SCOPED_PREDICTION_LEDGER="${EPM_RUN_SCOPED_PREDICTION_LEDGER:-1}" \
     "$PYTHON_BIN" -u -m extreme_price_movements.inference.run_inference \
       --live-test \
       --perps \
       --data-root "$DATA_ROOT" \
       --run-id "$RUN_ID" \
+      --run-scoped-prediction-ledger \
       --inference-interval "$INFERENCE_INTERVAL" \
       --challenger-interval "$CHALLENGER_INTERVAL" \
       "${live_data_args[@]}" \

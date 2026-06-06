@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from pathlib import Path
+from types import SimpleNamespace
 
 import extreme_price_movements.lgbm_pipeline as lp
 
@@ -17,6 +18,150 @@ def test_distillation_passes_apply_to_base_and_meta(monkeypatch):
     monkeypatch.setattr(lp, "LGBM_OOF_DISTILLATION_PASSES", 4)
     assert lp._distillation_passes_for_objective("train_base") == 4
     assert lp._distillation_passes_for_objective("train_meta") == 4
+
+
+def test_purged_time_splitter_excludes_purge_window(monkeypatch):
+    ts = pd.date_range("2026-01-01", periods=60, freq="h", tz="UTC")
+    y = np.tile([0, 1], 30).astype(np.float32)
+
+    splitter, y_split = lp._purged_time_splitter(
+        y,
+        True,
+        42,
+        timestamps=ts,
+        n_splits=5,
+        purge_hours=10,
+    )
+
+    folds = list(splitter.split(np.zeros(len(y_split)), y_split))
+    assert len(folds) == 5
+    ts_ns = pd.Series(ts).astype("int64").to_numpy()
+    purge_ns = int(10 * 3600 * 1_000_000_000)
+    for tr, va in folds:
+        lo = int(np.min(ts_ns[va]))
+        hi = int(np.max(ts_ns[va]))
+        assert not np.any((ts_ns[tr] >= lo - purge_ns) & (ts_ns[tr] <= hi + purge_ns))
+
+
+def test_recency_distillation_shrink_applies_to_base_and_meta(monkeypatch):
+    monkeypatch.setattr(lp, "LGBM_RECENCY_WEIGHTING", True)
+    monkeypatch.setattr(lp, "LGBM_BASE_RECENCY_HALF_LIFE_DAYS", 365.0)
+    monkeypatch.setattr(lp, "LGBM_META_RECENCY_HALF_LIFE_DAYS", 182.5)
+
+    ts = pd.to_datetime(
+        ["2025-06-01T00:00:00Z", "2026-06-01T00:00:00Z"],
+        utc=True,
+    )
+    weights = np.asarray([3.0, 3.0], dtype=np.float32)
+
+    base = lp._recency_shrink_weight_towards_one(
+        weights,
+        ts,
+        objective_mode="train_base",
+    )
+    meta = lp._recency_shrink_weight_towards_one(
+        weights,
+        ts,
+        objective_mode="train_meta",
+    )
+
+    assert base[-1] == pytest.approx(3.0)
+    assert meta[-1] == pytest.approx(3.0)
+    assert 1.0 < base[0] < 3.0
+    assert 1.0 < meta[0] < base[0]
+
+
+def test_meta_lgbm_native_preset_loads_from_meta_state(tmp_path, monkeypatch):
+    import joblib
+    import extreme_price_movements.training as training
+
+    run_id = "source_run"
+    state_dir = tmp_path / "artifacts" / run_id / "models"
+    state_dir.mkdir(parents=True)
+    model = SimpleNamespace(
+        selected_features=["f1", "f2"],
+        best_params={"max_depth": 4, "num_leaves": 16},
+        metrics={},
+    )
+    race = SimpleNamespace(best_model=model)
+    joblib.dump(
+        {"bundle": {"meta_models": {"side_strategy_clf": race}}},
+        state_dir / "model_state_meta.pkl",
+    )
+    monkeypatch.setattr(training, "_NATIVE_LGBM_META_PRESET_CACHE", {})
+
+    preset = training._load_native_lgbm_training_preset(
+        {
+            "data_root": str(tmp_path),
+            "lgbm_use_native_preset": "1",
+            "lgbm_native_preset_source_run_id": run_id,
+        },
+        scope_key="meta_side_strategy_clf",
+        objective_mode="train_meta",
+    )
+
+    assert preset is not None
+    assert preset["selected_features"] == ["f1", "f2"]
+    assert preset["best_params"]["max_depth"] == 4
+    assert "model_state_meta.pkl::side_strategy_clf" in preset["source"]
+
+
+def test_meta_lgbm_native_preset_normalizes_auxiliary_head_suffix(tmp_path, monkeypatch):
+    import joblib
+    import extreme_price_movements.training as training
+
+    run_id = "source_run"
+    state_dir = tmp_path / "artifacts" / run_id / "models"
+    state_dir.mkdir(parents=True)
+    model = SimpleNamespace(
+        selected_features=["meta_f1", "meta_f2"],
+        best_params={"max_depth": 5, "num_leaves": 32},
+        metrics={},
+    )
+    race = SimpleNamespace(best_model=model)
+    joblib.dump(
+        {"bundle": {"meta_models": {"long_strategy_clf": race}}},
+        state_dir / "model_state_meta.pkl",
+    )
+    monkeypatch.setattr(training, "_NATIVE_LGBM_META_PRESET_CACHE", {})
+
+    preset = training._load_native_lgbm_training_preset(
+        {
+            "data_root": str(tmp_path),
+            "lgbm_use_native_preset": "1",
+            "lgbm_native_preset_source_run_id": run_id,
+        },
+        scope_key="meta_long_strategy_correctness_clf",
+        objective_mode="train_meta",
+    )
+
+    assert preset is not None
+    assert preset["selected_features"] == ["meta_f1", "meta_f2"]
+    assert preset["best_params"]["num_leaves"] == 32
+    assert "model_state_meta.pkl::long_strategy_clf" in preset["source"]
+
+
+def test_lgbm_native_preset_require_fails_on_missing_meta(tmp_path, monkeypatch):
+    import joblib
+    import extreme_price_movements.training as training
+
+    run_id = "source_run"
+    state_dir = tmp_path / "artifacts" / run_id / "models"
+    state_dir.mkdir(parents=True)
+    joblib.dump({"bundle": {"meta_models": {}}}, state_dir / "model_state_meta.pkl")
+    monkeypatch.setattr(training, "_NATIVE_LGBM_META_PRESET_CACHE", {})
+    monkeypatch.setenv("EPM_LGBM_REQUIRE_NATIVE_PRESET", "1")
+
+    with pytest.raises(RuntimeError, match="LGBM meta preset not found"):
+        training._load_native_lgbm_training_preset(
+            {
+                "data_root": str(tmp_path),
+                "lgbm_use_native_preset": "1",
+                "lgbm_native_preset_source_run_id": run_id,
+            },
+            scope_key="meta_missing_strategy_clf",
+            objective_mode="train_meta",
+        )
 
 
 def test_lgbm_hpo_does_not_search_extra_trees():

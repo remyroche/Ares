@@ -1,5 +1,9 @@
 import pandas as pd
 
+from extreme_price_movements.inference.run_inference import (
+    _allow_model_feature_tail_recompute_for_reconciliation,
+    _ignore_market_kill_switch_for_reconciliation,
+)
 from extreme_price_movements.inference.safety_switches import (
     MarketKillSwitch,
     StrategyKillSwitch,
@@ -18,6 +22,46 @@ def test_market_kill_switch_triggers_on_usdc_depeg(tmp_path):
     assert decision.active is True
     assert decision.allow_new_entries is False
     assert decision.reason == "USDC_USDT_DEPEG"
+
+
+def test_market_kill_switch_reconciliation_bypass_is_shadow_only(monkeypatch):
+    monkeypatch.setenv("EPM_SHADOW_IGNORE_MARKET_KILL_SWITCH", "1")
+
+    assert _ignore_market_kill_switch_for_reconciliation({"mode": "shadow"}) is True
+    assert _ignore_market_kill_switch_for_reconciliation({"mode": "live-test"}) is True
+    assert _ignore_market_kill_switch_for_reconciliation({"mode": "live"}) is False
+
+    monkeypatch.delenv("EPM_SHADOW_IGNORE_MARKET_KILL_SWITCH")
+    assert _ignore_market_kill_switch_for_reconciliation({"mode": "shadow"}) is False
+
+
+def test_model_feature_tail_recompute_reconciliation_gate_is_not_live(monkeypatch):
+    monkeypatch.delenv("EPM_SHADOW_MODEL_FEATURE_TAIL_RECOMPUTE", raising=False)
+    assert (
+        _allow_model_feature_tail_recompute_for_reconciliation({"mode": "shadow"})
+        is True
+    )
+    assert (
+        _allow_model_feature_tail_recompute_for_reconciliation({"mode": "live-test"})
+        is True
+    )
+    assert (
+        _allow_model_feature_tail_recompute_for_reconciliation({"mode": "live"})
+        is False
+    )
+
+    monkeypatch.setenv("EPM_SHADOW_MODEL_FEATURE_TAIL_RECOMPUTE", "0")
+    assert (
+        _allow_model_feature_tail_recompute_for_reconciliation({"mode": "shadow"})
+        is False
+    )
+
+    assert (
+        _allow_model_feature_tail_recompute_for_reconciliation(
+            {"mode": "shadow", "live_model_feature_tail_recompute_enabled": False}
+        )
+        is False
+    )
 
 
 def test_market_kill_switch_self_recovers_after_halt(tmp_path):

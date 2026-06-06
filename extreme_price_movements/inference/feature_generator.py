@@ -13,7 +13,10 @@ import os
 import re
 import resource
 import shutil
+import subprocess
+import sys
 import time
+from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
 
@@ -35,7 +38,10 @@ from extreme_price_movements.inference.parity import (
     LIVE_UNAVAILABLE_FEATURES,
     strategy_id_matches,
 )
-from extreme_price_movements.inference.live_zscore_state import live_zscore_state_path
+from extreme_price_movements.inference.live_zscore_state import (
+    live_raw_rolling_state_path,
+    live_zscore_state_path,
+)
 from extreme_price_movements.regime_adaptor import regime_adaptor_inference_enabled
 from extreme_price_movements.utils import tprint
 
@@ -78,6 +84,219 @@ ORDERBOOK_RESIDUAL_FEATURE_KEYS = {
     "xasset_ob_liquidity_ts_resid",
     "xasset_ob_liquidity_peer_resid",
 }
+
+
+def _live_model_feature_auto_sync_enabled(cfg: Dict[str, Any]) -> bool:
+    raw = cfg.get(
+        "live_model_feature_auto_sync_selected_cache",
+        os.environ.get("EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_SELECTED_CACHE", "0"),
+    )
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _run_training_path_feature_sync_for_live(
+    *,
+    run_id: str,
+    data_root: str,
+    end_ts: pd.Timestamp,
+    cfg: Dict[str, Any],
+    required_feature_keys: Optional[Iterable[str]] = None,
+    background_full_union: bool = True,
+) -> bool:
+    """Bring the selected-feature cache current using the training feature path."""
+    end_ts = pd.Timestamp(end_ts)
+    exchange = str(cfg.get("exchange") or os.environ.get("EPM_EXCHANGE") or "kraken")
+    market_mode = str(cfg.get("market_mode") or os.environ.get("EPM_MARKET_MODE") or "")
+    data_root_s = str(data_root)
+    is_perps = (
+        market_mode.lower() in {"perp", "perps", "future", "futures", "swap"}
+        or "data_perp" in data_root_s
+    )
+    cmd = [
+        sys.executable,
+        "-u",
+        "extreme_price_movements/run_pipeline.py",
+        "features",
+    ]
+    if is_perps:
+        cmd.append("--perps")
+    cmd.extend(["--exchange", exchange, "--run-id", str(run_id)])
+    env = os.environ.copy()
+    env.update(
+        {
+            "PYTHONUNBUFFERED": "1",
+            "PYTHONPATH": env.get("PYTHONPATH", ".") or ".",
+            "MPLCONFIGDIR": env.get("MPLCONFIGDIR", "/private/tmp/ares_mplconfig"),
+            "EPM_DATA_ROOT": data_root_s,
+            "EPM_EXCHANGE": exchange,
+            "EPM_FEATURE_END_LAG_DAYS": "0",
+            "EPM_FEATURE_END_TS": end_ts.isoformat(),
+            "EPM_ARTIFACT_SOURCE_RUN_ID": str(run_id),
+            "EPM_MODEL_BACKEND": env.get("EPM_MODEL_BACKEND", "lgbm_pipeline"),
+            "EPM_DISABLE_REGIME_ADAPTORS": env.get("EPM_DISABLE_REGIME_ADAPTORS", "1"),
+            "EPM_SIMPLE_POLICY_REGIME_ADAPTOR": env.get(
+                "EPM_SIMPLE_POLICY_REGIME_ADAPTOR", "0"
+            ),
+        }
+    )
+    requested_keys = sorted({str(k) for k in (required_feature_keys or []) if str(k)})
+    decision_only = str(
+        cfg.get(
+            "live_model_feature_auto_sync_decision_only",
+            os.environ.get("EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_DECISION_ONLY", "1"),
+        )
+    ).strip().lower() not in {"0", "false", "no", "off"}
+    if decision_only and requested_keys:
+        env["EPM_FEATURE_BACKFILL_KEYS"] = ",".join(requested_keys)
+        # Keep the blocking live decision path scoped to the exact feature
+        # contract needed for current decisions. The optional background sync
+        # below still refreshes the full union off the latency path.
+        env["EPM_FEATURE_BACKFILL_ALL_INCOMPLETE_KEYS"] = "0"
+    raw_state_path = cfg.get("live_raw_rolling_state_path") or str(
+        live_raw_rolling_state_path(data_root_s, str(run_id))
+    )
+    causal_state_path = cfg.get("live_causal_transform_state_path") or str(
+        live_zscore_state_path(data_root_s, str(run_id))
+    )
+    if raw_state_path:
+        env["EPM_FEATURE_RAW_ROLLING_STATE"] = "1"
+        env["EPM_FEATURE_RAW_ROLLING_STATE_PATH"] = str(raw_state_path)
+        env["EPM_FEATURE_RAW_ROLLING_STATE_SPARSE_PREFIX"] = "1"
+    if causal_state_path:
+        env["EPM_FEATURE_CAUSAL_STATE"] = "1"
+        env["EPM_FEATURE_CAUSAL_STATE_PATH"] = str(causal_state_path)
+    env["EPM_FEATURE_CAUSAL_STATE_IGNORE_STALE_MIN_REQUIRED"] = str(
+        cfg.get(
+            "feature_causal_transform_state_ignore_stale_min_required",
+            cfg.get("live_causal_transform_state_ignore_stale_min_required", "1"),
+        )
+    )
+    env.setdefault(
+        "EPM_FEATURE_BACKFILL_COMPUTE_WORKERS",
+        str(
+            min(
+                2,
+                max(
+                    1,
+                    int(
+                        cfg.get(
+                            "feature_backfill_compute_workers",
+                            os.environ.get("EPM_FEATURE_BACKFILL_COMPUTE_WORKERS", "2"),
+                        )
+                        or 2
+                    ),
+                ),
+            )
+        ),
+    )
+    env.setdefault("EPM_FEATURE_SAVE_WORKERS", str(cfg.get("feature_save_workers", 1)))
+    timeout_s = float(
+        cfg.get(
+            "live_model_feature_auto_sync_timeout_seconds",
+            os.environ.get("EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_TIMEOUT_SECONDS", "1200"),
+        )
+    )
+    t0 = time.perf_counter()
+    tprint(
+        "Live model selected-feature cache auto-sync start: "
+        f"run_id={run_id} data_root={data_root_s} end_ts={end_ts.isoformat()} "
+        f"exchange={exchange} perps={is_perps} "
+        f"decision_only={decision_only and bool(requested_keys)} "
+        f"requested_keys={len(requested_keys)}"
+    )
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=Path.cwd(),
+            env=env,
+            timeout=timeout_s,
+            check=False,
+        )
+    except Exception as exc:
+        tprint(f"Live model selected-feature cache auto-sync failed to launch: {exc}")
+        return False
+    elapsed = time.perf_counter() - t0
+    if proc.returncode != 0:
+        tprint(
+            "Live model selected-feature cache auto-sync failed: "
+            f"returncode={proc.returncode} elapsed={elapsed:.1f}s"
+        )
+        return False
+    tprint(
+        "Live model selected-feature cache auto-sync complete: "
+        f"elapsed={elapsed:.1f}s"
+    )
+    if (
+        background_full_union
+        and decision_only
+        and requested_keys
+        and str(
+            cfg.get(
+                "live_model_feature_full_union_background_sync",
+                os.environ.get("EPM_LIVE_MODEL_FEATURE_FULL_UNION_BACKGROUND_SYNC", "1"),
+            )
+        ).strip().lower()
+        not in {"0", "false", "no", "off"}
+    ):
+        _maybe_start_background_training_path_feature_sync(
+            cmd=cmd,
+            env=env,
+            run_id=str(run_id),
+            data_root=data_root_s,
+            end_ts=end_ts,
+            cfg=cfg,
+        )
+    return True
+
+
+def _maybe_start_background_training_path_feature_sync(
+    *,
+    cmd: List[str],
+    env: Dict[str, str],
+    run_id: str,
+    data_root: str,
+    end_ts: pd.Timestamp,
+    cfg: Dict[str, Any],
+) -> None:
+    """Refresh the full selected-feature union off the decision-latency path."""
+    try:
+        state_dir = Path(data_root) / "artifacts" / str(run_id) / "live_state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        pid_path = state_dir / "feature_full_union_sync.pid"
+        if pid_path.exists():
+            try:
+                old_pid = int(pid_path.read_text().strip())
+                os.kill(old_pid, 0)
+                tprint(
+                    "Live model full-union feature sync already running in background: "
+                    f"pid={old_pid}"
+                )
+                return
+            except Exception:
+                pass
+        bg_env = dict(env)
+        bg_env.pop("EPM_FEATURE_BACKFILL_KEYS", None)
+        bg_env["EPM_FEATURE_BACKFILL_ALL_INCOMPLETE_KEYS"] = "1"
+        log_dir = Path("logs")
+        log_dir.mkdir(parents=True, exist_ok=True)
+        safe_ts = pd.Timestamp(end_ts).strftime("%Y%m%d_%H%M%S")
+        log_path = log_dir / f"live_feature_full_union_sync_{run_id}_{safe_ts}.log"
+        with log_path.open("ab") as log_fh:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=Path.cwd(),
+                env=bg_env,
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        pid_path.write_text(str(proc.pid))
+        tprint(
+            "Live model full-union feature sync started in background: "
+            f"pid={proc.pid} log={log_path}"
+        )
+    except Exception as exc:
+        tprint(f"Warning: failed to start background full-union feature sync: {exc}")
 MARKET_WIDE_FEATURE_KEYS = {
     "G_VOL",
     "G_TREND",
@@ -94,9 +313,161 @@ MODEL_DERIVED_FEATURE_RE = re.compile(
 
 
 def _copy_feature_mapping(feats: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
-    if hasattr(feats, "_raw") and hasattr(feats, "_assembled") and hasattr(feats, "copy"):
+    if _is_lazy_feature_mapping(feats) and hasattr(feats, "copy"):
         return feats.copy()
     return dict(feats or {})
+
+
+def _is_lazy_feature_mapping(feats: Any) -> bool:
+    return bool(
+        feats is not None
+        and (
+            (hasattr(feats, "_raw") and hasattr(feats, "_assembled"))
+            or (hasattr(feats, "_raw") and hasattr(feats, "_symbol_indices"))
+            or isinstance(feats, _FeatureOverlayDict)
+            or hasattr(feats, "latest_values_at")
+        )
+    )
+
+
+class _FeatureOverlayDict(MutableMapping):
+    """A lightweight union view for feature mappings.
+
+    The live path often layers cheap synthesized/latest-only features over a
+    lazy selected-feature store.  Eagerly converting that store to ``dict`` or
+    concatenating all keys forces wide DataFrame assembly.  This view preserves
+    normal mapping semantics while resolving each key only when a caller asks
+    for that key.
+    """
+
+    def __init__(
+        self,
+        primary: Dict[str, pd.DataFrame] | Any,
+        secondary: Dict[str, pd.DataFrame] | Any | None = None,
+    ) -> None:
+        self._primary = primary or {}
+        self._secondary = secondary or {}
+        self._overrides: Dict[str, Any] = {}
+
+    def __iter__(self):
+        seen: Set[str] = set()
+        for source in (self._overrides, self._primary, self._secondary):
+            try:
+                keys = source.keys()
+            except Exception:
+                keys = []
+            for key in keys:
+                key_s = str(key)
+                if key_s in seen:
+                    continue
+                seen.add(key_s)
+                yield key_s
+
+    def __len__(self) -> int:
+        return sum(1 for _ in self.__iter__())
+
+    def __contains__(self, key: object) -> bool:
+        key_s = str(key)
+        if key_s in self._overrides:
+            return True
+        for source in (self._primary, self._secondary):
+            try:
+                if key_s in source:
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def __getitem__(self, key: str) -> Any:
+        key_s = str(key)
+        if key_s in self._overrides:
+            return self._overrides[key_s]
+        for source in (self._primary, self._secondary):
+            try:
+                if key_s in source:
+                    return source.get(key_s)
+            except Exception:
+                continue
+        raise KeyError(key_s)
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self._overrides[str(key)] = value
+
+    def __delitem__(self, key: str) -> None:
+        key_s = str(key)
+        if key_s in self._overrides:
+            del self._overrides[key_s]
+            return
+        raise KeyError(key_s)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        try:
+            return self[str(key)]
+        except KeyError:
+            return default
+
+    def copy(self):
+        copied = _FeatureOverlayDict(self._primary, self._secondary)
+        copied._overrides.update(self._overrides)
+        return copied
+
+    def has_raw_key(self, key: str) -> bool:
+        key_s = str(key)
+        if key_s in self:
+            return True
+        for source in (self._primary, self._secondary):
+            if hasattr(source, "has_raw_key"):
+                try:
+                    if source.has_raw_key(key_s):
+                        return True
+                except Exception:
+                    continue
+        return False
+
+    def latest_values_at(
+        self,
+        key: str,
+        symbols: Iterable[str],
+        end_ts: pd.Timestamp,
+        *,
+        stale_sensitive: bool = False,
+    ) -> pd.Series | None:
+        key_s = str(key)
+        symbol_index = pd.Index([str(sym) for sym in symbols], name="symbol")
+        for source in (self._overrides, self._primary, self._secondary):
+            try:
+                if key_s not in source:
+                    continue
+            except Exception:
+                continue
+            if hasattr(source, "latest_values_at"):
+                try:
+                    values = source.latest_values_at(
+                        key_s,
+                        symbol_index.tolist(),
+                        end_ts,
+                        stale_sensitive=stale_sensitive,
+                    )
+                    if isinstance(values, pd.Series):
+                        return values.reindex(symbol_index)
+                except Exception:
+                    continue
+            try:
+                df = source.get(key_s)
+            except Exception:
+                df = None
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                continue
+            aligned = df.reindex(columns=symbol_index)
+            if end_ts in aligned.index:
+                return aligned.loc[end_ts].reindex(symbol_index)
+            if stale_sensitive:
+                continue
+            before = aligned[aligned.index <= end_ts]
+            if before.empty:
+                continue
+            return before.ffill().iloc[-1].reindex(symbol_index)
+        return None
 
 
 def _requires_live_orderbook_features(required_feature_keys: Set[str]) -> bool:
@@ -190,11 +561,19 @@ def _feature_runtime_cfg_hash(cfg: Optional[Dict[str, Any]]) -> str:
                     "live_feature_snapshot_cache_enabled",
                     "live_feature_rolling_cache_enabled",
                     "live_feature_rolling_cache_seed_hours",
+                    # Validation-only scope used by the model freshness guard.
+                    # It does not alter transformed feature values and should
+                    # not create a parallel rolling cache.
+                    "live_feature_coverage_symbols",
                     # Operational append-only state controls how the same
                     # feature values are computed; it must not invalidate the
                     # persisted value cache.
                     "live_causal_transform_state_enabled",
                     "live_causal_transform_state_path",
+                    "live_raw_rolling_state_enabled",
+                    "live_raw_rolling_state_path",
+                    "feature_raw_rolling_state_enabled",
+                    "feature_raw_rolling_state_path",
                 }
             }
         return str(value)
@@ -319,6 +698,12 @@ def _prune_stale_live_feature_cache_dirs(
             "symbols_hash": meta.get("symbols_hash"),
             "required_hash": meta.get("required_hash"),
         }
+        # Cache namespaces are intentionally independent. A fresh mask snapshot
+        # must not delete the broader model feature cache, and vice versa.
+        if candidate_contract.get("cache_namespace") != active_contract.get(
+            "cache_namespace"
+        ):
+            continue
         if candidate_contract == active_contract:
             continue
         try:
@@ -377,6 +762,16 @@ def _rolling_partition_path(cache_dir: Path, ts: pd.Timestamp) -> Path:
 
 
 def _offline_feature_lookup_run_id(cfg: Dict[str, Any], run_id: str) -> str:
+    parity_contract = (
+        cfg.get("training_live_parity_contract")
+        if isinstance(cfg.get("training_live_parity_contract"), dict)
+        else {}
+    )
+    feature_source = (
+        parity_contract.get("feature_source")
+        if isinstance(parity_contract.get("feature_source"), dict)
+        else {}
+    )
     for key in (
         "live_feature_source_run_id",
         "offline_feature_run_id",
@@ -390,7 +785,7 @@ def _offline_feature_lookup_run_id(cfg: Dict[str, Any], run_id: str) -> str:
         or os.getenv("EPM_FEATURE_SOURCE_RUN_ID")
         or os.getenv("EPM_ARTIFACT_SOURCE_RUN_ID")
     )
-    return str(env_value or run_id)
+    return str(env_value or feature_source.get("run_id") or run_id)
 
 
 def _offline_feature_lookup_data_root(cfg: Dict[str, Any], data_root: str) -> str:
@@ -456,8 +851,34 @@ def _latest_feature_matrix(
     end_ts: pd.Timestamp,
     required_feature_keys: Set[str],
 ) -> pd.DataFrame:
+    keys = sorted(str(k) for k in (required_feature_keys or set(feats.keys())) if str(k))
+    if hasattr(feats, "latest_values_at"):
+        rows: Dict[str, np.ndarray] = {}
+        symbol_index = pd.Index([str(sym) for sym in symbols], name="symbol")
+        for key in keys:
+            try:
+                if hasattr(feats, "has_raw_key") and not feats.has_raw_key(key):
+                    continue
+                values = feats.latest_values_at(
+                    key,
+                    symbols,
+                    end_ts,
+                    stale_sensitive=_is_live_stale_sensitive_feature_key(key),
+                )
+            except Exception:
+                continue
+            if not isinstance(values, pd.Series):
+                continue
+            arr = (
+                pd.to_numeric(values.reindex(symbol_index), errors="coerce")
+                .to_numpy(dtype=np.float32, copy=False)
+            )
+            rows[key] = arr
+        if not rows:
+            return pd.DataFrame(index=symbol_index, dtype=np.float32)
+        return pd.DataFrame(rows, index=symbol_index, dtype=np.float32)
+
     rows: Dict[str, Dict[str, float]] = {sym: {} for sym in symbols}
-    keys = required_feature_keys or set(feats.keys())
     for key in keys:
         df = feats.get(key)
         if not isinstance(df, pd.DataFrame) or df.empty:
@@ -506,6 +927,44 @@ def _latest_only_feature_dict(
     return _matrix_to_feature_dict(matrix, end_ts=end_ts)
 
 
+def _latest_required_feature_low_finite_support(
+    feats: Dict[str, pd.DataFrame],
+    *,
+    symbols: List[str],
+    end_ts: pd.Timestamp,
+    required_feature_keys: Set[str],
+    min_fraction: float,
+    max_report: int = 20,
+) -> list[dict[str, Any]]:
+    if not feats or not required_feature_keys or not symbols:
+        return []
+    matrix = _latest_feature_matrix(feats, symbols, end_ts, required_feature_keys)
+    if matrix.empty:
+        return []
+    total = max(1, int(matrix.shape[0]))
+    threshold = max(1, int(np.ceil(float(min_fraction) * total)))
+    issues: list[dict[str, Any]] = []
+    for key in sorted(str(k) for k in required_feature_keys):
+        if key not in matrix.columns:
+            continue
+        values = pd.to_numeric(matrix[key], errors="coerce").replace(
+            [np.inf, -np.inf], np.nan
+        )
+        finite = int(values.notna().sum())
+        if finite < threshold:
+            issues.append(
+                {
+                    "feature": key,
+                    "finite": finite,
+                    "rows": total,
+                    "pct": round(100.0 * finite / total, 2),
+                }
+            )
+        if len(issues) >= int(max_report):
+            break
+    return issues
+
+
 def _feature_history_matrix(
     feats: Dict[str, pd.DataFrame],
     *,
@@ -521,11 +980,32 @@ def _feature_history_matrix(
     appends are small and restart-safe without rewriting the full historical
     per-symbol feature store.
     """
+    end = pd.Timestamp(end_ts)
+    start = pd.Timestamp(start_ts) if start_ts is not None else None
+    if start is not None and start >= end:
+        latest = _latest_feature_matrix(
+            feats,
+            symbols=symbols,
+            end_ts=end,
+            required_feature_keys=required_feature_keys,
+        )
+        if latest.empty:
+            return pd.DataFrame()
+        row_index = pd.MultiIndex.from_product(
+            [pd.DatetimeIndex([end]), symbols],
+            names=["timestamp", "symbol"],
+        )
+        values = latest.reindex(index=symbols).to_numpy(dtype=np.float32, copy=False)
+        return pd.DataFrame(
+            values,
+            index=row_index,
+            columns=list(latest.columns),
+            dtype=np.float32,
+        )
+
     keys = sorted(required_feature_keys or set(feats.keys()))
     frames: Dict[str, pd.DataFrame] = {}
     idx_union: Optional[pd.DatetimeIndex] = None
-    end = pd.Timestamp(end_ts)
-    start = pd.Timestamp(start_ts) if start_ts is not None else None
     for key in keys:
         df = feats.get(key)
         if not isinstance(df, pd.DataFrame) or df.empty:
@@ -619,6 +1099,7 @@ def _load_live_feature_rolling_cache(
 ) -> Dict[str, pd.DataFrame]:
     if not bool(cfg.get("live_feature_rolling_cache_enabled", True)):
         return {}
+    load_t0 = time.perf_counter()
     current_cache_dir = _feature_snapshot_dir(cfg, run_id, cache_key)
     root_dir = _feature_snapshot_root(cfg, run_id)
     expected_symbols_hash = _hash_values(symbols)
@@ -696,8 +1177,21 @@ def _load_live_feature_rolling_cache(
                 for item in (meta.get("partitions") or [])
                 if isinstance(item, dict) and item.get("path") and item.get("ts")
             ]
-            start_bound = pd.Timestamp(start_ts)
             end_bound = pd.Timestamp(end_ts)
+            start_bound = pd.Timestamp(start_ts)
+            if (
+                bool(cfg.get("live_feature_return_latest_only", True))
+                and bool(
+                    cfg.get(
+                        "live_feature_rolling_cache_latest_only_read_enabled",
+                        True,
+                    )
+                )
+            ):
+                # Live scoring only consumes the target row. Avoid reading and
+                # concatenating the full transformed lookback cache when the
+                # caller will immediately collapse to latest-only features.
+                start_bound = end_bound
             loaded_for_meta = 0
             for item in partitions:
                 try:
@@ -757,7 +1251,9 @@ def _load_live_feature_rolling_cache(
         f"rows={len(matrix.index)} features={len(matrix.columns)} "
         f"end_ts={max((m.get('end_ts') for m in loaded_metas), default=None)} "
         f"cache_dirs={len(loaded_metas)} "
-        f"partitions={sum(len(m.get('partitions') or []) for m in loaded_metas)}"
+        f"partitions={sum(len(m.get('partitions') or []) for m in loaded_metas)} "
+        f"elapsed={time.perf_counter() - load_t0:.3f}s "
+        f"rss={_process_rss_mb():.1f}MB"
     )
     return _history_matrix_to_feature_dict(matrix, symbols=symbols)
 
@@ -776,6 +1272,7 @@ def _write_live_feature_rolling_cache(
 ) -> None:
     if not bool(cfg.get("live_feature_rolling_cache_enabled", True)):
         return
+    write_t0 = time.perf_counter()
     try:
         cache_dir = _feature_snapshot_dir(cfg, run_id, cache_key)
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -945,7 +1442,8 @@ def _write_live_feature_rolling_cache(
             "Persisted rolling live transformed feature cache: "
             f"written_rows={written_rows} skipped_existing={skipped_existing} "
             f"partitions={len(partition_list)} features={len(new_matrix.columns)} "
-            f"end_ts={end_ts}"
+            f"end_ts={end_ts} elapsed={time.perf_counter() - write_t0:.3f}s "
+            f"rss={_process_rss_mb():.1f}MB"
         )
     except Exception as exc:
         tprint(f"Warning: failed to persist rolling live feature cache: {exc}")
@@ -1014,6 +1512,7 @@ def _write_live_feature_snapshot(
 ) -> None:
     if not bool(cfg.get("live_feature_snapshot_cache_enabled", True)):
         return
+    write_t0 = time.perf_counter()
     try:
         cache_dir = _feature_snapshot_dir(cfg, run_id, cache_key)
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -1107,7 +1606,9 @@ def _write_live_feature_snapshot(
         )
         tprint(
             "Persisted live transformed feature snapshot: "
-            f"symbols={len(matrix.index)} features={len(matrix.columns)} end_ts={end_ts}"
+            f"symbols={len(matrix.index)} features={len(matrix.columns)} "
+            f"end_ts={end_ts} elapsed={time.perf_counter() - write_t0:.3f}s "
+            f"rss={_process_rss_mb():.1f}MB"
         )
     except Exception as exc:
         tprint(f"Warning: failed to persist live feature snapshot: {exc}")
@@ -1248,6 +1749,8 @@ def _required_tail_warmup_hours(
     trend_sma_hours: int,
     gate_vol_lookback_hours: int,
     tail_compute_hours: Optional[int] = None,
+    cfg: Optional[Dict[str, Any]] = None,
+    required_feature_keys: Optional[Set[str]] = None,
 ) -> int:
     """Choose the smallest safe warmup window for incremental inference backfills."""
     if tail_compute_hours is not None:
@@ -1257,11 +1760,35 @@ def _required_tail_warmup_hours(
     # raw rolling/gated features and CausalFeatureTransformer's rolling
     # standardization.  Using less than the transform window creates a live-vs-
     # replay parity break around the cache/tail seam.
+    transform_warmup = int(DEFAULT_CAUSAL_TRANSFORM_ROLL_WINDOW_HOURS)
+    identity_warmup = int(DEFAULT_IDENTITY_EWMA_WARMUP_HOURS)
+    contract = (cfg or {}).get("feature_transform_contract") if isinstance(cfg, dict) else None
+    if not isinstance(contract, FeatureTransformContract) and isinstance(cfg, dict):
+        bundle = cfg.get("bundle")
+        if isinstance(bundle, dict):
+            contract = bundle.get("feature_transform_contract")
+    if isinstance(contract, FeatureTransformContract):
+        lookbacks = getattr(contract, "required_lookback_hours_by_feature", {}) or {}
+        requested = {str(k) for k in (required_feature_keys or set()) if str(k)}
+        if requested:
+            requested_lookbacks = [
+                int(lookbacks.get(key, 0) or 0)
+                for key in requested
+                if key in lookbacks
+            ]
+            if requested_lookbacks:
+                transform_warmup = max(
+                    int(getattr(contract, "required_warmup_hours", 0) or 0),
+                    max(requested_lookbacks),
+                    1,
+                )
+                identity_warmup = min(identity_warmup, transform_warmup)
+
     base_hours = max(
         int(trend_sma_hours),
         int(gate_vol_lookback_hours),
-        int(DEFAULT_CAUSAL_TRANSFORM_ROLL_WINDOW_HOURS),
-        int(DEFAULT_IDENTITY_EWMA_WARMUP_HOURS),
+        int(transform_warmup),
+        int(identity_warmup),
         24 * 7,
     )
     return base_hours + DEFAULT_TAIL_WARMUP_BUFFER_HOURS
@@ -1275,7 +1802,7 @@ def _slice_feature_window(
     # LazyFeatureDict from data_store already applies parquet timestamp filters
     # during load. Iterating items here would materialize every requested wide
     # feature matrix, which makes tiny parity/replay probes unnecessarily slow.
-    if hasattr(feats, "_raw") and hasattr(feats, "_symbol_indices"):
+    if _is_lazy_feature_mapping(feats):
         return feats
     out: Dict[str, pd.DataFrame] = {}
     for key, df in feats.items():
@@ -1294,20 +1821,22 @@ def _merge_feature_dicts(
     cached_feats: Dict[str, pd.DataFrame],
     new_feats: Dict[str, pd.DataFrame],
 ) -> Dict[str, pd.DataFrame]:
-    if hasattr(cached_feats, "_raw") and hasattr(cached_feats, "_assembled"):
+    if _is_lazy_feature_mapping(cached_feats):
         if not new_feats:
             return _copy_feature_mapping(cached_feats)
         if not any(
             isinstance(v, pd.DataFrame) and not v.empty for v in new_feats.values()
         ):
             return _copy_feature_mapping(cached_feats)
-    if hasattr(new_feats, "_raw") and hasattr(new_feats, "_assembled"):
+        return _FeatureOverlayDict(new_feats, cached_feats)
+    if _is_lazy_feature_mapping(new_feats):
         if not cached_feats:
             return _copy_feature_mapping(new_feats)
         if not any(
             isinstance(v, pd.DataFrame) and not v.empty for v in cached_feats.values()
         ):
             return _copy_feature_mapping(new_feats)
+        return _FeatureOverlayDict(new_feats, cached_feats)
     merged: Dict[str, pd.DataFrame] = {}
     all_keys = sorted(set(cached_feats.keys()) | set(new_feats.keys()))
     for key in all_keys:
@@ -1329,6 +1858,10 @@ def _merge_feature_dicts_preserve_cached(
     new_feats: Dict[str, pd.DataFrame],
 ) -> Dict[str, pd.DataFrame]:
     """Merge feature dictionaries while preserving cached training values."""
+    if _is_lazy_feature_mapping(cached_feats):
+        return _FeatureOverlayDict(cached_feats, new_feats)
+    if _is_lazy_feature_mapping(new_feats):
+        return _FeatureOverlayDict(cached_feats, new_feats)
     merged: Dict[str, pd.DataFrame] = {}
     all_keys = sorted(set(cached_feats.keys()) | set(new_feats.keys()))
     for key in all_keys:
@@ -1351,6 +1884,21 @@ def _merge_missing_feature_dicts(
     """Merge feature dictionaries without replacing already-cached feature keys."""
     if not new_feats:
         return _copy_feature_mapping(cached_feats)
+    if hasattr(cached_feats, "_raw") and hasattr(cached_feats, "_assembled"):
+        merged = _copy_feature_mapping(cached_feats)
+        for key, value in (new_feats or {}).items():
+            if str(key) not in merged:
+                merged[str(key)] = value
+        return merged
+    if _is_lazy_feature_mapping(cached_feats):
+        missing = {
+            str(key): value
+            for key, value in (new_feats or {}).items()
+            if str(key) not in cached_feats
+        }
+        if not missing:
+            return _copy_feature_mapping(cached_feats)
+        return _FeatureOverlayDict(cached_feats, missing)
     merged = _copy_feature_mapping(cached_feats)
     for key, value in new_feats.items():
         if key not in merged:
@@ -1403,6 +1951,7 @@ def _slice_tail_features_for_cache_append(
 def _cached_feature_coverage_end_ts(
     cached_feats: Dict[str, pd.DataFrame],
     required_feature_keys: Optional[Set[str]] = None,
+    coverage_symbols: Optional[Iterable[str]] = None,
 ) -> Optional[pd.Timestamp]:
     """Return the deterministic timestamp through which cached features cover.
 
@@ -1413,16 +1962,92 @@ def _cached_feature_coverage_end_ts(
     if not cached_feats:
         return None
 
+    coverage_symbol_set = {
+        str(sym) for sym in (coverage_symbols or []) if str(sym)
+    }
+
     if hasattr(cached_feats, "_symbol_indices"):
-        candidates = []
-        for idx_vals in getattr(cached_feats, "_symbol_indices", {}).values():
+        required = set(required_feature_keys or set())
+        symbol_indices = getattr(cached_feats, "_symbol_indices", {}) or {}
+        assembled = getattr(cached_feats, "_assembled", {}) or {}
+        raw = getattr(cached_feats, "_raw", {}) or {}
+
+        def _index_latest_ts(idx_vals: Any) -> Optional[pd.Timestamp]:
             try:
                 idx = pd.DatetimeIndex(pd.to_datetime(idx_vals, utc=True, errors="coerce"))
                 idx = idx[pd.notna(idx)]
                 if not idx.empty:
-                    candidates.append(pd.Timestamp(idx.max()))
+                    return pd.Timestamp(idx.max())
             except Exception:
+                return None
+            return None
+
+        def _symbols_for_raw_payload(payload: Any) -> Set[str]:
+            if isinstance(payload, dict):
+                return {str(sym) for sym in payload.keys()}
+            return set()
+
+        per_feature_candidates: List[pd.Timestamp] = []
+        lazy_keys = set()
+        try:
+            lazy_keys = {str(k) for k in cached_feats.keys()}
+        except Exception:
+            lazy_keys = set(assembled.keys()) | set(raw.keys())
+        keys_to_check = sorted(required & lazy_keys) if required else sorted(lazy_keys)
+        for key in keys_to_check:
+            frame = assembled.get(key)
+            if isinstance(frame, pd.DataFrame) and not frame.empty:
+                try:
+                    scoped = frame
+                    if coverage_symbol_set and len(getattr(frame, "columns", [])):
+                        cols = [
+                            col for col in frame.columns if str(col) in coverage_symbol_set
+                        ]
+                        if not cols:
+                            continue
+                        scoped = frame.loc[:, cols].dropna(how="all")
+                        if scoped.empty:
+                            continue
+                    idx = pd.DatetimeIndex(scoped.index)
+                    if not idx.empty:
+                        per_feature_candidates.append(pd.Timestamp(idx.max()))
+                except Exception:
+                    continue
                 continue
+
+            payload = raw.get(key)
+            payload_symbols = _symbols_for_raw_payload(payload)
+            if not payload_symbols:
+                continue
+            if coverage_symbol_set:
+                payload_symbols &= coverage_symbol_set
+            if not payload_symbols:
+                continue
+            symbol_candidates: List[pd.Timestamp] = []
+            for sym in sorted(payload_symbols):
+                item = payload.get(sym) if isinstance(payload, dict) else None
+                if isinstance(item, tuple) and len(item) == 2:
+                    idx_vals = item[0]
+                else:
+                    idx_vals = symbol_indices.get(sym)
+                latest = _index_latest_ts(idx_vals)
+                if latest is not None:
+                    symbol_candidates.append(latest)
+            if symbol_candidates:
+                per_feature_candidates.append(min(symbol_candidates))
+
+        if per_feature_candidates:
+            return min(per_feature_candidates)
+        if required:
+            return None
+
+        candidates = []
+        for sym, idx_vals in symbol_indices.items():
+            if coverage_symbol_set and str(sym) not in coverage_symbol_set:
+                continue
+            latest = _index_latest_ts(idx_vals)
+            if latest is not None:
+                candidates.append(latest)
         return min(candidates) if candidates else None
 
     required = set(required_feature_keys or set())
@@ -1434,7 +2059,15 @@ def _cached_feature_coverage_end_ts(
         if not isinstance(df, pd.DataFrame) or df.empty:
             continue
         try:
-            idx = pd.DatetimeIndex(df.index)
+            frame = df
+            if coverage_symbol_set and len(getattr(df, "columns", [])):
+                cols = [col for col in df.columns if str(col) in coverage_symbol_set]
+                if not cols:
+                    continue
+                frame = df.loc[:, cols].dropna(how="all")
+                if frame.empty:
+                    continue
+            idx = pd.DatetimeIndex(frame.index)
             if idx.empty:
                 continue
             candidates.append(pd.Timestamp(idx.max()))
@@ -1444,10 +2077,113 @@ def _cached_feature_coverage_end_ts(
     # If none of the requested frames are present in the cache, fall back to the
     # whole cache so missing requested keys can still be backfilled later.
     if not candidates and required:
-        return _cached_feature_coverage_end_ts(cached_feats, None)
+        return _cached_feature_coverage_end_ts(
+            cached_feats, None, coverage_symbols=coverage_symbols
+        )
     if not candidates:
         return None
     return min(candidates)
+
+
+def _cached_feature_stale_detail(
+    cached_feats: Dict[str, pd.DataFrame],
+    required_feature_keys: Optional[Set[str]],
+    end_ts: pd.Timestamp,
+    coverage_symbols: Optional[Iterable[str]] = None,
+    limit: int = 20,
+) -> List[str]:
+    """Summarize stale feature coverage without materializing lazy feature frames."""
+    if not cached_feats:
+        return ["<cache>=missing"]
+
+    coverage_symbol_set = {
+        str(sym) for sym in (coverage_symbols or []) if str(sym)
+    }
+    required = sorted(str(k) for k in (required_feature_keys or set()) if str(k))
+    try:
+        available_keys = {str(k) for k in cached_feats.keys()}
+    except Exception:
+        available_keys = set()
+    keys_to_check = required or sorted(available_keys)
+    stale_detail: List[str] = []
+
+    def _index_latest_ts(idx_vals: Any) -> Optional[pd.Timestamp]:
+        try:
+            idx = pd.DatetimeIndex(pd.to_datetime(idx_vals, utc=True, errors="coerce"))
+            idx = idx[pd.notna(idx)]
+            if not idx.empty:
+                return pd.Timestamp(idx.max())
+        except Exception:
+            return None
+        return None
+
+    if hasattr(cached_feats, "_symbol_indices"):
+        symbol_indices = getattr(cached_feats, "_symbol_indices", {}) or {}
+        assembled = getattr(cached_feats, "_assembled", {}) or {}
+        raw = getattr(cached_feats, "_raw", {}) or {}
+        for key in keys_to_check:
+            if key not in available_keys:
+                stale_detail.append(f"{key}=missing")
+            else:
+                latest_candidates: List[pd.Timestamp] = []
+                frame = assembled.get(key)
+                if isinstance(frame, pd.DataFrame) and not frame.empty:
+                    try:
+                        frame_cols = [str(col) for col in frame.columns]
+                        cols = frame_cols
+                        if coverage_symbol_set:
+                            cols = [col for col in frame_cols if col in coverage_symbol_set]
+                        if cols:
+                            scoped = frame.loc[:, cols].dropna(how="all")
+                            if not scoped.empty:
+                                latest_candidates.append(pd.Timestamp(scoped.index.max()))
+                    except Exception:
+                        pass
+                payload = raw.get(key)
+                if isinstance(payload, dict):
+                    payload_symbols = {str(sym) for sym in payload.keys()}
+                    if coverage_symbol_set:
+                        payload_symbols &= coverage_symbol_set
+                    for sym in sorted(payload_symbols):
+                        item = payload.get(sym)
+                        idx_vals = item[0] if isinstance(item, tuple) and len(item) == 2 else symbol_indices.get(sym)
+                        latest = _index_latest_ts(idx_vals)
+                        if latest is not None:
+                            latest_candidates.append(latest)
+                if not latest_candidates:
+                    stale_detail.append(f"{key}=missing")
+                else:
+                    latest = min(latest_candidates)
+                    if latest < pd.Timestamp(end_ts):
+                        stale_detail.append(f"{key}={latest}")
+            if len(stale_detail) >= limit:
+                break
+        return stale_detail
+
+    for key in keys_to_check:
+        if key not in available_keys:
+            stale_detail.append(f"{key}=missing")
+        else:
+            try:
+                df = cached_feats.get(key)
+                if not isinstance(df, pd.DataFrame) or df.empty:
+                    stale_detail.append(f"{key}=missing")
+                else:
+                    frame = df
+                    if coverage_symbol_set and len(getattr(df, "columns", [])):
+                        cols = [col for col in df.columns if str(col) in coverage_symbol_set]
+                        frame = df.loc[:, cols].dropna(how="all") if cols else pd.DataFrame()
+                    if frame.empty:
+                        stale_detail.append(f"{key}=missing")
+                    else:
+                        latest = pd.Timestamp(frame.index.max())
+                        if latest < pd.Timestamp(end_ts):
+                            stale_detail.append(f"{key}={latest}")
+            except Exception:
+                stale_detail.append(f"{key}=bad_index")
+        if len(stale_detail) >= limit:
+            break
+    return stale_detail
 
 
 def _is_live_stale_sensitive_feature_key(key: str) -> bool:
@@ -1647,6 +2383,8 @@ def _backfill_missing_requested_keys(
         ):
             skipped_missing_keys.add(key_s)
             continue
+        if gate_base is not None and gate_base not in merged_feats:
+            compute_missing_keys.add(gate_base)
         compute_missing_keys.add(key_s)
     if not compute_missing_keys:
         skipped = sorted(skipped_missing_keys or {str(key) for key in missing_keys})
@@ -1746,6 +2484,180 @@ def _backfill_missing_requested_keys(
     return _merge_feature_dicts(merged_feats, missing_frames)
 
 
+def _selected_feature_latest_cache_key(
+    *,
+    source_run_id: str,
+    source_root: str,
+    symbols: Iterable[str],
+    feature_keys: Optional[Iterable[str]],
+    end_ts: Optional[pd.Timestamp],
+    allowed_periods: Any = None,
+) -> str:
+    payload = {
+        "version": LIVE_FEATURE_CACHE_VERSION,
+        "source_run_id": str(source_run_id or ""),
+        "source_root": str(source_root or ""),
+        "symbols": sorted(str(s) for s in (symbols or []) if str(s)),
+        "feature_keys": sorted(str(k) for k in (feature_keys or []) if str(k)),
+        "end_ts": None if end_ts is None else pd.Timestamp(end_ts).isoformat(),
+        "allowed_periods": [
+            [pd.Timestamp(start).isoformat(), pd.Timestamp(end).isoformat()]
+            for start, end in (allowed_periods or [])
+        ],
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+
+
+def _selected_feature_latest_cache_dir(
+    *,
+    cache_root: str,
+    source_run_id: str,
+    source_root: str,
+    symbols: Iterable[str],
+    feature_keys: Optional[Iterable[str]],
+    end_ts: pd.Timestamp,
+    allowed_periods: Any = None,
+) -> Path:
+    key = _selected_feature_latest_cache_key(
+        source_run_id=source_run_id,
+        source_root=source_root,
+        symbols=symbols,
+        feature_keys=feature_keys,
+        end_ts=end_ts,
+        allowed_periods=allowed_periods,
+    )
+    return (
+        Path(cache_root)
+        / "artifacts"
+        / str(source_run_id)
+        / "live_selected_feature_latest_matrix"
+        / key[:2]
+        / key
+    )
+
+
+def _load_selected_feature_latest_matrix_cache(
+    *,
+    cache_root: str,
+    source_run_id: str,
+    source_root: str,
+    symbols: List[str],
+    feature_keys: Optional[Iterable[str]],
+    end_ts: pd.Timestamp,
+    allowed_periods: Any = None,
+) -> Dict[str, pd.DataFrame]:
+    cache_dir = _selected_feature_latest_cache_dir(
+        cache_root=cache_root,
+        source_run_id=source_run_id,
+        source_root=source_root,
+        symbols=symbols,
+        feature_keys=feature_keys,
+        end_ts=end_ts,
+        allowed_periods=allowed_periods,
+    )
+    meta_path = cache_dir / "meta.json"
+    data_path = cache_dir / "latest.parquet"
+    if not (meta_path.exists() and data_path.exists()):
+        return {}
+    try:
+        meta = json.loads(meta_path.read_text())
+        if meta.get("version") != LIVE_FEATURE_CACHE_VERSION:
+            return {}
+        if str(meta.get("source_run_id") or "") != str(source_run_id or ""):
+            return {}
+        if str(meta.get("source_root") or "") != str(source_root or ""):
+            return {}
+        if pd.Timestamp(meta.get("end_ts")) != pd.Timestamp(end_ts):
+            return {}
+        if meta.get("symbols_hash") != _hash_values(symbols):
+            return {}
+        feature_key_set = {str(k) for k in (feature_keys or []) if str(k)}
+        if meta.get("feature_keys_hash") != _hash_values(feature_key_set):
+            return {}
+        matrix = _read_live_feature_matrix_parquet(data_path, feature_key_set)
+    except Exception:
+        return {}
+    if matrix is None or matrix.empty:
+        return {}
+    missing = {str(k) for k in (feature_keys or []) if str(k)}.difference(
+        str(c) for c in matrix.columns
+    )
+    if missing:
+        return {}
+    try:
+        matrix = matrix.reindex(index=[str(sym) for sym in symbols])
+    except Exception:
+        pass
+    tprint(
+        "Loaded selected-feature latest matrix cache: "
+        f"symbols={len(matrix.index)} features={len(matrix.columns)} "
+        f"end_ts={pd.Timestamp(end_ts)}"
+    )
+    return _matrix_to_feature_dict(matrix.astype(np.float32, copy=False), end_ts=end_ts)
+
+
+def _write_selected_feature_latest_matrix_cache(
+    *,
+    cache_root: str,
+    source_run_id: str,
+    source_root: str,
+    symbols: List[str],
+    feature_keys: Optional[Iterable[str]],
+    end_ts: pd.Timestamp,
+    allowed_periods: Any = None,
+    feats: Dict[str, pd.DataFrame],
+) -> None:
+    feature_key_set = {str(k) for k in (feature_keys or []) if str(k)}
+    try:
+        matrix = _latest_feature_matrix(
+            feats,
+            symbols=symbols,
+            end_ts=end_ts,
+            required_feature_keys=feature_key_set,
+        )
+        if matrix.empty:
+            return
+        cache_dir = _selected_feature_latest_cache_dir(
+            cache_root=cache_root,
+            source_run_id=source_run_id,
+            source_root=source_root,
+            symbols=symbols,
+            feature_keys=feature_key_set,
+            end_ts=end_ts,
+            allowed_periods=allowed_periods,
+        )
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        tmp_data = cache_dir / "latest.tmp.parquet"
+        data_path = cache_dir / "latest.parquet"
+        matrix.astype(np.float32, copy=False).to_parquet(tmp_data)
+        tmp_data.replace(data_path)
+        meta = {
+            "version": LIVE_FEATURE_CACHE_VERSION,
+            "source_run_id": str(source_run_id or ""),
+            "source_root": str(source_root or ""),
+            "end_ts": pd.Timestamp(end_ts).isoformat(),
+            "symbols_hash": _hash_values(symbols),
+            "feature_keys_hash": _hash_values(feature_key_set),
+            "symbols": [str(sym) for sym in symbols],
+            "features": list(matrix.columns),
+            "rows": int(len(matrix.index)),
+        }
+        tmp_meta = cache_dir / "meta.tmp.json"
+        tmp_meta.write_text(json.dumps(meta))
+        tmp_meta.replace(cache_dir / "meta.json")
+        tprint(
+            "Persisted selected-feature latest matrix cache: "
+            f"symbols={len(matrix.index)} features={len(matrix.columns)} "
+            f"end_ts={pd.Timestamp(end_ts)}"
+        )
+    except Exception as exc:
+        tprint(f"Warning: failed to persist selected-feature latest matrix cache: {exc}")
+
+
 def load_cached_features_for_inference(
     run_id: str,
     data_root: str,
@@ -1753,6 +2665,7 @@ def load_cached_features_for_inference(
     feature_keys: Optional[Set[str]] = None,
     start_ts: Optional[pd.Timestamp] = None,
     end_ts: Optional[pd.Timestamp] = None,
+    allowed_periods=None,
 ) -> Dict[str, pd.DataFrame]:
     run_id_s = str(run_id or "")
     match = re.match(r"^(\d{8}_\d{6})", run_id_s)
@@ -1766,7 +2679,46 @@ def load_cached_features_for_inference(
         if end_ts is not None
         else None
     )
+    latest_cache_flag = os.getenv("EPM_SELECTED_FEATURE_LATEST_MATRIX_CACHE", "1")
+    latest_only = (
+        str(latest_cache_flag).strip().lower() not in {"0", "false", "no", "off"}
+        and start_ts is not None
+        and end_ts is not None
+        and pd.Timestamp(start_ts) == pd.Timestamp(end_ts)
+        and feature_keys is not None
+    )
+    normalized_periods = []
+    for period in allowed_periods or []:
+        if isinstance(period, dict):
+            p_start = period.get("start_ts") or period.get("start")
+            p_end = period.get("end_ts") or period.get("end")
+        elif isinstance(period, (list, tuple)) and len(period) >= 2:
+            p_start, p_end = period[0], period[1]
+        else:
+            continue
+        try:
+            normalized_periods.append((pd.Timestamp(p_start), pd.Timestamp(p_end)))
+        except Exception:
+            continue
     for root in _offline_feature_lookup_data_roots(data_root):
+        if latest_only:
+            cached = _load_selected_feature_latest_matrix_cache(
+                cache_root=data_root,
+                source_run_id=run_id_s,
+                source_root=root,
+                symbols=symbols,
+                feature_keys=feature_keys,
+                end_ts=pd.Timestamp(end_ts),
+                allowed_periods=normalized_periods,
+            )
+            if cached:
+                if root != str(data_root):
+                    tprint(
+                        "Loaded selected-feature latest matrix from fallback data root: "
+                        f"{root}"
+                    )
+                return cached
+        load_t0 = time.perf_counter()
         feats = load_features_selected(
             ts,
             root,
@@ -1774,6 +2726,7 @@ def load_cached_features_for_inference(
             symbols=symbols,
             start_ts=start_ts,
             end_ts=query_end_ts,
+            allowed_periods=allowed_periods,
         )
         if hasattr(feats, "items"):
             if root != str(data_root):
@@ -1781,7 +2734,24 @@ def load_cached_features_for_inference(
                     "Loaded offline selected features from fallback data root: "
                     f"{root}"
                 )
-            return _slice_feature_window(feats, start_ts=start_ts, end_ts=end_ts)
+            sliced = _slice_feature_window(feats, start_ts=start_ts, end_ts=end_ts)
+            if latest_only and sliced:
+                _write_selected_feature_latest_matrix_cache(
+                    cache_root=data_root,
+                    source_run_id=run_id_s,
+                    source_root=root,
+                    symbols=symbols,
+                    feature_keys=feature_keys,
+                    end_ts=pd.Timestamp(end_ts),
+                    allowed_periods=normalized_periods,
+                    feats=sliced,
+                )
+            tprint(
+                "Selected-feature cache load complete: "
+                f"source_root={root} features={len(sliced or {})} "
+                f"elapsed={time.perf_counter() - load_t0:.3f}s"
+            )
+            return sliced
     return {}
 
 
@@ -1813,6 +2783,8 @@ def load_or_compute_features(
             key_s.startswith("live_feature_")
             or key_s.startswith("historical_inference_")
             or key_s.startswith("live_causal_transform_")
+            or key_s.startswith("live_raw_rolling_")
+            or key_s.startswith("feature_raw_rolling_")
         ) and key_s not in cfg:
             cfg[key_s] = value
     # Runtime config is the primary feature-generation config, but model
@@ -1851,12 +2823,35 @@ def load_or_compute_features(
     if _requires_gated_feature_generation(required_feature_keys):
         cfg["enable_gated_features"] = True
     cfg.setdefault("feature_transform_cache_enabled", False)
+    feature_source_run_id = _offline_feature_lookup_run_id(cfg, run_id)
+    if feature_source_run_id and "live_feature_source_run_id" not in cfg:
+        cfg["live_feature_source_run_id"] = str(feature_source_run_id)
     if bool(cfg.get("live_causal_transform_state_enabled", True)):
         cfg["live_causal_transform_state_enabled"] = True
         cfg.setdefault(
             "live_causal_transform_state_path",
-            str(live_zscore_state_path(data_root, run_id)),
+            str(live_zscore_state_path(data_root, str(feature_source_run_id or run_id))),
         )
+    if bool(cfg.get("live_raw_rolling_state_enabled", True)):
+        from extreme_price_movements.inference.live_zscore_state import (
+            live_raw_rolling_state_path,
+        )
+
+        cfg["live_raw_rolling_state_enabled"] = True
+        cfg.setdefault(
+            "live_raw_rolling_state_path",
+            str(
+                live_raw_rolling_state_path(
+                    data_root,
+                    str(feature_source_run_id or run_id),
+                )
+            ),
+        )
+    coverage_symbols = [
+        str(sym)
+        for sym in (cfg.get("live_feature_coverage_symbols") or [])
+        if str(sym)
+    ]
 
     end_ts = close.index.max()
     start_ts = end_ts - pd.Timedelta(hours=lookback_hours)
@@ -1868,7 +2863,32 @@ def load_or_compute_features(
         cfg=cfg,
         data_root=data_root,
     )
-    if bool(cfg.get("live_feature_memory_cache_enabled", True)):
+    tprint(
+        "Live feature request: "
+        f"symbols={len(basket_syms)} required_keys={len(required_feature_keys or [])} "
+        f"lookback_hours={lookback_hours} start={start_ts} end={end_ts} "
+        f"namespace={_live_feature_cache_namespace(cfg)} "
+        f"cache_key={hashlib.sha256(cache_key.encode('utf-8')).hexdigest()[:12]} "
+        f"contract_hash={_feature_transform_contract_hash_from_cfg(cfg)}"
+    )
+    offline_feature_run_id = _offline_feature_lookup_run_id(cfg, run_id)
+    offline_feature_data_root = _offline_feature_lookup_data_root(cfg, data_root)
+    offline_source_override = (
+        offline_feature_run_id != str(run_id)
+        or offline_feature_data_root != str(data_root)
+    )
+    prefer_offline_cache = bool(
+        cfg.get(
+            "live_feature_prefer_offline_cache",
+            _live_feature_cache_namespace(cfg) == "model" and offline_source_override,
+        )
+    )
+    authoritative_model_offline_cache = bool(
+        prefer_offline_cache
+        and _live_feature_cache_namespace(cfg) == "model"
+        and bool(cfg.get("live_feature_offline_cache_enabled", True))
+    )
+    if bool(cfg.get("live_feature_memory_cache_enabled", True)) and not prefer_offline_cache:
         memory_entry = _LIVE_FEATURE_MEMORY_CACHE.get(cache_key)
         if isinstance(memory_entry, dict):
             memory_end = memory_entry.get("end_ts")
@@ -1884,13 +2904,17 @@ def load_or_compute_features(
                 )
                 return memory_feats
 
-    snapshot_feats = _load_live_feature_snapshot(
-        cfg=cfg,
-        run_id=run_id,
-        cache_key=cache_key,
-        symbols=basket_syms,
-        end_ts=end_ts,
-        required_feature_keys=required_feature_keys,
+    snapshot_feats = (
+        {}
+        if prefer_offline_cache
+        else _load_live_feature_snapshot(
+            cfg=cfg,
+            run_id=run_id,
+            cache_key=cache_key,
+            symbols=basket_syms,
+            end_ts=end_ts,
+            required_feature_keys=required_feature_keys,
+        )
     )
     if snapshot_feats:
         if bool(cfg.get("live_feature_memory_cache_enabled", True)):
@@ -1917,14 +2941,18 @@ def load_or_compute_features(
                 "Using in-memory live feature history as tail base: "
                 f"features={len(cached_feats)}"
             )
-    rolling_feats = _load_live_feature_rolling_cache(
-        cfg=cfg,
-        run_id=run_id,
-        cache_key=cache_key,
-        symbols=basket_syms,
-        start_ts=start_ts,
-        end_ts=end_ts,
-        required_feature_keys=required_feature_keys,
+    rolling_feats = (
+        {}
+        if authoritative_model_offline_cache
+        else _load_live_feature_rolling_cache(
+            cfg=cfg,
+            run_id=run_id,
+            cache_key=cache_key,
+            symbols=basket_syms,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            required_feature_keys=required_feature_keys,
+        )
     )
     if rolling_feats:
         cached_feats = _merge_feature_dicts(cached_feats, rolling_feats)
@@ -1932,44 +2960,301 @@ def load_or_compute_features(
     rolling_cached_last_ts = _cached_feature_coverage_end_ts(
         cached_feats,
         required_feature_keys=required_feature_keys,
+        coverage_symbols=coverage_symbols,
     )
-    offline_feature_run_id = _offline_feature_lookup_run_id(cfg, run_id)
-    offline_feature_data_root = _offline_feature_lookup_data_root(cfg, data_root)
+    if rolling_feats:
+        tprint(
+            "Live feature rolling cache coverage: "
+            f"cached_last_ts={rolling_cached_last_ts} "
+            f"features={len(cached_feats)} coverage_symbols={len(coverage_symbols)}"
+        )
     need_offline_cache = (
-        rolling_cached_last_ts is None
+        prefer_offline_cache
+        or rolling_cached_last_ts is None
         or pd.Timestamp(rolling_cached_last_ts) < pd.Timestamp(end_ts)
     )
-    if need_offline_cache and (
-        offline_feature_run_id != str(run_id)
-        or offline_feature_data_root != str(data_root)
-    ):
+    namespace = _live_feature_cache_namespace(cfg)
+    # Selected-feature handoff is authoritative for model scoring parity, but
+    # non-model namespaces (notably strategy masks) should advance from the live
+    # rolling cache/raw panel when they are stale. Falling back to the artifact
+    # selected store there loads full histories, can be behind the live hour, and
+    # no longer represents the actual live mask path.
+    allow_offline_cache = bool(
+        prefer_offline_cache
+        or namespace == "model"
+        or cfg.get("live_feature_allow_offline_seed", False)
+    )
+    if need_offline_cache and offline_source_override and allow_offline_cache:
         tprint(
             "Live feature offline cache source override: "
-            f"run_id={offline_feature_run_id} data_root={offline_feature_data_root}"
+            f"run_id={offline_feature_run_id} data_root={offline_feature_data_root} "
+            f"prefer_offline={prefer_offline_cache}"
         )
-    if need_offline_cache and bool(cfg.get("live_feature_offline_cache_enabled", True)):
+    if (
+        need_offline_cache
+        and allow_offline_cache
+        and bool(cfg.get("live_feature_offline_cache_enabled", True))
+    ):
+        offline_t0 = time.perf_counter()
+        offline_start_ts = start_ts
+        offline_end_ts = end_ts
+        if (
+            prefer_offline_cache
+            and bool(cfg.get("live_feature_return_latest_only", True))
+            and _live_feature_cache_namespace(cfg) == "model"
+        ):
+            offline_start_ts = end_ts
+            offline_end_ts = end_ts
         offline_feats = load_cached_features_for_inference(
             run_id=offline_feature_run_id,
             data_root=offline_feature_data_root,
             symbols=basket_syms,
             feature_keys=required_feature_keys,
-            start_ts=start_ts,
-            end_ts=end_ts,
+            start_ts=offline_start_ts,
+            end_ts=offline_end_ts,
+            allowed_periods=(cfg or {}).get("live_feature_offline_allowed_periods"),
         )
         if offline_feats:
-            cached_feats = _merge_feature_dicts(offline_feats, cached_feats)
+            if authoritative_model_offline_cache:
+                # Model scoring with a feature-source override is a strict
+                # train/live parity path. Do not silently fill missing selected
+                # model features from rolling live caches or raw live synthesis;
+                # downstream finite-contract gates should reject candidates
+                # whose deployed contract is unavailable in the authoritative
+                # selected-feature handoff.
+                cached_feats = _copy_feature_mapping(offline_feats)
+            else:
+                # The offline training-path cache is loaded only when the rolling
+                # live cache is stale or incomplete. Keep the rolling history for
+                # keys/timestamps the offline cache does not have, but let the
+                # freshly regenerated training-path features win on overlaps.
+                cached_feats = _merge_feature_dicts(cached_feats, offline_feats)
+        tprint(
+            "Live feature offline cache load: "
+            f"hit={bool(offline_feats)} features={len(offline_feats or {})} "
+            f"elapsed={time.perf_counter() - offline_t0:.3f}s "
+            f"rss={_process_rss_mb():.1f}MB"
+        )
+    if authoritative_model_offline_cache:
+        missing_offline_keys = sorted(set(required_feature_keys or set()) - set(cached_feats))
+        if missing_offline_keys:
+            tprint(
+                "Live model feature selected-cache contract incomplete: "
+                f"missing_features={len(missing_offline_keys)} "
+                f"sample={missing_offline_keys[:20]}"
+            )
+            if (
+                not bool(cfg.get("_live_model_feature_auto_sync_attempted", False))
+                and _live_model_feature_auto_sync_enabled(cfg)
+            ):
+                cfg["_live_model_feature_auto_sync_attempted"] = True
+                synced = _run_training_path_feature_sync_for_live(
+                    run_id=str(offline_feature_run_id),
+                    data_root=str(offline_feature_data_root),
+                    end_ts=pd.Timestamp(end_ts),
+                    cfg=cfg,
+                    required_feature_keys=required_feature_keys,
+                )
+                if synced:
+                    retry_t0 = time.perf_counter()
+                    offline_feats = load_cached_features_for_inference(
+                        run_id=offline_feature_run_id,
+                        data_root=offline_feature_data_root,
+                        symbols=basket_syms,
+                        feature_keys=required_feature_keys,
+                        start_ts=end_ts
+                        if bool(cfg.get("live_feature_return_latest_only", True))
+                        else start_ts,
+                        end_ts=end_ts,
+                        allowed_periods=(cfg or {}).get(
+                            "live_feature_offline_allowed_periods"
+                        ),
+                    )
+                    cached_feats = _copy_feature_mapping(offline_feats)
+                    missing_offline_keys = sorted(
+                        set(required_feature_keys or set()) - set(cached_feats)
+                    )
+                    tprint(
+                        "Live model feature selected-cache auto-sync reload: "
+                        f"hit={bool(offline_feats)} features={len(offline_feats or {})} "
+                        f"missing_features={len(missing_offline_keys)} "
+                        f"elapsed={time.perf_counter() - retry_t0:.3f}s"
+                    )
+            if missing_offline_keys and not bool(
+                cfg.get("live_model_feature_allow_incomplete_selected_cache", False)
+            ):
+                raise RuntimeError(
+                    "Live model selected-feature cache is incomplete for the "
+                    "requested deployed model contract: "
+                    f"missing_features={len(missing_offline_keys)} "
+                    f"sample={missing_offline_keys[:20]}. Run the incremental "
+                    "training-path feature update for the artifact source run "
+                    "before live scoring, or explicitly set "
+                    "live_model_feature_allow_incomplete_selected_cache=True for "
+                    "diagnostic dry-runs that must continue without scoring."
+                )
+        if required_feature_keys:
+            # The selected-feature handoff is authoritative for model scoring,
+            # but some derived, portable keys can be stale in the persisted
+            # handoff for the latest live hour while the raw live panel already
+            # contains the exact source values. Repair only deterministic keys
+            # from portable live sources, then keep strict candidate-level
+            # finite validation downstream.
+            cached_feats = _synthesize_live_safe_feature_keys(
+                cached_feats,
+                panel,
+                basket_syms,
+                required_feature_keys,
+                data_root=data_root,
+                run_id=run_id,
+                cfg=cfg,
+            )
+        try:
+            min_latest_finite_fraction = float(
+                cfg.get(
+                    "live_model_feature_selected_cache_min_latest_finite_fraction",
+                    0.05,
+                )
+            )
+        except (TypeError, ValueError):
+            min_latest_finite_fraction = 0.05
+        low_finite_latest = _latest_required_feature_low_finite_support(
+            cached_feats,
+            symbols=basket_syms,
+            end_ts=end_ts,
+            required_feature_keys=set(required_feature_keys or set()),
+            min_fraction=max(0.0, min(1.0, min_latest_finite_fraction)),
+        )
+        if (
+            low_finite_latest
+            and not bool(cfg.get("_live_model_feature_auto_sync_attempted", False))
+            and _live_model_feature_auto_sync_enabled(cfg)
+        ):
+            cfg["_live_model_feature_auto_sync_attempted"] = True
+            tprint(
+                "Live model selected-feature cache has low latest finite "
+                "support; running training-path auto-sync before scoring: "
+                f"issues={low_finite_latest[:10]}"
+            )
+            synced = _run_training_path_feature_sync_for_live(
+                run_id=str(offline_feature_run_id),
+                data_root=str(offline_feature_data_root),
+                end_ts=pd.Timestamp(end_ts),
+                cfg=cfg,
+                required_feature_keys=required_feature_keys,
+            )
+            if synced:
+                retry_t0 = time.perf_counter()
+                offline_feats = load_cached_features_for_inference(
+                    run_id=offline_feature_run_id,
+                    data_root=offline_feature_data_root,
+                    symbols=basket_syms,
+                    feature_keys=required_feature_keys,
+                    start_ts=end_ts
+                    if bool(cfg.get("live_feature_return_latest_only", True))
+                    else start_ts,
+                    end_ts=end_ts,
+                    allowed_periods=(cfg or {}).get(
+                        "live_feature_offline_allowed_periods"
+                    ),
+                )
+                cached_feats = _copy_feature_mapping(offline_feats)
+                if required_feature_keys:
+                    cached_feats = _synthesize_live_safe_feature_keys(
+                        cached_feats,
+                        panel,
+                        basket_syms,
+                        required_feature_keys,
+                        data_root=data_root,
+                        run_id=run_id,
+                        cfg=cfg,
+                    )
+                low_finite_latest = _latest_required_feature_low_finite_support(
+                    cached_feats,
+                    symbols=basket_syms,
+                    end_ts=end_ts,
+                    required_feature_keys=set(required_feature_keys or set()),
+                    min_fraction=max(0.0, min(1.0, min_latest_finite_fraction)),
+                )
+                tprint(
+                    "Live model selected-feature cache finite-support auto-sync "
+                    "reload: "
+                    f"hit={bool(offline_feats)} features={len(offline_feats or {})} "
+                    f"remaining_low_finite={len(low_finite_latest)} "
+                    f"elapsed={time.perf_counter() - retry_t0:.3f}s"
+                )
+        elif low_finite_latest:
+            tprint(
+                "Live model selected-feature cache latest finite-support warning: "
+                f"issues={low_finite_latest[:10]}"
+            )
+        return_feats = cached_feats
+        if bool(cfg.get("live_feature_return_latest_only", True)):
+            return_feats = _latest_only_feature_dict(
+                cached_feats,
+                symbols=basket_syms,
+                end_ts=end_ts,
+                required_feature_keys=required_feature_keys,
+            ) or cached_feats
+        if bool(cfg.get("live_feature_memory_cache_enabled", True)):
+            _LIVE_FEATURE_MEMORY_CACHE[cache_key] = {
+                "end_ts": end_ts,
+                "feats": return_feats,
+                "latest_only": bool(return_feats is not cached_feats),
+            }
+        timer.mark("model_offline_cache_authoritative")
+        return return_feats
     offline_cached_last_ts = _cached_feature_coverage_end_ts(
         cached_feats,
         required_feature_keys=required_feature_keys,
+        coverage_symbols=coverage_symbols,
     )
     timer.mark("load_cached_transformed_features")
 
     cached_last_ts = _cached_feature_coverage_end_ts(
         cached_feats,
         required_feature_keys=required_feature_keys,
+        coverage_symbols=coverage_symbols,
     )
+    if cached_last_ts is None or pd.Timestamp(cached_last_ts) < pd.Timestamp(end_ts):
+        stale_detail = _cached_feature_stale_detail(
+            cached_feats,
+            required_feature_keys,
+            end_ts,
+            coverage_symbols=coverage_symbols,
+        )
+        tprint(
+            "Live feature cache coverage before tail: "
+            f"cached_last_ts={cached_last_ts} target_end_ts={end_ts} "
+            f"stale_sample={stale_detail[:10]} "
+            f"required_keys={len(required_feature_keys or [])}"
+        )
 
     need_tail_backfill = cached_last_ts is None or end_ts > cached_last_ts
+    if (
+        need_tail_backfill
+        and _live_feature_cache_namespace(cfg) == "model"
+        and not bool(cfg.get("live_model_feature_tail_recompute_enabled", False))
+    ):
+        stale_detail = _cached_feature_stale_detail(
+            cached_feats,
+            required_feature_keys,
+            end_ts,
+            coverage_symbols=coverage_symbols,
+        )
+        tprint(
+            "Live model feature cache stale detail: "
+            f"sample={stale_detail} total_required={len(required_feature_keys or [])}"
+        )
+        raise RuntimeError(
+            "Live model feature cache is stale or incomplete for the requested "
+            f"model contract: cached_last_ts={cached_last_ts} target_end_ts={end_ts} "
+            f"required_features={len(required_feature_keys or [])}. Run the "
+            "incremental training-path feature update for the artifact source "
+            "run before live scoring, or explicitly enable "
+            "live_model_feature_tail_recompute_enabled for replay/audit mode."
+        )
+
     # Always layer the lightweight candidate-selector features on top of the
     # stored offline feature cache, because the offline cache does not
     # necessarily contain keys like ret24h/range_12h_pct used by inference.
@@ -1979,19 +3264,44 @@ def load_or_compute_features(
         selector_feats["barrier_pct"] = policy_barrier
     timer.mark("compute_selector_features")
 
-    if (
-        need_tail_backfill
-        and _live_feature_cache_namespace(cfg) == "model"
-        and not bool(cfg.get("live_model_feature_tail_recompute_enabled", False))
-    ):
-        raise RuntimeError(
-            "Live model feature cache is stale or incomplete for the requested "
-            f"model contract: cached_last_ts={cached_last_ts} target_end_ts={end_ts} "
-            f"required_features={len(required_feature_keys or [])}. Run the "
-            "incremental training-path feature update for the artifact source "
-            "run before live scoring, or explicitly enable "
-            "live_model_feature_tail_recompute_enabled for replay/audit mode."
+    if need_tail_backfill and required_feature_keys and cached_feats:
+        completed_cached_feats = _merge_missing_feature_dicts(cached_feats, selector_feats)
+        missing = {k for k in required_feature_keys if k not in completed_cached_feats}
+        completed_cached_feats = _backfill_missing_requested_keys(
+            panel=panel,
+            basket_syms=basket_syms,
+            cfg=cfg,
+            merged_feats=completed_cached_feats,
+            missing_keys=missing,
         )
+        # Backfill can materialize base columns required by gated model inputs
+        # such as ``atr_percentile_G_VOL_0``. Run the deterministic derived
+        # materializers again so the final contract check sees the expanded
+        # columns, not just their newly available bases.
+        completed_cached_feats = _synthesize_gated_feature_keys(
+            completed_cached_feats, panel, basket_syms, required_feature_keys
+        )
+        completed_cached_feats = _synthesize_live_safe_feature_keys(
+            completed_cached_feats,
+            panel,
+            basket_syms,
+            required_feature_keys,
+            data_root=data_root,
+            run_id=run_id,
+            cfg=cfg,
+        )
+        completed_cached_last_ts = _cached_feature_coverage_end_ts(
+            completed_cached_feats,
+            required_feature_keys=required_feature_keys,
+            coverage_symbols=coverage_symbols,
+        )
+        cached_feats = completed_cached_feats
+        cached_last_ts = completed_cached_last_ts
+        if (
+            completed_cached_last_ts is not None
+            and pd.Timestamp(completed_cached_last_ts) >= pd.Timestamp(end_ts)
+        ):
+            need_tail_backfill = False
 
     if not need_tail_backfill:
         tprint(
@@ -2074,7 +3384,23 @@ def load_or_compute_features(
         trend_sma_hours=trend_sma_hours,
         gate_vol_lookback_hours=gate_vol_lookback_hours,
         tail_compute_hours=tail_compute_hours,
+        cfg=cfg,
+        required_feature_keys=required_feature_keys,
     )
+    if (
+        _live_feature_cache_namespace(cfg) != "model"
+        and not _feature_transform_contract_hash_from_cfg(cfg)
+    ):
+        try:
+            mask_tail_warmup_hours = int(
+                cfg.get(
+                    "live_mask_feature_tail_warmup_hours",
+                    os.getenv("EPM_LIVE_MASK_FEATURE_TAIL_WARMUP_HOURS", 24 * 120 + 72),
+                )
+            )
+        except Exception:
+            mask_tail_warmup_hours = 24 * 120 + 72
+        tail_warmup_hours = min(tail_warmup_hours, max(mask_tail_warmup_hours, 1))
     tail_start_ts = max(
         close.index.min(),
         (
@@ -2091,6 +3417,13 @@ def load_or_compute_features(
     tprint(
         "Stored features missing latest timestamps; computing tail-only feature backfill "
         f"from {tail_start_ts} to {end_ts}"
+    )
+    tprint(
+        "Live feature tail compute scope: "
+        f"panel_rows={sum(len(df.index) for df in panel_tail.values() if isinstance(df, pd.DataFrame))} "
+        f"panel_fields={len(panel_tail)} symbols={len(basket_syms)} "
+        f"required_keys={len(required_feature_keys or [])} "
+        f"cached_last_ts={cached_last_ts}"
     )
     tprint(
         "Live feature parity: tail backfill uses shared training/backtest "
@@ -2115,12 +3448,23 @@ def load_or_compute_features(
             sorted(required_feature_keys) if required_feature_keys else None
         ),
     )
+    tprint(
+        "Live feature tail raw compute complete: "
+        f"features={len(full_tail_feats or {})} rss={_process_rss_mb():.1f}MB"
+    )
     if _feature_transform_contract_hash_from_cfg(cfg):
+        transform_t0 = time.perf_counter()
         full_tail_feats = _transform_feature_panels_for_inference(
             full_tail_feats,
             cfg,
             strict=False,
             label="live_tail_backfill",
+        )
+        tprint(
+            "Live feature tail transform complete: "
+            f"features={len(full_tail_feats or {})} "
+            f"elapsed={time.perf_counter() - transform_t0:.3f}s "
+            f"rss={_process_rss_mb():.1f}MB"
         )
     market_tail_feats = _market_wide_feature_frames(
         mkt_gates,
@@ -2383,11 +3727,13 @@ def get_inference_required_feature_keys(
 
     alpha_models = bundle.get("alpha_models", {}) if isinstance(bundle, dict) else {}
     for key, value in alpha_models.items():
-        if not _model_key_matches_allowed(str(key), allowed):
-            continue
         if not isinstance(value, dict):
+            if not _model_key_matches_allowed(str(key), allowed):
+                continue
             continue
         if "feat_cols" in value:
+            if not _model_key_matches_allowed(str(key), allowed):
+                continue
             required.update(_effective_alpha_feature_cols(value))
             continue
         for nested_key, model_info in value.items():
@@ -2537,13 +3883,11 @@ def _compute_per_symbol_features(
     """
     feats: Dict[str, pd.DataFrame] = {}
 
-    # Get price data
     close = panel.get("close")
     high = panel.get("high")
     low = panel.get("low")
     volume = panel.get("volume")
 
-    # Safely check for empty - handle case where close might be a string or other type
     try:
         is_empty = (
             close is None
@@ -2555,124 +3899,163 @@ def _compute_per_symbol_features(
         is_empty = True
 
     if is_empty:
-        return out
+        return feats
 
-    # Filter to basket symbols
     valid_syms = [s for s in basket_syms if s in close.columns]
     if not valid_syms:
         return feats
 
-    c = close[valid_syms]
-    h = high[valid_syms] if high is not None else c
-    l = low[valid_syms] if low is not None else c
+    c = close.loc[:, valid_syms].astype(np.float32, copy=False)
+    h = (
+        high.loc[:, valid_syms].astype(np.float32, copy=False)
+        if isinstance(high, pd.DataFrame)
+        else c
+    )
+    l = (
+        low.loc[:, valid_syms].astype(np.float32, copy=False)
+        if isinstance(low, pd.DataFrame)
+        else c
+    )
     v = (
-        volume[valid_syms]
-        if volume is not None
-        else pd.DataFrame(1.0, index=c.index, columns=c.columns)
+        volume.loc[:, valid_syms].astype(np.float32, copy=False)
+        if isinstance(volume, pd.DataFrame)
+        else pd.DataFrame(1.0, index=c.index, columns=c.columns, dtype=np.float32)
     )
-    c = c.astype(np.float32, copy=False)
-    h = h.astype(np.float32, copy=False)
-    l = l.astype(np.float32, copy=False)
-    v = v.astype(np.float32, copy=False)
+    idx = c.index
+    cols = list(c.columns)
+    c_arr = np.ascontiguousarray(c.to_numpy(dtype=np.float32, copy=False))
+    h_arr = np.ascontiguousarray(h.to_numpy(dtype=np.float32, copy=False))
+    l_arr = np.ascontiguousarray(l.to_numpy(dtype=np.float32, copy=False))
+    v_arr = np.ascontiguousarray(v.to_numpy(dtype=np.float32, copy=False))
 
-    # Compute ret24h (24-hour returns)
-    ret24h = c / c.shift(24) - 1.0
-    feats["ret24h"] = ret24h.astype(np.float32)
+    ret24h_arr = ff._numba_pct_change_parallel(c_arr, 24)
+    ret12h_arr = ff._numba_pct_change_parallel(c_arr, 12)
+    ret6h_arr = ff._numba_pct_change_parallel(c_arr, 6)
+    ret1h_arr = ff._numba_pct_change_parallel(c_arr, 1)
+    feats["ret24h"] = _frame_from_array(ret24h_arr, idx, cols)
+    feats["ret12h"] = _frame_from_array(ret12h_arr, idx, cols)
+    feats["ret6h"] = _frame_from_array(ret6h_arr, idx, cols)
+    feats["ret1h"] = _frame_from_array(ret1h_arr, idx, cols)
 
-    # Compute ret12h (12-hour returns)
-    ret12h = c / c.shift(12) - 1.0
-    feats["ret12h"] = ret12h.astype(np.float32)
-
-    # Compute ret6h (6-hour returns)
-    ret6h = c / c.shift(6) - 1.0
-    feats["ret6h"] = ret6h.astype(np.float32)
-
-    # Compute ret1h (1-hour returns)
-    ret1h = c / c.shift(1) - 1.0
-    feats["ret1h"] = ret1h.astype(np.float32)
-
-    # Compute range_12h_pct (12-hour high-low range)
-    h_12 = _mask_rolling_min_periods(ff.numba_rolling_max(h, 12), h, 12, 12)
-    l_12 = _mask_rolling_min_periods(ff.numba_rolling_min(l, 12), l, 12, 12)
-    range_12h_pct = (h_12 - l_12) / (c + 1e-12)
-    feats["range_12h_pct"] = range_12h_pct.astype(np.float32)
-
-    # LGBM deployment masks are saved as raw-feature predicates. Keep this
-    # selector-side subset aligned with the feature names used in those masks.
-    h_24 = ff.numba_rolling_max(h, 24)
-    l_24 = ff.numba_rolling_min(l, 24)
-    range_24h_pct = (h_24 - l_24) / (c + 1e-12)
-    feats["range_24h_pct"] = range_24h_pct.astype(np.float32)
-
-    prev_low_24 = l_24.shift(1)
-    dist_prior_day_low = (c - prev_low_24) / (c + 1e-12)
-    feats["dist_prior_day_low"] = dist_prior_day_low.fillna(0.0).astype(np.float32)
-
-    prev_c = c.shift(1)
-    tr = np.maximum(np.maximum((h - l).abs(), (h - prev_c).abs()), (l - prev_c).abs())
-    atr = ff.numba_rolling_mean(tr.astype(np.float32), 14).replace(0.0, np.nan)
-    ema_fast = c.ewm(span=10, adjust=False, min_periods=1).mean()
-    dist_ema_fast = (c - ema_fast) / (atr + 1e-12)
-    feats["dist_ema_fast"] = (
-        dist_ema_fast.replace([np.inf, -np.inf], np.nan).fillna(0.0).astype(np.float32)
+    h_12 = _mask_min_periods_array(
+        ff._numba_rolling_max_parallel(h_arr, 12), h_arr, 12, 12
+    )
+    l_12 = _mask_min_periods_array(
+        ff._numba_rolling_min_parallel(l_arr, 12), l_arr, 12, 12
+    )
+    feats["range_12h_pct"] = _frame_from_array(
+        (h_12 - l_12) / (c_arr + np.float32(1e-12)), idx, cols
     )
 
-    delta = c.diff()
-    gain = ff.numba_rolling_mean(delta.clip(lower=0.0).astype(np.float32), 14)
-    loss = ff.numba_rolling_mean((-delta.clip(upper=0.0)).astype(np.float32), 14)
-    rs = gain / (loss + 1e-12)
-    rsi = 100.0 - (100.0 / (1.0 + rs))
-    feats["rsi_slope"] = rsi.diff(3).fillna(0.0).astype(np.float32)
-
-    vwap_48 = ff.numba_rolling_vwap(c, v, 48)
-    session_stdev_48 = ff.numba_rolling_std(c, 48)
-    loc_vwap_dev_z_48 = (c - vwap_48) / (
-        np.maximum(session_stdev_48, atr * 0.5) + 1e-12
-    )
-    feats["loc_vwap_dev_z_48"] = (
-        loc_vwap_dev_z_48.replace([np.inf, -np.inf], np.nan)
-        .fillna(0.0)
-        .astype(np.float32)
+    h_24 = ff._numba_rolling_max_parallel(h_arr, 24)
+    l_24 = ff._numba_rolling_min_parallel(l_arr, 24)
+    feats["range_24h_pct"] = _frame_from_array(
+        (h_24 - l_24) / (c_arr + np.float32(1e-12)), idx, cols
     )
 
-    # Compute volatility (24-hour rolling std of returns)
-    rv_24h = _mask_rolling_min_periods(
-        ff.numba_rolling_std(ret1h.astype(np.float32), 24), ret1h, 24, 24
+    prev_low_24 = _shift_array(l_24, 1)
+    dist_prior_day_low_arr = (c_arr - prev_low_24) / (c_arr + np.float32(1e-12))
+    dist_prior_day_low_arr = np.nan_to_num(
+        dist_prior_day_low_arr, nan=0.0, posinf=0.0, neginf=0.0
+    ).astype(np.float32, copy=False)
+    feats["dist_prior_day_low"] = _frame_from_array(dist_prior_day_low_arr, idx, cols)
+
+    prev_c = _shift_array(c_arr, 1)
+    tr_arr = np.maximum(
+        np.maximum(np.abs(h_arr - l_arr), np.abs(h_arr - prev_c)),
+        np.abs(l_arr - prev_c),
+    ).astype(np.float32, copy=False)
+    atr_arr = ff.numba_rolling_mean(tr_arr, 14).astype(np.float32, copy=False)
+    atr_arr[atr_arr == 0.0] = np.nan
+    ema_fast_arr = ff._numba_ewma_parallel(
+        c_arr, np.float32(2.0 / (10.0 + 1.0)), False
+    )
+    dist_ema_fast_arr = (c_arr - ema_fast_arr) / (atr_arr + np.float32(1e-12))
+    dist_ema_fast_arr = np.nan_to_num(
+        dist_ema_fast_arr, nan=0.0, posinf=0.0, neginf=0.0
+    ).astype(np.float32, copy=False)
+    feats["dist_ema_fast"] = _frame_from_array(dist_ema_fast_arr, idx, cols)
+
+    delta_arr = c_arr - prev_c
+    gain_arr = ff.numba_rolling_mean(
+        np.where(
+            np.isnan(delta_arr),
+            np.nan,
+            np.where(delta_arr > 0.0, delta_arr, 0.0),
+        ).astype(np.float32),
+        14,
+    )
+    loss_arr = ff.numba_rolling_mean(
+        np.where(
+            np.isnan(delta_arr),
+            np.nan,
+            np.where(delta_arr < 0.0, -delta_arr, 0.0),
+        ).astype(np.float32),
+        14,
+    )
+    rs_arr = gain_arr / (loss_arr + np.float32(1e-12))
+    rsi_arr = np.float32(100.0) - (np.float32(100.0) / (np.float32(1.0) + rs_arr))
+    rsi_slope_arr = rsi_arr - _shift_array(rsi_arr, 3)
+    rsi_slope_arr = np.nan_to_num(
+        rsi_slope_arr, nan=0.0, posinf=0.0, neginf=0.0
+    ).astype(np.float32, copy=False)
+    feats["rsi_slope"] = _frame_from_array(rsi_slope_arr, idx, cols)
+
+    vwap_48_arr = ff._numba_rolling_vwap_parallel(c_arr, v_arr, 48)
+    session_stdev_48_arr = ff.numba_rolling_std(c_arr, 48)
+    loc_vwap_dev_z_48_arr = (c_arr - vwap_48_arr) / (
+        np.maximum(session_stdev_48_arr, atr_arr * np.float32(0.5))
+        + np.float32(1e-12)
+    )
+    loc_vwap_dev_z_48_arr = np.nan_to_num(
+        loc_vwap_dev_z_48_arr, nan=0.0, posinf=0.0, neginf=0.0
+    ).astype(np.float32, copy=False)
+    feats["loc_vwap_dev_z_48"] = _frame_from_array(loc_vwap_dev_z_48_arr, idx, cols)
+
+    rv_24h_arr = _mask_min_periods_array(
+        ff.numba_rolling_std(ret1h_arr, 24), ret1h_arr, 24, 24
+    )
+    rv_24h_mean_arr = _mask_min_periods_array(
+        ff.numba_rolling_mean(rv_24h_arr, 24 * 90), rv_24h_arr, 24 * 90, 100
+    )
+    rv_24h_std_arr = _mask_min_periods_array(
+        ff.numba_rolling_std(rv_24h_arr, 24 * 90), rv_24h_arr, 24 * 90, 100
+    )
+    feats["volatility_zscore"] = _frame_from_array(
+        (rv_24h_arr - rv_24h_mean_arr) / (rv_24h_std_arr + np.float32(1e-12)),
+        idx,
+        cols,
     )
 
-    # Compute volatility z-score (relative to 90-day rolling window)
-    rv_24h_mean = _mask_rolling_min_periods(
-        ff.numba_rolling_mean(rv_24h.astype(np.float32), 24 * 90),
-        rv_24h,
-        24 * 90,
-        100,
+    sum_abs_ret_arr = _mask_min_periods_array(
+        ff._numba_rolling_sum_parallel(np.abs(ret1h_arr).astype(np.float32), 24),
+        ret1h_arr,
+        24,
+        24,
     )
-    rv_24h_std = _mask_rolling_min_periods(
-        ff.numba_rolling_std(rv_24h.astype(np.float32), 24 * 90),
-        rv_24h,
-        24 * 90,
-        100,
+    high_low_range_arr = (
+        _mask_min_periods_array(ff._numba_rolling_max_parallel(h_arr, 24), h_arr, 24, 24)
+        - _mask_min_periods_array(
+            ff._numba_rolling_min_parallel(l_arr, 24), l_arr, 24, 24
+        )
     )
-    volatility_zscore = (rv_24h - rv_24h_mean) / (rv_24h_std + 1e-12)
-    feats["volatility_zscore"] = volatility_zscore.astype(np.float32)
+    chop_score_arr = sum_abs_ret_arr / (
+        np.log(high_low_range_arr + np.float32(1e-12)) + np.float32(1e-12)
+    )
+    chop_score_arr = 1 - np.clip(chop_score_arr / np.float32(50.0), 0, 1)
+    feats["chop_score"] = _frame_from_array(chop_score_arr, idx, cols)
 
-    # Compute choppiness index (simplified version)
-    # Uses 24-hour rolling sum of absolute returns / rolling max-min
-    sum_abs_ret = _mask_rolling_min_periods(
-        ff.numba_rolling_sum(ret1h.abs().astype(np.float32), 24), ret1h, 24, 24
+    finite_rv = np.isfinite(rv_24h_arr)
+    rv_sum = np.where(finite_rv, rv_24h_arr, 0.0).sum(axis=1, dtype=np.float32)
+    rv_count = finite_rv.sum(axis=1)
+    mkt_rv_24h_arr = np.full(rv_24h_arr.shape[0], np.nan, dtype=np.float32)
+    np.divide(
+        rv_sum,
+        rv_count.astype(np.float32),
+        out=mkt_rv_24h_arr,
+        where=rv_count > 0,
     )
-    high_low_range = (
-        _mask_rolling_min_periods(ff.numba_rolling_max(h, 24), h, 24, 24)
-        - _mask_rolling_min_periods(ff.numba_rolling_min(l, 24), l, 24, 24)
-    )
-    chop_score = sum_abs_ret / (np.log(high_low_range + 1e-12) + 1e-12)
-    # Normalize to 0-1 range (approximate)
-    chop_score = 1 - np.clip(chop_score / 50, 0, 1)
-    feats["chop_score"] = chop_score.astype(np.float32)
-
-    # Compute mkt_rv_24h (market realized volatility - average across symbols)
-    mkt_rv_24h = rv_24h.mean(axis=1)
-    feats["mkt_rv_24h"] = mkt_rv_24h.astype(np.float32)
+    feats["mkt_rv_24h"] = pd.Series(mkt_rv_24h_arr, index=idx, dtype=np.float32)
 
     tprint(f"Computed {len(feats)} per-symbol features for {len(valid_syms)} symbols")
     return feats
@@ -2733,6 +4116,49 @@ def _mask_rolling_min_periods(
     if int(min_periods) <= 1:
         return values
     return values.where(_rolling_valid_counts(source, int(window)) >= float(min_periods))
+
+
+def _frame_from_array(
+    values: np.ndarray,
+    index: pd.Index,
+    columns: List[str],
+) -> pd.DataFrame:
+    return pd.DataFrame(
+        np.asarray(values, dtype=np.float32),
+        index=index,
+        columns=columns,
+        copy=False,
+    )
+
+
+def _rolling_valid_counts_array(values: np.ndarray, window: int) -> np.ndarray:
+    finite = np.isfinite(np.asarray(values, dtype=np.float32)).astype(np.float32)
+    return ff._numba_rolling_sum_parallel(finite, int(window))
+
+
+def _mask_min_periods_array(
+    values: np.ndarray,
+    source: np.ndarray,
+    window: int,
+    min_periods: int,
+) -> np.ndarray:
+    out = np.asarray(values, dtype=np.float32).copy()
+    if int(min_periods) <= 1:
+        return out
+    counts = _rolling_valid_counts_array(source, int(window))
+    out[counts < float(min_periods)] = np.nan
+    return out
+
+
+def _shift_array(values: np.ndarray, periods: int) -> np.ndarray:
+    arr = np.asarray(values, dtype=np.float32)
+    out = np.full(arr.shape, np.nan, dtype=np.float32)
+    p = int(periods)
+    if p <= 0:
+        return arr.copy()
+    if p < arr.shape[0]:
+        out[p:, :] = arr[:-p, :]
+    return out
 
 
 def _zero_frame_like_panel(
@@ -2798,7 +4224,7 @@ def _materialize_live_orderbook_summary_features(
     if not _requires_live_orderbook_features(required_feature_keys):
         return feats
     if cfg is not None and not bool(
-        cfg.get("live_materialize_orderbook_model_features", True)
+        cfg.get("live_materialize_orderbook_model_features", False)
     ):
         return feats
 
@@ -2849,6 +4275,74 @@ def _materialize_live_orderbook_summary_features(
         "median_spread_bps",
         "pct_assets_wide_spread",
     }
+
+    latest_only = bool((cfg or {}).get("live_feature_return_latest_only", True))
+    latest_ts = pd.Timestamp(idx.max()) if len(idx) else None
+    if latest_only and latest_ts is not None and hasattr(feats, "latest_values_at"):
+        required_ob = {
+            str(k)
+            for k in required_feature_keys
+            if str(k).startswith(("ob_", "obw_")) or str(k) in ORDERBOOK_RESIDUAL_FEATURE_KEYS
+        }
+        if required_ob:
+            def put_latest_from_cache(name: str, source: str | None = None) -> bool:
+                source_key = str(source or name)
+                try:
+                    if hasattr(feats, "has_raw_key") and not feats.has_raw_key(source_key):
+                        return False
+                    values = feats.latest_values_at(
+                        source_key,
+                        cols,
+                        latest_ts,
+                        stale_sensitive=_is_live_stale_sensitive_feature_key(source_key),
+                    )
+                except Exception:
+                    return False
+                if not isinstance(values, pd.Series):
+                    return False
+                arr = (
+                    pd.to_numeric(values.reindex(cols), errors="coerce")
+                    .to_numpy(dtype=np.float32, copy=False)
+                )
+                if not np.isfinite(arr).any():
+                    return False
+                out[str(name)] = pd.DataFrame(
+                    arr[None, :],
+                    index=pd.DatetimeIndex([latest_ts]),
+                    columns=cols,
+                    dtype=np.float32,
+                )
+                return True
+
+            orderbook_aliases = {
+                "ob_l1_imbalance": "ob_imb_l1",
+                "ob_l10_imbalance": "ob_imb_l10",
+                "ob_l20_imbalance": "ob_imb_l20",
+                "ob_microprice_premium_bps": "ob_microprice_dev_bps",
+                "ob_mid_vs_close_bps": "ob_mid_close_dislocation_bps",
+            }
+            available_latest = 0
+            missing_latest: List[str] = []
+            for name in sorted(required_ob):
+                if put_latest_from_cache(name):
+                    available_latest += 1
+                    continue
+                source = orderbook_aliases.get(name)
+                if source and put_latest_from_cache(name, source=source):
+                    available_latest += 1
+                    continue
+                missing_latest.append(name)
+            if available_latest and not missing_latest:
+                tprint(
+                    "Materialized latest-only live orderbook features from selected-feature cache: "
+                    f"{available_latest} required keys"
+                )
+                return out
+            if available_latest:
+                tprint(
+                    "Materialized latest-only live orderbook features from selected-feature cache: "
+                    f"{available_latest} keys; falling back for missing={missing_latest[:8]}"
+                )
 
     def complete_broadcast_columns(value: pd.DataFrame) -> pd.DataFrame:
         frame = value.reindex(index=idx)
@@ -2925,10 +4419,15 @@ def _materialize_live_orderbook_summary_features(
         ).shift(1)
     )
     available = (best_bid.notna() & best_ask.notna() & mid.notna()).astype(np.float32)
+    def needs_feature(name: str) -> bool:
+        return bool(
+            name in required_feature_keys
+            or name in out
+            or (required_residuals and name in residual_source_feature_keys)
+        )
+
     def put(name: str, value: pd.DataFrame) -> None:
-        if name in required_feature_keys or name in out or (
-            required_residuals and name in residual_source_feature_keys
-        ):
+        if needs_feature(name):
             existing = out.get(name)
             if (
                 preserve_cached
@@ -2948,6 +4447,10 @@ def _materialize_live_orderbook_summary_features(
                 .astype(np.float32)
             )
 
+    def put_lazy(name: str, factory) -> None:
+        if needs_feature(name):
+            put(name, factory())
+
     def broadcast_to_symbols(value: pd.Series) -> pd.DataFrame:
         ser = pd.to_numeric(value, errors="coerce").reindex(idx)
         values = np.ascontiguousarray(ser.to_numpy(dtype=np.float32))
@@ -2959,20 +4462,32 @@ def _materialize_live_orderbook_summary_features(
         )
 
     spread_bps = (((best_ask - best_bid) / (mid.abs() + eps)) * 1e4).clip(0, 1000)
-    spread_z_24h = _rolling_zscore_frame(spread_bps, 24)
+    spread_z_24h = None
+    if (
+        needs_feature("ob_spread_z_24h")
+        or needs_feature("ob_spread_bps_z_24h")
+        or needs_feature("xasset_mkt_spread_bps_z_24h")
+        or needs_feature("xasset_mkt_ob_stress_z_24h")
+        or needs_feature("xasset_ob_stress_basket_z_24h")
+    ):
+        spread_z_24h = _rolling_zscore_frame(spread_bps, 24)
     put("ob_available", available)
     put("ob_stale_flag", 1.0 - available)
     put("ob_update_gap_flag", 1.0 - available)
     put("ob_spread_bps", spread_bps)
-    put("ob_spread_z_24h", spread_z_24h)
-    put("ob_spread_bps_z_24h", spread_z_24h)
-    put("ob_spread_bps_z_7d", _rolling_zscore_frame(spread_bps, 24 * 7))
+    if spread_z_24h is not None:
+        put("ob_spread_z_24h", spread_z_24h)
+        put("ob_spread_bps_z_24h", spread_z_24h)
+    put_lazy("ob_spread_bps_z_7d", lambda: _rolling_zscore_frame(spread_bps, 24 * 7))
     mid_close_gap = (((mid - close_aligned) / (close_aligned.abs() + eps)) * 1e4).clip(
         -1000, 1000
     )
     put("ob_mid_close_dislocation_bps", mid_close_gap)
     put("ob_mid_vs_close_bps", mid_close_gap)
-    put("ob_mid_close_dislocation_bps_z_24h", _rolling_zscore_frame(mid_close_gap, 24))
+    put_lazy(
+        "ob_mid_close_dislocation_bps_z_24h",
+        lambda: _rolling_zscore_frame(mid_close_gap, 24),
+    )
 
     if bid_qty_1 is not None and ask_qty_1 is not None:
         l1_imb = ((bid_qty_1 - ask_qty_1) / (bid_qty_1 + ask_qty_1 + eps)).clip(-1, 1)
@@ -2986,7 +4501,10 @@ def _materialize_live_orderbook_summary_features(
         put("ob_imb_l1", l1_imb)
         put("ob_microprice_premium_bps", microprice_bps)
         put("ob_microprice_dev_bps", microprice_bps)
-        put("ob_microprice_dev_bps_z_24h", _rolling_zscore_frame(microprice_bps, 24))
+        put_lazy(
+            "ob_microprice_dev_bps_z_24h",
+            lambda: _rolling_zscore_frame(microprice_bps, 24),
+        )
         top_liq = (mid * (bid_qty_1 + ask_qty_1)).clip(lower=0.0)
         put("ob_top_liquidity_usd", np.log1p(top_liq))
         put(
@@ -3004,7 +4522,10 @@ def _materialize_live_orderbook_summary_features(
         put("ob_imb_l10", l10_imb)
         put("ob_wimb_l10", l10_imb)
         put("ob_depth_usd_l10", np.log1p(depth_l10))
-        put("ob_depth_usd_l10_z", _rolling_zscore_frame(np.log1p(depth_l10), 24 * 7))
+        put_lazy(
+            "ob_depth_usd_l10_z",
+            lambda: _rolling_zscore_frame(np.log1p(depth_l10), 24 * 7),
+        )
         put(
             "ob_depth_l10_to_qv_24h",
             (depth_l10 / (quote_volume_24h + eps)).clip(0, 100),
@@ -3012,6 +4533,8 @@ def _materialize_live_orderbook_summary_features(
 
     l20_imb = None
     depth_l20 = None
+    depth_l20_z = None
+    depth_l20_to_qv_z = None
     if bid_qty_l20 is not None and ask_qty_l20 is not None:
         l20_imb = (
             (bid_qty_l20 - ask_qty_l20) / (bid_qty_l20 + ask_qty_l20 + eps)
@@ -3022,12 +4545,27 @@ def _materialize_live_orderbook_summary_features(
         put("ob_wimb_l20", l20_imb)
         put("ob_wall_imb_l20", l20_imb)
         put("ob_depth_usd_l20", np.log1p(depth_l20))
-        depth_l20_z = _rolling_zscore_frame(np.log1p(depth_l20), 24 * 7)
-        put("ob_depth_usd_l20_z", depth_l20_z)
-        put("ob_depth_usd_z_24h", depth_l20_z)
+        depth_l20_z = None
+        if (
+            needs_feature("ob_depth_usd_l20_z")
+            or needs_feature("ob_depth_usd_z_24h")
+            or needs_feature("xasset_mkt_depth_z")
+            or needs_feature("ob_book_pressure_l10")
+        ):
+            depth_l20_z = _rolling_zscore_frame(np.log1p(depth_l20), 24 * 7)
+            put("ob_depth_usd_l20_z", depth_l20_z)
+            put("ob_depth_usd_z_24h", depth_l20_z)
         depth_l20_to_qv = (depth_l20 / (quote_volume_24h + eps)).clip(0, 100)
         put("ob_depth_l20_to_qv_24h", depth_l20_to_qv)
-        put("ob_depth_l20_to_qv_z_7d", _rolling_zscore_frame(depth_l20_to_qv, 24 * 7))
+        if (
+            needs_feature("ob_depth_l20_to_qv_z_7d")
+            or needs_feature("xasset_mkt_depth_to_qv_z")
+            or needs_feature("xasset_mkt_ob_stress_z_24h")
+            or needs_feature("xasset_ob_stress_basket_z_24h")
+            or needs_feature("xasset_ob_liquidity_divergence_z_24h")
+        ):
+            depth_l20_to_qv_z = _rolling_zscore_frame(depth_l20_to_qv, 24 * 7)
+            put("ob_depth_l20_to_qv_z_7d", depth_l20_to_qv_z)
         if bid_qty_1 is not None:
             put("ob_bid_depth_decay_l20", (bid_qty_1 / (bid_qty_l20 + eps)).clip(0, 1))
         if ask_qty_1 is not None:
@@ -3045,9 +4583,9 @@ def _materialize_live_orderbook_summary_features(
             (l10_imb if l10_imb is not None else l20_imb) * spread_bps,
         )
         put("ob_book_absorption_score", (-l20_imb.abs()).clip(-2, 2))
-        put(
+        put_lazy(
             "ob_liquidity_shock_z",
-            _rolling_zscore_frame(depth_l20.diff().fillna(0.0), 24 * 7),
+            lambda: _rolling_zscore_frame(depth_l20.diff().fillna(0.0), 24 * 7),
         )
 
     trade_count = _aligned_orderbook_panel_field(
@@ -3075,21 +4613,21 @@ def _materialize_live_orderbook_summary_features(
     )
 
     if trade_count is not None:
-        put(
+        put_lazy(
             "ob_trade_count_z_24h",
-            _rolling_zscore_frame(np.log1p(trade_count.clip(lower=0.0)), 24 * 7),
+            lambda: _rolling_zscore_frame(np.log1p(trade_count.clip(lower=0.0)), 24 * 7),
         )
     if notional is not None:
-        put(
+        put_lazy(
             "ob_notional_z_24h",
-            _rolling_zscore_frame(np.log1p(notional.clip(lower=0.0)), 24 * 7),
+            lambda: _rolling_zscore_frame(np.log1p(notional.clip(lower=0.0)), 24 * 7),
         )
         if depth_l20 is not None:
             notional_to_depth = (notional / (depth_l20 + eps)).clip(0, 100)
             put("ob_notional_to_depth_l20", notional_to_depth)
-            put(
+            put_lazy(
                 "ob_notional_to_depth_l20_z_24h",
-                _rolling_zscore_frame(notional_to_depth, 24),
+                lambda: _rolling_zscore_frame(notional_to_depth, 24),
             )
             if signed_flow is not None:
                 put(
@@ -3097,23 +4635,23 @@ def _materialize_live_orderbook_summary_features(
                     (signed_flow.abs() * notional_to_depth).clip(0, 100),
                 )
     if buy_notional is not None:
-        put(
+        put_lazy(
             "ob_buy_notional_z_24h",
-            _rolling_zscore_frame(np.log1p(buy_notional.clip(lower=0.0)), 24 * 7),
+            lambda: _rolling_zscore_frame(np.log1p(buy_notional.clip(lower=0.0)), 24 * 7),
         )
     if sell_notional is not None:
-        put(
+        put_lazy(
             "ob_sell_notional_z_24h",
-            _rolling_zscore_frame(np.log1p(sell_notional.clip(lower=0.0)), 24 * 7),
+            lambda: _rolling_zscore_frame(np.log1p(sell_notional.clip(lower=0.0)), 24 * 7),
         )
     if buy_notional is not None and sell_notional is not None:
         flow_notional_imb = (
             (buy_notional - sell_notional) / (buy_notional + sell_notional + eps)
         ).clip(-1, 1)
         put("ob_flow_notional_imbalance_1h", flow_notional_imb)
-        put(
+        put_lazy(
             "ob_flow_notional_skew_z_24h",
-            _rolling_zscore_frame(buy_notional - sell_notional, 24 * 7),
+            lambda: _rolling_zscore_frame(buy_notional - sell_notional, 24 * 7),
         )
     if buy_qty is not None and sell_qty is not None:
         flow_qty_imb = ((buy_qty - sell_qty) / (buy_qty + sell_qty + eps)).clip(-1, 1)
@@ -3129,9 +4667,9 @@ def _materialize_live_orderbook_summary_features(
             )
             put("ob_kyle_lambda_1h", kyle)
     if mean_trade_qty is not None:
-        put(
+        put_lazy(
             "ob_mean_trade_qty_z_24h",
-            _rolling_zscore_frame(np.log1p(mean_trade_qty.clip(lower=0.0)), 24 * 7),
+            lambda: _rolling_zscore_frame(np.log1p(mean_trade_qty.clip(lower=0.0)), 24 * 7),
         )
         if bid_qty_1 is not None and ask_qty_1 is not None:
             trade_size_to_l1 = (
@@ -3139,30 +4677,43 @@ def _materialize_live_orderbook_summary_features(
                 / (mid * (bid_qty_1 + ask_qty_1) + eps)
             ).clip(0, 100)
             put("ob_trade_size_to_l1_depth", trade_size_to_l1)
-            put(
+            put_lazy(
                 "ob_trade_size_to_l1_depth_z_24h",
-                _rolling_zscore_frame(trade_size_to_l1, 24),
+                lambda: _rolling_zscore_frame(trade_size_to_l1, 24),
             )
 
-    depth_norm_z = out.get("ob_depth_l20_to_qv_z_7d")
-    spread_z = out.get("ob_spread_z_24h")
-    depth_usd_z = out.get("ob_depth_usd_l20_z")
-    available_spread = [s for s in basket_syms if s in spread_bps.columns]
-    basket_spread_bps = (
-        spread_bps[available_spread].mean(axis=1)
-        if available_spread
-        else spread_bps.mean(axis=1)
-    )
-    put("xasset_mkt_spread_bps", broadcast_to_symbols(basket_spread_bps))
-    if isinstance(depth_usd_z, pd.DataFrame):
-        available_depth_usd = [s for s in basket_syms if s in depth_usd_z.columns]
-        basket_depth_usd_z = (
-            depth_usd_z[available_depth_usd].mean(axis=1)
-            if available_depth_usd
-            else depth_usd_z.mean(axis=1)
+    depth_norm_z = depth_l20_to_qv_z
+    spread_z = spread_z_24h
+    depth_usd_z = depth_l20_z
+    basket_spread_bps = None
+    if needs_feature("xasset_mkt_spread_bps"):
+        available_spread = [s for s in basket_syms if s in spread_bps.columns]
+        basket_spread_bps = (
+            spread_bps[available_spread].mean(axis=1)
+            if available_spread
+            else spread_bps.mean(axis=1)
         )
-        put("xasset_mkt_depth_z", broadcast_to_symbols(basket_depth_usd_z))
-    if isinstance(depth_norm_z, pd.DataFrame) and isinstance(spread_z, pd.DataFrame):
+        put("xasset_mkt_spread_bps", broadcast_to_symbols(basket_spread_bps))
+    if isinstance(depth_usd_z, pd.DataFrame):
+        if needs_feature("xasset_mkt_depth_z"):
+            available_depth_usd = [s for s in basket_syms if s in depth_usd_z.columns]
+            basket_depth_usd_z = (
+                depth_usd_z[available_depth_usd].mean(axis=1)
+                if available_depth_usd
+                else depth_usd_z.mean(axis=1)
+            )
+            put("xasset_mkt_depth_z", broadcast_to_symbols(basket_depth_usd_z))
+    if (
+        isinstance(depth_norm_z, pd.DataFrame)
+        and isinstance(spread_z, pd.DataFrame)
+        and (
+            needs_feature("xasset_mkt_spread_bps_z_24h")
+            or needs_feature("xasset_mkt_depth_to_qv_z")
+            or needs_feature("xasset_mkt_ob_stress_z_24h")
+            or needs_feature("xasset_ob_stress_basket_z_24h")
+            or needs_feature("xasset_ob_liquidity_divergence_z_24h")
+        )
+    ):
         available_basket = [s for s in basket_syms if s in depth_norm_z.columns]
         basket_depth_z = (
             depth_norm_z[available_basket].mean(axis=1)
@@ -3176,15 +4727,19 @@ def _materialize_live_orderbook_summary_features(
         )
         put("xasset_mkt_spread_bps_z_24h", broadcast_to_symbols(basket_spread_z))
         put("xasset_mkt_depth_to_qv_z", broadcast_to_symbols(basket_depth_z))
-        stress = _rolling_zscore_frame(
-            broadcast_to_symbols((basket_spread_z - basket_depth_z).clip(-10, 10)),
-            24,
-        )
-        put("xasset_mkt_ob_stress_z_24h", stress)
-        put("xasset_ob_stress_basket_z_24h", stress)
-        put(
+        if (
+            needs_feature("xasset_mkt_ob_stress_z_24h")
+            or needs_feature("xasset_ob_stress_basket_z_24h")
+        ):
+            stress = _rolling_zscore_frame(
+                broadcast_to_symbols((basket_spread_z - basket_depth_z).clip(-10, 10)),
+                24,
+            )
+            put("xasset_mkt_ob_stress_z_24h", stress)
+            put("xasset_ob_stress_basket_z_24h", stress)
+        put_lazy(
             "xasset_ob_liquidity_divergence_z_24h",
-            _rolling_zscore_frame(depth_norm_z.sub(basket_depth_z, axis=0), 24),
+            lambda: _rolling_zscore_frame(depth_norm_z.sub(basket_depth_z, axis=0), 24),
         )
 
     if l20_imb is not None:
@@ -3236,6 +4791,24 @@ def _materialize_live_orderbook_summary_features(
                 )
         add_residual_features(residual_inputs, None, cfg or {})
         for key in required_residuals:
+            existing = out.get(key)
+            if (
+                preserve_cached
+                and isinstance(existing, pd.DataFrame)
+                and not existing.empty
+            ):
+                aligned_existing = (
+                    existing.reindex(index=idx, columns=cols)
+                    .replace([np.inf, -np.inf], np.nan)
+                    .astype(np.float32)
+                )
+                # Offline selected-feature caches may carry all-NaN residual
+                # placeholders from missing live primitives. Preserve populated
+                # cached residuals for strict train/inference parity, but still
+                # synthesize placeholders from live orderbook summaries.
+                if bool(aligned_existing.notna().to_numpy().any()):
+                    out[key] = aligned_existing
+                    continue
             frame = residual_inputs.get(key)
             if isinstance(frame, pd.DataFrame) and not frame.empty:
                 out[key] = (
@@ -3331,6 +4904,56 @@ def _synthesize_live_safe_feature_keys(
     orderbook_alias_missing = sorted(
         key for key in orderbook_aliases if key in required and key not in feats
     )
+    close = panel.get("close")
+    zero_frame = _zero_frame_like_panel(panel, basket_syms)
+    residual_repair_missing: List[str] = []
+    if "path_efficiency_24_ts_resid" in required:
+        needs_repair = True
+        if (
+            hasattr(feats, "latest_values_at")
+            and zero_frame is not None
+            and isinstance(zero_frame.index, pd.DatetimeIndex)
+            and not zero_frame.empty
+        ):
+            latest_ts = pd.Timestamp(zero_frame.index.max())
+            try:
+                values = feats.latest_values_at(
+                    "path_efficiency_24_ts_resid",
+                    list(zero_frame.columns),
+                    latest_ts,
+                    stale_sensitive=False,
+                )
+                needs_repair = not (
+                    isinstance(values, pd.Series)
+                    and bool(
+                        np.isfinite(
+                            pd.to_numeric(values, errors="coerce").to_numpy(
+                                dtype=np.float32, copy=False
+                            )
+                        ).any()
+                    )
+                )
+            except Exception:
+                needs_repair = True
+        else:
+            existing = feats.get("path_efficiency_24_ts_resid")
+            needs_repair = not isinstance(existing, pd.DataFrame) or existing.empty
+            if (
+                not needs_repair
+                and zero_frame is not None
+                and isinstance(existing, pd.DataFrame)
+                and not existing.empty
+            ):
+                aligned_existing = existing.reindex(
+                    index=zero_frame.index,
+                    columns=zero_frame.columns,
+                ).replace([np.inf, -np.inf], np.nan)
+                latest = aligned_existing.tail(1)
+                needs_repair = latest.empty or not bool(
+                    np.isfinite(latest.to_numpy(dtype=np.float32, copy=False)).any()
+                )
+        if needs_repair:
+            residual_repair_missing.append("path_efficiency_24_ts_resid")
     orderbook_zero_missing: List[str] = []
     stale_sensitive_zero_missing = sorted(
         key
@@ -3361,18 +4984,17 @@ def _synthesize_live_safe_feature_keys(
         and not calendar_missing
         and not rolling_missing
         and not orderbook_alias_missing
+        and not residual_repair_missing
         and not orderbook_zero_missing
         and not orderbook_prefix_zero_missing
         and not stale_sensitive_zero_missing
     ):
         return _ensure_required_symbol_columns(feats, panel, basket_syms, required)
 
-    zero_frame = _zero_frame_like_panel(panel, basket_syms)
     if zero_frame is None:
         raise ValueError("Cannot materialize derived live features without a close panel")
 
     out = _copy_feature_mapping(feats)
-    close = panel.get("close")
     if barrier_missing:
         policy_barrier = _compute_policy_barrier_pct(panel, basket_syms, {})
         if isinstance(policy_barrier, pd.DataFrame) and not policy_barrier.empty:
@@ -3432,10 +5054,50 @@ def _synthesize_live_safe_feature_keys(
             raise ValueError(
                 f"{key} is required but equivalent source feature {source!r} is unavailable"
             )
+    if residual_repair_missing:
+        if not isinstance(close, pd.DataFrame) or close.empty:
+            raise ValueError(
+                "path_efficiency_24_ts_resid is required but close panel is unavailable"
+            )
+        aligned_close = (
+            close.reindex(index=zero_frame.index, columns=zero_frame.columns)
+            .replace([np.inf, -np.inf], np.nan)
+            .astype(np.float32)
+        )
+        ret1 = aligned_close.pct_change().astype(np.float32)
+        ret24 = aligned_close.pct_change(24).astype(np.float32)
+        abs_path = ret1.abs().rolling(24, min_periods=8).sum()
+        path_eff = (ret24.abs() / (abs_path + 1e-12)).clip(0.0, 1.0).astype(np.float32)
+        residual_inputs: Dict[str, pd.DataFrame] = {
+            "path_efficiency_24": path_eff,
+            "ret1h": ret1,
+            "ret24h": ret24,
+        }
+        add_residual_features(residual_inputs, None, cfg or {})
+        repaired = residual_inputs.get("path_efficiency_24_ts_resid")
+        if not isinstance(repaired, pd.DataFrame) or repaired.empty:
+            raise ValueError("path_efficiency_24_ts_resid repair could not be computed")
+        repaired = (
+            repaired.reindex(index=zero_frame.index, columns=zero_frame.columns)
+            .replace([np.inf, -np.inf], np.nan)
+            .astype(np.float32)
+        )
+        existing = out.get("path_efficiency_24_ts_resid")
+        if isinstance(existing, pd.DataFrame) and not existing.empty:
+            existing = (
+                existing.reindex(index=zero_frame.index, columns=zero_frame.columns)
+                .replace([np.inf, -np.inf], np.nan)
+                .astype(np.float32)
+            )
+            out["path_efficiency_24_ts_resid"] = existing.combine_first(repaired).astype(
+                np.float32
+            )
+        else:
+            out["path_efficiency_24_ts_resid"] = repaired
     out = _ensure_required_symbol_columns(out, panel, basket_syms, required)
     tprint(
         "Materialized derived live feature keys for inference: "
-        f"{(['barrier_pct'] if barrier_missing else []) + calendar_missing + rolling_missing + orderbook_alias_missing}"
+        f"{(['barrier_pct'] if barrier_missing else []) + calendar_missing + rolling_missing + orderbook_alias_missing + residual_repair_missing}"
     )
     return out
 

@@ -150,6 +150,46 @@ def test_policy_rank_reference_bad_manifest_policy_oos_contract_fails_closed(tmp
     assert result.n_rows == 0
 
 
+def test_policy_rank_reference_loader_survives_promoted_external_manifest_path(tmp_path):
+    df = pd.DataFrame(
+        {
+            "strategy_id": ["long_demo"] * 3,
+            "calibrated_score": [0.1, 0.4, 0.8],
+            "rank_pct": [1 / 3, 2 / 3, 1.0],
+            "policy_oos_generation_source": ["generated_from_train_meta_state:labels"] * 3,
+            "policy_oos_source_model_fit_end": ["2026-01-19T06:00:00+00:00"] * 3,
+        }
+    )
+    persist_policy_rank_reference(
+        df,
+        data_root=tmp_path,
+        run_id="run_a",
+        strategy_id="long_demo",
+        market_mode="perp",
+    )
+    manifest_path = (
+        tmp_path
+        / "artifacts"
+        / "run_a"
+        / "simple_policy_optimiser"
+        / "rank_reference"
+        / "manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text())
+    manifest["strategies"]["long_demo"]["path"] = (
+        "extreme_price_movements/reports/promoted_copy/simple_policy_optimiser/"
+        "rank_reference/long_demo.parquet"
+    )
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    store = PolicyRankReferenceStore(data_root=tmp_path, run_id="run_a")
+    result = store.lookup(strategy_id="long_demo", calibrated_score=0.4, side="long")
+
+    assert result.n_rows == 3
+    assert result.policy_rank_pct == 2 / 3
+    assert result.source.endswith("rank_reference/long_demo.parquet")
+
+
 def test_policy_rank_pct_searchsorted_right():
     scores = np.asarray([0.1, 0.2, 0.4, 0.8])
 
@@ -259,6 +299,52 @@ def test_live_gate_can_require_cross_strategy_auction_rank(tmp_path):
     ) == (False, "rank_below_dynamic_threshold")
     assert decision["policy_rank_pct"] == 0.8
     assert decision["normalized_rank_score"] == 0.0
+    assert decision["threshold_rank_score"] == 0.0
+    assert decision["threshold_rank_score_source"] == "cross_strategy_auction_reference"
+
+
+def test_deployment_threshold_uses_auction_rank_not_strategy_rank(tmp_path):
+    persist_policy_rank_reference(
+        pd.DataFrame(
+            {
+                "strategy_id": ["long_demo"] * 5,
+                "calibrated_score": [0.10, 0.20, 0.30, 0.40, 0.90],
+                "rank_pct": [0.2, 0.4, 0.6, 0.8, 1.0],
+            }
+        ),
+        data_root=tmp_path,
+        run_id="run_a",
+        strategy_id="long_demo",
+        market_mode="perps",
+    )
+    persist_auction_rank_reference(
+        pd.DataFrame(
+            {
+                "calibrated_score": [0.50, 0.60, 0.70, 0.80],
+                "strategy_id": ["short_a", "long_b", "short_c", "long_d"],
+            }
+        ),
+        data_root=tmp_path,
+        run_id="run_a",
+    )
+    store = PolicyRankReferenceStore(data_root=tmp_path, run_id="run_a")
+    decision = {
+        "strategy_id": "long_demo",
+        "side": "long",
+        "threshold_space": "rank_percentile",
+        "calibrated_score": 0.40,
+        "effective_threshold": 0.70,
+        "chain_results": {},
+    }
+
+    assert apply_policy_rank_percentile_gate(
+        decision,
+        store=store,
+        require_cross_strategy_auction_rank=True,
+        use_auction_rank_for_threshold=True,
+    ) == (False, "rank_below_dynamic_threshold")
+    assert decision["policy_rank_pct"] == 0.8
+    assert decision["auction_rank_pct"] == 0.0
     assert decision["threshold_rank_score"] == 0.0
     assert decision["threshold_rank_score_source"] == "cross_strategy_auction_reference"
 

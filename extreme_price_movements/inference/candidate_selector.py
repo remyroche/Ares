@@ -225,7 +225,80 @@ def _prepare_shared_mask_context(
         "candidate_selector: shared CanonicalRuleMaskResolver initialized "
         f"features={len(feats_1d)} rows={int(n_ts * n_syms)}"
     )
-    return {"feats_1d": feats_1d, "resolver": resolver}
+    return {
+        "feats_1d": feats_1d,
+        "resolver": resolver,
+        "X": X,
+        "metadata": metadata,
+        "symbols": list(close_df.columns),
+        "timestamps": list(close_df.index),
+    }
+
+
+def build_latest_prepared_feature_frames(
+    panel: Dict[str, pd.DataFrame],
+    feats: Dict[str, pd.DataFrame],
+    mask_cfg: Dict[str, Any],
+    *,
+    symbols: Optional[Iterable[str]] = None,
+    required_columns: Optional[Iterable[str]] = None,
+) -> Dict[str, pd.DataFrame]:
+    """Return latest FeatureProcessor columns as live feature frames.
+
+    LGBM base models are trained on the FeatureProcessor output contract, not
+    only the raw hourly feature panels. Live inference must therefore expose
+    these prepared columns to the model scorer after the shared training-path
+    raw features have been computed.
+    """
+
+    close_df = panel.get("close")
+    if not isinstance(close_df, pd.DataFrame) or close_df.empty:
+        return {}
+    context = _prepare_shared_mask_context(panel, feats, mask_cfg)
+    X = context.get("X")
+    metadata = context.get("metadata") or []
+    if not isinstance(X, np.ndarray) or X.size == 0 or not metadata:
+        return {}
+
+    all_symbols = [str(sym) for sym in context.get("symbols", list(close_df.columns))]
+    selected_symbols = [
+        str(sym)
+        for sym in (symbols if symbols is not None else all_symbols)
+        if str(sym) in set(all_symbols)
+    ]
+    if not selected_symbols:
+        return {}
+
+    feature_names = [str(getattr(meta, "feature_name", "")) for meta in metadata]
+    feature_names = [name for name in feature_names if name]
+    if not feature_names:
+        return {}
+
+    keep: Optional[set[str]] = None
+    if required_columns is not None:
+        keep = {str(col) for col in required_columns if str(col)}
+    n_syms = int(len(all_symbols))
+    latest_start = max(0, int(X.shape[0]) - n_syms)
+    latest = np.asarray(X[latest_start : latest_start + n_syms, :], dtype=np.float32)
+    latest_df = pd.DataFrame(latest, index=all_symbols, columns=feature_names)
+    latest_df = latest_df.reindex(selected_symbols)
+    latest_ts = pd.Timestamp(close_df.index.max())
+
+    out: Dict[str, pd.DataFrame] = {}
+    for col in feature_names:
+        if keep is not None and col not in keep:
+            continue
+        series = latest_df[col]
+        out[col] = pd.DataFrame(
+            [series.to_numpy(dtype=np.float32, copy=False)],
+            index=pd.DatetimeIndex([latest_ts]),
+            columns=latest_df.index,
+        )
+    tprint(
+        "candidate_selector: prepared latest FeatureProcessor frames "
+        f"features={len(out)} symbols={len(selected_symbols)} ts={latest_ts}"
+    )
+    return out
 
 
 def _build_mask_for_mode(
@@ -254,7 +327,9 @@ def _build_mask_for_mode(
             return f"({base_event}==1)|(*)|(*)"
         return base_event
 
-    base = _normalize_legacy_base_event(mask_cfg.get("base_event_trigger", ""))
+    base = _normalize_legacy_base_event(
+        mask_cfg.get("base_event_trigger") or mask_cfg.get("canonical_key") or ""
+    )
     if base and resolver is not None:
         try:
             mask_1d = resolver.get_mask(base)
@@ -630,17 +705,39 @@ def select_candidates(
 
     try:
         up_zone, down_zone = _up_down_zones(feats, panel, metric=metric)
+        shared_context: Optional[Dict[str, Any]] = None
+        try:
+            shared_context = _prepare_shared_mask_context(
+                panel, feats, mode_cfg.get("price_up_tf", default_cfg)
+            )
+        except Exception as exc:
+            tprint(
+                "candidate_selector: shared select_candidates mask context init "
+                f"failed; falling back to per-mode preparation: {exc}"
+            )
         m_up_tf = _build_mask_for_mode(
-            panel, feats, mode_cfg.get("price_up_tf", default_cfg)
+            panel,
+            feats,
+            mode_cfg.get("price_up_tf", default_cfg),
+            prepared_context=shared_context,
         )
         m_up_mr = _build_mask_for_mode(
-            panel, feats, mode_cfg.get("price_up_mr", default_cfg)
+            panel,
+            feats,
+            mode_cfg.get("price_up_mr", default_cfg),
+            prepared_context=shared_context,
         )
         m_down_tf = _build_mask_for_mode(
-            panel, feats, mode_cfg.get("price_down_tf", default_cfg)
+            panel,
+            feats,
+            mode_cfg.get("price_down_tf", default_cfg),
+            prepared_context=shared_context,
         )
         m_down_mr = _build_mask_for_mode(
-            panel, feats, mode_cfg.get("price_down_mr", default_cfg)
+            panel,
+            feats,
+            mode_cfg.get("price_down_mr", default_cfg),
+            prepared_context=shared_context,
         )
 
         long_mask = (up_zone & m_up_tf) | (down_zone & m_down_mr)
@@ -731,17 +828,39 @@ def select_candidates_at_timestamp(
 
     try:
         up_zone, down_zone = _up_down_zones(feats, panel, metric=metric)
+        shared_context: Optional[Dict[str, Any]] = None
+        try:
+            shared_context = _prepare_shared_mask_context(
+                panel, feats, mode_cfg.get("price_up_tf", default_cfg)
+            )
+        except Exception as exc:
+            tprint(
+                "candidate_selector: shared timestamp mask context init failed; "
+                f"falling back to per-mode preparation: {exc}"
+            )
         m_up_tf = _build_mask_for_mode(
-            panel, feats, mode_cfg.get("price_up_tf", default_cfg)
+            panel,
+            feats,
+            mode_cfg.get("price_up_tf", default_cfg),
+            prepared_context=shared_context,
         )
         m_up_mr = _build_mask_for_mode(
-            panel, feats, mode_cfg.get("price_up_mr", default_cfg)
+            panel,
+            feats,
+            mode_cfg.get("price_up_mr", default_cfg),
+            prepared_context=shared_context,
         )
         m_down_tf = _build_mask_for_mode(
-            panel, feats, mode_cfg.get("price_down_tf", default_cfg)
+            panel,
+            feats,
+            mode_cfg.get("price_down_tf", default_cfg),
+            prepared_context=shared_context,
         )
         m_down_mr = _build_mask_for_mode(
-            panel, feats, mode_cfg.get("price_down_mr", default_cfg)
+            panel,
+            feats,
+            mode_cfg.get("price_down_mr", default_cfg),
+            prepared_context=shared_context,
         )
 
         long_mask = (up_zone & m_up_tf) | (down_zone & m_down_mr)

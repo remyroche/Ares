@@ -33,6 +33,7 @@ from extreme_price_movements.simple_policy_optimiser import (  # noqa: E402
     _load_policy_stage_view,
     _load_slice_plan_source_validation,
 )
+from extreme_price_movements.inference.config import load_trained_symbol_universe  # noqa: E402
 from extreme_price_movements.policy_oos_provenance import (  # noqa: E402
     validate_policy_oos_source_artifacts,
     write_policy_oos_preflight_report,
@@ -66,6 +67,61 @@ def _timestamp_bounds(df: pd.DataFrame) -> dict[str, Any]:
         "min_timestamp": ts.min().isoformat(),
         "max_timestamp": ts.max().isoformat(),
     }
+
+
+def _load_deployable_trained_universe(data_root: Path, run_id: str) -> set[str]:
+    try:
+        universe = {
+            str(sym)
+            for sym in load_trained_symbol_universe(str(data_root), str(run_id))
+            if str(sym)
+        }
+    except Exception as exc:
+        raise SystemExit(
+            "Unable to load trained/inference universe for policy-OOS generation: "
+            f"{exc}"
+        ) from exc
+    if not universe:
+        raise SystemExit(
+            "Refusing policy-OOS generation because the trained/inference universe is empty."
+        )
+    return universe
+
+
+def _filter_policy_oos_to_trained_universe(
+    df: pd.DataFrame,
+    *,
+    trained_universe: set[str],
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    if "symbol" not in df.columns:
+        raise SystemExit("Policy-OOS frame is missing required symbol column.")
+    symbols = df["symbol"].astype(str)
+    keep = symbols.isin(trained_universe)
+    outside = sorted(set(symbols.loc[~keep]) - set(trained_universe))
+    report = {
+        "input_rows": int(len(df)),
+        "input_symbols": int(symbols.nunique(dropna=True)),
+        "trained_universe_symbols": int(len(trained_universe)),
+        "kept_rows": int(keep.sum()),
+        "dropped_rows": int((~keep).sum()),
+        "dropped_symbols": int(len(outside)),
+        "dropped_symbol_sample": outside[:30],
+    }
+    return df.loc[keep].copy(), report
+
+
+def _attach_policy_oos_contract_columns(
+    df: pd.DataFrame,
+    *,
+    market_mode: str,
+    source_model_fit_end: Any,
+    generation_source: str,
+) -> pd.DataFrame:
+    out = df.copy()
+    out["market_mode"] = str(market_mode)
+    out["policy_oos_source_model_fit_end"] = str(source_model_fit_end)
+    out["policy_oos_generation_source"] = str(generation_source)
+    return out
 
 
 def main() -> int:
@@ -138,6 +194,7 @@ def main() -> int:
     stage_view, stage_name = _load_policy_stage_view(slice_plan_path)
     if stage_name != "policy_optimiser" or not stage_view:
         raise SystemExit(f"Missing policy_optimiser stage view in {slice_plan_path}")
+    trained_universe = _load_deployable_trained_universe(data_root, args.run_id)
 
     full_state = joblib.load(meta_state_path)
     if not isinstance(full_state, dict) or not isinstance(full_state.get("bundle"), dict):
@@ -182,11 +239,24 @@ def main() -> int:
         df = _filter_policy_quote_rows(df, args.market_mode)
         if df.empty:
             continue
-        df = df.copy()
+        df, universe_report = _filter_policy_oos_to_trained_universe(
+            df,
+            trained_universe=trained_universe,
+        )
+        if df.empty:
+            raise SystemExit(
+                "Policy-OOS generation produced no deployable rows for "
+                f"{strategy_id} after trained-universe filtering: "
+                + json.dumps(universe_report, sort_keys=True, default=str)
+            )
         if "clf" not in df.columns and "oof_pred" in df.columns:
             df["clf"] = df["oof_pred"]
-        df["policy_oos_source_model_fit_end"] = str(source_model_fit_end)
-        df["policy_oos_generation_source"] = str(sources.get(strategy_id, "unknown"))
+        df = _attach_policy_oos_contract_columns(
+            df,
+            market_mode=args.market_mode,
+            source_model_fit_end=source_model_fit_end,
+            generation_source=sources.get(strategy_id, "unknown"),
+        )
         path = out_dir / f"policy_oos_{strategy_id}_clf.parquet"
         df.to_parquet(path, index=False)
         bounds = _timestamp_bounds(df)
@@ -213,12 +283,21 @@ def main() -> int:
             "rank_normalization": "simple_policy_optimiser recalculates calibrated_score/rank_pct from clf",
             "slice_contract": source_validation,
             "source_artifact_preflight": preflight,
+            "trained_universe_filter": universe_report,
         }
         path.with_suffix(".manifest.json").write_text(
             json.dumps(manifest, indent=2, sort_keys=True, default=str) + "\n",
             encoding="utf-8",
         )
-        written.append({"strategy_id": strategy_id, "path": str(path), **bounds, "rows": int(len(df))})
+        written.append(
+            {
+                "strategy_id": strategy_id,
+                "path": str(path),
+                **bounds,
+                "rows": int(len(df)),
+                "trained_universe_filter": universe_report,
+            }
+        )
 
     summary = {
         "generated_by": "scripts/generate_policy_oos_predictions.py",
@@ -232,6 +311,7 @@ def main() -> int:
         "source_model_state_path": str(meta_state_path),
         "source_model_state_sha256": model_state_hash,
         "source_artifact_preflight_path": str(preflight_path),
+        "trained_universe_symbols": len(trained_universe),
     }
     (out_dir / "manifest.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True, default=str) + "\n",

@@ -105,6 +105,51 @@ def _rank_reference_root(data_root: str | Path, run_id: str) -> Path:
     )
 
 
+def _portable_manifest_path(
+    out_path: Path, *, out_dir: Path, data_root: str | Path, run_id: str
+) -> str:
+    """Return a manifest path that survives copying a rank_reference directory."""
+    artifact_root = Path(data_root) / "artifacts" / str(run_id)
+    try:
+        return str(out_path.relative_to(artifact_root))
+    except ValueError:
+        pass
+    try:
+        return str(out_path.relative_to(out_dir))
+    except ValueError:
+        return out_path.name
+
+
+def _resolve_manifest_path(
+    *,
+    data_root: Path,
+    run_id: str,
+    rank_reference_root: Path,
+    manifest_path_value: str,
+) -> Path:
+    """Resolve rank-reference manifest paths, including older promoted manifests."""
+    raw = Path(str(manifest_path_value or ""))
+    artifact_root = data_root / "artifacts" / str(run_id)
+    candidates: list[Path] = []
+    if raw.is_absolute():
+        candidates.append(raw)
+    else:
+        candidates.extend(
+            [
+                artifact_root / raw,
+                rank_reference_root / raw,
+            ]
+        )
+    if raw.name:
+        candidates.append(rank_reference_root / raw.name)
+    if not raw.is_absolute():
+        candidates.append(Path(raw))
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0] if candidates else rank_reference_root / raw.name
+
+
 def policy_rank_pct_from_sorted_scores(
     sorted_scores: Iterable[float] | np.ndarray,
     calibrated_score: float,
@@ -149,6 +194,7 @@ def persist_policy_rank_reference(
     run_id: str,
     strategy_id: str,
     market_mode: str | None = None,
+    output_dir: str | Path | None = None,
 ) -> Path:
     """Persist the exact policy-slice rank population used by Stage A."""
     required = {POLICY_RANK_REFERENCE_SCORE_COL, POLICY_RANK_REFERENCE_RANK_COL}
@@ -156,7 +202,7 @@ def persist_policy_rank_reference(
     if missing:
         raise ValueError(f"policy rank reference missing required columns: {missing}")
 
-    out_dir = _rank_reference_root(data_root, run_id)
+    out_dir = Path(output_dir) if output_dir is not None else _rank_reference_root(data_root, run_id)
     out_dir.mkdir(parents=True, exist_ok=True)
     sid = str(strategy_id)
     file_name = f"{_safe_strategy_filename(sid)}.parquet"
@@ -211,8 +257,11 @@ def persist_policy_rank_reference(
     )
     strategies = dict(manifest.get("strategies") or {})
     scores = ref[POLICY_RANK_REFERENCE_SCORE_COL].to_numpy(dtype=np.float64)
+    manifest_path_value = _portable_manifest_path(
+        out_path, out_dir=out_dir, data_root=data_root, run_id=run_id
+    )
     strategies[sid] = {
-        "path": str(out_path.relative_to(Path(data_root) / "artifacts" / str(run_id))),
+        "path": manifest_path_value,
         "n_rows": int(len(ref)),
         "score_col": POLICY_RANK_REFERENCE_SCORE_COL,
         "rank_col": POLICY_RANK_REFERENCE_RANK_COL,
@@ -242,11 +291,12 @@ def persist_auction_rank_reference(
     run_id: str,
     market_mode: str | None = None,
     score_col: str = POLICY_RANK_REFERENCE_SCORE_COL,
+    output_dir: str | Path | None = None,
 ) -> Path:
     """Persist the cross-strategy score population used by portfolio auction."""
     if score_col not in candidates.columns:
         raise ValueError(f"auction rank reference missing score column: {score_col}")
-    out_dir = _rank_reference_root(data_root, run_id)
+    out_dir = Path(output_dir) if output_dir is not None else _rank_reference_root(data_root, run_id)
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / AUCTION_RANK_REFERENCE_FILE
     ref = candidates.copy()
@@ -291,8 +341,11 @@ def persist_auction_rank_reference(
         }
     )
     scores = ref[score_col].to_numpy(dtype=np.float64)
+    manifest_path_value = _portable_manifest_path(
+        out_path, out_dir=out_dir, data_root=data_root, run_id=run_id
+    )
     manifest["auction"] = {
-        "path": str(out_path.relative_to(Path(data_root) / "artifacts" / str(run_id))),
+        "path": manifest_path_value,
         "n_rows": int(len(ref)),
         "score_col": score_col,
         "rank_col": "normalized_rank_score",
@@ -314,9 +367,10 @@ def invalidate_auction_rank_reference(
     run_id: str,
     market_mode: str | None = None,
     reason: str,
+    output_dir: str | Path | None = None,
 ) -> None:
     """Clear stale cross-strategy auction manifest entries before a fresh export."""
-    out_dir = _rank_reference_root(data_root, run_id)
+    out_dir = Path(output_dir) if output_dir is not None else _rank_reference_root(data_root, run_id)
     manifest_path = out_dir / "manifest.json"
     if not manifest_path.exists():
         return
@@ -434,7 +488,12 @@ class PolicyRankReferenceStore:
         if alias in self._cache:
             return self._cache[alias]
         rel_path = str(entry.get("path") or "")
-        path = self.data_root / "artifacts" / self.run_id / rel_path
+        path = _resolve_manifest_path(
+            data_root=self.data_root,
+            run_id=self.run_id,
+            rank_reference_root=self.root,
+            manifest_path_value=rel_path,
+        )
         score_col = str(entry.get("score_col") or POLICY_RANK_REFERENCE_SCORE_COL)
         try:
             frame = pd.read_parquet(path, columns=[score_col])
@@ -473,7 +532,12 @@ class PolicyRankReferenceStore:
         if not isinstance(entry, dict):
             return None
         rel_path = str(entry.get("path") or "")
-        path = self.data_root / "artifacts" / self.run_id / rel_path
+        path = _resolve_manifest_path(
+            data_root=self.data_root,
+            run_id=self.run_id,
+            rank_reference_root=self.root,
+            manifest_path_value=rel_path,
+        )
         score_col = str(entry.get("score_col") or POLICY_RANK_REFERENCE_SCORE_COL)
         try:
             frame = pd.read_parquet(path, columns=[score_col])

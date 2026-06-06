@@ -88,6 +88,7 @@ _PERP_FEATURE_COLLISION_RENAMES = {
 _PERP_NATIVE_TRANSFORM_SKIP_KEYS = {
     _PERP_FEATURE_COLLISION_RENAMES.get(k, k) for k in get_perp_feature_names()
 }
+_PERP_DERIVATIVE_FEATURE_KEYS = set(_PERP_NATIVE_TRANSFORM_SKIP_KEYS)
 _OI_FEATURE_KEYS = set(get_oi_feature_names())
 _PERP_NATIVE_TRANSFORM_SKIP_KEYS.update(_OI_FEATURE_KEYS)
 _PERP_NATIVE_TRANSFORM_SKIP_KEYS.update(
@@ -1277,7 +1278,7 @@ def compute_orderbook_wall_primitives(
         return pd.DataFrame(0.0, index=idx, columns=cols, dtype=np.float32)
 
     qv = (close_panel * volume_panel).replace([np.inf, -np.inf], np.nan)
-    qv24 = qv.rolling(24, min_periods=1).mean().shift(1).fillna(0.0)
+    qv24 = ff.numba_rolling_mean(qv.astype(np.float32), 24).shift(1).fillna(0.0)
 
     bands = {"r005": 0.005, "r010": 0.01, "r020": 0.02, "r030": 0.03}
     for b in ("a05", "a10", "a20", "a30"):
@@ -2063,6 +2064,8 @@ def _feature_state_path_for_workset(
     base_path: str | os.PathLike,
     feature_keys: list[str],
     symbols: list[str],
+    *,
+    contract_parts: list[str] | tuple[str, ...] | None = None,
 ) -> str:
     """Keep live rolling transform state isolated per feature/symbol contract."""
     base = os.fspath(base_path)
@@ -2072,6 +2075,8 @@ def _feature_state_path_for_workset(
             *[str(k) for k in feature_keys],
             "symbols",
             *[str(s) for s in symbols],
+            "contract",
+            *[str(p) for p in (contract_parts or [])],
         ]
     )
     digest = hashlib.sha1(digest_src.encode("utf-8")).hexdigest()[:16]
@@ -2110,8 +2115,18 @@ def _apply_causal_transform_live_state_or_batch(
                 )
 
                 state_keys = [k for k in feat_keys_list if k not in skip_transform_set]
+                transform_contract_parts = [
+                    "live_causal_transform_state_v2",
+                    f"contract_hash={cfg.get('feature_transform_contract_hash') or cfg.get('feature_causal_transform_contract_hash') or ''}",
+                    f"window={int(transformer.roll_window)}",
+                    f"winsor_qt={float(transformer.winsor_qt):.12g}",
+                    f"sigma_k={float(transformer.sigma_k):.12g}",
+                ]
                 workset_state_path = _feature_state_path_for_workset(
-                    state_path, state_keys, feature_columns
+                    state_path,
+                    state_keys,
+                    feature_columns,
+                    contract_parts=transform_contract_parts,
                 )
                 state = RollingZScoreState.load(
                     workset_state_path,
@@ -2121,6 +2136,7 @@ def _apply_causal_transform_live_state_or_batch(
                     winsor_qt=float(transformer.winsor_qt),
                     sigma_k=float(transformer.sigma_k),
                 )
+                batch_prefix_end_pos: int | None = None
                 if state is None:
                     state = RollingZScoreState(
                         state_keys,
@@ -2136,13 +2152,54 @@ def _apply_causal_transform_live_state_or_batch(
                         f"window={int(transformer.roll_window)} "
                         f"path={workset_state_path}"
                     )
+                    state_initialized_empty = True
                 else:
+                    state_initialized_empty = False
                     if state.last_timestamp:
                         last_state_ts = pd.Timestamp(state.last_timestamp)
                         if last_state_ts.tzinfo is not None and feature_index.tz is None:
                             last_state_ts = last_state_ts.tz_convert("UTC").tz_localize(None)
                         elif last_state_ts.tzinfo is None and feature_index.tz is not None:
                             last_state_ts = last_state_ts.tz_localize(feature_index.tz)
+                        min_required_ts_raw = cfg.get(
+                            "feature_causal_transform_min_required_ts"
+                        )
+                        if min_required_ts_raw:
+                            min_required_ts = pd.Timestamp(min_required_ts_raw)
+                            if min_required_ts.tzinfo is not None and feature_index.tz is None:
+                                min_required_ts = min_required_ts.tz_convert("UTC").tz_localize(None)
+                            elif min_required_ts.tzinfo is None and feature_index.tz is not None:
+                                min_required_ts = min_required_ts.tz_localize(feature_index.tz)
+                            if min_required_ts < last_state_ts:
+                                ignore_stale_min_required = bool(
+                                    cfg.get(
+                                        "feature_causal_transform_state_ignore_stale_min_required",
+                                        cfg.get(
+                                            "live_causal_transform_state_ignore_stale_min_required",
+                                            True,
+                                        ),
+                                    )
+                                )
+                                if ignore_stale_min_required:
+                                    tprint(
+                                        "Live CausalTransform state covers the old "
+                                        "tail prefix; using append-only state path "
+                                        "instead of hybrid recompute: "
+                                        f"state_last_ts={last_state_ts} "
+                                        f"min_required_ts={min_required_ts}"
+                                    )
+                                else:
+                                    prefix_positions = np.flatnonzero(feature_index <= last_state_ts)
+                                    if prefix_positions.size > 0:
+                                        batch_prefix_end_pos = int(prefix_positions[-1]) + 1
+                                    tprint(
+                                        "Live CausalTransform state overlaps an older "
+                                        "fast-path tail save window; using hybrid "
+                                        "transform path: "
+                                        f"state_last_ts={last_state_ts} "
+                                        f"min_required_ts={min_required_ts} "
+                                        f"batch_prefix_rows={batch_prefix_end_pos or 0}"
+                                    )
                         update_positions = np.flatnonzero(feature_index > last_state_ts)
                     else:
                         update_positions = np.arange(len(feature_index), dtype=np.int64)
@@ -2157,11 +2214,86 @@ def _apply_causal_transform_live_state_or_batch(
                         "Live CausalTransform state already current; falling back "
                         "to batched transform for this raw compute pass."
                     )
+                elif state_initialized_empty and update_positions.size > int(
+                    cfg.get(
+                        "feature_causal_transform_state_bootstrap_max_rows",
+                        max(int(transformer.roll_window) * 2, 1),
+                    )
+                ):
+                    seed_rows = min(int(transformer.roll_window), len(feature_index))
+                    seed_start = max(0, len(feature_index) - seed_rows)
+                    tprint(
+                        "Live CausalTransform state bootstrap is large; using "
+                        "vectorized fast-path transform and seeding rolling "
+                        "state tail: "
+                        f"rows={int(update_positions.size)} seed_rows={seed_rows}"
+                    )
+                    transformed_feats = transformer.transform_batch(
+                        feats,
+                        skip_keys=skip_transform_set,
+                        chunk_size=int(cfg.get("transform_chunk_size", 50)),
+                    )
+                    for pos in range(seed_start, len(feature_index)):
+                        row_payload = {}
+                        for k in state_keys:
+                            arr = np.asarray(feats[k], dtype=np.float32)
+                            if arr.ndim == 1:
+                                row_payload[k] = np.broadcast_to(
+                                    arr[:, None], feature_shape
+                                )[int(pos), :]
+                            else:
+                                row_payload[k] = arr[int(pos), :]
+                        state.update(
+                            row_payload,
+                            timestamp=str(
+                                pd.Timestamp(feature_index[int(pos)]).isoformat()
+                            ),
+                        )
+                    feats = transformed_feats
+                    for k, arr in list(feats.items()):
+                        arr = np.asarray(arr, dtype=np.float32)
+                        if arr.ndim == 1:
+                            arr = np.broadcast_to(arr[:, None], feature_shape)
+                        feats[k] = pd.DataFrame(
+                            arr, index=feature_index, columns=feature_columns
+                        )
+                    state.save(workset_state_path)
+                    tprint(
+                        "Live CausalTransform state bootstrapped from vectorized "
+                        "fast-path transform tail: "
+                        f"seed_rows={seed_rows} "
+                        f"from={pd.Timestamp(feature_index[seed_start]).isoformat()} "
+                        f"to={pd.Timestamp(feature_index[-1]).isoformat()}"
+                    )
+                    stateful_transform_used = True
                 else:
                     state_outputs = {
                         k: np.full(feature_shape, np.nan, dtype=np.float32)
                         for k in state_keys
                     }
+                    if batch_prefix_end_pos is not None and batch_prefix_end_pos > 0:
+                        prefix_shape = (int(batch_prefix_end_pos), feature_shape[1])
+                        prefix_feats: dict[str, np.ndarray] = {}
+                        for k in feat_keys_list:
+                            arr = np.asarray(feats[k], dtype=np.float32)
+                            if arr.ndim == 1:
+                                arr = np.broadcast_to(arr[:, None], feature_shape)
+                            prefix_feats[k] = np.asarray(
+                                arr[: int(batch_prefix_end_pos), :],
+                                dtype=np.float32,
+                            )
+                        prefix_transformed = transformer.transform_batch(
+                            prefix_feats,
+                            skip_keys=skip_transform_set,
+                            chunk_size=int(cfg.get("transform_chunk_size", 50)),
+                        )
+                        for k in state_keys:
+                            arr = np.asarray(prefix_transformed[k], dtype=np.float32)
+                            if arr.ndim == 1:
+                                arr = np.broadcast_to(arr[:, None], prefix_shape)
+                            state_outputs[k][: int(batch_prefix_end_pos), :] = arr[
+                                : int(batch_prefix_end_pos), :
+                            ]
                     raw_arrays: dict[str, np.ndarray] = {}
                     for k in state_keys:
                         arr = np.asarray(feats[k], dtype=np.float32)
@@ -2196,6 +2328,12 @@ def _apply_causal_transform_live_state_or_batch(
                             copy=False,
                         )
                     state.save(workset_state_path)
+                    if batch_prefix_end_pos is not None and batch_prefix_end_pos > 0:
+                        tprint(
+                            "Live CausalTransform fast-path hybrid update complete: "
+                            f"batch_prefix_rows={int(batch_prefix_end_pos)} "
+                            f"state_rows={int(update_positions.size)}"
+                        )
                     tprint(
                         "Live CausalTransform state updated append-only: "
                         f"rows={int(update_positions.size)} "
@@ -3030,44 +3168,198 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         feature_timer.mark(stage, feature_count=count)
 
     primitive_cache: dict[tuple[str, str, int], pd.DataFrame] = {}
+    raw_rolling_state_root = (
+        cfg.get("feature_raw_rolling_state_path")
+        or cfg.get("live_raw_rolling_state_path")
+    )
+    raw_rolling_state_enabled = bool(
+        cfg.get("feature_raw_rolling_state_enabled", False)
+        or cfg.get("live_raw_rolling_state_enabled", False)
+    ) and bool(raw_rolling_state_root)
+    try:
+        raw_rolling_min_window = int(
+            cfg.get("feature_raw_rolling_state_min_window", 12)
+        )
+    except Exception:
+        raw_rolling_min_window = 12
+
+    def _align_state_ts_for_index(value, index: pd.Index) -> pd.Timestamp:
+        ts = pd.Timestamp(value)
+        index_tz = getattr(index, "tz", None)
+        if ts.tzinfo is not None and index_tz is None:
+            return ts.tz_convert("UTC").tz_localize(None)
+        if ts.tzinfo is None and index_tz is not None:
+            return ts.tz_localize(index_tz)
+        return ts
+
+    def _raw_rolling_state_result(
+        *,
+        op: str,
+        name: str,
+        src: pd.DataFrame,
+        window: int,
+        vectorized_fn,
+    ) -> pd.DataFrame:
+        """Use raw append-only rolling state only when it is exactly safe."""
+        window = int(window)
+        if (
+            not raw_rolling_state_enabled
+            or window < raw_rolling_min_window
+            or not isinstance(src, pd.DataFrame)
+            or src.empty
+        ):
+            return vectorized_fn(src, window).astype(np.float32)
+        try:
+            from extreme_price_movements.inference.live_zscore_state import (
+                RawRollingFeatureState,
+            )
+
+            columns = [str(c) for c in src.columns]
+            index = src.index
+            contract_parts = [
+                "raw_rolling_state_v1",
+                f"op={op}",
+                f"name={name}",
+                f"window={window}",
+                f"scope={cfg.get('feature_raw_rolling_state_scope') or cfg.get('run_id') or 'unknown'}",
+                f"requested={cfg.get('feature_causal_transform_requested_hash') or ''}",
+                f"feature_contract={cfg.get('feature_causal_transform_contract_hash') or cfg.get('feature_transform_contract_hash') or ''}",
+            ]
+            state_path = _feature_state_path_for_workset(
+                raw_rolling_state_root,
+                [f"{op}:{name}:{window}"],
+                columns,
+                contract_parts=contract_parts,
+            )
+            state = RawRollingFeatureState.load(
+                state_path,
+                op=op,
+                name=name,
+                symbols=columns,
+                window=window,
+            )
+            if state is not None and state.last_timestamp:
+                last_ts = _align_state_ts_for_index(state.last_timestamp, index)
+                sparse_prefix_enabled = bool(
+                    cfg.get("feature_raw_rolling_state_sparse_prefix_enabled", False)
+                    or cfg.get("live_raw_rolling_state_sparse_prefix_enabled", False)
+                )
+                if len(index) > 0 and (
+                    pd.Timestamp(index[0]) > last_ts
+                    or (
+                        sparse_prefix_enabled
+                        and pd.Timestamp(index[-1]) > last_ts
+                    )
+                ):
+                    arr = np.asarray(src, dtype=np.float32)
+                    out = np.full(arr.shape, np.nan, dtype=np.float32)
+                    if pd.Timestamp(index[0]) > last_ts:
+                        update_positions = range(arr.shape[0])
+                        prefix_skipped = 0
+                    else:
+                        update_positions_arr = np.flatnonzero(index > last_ts)
+                        update_positions = update_positions_arr.tolist()
+                        prefix_skipped = int(update_positions_arr[0]) if update_positions_arr.size else arr.shape[0]
+                        if prefix_skipped > 0:
+                            # Downstream feature families, notably long-window
+                            # residuals, still need the historical prefix as
+                            # warmup inside this compute pass. The raw rolling
+                            # state updates only new rows, but returning NaN for
+                            # the prefix starves those later computations.
+                            prefix_result = vectorized_fn(src.iloc[:prefix_skipped], window)
+                            out[:prefix_skipped, :] = np.asarray(
+                                prefix_result, dtype=np.float32
+                            )
+                    for pos in update_positions:
+                        out[pos, :] = state.update(
+                            arr[pos, :],
+                            timestamp=pd.Timestamp(index[pos]).isoformat(),
+                        )
+                    state.save(state_path)
+                    tprint(
+                        "Live raw rolling state append-only update: "
+                        f"op={op} name={name} window={window} "
+                        f"rows={len(update_positions)} prefix_skipped={prefix_skipped} "
+                        f"from={pd.Timestamp(index[update_positions[0]]).isoformat() if update_positions else None} "
+                        f"to={pd.Timestamp(index[-1]).isoformat()}"
+                    )
+                    return pd.DataFrame(out, index=src.index, columns=src.columns)
+            result = vectorized_fn(src, window).astype(np.float32)
+            state = RawRollingFeatureState(
+                op=op,
+                name=name,
+                symbols=columns,
+                window=window,
+            )
+            state.seed_from_frame(np.asarray(src, dtype=np.float32), src.index)
+            state.save(state_path)
+            return result
+        except Exception as exc:
+            tprint(
+                "Live raw rolling state unavailable; falling back to vectorized "
+                f"{op}: {type(exc).__name__}: {exc}"
+            )
+            return vectorized_fn(src, window).astype(np.float32)
 
     def _roll_std(name: str, src: pd.DataFrame, window: int) -> pd.DataFrame:
         key = ("roll_std", name, int(window))
         if key not in primitive_cache:
-            primitive_cache[key] = ff.apply_to_frame(
-                src, ff._numba_rolling_std_nan_safe, int(window)
-            ).astype(np.float32)
+            primitive_cache[key] = _raw_rolling_state_result(
+                op="std",
+                name=name,
+                src=src,
+                window=int(window),
+                vectorized_fn=lambda frame, w: ff.apply_to_frame(
+                    frame, ff._numba_rolling_std_nan_safe, int(w)
+                ),
+            )
         return primitive_cache[key]
 
     def _roll_mean(name: str, src: pd.DataFrame, window: int) -> pd.DataFrame:
         key = ("roll_mean", name, int(window))
         if key not in primitive_cache:
-            primitive_cache[key] = ff.numba_rolling_mean(src, int(window)).astype(
-                np.float32
+            primitive_cache[key] = _raw_rolling_state_result(
+                op="mean",
+                name=name,
+                src=src,
+                window=int(window),
+                vectorized_fn=lambda frame, w: ff.numba_rolling_mean(frame, int(w)),
             )
         return primitive_cache[key]
 
     def _roll_sum(name: str, src: pd.DataFrame, window: int) -> pd.DataFrame:
         key = ("roll_sum", name, int(window))
         if key not in primitive_cache:
-            primitive_cache[key] = ff.numba_rolling_sum(src, int(window)).astype(
-                np.float32
+            primitive_cache[key] = _raw_rolling_state_result(
+                op="sum",
+                name=name,
+                src=src,
+                window=int(window),
+                vectorized_fn=lambda frame, w: ff.numba_rolling_sum(frame, int(w)),
             )
         return primitive_cache[key]
 
     def _roll_max(name: str, src: pd.DataFrame, window: int) -> pd.DataFrame:
         key = ("roll_max", name, int(window))
         if key not in primitive_cache:
-            primitive_cache[key] = ff.numba_rolling_max(src, int(window)).astype(
-                np.float32
+            primitive_cache[key] = _raw_rolling_state_result(
+                op="max",
+                name=name,
+                src=src,
+                window=int(window),
+                vectorized_fn=lambda frame, w: ff.numba_rolling_max(frame, int(w)),
             )
         return primitive_cache[key]
 
     def _roll_min(name: str, src: pd.DataFrame, window: int) -> pd.DataFrame:
         key = ("roll_min", name, int(window))
         if key not in primitive_cache:
-            primitive_cache[key] = ff.numba_rolling_min(src, int(window)).astype(
-                np.float32
+            primitive_cache[key] = _raw_rolling_state_result(
+                op="min",
+                name=name,
+                src=src,
+                window=int(window),
+                vectorized_fn=lambda frame, w: ff.numba_rolling_min(frame, int(w)),
             )
         return primitive_cache[key]
 
@@ -3229,15 +3521,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     ret_1 = c_raw.pct_change().fillna(0.0).astype(np.float32)
     ret_sign = np.sign(ret_1).astype(np.float32)
 
-    past_rv_2h = (
-        ret_1.rolling(2, min_periods=1).std().shift(1).fillna(0.0).astype(np.float32)
-    )
-    past_rv_4h = (
-        ret_1.rolling(4, min_periods=1).std().shift(1).fillna(0.0).astype(np.float32)
-    )
-    past_rv_8h = (
-        ret_1.rolling(8, min_periods=1).std().shift(1).fillna(0.0).astype(np.float32)
-    )
+    past_rv_2h = _roll_std("ret_1", ret_1, 2).shift(1).fillna(0.0).astype(np.float32)
+    past_rv_4h = _roll_std("ret_1", ret_1, 4).shift(1).fillna(0.0).astype(np.float32)
+    past_rv_8h = _roll_std("ret_1", ret_1, 8).shift(1).fillna(0.0).astype(np.float32)
     past_entropy_4h = ff.apply_to_frame(ret_sign, ff.binary_entropy_nb, 4).shift(1)
     past_entropy_8h = ff.apply_to_frame(ret_sign, ff.binary_entropy_nb, 8).shift(1)
     past_entropy_4h = past_entropy_4h.fillna(0.5).astype(np.float32)
@@ -4245,8 +4531,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         )
         if "1d" in _pos_delta_refs:
             _entry_1d = _ref_abs_1d.ffill().shift(1)
-            _lower_oiw_1d = _entry_1d.rolling(24, min_periods=1).min()
-            _upper_oiw_1d = _entry_1d.rolling(24, min_periods=1).max()
+            _lower_oiw_1d = _roll_min("oiw_entry_1d", _entry_1d, 24)
+            _upper_oiw_1d = _roll_max("oiw_entry_1d", _entry_1d, 24)
             _lower_oiw_1d_arr = _lower_oiw_1d.to_numpy(dtype=np.float32, copy=False)
             _upper_oiw_1d_arr = _upper_oiw_1d.to_numpy(dtype=np.float32, copy=False)
             _oiw_zone_1d = (
@@ -4305,8 +4591,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         _fund_abs_z_loc = _batch_roll_zscore(_fund_loc, 14 * 24).abs().clip(0.0, 6.0).astype(np.float32)
         _fund_weighted_price = (_price_for_funding := c_raw.where(c_raw > 0.0).astype(np.float32)) * _fund_abs_z_loc.fillna(0.0)
         for _suffix, _window in (("12h", 12), ("96h", 96)):
-            _num = _fund_weighted_price.rolling(_window, min_periods=1).sum()
-            _den = _fund_abs_z_loc.fillna(0.0).rolling(_window, min_periods=1).sum()
+            _num = _roll_sum("fund_weighted_price", _fund_weighted_price, _window)
+            _den = _roll_sum("fund_abs_z_loc", _fund_abs_z_loc.fillna(0.0), _window)
             _ref = (_num / _den.replace(0.0, np.nan)).replace([np.inf, -np.inf], np.nan)
             _ref_arr = _ref.to_numpy(dtype=np.float32, copy=False)
             _dist = (_c_raw_arr - _ref_arr) / (_atr_price_arr + np.float32(1e-12))
@@ -5063,7 +5349,10 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 feats["spot_rv_24h"] / (perp_rv_24h + 1e-12)
             ).clip(0, 10).astype(np.float32)
 
-        oi_feature_panel = _portable_perp_panel(oi_panel)
+        need_oi_features = (not requested_feature_set) or bool(
+            requested_feature_set.intersection(_OI_FEATURE_KEYS)
+        )
+        oi_feature_panel = _portable_perp_panel(oi_panel) if need_oi_features else None
         if isinstance(oi_feature_panel, pd.DataFrame):
             funding_feature_panel = (
                 _portable_funding_per_hour(funding_panel)
@@ -5079,8 +5368,13 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             )
             feats.update(oi_feats)
             tprint(f"OI feature block added: {len(oi_feats)}")
+        elif not need_oi_features:
+            tprint("Skipping OI feature block: no OI keys requested")
 
-        if isinstance(funding_panel, pd.DataFrame) and isinstance(
+        need_perp_derivative_features = (not requested_feature_set) or bool(
+            requested_feature_set.intersection(_PERP_DERIVATIVE_FEATURE_KEYS)
+        )
+        if need_perp_derivative_features and isinstance(funding_panel, pd.DataFrame) and isinstance(
             oi_panel, pd.DataFrame
         ) and isinstance(reference_price_panel_for_basis, pd.DataFrame):
             tprint("Computing perp derivative features...")
@@ -5147,6 +5441,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                     .astype(np.float32)
                 )
             tprint(f"Perp derivative features added: {len(perp_buffers)}")
+        elif not need_perp_derivative_features:
+            tprint("Skipping perp derivative features: no perp derivative keys requested")
         else:
             tprint(
                 "Perps mode enabled but portable funding/open_interest/spot data missing; skipping perp derivatives block."
@@ -5392,9 +5688,9 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             feats["ob_stale_flag"] = (1.0 - available).astype(np.float32)
         feats["ob_update_gap_flag"] = (1.0 - available).astype(np.float32)
         feats["ob_available"] = available.astype(np.float32)
-        feats["ob_coverage_24h"] = available.rolling(24, min_periods=1).mean().astype(
-            np.float32
-        )
+        feats["ob_coverage_24h"] = _roll_mean(
+            "ob_available", available.astype(np.float32), 24
+        ).astype(np.float32)
 
     if isinstance(ob_bid_qty_1, pd.DataFrame) and isinstance(
         ob_ask_qty_1, pd.DataFrame
@@ -5635,23 +5931,25 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             feats["fund_rate_z_14d"].abs().clip(0, 6).astype(np.float32)
         )
         feats["fund_carry_24h"] = _batch_roll_zscore(
-            feats["fund_rate"].rolling(24, min_periods=1).sum(), 14 * 24
+            _roll_sum("fund_rate", feats["fund_rate"], 24), 14 * 24
         )
         feats["fund_mom_8h"] = feats["fund_rate_mom_8h"].astype(np.float32)
         feats["fund_mom_24h"] = feats["fund_rate_mom_24h"].astype(np.float32)
         feats["fund_sign_persistence_24h"] = (
-            np.sign(feats["fund_rate"])
-            .rolling(24, min_periods=1)
-            .mean()
+            _roll_mean(
+                "fund_sign",
+                np.sign(feats["fund_rate"]).astype(np.float32),
+                24,
+            )
             .clip(-1, 1)
             .astype(np.float32)
         )
         feats["fund_extreme_duration_24h"] = (
-            (feats["fund_rate_z_14d"].abs() > 2)
-            .astype(np.float32)
-            .rolling(24, min_periods=1)
-            .mean()
-            .astype(np.float32)
+            _roll_mean(
+                "fund_extreme_abs_z_gt2",
+                (feats["fund_rate_z_14d"].abs() > 2).astype(np.float32),
+                24,
+            ).astype(np.float32)
         )
         feats["fund_rank_30d"] = (
             feats["fund_rate"]
@@ -5795,7 +6093,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
         for _h in (5, 10):
             ret_h = feats.get(
-                f"ret{_h}h", feats["ret1h"].rolling(_h, min_periods=1).sum()
+                f"ret{_h}h", _roll_sum("ret1h", feats["ret1h"], _h)
             )
             proximity = feats[f"fund_next_event_proximity_{_h}h"]
             post_proximity = (1.0 - (hours_since_last / float(_h))).clip(0.0, 1.0)
@@ -5874,7 +6172,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             feats[f"persistent_pos_funding_failed_breakout_{_h}h"] = (
                 (
                     pos_funding_persistence
-                    * failed_breakout_up.rolling(_h, min_periods=1).max()
+                    * _roll_max("failed_breakout_up", failed_breakout_up, _h)
                 )
                 .clip(0.0, 1.0)
                 .astype(np.float32)
@@ -5882,14 +6180,14 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             feats[f"persistent_neg_funding_failed_breakdown_{_h}h"] = (
                 (
                     neg_funding_persistence
-                    * failed_breakdown.rolling(_h, min_periods=1).max()
+                    * _roll_max("failed_breakdown", failed_breakdown, _h)
                 )
                 .clip(0.0, 1.0)
                 .astype(np.float32)
             )
             feats[f"fund_flip_x_vol_expansion_{_h}h"] = (
                 (
-                    fund_flip.rolling(_h, min_periods=1).max()
+                    _roll_max("fund_flip", fund_flip, _h)
                     * vol_expansion_proxy.clip(0.0, 10.0)
                 )
                 .clip(0.0, 10.0)
@@ -7022,8 +7320,8 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["t_trail_proxy"] = (trail_act_pct / (hr_48 + eps)).astype(np.float32)
 
     shock_12h = (c_prev / (c_prev.shift(12) + eps) - 1.0).abs().fillna(0.0)
-    hh_12 = h_prev.rolling(12, min_periods=1).max()
-    ll_12 = l_prev.rolling(12, min_periods=1).min()
+    hh_12 = _roll_max("h_prev", h_prev, 12)
+    ll_12 = _roll_min("l_prev", l_prev, 12)
     dist_from_low = (c_prev / (ll_12 + eps) - 1.0).fillna(0.0)
     dist_from_high = (hh_12 / (c_prev + eps) - 1.0).fillna(0.0)
 
@@ -9447,7 +9745,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     if not requested_feature_set or position_sizer_keys.intersection(
         requested_feature_set
     ):
-        _mark_feature_stage("pre_position_sizer")
+        _mark_feature_stage("composite_features")
         tprint("Features: adding missing position sizer features")
 
         atr_base = feats.get(
@@ -9803,6 +10101,13 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         del o, h, l, c, v
         del atr, dir_s, rv6, rv12, rv_ratio, mkt_gates
         gc.collect()
+        _mark_feature_stage("position_sizer_features")
+    else:
+        _mark_feature_stage("composite_features")
+        tprint(
+            "Features: skipping position sizer feature block; no requested "
+            "position-sizer keys in active feature contract"
+        )
 
     tprint(f"Features: done ({len(feats)} keys)")
     _mark_feature_stage("final")
@@ -9991,8 +10296,15 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
 
     chunk_size = int(cfg.get("transform_chunk_size", 50))
     stateful_transform_used = False
-    if bool(cfg.get("live_causal_transform_state_enabled", False)):
-        state_path = cfg.get("live_causal_transform_state_path")
+    state_enabled = bool(
+        cfg.get("feature_causal_transform_state_enabled", False)
+        or cfg.get("live_causal_transform_state_enabled", False)
+    )
+    if state_enabled:
+        state_path = (
+            cfg.get("feature_causal_transform_state_path")
+            or cfg.get("live_causal_transform_state_path")
+        )
         if state_path:
             try:
                 from extreme_price_movements.inference.live_zscore_state import (
@@ -10000,8 +10312,20 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                 )
 
                 state_keys = [k for k in feat_keys_list if k not in active_skip_transform_set]
+                transform_contract_parts = [
+                    "causal_transform_state_v2",
+                    f"scope={cfg.get('feature_causal_transform_state_scope') or cfg.get('run_id') or 'unknown'}",
+                    f"requested={cfg.get('feature_causal_transform_requested_hash') or ''}",
+                    f"feature_contract={cfg.get('feature_causal_transform_contract_hash') or cfg.get('feature_transform_contract_hash') or ''}",
+                    f"window={int(transformer.roll_window)}",
+                    f"winsor_qt={float(transformer.winsor_qt):.12g}",
+                    f"sigma_k={float(transformer.sigma_k):.12g}",
+                ]
                 workset_state_path = _feature_state_path_for_workset(
-                    state_path, state_keys, _feat_columns
+                    state_path,
+                    state_keys,
+                    _feat_columns,
+                    contract_parts=transform_contract_parts,
                 )
                 state = RollingZScoreState.load(
                     workset_state_path,
@@ -10025,19 +10349,60 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                         f"window={int(transformer.roll_window)} "
                         f"path={workset_state_path}"
                     )
+                    state_initialized_empty = True
                 else:
+                    state_initialized_empty = False
                     tprint(
                         "Live CausalTransform state loaded: "
                         f"features={len(state_keys)} symbols={len(_feat_columns)} "
                         f"last_ts={state.last_timestamp} path={workset_state_path}"
                     )
 
+                batch_prefix_end_pos: int | None = None
                 if state.last_timestamp:
                     last_state_ts = pd.Timestamp(state.last_timestamp)
                     if last_state_ts.tzinfo is not None and _feat_index.tz is None:
                         last_state_ts = last_state_ts.tz_convert("UTC").tz_localize(None)
                     elif last_state_ts.tzinfo is None and _feat_index.tz is not None:
                         last_state_ts = last_state_ts.tz_localize(_feat_index.tz)
+                    min_required_ts_raw = cfg.get(
+                        "feature_causal_transform_min_required_ts"
+                    )
+                    if min_required_ts_raw:
+                        min_required_ts = pd.Timestamp(min_required_ts_raw)
+                        if min_required_ts.tzinfo is not None and _feat_index.tz is None:
+                            min_required_ts = min_required_ts.tz_convert("UTC").tz_localize(None)
+                        elif min_required_ts.tzinfo is None and _feat_index.tz is not None:
+                            min_required_ts = min_required_ts.tz_localize(_feat_index.tz)
+                        if min_required_ts < last_state_ts:
+                            ignore_stale_min_required = bool(
+                                cfg.get(
+                                    "feature_causal_transform_state_ignore_stale_min_required",
+                                    cfg.get(
+                                        "live_causal_transform_state_ignore_stale_min_required",
+                                        True,
+                                    ),
+                                )
+                            )
+                            if ignore_stale_min_required:
+                                tprint(
+                                    "Live CausalTransform state covers the old "
+                                    "tail prefix; using append-only state path "
+                                    "instead of hybrid recompute: "
+                                    f"state_last_ts={last_state_ts} "
+                                    f"min_required_ts={min_required_ts}"
+                                )
+                            else:
+                                prefix_positions = np.flatnonzero(_feat_index <= last_state_ts)
+                                if prefix_positions.size > 0:
+                                    batch_prefix_end_pos = int(prefix_positions[-1]) + 1
+                                tprint(
+                                    "Live CausalTransform state overlaps an older tail "
+                                    "save window; using hybrid transform path: "
+                                    f"state_last_ts={last_state_ts} "
+                                    f"min_required_ts={min_required_ts} "
+                                    f"batch_prefix_rows={batch_prefix_end_pos or 0}"
+                                )
                     update_positions = np.flatnonzero(_feat_index > last_state_ts)
                 else:
                     update_positions = np.arange(len(_feat_index), dtype=np.int64)
@@ -10047,11 +10412,78 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                         "Live CausalTransform state already current; falling back to "
                         "batched transform for this raw compute pass."
                     )
+                elif state_initialized_empty and update_positions.size > int(
+                    cfg.get(
+                        "feature_causal_transform_state_bootstrap_max_rows",
+                        max(int(transformer.roll_window) * 2, 1),
+                    )
+                ):
+                    seed_rows = min(int(transformer.roll_window), len(_feat_index))
+                    seed_start = max(0, len(_feat_index) - seed_rows)
+                    tprint(
+                        "Live CausalTransform state bootstrap is large; using "
+                        "vectorized batched transform and seeding rolling state tail: "
+                        f"rows={int(update_positions.size)} seed_rows={seed_rows}"
+                    )
+                    transformed_feats = transformer.transform_batch(
+                        feats,
+                        skip_keys=active_skip_transform_set,
+                        chunk_size=chunk_size,
+                    )
+                    for pos in range(seed_start, len(_feat_index)):
+                        row_payload = {}
+                        for k in state_keys:
+                            arr = np.asarray(feats[k], dtype=np.float32)
+                            if arr.ndim == 1:
+                                row_payload[k] = np.broadcast_to(
+                                    arr[:, None], feature_shape
+                                )[int(pos), :]
+                            else:
+                                row_payload[k] = arr[int(pos), :]
+                        state.update(
+                            row_payload,
+                            timestamp=str(
+                                pd.Timestamp(_feat_index[int(pos)]).isoformat()
+                            ),
+                        )
+                    feats = transformed_feats
+                    state.save(workset_state_path)
+                    tprint(
+                        "Live CausalTransform state bootstrapped from vectorized "
+                        "transform tail: "
+                        f"seed_rows={seed_rows} "
+                        f"from={pd.Timestamp(_feat_index[seed_start]).isoformat()} "
+                        f"to={pd.Timestamp(_feat_index[-1]).isoformat()}"
+                    )
+                    stateful_transform_used = True
                 else:
                     state_outputs = {
                         k: np.full(feature_shape, np.nan, dtype=np.float32)
                         for k in state_keys
                     }
+                    if batch_prefix_end_pos is not None and batch_prefix_end_pos > 0:
+                        prefix_shape = (int(batch_prefix_end_pos), feature_shape[1])
+                        prefix_feats: dict[str, np.ndarray] = {}
+                        for k in feat_keys_list:
+                            arr = np.asarray(feats[k], dtype=np.float32)
+                            if arr.ndim == 1:
+                                arr = np.broadcast_to(arr[:, None], feature_shape)
+                            prefix_feats[k] = np.asarray(
+                                arr[: int(batch_prefix_end_pos), :],
+                                dtype=np.float32,
+                            )
+                        prefix_transformed = transformer.transform_batch(
+                            prefix_feats,
+                            skip_keys=active_skip_transform_set,
+                            chunk_size=chunk_size,
+                        )
+                        for k in state_keys:
+                            arr = np.asarray(prefix_transformed[k], dtype=np.float32)
+                            if arr.ndim == 1:
+                                arr = np.broadcast_to(arr[:, None], prefix_shape)
+                            state_outputs[k][: int(batch_prefix_end_pos), :] = arr[
+                                : int(batch_prefix_end_pos), :
+                            ]
                     raw_arrays: dict[str, np.ndarray] = {}
                     for k in state_keys:
                         arr = np.asarray(feats[k], dtype=np.float32)
@@ -10079,6 +10511,12 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                             arr = np.broadcast_to(arr[:, None], feature_shape)
                         feats[k] = arr.astype(np.float32, copy=False)
                     state.save(workset_state_path)
+                    if batch_prefix_end_pos is not None and batch_prefix_end_pos > 0:
+                        tprint(
+                            "Live CausalTransform hybrid update complete: "
+                            f"batch_prefix_rows={int(batch_prefix_end_pos)} "
+                            f"state_rows={int(update_positions.size)}"
+                        )
                     tprint(
                         "Live CausalTransform state updated append-only: "
                         f"rows={int(update_positions.size)} "
@@ -10088,7 +10526,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
                     stateful_transform_used = True
             except Exception as exc:
                 tprint(
-                    "Live CausalTransform state unavailable; falling back to "
+                    "CausalTransform state unavailable; falling back to "
                     f"batched tail transform: {type(exc).__name__}: {exc}"
                 )
 
@@ -11545,7 +11983,9 @@ def add_time_series_percentile_features(
             ts_pct = ff.numba_rolling_rank_pct(df, window=lookback)
 
             # Mask out periods with insufficient history (e.g., < 25% of lookback)
-            valid_counts = df.notna().rolling(lookback, min_periods=1).sum()
+            valid_counts = ff.numba_rolling_sum(
+                df.notna().astype(np.float32), lookback
+            )
             min_required = int(lookback * min_history_fraction)
             mask = valid_counts < min_required
             if mask.any().any():

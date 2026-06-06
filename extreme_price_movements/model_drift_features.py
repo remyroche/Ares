@@ -193,12 +193,11 @@ def transform_model_drift_features(
     sim = (1.0 / (1.0 + dist)).astype(np.float32)
     maha = np.sqrt(np.mean(np.square(z), axis=1)).astype(np.float32)
     corr_ref = np.asarray(state.get("corr_reference", []), dtype=np.float32)
+    # A live scoring batch is an arbitrary set of candidates, not a causal
+    # covariance window. Keep per-row drift diagnostics invariant to batch
+    # composition; covariance-window drift belongs in a separately persisted
+    # causal state, not in this row-local artifact transform.
     frob = np.zeros(len(frame), dtype=np.float32)
-    if len(frame) >= 3 and corr_ref.shape == (len(cols), len(cols)):
-        corr_now = np.corrcoef(z, rowvar=False)
-        corr_now = np.nan_to_num(corr_now, nan=0.0, posinf=0.0, neginf=0.0)
-        frob_val = float(np.linalg.norm(corr_now - corr_ref, ord="fro") / max(1.0, len(cols)))
-        frob[:] = frob_val
     cov_shift = (maha + frob).astype(np.float32)
     sim_s = pd.Series(sim, index=out_index)
     window = int(state.get("window", 240) or 240)
@@ -227,8 +226,8 @@ def transform_model_drift_features(
             out[f"regime_centroid_similarity_train_pc{i}"] = (1.0 / (1.0 + comp_dist)).astype(np.float32)
         else:
             out[f"regime_centroid_similarity_train_pc{i}"] = np.float32(1.0)
-    out["regime_centroid_similarity_train_window_mean"] = sim_s.rolling(window, min_periods=1).mean().to_numpy(dtype=np.float32)
-    out["regime_centroid_similarity_train_window_p10"] = sim_s.rolling(window, min_periods=1).quantile(0.10).to_numpy(dtype=np.float32)
+    out["regime_centroid_similarity_train_window_mean"] = sim_s.to_numpy(dtype=np.float32)
+    out["regime_centroid_similarity_train_window_p10"] = sim_s.to_numpy(dtype=np.float32)
     out["feature_drift_psi_core_50"] = psi50
     out["feature_drift_psi_core_80"] = psi80
     out["mahalanobis_mean_shift"] = maha
@@ -239,4 +238,3 @@ def transform_model_drift_features(
     out["rare_leaf_low_support_score"] = rare_leaf
     out["contribution_drift_score"] = np.asarray(contribution_drift, dtype=np.float32)
     return out.reindex(columns=list(MODEL_DRIFT_FEATURE_KEYS)).astype(np.float32)
-

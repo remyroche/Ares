@@ -5,8 +5,52 @@ import pytest
 
 from extreme_price_movements.inference import run_inference as ri
 from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
+from extreme_price_movements.inference.policy_rank_reference import (
+    AuctionEvThresholdResult,
+    StrategyEvGateResult,
+)
 from extreme_price_movements.inference.safety_switches import StrategyKillSwitch
 from extreme_price_movements.portfolio_manager import PortfolioManager
+
+
+@pytest.fixture(autouse=True)
+def _synthetic_strategy_ev_contract(monkeypatch):
+    """Step-parity fixtures do not mount policy-OOS EV tables."""
+
+    def _threshold(self, *, strategy_id, side, target_mean_net_return, min_hit_rate, fallback_threshold):
+        return AuctionEvThresholdResult(
+            threshold=0.0,
+            target_mean_net_return=float(target_mean_net_return),
+            target_hit_rate=float(min_hit_rate),
+            mean_net_return=0.01,
+            hit_rate=1.0,
+            n_trades=100,
+            source="synthetic_test_contract",
+            enabled=True,
+            reason="synthetic_test_contract",
+        )
+
+    def _gate(self, *, strategy_id, side, target_mean_net_return, min_hit_rate):
+        return StrategyEvGateResult(
+            allowed=True,
+            target_mean_net_return=float(target_mean_net_return),
+            min_hit_rate=float(min_hit_rate),
+            mean_net_return=0.01,
+            hit_rate=1.0,
+            source="synthetic_test_contract",
+            reason="synthetic_test_contract",
+        )
+
+    monkeypatch.setattr(
+        ri.PolicyRankReferenceStore,
+        "strategy_threshold_for_ev",
+        _threshold,
+    )
+    monkeypatch.setattr(
+        ri.PolicyRankReferenceStore,
+        "strategy_ev_gate",
+        _gate,
+    )
 
 
 def test_load_normalized_threshold_map_prefers_policy_deployment_rank(tmp_path):
@@ -1047,8 +1091,8 @@ def test_run_inference_step_gates_meta_to_top_quartile_base_preds(monkeypatch):
         calibration_data={},
     )
 
-    assert orchestrator.full_chain_symbols == ["B/USDT"]
-    assert [call["symbol"] for call in executor.calls] == ["B/USDT"]
+    assert orchestrator.full_chain_symbols == ["B/USDT", "D/USDT"]
+    assert [call["symbol"] for call in executor.calls] == ["B/USDT", "D/USDT"]
     assert results["trades"][0]["symbol"] == "B/USDT"
 
 

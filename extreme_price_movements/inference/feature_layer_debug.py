@@ -19,6 +19,7 @@ from extreme_price_movements.ebm_on_lgbm import (
 from extreme_price_movements.inference.model_orchestrator import (
     ModelOrchestrator,
     _alpha_prediction_frame_for_model,
+    _effective_alpha_feature_contract,
     _extract_ebm_contract_model,
     _synthetic_ebm_raw_features,
 )
@@ -101,17 +102,17 @@ def _resolve_alpha_input(
     side: str,
     strategy_id: str,
 ) -> tuple[Any, pd.DataFrame, list[str], str]:
-    model_info = orchestrator.alpha_by_strategy.get(strategy_id)
-    model_key = strategy_id
-    if not isinstance(model_info, dict):
-        prefixed = f"{side}_{strategy_id}"
-        model_info = orchestrator.alpha_by_strategy.get(prefixed)
-        model_key = prefixed
+    model_key, model_info = orchestrator._alpha_model_info_for_kind(
+        side,
+        str(strategy_id),
+    )
     if not isinstance(model_info, dict):
         return None, pd.DataFrame(), [], model_key
     model = model_info.get("model")
-    feat_cols = [str(c) for c in (model_info.get("feat_cols", []) or [])]
+    feat_cols = _effective_alpha_feature_contract(model_info)
     X = orchestrator._align_alpha_feature_contract(feature_row, feat_cols)
+    if X.empty:
+        return model, X, feat_cols, model_key
     X = _alpha_prediction_frame_for_model(model, X, feat_cols)
     return model, X, feat_cols, model_key
 
@@ -369,3 +370,74 @@ def dump_live_feature_layers(
         f"path={out_dir}"
     )
     return out_dir
+
+
+def update_live_feature_layer_rank_summary(
+    debug_dir: str | Path | None,
+    *,
+    decision: dict[str, Any] | None = None,
+    chain_results: dict[str, Any] | None = None,
+    gate_allowed: bool | None = None,
+    gate_reason: str | None = None,
+) -> None:
+    """Attach post-policy-rank gate values to an existing live debug summary.
+
+    Feature-layer dumps are written immediately after model scoring so they
+    capture the exact model matrices. The policy/auction rank gate runs later
+    after cross-strategy decision rows are assembled, so update the same
+    summary file once those rank values exist.
+    """
+    if debug_dir is None:
+        return
+    path = Path(debug_dir) / "summary.json"
+    if not path.exists():
+        return
+    try:
+        summary = json.loads(path.read_text())
+    except Exception:
+        return
+    decision = decision or {}
+    chain_results = chain_results or {}
+
+    def _first_value(key: str) -> Any:
+        if key in chain_results:
+            return chain_results.get(key)
+        return decision.get(key)
+
+    summary.update(
+        {
+            "rank_gate_updated_at": datetime.now(timezone.utc).isoformat(),
+            "rank_gate_allowed": gate_allowed,
+            "rank_gate_reason": gate_reason,
+            "calibrated_score": _safe_float(_first_value("calibrated_score")),
+            "policy_rank_pct": _safe_float(_first_value("policy_rank_pct")),
+            "policy_rank_reference_n": _safe_float(
+                _first_value("policy_rank_reference_n")
+            ),
+            "policy_rank_reference_source": _first_value(
+                "policy_rank_reference_source"
+            ),
+            "auction_rank_pct": _safe_float(_first_value("auction_rank_pct")),
+            "auction_rank_reference_n": _safe_float(
+                _first_value("auction_rank_reference_n")
+            ),
+            "auction_rank_reference_source": _first_value(
+                "auction_rank_reference_source"
+            ),
+            "auction_rank_score_source": _first_value("auction_rank_score_source"),
+            "normalized_rank_score": _safe_float(
+                _first_value("normalized_rank_score")
+            ),
+            "threshold_rank_score": _safe_float(
+                _first_value("threshold_rank_score")
+            ),
+            "threshold_rank_score_source": _first_value(
+                "threshold_rank_score_source"
+            ),
+            "effective_threshold": _safe_float(_first_value("effective_threshold")),
+            "rank_score_source": _first_value("rank_score_source"),
+        }
+    )
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(_json_safe(summary), indent=2))
+    tmp.replace(path)

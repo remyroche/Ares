@@ -153,6 +153,13 @@ def _symbol_alias_candidates(symbol: str) -> list[str]:
     canonical = _normalize_spot_symbol(symbol)
     raw = str(symbol or "").upper().strip()
     candidates: list[str] = []
+    if "/" in canonical:
+        base, quote = canonical.split("/", 1)
+        # Perp feature caches are written as e.g. symbol=KAITO_USD:USD.parquet
+        # for KAITO/USD:USD.  The spot-normalized aliases below collapse this to
+        # KAITO_USDUSD and miss the authoritative selected-feature cache.
+        if ":" in quote:
+            candidates.append(f"{base}_{quote}")
     for candidate in (
         canonical,
         canonical.replace("/", "_"),
@@ -255,6 +262,7 @@ def _build_parquet_ts_filters(
     start_ts: Optional[pd.Timestamp] = None,
     end_ts: Optional[pd.Timestamp] = None,
     allowed_periods=None,
+    inclusive_end: bool = False,
 ):
     """Build pyarrow parquet filters for timestamp pushdown when possible."""
 
@@ -301,10 +309,11 @@ def _build_parquet_ts_filters(
     for period_start, period_end in periods:
         if period_start is None or period_end is None:
             continue
+        end_op = "<=" if inclusive_end else "<"
         filters.append(
             [
                 ("ts", ">=", period_start.to_pydatetime()),
-                ("ts", "<", period_end.to_pydatetime()),
+                ("ts", end_op, period_end.to_pydatetime()),
             ]
         )
     return filters if filters else None
@@ -2199,6 +2208,19 @@ def _download_backfill_internal_gaps_enabled() -> bool:
     return str(raw).strip().lower() not in {"0", "false", "no", "n", "off"}
 
 
+def _download_tail_only_enabled() -> bool:
+    raw = os.getenv("EPM_DOWNLOAD_TAIL_ONLY", "0")
+    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _partition_compact_min_delta_rows() -> int:
+    raw = os.getenv("EPM_PARTITION_COMPACT_MIN_DELTA_ROWS", "200")
+    try:
+        return max(0, int(float(raw)))
+    except Exception:
+        return 200
+
+
 def _perp_side_data_enabled() -> bool:
     raw = os.getenv("EPM_PERP_SIDE_DATA_ENABLED", "1")
     return str(raw).strip().lower() not in {"0", "false", "no", "n", "off"}
@@ -2741,6 +2763,23 @@ class PartitionedOHLCVStore:
         except Exception as e:
             tprint(f"Error writing meta for {symbol}: {e}")
 
+    def _latest_stored_ts_ms(self, symbol: str) -> int:
+        """Return the latest timestamp visible from partition filenames."""
+        sym_dir = self._get_symbol_dir(symbol)
+        latest_s = 0
+        if not os.path.exists(sym_dir):
+            return 0
+        for fpath in glob.glob(os.path.join(sym_dir, "year=*", "*.parquet")):
+            base = os.path.basename(fpath).replace(".parquet", "")
+            parts = base.split("-")
+            if len(parts) < 3:
+                continue
+            try:
+                latest_s = max(latest_s, int(parts[-1]))
+            except ValueError:
+                continue
+        return int(latest_s * 1000) if latest_s > 0 else 0
+
     def _downcast(self, df: pd.DataFrame) -> pd.DataFrame:
         if df.empty:
             return df
@@ -2994,6 +3033,29 @@ class PartitionedOHLCVStore:
         files = glob.glob(os.path.join(part_dir, "*.parquet"))
         if not files:
             return
+        compact_files = [
+            f for f in files if os.path.basename(f).startswith("compact-")
+        ]
+        part_files = [
+            f for f in files if os.path.basename(f).startswith("part-")
+        ]
+        min_delta_rows = _partition_compact_min_delta_rows()
+        if compact_files and part_files and min_delta_rows > 0:
+            delta_rows = 0
+            for f in part_files:
+                try:
+                    delta_rows += int(pq.ParquetFile(f).metadata.num_rows)
+                except Exception:
+                    # If metadata is unreadable, fall through to full compaction.
+                    delta_rows = min_delta_rows
+                    break
+            if delta_rows < min_delta_rows:
+                tprint(
+                    f"Deferring compaction for {symbol} {year}: "
+                    f"delta_rows={delta_rows} < {min_delta_rows} "
+                    f"part_files={len(part_files)}"
+                )
+                return
         # Compact files are the historical base; part files are incremental
         # updates. Read part files last so duplicate timestamp merges preserve
         # the newest auxiliary backfill values deterministically.
@@ -3097,7 +3159,13 @@ class PartitionedOHLCVStore:
             last_ts_ms = meta.get("last_ts_ms", 0)
             existing_idx = pd.DatetimeIndex([])
 
-            if last_ts_ms > 0:
+            if _download_tail_only_enabled() and last_ts_ms > 0:
+                latest_stored_ms = self._latest_stored_ts_ms(symbol)
+                if latest_stored_ms > last_ts_ms:
+                    self._write_meta(symbol, {"last_ts_ms": int(latest_stored_ms)})
+                    last_ts_ms = int(latest_stored_ms)
+                start_ms = int(last_ts_ms) + 1
+            elif last_ts_ms > 0:
                 existing_frame = self.load(symbol)
                 existing_idx = existing_frame.index
                 if _has_sparse_perp_auxiliary_data(
@@ -3219,7 +3287,13 @@ class PartitionedOHLCVStore:
             existing_idx = pd.DatetimeIndex([])
             auxiliary_only_ranges: list[tuple[int, int]] = []
 
-            if last_ts_ms > 0:
+            if _download_tail_only_enabled() and last_ts_ms > 0:
+                latest_stored_ms = self._latest_stored_ts_ms(symbol)
+                if latest_stored_ms > last_ts_ms:
+                    self._write_meta(symbol, {"last_ts_ms": int(latest_stored_ms)})
+                    last_ts_ms = int(latest_stored_ms)
+                start_ms = int(last_ts_ms) + 1
+            elif last_ts_ms > 0:
                 existing_frame = self.load(symbol)
                 existing_idx = existing_frame.index
                 if not existing_idx.empty and _has_sparse_perp_auxiliary_data(
@@ -3585,10 +3659,398 @@ def _feature_lock_path(parquet_path: str) -> str:
     return parquet_path + ".lock"
 
 
-def _atomic_write_parquet(df: pd.DataFrame, parquet_path: str):
+def _feature_delta_dir(parquet_path: str) -> str:
+    return parquet_path + ".deltas"
+
+
+def _feature_delta_duckdb_path(parquet_path: str) -> str:
+    return parquet_path + ".deltas.duckdb"
+
+
+def _feature_delta_append_enabled() -> bool:
+    return os.getenv("EPM_FEATURE_DELTA_APPEND", "1").lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
+def _feature_delta_compact_rows() -> int:
+    try:
+        return max(1, int(os.getenv("EPM_FEATURE_DELTA_COMPACT_ROWS", "200")))
+    except Exception:
+        return 200
+
+
+_DUCKDB_IMPORT_CACHE: Any | None = None
+_DUCKDB_IMPORT_ATTEMPTED = False
+_DUCKDB_UNAVAILABLE_LOGGED = False
+
+
+def _feature_delta_duckdb_enabled() -> bool:
+    return os.getenv("EPM_FEATURE_DELTA_DUCKDB", "1").lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
+def _feature_delta_trusted_cutoff_append_enabled() -> bool:
+    return os.getenv("EPM_FEATURE_DELTA_TRUST_CUTOFF_APPEND", "1").lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
+def _feature_delta_duckdb_module():
+    global _DUCKDB_IMPORT_ATTEMPTED, _DUCKDB_IMPORT_CACHE, _DUCKDB_UNAVAILABLE_LOGGED
+    if _DUCKDB_IMPORT_ATTEMPTED:
+        return _DUCKDB_IMPORT_CACHE
+    _DUCKDB_IMPORT_ATTEMPTED = True
+    try:
+        import duckdb  # type: ignore
+    except Exception as exc:
+        _DUCKDB_IMPORT_CACHE = None
+        if _feature_delta_duckdb_enabled() and not _DUCKDB_UNAVAILABLE_LOGGED:
+            tprint(
+                "Feature delta DuckDB buffer unavailable; falling back to "
+                f"parquet delta parts ({type(exc).__name__}: {exc})"
+            )
+            _DUCKDB_UNAVAILABLE_LOGGED = True
+        return None
+    _DUCKDB_IMPORT_CACHE = duckdb
+    return duckdb
+
+
+def _feature_delta_compression() -> str | None:
+    value = os.getenv("EPM_FEATURE_DELTA_COMPRESSION", "snappy").strip().lower()
+    if value in {"", "none", "null", "uncompressed", "off"}:
+        return None
+    return value
+
+
+def _atomic_write_parquet(
+    df: pd.DataFrame,
+    parquet_path: str,
+    *,
+    compression: str = "zstd",
+):
     tmp_path = parquet_path + ".tmp"
-    df.to_parquet(tmp_path, engine="pyarrow", compression="zstd")
+    df.to_parquet(tmp_path, engine="pyarrow", compression=compression)
     os.replace(tmp_path, parquet_path)
+
+
+def _list_feature_delta_parts(parquet_path: str) -> list[str]:
+    delta_dir = _feature_delta_dir(parquet_path)
+    if not os.path.isdir(delta_dir):
+        return []
+    return sorted(glob.glob(os.path.join(delta_dir, "part-*.parquet")))
+
+
+def _clear_feature_deltas(parquet_path: str) -> None:
+    delta_dir = _feature_delta_dir(parquet_path)
+    if os.path.isdir(delta_dir):
+        shutil.rmtree(delta_dir)
+    duckdb_path = _feature_delta_duckdb_path(parquet_path)
+    for path in glob.glob(duckdb_path + "*"):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def _duckdb_table_columns(con: Any) -> list[str]:
+    try:
+        rows = con.execute("PRAGMA table_info('feature_deltas')").fetchall()
+    except Exception:
+        return []
+    return [str(row[1]) for row in rows]
+
+
+def _duckdb_quote_ident(name: str) -> str:
+    return '"' + str(name).replace('"', '""') + '"'
+
+
+def _duckdb_where_from_parquet_filters(filters, table_cols: set[str]) -> tuple[str, list]:
+    if not filters or "ts" not in table_cols:
+        return "", []
+
+    # PyArrow accepts either [(col, op, value), ...] for one conjunction or
+    # [[...], [...]] for OR-of-AND predicates.  Normalize to the latter.
+    if filters and isinstance(filters[0], tuple):
+        filter_groups = [filters]
+    else:
+        filter_groups = filters
+
+    allowed_ops = {"=", "==", "!=", "<", "<=", ">", ">="}
+    clauses: list[str] = []
+    params: list = []
+    ts_ident = _duckdb_quote_ident("ts")
+
+    for group in filter_groups:
+        subclauses: list[str] = []
+        subparams: list = []
+        for item in group or []:
+            if not isinstance(item, tuple) or len(item) != 3:
+                continue
+            col, op, value = item
+            if str(col) != "ts":
+                continue
+            op_s = "==" if str(op) == "=" else str(op)
+            if op_s not in allowed_ops:
+                continue
+            try:
+                value = pd.Timestamp(value)
+                if value.tzinfo is None:
+                    value = value.tz_localize("UTC")
+                else:
+                    value = value.tz_convert("UTC")
+                value = value.to_pydatetime()
+            except Exception:
+                pass
+            sql_op = "=" if op_s == "==" else op_s
+            subclauses.append(f"{ts_ident} {sql_op} ?")
+            subparams.append(value)
+        if subclauses:
+            clauses.append("(" + " AND ".join(subclauses) + ")")
+            params.extend(subparams)
+
+    if not clauses:
+        return "", []
+    return " WHERE " + " OR ".join(clauses), params
+
+
+def _normalise_delta_storage_frame(new_data: pd.DataFrame, symbol: str) -> pd.DataFrame:
+    out = new_data.copy()
+    if isinstance(out.index, pd.DatetimeIndex):
+        out = out.reset_index()
+        first_col = str(out.columns[0])
+        if first_col != "ts":
+            out = out.rename(columns={out.columns[0]: "ts"})
+    elif "ts" not in out.columns:
+        out = out.reset_index().rename(columns={out.index.name or "index": "ts"})
+    if "ts" not in out.columns:
+        out.insert(0, "ts", pd.to_datetime(new_data.index, utc=True, errors="coerce"))
+    out["ts"] = pd.to_datetime(out["ts"], utc=True, errors="coerce")
+    out = out[~out["ts"].isna()].copy()
+    out["__symbol__"] = symbol
+    return out
+
+
+def _read_feature_delta_duckdb(
+    parquet_path: str,
+    columns: list[str] | None = None,
+    filters=None,
+) -> pd.DataFrame:
+    duckdb = _feature_delta_duckdb_module()
+    db_path = _feature_delta_duckdb_path(parquet_path)
+    if duckdb is None or not os.path.exists(db_path):
+        return pd.DataFrame()
+    con = None
+    try:
+        con = duckdb.connect(db_path, read_only=True)
+        table_cols = _duckdb_table_columns(con)
+        if not table_cols:
+            return pd.DataFrame()
+        requested = list(columns) if columns is not None else None
+        if requested is None:
+            select_cols = table_cols
+        else:
+            select_cols = [c for c in requested if c in table_cols]
+            if "ts" in table_cols and "ts" not in select_cols:
+                select_cols.insert(0, "ts")
+            if (
+                "__symbol__" in table_cols
+                and "__symbol__" in requested
+                and "__symbol__" not in select_cols
+            ):
+                select_cols.append("__symbol__")
+            if not select_cols:
+                return pd.DataFrame()
+        quoted_cols = ", ".join(_duckdb_quote_ident(c) for c in select_cols)
+        where_sql, params = _duckdb_where_from_parquet_filters(
+            filters,
+            set(table_cols),
+        )
+        query = f"SELECT {quoted_cols} FROM feature_deltas{where_sql}"
+        df = con.execute(query, params).fetchdf()
+        if "ts" in df.columns:
+            ts_index = pd.to_datetime(df["ts"], utc=True, errors="coerce")
+            df = df.loc[~ts_index.isna()].copy()
+            ts_index = ts_index[~ts_index.isna()]
+            df = df.drop(columns=["ts"])
+            df.index = pd.DatetimeIndex(ts_index, name="ts")
+        if requested is not None:
+            known = set(table_cols)
+            # ``ts`` is represented as the DatetimeIndex after the DuckDB read.
+            # Do not re-add it as an all-NaN payload column when callers request
+            # it for index reconstruction; that makes downstream index
+            # validation discard otherwise valid delta rows.
+            payload_requested = [col for col in requested if col != "ts"]
+            for col in payload_requested:
+                if col not in df.columns and col in known:
+                    df[col] = np.nan
+            ordered = [c for c in payload_requested if c in df.columns]
+            df = df[ordered]
+        return df
+    except Exception as exc:
+        tprint(f"Warning: failed to read feature DuckDB delta {db_path}: {exc}")
+        return pd.DataFrame()
+    finally:
+        if con is not None:
+            try:
+                con.close()
+            except Exception:
+                pass
+
+
+def _write_feature_delta_duckdb(parquet_path: str, symbol: str, new_data: pd.DataFrame) -> int:
+    if not _feature_delta_duckdb_enabled():
+        return 0
+    duckdb = _feature_delta_duckdb_module()
+    if duckdb is None:
+        return 0
+    db_path = _feature_delta_duckdb_path(parquet_path)
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    out = _normalise_delta_storage_frame(new_data, symbol)
+    if out.empty:
+        return 0
+    con = None
+    try:
+        con = duckdb.connect(db_path)
+        con.register("incoming_delta", out)
+        table_exists = bool(
+            con.execute(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'feature_deltas'"
+            ).fetchone()[0]
+        )
+        if not table_exists:
+            con.execute("CREATE TABLE feature_deltas AS SELECT * FROM incoming_delta")
+        else:
+            table_cols = _duckdb_table_columns(con)
+            for col in out.columns:
+                if col in table_cols:
+                    continue
+                if col in {"ts", "__symbol__"}:
+                    col_type = "VARCHAR" if col == "__symbol__" else "TIMESTAMPTZ"
+                else:
+                    col_type = "FLOAT"
+                con.execute(
+                    f"ALTER TABLE feature_deltas ADD COLUMN {_duckdb_quote_ident(col)} {col_type}"
+                )
+            con.execute("INSERT INTO feature_deltas BY NAME SELECT * FROM incoming_delta")
+        return int(len(out))
+    except Exception as exc:
+        tprint(
+            "Warning: feature DuckDB delta append failed; falling back to "
+            f"parquet delta part for {symbol}: {type(exc).__name__}: {exc}"
+        )
+        try:
+            if con is not None:
+                con.close()
+        finally:
+            return 0
+    finally:
+        if con is not None:
+            try:
+                con.unregister("incoming_delta")
+            except Exception:
+                pass
+            try:
+                con.close()
+            except Exception:
+                pass
+
+
+def _should_skip_existing_tail_check(parquet_path: str, new_data: pd.DataFrame) -> bool:
+    """Return true only when incoming rows are strictly after stored rows."""
+    if new_data.empty:
+        return False
+    _, last_ts = get_feature_bounds(parquet_path)
+    if last_ts is None:
+        return True
+    incoming_first = pd.Timestamp(new_data.index.min())
+    stored_last = pd.Timestamp(last_ts)
+    if incoming_first.tzinfo is None and stored_last.tzinfo is not None:
+        incoming_first = incoming_first.tz_localize(stored_last.tz)
+    elif incoming_first.tzinfo is not None and stored_last.tzinfo is None:
+        incoming_first = incoming_first.tz_convert("UTC").tz_localize(None)
+    return incoming_first > stored_last
+
+
+def _slice_feature_save_index_for_cutoff(
+    time_index: pd.Index,
+    cutoff_ts: pd.Timestamp | None,
+) -> tuple[pd.Index, np.ndarray | slice]:
+    """Return the rows that need saving before materializing symbol payloads."""
+    if cutoff_ts is None:
+        return time_index, slice(None)
+    cutoff = pd.Timestamp(cutoff_ts)
+    idx = time_index
+    if isinstance(idx, pd.DatetimeIndex):
+        if idx.tz is not None and cutoff.tzinfo is None:
+            cutoff = cutoff.tz_localize(idx.tz)
+        elif idx.tz is None and cutoff.tzinfo is not None:
+            cutoff = cutoff.tz_convert("UTC").tz_localize(None)
+    mask = np.asarray(idx > cutoff, dtype=bool)
+    return idx[mask], mask
+
+
+def _feature_delta_duckdb_row_count(parquet_path: str) -> int:
+    duckdb = _feature_delta_duckdb_module()
+    db_path = _feature_delta_duckdb_path(parquet_path)
+    if duckdb is None or not os.path.exists(db_path):
+        return 0
+    con = None
+    try:
+        con = duckdb.connect(db_path, read_only=True)
+        return int(con.execute("SELECT COUNT(*) FROM feature_deltas").fetchone()[0])
+    except Exception:
+        return 0
+    finally:
+        if con is not None:
+            try:
+                con.close()
+            except Exception:
+                pass
+
+
+def _feature_delta_duckdb_columns(parquet_path: str) -> set[str]:
+    duckdb = _feature_delta_duckdb_module()
+    db_path = _feature_delta_duckdb_path(parquet_path)
+    if duckdb is None or not os.path.exists(db_path):
+        return set()
+    con = None
+    try:
+        con = duckdb.connect(db_path, read_only=True)
+        return set(_duckdb_table_columns(con))
+    except Exception:
+        return set()
+    finally:
+        if con is not None:
+            try:
+                con.close()
+            except Exception:
+                pass
+
+
+def _feature_schema_names(parquet_path: str) -> set[str]:
+    names: set[str] = set()
+    paths = []
+    if os.path.exists(parquet_path):
+        paths.append(parquet_path)
+    paths.extend(_list_feature_delta_parts(parquet_path))
+    for path in paths:
+        try:
+            names.update(pq.ParquetFile(path).schema.names)
+        except Exception:
+            continue
+    names.update(_feature_delta_duckdb_columns(parquet_path))
+    return names
 
 
 def _quarantine_corrupt_feature_file(parquet_path: str):
@@ -3619,6 +4081,30 @@ def _write_feature_metadata(parquet_path: str, symbol: str, index: pd.Index):
         "last_ts": last_ts,
     }
 
+    tmp_meta = meta_path + ".tmp"
+    with open(tmp_meta, "w") as fp:
+        json.dump(meta, fp)
+    os.replace(tmp_meta, meta_path)
+
+
+def _write_feature_metadata_values(
+    parquet_path: str,
+    symbol: str,
+    rows: int,
+    first_ts: pd.Timestamp | None,
+    last_ts: pd.Timestamp | None,
+):
+    meta_path = _feature_meta_path(parquet_path)
+    meta = {
+        "version": 2,
+        "symbol": symbol,
+        "rows": int(rows),
+        "first_ts": pd.Timestamp(first_ts).isoformat() if first_ts is not None else None,
+        "last_ts": pd.Timestamp(last_ts).isoformat() if last_ts is not None else None,
+        "delta_parts": len(_list_feature_delta_parts(parquet_path)),
+        "delta_rows": _feature_delta_row_count(parquet_path),
+        "delta_duckdb_rows": _feature_delta_duckdb_row_count(parquet_path),
+    }
     tmp_meta = meta_path + ".tmp"
     with open(tmp_meta, "w") as fp:
         json.dump(meta, fp)
@@ -3678,11 +4164,204 @@ def get_feature_bounds(
     return _infer_feature_bounds_from_file(parquet_path)
 
 
+def _read_feature_part(
+    parquet_path: str,
+    columns: list[str] | None = None,
+    filters=None,
+) -> pd.DataFrame:
+    schema_names = _feature_schema_names(parquet_path)
+    part_paths = []
+    if os.path.exists(parquet_path):
+        part_paths.append(parquet_path)
+    part_paths.extend(_list_feature_delta_parts(parquet_path))
+    frames: list[pd.DataFrame] = []
+    requested = list(columns) if columns is not None else None
+
+    for part_path in part_paths:
+        try:
+            part_schema = set(pq.ParquetFile(part_path).schema.names)
+        except Exception:
+            continue
+        if requested is None:
+            read_cols = None
+        else:
+            read_cols = [c for c in requested if c in part_schema]
+            if not read_cols:
+                continue
+        read_kwargs = {}
+        if read_cols is not None:
+            read_kwargs["columns"] = read_cols
+        if filters is not None and "ts" in part_schema:
+            read_kwargs["filters"] = filters
+        try:
+            frame = pd.read_parquet(part_path, **read_kwargs)
+        except Exception:
+            if filters is not None and "ts" in part_schema:
+                read_kwargs.pop("filters", None)
+                frame = pd.read_parquet(part_path, **read_kwargs)
+            else:
+                raise
+        if requested is not None:
+            missing = [c for c in requested if c not in frame.columns and c in schema_names]
+            for col in missing:
+                frame[col] = np.nan
+            ordered = [c for c in requested if c in frame.columns]
+            frame = frame[ordered]
+        frames.append(frame)
+
+    duckdb_frame = _read_feature_delta_duckdb(
+        parquet_path,
+        columns=columns,
+        filters=filters,
+    )
+    if not duckdb_frame.empty:
+        frames.append(duckdb_frame)
+
+    if not frames:
+        return pd.DataFrame()
+
+    frames = [frame for frame in frames if isinstance(frame, pd.DataFrame) and not frame.empty]
+    if not frames:
+        return pd.DataFrame()
+
+    if len(frames) == 1:
+        return frames[0]
+    return pd.concat(frames, axis=0, copy=False)
+
+
+def _merge_duplicate_feature_rows(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or df.index.is_unique:
+        return df
+    # Sparse delta rows may update only a subset of columns for an existing
+    # timestamp. Coalesce duplicate timestamps column-wise using the first
+    # non-null value so append-only deltas can fill missing cells without
+    # silently replacing an existing base feature value for historical rows.
+    merged = df.groupby(level=0, sort=True).agg(
+        lambda s: s.dropna().iloc[0] if not s.dropna().empty else np.nan
+    )
+    return merged.sort_index()
+
+
+def read_symbol_features(
+    parquet_path: str,
+    columns: list[str] | None = None,
+    start_ts: pd.Timestamp | None = None,
+    end_ts: pd.Timestamp | None = None,
+    allowed_periods=None,
+) -> pd.DataFrame:
+    filters = _build_parquet_ts_filters(
+        start_ts=start_ts,
+        end_ts=end_ts,
+        allowed_periods=allowed_periods,
+        inclusive_end=not bool(allowed_periods),
+    )
+    df = _read_feature_part(parquet_path, columns=columns, filters=filters)
+    if df.empty:
+        return df
+
+    df, index_reason = _ensure_feature_frame_index(df, parquet_path=parquet_path)
+    if index_reason == "invalid_ts_column":
+        return pd.DataFrame(columns=df.columns)
+
+    idx = df.index
+    if isinstance(idx, pd.DatetimeIndex) and idx.tz is not None:
+        _s = (
+            pd.Timestamp(start_ts).tz_localize(idx.tz)
+            if start_ts is not None and pd.Timestamp(start_ts).tzinfo is None
+            else start_ts
+        )
+        _e = (
+            pd.Timestamp(end_ts).tz_localize(idx.tz)
+            if end_ts is not None and pd.Timestamp(end_ts).tzinfo is None
+            else end_ts
+        )
+    else:
+        _s = start_ts
+        _e = end_ts
+    if _s is not None:
+        df = df[df.index >= _s]
+    if _e is not None:
+        df = df[df.index <= _e]
+    if allowed_periods:
+        df = _apply_allowed_periods_mask(df, allowed_periods)
+    df = _merge_duplicate_feature_rows(df)
+    return df.sort_index()
+
+
+def _feature_delta_row_count(parquet_path: str) -> int:
+    total = 0
+    for part_path in _list_feature_delta_parts(parquet_path):
+        try:
+            total += int(pq.ParquetFile(part_path).metadata.num_rows)
+        except Exception:
+            continue
+    total += _feature_delta_duckdb_row_count(parquet_path)
+    return total
+
+
+def _write_feature_delta_part(parquet_path: str, symbol: str, new_data: pd.DataFrame) -> int:
+    duckdb_written = _write_feature_delta_duckdb(parquet_path, symbol, new_data)
+    if duckdb_written > 0:
+        old_first, old_last = get_feature_bounds(parquet_path)
+        new_first = pd.Timestamp(new_data.index.min())
+        new_last = pd.Timestamp(new_data.index.max())
+        first_ts = min([x for x in [old_first, new_first] if x is not None])
+        last_ts = max([x for x in [old_last, new_last] if x is not None])
+        old_rows = int((_read_feature_metadata(parquet_path) or {}).get("rows") or 0)
+        _write_feature_metadata_values(
+            parquet_path,
+            symbol,
+            rows=old_rows + duckdb_written,
+            first_ts=first_ts,
+            last_ts=last_ts,
+        )
+        return duckdb_written
+
+    delta_dir = _feature_delta_dir(parquet_path)
+    os.makedirs(delta_dir, exist_ok=True)
+    part_name = f"part-{pd.Timestamp.utcnow().strftime('%Y%m%dT%H%M%S%f')}-{time.time_ns()}.parquet"
+    part_path = os.path.join(delta_dir, part_name)
+    out = new_data.copy()
+    out["__symbol__"] = symbol
+    _atomic_write_parquet(out, part_path, compression=_feature_delta_compression())
+    old_first, old_last = get_feature_bounds(parquet_path)
+    new_first = pd.Timestamp(out.index.min())
+    new_last = pd.Timestamp(out.index.max())
+    first_ts = min([x for x in [old_first, new_first] if x is not None])
+    last_ts = max([x for x in [old_last, new_last] if x is not None])
+    old_rows = int((_read_feature_metadata(parquet_path) or {}).get("rows") or 0)
+    _write_feature_metadata_values(
+        parquet_path,
+        symbol,
+        rows=old_rows + len(out),
+        first_ts=first_ts,
+        last_ts=last_ts,
+    )
+    return len(out)
+
+
+def compact_symbol_feature_deltas(parquet_path: str, symbol: str) -> int:
+    parts = _list_feature_delta_parts(parquet_path)
+    if not parts:
+        return 0
+    combined = read_symbol_features(parquet_path)
+    if combined.empty:
+        return 0
+    numeric_cols = [c for c in combined.columns if c != "__symbol__"]
+    combined[numeric_cols] = combined[numeric_cols].astype(np.float32, copy=False)
+    combined["__symbol__"] = symbol
+    _atomic_write_parquet(combined, parquet_path)
+    _clear_feature_deltas(parquet_path)
+    _write_feature_metadata(parquet_path, symbol, combined.index)
+    return len(combined)
+
+
 def append_symbol_features(
     parquet_path: str,
     symbol: str,
     new_data: pd.DataFrame,
     overwrite_columns: set[str] | None = None,
+    skip_existing_tail_check: bool = False,
 ) -> int:
     if new_data.empty:
         return 0
@@ -3701,10 +4380,83 @@ def append_symbol_features(
     lock_path = _feature_lock_path(parquet_path)
 
     with FileLock(lock_path):
+        overwrite_columns = set(str(c) for c in (overwrite_columns or set()))
+        if (
+            _feature_delta_append_enabled()
+            and not overwrite_columns
+            and os.path.exists(parquet_path)
+        ):
+            delta_data = new_data.drop(
+                columns=[
+                    c
+                    for c in new_data.columns
+                    if c != "__symbol__" and bool(new_data[c].isna().all())
+                ],
+                errors="ignore",
+            )
+            if not delta_data.empty and any(c != "__symbol__" for c in delta_data.columns):
+                if not skip_existing_tail_check:
+                    # Idempotence for interrupted reruns: if the requested tail rows
+                    # are already present in base or delta storage, do not append
+                    # duplicate rows. Keep this range read narrow; incremental tails
+                    # are normally only a few rows per symbol.
+                    incoming_value_cols = [c for c in delta_data.columns if c != "__symbol__"]
+                    try:
+                        existing_tail = read_symbol_features(
+                            parquet_path,
+                            columns=incoming_value_cols,
+                            start_ts=pd.Timestamp(delta_data.index.min()),
+                            end_ts=pd.Timestamp(delta_data.index.max()),
+                        )
+                    except Exception:
+                        existing_tail = pd.DataFrame()
+                    if not existing_tail.empty:
+                        common_idx = delta_data.index.intersection(existing_tail.index)
+                        if len(common_idx) > 0:
+                            existing_aligned = existing_tail.reindex(
+                                index=common_idx,
+                                columns=incoming_value_cols,
+                            )
+                            populated_cells = existing_aligned.notna()
+                            if bool(populated_cells.any().any()):
+                                for col in incoming_value_cols:
+                                    if col not in delta_data.columns:
+                                        continue
+                                    populated_idx = populated_cells.index[
+                                        populated_cells[col].to_numpy(dtype=bool)
+                                    ]
+                                    if len(populated_idx) > 0:
+                                        delta_data.loc[populated_idx, col] = np.nan
+                                value_cols = [
+                                    c for c in delta_data.columns if c != "__symbol__"
+                                ]
+                                if value_cols:
+                                    delta_data = delta_data.loc[
+                                        ~delta_data[value_cols].isna().all(axis=1)
+                                    ]
+                if delta_data.empty:
+                    return 0
+                append_start = time.time()
+                written_rows = _write_feature_delta_part(parquet_path, symbol, delta_data)
+                append_elapsed = time.time() - append_start
+                if append_elapsed >= 5.0:
+                    tprint(
+                        "Feature delta append slow: "
+                        f"symbol={symbol} rows={len(delta_data)} cols={len(delta_data.columns)} "
+                        f"elapsed={append_elapsed:.1f}s path={os.path.basename(parquet_path)}"
+                    )
+                if (
+                    not _feature_delta_duckdb_enabled()
+                    and _feature_delta_row_count(parquet_path) >= _feature_delta_compact_rows()
+                ):
+                    compact_symbol_feature_deltas(parquet_path, symbol)
+                return written_rows
+            return 0
+
         existing = None
         if os.path.exists(parquet_path):
             try:
-                existing = pd.read_parquet(parquet_path)
+                existing = read_symbol_features(parquet_path)
             except Exception as e:
                 tprint(
                     f"Warning: quarantining unreadable feature file {parquet_path}: {e}"
@@ -3729,7 +4481,6 @@ def append_symbol_features(
                     existing = existing.drop(columns=["__symbol__"])
 
         incoming_cols = list(new_data.columns)
-        overwrite_columns = set(str(c) for c in (overwrite_columns or set()))
         all_cols = sorted(
             set(incoming_cols)
             | (set(existing.columns) if existing is not None else set())
@@ -3790,6 +4541,7 @@ def append_symbol_features(
         combined[numeric_cols] = combined[numeric_cols].astype(np.float32, copy=False)
 
         _atomic_write_parquet(combined, parquet_path)
+        _clear_feature_deltas(parquet_path)
         _write_feature_metadata(parquet_path, symbol, combined.index)
 
         return len(combined) - before_rows
@@ -3821,6 +4573,16 @@ def save_features(
     overwrite_columns = set(str(c) for c in (overwrite_columns or set()))
 
     tprint(f"Saving features to {out_dir}...")
+    trust_cutoff_append = (
+        min_timestamp_by_symbol is not None
+        and not overwrite_columns
+        and _feature_delta_trusted_cutoff_append_enabled()
+    )
+    if trust_cutoff_append:
+        tprint(
+            "  Feature delta trusted cutoff append enabled: skipping per-symbol "
+            "existing-tail reads for generated post-cutoff rows"
+        )
 
     first_key = list(feats.keys())[0]
     first_val = feats[first_key]
@@ -3854,6 +4616,21 @@ def save_features(
         )
 
         worker_count = max(1, int(save_workers or 1))
+        if (
+            worker_count > 1
+            and _feature_delta_append_enabled()
+            and _feature_delta_duckdb_enabled()
+            and not replace_existing
+        ):
+            # DuckDB is reliable as an append store here, but concurrent
+            # per-symbol writers can spend minutes CPU-bound during executor
+            # shutdown on macOS. Keep the append path deterministic; the data
+            # preparation remains streaming and the writes are tiny tail deltas.
+            tprint(
+                "  DuckDB feature deltas enabled: forcing single-writer save path "
+                f"(requested workers={worker_count})"
+            )
+            worker_count = 1
         max_pending = max(1, worker_count * 2)
 
         def _prepare_symbol_payload(j: int, sym: str):
@@ -3864,27 +4641,22 @@ def save_features(
             if min_timestamp_by_symbol:
                 cutoff_ts = min_timestamp_by_symbol.get(sym)
 
+            selected_index, row_selector = _slice_feature_save_index_for_cutoff(
+                time_index,
+                cutoff_ts,
+            )
+            if len(selected_index) == 0:
+                return None
+
             sym_data = {}
             for k in feat_keys:
                 arr = feats[k]
                 if arr.ndim == 2:
-                    sym_data[k] = arr[:, j]
+                    sym_data[k] = arr[row_selector, j]
                 else:
-                    sym_data[k] = arr
-            df_sym = pd.DataFrame(sym_data, index=time_index, copy=False)
+                    sym_data[k] = arr[row_selector]
+            df_sym = pd.DataFrame(sym_data, index=selected_index, copy=False)
             df_sym = df_sym.astype(np.float32, copy=False)
-
-            if cutoff_ts is not None:
-                # Ensure timezone compatibility between cutoff and index
-                if df_sym.index.tz is not None and cutoff_ts.tzinfo is None:
-                    cutoff_ts = cutoff_ts.tz_localize(df_sym.index.tz)
-                elif df_sym.index.tz is None and cutoff_ts.tzinfo is not None:
-                    cutoff_ts = cutoff_ts.tz_localize(None)
-                df_sym = df_sym[df_sym.index > cutoff_ts]
-                if df_sym.empty:
-                    del sym_data
-                    del df_sym
-                    return None
 
             del sym_data
             return final_path, sym, df_sym
@@ -3897,19 +4669,32 @@ def save_features(
                 df_out = df_sym.copy()
                 df_out["__symbol__"] = sym
                 _atomic_write_parquet(df_out, final_path)
+                _clear_feature_deltas(final_path)
                 _write_feature_metadata(final_path, sym, df_out.index)
             else:
+                skip_existing_tail_check = trust_cutoff_append and _should_skip_existing_tail_check(
+                    final_path,
+                    df_sym,
+                )
                 append_symbol_features(
                     final_path,
                     sym,
                     df_sym,
                     overwrite_columns=overwrite_columns,
+                    skip_existing_tail_check=skip_existing_tail_check,
                 )
             return True
 
         count = 0
         if worker_count == 1:
+            last_progress_log = time.time()
             for j, sym in enumerate(symbols):
+                if time.time() - last_progress_log >= 30.0:
+                    tprint(
+                        f"  Save progress: preparing symbol {j + 1}/{total} "
+                        f"({sym}, {n_feats} features each)"
+                    )
+                    last_progress_log = time.time()
                 payload = _prepare_symbol_payload(j, sym)
                 wrote = _write_symbol_payload(payload)
                 if payload is not None:
@@ -3922,6 +4707,7 @@ def save_features(
                     tprint(
                         f"  Save progress: {count}/{total} symbols ({n_feats} features each)"
                     )
+                    last_progress_log = time.time()
                     _gc.collect()
                 if count % 200 == 0:
                     _gc.collect()
@@ -3982,34 +4768,46 @@ def save_features(
     n_feats = len(feat_keys)
 
     worker_count = max(1, int(save_workers or 1))
+    if (
+        worker_count > 1
+        and _feature_delta_append_enabled()
+        and _feature_delta_duckdb_enabled()
+        and not replace_existing
+    ):
+        # DuckDB is reliable as an append store here, but concurrent per-symbol
+        # writers can spend minutes CPU-bound during executor shutdown on macOS.
+        # Keep the append path deterministic; the data preparation remains
+        # streaming and the writes are tiny tail deltas.
+        tprint(
+            "  DuckDB feature deltas enabled: forcing single-writer save path "
+            f"(requested workers={worker_count})"
+        )
+        worker_count = 1
     max_pending = max(1, worker_count * 2)
 
     def _prepare_dataframe_symbol_payload(sym: str):
         cutoff_ts = None
         if min_timestamp_by_symbol:
             cutoff_ts = min_timestamp_by_symbol.get(sym)
+        selected_index, row_selector = _slice_feature_save_index_for_cutoff(
+            time_index,
+            cutoff_ts,
+        )
+        if len(selected_index) == 0:
+            return None
 
         # Build {feat_name: 1-D array} for this symbol
         col_data = {}
         for k in feat_keys:
             j = col_maps[k].get(sym)
             if j is not None:
-                col_data[k] = arrays[k][:, j]
+                col_data[k] = arrays[k][row_selector, j]
 
         if not col_data:
             return None
 
-        df_sym = pd.DataFrame(col_data, index=time_index)
+        df_sym = pd.DataFrame(col_data, index=selected_index)
         df_sym = df_sym.astype(np.float32, copy=False)
-        if cutoff_ts is not None:
-            # Ensure timezone compatibility between cutoff and index
-            if df_sym.index.tz is not None and cutoff_ts.tzinfo is None:
-                cutoff_ts = cutoff_ts.tz_localize(df_sym.index.tz)
-            elif df_sym.index.tz is None and cutoff_ts.tzinfo is not None:
-                cutoff_ts = cutoff_ts.tz_localize(None)
-            df_sym = df_sym[df_sym.index > cutoff_ts]
-        if df_sym.empty:
-            return None
 
         safe_sym = sym.replace("/", "_")
         final_path = os.path.join(out_dir, f"symbol={safe_sym}.parquet")
@@ -4023,19 +4821,32 @@ def save_features(
             df_out = df_sym.copy()
             df_out["__symbol__"] = sym
             _atomic_write_parquet(df_out, final_path)
+            _clear_feature_deltas(final_path)
             _write_feature_metadata(final_path, sym, df_out.index)
         else:
+            skip_existing_tail_check = trust_cutoff_append and _should_skip_existing_tail_check(
+                final_path,
+                df_sym,
+            )
             append_symbol_features(
                 final_path,
                 sym,
                 df_sym,
                 overwrite_columns=overwrite_columns,
+                skip_existing_tail_check=skip_existing_tail_check,
             )
         return True
 
     count = 0
     if worker_count == 1:
-        for sym in symbols:
+        last_progress_log = time.time()
+        for j, sym in enumerate(symbols):
+            if time.time() - last_progress_log >= 30.0:
+                tprint(
+                    f"  Save progress: preparing symbol {j + 1}/{total} "
+                    f"({sym}, {n_feats} features each)"
+                )
+                last_progress_log = time.time()
             payload = _prepare_dataframe_symbol_payload(sym)
             wrote = _write_dataframe_symbol_payload(payload)
             if payload is not None:
@@ -4044,8 +4855,9 @@ def save_features(
             if wrote:
                 count += 1
 
-            if count % 50 == 0:
+            if count % 25 == 0 or count == total:
                 tprint(f"Saved {count}/{total} symbols ({n_feats} features each)")
+                last_progress_log = time.time()
             if count % 100 == 0:
                 _gc.collect()
     else:
@@ -4130,7 +4942,7 @@ def load_features(ts: pd.Timestamp, root_dir: str) -> dict:
             fname = os.path.basename(fpath)
             # fname is symbol=XYZ.parquet
             sym = fname.replace("symbol=", "").replace(".parquet", "")
-            df = pd.read_parquet(fpath)
+            df = read_symbol_features(fpath)
 
             if "__symbol__" in df.columns:
                 if not df.empty:
@@ -4483,18 +5295,12 @@ def load_features_selected(
     symbol_set = (
         {_normalize_spot_symbol(str(sym)) for sym in symbols} if symbols else None
     )
+    # Preserve timezone-aware bounds for parquet/DuckDB pushdown.  Feature
+    # parquet files use a UTC ``ts`` index column; stripping tz here makes
+    # pyarrow reject the filter and forces a full-history fallback read.
     start_ts = pd.Timestamp(start_ts) if start_ts is not None else None
     end_ts = pd.Timestamp(end_ts) if end_ts is not None else None
-    if start_ts is not None and start_ts.tzinfo is not None:
-        start_ts = start_ts.tz_localize(None)
-    if end_ts is not None and end_ts.tzinfo is not None:
-        end_ts = end_ts.tz_localize(None)
     normalized_periods = _normalize_allowed_periods(allowed_periods)
-    parquet_filters = _build_parquet_ts_filters(
-        start_ts=start_ts,
-        end_ts=end_ts,
-        allowed_periods=normalized_periods,
-    )
     if symbol_set is not None:
         files = []
         seen = set()
@@ -4532,22 +5338,16 @@ def load_features_selected(
     total_files = len(files)
     progress_every = 25 if total_files >= 100 else 10
 
-    for i, fpath in enumerate(files, start=1):
+    def _read_one_selected_feature_file(fpath: str):
         try:
             fname = os.path.basename(fpath)
             sym_guess = _normalize_spot_symbol(
                 fname.replace("symbol=", "").replace(".parquet", "")
             )
             if symbol_set is not None and sym_guess not in symbol_set:
-                if i % progress_every == 0 or i == total_files:
-                    elapsed = time.time() - start_load
-                    tprint(
-                        f"Selective feature load progress: {i}/{total_files} files "
-                        f"({(i / total_files) * 100:.1f}%) in {elapsed:.1f}s"
-                    )
-                continue
+                return None
 
-            schema_names = set(pq.ParquetFile(fpath).schema.names)
+            schema_names = _feature_schema_names(fpath)
             cols_to_read = []
             if "__symbol__" in schema_names:
                 cols_to_read.append("__symbol__")
@@ -4568,61 +5368,20 @@ def load_features_selected(
             if not cols_to_read or (
                 len(cols_to_read) == 1 and cols_to_read[0] == "__symbol__"
             ):
-                if i % progress_every == 0 or i == total_files:
-                    elapsed = time.time() - start_load
-                    tprint(
-                        f"Selective feature load progress: {i}/{total_files} files "
-                        f"({(i / total_files) * 100:.1f}%) in {elapsed:.1f}s"
-                    )
-                continue
+                return None
 
-            read_kwargs = {"columns": cols_to_read}
-            if parquet_filters is not None and "ts" in schema_names:
-                read_kwargs["filters"] = parquet_filters
-            try:
-                df = pd.read_parquet(fpath, **read_kwargs)
-            except Exception as e:
-                if parquet_filters is not None and "ts" in schema_names:
-                    tprint(
-                        f"Parquet ts pushdown failed for {fpath}: {e}. Falling back to post-load slicing."
-                    )
-                    read_kwargs.pop("filters", None)
-                    df = pd.read_parquet(fpath, **read_kwargs)
-                else:
-                    raise
+            df = read_symbol_features(
+                fpath,
+                columns=cols_to_read,
+                start_ts=start_ts,
+                end_ts=end_ts,
+                allowed_periods=normalized_periods,
+            )
             df, index_reason = _ensure_feature_frame_index(df, parquet_path=fpath)
             if index_reason == "invalid_ts_column":
-                tprint(f"Skipping feature file {fpath}: invalid ts column")
-                continue
-            _idx = df.index
-            if isinstance(_idx, pd.DatetimeIndex) and _idx.tz is not None:
-                _s = (
-                    start_ts.tz_localize(_idx.tz)
-                    if start_ts is not None and start_ts.tzinfo is None
-                    else start_ts
-                )
-                _e = (
-                    end_ts.tz_localize(_idx.tz)
-                    if end_ts is not None and end_ts.tzinfo is None
-                    else end_ts
-                )
-            else:
-                _s = start_ts
-                _e = end_ts
-            if _s is not None and parquet_filters is None:
-                df = df[df.index >= _s]
-            if _e is not None and parquet_filters is None:
-                df = df[df.index <= _e]
-            if normalized_periods and parquet_filters is None:
-                df = _apply_allowed_periods_mask(df, normalized_periods)
+                return ("skip", f"Skipping feature file {fpath}: invalid ts column")
             if df.empty:
-                if i % progress_every == 0 or i == total_files:
-                    elapsed = time.time() - start_load
-                    tprint(
-                        f"Selective feature load progress: {i}/{total_files} files "
-                        f"({(i / total_files) * 100:.1f}%) in {elapsed:.1f}s"
-                    )
-                continue
+                return None
             if not df.index.is_unique:
                 df = df[~df.index.duplicated(keep="last")]
 
@@ -4636,45 +5395,103 @@ def load_features_selected(
                 real_sym = sym_guess
 
             if symbol_set is not None and real_sym not in symbol_set:
-                if i % progress_every == 0 or i == total_files:
-                    elapsed = time.time() - start_load
-                    tprint(
-                        f"Selective feature load progress: {i}/{total_files} files "
-                        f"({(i / total_files) * 100:.1f}%) in {elapsed:.1f}s"
-                    )
-                continue
+                return None
 
             normalized_idx, _, index_reason = _normalize_feature_index(df.index.values)
             if normalized_idx is None:
-                tprint(
-                    f"Skipping feature file {fpath} for symbol {real_sym}: invalid index ({index_reason})"
+                return (
+                    "skip",
+                    f"Skipping feature file {fpath} for symbol {real_sym}: invalid index ({index_reason})",
                 )
-                continue
+            messages = []
             if index_reason is not None:
-                tprint(
+                messages.append(
                     f"Normalized feature index for symbol {real_sym} in {fpath}: {index_reason}"
                 )
             df.index = normalized_idx
             if not df.index.is_unique:
                 df = df[~df.index.duplicated(keep="last")]
             idx_vals = df.index.to_numpy(copy=False)
-            symbol_indices[real_sym] = idx_vals
+            feature_values: dict[str, np.ndarray] = {}
             for k in df.columns:
                 if feature_set is not None and k not in feature_set:
                     continue
-                if k not in feat_buffers:
-                    feat_buffers[k] = {}
-                feat_buffers[k][real_sym] = _coerce_feature_values_float32(df[k])
+                feature_values[str(k)] = _coerce_feature_values_float32(df[k])
 
             del df
+            if not feature_values:
+                return None
+            return ("ok", real_sym, idx_vals, feature_values, messages)
+        except Exception as e:
+            return ("skip", f"Error loading {fpath}: {e}")
+
+    def _ingest_selected_feature_result(result) -> None:
+        if result is None:
+            return
+        if not isinstance(result, tuple) or not result:
+            return
+        if result[0] == "skip":
+            if len(result) > 1:
+                tprint(str(result[1]))
+            return
+        if result[0] != "ok" or len(result) < 5:
+            return
+        _, real_sym, idx_vals, feature_values, messages = result
+        for message in messages or []:
+            tprint(str(message))
+        symbol_indices[str(real_sym)] = idx_vals
+        for k, values in feature_values.items():
+            if k not in feat_buffers:
+                feat_buffers[k] = {}
+            feat_buffers[k][str(real_sym)] = values
+
+    try:
+        max_workers = int(os.getenv("EPM_FEATURE_SELECTED_LOAD_WORKERS", "8") or "8")
+    except Exception:
+        max_workers = 8
+    max_workers = max(1, min(max_workers, total_files))
+    parallel_enabled = (
+        max_workers > 1
+        and total_files >= 16
+        and feature_set is not None
+        and (start_ts is not None or end_ts is not None)
+        and str(os.getenv("EPM_FEATURE_SELECTED_LOAD_PARALLEL", "1")).strip().lower()
+        not in {"0", "false", "no", "off"}
+    )
+    if parallel_enabled:
+        tprint(
+            "Selective feature load parallel reader enabled: "
+            f"workers={max_workers} files={total_files}"
+        )
+        completed = 0
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_path = {
+                executor.submit(_read_one_selected_feature_file, fpath): fpath
+                for fpath in files
+            }
+            for future in concurrent.futures.as_completed(future_to_path):
+                try:
+                    _ingest_selected_feature_result(future.result())
+                except Exception as exc:
+                    tprint(
+                        f"Error loading {future_to_path.get(future, '<unknown>')}: {exc}"
+                    )
+                completed += 1
+                if completed % progress_every == 0 or completed == total_files:
+                    elapsed = time.time() - start_load
+                    tprint(
+                        f"Selective feature load progress: {completed}/{total_files} files "
+                        f"({(completed / total_files) * 100:.1f}%) in {elapsed:.1f}s"
+                    )
+    else:
+        for i, fpath in enumerate(files, start=1):
+            _ingest_selected_feature_result(_read_one_selected_feature_file(fpath))
             if i % progress_every == 0 or i == total_files:
                 elapsed = time.time() - start_load
                 tprint(
                     f"Selective feature load progress: {i}/{total_files} files "
                     f"({(i / total_files) * 100:.1f}%) in {elapsed:.1f}s"
                 )
-        except Exception as e:
-            tprint(f"Error loading {fpath}: {e}")
 
     if not feat_buffers:
         return None

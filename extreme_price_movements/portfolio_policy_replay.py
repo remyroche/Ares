@@ -1857,6 +1857,7 @@ def run_portfolio_policy_replay(
     max_evaluations: Optional[int] = None,
     fixed_policy_config_path: Optional[str | Path] = None,
     ev_curve_candidate_path: Optional[str | Path] = None,
+    persist_live_artifacts: bool = True,
 ) -> Dict[str, Any]:
     run_root = Path(data_root) / "artifacts" / str(run_id)
     if candidate_path is None:
@@ -2019,7 +2020,7 @@ def run_portfolio_policy_replay(
         json.dumps(_json_safe(validation_report), indent=2),
         encoding="utf-8",
     )
-    if fixed_policy_config_path is None:
+    if fixed_policy_config_path is None and persist_live_artifacts:
         policy_params_dir = run_root / "policy_params"
         policy_params_dir.mkdir(parents=True, exist_ok=True)
         policy_config_path = policy_params_dir / "optimized_portfolio_policy_config.json"

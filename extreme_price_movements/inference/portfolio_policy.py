@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 
+from extreme_price_movements.inference.parity import _policy_artifact_bases
 from extreme_price_movements.path_utils import resolve_mode_file
 
 
@@ -58,6 +59,8 @@ class PortfolioPolicyConfig:
     max_entry_friction_bps: float = 60.0
     max_spread_bps: float = 25.0
     hard_max_spread_bps: float = 100.0
+    ev_haircut_expected_spread_bps: float = 97.32886619027215
+    ev_haircut_delay_slippage_baseline_bps: float = 40.0
     min_liquidity_capacity_weight: float = 0.25
     max_ticker_age_seconds: float = 4.0
 
@@ -158,11 +161,15 @@ def validate_portfolio_strategy_contract(
 
 
 def _load_artifact_payload(data_root: str, run_id: str) -> Dict[str, Any]:
-    base = Path(data_root) / "artifacts" / str(run_id) / "policy_params"
-    path = resolve_mode_file(base / "optimized_portfolio_policy_config.json")
-    if path.exists():
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        return payload if isinstance(payload, dict) else {}
+    for root in _policy_artifact_bases(data_root, str(run_id)):
+        for path in (
+            root / "policy_params" / "optimized_portfolio_policy_config.json",
+            root / "portfolio_policy_replay" / "optimized_portfolio_policy_config.json",
+        ):
+            resolved = resolve_mode_file(path)
+            if resolved.exists():
+                payload = json.loads(resolved.read_text(encoding="utf-8"))
+                return payload if isinstance(payload, dict) else {}
     return {}
 
 
@@ -229,6 +236,8 @@ def load_portfolio_policy_config(
             "max_entry_friction_bps",
             "max_spread_bps",
             "hard_max_spread_bps",
+            "ev_haircut_expected_spread_bps",
+            "ev_haircut_delay_slippage_baseline_bps",
             "min_liquidity_capacity_weight",
         },
         "strategy_contract": {
@@ -241,9 +250,7 @@ def load_portfolio_policy_config(
     artifact_payload = _load_artifact_payload(data_root, run_id)
     if require_artifact and not artifact_payload:
         path = (
-            Path(data_root)
-            / "artifacts"
-            / str(run_id)
+            _policy_artifact_bases(data_root, str(run_id))[0]
             / "policy_params"
             / "optimized_portfolio_policy_config.json"
         )

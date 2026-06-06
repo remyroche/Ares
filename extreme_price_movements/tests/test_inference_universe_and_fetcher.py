@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import pandas as pd
 
@@ -147,6 +149,119 @@ def test_resolve_inference_universes_maps_explicit_usdt_symbols_to_usdc(
     assert out["tradable_symbols"] == ["BTC/USDC"]
 
 
+def test_resolve_inference_universes_expands_tradable_with_cross_strategy_oos_symbols(
+    tmp_path, monkeypatch
+):
+    data_root = tmp_path / "data"
+    run_dir = data_root / "artifacts" / "run1"
+    feature_dir = run_dir / "features"
+    policy_dir = run_dir / "policy_params"
+    feature_dir.mkdir(parents=True)
+    policy_dir.mkdir(parents=True)
+    (feature_dir / "feature_health_symbol_summary.csv").write_text(
+        "symbol,rows\nBTC/USDT,100\nETH/USDT,100\nSOL/USDT,100\n"
+    )
+    (policy_dir / "cross_strategy_symbol_oos_eligibility.json").write_text(
+        '{"schema_version":"cross_strategy_oos_symbol_eligibility_v1",'
+        '"deployable_symbol_list":["BTC_USD:USD","SOL_USD:USD"]}'
+    )
+
+    out = inference_config.resolve_inference_universes(
+        object(),
+        data_root=str(data_root),
+        run_id="run1",
+        explicit_symbols=["BTC/USDT", "ETH/USDT", "SOL/USDT"],
+    )
+
+    assert out["tradable_symbols"] == ["BTC/USDC", "ETH/USDC", "SOL/USDC"]
+    assert out["cross_strategy_oos_symbols"] == ["BTC/USD:USD", "SOL/USD:USD"]
+
+
+def test_resolve_inference_universes_exposes_cross_strategy_oos_without_promoting(
+    tmp_path, monkeypatch
+):
+    data_root = tmp_path / "data"
+    run_dir = data_root / "artifacts" / "run1"
+    feature_dir = run_dir / "features"
+    policy_dir = run_dir / "policy_params"
+    feature_dir.mkdir(parents=True)
+    policy_dir.mkdir(parents=True)
+    (feature_dir / "feature_health_symbol_summary.csv").write_text(
+        "symbol,rows\nETH/USDT,100\n"
+    )
+    (policy_dir / "cross_strategy_symbol_oos_eligibility.json").write_text(
+        '{"schema_version":"cross_strategy_oos_symbol_eligibility_v1",'
+        '"deployable_symbol_list":["SOL_USD:USD"]}'
+    )
+
+    class _Exchange:
+        def load_markets(self):
+            return {
+                "BTC/USDC": {"quote": "USDC", "active": True, "margin": True},
+                "ETH/USDC": {"quote": "USDC", "active": True, "margin": True},
+                "SOL/USDC": {"quote": "USDC", "active": True, "margin": True},
+            }
+
+    monkeypatch.setattr(inference_config, "_MARGIN_UNIVERSE_CACHE", None)
+    monkeypatch.setattr(inference_config, "_MARGIN_UNIVERSE_CACHE_DAY", None)
+    monkeypatch.setattr(inference_config, "_MARGIN_UNIVERSE_CACHE_QUOTE", None)
+    out = inference_config.resolve_inference_universes(
+        _Exchange(), data_root=str(data_root), run_id="run1"
+    )
+
+    assert out["download_symbols"] == ["BTC/USDC", "ETH/USDC", "SOL/USDC"]
+    assert out["tradable_symbols"] == ["ETH/USDC"]
+    assert out["trained_symbols"] == ["ETH/USDT"]
+    assert out["cross_strategy_oos_symbols"] == ["SOL/USD:USD"]
+
+
+def test_resolve_inference_universes_promotes_stable_active_untrained_overlap(
+    tmp_path, monkeypatch
+):
+    data_root = tmp_path / "data"
+    run_dir = data_root / "artifacts" / "run1"
+    feature_dir = run_dir / "features"
+    expansion_dir = run_dir / "symbol_expansion"
+    feature_dir.mkdir(parents=True)
+    (feature_dir / "feature_health_symbol_summary.csv").write_text(
+        "symbol,rows\nETH/USDT,100\n"
+    )
+    for window, symbols in {
+        "latest_trainingpath_context_fix_4w": ["SOL/USD:USD", "DOG/USD:USD"],
+        "latest_trainingpath_context_fix_8w": ["SOL/USD:USD", "CAT/USD:USD"],
+    }.items():
+        path = expansion_dir / window
+        path.mkdir(parents=True)
+        (path / "tradeable_symbol_expansion.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "active_untrained_symbol_expansion_backtest_v1",
+                    "eligible_symbols": symbols,
+                }
+            )
+        )
+
+    class _Exchange:
+        def load_markets(self):
+            return {
+                "CAT/USDC": {"quote": "USDC", "active": True, "margin": True},
+                "DOG/USDC": {"quote": "USDC", "active": True, "margin": True},
+                "ETH/USDC": {"quote": "USDC", "active": True, "margin": True},
+                "SOL/USDC": {"quote": "USDC", "active": True, "margin": True},
+            }
+
+    monkeypatch.setattr(inference_config, "_MARGIN_UNIVERSE_CACHE", None)
+    monkeypatch.setattr(inference_config, "_MARGIN_UNIVERSE_CACHE_DAY", None)
+    monkeypatch.setattr(inference_config, "_MARGIN_UNIVERSE_CACHE_QUOTE", None)
+    out = inference_config.resolve_inference_universes(
+        _Exchange(), data_root=str(data_root), run_id="run1"
+    )
+
+    assert out["download_symbols"] == ["CAT/USDC", "DOG/USDC", "ETH/USDC", "SOL/USDC"]
+    assert out["tradable_symbols"] == ["ETH/USDC", "SOL/USDC"]
+    assert out["active_untrained_expansion_symbols"] == ["SOL/USD:USD"]
+
+
 def test_fetch_incremental_universe_triggers_backfill_on_recent_gaps(monkeypatch):
     fetcher = DataFetcher(exchange=object(), data_root="data")
 
@@ -161,7 +276,7 @@ def test_fetch_incremental_universe_triggers_backfill_on_recent_gaps(monkeypatch
     monkeypatch.setattr(fetcher, "has_recent_gap", lambda s, days=7: gap_by_symbol[s])
     monkeypatch.setattr(
         fetcher,
-        "trigger_gap_backfill",
+        "trigger_hourly_gap_backfill",
         lambda symbol, **kwargs: backfill_calls.append(symbol),
     )
 
@@ -246,6 +361,52 @@ def test_fetch_incremental_universe_skips_microdata_refresh_by_default(monkeypat
     fetcher.fetch_incremental_universe(["A/USDT"], refresh_microdata=False)
 
     assert micro_calls == []
+
+
+def test_fetch_hourly_universe_refreshes_microdata_for_existing_target_bar(
+    tmp_path, monkeypatch
+):
+    fetcher = DataFetcher(exchange=object(), data_root=str(tmp_path))
+    target_hour = pd.Timestamp("2026-06-05 08:00:00+00:00")
+    micro_calls = []
+
+    class _Store:
+        def load(self, symbol, start_ts=None, end_ts=None):
+            return pd.DataFrame(
+                {"close": [1.0]},
+                index=pd.DatetimeIndex([target_hour], name="timestamp"),
+            )
+
+    fetcher.ohlcv_store = _Store()
+    monkeypatch.setattr(fetcher, "has_recent_gap", lambda symbol, days=7: False)
+    monkeypatch.setattr(
+        fetcher,
+        "fetch_latest_hourly_symbol",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("OHLCV should not be refetched")
+        ),
+    )
+    monkeypatch.setattr(
+        fetcher,
+        "update_microdata_symbol",
+        lambda symbol, **kwargs: micro_calls.append(
+            (symbol, kwargs.get("start_ts"), kwargs.get("end_ts"))
+        ),
+    )
+
+    out = fetcher.fetch_hourly_universe_once(
+        ["A/USDT", "B/USDT"],
+        target_hour=target_hour,
+        refresh_microdata=True,
+        max_workers=2,
+        microdata_max_workers=2,
+    )
+
+    assert out == {}
+    assert micro_calls == [
+        ("A/USDT", target_hour, target_hour),
+        ("B/USDT", target_hour, target_hour),
+    ]
 
 
 def test_fetch_incremental_universe_microdata_failure_is_not_dead_letter(monkeypatch):
@@ -360,7 +521,9 @@ def test_fetch_hourly_universe_once_can_skip_recent_gap_backfill(tmp_path, monke
         fetcher, "has_recent_gap", lambda symbol, days=7: gap_checks.append(symbol) or True
     )
     monkeypatch.setattr(
-        fetcher, "trigger_gap_backfill", lambda symbol, days=7, backfill_fn=None: backfills.append(symbol)
+        fetcher,
+        "trigger_hourly_gap_backfill",
+        lambda symbol, days=7: backfills.append(symbol),
     )
 
     fetcher.fetch_hourly_universe_once(
@@ -372,6 +535,52 @@ def test_fetch_hourly_universe_once_can_skip_recent_gap_backfill(tmp_path, monke
 
     assert gap_checks == []
     assert backfills == []
+
+
+def test_fetch_hourly_universe_once_backfills_gap_when_target_bar_exists(tmp_path, monkeypatch):
+    target_hour = pd.Timestamp("2026-01-01 12:00:00", tz="UTC")
+
+    class _Exchange:
+        def fetch_ohlcv(self, symbol, timeframe, since=None, limit=None, params=None):
+            raise AssertionError("target bar already exists; fetch should be skipped")
+
+    fetcher = DataFetcher(exchange=_Exchange(), data_root=str(tmp_path))
+    existing = pd.DataFrame(
+        {
+            "open": [1.0],
+            "high": [2.0],
+            "low": [0.5],
+            "close": [1.5],
+            "volume": [10.0],
+        },
+        index=pd.DatetimeIndex([target_hour], name="ts"),
+    )
+    fetcher.ohlcv_store.save_partitioned(symbol="A/USDT", df=existing)
+
+    gap_checks = []
+    backfills = []
+    monkeypatch.setattr(
+        fetcher,
+        "has_recent_gap",
+        lambda symbol, days=7: gap_checks.append(symbol) or True,
+    )
+    monkeypatch.setattr(
+        fetcher,
+        "trigger_hourly_gap_backfill",
+        lambda symbol, days=7: backfills.append(symbol),
+    )
+
+    out = fetcher.fetch_hourly_universe_once(
+        ["A/USDT"],
+        max_workers=1,
+        target_hour=target_hour,
+        check_recent_gaps_days=7,
+        refresh_microdata=False,
+    )
+
+    assert out == {}
+    assert gap_checks == ["A/USDT"]
+    assert backfills == ["A/USDT"]
 
 
 def test_load_microdata_panel_preserves_saved_orderbook_fields(tmp_path):
@@ -399,6 +608,35 @@ def test_load_microdata_panel_preserves_saved_orderbook_fields(tmp_path):
     assert "orderbook_cum_bid_qty_l20" in panel
     np.testing.assert_allclose(panel["orderbook_hourly"]["A/USDT"], [1.0, 1.1])
     np.testing.assert_allclose(panel["orderbook_best_bid"]["A/USDT"], [0.9, 1.0])
+
+
+def test_load_microdata_panel_merges_dedicated_open_interest_history(tmp_path):
+    fetcher = DataFetcher(exchange=object(), data_root=str(tmp_path))
+    idx = pd.date_range("2026-01-01", periods=4, freq="1h", tz="UTC")
+    pd.DataFrame(
+        {"open_interest": [100.0, 101.0, 102.0, 103.0]},
+        index=idx,
+    ).to_parquet(fetcher.open_interest_dir / "A_USDT.parquet")
+    pd.DataFrame(
+        {
+            "funding_rate": [0.001],
+            "open_interest": [110.0],
+        },
+        index=pd.DatetimeIndex([idx[-1]]),
+    ).to_parquet(fetcher.funding_dir / "A_USDT.parquet")
+
+    panel = fetcher._load_microdata_panel(["A/USDT"])
+
+    assert "open_interest" in panel
+    assert "funding_rate" in panel
+    np.testing.assert_allclose(
+        panel["open_interest"]["A/USDT"].reindex(idx).to_numpy(),
+        [100.0, 101.0, 102.0, 110.0],
+    )
+    np.testing.assert_allclose(
+        [float(panel["funding_rate"].loc[idx[-1], "A/USDT"])],
+        [0.001],
+    )
 
 
 def test_update_microdata_symbol_uses_perp_exchange_for_spot_funding(

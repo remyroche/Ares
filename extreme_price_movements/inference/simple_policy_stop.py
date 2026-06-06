@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, Mapping, Optional
@@ -206,13 +207,18 @@ def extract_simple_policy_stop_params_by_strategy(
 
 
 def _iter_simple_policy_artifact_paths(data_root: str, run_id: Optional[str] = None):
-    artifacts_root = Path(data_root) / "artifacts"
-    if not artifacts_root.exists():
-        return
-    if run_id:
-        run_dirs = [artifacts_root / str(run_id)]
+    override = str(os.environ.get("EPM_INFERENCE_POLICY_ARTIFACT_ROOT", "") or "").strip()
+    if override:
+        run_dirs = [Path(override)]
+        artifacts_root = None
     else:
-        run_dirs = sorted(artifacts_root.iterdir())
+        run_dirs = []
+        artifacts_root = Path(data_root) / "artifacts"
+    if artifacts_root is not None and artifacts_root.exists():
+        if run_id:
+            run_dirs.append(artifacts_root / str(run_id))
+        else:
+            run_dirs.extend(sorted(artifacts_root.iterdir()))
     for run_dir in run_dirs:
         if not run_dir.is_dir():
             continue

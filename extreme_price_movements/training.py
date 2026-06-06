@@ -70,6 +70,8 @@ from .model_scoring import (
     precision_at_k,
     topk_mask,
 )
+
+_NATIVE_LGBM_META_PRESET_CACHE: dict[tuple[str, str], dict[str, Any]] = {}
 from .offline_optimisers.params_store import (
     CANDIDATE_BEST_PARAMS_CSV,
     apply_offline_optimizer_best_params,
@@ -80,6 +82,68 @@ from .offline_optimisers.params_store import (
     load_tbm_best_params_per_side_horizon,
     load_tbm_geometry_grid,
 )
+
+
+def _truthy_env(name: str, default: str = "") -> bool:
+    return str(os.getenv(name, default)).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }
+
+
+def _strategy_aliases(strategy_id: str, trade_side: str | None = None) -> set[str]:
+    raw = str(strategy_id or "").strip()
+    aliases = {raw} if raw else set()
+    for prefix in ("long_", "short_"):
+        if raw.startswith(prefix):
+            aliases.add(raw[len(prefix) :])
+    side = str(trade_side or "").strip().lower()
+    if side in {"long", "short"}:
+        aliases.update({f"{side}_{sid}" for sid in list(aliases) if sid})
+    return {sid for sid in aliases if sid}
+
+
+def _select_strategies_by_alias(
+    strategies: Sequence[dict],
+    requested_ids: Sequence[str],
+) -> tuple[list[dict], list[str]]:
+    requested = [str(s).strip() for s in requested_ids if str(s).strip()]
+    requested_set = set(requested)
+    selected: list[dict] = []
+    found_aliases: set[str] = set()
+    for strategy in strategies:
+        aliases = _strategy_aliases(
+            str(strategy.get("strategy_id", "")).strip(),
+            str(strategy.get("trade_side", "")).strip(),
+        )
+        if aliases & requested_set:
+            selected.append(strategy)
+            found_aliases.update(aliases)
+    order: dict[str, int] = {}
+    for i, sid in enumerate(requested):
+        order[sid] = i
+        side = (
+            "short"
+            if sid.startswith("short_")
+            else "long"
+            if sid.startswith("long_")
+            else ""
+        )
+        for alias in _strategy_aliases(sid, side):
+            order.setdefault(alias, i)
+    selected.sort(
+        key=lambda s: min(
+            order.get(alias, 10**9)
+            for alias in _strategy_aliases(
+                str(s.get("strategy_id", "")).strip(),
+                str(s.get("trade_side", "")).strip(),
+            )
+        )
+    )
+    return selected, [sid for sid in requested if sid not in found_aliases]
 from .optimise_tpsl_ratio import (
     PurgedKFold,
     calibrate_atr_base_pct,
@@ -1393,6 +1457,12 @@ TOPK_INFO_FRACS = (0.10, 0.20, 0.30)
 
 def _resolve_training_cfg_with_offline_optimisers(cfg):
     """Apply persisted offline-optimiser best params onto cfg with cfg values as fallback."""
+    if _truthy_env("EPM_SKIP_MASK_STRATEGY_PARAMS"):
+        tprint(
+            "Training cfg: skipping offline optimiser mask/strategy params "
+            "because EPM_SKIP_MASK_STRATEGY_PARAMS is set"
+        )
+        return cfg
     try:
         return apply_offline_optimizer_best_params(cfg)
     except Exception as exc:
@@ -2855,7 +2925,40 @@ def _fit_direct_extratrees_base_model(
         _race_X_availability_df.columns = list(_feature_names_for_full_fit)
     else:
         _race_X_availability_df = _race_X_df
+    _native_lgbm_preset = None
+    _native_lgbm_preset_features: set[str] = set()
     if _backend == "lgbm_pipeline":
+        _native_lgbm_preset = _load_native_lgbm_training_preset(
+            _cfg_local,
+            scope_key=str(native_scope_key or hpo_scope_key or kind_name),
+            objective_mode="train_meta" if _is_meta_hpo else "train_base",
+        )
+        _native_lgbm_preset_features = {
+            str(c)
+            for c in ((_native_lgbm_preset or {}).get("selected_features") or [])
+            if str(c).strip()
+        }
+    if _backend == "lgbm_pipeline":
+        if bool(getattr(_race_X_df.columns, "has_duplicates", False)):
+            _dup_mask = _race_X_df.columns.duplicated(keep="first")
+            _dup_preview = list(dict.fromkeys(map(str, _race_X_df.columns[_dup_mask])))[:20]
+            tprint(
+                f"Model Race [{kind_name}]: dropping "
+                f"{int(np.sum(_dup_mask))} duplicate feature columns before "
+                f"LGBM availability pruning; preview={_dup_preview}"
+            )
+            _race_X_df = _race_X_df.loc[:, ~_dup_mask].copy()
+            _feature_names_for_full_fit = list(_race_X_df.columns)
+            X_full_np = _race_X_df.to_numpy(dtype=np.float32, copy=False)
+            if (
+                _race_X_availability_df is not _race_X_df
+                and hasattr(_race_X_availability_df, "columns")
+            ):
+                _avail_dup_mask = _race_X_availability_df.columns.duplicated(keep="first")
+                if bool(np.any(_avail_dup_mask)):
+                    _race_X_availability_df = _race_X_availability_df.loc[
+                        :, ~_avail_dup_mask
+                    ].copy()
         _before_cols = list(_race_X_df.columns)
         _availability_exempt = (
             {
@@ -2866,6 +2969,10 @@ def _fit_direct_extratrees_base_model(
             if _is_meta_hpo
             else set()
         )
+        if _native_lgbm_preset_features:
+            _availability_exempt.update(
+                c for c in _native_lgbm_preset_features if c in _race_X_df.columns
+            )
         _kept_cols = _recent_feature_availability_filter(
             _race_X_availability_df,
             _before_cols,
@@ -2895,13 +3002,6 @@ def _fit_direct_extratrees_base_model(
         if _backend == "lgbm_pipeline"
         else (("ebm_on_lgbm", train_ebm_on_lgbm_candidate),)
     )
-    _native_lgbm_preset = None
-    if _backend == "lgbm_pipeline" and not _is_meta_hpo:
-        _native_lgbm_preset = _load_native_lgbm_training_preset(
-            _cfg_local,
-            scope_key=str(native_scope_key or hpo_scope_key or kind_name),
-            objective_mode="train_base",
-        )
     for candidate_name, trainer in _candidate_trainers:
         try:
             tprint(
@@ -5655,7 +5755,10 @@ def _meta_report_entry(
             y_per_horizon = {h: v[:n] for h, v in y_per_horizon.items()}
 
     tau = 0.85
-    is_quantile = bool(meta_model.model and meta_model.model.get("pool") == "quantile")
+    model_payload = getattr(meta_model, "model", None)
+    is_quantile = bool(
+        isinstance(model_payload, dict) and model_payload.get("pool") == "quantile"
+    )
 
     def pinball(y, q, a=tau):
         e = y - q
@@ -6758,6 +6861,12 @@ def _load_native_lgbm_training_preset(
     """
 
     cfg_local = cfg if isinstance(cfg, dict) else {}
+    require_preset = str(
+        os.getenv(
+            "EPM_LGBM_REQUIRE_NATIVE_PRESET",
+            cfg_local.get("lgbm_require_native_preset", ""),
+        )
+    ).strip().lower() in {"1", "true", "yes", "y", "on"}
     use_preset = str(
         os.getenv(
             "EPM_LGBM_USE_NATIVE_PRESET",
@@ -6766,8 +6875,6 @@ def _load_native_lgbm_training_preset(
     ).strip().lower() in {"1", "true", "yes", "y", "on"}
     if not use_preset:
         return None
-    if str(objective_mode or "").strip().lower() in {"train_meta", "meta"}:
-        return None
     source_run_id = str(
         os.getenv("EPM_LGBM_NATIVE_PRESET_SOURCE_RUN_ID", "")
         or cfg_local.get("lgbm_native_preset_source_run_id")
@@ -6775,7 +6882,18 @@ def _load_native_lgbm_training_preset(
         or ""
     ).strip()
     if not source_run_id:
+        if require_preset:
+            raise RuntimeError(
+                "EPM_LGBM_REQUIRE_NATIVE_PRESET=1 but no native preset source run id "
+                "was provided."
+            )
         return None
+    if str(objective_mode or "").strip().lower() in {"train_meta", "meta"}:
+        return _load_native_lgbm_meta_training_preset(
+            cfg_local,
+            source_run_id=source_run_id,
+            scope_key=scope_key,
+        )
     model_path = (
         Path(str(cfg_local.get("data_root", "data")))
         / "artifacts"
@@ -6786,7 +6904,10 @@ def _load_native_lgbm_training_preset(
         / "model.joblib"
     )
     if not model_path.exists():
-        tprint(f"LGBM native preset not found for {scope_key}: {model_path}")
+        msg = f"LGBM native preset not found for {scope_key}: {model_path}"
+        if require_preset:
+            raise RuntimeError(msg)
+        tprint(msg)
         return None
     try:
         import joblib
@@ -6820,6 +6941,117 @@ def _load_native_lgbm_training_preset(
     except Exception as exc:
         raise RuntimeError(
             f"Failed to load native LGBM preset for {scope_key} from {model_path}: {exc}"
+        ) from exc
+
+
+def _load_native_lgbm_meta_training_preset(
+    cfg: dict[str, Any] | None,
+    *,
+    source_run_id: str,
+    scope_key: str,
+) -> dict[str, Any] | None:
+    cfg_local = cfg if isinstance(cfg, dict) else {}
+    require_preset = str(
+        os.getenv(
+            "EPM_LGBM_REQUIRE_NATIVE_PRESET",
+            cfg_local.get("lgbm_require_native_preset", ""),
+        )
+    ).strip().lower() in {"1", "true", "yes", "y", "on"}
+    cache_key = (str(source_run_id), str(scope_key))
+    if cache_key in _NATIVE_LGBM_META_PRESET_CACHE:
+        return dict(_NATIVE_LGBM_META_PRESET_CACHE[cache_key])
+    state_path = (
+        Path(str(cfg_local.get("data_root", "data")))
+        / "artifacts"
+        / str(source_run_id)
+        / "models"
+        / "model_state_meta.pkl"
+    )
+    if not state_path.exists():
+        msg = f"LGBM meta preset state not found for {scope_key}: {state_path}"
+        if require_preset:
+            raise RuntimeError(msg)
+        tprint(msg)
+        return None
+    try:
+        import joblib
+
+        state = joblib.load(state_path)
+        bundle = state.get("bundle", state) if isinstance(state, dict) else {}
+        meta_models = bundle.get("meta_models", {}) if isinstance(bundle, dict) else {}
+        candidates: list[str] = []
+
+        def _add_candidate(value: str) -> None:
+            value = str(value or "").strip()
+            if value and value not in candidates:
+                candidates.append(value)
+
+        def _normalise_meta_key(value: str) -> list[str]:
+            raw = str(value or "").strip()
+            out: list[str] = []
+            if not raw:
+                return out
+            out.append(raw)
+            no_meta = raw[len("meta_") :] if raw.startswith("meta_") else raw
+            out.append(no_meta)
+            for suffix in ("_correctness_clf", "_tbm_clf", "_base_target_clf"):
+                if no_meta.endswith(suffix):
+                    out.append(no_meta[: -len(suffix)] + "_clf")
+            if not no_meta.endswith("_clf"):
+                out.append(no_meta + "_clf")
+            return out
+
+        for key in _normalise_meta_key(str(scope_key)):
+            _add_candidate(key)
+            if not key.startswith("meta_"):
+                _add_candidate(f"meta_{key}")
+        race = None
+        matched_key = ""
+        for key in candidates:
+            if key in meta_models:
+                race = meta_models[key]
+                matched_key = key
+                break
+        if race is None:
+            msg = (
+                f"LGBM meta preset not found for {scope_key}: "
+                f"checked={candidates[:3]}, source={state_path}"
+            )
+            if require_preset:
+                raise RuntimeError(msg)
+            tprint(msg)
+            return None
+        model = getattr(race, "best_model", race)
+        selected = [str(c) for c in (getattr(model, "selected_features", []) or [])]
+        params = dict(getattr(model, "best_params", {}) or {})
+        metrics = dict(getattr(model, "metrics", {}) or {})
+        if not selected:
+            selected = [str(c) for c in (metrics.get("selected_features", []) or [])]
+        if not params:
+            params = dict(
+                metrics.get("best_params")
+                or metrics.get("hpo_best_params")
+                or {}
+            )
+        if not selected or not params:
+            raise ValueError(
+                f"selected_features={len(selected)} best_params={bool(params)}"
+            )
+        out = {
+            "selected_features": selected,
+            "best_params": params,
+            "source": str(state_path) + f"::{matched_key}",
+            "source_run_id": str(source_run_id),
+        }
+        _NATIVE_LGBM_META_PRESET_CACHE[cache_key] = dict(out)
+        tprint(
+            f"LGBM meta preset loaded for {scope_key}: "
+            f"features={len(selected)}, params={len(params)}, source={out['source']}"
+        )
+        return out
+    except Exception as exc:
+        raise RuntimeError(
+            f"Failed to load LGBM meta preset for {scope_key} from {state_path}: {exc}"
         ) from exc
 
 
@@ -10987,6 +11219,12 @@ def generate_label_datasets(
         if bool(cfg.get("label_gc_after_each_dataset", True)):
             gc.collect()
 
+    _preselected_strategy_defs = [
+        dict(s)
+        for s in (cfg.get("strategies") or [])
+        if isinstance(s, dict) and str(s.get("strategy_id", "")).strip()
+    ]
+
     # Always resolve + enforce persisted offline-optimal candidate ranges before any event generation.
     cfg = _resolve_training_cfg_with_offline_optimisers(cfg)
     _label_strategy_ids_env = (
@@ -10998,27 +11236,25 @@ def generate_label_datasets(
         _requested_ids = [
             s.strip() for s in _label_strategy_ids_env.split(",") if s.strip()
         ]
-        _requested_set = set(_requested_ids)
         _all_strategies = get_strategies(cfg)
-        _selected_strategies = [
-            s
-            for s in _all_strategies
-            if str(s.get("strategy_id", "")).strip() in _requested_set
-        ]
-        _found_ids = {
-            str(s.get("strategy_id", "")).strip() for s in _selected_strategies
-        }
-        _missing_ids = [s for s in _requested_ids if s not in _found_ids]
+        _selected_strategies, _missing_ids = _select_strategies_by_alias(
+            _all_strategies,
+            _requested_ids,
+        )
+        if not _selected_strategies and _preselected_strategy_defs:
+            _selected_strategies, _missing_ids = _select_strategies_by_alias(
+                _preselected_strategy_defs,
+                _requested_ids,
+            )
         if _missing_ids:
-            tprint(
-                "WARNING: label builder strategy allowlist missing ids after "
-                f"offline optimiser resolution: {_missing_ids}"
+            _msg = (
+                "label builder strategy allowlist missing ids after offline "
+                f"optimiser resolution: {_missing_ids}"
             )
+            if _truthy_env("EPM_REQUIRE_STRATEGY_ALLOWLIST"):
+                raise RuntimeError(_msg)
+            tprint(f"WARNING: {_msg}")
         if _selected_strategies:
-            _order = {sid: i for i, sid in enumerate(_requested_ids)}
-            _selected_strategies.sort(
-                key=lambda s: _order.get(str(s.get("strategy_id", "")), 10**9)
-            )
             cfg = dict(cfg)
             cfg["strategies"] = _selected_strategies
             tprint(
@@ -11036,24 +11272,26 @@ def generate_label_datasets(
         _requested_ids = [
             s.strip() for s in _label_strategy_ids_env.split(",") if s.strip()
         ]
-        _requested_set = set(_requested_ids)
         _all_strategies = get_strategies(cfg)
-        _selected_strategies = [
-            s
-            for s in _all_strategies
-            if str(s.get("strategy_id", "")).strip() in _requested_set
-        ]
+        _selected_strategies, _missing_ids = _select_strategies_by_alias(
+            _all_strategies,
+            _requested_ids,
+        )
         if _selected_strategies:
-            _order = {sid: i for i, sid in enumerate(_requested_ids)}
-            _selected_strategies.sort(
-                key=lambda s: _order.get(str(s.get("strategy_id", "")), 10**9)
-            )
             cfg = dict(cfg)
             cfg["strategies"] = _selected_strategies
+            _selected_aliases: set[str] = set()
+            for _s in _selected_strategies:
+                _selected_aliases.update(
+                    _strategy_aliases(
+                        str(_s.get("strategy_id", "")).strip(),
+                        str(_s.get("trade_side", "")).strip(),
+                    )
+                )
             mask_by_strategy = {
                 sid: mask
                 for sid, mask in mask_by_strategy.items()
-                if str(sid).strip() in _requested_set
+                if _strategy_aliases(str(sid).strip()) & _selected_aliases
             }
             if mask_by_strategy:
                 global_mask = None
@@ -11069,6 +11307,22 @@ def generate_label_datasets(
                 f"candidate-mask build; selected {len(_selected_strategies)}/"
                 f"{len(_requested_ids)} strategies"
             )
+            if _missing_ids:
+                _msg = (
+                    "label builder strategy allowlist missing ids after "
+                    f"candidate-mask build: {_missing_ids}"
+                )
+                if _truthy_env("EPM_REQUIRE_STRATEGY_ALLOWLIST"):
+                    raise RuntimeError(_msg)
+                tprint(f"WARNING: {_msg}")
+        else:
+            _msg = (
+                "label builder strategy allowlist matched no strategies after "
+                "candidate-mask build"
+            )
+            if _truthy_env("EPM_REQUIRE_STRATEGY_ALLOWLIST"):
+                raise RuntimeError(_msg)
+            tprint(f"WARNING: {_msg}")
 
     # Optional microstructure noise filter. Disabled by default so label support
     # is governed by strategy masks and required market-data coverage only.
@@ -11965,6 +12219,25 @@ def train_meta_models_from_artifacts(
     include_meta_clf = bool(
         cfg.get("meta_clf_enabled", cfg.get("meta_race_include_classifiers", True))
     )
+    _env_bool_meta_toggles = {
+        "EPM_META_TRAIN_BASE_TARGET_CLF_HEAD": "meta_train_base_target_clf_head",
+        "EPM_META_TRAIN_CORRECTNESS_CLF_HEAD": "meta_train_correctness_clf_head",
+        "EPM_META_TRAIN_TBM_CLF_HEAD": "meta_train_tbm_clf_head",
+    }
+    for _env_name, _cfg_key in _env_bool_meta_toggles.items():
+        _raw = os.getenv(_env_name)
+        if _raw is None:
+            continue
+        _val = str(_raw).strip().lower()
+        if _val in {"1", "true", "yes", "y", "on"}:
+            cfg[_cfg_key] = True
+        elif _val in {"0", "false", "no", "n", "off"}:
+            cfg[_cfg_key] = False
+        else:
+            tprint(
+                f"WARNING: invalid {_env_name}={_raw!r}; expected boolean, "
+                f"leaving {_cfg_key}={cfg.get(_cfg_key)!r}"
+            )
     require_meta_move_prob = bool(
         cfg.get("meta_require_classifier_barrier_probs", True)
     )
@@ -16551,7 +16824,6 @@ def train_meta_models_from_artifacts(
         # ExtraTrees uncertainty features are post-fit artifacts, so they cannot
         # participate in base-model MDI; they must enter here so meta-head MDI
         # can consider them.
-        configured_meta = list(_meta_feature_keys_for_kind(cfg, strat, kind=None))
         _meta_backend_ebm_only = str(cfg.get("meta_model_backend", "")).lower() in {
             "ebm_on_lgbm_only",
             "ebm_only",
@@ -16559,6 +16831,32 @@ def train_meta_models_from_artifacts(
         _meta_backend_lgbm_pipeline = (
             str(cfg.get("meta_model_backend", "")).lower() == "lgbm_pipeline"
         )
+        configured_meta = list(_meta_feature_keys_for_kind(cfg, strat, kind=None))
+        _native_meta_preset_features: list[str] = []
+        if _meta_backend_lgbm_pipeline:
+            _native_meta_scope = f"{side}_{k}_clf"
+            _native_meta_preset = _load_native_lgbm_training_preset(
+                cfg,
+                scope_key=_native_meta_scope,
+                objective_mode="train_meta",
+            )
+            _native_meta_preset_features = [
+                str(c)
+                for c in ((_native_meta_preset or {}).get("selected_features") or [])
+                if str(c).strip()
+            ]
+            if _native_meta_preset_features:
+                _pre_cfg_n = len(configured_meta)
+                configured_meta = list(
+                    dict.fromkeys(configured_meta + _native_meta_preset_features)
+                )
+                _added_cfg_n = len(configured_meta) - _pre_cfg_n
+                tprint(
+                    f"  Meta {k}: native LGBM preset requires "
+                    f"{len(_native_meta_preset_features)} selected features; "
+                    f"added {_added_cfg_n} missing keys to raw/meta feature request "
+                    f"(scope={_native_meta_scope})."
+                )
         _stage1_cap = int(
             cfg.get(
                 "meta_feature_stage1_rows",
@@ -16744,6 +17042,7 @@ def train_meta_models_from_artifacts(
             feat_cols,
             cfg=cfg,
             context=f"meta {k} raw feature matrix",
+            exempt_features=set(_native_meta_preset_features),
         )
         if not feat_cols:
             tprint(
@@ -17381,6 +17680,27 @@ def train_meta_models_from_artifacts(
             [c for c in recent_effectiveness_cols if c in X_meta_base.columns]
         )
         meta_model_cols.extend([c for c in meta_model_drift_cols if c in X_meta_base.columns])
+        if _native_meta_preset_features:
+            _pre_native_cols_n = len(meta_model_cols)
+            meta_model_cols.extend(
+                [c for c in _native_meta_preset_features if c in X_meta_base.columns]
+            )
+            meta_model_cols = list(dict.fromkeys(meta_model_cols))
+            _missing_native_cols = [
+                c for c in _native_meta_preset_features if c not in X_meta_base.columns
+            ]
+            if len(meta_model_cols) != _pre_native_cols_n:
+                tprint(
+                    f"  Meta {k}: retained "
+                    f"{len(_native_meta_preset_features) - len(_missing_native_cols)}/"
+                    f"{len(_native_meta_preset_features)} native preset selected "
+                    "features in the shared meta model frame."
+                )
+            if _missing_native_cols:
+                tprint(
+                    f"    Meta {k}: native preset selected features not yet "
+                    f"materialized before fit (first 20): {_missing_native_cols[:20]}"
+                )
         meta_model_cols.extend(
             [
                 c
@@ -17821,6 +18141,7 @@ def train_meta_models_from_artifacts(
                     return
                 _race, _diag = _fit_direct_extratrees_base_model(
                     kind_name=f"meta_{head_key}",
+                    native_scope_key=head_key,
                     X=X_meta_models.loc[_valid].reset_index(drop=True),
                     y=_y_model[_valid],
                     y_hard_ref=_y_hard_arr[_valid],
@@ -21374,18 +21695,20 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
         from extreme_price_movements.strategy_registry import get_strategies
 
         _requested_ids = [s.strip() for s in _strategy_ids_env.split(",") if s.strip()]
-        _requested_set = set(_requested_ids)
         _all_strategies = get_strategies(cfg)
-        _selected_strategies = [
-            s
-            for s in _all_strategies
-            if str(s.get("strategy_id", "")).strip() in _requested_set
-        ]
-        if _selected_strategies:
-            _order = {sid: i for i, sid in enumerate(_requested_ids)}
-            _selected_strategies.sort(
-                key=lambda s: _order.get(str(s.get("strategy_id", "")), 10**9)
+        _selected_strategies, _missing_ids = _select_strategies_by_alias(
+            _all_strategies,
+            _requested_ids,
+        )
+        if _missing_ids:
+            _msg = (
+                f"Training strategy allowlist missing after optimiser resolution "
+                f"({_strategy_ids_label}): {_missing_ids}"
             )
+            if _truthy_env("EPM_REQUIRE_STRATEGY_ALLOWLIST"):
+                raise RuntimeError(_msg)
+            tprint(f"WARNING: {_msg}")
+        if _selected_strategies:
             cfg = dict(cfg)
             cfg["strategies"] = _selected_strategies
             tprint(

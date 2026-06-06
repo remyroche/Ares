@@ -2,6 +2,7 @@ import inspect
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -14,8 +15,10 @@ from extreme_price_movements.inference.feature_generator import (
 )
 from extreme_price_movements.inference.run_inference import (
     _evaluate_oco_policy,
+    _ev_adjusted_prediction_after_entry_friction,
     _latest_closed_candle_start,
     _monitor_active_position_price_action,
+    _position_policy_entry_price,
 )
 from extreme_price_movements.inference.simple_policy_stop import (
     MIN_TRAILING_GIVEBACK_FRAC,
@@ -74,6 +77,115 @@ def _simple_policy_params(**overrides):
     params = load_simple_policy_stop_params_by_strategy(str(base), run_id="test-run")[strategy_id]
     params.update(overrides)
     return params
+
+
+def test_ev_adjustment_haircuts_only_excess_execution_costs():
+    calibration = {
+        "long_demo": [
+            {"mean_score": 0.70, "mean_net_return": 0.010, "count": 100},
+            {"mean_score": 0.80, "mean_net_return": 0.020, "count": 100},
+            {"mean_score": 0.90, "mean_net_return": 0.030, "count": 100},
+        ]
+    }
+
+    within_baseline = _ev_adjusted_prediction_after_entry_friction(
+        calibrated_score=0.80,
+        strategy_id="long_demo",
+        side="long",
+        calibration=calibration,
+        live_entry_friction_bps=88.0,
+        observed_spread_bps=100.0,
+        orderbook_slippage_bps=15.0,
+        adverse_signal_gap_bps=25.0,
+        spread_baseline_bps=100.0,
+        delay_slippage_baseline_bps=40.0,
+        policy_rank_reference_store=None,
+    )
+
+    assert within_baseline["ev_haircut_raw_live_entry_friction_bps"] == 88.0
+    assert within_baseline["ev_haircut_bps"] == 0.0
+    assert within_baseline["ev_haircut_spread_excess_bps"] == 0.0
+    assert within_baseline["ev_haircut_delay_slippage_excess_bps"] == 0.0
+    assert within_baseline["ev_adjusted_net_return_after_friction"] == pytest.approx(
+        within_baseline["ev_adjusted_net_return_before_friction"]
+    )
+
+    above_baseline = _ev_adjusted_prediction_after_entry_friction(
+        calibrated_score=0.80,
+        strategy_id="long_demo",
+        side="long",
+        calibration=calibration,
+        live_entry_friction_bps=120.0,
+        observed_spread_bps=120.0,
+        orderbook_slippage_bps=25.0,
+        adverse_signal_gap_bps=35.0,
+        spread_baseline_bps=100.0,
+        delay_slippage_baseline_bps=40.0,
+        policy_rank_reference_store=None,
+    )
+
+    assert above_baseline["ev_haircut_spread_excess_bps"] == pytest.approx(10.0)
+    assert above_baseline["ev_haircut_delay_slippage_excess_bps"] == pytest.approx(
+        20.0
+    )
+    assert above_baseline["ev_haircut_bps"] == pytest.approx(30.0)
+    assert above_baseline["ev_adjusted_net_return_after_friction"] == pytest.approx(
+        above_baseline["ev_adjusted_net_return_before_friction"] - 0.003
+    )
+
+
+def test_simple_policy_stop_params_honor_policy_artifact_root_override(
+    tmp_path, monkeypatch
+):
+    active = (
+        tmp_path
+        / "artifacts"
+        / "run_a"
+        / "simple_policy_optimiser"
+        / "deployment"
+    )
+    active.mkdir(parents=True)
+    active_row = {
+        "strategy_id": "long_stale",
+        "enable_trailing": True,
+        "barrier_pct": 0.02,
+        "sl_mult": 1.0,
+        "trailing_activation_mult": 1.0,
+        "trailing_power": 1.5,
+        "trailing_squash_divisor": 2.0,
+        "giveback_beta": 0.5,
+        "capital_protect_mfe_mult": 1.0,
+        "capital_protect_regression_frac": 0.45,
+    }
+    (active / "best_policy_params.json").write_text(
+        json.dumps(
+            {
+                "generated_by": SIMPLE_POLICY_GENERATOR,
+                "schema_version": SIMPLE_POLICY_SCHEMA,
+                "strategies": [active_row],
+            }
+        )
+    )
+    override = tmp_path / "policy_override" / "simple_policy_optimiser" / "deployment"
+    override.mkdir(parents=True)
+    override_row = dict(active_row)
+    override_row["strategy_id"] = "long_current"
+    override_row["sl_mult"] = 1.25
+    (override / "best_policy_params.json").write_text(
+        json.dumps(
+            {
+                "generated_by": SIMPLE_POLICY_GENERATOR,
+                "schema_version": SIMPLE_POLICY_SCHEMA,
+                "strategies": [override_row],
+            }
+        )
+    )
+
+    monkeypatch.setenv("EPM_INFERENCE_POLICY_ARTIFACT_ROOT", str(override.parents[1]))
+    params = load_simple_policy_stop_params_by_strategy(str(tmp_path), run_id="run_a")
+
+    assert set(params) == {"long_current"}
+    assert params["long_current"]["sl_mult"] == 1.25
 
 
 def _policy_decision(
@@ -138,11 +250,76 @@ def test_synthesize_live_safe_timestamp_dayofweek_feature():
     ]
 
 
+def test_synthesize_live_safe_repairs_nan_path_efficiency_residual():
+    idx = pd.date_range("2026-03-01", periods=520, freq="1h", tz="UTC")
+    base = 100.0 + np.sin(np.arange(len(idx)) / 7.0).cumsum()
+    close = pd.DataFrame(
+        {
+            "BTC/USD:USD": base,
+            "ETH/USD:USD": base * 0.8 + np.cos(np.arange(len(idx)) / 5.0),
+        },
+        index=idx,
+        dtype=np.float32,
+    )
+    stale = pd.DataFrame(
+        np.nan,
+        index=idx,
+        columns=["BTC/USD:USD", "ETH/USD:USD"],
+        dtype=np.float32,
+    )
+
+    feats = _synthesize_live_safe_feature_keys(
+        {"path_efficiency_24_ts_resid": stale},
+        {"close": close},
+        ["BTC/USD:USD", "ETH/USD:USD"],
+        {"path_efficiency_24_ts_resid"},
+    )
+
+    repaired = feats["path_efficiency_24_ts_resid"].tail(1)
+    assert np.isfinite(repaired.to_numpy(dtype=np.float32)).all()
+
+
 def test_cross_margin_dust_threshold_defaults_by_mode():
     assert _default_cross_margin_dust_quote_threshold("live-test") == 2.5
     assert _default_cross_margin_dust_quote_threshold("live_test") == 2.5
     assert _default_cross_margin_dust_quote_threshold("live") == 5.0
     assert _default_cross_margin_dust_quote_threshold("shadow") == 5.0
+
+
+def test_trade_executor_shutdown_preserves_positions_by_default():
+    class _OCO:
+        def __init__(self):
+            self.close_calls = 0
+
+        def close_all_positions(self):
+            self.close_calls += 1
+
+    executor = TradeExecutor(mode="shadow", exchange=None)
+    executor.oco_executor = _OCO()
+
+    executor.shutdown()
+
+    assert executor.oco_executor.close_calls == 0
+
+
+def test_trade_executor_shutdown_can_flatten_when_explicitly_enabled():
+    class _OCO:
+        def __init__(self):
+            self.close_calls = 0
+
+        def close_all_positions(self):
+            self.close_calls += 1
+
+    executor = TradeExecutor(
+        mode="shadow",
+        exchange=None,
+        config={"close_positions_on_shutdown": True},
+    )
+    executor.oco_executor = _OCO()
+
+    executor.shutdown()
+
+    assert executor.oco_executor.close_calls == 1
 
 
 def test_select_candidates_uses_ret12h_move_and_vol_thresholds():
@@ -458,6 +635,19 @@ def test_5m_exit_takes_priority_over_threshold_update():
     assert "BTC/USDT" not in executor.get_active_positions()
 
 
+def test_position_policy_entry_price_prefers_realized_fill():
+    entry_price, source = _position_policy_entry_price(
+        {
+            "theoretical_entry_price": 100.0,
+            "policy_entry_price": 100.2,
+            "realized_entry_price": 101.5,
+        }
+    )
+
+    assert entry_price == pytest.approx(101.5)
+    assert source == "realized_entry_price"
+
+
 def test_shadow_executor_exposes_monitorable_open_positions():
     executor = TradeExecutor(
         mode="shadow",
@@ -761,15 +951,15 @@ def test_exchange_error_classifier_covers_binance_failure_modes():
         assert _classify_exchange_error(RuntimeError(message)) == expected
 
 
-def test_kraken_futures_stop_orders_trigger_on_last_price():
+def test_kraken_futures_stop_orders_trigger_on_executable_side_price():
     class _KrakenFuturesExchange:
         id = "krakenfutures"
 
         def __init__(self):
-            self.created_order = None
+            self.created_orders = []
 
         def create_order(self, **kwargs):
-            self.created_order = dict(kwargs)
+            self.created_orders.append(dict(kwargs))
             return {"id": "stop-1", **kwargs}
 
     exchange = _KrakenFuturesExchange()
@@ -781,14 +971,25 @@ def test_kraken_futures_stop_orders_trigger_on_last_price():
         stop_price=0.0804,
         config={"execution_account": "perps"},
     )
+    _create_reduce_stop_loss_order(
+        exchange,
+        symbol="XPL/USD:USD",
+        side="sell",
+        amount=79.0,
+        stop_price=0.0794,
+        config={"execution_account": "perps"},
+    )
 
-    assert exchange.created_order["type"] == "market"
-    assert exchange.created_order["params"]["reduceOnly"] is True
-    assert exchange.created_order["params"]["triggerSignal"] == "last"
-    assert exchange.created_order["params"]["stopLossPrice"] == pytest.approx(0.0804)
+    buy_stop, sell_stop = exchange.created_orders
+    assert buy_stop["type"] == "market"
+    assert buy_stop["params"]["reduceOnly"] is True
+    assert buy_stop["params"]["triggerSignal"] == "ask"
+    assert buy_stop["params"]["stopLossPrice"] == pytest.approx(0.0804)
+    assert sell_stop["params"]["triggerSignal"] == "bid"
+    assert sell_stop["params"]["stopLossPrice"] == pytest.approx(0.0794)
 
 
-def test_kraken_futures_stop_trigger_reference_uses_last_not_mark():
+def test_kraken_futures_stop_trigger_reference_uses_executable_side_not_last():
     class _KrakenFuturesExchange:
         id = "krakenfutures"
 
@@ -797,14 +998,34 @@ def test_kraken_futures_stop_trigger_reference_uses_last_not_mark():
         {
             "last": 0.0810,
             "close": 0.0809,
+            "bid": 0.0808,
+            "ask": 0.0812,
             "markPrice": 0.0803,
             "info": {"markPrice": "0.0802"},
         },
         {"execution_account": "perps"},
+        position_side="long",
     )
 
-    assert price == pytest.approx(0.0810)
-    assert source == "last"
+    assert price == pytest.approx(0.0808)
+    assert source == "bid"
+
+    price, source = _stop_trigger_reference_price(
+        _KrakenFuturesExchange(),
+        {
+            "last": 0.0810,
+            "close": 0.0809,
+            "bid": 0.0808,
+            "ask": 0.0812,
+            "markPrice": 0.0803,
+            "info": {"markPrice": "0.0802"},
+        },
+        {"execution_account": "perps"},
+        position_side="short",
+    )
+
+    assert price == pytest.approx(0.0812)
+    assert source == "ask"
 
 
 def test_kraken_futures_existing_mark_stop_does_not_match_policy():
@@ -813,17 +1034,31 @@ def test_kraken_futures_existing_mark_stop_does_not_match_policy():
 
     mark_stop = {"info": {"triggerSignal": "mark", "stopPrice": "0.0804"}}
     last_stop = {"info": {"triggerSignal": "last", "stopPrice": "0.0804"}}
+    bid_stop = {"info": {"triggerSignal": "bid", "stopPrice": "0.0804"}}
+    ask_stop = {"info": {"triggerSignal": "ask", "stopPrice": "0.0804"}}
 
     cfg = {"execution_account": "perps"}
     assert (
         _protective_stop_trigger_matches_policy(
-            _KrakenFuturesExchange(), mark_stop, cfg
+            _KrakenFuturesExchange(), mark_stop, cfg, position_side="long"
         )
         is False
     )
     assert (
         _protective_stop_trigger_matches_policy(
-            _KrakenFuturesExchange(), last_stop, cfg
+            _KrakenFuturesExchange(), last_stop, cfg, position_side="long"
+        )
+        is False
+    )
+    assert (
+        _protective_stop_trigger_matches_policy(
+            _KrakenFuturesExchange(), bid_stop, cfg, position_side="long"
+        )
+        is True
+    )
+    assert (
+        _protective_stop_trigger_matches_policy(
+            _KrakenFuturesExchange(), ask_stop, cfg, position_side="short"
         )
         is True
     )
@@ -1765,6 +2000,40 @@ def test_short_policy_decision_replacement_improves_downward():
     )
     executor.update_position_policy_state("BTC/USDT", policy_stop_decision=decision)
     assert executor.get_active_positions()["BTC/USDT"]["stop_price"] == pytest.approx(99.0)
+
+
+def test_execute_trade_hard_blocks_stale_signal_before_order_recording():
+    executor = TradeExecutor(
+        mode="shadow",
+        exchange=None,
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params(strategy_id="long_mr")
+            }
+        },
+        config={
+            "hard_stale_signal_entry_gate_enabled": True,
+            "max_signal_close_to_entry_seconds": 900.0,
+        },
+    )
+    now = pd.Timestamp.now(tz="UTC")
+    result = executor.execute_trade(
+        "BTC/USDT",
+        "long",
+        10.0,
+        price=100.0,
+        bucket_key="long_mr",
+        trade_context={
+            "signal_bar_ts": (now - pd.Timedelta(minutes=80)).isoformat(),
+            "signal_bar_close_ts": (now - pd.Timedelta(minutes=20)).isoformat(),
+        },
+    )
+
+    assert result["success"] is False
+    assert result["status"] == "rejected"
+    assert result["error_category"] == "stale_signal_age_exceeded"
+    assert result["signal_close_to_entry_seconds"] > 900.0
+    assert executor.get_active_positions() == {}
 
 
 def test_reattach_requires_policy_provenance(monkeypatch):

@@ -208,15 +208,17 @@ class DataFetcher:
             market_data_root = Path(scoped_data_root(cfg))
         self.orderbook_dir = market_data_root / "orderbook_hourly"
         self.funding_dir = market_data_root / "funding_hourly"
+        self.open_interest_dir = market_data_root / "open_interest_hourly"
         self.orderbook_dir.mkdir(parents=True, exist_ok=True)
         self.funding_dir.mkdir(parents=True, exist_ok=True)
+        self.open_interest_dir.mkdir(parents=True, exist_ok=True)
         self.api_error_counts: Dict[str, int] = {}
         self.dead_letter_symbols: Dict[str, str] = {}
         self._perp_exchange: Optional[Any] = None
         self._symbols_without_perp_funding: set[str] = set()
         self._ohlcv_cache: Dict[str, pd.DataFrame] = {}
         self._microdata_symbol_cache: Dict[
-            str, tuple[Optional[float], Optional[float], Dict[str, pd.Series]]
+            str, tuple[Optional[float], Optional[float], Optional[float], Dict[str, pd.Series]]
         ] = {}
         self._ticker_snapshot_cache: tuple[float, Dict[str, Dict[str, Any]]] | None = None
         self._ticker_snapshot_lock = threading.Lock()
@@ -281,11 +283,19 @@ class DataFetcher:
         key = self._symbol_file_key(symbol)
         obp = self.orderbook_dir / f"{key}.parquet"
         frp = self.funding_dir / f"{key}.parquet"
+        oip = self.open_interest_dir / f"{key}.parquet"
         ob_mtime = obp.stat().st_mtime if obp.exists() else None
         fr_mtime = frp.stat().st_mtime if frp.exists() else None
+        oi_mtime = oip.stat().st_mtime if oip.exists() else None
         cached = self._microdata_symbol_cache.get(symbol)
-        if cached and cached[0] == ob_mtime and cached[1] == fr_mtime:
-            by_field = cached[2]
+        if (
+            cached
+            and cached[0] == ob_mtime
+            and cached[1] == fr_mtime
+            and len(cached) >= 4
+            and cached[2] == oi_mtime
+        ):
+            by_field = cached[3]
             idx_union = None
             for series in by_field.values():
                 idx_union = (
@@ -333,8 +343,37 @@ class DataFetcher:
                         fr[field_name], errors="coerce"
                     ).astype(np.float32)
             idx_union = fr.index if idx_union is None else idx_union.union(fr.index)
+        if oip.exists():
+            oi = pd.read_parquet(oip)
+            oi.index = pd.to_datetime(oi.index, utc=True)
+            oi = oi[~oi.index.duplicated(keep="last")].sort_index()
+            oi_col = None
+            for candidate in (
+                "open_interest",
+                "openInterestValue",
+                "sumOpenInterestValue",
+                "openInterestAmount",
+                "openInterest",
+                "sumOpenInterest",
+            ):
+                if candidate in oi.columns:
+                    oi_col = candidate
+                    break
+            if oi_col is not None:
+                oi_series = pd.to_numeric(oi[oi_col], errors="coerce").astype(
+                    np.float32
+                )
+                existing = by_field.get("open_interest")
+                if existing is not None:
+                    # Funding-hourly is updated from the live ticker and can be
+                    # fresher; open_interest_hourly provides the dense
+                    # historical contract needed by 3d/7d OI features.
+                    by_field["open_interest"] = existing.combine_first(oi_series)
+                else:
+                    by_field["open_interest"] = oi_series
+                idx_union = oi.index if idx_union is None else idx_union.union(oi.index)
 
-        self._microdata_symbol_cache[symbol] = (ob_mtime, fr_mtime, by_field)
+        self._microdata_symbol_cache[symbol] = (ob_mtime, fr_mtime, oi_mtime, by_field)
         return idx_union, by_field
 
     def _record_api_error(self, symbol: str, exc: Exception, *, context: str) -> None:
@@ -1031,6 +1070,7 @@ class DataFetcher:
         microdata_failed = 0
         microdata_canceled = 0
         symbols_to_fetch: list[str] = []
+        skipped_existing_symbols: list[str] = []
         for sym in symbols:
             try:
                 cached_bar = self.ohlcv_store.load(
@@ -1042,6 +1082,7 @@ class DataFetcher:
                     hourly_index = pd.DatetimeIndex(cached_bar.index)
                     if bool((hourly_index == target_hour).any()):
                         skipped_existing += 1
+                        skipped_existing_symbols.append(sym)
                         continue
             except Exception:
                 pass
@@ -1054,6 +1095,49 @@ class DataFetcher:
             f"target_hour={target_hour}"
         )
         started_at = time.monotonic()
+        if refresh_microdata and skipped_existing_symbols:
+            # OHLCV target-hour bars and derivative microdata have independent
+            # freshness. A restart can have the candle already on disk while
+            # the current ticker-derived OI/funding/mark snapshot is missing;
+            # refreshing skipped-current symbols keeps OI-derived model
+            # contracts finite without redownloading the hourly candle.
+            microdata_symbols.extend(skipped_existing_symbols)
+
+        target_hour_first = str(
+            os.environ.get("EPM_HOURLY_FETCH_TARGET_HOUR_FIRST", "1")
+        ).strip().lower() not in {"0", "false", "no", "off"}
+        if (
+            check_recent_gaps_days > 0
+            and skipped_existing_symbols
+            and not target_hour_first
+        ):
+            def _gap_backfill_skipped(sym: str) -> Optional[pd.DataFrame]:
+                if not self.has_recent_gap(sym, days=check_recent_gaps_days):
+                    return None
+                backfilled = self.trigger_hourly_gap_backfill(
+                    sym,
+                    days=check_recent_gaps_days,
+                )
+                self._invalidate_symbol_cache(sym, microdata=False)
+                return backfilled
+
+            gap_workers = max(1, min(workers, len(skipped_existing_symbols)))
+            with ThreadPoolExecutor(max_workers=gap_workers) as gap_executor:
+                gap_futures = {
+                    gap_executor.submit(_gap_backfill_skipped, sym): sym
+                    for sym in skipped_existing_symbols
+                }
+                for fut in as_completed(gap_futures):
+                    sym = gap_futures[fut]
+                    try:
+                        backfilled = fut.result()
+                        if isinstance(backfilled, pd.DataFrame) and not backfilled.empty:
+                            out[sym] = backfilled
+                            gap_backfills += 1
+                    except Exception as exc:
+                        failed += 1
+                        self._record_api_error(sym, exc, context="gap_backfill")
+
         executor = ThreadPoolExecutor(max_workers=workers)
         futures = {
             executor.submit(
@@ -1097,12 +1181,13 @@ class DataFetcher:
                         sym, days=check_recent_gaps_days
                     ):
                         try:
-                            self.trigger_gap_backfill(
+                            backfilled = self.trigger_hourly_gap_backfill(
                                 sym,
                                 days=check_recent_gaps_days,
-                                backfill_fn=backfill_fn,
                             )
                             self._invalidate_symbol_cache(sym, microdata=False)
+                            if isinstance(backfilled, pd.DataFrame) and not backfilled.empty:
+                                out[sym] = backfilled
                             gap_backfills += 1
                         except Exception as exc:
                             failed += 1
@@ -1110,7 +1195,49 @@ class DataFetcher:
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
 
+        if (
+            check_recent_gaps_days > 0
+            and skipped_existing_symbols
+            and target_hour_first
+            and str(
+                os.environ.get("EPM_HOURLY_GAP_BACKFILL_AFTER_TARGET_FETCH", "1")
+            ).strip().lower()
+            not in {"0", "false", "no", "off"}
+        ):
+            tprint(
+                "Hourly target-hour fetch finished; starting optional recent-gap "
+                f"repair for skipped-current symbols={len(skipped_existing_symbols)}"
+            )
+
+            def _gap_backfill_skipped(sym: str) -> Optional[pd.DataFrame]:
+                if not self.has_recent_gap(sym, days=check_recent_gaps_days):
+                    return None
+                backfilled = self.trigger_hourly_gap_backfill(
+                    sym,
+                    days=check_recent_gaps_days,
+                )
+                self._invalidate_symbol_cache(sym, microdata=False)
+                return backfilled
+
+            gap_workers = max(1, min(workers, len(skipped_existing_symbols)))
+            with ThreadPoolExecutor(max_workers=gap_workers) as gap_executor:
+                gap_futures = {
+                    gap_executor.submit(_gap_backfill_skipped, sym): sym
+                    for sym in skipped_existing_symbols
+                }
+                for fut in as_completed(gap_futures):
+                    sym = gap_futures[fut]
+                    try:
+                        backfilled = fut.result()
+                        if isinstance(backfilled, pd.DataFrame) and not backfilled.empty:
+                            out[sym] = backfilled
+                            gap_backfills += 1
+                    except Exception as exc:
+                        failed += 1
+                        self._record_api_error(sym, exc, context="gap_backfill")
+
         if refresh_microdata and microdata_symbols:
+            microdata_symbols = list(dict.fromkeys(microdata_symbols))
             microdata_workers = max(
                 1, min(int(microdata_workers), len(microdata_symbols), worker_cap)
             )
@@ -1208,6 +1335,28 @@ class DataFetcher:
             # Backward-compatible signatures in tests/mocks.
             return fn(self.exchange, symbol, start_ts, end_ts)
 
+    def trigger_hourly_gap_backfill(
+        self,
+        symbol: str,
+        *,
+        days: int = 7,
+    ) -> Optional[pd.DataFrame]:
+        """Backfill recent missing 1h OHLCV rows in the inference hourly store."""
+        end_ts = pd.Timestamp.now(tz="UTC")
+        start_ts = end_ts - pd.Timedelta(days=int(days))
+        new_data = self.fetch_ohlcv(symbol, start=start_ts, end=end_ts)
+        if new_data is None or not isinstance(new_data, pd.DataFrame) or new_data.empty:
+            return pd.DataFrame()
+        existing = self.ohlcv_store.load(symbol, start_ts=None, end_ts=None)
+        merged = (
+            self._resample_and_merge(existing, new_data)
+            if isinstance(existing, pd.DataFrame) and not existing.empty
+            else new_data
+        )
+        if isinstance(merged, pd.DataFrame) and not merged.empty:
+            self.ohlcv_store.save_partitioned(symbol=symbol, df=merged)
+        return new_data
+
     def needs_incremental_update(self, symbol: str) -> bool:
         """Cheap probe using latest exchange kline (limit=1) vs local store tail."""
         try:
@@ -1277,10 +1426,9 @@ class DataFetcher:
                 ):
                     tprint(f"Detected recent gap for {sym}; invoking backfill")
                     try:
-                        self.trigger_gap_backfill(
+                        self.trigger_hourly_gap_backfill(
                             sym,
                             days=check_recent_gaps_days,
-                            backfill_fn=backfill_fn,
                         )
                         gap_backfills += 1
                     except Exception as exc:
@@ -1480,7 +1628,12 @@ class DataFetcher:
             self._log_microdata_error(symbol, exc, context="microdata_funding")
         return out
 
-    def _load_microdata_panel(self, symbols: List[str]) -> Dict[str, pd.DataFrame]:
+    def _load_microdata_panel(
+        self,
+        symbols: List[str],
+        *,
+        start_ts: Optional[pd.Timestamp] = None,
+    ) -> Dict[str, pd.DataFrame]:
         idx_union = None
         orderbook_fields = {
             "mid": {},
@@ -1507,14 +1660,23 @@ class DataFetcher:
         for sym in symbols:
             sym_idx, by_field = self._load_microdata_symbol_cached(sym)
             if sym_idx is not None:
+                if start_ts is not None:
+                    sym_idx = pd.DatetimeIndex(sym_idx)
+                    sym_idx = sym_idx[sym_idx >= pd.Timestamp(start_ts)]
+                    if sym_idx.empty:
+                        continue
                 idx_union = sym_idx if idx_union is None else idx_union.union(sym_idx)
             for field_name in orderbook_fields:
                 series = by_field.get(f"orderbook_{field_name}")
                 if series is not None:
+                    if start_ts is not None:
+                        series = series[series.index >= pd.Timestamp(start_ts)]
                     orderbook_fields[field_name][sym] = series
             for field_name in microdata_fields:
                 series = by_field.get(field_name)
                 if series is not None:
+                    if start_ts is not None:
+                        series = series[series.index >= pd.Timestamp(start_ts)]
                     microdata_fields[field_name][sym] = series
         if idx_union is None:
             return {}
@@ -1591,7 +1753,7 @@ class DataFetcher:
             f"cache_misses={cache_misses} lookback_hours={lookback_hours}"
         )
         panel = get_panel_from_dict(ohlcv_data)
-        micro_panel = self._load_microdata_panel(symbols)
+        micro_panel = self._load_microdata_panel(symbols, start_ts=start_ts)
         for key, frame in micro_panel.items():
             existing = panel.get(key)
             if (

@@ -47,6 +47,58 @@ def test_portfolio_policy_loads_artifact_before_runtime(tmp_path):
     assert policy.initial_rank_threshold == 0.93
 
 
+def test_portfolio_policy_honors_policy_artifact_root_override(tmp_path, monkeypatch):
+    root = tmp_path / "data"
+    active = root / "artifacts" / "RID" / "policy_params"
+    active.mkdir(parents=True)
+    (active / "optimized_portfolio_policy_config.json").write_text(
+        json.dumps(
+            {
+                "max_concurrent_positions": 12,
+                "strategy_contract": {"strategy_ids": ["long_stale"]},
+            }
+        )
+    )
+    override = tmp_path / "policy_override" / "policy_params"
+    override.mkdir(parents=True)
+    (override / "optimized_portfolio_policy_config.json").write_text(
+        json.dumps(
+            {
+                "max_concurrent_positions": 4,
+                "strategy_contract": {"strategy_ids": ["long_current"]},
+            }
+        )
+    )
+
+    monkeypatch.setenv("EPM_INFERENCE_POLICY_ARTIFACT_ROOT", str(override.parent))
+    policy = load_portfolio_policy_config(data_root=str(root), run_id="RID")
+
+    assert policy.max_concurrent_positions == 4
+    assert policy.strategy_ids == ("long_current",)
+
+
+def test_portfolio_policy_uses_override_replay_config_when_policy_params_missing(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "data"
+    active = root / "artifacts" / "RID" / "policy_params"
+    active.mkdir(parents=True)
+    (active / "optimized_portfolio_policy_config.json").write_text(
+        json.dumps({"strategy_contract": {"strategy_ids": ["long_stale"]}})
+    )
+    override = tmp_path / "policy_override"
+    replay = override / "portfolio_policy_replay"
+    replay.mkdir(parents=True)
+    (replay / "optimized_portfolio_policy_config.json").write_text(
+        json.dumps({"strategy_contract": {"strategy_ids": ["long_current"]}})
+    )
+
+    monkeypatch.setenv("EPM_INFERENCE_POLICY_ARTIFACT_ROOT", str(override))
+    policy = load_portfolio_policy_config(data_root=str(root), run_id="RID")
+
+    assert policy.strategy_ids == ("long_current",)
+
+
 def test_portfolio_policy_loads_nested_artifact_sections_and_aliases(tmp_path):
     root = tmp_path / "data"
     path = root / "artifacts" / "RID" / "policy_params"

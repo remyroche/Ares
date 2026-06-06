@@ -231,8 +231,13 @@ def _policy_rank_reference_path(
     data_root: Path,
     run_id: str,
     strategy_id: str,
+    rank_reference_dir: Path | None = None,
 ) -> Path:
-    root = data_root / "artifacts" / run_id / "simple_policy_optimiser" / "rank_reference"
+    root = (
+        Path(rank_reference_dir)
+        if rank_reference_dir is not None
+        else data_root / "artifacts" / run_id / "simple_policy_optimiser" / "rank_reference"
+    )
     for alias in strategy_rank_reference_aliases(strategy_id):
         path = root / f"{_safe_strategy_filename(alias)}.parquet"
         if path.exists():
@@ -250,8 +255,14 @@ def _sample_policy_rank_reference_rows(
     *,
     sample_rows: int,
     min_timestamp: str | None,
+    rank_reference_dir: Path | None = None,
 ) -> pd.DataFrame:
-    path = _policy_rank_reference_path(data_root, run_id, strategy_id)
+    path = _policy_rank_reference_path(
+        data_root,
+        run_id,
+        strategy_id,
+        rank_reference_dir=rank_reference_dir,
+    )
     tprint(f"Loading policy rank-reference rows from {path}")
     df = pd.read_parquet(path)
     if df.empty:
@@ -533,6 +544,7 @@ def _build_runtime_cfg(
     feature_source_run_id: str | None = None,
     disable_rolling_cache: bool = False,
     disable_offline_cache: bool = False,
+    offline_allowed_periods=None,
 ) -> dict[str, Any]:
     try:
         feature_cfg = load_inference_config(
@@ -573,6 +585,8 @@ def _build_runtime_cfg(
         runtime_cfg["live_feature_rolling_cache_enabled"] = False
     if disable_offline_cache:
         runtime_cfg["live_feature_offline_cache_enabled"] = False
+    if offline_allowed_periods:
+        runtime_cfg["live_feature_offline_allowed_periods"] = offline_allowed_periods
     bundle = state.get("bundle", {}) if isinstance(state.get("bundle"), dict) else {}
     runtime_cfg.setdefault("bundle", bundle)
     for key in (
@@ -925,6 +939,24 @@ def main() -> int:
     )
     parser.add_argument("--max-symbols", type=int, default=0)
     parser.add_argument("--min-timestamp", default=None)
+    parser.add_argument(
+        "--rank-reference-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Override simple_policy_optimiser rank-reference directory for "
+            "policy_rank_reference sampling and score comparison."
+        ),
+    )
+    parser.add_argument(
+        "--policy-artifact-root",
+        type=Path,
+        default=None,
+        help=(
+            "Override the inference policy artifact root used for strategy_for_inference "
+            "and best_policy_params lookups during replay."
+        ),
+    )
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument(
         "--basket-mode",
@@ -955,6 +987,8 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
+    if args.policy_artifact_root is not None:
+        os.environ["EPM_INFERENCE_POLICY_ARTIFACT_ROOT"] = str(args.policy_artifact_root)
 
     started = time.monotonic()
     artifact_data_root = args.artifact_data_root or args.data_root
@@ -974,6 +1008,7 @@ def main() -> int:
             strategy_id,
             sample_rows=args.sample_rows,
             min_timestamp=args.min_timestamp,
+            rank_reference_dir=args.rank_reference_dir,
         )
     else:
         meta_path = _meta_oof_path(artifact_data_root, args.run_id, args.strategy_id)
@@ -1063,6 +1098,23 @@ def main() -> int:
 
     tprint("Loading trained model state and transform contract")
     state = load_full_state(args.run_id, str(artifact_data_root))
+    unique_sample_timestamps = sorted(pd.to_datetime(samples["timestamp"], utc=True).dropna().unique())
+    offline_allowed_periods = None
+    if unique_sample_timestamps:
+        offline_allowed_periods = [
+            (
+                pd.Timestamp(sample_ts),
+                pd.Timestamp(sample_ts) + pd.Timedelta(microseconds=1),
+            )
+            for sample_ts in unique_sample_timestamps
+        ]
+        tprint(
+            "Historical inference parity: using exact-timestamp selected-feature "
+            "cache windows for offline feature load "
+            f"timestamps={len(offline_allowed_periods)} "
+            f"first={pd.Timestamp(unique_sample_timestamps[0])} "
+            f"last={pd.Timestamp(unique_sample_timestamps[-1])}"
+        )
     feature_cfg = _build_runtime_cfg(
         data_root=args.data_root,
         artifact_data_root=artifact_data_root,
@@ -1072,6 +1124,7 @@ def main() -> int:
         feature_source_run_id=args.feature_source_run_id,
         disable_rolling_cache=bool(args.disable_rolling_cache),
         disable_offline_cache=bool(args.disable_offline_cache),
+        offline_allowed_periods=offline_allowed_periods,
     )
     required_keys = _feature_columns_for_state(state, strategy_id)
     tprint(f"Initial required feature contract keys: {len(required_keys):,}")
@@ -1232,7 +1285,12 @@ def main() -> int:
         calibration_data = load_calibration_curves(str(artifact_data_root), args.run_id)
         policy_rank_scores = None
         if args.sample_source == "policy_rank_reference":
-            ref_path = _policy_rank_reference_path(artifact_data_root, args.run_id, strategy_id)
+            ref_path = _policy_rank_reference_path(
+                artifact_data_root,
+                args.run_id,
+                strategy_id,
+                rank_reference_dir=args.rank_reference_dir,
+            )
             ref = pd.read_parquet(ref_path, columns=["calibrated_score"])
             policy_rank_scores = pd.to_numeric(
                 ref["calibrated_score"], errors="coerce"

@@ -681,6 +681,95 @@ def load_trained_symbol_universe(
     return symbols
 
 
+def load_cross_strategy_oos_symbol_allowlist(
+    data_root: str,
+    run_id: str,
+) -> Set[str]:
+    """Load deployable symbols that passed cross-strategy OOS symbol evidence."""
+    if str(os.environ.get("EPM_DISABLE_CROSS_STRATEGY_OOS_SYMBOL_FILTER", "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return set()
+    path = (
+        Path(data_root)
+        / "artifacts"
+        / str(run_id)
+        / "policy_params"
+        / "cross_strategy_symbol_oos_eligibility.json"
+    )
+    if not path.exists():
+        return set()
+    try:
+        payload = json.loads(path.read_text())
+    except Exception as exc:
+        tprint(f"Warning: failed to load cross-strategy OOS symbol eligibility {path}: {exc}")
+        return set()
+    symbols = payload.get("deployable_symbol_list") or []
+    out = {
+        normalise_symbol(str(sym).replace("_", "/"))
+        for sym in symbols
+        if str(sym).strip()
+    }
+    if out:
+        tprint(
+            "Loaded cross-strategy OOS symbol allowlist: "
+            f"symbols={len(out)} path={path}"
+        )
+    return out
+
+
+def load_active_untrained_symbol_expansion_allowlist(
+    data_root: str,
+    run_id: str,
+) -> Set[str]:
+    """Load stable active-untrained symbols approved by expansion backtests."""
+    if str(os.environ.get("EPM_DISABLE_ACTIVE_UNTRAINED_SYMBOL_EXPANSION", "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return set()
+    root = Path(data_root) / "artifacts" / str(run_id) / "symbol_expansion"
+    windows = [
+        root / "latest_trainingpath_context_fix_4w" / "tradeable_symbol_expansion.json",
+        root / "latest_trainingpath_context_fix_8w" / "tradeable_symbol_expansion.json",
+    ]
+    symbol_sets: List[Set[str]] = []
+    for path in windows:
+        if not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text())
+        except Exception as exc:
+            tprint(f"Warning: failed to load active-untrained expansion {path}: {exc}")
+            continue
+        symbols = payload.get("eligible_symbols") or []
+        out = {
+            normalise_symbol(str(sym).replace("_", "/"))
+            for sym in symbols
+            if str(sym).strip()
+        }
+        if out:
+            symbol_sets.append(out)
+            tprint(
+                "Loaded active-untrained symbol expansion window: "
+                f"symbols={len(out)} path={path}"
+            )
+    if not symbol_sets:
+        return set()
+    stable = set.intersection(*symbol_sets)
+    if stable:
+        tprint(
+            "Loaded stable active-untrained symbol expansion allowlist: "
+            f"symbols={len(stable)} windows={len(symbol_sets)}"
+        )
+    return stable
+
+
 def resolve_inference_universes(
     exchange: Any,
     *,
@@ -763,28 +852,79 @@ def resolve_inference_universes(
     trained_symbols = load_trained_symbol_universe(
         data_root, run_id, accepted_strategy_ids=accepted_strategy_ids
     )
+    oos_allowlist = load_cross_strategy_oos_symbol_allowlist(data_root, run_id)
+    active_untrained_allowlist = load_active_untrained_symbol_expansion_allowlist(
+        data_root,
+        run_id,
+    )
+    expansion_allowlist = set(active_untrained_allowlist)
     if trained_symbols:
         trained_bases = symbol_bases(trained_symbols)
+        oos_bases = symbol_bases(oos_allowlist)
+        active_untrained_bases = symbol_bases(active_untrained_allowlist)
+        expansion_bases = symbol_bases(expansion_allowlist)
+        allowed_bases = set(trained_bases).union(expansion_bases)
         tradable_symbols = sorted(
             sym
             for sym in set(live_symbols)
-            if _normalise_symbol(sym).split("/")[0] in trained_bases
+            if _normalise_symbol(sym).split("/")[0] in allowed_bases
         )
         dropped = len(set(live_symbols) - set(tradable_symbols))
+        expanded = [
+            sym
+            for sym in tradable_symbols
+            if _normalise_symbol(sym).split("/")[0] in expansion_bases
+            and _normalise_symbol(sym).split("/")[0] not in trained_bases
+        ]
         tprint(
-            f"Tradable universe restricted to trained symbols: "
+            f"Tradable universe restricted to trained plus active-untrained expansion-approved symbols: "
             f"download={len(live_symbols)} tradable={len(tradable_symbols)} "
-            f"dropped_untrained={dropped} live_quote={live_quote_currency}"
+            f"dropped_unapproved={dropped} "
+            f"trained_bases={len(trained_bases)} "
+            f"active_untrained_expansion_bases={len(active_untrained_bases)} "
+            f"cross_strategy_oos_diagnostic_bases={len(oos_bases)} "
+            f"expanded_live_symbols={len(expanded)} "
+            f"live_quote={live_quote_currency}"
         )
     else:
-        tradable_symbols = live_symbols
+        if expansion_allowlist:
+            expansion_bases = symbol_bases(expansion_allowlist)
+            tradable_symbols = sorted(
+                sym
+                for sym in set(live_symbols)
+                if _normalise_symbol(sym).split("/")[0] in expansion_bases
+            )
+            tprint(
+                "No trained symbol universe artifact found; restricting tradable "
+                "universe to OOS/expansion-approved symbols: "
+                f"download={len(live_symbols)} tradable={len(tradable_symbols)} "
+                f"expansion_bases={len(expansion_bases)} live_quote={live_quote_currency}"
+            )
+        else:
+            tradable_symbols = live_symbols
+            tprint(
+                "Warning: no trained or cross-strategy OOS symbol universe artifact "
+                "found; using live universe for tradability"
+            )
+    if expansion_allowlist:
+        expansion_bases = symbol_bases(expansion_allowlist)
+        covered = [
+            sym
+            for sym in tradable_symbols
+            if _normalise_symbol(sym).split("/")[0] in expansion_bases
+        ]
         tprint(
-            "Warning: no trained symbol universe artifact found; "
-            "using live universe for tradability"
+            "OOS symbol evidence loaded for tradable-universe expansion: "
+            f"active_untrained_stable={len(active_untrained_allowlist)} "
+            f"cross_strategy_diagnostic_only={len(oos_allowlist)} "
+            f"covered_tradable={len(covered)} "
+            f"tradable={len(tradable_symbols)}"
         )
     return {
         "download_symbols": live_symbols,
         "tradable_symbols": tradable_symbols,
         "trained_symbols": sorted(trained_symbols),
         "live_quote_currency": live_quote_currency,
+        "cross_strategy_oos_symbols": sorted(oos_allowlist),
+        "active_untrained_expansion_symbols": sorted(active_untrained_allowlist),
     }

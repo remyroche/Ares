@@ -48,3 +48,11 @@ Action: In feature injection (`pipeline_steps.py`), replace `pd.concat([df, pd.D
 Learning: `iterrows()` in pandas is extremely slow due to box/unbox overhead and index checking. Simple iteration is often better performed by converting dataframe columns to numpy arrays and using `zip()` to iterate, or vectorizing the operations entirely, especially inside inner loops for tasks like pruning dominance fronts or pairwise metrics processing.
 Action: Search for and replace `iterrows()` with vectorized alternatives or numpy iteration whenever optimizing loops in a DataFrame.
 ## 2026-04-21 - [Data Converter] Learning: Iterating through DataFrame rows with iterrows() to build OHLC mapping or fallback stats is critically slow. Action: Extract columns using .values and iterate via zip() or vectorize with boolean masking.
+
+## 2024-05-18 - Replacing iterrows with Vectorized pandas/numpy operations
+Learning: Pandas `iterrows()` is incredibly slow, especially within inner loops of inference or ledger processing, as it reconstructs a Pandas Series for every single row.
+Action: Use `zip()` over `df[col].to_numpy()` for operations requiring row-wise logical state tracking, or pandas vectorized operations like `.intersection()` and `.concat()` for ledger deduplication and insert logic.
+
+## 2024-05-18 - Fast 'as_of' joins on Datetime sequences
+Learning: Manual fallback joins for finding the "nearest" row by timestamp (e.g., using `deltas.idxmin()`) in an O(N*M) loop is a massive bottleneck.
+Action: Use `pd.merge_asof(direction="nearest", by=group_cols)` after correctly aligning datetime types (`utc=True`) and sorting both dataframes by their respective time columns. This achieves O(N log M) and drastically improves performance.

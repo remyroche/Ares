@@ -190,12 +190,22 @@ class PredictionLedger:
             return
         old_idx = old.set_index(key_cols, drop=False)
         upd_idx = updates.set_index(key_cols, drop=False)
-        for key, row in upd_idx.iterrows():
-            if key in old_idx.index:
-                for col, value in row.items():
-                    old_idx.loc[key, col] = value
-            else:
-                old_idx = pd.concat([old_idx, row.to_frame().T], axis=0, sort=False)
+
+        upd_idx = upd_idx[~upd_idx.index.duplicated(keep="last")]
+
+        common_idx = upd_idx.index.intersection(old_idx.index)
+        new_idx = upd_idx.index.difference(old_idx.index)
+
+        missing_cols = [c for c in upd_idx.columns if c not in old_idx.columns]
+        for c in missing_cols:
+            old_idx[c] = pd.NA
+
+        if not common_idx.empty:
+            old_idx.loc[common_idx, upd_idx.columns] = upd_idx.loc[common_idx]
+
+        if not new_idx.empty:
+            old_idx = pd.concat([old_idx, upd_idx.loc[new_idx]], axis=0, sort=False)
+
         self._write_atomic(old_idx.reset_index(drop=True))
 
 

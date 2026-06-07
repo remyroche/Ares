@@ -169,9 +169,7 @@ class PredictionLedger:
                 new[col] = pd.NA
         for ts_col in ("timestamp", "signal_bar_ts", "decision_ts"):
             if ts_col in new.columns:
-                new[ts_col] = pd.to_datetime(
-                    new[ts_col], utc=True, errors="coerce"
-                )
+                new[ts_col] = pd.to_datetime(new[ts_col], utc=True, errors="coerce")
         old = self._read()
         out = new if old.empty else pd.concat([old, new], ignore_index=True, sort=False)
         subset = [
@@ -224,12 +222,24 @@ class PredictionLedger:
             return
         old_idx = old.set_index(key_cols, drop=False)
         upd_idx = updates.set_index(key_cols, drop=False)
-        for key, row in upd_idx.iterrows():
-            if key in old_idx.index:
-                for col, value in row.items():
-                    old_idx.loc[key, col] = value
-            else:
-                old_idx = pd.concat([old_idx, row.to_frame().T], axis=0, sort=False)
+
+        # Handle schema evolution by explicitly adding missing columns using pd.NA
+        missing_cols = set(upd_idx.columns) - set(old_idx.columns)
+        for col in missing_cols:
+            old_idx[col] = pd.NA
+
+        common_idx = upd_idx.index.intersection(old_idx.index)
+        if len(common_idx) > 0:
+            # Deduplicate upd_idx to prevent 'cannot reindex' errors
+            upd_dedup = upd_idx.loc[common_idx][
+                ~upd_idx.loc[common_idx].index.duplicated(keep="last")
+            ]
+            old_idx.loc[upd_dedup.index, upd_dedup.columns] = upd_dedup
+
+        new_idx = upd_idx.index.difference(old_idx.index)
+        if len(new_idx) > 0:
+            old_idx = pd.concat([old_idx, upd_idx.loc[new_idx]], axis=0, sort=False)
+
         self._write_atomic(old_idx.reset_index(drop=True))
 
 

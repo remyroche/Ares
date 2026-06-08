@@ -1,0 +1,83 @@
+{
+  "distillation": {
+    "distill_age_impact": 0.5,
+    "distill_error_power": 1.0,
+    "distill_missed_net_power": 1.0,
+    "distill_net_loss_power": 1.0,
+    "distill_rank_focus_temperature": 0.08,
+    "distill_rank_focus_threshold": 0.8,
+    "distill_stop_hit_focus": 0.0,
+    "economic_error_mix": 0.0,
+    "false_negative_focus": 0.5,
+    "false_positive_focus": 1.0
+  },
+  "execution_costs": {},
+  "geometry": {
+    "enabled": true,
+    "geometry_anchor_mix": 0.627615374021725,
+    "label_horizon_bars": 6.0,
+    "mae_failure_vol_mult": 1.1729252536574715,
+    "min_executable_net_bps": 113.00349431240124,
+    "sl_as_tp_pct": 0.39038041360475517,
+    "timeout_value": 0.5155303965016674,
+    "tp_vol_mult": 0.4374426230782946,
+    "trailing_activation_vol_mult": 0.5091020822378932,
+    "trailing_giveback_pct": 0.8530628836367063
+  },
+  "label": {
+    "mae_penalty_scale": 3.7508550313931353,
+    "max_bad_path_soft_label": 0.4053630890684389,
+    "max_stop_soft_label": 0.33748553342933646,
+    "mfe_scale_bps": 174.223036196552,
+    "net_return_center_bps": 133.9145555124533,
+    "net_return_temperature_bps": 76.29805667159955,
+    "path_quality_mix": 0.7089200008967065,
+    "stop_penalty": 0.7986656195665447
+  },
+  "name": "trial_39",
+  "objective": {
+    "base_k_multiplier": 2.0,
+    "edge_lcb_se_divisor": 1.64,
+    "hit_fee_floor_bps": 0.0,
+    "impact_scale_bps": 75.0,
+    "max_avg_stop_loss_bps_at_20": 125.0,
+    "max_stop_hit_rate_at_20": 0.35,
+    "max_symbol_hhi_at_20": 0.25,
+    "max_week_hhi_at_20": 0.35,
+    "max_window_stop_hit_rate_at_20": 0.5,
+    "min_mean_net_bps_at_20": 0.0,
+    "min_unique_symbols_at_20": 6.0,
+    "min_window_mean_net_bps_at_20": 0.0,
+    "portfolio_alignment_strength": 0.0
+  },
+  "provenance": {
+    "cv_mode": "interleaved_spread",
+    "features": "frozen_native_preset",
+    "hyperparameters": "frozen_native_preset_except_n_estimators_cap",
+    "lgbm_early_stopping_rounds": 30,
+    "lgbm_hpo_trials": 0,
+    "lgbm_n_estimators_cap": 200,
+    "max_trees": 200,
+    "max_trees_env": "EPM_LGBM_N_ESTIMATORS_CAP=200",
+    "phase": "labels",
+    "study_patience_trials": 40,
+    "study_pruner": "successive_halving",
+    "subsample": "spread_through_full_period"
+  },
+  "stage": "all",
+  "version": 1,
+  "weight": {
+    "ambiguous_weight": 0.6,
+    "class_rebalance_strength": 0.5,
+    "concurrency_penalty": 0.25,
+    "concurrency_window_hours": 1.0,
+    "hard_negative_weight": 1.25,
+    "mae_weight_power": 0.75,
+    "mfe_weight_power": 0.75,
+    "net_ev_weight_power": 1.0,
+    "path_quality_strength": 0.0,
+    "positive_mass_target": 0.45,
+    "recency_half_life_days": 300.0,
+    "robustness_strength": 0.0
+  }
+}

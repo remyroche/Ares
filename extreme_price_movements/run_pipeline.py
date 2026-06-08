@@ -409,6 +409,27 @@ def _maybe_extend_training_stage_to_latest(stage_view: dict, *, stage_name: str)
     view["disable_exact_plan_row_filter"] = True
     view["extended_to_latest"] = True
     view["stage_name"] = view.get("stage_name") or stage_name
+    recent_days_raw = str(os.environ.get("EPM_TRAIN_RECENT_DAYS", "")).strip()
+    if recent_days_raw:
+        try:
+            recent_days = max(1.0, float(recent_days_raw))
+            recent_start = pd.Timestamp.utcnow() - pd.Timedelta(days=recent_days)
+            existing_start = pd.to_datetime(
+                view.get("allowed_start_ts") or view.get("fit_start"),
+                utc=True,
+                errors="coerce",
+            )
+            if pd.isna(existing_start) or recent_start > existing_start:
+                view["allowed_start_ts"] = recent_start.isoformat()
+                view["fit_start"] = recent_start.isoformat()
+            tprint(
+                f"{stage_name}: EPM_TRAIN_RECENT_DAYS={recent_days:g}; "
+                f"clamped start={view.get('allowed_start_ts') or view.get('fit_start')}."
+            )
+        except Exception as exc:
+            tprint(
+                f"{stage_name}: ignored invalid EPM_TRAIN_RECENT_DAYS={recent_days_raw!r}: {exc}"
+            )
     tprint(
         f"{stage_name}: EPM_TRAIN_EXTEND_TO_LATEST=1; preserving "
         f"start={view.get('allowed_start_ts') or view.get('fit_start') or 'artifact-start'} "
@@ -417,6 +438,20 @@ def _maybe_extend_training_stage_to_latest(stage_view: dict, *, stage_name: str)
         f"allowed_periods={'yes' if original_periods else 'no'}."
     )
     return view
+
+
+def _load_training_slice_plan(cfg: dict, source_ts_sig: pd.Timestamp) -> dict:
+    """Load the training slice plan, optionally pinned for reproducible comparisons."""
+    override_raw = str(os.environ.get("EPM_TRAIN_SLICE_PLAN_PATH", "") or "").strip()
+    if override_raw:
+        override_path = Path(override_raw).expanduser()
+        with override_path.open("r", encoding="utf-8") as f:
+            slice_plan = json.load(f)
+        tprint(f"Training slice plan override loaded from {override_path}")
+        return slice_plan
+    return load_or_build_slice_plan(
+        cfg, source_ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
+    )
 
 
 def _strategy_source_run_id(cfg: dict) -> str:
@@ -2116,9 +2151,7 @@ def run_train(cfg, ts_override=None, base_only=False, meta_only=False, store=Non
 
     # Slice Plan Injection
     try:
-        slice_plan = load_or_build_slice_plan(
-            cfg, source_ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
-        )
+        slice_plan = _load_training_slice_plan(cfg, source_ts_sig)
         _attach_feature_availability_policy_view(cfg, slice_plan, source_ts_sig)
         if "train_base" in slice_plan.get("materialized_views", {}):
             stage_view = slice_plan["materialized_views"]["train_base"]
@@ -2670,7 +2703,7 @@ def run_train_meta(cfg, ts_override=None, store=None):
     cfg["meta_move_top_frac"] = _meta_top_frac
     cfg["meta_trade_topx_values"] = [40]
     _base_target_env = (
-        str(os.getenv("EPM_META_TRAIN_BASE_TARGET_CLF_HEAD", "1")).strip().lower()
+        str(os.getenv("EPM_META_TRAIN_BASE_TARGET_CLF_HEAD", "0")).strip().lower()
     )
     cfg["meta_train_base_target_clf_head"] = _base_target_env not in {
         "0",
@@ -2678,7 +2711,7 @@ def run_train_meta(cfg, ts_override=None, store=None):
         "no",
         "off",
     }
-    _tbm_env = str(os.getenv("EPM_META_TRAIN_TBM_CLF_HEAD", "0")).strip().lower()
+    _tbm_env = str(os.getenv("EPM_META_TRAIN_TBM_CLF_HEAD", "1")).strip().lower()
     cfg["meta_train_tbm_clf_head"] = _tbm_env not in {
         "0",
         "false",
@@ -2783,9 +2816,7 @@ def run_train_meta(cfg, ts_override=None, store=None):
 
     # Slice Plan Injection
     try:
-        slice_plan = load_or_build_slice_plan(
-            cfg, source_ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
-        )
+        slice_plan = _load_training_slice_plan(cfg, source_ts_sig)
         _attach_feature_availability_policy_view(cfg, slice_plan, source_ts_sig)
         if "train_meta" in slice_plan.get("materialized_views", {}):
             stage_view = slice_plan["materialized_views"]["train_meta"]

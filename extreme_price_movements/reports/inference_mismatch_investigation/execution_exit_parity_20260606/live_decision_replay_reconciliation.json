@@ -1,0 +1,56 @@
+{
+  "rows": 255,
+  "candidate_rows": 255,
+  "replay_rows": 255,
+  "live_traded": 12,
+  "replay_accepted": 5,
+  "decision_matches": 238,
+  "decision_mismatches": 17,
+  "gap_classes": {
+    "match": 238,
+    "live_accept_replay_reject": 12,
+    "replay_accept_live_reject": 5
+  },
+  "gap_explanations": {
+    "rank_threshold": 235,
+    "live_traded": 12,
+    "live_stale_signal_or_data_gate": 2,
+    "live_reject:global_auction_symbol_entry_block:recent_losing_trade_cooldown": 2,
+    "live_reject:local_stop_min_distance_invalid": 2,
+    "live_reject:global_auction_adverse_hourly_close_gap:adverse_hourly_close_gap_too_large": 1,
+    "live_reject:global_auction_symbol_entry_block:symbol_already_active": 1
+  },
+  "replay_rejection_reasons": {
+    "nan": 138,
+    "below_dynamic_threshold": 111,
+    "accepted": 5,
+    "max_new_entries_per_bar_reached": 1
+  },
+  "live_portfolio_reasons": {
+    "rank_below_dynamic_threshold": 231,
+    "None": 12,
+    "global_auction_stale_signal_age:stale_signal_age_exceeded": 2,
+    "global_auction_symbol_entry_block:recent_losing_trade_cooldown": 2,
+    "local_stop_min_distance_invalid": 2,
+    "global_auction_portfolio_pre_liquidity:rank_below_dynamic_threshold": 2,
+    "global_auction_adverse_hourly_close_gap:adverse_hourly_close_gap_too_large": 1,
+    "global_auction_price_gap_penalty:rank_below_dynamic_threshold_after_price_gap": 1,
+    "global_auction_portfolio_post_liquidity:rank_below_dynamic_threshold": 1,
+    "global_auction_symbol_entry_block:symbol_already_active": 1
+  },
+  "direct_rank_gate_would_open": 25,
+  "direct_rank_gate_matches": 242,
+  "direct_rank_gate_mismatches": 13,
+  "direct_rank_gate_gap_explanations": {
+    "match": 242,
+    "rank_threshold": 5,
+    "live_stale_signal_or_data_gate": 2,
+    "live_reject:global_auction_symbol_entry_block:recent_losing_trade_cooldown": 2,
+    "live_reject:local_stop_min_distance_invalid": 2,
+    "live_reject:global_auction_adverse_hourly_close_gap:adverse_hourly_close_gap_too_large": 1,
+    "live_reject:global_auction_symbol_entry_block:symbol_already_active": 1
+  },
+  "exact_portfolio_state_replayable_rows": 0,
+  "exact_portfolio_state_replayable_traded_rows": 0,
+  "exact_portfolio_state_replayable_note": "Rows without persisted portfolio state are candidate/rank replay rows, not exact stateful portfolio replay proof."
+}

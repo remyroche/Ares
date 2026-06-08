@@ -1,0 +1,180 @@
+{
+  "number": 13,
+  "params": {
+    "distill_age_impact": 1.4441225547128702,
+    "distill_error_power": 2.0778745591004446,
+    "false_negative_focus": 0.5819934797850894,
+    "false_positive_focus": 0.016726160483709226
+  },
+  "recipe": {
+    "distillation": {
+      "distill_age_impact": 1.4441225547128702,
+      "distill_error_power": 2.0778745591004446,
+      "false_negative_focus": 0.5819934797850894,
+      "false_positive_focus": 0.016726160483709226
+    },
+    "execution_costs": {},
+    "label": {
+      "mae_penalty_scale": 0.2519689307659123,
+      "mfe_scale_bps": 62.26487657733663,
+      "net_return_center_bps": 66.46925585195464,
+      "net_return_temperature_bps": 92.39062835958602,
+      "path_quality_mix": 0.9216267465959218,
+      "stop_penalty": 0.06293797773084756
+    },
+    "name": "label_weight_long_dist_seq_fast_distillation_20260607_v4_best_trial_13",
+    "objective": {
+      "base_k_multiplier": 2.0,
+      "hit_fee_floor_bps": 0.0,
+      "impact_scale_bps": 100.0,
+      "portfolio_alignment_strength": 0.059169251432668754
+    },
+    "provenance": {
+      "best_trial_number": 13,
+      "best_trial_value": 0.08235936573461432,
+      "cv_mode": "interleaved_spread",
+      "features": "frozen_native_preset",
+      "hyperparameters": "frozen_native_preset_except_n_estimators_cap",
+      "lgbm_early_stopping_rounds": 30,
+      "lgbm_hpo_trials": 0,
+      "lgbm_n_estimators_cap": 200,
+      "max_trees": 200,
+      "max_trees_env": "EPM_LGBM_N_ESTIMATORS_CAP=200",
+      "phase": "distillation",
+      "study_name": "label_weight_long_dist_seq_fast_distillation_20260607_v4",
+      "study_patience_trials": 40,
+      "study_pruner": "successive_halving",
+      "subsample": "spread_through_full_period"
+    },
+    "stage": "all",
+    "version": 1,
+    "weight": {
+      "ambiguous_weight": 0.6295585141612221,
+      "class_rebalance_strength": 0.4626272445278493,
+      "concurrency_penalty": 0.31621700446099954,
+      "concurrency_window_hours": 2.0,
+      "hard_negative_weight": 0.9095462490411241,
+      "mae_weight_power": 0.7583627772440158,
+      "mfe_weight_power": 0.10352356322766502,
+      "net_ev_weight_power": 0.8063614840366224,
+      "path_quality_strength": 0.12103743328264609,
+      "positive_mass_target": 0.4325965746038871,
+      "recency_half_life_days": 300.0,
+      "robustness_strength": 0.2767738310098995
+    }
+  },
+  "recipe_path": "reports_perp/label_weight_optuna/long_dist_seq_fast_20260607_v4/03_distillation/trial_0013_recipe.json",
+  "user_attrs": {
+    "metrics": {
+      "eval_rows": 51315,
+      "execution_cost_bps": 68.83,
+      "fast_eval": true,
+      "features": 105,
+      "mean_net_bps_at_20": -80.49675201342652,
+      "median_net_bps_at_20": -86.10974851932073,
+      "model_stage": "base",
+      "net_hit_at_10": 0.34098285596995054,
+      "net_hit_at_20": 0.2980823995520527,
+      "net_hit_at_30": 0.2640215694390117,
+      "net_hit_at_40": 0.25098497989820046,
+      "per_window": {
+        "2w": {
+          "10": {
+            "mean_net_bps": -75.65104068271096,
+            "median_net_bps": -94.78045138150453,
+            "n": 147.0,
+            "net_hit": 0.3197278911564626,
+            "stop_hit_rate": 0.7482993197278912
+          },
+          "20": {
+            "mean_net_bps": -114.5718889873171,
+            "median_net_bps": -113.07982238560915,
+            "n": 269.0,
+            "net_hit": 0.275092936802974,
+            "stop_hit_rate": 0.758364312267658
+          },
+          "30": {
+            "mean_net_bps": -112.63866913203978,
+            "median_net_bps": -105.4213356654346,
+            "n": 370.0,
+            "net_hit": 0.22972972972972974,
+            "stop_hit_rate": 0.745945945945946
+          },
+          "40": {
+            "mean_net_bps": -111.71581914245995,
+            "median_net_bps": -93.98181084163487,
+            "n": 426.0,
+            "net_hit": 0.20657276995305165,
+            "stop_hit_rate": 0.7347417840375586
+          }
+        },
+        "4w": {
+          "10": {
+            "mean_net_bps": -48.044721339501685,
+            "median_net_bps": -68.83000013058555,
+            "n": 494.0,
+            "net_hit": 0.3603238866396761,
+            "stop_hit_rate": 0.6781376518218624
+          },
+          "20": {
+            "mean_net_bps": -69.97518662974905,
+            "median_net_bps": -77.72955903403461,
+            "n": 901.0,
+            "net_hit": 0.3118756936736959,
+            "stop_hit_rate": 0.6892341842397336
+          },
+          "30": {
+            "mean_net_bps": -74.58450660043435,
+            "median_net_bps": -93.54240935847163,
+            "n": 1223.0,
+            "net_hit": 0.2788225674570728,
+            "stop_hit_rate": 0.6852003270645952
+          },
+          "40": {
+            "mean_net_bps": -74.46154129281165,
+            "median_net_bps": -87.1544002982974,
+            "n": 1433.0,
+            "net_hit": 0.2693649685973482,
+            "stop_hit_rate": 0.685973482205164
+          }
+        },
+        "8w": {
+          "10": {
+            "mean_net_bps": -45.968109921869576,
+            "median_net_bps": -68.80600004689957,
+            "n": 1206.0,
+            "net_hit": 0.33167495854063017,
+            "stop_hit_rate": 0.593698175787728
+          },
+          "20": {
+            "mean_net_bps": -58.545405335377275,
+            "median_net_bps": -68.83000095328967,
+            "n": 2257.0,
+            "net_hit": 0.30084182543198934,
+            "stop_hit_rate": 0.5994683207797962
+          },
+          "30": {
+            "mean_net_bps": -62.061853644494185,
+            "median_net_bps": -68.98516016901529,
+            "n": 3102.0,
+            "net_hit": 0.27852998065764023,
+            "stop_hit_rate": 0.59284332688588
+          },
+          "40": {
+            "mean_net_bps": -62.451801806953924,
+            "median_net_bps": -69.05532325601787,
+            "n": 3680.0,
+            "net_hit": 0.27119565217391306,
+            "stop_hit_rate": 0.5855978260869565
+          }
+        }
+      },
+      "prediction_instability": 0.015411837863637364,
+      "run_id": "fast_label_weight_trial_13",
+      "stop_hit_rate_at_20": 0.6875317567831265,
+      "train_rows": 101721
+    },
+    "recipe_path": "reports_perp/label_weight_optuna/long_dist_seq_fast_20260607_v4/03_distillation/trial_0013_recipe.json"
+  },
+  "value": 0.08235936573461432
+}

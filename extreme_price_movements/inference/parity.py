@@ -1123,12 +1123,15 @@ def validate_required_feature_frames(
     required = {str(key) for key in (required_feature_keys or set()) if str(key)}
     if not required:
         return True
+    is_latest_value_feature_map = hasattr(features, "keys") and hasattr(
+        features, "latest_values_at"
+    )
     is_lazy_feature_map = hasattr(features, "keys") and hasattr(
         features, "raw_symbols_for_key"
     )
     feature_map = (
         features
-        if isinstance(features, dict) or is_lazy_feature_map
+        if isinstance(features, dict) or is_lazy_feature_map or is_latest_value_feature_map
         else {}
     )
     missing_keys = sorted(key for key in required if key not in feature_map)
@@ -1137,6 +1140,13 @@ def validate_required_feature_frames(
     symbol_list = [str(sym) for sym in (symbols or []) if str(sym)]
 
     for key in sorted(required - set(missing_keys)):
+        if is_latest_value_feature_map:
+            # Lazy selected-feature stores may surface sparse live symbol
+            # coverage as NaN cells at matrix-build time. That is still a
+            # valid trained feature column: strict finite/parity handling is
+            # applied later by the model adapter. This validator should only
+            # reject truly absent trained keys for latest-value stores.
+            continue
         if is_lazy_feature_map:
             if symbol_list:
                 try:

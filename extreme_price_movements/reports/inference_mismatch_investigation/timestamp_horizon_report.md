@@ -53,8 +53,12 @@ This report reconciles the timing contract between model/OOS policy optimisation
 
 - `simple_policy_optimiser.py` lines around `_apply_delayed_entry_execution_model(...)` show the delayed-entry model is now `t+10m`, not `t+7m`.
 - `simple_policy_optimiser.py` applies delayed-entry execution before `discover_deployment_rank_threshold_simple_grid(...)`, so deployment thresholds are based on delayed-entry proxy paths.
-- The current saved candidate artifact has not been regenerated under this default: `simple_policy_optimiser/simple_policy_candidates.parquet` has `delayed_entry_ts - timestamp = 7 minutes` for all 20,026 rows.
-- The local execution-1m cache also contains one saved minute per symbol-hour at minute `:07` for the audited May window, which is consistent with the older t+7 artifact.
+- The current saved candidate artifacts have been regenerated under the t+10 contract:
+  - `data_perp/artifacts/20260525_010004_nopenalty/simple_policy_optimiser/simple_policy_candidates.parquet`
+  - `extreme_price_movements/reports/inference_mismatch_investigation/simple_policy_optimiser_trained_universe_full_deployable/simple_policy_optimiser/simple_policy_candidates.parquet`
+  - `extreme_price_movements/reports/inference_mismatch_investigation/simple_policy_optimiser_trained_universe_verify/simple_policy_optimiser/simple_policy_candidates.parquet`
+- Direct parquet inspection on 2026-06-04 shows 27,485 candidate rows in each of those artifacts and `delayed_entry_ts - timestamp = 10 minutes` for every row.
+- The regenerated artifacts use `entry_execution_source=delayed_1m_intraminute_proxy` for 25,564 rows and `theoretical_15m_open` fallback for 1,921 rows where the t+10 1m proxy was not available.
 - `trade_executor.py` records realized entry price, expected entry price, order fee conversion, entry delay fields, and signal-to-entry time for market/stop execution modes.
 - `prediction_ledger.py` includes feature, artifact, decision, friction, spread/slippage, entry delay, and drift diagnostic fields needed for later live/OOS reconciliation.
 
@@ -66,13 +70,13 @@ This report reconciles the timing contract between model/OOS policy optimisation
 
 ## Open Checks
 
-1. Regenerate simple-policy candidates and deployment metrics under the current t+10 delayed-entry setting.
-2. Verify that every regenerated policy candidate file contains delayed-entry fields and that deployment thresholds are discovered on delayed-entry-adjusted paths for all four heads.
-3. Compare live `signal_to_entry_seconds` against the optimiser's intended 10-minute delay.
-4. Quantify OOS performance at zero delay, 10-minute proxy delay, and observed live delays.
-5. Verify exit timestamp and stop-trigger/fill handling against the path arrays used by `simple_policy_optimiser`.
-6. Confirm that adverse hourly-close gap is included in live EV/friction gates for the currently running code path, not only on disk.
+1. Verify that deployment thresholds were discovered from the regenerated delayed-entry-adjusted paths for every active deployed head.
+2. Compare live `signal_to_entry_seconds` against the optimiser's intended 10-minute delay.
+3. Quantify OOS performance at zero delay, 10-minute proxy delay, and observed live delays.
+4. Verify exit timestamp and stop-trigger/fill handling against the path arrays used by `simple_policy_optimiser`.
+5. Confirm that adverse hourly-close gap is included in live EV/friction gates for the currently running code path, not only on disk.
+6. Explain the 1,921 `theoretical_15m_open` fallback rows and decide whether they should be excluded from threshold discovery or marked separately in deployment metrics.
 
 ## Current Conclusion
 
-No label-horizon mismatch is proven yet. A timestamp/execution artifact mismatch is proven: the current code default is t+10, but the saved OOS candidate artifact is still t+7. Execution realism remains incomplete until OOS candidates are regenerated under t+10 and then re-scored under observed live delays, spread, slippage, fees, and rejected market/stop orders.
+No label-horizon mismatch is proven yet. The earlier timestamp/execution artifact mismatch has been repaired for the active candidate artifacts: the current code default is t+10 and the regenerated OOS candidate artifacts are also t+10. Execution realism remains incomplete until the regenerated t+10 candidates are re-scored against deployment thresholds, observed live delays, spread, slippage, fees, liquidity filters, and rejected market/stop orders.

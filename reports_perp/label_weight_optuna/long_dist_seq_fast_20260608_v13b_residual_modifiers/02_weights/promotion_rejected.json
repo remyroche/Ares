@@ -1,0 +1,32 @@
+{
+  "best_trial_number": 84,
+  "best_trial_params": {
+    "ambiguous_weight": 0.5415192791871039,
+    "class_rebalance_strength": 0.2355860985487016,
+    "concurrency_penalty": 0.18793909993993685,
+    "concurrency_window_hours": 2.0,
+    "hard_negative_weight": 1.2044887626822038,
+    "mae_weight_power": 0.6761693200875538,
+    "mfe_weight_power": 0.11425749790790696,
+    "net_ev_weight_power": 0.03474396187352169,
+    "path_quality_strength": 0.32406080349648836,
+    "portfolio_alignment_strength": 0.10724796039814508,
+    "positive_mass_target": 0.43939434039299463,
+    "recency_half_life_days": 90.0,
+    "robustness_strength": 0.5085609669436982,
+    "weight_modifier_strength": 0.1317442410761344
+  },
+  "best_trial_recipe_path": "reports_perp/label_weight_optuna/long_dist_seq_fast_20260608_v13b_residual_modifiers/02_weights/trial_0084_recipe.json",
+  "best_trial_value": 0.2845936078354431,
+  "incumbent_recipe_path": "reports_perp/label_weight_optuna/long_dist_seq_fast_20260608_v13b_residual_modifiers/02_weights/trial_0000_recipe.json",
+  "incumbent_trial_number": 0,
+  "incumbent_trial_params": {
+    "recipe_enabled": false
+  },
+  "incumbent_trial_value": 0.274722172448959,
+  "phase": "weights",
+  "promotion_margin": 0.01,
+  "promotion_rejected": true,
+  "reason": "best trial did not beat incumbent noop/base recipe by the required margin",
+  "study_name": "label_weight_long_dist_seq_fast_weights_20260608_v13b_residual"
+}

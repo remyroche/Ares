@@ -4735,12 +4735,14 @@ def run_training_step(
         exh = bundle.get("exh_models", {})
         for d in ["up", "down"]:
             m = exh.get(d)
-            tprint(f"  exh_{d}: {'fitted' if m and m.model else 'NO MODEL'}")
+            fitted = bool(m) and bool(getattr(m, "model", m))
+            tprint(f"  exh_{d}: {'fitted' if fitted else 'NO MODEL'}")
 
         meta = bundle.get("meta_models", {})
         if meta:
             for key, m in meta.items():
-                tprint(f"  meta_{key}: {'fitted' if m and m.model else 'NO MODEL'}")
+                fitted = bool(m) and bool(getattr(m, "model", m))
+                tprint(f"  meta_{key}: {'fitted' if fitted else 'NO MODEL'}")
         else:
             tprint("  meta_models: NONE")
 
@@ -4798,24 +4800,33 @@ def run_training_step(
     try:
         from extreme_price_movements.lgbm_pipeline import export_tail_control_reports
 
-        compare_ids = [
-            v.strip()
-            for v in str(os.environ.get("EPM_TAIL_CONTROL_COMPARE_RUN_IDS", "")).split(",")
-            if v.strip()
-        ]
-        source_compare = str(cfg.get("artifact_source_run_id") or "").strip()
-        if source_compare and source_compare != run_id and source_compare not in compare_ids:
-            compare_ids.insert(0, source_compare)
-        report_paths = export_tail_control_reports(
-            cfg["data_root"],
-            run_id,
-            compare_run_ids=compare_ids,
-            target_strategy_id=os.environ.get("EPM_TAIL_CONTROL_STRATEGY_ID", ""),
-        )
-        tprint(
-            "Tail-control reports saved: "
-            f"{report_paths.get('per_model_metrics_csv')}"
-        )
+        if os.environ.get("EPM_SKIP_TAIL_CONTROL_REPORTS", "0").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "y",
+            "on",
+        }:
+            tprint("Tail-control report export skipped by EPM_SKIP_TAIL_CONTROL_REPORTS=1.")
+        else:
+            compare_ids = [
+                v.strip()
+                for v in str(os.environ.get("EPM_TAIL_CONTROL_COMPARE_RUN_IDS", "")).split(",")
+                if v.strip()
+            ]
+            source_compare = str(cfg.get("artifact_source_run_id") or "").strip()
+            if source_compare and source_compare != run_id and source_compare not in compare_ids:
+                compare_ids.insert(0, source_compare)
+            report_paths = export_tail_control_reports(
+                cfg["data_root"],
+                run_id,
+                compare_run_ids=compare_ids,
+                target_strategy_id=os.environ.get("EPM_TAIL_CONTROL_STRATEGY_ID", ""),
+            )
+            tprint(
+                "Tail-control reports saved: "
+                f"{report_paths.get('per_model_metrics_csv')}"
+            )
     except Exception as _e_tail:
         tprint(f"WARNING: tail-control report export failed: {_e_tail}")
 
@@ -9085,10 +9096,10 @@ def run_feature_generation_step(
                         f"{batch_label} timings: compute={compute_dt:.1f}s save={save_dt:.1f}s"
                     )
                     total_saved_keys += len(feats_chunk)
-                del panel_chunk, feats_chunk, orderbook_chunk
+                del panel_chunk, feats_chunk
                 gc.collect()
 
-            del panel_chunk_source
+            del panel_chunk_source, orderbook_chunk
             gc.collect()
 
         tprint(f"Computed + saved chunked backfill features: {total_saved_keys} keys")

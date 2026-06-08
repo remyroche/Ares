@@ -1,0 +1,114 @@
+{
+  "v10_final": {
+    "avg_stop_loss_bps_at_20": 155.5890031120926,
+    "eval_rows": 102171,
+    "mean_net_bps_at_10": 74.3990159049444,
+    "mean_net_bps_at_20": 60.264908002298355,
+    "mean_net_bps_at_30": 48.465205841461824,
+    "mean_net_bps_at_50": 38.71998624790461,
+    "median_net_bps_at_20": 12.18600455120206,
+    "median_net_bps_at_50": 8.978471163734795,
+    "net_hit_at_10": 0.64,
+    "net_hit_at_20": 0.6,
+    "net_hit_at_30": 0.5666666666666667,
+    "net_hit_at_50": 0.552,
+    "objective_score": null,
+    "per_window_top20": {
+      "13w": {
+        "mean_net_bps_at_20": null,
+        "mean_net_bps_at_50": null,
+        "net_hit_at_20": null,
+        "symbol_hhi_at_20": null,
+        "unique_symbols_at_20": null,
+        "week_hhi_at_20": null
+      },
+      "26w": {
+        "mean_net_bps_at_20": null,
+        "mean_net_bps_at_50": null,
+        "net_hit_at_20": null,
+        "symbol_hhi_at_20": null,
+        "unique_symbols_at_20": null,
+        "week_hhi_at_20": null
+      },
+      "8w": {
+        "mean_net_bps_at_20": null,
+        "mean_net_bps_at_50": null,
+        "net_hit_at_20": null,
+        "symbol_hhi_at_20": null,
+        "unique_symbols_at_20": null,
+        "week_hhi_at_20": null
+      },
+      "full": {
+        "mean_net_bps_at_20": null,
+        "mean_net_bps_at_50": null,
+        "net_hit_at_20": null,
+        "symbol_hhi_at_20": null,
+        "unique_symbols_at_20": null,
+        "week_hhi_at_20": null
+      }
+    },
+    "prediction_instability": 0.08926785535678562,
+    "stop_hit_rate_at_20": 0.13,
+    "symbol_concentration_hhi_at_20": 0.06050000000000001,
+    "train_rows": 204391,
+    "unique_symbols_at_20": 17.9,
+    "unique_weeks_at_20": 11.700000000000001,
+    "week_concentration_hhi_at_20": 0.11500000000000002
+  },
+  "v9_final": {
+    "avg_stop_loss_bps_at_20": 98.00466975438098,
+    "eval_rows": 102171,
+    "mean_net_bps_at_10": 25.85273860402406,
+    "mean_net_bps_at_20": 51.30483161572369,
+    "mean_net_bps_at_30": 48.31191075103979,
+    "mean_net_bps_at_50": 39.225388366337874,
+    "median_net_bps_at_20": 8.918247655108573,
+    "median_net_bps_at_50": 5.447816107496622,
+    "net_hit_at_10": 0.54,
+    "net_hit_at_20": 0.5900000000000001,
+    "net_hit_at_30": 0.5533333333333333,
+    "net_hit_at_50": 0.532,
+    "objective_score": null,
+    "per_window_top20": {
+      "13w": {
+        "mean_net_bps_at_20": null,
+        "mean_net_bps_at_50": null,
+        "net_hit_at_20": null,
+        "symbol_hhi_at_20": null,
+        "unique_symbols_at_20": null,
+        "week_hhi_at_20": null
+      },
+      "26w": {
+        "mean_net_bps_at_20": null,
+        "mean_net_bps_at_50": null,
+        "net_hit_at_20": null,
+        "symbol_hhi_at_20": null,
+        "unique_symbols_at_20": null,
+        "week_hhi_at_20": null
+      },
+      "8w": {
+        "mean_net_bps_at_20": null,
+        "mean_net_bps_at_50": null,
+        "net_hit_at_20": null,
+        "symbol_hhi_at_20": null,
+        "unique_symbols_at_20": null,
+        "week_hhi_at_20": null
+      },
+      "full": {
+        "mean_net_bps_at_20": null,
+        "mean_net_bps_at_50": null,
+        "net_hit_at_20": null,
+        "symbol_hhi_at_20": null,
+        "unique_symbols_at_20": null,
+        "week_hhi_at_20": null
+      }
+    },
+    "prediction_instability": 0.1634587103827753,
+    "stop_hit_rate_at_20": 0.17,
+    "symbol_concentration_hhi_at_20": 0.07150000000000001,
+    "train_rows": 204391,
+    "unique_symbols_at_20": 16.5,
+    "unique_weeks_at_20": 11.4,
+    "week_concentration_hhi_at_20": 0.123
+  }
+}

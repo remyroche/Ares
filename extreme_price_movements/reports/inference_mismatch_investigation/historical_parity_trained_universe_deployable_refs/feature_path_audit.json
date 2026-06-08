@@ -1,0 +1,18 @@
+{
+  "disable_offline_cache": false,
+  "disable_rolling_cache": false,
+  "feature_load_path": "inference_candidate",
+  "feature_source_run_id": "20260523_015947",
+  "long_candidates": 29,
+  "short_candidates": 0,
+  "strategy_masks": {
+    "long_dist_ema20_atr_-0_92271453_loc_bb_channel_pos_48_0_60767579_leverage_build_score_0_45107844_return_autocorr_48_1_18643_rolling_range_20_-0_25967735": 29
+  },
+  "thresholds": {
+    "extreme_pct": 0.06,
+    "metric": "ret12h",
+    "min_move_12h_pct": 0.06,
+    "min_range_pct": 0.07,
+    "min_vol_zscore": 1.6
+  }
+}

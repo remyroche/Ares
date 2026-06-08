@@ -1,0 +1,26 @@
+{
+  "latest_timestamp": "2026-06-04 16:22:33.658486+00:00",
+  "signal_bar_ts": "2026-06-04 15:00:00+00:00",
+  "rows": 4,
+  "symbols": [
+    "SYN/USD:USD",
+    "TLM/USD:USD",
+    "WLD/USD:USD",
+    "ZRO/USD:USD"
+  ],
+  "feature_values_compared_to_training_store": 968,
+  "feature_max_abs_delta": 0.0,
+  "feature_nonzero_gt_1e-12": 0,
+  "base_score_max_abs_delta": 0.0,
+  "base_score_nonzero_gt_1e-12": 0,
+  "meta_score_max_abs_delta": 0.0,
+  "meta_score_nonzero_gt_1e-12": 0,
+  "policy_rank_max_abs_delta": 0.0,
+  "policy_rank_nonzero_gt_1e-12": 0,
+  "auction_rank_max_abs_delta": 0.0,
+  "auction_rank_nonzero_gt_1e-12": 0,
+  "normalized_rank_max_abs_delta": 0.0,
+  "normalized_rank_nonzero_gt_1e-12": 0,
+  "feature_csv": "extreme_price_movements/reports/inference_mismatch_investigation/live_vs_training_path_feature_values/live_ledger_vs_training_feature_store_20260604T162233Z.csv",
+  "score_csv": "extreme_price_movements/reports/inference_mismatch_investigation/live_vs_training_path_feature_values/live_ledger_vs_selected_model_scores_20260604T162233Z.csv"
+}

@@ -42,6 +42,15 @@ except Exception:  # pragma: no cover - standalone fallback
         return np.clip(0.75 + 1.50 * rank, 0.25, 4.0).astype(np.float32)
 
 try:
+    from .label_weight_optuna import apply_distillation_recipe, load_recipe_from_env_or_cfg
+except Exception:  # pragma: no cover - optional experiment hook
+    def apply_distillation_recipe(distill, fp_weight, **_kwargs):
+        return np.asarray(distill, dtype=np.float32), np.asarray(fp_weight, dtype=np.float32)
+
+    def load_recipe_from_env_or_cfg(_cfg=None):
+        return None
+
+try:
     from .utils import tprint
 except Exception:  # pragma: no cover - standalone fallback
     def tprint(message: str) -> None:
@@ -49,7 +58,7 @@ except Exception:  # pragma: no cover - standalone fallback
 
 
 LGBM_CV_SPLITS = int(os.environ.get("EPM_LGBM_CV_SPLITS", "3"))
-LGBM_CV_MODE = str(os.environ.get("EPM_LGBM_CV_MODE", "")).strip().lower()
+_LGBM_CV_MODE_RAW = str(os.environ.get("EPM_LGBM_CV_MODE", "")).strip().lower()
 LGBM_PURGED_CV = os.environ.get("EPM_LGBM_PURGED_CV", "0").strip().lower() in {
     "1",
     "true",
@@ -57,6 +66,11 @@ LGBM_PURGED_CV = os.environ.get("EPM_LGBM_PURGED_CV", "0").strip().lower() in {
     "y",
     "on",
 }
+LGBM_CV_MODE = (
+    _LGBM_CV_MODE_RAW
+    if _LGBM_CV_MODE_RAW
+    else ("purged_time" if LGBM_PURGED_CV else "interleaved_spread")
+)
 LGBM_PURGE_HOURS = float(os.environ.get("EPM_LGBM_PURGE_HOURS", "10"))
 LGBM_RECENCY_WEIGHTING = os.environ.get("EPM_LGBM_RECENCY_WEIGHTING", "0").strip().lower() in {
     "1",
@@ -92,12 +106,42 @@ LGBM_RELIEF_NEIGHBORS = int(os.environ.get("EPM_LGBM_RELIEF_NEIGHBORS", "8"))
 LGBM_HPO_MAX_ROWS = int(os.environ.get("EPM_LGBM_HPO_MAX_ROWS", "10000"))
 LGBM_HPO_ROW_SUBSAMPLE_FRAC = float(os.environ.get("EPM_LGBM_HPO_ROW_SUBSAMPLE_FRAC", os.environ.get("EPM_LGBM_ROW_SUBSAMPLE_FRAC", "1.0")))
 LGBM_HPO_TRIALS = int(os.environ.get("EPM_LGBM_HPO_TRIALS", "200"))
-LGBM_HPO_EARLY_STOP_PATIENCE = int(os.environ.get("EPM_LGBM_HPO_EARLY_STOP_PATIENCE", "50"))
+LGBM_HPO_EARLY_STOP_PATIENCE = int(os.environ.get("EPM_LGBM_HPO_EARLY_STOP_PATIENCE", "40"))
+LGBM_EARLY_STOPPING_ROUNDS = int(os.environ.get("EPM_LGBM_EARLY_STOPPING_ROUNDS", "40"))
 LGBM_HPO_FINAL_MIN_ESTIMATORS = int(os.environ.get("EPM_LGBM_HPO_FINAL_MIN_ESTIMATORS", "800"))
+LGBM_N_ESTIMATORS_CAP = int(os.environ.get("EPM_LGBM_N_ESTIMATORS_CAP", "0"))
 LGBM_FINAL_MODEL_COUNT = int(os.environ.get("EPM_LGBM_FINAL_MODEL_COUNT", "3"))
 LGBM_OOF_DISTILLATION_PASSES = int(os.environ.get("EPM_LGBM_OOF_DISTILLATION_PASSES", "1"))
 LGBM_MIN_OOF_DISTILLATION_PASSES = int(os.environ.get("EPM_LGBM_MIN_OOF_DISTILLATION_PASSES", "2"))
 LGBM_META_MIN_OOF_DISTILLATION_PASSES = int(os.environ.get("EPM_LGBM_META_MIN_OOF_DISTILLATION_PASSES", "2"))
+LGBM_DISABLE_SELF_DISTILLATION = os.environ.get("EPM_LGBM_DISABLE_SELF_DISTILLATION", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+}
+LGBM_SKIP_FINAL_OOF_META_CV = os.environ.get("EPM_LGBM_SKIP_FINAL_OOF_META_CV", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+}
+LGBM_SKIP_REFERENCE_ARTIFACTS = os.environ.get("EPM_LGBM_SKIP_REFERENCE_ARTIFACTS", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+}
+LGBM_OPTUNA_CANDIDATE_ONLY = os.environ.get("EPM_LGBM_OPTUNA_CANDIDATE_ONLY", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+}
 LGBM_FINAL_FIT_USE_ALL_ROWS = os.environ.get("EPM_LGBM_FINAL_FIT_USE_ALL_ROWS", "1") == "1"
 LGBM_META_RANK_BINS = int(os.environ.get("EPM_LGBM_META_RANK_BINS", "10"))
 LGBM_DIRECTION_STABILITY_MIN = float(os.environ.get("EPM_LGBM_DIRECTION_STABILITY_MIN", "0.75"))
@@ -139,6 +183,25 @@ LGBM_META_METRIC_TARGET_FRACTION = float(os.environ.get("EPM_LGBM_META_METRIC_TA
 LGBM_SALG_LIFT_COEF = float(os.environ.get("EPM_LGBM_SALG_LIFT_COEF", "0.38"))
 LGBM_J_SALG_NORM_DENOM = float(os.environ.get("EPM_LGBM_J_SALG_NORM_DENOM", "1.50"))
 LGBM_OBJECTIVE = str(os.environ.get("EPM_LGBM_OBJECTIVE", "default")).strip().lower()
+LGBM_TRUE_SOFT_LABELS = os.environ.get("EPM_LGBM_TRUE_SOFT_LABELS", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+}
+LGBM_REBALANCE_EFFECTIVE_CLASSES = os.environ.get(
+    "EPM_LGBM_REBALANCE_EFFECTIVE_CLASSES", "0"
+).strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+}
+LGBM_REBALANCE_POS_MASS_MIN = float(os.environ.get("EPM_LGBM_REBALANCE_POS_MASS_MIN", "0.25"))
+LGBM_REBALANCE_POS_MASS_MAX = float(os.environ.get("EPM_LGBM_REBALANCE_POS_MASS_MAX", "0.55"))
+LGBM_REBALANCE_MAX_MULTIPLIER = float(os.environ.get("EPM_LGBM_REBALANCE_MAX_MULTIPLIER", "2.0"))
 LGBM_HPO_PARAM_SET = str(os.environ.get("EPM_LGBM_HPO_PARAM_SET", "full")).strip().lower()
 LGBM_FEATURE_SELECTION_OBJECTIVE = str(
     os.environ.get("EPM_LGBM_FEATURE_SELECTION_OBJECTIVE", "")
@@ -151,7 +214,7 @@ LGBM_TAIL_WORST_FEATURE_PENALTY = float(os.environ.get("EPM_LGBM_TAIL_WORST_FEAT
 LGBM_N_JOBS = int(os.environ.get("EPM_LGBM_N_JOBS", "3"))
 
 LGBM_CV_SPLITS = max(2, int(LGBM_CV_SPLITS))
-if LGBM_CV_MODE not in {"", "shuffled", "purged_time"}:
+if LGBM_CV_MODE not in {"", "shuffled", "purged_time", "interleaved", "interleaved_spread"}:
     LGBM_CV_MODE = "shuffled"
 LGBM_PURGE_HOURS = max(0.0, float(LGBM_PURGE_HOURS))
 LGBM_BASE_RECENCY_HALF_LIFE_DAYS = max(1e-6, float(LGBM_BASE_RECENCY_HALF_LIFE_DAYS))
@@ -179,7 +242,9 @@ LGBM_IMPORTANCE_INSTABILITY_MATERIAL_TOP_FRAC = float(np.clip(LGBM_IMPORTANCE_IN
 LGBM_IMPORTANCE_INSTABILITY_CV_CAP = max(1e-6, float(LGBM_IMPORTANCE_INSTABILITY_CV_CAP))
 LGBM_IMPORTANCE_TOPK_FOCUS_SOFTNESS = max(1e-6, float(LGBM_IMPORTANCE_TOPK_FOCUS_SOFTNESS))
 LGBM_FINAL_MODEL_COUNT = max(1, int(LGBM_FINAL_MODEL_COUNT))
+LGBM_EARLY_STOPPING_ROUNDS = max(1, int(LGBM_EARLY_STOPPING_ROUNDS))
 LGBM_HPO_FINAL_MIN_ESTIMATORS = max(1, int(LGBM_HPO_FINAL_MIN_ESTIMATORS))
+LGBM_N_ESTIMATORS_CAP = max(0, int(LGBM_N_ESTIMATORS_CAP))
 LGBM_HPO_PATH_SMOOTH_MAX = float(np.clip(LGBM_HPO_PATH_SMOOTH_MAX, 0.0, 10.0))
 LGBM_OOF_DISTILLATION_PASSES = max(0, int(LGBM_OOF_DISTILLATION_PASSES))
 LGBM_MIN_OOF_DISTILLATION_PASSES = max(0, int(LGBM_MIN_OOF_DISTILLATION_PASSES))
@@ -188,6 +253,11 @@ LGBM_META_RANK_BINS = max(2, int(LGBM_META_RANK_BINS))
 LGBM_BASE_METRIC_TARGET_FRACTION = float(np.clip(LGBM_BASE_METRIC_TARGET_FRACTION, 0.001, 0.5))
 LGBM_META_METRIC_TARGET_FRACTION = float(np.clip(LGBM_META_METRIC_TARGET_FRACTION, 0.001, 0.5))
 LGBM_J_SALG_NORM_DENOM = max(1e-6, float(LGBM_J_SALG_NORM_DENOM))
+LGBM_REBALANCE_POS_MASS_MIN = float(np.clip(LGBM_REBALANCE_POS_MASS_MIN, 0.01, 0.95))
+LGBM_REBALANCE_POS_MASS_MAX = float(
+    np.clip(max(LGBM_REBALANCE_POS_MASS_MAX, LGBM_REBALANCE_POS_MASS_MIN), 0.01, 0.95)
+)
+LGBM_REBALANCE_MAX_MULTIPLIER = max(1.0, float(LGBM_REBALANCE_MAX_MULTIPLIER))
 if LGBM_OBJECTIVE not in {"default", "tail_control"}:
     LGBM_OBJECTIVE = "default"
 if LGBM_HPO_PARAM_SET not in {"full", "reduced"}:
@@ -474,6 +544,12 @@ def _timestamp_ns(timestamps: Any, n: int) -> np.ndarray | None:
 
 
 def _recency_half_life_days(objective_mode: str | None) -> float:
+    recipe = load_recipe_from_env_or_cfg(None)
+    if recipe is not None and str(getattr(recipe, "stage", "")).strip().lower() != "__label_weight_noop__":
+        base_half_life = max(1e-6, float(recipe.weight.recency_half_life_days))
+        if _normalize_objective_mode(objective_mode) == "train_meta":
+            return base_half_life * 0.5
+        return base_half_life
     return (
         float(LGBM_META_RECENCY_HALF_LIFE_DAYS)
         if _normalize_objective_mode(objective_mode) == "train_meta"
@@ -956,6 +1032,8 @@ def _normalize_objective_mode(objective_mode: str | None) -> str:
 
 
 def _distillation_passes_for_objective(objective_mode: str | None = "train_base") -> int:
+    if LGBM_DISABLE_SELF_DISTILLATION:
+        return 0
     passes = max(
         int(LGBM_OOF_DISTILLATION_PASSES),
         int(LGBM_MIN_OOF_DISTILLATION_PASSES),
@@ -1045,8 +1123,10 @@ def _looks_classifier_target(y: np.ndarray) -> bool:
     return bool(len(unique) <= 20 and np.all(np.isclose(unique, np.round(unique))))
 
 
-def _coerce_target(y: np.ndarray, classifier: bool) -> np.ndarray:
+def _coerce_target(y: np.ndarray, classifier: bool, *, allow_soft_labels: bool = False) -> np.ndarray:
     if classifier:
+        if allow_soft_labels:
+            return np.clip(np.asarray(y, dtype=np.float32), 0.0, 1.0)
         return np.asarray(y >= 0.5, dtype=np.int8)
     return np.asarray(y, dtype=np.float32)
 
@@ -2106,6 +2186,12 @@ def _cv_splitter(
     timestamps: Any = None,
     n_splits: int = LGBM_CV_SPLITS,
 ) -> tuple[Any, np.ndarray]:
+    if LGBM_CV_MODE in {"interleaved", "interleaved_spread"}:
+        return _interleaved_spread_splitter(
+            y,
+            classifier,
+            n_splits=n_splits,
+        )
     if bool(LGBM_PURGED_CV) or LGBM_CV_MODE == "purged_time":
         return _purged_time_splitter(
             y,
@@ -2641,7 +2727,7 @@ def _redundancy_cluster_filter(
 
 def _base_lgbm_params(seed: int, *, classifier: bool, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     params: dict[str, Any] = {
-        "objective": "binary" if classifier else "regression",
+        "objective": "cross_entropy" if classifier and LGBM_TRUE_SOFT_LABELS else ("binary" if classifier else "regression"),
         "n_estimators": 800,
         "learning_rate": 0.02,
         "max_depth": 4,
@@ -2660,6 +2746,11 @@ def _base_lgbm_params(seed: int, *, classifier: bool, overrides: dict[str, Any] 
     }
     if overrides:
         params.update(overrides)
+    if classifier and LGBM_TRUE_SOFT_LABELS:
+        params["objective"] = "cross_entropy"
+        params.pop("scale_pos_weight", None)
+        params.pop("is_unbalance", None)
+        params.pop("class_weight", None)
     depth = int(params.get("max_depth", 4))
     if "num_leaves" not in params or params.get("num_leaves") is None:
         params["num_leaves"] = int(2 ** depth)
@@ -2670,9 +2761,27 @@ def _base_lgbm_params(seed: int, *, classifier: bool, overrides: dict[str, Any] 
 def _make_lgbm_model(params: dict[str, Any], classifier: bool) -> Any:
     import lightgbm as lgb
 
+    params = _effective_lgbm_params(params, classifier=classifier)
+    if classifier and LGBM_TRUE_SOFT_LABELS:
+        return lgb.LGBMRegressor(**params)
     if classifier:
         return lgb.LGBMClassifier(**params)
     return lgb.LGBMRegressor(**params)
+
+
+def _effective_lgbm_params(params: dict[str, Any], *, classifier: bool) -> dict[str, Any]:
+    out = dict(params)
+    if LGBM_N_ESTIMATORS_CAP > 0 and "n_estimators" in out:
+        out["n_estimators"] = min(
+            int(out.get("n_estimators", LGBM_N_ESTIMATORS_CAP)),
+            int(LGBM_N_ESTIMATORS_CAP),
+        )
+    if classifier and LGBM_TRUE_SOFT_LABELS:
+        out["objective"] = "cross_entropy"
+        out.pop("scale_pos_weight", None)
+        out.pop("is_unbalance", None)
+        out.pop("class_weight", None)
+    return out
 
 
 def _fit_lgbm_model(
@@ -3446,6 +3555,177 @@ def _normalize_weights(weights: np.ndarray, *, min_weight: float = 0.25, max_wei
     w = w / max(float(np.mean(w)), 1e-6)
     ess = float((w.sum() ** 2) / max(np.sum(w**2), 1e-6))
     return w.astype(np.float32), ess
+
+
+def _effective_n(weights: np.ndarray) -> float:
+    w = np.asarray(weights, dtype=np.float64)
+    if len(w) == 0:
+        return 0.0
+    denom = float(np.sum(w**2))
+    if denom <= 1e-12:
+        return 0.0
+    return float((np.sum(w) ** 2) / denom)
+
+
+def _label_weight_diagnostics(
+    y_soft: np.ndarray,
+    y_hard: np.ndarray,
+    weights: np.ndarray,
+    *,
+    prefix: str,
+) -> dict[str, float]:
+    ys = np.clip(np.asarray(y_soft, dtype=np.float64), 0.0, 1.0)
+    yh = np.asarray(y_hard, dtype=np.float64) >= 0.5
+    w = np.nan_to_num(np.asarray(weights, dtype=np.float64), nan=1.0, posinf=1.0, neginf=1.0)
+    if len(ys) == 0:
+        return {
+            f"{prefix}_hard_positive_rate": float("nan"),
+            f"{prefix}_soft_mean": float("nan"),
+            f"{prefix}_soft_std": float("nan"),
+            f"{prefix}_weighted_positive_mass": 0.0,
+            f"{prefix}_weighted_negative_mass": 0.0,
+            f"{prefix}_weighted_positive_fraction": float("nan"),
+            f"{prefix}_n_eff_total": 0.0,
+            f"{prefix}_n_eff_positive": 0.0,
+            f"{prefix}_n_eff_negative": 0.0,
+            f"{prefix}_hard_positive_count": 0.0,
+            f"{prefix}_hard_negative_count": 0.0,
+        }
+    pos_mass = float(np.sum(w * ys))
+    neg_mass = float(np.sum(w * (1.0 - ys)))
+    total_mass = pos_mass + neg_mass
+    pos_w = w[yh]
+    neg_w = w[~yh]
+    return {
+        f"{prefix}_hard_positive_rate": float(np.mean(yh)),
+        f"{prefix}_soft_mean": float(np.mean(ys)),
+        f"{prefix}_soft_std": float(np.std(ys)),
+        f"{prefix}_weighted_positive_mass": pos_mass,
+        f"{prefix}_weighted_negative_mass": neg_mass,
+        f"{prefix}_weighted_positive_fraction": float(pos_mass / total_mass) if total_mass > 1e-12 else float("nan"),
+        f"{prefix}_n_eff_total": float(_effective_n(w)),
+        f"{prefix}_n_eff_positive": float(_effective_n(pos_w)),
+        f"{prefix}_n_eff_negative": float(_effective_n(neg_w)),
+        f"{prefix}_hard_positive_count": float(np.sum(yh)),
+        f"{prefix}_hard_negative_count": float(np.sum(~yh)),
+    }
+
+
+def _log_label_weight_diagnostics(
+    y_soft: np.ndarray,
+    y_hard: np.ndarray,
+    weights: np.ndarray,
+    *,
+    label: str,
+) -> dict[str, float]:
+    diag = _label_weight_diagnostics(y_soft, y_hard, weights, prefix=label)
+    tprint(
+        "LGBM label/weight diagnostics "
+        f"{label}: hard_pos_rate={diag[f'{label}_hard_positive_rate']:.4f}, "
+        f"soft_mean={diag[f'{label}_soft_mean']:.4f}, "
+        f"soft_std={diag[f'{label}_soft_std']:.4f}, "
+        f"weighted_pos_frac={diag[f'{label}_weighted_positive_fraction']:.4f}, "
+        f"weighted_pos_mass={diag[f'{label}_weighted_positive_mass']:.1f}, "
+        f"weighted_neg_mass={diag[f'{label}_weighted_negative_mass']:.1f}, "
+        f"n_eff_total={diag[f'{label}_n_eff_total']:.1f}, "
+        f"n_eff_pos={diag[f'{label}_n_eff_positive']:.1f}, "
+        f"n_eff_neg={diag[f'{label}_n_eff_negative']:.1f}."
+    )
+    return diag
+
+
+def _rebalance_effective_class_mass(
+    y_soft: np.ndarray,
+    y_hard: np.ndarray,
+    weights: np.ndarray,
+    *,
+    label: str,
+) -> tuple[np.ndarray, dict[str, float]]:
+    del y_hard
+    w = np.asarray(weights, dtype=np.float32)
+    if not bool(LGBM_REBALANCE_EFFECTIVE_CLASSES):
+        return w, {f"{label}_class_rebalance_applied": 0.0}
+    ys = np.clip(np.asarray(y_soft, dtype=np.float64), 0.0, 1.0)
+    if len(ys) != len(w) or len(ys) == 0:
+        return w, {f"{label}_class_rebalance_applied": 0.0}
+    pos_mass = float(np.sum(w.astype(np.float64) * ys))
+    neg_mass = float(np.sum(w.astype(np.float64) * (1.0 - ys)))
+    total_mass = pos_mass + neg_mass
+    if total_mass <= 1e-12 or pos_mass <= 1e-12 or neg_mass <= 1e-12:
+        return w, {f"{label}_class_rebalance_applied": 0.0}
+    current_frac = float(pos_mass / total_mass)
+    target_frac = float(np.clip(current_frac, LGBM_REBALANCE_POS_MASS_MIN, LGBM_REBALANCE_POS_MASS_MAX))
+    if abs(target_frac - current_frac) <= 1e-6:
+        return w, {
+            f"{label}_class_rebalance_applied": 0.0,
+            f"{label}_class_rebalance_pos_fraction_before": current_frac,
+            f"{label}_class_rebalance_pos_fraction_target": target_frac,
+        }
+    pos_factor = float(np.clip((target_frac * total_mass) / pos_mass, 1.0 / LGBM_REBALANCE_MAX_MULTIPLIER, LGBM_REBALANCE_MAX_MULTIPLIER))
+    neg_factor = float(np.clip(((1.0 - target_frac) * total_mass) / neg_mass, 1.0 / LGBM_REBALANCE_MAX_MULTIPLIER, LGBM_REBALANCE_MAX_MULTIPLIER))
+    row_factor = ys * pos_factor + (1.0 - ys) * neg_factor
+    out, ess = _normalize_weights(w.astype(np.float64) * row_factor)
+    after = _label_weight_diagnostics(ys, ys >= 0.5, out, prefix=f"{label}_post_rebalance")
+    diag = {
+        f"{label}_class_rebalance_applied": 1.0,
+        f"{label}_class_rebalance_pos_fraction_before": current_frac,
+        f"{label}_class_rebalance_pos_fraction_target": target_frac,
+        f"{label}_class_rebalance_pos_factor": pos_factor,
+        f"{label}_class_rebalance_neg_factor": neg_factor,
+        f"{label}_class_rebalance_n_eff_after": float(ess),
+    }
+    diag.update(after)
+    tprint(
+        "LGBM effective-class rebalance "
+        f"{label}: pos_frac={current_frac:.4f}->{after[f'{label}_post_rebalance_weighted_positive_fraction']:.4f} "
+        f"target={target_frac:.4f}, pos_factor={pos_factor:.3f}, neg_factor={neg_factor:.3f}, "
+        f"cap={LGBM_REBALANCE_MAX_MULTIPLIER:.2f}, ess={ess:.1f}."
+    )
+    return out.astype(np.float32), diag
+
+
+def _fold_support_diagnostics(
+    splitter: Any,
+    y_split: np.ndarray,
+    y_hard: np.ndarray,
+    *,
+    prefix: str,
+) -> dict[str, float]:
+    yh = np.asarray(y_hard, dtype=np.float64) >= 0.5
+    fold_pos_train: list[float] = []
+    fold_pos_valid: list[float] = []
+    fold_neg_train: list[float] = []
+    fold_neg_valid: list[float] = []
+    try:
+        for tr, va in splitter.split(np.zeros(len(y_split)), y_split):
+            tr = np.asarray(tr, dtype=np.int32)
+            va = np.asarray(va, dtype=np.int32)
+            fold_pos_train.append(float(np.sum(yh[tr])))
+            fold_pos_valid.append(float(np.sum(yh[va])))
+            fold_neg_train.append(float(len(tr) - np.sum(yh[tr])))
+            fold_neg_valid.append(float(len(va) - np.sum(yh[va])))
+    except Exception:
+        return {}
+    if not fold_pos_train:
+        return {}
+    diag = {
+        f"{prefix}_fold_count": float(len(fold_pos_train)),
+        f"{prefix}_fold_train_pos_min": float(np.min(fold_pos_train)),
+        f"{prefix}_fold_train_pos_mean": float(np.mean(fold_pos_train)),
+        f"{prefix}_fold_valid_pos_min": float(np.min(fold_pos_valid)),
+        f"{prefix}_fold_valid_pos_mean": float(np.mean(fold_pos_valid)),
+        f"{prefix}_fold_train_neg_min": float(np.min(fold_neg_train)),
+        f"{prefix}_fold_valid_neg_min": float(np.min(fold_neg_valid)),
+    }
+    tprint(
+        "LGBM fold class-support diagnostics "
+        f"{prefix}: folds={int(diag[f'{prefix}_fold_count'])}, "
+        f"train_pos_min={diag[f'{prefix}_fold_train_pos_min']:.0f}, "
+        f"valid_pos_min={diag[f'{prefix}_fold_valid_pos_min']:.0f}, "
+        f"train_neg_min={diag[f'{prefix}_fold_train_neg_min']:.0f}, "
+        f"valid_neg_min={diag[f'{prefix}_fold_valid_neg_min']:.0f}."
+    )
+    return diag
 
 
 def _drop_fraction(n_features: int) -> float:
@@ -4597,6 +4877,12 @@ def _cross_val_oof_lgbm(
         timestamps=timestamps,
         n_splits=n_splits,
     )
+    fold_support_diag = _fold_support_diagnostics(
+        splitter,
+        y_split,
+        y_metric,
+        prefix="oof_cv",
+    )
     oof = np.full(len(y_arr), np.nan, dtype=np.float32)
     metrics: list[dict[str, float]] = []
     tprint(
@@ -4619,11 +4905,18 @@ def _cross_val_oof_lgbm(
             params=fold_params,
             X_valid=Xf.iloc[va].reset_index(drop=True),
             y_valid=y_arr[va],
-            early_stopping_rounds=50,
+            early_stopping_rounds=LGBM_EARLY_STOPPING_ROUNDS,
         )
         pred = _predict_lgbm_raw(model, Xf.iloc[va].reset_index(drop=True), "classifier" if classifier else "regressor")
         oof[va] = pred
-        metrics.append(_metric_pack(y_metric[va], pred, classifier=classifier, groups=_groups_take(groups, va), returns=ret_arr[va]))
+        fold_metrics = _metric_pack(y_metric[va], pred, classifier=classifier, groups=_groups_take(groups, va), returns=ret_arr[va])
+        if fold_support_diag:
+            fold_metrics.update(fold_support_diag)
+            fold_metrics["oof_cv_fold_train_pos"] = float(np.sum(np.asarray(y_metric)[tr] >= 0.5)) if classifier else float("nan")
+            fold_metrics["oof_cv_fold_valid_pos"] = float(np.sum(np.asarray(y_metric)[va] >= 0.5)) if classifier else float("nan")
+            fold_metrics["oof_cv_fold_train_neg"] = float(len(tr) - np.sum(np.asarray(y_metric)[tr] >= 0.5)) if classifier else float("nan")
+            fold_metrics["oof_cv_fold_valid_neg"] = float(len(va) - np.sum(np.asarray(y_metric)[va] >= 0.5)) if classifier else float("nan")
+        metrics.append(fold_metrics)
         tprint(
             f"LGBM OOF CV fold {fold_i}/{n_splits} complete: "
             f"elapsed={time.perf_counter() - fold_t0:.1f}s."
@@ -4660,6 +4953,12 @@ def _cross_val_oof_lgbm_with_meta_features(
         timestamps=timestamps,
         n_splits=n_splits,
     )
+    fold_support_diag = _fold_support_diagnostics(
+        splitter,
+        y_split,
+        y_metric,
+        prefix="final_oof_cv",
+    )
     oof = np.full(len(y_arr), np.nan, dtype=np.float32)
     metrics: list[dict[str, float]] = []
     meta_features = pd.DataFrame(index=np.arange(len(y_arr)), columns=LGBM_META_FEATURE_NAMES, dtype=np.float32)
@@ -4686,11 +4985,18 @@ def _cross_val_oof_lgbm_with_meta_features(
             params=fold_params,
             X_valid=X_va,
             y_valid=y_arr[va],
-            early_stopping_rounds=50,
+            early_stopping_rounds=LGBM_EARLY_STOPPING_ROUNDS,
         )
         pred = _predict_lgbm_raw(model, X_va, mode)
         oof[va] = pred
-        metrics.append(_metric_pack(y_metric[va], pred, classifier=classifier, groups=_groups_take(groups, va), returns=ret_arr[va]))
+        fold_metrics = _metric_pack(y_metric[va], pred, classifier=classifier, groups=_groups_take(groups, va), returns=ret_arr[va])
+        if fold_support_diag:
+            fold_metrics.update(fold_support_diag)
+            fold_metrics["final_oof_cv_fold_train_pos"] = float(np.sum(np.asarray(y_metric)[tr] >= 0.5)) if classifier else float("nan")
+            fold_metrics["final_oof_cv_fold_valid_pos"] = float(np.sum(np.asarray(y_metric)[va] >= 0.5)) if classifier else float("nan")
+            fold_metrics["final_oof_cv_fold_train_neg"] = float(len(tr) - np.sum(np.asarray(y_metric)[tr] >= 0.5)) if classifier else float("nan")
+            fold_metrics["final_oof_cv_fold_valid_neg"] = float(len(va) - np.sum(np.asarray(y_metric)[va] >= 0.5)) if classifier else float("nan")
+        metrics.append(fold_metrics)
         fold_meta = _lgbm_meta_features_from_models([model], X_va, mode=mode, rank_bin_stats=None)
         gain_imp, split_imp = _feature_importances(model, len(features))
         drift_features = _top_cumulative_importance_feature_names(
@@ -4749,6 +5055,7 @@ def _oof_distilled_sample_weights_lgbm(
     passes: int,
     label: str,
     objective_mode: str | None = "train_base",
+    cfg: dict[str, Any] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     base, _ = _normalize_weights(base_weight)
     current = base.copy()
@@ -4789,6 +5096,16 @@ def _oof_distilled_sample_weights_lgbm(
             fp_weight,
             timestamps,
             objective_mode=objective_mode,
+        )
+        distill, fp_weight = apply_distillation_recipe(
+            distill,
+            fp_weight,
+            y_metric=y_metric,
+            pred=last_oof,
+            returns=returns,
+            timestamps=timestamps,
+            objective_mode=objective_mode,
+            cfg=cfg,
         )
         current, ess = _normalize_weights(base * distill * fp_weight)
         prev_oof = last_oof.copy()
@@ -4837,11 +5154,11 @@ def _run_lgbm_hpo(
     t0 = time.perf_counter()
     try:
         import optuna
-        from optuna.pruners import MedianPruner
+        from optuna.pruners import SuccessiveHalvingPruner
         from optuna.trial import TrialState
     except Exception as exc:
         tprint(f"LGBM HPO skipped, Optuna unavailable ({exc}).")
-        params = _default_hpo_params(random_state, classifier)
+        params = _effective_lgbm_params(_default_hpo_params(random_state, classifier), classifier=classifier)
         return params, {"hpo_available": False, "hpo_best_value": np.nan, "hpo_objective_mode": _normalize_objective_mode(objective_mode)}
     y_arr = np.asarray(y)
     y_metric = np.asarray(metric_y if metric_y is not None else y_arr)
@@ -4873,9 +5190,11 @@ def _run_lgbm_hpo(
         f"row_subsample_frac={hpo_frac:.3f}, max_rows={int(LGBM_HPO_MAX_ROWS)}, "
         f"patience={int(patience)}, objective={_normalize_objective_mode(objective_mode)}, "
         f"param_set={LGBM_HPO_PARAM_SET}, "
-        "fold_mode=interleaved_spread, cegb_enabled=False, "
+        "fold_mode=interleaved_spread, pruner=successive_halving, cegb_enabled=False, "
         f"path_smooth_max={float(LGBM_HPO_PATH_SMOOTH_MAX):.3g}, "
-        f"final_min_estimators={int(LGBM_HPO_FINAL_MIN_ESTIMATORS)}."
+        f"final_min_estimators={int(LGBM_HPO_FINAL_MIN_ESTIMATORS)}, "
+        f"n_estimators_cap={int(LGBM_N_ESTIMATORS_CAP)}, "
+        f"early_stopping_rounds={int(LGBM_EARLY_STOPPING_ROUNDS)}."
     )
 
     def objective(trial: Any) -> float:
@@ -4943,7 +5262,7 @@ def _run_lgbm_hpo(
                 params=params,
                 X_valid=X_sub.iloc[va].reset_index(drop=True),
                 y_valid=y_sub[va],
-                early_stopping_rounds=75,
+                early_stopping_rounds=LGBM_EARLY_STOPPING_ROUNDS,
             )
             best_iter = _model_num_iterations(model)
             if best_iter > 0:
@@ -5091,11 +5410,18 @@ def _run_lgbm_hpo(
         elif int(trial.number) - int(best_seen["trial"]) >= int(patience):
             study.stop()
 
-    study = optuna.create_study(direction="maximize", pruner=MedianPruner(n_startup_trials=10, n_warmup_steps=1, interval_steps=1))
+    study = optuna.create_study(
+        direction="maximize",
+        pruner=SuccessiveHalvingPruner(
+            min_resource=1,
+            reduction_factor=2,
+            min_early_stopping_rate=0,
+        ),
+    )
     study.optimize(objective, n_trials=max(0, int(max_trials)), callbacks=[early_stop_callback], n_jobs=1, show_progress_bar=False)
     complete = [t for t in study.trials if t.state == TrialState.COMPLETE and t.value is not None]
     if not complete:
-        params = _default_hpo_params(random_state, classifier)
+        params = _effective_lgbm_params(_default_hpo_params(random_state, classifier), classifier=classifier)
         return params, {"hpo_available": True, "hpo_completed_trials": 0, "hpo_best_value": np.nan, "hpo_objective_mode": _normalize_objective_mode(objective_mode)}
     best = study.best_trial
     best_iterations = [int(v) for v in best.user_attrs.get("hpo_fold_best_iterations", []) if int(v) > 0]
@@ -5108,7 +5434,7 @@ def _run_lgbm_hpo(
             f"using min={int(LGBM_HPO_FINAL_MIN_ESTIMATORS)}."
         )
     depth = int(best.params.get("max_depth", 4))
-    best_params = _base_lgbm_params(
+    best_params_raw = _base_lgbm_params(
         random_state + 191,
         classifier=classifier,
         overrides={
@@ -5136,10 +5462,11 @@ def _run_lgbm_hpo(
         },
     )
     if LGBM_HPO_PARAM_SET == "full":
-        best_params["feature_fraction_bynode"] = float(
+        best_params_raw["feature_fraction_bynode"] = float(
             best.params.get("feature_fraction_bynode", 1.0)
         )
-        best_params["max_delta_step"] = float(best.params.get("max_delta_step", 0.0))
+        best_params_raw["max_delta_step"] = float(best.params.get("max_delta_step", 0.0))
+    best_params = _effective_lgbm_params(best_params_raw, classifier=classifier)
     attrs = dict(best.user_attrs)
     attrs.update(
         {
@@ -5150,7 +5477,12 @@ def _run_lgbm_hpo(
             "hpo_best_params": dict(best_params),
             "hpo_objective_mode": _normalize_objective_mode(objective_mode),
             "hpo_param_set": LGBM_HPO_PARAM_SET,
-            "hpo_final_n_estimators": int(final_n_estimators),
+            "hpo_final_n_estimators_raw": int(final_n_estimators),
+            "hpo_final_n_estimators": int(best_params.get("n_estimators", final_n_estimators)),
+            "hpo_n_estimators_cap": int(LGBM_N_ESTIMATORS_CAP),
+            "hpo_lgbm_early_stopping_rounds": int(LGBM_EARLY_STOPPING_ROUNDS),
+            "hpo_early_stop_patience_trials": int(patience),
+            "hpo_pruner": "successive_halving",
         }
     )
     tprint(
@@ -5176,6 +5508,7 @@ def train_lgbm_stability_candidate(
     preset_feature_names: Optional[list[str]] = None,
     preset_best_params: Optional[dict[str, Any]] = None,
     preset_source: str | None = None,
+    cfg: dict[str, Any] | None = None,
 ) -> Optional[dict[str, Any]]:
     objective_mode = _normalize_objective_mode(hpo_objective_mode)
     distill_passes = _distillation_passes_for_objective(objective_mode)
@@ -5185,8 +5518,9 @@ def train_lgbm_stability_candidate(
     X_raw_df = X.copy() if isinstance(X, pd.DataFrame) else pd.DataFrame(X)
     X_raw_df.columns = [str(c) for c in X_raw_df.columns]
     X_df = _frame(X)
-    y_arr = _coerce_target(y, classifier)
-    y_metric = _coerce_target(hard_labels, classifier) if hard_labels is not None else y_arr
+    y_arr = _coerce_target(y, classifier, allow_soft_labels=bool(LGBM_TRUE_SOFT_LABELS))
+    y_metric = _coerce_target(hard_labels, classifier) if hard_labels is not None else _coerce_target(y, classifier)
+    y_hard_diag = _coerce_target(hard_labels, classifier) if hard_labels is not None else _coerce_target(y, classifier)
     _validate_input_lengths(X_df, y_arr, sample_weight=sample_weight, timestamps=timestamps, assets=assets, returns=returns)
     if len(y_metric) != len(y_arr):
         raise ValueError(f"hard_labels length {len(y_metric)} != target length {len(y_arr)}")
@@ -5266,6 +5600,28 @@ def train_lgbm_stability_candidate(
             f"objective={objective_mode}, half_life_days={_recency_half_life_days(objective_mode):.1f}, "
             "distillation_multipliers_shrink_to_one=yes."
         )
+    label_diag = _log_label_weight_diagnostics(
+        y_arr,
+        y_hard_diag,
+        sw,
+        label=f"candidate_{objective_mode}_pre_rebalance",
+    )
+    sw, rebalance_diag = _rebalance_effective_class_mass(
+        y_arr,
+        y_hard_diag,
+        sw,
+        label=f"candidate_{objective_mode}",
+    )
+    if bool(rebalance_diag.get(f"candidate_{objective_mode}_class_rebalance_applied", 0.0)):
+        label_diag.update(
+            _log_label_weight_diagnostics(
+                y_arr,
+                y_hard_diag,
+                sw,
+                label=f"candidate_{objective_mode}_post_rebalance",
+            )
+        )
+    label_diag.update(rebalance_diag)
     stage_indices = _stage_partition_indices(y_metric, timestamps=timestamps, assets=assets, random_state=random_state + 701)
     stage_indices = _subsample_stage_indices(stage_indices, y_metric, max_fraction=LGBM_ROW_SUBSAMPLE_FRAC, random_state=random_state + 3701, classifier=classifier)
     if oi_present_mask is not None:
@@ -5447,7 +5803,10 @@ def train_lgbm_stability_candidate(
         f"{len(selected_features)} after {len(history)} prune rounds; "
         f"preview={selected_features[:10]}."
     )
-    base_params = dict(preset_best_params or _default_hpo_params(random_state + 401, classifier))
+    base_params = _effective_lgbm_params(
+        dict(preset_best_params or _default_hpo_params(random_state + 401, classifier)),
+        classifier=classifier,
+    )
     if preset_best_params:
         tprint("LGBM candidate using native preset best_params; HPO is skipped for base preset candidate scoring.")
     final_weights, _ = _oof_distilled_sample_weights_lgbm(
@@ -5465,6 +5824,7 @@ def train_lgbm_stability_candidate(
         passes=distill_passes,
         label="candidate",
         objective_mode=objective_mode,
+        cfg=cfg,
     )
     eval_preds: list[np.ndarray] = []
     eval_configs = (
@@ -5513,9 +5873,24 @@ def train_lgbm_stability_candidate(
     metrics["recency_weighting_enabled"] = bool(LGBM_RECENCY_WEIGHTING)
     metrics["recency_sample_weight_applied"] = bool(recency_applied)
     metrics["recency_half_life_days"] = float(_recency_half_life_days(objective_mode))
-    metrics["cv_mode"] = "purged_time" if (bool(LGBM_PURGED_CV) or LGBM_CV_MODE == "purged_time") else "shuffled"
+    metrics["true_soft_labels_enabled"] = bool(LGBM_TRUE_SOFT_LABELS)
+    metrics["effective_class_rebalance_enabled"] = bool(LGBM_REBALANCE_EFFECTIVE_CLASSES)
+    metrics.update(label_diag)
+    metrics["cv_mode"] = (
+        "interleaved_spread"
+        if LGBM_CV_MODE in {"interleaved", "interleaved_spread"}
+        else (
+            "purged_time"
+            if (bool(LGBM_PURGED_CV) or LGBM_CV_MODE == "purged_time")
+            else "shuffled"
+        )
+    )
     metrics["cv_splits"] = int(LGBM_CV_SPLITS)
-    metrics["purge_hours"] = float(LGBM_PURGE_HOURS if (bool(LGBM_PURGED_CV) or LGBM_CV_MODE == "purged_time") else 0.0)
+    metrics["purge_hours"] = float(
+        LGBM_PURGE_HOURS
+        if (bool(LGBM_PURGED_CV) or LGBM_CV_MODE == "purged_time")
+        else 0.0
+    )
     metrics.update(oi_diagnostics)
     metrics.update(coverage_diagnostics)
     metrics["feature_selection_sample_policy"] = "stratified_spread_across_ordered_rows"
@@ -5529,8 +5904,42 @@ def train_lgbm_stability_candidate(
     fill = float(np.mean(y_arr))
     oof_for_fit = np.nan_to_num(oof_full, nan=fill).astype(np.float32)
     tprint(f"LGBM candidate done: J={metrics.get('J_final', 0.0):.4f}, features={len(selected_features)}, elapsed={metrics['candidate_elapsed_sec']:.1f}s.")
+    candidate_model = None
+    if LGBM_OPTUNA_CANDIDATE_ONLY:
+        fill_oof = float(np.nanmean(oof_full)) if np.isfinite(oof_full).any() else fill
+        oof_filled = np.nan_to_num(oof_full, nan=fill_oof).astype(np.float32)
+        rank_pct = _safe_rank_pct(oof_filled)
+        meta_oof_features = pd.DataFrame(index=np.arange(n), columns=LGBM_META_FEATURE_NAMES, dtype=np.float32)
+        meta_oof_features["lgbm_prob"] = oof_filled
+        meta_oof_features["rank_pct"] = rank_pct
+        candidate_model = LGBMStabilityModel(mode=mode)
+        candidate_model.selected_features = list(selected_features)
+        candidate_model.input_feature_names = list(selected_features)
+        candidate_model.oof_probs = oof_full.astype(np.float32)
+        candidate_model.meta_oof_features = meta_oof_features.reindex(
+            columns=candidate_model.meta_feature_names,
+            fill_value=0.0,
+        ).astype(np.float32)
+        candidate_model.rank_bin_stats_oof = _fit_rank_bin_stats_oof(
+            y_metric,
+            rank_pct,
+            classifier=classifier,
+            returns=ret_arr,
+        )
+        candidate_model.metrics = dict(metrics)
+        candidate_model.metrics["optuna_candidate_only"] = True
+        candidate_model.metrics["final_fit_train_rows"] = 0
+        candidate_model.metrics["final_fit_train_rows_total"] = int(n)
+        candidate_model.metrics["final_model_count"] = 0
+        candidate_model.metrics["final_ensemble_sequential_distillation"] = False
+        candidate_model.pruning_history = list(history)
+        tprint(
+            "LGBM Optuna candidate-only model materialized; "
+            f"oof_finite={int(np.isfinite(oof_full).sum())}/{len(oof_full)}, "
+            f"features={len(selected_features)}."
+        )
     return {
-        "model": None,
+        "model": candidate_model,
         "metrics": metrics,
         "oof_probs": oof_full,
         "oof_for_full_fit": oof_for_fit,
@@ -5569,14 +5978,16 @@ def fit_lgbm_stability_full_model(
     reference_artifact_dir: str | os.PathLike[str] | None = None,
     preset_best_params: Optional[dict[str, Any]] = None,
     preset_source: str | None = None,
+    cfg: dict[str, Any] | None = None,
 ) -> Optional[LGBMStabilityModel]:
     t0 = time.perf_counter()
     objective_mode = _normalize_objective_mode(hpo_objective_mode)
     distill_passes = _distillation_passes_for_objective(objective_mode)
     classifier = mode == "classifier"
     X_df = _frame(X)
-    y_arr = _coerce_target(y, classifier)
-    y_metric = _coerce_target(hard_labels, classifier) if hard_labels is not None else y_arr
+    y_arr = _coerce_target(y, classifier, allow_soft_labels=bool(LGBM_TRUE_SOFT_LABELS))
+    y_metric = _coerce_target(hard_labels, classifier) if hard_labels is not None else _coerce_target(y, classifier)
+    y_hard_diag = _coerce_target(hard_labels, classifier) if hard_labels is not None else _coerce_target(y, classifier)
     _validate_input_lengths(X_df, y_arr, sample_weight=sample_weight, timestamps=timestamps, assets=assets, returns=returns)
     if len(y_metric) != len(y_arr):
         raise ValueError(f"hard_labels length {len(y_metric)} != target length {len(y_arr)}")
@@ -5607,6 +6018,28 @@ def fit_lgbm_stability_full_model(
             f"objective={objective_mode}, half_life_days={_recency_half_life_days(objective_mode):.1f}, "
             "distillation_multipliers_shrink_to_one=yes."
         )
+    label_diag = _log_label_weight_diagnostics(
+        y_arr,
+        y_hard_diag,
+        sw,
+        label=f"final_{objective_mode}_pre_rebalance",
+    )
+    sw, rebalance_diag = _rebalance_effective_class_mass(
+        y_arr,
+        y_hard_diag,
+        sw,
+        label=f"final_{objective_mode}",
+    )
+    if bool(rebalance_diag.get(f"final_{objective_mode}_class_rebalance_applied", 0.0)):
+        label_diag.update(
+            _log_label_weight_diagnostics(
+                y_arr,
+                y_hard_diag,
+                sw,
+                label=f"final_{objective_mode}_post_rebalance",
+            )
+        )
+    label_diag.update(rebalance_diag)
     if stage_indices is None:
         all_idx = np.arange(n, dtype=np.int32)
         stage_indices = {"lgbm_select": all_idx, "hpo": all_idx, "fit_oof": all_idx}
@@ -5643,7 +6076,7 @@ def fit_lgbm_stability_full_model(
     hpo_groups = _groups_take(stability_groups, hpo_idx)
     hpo_weights, _ = _normalize_weights(sw[hpo_idx])
     if preset_best_params:
-        best_params = dict(preset_best_params)
+        best_params = _effective_lgbm_params(dict(preset_best_params), classifier=classifier)
         hpo_metrics = {
             "hpo_available": True,
             "hpo_reused_from_native_preset": True,
@@ -5671,6 +6104,8 @@ def fit_lgbm_stability_full_model(
             patience=LGBM_HPO_EARLY_STOP_PATIENCE if hpo_patience_override is None else int(hpo_patience_override),
             objective_mode=objective_mode,
         )
+        best_params = _effective_lgbm_params(dict(best_params), classifier=classifier)
+        hpo_metrics["hpo_best_params"] = dict(best_params)
     if distill_passes > 0:
         final_weights, pre_final_oof = _oof_distilled_sample_weights_lgbm(
             X_df,
@@ -5687,6 +6122,7 @@ def fit_lgbm_stability_full_model(
             passes=distill_passes,
             label="final",
             objective_mode=objective_mode,
+            cfg=cfg,
         )
     else:
         final_weights = sw.copy()
@@ -5709,7 +6145,7 @@ def fit_lgbm_stability_full_model(
         tprint(
             f"LGBM final model {i + 1}/{LGBM_FINAL_MODEL_COUNT} started: "
             f"rows={len(y_fit)}, features={len(selected_features)}, "
-            f"sequential_distill=yes."
+            f"sequential_distill={'no' if LGBM_DISABLE_SELF_DISTILLATION else 'yes'}."
         )
         params_i = dict(best_params)
         params_i["random_state"] = int(random_state + 7001 + i * 101)
@@ -5722,31 +6158,44 @@ def fit_lgbm_stability_full_model(
             running_ensemble_pred = (
                 (running_ensemble_pred.astype(np.float32) * float(i)) + model_pred_all.astype(np.float32)
             ) / float(i + 1)
-        distill = _compute_weight_distillation(
-            y_metric,
-            running_ensemble_pred,
-            prev_ensemble_pred,
-            is_classifier=classifier,
-            include_false_positive_focus=False,
-        )
-        fp_weight = _false_positive_avoidance_weight(
-            y_metric,
-            running_ensemble_pred,
-            classifier=classifier,
-            top_frac=_target_top_fraction(objective_mode),
-        )
-        distill = _recency_shrink_weight_towards_one(
-            distill,
-            timestamps,
-            objective_mode=objective_mode,
-        )
-        fp_weight = _recency_shrink_weight_towards_one(
-            fp_weight,
-            timestamps,
-            objective_mode=objective_mode,
-        )
-        sequential_weights, final_ensemble_ess = _normalize_weights(sequential_weight_base * distill * fp_weight)
-        prev_ensemble_pred = running_ensemble_pred.copy()
+        if not LGBM_DISABLE_SELF_DISTILLATION:
+            distill = _compute_weight_distillation(
+                y_metric,
+                running_ensemble_pred,
+                prev_ensemble_pred,
+                is_classifier=classifier,
+                include_false_positive_focus=False,
+            )
+            fp_weight = _false_positive_avoidance_weight(
+                y_metric,
+                running_ensemble_pred,
+                classifier=classifier,
+                top_frac=_target_top_fraction(objective_mode),
+            )
+            distill = _recency_shrink_weight_towards_one(
+                distill,
+                timestamps,
+                objective_mode=objective_mode,
+            )
+            fp_weight = _recency_shrink_weight_towards_one(
+                fp_weight,
+                timestamps,
+                objective_mode=objective_mode,
+            )
+            distill, fp_weight = apply_distillation_recipe(
+                distill,
+                fp_weight,
+                y_metric=y_metric,
+                pred=running_ensemble_pred,
+                returns=ret_arr,
+                timestamps=timestamps,
+                objective_mode=objective_mode,
+                cfg=cfg,
+            )
+            sequential_weights, final_ensemble_ess = _normalize_weights(
+                sequential_weight_base * distill * fp_weight
+            )
+            prev_ensemble_pred = running_ensemble_pred.copy()
         tprint(
             f"LGBM final model {i + 1}/{LGBM_FINAL_MODEL_COUNT} fitted on "
             f"{len(y_fit)} rows in {time.perf_counter() - fit_t0:.1f}s; "
@@ -5782,19 +6231,32 @@ def fit_lgbm_stability_full_model(
             "check CEGB/path_smooth/min_split_gain and final HPO params."
         )
     final_weights = sequential_weights.astype(np.float32)
-    final_oof, final_fold_metrics, meta_oof_features = _cross_val_oof_lgbm_with_meta_features(
-        X_df,
-        y_arr,
-        final_weights,
-        selected_features,
-        classifier=classifier,
-        params=best_params,
-        groups=stability_groups,
-        timestamps=timestamps,
-        returns=ret_arr,
-        metric_y=y_metric,
-        random_state=random_state + 11701,
-    )
+    if LGBM_SKIP_FINAL_OOF_META_CV:
+        tprint(
+            "LGBM final OOF/meta CV skipped by EPM_LGBM_SKIP_FINAL_OOF_META_CV=1; "
+            "using filled pre-final OOF for trial scoring."
+        )
+        fill = float(np.nanmean(pre_final_oof)) if np.isfinite(pre_final_oof).any() else float(np.mean(y_arr))
+        final_oof = np.nan_to_num(pre_final_oof, nan=fill).astype(np.float32)
+        final_fold_metrics = [_metric_pack(y_metric, final_oof, classifier=classifier, groups=stability_groups, returns=ret_arr)]
+        meta_oof_features = pd.DataFrame(index=np.arange(n), columns=LGBM_META_FEATURE_NAMES, dtype=np.float32)
+        full_rank = _safe_rank_pct(final_oof)
+        meta_oof_features["lgbm_prob"] = final_oof
+        meta_oof_features["rank_pct"] = full_rank
+    else:
+        final_oof, final_fold_metrics, meta_oof_features = _cross_val_oof_lgbm_with_meta_features(
+            X_df,
+            y_arr,
+            final_weights,
+            selected_features,
+            classifier=classifier,
+            params=best_params,
+            groups=stability_groups,
+            timestamps=timestamps,
+            returns=ret_arr,
+            metric_y=y_metric,
+            random_state=random_state + 11701,
+        )
     model.oof_probs = final_oof.astype(np.float32)
     model.rank_bin_stats_oof = _fit_rank_bin_stats_oof(y_metric, np.asarray(meta_oof_features["rank_pct"], dtype=np.float32), classifier=classifier, returns=ret_arr)
     model.meta_oof_features = meta_oof_features.reindex(columns=model.meta_feature_names, fill_value=0.0).astype(np.float32)
@@ -5822,7 +6284,7 @@ def fit_lgbm_stability_full_model(
         model.drift_reference.get("feature_names", [])[:50]
     )
     model.metrics["final_model_count"] = int(LGBM_FINAL_MODEL_COUNT)
-    model.metrics["final_ensemble_sequential_distillation"] = True
+    model.metrics["final_ensemble_sequential_distillation"] = not bool(LGBM_DISABLE_SELF_DISTILLATION)
     model.metrics["oof_distillation_passes"] = int(distill_passes)
     model.metrics["min_oof_distillation_passes"] = int(LGBM_MIN_OOF_DISTILLATION_PASSES)
     model.metrics["meta_min_oof_distillation_passes"] = int(LGBM_META_MIN_OOF_DISTILLATION_PASSES)
@@ -5830,9 +6292,24 @@ def fit_lgbm_stability_full_model(
     model.metrics["recency_weighting_enabled"] = bool(LGBM_RECENCY_WEIGHTING)
     model.metrics["recency_sample_weight_applied"] = bool(recency_applied)
     model.metrics["recency_half_life_days"] = float(_recency_half_life_days(objective_mode))
-    model.metrics["cv_mode"] = "purged_time" if (bool(LGBM_PURGED_CV) or LGBM_CV_MODE == "purged_time") else "shuffled"
+    model.metrics["true_soft_labels_enabled"] = bool(LGBM_TRUE_SOFT_LABELS)
+    model.metrics["effective_class_rebalance_enabled"] = bool(LGBM_REBALANCE_EFFECTIVE_CLASSES)
+    model.metrics.update(label_diag)
+    model.metrics["cv_mode"] = (
+        "interleaved_spread"
+        if LGBM_CV_MODE in {"interleaved", "interleaved_spread"}
+        else (
+            "purged_time"
+            if (bool(LGBM_PURGED_CV) or LGBM_CV_MODE == "purged_time")
+            else "shuffled"
+        )
+    )
     model.metrics["cv_splits"] = int(LGBM_CV_SPLITS)
-    model.metrics["purge_hours"] = float(LGBM_PURGE_HOURS if (bool(LGBM_PURGED_CV) or LGBM_CV_MODE == "purged_time") else 0.0)
+    model.metrics["purge_hours"] = float(
+        LGBM_PURGE_HOURS
+        if (bool(LGBM_PURGED_CV) or LGBM_CV_MODE == "purged_time")
+        else 0.0
+    )
     model.metrics["best_params"] = dict(best_params)
     model.metrics["hpo_objective_mode"] = objective_mode
     model.metrics["lgbm_meta_feature_names"] = list(model.meta_feature_names)
@@ -5843,19 +6320,22 @@ def fit_lgbm_stability_full_model(
     if ref_dir is None and meta_path:
         meta_path_obj = Path(meta_path)
         ref_dir = meta_path_obj.parent / "lgbm_reference" / meta_path_obj.stem
-    _save_lgbm_reference_artifacts(
-        model,
-        ref_dir,
-        X_reference=X_fit,
-        split_importance_sum=split_importance_sum,
-        gain_importance_sum=gain_importance_sum,
-        y_metric=y_metric,
-        returns=ret_arr,
-        timestamps=timestamps,
-        assets=assets,
-        objective_mode=objective_mode,
-        mode=mode,
-    )
+    if LGBM_SKIP_REFERENCE_ARTIFACTS:
+        tprint("LGBM reference artifacts skipped by EPM_LGBM_SKIP_REFERENCE_ARTIFACTS=1.")
+    else:
+        _save_lgbm_reference_artifacts(
+            model,
+            ref_dir,
+            X_reference=X_fit,
+            split_importance_sum=split_importance_sum,
+            gain_importance_sum=gain_importance_sum,
+            y_metric=y_metric,
+            returns=ret_arr,
+            timestamps=timestamps,
+            assets=assets,
+            objective_mode=objective_mode,
+            mode=mode,
+        )
     fit_oof_metrics_for_stage: dict[str, Any] | None = None
     if pre_final_oof is not None and len(pre_final_oof) == n:
         pre_metrics = _metric_pack(y_metric, pre_final_oof, classifier=classifier, groups=stability_groups, returns=ret_arr)
@@ -5919,6 +6399,7 @@ def train_lgbm_stability_pipeline(
     hpo_objective_mode: str = "train_base",
     meta_feature_output_path: str | os.PathLike[str] | None = None,
     reference_artifact_dir: str | os.PathLike[str] | None = None,
+    cfg: dict[str, Any] | None = None,
 ) -> Optional[LGBMStabilityModel]:
     objective_mode = _normalize_objective_mode(hpo_objective_mode)
     candidate = train_lgbm_stability_candidate(
@@ -5932,9 +6413,47 @@ def train_lgbm_stability_pipeline(
         returns=returns,
         hard_labels=hard_labels,
         hpo_objective_mode=objective_mode,
+        cfg=cfg,
     )
     if candidate is None:
         return None
+    if LGBM_OPTUNA_CANDIDATE_ONLY:
+        selected_features = [str(c) for c in candidate.get("selected_feature_names", []) or []]
+        oof = np.asarray(candidate.get("oof_probs"), dtype=np.float32)
+        if oof.ndim != 1 or len(oof) != len(y):
+            raise ValueError(
+                "LGBM Optuna candidate-only mode requires 1-D candidate OOF "
+                f"with len={len(y)}, got shape={getattr(oof, 'shape', None)}"
+            )
+        y_metric = _coerce_target(hard_labels, mode == "classifier") if hard_labels is not None else _coerce_target(y, mode == "classifier")
+        ret_arr = _as_returns(y_metric, returns)
+        fill = float(np.nanmean(oof)) if np.isfinite(oof).any() else float(np.mean(y_metric))
+        oof_filled = np.nan_to_num(oof, nan=fill).astype(np.float32)
+        rank_pct = _safe_rank_pct(oof_filled)
+        meta_oof_features = pd.DataFrame(index=np.arange(len(oof_filled)), columns=LGBM_META_FEATURE_NAMES, dtype=np.float32)
+        meta_oof_features["lgbm_prob"] = oof_filled
+        meta_oof_features["rank_pct"] = rank_pct
+        model = LGBMStabilityModel(mode=mode)
+        model.selected_features = selected_features
+        model.input_feature_names = selected_features
+        model.oof_probs = oof.astype(np.float32)
+        model.meta_oof_features = meta_oof_features.reindex(columns=model.meta_feature_names, fill_value=0.0).astype(np.float32)
+        model.rank_bin_stats_oof = _fit_rank_bin_stats_oof(y_metric, rank_pct, classifier=(mode == "classifier"), returns=ret_arr)
+        model.metrics = dict(candidate.get("metrics") or {})
+        model.metrics["feature_count"] = int(len(selected_features))
+        model.metrics["selected_features_count"] = int(len(selected_features))
+        model.metrics["selected_features_preview"] = list(selected_features[:50])
+        model.metrics["optuna_candidate_only"] = True
+        model.metrics["final_fit_train_rows"] = 0
+        model.metrics["final_fit_train_rows_total"] = int(len(y))
+        model.metrics["final_model_count"] = 0
+        model.metrics["final_ensemble_sequential_distillation"] = False
+        model.pruning_history = list(candidate.get("pruning_history") or [])
+        tprint(
+            "LGBM Optuna candidate-only fast exit enabled; "
+            f"skipping full fit/final OOF/reference artifacts with features={len(selected_features)}."
+        )
+        return model
     return fit_lgbm_stability_full_model(
         X,
         y,
@@ -5956,6 +6475,7 @@ def train_lgbm_stability_pipeline(
         hpo_objective_mode=objective_mode,
         meta_feature_output_path=meta_feature_output_path,
         reference_artifact_dir=reference_artifact_dir,
+        cfg=cfg,
     )
 
 

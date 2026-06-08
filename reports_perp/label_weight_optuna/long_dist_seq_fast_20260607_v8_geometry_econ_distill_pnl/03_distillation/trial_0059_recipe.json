@@ -1,0 +1,72 @@
+{
+  "distillation": {
+    "distill_age_impact": 1.6029072746078155,
+    "distill_error_power": 0.25863622327240243,
+    "distill_missed_net_power": 2.6354415199114807,
+    "distill_net_loss_power": 0.8117753668288097,
+    "distill_rank_focus_temperature": 0.1315258708726749,
+    "distill_rank_focus_threshold": 0.7771059410931912,
+    "distill_stop_hit_focus": 0.2202925044256349,
+    "economic_error_mix": 0.38742672584598814,
+    "false_negative_focus": 0.07053882377689201,
+    "false_positive_focus": 0.053215795426884566
+  },
+  "execution_costs": {},
+  "geometry": {
+    "enabled": true,
+    "geometry_anchor_mix": 0.38508606553324765,
+    "label_horizon_bars": 5.0,
+    "mae_failure_vol_mult": 1.1756985034041816,
+    "min_executable_net_bps": 15.615711889190262,
+    "sl_as_tp_pct": 0.8073698453562188,
+    "timeout_value": 0.49258830886655425,
+    "tp_vol_mult": 0.7094977829487271,
+    "trailing_activation_vol_mult": 2.5097815214050994,
+    "trailing_giveback_pct": 0.7032427943204667
+  },
+  "label": {
+    "mae_penalty_scale": 0.6316575297511658,
+    "mfe_scale_bps": 238.78367539895513,
+    "net_return_center_bps": 94.22608831032024,
+    "net_return_temperature_bps": 52.108132947068995,
+    "path_quality_mix": 0.1469624034050537,
+    "stop_penalty": 0.6009383564460999
+  },
+  "name": "trial_59",
+  "objective": {
+    "base_k_multiplier": 2.0,
+    "hit_fee_floor_bps": 0.0,
+    "impact_scale_bps": 75.0,
+    "portfolio_alignment_strength": 0.3009591367044608
+  },
+  "provenance": {
+    "cv_mode": "interleaved_spread",
+    "features": "frozen_native_preset",
+    "hyperparameters": "frozen_native_preset_except_n_estimators_cap",
+    "lgbm_early_stopping_rounds": 30,
+    "lgbm_hpo_trials": 0,
+    "lgbm_n_estimators_cap": 200,
+    "max_trees": 200,
+    "max_trees_env": "EPM_LGBM_N_ESTIMATORS_CAP=200",
+    "phase": "distillation",
+    "study_patience_trials": 40,
+    "study_pruner": "successive_halving",
+    "subsample": "spread_through_full_period"
+  },
+  "stage": "all",
+  "version": 1,
+  "weight": {
+    "ambiguous_weight": 0.4596450484272102,
+    "class_rebalance_strength": 0.3434991586324751,
+    "concurrency_penalty": 0.3066142484483748,
+    "concurrency_window_hours": 0.5,
+    "hard_negative_weight": 4.381699588651106,
+    "mae_weight_power": 1.0277278195519028,
+    "mfe_weight_power": 1.1465082204872499,
+    "net_ev_weight_power": 0.8365771630783736,
+    "path_quality_strength": 0.2664945997639339,
+    "positive_mass_target": 0.4082242380624346,
+    "recency_half_life_days": 90.0,
+    "robustness_strength": 0.13351949812606279
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "auction_rank_minmax": [
+    NaN,
+    NaN
+  ],
+  "feature_rows_with_diffs": 0,
+  "max_base_abs_diff": 0.0,
+  "max_feature_abs_diff": 0.0,
+  "max_meta_abs_diff": NaN,
+  "out_csv": "/Users/remyroche/Documents/Ares/extreme_price_movements/reports/inference_mismatch_investigation/live_vs_training_path_feature_values/live_debug_222631_vs_training_store_scores.csv",
+  "policy_rank_minmax": [
+    NaN,
+    NaN
+  ],
+  "rows": 12,
+  "signal_bar_ts": "2026-06-04 21:00:00+00:00"
+}

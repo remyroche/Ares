@@ -296,7 +296,12 @@ def slice_plan_is_stale(
         if float(existing_symbol_fraction) != float(current_symbol_fraction):
             return True
 
-    for key in ("policy_optimiser_tail_months", "policy_optimiser_max_sample_fraction"):
+    for key in (
+        "policy_optimiser_tail_months",
+        "policy_optimiser_holdout_start_months_ago",
+        "policy_optimiser_holdout_end_months_ago",
+        "policy_optimiser_max_sample_fraction",
+    ):
         current_value = planner_cfg.get(key)
         if current_value is None:
             continue
@@ -416,23 +421,28 @@ def _symbols_for_idx(events_df: pd.DataFrame, idx: np.ndarray) -> tuple[str, ...
     return tuple(sorted(events_df.iloc[idx]["symbol"].astype(str).dropna().unique()))
 
 
-def _build_final_tail_policy_plan(
+def _build_policy_holdout_plan(
     events_df: pd.DataFrame,
     *,
-    tail_months: int,
+    holdout_start_months_ago: int,
+    holdout_end_months_ago: int,
     max_sample_fraction: float = 0.30,
 ) -> list[ConsumerSlicePlan]:
     if events_df is None or events_df.empty or "t0" not in events_df.columns:
         return []
-    tail_months = max(1, int(tail_months))
+    holdout_start_months_ago = max(1, int(holdout_start_months_ago))
+    holdout_end_months_ago = max(0, int(holdout_end_months_ago))
+    if holdout_start_months_ago <= holdout_end_months_ago:
+        holdout_start_months_ago = holdout_end_months_ago + 1
     t0 = pd.to_datetime(events_df["t0"], utc=True, errors="coerce")
     valid_mask = t0.notna().to_numpy()
     if not valid_mask.any():
         return []
     valid_idx = np.flatnonzero(valid_mask).astype(np.int64)
     max_t0 = t0[valid_mask].max()
-    cutoff = max_t0 - pd.DateOffset(months=tail_months)
-    predict_mask = (t0 >= cutoff).to_numpy() & valid_mask
+    holdout_start = max_t0 - pd.DateOffset(months=holdout_start_months_ago)
+    holdout_end = max_t0 - pd.DateOffset(months=holdout_end_months_ago)
+    predict_mask = ((t0 >= holdout_start) & (t0 < holdout_end)).to_numpy() & valid_mask
     predict_idx = np.flatnonzero(predict_mask).astype(np.int64)
     max_predict = int(np.floor(float(max_sample_fraction) * float(valid_idx.size)))
     max_predict = max(1, max_predict)
@@ -463,16 +473,21 @@ def _build_final_tail_policy_plan(
             fit_idx=fit_idx,
             predict_idx=predict_idx,
             oof_target_idx=predict_idx,
-            tag="predict_final_tail_all_symbols",
+            tag="predict_middle_holdout_all_symbols",
             symbols_fit=symbols_fit,
             symbols_predict=symbols_predict,
             metadata={
-                "preset": "final_tail_policy",
+                "preset": "middle_holdout_policy",
                 "plan_kind": "fit_predict",
-                "fit_role": "all_rows_before_policy_tail",
-                "predict_role": "policy_holdout_tail",
-                "policy_optimiser_predict_scope": "final_tail_all_symbols",
-                "policy_optimiser_tail_months": int(tail_months),
+                "fit_role": "all_rows_except_policy_holdout",
+                "predict_role": "policy_holdout_middle",
+                "policy_optimiser_predict_scope": "middle_holdout_all_symbols",
+                "policy_optimiser_holdout_start_months_ago": int(
+                    holdout_start_months_ago
+                ),
+                "policy_optimiser_holdout_end_months_ago": int(
+                    holdout_end_months_ago
+                ),
                 "policy_optimiser_max_sample_fraction": float(max_sample_fraction),
                 "policy_optimiser_sample_fraction_cap_applied": bool(cap_applied),
                 "policy_optimiser_all_symbols": True,
@@ -524,10 +539,10 @@ def _build_pre_policy_training_plan(
             symbols_predict=symbols_fit,
             metadata={
                 "preset": "pre_policy_tail_training",
-                "plan_kind": "fit_all_before_policy_tail",
-                "fit_role": "all_rows_before_policy_tail",
-                "predict_role": "training_rows_before_policy_tail",
-                "policy_optimiser_tail_excluded": True,
+                "plan_kind": "fit_all_except_policy_holdout",
+                "fit_role": "all_rows_except_policy_holdout",
+                "predict_role": "training_rows_except_policy_holdout",
+                "policy_optimiser_holdout_excluded": True,
                 "n_fit": int(fit_idx.size),
                 "n_predict": int(fit_idx.size),
                 "n_symbols_fit": len(symbols_fit),
@@ -767,6 +782,8 @@ def build_slice_plan(
     allocation_targets: dict,
     exchange_context: dict | None = None,
     policy_tail_months: int = 4,
+    policy_holdout_start_months_ago: int = 16,
+    policy_holdout_end_months_ago: int = 12,
     policy_tail_max_fraction: float = 0.30,
 ) -> dict:
     tprint(f"Building new slice plan for {run_id}")
@@ -774,9 +791,10 @@ def build_slice_plan(
     bundle = planner.build(events_df)
 
     consumer_plans_dict = bundle["consumer_plans"]
-    policy_tail_plans = _build_final_tail_policy_plan(
+    policy_tail_plans = _build_policy_holdout_plan(
         events_df,
-        tail_months=policy_tail_months,
+        holdout_start_months_ago=policy_holdout_start_months_ago,
+        holdout_end_months_ago=policy_holdout_end_months_ago,
         max_sample_fraction=policy_tail_max_fraction,
     )
     if policy_tail_plans:
@@ -795,8 +813,10 @@ def build_slice_plan(
         )
         meta = policy_tail_plans[0].metadata
         tprint(
-            "Slice plan policy_optimiser uses final "
-            f"{int(policy_tail_months)} month tail across all symbols "
+            "Slice plan policy_optimiser uses middle holdout "
+            f"months {int(policy_holdout_start_months_ago)}.."
+            f"{int(policy_holdout_end_months_ago)} before latest event "
+            "across all symbols "
             f"(cap={float(policy_tail_max_fraction):.1%}, "
             f"cap_applied={bool(meta.get('policy_optimiser_sample_fraction_cap_applied'))}): "
             f"fit_rows={meta.get('n_fit')} predict_rows={meta.get('n_predict')} "
@@ -804,7 +824,7 @@ def build_slice_plan(
         )
     else:
         tprint(
-            "Slice plan warning: could not build final-tail policy_optimiser "
+            "Slice plan warning: could not build middle-holdout policy_optimiser "
             "consumer plan; policy optimiser will refuse fallback."
         )
 
@@ -880,12 +900,24 @@ def build_slice_plan(
         "ts_sig": ts_sig.isoformat(),
         "exchange_context": exchange_context or {},
         "policy_optimiser_tail_months": int(policy_tail_months),
+        "policy_optimiser_holdout_start_months_ago": int(
+            policy_holdout_start_months_ago
+        ),
+        "policy_optimiser_holdout_end_months_ago": int(
+            policy_holdout_end_months_ago
+        ),
         "policy_optimiser_max_sample_fraction": float(policy_tail_max_fraction),
         "planner": {
             "preset": planner_config.preset.preset_name,
             "symbol_policy_mode": planner_config.preset.symbol_policy.mode,
             "symbol_fraction": float(planner_config.preset.sampling.symbol_fraction),
             "policy_optimiser_tail_months": int(policy_tail_months),
+            "policy_optimiser_holdout_start_months_ago": int(
+                policy_holdout_start_months_ago
+            ),
+            "policy_optimiser_holdout_end_months_ago": int(
+                policy_holdout_end_months_ago
+            ),
             "policy_optimiser_max_sample_fraction": float(policy_tail_max_fraction),
             # include other config bits if needed
         },
@@ -939,6 +971,28 @@ def load_or_build_slice_plan(
         ),
     }
     policy_tail_months = max(1, int(cfg.get("policy_optimiser_tail_months", 4) or 4))
+    policy_holdout_start_months_ago = max(
+        1,
+        int(
+            cfg.get(
+                "policy_optimiser_holdout_start_months_ago",
+                cfg.get("policy_optimiser_middle_holdout_start_months_ago", 16),
+            )
+            or 16
+        ),
+    )
+    policy_holdout_end_months_ago = max(
+        0,
+        int(
+            cfg.get(
+                "policy_optimiser_holdout_end_months_ago",
+                cfg.get("policy_optimiser_middle_holdout_end_months_ago", 12),
+            )
+            or 12
+        ),
+    )
+    if policy_holdout_start_months_ago <= policy_holdout_end_months_ago:
+        policy_holdout_start_months_ago = policy_holdout_end_months_ago + 1
     policy_tail_max_fraction = float(
         cfg.get("policy_optimiser_max_sample_fraction", 0.30) or 0.30
     )
@@ -967,6 +1021,12 @@ def load_or_build_slice_plan(
                     "symbol_policy_mode": planner_config.preset.symbol_policy.mode,
                     "symbol_fraction": planner_config.preset.sampling.symbol_fraction,
                     "policy_optimiser_tail_months": int(policy_tail_months),
+                    "policy_optimiser_holdout_start_months_ago": int(
+                        policy_holdout_start_months_ago
+                    ),
+                    "policy_optimiser_holdout_end_months_ago": int(
+                        policy_holdout_end_months_ago
+                    ),
                     "policy_optimiser_max_sample_fraction": float(
                         policy_tail_max_fraction
                     ),
@@ -1002,6 +1062,8 @@ def load_or_build_slice_plan(
         allocation_targets,
         exchange_context=exchange_context,
         policy_tail_months=policy_tail_months,
+        policy_holdout_start_months_ago=policy_holdout_start_months_ago,
+        policy_holdout_end_months_ago=policy_holdout_end_months_ago,
         policy_tail_max_fraction=policy_tail_max_fraction,
     )
     save_slice_plan_atomic(path, plan)

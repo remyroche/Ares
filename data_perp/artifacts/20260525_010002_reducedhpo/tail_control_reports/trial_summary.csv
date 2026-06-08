@@ -1,3 +1,0 @@
-run_id,layer,models,mean_tail_control_score,max_tail_control_score
-20260525_010002_reducedhpo,base,1,0.638966159066775,0.638966159066775
-20260525_010002_reducedhpo,meta,1,0.7181830264022693,0.7181830264022693

@@ -18,7 +18,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-import joblib
 import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +33,7 @@ from extreme_price_movements.simple_policy_optimiser import (  # noqa: E402
     _load_slice_plan_source_validation,
 )
 from extreme_price_movements.inference.config import load_trained_symbol_universe  # noqa: E402
+from extreme_price_movements.model_loader import load_model_bundle  # noqa: E402
 from extreme_price_movements.policy_oos_provenance import (  # noqa: E402
     validate_policy_oos_source_artifacts,
     write_policy_oos_preflight_report,
@@ -54,6 +54,8 @@ def _strategy_id_from_meta_key(key: str) -> str:
         out = out[: -len("_clf")]
     if out.endswith("_tbm"):
         out = out[: -len("_tbm")]
+    if out.endswith("_correctness"):
+        out = out[: -len("_correctness")]
     return out
 
 
@@ -110,6 +112,22 @@ def _filter_policy_oos_to_trained_universe(
     return df.loc[keep].copy(), report
 
 
+def _stage_view_for_trained_universe(
+    stage_view: dict[str, Any],
+    *,
+    trained_universe: set[str],
+) -> dict[str, Any]:
+    out = dict(stage_view)
+    for key in ("symbols", "allowed_symbols"):
+        values = out.get(key)
+        if not values:
+            continue
+        out[key] = [str(sym) for sym in values if str(sym) in trained_universe]
+    if not out.get("symbols") and not out.get("allowed_symbols"):
+        out["allowed_symbols"] = sorted(trained_universe)
+    return out
+
+
 def _attach_policy_oos_contract_columns(
     df: pd.DataFrame,
     *,
@@ -149,9 +167,14 @@ def main() -> int:
     run_root = data_root / "artifacts" / args.run_id
     slice_plan_path = run_root / "slices" / "slice_plan.json"
     meta_state_path = run_root / "models" / "model_state_meta.pkl"
+    scoring_state_path = run_root / "models" / "trained_state.pkl"
+    if not scoring_state_path.exists():
+        scoring_state_path = meta_state_path
     out_dir = args.output_dir or (run_root / "policy_oos_predictions")
     if not meta_state_path.exists():
         raise SystemExit(f"Missing train-meta model state: {meta_state_path}")
+    if not scoring_state_path.exists():
+        raise SystemExit(f"Missing scoring model state: {scoring_state_path}")
 
     source_validation = _load_slice_plan_source_validation(slice_plan_path)
     exchange_context = source_validation.get("exchange_context") or {}
@@ -168,9 +191,14 @@ def main() -> int:
     policy_start = source_validation.get("policy_optimiser_predict_start")
     if not model_fit_end or not policy_start:
         raise SystemExit("Slice plan is missing policy fit/predict timestamps.")
-    if not (pd.Timestamp(model_fit_end) < pd.Timestamp(policy_start)):
+    temporal_oos = bool(source_validation.get("policy_holdout_temporal_disjoint", False))
+    row_disjoint_oos = bool(
+        source_validation.get("policy_holdout_fit_predict_disjoint", False)
+    )
+    if not temporal_oos and not row_disjoint_oos:
         raise SystemExit(
-            f"Model fit cutoff is not before policy window: {model_fit_end} >= {policy_start}"
+            "Slice plan does not prove temporal or row-disjoint policy-OOS safety: "
+            + json.dumps(source_validation, sort_keys=True, default=str)
         )
 
     preflight = validate_policy_oos_source_artifacts(
@@ -195,11 +223,15 @@ def main() -> int:
     if stage_name != "policy_optimiser" or not stage_view:
         raise SystemExit(f"Missing policy_optimiser stage view in {slice_plan_path}")
     trained_universe = _load_deployable_trained_universe(data_root, args.run_id)
+    scoring_stage_view = _stage_view_for_trained_universe(
+        stage_view,
+        trained_universe=trained_universe,
+    )
 
-    full_state = joblib.load(meta_state_path)
-    if not isinstance(full_state, dict) or not isinstance(full_state.get("bundle"), dict):
-        raise SystemExit(f"Unexpected model_state_meta format: {meta_state_path}")
-    bundle = full_state.get("bundle", {})
+    bundle = load_model_bundle(args.run_id, str(data_root))
+    if not isinstance(bundle, dict):
+        raise SystemExit(f"Unexpected scoring bundle format for run_id={args.run_id}")
+    full_state = {"bundle": bundle}
     meta_models = bundle.get("meta_models", {}) if isinstance(bundle, dict) else {}
     if not meta_models:
         raise SystemExit(f"No meta models in {meta_state_path}")
@@ -218,7 +250,7 @@ def main() -> int:
         frames, sources = _generate_policy_predictions_from_models(
             data_root=str(data_root),
             run_id=args.run_id,
-            stage_view=stage_view,
+            stage_view=scoring_stage_view,
             max_strategies=args.max_strategies,
             strategy_ids_allowlist=allowlist,
             market_mode=args.market_mode,
@@ -232,7 +264,8 @@ def main() -> int:
             os.environ["EPM_SIMPLE_POLICY_ALLOW_FEATURE_ONLY_REPLAY"] = old_feature_only
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    model_state_hash = _sha256(meta_state_path)
+    model_state_hash = _sha256(scoring_state_path)
+    meta_state_hash = _sha256(meta_state_path)
     written: list[dict[str, Any]] = []
     for strategy_id, frame in sorted(frames.items()):
         df = _filter_rows_to_stage_view(frame, stage_view)
@@ -271,7 +304,9 @@ def main() -> int:
             "model_provenance": "train_meta_frozen_model_state",
             "generated_from_final_fit_bundle": False,
             "source_model_state_path": str(meta_state_path),
-            "source_model_state_sha256": model_state_hash,
+            "source_model_state_sha256": meta_state_hash,
+            "scoring_model_state_path": str(scoring_state_path),
+            "scoring_model_state_sha256": model_state_hash,
             "source_model_fit_end": str(source_model_fit_end),
             "policy_predict_start": str(policy_start),
             "policy_predict_end": str(
@@ -309,7 +344,9 @@ def main() -> int:
         "source_model_fit_end": str(source_model_fit_end),
         "policy_predict_start": str(policy_start),
         "source_model_state_path": str(meta_state_path),
-        "source_model_state_sha256": model_state_hash,
+        "source_model_state_sha256": meta_state_hash,
+        "scoring_model_state_path": str(scoring_state_path),
+        "scoring_model_state_sha256": model_state_hash,
         "source_artifact_preflight_path": str(preflight_path),
         "trained_universe_symbols": len(trained_universe),
     }

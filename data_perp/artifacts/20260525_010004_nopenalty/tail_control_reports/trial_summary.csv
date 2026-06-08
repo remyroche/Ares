@@ -1,3 +1,0 @@
-run_id,layer,models,mean_tail_control_score,max_tail_control_score
-20260525_010004_nopenalty,base,11,0.6791384336285113,0.7728013670738094
-20260525_010004_nopenalty,meta,4,0.9857725909434418,1.0213975878016808

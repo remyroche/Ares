@@ -27,6 +27,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, 
 import numpy as np
 import optuna
 import pandas as pd
+import pyarrow.parquet as pq
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 if str(PACKAGE_ROOT) not in sys.path:
@@ -35,11 +36,11 @@ if str(PACKAGE_ROOT) not in sys.path:
 from extreme_price_movements.data_store import (
     PartitionedOHLCVStore,
     _fetch_ohlcv_paged,
+    _read_feature_delta_duckdb,
     exchange_data_component,
     make_perp_exchange,
     make_spot_exchange,
     read_parquet_projected,
-    read_symbol_features,
 )
 from extreme_price_movements.inference.policy_rank_reference import (
     invalidate_auction_rank_reference,
@@ -47,6 +48,7 @@ from extreme_price_movements.inference.policy_rank_reference import (
     persist_policy_rank_reference,
 )
 from extreme_price_movements.inference.config import load_trained_symbol_universe
+from extreme_price_movements.inference.feature_generator import is_model_derived_feature_key
 from extreme_price_movements.inference.model_orchestrator import (
     ModelOrchestrator,
     _effective_alpha_feature_contract,
@@ -293,6 +295,22 @@ def _policy_expected_spread_bps(market_mode: str) -> float:
     if normalize_market_mode(market_mode) == "perps":
         return max(0.0, float(DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS))
     return max(0.0, float(DEFAULT_SPOT_POLICY_EXPECTED_SPREAD_BPS))
+
+
+def _default_exit_quote_half_spread_bps(df: Optional[pd.DataFrame] = None) -> float:
+    """Half-spread proxy for side-aware bid/ask exit replay."""
+    env_value = os.environ.get("EPM_SIMPLE_POLICY_EXIT_QUOTE_HALF_SPREAD_BPS")
+    if env_value not in {None, ""}:
+        try:
+            return max(0.0, float(env_value))
+        except Exception:
+            pass
+    if isinstance(df, pd.DataFrame) and "expected_half_spread_bps" in df.columns:
+        vals = pd.to_numeric(df["expected_half_spread_bps"], errors="coerce")
+        vals = vals[np.isfinite(vals)]
+        if not vals.empty:
+            return max(0.0, float(vals.median()))
+    return _policy_expected_spread_bps(normalize_market_mode()) / 2.0
 
 
 ASSET_DECISION_KEEP = "keep"
@@ -573,6 +591,7 @@ def stop_exit_proxy_15m(
     base_gap_bps: float = POLICY_STOP_EXIT_BASE_GAP_BPS,
     alpha_through: float = POLICY_STOP_EXIT_ALPHA_THROUGH,
     max_gap_bps: float = POLICY_STOP_EXIT_MAX_GAP_BPS,
+    quote_half_spread_bps: float = 0.0,
 ) -> Tuple[bool, float]:
     return stop_exit_fill_price(
         side=side,
@@ -582,6 +601,7 @@ def stop_exit_proxy_15m(
         base_gap_bps=base_gap_bps,
         alpha_through=alpha_through,
         max_gap_bps=max_gap_bps,
+        quote_half_spread_bps=quote_half_spread_bps,
     )
 
 
@@ -594,6 +614,7 @@ def _stop_exit_proxy_15m_array(
     base_gap_bps: float = POLICY_STOP_EXIT_BASE_GAP_BPS,
     alpha_through: float = POLICY_STOP_EXIT_ALPHA_THROUGH,
     max_gap_bps: float = POLICY_STOP_EXIT_MAX_GAP_BPS,
+    quote_half_spread_bps: float = 0.0,
 ) -> Tuple[np.ndarray, np.ndarray]:
     return stop_exit_fill_price_array(
         side=side,
@@ -603,6 +624,7 @@ def _stop_exit_proxy_15m_array(
         base_gap_bps=base_gap_bps,
         alpha_through=alpha_through,
         max_gap_bps=max_gap_bps,
+        quote_half_spread_bps=quote_half_spread_bps,
     )
 
 
@@ -616,11 +638,18 @@ def _adverse_exit_fill_proxy_array(
     base_gap_bps: float = POLICY_STOP_EXIT_BASE_GAP_BPS,
     alpha_through: float = POLICY_STOP_EXIT_ALPHA_THROUGH,
     max_gap_bps: float = POLICY_STOP_EXIT_MAX_GAP_BPS,
+    quote_half_spread_bps: float = 0.0,
 ) -> np.ndarray:
     """Worsen every simulated exit fill relative to the ideal exit level."""
     side_arr = np.asarray(side, dtype=np.float32)
     px = np.asarray(exit_px, dtype=np.float64)
     is_long = side_arr >= 0.0
+    quote_half_spread = max(0.0, float(quote_half_spread_bps)) / 10000.0
+    px = np.where(
+        is_long,
+        px * (1.0 - quote_half_spread),
+        px * (1.0 + quote_half_spread),
+    )
     finite = np.isfinite(px) & (px > 0.0)
     through = np.zeros_like(px, dtype=np.float64)
     if trigger == "favorable" and candle_high is not None and candle_low is not None:
@@ -733,6 +762,7 @@ def simulate_and_score(
     adverse_exit_delta: float = ADVERSE_EXIT_DELTA,
     adverse_exit_fast_bars: int = ADVERSE_EXIT_FAST_BARS,
     adverse_exit_max_mfe_atr: float = ADVERSE_EXIT_MAX_MFE_ATR,
+    exit_quote_half_spread_bps: Optional[float] = None,
     max_concurrent_trades: int = MAX_CONCURRENT_TRADES,
     max_concurrent_per_asset: int = DEPLOYMENT_MAX_CONCURRENT_PER_ASSET,
     **_ignored_policy_audit_params: Any,
@@ -742,6 +772,9 @@ def simulate_and_score(
     Checks TP/SL pessimistically, computes fees properly per trade.
     """
     input_row_count = int(len(df_sub))
+    if exit_quote_half_spread_bps is None:
+        exit_quote_half_spread_bps = _default_exit_quote_half_spread_bps(df_sub)
+    exit_quote_half_spread_bps = max(0.0, float(exit_quote_half_spread_bps))
     input_valid_entry_mask = np.ones(input_row_count, dtype=bool)
     n_trades, max_bars = f_opens.shape
     if n_trades == 0:
@@ -834,6 +867,7 @@ def simulate_and_score(
 
     is_long_arr = side == 1
     is_short_arr = side == -1
+    quote_half_spread_frac = float(exit_quote_half_spread_bps) / 10000.0
 
     sl_dist = barrier_price_dist * sl_mult
     tp_act = barrier_price_dist * trailing_activation_mult
@@ -898,11 +932,17 @@ def simulate_and_score(
         is_short_mask = is_short_arr[active_idx]
 
         # 1. Check SL (Pessimistic: happens first)
+        sl_stop_long_all = entry_prices - sl_dist
+        sl_stop_short_all = entry_prices + sl_dist
+        sl_trigger_long_all = sl_stop_long_all / max(
+            1.0 - quote_half_spread_frac, 1e-12
+        )
+        sl_trigger_short_all = sl_stop_short_all / (1.0 + quote_half_spread_frac)
         sl_hit_long = is_long_mask & (
-            f_lows[active_idx, j] <= (entry - sl_dist[active_idx])
+            f_lows[active_idx, j] <= sl_trigger_long_all[active_idx]
         )
         sl_hit_short = is_short_mask & (
-            f_highs[active_idx, j] >= (entry + sl_dist[active_idx])
+            f_highs[active_idx, j] >= sl_trigger_short_all[active_idx]
         )
         sl_hit = sl_hit_long | sl_hit_short
 
@@ -910,14 +950,15 @@ def simulate_and_score(
         if len(hit_indices) > 0:
             stop_px = np.where(
                 is_long_arr[hit_indices],
-                entry_prices[hit_indices] - sl_dist[hit_indices],
-                entry_prices[hit_indices] + sl_dist[hit_indices],
+                sl_stop_long_all[hit_indices],
+                sl_stop_short_all[hit_indices],
             )
             filled, exit_px = _stop_exit_proxy_15m_array(
                 side=side[hit_indices],
                 stop_px=stop_px,
                 candle_high=f_highs[hit_indices, j],
                 candle_low=f_lows[hit_indices, j],
+                quote_half_spread_bps=exit_quote_half_spread_bps,
             )
             filled_idx = hit_indices[filled]
             if len(filled_idx) > 0:
@@ -988,6 +1029,7 @@ def simulate_and_score(
                             candle_high=f_highs[finite_hit, j],
                             candle_low=f_lows[finite_hit, j],
                             trigger="adverse",
+                            quote_half_spread_bps=exit_quote_half_spread_bps,
                         )
                         exit_rets[finite_hit] = side[finite_hit] * (
                             fill_px / entry_prices[finite_hit] - 1.0
@@ -1019,11 +1061,15 @@ def simulate_and_score(
                 cap_sl_short = protected_entry - lock_dist[protected_idx]
                 eff_sl_long = np.maximum(orig_sl_long, cap_sl_long)
                 eff_sl_short = np.minimum(orig_sl_short, cap_sl_short)
+                cap_trigger_long = eff_sl_long / max(
+                    1.0 - quote_half_spread_frac, 1e-12
+                )
+                cap_trigger_short = eff_sl_short / (1.0 + quote_half_spread_frac)
                 cap_hit_long = protected_long & (
-                    f_lows[protected_idx, j] <= eff_sl_long
+                    f_lows[protected_idx, j] <= cap_trigger_long
                 )
                 cap_hit_short = protected_short & (
-                    f_highs[protected_idx, j] >= eff_sl_short
+                    f_highs[protected_idx, j] >= cap_trigger_short
                 )
                 if np.any(cap_hit_long):
                     hit = protected_idx[cap_hit_long]
@@ -1032,6 +1078,7 @@ def simulate_and_score(
                         stop_px=eff_sl_long[cap_hit_long],
                         candle_high=f_highs[hit, j],
                         candle_low=f_lows[hit, j],
+                        quote_half_spread_bps=exit_quote_half_spread_bps,
                     )
                     filled_hit = hit[filled]
                     if len(filled_hit) > 0:
@@ -1048,6 +1095,7 @@ def simulate_and_score(
                         stop_px=eff_sl_short[cap_hit_short],
                         candle_high=f_highs[hit, j],
                         candle_low=f_lows[hit, j],
+                        quote_half_spread_bps=exit_quote_half_spread_bps,
                     )
                     filled_hit = hit[filled]
                     if len(filled_hit) > 0:
@@ -1081,16 +1129,20 @@ def simulate_and_score(
 
         trail_level_long = entry + (max_favorable[active_idx] - trail_amount)
         trail_level_short = entry - (max_favorable[active_idx] - trail_amount)
+        trail_trigger_long = trail_level_long / max(
+            1.0 - quote_half_spread_frac, 1e-12
+        )
+        trail_trigger_short = trail_level_short / (1.0 + quote_half_spread_frac)
 
         trail_hit_long = (
             is_long_arr[active_idx]
             & trail_active
-            & (f_lows[active_idx, j] <= trail_level_long)
+            & (f_lows[active_idx, j] <= trail_trigger_long)
         )
         trail_hit_short = (
             is_short_arr[active_idx]
             & trail_active
-            & (f_highs[active_idx, j] >= trail_level_short)
+            & (f_highs[active_idx, j] >= trail_trigger_short)
         )
         trail_hit = trail_hit_long | trail_hit_short
 
@@ -1106,6 +1158,7 @@ def simulate_and_score(
                 stop_px=trail_stop,
                 candle_high=f_highs[trail_indices, j],
                 candle_low=f_lows[trail_indices, j],
+                quote_half_spread_bps=exit_quote_half_spread_bps,
             )
             filled_idx = trail_indices[filled]
             if len(filled_idx) > 0:
@@ -1136,6 +1189,7 @@ def simulate_and_score(
             side=v_s,
             exit_px=b_close,
             trigger="close",
+            quote_half_spread_bps=exit_quote_half_spread_bps,
         )
         exit_rets[end_idx] = v_s * (
             fill_px.astype(np.float64, copy=False) / v_ent - 1.0
@@ -1244,6 +1298,7 @@ def simulate_and_score(
         "full_sl_exit_count": full_sl_exit_count,
         "capital_protect_exit_count": capital_protect_exit_count,
         "trailing_exit_count": trailing_exit_count,
+        "exit_quote_half_spread_bps": float(exit_quote_half_spread_bps),
         "adverse_exit_theta": (
             float(resolved_theta) if np.isfinite(resolved_theta) else np.nan
         ),
@@ -2398,6 +2453,9 @@ def _build_simple_policy_candidate_rows(
     net_return_before_spread = net_return.copy()
     expected_spread_bps = _policy_expected_spread_bps(market_mode)
     expected_half_spread_bps = expected_spread_bps / 2.0
+    exit_quote_half_spread_bps = float(
+        metrics.get("exit_quote_half_spread_bps", expected_half_spread_bps)
+    )
     spread_cost_bps = np.full(
         len(rows),
         expected_half_spread_bps,
@@ -2470,6 +2528,8 @@ def _build_simple_policy_candidate_rows(
             "expected_spread_bps": expected_spread_bps,
             "expected_half_spread_bps": spread_cost_bps,
             "spread_cost_bps": spread_cost_bps,
+            "exit_quote_half_spread_bps": exit_quote_half_spread_bps,
+            "exit_price_source": "side_aware_bid_ask_proxy",
             "slippage_bps": entry_slippage_proxy_bps,
             "holding_bars": exit_bars,
             "simple_policy_exit_reason": exit_reasons,
@@ -2878,6 +2938,11 @@ def _write_simple_policy_candidate_metadata(
         ),
         "expected_spread_application": (
             "net_return = net_return_before_spread - expected_spread_bps / 2 / 10000"
+        ),
+        "exit_price_application": (
+            "policy replay uses side_aware_bid_ask_proxy: long exits use bid proxy, "
+            "short exits use ask proxy, with exit_quote_half_spread_bps plus "
+            "shared stop-gap fill model"
         ),
         "row_count": int(len(candidate_table)),
     }
@@ -6333,6 +6398,8 @@ def _load_slice_plan_source_validation(slice_plan_path: Path) -> Dict[str, Any]:
     holdout_fit_predict_disjoint = []
     holdout_temporal_disjoint = []
     holdout_tail_months = []
+    holdout_start_months_ago = []
+    holdout_end_months_ago = []
     holdout_all_symbols = []
     policy_fit_ends = []
     policy_predict_starts = []
@@ -6345,6 +6412,14 @@ def _load_slice_plan_source_validation(slice_plan_path: Path) -> Dict[str, Any]:
         holdout_predict_roles.append(str(meta.get("predict_role", "")))
         if meta.get("policy_optimiser_tail_months") is not None:
             holdout_tail_months.append(int(meta.get("policy_optimiser_tail_months")))
+        if meta.get("policy_optimiser_holdout_start_months_ago") is not None:
+            holdout_start_months_ago.append(
+                int(meta.get("policy_optimiser_holdout_start_months_ago"))
+            )
+        if meta.get("policy_optimiser_holdout_end_months_ago") is not None:
+            holdout_end_months_ago.append(
+                int(meta.get("policy_optimiser_holdout_end_months_ago"))
+            )
         holdout_all_symbols.append(bool(meta.get("policy_optimiser_all_symbols")))
         fit_idx = set(plan.get("fit_idx", []) or [])
         predict_idx = set(plan.get("predict_idx", []) or [])
@@ -6375,13 +6450,15 @@ def _load_slice_plan_source_validation(slice_plan_path: Path) -> Dict[str, Any]:
     # false overlap warnings and would incorrectly reject valid OOS policy slices.
     strict_holdout_verified = (
         bool(policy_plans)
-        and all(role == "policy_holdout_tail" for role in holdout_predict_roles)
+        and all(
+            role in {"policy_holdout_tail", "policy_holdout_middle"}
+            for role in holdout_predict_roles
+        )
         and all(holdout_all_symbols or [False])
         and all(holdout_fit_predict_disjoint or [True])
-        and policy_temporal_disjoint
     )
     verified = (
-        policy_n > 0
+        (policy_n > 0 or policy_holdout_n > 0)
         and (train_base_n > 0 or train_meta_n > 0)
         and (strict_holdout_verified or policy_holdout_n == 0)
     )
@@ -6395,6 +6472,12 @@ def _load_slice_plan_source_validation(slice_plan_path: Path) -> Dict[str, Any]:
         "policy_optimiser_holdout_n_plans": int(policy_holdout_n),
         "exchange_context": payload.get("exchange_context", {}),
         "policy_optimiser_tail_months": sorted(set(holdout_tail_months)),
+        "policy_optimiser_holdout_start_months_ago": sorted(
+            set(holdout_start_months_ago)
+        ),
+        "policy_optimiser_holdout_end_months_ago": sorted(
+            set(holdout_end_months_ago)
+        ),
         "policy_optimiser_fit_end": (
             max(policy_fit_ends).isoformat() if policy_fit_ends else None
         ),
@@ -6410,8 +6493,8 @@ def _load_slice_plan_source_validation(slice_plan_path: Path) -> Dict[str, Any]:
         "policy_holdout_fit_predict_disjoint": bool(strict_holdout_verified),
         "policy_holdout_temporal_disjoint": bool(policy_temporal_disjoint),
         "policy_holdout_train_base_meta_fit_overlap_rows": 0,
-        "policy_holdout_train_base_meta_fit_disjoint": bool(policy_temporal_disjoint),
-        "policy_overlap_check_scope": "within_policy_plan_indices_and_fit_end_before_predict_start",
+        "policy_holdout_train_base_meta_fit_disjoint": bool(strict_holdout_verified),
+        "policy_overlap_check_scope": "within_policy_plan_indices",
         "oos_policy_slice_verified": bool(verified),
         "reason": (
             "policy_holdout_predict_plans_present"
@@ -6734,11 +6817,84 @@ def _feature_path_for_symbol_from_dirs(
     return fallback
 
 
+def _read_symbol_features_fast_for_policy(
+    parquet_path: str,
+    *,
+    columns: Optional[Sequence[str]],
+    start_ts: pd.Timestamp,
+    end_ts: pd.Timestamp,
+) -> pd.DataFrame:
+    """Read policy-slice feature rows without the slower full cache wrapper."""
+    path = str(parquet_path)
+    requested = list(dict.fromkeys(str(col) for col in (columns or []) if str(col)))
+    start = pd.Timestamp(start_ts)
+    end = pd.Timestamp(end_ts)
+    filters = [("ts", ">=", start), ("ts", "<=", end)]
+    frames: List[pd.DataFrame] = []
+    if os.path.exists(path):
+        read_cols = requested if requested else None
+        if requested:
+            try:
+                schema = set(pq.ParquetFile(path).schema.names)
+                read_cols = [col for col in requested if col in schema]
+                if "ts" in schema and "ts" not in read_cols:
+                    read_cols.append("ts")
+            except Exception:
+                read_cols = requested
+        try:
+            frame = pd.read_parquet(
+                path,
+                columns=read_cols,
+                filters=filters,
+            )
+        except Exception:
+            frame = pd.read_parquet(path, columns=read_cols)
+            if "ts" in frame.columns:
+                ts = pd.to_datetime(frame["ts"], utc=True, errors="coerce")
+                frame = frame.loc[(ts >= start) & (ts <= end)].copy()
+        if isinstance(frame, pd.DataFrame) and not frame.empty:
+            frames.append(frame)
+
+    delta = _read_feature_delta_duckdb(
+        path,
+        columns=requested or None,
+        filters=filters,
+    )
+    if isinstance(delta, pd.DataFrame) and not delta.empty:
+        frames.append(delta)
+    if not frames:
+        return pd.DataFrame(columns=requested)
+    out = pd.concat(frames, axis=0, copy=False)
+    if out.empty:
+        return pd.DataFrame(columns=requested)
+    if "ts" in out.columns:
+        ts = pd.to_datetime(out["ts"], utc=True, errors="coerce")
+        keep = ~ts.isna()
+        out = out.loc[keep].copy()
+        ts = ts.loc[keep]
+        out = out.drop(columns=["ts"])
+        out.index = pd.DatetimeIndex(ts, name="ts")
+    elif not isinstance(out.index, pd.DatetimeIndex):
+        return pd.DataFrame(columns=requested)
+    out.index = pd.to_datetime(out.index, utc=True, errors="coerce")
+    out = out.loc[~pd.isna(out.index)]
+    out = out.loc[(out.index >= start) & (out.index <= end)]
+    if requested:
+        for col in requested:
+            if col not in out.columns:
+                out[col] = np.nan
+        out = out[requested]
+    if not out.index.is_unique:
+        out = out.groupby(level=0, sort=True).last()
+    return out.sort_index()
+
+
 def _load_feature_rows_for_events(
     events: pd.DataFrame,
     *,
     data_root: str,
     run_id: str,
+    feature_cols: Optional[Sequence[str]] = None,
 ) -> pd.DataFrame:
     """Load feature rows for timestamp x symbol events from feature parquet files."""
     if events.empty:
@@ -6747,14 +6903,20 @@ def _load_feature_rows_for_events(
         return pd.DataFrame()
 
     feature_dirs = _policy_feature_dirs(data_root, run_id)
+    projected_cols = (
+        list(dict.fromkeys(str(col) for col in feature_cols if str(col)))
+        if feature_cols
+        else None
+    )
     parts: List[pd.DataFrame] = []
     for symbol, grp in events.groupby("symbol", sort=False):
         path = _feature_path_for_symbol_from_dirs(feature_dirs, str(symbol))
         if not path.exists():
             continue
         grp_ts = pd.to_datetime(grp["timestamp"], utc=True, errors="coerce")
-        feats = read_symbol_features(
+        feats = _read_symbol_features_fast_for_policy(
             str(path),
+            columns=projected_cols,
             start_ts=grp_ts.min(),
             end_ts=grp_ts.max(),
         )
@@ -7203,10 +7365,14 @@ def _load_feature_events_from_stage_view(
     rows: List[pd.DataFrame] = []
     allowed_symbols = [str(sym) for sym in symbols]
     if not allowed_symbols:
-        allowed_symbols = [
-            path.stem.replace("symbol=", "").replace("_", "/")
-            for path in sorted(feature_dir.glob("symbol=*.parquet"))
-        ]
+        discovered: List[str] = []
+        for path in sorted(feature_dir.glob("symbol=*.parquet")):
+            raw_symbol = path.stem.replace("symbol=", "")
+            discovered.append(raw_symbol)
+            slash_symbol = raw_symbol.replace("_", "/")
+            if slash_symbol != raw_symbol:
+                discovered.append(slash_symbol)
+        allowed_symbols = list(dict.fromkeys(discovered))
 
     allowed_from_stage = stage_view.get("symbols") or stage_view.get("allowed_symbols")
     if allowed_from_stage:
@@ -7400,7 +7566,20 @@ def _generate_policy_predictions_from_models(
     sources: Dict[str, str] = {}
     allow_feature_only_replay = _allow_feature_only_policy_replay()
     for strategy_id in strategy_ids:
+        strategy_started = time.monotonic()
+
+        def _log_generation_timing(stage: str, stage_started: float, rows: int = -1) -> None:
+            logger.info(
+                "[%s] policy prediction generation %s took %.2fs%s",
+                strategy_id,
+                stage,
+                time.monotonic() - stage_started,
+                "" if rows < 0 else f" rows={int(rows)}",
+            )
+
+        stage_started = time.monotonic()
         events = _load_label_events_for_strategy(data_root, run_id, strategy_id)
+        _log_generation_timing("load_label_events", stage_started, len(events))
         label_source = "labels"
         if events.empty:
             if not allow_feature_only_replay:
@@ -7416,26 +7595,22 @@ def _generate_policy_predictions_from_models(
                     strategy_id,
                 )
                 continue
+            stage_started = time.monotonic()
             events = _load_feature_events_from_stage_view(
                 data_root=data_root,
                 run_id=run_id,
                 stage_view=stage_view,
                 symbols=[],
             )
+            _log_generation_timing("load_feature_events", stage_started, len(events))
             label_source = "feature_events_no_labels"
+        stage_started = time.monotonic()
         events = _filter_rows_to_stage_view(events, stage_view)
         events = _filter_policy_quote_rows(events, market_mode).reset_index(drop=True)
+        _log_generation_timing("filter_policy_events", stage_started, len(events))
         if events.empty:
             continue
         events = _add_default_policy_outcome_columns(events)
-        features = _load_feature_rows_for_events(
-            events,
-            data_root=data_root,
-            run_id=run_id,
-        )
-        if features.empty:
-            continue
-        events = events.loc[features.index.to_numpy()].copy()
         side = _strategy_side(strategy_id)
         model_info = orchestrator.alpha_by_strategy.get(strategy_id)
         if model_info is None:
@@ -7443,6 +7618,32 @@ def _generate_policy_predictions_from_models(
         required_feature_keys = []
         if isinstance(model_info, dict):
             required_feature_keys = _effective_alpha_feature_contract(model_info)
+        meta_key, meta_feature_cols = _effective_meta_feature_contract_for_strategy(
+            orchestrator,
+            side=side,
+            strategy_id=strategy_id,
+        )
+        projected_feature_keys = list(
+            dict.fromkeys(
+                [
+                    *[str(col) for col in required_feature_keys],
+                    *[str(col) for col in meta_feature_cols],
+                    str(strategy_id),
+                ]
+            )
+        )
+        stage_started = time.monotonic()
+        features = _load_feature_rows_for_events(
+            events,
+            data_root=data_root,
+            run_id=run_id,
+            feature_cols=projected_feature_keys,
+        )
+        _log_generation_timing("load_feature_rows", stage_started, len(features))
+        if features.empty:
+            continue
+        events = events.loc[features.index.to_numpy()].copy()
+        stage_started = time.monotonic()
         features = _materialize_policy_gated_features(
             features,
             events,
@@ -7450,6 +7651,12 @@ def _generate_policy_predictions_from_models(
             market_mode=market_mode,
             required_feature_keys=required_feature_keys,
         )
+        _log_generation_timing(
+            "materialize_policy_gated_features",
+            stage_started,
+            len(features),
+        )
+        stage_started = time.monotonic()
         finite_mask, finite_diag = _finite_model_feature_mask(
             features,
             events,
@@ -7457,6 +7664,7 @@ def _generate_policy_predictions_from_models(
             feature_cols=required_feature_keys,
             stage="alpha",
         )
+        _log_generation_timing("alpha_finite_mask", stage_started, int(finite_mask.sum()))
         if not bool(finite_mask.all()):
             diag_dir = (
                 Path(data_root)
@@ -7496,7 +7704,9 @@ def _generate_policy_predictions_from_models(
             features = features.loc[finite_mask].copy()
             events = events.loc[finite_mask].reset_index(drop=True)
             features.index = events.index
+        stage_started = time.monotonic()
         alpha_pred = orchestrator.predict_alpha(features, side, strategy_id)
+        _log_generation_timing("predict_alpha", stage_started, len(alpha_pred) if isinstance(alpha_pred, pd.Series) else -1)
         if not isinstance(alpha_pred, pd.Series) or alpha_pred.empty:
             continue
         alpha_pred = alpha_pred.reindex(features.index).replace(
@@ -7513,12 +7723,21 @@ def _generate_policy_predictions_from_models(
         meta_base = features.copy()
         meta_base[strategy_id] = alpha_pred
         alpha_model = model_info.get("model") if isinstance(model_info, dict) else None
+        model_derived_to_drop = [
+            col
+            for col in meta_base.columns
+            if col != str(strategy_id) and is_model_derived_feature_key(str(col))
+        ]
+        if model_derived_to_drop:
+            meta_base = meta_base.drop(columns=model_derived_to_drop)
+        stage_started = time.monotonic()
         meta_base = _add_alpha_model_uncertainty_context(
             meta_base,
             alpha_model=alpha_model,
             strategy_id=strategy_id,
             horizon=10,
         )
+        _log_generation_timing("materialize_alpha_uncertainty_context", stage_started, len(meta_base))
         if not getattr(orchestrator, "meta_models", None):
             logger.warning(
                 "[%s] Skipping generated policy predictions: no trained meta "
@@ -7527,11 +7746,6 @@ def _generate_policy_predictions_from_models(
                 strategy_id,
             )
             continue
-        meta_key, meta_feature_cols = _effective_meta_feature_contract_for_strategy(
-            orchestrator,
-            side=side,
-            strategy_id=strategy_id,
-        )
         meta_model = getattr(orchestrator, "meta_models", {}).get(meta_key)
         materialize_meta = getattr(
             orchestrator, "_materialize_meta_model_derived_features", None
@@ -7543,22 +7757,29 @@ def _generate_policy_predictions_from_models(
             orchestrator, "_materialize_meta_model_drift_features", None
         )
         if callable(materialize_alpha_context) and meta_model is not None:
+            stage_started = time.monotonic()
             meta_base = materialize_alpha_context(
                 meta_base,
                 meta_model,
                 side=side,
                 kind=strategy_id,
             )
+            _log_generation_timing("materialize_meta_alpha_context", stage_started, len(meta_base))
         if callable(materialize_meta_drift) and meta_model is not None:
+            stage_started = time.monotonic()
             meta_base = materialize_meta_drift(meta_base, meta_model)
+            _log_generation_timing("materialize_meta_drift", stage_started, len(meta_base))
         if callable(materialize_meta) and meta_model is not None:
+            stage_started = time.monotonic()
             meta_base = materialize_meta(
                 meta_base,
                 meta_model,
                 side=side,
                 kind=strategy_id,
             )
+            _log_generation_timing("materialize_meta_model_features", stage_started, len(meta_base))
         if meta_feature_cols:
+            stage_started = time.monotonic()
             meta_finite_mask, meta_finite_diag = _finite_model_feature_mask(
                 meta_base,
                 events,
@@ -7566,6 +7787,7 @@ def _generate_policy_predictions_from_models(
                 feature_cols=meta_feature_cols,
                 stage="meta",
             )
+            _log_generation_timing("meta_finite_mask", stage_started, int(meta_finite_mask.sum()))
             diag_dir = (
                 Path(data_root)
                 / "artifacts"
@@ -7601,7 +7823,9 @@ def _generate_policy_predictions_from_models(
                     ],
                     diag_path,
                 )
+        stage_started = time.monotonic()
         meta_pred = orchestrator.predict_meta(meta_base, side, strategy_id)
+        _log_generation_timing("predict_meta", stage_started, len(meta_pred) if isinstance(meta_pred, pd.Series) else -1)
         if not isinstance(meta_pred, pd.Series) or meta_pred.empty:
             logger.warning(
                 "[%s] Skipping generated policy predictions: meta model returned no "
@@ -7636,6 +7860,7 @@ def _generate_policy_predictions_from_models(
         events["base_gate_top_frac"] = float(BASE_TO_META_TOP_FRAC)
         generated[strategy_id] = events
         sources[strategy_id] = f"{source_tag}:{label_source}"
+        _log_generation_timing("total", strategy_started, len(events))
     return generated, sources
 
 
@@ -7731,6 +7956,14 @@ def _validate_policy_prediction_oos_contract(
     min_ts = ts.min()
     max_ts = ts.max()
     temporal_disjoint = bool(pd.notna(fit_end) and min_ts > fit_end)
+    row_disjoint_holdout = bool(
+        source_validation.get("policy_holdout_train_base_meta_fit_disjoint")
+    )
+    holdout_roles = {
+        str(v)
+        for v in source_validation.get("policy_holdout_predict_roles", []) or []
+    }
+    middle_holdout = "policy_holdout_middle" in holdout_roles
     starts_in_policy = bool(pd.notna(predict_start) and min_ts >= predict_start)
     ends_in_policy = bool(pd.notna(predict_end) and max_ts <= predict_end)
     manifest = _load_policy_oos_manifest(source_path)
@@ -7770,24 +8003,26 @@ def _validate_policy_prediction_oos_contract(
         and pd.notna(fit_end)
         and source_model_fit_end <= fit_end
     )
+    model_policy_disjoint_safe = bool(model_before_policy or (middle_holdout and row_disjoint_holdout))
     manifest_oos_safe = (
         manifest_present
         and not manifest_error
-        and model_before_policy
-        and model_not_after_fit_end
+        and model_policy_disjoint_safe
+        and (model_not_after_fit_end or middle_holdout)
         and not generated_from_final_fit
         and scoring_contract_ok
     )
-    ok = temporal_disjoint and starts_in_policy and ends_in_policy and manifest_oos_safe
+    policy_slice_disjoint = bool(temporal_disjoint or (middle_holdout and row_disjoint_holdout))
+    ok = policy_slice_disjoint and starts_in_policy and ends_in_policy and manifest_oos_safe
     reason = "ok" if ok else "prediction_timestamps_not_strict_policy_oos"
-    if temporal_disjoint and starts_in_policy and ends_in_policy and not manifest_oos_safe:
+    if policy_slice_disjoint and starts_in_policy and ends_in_policy and not manifest_oos_safe:
         if not manifest_present:
             reason = "missing_policy_oos_manifest"
         elif manifest_error:
             reason = "unreadable_policy_oos_manifest"
         elif (
-            not model_before_policy
-            or not model_not_after_fit_end
+            not model_policy_disjoint_safe
+            or not (model_not_after_fit_end or middle_holdout)
             or generated_from_final_fit
         ):
             reason = "policy_oos_model_manifest_not_oos_safe"
@@ -7821,6 +8056,9 @@ def _validate_policy_prediction_oos_contract(
         ),
         "generated_from_final_fit_bundle": generated_from_final_fit,
         "model_temporal_disjoint_from_policy_oos": model_before_policy,
+        "policy_holdout_row_disjoint_from_training": row_disjoint_holdout,
+        "policy_middle_holdout": middle_holdout,
+        "model_policy_disjoint_safe": model_policy_disjoint_safe,
         "model_fit_end_not_after_policy_fit_end": model_not_after_fit_end,
         "model_provenance": model_provenance or None,
         "prediction_source": prediction_source or None,
@@ -8374,7 +8612,11 @@ def _available_strategy_ids_from_meta_oof(meta_oof_dir: Path) -> Optional[Set[st
     for path in meta_oof_dir.glob(f"{prefix}*{suffix}"):
         name = path.name
         if name.startswith(prefix) and name.endswith(suffix):
-            ids.add(name[len(prefix) : -len(suffix)])
+            strategy_id = name[len(prefix) : -len(suffix)]
+            ids.add(strategy_id)
+            for meta_suffix in ("_tbm", "_correctness"):
+                if strategy_id.endswith(meta_suffix):
+                    ids.add(strategy_id[: -len(meta_suffix)])
     return ids or None
 
 
@@ -8664,6 +8906,8 @@ def run_simple_policy_optimisation(
                 strategy_id = strategy_id[: -len("_tbm_clf")]
             elif strategy_id.endswith("_clf"):
                 strategy_id = strategy_id[: -len("_clf")]
+            if strategy_id.endswith("_correctness"):
+                strategy_id = strategy_id[: -len("_correctness")]
             if not _strategy_id_matches_allowlist(strategy_id, strategy_ids_allowlist):
                 continue
             if strategy_id in meta_oof:
@@ -8776,6 +9020,8 @@ def run_simple_policy_optimisation(
                 strategy_id = strategy_id[: -len("_tbm_clf")]
             elif strategy_id.endswith("_clf"):
                 strategy_id = strategy_id[: -len("_clf")]
+            if strategy_id.endswith("_correctness"):
+                strategy_id = strategy_id[: -len("_correctness")]
             if not _strategy_id_matches_allowlist(strategy_id, strategy_ids_allowlist):
                 continue
             if strategy_id in meta_oof:

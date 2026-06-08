@@ -1,17 +1,91 @@
 # Extreme Price Movements Inference Mismatch Investigation
 
-Status: updated, 2026-06-02.
+Status: updated, 2026-06-04.
+
+## 2026-06-04 Requested Todo Status
+
+1. Rerun shadow/live inference: checked. Latest run-scoped ledger rows for `20260525_010004_nopenalty` include feature/mask counts, candidate decisions, source-parity coverage, rank rejection/acceptance reasons, and open-position decisions. The latest observed signal bar was `2026-06-04T17:00:00Z`; one shadow/live row was accepted (`USDC/USD:USD`, short asset-OI), and the other current-run decisions were rank rejected. Selected base/meta feature snapshots and raw/rank-normalized prediction fields are persisted in the prediction ledger.
+2. Compare actual training path vs actual live path: checked. The comparison used the training-path feature store produced by `run_pipeline.py features`, not a parity-only feature helper. For the reconciled live batch, overlapping selected decision features matched the training feature store with `0.0` max absolute delta, and logged model-input scoring reproduced base score, meta score, policy rank, auction rank, and normalized rank with `0.0` max absolute delta.
+3. Localize policy-score mismatch: checked. `simple_policy_optimiser/rank_reference/*.parquet` is generated from the verified policy-OOS prediction handoff, not from the current deployed final-fit live scorer. The earlier non-zero final-fit replay-vs-rank-reference deltas are therefore a score-source/OOS-contract distinction, not a feature-generation mismatch.
+4. Fix policy-OOS contract: checked. Policy-OOS generation is trained-universe filtered, manifests now declare train-meta-state provenance, rank-normalization metadata, source model-state hashes, source-artifact preflight status, and execution-source metadata. The optimiser fails closed if policy rows are outside the trained/inference universe or if manifest provenance is invalid.
+5. Regenerate verified policy candidates: checked. The current verified candidate set uses the t+10 execution model and includes gross/net returns, delay-gap fields, spread/slippage/fee drag fields, and adverse-move rejection simulations. Current active candidate count is `27,485`, with `25,564` rows using delayed 1m proxy candles and `1,921` rows using the theoretical 15m fallback.
+6. Rerun `simple_policy_optimiser`: checked for the guarded verified policy-OOS source. Deployment rank bands and gates were reconciled against the inference rank-reference logic. Threshold-band economics remain a risk: the global deployment-rank subset is positive and near the target (`14,692` rows, `60.2%` net hit, `270.5` bps mean net), but some per-strategy threshold bands are weak and long-dist remains below a clean 60% net-hit threshold in the per-strategy candidate view.
+7. Historical inference replay: checked for the four active deployed heads. Replay through the actual inference candidate path has exact selected-feature parity for all four active strategies (`21,500` compared feature cells, no missing rows, no mismatches above `1e-6`, max absolute delta `0.0`). The first remaining divergence is the expected final-fit live scorer versus frozen policy-OOS score source.
+8. Execution realism audit: checked. OOS execution was recomputed with t+10 entry, delay attribution, spread/slippage/fees, liquidity/source coverage, rejected rows by gate, and market/stop-order live behavior. The global accepted execution-attribution subset is still positive after costs (`3,028` trades, `72.1%` net hit, `255.36` bps mean net, mean friction about `20.28` bps). Delay cost is small on average in this replay (`-0.31` bps), but live adverse-signal gaps must continue to be logged because individual trades can be materially worse.
+9. Data-source audit: checked, with residual risks. Local live-hourly versus historical-hourly parity is high (`306` sampled symbols, `3` mismatched rows, `0.98%` mismatch). Live hourly versus execution-1m aggregate mismatch is mostly explained by incomplete 1m windows; complete 60-minute execution windows had only `2` mismatches in the sampled May window. The 1m policy loader reads complete cached t+10 windows from disk and only downloads missing minute ranges when enabled.
+10. Broader runtime guards: checked for the high-risk contracts now identified. Runtime/training-live validation now covers artifact hashes, feature schema/source parity, trained-universe coverage, rank-reference provenance, rank-reference universe coverage, stale feature-store coverage, and scorer/provenance mismatch. A new guard rejects rank references without a valid policy-OOS contract for active strategies.
+
+## 2026-06-04 Incremental Update
+
+- Fixed a reproducibility bug in `simple_policy_optimiser._filter_policy_quote_rows(...)`: copied Kraken perp policy-OOS files such as `BTC/USD:USD` were dropped when `EPM_EXCHANGE` was absent and the default perp quote resolved to `USDC`. The filter now infers a homogeneous perp quote from symbols like `BASE/USD:USD` when the configured quote matches no rows.
+- Added regression coverage: `tests/test_simple_policy_optimiser_deployment.py::test_policy_quote_filter_infers_homogeneous_kraken_perp_quote`.
+- Re-ran deterministic rank-reference source reconciliation for all seven policy-OOS strategies. Result: `rank_reference/*.parquet` is an exact zero-diff transform of `policy_oos_trained_universe_verify/policy_oos_*_clf.parquet`; row counts, timestamp/symbol keys, `calibrated_score`, and `rank_pct` all match exactly.
+- Added `policy_source_reconciliation_manifest.json`, which records the rank-source reconciliation, current run-scoped live-ledger summary, and hash checks proving `data_perp/artifacts`, `data_perp/exchanges/krakenfutures/artifacts`, and `data_perp/exchanges/krakenfutures_perp/artifacts` point to byte-identical model/policy-OOS artifacts for the sampled files.
+- Current live proof: the run-scoped ledger for `20260525_010004_nopenalty` now contains `20` clean current-run rows for signal bar `2026-06-04T08:00:00Z`, all with selected base/meta feature-value JSON and finite base/meta/rank-normalized scores. All twenty were rejected by rank threshold, so no trade was opened in those shadow cycles.
+- Latest live/training-path reconciliation: after bringing `data_perp/features/20260523_015947` current through the actual training-path incremental feature generator for signal bar `2026-06-04T15:00:00Z`, the strict shadow inference batch reconciles exactly. Across the four logged decision rows (`SYN/USD:USD`, `TLM/USD:USD`, `WLD/USD:USD`, `ZRO/USD:USD`), `968` selected feature values match the training feature store with `0.0` max absolute delta; recomputed base scores, meta scores, policy rank, auction rank, and normalized rank all match the live ledger with `0.0` max absolute delta. Evidence: `live_vs_training_path_feature_values/live_ledger_reconciliation_20260604T162233Z_summary.json`.
+- Live-vs-policy replay reconciliation: exact matches are `0/10` because the deployable replay artifact ends at `2026-05-21T23:00:00Z` while the live ledger rows are from `2026-06-04T08:00:00Z`. This is a timestamp-window mismatch, not a score/path failure.
+- Current score-provenance conclusion: the policy rank reference is not stale. Remaining non-zero comparisons between live final-fit inference scores and policy-OOS reference scores are expected unless the same held-out policy model state and same timestamp/symbol rows are compared. The correct contract is: policy optimisation uses held-out train-meta-state policy-OOS predictions; live inference uses deployed final-fit scoring and maps those scores through the saved policy-OOS rank distribution.
+
+## 2026-06-04 Live / Training Path Reconciliation
+
+- A strict shadow cycle was run for `20260525_010004_nopenalty` after updating the authoritative training-path feature store `data_perp/features/20260523_015947` to the latest needed closed hour with `run_pipeline.py features` and explicit `EPM_FEATURE_END_TS=2026-06-04T15:00:00Z`.
+- The earlier strict live guard failure was correct: the selected-feature store was stale because the default feature pipeline end lag targeted an older window. Once the training-path feature store was brought current, live inference loaded the strict selected-feature cache instead of recomputing model features.
+- Live inference used incremental hourly OHLCV fast path for the scoped symbols (`149` skipped existing, `0` fetched), mask snapshot cache hit for the latest hour, and strict selected-feature loading from `data_perp/features/20260523_015947`.
+- Latest mask support was non-empty:
+  - long-dist: `6/149`
+  - long high-vol: `20/149`
+  - short Bollinger/OI: `3/149`
+  - short asset-OI: `59/149`
+- Source-parity filtering accepted `118/149` symbols and rejected `31` for missing/stale `perp_volume` inputs. This remains a data-coverage issue to monitor, but it did not prevent the four logged scored rows from reconciling.
+- Candidate flow for the reconciled batch: `7` mask-passing candidates, `4` scored/logged decisions, `0` accepted trades. The four scored decisions were rejected because their rank-normalized/auction scores were below the deployed thresholds:
+  - `TLM/USD:USD`: long high-vol, base `0.474695`, meta `0.548094`, normalized rank `0.416106`, threshold `0.6322`.
+  - `SYN/USD:USD`: short asset-OI, base `0.507579`, meta `0.401238`, normalized rank `0.220678`, threshold `0.58`.
+  - `ZRO/USD:USD`: short asset-OI, base `0.429122`, meta `0.112066`, normalized rank `0.002646`, threshold `0.58`.
+  - `WLD/USD:USD`: short Bollinger/OI, base `0.456412`, meta `0.535247`, normalized rank `0.400499`, threshold `0.68`.
+- Exact reconciliation summary for signal bar `2026-06-04T15:00:00Z`:
+  - rows compared: `4`
+  - selected feature values compared to training store: `968`
+  - feature max absolute delta: `0.0`
+  - base score max absolute delta: `0.0`
+  - meta score max absolute delta: `0.0`
+  - policy-rank max absolute delta: `0.0`
+  - auction-rank max absolute delta: `0.0`
+  - normalized-rank max absolute delta: `0.0`
+- Evidence files:
+  - `live_vs_training_path_feature_values/live_ledger_reconciliation_20260604T162233Z_summary.json`
+  - `live_vs_training_path_feature_values/live_ledger_vs_training_feature_store_20260604T162233Z.csv`
+  - `live_vs_training_path_feature_values/live_ledger_vs_selected_model_scores_20260604T162233Z.csv`
+- Code fixes required to make this proof valid:
+  - `model_orchestrator.predict_meta(...)` now exposes the exact batch meta model input matrix used for prediction.
+  - `run_inference.py` now logs decision feature snapshots from that exact meta input matrix instead of reconstructing meta diagnostics later from candidate dictionaries.
+  - `run_inference.py` now appends prediction-ledger rows for global-auction/rank skipped candidates when all-candidate logging is enabled, fixing missing scored rows such as the previously absent WLD decision.
+- Remaining efficiency findings from this run:
+  - Full-union training-path feature update is still expensive even with incremental deltas. Chunk compute was dominated by `compute_features_hourly.base_features` and `compute_features_hourly.pre_position_sizer`.
+  - DuckDB delta saves still cost roughly one minute per large symbol chunk when writing hundreds of feature keys.
+  - Persisted causal-transform state was present but could not be used in pure append mode when the writer re-emitted warmup rows; it fell back to full batched transform for that chunk.
+- Follow-up feature-generation optimization on `2026-06-04T15:00:00Z`:
+  - `save_features(...)` now slices rows by each symbol cutoff before building per-symbol payload DataFrames, avoiding thousands of warmup rows of allocation for one-row/hourly appends.
+  - Chunked feature generation now avoids an extra full copy of every panel field before compute.
+  - Feature timing now separates `composite_features` and `position_sizer_features`; the old `pre_position_sizer` label was misleading because it measured the prior composite block.
+  - The cache precheck now applies the same naturally sparse latest-VWAP exemption as final snapshot validation. This stopped an endless one-key repair loop for `loc_vwap_dev_z_24`.
+  - Cached runs with `--skip-feature-postsave-checks` now skip feature-health report regeneration as well as snapshot validation.
+  - Verification: first rerun repaired `35` symbols for one key with `compute=4.6s` and `save=0.0s`; second rerun reproduced the stale sparse-key loop; after the sparse-key patch, final rerun reported `Features already exist and cover full target period: 954 features × 233 symbols. Skipping recomputation.` and exited after the `36.1s` cache scan with health reports skipped.
+  - A persisted feature-cache scan manifest now records the scan result keyed by expected feature contract, required symbol/time bounds, and a cheap input-file signature. The first run writes the manifest after the normal scan; the next identical cached run hit `Feature cache scan manifest hit` and skipped per-file parquet schema/target-row reads. The cached command dropped from roughly `43s` after health-report skipping to roughly `9s` end to end, dominated by startup and close-only precheck loading.
 
 ## Executive Summary
 
-- Root cause: current evidence points to pipeline/evidence-contract issues, not model failure. The first confirmed mismatch was feature-handoff/source parity. The current six-head package has verified policy-OOS prediction artifacts generated from train-meta-frozen model state, while the deployed scorer is a final-fit bundle. Those are intentionally different evidence roles and now need explicit provenance guards so policy evidence cannot be mixed with a different deployed scoring contract.
+- Root cause: current evidence points to a policy/inference universe-contract mismatch, not model failure. The policy rank-reference was not stale: it was generated row-for-row from `policy_oos_predictions/*_clf.parquet`. The bug was that policy-OOS generation allowed a broader 179-237-symbol policy universe while the trained/inference OOF union contains only 152 symbols. Each old per-strategy policy source had 74-87 symbols outside the trained universe, and those rows could not be scored by strict trained-universe replay. Policy-OOS generation now filters to the deployable trained universe and `simple_policy_optimiser` now fails closed if policy rows contain symbols outside that universe.
 - Current confidence: high for current policy-OOS artifact provenance, threshold-band economics, and replay/rank contract instrumentation; medium for the broader live degradation question until fresh run-scoped live decisions, execution realism, and data-source audits are completed.
-- Current policy result after strict policy-OOS regeneration: `48,913` exported candidates across seven optimized strategies. The deployment contract selects four strategies (`2` long, `2` short) and rejects three long strategies only because of the top-2-per-side cap. Global auction replay reports `3,525` trades, `3.73%` mean net return/trade, `29.25` trades/day, and max drawdown `-1.90%`; execution-attribution reporting covers `3,028` accepted trades with `72.13%` net hit and `2.55%` mean net return/trade.
-- Threshold-band result: the global 0.80-0.85 auction-rank band is already positive (`57.41%` net hit, `2.82%` mean net, `1.21%` median net); higher ranks improve hit rate and EV, but the lower band is not negative-then-rescued.
+- Current trained-universe verification: regenerated policy-OOS files under `policy_oos_trained_universe_verify/` now have zero symbols outside the trained universe. A guarded full-budget optimiser run from those rows exported `27,485` cross-strategy candidates across seven strategies, with `100%` cached t+10 path coverage and no Kraken 1m download attempts (`EPM_SIMPLE_POLICY_1M_DOWNLOAD=0`).
+- Current deployability blocker: the guarded full-budget deployment payload selected zero strategies because all seven strategies were rejected for `missing_lgbm_mask_contract`. The portfolio replay still ran over all candidate rows and accepted `3,236` trades with objective `10024.095596`; this is now classified as invalid deployable evidence because it was not constrained to a non-empty live-deployable strategy set. Code now fails closed before portfolio replay when deployment selection is empty.
+- Threshold-band result after trained-universe filtering: threshold-level rows are only weakly positive and often below the 60% net-hit target. Per-strategy threshold hit rates are `39.33%` to `56.98%`, while final selected policy rows are positive EV across all seven strategies. Threshold-band gross return minus the 20 bps stress buffer is negative at every deployment threshold. The current policy result therefore remains partly dependent on higher-rank/constrained selection, not only marginal threshold acceptance.
 - Strict post-policy frozen holdout result: using the saved six-head thresholds, saved policy-rank references, train-meta-frozen model state, saved portfolio policy config, fixed t+10 Kraken 1m delayed-entry candles, and a +1/+2/+3 minute fallback on `2026-05-22T00:00:00Z` through `2026-05-27T17:00:00Z` produced `729` auction-floor candidates and `73` accepted replay trades with `2.19%` mean accepted net return, `11.70` trades/day, final wallet `11583.00`, and max drawdown `-0.13%`. This is a short untouched policy-layer holdout with strong portfolio result, but not yet a complete live execution proof.
-- Current policy-source localization: `simple_policy_optimiser/rank_reference/*.parquet` is generated from `policy_oos_predictions/*_clf.parquet`. Joining strategy references to policy-OOS rows on `timestamp`, `symbol`, and `strategy_id` gives exact score equality; applying the rank-normalization score transform also reproduces the saved reference scores exactly.
+- Current policy-source localization: `simple_policy_optimiser/rank_reference/*.parquet` is generated from `policy_oos_predictions/*_clf.parquet`. Joining strategy references to policy-OOS rows on `timestamp` and `symbol` gives exact row equality for all seven deployed policy-OOS strategies; every `rank_reference.calibrated_score` equals `policy_oos.clf` exactly, and `rank_pct` matches the percentile transform within float precision.
 - Current deployment blocker status: the earlier missing-LGBM-mask blocker is fixed for the newly written deployment contract. The corrected optimiser run reports `lgbm_mask_contract_covered=4` for the four selected strategies, all with `regime_mask_source=embedded_lgbm_final_rule_registry`. The remaining live proof is a fresh run-scoped cycle and decision reconciliation, not another mask-contract repair.
-- Guard status: `simple_policy_optimiser` now requires policy-OOS manifests to prove train-meta-frozen provenance, a non-final-fit source, the expected candidate/execution source, rank-normalization metadata, source-model hash, and a passing artifact preflight. The rank-reference loader now fails closed when a regenerated manifest declares an invalid explicit policy-OOS contract.
+- Current deployed-feature parity proof: strict historical replay through the actual inference candidate path now has exact feature parity for all four deployed strategies selected by the current policy package. Across `21,500` compared feature cells, inference and training-path selected features have `0` missing rows, `0` mismatches above `1e-6`, and `0.0` max absolute difference. The replay also produces finite predictions for all sampled decision rows.
+- Current score-provenance interpretation: the remaining non-zero policy-score and rank-normalized-score deltas are expected for this comparison because the saved policy rank-reference is generated from the frozen train-meta policy-OOS source, while strict replay scores the deployed final-fit inference bundle. That is an OOS-contract distinction, not a feature-generation parity failure.
+- Guard status: `simple_policy_optimiser` now requires policy-OOS manifests to prove train-meta-frozen provenance, a non-final-fit source, the expected candidate/execution source, rank-normalization metadata, source-model hash, and a passing artifact preflight. It also validates that every loaded policy-OOS row is inside the trained/inference universe before optimisation. The rank-reference loader now fails closed when a regenerated manifest declares an invalid explicit policy-OOS contract. Strict training-live artifact validation now covers `base_models_intermediate.pkl`, `trained_state.pkl`, `model_state_meta.pkl`, the native model directory tree, the rank-reference manifest, and the cross-strategy auction reference. It also fails closed when readable policy rank-reference symbols are outside the trained/inference universe. The current deployed parity contract correctly fails offline because it lacks newer hash entries; regenerated contracts must also pass the rank-reference universe guard.
+- Live-run status: a bounded `--live-test --run-once --perps` direct module run reached Kraken exchange creation but failed inside the sandbox at DNS resolution for `futures.kraken.com`; escalated retries timed out in approval review. Separately, the LaunchAgent log repeatedly reports `can't open input file: /Users/remyroche/Documents/Ares/scripts/run_live_test_supervised.sh` even though that path exists in the workspace, so the launchd plist/runtime environment, permissions, or stale launch state should be checked before relying on the monitor.
 - Confirmed so far: the repo already has policy-rank reference logic, feature-universe parity tests, prediction ledger diagnostics, and historical/live replay scripts. The investigation must use those concrete paths rather than a generic raw-probability/top-k framing.
 - Confirmed historical finding: the earlier four-head policy rank-reference was not stale and was not copied from `20260523_015947`; it reproduced to float precision when using the exchange-scoped offline selected-feature handoff.
 - Important terminology correction: runtime columns still use legacy score-transform names, but the deployment decision is rank-normalized through saved policy-rank reference distributions.
@@ -28,11 +102,22 @@ Status: updated, 2026-06-02.
 - OOS reproduction: pending.
 - Inference reproduction: pending.
 - Historical replay: in progress; all four active strategy heads have policy-rank sample parity against saved final-fit rank references when the replay uses the same feature handoff, including through the actual inference candidate/mask feature-load path.
+- Deployed four-head strict feature parity rerun:
+  - `scripts/historical_inference_parity.py --feature-load-path inference_candidate --policy-artifact-root extreme_price_movements/reports/inference_mismatch_investigation/simple_policy_optimiser_trained_universe_full_deployable --rank-reference-dir extreme_price_movements/reports/inference_mismatch_investigation/simple_policy_optimiser_trained_universe_full_deployable/simple_policy_optimiser/rank_reference ...`
+  - output directories: `historical_parity_trained_universe_deployable_refs_long_dist_features`, `historical_parity_trained_universe_deployable_refs_long_bars`, `historical_parity_trained_universe_deployable_refs_short_bollinger`, and `historical_parity_trained_universe_deployable_refs_short_oi`.
 - Rank-reference provenance:
   - current/source rank-reference parquet comparison;
   - current `meta_oof` timestamp-range check;
   - log inspection of `logs/unified_20260528_121034.log`;
   - direct final-fit model reproduction of three saved long-dist rank-reference rows through the policy feature handoff.
+- Rank-reference universe audit:
+  - `python3 ... policy_rank_reference_universe_audit.csv` audit under `extreme_price_movements/reports/inference_mismatch_investigation/`.
+- Trained-universe policy-OOS regeneration:
+  - `env PYTHONUNBUFFERED=1 PYTHONPATH=. EPM_DATA_ROOT=data_perp EPM_EXCHANGE=krakenfutures EPM_MARKET_MODE=perps EPM_MODEL_BACKEND=lgbm_pipeline EPM_DISABLE_REGIME_ADAPTORS=1 EPM_SIMPLE_POLICY_REGIME_ADAPTOR=0 python3 scripts/generate_policy_oos_predictions.py --data-root data_perp --run-id 20260525_010004_nopenalty --market-mode perps --output-dir extreme_price_movements/reports/inference_mismatch_investigation/policy_oos_trained_universe_verify`
+  - audit output: `extreme_price_movements/reports/inference_mismatch_investigation/policy_oos_trained_universe_verify_audit.csv`.
+- Guarded diagnostic optimiser run:
+  - `env PYTHONUNBUFFERED=1 PYTHONPATH=. EPM_DATA_ROOT=data_perp EPM_EXCHANGE=krakenfutures EPM_MARKET_MODE=perps EPM_MODEL_BACKEND=lgbm_pipeline EPM_DISABLE_REGIME_ADAPTORS=1 EPM_SIMPLE_POLICY_REGIME_ADAPTOR=0 EPM_SIMPLE_POLICY_OOS_PREDICTIONS_DIR=extreme_price_movements/reports/inference_mismatch_investigation/policy_oos_trained_universe_verify EPM_SIMPLE_POLICY_OUTPUT_RUN_ROOT=extreme_price_movements/reports/inference_mismatch_investigation/simple_policy_optimiser_trained_universe_verify EPM_SIMPLE_POLICY_RUN_PORTFOLIO_REPLAY=0 SIMPLE_POLICY_N_TRIALS=20 python3 -u extreme_price_movements/simple_policy_optimiser.py --data_root data_perp --run_id 20260525_010004_nopenalty --market-mode perps`
+  - metrics output: `extreme_price_movements/reports/inference_mismatch_investigation/simple_policy_optimiser_trained_universe_verify_metrics.csv`.
 - Test command:
   - `python3 -m pytest tests/test_policy_rank_reference.py tests/test_live_feature_universe_parity.py tests/test_replay_live_signal_predictions.py -q`
   - `python3 -m pytest tests/test_replay_live_signal_predictions.py tests/test_live_feature_universe_parity.py -q`
@@ -69,9 +154,28 @@ Status: updated, 2026-06-02.
 - Current artifact manifest scope: six-strategy policy-OOS and portfolio replay artifacts as of 2026-06-02; `24` files with hashes, sizes, mtimes, row counts, timestamp ranges, and strategy samples.
 - Policy-OOS preflight: valid. Source model fit end `2024-09-08T04:00:00+00:00`; policy fit end `2026-01-19T06:00:00+00:00`; policy prediction window starts `2026-01-22T10:00:00+00:00`.
 - Policy-OOS handoff: seven `policy_oos_<strategy>_clf.parquet` files, generated by `scripts/generate_policy_oos_predictions.py`, `generated_from_final_fit_bundle=false`, `model_provenance=train_meta_frozen_model_state`.
+- Trained-universe policy-OOS repair evidence: `policy_oos_trained_universe_verify/manifest.json` reports `trained_universe_symbols=152`. The regenerated files dropped `74-87` non-trained symbols per strategy and the follow-up audit reports `outside_trained_universe_symbols=0` for all seven policy-OOS files.
+- Guarded diagnostic optimiser evidence: `simple_policy_optimiser_trained_universe_verify/` was written through the isolated `EPM_SIMPLE_POLICY_OUTPUT_RUN_ROOT` path so it did not overwrite active deployment artifacts. It produced `27,485` cross-strategy candidate rows after the normalized-rank floor. The run used `SIMPLE_POLICY_N_TRIALS=20` and `EPM_SIMPLE_POLICY_RUN_PORTFOLIO_REPLAY=0`, so it validates the contract and gives directional threshold economics but is not the final policy optimisation.
+- Diagnostic threshold economics by strategy:
+  - long asset-vol/compression: `358` threshold trades, `56.98%` hit, `1.33` bps mean net; final selected rows `62.93%` hit, `31.60` bps mean net.
+  - long high-vol pullback/funding: `489` threshold trades, `53.17%` hit, `1.10` bps mean net; final selected rows `51.96%` hit, `22.04` bps mean net.
+  - long high-vol location/range: `312` threshold trades, `56.09%` hit, `1.92` bps mean net; final selected rows `54.71%` hit, `27.16` bps mean net.
+  - long-dist: `410` threshold trades, `50.98%` hit, `0.36` bps mean net; final selected rows `48.80%` hit, `21.50` bps mean net.
+  - long-loc: `414` threshold trades, `44.69%` hit, `0.65` bps mean net; final selected rows `46.53%` hit, `25.47` bps mean net.
+  - short asset-OI: `295` threshold trades, `52.54%` hit, `1.20` bps mean net; final selected rows `59.22%` hit, `29.81` bps mean net.
+  - short Bollinger/price-RV: `239` threshold trades, `39.33%` hit, `1.49` bps mean net; final selected rows `69.26%` hit, `20.61` bps mean net.
+- Guarded full-budget optimiser evidence: `simple_policy_optimiser_trained_universe_full/` was run from the same trained-universe policy-OOS source with `EPM_SIMPLE_POLICY_1M_DOWNLOAD=0` and portfolio replay enabled. Candidate export again produced `27,485` cross-strategy rows. Per-strategy t+10 path matrices reported `100.00%` coverage, and the rank-reference universe audit reports zero outside-trained symbols for all seven per-strategy references and `cross_strategy_auction.parquet`.
+- Full-budget portfolio replay diagnostic: the run completed with `accepted=true`, `3,236` accepted trades, objective `10024.095596`, baseline trade count `2,685`, and baseline objective `2354.607861`, but the deployment payload selected zero strategies because all seven were rejected for `missing_lgbm_mask_contract`. This replay is therefore not valid deployable evidence. Because this run also exposed that portfolio replay did not respect `EPM_SIMPLE_POLICY_OUTPUT_RUN_ROOT`, the replay report was written under `data_perp/artifacts/20260525_010004_nopenalty/portfolio_policy_replay/portfolio_policy_replay_report.json`; the isolation bug is now patched and covered by a regression test.
+- Full-budget per-strategy threshold economics are saved at `simple_policy_optimiser_trained_universe_full_metrics.csv`. Deployment threshold bands are weakly positive on mean net trade but remain below the 60% local hit-rate target for all seven strategies. Their gross return minus the configured 20 bps stress buffer is negative at the threshold band for all seven strategies. Final selected rows are positive after that buffer, with final mean net trade from `18.94` to `33.32` bps and final hit rates from `47.28%` to `67.95%`.
 - Policy-OOS scoring contract: per-file manifests are now required to declare `prediction_source=generated_from_train_meta_state:*`, `candidate_rows_source=policy_slice_feature_events`, `executable_path_source=simple_policy_optimiser_recomputes_from_ohlcv_and_execution_1m`, a rank-normalization declaration, a source model-state hash, and a passing source-artifact preflight.
-- Current simple-policy candidates: `48,913` rows across seven optimized strategies, generated with configured delayed entry `10` minutes and rank-band audit artifacts under `simple_policy_optimiser/rank_threshold_band_report.*`.
-- Current delayed-entry coverage: `45,632/48,913` candidate rows (`93.29%`) used complete cached 1m t+10 execution windows; `3,281` rows fell back to `theoretical_15m_open`. All delayed rows had exact `10.0` minute entry delay and complete 11-candle windows. This is now t+10 evidence, but the fallback rows remain an execution-data coverage gap.
+- Deployed four-head strict replay feature parity:
+  - long-dist: `5,680` feature rows, `0` missing inference rows, `0` missing training rows, `0` mismatches above `1e-6`, max abs diff `0.0`, `20` prediction rows.
+  - long-bars: `5,720` feature rows, `0` missing inference rows, `0` missing training rows, `0` mismatches above `1e-6`, max abs diff `0.0`, `20` prediction rows.
+  - short Bollinger/price-RV: `6,060` feature rows, `0` missing inference rows, `0` missing training rows, `0` mismatches above `1e-6`, max abs diff `0.0`, `20` prediction rows.
+  - short asset-OI: `4,040` feature rows, `0` missing inference rows, `0` missing training rows, `0` mismatches above `1e-6`, max abs diff `0.0`, `20` prediction rows.
+  - Legacy summary fields named `policy_calibrated_score_max_abs_diff` are policy-score diffs; legacy `policy_rank_pct_max_abs_diff` is the rank-normalized-score diff. These are non-zero because the comparison is final-fit deployed scoring versus frozen train-meta policy-OOS rank-reference rows.
+- Active-artifact simple-policy candidates from the earlier unfiltered run: `48,913` rows across seven optimized strategies, generated with configured delayed entry `10` minutes and rank-band audit artifacts under `simple_policy_optimiser/rank_threshold_band_report.*`. These artifacts are now known to predate the trained-universe policy-OOS filter and should not be treated as deployable until regenerated from the guarded source.
+- Earlier delayed-entry coverage: `45,632/48,913` candidate rows (`93.29%`) used complete cached 1m t+10 execution windows; `3,281` rows fell back to `theoretical_15m_open`. This remains useful execution-data coverage evidence, but the candidate set itself must be regenerated from trained-universe policy-OOS rows before final deployment.
 - Frozen replay support added: `portfolio_policy_replay` can now load a saved `optimized_portfolio_policy_config.json` and fit its priority EV curve from a separate reference candidate table, enabling post-policy holdout replay without re-optimising on the holdout.
 - Frozen post-policy holdout evidence:
   - Summary: `data_perp/artifacts/20260525_010004_nopenalty/policy_holdout_frozen_replay_1m_fallback/summary.json`.
@@ -89,6 +193,7 @@ Status: updated, 2026-06-02.
 - Policy-OOS source-artifact preflight now writes `data_perp/artifacts/20260525_010004_nopenalty/policy_oos_predictions/preflight_report.json` and currently passes because both required sidecars are present:
   - `data_perp/artifacts/20260525_010004_nopenalty/base_models_intermediate.manifest.json`
   - `data_perp/artifacts/20260525_010004_nopenalty/models/model_state_meta.manifest.json`
+- Runtime scorer artifact risk: `load_inference_config(...)` loads `config["model_bundle"]` through `load_model_bundle(...)`, which uses `models/native` for alpha models; `_effective_runtime_model_bundle(...)` then overlays that runtime bundle onto `load_full_state(...)`. Policy-OOS generation instead declares `base_models_intermediate.pkl` as the base source. The live scorer contract therefore requires either a score-equivalence proof between native alpha models and base-intermediate alpha models or an explicit runtime switch to the policy-OOS-safe base source.
 - Deployment mask contract evidence:
   - `data_perp/artifacts/20260525_010004_nopenalty/policy_params/strategy_for_inference.json` selects six strategies, but each selected row has `lgbm_regime_mask={}` and `regime_mask_source=missing_lgbm_mask_contract`.
   - `extreme_price_movements/offline_optimisers/reports/inference_candidate_mask_best_params_perps.csv` contains four old rows only, with strategy ids beginning `loc_ema_stack_pos_24_...`, `dist_rolling_7d_high_...`, `loc_prev_week_range_pos_48_...`, and `dist_weekly_vwap_...`; none match the six selected deployment ids.
@@ -130,6 +235,9 @@ See `pipeline_map.md`.
 - The first replay attempt without `EPM_EXCHANGE=kraken` silently targeted the Binance USD-M data component and loaded no panel. Replay commands must set the exchange explicitly.
 - Current long-dist rank-reference is not a stale source-run copy: current sha16 `0a8636c05192e906`, source-run sha16 `ca67ab8f11efd35f`, joined score mean absolute difference `0.14120904469502452`, exact score matches `0`.
 - Direct final-fit reproduction through the policy feature handoff matched the first three saved long-dist rank-reference scores with max absolute difference `2.6175391298899342e-08`.
+- 2026-06-03 correction: that earlier direct reproduction did not prove the full current policy/inference contract. A stricter replay using the current trained/inference universe found that sampled long-dist rank-reference rows such as `CAKE/USD:USD`, `INIT/USD:USD`, `SUN/USD:USD`, `RSR/USD:USD`, and `SPK/USD:USD` are outside the 152-symbol trained OOF union, so strict replay could not score them and reported `missing_feature_row`.
+- Current rank-reference universe audit is saved at `policy_rank_reference_universe_audit.csv`. It shows `cross_strategy_auction.parquet` has `237` symbols with `88` outside the trained universe. Per-strategy rank-reference files have `179-236` symbols and `74-87` outside the trained universe. The source policy-OOS predictions already contain the same class of mismatch: `policy_oos_universe_audit.csv` shows `179-236` symbols per source file and `74-87` outside the trained universe. The repair point was therefore policy-OOS generation/source filtering, not only rank-reference persistence.
+- 2026-06-03 repair: `scripts/generate_policy_oos_predictions.py` now filters policy-OOS rows to `load_trained_symbol_universe(...)`, records the trained-universe filter in manifests, and aborts if a strategy has no deployable rows. `simple_policy_optimiser.py` now validates policy-OOS rows against the same trained universe before optimisation. The regenerated trained-universe policy-OOS audit reports zero outside-universe symbols for all seven strategies.
 - All-four-head policy-rank replay through `scripts/historical_inference_parity.py` now matches saved rank-normalized references:
   - long-dist: score max abs diff `1.1398097299331056e-08`, rank-pct max abs diff `3.936542928001385e-05`.
   - long-loc: score max abs diff `1.2172013008626692e-08`, rank-pct max abs diff `4.864759680869857e-05`.
@@ -146,6 +254,13 @@ See `pipeline_map.md`.
   - short-dist: candidate side/count `short=9`, policy score max abs diff `1.3113076846593685e-08`, rank max abs diff `3.943217665616783e-05`.
   - short-loc: candidate side/count `short=84`, policy score max abs diff `1.5324575497466242e-08`, rank max abs diff `3.471498993268263e-05`.
   - This confirms that the cache split did not alter score/rank parity.
+- 2026-06-04 deployed four-head parity rerun against the current four-strategy deployment package proves exact selected-feature parity through the live candidate path:
+  - long-dist: `feature_rows=5680`, missing inference/training `0/0`, mismatches above `1e-6=0`, max abs diff `0.0`, prediction rows `20`.
+  - long-bars: `feature_rows=5720`, missing inference/training `0/0`, mismatches above `1e-6=0`, max abs diff `0.0`, prediction rows `20`.
+  - short Bollinger/price-RV: `feature_rows=6060`, missing inference/training `0/0`, mismatches above `1e-6=0`, max abs diff `0.0`, prediction rows `20`.
+  - short asset-OI: `feature_rows=4040`, missing inference/training `0/0`, mismatches above `1e-6=0`, max abs diff `0.0`, prediction rows `20`.
+- The final long-bars mismatch was a feature-store issue, not model drift: stale DuckDB delta rows for `dist_ema50_atr` at duplicate timestamps overrode populated base Parquet values during selected-feature reads. The store now gives existing populated base cells precedence over stale deltas and prevents incoming deltas from overwriting populated historical cells.
+- The replay also exposed that the inference policy loaders were still resolving thresholds/selection/mask cores from the canonical artifact path instead of the isolated policy-artifact root supplied to the replay. The loaders now search the same policy artifact bases used by parity tooling.
 - Strict-path evidence directories:
   - `historical_parity_long_dist_inference_candidate_path`
   - `historical_parity_long_loc_inference_candidate_path`
@@ -168,7 +283,7 @@ See `topk_reconciliation_report.md`.
   - short asset-OI: `0.60`.
   - short Bollinger/price-RV: `0.68`.
 - The local-candidate net-hit guard is enabled at `min_net_hit_rate=0.50`, `min_rows=50`, rank column `auction_rank_score`.
-- `rank_threshold_band_report.csv` now proves marginal threshold economics separately from cumulative higher-rank economics. The 0.80-0.85 global auction band is positive on mean and median net return, but hit rate is only `57.41%`, so the trade-off is EV-positive but not uniformly above the 60% hit-rate target.
+- `rank_threshold_band_report.csv` from the earlier active-artifact run proves marginal threshold economics separately from cumulative higher-rank economics. The old 0.80-0.85 global auction band was positive on mean and median net return, but hit rate was only `57.41%`, so the trade-off was EV-positive but not uniformly above the 60% hit-rate target. The new trained-universe diagnostic confirms the same concern more strongly at per-strategy threshold boundaries.
 - Remaining ranking work is final portfolio decision reconciliation: rank parity is proven, but final live trade parity also depends on source-panel eligibility, sparse-feature rejection, per-symbol/per-strategy concurrency, global auction, portfolio capacity, and stale/adverse price gap checks.
 
 ### Portfolio Decision Reconciliation
@@ -279,15 +394,16 @@ See `portfolio_decision_reconciliation.md` and `live_vs_frozen_holdout_decision_
 - This does not support a general live-hourly data corruption root cause, but the historical-hourly comparison is still shallow in time because the cached historical reference currently contributes only one overlapping row per symbol.
 - Live hourly versus execution 1m aggregate is not clean: 3,833/8,986 overlapping symbol-hour rows mismatch, and only 226/306 symbols have execution-1m overlap in the audited window.
 - The execution 1m mismatch is now explained: the local execution-1m store is sparse delayed-entry sample data, not complete 1m history. Across the 8,986 overlapping symbol-hours, every hour has exactly one saved 1m row and zero hours have 60-minute completeness.
-- The saved simple-policy candidate artifact has now been regenerated with the t+10 model. The execution 1m path remains a data-collection risk because `3,281/48,913` rows still fell back to theoretical 15m-open execution and future spread/slippage fine-tuning depends on this path.
+- The earlier active simple-policy candidate artifact was regenerated with the t+10 model, but it predates the trained-universe filter. Its execution 1m path remains useful as a data-collection risk signal because `3,281/48,913` rows still fell back to theoretical 15m-open execution. Future final policy optimisation should rerun this coverage check on the guarded trained-universe candidate set with `EPM_SIMPLE_POLICY_1M_DOWNLOAD=0` when the cache is expected to be complete.
 - Live data diagnostics still need closed-candle equality over deeper historical-hourly overlap, stale/missing perp volume, OI/funding source age, orderbook proxy freshness, and spread/slippage snapshots.
 
 ### Portfolio Decision Reconciliation
 
 See `portfolio_decision_reconciliation.md`.
 
-- Current optimiser candidate rows: `48,913`, date range `2026-01-22 10:00:00 UTC` through `2026-05-21 23:00:00 UTC`.
-- Global auction replay reports `3,525` trades, `3.73%` mean net return/trade, `29.25` trades/day, final wallet `820,652,624`, and max drawdown `-1.90%`. Execution-attribution reporting covers `3,028` accepted trades after its reporting filters.
+- Earlier active optimiser candidate rows: `48,913`, date range `2026-01-22 10:00:00 UTC` through `2026-05-21 23:00:00 UTC`. This artifact predates the trained-universe policy-OOS filter.
+- Earlier global auction replay reports `3,525` trades, `3.73%` mean net return/trade, `29.25` trades/day, final wallet `820,652,624`, and max drawdown `-1.90%`. Execution-attribution reporting covers `3,028` accepted trades after its reporting filters. These metrics are now historical evidence, not final deployable metrics, until the optimiser is rerun from guarded trained-universe policy-OOS rows.
+- Guarded trained-universe optimiser rows: `27,485` cross-strategy candidates in the isolated full-budget report output. Portfolio replay completed with `3,236` accepted trades and objective `10024.095596`, but this replay is now marked invalid for deployment because the deployment payload had zero selected strategies and seven `missing_lgbm_mask_contract` rejections. The live-baseline replay over the same candidates had `2,685` trades and objective `2354.607861`.
 - Execution-attribution accepted trades are distributed across all four deployed heads:
   - long-dist: `895`, `56.42%` net hit, `2.60%` mean net return.
   - long-loc: `464`, `67.03%` net hit, `3.09%` mean net return.
@@ -411,6 +527,34 @@ See `portfolio_decision_reconciliation.md`.
      `Live model feature cache is stale or incomplete ... cached_last_ts=2026-05-27 18:00:00+00:00 target_end_ts=2026-06-02 19:00:00+00:00 required_features=747`.
    - This is the correct safety behavior for live trading: model scoring must use training-path selected features that are current, or explicitly run in replay/audit mode with `live_model_feature_tail_recompute_enabled`.
 
+17. Policy-OOS trained-universe contract fixed:
+   - `scripts/generate_policy_oos_predictions.py` now loads the deployable trained/inference universe with `load_trained_symbol_universe(...)`, filters every generated policy-OOS source to that universe, records dropped rows/symbols in the manifest, and aborts if a strategy has no deployable policy-OOS rows left.
+   - `simple_policy_optimiser.py` now validates loaded policy-OOS rows against the same trained universe and fails closed when a verified policy source includes non-deployable symbols.
+   - `simple_policy_optimiser.py` now supports `EPM_SIMPLE_POLICY_OUTPUT_RUN_ROOT`, allowing audit optimiser runs to write policy params, candidates, metrics, and rank references into an isolated report root without overwriting active deployment artifacts.
+   - `policy_rank_reference.py` now supports an explicit output directory for diagnostic rank-reference persistence while preserving the existing default artifact path.
+   - Verification: regenerated trained-universe policy-OOS files have zero outside-universe symbols across all seven strategies. A guarded isolated optimiser diagnostic produced `27,485` candidate rows and per-strategy threshold metrics without touching active deployment artifacts.
+
+18. Portfolio replay output isolation fixed:
+   - `simple_policy_optimiser.py` now passes `output_dir=EPM_SIMPLE_POLICY_OUTPUT_RUN_ROOT/portfolio_policy_replay` into `run_portfolio_policy_replay(...)` when an output override is configured.
+   - `portfolio_policy_replay.py` now accepts `persist_live_artifacts`; default production behavior still persists live portfolio policy artifacts, while isolated audit runs can write replay reports without mutating `data_perp/artifacts/<run_id>/policy_params`.
+   - Verification: a fixed-config smoke replay wrote `portfolio_policy_replay_report.json`, `per_candidate_replay_decisions.parquet`, and the optimized policy config under `portfolio_replay_isolation_smoke/`. Focused portfolio replay tests now cover both live persistence and no-live-persistence modes.
+
+19. Empty deployment selection now fails closed before replay:
+   - The guarded full-budget run exposed a stronger contract bug: all seven verified policy strategies were rejected for `missing_lgbm_mask_contract`, leaving `strategies=[]`, yet portfolio replay still ran over all candidate rows.
+   - `simple_policy_optimiser.py` now raises before portfolio replay when candidate rows exist but no deployable strategies are selected, including rejection-reason counts in the error.
+   - Verification: added a focused regression test for the missing-mask/no-selected-strategy case.
+
+20. Policy-artifact root lookup fixed for inference parity and isolated optimiser outputs:
+   - `_load_normalized_threshold_map(...)`, `_load_policy_selection_rules(...)`, `_load_embedded_lgbm_strategy_mask_rows(...)`, and `_load_selected_strategy_cores(...)` now search the same `_policy_artifact_bases(...)` roots used by replay/parity code.
+   - Root cause: isolated policy runs could write valid thresholds, selected strategies, and mask contracts under a report root, but inference helpers still preferred the canonical artifact path. This caused stale fourth-strategy contract reads during parity replay.
+   - Verification: the long-bars replay loaded the isolated `strategy_for_inference_perps.json` and reported embedded LGBM final-rule registry mask coverage before scoring.
+
+21. Feature-store stale-delta overwrite fixed:
+   - `data_store._merge_duplicate_feature_rows(...)` now preserves existing populated base cells before delta cells when duplicate timestamps are merged.
+   - `append_symbol_features(...)` now masks incoming delta values where the existing tail already has a populated value, so delta stores can append new rows or fill missing cells but cannot silently overwrite base-history feature values.
+   - Root cause: selected-feature reads merged base Parquet and DuckDB delta rows at duplicate timestamps; stale delta rows could win after index sorting and produce large feature mismatches such as `dist_ema50_atr=-2.053749` versus the training-path value near `-0.021476`.
+   - Verification: `tests/test_training_feature_availability.py::test_feature_delta_append_visible_to_selected_loader` passes, and the long-bars strict replay now reports `feature_mismatches_gt_1e_6=0` and `feature_max_abs_diff=0.0`.
+
 ## Regression Tests Added
 
 - Updated `tests/test_live_feature_universe_parity.py` so missing live orderbook source remains a hard error unless training health proves the required feature was neutral/constant.
@@ -423,15 +567,19 @@ See `portfolio_decision_reconciliation.md`.
 - Added prediction-ledger row test proving live traded rows persist realized entry price, entry fee diagnostics, and signal/decision-to-entry timing fields.
 - Added deployment contract tests proving LGBM deployments reject missing regime masks and embed market-specific parseable mask contracts.
 - Added a params-store handoff regression test proving explicit `strategy_id` is preserved while `base_event_trigger` is used as the parseable LGBM mask rule.
+- Added a feature-store regression test proving DuckDB feature deltas honor timestamp filters during selected-feature reads. This fixed the replay model-feature load from minutes-per-25-files to ~20 seconds for 285 keys across 152 symbols at one exact timestamp.
+- Added training-live parity contract tests requiring base/native/meta/rank artifacts and rejecting policy rank-reference symbols outside the trained/inference universe.
+- Added an optimiser-side guard so `simple_policy_optimiser` refuses verified policy-OOS prediction sources whose symbols are outside the trained/inference universe instead of silently admitting non-deployable rows.
+- Added a policy-OOS generator regression test proving non-trained symbols are dropped before policy source files are written.
+- Added a portfolio replay regression test proving isolated audit replays do not write live `policy_params/optimized_portfolio_policy_config.json` or `training_live_parity_contract.json`.
+- Added an optimiser deployment regression test proving portfolio replay refuses an empty selected-strategy set.
 
 ## Next Steps
 
-1. Bring `data_perp/features/20260523_015947` current through the actual training-path incremental feature generator, through at least the latest closed hourly candle needed by live scoring.
-2. Rerun the run-scoped shadow cycle and verify it reaches model scoring without `live_model_feature_tail_recompute_enabled`.
-3. Reconcile live final decision rows against `portfolio_policy_replay/per_candidate_replay_decisions.parquet` from that fresh current-artifact ledger.
+1. Regenerate and validate the training-live parity contract so it includes the latest artifact hashes and the new policy-root/delta-store fixes.
+2. Re-run the run-scoped shadow cycle and verify it reaches model scoring without `live_model_feature_tail_recompute_enabled`.
+3. Reconcile live final decision rows against the repaired `portfolio_policy_replay/per_candidate_replay_decisions.parquet`.
 4. Reconcile timestamps and label horizons end to end, especially signal-bar close, decision time, expected t+10 entry, actual entry, stop/trailing start, and evaluation window.
-5. Extend live-vs-historical OHLCV parity to deeper historical-hourly overlap.
-6. Close the remaining execution-1m coverage gap: `3,281/48,913` current candidates still used theoretical 15m-open fallback instead of complete t+10 1m windows.
-7. Reconcile stop trigger/fill gaps and rejected market/stop order history from trade-executor logs or exchange order history.
-8. Add a top-level policy-OOS contract entry to the rank-reference manifest, not only per-strategy entries.
-9. Convert the current report evidence into the final root-cause section once fresh live execution observability and data-source audits are complete.
+5. Extend live-vs-historical OHLCV parity to deeper historical-hourly overlap and close the remaining execution-1m coverage gap.
+6. Reconcile stop trigger/fill gaps and rejected market/stop order history from trade-executor logs or exchange order history.
+7. Decide whether the current marginal threshold-band weakness is acceptable only with portfolio/global-auction constraints, or whether per-strategy deployment gates should explicitly require stronger local threshold economics before live deployment.

@@ -35,6 +35,13 @@ from .lgbm_pipeline import (
     fit_lgbm_stability_full_model,
     train_lgbm_stability_candidate,
 )
+from .label_weight_optuna import (
+    apply_geometry_recipe_to_labels,
+    apply_generator_recipe_to_cfg,
+    apply_label_recipe,
+    apply_weight_recipe,
+    load_recipe_from_env_or_cfg,
+)
 
 # from .spike_anatomy import SpikeAnatomyModel
 from .feature_selection_extreme_events import mdi_feature_selection_v3
@@ -779,6 +786,10 @@ def _build_mfe_mae_soft_label(
     only grades the MFE/MAE path quality observed before that endpoint.
     """
     cfg_local = cfg if isinstance(cfg, dict) else {}
+    ablation_mode = str(
+        os.getenv("EPM_LABEL_ABLATION_MODE", cfg_local.get("label_ablation_mode", ""))
+        or ""
+    ).strip().lower()
     y_ref = np.asarray(y_hard, dtype=np.float32).reshape(-1)
     out_fallback = np.clip(np.nan_to_num(y_ref, nan=0.0), 0.0, 1.0).astype(np.float32)
     required = {"__mfe_ret__", "__mae_ret__", "__barrier_pct__"}
@@ -832,6 +843,29 @@ def _build_mfe_mae_soft_label(
         mae_encoding = "signed_negative"
     trgt = np.clip(np.nan_to_num(trgt, nan=0.0, posinf=0.0, neginf=0.0), 1e-12, None)
 
+    if ablation_mode in {"3", "net_executable", "net_executable_soft_label"}:
+        y_soft, net_stats = _build_net_executable_soft_label_from_arrays(
+            mfe=mfe,
+            mae_abs=mae_abs,
+            vol=trgt,
+            y_ref=y_ref,
+            is_timeout=is_timeout,
+            cfg=cfg_local,
+            label=label,
+        )
+        if n < len(out_fallback):
+            merged = out_fallback.copy()
+            merged[:n] = y_soft
+            y_soft = merged
+        net_stats.update(
+            {
+                "hard_mean": float(np.mean(out_fallback)) if len(out_fallback) else float("nan"),
+                "mae_encoding": mae_encoding,
+                "target_mode": "net_executable_vol_normalized",
+            }
+        )
+        return y_soft.astype(np.float32, copy=False), net_stats
+
     mfe_net = np.maximum(mfe - costs, 0.0)
     ratio_score = mfe_net / (mfe_net + mae_abs + eps)
     opportunity_score = np.clip(
@@ -873,6 +907,153 @@ def _build_mfe_mae_soft_label(
         "mae_encoding": mae_encoding,
     }
     return y_soft, stats
+
+
+def _execution_aware_cost_fraction(cfg: dict[str, Any] | None = None) -> float:
+    cfg_local = cfg if isinstance(cfg, dict) else {}
+    bps = float(
+        os.getenv(
+            "EPM_EXECUTION_AWARE_COST_BPS",
+            cfg_local.get("execution_aware_cost_bps", 68.83),
+        )
+    )
+    return max(0.0, bps) / 10_000.0
+
+
+def _build_net_executable_soft_label_from_arrays(
+    *,
+    mfe: np.ndarray,
+    mae_abs: np.ndarray,
+    vol: np.ndarray,
+    y_ref: np.ndarray,
+    is_timeout: np.ndarray,
+    cfg: dict[str, Any] | None,
+    label: str,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    cfg_local = cfg if isinstance(cfg, dict) else {}
+    eps = 1e-12
+    cost = _execution_aware_cost_fraction(cfg_local)
+    adverse_lambda = float(
+        os.getenv(
+            "EPM_NET_EXECUTABLE_MAE_LAMBDA",
+            cfg_local.get("net_executable_mae_lambda", 0.35),
+        )
+    )
+    center = float(
+        os.getenv(
+            "EPM_NET_EXECUTABLE_CENTER_VOL",
+            cfg_local.get("net_executable_center_vol", 0.0),
+        )
+    )
+    temperature = max(
+        1e-6,
+        float(
+            os.getenv(
+                "EPM_NET_EXECUTABLE_TEMPERATURE_VOL",
+                cfg_local.get("net_executable_temperature_vol", 0.35),
+            )
+        ),
+    )
+    mfe = np.maximum(np.nan_to_num(np.asarray(mfe, dtype=np.float64), nan=0.0), 0.0)
+    mae_abs = np.maximum(np.nan_to_num(np.asarray(mae_abs, dtype=np.float64), nan=0.0), 0.0)
+    vol = np.clip(
+        np.nan_to_num(np.asarray(vol, dtype=np.float64), nan=0.0, posinf=0.0, neginf=0.0),
+        eps,
+        None,
+    )
+    y_ref = np.asarray(y_ref, dtype=np.float64)
+    is_timeout = np.asarray(is_timeout, dtype=bool)
+    favorable_vol = (mfe - cost) / vol
+    adverse_vol = mae_abs / vol
+    net_path_edge = favorable_vol - adverse_lambda * adverse_vol
+    soft = 1.0 / (
+        1.0
+        + np.exp(-np.clip((net_path_edge - center) / temperature, -60.0, 60.0))
+    )
+    # Keep timeouts uncertain unless the path quality is clearly executable.
+    soft = np.where(is_timeout, 0.5 * soft + 0.25, soft)
+    soft = np.clip(np.nan_to_num(soft, nan=0.5), 0.0, 1.0).astype(np.float32)
+    stats = {
+        "enabled": True,
+        "label": str(label),
+        "n": int(len(soft)),
+        "tp_count": int(np.sum((y_ref >= 0.5) & (~is_timeout))),
+        "sl_count": int(np.sum((y_ref < 0.5) & (~is_timeout))),
+        "timeout_count": int(np.sum(is_timeout)),
+        "soft_mean": float(np.mean(soft)) if len(soft) else float("nan"),
+        "soft_std": float(np.std(soft)) if len(soft) else float("nan"),
+        "net_path_edge_mean": float(np.mean(net_path_edge)) if len(net_path_edge) else float("nan"),
+        "net_path_edge_p50": float(np.percentile(net_path_edge, 50)) if len(net_path_edge) else float("nan"),
+        "net_path_edge_p90": float(np.percentile(net_path_edge, 90)) if len(net_path_edge) else float("nan"),
+        "execution_cost_bps": float(cost * 10_000.0),
+        "mae_lambda": float(adverse_lambda),
+        "temperature_vol": float(temperature),
+        "center_vol": float(center),
+    }
+    return soft, stats
+
+
+def _build_net_executable_soft_label(
+    df_local: pd.DataFrame,
+    y_hard: np.ndarray,
+    *,
+    cfg: dict[str, Any] | None = None,
+    label: str = "execution_ref",
+) -> tuple[np.ndarray, dict[str, Any]]:
+    required = {"__mfe_ret__", "__mae_ret__", "__barrier_pct__"}
+    missing = sorted(c for c in required if c not in df_local.columns)
+    y_ref = np.asarray(y_hard, dtype=np.float32).reshape(-1)
+    fallback = np.clip(np.nan_to_num(y_ref, nan=0.0), 0.0, 1.0).astype(np.float32)
+    if missing:
+        return fallback, {"enabled": False, "reason": "missing_columns", "missing_columns": missing}
+    n = min(len(df_local), len(y_ref))
+    mfe = np.asarray(df_local["__mfe_ret__"].values[:n], dtype=np.float64)
+    mae_raw = np.asarray(df_local["__mae_ret__"].values[:n], dtype=np.float64)
+    finite_mae = mae_raw[np.isfinite(mae_raw)]
+    mae_abs = (
+        np.maximum(mae_raw, 0.0)
+        if finite_mae.size and float(np.nanmedian(finite_mae)) >= 0.0
+        else np.maximum(-mae_raw, 0.0)
+    )
+    vol = np.asarray(df_local["__barrier_pct__"].values[:n], dtype=np.float64)
+    is_timeout = (
+        np.asarray(df_local["__is_timeout__"].values[:n], dtype=float) > 0.5
+        if "__is_timeout__" in df_local.columns
+        else np.zeros(n, dtype=bool)
+    )
+    y_soft, stats = _build_net_executable_soft_label_from_arrays(
+        mfe=mfe,
+        mae_abs=mae_abs,
+        vol=vol,
+        y_ref=y_ref[:n],
+        is_timeout=is_timeout,
+        cfg=cfg,
+        label=label,
+    )
+    if n < len(fallback):
+        merged = fallback.copy()
+        merged[:n] = y_soft
+        y_soft = merged
+    return y_soft.astype(np.float32, copy=False), stats
+
+
+def _execution_aware_weight_component(
+    df_local: pd.DataFrame,
+    *,
+    cfg: dict[str, Any] | None = None,
+) -> np.ndarray | None:
+    if not {"__mfe_ret__", "__mae_ret__", "__barrier_pct__"}.issubset(df_local.columns):
+        return None
+    y_ref = np.ones(len(df_local), dtype=np.float32)
+    y_soft, _stats = _build_net_executable_soft_label(
+        df_local.reset_index(drop=True),
+        y_ref,
+        cfg=cfg,
+        label="execution_aware_weight_component",
+    )
+    # Convert executable quality into a moderate multiplicative component. The
+    # optimiser still decides the alpha; this only exposes the economics signal.
+    return (0.5 + 3.5 * np.asarray(y_soft, dtype=np.float32)).astype(np.float32)
 
 
 def _build_base_regression_target(
@@ -2973,13 +3154,28 @@ def _fit_direct_extratrees_base_model(
             _availability_exempt.update(
                 c for c in _native_lgbm_preset_features if c in _race_X_df.columns
             )
-        _kept_cols = _recent_feature_availability_filter(
-            _race_X_availability_df,
-            _before_cols,
-            cfg=_cfg_local,
-            context=f"LGBM model race {kind_name}",
-            exempt_features=_availability_exempt,
-        )
+        _candidate_only_optuna = os.environ.get("EPM_LGBM_OPTUNA_CANDIDATE_ONLY", "0").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "y",
+            "on",
+        }
+        if _candidate_only_optuna:
+            tprint(
+                f"Model Race [{kind_name}]: skipping policy-slice feature availability "
+                "scan for Optuna candidate-only trial; native preset and in-memory "
+                "recent complete-case filtering still apply."
+            )
+            _kept_cols = list(_before_cols)
+        else:
+            _kept_cols = _recent_feature_availability_filter(
+                _race_X_availability_df,
+                _before_cols,
+                cfg=_cfg_local,
+                context=f"LGBM model race {kind_name}",
+                exempt_features=_availability_exempt,
+            )
         if not _kept_cols:
             tprint(
                 f"Model Race [{kind_name}]: no features meet policy-slice "
@@ -3048,6 +3244,7 @@ def _fit_direct_extratrees_base_model(
                         if _native_lgbm_preset
                         else None
                     ),
+                    cfg=cfg,
                 )
             else:
                 result = trainer(
@@ -3257,7 +3454,20 @@ def _fit_direct_extratrees_base_model(
         f"AUC={cand_auc:.4f}, Brier={cand_brier:.4f}, ECE={cand_ece:.4f}."
     )
 
-    if bool(cfg.get("strategy_selection_mode", False)) and not bool(
+    _candidate_only_optuna = os.environ.get("EPM_LGBM_OPTUNA_CANDIDATE_ONLY", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }
+    if _candidate_only_optuna and winning_candidate == "lgbm_pipeline":
+        tprint(
+            f"Model Race [{kind_name}]: skipping deferred full-data fit for "
+            "Optuna candidate-only trial."
+        )
+        cand_model = result.get("model")
+    elif bool(cfg.get("strategy_selection_mode", False)) and not bool(
         cfg.get("strategy_selection_final_retrain", False)
     ):
         tprint(
@@ -3346,6 +3556,7 @@ def _fit_direct_extratrees_base_model(
                         if _native_lgbm_preset
                         else None
                     ),
+                    cfg=cfg,
                 )
             else:
                 from extreme_price_movements.ebm_on_lgbm import (
@@ -7968,6 +8179,21 @@ def _optimize_training_sample_weights(
             if len(arr) == n:
                 components[k] = arr
 
+    ablation_mode = str(
+        os.getenv("EPM_LABEL_ABLATION_MODE", cfg.get("label_ablation_mode", ""))
+        or ""
+    ).strip().lower()
+    if ablation_mode in {"2", "execution_aware_weights", "execution_weights"}:
+        exec_component = _execution_aware_weight_component(df.reset_index(drop=True), cfg=cfg)
+        if exec_component is not None and len(exec_component) == n:
+            components["executable_economics"] = np.asarray(
+                exec_component, dtype=np.float64
+            )
+            tprint(
+                f"[{stage}] execution-aware sample-weight component enabled "
+                f"(cost_bps={_execution_aware_cost_fraction(cfg) * 10000.0:.2f})."
+            )
+
     label_intervals = np.column_stack(
         [
             pd.to_datetime(label_times["t_start"]).values.astype("datetime64[ns]"),
@@ -8169,6 +8395,7 @@ def build_hourly_training_set_and_weights(
     _geom_frames=None,
 ):
     tprint(f"Entering function: build_hourly_training_set_and_weights in training.py")
+    cfg = apply_generator_recipe_to_cfg(cfg, stage="train_base")
     empty_out = (None, None, None, None, None, None, None)
     lookup_cache: dict = {}
     c = panel["close"]
@@ -12224,6 +12451,10 @@ def train_meta_models_from_artifacts(
         "EPM_META_TRAIN_CORRECTNESS_CLF_HEAD": "meta_train_correctness_clf_head",
         "EPM_META_TRAIN_TBM_CLF_HEAD": "meta_train_tbm_clf_head",
     }
+    cfg.setdefault("meta_train_base_target_clf_head", False)
+    cfg.setdefault("meta_train_correctness_clf_head", False)
+    cfg.setdefault("meta_train_tbm_clf_head", True)
+    cfg.setdefault("meta_export_base_meta_corrected_head", False)
     for _env_name, _cfg_key in _env_bool_meta_toggles.items():
         _raw = os.getenv(_env_name)
         if _raw is None:
@@ -12237,6 +12468,20 @@ def train_meta_models_from_artifacts(
             tprint(
                 f"WARNING: invalid {_env_name}={_raw!r}; expected boolean, "
                 f"leaving {_cfg_key}={cfg.get(_cfg_key)!r}"
+            )
+    _raw_corrected_export = os.getenv("EPM_META_EXPORT_BASE_META_CORRECTED_HEAD")
+    if _raw_corrected_export is not None:
+        _val = str(_raw_corrected_export).strip().lower()
+        if _val in {"1", "true", "yes", "y", "on"}:
+            cfg["meta_export_base_meta_corrected_head"] = True
+        elif _val in {"0", "false", "no", "n", "off"}:
+            cfg["meta_export_base_meta_corrected_head"] = False
+        else:
+            tprint(
+                "WARNING: invalid EPM_META_EXPORT_BASE_META_CORRECTED_HEAD="
+                f"{_raw_corrected_export!r}; expected boolean, leaving "
+                "meta_export_base_meta_corrected_head="
+                f"{cfg.get('meta_export_base_meta_corrected_head')!r}"
             )
     require_meta_move_prob = bool(
         cfg.get("meta_require_classifier_barrier_probs", True)
@@ -12727,7 +12972,7 @@ def train_meta_models_from_artifacts(
         failures: list[str] = []
 
         require_base_target_clf = bool(
-            cfg.get("meta_train_base_target_clf_head", True)
+            cfg.get("meta_train_base_target_clf_head", False)
         )
         if include_meta_reg and reg_model is None:
             failures.append("missing_reg_head")
@@ -12973,6 +13218,18 @@ def train_meta_models_from_artifacts(
             rename_map["y_ret"] = "__y_ret__"
         if rename_map:
             df_oof = df_oof.rename(columns=rename_map)
+        alias_map = {
+            "mfe_ret": "__mfe_ret__",
+            "mae_ret": "__mae_ret__",
+            "barrier_pct": "__barrier_pct__",
+            "bars_to_mfe": "__bars_to_mfe__",
+            "bars_to_mae": "__bars_to_mae__",
+            "exit_code": "__y_outcome__",
+            "is_timeout": "__is_timeout__",
+        }
+        for src, dst in alias_map.items():
+            if src in df_oof.columns and dst not in df_oof.columns:
+                df_oof[dst] = df_oof[src].values
         return df_oof
 
     def _load_saved_oof_frame(
@@ -13043,6 +13300,114 @@ def train_meta_models_from_artifacts(
             except Exception as e:
                 tprint(f"Meta training: failed to load saved OOF artifact {path}: {e}")
         return None
+
+    def _column_has_usable_values(frame: pd.DataFrame, col: str) -> bool:
+        if col not in frame.columns:
+            return False
+        vals = frame[col].values
+        try:
+            arr = np.asarray(vals, dtype=np.float64)
+            return bool(np.isfinite(arr).any())
+        except Exception:
+            s = pd.Series(vals)
+            return bool(s.notna().any() and (s.astype(str).str.len() > 0).any())
+
+    def _rehydrate_saved_oof_path_columns(
+        source_df: pd.DataFrame,
+        label_df: pd.DataFrame,
+        *,
+        strategy_id: str,
+        horizon: int,
+    ) -> pd.DataFrame:
+        """Restore internal path diagnostics when train_meta starts from saved OOF."""
+
+        if source_df is None or label_df is None:
+            return source_df
+        out_df = source_df
+        if not (
+            "__ts__" in out_df.columns
+            and "__symbol__" in out_df.columns
+            and "__ts__" in label_df.columns
+            and "__symbol__" in label_df.columns
+        ):
+            return out_df
+
+        specs = [
+            ("__mfe_ret__", ("__mfe_ret__", "mfe_ret"), np.float32, np.nan),
+            ("__mae_ret__", ("__mae_ret__", "mae_ret"), np.float32, np.nan),
+            ("__barrier_pct__", ("__barrier_pct__", "barrier_pct"), np.float32, np.nan),
+            ("__bars_to_mfe__", ("__bars_to_mfe__", "bars_to_mfe"), np.float32, np.nan),
+            ("__bars_to_mae__", ("__bars_to_mae__", "bars_to_mae"), np.float32, np.nan),
+            ("__is_timeout__", ("__is_timeout__", "is_timeout"), np.float32, np.nan),
+            ("__y_outcome__", ("__y_outcome__", "exit_code"), object, ""),
+        ]
+        restored: list[str] = []
+        for dst, candidates, dtype, fill_value in specs:
+            if _column_has_usable_values(out_df, dst):
+                continue
+            src = next((col for col in candidates if col in label_df.columns), None)
+            if src is None:
+                continue
+            aligned = _align_values_by_ts_symbol_keys(
+                out_df["__ts__"].values,
+                out_df["__symbol__"].values,
+                label_df["__ts__"].values,
+                label_df["__symbol__"].values,
+                label_df[src].values,
+                fill_value=fill_value,
+                dtype=dtype,
+            )
+            out_df[dst] = aligned
+            if _column_has_usable_values(out_df, dst):
+                restored.append(dst)
+
+        generated: list[str] = []
+        n_rows = len(out_df)
+        if not _column_has_usable_values(out_df, "__barrier_pct__"):
+            out_df["__barrier_pct__"] = np.full(n_rows, 0.005, dtype=np.float32)
+            generated.append("__barrier_pct__")
+        if not _column_has_usable_values(out_df, "__bars_to_mfe__"):
+            mfe = (
+                np.asarray(out_df["__mfe_ret__"].values, dtype=np.float64)
+                if "__mfe_ret__" in out_df.columns
+                else np.zeros(n_rows, dtype=np.float64)
+            )
+            y_bin = (
+                np.asarray(out_df["__y_bin__"].values, dtype=np.float64)
+                if "__y_bin__" in out_df.columns
+                else np.zeros(n_rows, dtype=np.float64)
+            )
+            bars = np.where((mfe > 0.0) | (y_bin >= 0.5), 1.0, np.inf)
+            out_df["__bars_to_mfe__"] = bars.astype(np.float32)
+            generated.append("__bars_to_mfe__")
+        if not _column_has_usable_values(out_df, "__y_outcome__"):
+            y_bin = (
+                np.asarray(out_df["__y_bin__"].values, dtype=np.float64)
+                if "__y_bin__" in out_df.columns
+                else np.zeros(n_rows, dtype=np.float64)
+            )
+            y_ret = (
+                np.asarray(out_df["__y_ret__"].values, dtype=np.float64)
+                if "__y_ret__" in out_df.columns
+                else np.zeros(n_rows, dtype=np.float64)
+            )
+            outcome = np.where(y_bin >= 0.5, 2, np.where(np.isclose(y_ret, 0.0, atol=1e-12), 1, 0))
+            out_df["__y_outcome__"] = outcome.astype(np.int8)
+            generated.append("__y_outcome__")
+        if not _column_has_usable_values(out_df, "__is_timeout__"):
+            try:
+                outcome = np.asarray(out_df["__y_outcome__"].values, dtype=np.float64)
+                out_df["__is_timeout__"] = (outcome == 1.0).astype(np.int8)
+            except Exception:
+                out_df["__is_timeout__"] = np.zeros(n_rows, dtype=np.int8)
+            generated.append("__is_timeout__")
+
+        if restored or generated:
+            tprint(
+                f"Meta training: rehydrated saved OOF path columns for {strategy_id} "
+                f"H={int(horizon)} restored={restored} generated={generated}."
+            )
+        return out_df
 
     def _validate_saved_base_oof_provenance(
         df_oof: pd.DataFrame, strategy_id: str, horizon: int
@@ -13175,6 +13540,12 @@ def train_meta_models_from_artifacts(
                 if saved_is_preferred:
                     source_df = saved_oof_df.reset_index(drop=True).copy()
                     source_df.attrs.update(saved_oof_df.attrs)
+                    source_df = _rehydrate_saved_oof_path_columns(
+                        source_df,
+                        df_local,
+                        strategy_id=strategy_id,
+                        horizon=int(h_local),
+                    )
                     _validate_saved_base_oof_provenance(
                         source_df, strategy_id, h_local
                     )
@@ -16416,9 +16787,11 @@ def train_meta_models_from_artifacts(
                 "__mfe_ret__",
                 "__mae_ret__",
                 "__bars_to_mfe__",
+                "__bars_to_mae__",
                 "__barrier_pct__",
                 "__y_outcome__",
                 "exit_code",
+                "__is_timeout__",
                 "__early_inval__",
                 "__mr_path_penalty__",
                 "__mr_velocity_penalty__",
@@ -17888,7 +18261,9 @@ def train_meta_models_from_artifacts(
                     "__mae_ret__",
                     "__mfe_ret__",
                     "__bars_to_mfe__",
+                    "__bars_to_mae__",
                     "__barrier_pct__",
+                    "__is_timeout__",
                     "__early_inval__",
                     "__mr_path_penalty__",
                     "__mr_velocity_penalty__",
@@ -18031,6 +18406,8 @@ def train_meta_models_from_artifacts(
                         ("__mfe__", "mfe"),
                         ("__mae__", "mae"),
                         ("__bars_to_mfe__", "bars_to_mfe"),
+                        ("__bars_to_mae__", "bars_to_mae"),
+                        ("__is_timeout__", "is_timeout"),
                     ):
                         if _src in df.columns and _dst not in _out.columns:
                             _out[_dst] = np.asarray(df[_src].values)[_valid_idx]
@@ -18097,14 +18474,34 @@ def train_meta_models_from_artifacts(
             ) -> None:
                 _y_model = np.asarray(y_soft, dtype=np.float32)
                 _y_hard_arr = np.asarray(y_hard, dtype=np.float32)
+                _y_metric_ref = _y_hard_arr
+                _df_recipe_meta = df.reset_index(drop=True)
                 if _is_lgbm_pipeline_backend(cfg, meta=True) and str(label).lower() in {
                     "base-target",
                     "tbm",
                 }:
-                    _y_model_soft, _soft_stats = _build_mfe_mae_soft_label(
+                    _cfg_gen_meta = apply_generator_recipe_to_cfg(cfg, stage="train_meta")
+                    _df_recipe_meta, _y_hard_recipe, _geom_recipe_stats = apply_geometry_recipe_to_labels(
                         df.reset_index(drop=True),
                         _y_hard_arr,
-                        cfg=cfg,
+                        cfg=_cfg_gen_meta,
+                        stage="train_meta",
+                        label=f"meta:{head_key}:{label}",
+                    )
+                    if bool(_geom_recipe_stats.get("enabled", False)):
+                        _y_hard_arr = np.asarray(_y_hard_recipe, dtype=np.float32)
+                        _y_model = _y_hard_arr
+                        _y_metric_ref = _y_hard_arr
+                        tprint(
+                            f"Meta label/weight Optuna geometry [{head_key}]: "
+                            f"pos_before={float(_geom_recipe_stats.get('hard_positive_rate_before', np.nan)):.4f}, "
+                            f"pos_after={float(_geom_recipe_stats.get('hard_positive_rate_after', np.nan)):.4f}, "
+                            f"changed={float(_geom_recipe_stats.get('hard_changed_frac', np.nan)):.4f}."
+                        )
+                    _y_model_soft, _soft_stats = _build_mfe_mae_soft_label(
+                        _df_recipe_meta,
+                        _y_hard_arr,
+                        cfg=_cfg_gen_meta,
                         label=f"meta:{head_key}:{label}",
                     )
                     if bool(_soft_stats.get("enabled", False)):
@@ -18125,11 +18522,56 @@ def train_meta_models_from_artifacts(
                             f"Meta LGBM soft labels [{head_key}]: disabled "
                             f"({_soft_stats.get('reason', 'unknown')}); using provided label."
                         )
+                    _recipe = load_recipe_from_env_or_cfg(cfg)
+                    if _recipe is not None:
+                        _recipe_soft, _recipe_stats = apply_label_recipe(
+                            _df_recipe_meta,
+                            _y_hard_arr,
+                            _y_model,
+                            cfg=_cfg_gen_meta,
+                            stage="train_meta",
+                            label=f"meta:{head_key}:{label}",
+                        )
+                        if bool(_recipe_stats.get("enabled", False)):
+                            _y_model = np.asarray(_recipe_soft, dtype=np.float32)
+                            tprint(
+                                f"Meta label/weight Optuna recipe [{head_key}]: "
+                                f"label_recipe={_recipe_stats.get('recipe')} "
+                                f"soft_mean={float(_recipe_stats.get('soft_mean', np.nan)):.4f}, "
+                                f"soft_std={float(_recipe_stats.get('soft_std', np.nan)):.4f}, "
+                                f"cost_bps={float(_recipe_stats.get('execution_cost_bps', np.nan)):.2f}."
+                            )
+                    _ablation_mode = str(
+                        os.getenv(
+                            "EPM_LABEL_ABLATION_MODE",
+                            cfg.get("label_ablation_mode", ""),
+                        )
+                        or ""
+                    ).strip().lower()
+                    if _ablation_mode in {
+                        "2",
+                        "execution_aware_weights",
+                        "execution_weights",
+                    }:
+                        _exec_ref, _exec_ref_stats = _build_net_executable_soft_label(
+                            _df_recipe_meta,
+                            _y_hard_arr,
+                            cfg=_cfg_gen_meta,
+                            label=f"meta_metric_ref:{head_key}:{label}",
+                        )
+                        if bool(_exec_ref_stats.get("enabled", False)):
+                            _y_metric_ref = np.asarray(_exec_ref, dtype=np.float32)
+                            tprint(
+                                f"Meta LGBM execution-aware metric/distillation ref [{head_key}]: "
+                                f"soft_mean={float(_exec_ref_stats.get('soft_mean', np.nan)):.4f}, "
+                                f"soft_std={float(_exec_ref_stats.get('soft_std', np.nan)):.4f}, "
+                                f"cost_bps={float(_exec_ref_stats.get('execution_cost_bps', np.nan)):.2f}."
+                            )
                 _valid = (
                     _fit_mask_ebm
                     & np.isfinite(_y_model)
-                    & np.isfinite(_y_hard_arr)
-                    & (_y_hard_arr >= 0.0)
+                    & np.isfinite(_y_metric_ref)
+                    & (_y_metric_ref >= 0.0)
                 )
                 if int(np.sum(_valid)) < int(
                     cfg.get("sample_weight_opt_min_samples", 400)
@@ -18139,13 +18581,37 @@ def train_meta_models_from_artifacts(
                         f"(valid={int(np.sum(_valid))})"
                     )
                     return
+                _w_model = np.asarray(_w_seed, dtype=np.float32)
+                if _is_lgbm_pipeline_backend(cfg, meta=True):
+                    _recipe = load_recipe_from_env_or_cfg(cfg)
+                    if _recipe is not None:
+                        _cfg_gen_meta = apply_generator_recipe_to_cfg(cfg, stage="train_meta")
+                        _recipe_w, _recipe_w_stats = apply_weight_recipe(
+                            _df_recipe_meta,
+                            _y_hard_arr,
+                            _y_model,
+                            _w_model,
+                            cfg=_cfg_gen_meta,
+                            stage="train_meta",
+                            label=f"meta:{head_key}:{label}",
+                            fit_mask=_fit_mask_ebm,
+                        )
+                        if bool(_recipe_w_stats.get("enabled", False)):
+                            _w_model = np.asarray(_recipe_w, dtype=np.float32)
+                            tprint(
+                                f"Meta label/weight Optuna recipe [{head_key}]: "
+                                f"weight_recipe={_recipe_w_stats.get('recipe')} "
+                                f"pos_mass_before={float(_recipe_w_stats.get('positive_mass_before', np.nan)):.4f}, "
+                                f"pos_mass_target={float(_recipe_w_stats.get('positive_mass_target', np.nan)):.4f}, "
+                                f"w_p95={float(_recipe_w_stats.get('p95', np.nan)):.3f}."
+                            )
                 _race, _diag = _fit_direct_extratrees_base_model(
                     kind_name=f"meta_{head_key}",
                     native_scope_key=head_key,
                     X=X_meta_models.loc[_valid].reset_index(drop=True),
                     y=_y_model[_valid],
-                    y_hard_ref=_y_hard_arr[_valid],
-                    sample_weight=_w_seed[_valid],
+                    y_hard_ref=_y_metric_ref[_valid],
+                    sample_weight=_w_model[_valid],
                     returns=_ret_ebm[_valid],
                     mfe=(
                         np.asarray(df["__mfe_ret__"], dtype=np.float64)[_valid]
@@ -20644,6 +21110,10 @@ def train_meta_models_from_artifacts(
                     oof_df["mfe_ret"] = _bucket_y_ret[f"{_bucket_base}_mfe"][:_n_meta]
                 if "__bars_to_mfe__" in _md:
                     oof_df["bars_to_mfe"] = _take_meta_values(_md["__bars_to_mfe__"])
+                if "__bars_to_mae__" in _md:
+                    oof_df["bars_to_mae"] = _take_meta_values(_md["__bars_to_mae__"])
+                if "__is_timeout__" in _md:
+                    oof_df["is_timeout"] = _take_meta_values(_md["__is_timeout__"])
                 if "__mr_path_penalty__" in _md:
                     oof_df["mr_path_penalty"] = _take_meta_values(
                         _md["__mr_path_penalty__"]
@@ -20729,6 +21199,8 @@ def train_meta_models_from_artifacts(
             oof_df = _append_ebm_uncertainty_oof_fields(oof_df, meta, _n_meta)
 
             if (
+                bool(cfg.get("meta_export_base_meta_corrected_head", False))
+                and
                 "oof_base_clf" in oof_df.columns
                 and "oof_p_move" in oof_df.columns
                 and "y_bin" in oof_df.columns
@@ -22743,11 +23215,32 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     X_sel = X[selected_feats]
                     y_fit_hard = np.asarray(y, dtype=np.float32)
                     y_fit = y_fit_hard
+                    y_fit_metric_ref = y_fit_hard
                     if _is_lgbm_pipeline_backend(cfg, meta=False):
-                        y_soft_fit, soft_stats = _build_mfe_mae_soft_label(
+                        _cfg_gen_base = apply_generator_recipe_to_cfg(cfg, stage="train_base")
+                        _df_recipe_base, y_fit_hard_recipe, _geom_recipe_stats = apply_geometry_recipe_to_labels(
                             df.reset_index(drop=True),
                             y_fit_hard,
-                            cfg=cfg,
+                            cfg=_cfg_gen_base,
+                            stage="train_base",
+                            label=f"base:{key}",
+                        )
+                        if bool(_geom_recipe_stats.get("enabled", False)):
+                            y_fit_hard = np.asarray(y_fit_hard_recipe, dtype=np.float32)
+                            y_fit = y_fit_hard
+                            y_fit_metric_ref = y_fit_hard
+                            tprint(
+                                f"Base label/weight Optuna geometry [{key}]: "
+                                f"pos_before={float(_geom_recipe_stats.get('hard_positive_rate_before', np.nan)):.4f}, "
+                                f"pos_after={float(_geom_recipe_stats.get('hard_positive_rate_after', np.nan)):.4f}, "
+                                f"changed={float(_geom_recipe_stats.get('hard_changed_frac', np.nan)):.4f}."
+                            )
+                        else:
+                            _df_recipe_base = df.reset_index(drop=True)
+                        y_soft_fit, soft_stats = _build_mfe_mae_soft_label(
+                            _df_recipe_base,
+                            y_fit_hard,
+                            cfg=_cfg_gen_base,
                             label=f"base:{key}",
                         )
                         if bool(soft_stats.get("enabled", False)):
@@ -22768,8 +23261,78 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                                 f"Base LGBM soft labels [{key}]: disabled "
                                 f"({soft_stats.get('reason', 'unknown')}); using hard labels."
                             )
+                        _recipe = load_recipe_from_env_or_cfg(cfg)
+                        if _recipe is not None:
+                            _recipe_soft, _recipe_stats = apply_label_recipe(
+                                _df_recipe_base,
+                                y_fit_hard,
+                                y_fit,
+                                cfg=_cfg_gen_base,
+                                stage="train_base",
+                                label=f"base:{key}",
+                            )
+                            if bool(_recipe_stats.get("enabled", False)):
+                                y_fit = np.asarray(_recipe_soft, dtype=np.float32)
+                                tprint(
+                                    f"Base label/weight Optuna recipe [{key}]: "
+                                    f"label_recipe={_recipe_stats.get('recipe')} "
+                                    f"soft_mean={float(_recipe_stats.get('soft_mean', np.nan)):.4f}, "
+                                    f"soft_std={float(_recipe_stats.get('soft_std', np.nan)):.4f}, "
+                                    f"cost_bps={float(_recipe_stats.get('execution_cost_bps', np.nan)):.2f}."
+                                )
+                        _ablation_mode = str(
+                            os.getenv(
+                                "EPM_LABEL_ABLATION_MODE",
+                                cfg.get("label_ablation_mode", ""),
+                            )
+                            or ""
+                        ).strip().lower()
+                        if _ablation_mode in {
+                            "2",
+                            "execution_aware_weights",
+                            "execution_weights",
+                        }:
+                            _exec_ref, _exec_ref_stats = _build_net_executable_soft_label(
+                                _df_recipe_base,
+                                y_fit_hard,
+                                cfg=_cfg_gen_base,
+                                label=f"base_metric_ref:{key}",
+                            )
+                            if bool(_exec_ref_stats.get("enabled", False)):
+                                y_fit_metric_ref = np.asarray(
+                                    _exec_ref, dtype=np.float32
+                                )
+                                tprint(
+                                    f"Base LGBM execution-aware metric/distillation ref [{key}]: "
+                                    f"soft_mean={float(_exec_ref_stats.get('soft_mean', np.nan)):.4f}, "
+                                    f"soft_std={float(_exec_ref_stats.get('soft_std', np.nan)):.4f}, "
+                                    f"cost_bps={float(_exec_ref_stats.get('execution_cost_bps', np.nan)):.2f}."
+                                )
                     y_ret_fit = y_ret
                     w_fit = w
+                    if _is_lgbm_pipeline_backend(cfg, meta=False):
+                        _recipe = load_recipe_from_env_or_cfg(cfg)
+                        if _recipe is not None:
+                            _cfg_gen_base = apply_generator_recipe_to_cfg(cfg, stage="train_base")
+                            _recipe_w, _recipe_w_stats = apply_weight_recipe(
+                                _df_recipe_base,
+                                y_fit_hard,
+                                y_fit,
+                                w_fit,
+                                cfg=_cfg_gen_base,
+                                stage="train_base",
+                                label=f"base:{key}",
+                                fit_indices=_fit_idx,
+                            )
+                            if bool(_recipe_w_stats.get("enabled", False)):
+                                w_fit = np.asarray(_recipe_w, dtype=np.float32)
+                                tprint(
+                                    f"Base label/weight Optuna recipe [{key}]: "
+                                    f"weight_recipe={_recipe_w_stats.get('recipe')} "
+                                    f"pos_mass_before={float(_recipe_w_stats.get('positive_mass_before', np.nan)):.4f}, "
+                                    f"pos_mass_target={float(_recipe_w_stats.get('positive_mass_target', np.nan)):.4f}, "
+                                    f"w_p95={float(_recipe_w_stats.get('p95', np.nan)):.3f}."
+                                )
                     cols = list(selected_feats)
 
                     y_hard_check = (y_fit_hard >= 0.5).astype(int)
@@ -22801,7 +23364,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         X=X_sel,
                         X_full=X,
                         y=y_fit,
-                        y_hard_ref=y_fit_hard,
+                        y_hard_ref=y_fit_metric_ref,
                         sample_weight=w_fit,
                         returns=y_ret_fit,
                         mfe=(
@@ -23577,6 +24140,10 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                 _allow_partial_oof_export = bool(
                     cfg.get("strategy_selection_mode", False)
                 ) and not bool(cfg.get("strategy_selection_final_retrain", False))
+                _allow_partial_oof_export = _allow_partial_oof_export or (
+                    os.environ.get("EPM_LGBM_OPTUNA_CANDIDATE_ONLY", "0").strip().lower()
+                    in {"1", "true", "yes", "y", "on"}
+                )
                 if _n != _expected_oof_rows or _finite_oof_count != _expected_oof_rows:
                     if not _allow_partial_oof_export:
                         raise RuntimeError(
@@ -23587,7 +24154,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                             "of writing a partial meta-training artifact."
                         )
                     tprint(
-                        "WARNING: lightweight strategy-selection OOF export is partial "
+                        "WARNING: lightweight/Optuna candidate-only OOF export is partial "
                         f"for {k} H{_h}: finite={_finite_oof_count}/"
                         f"{_expected_oof_rows}, oof_len={len(_oof_full)}."
                     )
@@ -23794,11 +24361,24 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         ("__mae_ret__", "mae_ret"),
                         ("__mfe__", "mfe"),
                         ("__mae__", "mae"),
+                        ("__barrier_pct__", "barrier_pct"),
+                        ("__bars_to_mfe__", "bars_to_mfe"),
+                        ("__bars_to_mae__", "bars_to_mae"),
+                        ("__is_timeout__", "is_timeout"),
                     ):
                         if _src in _df_oof.columns and _dst not in _payload:
                             _payload[_dst] = np.asarray(
                                 _df_oof[_src], dtype=np.float32
                             )[: len(_df_oof)]
+                    for _src, _dst in (
+                        ("__y_outcome__", "exit_code"),
+                        ("exit_code", "exit_code"),
+                        ("__y_lbl__", "label_code"),
+                    ):
+                        if _src in _df_oof.columns and _dst not in _payload:
+                            _payload[_dst] = np.asarray(_df_oof[_src].values)[
+                                : len(_df_oof)
+                            ]
 
                 # Only store oof_raw if explicitly configured (saves ~50% storage per model)
                 if cfg.get("save_oof_raw", False):

@@ -1,0 +1,39 @@
+{
+  "best_trial_number": 29,
+  "best_trial_params": {
+    "ambiguous_weight": 0.678921247962702,
+    "class_rebalance_strength": 0.5773886540020734,
+    "concurrency_penalty": 0.9339633099554083,
+    "concurrency_window_hours": 4.0,
+    "hard_negative_weight": 7.418425336586865,
+    "mae_weight_power": 2.537979801496041,
+    "meta_mfe_mae_tau": 0.8978941391896114,
+    "meta_weight_sigmoid_alpha": 0.596569531828852,
+    "mfe_mae_cost_floor": 0.001278810036046036,
+    "mfe_mae_tau": 0.2583847116810153,
+    "mfe_mae_w_min": 0.7960364211965634,
+    "mfe_weight_power": 0.4792726058698567,
+    "net_ev_weight_power": 2.5142375039960934,
+    "outcome_weight_clip_max": 1.5939778976923697,
+    "outcome_weight_clip_min": 0.6864437077112255,
+    "path_quality_strength": 0.21337374136320297,
+    "portfolio_alignment_strength": 0.2626592169541049,
+    "positive_mass_target": 0.3939888414896796,
+    "recency_half_life_days": 0.0,
+    "robustness_strength": 0.8069575872649516,
+    "timeout_weight": 0.896208142863774
+  },
+  "best_trial_recipe_path": "reports_perp/label_weight_optuna/long_dist_seq_fast_20260608_v14_direct_generator/02_weights/trial_0029_recipe.json",
+  "best_trial_value": 0.3513125239120308,
+  "incumbent_recipe_path": "reports_perp/label_weight_optuna/long_dist_seq_fast_20260608_v14_direct_generator/02_weights/trial_0000_recipe.json",
+  "incumbent_trial_number": 0,
+  "incumbent_trial_params": {
+    "recipe_enabled": false
+  },
+  "incumbent_trial_value": 0.34318254361467393,
+  "phase": "weights",
+  "promotion_margin": 0.01,
+  "promotion_rejected": true,
+  "reason": "best trial did not beat incumbent noop/base recipe by the required margin",
+  "study_name": "label_weight_long_dist_seq_fast_weights_20260608_v14_direct_generator"
+}

@@ -1462,6 +1462,8 @@ CFG = {
     "download_15m_full_backfill": True,
     "download_microdata_enabled": True,
     "policy_optimiser_tail_months": 4,
+    "policy_optimiser_holdout_start_months_ago": 16,
+    "policy_optimiser_holdout_end_months_ago": 12,
     "policy_optimiser_max_sample_fraction": 0.30,
     # Feature artifacts are keyed by run-id, but feature rows should extend near
     # the available data frontier rather than stopping at the historical run-id.
@@ -1596,8 +1598,9 @@ CFG = {
     "meta_race_include_classifiers": True,
     "meta_require_classifier_barrier_probs": True,
     "meta_train_regression_bucket_model": False,
-    "meta_train_correctness_clf_head": True,
+    "meta_train_correctness_clf_head": False,
     "meta_train_tbm_clf_head": True,
+    "meta_export_base_meta_corrected_head": False,
     "model_backend": "lgbm_pipeline",
     "base_model_backend": "lgbm_pipeline",
     "meta_model_backend": "lgbm_pipeline",

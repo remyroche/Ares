@@ -1,0 +1,134 @@
+{
+  "rows": 255,
+  "traded_rows": 12,
+  "columns": {
+    "expected_policy_slippage_bps": {
+      "n": 14,
+      "mean": 0.5977583477611332,
+      "median": 0.0,
+      "p90": 1.72019886557906,
+      "max": 7.521449055468699
+    },
+    "expected_policy_friction_bps": {
+      "n": 14,
+      "mean": 25.134291639172158,
+      "median": 12.245627719811168,
+      "p90": 56.99311918145675,
+      "max": 83.63692339268339
+    },
+    "live_spread_bps": {
+      "n": 14,
+      "mean": 49.07306658282205,
+      "median": 24.491255439622336,
+      "p90": 113.9862383629135,
+      "max": 167.27384678536677
+    },
+    "live_expected_slippage_bps": {
+      "n": 14,
+      "mean": 0.5977583477611332,
+      "median": 0.0,
+      "p90": 1.72019886557906,
+      "max": 7.521449055468699
+    },
+    "live_total_entry_friction_bps": {
+      "n": 14,
+      "mean": 25.134291639172158,
+      "median": 12.245627719811168,
+      "p90": 56.99311918145675,
+      "max": 83.63692339268339
+    },
+    "actual_fill_vs_expected_bps": {
+      "n": 14,
+      "mean": -6.050411753406832,
+      "median": 0.0,
+      "p90": 5.37502401521595,
+      "max": 21.996545679318082
+    },
+    "actual_fill_vs_theoretical_bps": {
+      "n": 13,
+      "mean": 40.19519523636533,
+      "median": 31.17692907248726,
+      "p90": 142.97100789352115,
+      "max": 155.33268101761254
+    },
+    "policy_vs_live_slippage_delta_bps": {
+      "n": 14,
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "max": 0.0
+    },
+    "policy_vs_live_friction_delta_bps": {
+      "n": 14,
+      "mean": 0.0,
+      "median": 0.0,
+      "p90": 0.0,
+      "max": 0.0
+    },
+    "signal_to_entry_seconds": {
+      "n": 14,
+      "mean": 4431.495921714286,
+      "median": 4352.063457,
+      "p90": 4754.577214100001,
+      "max": 5102.368352
+    }
+  },
+  "by_strategy": {
+    "asset_minus_mkt_oi_1d_peer_resid_0_34164831_oi_expansion_compression_balance_24h_0_42287597": {
+      "rows": 124,
+      "traded_rows": 1,
+      "policy_vs_live_friction_delta_bps": {
+        "n": 1,
+        "mean": 0.0,
+        "median": 0.0,
+        "p90": 0.0,
+        "max": 0.0
+      },
+      "live_total_entry_friction_bps": {
+        "n": 1,
+        "mean": 8.021474056718706,
+        "median": 8.021474056718706,
+        "p90": 8.021474056718706,
+        "max": 8.021474056718706
+      }
+    },
+    "bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828": {
+      "rows": 114,
+      "traded_rows": 11,
+      "policy_vs_live_friction_delta_bps": {
+        "n": 13,
+        "mean": 0.0,
+        "median": 0.0,
+        "p90": 0.0,
+        "max": 0.0
+      },
+      "live_total_entry_friction_bps": {
+        "n": 13,
+        "mean": 26.450662222437813,
+        "median": 12.764871074801626,
+        "p90": 58.08380169884721,
+        "max": 83.63692339268339
+      }
+    },
+    "bollinger_band_width_-0_0062114433_oi_value_z_90d_0_082444385_price_rv_15d_robust_z_0_060036644": {
+      "rows": 11,
+      "traded_rows": 0,
+      "policy_vs_live_friction_delta_bps": {
+        "n": 0
+      },
+      "live_total_entry_friction_bps": {
+        "n": 0
+      }
+    },
+    "dist_ema20_atr_-0_92271453_loc_bb_channel_pos_48_0_60767579_leverage_build_score_0_45107844_return_autocorr_48_1_18643_rolling_range_20_-0_25967735": {
+      "rows": 6,
+      "traded_rows": 0,
+      "policy_vs_live_friction_delta_bps": {
+        "n": 0
+      },
+      "live_total_entry_friction_bps": {
+        "n": 0
+      }
+    }
+  }
+}

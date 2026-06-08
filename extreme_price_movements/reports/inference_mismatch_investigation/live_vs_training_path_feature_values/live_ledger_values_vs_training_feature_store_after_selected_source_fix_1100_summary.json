@@ -1,0 +1,15 @@
+{
+  "ledger_path": "data_perp/exchanges/krakenfutures/live_state/prediction_ledgers/20260525_010004_nopenalty/prediction_ledger.parquet",
+  "latest_timestamp": "2026-06-04 12:27:19.263354+00:00",
+  "rows_checked": 6,
+  "cells_checked": 970,
+  "status_counts": {
+    "match": 959,
+    "nonfinite_mismatch": 11
+  },
+  "max_abs_diff": 0.0,
+  "top_diffs": [],
+  "meta_feature_value_cells": 0,
+  "base_feature_value_cells": 970,
+  "csv": "extreme_price_movements/reports/inference_mismatch_investigation/live_vs_training_path_feature_values/live_ledger_values_vs_training_feature_store_after_selected_source_fix_1100.csv"
+}

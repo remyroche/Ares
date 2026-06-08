@@ -1,0 +1,16 @@
+{
+  "cells": 1250,
+  "feature_keys": 263,
+  "ledger_cycle_timestamp": "2026-06-04T11:27:00.121015+00:00",
+  "ledger_rows": 11,
+  "max_abs_diff": 2.977008283138275,
+  "mean_abs_diff": 0.15561739445898154,
+  "output_csv": "extreme_price_movements/reports/inference_mismatch_investigation/live_vs_training_path_feature_values/live_ledger_vs_training_feature_store_after_source_state_patch_1100.csv",
+  "status_counts": {
+    "diff": 351,
+    "ok": 888,
+    "train_nan": 11
+  },
+  "symbols": 10,
+  "target_ts": "2026-06-04T11:00:00+00:00"
+}

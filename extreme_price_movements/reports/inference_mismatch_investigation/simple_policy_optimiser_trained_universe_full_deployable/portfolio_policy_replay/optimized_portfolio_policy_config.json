@@ -1,0 +1,50 @@
+{
+  "portfolio_policy_version": "global_auction_v1",
+  "strategy_contract": {
+    "strategy_ids": [
+      "long_bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828",
+      "long_dist_ema20_atr_-0_92271453_loc_bb_channel_pos_48_0_60767579_leverage_build_score_0_45107844_return_autocorr_48_1_18643_rolling_range_20_-0_25967735",
+      "short_asset_minus_mkt_oi_1d_peer_resid_0_34164831_oi_expansion_compression_balance_24h_0_42287597",
+      "short_bollinger_band_width_-0_0062114433_oi_value_z_90d_0_082444385_price_rv_15d_robust_z_0_060036644"
+    ],
+    "strategy_cores": [
+      "asset_minus_mkt_oi_1d_peer_resid_0_34164831_oi_expansion_compression_balance_24h_0_42287597",
+      "bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828",
+      "bollinger_band_width_-0_0062114433_oi_value_z_90d_0_082444385_price_rv_15d_robust_z_0_060036644",
+      "dist_ema20_atr_-0_92271453_loc_bb_channel_pos_48_0_60767579_leverage_build_score_0_45107844_return_autocorr_48_1_18643_rolling_range_20_-0_25967735"
+    ]
+  },
+  "selection": {
+    "global_threshold_floor": 0.6,
+    "threshold_viability_margin": 0.05,
+    "occupancy_threshold_alpha": 0.005786407914283923,
+    "occupancy_threshold_power": 2.409212830449029
+  },
+  "concurrency": {
+    "max_concurrent_positions": 8,
+    "max_concurrent_per_side": null,
+    "max_concurrent_per_strategy": 6,
+    "max_concurrent_per_symbol": 1,
+    "max_new_entries_per_bar": 2
+  },
+  "allocation": {
+    "max_total_wallet_allocation_pct": 0.8
+  },
+  "sizing": {
+    "rank_size_power": 0.7145405046126301,
+    "rank_multiplier_min": 1.0,
+    "rank_multiplier_max": 2.5
+  },
+  "friction": {
+    "max_signal_gap_bps": null,
+    "min_liquidity_capacity_weight": null,
+    "offline_default_price_gap_bps": 50.0
+  },
+  "guardrails": {
+    "max_side_concentration": null,
+    "max_strategy_concentration": null
+  },
+  "adaptive_quality": {
+    "enabled": false
+  }
+}

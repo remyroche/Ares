@@ -403,6 +403,49 @@ def _strict_finite_model_matrix(
     )
 
 
+def _model_matrix_nonfinite_summary(
+    X: pd.DataFrame,
+    *,
+    limit: int = 20,
+) -> Tuple[int, List[Dict[str, Any]]]:
+    if X is None or not isinstance(X, pd.DataFrame) or X.empty:
+        return 0, []
+    try:
+        X_float = X.astype(np.float32, copy=False)
+        values = X_float.to_numpy(dtype=np.float32, copy=False)
+    except Exception:
+        return 0, []
+    bad = ~np.isfinite(values)
+    total = int(bad.sum())
+    if total <= 0:
+        return 0, []
+    counts = bad.sum(axis=0)
+    order = np.argsort(-counts)
+    sample: List[Dict[str, Any]] = []
+    cols = [str(c) for c in X_float.columns]
+    for idx in order[: int(limit)]:
+        count = int(counts[int(idx)])
+        if count <= 0:
+            continue
+        sample.append({"feature": cols[int(idx)], "nonfinite": count})
+    return total, sample
+
+
+def _training_neutral_filled_model_matrix(
+    X: pd.DataFrame,
+    *,
+    model_feature_cols: List[str],
+) -> pd.DataFrame:
+    """Match the LGBM training/scoring adapter: Inf and NaN model inputs become 0."""
+    cols = [str(c) for c in model_feature_cols]
+    X_float = X.reindex(columns=cols).astype(np.float32, copy=False)
+    values = X_float.to_numpy(dtype=np.float32, copy=False)
+    if np.isfinite(values).all():
+        return X_float
+    filled = np.nan_to_num(values, nan=0.0, posinf=0.0, neginf=0.0, copy=True)
+    return pd.DataFrame(filled, index=X_float.index, columns=cols, dtype=np.float32)
+
+
 class ModelOrchestrator:
     """Orchestrates model inference pipeline with proper prediction order."""
 
@@ -620,6 +663,40 @@ class ModelOrchestrator:
                 if "model_matrix_nonfinite" not in errors:
                     tprint(f"Error aligning alpha feature contract: {exc}")
                     return pd.DataFrame(index=features.index)
+                if bool(
+                    self.cfg.get(
+                        "strict_feature_parity_neutral_fill_nonfinite", True
+                    )
+                ):
+                    total_bad, sample = _model_matrix_nonfinite_summary(model_matrix)
+                    try:
+                        X = _training_neutral_filled_model_matrix(
+                            model_matrix,
+                            model_feature_cols=feat_cols_s,
+                        )
+                        if not getattr(
+                            self,
+                            "_alpha_neutral_fill_nonfinite_warned",
+                            False,
+                        ):
+                            tprint(
+                                "Alpha inference: neutral-filled non-finite "
+                                "trained feature values with the LGBM "
+                                "training/scoring adapter "
+                                f"(values={total_bad}, sample={sample[:12]})."
+                            )
+                            self._alpha_neutral_fill_nonfinite_warned = True
+                        return _strict_finite_model_matrix(
+                            X,
+                            model_feature_cols=feat_cols_s,
+                            model_key="alpha",
+                        )
+                    except Exception as exc2:
+                        tprint(
+                            "Error aligning alpha feature contract after "
+                            f"neutral fill: {exc2}"
+                        )
+                        return pd.DataFrame(index=features.index)
                 matrix_float = model_matrix.astype(np.float32, copy=False)
                 values = matrix_float.to_numpy(dtype=np.float32, copy=False)
                 row_ok = np.isfinite(values).all(axis=1)
@@ -1493,30 +1570,71 @@ class ModelOrchestrator:
                         errors = set(report.get("global_errors") or [])
                         if "model_matrix_nonfinite" not in errors:
                             raise
-                        matrix_float = model_matrix.astype(np.float32, copy=False)
-                        values = matrix_float.to_numpy(dtype=np.float32, copy=False)
-                        row_ok = np.isfinite(values).all(axis=1)
-                        valid_rows = int(row_ok.sum())
-                        if valid_rows <= 0:
-                            raise
-                        dropped_rows = int(len(row_ok) - valid_rows)
-                        self._last_results["meta_contract_error"] = {
-                            "key": key,
-                            "reason": "dropped_nonfinite_meta_rows",
-                            "dropped_rows": dropped_rows,
-                            "valid_rows": valid_rows,
-                            "details": report,
-                        }
-                        tprint(
-                            f"Meta inference for {key}: dropped {dropped_rows}/"
-                            f"{len(row_ok)} rows with non-finite trained features; "
-                            f"predicting {valid_rows} strict rows."
-                        )
-                        X = _strict_finite_model_matrix(
-                            matrix_float.loc[row_ok],
-                            model_feature_cols=feat_cols,
-                            model_key=key,
-                        )
+                        if bool(
+                            self.cfg.get(
+                                "strict_feature_parity_neutral_fill_nonfinite",
+                                True,
+                            )
+                        ):
+                            total_bad, sample = _model_matrix_nonfinite_summary(
+                                model_matrix
+                            )
+                            X = _training_neutral_filled_model_matrix(
+                                model_matrix,
+                                model_feature_cols=feat_cols,
+                            )
+                            self._last_results["meta_contract_error"] = {
+                                "key": key,
+                                "reason": "neutral_filled_nonfinite_meta_features",
+                                "nonfinite_values": total_bad,
+                                "nonfinite_features_sample": sample[:20],
+                                "details": report,
+                            }
+                            if not getattr(
+                                self,
+                                "_meta_neutral_fill_nonfinite_warned",
+                                False,
+                            ):
+                                tprint(
+                                    f"Meta inference for {key}: neutral-filled "
+                                    "non-finite trained feature values with the "
+                                    "LGBM training/scoring adapter "
+                                    f"(values={total_bad}, sample={sample[:12]})."
+                                )
+                                self._meta_neutral_fill_nonfinite_warned = True
+                            X = _strict_finite_model_matrix(
+                                X,
+                                model_feature_cols=feat_cols,
+                                model_key=key,
+                            )
+                        else:
+                            matrix_float = model_matrix.astype(np.float32, copy=False)
+                            values = matrix_float.to_numpy(
+                                dtype=np.float32,
+                                copy=False,
+                            )
+                            row_ok = np.isfinite(values).all(axis=1)
+                            valid_rows = int(row_ok.sum())
+                            if valid_rows <= 0:
+                                raise
+                            dropped_rows = int(len(row_ok) - valid_rows)
+                            self._last_results["meta_contract_error"] = {
+                                "key": key,
+                                "reason": "dropped_nonfinite_meta_rows",
+                                "dropped_rows": dropped_rows,
+                                "valid_rows": valid_rows,
+                                "details": report,
+                            }
+                            tprint(
+                                f"Meta inference for {key}: dropped {dropped_rows}/"
+                                f"{len(row_ok)} rows with non-finite trained "
+                                f"features; predicting {valid_rows} strict rows."
+                            )
+                            X = _strict_finite_model_matrix(
+                                matrix_float.loc[row_ok],
+                                model_feature_cols=feat_cols,
+                                model_key=key,
+                            )
                 except FeatureParityError as exc:
                     self._last_results["meta_contract_error"] = {
                         "key": key,

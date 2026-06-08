@@ -79,6 +79,7 @@ def _validate_one_artifact(
     current_slice_plan_sha256: str,
     policy_fit_end: pd.Timestamp,
     policy_predict_start: pd.Timestamp,
+    row_disjoint_policy_oos: bool = False,
 ) -> Dict[str, Any]:
     diag: Dict[str, Any] = {
         "name": name,
@@ -175,7 +176,7 @@ def _validate_one_artifact(
     if pd.notna(fit_end):
         if fit_end > policy_fit_end:
             diag["errors"].append("source_model_fit_end_after_policy_fit_end")
-        if fit_end >= policy_predict_start:
+        if fit_end >= policy_predict_start and not row_disjoint_policy_oos:
             diag["errors"].append("source_model_fit_end_not_before_policy_predict_start")
 
     diag["valid"] = not diag["errors"]
@@ -213,8 +214,17 @@ def validate_policy_oos_source_artifacts(
     if pd.isna(policy_fit_end) or pd.isna(policy_predict_start):
         report["errors"].append("missing_policy_fit_or_predict_window")
         return report
-    if policy_fit_end >= policy_predict_start:
+    row_disjoint_policy_oos = bool(
+        source_validation.get("policy_holdout_fit_predict_disjoint", False)
+    )
+    temporal_policy_oos = bool(
+        source_validation.get("policy_holdout_temporal_disjoint", False)
+    )
+    if policy_fit_end >= policy_predict_start and not row_disjoint_policy_oos:
         report["errors"].append("policy_fit_end_not_before_predict_start")
+        return report
+    if not temporal_policy_oos and not row_disjoint_policy_oos:
+        report["errors"].append("policy_slice_not_temporal_or_row_disjoint")
         return report
 
     slice_plan_sha256 = sha256_file(slice_plan_path)
@@ -240,6 +250,7 @@ def validate_policy_oos_source_artifacts(
             current_slice_plan_sha256=slice_plan_sha256,
             policy_fit_end=policy_fit_end,
             policy_predict_start=policy_predict_start,
+            row_disjoint_policy_oos=row_disjoint_policy_oos,
         )
 
     for name, diag in report["artifacts"].items():

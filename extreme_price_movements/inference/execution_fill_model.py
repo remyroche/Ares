@@ -21,6 +21,7 @@ def stop_exit_fill_price(
     base_gap_bps: float,
     alpha_through: float,
     max_gap_bps: float,
+    quote_half_spread_bps: float = 0.0,
 ) -> Tuple[bool, float]:
     """Return whether a stop crossed and the modeled market-stop fill price."""
     stop = float(stop_px)
@@ -31,14 +32,17 @@ def stop_exit_fill_price(
 
     base_gap = stop * float(base_gap_bps) / 10000.0
     max_gap = stop * float(max_gap_bps) / 10000.0
+    quote_half_spread = max(0.0, float(quote_half_spread_bps)) / 10000.0
     side_l = str(side).lower()
     if side_l == "long":
+        low = low - stop * quote_half_spread
         if low > stop:
             return False, float("nan")
         through = max(stop - low, 0.0)
         gap = min(base_gap + float(alpha_through) * through, max_gap)
         return True, float(stop - gap)
     if side_l == "short":
+        high = high + stop * quote_half_spread
         if high < stop:
             return False, float("nan")
         through = max(high - stop, 0.0)
@@ -56,6 +60,7 @@ def stop_exit_fill_price_array(
     base_gap_bps: float,
     alpha_through: float,
     max_gap_bps: float,
+    quote_half_spread_bps: float = 0.0,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Vectorized variant of :func:`stop_exit_fill_price`.
 
@@ -68,9 +73,16 @@ def stop_exit_fill_price_array(
     low = np.asarray(candle_low, dtype=np.float64)
     is_long = side_arr >= 0.0
     is_short = ~is_long
+    quote_half_spread = max(0.0, float(quote_half_spread_bps)) / 10000.0
+    high_trigger = np.where(is_long, high - stop * quote_half_spread, high + stop * quote_half_spread)
+    low_trigger = np.where(is_long, low - stop * quote_half_spread, low + stop * quote_half_spread)
     finite = np.isfinite(stop) & (stop > 0.0) & np.isfinite(high) & np.isfinite(low)
-    hit = finite & ((is_long & (low <= stop)) | (is_short & (high >= stop)))
-    through = np.where(is_long, np.maximum(stop - low, 0.0), np.maximum(high - stop, 0.0))
+    hit = finite & ((is_long & (low_trigger <= stop)) | (is_short & (high_trigger >= stop)))
+    through = np.where(
+        is_long,
+        np.maximum(stop - low_trigger, 0.0),
+        np.maximum(high_trigger - stop, 0.0),
+    )
     gap = np.minimum(
         stop * float(base_gap_bps) / 10000.0 + float(alpha_through) * through,
         stop * float(max_gap_bps) / 10000.0,

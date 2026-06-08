@@ -1,4 +1,0 @@
-pair,symbols,symbols_with_live_rows,symbols_with_reference_rows,symbols_with_overlap,symbols_with_mismatch,overlap_rows,exact_rows_within_tol,mismatch_rows_gt_tol,price_mismatch_rows_gt_tol,volume_mismatch_rows_gt_tol,mismatch_rate_gt_tol
-hourly_live_vs_historical,306,306,306,306,4,306,302,4,4,4,0.013071895424836602
-hourly_live_vs_execution_1m_aggregate,306,306,226,226,220,8986,5153,3833,3582,3825,0.4265524148675718
-hourly_live_vs_nested_execution_1m_aggregate,306,306,0,0,0,0,0,0,0,0,

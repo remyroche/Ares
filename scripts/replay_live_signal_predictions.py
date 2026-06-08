@@ -808,6 +808,26 @@ def _score_row(
             "worst_feature": "",
         }
     )
+    full_chain_meta = replay_meta
+    full_chain_cal, full_chain_cal_threshold = calibrated_score_and_threshold(
+        raw_score=full_chain_meta,
+        strategy_id=core_strategy_id,
+        calibration_data=calibration_data,
+        default_threshold=1.0,
+    )
+    full_chain_rank = rank_store.lookup(
+        strategy_id=strategy_id,
+        side=side,
+        calibrated_score=full_chain_cal,
+    )
+    meta_replay_source = "single_row_full_chain"
+    if np.isfinite(out.get("logged_meta_input_pred", np.nan)):
+        # Live performs meta prediction in batch and records the exact selected
+        # meta-model matrix per decision. Some diagnostic meta inputs, notably
+        # feature_drift_psi_core, are batch-context dependent; using the logged
+        # selected matrix is the exact training/inference adapter parity path.
+        replay_meta = out["logged_meta_input_pred"]
+        meta_replay_source = "logged_batch_meta_input"
     replay_cal, replay_cal_threshold = calibrated_score_and_threshold(
         raw_score=replay_meta,
         strategy_id=core_strategy_id,
@@ -831,6 +851,14 @@ def _score_row(
             "replay_policy_rank_pct": rank_lookup.policy_rank_pct,
             "replay_policy_rank_reference_n": rank_lookup.n_rows,
             "replay_policy_rank_reference_source": rank_lookup.source,
+            "replay_meta_input_source": meta_replay_source,
+            "full_chain_meta_pred": full_chain_meta,
+            "full_chain_calibrated_score": full_chain_cal,
+            "full_chain_calibration_threshold": full_chain_cal_threshold,
+            "full_chain_policy_rank_pct": full_chain_rank.policy_rank_pct,
+            "full_chain_meta_pred_delta": full_chain_meta - out["live_meta_pred"],
+            "full_chain_rank_percentile_delta": full_chain_rank.policy_rank_pct
+            - out["live_policy_rank_pct"],
             "replay_meta_model_input_common_count": replay_meta_input_delta_summary[
                 "count"
             ],
@@ -1153,11 +1181,14 @@ def main() -> int:
                 accepted_strategy_keys.add(f"{side}_{core}")
                 accepted_strategy_keys.add(f"{side}_{core}_clf")
     logged_feature_keys = _logged_decision_feature_keys(decisions)
-    required_keys = raw_required_feature_keys(logged_feature_keys)
-    if not required_keys:
-        required_keys = raw_required_feature_keys(
-            get_inference_required_feature_keys(state, accepted_strategy_keys)
-        )
+    # Replay must materialize the same feature context as live inference, not
+    # only the narrower set of logged model inputs. Some live-derived features
+    # share rolling/orderbook primitives, so narrowing this request can change
+    # the feature generation path and create false train/live parity breaks.
+    required_keys = raw_required_feature_keys(
+        get_inference_required_feature_keys(state, accepted_strategy_keys)
+    )
+    required_keys |= raw_required_feature_keys(logged_feature_keys)
     try:
         mask_rows = _load_lgbm_strategy_mask_rows(
             str(artifact_data_root),

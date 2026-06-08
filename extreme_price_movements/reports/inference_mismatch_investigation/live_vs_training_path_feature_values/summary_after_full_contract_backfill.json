@@ -1,0 +1,237 @@
+{
+  "latest_signal_bar_ts": "2026-06-04T08:00:00+00:00",
+  "ledger_rows": 20,
+  "symbols": 7,
+  "feature_keys": 263,
+  "cells": 2136,
+  "status_counts": {
+    "ok": 1496,
+    "diff": 622,
+    "train_nan": 18
+  },
+  "max_abs_diff": 4.107497692108154,
+  "worst_diffs": [
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "WLD/USD:USD",
+      "strategy_id": "bollinger_band_width_-0_0062114433_oi_value_z_90d_0_082444385_price_rv_15d_robust_z_0_060036644",
+      "feature": "reversion_target_distance",
+      "live_value": 2.053748846054077,
+      "training_store_value": -2.053748846054077,
+      "abs_diff": 4.107497692108154,
+      "diff": 4.107497692108154,
+      "status": "diff"
+    },
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "WLD/USD:USD",
+      "strategy_id": "bollinger_band_width_-0_0062114433_oi_value_z_90d_0_082444385_price_rv_15d_robust_z_0_060036644",
+      "feature": "reversion_target_distance",
+      "live_value": 2.053748846054077,
+      "training_store_value": -2.053748846054077,
+      "abs_diff": 4.107497692108154,
+      "diff": 4.107497692108154,
+      "status": "diff"
+    },
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "TRX/USD:USD",
+      "strategy_id": "bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828",
+      "feature": "oi_chg_8h",
+      "live_value": -3.815523862838745,
+      "training_store_value": -0.11291705071926117,
+      "abs_diff": 3.702606812119484,
+      "diff": -3.702606812119484,
+      "status": "diff"
+    },
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "TRX/USD:USD",
+      "strategy_id": "bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828",
+      "feature": "oi_chg_8h",
+      "live_value": -3.815523862838745,
+      "training_store_value": -0.11291705071926117,
+      "abs_diff": 3.702606812119484,
+      "diff": -3.702606812119484,
+      "status": "diff"
+    },
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "SOL/USD:USD",
+      "strategy_id": "bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828",
+      "feature": "oi_chg_8h",
+      "live_value": 3.5506398677825928,
+      "training_store_value": -0.08782513439655304,
+      "abs_diff": 3.638465002179146,
+      "diff": 3.638465002179146,
+      "status": "diff"
+    },
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "SOL/USD:USD",
+      "strategy_id": "bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828",
+      "feature": "oi_chg_8h",
+      "live_value": 3.5506398677825928,
+      "training_store_value": -0.08782513439655304,
+      "abs_diff": 3.638465002179146,
+      "diff": 3.638465002179146,
+      "status": "diff"
+    },
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "XRP/USD:USD",
+      "strategy_id": "bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828",
+      "feature": "oi_chg_8h",
+      "live_value": 1.6292405128479004,
+      "training_store_value": -1.1559782028198242,
+      "abs_diff": 2.7852187156677246,
+      "diff": 2.7852187156677246,
+      "status": "diff"
+    },
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "XRP/USD:USD",
+      "strategy_id": "bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828",
+      "feature": "oi_chg_8h",
+      "live_value": 1.6292405128479004,
+      "training_store_value": -1.1559782028198242,
+      "abs_diff": 2.7852187156677246,
+      "diff": 2.7852187156677246,
+      "status": "diff"
+    },
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "YGG/USD:USD",
+      "strategy_id": "asset_minus_mkt_oi_1d_peer_resid_0_34164831_oi_expansion_compression_balance_24h_0_42287597",
+      "feature": "log_quote_volume",
+      "live_value": 2.053748846054077,
+      "training_store_value": -0.381801038980484,
+      "abs_diff": 2.435549885034561,
+      "diff": 2.435549885034561,
+      "status": "diff"
+    },
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "YGG/USD:USD",
+      "strategy_id": "asset_minus_mkt_oi_1d_peer_resid_0_34164831_oi_expansion_compression_balance_24h_0_42287597",
+      "feature": "log_quote_volume",
+      "live_value": 2.053748846054077,
+      "training_store_value": -0.381801038980484,
+      "abs_diff": 2.435549885034561,
+      "diff": 2.435549885034561,
+      "status": "diff"
+    },
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "TRX/USD:USD",
+      "strategy_id": "bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828",
+      "feature": "range_per_funding_abs_z_24h",
+      "live_value": -0.16439206898212433,
+      "training_store_value": 2.02199387550354,
+      "abs_diff": 2.1863859444856644,
+      "diff": -2.1863859444856644,
+      "status": "diff"
+    },
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "TRX/USD:USD",
+      "strategy_id": "bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828",
+      "feature": "range_per_funding_abs_z_24h",
+      "live_value": -0.16439206898212433,
+      "training_store_value": 2.02199387550354,
+      "abs_diff": 2.1863859444856644,
+      "diff": -2.1863859444856644,
+      "status": "diff"
+    },
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "SOL/USD:USD",
+      "strategy_id": "bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828",
+      "feature": "press_12",
+      "live_value": -2.053748846054077,
+      "training_store_value": 0.0,
+      "abs_diff": 2.053748846054077,
+      "diff": -2.053748846054077,
+      "status": "diff"
+    },
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "SNX/USD:USD",
+      "strategy_id": "asset_minus_mkt_oi_1d_peer_resid_0_34164831_oi_expansion_compression_balance_24h_0_42287597",
+      "feature": "quote_volume_z_30d",
+      "live_value": -2.053748846054077,
+      "training_store_value": 0.0,
+      "abs_diff": 2.053748846054077,
+      "diff": -2.053748846054077,
+      "status": "diff"
+    },
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "XRP/USD:USD",
+      "strategy_id": "bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828",
+      "feature": "press_12",
+      "live_value": -2.053748846054077,
+      "training_store_value": 0.0,
+      "abs_diff": 2.053748846054077,
+      "diff": -2.053748846054077,
+      "status": "diff"
+    },
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "SNX/USD:USD",
+      "strategy_id": "asset_minus_mkt_oi_1d_peer_resid_0_34164831_oi_expansion_compression_balance_24h_0_42287597",
+      "feature": "quote_volume_z_30d",
+      "live_value": -2.053748846054077,
+      "training_store_value": 0.0,
+      "abs_diff": 2.053748846054077,
+      "diff": -2.053748846054077,
+      "status": "diff"
+    },
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "WLD/USD:USD",
+      "strategy_id": "bollinger_band_width_-0_0062114433_oi_value_z_90d_0_082444385_price_rv_15d_robust_z_0_060036644",
+      "feature": "press_24",
+      "live_value": 2.053748846054077,
+      "training_store_value": 0.0,
+      "abs_diff": 2.053748846054077,
+      "diff": 2.053748846054077,
+      "status": "diff"
+    },
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "TRX/USD:USD",
+      "strategy_id": "bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828",
+      "feature": "press_12",
+      "live_value": -2.053748846054077,
+      "training_store_value": 0.0,
+      "abs_diff": 2.053748846054077,
+      "diff": -2.053748846054077,
+      "status": "diff"
+    },
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "XRP/USD:USD",
+      "strategy_id": "bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828",
+      "feature": "press_12",
+      "live_value": -2.053748846054077,
+      "training_store_value": 0.0,
+      "abs_diff": 2.053748846054077,
+      "diff": -2.053748846054077,
+      "status": "diff"
+    },
+    {
+      "signal_bar_ts": "2026-06-04T08:00:00+00:00",
+      "symbol": "YGG/USD:USD",
+      "strategy_id": "asset_minus_mkt_oi_1d_peer_resid_0_34164831_oi_expansion_compression_balance_24h_0_42287597",
+      "feature": "quote_volume_z_30d",
+      "live_value": 2.053748846054077,
+      "training_store_value": 0.0,
+      "abs_diff": 2.053748846054077,
+      "diff": 2.053748846054077,
+      "status": "diff"
+    }
+  ],
+  "missing_feature_keys": [],
+  "output_csv": "/Users/remyroche/Documents/Ares/extreme_price_movements/reports/inference_mismatch_investigation/live_vs_training_path_feature_values/live_ledger_vs_training_feature_store_after_full_contract_backfill.csv"
+}

@@ -1,0 +1,5 @@
+strategy_id,reason,input_selected_rows,path_rows,simulated_rows,delayed_1m_rows,entry_execution_sources,total_trades_after_sim_selection,mean_net_trade,win_rate,full_sl_exit_count,capital_protect_exit_count,trailing_exit_count,adverse_exit_count
+long_dist_ema20_atr_-0_92271453_loc_bb_channel_pos_48_0_60767579_leverage_build_score_0_45107844_return_autocorr_48_1_18643_rolling_range_20_-0_25967735,ok,5,5,5,0,{'theoretical_15m_open': 5},5,0.0001805193314794451,0.4,0,0,2,0
+long_bars_in_high_vol_state_log_norm_-0_49417102_loc_range_pos_48_0_22034115_loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828,ok,28,28,28,0,{'theoretical_15m_open': 28},28,4.1476250771665946e-05,0.39285714285714285,15,0,11,0
+short_bollinger_band_width_-0_0062114433_oi_value_z_90d_0_082444385_price_rv_15d_robust_z_0_060036644,ok,18,18,18,0,{'theoretical_15m_open': 18},18,-0.001702736597508192,0.0,0,0,0,0
+short_asset_minus_mkt_oi_1d_peer_resid_0_34164831_oi_expansion_compression_balance_24h_0_42287597,ok,8,8,8,0,{'theoretical_15m_open': 8},8,0.006786772049963474,0.625,0,0,5,0

@@ -1,0 +1,21 @@
+{
+  "avg_stop_loss_bps_at_20": 16.69443015631661,
+  "eval_rows": 102171,
+  "mean_net_bps_at_10": 7.17537832761521,
+  "mean_net_bps_at_20": 4.32755258733499,
+  "mean_net_bps_at_30": 9.215861132041631,
+  "mean_net_bps_at_50": 2.791855736370306,
+  "median_net_bps_at_20": -42.16328402601182,
+  "median_net_bps_at_50": -43.952676347382365,
+  "net_hit_at_10": 0.15000000000000002,
+  "net_hit_at_20": 0.15,
+  "net_hit_at_30": 0.16,
+  "net_hit_at_50": 0.164,
+  "prediction_instability": 0.03535533905932738,
+  "stop_hit_rate_at_20": 0.020000000000000004,
+  "symbol_concentration_hhi_at_20": 0.07900000000000001,
+  "train_rows": 204391,
+  "unique_symbols_at_20": 14.9,
+  "unique_weeks_at_20": 10.0,
+  "week_concentration_hhi_at_20": 0.164
+}

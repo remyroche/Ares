@@ -1,0 +1,37 @@
+{
+  "rows": 53,
+  "candidate_rows": 53,
+  "replay_rows": 53,
+  "live_traded": 7,
+  "replay_accepted": 2,
+  "decision_matches": 44,
+  "decision_mismatches": 9,
+  "gap_classes": {
+    "match": 44,
+    "live_accept_replay_reject": 7,
+    "replay_accept_live_reject": 2
+  },
+  "gap_explanations": {
+    "rank_threshold": 44,
+    "live_traded": 7,
+    "live_stale_signal_or_data_gate": 2
+  },
+  "replay_rejection_reasons": {
+    "nan": 38,
+    "below_dynamic_threshold": 13,
+    "accepted": 2
+  },
+  "live_portfolio_reasons": {
+    "rank_below_dynamic_threshold": 44,
+    "None": 7,
+    "global_auction_stale_signal_age:stale_signal_age_exceeded": 2
+  },
+  "direct_rank_gate_would_open": 10,
+  "direct_rank_gate_matches": 50,
+  "direct_rank_gate_mismatches": 3,
+  "direct_rank_gate_gap_explanations": {
+    "match": 50,
+    "live_stale_signal_or_data_gate": 2,
+    "rank_threshold": 1
+  }
+}

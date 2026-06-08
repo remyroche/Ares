@@ -623,6 +623,7 @@ def normalise_candidate_table(candidates: pd.DataFrame) -> pd.DataFrame:
         "gross_return",
         "fees_bps",
         "slippage_bps",
+        "exit_quote_half_spread_bps",
         "holding_bars",
         "barrier_pct",
         "policy_sl_mult",

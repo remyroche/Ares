@@ -1,6 +1,0 @@
-{
-  "candidate_rules": 24,
-  "post_dedup_rules": 23,
-  "buckets": 1,
-  "checkpoint_path": "data_perp/artifacts/20260523_015947/lgbm_based_mask_generation_v2_regen_20260529_1345_top30_perps/run_20260529_114456_069338/h10/returns_target/long/stage_a_context/stage_a_step1_checkpoint.pkl"
-}

@@ -1,0 +1,17 @@
+{
+  "auction_rank_minmax": [
+    0.08748108045174059,
+    0.6398300151356386
+  ],
+  "feature_rows_with_diffs": 0,
+  "max_base_abs_diff": 0.0,
+  "max_feature_abs_diff": 0.0,
+  "max_meta_abs_diff": 0.0,
+  "out_csv": "/Users/remyroche/Documents/Ares/extreme_price_movements/reports/inference_mismatch_investigation/live_vs_training_path_feature_values/live_debug_222631_vs_training_store_scores_exact_live_key.csv",
+  "policy_rank_minmax": [
+    0.04665925004908056,
+    0.4034238089874986
+  ],
+  "rows": 12,
+  "signal_bar_ts": "2026-06-04 21:00:00+00:00"
+}

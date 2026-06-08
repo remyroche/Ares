@@ -1,0 +1,54 @@
+{
+  "distillation": {
+    "distill_age_impact": 0.5,
+    "distill_error_power": 1.0,
+    "false_negative_focus": 0.5,
+    "false_positive_focus": 1.0
+  },
+  "execution_costs": {},
+  "label": {
+    "mae_penalty_scale": 0.2519689307659123,
+    "mfe_scale_bps": 62.26487657733663,
+    "net_return_center_bps": 66.46925585195464,
+    "net_return_temperature_bps": 92.39062835958602,
+    "path_quality_mix": 0.9216267465959218,
+    "stop_penalty": 0.06293797773084756
+  },
+  "name": "trial_29",
+  "objective": {
+    "base_k_multiplier": 2.0,
+    "hit_fee_floor_bps": 0.0,
+    "impact_scale_bps": 100.0,
+    "portfolio_alignment_strength": 0.08117439582441767
+  },
+  "provenance": {
+    "cv_mode": "interleaved_spread",
+    "features": "frozen_native_preset",
+    "hyperparameters": "frozen_native_preset_except_n_estimators_cap",
+    "lgbm_early_stopping_rounds": 30,
+    "lgbm_hpo_trials": 0,
+    "lgbm_n_estimators_cap": 200,
+    "max_trees": 200,
+    "max_trees_env": "EPM_LGBM_N_ESTIMATORS_CAP=200",
+    "phase": "weights",
+    "study_patience_trials": 40,
+    "study_pruner": "successive_halving",
+    "subsample": "spread_through_full_period"
+  },
+  "stage": "all",
+  "version": 1,
+  "weight": {
+    "ambiguous_weight": 0.38016667562515494,
+    "class_rebalance_strength": 0.8960810424660015,
+    "concurrency_penalty": 0.012933728993237456,
+    "concurrency_window_hours": 2.0,
+    "hard_negative_weight": 0.7813309306429248,
+    "mae_weight_power": 0.2130328649842048,
+    "mfe_weight_power": 0.3948823619542248,
+    "net_ev_weight_power": 0.9731043215451798,
+    "path_quality_strength": 0.5127830684612683,
+    "positive_mass_target": 0.4264118133668491,
+    "recency_half_life_days": 300.0,
+    "robustness_strength": 0.07333034200141435
+  }
+}

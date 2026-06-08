@@ -133,6 +133,9 @@ def _run_training_path_feature_sync_for_live(
             "EPM_FEATURE_END_TS": end_ts.isoformat(),
             "EPM_ARTIFACT_SOURCE_RUN_ID": str(run_id),
             "EPM_MODEL_BACKEND": env.get("EPM_MODEL_BACKEND", "lgbm_pipeline"),
+            "EPM_FEATURE_MISSING_COLUMNS_RECENT_TAIL": env.get(
+                "EPM_FEATURE_MISSING_COLUMNS_RECENT_TAIL", "1"
+            ),
             "EPM_DISABLE_REGIME_ADAPTORS": env.get("EPM_DISABLE_REGIME_ADAPTORS", "1"),
             "EPM_SIMPLE_POLICY_REGIME_ADAPTOR": env.get(
                 "EPM_SIMPLE_POLICY_REGIME_ADAPTOR", "0"
@@ -146,12 +149,66 @@ def _run_training_path_feature_sync_for_live(
             os.environ.get("EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_DECISION_ONLY", "1"),
         )
     ).strip().lower() not in {"0", "false", "no", "off"}
-    if decision_only and requested_keys:
+    key_batch_mode_max_keys = int(
+        cfg.get(
+            "live_model_feature_auto_sync_key_batch_mode_max_keys",
+            os.environ.get("EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_KEY_BATCH_MODE_MAX_KEYS", "128"),
+        )
+        or 128
+    )
+    large_selected_repair = bool(requested_keys) and len(requested_keys) > max(
+        0, key_batch_mode_max_keys
+    )
+    if decision_only and requested_keys and not large_selected_repair:
         env["EPM_FEATURE_BACKFILL_KEYS"] = ",".join(requested_keys)
         # Keep the blocking live decision path scoped to the exact feature
         # contract needed for current decisions. The optional background sync
         # below still refreshes the full union off the latency path.
         env["EPM_FEATURE_BACKFILL_ALL_INCOMPLETE_KEYS"] = "0"
+        env.setdefault(
+            "EPM_FEATURE_BACKFILL_SYMBOL_CHUNK_SIZE",
+            str(
+                max(
+                    1,
+                    int(
+                        cfg.get(
+                            "live_model_feature_auto_sync_symbol_chunk_size",
+                            os.environ.get(
+                                "EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_SYMBOL_CHUNK_SIZE",
+                                "25",
+                            ),
+                        )
+                        or 25
+                    ),
+                )
+            ),
+        )
+        env.setdefault(
+            "EPM_FEATURE_BACKFILL_KEY_BATCH_SIZE",
+            str(
+                max(
+                    1,
+                    int(
+                        cfg.get(
+                            "live_model_feature_auto_sync_key_batch_size",
+                            os.environ.get(
+                                "EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_KEY_BATCH_SIZE",
+                                "32",
+                            ),
+                        )
+                        or 32
+                    ),
+                )
+            ),
+        )
+    elif decision_only and requested_keys and large_selected_repair:
+        # For large selected-feature gaps, key batching is counterproductive:
+        # each key batch still recomputes the broad shared feature graph and
+        # repeats parquet writes. Use the normal incremental backfill path once
+        # instead of hundreds of small selected-key batches.
+        env.pop("EPM_FEATURE_BACKFILL_KEYS", None)
+        env["EPM_FEATURE_BACKFILL_ALL_INCOMPLETE_KEYS"] = "1"
+        env.pop("EPM_FEATURE_BACKFILL_KEY_BATCH_SIZE", None)
     raw_state_path = cfg.get("live_raw_rolling_state_path") or str(
         live_raw_rolling_state_path(data_root_s, str(run_id))
     )
@@ -202,7 +259,9 @@ def _run_training_path_feature_sync_for_live(
         f"run_id={run_id} data_root={data_root_s} end_ts={end_ts.isoformat()} "
         f"exchange={exchange} perps={is_perps} "
         f"decision_only={decision_only and bool(requested_keys)} "
-        f"requested_keys={len(requested_keys)}"
+        f"requested_keys={len(requested_keys)} "
+        f"large_selected_repair={large_selected_repair} "
+        f"key_batch_mode_max_keys={key_batch_mode_max_keys}"
     )
     try:
         proc = subprocess.run(
@@ -1744,6 +1803,28 @@ def _is_live_synthesized_feature_key(key: str) -> bool:
     )
 
 
+def _is_live_source_derived_feature_key(key: str) -> bool:
+    """Return True for source-dependent keys live can recompute causally.
+
+    These features are selected model inputs for deployed perp heads. They are
+    not portable across missing volume/OI sources, but when the current live
+    panel has those sources we should recompute them instead of treating the
+    selected-feature cache as irreparable.
+    """
+    key_s = str(key or "")
+    return (
+        key_s == "dist_stack"
+        or key_s == "dist_weekly_vwap"
+        or key_s == "dist_vwap_norm"
+        or key_s == "dist_vwap_atr"
+        or key_s.startswith("dist_vwap_")
+        or key_s.startswith("trapped_longs_")
+        or key_s.startswith("vwap_zone_")
+        or key_s.startswith("z_vwap_")
+        or key_s.startswith("oi_rel_vol_")
+    )
+
+
 def _required_tail_warmup_hours(
     lookback_hours: int,
     trend_sma_hours: int,
@@ -2379,7 +2460,10 @@ def _backfill_missing_requested_keys(
             or _is_calendar_feature_key(key_s)
             or _is_rolling30d_feature_key(key_s)
             or key_s == "barrier_pct"
-            or is_non_portable_feature_key(key_s)
+            or (
+                is_non_portable_feature_key(key_s)
+                and not _is_live_source_derived_feature_key(key_s)
+            )
         ):
             skipped_missing_keys.add(key_s)
             continue
@@ -2578,6 +2662,17 @@ def _load_selected_feature_latest_matrix_cache(
         feature_key_set = {str(k) for k in (feature_keys or []) if str(k)}
         if meta.get("feature_keys_hash") != _hash_values(feature_key_set):
             return {}
+        source_feature_dir = Path(source_root) / "features" / str(source_run_id)
+        source_manifest = source_feature_dir / "_feature_cache_scan_manifest.json"
+        if source_manifest.exists():
+            cache_mtime = min(meta_path.stat().st_mtime, data_path.stat().st_mtime)
+            if source_manifest.stat().st_mtime > cache_mtime + 1e-6:
+                tprint(
+                    "Selected-feature latest matrix cache is older than the "
+                    "source feature manifest; invalidating stale live cache "
+                    f"end_ts={pd.Timestamp(end_ts)}"
+                )
+                return {}
         matrix = _read_live_feature_matrix_parquet(data_path, feature_key_set)
     except Exception:
         return {}
@@ -3038,6 +3133,54 @@ def load_or_compute_features(
     if authoritative_model_offline_cache:
         missing_offline_keys = sorted(set(required_feature_keys or set()) - set(cached_feats))
         if missing_offline_keys:
+            if required_feature_keys:
+                pre_sync_repairable_missing = {
+                    key
+                    for key in missing_offline_keys
+                    if (
+                        _is_live_synthesized_feature_key(key)
+                        or _is_live_source_derived_feature_key(key)
+                        or _gate_feature_base_key(key) is not None
+                    )
+                }
+                if pre_sync_repairable_missing:
+                    source_derived_missing = {
+                        key
+                        for key in pre_sync_repairable_missing
+                        if _is_live_source_derived_feature_key(key)
+                    }
+                    if source_derived_missing:
+                        cached_feats = _backfill_missing_requested_keys(
+                            panel,
+                            basket_syms,
+                            cfg,
+                            cached_feats,
+                            source_derived_missing,
+                        )
+                    cached_feats = _synthesize_gated_feature_keys(
+                        cached_feats, panel, basket_syms, required_feature_keys
+                    )
+                    cached_feats = _synthesize_live_safe_feature_keys(
+                        cached_feats,
+                        panel,
+                        basket_syms,
+                        required_feature_keys,
+                        data_root=data_root,
+                        run_id=run_id,
+                        cfg=cfg,
+                    )
+                    repaired_missing = sorted(
+                        set(required_feature_keys or set()) - set(cached_feats)
+                    )
+                    if len(repaired_missing) < len(missing_offline_keys):
+                        tprint(
+                            "Live model selected-feature cache repaired "
+                            "deterministic/source-derived keys before auto-sync: "
+                            f"missing_features={len(missing_offline_keys)}->"
+                            f"{len(repaired_missing)}"
+                        )
+                    missing_offline_keys = repaired_missing
+        if missing_offline_keys:
             tprint(
                 "Live model feature selected-cache contract incomplete: "
                 f"missing_features={len(missing_offline_keys)} "
@@ -3080,6 +3223,56 @@ def load_or_compute_features(
                         f"missing_features={len(missing_offline_keys)} "
                         f"elapsed={time.perf_counter() - retry_t0:.3f}s"
                     )
+            if missing_offline_keys and required_feature_keys:
+                # The persisted selected-feature cache is authoritative for
+                # model-scored raw features, but deterministic live-safe keys
+                # such as G_VOL-expanded interactions and barrier_pct can be
+                # reconstructed from the same live panel before deciding the
+                # cache is genuinely incomplete. Source-dependent perp
+                # primitives such as VWAP/OI-relative features are also
+                # recomputed only when their live source panels are present;
+                # missing source rows remain NaN and fail the downstream
+                # candidate finite checks.
+                source_derived_missing = {
+                    key
+                    for key in missing_offline_keys
+                    if _is_live_source_derived_feature_key(key)
+                }
+                if source_derived_missing:
+                    cached_feats = _backfill_missing_requested_keys(
+                        panel,
+                        basket_syms,
+                        cfg,
+                        cached_feats,
+                        source_derived_missing,
+                    )
+                cached_feats = _synthesize_gated_feature_keys(
+                    cached_feats, panel, basket_syms, required_feature_keys
+                )
+                cached_feats = _synthesize_live_safe_feature_keys(
+                    cached_feats,
+                    panel,
+                    basket_syms,
+                    required_feature_keys,
+                    data_root=data_root,
+                    run_id=run_id,
+                    cfg=cfg,
+                )
+                missing_offline_keys = sorted(
+                    set(required_feature_keys or set()) - set(cached_feats)
+                )
+                if missing_offline_keys:
+                    tprint(
+                        "Live model selected-feature cache remains incomplete "
+                        "after deterministic live-safe synthesis: "
+                        f"missing_features={len(missing_offline_keys)} "
+                        f"sample={missing_offline_keys[:20]}"
+                    )
+                else:
+                    tprint(
+                        "Live model selected-feature cache completed by "
+                        "deterministic live-safe synthesis"
+                    )
             if missing_offline_keys and not bool(
                 cfg.get("live_model_feature_allow_incomplete_selected_cache", False)
             ):
@@ -3100,6 +3293,12 @@ def load_or_compute_features(
             # contains the exact source values. Repair only deterministic keys
             # from portable live sources, then keep strict candidate-level
             # finite validation downstream.
+            cached_feats = _synthesize_gated_feature_keys(
+                cached_feats,
+                panel,
+                basket_syms,
+                required_feature_keys,
+            )
             cached_feats = _synthesize_live_safe_feature_keys(
                 cached_feats,
                 panel,
@@ -3160,6 +3359,12 @@ def load_or_compute_features(
                 )
                 cached_feats = _copy_feature_mapping(offline_feats)
                 if required_feature_keys:
+                    cached_feats = _synthesize_gated_feature_keys(
+                        cached_feats,
+                        panel,
+                        basket_syms,
+                        required_feature_keys,
+                    )
                     cached_feats = _synthesize_live_safe_feature_keys(
                         cached_feats,
                         panel,
@@ -4224,7 +4429,7 @@ def _materialize_live_orderbook_summary_features(
     if not _requires_live_orderbook_features(required_feature_keys):
         return feats
     if cfg is not None and not bool(
-        cfg.get("live_materialize_orderbook_model_features", False)
+        cfg.get("live_materialize_orderbook_model_features", True)
     ):
         return feats
 
@@ -4772,6 +4977,74 @@ def _materialize_live_orderbook_summary_features(
         )
         put("obw_nearest_wall_distance_skew", (spread_bps / 100.0).clip(0, 1))
 
+    if needs_feature("ob_spread_z_x_rv_24h"):
+        rv_24h = out.get("rv_24h")
+        if not isinstance(rv_24h, pd.DataFrame) or rv_24h.empty:
+            ret1_live = close_aligned.pct_change().astype(np.float32)
+            rv_24h = _mask_rolling_min_periods(
+                ff.numba_rolling_std(ret1_live, 24),
+                ret1_live,
+                24,
+                6,
+            ).astype(np.float32)
+        if spread_z_24h is not None:
+            rv24z = _rolling_zscore_frame(
+                rv_24h.reindex(index=idx, columns=cols).astype(np.float32),
+                14 * 24,
+            )
+            put(
+                "ob_spread_z_x_rv_24h",
+                (spread_z_24h * rv24z).clip(-12, 12).astype(np.float32),
+            )
+
+    if needs_feature("ob_depth_to_qv_z_x_rvol_z") and isinstance(
+        depth_l20_to_qv_z, pd.DataFrame
+    ):
+        rvol_z = out.get("rvol_z")
+        if not isinstance(rvol_z, pd.DataFrame) or rvol_z.empty:
+            log_quote_volume = np.log1p(
+                quote_volume_source.clip(lower=0.0)
+            ).astype(np.float32)
+            rvol_z = _rolling_zscore_frame(
+                log_quote_volume.reindex(index=idx, columns=cols),
+                int((cfg or {}).get("volz_n", 24 * 14)),
+            )
+        put(
+            "ob_depth_to_qv_z_x_rvol_z",
+            (
+                depth_l20_to_qv_z.reindex(index=idx, columns=cols)
+                * rvol_z.reindex(index=idx, columns=cols)
+            )
+            .clip(-12, 12)
+            .astype(np.float32),
+        )
+
+    if (
+        needs_feature("xasset_asset_minus_mkt_ob_pressure_z_24h")
+        or needs_feature("xasset_ob_pressure_ts_resid")
+        or needs_feature("xasset_ob_pressure_peer_resid")
+    ):
+        pressure = out.get("ob_book_pressure_l10")
+        if isinstance(pressure, pd.DataFrame) and not pressure.empty:
+            pressure = pressure.reindex(index=idx, columns=cols).astype(np.float32)
+            available_pressure = [s for s in basket_syms if s in pressure.columns]
+            basket_pressure = (
+                pressure[available_pressure].mean(axis=1)
+                if available_pressure
+                else pressure.mean(axis=1)
+            )
+            asset_minus_pressure = pressure.sub(basket_pressure, axis=0).astype(
+                np.float32
+            )
+            put(
+                "xasset_asset_minus_mkt_ob_pressure",
+                asset_minus_pressure,
+            )
+            put(
+                "xasset_asset_minus_mkt_ob_pressure_z_24h",
+                _rolling_zscore_frame(asset_minus_pressure, 24).clip(-6, 6),
+            )
+
     if required_residuals:
         # Cached offline-selected feature panels can contain all-NaN residual
         # placeholders when their live primitives were missing. Compute these
@@ -5225,15 +5498,37 @@ def _synthesize_gated_feature_keys(
         if state not in {"0", "1"}:
             raise ValueError(f"Unsupported gate-conditioned feature state in {feat_name}")
         if base_name not in out:
-            raise ValueError(
-                f"{feat_name} is required but base feature {base_name!r} is unavailable"
+            tprint(
+                "Gate-conditioned selected feature base unavailable; "
+                "materializing NaN frame so strict downstream finite checks "
+                "or the training-equivalent model adapter can handle it: "
+                f"feature={feat_name} base={base_name!r}"
             )
+            out[feat_name] = pd.DataFrame(
+                np.nan,
+                index=close.index,
+                columns=valid_syms,
+                dtype=np.float32,
+            )
+            continue
         gate_df = gates.get(gate_name)
         base_df = out.get(base_name)
         if not isinstance(gate_df, pd.DataFrame) or not isinstance(
             base_df, pd.DataFrame
         ):
-            raise ValueError(f"{feat_name} cannot be materialized from portable gate inputs")
+            tprint(
+                "Gate-conditioned selected feature inputs are not portable "
+                "frames; materializing NaN frame so strict downstream finite "
+                "checks or the training-equivalent model adapter can handle it: "
+                f"feature={feat_name} base={base_name!r}"
+            )
+            out[feat_name] = pd.DataFrame(
+                np.nan,
+                index=close.index,
+                columns=valid_syms,
+                dtype=np.float32,
+            )
+            continue
         gate_aligned = gate_df.reindex(index=base_df.index, columns=base_df.columns)
         if state == "1":
             out[feat_name] = (base_df.astype(np.float32) * gate_aligned).astype(
@@ -5459,10 +5754,16 @@ def get_features_for_candidates(
                     ts_utc,
                     stale_sensitive=_is_live_stale_sensitive_feature_key(feat_name),
                 )
-                finite = values.notna()
-                if not bool(finite.any()):
+                if values is None:
                     continue
+                values = pd.Series(values).reindex(candidate_index)
+                # Preserve all available trained feature columns, even when
+                # their current live cells are NaN for this symbol subset. The
+                # LGBM model adapter applies the same neutral-fill path as
+                # training; dropping the column here converts sparse live
+                # source coverage into a false missing-contract failure.
                 out.loc[values.index, feat_name] = values.to_numpy(copy=False)
+                finite = values.notna()
                 has_feature.loc[finite.index[finite]] = True
             return out.loc[has_feature]
 

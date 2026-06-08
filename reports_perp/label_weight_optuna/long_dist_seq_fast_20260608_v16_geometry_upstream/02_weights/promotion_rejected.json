@@ -1,0 +1,19 @@
+{
+  "best_trial_number": 0,
+  "best_trial_params": {
+    "recipe_enabled": false
+  },
+  "best_trial_recipe_path": "reports_perp/label_weight_optuna/long_dist_seq_fast_20260608_v16_geometry_upstream/02_weights/trial_0000_recipe.json",
+  "best_trial_value": 0.3759468677457687,
+  "incumbent_recipe_path": "reports_perp/label_weight_optuna/long_dist_seq_fast_20260608_v16_geometry_upstream/02_weights/trial_0000_recipe.json",
+  "incumbent_trial_number": 0,
+  "incumbent_trial_params": {
+    "recipe_enabled": false
+  },
+  "incumbent_trial_value": 0.3759468677457687,
+  "phase": "weights",
+  "promotion_margin": 0.01,
+  "promotion_rejected": true,
+  "reason": "best trial did not beat incumbent noop/base recipe by the required margin",
+  "study_name": "label_weight_long_dist_seq_fast_weights_20260608_v16_geometry_upstream"
+}

@@ -1,0 +1,17 @@
+{
+  "csv": "extreme_price_movements/reports/inference_mismatch_investigation/live_vs_training_path_feature_values/live_ledger_vs_training_feature_store.csv",
+  "feature_value_cells": 2136,
+  "finite_compared": 44,
+  "latest_signal_bar_ts": "2026-06-04T08:00:00+00:00",
+  "ledger_rows": 20,
+  "loaded_features": 263,
+  "matches": 44,
+  "max_abs_diff": 0.0,
+  "mismatches": 0,
+  "requested_features": 263,
+  "status_counts": {
+    "ok": 44,
+    "train_nan": 2092
+  },
+  "symbols": 7
+}

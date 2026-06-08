@@ -1,0 +1,54 @@
+{
+  "distillation": {
+    "distill_age_impact": 1.2620509012605046,
+    "distill_error_power": 1.416767301413678,
+    "false_negative_focus": 0.82132297431865,
+    "false_positive_focus": 0.018894735997749157
+  },
+  "execution_costs": {},
+  "label": {
+    "mae_penalty_scale": 0.2639287848974544,
+    "mfe_scale_bps": 241.71561878134023,
+    "net_return_center_bps": 43.11524612228743,
+    "net_return_temperature_bps": 42.69235916787691,
+    "path_quality_mix": 0.7365327292214027,
+    "stop_penalty": 0.4948699554865672
+  },
+  "name": "trial_4",
+  "objective": {
+    "base_k_multiplier": 2.0,
+    "hit_fee_floor_bps": 0.0,
+    "impact_scale_bps": 75.0,
+    "portfolio_alignment_strength": 0.2644485133655065
+  },
+  "provenance": {
+    "cv_mode": "interleaved_spread",
+    "features": "frozen_native_preset",
+    "hyperparameters": "frozen_native_preset_except_n_estimators_cap",
+    "lgbm_early_stopping_rounds": 30,
+    "lgbm_hpo_trials": 0,
+    "lgbm_n_estimators_cap": 200,
+    "max_trees": 200,
+    "max_trees_env": "EPM_LGBM_N_ESTIMATORS_CAP=200",
+    "phase": "distillation",
+    "study_patience_trials": 40,
+    "study_pruner": "successive_halving",
+    "subsample": "spread_through_full_period"
+  },
+  "stage": "all",
+  "version": 1,
+  "weight": {
+    "ambiguous_weight": 0.385820397642212,
+    "class_rebalance_strength": 0.29450064240598073,
+    "concurrency_penalty": 0.2723843404790177,
+    "concurrency_window_hours": 1.0,
+    "hard_negative_weight": 1.9294926886130723,
+    "mae_weight_power": 2.445447047711188,
+    "mfe_weight_power": 1.8493912226928089,
+    "net_ev_weight_power": 0.7591142272096565,
+    "path_quality_strength": 0.6020195591149917,
+    "positive_mass_target": 0.42022849113150545,
+    "recency_half_life_days": 150.0,
+    "robustness_strength": 0.6473432334108443
+  }
+}

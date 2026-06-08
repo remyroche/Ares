@@ -873,8 +873,13 @@ def _load_lgbm_strategy_mask_rows(
 def _validate_lgbm_strategy_mask_coverage(
     lgbm_strategy_mask_rows: Mapping[str, Mapping[str, Any]],
     accepted_strategies: Optional[set[str]],
+    policy_selection_rules: Optional[Mapping[str, Any]] = None,
 ) -> None:
     """Fail closed when deployed LGBM strategies lack pre-base regime masks."""
+    rules = policy_selection_rules or {}
+    requires_mask_contract = bool(
+        rules.get("requires_lgbm_regime_mask_contract", True)
+    )
     selected = {
         strategy_core_id(str(sid))
         for sid in (accepted_strategies or set())
@@ -894,6 +899,13 @@ def _validate_lgbm_strategy_mask_coverage(
     }
     missing = sorted(core for core in selected if core not in row_cores)
     if missing:
+        if not requires_mask_contract:
+            tprint(
+                "LGBM strategy regime masks absent for accepted strategies, "
+                "but deployed policy marks requires_lgbm_regime_mask_contract=false; "
+                f"continuing without pre-base strategy mask gating: {missing}"
+            )
+            return
         raise RuntimeError(
             "LGBM strategy regime masks missing for accepted strategies: "
             f"{missing}. Refusing to fall back to legacy candidate masks."
@@ -2804,6 +2816,23 @@ def _symbols_with_required_feature_coverage(
     if not required_feature_keys or not symbol_list:
         return symbol_list, {}
     missing_by_symbol: Dict[str, List[str]] = {}
+    if hasattr(feats, "latest_values_at"):
+        # Lazy/overlay live feature stores can represent sparse selected-cache
+        # coverage by returning NaN cells for a requested symbol while still
+        # carrying the trained feature column. Do not prune candidates on raw
+        # symbol membership here; the model-matrix adapter applies the same
+        # neutral-fill semantics used by training, and true missing keys remain
+        # hard failures below.
+        for key in sorted(required_feature_keys):
+            try:
+                has_key = str(key) in feats
+            except Exception:
+                has_key = False
+            if not has_key:
+                for sym in symbol_list:
+                    missing_by_symbol.setdefault(sym, []).append(str(key))
+        allowed = [sym for sym in symbol_list if sym not in missing_by_symbol]
+        return allowed, missing_by_symbol
     if hasattr(feats, "raw_symbols_for_key"):
         for key in sorted(required_feature_keys):
             try:
@@ -3152,19 +3181,55 @@ def _select_candidates_and_load_features(
         long_cands: List[str] = []
         short_cands: List[str] = []
         candidate_feats: Dict[str, pd.DataFrame] = dict(selector_feats)
+        strategy_candidate_masks: Dict[str, List[str]] = {}
         if not lgbm_strategy_mask_rows:
-            long_cands, short_cands = select_candidates(
-                panel=panel,
-                feats=selector_feats,
-                metric=str(thresholds.get("metric", "ret12h")),
+            mode_cfg = dict((cfg or {}).get("candidate_mask_params_by_mode", {}) or {})
+            policy_rules = dict((cfg or {}).get("policy_selection_rules", {}) or {})
+            mask_contract_required = bool(
+                policy_rules.get("requires_lgbm_regime_mask_contract", True)
             )
+            accepted_contract_ids = [
+                str(sid).strip()
+                for sid in ((cfg or {}).get("accepted_strategy_ids") or [])
+                if str(sid).strip()
+            ]
+            if not mode_cfg and not mask_contract_required and accepted_contract_ids:
+                tradable_ordered = [str(sym) for sym in symbols if str(sym).strip()]
+                long_strategy_ids = [
+                    sid for sid in accepted_contract_ids if strategy_side(sid) == "long"
+                ]
+                short_strategy_ids = [
+                    sid for sid in accepted_contract_ids if strategy_side(sid) == "short"
+                ]
+                if long_strategy_ids:
+                    long_cands = list(tradable_ordered)
+                if short_strategy_ids:
+                    short_cands = list(tradable_ordered)
+                strategy_candidate_masks = {
+                    sid: list(tradable_ordered)
+                    for sid in accepted_contract_ids
+                    if strategy_side(sid) in {"long", "short"}
+                }
+                tprint(
+                    "No deployed pre-model mask contract and no per-mode mask params; "
+                    "using full tradable universe for model/policy rank gating "
+                    f"strategies={len(strategy_candidate_masks)} "
+                    f"long={len(long_cands)} short={len(short_cands)} "
+                    f"symbols={len(tradable_ordered)}"
+                )
+            else:
+                long_cands, short_cands = select_candidates(
+                    panel=panel,
+                    feats=selector_feats,
+                    metric=str(thresholds.get("metric", "ret12h")),
+                )
             timer.mark("selector_candidates")
         else:
             tprint(
                 "Deployment LGBM masks are authoritative; "
                 "skipping legacy per-mode candidate selector."
             )
-        strategy_candidate_masks: Dict[str, List[str]] = {}
+        strategy_candidate_masks = dict(strategy_candidate_masks)
         tradable_symbol_set = {str(sym) for sym in symbols}
         context_symbols = [
             str(sym).strip()
@@ -11234,6 +11299,7 @@ def main():
         _validate_lgbm_strategy_mask_coverage(
             lgbm_strategy_mask_rows,
             accepted_strategies,
+            policy_selection_rules,
         )
     except Exception as exc:
         deployment_mask_coverage_error = str(exc)
@@ -11989,6 +12055,8 @@ def main():
                 "live_data_root": str(
                     config.get("live_data_root") or config["data_root"]
                 ),
+                "accepted_strategy_ids": sorted(accepted_strategies or []),
+                "policy_selection_rules": policy_selection_rules,
             }
             if _allow_model_feature_tail_recompute_for_reconciliation(config):
                 feature_runtime_cfg["live_model_feature_tail_recompute_enabled"] = True

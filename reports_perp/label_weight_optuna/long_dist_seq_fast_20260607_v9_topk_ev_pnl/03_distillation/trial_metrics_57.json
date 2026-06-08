@@ -1,0 +1,160 @@
+{
+  "avg_loss_net_bps_at_10": 55.53944942776779,
+  "avg_loss_net_bps_at_20": 51.802994345584,
+  "avg_loss_net_bps_at_30": 58.87189428524114,
+  "avg_loss_net_bps_at_40": 58.26201501965424,
+  "avg_stop_loss_bps_at_20": 95.22021964084047,
+  "avg_win_net_bps_at_10": 139.231972555394,
+  "avg_win_net_bps_at_20": 103.40083958114413,
+  "avg_win_net_bps_at_30": 119.37872739888729,
+  "avg_win_net_bps_at_40": 115.70285590346374,
+  "eval_rows": 51020,
+  "execution_cost_bps": 68.83,
+  "fast_eval": true,
+  "features": 105,
+  "mean_net_bps_at_10": 43.73964182830416,
+  "mean_net_bps_at_20": 21.400794670060286,
+  "mean_net_bps_at_30": 20.94259463669422,
+  "mean_net_bps_at_40": 19.418611438029917,
+  "median_net_bps_at_10": 17.861973701817917,
+  "median_net_bps_at_20": -3.5893450220301735,
+  "median_net_bps_at_30": -0.3411741889268147,
+  "median_net_bps_at_40": -2.157342849224804,
+  "model_stage": "base",
+  "net_hit_at_10": 0.525,
+  "net_hit_at_20": 0.48750000000000004,
+  "net_hit_at_30": 0.4666666666666667,
+  "net_hit_at_40": 0.45500000000000007,
+  "per_window": {
+    "2w": {
+      "10": {
+        "avg_loss_net_bps": 48.070017128176985,
+        "avg_stop_loss_bps": 106.31188726603985,
+        "avg_win_net_bps": 103.11414821763833,
+        "mean_net_bps": 42.640482079312214,
+        "median_net_bps": 50.38967845410109,
+        "n": 10.0,
+        "net_hit": 0.6,
+        "stop_hit_rate": 0.1
+      },
+      "20": {
+        "avg_loss_net_bps": 43.595007759237454,
+        "avg_stop_loss_bps": 91.62738459037617,
+        "avg_win_net_bps": 78.50762649649924,
+        "mean_net_bps": 23.561441081417733,
+        "median_net_bps": 13.19019613236189,
+        "n": 20.0,
+        "net_hit": 0.55,
+        "stop_hit_rate": 0.1
+      },
+      "30": {
+        "avg_loss_net_bps": 80.56581932172446,
+        "avg_stop_loss_bps": 149.7074727435472,
+        "avg_win_net_bps": 89.71006516747178,
+        "mean_net_bps": 10.247985739180196,
+        "median_net_bps": 13.19019613236189,
+        "n": 30.0,
+        "net_hit": 0.5333333333333333,
+        "stop_hit_rate": 0.2
+      },
+      "40": {
+        "avg_loss_net_bps": 87.48967459161763,
+        "avg_stop_loss_bps": 134.8743736176768,
+        "avg_win_net_bps": 95.65431415483359,
+        "mean_net_bps": 4.082319781607953,
+        "median_net_bps": 1.184935918152334,
+        "n": 40.0,
+        "net_hit": 0.5,
+        "stop_hit_rate": 0.275
+      }
+    },
+    "4w": {
+      "10": {
+        "avg_loss_net_bps": 49.477230404429136,
+        "avg_stop_loss_bps": 93.26900099024176,
+        "avg_win_net_bps": 152.3086198177934,
+        "mean_net_bps": 71.59427972890437,
+        "median_net_bps": 33.72838744342327,
+        "n": 10.0,
+        "net_hit": 0.6,
+        "stop_hit_rate": 0.1
+      },
+      "20": {
+        "avg_loss_net_bps": 52.74330733688341,
+        "avg_stop_loss_bps": 97.42162554765741,
+        "avg_win_net_bps": 102.67839282707736,
+        "mean_net_bps": 32.73862775329501,
+        "median_net_bps": 5.795951237976553,
+        "n": 20.0,
+        "net_hit": 0.55,
+        "stop_hit_rate": 0.15
+      },
+      "30": {
+        "avg_loss_net_bps": 49.1096427892255,
+        "avg_stop_loss_bps": 97.63002371966839,
+        "avg_win_net_bps": 106.38134926937522,
+        "mean_net_bps": 33.818886308694886,
+        "median_net_bps": 5.795951237976553,
+        "n": 30.0,
+        "net_hit": 0.5333333333333333,
+        "stop_hit_rate": 0.13333333333333333
+      },
+      "40": {
+        "avg_loss_net_bps": 44.69088242793554,
+        "avg_stop_loss_bps": 103.27147948175669,
+        "avg_win_net_bps": 110.66971946932024,
+        "mean_net_bps": 36.87343356812373,
+        "median_net_bps": 5.795951237976553,
+        "n": 40.0,
+        "net_hit": 0.525,
+        "stop_hit_rate": 0.125
+      }
+    },
+    "8w": {
+      "10": {
+        "avg_loss_net_bps": 75.41476242928631,
+        "avg_stop_loss_bps": 96.20916016485542,
+        "avg_win_net_bps": 159.03539668838184,
+        "mean_net_bps": -5.079714693985875,
+        "median_net_bps": -49.73081673581153,
+        "n": 10.0,
+        "net_hit": 0.3,
+        "stop_hit_rate": 0.4
+      },
+      "20": {
+        "avg_loss_net_bps": 59.960014864860916,
+        "avg_stop_loss_bps": 95.56909106912713,
+        "avg_win_net_bps": 134.57309944003822,
+        "mean_net_bps": -1.6000805733911627,
+        "median_net_bps": -40.618327675312756,
+        "n": 20.0,
+        "net_hit": 0.3,
+        "stop_hit_rate": 0.3
+      },
+      "30": {
+        "avg_loss_net_bps": 50.41123693428933,
+        "avg_stop_loss_bps": 93.36127726247268,
+        "avg_win_net_bps": 178.37640270970763,
+        "mean_net_bps": 10.598800304109854,
+        "median_net_bps": -27.62564434289932,
+        "n": 30.0,
+        "net_hit": 0.26666666666666666,
+        "stop_hit_rate": 0.23333333333333334
+      },
+      "40": {
+        "avg_loss_net_bps": 47.61686219839186,
+        "avg_stop_loss_bps": 97.76428070819935,
+        "avg_win_net_bps": 148.82075158327822,
+        "mean_net_bps": 6.4034815915674015,
+        "median_net_bps": -20.484006727039812,
+        "n": 40.0,
+        "net_hit": 0.275,
+        "stop_hit_rate": 0.2
+      }
+    }
+  },
+  "prediction_instability": 0.11785113019775795,
+  "run_id": "fast_label_weight_trial_57",
+  "stop_hit_rate_at_20": 0.17250000000000001,
+  "train_rows": 102179
+}

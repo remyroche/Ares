@@ -52,7 +52,6 @@ import json
 import os
 import re
 import resource
-import sys
 import threading
 import time
 from dataclasses import replace
@@ -95,7 +94,6 @@ from extreme_price_movements.inference.data_fetcher import (
     DataFetcher,
     classify_api_error,
     fetch_and_build_panel,
-    fetch_latest_ohlcv,
     make_exchange,
 )
 from extreme_price_movements.inference.feature_generator import (
@@ -108,7 +106,6 @@ from extreme_price_movements.inference.feature_generator import (
     generate_features,
     get_features_for_candidates,
     get_inference_required_feature_keys,
-    get_market_data,
     is_model_derived_feature_key,
     load_or_compute_features,
     raw_required_feature_keys,
@@ -184,7 +181,6 @@ from extreme_price_movements.path_utils import mode_file_candidates
 from extreme_price_movements.inference.trade_executor import TradeExecutor
 from extreme_price_movements.inference.trade_logger import (
     TradeLogger,
-    log_trade_decision,
 )
 from extreme_price_movements.portfolio_manager import PortfolioManager
 from extreme_price_movements.utils import tprint
@@ -239,6 +235,8 @@ def _raise_if_policy_export_invalid(data_root: str, run_id: str) -> None:
             f"strict simple_policy_optimiser export is marked invalid at "
             f"{marker_path}{suffix}"
         )
+
+
 AUCTION_EV_MIN_HIT_RATE = float(os.getenv("EPM_AUCTION_EV_MIN_HIT_RATE", "0.55"))
 LOSING_TRADE_COOLDOWN_HOURS = 12.0
 _HISTORICAL_SCORE_RANK_CACHE: Dict[tuple[str, str, str, str], np.ndarray] = {}
@@ -332,7 +330,9 @@ def _fetch_live_closeable_price(
     }
 
 
-def _position_policy_entry_price(position_state: Mapping[str, Any]) -> tuple[float, str]:
+def _position_policy_entry_price(
+    position_state: Mapping[str, Any],
+) -> tuple[float, str]:
     """Return the fill reference used for live policy MFE/MAE accounting."""
     for key in (
         "realized_entry_price",
@@ -397,7 +397,11 @@ class _StageTimer:
         now = time.perf_counter()
         try:
             rss_raw = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
-            rss_mb = rss_raw / (1024.0 * 1024.0) if rss_raw > 10_000_000 else rss_raw / 1024.0
+            rss_mb = (
+                rss_raw / (1024.0 * 1024.0)
+                if rss_raw > 10_000_000
+                else rss_raw / 1024.0
+            )
         except Exception:
             rss_mb = float("nan")
         tprint(
@@ -877,9 +881,7 @@ def _validate_lgbm_strategy_mask_coverage(
 ) -> None:
     """Fail closed when deployed LGBM strategies lack pre-base regime masks."""
     rules = policy_selection_rules or {}
-    requires_mask_contract = bool(
-        rules.get("requires_lgbm_regime_mask_contract", True)
-    )
+    requires_mask_contract = bool(rules.get("requires_lgbm_regime_mask_contract", True))
     selected = {
         strategy_core_id(str(sid))
         for sid in (accepted_strategies or set())
@@ -1117,7 +1119,9 @@ def _persist_source_parity_report(
         out_dir = Path(data_root) / "artifacts" / str(run_id) / "live_source_parity"
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / f"{stamp}_{label}.json"
-        out_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+        out_path.write_text(
+            json.dumps(report, indent=2, sort_keys=True), encoding="utf-8"
+        )
         return out_path
     except Exception as exc:
         tprint(f"Warning: failed to persist source parity report: {exc}")
@@ -1266,9 +1270,7 @@ def _load_strategy_ev_calibration(data_root: str, run_id: str) -> Dict[str, Any]
                         float(fees.mean()) if np.isfinite(fees).any() else None
                     ),
                     "mean_slippage_bps": (
-                        float(slippage.mean())
-                        if np.isfinite(slippage).any()
-                        else None
+                        float(slippage.mean()) if np.isfinite(slippage).any() else None
                     ),
                     "hit_rate": float((net > 0.0).mean()),
                     "count": int(len(bucket_df)),
@@ -1338,7 +1340,12 @@ def _estimated_hit_rate_from_meta_prediction(
             "estimated_hit_rate_calibration_n": 0,
         }
     sid = str(strategy_id or "")
-    candidates = [sid, f"{sid}_clf", strategy_core_id(sid), f"{strategy_core_id(sid)}_clf"]
+    candidates = [
+        sid,
+        f"{sid}_clf",
+        strategy_core_id(sid),
+        f"{strategy_core_id(sid)}_clf",
+    ]
     curve = None
     for key in candidates:
         if key and key in calibration:
@@ -1534,15 +1541,9 @@ def _ev_adjusted_prediction_after_entry_friction(
         "ev_haircut_spread_excess_bps": float(spread_excess_bps),
         "ev_haircut_orderbook_slippage_bps": float(slippage_bps),
         "ev_haircut_adverse_signal_gap_bps": float(adverse_gap_bps),
-        "ev_haircut_observed_delay_slippage_bps": float(
-            observed_delay_slippage_bps
-        ),
-        "ev_haircut_delay_slippage_baseline_bps": float(
-            delay_slippage_baseline
-        ),
-        "ev_haircut_delay_slippage_excess_bps": float(
-            delay_slippage_excess_bps
-        ),
+        "ev_haircut_observed_delay_slippage_bps": float(observed_delay_slippage_bps),
+        "ev_haircut_delay_slippage_baseline_bps": float(delay_slippage_baseline),
+        "ev_haircut_delay_slippage_excess_bps": float(delay_slippage_excess_bps),
         "ev_haircut_contract": (
             "spread_excess=max(0, spread_bps/2 - expected_spread_bps/2); "
             "delay_slippage_excess=max(0, adverse_signal_gap_bps + "
@@ -1589,7 +1590,9 @@ def _ev_adjusted_prediction_after_entry_friction(
         adjusted_score = float(score)
     else:
         adjusted_score = float(np.interp(adjusted_net_ev, ys, xs))
-    adjusted_score = float(np.clip(adjusted_score, float(np.nanmin(xs)), float(np.nanmax(xs))))
+    adjusted_score = float(
+        np.clip(adjusted_score, float(np.nanmin(xs)), float(np.nanmax(xs)))
+    )
     adjusted_rank = float("nan")
     rank_n = 0
     rank_source = ""
@@ -1615,7 +1618,9 @@ def _ev_adjusted_prediction_after_entry_friction(
     }
 
 
-def _adverse_signal_gap_bps(*, side: str, signal_price: Any, decision_mid: Any) -> float:
+def _adverse_signal_gap_bps(
+    *, side: str, signal_price: Any, decision_mid: Any
+) -> float:
     signal = _safe_float(signal_price, np.nan)
     mid = _safe_float(decision_mid, np.nan)
     if not (np.isfinite(signal) and signal > 0.0 and np.isfinite(mid) and mid > 0.0):
@@ -1628,7 +1633,9 @@ def _adverse_signal_gap_bps(*, side: str, signal_price: Any, decision_mid: Any) 
     return 0.0
 
 
-def _signal_bar_close_ts(signal_bar_ts: Any, *, bar_hours: float = 1.0) -> pd.Timestamp | None:
+def _signal_bar_close_ts(
+    signal_bar_ts: Any, *, bar_hours: float = 1.0
+) -> pd.Timestamp | None:
     ts = pd.to_datetime(signal_bar_ts, utc=True, errors="coerce")
     if pd.isna(ts):
         return None
@@ -1648,7 +1655,9 @@ def _entry_timing_snapshot(
     now_ts = pd.to_datetime(now, utc=True, errors="coerce")
     age_seconds = np.nan
     if not pd.isna(close_ts_parsed) and not pd.isna(now_ts):
-        age_seconds = float((pd.Timestamp(now_ts) - pd.Timestamp(close_ts_parsed)).total_seconds())
+        age_seconds = float(
+            (pd.Timestamp(now_ts) - pd.Timestamp(close_ts_parsed)).total_seconds()
+        )
     signal_ts_parsed = pd.to_datetime(signal_ts, utc=True, errors="coerce")
     signal_to_decision_seconds = np.nan
     if not pd.isna(signal_ts_parsed) and not pd.isna(now_ts):
@@ -1657,7 +1666,9 @@ def _entry_timing_snapshot(
         )
     limit_seconds = float(max_signal_close_age_seconds)
     return {
-        "decision_ts": pd.Timestamp(now_ts).isoformat() if not pd.isna(now_ts) else None,
+        "decision_ts": pd.Timestamp(now_ts).isoformat()
+        if not pd.isna(now_ts)
+        else None,
         "signal_bar_ts": (
             pd.Timestamp(signal_ts_parsed).isoformat()
             if not pd.isna(signal_ts_parsed)
@@ -1673,7 +1684,9 @@ def _entry_timing_snapshot(
         "max_signal_close_to_entry_seconds": limit_seconds,
         "stale_signal_age_gate_enabled": bool(limit_seconds >= 0.0),
         "stale_signal_age_gate_exceeded": bool(
-            np.isfinite(age_seconds) and limit_seconds >= 0.0 and age_seconds > limit_seconds
+            np.isfinite(age_seconds)
+            and limit_seconds >= 0.0
+            and age_seconds > limit_seconds
         ),
     }
 
@@ -1700,7 +1713,9 @@ def _signal_to_entry_alert_seconds(runtime_config: Mapping[str, Any]) -> float:
         return 600.0
 
 
-def _live_entry_adverse_hourly_close_gate(runtime_config: Dict[str, Any]) -> Tuple[bool, float]:
+def _live_entry_adverse_hourly_close_gate(
+    runtime_config: Dict[str, Any],
+) -> Tuple[bool, float]:
     enabled_raw = os.environ.get(
         "EPM_ADVERSE_HOURLY_CLOSE_ENTRY_GATE_ENABLED",
         runtime_config.get("adverse_hourly_close_entry_gate_enabled", True),
@@ -1839,7 +1854,9 @@ def _prediction_ledger_row(
             "fee_bps",
             snap.get(
                 "fee_bps",
-                snap_details.get("fee_bps") if isinstance(snap_details, dict) else np.nan,
+                snap_details.get("fee_bps")
+                if isinstance(snap_details, dict)
+                else np.nan,
             ),
         ),
         np.nan,
@@ -1916,12 +1933,8 @@ def _prediction_ledger_row(
         "meta_model_feature_count": chain.get("meta_model_feature_count"),
         "base_model_features_json": chain.get("base_model_features_json"),
         "meta_model_features_json": chain.get("meta_model_features_json"),
-        "base_model_feature_values_json": chain.get(
-            "base_model_feature_values_json"
-        ),
-        "meta_model_feature_values_json": chain.get(
-            "meta_model_feature_values_json"
-        ),
+        "base_model_feature_values_json": chain.get("base_model_feature_values_json"),
+        "meta_model_feature_values_json": chain.get("meta_model_feature_values_json"),
         "model_feature_value_sources_json": chain.get(
             "model_feature_value_sources_json"
         ),
@@ -2062,12 +2075,8 @@ def _prediction_ledger_row(
             and normalized_rank >= final_threshold
         ),
         "portfolio_priority": decision.get("portfolio_priority"),
-        "portfolio_state_snapshot_json": decision.get(
-            "portfolio_state_snapshot_json"
-        ),
-        "portfolio_state_snapshot_hash": decision.get(
-            "portfolio_state_snapshot_hash"
-        ),
+        "portfolio_state_snapshot_json": decision.get("portfolio_state_snapshot_json"),
+        "portfolio_state_snapshot_hash": decision.get("portfolio_state_snapshot_hash"),
         "portfolio_state_snapshot_error": decision.get(
             "portfolio_state_snapshot_error"
         ),
@@ -2123,9 +2132,7 @@ def _prediction_ledger_row(
             "ticker_fetch_latency_seconds"
         ),
         "exchange_ticker_timestamp": snap_details.get("exchange_ticker_timestamp"),
-        "exchange_ticker_age_seconds": snap_details.get(
-            "exchange_ticker_age_seconds"
-        ),
+        "exchange_ticker_age_seconds": snap_details.get("exchange_ticker_age_seconds"),
         "spread_bps": snap.get("spread_bps", snap.get("ticker_spread_bps")),
         "ticker_spread_bps": snap.get("ticker_spread_bps", snap.get("spread_bps")),
         "orderbook_side": snap.get("orderbook_side"),
@@ -2189,7 +2196,9 @@ def _prediction_ledger_row(
             "orderbook_live_slippage_bps",
             snap.get(
                 "orderbook_live_slippage_bps",
-                snap.get("orderbook_slippage_bps", snap.get("expected_fill_slippage_bps")),
+                snap.get(
+                    "orderbook_slippage_bps", snap.get("expected_fill_slippage_bps")
+                ),
             ),
         ),
         "adverse_signal_gap_bps": snap.get("adverse_signal_gap_bps"),
@@ -2204,21 +2213,15 @@ def _prediction_ledger_row(
         "ev_haircut_raw_live_entry_friction_bps": snap.get(
             "ev_haircut_raw_live_entry_friction_bps"
         ),
-        "ev_haircut_observed_spread_bps": snap.get(
-            "ev_haircut_observed_spread_bps"
-        ),
+        "ev_haircut_observed_spread_bps": snap.get("ev_haircut_observed_spread_bps"),
         "ev_haircut_observed_half_spread_bps": snap.get(
             "ev_haircut_observed_half_spread_bps"
         ),
-        "ev_haircut_spread_baseline_bps": snap.get(
-            "ev_haircut_spread_baseline_bps"
-        ),
+        "ev_haircut_spread_baseline_bps": snap.get("ev_haircut_spread_baseline_bps"),
         "ev_haircut_half_spread_baseline_bps": snap.get(
             "ev_haircut_half_spread_baseline_bps"
         ),
-        "ev_haircut_spread_excess_bps": snap.get(
-            "ev_haircut_spread_excess_bps"
-        ),
+        "ev_haircut_spread_excess_bps": snap.get("ev_haircut_spread_excess_bps"),
         "ev_haircut_orderbook_slippage_bps": snap.get(
             "ev_haircut_orderbook_slippage_bps"
         ),
@@ -2235,18 +2238,14 @@ def _prediction_ledger_row(
             "ev_haircut_delay_slippage_excess_bps"
         ),
         "ev_haircut_contract": snap.get("ev_haircut_contract"),
-        "ev_adjusted_entry_friction_bps": snap.get(
-            "ev_adjusted_entry_friction_bps"
-        ),
+        "ev_adjusted_entry_friction_bps": snap.get("ev_adjusted_entry_friction_bps"),
         "ev_adjusted_net_return_before_friction": snap.get(
             "ev_adjusted_net_return_before_friction"
         ),
         "ev_adjusted_net_return_after_friction": snap.get(
             "ev_adjusted_net_return_after_friction"
         ),
-        "ev_adjusted_calibrated_score": snap.get(
-            "ev_adjusted_calibrated_score"
-        ),
+        "ev_adjusted_calibrated_score": snap.get("ev_adjusted_calibrated_score"),
         "ev_adjusted_rank_score": snap.get("ev_adjusted_rank_score"),
         "ev_adjusted_source": snap.get("ev_adjusted_source"),
         "entry_delay_effect_bps": trade.get("entry_delay_effect_bps"),
@@ -2254,9 +2253,7 @@ def _prediction_ledger_row(
         "entry_delay_abs_bps": trade.get("entry_delay_abs_bps"),
         "decision_to_entry_seconds": trade.get("decision_to_entry_seconds"),
         "signal_to_entry_seconds": trade.get("signal_to_entry_seconds"),
-        "gross_to_net_friction_drag_bps": trade.get(
-            "gross_to_net_friction_drag_bps"
-        ),
+        "gross_to_net_friction_drag_bps": trade.get("gross_to_net_friction_drag_bps"),
         "entry_notional_quote": entry_notional_quote,
         "base_amount": trade.get("base_amount"),
         "entry_fee_quote": trade.get("entry_fee_quote"),
@@ -2676,7 +2673,11 @@ def _latest_only_features(
                 if positions.size:
                     latest_pos_by_symbol[sym] = int(positions[-1])
         for key in feats.keys():
-            frame = assembled_payloads.get(key) if isinstance(assembled_payloads, dict) else None
+            frame = (
+                assembled_payloads.get(key)
+                if isinstance(assembled_payloads, dict)
+                else None
+            )
             if isinstance(frame, pd.DataFrame) and not frame.empty:
                 cols = [c for c in keep if c in frame.columns]
                 if not cols:
@@ -2727,7 +2728,9 @@ def _latest_only_features(
             raw_symbols = set()
             if hasattr(feats, "raw_symbols_for_key"):
                 try:
-                    raw_symbols = set(str(sym) for sym in feats.raw_symbols_for_key(key))
+                    raw_symbols = set(
+                        str(sym) for sym in feats.raw_symbols_for_key(key)
+                    )
                 except Exception:
                     raw_symbols = set()
             cols = [sym for sym in keep if not raw_symbols or sym in raw_symbols]
@@ -2942,7 +2945,9 @@ def _candidate_feature_cycle_cache_key(
         "lookback_hours": int(lookback_hours),
         "latest_ts": pd.Timestamp(close.index.max()).isoformat(),
         "symbols_hash": _hash_values(symbols),
-        "feature_context_symbols_hash": _hash_values(feature_context_symbols or symbols),
+        "feature_context_symbols_hash": _hash_values(
+            feature_context_symbols or symbols
+        ),
         "raw_feature_keys_hash": _hash_values(raw_feature_keys),
         "strategy_feature_contracts_hash": _feature_runtime_cfg_hash(
             {
@@ -3009,7 +3014,11 @@ def _filter_strategy_masks_by_finite_model_contract(
     diagnostics: Dict[str, Dict[str, Any]] = {}
     for strategy_id, symbols in strategy_candidate_masks.items():
         symbol_list = [str(sym) for sym in (symbols or []) if str(sym)]
-        feat_cols = [str(col) for col in strategy_feature_contracts.get(str(strategy_id), []) if str(col)]
+        feat_cols = [
+            str(col)
+            for col in strategy_feature_contracts.get(str(strategy_id), [])
+            if str(col)
+        ]
         if not symbol_list or not feat_cols:
             filtered[str(strategy_id)] = symbol_list
             continue
@@ -3029,14 +3038,20 @@ def _filter_strategy_masks_by_finite_model_contract(
         kept = [sym for sym, ok in zip(symbol_list, finite_rows) if bool(ok)]
         filtered[str(strategy_id)] = kept
         if missing_cols or len(kept) != len(symbol_list):
-            nonfinite_counts = (~finite).sum(axis=0) if finite.size else np.zeros(len(feat_cols), dtype=int)
+            nonfinite_counts = (
+                (~finite).sum(axis=0)
+                if finite.size
+                else np.zeros(len(feat_cols), dtype=int)
+            )
             top_idx = np.argsort(nonfinite_counts)[::-1]
             top_features = [
                 {
                     "feature": str(feat_cols[int(i)]),
                     "rows": int(nonfinite_counts[int(i)]),
                     "pct": round(
-                        float(nonfinite_counts[int(i)]) * 100.0 / max(1, len(symbol_list)),
+                        float(nonfinite_counts[int(i)])
+                        * 100.0
+                        / max(1, len(symbol_list)),
                         2,
                     ),
                 }
@@ -3199,7 +3214,9 @@ def _select_candidates_and_load_features(
                     sid for sid in accepted_contract_ids if strategy_side(sid) == "long"
                 ]
                 short_strategy_ids = [
-                    sid for sid in accepted_contract_ids if strategy_side(sid) == "short"
+                    sid
+                    for sid in accepted_contract_ids
+                    if strategy_side(sid) == "short"
                 ]
                 if long_strategy_ids:
                     long_cands = list(tradable_ordered)
@@ -3471,12 +3488,18 @@ def _select_candidates_and_load_features(
                 for candidate_key in candidate_keys:
                     values = strategy_feature_contracts.get(candidate_key)
                     if values:
-                        active_model_feature_keys.update(str(v) for v in values if str(v))
+                        active_model_feature_keys.update(
+                            str(v) for v in values if str(v)
+                        )
             if active_model_feature_keys:
                 before_model_keys = len(model_raw_feature_keys)
-                model_raw_feature_keys = raw_required_feature_keys(active_model_feature_keys)
+                model_raw_feature_keys = raw_required_feature_keys(
+                    active_model_feature_keys
+                )
                 model_decision_feature_keys = set(active_model_feature_keys)
-                raw_feature_keys = set(mask_raw_feature_keys).union(model_raw_feature_keys)
+                raw_feature_keys = set(mask_raw_feature_keys).union(
+                    model_raw_feature_keys
+                )
                 cache_key = None
                 tprint(
                     "Live feature parity: narrowed model feature contract to "
@@ -3484,8 +3507,8 @@ def _select_candidates_and_load_features(
                     f"strategies={len(active_mask_strategy_ids)} "
                     f"model_required={before_model_keys}->{len(model_raw_feature_keys)}"
                 )
-        model_feature_coverage_symbols = (
-            pre_mask_source_eligible_symbols or list(source_allowed_model_symbols)
+        model_feature_coverage_symbols = pre_mask_source_eligible_symbols or list(
+            source_allowed_model_symbols
         )
         tprint(
             "Live feature parity: computing model feature frame on the full "
@@ -3520,7 +3543,9 @@ def _select_candidates_and_load_features(
         )
         if lgbm_strategy_mask_rows and model_decision_feature_keys:
             try:
-                first_mask_cfg = dict(next(iter(lgbm_strategy_mask_rows.values())) or {})
+                first_mask_cfg = dict(
+                    next(iter(lgbm_strategy_mask_rows.values())) or {}
+                )
                 first_mask_cfg.update(dict(first_mask_cfg.get("mask_params", {}) or {}))
                 prepared_model_feats = build_latest_prepared_feature_frames(
                     _latest_only_panel(panel, model_feature_symbols),
@@ -4230,7 +4255,9 @@ def _feature_audit_value(
         base_pred = _safe_float(chain_results.get("base_pred"), np.nan)
         if np.isfinite(base_pred):
             base_prob = float(np.clip(base_pred, 1e-6, 1.0 - 1e-6))
-            return _json_safe_audit_value(np.log(base_prob / (1.0 - base_prob))), "base_pred_logit"
+            return _json_safe_audit_value(
+                np.log(base_prob / (1.0 - base_prob))
+            ), "base_pred_logit"
     if feature_name in chain_results:
         return _json_safe_audit_value(chain_results.get(feature_name)), "chain_results"
     diagnostics = chain_results.get("lgbm_diagnostics")
@@ -4377,7 +4404,11 @@ def _attach_portfolio_replay_state_for_ledger(
     if isinstance(open_df, pd.DataFrame) and not open_df.empty:
         open_positions = _json_safe_audit_value(
             open_df.sort_values(
-                [col for col in ("symbol", "side", "strategy_id") if col in open_df.columns]
+                [
+                    col
+                    for col in ("symbol", "side", "strategy_id")
+                    if col in open_df.columns
+                ]
             ).to_dict(orient="records")
         )
     else:
@@ -4435,9 +4466,7 @@ def _attach_portfolio_replay_state_for_ledger(
         "wallet_value", state.get("portfolio_value")
     )
     decision["open_notional_before"] = capacity_payload.get("open_notional")
-    decision["available_wallet_before"] = capacity_payload.get(
-        "available_wallet_quote"
-    )
+    decision["available_wallet_before"] = capacity_payload.get("available_wallet_quote")
 
 
 def _model_feature_ledger_snapshot_for_decision(
@@ -4897,8 +4926,7 @@ def _send_trade_close_email(
             f"decision_module: {closed_trade.get('decision_module')}",
             "stop_policy_params_source: "
             f"{closed_trade.get('stop_policy_params_source')}",
-            "stop_policy_params_hash: "
-            f"{closed_trade.get('stop_policy_params_hash')}",
+            f"stop_policy_params_hash: {closed_trade.get('stop_policy_params_hash')}",
             f"stop_policy_schema: {closed_trade.get('stop_policy_schema')}",
             f"stop_order_id: {closed_trade.get('stop_order_id')}",
             f"close_order_id: {closed_trade.get('close_order_id')}",
@@ -5105,7 +5133,9 @@ def _resolve_prediction_ledger_path(
         return Path(explicit)
     state_dir = Path(live_data_root) / "live_state"
     if bool(run_scoped) or _env_flag("EPM_RUN_SCOPED_PREDICTION_LEDGER", False):
-        return state_dir / "prediction_ledgers" / str(run_id) / "prediction_ledger.parquet"
+        return (
+            state_dir / "prediction_ledgers" / str(run_id) / "prediction_ledger.parquet"
+        )
     return state_dir / "prediction_ledger.parquet"
 
 
@@ -5138,7 +5168,10 @@ def _sync_reconciled_positions_to_portfolio_manager(
     for symbol, state in active_positions.items():
         if not isinstance(state, dict):
             continue
-        if not bool(state.get("external_position")) or symbol in portfolio_mgr.positions:
+        if (
+            not bool(state.get("external_position"))
+            or symbol in portfolio_mgr.positions
+        ):
             continue
         try:
             portfolio_mgr.record_position_open(
@@ -5694,7 +5727,9 @@ def _select_top_base_prediction_symbols(
             {
                 "feature": str(feat_cols[int(i)]),
                 "rows": int(nonfinite_counts[int(i)]),
-                "pct": round(float(nonfinite_counts[int(i)]) * 100.0 / max(1, len(row_index)), 2),
+                "pct": round(
+                    float(nonfinite_counts[int(i)]) * 100.0 / max(1, len(row_index)), 2
+                ),
             }
             for i in top_idx[:15]
             if int(nonfinite_counts[int(i)]) > 0
@@ -5730,7 +5765,9 @@ def _select_top_base_prediction_symbols(
                 )
                 if aligned.empty:
                     missing_cols = [
-                        col for col in feat_cols if col not in candidate_features.columns
+                        col
+                        for col in feat_cols
+                        if col not in candidate_features.columns
                     ]
                     tprint(
                         f"Base feature contract block for {side}/{strategy_core_id(strategy_id)}: "
@@ -6142,7 +6179,9 @@ def run_inference_step(
     adverse_hourly_close_gate_enabled, adverse_hourly_close_gate_bps = (
         _live_entry_adverse_hourly_close_gate(runtime_config)
     )
-    max_signal_close_to_entry_seconds = _max_signal_close_to_entry_seconds(runtime_config)
+    max_signal_close_to_entry_seconds = _max_signal_close_to_entry_seconds(
+        runtime_config
+    )
     hard_stale_gate_default = executor_mode in {
         "live",
         "live-test",
@@ -6157,9 +6196,12 @@ def run_inference_step(
             hard_stale_gate_default,
         ),
     )
-    hard_stale_gate_enabled = (
-        str(hard_stale_gate_raw).strip().lower() not in {"0", "false", "no", "off"}
-    )
+    hard_stale_gate_enabled = str(hard_stale_gate_raw).strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
     if not hard_stale_gate_enabled:
         max_signal_close_to_entry_seconds = -1.0
     signal_to_entry_alert_seconds = _signal_to_entry_alert_seconds(runtime_config)
@@ -6200,9 +6242,7 @@ def run_inference_step(
         validate_training_live_parity_contract(
             parity_contract,
             active_strategy_ids=(
-                sorted(accepted_strategies)
-                if accepted_strategies is not None
-                else []
+                sorted(accepted_strategies) if accepted_strategies is not None else []
             ),
             data_root=str(runtime_config.get("data_root") or ""),
             run_id=str(runtime_config.get("run_id") or ""),
@@ -6719,17 +6759,19 @@ def run_inference_step(
                             1.0,
                         )
                     )
-                    auction_ev_open_positions = (
-                        int(starting_active_position_count) + int(total_entries_executed)
-                    )
+                    auction_ev_open_positions = int(
+                        starting_active_position_count
+                    ) + int(total_entries_executed)
                     auction_ev_target = _auction_ev_target_for_occupancy(
                         open_positions=auction_ev_open_positions,
                         policy=portfolio_policy,
                     )
-                    auction_ev_gate = policy_rank_reference_store.auction_threshold_for_ev(
-                        target_mean_net_return=auction_ev_target,
-                        min_hit_rate=AUCTION_EV_MIN_HIT_RATE,
-                        fallback_threshold=1.0,
+                    auction_ev_gate = (
+                        policy_rank_reference_store.auction_threshold_for_ev(
+                            target_mean_net_return=auction_ev_target,
+                            min_hit_rate=AUCTION_EV_MIN_HIT_RATE,
+                            fallback_threshold=1.0,
+                        )
                     )
                     strategy_ev_threshold = (
                         policy_rank_reference_store.strategy_threshold_for_ev(
@@ -6770,7 +6812,9 @@ def run_inference_step(
                     meta_hash = meta_head_hash(
                         meta_model_key=meta_model_key,
                         meta_model=meta_model_for_hash,
-                        feature_contract=list(meta_contracts.get("meta_features") or []),
+                        feature_contract=list(
+                            meta_contracts.get("meta_features") or []
+                        ),
                     )
                     dynamic_state = (
                         dynamic_performance_monitor.threshold_multiplier(
@@ -6782,9 +6826,7 @@ def run_inference_step(
                     dynamic_multiplier = float(
                         getattr(dynamic_state, "multiplier", 1.0) or 1.0
                     )
-                    dynamic_multiplier = float(
-                        np.clip(dynamic_multiplier, 0.8, 1.2)
-                    )
+                    dynamic_multiplier = float(np.clip(dynamic_multiplier, 0.8, 1.2))
                     raw_strategy_threshold = float(
                         np.clip(strategy_ev_threshold.threshold, 0.0, 1.0)
                     )
@@ -7027,9 +7069,7 @@ def run_inference_step(
                             "strategy_ev_threshold_before_dynamic": float(
                                 raw_strategy_threshold
                             ),
-                            "dynamic_performance_multiplier": float(
-                                dynamic_multiplier
-                            ),
+                            "dynamic_performance_multiplier": float(dynamic_multiplier),
                             "dynamic_performance_reason": (
                                 getattr(dynamic_state, "reason", "disabled")
                                 if dynamic_state is not None
@@ -7063,9 +7103,7 @@ def run_inference_step(
                             "strategy_ev_threshold_n_trades": int(
                                 strategy_ev_threshold.n_trades
                             ),
-                            "strategy_ev_gate_allowed": bool(
-                                strategy_ev_gate.allowed
-                            ),
+                            "strategy_ev_gate_allowed": bool(strategy_ev_gate.allowed),
                             "strategy_ev_gate_reason": strategy_ev_gate.reason,
                             "strategy_ev_avg_net_return": float(
                                 strategy_ev_gate.mean_net_return
@@ -7214,9 +7252,7 @@ def run_inference_step(
                 decision["normalized_rank_score"] = decision.get(
                     "normalized_rank_score", rank_pct
                 )
-                decision["portfolio_priority"] = _candidate_portfolio_priority(
-                    decision
-                )
+                decision["portfolio_priority"] = _candidate_portfolio_priority(decision)
                 filtered_decision_rows.append(decision)
             decision_rows = filtered_decision_rows
             decision_rows.sort(
@@ -7313,13 +7349,10 @@ def run_inference_step(
                     cooldown_hours=cooldown_hours,
                 )
                 if symbol_block_reason:
-                    if (
-                        prediction_ledger is not None
-                        and (
-                            trade_success
-                            or _should_log_prediction_candidate(
-                                decision, policy=portfolio_policy
-                            )
+                    if prediction_ledger is not None and (
+                        trade_success
+                        or _should_log_prediction_candidate(
+                            decision, policy=portfolio_policy
                         )
                     ):
                         prediction_ledger_rows.append(
@@ -7548,7 +7581,9 @@ def run_inference_step(
                             "effective_threshold", ""
                         ),
                         "model_artifact_run_id": decision.get("model_artifact_run_id"),
-                        "policy_artifact_run_id": decision.get("policy_artifact_run_id"),
+                        "policy_artifact_run_id": decision.get(
+                            "policy_artifact_run_id"
+                        ),
                         "ridge_confidence": chain_results.get("ridge_confidence", ""),
                     }
                     features_log = {}
@@ -7790,15 +7825,12 @@ def run_inference_step(
                             execution_snapshot["adverse_hourly_close_gap_bps"] = float(
                                 adverse_gap_bps
                             )
-                            execution_snapshot[
-                                "adverse_hourly_close_gate_bps"
-                            ] = float(adverse_hourly_close_gate_bps)
-                            if (
-                                adverse_hourly_close_gate_enabled
-                                and (
-                                    not np.isfinite(adverse_gap_bps)
-                                    or adverse_gap_bps >= adverse_hourly_close_gate_bps
-                                )
+                            execution_snapshot["adverse_hourly_close_gate_bps"] = float(
+                                adverse_hourly_close_gate_bps
+                            )
+                            if adverse_hourly_close_gate_enabled and (
+                                not np.isfinite(adverse_gap_bps)
+                                or adverse_gap_bps >= adverse_hourly_close_gate_bps
                             ):
                                 reject_reason = "adverse_hourly_close_gap_too_large"
                                 if (
@@ -7890,13 +7922,15 @@ def run_inference_step(
                                     ev_adjusted.get("ev_adjusted_rank_score"), np.nan
                                 )
                                 if np.isfinite(ev_rank):
-                                    adjusted_rank = min(float(adjusted_rank), float(ev_rank))
+                                    adjusted_rank = min(
+                                        float(adjusted_rank), float(ev_rank)
+                                    )
                                     execution_snapshot["adjusted_rank_score"] = float(
                                         adjusted_rank
                                     )
-                                    chain_results["threshold_rank_score_after_friction_ev"] = (
-                                        float(adjusted_rank)
-                                    )
+                                    chain_results[
+                                        "threshold_rank_score_after_friction_ev"
+                                    ] = float(adjusted_rank)
                                     if adjusted_rank < threshold_for_size:
                                         side_metrics["non_fatal_issues"] += 1
                                         continue
@@ -7951,30 +7985,26 @@ def run_inference_step(
                                     book_snapshot.expected_total_entry_friction_bps,
                                     0.0,
                                 ) + float(adverse_gap_bps)
-                                ev_adjusted = (
-                                    _ev_adjusted_prediction_after_entry_friction(
-                                        calibrated_score=decision.get(
-                                            "calibrated_score"
-                                        ),
-                                        strategy_id=strategy_id,
-                                        side=side,
-                                        calibration=strategy_ev_calibration,
-                                        live_entry_friction_bps=live_entry_friction_bps,
-                                        observed_spread_bps=book_snapshot.spread_bps,
-                                        orderbook_slippage_bps=(
-                                            book_snapshot.expected_fill_slippage_bps
-                                        ),
-                                        adverse_signal_gap_bps=float(adverse_gap_bps),
-                                        spread_baseline_bps=(
-                                            portfolio_policy.ev_haircut_expected_spread_bps
-                                        ),
-                                        delay_slippage_baseline_bps=(
-                                            portfolio_policy.ev_haircut_delay_slippage_baseline_bps
-                                        ),
-                                        policy_rank_reference_store=(
-                                            policy_rank_reference_store
-                                        ),
-                                    )
+                                ev_adjusted = _ev_adjusted_prediction_after_entry_friction(
+                                    calibrated_score=decision.get("calibrated_score"),
+                                    strategy_id=strategy_id,
+                                    side=side,
+                                    calibration=strategy_ev_calibration,
+                                    live_entry_friction_bps=live_entry_friction_bps,
+                                    observed_spread_bps=book_snapshot.spread_bps,
+                                    orderbook_slippage_bps=(
+                                        book_snapshot.expected_fill_slippage_bps
+                                    ),
+                                    adverse_signal_gap_bps=float(adverse_gap_bps),
+                                    spread_baseline_bps=(
+                                        portfolio_policy.ev_haircut_expected_spread_bps
+                                    ),
+                                    delay_slippage_baseline_bps=(
+                                        portfolio_policy.ev_haircut_delay_slippage_baseline_bps
+                                    ),
+                                    policy_rank_reference_store=(
+                                        policy_rank_reference_store
+                                    ),
                                 )
                                 chain_results.update(ev_adjusted)
                                 execution_snapshot.update(ev_adjusted)
@@ -8435,7 +8465,9 @@ def run_inference_step(
                         )
                         side_metrics["non_fatal_issues"] += 1
                         continue
-                    sizing_context = chain_results.get("portfolio_rank_sizing", {}) or {}
+                    sizing_context = (
+                        chain_results.get("portfolio_rank_sizing", {}) or {}
+                    )
                     perp_sizing_context = {
                         key: sizing_context.get(key)
                         for key in (
@@ -8631,9 +8663,7 @@ def run_inference_step(
                             "expected_entry_price": execution_snapshot.get(
                                 "expected_entry_price"
                             )
-                            or execution_snapshot.get(
-                                "expected_fill_price"
-                            )
+                            or execution_snapshot.get("expected_fill_price")
                             or execution_price,
                             "expected_fill_slippage_bps": execution_snapshot.get(
                                 "expected_fill_slippage_bps"
@@ -8731,9 +8761,7 @@ def run_inference_step(
                             entry_delay_adverse_bps=trade_result.get(
                                 "entry_delay_adverse_bps"
                             ),
-                            entry_delay_abs_bps=trade_result.get(
-                                "entry_delay_abs_bps"
-                            ),
+                            entry_delay_abs_bps=trade_result.get("entry_delay_abs_bps"),
                             decision_to_entry_seconds=trade_result.get(
                                 "decision_to_entry_seconds"
                             ),
@@ -8778,13 +8806,10 @@ def run_inference_step(
                             status="failed",
                             error=trade_result.get("error", ""),
                         )
-                    if (
-                        prediction_ledger is not None
-                        and (
-                            trade_success
-                            or _should_log_prediction_candidate(
-                                decision, policy=portfolio_policy
-                            )
+                    if prediction_ledger is not None and (
+                        trade_success
+                        or _should_log_prediction_candidate(
+                            decision, policy=portfolio_policy
                         )
                     ):
                         prediction_ledger_rows.append(
@@ -8939,11 +8964,8 @@ def run_inference_step(
                 chain_results["global_auction_skip_stage"] = stage
                 chain_results["global_auction_skip_reason"] = reason
                 decision["chain_results"] = chain_results
-                if (
-                    prediction_ledger is not None
-                    and _should_log_prediction_candidate(
-                        decision, policy=portfolio_policy
-                    )
+                if prediction_ledger is not None and _should_log_prediction_candidate(
+                    decision, policy=portfolio_policy
                 ):
                     prediction_ledger_rows.append(
                         _prediction_ledger_row(
@@ -8964,15 +8986,12 @@ def run_inference_step(
                 if extra:
                     details.update(extra)
                 compact = " ".join(
-                    f"{k}={v}"
-                    for k, v in details.items()
-                    if v is not None and v != ""
+                    f"{k}={v}" for k, v in details.items() if v is not None and v != ""
                 )
                 tprint(
                     "Global auction skip: "
                     f"{symbol} {side}/{strategy_id} stage={stage} "
-                    f"reason={reason}"
-                    + (f" {compact}" if compact else "")
+                    f"reason={reason}" + (f" {compact}" if compact else "")
                 )
 
             symbol_block_reason = _symbol_entry_block_reason(
@@ -9056,7 +9075,8 @@ def run_inference_step(
                             "position_size_cap": info.get("position_size_cap"),
                             "n_positions_before": info.get("n_positions_before"),
                             "constraints": ",".join(
-                                str(x) for x in info.get("constraints_checked", []) or []
+                                str(x)
+                                for x in info.get("constraints_checked", []) or []
                             ),
                         },
                     )
@@ -9073,7 +9093,9 @@ def run_inference_step(
                 side_metrics["non_fatal_issues"] = (
                     int(side_metrics.get("non_fatal_issues", 0)) + 1
                 )
-                _log_global_auction_skip("sizing", "invalid_or_zero_size", extra={"computed_size": size})
+                _log_global_auction_skip(
+                    "sizing", "invalid_or_zero_size", extra={"computed_size": size}
+                )
                 _commit_global_side_metrics()
                 continue
             close = panel.get("close")
@@ -9108,11 +9130,8 @@ def run_inference_step(
             )
             execution_snapshot.update(timing_snapshot)
             if bool(timing_snapshot.get("stale_signal_age_gate_exceeded")):
-                if (
-                    prediction_ledger is not None
-                    and _should_log_prediction_candidate(
-                        decision, policy=portfolio_policy
-                    )
+                if prediction_ledger is not None and _should_log_prediction_candidate(
+                    decision, policy=portfolio_policy
                 ):
                     prediction_ledger_rows.append(
                         _prediction_ledger_row(
@@ -9311,12 +9330,9 @@ def run_inference_step(
                     execution_snapshot["adverse_hourly_close_gate_bps"] = float(
                         adverse_hourly_close_gate_bps
                     )
-                    if (
-                        adverse_hourly_close_gate_enabled
-                        and (
-                            not np.isfinite(adverse_gap_bps)
-                            or adverse_gap_bps >= adverse_hourly_close_gate_bps
-                        )
+                    if adverse_hourly_close_gate_enabled and (
+                        not np.isfinite(adverse_gap_bps)
+                        or adverse_gap_bps >= adverse_hourly_close_gate_bps
                     ):
                         if (
                             prediction_ledger is not None
@@ -9479,7 +9495,9 @@ def run_inference_step(
                             )
                             _log_global_auction_skip(
                                 "orderbook_precheck",
-                                str(book_snapshot.reject_reason or "orderbook_rejected"),
+                                str(
+                                    book_snapshot.reject_reason or "orderbook_rejected"
+                                ),
                                 extra={
                                     "capacity_quote": book_snapshot.orderbook_capacity_quote_within_slippage,
                                     "capacity_weight": book_snapshot.liquidity_capacity_weight,
@@ -9585,20 +9603,22 @@ def run_inference_step(
                                 perp_rank = (
                                     _perp_rank_context(
                                         data_root=str(
-                                        runtime_config.get("data_root", "data")
-                                    ),
-                                    run_id=str(runtime_config.get("run_id", "latest")),
-                                    side=side,
-                                    strategy_id=strategy_id,
-                                    score=float(
-                                        chain_results.get("meta_pred")
-                                        or decision.get("calibrated_score")
-                                        or adjusted_rank
-                                    ),
+                                            runtime_config.get("data_root", "data")
+                                        ),
+                                        run_id=str(
+                                            runtime_config.get("run_id", "latest")
+                                        ),
+                                        side=side,
+                                        strategy_id=strategy_id,
+                                        score=float(
+                                            chain_results.get("meta_pred")
+                                            or decision.get("calibrated_score")
+                                            or adjusted_rank
+                                        ),
+                                    )
+                                    if _is_perps_config(runtime_config)
+                                    else {}
                                 )
-                                if _is_perps_config(runtime_config)
-                                else {}
-                            )
                             sizing_audit = compute_rank_based_position_size(
                                 wallet_value=float(capacity["wallet_value"]),
                                 open_notional=float(capacity["open_notional"]),
@@ -9673,11 +9693,16 @@ def run_inference_step(
                                     ),
                                     extra={
                                         "requested_position_size": size,
-                                        "position_size_cap": info.get("position_size_cap"),
-                                        "n_positions_before": info.get("n_positions_before"),
+                                        "position_size_cap": info.get(
+                                            "position_size_cap"
+                                        ),
+                                        "n_positions_before": info.get(
+                                            "n_positions_before"
+                                        ),
                                         "constraints": ",".join(
                                             str(x)
-                                            for x in info.get("constraints_checked", []) or []
+                                            for x in info.get("constraints_checked", [])
+                                            or []
                                         ),
                                     },
                                 )
@@ -9779,9 +9804,7 @@ def run_inference_step(
                         policy_reference_price
                     )
                     execution_snapshot["policy_entry_price"] = policy_reference_price
-                    execution_snapshot["policy_entry_price_source"] = (
-                        "signal_bar_close"
-                    )
+                    execution_snapshot["policy_entry_price_source"] = "signal_bar_close"
                 execution_kwargs = {
                     "execution_snapshot": execution_snapshot,
                     "signal_price": policy_reference_price,
@@ -9868,9 +9891,7 @@ def run_inference_step(
                     "estimated_ev_net_return": chain_results.get(
                         "estimated_ev_net_return"
                     ),
-                    "estimated_ev_cost_bps": chain_results.get(
-                        "estimated_ev_cost_bps"
-                    ),
+                    "estimated_ev_cost_bps": chain_results.get("estimated_ev_cost_bps"),
                     "estimated_ev_hit_rate": chain_results.get("estimated_ev_hit_rate"),
                     "estimated_ev_source": chain_results.get("estimated_ev_source"),
                     "estimated_ev_calibration_n": chain_results.get(
@@ -10062,16 +10083,12 @@ def run_inference_step(
                         "entry_price_delta_vs_ohlcv_pct"
                     ),
                     entry_delay_effect_bps=trade_result.get("entry_delay_effect_bps"),
-                    entry_delay_adverse_bps=trade_result.get(
-                        "entry_delay_adverse_bps"
-                    ),
+                    entry_delay_adverse_bps=trade_result.get("entry_delay_adverse_bps"),
                     entry_delay_abs_bps=trade_result.get("entry_delay_abs_bps"),
                     decision_to_entry_seconds=trade_result.get(
                         "decision_to_entry_seconds"
                     ),
-                    signal_to_entry_seconds=trade_result.get(
-                        "signal_to_entry_seconds"
-                    ),
+                    signal_to_entry_seconds=trade_result.get("signal_to_entry_seconds"),
                     expected_friction_drag_bps=trade_result.get(
                         "expected_friction_drag_bps"
                     ),
@@ -10102,12 +10119,9 @@ def run_inference_step(
                     status="failed",
                     error=trade_result.get("error", ""),
                 )
-            if (
-                prediction_ledger is not None
-                and (
-                    trade_success
-                    or _should_log_prediction_candidate(decision, policy=portfolio_policy)
-                )
+            if prediction_ledger is not None and (
+                trade_success
+                or _should_log_prediction_candidate(decision, policy=portfolio_policy)
             ):
                 prediction_ledger_rows.append(
                     _prediction_ledger_row(
@@ -10988,7 +11002,6 @@ def _emit_inference_heartbeat(
 
 
 def main():
-    import argparse
 
     _load_local_env_if_present()
     _configure_numba_threading_layer()
@@ -11499,7 +11512,9 @@ def main():
         live_data_root=str(config["live_data_root"]),
         ledger_path=prediction_ledger.path,
         lookback_days=int(config.get("dynamic_strategy_performance_lookback_days", 21)),
-        top_fraction=float(config.get("dynamic_strategy_performance_top_fraction", 0.40)),
+        top_fraction=float(
+            config.get("dynamic_strategy_performance_top_fraction", 0.40)
+        ),
         min_resolved=int(config.get("dynamic_strategy_performance_min_resolved", 20)),
     )
     market_kill_switch = MarketKillSwitch(
@@ -11977,8 +11992,9 @@ def main():
 
             if bool(config.get("hourly_fetch_model_universe_only", True)):
                 panel_symbols = sorted(
-                    set(feature_context_symbols or symbols or download_symbols)
-                    .union(symbols)
+                    set(feature_context_symbols or symbols or download_symbols).union(
+                        symbols
+                    )
                 )
             else:
                 panel_symbols = list(download_symbols)
@@ -12383,11 +12399,26 @@ def _evaluate_oco_policy(
                     position_state.update(refreshed)
                     stop_price = float(position_state.get("stop_price", stop_price))
 
-        for bar_ts, row in bars.iterrows():
-            bar_open = float(row["open"])
-            bar_high = float(row["high"])
-            bar_low = float(row["low"])
-            bar_close = float(row["close"])
+        # Convert to numpy arrays for much faster iteration
+        bar_tss = bars.index.to_numpy()
+        bar_opens = bars.get(
+            "open", pd.Series(float("nan"), index=bars.index)
+        ).to_numpy()
+        bar_highs = bars.get(
+            "high", pd.Series(float("nan"), index=bars.index)
+        ).to_numpy()
+        bar_lows = bars.get("low", pd.Series(float("nan"), index=bars.index)).to_numpy()
+        bar_closes = bars.get(
+            "close", pd.Series(float("nan"), index=bars.index)
+        ).to_numpy()
+
+        for bar_ts, bar_open, bar_high, bar_low, bar_close in zip(
+            bar_tss, bar_opens, bar_highs, bar_lows, bar_closes
+        ):
+            bar_open = float(bar_open)
+            bar_high = float(bar_high)
+            bar_low = float(bar_low)
+            bar_close = float(bar_close)
             price_dev_pct = (
                 (bar_close - entry_price) / max(abs(entry_price), 1e-12)
                 if side == "long"

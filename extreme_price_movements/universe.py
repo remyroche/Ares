@@ -36,6 +36,12 @@ HARDCODED_EXCLUDED_SYMBOLS = frozenset(
         "MANTRA/USDC",
     }
 )
+DEFAULT_SPREAD_COST_BLACKLIST_BASELINE_PATH = (
+    "data_perp/exchanges/krakenfutures/spread_model/"
+    "per_asset_spread_baseline_latest.csv"
+)
+DEFAULT_SPREAD_COST_BLACKLIST_THRESHOLD_BPS = 125.0
+_SPREAD_COST_EXCLUSION_CACHE: dict[tuple[str, float, float], set[str]] = {}
 DEDUP_QUOTES = ("USD", "USDC", "USDT")
 DEDUP_QUOTE_PRIORITY = {quote: rank for rank, quote in enumerate(DEDUP_QUOTES)}
 SUPPORTED_TRAINING_QUOTES = frozenset(DEDUP_QUOTES)
@@ -166,6 +172,99 @@ def _is_valid_spot_symbol_format(symbol: str) -> bool:
     return bool(re.fullmatch(r"[A-Z0-9]+/[A-Z0-9]+(:[A-Z0-9]+)?", norm or ""))
 
 
+def _spread_cost_blacklist_threshold_bps() -> float:
+    raw = os.environ.get(
+        "EPM_SPREAD_BLACKLIST_THRESHOLD_BPS",
+        str(DEFAULT_SPREAD_COST_BLACKLIST_THRESHOLD_BPS),
+    )
+    try:
+        value = float(raw)
+    except Exception:
+        value = DEFAULT_SPREAD_COST_BLACKLIST_THRESHOLD_BPS
+    return value if value > 0.0 else 0.0
+
+
+def _spread_cost_blacklist_path() -> str:
+    return str(
+        os.environ.get(
+            "EPM_SPREAD_BLACKLIST_BASELINE_PATH",
+            DEFAULT_SPREAD_COST_BLACKLIST_BASELINE_PATH,
+        )
+    ).strip()
+
+
+def load_spread_cost_excluded_symbols(
+    *,
+    path: str | None = None,
+    threshold_bps: float | None = None,
+) -> set[str]:
+    """Load Kraken perp symbols whose average spread exceeds the configured cap."""
+    disabled = str(os.environ.get("EPM_DISABLE_SPREAD_BLACKLIST", "")).strip().lower()
+    if disabled in {"1", "true", "yes", "y", "on"}:
+        return set()
+    threshold = (
+        float(threshold_bps)
+        if threshold_bps is not None
+        else _spread_cost_blacklist_threshold_bps()
+    )
+    if threshold <= 0.0:
+        return set()
+    raw_path = str(path or _spread_cost_blacklist_path()).strip()
+    if not raw_path:
+        return set()
+    try:
+        mtime = os.path.getmtime(raw_path)
+    except OSError:
+        return set()
+    cache_key = (os.path.abspath(raw_path), float(threshold), float(mtime))
+    cached = _SPREAD_COST_EXCLUSION_CACHE.get(cache_key)
+    if cached is not None:
+        return set(cached)
+    try:
+        frame = pd.read_csv(raw_path)
+    except Exception as exc:
+        tprint(f"Warning: failed to load spread-cost blacklist baseline {raw_path}: {exc}")
+        return set()
+    if "symbol" not in frame.columns:
+        return set()
+    value_col = None
+    for candidate in ("average_spread_bps", "baseline_spread_bps", "spread_bps"):
+        if candidate in frame.columns:
+            value_col = candidate
+            break
+    if value_col is None:
+        return set()
+    values = pd.to_numeric(frame[value_col], errors="coerce")
+    symbols = frame["symbol"].astype(str).map(_normalize_symbol)
+    excluded = {
+        str(symbol)
+        for symbol, value in zip(symbols, values)
+        if symbol and pd.notna(value) and float(value) > threshold
+    }
+    _SPREAD_COST_EXCLUSION_CACHE.clear()
+    _SPREAD_COST_EXCLUSION_CACHE[cache_key] = set(excluded)
+    return excluded
+
+
+def apply_spread_cost_universe_exclusions(symbols: list[str]) -> list[str]:
+    excluded = load_spread_cost_excluded_symbols()
+    cleaned: list[str] = []
+    removed: list[str] = []
+    for sym in symbols:
+        norm = _normalize_symbol(sym)
+        if norm in excluded:
+            removed.append(norm)
+            continue
+        cleaned.append(norm)
+    if removed:
+        tprint(
+            "Spread-cost universe exclusions removed "
+            f"{len(set(removed))} symbols above "
+            f"{_spread_cost_blacklist_threshold_bps():.2f} bps average spread."
+        )
+    return sorted(set(cleaned))
+
+
 def deduplicate_symbols_by_base(symbols: list[str]) -> list[str]:
     """Return at most one symbol per base asset for preferred spot quote variants."""
     original_count = len(symbols)
@@ -231,7 +330,7 @@ def apply_hardcoded_universe_exclusions(symbols: list[str]) -> list[str]:
             f"Unsupported quote filtering removed {unsupported} symbols "
             f"(allowed quotes: {sorted(SUPPORTED_TRAINING_QUOTES)})"
         )
-    return sorted(set(cleaned))
+    return apply_spread_cost_universe_exclusions(cleaned)
 
 
 def fetch_binance_cross_margin_pairs():

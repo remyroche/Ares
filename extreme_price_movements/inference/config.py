@@ -31,6 +31,7 @@ from extreme_price_movements.offline_optimisers.params_store import (
     apply_offline_optimizer_best_params,
     market_report_path,
 )
+from extreme_price_movements.universe import apply_spread_cost_universe_exclusions
 from extreme_price_movements.utils import tprint
 
 
@@ -107,6 +108,8 @@ def load_inference_config(
     data_root: Optional[str] = None,
     run_id: Optional[str] = None,
     market_mode: Optional[str] = None,
+    model_artifact_run_id: Optional[str] = None,
+    policy_artifact_run_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Load complete inference configuration.
 
@@ -139,6 +142,19 @@ def load_inference_config(
             raise ValueError("No run ID found and none provided")
 
     tprint(f"Loading inference config for run_id: {run_id}")
+    policy_run_id = str(policy_artifact_run_id or os.environ.get("EPM_POLICY_ARTIFACT_RUN_ID") or run_id)
+    model_run_id = str(model_artifact_run_id or os.environ.get("EPM_MODEL_ARTIFACT_RUN_ID") or "")
+    final_fit_manifest_path = (
+        Path(data_root) / "artifacts" / policy_run_id / "final_model_fit_manifest.json"
+    )
+    if not model_run_id and final_fit_manifest_path.exists():
+        try:
+            final_fit_manifest = json.loads(final_fit_manifest_path.read_text())
+            model_run_id = str(final_fit_manifest.get("model_artifact_run_id") or "")
+        except Exception:
+            model_run_id = ""
+    if not model_run_id:
+        model_run_id = str(run_id)
 
     # Load thresholds from runtime_cfg (populated by offline optimizer)
     runtime_cfg = _resolve_runtime_cfg(market_mode_norm)
@@ -153,13 +169,15 @@ def load_inference_config(
     tprint(f"Using TBM params: {tbm_params}")
 
     # Load model bundle
-    model_bundle = load_model_bundle(run_id, data_root)
+    model_bundle = load_model_bundle(model_run_id, data_root)
 
     # Load full state
-    full_state = load_full_state(run_id, data_root)
+    full_state = load_full_state(model_run_id, data_root)
 
     config = {
         "run_id": run_id,
+        "model_artifact_run_id": model_run_id,
+        "policy_artifact_run_id": policy_run_id,
         "thresholds": thresholds,
         "tbm_params": tbm_params,
         "runtime_cfg": runtime_cfg,
@@ -172,7 +190,10 @@ def load_inference_config(
         "live_quote_currency": DEFAULT_LIVE_QUOTE_CURRENCY,
     }
 
-    tprint(f"Inference config loaded successfully for run {run_id}")
+    tprint(
+        "Inference config loaded successfully: "
+        f"policy_run={policy_run_id} model_run={model_run_id}"
+    )
     return config
 
 
@@ -849,6 +870,15 @@ def resolve_inference_universes(
         live_symbols = get_margin_universe(
             exchange, force_refresh=True, quote_currency=live_quote_currency
         )
+    if mode == "perps":
+        before_spread_filter = len(live_symbols)
+        live_symbols = apply_spread_cost_universe_exclusions(live_symbols)
+        removed_spread = before_spread_filter - len(live_symbols)
+        if removed_spread > 0:
+            tprint(
+                "Perp inference spread-cost blacklist removed "
+                f"{removed_spread} live symbols before tradable-universe gating."
+            )
     trained_symbols = load_trained_symbol_universe(
         data_root, run_id, accepted_strategy_ids=accepted_strategy_ids
     )

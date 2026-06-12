@@ -3,6 +3,7 @@ import json
 import numpy as np
 import pandas as pd
 
+from extreme_price_movements import universe as universe_mod
 from extreme_price_movements.inference import config as inference_config
 from extreme_price_movements.inference.data_fetcher import DataFetcher
 
@@ -147,6 +148,59 @@ def test_resolve_inference_universes_maps_explicit_usdt_symbols_to_usdc(
 
     assert out["download_symbols"] == ["BTC/USDC", "SOL/USDC"]
     assert out["tradable_symbols"] == ["BTC/USDC"]
+
+
+def test_resolve_inference_universes_applies_spread_blacklist_for_perps(
+    tmp_path, monkeypatch
+):
+    data_root = tmp_path / "data"
+    feature_dir = data_root / "artifacts" / "run1" / "features"
+    feature_dir.mkdir(parents=True)
+    (feature_dir / "feature_health_symbol_summary.csv").write_text(
+        "symbol,rows\nBTC/USD:USD,100\nBAD/USD:USD,100\n"
+    )
+    baseline_path = tmp_path / "per_asset_spread_baseline_latest.csv"
+    baseline_path.write_text(
+        "symbol,rows,average_spread_bps,median_spread_bps,p75_spread_bps,average_spread_ticks\n"
+        "BTC/USD:USD,10,10.0,9.0,12.0,1.0\n"
+        "BAD/USD:USD,10,126.0,120.0,130.0,2.0\n",
+        encoding="utf-8",
+    )
+
+    class _Exchange:
+        def load_markets(self):
+            return {
+                "BTC/USD:USD": {
+                    "base": "BTC",
+                    "quote": "USD",
+                    "settle": "USD",
+                    "active": True,
+                    "swap": True,
+                },
+                "BAD/USD:USD": {
+                    "base": "BAD",
+                    "quote": "USD",
+                    "settle": "USD",
+                    "active": True,
+                    "swap": True,
+                },
+            }
+
+    monkeypatch.setenv("EPM_SPREAD_BLACKLIST_BASELINE_PATH", str(baseline_path))
+    monkeypatch.setenv("EPM_SPREAD_BLACKLIST_THRESHOLD_BPS", "125")
+    monkeypatch.delenv("EPM_DISABLE_SPREAD_BLACKLIST", raising=False)
+    universe_mod._SPREAD_COST_EXCLUSION_CACHE.clear()
+
+    out = inference_config.resolve_inference_universes(
+        _Exchange(),
+        data_root=str(data_root),
+        run_id="run1",
+        market_mode="perps",
+        live_quote_currency="USD",
+    )
+
+    assert out["download_symbols"] == ["BTC/USD:USD"]
+    assert out["tradable_symbols"] == ["BTC/USD:USD"]
 
 
 def test_resolve_inference_universes_expands_tradable_with_cross_strategy_oos_symbols(

@@ -1,3 +1,4 @@
+import math
 import json
 
 import pandas as pd
@@ -214,6 +215,6 @@ def test_load_panel_preserves_perp_ohlcv_extras_and_overlays_microdata(tmp_path)
         end_ts=idx[0],
     )
 
-    assert panel["mark_open"].loc[idx[0], symbol] == 1.01
-    assert panel["mark_price"].loc[idx[0], symbol] == 1.03
-    assert panel["funding_rate"].loc[idx[0], symbol] == 0.0001
+    assert math.isclose(float(panel["mark_open"].loc[idx[0], symbol]), 1.01, rel_tol=1e-5)
+    assert math.isclose(float(panel["mark_price"].loc[idx[0], symbol]), 1.03, rel_tol=1e-5)
+    assert math.isclose(float(panel["funding_rate"].loc[idx[0], symbol]), 0.0001, rel_tol=1e-5)

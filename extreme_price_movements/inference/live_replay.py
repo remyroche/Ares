@@ -404,20 +404,50 @@ def _join_oos(
     needs = out.get("oos_expected_net_bps", pd.Series(np.nan, index=out.index)).isna()
     if not needs.any() or "timestamp" not in oos.columns:
         return out
+    # ⚡ Bolt Optimization: Replaced O(N*M) iterrows loop with vectorized pd.merge_asof.
+    # We do a nearest-time match grouped by symbol/side/strategy_id.
     # Asof fallback against OOS timestamp, grouped by symbol/side/strategy_id.
     group_cols = [c for c in ["symbol", "side", "strategy_id"] if c in out.columns and c in oos.columns]
-    for idx, row in out.loc[needs].iterrows():
-        cand = oos.copy()
-        for col in group_cols:
-            cand = cand[cand[col].astype(str) == str(row[col])]
-        if cand.empty or "timestamp" not in cand.columns:
-            continue
-        deltas = (cand["timestamp"] - row["signal_bar_ts"]).abs()
-        best_idx = deltas.idxmin()
-        if pd.notna(deltas.loc[best_idx]) and deltas.loc[best_idx] <= oos_join_tolerance:
-            for col in ("oos_expected_net_bps", "oos_expected_net_for_same_policy", "oos_selected"):
-                if col in cand.columns:
-                    out.at[idx, col] = cand.loc[best_idx, col]
+
+    if "signal_bar_ts" in out.columns:
+        left_df = out.loc[needs].copy()
+        left_df = left_df[left_df["signal_bar_ts"].notna()]
+
+        if not left_df.empty and group_cols:
+            left_df["_orig_idx"] = left_df.index
+            left_df = left_df.sort_values("signal_bar_ts")
+
+            right_df = oos.copy()
+            right_df = right_df[right_df["timestamp"].notna()]
+            right_df = right_df.sort_values("timestamp")
+
+            if not right_df.empty:
+                for col in group_cols:
+                    left_df[col] = left_df[col].astype(str)
+                    right_df[col] = right_df[col].astype(str)
+
+                target_cols = [c for c in ("oos_expected_net_bps", "oos_expected_net_for_same_policy", "oos_selected") if c in right_df.columns]
+
+                left_df = left_df.drop(columns=[c for c in target_cols if c in left_df.columns])
+                right_subset = right_df[["timestamp"] + group_cols + target_cols].copy()
+
+                matched = pd.merge_asof(
+                    left_df,
+                    right_subset,
+                    left_on="signal_bar_ts",
+                    right_on="timestamp",
+                    by=group_cols,
+                    direction="nearest",
+                    tolerance=oos_join_tolerance,
+                )
+
+                matched = matched.set_index("_orig_idx")
+
+                for col in target_cols:
+                    if col in matched.columns:
+                        update_s = matched[col].dropna()
+                        if not update_s.empty:
+                            out.loc[update_s.index, col] = update_s
     return out
 
 

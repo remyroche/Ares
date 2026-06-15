@@ -1,2 +1,0 @@
-window,group,n_trades,trades_per_day,gross_hit_rate,net_hit_rate,mean_gross_bps,median_gross_bps,mean_net_bps,median_net_bps,stop_loss_rate,capital_protect_rate,trailing_rate,adverse_exit_rate,delayed_1m_entry_coverage
-june_to_now,baseline_trained,59.0,33.714285714285715,0.3050847457627119,0.3050847457627119,17.71369520071657,-2.0432891324162483,2.7816989695874312,-16.244135331362486,0.2542372881355932,0.0,0.3050847457627119,0.0,1.0

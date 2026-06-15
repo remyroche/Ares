@@ -1,7 +1,0 @@
-{
-  "folds": [],
-  "accepted": true,
-  "selection_reason": "fixed_policy_config_no_optimisation",
-  "fixed_policy_config_path": "extreme_price_movements/reports/inference_mismatch_investigation/simple_policy_optimiser_trained_universe_full/policy_params/portfolio_policy_config.json",
-  "candidate_rows": 27485
-}

@@ -115,6 +115,7 @@ def _fail_if_log_failed(step_name: str) -> None:
         text = text[-250_000:]
     markers = (
         "PIPELINE FAILED",
+        "ERROR: Features not found. Run feature_generation first.",
         "ERROR: No alpha label datasets found",
         "ERROR: Base models intermediate not found",
         "Traceback (most recent call last):",
@@ -355,7 +356,7 @@ def _base_env(run_id: str, *, label_hpo: bool) -> dict[str, str]:
 
 
 def _pipeline_cmd(stage: str, run_id: str) -> list[str]:
-    return [
+    cmd = [
         sys.executable,
         "-u",
         "extreme_price_movements/run_pipeline.py",
@@ -365,9 +366,14 @@ def _pipeline_cmd(stage: str, run_id: str) -> list[str]:
         "krakenfutures",
         "--model-backend",
         "lgbm_pipeline",
+    ]
+    if str(stage) == "labels":
+        cmd.extend(["--ts", FEATURE_SOURCE_RUN_ID])
+    cmd.extend([
         "--run-id",
         run_id,
-    ]
+    ])
+    return cmd
 
 
 def _policy_cmd(run_id: str) -> list[str]:
@@ -516,7 +522,16 @@ def _materialize_label_manifest(run_id: str, env: dict[str, str]) -> Path:
             "Historical four-strategy label parquets unavailable; generating fresh "
             f"labels for {run_id} from feature_source_run_id={FEATURE_SOURCE_RUN_ID}."
         )
-        _run_step(f"{run_id}_labels", _pipeline_cmd("labels", run_id), env)
+        label_env = dict(env)
+        label_env.update(
+            {
+                "EPM_ARTIFACT_SOURCE_RUN_ID": run_id,
+                "EPM_LABEL_SOURCE_RUN_ID": run_id,
+                "EPM_LABEL_ARTIFACT_RUN_ID": run_id,
+                "EPM_FEATURE_SOURCE_RUN_ID": FEATURE_SOURCE_RUN_ID,
+            }
+        )
+        _run_step(f"{run_id}_labels", _pipeline_cmd("labels", run_id), label_env)
         out = DATA_ROOT / "artifacts" / run_id / "labels" / "labels_manifest.json"
         _require_file(out, "generated labels manifest")
         if not _destination_label_manifest_ready(run_id):

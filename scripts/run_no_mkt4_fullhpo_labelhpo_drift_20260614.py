@@ -831,10 +831,15 @@ def _write_comparison(run_ids: dict[str, str]) -> Path:
 
 def main() -> int:
     _append("No-mkt4 full-HPO label/drift matrix starting")
+    run_baseline_variant = os.environ.get(
+        "EPM_NO_MKT4_RUN_BASELINE_LABEL_VARIANT",
+        "1",
+    ).strip().lower() not in {"0", "false", "no", "n", "off"}
     run_ids = {
         "new_labelhpo": f"{MATRIX_ID}_labelhpo",
-        "new_baseline_labels": f"{MATRIX_ID}_baseline_labels",
     }
+    if run_baseline_variant:
+        run_ids["new_baseline_labels"] = f"{MATRIX_ID}_baseline_labels"
     manifest = {
         "matrix_id": MATRIX_ID,
         "old_run_id": OLD_RUN_ID,
@@ -851,7 +856,14 @@ def main() -> int:
     )
     _append(f"Matrix manifest: {manifest_dir / 'matrix_manifest.json'}")
     _run_variant(run_ids["new_labelhpo"], label_hpo=True)
-    _run_variant(run_ids["new_baseline_labels"], label_hpo=False)
+    if run_baseline_variant:
+        _run_variant(run_ids["new_baseline_labels"], label_hpo=False)
+    else:
+        _append(
+            "Baseline-label variant skipped by "
+            "EPM_NO_MKT4_RUN_BASELINE_LABEL_VARIANT=0; the label-HPO variant "
+            "still elects baseline labels/weights per head when baseline wins."
+        )
     comparison = _write_comparison(run_ids)
     _append(f"No-mkt4 full-HPO label/drift matrix complete: {comparison}")
     return 0

@@ -20,10 +20,10 @@ import numpy as np
 import pandas as pd
 
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
-from extreme_price_movements.run_ridge_sizer import (
-    load_base_oof_predictions,
-    load_meta_oof_predictions,
-    load_trade_outcomes,
+from extreme_price_movements.mr_tf_masks import (
+    mr_tf_route_from_path,
+    overlay_mr_tf_route_predictions,
+    strip_mr_tf_route_suffix,
 )
 from extreme_price_movements.simple_offset_generator import (
     build_policy_path_state_bundle,
@@ -41,6 +41,446 @@ POLICY_OPTIMISER_ASSESSMENT_FRAC = 0.05
 POLICY_OPTIMISER_DIAGNOSTIC_FRAC = 0.01
 POLICY_OPTIMISER_OFFSET_LIMITER_ENABLED = False
 logger = logging.getLogger(__name__)
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() not in {"0", "false", "no", "off", ""}
+
+
+def _future_path_columns_present(outcomes: pd.DataFrame) -> bool:
+    required = ("future_opens", "future_highs", "future_lows", "future_closes")
+    return all(col in outcomes.columns for col in required)
+
+
+def _future_path_coverage(outcomes: pd.DataFrame, idx: np.ndarray) -> Dict[str, Any]:
+    if len(idx) == 0 or not _future_path_columns_present(outcomes):
+        return {
+            "rows": int(len(idx)),
+            "covered_rows": 0,
+            "coverage": 0.0,
+            "median_bars": 0.0,
+            "max_bars": 0,
+        }
+    raw = outcomes["future_opens"].values[np.asarray(idx, dtype=np.int64)]
+    lengths = np.asarray(
+        [
+            0
+            if arr is None
+            else int(np.asarray(arr, dtype=np.float32).reshape(-1).size)
+            for arr in raw
+        ],
+        dtype=np.int32,
+    )
+    covered = lengths > 0
+    return {
+        "rows": int(len(lengths)),
+        "covered_rows": int(np.sum(covered)),
+        "coverage": float(np.mean(covered)) if len(lengths) else 0.0,
+        "median_bars": float(np.nanmedian(lengths[covered])) if np.any(covered) else 0.0,
+        "max_bars": int(np.max(lengths)) if len(lengths) else 0,
+    }
+
+
+def _default_policy_path_max_bars(outcomes: pd.DataFrame) -> int:
+    env_val = os.environ.get("EPM_POLICY_FUTURE_PATH_MAX_BARS")
+    if env_val:
+        try:
+            return max(2, int(float(env_val)))
+        except Exception:
+            pass
+    if "label_policy_max_hold_bars" in outcomes.columns:
+        vals = pd.to_numeric(outcomes["label_policy_max_hold_bars"], errors="coerce")
+        finite = np.asarray(vals, dtype=np.float64)
+        finite = finite[np.isfinite(finite) & (finite > 1.0)]
+        if finite.size:
+            return max(2, int(np.nanmedian(finite)))
+    return 40  # H10 policy horizon at 15m bars.
+
+
+def _enrich_future_paths_from_15m_cache(
+    outcomes: pd.DataFrame,
+    *,
+    selected_idx: np.ndarray,
+    max_bars: Optional[int] = None,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """Attach selected-row 15m OHLC paths without changing policy barriers.
+
+    The optimiser needs barwise paths for TP/SL, trailing, hard-TP and ATR-power
+    geometry.  OOF files often carry timestamp/symbol/barrier context but not
+    future OHLC arrays, so this fills only the future path arrays from the local
+    15m cache.  It does not recompute ``barrier_pct`` or label geometry.
+    """
+
+    idx = np.asarray(selected_idx, dtype=np.int64)
+    idx = idx[(idx >= 0) & (idx < len(outcomes))]
+    max_bars_int = max(2, int(max_bars or _default_policy_path_max_bars(outcomes)))
+    before = _future_path_coverage(outcomes, idx)
+    if before["coverage"] >= 1.0 and before["max_bars"] > 0:
+        before["source"] = "oof_future_paths"
+        before["max_requested_bars"] = int(max_bars_int)
+        return outcomes, before
+
+    if len(idx) == 0 or not {"timestamp", "symbol"}.issubset(outcomes.columns):
+        stats = dict(before)
+        stats["source"] = "missing_timestamp_or_symbol"
+        stats["max_requested_bars"] = int(max_bars_int)
+        return outcomes, stats
+
+    try:
+        from extreme_price_movements.hf_data_loader import _load_existing_data
+    except Exception as exc:
+        stats = dict(before)
+        stats["source"] = f"hf_loader_unavailable:{exc}"
+        stats["max_requested_bars"] = int(max_bars_int)
+        return outcomes, stats
+
+    out = outcomes.copy()
+    required = ("future_opens", "future_highs", "future_lows", "future_closes")
+    for col in required:
+        if col not in out.columns:
+            out[col] = pd.Series([None] * len(out), dtype=object)
+    if "entry_price" not in out.columns:
+        out["entry_price"] = np.nan
+    col_pos = {str(col): int(i) for i, col in enumerate(out.columns)}
+
+    ts_all = pd.to_datetime(out["timestamp"], utc=True, errors="coerce")
+    sym_all = out["symbol"].astype(str)
+    loaded_symbols = 0
+    missing_symbols = 0
+    filled_rows = 0
+
+    for symbol, local_pos in pd.Series(idx).groupby(sym_all.iloc[idx].values):
+        pos = np.asarray(local_pos.values, dtype=np.int64)
+        if len(pos) == 0:
+            continue
+        bars = _load_existing_data(str(symbol), allow_quote_fallback=True)
+        if bars is None or bars.empty:
+            missing_symbols += 1
+            continue
+        needed_cols = {"open", "high", "low", "close"}
+        if not needed_cols.issubset(set(bars.columns)):
+            missing_symbols += 1
+            continue
+        bars = bars.sort_index()
+        bar_idx = pd.DatetimeIndex(pd.to_datetime(bars.index, utc=True, errors="coerce"))
+        bar_idx_ns = bar_idx.asi8
+        opens = np.asarray(bars["open"].values, dtype=np.float32)
+        highs = np.asarray(bars["high"].values, dtype=np.float32)
+        lows = np.asarray(bars["low"].values, dtype=np.float32)
+        closes = np.asarray(bars["close"].values, dtype=np.float32)
+        if len(bar_idx_ns) == 0:
+            missing_symbols += 1
+            continue
+        loaded_symbols += 1
+
+        ts_ns = pd.DatetimeIndex(ts_all.iloc[pos]).asi8
+        starts = np.searchsorted(bar_idx_ns, ts_ns, side="left")
+        for row_pos, start in zip(pos, starts):
+            if start < 0 or start >= len(opens):
+                continue
+            end = min(int(start) + max_bars_int, len(opens))
+            if end <= start:
+                continue
+            sl = slice(int(start), int(end))
+            row_i = int(row_pos)
+            out.iat[row_i, col_pos["future_opens"]] = opens[sl].astype(
+                np.float32, copy=True
+            )
+            out.iat[row_i, col_pos["future_highs"]] = highs[sl].astype(
+                np.float32, copy=True
+            )
+            out.iat[row_i, col_pos["future_lows"]] = lows[sl].astype(
+                np.float32, copy=True
+            )
+            out.iat[row_i, col_pos["future_closes"]] = closes[sl].astype(
+                np.float32, copy=True
+            )
+            entry_raw = pd.to_numeric(
+                pd.Series([out["entry_price"].iloc[row_i]]), errors="coerce"
+            ).iloc[0]
+            if not np.isfinite(entry_raw):
+                out.iat[row_i, col_pos["entry_price"]] = float(opens[int(start)])
+            filled_rows += 1
+
+    after = _future_path_coverage(out, idx)
+    after.update(
+        {
+            "source": "local_15m_cache",
+            "max_requested_bars": int(max_bars_int),
+            "loaded_symbols": int(loaded_symbols),
+            "missing_symbols": int(missing_symbols),
+            "filled_rows": int(filled_rows),
+            "coverage_before": float(before.get("coverage", 0.0)),
+        }
+    )
+    return out, after
+
+
+def load_trade_outcomes(
+    data_root: str,
+    run_id: str,
+    oof_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Construct policy-optimiser outcomes from OOF/context rows.
+
+    This is intentionally local to the policy stage. It preserves canonical OOF
+    fields such as raw ``barrier_pct`` and optional future path arrays, and does
+    not rebuild ridge-sizer-specific 15m ATR/path state.
+    """
+
+    if "return" not in oof_df.columns:
+        outcomes_path = Path(data_root) / "artifacts" / run_id / "trade_outcomes.parquet"
+        if outcomes_path.exists():
+            outcomes = pd.read_parquet(outcomes_path)
+            tprint(f"Loaded trade outcomes from {outcomes_path}: {len(outcomes)} trades")
+            return outcomes
+        raise FileNotFoundError(
+            f"No 'return' column in OOF and no trade_outcomes.parquet found for {run_id}"
+        )
+
+    raw_returns = np.asarray(oof_df["return"].values, dtype=np.float32)
+    if np.abs(np.nanmean(raw_returns)) > 0.05:
+        tprint(
+            "  WARNING: Returns appear to be in percentage points "
+            f"(mean={np.nanmean(raw_returns):.6f}). Converting to decimal."
+        )
+        raw_returns = raw_returns / 100.0
+
+    outcomes = pd.DataFrame({"return": raw_returns})
+    outcomes["is_long"] = oof_df["is_long"].values if "is_long" in oof_df.columns else 1
+
+    preserve_cols = [
+        "timestamp",
+        "symbol",
+        "side",
+        "entry_price",
+        "exit_code",
+        "u_policy",
+        "u_policy_net",
+        "mae_ret",
+        "mfe_ret",
+        "duration",
+        "t_mfe",
+        "t_mae",
+        "barrier_pct",
+        "barrier_frac",
+        "__barrier_pct__",
+        "tp",
+        "tp_pct",
+        "label_policy_sl_atr_mult",
+        "label_policy_tp_sl_ratio",
+        "label_policy_max_hold_bars",
+        "label_policy_giveback_pct",
+        "atr_pct",
+        "atr_frac",
+        "future_opens",
+        "future_highs",
+        "future_lows",
+        "future_closes",
+    ]
+    aux_cols = [
+        "oof_u_hat",
+        "oof_log_mae_q70_hat",
+        "oof_log_mfe_hat",
+        "oof_log_dur_hat",
+        "oof_p_tp",
+        "oof_p_sl",
+        "oof_p_to",
+        "oof_p_time",
+        "utility",
+        "oof_pred",
+        "oof_pred_oriented",
+        "reg",
+        "reg_mean",
+        "reg_std",
+        "clf",
+        "oof_p_move",
+        "oof_asym_hat",
+    ]
+    for c in [*preserve_cols, *aux_cols]:
+        if c in oof_df.columns and c not in outcomes.columns:
+            outcomes[c] = oof_df[c].values
+    for c in oof_df.columns:
+        if c.startswith("u_tbm_") and c not in outcomes.columns:
+            outcomes[c] = oof_df[c].values
+
+    if "barrier_pct" not in outcomes.columns:
+        for fallback in (
+            "__barrier_pct__",
+            "barrier_frac",
+            "tp",
+            "tp_pct",
+            "atr_frac",
+            "atr_pct",
+        ):
+            if fallback in outcomes.columns:
+                vals = pd.to_numeric(outcomes[fallback], errors="coerce")
+                if np.isfinite(np.asarray(vals, dtype=np.float64)).any():
+                    outcomes["barrier_pct"] = vals.astype(np.float32)
+                    break
+    if "barrier_frac" not in outcomes.columns and "barrier_pct" in outcomes.columns:
+        outcomes["barrier_frac"] = outcomes["barrier_pct"].values
+
+    if all(c in outcomes.columns for c in ("mfe_ret", "mae_ret", "return")):
+        mfe = np.abs(np.asarray(outcomes["mfe_ret"].values, dtype=np.float32))
+        mae = np.abs(np.asarray(outcomes["mae_ret"].values, dtype=np.float32))
+        if "barrier_pct" in outcomes.columns:
+            barrier = np.clip(
+                np.asarray(outcomes["barrier_pct"].values, dtype=np.float32),
+                0.005,
+                0.2,
+            )
+        else:
+            barrier = np.clip(np.maximum(mae * 2.5, 1e-4), 0.005, 0.2)
+        tp_mult = 0.50
+        sl_mult = 0.18
+        if "label_policy_tp_sl_ratio" in outcomes.columns:
+            ratio = np.asarray(
+                outcomes["label_policy_tp_sl_ratio"].values, dtype=np.float32
+            )
+            ratio_clean = np.where(np.isfinite(ratio) & (ratio > 0), ratio, 3.0)
+            tp_mult = np.clip(ratio_clean * sl_mult, 0.1, 2.0)
+        tp_dist = tp_mult * barrier - 0.003
+        sl_dist = sl_mult * barrier + 0.003
+        is_tp = mfe >= np.maximum(tp_dist, 1e-6)
+        is_sl = mae >= np.maximum(sl_dist, 1e-6)
+        tbm = np.ones(len(outcomes), dtype=np.int8)
+        tbm[is_sl & ~is_tp] = 0
+        tbm[is_tp] = 2
+        outcomes["tbm_label"] = tbm
+
+    tprint(f"Constructed policy trade outcomes from OOF context: {len(outcomes)} trades")
+    return outcomes
+
+
+def _policy_oof_strategy_key(path: Path, *, meta: bool) -> str:
+    stem = path.stem
+    prefix = "meta_oof_" if meta else "oof_"
+    if stem.startswith(prefix):
+        stem = stem[len(prefix) :]
+    for side_prefix in ("long_", "short_"):
+        if stem.startswith(side_prefix):
+            stem = stem[len(side_prefix) :]
+            break
+    if meta:
+        stem = strip_mr_tf_route_suffix(stem)
+    if meta:
+        for suffix in ("_tbm_clf", "_correctness_clf", "_clf", "_reg"):
+            if stem.endswith(suffix):
+                stem = stem[: -len(suffix)]
+                break
+    else:
+        stem = re.sub(r"_H\d+(?:_(?:tight|wide|balanced))?$", "", stem)
+    return strategy_core_id(stem)
+
+
+def _policy_oof_priority(path: Path, *, meta: bool) -> int:
+    name = path.stem
+    if meta:
+        route_penalty = 10 if mr_tf_route_from_path(path) else 0
+        if name.endswith("_tbm_clf"):
+            return route_penalty + 0
+        if name.endswith("_clf"):
+            return route_penalty + 1
+        if name.endswith("_reg"):
+            return route_penalty + 2
+        return route_penalty + 3
+    return 0
+
+
+def load_base_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataFrame]:
+    """Load base OOF context locally for policy optimisation."""
+
+    oof_dir = Path(data_root) / "artifacts" / run_id / "oof"
+    if not oof_dir.exists():
+        tprint(f"WARNING: Base OOF directory not found at {oof_dir}")
+        return {}
+    out: Dict[str, pd.DataFrame] = {}
+    for path in sorted(oof_dir.glob("oof_*.parquet")):
+        if path.name == "base_oof_all.parquet" or path.stem.endswith("_all"):
+            continue
+        key = _policy_oof_strategy_key(path, meta=False)
+        if not key or key in out:
+            continue
+        out[key] = pd.read_parquet(path)
+    tprint(f"Loaded policy base OOF context for {len(out)} strategies.")
+    return out
+
+
+def load_meta_oof_predictions(data_root: str, run_id: str) -> Dict[str, pd.DataFrame]:
+    """Load meta OOF context locally for policy optimisation."""
+
+    oof_dir = Path(data_root) / "artifacts" / run_id / "meta_oof"
+    if not oof_dir.exists():
+        tprint(f"WARNING: Meta OOF directory not found at {oof_dir}")
+        return {}
+    candidates: Dict[str, Tuple[int, Path]] = {}
+    route_candidates: Dict[str, Dict[str, Tuple[int, Path]]] = {}
+    for path in sorted(oof_dir.glob("meta_oof_*.parquet")):
+        key = _policy_oof_strategy_key(path, meta=True)
+        if not key:
+            continue
+        route = mr_tf_route_from_path(path)
+        rank = _policy_oof_priority(path, meta=True)
+        if route in {"mr", "tf"}:
+            by_route = route_candidates.setdefault(key, {})
+            prev_route = by_route.get(route)
+            if prev_route is None or (rank, path.as_posix()) < (
+                prev_route[0],
+                prev_route[1].as_posix(),
+            ):
+                by_route[route] = (rank, path)
+            continue
+        prev = candidates.get(key)
+        if prev is None or (rank, path.as_posix()) < (prev[0], prev[1].as_posix()):
+            candidates[key] = (rank, path)
+    for key, by_route in route_candidates.items():
+        if key in candidates:
+            continue
+        best_route = min(by_route.values(), key=lambda item: (item[0], item[1].as_posix()))
+        candidates[key] = best_route
+    out: Dict[str, pd.DataFrame] = {}
+    overlay_report: Dict[str, Dict[str, Any]] = {}
+    for key, (_, path) in candidates.items():
+        df = pd.read_parquet(path)
+        route_report: Dict[str, Any] = {
+            "canonical_source": str(path),
+            "overlays": {},
+        }
+        for route, (_, route_path) in sorted(route_candidates.get(key, {}).items()):
+            if route_path == path:
+                continue
+            try:
+                route_df = pd.read_parquet(route_path)
+            except Exception as exc:
+                route_report["overlays"][route] = {
+                    "path": str(route_path),
+                    "overlay_rows": 0,
+                    "reason": f"read_failed:{exc}",
+                }
+                continue
+            df, diag = overlay_mr_tf_route_predictions(df, route_df, route=route)
+            diag["path"] = str(route_path)
+            route_report["overlays"][route] = diag
+        if route_report["overlays"]:
+            df.attrs["mr_tf_policy_overlay"] = route_report
+            overlay_report[key] = route_report
+        out[key] = df
+    if overlay_report:
+        total = sum(
+            int(diag.get("overlay_rows", 0))
+            for report in overlay_report.values()
+            for diag in dict(report.get("overlays", {})).values()
+        )
+        tprint(
+            "Applied MR/TF route meta-OOF overlays for "
+            f"{len(overlay_report)} strategies ({total} routed rows)."
+        )
+    tprint(f"Loaded policy meta OOF context for {len(out)} strategies.")
+    return out
 
 
 def _write_text_with_mode_alias(path: Path, text: str) -> None:
@@ -679,8 +1119,9 @@ def build_strategy_for_inference_payload(
         if row.get("strategy_id")
     }
     payload = {
-        "schema_version": "v2",
-        "generated_by": "policy_optimiser",
+        "schema_version": "simple_policy_v1",
+        "schema": "simple_policy_v1",
+        "generated_by": "simple_policy_optimiser",
         "run_id": run_id,
         "requires_lgbm_regime_mask_contract": require_lgbm_mask_contracts,
         "selection_rules": {
@@ -732,6 +1173,70 @@ def build_strategy_for_inference_payload(
                     - _safe_float(row.get("baseline_profit_factor"), np.nan),
                 },
                 "side": row.get("side", ""),
+                "sl_mult": float(row.get("sl_mult", 1.0)),
+                "barrier_frac": float(
+                    row.get("barrier_frac", row.get("barrier_pct", 0.02))
+                ),
+                "barrier_pct": float(
+                    row.get("barrier_pct", row.get("barrier_frac", 0.02))
+                ),
+                "median_barrier_frac": float(
+                    row.get(
+                        "median_barrier_frac",
+                        row.get(
+                            "policy_median_barrier_frac",
+                            row.get("barrier_frac", row.get("barrier_pct", 0.02)),
+                        ),
+                    )
+                ),
+                "policy_median_barrier_frac": float(
+                    row.get(
+                        "policy_median_barrier_frac",
+                        row.get(
+                            "median_barrier_frac",
+                            row.get("barrier_frac", row.get("barrier_pct", 0.02)),
+                        ),
+                    )
+                ),
+                "enable_trailing": bool(row.get("enable_trailing", False)),
+                "trailing_activation_mult": float(
+                    row.get(
+                        "trailing_activation_mult",
+                        row.get("trailing_override_alpha", row.get("tp_mult", 1.0)),
+                    )
+                ),
+                "trailing_power": float(row.get("trailing_power", 1.0)),
+                "trailing_squash_divisor": float(
+                    row.get("trailing_squash_divisor", 1.0)
+                ),
+                "giveback_beta": float(row.get("giveback_beta", 0.5)),
+                "atr_power": float(row.get("atr_power", 1.0)),
+                "atr_multiplier": float(row.get("atr_multiplier", 1.0)),
+                "hard_tp_abs_pct": float(row.get("hard_tp_abs_pct", 0.0)),
+                "capital_protect_mfe_mult": float(
+                    row.get("capital_protect_mfe_mult", 0.0)
+                ),
+                "capital_protect_regression_frac": float(
+                    row.get("capital_protect_regression_frac", 0.0)
+                ),
+                "adverse_exit_enabled": bool(row.get("adverse_exit_enabled", False)),
+                "adverse_exit_alpha": float(row.get("adverse_exit_alpha", 1.0)),
+                "adverse_exit_beta": float(row.get("adverse_exit_beta", 1.0)),
+                "adverse_exit_delta": float(row.get("adverse_exit_delta", 1.0)),
+                "adverse_exit_theta_quantile": float(
+                    row.get("adverse_exit_theta_quantile", 0.75)
+                ),
+                "adverse_exit_theta": float(row.get("adverse_exit_theta", np.nan)),
+                "adverse_exit_fast_bars": int(row.get("adverse_exit_fast_bars", 4)),
+                "adverse_exit_min_mae_atr": float(
+                    row.get("adverse_exit_min_mae_atr", 1.0)
+                ),
+                "adverse_exit_min_speed": float(
+                    row.get("adverse_exit_min_speed", 0.3)
+                ),
+                "adverse_exit_max_mfe_atr": float(
+                    row.get("adverse_exit_max_mfe_atr", 0.25)
+                ),
                 "selected": True,
                 "selection_rank": row.get("selection_rank", 0.0),
                 "deployment_rank_threshold": row.get("deployment_rank_threshold", 0.0),
@@ -1739,13 +2244,91 @@ def _pack_future_path_matrices(
     packed["future_lengths"] = lengths
     packed["entry_price"] = entry_price.astype(np.float32)
     packed["is_long"] = np.asarray(is_long, dtype=bool)
+    covered = lengths > 0
+    packed["_future_path_coverage"] = np.asarray(
+        [float(np.mean(covered)) if len(covered) else 0.0], dtype=np.float32
+    )
+    packed["_future_path_rows"] = np.asarray([int(len(lengths))], dtype=np.int32)
+    packed["_future_path_covered_rows"] = np.asarray(
+        [int(np.sum(covered))], dtype=np.int32
+    )
     return packed
+
+
+def _causal_symbol_median_barrier(
+    context: Dict[str, np.ndarray],
+    barrier: np.ndarray,
+) -> np.ndarray:
+    """Strictly causal per-symbol median barrier used as ATR normalisation anchor."""
+
+    barrier_arr = np.maximum(np.asarray(barrier, dtype=np.float32), 1e-6)
+    explicit_anchor = context.get("policy_median_barrier_frac")
+    if explicit_anchor is None:
+        explicit_anchor = context.get("median_barrier_frac")
+    try:
+        anchor = float(np.asarray(explicit_anchor).reshape(-1)[0])
+    except Exception:
+        anchor = float("nan")
+    if np.isfinite(anchor) and anchor > 0.0:
+        return np.full_like(barrier_arr, np.float32(anchor), dtype=np.float32)
+    try:
+        import pandas as pd
+
+        if "symbol" in context:
+            df_atr = pd.DataFrame(
+                {"barrier": barrier_arr, "symbol": np.asarray(context["symbol"])}
+            )
+            out = (
+                df_atr.groupby("symbol")["barrier"]
+                .expanding(min_periods=1)
+                .median()
+                .reset_index(level=0, drop=True)
+                .sort_index()
+                .values.astype(np.float32)
+            )
+        else:
+            out = (
+                pd.Series(barrier_arr)
+                .expanding(min_periods=1)
+                .median()
+                .values.astype(np.float32)
+            )
+    except Exception:
+        med = float(np.nanmedian(barrier_arr))
+        out = np.full_like(barrier_arr, med if np.isfinite(med) and med > 0 else 0.02)
+    return np.maximum(np.asarray(out, dtype=np.float32), 1e-6)
+
+
+def _apply_atr_power_to_barrier(
+    barrier: np.ndarray,
+    median_barrier: np.ndarray,
+    atr_power: float,
+    atr_multiplier: float = 1.0,
+) -> np.ndarray:
+    """Scale ATR-like barriers with level and curvature knobs."""
+
+    power = float(atr_power)
+    if not np.isfinite(power):
+        power = 1.0
+    power = float(np.clip(power, 0.5, 1.2))
+    multiplier = float(atr_multiplier)
+    if not np.isfinite(multiplier):
+        multiplier = 1.0
+    multiplier = float(np.clip(multiplier, 0.5, 2.0))
+    barrier_arr = np.maximum(np.asarray(barrier, dtype=np.float32), 1e-6)
+    median_arr = np.maximum(np.asarray(median_barrier, dtype=np.float32), 1e-6)
+    ratio = np.maximum(barrier_arr / median_arr, 1e-6)
+    out = multiplier * median_arr * np.power(ratio, power)
+    return np.maximum(np.asarray(out, dtype=np.float32), 1e-6)
 
 
 def _simulate_tpsl_from_paths_unified(
     context: Dict[str, np.ndarray],
     tp_mult: float = 1.0,
     sl_mult: float = 1.0,
+    atr_power: float = 1.0,
+    atr_multiplier: float = 1.0,
+    hard_tp_abs_pct: float = 0.0,
     enable_trailing: bool = False,
     is_baseline: bool = True,  # If True, this is baseline simulation
 ) -> Optional[np.ndarray]:
@@ -1794,15 +2377,24 @@ def _simulate_tpsl_from_paths_unified(
     )
     side = np.where(is_long, 1.0, -1.0).astype(np.float32)
 
-    barrier = np.maximum(
+    barrier_raw = np.maximum(
         np.asarray(
             context.get("barrier_pct", np.full(n_trades, 0.02)), dtype=np.float32
         ),
         1e-4,
     )
+    median_barrier = _causal_symbol_median_barrier(context, barrier_raw)
+    barrier = _apply_atr_power_to_barrier(
+        barrier_raw,
+        median_barrier,
+        atr_power,
+        atr_multiplier,
+    )
 
     tp_dist = tp_mult * barrier
     sl_dist = sl_mult * barrier
+    hard_tp_abs = float(hard_tp_abs_pct)
+    hard_tp_enabled = np.isfinite(hard_tp_abs) and hard_tp_abs > 0.0
 
     exited = np.zeros(n_trades, dtype=bool)
     exit_rets = np.zeros(n_trades, dtype=np.float32)
@@ -1858,6 +2450,11 @@ def _simulate_tpsl_from_paths_unified(
         # --- TAKE PROFIT (simple hit detection) ---
         best_ret = np.maximum(high_ret, low_ret)
         tp_hit = best_ret >= tp_dist_a
+        hard_tp_hit = (
+            best_ret >= float(hard_tp_abs)
+            if hard_tp_enabled
+            else np.zeros(len(idx), dtype=bool)
+        )
 
         # --- TRAILING PROFIT LOGIC ---
         # Update extreme price tracking
@@ -1903,6 +2500,8 @@ def _simulate_tpsl_from_paths_unified(
             if sl_hit[i_idx]:
                 # SL hit: use hard stop (capped)
                 bar_exit[i_idx] = -sl_dist_a[i_idx]
+            elif hard_tp_hit[i_idx]:
+                bar_exit[i_idx] = float(hard_tp_abs)
             elif tp_activated[trade_idx]:
                 if enable_trailing:
                     # Check if trailing stop hit
@@ -1968,6 +2567,9 @@ def _simulate_barwise_path_policy(
             context,
             tp_mult=tp_mult,
             sl_mult=sl_mult,
+            atr_power=float(params.get("atr_power", 1.0)),
+            atr_multiplier=float(params.get("atr_multiplier", 1.0)),
+            hard_tp_abs_pct=float(params.get("hard_tp_abs_pct", 0.0)),
             enable_trailing=False,
             is_baseline=True,
         )
@@ -2013,6 +2615,13 @@ def _simulate_barwise_path_policy(
         ),
         1e-4,
     )
+    median_barrier = _causal_symbol_median_barrier(context, barrier)
+    barrier_eff = _apply_atr_power_to_barrier(
+        barrier,
+        median_barrier,
+        float(params.get("atr_power", 1.0)),
+        float(params.get("atr_multiplier", 1.0)),
+    )
     conf = np.asarray(context.get("confidence", np.zeros(n_trades)), dtype=np.float32)
     p_tp = np.asarray(context.get("p_tp", np.full(n_trades, np.nan)), dtype=np.float32)
     p_sl = np.asarray(context.get("p_sl", np.full(n_trades, np.nan)), dtype=np.float32)
@@ -2038,8 +2647,10 @@ def _simulate_barwise_path_policy(
 
     tp_mult = float(params.get("tp_mult", 1.0))
     sl_mult = float(params.get("sl_mult", 1.0))
-    tp_dist = tp_mult * barrier
-    sl_dist = sl_mult * barrier
+    tp_dist = tp_mult * barrier_eff
+    sl_dist = sl_mult * barrier_eff
+    hard_tp_abs = float(params.get("hard_tp_abs_pct", 0.0))
+    hard_tp_enabled = np.isfinite(hard_tp_abs) and hard_tp_abs > 0.0
     a1 = float(params.get("a1", 0.5))
     a2 = float(params.get("a2", 1.0 - a1))
     b1 = float(params.get("b1", 0.5))
@@ -2086,24 +2697,7 @@ def _simulate_barwise_path_policy(
 
     import pandas as pd
 
-    # Strict causal expanding median grouped by symbol to avoid cross-asset contamination
-    if "symbol" in context:
-        df_atr = pd.DataFrame({"barrier": barrier, "symbol": context["symbol"]})
-        full_median_atr = (
-            df_atr.groupby("symbol")["barrier"]
-            .expanding(min_periods=1)
-            .median()
-            .reset_index(level=0, drop=True)
-            .sort_index()
-            .values.astype(np.float32)
-        )
-    else:
-        full_median_atr = (
-            pd.Series(barrier)
-            .expanding(min_periods=1)
-            .median()
-            .values.astype(np.float32)
-        )
+    full_median_atr = median_barrier
 
     # We will keep track of exactly what bar a trade exits to compute time-in-market
     exit_lengths = np.full(n_trades, max_bars, dtype=np.int32)
@@ -2140,7 +2734,7 @@ def _simulate_barwise_path_policy(
         bar_high = bar_high[valid]
         bar_low = bar_low[valid]
         bar_close = bar_close[valid]
-        barrier_a = barrier[idx]
+        barrier_a = barrier_eff[idx]
         tp_dist_a = tp_dist[idx]
         sl_dist_a = sl_dist[idx]
         m_a = m[idx]
@@ -2171,6 +2765,11 @@ def _simulate_barwise_path_policy(
 
         # TP hit logic
         tp_hit = best_ret >= tp_dist_a
+        hard_tp_hit = (
+            best_ret >= float(hard_tp_abs)
+            if hard_tp_enabled
+            else np.zeros(len(idx), dtype=bool)
+        )
         tp_hit_ever[idx] = tp_hit_ever[idx] | tp_hit
 
         # --- NEW TRAILING LOGIC ---
@@ -2185,7 +2784,13 @@ def _simulate_barwise_path_policy(
 
         # Calculate ATR-based median
         atr_ratio_a = barrier_a / np.maximum(full_median_atr[idx], 1e-6)
-        trailing_override_band_a = trailing_override_alpha * barrier_a
+        trailing_activation_mult = float(
+            params.get(
+                "trailing_activation_mult",
+                params.get("trailing_override_alpha", trailing_override_alpha),
+            )
+        )
+        trailing_override_band_a = trailing_activation_mult * barrier_a
         giveback_beta_param = float(params.get("giveback_beta", 0.5))
 
         # Check activation and set trailing threshold
@@ -2212,17 +2817,18 @@ def _simulate_barwise_path_policy(
                 ) / trailing_squash_divisor
                 trail_dist = trail_dist_ret * ent[i_idx]
 
-                # Giveback constraint
-                D = giveback_beta_param * barrier_a[i_idx]
-
+                giveback_dist_ret = giveback_beta_param * barrier_a[i_idx]
+                floor_ret = max(
+                    float(trailing_override_band_a[i_idx]),
+                    min(
+                        float(extreme_ret - trail_dist_ret),
+                        float(extreme_ret - giveback_dist_ret),
+                    ),
+                )
                 if side_a[i_idx] > 0:
-                    power_stop = extreme_price[trade_idx] - trail_dist
-                    giveback_stop = extreme_price[trade_idx] * (1.0 - D)
-                    trailing_thresh[trade_idx] = min(power_stop, giveback_stop)
+                    trailing_thresh[trade_idx] = ent[i_idx] * (1.0 + floor_ret)
                 else:
-                    power_stop = extreme_price[trade_idx] + trail_dist
-                    giveback_stop = extreme_price[trade_idx] * (1.0 + D)
-                    trailing_thresh[trade_idx] = max(power_stop, giveback_stop)
+                    trailing_thresh[trade_idx] = ent[i_idx] * (1.0 - floor_ret)
             else:
                 # Keep active flag as false if not breached
                 pass
@@ -2263,10 +2869,17 @@ def _simulate_barwise_path_policy(
 
         bar_exit = np.full(len(idx), np.nan, dtype=np.float32)
         bar_exit = np.where(open_sl, -sl_eff, bar_exit)
+        bar_exit = np.where(
+            hard_tp_hit & np.isnan(bar_exit),
+            float(hard_tp_abs),
+            bar_exit,
+        )
         bar_exit = np.where(open_trail & np.isnan(bar_exit), trail_floor_ret, bar_exit)
         bar_exit = np.where(simple_tp_hit & np.isnan(bar_exit), tp_dist_a, bar_exit)
 
-        hard_hit = sl_hit | trail_hit | open_sl | open_trail | simple_tp_hit
+        hard_hit = (
+            sl_hit | trail_hit | open_sl | open_trail | simple_tp_hit | hard_tp_hit
+        )
         bar_exit = np.where(
             np.isnan(bar_exit),
             np.where(
@@ -2390,11 +3003,18 @@ def replay_exit_policy(
         ),
         1e-4,
     )
+    median_barrier = _causal_symbol_median_barrier(context, barrier)
+    barrier_eff = _apply_atr_power_to_barrier(
+        barrier,
+        median_barrier,
+        float(params.get("atr_power", 1.0)),
+        float(params.get("atr_multiplier", 1.0)),
+    )
 
     tp_mult = float(params.get("tp_mult", 1.0))
     sl_mult = float(params.get("sl_mult", 1.0))
-    tp_dist = tp_mult * barrier
-    sl_dist = sl_mult * barrier
+    tp_dist = tp_mult * barrier_eff
+    sl_dist = sl_mult * barrier_eff
 
     ae_vel = np.asarray(
         context.get("AE_vel", mae / np.maximum(bars, 1)), dtype=np.float32
@@ -2524,52 +3144,34 @@ def replay_exit_policy(
     trailing_override_alpha = float(params.get("trailing_override_alpha", 0.0))
     giveback_beta_param = float(params.get("giveback_beta", 0.5))
 
-    # Compute expanding median ATR strictly causally across the mask to prevent future leakage
-    # Using a fast pandas rolling median grouped by symbol to prevent cross-asset leakage
-    import pandas as pd
-
-    if "symbol" in context:
-        df_atr = pd.DataFrame({"barrier": barrier, "symbol": context["symbol"]})
-        median_atr = (
-            df_atr.groupby("symbol")["barrier"]
-            .expanding(min_periods=1)
-            .median()
-            .reset_index(level=0, drop=True)
-            .sort_index()
-            .values.astype(np.float32)
+    trailing_activation_mult = float(
+        params.get(
+            "trailing_activation_mult",
+            params.get("trailing_override_alpha", trailing_override_alpha),
         )
-    else:
-        median_atr = (
-            pd.Series(barrier)
-            .expanding(min_periods=1)
-            .median()
-            .values.astype(np.float32)
-        )
-
-    atr_ratio = barrier / np.maximum(median_atr, 1e-6)
-    trailing_override_band = trailing_override_alpha * barrier
+    )
+    trailing_override_band = trailing_activation_mult * barrier_eff
 
     trail_on = (mfe > trailing_override_band) & enable_trailing
 
-    # Activation price return is exactly trailing_override_band
-    # Profit above activation (in return terms)
     profit_above_activation_ret = np.maximum(0.0, mfe - trailing_override_band)
 
-    # Apply power curve
     trail_dist_ret = (
         profit_above_activation_ret**trailing_power
     ) / trailing_squash_divisor
 
-    # Giveback constraint
-    D = giveback_beta_param * atr_ratio / 100.0
+    giveback_dist_ret = giveback_beta_param * barrier_eff
 
-    # Trail floor is the max profit minus the giveback distance
     power_stop = mfe - trail_dist_ret
-    giveback_stop = mfe - D
-    trail_floor = np.minimum(power_stop, giveback_stop)
+    giveback_stop = mfe - giveback_dist_ret
+    trail_floor = np.maximum(
+        trailing_override_band,
+        np.minimum(power_stop, giveback_stop),
+    )
 
-    # Apply trail floor if trailing is active
     rets = np.where(trail_on, np.maximum(rets, trail_floor), rets)
+    if hard_tp_enabled:
+        rets = np.where(mfe >= float(hard_tp_abs), float(hard_tp_abs), rets)
 
     if any(
         [enable_trailing, enable_early_exit, enable_compression, enable_barrier_conf]
@@ -2597,6 +3199,18 @@ def _sequential_optimise(
     params["enable_compression"] = False
     params["enable_trailing"] = False  # BASIC RUN: Disable trailing for simple TP/SL
     params["enable_barrier_conf"] = False
+    params.setdefault("atr_power", 1.0)
+    params.setdefault("atr_multiplier", 1.0)
+    params.setdefault("hard_tp_abs_pct", 0.0)
+    params.setdefault(
+        "trailing_activation_mult",
+        params.get("trailing_override_alpha", params.get("tp_mult", 1.0)),
+    )
+    params.setdefault("trailing_power", 1.0)
+    params.setdefault("trailing_squash_divisor", 1.0)
+    params.setdefault("giveback_beta", 0.5)
+    params.setdefault("capital_protect_mfe_mult", 0.0)
+    params.setdefault("capital_protect_regression_frac", 0.0)
 
     # Group parameters into families for incremental testing
     # Each family is tested separately - if it degrades performance, it's disabled
@@ -2624,8 +3238,8 @@ def _sequential_optimise(
                     ],
                 ),
                 (
-                    "trailing_override_alpha",
-                    [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5],
+                    "trailing_activation_mult",
+                    [0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4],
                 ),
                 ("giveback_beta", [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]),
             ],
@@ -2642,6 +3256,14 @@ def _sequential_optimise(
                 ("multiplier_band", [(0.70, 1.30), (0.80, 1.20), (0.85, 1.15)]),
             ],
         ),
+        (
+            "final_atr_tp_geometry",
+            [
+                ("atr_power", [0.5, 0.7, 0.85, 1.0, 1.1, 1.2]),
+                ("atr_multiplier", [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]),
+                ("hard_tp_abs_pct", [0.0, 0.006, 0.008, 0.010, 0.0125, 0.015, 0.020]),
+            ],
+        ),
     ]
 
     # Check if future paths are available for fair baseline computation
@@ -2649,6 +3271,27 @@ def _sequential_optimise(
         col in context
         for col in ("future_opens", "future_highs", "future_lows", "future_closes")
     )
+    path_coverage_arr = np.asarray(
+        context.get(
+            "_future_path_coverage",
+            np.asarray([1.0 if has_future_paths_ctx else 0.0], dtype=np.float32),
+        ),
+        dtype=np.float32,
+    ).reshape(-1)
+    path_coverage = (
+        float(path_coverage_arr[0]) if path_coverage_arr.size else 0.0
+    )
+    require_future_paths = bool(fixed.get("require_future_paths", False))
+    min_future_path_coverage = float(fixed.get("min_future_path_coverage", 0.0))
+    if require_future_paths and (
+        not has_future_paths_ctx or path_coverage < min_future_path_coverage
+    ):
+        raise RuntimeError(
+            "Path-dependent policy optimisation requires barwise future paths; "
+            f"has_future_paths={has_future_paths_ctx}, "
+            f"coverage={path_coverage:.1%}, "
+            f"required={min_future_path_coverage:.1%}."
+        )
     fixed_tp_mult = float(fixed.get("tp_mult", 1.0))
     fixed_sl_mult = float(fixed.get("sl_mult", 1.0))
 
@@ -2871,6 +3514,13 @@ def _sequential_optimise(
         )
 
     for family_name, family_params in param_families:
+        if family_name in {"trailing_stop", "final_atr_tp_geometry"} and not has_future_paths_ctx:
+            tprint(
+                f"  Skipping path-dependent family '{family_name}' because "
+                "future OHLC paths are unavailable."
+            )
+            disabled_families.append(family_name)
+            continue
         # Skip families that were previously disabled
         if family_name in disabled_families:
             tprint(f"  Skipping disabled family: {family_name}")
@@ -3719,7 +4369,11 @@ def _sequential_optimise(
         f"  [VERIFY] Final params: tp_mult={best_val_params.get('tp_mult')}, "
         f"sl_mult={best_val_params.get('sl_mult')}, "
         f"size_power={best_val_params.get('size_power', 'default')}, "
-        f"trailing_power={best_val_params.get('trailing_power', 'default')}"
+        f"atr_power={best_val_params.get('atr_power', 'default')}, "
+        f"atr_multiplier={best_val_params.get('atr_multiplier', 'default')}, "
+        f"hard_tp_abs_pct={best_val_params.get('hard_tp_abs_pct', 'default')}, "
+        f"trailing_power={best_val_params.get('trailing_power', 'default')}, "
+        f"trailing_activation_mult={best_val_params.get('trailing_activation_mult', best_val_params.get('trailing_override_alpha', 'default'))}"
     )
 
     # Compute fair baseline from paths when available
@@ -3729,6 +4383,9 @@ def _sequential_optimise(
             context,
             tp_mult=fixed_tp_mult,
             sl_mult=fixed_sl_mult,
+            atr_power=1.0,
+            atr_multiplier=1.0,
+            hard_tp_abs_pct=0.0,
             enable_trailing=False,  # BASIC RUN: Simple TP/SL only, no trailing
             is_baseline=True,
         )
@@ -3898,8 +4555,35 @@ def run_policy_optimisation(
     cost_pct: float = 0.003,
     use_offset_optimiser: bool = False,
     stage_view: Optional[Dict[str, Any]] = None,
+    require_future_paths: Optional[bool] = None,
+    min_future_path_coverage: Optional[float] = None,
+    future_path_max_bars: Optional[int] = None,
 ) -> Dict[str, Any]:
     tprint("POLICY OPTIMISER START")
+    if require_future_paths is None:
+        require_future_paths = _env_bool("EPM_POLICY_REQUIRE_FUTURE_PATHS", True)
+    if min_future_path_coverage is None:
+        try:
+            min_future_path_coverage = float(
+                os.environ.get("EPM_POLICY_MIN_FUTURE_PATH_COVERAGE", "0.95")
+            )
+        except Exception:
+            min_future_path_coverage = 0.95
+    min_future_path_coverage = float(np.clip(min_future_path_coverage, 0.0, 1.0))
+    if future_path_max_bars is None:
+        try:
+            future_path_max_bars = int(
+                float(os.environ.get("EPM_POLICY_FUTURE_PATH_MAX_BARS", "40"))
+            )
+        except Exception:
+            future_path_max_bars = 40
+    future_path_max_bars = max(2, int(future_path_max_bars))
+    tprint(
+        "Policy path replay guard: "
+        f"require_future_paths={bool(require_future_paths)}, "
+        f"min_coverage={min_future_path_coverage:.1%}, "
+        f"max_bars={future_path_max_bars}"
+    )
     if use_offset_optimiser and not POLICY_OPTIMISER_OFFSET_LIMITER_ENABLED:
         tprint("Policy optimiser: offset limiter disabled for this run.")
     use_offset_optimiser = bool(
@@ -4093,6 +4777,33 @@ def run_policy_optimisation(
             selected_idx=assessment_idx,
             frac=assessment_frac,
         )
+        outcomes, path_coverage_stats = _enrich_future_paths_from_15m_cache(
+            outcomes,
+            selected_idx=selected_idx,
+            max_bars=future_path_max_bars,
+        )
+        tprint(
+            "Policy future path coverage: "
+            f"strategy={selected['strategy_id']} "
+            f"source={path_coverage_stats.get('source')} "
+            f"rows={path_coverage_stats.get('covered_rows', 0)}/"
+            f"{path_coverage_stats.get('rows', 0)} "
+            f"coverage={float(path_coverage_stats.get('coverage', 0.0)):.1%} "
+            f"median_bars={float(path_coverage_stats.get('median_bars', 0.0)):.1f} "
+            f"max_bars={int(path_coverage_stats.get('max_bars', 0))}"
+        )
+        if bool(require_future_paths) and (
+            float(path_coverage_stats.get("coverage", 0.0))
+            < float(min_future_path_coverage)
+        ):
+            raise RuntimeError(
+                "Policy optimiser requires barwise future paths for path simulation, "
+                f"but {selected['strategy_id']} only has "
+                f"{float(path_coverage_stats.get('coverage', 0.0)):.1%} coverage "
+                f"below required {float(min_future_path_coverage):.1%}. "
+                "Refresh/enrich the 15m OHLCV cache or set "
+                "EPM_POLICY_REQUIRE_FUTURE_PATHS=0 to allow non-path fallback."
+            )
         tprint(
             f"Policy optimiser selection: upstream_sizer_frac={upstream_sizer_frac:.3f}, "
             f"candidate_frac={frac:.3f}, assessment_frac={assessment_frac:.3f}, "
@@ -4232,6 +4943,17 @@ def run_policy_optimisation(
         context["progress_per_bar"] = _robust_apply(
             path_bundle["progress_per_bar"], pg_fit
         )
+        train_barriers = np.asarray(context["barrier_pct"], dtype=np.float64)[
+            train_mask
+        ]
+        train_barriers = train_barriers[
+            np.isfinite(train_barriers) & (train_barriers > 0.0)
+        ]
+        median_barrier_frac = (
+            float(np.nanmedian(train_barriers)) if train_barriers.size else 0.02
+        )
+        context["median_barrier_frac"] = np.float32(median_barrier_frac)
+        context["policy_median_barrier_frac"] = np.float32(median_barrier_frac)
         context["p_tp"] = path_bundle.get("p_tp", np.full(len(base_rets), np.nan))
         context["p_sl"] = path_bundle.get("p_sl", np.full(len(base_rets), np.nan))
         context_ts = pd.to_datetime(
@@ -4241,6 +4963,11 @@ def run_policy_optimisation(
         )
         context["timestamps_ms"] = (
             np.asarray(context_ts.view("int64"), dtype=np.int64) // 1_000_000
+        )
+        context["symbol"] = np.asarray(
+            outcomes.get("symbol", pd.Series([""] * len(outcomes))).astype(str).values[
+                selected_idx
+            ]
         )
         context.update(path_matrices)
 
@@ -4275,6 +5002,8 @@ def run_policy_optimisation(
             "enable_compression": False,
             "enable_barrier_conf": False,
             "enable_trailing": False,  # BASIC RUN: Simple TP/SL only
+            "require_future_paths": bool(require_future_paths),
+            "min_future_path_coverage": float(min_future_path_coverage),
         }
 
         best = _sequential_optimise(
@@ -4296,6 +5025,18 @@ def run_policy_optimisation(
         best["source_artifact"] = selected.get("source_artifact", "")
         best["selected_key"] = key
         best["selection_score"] = conf_name
+        best["path_simulation_source"] = str(path_coverage_stats.get("source", ""))
+        best["path_simulation_coverage"] = float(
+            path_coverage_stats.get("coverage", 0.0)
+        )
+        best["path_simulation_rows"] = int(path_coverage_stats.get("rows", 0))
+        best["path_simulation_covered_rows"] = int(
+            path_coverage_stats.get("covered_rows", 0)
+        )
+        best["path_simulation_median_bars"] = float(
+            path_coverage_stats.get("median_bars", 0.0)
+        )
+        best["path_simulation_max_bars"] = int(path_coverage_stats.get("max_bars", 0))
 
         # Get sizer's reported wallet_pnl early for logging and skip logic
         sizer_wallet_pnl = float(selected.get("wallet_pnl", 0.0))
@@ -4888,6 +5629,8 @@ def run_policy_optimisation(
         )
         best["cost_pct"] = cost_pct
         best["wallet_range"] = [0.05, 0.15]
+        best["median_barrier_frac"] = float(median_barrier_frac)
+        best["policy_median_barrier_frac"] = float(median_barrier_frac)
         best["sizer_wallet_pnl"] = sizer_wallet_pnl
         best["sizer_net_pnl"] = float(selected.get("net_pnl", 0.0))
         final_metrics = best.get("metrics_final", {})
@@ -5042,8 +5785,18 @@ def run_policy_optimisation(
                         active_params["trailing_override_alpha"] = p[
                             "trailing_override_alpha"
                         ]
+                    if "trailing_activation_mult" in p:
+                        active_params["trailing_activation_mult"] = p[
+                            "trailing_activation_mult"
+                        ]
                     if "giveback_beta" in p:
                         active_params["giveback_beta"] = p["giveback_beta"]
+                    if "atr_power" in p:
+                        active_params["atr_power"] = p["atr_power"]
+                    if "atr_multiplier" in p:
+                        active_params["atr_multiplier"] = p["atr_multiplier"]
+                    if "hard_tp_abs_pct" in p:
+                        active_params["hard_tp_abs_pct"] = p["hard_tp_abs_pct"]
                     if "capital_protect_mfe_mult" in p:
                         active_params["cap_mfe_mult"] = p["capital_protect_mfe_mult"]
                     if "capital_protect_regression_frac" in p:
@@ -5122,8 +5875,9 @@ def run_policy_optimisation(
     )
     best = strategy_rows[0]
     payload = {
-        "schema_version": "v4",
-        "generated_by": "policy_optimiser",
+        "schema_version": "simple_policy_v1",
+        "schema": "simple_policy_v1",
+        "generated_by": "simple_policy_optimiser",
         "run_id": run_id,
         "cost_pct": float(cost_pct),
         "strategies": strategy_rows,

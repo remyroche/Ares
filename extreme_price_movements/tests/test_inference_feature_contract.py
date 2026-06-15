@@ -3,6 +3,7 @@ import pandas as pd
 import pytest
 
 from extreme_price_movements.inference.feature_generator import (
+    _live_training_path_sync_feature_keys,
     _synthesize_gated_feature_keys,
 )
 from extreme_price_movements.inference.feature_parity import FeatureParityError
@@ -99,3 +100,110 @@ def test_gated_selected_feature_missing_base_materializes_nan_frame():
     assert list(out.columns) == ["AAA/USD:USD", "BBB/USD:USD"]
     assert out.index.equals(idx)
     assert out.isna().all().all()
+
+
+def test_live_training_path_sync_skips_deterministic_live_synthesized_keys():
+    sync_keys, skipped = _live_training_path_sync_feature_keys(
+        [
+            "ret1h_G_VOL_0",
+            "ret1h_G_VOL_1",
+            "barrier_pct",
+            "ret12h",
+            "lr_12h",
+            "oi_3d_chg_z",
+        ],
+        {"live_model_feature_store_strict": True},
+    )
+
+    assert sync_keys == ["ret12h"]
+    assert skipped == [
+        "barrier_pct",
+        "lr_12h",
+        "oi_3d_chg_z",
+        "ret1h_G_VOL_0",
+        "ret1h_G_VOL_1",
+    ]
+
+
+def test_gated_selected_feature_overwrites_nan_placeholder_from_base():
+    idx = pd.date_range("2026-01-01", periods=48, freq="h", tz="UTC")
+    cols = ["AAA/USD:USD", "BBB/USD:USD"]
+    close = pd.DataFrame(
+        {
+            cols[0]: np.linspace(100.0, 110.0, len(idx)),
+            cols[1]: np.linspace(50.0, 48.0, len(idx)),
+        },
+        index=idx,
+    )
+    base = close.pct_change().astype(np.float32)
+    nan_gate = pd.DataFrame(np.nan, index=idx, columns=cols, dtype=np.float32)
+
+    feats = _synthesize_gated_feature_keys(
+        {
+            "ret1h": base,
+            "ret1h_G_VOL_0": nan_gate,
+            "ret1h_G_VOL_1": nan_gate,
+        },
+        {"close": close},
+        cols,
+        {"ret1h_G_VOL_0", "ret1h_G_VOL_1"},
+    )
+
+    combined = feats["ret1h_G_VOL_0"] + feats["ret1h_G_VOL_1"]
+    assert np.isfinite(feats["ret1h_G_VOL_0"].tail(1).to_numpy()).any()
+    assert np.isfinite(feats["ret1h_G_VOL_1"].tail(1).to_numpy()).any()
+    np.testing.assert_allclose(
+        combined.tail(24).to_numpy(dtype=np.float32),
+        base.tail(24).to_numpy(dtype=np.float32),
+        rtol=1e-6,
+        atol=1e-8,
+    )
+
+
+def test_gated_return_feature_synthesizes_missing_return_base_from_close():
+    idx = pd.date_range("2026-01-01", periods=48, freq="h", tz="UTC")
+    cols = ["AAA/USD:USD", "BBB/USD:USD"]
+    close = pd.DataFrame(
+        {
+            cols[0]: np.linspace(100.0, 110.0, len(idx)),
+            cols[1]: np.linspace(50.0, 48.0, len(idx)),
+        },
+        index=idx,
+    )
+    expected = close.pct_change().astype(np.float32)
+
+    feats = _synthesize_gated_feature_keys(
+        {},
+        {"close": close},
+        cols,
+        {"ret1h_G_VOL_0", "ret1h_G_VOL_1"},
+    )
+
+    combined = feats["ret1h_G_VOL_0"] + feats["ret1h_G_VOL_1"]
+    assert np.isfinite(combined.tail(1).to_numpy()).all()
+    np.testing.assert_allclose(
+        combined.tail(24).to_numpy(dtype=np.float32),
+        expected.tail(24).to_numpy(dtype=np.float32),
+        rtol=1e-6,
+        atol=1e-8,
+    )
+
+
+def test_alpha_contract_overwrites_nan_gated_feature_when_base_and_gate_exist():
+    X = pd.DataFrame(
+        {
+            "ret1h": [0.01, -0.02],
+            "G_VOL": [1.0, 0.0],
+            "ret1h_G_VOL_1": [np.nan, np.nan],
+        },
+        index=["AAA/USDC", "BBB/USDC"],
+    )
+    orchestrator = ModelOrchestrator({}, {"strict_feature_parity": True})
+
+    aligned = orchestrator._align_alpha_feature_contract(
+        X,
+        ["ret1h", "G_VOL", "ret1h_G_VOL_1"],
+    )
+
+    assert aligned.loc["AAA/USDC", "ret1h_G_VOL_1"] == pytest.approx(0.01)
+    assert aligned.loc["BBB/USDC", "ret1h_G_VOL_1"] == pytest.approx(-0.0)

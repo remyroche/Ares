@@ -1,8 +1,21 @@
 import numpy as np
 import pandas as pd
 import pytest
+from pathlib import Path
 
 from extreme_price_movements import simple_policy_optimiser as spo
+
+
+@pytest.fixture(autouse=True)
+def _isolate_policy_spread_baseline(monkeypatch):
+    monkeypatch.setenv("EPM_SIMPLE_POLICY_USE_SPREAD_MODEL", "0")
+    monkeypatch.delenv("EPM_SIMPLE_POLICY_SPREAD_BASELINE_PATH", raising=False)
+    monkeypatch.delenv("EPM_SIMPLE_POLICY_EXIT_QUOTE_HALF_SPREAD_BPS", raising=False)
+    spo._SPREAD_MODEL_COST_CACHE.clear()
+    spo._SPREAD_BASELINE_CACHE.clear()
+    yield
+    spo._SPREAD_MODEL_COST_CACHE.clear()
+    spo._SPREAD_BASELINE_CACHE.clear()
 
 
 def test_policy_candidate_export_includes_entry_slippage_in_friction(monkeypatch):
@@ -28,6 +41,16 @@ def test_policy_candidate_export_includes_entry_slippage_in_friction(monkeypatch
             "theoretical_entry_price": [100.0],
             "entry_gap_bps": [15.0],
             "entry_slippage_proxy_bps": [4.5],
+            "simple_grid_ev_bucket": [18],
+            "simple_grid_gross_ev_bps": [140.0],
+            "simple_grid_execution_friction_bps": [70.0],
+            "simple_grid_net_ev_bps": [70.0],
+            "simple_grid_selected_sl_mult": [1.0],
+            "simple_grid_selected_tp_mult": [1.5],
+            "meta_lgbm_uncertainty_score": [0.37],
+            "meta_lgbm_inference_drift_score": [0.42],
+            "meta_lgbm_feature_drift_psi_core": [0.18],
+            "meta_lgbm_predictive_atlas_hit_rate_surprise": [0.07],
         }
     )
     paths = (
@@ -56,14 +79,346 @@ def test_policy_candidate_export_includes_entry_slippage_in_friction(monkeypatch
     assert out["spread_cost_bps"].iloc[0] == pytest.approx(
         spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0
     )
+    assert out["exit_quote_half_spread_bps"].iloc[0] == pytest.approx(
+        spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0
+    )
+    assert out["exit_spread_cost_bps"].iloc[0] == pytest.approx(
+        spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0
+    )
     assert out["net_return_before_spread"].iloc[0] == pytest.approx(0.009)
-    assert out["net_return"].iloc[0] == pytest.approx(
-        0.009 - (spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0) / 10_000.0
+    assert out["net_return_before_legacy_entry_spread_haircut"].iloc[0] == pytest.approx(
+        0.009
+    )
+    assert out["legacy_posthoc_entry_spread_haircut_bps"].iloc[0] == pytest.approx(0.0)
+    assert out["net_return"].iloc[0] == pytest.approx(0.009)
+    assert out["policy_executable_entry_price"].iloc[0] == pytest.approx(100.15)
+    assert out["theoretical_entry_price"].iloc[0] == pytest.approx(100.15)
+    assert out["entry_reanchor_bps"].iloc[0] == pytest.approx(
+        spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0 + 4.5
     )
     assert out["expected_friction_bps"].iloc[0] == pytest.approx(
-        14.5 + spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0
+        14.5
+        + spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0
+        + spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0
     )
     assert out["entry_gap_bps"].iloc[0] == 15.0
+    assert out["simple_grid_ev_bucket"].iloc[0] == 18
+    assert out["simple_grid_net_ev_bps"].iloc[0] == pytest.approx(70.0)
+    assert out["meta_lgbm_uncertainty_score"].iloc[0] == pytest.approx(0.37)
+    assert out["meta_lgbm_inference_drift_score"].iloc[0] == pytest.approx(0.42)
+    assert out["meta_lgbm_feature_drift_psi_core"].iloc[0] == pytest.approx(0.18)
+    assert out["meta_lgbm_predictive_atlas_hit_rate_surprise"].iloc[0] == pytest.approx(0.07)
+
+
+def test_alpha_uncertainty_context_exports_base_lgbm_drift_features():
+    class AlphaModel:
+        def transform_meta_features(self, frame):
+            return pd.DataFrame(
+                {
+                    "lgbm_prob": [0.7, 0.6],
+                    "entropy": [0.4, 0.5],
+                    "uncertainty_score": [0.21, 0.31],
+                    "inference_drift_score": [0.41, 0.51],
+                    "feature_drift_psi_core_80": [0.12, 0.22],
+                    "feature_drift_ks_bin_mean": [0.13, 0.23],
+                },
+                index=frame.index,
+            )
+
+    meta_base = pd.DataFrame(
+        {
+            "long_test": [0.7, 0.6],
+            "feature_a": [1.0, 2.0],
+        },
+        index=pd.Index([10, 11]),
+    )
+
+    out = spo._add_alpha_model_uncertainty_context(
+        meta_base,
+        alpha_model=AlphaModel(),
+        strategy_id="long_test",
+        horizon=10,
+    )
+
+    assert np.allclose(out["base_lgbm_uncertainty_score"], [0.21, 0.31])
+    assert np.allclose(out["base_lgbm_inference_drift_score"], [0.41, 0.51])
+    assert np.allclose(out["base_lgbm_feature_drift_psi_core"], [0.12, 0.22])
+    assert np.allclose(out["base_lgbm_feature_drift_ks_core"], [0.13, 0.23])
+    assert "base_H10_pred_std" in out.columns
+
+
+def test_simulate_and_score_reanchors_entry_spread_into_path_geometry(monkeypatch):
+    monkeypatch.setenv("EPM_SIMPLE_POLICY_EXIT_QUOTE_HALF_SPREAD_BPS", "0")
+    rows = pd.DataFrame(
+        {
+            "timestamp": [
+                pd.Timestamp("2026-01-01 00:00:00", tz="UTC"),
+                pd.Timestamp("2026-01-01 01:00:00", tz="UTC"),
+            ],
+            "symbol": ["BTC/USD:USD", "ETH/USD:USD"],
+            "market_mode": ["perps", "perps"],
+            "side": [1.0, -1.0],
+            "rank_pct": [0.95, 0.95],
+            "barrier_pct": [0.01, 0.01],
+            "expected_half_spread_bps": [10.0, 10.0],
+            "entry_slippage_proxy_bps": [5.0, 5.0],
+        }
+    )
+    paths = (
+        np.array([[100.0, 100.0], [100.0, 100.0]], dtype=np.float32),
+        np.array([[100.0, 102.0], [100.0, 102.0]], dtype=np.float32),
+        np.array([[100.0, 98.0], [100.0, 98.0]], dtype=np.float32),
+        np.array([[100.0, 100.0], [100.0, 100.0]], dtype=np.float32),
+    )
+
+    metrics = spo.simulate_and_score(
+        rows,
+        *paths,
+        cost_pct=0.0,
+        size_power=1.0,
+        sl_mult=10.0,
+        trailing_activation_mult=10.0,
+        max_concurrent_trades=10,
+        max_concurrent_per_asset=10,
+        market_mode="perps",
+    )
+
+    assert metrics["theoretical_entry_prices"].tolist() == pytest.approx(
+        [100.0, 100.0]
+    )
+    assert metrics["entry_reanchor_bps"].tolist() == pytest.approx([15.0, 15.0])
+    assert metrics["entry_prices"].tolist() == pytest.approx([100.15, 99.85])
+
+
+def test_simulate_and_score_defaults_perp_exit_quote_gap(monkeypatch):
+    monkeypatch.delenv("EPM_SIMPLE_POLICY_EXIT_QUOTE_HALF_SPREAD_BPS", raising=False)
+    rows = pd.DataFrame(
+        {
+            "timestamp": [pd.Timestamp("2026-01-01 00:00:00", tz="UTC")],
+            "symbol": ["PNUT/USD:USD"],
+            "market_mode": ["perps"],
+            "side": [-1.0],
+            "rank_pct": [0.95],
+            "barrier_pct": [0.01],
+        }
+    )
+    paths = (
+        np.array([[100.0, 100.0]], dtype=np.float32),
+        np.array([[100.0, 101.5]], dtype=np.float32),
+        np.array([[100.0, 99.5]], dtype=np.float32),
+        np.array([[100.0, 101.0]], dtype=np.float32),
+    )
+
+    metrics = spo.simulate_and_score(
+        rows,
+        *paths,
+        cost_pct=0.0,
+        size_power=1.0,
+        sl_mult=1.0,
+        trailing_activation_mult=10.0,
+        max_concurrent_trades=10,
+        max_concurrent_per_asset=10,
+    )
+
+    assert metrics["exit_quote_half_spread_bps"] == pytest.approx(
+        spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0
+    )
+    assert metrics["full_sl_exit_count"] == 1
+
+
+def test_policy_spread_columns_use_asset_average_with_global_fallback(monkeypatch, tmp_path):
+    baseline_path = tmp_path / "per_asset_spread_baseline_latest.csv"
+    baseline_path.write_text(
+        "symbol,rows,average_spread_bps,median_spread_bps,p75_spread_bps,average_spread_ticks\n"
+        "BTC/USD:USD,3,6.0,5.0,7.0,1.0\n"
+        "ETH/USD:USD,1,18.0,16.0,20.0,3.0\n"
+    )
+    monkeypatch.setenv("EPM_SIMPLE_POLICY_USE_SPREAD_MODEL", "1")
+    monkeypatch.setenv("EPM_SIMPLE_POLICY_SPREAD_BASELINE_PATH", str(baseline_path))
+    spo._SPREAD_MODEL_COST_CACHE.clear()
+    spo._SPREAD_BASELINE_CACHE.clear()
+    rows = pd.DataFrame(
+        {
+            "symbol": ["BTC/USD:USD", "MISSING/USD:USD"],
+            "market_mode": ["perps", "perps"],
+        }
+    )
+
+    out = spo._with_policy_spread_cost_columns(rows, market_mode="perps")
+
+    assert out["expected_spread_bps"].tolist() == pytest.approx([6.0, 9.0])
+    assert out["expected_half_spread_bps"].tolist() == pytest.approx([3.0, 4.5])
+    assert out["exit_spread_cost_bps"].tolist() == pytest.approx([3.0, 4.5])
+
+
+def test_simple_rank_net_ev_prefilter_subtracts_row_level_spread():
+    rows = pd.DataFrame(
+        {
+            "timestamp": [
+                pd.Timestamp("2026-01-01 00:00:00", tz="UTC"),
+                pd.Timestamp("2026-01-01 00:15:00", tz="UTC"),
+            ],
+            "symbol": ["LOW/USD:USD", "WIDE/USD:USD"],
+            "market_mode": ["perps", "perps"],
+            "side": [1.0, 1.0],
+            "rank_pct": [0.91, 0.81],
+            "calibrated_score": [0.9, 0.8],
+            "barrier_pct": [0.01, 0.01],
+            "expected_half_spread_bps": [5.0, 75.0],
+            "exit_spread_cost_bps": [5.0, 75.0],
+            "entry_slippage_proxy_bps": [0.0, 0.0],
+        }
+    )
+    paths = (
+        np.array([[100.0, 100.0], [100.0, 100.0]], dtype=np.float32),
+        np.array([[100.0, 101.1], [100.0, 101.1]], dtype=np.float32),
+        np.array([[100.0, 99.9], [100.0, 99.9]], dtype=np.float32),
+        np.array([[100.0, 101.0], [100.0, 101.0]], dtype=np.float32),
+    )
+
+    fit = spo._fit_simple_rank_net_ev_prefilter(
+        rows,
+        paths,
+        cost_pct=0.0,
+        market_mode="perps",
+        sl_mults=(1.0,),
+        tp_mults=(1.0,),
+        bucket_count=10,
+        min_bucket_rows=1,
+        min_net_ev_bps=0.0,
+    )
+    filtered, keep_mask, summary = spo._apply_simple_rank_net_ev_prefilter(
+        rows,
+        fit,
+        cost_pct=0.0,
+        market_mode="perps",
+        context="unit_test",
+    )
+
+    assert fit["status"] == "fit"
+    assert keep_mask.tolist() == [True, False]
+    assert summary["rows_after"] == 1
+    assert filtered["symbol"].tolist() == ["LOW/USD:USD"]
+    assert filtered["simple_grid_gross_ev_bps"].iloc[0] > 80.0
+    assert filtered["simple_grid_net_ev_bps"].iloc[0] > 70.0
+
+
+def test_simulate_and_score_uses_row_level_exit_half_spread():
+    rows = pd.DataFrame(
+        {
+            "timestamp": [
+                pd.Timestamp("2026-01-01 00:00:00", tz="UTC"),
+                pd.Timestamp("2026-01-01 01:00:00", tz="UTC"),
+            ],
+            "symbol": ["BTC/USD:USD", "ETH/USD:USD"],
+            "market_mode": ["perps", "perps"],
+            "side": [1.0, 1.0],
+            "rank_pct": [1.0, 1.0],
+            "barrier_pct": [0.10, 0.10],
+            "expected_half_spread_bps": [0.0, 0.0],
+            "exit_spread_cost_bps": [0.0, 100.0],
+        }
+    )
+    paths = (
+        np.array([[100.0], [100.0]], dtype=np.float32),
+        np.array([[100.0], [100.0]], dtype=np.float32),
+        np.array([[100.0], [100.0]], dtype=np.float32),
+        np.array([[100.0], [100.0]], dtype=np.float32),
+    )
+
+    metrics = spo.simulate_and_score(
+        rows,
+        *paths,
+        cost_pct=0.0,
+        size_power=1.0,
+        sl_mult=10.0,
+        trailing_activation_mult=10.0,
+        max_concurrent_trades=10,
+        max_concurrent_per_asset=10,
+        market_mode="perps",
+    )
+
+    assert metrics["exit_spread_cost_bps"].tolist() == pytest.approx([0.0, 100.0])
+    raw_returns = np.asarray(metrics["raw_gains"]) / np.asarray(metrics["sizes"])
+    assert raw_returns[1] < raw_returns[0] - 0.009
+
+
+def test_exit_pressure_tightens_hard_take_profit_threshold():
+    rows = pd.DataFrame(
+        {
+            "timestamp": [pd.Timestamp("2026-01-01 00:00:00", tz="UTC")],
+            "symbol": ["BTC/USD"],
+            "market_mode": ["spot"],
+            "side": [1.0],
+            "rank_pct": [0.95],
+            "barrier_pct": [0.02],
+        }
+    )
+    paths = (
+        np.array([[100.0, 100.0, 100.0]], dtype=np.float32),
+        np.array([[100.0, 101.0, 101.0]], dtype=np.float32),
+        np.array([[100.0, 99.0, 99.0]], dtype=np.float32),
+        np.array([[100.0, 100.5, 100.5]], dtype=np.float32),
+    )
+
+    baseline = spo.simulate_and_score(
+        rows,
+        *paths,
+        cost_pct=0.0,
+        sl_mult=10.0,
+        trailing_activation_mult=10.0,
+        hard_tp_abs_pct=0.02,
+        max_concurrent_trades=10,
+        max_concurrent_per_asset=10,
+        market_mode="spot",
+    )
+    tightened = spo.simulate_and_score(
+        rows,
+        *paths,
+        cost_pct=0.0,
+        sl_mult=10.0,
+        trailing_activation_mult=10.0,
+        hard_tp_abs_pct=0.02,
+        exit_pressure_enabled=True,
+        exit_pressure_alpha=1.0,
+        exit_pressure_beta=1.0,
+        exit_pressure_delta=1.0,
+        exit_pressure_kappa=1.0,
+        exit_pressure_min_multiplier=0.25,
+        target_holding_hours=0.25,
+        max_concurrent_trades=10,
+        max_concurrent_per_asset=10,
+        market_mode="spot",
+    )
+
+    assert baseline["hard_tp_exit_count"] == 0
+    assert tightened["hard_tp_exit_count"] == 1
+    assert tightened["exit_pressure_p75"] > 0.0
+    assert tightened["tightening_multiplier_p25"] < 1.0
+
+
+def test_policy_round_trip_friction_fills_missing_spread_defaults():
+    rows = pd.DataFrame(
+        {
+            "symbol": ["BTC/USD:USD", "ETH/USD:USD"],
+            "market_mode": ["perps", "perps"],
+            "expected_half_spread_bps": [np.nan, 6.0],
+            "exit_spread_cost_bps": [np.nan, 8.0],
+            "entry_slippage_proxy_bps": [1.0, 2.0],
+        }
+    )
+
+    friction = spo._policy_round_trip_friction_bps(
+        rows,
+        cost_pct=0.001,
+        exit_quote_half_spread_bps=7.0,
+        market_mode="perps",
+    )
+
+    assert friction[0] == pytest.approx(
+        20.0 + spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0 + 7.0 + 1.0
+    )
+    assert friction[1] == pytest.approx(20.0 + 6.0 + 8.0 + 2.0)
 
 
 def test_policy_band_metrics_include_execution_cost_assumptions():
@@ -79,13 +434,27 @@ def test_policy_band_metrics_include_execution_cost_assumptions():
             * 2,
             "spread_cost_bps": [spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0]
             * 2,
+            "exit_quote_half_spread_bps": [
+                spo.DEFAULT_PERP_POLICY_EXIT_QUOTE_HALF_SPREAD_BPS
+            ]
+            * 2,
+            "exit_spread_cost_bps": [
+                spo.DEFAULT_PERP_POLICY_EXIT_QUOTE_HALF_SPREAD_BPS
+            ]
+            * 2,
             "entry_delay_target_minutes": [float(spo.POLICY_DELAYED_ENTRY_MINUTES)] * 2,
             "entry_delay_actual_minutes": [5.0, 6.0],
             "entry_slippage_proxy_bps": [4.0, 8.0],
             "fees_bps": [20.0, 20.0],
             "expected_friction_bps": [
-                20.0 + spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0 + 4.0,
-                20.0 + spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0 + 8.0,
+                20.0
+                + spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0
+                + spo.DEFAULT_PERP_POLICY_EXIT_QUOTE_HALF_SPREAD_BPS
+                + 4.0,
+                20.0
+                + spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0
+                + spo.DEFAULT_PERP_POLICY_EXIT_QUOTE_HALF_SPREAD_BPS
+                + 8.0,
             ],
             "entry_execution_source": [
                 "delayed_1m_intraminute_proxy",
@@ -111,12 +480,134 @@ def test_policy_band_metrics_include_execution_cost_assumptions():
     assert metrics["mean_spread_cost_bps"] == pytest.approx(
         spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0
     )
+    assert metrics["mean_exit_spread_cost_bps"] == pytest.approx(
+        spo.DEFAULT_PERP_POLICY_EXIT_QUOTE_HALF_SPREAD_BPS
+    )
     assert metrics["mean_entry_delay_target_minutes"] == pytest.approx(5.0)
     assert metrics["mean_entry_delay_actual_minutes"] == pytest.approx(5.5)
     assert metrics["mean_entry_slippage_proxy_bps"] == pytest.approx(6.0)
     assert metrics["mean_expected_friction_bps"] == pytest.approx(
-        20.0 + spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0 + 6.0
+        20.0
+        + spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0
+        + spo.DEFAULT_PERP_POLICY_EXIT_QUOTE_HALF_SPREAD_BPS
+        + 6.0
     )
     assert metrics["entry_execution_source_counts"] == {
         "delayed_1m_intraminute_proxy": 2
     }
+
+
+def test_deployment_payload_exports_asset_exclusion_map(monkeypatch):
+    monkeypatch.setenv("EPM_POLICY_DEPLOYMENT_SELECTION_METRIC", "top_5")
+    monkeypatch.setenv("EPM_POLICY_MAX_DEPLOYMENT_STRATEGIES", "1")
+    monkeypatch.setenv("EPM_POLICY_MAX_DEPLOYMENT_STRATEGIES_PER_SIDE", "1")
+    monkeypatch.setattr(
+        spo,
+        "_load_lgbm_mask_contracts_for_deployment",
+        lambda market_mode="spot": {},
+    )
+    monkeypatch.setattr(
+        spo,
+        "_require_lgbm_mask_contracts_for_deployment",
+        lambda: False,
+    )
+
+    metrics = {
+        "top_1": {
+            "n_trades": 10,
+            "start_date": "2025-01-01",
+            "end_date": "2025-02-01",
+        },
+        "top_5": {
+            "avg_pnl_bankroll": 0.01,
+            "w_std": 0.001,
+            "m_std": 0.001,
+            "n_trades": 20,
+            "start_date": "2025-01-01",
+            "end_date": "2025-02-01",
+        },
+    }
+    payload = spo._build_deployment_payload(
+        run_id="unit",
+        oos_results_json={
+            "strategies": {
+                "long_test": {
+                    "validation_metrics": metrics,
+                    "best_params": {"sl_mult": 1.0},
+                    "asset_metrics": [
+                        {
+                            "symbol": "BAD/USD:USD",
+                            "asset_decision": spo.ASSET_DECISION_BLACKLIST,
+                        },
+                        {
+                            "symbol": "OK/USD:USD",
+                            "asset_decision": spo.ASSET_DECISION_KEEP,
+                        },
+                    ],
+                }
+            }
+        },
+        available_strategy_ids={"long_test"},
+        market_mode="perps",
+    )
+
+    assert payload["asset_exclusions"] == {"long_test": ["BAD/USD:USD"]}
+    assert payload["strategies"][0]["excluded_symbols"] == ["BAD/USD:USD"]
+
+
+def test_local_candidate_guard_uses_per_strategy_rank_and_filters_replay(monkeypatch):
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_HIT_GUARD_ENABLED", True)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_ROWS", 2)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_BAND_WIDTH", 0.02)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_NET_HIT_RATE", 0.50)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_GROSS_HIT_RATE", 0.50)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_BPS_WEIGHTED_HIT", 0.50)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_MEAN_NET_RETURN", 0.0)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_CONFIRMATION_BANDS", 0)
+    monkeypatch.setattr(
+        spo,
+        "DEPLOYMENT_LOCAL_CANDIDATE_CONFIRMATION_MIN_POSITIVE",
+        0,
+    )
+
+    payload = {
+        "strategies": [
+            {
+                "strategy_id": "long_test",
+                "selected": True,
+                "deployment_rank_threshold": 0.50,
+            }
+        ],
+        "rejected_strategies": [],
+    }
+    candidates = pd.DataFrame(
+        {
+            "strategy_id": ["long_test"] * 4,
+            "strategy_rank_pct": [0.50, 0.51, 0.54, 0.55],
+            "auction_rank_score": [0.99, 0.98, 0.10, 0.11],
+            "net_return": [-0.010, -0.020, 0.010, 0.020],
+            "gross_return": [-0.005, -0.010, 0.015, 0.025],
+        }
+    )
+
+    summary = spo._apply_local_candidate_hit_rate_guard(
+        payload,
+        candidates,
+        candidate_path=Path("unit.parquet"),
+    )
+
+    guard = payload["strategies"][0]["local_candidate_hit_rate_guard"]
+    assert summary["rank_col"] == "strategy_rank_pct"
+    assert summary["rank_scope"] == "per_strategy"
+    assert payload["strategies"][0]["deployment_rank_threshold"] == pytest.approx(0.54)
+    assert guard["selected_mean_net_return"] > 0.0
+    assert guard["selected_bps_weighted_hit"] == pytest.approx(1.0)
+
+    replay = spo._filter_candidates_to_deployment_strategies(
+        candidates,
+        ["long_test"],
+        deployment_payload=payload,
+    )
+
+    assert replay["strategy_rank_pct"].min() == pytest.approx(0.54)
+    assert len(replay) == 2

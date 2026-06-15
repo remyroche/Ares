@@ -2,6 +2,7 @@ import concurrent.futures
 import fcntl
 import gc as _gc
 import glob
+import hashlib
 import json
 import os
 import re
@@ -42,6 +43,7 @@ HTTP_POOL_MAXSIZE = int(os.getenv("EPM_HTTP_POOL_MAXSIZE", "64") or "64")
 HTTP_POOL_CONNECTIONS = int(os.getenv("EPM_HTTP_POOL_CONNECTIONS", "64") or "64")
 _PUBLIC_DATA_SESSION: requests.Session | None = None
 _KRAKEN_FUNDING_EXPORT_CACHE: dict[tuple[str, str], pd.Series] = {}
+LIVE_LATEST_FEATURE_MATRIX_VERSION = 1
 
 
 def _configure_requests_session_pool(session: Any) -> None:
@@ -2995,6 +2997,8 @@ class PartitionedOHLCVStore:
             if c in df_reset.columns:
                 df_reset[c] = df_reset[c].astype(np.float32)
 
+        self._export_open_interest_sidecar(symbol, df_reset)
+
         df_reset["year"] = df_reset["ts"].dt.year
 
         sym_dir = self._get_symbol_dir(symbol)
@@ -3022,6 +3026,64 @@ class PartitionedOHLCVStore:
                 self._write_meta(symbol, {"last_ts_ms": int(last_ts.value // 10**6)})
         except Exception:
             pass
+
+    def _export_open_interest_sidecar(self, symbol: str, df_reset: pd.DataFrame) -> None:
+        """Mirror embedded perp OI into the dedicated sidecar used by features/live."""
+        if (
+            df_reset is None
+            or df_reset.empty
+            or "ts" not in df_reset.columns
+            or "open_interest" not in df_reset.columns
+        ):
+            return
+        try:
+            oi = pd.to_numeric(df_reset["open_interest"], errors="coerce")
+            mask = np.isfinite(oi.to_numpy(dtype=np.float64, copy=False)) & (oi > 0.0)
+            if not bool(np.any(mask)):
+                return
+            key = str(symbol).replace("/", "_").replace(":", "_")
+            sidecar_dir = os.path.join(self.root_dir, "open_interest_hourly")
+            os.makedirs(sidecar_dir, exist_ok=True)
+            path = os.path.join(sidecar_dir, f"{key}.parquet")
+            incoming = pd.DataFrame(
+                {
+                    "open_interest": oi.loc[mask].astype(np.float32).to_numpy(),
+                },
+                index=pd.DatetimeIndex(
+                    pd.to_datetime(df_reset.loc[mask, "ts"], utc=True),
+                    name="ts",
+                ).floor("h"),
+            )
+            incoming = incoming[~incoming.index.duplicated(keep="last")].sort_index()
+            if incoming.empty:
+                return
+            if os.path.exists(path):
+                try:
+                    existing = pd.read_parquet(path)
+                    if not existing.empty:
+                        existing.index = pd.to_datetime(
+                            existing.index, utc=True, errors="coerce"
+                        ).floor("h")
+                        if "open_interest" in existing.columns:
+                            existing = existing[["open_interest"]]
+                            existing["open_interest"] = pd.to_numeric(
+                                existing["open_interest"], errors="coerce"
+                            ).astype(np.float32)
+                            incoming = (
+                                pd.concat([existing, incoming])
+                                .sort_index()
+                                .groupby(level=0)
+                                .last()
+                            )
+                except Exception as exc:
+                    tprint(
+                        f"WARN open-interest sidecar merge skipped for {symbol}: {exc}"
+                    )
+            tmp_path = path + ".tmp"
+            incoming.to_parquet(tmp_path, engine="pyarrow", compression="zstd")
+            os.replace(tmp_path, path)
+        except Exception as exc:
+            tprint(f"WARN open-interest sidecar export failed for {symbol}: {exc}")
 
     def compact_partition(self, symbol: str, year: int):
         sym_dir = self._get_symbol_dir(symbol)
@@ -4236,9 +4298,7 @@ def _merge_duplicate_feature_rows(df: pd.DataFrame) -> pd.DataFrame:
     # timestamp. Coalesce duplicate timestamps column-wise using the first
     # non-null value so append-only deltas can fill missing cells without
     # silently replacing an existing base feature value for historical rows.
-    merged = df.groupby(level=0, sort=True).agg(
-        lambda s: s.dropna().iloc[0] if not s.dropna().empty else np.nan
-    )
+    merged = df.groupby(level=0, sort=True).first()
     return merged.sort_index()
 
 
@@ -5454,8 +5514,7 @@ def load_features_selected(
         max_workers > 1
         and total_files >= 16
         and feature_set is not None
-        and (start_ts is not None or end_ts is not None)
-        and str(os.getenv("EPM_FEATURE_SELECTED_LOAD_PARALLEL", "1")).strip().lower()
+        and str(os.getenv("EPM_FEATURE_SELECTED_LOAD_PARALLEL", "0")).strip().lower()
         not in {"0", "false", "no", "off"}
     )
     if parallel_enabled:
@@ -5500,6 +5559,238 @@ def load_features_selected(
         f"Loaded raw arrays for {len(feat_buffers)} features. Returning LazyFeatureDict proxy."
     )
     return LazyFeatureDict(feat_buffers, symbol_indices=symbol_indices)
+
+
+def _live_latest_feature_matrix_token(end_ts: pd.Timestamp) -> str:
+    ts = pd.Timestamp(end_ts)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("UTC")
+    else:
+        ts = ts.tz_convert("UTC")
+    return ts.strftime("%Y%m%dT%H%M%SZ")
+
+
+def _live_latest_feature_matrix_paths(
+    ts: pd.Timestamp,
+    root_dir: str,
+    end_ts: pd.Timestamp,
+) -> tuple[str, str]:
+    ts_str = pd.Timestamp(ts).strftime("%Y%m%d_%H%M%S")
+    token = _live_latest_feature_matrix_token(end_ts)
+    out_dir = os.path.join(root_dir, "features", ts_str, "_live_latest_matrix")
+    return (
+        os.path.join(out_dir, f"matrix_{token}.parquet"),
+        os.path.join(out_dir, f"matrix_{token}.meta.json"),
+    )
+
+
+def _coerce_live_latest_matrix_index(matrix: pd.DataFrame) -> pd.DataFrame:
+    if matrix is None or matrix.empty:
+        return pd.DataFrame()
+    out = matrix.copy()
+    for col in ("symbol", "__symbol__"):
+        if col in out.columns:
+            out = out.set_index(col)
+            break
+    out.index = pd.Index([_normalize_spot_symbol(str(s)) for s in out.index], name="symbol")
+    if not out.index.is_unique:
+        out = out[~out.index.duplicated(keep="last")]
+    drop_cols = [c for c in out.columns if str(c).startswith("__index_level_")]
+    if drop_cols:
+        out = out.drop(columns=drop_cols)
+    return out
+
+
+def _latest_feature_matrix_from_mapping(
+    feats: dict,
+    *,
+    symbols: list[str] | None,
+    end_ts: pd.Timestamp,
+    feature_keys: set[str] | None = None,
+    feat_index: pd.Index | None = None,
+    feat_columns: list | None = None,
+) -> pd.DataFrame:
+    if not feats:
+        return pd.DataFrame()
+    symbol_list = [_normalize_spot_symbol(str(s)) for s in (symbols or feat_columns or [])]
+    if not symbol_list:
+        first_val = next(iter(feats.values()))
+        if isinstance(first_val, pd.DataFrame):
+            symbol_list = [_normalize_spot_symbol(str(s)) for s in first_val.columns]
+    if not symbol_list:
+        return pd.DataFrame()
+
+    end_ts = pd.Timestamp(end_ts)
+    if end_ts.tzinfo is None:
+        end_ts = end_ts.tz_localize("UTC")
+    else:
+        end_ts = end_ts.tz_convert("UTC")
+    rows: dict[str, dict[str, float]] = {sym: {} for sym in symbol_list}
+    wanted = {str(k) for k in feature_keys} if feature_keys else None
+
+    array_row_idx: int | None = None
+    array_columns = [_normalize_spot_symbol(str(s)) for s in (feat_columns or [])]
+    array_col_pos = {sym: i for i, sym in enumerate(array_columns)}
+    if feat_index is not None and len(feat_index) > 0:
+        idx = pd.DatetimeIndex(pd.to_datetime(feat_index, utc=True))
+        eligible = np.flatnonzero(idx <= end_ts)
+        if eligible.size:
+            array_row_idx = int(eligible[-1])
+
+    for key, value in feats.items():
+        key_s = str(key)
+        if wanted is not None and key_s not in wanted:
+            continue
+        try:
+            if isinstance(value, pd.DataFrame):
+                df = value
+                if df.empty:
+                    continue
+                idx = pd.DatetimeIndex(pd.to_datetime(df.index, utc=True))
+                eligible = np.flatnonzero(idx <= end_ts)
+                if eligible.size == 0:
+                    continue
+                row = df.iloc[int(eligible[-1])]
+                for sym in symbol_list:
+                    if sym in row.index:
+                        rows[sym][key_s] = float(row.loc[sym])
+                continue
+            if isinstance(value, np.ndarray):
+                if array_row_idx is None or not array_columns:
+                    continue
+                arr = value
+                if arr.ndim == 1:
+                    val = float(arr[array_row_idx])
+                    for sym in symbol_list:
+                        rows[sym][key_s] = val
+                elif arr.ndim == 2:
+                    for sym in symbol_list:
+                        j = array_col_pos.get(sym)
+                        if j is None:
+                            continue
+                        rows[sym][key_s] = float(arr[array_row_idx, j])
+        except Exception:
+            continue
+
+    matrix = pd.DataFrame.from_dict(rows, orient="index")
+    if matrix.empty:
+        return matrix
+    matrix.index.name = "symbol"
+    return matrix.astype(np.float32, copy=False)
+
+
+def write_live_latest_feature_matrix(
+    feats: dict,
+    ts: pd.Timestamp,
+    root_dir: str,
+    *,
+    end_ts: pd.Timestamp,
+    symbols: list[str] | None = None,
+    feature_keys: set[str] | list[str] | tuple[str, ...] | None = None,
+    feat_index: pd.Index | None = None,
+    feat_columns: list | None = None,
+    merge_existing: bool = True,
+) -> None:
+    """Persist one live-hour feature matrix for fast inference loading.
+
+    The normal feature store remains symbol-partitioned for training.  This
+    sidecar is intentionally denormalized as symbols x feature keys so live
+    inference can load one compact parquet file for the latest decision hour.
+    """
+    try:
+        feature_key_set = {str(k) for k in feature_keys} if feature_keys else None
+        matrix = _latest_feature_matrix_from_mapping(
+            feats,
+            symbols=symbols,
+            end_ts=end_ts,
+            feature_keys=feature_key_set,
+            feat_index=feat_index,
+            feat_columns=feat_columns,
+        )
+        if matrix.empty:
+            return
+        data_path, meta_path = _live_latest_feature_matrix_paths(ts, root_dir, end_ts)
+        os.makedirs(os.path.dirname(data_path), exist_ok=True)
+        if merge_existing and os.path.exists(data_path):
+            try:
+                existing = _coerce_live_latest_matrix_index(pd.read_parquet(data_path))
+            except Exception:
+                existing = pd.DataFrame()
+            if not existing.empty:
+                merged_index = existing.index.union(matrix.index)
+                merged = existing.reindex(merged_index)
+                for col in matrix.columns:
+                    incoming = matrix[col].reindex(merged_index)
+                    if col in merged.columns:
+                        merged[col] = incoming.combine_first(merged[col])
+                    else:
+                        merged[col] = incoming
+                matrix = merged
+        matrix = matrix.sort_index(axis=0).sort_index(axis=1).astype(
+            np.float32, copy=False
+        )
+        tmp_data = data_path + ".tmp"
+        tmp_meta = meta_path + ".tmp"
+        matrix.to_parquet(tmp_data, engine="pyarrow", compression="zstd")
+        os.replace(tmp_data, data_path)
+        meta = {
+            "version": LIVE_LATEST_FEATURE_MATRIX_VERSION,
+            "run_id": pd.Timestamp(ts).strftime("%Y%m%d_%H%M%S"),
+            "end_ts": pd.Timestamp(end_ts).isoformat(),
+            "rows": int(matrix.shape[0]),
+            "features": int(matrix.shape[1]),
+            "feature_names_hash": hashlib.sha256(
+                json.dumps(
+                    sorted(str(c) for c in matrix.columns),
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest(),
+        }
+        with open(tmp_meta, "w") as f:
+            json.dump(meta, f, sort_keys=True)
+        os.replace(tmp_meta, meta_path)
+        tprint(
+            "Persisted live latest feature matrix sidecar: "
+            f"symbols={matrix.shape[0]} features={matrix.shape[1]} "
+            f"end_ts={pd.Timestamp(end_ts)}"
+        )
+    except Exception as exc:
+        tprint(f"Warning: failed to persist live latest feature matrix sidecar: {exc}")
+
+
+def load_live_latest_feature_matrix(
+    ts: pd.Timestamp,
+    root_dir: str,
+    *,
+    end_ts: pd.Timestamp,
+    feature_keys: list[str] | set[str] | tuple[str, ...] | None = None,
+    symbols: list[str] | set[str] | tuple[str, ...] | None = None,
+) -> pd.DataFrame | None:
+    data_path, meta_path = _live_latest_feature_matrix_paths(ts, root_dir, end_ts)
+    if not (os.path.exists(data_path) and os.path.exists(meta_path)):
+        return None
+    try:
+        with open(meta_path) as f:
+            meta = json.load(f)
+        if int(meta.get("version", -1)) != LIVE_LATEST_FEATURE_MATRIX_VERSION:
+            return None
+        if pd.Timestamp(meta.get("end_ts")) != pd.Timestamp(end_ts):
+            return None
+        matrix = _coerce_live_latest_matrix_index(pd.read_parquet(data_path))
+        if matrix.empty:
+            return None
+        if feature_keys is not None:
+            wanted = [str(k) for k in feature_keys if str(k)]
+            missing = sorted(set(wanted) - set(str(c) for c in matrix.columns))
+            if missing:
+                return None
+            matrix = matrix.loc[:, wanted]
+        if symbols is not None:
+            symbol_index = [_normalize_spot_symbol(str(s)) for s in symbols]
+            matrix = matrix.reindex(symbol_index)
+        return matrix.astype(np.float32, copy=False)
+    except Exception:
+        return None
 
 
 def check_data_health(df: pd.DataFrame, timeframe="1h") -> dict:

@@ -23,6 +23,26 @@ def test_prediction_ledger_appends_and_loads_unresolved(tmp_path):
     assert unresolved.iloc[0]["symbol"] == "BTC/USDC"
 
 
+def test_prediction_ledger_exposes_prefixed_lgbm_diagnostic_columns(tmp_path):
+    path = tmp_path / "prediction_ledger.parquet"
+    ledger = PredictionLedger(path)
+    ledger.append_rows(
+        [
+            {
+                "timestamp": "2026-05-10T12:00:00Z",
+                "symbol": "BTC/USDC",
+                "strategy_id": "short_test",
+            }
+        ]
+    )
+
+    df = pd.read_parquet(path)
+    for prefix in ("base_lgbm", "meta_lgbm"):
+        assert f"{prefix}_feature_drift_cov_shift" in df.columns
+        assert f"{prefix}_regime_centroid_similarity_train" in df.columns
+        assert f"{prefix}_prob_uncertainty" in df.columns
+
+
 def test_prediction_ledger_marks_resolved(tmp_path):
     path = tmp_path / "prediction_ledger.parquet"
     ledger = PredictionLedger(path)

@@ -1,5 +1,6 @@
 """Daily deployment reporting and profit skim utilities."""
 
+import html
 import json
 import os
 import smtplib
@@ -128,6 +129,79 @@ def _format_trade_report(trades: pd.DataFrame) -> str:
     for col in view.columns:
         view[col] = view[col].astype(str).str.slice(0, 120)
     return view.to_csv(index=False)
+
+
+def _html_escape(value: Any) -> str:
+    return html.escape("" if value is None else str(value), quote=True)
+
+
+def _html_metric(label: str, value: str, *, accent: str = "neutral") -> str:
+    colors = {
+        "good": "#087f5b",
+        "bad": "#c92a2a",
+        "warn": "#b7791f",
+        "neutral": "#24435c",
+    }
+    color = colors.get(accent, colors["neutral"])
+    return (
+        '<td class="metric">'
+        f'<div class="metric-label">{_html_escape(label)}</div>'
+        f'<div class="metric-value" style="color:{color}">{_html_escape(value)}</div>'
+        "</td>"
+    )
+
+
+def _html_pre(text: str) -> str:
+    return f'<pre class="preblock">{_html_escape(text)}</pre>'
+
+
+def _html_section(title: str, body: str) -> str:
+    return (
+        '<section class="section">'
+        f"<h2>{_html_escape(title)}</h2>"
+        f"{body}"
+        "</section>"
+    )
+
+
+def _html_trade_table(trades: pd.DataFrame, *, max_rows: int = 40) -> str:
+    if trades.empty:
+        return '<p class="muted">No trades logged since the previous daily message.</p>'
+    preferred = [
+        "timestamp",
+        "symbol",
+        "side",
+        "strategy_id",
+        "status",
+        "calibrated_score",
+        "rank_percentile",
+        "entry_notional_quote",
+        "net_pnl_amount",
+        "net_pnl_pct",
+        "exit_reason",
+    ]
+    cols = [col for col in preferred if col in trades.columns]
+    if not cols:
+        cols = [col for col in REPORT_TRADE_COLUMNS if col in trades.columns][:10]
+    if not cols:
+        return '<p class="muted">Trade rows were present, but no display columns were available.</p>'
+    view = trades.loc[:, cols].tail(max_rows).copy()
+    headers = "".join(f"<th>{_html_escape(col)}</th>" for col in view.columns)
+    body_rows = []
+    for _, row in view.iterrows():
+        cells = []
+        for col in view.columns:
+            value = row.get(col)
+            if isinstance(value, float):
+                value = f"{value:.6g}" if np.isfinite(value) else ""
+            cells.append(f"<td>{_html_escape(str(value)[:96])}</td>")
+        body_rows.append("<tr>" + "".join(cells) + "</tr>")
+    return (
+        '<div class="table-wrap"><table>'
+        f"<thead><tr>{headers}</tr></thead>"
+        f"<tbody>{''.join(body_rows)}</tbody>"
+        "</table></div>"
+    )
 
 
 def _trade_closed_mask(trades: pd.DataFrame) -> pd.Series:
@@ -769,6 +843,86 @@ def _model_drift_summary(trades: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 
+def _live_drift_recap_summary(config: Dict[str, Any]) -> str:
+    """Human-readable summary of the latest live drift recap for email reports."""
+    if not bool(config.get("daily_report_include_live_drift_recap", True)):
+        return "Live drift recap: disabled by daily_report_include_live_drift_recap."
+
+    explicit_path = str(config.get("daily_report_live_drift_recap_path") or "").strip()
+    if explicit_path:
+        recap_path = Path(explicit_path)
+    else:
+        live_root = Path(
+            config.get("live_data_root")
+            or config.get("data_root")
+            or "data"
+        )
+        recap_path = (
+            live_root
+            / "live_state"
+            / "drift_monitoring"
+            / "latest"
+            / "drift_recap.json"
+        )
+
+    recap = _read_json(recap_path)
+    if not recap:
+        return f"Live drift recap: unavailable at {recap_path}"
+
+    reason = str(recap.get("reason") or "").strip()
+    if reason:
+        return f"Live drift recap: skipped reason={reason} path={recap_path}"
+
+    lines = [
+        "Live drift recap:",
+        f"  asof_ts: {recap.get('asof_ts', '')}",
+        f"  label_maturity_cutoff_ts: {recap.get('label_maturity_cutoff_ts', '')}",
+        f"  ledger_rows: {recap.get('ledger_rows', 0)} "
+        f"scored_metric_rows: {recap.get('scored_metric_rows', 0)} "
+        f"regime_feature_rows: {recap.get('regime_feature_rows', 0)}",
+        f"  source: {recap_path}",
+    ]
+
+    family_scores = recap.get("family_scores") or recap.get("all_family_scores") or {}
+    if not isinstance(family_scores, dict) or not family_scores:
+        lines.append("  family_scores: unavailable")
+        return "\n".join(lines)
+
+    def _window_sort_key(item: tuple[str, Any]) -> float:
+        label = str(item[0])
+        digits = "".join(ch for ch in label if ch.isdigit() or ch == ".")
+        return _coerce_float(digits, default=9999.0)
+
+    for window, families in sorted(family_scores.items(), key=_window_sort_key):
+        if not isinstance(families, dict) or not families:
+            continue
+        lines.append(f"  {window}:")
+        ordered = sorted(
+            families.items(),
+            key=lambda item: _coerce_float(
+                (item[1] or {}).get("family_score")
+                if isinstance(item[1], dict)
+                else np.nan,
+                default=-1.0,
+            ),
+            reverse=True,
+        )
+        for family, values in ordered[:8]:
+            if not isinstance(values, dict):
+                continue
+            score = _coerce_float(values.get("family_score"))
+            coverage = _coerce_float(values.get("family_metric_coverage_ratio"))
+            reliable = _coerce_float(values.get("family_reliable_baseline_ratio"))
+            matured = _coerce_float(values.get("family_matured_label_coverage_ratio"))
+            lines.append(
+                f"    {family}: score={score:.3f} "
+                f"coverage={coverage:.2f} reliable={reliable:.2f} "
+                f"matured={matured:.2f}"
+            )
+
+    return "\n".join(lines)
+
+
 def transfer_profit_to_spot(
     exchange: Any,
     *,
@@ -832,6 +986,7 @@ class DailyDeploymentReporter:
         *,
         subject: str,
         body: str,
+        html_body: Optional[str] = None,
         recipient: str,
         config: Dict[str, Any],
     ) -> Dict[str, Any]:
@@ -852,6 +1007,8 @@ class DailyDeploymentReporter:
         message["To"] = recipient
         message["Subject"] = subject
         message.set_content(body)
+        if html_body:
+            message.add_alternative(html_body, subtype="html")
 
         timeout = float(config.get("daily_report_smtp_timeout_seconds", 30.0))
         try:
@@ -897,6 +1054,9 @@ class DailyDeploymentReporter:
                 "Model Drift And Execution",
                 _model_drift_summary(trades),
                 "",
+                "Live Drift Recap",
+                _live_drift_recap_summary(cfg),
+                "",
                 "Dynamic Strategy Performance",
                 _dynamic_strategy_performance_recap(cfg),
                 "",
@@ -909,6 +1069,96 @@ class DailyDeploymentReporter:
                 "Trades Since Previous Message",
                 _format_trade_report(trades),
             ]
+        )
+
+    def _build_html_body(
+        self,
+        *,
+        now: pd.Timestamp,
+        total_balance: float,
+        available_balance: float,
+        previous_best_balance: float,
+        amount_to_save: float,
+        transfer_result: Dict[str, Any],
+        trades: pd.DataFrame,
+        config: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        cfg = dict(config or {})
+        delta_balance = available_balance - previous_best_balance
+        transfer_summary = json.dumps(transfer_result, default=str, sort_keys=True)
+        account_metrics = (
+            '<table class="metrics"><tr>'
+            + _html_metric("Total Balance", f"{total_balance:,.4f} USDT")
+            + _html_metric("Available", f"{available_balance:,.4f} USDT")
+            + _html_metric(
+                "Vs Previous Best",
+                f"{delta_balance:,.4f} USDT",
+                accent="good" if delta_balance >= 0 else "bad",
+            )
+            + _html_metric(
+                "Saved To Spot",
+                f"{amount_to_save:,.4f} USDT",
+                accent="good" if amount_to_save > 0 else "neutral",
+            )
+            + "</tr></table>"
+            f'<p class="kv"><span>Datetime</span>{_html_escape(now.isoformat())}</p>'
+            f'<p class="kv"><span>Transfer</span>{_html_escape(transfer_summary[:500])}</p>'
+        )
+        sections = [
+            _html_section("Account", account_metrics),
+            _html_section("Model Drift And Execution", _html_pre(_model_drift_summary(trades))),
+            _html_section("Live Drift Recap", _html_pre(_live_drift_recap_summary(cfg))),
+            _html_section(
+                "Dynamic Strategy Performance",
+                _html_pre(_dynamic_strategy_performance_recap(cfg)),
+            ),
+            _html_section(
+                "Confidence Calibration",
+                _html_pre(_confidence_calibration_recap(trades)),
+            ),
+            _html_section(
+                "Net Strategy Recap",
+                _html_pre(_strategy_trade_recap(trades, total_balance=total_balance)),
+            ),
+            _html_section("Trades Since Previous Message", _html_trade_table(trades)),
+        ]
+        css = """
+        body { margin:0; padding:0; background:#f4f6f8; color:#152536; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; }
+        .page { max-width:980px; margin:0 auto; padding:24px 18px 36px; }
+        .header { padding:6px 0 18px; border-bottom:3px solid #24435c; margin-bottom:18px; }
+        h1 { margin:0; font-size:24px; line-height:1.25; color:#102a43; letter-spacing:0; }
+        .subtitle { margin:7px 0 0; color:#52677a; font-size:13px; }
+        .section { background:#ffffff; border:1px solid #d8e0e8; border-radius:8px; padding:16px; margin:14px 0; }
+        h2 { margin:0 0 12px; font-size:16px; line-height:1.3; color:#102a43; letter-spacing:0; }
+        .metrics { width:100%; border-collapse:separate; border-spacing:8px; margin:0 0 8px; table-layout:fixed; }
+        .metric { background:#f8fafc; border:1px solid #dde5ed; border-radius:8px; padding:12px; vertical-align:top; }
+        .metric-label { color:#627286; font-size:12px; text-transform:uppercase; letter-spacing:0; margin-bottom:6px; }
+        .metric-value { font-size:20px; line-height:1.2; font-weight:700; word-break:break-word; }
+        .kv { margin:8px 0 0; color:#20364a; font-size:13px; line-height:1.45; }
+        .kv span { display:inline-block; min-width:92px; color:#627286; font-weight:600; }
+        .preblock { margin:0; padding:12px; overflow-x:auto; white-space:pre-wrap; word-break:break-word; background:#f8fafc; border:1px solid #dde5ed; border-radius:6px; font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:#1f2d3d; }
+        .table-wrap { overflow-x:auto; border:1px solid #dde5ed; border-radius:6px; }
+        table { width:100%; border-collapse:collapse; font-size:12px; }
+        th { background:#edf2f7; color:#334e68; text-align:left; padding:8px; border-bottom:1px solid #d8e0e8; white-space:nowrap; }
+        td { padding:8px; border-bottom:1px solid #edf2f7; vertical-align:top; color:#1f2d3d; }
+        tr:last-child td { border-bottom:0; }
+        .muted { color:#627286; margin:0; }
+        @media (max-width:700px) {
+          .page { padding:14px 10px 24px; }
+          .section { padding:12px; }
+          .metrics, .metrics tbody, .metrics tr, .metric { display:block; width:auto; }
+          .metric { margin:0 0 8px; }
+          .metric-value { font-size:18px; }
+        }
+        """
+        return (
+            "<!doctype html><html><head><meta charset=\"utf-8\">"
+            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+            f"<style>{css}</style></head><body><div class=\"page\">"
+            "<div class=\"header\"><h1>Extreme Price Movement Deployment Report</h1>"
+            f"<p class=\"subtitle\">Daily deployment recap for {_html_escape(now.isoformat())}</p></div>"
+            + "".join(sections)
+            + "</div></body></html>"
         )
 
     def maybe_run(
@@ -1043,8 +1293,22 @@ class DailyDeploymentReporter:
             trades=trades,
             config=cfg,
         )
+        html_body = self._build_html_body(
+            now=now_ts,
+            total_balance=total_balance,
+            available_balance=available_balance,
+            previous_best_balance=previous_best,
+            amount_to_save=amount_to_save,
+            transfer_result=transfer_result,
+            trades=trades,
+            config=cfg,
+        )
         email_result = self._send_email(
-            subject=str(subject), body=body, recipient=recipient, config=cfg
+            subject=str(subject),
+            body=body,
+            html_body=html_body,
+            recipient=recipient,
+            config=cfg,
         )
         if not email_result.get("success"):
             tprint(

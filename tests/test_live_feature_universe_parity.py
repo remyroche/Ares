@@ -37,6 +37,7 @@ def test_model_features_are_computed_on_full_tradable_universe(monkeypatch):
     def fake_load_or_compute_features(**kwargs):
         captured["basket_syms"] = list(kwargs["basket_syms"])
         captured["panel_symbols"] = list(kwargs["panel"]["close"].columns)
+        captured["required_feature_keys"] = set(kwargs["required_feature_keys"])
         return {}
 
     monkeypatch.setattr(run_inference, "load_or_compute_features", fake_load_or_compute_features)
@@ -55,6 +56,7 @@ def test_model_features_are_computed_on_full_tradable_universe(monkeypatch):
 
     assert captured["basket_syms"] == symbols
     assert captured["panel_symbols"] == symbols
+    assert "barrier_pct" in captured["required_feature_keys"]
 
 
 def test_strategy_mask_candidates_require_finite_deployed_contract():
@@ -694,6 +696,74 @@ def test_live_feature_cache_key_ignores_cycle_cache_controls():
     assert key_a == key_b
 
 
+def test_live_feature_cache_key_ignores_selected_sync_controls():
+    base = {
+        "run_id": "run_a",
+        "symbols": ["AAA/USDC"],
+        "required_feature_keys": {"ret24h"},
+        "lookback_hours": 24 * 60,
+    }
+
+    key_a = feature_generator._live_feature_cache_key(
+        **base,
+        cfg={
+            "train_min_range_pct": 0.06,
+            "live_feature_cache_namespace": "model",
+            "live_model_feature_auto_sync_selected_cache": True,
+            "live_model_feature_auto_sync_blocking": False,
+            "live_model_feature_auto_sync_timeout_seconds": 1200,
+        },
+    )
+    key_b = feature_generator._live_feature_cache_key(
+        **base,
+        cfg={
+            "train_min_range_pct": 0.06,
+            "live_feature_cache_namespace": "model",
+            "live_model_feature_auto_sync_selected_cache": False,
+            "live_model_feature_auto_sync_blocking": True,
+            "live_model_feature_auto_sync_timeout_seconds": 5,
+        },
+    )
+
+    assert key_a == key_b
+
+
+def test_selected_feature_sync_can_launch_out_of_band(tmp_path, monkeypatch):
+    launched = {}
+
+    class FakeProc:
+        pid = 12345
+
+    def fake_popen(cmd, **kwargs):
+        launched["cmd"] = list(cmd)
+        launched["kwargs"] = dict(kwargs)
+        return FakeProc()
+
+    monkeypatch.setattr(feature_generator.subprocess, "Popen", fake_popen)
+
+    ok = feature_generator._run_training_path_feature_sync_for_live(
+        run_id="feature_run",
+        data_root=str(tmp_path),
+        end_ts=pd.Timestamp("2026-06-10T09:00:00Z"),
+        cfg={"exchange": "kraken", "market_mode": "perps"},
+        required_feature_keys={"ret24h"},
+        blocking=False,
+        sync_label="selected_missing_contract",
+    )
+
+    assert ok is True
+    assert "--perps" in launched["cmd"]
+    assert launched["cmd"][-4:] == ["--exchange", "kraken", "--run-id", "feature_run"]
+    assert launched["kwargs"]["start_new_session"] is True
+    state_dir = tmp_path / "artifacts" / "feature_run" / "live_state"
+    assert (state_dir / "feature_selected_missing_contract_sync.pid").read_text() == "12345"
+    meta = json.loads(
+        (state_dir / "feature_selected_missing_contract_sync.json").read_text()
+    )
+    assert meta["requested_keys"] == 1
+    assert meta["end_ts"] == "2026-06-10T09:00:00+00:00"
+
+
 def test_live_feature_cache_key_ignores_coverage_symbols():
     base = {
         "run_id": "run_a",
@@ -1101,7 +1171,9 @@ def test_prediction_ledger_path_supports_run_scoped_override(monkeypatch, tmp_pa
         live_data_root=tmp_path,
         run_id="run_a",
     )
-    assert default_path == tmp_path / "live_state" / "prediction_ledger.parquet"
+    assert default_path == (
+        tmp_path / "live_state" / "prediction_ledgers" / "run_a" / "prediction_ledger.parquet"
+    )
 
     scoped_path = run_inference._resolve_prediction_ledger_path(
         live_data_root=tmp_path,
@@ -1273,24 +1345,128 @@ def test_model_feature_source_override_does_not_backfill_missing_offline_keys(mo
     monkeypatch.setattr(feature_generator, "_write_live_feature_snapshot", lambda **kwargs: None)
     monkeypatch.setattr(feature_generator, "_write_live_feature_rolling_cache", lambda **kwargs: None)
 
-    with pytest.raises(RuntimeError, match="selected-feature cache is incomplete"):
-        feature_generator.load_or_compute_features(
-            panel=panel,
-            basket_syms=symbols,
-            run_id="deploy_run",
-            data_root="data_perp/exchanges/krakenfutures",
-            cfg={
-                "live_feature_cache_namespace": "model",
-                "live_feature_offline_cache_enabled": True,
-                "training_live_parity_contract": {
-                    "feature_source": {"run_id": "feature_run"}
-                },
+    feats = feature_generator.load_or_compute_features(
+        panel=panel,
+        basket_syms=symbols,
+        run_id="deploy_run",
+        data_root="data_perp/exchanges/krakenfutures",
+        cfg={
+            "live_feature_cache_namespace": "model",
+            "live_feature_offline_cache_enabled": True,
+            "live_model_feature_store_strict": True,
+            "live_model_feature_auto_sync_selected_cache": False,
+            "training_live_parity_contract": {
+                "feature_source": {"run_id": "feature_run"}
             },
-            lookback_hours=2,
-            required_feature_keys={"feat_a", "feat_missing"},
-        )
+        },
+        lookback_hours=2,
+        required_feature_keys={"feat_a", "feat_missing"},
+    )
 
     assert rolling_called["value"] is False
+    assert float(feats["feat_a"].loc[idx[-1], "AAA/USD:USD"]) == 2.0
+    assert "feat_missing" in feats
+    assert np.isnan(feats["feat_missing"].loc[idx[-1], "AAA/USD:USD"])
+
+
+def test_strict_model_source_override_materializes_source_derived_without_sync(monkeypatch):
+    idx = pd.date_range("2026-06-04 10:00", periods=2, freq="1h", tz="UTC")
+    symbols = ["AAA/USD:USD"]
+    panel = {
+        "close": pd.DataFrame({"AAA/USD:USD": [100.0, 101.0]}, index=idx),
+    }
+
+    def fail_sync(*args, **kwargs):
+        raise AssertionError(
+            "source-derived live keys should not trigger selected-cache sync"
+        )
+
+    monkeypatch.setattr(
+        feature_generator, "_run_training_path_feature_sync_for_live", fail_sync
+    )
+    monkeypatch.setattr(
+        feature_generator,
+        "load_cached_features_for_inference",
+        lambda **kwargs: {
+            "feat_a": pd.DataFrame({"AAA/USD:USD": [2.0]}, index=idx[-1:]),
+        },
+    )
+    monkeypatch.setattr(
+        feature_generator, "_write_live_feature_snapshot", lambda **kwargs: None
+    )
+    monkeypatch.setattr(
+        feature_generator, "_write_live_feature_rolling_cache", lambda **kwargs: None
+    )
+
+    feats = feature_generator.load_or_compute_features(
+        panel=panel,
+        basket_syms=symbols,
+        run_id="deploy_run",
+        data_root="data_perp/exchanges/krakenfutures",
+        cfg={
+            "live_feature_cache_namespace": "model",
+            "live_feature_offline_cache_enabled": True,
+            "live_feature_prefer_offline_cache": True,
+            "live_model_feature_store_strict": True,
+            "live_model_feature_auto_sync_selected_cache": True,
+            "training_live_parity_contract": {
+                "feature_source": {"run_id": "feature_run"}
+            },
+        },
+        lookback_hours=2,
+        required_feature_keys={"feat_a", "oi_3d_chg_z"},
+    )
+
+    assert float(feats["feat_a"].loc[idx[-1], "AAA/USD:USD"]) == 2.0
+    assert "oi_3d_chg_z" in feats
+    assert np.isnan(feats["oi_3d_chg_z"].loc[idx[-1], "AAA/USD:USD"])
+
+
+def test_model_feature_source_override_materializes_execution_barrier(monkeypatch):
+    idx = pd.date_range("2026-06-04 10:00", periods=4, freq="1h", tz="UTC")
+    symbols = ["AAA/USD:USD"]
+    close = pd.DataFrame({"AAA/USD:USD": [100.0, 101.0, 102.0, 103.0]}, index=idx)
+    panel = {
+        "high": close + 1.0,
+        "low": close - 1.0,
+        "close": close,
+    }
+    offline = {
+        "feat_a": pd.DataFrame({"AAA/USD:USD": [2.0]}, index=idx[-1:]),
+    }
+
+    monkeypatch.setattr(
+        feature_generator,
+        "load_cached_features_for_inference",
+        lambda **kwargs: offline,
+    )
+    monkeypatch.setattr(feature_generator, "_write_live_feature_snapshot", lambda **kwargs: None)
+    monkeypatch.setattr(feature_generator, "_write_live_feature_rolling_cache", lambda **kwargs: None)
+
+    feats = feature_generator.load_or_compute_features(
+        panel=panel,
+        basket_syms=symbols,
+        run_id="deploy_run",
+        data_root="data_perp/exchanges/krakenfutures",
+        cfg={
+            "live_feature_cache_namespace": "model",
+            "live_feature_offline_cache_enabled": True,
+            "live_feature_prefer_offline_cache": True,
+            "live_model_feature_store_strict": True,
+            "live_model_feature_auto_sync_selected_cache": False,
+            "training_live_parity_contract": {
+                "feature_source": {"run_id": "feature_run"}
+            },
+        },
+        lookback_hours=4,
+        required_feature_keys={"feat_a", "barrier_pct"},
+    )
+
+    assert "barrier_pct" in feats
+    barrier = feats["barrier_pct"].loc[idx[-1], "AAA/USD:USD"]
+    assert np.isfinite(barrier)
+    assert barrier > 0.0
+    assert float(feats["feat_a"].loc[idx[-1], "AAA/USD:USD"]) == 2.0
 
 
 def test_offline_feature_lookup_roots_fall_back_from_exchange_scope(monkeypatch):

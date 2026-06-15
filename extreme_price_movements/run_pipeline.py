@@ -26,6 +26,8 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 _is_lgbm_pipeline_run = (
     str(os.environ.get("EPM_MODEL_BACKEND", "")).strip().lower() == "lgbm_pipeline"
     or "lgbm_pipeline" in {str(arg).strip().lower() for arg in sys.argv}
+    or "recency_hpo" in {str(arg).strip().lower() for arg in sys.argv}
+    or "final_model_fit" in {str(arg).strip().lower() for arg in sys.argv}
 )
 try:
     _lgbm_threads = str(max(1, int(os.environ.get("EPM_LGBM_N_JOBS", "3") or "3")))
@@ -406,7 +408,11 @@ def _maybe_extend_training_stage_to_latest(stage_view: dict, *, stage_name: str)
     view.pop("allowed_end_ts", None)
     view.pop("fit_end", None)
     view.pop("allowed_periods", None)
-    view["disable_exact_plan_row_filter"] = True
+    if _truthy_env("EPM_TRAIN_EXTEND_DISABLE_EXACT_PLAN_FILTER"):
+        view["disable_exact_plan_row_filter"] = True
+    else:
+        view.pop("disable_exact_plan_row_filter", None)
+        view["preserve_exact_plan_row_filter"] = True
     view["extended_to_latest"] = True
     view["stage_name"] = view.get("stage_name") or stage_name
     recent_days_raw = str(os.environ.get("EPM_TRAIN_RECENT_DAYS", "")).strip()
@@ -435,7 +441,9 @@ def _maybe_extend_training_stage_to_latest(stage_view: dict, *, stage_name: str)
         f"start={view.get('allowed_start_ts') or view.get('fit_start') or 'artifact-start'} "
         f"and symbols={len(view.get('symbols') or []) or 'ALL'}, removing "
         f"end={original_end or 'none'} and "
-        f"allowed_periods={'yes' if original_periods else 'no'}."
+        f"allowed_periods={'yes' if original_periods else 'no'}; "
+        f"exact_plan_row_filter="
+        f"{'disabled' if view.get('disable_exact_plan_row_filter') else 'preserved'}."
     )
     return view
 
@@ -447,8 +455,44 @@ def _load_training_slice_plan(cfg: dict, source_ts_sig: pd.Timestamp) -> dict:
         override_path = Path(override_raw).expanduser()
         with override_path.open("r", encoding="utf-8") as f:
             slice_plan = json.load(f)
+        cfg["_training_slice_plan_path"] = str(override_path)
+        event_run_id = str(
+            os.environ.get("EPM_TRAIN_SLICE_PLAN_EVENT_RUN_ID", "") or ""
+        ).strip()
+        if event_run_id:
+            cfg["_training_slice_plan_run_id"] = event_run_id
+        else:
+            try:
+                cfg["_training_slice_plan_run_id"] = str(
+                    override_path.parents[1].name
+                )
+            except Exception:
+                cfg["_training_slice_plan_run_id"] = (
+                    source_ts_sig.strftime("%Y%m%d_%H%M%S")
+                )
+        try:
+            slice_plan["_event_source_run_id"] = str(
+                cfg.get("_training_slice_plan_run_id") or ""
+            )
+        except Exception:
+            pass
         tprint(f"Training slice plan override loaded from {override_path}")
         return slice_plan
+    run_id = str(
+        os.environ.get("EPM_TRAIN_SLICE_PLAN_RUN_ID", "")
+        or cfg.get("_training_slice_plan_run_id")
+        or cfg.get("label_source_run_id")
+        or cfg.get("artifact_source_run_id")
+        or cfg.get("output_run_id")
+        or cfg.get("run_id")
+        or source_ts_sig.strftime("%Y%m%d_%H%M%S")
+    ).strip()
+    if not run_id:
+        run_id = source_ts_sig.strftime("%Y%m%d_%H%M%S")
+    cfg["_training_slice_plan_run_id"] = run_id
+    cfg["_training_slice_plan_path"] = str(
+        Path(cfg["data_root"]) / "artifacts" / run_id / "slices" / "slice_plan.json"
+    )
     return load_or_build_slice_plan(
         cfg, source_ts_sig, force_refresh=cfg.get("refresh_slice_plan", False)
     )
@@ -797,14 +841,20 @@ def _attach_feature_availability_policy_view(cfg: dict, slice_plan: dict, ts_sig
     if not policy_view:
         tprint("Feature availability reference: strict policy_optimiser slice unavailable; using training rows.")
         return
+    feature_source_run_id = (
+        str(os.environ.get("EPM_POLICY_FEATURE_SOURCE_RUN_ID") or "").strip()
+        or str(os.environ.get("EPM_FEATURE_SOURCE_RUN_ID") or "").strip()
+        or ts_sig.strftime("%Y%m%d_%H%M%S")
+    )
     cfg["_feature_availability_stage_view"] = policy_view
-    cfg["_feature_availability_run_id"] = ts_sig.strftime("%Y%m%d_%H%M%S")
+    cfg["_feature_availability_run_id"] = feature_source_run_id
     periods = policy_view.get("allowed_periods") or []
     symbols = policy_view.get("symbols") or []
     tprint(
         "Feature availability reference: using strict simple_policy_optimiser "
         f"slice (periods={len(periods)}, symbols={len(symbols)}, "
-        f"start={policy_view.get('allowed_start_ts')}, end={policy_view.get('allowed_end_ts')})."
+        f"start={policy_view.get('allowed_start_ts')}, end={policy_view.get('allowed_end_ts')}, "
+        f"feature_run_id={feature_source_run_id})."
     )
 
 
@@ -1538,7 +1588,12 @@ def _label_artifacts_ready(cfg, ts_sig):
     """Check whether core label artifacts exist for this run timestamp."""
     import os
 
-    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    run_id = str(
+        cfg.get("label_source_run_id")
+        or cfg.get("artifact_source_run_id")
+        or cfg.get("_label_artifact_run_id")
+        or ts_sig.strftime("%Y%m%d_%H%M%S")
+    ).strip()
     from extreme_price_movements.data_store import load_artifact_manifest
 
     labels_manifest = load_artifact_manifest(cfg["data_root"], run_id, "labels") or {}
@@ -1650,6 +1705,16 @@ def run_labels(cfg, horizons=None, ts_override=None, store=None):
     if ts_sig is None:
         tprint("ERROR: No feature directories found. Run feature_generation first.")
         return
+
+    label_artifact_run_id = str(
+        cfg.get("_label_artifact_run_id")
+        or cfg.get("output_run_id")
+        or os.environ.get("EPM_LABEL_ARTIFACT_RUN_ID")
+        or ""
+    ).strip()
+    if label_artifact_run_id:
+        cfg["_label_artifact_run_id"] = label_artifact_run_id
+        tprint(f"Labels artifact output run_id={label_artifact_run_id}")
 
     tprint(f"Labels mode. ts_sig={ts_sig} horizons={horizons}")
     _rollout_env = os.getenv("EPM_POLICY_ROLLOUT_LABELING_ENABLE", "").strip().lower()
@@ -2416,11 +2481,9 @@ def _run_offset_generation_stage(cfg, ts_sig):
     try:
         from extreme_price_movements.policy_optimiser import (
             _load_best_strategy,
-            resolve_optimised_selection_frac,
-        )
-        from extreme_price_movements.run_ridge_sizer import (
             load_meta_oof_predictions,
             load_trade_outcomes,
+            resolve_optimised_selection_frac,
         )
         from extreme_price_movements.simple_offset_generator import (
             run_simple_offset_generator_from_sizer,
@@ -2955,6 +3018,11 @@ def _stage_fit_bounds_from_cfg(cfg: dict):
     )
 
 
+def _active_stage_preserves_exact_plan_filter(cfg: dict) -> bool:
+    stage_view = cfg.get("_active_stage_view") or {}
+    return not bool(stage_view.get("disable_exact_plan_row_filter"))
+
+
 def _write_meta_artifact_policy_oos_provenance(
     cfg: dict,
     *,
@@ -2965,6 +3033,7 @@ def _write_meta_artifact_policy_oos_provenance(
         from extreme_price_movements.policy_oos_provenance import (
             parquet_timestamp_bounds,
             sha256_file,
+            slice_plan_fit_bounds,
             write_source_artifact_provenance_manifest,
         )
 
@@ -2974,6 +3043,16 @@ def _write_meta_artifact_policy_oos_provenance(
         fit_start, fit_end = parquet_timestamp_bounds(
             sorted((run_root / "meta_oof").glob("meta_oof_*.parquet"))
         )
+        if (
+            (fit_start is None or fit_end is None)
+            and _active_stage_preserves_exact_plan_filter(cfg)
+        ):
+            plan_fit_start, plan_fit_end = slice_plan_fit_bounds(
+                slice_plan_path,
+                ("meta_model_fit",),
+            )
+            fit_start = fit_start or plan_fit_start
+            fit_end = fit_end or plan_fit_end
         if fit_start is None or fit_end is None:
             fit_start, fit_end = _stage_fit_bounds_from_cfg(cfg)
         feature_contract_hash = (
@@ -3678,7 +3757,9 @@ def _run_final_retraining_layers(
     final_cfg = dict(cfg)
     final_cfg["planned_max_assets"] = None
     final_cfg["planned_max_months"] = None
-    final_cfg["sample_weight_opt_enable"] = True
+    final_cfg["sample_weight_opt_enable"] = str(
+        os.environ.get("EPM_FINAL_RETRAIN_SAMPLE_WEIGHT_OPT_ENABLE", "0")
+    ).strip().lower() in {"1", "true", "yes", "on"}
     final_cfg["train_full_inference_models"] = True
     final_cfg["strategy_selection_final_retrain"] = True
     final_cfg["final_retrain_folds"] = int(os.environ.get("EPM_FINAL_RETRAIN_FOLDS", "4"))
@@ -3714,6 +3795,106 @@ def _run_final_retraining_layers(
         report["meta_rounds"].append({"round": round_i, "metrics": metrics})
     _write_json(sel_dir / "final_retrain_report.json", report)
     return report
+
+
+def _run_final_model_fit(
+    cfg: dict,
+    *,
+    ts_override: str | None = None,
+) -> None:
+    ts_sig = _resolve_ts_sig(cfg, ts_override)
+    if ts_sig is None:
+        tprint("ERROR: No feature directories found.")
+        return
+    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    policy_run_id = str(
+        os.environ.get("EPM_POLICY_ARTIFACT_RUN_ID", "")
+        or cfg.get("policy_artifact_run_id")
+        or run_id
+    ).strip()
+    explicit_ids = [
+        s.strip()
+        for s in str(os.environ.get("EPM_FINAL_MODEL_STRATEGY_IDS", "")).split(",")
+        if s.strip()
+    ]
+    strategy_ids = explicit_ids or _load_policy_winners(cfg, policy_run_id)
+    if not strategy_ids:
+        tprint(
+            "ERROR: final_model_fit found no selected policy strategies. "
+            "Run simple_policy_optimiser first or set EPM_FINAL_MODEL_STRATEGY_IDS."
+        )
+        return
+
+    ids_csv = ",".join(strategy_ids)
+    fit_cfg = dict(cfg)
+    fit_cfg["train_full_inference_models"] = True
+    fit_cfg["lgbm_use_native_preset"] = True
+    fit_cfg["lgbm_require_native_preset"] = True
+    fit_cfg["lgbm_native_preset_source_run_id"] = policy_run_id
+    fit_cfg["recency_hpo_use_winner"] = True
+    fit_cfg["model_backend"] = "lgbm_pipeline"
+    fit_cfg["base_model_backend"] = "lgbm_pipeline"
+    fit_cfg["meta_model_backend"] = "lgbm_pipeline"
+    fit_cfg["planned_max_assets"] = None
+    fit_cfg["planned_max_months"] = None
+
+    env = {
+        "EPM_MODEL_BACKEND": "lgbm_pipeline",
+        "EPM_LGBM_USE_NATIVE_PRESET": "1",
+        "EPM_LGBM_REQUIRE_NATIVE_PRESET": "1",
+        "EPM_LGBM_NATIVE_PRESET_SOURCE_RUN_ID": policy_run_id,
+        "EPM_RECENCY_HPO_USE_WINNER": "1",
+        "EPM_TRAIN_EXTEND_TO_LATEST": "1",
+        "EPM_TRAIN_EXTEND_DISABLE_EXACT_PLAN_FILTER": "1",
+        "EPM_BASE_STRATEGY_IDS": ids_csv,
+        "EPM_META_STRATEGY_IDS": ids_csv,
+        "EPM_POLICY_STRATEGY_IDS": ids_csv,
+    }
+    tprint(
+        "FINAL MODEL FIT START: "
+        f"run_id={run_id} policy_run_id={policy_run_id} "
+        f"strategies={len(strategy_ids)} native_preset=yes recency_hpo_winner=yes "
+        "fit_window=all_available_rows"
+    )
+    with _temporary_env(env):
+        run_train(
+            fit_cfg,
+            ts_override=ts_sig.strftime("%Y%m%d_%H%M%S"),
+            base_only=True,
+            meta_only=False,
+        )
+        run_train_meta(fit_cfg, ts_override=ts_sig.strftime("%Y%m%d_%H%M%S"))
+
+    manifest = {
+        "mode": "final_model_fit",
+        "run_id": run_id,
+        "model_artifact_run_id": run_id,
+        "policy_artifact_run_id": policy_run_id,
+        "strategy_ids": strategy_ids,
+        "strategy_source": (
+            "EPM_FINAL_MODEL_STRATEGY_IDS" if explicit_ids else "policy_winners"
+        ),
+        "native_preset_source_run_id": policy_run_id,
+        "native_preset_required": True,
+        "recency_hpo_use_winner": True,
+        "train_extend_to_latest": True,
+        "disable_exact_plan_row_filter": True,
+        "validation_note": (
+            "Deployment final fit only. Metrics from these models are not clean OOS "
+            "validation because all available rows may be used for fitting."
+        ),
+    }
+    out_dir = Path(fit_cfg["data_root"]) / "artifacts" / run_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(out_dir / "final_model_fit_manifest.json", manifest)
+    if policy_run_id != run_id:
+        policy_dir = Path(fit_cfg["data_root"]) / "artifacts" / policy_run_id
+        policy_dir.mkdir(parents=True, exist_ok=True)
+        _write_json(policy_dir / "final_model_fit_manifest.json", manifest)
+    tprint(
+        "FINAL MODEL FIT COMPLETE: "
+        f"manifest={out_dir / 'final_model_fit_manifest.json'}"
+    )
 
 
 def run_strategies_selection(cfg, ts_override=None, store=None):
@@ -4143,6 +4324,8 @@ def main():
             "meta_training",
             "train_meta",
             "base_hpo",
+            "recency_hpo",
+            "final_model_fit",
             "sizer",
             "policy_optimiser",
             "optimise",
@@ -4266,7 +4449,9 @@ def main():
     )
     args = parser.parse_args()
     if args.run_id_override and not args.ts_override:
-        args.ts_override = args.run_id_override
+        _run_id_for_ts = str(args.run_id_override).strip()
+        if re.match(r"^\d{8}_\d{6}(?:_|$)", _run_id_for_ts):
+            args.ts_override = args.run_id_override
 
     cfg = CFG.copy()
     _apply_fee_model(cfg, BASE_ROUND_TRIP_FEE_PCT)
@@ -4289,8 +4474,72 @@ def main():
             "Artifact source override: "
             f"labels/features/slices will read from run_id={_source_run_id}"
         )
+    _label_source_run_id = str(os.environ.get("EPM_LABEL_SOURCE_RUN_ID") or "").strip()
+    if _label_source_run_id:
+        cfg["label_source_run_id"] = _label_source_run_id
+        tprint(f"Label source override: labels will read from run_id={_label_source_run_id}")
+    _feature_source_run_id = str(os.environ.get("EPM_FEATURE_SOURCE_RUN_ID") or "").strip()
+    if _feature_source_run_id:
+        cfg["feature_source_run_id"] = _feature_source_run_id
+        tprint(
+            "Feature source override: features/slices will read from "
+            f"run_id={_feature_source_run_id}"
+        )
     if args.run_id_override:
         cfg["output_run_id"] = str(args.run_id_override).strip()
+    _label_artifact_run_id = str(
+        os.environ.get("EPM_LABEL_ARTIFACT_RUN_ID")
+        or cfg.get("output_run_id")
+        or ""
+    ).strip()
+    if _label_artifact_run_id:
+        cfg["_label_artifact_run_id"] = _label_artifact_run_id
+    _mr_tf_env_map = {
+        "EPM_MR_TF_MASKS_ENABLED": ("enabled", "bool"),
+        "EPM_MR_TF_OPTUNA_ENABLED": ("optuna_enabled", "bool"),
+        "EPM_MR_TF_OPTUNA_TRIALS": ("optuna_trials", "int"),
+        "EPM_MR_TF_OPTUNA_PATIENCE": ("optuna_patience", "int"),
+        "EPM_MR_TF_MIN_TRAIN_SAMPLES": ("min_train_samples", "int"),
+        "EPM_MR_TF_PROMOTION_MARGIN": ("promotion_margin", "float"),
+        "EPM_MR_TF_PROMOTION_TOP_FRAC": ("promotion_top_frac", "float"),
+        "EPM_MR_TF_OPTUNA_USE_NUMBA": ("optuna_use_numba", "bool"),
+        "EPM_MR_TF_OPTUNA_NUMBA_MIN_ROWS": ("optuna_numba_min_rows", "int"),
+        "EPM_MR_TF_SUPPORT_LOSS_HURDLE": ("support_loss_hurdle", "float"),
+        "EPM_MR_TF_SUPPORT_LOSS_HURDLE_RATIO": ("support_loss_hurdle_ratio", "float"),
+        "EPM_MR_TF_SUPPORT_LOSS_HURDLE_FLOOR": ("support_loss_hurdle_floor", "float"),
+        "EPM_MR_TF_SUPPORT_LOSS_QUADRATIC_MULTIPLIER": (
+            "support_loss_quadratic_multiplier",
+            "float",
+        ),
+        "EPM_MR_TF_SUPPORT_LOSS_HARD_VETO": ("support_loss_hard_veto", "bool"),
+        "EPM_MR_TF_SUPPORT_VALUE_POWER": ("support_value_power", "float"),
+        "EPM_MR_TF_MIN_COVERAGE": ("min_coverage", "float"),
+        "EPM_MR_TF_MIN_EARNED_QUALITY_UPLIFT": (
+            "min_earned_quality_uplift",
+            "float",
+        ),
+    }
+    _mr_tf_section = dict(cfg.get("mr_tf_masks") or {})
+    _mr_tf_changed = False
+    for _env_name, (_cfg_key, _kind) in _mr_tf_env_map.items():
+        _raw = str(os.environ.get(_env_name, "")).strip()
+        if _raw == "":
+            continue
+        try:
+            if _kind == "bool":
+                _value = _raw.lower() in {"1", "true", "yes", "on"}
+            elif _kind == "int":
+                _value = int(float(_raw))
+            else:
+                _value = float(_raw)
+        except Exception as exc:
+            tprint(f"WARNING: ignoring invalid {_env_name}={_raw!r}: {exc}")
+            continue
+        _mr_tf_section[_cfg_key] = _value
+        _mr_tf_changed = True
+    if _mr_tf_changed:
+        cfg["mr_tf_masks"] = _mr_tf_section
+        tprint(f"MR/TF mask override: {json.dumps(_mr_tf_section, sort_keys=True)}")
     market_mode = "perps" if args.perps else args.market_mode
     exchange_id = str(args.exchange or os.environ.get("EPM_EXCHANGE") or "binance").strip().lower()
     if exchange_id in {"krakenfutures", "kraken_futures"}:
@@ -4374,6 +4623,25 @@ def main():
             .lower()
             not in {"0", "false", "no", "off"}
         )
+    if os.environ.get("EPM_MIN_TRAIN_SAMPLES"):
+        cfg["min_train_samples"] = max(1, int(os.environ["EPM_MIN_TRAIN_SAMPLES"]))
+    if os.environ.get("EPM_BASE_MIN_SAMPLES_HARD_FLOOR"):
+        cfg["base_min_samples_hard_floor"] = max(
+            1, int(os.environ["EPM_BASE_MIN_SAMPLES_HARD_FLOOR"])
+        )
+    if os.environ.get("EPM_SAMPLE_WEIGHT_OPT_MIN_SAMPLES"):
+        cfg["sample_weight_opt_min_samples"] = max(
+            1, int(os.environ["EPM_SAMPLE_WEIGHT_OPT_MIN_SAMPLES"])
+        )
+    if os.environ.get("EPM_BASE_REQUIRE_POSITIVE_OOF_EXPECTANCY"):
+        cfg["base_require_positive_oof_expectancy"] = (
+            os.environ["EPM_BASE_REQUIRE_POSITIVE_OOF_EXPECTANCY"].strip().lower()
+            not in {"0", "false", "no", "off"}
+        )
+    if os.environ.get("EPM_BASE_OOF_EXPECTANCY_TOP_FRAC"):
+        cfg["base_oof_expectancy_top_frac"] = float(
+            os.environ["EPM_BASE_OOF_EXPECTANCY_TOP_FRAC"]
+        )
 
     _configure_report_roots(cfg)
     if args.model_backend:
@@ -4398,7 +4666,7 @@ def main():
     cfg["planned_max_assets"] = args.planned_max_assets
     cfg["planned_max_months"] = args.planned_max_months
     cfg["refresh_slice_plan"] = bool(args.refresh_slice_plan)
-    if args.mode in {"train", "base_training", "train_base", "meta_training", "train_meta"}:
+    if args.mode in {"train", "base_training", "train_base", "meta_training", "train_meta", "recency_hpo", "final_model_fit"}:
         _apply_training_no_penalty(cfg)
     if str(os.environ.get("EPM_DISABLE_REGIME_ADAPTORS", "")).strip().lower() in {
         "1",
@@ -4450,6 +4718,100 @@ def main():
             run_base_hpo_step(ts_sig, cfg)
         else:
             tprint("ERROR: No feature directories found.")
+    elif args.mode == "recency_hpo":
+        scope_filter = str(os.environ.get("EPM_RECENCY_HPO_SCOPE", "base")).strip().lower()
+        scope_tokens = {p.strip() for p in scope_filter.split(",") if p.strip()}
+        key_filter = str(
+            os.environ.get("EPM_RECENCY_HPO_SCOPE_KEY", "")
+            or os.environ.get("EPM_RECENCY_HPO_STRATEGY_ID", "")
+        ).strip()
+        strategy_filter = str(os.environ.get("EPM_RECENCY_HPO_STRATEGY_ID", "")).strip()
+        if not key_filter:
+            tprint(
+                "ERROR: recency_hpo requires EPM_RECENCY_HPO_SCOPE_KEY or "
+                "EPM_RECENCY_HPO_STRATEGY_ID so it runs on one intended "
+                "strategy/head instead of every native LGBM scope."
+            )
+            sys.exit(2)
+        cfg["recency_hpo_enabled"] = True
+        cfg["recency_hpo_only"] = True
+        cfg["lgbm_use_native_preset"] = True
+        cfg["model_backend"] = "lgbm_pipeline"
+        cfg["base_model_backend"] = "lgbm_pipeline"
+        cfg["meta_model_backend"] = "lgbm_pipeline"
+        os.environ.setdefault("EPM_MODEL_BACKEND", "lgbm_pipeline")
+        os.environ.setdefault("EPM_LGBM_USE_NATIVE_PRESET", "1")
+        os.environ.setdefault("EPM_RECENCY_HPO_ENABLED", "1")
+        os.environ.setdefault("EPM_RECENCY_HPO_ONLY", "1")
+        os.environ.setdefault("EPM_TRAIN_EXTEND_TO_LATEST", "1")
+        os.environ.setdefault("EPM_TRAIN_EXTEND_DISABLE_EXACT_PLAN_FILTER", "1")
+        if strategy_filter:
+            if scope_tokens == {"meta"}:
+                os.environ.setdefault("EPM_META_STRATEGY_IDS", strategy_filter)
+            elif "both" in scope_tokens or {"base", "meta"}.issubset(scope_tokens):
+                os.environ.setdefault("EPM_BASE_STRATEGY_IDS", strategy_filter)
+                os.environ.setdefault("EPM_META_STRATEGY_IDS", strategy_filter)
+            else:
+                os.environ.setdefault("EPM_BASE_STRATEGY_IDS", strategy_filter)
+        tprint(
+            "STEP: RECENCY HPO START "
+            f"(scope={scope_filter}, key_filter={key_filter}, "
+            "native_preset_required=yes)"
+        )
+        from extreme_price_movements.lgbm_recency_hpo import RecencyHPOComplete
+
+        def _run_recency_hpo_stage(stage_name, fn):
+            try:
+                fn()
+            except RecencyHPOComplete as exc:
+                winner = exc.payload.get("winner", {}) if isinstance(exc.payload, dict) else {}
+                tprint(
+                    "RECENCY HPO COMPLETE "
+                    f"(stage={stage_name}, scope={exc.scope}, "
+                    f"scope_key={exc.scope_key}, winner={winner})"
+                )
+                return True
+            return False
+
+        if scope_tokens == {"meta"}:
+            completed = _run_recency_hpo_stage(
+                "meta",
+                lambda: run_train_meta(cfg, ts_override=args.ts_override),
+            )
+            if not completed:
+                tprint("WARNING: recency_hpo meta completed without matching a target scope.")
+        elif "both" in scope_tokens or {"base", "meta"}.issubset(scope_tokens):
+            base_completed = _run_recency_hpo_stage(
+                "base",
+                lambda: run_train(
+                    cfg,
+                    ts_override=args.ts_override,
+                    base_only=True,
+                    meta_only=False,
+                ),
+            )
+            meta_completed = _run_recency_hpo_stage(
+                "meta",
+                lambda: run_train_meta(cfg, ts_override=args.ts_override),
+            )
+            if not base_completed:
+                tprint("WARNING: recency_hpo base completed without matching a target scope.")
+            if not meta_completed:
+                tprint("WARNING: recency_hpo meta completed without matching a target scope.")
+        else:
+            completed = _run_recency_hpo_stage(
+                "base",
+                lambda: run_train(
+                    cfg,
+                    ts_override=args.ts_override,
+                    base_only=True,
+                    meta_only=False,
+                ),
+            )
+            if not completed:
+                tprint("WARNING: recency_hpo base completed without matching a target scope.")
+    elif args.mode == "final_model_fit":
+        _run_final_model_fit(cfg, ts_override=args.ts_override)
     elif args.mode == "sizer":
         run_sizer(cfg, ts_override=args.ts_override)
     elif args.mode == "policy_optimiser":

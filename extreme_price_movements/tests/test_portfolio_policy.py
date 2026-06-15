@@ -304,6 +304,47 @@ def test_rank_based_position_size_rank_scales_under_position_cap():
     assert low_rank["size_after_liquidity"] < high_rank["size_after_liquidity"]
 
 
+def test_perps_rank_sizing_uses_same_dynamic_leverage_in_live_and_live_test():
+    policy = PortfolioPolicyConfig()
+    prod = compute_rank_based_position_size(
+        wallet_value=100.0,
+        open_notional=0.0,
+        adjusted_rank_score=0.95,
+        final_threshold=0.70,
+        policy=policy,
+        liquidity_capacity_weight=1.0,
+        live_test_mode=False,
+        market_mode="perps",
+        available_wallet_value=100.0,
+        stop_loss_pct=0.01,
+        rank_number=1,
+        rank_x=5,
+        orderbook_capacity_quote=1_000.0,
+    )
+    live_test = compute_rank_based_position_size(
+        wallet_value=100.0,
+        open_notional=0.0,
+        adjusted_rank_score=0.95,
+        final_threshold=0.70,
+        policy=policy,
+        liquidity_capacity_weight=1.0,
+        live_test_mode=True,
+        market_mode="perps",
+        available_wallet_value=100.0,
+        stop_loss_pct=0.01,
+        rank_number=1,
+        rank_x=5,
+        orderbook_capacity_quote=1_000.0,
+    )
+
+    assert prod["perp_rank_leverage"] == 25.0
+    assert prod["perp_effective_leverage"] == 25.0
+    assert live_test["perp_rank_leverage"] == prod["perp_rank_leverage"]
+    assert live_test["perp_effective_leverage"] == prod["perp_effective_leverage"]
+    assert live_test["size_after_liquidity"] == policy.live_test_quote_notional
+    assert prod["size_after_liquidity"] > live_test["size_after_liquidity"]
+
+
 def test_capacity_api_reports_remaining_slots_and_notional():
     mgr = PortfolioManager(portfolio_value=10000.0)
     mgr.record_position_open(

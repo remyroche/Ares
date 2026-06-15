@@ -7,7 +7,7 @@ with the same adverse gap assumptions.
 
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Any, Tuple
 
 import numpy as np
 
@@ -60,7 +60,7 @@ def stop_exit_fill_price_array(
     base_gap_bps: float,
     alpha_through: float,
     max_gap_bps: float,
-    quote_half_spread_bps: float = 0.0,
+    quote_half_spread_bps: Any = 0.0,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Vectorized variant of :func:`stop_exit_fill_price`.
 
@@ -73,7 +73,15 @@ def stop_exit_fill_price_array(
     low = np.asarray(candle_low, dtype=np.float64)
     is_long = side_arr >= 0.0
     is_short = ~is_long
-    quote_half_spread = max(0.0, float(quote_half_spread_bps)) / 10000.0
+    quote_half_spread = np.asarray(quote_half_spread_bps, dtype=np.float64)
+    if quote_half_spread.ndim == 0:
+        quote_half_spread = np.full_like(stop, float(quote_half_spread), dtype=np.float64)
+    else:
+        quote_half_spread = np.broadcast_to(quote_half_spread, stop.shape).astype(
+            np.float64,
+            copy=False,
+        )
+    quote_half_spread = np.maximum(np.nan_to_num(quote_half_spread, nan=0.0), 0.0) / 10000.0
     high_trigger = np.where(is_long, high - stop * quote_half_spread, high + stop * quote_half_spread)
     low_trigger = np.where(is_long, low - stop * quote_half_spread, low + stop * quote_half_spread)
     finite = np.isfinite(stop) & (stop > 0.0) & np.isfinite(high) & np.isfinite(low)

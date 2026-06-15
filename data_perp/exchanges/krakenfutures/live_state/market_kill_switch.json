@@ -1,16 +1,16 @@
 {
   "active": false,
   "details": {
-    "market_avg_1h_abs_move": 0.054285638060537794,
-    "market_avg_4h_abs_move": 0.07259109849210717,
-    "market_basket_assets": 147,
+    "market_avg_1h_abs_move": 0.10262074279347286,
+    "market_avg_4h_abs_move": 0.07146147700868657,
+    "market_basket_assets": 185,
     "market_basket_min_assets": 20,
     "market_basket_status": "broad_non_btc_eth"
   },
-  "halt_until": "2026-06-04T19:30:00+00:00",
+  "halt_until": "2026-06-14T20:00:00+00:00",
   "manual_reset_required": false,
   "reason": "MARKET_AVG_1H_MOVE_GT_5PCT",
-  "recovered_at": "2026-06-04T19:45:00+00:00",
+  "recovered_at": "2026-06-14T20:00:00+00:00",
   "self_reversible": true,
-  "triggered_at": "2026-06-04T07:30:00+00:00"
+  "triggered_at": "2026-06-14T08:00:00+00:00"
 }

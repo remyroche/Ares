@@ -18,10 +18,15 @@ from scipy.stats import spearmanr
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import roc_auc_score
 from sklearn.mixture import GaussianMixture
+try:
+    from sklearn.cluster import MiniBatchKMeans as _MiniBatchKMeans
+except Exception:  # pragma: no cover - optional sklearn component
+    _MiniBatchKMeans = None
 
 import extreme_price_movements.fast_funcs as ff
 
 from .barrier_geometry import make_effective_tp
+from .base_error_archetype_backfill import load_base_error_archetype_states
 from .calibration import apply_logit_shift, compute_logit_shift, compute_prevalences
 from .candidates import (
     select_trade_candidates_hourly,
@@ -30,11 +35,21 @@ from .candidates import (
 from .config import CANON_HORIZONS
 from .data_store import save_artifact_df
 from .ebm_on_lgbm import train_ebm_on_lgbm_candidate
+from .lgbm_archetype_features import (
+    ARCHETYPE_FEATURE_NAMES,
+    RAW_CONTRIB_FEATURE_PREFIX,
+    is_archetype_feature_name,
+    is_raw_contrib_feature_name,
+)
 from .lgbm_pipeline import (
+    LGBM_INTERNAL_METRIC_FEATURE_NAMES,
     _is_lgbm_model_derived_meta_feature,
+    apply_label_weight_hpo_report_to_arrays,
     fit_lgbm_stability_full_model,
+    run_lgbm_recency_hpo_fixed_contract,
     train_lgbm_stability_candidate,
 )
+from .lgbm_recency_hpo import RecencyHPOComplete, recency_hpo_enabled_for_scope
 from .label_weight_optuna import (
     apply_geometry_recipe_to_labels,
     apply_generator_recipe_to_cfg,
@@ -66,6 +81,9 @@ from .model_drift_features import (
     MODEL_DRIFT_FEATURE_KEYS,
     fit_model_drift_state,
     transform_model_drift_features,
+)
+from .model_effectiveness_history import (
+    build_model_effectiveness_history_defaults,
 )
 from .model_race import ModelRace, _safe_binary_calibrate
 from .model_scoring import (
@@ -234,6 +252,515 @@ def _stage_period_mask(index: pd.Index, stage_view: dict[str, Any]) -> np.ndarra
         if not pd.isna(end):
             mask &= np.asarray(ts <= end, dtype=bool)
     return mask
+
+
+def _foldwise_model_drift_feature_frame(
+    frame: pd.DataFrame,
+    *,
+    feature_columns: Sequence[str],
+    n_splits: int,
+    max_core_features: int,
+    window: int,
+) -> pd.DataFrame:
+    """Build model-drift features without fitting the drift reference on its own rows."""
+    cols = [str(c) for c in feature_columns if str(c) in frame.columns]
+    n = int(len(frame))
+    out = pd.DataFrame(index=frame.index, columns=list(MODEL_DRIFT_FEATURE_KEYS), dtype=np.float32)
+    if n == 0 or not cols:
+        return out.fillna(0.0).astype(np.float32)
+    source = frame.reindex(columns=cols)
+    n_splits = max(2, min(int(n_splits or 3), n))
+    positions = np.arange(n, dtype=np.int32)
+    min_train_rows = max(20, min(100, n // 3))
+    for fold_i in range(n_splits):
+        valid_pos = positions[(positions % n_splits) == fold_i]
+        train_pos = positions[(positions % n_splits) != fold_i]
+        if valid_pos.size == 0 or train_pos.size < min_train_rows:
+            continue
+        try:
+            state = fit_model_drift_state(
+                source.iloc[train_pos],
+                feature_columns=cols,
+                model=None,
+                max_core_features=int(max_core_features),
+                window=int(window),
+            )
+            part = transform_model_drift_features(
+                source.iloc[valid_pos],
+                state,
+                model=None,
+                index=frame.index[valid_pos],
+            )
+            if not part.empty:
+                valid_cols = [str(c) for c in part.columns if str(c) in out.columns]
+                if valid_cols:
+                    out.loc[part.index, valid_cols] = part[valid_cols].to_numpy(dtype=np.float32)
+        except Exception:
+            continue
+    return out.fillna(0.0).replace([np.inf, -np.inf], 0.0).astype(np.float32)
+
+
+BASE_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS = (
+    "base_lgbm_predictive_atlas_ic",
+    "base_lgbm_predictive_atlas_rank_ic",
+    "base_lgbm_predictive_atlas_hit_rate",
+    "base_lgbm_predictive_atlas_expected_hit_rate",
+    "base_lgbm_predictive_atlas_hit_rate_surprise",
+    "base_lgbm_predictive_atlas_hit_rate_surprise_z",
+    "base_lgbm_predictive_atlas_support_n",
+    "base_lgbm_predictive_atlas_effective_n",
+    "base_lgbm_predictive_atlas_score_mean",
+    "base_lgbm_predictive_atlas_score_std",
+    "base_lgbm_predictive_atlas_support_quality",
+)
+
+
+def _online_corr_from_stats(stats: dict[str, float], x_prefix: str = "x") -> float:
+    n = float(stats.get("n", 0.0) or 0.0)
+    if n < 3.0:
+        return 0.0
+    sx = float(stats.get(f"s{x_prefix}", 0.0) or 0.0)
+    sxx = float(stats.get(f"s{x_prefix}{x_prefix}", 0.0) or 0.0)
+    sy = float(stats.get("sy", 0.0) or 0.0)
+    syy = float(stats.get("syy", 0.0) or 0.0)
+    sxy = float(stats.get(f"s{x_prefix}y", 0.0) or 0.0)
+    cov = sxy - (sx * sy / n)
+    vx = sxx - (sx * sx / n)
+    vy = syy - (sy * sy / n)
+    denom = float(np.sqrt(max(vx, 0.0) * max(vy, 0.0)))
+    if denom <= 1e-12:
+        return 0.0
+    return float(np.clip(cov / denom, -1.0, 1.0))
+
+
+def _stats_features(stats: dict[str, float], *, min_support: int) -> dict[str, float]:
+    n = float(stats.get("n", 0.0) or 0.0)
+    if n < 1.0:
+        return {
+            "base_lgbm_predictive_atlas_ic": 0.0,
+            "base_lgbm_predictive_atlas_rank_ic": 0.0,
+            "base_lgbm_predictive_atlas_hit_rate": 0.5,
+            "base_lgbm_predictive_atlas_expected_hit_rate": 0.5,
+            "base_lgbm_predictive_atlas_hit_rate_surprise": 0.0,
+            "base_lgbm_predictive_atlas_hit_rate_surprise_z": 0.0,
+            "base_lgbm_predictive_atlas_support_n": 0.0,
+            "base_lgbm_predictive_atlas_effective_n": 0.0,
+            "base_lgbm_predictive_atlas_score_mean": 0.5,
+            "base_lgbm_predictive_atlas_score_std": 0.0,
+            "base_lgbm_predictive_atlas_support_quality": 0.0,
+        }
+    wins = float(stats.get("wins", 0.0) or 0.0)
+    exp_wins = float(stats.get("expected_wins", 0.0) or 0.0)
+    exp_var = max(float(stats.get("expected_var", 0.0) or 0.0), 1e-9)
+    sx = float(stats.get("sx", 0.0) or 0.0)
+    sxx = float(stats.get("sxx", 0.0) or 0.0)
+    score_mean = sx / n
+    score_var = max(sxx / n - score_mean * score_mean, 0.0)
+    hit_rate = wins / n
+    expected_hit_rate = exp_wins / n
+    support_quality = float(np.clip(n / max(float(min_support), 1.0), 0.0, 1.0))
+    return {
+        "base_lgbm_predictive_atlas_ic": _online_corr_from_stats(stats, "x"),
+        "base_lgbm_predictive_atlas_rank_ic": _online_corr_from_stats(stats, "r"),
+        "base_lgbm_predictive_atlas_hit_rate": float(np.clip(hit_rate, 0.0, 1.0)),
+        "base_lgbm_predictive_atlas_expected_hit_rate": float(np.clip(expected_hit_rate, 0.0, 1.0)),
+        "base_lgbm_predictive_atlas_hit_rate_surprise": float(np.clip(hit_rate - expected_hit_rate, -1.0, 1.0)),
+        "base_lgbm_predictive_atlas_hit_rate_surprise_z": float(np.clip((wins - exp_wins) / np.sqrt(exp_var), -8.0, 8.0)),
+        "base_lgbm_predictive_atlas_support_n": n,
+        "base_lgbm_predictive_atlas_effective_n": n,
+        "base_lgbm_predictive_atlas_score_mean": float(np.clip(score_mean, 0.0, 1.0)),
+        "base_lgbm_predictive_atlas_score_std": float(np.sqrt(score_var)),
+        "base_lgbm_predictive_atlas_support_quality": support_quality,
+    }
+
+
+def _update_predictive_stats(
+    stats: dict[str, float],
+    *,
+    score: float,
+    rank_score: float,
+    y: float,
+) -> None:
+    p = float(np.clip(score, 1e-4, 1.0 - 1e-4))
+    r = float(np.clip(rank_score, 0.0, 1.0))
+    yy = float(np.clip(y, 0.0, 1.0))
+    stats["n"] = float(stats.get("n", 0.0) or 0.0) + 1.0
+    stats["wins"] = float(stats.get("wins", 0.0) or 0.0) + yy
+    stats["expected_wins"] = float(stats.get("expected_wins", 0.0) or 0.0) + p
+    stats["expected_var"] = float(stats.get("expected_var", 0.0) or 0.0) + p * (1.0 - p)
+    stats["sx"] = float(stats.get("sx", 0.0) or 0.0) + p
+    stats["sxx"] = float(stats.get("sxx", 0.0) or 0.0) + p * p
+    stats["sxy"] = float(stats.get("sxy", 0.0) or 0.0) + p * yy
+    stats["sr"] = float(stats.get("sr", 0.0) or 0.0) + r
+    stats["srr"] = float(stats.get("srr", 0.0) or 0.0) + r * r
+    stats["sry"] = float(stats.get("sry", 0.0) or 0.0) + r * yy
+    stats["sy"] = float(stats.get("sy", 0.0) or 0.0) + yy
+    stats["syy"] = float(stats.get("syy", 0.0) or 0.0) + yy * yy
+
+
+def _timestamp_ns_for_causal_history(
+    frame: pd.DataFrame,
+    *,
+    n: int,
+    horizon_hours: int,
+    col_candidates: Sequence[str] = ("label_available_ts", "__label_available_ts__"),
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return row timestamps and label-availability timestamps in ns.
+
+    Target-derived meta features must behave like live history: a row at time
+    ``t`` can only consume labels from earlier rows whose outcome horizon has
+    already matured.  When an explicit label-availability column is not present,
+    use ``timestamp + horizon`` as the conservative availability timestamp.
+    """
+
+    ts_col = "__ts__" if "__ts__" in frame.columns else "timestamp" if "timestamp" in frame.columns else None
+    if ts_col is not None:
+        ts = pd.to_datetime(frame[ts_col], utc=True, errors="coerce")
+        ts_ns = pd.DatetimeIndex(ts).asi8.astype(np.int64, copy=False)
+    else:
+        # Positional fallback keeps tests/smoke frames causal without pretending
+        # that all labels are immediately available.
+        ts_ns = np.arange(n, dtype=np.int64)
+
+    if len(ts_ns) < n:
+        fill_start = int(ts_ns[-1]) + 1 if len(ts_ns) else 0
+        ts_ns = np.pad(
+            ts_ns,
+            (0, n - len(ts_ns)),
+            constant_values=fill_start,
+        )
+    ts_ns = np.asarray(ts_ns[:n], dtype=np.int64)
+    invalid_ts = ts_ns == np.iinfo(np.int64).min
+
+    avail_ns: np.ndarray | None = None
+    for col in col_candidates:
+        if col in frame.columns:
+            avail = pd.to_datetime(frame[col], utc=True, errors="coerce")
+            avail_ns = pd.DatetimeIndex(avail).asi8.astype(np.int64, copy=False)
+            break
+    if avail_ns is None:
+        if ts_col is not None:
+            horizon_ns = int(max(int(horizon_hours), 0)) * 3600 * 1_000_000_000
+            avail_ns = ts_ns + horizon_ns
+        else:
+            avail_ns = ts_ns + max(int(horizon_hours), 1)
+    if len(avail_ns) < n:
+        fill_start = int(avail_ns[-1]) + 1 if len(avail_ns) else 0
+        avail_ns = np.pad(
+            avail_ns,
+            (0, n - len(avail_ns)),
+            constant_values=fill_start,
+        )
+    avail_ns = np.asarray(avail_ns[:n], dtype=np.int64)
+    avail_ns[invalid_ts] = np.iinfo(np.int64).max
+    avail_ns[avail_ns == np.iinfo(np.int64).min] = np.iinfo(np.int64).max
+    return ts_ns, avail_ns
+
+
+def _causal_base_performance_feature_arrays(
+    *,
+    frame: pd.DataFrame,
+    base_prob: np.ndarray,
+    outcome: np.ndarray,
+    base_rank_pct: np.ndarray,
+    asset_vals: np.ndarray,
+    horizon_hours: int,
+    rank_top_frac: float,
+    window: int = 20,
+    min_periods: int = 5,
+) -> dict[str, np.ndarray]:
+    """Build base performance features from matured same-asset history only."""
+
+    n = int(len(frame))
+    base_prob = np.asarray(base_prob, dtype=np.float32).reshape(-1)[:n]
+    outcome = np.asarray(outcome, dtype=np.float32).reshape(-1)[:n]
+    base_rank_pct = np.asarray(base_rank_pct, dtype=np.float32).reshape(-1)[:n]
+    if len(base_prob) < n:
+        base_prob = np.pad(base_prob, (0, n - len(base_prob)), constant_values=np.nan)
+    if len(outcome) < n:
+        outcome = np.pad(outcome, (0, n - len(outcome)), constant_values=np.nan)
+    if len(base_rank_pct) < n:
+        base_rank_pct = np.pad(base_rank_pct, (0, n - len(base_rank_pct)), constant_values=np.nan)
+
+    ts_ns, avail_ns = _timestamp_ns_for_causal_history(
+        frame, n=n, horizon_hours=int(horizon_hours)
+    )
+    query_order = np.lexsort((np.arange(n, dtype=np.int64), ts_ns))
+    event_order = np.lexsort((np.arange(n, dtype=np.int64), avail_ns))
+    finite_event = np.isfinite(base_prob) & np.isfinite(outcome) & (avail_ns < np.iinfo(np.int64).max)
+
+    rank_top_mask = base_rank_pct >= (1.0 - float(np.clip(rank_top_frac, 0.01, 0.50)))
+    prob_error = np.full(n, np.nan, dtype=np.float32)
+    recent_prob_error = np.full(n, np.nan, dtype=np.float32)
+    recent_hit_rate = np.full(n, np.nan, dtype=np.float32)
+    signed_prediction_error = np.full(n, np.nan, dtype=np.float32)
+    negative_log_likelihood = np.full(n, np.nan, dtype=np.float32)
+    surprise_error_z = np.full(n, np.nan, dtype=np.float32)
+    wrong_confident = np.full(n, np.nan, dtype=np.float32)
+
+    err_hist: dict[str, list[float]] = {}
+    signed_hist: dict[str, list[float]] = {}
+    nll_hist: dict[str, list[float]] = {}
+    wrong_conf_hist: dict[str, list[float]] = {}
+    top_hit_hist: dict[str, list[float]] = {}
+    event_ptr = 0
+    error_window = int(max(60, window * 3))
+    keep_window = int(max(error_window * 4, window * 4, window))
+
+    for row_i in query_order:
+        cur_ts = int(ts_ns[row_i])
+        while event_ptr < n and int(avail_ns[event_order[event_ptr]]) < cur_ts:
+            event_i = int(event_order[event_ptr])
+            event_ptr += 1
+            if not bool(finite_event[event_i]):
+                continue
+            asset = str(asset_vals[event_i]) if len(asset_vals) > event_i else "all"
+            p_event = float(np.clip(float(base_prob[event_i]), 1e-6, 1.0 - 1e-6))
+            y_event = float(np.clip(float(outcome[event_i]), 0.0, 1.0))
+            err = float(abs(p_event - y_event))
+            hist = err_hist.setdefault(asset, [])
+            hist.append(err)
+            if len(hist) > keep_window:
+                del hist[: len(hist) - keep_window]
+            shist = signed_hist.setdefault(asset, [])
+            shist.append(float(y_event - p_event))
+            if len(shist) > keep_window:
+                del shist[: len(shist) - keep_window]
+            nll = float(-(y_event * np.log(p_event) + (1.0 - y_event) * np.log(1.0 - p_event)))
+            nhist = nll_hist.setdefault(asset, [])
+            nhist.append(nll)
+            if len(nhist) > keep_window:
+                del nhist[: len(nhist) - keep_window]
+            confidence = float(np.clip(abs(p_event - 0.5) * 2.0, 0.0, 1.0))
+            wrong = float((p_event >= 0.5) != (y_event >= 0.5))
+            whist = wrong_conf_hist.setdefault(asset, [])
+            whist.append(wrong * confidence)
+            if len(whist) > keep_window:
+                del whist[: len(whist) - keep_window]
+            if bool(rank_top_mask[event_i]):
+                hit = float((p_event >= 0.5) == (y_event >= 0.5))
+                thist = top_hit_hist.setdefault(asset, [])
+                thist.append(hit)
+                if len(thist) > keep_window:
+                    del thist[: len(thist) - keep_window]
+
+        asset = str(asset_vals[row_i]) if len(asset_vals) > row_i else "all"
+        hist = err_hist.get(asset, [])
+        if hist:
+            prob_error[row_i] = float(hist[-1])
+            tail = hist[-window:]
+            if len(tail) >= min_periods:
+                recent_prob_error[row_i] = float(np.mean(tail))
+        shist = signed_hist.get(asset, [])
+        if len(shist) >= min_periods:
+            signed_prediction_error[row_i] = float(np.mean(shist[-error_window:]))
+        nhist = nll_hist.get(asset, [])
+        if len(nhist) >= min_periods:
+            nll_tail = np.asarray(nhist[-error_window:], dtype=np.float64)
+            negative_log_likelihood[row_i] = float(np.mean(nll_tail))
+            if len(nll_tail) >= max(min_periods + 2, 8):
+                base_tail = nll_tail[:-1]
+                mu = float(np.mean(base_tail))
+                sd = float(np.std(base_tail))
+                surprise_error_z[row_i] = float(
+                    np.clip((float(nll_tail[-1]) - mu) / max(sd, 1e-6), -8.0, 8.0)
+                )
+        whist = wrong_conf_hist.get(asset, [])
+        if len(whist) >= min_periods:
+            wrong_confident[row_i] = float(np.mean(whist[-error_window:]))
+        thist = top_hit_hist.get(asset, [])
+        if len(thist) >= min_periods:
+            recent_hit_rate[row_i] = float(np.mean(thist[-window:]))
+
+    return {
+        "prob_error": prob_error,
+        "recent_prob_error_20": recent_prob_error,
+        "recent_hit_rate_20": recent_hit_rate,
+        "base_model_abs_error_roll20": recent_prob_error.copy(),
+        "signed_prediction_error": signed_prediction_error,
+        "negative_log_likelihood": negative_log_likelihood,
+        "surprise_error_z": surprise_error_z,
+        "wrong_confident": wrong_confident,
+    }
+
+
+def _append_base_predictive_atlas_features(
+    X_meta_base: pd.DataFrame,
+    *,
+    df: pd.DataFrame,
+    strategy_id: str,
+    primary_horizon: int,
+    base_score: np.ndarray,
+    y_binary: np.ndarray,
+    cfg: dict[str, Any],
+) -> tuple[pd.DataFrame, list[str]]:
+    """Add past-only local base predictive quality features for meta training.
+
+    The base layer does not have simple-policy EV yet, so these features answer
+    whether nearby historical base states had predictive skill: IC, rank-IC,
+    hit-rate, and hit-rate surprise versus the base score's expected hit-rate.
+    """
+    if not bool(cfg.get("base_predictive_atlas_features_enabled", True)):
+        return X_meta_base, []
+    n = int(len(X_meta_base))
+    if n == 0:
+        return X_meta_base, []
+    min_rows = int(cfg.get("base_predictive_atlas_min_rows", 200))
+    min_support = int(cfg.get("base_predictive_atlas_min_support", 40))
+    if n < min_rows:
+        neutral = _stats_features({}, min_support=min_support)
+        out = X_meta_base.copy()
+        for key, val in neutral.items():
+            out[key] = np.full(n, float(val), dtype=np.float32)
+        return out, list(BASE_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS)
+
+    score = np.asarray(base_score, dtype=np.float64).reshape(-1)[:n]
+    if len(score) < n:
+        score = np.pad(score, (0, n - len(score)), constant_values=np.nan)
+    finite_score = score[np.isfinite(score)]
+    fill_score = float(np.nanmedian(finite_score)) if len(finite_score) else 0.5
+    score = np.clip(np.nan_to_num(score, nan=fill_score), 0.0, 1.0)
+    rank_score = pd.Series(score).rank(pct=True).to_numpy(dtype=np.float64)
+    y = np.asarray(y_binary, dtype=np.float64).reshape(-1)[:n]
+    if len(y) < n:
+        y = np.pad(y, (0, n - len(y)), constant_values=np.nan)
+    y = np.where(np.isfinite(y), (y >= 0.5).astype(np.float64), np.nan)
+
+    h = int(primary_horizon)
+    feature_prefixes = (
+        "base_lgbm_",
+        f"base_H{h}_",
+        f"pred_H{h}_",
+        f"pred_{strategy_id}_H{h}_",
+    )
+    blocked_suffixes = tuple(key.replace("base_lgbm_", "") for key in BASE_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS)
+    candidate_cols: list[str] = []
+    for col in X_meta_base.columns:
+        col_s = str(col)
+        if any(col_s.endswith(sfx) for sfx in blocked_suffixes):
+            continue
+        if not col_s.startswith(feature_prefixes):
+            continue
+        if not pd.api.types.is_numeric_dtype(X_meta_base[col]):
+            continue
+        values = pd.to_numeric(X_meta_base[col], errors="coerce")
+        finite_share = float(np.isfinite(values.to_numpy(dtype=np.float64, copy=False)).mean())
+        if finite_share < 0.70:
+            continue
+        var = float(values.var(skipna=True))
+        if not np.isfinite(var) or var <= 1e-12:
+            continue
+        candidate_cols.append(col_s)
+    if not candidate_cols:
+        candidate_cols = []
+    max_features = int(cfg.get("base_predictive_atlas_max_features", 48))
+    if candidate_cols:
+        variances = (
+            X_meta_base[candidate_cols]
+            .apply(pd.to_numeric, errors="coerce")
+            .var(axis=0, skipna=True)
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(0.0)
+        )
+        candidate_cols = list(variances.sort_values(ascending=False).index[:max_features])
+
+    if candidate_cols:
+        src = X_meta_base.reindex(columns=candidate_cols).apply(pd.to_numeric, errors="coerce")
+        med = src.median(axis=0, skipna=True).fillna(0.0)
+        q25 = src.quantile(0.25).fillna(med)
+        q75 = src.quantile(0.75).fillna(med)
+        scale = (q75 - q25).abs().replace(0.0, np.nan)
+        scale = scale.fillna(src.std(axis=0, skipna=True)).replace(0.0, 1.0).fillna(1.0)
+        matrix = ((src.fillna(med) - med) / scale).clip(-8.0, 8.0).to_numpy(dtype=np.float32)
+    else:
+        matrix = score.reshape(-1, 1).astype(np.float32)
+
+    cluster_labels = np.zeros(n, dtype=np.int32)
+    if _MiniBatchKMeans is not None and matrix.shape[1] > 0:
+        try:
+            max_clusters = int(cfg.get("base_predictive_atlas_max_clusters", 16))
+            min_cluster = max(min_support, int(cfg.get("base_predictive_atlas_min_cluster_rows", 100)))
+            k = int(np.clip(n // max(min_cluster, 1), 2, max_clusters))
+            fit_cap = int(cfg.get("base_predictive_atlas_fit_max_rows", 20000))
+            if k >= 2:
+                if n > fit_cap > 0:
+                    fit_idx = np.linspace(0, n - 1, fit_cap, dtype=np.int64)
+                    fit_matrix = matrix[fit_idx]
+                else:
+                    fit_matrix = matrix
+                km = _MiniBatchKMeans(
+                    n_clusters=k,
+                    random_state=42,
+                    batch_size=min(4096, max(256, len(fit_matrix))),
+                    n_init=5,
+                )
+                km.fit(fit_matrix)
+                cluster_labels = km.predict(matrix).astype(np.int32, copy=False)
+        except Exception:
+            cluster_labels = np.zeros(n, dtype=np.int32)
+
+    rank_bucket = np.clip(np.floor(rank_score * 10.0).astype(np.int32), 0, 9)
+    ts, avail_ts = _timestamp_ns_for_causal_history(
+        df, n=n, horizon_hours=int(primary_horizon)
+    )
+    order = np.lexsort(
+        (
+            np.arange(n, dtype=np.int64),
+            np.where(ts == np.iinfo(np.int64).min, np.arange(n), ts),
+        )
+    )
+    event_order = np.lexsort(
+        (
+            np.arange(n, dtype=np.int64),
+            np.where(avail_ts == np.iinfo(np.int64).max, np.iinfo(np.int64).max, avail_ts),
+        )
+    )
+
+    local_stats: dict[tuple[int, int], dict[str, float]] = {}
+    global_stats: dict[str, float] = {}
+    result = {
+        key: np.full(n, np.nan, dtype=np.float32)
+        for key in BASE_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS
+    }
+    event_ptr = 0
+    for row_i in order:
+        cur_ts = int(ts[row_i])
+        while event_ptr < n and int(avail_ts[event_order[event_ptr]]) < cur_ts:
+            event_i = int(event_order[event_ptr])
+            event_ptr += 1
+            if not np.isfinite(y[event_i]):
+                continue
+            event_key = (int(cluster_labels[event_i]), int(rank_bucket[event_i]))
+            local_stats.setdefault(event_key, {})
+            _update_predictive_stats(
+                local_stats[event_key],
+                score=float(score[event_i]),
+                rank_score=float(rank_score[event_i]),
+                y=float(y[event_i]),
+            )
+            _update_predictive_stats(
+                global_stats,
+                score=float(score[event_i]),
+                rank_score=float(rank_score[event_i]),
+                y=float(y[event_i]),
+            )
+        key = (int(cluster_labels[row_i]), int(rank_bucket[row_i]))
+        stats = local_stats.get(key, {})
+        use_stats = stats if float(stats.get("n", 0.0) or 0.0) >= min_support else global_stats
+        feats = _stats_features(use_stats, min_support=min_support)
+        for col, val in feats.items():
+            result[col][row_i] = float(val)
+
+    out = X_meta_base.copy()
+    for col in BASE_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS:
+        arr = np.nan_to_num(
+            result[col],
+            nan=float(_stats_features({}, min_support=min_support).get(col, 0.0)),
+            posinf=0.0,
+            neginf=0.0,
+        ).astype(np.float32)
+        out[col] = arr
+    return out, list(BASE_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS)
 
 
 def _feature_store_availability_matrix(
@@ -1725,6 +2252,19 @@ def _build_optimal_candidate_mask(panel, feats, cfg):
                     _out.add(str(_feature_name))
         return _out
 
+    def _is_all_eligible_mask_key(_mask_key: str) -> bool:
+        _key = str(_mask_key or "").strip().lower()
+        return _key in {
+            "all",
+            "all_samples",
+            "all_eligible",
+            "valid_ohlc",
+            "valid_universe",
+            "universe_all",
+            "perp_universe",
+            "perps_universe",
+        }
+
     _required_rule_features: set[str] = set()
     for _strat in strategies:
         _required_rule_features.update(
@@ -1939,11 +2479,18 @@ def _build_optimal_candidate_mask(panel, feats, cfg):
     for strat in strategies:
         strat_id = strat["strategy_id"]
         key = strat["base_event_trigger"]
+        key_str = str(key or "")
         canonical_key = _normalize_legacy_mask_key(key)
 
         # Try canonical resolver first, fall back to legacy mode builder for price_* keys
         mask_df = None
-        if key.startswith("price_up") or key.startswith("price_down"):
+        if _is_all_eligible_mask_key(key_str):
+            mask_df = valid_data_mask.copy()
+            tprint(
+                f"[DIAGNOSTIC] Strategy {strat_id} using ALL-ELIGIBLE universe mask "
+                f"for {key}: {mask_df.sum().sum():,} active triggers"
+            )
+        elif key_str.startswith("price_up") or key_str.startswith("price_down"):
             mask_df = _legacy_mode_mask(key)
             if mask_df is not None:
                 tprint(
@@ -2118,6 +2665,17 @@ _BASE_CLF_UNCERTAINTY_ALIAS_KEYS: tuple[tuple[str, str], ...] = (
     ("oof_sigma_trees", "sigma_trees"),
     ("oof_sigma_robust", "sigma_robust"),
 )
+
+_BASE_MODEL_DRIFT_META_ALIASES: dict[str, tuple[str, ...]] = {
+    "feature_drift_psi_core_80": ("feature_drift_psi_core",),
+    "feature_drift_ks_bin_mean": ("feature_drift_ks_core",),
+    "row_drift_v1_psi_core_80": ("row_drift_v1_psi_core",),
+    "row_drift_v1_ks_bin_mean": ("row_drift_v1_ks_core",),
+}
+
+
+def _base_model_drift_meta_aliases(feature_key: str) -> tuple[str, ...]:
+    return _BASE_MODEL_DRIFT_META_ALIASES.get(str(feature_key), ())
 
 
 def _sanitize_tree_fit_matrix(X: Any, context: str) -> np.ndarray:
@@ -2815,8 +3373,8 @@ def _synthetic_tp_sl_hit_metrics_for_score(
     mae,
     *,
     specs: tuple[tuple[str, float, float], ...] = (
+        ("tp3_sl2", 0.03, 0.02),
         ("tp2_sl1", 0.02, 0.01),
-        ("tp3_sl15", 0.03, 0.015),
     ),
 ) -> dict[str, float]:
     """Conservative top-bucket hit rates from MFE/MAE for fixed TP/SL pairs."""
@@ -2890,6 +3448,7 @@ def _fit_direct_extratrees_base_model(
     returns=None,
     mfe=None,
     mae=None,
+    label_context=None,
     groups=None,
     symbols=None,
     n_splits: int = 2,
@@ -2910,6 +3469,24 @@ def _fit_direct_extratrees_base_model(
 
     from .purged_cv import PurgedKFold as _PurgedKFold
 
+    def _metric_float(value, default: float = float("nan")) -> float:
+        try:
+            if value is None:
+                return float(default)
+            out = float(value)
+            return out if np.isfinite(out) else float(default)
+        except Exception:
+            return float(default)
+
+    def _metric_int(value, default: int = 0) -> int:
+        try:
+            if value is None:
+                return int(default)
+            out = float(value)
+            return int(out) if np.isfinite(out) else int(default)
+        except Exception:
+            return int(default)
+
     race = ModelRace(kind=kind_name, task="base", n_splits=n_splits)
     y = np.asarray(y, dtype=np.float64)
     y = np.clip(y, 0.0, 1.0)
@@ -2922,6 +3499,11 @@ def _fit_direct_extratrees_base_model(
     returns_arr = y if returns is None else np.asarray(returns, dtype=np.float64)
     mfe_arr = None if mfe is None else np.asarray(mfe, dtype=np.float64)
     mae_arr = None if mae is None else np.asarray(mae, dtype=np.float64)
+    label_context_local = dict(label_context or {})
+    if mfe_arr is not None:
+        label_context_local.setdefault("mfe", mfe_arr)
+    if mae_arr is not None:
+        label_context_local.setdefault("mae", mae_arr)
     sample_weight_arr = (
         None if sample_weight is None else np.asarray(sample_weight, dtype=np.float64)
     )
@@ -3108,17 +3690,67 @@ def _fit_direct_extratrees_base_model(
         _race_X_availability_df = _race_X_df
     _native_lgbm_preset = None
     _native_lgbm_preset_features: set[str] = set()
+    _native_lgbm_preset_params_only = False
     if _backend == "lgbm_pipeline":
         _native_lgbm_preset = _load_native_lgbm_training_preset(
             _cfg_local,
             scope_key=str(native_scope_key or hpo_scope_key or kind_name),
             objective_mode="train_meta" if _is_meta_hpo else "train_base",
         )
-        _native_lgbm_preset_features = {
-            str(c)
-            for c in ((_native_lgbm_preset or {}).get("selected_features") or [])
-            if str(c).strip()
-        }
+        _native_lgbm_preset_params_only = _truthy_env(
+            "EPM_LGBM_NATIVE_PRESET_PARAMS_ONLY",
+            str(_cfg_local.get("lgbm_native_preset_params_only", "")),
+        )
+        if not _native_lgbm_preset_params_only:
+            _native_lgbm_preset_features = {
+                str(c)
+                for c in ((_native_lgbm_preset or {}).get("selected_features") or [])
+                if str(c).strip()
+            }
+        if _native_lgbm_preset and _native_lgbm_preset_params_only:
+            tprint(
+                f"Model Race [{kind_name}]: native LGBM preset params-only mode; "
+                "reusing best_params while rerunning LGBM feature selection "
+                "without old selected-feature exemptions."
+            )
+        _native_label_report = (
+            (_native_lgbm_preset or {}).get("label_weight_hpo_report")
+            if _native_lgbm_preset
+            else None
+        )
+        if _native_label_report and not _is_meta_hpo:
+            y, y_hard, sample_weight_arr, _label_reuse_diag = (
+                apply_label_weight_hpo_report_to_arrays(
+                    y,
+                    y_hard,
+                    sample_weight_arr,
+                    label_context_local,
+                    _native_label_report,
+                    objective_mode="train_base",
+                    classifier=True,
+                    label=f"{kind_name}_native_preset",
+                )
+            )
+            if bool(_label_reuse_diag.get("applied", False)):
+                p_unweighted_all, p_weighted_all = compute_prevalences(
+                    y_hard,
+                    sample_weight_arr,
+                )
+                race._used_sample_weight_ = sample_weight_arr is not None
+                race.calibration_state_ = race._build_bias_state(
+                    p_unweighted_all,
+                    p_weighted_all,
+                    eps=1e-6,
+                )
+                race.calibration_state_["calibration_method"] = "identity"
+                race.calibration_state_["calibration_input"] = (
+                    "candidate_raw_prior_label_hpo"
+                )
+                y_eval_full = y_hard
+                tprint(
+                    f"Model Race [{kind_name}]: prior label/sample-weight winner "
+                    "applied before LGBM feature selection/model HPO."
+                )
     if _backend == "lgbm_pipeline":
         if bool(getattr(_race_X_df.columns, "has_duplicates", False)):
             _dup_mask = _race_X_df.columns.duplicated(keep="first")
@@ -3193,6 +3825,78 @@ def _fit_direct_extratrees_base_model(
                 f"Model Race [{kind_name}]: policy-slice availability pruning "
                 f"{len(_before_cols)} -> {len(_kept_cols)} features before LGBM prescreen."
             )
+    _native_scope_for_lgbm = str(native_scope_key or hpo_scope_key or kind_name)
+    _recency_hpo_scope = "meta" if _is_meta_hpo else "base"
+    _recency_hpo_only = _truthy_env(
+        "EPM_RECENCY_HPO_ONLY",
+        str(_cfg_local.get("recency_hpo_only", "")),
+    )
+    _recency_hpo_selected = recency_hpo_enabled_for_scope(
+        _cfg_local,
+        _recency_hpo_scope,
+        scope_key=_native_scope_for_lgbm,
+    )
+    if _backend == "lgbm_pipeline" and _recency_hpo_only and not _recency_hpo_selected:
+        tprint(
+            f"Model Race [{kind_name}]: recency_hpo_only=1; "
+            f"skipping non-target scope_key={_native_scope_for_lgbm}."
+        )
+        return None, _base_fit_failure_payload(
+            failure_reason="recency_hpo_scope_not_selected",
+            training_diagnostics={
+                "n_total": int(len(y_hard)),
+                "native_scope_key": _native_scope_for_lgbm,
+                "recency_hpo_scope": _recency_hpo_scope,
+            },
+        )
+    if (
+        _backend == "lgbm_pipeline"
+        and _recency_hpo_selected
+    ):
+        if not _native_lgbm_preset:
+            raise RuntimeError(
+                f"recency_hpo for {_native_scope_for_lgbm} requires a native LGBM "
+                "preset with selected_features and best_params. Set "
+                "EPM_LGBM_USE_NATIVE_PRESET=1 and "
+                "EPM_LGBM_NATIVE_PRESET_SOURCE_RUN_ID to a compatible source run."
+            )
+        tprint(
+            f"Model Race [{kind_name}]: running fixed-contract recency_hpo "
+            f"for scope={_recency_hpo_scope}, scope_key={_native_scope_for_lgbm}."
+        )
+        _recency_hpo_result = run_lgbm_recency_hpo_fixed_contract(
+            _race_X_df,
+            y,
+            sample_weight=sample_weight_arr,
+            selected_features=[
+                str(c)
+                for c in ((_native_lgbm_preset or {}).get("selected_features") or [])
+                if str(c).strip()
+            ],
+            best_params=dict((_native_lgbm_preset or {}).get("best_params") or {}),
+            timestamps=groups_arr,
+            returns=returns_arr,
+            hard_labels=y_hard,
+            random_state=42,
+            mode="classifier",
+            objective_mode="train_meta" if _is_meta_hpo else "train_base",
+            cfg=_cfg_local,
+            scope_key=_native_scope_for_lgbm,
+        )
+        tprint(
+            f"Model Race [{kind_name}]: recency_hpo winner "
+            f"{_recency_hpo_result.get('winner', {})}"
+        )
+        if _recency_hpo_only:
+            tprint(
+                f"Model Race [{kind_name}]: recency_hpo_only=1; "
+                "stopping after fixed-contract recency search."
+            )
+            raise RecencyHPOComplete(
+                scope=_recency_hpo_scope,
+                scope_key=_native_scope_for_lgbm,
+                payload=_recency_hpo_result,
+            )
     _candidate_trainers = (
         (("lgbm_pipeline", train_lgbm_stability_candidate),)
         if _backend == "lgbm_pipeline"
@@ -3231,7 +3935,7 @@ def _fit_direct_extratrees_base_model(
                     ),
                     preset_feature_names=(
                         (_native_lgbm_preset or {}).get("selected_features")
-                        if _native_lgbm_preset
+                        if _native_lgbm_preset and not _native_lgbm_preset_params_only
                         else None
                     ),
                     preset_best_params=(
@@ -3245,6 +3949,7 @@ def _fit_direct_extratrees_base_model(
                         else None
                     ),
                     cfg=cfg,
+                    label_context=label_context_local,
                 )
             else:
                 result = trainer(
@@ -3288,15 +3993,14 @@ def _fit_direct_extratrees_base_model(
                     f"full_n={len(oof)})."
                 )
                 continue
-            score = float(
-                result.get("metrics", {}).get(
-                    "J_Score",
-                    result.get("metrics", {}).get(
-                        "J_final_oof",
-                        result.get("metrics", {}).get("J_final", 0.0),
-                    ),
+            _result_metrics = result.get("metrics", {}) or {}
+            score = _metric_float(_result_metrics.get("J_Score"), float("nan"))
+            if not np.isfinite(score):
+                score = _metric_float(
+                    _result_metrics.get("J_final_oof"), float("nan")
                 )
-            )
+            if not np.isfinite(score):
+                score = _metric_float(_result_metrics.get("J_final"), 0.0)
             candidate_results[candidate_name] = result
             candidate_scores[candidate_name] = score
             candidate_oof[candidate_name] = oof
@@ -3336,7 +4040,7 @@ def _fit_direct_extratrees_base_model(
     win_score = float(candidate_scores[winning_candidate])
     cand_oof_full = candidate_oof[winning_candidate]
     cand_finite = np.isfinite(cand_oof_full)
-    cand_metrics = result.get("metrics", {})
+    cand_metrics = result.get("metrics", {}) or {}
     tprint(
         f"Model Race [{kind_name}]: {winning_candidate} WINS "
         f"on J_Score={win_score:.4f}"
@@ -3442,8 +4146,8 @@ def _fit_direct_extratrees_base_model(
     tprint(
         f"Model Race [{kind_name}]: large-sample pre-final metrics for "
         f"{winning_candidate} on n={int(np.sum(cand_finite))}: "
-        f"J={float(cand_metrics.get('J_final_oof', 0.0)):.4f}, "
-        f"lift30={float(cand_metrics.get('lift30', 0.0)):.3f}, "
+        f"J={_metric_float(cand_metrics.get('J_final_oof'), 0.0):.4f}, "
+        f"lift30={_metric_float(cand_metrics.get('lift30'), 0.0):.3f}, "
         f"stability30={cand_stability30:.4f}, "
         f"mean_return10_gross={cand_mean_return10_gross:.6f}, "
         f"mean_return30_gross={cand_mean_return30_gross:.6f}, "
@@ -3556,7 +4260,13 @@ def _fit_direct_extratrees_base_model(
                         if _native_lgbm_preset
                         else None
                     ),
+                    preset_label_weight_hpo_report=(
+                        (_native_lgbm_preset or {}).get("label_weight_hpo_report")
+                        if _native_lgbm_preset
+                        else None
+                    ),
                     cfg=cfg,
+                    label_context=label_context_local,
                 )
             else:
                 from extreme_price_movements.ebm_on_lgbm import (
@@ -3648,58 +4358,61 @@ def _fit_direct_extratrees_base_model(
     except Exception:
         cand_brier = float("nan")
     if final_cand_metrics.get("metrics_assessment_slice") == "fit_oof":
-        cand_auc = float(final_cand_metrics.get("auc", cand_auc))
-        cand_brier = float(final_cand_metrics.get("brier", cand_brier))
-        cand_stability30 = float(
-            final_cand_metrics.get("stability30", cand_stability30)
+        cand_auc = _metric_float(final_cand_metrics.get("auc"), cand_auc)
+        cand_brier = _metric_float(final_cand_metrics.get("brier"), cand_brier)
+        cand_stability30 = _metric_float(
+            final_cand_metrics.get("stability30"), cand_stability30
         )
         _assess_idx = np.asarray(
             (result.get("stage_indices", {}) or {}).get("fit_oof", []), dtype=np.int32
         )
-        _assess_idx = _assess_idx[
-            (_assess_idx >= 0)
-            & (_assess_idx < len(cand_oof_final))
-            & (_assess_idx < len(returns_eval_full))
-        ]
-        _assess_mask = np.isfinite(cand_oof_final[_assess_idx]) & np.isfinite(
-            returns_eval_full[_assess_idx]
-        )
-        _assess_idx = _assess_idx[_assess_mask]
-        if len(_assess_idx) >= 8:
-            _pred_assess = cand_oof_final[_assess_idx]
-            _ret_assess = returns_eval_full[_assess_idx]
-            _n10 = max(1, int(np.ceil(0.10 * len(_assess_idx))))
-            _n30 = max(1, int(np.ceil(0.30 * len(_assess_idx))))
-            _top10 = np.argsort(_pred_assess)[-_n10:]
-            _top30 = np.argsort(_pred_assess)[-_n30:]
-            cand_mean_return10_gross = float(np.nanmean(_ret_assess[_top10]))
-            cand_mean_return30_gross = float(np.nanmean(_ret_assess[_top30]))
-            cand_rank_return_metrics = {
-                **cand_rank_return_metrics,
-                "mean_return10_gross": cand_mean_return10_gross,
-                "mean_return30_gross": cand_mean_return30_gross,
-            }
-            cand_synthetic_hit_metrics = {
-                **cand_synthetic_hit_metrics,
-                **_synthetic_tp_sl_hit_metrics_for_score(
-                    cand_oof_final[_assess_idx],
-                    (
-                        mfe_eval_full[_assess_idx]
-                        if mfe_eval_full is not None
-                        and len(mfe_eval_full) >= len(cand_oof_final)
-                        else None
+        if returns_eval_full is not None:
+            _assess_idx = _assess_idx[
+                (_assess_idx >= 0)
+                & (_assess_idx < len(cand_oof_final))
+                & (_assess_idx < len(returns_eval_full))
+            ]
+            _assess_mask = np.isfinite(cand_oof_final[_assess_idx]) & np.isfinite(
+                returns_eval_full[_assess_idx]
+            )
+            _assess_idx = _assess_idx[_assess_mask]
+            if len(_assess_idx) >= 8:
+                _pred_assess = cand_oof_final[_assess_idx]
+                _ret_assess = returns_eval_full[_assess_idx]
+                _n10 = max(1, int(np.ceil(0.10 * len(_assess_idx))))
+                _n30 = max(1, int(np.ceil(0.30 * len(_assess_idx))))
+                _top10 = np.argsort(_pred_assess)[-_n10:]
+                _top30 = np.argsort(_pred_assess)[-_n30:]
+                cand_mean_return10_gross = float(np.nanmean(_ret_assess[_top10]))
+                cand_mean_return30_gross = float(np.nanmean(_ret_assess[_top30]))
+                cand_rank_return_metrics = {
+                    **cand_rank_return_metrics,
+                    "mean_return10_gross": cand_mean_return10_gross,
+                    "mean_return30_gross": cand_mean_return30_gross,
+                }
+                cand_synthetic_hit_metrics = {
+                    **cand_synthetic_hit_metrics,
+                    **_synthetic_tp_sl_hit_metrics_for_score(
+                        cand_oof_final[_assess_idx],
+                        (
+                            mfe_eval_full[_assess_idx]
+                            if mfe_eval_full is not None
+                            and len(mfe_eval_full) >= len(cand_oof_final)
+                            else None
+                        ),
+                        (
+                            mae_eval_full[_assess_idx]
+                            if mae_eval_full is not None
+                            and len(mae_eval_full) >= len(cand_oof_final)
+                            else None
+                        ),
                     ),
-                    (
-                        mae_eval_full[_assess_idx]
-                        if mae_eval_full is not None
-                        and len(mae_eval_full) >= len(cand_oof_final)
-                        else None
-                    ),
-                ),
-            }
-    final_win_score = float(
-        final_cand_metrics.get("J_final_oof", final_cand_metrics.get("J_final", win_score))
+                }
+    final_win_score = _metric_float(
+        final_cand_metrics.get("J_final_oof"), float("nan")
     )
+    if not np.isfinite(final_win_score):
+        final_win_score = _metric_float(final_cand_metrics.get("J_final"), win_score)
     if not np.isfinite(final_win_score):
         final_win_score = win_score
 
@@ -3732,24 +4445,31 @@ def _fit_direct_extratrees_base_model(
             **cand_synthetic_hit_metrics,
             "mean_return10_gross": cand_mean_return10_gross,
             "mean_return30_gross": cand_mean_return30_gross,
-            "J_final_oof": float(
-                final_cand_metrics.get("J_final_oof", final_cand_metrics.get("J_final", 0.0))
+            "J_final_oof": _metric_float(
+                final_cand_metrics.get("J_final_oof"),
+                _metric_float(final_cand_metrics.get("J_final"), 0.0),
             ),
-            "lift30": float(final_cand_metrics.get("lift30", 0.0)),
+            "lift30": _metric_float(final_cand_metrics.get("lift30"), 0.0),
             "stability30": cand_stability30,
-            "feature_count": int(final_cand_metrics.get("feature_count", 0)),
-            "n_raw_features": int(final_cand_metrics.get("n_raw_features_kept", 0)),
-            "n_leaf_features": int(final_cand_metrics.get("n_leaf_features_kept", 0)),
-            "post_hpo_shape_features": float(
-                final_cand_metrics.get("post_hpo_shape_features", np.nan)
+            "feature_count": _metric_int(final_cand_metrics.get("feature_count"), 0),
+            "n_raw_features": _metric_int(
+                final_cand_metrics.get("n_raw_features_kept"), 0
             ),
-            "post_hpo_shape_dropped": float(
-                final_cand_metrics.get("post_hpo_shape_dropped", np.nan)
+            "n_leaf_features": _metric_int(
+                final_cand_metrics.get("n_leaf_features_kept"), 0
             ),
-            "post_hpo_shape_smoothed": float(
-                final_cand_metrics.get("post_hpo_shape_smoothed", np.nan)
+            "post_hpo_shape_features": _metric_float(
+                final_cand_metrics.get("post_hpo_shape_features"), float("nan")
             ),
-            "final_outer_bags": int(final_cand_metrics.get("final_outer_bags", 0)),
+            "post_hpo_shape_dropped": _metric_float(
+                final_cand_metrics.get("post_hpo_shape_dropped"), float("nan")
+            ),
+            "post_hpo_shape_smoothed": _metric_float(
+                final_cand_metrics.get("post_hpo_shape_smoothed"), float("nan")
+            ),
+            "final_outer_bags": _metric_int(
+                final_cand_metrics.get("final_outer_bags"), 0
+            ),
             "postprocessor_calibration_method": str(
                 final_cand_metrics.get("postprocessor_calibration_method", "identity")
             ),
@@ -3870,7 +4590,7 @@ def _fit_direct_extratrees_base_model(
     tprint(
         f"Model Race [{kind_name}]: using {winning_candidate} as best_model "
         f"(J_Score={final_win_score:.4f}, race_J_Score={win_score:.4f}, "
-        f"AUC={cand_auc:.4f}, lift30={final_cand_metrics.get('lift30', 0):.3f}, "
+        f"AUC={cand_auc:.4f}, lift30={_metric_float(final_cand_metrics.get('lift30'), 0.0):.3f}, "
         f"oof_full={int(np.sum(np.isfinite(cand_oof_final)))}/{len(cand_oof_final)}, "
         f"stage_oof={_stage_counts})"
     )
@@ -5703,6 +6423,60 @@ def _base_model_report_entry(
     }
 
 
+def _effective_lgbm_input_feature_contract(
+    model_obj: Any,
+    fallback_feature_cols: Sequence[str] | None,
+) -> tuple[list[str], list[str]]:
+    """Return ``(model_feature_names, input_feature_names)`` for nested LGBM models.
+
+    Older LGBM artifacts may expose synthetic LightGBM names such as ``f12``.
+    In that case we keep the broad positional feature list as the external
+    contract and persist the named alias map separately. Newer artifacts expose
+    real feature names directly; those are the actual live input contract.
+    """
+
+    fallback = [str(c) for c in (fallback_feature_cols or []) if str(c)]
+    seen: set[int] = set()
+    owners: list[Any] = []
+
+    def _add(owner: Any) -> None:
+        if owner is None:
+            return
+        owner_id = id(owner)
+        if owner_id in seen:
+            return
+        seen.add(owner_id)
+        owners.append(owner)
+
+    _add(model_obj)
+    best = getattr(model_obj, "best_model", None)
+    _add(best)
+    _add(getattr(best, "estimator", None))
+
+    for owner in owners:
+        selected = [str(c) for c in (getattr(owner, "selected_features", []) or [])]
+        if not selected:
+            continue
+        input_features = [
+            str(c) for c in (getattr(owner, "input_feature_names", []) or [])
+        ]
+        if input_features and len(input_features) == len(selected):
+            return selected, input_features
+        if all(re.fullmatch(r"f\d+", name) is not None for name in selected):
+            mapped: list[str] = []
+            for name in selected:
+                idx = int(name[1:])
+                if idx < 0 or idx >= len(fallback):
+                    mapped = []
+                    break
+                mapped.append(fallback[idx])
+            if mapped:
+                return selected, mapped
+            return selected, []
+        return selected, selected
+    return [], []
+
+
 def _extract_model_feature_importance_rows(
     model_obj: Any,
     *,
@@ -5946,6 +6720,131 @@ def _feature_importance_summary(rows: Sequence[dict[str, Any]], top_n: int = 20)
             for r in top_split
             if float(r.get("split", 0.0)) > 0.0
         ],
+    }
+
+
+def _archetype_feature_family(feature_name: str) -> str:
+    feature = str(feature_name)
+    if is_raw_contrib_feature_name(feature):
+        return "raw_contrib_oof"
+    if "archetype_contrib_svd_" in feature:
+        return "contrib_svd"
+    if "raw_state_svd_psi" in feature or "raw_state_svd_ks" in feature:
+        return "raw_state_svd_distribution"
+    if "raw_state_psi" in feature or "raw_state_ks" in feature:
+        return "raw_state_distribution"
+    if "raw_state_svd_" in feature:
+        return "raw_state_svd"
+    if "raw_state_transition_" in feature:
+        return "raw_state_transition"
+    if "raw_state_" in feature:
+        return "raw_state_distance"
+    if "state_log_likelihood" in feature or "state_tod_mahalanobis" in feature:
+        return "raw_state_density"
+    if any(
+        token in feature
+        for token in (
+            "contrib_abs_sum",
+            "contrib_l2_norm",
+            "contrib_entropy",
+            "top_1_contrib_abs",
+            "top_3_contrib_abs_sum",
+            "positive_contrib_sum",
+            "negative_contrib_sum",
+        )
+    ):
+        return "contrib_summary"
+    return "archetype"
+
+
+def _write_meta_archetype_feature_importance_report(
+    rows: Sequence[dict[str, Any]],
+    *,
+    output_dir: str | os.PathLike[str],
+    source_report_path: str | os.PathLike[str] | None = None,
+) -> dict[str, Any]:
+    if not rows:
+        return {}
+    df = pd.DataFrame(list(rows))
+    if "feature" not in df.columns:
+        return {}
+    df = df[df["feature"].map(is_archetype_feature_name)].copy()
+    if df.empty:
+        return {}
+    total_models = max(1, int(df["model_id"].nunique()) if "model_id" in df.columns else 1)
+    numeric_cols = [
+        "gain",
+        "gain_share",
+        "split",
+        "split_share",
+        "importance",
+        "importance_share",
+        "gain_rank",
+        "split_rank",
+    ]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+        else:
+            df[col] = 0.0
+    if "used_by_model" not in df.columns:
+        df["used_by_model"] = (
+            (df["gain"] > 0.0) | (df["split"] > 0.0) | (df["importance"] > 0.0)
+        )
+    else:
+        df["used_by_model"] = df["used_by_model"].astype(bool)
+    df["family"] = df["feature"].map(_archetype_feature_family)
+    source_path = "" if source_report_path is None else str(source_report_path)
+    summary_rows: list[dict[str, Any]] = []
+    for (feature, family), group in df.groupby(["feature", "family"], sort=False):
+        used = group[group["used_by_model"]]
+        model_count = int(group["model_id"].nunique()) if "model_id" in group.columns else int(len(group))
+        used_model_count = (
+            int(used["model_id"].nunique())
+            if "model_id" in used.columns
+            else int(len(used))
+        )
+        summary_rows.append(
+            {
+                "feature": str(feature),
+                "family": str(family),
+                "model_count": int(model_count),
+                "used_model_count": int(used_model_count),
+                "model_stability": float(used_model_count / max(total_models, 1)),
+                "fold_stability_proxy": float(used_model_count / max(total_models, 1)),
+                "mean_gain": float(group["gain"].mean()),
+                "mean_gain_share": float(group["gain_share"].mean()),
+                "mean_split": float(group["split"].mean()),
+                "mean_split_share": float(group["split_share"].mean()),
+                "mean_importance": float(group["importance"].mean()),
+                "mean_importance_share": float(group["importance_share"].mean()),
+                "best_gain_rank": int(group["gain_rank"].replace(0, np.nan).min())
+                if np.isfinite(group["gain_rank"].replace(0, np.nan).min())
+                else 0,
+                "best_split_rank": int(group["split_rank"].replace(0, np.nan).min())
+                if np.isfinite(group["split_rank"].replace(0, np.nan).min())
+                else 0,
+                "path": source_path,
+            }
+        )
+    summary_df = pd.DataFrame(summary_rows).sort_values(
+        ["mean_gain_share", "mean_split_share", "model_stability"],
+        ascending=[False, False, False],
+    )
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = out_dir / "meta_archetype_feature_importance.csv"
+    json_path = out_dir / "meta_archetype_feature_importance.json"
+    summary_df.to_csv(csv_path, index=False)
+    summary_df.to_json(json_path, orient="records", indent=2)
+    return {
+        "meta_archetype_feature_importance_csv": str(csv_path),
+        "meta_archetype_feature_importance_json": str(json_path),
+        "archetype_feature_count": int(len(summary_df)),
+        "archetype_used_feature_count": int(
+            np.sum(pd.to_numeric(summary_df["used_model_count"], errors="coerce").fillna(0) > 0)
+        ),
+        "top_archetype_features": summary_df.head(20).to_dict(orient="records"),
     }
 
 
@@ -6933,6 +7832,8 @@ def _write_base_meta_contract_manifest(
         "oof_sigma_robust",
         *[f"oof_{k}" for k in MODEL_DRIFT_FEATURE_KEYS],
         *[f"oof_tree_{k}" for k in ModelRace._TREE_UNCERTAINTY_KEYS],
+        *[f"oof_{k}" for k in ARCHETYPE_FEATURE_NAMES],
+        f"oof_{RAW_CONTRIB_FEATURE_PREFIX}*",
         *_BASE_REG_UNCERTAINTY_KEYS,
         *_BASE_REG_INTERACTION_KEYS,
     ]
@@ -6996,6 +7897,7 @@ def _write_base_meta_contract_manifest(
             "calibration_method",
         ],
         "required_oof_columns": oof_columns,
+        "raw_contrib_oof_prefix": f"oof_{RAW_CONTRIB_FEATURE_PREFIX}",
         "strategies": strategies_payload,
     }
     path = os.path.join(artifacts_root, "base_meta_contract.json")
@@ -7013,6 +7915,11 @@ def _stage_fit_bounds_from_cfg(cfg: dict[str, Any]) -> tuple[Any, Any]:
     )
 
 
+def _active_stage_preserves_exact_plan_filter(cfg: dict[str, Any]) -> bool:
+    stage_view = cfg.get("_active_stage_view") or {}
+    return not bool(stage_view.get("disable_exact_plan_row_filter"))
+
+
 def _write_base_artifact_policy_oos_provenance(
     cfg: dict[str, Any],
     *,
@@ -7024,6 +7931,7 @@ def _write_base_artifact_policy_oos_provenance(
         from extreme_price_movements.policy_oos_provenance import (
             parquet_timestamp_bounds,
             sha256_file,
+            slice_plan_fit_bounds,
             write_source_artifact_provenance_manifest,
         )
 
@@ -7032,6 +7940,16 @@ def _write_base_artifact_policy_oos_provenance(
         fit_start, fit_end = parquet_timestamp_bounds(
             [run_root / "oof" / "base_oof_all.parquet"]
         )
+        if (
+            (fit_start is None or fit_end is None)
+            and _active_stage_preserves_exact_plan_filter(cfg)
+        ):
+            plan_fit_start, plan_fit_end = slice_plan_fit_bounds(
+                slice_plan_path,
+                ("base_model_fit",),
+            )
+            fit_start = fit_start or plan_fit_start
+            fit_end = fit_end or plan_fit_end
         if fit_start is None or fit_end is None:
             fit_start, fit_end = _stage_fit_bounds_from_cfg(cfg)
         manifest_path = write_source_artifact_provenance_manifest(
@@ -7127,8 +8045,49 @@ def _load_native_lgbm_training_preset(
         selected = [str(c) for c in (getattr(model, "selected_features", []) or [])]
         params = dict(getattr(model, "best_params", {}) or {})
         metrics = dict(getattr(model, "metrics", {}) or {})
+        label_weight_hpo_report = dict(
+            getattr(model, "label_weight_hpo_report_", {}) or {}
+        )
+        if not label_weight_hpo_report:
+            label_weight_hpo_report = dict(
+                metrics.get("label_weight_hpo_report") or {}
+            )
+        if not label_weight_hpo_report:
+            try:
+                ref_report = (
+                    model_path.parents[3]
+                    / "lgbm_reference"
+                    / str(scope_key)
+                    / "label_weight_hpo"
+                    / "report.json"
+                )
+                if ref_report.exists():
+                    label_weight_hpo_report = json.loads(
+                        ref_report.read_text(encoding="utf-8")
+                    )
+            except Exception:
+                label_weight_hpo_report = {}
         if not selected:
             selected = [str(c) for c in (metrics.get("selected_features", []) or [])]
+        scope_raw = str(scope_key or "")
+        scope_no_meta = scope_raw[len("meta_") :] if scope_raw.startswith("meta_") else scope_raw
+        for suffix in ("_correctness_clf", "_tbm_clf", "_base_target_clf", "_clf"):
+            if scope_no_meta.endswith(suffix):
+                scope_strategy = scope_no_meta[: -len(suffix)]
+                break
+        else:
+            scope_strategy = scope_no_meta
+        if scope_strategy.startswith(("long_", "short_")):
+            scope_core = scope_strategy.split("_", 1)[1]
+            legacy_prefix = f"pred_{scope_core}_"
+            scoped_prefix = f"pred_{scope_strategy}_"
+            selected = [
+                scoped_prefix + str(c)[len(legacy_prefix) :]
+                if str(c).startswith(legacy_prefix)
+                else str(c)
+                for c in selected
+            ]
+            selected = list(dict.fromkeys(selected))
         if not params:
             params = dict(
                 metrics.get("best_params")
@@ -7141,11 +8100,14 @@ def _load_native_lgbm_training_preset(
             )
         tprint(
             f"LGBM native preset loaded for {scope_key}: "
-            f"features={len(selected)}, params={len(params)}, source={model_path}"
+            f"features={len(selected)}, params={len(params)}, "
+            f"label_hpo_winner={str(label_weight_hpo_report.get('winner', 'none'))}, "
+            f"source={model_path}"
         )
         return {
             "selected_features": selected,
             "best_params": params,
+            "label_weight_hpo_report": label_weight_hpo_report,
             "source": str(model_path),
             "source_run_id": source_run_id,
         }
@@ -7208,6 +8170,10 @@ def _load_native_lgbm_meta_training_preset(
             for suffix in ("_correctness_clf", "_tbm_clf", "_base_target_clf"):
                 if no_meta.endswith(suffix):
                     out.append(no_meta[: -len(suffix)] + "_clf")
+            if no_meta.endswith("_clf"):
+                stem = no_meta[: -len("_clf")]
+                out.append(stem + "_tbm_clf")
+                out.append(stem + "_correctness_clf")
             if not no_meta.endswith("_clf"):
                 out.append(no_meta + "_clf")
             return out
@@ -7238,6 +8204,10 @@ def _load_native_lgbm_meta_training_preset(
         metrics = dict(getattr(model, "metrics", {}) or {})
         if not selected:
             selected = [str(c) for c in (metrics.get("selected_features", []) or [])]
+        # Meta feature frames are rebuilt with the exact prediction-feature names
+        # saved in the meta model contract. Do not side-prefix legacy
+        # ``pred_<strategy>_*`` names here; doing so creates synthetic
+        # ``pred_short_<strategy>_*`` keys that the meta frame never materializes.
         if not params:
             params = dict(
                 metrics.get("best_params")
@@ -7326,6 +8296,11 @@ def _append_base_oof_contract_uncertainty(
         oof_prob = np.pad(oof_prob, (0, n - len(oof_prob)), constant_values=np.nan)
     oof_prob = oof_prob[:n]
     finite_count = int(np.sum(finite_mask))
+    internal_oof_keys = {f"oof_{name}" for name in LGBM_INTERNAL_METRIC_FEATURE_NAMES}
+    archetype_oof_keys = {f"oof_{name}" for name in ARCHETYPE_FEATURE_NAMES}
+    has_lgbm_internal_metrics = callable(
+        getattr(best_model, "transform_internal_model_metrics", None)
+    )
 
     def from_sources(contract_key: str, *aliases: str) -> Any:
         names = (contract_key, *aliases)
@@ -7355,7 +8330,14 @@ def _append_base_oof_contract_uncertainty(
             out_key = str(raw_key)
             if not out_key.startswith("oof_"):
                 out_key = f"oof_{out_key}"
-            if out_key.startswith("oof_ebm_unc_"):
+            if (
+                out_key in internal_oof_keys
+                or out_key.startswith("oof_ebm_unc_")
+                or out_key in archetype_oof_keys
+                or is_raw_contrib_feature_name(out_key)
+            ):
+                if out_key in internal_oof_keys:
+                    has_lgbm_internal_metrics = True
                 _payload_put_oof_vector(payload, out_key, vals, n, finite_mask)
         drift_feats = getattr(owner, "oof_model_drift_features", None)
         if isinstance(drift_feats, dict):
@@ -7398,6 +8380,29 @@ def _append_base_oof_contract_uncertainty(
         _payload_put_oof_vector(payload, key, from_sources(key), n, finite_mask)
         if key not in payload:
             payload[key] = default_vec[:n][finite_mask].astype(np.float32, copy=False)
+
+    for feat_key in ARCHETYPE_FEATURE_NAMES:
+        out_key = f"oof_{feat_key}"
+        _payload_put_oof_vector(
+            payload,
+            out_key,
+            from_sources(out_key, feat_key),
+            n,
+            finite_mask,
+            default=0.0,
+        )
+
+    if has_lgbm_internal_metrics:
+        for feat_key in LGBM_INTERNAL_METRIC_FEATURE_NAMES:
+            out_key = f"oof_{feat_key}"
+            _payload_put_oof_vector(
+                payload,
+                out_key,
+                from_sources(out_key, feat_key),
+                n,
+                finite_mask,
+                default=np.nan,
+            )
 
     confidence = 2.0 * np.abs(np.nan_to_num(oof_prob, nan=0.5) - 0.5)
     tree_defaults = {
@@ -8006,7 +9011,7 @@ def _optimize_training_sample_weights(
     strategy: dict | None = None,
 ) -> np.ndarray:
     """Optimize sample-weight component blend using constrained CV objective."""
-    if not bool(cfg.get("sample_weight_opt_enable", True)):
+    if not bool(cfg.get("sample_weight_opt_enable", False)):
         return np.asarray(base_weights, dtype=np.float32)
 
     n = len(base_weights)
@@ -9527,7 +10532,12 @@ def build_hourly_training_set_and_weights(
             f"Required selection metric '{selection_metric_name}' contains no finite values after alignment."
         )
 
-    min_cov = float(cfg.get("range_pct_min_coverage", 0.95))
+    min_cov = float(
+        os.getenv(
+            "EPM_RANGE_PCT_MIN_COVERAGE",
+            cfg.get("range_pct_min_coverage", 0.95),
+        )
+    )
     cov = float(finite_n / max(total_n, 1))
     if cov < min_cov:
         raise RuntimeError(
@@ -12424,6 +13434,111 @@ def build_excursion_targets(
     }
 
 
+def _truthy_env_or_cfg_local(cfg: dict[str, Any], env_name: str, cfg_key: str, default: bool = False) -> bool:
+    raw = os.getenv(env_name)
+    if raw is None:
+        raw = cfg.get(cfg_key, default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _timestamp_symbol_key_arrays(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray] | None:
+    ts_col = "__ts__" if "__ts__" in df.columns else "timestamp" if "timestamp" in df.columns else None
+    sym_col = "__symbol__" if "__symbol__" in df.columns else "symbol" if "symbol" in df.columns else None
+    if ts_col is None or sym_col is None:
+        return None
+    ts = pd.to_datetime(df[ts_col], utc=True, errors="coerce")
+    ts_ns = pd.Series(ts).astype("int64").to_numpy(dtype=np.int64)
+    invalid = ~ts.notna().to_numpy(dtype=bool)
+    ts_ns[invalid] = np.iinfo(np.int64).min
+    sym = df[sym_col].astype(str).to_numpy(dtype=object)
+    return ts_ns, sym
+
+
+def _load_timestamp_symbol_universe(path: str | os.PathLike[str]) -> set[tuple[int, str]]:
+    p = Path(path).expanduser()
+    if not p.exists():
+        raise FileNotFoundError(f"Meta fit row universe path does not exist: {p}")
+    raw = pd.read_csv(p) if p.suffix.lower() in {".csv", ".txt"} else pd.read_parquet(p)
+    keys = _timestamp_symbol_key_arrays(raw)
+    if keys is None:
+        raise ValueError(
+            f"Meta fit row universe {p} must contain timestamp/symbol or __ts__/__symbol__ columns"
+        )
+    ts_ns, sym = keys
+    valid = ts_ns != np.iinfo(np.int64).min
+    return set(zip(ts_ns[valid], pd.Series(sym[valid]).astype(str)))
+
+
+def _apply_meta_fit_row_universe(
+    df: pd.DataFrame,
+    mask: np.ndarray,
+    cfg: dict[str, Any],
+    *,
+    strategy_id: str,
+) -> np.ndarray:
+    path = str(os.getenv("EPM_META_FIT_ROW_UNIVERSE_PATH", cfg.get("meta_fit_row_universe_path", "")) or "").strip()
+    if not path:
+        return np.asarray(mask, dtype=bool)
+    keys = _timestamp_symbol_key_arrays(df)
+    if keys is None:
+        raise ValueError(f"Meta {strategy_id}: cannot apply fit row universe without timestamp/symbol columns")
+    universe = _load_timestamp_symbol_universe(path)
+    ts_ns, sym = keys
+    row_keep = np.fromiter(
+        ((int(t), str(s)) in universe for t, s in zip(ts_ns, sym)),
+        dtype=bool,
+        count=len(ts_ns),
+    )
+    out = np.asarray(mask, dtype=bool).copy() & row_keep
+    strict = _truthy_env_or_cfg_local(cfg, "EPM_META_FIT_ROW_UNIVERSE_STRICT", "meta_fit_row_universe_strict", False)
+    if strict:
+        current = set(zip(ts_ns[np.asarray(mask, dtype=bool)], pd.Series(sym[np.asarray(mask, dtype=bool)]).astype(str)))
+        missing = len(universe - current)
+        extra = int(np.sum(np.asarray(mask, dtype=bool) & ~row_keep))
+        if missing or extra:
+            raise ValueError(
+                f"Meta {strategy_id}: fit rows are not row-identical to {path}: "
+                f"missing_universe_rows={missing}, extra_rows={extra}, kept={int(np.sum(out))}"
+            )
+    tprint(
+        f"  Meta {strategy_id}: fit row universe filter "
+        f"{int(np.sum(mask))}->{int(np.sum(out))} rows (strict={strict}, source={path})"
+    )
+    if int(np.sum(out)) <= 0:
+        raise ValueError(f"Meta {strategy_id}: fit row universe filter removed all rows using {path}")
+    return out
+
+
+def _export_meta_fit_row_universe(
+    df: pd.DataFrame,
+    mask: np.ndarray,
+    cfg: dict[str, Any],
+    *,
+    strategy_id: str,
+) -> None:
+    if not _truthy_env_or_cfg_local(cfg, "EPM_META_FIT_ROW_UNIVERSE_EXPORT", "meta_fit_row_universe_export", True):
+        return
+    ts_col = "__ts__" if "__ts__" in df.columns else "timestamp" if "timestamp" in df.columns else None
+    sym_col = "__symbol__" if "__symbol__" in df.columns else "symbol" if "symbol" in df.columns else None
+    if ts_col is None or sym_col is None:
+        return
+    out_dir = Path(str(cfg.get("data_root", "data"))) / "artifacts" / str(cfg.get("run_id", "default")) / "row_universe"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    idx = np.flatnonzero(np.asarray(mask, dtype=bool))
+    safe_strategy = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(strategy_id))
+    out = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(df[ts_col].iloc[idx], utc=True, errors="coerce"),
+            "symbol": df[sym_col].iloc[idx].astype(str).to_numpy(dtype=object),
+            "row_index": idx.astype(np.int64),
+            "strategy_id": str(strategy_id),
+        }
+    ).dropna(subset=["timestamp", "symbol"])
+    path = out_dir / f"meta_fit_{safe_strategy}.parquet"
+    out.to_parquet(path, index=False)
+    tprint(f"  Meta {strategy_id}: fit row universe exported to {path} rows={len(out)}")
+
+
 def train_meta_models_from_artifacts(
     datasets, cfg, alpha_models, base_variant_models=None
 ):
@@ -12660,6 +13775,27 @@ def train_meta_models_from_artifacts(
     _feature_snapshot_ts = cfg.get("_feature_snapshot_ts")
     if _feature_snapshot_ts is not None:
         _feature_snapshot_ts = pd.Timestamp(_feature_snapshot_ts)
+    _base_error_state_cache: dict[tuple[str, int], Any] | None = None
+
+    def _posthoc_base_error_state(strategy_id: str, horizon: int) -> Any:
+        nonlocal _base_error_state_cache
+        if _base_error_state_cache is None:
+            artifact_dir = os.path.join(
+                str(cfg.get("data_root", "data")),
+                "artifacts",
+                str(cfg.get("run_id", "default")),
+            )
+            try:
+                _base_error_state_cache = load_base_error_archetype_states(
+                    artifact_dir
+                )
+            except Exception as exc:
+                _base_error_state_cache = {}
+                tprint(
+                    "Meta training: failed to load post-hoc base-error archetype "
+                    f"states from {artifact_dir}: {exc}"
+                )
+        return _base_error_state_cache.get((str(strategy_id), int(horizon)))
 
     def _inject_raw_meta_features(
         df_src: pd.DataFrame,
@@ -12673,6 +13809,23 @@ def train_meta_models_from_artifacts(
             or not feature_keys
         ):
             return df_src
+        requested_feature_keys = sorted(
+            {str(k) for k in feature_keys if isinstance(k, str) and k}
+        )
+        generated_missing = [
+            k
+            for k in requested_feature_keys
+            if k not in df_src.columns and _is_lgbm_model_derived_meta_feature(k)
+        ]
+        if generated_missing:
+            raise RuntimeError(
+                f"Meta {stage_label}: raw feature injection received "
+                f"{len(generated_missing)} missing generated/model-derived keys "
+                f"(sample={generated_missing[:12]}). These must be split out before "
+                "raw injection and materialized from base/meta OOF or model state."
+            )
+        if not requested_feature_keys:
+            return df_src
         from extreme_price_movements.pipeline_steps import inject_features_into_datasets
 
         tmp = {stage_label: df_src.copy()}
@@ -12682,7 +13835,7 @@ def train_meta_models_from_artifacts(
             cfg,
             {
                 stage_label: sorted(
-                    {str(k) for k in feature_keys if isinstance(k, str) and k}
+                    {str(k) for k in requested_feature_keys if isinstance(k, str) and k}
                 )
             },
         )
@@ -12699,6 +13852,111 @@ def train_meta_models_from_artifacts(
             elif mk in df_local.columns:
                 source_map[str(mk)] = str(mk)
         return source_map
+
+    def _requested_model_derived_meta_keys(
+        *feature_groups: Sequence[str],
+    ) -> list[str]:
+        out: list[str] = []
+        for group in feature_groups:
+            for raw_key in group or []:
+                if not isinstance(raw_key, str) or not raw_key:
+                    continue
+                if _is_lgbm_model_derived_meta_feature(raw_key):
+                    out.append(str(raw_key))
+        return list(dict.fromkeys(out))
+
+    def _raw_meta_feature_keys(feature_keys: Sequence[str]) -> list[str]:
+        return [
+            str(k)
+            for k in feature_keys or []
+            if isinstance(k, str)
+            and k
+            and not _is_lgbm_model_derived_meta_feature(str(k))
+        ]
+
+    def _neutral_model_derived_meta_value(feature_key: str) -> float:
+        key = str(feature_key).lower()
+        if key.endswith("_is_neutral"):
+            return 1.0
+        if key.endswith("_is_bad") or key.endswith("_is_good"):
+            return 0.0
+        if key.endswith("_bad_rate_lift") or key.endswith("_oof_bad_rate_lift"):
+            return 1.0
+        if "expected_hit_rate" in key or (
+            "hit_rate" in key and "surprise" not in key
+        ):
+            return 0.5
+        if key.endswith("_score_mean") or key.endswith("_mean_score"):
+            return 0.5
+        if "negative_log_likelihood" in key:
+            return 0.6931471805599453
+        if key.endswith("_support_quality"):
+            return 0.0
+        if key.endswith("_support_n") or key.endswith("_effective_n"):
+            return 0.0
+        if "prob_error" in key:
+            return 0.5
+        return 0.0
+
+    def _append_neutral_model_derived_meta_columns(
+        frame: pd.DataFrame,
+        feature_keys: Sequence[str],
+        *,
+        context: str,
+    ) -> tuple[pd.DataFrame, list[str]]:
+        missing = [
+            str(k)
+            for k in feature_keys
+            if isinstance(k, str)
+            and k
+            and _is_lgbm_model_derived_meta_feature(str(k))
+            and str(k) not in frame.columns
+        ]
+        if not missing:
+            return frame, []
+        allow_neutral = bool(
+            cfg.get("meta_allow_neutral_model_derived_placeholders", False)
+        ) or os.environ.get(
+            "EPM_META_ALLOW_NEUTRAL_MODEL_DERIVED_PLACEHOLDERS",
+            "0",
+        ).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "y",
+            "on",
+        }
+        if not allow_neutral:
+            raise RuntimeError(
+                f"Meta {context}: missing {len(missing)} generated/model-derived "
+                "columns after base/meta OOF materialization "
+                f"(sample={missing[:20]}). This is a fast-fail because these "
+                "features are configured for meta training but are not present in "
+                "the assembled meta frame. Retrain/regenerate the upstream base "
+                "OOF/model-state artifacts with these diagnostics enabled, remove "
+                "the unsupported keys from the meta feature config, or explicitly "
+                "set EPM_META_ALLOW_NEUTRAL_MODEL_DERIVED_PLACEHOLDERS=1 for a "
+                "legacy diagnostic run."
+            )
+        neutral_cols = {
+            key: np.full(
+                len(frame),
+                _neutral_model_derived_meta_value(key),
+                dtype=np.float32,
+            )
+            for key in missing
+        }
+        frame = pd.concat(
+            [frame, pd.DataFrame(neutral_cols, index=frame.index)],
+            axis=1,
+            copy=False,
+        )
+        tprint(
+            f"  Meta {context}: added {len(missing)} neutral generated/model-derived "
+            f"columns unavailable from current base/meta context "
+            f"(sample={missing[:12]})."
+        )
+        return frame, missing
 
     def _alpha_conf_for_strategy(trade_side: str, strategy_id: str):
         if not alpha_models:
@@ -12776,6 +14034,17 @@ def train_meta_models_from_artifacts(
             ),
             "lift10": bool(np.isfinite(lift10) and lift10 >= thresholds["lift10"]),
         }
+        gate_enabled = (
+            str(
+                os.getenv(
+                    "EPM_META_BASE_QUALITY_GATE_ENABLE",
+                    cfg.get("meta_base_quality_gate_enable", True),
+                )
+            )
+            .strip()
+            .lower()
+            not in {"0", "false", "no", "off"}
+        )
         passed = bool(checks["en_lift30"])
         details = {
             "passed": passed,
@@ -12799,7 +14068,17 @@ def train_meta_models_from_artifacts(
             "checks_brier_imp": checks["brier_imp"],
             "checks_logloss_imp": checks["logloss_imp"],
             "checks_lift10": checks["lift10"],
+            "gate_enabled": gate_enabled,
         }
+        if not gate_enabled:
+            details["passed"] = True
+            details["gate_disabled_reason"] = "EPM_META_BASE_QUALITY_GATE_ENABLE=0"
+            tprint(
+                f"Meta {strategy_id}: base-model quality gate disabled; "
+                f"training meta head anyway (auc={auc:.4f}, ic={ic:.4f}, "
+                f"en_lift30={en_lift30:.4f}, n_eval={n_eval})."
+            )
+            return True, details
         if not passed:
             failed = [k for k, ok in checks.items() if not ok]
             tprint(
@@ -12939,18 +14218,43 @@ def train_meta_models_from_artifacts(
     def _meta_strategy_gate_result(
         trade_side: str, strategy_id: str
     ) -> tuple[bool, dict[str, Any]]:
-        reg_key = f"{strategy_id}_reg"
-        clf_key = f"{strategy_id}_clf"
+        strategy_scope = (
+            str(strategy_id)
+            if str(strategy_id).startswith(("long_", "short_"))
+            else f"{trade_side}_{strategy_id}"
+        )
+        reg_key = f"{strategy_scope}_reg"
+        clf_key = f"{strategy_scope}_clf"
+        legacy_reg_key = f"{strategy_id}_reg"
+        legacy_clf_key = f"{strategy_id}_clf"
         aligned_reg_key = f"{trade_side}_{strategy_id}_reg"
         aligned_clf_key = f"{trade_side}_{strategy_id}_clf"
         reg_key_used = reg_key if reg_key in meta_models else aligned_reg_key
         clf_key_used = clf_key if clf_key in meta_models else aligned_clf_key
+        if reg_key_used not in meta_models and legacy_reg_key in meta_models:
+            reg_key_used = legacy_reg_key
+        if clf_key_used not in meta_models and legacy_clf_key in meta_models:
+            clf_key_used = legacy_clf_key
         reg_model = meta_models.get(reg_key_used)
         clf_model = meta_models.get(clf_key_used)
-        correctness_clf_key = f"{trade_side}_{strategy_id}_correctness_clf"
-        correctness_clf_model = meta_models.get(correctness_clf_key)
-        tbm_clf_key = f"{trade_side}_{strategy_id}_tbm_clf"
-        tbm_clf_model = meta_models.get(tbm_clf_key)
+        correctness_clf_key = f"{strategy_scope}_correctness_clf"
+        legacy_correctness_clf_key = f"{strategy_id}_correctness_clf"
+        aligned_correctness_clf_key = f"{trade_side}_{strategy_id}_correctness_clf"
+        correctness_clf_key_used = correctness_clf_key
+        if correctness_clf_key_used not in meta_models and aligned_correctness_clf_key in meta_models:
+            correctness_clf_key_used = aligned_correctness_clf_key
+        if correctness_clf_key_used not in meta_models and legacy_correctness_clf_key in meta_models:
+            correctness_clf_key_used = legacy_correctness_clf_key
+        correctness_clf_model = meta_models.get(correctness_clf_key_used)
+        tbm_clf_key = f"{strategy_scope}_tbm_clf"
+        legacy_tbm_clf_key = f"{strategy_id}_tbm_clf"
+        aligned_tbm_clf_key = f"{trade_side}_{strategy_id}_tbm_clf"
+        tbm_clf_key_used = tbm_clf_key
+        if tbm_clf_key_used not in meta_models and aligned_tbm_clf_key in meta_models:
+            tbm_clf_key_used = aligned_tbm_clf_key
+        if tbm_clf_key_used not in meta_models and legacy_tbm_clf_key in meta_models:
+            tbm_clf_key_used = legacy_tbm_clf_key
+        tbm_clf_model = meta_models.get(tbm_clf_key_used)
         thresholds = {
             "ic_u_policy": float(cfg.get("meta_strategy_gate_min_ic_u_policy", 0.015)),
             "spread10_u_policy": float(
@@ -12967,6 +14271,8 @@ def train_meta_models_from_artifacts(
             "tbm_clf_key": tbm_clf_key,
             "reg_key_used": reg_key_used,
             "clf_key_used": clf_key_used,
+            "correctness_clf_key_used": correctness_clf_key_used,
+            "tbm_clf_key_used": tbm_clf_key_used,
             "thresholds": thresholds,
         }
         failures: list[str] = []
@@ -13583,6 +14889,59 @@ def train_meta_models_from_artifacts(
             else:
                 source_df = df_local
                 oof_local = np.asarray(race_local.oof_probs, dtype=float)
+            if not saved_is_preferred and race_local is not None:
+                try:
+                    _best_for_label_hpo = getattr(race_local, "best_model", None)
+                    _label_hpo_hard = getattr(
+                        _best_for_label_hpo,
+                        "label_weight_hpo_hard_label_",
+                        None,
+                    )
+                    _label_hpo_soft = getattr(
+                        _best_for_label_hpo,
+                        "label_weight_hpo_soft_label_",
+                        None,
+                    )
+                    _label_hpo_weight = getattr(
+                        _best_for_label_hpo,
+                        "label_weight_hpo_sample_weight_",
+                        None,
+                    )
+                    _label_hpo_report = dict(
+                        getattr(_best_for_label_hpo, "label_weight_hpo_report_", {})
+                        or {}
+                    )
+                    if _label_hpo_hard is not None and len(_label_hpo_hard) == len(source_df):
+                        source_df = source_df.copy()
+                        if "__y_bin__" in source_df.columns:
+                            source_df["__y_bin_baseline__"] = np.asarray(
+                                source_df["__y_bin__"], dtype=np.float32
+                            )
+                        source_df["__y_bin__"] = np.asarray(
+                            _label_hpo_hard, dtype=np.float32
+                        )
+                        if _label_hpo_soft is not None and len(_label_hpo_soft) == len(source_df):
+                            source_df["__label_weight_hpo_soft_label__"] = np.asarray(
+                                _label_hpo_soft, dtype=np.float32
+                            )
+                        if (
+                            _label_hpo_weight is not None
+                            and len(_label_hpo_weight) == len(source_df)
+                        ):
+                            source_df["__label_weight_hpo_sample_weight__"] = np.asarray(
+                                _label_hpo_weight, dtype=np.float32
+                            )
+                        tprint(
+                            "Meta training: using in-memory label/sample-weight HPO "
+                            f"target for {strategy_id} H={int(h_local)} "
+                            f"winner={_label_hpo_report.get('winner', 'unknown')} "
+                            f"selected={bool(_label_hpo_report.get('selected', False))}."
+                        )
+                except Exception as _label_hpo_exc:
+                    tprint(
+                        "WARNING: failed to apply in-memory label/sample-weight HPO "
+                        f"target for {strategy_id} H={int(h_local)}: {_label_hpo_exc}"
+                    )
             if len(oof_local) != len(source_df):
                 skip[h_local] = f"oof_len_mismatch:{len(oof_local)}!={len(source_df)}"
                 continue
@@ -13733,6 +15092,112 @@ def train_meta_models_from_artifacts(
                 f"    Meta {strategy_id} H{int(h)}: aligning clf/reg uncertainty on "
                 f"{len(ds_h)} fitted rows -> {len(df_union)} union rows"
             )
+            union_ts_vals = df_union["__ts__"].values
+            union_sym_vals = df_union["__symbol__"].values
+            source_ts_vals = ds_h["__ts__"].values
+            source_sym_vals = ds_h["__symbol__"].values
+            align_take_idx: np.ndarray | None = None
+            direct_alignment = False
+            _source_len_for_alignment = min(len(source_ts_vals), len(source_sym_vals))
+            if _source_len_for_alignment > 0 and len(df_union) > 0:
+                try:
+                    if _source_len_for_alignment == len(df_union):
+                        _union_ts_ns = pd.to_datetime(
+                            union_ts_vals, utc=True, errors="coerce"
+                        ).view("i8")
+                        _source_ts_ns = pd.to_datetime(
+                            source_ts_vals, utc=True, errors="coerce"
+                        ).view("i8")
+                        direct_alignment = bool(
+                            np.array_equal(_union_ts_ns, _source_ts_ns)
+                            and np.array_equal(
+                                np.asarray(union_sym_vals, dtype=object),
+                                np.asarray(source_sym_vals, dtype=object),
+                            )
+                        )
+                    if not direct_alignment:
+                        _source_ts_ns = pd.to_datetime(
+                            source_ts_vals, utc=True, errors="coerce"
+                        ).view("i8")[:_source_len_for_alignment]
+                        _union_ts_ns = pd.to_datetime(
+                            union_ts_vals, utc=True, errors="coerce"
+                        ).view("i8")
+                        _source_sym_arr = np.asarray(
+                            source_sym_vals, dtype=object
+                        )[:_source_len_for_alignment]
+                        _union_sym_arr = np.asarray(union_sym_vals, dtype=object)
+                        _codes, _ = pd.factorize(
+                            np.concatenate([_source_sym_arr, _union_sym_arr]),
+                            sort=False,
+                        )
+                        _source_sym_codes = _codes[:_source_len_for_alignment].astype(
+                            np.int32, copy=False
+                        )
+                        _union_sym_codes = _codes[_source_len_for_alignment:].astype(
+                            np.int32, copy=False
+                        )
+                        _key_dtype = np.dtype([("ts", np.int64), ("sym", np.int32)])
+                        _source_keys = np.empty(
+                            _source_len_for_alignment, dtype=_key_dtype
+                        )
+                        _source_keys["ts"] = _source_ts_ns.astype(
+                            np.int64, copy=False
+                        )
+                        _source_keys["sym"] = _source_sym_codes
+                        _union_keys = np.empty(len(_union_ts_ns), dtype=_key_dtype)
+                        _union_keys["ts"] = _union_ts_ns.astype(np.int64, copy=False)
+                        _union_keys["sym"] = _union_sym_codes
+                        _order = np.argsort(_source_keys, kind="mergesort")
+                        _source_keys_sorted = _source_keys[_order]
+                        if len(_source_keys_sorted) > 1:
+                            _keep = np.ones(len(_source_keys_sorted), dtype=bool)
+                            _keep[1:] = _source_keys_sorted[1:] != _source_keys_sorted[:-1]
+                            _source_keys_sorted = _source_keys_sorted[_keep]
+                            _order = _order[_keep]
+                        _pos = np.searchsorted(_source_keys_sorted, _union_keys)
+                        _valid = (_pos >= 0) & (_pos < len(_source_keys_sorted))
+                        align_take_idx = np.full(len(_union_keys), -1, dtype=np.int32)
+                        if np.any(_valid):
+                            _exact = _source_keys_sorted[_pos[_valid]] == _union_keys[_valid]
+                            if np.any(_exact):
+                                _valid_idx = np.flatnonzero(_valid)
+                                align_take_idx[_valid_idx[_exact]] = _order[_pos[_valid][_exact]].astype(
+                                    np.int32, copy=False
+                                )
+                except Exception as _align_plan_exc:
+                    align_take_idx = None
+                    direct_alignment = False
+                    tprint(
+                        f"    Meta {strategy_id} H{int(h)}: reusable uncertainty "
+                        f"alignment plan failed ({_align_plan_exc}); falling back "
+                        "to per-column alignment."
+                    )
+            tprint(
+                f"    Meta {strategy_id} H{int(h)}: uncertainty alignment plan "
+                f"direct={direct_alignment} mapped="
+                f"{int(np.sum(align_take_idx >= 0)) if align_take_idx is not None else 'fallback'}"
+            )
+
+            def _align_uncertainty_vector(vec: Any) -> np.ndarray:
+                vals = np.asarray(vec, dtype=np.float32)
+                if direct_alignment and len(vals) >= len(df_union):
+                    return vals[: len(df_union)].astype(np.float32, copy=False)
+                if align_take_idx is not None:
+                    out_arr = np.full(len(df_union), np.nan, dtype=np.float32)
+                    valid_idx = (align_take_idx >= 0) & (align_take_idx < len(vals))
+                    if np.any(valid_idx):
+                        out_arr[valid_idx] = vals[align_take_idx[valid_idx]]
+                    return out_arr
+                return _align_values_by_ts_symbol_keys(
+                    union_ts_vals,
+                    union_sym_vals,
+                    source_ts_vals,
+                    source_sym_vals,
+                    vals,
+                    fill_value=np.nan,
+                    dtype=np.float32,
+                )
+
             for oof_col, feat_key in _BASE_CLF_UNCERTAINTY_ALIAS_KEYS:
                 if saved_oof_preferred:
                     if oof_col not in ds_h.columns:
@@ -13742,15 +15207,7 @@ def train_meta_models_from_artifacts(
                     vec_h = _race_sigma_vector(race, oof_col, len(ds_h))
                 if not np.isfinite(vec_h).any():
                     continue
-                aligned = _align_values_by_ts_symbol_keys(
-                    df_union["__ts__"].values,
-                    df_union["__symbol__"].values,
-                    ds_h["__ts__"].values,
-                    ds_h["__symbol__"].values,
-                    vec_h,
-                    fill_value=np.nan,
-                    dtype=np.float32,
-                )
+                aligned = _align_uncertainty_vector(vec_h)
                 out[f"pred_{strategy_id}_H{int(h)}_{feat_key}"] = aligned
                 out[f"pred_H{int(h)}_{feat_key}"] = aligned
                 out[f"base_H{int(h)}_{feat_key}"] = aligned
@@ -13762,15 +15219,7 @@ def train_meta_models_from_artifacts(
                     vec_h = np.asarray(ds_h[oof_col].values, dtype=np.float32)
                 else:
                     vec_h = _race_sigma_vector(race, oof_col, len(ds_h))
-                aligned = _align_values_by_ts_symbol_keys(
-                    df_union["__ts__"].values,
-                    df_union["__symbol__"].values,
-                    ds_h["__ts__"].values,
-                    ds_h["__symbol__"].values,
-                    vec_h,
-                    fill_value=np.nan,
-                    dtype=np.float32,
-                )
+                aligned = _align_uncertainty_vector(vec_h)
                 out[f"pred_{strategy_id}_H{int(h)}_{feat_key}"] = aligned
                 out[f"pred_H{int(h)}_{feat_key}"] = aligned
                 out[f"base_H{int(h)}_{feat_key}"] = aligned
@@ -13784,18 +15233,14 @@ def train_meta_models_from_artifacts(
                     vec_h = _race_sigma_vector(race, oof_col, len(ds_h))
                 if not np.isfinite(vec_h).any():
                     continue
-                aligned = _align_values_by_ts_symbol_keys(
-                    df_union["__ts__"].values,
-                    df_union["__symbol__"].values,
-                    ds_h["__ts__"].values,
-                    ds_h["__symbol__"].values,
-                    vec_h,
-                    fill_value=np.nan,
-                    dtype=np.float32,
-                )
+                aligned = _align_uncertainty_vector(vec_h)
                 out[f"pred_{strategy_id}_H{int(h)}_{feat_key}"] = aligned
                 out[f"pred_H{int(h)}_{feat_key}"] = aligned
                 out[f"base_H{int(h)}_{feat_key}"] = aligned
+                for alias_key in _base_model_drift_meta_aliases(feat_key):
+                    out[f"pred_{strategy_id}_H{int(h)}_{alias_key}"] = aligned
+                    out[f"pred_H{int(h)}_{alias_key}"] = aligned
+                    out[f"base_H{int(h)}_{alias_key}"] = aligned
             for pred_key, pred_alias in (
                 ("oof_prob_ebm_raw", "ebm_raw"),
                 ("oof_prob_en", "ebm_en"),
@@ -13809,15 +15254,7 @@ def train_meta_models_from_artifacts(
                     vec_h = _race_sigma_vector(race, pred_key, len(ds_h))
                 if not np.isfinite(vec_h).any():
                     continue
-                aligned = _align_values_by_ts_symbol_keys(
-                    df_union["__ts__"].values,
-                    df_union["__symbol__"].values,
-                    ds_h["__ts__"].values,
-                    ds_h["__symbol__"].values,
-                    vec_h,
-                    fill_value=np.nan,
-                    dtype=np.float32,
-                )
+                aligned = _align_uncertainty_vector(vec_h)
                 out[f"pred_{strategy_id}_H{int(h)}_{pred_alias}"] = aligned
                 out[f"pred_H{int(h)}_{pred_alias}"] = aligned
                 out[f"base_H{int(h)}_{pred_alias}"] = aligned
@@ -13836,15 +15273,7 @@ def train_meta_models_from_artifacts(
                     vec_h = _race_sigma_vector(race, oof_col, len(ds_h))
                 if not np.isfinite(vec_h).any():
                     continue
-                aligned = _align_values_by_ts_symbol_keys(
-                    df_union["__ts__"].values,
-                    df_union["__symbol__"].values,
-                    ds_h["__ts__"].values,
-                    ds_h["__symbol__"].values,
-                    vec_h,
-                    fill_value=np.nan,
-                    dtype=np.float32,
-                )
+                aligned = _align_uncertainty_vector(vec_h)
                 out[f"pred_{strategy_id}_H{int(h)}_{feat_key}"] = aligned
                 out[f"pred_H{int(h)}_{feat_key}"] = aligned
                 out[f"base_H{int(h)}_{feat_key}"] = aligned
@@ -13861,15 +15290,37 @@ def train_meta_models_from_artifacts(
                     continue
                 if len(vec_h) == 0:
                     continue
-                aligned = _align_values_by_ts_symbol_keys(
-                    df_union["__ts__"].values,
-                    df_union["__symbol__"].values,
-                    ds_h["__ts__"].values,
-                    ds_h["__symbol__"].values,
-                    vec_h,
-                    fill_value=np.nan,
-                    dtype=np.float32,
-                )
+                aligned = _align_uncertainty_vector(vec_h)
+                out[f"pred_{strategy_id}_H{int(h)}_{feat_key}"] = aligned
+                out[f"pred_H{int(h)}_{feat_key}"] = aligned
+                out[f"base_H{int(h)}_{feat_key}"] = aligned
+            archetype_keys = list(ARCHETYPE_FEATURE_NAMES)
+            if saved_oof_preferred:
+                for col in ds_h.columns:
+                    col_s = str(col)
+                    if col_s.startswith("oof_") and is_archetype_feature_name(col_s[4:]):
+                        archetype_keys.append(col_s[4:])
+            else:
+                for owner in (race, getattr(race, "best_model", None)):
+                    feats = getattr(owner, "oof_uncertainty_features", None)
+                    if not isinstance(feats, dict):
+                        continue
+                    for raw_key in feats.keys():
+                        key_s = str(raw_key)
+                        key_s = key_s[4:] if key_s.startswith("oof_") else key_s
+                        if is_archetype_feature_name(key_s):
+                            archetype_keys.append(key_s)
+            for feat_key in list(dict.fromkeys(archetype_keys)):
+                oof_col = f"oof_{feat_key}"
+                if saved_oof_preferred:
+                    if oof_col not in ds_h.columns:
+                        continue
+                    vec_h = np.asarray(ds_h[oof_col].values, dtype=np.float32)
+                else:
+                    vec_h = _race_sigma_vector(race, oof_col, len(ds_h))
+                if len(vec_h) == 0 or not np.isfinite(vec_h).any():
+                    continue
+                aligned = _align_uncertainty_vector(vec_h)
                 out[f"pred_{strategy_id}_H{int(h)}_{feat_key}"] = aligned
                 out[f"pred_H{int(h)}_{feat_key}"] = aligned
                 out[f"base_H{int(h)}_{feat_key}"] = aligned
@@ -16778,6 +18229,93 @@ def train_meta_models_from_artifacts(
             tprint(f"Meta {k}: skipped (only {len(df)} union samples)")
             continue
 
+        _meta_mr_tf_enabled = False
+        _meta_mr_tf_diag = None
+        try:
+            from extreme_price_movements.mr_tf_masks import (
+                MR_MASK_COL as _META_MR_MASK_COL,
+                MIXED_MASK_COL as _META_MIXED_MASK_COL,
+                PARAMS_HASH_COL as _META_PARAMS_HASH_COL,
+                ROUTE_COL as _META_ROUTE_COL,
+                TF_MASK_COL as _META_TF_MASK_COL,
+                apply_mr_tf_masks as _apply_meta_mr_tf_masks,
+                mr_tf_masks_enabled as _meta_mr_tf_masks_enabled,
+            )
+
+            _meta_mr_tf_enabled = bool(_meta_mr_tf_masks_enabled(cfg))
+            if _meta_mr_tf_enabled:
+                _rename_route_cols = {
+                    "mr_tf_route": _META_ROUTE_COL,
+                    "mr_mask": _META_MR_MASK_COL,
+                    "tf_mask": _META_TF_MASK_COL,
+                    "mixed_mask": _META_MIXED_MASK_COL,
+                    "mr_tf_params_hash": _META_PARAMS_HASH_COL,
+                }
+                for _src_col, _dst_col in _rename_route_cols.items():
+                    if _dst_col not in df.columns and _src_col in df.columns:
+                        df[_dst_col] = df[_src_col].values
+                if _META_ROUTE_COL not in df.columns:
+                    _base_mask_params = None
+                    try:
+                        _base_h_info = (
+                            (conf or {}).get("models_by_h", {}) or {}
+                        ).get(base_H, {})
+                        _base_mask_params = (
+                            (
+                                (_base_h_info.get("mr_tf_specialists") or {})
+                                .get("mask_diagnostics", {})
+                                .get("params")
+                            )
+                            or (
+                                (conf or {})
+                                .get("mr_tf_specialists", {})
+                                .get("mask_diagnostics", {})
+                                .get("params")
+                            )
+                        )
+                    except Exception:
+                        _base_mask_params = None
+                    df, _meta_mr_tf_diag = _apply_meta_mr_tf_masks(
+                        df,
+                        side=side,
+                        cfg=cfg,
+                        params=_base_mask_params,
+                    )
+                else:
+                    _counts = pd.Series(df[_META_ROUTE_COL].astype(str)).value_counts()
+                    _meta_mr_tf_diag = {
+                        "enabled": True,
+                        "source": "base_oof_route_columns",
+                        "counts": {
+                            "mr": int(_counts.get("mr", 0)),
+                            "tf": int(_counts.get("tf", 0)),
+                            "mixed": int(_counts.get("mixed", 0)),
+                        },
+                        "params_hash": (
+                            str(df[_META_PARAMS_HASH_COL].iloc[0])
+                            if _META_PARAMS_HASH_COL in df.columns and len(df)
+                            else ""
+                        ),
+                    }
+                _counts = dict((_meta_mr_tf_diag or {}).get("counts") or {})
+                tprint(
+                    f"MR/TF meta routes [{k}]: "
+                    f"mr={int(_counts.get('mr', 0))} "
+                    f"tf={int(_counts.get('tf', 0))} "
+                    f"mixed={int(_counts.get('mixed', 0))} "
+                    f"hash={(_meta_mr_tf_diag or {}).get('params_hash', '')}"
+                )
+        except Exception as _meta_mr_tf_exc:
+            _meta_mr_tf_enabled = False
+            _meta_mr_tf_diag = {
+                "enabled": False,
+                "reason": f"meta_route_generation_failed:{_meta_mr_tf_exc}",
+            }
+            tprint(
+                f"WARNING: MR/TF meta route generation disabled for {k}: "
+                f"{_meta_mr_tf_exc}"
+            )
+
         if "__ts__" in df.columns and "__symbol__" in df.columns:
             _primary_label_key = f"train_{k}_{int(_strategy_primary_h)}"
             _path_source_df = datasets.get(_primary_label_key)
@@ -17204,20 +18742,73 @@ def train_meta_models_from_artifacts(
         _meta_backend_lgbm_pipeline = (
             str(cfg.get("meta_model_backend", "")).lower() == "lgbm_pipeline"
         )
+        _meta_rule_mask_feature_diag = None
+        try:
+            from extreme_price_movements.rule_mask_features import (
+                append_rule_mask_features as _append_rule_mask_features,
+                rule_mask_feature_names as _rule_mask_feature_names,
+            )
+
+            df, _meta_rule_mask_feature_diag = _append_rule_mask_features(
+                df,
+                cfg,
+                side=side,
+                context=f"meta:{k}",
+            )
+            _configured_rule_mask_features = [
+                c for c in _rule_mask_feature_names(cfg) if c in df.columns
+            ]
+        except Exception as _rule_mask_exc:
+            _meta_rule_mask_feature_diag = {
+                "enabled": False,
+                "reason": f"rule_mask_feature_generation_failed:{_rule_mask_exc}",
+            }
+            _configured_rule_mask_features = []
+            tprint(
+                f"WARNING: rule-mask feature generation failed for meta {k}: "
+                f"{_rule_mask_exc}"
+            )
         configured_meta = list(_meta_feature_keys_for_kind(cfg, strat, kind=None))
+        if _configured_rule_mask_features:
+            _pre_rule_meta_n = len(configured_meta)
+            configured_meta = list(
+                dict.fromkeys(configured_meta + _configured_rule_mask_features)
+            )
+            tprint(
+                f"  Meta {k}: added {len(configured_meta) - _pre_rule_meta_n} "
+                "rule-mask candidate features to the LGBM meta feature pool."
+            )
         _native_meta_preset_features: list[str] = []
         if _meta_backend_lgbm_pipeline:
-            _native_meta_scope = f"{side}_{k}_clf"
+            _native_meta_scope = (
+                f"{k}_clf"
+                if str(k).startswith(("long_", "short_"))
+                else f"{side}_{k}_clf"
+            )
             _native_meta_preset = _load_native_lgbm_training_preset(
                 cfg,
                 scope_key=_native_meta_scope,
                 objective_mode="train_meta",
             )
-            _native_meta_preset_features = [
-                str(c)
-                for c in ((_native_meta_preset or {}).get("selected_features") or [])
-                if str(c).strip()
-            ]
+            _native_meta_preset_params_only = _truthy_env(
+                "EPM_LGBM_NATIVE_PRESET_PARAMS_ONLY",
+                str(cfg.get("lgbm_native_preset_params_only", "")),
+            )
+            _native_meta_preset_features = (
+                [
+                    str(c)
+                    for c in ((_native_meta_preset or {}).get("selected_features") or [])
+                    if str(c).strip()
+                ]
+                if not _native_meta_preset_params_only
+                else []
+            )
+            if _native_meta_preset and _native_meta_preset_params_only:
+                tprint(
+                    f"  Meta {k}: native LGBM preset params-only mode; "
+                    "reusing best_params while rerunning meta feature selection "
+                    "without old selected-feature exemptions."
+                )
             if _native_meta_preset_features:
                 _pre_cfg_n = len(configured_meta)
                 configured_meta = list(
@@ -17247,6 +18838,16 @@ def train_meta_models_from_artifacts(
             )
         else:
             df_stage1 = df
+            configured_meta_raw = _raw_meta_feature_keys(configured_meta)
+            configured_meta_generated = _requested_model_derived_meta_keys(
+                configured_meta
+            )
+            if configured_meta_generated:
+                tprint(
+                    f"  Meta {k}: stage1 raw injection excludes "
+                    f"{len(configured_meta_generated)} configured generated/model-derived "
+                    "keys; they require the full-frame generated feature path."
+                )
             if _stage1_cap > 0 and len(df_stage1) > _stage1_cap:
                 _pre_stage1 = len(df_stage1)
                 df_stage1 = subsample_symbol_balanced(df_stage1, _stage1_cap)
@@ -17256,18 +18857,18 @@ def train_meta_models_from_artifacts(
                 )
             df_stage1 = _inject_raw_meta_features(
                 df_stage1,
-                configured_meta,
+                configured_meta_raw,
                 f"__meta_stage1__{k}",
             )
             feat_source_map_stage1 = _resolve_meta_raw_sources(
-                df_stage1, configured_meta
+                df_stage1, configured_meta_raw
             )
             feat_cols_stage1 = list(dict.fromkeys(feat_source_map_stage1.keys()))
             missing_meta_keys = [
-                mk for mk in configured_meta if mk not in feat_source_map_stage1
+                mk for mk in configured_meta_raw if mk not in feat_source_map_stage1
             ]
             tprint(
-                f"  Meta {k}: stage1 resolved raw meta keys {len(feat_cols_stage1)}/{len(configured_meta)} "
+                f"  Meta {k}: stage1 resolved raw meta keys {len(feat_cols_stage1)}/{len(configured_meta_raw)} "
                 f"(missing={len(missing_meta_keys)})"
             )
             if missing_meta_keys:
@@ -17389,15 +18990,35 @@ def train_meta_models_from_artifacts(
                 tprint(f"  Meta {k}: clf stage1 preselection failed ({_sel_exc})")
         if not preselected_raw_keys:
             preselected_raw_keys = set(feat_cols_stage1)
+        model_derived_meta_requested = _requested_model_derived_meta_keys(
+            configured_meta,
+            sorted(preselected_raw_keys),
+            _native_meta_preset_features,
+        )
+        base_error_archetype_state_for_meta = (
+            _posthoc_base_error_state(str(k), int(_strategy_primary_h))
+            if any("base_error_" in str(c) for c in model_derived_meta_requested)
+            else None
+        )
+        if base_error_archetype_state_for_meta is not None:
+            tprint(
+                f"  Meta {k}: loaded post-hoc base-error archetype state "
+                f"for H{int(_strategy_primary_h)} "
+                f"(enabled={bool(getattr(base_error_archetype_state_for_meta, 'enabled', False))}, "
+                f"features={len(getattr(base_error_archetype_state_for_meta, 'feature_names', []) or [])})."
+            )
+        raw_preselected_keys = _raw_meta_feature_keys(sorted(preselected_raw_keys))
         tprint(
-            f"  Meta {k}: stage1 preselection kept {len(preselected_raw_keys)} raw meta features"
+            f"  Meta {k}: stage1 preselection kept {len(preselected_raw_keys)} meta features "
+            f"({len(raw_preselected_keys)} raw-injectable, "
+            f"{len(model_derived_meta_requested)} generated/model-derived requested)"
         )
         df = _inject_raw_meta_features(
             df,
-            sorted(preselected_raw_keys),
+            raw_preselected_keys,
             f"__meta_full__{k}",
         )
-        feat_source_map = _resolve_meta_raw_sources(df, sorted(preselected_raw_keys))
+        feat_source_map = _resolve_meta_raw_sources(df, raw_preselected_keys)
         feat_cols = list(dict.fromkeys(feat_source_map.keys()))
         exclude_key = f"meta_feature_exclude_{k}"
         exclude_set = set(cfg.get(exclude_key, []))
@@ -17407,17 +19028,18 @@ def train_meta_models_from_artifacts(
             tprint(
                 f"  Meta feature exclusion ({k}): {n_before} -> {len(feat_cols)} features ({n_before - len(feat_cols)} excluded)"
             )
-        if not feat_cols:
+        if not feat_cols and not model_derived_meta_requested:
             tprint(f"Meta {k}: skipped (no raw meta features found in dataset)")
             continue
-        feat_cols = _recent_feature_availability_filter(
-            df,
-            feat_cols,
-            cfg=cfg,
-            context=f"meta {k} raw feature matrix",
-            exempt_features=set(_native_meta_preset_features),
-        )
-        if not feat_cols:
+        if feat_cols:
+            feat_cols = _recent_feature_availability_filter(
+                df,
+                feat_cols,
+                cfg=cfg,
+                context=f"meta {k} raw feature matrix",
+                exempt_features=set(_native_meta_preset_features),
+            )
+        if not feat_cols and not model_derived_meta_requested:
             tprint(
                 f"Meta {k}: skipped (no raw meta features meet recent coverage threshold)"
             )
@@ -17479,8 +19101,85 @@ def train_meta_models_from_artifacts(
             k, conf, df, horizon_dfs
         )
         if not primary_tree_feat_df.empty:
+            _primary_base_prefix = f"base_H{int(_strategy_primary_h)}_"
+            _base_lgbm_source_keys = set(LGBM_INTERNAL_METRIC_FEATURE_NAMES)
+            _base_lgbm_source_keys.update(str(c) for c in MODEL_DRIFT_FEATURE_KEYS)
+            _requested_model_context_keys = set(model_derived_meta_requested)
+            _base_lgbm_alias_cols: dict[str, np.ndarray] = {}
+            for _src_col in list(primary_tree_feat_df.columns):
+                _src_s = str(_src_col)
+                if not _src_s.startswith(_primary_base_prefix):
+                    continue
+                _feat_key = _src_s[len(_primary_base_prefix) :]
+                _src_vals = pd.to_numeric(
+                    primary_tree_feat_df[_src_col], errors="coerce"
+                ).to_numpy(dtype=np.float32, copy=False)
+                if (
+                    _feat_key in _requested_model_context_keys
+                    and _feat_key not in primary_tree_feat_df.columns
+                ):
+                    _base_lgbm_alias_cols[_feat_key] = _src_vals
+                _dst_col = f"base_lgbm_{_feat_key}"
+                if (
+                    (
+                        _feat_key in _base_lgbm_source_keys
+                        or _dst_col in _requested_model_context_keys
+                    )
+                    and _dst_col not in primary_tree_feat_df.columns
+                ):
+                    _base_lgbm_alias_cols[_dst_col] = _src_vals
+            if (
+                "base_lgbm_feature_drift_psi_core_80" in _base_lgbm_alias_cols
+                and "base_lgbm_feature_drift_psi_core"
+                not in primary_tree_feat_df.columns
+            ):
+                _base_lgbm_alias_cols["base_lgbm_feature_drift_psi_core"] = (
+                    _base_lgbm_alias_cols["base_lgbm_feature_drift_psi_core_80"]
+                )
+            if (
+                "base_lgbm_feature_drift_ks_bin_mean" in _base_lgbm_alias_cols
+                and "base_lgbm_feature_drift_ks_core"
+                not in primary_tree_feat_df.columns
+            ):
+                _base_lgbm_alias_cols["base_lgbm_feature_drift_ks_core"] = (
+                    _base_lgbm_alias_cols["base_lgbm_feature_drift_ks_bin_mean"]
+                )
+            if _base_lgbm_alias_cols:
+                primary_tree_feat_df = pd.concat(
+                    [
+                        primary_tree_feat_df,
+                        pd.DataFrame(
+                            _base_lgbm_alias_cols,
+                            index=primary_tree_feat_df.index,
+                        ),
+                    ],
+                    axis=1,
+                    copy=False,
+                )
+                tprint(
+                    f"  Meta {k}: added {len(_base_lgbm_alias_cols)} "
+                    "primary-horizon generated-context aliases "
+                    f"from H{int(_strategy_primary_h)}."
+                )
             X_feats = pd.concat([X_feats, primary_tree_feat_df], axis=1)
             tree_uncertainty_cols = list(primary_tree_feat_df.columns)
+            raw_contrib_tree_cols = [
+                c for c in tree_uncertainty_cols if is_raw_contrib_feature_name(str(c))
+            ]
+            if raw_contrib_tree_cols and not _meta_backend_lgbm_pipeline:
+                tree_uncertainty_cols = [
+                    c for c in tree_uncertainty_cols if c not in set(raw_contrib_tree_cols)
+                ]
+                tprint(
+                    f"  Meta {k}: collected {len(raw_contrib_tree_cols)} raw "
+                    "base contribution OOF columns but excluded them from the "
+                    "non-LGBM meta backend."
+                )
+            elif raw_contrib_tree_cols:
+                tprint(
+                    f"  Meta {k}: collected {len(raw_contrib_tree_cols)} raw "
+                    "base contribution OOF columns for LGBM meta SVD transform."
+                )
             tprint(
                 f"  Meta {k}: primary tree uncertainty features materialized="
                 f"{len(tree_uncertainty_cols)} columns from "
@@ -17496,6 +19195,36 @@ def train_meta_models_from_artifacts(
         _t_shared_frame = _time.monotonic()
 
         X_meta_base = X_feats.fillna(0.0)
+        # Meta atlas/context features must use the plain base OOF score, not
+        # uncertainty-adjusted variants. Define it before any feature builders
+        # that need the base score.
+        _base_plain_vals = np.asarray(p_oof, dtype=np.float32)
+        _base_plain_vals = np.nan_to_num(
+            _base_plain_vals, nan=0.5, posinf=0.5, neginf=0.5
+        ).astype(np.float32)
+        _base_med_vals = _base_plain_vals
+        base_predictive_atlas_cols: list[str] = []
+        try:
+            X_meta_base, base_predictive_atlas_cols = _append_base_predictive_atlas_features(
+                X_meta_base,
+                df=df,
+                strategy_id=str(k),
+                primary_horizon=int(_strategy_primary_h),
+                base_score=np.asarray(_base_med_vals, dtype=np.float32),
+                y_binary=np.asarray(_y_bin_for_h_aligned(int(_strategy_primary_h)), dtype=np.float32),
+                cfg=cfg,
+            )
+            if base_predictive_atlas_cols:
+                tprint(
+                    f"  Meta {k}: added {len(base_predictive_atlas_cols)} "
+                    "base predictive atlas IC/hit-rate/surprise features."
+                )
+        except Exception as _base_pred_atlas_exc:
+            base_predictive_atlas_cols = []
+            tprint(
+                f"  Meta {k}: warning base predictive atlas feature generation "
+                f"failed: {_base_pred_atlas_exc}"
+            )
         tprint(
             f"  Meta {k}: shared meta frame materialized rows={len(X_meta_base)} "
             f"cols={X_meta_base.shape[1]} ({_time.monotonic()-_t_shared_frame:.1f}s)"
@@ -17536,13 +19265,8 @@ def train_meta_models_from_artifacts(
         # Meta interaction products must use the plain OOF prediction, not the
         # EN/uncertainty-adjusted variants. The adjusted predictions remain as
         # standalone uncertainty features for downstream models.
-        _base_plain_vals = np.asarray(p_oof, dtype=np.float32)
-        _base_plain_vals = np.nan_to_num(
-            _base_plain_vals, nan=0.5, posinf=0.5, neginf=0.5
-        ).astype(np.float32)
         X_meta_base["base_med_pred"] = _base_plain_vals
         meta_interaction_cols.append("base_med_pred")
-        _base_med_vals = _base_plain_vals
         X_meta_base["base_med_en"] = np.nan_to_num(
             _base_plain_vals, nan=0.5, posinf=0.5, neginf=0.5
         ).astype(np.float32)
@@ -17714,61 +19438,22 @@ def train_meta_models_from_artifacts(
             X_meta_base["base_model_margin"] = np.abs(_base_prob_vals - 0.5).astype(
                 np.float32, copy=False
             )
-            _meta_prob_err = np.full(len(df), np.nan, dtype=np.float32)
-            _recent_prob_err_20 = np.full(len(df), np.nan, dtype=np.float32)
-            _recent_hit_rate_20 = np.full(len(df), np.nan, dtype=np.float32)
-            _prob_pred = (_base_prob_vals >= 0.5).astype(np.int8)
             _rank_top_frac = float(
                 np.clip(cfg.get("meta_clf_top_frac", 0.15), 0.01, 0.50)
             )
-            _rank_top_mask = _base_rank_pct >= (1.0 - _rank_top_frac)
-            _work = pd.DataFrame(
-                {
-                    "asset": _asset_vals,
-                    "timestamp": _ts_vals,
-                    "base_prob": _base_prob_vals,
-                    "outcome": _base_outcome,
-                    "rank_top": _rank_top_mask,
-                    "pred_label": _prob_pred,
-                }
+            _base_perf_feats = _causal_base_performance_feature_arrays(
+                frame=df,
+                base_prob=_base_prob_vals,
+                outcome=_base_outcome,
+                base_rank_pct=_base_rank_pct,
+                asset_vals=_asset_vals,
+                horizon_hours=int(_strategy_primary_h),
+                rank_top_frac=_rank_top_frac,
+                window=20,
+                min_periods=5,
             )
-            for _asset, _grp in _work.groupby("asset", sort=False):
-                _grp = _grp.sort_values("timestamp", kind="mergesort")
-                _idx = _grp.index.to_numpy(dtype=np.int64)
-                _p = _grp["base_prob"].to_numpy(dtype=np.float32)
-                _o = _grp["outcome"].to_numpy(dtype=np.float32)
-                _pe = np.abs(np.roll(_p, 1) - np.roll(_o, 1)).astype(np.float32)
-                if _pe.size > 0:
-                    _pe[0] = np.nan
-                _meta_prob_err[_idx] = _pe
-                _recent_prob_err_20[_idx] = (
-                    pd.Series(_pe).rolling(20, min_periods=5).mean().to_numpy()
-                )
-                _hit = (
-                    _grp["pred_label"].to_numpy(dtype=np.int8) == (_o >= 0.5)
-                ).astype(np.float32)
-                _top_hist = np.where(
-                    _grp["rank_top"].to_numpy(dtype=bool), _hit, np.nan
-                )
-                _hit_series = (
-                    pd.Series(_top_hist)
-                    .shift(1)
-                    .rolling(20, min_periods=5)
-                    .mean()
-                    .ffill()
-                    .to_numpy(dtype=np.float32)
-                )
-                _recent_hit_rate_20[_idx] = _hit_series
-            X_meta_base["prob_error"] = _meta_prob_err.astype(np.float32, copy=False)
-            X_meta_base["recent_prob_error_20"] = _recent_prob_err_20.astype(
-                np.float32, copy=False
-            )
-            X_meta_base["recent_hit_rate_20"] = _recent_hit_rate_20.astype(
-                np.float32, copy=False
-            )
-            X_meta_base["base_model_abs_error_roll20"] = _recent_prob_err_20.astype(
-                np.float32, copy=False
-            )
+            for _perf_col, _perf_vals in _base_perf_feats.items():
+                X_meta_base[_perf_col] = np.asarray(_perf_vals, dtype=np.float32)
 
             _native_exc = None
             _mfe_col = f"__meta_raw__mfe_{int(_strategy_primary_h)}h"
@@ -17865,7 +19550,7 @@ def train_meta_models_from_artifacts(
         _recent_eff_enabled = bool(cfg.get("enable_recent_effectiveness_features", True))
         _recent_eff_max_rows_raw = os.getenv(
             "EPM_META_RECENT_EFFECTIVENESS_MAX_ROWS",
-            str(int(cfg.get("meta_recent_effectiveness_max_rows", 0))),
+            str(int(cfg.get("meta_recent_effectiveness_max_rows", 150000))),
         )
         try:
             _recent_eff_max_rows = int(_recent_eff_max_rows_raw)
@@ -17874,8 +19559,10 @@ def train_meta_models_from_artifacts(
             tprint(
                 "  Meta "
                 f"{k}: invalid EPM_META_RECENT_EFFECTIVENESS_MAX_ROWS="
-                f"{_recent_eff_max_rows_raw!r}; using {_recent_eff_max_rows}"
+                    f"{_recent_eff_max_rows_raw!r}; using {_recent_eff_max_rows}"
             )
+        if _recent_eff_max_rows <= 0:
+            _recent_eff_max_rows = 150000
         if _recent_eff_enabled and _recent_eff_max_rows > 0 and len(df) > _recent_eff_max_rows:
             _recent_eff_enabled = False
             tprint(
@@ -17986,6 +19673,7 @@ def train_meta_models_from_artifacts(
                     for c in X_meta_base.columns
                     if str(c) not in set(MODEL_DRIFT_FEATURE_KEYS)
                     and str(c) != "feature_drift_psi_core"
+                    and str(c) != "feature_drift_ks_core"
                     and pd.api.types.is_numeric_dtype(X_meta_base[c])
                 ]
                 _meta_model_drift_state = fit_model_drift_state(
@@ -17995,11 +19683,12 @@ def train_meta_models_from_artifacts(
                     max_core_features=int(cfg.get("model_drift_max_core_features", 80)),
                     window=int(cfg.get("model_drift_window", 240)),
                 )
-                _meta_drift_df = transform_model_drift_features(
+                _meta_drift_df = _foldwise_model_drift_feature_frame(
                     X_meta_base[_drift_source_cols],
-                    _meta_model_drift_state,
-                    model=None,
-                    index=X_meta_base.index,
+                    feature_columns=_drift_source_cols,
+                    n_splits=int(cfg.get("model_drift_oof_splits", cfg.get("lgbm_cv_splits", 3))),
+                    max_core_features=int(cfg.get("model_drift_max_core_features", 80)),
+                    window=int(cfg.get("model_drift_window", 240)),
                 )
                 if not _meta_drift_df.empty:
                     for _c in _meta_drift_df.columns:
@@ -18007,12 +19696,16 @@ def train_meta_models_from_artifacts(
                     X_meta_base["feature_drift_psi_core"] = np.asarray(
                         _meta_drift_df["feature_drift_psi_core_80"], dtype=np.float32
                     )
+                    X_meta_base["feature_drift_ks_core"] = np.asarray(
+                        _meta_drift_df["feature_drift_ks_bin_mean"], dtype=np.float32
+                    )
                     meta_model_drift_cols = list(_meta_drift_df.columns) + [
-                        "feature_drift_psi_core"
+                        "feature_drift_psi_core",
+                        "feature_drift_ks_core",
                     ]
                     tprint(
                         f"  Meta {k}: added {len(meta_model_drift_cols)} "
-                        "artifact-backed meta model drift features."
+                        "fold-wise meta model drift features."
                     )
             except Exception as _meta_drift_exc:
                 _meta_model_drift_state = None
@@ -18021,6 +19714,27 @@ def train_meta_models_from_artifacts(
                     f"  Meta {k}: warning meta model drift feature generation "
                     f"failed: {_meta_drift_exc}"
                 )
+
+        X_meta_base, neutral_model_derived_cols = (
+            _append_neutral_model_derived_meta_columns(
+                X_meta_base,
+                model_derived_meta_requested,
+                context=str(k),
+            )
+        )
+        generated_model_derived_cols = [
+            c for c in model_derived_meta_requested if c in X_meta_base.columns
+        ]
+        if generated_model_derived_cols:
+            _actual_generated_n = len(generated_model_derived_cols) - len(
+                neutral_model_derived_cols
+            )
+            tprint(
+                f"  Meta {k}: generated/model-derived meta columns present="
+                f"{len(generated_model_derived_cols)} "
+                f"(actual_or_alias={max(_actual_generated_n, 0)}, "
+                f"neutral={len(neutral_model_derived_cols)})."
+            )
 
         meta_model_cols = []
         meta_model_cols.extend(
@@ -18047,10 +19761,16 @@ def train_meta_models_from_artifacts(
             [c for c in tree_uncertainty_cols if c in X_meta_base.columns]
         )
         meta_model_cols.extend(
+            [c for c in generated_model_derived_cols if c in X_meta_base.columns]
+        )
+        meta_model_cols.extend(
             [c for c in meta_interaction_cols if c in X_meta_base.columns]
         )
         meta_model_cols.extend(
             [c for c in recent_effectiveness_cols if c in X_meta_base.columns]
+        )
+        meta_model_cols.extend(
+            [c for c in base_predictive_atlas_cols if c in X_meta_base.columns]
         )
         meta_model_cols.extend([c for c in meta_model_drift_cols if c in X_meta_base.columns])
         if _native_meta_preset_features:
@@ -18102,6 +19822,10 @@ def train_meta_models_from_artifacts(
                     "recent_prob_error_20",
                     "recent_hit_rate_20",
                     "base_model_abs_error_roll20",
+                    "signed_prediction_error",
+                    "negative_log_likelihood",
+                    "surprise_error_z",
+                    "wrong_confident",
                 }
             )
             _keep_preselected.update(str(c) for c in tree_uncertainty_cols)
@@ -18204,6 +19928,18 @@ def train_meta_models_from_artifacts(
         _fit_mask_capped = _cap_meta_fit_mask(
             np.asarray(_trade_mask, dtype=bool), "post-rank/trade fit mask"
         )
+        _fit_mask_capped = _apply_meta_fit_row_universe(
+            df,
+            _fit_mask_capped,
+            cfg,
+            strategy_id=str(k),
+        )
+        _export_meta_fit_row_universe(
+            df,
+            _fit_mask_capped,
+            cfg,
+            strategy_id=str(k),
+        )
 
         def _attach_model_drift_state(_model_obj: Any) -> Any:
             if _model_obj is not None and isinstance(_meta_model_drift_state, dict):
@@ -18243,6 +19979,76 @@ def train_meta_models_from_artifacts(
             )
             _w_seed = _w_seed / max(float(np.nanmean(_w_seed[_fit_mask_ebm])), 1e-6)
             _w_seed = np.clip(_w_seed, 0.5, 2.0).astype(np.float32)
+            _label_hpo_weight_col = None
+            for _candidate_col in (
+                "label_weight_hpo_sample_weight",
+                "__label_weight_hpo_sample_weight__",
+            ):
+                if _candidate_col in df.columns:
+                    _label_hpo_weight_col = _candidate_col
+                    break
+            if _label_hpo_weight_col is not None:
+                _hpo_w = np.asarray(
+                    pd.to_numeric(df[_label_hpo_weight_col], errors="coerce"),
+                    dtype=np.float32,
+                )
+                _hpo_w = np.where(
+                    np.isfinite(_hpo_w) & (_hpo_w > 0.0),
+                    _hpo_w,
+                    1.0,
+                )
+                _hpo_mean = (
+                    float(np.nanmean(_hpo_w[_fit_mask_ebm]))
+                    if np.any(_fit_mask_ebm)
+                    else 1.0
+                )
+                if not np.isfinite(_hpo_mean) or _hpo_mean <= 1e-6:
+                    _hpo_mean = 1.0
+                _hpo_w = np.clip(_hpo_w / _hpo_mean, 0.10, 5.0).astype(np.float32)
+                _w_seed = (_w_seed * _hpo_w).astype(np.float32)
+                _w_seed = _w_seed / max(float(np.nanmean(_w_seed[_fit_mask_ebm])), 1e-6)
+                _w_seed = np.clip(_w_seed, 0.10, 5.0).astype(np.float32)
+                _hpo_selected_col = (
+                    "label_weight_hpo_selected"
+                    if "label_weight_hpo_selected" in df.columns
+                    else None
+                )
+                _hpo_winner_col = (
+                    "label_weight_hpo_winner"
+                    if "label_weight_hpo_winner" in df.columns
+                    else None
+                )
+                _selected_rate = (
+                    float(
+                        np.nanmean(
+                            np.asarray(
+                                df[_hpo_selected_col].values,
+                                dtype=float,
+                            )[_fit_mask_ebm]
+                        )
+                    )
+                    if _hpo_selected_col is not None and np.any(_fit_mask_ebm)
+                    else float("nan")
+                )
+                _winner_preview = "unknown"
+                if _hpo_winner_col is not None:
+                    try:
+                        _winner_vals = (
+                            pd.Series(df[_hpo_winner_col].values[_fit_mask_ebm])
+                            .dropna()
+                            .astype(str)
+                        )
+                        if not _winner_vals.empty:
+                            _winner_preview = str(_winner_vals.mode().iloc[0])
+                    except Exception:
+                        _winner_preview = "unknown"
+                tprint(
+                    f"  Meta {k}: incorporated base label/sample-weight HPO weights "
+                    f"from {_label_hpo_weight_col} into meta classifier seed weights "
+                    f"(winner={_winner_preview}, selected_rate={_selected_rate:.3f}, "
+                    f"mean={float(np.nanmean(_w_seed[_fit_mask_ebm])):.3f}, "
+                    f"p95={float(np.nanpercentile(_w_seed[_fit_mask_ebm], 95)):.3f})."
+                )
 
             def _meta_bucket_metadata() -> dict[str, Any]:
                 _md_local: dict[str, Any] = {}
@@ -18267,6 +20073,16 @@ def train_meta_models_from_artifacts(
                     "__early_inval__",
                     "__mr_path_penalty__",
                     "__mr_velocity_penalty__",
+                    "entry_price",
+                    "__entry_price__",
+                    "future_opens",
+                    "future_highs",
+                    "future_lows",
+                    "future_closes",
+                    "__future_opens__",
+                    "__future_highs__",
+                    "__future_lows__",
+                    "__future_closes__",
                 ]:
                     if _cn in df.columns:
                         _md_local[_cn] = df[_cn].values
@@ -18288,6 +20104,16 @@ def train_meta_models_from_artifacts(
                 _positional_map = {
                     f"f{i}": col for i, col in enumerate(_feature_columns)
                 }
+                _default_ts = None
+                for _ts_col in ("__ts__", "timestamp"):
+                    if _ts_col in df.columns:
+                        _default_ts = df[_ts_col].values
+                        break
+                _history_defaults = build_model_effectiveness_history_defaults(
+                    X_meta_models,
+                    _feature_columns,
+                    timestamps=_default_ts,
+                )
                 _contract_row = {
                     "strategy_id": str(k),
                     "meta_model_key": str(head_key),
@@ -18303,6 +20129,42 @@ def train_meta_models_from_artifacts(
                     ],
                     "model_drift_cols": [str(c) for c in meta_model_drift_cols],
                     "meta_interaction_cols": [str(c) for c in meta_interaction_cols],
+                    "rule_mask_feature_diagnostics": dict(
+                        _meta_rule_mask_feature_diag or {}
+                    ),
+                    "model_effectiveness_history_defaults": dict(
+                        _history_defaults.get("defaults", {})
+                    ),
+                    "model_effectiveness_history_default_sources": dict(
+                        _history_defaults.get("sources", {})
+                    ),
+                    "model_effectiveness_history_default_policy": str(
+                        _history_defaults.get("policy", "")
+                    ),
+                    "model_effectiveness_history_default_feature_count": int(
+                        _history_defaults.get("feature_count", 0)
+                    ),
+                    "model_effectiveness_history_default_rows": int(
+                        _history_defaults.get("rows", 0)
+                    ),
+                    "base_error_archetype_state_available": bool(
+                        base_error_archetype_state_for_meta is not None
+                    ),
+                    "base_error_archetype_state_enabled": bool(
+                        getattr(
+                            base_error_archetype_state_for_meta,
+                            "enabled",
+                            False,
+                        )
+                    ),
+                    "base_error_archetype_feature_names": list(
+                        getattr(
+                            base_error_archetype_state_for_meta,
+                            "feature_names",
+                            [],
+                        )
+                        or []
+                    ),
                     "base_probability_column": (
                         str(_base_prob_col) if _base_prob_col is not None else ""
                     ),
@@ -18320,8 +20182,24 @@ def train_meta_models_from_artifacts(
                         _positional_map,
                     )
                     setattr(race_obj, "meta_feature_contract_", _contract_row)
+                    setattr(
+                        race_obj,
+                        "model_effectiveness_history_defaults_",
+                        dict(_history_defaults.get("defaults", {})),
+                    )
+                    setattr(
+                        race_obj,
+                        "model_effectiveness_history_default_sources_",
+                        dict(_history_defaults.get("sources", {})),
+                    )
                     if isinstance(_meta_model_drift_state, dict):
                         setattr(race_obj, "model_drift_state_", _meta_model_drift_state)
+                    if base_error_archetype_state_for_meta is not None:
+                        setattr(
+                            race_obj,
+                            "base_error_archetype_state_",
+                            base_error_archetype_state_for_meta,
+                        )
                     _best_model = getattr(race_obj, "best_model", None)
                     if _best_model is not None:
                         setattr(
@@ -18339,11 +20217,27 @@ def train_meta_models_from_artifacts(
                             "meta_feature_contract_",
                             _contract_row,
                         )
+                        setattr(
+                            _best_model,
+                            "model_effectiveness_history_defaults_",
+                            dict(_history_defaults.get("defaults", {})),
+                        )
+                        setattr(
+                            _best_model,
+                            "model_effectiveness_history_default_sources_",
+                            dict(_history_defaults.get("sources", {})),
+                        )
                         if isinstance(_meta_model_drift_state, dict):
                             setattr(
                                 _best_model,
                                 "model_drift_state_",
                                 _meta_model_drift_state,
+                            )
+                        if base_error_archetype_state_for_meta is not None:
+                            setattr(
+                                _best_model,
+                                "base_error_archetype_state_",
+                                base_error_archetype_state_for_meta,
                             )
                 except Exception as _contract_exc:
                     tprint(
@@ -18411,6 +20305,15 @@ def train_meta_models_from_artifacts(
                     ):
                         if _src in df.columns and _dst not in _out.columns:
                             _out[_dst] = np.asarray(df[_src].values)[_valid_idx]
+                    for _src, _dst in (
+                        ("__mr_tf_route__", "mr_tf_route"),
+                        ("__mr_mask__", "mr_mask"),
+                        ("__tf_mask__", "tf_mask"),
+                        ("__mixed_mask__", "mixed_mask"),
+                        ("__mr_tf_params_hash__", "mr_tf_params_hash"),
+                    ):
+                        if _src in df.columns and _dst not in _out.columns:
+                            _out[_dst] = np.asarray(df[_src].values)[_valid_idx]
                     _out["y_bin"] = np.asarray(y_hard_head, dtype=np.float32)[_valid_idx]
                     _out["y_move"] = np.asarray(y_hard_head, dtype=np.float32)[
                         _valid_idx
@@ -18471,6 +20374,8 @@ def train_meta_models_from_artifacts(
                 y_soft: np.ndarray,
                 y_hard: np.ndarray,
                 label: str,
+                route_name: str | None = None,
+                route_mask: np.ndarray | None = None,
             ) -> None:
                 _y_model = np.asarray(y_soft, dtype=np.float32)
                 _y_hard_arr = np.asarray(y_hard, dtype=np.float32)
@@ -18522,7 +20427,7 @@ def train_meta_models_from_artifacts(
                             f"Meta LGBM soft labels [{head_key}]: disabled "
                             f"({_soft_stats.get('reason', 'unknown')}); using provided label."
                         )
-                    _recipe = load_recipe_from_env_or_cfg(cfg)
+                    _recipe = load_recipe_from_env_or_cfg(cfg, scope="meta")
                     if _recipe is not None:
                         _recipe_soft, _recipe_stats = apply_label_recipe(
                             _df_recipe_meta,
@@ -18573,17 +20478,27 @@ def train_meta_models_from_artifacts(
                     & np.isfinite(_y_metric_ref)
                     & (_y_metric_ref >= 0.0)
                 )
+                if route_mask is not None:
+                    _route_mask_arr = np.asarray(route_mask, dtype=bool)
+                    if len(_route_mask_arr) != len(_valid):
+                        tprint(
+                            f"Meta {head_key}: skipped {label} route={route_name} "
+                            "head (route mask length mismatch)."
+                        )
+                        return
+                    _valid &= _route_mask_arr
                 if int(np.sum(_valid)) < int(
                     cfg.get("sample_weight_opt_min_samples", 400)
                 ):
                     tprint(
-                    f"Meta {head_key}: skipped specialist {label} head "
+                        f"Meta {head_key}: skipped specialist {label} "
+                        f"route={route_name or 'general'} head "
                         f"(valid={int(np.sum(_valid))})"
                     )
                     return
                 _w_model = np.asarray(_w_seed, dtype=np.float32)
                 if _is_lgbm_pipeline_backend(cfg, meta=True):
-                    _recipe = load_recipe_from_env_or_cfg(cfg)
+                    _recipe = load_recipe_from_env_or_cfg(cfg, scope="meta")
                     if _recipe is not None:
                         _cfg_gen_meta = apply_generator_recipe_to_cfg(cfg, stage="train_meta")
                         _recipe_w, _recipe_w_stats = apply_weight_recipe(
@@ -18640,10 +20555,113 @@ def train_meta_models_from_artifacts(
                 _race.meta_source_strategy_id_ = str(k)
                 _race.meta_head_key_ = str(head_key)
                 _race.meta_head_label_ = str(label)
+                _race.mr_tf_route_ = str(route_name or "general")
+                _race.mr_tf_params_hash_ = str(
+                    (_meta_mr_tf_diag or {}).get("params_hash", "")
+                )
                 _race.valid_idx_ = np.flatnonzero(_valid).astype(np.int32)
                 _race.y_move = _y_hard_arr[_valid]
                 _race.y_move_soft = _y_model[_valid]
                 _race.move_threshold = np.zeros(int(np.sum(_valid)), dtype=np.float32)
+                if route_name is not None:
+                    _baseline_head_key = str(head_key)
+                    if _baseline_head_key.endswith(f"_{route_name}_tbm_clf"):
+                        _baseline_head_key = _baseline_head_key.replace(
+                            f"_{route_name}_tbm_clf", "_tbm_clf"
+                        )
+                    _baseline_race = meta_models.get(_baseline_head_key)
+                    _route_cmp = {
+                        "promoted": False,
+                        "prune_reason": "missing_general_meta_baseline",
+                    }
+                    try:
+                        from extreme_price_movements.mr_tf_masks import (
+                            compare_specialist_to_baseline as _compare_meta_mr_tf_specialist,
+                        )
+
+                        if (
+                            _baseline_race is not None
+                            and getattr(_baseline_race, "oof_probs", None) is not None
+                            and getattr(_baseline_race, "valid_idx_", None) is not None
+                        ):
+                            _base_oof = np.asarray(
+                                _baseline_race.oof_probs, dtype=np.float32
+                            )
+                            _base_valid_idx = np.asarray(
+                                getattr(_baseline_race, "valid_idx_"),
+                                dtype=np.int64,
+                            )
+                            _n_base = min(len(_base_oof), len(_base_valid_idx))
+                            _base_lookup = pd.Series(
+                                _base_oof[:_n_base],
+                                index=_base_valid_idx[:_n_base],
+                            )
+                            _base_aligned = _base_lookup.reindex(
+                                _race.valid_idx_
+                            ).to_numpy(dtype=np.float32)
+                            _finite_cmp = np.isfinite(_base_aligned)
+                            _mr_tf_cfg_cmp = (
+                                dict(cfg.get("mr_tf_masks") or {})
+                                if isinstance(cfg.get("mr_tf_masks"), dict)
+                                else {}
+                            )
+                            _route_cmp = _compare_meta_mr_tf_specialist(
+                                specialist_pred=np.asarray(
+                                    _race.oof_probs, dtype=np.float32
+                                )[_finite_cmp],
+                                baseline_pred=_base_aligned[_finite_cmp],
+                                returns=np.asarray(_ret_ebm, dtype=np.float32)[
+                                    _race.valid_idx_[_finite_cmp]
+                                ],
+                                margin=float(
+                                    _mr_tf_cfg_cmp.get(
+                                        "meta_promotion_margin",
+                                        _mr_tf_cfg_cmp.get("promotion_margin", 0.0),
+                                    )
+                                ),
+                                top_frac=float(
+                                    _mr_tf_cfg_cmp.get(
+                                        "meta_promotion_top_frac",
+                                        _mr_tf_cfg_cmp.get("promotion_top_frac", 0.30),
+                                    )
+                                ),
+                            )
+                    except Exception as _route_cmp_exc:
+                        _route_cmp = {
+                            "promoted": False,
+                            "prune_reason": f"comparison_failed:{_route_cmp_exc}",
+                        }
+                    try:
+                        setattr(
+                            _race,
+                            "mr_tf_baseline_comparison_",
+                            dict(_route_cmp),
+                        )
+                    except Exception:
+                        pass
+                    meta_gate_results.append(
+                        {
+                            "Model": str(head_key),
+                            "Model_Type": "meta_mr_tf_specialist",
+                            "Route": str(route_name),
+                            "Baseline_Model": str(_baseline_head_key),
+                            "Promoted": bool(_route_cmp.get("promoted", False)),
+                            "Uplift": float(_route_cmp.get("uplift", np.nan)),
+                            "Promotion_Metric": str(
+                                _route_cmp.get("promotion_metric", "")
+                            ),
+                            "Prune_Reason": str(
+                                _route_cmp.get("prune_reason", "")
+                            ),
+                        }
+                    )
+                    if not bool(_route_cmp.get("promoted", False)):
+                        tprint(
+                            f"Meta {head_key}: route={route_name} not promoted "
+                            f"versus {_baseline_head_key}; "
+                            f"uplift={float(_route_cmp.get('uplift', np.nan)):.6f}."
+                        )
+                        return
                 _persist_meta_feature_contract(head_key, _race, label=label)
                 meta_models[head_key] = _race
                 _bucket_y_ret[head_key] = _y_model.copy()
@@ -18659,6 +20677,7 @@ def train_meta_models_from_artifacts(
                 _checkpoint_meta_models_incremental(head_key)
                 tprint(
                     f"Meta {head_key}: fitted specialist {label} classifier "
+                    f"route={route_name or 'general'} "
                     f"(valid={int(np.sum(_valid))}, backend={getattr(_race, 'best_model_name', 'ebm_on_lgbm')})."
                 )
 
@@ -18676,36 +20695,65 @@ def train_meta_models_from_artifacts(
                 (_base_prob_for_correct >= float(cfg.get("base_clf_threshold", 0.5)))
                 == (_y_bin_meta >= 0.5)
             ).astype(np.float32)
+            _meta_strategy_scope = (
+                str(k)
+                if str(k).startswith(("long_", "short_"))
+                else f"{side}_{k}"
+            )
             if bool(cfg.get("meta_train_base_target_clf_head", False)):
+                _head_key = f"{_meta_strategy_scope}_clf"
                 _fit_meta_ebm_classifier_head(
-                    head_key=f"{side}_{k}_clf",
+                    head_key=_head_key,
                     y_soft=_y_bin_meta,
                     y_hard=(_y_bin_meta >= 0.5).astype(np.float32),
                     label="base-target",
                 )
-                _meta_ebm_heads_trained = _meta_ebm_heads_trained or (
-                    f"{side}_{k}_clf" in meta_models
-                )
+                _meta_ebm_heads_trained = _meta_ebm_heads_trained or (_head_key in meta_models)
             if bool(cfg.get("meta_train_correctness_clf_head", False)):
+                _head_key = f"{_meta_strategy_scope}_correctness_clf"
                 _fit_meta_ebm_classifier_head(
-                    head_key=f"{side}_{k}_correctness_clf",
+                    head_key=_head_key,
                     y_soft=_base_correct,
                     y_hard=_base_correct,
                     label="base-correctness",
                 )
-                _meta_ebm_heads_trained = _meta_ebm_heads_trained or (
-                    f"{side}_{k}_correctness_clf" in meta_models
-                )
+                _meta_ebm_heads_trained = _meta_ebm_heads_trained or (_head_key in meta_models)
             if bool(cfg.get("meta_train_tbm_clf_head", False)):
+                _head_key = f"{_meta_strategy_scope}_tbm_clf"
                 _fit_meta_ebm_classifier_head(
-                    head_key=f"{side}_{k}_tbm_clf",
+                    head_key=_head_key,
                     y_soft=_y_bin_meta,
                     y_hard=(_y_bin_meta >= 0.5).astype(np.float32),
                     label="TBM",
                 )
-                _meta_ebm_heads_trained = _meta_ebm_heads_trained or (
-                    f"{side}_{k}_tbm_clf" in meta_models
-                )
+                _meta_ebm_heads_trained = _meta_ebm_heads_trained or (_head_key in meta_models)
+                if _meta_mr_tf_enabled:
+                    for _route_name, _route_col in (
+                        ("mr", "__mr_mask__"),
+                        ("tf", "__tf_mask__"),
+                    ):
+                        if _route_col not in df.columns:
+                            continue
+                        _route_mask_meta = np.asarray(
+                            df[_route_col].values, dtype=bool
+                        )
+                        if not bool(np.any(_route_mask_meta)):
+                            continue
+                        _route_head_key = (
+                            f"{_meta_strategy_scope}_{_route_name}_tbm_clf"
+                        )
+                        _fit_meta_ebm_classifier_head(
+                            head_key=_route_head_key,
+                            y_soft=_y_bin_meta,
+                            y_hard=(_y_bin_meta >= 0.5).astype(np.float32),
+                            label="TBM",
+                            route_name=_route_name,
+                            route_mask=_route_mask_meta,
+                        )
+                        _meta_ebm_heads_trained = (
+                            _meta_ebm_heads_trained
+                            or (_route_head_key in meta_models)
+                        )
 
         _ran_aligned_map_v2 = False
         if _use_aligned_map_v2:
@@ -18756,7 +20804,7 @@ def train_meta_models_from_artifacts(
             f"max={float(np.max(w_meta_main)):.3f} n_eff={_n_eff:.0f}"
         )
 
-        if bool(cfg.get("sample_weight_opt_enable", True)) and "__ts__" in df.columns:
+        if bool(cfg.get("sample_weight_opt_enable", False)) and "__ts__" in df.columns:
             _meta_ts = pd.to_datetime(df["__ts__"])
             _meta_label_times = pd.DataFrame(
                 {
@@ -19201,7 +21249,7 @@ def train_meta_models_from_artifacts(
                 )
 
             if (
-                bool(cfg.get("sample_weight_opt_enable", True))
+                bool(cfg.get("sample_weight_opt_enable", False))
                 and "__ts__" in df.columns
             ):
                 _meta_ts_c = pd.to_datetime(df["__ts__"])
@@ -21124,6 +23172,20 @@ def train_meta_models_from_artifacts(
                     )
                 if "__early_inval__" in _md:
                     oof_df["early_inval"] = _take_meta_values(_md["__early_inval__"])
+                for _src, _dst in (
+                    ("__entry_price__", "entry_price"),
+                    ("entry_price", "entry_price"),
+                    ("__future_opens__", "future_opens"),
+                    ("future_opens", "future_opens"),
+                    ("__future_highs__", "future_highs"),
+                    ("future_highs", "future_highs"),
+                    ("__future_lows__", "future_lows"),
+                    ("future_lows", "future_lows"),
+                    ("__future_closes__", "future_closes"),
+                    ("future_closes", "future_closes"),
+                ):
+                    if _src in _md and _dst not in oof_df.columns:
+                        oof_df[_dst] = _take_meta_values(_md[_src])
                 if "__meta_reg_train_target__" in _md:
                     oof_df["reg_train_target"] = np.asarray(
                         _md["__meta_reg_train_target__"], dtype=float
@@ -21806,6 +23868,17 @@ def train_meta_models_from_artifacts(
                 f"Saved meta feature importance report to {_meta_fi_csv} "
                 f"rows={len(_meta_fi_df)}"
             )
+            _archetype_report = _write_meta_archetype_feature_importance_report(
+                _meta_feature_rows_for_export,
+                output_dir=meta_oof_dir,
+                source_report_path=_meta_fi_csv,
+            )
+            if _archetype_report:
+                _export_summary["meta_archetype_feature_importance"] = _archetype_report
+                tprint(
+                    "Saved meta archetype feature importance report to "
+                    f"{_archetype_report.get('meta_archetype_feature_importance_csv')}"
+                )
         except Exception as _exc:
             tprint(f"Warning: failed to save meta feature importance report: {_exc}")
 
@@ -22278,7 +24351,12 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
         minority_pct = float(
             (min(n_pos, n_neg) / max(n_total, 1)) * 100.0 if n_total > 0 else 0.0
         )
-        key = f"{side_name}_{kind_name}_H{int(horizon)}"
+        scoped_kind_name = (
+            str(kind_name)
+            if str(kind_name).startswith(("long_", "short_"))
+            else f"{side_name}_{kind_name}"
+        )
+        key = f"{scoped_kind_name}_H{int(horizon)}"
         payload = {
             "fit_status": str(fit_status),
             "failure_reason": failure_reason,
@@ -22783,6 +24861,84 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     required_cols = {"__y_bin__", "__y_ret__", "__w__"}
                     missing = required_cols - set(df.columns)
                     assert not missing, f"Dataset {key} missing columns: {missing}"
+                    _mr_tf_enabled = False
+                    _mr_tf_diag = None
+                    try:
+                        from extreme_price_movements.mr_tf_masks import (
+                            apply_mr_tf_masks as _apply_mr_tf_masks,
+                            mr_tf_masks_enabled as _mr_tf_masks_enabled,
+                            optimize_mr_tf_mask_params as _optimize_mr_tf_mask_params,
+                        )
+
+                        _mr_tf_enabled = bool(_mr_tf_masks_enabled(cfg))
+                        if _mr_tf_enabled:
+                            _mr_tf_params_override = None
+                            _mr_tf_search_diag = None
+                            _mr_tf_cfg_local = (
+                                dict(cfg.get("mr_tf_masks") or {})
+                                if isinstance(cfg.get("mr_tf_masks"), dict)
+                                else {}
+                            )
+                            if bool(_mr_tf_cfg_local.get("optuna_enabled", False)):
+                                _mr_tf_params_override, _mr_tf_search_diag = (
+                                    _optimize_mr_tf_mask_params(
+                                        df,
+                                        y=df["__y_bin__"].values,
+                                        returns=df["__y_ret__"].values,
+                                        side=side,
+                                        cfg=cfg,
+                                    )
+                                )
+                            df, _mr_tf_diag = _apply_mr_tf_masks(
+                                df,
+                                side=side,
+                                cfg=cfg,
+                                params=_mr_tf_params_override,
+                            )
+                            if _mr_tf_search_diag is not None:
+                                _mr_tf_diag["optuna_search"] = dict(
+                                    _mr_tf_search_diag
+                                )
+                            _counts = dict((_mr_tf_diag or {}).get("counts") or {})
+                            tprint(
+                                f"MR/TF masks [{key}]: "
+                                f"mr={int(_counts.get('mr', 0))} "
+                                f"tf={int(_counts.get('tf', 0))} "
+                                f"mixed={int(_counts.get('mixed', 0))} "
+                                f"hash={(_mr_tf_diag or {}).get('params_hash', '')}"
+                            )
+                    except Exception as _mr_tf_exc:
+                        _mr_tf_enabled = False
+                        _mr_tf_diag = {
+                            "enabled": False,
+                            "reason": f"mask_generation_failed:{_mr_tf_exc}",
+                        }
+                        tprint(
+                            f"WARNING: MR/TF mask generation disabled for {key}: "
+                            f"{_mr_tf_exc}"
+                        )
+
+                    _rule_mask_feature_diag = None
+                    try:
+                        from extreme_price_movements.rule_mask_features import (
+                            append_rule_mask_features as _append_rule_mask_features,
+                        )
+
+                        df, _rule_mask_feature_diag = _append_rule_mask_features(
+                            df,
+                            cfg,
+                            side=side,
+                            context=f"base:{key}",
+                        )
+                    except Exception as _rule_mask_exc:
+                        _rule_mask_feature_diag = {
+                            "enabled": False,
+                            "reason": f"rule_mask_feature_generation_failed:{_rule_mask_exc}",
+                        }
+                        tprint(
+                            f"WARNING: rule-mask feature generation failed for "
+                            f"base {key}: {_rule_mask_exc}"
+                        )
 
                     # Inject Specialist OOF Features
                     # df has ts, symbol. We can map.
@@ -22836,6 +24992,11 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         "__ts__",
                         "__symbol__",
                         "__barrier_pct__",
+                        "__mr_tf_route__",
+                        "__mr_mask__",
+                        "__tf_mask__",
+                        "__mixed_mask__",
+                        "__mr_tf_params_hash__",
                     ]
                     X = df.drop(columns=[c for c in drop_cols if c in df.columns])
                     leak_cols = [c for c in X.columns if str(c).startswith("__")]
@@ -22861,6 +25022,31 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     # But X has interaction columns already.
                     # We can't easily filter interaction columns by exact name match.
                     # Heuristic: Check if base feature part of the column name is in allowed_keys.
+                    native_preset_allowed_keys: set[str] = set()
+                    if _is_lgbm_pipeline_backend(cfg, meta=False):
+                        try:
+                            _native_filter_preset = _load_native_lgbm_training_preset(
+                                cfg,
+                                scope_key=(
+                                    f"{k}_H{H}"
+                                    if str(k).startswith(("long_", "short_"))
+                                    else f"{side}_{k}_H{H}"
+                                ),
+                                objective_mode="train_base",
+                            )
+                            native_preset_allowed_keys = {
+                                str(c)
+                                for c in (
+                                    (_native_filter_preset or {}).get("selected_features")
+                                    or []
+                                )
+                                if str(c).strip()
+                            }
+                        except Exception as exc:
+                            tprint(
+                                f"Base native preset feature filter [{key}]: "
+                                f"unable to load selected feature allowlist: {exc}"
+                            )
 
                     valid_cols = []
                     # Always keep market gates/lags/specialist scores if they are standard inputs
@@ -22877,7 +25063,12 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
 
                     for c in X.columns:
                         # Check exact match
-                        if c in allowed_keys or c in std_inputs:
+                        if (
+                            c in allowed_keys
+                            or c in std_inputs
+                            or c in native_preset_allowed_keys
+                            or str(c).startswith("lgbm_rule_mask_")
+                        ):
                             valid_cols.append(c)
                             continue
                         # Check interaction pattern: {col}_{gate}_0 or {col}_{gate}_1
@@ -22934,7 +25125,11 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         trade_side, k, cfg
                     )
                     cand_filter_pretty = (
-                        "top_ret" if cand_filter == "best" else "bottom_ret"
+                        "top_ret"
+                        if cand_filter == "best"
+                        else "bottom_ret"
+                        if cand_filter == "worst"
+                        else "all"
                     )
 
                     tprint(
@@ -23261,7 +25456,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                                 f"Base LGBM soft labels [{key}]: disabled "
                                 f"({soft_stats.get('reason', 'unknown')}); using hard labels."
                             )
-                        _recipe = load_recipe_from_env_or_cfg(cfg)
+                        _recipe = load_recipe_from_env_or_cfg(cfg, scope="base")
                         if _recipe is not None:
                             _recipe_soft, _recipe_stats = apply_label_recipe(
                                 _df_recipe_base,
@@ -23311,7 +25506,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     y_ret_fit = y_ret
                     w_fit = w
                     if _is_lgbm_pipeline_backend(cfg, meta=False):
-                        _recipe = load_recipe_from_env_or_cfg(cfg)
+                        _recipe = load_recipe_from_env_or_cfg(cfg, scope="base")
                         if _recipe is not None:
                             _cfg_gen_base = apply_generator_recipe_to_cfg(cfg, stage="train_base")
                             _recipe_w, _recipe_w_stats = apply_weight_recipe(
@@ -23357,10 +25552,34 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         if "__symbol__" in df.columns
                         else None
                     )
+                    _label_context_fit = {}
+                    for _src, _dst in (
+                        ("__mfe_ret__", "mfe"),
+                        ("__mae_ret__", "mae"),
+                        ("__barrier_pct__", "atr"),
+                        ("__tp__", "tp"),
+                        ("__sl__", "sl"),
+                        ("__bars_to_mfe__", "bars_to_mfe"),
+                        ("__bars_to_mae__", "bars_to_mae"),
+                        ("__t_mfe__", "time_to_mfe"),
+                        ("__t_mae__", "time_to_mae"),
+                        ("__tau_tp__", "tau_tp"),
+                        ("__tau_sl__", "tau_sl"),
+                        ("__bars_to_tp__", "bars_to_tp"),
+                        ("__bars_to_sl__", "bars_to_sl"),
+                        ("__y_outcome__", "exit_code"),
+                        ("__is_timeout__", "is_timeout"),
+                    ):
+                        if _src in df.columns:
+                            _label_context_fit[_dst] = df[_src].values
                     race, base_fit_diag = _fit_direct_extratrees_base_model(
                         kind_name=k,
                         hpo_scope_key=key,
-                        native_scope_key=f"{side}_{k}_H{H}",
+                        native_scope_key=(
+                            f"{k}_H{H}"
+                            if str(k).startswith(("long_", "short_"))
+                            else f"{side}_{k}_H{H}"
+                        ),
                         X=X_sel,
                         X_full=X,
                         y=y_fit,
@@ -23377,6 +25596,7 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                             if "__mae_ret__" in df.columns
                             else None
                         ),
+                        label_context=_label_context_fit,
                         groups=groups,
                         symbols=symbols,
                         n_splits=2,
@@ -23404,6 +25624,240 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                             f"{base_fit_diag.get('failure_reason', 'invalid_or_degenerate_model_output')}."
                         )
                         continue
+                    _mr_tf_specialists = None
+                    if _mr_tf_enabled:
+                        try:
+                            from extreme_price_movements.mr_tf_masks import (
+                                MR_MASK_COL as _MR_MASK_COL,
+                                TF_MASK_COL as _TF_MASK_COL,
+                                compare_specialist_to_baseline as _compare_mr_tf_specialist,
+                                route_support_diagnostics as _route_support_diagnostics,
+                            )
+
+                            _mr_tf_cfg = (
+                                dict(cfg.get("mr_tf_masks") or {})
+                                if isinstance(cfg.get("mr_tf_masks"), dict)
+                                else {}
+                            )
+                            _min_route_rows = int(
+                                _mr_tf_cfg.get(
+                                    "min_train_samples",
+                                    cfg.get("sample_weight_opt_min_samples", 400),
+                                )
+                            )
+                            _promo_margin = float(
+                                _mr_tf_cfg.get("promotion_margin", 0.0)
+                            )
+                            _promo_top_frac = float(
+                                _mr_tf_cfg.get("promotion_top_frac", 0.30)
+                            )
+                            _baseline_oof_full = (
+                                np.asarray(race.oof_probs, dtype=np.float32)
+                                if getattr(race, "oof_probs", None) is not None
+                                and len(race.oof_probs) == len(df)
+                                else None
+                            )
+                            _mr_tf_specialists = {
+                                "enabled": True,
+                                "mask_diagnostics": dict(_mr_tf_diag or {}),
+                                "routes": {},
+                            }
+                            for _route_name, _route_col in (
+                                ("mr", _MR_MASK_COL),
+                                ("tf", _TF_MASK_COL),
+                            ):
+                                _route_mask = (
+                                    np.asarray(df[_route_col].values, dtype=bool)
+                                    if _route_col in df.columns
+                                    else np.zeros(len(df), dtype=bool)
+                                )
+                                _support = _route_support_diagnostics(
+                                    y_fit_metric_ref,
+                                    _route_mask,
+                                    min_train_samples=_min_route_rows,
+                                )
+                                _route_payload = {
+                                    "route": _route_name,
+                                    "support": dict(_support),
+                                    "promoted": False,
+                                    "enabled": False,
+                                }
+                                if not bool(_support.get("ok", False)):
+                                    _route_payload["prune_reason"] = _support.get(
+                                        "reason", "unsupported_route"
+                                    )
+                                    _mr_tf_specialists["routes"][
+                                        _route_name
+                                    ] = _route_payload
+                                    tprint(
+                                        f"MR/TF base specialist [{key}:{_route_name}] "
+                                        f"skipped: {_route_payload['prune_reason']} "
+                                        f"(n={int(_support.get('n', 0))})."
+                                    )
+                                    continue
+                                _route_idx = np.flatnonzero(_route_mask)
+                                _route_label_context = {}
+                                for _lc_key, _lc_val in (_label_context_fit or {}).items():
+                                    try:
+                                        _lc_arr = np.asarray(_lc_val)
+                                        _route_label_context[_lc_key] = (
+                                            _lc_arr[_route_mask]
+                                            if len(_lc_arr) == len(_route_mask)
+                                            else _lc_val
+                                        )
+                                    except Exception:
+                                        _route_label_context[_lc_key] = _lc_val
+                                _route_race, _route_diag = _fit_direct_extratrees_base_model(
+                                    kind_name=f"{k}_{_route_name}",
+                                    hpo_scope_key=f"{key}__{_route_name}",
+                                    native_scope_key=(
+                                        f"{k}_H{H}__{_route_name}"
+                                        if str(k).startswith(("long_", "short_"))
+                                        else f"{side}_{k}_H{H}__{_route_name}"
+                                    ),
+                                    X=X_sel.loc[_route_mask].reset_index(drop=True),
+                                    X_full=X.loc[_route_mask].reset_index(drop=True),
+                                    y=np.asarray(y_fit, dtype=np.float32)[_route_mask],
+                                    y_hard_ref=np.asarray(
+                                        y_fit_metric_ref, dtype=np.float32
+                                    )[_route_mask],
+                                    sample_weight=np.asarray(
+                                        w_fit, dtype=np.float32
+                                    )[_route_mask],
+                                    returns=np.asarray(
+                                        y_ret_fit, dtype=np.float32
+                                    )[_route_mask],
+                                    mfe=(
+                                        np.asarray(
+                                            df["__mfe_ret__"], dtype=np.float64
+                                        )[_route_mask]
+                                        if "__mfe_ret__" in df.columns
+                                        else None
+                                    ),
+                                    mae=(
+                                        np.asarray(
+                                            df["__mae_ret__"], dtype=np.float64
+                                        )[_route_mask]
+                                        if "__mae_ret__" in df.columns
+                                        else None
+                                    ),
+                                    label_context=_route_label_context,
+                                    groups=(
+                                        np.asarray(groups)[_route_mask]
+                                        if groups is not None
+                                        else None
+                                    ),
+                                    symbols=(
+                                        np.asarray(symbols)[_route_mask]
+                                        if symbols is not None
+                                        else None
+                                    ),
+                                    n_splits=2,
+                                    cfg=cfg,
+                                )
+                                _route_payload["fit_diagnostics"] = dict(
+                                    _route_diag or {}
+                                )
+                                if (
+                                    _route_race is None
+                                    or getattr(_route_race, "oof_probs", None) is None
+                                ):
+                                    _route_payload["prune_reason"] = (
+                                        (_route_diag or {}).get("failure_reason")
+                                        or "route_fit_failed"
+                                    )
+                                    _mr_tf_specialists["routes"][
+                                        _route_name
+                                    ] = _route_payload
+                                    tprint(
+                                        f"MR/TF base specialist [{key}:{_route_name}] "
+                                        f"failed: {_route_payload['prune_reason']}."
+                                    )
+                                    continue
+                                _route_oof = np.asarray(
+                                    _route_race.oof_probs, dtype=np.float32
+                                )
+                                if _baseline_oof_full is not None:
+                                    _cmp = _compare_mr_tf_specialist(
+                                        specialist_pred=_route_oof,
+                                        baseline_pred=_baseline_oof_full[_route_idx],
+                                        returns=np.asarray(
+                                            y_ret_fit, dtype=np.float32
+                                        )[_route_idx],
+                                        margin=_promo_margin,
+                                        top_frac=_promo_top_frac,
+                                    )
+                                else:
+                                    _cmp = {
+                                        "promoted": False,
+                                        "prune_reason": "missing_general_oof_baseline",
+                                    }
+                                _promoted = bool(_cmp.get("promoted", False))
+                                try:
+                                    setattr(_route_race, "mr_tf_route_", _route_name)
+                                    setattr(
+                                        _route_race,
+                                        "mr_tf_params_",
+                                        dict((_mr_tf_diag or {}).get("params") or {}),
+                                    )
+                                    setattr(
+                                        _route_race,
+                                        "mr_tf_params_hash_",
+                                        str((_mr_tf_diag or {}).get("params_hash", "")),
+                                    )
+                                except Exception:
+                                    pass
+                                _route_model_features, _route_input_features = (
+                                    _effective_lgbm_input_feature_contract(
+                                        _route_race,
+                                        list(X.columns),
+                                    )
+                                )
+                                _route_feat_cols = (
+                                    list(_route_input_features)
+                                    if (
+                                        _route_input_features
+                                        and _route_model_features
+                                        and _route_input_features
+                                        == _route_model_features
+                                    )
+                                    else list(X.columns)
+                                )
+                                _route_payload.update(
+                                    {
+                                        "enabled": _promoted,
+                                        "promoted": _promoted,
+                                        "baseline_comparison": dict(_cmp),
+                                        "model": _route_race if _promoted else None,
+                                        "feat_cols": list(_route_feat_cols),
+                                        "fit_row_idx": _route_idx.astype(np.int32),
+                                        "selected_features": list(_route_feat_cols),
+                                    }
+                                )
+                                if not _promoted:
+                                    _route_payload["prune_reason"] = (
+                                        "did_not_beat_general_baseline_by_margin"
+                                    )
+                                _mr_tf_specialists["routes"][
+                                    _route_name
+                                ] = _route_payload
+                                tprint(
+                                    f"MR/TF base specialist [{key}:{_route_name}] "
+                                    f"n={len(_route_idx)} promoted={_promoted} "
+                                    f"uplift={float(_cmp.get('uplift', np.nan)):.6f} "
+                                    f"margin={_promo_margin:.6f}."
+                                )
+                        except Exception as _mr_tf_fit_exc:
+                            _mr_tf_specialists = {
+                                "enabled": False,
+                                "reason": f"specialist_training_failed:{_mr_tf_fit_exc}",
+                                "mask_diagnostics": dict(_mr_tf_diag or {}),
+                                "routes": {},
+                            }
+                            tprint(
+                                f"WARNING: MR/TF base specialist training failed "
+                                f"for {key}: {_mr_tf_fit_exc}"
+                            )
                     _reg_target_bundle_full = _build_base_regression_target(
                         df.reset_index(drop=True),
                         side=side,
@@ -24004,6 +26458,35 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         "degeneracy": degeneracy_info,
                         "deployable": _deployable,
                         "reg_head": reg_head,
+                        "mr_tf_specialists": _mr_tf_specialists,
+                        "mr_tf_route": (
+                            df["__mr_tf_route__"].astype(str).values
+                            if "__mr_tf_route__" in df.columns
+                            else None
+                        ),
+                        "mr_tf_mask_mr": (
+                            np.asarray(df["__mr_mask__"].values, dtype=np.int8)
+                            if "__mr_mask__" in df.columns
+                            else None
+                        ),
+                        "mr_tf_mask_tf": (
+                            np.asarray(df["__tf_mask__"].values, dtype=np.int8)
+                            if "__tf_mask__" in df.columns
+                            else None
+                        ),
+                        "mr_tf_mask_mixed": (
+                            np.asarray(df["__mixed_mask__"].values, dtype=np.int8)
+                            if "__mixed_mask__" in df.columns
+                            else None
+                        ),
+                        "mr_tf_params_hash": (
+                            str((_mr_tf_diag or {}).get("params_hash", ""))
+                            if _mr_tf_diag
+                            else ""
+                        ),
+                        "rule_mask_feature_diagnostics": dict(
+                            _rule_mask_feature_diag or {}
+                        ),
                         "econ_top_mean_ret": (
                             float(_econ_mean)
                             if np.isfinite(_econ_mean)
@@ -24030,34 +26513,58 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     f"  WARNING: {side}_{k}: all deployable horizons failed selection score gate; "
                     f"falling back to best deployable horizon H={_fallback_h}"
                 )
+            def _horizon_feature_contract(_entry: dict[str, Any]) -> list[str]:
+                _raw_cols = [str(_c) for _c in (_entry.get("feat_cols", []) or [])]
+                _model_features, _input_features = _effective_lgbm_input_feature_contract(
+                    _entry.get("model"),
+                    _raw_cols,
+                )
+                if _input_features and _model_features and _input_features == _model_features:
+                    return list(_input_features)
+                return _raw_cols
+
             if best_m is not None:
+                _primary_contract = _horizon_feature_contract(best_m)
+                best_m["raw_feat_cols"] = best_m.get("feat_cols", [])
+                best_m["feat_cols"] = _primary_contract
+                best_m["selected_features"] = _primary_contract
                 best_m["models_by_h"] = {
                     h: {
                         "model": v["model"],
-                        "feat_cols": v["feat_cols"],
+                        "feat_cols": _horizon_feature_contract(v),
+                        "raw_feat_cols": v["feat_cols"],
                         "H": v["H"],
                         "fit_row_idx": v.get("fit_row_idx"),
-                        "selected_features": feature_selection_by_h.get(
-                            h, v["feat_cols"]
-                        ),
+                        "selected_features": _horizon_feature_contract(v),
                         "top5_features": v.get("top5_features", [])[:5],
                         "top10_features": v.get("top10_features", [])[:10],
                         "reg_head": v.get("reg_head"),
+                        "mr_tf_specialists": v.get("mr_tf_specialists"),
+                        "mr_tf_route": v.get("mr_tf_route"),
+                        "mr_tf_mask_mr": v.get("mr_tf_mask_mr"),
+                        "mr_tf_mask_tf": v.get("mr_tf_mask_tf"),
+                        "mr_tf_mask_mixed": v.get("mr_tf_mask_mixed"),
+                        "mr_tf_params_hash": v.get("mr_tf_params_hash", ""),
                     }
                     for h, v in deployable_h_models.items()
                 }
                 best_m["all_models_by_h"] = {
                     h: {
                         "model": v["model"],
-                        "feat_cols": v["feat_cols"],
+                        "feat_cols": _horizon_feature_contract(v),
+                        "raw_feat_cols": v["feat_cols"],
                         "H": v["H"],
                         "fit_row_idx": v.get("fit_row_idx"),
-                        "selected_features": feature_selection_by_h.get(
-                            h, v["feat_cols"]
-                        ),
+                        "selected_features": _horizon_feature_contract(v),
                         "top5_features": v.get("top5_features", [])[:5],
                         "top10_features": v.get("top10_features", [])[:10],
                         "reg_head": v.get("reg_head"),
+                        "mr_tf_specialists": v.get("mr_tf_specialists"),
+                        "mr_tf_route": v.get("mr_tf_route"),
+                        "mr_tf_mask_mr": v.get("mr_tf_mask_mr"),
+                        "mr_tf_mask_tf": v.get("mr_tf_mask_tf"),
+                        "mr_tf_mask_mixed": v.get("mr_tf_mask_mixed"),
+                        "mr_tf_params_hash": v.get("mr_tf_params_hash", ""),
                         "degenerate": bool(v.get("degenerate", False)),
                         "degeneracy": v.get("degeneracy", {}),
                         "deployable": bool(v.get("deployable", False)),
@@ -24075,19 +26582,28 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     per_h_models, key=lambda h: per_h_models[h].get("score", -1e12)
                 )
                 best_m = dict(per_h_models[_fallback_h])
+                _primary_contract = _horizon_feature_contract(best_m)
+                best_m["raw_feat_cols"] = best_m.get("feat_cols", [])
+                best_m["feat_cols"] = _primary_contract
+                best_m["selected_features"] = _primary_contract
                 best_m["models_by_h"] = {}
                 best_m["all_models_by_h"] = {
                     h: {
                         "model": v["model"],
-                        "feat_cols": v["feat_cols"],
+                        "feat_cols": _horizon_feature_contract(v),
+                        "raw_feat_cols": v["feat_cols"],
                         "H": v["H"],
                         "fit_row_idx": v.get("fit_row_idx"),
-                        "selected_features": feature_selection_by_h.get(
-                            h, v["feat_cols"]
-                        ),
+                        "selected_features": _horizon_feature_contract(v),
                         "top5_features": v.get("top5_features", [])[:5],
                         "top10_features": v.get("top10_features", [])[:10],
                         "reg_head": v.get("reg_head"),
+                        "mr_tf_specialists": v.get("mr_tf_specialists"),
+                        "mr_tf_route": v.get("mr_tf_route"),
+                        "mr_tf_mask_mr": v.get("mr_tf_mask_mr"),
+                        "mr_tf_mask_tf": v.get("mr_tf_mask_tf"),
+                        "mr_tf_mask_mixed": v.get("mr_tf_mask_mixed"),
+                        "mr_tf_params_hash": v.get("mr_tf_params_hash", ""),
                         "degenerate": bool(v.get("degenerate", False)),
                         "degeneracy": v.get("degeneracy", {}),
                         "deployable": False,
@@ -24167,6 +26683,28 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     "oof_prob": _oof_full[:_n][_finite_oof_mask],
                     "index": np.arange(_n, dtype=np.int32)[_finite_oof_mask],
                 }
+                _route_vals = _v.get("mr_tf_route")
+                if _route_vals is not None and len(_route_vals) >= _n:
+                    _payload["mr_tf_route"] = np.asarray(_route_vals, dtype=object)[
+                        :_n
+                    ][_finite_oof_mask]
+                for _src_key, _dst_key in (
+                    ("mr_tf_mask_mr", "mr_mask"),
+                    ("mr_tf_mask_tf", "tf_mask"),
+                    ("mr_tf_mask_mixed", "mixed_mask"),
+                ):
+                    _mask_vals = _v.get(_src_key)
+                    if _mask_vals is not None and len(_mask_vals) >= _n:
+                        _payload[_dst_key] = np.asarray(
+                            _mask_vals, dtype=np.int8
+                        )[:_n][_finite_oof_mask]
+                _params_hash = str(_v.get("mr_tf_params_hash") or "")
+                if _params_hash:
+                    _payload["mr_tf_params_hash"] = np.full(
+                        int(np.sum(_finite_oof_mask)),
+                        _params_hash,
+                        dtype=object,
+                    )
                 if _df_oof is not None and bool(
                     cfg.get("model_drift_features_enabled", True)
                 ):
@@ -24352,6 +26890,70 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                         _payload["y_bin"] = np.asarray(
                             _df_oof["__y_bin__"], dtype=np.float32
                         )[: len(_df_oof)]
+                    try:
+                        _best_for_label_hpo = getattr(_race, "best_model", None)
+                        _label_hpo_report = dict(
+                            getattr(
+                                _best_for_label_hpo,
+                                "label_weight_hpo_report_",
+                                {},
+                            )
+                            or {}
+                        )
+                        _label_hpo_hard = getattr(
+                            _best_for_label_hpo,
+                            "label_weight_hpo_hard_label_",
+                            None,
+                        )
+                        _label_hpo_soft = getattr(
+                            _best_for_label_hpo,
+                            "label_weight_hpo_soft_label_",
+                            None,
+                        )
+                        _label_hpo_weight = getattr(
+                            _best_for_label_hpo,
+                            "label_weight_hpo_sample_weight_",
+                            None,
+                        )
+                        if _label_hpo_hard is not None and len(_label_hpo_hard) >= _n:
+                            if "y_bin" in _payload:
+                                _payload["y_bin_baseline"] = np.asarray(
+                                    _payload["y_bin"], dtype=np.float32
+                                )
+                            _payload["y_bin"] = np.asarray(
+                                _label_hpo_hard, dtype=np.float32
+                            )[:_n][_finite_oof_mask]
+                            _payload["label_weight_hpo_winner"] = np.full(
+                                len(_payload["y_bin"]),
+                                str(_label_hpo_report.get("winner", "unknown")),
+                                dtype=object,
+                            )
+                            _payload["label_weight_hpo_selected"] = np.full(
+                                len(_payload["y_bin"]),
+                                bool(_label_hpo_report.get("selected", False)),
+                                dtype=bool,
+                            )
+                            if _label_hpo_soft is not None and len(_label_hpo_soft) >= _n:
+                                _payload["label_weight_hpo_soft_label"] = np.asarray(
+                                    _label_hpo_soft, dtype=np.float32
+                                )[:_n][_finite_oof_mask]
+                            if (
+                                _label_hpo_weight is not None
+                                and len(_label_hpo_weight) >= _n
+                            ):
+                                _payload["label_weight_hpo_sample_weight"] = np.asarray(
+                                    _label_hpo_weight, dtype=np.float32
+                                )[:_n][_finite_oof_mask]
+                            tprint(
+                                f"  Base OOF label source for {k} H{_h}: "
+                                f"label_weight_hpo_winner={_label_hpo_report.get('winner', 'unknown')} "
+                                f"selected={bool(_label_hpo_report.get('selected', False))}."
+                            )
+                    except Exception as _label_hpo_exc:
+                        tprint(
+                            f"WARNING: failed to attach label/sample-weight HPO labels "
+                            f"to base OOF for {k} H{_h}: {_label_hpo_exc}"
+                        )
                     if "__y_ret__" in _df_oof.columns:
                         _payload["y_ret"] = np.asarray(
                             _df_oof["__y_ret__"], dtype=np.float32
@@ -24408,36 +27010,42 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     )
                     continue
                 _model_dir = os.path.join(models_dir, f"{side}_{k}_H{_h}")
-                _feat_cols_for_contract = [
+                _raw_feat_cols_for_contract = [
                     str(_c) for _c in (_v.get("feat_cols", []) or [])
                 ]
-                _lgbm_selected_model_features = []
-                _lgbm_selected_input_features = []
-                try:
-                    _estimator = getattr(
-                        getattr(_race, "best_model", None), "estimator", None
+                (
+                    _lgbm_selected_model_features,
+                    _lgbm_selected_input_features,
+                ) = _effective_lgbm_input_feature_contract(
+                    _race,
+                    _raw_feat_cols_for_contract,
+                )
+                _feat_cols_for_contract = (
+                    list(_lgbm_selected_input_features)
+                    if (
+                        _lgbm_selected_input_features
+                        and _lgbm_selected_model_features
+                        and _lgbm_selected_input_features == _lgbm_selected_model_features
                     )
-                    _selected = [
-                        str(_c)
-                        for _c in (getattr(_estimator, "selected_features", []) or [])
-                    ]
-                    if _selected and all(
-                        re.fullmatch(r"f\d+", _name) for _name in _selected
-                    ):
-                        _mapped = []
-                        for _name in _selected:
-                            _idx = int(_name[1:])
-                            if _idx < 0 or _idx >= len(_feat_cols_for_contract):
-                                _mapped = []
-                                break
-                            _mapped.append(_feat_cols_for_contract[_idx])
-                        if _mapped:
-                            _lgbm_selected_model_features = _selected
-                            _lgbm_selected_input_features = _mapped
-                            setattr(_estimator, "input_feature_names", list(_mapped))
+                    else list(_raw_feat_cols_for_contract)
+                )
+                try:
+                    _best = getattr(_race, "best_model", None)
+                    if _best is not None and _lgbm_selected_input_features:
+                        setattr(
+                            _best,
+                            "input_feature_names",
+                            list(_lgbm_selected_input_features),
+                        )
+                    _estimator = getattr(_best, "estimator", None)
+                    if _estimator is not None and _lgbm_selected_input_features:
+                        setattr(
+                            _estimator,
+                            "input_feature_names",
+                            list(_lgbm_selected_input_features),
+                        )
                 except Exception:
-                    _lgbm_selected_model_features = []
-                    _lgbm_selected_input_features = []
+                    pass
                 _race.save_native(_model_dir)
                 import json as _json
 
@@ -24463,9 +27071,8 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     _json.dump(
                         {
                             "feat_cols": _feat_cols_for_contract,
-                            "selected_features": _v.get(
-                                "selected_features", _feat_cols_for_contract
-                            ),
+                            "raw_feat_cols": _raw_feat_cols_for_contract,
+                            "selected_features": _feat_cols_for_contract,
                             "lgbm_selected_model_features": _lgbm_selected_model_features,
                             "lgbm_selected_input_features": _lgbm_selected_input_features,
                             "fit_row_count": int(

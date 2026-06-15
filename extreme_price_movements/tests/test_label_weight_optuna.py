@@ -687,6 +687,38 @@ def test_best_recipe_default_is_used_when_not_bypassed(tmp_path, monkeypatch):
     assert recipe.weight.positive_mass_target == 0.37
 
 
+def test_scoped_recipe_overrides_global_recipe(tmp_path, monkeypatch):
+    monkeypatch.delenv("EPM_LABEL_WEIGHT_DISABLE", raising=False)
+    monkeypatch.setenv("EPM_LABEL_WEIGHT_USE_BEST_DEFAULT", "0")
+    global_recipe = LabelWeightRecipe(name="global")
+    global_recipe.weight.positive_mass_target = 0.37
+    base_recipe = LabelWeightRecipe(name="base")
+    base_recipe.weight.positive_mass_target = 0.41
+    meta_recipe = LabelWeightRecipe(name="meta")
+    meta_recipe.weight.positive_mass_target = 0.52
+    global_path = _write_recipe(tmp_path / "global.json", global_recipe)
+    base_path = _write_recipe(tmp_path / "base.json", base_recipe)
+    meta_path = _write_recipe(tmp_path / "meta.json", meta_recipe)
+    monkeypatch.setenv("EPM_LABEL_WEIGHT_RECIPE", global_path)
+    monkeypatch.setenv("EPM_LABEL_WEIGHT_BASE_RECIPE", base_path)
+    monkeypatch.setenv("EPM_LABEL_WEIGHT_META_RECIPE", meta_path)
+
+    assert load_recipe_from_env_or_cfg(scope="base").name == "base"
+    assert load_recipe_from_env_or_cfg(scope="meta").name == "meta"
+    assert load_recipe_from_env_or_cfg().name == "global"
+
+
+def test_scoped_disable_only_disables_that_scope(tmp_path, monkeypatch):
+    monkeypatch.setenv("EPM_LABEL_WEIGHT_USE_BEST_DEFAULT", "0")
+    recipe = LabelWeightRecipe(name="active")
+    recipe_path = _write_recipe(tmp_path / "recipe.json", recipe)
+    monkeypatch.setenv("EPM_LABEL_WEIGHT_RECIPE", recipe_path)
+    monkeypatch.setenv("EPM_LABEL_WEIGHT_META_DISABLE", "1")
+
+    assert load_recipe_from_env_or_cfg(scope="meta") is None
+    assert load_recipe_from_env_or_cfg(scope="base").name == "active"
+
+
 def test_label_weight_disable_ignores_persisted_best(tmp_path, monkeypatch):
     monkeypatch.delenv("EPM_LABEL_WEIGHT_RECIPE", raising=False)
     monkeypatch.setenv("EPM_LABEL_WEIGHT_DISABLE", "1")

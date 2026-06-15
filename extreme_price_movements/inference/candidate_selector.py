@@ -7,6 +7,8 @@ This module applies candidate thresholds to select trade candidates:
 - Returns long_candidates and short_candidates
 """
 
+import json
+import re
 from typing import Dict, Iterable, List, Tuple, Any, Optional
 
 import pandas as pd
@@ -14,6 +16,145 @@ import numpy as np
 
 from extreme_price_movements.inference.config import _resolve_runtime_cfg
 from extreme_price_movements.utils import tprint
+
+
+_CANONICAL_CONDITION_PATTERN = re.compile(
+    r"^(?P<name>.+?)(?P<op><=|>=|==|<|>)(?P<value>.+)$"
+)
+
+
+def _latest_feature_series_for_symbols(
+    feats: Dict[str, pd.DataFrame],
+    feature: str,
+    close_df: pd.DataFrame,
+) -> Optional[pd.Series]:
+    value = feats.get(str(feature))
+    columns = close_df.columns.astype(str)
+    if isinstance(value, pd.DataFrame) and not value.empty:
+        frame = value.copy()
+        if set(columns).issubset(set(str(c) for c in frame.columns)):
+            frame.columns = frame.columns.astype(str)
+            return pd.to_numeric(frame.reindex(columns=columns).iloc[-1], errors="coerce")
+        if set(columns).issubset(set(str(i) for i in frame.index)):
+            frame.index = frame.index.astype(str)
+            if str(feature) in frame.columns:
+                return pd.to_numeric(
+                    frame[str(feature)].reindex(index=columns),
+                    errors="coerce",
+                )
+            if frame.shape[1] == 1:
+                return pd.to_numeric(frame.iloc[:, 0].reindex(index=columns), errors="coerce")
+    if isinstance(value, pd.Series) and not value.empty:
+        series = pd.to_numeric(value, errors="coerce")
+        if set(columns).issubset(set(str(i) for i in series.index)):
+            series.index = series.index.astype(str)
+            return series.reindex(index=columns)
+    return None
+
+
+def _eval_condition_series(values: pd.Series, operator: str, threshold: float) -> pd.Series:
+    if operator == "<=":
+        return values <= threshold
+    if operator == ">=":
+        return values >= threshold
+    if operator == "<":
+        return values < threshold
+    if operator == ">":
+        return values > threshold
+    return values == threshold
+
+
+def _diagnose_latest_canonical_rule(
+    canonical_key: str,
+    feats: Dict[str, pd.DataFrame],
+    close_df: pd.DataFrame,
+    *,
+    max_conditions: int = 12,
+) -> Dict[str, Any]:
+    slots = str(canonical_key or "").split("|")
+    if len(slots) != 3 or not isinstance(close_df, pd.DataFrame) or close_df.empty:
+        return {}
+    n_symbols = int(close_df.shape[1])
+    slot_names = ("trigger", "location", "regime")
+    slot_reports: List[Dict[str, Any]] = []
+    overall = pd.Series(True, index=close_df.columns.astype(str))
+    condition_reports: List[Dict[str, Any]] = []
+    for slot_name, raw_slot in zip(slot_names, slots):
+        slot_text = str(raw_slot or "").strip().strip("()")
+        if not slot_text or slot_text == "*":
+            slot_reports.append(
+                {"slot": slot_name, "pass": n_symbols, "total": n_symbols, "wildcard": True}
+            )
+            continue
+        slot_mask = pd.Series(True, index=close_df.columns.astype(str))
+        for cond in [part.strip() for part in slot_text.split("&") if part.strip()]:
+            match = _CANONICAL_CONDITION_PATTERN.match(cond)
+            if match is None:
+                slot_mask &= False
+                condition_reports.append(
+                    {
+                        "slot": slot_name,
+                        "condition": cond,
+                        "pass": 0,
+                        "total": n_symbols,
+                        "reason": "parse_failed",
+                    }
+                )
+                continue
+            feature = str(match.group("name")).strip()
+            operator = str(match.group("op")).strip()
+            try:
+                threshold = float(match.group("value"))
+            except Exception:
+                threshold = float("nan")
+            values = _latest_feature_series_for_symbols(feats, feature, close_df)
+            if values is None or not np.isfinite(threshold):
+                cond_mask = pd.Series(False, index=close_df.columns.astype(str))
+                finite = 0
+                vmin = vmax = vmean = np.nan
+            else:
+                values = values.reindex(index=close_df.columns.astype(str))
+                cond_mask = _eval_condition_series(values, operator, threshold).fillna(False)
+                finite_values = values.replace([np.inf, -np.inf], np.nan).dropna()
+                finite = int(finite_values.shape[0])
+                vmin = float(finite_values.min()) if finite else np.nan
+                vmax = float(finite_values.max()) if finite else np.nan
+                vmean = float(finite_values.mean()) if finite else np.nan
+            slot_mask &= cond_mask.astype(bool)
+            condition_reports.append(
+                {
+                    "slot": slot_name,
+                    "condition": cond,
+                    "feature": feature,
+                    "op": operator,
+                    "threshold": threshold,
+                    "pass": int(cond_mask.sum()),
+                    "total": n_symbols,
+                    "finite": finite,
+                    "min": vmin,
+                    "max": vmax,
+                    "mean": vmean,
+                }
+            )
+        slot_reports.append(
+            {
+                "slot": slot_name,
+                "pass": int(slot_mask.sum()),
+                "total": n_symbols,
+                "wildcard": False,
+            }
+        )
+        overall &= slot_mask.astype(bool)
+    blockers = sorted(
+        condition_reports,
+        key=lambda row: (int(row.get("pass", 0)), -int(row.get("finite", 0))),
+    )[: int(max_conditions)]
+    return {
+        "overall_pass": int(overall.sum()),
+        "total": n_symbols,
+        "slots": slot_reports,
+        "top_blocking_conditions": blockers,
+    }
 
 
 def _feature_to_panel_flat(
@@ -629,6 +770,21 @@ def build_strategy_candidate_masks(
             f"side={side or 'unknown'} strategy_id={strategy_id} "
             f"passed={len(passed)}/{denominator} support={support:.2%}"
         )
+        canonical_key = str(
+            mask_cfg.get("base_event_trigger") or mask_cfg.get("canonical_key") or ""
+        )
+        if not passed and canonical_key:
+            diagnostics = _diagnose_latest_canonical_rule(
+                canonical_key,
+                feats,
+                close,
+            )
+            if diagnostics:
+                tprint(
+                    "candidate_selector: zero-support canonical mask diagnostics "
+                    f"strategy_id={strategy_id} "
+                    f"{json.dumps(diagnostics, sort_keys=True, default=str)}"
+                )
         out[strategy_id] = passed
     return out
 

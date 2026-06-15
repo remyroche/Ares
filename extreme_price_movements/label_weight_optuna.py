@@ -17,12 +17,18 @@ import os
 import shlex
 import subprocess
 import tempfile
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+
+try:
+    from .lgbm_recency_hpo import recency_hpo_decay_from_config
+except Exception:  # pragma: no cover - standalone script fallback
+    def recency_hpo_decay_from_config(*_args, **_kwargs):
+        return None, None
 
 
 DEFAULT_EXECUTION_COST_KEYS = {
@@ -126,6 +132,7 @@ GENERATOR_DEFAULTS: dict[str, float] = {
 
 @dataclass
 class DistillationParams:
+    distillation_strength: float = 1.0
     distill_error_power: float = 1.0
     false_positive_focus: float = 1.0
     false_negative_focus: float = 0.50
@@ -136,6 +143,20 @@ class DistillationParams:
     distill_missed_net_power: float = 1.0
     distill_rank_focus_threshold: float = 0.80
     distill_rank_focus_temperature: float = 0.08
+
+
+def neutral_distillation_params() -> DistillationParams:
+    return DistillationParams(
+        distillation_strength=0.0,
+        distill_error_power=0.0,
+        false_positive_focus=0.0,
+        false_negative_focus=0.0,
+        distill_age_impact=0.0,
+        economic_error_mix=0.0,
+        distill_net_loss_power=0.0,
+        distill_stop_hit_focus=0.0,
+        distill_missed_net_power=0.0,
+    )
 
 
 @dataclass
@@ -155,11 +176,16 @@ class ObjectiveParams:
     lgbm_j_floor: float = 0.55
     lgbm_j_good: float = 0.80
     max_top20_mean_net_bps_baseline_drawdown: float = 3.0
-    max_top20_hit_baseline_drawdown: float = 0.04
     max_top20_bps_weighted_hit_baseline_drawdown: float = 0.02
     max_top10_mean_net_bps_baseline_drawdown: float = 5.0
     max_top10_bps_weighted_hit_baseline_drawdown: float = 0.03
     max_score_std_baseline_drawdown_ratio: float = 0.25
+    max_score_gap_baseline_drawdown_ratio: float = 0.45
+    max_economic_weighted_ic_baseline_drawdown: float = 0.035
+    max_top_weighted_ic_baseline_drawdown: float = 0.040
+    min_effective_sample_frac_weight: float = 0.65
+    min_weight_rank_corr_to_baseline: float = 0.40
+    max_weight_final_delta_abs_mean: float = 0.65
     max_stop_hit_rate_at_20: float = 0.35
     max_avg_stop_loss_bps_at_20: float = 125.0
     min_mean_net_bps_at_20: float = 0.0
@@ -168,6 +194,10 @@ class ObjectiveParams:
     max_symbol_hhi_at_20: float = 0.25
     max_week_hhi_at_20: float = 0.35
     min_unique_symbols_at_20: float = 6.0
+    min_label_final_changed_frac: float = 1e-4
+    min_label_final_delta_abs_mean: float = 1e-7
+    min_weight_final_changed_frac: float = 1e-4
+    min_weight_final_delta_abs_mean: float = 1e-7
 
 
 @dataclass
@@ -186,16 +216,20 @@ class LabelWeightRecipe:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "LabelWeightRecipe":
+        def _filtered(model: type[Any], key: str) -> dict[str, Any]:
+            allowed = {f.name for f in fields(model)}
+            return {k: v for k, v in dict(raw.get(key, {})).items() if k in allowed}
+
         return cls(
             version=int(raw.get("version", 1)),
             name=str(raw.get("name", "recipe")),
             stage=str(raw.get("stage", "all")),
-            geometry=LabelGeometryParams(**dict(raw.get("geometry", {}))),
-            label=LabelParams(**dict(raw.get("label", {}))),
-            weight=WeightParams(**dict(raw.get("weight", {}))),
-            generator=GeneratorParams(**dict(raw.get("generator") or {})),
-            distillation=DistillationParams(**dict(raw.get("distillation", {}))),
-            objective=ObjectiveParams(**dict(raw.get("objective", {}))),
+            geometry=LabelGeometryParams(**_filtered(LabelGeometryParams, "geometry")),
+            label=LabelParams(**_filtered(LabelParams, "label")),
+            weight=WeightParams(**_filtered(WeightParams, "weight")),
+            generator=GeneratorParams(**_filtered(GeneratorParams, "generator")),
+            distillation=DistillationParams(**_filtered(DistillationParams, "distillation")),
+            objective=ObjectiveParams(**_filtered(ObjectiveParams, "objective")),
             execution_costs={
                 str(k): float(v)
                 for k, v in dict(raw.get("execution_costs", {})).items()
@@ -239,10 +273,36 @@ OPTUNA_LAYER_CHOICES = (
 )
 
 
-def recipe_path_from_env_or_cfg(cfg: dict[str, Any] | None = None) -> str:
+def _scope_from_stage(stage: str | None) -> str | None:
+    stage_l = str(stage or "").strip().lower()
+    if stage_l in {"train_base", "base"}:
+        return "base"
+    if stage_l in {"train_meta", "meta"}:
+        return "meta"
+    return None
+
+
+def _scope_key_prefix(scope: str | None) -> str:
+    scope_l = str(scope or "").strip().lower()
+    return scope_l if scope_l in {"base", "meta"} else ""
+
+
+def recipe_path_from_env_or_cfg(cfg: dict[str, Any] | None = None, *, scope: str | None = None) -> str:
     cfg_local = cfg if isinstance(cfg, dict) else {}
-    if _label_weight_disabled(cfg_local):
+    scope_prefix = _scope_key_prefix(scope)
+    if _label_weight_disabled(cfg_local, scope=scope_prefix or None):
         return DISABLED_RECIPE_KEY
+    explicit = ""
+    if scope_prefix:
+        explicit = os.getenv(
+            f"EPM_LABEL_WEIGHT_{scope_prefix.upper()}_RECIPE",
+            cfg_local.get(
+                f"label_weight_{scope_prefix}_recipe",
+                cfg_local.get(f"label_weight_{scope_prefix}_recipe_path", ""),
+            ),
+        )
+        if explicit:
+            return str(explicit).strip()
     explicit = os.getenv(
         "EPM_LABEL_WEIGHT_RECIPE",
         cfg_local.get("label_weight_recipe", cfg_local.get("label_weight_recipe_path", "")),
@@ -252,6 +312,16 @@ def recipe_path_from_env_or_cfg(cfg: dict[str, Any] | None = None) -> str:
     use_best_default = _truthy_env_or_cfg("EPM_LABEL_WEIGHT_USE_BEST_DEFAULT", cfg_local, default=True)
     bypass_best_default = _truthy_env_or_cfg("EPM_LABEL_WEIGHT_BYPASS_BEST_DEFAULT", cfg_local, default=False)
     if use_best_default and not bypass_best_default:
+        scoped_best = ""
+        if scope_prefix:
+            scoped_best = os.getenv(
+                f"EPM_LABEL_WEIGHT_{scope_prefix.upper()}_BEST_RECIPE",
+                cfg_local.get(f"label_weight_{scope_prefix}_best_recipe_path", ""),
+            )
+        if scoped_best:
+            best_path = Path(str(scoped_best)).expanduser()
+            if best_path.exists():
+                return str(best_path)
         best_path = Path(
             str(
                 os.getenv(
@@ -277,8 +347,17 @@ def _truthy_env_or_cfg(name: str, cfg: dict[str, Any], *, default: bool = False)
     return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def _label_weight_disabled(cfg: dict[str, Any]) -> bool:
-    raw = os.getenv("EPM_LABEL_WEIGHT_DISABLE")
+def _label_weight_disabled(cfg: dict[str, Any], *, scope: str | None = None) -> bool:
+    scope_prefix = _scope_key_prefix(scope)
+    raw = None
+    if scope_prefix:
+        raw = os.getenv(f"EPM_LABEL_WEIGHT_{scope_prefix.upper()}_DISABLE")
+        if raw is None and f"label_weight_{scope_prefix}_disable" in cfg:
+            raw = cfg.get(f"label_weight_{scope_prefix}_disable")
+        if raw is None and f"label_weight_{scope_prefix}_enabled" in cfg:
+            return str(cfg.get(f"label_weight_{scope_prefix}_enabled")).strip().lower() in {"0", "false", "no", "n", "off"}
+    if raw is None:
+        raw = os.getenv("EPM_LABEL_WEIGHT_DISABLE")
     if raw is not None:
         return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
     if "label_weight_disable" in cfg:
@@ -716,6 +795,8 @@ def _noop_recipe_for_phase(
     if base_recipe is not None:
         recipe = LabelWeightRecipe.from_dict(base_recipe.to_dict())
         recipe.name = name
+        if phase_norm == "distillation":
+            recipe.distillation = neutral_distillation_params()
         recipe.provenance = dict(recipe.provenance)
         recipe.provenance.update(
             {
@@ -760,13 +841,14 @@ def _enqueue_previous_best(study: Any, path: Path, *, phase: str) -> bool:
     payload = _read_json_if_exists(path)
     if not payload:
         return False
-    params = payload.get("params")
+    params = None
+    recipe_payload = payload.get("recipe")
+    if isinstance(recipe_payload, dict):
+        params = _params_from_recipe(LabelWeightRecipe.from_dict(recipe_payload), phase=phase)
+    elif {"label", "weight", "distillation"}.intersection(payload):
+        params = _params_from_recipe(LabelWeightRecipe.from_dict(payload), phase=phase)
     if not isinstance(params, dict):
-        recipe_payload = payload.get("recipe")
-        if isinstance(recipe_payload, dict):
-            params = _params_from_recipe(LabelWeightRecipe.from_dict(recipe_payload), phase=phase)
-        elif {"label", "weight", "distillation"}.intersection(payload):
-            params = _params_from_recipe(LabelWeightRecipe.from_dict(payload), phase=phase)
+        params = payload.get("params")
     if not isinstance(params, dict) or not params:
         return False
     try:
@@ -812,10 +894,18 @@ def _write_best_artifacts(
                 "best_trial_value": float(trial.value),
             }
         )
+    trial_params = dict(trial.params)
+    effective_params = dict(trial_params)
+    if _trial_is_noop(trial):
+        try:
+            effective_params = _params_from_recipe(LabelWeightRecipe.from_dict(recipe_payload), phase=phase)
+        except Exception:
+            effective_params = dict(trial_params)
     best_trial_payload = {
         "number": int(trial.number),
         "value": float(trial.value),
-        "params": dict(trial.params),
+        "params": effective_params,
+        "trial_params": trial_params,
         "user_attrs": dict(trial.user_attrs),
         "recipe_path": str(recipe_path or ""),
         "recipe": recipe_payload,
@@ -903,8 +993,12 @@ def load_recipe(path: str) -> LabelWeightRecipe | None:
     return recipe
 
 
-def load_recipe_from_env_or_cfg(cfg: dict[str, Any] | None = None) -> LabelWeightRecipe | None:
-    return load_recipe(recipe_path_from_env_or_cfg(cfg))
+def load_recipe_from_env_or_cfg(
+    cfg: dict[str, Any] | None = None,
+    *,
+    scope: str | None = None,
+) -> LabelWeightRecipe | None:
+    return load_recipe(recipe_path_from_env_or_cfg(cfg, scope=scope))
 
 
 def recipe_applies(recipe: LabelWeightRecipe | None, stage: str) -> bool:
@@ -948,7 +1042,7 @@ def apply_generator_recipe_to_cfg(
     """Return cfg with recipe-controlled native label/weight generator knobs applied."""
 
     cfg_local = dict(cfg or {})
-    recipe = load_recipe_from_env_or_cfg(cfg_local)
+    recipe = load_recipe_from_env_or_cfg(cfg_local, scope=_scope_from_stage(stage))
     if not recipe_applies(recipe, stage):
         return cfg_local
     assert recipe is not None
@@ -1305,7 +1399,7 @@ def apply_geometry_recipe_to_labels(
 ) -> tuple[pd.DataFrame, np.ndarray, dict[str, Any]]:
     """Apply recipe label geometry as an upstream hard-label regeneration step."""
 
-    recipe = load_recipe_from_env_or_cfg(cfg)
+    recipe = load_recipe_from_env_or_cfg(cfg, scope=_scope_from_stage(stage))
     if not recipe_applies(recipe, stage):
         return df, np.asarray(y_hard, dtype=np.float32), {"enabled": False, "reason": "no_recipe"}
     assert recipe is not None
@@ -1402,7 +1496,7 @@ def apply_label_recipe(
     stage: str,
     label: str,
 ) -> tuple[np.ndarray, dict[str, Any]]:
-    recipe = load_recipe_from_env_or_cfg(cfg)
+    recipe = load_recipe_from_env_or_cfg(cfg, scope=_scope_from_stage(stage))
     if not recipe_applies(recipe, stage):
         return np.asarray(current_soft, dtype=np.float32), {"enabled": False, "reason": "no_recipe"}
     assert recipe is not None
@@ -1557,7 +1651,7 @@ def apply_weight_recipe(
     fit_indices: Any = None,
     fit_mask: Any = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
-    recipe = load_recipe_from_env_or_cfg(cfg)
+    recipe = load_recipe_from_env_or_cfg(cfg, scope=_scope_from_stage(stage))
     if not recipe_applies(recipe, stage):
         return np.asarray(current_weight, dtype=np.float32), {"enabled": False, "reason": "no_recipe"}
     assert recipe is not None
@@ -1643,7 +1737,20 @@ def apply_weight_recipe(
         ref_median = float(np.nanmedian(ref_counts)) if len(ref_counts) else 1.0
         out[:n] *= np.power(counts / max(ref_median, 1.0), -float(p.concurrency_penalty))
 
-    if "__ts__" in df.columns and float(p.recency_half_life_days) > 0.0:
+    recency_hpo_weight_active = False
+    if "__ts__" in df.columns:
+        recency_hpo_decay, _recency_hpo_active = recency_hpo_decay_from_config(
+            df["__ts__"].iloc[:n],
+            n,
+            cfg=cfg,
+            objective_mode=stage,
+        )
+        recency_hpo_weight_active = recency_hpo_decay is not None
+    if (
+        "__ts__" in df.columns
+        and float(p.recency_half_life_days) > 0.0
+        and not recency_hpo_weight_active
+    ):
         ts = pd.to_datetime(df["__ts__"].iloc[:n], utc=True, errors="coerce")
         ref_ts = ts[mask]
         if ref_ts.notna().any():
@@ -1681,6 +1788,7 @@ def apply_weight_recipe(
         "geometry_hard_positive_rate": float(geom_stats.get("hard_positive_rate", np.nan)),
         "geometry_timeout_rate": float(geom_stats.get("timeout_rate", np.nan)),
         "geometry_stop_before_tp_rate": float(geom_stats.get("stop_before_tp_rate", np.nan)),
+        "legacy_recency_disabled_by_recency_hpo": bool(recency_hpo_weight_active),
     }
     return out.astype(np.float32, copy=False), stats
 
@@ -1696,7 +1804,7 @@ def apply_distillation_recipe(
     objective_mode: str | None = None,
     cfg: dict[str, Any] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    recipe = load_recipe_from_env_or_cfg(cfg)
+    recipe = load_recipe_from_env_or_cfg(cfg, scope=_scope_from_stage(objective_mode))
     if not recipe_applies(recipe, str(objective_mode or "all")):
         return np.asarray(distill, dtype=np.float32), np.asarray(fp_weight, dtype=np.float32)
     assert recipe is not None
@@ -1748,7 +1856,24 @@ def apply_distillation_recipe(
     fp *= 1.0 + float(d.false_positive_focus) * np.clip(fp_signal, 0.0, 10.0)
     fp *= 1.0 + float(d.false_negative_focus) * np.clip(fn_signal, 0.0, 10.0)
     fp *= 1.0 + float(d.distill_stop_hit_focus) * high_pred_focus * severe_loss
-    if timestamps is not None and float(d.distill_age_impact) > 0.0:
+    recency_hpo_decay = None
+    if timestamps is not None:
+        recency_hpo_decay, _recency_hpo_active = recency_hpo_decay_from_config(
+            timestamps,
+            len(pred_clip),
+            cfg=cfg,
+            objective_mode=objective_mode,
+        )
+    if recency_hpo_decay is not None:
+        strength = np.clip(
+            np.asarray(recency_hpo_decay, dtype=np.float64).reshape(-1),
+            0.0,
+            1.0,
+        )
+        if len(strength) == len(dist):
+            dist = 1.0 + (dist - 1.0) * strength
+            fp = 1.0 + (fp - 1.0) * strength
+    elif timestamps is not None and float(d.distill_age_impact) > 0.0:
         ts = pd.to_datetime(pd.Series(timestamps), utc=True, errors="coerce")
         if ts.notna().any():
             latest = ts.max()
@@ -1762,6 +1887,12 @@ def apply_distillation_recipe(
             strength = np.clip(age_decay, 0.0, 1.0) ** float(d.distill_age_impact)
             dist = 1.0 + (dist - 1.0) * strength
             fp = 1.0 + (fp - 1.0) * strength
+    distill_strength = float(np.clip(d.distillation_strength, 0.0, 1.0))
+    if distill_strength <= 0.0:
+        return np.asarray(distill, dtype=np.float32), np.asarray(fp_weight, dtype=np.float32)
+    if distill_strength < 1.0:
+        dist = 1.0 + (dist - 1.0) * distill_strength
+        fp = 1.0 + (fp - 1.0) * distill_strength
     return _normalize_weights(dist), _normalize_weights(fp)
 
 
@@ -1861,9 +1992,12 @@ def suggest_optuna_params(
     if phase in {"labels", "all"}:
         current = recipe.label
         label_layer_active = _layer_active(active_layer, *LABEL_LAYERS)
-        if float(current.label_modifier_strength) > 0.0:
+        label_residual_active = label_layer_active or float(current.label_modifier_strength) > 0.0
+        if label_residual_active:
             recipe.label = LabelParams(
-                label_modifier_strength=current.label_modifier_strength,
+                label_modifier_strength=trial.suggest_float("label_modifier_strength", 0.0, 0.80)
+                if label_layer_active
+                else current.label_modifier_strength,
                 mfe_scale_bps=trial.suggest_float("mfe_scale_bps", 20.0, 300.0, log=True)
                 if _layer_active(active_layer, "net_edge_mapping")
                 else current.mfe_scale_bps,
@@ -1929,14 +2063,17 @@ def suggest_optuna_params(
     if phase in {"weights", "all"}:
         current = recipe.weight
         weight_layer_active = _layer_active(active_layer, *WEIGHT_LAYERS)
-        if float(current.weight_modifier_strength) > 0.0:
+        weight_residual_active = weight_layer_active or float(current.weight_modifier_strength) > 0.0
+        if weight_residual_active:
             half_life = (
                 trial.suggest_categorical("recency_half_life_days", [0.0, 90.0, 150.0, 300.0, 450.0])
                 if _layer_active(active_layer, "robustness_diversification")
                 else current.recency_half_life_days
             )
             recipe.weight = WeightParams(
-                weight_modifier_strength=current.weight_modifier_strength,
+                weight_modifier_strength=trial.suggest_float("weight_modifier_strength", 0.0, 0.65)
+                if weight_layer_active
+                else current.weight_modifier_strength,
                 positive_mass_target=trial.suggest_float("positive_mass_target", 0.20, 0.50)
                 if _layer_active(active_layer, "class_balance")
                 else current.positive_mass_target,
@@ -1946,13 +2083,13 @@ def suggest_optuna_params(
                 mfe_weight_power=trial.suggest_float("mfe_weight_power", 0.0, 3.0)
                 if _layer_active(active_layer, "economic_emphasis")
                 else current.mfe_weight_power,
-                mae_weight_power=trial.suggest_float("mae_weight_power", 0.0, 5.0)
+                mae_weight_power=trial.suggest_float("mae_weight_power", 0.0, 3.0)
                 if _layer_active(active_layer, "economic_emphasis")
                 else current.mae_weight_power,
-                net_ev_weight_power=trial.suggest_float("net_ev_weight_power", 0.0, 4.0)
+                net_ev_weight_power=trial.suggest_float("net_ev_weight_power", 0.0, 3.0)
                 if _layer_active(active_layer, "economic_emphasis")
                 else current.net_ev_weight_power,
-                hard_negative_weight=trial.suggest_float("hard_negative_weight", 1.0, 8.0, log=True)
+                hard_negative_weight=trial.suggest_float("hard_negative_weight", 1.0, 5.0, log=True)
                 if _layer_active(active_layer, "economic_emphasis")
                 else current.hard_negative_weight,
                 ambiguous_weight=trial.suggest_float("ambiguous_weight", 0.10, 1.0)
@@ -1991,7 +2128,7 @@ def suggest_optuna_params(
                     else current_gen.timeout_weight,
                     "outcome_weight_clip_min": clip_min,
                     "outcome_weight_clip_max": trial.suggest_float(
-                        "outcome_weight_clip_max", clip_max_low, 4.00
+                        "outcome_weight_clip_max", clip_max_low, 3.00
                     )
                     if _layer_active(active_layer, "class_balance")
                     else current_gen.outcome_weight_clip_max,
@@ -2030,6 +2167,9 @@ def suggest_optuna_params(
     if phase in {"distillation", "all"}:
         current = recipe.distillation
         recipe.distillation = DistillationParams(
+            distillation_strength=trial.suggest_float("distillation_strength", 0.0, 0.60)
+            if _layer_active(active_layer, "error_refocus", "rank_tail_refocus")
+            else current.distillation_strength,
             distill_error_power=trial.suggest_float("distill_error_power", 0.0, 3.0)
             if _layer_active(active_layer, "error_refocus")
             else current.distill_error_power,
@@ -2301,6 +2441,7 @@ def objective_score(
 ) -> float:
     obj = objective if objective is not None else ObjectiveParams()
     stage = _stage_norm(model_stage)
+    phase_norm = _phase_norm(phase)
     mean10 = float(metrics.get("mean_net_bps_at_10", metrics.get("mean_net_bps@10", 0.0)))
     mean20 = float(metrics.get("mean_net_bps_at_20", metrics.get("mean_net_bps@20", 0.0)))
     mean30 = float(metrics.get("mean_net_bps_at_30", metrics.get("mean_net_bps@30", mean20)))
@@ -2399,6 +2540,29 @@ def objective_score(
         default=0.0,
     )
     weighted_econ_ic = _weighted_economic_ic(metrics)
+    top_weighted_econ_ic = float(
+        0.45
+        * _ranking_metric(
+            metrics,
+            "economic_weighted_ic_top20",
+            "economic_rank_ic_top20",
+            default=weighted_econ_ic,
+        )
+        + 0.35
+        * _ranking_metric(
+            metrics,
+            "economic_weighted_ic_top10",
+            "economic_rank_ic_top10",
+            default=weighted_econ_ic,
+        )
+        + 0.20
+        * _ranking_metric(
+            metrics,
+            "economic_weighted_ic_top30",
+            "economic_rank_ic_top30",
+            default=weighted_econ_ic,
+        )
+    )
     bucket_spread_bps = _ranking_metric(
         metrics,
         "economic_bucket_spread_bps",
@@ -2431,6 +2595,11 @@ def objective_score(
     baseline_mean10 = _baseline_metric(metrics, "mean_net_bps_at_10")
     baseline_bps_hit20 = _baseline_metric(metrics, "bps_weighted_hit_at_20")
     baseline_bps_hit10 = _baseline_metric(metrics, "bps_weighted_hit_at_10")
+    baseline_score_gap = _baseline_metric(metrics, "score_gap_top10_to_30_40")
+    baseline_weighted_ic = _baseline_metric(metrics, "economic_weighted_ic")
+    baseline_top20_ic = _baseline_metric(metrics, "economic_weighted_ic_top20")
+    baseline_top10_ic = _baseline_metric(metrics, "economic_weighted_ic_top10")
+    baseline_top30_ic = _baseline_metric(metrics, "economic_weighted_ic_top30")
     baseline_drawdown = (
         max(0.0, float(baseline_mean20) - mean20 - float(obj.max_top20_mean_net_bps_baseline_drawdown))
         if baseline_mean20 is not None
@@ -2455,6 +2624,57 @@ def objective_score(
     if base_score_std is not None and math.isfinite(score_std):
         min_vs_baseline = float(base_score_std) * (1.0 - float(obj.max_score_std_baseline_drawdown_ratio))
         baseline_std_drawdown = max(0.0, min_vs_baseline - score_std)
+    baseline_gap_drawdown = 0.0
+    if baseline_score_gap is not None and math.isfinite(score_gap):
+        min_gap_vs_baseline = float(baseline_score_gap) * (
+            1.0 - float(obj.max_score_gap_baseline_drawdown_ratio)
+        )
+        baseline_gap_drawdown = max(0.0, min_gap_vs_baseline - score_gap)
+    baseline_ic_drawdown = (
+        max(
+            0.0,
+            float(baseline_weighted_ic)
+            - weighted_econ_ic
+            - float(obj.max_economic_weighted_ic_baseline_drawdown),
+        )
+        if baseline_weighted_ic is not None
+        else 0.0
+    )
+    baseline_top_ic_drawdown = 0.0
+    top_ic_pairs = (
+        (baseline_top20_ic, _ranking_metric(metrics, "economic_weighted_ic_top20", default=top_weighted_econ_ic)),
+        (baseline_top10_ic, _ranking_metric(metrics, "economic_weighted_ic_top10", default=top_weighted_econ_ic)),
+        (baseline_top30_ic, _ranking_metric(metrics, "economic_weighted_ic_top30", default=top_weighted_econ_ic)),
+    )
+    for baseline_ic, candidate_ic in top_ic_pairs:
+        if baseline_ic is None:
+            continue
+        baseline_top_ic_drawdown = max(
+            baseline_top_ic_drawdown,
+            max(
+                0.0,
+                float(baseline_ic) - float(candidate_ic) - float(obj.max_top_weighted_ic_baseline_drawdown),
+            ),
+        )
+    effective_sample_frac = _metric_first(metrics, "effective_sample_frac", default=1.0)
+    weight_rank_corr = _metric_first(metrics, "weight_rank_corr_to_baseline", default=1.0)
+    weight_delta_abs = _metric_first(metrics, "weight_final_delta_abs_mean", default=0.0)
+    weight_concentration_shortfall = 0.0
+    weight_rank_shortfall = 0.0
+    weight_delta_excess = 0.0
+    if phase_norm == "weights":
+        weight_concentration_shortfall = max(
+            0.0,
+            float(obj.min_effective_sample_frac_weight) - effective_sample_frac,
+        )
+        weight_rank_shortfall = max(
+            0.0,
+            float(obj.min_weight_rank_corr_to_baseline) - weight_rank_corr,
+        )
+        weight_delta_excess = max(
+            0.0,
+            weight_delta_abs - float(obj.max_weight_final_delta_abs_mean),
+        )
     hard_stop_excess = max(0.0, stop20 - min(0.95, float(obj.max_stop_hit_rate_at_20) + 0.25))
     hard_window_stop_excess = max(
         0.0,
@@ -2477,6 +2697,8 @@ def objective_score(
         or baseline_top10_drawdown > impact_scale
         or baseline_bps_hit_drawdown > 0.12
         or baseline_top10_bps_hit_drawdown > 0.15
+        or weight_concentration_shortfall > 0.35
+        or weight_rank_shortfall > 0.50
     ):
         return float(
             -10.0
@@ -2488,6 +2710,8 @@ def objective_score(
             - 1.5 * math.tanh(baseline_top10_drawdown / impact_scale)
             - 2.0 * math.tanh(baseline_bps_hit_drawdown / 0.08)
             - 1.5 * math.tanh(baseline_top10_bps_hit_drawdown / 0.10)
+            - 1.5 * math.tanh(weight_concentration_shortfall / 0.20)
+            - 1.0 * math.tanh(weight_rank_shortfall / 0.25)
         )
     smooth_penalty = (
         1.25 * math.tanh(stop_excess / 0.15)
@@ -2507,6 +2731,12 @@ def objective_score(
         + 0.85 * math.tanh(baseline_bps_hit_drawdown / 0.08)
         + 0.65 * math.tanh(baseline_top10_bps_hit_drawdown / 0.10)
         + 0.80 * math.tanh(baseline_std_drawdown / 0.04)
+        + 0.85 * math.tanh(baseline_gap_drawdown / 0.06)
+        + 0.65 * math.tanh(baseline_ic_drawdown / 0.04)
+        + 0.85 * math.tanh(baseline_top_ic_drawdown / 0.04)
+        + 1.20 * math.tanh(weight_concentration_shortfall / 0.25)
+        + 0.85 * math.tanh(weight_rank_shortfall / 0.30)
+        + 0.75 * math.tanh(weight_delta_excess / 0.50)
     )
     ic_norm = _unit_interval(
         weighted_econ_ic,
@@ -2532,9 +2762,9 @@ def objective_score(
         + 0.20 * _unit_interval(bps_hit30_lcb, floor=0.25, good=0.52)
     )
     score = float(
-        0.45 * rank_model_score
-        + 0.35 * edge_score
-        + 0.20 * bps_hit_score
+        0.35 * rank_model_score
+        + 0.40 * edge_score
+        + 0.25 * bps_hit_score
         - 0.10 * instability
         - smooth_penalty
     )
@@ -2593,6 +2823,12 @@ SELECTED_PROMOTION_METRICS = (
     "unique_weeks_at_20",
     "symbol_concentration_hhi_at_20",
     "week_concentration_hhi_at_20",
+    "label_final_changed_frac",
+    "label_final_delta_abs_mean",
+    "weight_final_changed_frac",
+    "weight_final_delta_abs_mean",
+    "weight_rank_corr_to_baseline",
+    "effective_sample_frac",
 )
 
 
@@ -2627,6 +2863,7 @@ def _promotion_guard_decision(
     incumbent_metrics: dict[str, Any] | None,
     neutral_metrics: dict[str, Any] | None,
     objective: ObjectiveParams,
+    phase: str = "all",
 ) -> tuple[bool, dict[str, Any]]:
     candidate = _selected_metric_snapshot(candidate_metrics)
     incumbent = _selected_metric_snapshot(incumbent_metrics)
@@ -2640,6 +2877,52 @@ def _promotion_guard_decision(
             return
         if candidate[key] < floor:
             failures.append(f"{label or key}: {candidate[key]:.6g} < {floor:.6g}")
+
+    def _candidate_at_most(key: str, ceiling: float, *, label: str | None = None) -> None:
+        if key not in candidate:
+            failures.append(f"candidate missing {key}")
+            return
+        if candidate[key] > ceiling:
+            failures.append(f"{label or key}: {candidate[key]:.6g} > {ceiling:.6g}")
+
+    phase_norm = _phase_norm(phase)
+    if phase_norm == "labels":
+        _candidate_at_least(
+            "label_final_changed_frac",
+            float(objective.min_label_final_changed_frac),
+            label="label residual changed-frac guard",
+        )
+        _candidate_at_least(
+            "label_final_delta_abs_mean",
+            float(objective.min_label_final_delta_abs_mean),
+            label="label residual delta guard",
+        )
+    if phase_norm == "weights":
+        _candidate_at_least(
+            "weight_final_changed_frac",
+            float(objective.min_weight_final_changed_frac),
+            label="weight residual changed-frac guard",
+        )
+        _candidate_at_least(
+            "weight_final_delta_abs_mean",
+            float(objective.min_weight_final_delta_abs_mean),
+            label="weight residual delta guard",
+        )
+        _candidate_at_least(
+            "effective_sample_frac",
+            float(objective.min_effective_sample_frac_weight),
+            label="weight effective-sample guard",
+        )
+        _candidate_at_least(
+            "weight_rank_corr_to_baseline",
+            float(objective.min_weight_rank_corr_to_baseline),
+            label="weight rank-correlation guard",
+        )
+        _candidate_at_most(
+            "weight_final_delta_abs_mean",
+            float(objective.max_weight_final_delta_abs_mean),
+            label="weight delta guard",
+        )
 
     if reference:
         if "mean_net_bps_at_20" in reference:
@@ -2679,15 +2962,27 @@ def _promotion_guard_decision(
             _candidate_at_least(
                 "score_gap_top10_to_30_40",
                 reference["score_gap_top10_to_30_40"]
-                * (1.0 - float(objective.max_score_std_baseline_drawdown_ratio)),
+                * (1.0 - float(objective.max_score_gap_baseline_drawdown_ratio)),
                 label="top score-gap baseline guard",
             )
         if "economic_weighted_ic" in reference:
             _candidate_at_least(
                 "economic_weighted_ic",
-                reference["economic_weighted_ic"] - 0.02,
+                reference["economic_weighted_ic"]
+                - float(objective.max_economic_weighted_ic_baseline_drawdown),
                 label="weighted IC baseline guard",
             )
+        for key in (
+            "economic_weighted_ic_top30",
+            "economic_weighted_ic_top20",
+            "economic_weighted_ic_top10",
+        ):
+            if key in reference:
+                _candidate_at_least(
+                    key,
+                    reference[key] - float(objective.max_top_weighted_ic_baseline_drawdown),
+                    label=f"{key} baseline guard",
+                )
 
     payload = {
         "passes": not failures,
@@ -2990,6 +3285,42 @@ def main(argv: list[str] | None = None) -> int:
             raise RuntimeError(f"No metrics available for trial {trial.number}")
         trial.set_user_attr("recipe_path", str(recipe_path))
         trial.set_user_attr("metrics", metrics)
+        phase_norm = _phase_norm(str(args.phase))
+        if not _trial_is_noop(trial):
+            if phase_norm == "labels":
+                changed = _metric_first(metrics, "label_final_changed_frac", default=0.0)
+                delta = _metric_first(metrics, "label_final_delta_abs_mean", default=0.0)
+                if changed < float(recipe.objective.min_label_final_changed_frac) or delta < float(
+                    recipe.objective.min_label_final_delta_abs_mean
+                ):
+                    score = -25.0
+                    trial.set_user_attr(
+                        "noop_guard_failure",
+                        {
+                            "phase": phase_norm,
+                            "label_final_changed_frac": changed,
+                            "label_final_delta_abs_mean": delta,
+                        },
+                    )
+                    trial.report(float(score), 0)
+                    return float(score)
+            if phase_norm == "weights":
+                changed = _metric_first(metrics, "weight_final_changed_frac", default=0.0)
+                delta = _metric_first(metrics, "weight_final_delta_abs_mean", default=0.0)
+                if changed < float(recipe.objective.min_weight_final_changed_frac) or delta < float(
+                    recipe.objective.min_weight_final_delta_abs_mean
+                ):
+                    score = -25.0
+                    trial.set_user_attr(
+                        "noop_guard_failure",
+                        {
+                            "phase": phase_norm,
+                            "weight_final_changed_frac": changed,
+                            "weight_final_delta_abs_mean": delta,
+                        },
+                    )
+                    trial.report(float(score), 0)
+                    return float(score)
         score = objective_score(
             metrics,
             model_stage=str(metrics.get("model_stage", "base")),
@@ -3047,6 +3378,7 @@ def main(argv: list[str] | None = None) -> int:
             incumbent_metrics=incumbent_metrics,
             neutral_metrics=neutral_baseline_metrics,
             objective=best_objective,
+            phase=str(args.phase),
         )
         _write_promotion_comparison(
             args.out_dir,

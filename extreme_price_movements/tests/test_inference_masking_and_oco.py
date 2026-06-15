@@ -13,6 +13,7 @@ from extreme_price_movements.inference.candidate_selector import (
 from extreme_price_movements.inference.feature_generator import (
     _synthesize_live_safe_feature_keys,
 )
+import extreme_price_movements.inference.run_inference as run_inference
 from extreme_price_movements.inference.run_inference import (
     _evaluate_oco_policy,
     _ev_adjusted_prediction_after_entry_friction,
@@ -36,12 +37,284 @@ from extreme_price_movements.inference.trade_executor import (
     STOP_MIN_CURRENT_DISTANCE_PCT,
     TradeExecutor,
     _classify_exchange_error,
+    _closed_trade_metrics,
     _create_reduce_stop_loss_order,
     _default_cross_margin_dust_quote_threshold,
+    _kraken_futures_last_stop_from_executable_stop,
     _protective_stop_trigger_matches_policy,
+    _stop_is_at_least_as_protective,
     _stop_trigger_reference_price,
 )
 from extreme_price_movements.optimise import _select_candidate_trade_mask
+
+
+def test_raw_signal_close_reliability_rejects_zero_volume_without_substitution():
+    idx = pd.date_range("2026-06-10 08:00", periods=1, freq="h", tz="UTC")
+    symbol = "CYBER/USD:USD"
+    panel = {
+        "close": pd.DataFrame({symbol: [0.3559]}, index=idx),
+        "volume": pd.DataFrame({symbol: [0.0]}, index=idx),
+        "mark_close": pd.DataFrame({symbol: [0.341955]}, index=idx),
+        "index_price": pd.DataFrame({symbol: [0.34226]}, index=idx),
+    }
+
+    snap = run_inference._raw_signal_close_reliability_snapshot(
+        panel,
+        symbol,
+        max_reference_gap_bps=150.0,
+    )
+
+    assert snap["raw_signal_close_unreliable"] is True
+    assert snap["raw_signal_close_unreliable_reason"] == "zero_volume_raw_close"
+    assert snap["signal_price"] == pytest.approx(0.3559)
+    assert snap["raw_signal_close"] == pytest.approx(0.3559)
+    assert snap["raw_signal_close_reference_source"] in {
+        "mark_close",
+        "index_price",
+    }
+    assert snap["raw_signal_close_reference_gap_bps"] > 150.0
+
+
+def test_raw_signal_close_reliability_rejects_large_reference_gap_without_substitution():
+    idx = pd.date_range("2026-06-10 08:00", periods=1, freq="h", tz="UTC")
+    symbol = "CYBER/USD:USD"
+    panel = {
+        "close": pd.DataFrame({symbol: [0.3559]}, index=idx),
+        "volume": pd.DataFrame({symbol: [10.0]}, index=idx),
+        "mark_close": pd.DataFrame({symbol: [0.341955]}, index=idx),
+    }
+
+    snap = run_inference._raw_signal_close_reliability_snapshot(
+        panel,
+        symbol,
+        max_reference_gap_bps=150.0,
+    )
+
+    assert snap["raw_signal_close_unreliable"] is True
+    assert (
+        snap["raw_signal_close_unreliable_reason"]
+        == "raw_close_reference_gap_too_large"
+    )
+    assert snap["signal_price"] == pytest.approx(0.3559)
+    assert snap["raw_signal_close_reference_price"] == pytest.approx(0.341955)
+
+
+def test_raw_signal_close_reliability_accepts_clean_raw_close():
+    idx = pd.date_range("2026-06-10 08:00", periods=1, freq="h", tz="UTC")
+    symbol = "ETH/USD:USD"
+    panel = {
+        "close": pd.DataFrame({symbol: [3500.0]}, index=idx),
+        "volume": pd.DataFrame({symbol: [25.0]}, index=idx),
+        "mark_close": pd.DataFrame({symbol: [3498.0]}, index=idx),
+    }
+
+    snap = run_inference._raw_signal_close_reliability_snapshot(
+        panel,
+        symbol,
+        max_reference_gap_bps=150.0,
+    )
+
+    assert snap["raw_signal_close_unreliable"] is False
+    assert snap["raw_signal_close_unreliable_reason"] == ""
+    assert snap["signal_price"] == pytest.approx(3500.0)
+    assert snap["raw_signal_close_reference_gap_bps"] < 150.0
+
+
+class _PrescoreExchange:
+    def __init__(self, *, bid=100.0, ask=100.1):
+        self._bid = bid
+        self._ask = ask
+
+    def fetch_ticker(self, symbol):
+        return {"bid": self._bid, "ask": self._ask, "last": (self._bid + self._ask) / 2.0}
+
+    def fetch_order_book(self, symbol):
+        return {
+            "asks": [[self._ask, 10.0]],
+            "bids": [[self._bid, 10.0]],
+        }
+
+
+class _PrescoreExecutor:
+    mode = "live-test"
+
+    def __init__(self, exchange):
+        self.exchange = exchange
+
+
+def test_pre_score_market_mask_rejects_wide_spread_before_scoring():
+    idx = pd.date_range("2026-06-10 08:00", periods=1, freq="h", tz="UTC")
+    symbol = "ETH/USD:USD"
+    panel = {
+        "close": pd.DataFrame({symbol: [100.0]}, index=idx),
+        "volume": pd.DataFrame({symbol: [10.0]}, index=idx),
+        "mark_close": pd.DataFrame({symbol: [100.0]}, index=idx),
+        "open_interest": pd.DataFrame({symbol: [1000000.0]}, index=idx),
+    }
+
+    snap = run_inference._pre_score_market_mask_snapshot(
+        panel=panel,
+        symbol=symbol,
+        side="long",
+        strategy_id="long_mr",
+        executor=_PrescoreExecutor(_PrescoreExchange(bid=100.0, ask=103.0)),
+        policy=run_inference.PortfolioPolicyConfig(max_spread_bps=25.0),
+        runtime_config={
+            "mode": "live-test",
+            "market_mode": "perps",
+            "live_prescore_orderbook_enabled": False,
+        },
+        now=pd.Timestamp("2026-06-10 09:05:00Z"),
+        signal_bar_ts=idx[-1],
+        raw_close_reference_gap_bps=150.0,
+        max_signal_close_to_entry_seconds=900.0,
+    )
+
+    assert snap["prescore_market_mask_allowed"] is False
+    assert snap["prescore_market_mask_reason"] == "ticker_spread_above_prescore_max"
+    assert snap["prescore_ticker_spread_bps"] > 25.0
+
+
+def test_pre_score_market_mask_accepts_fresh_liquid_candidate():
+    idx = pd.date_range("2026-06-10 08:00", periods=1, freq="h", tz="UTC")
+    symbol = "ETH/USD:USD"
+    panel = {
+        "close": pd.DataFrame({symbol: [100.0]}, index=idx),
+        "volume": pd.DataFrame({symbol: [10.0]}, index=idx),
+        "mark_close": pd.DataFrame({symbol: [100.0]}, index=idx),
+        "open_interest": pd.DataFrame({symbol: [1000000.0]}, index=idx),
+    }
+
+    snap = run_inference._pre_score_market_mask_snapshot(
+        panel=panel,
+        symbol=symbol,
+        side="long",
+        strategy_id="long_mr",
+        executor=_PrescoreExecutor(_PrescoreExchange(bid=100.0, ask=100.1)),
+        policy=run_inference.PortfolioPolicyConfig(max_spread_bps=25.0),
+        runtime_config={
+            "mode": "live-test",
+            "market_mode": "perps",
+            "live_prescore_orderbook_enabled": True,
+            "live_prescore_liquidity_probe_quote_notional": 50.0,
+        },
+        now=pd.Timestamp("2026-06-10 09:05:00Z"),
+        signal_bar_ts=idx[-1],
+        raw_close_reference_gap_bps=150.0,
+        max_signal_close_to_entry_seconds=900.0,
+    )
+
+    assert snap["prescore_market_mask_allowed"] is True
+    assert snap["prescore_market_mask_reason"] == ""
+    assert snap["prescore_oi_value"] == pytest.approx(1000000.0)
+    assert snap["prescore_orderbook_capacity_quote_within_slippage"] >= 50.0
+
+
+def test_live_warmup_state_health_requires_panel_span_or_current_cache(tmp_path):
+    idx = pd.date_range("2026-06-10 08:00", periods=6, freq="h", tz="UTC")
+    symbol = "ETH/USD:USD"
+    panel = {"close": pd.DataFrame({symbol: [100.0] * len(idx)}, index=idx)}
+    cfg = {
+        "live_raw_rolling_state_enabled": True,
+        "live_raw_rolling_state_path": str(tmp_path / "raw_rolling_state.npz"),
+        "live_causal_transform_state_enabled": True,
+        "live_causal_transform_state_path": str(tmp_path / "causal_transform_state.npz"),
+        "live_feature_snapshot_cache_dir": str(tmp_path / "feature_cache"),
+    }
+
+    health = run_inference._live_warmup_state_health_snapshot(
+        panel=panel,
+        symbols=[symbol],
+        lookback_hours=6,
+        required_model_warmup_hours=24 * 45,
+        latest_closed_hour=idx[-1],
+        feature_runtime_cfg=cfg,
+        config={"mode": "live-test", "live_min_panel_warmup_hours": 24},
+    )
+
+    assert health["ok"] is False
+    assert health["reason"] == "insufficient_panel_warmup"
+
+
+def test_live_warmup_state_health_accepts_current_panel_and_state(tmp_path):
+    idx = pd.date_range("2026-06-01 00:00", periods=24 * 35, freq="h", tz="UTC")
+    symbol = "ETH/USD:USD"
+    panel = {"close": pd.DataFrame({symbol: [100.0] * len(idx)}, index=idx)}
+    raw_state = tmp_path / "raw_rolling_state.npz"
+    causal_state = tmp_path / "causal_transform_state.npz"
+    raw_state.write_bytes(b"state")
+    causal_state.write_bytes(b"state")
+    cache_dir = tmp_path / "feature_cache" / "abc"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "rolling_meta.json").write_text(
+        json.dumps(
+            {
+                "end_ts": pd.Timestamp(idx[-1]).isoformat(),
+                "rows": 1,
+                "features": ["x"],
+            }
+        )
+    )
+    cfg = {
+        "live_raw_rolling_state_enabled": True,
+        "live_raw_rolling_state_path": str(raw_state),
+        "live_causal_transform_state_enabled": True,
+        "live_causal_transform_state_path": str(causal_state),
+        "live_feature_snapshot_cache_dir": str(tmp_path / "feature_cache"),
+    }
+
+    health = run_inference._live_warmup_state_health_snapshot(
+        panel=panel,
+        symbols=[symbol],
+        lookback_hours=24 * 35,
+        required_model_warmup_hours=24 * 45,
+        latest_closed_hour=idx[-1],
+        feature_runtime_cfg=cfg,
+        config={"mode": "live-test", "live_min_panel_warmup_hours": 24 * 32},
+    )
+
+    assert health["ok"] is True
+    assert health["panel_ok"] is True
+    assert health["raw_rolling_state"]["ok"] is True
+
+
+def test_live_warmup_state_health_accepts_hashed_feature_state_inventory(tmp_path):
+    idx = pd.date_range("2026-06-01 00:00", periods=24 * 35, freq="h", tz="UTC")
+    symbol = "ETH/USD:USD"
+    panel = {"close": pd.DataFrame({symbol: [100.0] * len(idx)}, index=idx)}
+    raw_state_root = tmp_path / "raw_rolling_state.npz"
+    causal_state_root = tmp_path / "causal_transform_state.npz"
+    (tmp_path / "raw_rolling_state.abc123.npz").write_bytes(b"state")
+    (tmp_path / "causal_transform_state.def456.npz").write_bytes(b"state")
+    cfg = {
+        "live_raw_rolling_state_enabled": True,
+        "live_raw_rolling_state_path": str(raw_state_root),
+        "live_causal_transform_state_enabled": True,
+        "live_causal_transform_state_path": str(causal_state_root),
+        "live_feature_snapshot_cache_dir": str(tmp_path / "feature_cache"),
+    }
+
+    health = run_inference._live_warmup_state_health_snapshot(
+        panel=panel,
+        symbols=[symbol],
+        lookback_hours=24 * 35,
+        required_model_warmup_hours=24 * 45,
+        latest_closed_hour=idx[-1],
+        feature_runtime_cfg=cfg,
+        config={"mode": "live-test", "live_min_panel_warmup_hours": 24 * 32},
+    )
+
+    assert health["ok"] is True
+    assert health["raw_rolling_state"]["ok"] is True
+    assert health["raw_rolling_state"]["exact_exists"] is False
+    assert health["raw_rolling_state"]["hashed_count"] == 1
+    assert (
+        health["raw_rolling_state"]["reason"]
+        == "ok_hashed_state_inventory"
+    )
+    assert health["causal_transform_state"]["ok"] is True
+    assert health["causal_transform_state"]["exact_exists"] is False
+    assert health["causal_transform_state"]["hashed_count"] == 1
 
 
 def _simple_policy_params(**overrides):
@@ -60,6 +333,9 @@ def _simple_policy_params(**overrides):
         "trailing_power": 1.5,
         "trailing_squash_divisor": 2.0,
         "giveback_beta": 0.5,
+        "atr_power": 1.0,
+        "atr_multiplier": 1.0,
+        "hard_tp_abs_pct": 0.0,
         "capital_protect_mfe_mult": 1.0,
         "capital_protect_regression_frac": 0.45,
     }
@@ -279,6 +555,95 @@ def test_synthesize_live_safe_repairs_nan_path_efficiency_residual():
     assert np.isfinite(repaired.to_numpy(dtype=np.float32)).all()
 
 
+def test_live_adverse_policy_exit_shadow_uses_executable_close(monkeypatch):
+    params = _simple_policy_params(strategy_id="short_test")
+
+    class _Executor:
+        mode = "live"
+        exchange = object()
+
+        def __init__(self):
+            self.closed = None
+
+        def get_simple_policy_stop_params(self, bucket_key):
+            return params
+
+        def close_position(self, symbol, price, reason):
+            self.closed = {"symbol": symbol, "price": price, "reason": reason}
+            return {"closed_trade": {"symbol": symbol, "exit_price": price}}
+
+    def _decision(**kwargs):
+        return SimplePolicyStopDecision(
+            should_replace=False,
+            stop_price=None,
+            reason="adverse_excursion_exit",
+            reason_detail="adverse_excursion_exit: test",
+            strategy_id=params["strategy_id"],
+            params_source=params["params_source"],
+            params_hash=params["params_hash"],
+            barrier_frac=params.get("barrier_frac") or params["barrier_pct"],
+            sl_mult=params["sl_mult"],
+            should_exit=True,
+            exit_reason="adverse_excursion_exit",
+            mfe=0.0,
+            mae=0.03,
+        )
+
+    monkeypatch.setattr(run_inference, "_shadow_execution_realism_enabled", lambda: True)
+    monkeypatch.setattr(
+        run_inference,
+        "_fetch_live_closeable_price",
+        lambda symbol, side, executor: {
+            "price": 103.0,
+            "source": "ticker_ask",
+            "bid": 102.8,
+            "ask": 103.0,
+            "last": 102.9,
+        },
+    )
+    monkeypatch.setattr(
+        run_inference,
+        "compute_simple_policy_stop_decision",
+        lambda **kwargs: _decision(**kwargs),
+    )
+
+    position_state = {
+        "side": "short",
+        "entry_price": 100.0,
+        "bucket_key": "short_test",
+        "strategy_id": "short_test",
+        "stop_price": 110.0,
+        "stop_reason": "original_stop_loss",
+        "peak_price": 100.0,
+        "mfe": 0.0,
+        "mae": 0.0,
+    }
+    bars = pd.DataFrame(
+        {
+            "open": [99.0],
+            "high": [101.0],
+            "low": [98.5],
+            "close": [99.0],
+        },
+        index=pd.DatetimeIndex(["2026-06-09T21:10:00Z"]),
+    )
+    executor = _Executor()
+
+    result = _evaluate_oco_policy("PNUT/USD:USD", position_state, bars, executor)
+
+    assert result == {"closed_trade": {"symbol": "PNUT/USD:USD", "exit_price": 103.0}}
+    assert executor.closed == {
+        "symbol": "PNUT/USD:USD",
+        "price": 103.0,
+        "reason": "adverse_excursion_exit",
+    }
+    shadow = position_state["simple_policy_shadow"]
+    assert shadow["shadow_exit_price"] == 103.0
+    assert shadow["shadow_policy_bar_exit_price"] == 99.0
+    assert shadow["shadow_exit_price_source"] == "ticker_ask"
+    assert shadow["shadow_exit_reason"] == "adverse_excursion_exit"
+
+
 def test_cross_margin_dust_threshold_defaults_by_mode():
     assert _default_cross_margin_dust_quote_threshold("live-test") == 2.5
     assert _default_cross_margin_dust_quote_threshold("live_test") == 2.5
@@ -450,6 +815,44 @@ def test_policy_optimiser_stop_decision_uses_max_favorable_giveback():
     assert decision.stop_price == pytest.approx(expected)
 
 
+def test_policy_optimiser_stop_decision_applies_exit_pressure_tightening():
+    params = _simple_policy_params(
+        barrier_frac=0.02,
+        sl_mult=1.0,
+        trailing_activation_mult=10.0,
+        hard_tp_abs_pct=0.0,
+        capital_protect_mfe_mult=0.0,
+        exit_pressure_enabled=True,
+        exit_pressure_alpha=1.0,
+        exit_pressure_beta=1.0,
+        exit_pressure_delta=1.0,
+        exit_pressure_kappa=1.0,
+        exit_pressure_min_multiplier=0.25,
+        target_holding_hours=0.25,
+    )
+    decision = compute_simple_policy_stop_decision(
+        side="long",
+        state={
+            "side": "long",
+            "entry_price": 100.0,
+            "peak_price": 100.0,
+            "mfe": 0.0,
+            "mae": 0.0,
+            "bars_in_trade": 4,
+            "stop_price": 98.0,
+            "strategy_id": "long_mr",
+            "barrier_frac": 0.02,
+        },
+        latest_market_state={},
+        policy_params=params,
+    )
+
+    assert decision.reason == "exit_pressure_stop_tightening"
+    assert decision.stop_price > 98.0
+    assert decision.exit_pressure > 0.0
+    assert decision.tightening_multiplier < 1.0
+
+
 def test_select_candidates_rejects_legacy_threshold_overrides():
     idx = pd.date_range("2026-03-01", periods=2, freq="1h", tz="UTC")
     close = pd.DataFrame({"A": [100, 101], "B": [100, 99]}, index=idx)
@@ -514,6 +917,76 @@ def test_lgbm_strategy_masks_align_latest_symbol_vectors_with_panel_features():
     masks = build_strategy_candidate_masks(panel, feats, strategies)
 
     assert masks["long_test"] == ["A"]
+
+
+def test_live_candidate_selection_preserves_authoritative_pre_model_lgbm_masks(
+    monkeypatch, tmp_path
+):
+    idx = pd.date_range("2026-03-01", periods=2, freq="1h", tz="UTC")
+    symbols = ["A", "B"]
+    close = pd.DataFrame(
+        {"A": [100.0, 101.0], "B": [100.0, 99.0]},
+        index=idx,
+    )
+    panel = {
+        "close": close,
+        "high": close * 1.01,
+        "low": close * 0.99,
+        "open": close,
+        "volume": pd.DataFrame(100.0, index=idx, columns=symbols),
+    }
+    mask_rows = {
+        "long_test": {
+            "strategy_id": "long_test",
+            "trade_side": "long",
+            "base_event_trigger": "(*)|(mask_signal>0.5)|(*)",
+            "mask_params": {"canonical_key": "(*)|(mask_signal>0.5)|(*)"},
+        }
+    }
+
+    def fake_load_or_compute_features(*, cfg, **kwargs):
+        namespace = str((cfg or {}).get("live_feature_cache_namespace") or "")
+        if namespace == "mask":
+            return {
+                "mask_signal": pd.DataFrame(
+                    {"A": [1.0], "B": [0.0]},
+                    index=pd.DatetimeIndex([idx[-1]]),
+                )
+            }
+        if namespace == "model":
+            return {
+                "mask_signal": pd.DataFrame(
+                    {"A": [np.nan], "B": [np.nan]},
+                    index=pd.DatetimeIndex([idx[-1]]),
+                )
+            }
+        return {}
+
+    monkeypatch.setattr(
+        run_inference,
+        "load_or_compute_features",
+        fake_load_or_compute_features,
+    )
+
+    _, long_cands, short_cands, _, strategy_masks = (
+        run_inference._select_candidates_and_load_features(
+            panel=panel,
+            symbols=symbols,
+            run_id="test-run",
+            data_root=str(tmp_path),
+            cfg={"live_feature_cycle_cache_enabled": False},
+            lookback_hours=2,
+            required_feature_keys=set(),
+            lgbm_strategy_mask_rows=mask_rows,
+            feature_context_symbols=symbols,
+            strategy_feature_contracts=None,
+            model_features_required=True,
+        )
+    )
+
+    assert long_cands == ["A"]
+    assert short_cands == []
+    assert strategy_masks["long_test"] == ["A"]
 
 
 def test_select_candidates_falls_back_when_optimized_masks_are_silent():
@@ -983,10 +1456,83 @@ def test_kraken_futures_stop_orders_trigger_on_executable_side_price():
     buy_stop, sell_stop = exchange.created_orders
     assert buy_stop["type"] == "market"
     assert buy_stop["params"]["reduceOnly"] is True
-    assert buy_stop["params"]["triggerSignal"] == "ask"
+    assert buy_stop["params"]["triggerSignal"] == "last"
     assert buy_stop["params"]["stopLossPrice"] == pytest.approx(0.0804)
-    assert sell_stop["params"]["triggerSignal"] == "bid"
+    assert sell_stop["params"]["triggerSignal"] == "last"
     assert sell_stop["params"]["stopLossPrice"] == pytest.approx(0.0794)
+
+
+def test_kraken_futures_native_sendorder_uses_last_trigger():
+    class _NativeKrakenFuturesExchange:
+        id = "krakenfutures"
+
+        def __init__(self):
+            self.markets = {"XPL/USD:USD": {"id": "PF_XPLUSD", "active": True}}
+            self.native_orders = []
+
+        def load_markets(self):
+            return self.markets
+
+        def market(self, symbol):
+            return self.markets[symbol]
+
+        def amount_to_precision(self, symbol, amount):
+            return f"{float(amount):.1f}"
+
+        def price_to_precision(self, symbol, price):
+            return f"{float(price):.4f}"
+
+        def privatePostSendorder(self, payload):
+            self.native_orders.append(dict(payload))
+            return {"sendStatus": {"order_id": "native-stop-1"}, "result": "success"}
+
+        def create_order(self, **kwargs):
+            raise AssertionError("native Kraken Futures stop path should be used")
+
+    exchange = _NativeKrakenFuturesExchange()
+
+    order = _create_reduce_stop_loss_order(
+        exchange,
+        symbol="XPL/USD:USD",
+        side="buy",
+        amount=79.0,
+        stop_price=0.0804,
+        config={"execution_account": "perps"},
+    )
+
+    assert order["id"] == "native-stop-1"
+    assert order["triggerSignal"] == "last"
+    assert exchange.native_orders == [
+        {
+            "symbol": "PF_XPLUSD",
+            "side": "buy",
+            "size": "79.0",
+            "orderType": "stp",
+            "stopPrice": "0.0804",
+            "reduceOnly": True,
+            "triggerSignal": "last",
+        }
+    ]
+
+
+def test_kraken_futures_last_stop_adjusts_from_executable_side_spread():
+    short_stop, short_meta = _kraken_futures_last_stop_from_executable_stop(
+        {"bid": 0.0418, "ask": 0.0420, "last": 0.0419},
+        {},
+        position_side="short",
+        policy_stop_price=0.04267,
+    )
+    long_stop, long_meta = _kraken_futures_last_stop_from_executable_stop(
+        {"bid": 0.0998, "ask": 0.1002, "last": 0.1000},
+        {},
+        position_side="long",
+        policy_stop_price=0.0975,
+    )
+
+    assert short_stop == pytest.approx(0.04257)
+    assert short_meta["gap_source"] == "ask_minus_last"
+    assert long_stop == pytest.approx(0.0977)
+    assert long_meta["gap_source"] == "last_minus_bid"
 
 
 def test_kraken_futures_stop_trigger_reference_uses_executable_side_not_last():
@@ -1028,6 +1574,84 @@ def test_kraken_futures_stop_trigger_reference_uses_executable_side_not_last():
     assert source == "ask"
 
 
+def test_live_policy_closes_when_executable_side_breaches_stop(monkeypatch):
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
+        lambda *args, **kwargs: pd.DataFrame(),
+    )
+
+    class _ExecutableBreachExchange(_FilterAwareExchange):
+        id = "krakenfutures"
+
+        def __init__(self):
+            super().__init__()
+            self.markets["PNUT/USD:USD"] = {
+                "id": "PF_PNUTUSD",
+                "active": True,
+                "limits": {
+                    "amount": {"min": 1.0, "max": 1_000_000.0},
+                    "cost": {"min": 1.0, "max": 1_000_000.0},
+                },
+                "contract": True,
+                "swap": True,
+                "quote": "USD",
+                "settle": "USD",
+                "info": {"status": "TRADING"},
+            }
+
+        def fetch_ticker(self, symbol):
+            return {"last": 99.0, "bid": 98.8, "ask": 100.2}
+
+    exchange = _ExecutableBreachExchange()
+    executor = TradeExecutor(
+        mode="live-test",
+        exchange=exchange,
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "short_mr": _simple_policy_params(strategy_id="short_mr")
+            }
+        },
+        config={
+            "execution_account": "perps",
+            "market_mode": "perps",
+            "live_quote_currency": "USD",
+            "monitor_interval_seconds": 300,
+        },
+    )
+    executor.positions["PNUT/USD:USD"] = {
+        "side": "short",
+        "entry_price": 99.0,
+        "realized_entry_price": 99.0,
+        "size": 100.0,
+        "bucket_key": "short_mr",
+        "strategy_id": "short_mr",
+        "stop_price": 100.0,
+        "stop_reason": "original_stop_loss",
+        "stop_order_id": "stop-1",
+        "entry_time": pd.Timestamp("2026-03-01 00:00", tz="UTC"),
+        "peak_price": 99.0,
+        "mfe": 0.0,
+        "mae": 0.0,
+    }
+    bars = pd.DataFrame(
+        {
+            "open": [99.0],
+            "high": [99.5],
+            "low": [98.5],
+            "close": [99.0],
+        },
+        index=pd.date_range("2026-03-01 00:05", periods=1, freq="5min", tz="UTC"),
+    )
+
+    result = _evaluate_oco_policy(
+        "PNUT/USD:USD", executor.positions["PNUT/USD:USD"], bars, executor
+    )
+
+    assert result["success"] is True
+    assert result["reason"].startswith("software_executable_stop_breach")
+    assert "PNUT/USD:USD" not in executor.get_active_positions()
+
+
 def test_kraken_futures_existing_mark_stop_does_not_match_policy():
     class _KrakenFuturesExchange:
         id = "krakenfutures"
@@ -1048,19 +1672,19 @@ def test_kraken_futures_existing_mark_stop_does_not_match_policy():
         _protective_stop_trigger_matches_policy(
             _KrakenFuturesExchange(), last_stop, cfg, position_side="long"
         )
-        is False
+        is True
     )
     assert (
         _protective_stop_trigger_matches_policy(
             _KrakenFuturesExchange(), bid_stop, cfg, position_side="long"
         )
-        is True
+        is False
     )
     assert (
         _protective_stop_trigger_matches_policy(
             _KrakenFuturesExchange(), ask_stop, cfg, position_side="short"
         )
-        is True
+        is False
     )
 
 
@@ -1359,6 +1983,42 @@ def test_stop_loss_cancel_replace_uses_existing_base_amount(monkeypatch):
     assert exchange.oco_calls == 0
 
 
+def test_stop_loss_replace_rejects_looser_short_stop_at_boundary(monkeypatch):
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
+        lambda *args, **kwargs: pd.DataFrame(),
+    )
+    exchange = _FilterAwareExchange()
+    params = _simple_policy_params(strategy_id="short_mr")
+    executor = TradeExecutor(
+        mode="live",
+        exchange=exchange,
+        bucket_params={"simple_policy_stop_params_by_strategy": {"short_mr": params}},
+        config={"monitor_interval_seconds": 300},
+    )
+    try:
+        result = executor.execute_trade(
+            "BTC/USDT", "short", 100.0, price=100.0, bucket_key="short_mr"
+        )
+        assert result["success"]
+        state = executor.oco_executor.active_positions["BTC/USDT"]
+        state["stop_price"] = 103.0
+        state["stop_order_id"] = "order-2"
+        state["stop_order_ids"] = ["order-2"]
+        decision = _policy_decision(params, stop_price=105.0)
+
+        executor.oco_executor._replace_stop_order_from_decision(
+            "BTC/USDT", state, decision
+        )
+    finally:
+        executor.shutdown()
+
+    assert state["stop_price"] == pytest.approx(103.0)
+    assert state["stop_order_id"] == "order-2"
+    assert state["stop_update_error_category"] == "policy_stop_not_improved"
+    assert exchange.canceled == []
+
+
 def test_stop_loss_cancel_replace_does_not_duplicate_on_cancel_failure(monkeypatch):
     monkeypatch.setattr(
         "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
@@ -1649,6 +2309,12 @@ def test_perps_reconciliation_imports_existing_position_and_stop(monkeypatch):
                 }
             ]
 
+        def price_to_precision(self, symbol, price):
+            return f"{float(price):.5f}"
+
+        def fetch_ticker(self, symbol):
+            return {"bid": 0.03270, "ask": 0.03285, "last": 0.03280}
+
         def fetch_open_orders(self, symbol, since=None, limit=None, params=None):
             return [
                 {
@@ -1659,7 +2325,11 @@ def test_perps_reconciliation_imports_existing_position_and_stop(monkeypatch):
                     "amount": 100.0,
                     "status": "open",
                     "reduceOnly": True,
-                    "info": {"order_id": "stop-1", "stopPrice": "0.03285"},
+                    "info": {
+                        "order_id": "stop-1",
+                        "stopPrice": "0.03280",
+                        "triggerSignal": "last",
+                    },
                 },
                 {
                     "id": "stop-2",
@@ -1669,7 +2339,11 @@ def test_perps_reconciliation_imports_existing_position_and_stop(monkeypatch):
                     "amount": 101.0,
                     "status": "open",
                     "reduceOnly": True,
-                    "info": {"order_id": "stop-2", "stopPrice": "0.03285"},
+                    "info": {
+                        "order_id": "stop-2",
+                        "stopPrice": "0.03280",
+                        "triggerSignal": "last",
+                    },
                 }
             ]
 
@@ -1716,9 +2390,118 @@ def test_perps_reconciliation_imports_existing_position_and_stop(monkeypatch):
     assert active["NIGHT/USD:USD"]["stop_order_ids"] == ["stop-1", "stop-2"]
     assert active["NIGHT/USD:USD"]["stop_order_coverage"] == pytest.approx(201.0)
     assert active["NIGHT/USD:USD"]["stop_price"] == pytest.approx(0.03285)
+    assert active["NIGHT/USD:USD"]["policy_stop_price"] == pytest.approx(0.03285)
+    assert active["NIGHT/USD:USD"]["exchange_stop_price"] == pytest.approx(0.03280)
+    assert active["NIGHT/USD:USD"]["final_placed_stop"] == pytest.approx(0.03280)
     assert active["NIGHT/USD:USD"]["external_position"] is True
     assert statuses["NIGHT/USD:USD"]["status"] == "open"
     assert statuses["NIGHT/USD:USD"]["stop_order_coverage"] == pytest.approx(201.0)
+
+
+def test_perps_reconciliation_preserves_tighter_recovered_stop(monkeypatch):
+    assert _stop_is_at_least_as_protective("short", 0.125, 0.131)
+    assert not _stop_is_at_least_as_protective("short", 0.132, 0.131)
+    assert _stop_is_at_least_as_protective("long", 105.0, 100.0)
+    assert not _stop_is_at_least_as_protective("long", 95.0, 100.0)
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
+        lambda *args, **kwargs: pd.DataFrame(),
+    )
+
+    class _TighterRecoveredStopExchange(_FilterAwareExchange):
+        id = "krakenfutures"
+
+        def __init__(self):
+            super().__init__()
+            self.markets = {
+                "SYRUP/USD:USD": {
+                    "active": True,
+                    "limits": {
+                        "amount": {"min": 1.0, "max": 1_000_000.0},
+                        "cost": {"min": 1.0, "max": 1_000_000.0},
+                    },
+                    "contract": True,
+                    "swap": True,
+                    "quote": "USD",
+                    "settle": "USD",
+                    "info": {"status": "TRADING"},
+                }
+            }
+
+        def fetch_positions(self, symbols=None, params=None):
+            return [
+                {
+                    "symbol": "SYRUP/USD:USD",
+                    "contracts": 100.0,
+                    "side": "short",
+                    "entryPrice": 0.12865,
+                    "contractSize": 1.0,
+                }
+            ]
+
+        def fetch_open_orders(self, symbol, since=None, limit=None, params=None):
+            return [
+                {
+                    "id": "tight-stop",
+                    "symbol": symbol,
+                    "type": "stop",
+                    "side": "buy",
+                    "amount": 100.0,
+                    "status": "open",
+                    "reduceOnly": True,
+                    "info": {
+                        "order_id": "tight-stop",
+                        "stopPrice": "0.12524",
+                        "triggerSignal": "last",
+                    },
+                }
+            ]
+
+    params = _simple_policy_params(strategy_id="short_mr")
+    exchange = _TighterRecoveredStopExchange()
+    executor = TradeExecutor(
+        mode="live-test",
+        exchange=exchange,
+        bucket_params={"simple_policy_stop_params_by_strategy": {"short_mr": params}},
+        config={
+            "execution_account": "perps",
+            "market_mode": "perps",
+            "live_quote_currency": "USD",
+            "monitor_interval_seconds": 300,
+        },
+    )
+    executor._load_pending_entry_context = lambda symbol: {
+        "symbol": symbol,
+        "status": "pending",
+        "action": "enter",
+        "strategy_id": "short_mr",
+        "actual_entry_price": 0.12865,
+        "stop_price": 0.1312,
+        "barrier_frac": 0.02,
+        "barrier_pct": 0.02,
+        "sl_mult": 1.0,
+        "stop_policy_params_source": params["params_source"],
+        "stop_policy_params_hash": params["params_hash"],
+        "stop_policy_schema": SIMPLE_POLICY_SCHEMA,
+        "timestamp": "2026-06-09T16:25:00Z",
+    }
+    try:
+        report = executor.reconcile_cross_margin_account()
+        active = executor.get_active_positions()
+    finally:
+        executor.shutdown()
+
+    assert report["summary"]["skipped"] is False
+    assert report["summary"]["active_positions_after_reconcile"] == 1
+    assert exchange.canceled == []
+    state = active["SYRUP/USD:USD"]
+    assert state["stop_order_id"] == "tight-stop"
+    assert state["stop_order_ids"] == ["tight-stop"]
+    assert state["stop_order_coverage"] == pytest.approx(100.0)
+    assert state["stop_price"] == pytest.approx(0.1312)
+    assert state["policy_stop_price"] == pytest.approx(0.1312)
+    assert state["exchange_stop_price"] == pytest.approx(0.12524)
+    assert state["final_placed_stop"] == pytest.approx(0.12524)
 
 
 def test_perps_reconciliation_imports_orphan_position_with_artifact_stop(monkeypatch):
@@ -2207,6 +2990,99 @@ def test_strict_immediate_trigger_preflight_repairs_candidate_before_replace(mon
         )
     finally:
         executor.shutdown()
+
+
+def test_live_policy_update_returns_internal_close_metrics(monkeypatch):
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
+        lambda *args, **kwargs: pd.DataFrame(),
+    )
+    exchange = _FilterAwareExchange()
+    params = _simple_policy_params()
+    executor = TradeExecutor(
+        mode="live",
+        exchange=exchange,
+        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": params}},
+        config={"monitor_interval_seconds": 300},
+    )
+
+    def _fake_policy_update_close(oco_executor, symbol, state, decision):
+        state["last_close_metrics"] = {
+            "symbol": symbol,
+            "side": state.get("side"),
+            "entry_price": state.get("entry_price"),
+            "exit_price": 101.0,
+            "filled": state.get("size"),
+            "reason": "software_policy_stop_close",
+        }
+        oco_executor.active_positions.pop(symbol, None)
+
+    monkeypatch.setattr(
+        OCOExecutor,
+        "_update_stop_loss_from_policy_decision",
+        _fake_policy_update_close,
+    )
+
+    try:
+        result = executor.execute_trade(
+            "BTC/USDT", "long", 100.0, price=100.0, bucket_key="long_mr"
+        )
+        assert result["success"]
+        decision = _policy_decision(params, stop_price=101.0)
+
+        update_result = executor.update_position_policy_state(
+            "BTC/USDT", policy_stop_decision=decision
+        )
+
+        assert update_result["closed_trade"]["symbol"] == "BTC/USDT"
+        assert update_result["closed_trade"]["reason"] == "software_policy_stop_close"
+        assert executor.get_position("BTC/USDT") is None
+    finally:
+        executor.shutdown()
+
+
+def test_stop_fill_close_metrics_marks_open_shadow_exit():
+    state = {
+        "side": "short",
+        "entry_price": 0.3095,
+        "size": 18.5,
+        "bucket_key": "short_mr",
+        "stop_price": 0.316,
+        "final_placed_stop": 0.316,
+        "requested_policy_stop": 0.316,
+        "stop_reason": "original_stop_loss",
+        "mfe": 0.0,
+        "mae": 0.011,
+        "simple_policy_shadow": {
+            "schema": "simple_policy_execution_shadow_v1",
+            "status": "open",
+            "shadow_stop_price": 0.316,
+            "shadow_stop_reason": "original_stop_loss",
+            "initial_shadow_stop_price": 0.316,
+            "policy_entry_price": 0.3095,
+            "realized_entry_price": 0.3095,
+            "entry_gap_bps": 0.0,
+            "events": [],
+        },
+    }
+    order = {
+        "id": "stop-order",
+        "average": 0.3208,
+        "filled": 18.5,
+        "status": "closed",
+        "type": "market",
+    }
+
+    metrics = _closed_trade_metrics(
+        "IP/USD:USD", state, order, reason="stop_loss_filled"
+    )
+
+    assert metrics["shadow_status"] == "shadow_exit_triggered"
+    assert metrics["shadow_exit_price"] == pytest.approx(0.316)
+    assert metrics["shadow_exit_reason"] == "shadow_stop_loss_filled:original_stop_loss"
+    assert metrics["simple_policy_shadow"]["events"][-1]["event"] == (
+        "shadow_exchange_stop_filled"
+    )
 
 
 def test_live_entry_uses_context_barrier_when_artifact_has_none(monkeypatch):

@@ -241,6 +241,22 @@ def test_vwap_and_oi_rel_vol_require_perp_volume_source():
     assert "oi_rel_vol_2h" in groups["open_interest"]
 
 
+def test_current_zero_volume_is_valid_perp_volume_source():
+    idx = pd.date_range("2026-01-01", periods=4, freq="1h", tz="UTC")
+    panel = {
+        "close": pd.DataFrame({"BTC/USD:USD": [100.0, 101.0, 102.0, 103.0]}, index=idx),
+        "volume": pd.DataFrame({"BTC/USD:USD": [10.0, 7.0, 0.0, 0.0]}, index=idx),
+    }
+    report = validate_required_source_panels(
+        panel,
+        ["BTC/USD:USD"],
+        idx.max(),
+        {"dist_vwap_norm"},
+        cfg={**_cfg(), "market_mode": "perps", "feature_source_max_staleness_hours": {"perp_volume": 1.0}},
+    )
+    assert report["accepted_symbols"] == ["BTC/USD:USD"]
+
+
 def test_nonfinite_transformed_value_refuses_inference():
     contract = _contract()
     idx = pd.date_range("2026-01-01", periods=4, freq="1h", tz="UTC")

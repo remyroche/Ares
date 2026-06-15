@@ -6,6 +6,7 @@ import os
 import pickle
 import re
 import time
+from pathlib import Path
 from typing import Sequence
 
 import joblib
@@ -37,6 +38,7 @@ from extreme_price_movements.data_store import (
     save_features,
     scoped_data_root,
     use_exchange_scoped_data,
+    write_live_latest_feature_matrix,
     to_panel,
 )
 from extreme_price_movements.path_utils import resolve_mode_file
@@ -1432,7 +1434,7 @@ def _feature_missing_columns_recent_tail_enabled() -> bool:
     """Return whether missing feature columns should use bounded-tail backfill."""
     raw = os.environ.get("EPM_FEATURE_MISSING_COLUMNS_RECENT_TAIL")
     if raw is None:
-        return _feature_backfill_all_incomplete_keys_enabled()
+        return True
     return raw.lower() in {"1", "true", "yes", "on"}
 
 
@@ -2966,7 +2968,12 @@ def _feature_time_coverage_backfill_keys(
     missing_keys: list[str],
 ) -> list[str]:
     """Keys to append when feature files are missing the target timestamp."""
-    return sorted(set(expected_keys) - set(missing_keys))
+    keys = sorted(set(expected_keys) - set(missing_keys))
+    if keys:
+        return keys
+    # If every expected key is absent from the cache scan, treating this as an
+    # empty backfill makes a missing/incomplete feature store look fully cached.
+    return sorted(set(expected_keys))
 
 
 def _chunked_partial_backfill_is_fully_covered(symbols_to_compute: Sequence[str]) -> bool:
@@ -3549,7 +3556,11 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
                 f"inference_candidate_mask_best_params_per_bucket.csv"
             )
 
-    run_id = pd.Timestamp(ts_sig).strftime("%Y%m%d_%H%M%S")
+    run_id = str(
+        cfg.get("_label_artifact_run_id")
+        or cfg.get("output_run_id")
+        or pd.Timestamp(ts_sig).strftime("%Y%m%d_%H%M%S")
+    ).strip()
     tprint("STEP: LABEL GENERATION START")
     _labels_dir = os.path.join(cfg["data_root"], "artifacts", run_id, "labels")
     os.makedirs(_labels_dir, exist_ok=True)
@@ -3601,21 +3612,32 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
             )
             margin_symbols = list(cfg.get("market_basket", []))
     if _labels_use_store_universe:
-        from extreme_price_movements.optimization_utils import (
-            filter_low_variance_assets,
-        )
-
         syms_all = apply_hardcoded_universe_exclusions(list(set(margin_symbols)))
         tprint(
             f"Labels offline universe build: using local store symbols ({len(syms_all)} symbols)"
         )
-        train_syms = filter_low_variance_assets(
-            store,
-            syms_all,
-            lookback_days=30,
-            threshold_pct=cfg["variance_filter_pct"],
-            ts_sig=ts_sig,
-        )
+        _label_variance_env = str(os.environ.get("EPM_LABEL_VARIANCE_FILTER", "")).strip().lower()
+        _label_variance_filter_enabled = _label_variance_env in {"1", "true", "yes", "y", "on"}
+        if not _label_variance_env:
+            _label_variance_filter_enabled = bool(cfg.get("label_variance_filter_enabled", False))
+        if _label_variance_filter_enabled:
+            from extreme_price_movements.optimization_utils import (
+                filter_low_variance_assets,
+            )
+
+            train_syms = filter_low_variance_assets(
+                store,
+                syms_all,
+                lookback_days=30,
+                threshold_pct=cfg["variance_filter_pct"],
+                ts_sig=ts_sig,
+            )
+        else:
+            train_syms = syms_all
+            tprint(
+                "Labels offline universe build: variance filter disabled; "
+                f"using all {len(train_syms)} local-store symbols before base-asset dedup"
+            )
         train_syms = apply_hardcoded_universe_exclusions(list(set(train_syms)))
     else:
         train_syms = get_training_universe(margin_symbols, cfg, store, ts_sig=ts_sig)
@@ -4285,6 +4307,141 @@ def _consolidate_layer_oof_from_disk(
     return len(merged)
 
 
+def _truthy_cfg_or_env(cfg: dict, env_name: str, cfg_key: str, default: bool = False) -> bool:
+    raw = os.getenv(env_name)
+    if raw is None:
+        raw = cfg.get(cfg_key, default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _row_universe_key_frame(df: pd.DataFrame) -> pd.DataFrame | None:
+    ts_col = "__ts__" if "__ts__" in df.columns else "timestamp" if "timestamp" in df.columns else None
+    sym_col = "__symbol__" if "__symbol__" in df.columns else "symbol" if "symbol" in df.columns else None
+    if ts_col is None or sym_col is None:
+        return None
+    ts = pd.to_datetime(df[ts_col], utc=True, errors="coerce")
+    sym = df[sym_col].astype(str)
+    return pd.DataFrame(
+        {
+            "_row_ts_ns": pd.Series(ts).astype("int64").to_numpy(dtype=np.int64),
+            "_row_symbol": sym.to_numpy(dtype=object),
+            "_row_valid": ts.notna().to_numpy(dtype=bool),
+        }
+    )
+
+
+def _load_row_universe_path(path: str | os.PathLike[str]) -> pd.DataFrame:
+    p = Path(path).expanduser()
+    if not p.exists():
+        raise FileNotFoundError(f"Training row universe path does not exist: {p}")
+    if p.suffix.lower() in {".csv", ".txt"}:
+        raw = pd.read_csv(p)
+    else:
+        raw = pd.read_parquet(p)
+    keys = _row_universe_key_frame(raw)
+    if keys is None or keys.empty:
+        raise ValueError(
+            f"Training row universe {p} must contain timestamp/symbol or __ts__/__symbol__ columns"
+        )
+    return keys.loc[keys["_row_valid"]].drop_duplicates(
+        subset=["_row_ts_ns", "_row_symbol"],
+        ignore_index=True,
+    )
+
+
+def _row_universe_filter_datasets(datasets: dict[str, pd.DataFrame], cfg: dict) -> dict[str, pd.DataFrame]:
+    path = str(
+        os.getenv(
+            "EPM_TRAIN_ROW_UNIVERSE_PATH",
+            cfg.get("train_row_universe_path", ""),
+        )
+        or ""
+    ).strip()
+    if not path:
+        source_run_id = str(
+            os.getenv(
+                "EPM_TRAIN_ROW_UNIVERSE_SOURCE_RUN_ID",
+                cfg.get("train_row_universe_source_run_id", ""),
+            )
+            or ""
+        ).strip()
+        if source_run_id:
+            path = os.path.join(
+                str(cfg.get("data_root", "data")),
+                "artifacts",
+                source_run_id,
+                "oof",
+                "base_oof_all.parquet",
+            )
+    if not path:
+        return datasets
+    strict = _truthy_cfg_or_env(cfg, "EPM_TRAIN_ROW_UNIVERSE_STRICT", "train_row_universe_strict", False)
+    universe = _load_row_universe_path(path)
+    universe_keys = set(zip(universe["_row_ts_ns"].to_numpy(dtype=np.int64), universe["_row_symbol"].astype(str)))
+    out: dict[str, pd.DataFrame] = {}
+    for name, df in datasets.items():
+        keys = _row_universe_key_frame(df)
+        if keys is None:
+            if strict:
+                raise ValueError(f"Dataset {name} cannot be row-universe filtered: missing timestamp/symbol")
+            out[name] = df
+            continue
+        valid = keys["_row_valid"].to_numpy(dtype=bool)
+        current_keys = list(zip(keys["_row_ts_ns"].to_numpy(dtype=np.int64), keys["_row_symbol"].astype(str)))
+        keep = np.fromiter((key in universe_keys for key in current_keys), dtype=bool, count=len(current_keys))
+        keep &= valid
+        before = int(len(df))
+        kept = int(np.sum(keep))
+        if strict:
+            current_key_set = set(current_keys)
+            missing = len(universe_keys - current_key_set)
+            extra = before - kept
+            if missing or extra:
+                raise ValueError(
+                    f"Dataset {name} is not row-identical to universe {path}: "
+                    f"missing_universe_rows={missing}, extra_rows={extra}, before={before}, kept={kept}"
+                )
+        if kept:
+            out[name] = df.loc[keep].reset_index(drop=True)
+        tprint(
+            f"Training row universe filter [{name}]: {before:,}->{kept:,} rows "
+            f"(strict={strict}, source={path})"
+        )
+    if not out:
+        raise ValueError(f"Training row universe filter removed all datasets using {path}")
+    return out
+
+
+def _export_train_row_universe(datasets: dict[str, pd.DataFrame], cfg: dict, run_id: str) -> None:
+    if not _truthy_cfg_or_env(cfg, "EPM_TRAIN_ROW_UNIVERSE_EXPORT", "train_row_universe_export", True):
+        return
+    rows = []
+    out_dir = Path(str(cfg.get("data_root", "data"))) / "artifacts" / str(run_id) / "row_universe"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for name, df in datasets.items():
+        keys = _row_universe_key_frame(df)
+        if keys is None or keys.empty:
+            continue
+        ts_col = "__ts__" if "__ts__" in df.columns else "timestamp"
+        sym_col = "__symbol__" if "__symbol__" in df.columns else "symbol"
+        one = pd.DataFrame(
+            {
+                "dataset": str(name),
+                "timestamp": pd.to_datetime(df[ts_col], utc=True, errors="coerce"),
+                "symbol": df[sym_col].astype(str).to_numpy(dtype=object),
+            }
+        ).dropna(subset=["timestamp", "symbol"])
+        one.to_parquet(out_dir / f"{re.sub(r'[^A-Za-z0-9_.-]+', '_', str(name))}.parquet", index=False)
+        rows.append(one)
+    if rows:
+        all_rows = pd.concat(rows, axis=0, ignore_index=True)
+        all_rows.to_parquet(out_dir / "train_row_universe_all.parquet", index=False)
+        tprint(
+            f"Training row universe exported: {out_dir / 'train_row_universe_all.parquet'} "
+            f"rows={len(all_rows)} datasets={len(rows)}"
+        )
+
+
 def run_training_step(
     ts_sig, cfg, store=None, margin_symbols=None, base_only=False, meta_only=False
 ):
@@ -4560,6 +4717,13 @@ def run_training_step(
             f"oos_eval_time_filter=[{_t_start}, {_t_end}): {len(datasets)} datasets retained"
         )
 
+    datasets = _row_universe_filter_datasets(datasets, cfg)
+    datasets = {
+        name: _cap_training_dataset_rows(df, name=name, cfg=cfg)
+        for name, df in datasets.items()
+    }
+    _export_train_row_universe(datasets, cfg, run_id)
+
     tprint(f"Loaded {len(datasets)} datasets total.")
 
     from extreme_price_movements.training import train_models_from_artifacts
@@ -4574,6 +4738,37 @@ def run_training_step(
             f"Base-only mode: Loading {len(req_keys)} req features (excluded {len(meta_keys - base_keys)} meta-only keys)"
         )
         req_keys = _base_training_feature_requirements_from_hpo(cfg, datasets, req_keys)
+    if not meta_only:
+        req_keys = _base_training_feature_requirements_from_native_presets(
+            cfg, datasets, req_keys
+        )
+
+    try:
+        from extreme_price_movements.rule_mask_features import (
+            rule_mask_feature_source_keys,
+            rule_mask_features_enabled,
+        )
+
+        if rule_mask_features_enabled(cfg):
+            _rule_source_keys = set(rule_mask_feature_source_keys(cfg))
+            if _rule_source_keys:
+                if isinstance(req_keys, dict):
+                    req_keys = {
+                        str(name): sorted(set(vals or []) | _rule_source_keys)
+                        for name, vals in req_keys.items()
+                    }
+                else:
+                    req_keys = sorted(set(req_keys or []) | _rule_source_keys)
+                tprint(
+                    "Rule-mask feature injection: requested "
+                    f"{len(_rule_source_keys)} source columns from diversified "
+                    "LGBM rules."
+                )
+    except Exception as _rule_req_exc:
+        tprint(
+            "WARNING: rule-mask feature source request skipped: "
+            f"{_rule_req_exc}"
+        )
 
     cfg["_feature_snapshot_ts"] = feature_ts_sig
     datasets = inject_features_into_datasets(datasets, feature_ts_sig, cfg, req_keys)
@@ -4682,6 +4877,54 @@ def run_training_step(
         "k_trail_dist": cfg.get("risk_k_trail_dist", 0.5),
         "granular_risk": _granular,
     }
+
+    if trained_bundle and (
+        bool(cfg.get("merge_existing_base_models", False))
+        or str(os.environ.get("EPM_MERGE_EXISTING_TRAINED_STATE", "")).strip().lower()
+        in {"1", "true", "yes", "on"}
+    ):
+        _existing_state_path = os.path.join(
+            cfg["data_root"], "artifacts", run_id, "models", "trained_state.pkl"
+        )
+        if os.path.exists(_existing_state_path):
+            try:
+                with open(_existing_state_path, "rb") as _f_existing_state:
+                    _existing_state = pickle.load(_f_existing_state)
+                _existing_bundle = (
+                    _existing_state.get("bundle", {})
+                    if isinstance(_existing_state, dict)
+                    else {}
+                )
+                if isinstance(_existing_bundle, dict):
+                    _merged_bundle = dict(_existing_bundle)
+                    for _key, _value in dict(trained_bundle).items():
+                        if isinstance(_value, dict) and isinstance(
+                            _merged_bundle.get(_key), dict
+                        ):
+                            if _key == "alpha_models":
+                                _alpha = dict(_merged_bundle.get(_key) or {})
+                                for _side, _side_models in (_value or {}).items():
+                                    _merged_side = dict(_alpha.get(_side) or {})
+                                    if isinstance(_side_models, dict):
+                                        _merged_side.update(_side_models)
+                                    _alpha[_side] = _merged_side
+                                _merged_bundle[_key] = _alpha
+                            else:
+                                _merged = dict(_merged_bundle.get(_key) or {})
+                                _merged.update(_value)
+                                _merged_bundle[_key] = _merged
+                        elif _value:
+                            _merged_bundle[_key] = _value
+                    trained_bundle = _merged_bundle
+                    tprint(
+                        "Trained state merge enabled: preserved existing bundle "
+                        f"entries from {_existing_state_path}"
+                    )
+            except Exception as _merge_exc:
+                tprint(
+                    "WARNING: failed to merge existing trained_state.pkl; "
+                    f"continuing with current training bundle only: {_merge_exc}"
+                )
 
     state = {
         "ts_trained": ts_sig,
@@ -5441,6 +5684,24 @@ def run_base_hpo_step(ts_sig, cfg):
                 "gamma_score",
             }
         )
+        try:
+            from extreme_price_movements.rule_mask_features import (
+                rule_mask_feature_source_keys,
+                rule_mask_features_enabled,
+            )
+
+            if rule_mask_features_enabled(cfg):
+                _rule_source_keys = set(rule_mask_feature_source_keys(cfg))
+                if _rule_source_keys:
+                    base_req_keys.update(_rule_source_keys)
+                    tprint(
+                        f"BASE HPO: requested {len(_rule_source_keys)} "
+                        "rule-mask source columns."
+                    )
+        except Exception as _rule_req_exc:
+            tprint(
+                f"WARNING: BASE HPO rule-mask source request skipped: {_rule_req_exc}"
+            )
         strategy_datasets = inject_features_into_datasets(
             strategy_datasets,
             feature_ts_sig,
@@ -5923,6 +6184,30 @@ def _extract_required_features(bundle, cfg):
                     _req.update(_added)
         return
 
+    def _effective_alpha_feature_cols(_model_info):
+        if not isinstance(_model_info, dict):
+            return []
+        _feat_cols = [
+            str(v)
+            for v in (_model_info.get("feat_cols", []) or [])
+            if isinstance(v, str) and v
+        ]
+        _model = _model_info.get("model")
+        _inner = getattr(_model, "best_model", _model)
+        _selected = [
+            str(v) for v in (getattr(_inner, "selected_features", []) or [])
+        ]
+        _input_features = [
+            str(v) for v in (getattr(_inner, "input_feature_names", []) or [])
+        ]
+        if _selected:
+            if _input_features and len(_input_features) == len(_selected):
+                return _input_features
+            if all(re.fullmatch(r"f\d+", name) is not None for name in _selected):
+                return _feat_cols
+            return _selected
+        return _feat_cols
+
     def _add_alpha_stack(_req, _alpha_models):
         nonlocal model_feature_count
         if not isinstance(_alpha_models, dict):
@@ -5931,44 +6216,28 @@ def _extract_required_features(bundle, cfg):
             if not isinstance(_side_bundle, dict):
                 continue
             if "model" in _side_bundle or "feat_cols" in _side_bundle:
-                _feat_cols = {
-                    str(v)
-                    for v in _side_bundle.get("feat_cols", [])
-                    if isinstance(v, str) and v
-                }
+                _feat_cols = set(_effective_alpha_feature_cols(_side_bundle))
                 model_feature_count += len(_feat_cols)
                 _req.update(_feat_cols)
                 _by_h = _side_bundle.get("models_by_h", {})
                 if isinstance(_by_h, dict):
                     for _info in _by_h.values():
                         if isinstance(_info, dict):
-                            _feat_cols_h = {
-                                str(v)
-                                for v in _info.get("feat_cols", [])
-                                if isinstance(v, str) and v
-                            }
+                            _feat_cols_h = set(_effective_alpha_feature_cols(_info))
                             model_feature_count += len(_feat_cols_h)
                             _req.update(_feat_cols_h)
                 continue
             for _kind_bundle in _side_bundle.values():
                 if not isinstance(_kind_bundle, dict):
                     continue
-                _feat_cols = {
-                    str(v)
-                    for v in _kind_bundle.get("feat_cols", [])
-                    if isinstance(v, str) and v
-                }
+                _feat_cols = set(_effective_alpha_feature_cols(_kind_bundle))
                 model_feature_count += len(_feat_cols)
                 _req.update(_feat_cols)
                 _by_h = _kind_bundle.get("models_by_h", {})
                 if isinstance(_by_h, dict):
                     for _info in _by_h.values():
                         if isinstance(_info, dict):
-                            _feat_cols_h = {
-                                str(v)
-                                for v in _info.get("feat_cols", [])
-                                if isinstance(v, str) and v
-                            }
+                            _feat_cols_h = set(_effective_alpha_feature_cols(_info))
                             model_feature_count += len(_feat_cols_h)
                             _req.update(_feat_cols_h)
 
@@ -8066,8 +8335,11 @@ def run_feature_generation_step(
             explicit_feature_end_ts, utc=True, errors="raise"
         ).floor("h")
     else:
+        latest_closed_hour = pd.Timestamp.now(tz="UTC").floor("h") - pd.Timedelta(
+            hours=1
+        )
         feature_data_end_ts = (
-            pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=max(feature_end_lag_days, 0))
+            latest_closed_hour - pd.Timedelta(days=max(feature_end_lag_days, 0))
         ).floor("h")
     if feature_data_end_ts < pd.Timestamp(ts_sig):
         feature_data_end_ts = pd.Timestamp(ts_sig)
@@ -8120,9 +8392,33 @@ def run_feature_generation_step(
                     + (" ..." if len(missing_requested) > 20 else "")
                 )
         else:
-            train_syms = get_training_universe(
-                margin_symbols, cfg, store, ts_sig=ts_sig
-            )
+            _feature_local_env = str(
+                os.environ.get("EPM_FEATURE_USE_LOCAL_STORE_UNIVERSE", "")
+            ).strip().lower()
+            _feature_use_local_store_universe = _feature_local_env in {
+                "1",
+                "true",
+                "yes",
+                "y",
+                "on",
+            }
+            if not _feature_local_env:
+                _feature_use_local_store_universe = bool(
+                    cfg.get("feature_use_local_store_universe", False)
+                )
+            if _feature_use_local_store_universe:
+                train_syms = apply_hardcoded_universe_exclusions(
+                    _dedup_universe_by_base(_local_store_symbols(store))
+                )
+                tprint(
+                    "Feature universe: using local store symbols by "
+                    "EPM_FEATURE_USE_LOCAL_STORE_UNIVERSE; "
+                    f"symbols={len(train_syms)}"
+                )
+            else:
+                train_syms = get_training_universe(
+                    margin_symbols, cfg, store, ts_sig=ts_sig
+                )
     except Exception as exc:
         tprint(
             f"WARNING: get_training_universe failed ({exc}); falling back to local store symbol discovery"
@@ -8160,6 +8456,8 @@ def run_feature_generation_step(
     lookback_days = max(180, int(cfg["fetch_years"] * 365))
 
     # 2. Early cache-completeness check using close-only loads.
+    loaded_close_syms = list(output_syms)
+    missing_symbols_for_backfill: list[str] = []
     stale_symbols_for_backfill: list[str] = []
     full_rewrite_symbols_for_backfill: set[str] = set()
     if existing_files and not force_full_recompute:
@@ -8281,6 +8579,22 @@ def run_feature_generation_step(
                 backfill_keys = stale_expected_keys
             else:
                 backfill_keys = stale_expected_keys
+            if (
+                not backfill_keys
+                and scan
+                and (
+                    missing_symbols_for_backfill
+                    or uncovered_symbols_for_backfill
+                    or stale_symbols_for_backfill
+                    or int(scan.get("available_key_count", 0) or 0) < len(expected_keys)
+                )
+            ):
+                backfill_keys = sorted(expected_keys)
+                tprint(
+                    "Feature cache scan found incomplete selected-feature coverage "
+                    "but no narrow backfill keys were derived; backfilling the full "
+                    f"requested contract ({len(backfill_keys)} keys)."
+                )
             explicit_backfill_keys_raw_precheck = os.environ.get(
                 "EPM_FEATURE_BACKFILL_KEYS", ""
             ).strip()
@@ -8294,7 +8608,7 @@ def run_feature_generation_step(
                 )
                 if explicit_backfill_keys_precheck:
                     backfill_keys = explicit_backfill_keys_precheck
-                    full_rewrite_symbols_for_backfill = set()
+                    full_rewrite_symbols_for_backfill = set(missing_symbols_for_backfill)
                     tprint(
                         "Explicit feature backfill key override (precheck): "
                         f"{len(backfill_keys)} keys"
@@ -8428,7 +8742,7 @@ def run_feature_generation_step(
         if explicit_backfill_keys:
             explicit_backfill_keys_active = True
             backfill_keys = explicit_backfill_keys
-            full_rewrite_symbols_for_backfill = set()
+            full_rewrite_symbols_for_backfill = set(missing_symbols_for_backfill)
             if close_panel_light is not None and not close_panel_light.empty:
                 (
                     precomputed_tail_cutoffs,
@@ -8451,10 +8765,17 @@ def run_feature_generation_step(
     dfs = {}
 
     syms_to_load = list(train_syms) + feature_context_syms
-    if backfill_keys and not force_full_recompute and stale_symbols_for_backfill:
+    if backfill_keys and not force_full_recompute and (
+        stale_symbols_for_backfill
+        or missing_symbols_for_backfill
+        or full_rewrite_symbols_for_backfill
+    ):
         # Incremental backfill mode: only load symbols that need backfilling
         required_syms = sorted(
-            set(stale_symbols_for_backfill).union(set(cfg["market_basket"]))
+            set(stale_symbols_for_backfill)
+            .union(set(missing_symbols_for_backfill))
+            .union(set(full_rewrite_symbols_for_backfill))
+            .union(set(cfg["market_basket"]))
         )
         if required_syms:
             syms_to_load = [s for s in train_syms if s in set(required_syms)]
@@ -8463,7 +8784,7 @@ def run_feature_generation_step(
                     syms_to_load.append(context_sym)
             tprint(
                 f"Backfill mode: Loading {len(syms_to_load)}/{len(train_syms)} symbols "
-                "(stale symbols + market basket)."
+                "(stale/missing/full-rewrite symbols + market basket)."
             )
 
     loaded_syms = []
@@ -8665,14 +8986,11 @@ def run_feature_generation_step(
             )
             if full_rewrite_symbols_for_backfill and not force_full_recompute:
                 tprint(
-                    "Chunked partial backfill: ignoring "
-                    f"{len(full_rewrite_symbols_for_backfill)} stale full-rewrite "
-                    "classifications because partial-key backfills must not "
-                    "replace existing base feature files. Missing columns are "
-                    "handled by append/delta storage or by an explicit full "
-                    "contract recompute."
+                    "Chunked partial backfill: preserving "
+                    f"{len(full_rewrite_symbols_for_backfill)} full-rewrite "
+                    "symbols because the cache scan found missing or structurally "
+                    "incomplete symbol feature files."
                 )
-                full_rewrite_symbols_for_backfill = set()
         else:
             tail_cutoffs = {}
             tprint("Chunked processing: Full recompute mode (no tail cutoffs)")
@@ -9091,6 +9409,16 @@ def run_feature_generation_step(
                         save_workers=int(cfg.get("feature_save_workers", 2)),
                         replace_existing=replace_existing_batch,
                     )
+                    write_live_latest_feature_matrix(
+                        feats_chunk,
+                        ts_sig,
+                        cfg["data_root"],
+                        end_ts=feature_data_end_ts,
+                        symbols=chunk_syms,
+                        feat_index=feat_index,
+                        feat_columns=feat_columns,
+                        merge_existing=True,
+                    )
                     save_dt = time.perf_counter() - save_t0
                     tprint(
                         f"{batch_label} timings: compute={compute_dt:.1f}s save={save_dt:.1f}s"
@@ -9244,6 +9572,15 @@ def run_feature_generation_step(
                 save_workers=int(cfg.get("feature_save_workers", 2)),
                 replace_existing=bool(force_full_recompute),
             )
+            write_live_latest_feature_matrix(
+                feats,
+                ts_sig,
+                cfg["data_root"],
+                end_ts=feature_data_end_ts,
+                feat_index=feat_index,
+                feat_columns=feat_columns,
+                merge_existing=bool(backfill_keys and not force_full_recompute),
+            )
             tprint(
                 f"Feature save timing: compute={compute_dt:.1f}s save={time.perf_counter() - save_t0:.1f}s"
             )
@@ -9268,6 +9605,10 @@ def run_feature_generation_step(
         label="Feature post-save validation",
     )
     snapshot_expected_keys = {k for k in expected_keys if not str(k).startswith("oof_")}
+    if is_incremental_backfill and backfill_keys:
+        snapshot_expected_keys = {
+            k for k in set(backfill_keys) if not str(k).startswith("oof_")
+        }
     skip_snapshot_validation = bool(cfg.get("skip_feature_snapshot_validation", False))
     skip_postsave_checks = bool(cfg.get("skip_feature_postsave_checks", False))
     if skip_snapshot_validation or skip_postsave_checks:
@@ -9754,6 +10095,91 @@ def _base_training_feature_requirements_from_hpo(cfg, datasets, default_req_keys
     return default_req_keys
 
 
+def _base_training_feature_requirements_from_native_presets(cfg, datasets, default_req_keys):
+    use_native = str(
+        os.getenv("EPM_LGBM_USE_NATIVE_PRESET", cfg.get("lgbm_use_native_preset", ""))
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    source_run_id = str(
+        os.getenv("EPM_LGBM_NATIVE_PRESET_SOURCE_RUN_ID", "")
+        or cfg.get("lgbm_native_preset_source_run_id")
+        or ""
+    ).strip()
+    if not use_native or not source_run_id or not datasets:
+        return default_req_keys
+
+    try:
+        from extreme_price_movements.training import _load_native_lgbm_training_preset
+    except Exception as exc:
+        tprint(f"Base native preset feature requirements skipped: {exc}")
+        return default_req_keys
+
+    strategies = get_strategies(cfg)
+    dataset_to_scope: dict[str, str] = {}
+    for strat in strategies:
+        if not isinstance(strat, dict):
+            continue
+        s_id = str(strat.get("strategy_id", "")).strip()
+        side = str(strat.get("trade_side", "")).strip()
+        if not s_id or not side:
+            continue
+        for H in strategy_runtime_horizons(strat, cfg):
+            name = f"train_{s_id}_{H}"
+            scoped_id = (
+                s_id
+                if s_id.startswith(("long_", "short_"))
+                else f"{side}_{s_id}"
+            )
+            dataset_to_scope[name] = f"{scoped_id}_H{H}"
+
+    def _add_native_keys(name: str, keys: list[str]) -> list[str]:
+        scope_key = dataset_to_scope.get(str(name))
+        if not scope_key:
+            return keys
+        preset = _load_native_lgbm_training_preset(
+            cfg,
+            scope_key=scope_key,
+            objective_mode="train_base",
+        )
+        selected = [
+            str(c)
+            for c in ((preset or {}).get("selected_features") or [])
+            if str(c).strip()
+        ]
+        if not selected:
+            return keys
+        merged = list(dict.fromkeys([*keys, *selected]))
+        added = len(merged) - len(dict.fromkeys(keys))
+        if added > 0:
+            tprint(
+                f"Base {name}: native LGBM preset requires {len(selected)} "
+                f"selected features; added {added} missing keys to raw feature request "
+                f"(scope={scope_key})."
+            )
+        return merged
+
+    if isinstance(default_req_keys, dict):
+        out = {}
+        for name in datasets.keys():
+            out[name] = _add_native_keys(str(name), list(default_req_keys.get(name, [])))
+        return out
+
+    base_keys = list(default_req_keys or [])
+    out_by_dataset = {}
+    found_any = False
+    for name in datasets.keys():
+        merged = _add_native_keys(str(name), base_keys)
+        out_by_dataset[name] = merged
+        found_any = found_any or len(merged) > len(base_keys)
+    if found_any:
+        total_keys = len({k for vals in out_by_dataset.values() for k in vals})
+        tprint(
+            "Base training: using per-dataset native LGBM selected feature "
+            f"requirements (global_union={total_keys})."
+        )
+        return out_by_dataset
+    return default_req_keys
+
+
 def _artifact_symbol_timestamp_columns(
     df: pd.DataFrame,
 ) -> tuple[str | None, str | None]:
@@ -9798,20 +10224,29 @@ def _active_stage_plan_key_hashes(cfg: dict, view: dict) -> np.ndarray | None:
     if not roles:
         return None
 
-    run_id = str(cfg.get("run_id") or "").strip()
+    run_id = str(
+        os.environ.get("EPM_TRAIN_SLICE_PLAN_EVENT_RUN_ID", "")
+        or cfg.get("_training_slice_plan_run_id")
+        or cfg.get("artifact_source_run_id")
+        or cfg.get("run_id")
+        or ""
+    ).strip()
     if not run_id:
         return None
 
     cache = cfg.setdefault("_active_stage_plan_key_hash_cache", {})
-    cache_key = (run_id, tuple(sorted(roles)))
+    data_root = cfg.get("data_root", "data")
+    slice_plan_path = str(cfg.get("_training_slice_plan_path") or "").strip()
+    if not slice_plan_path:
+        slice_plan_path = os.path.join(
+            data_root, "artifacts", run_id, "slices", "slice_plan.json"
+        )
+
+    cache_key = (run_id, slice_plan_path, tuple(sorted(roles)))
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
-    data_root = cfg.get("data_root", "data")
-    slice_plan_path = os.path.join(
-        data_root, "artifacts", run_id, "slices", "slice_plan.json"
-    )
     if not os.path.exists(slice_plan_path):
         return None
 
@@ -9838,8 +10273,19 @@ def _active_stage_plan_key_hashes(cfg: dict, view: dict) -> np.ndarray | None:
         for plan_row in consumers.get(role, []) or []:
             for idx_col in ("fit_idx", "predict_idx", "val_idx"):
                 idx_values = plan_row.get(idx_col)
-                if idx_values:
-                    plan_indices.append(np.asarray(idx_values, dtype=np.int64))
+                if not idx_values:
+                    continue
+                try:
+                    from extreme_price_movements.slice_plan_store import (
+                        _expand_compact_indices,
+                    )
+
+                    idx_values = _expand_compact_indices(idx_values)
+                except Exception:
+                    pass
+                arr = np.asarray(idx_values, dtype=np.int64).reshape(-1)
+                if arr.size:
+                    plan_indices.append(arr)
 
     if not plan_indices:
         return None
@@ -9856,7 +10302,8 @@ def _active_stage_plan_key_hashes(cfg: dict, view: dict) -> np.ndarray | None:
     cache[cache_key] = key_hashes
     tprint(
         f"[{view.get('stage_name', 'stage')}] Exact plan-row filter loaded: "
-        f"roles={','.join(roles)} event_keys={len(key_hashes)}"
+        f"roles={','.join(roles)} event_keys={len(key_hashes)} "
+        f"slice_plan_run_id={run_id}"
     )
     return key_hashes
 
@@ -10018,6 +10465,67 @@ def _filter_artifact_by_stage_view(df, cfg):
             if view.get("allowed_end_ts"):
                 df = df[df_ts <= pd.to_datetime(view["allowed_end_ts"])]
     return df
+
+
+def _cap_training_dataset_rows(
+    df: pd.DataFrame,
+    *,
+    name: str,
+    cfg: dict,
+) -> pd.DataFrame:
+    """Deterministically cap very large training label frames before feature injection."""
+    if df is None or df.empty:
+        return df
+    raw_max = (
+        os.environ.get("EPM_TRAIN_MAX_ROWS_PER_DATASET", "")
+        or cfg.get("train_max_rows_per_dataset", "")
+        or ""
+    )
+    try:
+        max_rows = int(float(raw_max))
+    except Exception:
+        max_rows = 0
+    if max_rows <= 0 or len(df) <= max_rows:
+        return df
+
+    sym_col, ts_col = _artifact_symbol_timestamp_columns(df)
+    if sym_col is None or ts_col is None:
+        rng = np.random.default_rng(
+            int(os.environ.get("EPM_TRAIN_ROW_SAMPLE_SEED", "1729") or "1729")
+        )
+        selected = np.sort(rng.choice(len(df), size=max_rows, replace=False))
+        out = df.iloc[selected].reset_index(drop=True)
+        tprint(
+            f"Training row cap applied to {name}: {len(df)} -> {len(out)} rows "
+            "(random fallback; missing symbol/timestamp columns)."
+        )
+        return out
+
+    seed = int(os.environ.get("EPM_TRAIN_ROW_SAMPLE_SEED", "1729") or "1729")
+    hashes = _hash_symbol_timestamp_keys(df[sym_col], df[ts_col])
+    if seed:
+        hashes = hashes ^ np.uint64((seed * 11400714819323198485) & ((1 << 64) - 1))
+    selected = np.argpartition(hashes, max_rows - 1)[:max_rows]
+    selected.sort()
+    out = df.iloc[selected].reset_index(drop=True)
+
+    try:
+        before_syms = int(df[sym_col].nunique(dropna=True))
+        after_syms = int(out[sym_col].nunique(dropna=True))
+    except Exception:
+        before_syms = after_syms = 0
+    try:
+        ts = pd.to_datetime(out[ts_col], utc=True, errors="coerce")
+        ts_min = str(ts.min()) if ts.notna().any() else "n/a"
+        ts_max = str(ts.max()) if ts.notna().any() else "n/a"
+    except Exception:
+        ts_min = ts_max = "n/a"
+    tprint(
+        f"Training row cap applied to {name}: {len(df)} -> {len(out)} rows "
+        f"(stable hash sample, symbols {after_syms}/{before_syms}, "
+        f"ts_range={ts_min} -> {ts_max})."
+    )
+    return out
 
     tprint("Resolving unique symbols and timestamps for feature injection...")
     all_syms = set()

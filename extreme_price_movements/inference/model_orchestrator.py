@@ -14,7 +14,7 @@ Returns full prediction chain results for each candidate.
 import re
 import resource
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -45,6 +45,24 @@ from extreme_price_movements.model_drift_features import (
     MODEL_DRIFT_FEATURE_KEYS,
     transform_model_drift_features,
 )
+from extreme_price_movements.model_effectiveness_history import (
+    apply_model_effectiveness_history_defaults,
+    extract_model_effectiveness_history_defaults,
+)
+from extreme_price_movements.drift_monitoring import load_latest_drift_regime_features
+from extreme_price_movements.lgbm_archetype_features import (
+    BASE_ERROR_ARCHETYPE_FEATURE_NAMES,
+    RAW_CONTRIB_FEATURE_PREFIX,
+    RAW_STATE_DIAGNOSTIC_FEATURE_NAMES,
+    RAW_STATE_SVD_FEATURE_NAMES,
+    is_raw_contrib_feature_name,
+    transform_residual_error_archetype_features,
+    transform_raw_state_archetype_features,
+)
+try:
+    from extreme_price_movements.lgbm_pipeline import LGBM_INTERNAL_METRIC_FEATURE_NAMES
+except Exception:  # pragma: no cover - keep inference importable with older bundles
+    LGBM_INTERNAL_METRIC_FEATURE_NAMES = ()
 from extreme_price_movements.regime_adaptor import (
     apply_regime_adaptor,
     regime_adaptor_inference_enabled,
@@ -75,14 +93,21 @@ def _process_rss_mb() -> float:
 
 
 ALPHA_MODEL_META_FEATURE_KEYS = {
+    *LGBM_INTERNAL_METRIC_FEATURE_NAMES,
     *MODEL_DRIFT_FEATURE_KEYS,
+    *BASE_ERROR_ARCHETYPE_FEATURE_NAMES,
+    *RAW_STATE_SVD_FEATURE_NAMES,
+    *RAW_STATE_DIAGNOSTIC_FEATURE_NAMES,
     "feature_drift_psi_core",
+    "feature_drift_ks_core",
 }
 
 
 LGBM_DIAGNOSTIC_LEDGER_KEYS = {
+    *LGBM_INTERNAL_METRIC_FEATURE_NAMES,
     *MODEL_DRIFT_FEATURE_KEYS,
     "feature_drift_psi_core",
+    "feature_drift_ks_core",
     "rare_leaf_fraction",
     "leaf_count_p10",
     "leaf_count_min",
@@ -111,6 +136,92 @@ def _first_row_diagnostics(frame: Any) -> Dict[str, float]:
         if np.isfinite(value):
             out[key] = value
     return out
+
+
+def _feature_frame_with_lgbm_diagnostics(
+    features: pd.DataFrame,
+    *,
+    base_diagnostics: Dict[str, float] | None = None,
+    meta_diagnostics: Dict[str, float] | None = None,
+) -> pd.DataFrame:
+    """Expose base/meta LGBM diagnostics as regular downstream feature columns."""
+    if not isinstance(features, pd.DataFrame) or features.empty:
+        return features
+    additions: Dict[str, float] = {}
+    for prefix, diagnostics in (
+        ("base_lgbm", base_diagnostics or {}),
+        ("meta_lgbm", meta_diagnostics or {}),
+    ):
+        for key, value in diagnostics.items():
+            try:
+                numeric = float(value)
+            except Exception:
+                continue
+            if not np.isfinite(numeric):
+                continue
+            col = f"{prefix}_{key}"
+            if col not in features.columns:
+                additions[col] = numeric
+    if not additions:
+        return features
+    out = features.copy()
+    for col, value in additions.items():
+        out[col] = np.full(len(out), value, dtype=np.float32)
+    return out
+
+
+def _feature_frame_with_latest_drift_features(
+    features: pd.DataFrame,
+    cfg: Mapping[str, Any] | None,
+) -> pd.DataFrame:
+    """Join latest per-asset drift monitoring features into a scoring frame."""
+    if not isinstance(features, pd.DataFrame) or features.empty:
+        return features
+    try:
+        latest = load_latest_drift_regime_features(
+            live_data_root=(cfg or {}).get("live_data_root"),
+            data_root=(cfg or {}).get("data_root"),
+        )
+    except Exception:
+        return features
+    if latest is None or latest.empty or "symbol" not in latest.columns:
+        return features
+    if "symbol" in features.columns:
+        symbols = features["symbol"].astype(str)
+    else:
+        symbols = pd.Series(features.index.astype(str), index=features.index)
+    latest = latest.copy()
+    latest["symbol"] = latest["symbol"].astype(str)
+    latest = latest.drop_duplicates(subset=["symbol"], keep="last").set_index("symbol")
+    drift_cols = [str(c) for c in latest.columns if str(c).startswith("drift_")]
+    if not drift_cols:
+        return features
+    out = features.copy()
+    aligned = latest.reindex(symbols.to_numpy())
+    aligned.index = out.index
+    added = 0
+    for col in drift_cols:
+        if col in out.columns:
+            continue
+        out[col] = pd.to_numeric(aligned[col], errors="coerce").astype(np.float32)
+        added += 1
+    return out if added else features
+
+
+def _regime_adaptor_score_from_applied(
+    applied: Dict[str, Any],
+    final_preds: np.ndarray,
+    regime_weight: np.ndarray,
+) -> np.ndarray:
+    if "combined_score" in applied and "deployment_score_pre_rank" in applied:
+        return np.asarray(applied["deployment_score_pre_rank"], dtype=float)
+    if "deployment_score" in applied:
+        return np.asarray(applied["deployment_score"], dtype=float)
+    if "error_risk_adjusted_score" in applied:
+        return np.asarray(applied["error_risk_adjusted_score"], dtype=float)
+    return np.asarray(final_preds, dtype=float) * np.clip(
+        np.asarray(regime_weight, dtype=float), 0.75, 1.20
+    )
 
 
 def _extract_ebm_contract_model(model: Any) -> Any:
@@ -170,6 +281,11 @@ def _effective_selected_feature_contract(model: Any) -> list[str]:
     if not selected:
         return []
     input_features = [str(c) for c in (getattr(inner, "input_feature_names", []) or [])]
+    raw_contrib_inputs = [
+        str(c) for c in (getattr(inner, "raw_contrib_input_features", []) or [])
+    ]
+    if raw_contrib_inputs and input_features:
+        return input_features
     if len(input_features) == len(selected) and input_features != selected:
         return input_features
     return selected
@@ -179,18 +295,32 @@ def _model_drift_feature_alias_source(name: str) -> str | None:
     """Return the unprefixed drift/context source for a meta feature alias."""
     name_s = str(name)
     drift_keys = set(MODEL_DRIFT_FEATURE_KEYS)
+    drift_keys.update(str(k) for k in LGBM_INTERNAL_METRIC_FEATURE_NAMES)
+    drift_keys.update(str(k) for k in BASE_ERROR_ARCHETYPE_FEATURE_NAMES)
+    drift_keys.update(str(k) for k in RAW_STATE_SVD_FEATURE_NAMES)
+    drift_keys.update(str(k) for k in RAW_STATE_DIAGNOSTIC_FEATURE_NAMES)
     drift_keys.add("feature_drift_psi_core")
+    drift_keys.add("feature_drift_ks_core")
     for key in sorted(drift_keys, key=len, reverse=True):
         if name_s == key:
             return key
         if name_s.endswith(f"_{key}") and re.match(
-            r"^(?:pred(?:_.*)?_H\d+|base_H\d+)_", name_s
+            r"^(?:pred(?:_.*)?_H\d+|base_H\d+|base_lgbm|meta_lgbm)_",
+            name_s,
         ):
             return key
     if name_s.endswith("_reg_rare_leaf_low_support_score") and re.match(
-        r"^(?:pred(?:_.*)?_H\d+|base_H\d+)_", name_s
+        r"^(?:pred(?:_.*)?_H\d+|base_H\d+|base_lgbm|meta_lgbm)_",
+        name_s,
     ):
         return "rare_leaf_low_support_score"
+    if is_raw_contrib_feature_name(name_s):
+        marker = RAW_CONTRIB_FEATURE_PREFIX
+        pos = name_s.find(marker)
+        if pos == 0:
+            return name_s
+        if pos > 0 and re.match(r"^(?:pred(?:_.*)?_H\d+|base_H\d+)_", name_s):
+            return name_s[pos:]
     return None
 
 
@@ -214,6 +344,19 @@ def _materialize_model_drift_feature_aliases(
         source_candidates = [src]
         if src == "feature_drift_psi_core":
             source_candidates.extend(["feature_drift_psi_core_80", "feature_drift_psi_core_50"])
+        elif src == "feature_drift_ks_core":
+            source_candidates.extend(["feature_drift_ks_bin_mean", "feature_drift_ks_bin_max"])
+        elif src == "row_drift_v1_psi_core":
+            source_candidates.extend(["row_drift_v1_psi_core_80", "row_drift_v1_psi_core_50"])
+        elif src == "row_drift_v1_ks_core":
+            source_candidates.extend(["row_drift_v1_ks_bin_mean", "row_drift_v1_ks_bin_max"])
+        if str(col).endswith(src):
+            prefix = str(col)[: -len(src)]
+            source_candidates.extend(
+                f"{prefix}{candidate}"
+                for candidate in list(source_candidates)
+                if candidate != src
+            )
         for source in source_candidates:
             if source in out.columns:
                 out[col] = pd.to_numeric(out[source], errors="coerce").astype(np.float32)
@@ -229,10 +372,30 @@ def _required_model_drift_sources(needed: set[str]) -> set[str]:
         col_s = str(col)
         if col_s in ALPHA_MODEL_META_FEATURE_KEYS:
             sources.add(col_s)
+            if col_s == "feature_drift_psi_core":
+                sources.add("feature_drift_psi_core_80")
+            if col_s == "feature_drift_ks_core":
+                sources.add("feature_drift_ks_bin_mean")
+            if col_s == "row_drift_v1_psi_core":
+                sources.add("row_drift_v1_psi_core_80")
+            if col_s == "row_drift_v1_ks_core":
+                sources.add("row_drift_v1_ks_bin_mean")
+            continue
+        if is_raw_contrib_feature_name(col_s):
+            src = _model_drift_feature_alias_source(col_s)
+            sources.add(src or col_s)
             continue
         src = _model_drift_feature_alias_source(col_s)
         if src is not None:
             sources.add(src)
+            if src == "feature_drift_psi_core":
+                sources.add("feature_drift_psi_core_80")
+            if src == "feature_drift_ks_core":
+                sources.add("feature_drift_ks_bin_mean")
+            if src == "row_drift_v1_psi_core":
+                sources.add("row_drift_v1_psi_core_80")
+            if src == "row_drift_v1_ks_core":
+                sources.add("row_drift_v1_ks_bin_mean")
     return sources
 
 
@@ -258,6 +421,34 @@ def _selected_feature_owner(model: Any) -> Any:
         else:
             return current
     return current
+
+
+def _lgbm_internal_metrics_frame(model: Any, X: Any) -> pd.DataFrame:
+    """Return detailed LGBM internal metrics for direct or wrapped models."""
+    candidates: list[Any] = []
+    for candidate in (
+        model,
+        getattr(model, "best_model", None),
+        _selected_feature_owner(model),
+    ):
+        if candidate is None:
+            continue
+        if any(id(candidate) == id(existing) for existing in candidates):
+            continue
+        candidates.append(candidate)
+    for candidate in candidates:
+        transform = getattr(candidate, "transform_internal_model_metrics", None)
+        if not callable(transform):
+            transform = getattr(candidate, "transform_meta_features", None)
+        if not callable(transform):
+            continue
+        try:
+            frame = transform(X)
+        except Exception:
+            continue
+        if isinstance(frame, pd.DataFrame) and not frame.empty:
+            return frame
+    return pd.DataFrame()
 
 
 def _synthetic_ebm_raw_features(model: Any) -> list[str]:
@@ -523,6 +714,10 @@ class ModelOrchestrator:
         else:
             self.ridge_weight_map = {}
         self._last_results: Dict[str, Any] = {}
+        self._last_base_lgbm_diagnostics: Dict[str, float] = {}
+        self._last_base_lgbm_diagnostics_by_key: Dict[str, Dict[str, float]] = {}
+        self._last_meta_diagnostics: Dict[str, float] = {}
+        self._last_mr_tf_route_frames_by_key: Dict[str, pd.DataFrame] = {}
 
         # Entry policy config from runtime_cfg or bucket_params
         self.entry_policy_config = self.cfg.get(
@@ -605,14 +800,22 @@ class ModelOrchestrator:
 
         aligned = features.copy()
 
-        if "G_VOL" in feat_cols and "G_VOL" not in aligned.columns:
+        def _column_has_finite(name: str) -> bool:
+            if name not in aligned.columns:
+                return False
+            values = pd.to_numeric(aligned[name], errors="coerce").replace(
+                [np.inf, -np.inf], np.nan
+            )
+            return bool(values.notna().any())
+
+        if "G_VOL" in feat_cols and not _column_has_finite("G_VOL"):
             if {"mkt_rv", "mkt_rv_med"}.issubset(aligned.columns):
                 aligned["G_VOL"] = (
                     aligned["mkt_rv"].astype(float)
                     > aligned["mkt_rv_med"].astype(float)
                 ).astype(np.float32)
 
-        if "G_TREND" in feat_cols and "G_TREND" not in aligned.columns:
+        if "G_TREND" in feat_cols and not _column_has_finite("G_TREND"):
             if {"mkt_ret24h", "mkt_rv"}.issubset(aligned.columns):
                 daily_vol = aligned["mkt_rv"].astype(float) * np.sqrt(24.0)
                 dyn_thr = np.maximum(daily_vol * 1.5, 0.005)
@@ -625,7 +828,9 @@ class ModelOrchestrator:
                 continue
             gate_series = aligned[gate_name].astype(np.float32)
             for feat_name in feat_cols:
-                if feat_name in aligned.columns or f"_{gate_name}_" not in feat_name:
+                if f"_{gate_name}_" not in feat_name:
+                    continue
+                if feat_name in aligned.columns and _column_has_finite(feat_name):
                     continue
                 base_part, state_part = feat_name.rsplit(f"_{gate_name}_", 1)
                 if state_part not in {"0", "1"} or base_part not in aligned.columns:
@@ -642,6 +847,30 @@ class ModelOrchestrator:
         feat_cols_s = [
             str(c) for c in feat_cols if str(c) not in DELETED_MODEL_FEATURE_KEYS
         ]
+        try:
+            from extreme_price_movements.rule_mask_features import (
+                append_rule_mask_features as _append_rule_mask_features,
+                is_rule_mask_feature_name as _is_rule_mask_feature_name,
+            )
+
+            if any(_is_rule_mask_feature_name(c) for c in feat_cols_s):
+                _rule_cfg = dict(self.cfg or {})
+                _rule_cfg["lgbm_rule_mask_features_enabled"] = True
+                aligned, _rule_diag = _append_rule_mask_features(
+                    aligned,
+                    _rule_cfg,
+                    side=None,
+                    context="inference:alpha",
+                )
+                if bool(self.cfg.get("model_inference_timing_enabled", False)):
+                    tprint(
+                        "Alpha inference: materialized rule-mask features "
+                        f"n_rules={_rule_diag.get('n_rules')} "
+                        f"source_available={_rule_diag.get('available_source_keys')}/"
+                        f"{_rule_diag.get('n_source_keys')}"
+                    )
+        except Exception as exc:
+            tprint(f"Alpha inference: rule-mask feature materialization failed: {exc}")
         if strict:
             missing = [c for c in feat_cols_s if c not in aligned.columns]
             if missing:
@@ -665,7 +894,7 @@ class ModelOrchestrator:
                     return pd.DataFrame(index=features.index)
                 if bool(
                     self.cfg.get(
-                        "strict_feature_parity_neutral_fill_nonfinite", True
+                        "strict_feature_parity_neutral_fill_nonfinite", False
                     )
                 ):
                     total_bad, sample = _model_matrix_nonfinite_summary(model_matrix)
@@ -832,12 +1061,14 @@ class ModelOrchestrator:
         Returns:
             Series of predictions indexed by symbol
         """
+        self._last_results.pop("mr_tf_alpha_routing", None)
         key = str(kind)
         model_info = self.alpha_by_strategy.get(key)
         if model_info is None:
             nested_key = f"{side}_{kind}"
             model_info = self.alpha_by_strategy.get(nested_key)
             key = nested_key if model_info is not None else key
+        self._last_mr_tf_route_frames_by_key.pop(str(key), None)
         if model_info is None:
             tprint(f"Warning: Alpha model not found for {key}")
             return pd.Series(dtype=float)
@@ -849,6 +1080,8 @@ class ModelOrchestrator:
             tprint(f"Warning: Model not loaded for {key}")
             return pd.Series(dtype=float)
 
+        self._last_base_lgbm_diagnostics = {}
+        self._last_base_lgbm_diagnostics_by_key.pop(str(key), None)
         timing_enabled = bool(self.cfg.get("inference_model_timing_enabled", True))
         t0 = time.perf_counter()
         aligned_features = self._align_alpha_feature_contract(features, feat_cols)
@@ -879,6 +1112,19 @@ class ModelOrchestrator:
         try:
             pred_t0 = time.perf_counter()
             preds = model.predict(X)
+            diag_t0 = time.perf_counter()
+            base_diag_frame = _lgbm_internal_metrics_frame(model, X)
+            base_diag = _first_row_diagnostics(base_diag_frame)
+            if base_diag:
+                self._last_base_lgbm_diagnostics = dict(base_diag)
+                self._last_base_lgbm_diagnostics_by_key[str(key)] = dict(base_diag)
+                if timing_enabled:
+                    tprint(
+                        "[Timing] model.alpha_diagnostics: "
+                        f"key={key} fields={len(base_diag)} "
+                        f"stage={time.perf_counter() - diag_t0:.3f}s "
+                        f"rss={_process_rss_mb():.1f}MB"
+                    )
             if timing_enabled:
                 tprint(
                     "[Timing] model.alpha_predict: "
@@ -887,7 +1133,111 @@ class ModelOrchestrator:
                     f"total={time.perf_counter() - t0:.3f}s "
                     f"rss={_process_rss_mb():.1f}MB"
                 )
-            return pd.Series(preds, index=aligned_features.index)
+            out = pd.Series(preds, index=aligned_features.index)
+            specialists = model_info.get("mr_tf_specialists")
+            if isinstance(specialists, dict):
+                try:
+                    from extreme_price_movements.mr_tf_masks import (
+                        apply_mr_tf_masks as _apply_mr_tf_masks,
+                        mr_tf_masks_enabled as _mr_tf_masks_enabled,
+                    )
+
+                    if bool(_mr_tf_masks_enabled(self.cfg)):
+                        mask_diag = dict(
+                            specialists.get("mask_diagnostics", {}) or {}
+                        )
+                        mask_params = mask_diag.get("params")
+                        route_source = features
+                        if isinstance(route_source, pd.DataFrame):
+                            route_source = route_source.reindex(out.index)
+                        route_frame, route_diag = _apply_mr_tf_masks(
+                            route_source,
+                            side=side,
+                            cfg=self.cfg,
+                            params=mask_params,
+                        )
+                        self._last_mr_tf_route_frames_by_key[str(key)] = route_frame[
+                            [
+                                c
+                                for c in (
+                                    "__mr_tf_route__",
+                                    "__mr_mask__",
+                                    "__tf_mask__",
+                                    "__mixed_mask__",
+                                    "__mr_tf_params_hash__",
+                                )
+                                if c in route_frame.columns
+                            ]
+                        ].copy()
+                        route_counts = (
+                            route_frame["__mr_tf_route__"].astype(str).value_counts()
+                            if "__mr_tf_route__" in route_frame.columns
+                            else pd.Series(dtype=int)
+                        )
+                        route_overrides = 0
+                        for route_name in ("mr", "tf"):
+                            route_info = (
+                                (specialists.get("routes") or {}).get(route_name)
+                                or {}
+                            )
+                            if not bool(
+                                route_info.get(
+                                    "enabled", route_info.get("promoted", False)
+                                )
+                            ):
+                                continue
+                            route_model = route_info.get("model")
+                            if route_model is None:
+                                continue
+                            route_mask_col = f"__{route_name}_mask__"
+                            if route_mask_col not in route_frame.columns:
+                                continue
+                            route_idx = route_frame.index[
+                                np.asarray(route_frame[route_mask_col].values, dtype=bool)
+                            ]
+                            if len(route_idx) <= 0:
+                                continue
+                            route_feat_cols = [
+                                str(c)
+                                for c in (
+                                    route_info.get("feat_cols")
+                                    or route_info.get("selected_features")
+                                    or _effective_alpha_feature_contract(route_info)
+                                )
+                            ]
+                            if not route_feat_cols:
+                                route_feat_cols = _effective_alpha_feature_contract(
+                                    model_info
+                                )
+                            route_features = route_source.reindex(route_idx)
+                            route_aligned = self._align_alpha_feature_contract(
+                                route_features,
+                                route_feat_cols,
+                            )
+                            if route_aligned.empty:
+                                continue
+                            route_X = _alpha_prediction_frame_for_model(
+                                route_model,
+                                route_aligned,
+                                route_feat_cols,
+                            )
+                            route_pred = route_model.predict(route_X)
+                            out.loc[route_aligned.index] = route_pred
+                            route_overrides += int(len(route_aligned))
+                        self._last_results["mr_tf_alpha_routing"] = {
+                            "key": key,
+                            "params_hash": route_diag.get("params_hash", ""),
+                            "counts": {
+                                str(k): int(v) for k, v in route_counts.items()
+                            },
+                            "specialist_overrides": int(route_overrides),
+                        }
+                except Exception as _route_exc:
+                    tprint(
+                        f"Warning: MR/TF alpha specialist routing skipped for {key}: "
+                        f"{_route_exc}"
+                    )
+            return out
         except Exception as e:
             tprint(f"Error predicting alpha for {key}: {e}")
             return pd.Series(dtype=float)
@@ -996,6 +1346,8 @@ class ModelOrchestrator:
 
         out = features.copy()
         strict_parity = bool(self.cfg.get("strict_feature_parity", False))
+        history_defaults = extract_model_effectiveness_history_defaults(meta_model)
+        history_default_used: list[str] = []
         kind_s = str(kind)
         core = strategy_core_id(kind_s)
         core_no_head = re.sub(r"_(?:clf|reg|tbm_clf|early_inval)$", "", core)
@@ -1040,6 +1392,15 @@ class ModelOrchestrator:
 
         def _numeric_col(name: str) -> pd.Series:
             return pd.to_numeric(out[name], errors="coerce").astype(float)
+
+        def _historical_default_series(name: str) -> pd.Series | None:
+            if name not in history_defaults:
+                return None
+            value = float(history_defaults[name])
+            if not np.isfinite(value):
+                return None
+            history_default_used.append(name)
+            return pd.Series(value, index=out.index, dtype=np.float32)
 
         def _symbol_values() -> np.ndarray | None:
             for name in ("__symbol__", "symbol"):
@@ -1115,16 +1476,20 @@ class ModelOrchestrator:
                 elif strict_parity:
                     value = None
                 else:
-                    value = pd.Series(0.5, index=out.index, dtype=np.float32)
+                    value = _historical_default_series(col)
+                    if value is None:
+                        value = pd.Series(0.5, index=out.index, dtype=np.float32)
             elif col in {
                 "prob_error",
                 "recent_prob_error_20",
                 "base_model_abs_error_roll20",
             }:
-                if not strict_parity:
+                value = _historical_default_series(col)
+                if value is None and not strict_parity:
                     value = pd.Series(0.5, index=out.index, dtype=np.float32)
             elif col.startswith("recent_hit_rate_"):
-                if not strict_parity:
+                value = _historical_default_series(col)
+                if value is None and not strict_parity:
                     neutral = 0.5 if col == "recent_hit_rate_20" else 0.0
                     value = pd.Series(neutral, index=out.index, dtype=np.float32)
             elif (
@@ -1136,7 +1501,8 @@ class ModelOrchestrator:
                 or col.startswith("recent_base_meta_disagreement_")
                 or col.startswith("recent_base_internal_disagreement_")
             ):
-                if not strict_parity:
+                value = _historical_default_series(col)
+                if value is None and not strict_parity:
                     value = pd.Series(0.0, index=out.index, dtype=np.float32)
             elif col == "rsi_z_x_regime_vol":
                 if {"rsi_z", "regime_vol_score"}.issubset(out.columns):
@@ -1217,6 +1583,22 @@ class ModelOrchestrator:
                 added += 1
         out, alias_added = _materialize_model_drift_feature_aliases(out, set(feat_cols))
         added += alias_added
+        if history_defaults:
+            out, default_added, default_filled = apply_model_effectiveness_history_defaults(
+                out,
+                feat_cols,
+                history_defaults,
+            )
+            history_default_used.extend(default_added)
+            history_default_used.extend(default_filled)
+            added += len(default_added) + len(default_filled)
+        if history_default_used:
+            self._last_results["meta_historical_effectiveness_defaults"] = {
+                "kind": str(kind),
+                "count": int(len(set(history_default_used))),
+                "features": sorted(set(history_default_used))[:50],
+                "source": "train_artifact_model_effectiveness_history_defaults",
+            }
         if added and not getattr(self, "_meta_model_derived_warned", False):
             tprint(
                 "Meta inference: materialized model-derived contract columns "
@@ -1243,7 +1625,9 @@ class ModelOrchestrator:
             feat_cols = effective_cols
         needed = set(feat_cols)
         needed_sources = _required_model_drift_sources(needed)
-        if not needed_sources.intersection(ALPHA_MODEL_META_FEATURE_KEYS):
+        if not needed_sources.intersection(ALPHA_MODEL_META_FEATURE_KEYS) and not any(
+            is_raw_contrib_feature_name(str(src)) for src in needed_sources
+        ):
             return features
 
         _, model_info = self._alpha_model_info_for_kind(side, kind)
@@ -1253,17 +1637,57 @@ class ModelOrchestrator:
         if alpha_model is None:
             return features
 
-        transform_owner = alpha_model
-        transform = getattr(transform_owner, "transform_meta_features", None)
-        if not callable(transform):
-            transform_owner = getattr(alpha_model, "best_model", None)
-            transform = getattr(transform_owner, "transform_meta_features", None)
-        if not callable(transform):
+        candidate_owners: list[Any] = []
+        seen_owner_ids: set[int] = set()
+
+        def _collect_owner(candidate: Any) -> None:
+            if candidate is None:
+                return
+            owner_id = id(candidate)
+            if owner_id in seen_owner_ids:
+                return
+            seen_owner_ids.add(owner_id)
+            candidate_owners.append(candidate)
+            for attr in (
+                "best_model",
+                "estimator",
+                "model",
+                "base_model",
+                "wrapped_model",
+            ):
+                try:
+                    nested = getattr(candidate, attr, None)
+                except Exception:
+                    nested = None
+                if nested is not candidate:
+                    _collect_owner(nested)
+
+        _collect_owner(alpha_model)
+        transform_owners = [
+            owner
+            for owner in candidate_owners
+            if callable(getattr(owner, "transform_meta_features", None))
+        ]
+        if not transform_owners:
             return features
 
-        try:
-            meta_context = transform(features)
-        except Exception:
+        contexts: list[pd.DataFrame] = []
+
+        def _append_context(frame: pd.DataFrame) -> None:
+            if isinstance(frame, pd.DataFrame) and not frame.empty:
+                if len(frame) == len(features) and not frame.index.equals(features.index):
+                    frame = frame.copy()
+                    frame.index = features.index
+                contexts.append(frame)
+
+        for transform_owner in transform_owners:
+            try:
+                _append_context(transform_owner.transform_meta_features(features))
+            except Exception:
+                continue
+
+        if not contexts:
+            last_exc: Exception | None = None
             try:
                 alpha_feat_cols = _effective_alpha_feature_contract(model_info)
                 aligned = self._align_alpha_feature_contract(features, alpha_feat_cols)
@@ -1274,22 +1698,140 @@ class ModelOrchestrator:
                     aligned,
                     alpha_feat_cols,
                 )
-                meta_context = transform(alpha_frame)
+                for transform_owner in transform_owners:
+                    try:
+                        _append_context(transform_owner.transform_meta_features(alpha_frame))
+                    except Exception as exc:
+                        last_exc = exc
             except Exception as exc:
+                last_exc = exc
+            if not contexts:
                 if not getattr(self, "_alpha_meta_context_warned", False):
                     tprint(
                         "Meta inference: failed to materialize alpha model meta "
-                        f"context for {kind}: {exc}"
+                        f"context for {kind}: {last_exc}"
                     )
                     self._alpha_meta_context_warned = True
                 return features
 
-        if not isinstance(meta_context, pd.DataFrame) or meta_context.empty:
-            return features
-
         out = features.copy()
-        meta_context = meta_context.reindex(out.index)
+        meta_context = pd.concat(
+            [ctx.reindex(out.index) for ctx in contexts],
+            axis=1,
+            copy=False,
+        )
+        meta_context = meta_context.loc[
+            :, ~meta_context.columns.astype(str).duplicated(keep="last")
+        ]
+        raw_state_sources = {
+            str(src)
+            for src in needed_sources
+            if str(src) in set(RAW_STATE_SVD_FEATURE_NAMES)
+            or str(src) in set(RAW_STATE_DIAGNOSTIC_FEATURE_NAMES)
+        }
+        meta_context_cols = set(map(str, meta_context.columns))
+        if raw_state_sources and not raw_state_sources.issubset(meta_context_cols):
+            raw_state = None
+            for raw_state_owner in candidate_owners:
+                raw_state = getattr(raw_state_owner, "raw_state_archetype_state", None)
+                if raw_state is not None:
+                    break
+            if raw_state is not None:
+                try:
+                    raw_context = transform_raw_state_archetype_features(
+                        features,
+                        raw_state,
+                        index=out.index,
+                    )
+                    if isinstance(raw_context, pd.DataFrame) and not raw_context.empty:
+                        meta_context = pd.concat(
+                            [meta_context, raw_context.reindex(out.index)],
+                            axis=1,
+                            copy=False,
+                        )
+                        meta_context = meta_context.loc[
+                            :,
+                            ~meta_context.columns.astype(str).duplicated(
+                                keep="last"
+                            ),
+                        ]
+                except Exception as exc:
+                    if not getattr(self, "_alpha_raw_state_context_warned", False):
+                        tprint(
+                            "Meta inference: failed to materialize raw-state "
+                        f"context for {kind}: {exc}"
+                    )
+                    self._alpha_raw_state_context_warned = True
+        base_error_sources = {
+            str(src)
+            for src in needed_sources
+            if str(src) in set(BASE_ERROR_ARCHETYPE_FEATURE_NAMES)
+        }
+        if base_error_sources:
+            base_error_state = None
+            for owner in (
+                meta_model,
+                getattr(meta_model, "best_model", None),
+                getattr(meta_model, "estimator", None),
+            ):
+                if owner is None:
+                    continue
+                base_error_state = getattr(owner, "base_error_archetype_state_", None)
+                if base_error_state is not None:
+                    break
+            if base_error_state is not None:
+                try:
+                    signature_context = pd.concat(
+                        [out, meta_context.reindex(out.index)],
+                        axis=1,
+                        copy=False,
+                    )
+                    signature_context = signature_context.loc[
+                        :,
+                        ~signature_context.columns.astype(str).duplicated(
+                            keep="last"
+                        ),
+                    ]
+                    base_error_context = transform_residual_error_archetype_features(
+                        signature_context,
+                        base_error_state,
+                        index=out.index,
+                    )
+                    if (
+                        isinstance(base_error_context, pd.DataFrame)
+                        and not base_error_context.empty
+                    ):
+                        meta_context = pd.concat(
+                            [meta_context, base_error_context.reindex(out.index)],
+                            axis=1,
+                            copy=False,
+                        )
+                        meta_context = meta_context.loc[
+                            :,
+                            ~meta_context.columns.astype(str).duplicated(
+                                keep="last"
+                            ),
+                        ]
+                except Exception as exc:
+                    if not getattr(self, "_alpha_base_error_context_warned", False):
+                        tprint(
+                            "Meta inference: failed to materialize base-error "
+                            f"archetype context for {kind}: {exc}"
+                        )
+                        self._alpha_base_error_context_warned = True
+            elif not getattr(self, "_alpha_base_error_context_missing_warned", False):
+                tprint(
+                    "Meta inference: base-error archetype features are required "
+                    f"for {kind}, but no base_error_archetype_state_ is attached "
+                    "to the meta model artifact."
+                )
+                self._alpha_base_error_context_missing_warned = True
         added = 0
+        raw_contrib_sources = {
+            str(src)
+            for src in needed_sources
+            if is_raw_contrib_feature_name(str(src))
+        }
         for col in ALPHA_MODEL_META_FEATURE_KEYS:
             if col not in needed_sources or col not in meta_context.columns:
                 continue
@@ -1302,6 +1844,18 @@ class ModelOrchestrator:
                 out[str(alias)] = pd.to_numeric(
                     meta_context[col], errors="coerce"
                 ).astype(np.float32)
+                added += 1
+        for col in sorted(raw_contrib_sources):
+            if col not in meta_context.columns:
+                continue
+            source = pd.to_numeric(meta_context[col], errors="coerce").astype(np.float32)
+            if col in needed:
+                out[col] = source
+                added += 1
+            for alias in sorted(needed):
+                if _model_drift_feature_alias_source(alias) != col:
+                    continue
+                out[str(alias)] = source
                 added += 1
         if (
             "feature_drift_psi_core" in needed_sources
@@ -1344,6 +1898,36 @@ class ModelOrchestrator:
                 meta_context["feature_drift_psi_core_80"], errors="coerce"
             ).astype(np.float32)
             added += 1
+        if any(
+            _model_drift_feature_alias_source(alias) == "feature_drift_ks_core"
+            for alias in needed
+        ):
+            ks_source_col = None
+            for candidate in (
+                "feature_drift_ks_core",
+                "feature_drift_ks_bin_mean",
+                "feature_drift_ks_bin_max",
+            ):
+                if candidate in meta_context.columns:
+                    ks_source_col = candidate
+                    break
+            if ks_source_col is not None:
+                source = pd.to_numeric(
+                    meta_context[ks_source_col],
+                    errors="coerce",
+                ).astype(np.float32)
+                if "feature_drift_ks_core" in needed and "feature_drift_ks_core" not in out.columns:
+                    out["feature_drift_ks_core"] = source
+                    added += 1
+                for alias in sorted(needed):
+                    if (
+                        alias in out.columns
+                        or _model_drift_feature_alias_source(alias)
+                        != "feature_drift_ks_core"
+                    ):
+                        continue
+                    out[str(alias)] = source
+                    added += 1
         out, alias_added = _materialize_model_drift_feature_aliases(
             out,
             needed,
@@ -1362,8 +1946,17 @@ class ModelOrchestrator:
         self,
         features: pd.DataFrame,
         meta_model: Any,
+        *,
+        include_all: bool = False,
+        prefix: str | None = None,
     ) -> pd.DataFrame:
-        """Attach this meta model's own artifact-backed drift features."""
+        """Attach this meta model's own artifact-backed drift features.
+
+        By default this only materializes columns required by the meta model's
+        own feature contract.  ``include_all`` plus ``prefix`` is used by policy
+        reporting/regime-adaptor paths to retain the full meta-layer drift and
+        uncertainty diagnostics without colliding with unprefixed alpha context.
+        """
         if not isinstance(features, pd.DataFrame) or features.empty:
             return features
         state = getattr(meta_model, "model_drift_state_", None)
@@ -1383,13 +1976,21 @@ class ModelOrchestrator:
             effective_cols
             or [str(c) for c in (getattr(meta_model, "feature_columns", []) or [])]
         )
-        needed_sources = _required_model_drift_sources(needed)
+        contract_sources = _required_model_drift_sources(needed)
+        report_sources = set(MODEL_DRIFT_FEATURE_KEYS) if include_all else set()
+        prefix_s = str(prefix).strip("_") if prefix else ""
+        needed_sources = contract_sources | report_sources
         added = 0
         for col in drift.columns:
             if col not in needed_sources:
                 continue
-            out[col] = pd.to_numeric(drift[col], errors="coerce").astype(np.float32)
-            added += 1
+            values = pd.to_numeric(drift[col], errors="coerce").astype(np.float32)
+            if col in contract_sources or (include_all and not prefix_s):
+                out[col] = values
+                added += 1
+            if prefix_s and col in report_sources:
+                out[f"{prefix_s}_{col}"] = values
+                added += 1
         # Backward-compatible aggregate alias used by older feature contracts.
         if (
             "feature_drift_psi_core" in needed
@@ -1397,12 +1998,32 @@ class ModelOrchestrator:
         ):
             out["feature_drift_psi_core"] = out["feature_drift_psi_core_80"]
             added += 1
+        if (
+            "feature_drift_ks_core" in needed
+            and "feature_drift_ks_core" not in out.columns
+            and "feature_drift_ks_bin_mean" in out.columns
+        ):
+            out["feature_drift_ks_core"] = out["feature_drift_ks_bin_mean"]
+            added += 1
         out, alias_added = _materialize_model_drift_feature_aliases(
             out,
             needed,
             overwrite=True,
         )
         added += alias_added
+        if prefix_s and include_all:
+            psi_col = f"{prefix_s}_feature_drift_psi_core_80"
+            if psi_col in out.columns:
+                out[f"{prefix_s}_feature_drift_psi_core"] = pd.to_numeric(
+                    out[psi_col], errors="coerce"
+                ).astype(np.float32)
+                added += 1
+            ks_col = f"{prefix_s}_feature_drift_ks_bin_mean"
+            if ks_col in out.columns:
+                out[f"{prefix_s}_feature_drift_ks_core"] = pd.to_numeric(
+                    out[ks_col], errors="coerce"
+                ).astype(np.float32)
+                added += 1
         if added and not getattr(self, "_meta_drift_context_warned", False):
             tprint(
                 "Meta inference: materialized meta-model drift columns "
@@ -1436,20 +2057,110 @@ class ModelOrchestrator:
         self._last_meta_model_key = None
         self._last_meta_model_input = None
         self._last_meta_model_features = []
+        self._last_results.pop("mr_tf_meta_routing", None)
+        self._last_mr_tf_route_frames_by_key.pop(f"meta:{requested_kind}", None)
         if key not in self.meta_models:
-            side_key = f"{side}_{kind}"
-            clf_key = f"{key}_clf"
-            tbm_key = f"{key}_tbm_clf"
-            if side_key in self.meta_models:
-                key = side_key
-            elif clf_key in self.meta_models:
-                key = clf_key
-            elif tbm_key in self.meta_models:
-                key = tbm_key
+            core = strategy_core_id(str(kind))
+            side_s = str(side or "").lower()
+            candidates = [
+                f"{side_s}_{kind}" if side_s else "",
+                f"{key}_clf",
+                f"{core}_clf" if core else "",
+                f"{key}_tbm_clf",
+                f"{core}_tbm_clf" if core else "",
+                f"{side_s}_{kind}_clf" if side_s else "",
+                f"{side_s}_{core}_clf" if side_s and core else "",
+                f"{side_s}_{kind}_tbm_clf" if side_s else "",
+                f"{side_s}_{core}_tbm_clf" if side_s and core else "",
+            ]
+            for candidate_key in candidates:
+                if candidate_key and candidate_key in self.meta_models:
+                    key = candidate_key
+                    break
 
         if key not in self.meta_models:
             tprint(f"Warning: Meta model not found for {key}")
             return pd.Series(dtype=float)
+
+        try:
+            from extreme_price_movements.mr_tf_masks import (
+                apply_mr_tf_masks as _apply_mr_tf_masks,
+                mr_tf_masks_enabled as _mr_tf_masks_enabled,
+            )
+
+            if bool(_mr_tf_masks_enabled(self.cfg)) and not any(
+                f"_{route}_tbm_clf" in str(key) for route in ("mr", "tf")
+            ):
+                mask_params = None
+                try:
+                    _, alpha_info_for_route = self._alpha_model_info_for_kind(
+                        side,
+                        requested_kind,
+                    )
+                    if isinstance(alpha_info_for_route, dict):
+                        mask_params = (
+                            (
+                                alpha_info_for_route.get("mr_tf_specialists")
+                                or {}
+                            )
+                            .get("mask_diagnostics", {})
+                            .get("params")
+                        )
+                except Exception:
+                    mask_params = None
+                route_frame, route_diag = _apply_mr_tf_masks(
+                    features,
+                    side=side,
+                    cfg=self.cfg,
+                    params=mask_params,
+                )
+                self._last_mr_tf_route_frames_by_key[f"meta:{requested_kind}"] = route_frame[
+                    [
+                        c
+                        for c in (
+                            "__mr_tf_route__",
+                            "__mr_mask__",
+                            "__tf_mask__",
+                            "__mixed_mask__",
+                            "__mr_tf_params_hash__",
+                        )
+                        if c in route_frame.columns
+                    ]
+                ].copy()
+                if "__mr_tf_route__" in route_frame.columns and len(route_frame):
+                    route_values = set(route_frame["__mr_tf_route__"].astype(str))
+                    route_values.discard("mixed")
+                    if len(route_values) == 1:
+                        route_name = next(iter(route_values))
+                        side_s = str(side or "").lower()
+                        core = strategy_core_id(str(requested_kind))
+                        route_candidates = [
+                            f"{side_s}_{requested_kind}_{route_name}_tbm_clf"
+                            if side_s
+                            else "",
+                            f"{side_s}_{core}_{route_name}_tbm_clf"
+                            if side_s and core
+                            else "",
+                            f"{requested_kind}_{route_name}_tbm_clf",
+                            f"{core}_{route_name}_tbm_clf" if core else "",
+                        ]
+                        for route_key in route_candidates:
+                            if route_key and route_key in self.meta_models:
+                                self._last_results["mr_tf_meta_routing"] = {
+                                    "requested_key": key,
+                                    "selected_key": route_key,
+                                    "route": route_name,
+                                    "params_hash": route_diag.get(
+                                        "params_hash", ""
+                                    ),
+                                }
+                                key = route_key
+                                break
+        except Exception as _route_exc:
+            tprint(
+                f"Warning: MR/TF meta specialist routing skipped for {key}: "
+                f"{_route_exc}"
+            )
 
         meta_model = self.meta_models[key]
 
@@ -1472,32 +2183,35 @@ class ModelOrchestrator:
                 for c in (feat_cols or [])
                 if str(c) not in DELETED_MODEL_FEATURE_KEYS
             ]
-            stale_model_derived_cols = []
-            for col in feat_cols:
-                if col not in features.columns or not is_model_derived_feature_key(col):
-                    continue
-                col_s = str(col)
-                # Bare base-score aliases are the causal source used to build
-                # downstream interactions. Drift/context diagnostics derived
-                # from model artifacts are recomputed below instead.
-                if re.match(
-                    r"^(?:pred(?:_.*)?_H\d+|base_H\d+)"
-                    r"(?:_ebm_raw|_ebm_en|_ebm_uncertainty_weighted)?$",
-                    col_s,
-                ):
-                    continue
-                stale_model_derived_cols.append(col_s)
-            if stale_model_derived_cols:
-                features = features.drop(columns=stale_model_derived_cols).copy()
-                if timing_enabled and not getattr(
-                    self, "_stale_meta_model_derived_warned", False
-                ):
-                    tprint(
-                        "Meta inference: dropped stale precomputed model-derived "
-                        "feature columns before artifact-backed materialization "
-                        f"(sample={stale_model_derived_cols[:12]})."
-                    )
-                    self._stale_meta_model_derived_warned = True
+            if not bool(
+                self.cfg.get("preserve_logged_meta_model_derived_features", False)
+            ):
+                stale_model_derived_cols = []
+                for col in feat_cols:
+                    if col not in features.columns or not is_model_derived_feature_key(col):
+                        continue
+                    col_s = str(col)
+                    # Bare base-score aliases are the causal source used to build
+                    # downstream interactions. Drift/context diagnostics derived
+                    # from model artifacts are recomputed below instead.
+                    if re.match(
+                        r"^(?:pred(?:_.*)?_H\d+|base_H\d+)"
+                        r"(?:_ebm_raw|_ebm_en|_ebm_uncertainty_weighted)?$",
+                        col_s,
+                    ):
+                        continue
+                    stale_model_derived_cols.append(col_s)
+                if stale_model_derived_cols:
+                    features = features.drop(columns=stale_model_derived_cols).copy()
+                    if timing_enabled and not getattr(
+                        self, "_stale_meta_model_derived_warned", False
+                    ):
+                        tprint(
+                            "Meta inference: dropped stale precomputed model-derived "
+                            "feature columns before artifact-backed materialization "
+                            f"(sample={stale_model_derived_cols[:12]})."
+                        )
+                        self._stale_meta_model_derived_warned = True
 
             features = self._materialize_alpha_model_meta_features(
                 features,
@@ -1515,6 +2229,33 @@ class ModelOrchestrator:
                 side=side,
                 kind=requested_kind,
             )
+            try:
+                from extreme_price_movements.rule_mask_features import (
+                    append_rule_mask_features as _append_rule_mask_features,
+                    is_rule_mask_feature_name as _is_rule_mask_feature_name,
+                )
+
+                if any(_is_rule_mask_feature_name(c) for c in feat_cols):
+                    _rule_cfg = dict(self.cfg or {})
+                    _rule_cfg["lgbm_rule_mask_features_enabled"] = True
+                    features, _rule_diag = _append_rule_mask_features(
+                        features,
+                        _rule_cfg,
+                        side=side,
+                        context=f"inference:meta:{key}",
+                    )
+                    if timing_enabled:
+                        tprint(
+                            "Meta inference: materialized rule-mask features "
+                            f"key={key} n_rules={_rule_diag.get('n_rules')} "
+                            f"source_available={_rule_diag.get('available_source_keys')}/"
+                            f"{_rule_diag.get('n_source_keys')}"
+                        )
+            except Exception as exc:
+                tprint(
+                    f"Meta inference: rule-mask feature materialization failed "
+                    f"for {key}: {exc}"
+                )
             if timing_enabled:
                 tprint(
                     "[Timing] model.meta_materialize: "
@@ -1573,7 +2314,7 @@ class ModelOrchestrator:
                         if bool(
                             self.cfg.get(
                                 "strict_feature_parity_neutral_fill_nonfinite",
-                                True,
+                                False,
                             )
                         ):
                             total_bad, sample = _model_matrix_nonfinite_summary(
@@ -1663,23 +2404,22 @@ class ModelOrchestrator:
             self._last_meta_model_features = [str(c) for c in list(X.columns)]
             self._last_meta_model_input = X.copy()
             self._last_meta_diagnostics = {}
-            transform_meta = getattr(meta_model, "transform_meta_features", None)
-            if callable(transform_meta):
-                try:
-                    diag_t0 = time.perf_counter()
-                    self._last_meta_diagnostics = _first_row_diagnostics(
-                        transform_meta(X)
+            try:
+                diag_t0 = time.perf_counter()
+                self._last_meta_diagnostics = _first_row_diagnostics(
+                    _lgbm_internal_metrics_frame(meta_model, X)
+                )
+                if timing_enabled and self._last_meta_diagnostics:
+                    tprint(
+                        "[Timing] model.meta_diagnostics: "
+                        f"key={key} fields={len(self._last_meta_diagnostics)} "
+                        f"stage={time.perf_counter() - diag_t0:.3f}s "
+                        f"rss={_process_rss_mb():.1f}MB"
                     )
-                    if timing_enabled:
-                        tprint(
-                            "[Timing] model.meta_diagnostics: "
-                            f"key={key} stage={time.perf_counter() - diag_t0:.3f}s "
-                            f"rss={_process_rss_mb():.1f}MB"
-                        )
-                except Exception as exc:
-                    self._last_meta_diagnostics = {
-                        "lgbm_diagnostics_error": str(exc)[:240]
-                    }
+            except Exception as exc:
+                self._last_meta_diagnostics = {
+                    "lgbm_diagnostics_error": str(exc)[:240]
+                }
             pred_t0 = time.perf_counter()
             preds = meta_model.predict(X)
             if timing_enabled:
@@ -1691,7 +2431,87 @@ class ModelOrchestrator:
                     f"rss={_process_rss_mb():.1f}MB"
                 )
 
-            return pd.Series(preds, index=X.index)
+            out = pd.Series(preds, index=X.index)
+            try:
+                from extreme_price_movements.mr_tf_masks import (
+                    mr_tf_masks_enabled as _mr_tf_masks_enabled,
+                    route_series_from_frame as _route_series_from_frame,
+                )
+
+                is_route_specific_key = any(
+                    f"_{route}_tbm_clf" in str(key) for route in ("mr", "tf")
+                )
+                if (
+                    bool(_mr_tf_masks_enabled(self.cfg))
+                    and not is_route_specific_key
+                    and not bool(getattr(self, "_mr_tf_meta_override_active", False))
+                ):
+                    route_frame = (
+                        getattr(self, "_last_mr_tf_route_frames_by_key", {}) or {}
+                    ).get(f"meta:{requested_kind}")
+                    if isinstance(route_frame, pd.DataFrame) and not route_frame.empty:
+                        aligned_route = route_frame.reindex(out.index)
+                        routes, known = _route_series_from_frame(aligned_route)
+                        side_s = str(side or "").lower()
+                        core = strategy_core_id(str(requested_kind))
+                        route_overlay_report: Dict[str, Any] = {}
+                        for route_name in ("mr", "tf"):
+                            route_idx = out.index[
+                                np.asarray(
+                                    (routes == route_name) & known,
+                                    dtype=bool,
+                                )
+                            ]
+                            if len(route_idx) <= 0:
+                                continue
+                            route_candidates = [
+                                f"{side_s}_{requested_kind}_{route_name}_tbm_clf"
+                                if side_s
+                                else "",
+                                f"{side_s}_{core}_{route_name}_tbm_clf"
+                                if side_s and core
+                                else "",
+                                f"{requested_kind}_{route_name}_tbm_clf",
+                                f"{core}_{route_name}_tbm_clf" if core else "",
+                            ]
+                            route_key = next(
+                                (
+                                    candidate_key
+                                    for candidate_key in route_candidates
+                                    if candidate_key and candidate_key in self.meta_models
+                                ),
+                                "",
+                            )
+                            if not route_key:
+                                continue
+                            self._mr_tf_meta_override_active = True
+                            try:
+                                route_pred = self.predict_meta(
+                                    features.reindex(route_idx),
+                                    side,
+                                    route_key,
+                                )
+                            finally:
+                                self._mr_tf_meta_override_active = False
+                            if isinstance(route_pred, pd.Series) and not route_pred.empty:
+                                route_pred = route_pred.reindex(route_idx).dropna()
+                                out.loc[route_pred.index] = route_pred.values
+                                route_overlay_report[route_name] = {
+                                    "selected_key": route_key,
+                                    "rows": int(len(route_pred)),
+                                }
+                        if route_overlay_report:
+                            self._last_results["mr_tf_meta_routing"] = {
+                                "requested_key": str(key),
+                                "mode": "per_row_overlay",
+                                "routes": route_overlay_report,
+                            }
+            except Exception as route_exc:
+                tprint(
+                    f"Warning: MR/TF per-row meta specialist overlay skipped for {key}: "
+                    f"{route_exc}"
+                )
+            return out
         except Exception as e:
             tprint(f"Error predicting meta for {key}: {e}")
             return pd.Series(dtype=float)
@@ -1944,15 +2764,62 @@ class ModelOrchestrator:
             self.cfg, adaptor
         ):
             try:
-                if "symbol" in features.columns:
-                    symbols = features["symbol"].astype(str).to_numpy()
+                base_diagnostics_by_key = (
+                    getattr(self, "_last_base_lgbm_diagnostics_by_key", {}) or {}
+                )
+                base_diagnostics = (
+                    base_diagnostics_by_key.get(str(kind))
+                    or base_diagnostics_by_key.get(f"{side}_{kind}")
+                    or getattr(self, "_last_base_lgbm_diagnostics", {})
+                    or {}
+                )
+                regime_source_features = features
+                try:
+                    route_frames = (
+                        getattr(self, "_last_mr_tf_route_frames_by_key", {}) or {}
+                    )
+                    route_frame = None
+                    for route_key in (str(kind), f"{side}_{kind}", f"meta:{kind}"):
+                        candidate_route_frame = route_frames.get(route_key)
+                        if isinstance(candidate_route_frame, pd.DataFrame):
+                            route_frame = candidate_route_frame
+                            break
+                    if isinstance(route_frame, pd.DataFrame) and not route_frame.empty:
+                        regime_source_features = features.copy()
+                        aligned_route = route_frame.reindex(regime_source_features.index)
+                        for route_col in aligned_route.columns:
+                            if route_col not in regime_source_features.columns:
+                                regime_source_features[route_col] = aligned_route[
+                                    route_col
+                                ].values
+                except Exception:
+                    regime_source_features = features
+                regime_features = _feature_frame_with_lgbm_diagnostics(
+                    regime_source_features,
+                    base_diagnostics=base_diagnostics,
+                    meta_diagnostics=getattr(self, "_last_meta_diagnostics", {}) or {},
+                )
+                try:
+                    from extreme_price_movements.mr_tf_masks import (
+                        append_mr_tf_route_features as _append_mr_tf_route_features,
+                    )
+
+                    regime_features = _append_mr_tf_route_features(regime_features)
+                except Exception:
+                    pass
+                regime_features = _feature_frame_with_latest_drift_features(
+                    regime_features,
+                    self.cfg,
+                )
+                if "symbol" in regime_features.columns:
+                    symbols = regime_features["symbol"].astype(str).to_numpy()
                 else:
-                    symbols = features.index.astype(str).to_numpy()
+                    symbols = regime_features.index.astype(str).to_numpy()
                 applied = apply_regime_adaptor(
-                    features,
+                    regime_features,
                     final_preds,
                     adaptor,
-                    timestamps=features.index,
+                    timestamps=regime_features.index,
                     symbols=symbols,
                 )
                 regime_weight = np.asarray(
@@ -1962,22 +2829,9 @@ class ModelOrchestrator:
                     applied.get("eligible", np.ones(len(final_preds), dtype=bool)),
                     dtype=bool,
                 )
-                if "error_risk_adjusted_score" in applied:
-                    final_preds = np.asarray(
-                        applied["error_risk_adjusted_score"], dtype=float
-                    )
-                elif (
-                    "combined_score" in applied
-                    and "deployment_score_pre_rank" in applied
-                ):
-                    # Rolling RegimeAdaptor integration emits only a pre-rank score here.
-                    # Portfolio/global or per-side rank normalization must happen downstream
-                    # after all strategy × symbol candidates are assembled.
-                    final_preds = np.asarray(
-                        applied["deployment_score_pre_rank"], dtype=float
-                    )
-                else:
-                    final_preds = final_preds * np.clip(regime_weight, 0.75, 1.20)
+                final_preds = _regime_adaptor_score_from_applied(
+                    applied, final_preds, regime_weight
+                )
                 final_preds = np.where(eligible, final_preds, 0.0)
                 mix_meta["regime_adaptor_enabled"] = float(
                     bool(np.any(applied.get("regime_adjustment_enabled", [True])))
@@ -1985,32 +2839,33 @@ class ModelOrchestrator:
                 mix_meta["regime_eligible_share"] = float(np.mean(eligible))
                 mix_meta["regime_weight_mean"] = float(np.mean(regime_weight))
                 for key in (
-                    "p_bad_regime_global_3d",
-                    "p_bad_regime_global_5d",
-                    "p_bad_regime_asset_3d",
-                    "p_bad_regime_asset_5d",
-                    "combined_global_bad_regime_score",
-                    "combined_asset_bad_regime_score",
-                    "bad_regime_offset",
+                    "meta_correctness_probability",
+                    "meta_correctness_probability_raw",
+                    "meta_correctness_probability_calibrated",
+                    "direct_label_regime_probability",
+                    "direct_label_regime_probability_raw",
+                    "meta_correctness_probability_calibrator_enabled",
+                    "meta_correctness_zscore",
+                    "meta_correctness_logit_offset",
+                    "meta_correctness_feature_count",
                     "combined_score",
                     "deployment_score_pre_rank",
+                    "deployment_score",
+                    "deployment_score_reference_rank",
+                    "deployment_score_rank",
+                    "deployment_score_rank_reference_n",
                     "local_batch_rank",
                     "score_delta_from_regime_adjustment",
-                    "live_required_columns_available",
-                    "error_risk_score",
-                    "error_risk_rank_score",
-                    "safety_rank_score",
-                    "score_multiplier",
                 ):
                     if key in applied:
                         arr = np.asarray(applied[key], dtype=float)
                         mix_meta[key] = float(np.nanmean(arr)) if len(arr) else 0.0
                 for key in (
-                    "selected_combination_params",
+                    "selected_correctness_integration_params",
                     "rank_scope",
                     "regime_disabled_reason",
-                    "missing_live_p_bad_regime_columns",
-                    "error_risk_disabled_reason",
+                    "meta_correctness_schema_missing_features",
+                    "selected_regime_adaptor_head",
                 ):
                     if key in applied:
                         vals = np.asarray(applied[key]).astype(str)
@@ -2251,8 +3106,24 @@ class ModelOrchestrator:
             results["reason"] = "meta_prediction_non_finite_no_base_fallback"
             return results
         results["meta_pred"] = meta_pred_val
+        base_diagnostics_by_key = dict(
+            getattr(self, "_last_base_lgbm_diagnostics_by_key", {}) or {}
+        )
+        base_diagnostics = base_diagnostics_by_key.get(str(kind))
+        if not base_diagnostics and base_diagnostics_by_key:
+            base_diagnostics = next(iter(base_diagnostics_by_key.values()))
+        if not base_diagnostics:
+            base_diagnostics = dict(
+                getattr(self, "_last_base_lgbm_diagnostics", {}) or {}
+            )
+        if base_diagnostics:
+            results["base_lgbm_diagnostics"] = dict(base_diagnostics)
+            results["base_lgbm_diagnostics_by_key"] = base_diagnostics_by_key
+            for diag_key, diag_value in base_diagnostics.items():
+                results[f"base_lgbm_{diag_key}"] = diag_value
         meta_diagnostics = dict(getattr(self, "_last_meta_diagnostics", {}) or {})
         if meta_diagnostics:
+            results["meta_lgbm_diagnostics"] = meta_diagnostics
             results["lgbm_diagnostics"] = meta_diagnostics
             for diag_key, diag_value in meta_diagnostics.items():
                 results[diag_key] = diag_value

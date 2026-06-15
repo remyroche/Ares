@@ -109,11 +109,17 @@ def test_daily_reporter_sends_balance_report_and_transfers_profit(
     assert exchange.transfers == []
     assert _FakeSMTP.logins == [("sender@example.com", "app-password")]
     assert len(_FakeSMTP.sent_messages) == 1
-    body = _FakeSMTP.sent_messages[0].get_content()
+    message = _FakeSMTP.sent_messages[0]
+    assert message.is_multipart()
+    body = message.get_body(preferencelist=("plain",)).get_content()
+    html_body = message.get_body(preferencelist=("html",)).get_content()
     assert "total_balance_usdt: 1100.00000000" in body
     assert "previous_best_available_balance_usdt: 1000.00000000" in body
     assert "amount_saved_to_spot_usdt: 0.00000000" in body
     assert "BTC/USDT" in body
+    assert "Extreme Price Movement Deployment Report" in html_body
+    assert "Total Balance" in html_body
+    assert "BTC/USDT" in html_body
 
     state = json.loads(Path(state_path).read_text())
     assert state["previous_best_balance_usdt"] == 1100.0
@@ -247,8 +253,32 @@ def test_confidence_calibration_recap_uses_net_amount_and_notional_fallback():
     assert ">=0.95 | 1 | 97.0000% | 100.0000% | 10.0000% | 20.0000 | 7.5000%" in recap
 
 
-def test_daily_report_body_includes_confidence_calibration_recap():
+def test_daily_report_body_includes_confidence_calibration_and_live_drift_recap(tmp_path):
     reporter = DailyDeploymentReporter(state_path="unused")
+    live_root = tmp_path / "live"
+    recap_dir = live_root / "live_state" / "drift_monitoring" / "latest"
+    recap_dir.mkdir(parents=True)
+    (recap_dir / "drift_recap.json").write_text(
+        json.dumps(
+            {
+                "asof_ts": "2026-01-02T00:00:00+00:00",
+                "label_maturity_cutoff_ts": "2026-01-02T00:00:00+00:00",
+                "ledger_rows": 10,
+                "scored_metric_rows": 8,
+                "regime_feature_rows": 3,
+                "family_scores": {
+                    "1d": {
+                        "prediction_drift": {
+                            "family_score": 0.7,
+                            "family_metric_coverage_ratio": 1.0,
+                            "family_reliable_baseline_ratio": 0.5,
+                            "family_matured_label_coverage_ratio": 1.0,
+                        }
+                    }
+                },
+            }
+        )
+    )
     body = reporter._build_body(
         now=pd.Timestamp("2026-01-02T00:01:00Z"),
         total_balance=1000.0,
@@ -264,10 +294,16 @@ def test_daily_report_body_includes_confidence_calibration_recap():
                 "net_pnl_amount": [1.0],
             }
         ),
+        config={"live_data_root": str(live_root)},
     )
 
     assert "Confidence Calibration Recap" in body
+    assert "Live Drift Recap" in body
+    assert "prediction_drift: score=0.700 coverage=1.00 reliable=0.50 matured=1.00" in body
     assert body.index("Model Drift And Execution") < body.index(
+        "Live Drift Recap"
+    )
+    assert body.index("Live Drift Recap") < body.index(
         "Confidence Calibration Recap"
     )
     assert body.index("Confidence Calibration Recap") < body.index("Net Strategy Recap")

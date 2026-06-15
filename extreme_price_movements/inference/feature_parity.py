@@ -463,13 +463,17 @@ def _finite_source_timestamp(
     series = series.loc[series.index <= end_ts]
     if series.empty:
         return None
-    finite = np.isfinite(series.to_numpy(dtype=np.float64, copy=False))
+    values = series.to_numpy(dtype=np.float64, copy=False)
+    finite = np.isfinite(values)
+    source_key_l = str(source_key or "").lower()
     positive_required = any(
-        token in source_key
-        for token in ("price", "close", "open", "high", "low", "interest", "volume")
+        token in source_key_l
+        for token in ("price", "close", "open", "high", "low", "interest")
     )
     if positive_required:
-        finite &= series.to_numpy(dtype=np.float64, copy=False) > 0.0
+        finite &= values > 0.0
+    elif "volume" in source_key_l:
+        finite &= values >= 0.0
     if not finite.any():
         return None
     return pd.Timestamp(series.index[np.flatnonzero(finite)[-1]])

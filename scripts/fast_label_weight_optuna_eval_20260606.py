@@ -233,6 +233,18 @@ def _weight_diagnostics(values: np.ndarray, *, reference: np.ndarray | None = No
     else:
         out["effective_sample_size"] = 0.0
         out["effective_sample_frac"] = 0.0
+    if reference is not None:
+        ref = np.asarray(reference, dtype=np.float64).reshape(-1)
+        n = min(len(arr), len(ref))
+        if n >= 3:
+            rank_frame = pd.DataFrame({"value": arr[:n], "reference": ref[:n]}).replace(
+                [np.inf, -np.inf],
+                np.nan,
+            )
+            rank_frame = rank_frame.dropna()
+            if len(rank_frame) >= 3:
+                corr = rank_frame["value"].rank().corr(rank_frame["reference"].rank())
+                out["rank_corr_to_reference"] = float(corr) if pd.notna(corr) else 0.0
     return out
 
 
@@ -671,6 +683,8 @@ class FastLongDistEvaluator:
             label=f"fast_trial_{trial_number}",
             fit_indices=data.train_idx,
         )
+        final_soft_stats = _array_stats(y_soft, reference=current_soft)
+        final_weight_stats = _weight_diagnostics(weights, reference=base_weight)
         pred = _fit_predict(data, y_soft, weights, trial_number=trial_number, phase=phase)
         eval_idx = data.eval_idx
         scored = pd.DataFrame(
@@ -715,16 +729,22 @@ class FastLongDistEvaluator:
             "geometry_stats": geometry_stats,
             "native_label_generator_stats": current_soft_stats,
             "native_weight_generator_stats": native_weight_stats,
+            "label_final_changed_frac": float(final_soft_stats.get("changed_frac_gt_1e_6", 0.0)),
+            "label_final_delta_abs_mean": float(final_soft_stats.get("delta_abs_mean", 0.0)),
+            "weight_final_changed_frac": float(final_weight_stats.get("changed_frac_gt_1e_6", 0.0)),
+            "weight_final_delta_abs_mean": float(final_weight_stats.get("delta_abs_mean", 0.0)),
+            "weight_rank_corr_to_baseline": float(final_weight_stats.get("rank_corr_to_reference", 1.0)),
+            "effective_sample_frac": float(final_weight_stats.get("effective_sample_frac", 0.0)),
             "label_stats": {
                 "source_hard": _array_stats(data.y_hard),
                 "geometry_hard": _array_stats(recipe_y_hard, reference=data.y_hard),
                 "native_soft": _array_stats(current_soft, reference=recipe_y_hard),
-                "final_soft": _array_stats(y_soft, reference=current_soft),
+                "final_soft": final_soft_stats,
             },
             "weight_stats": {
                 "source_base": _weight_diagnostics(data.base_weight),
                 "native_base": _weight_diagnostics(base_weight, reference=data.base_weight),
-                "final": _weight_diagnostics(weights, reference=base_weight),
+                "final": final_weight_stats,
             },
         }
         for k in (10, 20, 30, 50):

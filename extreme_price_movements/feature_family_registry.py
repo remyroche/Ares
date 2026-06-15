@@ -271,6 +271,8 @@ def get_feature_family(feature_name: str) -> FeatureFamily:
         return FeatureFamily.RISK_NORMALIZED_CONTINUOUS
     if "_self_z_" in lowered or lowered.endswith("_self_z"):
         return FeatureFamily.ALREADY_STANDARDIZED
+    if lowered.startswith("spread_proxy_") and lowered.endswith("_robust_z"):
+        return FeatureFamily.ALREADY_STANDARDIZED
     if lowered.startswith(("loc_", "dist_", "zscore_")):
         return FeatureFamily.BOUNDED_GEOMETRY
     if any(

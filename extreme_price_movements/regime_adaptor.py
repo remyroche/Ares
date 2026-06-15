@@ -3,10 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
+import pickle
 import re
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -23,28 +24,38 @@ from sklearn.isotonic import IsotonicRegression
 from extreme_price_movements.config import (
     CFG,
     REGIME_ADAPTOR_ASSET_FEATURE_KEYS,
-    REGIME_ADAPTOR_COMBINATION_GRID,
     REGIME_ADAPTOR_EBM_CONSOLIDATED_FEATURE_KEYS,
     REGIME_ADAPTOR_FEATURE_ORDER,
     REGIME_ADAPTOR_FUNDING_FEATURE_KEYS,
-    REGIME_ADAPTOR_GLOBAL_BAD_RATE_THRESHOLD,
     REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS,
-    REGIME_ADAPTOR_LGBM_CLASSIFIER_PARAMS,
-    REGIME_ADAPTOR_ASSET_BAD_RATE_THRESHOLD,
     REGIME_ADAPTOR_OBJECTIVE_WEIGHTS,
     REGIME_ADAPTOR_ORDERBOOK_FEATURE_KEYS,
     REGIME_ADAPTOR_RATIO_CLIPS,
     REGIME_ADAPTOR_ROLLING_PRIOR_FEATURE_KEYS,
     REGIME_ADAPTOR_STRATEGY_ASSET_FEATURE_KEYS,
 )
+from extreme_price_movements.mr_tf_masks import (
+    ROUTE_FEATURE_COLUMNS,
+    append_mr_tf_route_features,
+)
+from extreme_price_movements.candidate_drift_calibration import (
+    CANDIDATE_DRIFT_DIAGNOSTIC_COLUMNS,
+    CANDIDATE_DRIFT_FEATURE_COLUMNS,
+    CANDIDATE_DRIFT_LEGACY_ALIAS_COLUMNS,
+    DRIFT_SOURCE_COLUMNS as CANDIDATE_DRIFT_SOURCE_COLUMNS,
+    candidate_drift_report,
+    compact_candidate_drift_calibrator_state,
+    fit_transform_candidate_drift_calibrator,
+    hydrate_candidate_drift_calibrator_state,
+    transform_candidate_drift_features,
+)
 from extreme_price_movements.path_utils import resolve_mode_file
 
 try:
-    from lightgbm import Booster, LGBMClassifier, early_stopping
+    from lightgbm import Booster, LGBMClassifier
 except Exception:  # pragma: no cover - optional runtime dependency fallback.
     Booster = None  # type: ignore[assignment]
     LGBMClassifier = None  # type: ignore[assignment]
-    early_stopping = None  # type: ignore[assignment]
 
 try:
     import optuna
@@ -60,6 +71,25 @@ PREDICTION_DISAGREEMENT_THRESHOLD = 0.20
 SYMBOL_SHRINK_K = 200.0
 PSI_RARITY_THRESHOLD = 1.50
 MAX_DISTRIBUTION_FEATURES = 256
+META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS = tuple(
+    str(key)
+    for key in CFG.get(
+        "META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS",
+        (
+            "meta_lgbm_predictive_atlas_ic",
+            "meta_lgbm_predictive_atlas_rank_ic",
+            "meta_lgbm_predictive_atlas_hit_rate",
+            "meta_lgbm_predictive_atlas_expected_hit_rate",
+            "meta_lgbm_predictive_atlas_hit_rate_surprise",
+            "meta_lgbm_predictive_atlas_hit_rate_surprise_z",
+            "meta_lgbm_predictive_atlas_support_n",
+            "meta_lgbm_predictive_atlas_effective_n",
+            "meta_lgbm_predictive_atlas_score_mean",
+            "meta_lgbm_predictive_atlas_score_std",
+            "meta_lgbm_predictive_atlas_support_quality",
+        ),
+    )
+)
 REGIME_ADAPTOR_INFERENCE_DISABLED_MODES = {
     "",
     "0",
@@ -83,6 +113,7 @@ NEW_REGIME_FEATURES = (
     "meta_recent_brier_global",
     "abs_base_meta_diff",
     "signed_base_meta_diff",
+    "base_meta_model_disagreement",
     "abs_base_meta_diff_3d",
     "abs_base_meta_diff_7d",
     "abs_base_meta_diff_15d",
@@ -98,6 +129,12 @@ NEW_REGIME_FEATURES = (
     "base_models_disagreement_rate_3d",
     "base_models_disagreement_rate_7d",
     "base_models_disagreement_rate_15d",
+    "mr_tf_route_mr",
+    "mr_tf_route_tf",
+    "mr_tf_route_mixed",
+    "mr_tf_route_known",
+    "mr_tf_specialist_active",
+    "mr_tf_general_fallback",
     "max_abs_zscore",
     "mean_abs_zscore",
     "num_features_outside_p01_p99",
@@ -113,11 +150,80 @@ NEW_REGIME_FEATURES = (
     "symbol_sample_count_log",
     "symbol_liquidity_rank",
     "symbol_vol_rank",
+    *META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS,
+    *CANDIDATE_DRIFT_FEATURE_COLUMNS,
+    *[f"{key}_pct" for key in CANDIDATE_DRIFT_SOURCE_COLUMNS],
 )
 
-ROLLING_REGIME_HORIZONS_DAYS = (3, 5)
-ROLLING_REGIME_DEFAULT_BLEND_WEIGHTS = {3: 0.6, 5: 0.4}
-ROLLING_REGIME_BLEND_GRID = ((0.8, 0.2), (0.6, 0.4), (0.5, 0.5), (0.4, 0.6))
+ROLLING_REGIME_POSITIVE_BOOST_CHURN_FREE_TOP30_SHARE = 0.05
+ROLLING_REGIME_POSITIVE_BOOST_CHURN_PENALTY_STRENGTH = 0.50
+ROLLING_REGIME_POSITIVE_BOOST_CHURN_MAX_PENALTY = 0.15
+META_CORRECTNESS_INTEGRATION_SEARCH_SPACE = {
+    "lambda_correctness": (0.0, 1.0),
+    "correctness_offset_cap": (0.20, 0.60),
+}
+META_CORRECTNESS_INTEGRATION_HPO_TRIALS = 15
+META_CORRECTNESS_INTEGRATION_FALLBACK_GRID = {
+    "lambda_correctness": [0.0, 0.25, 0.50, 0.75, 1.0],
+    "correctness_offset_cap": [0.20, 0.40, 0.60],
+}
+META_CORRECTNESS_REGIME_PNL_TOP_FRACS = (0.05, 0.10, 0.20)
+META_CORRECTNESS_REGIME_PNL_TOP_FRAC_WEIGHTS = (0.40, 0.35, 0.25)
+META_CORRECTNESS_REGIME_PNL_LCB_Z = 1.0
+META_CORRECTNESS_MIN_ROWS = 200
+META_CORRECTNESS_RECENT_SCOPE_MONTHS = 2
+META_CORRECTNESS_MODEL_PICKLE_NAME = "meta_correctness_lgbm.pkl"
+DIRECT_LABEL_REGIME_MODEL_PICKLE_NAME = "direct_label_regime_lgbm.pkl"
+META_CORRECTNESS_SOFT_LABEL_CENTER = 0.5
+META_CORRECTNESS_CONVICTION_FLOOR = 0.25
+META_CORRECTNESS_SAMPLE_WEIGHT_CLIP = (0.25, 5.0)
+META_CORRECTNESS_CONFIDENT_BAD_WEIGHT = 1.25
+META_CORRECTNESS_WEIGHT_HPO_TRIALS = 200
+META_CORRECTNESS_WEIGHT_HPO_PATIENCE = 30
+META_CORRECTNESS_WEIGHT_HPO_DEFAULT_PARAMS = {
+    "rank_power": 2.0,
+    "conviction_multiplier": 0.75,
+    "pnl_mag_multiplier": 1.50,
+    "label_distance_multiplier": 1.50,
+}
+META_CORRECTNESS_FEATURE_REFINE_KEEP_FRACS = (1.00, 0.85, 0.70, 0.55)
+META_CORRECTNESS_FEATURE_REFINE_MIN_ROWS = 96
+META_CORRECTNESS_FEATURE_REFINE_MIN_FEATURES = 8
+META_CORRECTNESS_FEATURE_REFINE_MAX_FEATURES = 96
+META_CORRECTNESS_LGBM_HPO_OVERRIDES = {
+    "max_depth_max": 4,
+    "min_child_samples_pct_min": 0.03,
+}
+META_CORRECTNESS_DISTRIBUTION_ANOMALY_FEATURE_DEFINITIONS = {
+    "zscore_outliers": (
+        "Row-level counts or magnitudes of selected raw features outside their "
+        "time-safe training reference range."
+    ),
+    "psi_rarity": (
+        "Population-stability rarity versus training bins; high values mean the "
+        "row lives in feature ranges that were uncommon in the training slice."
+    ),
+    "ks_rarity": (
+        "CDF-distance rarity versus the training distribution, useful for tail "
+        "or one-sided distribution shifts."
+    ),
+    "mahalanobis_covariance_frobenius_shift": (
+        "Multivariate location and covariance shift in the selected feature or "
+        "SVD state space."
+    ),
+    "svd_reconstruction_error": (
+        "Distance from the low-rank raw-state manifold learned on the training "
+        "slice; high values flag off-manifold states."
+    ),
+    "knn_cluster_distance": (
+        "Distance to known train states or clusters; high values indicate "
+        "isolation from familiar regimes."
+    ),
+    "missing_stale_counts": (
+        "Data quality and freshness signals: missing inputs, stale snapshots, "
+        "or unavailable model-context features."
+    ),
+}
 REGIME_FEATURE_ORDER = list(
     dict.fromkeys(list(REGIME_ADAPTOR_FEATURE_ORDER) + list(NEW_REGIME_FEATURES))
 )
@@ -129,17 +235,8 @@ FUNDING_REGIME_FEATURES = tuple(REGIME_ADAPTOR_FUNDING_FEATURE_KEYS)
 ORDERBOOK_REGIME_FEATURES = tuple(REGIME_ADAPTOR_ORDERBOOK_FEATURE_KEYS)
 EBM_CONSOLIDATED_REGIME_FEATURES = tuple(REGIME_ADAPTOR_EBM_CONSOLIDATED_FEATURE_KEYS)
 ROLLING_PRIOR_REGIME_FEATURES = tuple(REGIME_ADAPTOR_ROLLING_PRIOR_FEATURE_KEYS)
-REQUIRED_LIVE_BAD_REGIME_COLUMNS = (
-    "p_bad_regime_global_3d",
-    "p_bad_regime_global_5d",
-    "p_bad_regime_asset_3d",
-    "p_bad_regime_asset_5d",
-)
 REGIME_OBJECTIVE_WEIGHTS = dict(REGIME_ADAPTOR_OBJECTIVE_WEIGHTS)
-GLOBAL_BAD_RATE_THRESHOLD = float(REGIME_ADAPTOR_GLOBAL_BAD_RATE_THRESHOLD)
-ASSET_BAD_RATE_THRESHOLD = float(REGIME_ADAPTOR_ASSET_BAD_RATE_THRESHOLD)
 REGIME_RATIO_CLIPS = {k: tuple(v) for k, v in REGIME_ADAPTOR_RATIO_CLIPS.items()}
-ROLLING_REGIME_LGBM_PARAMS = dict(REGIME_ADAPTOR_LGBM_CLASSIFIER_PARAMS)
 MARKET_MODE_SUFFIXES = {"spot": "_spot", "perps": "_perps"}
 ERROR_RISK_MIN_ROWS = 1000
 ERROR_RISK_MIN_BAD_ROWS = 100
@@ -196,9 +293,19 @@ ERROR_RISK_UNCERTAINTY_TOKENS = (
     "vote_margin",
     "support",
 )
+ERROR_RISK_ARCHETYPE_TOKENS = (
+    "archetype",
+    "distance_to_archetype",
+    "distance_to_bad_archetype",
+    "distance_to_good_archetype",
+    "base_error_",
+)
 ERROR_ARCHETYPE_SPARSIFY_MIN_FEATURES = 8
 ERROR_ARCHETYPE_SPARSIFY_MAX_FEATURES = 64
 ERROR_ARCHETYPE_SPARSIFY_DROP_FRACTION = 0.50
+ERROR_ARCHETYPE_MIN_ROLE_SUPPORT = 10
+ERROR_ARCHETYPE_MIN_BAD_RATE_DELTA = 0.05
+ERROR_ARCHETYPE_MIN_BAD_RATE_SPREAD = 0.05
 
 
 def _expand_cfg_feature_group_refs(keys: Sequence[Any], cfg: Dict[str, Any]) -> List[str]:
@@ -529,6 +636,26 @@ FEATURE_CANDIDATES.update(
             "funding_abs_z",
             "funding_rate_abs_mean",
         ),
+        "asset_spread_decile": (
+            "asset_spread_decile",
+            "asset_average_spread_decile",
+            "average_spread_decile",
+        ),
+        "asset_p75_spread_bps": (
+            "asset_p75_spread_bps",
+            "p75_spread_bps",
+            "asset_spread_p75_bps",
+        ),
+        "asset_p75_spread_decile": (
+            "asset_p75_spread_decile",
+            "p75_spread_decile",
+            "asset_spread_p75_decile",
+        ),
+        "spread_to_expected_move": (
+            "spread_to_expected_move",
+            "asset_spread_to_expected_move",
+            "spread_to_barrier",
+        ),
         "asset_spread_proxy_p90_24h": (
             "asset_spread_proxy_p90_24h",
             "spread_proxy_p90_24h",
@@ -623,26 +750,6 @@ for _feat in REGIME_FEATURE_ORDER:
     FEATURE_CANDIDATES.setdefault(_feat, (_feat,))
 
 
-@dataclass
-class RegimeAdaptorFit:
-    artifact: Dict[str, Any]
-    fixed_diagnostics: pd.DataFrame
-    adaptive_diagnostics: pd.DataFrame
-    asset_diagnostics: pd.DataFrame
-    metrics: pd.DataFrame
-    regime_weight_oof: np.ndarray
-    eligible_oof: np.ndarray
-    deployment_score_oof: np.ndarray
-    deployment_score_rank_oof: np.ndarray
-    regime_utility_pred_15d_oof: Optional[np.ndarray] = None
-    regime_utility_pred_30d_oof: Optional[np.ndarray] = None
-    combined_regime_utility_oof: Optional[np.ndarray] = None
-    regime_logit_offset_oof: Optional[np.ndarray] = None
-    trust_score_oof: Optional[np.ndarray] = None
-    trust_proba_oof: Optional[np.ndarray] = None
-    error_risk_diagnostics: Optional[pd.DataFrame] = None
-
-
 def safe_strategy_slug(strategy_id: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(strategy_id or "")).strip("_")
     return slug[:180] or "strategy"
@@ -667,19 +774,13 @@ def regime_adaptor_inference_enabled(
     runtime_cfg: Optional[Dict[str, Any]] = None,
     artifact: Optional[Dict[str, Any]] = None,
 ) -> bool:
-    """Return whether a trained regime adaptor should be applied at inference.
-
-    Research/training enablement and live inference enablement are intentionally
-    separate so artifacts can keep diagnostics while deployment stays opt-in.
-    """
+    """Return whether the retained meta-correctness adaptor should run live."""
     artifact = artifact or {}
-    error_risk = artifact.get("error_risk_model", {})
-    error_risk_enabled = bool(
-        isinstance(error_risk, dict)
-        and error_risk.get("enabled", False)
-        and artifact.get("enable_error_risk_gate", False)
+    is_meta_correctness = (
+        artifact.get("schema_version") == "rolling_meta_correctness_v2"
+        or artifact.get("model_type") == "meta_correctness_lgbm"
     )
-    if not bool(artifact.get("enable_regime_adaptor", False)) and not error_risk_enabled:
+    if not is_meta_correctness or not bool(artifact.get("enable_regime_adaptor", False)):
         return False
 
     cfg = runtime_cfg or {}
@@ -700,11 +801,6 @@ def regime_adaptor_inference_enabled(
         explicit_cfg = _coerce_optional_bool(nested.get("inference_enabled"))
     if explicit_cfg is not None:
         return bool(explicit_cfg)
-
-    if error_risk_enabled and str(
-        artifact.get("error_risk_inference_integration_mode", "")
-    ).strip().lower() in {"soft_modulator", "error_risk_soft_modulator"}:
-        return True
 
     mode = None
     if isinstance(cfg, dict):
@@ -757,6 +853,311 @@ def _fill_numeric(arr: np.ndarray, fill: float = 0.0) -> np.ndarray:
         med = float(fill)
     x[~finite] = med
     return x.astype(np.float32)
+
+
+_REGIME_SPREAD_BASELINE_CACHE: Dict[str, Optional[Dict[str, Any]]] = {}
+_REGIME_SPREAD_BASELINE_DEFAULT_PATH = (
+    "data_perp/exchanges/krakenfutures/spread_model/"
+    "per_asset_spread_baseline_latest.csv"
+)
+REGIME_SPREAD_BIN_COUNT = 50
+
+
+def _spread_cost_bin(values: Sequence[Any]) -> np.ndarray:
+    series = pd.to_numeric(pd.Series(values).reset_index(drop=True), errors="coerce").replace(
+        [np.inf, -np.inf], np.nan
+    )
+    out = np.full(len(series), np.nan, dtype=np.float64)
+    finite = series.dropna()
+    if finite.empty:
+        return out.astype(np.float32)
+    pct = finite.rank(method="average", pct=True).to_numpy(dtype=np.float64)
+    bins = np.floor(np.clip(pct - 1e-12, 0.0, 1.0) * float(REGIME_SPREAD_BIN_COUNT))
+    out[finite.index.to_numpy(dtype=np.int64)] = np.clip(
+        bins,
+        0.0,
+        float(REGIME_SPREAD_BIN_COUNT - 1),
+    )
+    return out.astype(np.float32)
+
+
+def _regime_spread_baseline_path() -> Path:
+    explicit = os.environ.get("EPM_SIMPLE_POLICY_SPREAD_BASELINE_PATH", "").strip()
+    if explicit:
+        return Path(explicit)
+    return Path(_REGIME_SPREAD_BASELINE_DEFAULT_PATH)
+
+
+def _spread_baseline_frame_from_path(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        return pd.DataFrame()
+    if path.suffix.lower() == ".json":
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return pd.DataFrame()
+        rows = (
+            payload.get("per_asset_spread_baseline")
+            or payload.get("per_asset_average_spread")
+            or []
+        )
+        return pd.DataFrame(rows if isinstance(rows, list) else [])
+    try:
+        return pd.read_csv(path)
+    except Exception:
+        return pd.DataFrame()
+
+
+def _load_regime_spread_baseline() -> Optional[Dict[str, Any]]:
+    path = _regime_spread_baseline_path()
+    cache_key = str(path)
+    if cache_key in _REGIME_SPREAD_BASELINE_CACHE:
+        return _REGIME_SPREAD_BASELINE_CACHE[cache_key]
+    frame = _spread_baseline_frame_from_path(path)
+    if frame.empty or "symbol" not in frame.columns:
+        _REGIME_SPREAD_BASELINE_CACHE[cache_key] = None
+        return None
+    avg_col = _first_col(
+        frame, ("average_spread_bps", "baseline_spread_bps", "spread_bps")
+    )
+    if avg_col is None:
+        _REGIME_SPREAD_BASELINE_CACHE[cache_key] = None
+        return None
+    p75_col = _first_col(
+        frame, ("p75_spread_bps", "asset_p75_spread_bps", "spread_p75_bps")
+    )
+    work = frame.copy()
+    work["symbol"] = work["symbol"].astype(str)
+    work["_avg_spread_bps"] = pd.to_numeric(work[avg_col], errors="coerce")
+    if p75_col is not None:
+        work["_p75_spread_bps"] = pd.to_numeric(work[p75_col], errors="coerce")
+    else:
+        work["_p75_spread_bps"] = work["_avg_spread_bps"]
+    work["_p75_spread_bps"] = work["_p75_spread_bps"].fillna(
+        work["_avg_spread_bps"]
+    )
+    valid = work.dropna(subset=["symbol", "_avg_spread_bps"])
+    valid = valid[
+        np.isfinite(valid["_avg_spread_bps"])
+        & (valid["_avg_spread_bps"] >= 0.0)
+    ].copy()
+    if valid.empty:
+        _REGIME_SPREAD_BASELINE_CACHE[cache_key] = None
+        return None
+    valid["_p75_spread_bps"] = pd.to_numeric(
+        valid["_p75_spread_bps"], errors="coerce"
+    ).fillna(valid["_avg_spread_bps"])
+    valid["_p75_spread_bps"] = valid["_p75_spread_bps"].clip(lower=0.0)
+    valid["_avg_spread_bin"] = _spread_cost_bin(valid["_avg_spread_bps"])
+    valid["_p75_spread_bin"] = _spread_cost_bin(valid["_p75_spread_bps"])
+    weights = pd.to_numeric(
+        valid.get("rows", pd.Series(1.0, index=valid.index)), errors="coerce"
+    ).fillna(1.0).clip(lower=0.0).to_numpy(dtype=np.float64)
+    if float(weights.sum()) <= 0.0:
+        weights = np.ones(len(valid), dtype=np.float64)
+    avg_values = valid["_avg_spread_bps"].to_numpy(dtype=np.float64)
+    p75_values = valid["_p75_spread_bps"].to_numpy(dtype=np.float64)
+    baseline = {
+        "source": str(path),
+        "global_average_spread_bps": float(np.average(avg_values, weights=weights)),
+        "global_p75_spread_bps": float(np.average(p75_values, weights=weights)),
+        "global_average_spread_decile": float(
+            np.average(valid["_avg_spread_bin"].to_numpy(dtype=np.float64), weights=weights)
+        ),
+        "global_p75_spread_decile": float(
+            np.average(valid["_p75_spread_bin"].to_numpy(dtype=np.float64), weights=weights)
+        ),
+        "avg_by_symbol": dict(
+            zip(valid["symbol"].astype(str), valid["_avg_spread_bps"].astype(float))
+        ),
+        "p75_by_symbol": dict(
+            zip(valid["symbol"].astype(str), valid["_p75_spread_bps"].astype(float))
+        ),
+        "avg_decile_by_symbol": dict(
+            zip(valid["symbol"].astype(str), valid["_avg_spread_bin"].astype(float))
+        ),
+        "p75_decile_by_symbol": dict(
+            zip(valid["symbol"].astype(str), valid["_p75_spread_bin"].astype(float))
+        ),
+    }
+    _REGIME_SPREAD_BASELINE_CACHE[cache_key] = baseline
+    return baseline
+
+
+def _map_spread_baseline(
+    symbols: np.ndarray,
+    baseline: Optional[Dict[str, Any]],
+    key: str,
+    default_key: str,
+    n: int,
+) -> Optional[np.ndarray]:
+    if not baseline:
+        return None
+    mapping = baseline.get(key)
+    if not isinstance(mapping, dict):
+        return None
+    try:
+        default = float(baseline.get(default_key, np.nan))
+    except Exception:
+        default = np.nan
+    vals = pd.to_numeric(
+        pd.Series(symbols.astype(str)).map(mapping), errors="coerce"
+    ).to_numpy(dtype=np.float64)
+    if np.isfinite(default):
+        vals = np.where(np.isfinite(vals), vals, default)
+    if len(vals) < n:
+        out = np.full(n, default if np.isfinite(default) else np.nan, dtype=np.float64)
+        out[: len(vals)] = vals
+        vals = out
+    return vals[:n].astype(np.float32, copy=False)
+
+
+def _expected_move_bps_from_features(
+    feature_frame: pd.DataFrame, n: int
+) -> Optional[np.ndarray]:
+    bps = _col(
+        feature_frame,
+        (
+            "expected_move_bps",
+            "policy_expected_move_bps",
+            "barrier_bps",
+            "target_move_bps",
+        ),
+        n,
+    )
+    if bps is not None:
+        return np.maximum(_fill_numeric(bps, fill=np.nan), 1e-6)
+    pct = _col(
+        feature_frame,
+        (
+            "policy_effective_barrier_pct",
+            "barrier_pct",
+            "expected_move_pct",
+            "target_return_pct",
+        ),
+        n,
+    )
+    if pct is None:
+        return None
+    vals = np.asarray(pct, dtype=np.float64)
+    finite = vals[np.isfinite(vals)]
+    if finite.size and float(np.nanmedian(np.abs(finite))) <= 5.0:
+        vals = vals * 10_000.0
+    return np.maximum(_fill_numeric(vals, fill=np.nan), 1e-6)
+
+
+def _append_static_spread_regime_features(
+    feature_frame: pd.DataFrame,
+    out: Dict[str, np.ndarray],
+    mapping: Dict[str, Any],
+    symbols: np.ndarray,
+    n: int,
+) -> None:
+    baseline = _load_regime_spread_baseline()
+    avg_spread = _col(
+        feature_frame,
+        ("asset_average_spread_bps", "average_spread_bps", "expected_spread_bps"),
+        n,
+    )
+    p75_spread = _col(feature_frame, FEATURE_CANDIDATES["asset_p75_spread_bps"], n)
+    avg_decile = _col(feature_frame, FEATURE_CANDIDATES["asset_spread_decile"], n)
+    p75_decile = _col(feature_frame, FEATURE_CANDIDATES["asset_p75_spread_decile"], n)
+
+    if avg_spread is None:
+        avg_spread = _map_spread_baseline(
+            symbols, baseline, "avg_by_symbol", "global_average_spread_bps", n
+        )
+    if p75_spread is None:
+        p75_spread = _map_spread_baseline(
+            symbols, baseline, "p75_by_symbol", "global_p75_spread_bps", n
+        )
+    if p75_spread is None and avg_spread is not None:
+        p75_spread = np.asarray(avg_spread, dtype=np.float32)
+
+    if avg_decile is None:
+        avg_decile = _map_spread_baseline(
+            symbols, baseline, "avg_decile_by_symbol", "global_average_spread_decile", n
+        )
+        if avg_decile is None and avg_spread is not None:
+            avg_decile = _spread_cost_bin(avg_spread)
+    if p75_decile is None:
+        p75_decile = _map_spread_baseline(
+            symbols, baseline, "p75_decile_by_symbol", "global_p75_spread_decile", n
+        )
+        if p75_decile is None and p75_spread is not None:
+            p75_decile = _spread_cost_bin(p75_spread)
+
+    if avg_decile is not None:
+        out["asset_spread_decile"] = _fill_numeric(
+            np.clip(avg_decile, 0.0, float(REGIME_SPREAD_BIN_COUNT - 1)),
+            fill=float(REGIME_SPREAD_BIN_COUNT - 1) / 2.0,
+        )
+        mapping["asset_spread_decile"] = (
+            _first_col(feature_frame, FEATURE_CANDIDATES["asset_spread_decile"])
+            or f"per_asset_spread_baseline.average_spread_bps:{REGIME_SPREAD_BIN_COUNT}_bins"
+        )
+    if p75_spread is not None:
+        out["asset_p75_spread_bps"] = _fill_numeric(p75_spread, fill=0.0)
+        mapping["asset_p75_spread_bps"] = (
+            _first_col(feature_frame, FEATURE_CANDIDATES["asset_p75_spread_bps"])
+            or "per_asset_spread_baseline.p75_spread_bps"
+        )
+    if p75_decile is not None:
+        out["asset_p75_spread_decile"] = _fill_numeric(
+            np.clip(p75_decile, 0.0, float(REGIME_SPREAD_BIN_COUNT - 1)),
+            fill=float(REGIME_SPREAD_BIN_COUNT - 1) / 2.0,
+        )
+        mapping["asset_p75_spread_decile"] = (
+            _first_col(feature_frame, FEATURE_CANDIDATES["asset_p75_spread_decile"])
+            or f"per_asset_spread_baseline.p75_spread_bps:{REGIME_SPREAD_BIN_COUNT}_bins"
+        )
+
+    direct_ratio = _col(feature_frame, FEATURE_CANDIDATES["spread_to_expected_move"], n)
+    if direct_ratio is not None:
+        out["spread_to_expected_move"] = _fill_numeric(
+            np.clip(direct_ratio, 0.0, 100.0), fill=0.0
+        )
+        mapping["spread_to_expected_move"] = _first_col(
+            feature_frame, FEATURE_CANDIDATES["spread_to_expected_move"]
+        )
+    elif avg_spread is not None:
+        expected_move_bps = _expected_move_bps_from_features(feature_frame, n)
+        if expected_move_bps is not None:
+            ratio = np.asarray(avg_spread, dtype=np.float64) / np.maximum(
+                np.asarray(expected_move_bps, dtype=np.float64), 1e-6
+            )
+            out["spread_to_expected_move"] = _fill_numeric(
+                np.clip(ratio, 0.0, 100.0), fill=0.0
+            )
+            mapping["spread_to_expected_move"] = {
+                "spread_bps": (
+                    _first_col(
+                        feature_frame,
+                        (
+                            "asset_average_spread_bps",
+                            "average_spread_bps",
+                            "expected_spread_bps",
+                        ),
+                    )
+                    or "per_asset_spread_baseline.average_spread_bps"
+                ),
+                "expected_move_bps": (
+                    _first_col(
+                        feature_frame,
+                        (
+                            "expected_move_bps",
+                            "policy_expected_move_bps",
+                            "barrier_bps",
+                            "target_move_bps",
+                            "policy_effective_barrier_pct",
+                            "barrier_pct",
+                            "expected_move_pct",
+                            "target_return_pct",
+                        ),
+                    )
+                    or "missing"
+                ),
+            }
 
 
 def build_regime_feature_frame(
@@ -909,6 +1310,20 @@ def build_regime_feature_frame(
                 feature_frame, FEATURE_CANDIDATES.get(key, (key,))
             )
 
+    try:
+        routed_features = append_mr_tf_route_features(feature_frame.iloc[:n])
+        for key in ROUTE_FEATURE_COLUMNS:
+            if key in routed_features.columns:
+                out[key] = _fill_numeric(
+                    pd.to_numeric(routed_features[key], errors="coerce").to_numpy(
+                        dtype=np.float64
+                    ),
+                    fill=0.0,
+                )
+                mapping[key] = "mr_tf_route_state"
+    except Exception:
+        pass
+
     if timestamps is not None and len(timestamps) >= n:
         ts = pd.to_datetime(np.asarray(timestamps)[:n], utc=True, errors="coerce")
         out["is_weekend"] = (pd.DatetimeIndex(ts).dayofweek >= 5).astype(np.float32)
@@ -919,6 +1334,7 @@ def build_regime_feature_frame(
         if symbols is not None and len(symbols) >= n
         else np.repeat("all", n).astype(str)
     )
+    _append_static_spread_regime_features(feature_frame, out, mapping, sym_arr, n)
     rolling_30d_periods = 30 * 24
     rolling_30d_min_periods = 24
     if timestamps is not None and len(timestamps) >= n:
@@ -962,6 +1378,15 @@ def build_regime_feature_frame(
         mapping[
             key
         ] = f"rolling30d({_first_col(feature_frame, FEATURE_CANDIDATES[key])})"
+
+    for key in REGIME_FEATURE_ORDER:
+        if key in out:
+            continue
+        arr = _col(feature_frame, FEATURE_CANDIDATES.get(key, (key,)), n)
+        if arr is None:
+            continue
+        out[key] = _fill_numeric(arr, fill=0.0)
+        mapping[key] = _first_col(feature_frame, FEATURE_CANDIDATES.get(key, (key,)))
 
     ordered = {key: out[key] for key in REGIME_FEATURE_ORDER if key in out}
     for key in (
@@ -1040,7 +1465,7 @@ def _fit_distribution_feature_spec(
     if len(filled) >= 20 and len(cols) >= 2:
         try:
             xs = scaler.fit_transform(filled.to_numpy(dtype=np.float64))
-            max_components = min(xs.shape[0], xs.shape[1], 64)
+            max_components = min(xs.shape[0], xs.shape[1], 16)
             pca = PCA(n_components=max_components, random_state=42)
             pca.fit(xs)
             cumulative = np.cumsum(pca.explained_variance_ratio_)
@@ -1429,6 +1854,7 @@ def _append_prediction_reliability_features(
     abs_diff = np.abs(diff)
     out["abs_base_meta_diff"] = abs_diff.astype(np.float32)
     out["signed_base_meta_diff"] = diff.astype(np.float32)
+    out["base_meta_model_disagreement"] = abs_diff.astype(np.float32)
     for days in (3, 7, 15):
         out[f"abs_base_meta_diff_{days}d"] = _fill_numeric(
             _rolling_by_symbol(abs_diff, timestamps, symbols, days), 0.0
@@ -2780,6 +3206,7 @@ def _error_risk_feature_pool(
         )
     direct_tokens = (
         *ERROR_RISK_UNCERTAINTY_TOKENS,
+        *ERROR_RISK_ARCHETYPE_TOKENS,
         "leaf_",
         "vote_",
         "pred_mean",
@@ -3144,6 +3571,9 @@ def _select_error_risk_features(
         "uncertainty_family_selected": any(
             _feature_matches_any_token(f, ERROR_RISK_UNCERTAINTY_TOKENS) for f in selected
         ),
+        "archetype_family_selected": any(
+            _feature_matches_any_token(f, ERROR_RISK_ARCHETYPE_TOKENS) for f in selected
+        ),
         "candidate_feature_scores": rows[:100],
     }
 
@@ -3158,6 +3588,11 @@ def _ensure_error_risk_family_access(
     ranked_rows: Sequence[Dict[str, Any]],
 ) -> List[str]:
     out = list(dict.fromkeys(str(f) for f in selected))
+    protected_family_tokens = (
+        *ERROR_RISK_DRIFT_TOKENS,
+        *ERROR_RISK_UNCERTAINTY_TOKENS,
+        *ERROR_RISK_ARCHETYPE_TOKENS,
+    )
 
     def ensure_family(tokens: Sequence[str]) -> None:
         nonlocal out
@@ -3170,11 +3605,17 @@ def _ensure_error_risk_family_access(
             if len(out) < ERROR_RISK_MAX_FEATURES:
                 out.append(feat)
             elif out:
-                out[-1] = feat
+                replace_idx = len(out) - 1
+                for idx in range(len(out) - 1, -1, -1):
+                    if not _feature_matches_any_token(out[idx], protected_family_tokens):
+                        replace_idx = idx
+                        break
+                out[replace_idx] = feat
             return
 
     ensure_family(ERROR_RISK_DRIFT_TOKENS)
     ensure_family(ERROR_RISK_UNCERTAINTY_TOKENS)
+    ensure_family(ERROR_RISK_ARCHETYPE_TOKENS)
     return out[:ERROR_RISK_MAX_FEATURES]
 
 
@@ -3579,14 +4020,60 @@ def _fit_error_archetype_spec(
             "top_contribution_features": top_features,
         }
         cluster_rows.append(row)
-        if count >= 10 and bad_rate >= global_bad + 0.05:
+        if (
+            count >= ERROR_ARCHETYPE_MIN_ROLE_SUPPORT
+            and bad_rate >= global_bad + ERROR_ARCHETYPE_MIN_BAD_RATE_DELTA
+        ):
             bad_ids.append(int(cid))
-        if count >= 10 and bad_rate <= global_bad - 0.05:
+        if (
+            count >= ERROR_ARCHETYPE_MIN_ROLE_SUPPORT
+            and bad_rate <= global_bad - ERROR_ARCHETYPE_MIN_BAD_RATE_DELTA
+        ):
             good_ids.append(int(cid))
-    if not bad_ids:
-        bad_ids = [int(max(cluster_rows, key=lambda r: r["bad_rate"])["cluster_id"])]
-    if not good_ids:
-        good_ids = [int(min(cluster_rows, key=lambda r: r["bad_rate"])["cluster_id"])]
+    supported_rows = [
+        r
+        for r in cluster_rows
+        if int(r.get("count", 0)) >= ERROR_ARCHETYPE_MIN_ROLE_SUPPORT
+    ]
+    max_supported_bad = (
+        float(max(r["bad_rate"] for r in supported_rows)) if supported_rows else global_bad
+    )
+    min_supported_bad = (
+        float(min(r["bad_rate"] for r in supported_rows)) if supported_rows else global_bad
+    )
+    bad_rate_spread = float(max_supported_bad - min_supported_bad)
+    role_signal_ok = bool(
+        bad_ids
+        and good_ids
+        and bad_rate_spread >= ERROR_ARCHETYPE_MIN_BAD_RATE_SPREAD
+    )
+    role_diagnostics = {
+        "global_bad_rate": global_bad,
+        "min_role_support": int(ERROR_ARCHETYPE_MIN_ROLE_SUPPORT),
+        "min_bad_rate_delta": float(ERROR_ARCHETYPE_MIN_BAD_RATE_DELTA),
+        "min_bad_rate_spread": float(ERROR_ARCHETYPE_MIN_BAD_RATE_SPREAD),
+        "max_supported_bad_rate": max_supported_bad,
+        "min_supported_bad_rate": min_supported_bad,
+        "bad_rate_spread": bad_rate_spread,
+        "role_signal_ok": bool(role_signal_ok),
+        "reason": "material_bad_good_separation" if role_signal_ok else "weak_cluster_separation",
+    }
+    if not role_signal_ok:
+        return {
+            "enabled": False,
+            "reason": "weak_cluster_separation",
+            "contribution_source": contribution_source,
+            "center": center.astype(float).tolist(),
+            "scale": scale.astype(float).tolist(),
+            "centroids": np.asarray(km.cluster_centers_, dtype=float).tolist(),
+            "contribution_features": [str(f) for f in (contribution_features or [])],
+            "global_bad_rate": global_bad,
+            "clusters": cluster_rows,
+            "bad_cluster_ids": [],
+            "good_cluster_ids": [],
+            "features": list(ERROR_ARCHETYPE_FEATURES),
+            "role_diagnostics": role_diagnostics,
+        }
     return {
         "enabled": True,
         "contribution_source": contribution_source,
@@ -3599,6 +4086,7 @@ def _fit_error_archetype_spec(
         "bad_cluster_ids": bad_ids,
         "good_cluster_ids": good_ids,
         "features": list(ERROR_ARCHETYPE_FEATURES),
+        "role_diagnostics": role_diagnostics,
     }
 
 
@@ -3689,11 +4177,11 @@ def _augment_error_features_with_archetypes(
         return base_x
     base_features = [str(f) for f in signature.get("features", [])]
     model_str = str(signature.get("booster_model_str", "") or "")
-    if not model_str or not base_features or any(f not in base_x.columns for f in base_features):
+    if not model_str or not base_features:
         return base_x
     try:
         booster = Booster(model_str=model_str)
-        x_sig = base_x[base_features].apply(pd.to_numeric, errors="coerce")
+        x_sig = base_x.reindex(columns=base_features).apply(pd.to_numeric, errors="coerce")
         medians = signature.get("feature_medians", {})
         for col in base_features:
             x_sig[col] = x_sig[col].replace([np.inf, -np.inf], np.nan).fillna(
@@ -3703,6 +4191,21 @@ def _augment_error_features_with_archetypes(
         if raw.ndim != 2 or raw.shape[0] != len(base_x):
             return base_x
         contrib = raw[:, : len(base_features)]
+        sparse_features = [
+            str(f)
+            for f in (
+                signature.get("sparse_contribution_features")
+                or archetypes.get("contribution_features")
+                or []
+            )
+        ]
+        if sparse_features and sparse_features != base_features:
+            index_by_feature = {str(f): i for i, f in enumerate(base_features)}
+            if all(f in index_by_feature for f in sparse_features):
+                keep = [index_by_feature[f] for f in sparse_features]
+                contrib = contrib[:, keep]
+            else:
+                return base_x
         arch = _transform_error_archetype_features(
             contrib, archetypes, index=base_x.index
         )
@@ -3936,6 +4439,87 @@ def _fit_error_risk_isotonic_calibrator(
 
 def _apply_error_risk_calibrator(pred_error: np.ndarray, spec: Dict[str, Any]) -> np.ndarray:
     p = np.clip(np.asarray(pred_error, dtype=np.float64), 1e-6, 1.0 - 1e-6)
+    if not isinstance(spec, dict) or not bool(spec.get("enabled", False)):
+        return p
+    xs = np.asarray(spec.get("x_thresholds", []), dtype=np.float64)
+    ys = np.asarray(spec.get("y_thresholds", []), dtype=np.float64)
+    if xs.ndim != 1 or ys.ndim != 1 or len(xs) == 0 or len(xs) != len(ys):
+        return p
+    order = np.argsort(xs)
+    xs = xs[order]
+    ys = ys[order]
+    return np.clip(np.interp(p, xs, ys, left=ys[0], right=ys[-1]), 1e-6, 1.0 - 1e-6)
+
+
+def _fit_meta_correctness_probability_calibrator(
+    p_meta_correct: Sequence[float],
+    y_correct: Sequence[float],
+    *,
+    sample_weight: Optional[Sequence[float]] = None,
+) -> Dict[str, Any]:
+    p = np.asarray(p_meta_correct, dtype=np.float64)
+    y = np.asarray(y_correct, dtype=np.float64)
+    n = min(len(p), len(y))
+    if n <= 0:
+        return {"enabled": False, "method": "isotonic", "reason": "empty_input"}
+    p = np.clip(p[:n], 1e-6, 1.0 - 1e-6)
+    y = y[:n]
+    finite = np.isfinite(p) & np.isfinite(y)
+    if int(np.sum(finite)) < 20 or len(np.unique(y[finite].astype(int))) < 2:
+        return {
+            "enabled": False,
+            "method": "isotonic",
+            "reason": "insufficient_validation_support",
+            "n": int(np.sum(finite)),
+        }
+    sw = None
+    if sample_weight is not None:
+        raw_sw = np.asarray(sample_weight, dtype=np.float64)
+        if len(raw_sw) >= n:
+            raw_sw = raw_sw[:n]
+            sw = np.where(np.isfinite(raw_sw) & (raw_sw > 0.0), raw_sw, 0.0)
+            if float(np.sum(sw[finite])) <= 0.0:
+                sw = None
+    try:
+        iso = IsotonicRegression(out_of_bounds="clip", y_min=1e-6, y_max=1.0 - 1e-6)
+        iso.fit(p[finite], y[finite], sample_weight=None if sw is None else sw[finite])
+        calibrated = _apply_meta_correctness_probability_calibrator(
+            p[finite],
+            {
+                "enabled": True,
+                "method": "isotonic",
+                "x_thresholds": np.asarray(iso.X_thresholds_, dtype=float).tolist(),
+                "y_thresholds": np.asarray(iso.y_thresholds_, dtype=float).tolist(),
+            },
+        )
+        return {
+            "enabled": True,
+            "method": "isotonic",
+            "fit_slice": "regime_adaptor_validation_lgbm_select_plus_hpo",
+            "n": int(np.sum(finite)),
+            "positive_rate": float(np.nanmean(y[finite])),
+            "raw_brier": float(np.nanmean(np.square(p[finite] - y[finite]))),
+            "calibrated_brier": float(
+                np.nanmean(np.square(calibrated - y[finite]))
+            ),
+            "raw_ece": _ece_binary(y[finite], p[finite]),
+            "calibrated_ece": _ece_binary(y[finite], calibrated),
+            "x_thresholds": np.asarray(iso.X_thresholds_, dtype=float).tolist(),
+            "y_thresholds": np.asarray(iso.y_thresholds_, dtype=float).tolist(),
+        }
+    except Exception as exc:
+        return {
+            "enabled": False,
+            "method": "isotonic",
+            "reason": f"fit_failed:{exc}",
+        }
+
+
+def _apply_meta_correctness_probability_calibrator(
+    p_meta_correct: Sequence[float],
+    spec: Optional[Dict[str, Any]],
+) -> np.ndarray:
+    p = np.clip(np.asarray(p_meta_correct, dtype=np.float64), 1e-6, 1.0 - 1e-6)
     if not isinstance(spec, dict) or not bool(spec.get("enabled", False)):
         return p
     xs = np.asarray(spec.get("x_thresholds", []), dtype=np.float64)
@@ -4326,10 +4910,6 @@ def _fit_error_risk_model(
         col: float(np.nanmedian(x_dev_final[col].to_numpy(dtype=np.float64)))
         for col in final_feature_columns
     }
-    signature_medians = {
-        col: float(np.nanmedian(x_dev[col].to_numpy(dtype=np.float64)))
-        for col in selected_features
-    }
     min_meta_pred = float(np.nanmin(score_arr[dev_idx])) if len(dev_idx) else 0.0
     feature_importance = _lgbm_feature_importance_report(final_model, final_feature_columns)
     win_rate_report = _error_risk_win_rate_report(
@@ -4514,6 +5094,247 @@ def _apply_error_risk_model(
     }
 
 
+def _load_meta_correctness_model_from_artifact(artifact: Dict[str, Any]) -> Any:
+    model = artifact.get("_meta_correctness_model_object")
+    if model is not None:
+        defaults = artifact.get("model_effectiveness_history_defaults")
+        if defaults and not getattr(model, "model_effectiveness_history_defaults_", None):
+            try:
+                setattr(model, "model_effectiveness_history_defaults_", dict(defaults))
+                setattr(
+                    model,
+                    "model_effectiveness_history_default_sources_",
+                    dict(artifact.get("model_effectiveness_history_default_sources", {}) or {}),
+                )
+            except Exception:
+                pass
+        return model
+    path = artifact.get("meta_correctness_model_path")
+    if not path:
+        return None
+    try:
+        model_path = Path(str(path))
+        if not model_path.exists():
+            return None
+        with model_path.open("rb") as f:
+            model = pickle.load(f)
+        defaults = artifact.get("model_effectiveness_history_defaults")
+        if defaults and not getattr(model, "model_effectiveness_history_defaults_", None):
+            try:
+                setattr(model, "model_effectiveness_history_defaults_", dict(defaults))
+                setattr(
+                    model,
+                    "model_effectiveness_history_default_sources_",
+                    dict(artifact.get("model_effectiveness_history_default_sources", {}) or {}),
+                )
+            except Exception:
+                pass
+        artifact["_meta_correctness_model_object"] = model
+        return model
+    except Exception:
+        return None
+
+
+def _load_direct_label_regime_model_from_artifact(artifact: Dict[str, Any]) -> Any:
+    model = artifact.get("_direct_label_regime_model_object")
+    if model is not None:
+        return model
+    path = artifact.get("direct_label_regime_model_path")
+    if not path:
+        return None
+    try:
+        model_path = Path(str(path))
+        if not model_path.exists():
+            return None
+        with model_path.open("rb") as f:
+            model = pickle.load(f)
+        artifact["_direct_label_regime_model_object"] = model
+        return model
+    except Exception:
+        return None
+
+
+def _apply_meta_correctness_regime_adaptor(
+    feature_frame: pd.DataFrame,
+    pred_calibrated: Sequence[float],
+    artifact: Dict[str, Any],
+    timestamps: Optional[Sequence[Any]] = None,
+    symbols: Optional[Sequence[Any]] = None,
+) -> Dict[str, np.ndarray]:
+    n = len(pred_calibrated)
+    score = np.clip(_as_float_array(pred_calibrated, n), 1e-6, 1.0 - 1e-6)
+    requested_enabled = bool(artifact.get("enable_regime_adaptor", False))
+    model = _load_meta_correctness_model_from_artifact(artifact)
+    direct_model = _load_direct_label_regime_model_from_artifact(artifact)
+    selected_head = str(artifact.get("selected_regime_adaptor_head", "meta_correctness") or "meta_correctness")
+    params = (
+        artifact.get(
+            "deployed_correctness_integration_params",
+            artifact.get("selected_correctness_integration_params", {}),
+        )
+        if isinstance(
+            artifact.get(
+                "deployed_correctness_integration_params",
+                artifact.get("selected_correctness_integration_params", {}),
+            ),
+            dict,
+        )
+        else {}
+    )
+    try:
+        x_live_base, mapping = _build_meta_correctness_feature_frame(
+            feature_frame.iloc[:n], score, timestamps, symbols
+        )
+        x_live_atlas, meta_predictive_atlas_state, meta_predictive_atlas_diag = (
+            _append_meta_lgbm_predictive_atlas_features(
+                x_live_base,
+                feature_frame.iloc[:n],
+                score,
+                timestamps=timestamps,
+                fit=False,
+                state=artifact.get("meta_lgbm_predictive_atlas", {}),
+            )
+        )
+        mapping["meta_lgbm_predictive_atlas"] = meta_predictive_atlas_diag
+        x_live, candidate_drift_state, candidate_drift_diag = _append_candidate_drift_calibration_features(
+            x_live_atlas,
+            feature_frame.iloc[:n],
+            timestamps=timestamps,
+            state=artifact.get("candidate_drift_calibrator", {}),
+            fit=False,
+        )
+        mapping["candidate_drift_calibration"] = candidate_drift_diag
+        p_correct_raw = np.full(n, 0.5, dtype=np.float64)
+        p_correct = p_correct_raw.copy()
+        p_direct_raw = np.full(n, 0.5, dtype=np.float64)
+        p_direct = p_direct_raw.copy()
+        correctness_available = model is not None
+        direct_available = direct_model is not None
+        if correctness_available:
+            p_correct_raw = np.clip(model.predict(x_live), 1e-6, 1.0 - 1e-6)
+            p_correct = _apply_meta_correctness_probability_calibrator(
+                p_correct_raw,
+                artifact.get("meta_correctness_probability_calibrator", {}),
+            )
+        if direct_available:
+            p_direct_raw = np.clip(direct_model.predict(x_live), 1e-6, 1.0 - 1e-6)
+            p_direct = _apply_meta_correctness_probability_calibrator(
+                p_direct_raw,
+                artifact.get("direct_label_probability_calibrator", {}),
+            )
+        if selected_head == "direct_label" and direct_available:
+            p_signal = p_direct
+            params = artifact.get("deployed_direct_label_integration_params", params) or params
+            selected_available = True
+        elif selected_head == "blend" and correctness_available and direct_available:
+            p_signal = np.clip(0.5 * p_correct + 0.5 * p_direct, 1e-6, 1.0 - 1e-6)
+            params = artifact.get("deployed_blend_integration_params", params) or params
+            selected_available = True
+        else:
+            p_signal = p_correct
+            selected_available = correctness_available
+        schema_diag = (
+            model.inference_schema_diagnostics(x_live)
+            if model is not None and hasattr(model, "inference_schema_diagnostics")
+            else {}
+        )
+        live_enabled = bool(requested_enabled and selected_available)
+        disabled_reason = ""
+    except Exception as exc:
+        x_live = pd.DataFrame(index=np.arange(n))
+        mapping = {}
+        p_correct_raw = np.full(n, 0.5, dtype=np.float64)
+        p_correct = p_correct_raw.copy()
+        p_direct_raw = np.full(n, 0.5, dtype=np.float64)
+        p_direct = p_direct_raw.copy()
+        p_signal = p_correct
+        schema_diag = {}
+        live_enabled = False
+        disabled_reason = str(exc)
+    combined = combine_meta_correctness_scores(score, p_signal, params=params)
+    deployment_pre_rank = combined["final_score"] if live_enabled else score.copy()
+    local_rank = _global_rank(deployment_pre_rank)
+    rank_ref = np.asarray(
+        artifact.get("deployment_score_rank_reference", []),
+        dtype=np.float64,
+    )
+    rank_ref = rank_ref[np.isfinite(rank_ref)]
+    reference_rank_available = bool(len(rank_ref) > 0)
+    deployment_reference_rank = (
+        _apply_percentile(deployment_pre_rank, rank_ref)
+        if reference_rank_available
+        else local_rank
+    )
+    return {
+        "regime_weight": np.ones(n, dtype=np.float64),
+        "eligible": np.ones(n, dtype=bool),
+        "deployment_score_pre_rank": deployment_pre_rank.astype(np.float64),
+        "deployment_score": deployment_pre_rank.astype(np.float64),
+        "deployment_score_reference_rank": deployment_reference_rank.astype(np.float64),
+        "deployment_score_rank": deployment_reference_rank.astype(np.float64),
+        "deployment_score_rank_reference_n": np.repeat(int(len(rank_ref)), n),
+        "local_batch_rank": local_rank.astype(np.float64),
+        "meta_correctness_probability": combined[
+            "meta_correctness_probability"
+        ].astype(np.float64),
+        "meta_correctness_probability_raw": np.asarray(
+            p_correct_raw, dtype=np.float64
+        ),
+        "meta_correctness_probability_calibrated": np.asarray(
+            p_correct, dtype=np.float64
+        ),
+        "direct_label_regime_probability": np.asarray(p_direct, dtype=np.float64),
+        "direct_label_regime_probability_raw": np.asarray(
+            p_direct_raw, dtype=np.float64
+        ),
+        "selected_regime_adaptor_head": np.repeat(selected_head, n),
+        "meta_correctness_probability_calibrator_enabled": np.repeat(
+            bool(
+                isinstance(
+                    artifact.get("meta_correctness_probability_calibrator", {}),
+                    dict,
+                )
+                and artifact.get("meta_correctness_probability_calibrator", {}).get(
+                    "enabled",
+                    False,
+                )
+            ),
+            n,
+        ),
+        "meta_correctness_zscore": combined["meta_correctness_zscore"].astype(
+            np.float64
+        ),
+        "meta_correctness_logit_offset": combined[
+            "meta_correctness_logit_offset"
+        ].astype(np.float64),
+        "combined_score": combined["final_score"].astype(np.float64),
+        "score_delta_from_regime_adjustment": combined[
+            "score_delta_from_regime_adjustment"
+        ].astype(np.float64),
+        "regime_adjustment_enabled": np.repeat(live_enabled, n),
+        "regime_disabled_reason": np.repeat(
+            ""
+            if live_enabled
+            else (disabled_reason or ("artifact_disabled" if not requested_enabled else "")),
+            n,
+        ),
+        "selected_correctness_integration_params": np.repeat(
+            json.dumps(params, sort_keys=True), n
+        ),
+        "rank_scope": np.repeat(
+            "training_validation_reference"
+            if reference_rank_available
+            else "local_batch",
+            n,
+        ),
+        "meta_correctness_feature_count": np.repeat(int(x_live.shape[1]), n),
+        "meta_correctness_schema_missing_features": np.repeat(
+            str(schema_diag.get("missing_selected_features_preview", [])), n
+        ),
+        "feature_mapping": mapping,
+    }
+
+
 def apply_regime_adaptor(
     feature_frame: pd.DataFrame,
     pred_calibrated: Sequence[float],
@@ -4523,189 +5344,25 @@ def apply_regime_adaptor(
 ) -> Dict[str, np.ndarray]:
     n = len(pred_calibrated)
     score = _as_float_array(pred_calibrated, n)
-    if (
-        artifact.get("schema_version") in {"rolling_bad_regime_v2", "rolling_regime_v1"}
-        or "selected_combination_params" in artifact
-    ):
-        regime_df, mapping = build_regime_feature_frame(
-            feature_frame.iloc[:n], timestamps, symbols
+    if artifact.get("schema_version") == "rolling_meta_correctness_v2" or artifact.get(
+        "model_type"
+    ) == "meta_correctness_lgbm":
+        return _apply_meta_correctness_regime_adaptor(
+            feature_frame, score, artifact, timestamps=timestamps, symbols=symbols
         )
-        required = REQUIRED_LIVE_BAD_REGIME_COLUMNS
-        missing_live_columns = [c for c in required if c not in feature_frame.columns]
-        available = not missing_live_columns
-        requested_enabled = bool(artifact.get("enable_regime_adaptor", False))
-        live_enabled = bool(requested_enabled and available)
-        p_global_3d = _col(feature_frame, ("p_bad_regime_global_3d",), n)
-        p_global_5d = _col(feature_frame, ("p_bad_regime_global_5d",), n)
-        p_asset_3d = _col(feature_frame, ("p_bad_regime_asset_3d",), n)
-        p_asset_5d = _col(feature_frame, ("p_bad_regime_asset_5d",), n)
-        if not live_enabled:
-            p_global_3d = p_global_5d = p_asset_3d = p_asset_5d = np.full(n, 0.5)
-        else:
-            p_global_3d = np.clip(_fill_numeric(p_global_3d, 0.5), 0.0, 1.0)
-            p_global_5d = np.clip(_fill_numeric(p_global_5d, 0.5), 0.0, 1.0)
-            p_asset_3d = np.clip(_fill_numeric(p_asset_3d, 0.5), 0.0, 1.0)
-            p_asset_5d = np.clip(_fill_numeric(p_asset_5d, 0.5), 0.0, 1.0)
-        blend = artifact.get("selected_3d_5d_blend", {"3d": 0.6, "5d": 0.4})
-        w3 = float(blend.get("3d", 0.6))
-        w5 = float(blend.get("5d", 0.4))
-        combined_global = w3 * np.asarray(
-            p_global_3d, dtype=np.float64
-        ) + w5 * np.asarray(p_global_5d, dtype=np.float64)
-        combined_asset = w3 * np.asarray(
-            p_asset_3d, dtype=np.float64
-        ) + w5 * np.asarray(p_asset_5d, dtype=np.float64)
-        params = (
-            artifact.get("selected_combination_params", {})
-            if isinstance(artifact.get("selected_combination_params", {}), dict)
-            else {}
-        )
-        combined = combine_meta_bad_regime_scores(
-            score, combined_global, combined_asset, params=params
-        )
-        deployment_pre_rank = (
-            combined["final_score"] if live_enabled else score.copy()
-        )
-        local_rank = _global_rank(deployment_pre_rank)
-        return {
-            "regime_weight": np.ones(n, dtype=np.float64),
-            "eligible": np.ones(n, dtype=bool),
-            "deployment_score_pre_rank": deployment_pre_rank.astype(np.float64),
-            "local_batch_rank": local_rank.astype(np.float64),
-            "p_bad_regime_global_3d": np.asarray(p_global_3d, dtype=np.float64),
-            "p_bad_regime_global_5d": np.asarray(p_global_5d, dtype=np.float64),
-            "p_bad_regime_asset_3d": np.asarray(p_asset_3d, dtype=np.float64),
-            "p_bad_regime_asset_5d": np.asarray(p_asset_5d, dtype=np.float64),
-            "combined_global_bad_regime_score": combined_global.astype(np.float64),
-            "combined_asset_bad_regime_score": combined_asset.astype(np.float64),
-            "bad_regime_offset": combined["bad_regime_offset"].astype(np.float64),
-            "combined_score": combined["final_score"].astype(np.float64),
-            "rank_scope": np.repeat("local_batch", n),
-            "live_required_columns_available": np.repeat(bool(available), n),
-            "missing_live_p_bad_regime_columns": np.repeat(
-                ",".join(missing_live_columns), n
-            ),
-            "score_delta_from_regime_adjustment": combined[
-                "score_delta_from_regime_adjustment"
-            ].astype(np.float64),
-            "regime_adjustment_enabled": np.repeat(live_enabled, n),
-            "regime_disabled_reason": np.repeat(
-                ""
-                if live_enabled
-                else (
-                    "missing_live_p_bad_regime_columns"
-                    if requested_enabled and missing_live_columns
-                    else "artifact_disabled"
-                ),
-                n,
-            ),
-            "selected_combination_params": np.repeat(
-                json.dumps(params, sort_keys=True), n
-            ),
-            "feature_mapping": mapping,
-        }
-    regime_df, _ = build_regime_feature_frame(
-        feature_frame.iloc[:n], timestamps, symbols
-    )
-    sym_arr = (
-        np.asarray(symbols).astype(str)[:n]
-        if symbols is not None and len(symbols) >= n
-        else np.repeat("all", n)
-    )
-    regime_df = _append_distribution_features(
-        regime_df,
-        feature_frame.iloc[:n],
-        artifact.get("distribution_feature_spec", {}),
-        timestamps,
-        sym_arr,
-    )
-    regime_df, _ = _append_prediction_reliability_features(
-        regime_df,
-        feature_frame.iloc[:n],
-        score,
-        None,
-        timestamps,
-        sym_arr,
-        artifact,
-    )
-    regime_df, _ = _append_symbol_features(
-        regime_df,
-        None,
-        timestamps,
-        sym_arr,
-        artifact,
-    )
-    effects = _effects_from_artifact(regime_df, artifact)
-    scaler = artifact.get("elastic_net", {}).get("scaler", {})
-    center = np.asarray(
-        scaler.get("center", np.zeros(effects.shape[1])), dtype=np.float64
-    )
-    scale = np.asarray(scaler.get("scale", np.ones(effects.shape[1])), dtype=np.float64)
-    if len(center) != effects.shape[1]:
-        center = np.zeros(effects.shape[1], dtype=np.float64)
-    if len(scale) != effects.shape[1]:
-        scale = np.ones(effects.shape[1], dtype=np.float64)
-    x_scaled = (effects.astype(np.float64) - center) / np.where(
-        np.abs(scale) > EPS, scale, 1.0
-    )
-    coefs = np.asarray(
-        artifact.get("elastic_net", {}).get("coef", np.zeros(effects.shape[1])),
-        dtype=np.float64,
-    )
-    if len(coefs) != effects.shape[1]:
-        coefs = np.zeros(effects.shape[1], dtype=np.float64)
-    intercept = float(artifact.get("elastic_net", {}).get("intercept", 0.0))
-    train_mean = float(
-        artifact.get("elastic_net", {}).get("train_prediction_mean", 0.0)
-    )
-    log_weight = x_scaled @ coefs + intercept - train_mean
-    clips = artifact.get("clips", {})
-    log_lo, log_hi = clips.get("total_log_weight_clip", [-0.35, 0.22])
-    wt_lo, wt_hi = clips.get("regime_weight_clip", [0.70, 1.25])
-    log_weight = np.clip(log_weight, float(log_lo), float(log_hi))
-    weight = np.clip(np.exp(log_weight), float(wt_lo), float(wt_hi)).astype(np.float64)
-    eligible = np.ones(n, dtype=bool)
-    if bool(artifact.get("enable_regime_adaptor", False)):
-        eligible &= ~_apply_bucket_gates(regime_df, artifact)
-        eligible &= ~_apply_asset_gates(
-            (
-                np.asarray(symbols).astype(str)[:n]
-                if symbols is not None and len(symbols) >= n
-                else np.repeat("all", n)
-            ),
-            artifact,
-        )
-    else:
-        weight[:] = 1.0
-    trust_model = artifact.get("trust_model", {})
-    trust_proba = np.full((n, 3), 1.0 / 3.0, dtype=np.float64)
-    trust_score = np.zeros(n, dtype=np.float64)
-    trust_multiplier = np.ones(n, dtype=np.float64)
-    if bool(trust_model.get("enabled", False)):
-        trust_x = _model_matrix_from_regime_features(
-            regime_df, trust_model.get("features", artifact.get("features", []))
-        )
-        trust_proba, trust_score = _predict_serialized_trust_model(trust_x, trust_model)
-        trust_multiplier = np.clip(1.0 + 0.25 * trust_score, 0.65, 1.15)
-        if bool(artifact.get("enable_regime_adaptor", False)):
-            eligible &= trust_score >= float(
-                artifact.get("trust_gate_threshold", -0.35)
-            )
-    deployment = score * weight * trust_multiplier
-    deployment[~eligible] = -np.inf
-    rank = _rank_pct(np.where(np.isfinite(deployment), deployment, np.nan)).copy()
-    rank[~np.isfinite(deployment)] = 0.0
-    error_risk = _apply_error_risk_model(regime_df, feature_frame.iloc[:n], score, artifact)
+    deployment = score.copy()
+    rank = _global_rank(deployment)
     return {
-        "regime_weight": weight.astype(np.float64),
-        "eligible": eligible,
+        "regime_weight": np.ones(n, dtype=np.float64),
+        "eligible": np.ones(n, dtype=bool),
+        "deployment_score_pre_rank": deployment.astype(np.float64),
         "deployment_score": deployment.astype(np.float64),
         "deployment_score_rank": rank.astype(np.float64),
-        "spline_effects": effects.astype(np.float32),
-        "trust_score": trust_score.astype(np.float64),
-        "trust_proba_good_neutral_bad": trust_proba.astype(np.float64),
-        "trust_multiplier": trust_multiplier.astype(np.float64),
-        **error_risk,
+        "local_batch_rank": rank.astype(np.float64),
+        "combined_score": deployment.astype(np.float64),
+        "score_delta_from_regime_adjustment": np.zeros(n, dtype=np.float64),
+        "regime_adjustment_enabled": np.repeat(False, n),
+        "regime_disabled_reason": np.repeat("unsupported_retired_regime_adaptor", n),
     }
 
 
@@ -5120,356 +5777,6 @@ def _worst_day_loss(rets: np.ndarray, timestamps: Optional[np.ndarray]) -> float
     return _worst_period_loss(rets, timestamps, "D")
 
 
-def compute_bad_regime_label(
-    *,
-    future_horizon_wallet_pnl: float,
-    future_horizon_maxDD: float,
-    future_horizon_hit_rate_surprise_z: float,
-    horizon_days: int,
-    dd_thresholds: Optional[Dict[int, float]] = None,
-) -> bool:
-    dd_thresholds = dd_thresholds or {3: 0.05, 5: 0.08}
-    threshold = float(dd_thresholds.get(int(horizon_days), 0.05))
-    return bool(
-        future_horizon_wallet_pnl < 0.0
-        or future_horizon_maxDD > threshold
-        or future_horizon_hit_rate_surprise_z < -1.0
-    )
-
-
-def add_consolidated_ebm_regime_features(
-    frame: pd.DataFrame,
-    timestamps: Optional[Sequence[Any]] = None,
-    *,
-    symbols: Optional[Sequence[Any]] = None,
-) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-    """Create higher-is-worse asset and global EBM aggregates point-in-time."""
-    out = frame.copy()
-    n = len(out)
-    ts = pd.to_datetime(
-        np.asarray(timestamps)[:n]
-        if timestamps is not None and len(timestamps) >= n
-        else out.index,
-        utc=True,
-        errors="coerce",
-    )
-    out["_ts"] = ts
-    if symbols is not None and len(symbols) >= n:
-        out["_symbol"] = np.asarray(symbols).astype(str)[:n]
-    elif "symbol" in out.columns:
-        out["_symbol"] = out["symbol"].astype(str)
-    else:
-        out["_symbol"] = "all"
-    mapping: Dict[str, Any] = {}
-
-    def available(cols: Sequence[str]) -> List[str]:
-        return [c for c in cols if c in out.columns]
-
-    primitive_specs = {
-        "ebm_unc_dispersion": available(
-            [
-                "ebm_unc_logodds_var",
-                "ebm_unc_pi_width",
-                "ebm_unc_entropy_mean",
-                "ebm_unc_entropy_std",
-                "ebm_unc_gap50rel",
-                "ebm_unc_support_adjusted_uncertainty",
-            ]
-        ),
-        "ebm_conflict": available(["ebm_unc_conflict_norm"]),
-        "ebm_brittleness": available(
-            ["ebm_unc_concentration", "ebm_unc_interaction_share"]
-        ),
-    }
-    primitives: Dict[str, np.ndarray] = {}
-    for name, cols in primitive_specs.items():
-        if cols:
-            primitives[name] = np.nanmean(
-                np.column_stack([pd.to_numeric(out[c], errors="coerce") for c in cols]),
-                axis=1,
-            )
-            mapping[name] = cols
-    if "ebm_unc_friction_weight" in out.columns:
-        friction_risk = 1.0 - pd.to_numeric(
-            out["ebm_unc_friction_weight"], errors="coerce"
-        ).to_numpy(dtype=np.float64)
-        primitives["ebm_conflict"] = np.nanmean(
-            np.column_stack(
-                [primitives.get("ebm_conflict", friction_risk), friction_risk]
-            ),
-            axis=1,
-        )
-        mapping["ebm_conflict"] = mapping.get("ebm_conflict", []) + [
-            "1.0-ebm_unc_friction_weight"
-        ]
-    support_cols = available(
-        ["ebm_unc_support_min", "ebm_unc_support_mean", "ebm_unc_proximity_min"]
-    )
-    if support_cols:
-        support_raw = np.nanmin(
-            np.column_stack(
-                [pd.to_numeric(out[c], errors="coerce") for c in support_cols]
-            ),
-            axis=1,
-        )
-        primitives["ebm_support_risk"] = 1.0 / np.sqrt(
-            1.0 + np.maximum(support_raw, 0.0)
-        )
-        mapping["ebm_support_risk"] = [f"risk({c})" for c in support_cols]
-
-    tmp = pd.DataFrame({"_ts": ts, "_symbol": out["_symbol"]})
-    for family, values in primitives.items():
-        tmp[family] = values
-        for days in (3, 7, 15):
-            window = f"{days}D"
-            asset_mean = []
-            global_mean = []
-            for sym, anchor in zip(tmp["_symbol"].to_numpy(), pd.DatetimeIndex(ts)):
-                hist = tmp[
-                    (tmp["_ts"] < anchor)
-                    & (tmp["_ts"] >= anchor - pd.Timedelta(window))
-                ]
-                global_vals = hist[family].to_numpy(dtype=np.float64)
-                asset_vals = hist.loc[
-                    hist["_symbol"].astype(str) == str(sym), family
-                ].to_numpy(dtype=np.float64)
-                global_mean.append(
-                    float(np.nanmean(global_vals[np.isfinite(global_vals)]))
-                    if np.isfinite(global_vals).any()
-                    else np.nan
-                )
-                asset_mean.append(
-                    float(np.nanmean(asset_vals[np.isfinite(asset_vals)]))
-                    if np.isfinite(asset_vals).any()
-                    else np.nan
-                )
-            out[f"asset_{family}_mean_{days}d"] = asset_mean
-            out[f"global_{family}_mean_{days}d"] = global_mean
-        if family == "ebm_unc_dispersion":
-            out[f"asset_{family}_trend_3d_to_15d"] = out[
-                f"asset_{family}_mean_3d"
-            ] / (np.abs(out[f"asset_{family}_mean_15d"]) + EPS)
-    return out.drop(columns=["_ts", "_symbol"], errors="ignore"), mapping
-
-
-def build_rolling_bad_regime_panel(
-    trades: pd.DataFrame,
-    feature_frame: Optional[pd.DataFrame] = None,
-    *,
-    strategy_id: Optional[str] = None,
-    timestamp_col: Optional[str] = None,
-    net_pnl_col: str = "net_pnl",
-    wallet_return_col: Optional[str] = None,
-    meta_pred_col: str = "meta_pred_calibrated",
-    symbol_col: str = "symbol",
-    anchor_freq: str = "D",
-    horizons_days: Sequence[int] = ROLLING_REGIME_HORIZONS_DAYS,
-    horizon_dd_thresholds: Optional[Dict[int, float]] = None,
-    min_future_trades: int = 1,
-) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-    """Build strategy_id × symbol × anchor_date × horizon bad-regime panel."""
-    if trades.empty:
-        return pd.DataFrame(), {"missing_features": [], "feature_mapping": {}}
-    df = _prepare_trade_frame(
-        trades,
-        timestamp_col=timestamp_col,
-        net_pnl_col=net_pnl_col,
-        wallet_return_col=wallet_return_col,
-        meta_pred_col=meta_pred_col,
-        symbol_col=symbol_col,
-        strategy_id=strategy_id,
-    )
-    start = df["_ts"].min().floor("D") + pd.Timedelta(days=30)
-    end = df["_ts"].max().floor("D") - pd.Timedelta(days=max(horizons_days))
-    anchors = (
-        pd.date_range(start, end, freq=anchor_freq, tz="UTC")
-        if end >= start
-        else pd.DatetimeIndex([df["_ts"].min().floor("D")])
-    )
-
-    base_source = feature_frame.copy() if feature_frame is not None else df.copy()
-    if "_ts" not in base_source.columns:
-        if timestamp_col and timestamp_col in base_source.columns:
-            base_source["_ts"] = pd.to_datetime(
-                base_source[timestamp_col], utc=True, errors="coerce"
-            )
-        else:
-            base_source["_ts"] = pd.to_datetime(
-                base_source.index, utc=True, errors="coerce"
-            )
-    if symbol_col not in base_source.columns:
-        base_source[symbol_col] = base_source.get("_symbol", "all")
-    src_ts = base_source["_ts"].copy()
-    base_source, ebm_mapping = add_consolidated_ebm_regime_features(
-        base_source, src_ts, symbols=base_source[symbol_col]
-    )
-    base_source["_ts"] = pd.to_datetime(src_ts, utc=True, errors="coerce")
-    base_source["_symbol"] = base_source[symbol_col].astype(str)
-
-    rows: List[Dict[str, Any]] = []
-    keys = sorted(set(zip(df["_strategy_id"], df["_symbol"])))
-    for sid, sym in keys:
-        sdf = df[(df["_strategy_id"] == sid) & (df["_symbol"] == sym)]
-        for anchor in anchors:
-            hist = sdf[sdf["_ts"] < anchor]
-            base_row: Dict[str, Any] = {
-                "strategy_id": sid,
-                "symbol": sym,
-                "anchor_date": anchor,
-            }
-            for days in (1, 3, 5, 7, 15, 30):
-                h = hist[hist["_ts"] >= anchor - pd.Timedelta(days=days)]
-                if days in (1, 3, 5, 7, 15, 30):
-                    base_row[f"prior_{days}d_strategy_asset_pnl"] = float(
-                        np.nansum(h["_wallet_pnl"])
-                    )
-                if days in (3, 5, 7, 15, 30):
-                    base_row[f"prior_{days}d_strategy_asset_maxDD"] = _drawdown(
-                        h["_wallet_pnl"].to_numpy(dtype=np.float64)
-                    )
-                    base_row[f"prior_{days}d_strategy_asset_trade_count"] = int(len(h))
-                    surprise = compute_hit_rate_surprise(h["_net_pnl"], h["_meta_p"])
-                    base_row[f"prior_{days}d_expected_hit_rate"] = surprise[
-                        "expected_hit_rate"
-                    ]
-                    base_row[f"prior_{days}d_hit_rate_surprise_z"] = surprise[
-                        "hit_rate_surprise_z"
-                    ]
-            hist_features = base_source[
-                (base_source["_ts"] < anchor)
-                & (base_source["_symbol"].astype(str) == str(sym))
-            ].tail(1)
-            if hist_features.empty:
-                hist_features = base_source[base_source["_ts"] < anchor].tail(1)
-            if not hist_features.empty:
-                for col in hist_features.columns:
-                    if (
-                        col.startswith("future_")
-                        or col.startswith("target_")
-                        or col in {"_ts", "_symbol"}
-                    ):
-                        continue
-                    val = hist_features.iloc[-1][col]
-                    if np.isscalar(val) and not isinstance(val, str):
-                        base_row[col] = val
-            side_hist = hist.tail(1)
-            if not side_hist.empty:
-                side_val = float(
-                    side_hist.iloc[-1].get(
-                        "trade_side", side_hist.iloc[-1].get("side_sign", 0.0)
-                    )
-                    or 0.0
-                )
-                funding_z_val = base_row.get("asset_funding_z", np.nan)
-                if np.isfinite(funding_z_val):
-                    base_row["asset_funding_side_alignment"] = side_val * float(
-                        funding_z_val
-                    )
-
-            for horizon in horizons_days:
-                fut = sdf[
-                    (sdf["_ts"] >= anchor)
-                    & (sdf["_ts"] < anchor + pd.Timedelta(days=int(horizon)))
-                ]
-                wallet = fut["_wallet_pnl"].to_numpy(dtype=np.float64)
-                net = fut["_net_pnl"].to_numpy(dtype=np.float64)
-                future_surprise = compute_hit_rate_surprise(
-                    net, fut["_meta_p"] if len(fut) else []
-                )
-                maxdd = _drawdown(wallet)
-                worst_day = _worst_day_loss(
-                    wallet, fut["_ts"].to_numpy() if len(fut) else None
-                )
-                std = float(np.nanstd(wallet if len(wallet) else [0.0]))
-                wallet_pnl = float(np.nansum(wallet))
-                row = dict(base_row)
-                future_trade_count = int(len(fut))
-                row.update(
-                    {
-                        "horizon_days": int(horizon),
-                        "future_horizon_trade_count": future_trade_count,
-                        "future_horizon_wallet_pnl": wallet_pnl,
-                        "future_horizon_net_pnl": float(np.nansum(net)),
-                        "future_horizon_maxDD": maxdd,
-                        "future_horizon_return_std": std,
-                        "future_horizon_worst_day_loss": worst_day,
-                        "future_horizon_hit_rate_surprise_z": future_surprise[
-                            "hit_rate_surprise_z"
-                        ],
-                        "future_horizon_badness": -wallet_pnl
-                        + 2.0 * maxdd
-                        + worst_day
-                        + 0.5 * std,
-                    }
-                )
-                row["bad_regime_label"] = (
-                    np.nan
-                    if future_trade_count < int(min_future_trades)
-                    else compute_bad_regime_label(
-                        future_horizon_wallet_pnl=wallet_pnl,
-                        future_horizon_maxDD=maxdd,
-                        future_horizon_hit_rate_surprise_z=row[
-                            "future_horizon_hit_rate_surprise_z"
-                        ],
-                        horizon_days=int(horizon),
-                        dd_thresholds=horizon_dd_thresholds,
-                    )
-                )
-                rows.append(row)
-    panel = pd.DataFrame(rows)
-    if panel.empty:
-        return panel, {
-            "missing_features": list(REGIME_FEATURE_ORDER),
-            "feature_mapping": {},
-        }
-    regime_features, mapping = build_regime_feature_frame(
-        panel, panel["anchor_date"], panel["symbol"]
-    )
-    for c in regime_features.columns:
-        panel[c] = regime_features[c].values
-    missing_features = [f for f in REGIME_FEATURE_ORDER if f not in panel.columns]
-    neutral_missing_cols: Dict[str, float] = {}
-    for f in missing_features:
-        if f in set(
-            GLOBAL_REGIME_FEATURES
-            + ASSET_REGIME_FEATURES
-            + STRATEGY_ASSET_REGIME_FEATURES
-            + EBM_CONSOLIDATED_REGIME_FEATURES
-        ):
-            neutral_missing_cols[f] = 0.0
-            neutral_missing_cols[f"{f}_missing"] = 1.0
-    if neutral_missing_cols:
-        panel = pd.concat(
-            [panel, pd.DataFrame(neutral_missing_cols, index=panel.index)], axis=1
-        )
-    return panel, {
-        "schema_version": "rolling_bad_regime_v2",
-        "panel_schema": list(panel.columns),
-        "feature_columns": [c for c in REGIME_FEATURE_ORDER if c in panel.columns],
-        "global_feature_columns": [
-            c for c in GLOBAL_REGIME_FEATURES if c in panel.columns
-        ],
-        "asset_feature_columns": [
-            c
-            for c in ASSET_REGIME_FEATURES + STRATEGY_ASSET_REGIME_FEATURES
-            if c in panel.columns
-        ],
-        "feature_mapping": {**mapping, "ebm_consolidated": ebm_mapping},
-        "missing_features": missing_features,
-        "no_leakage_statement": "all rolling realised features and feature_frame joins use timestamp strictly before anchor_date; labels use [anchor_date, anchor_date+horizon_days).",
-        "min_future_trades": int(min_future_trades),
-        "no_trade_label_policy": "bad_regime_label is NaN/excluded when future_horizon_trade_count < min_future_trades",
-        "horizon_dd_threshold_source": "configured defaults or caller supplied horizon_dd_thresholds",
-    }
-
-
-def build_monthly_regime_panel(
-    *args: Any, **kwargs: Any
-) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-    """Backward-compatible alias for the rolling bad-regime panel builder."""
-    return build_rolling_bad_regime_panel(*args, **kwargs)
-
-
 def regime_acceptance_objective(
     candidate: Dict[str, float],
     baseline: Dict[str, float],
@@ -5552,297 +5859,12 @@ def _mean_zscore(values: Sequence[float]) -> np.ndarray:
     return out
 
 
-def combine_meta_bad_regime_scores(
-    meta_p_calibrated: Sequence[float],
-    p_bad_regime_global: Sequence[float],
-    p_bad_regime_asset: Sequence[float],
-    *,
-    params: Optional[Dict[str, float]] = None,
-) -> Dict[str, np.ndarray]:
-    params = params or {}
-    meta = np.clip(np.asarray(meta_p_calibrated, dtype=np.float64), 1e-6, 1.0 - 1e-6)
-    p_global = np.clip(
-        np.asarray(p_bad_regime_global, dtype=np.float64), 1e-6, 1.0 - 1e-6
-    )
-    p_asset = np.clip(
-        np.asarray(p_bad_regime_asset, dtype=np.float64), 1e-6, 1.0 - 1e-6
-    )
-
-    global_weight = max(float(params.get("global_weight", 0.6)), 0.0)
-    asset_weight = max(float(params.get("asset_weight", 0.4)), 0.0)
-    weight_sum = global_weight + asset_weight
-    if weight_sum <= EPS:
-        w_global = 0.0
-        w_asset = 0.0
-    else:
-        w_global = global_weight / weight_sum
-        w_asset = asset_weight / weight_sum
-
-    gamma_global = max(float(params.get("gamma_global", 1.0)), EPS)
-    gamma_asset = max(float(params.get("gamma_asset", 1.0)), EPS)
-    w_interaction = max(float(params.get("interaction_weight", 0.0)), 0.0)
-
-    meta_logit = _logit(meta)
-    g_raw = _mean_zscore(_logit(p_global))
-    a_raw = _mean_zscore(_logit(p_asset))
-    g = np.maximum(g_raw, 0.0)
-    a = np.maximum(a_raw, 0.0)
-    bad_offset = (
-        w_global * np.power(g, gamma_global)
-        + w_asset * np.power(a, gamma_asset)
-        + w_interaction * g * a
-    )
-    raw = meta_logit - float(params.get("lambda_regime", 1.0)) * bad_offset
-    score = _sigmoid(raw)
-    rank = _global_rank(score)
-    return {
-        "final_score_raw": np.asarray(raw, dtype=np.float64),
-        "final_score": np.asarray(score, dtype=np.float64),
-        "final_global_rank": rank,
-        "bad_regime_offset": np.asarray(bad_offset, dtype=np.float64),
-        "global_bad_regime_zscore_raw": np.asarray(g_raw, dtype=np.float64),
-        "asset_bad_regime_zscore_raw": np.asarray(a_raw, dtype=np.float64),
-        "global_bad_regime_positive_zscore": np.asarray(g, dtype=np.float64),
-        "asset_bad_regime_positive_zscore": np.asarray(a, dtype=np.float64),
-        "score_delta_from_regime_adjustment": np.asarray(
-            score - meta, dtype=np.float64
-        ),
-    }
-
-
-def combine_meta_regime_scores(
-    meta_p_calibrated: Sequence[float],
-    regime_utility_calibrated: Sequence[float],
-    regime_logit_offset: Sequence[float],
-    *,
-    family: str = "logit_offset",
-    params: Optional[Dict[str, float]] = None,
-) -> Dict[str, np.ndarray]:
-    """Compatibility wrapper: treats legacy regime input as bad-regime probability."""
-    return combine_meta_bad_regime_scores(
-        meta_p_calibrated,
-        regime_utility_calibrated,
-        regime_logit_offset,
-        params={"global_weight": 1.0, "asset_weight": 0.0, **(params or {})},
-    )
-
-
 def select_by_final_rank(
     scores: Sequence[float], *, top_frac: float = 0.30
 ) -> np.ndarray:
     """Threshold/sizing helper: intentionally uses final global rank."""
     rank = _global_rank(np.asarray(scores, dtype=np.float64))
     return rank >= 1.0 - float(top_frac)
-
-
-def _fit_lgbm_classifier(
-    x_train: pd.DataFrame,
-    y_train: np.ndarray,
-    x_val: Optional[pd.DataFrame] = None,
-    y_val: Optional[np.ndarray] = None,
-    params: Optional[Dict[str, Any]] = None,
-    sample_weight: Optional[np.ndarray] = None,
-) -> Any:
-    params = {
-        k: v
-        for k, v in {**ROLLING_REGIME_LGBM_PARAMS, **(params or {})}.items()
-        if not str(k).startswith("_")
-    }
-    if len(np.unique(y_train.astype(int))) < 2:
-        return float(np.nanmean(y_train))
-    if LGBMClassifier is None:
-        return float(np.nanmean(y_train))
-    model = LGBMClassifier(**params)
-    fit_kwargs: Dict[str, Any] = {}
-    if (
-        x_val is not None
-        and y_val is not None
-        and len(x_val) > 0
-        and len(np.unique(y_val.astype(int))) > 1
-        and early_stopping is not None
-    ):
-        fit_kwargs["eval_set"] = [(x_val, y_val.astype(int))]
-        fit_kwargs["callbacks"] = [early_stopping(stopping_rounds=25, verbose=False)]
-    if sample_weight is not None:
-        fit_kwargs["sample_weight"] = sample_weight
-    model.fit(x_train, y_train.astype(int), **fit_kwargs)
-    return model
-
-
-def _fit_isotonic_calibrator(
-    pred: np.ndarray,
-    y: np.ndarray,
-    sample_weight: Optional[np.ndarray] = None,
-) -> Optional[IsotonicRegression]:
-    p = np.asarray(pred, dtype=np.float64)
-    yy = np.asarray(y, dtype=int)
-    mask = np.isfinite(p) & np.isfinite(yy)
-    if int(np.sum(mask)) < 20 or len(np.unique(yy[mask])) < 2:
-        return None
-    kwargs: Dict[str, Any] = {}
-    if sample_weight is not None:
-        sw = np.asarray(sample_weight, dtype=np.float64)
-        if len(sw) == len(p):
-            kwargs["sample_weight"] = np.where(np.isfinite(sw[mask]), sw[mask], 1.0)
-    calibrator = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
-    calibrator.fit(p[mask], yy[mask].astype(float), **kwargs)
-    return calibrator
-
-
-def _predict_classifier(model: Any, x: pd.DataFrame) -> np.ndarray:
-    if isinstance(model, (float, int, np.floating)):
-        return np.full(len(x), float(model), dtype=np.float64)
-    if hasattr(model, "predict_proba"):
-        proba = model.predict_proba(x)
-        if np.ndim(proba) == 2 and proba.shape[1] > 1:
-            return np.asarray(proba[:, 1], dtype=np.float64)
-    return np.clip(np.asarray(model.predict(x), dtype=np.float64), 0.0, 1.0)
-
-
-def _predict_classifier_calibrated(
-    model: Any,
-    x: pd.DataFrame,
-    calibrator: Optional[IsotonicRegression],
-) -> np.ndarray:
-    raw = np.clip(_predict_classifier(model, x), 1e-6, 1.0 - 1e-6)
-    if calibrator is None:
-        return raw
-    return np.clip(calibrator.predict(raw), 1e-6, 1.0 - 1e-6)
-
-
-def _tune_lgbm_classifier_params(
-    frame: pd.DataFrame,
-    features: Sequence[str],
-    label_col: str,
-    time_col: str,
-    *,
-    optuna_trials: int,
-    no_improvement_trials: int,
-) -> Dict[str, Any]:
-    """Small walk-forward Optuna search for the bad-regime classifier."""
-    base = dict(ROLLING_REGIME_LGBM_PARAMS)
-    if (
-        optuna is None
-        or LGBMClassifier is None
-        or optuna_trials <= 0
-        or len(frame) < 40
-    ):
-        return base
-    y_all = frame[label_col].astype(int).to_numpy()
-    if len(np.unique(y_all)) < 2:
-        return base
-    splits = _walk_forward_splits(frame[time_col].to_numpy(), len(frame), n_splits=4)
-    if not splits:
-        return base
-    study = optuna.create_study(
-        direction="minimize",
-        sampler=TPESampler(seed=42) if TPESampler is not None else None,
-        pruner=MedianPruner(n_startup_trials=8, n_min_trials=4)
-        if MedianPruner is not None
-        else None,
-    )
-    best_seen = {"trial": -1, "value": np.inf}
-
-    def objective(trial: Any) -> float:
-        params = {
-            **base,
-            "max_depth": trial.suggest_int("max_depth", 2, 3),
-            "num_leaves": trial.suggest_int("num_leaves", 4, 8),
-            "n_estimators": 50,
-            "min_child_samples": trial.suggest_int("min_child_samples", 50, 500),
-            "reg_alpha": trial.suggest_float("reg_alpha", 0.0, 4.0),
-            "reg_lambda": trial.suggest_float("reg_lambda", 5.0, 40.0),
-            "learning_rate": trial.suggest_float("learning_rate", 0.03, 0.08),
-            "subsample": trial.suggest_float("subsample", 0.6, 0.9),
-            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 0.9),
-        }
-        losses: List[float] = []
-        for tr, te in splits:
-            y_tr = y_all[tr]
-            y_te = y_all[te]
-            if len(np.unique(y_tr)) < 2 or len(np.unique(y_te)) < 2:
-                continue
-            model = _fit_lgbm_classifier(
-                frame.iloc[tr][list(features)],
-                y_tr,
-                frame.iloc[te][list(features)],
-                y_te,
-                params,
-                sample_weight=frame.iloc[tr]
-                .get("label_weight", pd.Series(1.0, index=frame.index[tr]))
-                .to_numpy(dtype=np.float64),
-            )
-            pred_tr = np.clip(
-                _predict_classifier(model, frame.iloc[tr][list(features)]),
-                1e-6,
-                1.0 - 1e-6,
-            )
-            calibrator = _fit_isotonic_calibrator(
-                pred_tr,
-                y_tr,
-                frame.iloc[tr]
-                .get("label_weight", pd.Series(1.0, index=frame.index[tr]))
-                .to_numpy(dtype=np.float64),
-            )
-            pred = _predict_classifier_calibrated(
-                model, frame.iloc[te][list(features)], calibrator
-            )
-            if {
-                "meta_score_for_training",
-                "future_horizon_wallet_pnl",
-            }.issubset(frame.columns):
-                meta_te = pd.to_numeric(
-                    frame.iloc[te]["meta_score_for_training"], errors="coerce"
-                ).fillna(0.5).to_numpy(dtype=np.float64)
-                ret_te = pd.to_numeric(
-                    frame.iloc[te]["future_horizon_wallet_pnl"], errors="coerce"
-                ).fillna(0.0).to_numpy(dtype=np.float64)
-                combined = combine_meta_bad_regime_scores(
-                    meta_te,
-                    pred,
-                    pred,
-                    params={
-                        "global_weight": 1.0,
-                        "asset_weight": 0.0,
-                        "lambda_regime": 1.0,
-                        "gamma_global": 1.0,
-                        "gamma_asset": 1.0,
-                    },
-                )
-                baseline_m = _selection_metrics(meta_te, ret_te, top_frac=0.30)
-                candidate_m = _selection_metrics(
-                    combined["final_score"], ret_te, top_frac=0.30
-                )
-                obj = regime_acceptance_objective(candidate_m, baseline_m)
-                losses.append(-float(obj.get("objective", 0.0)))
-            else:
-                rank_w = frame.iloc[te].get(
-                    "label_weight", pd.Series(1.0, index=frame.index[te])
-                ).to_numpy(dtype=np.float64)
-                loss_vec = -(y_te * np.log(pred) + (1 - y_te) * np.log(1 - pred))
-                losses.append(float(np.average(loss_vec, weights=rank_w)))
-        val = float(np.nanmean(losses)) if losses else float("inf")
-        if val < best_seen["value"]:
-            best_seen.update({"trial": int(trial.number), "value": val})
-        elif int(trial.number) - int(best_seen["trial"]) >= int(no_improvement_trials):
-            study.stop()
-        return val
-
-    study.optimize(
-        objective,
-        n_trials=int(optuna_trials),
-        gc_after_trial=True,
-        show_progress_bar=False,
-    )
-    if study.best_trial is not None:
-        base.update(study.best_trial.params)
-        base["n_estimators"] = 50
-        base["_optuna_best_trial"] = {
-            "number": int(study.best_trial.number),
-            "value": float(study.best_trial.value),
-            "params": _jsonify(study.best_trial.params),
-        }
-    return base
 
 
 def _selection_metrics(
@@ -5876,939 +5898,4149 @@ def _selection_metrics(
     }
 
 
-def compare_regime_combination_families(
+def _regime_positive_boost_uplift_diagnostics(
+    baseline_scores: Sequence[float],
+    candidate_scores: Sequence[float],
+    returns: Sequence[float],
+    combined: Dict[str, np.ndarray],
+    *,
+    top_frac: float = 0.30,
+) -> Dict[str, Any]:
+    baseline = np.asarray(baseline_scores, dtype=np.float64)
+    candidate = np.asarray(candidate_scores, dtype=np.float64)
+    pnl = np.asarray(returns, dtype=np.float64)
+    n = min(len(baseline), len(candidate), len(pnl))
+    if n <= 0:
+        return {
+            "rows_boosted": 0,
+            "boosted_row_share": 0.0,
+            "mean_boost": 0.0,
+            "mean_score_boost": 0.0,
+            "mean_good_offset": 0.0,
+            "top30_turnover_delta": 0.0,
+            "boosted_pnl_contribution": 0.0,
+            "top30_candidate_rows": 0,
+            "top30_baseline_rows": 0,
+            "top30_boosted_rows": 0,
+            "top30_promoted_by_boost_rows": 0,
+            "top30_positive_boost_promoted_share": 0.0,
+            "top30_boosted_pnl_contribution": 0.0,
+            "top30_promoted_by_boost_pnl_contribution": 0.0,
+            "top30_boosted_pnl_share_of_candidate": 0.0,
+        }
+    baseline = baseline[:n]
+    candidate = candidate[:n]
+    pnl = np.where(np.isfinite(pnl[:n]), pnl[:n], 0.0)
+    good_offset = np.asarray(
+        combined.get("good_regime_offset", np.zeros(n, dtype=np.float64)),
+        dtype=np.float64,
+    )[:n]
+    score_delta = np.asarray(
+        combined.get("score_delta_from_regime_adjustment", candidate - baseline),
+        dtype=np.float64,
+    )[:n]
+    boosted = np.isfinite(good_offset) & (good_offset > EPS)
+    baseline_top = _top_mask(baseline, top_frac)
+    candidate_top = _top_mask(candidate, top_frac)
+    overlap = baseline_top & candidate_top
+    promoted_by_boost = candidate_top & ~baseline_top & boosted
+    candidate_top_count = int(np.sum(candidate_top))
+    baseline_top_count = int(np.sum(baseline_top))
+    candidate_top_pnl = float(np.nansum(pnl[candidate_top]))
+    boosted_top_pnl = float(np.nansum(pnl[candidate_top & boosted]))
+    boosted_rows = int(np.sum(boosted))
+    mean_score_boost = (
+        float(np.nanmean(score_delta[boosted])) if boosted_rows else 0.0
+    )
+    return {
+        "rows_boosted": boosted_rows,
+        "boosted_row_share": float(boosted_rows / max(n, 1)),
+        "mean_boost": mean_score_boost,
+        "mean_score_boost": mean_score_boost,
+        "mean_good_offset": float(np.nanmean(good_offset[boosted]))
+        if boosted_rows
+        else 0.0,
+        "top30_turnover_delta": float(
+            1.0 - (np.sum(overlap) / max(candidate_top_count, 1))
+        ),
+        "boosted_pnl_contribution": float(np.nansum(pnl[boosted])),
+        "top30_candidate_rows": candidate_top_count,
+        "top30_baseline_rows": baseline_top_count,
+        "top30_boosted_rows": int(np.sum(candidate_top & boosted)),
+        "top30_promoted_by_boost_rows": int(np.sum(promoted_by_boost)),
+        "top30_positive_boost_promoted_share": float(
+            np.sum(promoted_by_boost) / max(candidate_top_count, 1)
+        ),
+        "top30_boosted_pnl_contribution": boosted_top_pnl,
+        "top30_promoted_by_boost_pnl_contribution": float(
+            np.nansum(pnl[promoted_by_boost])
+        ),
+        "top30_boosted_pnl_share_of_candidate": float(
+            boosted_top_pnl / candidate_top_pnl
+        )
+        if abs(candidate_top_pnl) > EPS
+        else 0.0,
+    }
+
+
+def _positive_boost_churn_penalty(
+    uplift_diagnostics: Dict[str, Any],
+) -> Dict[str, float]:
+    churn_basis = max(
+        float(uplift_diagnostics.get("top30_positive_boost_promoted_share", 0.0)),
+        0.0,
+    )
+    excess = max(
+        churn_basis - ROLLING_REGIME_POSITIVE_BOOST_CHURN_FREE_TOP30_SHARE,
+        0.0,
+    )
+    penalty = min(
+        ROLLING_REGIME_POSITIVE_BOOST_CHURN_MAX_PENALTY,
+        excess * ROLLING_REGIME_POSITIVE_BOOST_CHURN_PENALTY_STRENGTH,
+    )
+    return {
+        "positive_boost_churn_penalty_basis": float(churn_basis),
+        "positive_boost_churn_free_top30_share": float(
+            ROLLING_REGIME_POSITIVE_BOOST_CHURN_FREE_TOP30_SHARE
+        ),
+        "positive_boost_churn_penalty": float(penalty),
+        "positive_boost_churn_penalty_multiplier": float(max(0.0, 1.0 - penalty)),
+    }
+
+
+META_CORRECTNESS_EXACT_EXCLUDE = {
+    "return",
+    "returns",
+    "wallet_return",
+    "net_return",
+    "net_pnl",
+    "gross_pnl",
+    "raw_return",
+    "gross_return",
+    "policy_return",
+    "policy_returns",
+    "realized_pnl",
+    "future_horizon_wallet_pnl",
+    "future_horizon_trade_count",
+    "bad_regime_label",
+    "global_bad_regime_label",
+    "asset_bad_regime_label",
+    "bad_rate",
+    "mfe",
+    "mae",
+    "t_mfe",
+    "t_mae",
+    "selected_mask",
+    "meta_correctness_soft_label",
+    "meta_correctness_hard_label",
+}
+META_CORRECTNESS_EXCLUDE_PREFIXES = (
+    "__",
+    "future_",
+    "target_",
+    "label_",
+    "p_bad_regime_",
+)
+META_CORRECTNESS_EXCLUDE_SUBSTRINGS = (
+    "p_bad_regime",
+    "combined_global_bad_regime",
+    "combined_asset_bad_regime",
+    "combined_bad_regime",
+    "ebm_unc",
+    "ebm_uncertainty",
+    "global_ebm_unc",
+    "asset_ebm_unc",
+    "oof_ebm_unc",
+    "ebm_prediction_dispersion",
+    "ebm_prediction_brittleness",
+)
+META_CORRECTNESS_INCLUDE_TOKENS = (
+    "pred",
+    "prediction",
+    "prob",
+    "calibrated",
+    "score",
+    "rank",
+    "unc",
+    "uncert",
+    "drift",
+    "psi",
+    "ks",
+    "knn",
+    "svd",
+    "archetype",
+    "contrib",
+    "raw_state",
+    "state_",
+    "mahalanobis",
+    "reconstruction",
+    "transition",
+    "log_likelihood",
+    "error",
+    "surprise",
+    "wrong_confident",
+    "recent_",
+    "recent_meta",
+    "brier",
+    "ece",
+    "cal_error",
+    "calibration_error",
+    "rank_ic",
+    "rolling_ic",
+    "hit_rate",
+    "expected_hit_rate",
+    "hit_rate_surprise",
+    "confidence_surprise",
+    "drawdown",
+    "maxdd",
+    "trade_count",
+    "prior_pnl",
+    "recent_pnl",
+    "rolling_pnl",
+    "regime",
+    "loc_",
+    "location",
+    "session",
+    "hour",
+    "weekday",
+    "market_",
+    "asset_",
+    "symbol_",
+    "funding",
+    "orderbook",
+    "spread",
+    "depth",
+    "liquidity",
+    "breadth",
+    "dispersion",
+    "correlation",
+    "vol",
+    "rv",
+    "atr",
+)
+
+
+def _is_meta_correctness_feature_name(name: str) -> bool:
+    col = str(name)
+    low = col.lower()
+    if low in META_CORRECTNESS_EXACT_EXCLUDE:
+        return False
+    if low.endswith("_label") or low.endswith("_target"):
+        return False
+    if any(low.startswith(prefix) for prefix in META_CORRECTNESS_EXCLUDE_PREFIXES):
+        return False
+    if any(token in low for token in META_CORRECTNESS_EXCLUDE_SUBSTRINGS):
+        return False
+    if low in {"timestamp", "anchor_date", "symbol", "strategy_id"}:
+        return False
+    if col in REGIME_FEATURE_ORDER:
+        return True
+    return any(token in low for token in META_CORRECTNESS_INCLUDE_TOKENS)
+
+
+def _time_location_feature_frame(
+    n: int,
+    timestamps: Optional[Sequence[Any]],
+    symbols: Optional[Sequence[Any]],
+    *,
+    index: Any,
+) -> pd.DataFrame:
+    out = pd.DataFrame(index=index)
+    if timestamps is not None and len(timestamps) >= n:
+        ts = pd.to_datetime(np.asarray(timestamps)[:n], utc=True, errors="coerce")
+    else:
+        ts = pd.to_datetime(pd.Series(index).iloc[:n], utc=True, errors="coerce")
+    ts_idx = pd.DatetimeIndex(ts)
+    hour = (
+        ts_idx.hour.astype(np.float64)
+        + ts_idx.minute.astype(np.float64) / 60.0
+    )
+    dow = ts_idx.dayofweek.astype(np.float64)
+    finite_hour = np.isfinite(hour)
+    finite_dow = np.isfinite(dow)
+    hour = np.where(finite_hour, hour, 0.0)
+    dow = np.where(finite_dow, dow, 0.0)
+    out["regime_hour_sin"] = np.sin(2.0 * np.pi * hour / 24.0)
+    out["regime_hour_cos"] = np.cos(2.0 * np.pi * hour / 24.0)
+    out["regime_weekday_sin"] = np.sin(2.0 * np.pi * dow / 7.0)
+    out["regime_weekday_cos"] = np.cos(2.0 * np.pi * dow / 7.0)
+    out["regime_is_weekend"] = (dow >= 5.0).astype(np.float32)
+    if symbols is not None and len(symbols) >= n:
+        sym = np.asarray(symbols).astype(str)[:n]
+    else:
+        sym = np.repeat("all", n)
+    buckets = [
+        (
+            int(
+                hashlib.blake2b(
+                    str(s).encode("utf-8"), digest_size=2
+                ).hexdigest(),
+                16,
+            )
+            % 32
+        )
+        / 31.0
+        for s in sym
+    ]
+    out["symbol_hash_bucket_32"] = np.asarray(buckets, dtype=np.float32)
+    return out.astype(np.float32, copy=False)
+
+
+def _build_meta_correctness_feature_frame(
+    feature_frame: pd.DataFrame,
+    meta_scores: Sequence[float],
+    timestamps: Optional[Sequence[Any]] = None,
+    symbols: Optional[Sequence[Any]] = None,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    n = min(len(feature_frame), len(meta_scores))
+    base = feature_frame.iloc[:n].copy()
+    regime_df, regime_mapping = build_regime_feature_frame(base, timestamps, symbols)
+    score = np.clip(_as_float_array(meta_scores, n), 1e-6, 1.0 - 1e-6)
+    rank = _global_rank(score)
+    additions = pd.DataFrame(
+        {
+            "meta_score_for_correctness": score.astype(np.float32),
+            "meta_score_rank_for_correctness": rank.astype(np.float32),
+            "meta_score_conviction_for_correctness": (
+                np.clip(np.abs(score - 0.5) * 2.0, 0.0, 1.0)
+            ).astype(np.float32),
+        },
+        index=base.index,
+    )
+    loc = _time_location_feature_frame(n, timestamps, symbols, index=base.index)
+    pieces: List[pd.DataFrame] = []
+    for frame in (base, regime_df, additions, loc):
+        numeric_cols: Dict[str, np.ndarray] = {}
+        for col in frame.columns:
+            col_s = str(col)
+            if not _is_meta_correctness_feature_name(col_s):
+                continue
+            vals = pd.to_numeric(frame[col], errors="coerce").to_numpy(
+                dtype=np.float64
+            )
+            if np.isfinite(vals).any():
+                numeric_cols[col_s] = vals
+        if numeric_cols:
+            pieces.append(pd.DataFrame(numeric_cols, index=base.index))
+    if not pieces:
+        return pd.DataFrame(index=base.index), {"regime": regime_mapping}
+    out = pd.concat(pieces, axis=1)
+    out = out.loc[:, ~out.columns.duplicated(keep="last")]
+    out = out.replace([np.inf, -np.inf], np.nan)
+    for col in out.columns:
+        vals = out[col].to_numpy(dtype=np.float64)
+        finite = np.isfinite(vals)
+        fill = float(np.nanmedian(vals[finite])) if finite.any() else 0.0
+        out[col] = np.where(finite, vals, fill)
+    return out.astype(np.float32, copy=False), {"regime": regime_mapping}
+
+
+def _meta_predictive_atlas_neutral_features(
+    *,
+    min_support: int,
+    prefix: str = "meta_lgbm",
+) -> Dict[str, float]:
+    return {
+        f"{prefix}_predictive_atlas_ic": 0.0,
+        f"{prefix}_predictive_atlas_rank_ic": 0.0,
+        f"{prefix}_predictive_atlas_hit_rate": 0.5,
+        f"{prefix}_predictive_atlas_expected_hit_rate": 0.5,
+        f"{prefix}_predictive_atlas_hit_rate_surprise": 0.0,
+        f"{prefix}_predictive_atlas_hit_rate_surprise_z": 0.0,
+        f"{prefix}_predictive_atlas_support_n": 0.0,
+        f"{prefix}_predictive_atlas_effective_n": 0.0,
+        f"{prefix}_predictive_atlas_score_mean": 0.5,
+        f"{prefix}_predictive_atlas_score_std": 0.0,
+        f"{prefix}_predictive_atlas_support_quality": 0.0,
+    }
+
+
+def _meta_predictive_atlas_corr(stats: Mapping[str, Any], x_prefix: str) -> float:
+    n = float(stats.get("n", 0.0) or 0.0)
+    if n < 3.0:
+        return 0.0
+    sx = float(stats.get(f"s{x_prefix}", 0.0) or 0.0)
+    sxx = float(stats.get(f"s{x_prefix}{x_prefix}", 0.0) or 0.0)
+    sy = float(stats.get("sy", 0.0) or 0.0)
+    syy = float(stats.get("syy", 0.0) or 0.0)
+    sxy = float(stats.get(f"s{x_prefix}y", 0.0) or 0.0)
+    cov = sxy - (sx * sy / n)
+    vx = sxx - (sx * sx / n)
+    vy = syy - (sy * sy / n)
+    denom = float(np.sqrt(max(vx, 0.0) * max(vy, 0.0)))
+    if denom <= 1e-12:
+        return 0.0
+    return float(np.clip(cov / denom, -1.0, 1.0))
+
+
+def _meta_predictive_atlas_stats_features(
+    stats: Mapping[str, Any],
+    *,
+    min_support: int,
+    prefix: str = "meta_lgbm",
+) -> Dict[str, float]:
+    n = float(stats.get("n", 0.0) or 0.0)
+    if n < 1.0:
+        return _meta_predictive_atlas_neutral_features(
+            min_support=min_support,
+            prefix=prefix,
+        )
+    wins = float(stats.get("wins", 0.0) or 0.0)
+    exp_wins = float(stats.get("expected_wins", 0.0) or 0.0)
+    exp_var = max(float(stats.get("expected_var", 0.0) or 0.0), 1e-9)
+    sx = float(stats.get("sx", 0.0) or 0.0)
+    sxx = float(stats.get("sxx", 0.0) or 0.0)
+    score_mean = sx / n
+    score_var = max(sxx / n - score_mean * score_mean, 0.0)
+    hit_rate = wins / n
+    expected_hit_rate = exp_wins / n
+    support_quality = float(np.clip(n / max(float(min_support), 1.0), 0.0, 1.0))
+    return {
+        f"{prefix}_predictive_atlas_ic": _meta_predictive_atlas_corr(stats, "x"),
+        f"{prefix}_predictive_atlas_rank_ic": _meta_predictive_atlas_corr(stats, "r"),
+        f"{prefix}_predictive_atlas_hit_rate": float(np.clip(hit_rate, 0.0, 1.0)),
+        f"{prefix}_predictive_atlas_expected_hit_rate": float(
+            np.clip(expected_hit_rate, 0.0, 1.0)
+        ),
+        f"{prefix}_predictive_atlas_hit_rate_surprise": float(
+            np.clip(hit_rate - expected_hit_rate, -1.0, 1.0)
+        ),
+        f"{prefix}_predictive_atlas_hit_rate_surprise_z": float(
+            np.clip((wins - exp_wins) / np.sqrt(exp_var), -8.0, 8.0)
+        ),
+        f"{prefix}_predictive_atlas_support_n": n,
+        f"{prefix}_predictive_atlas_effective_n": n,
+        f"{prefix}_predictive_atlas_score_mean": float(np.clip(score_mean, 0.0, 1.0)),
+        f"{prefix}_predictive_atlas_score_std": float(np.sqrt(score_var)),
+        f"{prefix}_predictive_atlas_support_quality": support_quality,
+    }
+
+
+def _update_meta_predictive_atlas_stats(
+    stats: Dict[str, float],
+    *,
+    score: float,
+    rank_score: float,
+    y: float,
+) -> None:
+    p = float(np.clip(score, 1e-4, 1.0 - 1e-4))
+    r = float(np.clip(rank_score, 0.0, 1.0))
+    yy = float(np.clip(y, 0.0, 1.0))
+    stats["n"] = float(stats.get("n", 0.0) or 0.0) + 1.0
+    stats["wins"] = float(stats.get("wins", 0.0) or 0.0) + yy
+    stats["expected_wins"] = float(stats.get("expected_wins", 0.0) or 0.0) + p
+    stats["expected_var"] = float(stats.get("expected_var", 0.0) or 0.0) + p * (1.0 - p)
+    stats["sx"] = float(stats.get("sx", 0.0) or 0.0) + p
+    stats["sxx"] = float(stats.get("sxx", 0.0) or 0.0) + p * p
+    stats["sxy"] = float(stats.get("sxy", 0.0) or 0.0) + p * yy
+    stats["sr"] = float(stats.get("sr", 0.0) or 0.0) + r
+    stats["srr"] = float(stats.get("srr", 0.0) or 0.0) + r * r
+    stats["sry"] = float(stats.get("sry", 0.0) or 0.0) + r * yy
+    stats["sy"] = float(stats.get("sy", 0.0) or 0.0) + yy
+    stats["syy"] = float(stats.get("syy", 0.0) or 0.0) + yy * yy
+
+
+def _candidate_rank_scores(
+    candidate_frame: pd.DataFrame,
+    scores: np.ndarray,
+) -> np.ndarray:
+    for col in (
+        "normalized_rank_score",
+        "strategy_rank_pct",
+        "rank_pct",
+        "deployment_score_reference_rank",
+        "deployment_score_rank",
+    ):
+        if col not in candidate_frame.columns:
+            continue
+        vals = pd.to_numeric(candidate_frame[col], errors="coerce").to_numpy(dtype=np.float64)
+        if len(vals) >= len(scores) and np.isfinite(vals[: len(scores)]).any():
+            fill = float(np.nanmedian(vals[np.isfinite(vals)]))
+            return np.clip(np.nan_to_num(vals[: len(scores)], nan=fill), 0.0, 1.0)
+    return _global_rank(scores)
+
+
+def _meta_predictive_atlas_report(
+    *,
+    state: Mapping[str, Any],
+    features: pd.DataFrame,
+) -> Dict[str, Any]:
+    return {
+        "enabled": bool(state.get("enabled", False)),
+        "feature_count": int(len(META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS)),
+        "columns": list(META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS),
+        "training_rows": int(state.get("training_rows", 0) or 0),
+        "min_support": int(state.get("min_support", 0) or 0),
+        "global_support_n": float(
+            (state.get("global_stats", {}) or {}).get("n", 0.0) or 0.0
+        ),
+        "populated_buckets": int(
+            sum(
+                1
+                for stats in (state.get("bucket_stats", {}) or {}).values()
+                if float((stats or {}).get("n", 0.0) or 0.0)
+                >= float(state.get("min_support", 0) or 0)
+            )
+        ),
+        "mean_support_quality": (
+            float(
+                pd.to_numeric(
+                    features.get("meta_lgbm_predictive_atlas_support_quality"),
+                    errors="coerce",
+                ).mean()
+            )
+            if "meta_lgbm_predictive_atlas_support_quality" in features.columns
+            else 0.0
+        ),
+        "policy": "past_only_fit_then_frozen_bucket_stats_at_apply",
+    }
+
+
+def _append_meta_lgbm_predictive_atlas_features(
+    x_base: pd.DataFrame,
+    candidate_frame: pd.DataFrame,
+    meta_scores: Sequence[float],
+    *,
+    pnl: Optional[Sequence[float]] = None,
+    timestamps: Optional[Sequence[Any]] = None,
+    fit: bool = False,
+    state: Optional[Mapping[str, Any]] = None,
+    min_support: Optional[int] = None,
+) -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, Any]]:
+    """Append meta-layer predictive effectiveness features for regime adaptor.
+
+    During fit, rows get only statistics from earlier timestamps. During apply,
+    the persisted final bucket/global statistics from training are used.
+    """
+
+    if x_base is None or len(x_base) == 0:
+        return x_base, dict(state or {}), {
+            "enabled": False,
+            "reason": "empty_feature_frame",
+            "columns": list(META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS),
+        }
+    n = int(min(len(x_base), len(meta_scores), len(candidate_frame)))
+    if n <= 0:
+        return x_base, dict(state or {}), {
+            "enabled": False,
+            "reason": "empty_inputs",
+            "columns": list(META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS),
+        }
+    min_support_i = int(
+        min_support
+        if min_support is not None
+        else CFG.get("meta_predictive_atlas_min_support", 40)
+    )
+    min_support_i = max(3, min_support_i)
+    out = x_base.copy()
+    score = np.asarray(meta_scores, dtype=np.float64).reshape(-1)[:n]
+    finite_score = np.isfinite(score)
+    fill_score = float(np.nanmedian(score[finite_score])) if finite_score.any() else 0.5
+    score = np.clip(np.nan_to_num(score, nan=fill_score), 1e-6, 1.0 - 1e-6)
+    rank_score = _candidate_rank_scores(candidate_frame.iloc[:n], score)
+    rank_score = np.clip(np.nan_to_num(rank_score, nan=0.5), 0.0, 1.0)
+    bucket = np.clip(np.floor(rank_score * 10.0).astype(np.int32), 0, 9)
+
+    if fit:
+        if pnl is None:
+            neutral = _meta_predictive_atlas_neutral_features(min_support=min_support_i)
+            for col in META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS:
+                out[col] = np.full(len(out), float(neutral.get(col, 0.0)), dtype=np.float32)
+            disabled_state = {
+                "enabled": False,
+                "reason": "missing_policy_pnl",
+                "feature_columns": list(META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS),
+                "min_support": int(min_support_i),
+            }
+            return out, disabled_state, _meta_predictive_atlas_report(
+                state=disabled_state,
+                features=out,
+            )
+        y = np.asarray(pnl, dtype=np.float64).reshape(-1)[:n]
+        y = np.where(np.isfinite(y), (y > 0.0).astype(np.float64), np.nan)
+        if timestamps is not None and len(timestamps) >= n:
+            ts_ns = pd.DatetimeIndex(
+                pd.to_datetime(np.asarray(timestamps)[:n], utc=True, errors="coerce")
+            ).asi8
+        else:
+            ts_ns = np.arange(n, dtype=np.int64)
+        ts_ns = np.asarray(ts_ns, dtype=np.int64)
+        ts_sort = np.where(ts_ns == pd.NaT.value, np.arange(n, dtype=np.int64), ts_ns)
+        order = np.lexsort((np.arange(n, dtype=np.int64), ts_sort))
+        result = {
+            col: np.full(n, np.nan, dtype=np.float32)
+            for col in META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS
+        }
+        global_stats: Dict[str, float] = {}
+        bucket_stats: Dict[int, Dict[str, float]] = {}
+        neutral = _meta_predictive_atlas_neutral_features(min_support=min_support_i)
+        for row_i in order:
+            stats = bucket_stats.get(int(bucket[row_i]), {})
+            use_stats = (
+                stats
+                if float(stats.get("n", 0.0) or 0.0) >= float(min_support_i)
+                else global_stats
+            )
+            feats = _meta_predictive_atlas_stats_features(
+                use_stats,
+                min_support=min_support_i,
+            )
+            if not np.isfinite(y[row_i]):
+                feats = _meta_predictive_atlas_stats_features(
+                    global_stats,
+                    min_support=min_support_i,
+                )
+            else:
+                bucket_stats.setdefault(int(bucket[row_i]), {})
+                _update_meta_predictive_atlas_stats(
+                    bucket_stats[int(bucket[row_i])],
+                    score=float(score[row_i]),
+                    rank_score=float(rank_score[row_i]),
+                    y=float(y[row_i]),
+                )
+                _update_meta_predictive_atlas_stats(
+                    global_stats,
+                    score=float(score[row_i]),
+                    rank_score=float(rank_score[row_i]),
+                    y=float(y[row_i]),
+                )
+            for col in META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS:
+                result[col][row_i] = float(feats.get(col, neutral.get(col, 0.0)))
+        for col in META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS:
+            arr = np.full(len(out), float(neutral.get(col, 0.0)), dtype=np.float32)
+            arr[:n] = np.nan_to_num(
+                result[col],
+                nan=float(neutral.get(col, 0.0)),
+                posinf=0.0,
+                neginf=0.0,
+            ).astype(np.float32)
+            out[col] = arr
+        fitted_state: Dict[str, Any] = {
+            "enabled": True,
+            "schema_version": "meta_lgbm_predictive_atlas_v1",
+            "feature_columns": list(META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS),
+            "min_support": int(min_support_i),
+            "training_rows": int(n),
+            "bucket_source": "candidate_rank_score_decile",
+            "global_stats": {str(k): float(v) for k, v in global_stats.items()},
+            "bucket_stats": {
+                str(k): {str(sk): float(sv) for sk, sv in stats.items()}
+                for k, stats in bucket_stats.items()
+            },
+        }
+        return out.astype(np.float32, copy=False), fitted_state, _meta_predictive_atlas_report(
+            state=fitted_state,
+            features=out,
+        )
+
+    fitted_state = dict(state or {})
+    neutral = _meta_predictive_atlas_neutral_features(min_support=min_support_i)
+    if not bool(fitted_state.get("enabled", False)):
+        for col in META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS:
+            out[col] = np.full(len(out), float(neutral.get(col, 0.0)), dtype=np.float32)
+        return out.astype(np.float32, copy=False), fitted_state, {
+            "enabled": False,
+            "reason": str(fitted_state.get("reason", "meta_predictive_atlas_missing")),
+            "columns": list(META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS),
+        }
+    min_support_state = int(fitted_state.get("min_support", min_support_i) or min_support_i)
+    global_stats = fitted_state.get("global_stats", {}) or {}
+    raw_bucket_stats = fitted_state.get("bucket_stats", {}) or {}
+    bucket_stats = {
+        int(k): (v or {})
+        for k, v in raw_bucket_stats.items()
+        if str(k).lstrip("-").isdigit()
+    }
+    feature_values = {
+        col: np.full(n, np.nan, dtype=np.float32)
+        for col in META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS
+    }
+    for i in range(n):
+        stats_i = bucket_stats.get(int(bucket[i]), {})
+        use_stats = (
+            stats_i
+            if float(stats_i.get("n", 0.0) or 0.0) >= float(min_support_state)
+            else global_stats
+        )
+        feats = _meta_predictive_atlas_stats_features(
+            use_stats,
+            min_support=min_support_state,
+        )
+        for col in META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS:
+            feature_values[col][i] = float(feats.get(col, neutral.get(col, 0.0)))
+    for col in META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS:
+        arr = np.full(len(out), float(neutral.get(col, 0.0)), dtype=np.float32)
+        arr[:n] = np.nan_to_num(
+            feature_values[col],
+            nan=float(neutral.get(col, 0.0)),
+            posinf=0.0,
+            neginf=0.0,
+        ).astype(np.float32)
+        out[col] = arr
+    return out.astype(np.float32, copy=False), fitted_state, _meta_predictive_atlas_report(
+        state=fitted_state,
+        features=out,
+    )
+
+
+def _append_candidate_drift_calibration_features(
+    x_base: pd.DataFrame,
+    candidate_frame: pd.DataFrame,
+    *,
+    timestamps: Optional[Sequence[Any]] = None,
+    fit: bool = False,
+    state: Optional[Mapping[str, Any]] = None,
+) -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, Any]]:
+    """Append artifact-backed candidate-state drift/local utility features."""
+    if x_base is None or x_base.empty:
+        return x_base, {}, {"enabled": False, "reason": "empty_feature_frame"}
+    if fit:
+        fitted_state, features, report = fit_transform_candidate_drift_calibrator(
+            x_base,
+            candidate_frame,
+            timestamps=timestamps,
+            max_features=int(CFG.get("candidate_drift_max_features", 96)),
+            max_reference_rows=int(CFG.get("candidate_drift_max_reference_rows", 5000)),
+            enable_denoising_ae=bool(CFG.get("candidate_drift_denoising_ae_enabled", True)),
+            denoising_ae_max_iter=int(CFG.get("candidate_drift_denoising_ae_max_iter", 80)),
+            include_forward_oos_report=bool(
+                CFG.get("candidate_drift_forward_oos_report", True)
+            ),
+            forward_oos_folds=int(CFG.get("candidate_drift_forward_oos_folds", 3)),
+        )
+    else:
+        fitted_state = dict(state or {})
+        if not bool(fitted_state.get("enabled", False)):
+            return x_base, fitted_state, {
+                "enabled": False,
+                "reason": str(fitted_state.get("reason", "candidate_drift_calibrator_missing")),
+            }
+        features = transform_candidate_drift_features(
+            x_base,
+            fitted_state,
+            candidate_frame=candidate_frame,
+            timestamps=timestamps,
+            training_mode=False,
+        )
+        report = candidate_drift_report(features, candidate_frame, fitted_state)
+    if features is None or features.empty:
+        return x_base, fitted_state, report
+    diagnostic_cols = set(CANDIDATE_DRIFT_DIAGNOSTIC_COLUMNS)
+    if fit:
+        diagnostic_cols.update(CANDIDATE_DRIFT_LEGACY_ALIAS_COLUMNS)
+    feature_block = features.reindex(x_base.index)
+    feature_block = feature_block.loc[:, ~feature_block.columns.astype(str).duplicated(keep="last")]
+    model_feature_cols = [c for c in feature_block.columns if str(c) not in diagnostic_cols]
+    out = pd.concat(
+        [
+            x_base,
+            feature_block[model_feature_cols],
+        ],
+        axis=1,
+        copy=False,
+    )
+    out = out.loc[:, ~out.columns.astype(str).duplicated(keep="last")]
+    return out.astype(np.float32, copy=False), dict(fitted_state), dict(report or {})
+
+
+def _normalise_direct_label_values(values: Sequence[Any]) -> np.ndarray:
+    arr = np.asarray(values, dtype=np.float64)
+    finite = np.isfinite(arr)
+    if not finite.any():
+        return np.full(len(arr), np.nan, dtype=np.float32)
+    lo = float(np.nanmin(arr[finite]))
+    hi = float(np.nanmax(arr[finite]))
+    if lo < -1e-6 and hi <= 1.0 + 1e-6:
+        arr = (arr + 1.0) / 2.0
+    return np.clip(arr, 1e-4, 1.0 - 1e-4).astype(np.float32)
+
+
+def _resolve_direct_label_regime_targets(
+    frame: pd.DataFrame,
+    *,
+    meta_scores: Sequence[float],
+    pnl: Sequence[float],
+) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray], Dict[str, Any]]:
+    """Resolve direct base/meta labels without falling back to correctness labels."""
+    soft_col = _first_existing_column(
+        frame,
+        (
+            "meta_tbm_soft_label",
+            "meta_soft_label",
+            "oof_meta_soft_label",
+            "tbm_soft_label",
+            "soft_label",
+            "label_soft",
+            "y_soft",
+            "base_soft_label",
+            "oof_base_soft_label",
+        ),
+    )
+    hard_col = _first_existing_column(
+        frame,
+        (
+            "meta_tbm_label",
+            "meta_hard_label",
+            "oof_meta_hard_label",
+            "tbm_label",
+            "hard_label",
+            "label_hard",
+            "y_hard",
+            "base_hard_label",
+            "oof_base_hard_label",
+            "label",
+        ),
+    )
+    if soft_col is None and hard_col is None:
+        return None, None, None, {
+            "enabled": False,
+            "reason": "missing_direct_label_columns",
+            "soft_label_column": None,
+            "hard_label_column": None,
+        }
+    n = len(frame)
+    if soft_col is not None:
+        y_soft = _normalise_direct_label_values(pd.to_numeric(frame[soft_col], errors="coerce"))
+    else:
+        hard_raw = pd.to_numeric(frame[hard_col], errors="coerce").to_numpy(dtype=np.float64)
+        y_soft = _normalise_direct_label_values(hard_raw)
+    if hard_col is not None:
+        hard_raw = _normalise_direct_label_values(pd.to_numeric(frame[hard_col], errors="coerce"))
+        y_hard = (hard_raw >= 0.5).astype(np.float32)
+    else:
+        y_hard = (y_soft >= 0.5).astype(np.float32)
+    weight_col = _first_existing_column(
+        frame,
+        (
+            "sample_weight",
+            "__w__",
+            "weight",
+            "meta_sample_weight",
+            "base_sample_weight",
+            "oof_sample_weight",
+        ),
+    )
+    if weight_col is not None:
+        sw = pd.to_numeric(frame[weight_col], errors="coerce").to_numpy(dtype=np.float64)
+        sw = np.where(np.isfinite(sw) & (sw > 0.0), sw, np.nan)
+        if np.isfinite(sw).any():
+            fill = float(np.nanmedian(sw[np.isfinite(sw)]))
+            sw = np.nan_to_num(sw, nan=fill, posinf=fill, neginf=fill)
+            sw = sw / max(float(np.nanmean(sw)), EPS)
+            sw = np.clip(sw, 0.25, 5.0).astype(np.float32)
+        else:
+            weight_col = None
+    if weight_col is None:
+        sw, weight_diag = _meta_correctness_weight_formula(
+            meta_scores,
+            pnl,
+            y_soft,
+        )
+    else:
+        weight_diag = {"sample_weight_source": weight_col}
+    finite = np.isfinite(y_soft) & np.isfinite(y_hard) & np.isfinite(sw)
+    hard_unique = np.unique(y_hard[finite]) if finite.any() else np.asarray([])
+    diag = {
+        "enabled": True,
+        "soft_label_column": soft_col,
+        "hard_label_column": hard_col,
+        "sample_weight_column": weight_col or "candidate_policy_weight_formula",
+        "finite_rows": int(np.sum(finite)),
+        "rows": int(n),
+        "hard_positive_rate": float(np.nanmean(y_hard[finite])) if finite.any() else None,
+        "soft_label_mean": float(np.nanmean(y_soft[finite])) if finite.any() else None,
+        "hard_class_count": int(len(hard_unique)),
+        "weight_diagnostics": weight_diag,
+    }
+    if int(np.sum(finite)) < META_CORRECTNESS_MIN_ROWS or len(hard_unique) < 2:
+        diag["enabled"] = False
+        diag["reason"] = "insufficient_direct_label_support"
+        return None, None, None, diag
+    return y_soft.astype(np.float32), y_hard.astype(np.float32), sw.astype(np.float32), diag
+
+
+def _meta_correctness_weight_formula(
+    meta_scores: Sequence[float],
+    pnl_after_fees: Sequence[float],
+    y_soft: Sequence[float],
+    *,
+    scale: Optional[float] = None,
+    weight_params: Optional[Dict[str, float]] = None,
+) -> Tuple[np.ndarray, Dict[str, float]]:
+    meta = np.clip(np.asarray(meta_scores, dtype=np.float64), 1e-6, 1.0 - 1e-6)
+    pnl = np.asarray(pnl_after_fees, dtype=np.float64)
+    pnl = np.where(np.isfinite(pnl), pnl, 0.0)
+    y_soft_arr = np.asarray(y_soft, dtype=np.float64)
+    y_soft_arr = np.where(np.isfinite(y_soft_arr), y_soft_arr, 0.5)
+    if scale is None or not np.isfinite(float(scale)) or float(scale) <= 0.0:
+        abs_pnl = np.abs(pnl)
+        finite_abs = abs_pnl[np.isfinite(abs_pnl)]
+        scale = (
+            float(np.nanpercentile(finite_abs, 75))
+            if len(finite_abs)
+            else float(np.nanstd(pnl))
+        )
+        scale = max(float(scale), float(np.nanstd(pnl)) * 0.5, EPS)
+    params = dict(META_CORRECTNESS_WEIGHT_HPO_DEFAULT_PARAMS)
+    if isinstance(weight_params, dict):
+        for key, value in weight_params.items():
+            if key not in params:
+                continue
+            try:
+                val = float(value)
+            except Exception:
+                continue
+            if np.isfinite(val):
+                params[key] = val
+    rank = _global_rank(meta)
+    rank_power = float(np.clip(params["rank_power"], 0.25, 6.0))
+    conviction = np.clip(np.abs(meta - 0.5) * 2.0, 0.0, 1.0)
+    pnl_mag = np.clip(np.abs(pnl) / max(float(scale), EPS), 0.0, 3.0) / 3.0
+    label_distance = np.abs(y_soft_arr - 0.5)
+    sample_weight = (
+        (0.50 + np.power(np.clip(rank, 0.0, 1.0), rank_power))
+        * (0.75 + max(0.0, float(params["conviction_multiplier"])) * conviction)
+        * (0.75 + max(0.0, float(params["pnl_mag_multiplier"])) * pnl_mag)
+        * (
+            0.75
+            + max(0.0, float(params["label_distance_multiplier"])) * label_distance
+        )
+    )
+    confident_bad = (rank >= 0.70) & (pnl < 0.0)
+    sample_weight = np.where(
+        confident_bad,
+        sample_weight * float(META_CORRECTNESS_CONFIDENT_BAD_WEIGHT),
+        sample_weight,
+    )
+    sample_weight = sample_weight / max(float(np.nanmean(sample_weight)), EPS)
+    clip_lo, clip_hi = META_CORRECTNESS_SAMPLE_WEIGHT_CLIP
+    sample_weight = np.clip(sample_weight, clip_lo, clip_hi).astype(np.float32)
+    diagnostics = {
+        "sample_weight_rank_power": float(rank_power),
+        "sample_weight_conviction_multiplier": float(params["conviction_multiplier"]),
+        "sample_weight_pnl_mag_multiplier": float(params["pnl_mag_multiplier"]),
+        "sample_weight_label_distance_multiplier": float(
+            params["label_distance_multiplier"]
+        ),
+        "sample_weight_confident_bad_share": float(np.nanmean(confident_bad)),
+    }
+    return sample_weight, diagnostics
+
+
+def _meta_correctness_soft_labels_and_weights(
+    meta_scores: Sequence[float],
+    pnl_after_fees: Sequence[float],
+    *,
+    weight_params: Optional[Dict[str, float]] = None,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict[str, float]]:
+    meta = np.clip(np.asarray(meta_scores, dtype=np.float64), 1e-6, 1.0 - 1e-6)
+    pnl = np.asarray(pnl_after_fees, dtype=np.float64)
+    pnl = np.where(np.isfinite(pnl), pnl, 0.0)
+    abs_pnl = np.abs(pnl)
+    finite_abs = abs_pnl[np.isfinite(abs_pnl)]
+    scale = (
+        float(np.nanpercentile(finite_abs, 75))
+        if len(finite_abs)
+        else float(np.nanstd(pnl))
+    )
+    scale = max(scale, float(np.nanstd(pnl)) * 0.5, EPS)
+    center = float(META_CORRECTNESS_SOFT_LABEL_CENTER)
+    floor = float(META_CORRECTNESS_CONVICTION_FLOOR)
+    pnl_soft = center + center * np.tanh(pnl / scale)
+    conviction = np.clip(np.abs(meta - 0.5) * 2.0, 0.0, 1.0)
+    conviction_depth = floor + (1.0 - floor) * conviction
+    y_soft = center + conviction_depth * (pnl_soft - center)
+    y_soft = np.clip(y_soft, 1e-4, 1.0 - 1e-4).astype(np.float32)
+    y_hard = (pnl > 0.0).astype(np.float32)
+    sample_weight, weight_diag = _meta_correctness_weight_formula(
+        meta,
+        pnl,
+        y_soft,
+        scale=scale,
+        weight_params=weight_params,
+    )
+    clip_lo, clip_hi = META_CORRECTNESS_SAMPLE_WEIGHT_CLIP
+    diagnostics = {
+        "soft_label_center": center,
+        "conviction_floor": floor,
+        "soft_label_mean": float(np.nanmean(y_soft)),
+        "soft_label_std": float(np.nanstd(y_soft)),
+        "hard_positive_rate": float(np.nanmean(y_hard)),
+        "pnl_scale": float(scale),
+        "pnl_scale_tuning_policy": (
+            "keep center fixed at 0.5; tune pnl_scale/conviction_floor later "
+            "only if labels are too neutral"
+        ),
+        "sample_weight_clip_min": float(clip_lo),
+        "sample_weight_clip_max": float(clip_hi),
+        "sample_weight_min": float(np.nanmin(sample_weight)),
+        "sample_weight_mean": float(np.nanmean(sample_weight)),
+        "sample_weight_max": float(np.nanmax(sample_weight)),
+        **weight_diag,
+    }
+    return y_soft, y_hard, sample_weight, diagnostics
+
+
+def _meta_correctness_policy_sized_topk_objective(
+    scores: Sequence[float],
+    pnl_after_fees: Sequence[float],
+    *,
+    top_rank_threshold: float,
+    size_power: float,
+) -> Dict[str, float]:
+    score = np.asarray(scores, dtype=np.float64)
+    pnl = np.asarray(pnl_after_fees, dtype=np.float64)
+    n = min(len(score), len(pnl))
+    if n <= 0:
+        return {
+            "objective": -1e12,
+            "avg_net_pnl_per_trade": 0.0,
+            "profitable_trade_rate": 0.0,
+            "selected_trades": 0,
+        }
+    score = score[:n]
+    pnl = pnl[:n]
+    finite = np.isfinite(score) & np.isfinite(pnl)
+    if int(np.sum(finite)) <= 0:
+        return {
+            "objective": -1e12,
+            "avg_net_pnl_per_trade": 0.0,
+            "profitable_trade_rate": 0.0,
+            "selected_trades": 0,
+        }
+    rank = _global_rank(score)
+    threshold = float(np.clip(top_rank_threshold, 0.0, 0.999999))
+    selected = finite & (rank >= threshold)
+    if not np.any(selected):
+        finite_idx = np.where(finite)[0]
+        top_n = max(1, int(math.ceil(len(finite_idx) * max(1.0 - threshold, 0.01))))
+        selected_idx = finite_idx[np.argsort(score[finite_idx])[-top_n:]]
+        selected = np.zeros(n, dtype=bool)
+        selected[selected_idx] = True
+    rank_clip = np.clip(rank, 0.0, 1.0)
+    power = float(max(0.05, size_power))
+    sizes = 0.075 + 0.075 * np.power(rank_clip, power)
+    net = pnl * sizes
+    chosen = net[selected]
+    if len(chosen) == 0:
+        return {
+            "objective": -1e12,
+            "avg_net_pnl_per_trade": 0.0,
+            "profitable_trade_rate": 0.0,
+            "selected_trades": 0,
+        }
+    avg_net = float(np.nanmean(chosen))
+    profitable = float(np.nanmean(chosen > 0.0))
+    objective = avg_net * profitable
+    return {
+        "objective": float(objective if np.isfinite(objective) else -1e12),
+        "avg_net_pnl_per_trade": avg_net,
+        "profitable_trade_rate": profitable,
+        "selected_trades": int(len(chosen)),
+        "top_rank_threshold": float(threshold),
+        "size_power": float(power),
+    }
+
+
+def _regime_pnl_return_scale(returns: np.ndarray) -> float:
+    r = np.asarray(returns, dtype=np.float64)
+    finite = r[np.isfinite(r)]
+    if len(finite) == 0:
+        return 1.0
+    abs_ret = np.abs(finite)
+    return float(
+        max(
+            np.nanpercentile(abs_ret, 75.0),
+            np.nanstd(finite) * 0.5,
+            EPS,
+        )
+    )
+
+
+def _unit_tanh(value: float, scale: float, *, divisor: float = 1.0) -> float:
+    if not np.isfinite(value):
+        return 0.0
+    denom = max(float(scale) * max(float(divisor), EPS), EPS)
+    return float(0.5 + 0.5 * np.tanh(float(value) / denom))
+
+
+def _score_bucket_return_monotonicity(
+    scores: np.ndarray,
+    returns: np.ndarray,
+    *,
+    n_buckets: int = 5,
+) -> Tuple[float, Dict[str, Any]]:
+    s = np.asarray(scores, dtype=np.float64)
+    r = np.asarray(returns, dtype=np.float64)
+    n = min(len(s), len(r))
+    if n <= 0:
+        return 0.0, {"bucket_count": 0, "bucket_return_means": []}
+    s = s[:n]
+    r = r[:n]
+    finite = np.isfinite(s) & np.isfinite(r)
+    if int(np.sum(finite)) < max(8, int(n_buckets)):
+        return 0.0, {"bucket_count": 0, "bucket_return_means": []}
+    sf = s[finite]
+    rf = r[finite]
+    ranks = pd.Series(sf).rank(method="average", pct=True)
+    try:
+        bucket = pd.qcut(
+            ranks,
+            q=min(int(n_buckets), int(len(rf))),
+            labels=False,
+            duplicates="drop",
+        )
+    except Exception:
+        return 0.0, {"bucket_count": 0, "bucket_return_means": []}
+    df = pd.DataFrame({"bucket": bucket, "ret": rf}).dropna()
+    if df.empty:
+        return 0.0, {"bucket_count": 0, "bucket_return_means": []}
+    means = (
+        df.groupby("bucket", sort=True)["ret"]
+        .mean()
+        .to_numpy(dtype=np.float64)
+    )
+    if len(means) < 2:
+        return 0.0, {
+            "bucket_count": int(len(means)),
+            "bucket_return_means": means.astype(float).tolist(),
+        }
+    idx_rank = pd.Series(np.arange(len(means), dtype=np.float64)).rank()
+    ret_rank = pd.Series(means).rank()
+    corr = float(np.corrcoef(idx_rank, ret_rank)[0, 1])
+    if not np.isfinite(corr):
+        corr = 0.0
+    diffs = np.diff(means)
+    violation_rate = float(np.mean(diffs < 0.0)) if len(diffs) else 0.0
+    score = float(
+        np.clip(0.70 * (0.5 + 0.5 * corr) + 0.30 * (1.0 - violation_rate), 0.0, 1.0)
+    )
+    return score, {
+        "bucket_count": int(len(means)),
+        "bucket_return_means": means.astype(float).tolist(),
+        "bucket_return_spearman": corr,
+        "bucket_monotonicity_violation_rate": violation_rate,
+    }
+
+
+def _regime_pnl_topk_objective(
+    scores: Sequence[float],
+    pnl_after_fees: Sequence[float],
+    timestamps: Optional[Sequence[Any]] = None,
+    *,
+    top_fracs: Sequence[float] = META_CORRECTNESS_REGIME_PNL_TOP_FRACS,
+    top_frac_weights: Sequence[float] = META_CORRECTNESS_REGIME_PNL_TOP_FRAC_WEIGHTS,
+    lcb_z: float = META_CORRECTNESS_REGIME_PNL_LCB_Z,
+) -> Dict[str, Any]:
+    score = np.asarray(scores, dtype=np.float64)
+    pnl = np.asarray(pnl_after_fees, dtype=np.float64)
+    n = min(len(score), len(pnl))
+    if n <= 0:
+        return {
+            "objective": -1e12,
+            "valid": False,
+            "reason": "empty_input",
+            "selected_trades": 0,
+        }
+    score = score[:n]
+    pnl = pnl[:n]
+    finite = np.isfinite(score) & np.isfinite(pnl)
+    finite_n = int(np.sum(finite))
+    if finite_n < 8:
+        return {
+            "objective": -1e12,
+            "valid": False,
+            "reason": "too_few_finite_rows",
+            "finite_rows": finite_n,
+            "selected_trades": 0,
+        }
+    scale = _regime_pnl_return_scale(pnl[finite])
+    fracs = [float(np.clip(f, 0.001, 0.95)) for f in top_fracs]
+    weights = np.asarray(list(top_frac_weights), dtype=np.float64)
+    if len(weights) != len(fracs) or float(np.sum(weights)) <= EPS:
+        weights = np.ones(len(fracs), dtype=np.float64)
+    weights = weights / max(float(np.sum(weights)), EPS)
+    monotonicity, mono_diag = _score_bucket_return_monotonicity(score, pnl)
+    per_frac: List[Dict[str, Any]] = []
+    objectives: List[float] = []
+    penalties: List[float] = []
+    selected_total = 0
+    for frac, weight in zip(fracs, weights):
+        top_mask = _top_mask(np.where(finite, score, np.nan), frac)
+        bottom_mask = _top_mask(np.where(finite, -score, np.nan), frac)
+        top_ret = pnl[top_mask & finite]
+        bottom_ret = pnl[bottom_mask & finite]
+        selected_n = int(len(top_ret))
+        selected_total += selected_n
+        if selected_n == 0:
+            row = {
+                "top_frac": float(frac),
+                "weight": float(weight),
+                "selected_trades": 0,
+                "objective": -1e12,
+                "penalty": 1.0,
+            }
+            per_frac.append(row)
+            objectives.append(-1e12)
+            penalties.append(1.0)
+            continue
+        mean_net = float(np.nanmean(top_ret))
+        std = float(np.nanstd(top_ret, ddof=1)) if selected_n > 1 else 0.0
+        se = float(std / math.sqrt(max(selected_n, 1)))
+        lcb = float(mean_net - float(lcb_z) * se)
+        abs_ret = np.abs(top_ret)
+        weighted_hit = float(
+            np.nansum(abs_ret[top_ret > 0.0]) / max(float(np.nansum(abs_ret)), EPS)
+        )
+        downside = top_ret[top_ret < 0.0]
+        downside_std = float(np.nanstd(downside, ddof=1)) if len(downside) > 1 else 0.0
+        sortino = float(mean_net / (downside_std + EPS))
+        bottom_mean = float(np.nanmean(bottom_ret)) if len(bottom_ret) else 0.0
+        spread = float(mean_net - bottom_mean)
+        lcb_component = _unit_tanh(lcb, scale)
+        sortino_component = _unit_tanh(sortino, 1.0, divisor=2.0)
+        spread_component = _unit_tanh(spread, scale, divisor=2.0)
+        drawdown = _drawdown(top_ret)
+        drawdown_penalty = 0.08 * float(
+            np.tanh(drawdown / max(scale * math.sqrt(max(selected_n, 1)), EPS))
+        )
+        low_count_min = max(8, int(math.ceil(0.05 * finite_n * 0.50)))
+        low_count_penalty = 0.12 * max(
+            0.0, (float(low_count_min) - float(selected_n)) / max(float(low_count_min), 1.0)
+        )
+        negative_lcb_penalty = 0.10 * float(
+            np.tanh(max(0.0, -lcb) / max(scale, EPS))
+        )
+        penalty = float(drawdown_penalty + low_count_penalty + negative_lcb_penalty)
+        objective_raw = float(
+            0.45 * lcb_component
+            + 0.20 * weighted_hit
+            + 0.15 * sortino_component
+            + 0.10 * spread_component
+            + 0.10 * monotonicity
+        )
+        objective = float(objective_raw - penalty)
+        row = {
+            "top_frac": float(frac),
+            "weight": float(weight),
+            "selected_trades": int(selected_n),
+            "mean_net_pnl": mean_net,
+            "mean_net_pnl_se": se,
+            "lcb_mean_net_pnl": lcb,
+            "lcb_component": lcb_component,
+            "bps_weighted_profit_rate": weighted_hit,
+            "sortino_proxy": sortino,
+            "sortino_component": sortino_component,
+            "top_minus_bottom_return_spread": spread,
+            "spread_component": spread_component,
+            "monotonicity_by_score_bucket": monotonicity,
+            "drawdown": float(drawdown),
+            "drawdown_penalty": drawdown_penalty,
+            "low_count_penalty": low_count_penalty,
+            "negative_lcb_penalty": negative_lcb_penalty,
+            "penalty": penalty,
+            "objective_raw": objective_raw,
+            "objective": objective,
+        }
+        per_frac.append(row)
+        objectives.append(objective)
+        penalties.append(penalty)
+    obj_arr = np.asarray(objectives, dtype=np.float64)
+    valid_obj = np.isfinite(obj_arr) & (obj_arr > -1e11)
+    if not np.any(valid_obj):
+        return {
+            "objective": -1e12,
+            "valid": False,
+            "reason": "no_valid_topk_slices",
+            "finite_rows": finite_n,
+            "selected_trades": int(selected_total),
+            "per_top_frac": per_frac,
+        }
+    objective = float(np.sum(obj_arr[valid_obj] * weights[valid_obj]) / np.sum(weights[valid_obj]))
+    component_means: Dict[str, float] = {}
+    for key in (
+        "lcb_component",
+        "bps_weighted_profit_rate",
+        "sortino_component",
+        "spread_component",
+        "monotonicity_by_score_bucket",
+        "penalty",
+        "mean_net_pnl",
+        "lcb_mean_net_pnl",
+    ):
+        vals = np.asarray([float(row.get(key, np.nan)) for row in per_frac], dtype=np.float64)
+        mask = np.isfinite(vals)
+        component_means[f"{key}_weighted"] = (
+            float(np.sum(vals[mask] * weights[mask]) / np.sum(weights[mask]))
+            if np.any(mask)
+            else float("nan")
+        )
+    return {
+        "objective": objective,
+        "valid": True,
+        "reason": "ok",
+        "finite_rows": finite_n,
+        "selected_trades": int(selected_total),
+        "return_scale": float(scale),
+        "top_fracs": [float(f) for f in fracs],
+        "top_frac_weights": [float(w) for w in weights],
+        "lcb_z": float(lcb_z),
+        "per_top_frac": per_frac,
+        "monotonicity_diagnostics": mono_diag,
+        **component_means,
+    }
+
+
+def _regime_pnl_acceptance_objective(
+    candidate: Dict[str, Any],
+    baseline: Dict[str, Any],
+    *,
+    min_relative_denom: float = 0.10,
+) -> Dict[str, Any]:
+    c_obj = float(candidate.get("objective", np.nan))
+    b_obj = float(baseline.get("objective", np.nan))
+    valid = bool(candidate.get("valid", False)) and bool(baseline.get("valid", False))
+    if not valid or not np.isfinite(c_obj) or not np.isfinite(b_obj):
+        return {
+            "valid": False,
+            "fallback_reason": "invalid_regime_pnl_objective",
+            "objective": -np.inf,
+            "candidate_objective": c_obj,
+            "baseline_objective": b_obj,
+        }
+    denom = max(abs(b_obj), float(min_relative_denom), EPS)
+    uplift = c_obj - b_obj
+    objective = 1.0 + uplift / denom
+    return {
+        "valid": True,
+        "fallback_reason": "",
+        "objective": float(objective),
+        "candidate_objective": c_obj,
+        "baseline_objective": b_obj,
+        "absolute_uplift": float(uplift),
+        "relative_uplift": float(uplift / denom),
+        "objective_definition": (
+            "1 + (candidate_regime_pnl_objective - baseline_meta_regime_pnl_objective) "
+            "/ max(abs(baseline), 0.10)"
+        ),
+    }
+
+
+def _normalise_meta_correctness_integration_params(
+    params: Dict[str, Any],
+) -> Dict[str, float]:
+    lambda_lo, lambda_hi = META_CORRECTNESS_INTEGRATION_SEARCH_SPACE[
+        "lambda_correctness"
+    ]
+    cap_lo, cap_hi = META_CORRECTNESS_INTEGRATION_SEARCH_SPACE[
+        "correctness_offset_cap"
+    ]
+    return {
+        "lambda_correctness": float(
+            np.clip(float(params.get("lambda_correctness", 0.0)), lambda_lo, lambda_hi)
+        ),
+        "correctness_offset_cap": float(
+            np.clip(
+                float(params.get("correctness_offset_cap", cap_lo)),
+                cap_lo,
+                cap_hi,
+            )
+        ),
+    }
+
+
+def _suggest_meta_correctness_integration_params(trial: Any) -> Dict[str, float]:
+    lambda_lo, lambda_hi = META_CORRECTNESS_INTEGRATION_SEARCH_SPACE[
+        "lambda_correctness"
+    ]
+    cap_lo, cap_hi = META_CORRECTNESS_INTEGRATION_SEARCH_SPACE[
+        "correctness_offset_cap"
+    ]
+    return {
+        "lambda_correctness": float(
+            trial.suggest_float("lambda_correctness", float(lambda_lo), float(lambda_hi))
+        ),
+        "correctness_offset_cap": float(
+            trial.suggest_float("correctness_offset_cap", float(cap_lo), float(cap_hi))
+        ),
+    }
+
+
+def _enqueue_meta_correctness_integration_seed_trials(study: Any) -> None:
+    for params in (
+        {"lambda_correctness": 0.0, "correctness_offset_cap": 0.20},
+        {"lambda_correctness": 0.50, "correctness_offset_cap": 0.40},
+        {"lambda_correctness": 1.0, "correctness_offset_cap": 0.60},
+    ):
+        study.enqueue_trial(_normalise_meta_correctness_integration_params(params))
+
+
+def _iter_meta_correctness_integration_fallback_params() -> Iterable[Dict[str, float]]:
+    for lam in META_CORRECTNESS_INTEGRATION_FALLBACK_GRID["lambda_correctness"]:
+        for cap in META_CORRECTNESS_INTEGRATION_FALLBACK_GRID[
+            "correctness_offset_cap"
+        ]:
+            yield _normalise_meta_correctness_integration_params(
+                {
+                    "lambda_correctness": float(lam),
+                    "correctness_offset_cap": float(cap),
+                }
+            )
+
+
+def _optimise_meta_correctness_integration_for_policy_topk(
+    meta_scores: Sequence[float],
+    p_correct: Sequence[float],
+    pnl_after_fees: Sequence[float],
+    timestamps: Optional[Sequence[Any]] = None,
+    *,
+    top_rank_threshold: float,
+    size_power: float,
+    trials: int = META_CORRECTNESS_INTEGRATION_HPO_TRIALS,
+    seed: int = 91729,
+) -> Dict[str, Any]:
+    baseline_metrics = _regime_pnl_topk_objective(
+        meta_scores,
+        pnl_after_fees,
+        timestamps,
+    )
+    best: Dict[str, Any] = {
+        "objective": -1e12,
+        "params": {},
+        "selected_trades": 0,
+    }
+    rows: List[Dict[str, Any]] = []
+
+    def _evaluate(params: Dict[str, Any], *, source: str, trial_number: int) -> Dict[str, Any]:
+        integration_params = _normalise_meta_correctness_integration_params(params)
+        combined = combine_meta_correctness_scores(
+            meta_scores,
+            p_correct,
+            params=integration_params,
+        )
+        metrics = _regime_pnl_topk_objective(
+            combined["final_score"],
+            pnl_after_fees,
+            timestamps,
+        )
+        acceptance = _regime_pnl_acceptance_objective(metrics, baseline_metrics)
+        return {
+            **acceptance,
+            "selected_trades": int(metrics.get("selected_trades", 0)),
+            "regime_pnl_metrics": metrics,
+            "baseline_regime_pnl_metrics": baseline_metrics,
+            "params": integration_params,
+            "source": str(source),
+            "trial": int(trial_number),
+            "legacy_top_rank_threshold": float(top_rank_threshold),
+            "legacy_policy_size_power": float(size_power),
+        }
+
+    if optuna is None or int(trials) <= 0:
+        for i, params in enumerate(_iter_meta_correctness_integration_fallback_params()):
+            row = _evaluate(params, source="fallback_grid", trial_number=i)
+            rows.append(row)
+            if float(row["objective"]) > float(best["objective"]):
+                best = dict(row)
+        best["integration_search"] = {
+            "method": "fallback_grid",
+            "requested_trials": int(trials),
+            "completed_trials": int(len(rows)),
+            "search_space": dict(META_CORRECTNESS_INTEGRATION_SEARCH_SPACE),
+            "fallback_reason": "optuna_unavailable_or_disabled",
+        }
+        best["comparison_table"] = _jsonify(rows)
+        return best
+
+    def objective(trial: Any) -> float:
+        row = _evaluate(
+            _suggest_meta_correctness_integration_params(trial),
+            source="optuna",
+            trial_number=int(trial.number),
+        )
+        rows.append(row)
+        if float(row["objective"]) > float(best["objective"]):
+            best.clear()
+            best.update(row)
+        trial.set_user_attr("metrics", _jsonify(row))
+        return float(row["objective"])
+
+    sampler = TPESampler(seed=int(seed)) if TPESampler is not None else None
+    study = optuna.create_study(direction="maximize", sampler=sampler)
+    _enqueue_meta_correctness_integration_seed_trials(study)
+    study.optimize(
+        objective,
+        n_trials=max(1, int(trials)),
+        show_progress_bar=False,
+        catch=(Exception,),
+    )
+    best.setdefault("integration_search", {})
+    best["integration_search"] = {
+        "method": "optuna",
+        "requested_trials": int(trials),
+        "completed_trials": int(len(study.trials)),
+        "best_trial": int(study.best_trial.number) if study.best_trial else -1,
+        "search_space": dict(META_CORRECTNESS_INTEGRATION_SEARCH_SPACE),
+        "seed": int(seed),
+        "enqueued_trials": 3,
+    }
+    best["comparison_table"] = _jsonify(rows)
+    return best
+
+
+def _ordered_meta_correctness_features_for_regime_refine(
+    selected_features: Sequence[str],
+    feature_stats: Any,
+) -> List[str]:
+    selected = [str(c) for c in selected_features if str(c).strip()]
+    if not selected:
+        return []
+    base_order = {feature: i for i, feature in enumerate(selected)}
+    stats = (
+        feature_stats.copy()
+        if isinstance(feature_stats, pd.DataFrame)
+        else pd.DataFrame()
+    )
+    if stats.empty or "feature" not in stats.columns:
+        return selected
+    stats = stats.copy()
+    stats["feature"] = stats["feature"].astype(str)
+    score_col = next(
+        (
+            col
+            for col in (
+                "feature_score",
+                "feature_selection_score",
+                "normalized_permutation_delta_J",
+                "median_permutation_delta_J",
+                "univariate_j",
+            )
+            if col in stats.columns
+        ),
+        None,
+    )
+    if score_col is None:
+        return selected
+    stats["_score"] = pd.to_numeric(stats[score_col], errors="coerce")
+    stats = stats[stats["feature"].isin(base_order)].copy()
+    if stats.empty:
+        return selected
+    stats["_base_order"] = stats["feature"].map(base_order).astype(int)
+    stats = stats.sort_values(
+        ["_score", "_base_order"],
+        ascending=[False, True],
+        na_position="last",
+    )
+    ordered = stats["feature"].astype(str).tolist()
+    ordered_set = set(ordered)
+    ordered.extend([feature for feature in selected if feature not in ordered_set])
+    return ordered
+
+
+def _evaluate_meta_correctness_feature_subset_regime_pnl(
+    lgbm_pipe: Any,
+    X: pd.DataFrame,
+    y_soft: np.ndarray,
+    y_hard: np.ndarray,
+    sample_weight: np.ndarray,
+    features: Sequence[str],
+    *,
+    pnl: np.ndarray,
+    meta_scores: np.ndarray,
+    timestamps: Optional[np.ndarray],
+    random_state: int,
+) -> Dict[str, Any]:
+    feature_cols = [str(c) for c in features if str(c) in X.columns]
+    if not feature_cols:
+        return {
+            "valid": False,
+            "objective": -1e12,
+            "reason": "empty_feature_subset",
+            "feature_count": 0,
+        }
+    n = int(len(y_soft))
+    if n < 32 or len(np.unique(np.asarray(y_hard) >= 0.5)) < 2:
+        return {
+            "valid": False,
+            "objective": -1e12,
+            "reason": "insufficient_rows_or_class_support",
+            "feature_count": int(len(feature_cols)),
+            "rows": n,
+        }
+    splitter, y_split = lgbm_pipe._interleaved_spread_splitter(
+        np.asarray(y_hard, dtype=np.float32),
+        True,
+        n_splits=max(2, min(3, int(getattr(lgbm_pipe, "LGBM_CV_SPLITS", 3)))),
+    )
+    params = lgbm_pipe._base_lgbm_params(
+        int(random_state),
+        classifier=True,
+        overrides={
+            "boosting_type": "gbdt",
+            "n_estimators": int(
+                min(
+                    600,
+                    max(
+                        100,
+                        int(getattr(lgbm_pipe, "LGBM_FEATURE_SELECTION_N_ESTIMATORS", 300)),
+                    ),
+                )
+            ),
+            "learning_rate": float(getattr(lgbm_pipe, "LGBM_HPO_LEARNING_RATE", 0.025)),
+            "max_depth": 4,
+            "num_leaves": 16,
+            "reg_lambda": 15.0,
+            "reg_alpha": 1.0,
+            "min_child_samples": max(2, int(0.03 * max(n, 1))),
+            "subsample": 0.80,
+            "subsample_freq": 1,
+            "colsample_bytree": 0.75,
+            "extra_trees": False,
+        },
+    )
+    params = lgbm_pipe._effective_lgbm_params(params, classifier=True)
+    oof = np.full(n, np.nan, dtype=np.float32)
+    completed_folds = 0
+    for fold_i, (tr, va) in enumerate(splitter.split(np.zeros(len(y_split)), y_split)):
+        if len(tr) == 0 or len(va) == 0:
+            continue
+        if len(np.unique(np.asarray(y_hard)[tr] >= 0.5)) < 2:
+            continue
+        fold_params = dict(params)
+        fold_params["random_state"] = int(random_state) + int(fold_i) * 101
+        model = lgbm_pipe._fit_lgbm_model(
+            X.iloc[tr][feature_cols].reset_index(drop=True),
+            np.asarray(y_soft, dtype=np.float32)[tr],
+            np.asarray(sample_weight, dtype=np.float32)[tr],
+            classifier=True,
+            params=fold_params,
+            X_valid=X.iloc[va][feature_cols].reset_index(drop=True),
+            y_valid=np.asarray(y_soft, dtype=np.float32)[va],
+            early_stopping_rounds=int(getattr(lgbm_pipe, "LGBM_EARLY_STOPPING_ROUNDS", 40)),
+        )
+        oof[va] = lgbm_pipe._predict_lgbm_raw(
+            model,
+            X.iloc[va][feature_cols].reset_index(drop=True),
+            "classifier",
+        )
+        completed_folds += 1
+    finite = np.isfinite(oof)
+    if int(np.sum(finite)) < max(16, int(0.50 * n)):
+        return {
+            "valid": False,
+            "objective": -1e12,
+            "reason": "insufficient_oof_predictions",
+            "feature_count": int(len(feature_cols)),
+            "rows": n,
+            "oof_finite_rows": int(np.sum(finite)),
+            "completed_folds": int(completed_folds),
+        }
+    fill = float(np.nanmedian(oof[finite]))
+    p_correct = np.nan_to_num(oof, nan=fill, posinf=fill, neginf=fill)
+    integration = _optimise_meta_correctness_integration_for_policy_topk(
+        meta_scores,
+        p_correct,
+        pnl,
+        timestamps,
+        top_rank_threshold=0.80,
+        size_power=1.0,
+        trials=0,
+        seed=int(random_state) + 17,
+    )
+    return {
+        "valid": bool(integration.get("valid", False)),
+        "objective": float(integration.get("objective", -1e12)),
+        "reason": str(integration.get("fallback_reason") or "ok"),
+        "feature_count": int(len(feature_cols)),
+        "rows": n,
+        "oof_finite_rows": int(np.sum(finite)),
+        "completed_folds": int(completed_folds),
+        "integration": integration,
+    }
+
+
+def _refine_meta_correctness_features_for_regime_pnl(
+    lgbm_pipe: Any,
+    X_fit: pd.DataFrame,
+    y_soft_fit: np.ndarray,
+    y_hard_fit: np.ndarray,
+    sw_model: np.ndarray,
+    pnl_fit: np.ndarray,
+    meta_fit: np.ndarray,
+    ts_fit: Optional[np.ndarray],
+    selected_features: Sequence[str],
+    feature_stats: Any,
+    selection_idx: np.ndarray,
+    *,
+    cfg: Dict[str, Any],
+    random_state: int,
+) -> Dict[str, Any]:
+    enabled = bool(cfg.get("regime_adaptor_feature_refine_enable", True))
+    selected = [str(c) for c in selected_features if str(c) in X_fit.columns]
+    if not enabled:
+        return {
+            "enabled": False,
+            "reason": "disabled",
+            "selected_features": selected,
+        }
+    select_idx = np.asarray(selection_idx, dtype=np.int32)
+    select_idx = select_idx[(select_idx >= 0) & (select_idx < len(X_fit))]
+    min_rows = int(
+        cfg.get(
+            "regime_adaptor_feature_refine_min_rows",
+            META_CORRECTNESS_FEATURE_REFINE_MIN_ROWS,
+        )
+    )
+    min_features = int(
+        cfg.get(
+            "regime_adaptor_feature_refine_min_features",
+            META_CORRECTNESS_FEATURE_REFINE_MIN_FEATURES,
+        )
+    )
+    max_features = int(
+        cfg.get(
+            "regime_adaptor_feature_refine_max_features",
+            META_CORRECTNESS_FEATURE_REFINE_MAX_FEATURES,
+        )
+    )
+    if len(select_idx) < max(32, min_rows) or len(selected) <= max(1, min_features):
+        return {
+            "enabled": False,
+            "reason": "insufficient_rows_or_features",
+            "selected_features": selected,
+            "selection_rows": int(len(select_idx)),
+            "input_feature_count": int(len(selected)),
+        }
+    if len(np.unique(y_hard_fit[select_idx] >= 0.5)) < 2:
+        return {
+            "enabled": False,
+            "reason": "insufficient_class_support",
+            "selected_features": selected,
+            "selection_rows": int(len(select_idx)),
+            "input_feature_count": int(len(selected)),
+        }
+    ordered = _ordered_meta_correctness_features_for_regime_refine(
+        selected,
+        feature_stats,
+    )
+    ordered = [feature for feature in ordered if feature in X_fit.columns]
+    if max_features > 0 and len(ordered) > max_features:
+        ordered = ordered[:max_features]
+    if len(ordered) <= max(1, min_features):
+        return {
+            "enabled": False,
+            "reason": "insufficient_features_after_cap",
+            "selected_features": ordered,
+            "selection_rows": int(len(select_idx)),
+            "input_feature_count": int(len(selected)),
+            "candidate_feature_count": int(len(ordered)),
+        }
+    keep_fracs = tuple(
+        float(x)
+        for x in cfg.get(
+            "regime_adaptor_feature_refine_keep_fracs",
+            META_CORRECTNESS_FEATURE_REFINE_KEEP_FRACS,
+        )
+    )
+    subset_rows: List[Dict[str, Any]] = []
+    seen: set[Tuple[str, ...]] = set()
+    X_sel = X_fit.iloc[select_idx].reset_index(drop=True)
+    y_soft_sel = np.asarray(y_soft_fit, dtype=np.float32)[select_idx]
+    y_hard_sel = np.asarray(y_hard_fit, dtype=np.float32)[select_idx]
+    sw_sel = np.asarray(sw_model, dtype=np.float32)[select_idx]
+    pnl_sel = np.asarray(pnl_fit, dtype=np.float64)[select_idx]
+    meta_sel = np.asarray(meta_fit, dtype=np.float64)[select_idx]
+    ts_sel = (
+        np.asarray(ts_fit)[select_idx]
+        if ts_fit is not None and len(np.asarray(ts_fit)) == len(X_fit)
+        else None
+    )
+    best: Dict[str, Any] = {
+        "objective": -1e12,
+        "selected_features": list(ordered),
+        "feature_count": int(len(ordered)),
+    }
+    for frac in keep_fracs:
+        keep_n = int(round(len(ordered) * float(np.clip(frac, 0.05, 1.0))))
+        keep_n = min(len(ordered), max(min_features, keep_n))
+        features = tuple(ordered[:keep_n])
+        if features in seen:
+            continue
+        seen.add(features)
+        metrics = _evaluate_meta_correctness_feature_subset_regime_pnl(
+            lgbm_pipe,
+            X_sel,
+            y_soft_sel,
+            y_hard_sel,
+            sw_sel,
+            list(features),
+            pnl=pnl_sel,
+            meta_scores=meta_sel,
+            timestamps=ts_sel,
+            random_state=int(random_state) + len(seen) * 31,
+        )
+        row = {
+            "keep_frac": float(frac),
+            "feature_count": int(len(features)),
+            "features_preview": list(features[:20]),
+            **{k: v for k, v in metrics.items() if k != "integration"},
+        }
+        subset_rows.append(_jsonify(row))
+        value = float(metrics.get("objective", -1e12))
+        best_value = float(best.get("objective", -1e12))
+        if (
+            bool(metrics.get("valid", False))
+            and (
+                value > best_value + 1e-9
+                or (
+                    abs(value - best_value) <= 1e-9
+                    and len(features) < int(best.get("feature_count", len(ordered)))
+                )
+            )
+        ):
+            best = {
+                "objective": value,
+                "selected_features": list(features),
+                "feature_count": int(len(features)),
+                "metrics": metrics,
+            }
+    if float(best.get("objective", -1e12)) <= -1e11:
+        return {
+            "enabled": False,
+            "reason": "no_valid_regime_pnl_feature_subset",
+            "selected_features": selected,
+            "selection_rows": int(len(select_idx)),
+            "input_feature_count": int(len(selected)),
+            "candidate_feature_count": int(len(ordered)),
+            "comparison_table": subset_rows,
+        }
+    return {
+        "enabled": True,
+        "reason": "ok",
+        "selected_features": list(best["selected_features"]),
+        "selection_rows": int(len(select_idx)),
+        "input_feature_count": int(len(selected)),
+        "candidate_feature_count": int(len(ordered)),
+        "selected_feature_count": int(best["feature_count"]),
+        "best_value": float(best["objective"]),
+        "best_metrics": _jsonify(best.get("metrics", {})),
+        "comparison_table": subset_rows,
+        "objective": (
+            "J_regime_pnl feature refinement on lgbm_select rows over top 5/10/20%"
+        ),
+    }
+
+
+def _run_meta_correctness_lgbm_regime_pnl_hpo(
+    lgbm_pipe: Any,
+    X: pd.DataFrame,
+    y_soft: np.ndarray,
+    sample_weight: np.ndarray,
+    selected_features: Sequence[str],
+    *,
+    y_hard: np.ndarray,
+    pnl: np.ndarray,
+    meta_scores: np.ndarray,
+    timestamps: Optional[np.ndarray],
+    groups: Any,
+    random_state: int,
+    max_trials: int,
+    patience: int,
+    cfg: Dict[str, Any],
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    feature_cols = [str(c) for c in selected_features if str(c) in X.columns]
+    if not feature_cols:
+        params = lgbm_pipe._effective_lgbm_params(
+            lgbm_pipe._default_hpo_params(random_state, True),
+            classifier=True,
+        )
+        return params, {
+            "hpo_available": False,
+            "hpo_objective_mode": "regime_meta_pnl",
+            "hpo_reason": "missing_selected_features",
+        }
+    if optuna is None or int(max_trials) <= 0:
+        params, metrics = lgbm_pipe._run_lgbm_hpo(
+            X,
+            y_soft,
+            sample_weight,
+            feature_cols,
+            classifier=True,
+            groups=groups,
+            returns=pnl,
+            metric_y=y_hard,
+            random_state=random_state,
+            max_trials=max(0, int(max_trials)),
+            patience=max(1, int(patience)),
+            objective_mode="train_meta",
+            cfg=cfg,
+        )
+        metrics = dict(metrics)
+        metrics["hpo_objective_mode"] = "regime_meta_pnl_fallback_train_meta"
+        metrics["hpo_objective_definition"] = (
+            "fallback to lgbm_pipeline train_meta objective because Optuna is "
+            "unavailable or regime_adaptor optuna_trials <= 0"
+        )
+        return params, metrics
+
+    hpo_overrides = cfg.get("lgbm_hpo_overrides", {}) if isinstance(cfg, dict) else {}
+    hpo_overrides = hpo_overrides if isinstance(hpo_overrides, dict) else {}
+    max_depth_upper = int(
+        np.clip(
+            int(hpo_overrides.get("max_depth_max", getattr(lgbm_pipe, "LGBM_HPO_MAX_DEPTH_MAX", 5))),
+            3,
+            int(getattr(lgbm_pipe, "LGBM_HPO_MAX_DEPTH_MAX", 5)),
+        )
+    )
+    min_child_pct_min = float(
+        np.clip(float(hpo_overrides.get("min_child_samples_pct_min", 0.02)), 0.001, 0.50)
+    )
+    min_child_pct_max = float(
+        np.clip(
+            max(float(hpo_overrides.get("min_child_samples_pct_max", 0.07)), min_child_pct_min),
+            min_child_pct_min,
+            0.50,
+        )
+    )
+    n = int(len(y_soft))
+    hpo_cap = n
+    hpo_frac = float(np.clip(getattr(lgbm_pipe, "LGBM_HPO_ROW_SUBSAMPLE_FRAC", 1.0), 0.01, 1.0))
+    if hpo_frac < 0.999:
+        hpo_cap = min(hpo_cap, max(1, int(math.ceil(hpo_frac * n))))
+    max_rows = int(getattr(lgbm_pipe, "LGBM_HPO_MAX_ROWS", 0))
+    if max_rows > 0:
+        hpo_cap = min(hpo_cap, max_rows)
+    if n > hpo_cap:
+        sub_idx = lgbm_pipe._stratified_spread_subsample_indices(
+            y_hard,
+            hpo_cap,
+            random_state + 71,
+            True,
+        )
+    else:
+        sub_idx = np.arange(n, dtype=np.int32)
+    X_sub = X.iloc[sub_idx].reset_index(drop=True)
+    y_soft_sub = np.asarray(y_soft, dtype=np.float32)[sub_idx]
+    y_hard_sub = np.asarray(y_hard, dtype=np.float32)[sub_idx]
+    sw_sub = np.asarray(sample_weight, dtype=np.float32)[sub_idx]
+    pnl_sub = np.asarray(pnl, dtype=np.float64)[sub_idx]
+    meta_sub = np.asarray(meta_scores, dtype=np.float64)[sub_idx]
+    ts_sub = (
+        np.asarray(timestamps)[sub_idx]
+        if timestamps is not None and len(np.asarray(timestamps)) == n
+        else None
+    )
+    groups_sub = lgbm_pipe._groups_take(groups, sub_idx)
+    splitter, y_split = lgbm_pipe._interleaved_spread_splitter(
+        y_hard_sub,
+        True,
+        n_splits=max(2, int(getattr(lgbm_pipe, "LGBM_CV_SPLITS", 3))),
+    )
+    best_seen = {"value": -1e12, "trial": -1}
+
+    def _params_for_trial(trial: Any) -> Dict[str, Any]:
+        depth = trial.suggest_int("max_depth", 3, int(max_depth_upper))
+        return lgbm_pipe._base_lgbm_params(
+            random_state + int(trial.number) * 101,
+            classifier=True,
+            overrides={
+                "boosting_type": "gbdt",
+                "n_estimators": 1600,
+                "learning_rate": float(getattr(lgbm_pipe, "LGBM_HPO_LEARNING_RATE", 0.025)),
+                "max_depth": int(depth),
+                "num_leaves": int(2 ** int(depth)),
+                "max_bin": 63,
+                "reg_alpha": trial.suggest_float("reg_alpha", 0.1, 5.0, log=True),
+                "reg_lambda": trial.suggest_float("reg_lambda", 2.0, 100.0, log=True),
+                "min_child_samples": max(
+                    2,
+                    int(
+                        trial.suggest_float(
+                            "min_child_samples_pct",
+                            min_child_pct_min,
+                            min_child_pct_max,
+                        )
+                        * len(y_soft_sub)
+                    ),
+                ),
+                "min_child_weight": trial.suggest_float(
+                    "min_child_weight",
+                    float(getattr(lgbm_pipe, "LGBM_HPO_MIN_CHILD_WEIGHT_MIN", 1.0)),
+                    float(getattr(lgbm_pipe, "LGBM_HPO_MIN_CHILD_WEIGHT_MAX", 80.0)),
+                ),
+                "min_data_in_bin": trial.suggest_int("min_data_in_bin", 5, 100),
+                "min_split_gain": trial.suggest_float("min_split_gain", 1e-4, 3e-2, log=True),
+                "subsample": trial.suggest_float(
+                    "subsample",
+                    float(getattr(lgbm_pipe, "LGBM_HPO_SUBSAMPLE_MIN", 0.60)),
+                    float(getattr(lgbm_pipe, "LGBM_HPO_SUBSAMPLE_MAX", 0.90)),
+                ),
+                "subsample_freq": 1,
+                "colsample_bytree": trial.suggest_float("colsample_bytree", 0.40, 0.80),
+                "extra_trees": False,
+                "path_smooth": trial.suggest_float(
+                    "path_smooth",
+                    0.0,
+                    float(getattr(lgbm_pipe, "LGBM_HPO_PATH_SMOOTH_MAX", 0.0)),
+                )
+                if float(getattr(lgbm_pipe, "LGBM_HPO_PATH_SMOOTH_MAX", 0.0)) > 0.0
+                else 0.0,
+                "scale_pos_weight": trial.suggest_float("scale_pos_weight", 0.25, 4.0, log=True),
+            },
+        )
+
+    def objective(trial: Any) -> float:
+        params = _params_for_trial(trial)
+        fold_values: List[float] = []
+        fold_rows: List[Dict[str, Any]] = []
+        fold_best_iterations: List[int] = []
+        for step, (tr, va) in enumerate(splitter.split(np.zeros(len(y_split)), y_split)):
+            model = lgbm_pipe._fit_lgbm_model(
+                X_sub.iloc[tr][feature_cols].reset_index(drop=True),
+                y_soft_sub[tr],
+                sw_sub[tr],
+                classifier=True,
+                params=params,
+                X_valid=X_sub.iloc[va][feature_cols].reset_index(drop=True),
+                y_valid=y_soft_sub[va],
+                early_stopping_rounds=int(getattr(lgbm_pipe, "LGBM_EARLY_STOPPING_ROUNDS", 40)),
+            )
+            best_iter = lgbm_pipe._model_num_iterations(model)
+            if best_iter > 0:
+                fold_best_iterations.append(int(best_iter))
+            pred = lgbm_pipe._predict_lgbm_raw(
+                model,
+                X_sub.iloc[va][feature_cols].reset_index(drop=True),
+                "classifier",
+            )
+            metrics = _optimise_meta_correctness_integration_for_policy_topk(
+                meta_sub[va],
+                pred,
+                pnl_sub[va],
+                ts_sub[va] if ts_sub is not None else None,
+                top_rank_threshold=0.80,
+                size_power=1.0,
+                trials=META_CORRECTNESS_INTEGRATION_HPO_TRIALS,
+                seed=random_state + int(trial.number) * 101 + step,
+            )
+            value = float(metrics.get("objective", -1e12))
+            fold_values.append(value)
+            fold_rows.append(_jsonify(metrics))
+            trial.report(value, step)
+            if trial.should_prune():
+                raise optuna.TrialPruned()
+        vals = np.asarray([v for v in fold_values if np.isfinite(v)], dtype=np.float64)
+        if len(vals) == 0:
+            value = -1e12
+        else:
+            q25, q50, q75 = np.percentile(vals, [25.0, 50.0, 75.0])
+            value = float(q50 - 0.50 * (q75 - q25))
+        trial.set_user_attr("regime_pnl_fold_values", [float(v) for v in fold_values])
+        trial.set_user_attr("regime_pnl_fold_metrics", fold_rows)
+        trial.set_user_attr("J_regime_pnl", float(value))
+        trial.set_user_attr("J_final", float(value))
+        trial.set_user_attr("selected_objective", float(value))
+        if fold_best_iterations:
+            trial.set_user_attr("hpo_fold_best_iterations", [int(v) for v in fold_best_iterations])
+            trial.set_user_attr("hpo_best_iteration_p75", float(np.percentile(fold_best_iterations, 75.0)))
+        if value > float(best_seen["value"]):
+            best_seen.update({"value": value, "trial": int(trial.number)})
+        return value
+
+    def _patience_callback(study_obj: Any, trial: Any) -> None:
+        if int(best_seen["trial"]) >= 0 and int(trial.number) - int(best_seen["trial"]) >= max(1, int(patience)):
+            study_obj.stop()
+
+    sampler = TPESampler(seed=int(random_state)) if TPESampler is not None else None
+    pruner = MedianPruner(n_warmup_steps=1) if MedianPruner is not None else None
+    study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
+    study.optimize(
+        objective,
+        n_trials=max(1, int(max_trials)),
+        callbacks=[_patience_callback],
+        show_progress_bar=False,
+        catch=(Exception,),
+    )
+    complete = [
+        t
+        for t in study.trials
+        if getattr(t, "value", None) is not None
+        and np.isfinite(float(t.value))
+    ]
+    if not complete:
+        params = lgbm_pipe._effective_lgbm_params(
+            lgbm_pipe._default_hpo_params(random_state, True),
+            classifier=True,
+        )
+        return params, {
+            "hpo_available": True,
+            "hpo_completed_trials": 0,
+            "hpo_best_value": -1e12,
+            "hpo_objective_mode": "regime_meta_pnl",
+        }
+    best = study.best_trial
+    best_iterations = [
+        int(v)
+        for v in best.user_attrs.get("hpo_fold_best_iterations", [])
+        if int(v) > 0
+    ]
+    raw_final_n_estimators = int(np.percentile(best_iterations, 75.0)) if best_iterations else 1600
+    final_n_estimators = max(
+        int(getattr(lgbm_pipe, "LGBM_HPO_FINAL_MIN_ESTIMATORS", 200)),
+        raw_final_n_estimators,
+    )
+    depth = min(int(best.params.get("max_depth", 4)), int(max_depth_upper))
+    best_params_raw = lgbm_pipe._base_lgbm_params(
+        random_state + 191,
+        classifier=True,
+        overrides={
+            "boosting_type": "gbdt",
+            "n_estimators": int(final_n_estimators),
+            "learning_rate": float(getattr(lgbm_pipe, "LGBM_FINAL_LEARNING_RATE", 0.02)),
+            "max_depth": int(depth),
+            "num_leaves": int(2 ** int(depth)),
+            "max_bin": 63,
+            "reg_alpha": float(best.params.get("reg_alpha", 1.0)),
+            "reg_lambda": float(best.params.get("reg_lambda", 8.0)),
+            "min_child_samples": max(
+                2,
+                int(float(best.params.get("min_child_samples_pct", 0.03)) * max(1, len(y_soft))),
+            ),
+            "min_child_weight": float(best.params.get("min_child_weight", 40.0)),
+            "min_data_in_bin": int(best.params.get("min_data_in_bin", 20)),
+            "min_split_gain": float(best.params.get("min_split_gain", 0.01)),
+            "subsample": float(best.params.get("subsample", 0.75)),
+            "subsample_freq": 1,
+            "colsample_bytree": float(best.params.get("colsample_bytree", 0.70)),
+            "extra_trees": False,
+            "path_smooth": float(best.params.get("path_smooth", 0.0)),
+            "scale_pos_weight": float(best.params.get("scale_pos_weight", 1.0)),
+        },
+    )
+    best_params = lgbm_pipe._effective_lgbm_params(best_params_raw, classifier=True)
+    attrs = dict(best.user_attrs)
+    attrs.update(
+        {
+            "hpo_available": True,
+            "hpo_completed_trials": int(len(complete)),
+            "hpo_best_trial": int(best.number),
+            "hpo_best_value": float(best.value),
+            "hpo_best_params": dict(best_params),
+            "hpo_objective_mode": "regime_meta_pnl",
+            "hpo_objective_definition": (
+                "J_regime_pnl top 5/10/20%: 0.45*LCB(mean_net_pnl) + "
+                "0.20*bps_weighted_profit_rate + 0.15*sortino_proxy + "
+                "0.10*top_minus_bottom_return_spread + 0.10*bucket_monotonicity - penalties"
+            ),
+            "hpo_regime_pnl_top_fracs": list(META_CORRECTNESS_REGIME_PNL_TOP_FRACS),
+            "hpo_final_n_estimators_raw": int(raw_final_n_estimators),
+            "hpo_final_n_estimators": int(best_params.get("n_estimators", final_n_estimators)),
+            "hpo_early_stop_patience_trials": int(patience),
+        }
+    )
+    return best_params, attrs
+
+
+def _optimise_meta_correctness_weight_formula(
+    lgbm_pipe: Any,
+    X_fit: pd.DataFrame,
+    y_soft_fit: np.ndarray,
+    y_hard_fit: np.ndarray,
+    pnl_fit: np.ndarray,
+    meta_fit: np.ndarray,
+    ts_fit: Optional[np.ndarray],
+    sym_fit: Optional[np.ndarray],
+    *,
+    train_idx: np.ndarray,
+    validation_idx: np.ndarray,
+    hpo_idx: np.ndarray,
+    selected_features: Sequence[str],
+    best_params: Dict[str, Any],
+    cfg: Dict[str, Any],
+    policy_size_power: float,
+    deployment_rank_threshold: Optional[float],
+) -> Dict[str, Any]:
+    trials = int(
+        cfg.get(
+            "regime_adaptor_weight_hpo_trials",
+            META_CORRECTNESS_WEIGHT_HPO_TRIALS,
+        )
+    )
+    patience = int(
+        cfg.get(
+            "regime_adaptor_weight_hpo_patience",
+            META_CORRECTNESS_WEIGHT_HPO_PATIENCE,
+        )
+    )
+    enabled = bool(cfg.get("regime_adaptor_weight_hpo_enable", True))
+    if not enabled or trials <= 0:
+        return {
+            "enabled": False,
+            "reason": "disabled",
+            "best_params": dict(META_CORRECTNESS_WEIGHT_HPO_DEFAULT_PARAMS),
+        }
+    if optuna is None:
+        return {
+            "enabled": False,
+            "reason": "optuna_unavailable",
+            "best_params": dict(META_CORRECTNESS_WEIGHT_HPO_DEFAULT_PARAMS),
+        }
+    train_idx = np.asarray(train_idx, dtype=np.int32)
+    validation_idx = np.asarray(validation_idx, dtype=np.int32)
+    hpo_idx = np.asarray(hpo_idx, dtype=np.int32)
+    if len(train_idx) < 16 or len(validation_idx) < 16:
+        return {
+            "enabled": False,
+            "reason": "insufficient_train_or_validation_rows",
+            "best_params": dict(META_CORRECTNESS_WEIGHT_HPO_DEFAULT_PARAMS),
+            "train_rows": int(len(train_idx)),
+            "validation_rows": int(len(validation_idx)),
+        }
+    feature_cols = [str(c) for c in selected_features if str(c) in X_fit.columns]
+    if not feature_cols:
+        return {
+            "enabled": False,
+            "reason": "missing_selected_features",
+            "best_params": dict(META_CORRECTNESS_WEIGHT_HPO_DEFAULT_PARAMS),
+        }
+    threshold = (
+        float(deployment_rank_threshold)
+        if deployment_rank_threshold is not None
+        and np.isfinite(float(deployment_rank_threshold))
+        else 0.70
+    )
+    threshold = float(np.clip(threshold, 0.0, 0.999999))
+    size_power = float(policy_size_power if np.isfinite(policy_size_power) else 1.0)
+    stability_groups = lgbm_pipe._stability_group_bundle(
+        len(X_fit),
+        timestamps=ts_fit,
+        assets=sym_fit,
+    )
+    hpo_for_leaf_idx = hpo_idx if len(hpo_idx) else validation_idx
+    best_seen = {"score": -1e12, "trial": -1, "metrics": {}, "params": {}}
+
+    def _trial_params(trial: Any) -> Dict[str, float]:
+        return {
+            "rank_power": float(trial.suggest_float("rank_power", 0.50, 4.00)),
+            "conviction_multiplier": float(
+                trial.suggest_float("conviction_multiplier", 0.00, 2.00)
+            ),
+            "pnl_mag_multiplier": float(
+                trial.suggest_float("pnl_mag_multiplier", 0.00, 3.00)
+            ),
+            "label_distance_multiplier": float(
+                trial.suggest_float("label_distance_multiplier", 0.00, 3.00)
+            ),
+        }
+
+    def _prepare_model_weights(params: Dict[str, float]) -> Tuple[np.ndarray, Dict[str, Any]]:
+        sw_formula, formula_diag = _meta_correctness_weight_formula(
+            meta_fit,
+            pnl_fit,
+            y_soft_fit,
+            weight_params=params,
+        )
+        sw_base, _ = lgbm_pipe._normalize_weights(sw_formula)
+        sw_model, recency_applied = lgbm_pipe._apply_recency_sample_weight(
+            sw_base,
+            ts_fit,
+            objective_mode="train_meta",
+            cfg=cfg,
+        )
+        sw_model, rebalance_diag = lgbm_pipe._rebalance_effective_class_mass(
+            y_soft_fit,
+            y_hard_fit,
+            sw_model,
+            label="regime_adaptor_meta_correctness_weight_hpo",
+        )
+        return sw_model, {
+            **formula_diag,
+            "recency_sample_weight_applied": bool(recency_applied),
+            "rebalance": rebalance_diag,
+        }
+
+    def _evaluate(params: Dict[str, float]) -> Dict[str, Any]:
+        sw_model, diag = _prepare_model_weights(params)
+        _, hpo_weight_ess = lgbm_pipe._normalize_weights(sw_model[hpo_for_leaf_idx])
+        _, train_weight_ess = lgbm_pipe._normalize_weights(sw_model[train_idx])
+        validation_params, _ = lgbm_pipe._final_fit_leaf_floor(
+            dict(best_params),
+            fit_rows=len(train_idx),
+            hpo_rows=len(hpo_for_leaf_idx),
+            hpo_effective_rows=hpo_weight_ess,
+            final_effective_rows=train_weight_ess,
+            objective_mode="train_meta",
+        )
+        model = lgbm_pipe._fit_lgbm_model(
+            X_fit.iloc[train_idx][feature_cols].reset_index(drop=True),
+            y_soft_fit[train_idx],
+            sw_model[train_idx],
+            classifier=True,
+            params=validation_params,
+        )
+        p_correct = lgbm_pipe._predict_lgbm_raw(
+            model,
+            X_fit.iloc[validation_idx][feature_cols].reset_index(drop=True),
+            "classifier",
+        )
+        best_metrics = _optimise_meta_correctness_integration_for_policy_topk(
+            meta_fit[validation_idx],
+            p_correct,
+            pnl_fit[validation_idx],
+            (
+                np.asarray(ts_fit)[validation_idx]
+                if ts_fit is not None and len(np.asarray(ts_fit)) == len(X_fit)
+                else None
+            ),
+            top_rank_threshold=threshold,
+            size_power=size_power,
+            trials=META_CORRECTNESS_INTEGRATION_HPO_TRIALS,
+            seed=91729 + int(len(validation_idx)),
+        )
+        return {
+            "objective": float(best_metrics["objective"]),
+            "metrics": best_metrics,
+            "diagnostics": diag,
+        }
+
+    def objective(trial: Any) -> float:
+        params = _trial_params(trial)
+        try:
+            result = _evaluate(params)
+            score = float(result["objective"])
+        except Exception as exc:
+            trial.set_user_attr("failure_reason", str(exc)[:240])
+            return -1e12
+        trial.set_user_attr("metrics", _jsonify(result.get("metrics", {})))
+        if score > float(best_seen["score"]):
+            best_seen.update(
+                {
+                    "score": score,
+                    "trial": int(trial.number),
+                    "metrics": _jsonify(result.get("metrics", {})),
+                    "params": dict(params),
+                }
+            )
+        return score
+
+    sampler = TPESampler(seed=91373) if TPESampler is not None else None
+    pruner = MedianPruner(n_warmup_steps=10) if MedianPruner is not None else None
+    study = optuna.create_study(
+        direction="maximize",
+        sampler=sampler,
+        pruner=pruner,
+    )
+    study.enqueue_trial(dict(META_CORRECTNESS_WEIGHT_HPO_DEFAULT_PARAMS))
+
+    def _patience_callback(study_obj: Any, trial: Any) -> None:
+        best_number = int(getattr(study_obj.best_trial, "number", 0))
+        if int(trial.number) - best_number >= max(1, patience):
+            study_obj.stop()
+
+    study.optimize(
+        objective,
+        n_trials=max(1, trials),
+        callbacks=[_patience_callback],
+        show_progress_bar=False,
+        catch=(Exception,),
+    )
+    best_params = dict(META_CORRECTNESS_WEIGHT_HPO_DEFAULT_PARAMS)
+    if study.best_trial is not None:
+        best_params.update({k: float(v) for k, v in study.best_trial.params.items()})
+    best_eval = _evaluate(best_params)
+    return {
+        "enabled": True,
+        "study_trials": int(len(study.trials)),
+        "patience": int(patience),
+        "best_trial": int(study.best_trial.number) if study.best_trial else -1,
+        "best_value": float(study.best_value) if np.isfinite(study.best_value) else -1e12,
+        "best_params": best_params,
+        "best_metrics": _jsonify(best_eval.get("metrics", {})),
+        "objective": (
+            "regime_pnl_top5_10_20_lcb_weighted_hit_sortino_spread_monotonicity"
+        ),
+        "top_rank_threshold": float(threshold),
+        "policy_size_power": float(size_power),
+        "validation_rows": int(len(validation_idx)),
+        "train_rows": int(len(train_idx)),
+    }
+
+
+def combine_meta_correctness_scores(
+    meta_p_calibrated: Sequence[float],
+    p_meta_correct: Sequence[float],
+    *,
+    params: Optional[Dict[str, float]] = None,
+) -> Dict[str, np.ndarray]:
+    params = params or {}
+    meta = np.clip(np.asarray(meta_p_calibrated, dtype=np.float64), 1e-6, 1.0 - 1e-6)
+    p_correct = np.clip(
+        np.asarray(p_meta_correct, dtype=np.float64), 1e-6, 1.0 - 1e-6
+    )
+    lambda_correctness = max(float(params.get("lambda_correctness", 0.5)), 0.0)
+    offset_cap = max(float(params.get("correctness_offset_cap", 0.50)), 0.0)
+    correctness_z = _mean_zscore(_logit(p_correct))
+    offset_raw = lambda_correctness * correctness_z
+    offset = np.clip(offset_raw, -offset_cap, offset_cap)
+    raw = _logit(meta) + offset
+    score = _sigmoid(raw)
+    return {
+        "final_score_raw": np.asarray(raw, dtype=np.float64),
+        "final_score": np.asarray(score, dtype=np.float64),
+        "final_global_rank": _global_rank(score),
+        "meta_correctness_probability": np.asarray(p_correct, dtype=np.float64),
+        "meta_correctness_zscore": np.asarray(correctness_z, dtype=np.float64),
+        "meta_correctness_logit_offset_raw": np.asarray(offset_raw, dtype=np.float64),
+        "meta_correctness_logit_offset": np.asarray(offset, dtype=np.float64),
+        "score_delta_from_regime_adjustment": np.asarray(
+            score - meta, dtype=np.float64
+        ),
+    }
+
+
+def compare_meta_correctness_integration(
     panel: pd.DataFrame,
     *,
     meta_score_col: str = "meta_pred_calibrated",
-    return_col: str = "future_horizon_wallet_pnl",
+    correctness_col: str = "meta_correctness_oof",
+    return_col: str = "wallet_return",
 ) -> Dict[str, Any]:
-    if meta_score_col in panel.columns:
-        meta_series = pd.to_numeric(panel[meta_score_col], errors="coerce").fillna(0.5)
-    else:
-        meta_series = pd.Series(np.full(len(panel), 0.5), index=panel.index)
-    meta = np.clip(meta_series.to_numpy(dtype=np.float64), 1e-6, 1 - 1e-6)
+    def _series_or_default(col: str, default: float) -> pd.Series:
+        if col in panel.columns:
+            return panel[col]
+        return pd.Series(np.full(len(panel), float(default)), index=panel.index)
+
+    meta = (
+        pd.to_numeric(_series_or_default(meta_score_col, 0.5), errors="coerce")
+        .fillna(0.5)
+        .clip(1e-6, 1.0 - 1e-6)
+        .to_numpy(dtype=np.float64)
+    )
+    p_correct = (
+        pd.to_numeric(_series_or_default(correctness_col, 0.5), errors="coerce")
+        .fillna(0.5)
+        .clip(1e-6, 1.0 - 1e-6)
+        .to_numpy(dtype=np.float64)
+    )
     returns = (
-        pd.to_numeric(panel[return_col], errors="coerce")
+        pd.to_numeric(_series_or_default(return_col, 0.0), errors="coerce")
         .fillna(0.0)
         .to_numpy(dtype=np.float64)
     )
-    if "anchor_date" in panel.columns:
-        timestamps = panel["anchor_date"].to_numpy()
-    elif "timestamp" in panel.columns:
+    if "timestamp" in panel.columns:
         timestamps = panel["timestamp"].to_numpy()
+    elif "anchor_date" in panel.columns:
+        timestamps = panel["anchor_date"].to_numpy()
     else:
         timestamps = None
-    p_global = (
-        pd.to_numeric(
-            panel.get(
-                "combined_global_bad_regime_oof",
-                panel.get("combined_global_bad_regime_score", 0.5),
-            ),
-            errors="coerce",
-        )
-        .fillna(0.5)
-        .to_numpy(dtype=np.float64)
-    )
-    p_asset = (
-        pd.to_numeric(
-            panel.get(
-                "combined_asset_bad_regime_oof",
-                panel.get("combined_asset_bad_regime_score", 0.5),
-            ),
-            errors="coerce",
-        )
-        .fillna(0.5)
-        .to_numpy(dtype=np.float64)
-    )
     baseline_metrics = _selection_metrics(meta, returns, timestamps, top_frac=0.30)
+    baseline_regime_pnl_metrics = _regime_pnl_topk_objective(
+        meta,
+        returns,
+        timestamps,
+    )
     rows: List[Dict[str, Any]] = []
     best = {"objective": -np.inf, "params": {}}
-    grid = REGIME_ADAPTOR_COMBINATION_GRID
-    for wg in grid["global_weight"]:
-        for wa in grid["asset_weight"]:
-            if float(wg) + float(wa) <= 0.0:
-                continue
-            for gamma_global in grid.get("gamma_global", [1.0]):
-                for gamma_asset in grid.get("gamma_asset", [1.0]):
-                    for lam in grid["lambda_regime"]:
-                        params = {
-                            "global_weight": float(wg),
-                            "asset_weight": float(wa),
-                            "lambda_regime": float(lam),
-                            "gamma_global": float(gamma_global),
-                            "gamma_asset": float(gamma_asset),
-                        }
-                        combined = combine_meta_bad_regime_scores(
-                            meta, p_global, p_asset, params=params
-                        )
-                        metrics = _selection_metrics(
-                            combined["final_score"],
-                            returns,
-                            timestamps,
-                            top_frac=0.30,
-                        )
-                        obj = regime_acceptance_objective(metrics, baseline_metrics)
-                        row = {"params": params, "metrics": metrics, **obj}
-                        rows.append(row)
-                        if (
-                            obj["valid"]
-                            and metrics["net_pnl"]
-                            >= 0.90 * baseline_metrics["net_pnl"]
-                            and obj["objective"] > best["objective"]
-                        ):
-                            best = {
-                                "objective": obj["objective"],
-                                "params": params,
-                                "metrics": metrics,
-                                "objective_components": obj,
-                            }
+    integration_search: Dict[str, Any] = {}
+
+    def _evaluate(params: Dict[str, Any], *, source: str, trial_number: int) -> Dict[str, Any]:
+        integration_params = _normalise_meta_correctness_integration_params(params)
+        combined = combine_meta_correctness_scores(
+            meta,
+            p_correct,
+            params=integration_params,
+        )
+        metrics = _selection_metrics(
+            combined["final_score"], returns, timestamps, top_frac=0.30
+        )
+        regime_pnl_metrics = _regime_pnl_topk_objective(
+            combined["final_score"],
+            returns,
+            timestamps,
+        )
+        uplift_combined = {
+            "good_regime_offset": np.maximum(
+                combined["meta_correctness_logit_offset"], 0.0
+            ),
+            "score_delta_from_regime_adjustment": combined[
+                "score_delta_from_regime_adjustment"
+            ],
+        }
+        uplift = _regime_positive_boost_uplift_diagnostics(
+            meta,
+            combined["final_score"],
+            returns,
+            uplift_combined,
+            top_frac=0.30,
+        )
+        legacy_obj = regime_acceptance_objective(metrics, baseline_metrics)
+        obj = _regime_pnl_acceptance_objective(
+            regime_pnl_metrics,
+            baseline_regime_pnl_metrics,
+        )
+        churn = _positive_boost_churn_penalty(uplift)
+        objective_before_churn = float(obj.get("objective", np.nan))
+        obj = {
+            **obj,
+            "objective_before_churn_penalty": objective_before_churn,
+            **churn,
+        }
+        if np.isfinite(objective_before_churn):
+            obj["objective"] = float(
+                objective_before_churn
+                * churn["positive_boost_churn_penalty_multiplier"]
+            )
+        return {
+            "params": integration_params,
+            "metrics": metrics,
+            "regime_pnl_metrics": regime_pnl_metrics,
+            "baseline_regime_pnl_metrics": baseline_regime_pnl_metrics,
+            "legacy_top30_objective_components": legacy_obj,
+            "uplift_diagnostics": uplift,
+            "source": str(source),
+            "trial": int(trial_number),
+            **obj,
+        }
+
+    def _promotable_value(row: Dict[str, Any]) -> float:
+        obj = float(row.get("objective", np.nan))
+        if bool(row.get("valid", False)) and np.isfinite(obj) and obj > 1.0:
+            return obj
+        return -np.inf
+
+    def _maybe_update_best(row: Dict[str, Any]) -> None:
+        nonlocal best
+        value = _promotable_value(row)
+        if value > float(best["objective"]):
+            best = {
+                "objective": float(value),
+                "params": dict(row.get("params", {})),
+                "metrics": dict(row.get("metrics", {})),
+                "regime_pnl_metrics": dict(row.get("regime_pnl_metrics", {})),
+                "baseline_regime_pnl_metrics": dict(
+                    row.get("baseline_regime_pnl_metrics", {})
+                ),
+                "objective_components": {
+                    k: v
+                    for k, v in row.items()
+                    if k
+                    not in {
+                        "params",
+                        "metrics",
+                        "regime_pnl_metrics",
+                        "baseline_regime_pnl_metrics",
+                        "uplift_diagnostics",
+                        "source",
+                        "trial",
+                    }
+                },
+                "uplift_diagnostics": dict(row.get("uplift_diagnostics", {})),
+            }
+
+    if optuna is None:
+        for i, params in enumerate(_iter_meta_correctness_integration_fallback_params()):
+            row = _evaluate(params, source="fallback_grid", trial_number=i)
+            rows.append(row)
+            _maybe_update_best(row)
+        integration_search = {
+            "method": "fallback_grid",
+            "requested_trials": int(META_CORRECTNESS_INTEGRATION_HPO_TRIALS),
+            "completed_trials": int(len(rows)),
+            "search_space": dict(META_CORRECTNESS_INTEGRATION_SEARCH_SPACE),
+            "fallback_reason": "optuna_unavailable",
+        }
+    else:
+        def objective(trial: Any) -> float:
+            row = _evaluate(
+                _suggest_meta_correctness_integration_params(trial),
+                source="optuna",
+                trial_number=int(trial.number),
+            )
+            rows.append(row)
+            _maybe_update_best(row)
+            value = _promotable_value(row)
+            return float(value if np.isfinite(value) else -1e12)
+
+        sampler = TPESampler(seed=91753) if TPESampler is not None else None
+        study = optuna.create_study(direction="maximize", sampler=sampler)
+        _enqueue_meta_correctness_integration_seed_trials(study)
+        study.optimize(
+            objective,
+            n_trials=max(1, int(META_CORRECTNESS_INTEGRATION_HPO_TRIALS)),
+            show_progress_bar=False,
+            catch=(Exception,),
+        )
+        integration_search = {
+            "method": "optuna",
+            "requested_trials": int(META_CORRECTNESS_INTEGRATION_HPO_TRIALS),
+            "completed_trials": int(len(study.trials)),
+            "best_trial": int(study.best_trial.number) if study.best_trial else -1,
+            "search_space": dict(META_CORRECTNESS_INTEGRATION_SEARCH_SPACE),
+            "seed": 91753,
+            "enqueued_trials": 3,
+        }
     accepted = bool(best["objective"] > 1.05)
     return {
         "baseline_top30_metrics": baseline_metrics,
         "candidate_top30_metrics": best.get("metrics", {}),
+        "baseline_regime_pnl_metrics": baseline_regime_pnl_metrics,
+        "candidate_regime_pnl_metrics": best.get("regime_pnl_metrics", {}),
         "comparison_table": _jsonify(rows),
+        "integration_search": _jsonify(integration_search),
         "accepted": accepted,
         "selected_params": best["params"] if accepted else {},
         "selected_objective": None
         if not np.isfinite(best["objective"])
         else float(best["objective"]),
         "objective_components": best.get("objective_components", {}),
+        "selected_uplift_diagnostics": best.get("uplift_diagnostics", {}),
     }
 
 
-def join_regime_oof_to_trade_candidates(
-    trade_candidates: pd.DataFrame,
-    wide_oof_panel: pd.DataFrame,
+def _top_precision_pnl(
+    scores: Sequence[float],
+    returns: Sequence[float],
     *,
-    timestamp_col: str = "timestamp",
-    strategy_col: str = "strategy_id",
-    symbol_col: str = "symbol",
-) -> pd.DataFrame:
-    """Point-in-time asof join of wide OOF bad-regime scores onto trade candidates."""
-    if trade_candidates.empty or wide_oof_panel.empty:
-        return trade_candidates.copy()
-    left = trade_candidates.copy()
-    right = wide_oof_panel.copy()
-    left["_ts"] = pd.to_datetime(left[timestamp_col], utc=True, errors="coerce")
-    right["_anchor_ts"] = pd.to_datetime(
-        right["anchor_date"], utc=True, errors="coerce"
-    )
-    out_parts: List[pd.DataFrame] = []
-    for (sid, sym), chunk in left.groupby([strategy_col, symbol_col], sort=False):
-        r = right[
-            (right[strategy_col].astype(str) == str(sid))
-            & (right[symbol_col].astype(str) == str(sym))
-        ]
-        if r.empty:
-            out_parts.append(chunk)
-            continue
-        joined = pd.merge_asof(
-            chunk.sort_values("_ts"),
-            r.sort_values("_anchor_ts"),
-            left_on="_ts",
-            right_on="_anchor_ts",
-            direction="backward",
-            suffixes=("", "_regime"),
-        )
-        out_parts.append(joined)
-    return pd.concat(out_parts, ignore_index=True).drop(
-        columns=["_ts", "_anchor_ts"], errors="ignore"
-    )
+    top_frac: float,
+) -> Dict[str, float]:
+    s = np.asarray(scores, dtype=np.float64)
+    r = np.asarray(returns, dtype=np.float64)
+    n = min(len(s), len(r))
+    if n <= 0:
+        return {"rows": 0, "precision": float("nan"), "net_pnl": 0.0, "mean_pnl": 0.0}
+    s = s[:n]
+    r = r[:n]
+    mask = _top_mask(s, top_frac) & np.isfinite(r)
+    rr = r[mask]
+    if len(rr) == 0:
+        return {"rows": 0, "precision": float("nan"), "net_pnl": 0.0, "mean_pnl": 0.0}
+    return {
+        "rows": int(len(rr)),
+        "precision": float(np.mean(rr > 0.0)),
+        "net_pnl": float(np.nansum(rr)),
+        "mean_pnl": float(np.nanmean(rr)),
+    }
 
 
-def compare_regime_on_trade_candidates(
-    trade_candidates: pd.DataFrame,
+def _safe_binary_auc(y: Sequence[float], p: Sequence[float]) -> float:
+    yy = np.asarray(y, dtype=np.float64)
+    pp = np.asarray(p, dtype=np.float64)
+    finite = np.isfinite(yy) & np.isfinite(pp)
+    if int(np.sum(finite)) < 3 or len(np.unique(yy[finite])) < 2:
+        return float("nan")
+    try:
+        return float(roc_auc_score(yy[finite], pp[finite]))
+    except Exception:
+        return float("nan")
+
+
+def _safe_binary_logloss(y: Sequence[float], p: Sequence[float]) -> float:
+    yy = np.asarray(y, dtype=np.float64)
+    pp = np.clip(np.asarray(p, dtype=np.float64), 1e-6, 1.0 - 1e-6)
+    finite = np.isfinite(yy) & np.isfinite(pp)
+    if int(np.sum(finite)) < 1:
+        return float("nan")
+    try:
+        return float(log_loss(yy[finite], pp[finite], labels=[0.0, 1.0]))
+    except Exception:
+        return float("nan")
+
+
+def _meta_correctness_oof_quality_metrics(
+    meta_scores: Sequence[float],
+    p_meta_correct: Sequence[float],
+    y_hard: Sequence[float],
+    y_soft: Sequence[float],
+    pnl_after_fees: Sequence[float],
     *,
-    meta_score_col: str = "meta_pred_calibrated",
-    return_col: str = "wallet_return",
-    timestamp_col: str = "timestamp",
+    integration_params: Optional[Dict[str, float]] = None,
+    timestamps: Optional[Sequence[Any]] = None,
 ) -> Dict[str, Any]:
-    """Trade-candidate top-30 comparison after OOF bad-regime scores are joined."""
-    return compare_regime_combination_families(
-        trade_candidates,
-        meta_score_col=meta_score_col,
-        return_col=return_col,
-    ) | {"evaluation_universe": "trade_candidates"}
+    n = min(
+        len(meta_scores),
+        len(p_meta_correct),
+        len(y_hard),
+        len(y_soft),
+        len(pnl_after_fees),
+    )
+    if n <= 0:
+        return {"rows": 0}
+    meta = np.clip(np.asarray(meta_scores, dtype=np.float64)[:n], 1e-6, 1.0 - 1e-6)
+    p_correct = np.clip(
+        np.asarray(p_meta_correct, dtype=np.float64)[:n], 1e-6, 1.0 - 1e-6
+    )
+    yh = np.asarray(y_hard, dtype=np.float64)[:n]
+    ys = np.asarray(y_soft, dtype=np.float64)[:n]
+    pnl = np.asarray(pnl_after_fees, dtype=np.float64)[:n]
+    finite = (
+        np.isfinite(meta)
+        & np.isfinite(p_correct)
+        & np.isfinite(yh)
+        & np.isfinite(ys)
+        & np.isfinite(pnl)
+    )
+    if not finite.any():
+        return {"rows": 0}
+    meta = meta[finite]
+    p_correct = p_correct[finite]
+    yh = yh[finite]
+    ys = ys[finite]
+    pnl = pnl[finite]
+    if timestamps is not None and len(timestamps) >= n:
+        ts = np.asarray(timestamps)[:n][finite]
+    else:
+        ts = None
+    params = dict(integration_params or {})
+    combined = combine_meta_correctness_scores(meta, p_correct, params=params)
+    combined_score = combined["final_score"]
+    metrics: Dict[str, Any] = {
+        "rows": int(len(meta)),
+        "hard_positive_rate": float(np.nanmean(yh)),
+        "p_meta_correct_mean": float(np.nanmean(p_correct)),
+        "p_meta_correct_std": float(np.nanstd(p_correct)),
+        "p_meta_correct_auc": _safe_binary_auc(yh, p_correct),
+        "p_meta_correct_logloss": _safe_binary_logloss(yh, p_correct),
+        "p_meta_correct_brier": float(np.nanmean(np.square(p_correct - yh))),
+        "p_meta_correct_ece": _ece_binary(yh, p_correct),
+        "p_meta_correct_soft_mse": float(np.nanmean(np.square(p_correct - ys))),
+        "p_meta_correct_rank_ic_after_fee_pnl": _safe_corr(p_correct, pnl),
+        "meta_rank_ic_after_fee_pnl": _safe_corr(meta, pnl),
+        "combined_rank_ic_after_fee_pnl": _safe_corr(combined_score, pnl),
+        "integration_policy": "bounded_logit_adjustment",
+        "integration_params": params,
+        "bounded_logit_offset_abs_mean": float(
+            np.nanmean(np.abs(combined["meta_correctness_logit_offset"]))
+        ),
+        "bounded_logit_offset_abs_p95": float(
+            np.nanpercentile(np.abs(combined["meta_correctness_logit_offset"]), 95)
+        ),
+        "score_delta_abs_mean": float(
+            np.nanmean(np.abs(combined["score_delta_from_regime_adjustment"]))
+        ),
+        "score_delta_mean": float(
+            np.nanmean(combined["score_delta_from_regime_adjustment"])
+        ),
+    }
+    baseline_top30 = _selection_metrics(meta, pnl, ts, top_frac=0.30)
+    combined_top30 = _selection_metrics(combined_score, pnl, ts, top_frac=0.30)
+    metrics["baseline_top30_metrics"] = baseline_top30
+    metrics["combined_top30_metrics"] = combined_top30
+    metrics["combination_top30_objective_components"] = regime_acceptance_objective(
+        combined_top30, baseline_top30
+    )
+    top_deltas: Dict[str, Any] = {}
+    for frac, label in ((0.10, "top10"), (0.20, "top20"), (0.30, "top30")):
+        base = _top_precision_pnl(meta, pnl, top_frac=frac)
+        cand = _top_precision_pnl(combined_score, pnl, top_frac=frac)
+        top_deltas[f"baseline_{label}"] = base
+        top_deltas[f"combined_{label}"] = cand
+        top_deltas[f"{label}_precision_delta"] = float(
+            cand["precision"] - base["precision"]
+        ) if np.isfinite(cand["precision"]) and np.isfinite(base["precision"]) else float("nan")
+        top_deltas[f"{label}_net_pnl_delta"] = float(
+            cand["net_pnl"] - base["net_pnl"]
+        )
+    base_top = _top_mask(meta, 0.30)
+    cand_top = _top_mask(combined_score, 0.30)
+    top_count = max(int(np.sum(cand_top)), 1)
+    top_deltas["top30_turnover_delta"] = float(
+        1.0 - (np.sum(base_top & cand_top) / top_count)
+    )
+    top_deltas["rank_ic_delta"] = float(
+        metrics["combined_rank_ic_after_fee_pnl"] - metrics["meta_rank_ic_after_fee_pnl"]
+    ) if np.isfinite(metrics["combined_rank_ic_after_fee_pnl"]) and np.isfinite(
+        metrics["meta_rank_ic_after_fee_pnl"]
+    ) else float("nan")
+    metrics["combination_improvement"] = top_deltas
+    return _jsonify(metrics)
 
 
-def fit_rolling_regime_adaptor(
-    panel: pd.DataFrame,
+def _meta_correctness_feature_family_diagnostics(
+    available_features: Sequence[str],
+    selected_features: Sequence[str],
+) -> Dict[str, Any]:
+    families = {
+        "lgbm_uncertainty_drift": (
+            "feature_drift_",
+            "regime_centroid_similarity_train",
+            "mahalanobis_mean_shift",
+            "frobenius_corr_shift",
+            "feature_drift_cov_shift",
+            "inference_drift_score",
+            "uncertainty_score",
+            "rare_leaf_low_support_score",
+            "contribution_drift_score",
+            "pred_std",
+            "leaf_support",
+        ),
+        "distribution_anomaly": (
+            "zscore",
+            "psi",
+            "ks",
+            "knn",
+            "reconstruction_error",
+            "mahalanobis",
+            "frobenius",
+            "cov_shift",
+            "missing",
+            "stale",
+            "log_likelihood",
+            "outlier",
+            "rarity",
+        ),
+        "recent_meta_health": (
+            "recent_meta_",
+            "recent_global_",
+            "recent_side_horizon_",
+            "recent_bucket_",
+            "recent_regime_",
+            "recent_base_meta_disagreement_",
+            "recent_base_internal_disagreement_",
+            "recent_hit_rate_",
+            "recent_prob_error_",
+            "brier",
+            "ece",
+            "cal_error",
+            "calibration_error",
+            "rolling_ic",
+            "hit_rate",
+            "confidence_surprise",
+        ),
+        "strategy_asset_recent_health": (
+            "prior_",
+            "symbol_recent_",
+            "trade_count",
+            "drawdown",
+            "maxdd",
+            "expected_hit_rate",
+            "hit_rate_surprise",
+            "prior_pnl",
+            "recent_pnl",
+            "rolling_pnl",
+        ),
+        "raw_state_svd": (
+            "raw_state_",
+            "state_log_likelihood",
+            "state_tod_mahalanobis",
+        ),
+        "error_archetype": (
+            "shap_archetype",
+            "archetype",
+            "contrib_",
+            "distance_to_archetype",
+            "distance_to_bad_archetype",
+            "distance_to_good_archetype",
+        ),
+        "predictions": (
+            "pred",
+            "prediction",
+            "base_model",
+            "meta_score",
+            "prob",
+            "score",
+        ),
+    }
+
+    def _match(features: Sequence[str], tokens: Sequence[str]) -> List[str]:
+        out: List[str] = []
+        for feat in features:
+            low = str(feat).lower()
+            if any(tok in low for tok in tokens):
+                out.append(str(feat))
+        return sorted(dict.fromkeys(out))
+
+    available = [str(f) for f in available_features]
+    selected = [str(f) for f in selected_features]
+    out: Dict[str, Any] = {
+        "available_feature_count": int(len(available)),
+        "selected_feature_count": int(len(selected)),
+        "model_uncertainty_policy": (
+            "LGBM-derived uncertainty/drift only for p_meta_correct; legacy "
+            "EBM uncertainty columns are explicitly excluded."
+        ),
+        "families": {},
+    }
+    for family, tokens in families.items():
+        available_match = _match(available, tokens)
+        selected_match = _match(selected, tokens)
+        out["families"][family] = {
+            "available_count": int(len(available_match)),
+            "selected_count": int(len(selected_match)),
+            "selected_preview": selected_match[:25],
+        }
+    return out
+
+
+def _first_existing_column(frame: pd.DataFrame, names: Sequence[str]) -> Optional[str]:
+    for col in names:
+        if col in frame.columns:
+            return str(col)
+    return None
+
+
+def _format_scope_timestamp(value: Any) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    try:
+        return pd.Timestamp(value).isoformat()
+    except Exception:
+        return str(value)
+
+
+def _limit_meta_correctness_to_recent_scope(
+    frame: pd.DataFrame,
+    *,
+    months: int = META_CORRECTNESS_RECENT_SCOPE_MONTHS,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    input_rows = int(len(frame))
+    months_i = max(1, int(months or META_CORRECTNESS_RECENT_SCOPE_MONTHS))
+    metadata: Dict[str, Any] = {
+        "enabled": True,
+        "policy": "last_n_calendar_months_of_available_trade_candidate_rows",
+        "months": int(months_i),
+        "input_rows": input_rows,
+        "output_rows": 0,
+        "dropped_rows": input_rows,
+        "timestamp_column": "",
+        "available_start_ts": "",
+        "available_end_ts": "",
+        "cutoff_ts": "",
+        "reason": "",
+    }
+    if frame is None or frame.empty:
+        metadata["reason"] = "empty_input"
+        return frame.copy() if frame is not None else pd.DataFrame(), metadata
+    ts_col = _first_existing_column(frame, ("timestamp", "anchor_date"))
+    if ts_col is None:
+        metadata.update(
+            {
+                "enabled": False,
+                "reason": "missing_timestamp_column",
+            }
+        )
+        return frame.iloc[0:0].copy(), metadata
+    ts = pd.to_datetime(frame[ts_col], utc=True, errors="coerce")
+    finite = ts.notna()
+    if not bool(finite.any()):
+        metadata.update(
+            {
+                "enabled": False,
+                "timestamp_column": str(ts_col),
+                "reason": "no_finite_timestamps",
+            }
+        )
+        return frame.iloc[0:0].copy(), metadata
+    available_start = ts.loc[finite].min()
+    available_end = ts.loc[finite].max()
+    cutoff = available_end - pd.DateOffset(months=months_i)
+    keep = finite & (ts >= cutoff)
+    filtered = frame.loc[keep].copy().reset_index(drop=True)
+    metadata.update(
+        {
+            "timestamp_column": str(ts_col),
+            "available_start_ts": _format_scope_timestamp(available_start),
+            "available_end_ts": _format_scope_timestamp(available_end),
+            "cutoff_ts": _format_scope_timestamp(cutoff),
+            "output_rows": int(len(filtered)),
+            "dropped_rows": int(input_rows - len(filtered)),
+            "reason": "scoped_to_recent_available_rows",
+        }
+    )
+    return filtered, metadata
+
+
+def _meta_correctness_lgbm_cfg(cfg: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    out = dict(cfg or CFG)
+    overrides = out.get("lgbm_hpo_overrides", {})
+    overrides = dict(overrides) if isinstance(overrides, dict) else {}
+    overrides.update(META_CORRECTNESS_LGBM_HPO_OVERRIDES)
+    out["lgbm_hpo_overrides"] = overrides
+    return out
+
+
+def _fit_meta_correctness_lgbm_one_pass(
+    lgbm_pipe: Any,
+    X_fit: pd.DataFrame,
+    y_soft_fit: np.ndarray,
+    y_hard_fit: np.ndarray,
+    sw_fit: np.ndarray,
+    pnl_fit: np.ndarray,
+    meta_fit: np.ndarray,
+    ts_fit: Optional[np.ndarray],
+    sym_fit: Optional[np.ndarray],
+    *,
+    optuna_trials: int,
+    no_improvement_trials: int,
+    cfg: Dict[str, Any],
+    policy_size_power: float = 1.0,
+    deployment_rank_threshold: Optional[float] = None,
+) -> Dict[str, Any]:
+    n = int(len(X_fit))
+    if n < META_CORRECTNESS_MIN_ROWS:
+        return {"model": None, "reason": "insufficient_rows_for_one_pass_fit"}
+    old_disable_self_distillation = bool(
+        getattr(lgbm_pipe, "LGBM_DISABLE_SELF_DISTILLATION", False)
+    )
+    lgbm_pipe.LGBM_DISABLE_SELF_DISTILLATION = True
+    try:
+        sw_base, _ = lgbm_pipe._normalize_weights(sw_fit)
+        sw_model, recency_applied = lgbm_pipe._apply_recency_sample_weight(
+            sw_base,
+            ts_fit,
+            objective_mode="train_meta",
+            cfg=cfg,
+        )
+        sw_model, rebalance_diag = lgbm_pipe._rebalance_effective_class_mass(
+            y_soft_fit,
+            y_hard_fit,
+            sw_model,
+            label="regime_adaptor_meta_correctness",
+        )
+        candidate = lgbm_pipe.train_lgbm_stability_candidate(
+            X_fit,
+            y_soft_fit,
+            sample_weight=sw_base,
+            random_state=42,
+            mode="classifier",
+            timestamps=ts_fit,
+            assets=sym_fit,
+            returns=pnl_fit,
+            hard_labels=y_hard_fit,
+            hpo_objective_mode="train_meta",
+            cfg=cfg,
+        )
+        if not candidate:
+            return {"model": None, "reason": "lgbm_stability_candidate_failed"}
+        selected_features = [
+            str(c)
+            for c in candidate.get("selected_feature_names", [])
+            if str(c) in X_fit.columns
+        ]
+        if not selected_features:
+            return {"model": None, "reason": "no_selected_features"}
+        stage_indices_raw = candidate.get("stage_indices", {}) or {}
+        stage_indices: Dict[str, np.ndarray] = {}
+        for key in ("lgbm_select", "hpo", "fit_oof"):
+            arr = np.asarray(stage_indices_raw.get(key, []), dtype=np.int32)
+            arr = arr[(arr >= 0) & (arr < n)]
+            stage_indices[key] = np.unique(arr).astype(np.int32)
+        if len(stage_indices["fit_oof"]) == 0 or (
+            len(stage_indices["lgbm_select"]) + len(stage_indices["hpo"]) == 0
+        ):
+            stage_indices = lgbm_pipe._stage_partition_indices(
+                y_hard_fit,
+                timestamps=ts_fit,
+                assets=sym_fit,
+                random_state=743,
+            )
+        feature_refine = _refine_meta_correctness_features_for_regime_pnl(
+            lgbm_pipe,
+            X_fit,
+            y_soft_fit,
+            y_hard_fit,
+            sw_model,
+            pnl_fit,
+            meta_fit,
+            ts_fit,
+            selected_features,
+            candidate.get("feature_stats", pd.DataFrame()),
+            np.asarray(stage_indices.get("lgbm_select", []), dtype=np.int32),
+            cfg=cfg,
+            random_state=1207,
+        )
+        refined_features = [
+            str(c)
+            for c in feature_refine.get("selected_features", selected_features)
+            if str(c) in X_fit.columns
+        ]
+        if refined_features:
+            selected_features = refined_features
+        candidate_metrics = candidate.setdefault("metrics", {})
+        if isinstance(candidate_metrics, dict):
+            candidate_metrics.update(
+                {
+                    "regime_adaptor_feature_refine_enabled": bool(
+                        feature_refine.get("enabled", False)
+                    ),
+                    "regime_adaptor_feature_refine_reason": str(
+                        feature_refine.get("reason", "")
+                    ),
+                    "regime_adaptor_feature_refine_input_feature_count": int(
+                        feature_refine.get(
+                            "input_feature_count",
+                            len(candidate.get("selected_feature_names", []) or []),
+                        )
+                    ),
+                    "regime_adaptor_feature_refine_selected_feature_count": int(
+                        len(selected_features)
+                    ),
+                    "regime_adaptor_feature_refine_best_value": float(
+                        feature_refine.get("best_value", np.nan)
+                    ),
+                    "regime_adaptor_feature_refine_objective": str(
+                        feature_refine.get("objective", "")
+                    ),
+                }
+            )
+        train_idx = np.asarray(stage_indices.get("fit_oof", []), dtype=np.int32)
+        validation_idx = np.asarray(
+            sorted(
+                set(np.asarray(stage_indices.get("lgbm_select", []), dtype=np.int32).tolist())
+                | set(np.asarray(stage_indices.get("hpo", []), dtype=np.int32).tolist())
+            ),
+            dtype=np.int32,
+        )
+        train_idx = train_idx[(train_idx >= 0) & (train_idx < n)]
+        validation_idx = validation_idx[(validation_idx >= 0) & (validation_idx < n)]
+        min_partition_rows = min(32, max(2, int(META_CORRECTNESS_MIN_ROWS) // 2))
+        if len(train_idx) < min_partition_rows or len(validation_idx) < min_partition_rows:
+            return {
+                "model": None,
+                "reason": "insufficient_train_or_validation_rows",
+                "train_rows": int(len(train_idx)),
+                "validation_rows": int(len(validation_idx)),
+            }
+        if len(np.unique(y_hard_fit[train_idx])) < 2 or len(np.unique(y_hard_fit[validation_idx])) < 2:
+            return {
+                "model": None,
+                "reason": "insufficient_class_support_in_train_or_validation",
+                "train_rows": int(len(train_idx)),
+                "validation_rows": int(len(validation_idx)),
+            }
+        stability_groups = lgbm_pipe._stability_group_bundle(
+            n,
+            timestamps=ts_fit,
+            assets=sym_fit,
+        )
+        hpo_idx = np.asarray(stage_indices.get("hpo", []), dtype=np.int32)
+        if len(hpo_idx) < 32 or len(np.unique(y_hard_fit[hpo_idx])) < 2:
+            hpo_idx = validation_idx
+        hpo_weights, hpo_weight_ess = lgbm_pipe._normalize_weights(sw_model[hpo_idx])
+        best_params, hpo_metrics = _run_meta_correctness_lgbm_regime_pnl_hpo(
+            lgbm_pipe,
+            X_fit.iloc[hpo_idx].reset_index(drop=True),
+            y_soft_fit[hpo_idx],
+            hpo_weights,
+            selected_features,
+            y_hard=y_hard_fit[hpo_idx],
+            pnl=pnl_fit[hpo_idx],
+            meta_scores=meta_fit[hpo_idx],
+            timestamps=(
+                np.asarray(ts_fit)[hpo_idx]
+                if ts_fit is not None and len(np.asarray(ts_fit)) == n
+                else None
+            ),
+            groups=lgbm_pipe._groups_take(stability_groups, hpo_idx),
+            random_state=913,
+            max_trials=max(0, int(optuna_trials)),
+            patience=max(1, int(no_improvement_trials)),
+            cfg=cfg,
+        )
+        weight_hpo = _optimise_meta_correctness_weight_formula(
+            lgbm_pipe,
+            X_fit,
+            y_soft_fit,
+            y_hard_fit,
+            pnl_fit,
+            meta_fit,
+            ts_fit,
+            sym_fit,
+            train_idx=train_idx,
+            validation_idx=validation_idx,
+            hpo_idx=hpo_idx,
+            selected_features=selected_features,
+            best_params=best_params,
+            cfg=cfg,
+            policy_size_power=policy_size_power,
+            deployment_rank_threshold=deployment_rank_threshold,
+        )
+        if bool(weight_hpo.get("enabled", False)):
+            tuned_weights, tuned_weight_diag = _meta_correctness_weight_formula(
+                meta_fit,
+                pnl_fit,
+                y_soft_fit,
+                weight_params=weight_hpo.get("best_params", {}),
+            )
+            sw_base, _ = lgbm_pipe._normalize_weights(tuned_weights)
+            sw_model, recency_applied = lgbm_pipe._apply_recency_sample_weight(
+                sw_base,
+                ts_fit,
+                objective_mode="train_meta",
+                cfg=cfg,
+            )
+            sw_model, rebalance_diag = lgbm_pipe._rebalance_effective_class_mass(
+                y_soft_fit,
+                y_hard_fit,
+                sw_model,
+                label="regime_adaptor_meta_correctness_tuned_weight_formula",
+            )
+            weight_hpo["final_weight_diagnostics"] = {
+                **tuned_weight_diag,
+                "recency_sample_weight_applied": bool(recency_applied),
+                "rebalance": rebalance_diag,
+            }
+        _, train_weight_ess = lgbm_pipe._normalize_weights(sw_model[train_idx])
+        _, final_weight_ess = lgbm_pipe._normalize_weights(sw_model)
+        validation_params, validation_leaf_diag = lgbm_pipe._final_fit_leaf_floor(
+            dict(best_params),
+            fit_rows=len(train_idx),
+            hpo_rows=len(hpo_idx),
+            hpo_effective_rows=hpo_weight_ess,
+            final_effective_rows=train_weight_ess,
+            objective_mode="train_meta",
+        )
+        final_params, final_leaf_diag = lgbm_pipe._final_fit_leaf_floor(
+            dict(best_params),
+            fit_rows=n,
+            hpo_rows=len(hpo_idx),
+            hpo_effective_rows=hpo_weight_ess,
+            final_effective_rows=final_weight_ess,
+            objective_mode="train_meta",
+        )
+        validation_model = lgbm_pipe._fit_lgbm_model(
+            X_fit.iloc[train_idx][selected_features].reset_index(drop=True),
+            y_soft_fit[train_idx],
+            sw_model[train_idx],
+            classifier=True,
+            params=validation_params,
+        )
+        validation_pred = lgbm_pipe._predict_lgbm_raw(
+            validation_model,
+            X_fit.iloc[validation_idx][selected_features].reset_index(drop=True),
+            "classifier",
+        )
+        validation_metrics = lgbm_pipe._metric_pack(
+            y_hard_fit[validation_idx],
+            validation_pred,
+            classifier=True,
+            groups=lgbm_pipe._groups_take(stability_groups, validation_idx),
+            returns=pnl_fit[validation_idx],
+        )
+        validation_metrics.update(
+            lgbm_pipe._aggregate_j(
+                [validation_metrics],
+                objective_mode="train_meta",
+            )
+        )
+        final_raw_model = lgbm_pipe._fit_lgbm_model(
+            X_fit[selected_features].reset_index(drop=True),
+            y_soft_fit,
+            sw_model,
+            classifier=True,
+            params=final_params,
+        )
+        model = lgbm_pipe.LGBMStabilityModel(mode="classifier")
+        model.models.append(final_raw_model)
+        model.selected_features = list(selected_features)
+        model.input_feature_names = list(selected_features)
+        model.best_params = dict(final_params)
+        history_defaults = lgbm_pipe.build_model_effectiveness_history_defaults(
+            X_fit[selected_features].reset_index(drop=True),
+            selected_features,
+            timestamps=ts_fit,
+        )
+        model.model_effectiveness_history_defaults_ = dict(
+            history_defaults.get("defaults", {})
+        )
+        model.model_effectiveness_history_default_sources_ = dict(
+            history_defaults.get("sources", {})
+        )
+        model.feature_stats_train = lgbm_pipe._feature_stats_frame(
+            X_fit[selected_features].reset_index(drop=True),
+            selected_features,
+        )
+        model.oof_probs = np.full(n, np.nan, dtype=np.float32)
+        model.oof_probs[validation_idx] = np.asarray(validation_pred, dtype=np.float32)
+        validation_rank = lgbm_pipe._safe_rank_pct(validation_pred)
+        model.rank_bin_stats_oof = lgbm_pipe._fit_rank_bin_stats_oof(
+            y_hard_fit[validation_idx],
+            validation_rank,
+            classifier=True,
+            returns=pnl_fit[validation_idx],
+        )
+        gain_imp, split_imp = lgbm_pipe._feature_importances(
+            final_raw_model,
+            len(selected_features),
+        )
+        drift_features = lgbm_pipe._top_cumulative_importance_feature_names(
+            selected_features,
+            gain_imp,
+            split_imp,
+            cumulative_fraction=0.50,
+        )
+        model.drift_reference = lgbm_pipe._fit_feature_drift_reference(
+            X_fit[selected_features].reset_index(drop=True),
+            drift_features,
+        )
+        model.metrics = dict(candidate.get("metrics", {}) or {})
+        model.metrics.update(hpo_metrics)
+        model.metrics.update({f"validation_{k}": v for k, v in validation_metrics.items()})
+        model.metrics.update(
+            {
+                "regime_adaptor_training_scheme": "one_pass_fit_oof_train_validate_lgbm_select_plus_hpo_then_refit_all",
+                "regime_adaptor_no_self_distillation": True,
+                "regime_adaptor_train_rows": int(len(train_idx)),
+                "regime_adaptor_validation_rows": int(len(validation_idx)),
+                "regime_adaptor_hpo_rows": int(len(hpo_idx)),
+                "regime_adaptor_train_fraction": float(len(train_idx) / max(n, 1)),
+                "regime_adaptor_validation_fraction": float(len(validation_idx) / max(n, 1)),
+                "regime_adaptor_recency_sample_weight_applied": bool(recency_applied),
+                "regime_adaptor_selected_feature_count": int(len(selected_features)),
+                "regime_adaptor_weight_hpo_enabled": bool(
+                    weight_hpo.get("enabled", False)
+                ),
+                "regime_adaptor_weight_hpo_best_value": float(
+                    weight_hpo.get("best_value", weight_hpo.get("best_metrics", {}).get("objective", np.nan))
+                ),
+                "model_effectiveness_history_default_feature_count": int(
+                    history_defaults.get("feature_count", 0)
+                ),
+                "model_effectiveness_history_default_policy": str(
+                    history_defaults.get("policy", "")
+                ),
+                "regime_adaptor_validation_leaf_floor": dict(validation_leaf_diag),
+                "regime_adaptor_final_leaf_floor": dict(final_leaf_diag),
+                "final_ensemble_sequential_distillation": False,
+                "oof_distillation_passes": 0,
+            }
+        )
+        model.metrics.update(rebalance_diag)
+        return {
+            "model": model,
+            "candidate": candidate,
+            "selected_features": selected_features,
+            "stage_indices": {
+                "fit_oof": train_idx,
+                "validation": validation_idx,
+                "lgbm_select": np.asarray(stage_indices.get("lgbm_select", []), dtype=np.int32),
+                "hpo": np.asarray(stage_indices.get("hpo", []), dtype=np.int32),
+            },
+            "validation_idx": validation_idx,
+            "validation_pred": np.asarray(validation_pred, dtype=np.float32),
+            "validation_metrics": validation_metrics,
+            "hpo_metrics": hpo_metrics,
+            "sample_weight_hpo": weight_hpo,
+            "feature_refine": feature_refine,
+            "label_weight_diagnostics": rebalance_diag,
+        }
+    finally:
+        lgbm_pipe.LGBM_DISABLE_SELF_DISTILLATION = old_disable_self_distillation
+
+
+def fit_meta_correctness_regime_adaptor(
+    trade_candidate_oof: pd.DataFrame,
     *,
     strategy_id: str = "pooled",
-    model_name: str = "bad_regime_classifier",
-    global_feature_columns: Optional[Sequence[str]] = None,
-    asset_feature_columns: Optional[Sequence[str]] = None,
-    trade_candidate_oof: Optional[pd.DataFrame] = None,
+    model_name: str = "meta_correctness_lgbm",
     optuna_trials: int = 50,
     no_improvement_trials: int = 25,
-    global_bad_rate_threshold: float = GLOBAL_BAD_RATE_THRESHOLD,
-    asset_bad_rate_threshold: float = ASSET_BAD_RATE_THRESHOLD,
+    cfg: Optional[Dict[str, Any]] = None,
+    policy_size_power: float = 1.0,
+    deployment_rank_threshold: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """Train walk-forward pooled global/asset bad-regime classifiers."""
-    if panel.empty:
-        return {
-            "schema_version": "rolling_bad_regime_v2",
-            "enabled": False,
-            "reason": "empty_panel",
-        }
-    work = (
-        panel.sort_values(["anchor_date", "strategy_id", "symbol", "horizon_days"])
-        .reset_index(drop=True)
-        .copy()
-    )
-    global_features = [
-        c
-        for c in (global_feature_columns or GLOBAL_REGIME_FEATURES)
-        if c in work.columns
-    ]
-    asset_features = [
-        c
-        for c in (
-            asset_feature_columns
-            or (ASSET_REGIME_FEATURES + STRATEGY_ASSET_REGIME_FEATURES)
+    scope_cfg = dict(cfg or CFG)
+    recent_scope_months = int(
+        scope_cfg.get(
+            "regime_adaptor_recent_scope_months",
+            META_CORRECTNESS_RECENT_SCOPE_MONTHS,
         )
-        if c in work.columns
-    ]
-    for c in set(global_features + asset_features):
-        work[c] = pd.to_numeric(work[c], errors="coerce").fillna(0.0)
-    if (
-        "bad_regime_label" not in work.columns
-        or not global_features
-        or not asset_features
-    ):
+        or META_CORRECTNESS_RECENT_SCOPE_MONTHS
+    )
+    training_scope = f"last_{max(1, recent_scope_months)}_months_available"
+    if trade_candidate_oof is None or trade_candidate_oof.empty:
         return {
-            "schema_version": "rolling_bad_regime_v2",
-            "enabled": False,
-            "reason": "insufficient_features_or_label",
-            "global_features": global_features,
-            "asset_features": asset_features,
-        }
-    if LGBMClassifier is None:
-        return {
-            "schema_version": "rolling_bad_regime_v2",
+            "schema_version": "rolling_meta_correctness_v2",
             "enabled": False,
             "enable_regime_adaptor": False,
-            "reason": "lightgbm_unavailable_lgbm_only_modulation_required",
-            "global_features": global_features,
-            "asset_features": asset_features,
-        }
-    meta_score_col = (
-        "meta_p_calibrated"
-        if "meta_p_calibrated" in work.columns
-        else "meta_pred_calibrated"
-    )
-    if meta_score_col in work.columns:
-        work["meta_score_for_training"] = (
-            pd.to_numeric(work[meta_score_col], errors="coerce")
-            .fillna(0.5)
-            .clip(1e-6, 1.0 - 1e-6)
-        )
-    else:
-        work["meta_score_for_training"] = 0.5
-    work["meta_correctness_sample_weight"] = _meta_correctness_sample_weight(
-        work["meta_score_for_training"].to_numpy(dtype=np.float64)
-    )
-    if "future_horizon_wallet_pnl" not in work.columns:
-        work["future_horizon_wallet_pnl"] = 0.0
-    work["_regime_train_top50"] = (
-        _rank_pct(work["meta_score_for_training"].to_numpy(dtype=np.float64)) >= 0.50
-    )
-    valid_label = work["bad_regime_label"].notna()
-    no_trade_rows = int((~valid_label).sum())
-    work_trainable = work.loc[valid_label].copy()
-    oof_cols: Dict[str, np.ndarray] = {}
-    split_defs: List[Dict[str, Any]] = []
-    params_by_model: Dict[str, Any] = {}
-    oof_metrics: Dict[str, Any] = {}
-
-    def _metrics(y_true: np.ndarray, pred: np.ndarray) -> Dict[str, float]:
-        mask = np.isfinite(y_true) & np.isfinite(pred)
-        if not mask.any():
-            return {"auc": np.nan, "logloss": np.nan, "brier": np.nan}
-        y = y_true[mask].astype(int)
-        p = np.clip(pred[mask], 1e-6, 1.0 - 1e-6)
-        auc = float(roc_auc_score(y, p)) if len(np.unique(y)) > 1 else np.nan
-        logloss = float(-np.mean(y * np.log(p) + (1 - y) * np.log(1 - p)))
-        brier = float(np.mean((p - y) ** 2))
-        return {"auc": auc, "logloss": logloss, "brier": brier}
-
-    for horizon in ROLLING_REGIME_HORIZONS_DAYS:
-        hwork = work_trainable[
-            work_trainable["horizon_days"].astype(int) == int(horizon)
-        ].copy()
-        if hwork.empty:
-            continue
-        hwork_train = hwork[hwork["_regime_train_top50"].astype(bool)].copy()
-        if hwork_train.empty or len(hwork_train) < 40:
-            hwork_train = hwork.copy()
-        # Global labels are one row per anchor/horizon to avoid contradictory labels
-        # for identical global features.
-        global_df = hwork_train.groupby("anchor_date", as_index=False).agg(
-            {
-                **{c: "mean" for c in global_features},
-                "bad_regime_label": ["mean", "count"],
-                "meta_correctness_sample_weight": "mean",
-                "meta_score_for_training": "mean",
-                "future_horizon_wallet_pnl": "mean",
-            }
-        )
-        global_df.columns = [
-            "_".join(c).strip("_") if isinstance(c, tuple) else c
-            for c in global_df.columns
-        ]
-        global_df = global_df.rename(
-            columns={
-                **{f"{c}_mean": c for c in global_features},
-                "bad_regime_label_mean": "bad_rate",
-                "bad_regime_label_count": "global_label_weight",
-                "meta_correctness_sample_weight_mean": "label_weight",
-                "meta_score_for_training_mean": "meta_score_for_training",
-                "future_horizon_wallet_pnl_mean": "future_horizon_wallet_pnl",
-            }
-        )
-        global_df["label_weight"] = pd.to_numeric(
-            global_df["label_weight"], errors="coerce"
-        ).fillna(1.0).astype(np.float64)
-        global_df["global_bad_regime_label"] = (
-            global_df["bad_rate"] >= float(global_bad_rate_threshold)
-        ).astype(int)
-        # Asset labels are one row per symbol/anchor/horizon, pooled across strategies.
-        asset_df = hwork_train.groupby(["symbol", "anchor_date"], as_index=False).agg(
-            {
-                **{c: "mean" for c in asset_features},
-                "bad_regime_label": ["mean", "count"],
-                "meta_correctness_sample_weight": "mean",
-                "meta_score_for_training": "mean",
-                "future_horizon_wallet_pnl": "mean",
-            }
-        )
-        asset_df.columns = [
-            "_".join(c).strip("_") if isinstance(c, tuple) else c
-            for c in asset_df.columns
-        ]
-        asset_df = asset_df.rename(
-            columns={
-                **{f"{c}_mean": c for c in asset_features},
-                "bad_regime_label_mean": "bad_rate",
-                "bad_regime_label_count": "asset_label_weight",
-                "meta_correctness_sample_weight_mean": "label_weight",
-                "meta_score_for_training_mean": "meta_score_for_training",
-                "future_horizon_wallet_pnl_mean": "future_horizon_wallet_pnl",
-            }
-        )
-        asset_df["label_weight"] = pd.to_numeric(
-            asset_df["label_weight"], errors="coerce"
-        ).fillna(1.0).astype(np.float64)
-        asset_df["asset_bad_regime_label"] = (
-            asset_df["bad_rate"] >= float(asset_bad_rate_threshold)
-        ).astype(int)
-
-        for scope, model_df, features, label_col, join_cols in (
-            (
-                "global",
-                global_df,
-                global_features,
-                "global_bad_regime_label",
-                ["anchor_date"],
-            ),
-            (
-                "asset",
-                asset_df,
-                asset_features,
-                "asset_bad_regime_label",
-                ["symbol", "anchor_date"],
-            ),
-        ):
-            col = f"p_bad_regime_{scope}_{horizon}d_oof"
-            pred_frame = model_df[join_cols].copy()
-            pred_frame[col] = np.nan
-            best_params = _tune_lgbm_classifier_params(
-                model_df,
-                features,
-                label_col,
-                "anchor_date",
-                optuna_trials=optuna_trials,
-                no_improvement_trials=no_improvement_trials,
-            )
-            splits = _walk_forward_splits(
-                model_df["anchor_date"].to_numpy(), len(model_df), n_splits=5
-            )
-            y = model_df[label_col].astype(int).to_numpy()
-            isotonic_calibration_rows: List[Dict[str, Any]] = []
-            for tr, te in splits:
-                if len(tr) == 0 or len(te) == 0:
-                    continue
-                model = _fit_lgbm_classifier(
-                    model_df.iloc[tr][list(features)],
-                    y[tr],
-                    model_df.iloc[te][list(features)],
-                    y[te],
-                    best_params,
-                    sample_weight=model_df.iloc[tr]["label_weight"].to_numpy(
-                        dtype=np.float64
-                    )
-                    if "label_weight" in model_df.columns
-                    else None,
-                )
-                train_raw = _predict_classifier(model, model_df.iloc[tr][list(features)])
-                calibrator = _fit_isotonic_calibrator(
-                    train_raw,
-                    y[tr],
-                    model_df.iloc[tr]["label_weight"].to_numpy(dtype=np.float64)
-                    if "label_weight" in model_df.columns
-                    else None,
-                )
-                pred_frame.loc[pred_frame.index[te], col] = _predict_classifier_calibrated(
-                    model, model_df.iloc[te][list(features)], calibrator
-                )
-                isotonic_calibration_rows.append(
-                    {
-                        "horizon_days": int(horizon),
-                        "scope": scope,
-                        "train_rows": int(len(tr)),
-                        "valid_rows": int(len(te)),
-                        "enabled": calibrator is not None,
-                    }
-                )
-                split_defs.append(
-                    {
-                        "horizon_days": int(horizon),
-                        "scope": scope,
-                        "train_start": str(model_df.iloc[tr]["anchor_date"].min()),
-                        "train_end": str(model_df.iloc[tr]["anchor_date"].max()),
-                        "valid_start": str(model_df.iloc[te]["anchor_date"].min()),
-                        "valid_end": str(model_df.iloc[te]["anchor_date"].max()),
-                        "train_rows": int(len(tr)),
-                        "valid_rows": int(len(te)),
-                    }
-                )
-            oof_metrics[f"{scope}_{horizon}d"] = _metrics(
-                y, pred_frame[col].to_numpy(dtype=np.float64)
-            )
-            params_by_model[f"{scope}_{horizon}d"] = best_params
-            params_by_model[f"{scope}_{horizon}d"]["_isotonic_oof_calibration"] = (
-                isotonic_calibration_rows
-            )
-            if scope == "global":
-                work = work.merge(pred_frame, on=["anchor_date"], how="left")
-            else:
-                work = work.merge(pred_frame, on=["symbol", "anchor_date"], how="left")
-            oof_cols[col] = work[col].to_numpy(dtype=np.float64)
-
-    key_cols = ["strategy_id", "symbol", "anchor_date"]
-    wide = work.groupby(key_cols, as_index=False).agg(
-        {
-            **{
-                c: "first"
-                for c in work.columns
-                if c.startswith("p_bad_regime_") and c.endswith("_oof")
+            "reason": "empty_trade_candidate_oof",
+            "training_scope": training_scope,
+            "recent_scope": {
+                "enabled": True,
+                "policy": "last_n_calendar_months_of_available_trade_candidate_rows",
+                "months": int(max(1, recent_scope_months)),
+                "input_rows": 0,
+                "output_rows": 0,
+                "dropped_rows": 0,
+                "reason": "empty_trade_candidate_oof",
             },
-            "future_horizon_wallet_pnl": "mean",
-            "future_horizon_trade_count": "sum"
-            if "future_horizon_trade_count" in work.columns
-            else "size",
-            **(
-                {"meta_pred_calibrated": "first"}
-                if "meta_pred_calibrated" in work.columns
-                else {}
+        }
+    work = trade_candidate_oof.copy().reset_index(drop=True)
+    work, recent_scope = _limit_meta_correctness_to_recent_scope(
+        work,
+        months=recent_scope_months,
+    )
+    if work.empty:
+        reason = str(recent_scope.get("reason", "empty_after_recent_scope_filter"))
+        if reason == "scoped_to_recent_available_rows":
+            reason = "empty_after_recent_scope_filter"
+        return {
+            "schema_version": "rolling_meta_correctness_v2",
+            "enabled": False,
+            "enable_regime_adaptor": False,
+            "reason": reason,
+            "training_scope": training_scope,
+            "recent_scope": recent_scope,
+        }
+    meta_col = _first_existing_column(
+        work,
+        (
+            "meta_p_calibrated",
+            "meta_pred_calibrated",
+            "calibrated_score",
+            "meta_score_for_training",
+        ),
+    )
+    return_col = _first_existing_column(
+        work,
+        (
+            "wallet_return",
+            "net_return",
+            "policy_return",
+            "raw_return",
+            "future_horizon_wallet_pnl",
+            "net_pnl",
+        ),
+    )
+    if meta_col is None or return_col is None:
+        return {
+            "schema_version": "rolling_meta_correctness_v2",
+            "enabled": False,
+            "enable_regime_adaptor": False,
+            "reason": "missing_meta_score_or_after_fee_pnl",
+            "meta_score_column": meta_col or "",
+            "return_column": return_col or "",
+            "training_scope": training_scope,
+            "recent_scope": recent_scope,
+        }
+    n = len(work)
+    meta = (
+        pd.to_numeric(work[meta_col], errors="coerce")
+        .fillna(0.5)
+        .clip(1e-6, 1.0 - 1e-6)
+        .to_numpy(dtype=np.float64)
+    )
+    pnl = (
+        pd.to_numeric(work[return_col], errors="coerce")
+        .fillna(0.0)
+        .to_numpy(dtype=np.float64)
+    )
+    if "timestamp" in work.columns:
+        timestamps = pd.to_datetime(
+            work["timestamp"], utc=True, errors="coerce"
+        ).to_numpy()
+    elif "anchor_date" in work.columns:
+        timestamps = pd.to_datetime(
+            work["anchor_date"], utc=True, errors="coerce"
+        ).to_numpy()
+    else:
+        timestamps = None
+    symbols = (
+        work["symbol"].astype(str).to_numpy()
+        if "symbol" in work.columns
+        else np.repeat("all", n)
+    )
+    X_base, feature_mapping = _build_meta_correctness_feature_frame(
+        work, meta, timestamps, symbols
+    )
+    X_atlas, meta_predictive_atlas_state, meta_predictive_atlas_report = (
+        _append_meta_lgbm_predictive_atlas_features(
+            X_base,
+            work,
+            meta,
+            pnl=pnl,
+            timestamps=timestamps,
+            fit=True,
+        )
+    )
+    feature_mapping["meta_lgbm_predictive_atlas"] = {
+        "enabled": bool(meta_predictive_atlas_state.get("enabled", False)),
+        "feature_count": int(len(META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS)),
+        "columns": list(META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS),
+    }
+    X, candidate_drift_calibrator, candidate_drift_calibration_report = (
+        _append_candidate_drift_calibration_features(
+            X_atlas,
+            work,
+            timestamps=timestamps,
+            fit=True,
+        )
+    )
+    feature_mapping["candidate_drift_calibration"] = {
+        "enabled": bool(candidate_drift_calibrator.get("enabled", False)),
+        "feature_count": int(len(candidate_drift_calibrator.get("feature_columns", []) or [])),
+        "columns": list(CANDIDATE_DRIFT_FEATURE_COLUMNS),
+    }
+    excluded_p_bad = [c for c in work.columns if "p_bad_regime" in str(c).lower()]
+    if len(X) < META_CORRECTNESS_MIN_ROWS or X.shape[1] < 2:
+        return {
+            "schema_version": "rolling_meta_correctness_v2",
+            "enabled": False,
+            "enable_regime_adaptor": False,
+            "reason": "insufficient_rows_or_features",
+            "rows": int(len(X)),
+            "feature_count": int(X.shape[1]),
+            "excluded_p_bad_regime_features": sorted(map(str, excluded_p_bad)),
+            "training_scope": training_scope,
+            "recent_scope": recent_scope,
+        }
+    y_soft, y_hard, sample_weight, label_diag = _meta_correctness_soft_labels_and_weights(
+        meta, pnl
+    )
+    valid = (
+        np.isfinite(meta)
+        & np.isfinite(pnl)
+        & np.isfinite(y_soft)
+        & np.isfinite(sample_weight)
+    )
+    if (
+        int(np.sum(valid)) < META_CORRECTNESS_MIN_ROWS
+        or len(np.unique(y_hard[valid])) < 2
+    ):
+        return {
+            "schema_version": "rolling_meta_correctness_v2",
+            "enabled": False,
+            "enable_regime_adaptor": False,
+            "reason": "insufficient_label_support",
+            "rows": int(np.sum(valid)),
+            "hard_positive_rate": float(np.nanmean(y_hard[valid]))
+            if np.any(valid)
+            else 0.0,
+            "label_diagnostics": label_diag,
+            "excluded_p_bad_regime_features": sorted(map(str, excluded_p_bad)),
+            "training_scope": training_scope,
+            "recent_scope": recent_scope,
+        }
+    X_fit = X.loc[valid].reset_index(drop=True)
+    y_soft_fit = y_soft[valid]
+    y_hard_fit = y_hard[valid]
+    sw_fit = sample_weight[valid]
+    pnl_fit = pnl[valid]
+    ts_fit = (
+        np.asarray(timestamps)[valid]
+        if timestamps is not None and len(np.asarray(timestamps)) == n
+        else None
+    )
+    sym_fit = np.asarray(symbols)[valid] if len(symbols) == n else None
+    try:
+        from extreme_price_movements import lgbm_pipeline as lgbm_pipe
+    except Exception as exc:
+        return {
+            "schema_version": "rolling_meta_correctness_v2",
+            "enabled": False,
+            "enable_regime_adaptor": False,
+            "reason": f"lgbm_pipeline_unavailable:{exc}",
+            "training_scope": training_scope,
+            "recent_scope": recent_scope,
+        }
+    old_soft = bool(getattr(lgbm_pipe, "LGBM_TRUE_SOFT_LABELS", False))
+    lgbm_cfg = _meta_correctness_lgbm_cfg(cfg)
+    lgbm_pipe.LGBM_TRUE_SOFT_LABELS = True
+    try:
+        fit_result = _fit_meta_correctness_lgbm_one_pass(
+            lgbm_pipe,
+            X_fit,
+            y_soft_fit,
+            y_hard_fit,
+            sw_fit,
+            pnl_fit,
+            meta[valid],
+            ts_fit,
+            sym_fit,
+            optuna_trials=optuna_trials,
+            no_improvement_trials=no_improvement_trials,
+            cfg=lgbm_cfg,
+            policy_size_power=policy_size_power,
+            deployment_rank_threshold=deployment_rank_threshold,
+        )
+    finally:
+        lgbm_pipe.LGBM_TRUE_SOFT_LABELS = old_soft
+    model = fit_result.get("model")
+    if model is None:
+        return {
+            "schema_version": "rolling_meta_correctness_v2",
+            "enabled": False,
+            "enable_regime_adaptor": False,
+            "reason": str(fit_result.get("reason", "lgbm_one_pass_fit_failed")),
+            "rows": int(len(X_fit)),
+            "feature_count": int(X_fit.shape[1]),
+            "label_diagnostics": label_diag,
+            "excluded_p_bad_regime_features": sorted(map(str, excluded_p_bad)),
+            "training_scope": training_scope,
+            "recent_scope": recent_scope,
+        }
+    validation_idx = np.asarray(fit_result.get("validation_idx", []), dtype=np.int32)
+    p_validation_raw = np.asarray(
+        fit_result.get("validation_pred", np.full(len(validation_idx), 0.5)),
+        dtype=np.float64,
+    )
+    p_validation_raw = np.clip(
+        np.nan_to_num(p_validation_raw, nan=0.5),
+        1e-6,
+        1.0 - 1e-6,
+    )
+    calibrator_spec = _fit_meta_correctness_probability_calibrator(
+        p_validation_raw,
+        y_hard_fit[validation_idx],
+        sample_weight=sw_fit[validation_idx],
+    )
+    p_validation = _apply_meta_correctness_probability_calibrator(
+        p_validation_raw,
+        calibrator_spec,
+    )
+    eval_panel = pd.DataFrame(
+        {
+            "timestamp": (
+                np.asarray(ts_fit)[validation_idx]
+                if ts_fit is not None and len(np.asarray(ts_fit)) == len(X_fit)
+                else validation_idx
             ),
-            **(
-                {"meta_p_calibrated": "first"}
-                if "meta_p_calibrated" in work.columns
-                else {}
-            ),
+            "meta_score": meta[valid][validation_idx],
+            "meta_correctness_oof": p_validation,
+            "wallet_return": pnl_fit[validation_idx],
         }
     )
-    w3, w5 = (
-        ROLLING_REGIME_DEFAULT_BLEND_WEIGHTS[3],
-        ROLLING_REGIME_DEFAULT_BLEND_WEIGHTS[5],
+    comparison = compare_meta_correctness_integration(
+        eval_panel,
+        meta_score_col="meta_score",
+        correctness_col="meta_correctness_oof",
+        return_col="wallet_return",
     )
-    for col in (
-        "p_bad_regime_global_3d_oof",
-        "p_bad_regime_global_5d_oof",
-        "p_bad_regime_asset_3d_oof",
-        "p_bad_regime_asset_5d_oof",
-    ):
-        if col not in wide.columns:
-            wide[col] = 0.5
-    wide["combined_global_bad_regime_oof"] = (
-        w3 * wide["p_bad_regime_global_3d_oof"]
-        + w5 * wide["p_bad_regime_global_5d_oof"]
+    correctness_accepted = bool(comparison.get("accepted", False))
+    correctness_selected_params = (
+        comparison.get("selected_params", {}) if correctness_accepted else {}
     )
-    wide["combined_asset_bad_regime_oof"] = (
-        w3 * wide["p_bad_regime_asset_3d_oof"] + w5 * wide["p_bad_regime_asset_5d_oof"]
+    correctness_deployed_params = (
+        correctness_selected_params
+        if correctness_selected_params
+        else {"lambda_correctness": 0.0, "correctness_offset_cap": 0.0}
     )
-    anchor_diagnostic_comparison = compare_regime_combination_families(
-        wide,
-        meta_score_col="meta_p_calibrated"
-        if "meta_p_calibrated" in wide.columns
-        else "meta_pred_calibrated",
+    correctness_validation_combined = combine_meta_correctness_scores(
+        meta[valid][validation_idx],
+        p_validation,
+        params=correctness_deployed_params,
     )
-    trade_candidate_eval_available = (
-        trade_candidate_oof is not None and not trade_candidate_oof.empty
-    )
-    if trade_candidate_eval_available:
-        joined_candidates = join_regime_oof_to_trade_candidates(
-            trade_candidate_oof, wide
-        )
-        comparison = compare_regime_on_trade_candidates(
-            joined_candidates,
-            meta_score_col="meta_p_calibrated"
-            if "meta_p_calibrated" in joined_candidates.columns
-            else "meta_pred_calibrated",
-            return_col="wallet_return"
-            if "wallet_return" in joined_candidates.columns
-            else "future_horizon_wallet_pnl",
-        )
-        accepted = bool(comparison.get("accepted", False))
-        selected_params = comparison.get("selected_params", {}) if accepted else {}
-        decision_reason = (
-            "accepted" if accepted else "failed_trade_candidate_oof_acceptance"
-        )
-    else:
-        comparison = anchor_diagnostic_comparison
-        accepted = False
-        selected_params = {}
-        decision_reason = "missing_trade_candidate_oof_evaluation"
-    meta_col = (
-        "meta_pred_calibrated"
-        if "meta_pred_calibrated" in wide.columns
-        else "meta_p_calibrated"
-    )
-    meta_values = (
-        pd.to_numeric(wide[meta_col], errors="coerce")
-        .fillna(0.5)
-        .to_numpy(dtype=np.float64)
-        if meta_col in wide.columns
-        else np.full(len(wide), 0.5, dtype=np.float64)
-    )
-    combined = combine_meta_bad_regime_scores(
-        np.clip(meta_values, 1e-6, 1 - 1e-6),
-        wide["combined_global_bad_regime_oof"],
-        wide["combined_asset_bad_regime_oof"],
-        params=selected_params
-        or {
-            "global_weight": 0.6,
-            "asset_weight": 0.4,
-            "lambda_regime": 1.0,
-            "gamma_global": 1.0,
-            "gamma_asset": 1.0,
-        },
-    )
-    wide["combined_bad_regime_offset_oof"] = combined["bad_regime_offset"]
-    optuna_best_trial_diagnostics = {
-        k: v.get("_optuna_best_trial")
-        for k, v in params_by_model.items()
-        if isinstance(v, dict) and v.get("_optuna_best_trial") is not None
+    direct_label_result: Dict[str, Any] = {
+        "enabled": False,
+        "accepted": False,
+        "reason": "not_evaluated",
     }
-    return {
-        "schema_version": "rolling_bad_regime_v2",
+    direct_label_model = None
+    direct_label_comparison: Dict[str, Any] = {}
+    direct_label_calibrator: Dict[str, Any] = {}
+    direct_label_deployed_params: Dict[str, float] = {
+        "lambda_correctness": 0.0,
+        "correctness_offset_cap": 0.0,
+    }
+    direct_label_validation_combined: Optional[Dict[str, np.ndarray]] = None
+    direct_label_validation_idx: np.ndarray = np.asarray([], dtype=np.int32)
+    direct_y_soft, direct_y_hard, direct_sw, direct_label_diag = _resolve_direct_label_regime_targets(
+        work,
+        meta_scores=meta,
+        pnl=pnl,
+    )
+    if direct_y_soft is None or direct_y_hard is None or direct_sw is None:
+        direct_label_result = {
+            "enabled": False,
+            "accepted": False,
+            "reason": str(direct_label_diag.get("reason", "direct_label_unavailable")),
+            "label_diagnostics": direct_label_diag,
+        }
+    else:
+        direct_valid = (
+            valid
+            & np.isfinite(direct_y_soft)
+            & np.isfinite(direct_y_hard)
+            & np.isfinite(direct_sw)
+        )
+        if (
+            int(np.sum(direct_valid)) < META_CORRECTNESS_MIN_ROWS
+            or len(np.unique(direct_y_hard[direct_valid])) < 2
+        ):
+            direct_label_result = {
+                "enabled": False,
+                "accepted": False,
+                "reason": "insufficient_direct_label_support_after_valid_filter",
+                "label_diagnostics": direct_label_diag,
+                "rows": int(np.sum(direct_valid)),
+            }
+        else:
+            try:
+                direct_fit = _fit_meta_correctness_lgbm_one_pass(
+                    lgbm_pipe,
+                    X.loc[direct_valid].reset_index(drop=True),
+                    direct_y_soft[direct_valid],
+                    direct_y_hard[direct_valid],
+                    direct_sw[direct_valid],
+                    pnl[direct_valid],
+                    meta[direct_valid],
+                    (
+                        np.asarray(timestamps)[direct_valid]
+                        if timestamps is not None and len(np.asarray(timestamps)) == n
+                        else None
+                    ),
+                    np.asarray(symbols)[direct_valid] if len(symbols) == n else None,
+                    optuna_trials=optuna_trials,
+                    no_improvement_trials=no_improvement_trials,
+                    cfg=lgbm_cfg,
+                    policy_size_power=policy_size_power,
+                    deployment_rank_threshold=deployment_rank_threshold,
+                )
+                direct_label_model = direct_fit.get("model")
+                if direct_label_model is None:
+                    direct_label_result = {
+                        "enabled": False,
+                        "accepted": False,
+                        "reason": str(direct_fit.get("reason", "direct_lgbm_fit_failed")),
+                        "label_diagnostics": direct_label_diag,
+                    }
+                else:
+                    direct_label_validation_idx = np.asarray(
+                        direct_fit.get("validation_idx", []), dtype=np.int32
+                    )
+                    direct_pred_raw = np.clip(
+                        np.asarray(
+                            direct_fit.get(
+                                "validation_pred",
+                                np.full(len(direct_label_validation_idx), 0.5),
+                            ),
+                            dtype=np.float64,
+                        ),
+                        1e-6,
+                        1.0 - 1e-6,
+                    )
+                    direct_label_calibrator = _fit_meta_correctness_probability_calibrator(
+                        direct_pred_raw,
+                        direct_y_hard[direct_valid][direct_label_validation_idx],
+                        sample_weight=direct_sw[direct_valid][direct_label_validation_idx],
+                    )
+                    direct_pred = _apply_meta_correctness_probability_calibrator(
+                        direct_pred_raw,
+                        direct_label_calibrator,
+                    )
+                    direct_eval_panel = pd.DataFrame(
+                        {
+                            "timestamp": (
+                                np.asarray(timestamps)[direct_valid][direct_label_validation_idx]
+                                if timestamps is not None and len(np.asarray(timestamps)) == n
+                                else direct_label_validation_idx
+                            ),
+                            "meta_score": meta[direct_valid][direct_label_validation_idx],
+                            "direct_label_regime_oof": direct_pred,
+                            "wallet_return": pnl[direct_valid][direct_label_validation_idx],
+                        }
+                    )
+                    direct_label_comparison = compare_meta_correctness_integration(
+                        direct_eval_panel,
+                        meta_score_col="meta_score",
+                        correctness_col="direct_label_regime_oof",
+                        return_col="wallet_return",
+                    )
+                    direct_accepted = bool(direct_label_comparison.get("accepted", False))
+                    direct_selected_params = (
+                        direct_label_comparison.get("selected_params", {})
+                        if direct_accepted
+                        else {}
+                    )
+                    direct_label_deployed_params = (
+                        direct_selected_params
+                        if direct_selected_params
+                        else {"lambda_correctness": 0.0, "correctness_offset_cap": 0.0}
+                    )
+                    direct_label_validation_combined = combine_meta_correctness_scores(
+                        meta[direct_valid][direct_label_validation_idx],
+                        direct_pred,
+                        params=direct_label_deployed_params,
+                    )
+                    direct_label_result = {
+                        "enabled": True,
+                        "accepted": direct_accepted,
+                        "reason": "accepted" if direct_accepted else "failed_direct_label_acceptance",
+                        "label_diagnostics": direct_label_diag,
+                        "comparison": direct_label_comparison,
+                        "validation_metrics": direct_fit.get("validation_metrics", {}),
+                        "validation_pred": np.asarray(direct_pred, dtype=np.float32),
+                        "validation_pred_raw": np.asarray(direct_pred_raw, dtype=np.float32),
+                        "lgbm_metrics": getattr(direct_label_model, "metrics", {}),
+                        "selected_features": list(
+                            getattr(direct_label_model, "input_feature_names", None)
+                            or getattr(direct_label_model, "selected_features", [])
+                            or []
+                        ),
+                    }
+                direct_label_result["fit_result_summary"] = {
+                    "feature_refine": _jsonify(direct_fit.get("feature_refine", {})),
+                    "sample_weight_hpo": _jsonify(direct_fit.get("sample_weight_hpo", {})),
+                    "hpo_metrics": _jsonify(direct_fit.get("hpo_metrics", {})),
+                }
+            except Exception as exc:
+                direct_label_result = {
+                    "enabled": False,
+                    "accepted": False,
+                    "reason": f"direct_label_exception:{exc}",
+                    "label_diagnostics": direct_label_diag,
+                }
+
+    blend_comparison: Dict[str, Any] = {
+        "enabled": False,
+        "accepted": False,
+        "reason": "requires_matching_validation_rows_and_both_heads",
+    }
+    blend_deployed_params: Dict[str, float] = {
+        "lambda_correctness": 0.0,
+        "correctness_offset_cap": 0.0,
+    }
+    blend_validation_combined: Optional[Dict[str, np.ndarray]] = None
+    if (
+        correctness_accepted
+        and bool(direct_label_result.get("accepted", False))
+        and direct_label_validation_combined is not None
+        and len(direct_label_validation_idx) == len(validation_idx)
+        and np.array_equal(direct_label_validation_idx, validation_idx)
+    ):
+        blend_signal = np.clip(
+            0.5 * p_validation
+            + 0.5
+            * (
+                np.asarray(direct_label_result.get("validation_pred", p_validation), dtype=np.float64)
+                if "validation_pred" in direct_label_result
+                else p_validation
+            ),
+            1e-6,
+            1.0 - 1e-6,
+        )
+        blend_panel = pd.DataFrame(
+            {
+                "timestamp": eval_panel["timestamp"].to_numpy(),
+                "meta_score": meta[valid][validation_idx],
+                "blend_signal": blend_signal,
+                "wallet_return": pnl_fit[validation_idx],
+            }
+        )
+        blend_comparison = compare_meta_correctness_integration(
+            blend_panel,
+            meta_score_col="meta_score",
+            correctness_col="blend_signal",
+            return_col="wallet_return",
+        )
+        if bool(blend_comparison.get("accepted", False)):
+            blend_deployed_params = (
+                blend_comparison.get("selected_params", {})
+                or blend_deployed_params
+            )
+            blend_validation_combined = combine_meta_correctness_scores(
+                meta[valid][validation_idx],
+                blend_signal,
+                params=blend_deployed_params,
+            )
+
+    def _objective_value(row: Mapping[str, Any]) -> float:
+        value = row.get("selected_objective")
+        try:
+            value_f = float(value)
+        except Exception:
+            return -np.inf
+        return value_f if np.isfinite(value_f) else -np.inf
+
+    choices = [
+        (
+            "meta_correctness",
+            _objective_value(comparison) if correctness_accepted else -np.inf,
+            correctness_deployed_params,
+            correctness_validation_combined,
+        ),
+        (
+            "direct_label",
+            _objective_value(direct_label_comparison)
+            if bool(direct_label_result.get("accepted", False))
+            else -np.inf,
+            direct_label_deployed_params,
+            direct_label_validation_combined,
+        ),
+        (
+            "blend",
+            _objective_value(blend_comparison)
+            if bool(blend_comparison.get("accepted", False))
+            else -np.inf,
+            blend_deployed_params,
+            blend_validation_combined,
+        ),
+    ]
+    selected_head, selected_objective, deployed_integration_params, selected_validation_combined = max(
+        choices,
+        key=lambda item: item[1],
+    )
+    accepted = bool(np.isfinite(selected_objective) and selected_objective > -np.inf)
+    if not accepted or selected_validation_combined is None:
+        selected_head = "none"
+        deployed_integration_params = {"lambda_correctness": 0.0, "correctness_offset_cap": 0.0}
+        selected_validation_combined = correctness_validation_combined
+    selected_params = (
+        correctness_selected_params
+        if selected_head == "meta_correctness"
+        else (
+            direct_label_deployed_params
+            if selected_head == "direct_label"
+            else (blend_deployed_params if selected_head == "blend" else {})
+        )
+    )
+    deployment_score_rank_reference = _fit_percentile(
+        np.asarray(selected_validation_combined["final_score"], dtype=np.float64)
+    )
+    selected_features = list(
+        getattr(model, "input_feature_names", None) or model.selected_features
+    )
+    oof_quality_metrics = _meta_correctness_oof_quality_metrics(
+        meta[valid][validation_idx],
+        p_validation,
+        y_hard_fit[validation_idx],
+        y_soft_fit[validation_idx],
+        pnl_fit[validation_idx],
+        integration_params=deployed_integration_params,
+        timestamps=(
+            np.asarray(ts_fit)[validation_idx]
+            if ts_fit is not None and len(np.asarray(ts_fit)) == len(X_fit)
+            else None
+        ),
+    )
+    feature_family_diagnostics = _meta_correctness_feature_family_diagnostics(
+        list(X_fit.columns),
+        selected_features,
+    )
+    artifact = {
+        "schema_version": "rolling_meta_correctness_v2",
         "strategy_id": str(strategy_id),
         "model_name": str(model_name),
-        "model_type": "bad_regime_classifier",
+        "model_type": "meta_correctness_lgbm",
         "enabled": accepted,
         "enable_regime_adaptor": accepted,
-        "reason": decision_reason,
-        "config_snapshot": {
-            "horizons_days": list(ROLLING_REGIME_HORIZONS_DAYS),
-            "global_bad_rate_threshold": float(global_bad_rate_threshold),
-            "asset_bad_rate_threshold": float(asset_bad_rate_threshold),
-            "combination_grid": REGIME_ADAPTOR_COMBINATION_GRID,
-            "objective_weights": REGIME_OBJECTIVE_WEIGHTS,
-            "ratio_clips": REGIME_RATIO_CLIPS,
-            "classifier_family_required_for_modulation": "lightgbm",
-            "train_universe": "top_50pct_meta_model_oof_prediction",
-            "assessment_universe": "top_30pct_meta_model_oof_prediction",
-            "classification_sample_weight": "0.01 + rank(meta_model_oof_prediction)^2; period rows use mean individual trade weight",
-            "oof_probability_calibration": "isotonic_per_scope_horizon_fold_before_combination",
-        },
-        "feature_key_lists": {
-            "global": list(global_features),
-            "asset": list(asset_features),
-        },
-        "missing_feature_list": [
-            f for f in REGIME_FEATURE_ORDER if f not in work.columns
+        "reason": "accepted"
+        if accepted
+        else "failed_trade_candidate_oof_acceptance",
+        "selected_regime_adaptor_head": selected_head,
+        "available_regime_adaptor_heads": [
+            "meta_correctness_lgbm",
+            "direct_label_regime_lgbm",
+            "blend",
         ],
-        "panel_schema": list(work.columns),
-        "wide_oof_panel_schema": list(wide.columns),
-        "no_leakage_statement": "walk-forward split by anchor_date only; OOF predictions use train anchors strictly before validation anchors.",
-        "live_scoring_mode": "mode_b_precomputed_p_bad_regime_columns",
-        "rank_scope": "local_batch",
-        "rank_requirement": "portfolio_global_or_per_side_rank_required_downstream_before_thresholding_or_sizing",
-        "trade_candidate_eval_available": bool(trade_candidate_eval_available),
-        "global_bad_rate_threshold": float(global_bad_rate_threshold),
-        "asset_bad_rate_threshold": float(asset_bad_rate_threshold),
-        "optuna_best_trial_diagnostics": optuna_best_trial_diagnostics,
-        "no_trade_rows_excluded": no_trade_rows,
-        "global_classifier_label_definition": f"mean(strategy-symbol bad_regime_label at anchor/horizon) >= {float(global_bad_rate_threshold):.3f}",
-        "asset_classifier_label_definition": f"mean(strategy bad_regime_label for symbol at anchor/horizon) >= {float(asset_bad_rate_threshold):.3f}",
-        "walk_forward_splits": split_defs,
-        "global_classifier_params": {
-            k: v for k, v in params_by_model.items() if k.startswith("global")
-        },
-        "asset_classifier_params": {
-            k: v for k, v in params_by_model.items() if k.startswith("asset")
-        },
-        "oof_p_bad_regime_predictions": wide[
-            ["strategy_id", "symbol", "anchor_date"]
-            + [
-                c
-                for c in wide.columns
-                if c.startswith("p_bad_regime_") and c.endswith("_oof")
-            ]
-            + [
-                "combined_global_bad_regime_oof",
-                "combined_asset_bad_regime_oof",
-                "combined_bad_regime_offset_oof",
-            ]
-        ].to_dict(orient="records"),
-        "oof_classifier_metrics": oof_metrics,
-        "evaluation_universe": comparison.get(
-            "evaluation_universe",
-            "trade_candidates" if trade_candidate_eval_available else "unavailable",
+        "trade_candidate_eval_available": True,
+        "evaluation_universe": "trade_candidates",
+        "training_scope": training_scope,
+        "recent_scope": recent_scope,
+        "meta_lgbm_predictive_atlas": _jsonify(meta_predictive_atlas_state),
+        "meta_lgbm_predictive_atlas_report": _jsonify(meta_predictive_atlas_report),
+        "meta_lgbm_predictive_atlas_feature_columns": list(
+            META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS
         ),
-        "selected_3d_5d_blend": {"3d": w3, "5d": w5},
-        "selected_combination_params": selected_params,
+        "candidate_drift_calibrator": _jsonify(candidate_drift_calibrator),
+        "candidate_drift_calibration_report": _jsonify(candidate_drift_calibration_report),
+        "candidate_drift_feature_columns": list(CANDIDATE_DRIFT_FEATURE_COLUMNS),
+        "meta_correctness_probability_calibrator": _jsonify(calibrator_spec),
+        "direct_label_probability_calibrator": _jsonify(direct_label_calibrator),
+        "meta_correctness_probability_calibration_policy": (
+            "isotonic calibration fitted on the validation partition before "
+            "bounded-logit integration selection; live p_meta_correct is "
+            "calibrated before zscore(logit(p_meta_correct))"
+        ),
+        "deployment_score_rank_reference": deployment_score_rank_reference.astype(
+            float
+        ).tolist(),
+        "deployment_score_rank_reference_n": int(len(deployment_score_rank_reference)),
+        "deployment_score_rank_reference_policy": (
+            "reference distribution of deployed corrected validation scores; live "
+            "deployment_score_reference_rank is reported for rank-normalized policy "
+            "diagnostics while deployment_score_pre_rank remains the raw corrected score"
+        ),
+        "training_scheme": (
+            "shared lgbm_pipeline stability prefilter on lgbm_select, "
+            "regime_adaptor J_regime_pnl feature refinement on lgbm_select, "
+            "regime_adaptor J_regime_pnl LGBM HPO on hpo, one-pass "
+            "meta-correctness fit on fit_oof, validation/integration tuning "
+            "on lgbm_select+hpo, final serialized fit on all rows"
+        ),
+        "feature_selection_policy": (
+            "The shared train_meta stability selector provides a leakage-safe "
+            "candidate feature pool; the final regime_adaptor feature set is "
+            "chosen by J_regime_pnl over top 5/10/20% on lgbm_select rows."
+        ),
+        "feature_refine": fit_result.get("feature_refine", {}),
+        "self_distillation_policy": "disabled_for_regime_adaptor",
+        "validation_partition": "lgbm_select_plus_hpo",
+        "train_partition": "fit_oof",
+        "final_fit_partition": "all_rows",
+        "stage_row_counts": {
+            "fit_oof_train": int(len(fit_result.get("stage_indices", {}).get("fit_oof", []))),
+            "validation_lgbm_select_plus_hpo": int(len(validation_idx)),
+            "lgbm_select": int(len(fit_result.get("stage_indices", {}).get("lgbm_select", []))),
+            "hpo": int(len(fit_result.get("stage_indices", {}).get("hpo", []))),
+            "total": int(len(X_fit)),
+        },
+        "rank_scope": "training_validation_reference_with_local_batch_fallback",
+        "rank_requirement": (
+            "portfolio_global_or_per_side_rank_required_downstream_before_"
+            "thresholding_or_sizing"
+        ),
+        "meta_score_column": str(meta_col),
+        "return_column": str(return_col),
+        "label_definition": (
+            "pnl-aware soft correctness; hard correctness is after-fee pnl > 0"
+        ),
+        "correctness_probability_definition": (
+            "meta-correctness LGBM raw probability calibrated with validation-slice "
+            "isotonic regression before the bounded logit offset"
+        ),
+        "soft_label_formula": (
+            "center + (conviction_floor + (1 - conviction_floor) * "
+            "abs(meta_score - 0.5) * 2) * "
+            "(center + center*tanh(after_fee_pnl/pnl_scale) - center); "
+            "center is fixed at 0.5"
+        ),
+        "sample_weight_formula": (
+            "(0.50 + rank(meta)^rank_power) * "
+            "(0.75 + conviction_multiplier*conviction) * "
+            "(0.75 + pnl_mag_multiplier*pnl_magnitude) * "
+            "(0.75 + label_distance_multiplier*abs(soft_label-0.5)); "
+            "confident negative pnl rows receive 1.25x; weights are normalized "
+            "and clipped"
+        ),
+        "sample_weight_hpo": fit_result.get("sample_weight_hpo", {}),
+        "sample_weight_formula_params": (
+            fit_result.get("sample_weight_hpo", {}).get(
+                "best_params",
+                dict(META_CORRECTNESS_WEIGHT_HPO_DEFAULT_PARAMS),
+            )
+            if isinstance(fit_result.get("sample_weight_hpo", {}), dict)
+            else dict(META_CORRECTNESS_WEIGHT_HPO_DEFAULT_PARAMS)
+        ),
+        "sample_weight_hpo_policy": (
+            "after feature selection and LGBM HPO, tune rank_power and the "
+            "conviction/pnl_magnitude/label_distance multipliers with Optuna "
+            "on the lgbm_select+hpo validation rows; objective is J_regime_pnl "
+            "over top 5/10/20%: 0.45*LCB(mean_net_pnl) + "
+            "0.20*bps_weighted_profit_rate + 0.15*sortino_proxy + "
+            "0.10*top_minus_bottom_return_spread + "
+            "0.10*score_bucket_monotonicity - penalties; each weight trial "
+            "chooses lambda_correctness/correctness_offset_cap with a 15-trial "
+            "Optuna study over the bounded integration range"
+        ),
+        "selected_correctness_integration_params": correctness_selected_params,
+        "deployed_correctness_integration_params": correctness_deployed_params,
+        "selected_regime_integration_params": deployed_integration_params,
+        "deployed_direct_label_integration_params": direct_label_deployed_params,
+        "deployed_blend_integration_params": blend_deployed_params,
+        "correctness_integration_search": comparison.get("integration_search", {}),
+        "head_selection": {
+            "selected_head": selected_head,
+            "selected_objective": None
+            if not np.isfinite(selected_objective)
+            else float(selected_objective),
+            "meta_correctness_objective": _objective_value(comparison),
+            "direct_label_objective": _objective_value(direct_label_comparison),
+            "blend_objective": _objective_value(blend_comparison),
+            "meta_correctness_accepted": correctness_accepted,
+            "direct_label_accepted": bool(direct_label_result.get("accepted", False)),
+            "blend_accepted": bool(blend_comparison.get("accepted", False)),
+        },
+        "direct_label_regime_head": _jsonify(direct_label_result),
+        "direct_label_integration_search": direct_label_comparison.get(
+            "integration_search",
+            {},
+        )
+        if isinstance(direct_label_comparison, dict)
+        else {},
+        "blend_regime_head": _jsonify(blend_comparison),
+        "correctness_integration_policy": (
+            "15-trial Optuna search over bounded_logit_adjustment parameters, "
+            "accepted only when top-5/10/20 J_regime_pnl beats the unadjusted "
+            "meta score by the promotion margin; not multiplicative, so the "
+            "meta model remains the primary ranking signal"
+        ),
         "baseline_top30_metrics": comparison.get("baseline_top30_metrics", {}),
         "candidate_top30_metrics": comparison.get("candidate_top30_metrics", {}),
+        "baseline_regime_pnl_metrics": comparison.get(
+            "baseline_regime_pnl_metrics", {}
+        ),
+        "candidate_regime_pnl_metrics": comparison.get(
+            "candidate_regime_pnl_metrics", {}
+        ),
+        "acceptance_objective_components": comparison.get(
+            "objective_components", {}
+        ),
         "multiplicative_objective_components": comparison.get(
             "objective_components", {}
         ),
-        "final_enable_disable_decision": {
-            "enabled": accepted,
-            "reason": decision_reason,
-        },
-        "inference_contract": {
-            "required_live_columns_if_no_serialized_model": [
-                "p_bad_regime_global_3d",
-                "p_bad_regime_global_5d",
-                "p_bad_regime_asset_3d",
-                "p_bad_regime_asset_5d",
-            ],
-            "combination": (
-                "sigmoid(logit(meta_p_calibrated) - lambda_regime * bad_offset), "
-                "where bad_offset uses positive z-scored bad-regime logits with "
-                "global/asset weights and gammas"
-            ),
-        },
+        "positive_boost_uplift_diagnostics": comparison.get(
+            "selected_uplift_diagnostics", {}
+        ),
         "combination_family_comparison": comparison,
-        "anchor_panel_diagnostic_comparison": anchor_diagnostic_comparison,
-    }
-
-
-def fit_regime_adaptor(
-    feature_frame: pd.DataFrame,
-    pred_calibrated: Sequence[float],
-    returns: Sequence[float],
-    timestamps: Optional[Sequence[Any]],
-    symbols: Optional[Sequence[Any]],
-    *,
-    strategy_id: str,
-    model_name: str,
-    cost_pct: float = 0.003,
-    used_feature_columns: Optional[Sequence[str]] = None,
-    policy_candidate_mask: Optional[Sequence[bool]] = None,
-    gross_returns: Optional[Sequence[float]] = None,
-    policy_returns: Optional[Sequence[float]] = None,
-    mfe: Optional[Sequence[float]] = None,
-    mae: Optional[Sequence[float]] = None,
-    t_mfe: Optional[Sequence[float]] = None,
-    t_mae: Optional[Sequence[float]] = None,
-    deployment_rank_threshold: Optional[float] = None,
-) -> RegimeAdaptorFit:
-    n = min(len(feature_frame), len(pred_calibrated), len(returns))
-    frame_n = feature_frame.iloc[:n].copy()
-    scores = _as_float_array(pred_calibrated, n)
-    rets = _as_float_array(returns, n)
-    gross_arr = _as_float_array(gross_returns, n) if gross_returns is not None else None
-    policy_arr = _as_float_array(policy_returns, n) if policy_returns is not None else None
-    mfe_arr = _as_float_array(mfe, n) if mfe is not None else None
-    mae_arr = _as_float_array(mae, n) if mae is not None else None
-    t_mfe_arr = _as_float_array(t_mfe, n) if t_mfe is not None else None
-    t_mae_arr = _as_float_array(t_mae, n) if t_mae is not None else None
-    ts = (
-        np.asarray(timestamps)[:n]
-        if timestamps is not None and len(timestamps) >= n
-        else None
-    )
-    sy = (
-        np.asarray(symbols).astype(str)[:n]
-        if symbols is not None and len(symbols) >= n
-        else np.repeat("all", n)
-    )
-    if policy_candidate_mask is not None and len(policy_candidate_mask) >= n:
-        keep = np.asarray(policy_candidate_mask, dtype=bool)[:n]
-        frame_n = frame_n.iloc[keep].reset_index(drop=True)
-        scores = scores[keep]
-        rets = rets[keep]
-        gross_arr = gross_arr[keep] if gross_arr is not None else None
-        policy_arr = policy_arr[keep] if policy_arr is not None else None
-        mfe_arr = mfe_arr[keep] if mfe_arr is not None else None
-        mae_arr = mae_arr[keep] if mae_arr is not None else None
-        t_mfe_arr = t_mfe_arr[keep] if t_mfe_arr is not None else None
-        t_mae_arr = t_mae_arr[keep] if t_mae_arr is not None else None
-        ts = ts[keep] if ts is not None else None
-        sy = sy[keep]
-        n = len(scores)
-    outcome = policy_arr if policy_arr is not None else rets
-    outcome_cost_pct = 0.0 if policy_arr is not None else float(cost_pct)
-    outcome_source = (
-        "policy_realized_utility"
-        if policy_arr is not None
-        else "raw_realized_return"
-    )
-    distribution_spec = _fit_distribution_feature_spec(frame_n, used_feature_columns)
-    regime_df, mapping = build_regime_feature_frame(frame_n, ts, sy)
-    regime_df = _append_distribution_features(
-        regime_df, frame_n, distribution_spec, ts, sy
-    )
-    regime_df, reliability_spec = _append_prediction_reliability_features(
-        regime_df, frame_n, scores, outcome, ts, sy
-    )
-    regime_df, symbol_feature_spec = _append_symbol_features(
-        regime_df, outcome, ts, sy
-    )
-    features = [f for f in REGIME_FEATURE_ORDER if f in regime_df.columns]
-    if not features or n < 50:
-        artifact = _empty_artifact(strategy_id, model_name, features, mapping)
-        artifact["distribution_feature_spec"] = _jsonify(distribution_spec)
-        artifact["reliability_feature_spec"] = _jsonify(reliability_spec)
-        artifact["symbol_feature_spec"] = _jsonify(symbol_feature_spec)
-        applied = apply_regime_adaptor(frame_n, scores, artifact, ts, sy)
-        empty = pd.DataFrame()
-        return RegimeAdaptorFit(
-            artifact,
-            empty,
-            empty,
-            empty,
-            score_metrics(scores, outcome, ts, cost_pct=outcome_cost_pct),
-            applied["regime_weight"],
-            applied["eligible"],
-            applied["deployment_score"],
-            applied["deployment_score_rank"],
-        )
-
-    rank_weight = _rank_weight(scores)
-    percentile_refs = {
-        feat: _fit_percentile(regime_df[feat].values) for feat in features
-    }
-    spline_hpo, full_stats, effects = _select_spline_hyperparams(
-        regime_df,
-        features,
-        percentile_refs,
-        scores,
-        outcome,
-        ts,
-        rank_weight,
-    )
-    adaptive_rows: List[Dict[str, Any]] = []
-    for feat in features:
-        stats = full_stats.get(feat, {})
-        for row in stats.get("bins", []):
-            adaptive_rows.append(
-                {
-                    "strategy_id": strategy_id,
-                    "model": model_name,
-                    "feature": feat,
-                    **row,
-                }
+        "meta_correctness_oof_metrics": oof_quality_metrics,
+        "meta_correctness_validation_metrics": oof_quality_metrics,
+        "meta_correctness_validation_lgbm_metrics": fit_result.get(
+            "validation_metrics", {}
+        ),
+        "meta_correctness_combination_improvement": oof_quality_metrics.get(
+            "combination_improvement", {}
+        ),
+        "label_diagnostics": label_diag,
+        "lgbm_metrics": getattr(model, "metrics", {}),
+        "feature_key_lists": {"meta_correctness": selected_features},
+        "direct_label_feature_key_list": list(
+            direct_label_result.get("selected_features", [])
+            if isinstance(direct_label_result, dict)
+            else []
+        ),
+        "feature_mapping": feature_mapping,
+        "feature_family_diagnostics": feature_family_diagnostics,
+        "distribution_anomaly_feature_definitions": (
+            META_CORRECTNESS_DISTRIBUTION_ANOMALY_FEATURE_DEFINITIONS
+        ),
+        "model_uncertainty_drift_feature_policy": (
+            "Use LGBM-derived uncertainty/drift features: centroid similarity, "
+            "PSI/KS, covariance/Mahalanobis/Frobenius shifts, inference drift, "
+            "uncertainty_score, rare-leaf support, and contribution drift. "
+            "Legacy EBM uncertainty is excluded."
+        ),
+        "meta_recent_health_feature_policy": (
+            "recent_meta_* calibration/rank/health metrics and recent global, "
+            "bucket, side, regime, and disagreement metrics are eligible inputs."
+        ),
+        "model_effectiveness_history_defaults": dict(
+            getattr(model, "model_effectiveness_history_defaults_", {}) or {}
+        ),
+        "model_effectiveness_history_default_sources": dict(
+            getattr(model, "model_effectiveness_history_default_sources_", {}) or {}
+        ),
+        "model_effectiveness_history_default_policy": str(
+            getattr(model, "metrics", {}).get(
+                "model_effectiveness_history_default_policy",
+                "",
             )
-
-    fixed = fixed_bucket_diagnostics(
-        regime_df, scores, outcome, ts, sy, strategy_id, model_name, percentile_refs
-    )
-    asset_diag = asset_diagnostics(scores, outcome, ts, sy, strategy_id, model_name)
-    bucket_gates = _bucket_gates(fixed)
-    asset_gates = _asset_gates(asset_diag)
-
-    top = _top_mask(scores, 0.10)
-    target_center = (
-        float(np.nanmean(outcome[top])) if top.any() else float(np.nanmean(outcome))
-    )
-    target = (outcome - target_center).astype(np.float64)
-    model, scaler, train_mean, params = _fit_elastic_net(
-        effects, target, rank_weight, scores, outcome, ts
-    )
-    trust_model, trust_proba_oof, trust_score_oof, trust_target = _fit_trust_model(
-        regime_df,
-        features,
-        rets,
-        frame_n,
-        ts,
-        cost_pct,
-        gross_returns=gross_arr,
-        policy_returns=policy_arr,
-        mfe=mfe_arr,
-        mae=mae_arr,
-        t_mfe=t_mfe_arr,
-        t_mae=t_mae_arr,
-    )
-    error_risk_model, error_risk_diagnostics = _fit_error_risk_model(
-        regime_df,
-        frame_n,
-        scores,
-        outcome,
-        ts,
-        sy,
-        deployment_rank_threshold=deployment_rank_threshold,
-    )
-    artifact = {
-        "schema_version": "v1",
-        "strategy_id": str(strategy_id),
-        "model_name": str(model_name),
-        "features": features,
-        "feature_mapping": mapping,
-        "training_universe": (
-            "policy_candidate_mask_after_simple_policy_optimiser"
-            if policy_candidate_mask is not None
-            else "provided_oos_rows"
         ),
-        "distribution_feature_spec": _jsonify(distribution_spec),
-        "reliability_feature_spec": _jsonify(reliability_spec),
-        "symbol_feature_spec": _jsonify(symbol_feature_spec),
-        "percentile_refs": {
-            k: v.astype(float).tolist() for k, v in percentile_refs.items()
-        },
-        "feature_splines": _jsonify(full_stats),
-        "spline_hpo": _jsonify(spline_hpo),
-        "elastic_net": {
-            "coef": np.asarray(model.coef_, dtype=float).tolist(),
-            "intercept": float(model.intercept_),
-            "train_prediction_mean": train_mean,
-            "params": params,
-            "scaler": {
-                "center": np.asarray(
-                    getattr(scaler, "center_", np.zeros(effects.shape[1])), dtype=float
-                ).tolist(),
-                "scale": np.asarray(
-                    getattr(scaler, "scale_", np.ones(effects.shape[1])), dtype=float
-                ).tolist(),
-            },
-        },
-        "clips": {
-            "log_effect_clip": [-0.10, 0.10],
-            "group_clip": [-0.12, 0.12],
-            "total_log_weight_clip": [-0.35, 0.22],
-            "regime_weight_clip": [0.70, 1.25],
-        },
-        "bucket_gates": bucket_gates,
-        "asset_gates": [],
-        "retired_asset_gates": asset_gates,
-        "trust_model": _jsonify(trust_model),
-        "error_risk_model": _jsonify(error_risk_model),
-        "enable_error_risk_gate": bool(error_risk_model.get("enabled", False)),
-        "error_risk_inference_integration_mode": (
-            "soft_modulator" if bool(error_risk_model.get("enabled", False)) else "disabled"
+        "meta_correctness_feature_count": int(len(selected_features)),
+        "meta_correctness_selected_features_preview": selected_features[:50],
+        "excluded_p_bad_regime_features": sorted(map(str, excluded_p_bad)),
+        "excluded_p_bad_regime_policy": "all p_bad_regime_* columns are excluded from the meta-correctness model",
+        "no_leakage_statement": (
+            "labels use after-fee pnl; model inputs exclude labels/future "
+            "windows/realized pnl and use OOF model-derived features supplied "
+            "in the candidate frame. Meta-correctness acceptance metrics are "
+            "computed on the held-out lgbm_select+hpo validation partition; "
+            "the serialized deployment model is refit on all rows after "
+            "acceptance tuning."
         ),
-        "trust_gate_threshold": -0.35,
-        "outcome_source": outcome_source,
-        "outcome_cost_pct": outcome_cost_pct,
-        "rank_normalization": {
-            "method": "pandas_rank_pct_average",
-            "score": "deployment_score",
+        "live_scoring_mode": "serialized_meta_correctness_lgbm",
+        "inference_contract": {
+            "required_live_features": selected_features,
+            "combination": (
+                "sigmoid(logit(meta_p_calibrated) + "
+                "clip(lambda_correctness * zscore(logit(p_meta_correct_calibrated)), "
+                "-correctness_offset_cap, correctness_offset_cap))"
+            ),
+            "selected_regime_adaptor_head": selected_head,
         },
-        "enable_regime_adaptor": False,
-        "enable_regime_adaptor_inference": False,
-        "inference_integration_mode": "disabled",
+        "_meta_correctness_model_object": model,
+        "_direct_label_regime_model_object": direct_label_model,
     }
-    candidate_applied = apply_regime_adaptor(
-        frame_n,
-        scores,
-        artifact | {"enable_regime_adaptor": True},
-        ts,
-        sy,
-    )
-    raw_m = score_metrics(
-        scores,
-        outcome,
-        ts,
-        top_fracs=(0.01, 0.05, 0.10, 0.20),
-        cost_pct=outcome_cost_pct,
-    )
-    candidate_m = score_metrics(
-        candidate_applied["deployment_score_rank"],
-        outcome,
-        ts,
-        top_fracs=(0.01, 0.05, 0.10, 0.20),
-        cost_pct=outcome_cost_pct,
-    )
-    summary = _compare_metrics(raw_m, candidate_m)
-    enabled, enable_decision = _regime_enable_decision(summary)
-    artifact["enable_regime_adaptor"] = bool(enabled)
-    artifact["selection_score"] = float(enable_decision.get("selection_score", 0.0))
-    artifact["enable_gate"] = _jsonify(enable_decision)
-    final_applied = apply_regime_adaptor(
-        frame_n, scores, artifact, ts, sy
-    )
-    deployed_m = score_metrics(
-        final_applied["deployment_score_rank"],
-        outcome,
-        ts,
-        top_fracs=(0.01, 0.05, 0.10, 0.20),
-        cost_pct=outcome_cost_pct,
-    )
-    deployed_summary = _compare_metrics(raw_m, deployed_m)
-    model_quality = _model_quality_metrics_table(
-        strategy_id=strategy_id,
-        model_name=model_name,
-        training_universe=artifact["training_universe"],
-        raw_scores=scores,
-        adjusted_scores=final_applied["deployment_score_rank"],
-        returns=outcome,
-        timestamps=ts,
-        symbols=sy,
-        trust_proba=trust_proba_oof,
-        trust_score=trust_score_oof,
-        trust_target=trust_target,
-    )
-    top30_comparison = _regime_top30_comparison(
-        scores,
-        final_applied["deployment_score_rank"],
-        outcome,
-        ts,
-        sy,
-        cost_pct=outcome_cost_pct,
-    )
-    metrics = pd.concat(
-        [
-            raw_m.assign(stage="raw"),
-            candidate_m.assign(stage="regime_adjusted_candidate"),
-            deployed_m.assign(stage="regime_adjusted_deployed"),
-            top30_comparison.assign(stage="top30_before_after"),
-            model_quality.assign(stage="model_quality"),
-        ],
-        ignore_index=True,
-        sort=False,
-    )
-    metrics["strategy_id"] = strategy_id
-    metrics["model"] = model_name
-    metrics["regime_adaptor_enabled"] = bool(artifact["enable_regime_adaptor"])
-    artifact["candidate_before_after"] = _jsonify(summary.to_dict(orient="records"))
-    artifact["deployed_before_after"] = _jsonify(
-        deployed_summary.to_dict(orient="records")
-    )
-    artifact["before_after_top10"] = artifact["candidate_before_after"]
-    artifact["metrics"] = _jsonify(metrics.to_dict(orient="records"))
-    artifact["model_quality_metrics"] = _jsonify(
-        model_quality.to_dict(orient="records")
-    )
-    artifact["top30_regime_comparison"] = _jsonify(
-        top30_comparison.to_dict(orient="records")
-    )
-    return RegimeAdaptorFit(
-        artifact=artifact,
-        fixed_diagnostics=fixed,
-        adaptive_diagnostics=pd.DataFrame(adaptive_rows),
-        asset_diagnostics=asset_diag,
-        metrics=metrics,
-        regime_weight_oof=final_applied["regime_weight"],
-        eligible_oof=final_applied["eligible"],
-        deployment_score_oof=final_applied["deployment_score"],
-        deployment_score_rank_oof=final_applied["deployment_score_rank"],
-        trust_score_oof=trust_score_oof,
-        trust_proba_oof=trust_proba_oof,
-        error_risk_diagnostics=error_risk_diagnostics,
-    )
+    return artifact
 
 
 def _safe_corr(a: np.ndarray, b: np.ndarray) -> float:
@@ -7310,113 +10542,6 @@ def _asset_gates(asset_diag: pd.DataFrame) -> List[str]:
     )
 
 
-def audit_rolling_regime_readiness(
-    artifact: Dict[str, Any],
-    *,
-    live_feature_frame: Optional[pd.DataFrame] = None,
-    downstream_candidate_frame: Optional[pd.DataFrame] = None,
-) -> Dict[str, Any]:
-    """Summarize whether a rolling bad-regime artifact is wired for use.
-
-    This is intentionally a lightweight structural audit: it does not judge the
-    trading objective itself, but it highlights the common integration states
-    that make the rolling adaptor train-only or live-disabled.
-    """
-    is_rolling = artifact.get("schema_version") in {
-        "rolling_bad_regime_v2",
-        "rolling_regime_v1",
-    } or "selected_combination_params" in artifact
-    trade_eval_available = bool(
-        artifact.get("trade_candidate_eval_available", False)
-    )
-    evaluation_universe = str(artifact.get("evaluation_universe", ""))
-    enablement_uses_trade_candidates = (
-        trade_eval_available and evaluation_universe == "trade_candidates"
-    )
-
-    missing_live_cols: List[str]
-    if live_feature_frame is None:
-        missing_live_cols = list(
-            artifact.get("missing_live_p_bad_regime_columns", [])
-        )
-        if isinstance(missing_live_cols, str):
-            missing_live_cols = [c for c in missing_live_cols.split(",") if c]
-    else:
-        missing_live_cols = [
-            c
-            for c in REQUIRED_LIVE_BAD_REGIME_COLUMNS
-            if c not in live_feature_frame.columns
-        ]
-    live_columns_available = not missing_live_cols
-
-    downstream_rank_columns = ("final_global_rank", "final_side_rank")
-    downstream_has_pre_rank = False
-    downstream_rank_available = False
-    if downstream_candidate_frame is not None:
-        downstream_has_pre_rank = (
-            "deployment_score_pre_rank" in downstream_candidate_frame.columns
-        )
-        downstream_rank_available = any(
-            c in downstream_candidate_frame.columns for c in downstream_rank_columns
-        )
-
-    live_feature_missingness_by_scope: Dict[str, Dict[str, float]] = {}
-    high_missing_live_features: Dict[str, List[str]] = {}
-    feature_key_lists = artifact.get("feature_key_lists", {})
-    if live_feature_frame is not None and isinstance(feature_key_lists, dict):
-        for scope, cols in feature_key_lists.items():
-            scope_missingness: Dict[str, float] = {}
-            for col in cols or []:
-                col = str(col)
-                if col not in live_feature_frame.columns:
-                    missing_rate = 1.0
-                else:
-                    vals = pd.to_numeric(
-                        live_feature_frame[col], errors="coerce"
-                    ).to_numpy(dtype=np.float64)
-                    missing_rate = (
-                        float(np.mean(~np.isfinite(vals))) if len(vals) else 1.0
-                    )
-                scope_missingness[col] = missing_rate
-            live_feature_missingness_by_scope[str(scope)] = scope_missingness
-            high_missing_live_features[str(scope)] = [
-                col for col, rate in scope_missingness.items() if rate > 0.50
-            ]
-
-    checks = {
-        "rolling_artifact": bool(is_rolling),
-        "trade_candidate_eval_available": trade_eval_available,
-        "evaluation_universe_is_trade_candidates": evaluation_universe
-        == "trade_candidates",
-        "live_p_bad_regime_columns_available": live_columns_available,
-        "downstream_rank_available": downstream_rank_available,
-    }
-    if downstream_candidate_frame is None:
-        checks["downstream_rank_available"] = None
-
-    return {
-        "schema_version": artifact.get("schema_version", ""),
-        "enable_regime_adaptor": bool(artifact.get("enable_regime_adaptor", False)),
-        "reason": artifact.get("reason", ""),
-        "trade_candidate_eval_available": trade_eval_available,
-        "evaluation_universe": evaluation_universe,
-        "enablement_uses_trade_candidates": enablement_uses_trade_candidates,
-        "live_required_columns": list(REQUIRED_LIVE_BAD_REGIME_COLUMNS),
-        "live_required_columns_available": live_columns_available,
-        "missing_live_p_bad_regime_columns": missing_live_cols,
-        "downstream_has_deployment_score_pre_rank": downstream_has_pre_rank,
-        "downstream_rank_columns": list(downstream_rank_columns),
-        "downstream_rank_available": downstream_rank_available
-        if downstream_candidate_frame is not None
-        else None,
-        "live_feature_missingness_by_scope": live_feature_missingness_by_scope,
-        "high_missing_live_features": high_missing_live_features,
-        "rank_scope": artifact.get("rank_scope", ""),
-        "rank_requirement": artifact.get("rank_requirement", ""),
-        "checks": checks,
-    }
-
-
 def _archetype_centroid_stable_hash(
     features: Sequence[str],
     centroid: Sequence[float],
@@ -7553,7 +10678,7 @@ def save_regime_adaptor_outputs(
     data_root: str,
     run_id: str,
     strategy_id: str,
-    fit: RegimeAdaptorFit,
+    fit: Dict[str, Any],
     market_mode: Optional[str] = None,
 ) -> Path:
     mode = _normalise_market_mode(market_mode)
@@ -7567,64 +10692,69 @@ def save_regime_adaptor_outputs(
     )
     out_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = out_dir / "regime_adaptor.json"
-    artifact = dict(fit.artifact)
+    artifact = dict(fit)
+    meta_correctness_model = artifact.pop("_meta_correctness_model_object", None)
+    direct_label_model = artifact.pop("_direct_label_regime_model_object", None)
     artifact["market_mode"] = mode
-    previous_artifact: Optional[Dict[str, Any]] = None
-    previous_path = resolve_mode_file(artifact_path, mode)
-    if previous_path.exists():
+    if meta_correctness_model is not None:
+        model_path = _mode_stem(out_dir / META_CORRECTNESS_MODEL_PICKLE_NAME, mode)
+        with model_path.open("wb") as f:
+            pickle.dump(meta_correctness_model, f)
+        artifact["meta_correctness_model_path"] = str(model_path.resolve())
+    if direct_label_model is not None:
+        direct_model_path = _mode_stem(out_dir / DIRECT_LABEL_REGIME_MODEL_PICKLE_NAME, mode)
+        with direct_model_path.open("wb") as f:
+            pickle.dump(direct_label_model, f)
+        artifact["direct_label_regime_model_path"] = str(direct_model_path.resolve())
+    candidate_state = artifact.get("candidate_drift_calibrator")
+    if isinstance(candidate_state, Mapping):
+        sidecar_path = _mode_stem(out_dir / "candidate_drift_calibrator_arrays.npz", mode)
+        artifact["candidate_drift_calibrator"] = compact_candidate_drift_calibrator_state(
+            candidate_state,
+            sidecar_path,
+        )
+    report = artifact.get("candidate_drift_calibration_report")
+    if isinstance(report, dict):
+        report_path = _mode_stem(out_dir / "candidate_drift_calibration_report.json", mode)
+        report_path.write_text(json.dumps(_jsonify(report), indent=2, sort_keys=True))
+        artifact["candidate_drift_calibration_report_path"] = str(report_path.resolve())
         try:
-            previous_artifact = json.loads(previous_path.read_text(encoding="utf-8"))
+            flat = pd.DataFrame([_jsonify(report)])
+            csv_path = _mode_stem(out_dir / "candidate_drift_calibration_report.csv", mode)
+            flat.to_csv(csv_path, index=False)
+            artifact["candidate_drift_calibration_report_csv_path"] = str(csv_path.resolve())
         except Exception:
-            previous_artifact = None
-    artifact = _match_archetypes_to_previous(artifact, previous_artifact)
+            pass
     _write_json_with_mode_alias(artifact_path, artifact, mode)
-    error_risk = artifact.get("error_risk_model", {})
-    if isinstance(error_risk, dict):
-        report = {
-            "strategy_id": str(strategy_id),
-            "market_mode": mode,
-            "enabled": bool(error_risk.get("enabled", False)),
-            "reason": str(error_risk.get("reason", "")),
-            "label_race": error_risk.get("label_race", {}),
-            "hpo": error_risk.get("hpo", {}),
-            "feature_selection": error_risk.get("feature_selection", {}),
-            "reporting": error_risk.get("reporting", {}),
-            "acceptance": error_risk.get("acceptance", {}),
-            "error_archetypes": error_risk.get("error_archetypes", {}),
-        }
-        report_path = out_dir / "error_risk_report.json"
-        report_text = json.dumps(_jsonify(report), indent=2)
-        report_path.write_text(report_text)
-        mode_report_path = _mode_stem(report_path, mode)
-        if mode_report_path != report_path:
-            mode_report_path.write_text(report_text)
-    for name, frame in (
-        ("regime_diagnostics_fixed", fit.fixed_diagnostics),
-        ("regime_diagnostics_adaptive", fit.adaptive_diagnostics),
-        ("regime_asset_diagnostics", fit.asset_diagnostics),
-        ("regime_before_after_metrics", fit.metrics),
-        ("error_risk_diagnostics", fit.error_risk_diagnostics),
-    ):
-        if frame is None or frame.empty:
-            continue
-        parquet_path = out_dir / f"{name}.parquet"
-        json_path = out_dir / f"{name}.json"
-        frame.to_parquet(parquet_path, index=False)
-        mode_parquet_path = _mode_stem(parquet_path, mode)
-        if mode_parquet_path != parquet_path:
-            frame.to_parquet(mode_parquet_path, index=False)
-        json_text = frame.to_json(orient="records", indent=2)
-        json_path.write_text(json_text)
-        mode_json_path = _mode_stem(json_path, mode)
-        if mode_json_path != json_path:
-            mode_json_path.write_text(json_text)
     return artifact_path
 
 
 def load_regime_adaptor(
     path: str | Path, market_mode: str | None = None
 ) -> Dict[str, Any]:
-    return json.loads(resolve_market_file_path(Path(path), market_mode).read_text())
+    artifact_path = resolve_market_file_path(Path(path), market_mode)
+    artifact = json.loads(artifact_path.read_text())
+    model_path = artifact.get("meta_correctness_model_path")
+    if model_path:
+        resolved_model_path = Path(str(model_path))
+        if not resolved_model_path.is_absolute():
+            resolved_model_path = artifact_path.parent / resolved_model_path
+        artifact["meta_correctness_model_path"] = str(resolved_model_path)
+        _load_meta_correctness_model_from_artifact(artifact)
+    direct_model_path = artifact.get("direct_label_regime_model_path")
+    if direct_model_path:
+        resolved_direct_path = Path(str(direct_model_path))
+        if not resolved_direct_path.is_absolute():
+            resolved_direct_path = artifact_path.parent / resolved_direct_path
+        artifact["direct_label_regime_model_path"] = str(resolved_direct_path)
+        _load_direct_label_regime_model_from_artifact(artifact)
+    candidate_state = artifact.get("candidate_drift_calibrator")
+    if isinstance(candidate_state, Mapping):
+        artifact["candidate_drift_calibrator"] = hydrate_candidate_drift_calibrator_state(
+            candidate_state,
+            base_dir=artifact_path.parent,
+        )
+    return artifact
 
 
 def _jsonify(value: Any) -> Any:

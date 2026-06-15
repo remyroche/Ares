@@ -6,7 +6,7 @@ import resource
 import time
 import warnings
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -90,6 +90,19 @@ _PERP_NATIVE_TRANSFORM_SKIP_KEYS = {
 }
 _PERP_DERIVATIVE_FEATURE_KEYS = set(_PERP_NATIVE_TRANSFORM_SKIP_KEYS)
 _OI_FEATURE_KEYS = set(get_oi_feature_names())
+SPREAD_PROXY_RAW_FEATURE_KEYS = (
+    "hl_range_bps",
+    "abs_return_bps",
+    "body_bps",
+    "upper_wick_bps",
+    "lower_wick_bps",
+    "wick_to_range",
+    "close_location",
+    "gap_bps",
+)
+SPREAD_PROXY_FEATURE_KEYS = tuple(
+    f"spread_proxy_{name}_robust_z" for name in SPREAD_PROXY_RAW_FEATURE_KEYS
+)
 _PERP_NATIVE_TRANSFORM_SKIP_KEYS.update(_OI_FEATURE_KEYS)
 _PERP_NATIVE_TRANSFORM_SKIP_KEYS.update(
     {
@@ -838,6 +851,40 @@ def robust_zscore_rolling(
     return ff.numba_rolling_robust_zscore(
         x.astype(np.float32), int(n), float(quantile), float(eps)
     ).astype(np.float32)
+
+
+def _compute_spread_proxy_raw_features(
+    open_: pd.DataFrame,
+    high: pd.DataFrame,
+    low: pd.DataFrame,
+    close: pd.DataFrame,
+) -> dict[str, pd.DataFrame]:
+    """Same-bar OHLC geometry proxies for spread/liquidity pressure."""
+    open_ = open_.astype(np.float32, copy=False)
+    high = high.astype(np.float32, copy=False)
+    low = low.astype(np.float32, copy=False)
+    close = close.astype(np.float32, copy=False)
+    denom_close = close.abs() + EPS
+    range_abs = (high - low).clip(lower=0.0).astype(np.float32)
+    body_high = np.maximum(open_, close).astype(np.float32)
+    body_low = np.minimum(open_, close).astype(np.float32)
+    upper = (high - body_high).clip(lower=0.0).astype(np.float32)
+    lower = (body_low - low).clip(lower=0.0).astype(np.float32)
+    prev_close = close.shift(1)
+    out = {
+        "hl_range_bps": 10000.0 * range_abs / denom_close,
+        "abs_return_bps": 10000.0 * (close / (open_.abs() + EPS) - 1.0).abs(),
+        "body_bps": 10000.0 * (close - open_).abs() / denom_close,
+        "upper_wick_bps": 10000.0 * upper / denom_close,
+        "lower_wick_bps": 10000.0 * lower / denom_close,
+        "wick_to_range": ((upper + lower) / (range_abs + EPS)).clip(0.0, 5.0),
+        "close_location": ((close - low) / (range_abs + EPS)).clip(0.0, 1.0),
+        "gap_bps": 10000.0 * (open_ - prev_close).abs() / (prev_close.abs() + EPS),
+    }
+    return {
+        key: value.replace([np.inf, -np.inf], np.nan).astype(np.float32)
+        for key, value in out.items()
+    }
 
 
 def rsi(close: pd.DataFrame, n: int):
@@ -2029,6 +2076,65 @@ def _rolling_autocorr_df(df: pd.DataFrame, window: int) -> pd.DataFrame:
         .fillna(0.0)
         .astype(np.float32)
     )
+
+
+def _short_long_change_point_features(
+    src: pd.DataFrame,
+    *,
+    prefix: str,
+    short_window: int = 8,
+    long_window: int = 32,
+    sigma_window: int = 96,
+    eps: float = 1e-9,
+    index: pd.Index | None = None,
+    columns: Sequence[str] | None = None,
+) -> dict[str, pd.DataFrame]:
+    """Causal same-asset short-vs-long regime-change diagnostics."""
+    short_window = int(max(2, short_window))
+    long_window = int(max(short_window * 2, long_window))
+    sigma_window = int(max(long_window * 2, sigma_window))
+    if isinstance(src, pd.DataFrame):
+        x = src.replace([np.inf, -np.inf], np.nan).astype(np.float32)
+    else:
+        arr = np.asarray(src, dtype=np.float32)
+        if arr.ndim == 1:
+            arr = arr.reshape(-1, 1)
+        arr = np.where(np.isfinite(arr), arr, np.nan).astype(np.float32, copy=False)
+        if index is None:
+            index = pd.RangeIndex(arr.shape[0])
+        if columns is None:
+            columns = [f"col_{i}" for i in range(arr.shape[1])]
+        x = pd.DataFrame(arr, index=index, columns=list(columns), copy=False)
+    mu_s = ff.numba_rolling_mean(x, short_window)
+    mu_l = ff.numba_rolling_mean(x, long_window)
+    sig_s = ff.numba_rolling_std(x, short_window).clip(lower=eps)
+    sig_l = ff.numba_rolling_std(x, sigma_window).clip(lower=eps)
+    z_svl = ((mu_s - mu_l) / (sig_l + eps)).clip(-12.0, 12.0).fillna(0.0)
+    logstd_ratio = (
+        np.log(sig_s + eps) - np.log(sig_l + eps)
+    ).clip(-8.0, 8.0).fillna(0.0)
+    absratio = (
+        mu_s.abs() / (mu_l.abs() + eps)
+    ).replace([np.inf, -np.inf], np.nan).clip(0.0, 100.0).fillna(1.0)
+    return {
+        f"{prefix}_cp_z_{short_window}_{long_window}_{sigma_window}": z_svl.astype(np.float32),
+        f"{prefix}_cp_logstd_{short_window}_{long_window}": logstd_ratio.astype(np.float32),
+        f"{prefix}_cp_absratio_{short_window}_{long_window}": absratio.astype(np.float32),
+    }
+
+
+def _rolling_trend_r2_df(df: pd.DataFrame, window: int) -> pd.DataFrame:
+    """Rolling R^2 of price versus time, computed per asset."""
+    window = int(max(3, window))
+    x = np.arange(len(df), dtype=np.float32)
+    x_df = pd.DataFrame(
+        np.broadcast_to(x[:, None], df.shape),
+        index=df.index,
+        columns=df.columns,
+        copy=False,
+    )
+    corr = ff.numba_rolling_corr(df.astype(np.float32), x_df, window)
+    return (corr * corr).replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(0.0, 1.0).astype(np.float32)
 
 
 _LIVE_LGBM_MASK_FAST_FEATURES = frozenset(
@@ -3658,6 +3764,20 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         volume_df=v_raw,
         requested_feature_set=requested_feature_set,
     )
+    spread_proxy_feats_temp: dict[str, pd.DataFrame] = {}
+    if _needs_feature(*SPREAD_PROXY_FEATURE_KEYS):
+        spread_proxy_window = int(cfg.get("spread_proxy_robust_window", 24 * 30))
+        spread_raw = _compute_spread_proxy_raw_features(o_raw, h_raw, l_raw, c_raw)
+        spread_items: list[tuple[str, pd.DataFrame]] = []
+        for raw_name in SPREAD_PROXY_RAW_FEATURE_KEYS:
+            feature_name = f"spread_proxy_{raw_name}_robust_z"
+            if _needs_feature(feature_name):
+                spread_items.append((feature_name, spread_raw[raw_name]))
+        if spread_items:
+            spread_proxy_feats_temp.update(
+                _batch_roll_robust_zscore(spread_items, spread_proxy_window)
+            )
+        del spread_raw, spread_items
     _feature_base_valid_mask = (
         np.isfinite(o_raw)
         & np.isfinite(h_raw)
@@ -3675,6 +3795,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats = {}
     feats.update(_liq_feats_temp)
     feats.update(intraday_library_feats)
+    feats.update(spread_proxy_feats_temp)
     _mark_feature_stage("seed_feature_frames")
 
     # Correct return naming: log returns from log close
@@ -8443,6 +8564,275 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         feats["volume_entropy_12"] = _rolling_shannon_entropy_df(v, window=12, bins=10)
         feats["volume_entropy_24"] = _rolling_shannon_entropy_df(v, window=24, bins=12)
 
+    change_point_keys = {
+        "log_realized_vol",
+        "range_volatility",
+        "range_per_volume",
+        "trend_r2_24",
+        "trend_r2_48",
+        "path_entropy_12",
+        "path_entropy_24",
+        "binned_return_entropy_24",
+        "directional_entropy_20",
+        "log_realized_vol_cp_z_8_32_96",
+        "log_realized_vol_cp_logstd_8_32",
+        "log_realized_vol_cp_absratio_8_32",
+        "range_volatility_cp_z_8_32_96",
+        "range_volatility_cp_logstd_8_32",
+        "range_volatility_cp_absratio_8_32",
+        "vol_of_vol_cp_z_8_32_96",
+        "vol_of_vol_cp_logstd_8_32",
+        "vol_of_vol_cp_absratio_8_32",
+        "volume_zscore_cp_z_8_32_96",
+        "volume_zscore_cp_logstd_8_32",
+        "volume_zscore_cp_absratio_8_32",
+        "range_per_volume_cp_z_8_32_96",
+        "range_per_volume_cp_logstd_8_32",
+        "range_per_volume_cp_absratio_8_32",
+        "return_autocorr_cp_z_8_32_96",
+        "return_autocorr_cp_logstd_8_32",
+        "return_autocorr_cp_absratio_8_32",
+        "adx_cp_z_8_32_96",
+        "adx_cp_logstd_8_32",
+        "adx_cp_absratio_8_32",
+        "choppiness_cp_z_8_32_96",
+        "choppiness_cp_logstd_8_32",
+        "choppiness_cp_absratio_8_32",
+        "trend_r2_cp_z_8_32_96",
+        "trend_r2_cp_logstd_8_32",
+        "trend_r2_cp_absratio_8_32",
+        "price_entropy_cp_z_8_32_96",
+        "price_entropy_cp_logstd_8_32",
+        "price_entropy_cp_absratio_8_32",
+    }
+    if _needs_feature(*change_point_keys):
+        _mark_feature_stage("change_point_regime_features")
+        ret1h_for_cp = feats["ret1h"].replace([np.inf, -np.inf], np.nan).astype(np.float32)
+        if _needs_feature(
+            "log_realized_vol",
+            "log_realized_vol_cp_z_8_32_96",
+            "log_realized_vol_cp_logstd_8_32",
+            "log_realized_vol_cp_absratio_8_32",
+        ):
+            rv_for_cp = feats.get("rv_24h")
+            if rv_for_cp is None:
+                rv_for_cp = _roll_std("ret1h_cp", ret1h_for_cp, 24)
+            feats["log_realized_vol"] = np.log(rv_for_cp.clip(lower=1e-12)).fillna(0.0).astype(np.float32)
+            feats.update(
+                _short_long_change_point_features(
+                    feats["log_realized_vol"],
+                    prefix="log_realized_vol",
+                    short_window=8,
+                    long_window=32,
+                    sigma_window=96,
+                    index=idx,
+                    columns=cols,
+                )
+            )
+        if _needs_feature(
+            "range_volatility",
+            "range_volatility_cp_z_8_32_96",
+            "range_volatility_cp_logstd_8_32",
+            "range_volatility_cp_absratio_8_32",
+        ):
+            range_src = feats.get("range_ln", (h - l).astype(np.float32))
+            feats["range_volatility"] = (
+                _roll_std("range_volatility_src", range_src.astype(np.float32), 24)
+                .replace([np.inf, -np.inf], np.nan)
+                .fillna(0.0)
+                .astype(np.float32)
+            )
+            feats.update(
+                _short_long_change_point_features(
+                    feats["range_volatility"],
+                    prefix="range_volatility",
+                    short_window=8,
+                    long_window=32,
+                    sigma_window=96,
+                    index=idx,
+                    columns=cols,
+                )
+            )
+        if _needs_feature(
+            "vol_of_vol_cp_z_8_32_96",
+            "vol_of_vol_cp_logstd_8_32",
+            "vol_of_vol_cp_absratio_8_32",
+        ):
+            vol_of_vol_src = feats.get("vol_of_vol")
+            if vol_of_vol_src is None:
+                rv_for_cp = feats.get("rv_24h", _roll_std("ret1h_vov_cp", ret1h_for_cp, 24))
+                vol_of_vol_src = _roll_std("rv24_vov_cp", rv_for_cp.astype(np.float32), 48)
+                feats["vol_of_vol"] = vol_of_vol_src.astype(np.float32)
+            feats.update(
+                _short_long_change_point_features(
+                    vol_of_vol_src.astype(np.float32),
+                    prefix="vol_of_vol",
+                    short_window=8,
+                    long_window=32,
+                    sigma_window=96,
+                    index=idx,
+                    columns=cols,
+                )
+            )
+        if _needs_feature(
+            "volume_zscore_cp_z_8_32_96",
+            "volume_zscore_cp_logstd_8_32",
+            "volume_zscore_cp_absratio_8_32",
+        ):
+            volume_z_src = feats.get("volume_zscore_48h")
+            if volume_z_src is None:
+                volume_z_src = zscore_rolling(v, 48, winsorize=False)
+                feats["volume_zscore_48h"] = volume_z_src.astype(np.float32)
+            feats.update(
+                _short_long_change_point_features(
+                    volume_z_src.astype(np.float32),
+                    prefix="volume_zscore",
+                    short_window=8,
+                    long_window=32,
+                    sigma_window=96,
+                    index=idx,
+                    columns=cols,
+                )
+            )
+        if _needs_feature(
+            "range_per_volume",
+            "range_per_volume_cp_z_8_32_96",
+            "range_per_volume_cp_logstd_8_32",
+            "range_per_volume_cp_absratio_8_32",
+        ):
+            range_src = feats.get("range_ln", (h - l).astype(np.float32)).abs()
+            vol_denom = np.log1p(quote_volume_raw.clip(lower=0.0)).replace(0.0, np.nan)
+            feats["range_per_volume"] = (
+                (range_src / (vol_denom + 1e-9))
+                .replace([np.inf, -np.inf], np.nan)
+                .fillna(0.0)
+                .astype(np.float32)
+            )
+            feats.update(
+                _short_long_change_point_features(
+                    feats["range_per_volume"],
+                    prefix="range_per_volume",
+                    short_window=8,
+                    long_window=32,
+                    sigma_window=96,
+                    index=idx,
+                    columns=cols,
+                )
+            )
+        if _needs_feature(
+            "trend_r2_24",
+            "trend_r2_48",
+            "trend_r2_cp_z_8_32_96",
+            "trend_r2_cp_logstd_8_32",
+            "trend_r2_cp_absratio_8_32",
+        ):
+            if _needs_feature("trend_r2_24"):
+                feats["trend_r2_24"] = _rolling_trend_r2_df(c_log, 24)
+            trend_r2_src = _rolling_trend_r2_df(c_log, 48)
+            feats["trend_r2_48"] = trend_r2_src
+            feats.update(
+                _short_long_change_point_features(
+                    trend_r2_src,
+                    prefix="trend_r2",
+                    short_window=8,
+                    long_window=32,
+                    sigma_window=96,
+                    index=idx,
+                    columns=cols,
+                )
+            )
+        if _needs_feature(
+            "return_autocorr_cp_z_8_32_96",
+            "return_autocorr_cp_logstd_8_32",
+            "return_autocorr_cp_absratio_8_32",
+        ):
+            autocorr_src = feats.get("return_autocorr_48")
+            if autocorr_src is None:
+                autocorr_src = _rolling_autocorr_df(ret1h_for_cp, 48)
+                feats["return_autocorr_48"] = autocorr_src.astype(np.float32)
+            feats.update(
+                _short_long_change_point_features(
+                    autocorr_src.astype(np.float32),
+                    prefix="return_autocorr",
+                    short_window=8,
+                    long_window=32,
+                    sigma_window=96,
+                    index=idx,
+                    columns=cols,
+                )
+            )
+        if _needs_feature(
+            "adx_cp_z_8_32_96",
+            "adx_cp_logstd_8_32",
+            "adx_cp_absratio_8_32",
+        ):
+            adx_src = feats.get("adx_14")
+            if adx_src is None:
+                adx_raw_cp, _, _ = ff.numba_adx(h_raw, l_raw, c_raw, 14)
+                adx_src = np.log1p(adx_raw_cp.clip(lower=0.0)).astype(np.float32)
+                feats["adx_14"] = adx_src
+            feats.update(
+                _short_long_change_point_features(
+                    adx_src.astype(np.float32),
+                    prefix="adx",
+                    short_window=8,
+                    long_window=32,
+                    sigma_window=96,
+                    index=idx,
+                    columns=cols,
+                )
+            )
+        if _needs_feature(
+            "choppiness_cp_z_8_32_96",
+            "choppiness_cp_logstd_8_32",
+            "choppiness_cp_absratio_8_32",
+        ):
+            chop_src = feats.get("choppiness_index_20")
+            if chop_src is not None:
+                feats.update(
+                    _short_long_change_point_features(
+                        chop_src.astype(np.float32),
+                        prefix="choppiness",
+                        short_window=8,
+                        long_window=32,
+                        sigma_window=96,
+                        index=idx,
+                        columns=cols,
+                    )
+                )
+        if _needs_feature(
+            "path_entropy_12",
+            "path_entropy_24",
+            "binned_return_entropy_24",
+            "directional_entropy_20",
+            "price_entropy_cp_z_8_32_96",
+            "price_entropy_cp_logstd_8_32",
+            "price_entropy_cp_absratio_8_32",
+        ):
+            if "path_efficiency_12" in feats:
+                feats["path_entropy_12"] = (1.0 - feats["path_efficiency_12"]).clip(0.0, 1.0).astype(np.float32)
+            if "path_efficiency_24" in feats:
+                feats["path_entropy_24"] = (1.0 - feats["path_efficiency_24"]).clip(0.0, 1.0).astype(np.float32)
+            feats["binned_return_entropy_24"] = _rolling_shannon_entropy_df(
+                ret1h_for_cp,
+                window=24,
+                bins=12,
+            )
+            if "direction_entropy_20" in feats:
+                feats["directional_entropy_20"] = feats["direction_entropy_20"].astype(np.float32)
+            entropy_src = feats.get("binned_return_entropy_24")
+            feats.update(
+                _short_long_change_point_features(
+                    entropy_src.astype(np.float32),
+                    prefix="price_entropy",
+                    short_window=8,
+                    long_window=32,
+                    sigma_window=96,
+                    index=idx,
+                    columns=cols,
+                )
+            )
+
     # =====================================================================
     # OHLCV-Based Trend Quality Features (Report 2026-02-12)
     # =====================================================================
@@ -9638,6 +10028,7 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     }
     skip_transform_set.update(residual_skip_transform_set)
     skip_transform_set.update(k for k in _PERP_NATIVE_TRANSFORM_SKIP_KEYS if k in feats)
+    skip_transform_set.update(k for k in SPREAD_PROXY_FEATURE_KEYS if k in feats)
 
     position_sizer_keys = {
         "ATR_spike_ratio",

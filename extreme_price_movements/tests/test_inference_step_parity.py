@@ -8,6 +8,9 @@ from extreme_price_movements.inference.model_orchestrator import ModelOrchestrat
 from extreme_price_movements.inference.policy_rank_reference import (
     AuctionEvThresholdResult,
     StrategyEvGateResult,
+    persist_auction_rank_reference,
+    persist_fullscope_score_distribution_reference,
+    persist_policy_rank_reference,
 )
 from extreme_price_movements.inference.safety_switches import StrategyKillSwitch
 from extreme_price_movements.portfolio_manager import PortfolioManager
@@ -99,6 +102,108 @@ def test_load_normalized_threshold_map_prefers_policy_deployment_rank(tmp_path):
         thresholds["long_mr"]["threshold_scope"] == "per_strategy_prediction_rank_only"
     )
     assert thresholds["mr"]["normalized_threshold"] == 0.73
+
+
+def test_meta_hit_rate_calibration_resolves_side_tbm_alias(tmp_path):
+    run_id = "run"
+    report_dir = tmp_path / "artifacts" / run_id / "meta_oof"
+    report_dir.mkdir(parents=True)
+    (report_dir / "meta_calibration_report.json").write_text(
+        json.dumps(
+            {
+                "short_mr_tbm_clf": {
+                    "move_calibration": {
+                        "reliability_curve": [
+                            {"mean_pred": 0.25, "mean_true": 0.40, "count": 10},
+                            {"mean_pred": 0.75, "mean_true": 0.80, "count": 30},
+                        ]
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    ri._META_HIT_RATE_CALIBRATION_CACHE.clear()
+
+    calibration = ri._load_meta_hit_rate_calibration(str(tmp_path), run_id)
+    resolved = ri._estimated_hit_rate_from_meta_prediction(
+        0.75,
+        "mr",
+        calibration,
+    )
+
+    assert "mr" in calibration
+    assert "short_mr_tbm_clf" in calibration
+    assert resolved["estimated_hit_rate"] == pytest.approx(0.80)
+    assert resolved["estimated_hit_rate_calibration_n"] == 40
+    assert resolved["estimated_hit_rate_source"].endswith(":mr")
+
+
+def test_fullscope_score_distribution_reference_is_mapping_only(tmp_path, monkeypatch):
+    data_root = tmp_path
+    run_id = "run"
+    policy = pd.DataFrame(
+        {
+            "strategy_id": ["short_mr"] * 3,
+            "calibrated_score": [0.1, 0.2, 0.3],
+            "rank_pct": [1 / 3, 2 / 3, 1.0],
+        }
+    )
+    persist_policy_rank_reference(
+        policy,
+        data_root=data_root,
+        run_id=run_id,
+        strategy_id="short_mr",
+        market_mode="perps",
+    )
+    persist_auction_rank_reference(
+        policy,
+        data_root=data_root,
+        run_id=run_id,
+        market_mode="perps",
+    )
+    manifest = persist_fullscope_score_distribution_reference(
+        {
+            "short_mr": pd.DataFrame(
+                {
+                    "calibrated_score": [0.1, 0.2, 0.9, 0.95],
+                    "timestamp": pd.date_range(
+                        "2026-01-01", periods=4, tz="UTC", freq="h"
+                    ),
+                    "symbol": ["A", "B", "C", "D"],
+                }
+            )
+        },
+        data_root=data_root,
+        run_id=run_id,
+        market_mode="perps",
+    )
+
+    store = ri.PolicyRankReferenceStore(data_root=data_root, run_id=run_id)
+    fullscope_rank = store.lookup(
+        strategy_id="mr",
+        side="short",
+        calibrated_score=0.9,
+    )
+    auction_rank = store.lookup_auction(calibrated_score=0.9)
+
+    assert fullscope_rank.policy_rank_pct == pytest.approx(0.75)
+    assert auction_rank.policy_rank_pct == pytest.approx(0.75)
+    assert "fullscope_score_distribution" in fullscope_rank.source
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    assert payload["reference_is_in_sample"] is True
+    assert payload["performance_claim"] == "none"
+    assert payload["ev_claim"] == "none"
+
+    monkeypatch.setenv("EPM_POLICY_RANK_USE_FULLSCOPE_SCORE_DISTRIBUTION", "0")
+    fallback = ri.PolicyRankReferenceStore(data_root=data_root, run_id=run_id).lookup(
+        strategy_id="mr",
+        side="short",
+        calibrated_score=0.9,
+    )
+
+    assert fallback.policy_rank_pct == pytest.approx(1.0)
+    assert "fullscope_score_distribution" not in fallback.source
 
 
 def test_load_lgbm_strategy_masks_prefers_embedded_strategy_contract(tmp_path):

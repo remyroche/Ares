@@ -344,3 +344,58 @@ def parquet_timestamp_bounds(paths: Iterable[Path], *, column: str = "timestamp"
     if not mins or not maxs:
         return None, None
     return min(mins), max(maxs)
+
+
+def slice_plan_fit_bounds(
+    slice_plan_path: Path,
+    consumer_roles: Iterable[str],
+) -> tuple[Any, Any]:
+    """Return min/max fit window bounds from serialized consumer-plan metadata.
+
+    This is a provenance fallback for moments where an artifact handoff file is
+    not yet available/readable.  It only reports the explicit fit bounds recorded
+    in the slice plan; callers must decide whether those bounds still apply to
+    the actual training mode being written.
+    """
+
+    if not slice_plan_path.exists():
+        return None, None
+    try:
+        payload = json.loads(slice_plan_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None, None
+    consumers = payload.get("consumer_plans", {})
+    if not isinstance(consumers, dict):
+        return None, None
+
+    starts: list[pd.Timestamp] = []
+    ends: list[pd.Timestamp] = []
+    for role in consumer_roles:
+        plans = consumers.get(str(role), [])
+        if not isinstance(plans, list):
+            continue
+        for plan in plans:
+            if not isinstance(plan, dict):
+                continue
+            meta = plan.get("metadata", {})
+            if not isinstance(meta, dict):
+                meta = {}
+            start_raw = (
+                meta.get("fit_actual_start")
+                or meta.get("fit_start")
+                or meta.get("fit_window_start")
+            )
+            end_raw = (
+                meta.get("fit_actual_end")
+                or meta.get("fit_end")
+                or meta.get("fit_window_end")
+            )
+            start = pd.to_datetime(start_raw, utc=True, errors="coerce")
+            end = pd.to_datetime(end_raw, utc=True, errors="coerce")
+            if pd.notna(start):
+                starts.append(start)
+            if pd.notna(end):
+                ends.append(end)
+    if not starts or not ends:
+        return None, None
+    return min(starts), max(ends)

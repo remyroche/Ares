@@ -1,2 +1,0 @@
-[2026-05-22 06:36:43 UTC] START variant=rollout_on_new run_id=20260522_101001 rollout=1 selector=new code_root=/Users/remyroche/Documents/Ares
-/Library/Developer/CommandLineTools/usr/bin/python3: can't open file 'extreme_price_movements/run_pipeline.py': [Errno 1] Operation not permitted

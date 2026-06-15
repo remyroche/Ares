@@ -47,6 +47,41 @@ PREDICTION_LEDGER_DIAGNOSTIC_COLUMNS = [
     "portfolio_decision",
     "portfolio_reject_reason",
     "liquidity_reject_reason",
+    "prescore_market_mask_enabled",
+    "prescore_market_mask_allowed",
+    "prescore_market_mask_reason",
+    "prescore_signal_price",
+    "prescore_raw_signal_close",
+    "prescore_raw_signal_close_ts",
+    "prescore_raw_signal_volume",
+    "prescore_raw_signal_volume_ts",
+    "prescore_raw_signal_close_reference_gap_bps",
+    "prescore_raw_signal_close_reference_source",
+    "prescore_signal_bar_close_ts",
+    "prescore_signal_close_to_decision_seconds",
+    "prescore_max_signal_close_to_entry_seconds",
+    "prescore_stale_signal_age_gate_exceeded",
+    "prescore_oi_key",
+    "prescore_oi_value",
+    "prescore_oi_ts",
+    "prescore_oi_age_hours",
+    "prescore_ticker_bid",
+    "prescore_ticker_ask",
+    "prescore_ticker_mid",
+    "prescore_ticker_last",
+    "prescore_ticker_spread_bps",
+    "prescore_max_spread_bps",
+    "prescore_ticker_spread_weight",
+    "prescore_ticker_age_seconds",
+    "prescore_ticker_fetch_latency_seconds",
+    "prescore_ticker_reject_reason",
+    "prescore_orderbook_side",
+    "prescore_orderbook_capacity_quote_within_slippage",
+    "prescore_orderbook_intended_quote_size",
+    "prescore_orderbook_depth_weight",
+    "prescore_liquidity_capacity_weight",
+    "prescore_orderbook_slippage_bps",
+    "prescore_orderbook_reject_reason",
     "signal_price",
     "decision_mid",
     "theoretical_entry_price",
@@ -128,6 +163,7 @@ PREDICTION_LEDGER_DIAGNOSTIC_COLUMNS = [
     "realized_funding_bps",
     "realized_borrow_bps",
     "feature_drift_psi_core",
+    "feature_drift_ks_core",
     "feature_drift_cov_shift",
     "regime_centroid_similarity_train",
     "rare_leaf_fraction",
@@ -141,6 +177,29 @@ PREDICTION_LEDGER_DIAGNOSTIC_COLUMNS = [
     "num_material_contrib_features",
     "prob_uncertainty",
 ]
+
+_LGBM_DIAGNOSTIC_SUFFIXES = [
+    "feature_drift_psi_core",
+    "feature_drift_ks_core",
+    "feature_drift_cov_shift",
+    "regime_centroid_similarity_train",
+    "rare_leaf_fraction",
+    "leaf_count_p10",
+    "leaf_count_min",
+    "leaf_weight_p10",
+    "contrib_top1_abs_share",
+    "contrib_top3_abs_share",
+    "contrib_entropy",
+    "contrib_balance",
+    "num_material_contrib_features",
+    "prob_uncertainty",
+]
+
+PREDICTION_LEDGER_DIAGNOSTIC_COLUMNS.extend(
+    f"{prefix}_{suffix}"
+    for prefix in ("base_lgbm", "meta_lgbm")
+    for suffix in _LGBM_DIAGNOSTIC_SUFFIXES
+)
 
 
 class PredictionLedger:
@@ -164,9 +223,10 @@ class PredictionLedger:
         if not rows:
             return
         new = pd.DataFrame(rows)
-        for col in PREDICTION_LEDGER_DIAGNOSTIC_COLUMNS:
-            if col not in new.columns:
-                new[col] = pd.NA
+        ordered_cols = list(
+            dict.fromkeys(list(new.columns) + PREDICTION_LEDGER_DIAGNOSTIC_COLUMNS)
+        )
+        new = new.reindex(columns=ordered_cols)
         for ts_col in ("timestamp", "signal_bar_ts", "decision_ts"):
             if ts_col in new.columns:
                 new[ts_col] = pd.to_datetime(

@@ -348,7 +348,7 @@ def _add_scope_features(
                 f"n_{top_label}": raw["n_top"],
             }
 
-        if len(g) >= 1000:
+        try:
             stats_ts = _compute_scope_timeseries_vectorized(
                 g,
                 ts_col=ts_col,
@@ -363,7 +363,7 @@ def _add_scope_features(
                 min_top_samples=min_top_samples,
                 top_label=top_label,
             )
-        else:
+        except Exception:
             stats_ts = _compute_scope_timeseries(
                 g,
                 ts_col=ts_col,
@@ -520,8 +520,9 @@ def add_recent_effectiveness_features(
                 min_samples=min_samples,
                 min_top_samples=min_top_samples,
             )
+    _default_availability_col = f"recent_global_available_{windows[-1].lower()}"
     out["recent_effectiveness_available"] = out.get(
-        "recent_global_available_30d",
+        _default_availability_col,
         pd.Series(np.zeros(len(out), dtype=np.int8), index=out.index),
     ).astype(np.int8)
     if standardize:

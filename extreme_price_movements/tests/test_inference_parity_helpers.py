@@ -541,14 +541,22 @@ def test_raw_required_feature_keys_exclude_drift_meta_features():
             "ret24h",
             "regime_centroid_similarity_train",
             "feature_drift_psi_core",
+            "feature_drift_ks_core",
             "feature_drift_cov_shift",
+            "raw_state_svd_00",
+            "raw_state_psi_mean",
+            "archetype_contrib_svd_00",
         }
     )
 
     assert "ret24h" in required
     assert "regime_centroid_similarity_train" not in required
     assert "feature_drift_psi_core" not in required
+    assert "feature_drift_ks_core" not in required
     assert "feature_drift_cov_shift" not in required
+    assert "raw_state_svd_00" not in required
+    assert "raw_state_psi_mean" not in required
+    assert "archetype_contrib_svd_00" not in required
 
 
 def test_live_contract_rejects_target_derived_active_alpha_features():

@@ -28,11 +28,6 @@ from numba import jit, prange
 from scipy.stats import spearmanr
 
 from extreme_price_movements.metrics import _stable_equity_and_drawdown
-from extreme_price_movements.run_ridge_sizer import (
-    load_base_oof_predictions,
-    load_meta_oof_predictions,
-    load_trade_outcomes,
-)
 from extreme_price_movements.simple_position_sizer import (
     SimpleHeadRidgeSizer,
     clean_and_standardize,
@@ -954,8 +949,23 @@ def build_policy_path_state_bundle(
     atr_raw = _col("atr_12_15m", 0.0)
     sl_atr_mult = _col("label_policy_sl_atr_mult", 0.0)
     has_label_policy = np.any(atr_raw > 1e-6) and np.any(sl_atr_mult > 1e-6)
+    explicit_barrier = _col("barrier_pct", np.nan)
+    has_explicit_barrier = np.any(np.isfinite(explicit_barrier) & (explicit_barrier > 0.0))
     has_atr = np.any(atr_raw > 1e-6)
-    if has_label_policy:
+    if has_explicit_barrier:
+        barrier_pct = np.clip(
+            np.where(
+                np.isfinite(explicit_barrier) & (explicit_barrier > 0.0),
+                explicit_barrier,
+                np.nan,
+            ),
+            0.005,
+            0.2,
+        ).astype(np.float32)
+        if np.isnan(barrier_pct).any():
+            fallback = np.clip(np.maximum(mae * 2.5, 1e-4), 0.005, 0.2).astype(np.float32)
+            barrier_pct = np.where(np.isfinite(barrier_pct), barrier_pct, fallback)
+    elif has_label_policy:
         barrier_pct = np.clip(atr_raw * sl_atr_mult, 0.001, 0.2).astype(np.float32)
     elif has_atr:
         barrier_pct = np.clip(atr_raw * 2.0, 0.001, 0.2).astype(np.float32)

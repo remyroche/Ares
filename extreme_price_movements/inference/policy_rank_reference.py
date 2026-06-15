@@ -5,7 +5,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable
+from typing import Any, Dict, Iterable, Mapping
 
 import numpy as np
 import pandas as pd
@@ -18,6 +18,10 @@ POLICY_RANK_REFERENCE_DIR = "rank_reference"
 POLICY_RANK_REFERENCE_SCORE_COL = "calibrated_score"
 POLICY_RANK_REFERENCE_RANK_COL = "rank_pct"
 AUCTION_RANK_REFERENCE_FILE = "cross_strategy_auction.parquet"
+FULLSCOPE_SCORE_REFERENCE_SCHEMA_VERSION = "fullscope_score_distribution_reference_v1"
+FULLSCOPE_SCORE_REFERENCE_GENERATOR = "fullscope_score_distribution_builder"
+FULLSCOPE_SCORE_REFERENCE_DIR = "fullscope_score_distribution"
+FULLSCOPE_AUCTION_SCORE_REFERENCE_FILE = "cross_strategy_score_distribution.parquet"
 
 
 def _constant_string_value(frame: pd.DataFrame, column: str) -> str:
@@ -105,6 +109,10 @@ def _rank_reference_root(data_root: str | Path, run_id: str) -> Path:
     )
 
 
+def _fullscope_score_reference_root(data_root: str | Path, run_id: str) -> Path:
+    return _rank_reference_root(data_root, run_id) / FULLSCOPE_SCORE_REFERENCE_DIR
+
+
 def _portable_manifest_path(
     out_path: Path, *, out_dir: Path, data_root: str | Path, run_id: str
 ) -> str:
@@ -148,6 +156,71 @@ def _resolve_manifest_path(
         if candidate.exists():
             return candidate
     return candidates[0] if candidates else rank_reference_root / raw.name
+
+
+def _finite_score_frame(
+    frame: pd.DataFrame,
+    *,
+    strategy_id: str,
+    score_col: str,
+    rank_col: str = POLICY_RANK_REFERENCE_RANK_COL,
+    market_mode: str | None = None,
+    reference_scope: str,
+    reference_purpose: str,
+    reference_is_in_sample: bool,
+) -> pd.DataFrame:
+    if score_col not in frame.columns:
+        raise ValueError(f"score distribution for {strategy_id} missing {score_col!r}")
+    ref = frame.copy()
+    ref[score_col] = pd.to_numeric(ref[score_col], errors="coerce")
+    ref = ref.replace([np.inf, -np.inf], np.nan).dropna(subset=[score_col])
+    if ref.empty:
+        raise ValueError(f"score distribution for {strategy_id} has no finite scores")
+    cols = [score_col]
+    for optional_col in ("timestamp", "symbol", "side", "strategy_id", "market_mode"):
+        if optional_col in ref.columns and optional_col not in cols:
+            cols.append(optional_col)
+    if "strategy_id" not in ref.columns:
+        ref["strategy_id"] = str(strategy_id)
+        cols.append("strategy_id")
+    else:
+        ref["strategy_id"] = str(strategy_id)
+    if market_mode is not None and "market_mode" not in ref.columns:
+        ref["market_mode"] = str(market_mode)
+        cols.append("market_mode")
+    if rank_col not in ref.columns:
+        ref[rank_col] = ref[score_col].rank(method="max", pct=True)
+        cols.append(rank_col)
+    elif rank_col not in cols:
+        cols.append(rank_col)
+    for col, value in (
+        ("reference_scope", reference_scope),
+        ("reference_purpose", reference_purpose),
+    ):
+        ref[col] = str(value)
+        cols.append(col)
+    ref["reference_is_in_sample"] = bool(reference_is_in_sample)
+    cols.append("reference_is_in_sample")
+    return ref[cols].copy()
+
+
+def _score_summary(values: np.ndarray) -> dict[str, Any]:
+    scores = np.asarray(values, dtype=np.float64)
+    scores = scores[np.isfinite(scores)]
+    if scores.size == 0:
+        return {}
+    quantiles = {
+        f"p{int(q):02d}": float(np.nanpercentile(scores, q))
+        for q in (1, 5, 10, 25, 50, 75, 90, 95, 99)
+    }
+    return {
+        "n_rows": int(scores.size),
+        "min_score": float(np.nanmin(scores)),
+        "max_score": float(np.nanmax(scores)),
+        "mean_score": float(np.nanmean(scores)),
+        "std_score": float(np.nanstd(scores)),
+        "quantiles": quantiles,
+    }
 
 
 def policy_rank_pct_from_sorted_scores(
@@ -403,6 +476,114 @@ def invalidate_auction_rank_reference(
     os.replace(tmp_manifest, manifest_path)
 
 
+def persist_fullscope_score_distribution_reference(
+    strategy_frames: Mapping[str, pd.DataFrame],
+    *,
+    data_root: str | Path,
+    run_id: str,
+    market_mode: str | None = None,
+    score_col: str = POLICY_RANK_REFERENCE_SCORE_COL,
+    output_dir: str | Path | None = None,
+    provenance: Mapping[str, Any] | None = None,
+) -> Path:
+    """Persist an in-sample full-scope score CDF for percentile mapping only."""
+    out_dir = (
+        Path(output_dir)
+        if output_dir is not None
+        else _fullscope_score_reference_root(data_root, run_id)
+    )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    reference_scope = "fullscope_fit_period_meta_oof"
+    reference_purpose = "percentile_mapping_only_not_policy_performance_or_ev"
+    reference_is_in_sample = True
+    strategies: dict[str, Any] = {}
+    frames: list[pd.DataFrame] = []
+    for raw_sid, frame in strategy_frames.items():
+        sid = str(raw_sid or "").strip()
+        if not sid:
+            continue
+        ref = _finite_score_frame(
+            frame,
+            strategy_id=sid,
+            score_col=score_col,
+            market_mode=market_mode,
+            reference_scope=reference_scope,
+            reference_purpose=reference_purpose,
+            reference_is_in_sample=reference_is_in_sample,
+        )
+        file_name = f"{_safe_strategy_filename(sid)}.parquet"
+        out_path = out_dir / file_name
+        tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
+        ref.to_parquet(tmp_path, index=False)
+        os.replace(tmp_path, out_path)
+        scores = ref[score_col].to_numpy(dtype=np.float64)
+        entry = {
+            **_score_summary(scores),
+            "path": _portable_manifest_path(
+                out_path, out_dir=out_dir, data_root=data_root, run_id=run_id
+            ),
+            "score_col": score_col,
+            "rank_col": POLICY_RANK_REFERENCE_RANK_COL,
+            "reference_scope": reference_scope,
+            "reference_purpose": reference_purpose,
+            "reference_is_in_sample": reference_is_in_sample,
+            "created_at": pd.Timestamp.now(tz="UTC").isoformat(),
+        }
+        strategies[sid] = entry
+        frames.append(ref)
+    if not frames:
+        raise ValueError("no full-scope score distribution frames were persisted")
+
+    auction = pd.concat(frames, ignore_index=True, sort=False)
+    auction[POLICY_RANK_REFERENCE_RANK_COL] = auction[score_col].rank(
+        method="max", pct=True
+    )
+    auction_path = out_dir / FULLSCOPE_AUCTION_SCORE_REFERENCE_FILE
+    tmp_auction_path = auction_path.with_suffix(auction_path.suffix + ".tmp")
+    auction.to_parquet(tmp_auction_path, index=False)
+    os.replace(tmp_auction_path, auction_path)
+    auction_scores = auction[score_col].to_numpy(dtype=np.float64)
+    manifest = {
+        "schema_version": FULLSCOPE_SCORE_REFERENCE_SCHEMA_VERSION,
+        "generated_by": FULLSCOPE_SCORE_REFERENCE_GENERATOR,
+        "run_id": str(run_id),
+        "market_mode": str(market_mode or ""),
+        "score_col": score_col,
+        "rank_col": POLICY_RANK_REFERENCE_RANK_COL,
+        "reference_scope": reference_scope,
+        "reference_purpose": reference_purpose,
+        "reference_is_in_sample": reference_is_in_sample,
+        "performance_claim": "none",
+        "ev_claim": "none",
+        "warning": (
+            "This reference is built from the full-scope fit-period score "
+            "distribution and is only valid for percentile mapping. It must not "
+            "be used as OOS policy performance evidence."
+        ),
+        "provenance": dict(provenance or {}),
+        "strategies": strategies,
+        "auction": {
+            **_score_summary(auction_scores),
+            "path": _portable_manifest_path(
+                auction_path, out_dir=out_dir, data_root=data_root, run_id=run_id
+            ),
+            "score_col": score_col,
+            "rank_col": POLICY_RANK_REFERENCE_RANK_COL,
+            "reference_scope": reference_scope,
+            "reference_purpose": reference_purpose,
+            "reference_is_in_sample": reference_is_in_sample,
+            "created_at": pd.Timestamp.now(tz="UTC").isoformat(),
+        },
+    }
+    manifest_path = out_dir / "manifest.json"
+    tmp_manifest = manifest_path.with_suffix(".json.tmp")
+    tmp_manifest.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    os.replace(tmp_manifest, manifest_path)
+    return manifest_path
+
+
 @dataclass(frozen=True)
 class PolicyRankLookupResult:
     policy_rank_pct: float
@@ -443,9 +624,18 @@ class PolicyRankReferenceStore:
         self.run_id = str(run_id)
         self.root = _rank_reference_root(self.data_root, self.run_id)
         self.manifest_path = self.root / "manifest.json"
+        self.score_distribution_root = _fullscope_score_reference_root(
+            self.data_root, self.run_id
+        )
+        self.score_distribution_manifest_path = (
+            self.score_distribution_root / "manifest.json"
+        )
         self._manifest: dict[str, Any] | None = None
+        self._score_distribution_manifest: dict[str, Any] | None = None
         self._cache: dict[str, tuple[np.ndarray, str, str]] = {}
+        self._score_distribution_cache: dict[str, tuple[np.ndarray, str, str]] = {}
         self._auction_cache: tuple[np.ndarray, str] | None = None
+        self._score_distribution_auction_cache: tuple[np.ndarray, str] | None = None
         self._auction_ev_threshold_table: pd.DataFrame | None = None
         self._strategy_ev_threshold_tables: dict[str, pd.DataFrame] | None = None
         self._strategy_ev_gate_table: dict[str, dict[str, Any]] | None = None
@@ -461,6 +651,23 @@ class PolicyRankReferenceStore:
                 self._manifest = {}
         return self._manifest
 
+    @property
+    def score_distribution_manifest(self) -> dict[str, Any]:
+        if self._score_distribution_manifest is None:
+            try:
+                self._score_distribution_manifest = json.loads(
+                    self.score_distribution_manifest_path.read_text(encoding="utf-8")
+                )
+            except Exception:
+                self._score_distribution_manifest = {}
+        return self._score_distribution_manifest
+
+    def _use_fullscope_score_distribution_reference(self) -> bool:
+        raw = str(
+            os.getenv("EPM_POLICY_RANK_USE_FULLSCOPE_SCORE_DISTRIBUTION", "1")
+        ).strip().lower()
+        return raw not in {"0", "false", "no", "off"}
+
     def _strategy_entry(
         self, strategy_id: str, side: str | None = None
     ) -> tuple[str, dict[str, Any]] | tuple[None, None]:
@@ -470,6 +677,71 @@ class PolicyRankReferenceStore:
             if isinstance(entry, dict):
                 return alias, entry
         return None, None
+
+    def _score_distribution_strategy_entry(
+        self, strategy_id: str, side: str | None = None
+    ) -> tuple[str, dict[str, Any]] | tuple[None, None]:
+        if not self._use_fullscope_score_distribution_reference():
+            return None, None
+        manifest = self.score_distribution_manifest
+        if not bool(manifest.get("reference_is_in_sample", False)):
+            return None, None
+        if str(manifest.get("reference_purpose") or "") != (
+            "percentile_mapping_only_not_policy_performance_or_ev"
+        ):
+            return None, None
+        strategies = manifest.get("strategies") or {}
+        for alias in strategy_rank_reference_aliases(strategy_id, side):
+            entry = strategies.get(alias)
+            if isinstance(entry, dict):
+                return alias, entry
+        return None, None
+
+    def _load_scores_from_entry(
+        self,
+        *,
+        alias: str,
+        entry: dict[str, Any],
+        root: Path,
+        cache: dict[str, tuple[np.ndarray, str, str]],
+    ) -> tuple[np.ndarray, str, str] | None:
+        if alias in cache:
+            return cache[alias]
+        rel_path = str(entry.get("path") or "")
+        path = _resolve_manifest_path(
+            data_root=self.data_root,
+            run_id=self.run_id,
+            rank_reference_root=root,
+            manifest_path_value=rel_path,
+        )
+        score_col = str(entry.get("score_col") or POLICY_RANK_REFERENCE_SCORE_COL)
+        try:
+            frame = pd.read_parquet(path, columns=[score_col])
+            scores = pd.to_numeric(frame[score_col], errors="coerce").to_numpy(
+                dtype=np.float64
+            )
+        except Exception:
+            return None
+        scores = scores[np.isfinite(scores)]
+        if scores.size == 0:
+            return None
+        scores.sort()
+        loaded = (scores, str(path), alias)
+        cache[alias] = loaded
+        return loaded
+
+    def _load_score_distribution_scores(
+        self, strategy_id: str, side: str | None = None
+    ) -> tuple[np.ndarray, str, str] | None:
+        alias, entry = self._score_distribution_strategy_entry(strategy_id, side)
+        if not alias or not isinstance(entry, dict):
+            return None
+        return self._load_scores_from_entry(
+            alias=alias,
+            entry=entry,
+            root=self.score_distribution_root,
+            cache=self._score_distribution_cache,
+        )
 
     def _load_scores(
         self, strategy_id: str, side: str | None = None
@@ -485,13 +757,49 @@ class PolicyRankReferenceStore:
                 return None
         if not _policy_oos_contract_valid(entry):
             return None
-        if alias in self._cache:
-            return self._cache[alias]
+        return self._load_scores_from_entry(
+            alias=alias,
+            entry=entry,
+            root=self.root,
+            cache=self._cache,
+        )
+
+    def lookup(
+        self,
+        *,
+        strategy_id: str,
+        calibrated_score: float,
+        side: str | None = None,
+    ) -> PolicyRankLookupResult:
+        loaded = self._load_score_distribution_scores(strategy_id, side)
+        if loaded is None:
+            loaded = self._load_scores(strategy_id, side)
+        if loaded is None:
+            return PolicyRankLookupResult(float("nan"), 0, "", "")
+        scores, source, alias = loaded
+        rank = policy_rank_pct_from_sorted_scores(scores, float(calibrated_score))
+        return PolicyRankLookupResult(rank, int(scores.size), source, alias)
+
+    def _load_score_distribution_auction_scores(self) -> tuple[np.ndarray, str] | None:
+        if not self._use_fullscope_score_distribution_reference():
+            return None
+        if self._score_distribution_auction_cache is not None:
+            return self._score_distribution_auction_cache
+        manifest = self.score_distribution_manifest
+        if not bool(manifest.get("reference_is_in_sample", False)):
+            return None
+        if str(manifest.get("reference_purpose") or "") != (
+            "percentile_mapping_only_not_policy_performance_or_ev"
+        ):
+            return None
+        entry = manifest.get("auction")
+        if not isinstance(entry, dict):
+            return None
         rel_path = str(entry.get("path") or "")
         path = _resolve_manifest_path(
             data_root=self.data_root,
             run_id=self.run_id,
-            rank_reference_root=self.root,
+            rank_reference_root=self.score_distribution_root,
             manifest_path_value=rel_path,
         )
         score_col = str(entry.get("score_col") or POLICY_RANK_REFERENCE_SCORE_COL)
@@ -506,24 +814,8 @@ class PolicyRankReferenceStore:
         if scores.size == 0:
             return None
         scores.sort()
-        source = str(path)
-        loaded = (scores, source, alias)
-        self._cache[alias] = loaded
-        return loaded
-
-    def lookup(
-        self,
-        *,
-        strategy_id: str,
-        calibrated_score: float,
-        side: str | None = None,
-    ) -> PolicyRankLookupResult:
-        loaded = self._load_scores(strategy_id, side)
-        if loaded is None:
-            return PolicyRankLookupResult(float("nan"), 0, "", "")
-        scores, source, alias = loaded
-        rank = policy_rank_pct_from_sorted_scores(scores, float(calibrated_score))
-        return PolicyRankLookupResult(rank, int(scores.size), source, alias)
+        self._score_distribution_auction_cache = (scores, str(path))
+        return self._score_distribution_auction_cache
 
     def _load_auction_scores(self) -> tuple[np.ndarray, str] | None:
         if self._auction_cache is not None:
@@ -558,7 +850,9 @@ class PolicyRankReferenceStore:
         *,
         calibrated_score: float,
     ) -> PolicyRankLookupResult:
-        loaded = self._load_auction_scores()
+        loaded = self._load_score_distribution_auction_scores()
+        if loaded is None:
+            loaded = self._load_auction_scores()
         if loaded is None:
             return PolicyRankLookupResult(float("nan"), 0, "", "cross_strategy")
         scores, source = loaded
@@ -1103,8 +1397,19 @@ class PolicyRankReferenceStore:
             mean_net_return=mean_net,
             hit_rate=hit_rate,
             source=str(row.get("source", "")),
-            reason="strategy_ev_gate_pass" if allowed else "strategy_ev_gate_failed",
+                reason="strategy_ev_gate_pass" if allowed else "strategy_ev_gate_failed",
+            )
+
+
+def _rank_percentile_source_label(source: str, *, auction: bool) -> str:
+    source_s = str(source or "")
+    if FULLSCOPE_SCORE_REFERENCE_DIR in source_s:
+        return (
+            "fullscope_score_distribution_auction_reference_in_sample"
+            if auction
+            else "fullscope_score_distribution_percentile_in_sample"
         )
+    return "cross_strategy_auction_reference" if auction else "policy_rank_reference_percentile"
 
 
 def apply_policy_rank_percentile_gate(
@@ -1133,7 +1438,7 @@ def apply_policy_rank_percentile_gate(
     )
     if np.isfinite(result.policy_rank_pct):
         policy_rank_pct = float(np.clip(result.policy_rank_pct, 0.0, 1.0))
-        rank_source = "policy_rank_reference_percentile"
+        rank_source = _rank_percentile_source_label(result.source, auction=False)
     elif allow_live_batch_rank_fallback_for_debug:
         policy_rank_pct = float(decision.get("sizer_rank_percentile", np.nan))
         rank_source = "live_batch_percentile_fallback_debug"
@@ -1182,22 +1487,23 @@ def apply_policy_rank_percentile_gate(
     threshold_rank_source = rank_source
     if np.isfinite(auction.policy_rank_pct):
         auction_rank_pct = float(np.clip(auction.policy_rank_pct, 0.0, 1.0))
+        auction_source = _rank_percentile_source_label(auction.source, auction=True)
         decision["normalized_rank_score"] = auction_rank_pct
         decision["auction_rank_pct"] = auction_rank_pct
         decision["auction_rank_reference_n"] = int(auction.n_rows)
         decision["auction_rank_reference_source"] = auction.source
-        decision["auction_rank_score_source"] = "cross_strategy_auction_reference"
+        decision["auction_rank_score_source"] = auction_source
         if use_auction_rank_for_threshold:
             decision["threshold_score"] = auction_rank_pct
             threshold_rank_pct = auction_rank_pct
-            threshold_rank_source = "cross_strategy_auction_reference"
+            threshold_rank_source = auction_source
         chain.update(
             {
                 "normalized_rank_score": auction_rank_pct,
                 "auction_rank_pct": auction_rank_pct,
                 "auction_rank_reference_n": int(auction.n_rows),
                 "auction_rank_reference_source": auction.source,
-                "auction_rank_score_source": "cross_strategy_auction_reference",
+                "auction_rank_score_source": auction_source,
             }
         )
     else:
@@ -1208,7 +1514,7 @@ def apply_policy_rank_percentile_gate(
         decision["auction_rank_score_source"] = (
             "missing_cross_strategy_auction_reference"
         )
-        threshold_rank_source = "policy_rank_reference_percentile"
+        threshold_rank_source = rank_source
         chain.update(
             {
                 "normalized_rank_score": policy_rank_pct,

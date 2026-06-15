@@ -1965,6 +1965,7 @@ def get_panel_from_dict(
         "low": pd.DataFrame(),
         "close": pd.DataFrame(),
         "volume": pd.DataFrame(),
+        "quote_volume": pd.DataFrame(),
     }
     for col in PERP_OHLCV_EXTRA_FIELDS:
         panel[col] = pd.DataFrame()
@@ -2010,7 +2011,7 @@ def get_panel_from_dict(
         if not df_not_empty:
             continue
 
-        for col in ["open", "high", "low", "close", "volume", *PERP_OHLCV_EXTRA_FIELDS]:
+        for col in ["open", "high", "low", "close", "volume", "quote_volume", *PERP_OHLCV_EXTRA_FIELDS]:
             if col in df.columns:
                 series = df[col].rename(symbol)
                 panel[col] = panel[col].join(series, how="outer")
@@ -2019,6 +2020,31 @@ def get_panel_from_dict(
     for col in panel:
         panel[col] = panel[col].reindex(common_index)
         panel[col] = panel[col].sort_index()
+
+    close = panel.get("close")
+    volume = panel.get("volume")
+    if (
+        isinstance(close, pd.DataFrame)
+        and not close.empty
+        and isinstance(volume, pd.DataFrame)
+        and not volume.empty
+    ):
+        close_aligned, volume_aligned = close.align(volume, join="outer", axis=None)
+        synth_quote_volume = (
+            close_aligned.astype(np.float32) * volume_aligned.astype(np.float32)
+        ).replace([np.inf, -np.inf], np.nan)
+        synth_quote_volume = synth_quote_volume.mask(synth_quote_volume < 0.0)
+        existing_quote_volume = panel.get("quote_volume")
+        if isinstance(existing_quote_volume, pd.DataFrame) and not existing_quote_volume.empty:
+            existing_quote_volume = existing_quote_volume.reindex(
+                index=synth_quote_volume.index,
+                columns=synth_quote_volume.columns,
+            )
+            panel["quote_volume"] = existing_quote_volume.combine_first(
+                synth_quote_volume
+            ).astype(np.float32)
+        else:
+            panel["quote_volume"] = synth_quote_volume.astype(np.float32)
 
     return panel
 

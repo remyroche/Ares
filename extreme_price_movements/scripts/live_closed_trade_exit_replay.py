@@ -68,6 +68,12 @@ POLICY_STOP_EXIT_ALPHA_THROUGH = float(
 POLICY_STOP_EXIT_MAX_GAP_BPS = float(
     os.environ.get("EPM_SIMPLE_POLICY_STOP_EXIT_MAX_GAP_BPS", "75.0")
 )
+DEFAULT_PERP_EXIT_QUOTE_HALF_SPREAD_BPS = float(
+    os.environ.get("EPM_SIMPLE_POLICY_PERP_EXIT_QUOTE_HALF_SPREAD_BPS", "40.0")
+)
+DEFAULT_SPOT_EXIT_QUOTE_HALF_SPREAD_BPS = float(
+    os.environ.get("EPM_SIMPLE_POLICY_SPOT_EXIT_QUOTE_HALF_SPREAD_BPS", "0.0")
+)
 
 
 @dataclass(frozen=True)
@@ -190,6 +196,10 @@ def _iter_json_monitor_lines(log_path: Path, around_line: Optional[int]) -> Iter
 
 
 def _extract_trade_recap_from_log(row: Mapping[str, Any], workspace: Path) -> str:
+    embedded = str(row.get("trade_recap") or "").strip()
+    if embedded and embedded.lower() != "nan":
+        return embedded
+
     log_value = str(row.get("log") or "").strip()
     if not log_value:
         return ""
@@ -352,7 +362,31 @@ def _market_row(bar: Mapping[str, Any]) -> pd.DataFrame:
     return pd.DataFrame([data], index=pd.DatetimeIndex([ts]))
 
 
-def _stop_hit(side: str, stop_price: float, bar: Mapping[str, Any]) -> Tuple[bool, float]:
+def _exit_quote_half_spread_bps(row: Mapping[str, Any]) -> float:
+    env_value = os.environ.get("EPM_SIMPLE_POLICY_EXIT_QUOTE_HALF_SPREAD_BPS")
+    if env_value not in {None, ""}:
+        parsed = _safe_float(env_value)
+        if np.isfinite(parsed):
+            return max(0.0, float(parsed))
+    for key in ("exit_quote_half_spread_bps", "exit_spread_cost_bps"):
+        parsed = _safe_float(row.get(key))
+        if np.isfinite(parsed):
+            return max(0.0, float(parsed))
+    symbol = str(row.get("symbol") or "")
+    return (
+        max(0.0, float(DEFAULT_PERP_EXIT_QUOTE_HALF_SPREAD_BPS))
+        if ":USD" in symbol
+        else max(0.0, float(DEFAULT_SPOT_EXIT_QUOTE_HALF_SPREAD_BPS))
+    )
+
+
+def _stop_hit(
+    side: str,
+    stop_price: float,
+    bar: Mapping[str, Any],
+    *,
+    quote_half_spread_bps: float,
+) -> Tuple[bool, float]:
     return stop_exit_fill_price(
         side=side,
         stop_px=stop_price,
@@ -361,6 +395,7 @@ def _stop_hit(side: str, stop_price: float, bar: Mapping[str, Any]) -> Tuple[boo
         base_gap_bps=POLICY_STOP_EXIT_BASE_GAP_BPS,
         alpha_through=POLICY_STOP_EXIT_ALPHA_THROUGH,
         max_gap_bps=POLICY_STOP_EXIT_MAX_GAP_BPS,
+        quote_half_spread_bps=quote_half_spread_bps,
     )
 
 
@@ -406,8 +441,12 @@ def replay_one_anchor(
         _safe_float(row.get("rank_percentile"), _safe_float(row.get("rank_pct"), 0.5)),
     )
     live_stop_price = _safe_float(row.get("stop_price"))
-    live_exit_price = _safe_float(row.get("exit_price"))
+    live_exit_price = _safe_float(
+        row.get("exit_price"),
+        _safe_float(row.get("actual_exit_price"), _safe_float(row.get("realized_exit_price"))),
+    )
     live_entry_price = _safe_float(row.get("entry_price"))
+    exit_quote_half_spread_bps = _exit_quote_half_spread_bps(row)
 
     out: Dict[str, Any] = {
         "symbol": row.get("symbol"),
@@ -423,6 +462,7 @@ def replay_one_anchor(
         "parsed_sl_mult": sl_mult,
         "parsed_barrier_frac": barrier_frac,
         "rank_percentile": rank_percentile,
+        "exit_quote_half_spread_bps": exit_quote_half_spread_bps,
         "coverage_status": "ok",
     }
     try:
@@ -445,7 +485,9 @@ def replay_one_anchor(
         )
         return out
 
-    current_stop = float(initial.stop_price)
+    computed_initial_stop = float(initial.stop_price)
+    use_logged_stop = np.isfinite(live_stop_price) and live_stop_price > 0.0
+    current_stop = float(live_stop_price if use_logged_stop else computed_initial_stop)
     current_stop_reason = str(initial.reason)
     state = _state_after_initial(
         entry_price=float(entry_price),
@@ -457,6 +499,8 @@ def replay_one_anchor(
     out.update(
         {
             "initial_stop": current_stop,
+            "computed_initial_stop": computed_initial_stop,
+            "initial_stop_source": "logged_live_stop" if use_logged_stop else "computed_policy_stop",
             "initial_stop_reason": current_stop_reason,
             "initial_stop_vs_live_stop_bps": _basis_points(current_stop, live_stop_price, side),
         }
@@ -477,7 +521,12 @@ def replay_one_anchor(
     events: List[Dict[str, Any]] = []
     for _, bar in bars.iterrows():
         bar_ts = _to_ts(bar.get("ts"))
-        hit, fill_price = _stop_hit(side, current_stop, bar)
+        hit, fill_price = _stop_hit(
+            side,
+            current_stop,
+            bar,
+            quote_half_spread_bps=exit_quote_half_spread_bps,
+        )
         if hit:
             out.update(
                 {

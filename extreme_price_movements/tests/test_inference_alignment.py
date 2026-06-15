@@ -5,7 +5,11 @@ from extreme_price_movements.ebm_on_lgbm import EBMOnLGBMModel
 from extreme_price_movements.inference.feature_generator import (
     get_features_for_candidates,
 )
-from extreme_price_movements.inference.model_orchestrator import ModelOrchestrator
+from extreme_price_movements.inference.model_orchestrator import (
+    ModelOrchestrator,
+    _materialize_model_drift_feature_aliases,
+    _regime_adaptor_score_from_applied,
+)
 from extreme_price_movements.inference.trade_executor import TradeExecutor
 from extreme_price_movements.model_drift_features import (
     fit_model_drift_state,
@@ -48,6 +52,60 @@ def test_model_orchestrator_uses_flattened_ridge_weights():
     assert position.index.tolist() == ["BTC/USDT"]
     assert abs(float(position.iloc[0]) - 0.0) < 1e-12
     assert 0.0 <= float(confidence["confidence"]) <= 1.0
+
+
+def test_prefixed_base_drift_aliases_materialize_from_binned_sources():
+    frame = pd.DataFrame(
+        {
+            "pred_H5_feature_drift_psi_core_80": [0.25, 0.5],
+            "pred_H5_feature_drift_ks_bin_mean": [0.1, 0.2],
+            "base_H5_feature_drift_ks_bin_mean": [0.3, 0.4],
+        }
+    )
+
+    out, added = _materialize_model_drift_feature_aliases(
+        frame,
+        {
+            "pred_H5_feature_drift_psi_core",
+            "pred_H5_feature_drift_ks_core",
+            "base_H5_feature_drift_ks_core",
+        },
+    )
+
+    assert added == 3
+    assert np.allclose(out["pred_H5_feature_drift_psi_core"], [0.25, 0.5])
+    assert np.allclose(out["pred_H5_feature_drift_ks_core"], [0.1, 0.2])
+    assert np.allclose(out["base_H5_feature_drift_ks_core"], [0.3, 0.4])
+
+
+def test_regime_adaptor_score_precedence_keeps_legacy_deployment_path():
+    final = np.asarray([0.4, 0.6], dtype=np.float64)
+    weight = np.asarray([1.2, 0.8], dtype=np.float64)
+
+    legacy = _regime_adaptor_score_from_applied(
+        {
+            "deployment_score": np.asarray([0.3, 0.7]),
+            "error_risk_adjusted_score": np.asarray([0.1, 0.9]),
+        },
+        final,
+        weight,
+    )
+    assert np.allclose(legacy, [0.3, 0.7])
+
+    rolling = _regime_adaptor_score_from_applied(
+        {
+            "combined_score": np.asarray([0.2, 0.8]),
+            "deployment_score_pre_rank": np.asarray([0.25, 0.75]),
+            "deployment_score": np.asarray([0.3, 0.7]),
+            "error_risk_adjusted_score": np.asarray([0.1, 0.9]),
+        },
+        final,
+        weight,
+    )
+    assert np.allclose(rolling, [0.25, 0.75])
+
+    fallback = _regime_adaptor_score_from_applied({}, final, weight)
+    assert np.allclose(fallback, final * weight)
 
 
 def test_trade_executor_bucket_lookup_normalizes_case():
@@ -510,6 +568,53 @@ def test_predict_meta_refuses_missing_rank_percentile_context():
 
     assert preds.empty
     assert model.called is False
+
+
+def test_predict_meta_uses_training_history_defaults_for_recent_effectiveness():
+    class CapturingMetaModel:
+        feature_columns = [
+            "long_demo",
+            "recent_global_rank_ic_5d",
+            "recent_meta_global_top15_hit_rate_5d",
+            "meta_recent_brier_shrunk",
+            "symbol_recent_utility_shrunk",
+        ]
+        model_effectiveness_history_defaults_ = {
+            "recent_global_rank_ic_5d": 1.25,
+            "recent_meta_global_top15_hit_rate_5d": 0.64,
+            "meta_recent_brier_shrunk": 0.21,
+            "symbol_recent_utility_shrunk": -0.03,
+        }
+
+        def __init__(self):
+            self.seen = None
+
+        def predict(self, X):
+            self.seen = X.copy()
+            return [0.6] * len(X)
+
+    model = CapturingMetaModel()
+    orchestrator = ModelOrchestrator(
+        {"meta_models": {"long_demo_clf": model}},
+        {"strict_feature_parity": True},
+    )
+    features = pd.DataFrame(
+        {"long_demo": [0.7, 0.8]},
+        index=["AAA/USDC", "BBB/USDC"],
+    )
+
+    preds = orchestrator.predict_meta(features, "long", "long_demo")
+
+    assert list(preds.index) == ["AAA/USDC", "BBB/USDC"]
+    assert np.allclose(model.seen["recent_global_rank_ic_5d"], [1.25, 1.25])
+    assert np.allclose(
+        model.seen["recent_meta_global_top15_hit_rate_5d"],
+        [0.64, 0.64],
+    )
+    assert np.allclose(model.seen["meta_recent_brier_shrunk"], [0.21, 0.21])
+    assert np.allclose(model.seen["symbol_recent_utility_shrunk"], [-0.03, -0.03])
+    default_report = orchestrator._last_results["meta_historical_effectiveness_defaults"]
+    assert default_report["count"] == 4
 
 
 def test_run_full_chain_fails_closed_when_position_sizer_rejects(monkeypatch):

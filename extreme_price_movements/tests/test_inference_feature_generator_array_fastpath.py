@@ -233,6 +233,7 @@ def test_load_features_selected_parallel_latest_path(tmp_path, monkeypatch):
         df.to_parquet(in_dir / f"symbol={safe}.parquet")
 
     monkeypatch.setenv("EPM_FEATURE_SELECTED_LOAD_WORKERS", "2")
+    monkeypatch.setenv("EPM_FEATURE_SELECTED_LOAD_PARALLEL", "1")
     loaded = load_features_selected(
         run_ts,
         str(tmp_path),

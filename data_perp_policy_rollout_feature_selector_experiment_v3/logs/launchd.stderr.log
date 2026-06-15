@@ -1,2 +1,0 @@
-/bin/zsh: can't open input file: /Users/remyroche/Documents/Ares/scripts/launch_policy_rollout_selector_experiment.sh
-tee: /Users/remyroche/Documents/Ares/data_perp_policy_rollout_feature_selector_experiment_v3/logs/rollout_on_new.log: Operation not permitted

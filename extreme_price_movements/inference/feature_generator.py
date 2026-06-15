@@ -18,12 +18,15 @@ import sys
 import time
 from collections.abc import MutableMapping
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 import numpy as np
 import pandas as pd
 
-from extreme_price_movements.data_store import load_features_selected
+from extreme_price_movements.data_store import (
+    load_features_selected,
+    load_live_latest_feature_matrix,
+)
 import extreme_price_movements.fast_funcs as ff
 from extreme_price_movements.feature_transform_contract import FeatureTransformContract
 from extreme_price_movements.config import is_non_portable_feature_key
@@ -34,6 +37,7 @@ from extreme_price_movements.features import (
     compute_market_features,
 )
 from extreme_price_movements.features_residual import add_residual_features
+from extreme_price_movements.perp_features import compute_features as compute_perp_features
 from extreme_price_movements.inference.parity import (
     LIVE_UNAVAILABLE_FEATURES,
     strategy_id_matches,
@@ -73,7 +77,63 @@ DEFAULT_IDENTITY_EWMA_WARMUP_HOURS = 24 * 60 * 5
 DEFAULT_TAIL_WARMUP_BUFFER_HOURS = 72
 LIVE_FEATURE_CACHE_VERSION = 15
 _LIVE_FEATURE_MEMORY_CACHE: Dict[str, Dict[str, Any]] = {}
+_SELECTED_FEATURE_LATEST_MEMORY_CACHE: Dict[str, Dict[str, Any]] = {}
 _TRAINING_FEATURE_VARIATION_CACHE: Dict[tuple[str, str], Dict[str, bool]] = {}
+_FEATURE_STORE_RUN_TS_CACHE: Dict[tuple[str, str], pd.Timestamp] = {}
+
+
+def _resolve_feature_store_ts(run_id: str, root_dir: str, end_ts: Optional[pd.Timestamp] = None) -> pd.Timestamp:
+    """Resolve a model/source run id to the timestamped feature-store directory."""
+    run_id_s = str(run_id or "").strip()
+    match = re.match(r"^(\d{8}_\d{6})(?:_|$)", run_id_s)
+    if match:
+        return pd.to_datetime(match.group(1), format="%Y%m%d_%H%M%S", utc=True)
+
+    root_s = str(root_dir or "")
+    cache_key = (root_s, run_id_s)
+    cached = _FEATURE_STORE_RUN_TS_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    feature_root = Path(root_s) / "features"
+    candidates: list[tuple[pd.Timestamp, Path]] = []
+    try:
+        for path in feature_root.iterdir():
+            if not path.is_dir():
+                continue
+            name = path.name
+            if not re.match(r"^\d{8}_\d{6}$", name):
+                continue
+            try:
+                ts = pd.to_datetime(name, format="%Y%m%d_%H%M%S", utc=True)
+            except Exception:
+                continue
+            if (path / "_feature_cache_scan_manifest.json").exists() or any(path.glob("symbol=*.parquet")):
+                candidates.append((ts, path))
+    except Exception:
+        candidates = []
+
+    if candidates:
+        ts = max(candidates, key=lambda item: item[0])[0]
+        _FEATURE_STORE_RUN_TS_CACHE[cache_key] = ts
+        tprint(
+            "Resolved descriptive feature source run id to latest timestamped "
+            f"feature store: run_id={run_id_s} feature_ts={ts.strftime('%Y%m%d_%H%M%S')}"
+        )
+        return ts
+
+    if end_ts is not None:
+        ts = pd.Timestamp(end_ts)
+        if ts.tzinfo is None:
+            ts = ts.tz_localize("UTC")
+        else:
+            ts = ts.tz_convert("UTC")
+        return ts
+
+    raise ValueError(
+        "Cannot resolve feature-store timestamp from non-timestamp run id "
+        f"{run_id_s!r} under {feature_root}"
+    )
 ORDERBOOK_RESIDUAL_FEATURE_KEYS = {
     "ob_pressure_mkt_resid",
     "ob_spread_mkt_resid",
@@ -89,9 +149,255 @@ ORDERBOOK_RESIDUAL_FEATURE_KEYS = {
 def _live_model_feature_auto_sync_enabled(cfg: Dict[str, Any]) -> bool:
     raw = cfg.get(
         "live_model_feature_auto_sync_selected_cache",
-        os.environ.get("EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_SELECTED_CACHE", "0"),
+        os.environ.get("EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_SELECTED_CACHE", "1"),
     )
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _live_model_feature_auto_sync_blocking(cfg: Dict[str, Any]) -> bool:
+    raw = cfg.get(
+        "live_model_feature_auto_sync_blocking",
+        os.environ.get("EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_BLOCKING", "0"),
+    )
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _safe_feature_sync_label(value: str) -> str:
+    label = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value or "selected_cache"))
+    return label.strip("._") or "selected_cache"
+
+
+def _live_feature_sync_process_status(pid: int) -> str:
+    try:
+        status = subprocess.run(
+            [
+                "ps",
+                "-p",
+                str(pid),
+                "-o",
+                "pid=,stat=,etime=,rss=,pcpu=,pmem=",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        line = (status.stdout or "").strip()
+        if line:
+            return line
+    except Exception:
+        pass
+    return f"{pid} status_unavailable"
+
+
+def _live_feature_sync_process_alive(pid: int) -> tuple[bool, str]:
+    """Return whether a background feature-sync pid is active and usable."""
+    status = _live_feature_sync_process_status(pid)
+    if "status_unavailable" in status:
+        return False, status
+    parts = status.split()
+    # ps output is: pid stat etime rss pcpu pmem.  A zombie still accepts
+    # os.kill(pid, 0), so checking only signalability can leave stale sync
+    # locks behind and block every later live selected-feature refresh.
+    if len(parts) >= 2:
+        proc_stat = parts[1]
+        if proc_stat.upper().startswith("Z"):
+            return False, status
+        return True, status
+    return False, status
+
+
+def _live_feature_sync_progress_snapshot(
+    *,
+    data_root: str,
+    run_id: str,
+    end_ts: pd.Timestamp,
+) -> str:
+    parts: List[str] = []
+    now = time.time()
+    sidecar_dir = Path(data_root) / "features" / str(run_id) / "_live_latest_matrix"
+    try:
+        sidecars = sorted(
+            sidecar_dir.glob("matrix_*.parquet"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if sidecars:
+            newest = sidecars[0]
+            age = now - newest.stat().st_mtime
+            parts.append(f"latest_sidecar={newest.name} age={age:.1f}s")
+        else:
+            parts.append("latest_sidecar=none")
+    except Exception as exc:
+        parts.append(f"latest_sidecar_error={exc}")
+
+    manifest = Path(data_root) / "features" / str(run_id) / "_feature_cache_scan_manifest.json"
+    try:
+        if manifest.exists():
+            age = now - manifest.stat().st_mtime
+            parts.append(f"scan_manifest_age={age:.1f}s")
+        else:
+            parts.append("scan_manifest=missing")
+    except Exception as exc:
+        parts.append(f"scan_manifest_error={exc}")
+
+    parts.append(f"target_end_ts={pd.Timestamp(end_ts).isoformat()}")
+    return " ".join(parts)
+
+
+def _coerce_live_feature_sync_ts(value: Any) -> Optional[pd.Timestamp]:
+    try:
+        ts = pd.Timestamp(value)
+        if ts.tzinfo is None:
+            ts = ts.tz_localize("UTC")
+        else:
+            ts = ts.tz_convert("UTC")
+        return ts
+    except Exception:
+        return None
+
+
+def _live_feature_sync_state_dir(data_root: str, run_id: str) -> Path:
+    return Path(str(data_root)) / "artifacts" / str(run_id) / "live_state"
+
+
+def _live_feature_syncs_for_target(
+    *,
+    data_root: str,
+    run_id: str,
+    end_ts: pd.Timestamp,
+) -> List[Dict[str, Any]]:
+    """Return feature-sync metadata files targeting the same run/hour."""
+    state_dir = _live_feature_sync_state_dir(data_root, run_id)
+    target_ts = _coerce_live_feature_sync_ts(end_ts)
+    if target_ts is None:
+        return []
+    matches: List[Dict[str, Any]] = []
+    try:
+        paths = sorted(state_dir.glob("feature_*_sync.json"))
+    except Exception:
+        paths = []
+    for meta_path in paths:
+        try:
+            meta = json.loads(meta_path.read_text())
+        except Exception:
+            continue
+        meta_run_id = str(meta.get("run_id") or run_id)
+        if meta_run_id != str(run_id):
+            continue
+        meta_ts = _coerce_live_feature_sync_ts(meta.get("end_ts"))
+        if meta_ts is None or meta_ts != target_ts:
+            continue
+        try:
+            pid = int(meta.get("pid") or 0)
+        except Exception:
+            pid = 0
+        if pid <= 0:
+            alive, status = False, "missing_pid"
+        else:
+            alive, status = _live_feature_sync_process_alive(pid)
+        info = dict(meta)
+        info.update(
+            {
+                "pid": pid,
+                "alive": bool(alive),
+                "process_status": status,
+                "meta_path": str(meta_path),
+                "pid_path": str(meta_path.with_suffix(".pid")),
+            }
+        )
+        matches.append(info)
+    return matches
+
+
+def _wait_for_live_feature_syncs_for_target(
+    *,
+    data_root: str,
+    run_id: str,
+    end_ts: pd.Timestamp,
+    timeout_s: float,
+    heartbeat_s: float,
+    reason: str,
+) -> Dict[str, Any]:
+    """Wait for already-running same-target selected-feature syncs to finish."""
+    syncs = _live_feature_syncs_for_target(
+        data_root=data_root,
+        run_id=run_id,
+        end_ts=end_ts,
+    )
+    alive = [s for s in syncs if bool(s.get("alive"))]
+    if not alive:
+        return {"status": "no_existing_sync", "syncs": syncs}
+
+    tprint(
+        "Live model selected-feature cache sync already running for target; "
+        f"waiting instead of launching duplicate: reason={reason} "
+        f"run_id={run_id} end_ts={pd.Timestamp(end_ts).isoformat()} "
+        f"pids={[int(s.get('pid') or 0) for s in alive]} "
+        f"labels={[str(s.get('label') or '') for s in alive]}"
+    )
+    t0 = time.perf_counter()
+    heartbeat_s = max(5.0, float(heartbeat_s or 30.0))
+    next_heartbeat = t0 + heartbeat_s
+    while True:
+        syncs = _live_feature_syncs_for_target(
+            data_root=data_root,
+            run_id=run_id,
+            end_ts=end_ts,
+        )
+        alive = [s for s in syncs if bool(s.get("alive"))]
+        if not alive:
+            elapsed = time.perf_counter() - t0
+            tprint(
+                "Live model selected-feature cache existing sync finished: "
+                f"reason={reason} run_id={run_id} "
+                f"end_ts={pd.Timestamp(end_ts).isoformat()} elapsed={elapsed:.1f}s"
+            )
+            return {"status": "existing_sync_finished", "elapsed": elapsed, "syncs": syncs}
+        now = time.perf_counter()
+        if timeout_s > 0 and now - t0 >= timeout_s:
+            elapsed = now - t0
+            tprint(
+                "Live model selected-feature cache existing sync wait timeout: "
+                f"reason={reason} run_id={run_id} "
+                f"end_ts={pd.Timestamp(end_ts).isoformat()} elapsed={elapsed:.1f}s "
+                f"pids={[int(s.get('pid') or 0) for s in alive]}"
+            )
+            return {
+                "status": "existing_sync_timeout",
+                "elapsed": elapsed,
+                "syncs": syncs,
+            }
+        if now >= next_heartbeat:
+            elapsed = now - t0
+            tprint(
+                "Live model selected-feature cache existing sync heartbeat: "
+                f"reason={reason} elapsed={elapsed:.1f}s "
+                f"statuses={[str(s.get('process_status') or '') for s in alive]} "
+                f"{_live_feature_sync_progress_snapshot(data_root=data_root, run_id=run_id, end_ts=end_ts)}"
+            )
+            next_heartbeat = now + heartbeat_s
+        time.sleep(1.0)
+
+
+def _write_live_feature_sync_state(
+    *,
+    data_root: str,
+    run_id: str,
+    label: str,
+    meta: Dict[str, Any],
+) -> None:
+    try:
+        state_dir = _live_feature_sync_state_dir(data_root, run_id)
+        state_dir.mkdir(parents=True, exist_ok=True)
+        safe_label = _safe_feature_sync_label(label)
+        pid_path = state_dir / f"feature_{safe_label}_sync.pid"
+        meta_path = state_dir / f"feature_{safe_label}_sync.json"
+        pid = int(meta.get("pid") or 0)
+        if pid > 0:
+            pid_path.write_text(str(pid))
+        meta_path.write_text(json.dumps(meta, sort_keys=True))
+    except Exception as exc:
+        tprint(f"Warning: failed to write live feature sync state: {exc}")
 
 
 def _run_training_path_feature_sync_for_live(
@@ -102,6 +408,8 @@ def _run_training_path_feature_sync_for_live(
     cfg: Dict[str, Any],
     required_feature_keys: Optional[Iterable[str]] = None,
     background_full_union: bool = True,
+    blocking: bool = True,
+    sync_label: str = "selected_cache",
 ) -> bool:
     """Bring the selected-feature cache current using the training feature path."""
     end_ts = pd.Timestamp(end_ts)
@@ -142,7 +450,26 @@ def _run_training_path_feature_sync_for_live(
             ),
         }
     )
-    requested_keys = sorted({str(k) for k in (required_feature_keys or []) if str(k)})
+    requested_keys_raw = sorted({str(k) for k in (required_feature_keys or []) if str(k)})
+    requested_keys, skipped_live_repairable = _live_training_path_sync_feature_keys(
+        requested_keys_raw,
+        cfg,
+    )
+    if skipped_live_repairable:
+        tprint(
+            "Live model selected-feature cache auto-sync skipping live-repairable "
+            "keys; they will be materialized from the live panel instead: "
+            f"requested_keys={len(requested_keys_raw)} sync_keys={len(requested_keys)} "
+            f"skipped={len(skipped_live_repairable)} "
+            f"sample={skipped_live_repairable[:20]}"
+        )
+    if requested_keys_raw and not requested_keys:
+        tprint(
+            "Live model selected-feature cache auto-sync skipped: all requested "
+            "keys are live-repairable/synthetic and do not need the training "
+            "feature path."
+        )
+        return True
     decision_only = str(
         cfg.get(
             "live_model_feature_auto_sync_decision_only",
@@ -204,10 +531,10 @@ def _run_training_path_feature_sync_for_live(
     elif decision_only and requested_keys and large_selected_repair:
         # For large selected-feature gaps, key batching is counterproductive:
         # each key batch still recomputes the broad shared feature graph and
-        # repeats parquet writes. Use the normal incremental backfill path once
-        # instead of hundreds of small selected-key batches.
-        env.pop("EPM_FEATURE_BACKFILL_KEYS", None)
-        env["EPM_FEATURE_BACKFILL_ALL_INCOMPLETE_KEYS"] = "1"
+        # repeats parquet writes. Repair the active decision contract once,
+        # without expanding to every incomplete feature in the store.
+        env["EPM_FEATURE_BACKFILL_KEYS"] = ",".join(requested_keys)
+        env["EPM_FEATURE_BACKFILL_ALL_INCOMPLETE_KEYS"] = "0"
         env.pop("EPM_FEATURE_BACKFILL_KEY_BATCH_SIZE", None)
     raw_state_path = cfg.get("live_raw_rolling_state_path") or str(
         live_raw_rolling_state_path(data_root_s, str(run_id))
@@ -253,7 +580,14 @@ def _run_training_path_feature_sync_for_live(
             os.environ.get("EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_TIMEOUT_SECONDS", "1200"),
         )
     )
-    t0 = time.perf_counter()
+    heartbeat_s = float(
+        cfg.get(
+            "live_model_feature_auto_sync_heartbeat_seconds",
+            os.environ.get("EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_HEARTBEAT_SECONDS", "30"),
+        )
+        or 30.0
+    )
+    heartbeat_s = max(5.0, heartbeat_s)
     tprint(
         "Live model selected-feature cache auto-sync start: "
         f"run_id={run_id} data_root={data_root_s} end_ts={end_ts.isoformat()} "
@@ -261,29 +595,282 @@ def _run_training_path_feature_sync_for_live(
         f"decision_only={decision_only and bool(requested_keys)} "
         f"requested_keys={len(requested_keys)} "
         f"large_selected_repair={large_selected_repair} "
-        f"key_batch_mode_max_keys={key_batch_mode_max_keys}"
+        f"key_batch_mode_max_keys={key_batch_mode_max_keys} "
+        f"blocking={blocking}"
     )
+    existing_syncs = _live_feature_syncs_for_target(
+        data_root=data_root_s,
+        run_id=str(run_id),
+        end_ts=end_ts,
+    )
+    existing_alive = [s for s in existing_syncs if bool(s.get("alive"))]
+    if existing_alive:
+        if not blocking:
+            tprint(
+                "Live model selected-feature cache sync already running for "
+                "target out of band: "
+                f"pids={[int(s.get('pid') or 0) for s in existing_alive]} "
+                f"labels={[str(s.get('label') or '') for s in existing_alive]}"
+            )
+            return True
+        wait_result = _wait_for_live_feature_syncs_for_target(
+            data_root=data_root_s,
+            run_id=str(run_id),
+            end_ts=end_ts,
+            timeout_s=timeout_s,
+            heartbeat_s=heartbeat_s,
+            reason=sync_label,
+        )
+        if wait_result.get("status") == "existing_sync_timeout":
+            return False
+        sidecar_present, sidecar_meta = _live_latest_feature_matrix_presence(
+            run_id=str(run_id),
+            data_root=data_root_s,
+            symbols=None,
+            end_ts=end_ts,
+            feature_keys=requested_keys or None,
+        )
+        if sidecar_present:
+            tprint(
+                "Live model selected-feature cache existing sync produced "
+                "required sidecar: "
+                f"run_id={run_id} end_ts={end_ts.isoformat()} "
+                f"rows={sidecar_meta.get('rows')} features={sidecar_meta.get('features')}"
+            )
+            return True
+        tprint(
+            "Live model selected-feature cache existing sync finished without "
+            "the required sidecar; launching a new repair sync: "
+            f"run_id={run_id} end_ts={end_ts.isoformat()} "
+            f"missing_or_error={sidecar_meta}"
+        )
+    if not blocking:
+        try:
+            label = _safe_feature_sync_label(sync_label)
+            state_dir = Path(data_root_s) / "artifacts" / str(run_id) / "live_state"
+            state_dir.mkdir(parents=True, exist_ok=True)
+            pid_path = state_dir / f"feature_{label}_sync.pid"
+            meta_path = state_dir / f"feature_{label}_sync.json"
+            if pid_path.exists():
+                try:
+                    old_pid = int(pid_path.read_text().strip())
+                    alive, status = _live_feature_sync_process_alive(old_pid)
+                    if not alive:
+                        tprint(
+                            "Live model selected-feature cache sync stale pid "
+                            "ignored: "
+                            f"label={label} pid={old_pid} status='{status}'"
+                        )
+                        try:
+                            pid_path.unlink(missing_ok=True)
+                            meta_path.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                        raise ProcessLookupError(old_pid)
+                    tprint(
+                        "Live model selected-feature cache sync already running "
+                        "out of band: "
+                        f"label={label} pid={old_pid} status='{status}'"
+                    )
+                    return True
+                except Exception:
+                    pass
+            log_dir = Path("logs")
+            log_dir.mkdir(parents=True, exist_ok=True)
+            safe_ts = pd.Timestamp(end_ts).strftime("%Y%m%d_%H%M%S")
+            keys_hash = _hash_values(requested_keys or [])
+            log_path = log_dir / (
+                f"live_feature_{label}_sync_{run_id}_{safe_ts}_{keys_hash}.log"
+            )
+            with log_path.open("ab") as log_fh:
+                proc = subprocess.Popen(
+                    cmd,
+                    cwd=Path.cwd(),
+                    env=env,
+                    stdout=log_fh,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+            pid_path.write_text(str(proc.pid))
+            _write_live_feature_sync_state(
+                data_root=data_root_s,
+                run_id=str(run_id),
+                label=label,
+                meta={
+                    "pid": int(proc.pid),
+                    "label": label,
+                    "run_id": str(run_id),
+                    "data_root": data_root_s,
+                    "end_ts": pd.Timestamp(end_ts).isoformat(),
+                    "requested_keys": int(len(requested_keys)),
+                    "requested_keys_hash": keys_hash,
+                    "decision_only": bool(decision_only and requested_keys),
+                    "large_selected_repair": bool(large_selected_repair),
+                    "log_path": str(log_path),
+                    "status": "running",
+                    "started_at": pd.Timestamp.utcnow().isoformat(),
+                },
+            )
+            tprint(
+                "Live model selected-feature cache sync started out of band: "
+                f"label={label} pid={proc.pid} log={log_path}"
+            )
+            return True
+        except Exception as exc:
+            tprint(
+                "Live model selected-feature cache out-of-band sync failed to launch: "
+                f"{exc}"
+            )
+            return False
+
+    t0 = time.perf_counter()
+    label = _safe_feature_sync_label(sync_label)
+    keys_hash = _hash_values(requested_keys or [])
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
             cwd=Path.cwd(),
             env=env,
-            timeout=timeout_s,
-            check=False,
         )
     except Exception as exc:
         tprint(f"Live model selected-feature cache auto-sync failed to launch: {exc}")
         return False
+    _write_live_feature_sync_state(
+        data_root=data_root_s,
+        run_id=str(run_id),
+        label=label,
+        meta={
+            "pid": int(proc.pid),
+            "label": label,
+            "run_id": str(run_id),
+            "data_root": data_root_s,
+            "end_ts": pd.Timestamp(end_ts).isoformat(),
+            "requested_keys": int(len(requested_keys)),
+            "requested_keys_hash": keys_hash,
+            "decision_only": bool(decision_only and requested_keys),
+            "large_selected_repair": bool(large_selected_repair),
+            "status": "running",
+            "started_at": pd.Timestamp.utcnow().isoformat(),
+        },
+    )
+    tprint(
+        "Live model selected-feature cache auto-sync process started: "
+        f"pid={proc.pid} timeout={timeout_s:.1f}s heartbeat={heartbeat_s:.1f}s"
+    )
+    next_heartbeat = t0 + heartbeat_s
+    while True:
+        returncode = proc.poll()
+        now = time.perf_counter()
+        if returncode is not None:
+            break
+        if timeout_s > 0 and now - t0 >= timeout_s:
+            elapsed = now - t0
+            status_snapshot = _live_feature_sync_process_status(proc.pid)
+            progress_snapshot = _live_feature_sync_progress_snapshot(
+                data_root=data_root_s,
+                run_id=str(run_id),
+                end_ts=end_ts,
+            )
+            tprint(
+                "Live model selected-feature cache auto-sync timeout; terminating: "
+                f"pid={proc.pid} elapsed={elapsed:.1f}s "
+                f"status='{status_snapshot}' {progress_snapshot}"
+            )
+            proc.terminate()
+            try:
+                proc.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                tprint(
+                    "Live model selected-feature cache auto-sync did not terminate; "
+                    f"killing pid={proc.pid}"
+                )
+                proc.kill()
+                proc.wait(timeout=15)
+            _write_live_feature_sync_state(
+                data_root=data_root_s,
+                run_id=str(run_id),
+                label=label,
+                meta={
+                    "pid": int(proc.pid),
+                    "label": label,
+                    "run_id": str(run_id),
+                    "data_root": data_root_s,
+                    "end_ts": pd.Timestamp(end_ts).isoformat(),
+                    "requested_keys": int(len(requested_keys)),
+                    "requested_keys_hash": keys_hash,
+                    "decision_only": bool(decision_only and requested_keys),
+                    "large_selected_repair": bool(large_selected_repair),
+                    "status": "timeout",
+                    "finished_at": pd.Timestamp.utcnow().isoformat(),
+                    "elapsed_seconds": float(elapsed),
+                },
+            )
+            return False
+        if now >= next_heartbeat:
+            elapsed = now - t0
+            status_snapshot = _live_feature_sync_process_status(proc.pid)
+            progress_snapshot = _live_feature_sync_progress_snapshot(
+                data_root=data_root_s,
+                run_id=str(run_id),
+                end_ts=end_ts,
+            )
+            tprint(
+                "Live model selected-feature cache auto-sync heartbeat: "
+                f"pid={proc.pid} elapsed={elapsed:.1f}s "
+                f"status='{status_snapshot}' {progress_snapshot}"
+            )
+            next_heartbeat = now + heartbeat_s
+        time.sleep(1.0)
     elapsed = time.perf_counter() - t0
-    if proc.returncode != 0:
+    if returncode != 0:
         tprint(
             "Live model selected-feature cache auto-sync failed: "
-            f"returncode={proc.returncode} elapsed={elapsed:.1f}s"
+            f"returncode={returncode} elapsed={elapsed:.1f}s"
+        )
+        _write_live_feature_sync_state(
+            data_root=data_root_s,
+            run_id=str(run_id),
+            label=label,
+            meta={
+                "pid": int(proc.pid),
+                "label": label,
+                "run_id": str(run_id),
+                "data_root": data_root_s,
+                "end_ts": pd.Timestamp(end_ts).isoformat(),
+                "requested_keys": int(len(requested_keys)),
+                "requested_keys_hash": keys_hash,
+                "decision_only": bool(decision_only and requested_keys),
+                "large_selected_repair": bool(large_selected_repair),
+                "status": "failed",
+                "returncode": int(returncode),
+                "finished_at": pd.Timestamp.utcnow().isoformat(),
+                "elapsed_seconds": float(elapsed),
+            },
         )
         return False
     tprint(
         "Live model selected-feature cache auto-sync complete: "
-        f"elapsed={elapsed:.1f}s"
+        f"pid={proc.pid} elapsed={elapsed:.1f}s"
+    )
+    _write_live_feature_sync_state(
+        data_root=data_root_s,
+        run_id=str(run_id),
+        label=label,
+        meta={
+            "pid": int(proc.pid),
+            "label": label,
+            "run_id": str(run_id),
+            "data_root": data_root_s,
+            "end_ts": pd.Timestamp(end_ts).isoformat(),
+            "requested_keys": int(len(requested_keys)),
+            "requested_keys_hash": keys_hash,
+            "decision_only": bool(decision_only and requested_keys),
+            "large_selected_repair": bool(large_selected_repair),
+            "status": "complete",
+            "returncode": 0,
+            "finished_at": pd.Timestamp.utcnow().isoformat(),
+            "elapsed_seconds": float(elapsed),
+        },
     )
     if (
         background_full_union
@@ -292,7 +879,7 @@ def _run_training_path_feature_sync_for_live(
         and str(
             cfg.get(
                 "live_model_feature_full_union_background_sync",
-                os.environ.get("EPM_LIVE_MODEL_FEATURE_FULL_UNION_BACKGROUND_SYNC", "1"),
+                os.environ.get("EPM_LIVE_MODEL_FEATURE_FULL_UNION_BACKGROUND_SYNC", "0"),
             )
         ).strip().lower()
         not in {"0", "false", "no", "off"}
@@ -325,10 +912,20 @@ def _maybe_start_background_training_path_feature_sync(
         if pid_path.exists():
             try:
                 old_pid = int(pid_path.read_text().strip())
-                os.kill(old_pid, 0)
+                alive, status = _live_feature_sync_process_alive(old_pid)
+                if not alive:
+                    tprint(
+                        "Live model full-union feature sync stale pid ignored: "
+                        f"pid={old_pid} status='{status}'"
+                    )
+                    try:
+                        pid_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    raise ProcessLookupError(old_pid)
                 tprint(
                     "Live model full-union feature sync already running in background: "
-                    f"pid={old_pid}"
+                    f"pid={old_pid} status='{status}'"
                 )
                 return
             except Exception:
@@ -367,7 +964,21 @@ MARKET_WIDE_FEATURE_KEYS = {
     "regime_liquidity_score",
 }
 MODEL_DERIVED_FEATURE_RE = re.compile(
-    r"^(base_H\d+_|pred_H\d+|pred_.*_H\d+|pred_logit$|oof_ebm_unc_|base_med_|base_prob_|base_model_|regime_centroid_similarity_train|feature_drift_|inference_drift_score$|uncertainty_score$|rare_leaf_low_support_score$|contribution_drift_score$|mahalanobis_mean_shift$|frobenius_corr_shift$|prob_error|recent_prob_error_|recent_hit_rate_|recent_global_|recent_side_horizon_|recent_bucket_|recent_regime_|recent_meta_|recent_base_meta_disagreement_|recent_base_internal_disagreement_|recent_prediction_disagreement_available_|recent_effectiveness_available$)"
+    r"^(base_H\d+_|pred_H\d+|pred_.*_H\d+|pred_logit$|oof_ebm_unc_|base_med_|base_prob_|base_model_|"
+    r"base_lgbm_|meta_lgbm_|"
+    r"oof_(?:regime_centroid_similarity_train|feature_drift_|row_drift_v1_|raw_state_|state_|leaf_|score_|rank_|contrib_|top_|positive_contrib_sum|negative_contrib_sum|inference_drift_score|uncertainty_score|rare_leaf_low_support_score|support_gap)|"
+    r"lgbm_prob$|lgbm_raw_score$|abs_raw_score$|model_count$|tree_count_|prob_(?:mean|std|min|max|range|uncertainty)$|"
+    r"raw_score_(?:mean|std|min|max|range)$|margin_from_neutral$|entropy$|variance_proxy$|rank_pct$|"
+    r"score_margin_top|rank_margin_top|leaf_|large_leaf_value_fraction$|contrib_top|contrib_balance$|num_material_contrib_features$|"
+    r"score_final$|score_early_|score_100_minus_|score_path_(?:std|volatility|min|max|drawdown)$|"
+    r"score_reversal_count$|positive_tree_frac$|negative_tree_frac$|mean_tree_contribution$|"
+    r"max_tree_contribution$|top_tree_contribution_share$|rank_100_minus_|rank_path_std$|rank_bin_|"
+    r"regime_centroid_similarity_train|feature_drift_|row_drift_v1_|raw_state_|state_log_likelihood$|state_tod_mahalanobis$|"
+    r"archetype_contrib_|contrib_abs_sum$|contrib_l2_norm$|contrib_entropy$|top_1_contrib_abs$|top_3_contrib_abs_sum$|"
+    r"positive_contrib_sum$|negative_contrib_sum$|inference_drift_score$|uncertainty_score$|rare_leaf_low_support_score$|"
+    r"support_gap$|contribution_drift_score$|mahalanobis_mean_shift$|frobenius_corr_shift$|prob_error|recent_prob_error_|recent_hit_rate_|"
+    r"recent_global_|recent_side_horizon_|recent_bucket_|recent_regime_|recent_meta_|recent_base_meta_disagreement_|"
+    r"recent_base_internal_disagreement_|recent_prediction_disagreement_available_|recent_effectiveness_available$|drift_)"
 )
 
 
@@ -618,8 +1229,12 @@ def _feature_runtime_cfg_hash(cfg: Optional[Dict[str, Any]]) -> str:
                     "live_feature_memory_cache_enabled",
                     "live_feature_return_latest_only",
                     "live_feature_snapshot_cache_enabled",
+                    "live_feature_snapshot_cache_dir",
                     "live_feature_rolling_cache_enabled",
                     "live_feature_rolling_cache_seed_hours",
+                    "live_feature_rolling_cache_cross_key_fallback_enabled",
+                    "live_feature_rolling_cache_model_superset_for_mask_enabled",
+                    "live_feature_rolling_cache_latest_only_read_enabled",
                     # Validation-only scope used by the model freshness guard.
                     # It does not alter transformed feature values and should
                     # not create a parallel rolling cache.
@@ -633,6 +1248,20 @@ def _feature_runtime_cfg_hash(cfg: Optional[Dict[str, Any]]) -> str:
                     "live_raw_rolling_state_path",
                     "feature_raw_rolling_state_enabled",
                     "feature_raw_rolling_state_path",
+                    # Selected-feature sync controls only decide whether a
+                    # background training-path repair is launched. They do not
+                    # change feature values and should not split persistent
+                    # rolling caches.
+                    "live_model_feature_auto_sync_selected_cache",
+                    "live_model_feature_auto_sync_blocking",
+                    "live_model_feature_auto_sync_decision_only",
+                    "live_model_feature_auto_sync_key_batch_mode_max_keys",
+                    "live_model_feature_auto_sync_symbol_chunk_size",
+                    "live_model_feature_auto_sync_key_batch_size",
+                    "live_model_feature_auto_sync_timeout_seconds",
+                    "live_model_feature_auto_sync_heartbeat_seconds",
+                    "live_model_feature_full_union_background_sync",
+                    "live_model_feature_auto_sync_on_low_finite",
                 }
             }
         return str(value)
@@ -821,6 +1450,36 @@ def _rolling_partition_path(cache_dir: Path, ts: pd.Timestamp) -> Path:
 
 
 def _offline_feature_lookup_run_id(cfg: Dict[str, Any], run_id: str) -> str:
+    run_ids = _offline_feature_lookup_run_ids(cfg, run_id)
+    return run_ids[0] if run_ids else str(run_id)
+
+
+def _coerce_feature_source_run_ids(value: Any) -> List[str]:
+    out: List[str] = []
+
+    def _add(item: Any) -> None:
+        if item is None:
+            return
+        if isinstance(item, dict):
+            _add(item.get("run_id"))
+            return
+        if isinstance(item, (list, tuple, set)):
+            for child in item:
+                _add(child)
+            return
+        text = str(item).strip()
+        if not text:
+            return
+        for part in text.split(","):
+            part = part.strip()
+            if part and part not in out:
+                out.append(part)
+
+    _add(value)
+    return out
+
+
+def _offline_feature_lookup_run_ids(cfg: Dict[str, Any], run_id: str) -> List[str]:
     parity_contract = (
         cfg.get("training_live_parity_contract")
         if isinstance(cfg.get("training_live_parity_contract"), dict)
@@ -831,20 +1490,30 @@ def _offline_feature_lookup_run_id(cfg: Dict[str, Any], run_id: str) -> str:
         if isinstance(parity_contract.get("feature_source"), dict)
         else {}
     )
+    values: List[str] = []
     for key in (
+        "live_feature_source_run_ids",
+        "offline_feature_run_ids",
+        "feature_source_run_ids",
         "live_feature_source_run_id",
         "offline_feature_run_id",
         "feature_source_run_id",
     ):
-        value = cfg.get(key)
-        if value:
-            return str(value)
+        values.extend(_coerce_feature_source_run_ids(cfg.get(key)))
     env_value = (
         os.getenv("EPM_LIVE_FEATURE_SOURCE_RUN_ID")
         or os.getenv("EPM_FEATURE_SOURCE_RUN_ID")
         or os.getenv("EPM_ARTIFACT_SOURCE_RUN_ID")
     )
-    return str(env_value or feature_source.get("run_id") or run_id)
+    values.extend(_coerce_feature_source_run_ids(env_value))
+    values.extend(_coerce_feature_source_run_ids(parity_contract.get("feature_sources")))
+    values.extend(_coerce_feature_source_run_ids(feature_source.get("run_id")))
+    values.extend(_coerce_feature_source_run_ids(run_id))
+    deduped: List[str] = []
+    for value in values:
+        if value and value not in deduped:
+            deduped.append(value)
+    return deduped
 
 
 def _offline_feature_lookup_data_root(cfg: Dict[str, Any], data_root: str) -> str:
@@ -1817,12 +2486,163 @@ def _is_live_source_derived_feature_key(key: str) -> bool:
         or key_s == "dist_weekly_vwap"
         or key_s == "dist_vwap_norm"
         or key_s == "dist_vwap_atr"
+        or key_s == "dist_vwap_resid"
+        or key_s == "dist_vwap_norm_z"
+        or key_s == "squeeze_prob"
+        or key_s == "squeeze_prob_mkt_resid"
+        or key_s == "basis"
+        or key_s.startswith("basis_")
+        or key_s.startswith("premium_expansion_speed_")
         or key_s.startswith("dist_vwap_")
         or key_s.startswith("trapped_longs_")
         or key_s.startswith("vwap_zone_")
         or key_s.startswith("z_vwap_")
+        or key_s.startswith("z_dist_vwap_")
+        or key_s.startswith("distance_to_")
+        or key_s.startswith("bars_to_")
+        or key_s.startswith("up_barrier_pressure_")
+        or key_s.startswith("down_barrier_pressure_")
+        or key_s.startswith("squeeze_prob_")
         or key_s.startswith("oi_rel_vol_")
+        or key_s.startswith("crowded_long_")
+        or key_s.startswith("crowded_short_")
+        or key_s.startswith("cs_rank_oi_")
+        or key_s.startswith("oi_")
+        or key_s.startswith("price_rv_")
+        or key_s.startswith("price_x_oi_")
+        or key_s.startswith("loc_vwap_dev_z_")
+        or key_s.startswith("prog_eff_")
+        or key_s in {"lr_12h", "mom_slow", "mom_slow_z", "unwind_score"}
     )
+
+
+def _is_live_source_derived_alias_repair_key(key: str) -> bool:
+    """Return True for source-derived keys with cheap live alias materializers."""
+    key_s = str(key or "")
+    return (
+        key_s
+        in {
+            "basis",
+            "basis_pct",
+            "basis_frac",
+            "basis_pct_z",
+            "basis_frac_z_14d",
+            "basis_frac_rank_30d",
+            "basis_mom_2h",
+            "basis_mom_4h",
+            "basis_mom_8h",
+            "basis_mom_w",
+            "basis_stretch",
+            "basis_vol",
+            "squeeze_prob",
+            "squeeze_prob_mkt_resid",
+            "unwind",
+            "unwind_score",
+        }
+        or key_s.startswith("premium_expansion_speed_")
+    )
+
+
+def live_model_feature_store_strict(cfg: Optional[Dict[str, Any]] = None) -> bool:
+    """Return whether model scoring must preserve selected feature-store values.
+
+    In strict mode, missing/non-finite selected-cache values are passed through
+    to the model adapter instead of being repaired from fresher live source
+    panels. This preserves train/backtest/live feature-store parity.
+    """
+    cfg = cfg or {}
+    explicit = cfg.get("live_model_feature_store_strict")
+    if explicit is None:
+        explicit = os.environ.get("EPM_LIVE_MODEL_FEATURE_STORE_STRICT")
+    if explicit is None:
+        return True
+    return str(explicit).strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _live_training_path_sync_feature_keys(
+    keys: Iterable[str],
+    cfg: Optional[Dict[str, Any]] = None,
+) -> Tuple[List[str], List[str]]:
+    """Split feature keys into training-path sync keys and live-repair keys."""
+    cfg = cfg or {}
+    skip_repairable = str(
+        cfg.get(
+            "live_model_feature_auto_sync_skip_live_repairable_keys",
+            os.environ.get(
+                "EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_SKIP_LIVE_REPAIRABLE_KEYS",
+                "1",
+            ),
+        )
+    ).strip().lower() not in {"0", "false", "no", "off"}
+    sync_keys: List[str] = []
+    skipped: List[str] = []
+    for key in sorted({str(k) for k in keys if str(k)}):
+        if _is_live_synthesized_feature_key(key) or _gate_feature_base_key(key) is not None:
+            skipped.append(key)
+            continue
+        if skip_repairable and _is_live_source_derived_feature_key(key):
+            skipped.append(key)
+        else:
+            sync_keys.append(key)
+    return sync_keys, skipped
+
+
+def _source_derived_unusable_requested_keys(
+    feats: Dict[str, pd.DataFrame],
+    required_feature_keys: Optional[Set[str]],
+    basket_syms: List[str],
+    *,
+    end_ts: Optional[pd.Timestamp] = None,
+    repairable_only: bool = False,
+) -> Set[str]:
+    """Return required source-derived keys that are present but unusable at latest."""
+    if not feats or not required_feature_keys:
+        return set()
+    min_finite_fraction = float(
+        os.environ.get("EPM_LIVE_SOURCE_DERIVED_MIN_FINITE_FRACTION", "0.80") or 0.80
+    )
+    min_finite_fraction = min(max(min_finite_fraction, 0.0), 1.0)
+
+    end = None
+    if end_ts is not None:
+        try:
+            end = pd.Timestamp(end_ts)
+            end = end.tz_localize("UTC") if end.tzinfo is None else end.tz_convert("UTC")
+        except Exception:
+            end = None
+
+    unusable: Set[str] = set()
+    cols = [str(sym) for sym in basket_syms]
+    for key in sorted(str(k) for k in required_feature_keys):
+        if not _is_live_source_derived_feature_key(key):
+            continue
+        if repairable_only and not _is_live_source_derived_alias_repair_key(key):
+            continue
+        value = feats.get(key)
+        if not isinstance(value, pd.DataFrame) or value.empty:
+            continue
+        frame = value
+        if end is not None:
+            try:
+                idx = pd.to_datetime(frame.index, utc=True, errors="coerce")
+                eligible = idx <= end
+                if bool(np.any(eligible)):
+                    frame = frame.loc[eligible]
+            except Exception:
+                pass
+        frame = frame.tail(1)
+        if cols:
+            frame = frame.reindex(columns=cols)
+        if frame.empty or frame.shape[1] == 0:
+            unusable.add(key)
+            continue
+        arr = frame.apply(pd.to_numeric, errors="coerce").to_numpy(
+            dtype=np.float32, copy=False
+        )
+        finite = np.isfinite(arr)
+        if not bool(finite.any()) or float(finite.mean()) < min_finite_fraction:
+            unusable.add(key)
+    return unusable
 
 
 def _required_tail_warmup_hours(
@@ -2411,15 +3231,376 @@ def _compute_policy_barrier_pct(
     if not cols:
         return None
 
-    atr_n = max(1, int((cfg or {}).get("atr_n", 14)))
     high_raw = high.loc[:, cols].astype(np.float32)
     low_raw = low.loc[:, cols].astype(np.float32)
     close_raw = close.loc[:, cols].astype(np.float32)
+    atr_n = max(1, int((cfg or {}).get("atr_n", 14)))
     barrier = (
         atr_percent(high_raw, low_raw, close_raw, atr_n) / (close_raw + 1e-12)
     ).astype(np.float32)
     barrier = barrier.replace([np.inf, -np.inf], np.nan)
     return barrier.clip(lower=np.float32(0.005))
+
+
+def _materialize_policy_barrier_pct_feature(
+    feats: Dict[str, pd.DataFrame],
+    panel: Dict[str, pd.DataFrame],
+    basket_syms: List[str],
+    required_feature_keys: Optional[Set[str]],
+    cfg: Dict[str, Any],
+) -> Dict[str, pd.DataFrame]:
+    """Ensure raw execution-policy ``barrier_pct`` is present when requested.
+
+    ``barrier_pct`` is an execution input, not a transformed model feature. In
+    selected-feature-store mode it may be absent even when all model inputs are
+    available, so compute it from raw OHLCV using the same ATR% source used for
+    training labels instead of falling back to transformed ATR aliases.
+    """
+    if not required_feature_keys or "barrier_pct" not in set(required_feature_keys):
+        return feats
+    existing = feats.get("barrier_pct") if isinstance(feats, dict) else None
+    if isinstance(existing, pd.DataFrame) and not existing.empty:
+        cols = [sym for sym in basket_syms if sym in existing.columns]
+        if cols:
+            latest = existing.reindex(columns=cols).replace([np.inf, -np.inf], np.nan)
+            if bool(np.isfinite(latest.tail(1).to_numpy(dtype=np.float32, copy=False)).any()):
+                return feats
+    policy_barrier = _compute_policy_barrier_pct(panel, basket_syms, cfg or {})
+    if isinstance(policy_barrier, pd.DataFrame) and not policy_barrier.empty:
+        out = _copy_feature_mapping(feats)
+        out["barrier_pct"] = policy_barrier.astype(np.float32)
+        return out
+    return feats
+
+
+def _aligned_live_frame(
+    source: Dict[str, pd.DataFrame],
+    names: Iterable[str],
+    index: pd.Index,
+    columns: List[str],
+) -> Optional[pd.DataFrame]:
+    for name in names:
+        frame = source.get(str(name)) if isinstance(source, dict) else None
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            continue
+        valid_cols = [col for col in columns if col in frame.columns]
+        if not valid_cols:
+            continue
+        out = frame.reindex(index=index, columns=columns)
+        out = out.apply(pd.to_numeric, errors="coerce")
+        out = out.replace([np.inf, -np.inf], np.nan)
+        return out.astype(np.float32)
+    return None
+
+
+def _combined_aligned_live_frame(
+    source: Dict[str, pd.DataFrame],
+    names: Iterable[str],
+    index: pd.Index,
+    columns: List[str],
+) -> Optional[pd.DataFrame]:
+    out: Optional[pd.DataFrame] = None
+    for name in names:
+        frame = _aligned_live_frame(source, (str(name),), index, columns)
+        if frame is None:
+            continue
+        out = frame if out is None else out.combine_first(frame)
+    return None if out is None else out.astype(np.float32)
+
+
+def _source_alias_frame_like_panel(
+    panel: Dict[str, pd.DataFrame],
+    basket_syms: List[str],
+) -> Optional[pd.DataFrame]:
+    """Return a live source-derived repair frame using all relevant sidecars."""
+    if not isinstance(panel, dict):
+        return None
+    source_names = (
+        "close",
+        "mark_price",
+        "mark_close",
+        "spot_close",
+        "index_price",
+        "index_close",
+        "canonical_index",
+        "funding_rate",
+        "open_interest",
+        "volume",
+        "quote_volume",
+    )
+    valid_cols: set[str] = set()
+    index: Optional[pd.Index] = None
+    for name in source_names:
+        frame = panel.get(name)
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            continue
+        cols = [sym for sym in basket_syms if sym in frame.columns]
+        if not cols:
+            continue
+        valid_cols.update(cols)
+        try:
+            frame_index = pd.DatetimeIndex(pd.to_datetime(frame.index, utc=True))
+        except Exception:
+            frame_index = frame.index
+        index = frame_index if index is None else index.union(frame_index)
+    columns = [sym for sym in basket_syms if sym in valid_cols]
+    if index is None or len(index) == 0 or not columns:
+        return _zero_frame_like_panel(panel, basket_syms)
+    return pd.DataFrame(
+        0.0,
+        index=pd.Index(index).sort_values(),
+        columns=columns,
+        dtype=np.float32,
+    )
+
+
+def _clip_float_frame(
+    frame: pd.DataFrame,
+    lower: Optional[float] = None,
+    upper: Optional[float] = None,
+    fill_value: Optional[float] = None,
+) -> pd.DataFrame:
+    out = frame.replace([np.inf, -np.inf], np.nan)
+    if lower is not None or upper is not None:
+        out = out.clip(lower=lower, upper=upper)
+    if fill_value is not None:
+        out = out.fillna(float(fill_value))
+    return out.astype(np.float32)
+
+
+def _sigmoid_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    values = frame.clip(lower=-30.0, upper=30.0)
+    return (1.0 / (1.0 + np.exp(-values))).astype(np.float32)
+
+
+def _training_roll_zscore_frame(frame: pd.DataFrame, window: int) -> pd.DataFrame:
+    values = frame.apply(pd.to_numeric, errors="coerce").astype(np.float32)
+    return ff.numba_rolling_zscore_fused(values, int(window)).astype(np.float32)
+
+
+def _compute_live_canonical_perp_feature_frames(
+    panel: Dict[str, pd.DataFrame],
+    basket_syms: List[str],
+    index: pd.Index,
+    columns: List[str],
+    wanted: Set[str],
+) -> Dict[str, pd.DataFrame]:
+    canonical_names = {
+        "basis",
+        "basis_pct",
+        "basis_frac",
+        "basis_pct_z",
+        "basis_frac_z_14d",
+        "basis_frac_rank_30d",
+        "basis_mom_2h",
+        "basis_mom_4h",
+        "basis_mom_8h",
+        "basis_mom_w",
+        "basis_stretch",
+        "basis_vol",
+        "squeeze_prob",
+        "unwind",
+        "unwind_score",
+    }
+    target_names = sorted(str(key) for key in wanted if str(key) in canonical_names)
+    if "squeeze_prob_mkt_resid" in wanted:
+        target_names = sorted(set(target_names) | {"squeeze_prob"})
+    if not target_names:
+        return {}
+
+    close = _combined_aligned_live_frame(
+        panel,
+        ("close", "mark_price", "mark_close"),
+        index,
+        columns,
+    )
+    funding = _aligned_live_frame(panel, ("funding_rate",), index, columns)
+    oi = _aligned_live_frame(panel, ("open_interest",), index, columns)
+    volume = _aligned_live_frame(panel, ("volume",), index, columns)
+    quote_volume = _aligned_live_frame(panel, ("quote_volume",), index, columns)
+    mark = _combined_aligned_live_frame(
+        panel,
+        ("mark_price", "mark_close"),
+        index,
+        columns,
+    )
+    reference = _combined_aligned_live_frame(
+        panel,
+        ("spot_close", "index_price", "index_close", "canonical_index"),
+        index,
+        columns,
+    )
+    if (
+        close is None
+        or funding is None
+        or oi is None
+        or volume is None
+        or reference is None
+    ):
+        return {}
+
+    buffers: dict[str, dict[str, pd.Series]] = {name: {} for name in target_names}
+    for sym in columns:
+        if sym not in basket_syms:
+            continue
+        data = {
+            "funding_rate": funding[sym],
+            "open_interest": oi[sym],
+            "open_interest_quote": oi[sym] * close[sym],
+            "perp_price": close[sym],
+            "spot_price": reference[sym],
+            "volume": volume[sym],
+            "close": close[sym],
+        }
+        if isinstance(quote_volume, pd.DataFrame) and sym in quote_volume.columns:
+            data["quote_volume"] = quote_volume[sym]
+        if isinstance(mark, pd.DataFrame) and sym in mark.columns:
+            data["mark_price"] = mark[sym]
+        try:
+            sym_input = pd.DataFrame(data, index=index)
+            valid_price_ref = sym_input["perp_price"].notna() & sym_input[
+                "spot_price"
+            ].notna()
+            sym_input = sym_input.loc[valid_price_ref]
+            if sym_input.empty:
+                continue
+            sym_feats = compute_perp_features(sym_input)
+        except Exception as exc:
+            tprint(f"WARN live canonical perp alias compute failed for {sym}: {exc}")
+            continue
+        for name in target_names:
+            if name in sym_feats:
+                buffers[name][sym] = pd.to_numeric(
+                    sym_feats[name], errors="coerce"
+                ).astype(np.float32)
+
+    out: Dict[str, pd.DataFrame] = {}
+    for name, by_sym in buffers.items():
+        if by_sym:
+            out[name] = (
+                pd.DataFrame(by_sym)
+                .reindex(index=index, columns=columns)
+                .astype(np.float32)
+            )
+    return out
+
+
+def _materialize_live_perp_contract_aliases(
+    panel: Dict[str, pd.DataFrame],
+    basket_syms: List[str],
+    feats: Dict[str, pd.DataFrame],
+    required_feature_keys: Set[str],
+    cfg: Optional[Dict[str, Any]] = None,
+) -> Dict[str, pd.DataFrame]:
+    """Materialize selected perp aliases only through training-equivalent paths."""
+    required = {str(key) for key in (required_feature_keys or set())}
+    alias_keys = {
+        "basis",
+        "basis_pct",
+        "basis_frac",
+        "basis_pct_z",
+        "basis_frac_z_14d",
+        "basis_frac_rank_30d",
+        "basis_mom_2h",
+        "basis_mom_4h",
+        "basis_mom_8h",
+        "basis_mom_w",
+        "basis_stretch",
+        "basis_vol",
+        "squeeze_prob",
+        "premium_expansion_speed_5h",
+        "premium_expansion_speed_10h",
+        "unwind",
+        "unwind_score",
+        "squeeze_prob_mkt_resid",
+    }
+    zero_frame = _source_alias_frame_like_panel(panel, basket_syms)
+    if zero_frame is None:
+        return feats
+    index = zero_frame.index
+    columns = list(zero_frame.columns)
+    wanted_all = {key for key in required if key in alias_keys}
+    min_finite_fraction = float(
+        (cfg or {}).get("live_source_alias_materialize_min_finite_fraction", 0.80)
+    )
+    min_finite_fraction = min(max(min_finite_fraction, 0.0), 1.0)
+
+    def _needs_materialization(key: str) -> bool:
+        frame = feats.get(key)
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            return True
+        aligned = frame.reindex(index=index, columns=columns).tail(1)
+        if aligned.empty:
+            return True
+        arr = aligned.apply(pd.to_numeric, errors="coerce").to_numpy(
+            dtype=np.float32, copy=False
+        )
+        finite = np.isfinite(arr)
+        if not bool(finite.any()):
+            return True
+        return float(finite.mean()) < min_finite_fraction
+
+    wanted = {key for key in wanted_all if _needs_materialization(key)}
+    if not wanted:
+        return feats
+    out = _copy_feature_mapping(feats)
+    added: list[str] = []
+
+    canonical = _compute_live_canonical_perp_feature_frames(
+        panel,
+        basket_syms,
+        index,
+        columns,
+        wanted,
+    )
+    for key, frame in canonical.items():
+        out[key] = frame
+        added.append(key)
+
+    premium_source = _aligned_live_frame(
+        out,
+        ("premium_proxy",),
+        index,
+        columns,
+    )
+    if premium_source is not None:
+        for horizon in (5, 10):
+            key = f"premium_expansion_speed_{horizon}h"
+            if key in wanted:
+                out[key] = _clip_float_frame(
+                    _training_roll_zscore_frame(premium_source.diff(horizon), 24 * 14),
+                    lower=-6.0,
+                    upper=6.0,
+                )
+                added.append(key)
+
+    if "squeeze_prob_mkt_resid" in wanted:
+        residual_inputs = _copy_feature_mapping(out)
+        add_residual_features(residual_inputs, None, cfg or {})
+        squeeze_resid = _aligned_live_frame(
+            residual_inputs,
+            ("squeeze_prob_mkt_resid",),
+            index,
+            columns,
+        )
+        if squeeze_resid is not None:
+            out["squeeze_prob_mkt_resid"] = squeeze_resid.astype(np.float32)
+            added.append("squeeze_prob_mkt_resid")
+
+    if "unwind_score" in wanted:
+        unwind = _aligned_live_frame(out, ("unwind",), index, columns)
+        if unwind is not None:
+            out["unwind_score"] = _clip_float_frame(
+                unwind, lower=0.0, upper=1.0
+            )
+            added.append("unwind_score")
+
+    if added:
+        tprint(
+            "Materialized live perp source-derived contract aliases: "
+            f"n={len(added)} sample={added[:12]}"
+        )
+    return out
 
 
 def _backfill_missing_requested_keys(
@@ -2455,6 +3636,9 @@ def _backfill_missing_requested_keys(
         if gate_base is not None and gate_base in merged_feats:
             skipped_missing_keys.add(key_s)
             continue
+        if _is_live_source_derived_feature_key(key_s):
+            skipped_missing_keys.add(key_s)
+            continue
         if (
             _is_live_stale_sensitive_feature_key(key_s)
             or _is_calendar_feature_key(key_s)
@@ -2476,7 +3660,13 @@ def _backfill_missing_requested_keys(
             "Skipping shared feature backfill for live-synthesized/source-dependent "
             f"missing keys: n={len(skipped)} sample={skipped[:12]}"
         )
-        return merged_feats
+        return _materialize_missing_source_derived_contract_frames(
+            panel,
+            basket_syms,
+            merged_feats,
+            set(missing_keys or set()),
+            cfg,
+        )
     if skipped_missing_keys:
         skipped = sorted(skipped_missing_keys)
         tprint(
@@ -2493,11 +3683,20 @@ def _backfill_missing_requested_keys(
         if isinstance(df, pd.DataFrame) and not df.empty:
             compute_panel[key] = df.copy()
     if not compute_panel:
-        return merged_feats
+        return _materialize_missing_source_derived_contract_frames(
+            panel,
+            basket_syms,
+            merged_feats,
+            set(missing_keys or set()) | set(compute_missing_keys or set()),
+            cfg,
+        )
 
     local_cfg = _raw_feature_compute_cfg(cfg)
     if _requires_gated_feature_generation(compute_missing_keys):
         local_cfg["enable_gated_features"] = True
+    if any(_is_live_source_derived_feature_key(k) for k in compute_missing_keys):
+        local_cfg["feature_portability_mode"] = "off"
+        local_cfg["feature_portability_allow_volume_source_dependent"] = True
 
     # Compute only the missing keys, then merge them into the existing feature map.
     mkt_df = compute_market_features(
@@ -2516,7 +3715,13 @@ def _backfill_missing_requested_keys(
     )
 
     if not missing_feats:
-        return merged_feats
+        return _materialize_missing_source_derived_contract_frames(
+            panel,
+            basket_syms,
+            merged_feats,
+            set(missing_keys or set()) | set(compute_missing_keys or set()),
+            cfg,
+        )
 
     ref_index = None
     for df in compute_panel.values():
@@ -2563,9 +3768,137 @@ def _backfill_missing_requested_keys(
         )
 
     if not missing_frames:
-        return merged_feats
+        return _materialize_missing_source_derived_contract_frames(
+            panel,
+            basket_syms,
+            merged_feats,
+            set(missing_keys or set()) | set(compute_missing_keys or set()),
+            cfg,
+        )
 
-    return _merge_feature_dicts(merged_feats, missing_frames)
+    merged = _merge_feature_dicts(merged_feats, missing_frames)
+    return _materialize_missing_source_derived_contract_frames(
+        panel,
+        basket_syms,
+        merged,
+        set(missing_keys or set()) | set(compute_missing_keys or set()),
+        cfg,
+    )
+
+
+def _materialize_missing_source_derived_contract_frames(
+    panel: Dict[str, pd.DataFrame],
+    basket_syms: List[str],
+    feats: Dict[str, pd.DataFrame],
+    missing_keys: Set[str],
+    cfg: Optional[Dict[str, Any]] = None,
+) -> Dict[str, pd.DataFrame]:
+    """Add NaN frames for source-derived contract keys that remain unavailable.
+
+    The selected-feature cache is authoritative for model scoring, but some
+    live source-derived keys can be absent from the latest sidecar even after an
+    incremental feature refresh.  A missing dict key is a contract failure for
+    the whole batch; a present all-NaN frame lets existing source and finite
+    guards reject only affected candidates without inventing signal.
+    """
+    if not live_model_feature_store_strict(cfg):
+        feats = _materialize_live_perp_contract_aliases(
+            panel,
+            basket_syms,
+            feats,
+            set(missing_keys or set()),
+            cfg,
+        )
+    source_missing = {
+        str(key)
+        for key in (missing_keys or set())
+        if _is_live_source_derived_feature_key(str(key))
+        and (
+            str(key) not in feats
+            or not isinstance(feats.get(str(key)), pd.DataFrame)
+            or feats.get(str(key)).empty
+        )
+    }
+    if not source_missing:
+        return feats
+
+    zero_frame = _zero_frame_like_panel(panel, basket_syms)
+    if zero_frame is None:
+        return feats
+
+    nan_frame = pd.DataFrame(
+        np.nan,
+        index=zero_frame.index,
+        columns=zero_frame.columns,
+        dtype=np.float32,
+    )
+    out = _copy_feature_mapping(feats)
+    added = []
+    for key in sorted(source_missing):
+        value = out.get(key)
+        if isinstance(value, pd.DataFrame) and not value.empty:
+            continue
+        out[key] = nan_frame.copy()
+        added.append(key)
+    if added:
+        tprint(
+            "Materialized unavailable source-derived selected-feature contract "
+            "keys as NaN frames so downstream source/finite guards can fail "
+            f"closed per candidate: n={len(added)} sample={added[:12]}"
+        )
+    return out
+
+
+def _materialize_missing_selected_contract_nan_frames(
+    panel: Dict[str, pd.DataFrame],
+    basket_syms: List[str],
+    feats: Dict[str, pd.DataFrame],
+    missing_keys: Set[str],
+    *,
+    reason: str,
+) -> Dict[str, pd.DataFrame]:
+    """Add NaN frames for missing selected-feature contract keys.
+
+    This preserves the training feature-store contract: when the selected store
+    has no current value, live scoring should pass a missing value to the model
+    adapter instead of synthesizing a fresher live source value.
+    """
+    missing = {
+        str(key)
+        for key in (missing_keys or set())
+        if str(key)
+        and (
+            str(key) not in feats
+            or not isinstance(feats.get(str(key)), pd.DataFrame)
+            or feats.get(str(key)).empty
+        )
+    }
+    if not missing:
+        return feats
+    zero_frame = _zero_frame_like_panel(panel, basket_syms)
+    if zero_frame is None:
+        return feats
+    nan_frame = pd.DataFrame(
+        np.nan,
+        index=zero_frame.index,
+        columns=zero_frame.columns,
+        dtype=np.float32,
+    )
+    out = _copy_feature_mapping(feats)
+    added = []
+    for key in sorted(missing):
+        value = out.get(key)
+        if isinstance(value, pd.DataFrame) and not value.empty:
+            continue
+        out[key] = nan_frame.copy()
+        added.append(key)
+    if added:
+        tprint(
+            "Materialized missing selected-feature contract keys as NaN "
+            "frames for strict training-store parity: "
+            f"reason={reason} n={len(added)} sample={added[:12]}"
+        )
+    return out
 
 
 def _selected_feature_latest_cache_key(
@@ -2624,6 +3957,97 @@ def _selected_feature_latest_cache_dir(
     )
 
 
+def _source_feature_manifest_mtime(source_root: str, source_run_id: str) -> float:
+    try:
+        source_manifest = (
+            Path(source_root)
+            / "features"
+            / str(source_run_id)
+            / "_feature_cache_scan_manifest.json"
+        )
+        if source_manifest.exists():
+            return float(source_manifest.stat().st_mtime)
+    except Exception:
+        pass
+    return 0.0
+
+
+def _selected_latest_memory_key(
+    *,
+    source_run_id: str,
+    source_root: str,
+    symbols: Iterable[str],
+    feature_keys: Optional[Iterable[str]],
+    end_ts: pd.Timestamp,
+    allowed_periods: Any = None,
+    prefix: str = "",
+) -> str:
+    base_key = _selected_feature_latest_cache_key(
+        source_run_id=source_run_id,
+        source_root=source_root,
+        symbols=symbols,
+        feature_keys=feature_keys,
+        end_ts=end_ts,
+        allowed_periods=allowed_periods,
+    )
+    manifest_mtime = _source_feature_manifest_mtime(source_root, source_run_id)
+    return f"{prefix}{base_key}:manifest_mtime={manifest_mtime:.6f}"
+
+
+def _remember_selected_latest_matrix(
+    cache_key: str,
+    matrix: pd.DataFrame,
+    *,
+    end_ts: pd.Timestamp,
+) -> None:
+    if matrix is None or matrix.empty:
+        return
+    try:
+        if len(_SELECTED_FEATURE_LATEST_MEMORY_CACHE) >= 8:
+            oldest = next(iter(_SELECTED_FEATURE_LATEST_MEMORY_CACHE))
+            _SELECTED_FEATURE_LATEST_MEMORY_CACHE.pop(oldest, None)
+        _SELECTED_FEATURE_LATEST_MEMORY_CACHE[cache_key] = {
+            "end_ts": pd.Timestamp(end_ts),
+            "matrix": matrix.astype(np.float32, copy=False).copy(),
+        }
+    except Exception:
+        return
+
+
+def _recall_selected_latest_matrix(
+    cache_key: str,
+    *,
+    symbols: List[str],
+    feature_keys: Optional[Iterable[str]],
+    end_ts: pd.Timestamp,
+) -> Dict[str, pd.DataFrame]:
+    payload = _SELECTED_FEATURE_LATEST_MEMORY_CACHE.get(cache_key)
+    if not isinstance(payload, dict):
+        return {}
+    try:
+        if pd.Timestamp(payload.get("end_ts")) != pd.Timestamp(end_ts):
+            return {}
+        matrix = payload.get("matrix")
+        if not isinstance(matrix, pd.DataFrame) or matrix.empty:
+            return {}
+        missing = {str(k) for k in (feature_keys or []) if str(k)}.difference(
+            str(c) for c in matrix.columns
+        )
+        if missing:
+            return {}
+        matrix = matrix.reindex(index=[str(sym) for sym in symbols])
+        tprint(
+            "Loaded selected-feature latest matrix from in-process cache: "
+            f"symbols={len(matrix.index)} features={len(matrix.columns)} "
+            f"end_ts={pd.Timestamp(end_ts)}"
+        )
+        return _matrix_to_feature_dict(
+            matrix.astype(np.float32, copy=False), end_ts=end_ts
+        )
+    except Exception:
+        return {}
+
+
 def _load_selected_feature_latest_matrix_cache(
     *,
     cache_root: str,
@@ -2634,6 +4058,22 @@ def _load_selected_feature_latest_matrix_cache(
     end_ts: pd.Timestamp,
     allowed_periods: Any = None,
 ) -> Dict[str, pd.DataFrame]:
+    memory_key = _selected_latest_memory_key(
+        source_run_id=source_run_id,
+        source_root=source_root,
+        symbols=symbols,
+        feature_keys=feature_keys,
+        end_ts=end_ts,
+        allowed_periods=allowed_periods,
+    )
+    recalled = _recall_selected_latest_matrix(
+        memory_key,
+        symbols=symbols,
+        feature_keys=feature_keys,
+        end_ts=end_ts,
+    )
+    if recalled:
+        return recalled
     cache_dir = _selected_feature_latest_cache_dir(
         cache_root=cache_root,
         source_run_id=source_run_id,
@@ -2692,7 +4132,106 @@ def _load_selected_feature_latest_matrix_cache(
         f"symbols={len(matrix.index)} features={len(matrix.columns)} "
         f"end_ts={pd.Timestamp(end_ts)}"
     )
+    _remember_selected_latest_matrix(memory_key, matrix, end_ts=end_ts)
     return _matrix_to_feature_dict(matrix.astype(np.float32, copy=False), end_ts=end_ts)
+
+
+def _load_live_latest_feature_matrix_sidecar(
+    *,
+    cache_root: str,
+    source_run_id: str,
+    source_root: str,
+    symbols: List[str],
+    feature_keys: Optional[Iterable[str]],
+    end_ts: pd.Timestamp,
+    allowed_periods: Any = None,
+) -> Dict[str, pd.DataFrame]:
+    if str(os.getenv("EPM_LIVE_LATEST_FEATURE_MATRIX_SIDECAR", "1")).strip().lower() in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }:
+        return {}
+    try:
+        ts = _resolve_feature_store_ts(source_run_id, source_root, end_ts=end_ts)
+        feature_key_set = {str(k) for k in (feature_keys or []) if str(k)}
+        memory_key = _selected_latest_memory_key(
+            source_run_id=source_run_id,
+            source_root=source_root,
+            symbols=symbols,
+            feature_keys=feature_key_set,
+            end_ts=end_ts,
+            allowed_periods=allowed_periods,
+            prefix="source-sidecar:",
+        )
+        recalled = _recall_selected_latest_matrix(
+            memory_key,
+            symbols=symbols,
+            feature_keys=feature_key_set,
+            end_ts=end_ts,
+        )
+        if recalled:
+            return recalled
+        matrix = load_live_latest_feature_matrix(
+            ts,
+            source_root,
+            end_ts=pd.Timestamp(end_ts),
+            feature_keys=None,
+            symbols=symbols,
+        )
+        if matrix is None or matrix.empty:
+            return {}
+        missing = feature_key_set.difference(str(c) for c in matrix.columns)
+        if missing:
+            sample = sorted(missing)[:20]
+            tprint(
+                "Live latest feature matrix sidecar missing requested keys; "
+                "using available columns and deferring repair to the live "
+                f"model adapter: missing={len(missing)} sample={sample}"
+            )
+        if feature_key_set:
+            available = [str(c) for c in matrix.columns if str(c) in feature_key_set]
+            if not available:
+                return {}
+            matrix = matrix.loc[:, available]
+            zero_finite = []
+            for col in available:
+                if _is_live_source_derived_feature_key(col):
+                    continue
+                values = pd.to_numeric(matrix[col], errors="coerce")
+                if int(np.isfinite(values.to_numpy(dtype=float, copy=False)).sum()) == 0:
+                    zero_finite.append(col)
+            if zero_finite:
+                tprint(
+                    "Live latest feature matrix sidecar rejected: requested "
+                    "non-source-derived features have zero finite coverage "
+                    f"n={len(zero_finite)} sample={sorted(zero_finite)[:20]}"
+                )
+                return {}
+        matrix = matrix.reindex(index=[str(sym) for sym in symbols])
+        tprint(
+            "Loaded live latest feature matrix sidecar: "
+            f"source_root={source_root} symbols={len(matrix.index)} "
+            f"features={len(matrix.columns)} end_ts={pd.Timestamp(end_ts)}"
+        )
+        _remember_selected_latest_matrix(memory_key, matrix, end_ts=end_ts)
+        _write_selected_feature_latest_matrix_cache(
+            cache_root=cache_root,
+            source_run_id=source_run_id,
+            source_root=source_root,
+            symbols=symbols,
+            feature_keys=feature_key_set,
+            end_ts=pd.Timestamp(end_ts),
+            allowed_periods=allowed_periods,
+            feats=_matrix_to_feature_dict(matrix, end_ts=pd.Timestamp(end_ts)),
+        )
+        return _matrix_to_feature_dict(
+            matrix.astype(np.float32, copy=False), end_ts=end_ts
+        )
+    except Exception as exc:
+        tprint(f"Warning: failed to load live latest feature matrix sidecar: {exc}")
+        return {}
 
 
 def _write_selected_feature_latest_matrix_cache(
@@ -2763,9 +4302,7 @@ def load_cached_features_for_inference(
     allowed_periods=None,
 ) -> Dict[str, pd.DataFrame]:
     run_id_s = str(run_id or "")
-    match = re.match(r"^(\d{8}_\d{6})", run_id_s)
-    parse_value = match.group(1) if match else run_id_s
-    ts = pd.to_datetime(parse_value, format="%Y%m%d_%H%M%S", utc=True)
+    ts = _resolve_feature_store_ts(run_id_s, data_root, end_ts=end_ts)
     # load_features_selected uses half-open parquet pushdown filters. Live and
     # historical inference callers treat end_ts as inclusive, so pad the query
     # boundary and keep the explicit inclusive slice below.
@@ -2782,6 +4319,12 @@ def load_cached_features_for_inference(
         and pd.Timestamp(start_ts) == pd.Timestamp(end_ts)
         and feature_keys is not None
     )
+    sidecar_range_flag = os.getenv("EPM_LIVE_LATEST_FEATURE_MATRIX_SIDECAR_FOR_RANGE", "1")
+    latest_sidecar_allowed = (
+        str(sidecar_range_flag).strip().lower() not in {"0", "false", "no", "off"}
+        and end_ts is not None
+        and feature_keys is not None
+    )
     normalized_periods = []
     for period in allowed_periods or []:
         if isinstance(period, dict):
@@ -2796,7 +4339,13 @@ def load_cached_features_for_inference(
         except Exception:
             continue
     for root in _offline_feature_lookup_data_roots(data_root):
-        if latest_only:
+        if latest_only or latest_sidecar_allowed:
+            if not latest_only and start_ts is not None:
+                tprint(
+                    "Live latest feature matrix sidecar enabled for range request: "
+                    f"start={pd.Timestamp(start_ts)} end={pd.Timestamp(end_ts)} "
+                    f"keys={len(feature_keys)} symbols={len(symbols)}"
+                )
             cached = _load_selected_feature_latest_matrix_cache(
                 cache_root=data_root,
                 source_run_id=run_id_s,
@@ -2813,6 +4362,22 @@ def load_cached_features_for_inference(
                         f"{root}"
                     )
                 return cached
+            sidecar = _load_live_latest_feature_matrix_sidecar(
+                cache_root=data_root,
+                source_run_id=run_id_s,
+                source_root=root,
+                symbols=symbols,
+                feature_keys=feature_keys,
+                end_ts=pd.Timestamp(end_ts),
+                allowed_periods=normalized_periods,
+            )
+            if sidecar:
+                if root != str(data_root):
+                    tprint(
+                        "Loaded live latest feature matrix sidecar from fallback "
+                        f"data root: {root}"
+                    )
+                return sidecar
         load_t0 = time.perf_counter()
         feats = load_features_selected(
             ts,
@@ -2848,6 +4413,268 @@ def load_cached_features_for_inference(
             )
             return sliced
     return {}
+
+
+def load_cached_features_for_inference_sources(
+    run_ids: Iterable[str],
+    data_root: str,
+    symbols: List[str],
+    feature_keys: Optional[Set[str]] = None,
+    start_ts: Optional[pd.Timestamp] = None,
+    end_ts: Optional[pd.Timestamp] = None,
+    allowed_periods=None,
+) -> Dict[str, pd.DataFrame]:
+    merged: Dict[str, pd.DataFrame] = {}
+    used: List[str] = []
+    for source_run_id in _coerce_feature_source_run_ids(list(run_ids)):
+        feats = load_cached_features_for_inference(
+            run_id=source_run_id,
+            data_root=data_root,
+            symbols=symbols,
+            feature_keys=feature_keys,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            allowed_periods=allowed_periods,
+        )
+        if not feats:
+            continue
+        used.append(str(source_run_id))
+        merged = _merge_feature_dicts_preserve_cached(merged, feats)
+    if len(used) > 1:
+        tprint(
+            "Loaded selected features from multiple source runs: "
+            f"sources={used} features={len(merged)}"
+        )
+    return merged
+
+
+def _live_latest_feature_matrix_presence(
+    *,
+    run_id: str,
+    data_root: str,
+    symbols: Optional[List[str]],
+    end_ts: pd.Timestamp,
+    feature_keys: Optional[Iterable[str]] = None,
+    min_symbol_coverage: float = 0.70,
+) -> Tuple[bool, Dict[str, Any]]:
+    """Cheaply check whether the exact-hour selected-feature sidecar exists."""
+    feature_key_set = sorted({str(k) for k in (feature_keys or []) if str(k)})
+    requested_symbols = [str(s) for s in (symbols or []) if str(s)]
+    min_symbol_coverage = max(0.0, min(1.0, float(min_symbol_coverage)))
+    last_error: Optional[str] = None
+    for root in _offline_feature_lookup_data_roots(data_root):
+        try:
+            ts = _resolve_feature_store_ts(run_id, root, end_ts=end_ts)
+            matrix = load_live_latest_feature_matrix(
+                ts,
+                root,
+                end_ts=pd.Timestamp(end_ts),
+                feature_keys=feature_key_set or None,
+                symbols=symbols,
+            )
+            if matrix is None or matrix.empty:
+                continue
+            covered_rows = int(len(matrix.index))
+            if requested_symbols:
+                values = matrix.to_numpy(dtype=float, copy=False)
+                covered_rows = int(np.isfinite(values).any(axis=1).sum())
+                required_rows = int(np.ceil(len(requested_symbols) * min_symbol_coverage))
+                if covered_rows < max(1, required_rows):
+                    last_error = (
+                        "insufficient_symbol_coverage: "
+                        f"covered={covered_rows} requested={len(requested_symbols)} "
+                        f"min_fraction={min_symbol_coverage:.2f}"
+                    )
+                    continue
+            return True, {
+                "source_root": str(root),
+                "feature_ts": ts.strftime("%Y%m%d_%H%M%S"),
+                "rows": int(len(matrix.index)),
+                "covered_rows": int(covered_rows),
+                "features": int(len(matrix.columns)),
+                "required_features": int(len(feature_key_set)),
+            }
+        except Exception as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
+            continue
+    return False, {
+        "last_error": last_error,
+        "required_features": int(len(feature_key_set)),
+        "requested_symbols": int(len(requested_symbols)),
+    }
+
+
+def _live_model_feature_prewarm_enabled(cfg: Dict[str, Any]) -> bool:
+    raw = cfg.get(
+        "live_model_feature_prewarm_selected_cache",
+        os.environ.get("EPM_LIVE_MODEL_FEATURE_PREWARM_SELECTED_CACHE", "1"),
+    )
+    return str(raw).strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _live_model_feature_prewarm_blocking(cfg: Dict[str, Any]) -> bool:
+    raw = cfg.get(
+        "live_model_feature_prewarm_blocking",
+        os.environ.get("EPM_LIVE_MODEL_FEATURE_PREWARM_BLOCKING", "1"),
+    )
+    return str(raw).strip().lower() not in {"0", "false", "no", "off"}
+
+
+def prewarm_selected_model_feature_cache_for_live(
+    *,
+    run_id: str,
+    data_root: str,
+    symbols: List[str],
+    end_ts: pd.Timestamp,
+    cfg: Dict[str, Any],
+    required_feature_keys: Optional[Iterable[str]] = None,
+    source_run_ids: Optional[Iterable[str]] = None,
+) -> Dict[str, Any]:
+    """Ensure the strict selected model-feature handoff exists before scoring."""
+    cfg = dict(cfg or {})
+    end_ts = pd.Timestamp(end_ts)
+    if not _live_model_feature_prewarm_enabled(cfg):
+        return {"status": "disabled"}
+    if not _live_model_feature_auto_sync_enabled(cfg):
+        return {"status": "auto_sync_disabled"}
+    feature_keys = sorted({str(k) for k in (required_feature_keys or []) if str(k)})
+    if not feature_keys:
+        return {"status": "no_required_features"}
+    sync_feature_keys, skipped_live_repairable = _live_training_path_sync_feature_keys(
+        feature_keys,
+        cfg,
+    )
+    if not sync_feature_keys:
+        return {
+            "status": "no_training_path_features",
+            "requested_features": len(feature_keys),
+            "skipped_live_repairable": len(skipped_live_repairable),
+        }
+    source_ids = _coerce_feature_source_run_ids(list(source_run_ids or []))
+    if not source_ids:
+        source_ids = _offline_feature_lookup_run_ids(cfg, run_id)
+    source_run_id = str(source_ids[0] if source_ids else run_id)
+    source_data_root = _offline_feature_lookup_data_root(cfg, data_root)
+    try:
+        min_symbol_coverage = float(
+            cfg.get(
+                "live_model_feature_prewarm_min_symbol_coverage",
+                os.environ.get(
+                    "EPM_LIVE_MODEL_FEATURE_PREWARM_MIN_SYMBOL_COVERAGE",
+                    "0.70",
+                ),
+            )
+        )
+    except (TypeError, ValueError):
+        min_symbol_coverage = 0.70
+    blocking = _live_model_feature_prewarm_blocking(cfg)
+    existing_syncs = _live_feature_syncs_for_target(
+        data_root=source_data_root,
+        run_id=source_run_id,
+        end_ts=end_ts,
+    )
+    if [s for s in existing_syncs if bool(s.get("alive"))]:
+        if not blocking:
+            return {
+                "status": "existing_sync_running",
+                "source_run_id": source_run_id,
+                "syncs": len(existing_syncs),
+            }
+        wait_result = _wait_for_live_feature_syncs_for_target(
+            data_root=source_data_root,
+            run_id=source_run_id,
+            end_ts=end_ts,
+            timeout_s=float(
+                cfg.get(
+                    "live_model_feature_auto_sync_timeout_seconds",
+                    os.environ.get(
+                        "EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_TIMEOUT_SECONDS",
+                        "1200",
+                    ),
+                )
+            ),
+            heartbeat_s=float(
+                cfg.get(
+                    "live_model_feature_auto_sync_heartbeat_seconds",
+                    os.environ.get(
+                        "EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_HEARTBEAT_SECONDS",
+                        "30",
+                    ),
+                )
+                or 30.0
+            ),
+            reason="selected_prewarm",
+        )
+        if wait_result.get("status") == "existing_sync_timeout":
+            return {
+                "status": "existing_sync_timeout",
+                "source_run_id": source_run_id,
+                "syncs": len(wait_result.get("syncs") or []),
+            }
+    sidecar_present, sidecar_meta = _live_latest_feature_matrix_presence(
+        run_id=source_run_id,
+        data_root=source_data_root,
+        symbols=symbols,
+        end_ts=end_ts,
+        feature_keys=sync_feature_keys,
+        min_symbol_coverage=min_symbol_coverage,
+    )
+    if sidecar_present:
+        tprint(
+            "Live selected model-feature prewarm cache hit: "
+            f"source_run_id={source_run_id} end_ts={end_ts.isoformat()} "
+            f"rows={sidecar_meta.get('rows')} features={sidecar_meta.get('features')} "
+            f"feature_ts={sidecar_meta.get('feature_ts')}"
+        )
+        return {
+            "status": "cache_hit",
+            "source_run_id": source_run_id,
+            **sidecar_meta,
+        }
+
+    tprint(
+        "Live selected model-feature prewarm cache miss; running training-path "
+        "feature sync before scoring: "
+        f"source_run_id={source_run_id} end_ts={end_ts.isoformat()} "
+        f"symbols={len(symbols)} requested_keys={len(feature_keys)} "
+        f"sync_keys={len(sync_feature_keys)} "
+        f"blocking={blocking}"
+    )
+    ok = _run_training_path_feature_sync_for_live(
+        run_id=source_run_id,
+        data_root=source_data_root,
+        end_ts=end_ts,
+        cfg=cfg,
+        required_feature_keys=sync_feature_keys,
+        blocking=blocking,
+        sync_label="selected_prewarm",
+    )
+    status = "sync_complete" if ok else "sync_failed"
+    verify_present = False
+    verify_meta: Dict[str, Any] = {}
+    if ok and blocking:
+        verify_present, verify_meta = _live_latest_feature_matrix_presence(
+            run_id=source_run_id,
+            data_root=source_data_root,
+            symbols=symbols,
+            end_ts=end_ts,
+            feature_keys=sync_feature_keys,
+            min_symbol_coverage=min_symbol_coverage,
+        )
+        status = "sync_complete_verified" if verify_present else "sync_complete_unverified"
+    tprint(
+        "Live selected model-feature prewarm finished: "
+        f"status={status} source_run_id={source_run_id} "
+        f"end_ts={end_ts.isoformat()} "
+        f"rows={verify_meta.get('rows')} features={verify_meta.get('features')}"
+    )
+    return {
+        "status": status,
+        "source_run_id": source_run_id,
+        "ok": bool(ok),
+        "verified": bool(verify_present),
+        **verify_meta,
+    }
 
 
 def load_or_compute_features(
@@ -2918,7 +4745,8 @@ def load_or_compute_features(
     if _requires_gated_feature_generation(required_feature_keys):
         cfg["enable_gated_features"] = True
     cfg.setdefault("feature_transform_cache_enabled", False)
-    feature_source_run_id = _offline_feature_lookup_run_id(cfg, run_id)
+    offline_feature_run_ids = _offline_feature_lookup_run_ids(cfg, run_id)
+    feature_source_run_id = offline_feature_run_ids[0] if offline_feature_run_ids else str(run_id)
     if feature_source_run_id and "live_feature_source_run_id" not in cfg:
         cfg["live_feature_source_run_id"] = str(feature_source_run_id)
     if bool(cfg.get("live_causal_transform_state_enabled", True)):
@@ -2966,10 +4794,12 @@ def load_or_compute_features(
         f"cache_key={hashlib.sha256(cache_key.encode('utf-8')).hexdigest()[:12]} "
         f"contract_hash={_feature_transform_contract_hash_from_cfg(cfg)}"
     )
-    offline_feature_run_id = _offline_feature_lookup_run_id(cfg, run_id)
+    offline_feature_run_ids = _offline_feature_lookup_run_ids(cfg, run_id)
+    offline_feature_run_id = offline_feature_run_ids[0] if offline_feature_run_ids else str(run_id)
     offline_feature_data_root = _offline_feature_lookup_data_root(cfg, data_root)
     offline_source_override = (
-        offline_feature_run_id != str(run_id)
+        bool([rid for rid in offline_feature_run_ids if rid != str(run_id)])
+        or len(offline_feature_run_ids) > 1
         or offline_feature_data_root != str(data_root)
     )
     prefer_offline_cache = bool(
@@ -2993,11 +4823,25 @@ def load_or_compute_features(
                 and pd.Timestamp(memory_end) == pd.Timestamp(end_ts)
                 and isinstance(memory_feats, dict)
             ):
-                tprint(
-                    "Loaded in-memory live transformed feature cache: "
-                    f"features={len(memory_feats)} end_ts={end_ts}"
+                unusable = _source_derived_unusable_requested_keys(
+                    memory_feats,
+                    required_feature_keys,
+                    basket_syms,
+                    end_ts=end_ts,
+                    repairable_only=True,
                 )
-                return memory_feats
+                if unusable:
+                    tprint(
+                        "Ignoring in-memory live feature cache with unusable "
+                        "source-derived model keys: "
+                        f"n={len(unusable)} sample={sorted(unusable)[:12]}"
+                    )
+                else:
+                    tprint(
+                        "Loaded in-memory live transformed feature cache: "
+                        f"features={len(memory_feats)} end_ts={end_ts}"
+                    )
+                    return memory_feats
 
     snapshot_feats = (
         {}
@@ -3012,14 +4856,28 @@ def load_or_compute_features(
         )
     )
     if snapshot_feats:
-        if bool(cfg.get("live_feature_memory_cache_enabled", True)):
-            _LIVE_FEATURE_MEMORY_CACHE[cache_key] = {
-                "end_ts": end_ts,
-                "feats": snapshot_feats,
-                "latest_only": True,
-            }
-        timer.mark("snapshot_cache_hit")
-        return snapshot_feats
+        unusable = _source_derived_unusable_requested_keys(
+            snapshot_feats,
+            required_feature_keys,
+            basket_syms,
+            end_ts=end_ts,
+            repairable_only=True,
+        )
+        if unusable:
+            tprint(
+                "Ignoring persisted live feature snapshot with unusable "
+                "source-derived model keys: "
+                f"n={len(unusable)} sample={sorted(unusable)[:12]}"
+            )
+        else:
+            if bool(cfg.get("live_feature_memory_cache_enabled", True)):
+                _LIVE_FEATURE_MEMORY_CACHE[cache_key] = {
+                    "end_ts": end_ts,
+                    "feats": snapshot_feats,
+                    "latest_only": True,
+                }
+            timer.mark("snapshot_cache_hit")
+            return snapshot_feats
 
     cached_feats = {}
     memory_entry = _LIVE_FEATURE_MEMORY_CACHE.get(cache_key)
@@ -3080,9 +4938,10 @@ def load_or_compute_features(
         or cfg.get("live_feature_allow_offline_seed", False)
     )
     if need_offline_cache and offline_source_override and allow_offline_cache:
+        source_text = ",".join(offline_feature_run_ids or [offline_feature_run_id])
         tprint(
             "Live feature offline cache source override: "
-            f"run_id={offline_feature_run_id} data_root={offline_feature_data_root} "
+            f"run_id={source_text} data_root={offline_feature_data_root} "
             f"prefer_offline={prefer_offline_cache}"
         )
     if (
@@ -3094,14 +4953,13 @@ def load_or_compute_features(
         offline_start_ts = start_ts
         offline_end_ts = end_ts
         if (
-            prefer_offline_cache
-            and bool(cfg.get("live_feature_return_latest_only", True))
+            bool(cfg.get("live_feature_return_latest_only", True))
             and _live_feature_cache_namespace(cfg) == "model"
         ):
             offline_start_ts = end_ts
             offline_end_ts = end_ts
-        offline_feats = load_cached_features_for_inference(
-            run_id=offline_feature_run_id,
+        offline_feats = load_cached_features_for_inference_sources(
+            run_ids=offline_feature_run_ids or [offline_feature_run_id],
             data_root=offline_feature_data_root,
             symbols=basket_syms,
             feature_keys=required_feature_keys,
@@ -3131,7 +4989,33 @@ def load_or_compute_features(
             f"rss={_process_rss_mb():.1f}MB"
         )
     if authoritative_model_offline_cache:
-        missing_offline_keys = sorted(set(required_feature_keys or set()) - set(cached_feats))
+        strict_store = live_model_feature_store_strict(cfg)
+        cached_feats = _materialize_policy_barrier_pct_feature(
+            cached_feats,
+            panel,
+            basket_syms,
+            required_feature_keys,
+            cfg,
+        )
+        if required_feature_keys:
+            cached_feats = _synthesize_gated_feature_keys(
+                cached_feats,
+                panel,
+                basket_syms,
+                required_feature_keys,
+            )
+        missing_offline_set = set(required_feature_keys or set()) - set(cached_feats)
+        if not strict_store:
+            missing_offline_set.update(
+                _source_derived_unusable_requested_keys(
+                    cached_feats,
+                    required_feature_keys,
+                    basket_syms,
+                    end_ts=end_ts,
+                    repairable_only=True,
+                )
+            )
+        missing_offline_keys = sorted(missing_offline_set)
         if missing_offline_keys:
             if required_feature_keys:
                 pre_sync_repairable_missing = {
@@ -3169,9 +5053,20 @@ def load_or_compute_features(
                         run_id=run_id,
                         cfg=cfg,
                     )
-                    repaired_missing = sorted(
-                        set(required_feature_keys or set()) - set(cached_feats)
+                    repaired_missing_set = set(required_feature_keys or set()) - set(
+                        cached_feats
                     )
+                    if not strict_store:
+                        repaired_missing_set.update(
+                            _source_derived_unusable_requested_keys(
+                                cached_feats,
+                                required_feature_keys,
+                                basket_syms,
+                                end_ts=end_ts,
+                                repairable_only=True,
+                            )
+                        )
+                    repaired_missing = sorted(repaired_missing_set)
                     if len(repaired_missing) < len(missing_offline_keys):
                         tprint(
                             "Live model selected-feature cache repaired "
@@ -3191,17 +5086,26 @@ def load_or_compute_features(
                 and _live_model_feature_auto_sync_enabled(cfg)
             ):
                 cfg["_live_model_feature_auto_sync_attempted"] = True
+                sync_blocking = _live_model_feature_auto_sync_blocking(cfg)
                 synced = _run_training_path_feature_sync_for_live(
                     run_id=str(offline_feature_run_id),
                     data_root=str(offline_feature_data_root),
                     end_ts=pd.Timestamp(end_ts),
                     cfg=cfg,
-                    required_feature_keys=required_feature_keys,
+                    required_feature_keys=missing_offline_keys,
+                    blocking=sync_blocking,
+                    sync_label="selected_missing_contract",
                 )
-                if synced:
+                if synced and not sync_blocking:
+                    tprint(
+                        "Live model selected-feature cache warmup was scheduled "
+                        "out of band; this entry cycle will not wait for the "
+                        "training-path feature job."
+                    )
+                if synced and sync_blocking:
                     retry_t0 = time.perf_counter()
-                    offline_feats = load_cached_features_for_inference(
-                        run_id=offline_feature_run_id,
+                    offline_feats = load_cached_features_for_inference_sources(
+                        run_ids=offline_feature_run_ids or [offline_feature_run_id],
                         data_root=offline_feature_data_root,
                         symbols=basket_syms,
                         feature_keys=required_feature_keys,
@@ -3214,16 +5118,38 @@ def load_or_compute_features(
                         ),
                     )
                     cached_feats = _copy_feature_mapping(offline_feats)
-                    missing_offline_keys = sorted(
-                        set(required_feature_keys or set()) - set(cached_feats)
+                    missing_offline_set = set(required_feature_keys or set()) - set(
+                        cached_feats
                     )
+                    if not strict_store:
+                        missing_offline_set.update(
+                            _source_derived_unusable_requested_keys(
+                                cached_feats,
+                                required_feature_keys,
+                                basket_syms,
+                                end_ts=end_ts,
+                                repairable_only=True,
+                            )
+                        )
+                    missing_offline_keys = sorted(missing_offline_set)
                     tprint(
                         "Live model feature selected-cache auto-sync reload: "
                         f"hit={bool(offline_feats)} features={len(offline_feats or {})} "
                         f"missing_features={len(missing_offline_keys)} "
                         f"elapsed={time.perf_counter() - retry_t0:.3f}s"
                     )
-            if missing_offline_keys and required_feature_keys:
+            if missing_offline_keys and required_feature_keys and strict_store:
+                cached_feats = _materialize_missing_selected_contract_nan_frames(
+                    panel,
+                    basket_syms,
+                    cached_feats,
+                    set(required_feature_keys or set()) - set(cached_feats),
+                    reason="selected_cache_missing_after_auto_sync",
+                )
+                missing_offline_keys = sorted(
+                    set(required_feature_keys or set()) - set(cached_feats)
+                )
+            if missing_offline_keys and required_feature_keys and not strict_store:
                 # The persisted selected-feature cache is authoritative for
                 # model-scored raw features, but deterministic live-safe keys
                 # such as G_VOL-expanded interactions and barrier_pct can be
@@ -3258,9 +5184,24 @@ def load_or_compute_features(
                     run_id=run_id,
                     cfg=cfg,
                 )
-                missing_offline_keys = sorted(
-                    set(required_feature_keys or set()) - set(cached_feats)
+                cached_feats = _materialize_missing_source_derived_contract_frames(
+                    panel,
+                    basket_syms,
+                    cached_feats,
+                    set(required_feature_keys or set()) - set(cached_feats),
+                    cfg,
                 )
+                missing_offline_set = set(required_feature_keys or set()) - set(cached_feats)
+                missing_offline_set.update(
+                    _source_derived_unusable_requested_keys(
+                        cached_feats,
+                        required_feature_keys,
+                        basket_syms,
+                        end_ts=end_ts,
+                        repairable_only=True,
+                    )
+                )
+                missing_offline_keys = sorted(missing_offline_set)
                 if missing_offline_keys:
                     tprint(
                         "Live model selected-feature cache remains incomplete "
@@ -3286,7 +5227,7 @@ def load_or_compute_features(
                     "live_model_feature_allow_incomplete_selected_cache=True for "
                     "diagnostic dry-runs that must continue without scoring."
                 )
-        if required_feature_keys:
+        if required_feature_keys and not strict_store:
             # The selected-feature handoff is authoritative for model scoring,
             # but some derived, portable keys can be stale in the persisted
             # handoff for the latest live hour while the raw live panel already
@@ -3308,6 +5249,19 @@ def load_or_compute_features(
                 run_id=run_id,
                 cfg=cfg,
             )
+        elif required_feature_keys:
+            cached_feats = _synthesize_gated_feature_keys(
+                cached_feats,
+                panel,
+                basket_syms,
+                required_feature_keys,
+            )
+            cached_feats = _ensure_required_symbol_columns(
+                cached_feats,
+                panel,
+                basket_syms,
+                set(required_feature_keys or set()),
+            )
         try:
             min_latest_finite_fraction = float(
                 cfg.get(
@@ -3324,15 +5278,21 @@ def load_or_compute_features(
             required_feature_keys=set(required_feature_keys or set()),
             min_fraction=max(0.0, min(1.0, min_latest_finite_fraction)),
         )
+        sync_on_low_finite = bool(
+            cfg.get("live_model_feature_auto_sync_on_low_finite", False)
+        )
         if (
             low_finite_latest
+            and sync_on_low_finite
             and not bool(cfg.get("_live_model_feature_auto_sync_attempted", False))
             and _live_model_feature_auto_sync_enabled(cfg)
         ):
             cfg["_live_model_feature_auto_sync_attempted"] = True
+            sync_blocking = _live_model_feature_auto_sync_blocking(cfg)
             tprint(
                 "Live model selected-feature cache has low latest finite "
-                "support; running training-path auto-sync before scoring: "
+                "support; scheduling training-path auto-sync "
+                f"{'before scoring' if sync_blocking else 'out of band'}: "
                 f"issues={low_finite_latest[:10]}"
             )
             synced = _run_training_path_feature_sync_for_live(
@@ -3340,12 +5300,24 @@ def load_or_compute_features(
                 data_root=str(offline_feature_data_root),
                 end_ts=pd.Timestamp(end_ts),
                 cfg=cfg,
-                required_feature_keys=required_feature_keys,
+                required_feature_keys=[
+                    str(issue.get("feature"))
+                    for issue in low_finite_latest
+                    if isinstance(issue, dict) and issue.get("feature")
+                ],
+                blocking=sync_blocking,
+                sync_label="selected_low_finite",
             )
-            if synced:
+            if synced and not sync_blocking:
+                tprint(
+                    "Live model selected-feature finite-support warmup was "
+                    "scheduled out of band; continuing with current selected "
+                    "cache and downstream finite guards."
+                )
+            if synced and sync_blocking:
                 retry_t0 = time.perf_counter()
-                offline_feats = load_cached_features_for_inference(
-                    run_id=offline_feature_run_id,
+                offline_feats = load_cached_features_for_inference_sources(
+                    run_ids=offline_feature_run_ids or [offline_feature_run_id],
                     data_root=offline_feature_data_root,
                     symbols=basket_syms,
                     feature_keys=required_feature_keys,
@@ -3358,7 +5330,7 @@ def load_or_compute_features(
                     ),
                 )
                 cached_feats = _copy_feature_mapping(offline_feats)
-                if required_feature_keys:
+                if required_feature_keys and not strict_store:
                     cached_feats = _synthesize_gated_feature_keys(
                         cached_feats,
                         panel,
@@ -3373,6 +5345,26 @@ def load_or_compute_features(
                         data_root=data_root,
                         run_id=run_id,
                         cfg=cfg,
+                    )
+                elif required_feature_keys:
+                    cached_feats = _materialize_missing_selected_contract_nan_frames(
+                        panel,
+                        basket_syms,
+                        cached_feats,
+                        set(required_feature_keys or set()) - set(cached_feats),
+                        reason="low_finite_auto_sync_reload_missing",
+                    )
+                    cached_feats = _synthesize_gated_feature_keys(
+                        cached_feats,
+                        panel,
+                        basket_syms,
+                        required_feature_keys,
+                    )
+                    cached_feats = _ensure_required_symbol_columns(
+                        cached_feats,
+                        panel,
+                        basket_syms,
+                        set(required_feature_keys or set()),
                     )
                 low_finite_latest = _latest_required_feature_low_finite_support(
                     cached_feats,
@@ -3390,7 +5382,10 @@ def load_or_compute_features(
                 )
         elif low_finite_latest:
             tprint(
-                "Live model selected-feature cache latest finite-support warning: "
+                "Live model selected-feature cache latest finite-support warning; "
+                "continuing without training-path auto-sync because selected-input "
+                "non-finites are handled by the model adapter and candidate/source "
+                "guards: "
                 f"issues={low_finite_latest[:10]}"
             )
         return_feats = cached_feats
@@ -3441,37 +5436,116 @@ def load_or_compute_features(
         and _live_feature_cache_namespace(cfg) == "model"
         and not bool(cfg.get("live_model_feature_tail_recompute_enabled", False))
     ):
-        stale_detail = _cached_feature_stale_detail(
-            cached_feats,
-            required_feature_keys,
-            end_ts,
-            coverage_symbols=coverage_symbols,
-        )
-        tprint(
-            "Live model feature cache stale detail: "
-            f"sample={stale_detail} total_required={len(required_feature_keys or [])}"
-        )
-        raise RuntimeError(
-            "Live model feature cache is stale or incomplete for the requested "
-            f"model contract: cached_last_ts={cached_last_ts} target_end_ts={end_ts} "
-            f"required_features={len(required_feature_keys or [])}. Run the "
-            "incremental training-path feature update for the artifact source "
-            "run before live scoring, or explicitly enable "
-            "live_model_feature_tail_recompute_enabled for replay/audit mode."
-        )
+        if (
+            not bool(cfg.get("_live_model_feature_auto_sync_attempted", False))
+            and _live_model_feature_auto_sync_enabled(cfg)
+        ):
+            cfg["_live_model_feature_auto_sync_attempted"] = True
+            sync_blocking = _live_model_feature_auto_sync_blocking(cfg)
+            tprint(
+                "Live model feature cache is stale; scheduling training-path "
+                f"auto-sync {'before refusing live scoring' if sync_blocking else 'out of band'}: "
+                f"cached_last_ts={cached_last_ts} target_end_ts={end_ts} "
+                f"required_keys={len(required_feature_keys or [])}"
+            )
+            synced = _run_training_path_feature_sync_for_live(
+                run_id=str(offline_feature_run_id),
+                data_root=str(offline_feature_data_root),
+                end_ts=pd.Timestamp(end_ts),
+                cfg=cfg,
+                required_feature_keys=required_feature_keys,
+                blocking=sync_blocking,
+                sync_label="selected_stale_cache",
+            )
+            if synced and not sync_blocking:
+                tprint(
+                    "Live model stale-cache warmup was scheduled out of band; "
+                    "this entry cycle will not wait for the training-path feature job."
+                )
+            if synced and sync_blocking:
+                retry_t0 = time.perf_counter()
+                offline_feats = load_cached_features_for_inference_sources(
+                    run_ids=offline_feature_run_ids or [offline_feature_run_id],
+                    data_root=offline_feature_data_root,
+                    symbols=basket_syms,
+                    feature_keys=required_feature_keys,
+                    start_ts=end_ts
+                    if bool(cfg.get("live_feature_return_latest_only", True))
+                    else start_ts,
+                    end_ts=end_ts,
+                    allowed_periods=(cfg or {}).get(
+                        "live_feature_offline_allowed_periods"
+                    ),
+                )
+                if authoritative_model_offline_cache:
+                    cached_feats = _copy_feature_mapping(offline_feats)
+                else:
+                    cached_feats = _merge_feature_dicts(cached_feats, offline_feats)
+                cached_last_ts = _cached_feature_coverage_end_ts(
+                    cached_feats,
+                    required_feature_keys=required_feature_keys,
+                    coverage_symbols=coverage_symbols,
+                )
+                need_tail_backfill = (
+                    cached_last_ts is None or end_ts > pd.Timestamp(cached_last_ts)
+                )
+                tprint(
+                    "Live model feature stale-cache auto-sync reload: "
+                    f"hit={bool(offline_feats)} features={len(offline_feats or {})} "
+                    f"cached_last_ts={cached_last_ts} "
+                    f"still_stale={bool(need_tail_backfill)} "
+                    f"elapsed={time.perf_counter() - retry_t0:.3f}s"
+                )
+        if not need_tail_backfill:
+            tprint(
+                "Live model feature cache is current after training-path auto-sync; "
+                "continuing live scoring."
+            )
+        else:
+            stale_detail = _cached_feature_stale_detail(
+                cached_feats,
+                required_feature_keys,
+                end_ts,
+                coverage_symbols=coverage_symbols,
+            )
+            tprint(
+                "Live model feature cache stale detail: "
+                f"sample={stale_detail} total_required={len(required_feature_keys or [])}"
+            )
+            raise RuntimeError(
+                "Live model feature cache is stale or incomplete for the requested "
+                f"model contract: cached_last_ts={cached_last_ts} target_end_ts={end_ts} "
+                f"required_features={len(required_feature_keys or [])}. Run the "
+                "incremental training-path feature update for the artifact source "
+                "run before live scoring, or explicitly enable "
+                "live_model_feature_tail_recompute_enabled for replay/audit mode."
+            )
 
     # Always layer the lightweight candidate-selector features on top of the
     # stored offline feature cache, because the offline cache does not
     # necessarily contain keys like ret24h/range_12h_pct used by inference.
     selector_feats = _compute_per_symbol_features(panel, basket_syms)
-    policy_barrier = _compute_policy_barrier_pct(panel, basket_syms, cfg)
-    if isinstance(policy_barrier, pd.DataFrame) and not policy_barrier.empty:
-        selector_feats["barrier_pct"] = policy_barrier
+    selector_feats = _materialize_policy_barrier_pct_feature(
+        selector_feats,
+        panel,
+        basket_syms,
+        required_feature_keys,
+        cfg,
+    )
     timer.mark("compute_selector_features")
 
     if need_tail_backfill and required_feature_keys and cached_feats:
         completed_cached_feats = _merge_missing_feature_dicts(cached_feats, selector_feats)
         missing = {k for k in required_feature_keys if k not in completed_cached_feats}
+        missing.update(
+            _source_derived_unusable_requested_keys(
+                completed_cached_feats,
+                required_feature_keys,
+                basket_syms,
+                end_ts=end_ts,
+                repairable_only=True,
+            )
+        )
         completed_cached_feats = _backfill_missing_requested_keys(
             panel=panel,
             basket_syms=basket_syms,
@@ -3532,6 +5606,15 @@ def load_or_compute_features(
                 cfg=cfg,
             )
             missing = {k for k in required_feature_keys if k not in merged}
+            missing.update(
+                _source_derived_unusable_requested_keys(
+                    merged,
+                    required_feature_keys,
+                    basket_syms,
+                    end_ts=end_ts,
+                    repairable_only=True,
+                )
+            )
             merged = _backfill_missing_requested_keys(
                 panel=panel,
                 basket_syms=basket_syms,
@@ -3721,6 +5804,15 @@ def load_or_compute_features(
             cfg=cfg,
         )
         missing = {k for k in required_feature_keys if k not in merged_feats}
+        missing.update(
+            _source_derived_unusable_requested_keys(
+                merged_feats,
+                required_feature_keys,
+                basket_syms,
+                end_ts=end_ts,
+                repairable_only=True,
+            )
+        )
         merged_feats = _backfill_missing_requested_keys(
             panel=panel,
             basket_syms=basket_syms,
@@ -5269,7 +7361,19 @@ def _synthesize_live_safe_feature_keys(
 
     out = _copy_feature_mapping(feats)
     if barrier_missing:
-        policy_barrier = _compute_policy_barrier_pct(panel, basket_syms, {})
+        policy_barrier = None
+        atr_pct = out.get("atr_pct")
+        if isinstance(atr_pct, pd.DataFrame) and not atr_pct.empty:
+            policy_barrier = (
+                atr_pct.replace([np.inf, -np.inf], np.nan)
+                .clip(lower=np.float32(0.005))
+                .astype(np.float32)
+            )
+        if (
+            (not isinstance(policy_barrier, pd.DataFrame) or policy_barrier.empty)
+            and bool((cfg or {}).get("allow_raw_policy_barrier_recompute", False))
+        ):
+            policy_barrier = _compute_policy_barrier_pct(panel, basket_syms, cfg or {})
         if isinstance(policy_barrier, pd.DataFrame) and not policy_barrier.empty:
             out["barrier_pct"] = policy_barrier.reindex(
                 index=zero_frame.index,
@@ -5478,9 +7582,48 @@ def _synthesize_gated_feature_keys(
     requires_g_vol = "G_VOL" in needed or any("_G_VOL_" in key for key in needed)
     requires_g_trend = "G_TREND" in needed or any("_G_TREND_" in key for key in needed)
 
-    if requires_g_vol and "G_VOL" not in out:
+    def _latest_has_finite_frame(name: str) -> bool:
+        frame = out.get(name)
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            return False
+        try:
+            aligned = frame.reindex(index=close.index, columns=valid_syms).tail(1)
+            if aligned.empty:
+                return False
+            arr = aligned.apply(pd.to_numeric, errors="coerce").to_numpy(
+                dtype=np.float32, copy=False
+            )
+            return bool(np.isfinite(arr).any())
+        except Exception:
+            return False
+
+    # Selected-feature stores can contain placeholder all-NaN gated columns
+    # when a training-path warmup could not emit deterministic gate-expanded
+    # interactions.  Treat those as missing and rebuild them from the live
+    # OHLC panel below.
+    needed_bases = {
+        base
+        for base in (_gate_feature_base_key(key) for key in needed)
+        if isinstance(base, str) and base
+    }
+    synthesized_bases: list[str] = []
+    for base_name in sorted(needed_bases):
+        if _latest_has_finite_frame(base_name):
+            continue
+        ret_match = re.fullmatch(r"ret(\d+)h", base_name)
+        if ret_match:
+            horizon = max(1, int(ret_match.group(1)))
+            out[base_name] = close.pct_change(horizon).astype(np.float32)
+            synthesized_bases.append(base_name)
+    if synthesized_bases:
+        tprint(
+            "Gate-conditioned selected feature bases synthesized from live "
+            f"close panel: {synthesized_bases[:12]}"
+        )
+
+    if requires_g_vol and not _latest_has_finite_frame("G_VOL"):
         out["G_VOL"] = _broadcast_series_to_symbols(g_vol_series, valid_syms)
-    if requires_g_trend and "G_TREND" not in out:
+    if requires_g_trend and not _latest_has_finite_frame("G_TREND"):
         out["G_TREND"] = _broadcast_series_to_symbols(g_trend_series, valid_syms)
 
     gates = {
@@ -5489,7 +7632,8 @@ def _synthesize_gated_feature_keys(
     }
     for feat_name in sorted(needed):
         if feat_name in out or "_" not in feat_name:
-            continue
+            if feat_name in out and _latest_has_finite_frame(feat_name):
+                continue
         gate_name = "G_VOL" if "_G_VOL_" in feat_name else "G_TREND"
         marker = f"_{gate_name}_"
         if marker not in feat_name:

@@ -6,6 +6,8 @@ from extreme_price_movements.features_oi import (
     get_oi_trading_feature_names,
 )
 from extreme_price_movements.features_residual import residual_feature_names
+from extreme_price_movements.model_drift_features import MODEL_DRIFT_FEATURE_KEYS
+from extreme_price_movements.features_gmm_ae import AE_GMM_FEATURE_COLUMNS
 
 # =============================================================================
 # CANONICAL Horizons & Buckets - Single Source of Truth
@@ -521,6 +523,20 @@ FEATURE_KEYS_15M_OHLCV = [
     "bb_pos_24",
 ]
 
+SPREAD_PROXY_RAW_FEATURE_KEYS = [
+    "hl_range_bps",
+    "abs_return_bps",
+    "body_bps",
+    "upper_wick_bps",
+    "lower_wick_bps",
+    "wick_to_range",
+    "close_location",
+    "gap_bps",
+]
+SPREAD_PROXY_FEATURE_KEYS = [
+    f"spread_proxy_{name}_robust_z" for name in SPREAD_PROXY_RAW_FEATURE_KEYS
+]
+
 PRICE_MEMORY_FEATURE_KEYS = [
     "log_bars_since_above_1atr",
     "log_bars_since_below_1atr",
@@ -996,6 +1012,12 @@ CONTINUOUS_REGIME_FEATURES.update(
 )
 CONTINUOUS_REGIME_FEATURES.update(
     {
+        name: {"family": "spread_proxy", "type": "continuous"}
+        for name in SPREAD_PROXY_FEATURE_KEYS
+    }
+)
+CONTINUOUS_REGIME_FEATURES.update(
+    {
         "symbol_minus_mkt_ret_1h": {
             "family": "asset_relative_return",
             "type": "continuous",
@@ -1464,10 +1486,15 @@ CFG = {
     "policy_optimiser_tail_months": 4,
     "policy_optimiser_holdout_start_months_ago": 16,
     "policy_optimiser_holdout_end_months_ago": 12,
+    "policy_optimiser_recent_weeks_enable": True,
+    "policy_optimiser_optimise_start_weeks_ago": 8,
+    "policy_optimiser_optimise_end_weeks_ago": 0,
+    "policy_optimiser_validation_start_weeks_ago": 13,
+    "policy_optimiser_validation_end_weeks_ago": 9,
     "policy_optimiser_max_sample_fraction": 0.30,
     # Feature artifacts are keyed by run-id, but feature rows should extend near
     # the available data frontier rather than stopping at the historical run-id.
-    "feature_generation_end_lag_days": 3,
+    "feature_generation_end_lag_days": 0,
     "offline_backtest_skip_universe_refresh": True,
     # feature transformation remediation
     "ffd_d_values": [0.4, 0.5, 0.6],
@@ -1552,6 +1579,43 @@ CFG = {
     "val_lookback_hours": 24 * 7,  # 7d validation (time-split, no leakage)
     "min_train_samples": 200,
     "base_min_samples_hard_floor": 3000,
+    "mr_tf_masks": {
+        "enabled": False,
+        "optuna_enabled": False,
+        "q_adx_tf": 0.65,
+        "q_adx_mr": 0.45,
+        "q_stretch_mr": 0.75,
+        "q_persist_tf": 0.70,
+        "q_persist_mr": 0.30,
+        "q_tf_quality": 0.60,
+        "q_mr_quality": 0.60,
+        "N_tf": 3,
+        "N_mr": 2,
+        "ema_gap_min_tf": 0.0,
+        "mom_min_tf": 0.0,
+        "stretch_min_mr": 0.75,
+        "reversal_min_mr": 0.0,
+        "persistence_axis": "none",
+        "tf_quality_axis": "none",
+        "mr_quality_axis": "none",
+        "min_train_samples": 400,
+        "optuna_trials": 300,
+        "optuna_patience": 40,
+        "optuna_n_startup_trials": 8,
+        "optuna_n_warmup_steps": 0,
+        "optuna_use_numba": True,
+        "optuna_numba_min_rows": 20000,
+        "support_loss_hurdle": 0.0,
+        "support_loss_hurdle_ratio": 0.0015,
+        "support_loss_hurdle_floor": 5e-5,
+        "support_loss_quadratic_multiplier": 2.0,
+        "support_loss_hard_veto": False,
+        "support_value_power": 1.25,
+        "min_coverage": 0.10,
+        "min_earned_quality_uplift": 0.0,
+        "promotion_margin": 0.0,
+        "promotion_top_frac": 0.30,
+    },
     # Sample caps (symbol-balanced subsampling when exceeded)
     "base_fit_max_samples": 0,
     "base_selector_max_samples": 30000,
@@ -1578,7 +1642,7 @@ CFG = {
     # MFE/MAE quality: w_exc = 0.5 + 0.5 * clip(max(MFE/barrier, MAE/barrier) / tau, 0, 1)
     "meta_mfe_mae_tau": 1.0,
     # Sample-weight optimization (base + meta)
-    "sample_weight_opt_enable": True,
+    "sample_weight_opt_enable": False,
     "sample_weight_opt_min_samples": 400,
     "sample_weight_opt_trials": 16,
     "meta_sample_weight_opt_trials": 12,
@@ -1954,9 +2018,28 @@ CFG = {
     "sample_weight_distance_form": "inverse",  # inverse | exp
     "sample_weight_distance_k": 0.5,
     "sample_weight_distance_min_dist": 0.5,
+    # Native LGBM recency-weight HPO. This is intentionally disabled by
+    # default; when enabled it reuses native LGBM preset features/params and
+    # only searches the recency weighting contract.
+    "recency_hpo_enabled": False,
+    "recency_hpo_use_winner": True,
+    "recency_hpo_persist_winner": True,
+    "recency_hpo_train_years": 3,
+    "recency_hpo_holdout_months": 2,
+    "recency_hpo_base_half_life_months": [6.0, 9.0, 12.0],
+    "recency_hpo_meta_half_life_months": [3.0, 4.5, 6.0],
+    "recency_hpo_composite_weights": [0.3, 0.4, 0.5],
+    "recency_hpo_confirm_with_distillation": True,
+    "recency_hpo_confirmation_top_n": 3,
+    "recency_hpo_require_distillation_confirmation": True,
+    "recency_hpo_confirmation_score_tolerance": 1e-9,
+    "recency_hpo_min_train_rows": 1000,
+    "recency_hpo_min_oos_rows": 200,
     # per-hour cross-sectional training selection
     "variance_filter_pct": 1.0,  # Keep all non-constant assets
     "variance_filter_stride": 100,
+    "feature_use_local_store_universe": False,
+    "label_variance_filter_enabled": False,
     "train_extreme_pct_hourly": 0.06,  # Keep top/bottom 6% as extreme candidates (reduced from 0.08)
     "train_extreme_min": 10,
     "train_extreme_max": 80,
@@ -2051,6 +2134,7 @@ CFG = {
     "drop_raw_causal": True,
     # Enable/disable 15m OHLCV-derived feature family across train/inference feature lists.
     "enable_15m_ohlcv_features": True,
+    "spread_proxy_robust_window": 24 * 30,
     "causal_cols": [
         "dv_z",
         "rng_z",
@@ -3734,7 +3818,93 @@ CFG["INTERACTION_META_FEATURE_KEYS"] = [
     "fund_abs_z_x_rv_24h",
     "fund_z_x_trend_strength",
 ]
+CFG["CHANGE_POINT_REGIME_FEATURE_KEYS"] = [
+    "log_realized_vol",
+    "range_volatility",
+    "range_per_volume",
+    "trend_r2_24",
+    "trend_r2_48",
+    "path_entropy_12",
+    "path_entropy_24",
+    "binned_return_entropy_24",
+    "directional_entropy_20",
+    "log_realized_vol_cp_z_8_32_96",
+    "log_realized_vol_cp_logstd_8_32",
+    "log_realized_vol_cp_absratio_8_32",
+    "range_volatility_cp_z_8_32_96",
+    "range_volatility_cp_logstd_8_32",
+    "range_volatility_cp_absratio_8_32",
+    "vol_of_vol_cp_z_8_32_96",
+    "vol_of_vol_cp_logstd_8_32",
+    "vol_of_vol_cp_absratio_8_32",
+    "volume_zscore_cp_z_8_32_96",
+    "volume_zscore_cp_logstd_8_32",
+    "volume_zscore_cp_absratio_8_32",
+    "range_per_volume_cp_z_8_32_96",
+    "range_per_volume_cp_logstd_8_32",
+    "range_per_volume_cp_absratio_8_32",
+    "return_autocorr_cp_z_8_32_96",
+    "return_autocorr_cp_logstd_8_32",
+    "return_autocorr_cp_absratio_8_32",
+    "adx_cp_z_8_32_96",
+    "adx_cp_logstd_8_32",
+    "adx_cp_absratio_8_32",
+    "choppiness_cp_z_8_32_96",
+    "choppiness_cp_logstd_8_32",
+    "choppiness_cp_absratio_8_32",
+    "trend_r2_cp_z_8_32_96",
+    "trend_r2_cp_logstd_8_32",
+    "trend_r2_cp_absratio_8_32",
+    "price_entropy_cp_z_8_32_96",
+    "price_entropy_cp_logstd_8_32",
+    "price_entropy_cp_absratio_8_32",
+]
+CFG["CHANGE_POINT_SIGNAL_FEATURE_KEYS"] = [
+    "trend_r2_24",
+    "trend_r2_48",
+    "path_entropy_12",
+    "path_entropy_24",
+    "binned_return_entropy_24",
+    "directional_entropy_20",
+    "return_autocorr_cp_z_8_32_96",
+    "return_autocorr_cp_logstd_8_32",
+    "return_autocorr_cp_absratio_8_32",
+    "adx_cp_z_8_32_96",
+    "adx_cp_logstd_8_32",
+    "adx_cp_absratio_8_32",
+    "choppiness_cp_z_8_32_96",
+    "choppiness_cp_logstd_8_32",
+    "choppiness_cp_absratio_8_32",
+    "trend_r2_cp_z_8_32_96",
+    "trend_r2_cp_logstd_8_32",
+    "trend_r2_cp_absratio_8_32",
+    "price_entropy_cp_z_8_32_96",
+    "price_entropy_cp_logstd_8_32",
+    "price_entropy_cp_absratio_8_32",
+]
+CFG["CHANGE_POINT_CONTEXT_FEATURE_KEYS"] = [
+    "log_realized_vol",
+    "range_volatility",
+    "range_per_volume",
+    "log_realized_vol_cp_z_8_32_96",
+    "log_realized_vol_cp_logstd_8_32",
+    "log_realized_vol_cp_absratio_8_32",
+    "range_volatility_cp_z_8_32_96",
+    "range_volatility_cp_logstd_8_32",
+    "range_volatility_cp_absratio_8_32",
+    "vol_of_vol_cp_z_8_32_96",
+    "vol_of_vol_cp_logstd_8_32",
+    "vol_of_vol_cp_absratio_8_32",
+    "volume_zscore_cp_z_8_32_96",
+    "volume_zscore_cp_logstd_8_32",
+    "volume_zscore_cp_absratio_8_32",
+    "range_per_volume_cp_z_8_32_96",
+    "range_per_volume_cp_logstd_8_32",
+    "range_per_volume_cp_absratio_8_32",
+]
+CFG["spread_proxy_features"] = SPREAD_PROXY_FEATURE_KEYS
 CFG["base_shared_feature_keys"] += [
+    "spread_proxy_features",
     "PRICE_MEMORY_FEATURE_KEYS",
     "DAILY_SR_BASE_FEATURE_KEYS",
     "VOLUME_FREE_PERP_BASE_FEATURE_KEYS",
@@ -3742,8 +3912,14 @@ CFG["base_shared_feature_keys"] += [
     "ORDERBOOK_BASE_FEATURE_KEYS",
     "FUNDING_BASE_FEATURE_KEYS",
     "CROSS_ASSET_BASE_FEATURE_KEYS",
+    "CHANGE_POINT_SIGNAL_FEATURE_KEYS",
 ]
+CFG["meta_product_feature_keys"] = _append_missing(
+    CFG.get("meta_product_feature_keys", []),
+    ["spread_proxy_features"],
+)
 CFG["meta_shared_feature_keys"] += [
+    "spread_proxy_features",
     "WEEKLY_SR_META_FEATURE_KEYS",
     "VOLUME_FREE_PERP_META_FEATURE_KEYS",
     "LONG_HORIZON_PERP_META_FEATURE_KEYS",
@@ -3752,6 +3928,7 @@ CFG["meta_shared_feature_keys"] += [
     "FUNDING_META_FEATURE_KEYS",
     "CROSS_ASSET_META_FEATURE_KEYS",
     "INTERACTION_META_FEATURE_KEYS",
+    "CHANGE_POINT_CONTEXT_FEATURE_KEYS",
 ]
 
 
@@ -3930,8 +4107,18 @@ CFG["META_BASE_PERFORMANCE_FEATURE_KEYS"] = [
     "recent_prob_error_20",
     "recent_hit_rate_20",
     "base_model_abs_error_roll20",
+    "signed_prediction_error",
+    "negative_log_likelihood",
+    "surprise_error_z",
+    "wrong_confident",
 ]
 CFG["meta_shared_feature_keys"] += ["META_BASE_PERFORMANCE_FEATURE_KEYS"]
+CFG["REGIME_ADAPTOR_MODEL_ERROR_FEATURE_KEYS"] = [
+    "signed_prediction_error",
+    "negative_log_likelihood",
+    "surprise_error_z",
+    "wrong_confident",
+]
 
 
 CFG["META_SELF_FEATURE_KEYS"] = [
@@ -3984,6 +4171,7 @@ CFG["meta_shared_feature_keys"] += ["META_RECENT_DISAGREEMENT_FEATURE_KEYS"]
 
 CFG["META_MODEL_UNCERTAINTY_FEATURE_KEYS"] = [
     "feature_drift_psi_core",
+    "feature_drift_ks_core",
     "regime_centroid_similarity_train",
     "regime_centroid_similarity_train_pc0",
     "regime_centroid_similarity_train_pc1",
@@ -3992,6 +4180,10 @@ CFG["META_MODEL_UNCERTAINTY_FEATURE_KEYS"] = [
     "regime_centroid_similarity_train_window_p10",
     "feature_drift_psi_core_50",
     "feature_drift_psi_core_80",
+    "feature_drift_psi_bin_mean",
+    "feature_drift_psi_bin_max",
+    "feature_drift_ks_bin_mean",
+    "feature_drift_ks_bin_max",
     "mahalanobis_mean_shift",
     "frobenius_corr_shift",
     "feature_drift_cov_shift",
@@ -4005,6 +4197,46 @@ CFG["META_MODEL_UNCERTAINTY_FEATURE_KEYS"] = [
     "leaf_support_mean_log",
     "leaf_support_median_frac",
     "leaf_support_q25_frac",
+    "leaf_train_freq_mean",
+    "leaf_train_freq_p90",
+    "leaf_train_freq_p10",
+    "leaf_train_freq_min",
+    "leaf_train_freq_max",
+    "leaf_train_freq_std",
+    "leaf_surprisal_mean",
+    "leaf_surprisal_p90",
+    "leaf_surprisal_max",
+    "leaf_low_freq_fraction",
+    "leaf_proximity_mean",
+    "leaf_proximity_p90",
+    "leaf_proximity_max",
+    "leaf_model_space_distance_mean",
+    "leaf_model_space_distance_p10",
+    "leaf_target_mean_mean",
+    "leaf_target_mean_std",
+    "leaf_target_mean_min",
+    "leaf_target_mean_max",
+    "leaf_target_std_mean",
+    "leaf_target_iqr_mean",
+    "leaf_target_range_mean",
+    "leaf_target_abs_mean",
+    "leaf_target_positive_fraction",
+    "leaf_hit_rate_avg",
+    "leaf_target_dispersion",
+    "support_gap",
+    "leaf_pred_mean_mean",
+    "leaf_error_mean_mean",
+    "leaf_centroid_radius_mean",
+    "leaf_centroid_dist_mean",
+    "leaf_centroid_dist_median",
+    "leaf_centroid_dist_std",
+    "leaf_centroid_dist_p90",
+    "leaf_centroid_dist_cv",
+    "leaf_centroid_dist_rel_mean",
+    "leaf_centroid_dist_rel_std",
+    "leaf_centroid_dist_norm_mean",
+    "leaf_centroid_dist_norm_p90",
+    "leaf_centroid_dist_norm_max",
     "reg_pred_std_robust_norm",
     "reg_pred_range_q90_q10_norm",
     "reg_leaf_support_mean_frac",
@@ -4020,8 +4252,50 @@ CFG["META_MODEL_UNCERTAINTY_FEATURE_KEYS"] = [
     "archetype_oof_bad_rate_lift",
     "distance_to_bad_archetype",
     "distance_to_good_archetype",
+    "base_error_archetype_id",
+    "base_error_archetype_is_bad",
+    "base_error_archetype_is_good",
+    "base_error_archetype_is_neutral",
+    "base_error_distance_to_archetype_centroid",
+    "base_error_distance_to_nearest_bad_archetype",
+    "base_error_archetype_oof_bad_rate_lift",
+    "base_error_distance_to_bad_archetype",
+    "base_error_distance_to_good_archetype",
 ]
 CFG["meta_shared_feature_keys"] += ["META_MODEL_UNCERTAINTY_FEATURE_KEYS"]
+CFG["BASE_LGBM_META_UNCERTAINTY_FEATURE_KEYS"] = [
+    f"base_lgbm_{key}"
+    for key in CFG["META_MODEL_UNCERTAINTY_FEATURE_KEYS"]
+]
+CFG["meta_shared_feature_keys"] += ["BASE_LGBM_META_UNCERTAINTY_FEATURE_KEYS"]
+CFG["BASE_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS"] = [
+    "base_lgbm_predictive_atlas_ic",
+    "base_lgbm_predictive_atlas_rank_ic",
+    "base_lgbm_predictive_atlas_hit_rate",
+    "base_lgbm_predictive_atlas_expected_hit_rate",
+    "base_lgbm_predictive_atlas_hit_rate_surprise",
+    "base_lgbm_predictive_atlas_hit_rate_surprise_z",
+    "base_lgbm_predictive_atlas_support_n",
+    "base_lgbm_predictive_atlas_effective_n",
+    "base_lgbm_predictive_atlas_score_mean",
+    "base_lgbm_predictive_atlas_score_std",
+    "base_lgbm_predictive_atlas_support_quality",
+]
+CFG["meta_shared_feature_keys"] += ["BASE_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS"]
+CFG["META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS"] = [
+    str(key).replace("base_lgbm_", "meta_lgbm_", 1)
+    for key in CFG["BASE_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS"]
+]
+CFG["candidate_drift_denoising_ae_enabled"] = True
+CFG["candidate_drift_denoising_ae_max_iter"] = 80
+CFG["LGBM_AE_GMM_FEATURE_KEYS"] = list(AE_GMM_FEATURE_COLUMNS)
+CFG["BASE_LGBM_AE_GMM_FEATURE_KEYS"] = [
+    f"base_lgbm_{key}" for key in CFG["LGBM_AE_GMM_FEATURE_KEYS"]
+]
+CFG["META_LGBM_AE_GMM_FEATURE_KEYS"] = [
+    f"meta_lgbm_{key}" for key in CFG["LGBM_AE_GMM_FEATURE_KEYS"]
+]
+CFG["meta_shared_feature_keys"] += ["BASE_LGBM_AE_GMM_FEATURE_KEYS"]
 
 
 # =============================================================================
@@ -4063,8 +4337,13 @@ REGIME_ADAPTOR_BASE_FEATURE_KEYS = [
     "regime_centroid_similarity_train_window_mean",
     "regime_centroid_similarity_train_window_p10",
     "feature_drift_psi_core",
+    "feature_drift_ks_core",
     "feature_drift_psi_core_50",
     "feature_drift_psi_core_80",
+    "feature_drift_psi_bin_mean",
+    "feature_drift_psi_bin_max",
+    "feature_drift_ks_bin_mean",
+    "feature_drift_ks_bin_max",
     "mahalanobis_mean_shift",
     "frobenius_corr_shift",
     "feature_drift_cov_shift",
@@ -4073,6 +4352,143 @@ REGIME_ADAPTOR_BASE_FEATURE_KEYS = [
     "rare_leaf_low_support_score",
     "contribution_drift_score",
 ]
+REGIME_ADAPTOR_BASE_FEATURE_KEYS += CFG["REGIME_ADAPTOR_MODEL_ERROR_FEATURE_KEYS"]
+REGIME_ADAPTOR_ARCHETYPE_FEATURE_KEYS = (
+    [
+        "contrib_abs_sum",
+        "contrib_l2_norm",
+        "contrib_entropy",
+        "top_1_contrib_abs",
+        "top_3_contrib_abs_sum",
+        "positive_contrib_sum",
+        "negative_contrib_sum",
+    ]
+    + [f"archetype_contrib_svd_{_i:02d}" for _i in range(16)]
+    + [f"raw_state_svd_{_i:02d}" for _i in range(16)]
+    + [
+        "raw_state_svd_mean",
+        "raw_state_svd_std",
+        "raw_state_mahalanobis",
+        "raw_state_knn_distance",
+        "raw_state_min_cluster_distance",
+        "raw_state_reconstruction_error",
+        "raw_state_transition_norm",
+        "raw_state_transition_mahalanobis",
+        "state_log_likelihood",
+        "state_tod_mahalanobis",
+        "raw_state_psi_mean",
+        "raw_state_psi_max",
+        "raw_state_ks_mean",
+        "raw_state_ks_max",
+        "raw_state_svd_psi_mean",
+        "raw_state_svd_psi_max",
+        "raw_state_svd_ks_mean",
+        "raw_state_svd_ks_max",
+        "base_error_archetype_id",
+        "base_error_archetype_is_bad",
+        "base_error_archetype_is_good",
+        "base_error_archetype_is_neutral",
+        "base_error_distance_to_archetype_centroid",
+        "base_error_distance_to_nearest_bad_archetype",
+        "base_error_archetype_oof_bad_rate_lift",
+        "base_error_distance_to_bad_archetype",
+        "base_error_distance_to_good_archetype",
+    ]
+)
+REGIME_ADAPTOR_BASE_FEATURE_KEYS += REGIME_ADAPTOR_ARCHETYPE_FEATURE_KEYS
+
+REGIME_ADAPTOR_LGBM_INTERNAL_TOP25_METRIC_KEYS = (
+    "lgbm_prob",
+    "lgbm_raw_score",
+    "prob_std",
+    "raw_score_std",
+    "margin_from_neutral",
+    "prob_uncertainty",
+    "entropy",
+    "variance_proxy",
+    "rank_pct",
+    "score_margin_top10",
+    "score_margin_top20",
+    "score_margin_top30",
+    "leaf_count_p10",
+    "rare_leaf_fraction",
+    "leaf_proximity_mean",
+    "leaf_model_space_distance_mean",
+    "leaf_train_freq_p10",
+    "leaf_surprisal_mean",
+    "leaf_low_freq_fraction",
+    "leaf_hit_rate_avg",
+    "leaf_target_dispersion",
+    "support_gap",
+    "leaf_target_std_mean",
+    "leaf_target_iqr_mean",
+    "leaf_centroid_dist_norm_mean",
+    "leaf_centroid_dist_norm_p90",
+    "contrib_entropy",
+    "contrib_abs_sum",
+    "score_path_std",
+    "rank_bin_net_ret_oof",
+)
+REGIME_ADAPTOR_LGBM_INTERNAL_FEATURE_KEYS = [
+    f"{prefix}_{key}"
+    for prefix in ("base_lgbm", "meta_lgbm")
+    for key in REGIME_ADAPTOR_LGBM_INTERNAL_TOP25_METRIC_KEYS
+]
+REGIME_ADAPTOR_BASE_FEATURE_KEYS += REGIME_ADAPTOR_LGBM_INTERNAL_FEATURE_KEYS
+
+REGIME_ADAPTOR_META_LGBM_DRIFT_UNCERTAINTY_KEYS = tuple(
+    dict.fromkeys(
+        list(MODEL_DRIFT_FEATURE_KEYS)
+        + [
+            "feature_drift_psi_core",
+            "feature_drift_ks_core",
+        ]
+    )
+)
+REGIME_ADAPTOR_META_LGBM_DRIFT_UNCERTAINTY_FEATURE_KEYS = [
+    f"meta_lgbm_{key}"
+    for key in REGIME_ADAPTOR_META_LGBM_DRIFT_UNCERTAINTY_KEYS
+]
+REGIME_ADAPTOR_BASE_FEATURE_KEYS += (
+    REGIME_ADAPTOR_META_LGBM_DRIFT_UNCERTAINTY_FEATURE_KEYS
+)
+REGIME_ADAPTOR_META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS = list(
+    CFG["META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS"]
+)
+REGIME_ADAPTOR_BASE_FEATURE_KEYS += (
+    REGIME_ADAPTOR_META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS
+)
+REGIME_ADAPTOR_META_LGBM_AE_GMM_FEATURE_KEYS = list(
+    CFG["META_LGBM_AE_GMM_FEATURE_KEYS"]
+)
+REGIME_ADAPTOR_BASE_FEATURE_KEYS += REGIME_ADAPTOR_META_LGBM_AE_GMM_FEATURE_KEYS
+
+try:
+    from extreme_price_movements.drift_monitoring import drift_regime_feature_names
+
+    REGIME_ADAPTOR_DRIFT_MONITORING_FEATURE_KEYS = [
+        name
+        for name in drift_regime_feature_names()
+        if "_all_score_" not in str(name)
+        and not str(name).endswith(("_10d", "_14d"))
+    ]
+except Exception:
+    REGIME_ADAPTOR_DRIFT_MONITORING_FEATURE_KEYS = []
+REGIME_ADAPTOR_BASE_FEATURE_KEYS += REGIME_ADAPTOR_DRIFT_MONITORING_FEATURE_KEYS
+
+try:
+    from extreme_price_movements.candidate_drift_calibration import (
+        CANDIDATE_DRIFT_FEATURE_COLUMNS,
+        DRIFT_SOURCE_COLUMNS as CANDIDATE_DRIFT_SOURCE_COLUMNS,
+    )
+
+    REGIME_ADAPTOR_CANDIDATE_DRIFT_FEATURE_KEYS = (
+        list(CANDIDATE_DRIFT_FEATURE_COLUMNS)
+        + [f"{key}_pct" for key in CANDIDATE_DRIFT_SOURCE_COLUMNS]
+    )
+except Exception:
+    REGIME_ADAPTOR_CANDIDATE_DRIFT_FEATURE_KEYS = []
+REGIME_ADAPTOR_BASE_FEATURE_KEYS += REGIME_ADAPTOR_CANDIDATE_DRIFT_FEATURE_KEYS
 
 REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS = [
     "market_breadth_24h",
@@ -4270,6 +4686,62 @@ REGIME_ADAPTOR_EBM_CONSOLIDATED_FEATURE_KEYS = [
     "asset_ebm_brittleness_mean_7d",
     "asset_ebm_brittleness_mean_15d",
 ]
+_REGIME_ADAPTOR_REMOVED_EBM_CONSOLIDATED_FEATURE_KEYS = set(
+    REGIME_ADAPTOR_EBM_CONSOLIDATED_FEATURE_KEYS
+)
+REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS = [
+    key
+    for key in REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS
+    if key not in _REGIME_ADAPTOR_REMOVED_EBM_CONSOLIDATED_FEATURE_KEYS
+]
+REGIME_ADAPTOR_ASSET_FEATURE_KEYS = [
+    key
+    for key in REGIME_ADAPTOR_ASSET_FEATURE_KEYS
+    if key not in _REGIME_ADAPTOR_REMOVED_EBM_CONSOLIDATED_FEATURE_KEYS
+]
+REGIME_ADAPTOR_EBM_CONSOLIDATED_FEATURE_KEYS = []
+
+_REGIME_ADAPTOR_GLOBAL_FEATURE_ALLOWLIST = {
+    "market_breadth_24h",
+    "market_breadth_7d",
+    "mkt_ret_eq_5d",
+    "mkt_ret_eq_30d",
+    "market_index_slope_5d",
+    "market_index_slope_30d",
+    "market_breadth_5d",
+    "market_breadth_30d",
+    "pct_assets_positive_return_5d",
+    "pct_assets_positive_return_30d",
+    "pct_assets_above_5d_ema",
+    "pct_assets_above_30d_ema",
+    "cross_asset_return_dispersion_24h",
+    "cross_asset_return_dispersion_7d",
+    "cross_asset_return_dispersion_30d",
+    "cross_asset_vol_dispersion_24h",
+    "cross_asset_vol_dispersion_7d",
+    "median_asset_rv_24h",
+    "median_asset_rv_7d",
+    "top_decile_asset_rv_24h",
+    "top_decile_asset_rv_7d",
+    "cross_asset_correlation_7d",
+    "cross_asset_correlation_30d",
+    "corr_asset_market_return_24h_20d",
+    "beta_asset_market_20d",
+    "avg_pairwise_corr_universe_20d",
+    "btc_eth_trend_proxy",
+    "btc_eth_vol_proxy",
+    "funding_rate_cross_asset_dispersion",
+}
+REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS = [
+    key
+    for key in REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS
+    if key in _REGIME_ADAPTOR_GLOBAL_FEATURE_ALLOWLIST
+]
+REGIME_ADAPTOR_ASSET_FEATURE_KEYS = [
+    key
+    for key in REGIME_ADAPTOR_ASSET_FEATURE_KEYS
+    if "_10d" not in key and "_15d" not in key
+]
 
 
 REGIME_ADAPTOR_CROSS_ASSET_FEATURE_KEYS = REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS
@@ -4284,6 +4756,10 @@ REGIME_ADAPTOR_FUNDING_FEATURE_KEYS = [
     "funding_rate_cross_asset_dispersion",
 ]
 REGIME_ADAPTOR_ORDERBOOK_FEATURE_KEYS = [
+    "asset_spread_decile",
+    "asset_p75_spread_bps",
+    "asset_p75_spread_decile",
+    "spread_to_expected_move",
     "asset_spread_proxy_p90_24h",
     "asset_spread_proxy_p90_96h",
     "asset_spread_proxy_p90_7d",
@@ -4309,23 +4785,6 @@ REGIME_ADAPTOR_FEATURE_ORDER = (
     + REGIME_ADAPTOR_EBM_CONSOLIDATED_FEATURE_KEYS
 )
 
-REGIME_ADAPTOR_COMBINATION_GRID = {
-    "lambda_regime": [
-        0.125,
-        0.25,
-        0.33,
-        0.50,
-        0.66,
-        0.75,
-        1.0,
-        1.25,
-        1.5,
-    ],
-    "global_weight": [0.0, 0.25, 0.50, 0.75, 1.0],
-    "asset_weight": [0.0, 0.25, 0.50, 0.75, 1.0],
-    "gamma_global": [0.75, 1.0, 1.25, 1.5, 2.0],
-    "gamma_asset": [0.75, 1.0, 1.25, 1.5, 2.0],
-}
 REGIME_ADAPTOR_OBJECTIVE_WEIGHTS = {
     "pnl_ratio": 0.30,
     "sortino_ratio": 0.20,
@@ -4340,29 +4799,12 @@ REGIME_ADAPTOR_RATIO_CLIPS = {
     "period_std_ratio": [0.50, 1.75],
     "worst_loss_ratio": [0.50, 1.75],
 }
-REGIME_ADAPTOR_GLOBAL_BAD_RATE_THRESHOLD = 0.50
-REGIME_ADAPTOR_ASSET_BAD_RATE_THRESHOLD = 0.50
-
-REGIME_ADAPTOR_LGBM_CLASSIFIER_PARAMS = {
-    "objective": "binary",
-    "max_depth": 2,
-    "num_leaves": 4,
-    "n_estimators": 50,
-    "min_child_samples": 50,
-    "reg_alpha": 0.0,
-    "reg_lambda": 10.0,
-    "learning_rate": 0.05,
-    "random_state": 42,
-    "verbosity": -1,
-    "class_weight": "balanced",
-}
 
 
 class RegimeAdaptorKey:
-    """Canonical config keys for the rolling RegimeAdaptor layer."""
+    """Canonical config keys for the meta-correctness RegimeAdaptor layer."""
 
     REGIME_ADAPTOR_ENABLED = "regime_adaptor.enabled"
-    REGIME_ADAPTOR_HORIZONS_DAYS = "regime_adaptor.horizons_days"
     REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS = "regime_adaptor.global_feature_keys"
     REGIME_ADAPTOR_ASSET_FEATURE_KEYS = "regime_adaptor.asset_feature_keys"
     REGIME_ADAPTOR_STRATEGY_ASSET_FEATURE_KEYS = (
@@ -4378,19 +4820,8 @@ class RegimeAdaptorKey:
         "regime_adaptor.rolling_prior_feature_keys"
     )
     REGIME_ADAPTOR_MODEL_TYPE = "regime_adaptor.model_type"
-    REGIME_ADAPTOR_GLOBAL_BAD_RATE_THRESHOLD = (
-        "regime_adaptor.global_bad_rate_threshold"
-    )
-    REGIME_ADAPTOR_ASSET_BAD_RATE_THRESHOLD = "regime_adaptor.asset_bad_rate_threshold"
-    REGIME_ADAPTOR_LGBM_CLASSIFIER_PARAMS = "regime_adaptor.lgbm_classifier_params"
-    REGIME_ADAPTOR_OPTUNA_NO_IMPROVEMENT_TRIALS = (
-        "regime_adaptor.optuna_no_improvement_trials"
-    )
-    REGIME_ADAPTOR_COMBINATION_GRID = "regime_adaptor.combination_grid"
     REGIME_ADAPTOR_OBJECTIVE_WEIGHTS = "regime_adaptor.objective_weights"
     REGIME_ADAPTOR_RATIO_CLIPS = "regime_adaptor.ratio_clips"
-    REGIME_ADAPTOR_MIN_NET_PNL_RATIO = "regime_adaptor.min_net_pnl_ratio"
-    REGIME_ADAPTOR_MIN_OBJECTIVE = "regime_adaptor.min_objective"
     REGIME_ADAPTOR_INFERENCE_INTEGRATION_MODE = (
         "regime_adaptor.inference_integration_mode"
     )
@@ -4400,7 +4831,6 @@ class RegimeAdaptorKey:
 
 REGIME_ADAPTOR_DEFAULT_CONFIG = {
     RegimeAdaptorKey.REGIME_ADAPTOR_ENABLED: False,
-    RegimeAdaptorKey.REGIME_ADAPTOR_HORIZONS_DAYS: [3, 5],
     RegimeAdaptorKey.REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS: REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS,
     RegimeAdaptorKey.REGIME_ADAPTOR_ASSET_FEATURE_KEYS: REGIME_ADAPTOR_ASSET_FEATURE_KEYS,
     RegimeAdaptorKey.REGIME_ADAPTOR_STRATEGY_ASSET_FEATURE_KEYS: REGIME_ADAPTOR_STRATEGY_ASSET_FEATURE_KEYS,
@@ -4409,16 +4839,9 @@ REGIME_ADAPTOR_DEFAULT_CONFIG = {
     RegimeAdaptorKey.REGIME_ADAPTOR_ORDERBOOK_FEATURE_KEYS: REGIME_ADAPTOR_ORDERBOOK_FEATURE_KEYS,
     RegimeAdaptorKey.REGIME_ADAPTOR_EBM_CONSOLIDATED_FEATURE_KEYS: REGIME_ADAPTOR_EBM_CONSOLIDATED_FEATURE_KEYS,
     RegimeAdaptorKey.REGIME_ADAPTOR_ROLLING_PRIOR_FEATURE_KEYS: REGIME_ADAPTOR_ROLLING_PRIOR_FEATURE_KEYS,
-    RegimeAdaptorKey.REGIME_ADAPTOR_MODEL_TYPE: "bad_regime_classifier",
-    RegimeAdaptorKey.REGIME_ADAPTOR_GLOBAL_BAD_RATE_THRESHOLD: REGIME_ADAPTOR_GLOBAL_BAD_RATE_THRESHOLD,
-    RegimeAdaptorKey.REGIME_ADAPTOR_ASSET_BAD_RATE_THRESHOLD: REGIME_ADAPTOR_ASSET_BAD_RATE_THRESHOLD,
-    RegimeAdaptorKey.REGIME_ADAPTOR_LGBM_CLASSIFIER_PARAMS: REGIME_ADAPTOR_LGBM_CLASSIFIER_PARAMS,
-    RegimeAdaptorKey.REGIME_ADAPTOR_OPTUNA_NO_IMPROVEMENT_TRIALS: 25,
-    RegimeAdaptorKey.REGIME_ADAPTOR_COMBINATION_GRID: REGIME_ADAPTOR_COMBINATION_GRID,
+    RegimeAdaptorKey.REGIME_ADAPTOR_MODEL_TYPE: "meta_correctness_lgbm",
     RegimeAdaptorKey.REGIME_ADAPTOR_OBJECTIVE_WEIGHTS: REGIME_ADAPTOR_OBJECTIVE_WEIGHTS,
     RegimeAdaptorKey.REGIME_ADAPTOR_RATIO_CLIPS: REGIME_ADAPTOR_RATIO_CLIPS,
-    RegimeAdaptorKey.REGIME_ADAPTOR_MIN_NET_PNL_RATIO: 0.90,
-    RegimeAdaptorKey.REGIME_ADAPTOR_MIN_OBJECTIVE: 1.05,
     RegimeAdaptorKey.REGIME_ADAPTOR_INFERENCE_INTEGRATION_MODE: "disabled",
     RegimeAdaptorKey.REGIME_ADAPTOR_ARTIFACT_PATH: "ridge_sizer/regime_adaptors/{strategy_id}/regime_adaptor.json",
     RegimeAdaptorKey.REGIME_ADAPTOR_DIAGNOSTICS_PATH: "ridge_sizer/regime_adaptors/{strategy_id}/diagnostics",
@@ -4656,6 +5079,7 @@ for _bps in (5, 10, 25, 50, 100):
         }
     )
 PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(RESIDUAL_FEATURE_KEYS)
+PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(SPREAD_PROXY_FEATURE_KEYS)
 PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(OI_TRADING_FEATURE_KEYS)
 PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(LONG_HORIZON_PERP_META_FEATURE_KEYS)
 PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS.update(VOLUME_FREE_PERP_BASE_FEATURE_KEYS)
@@ -4868,6 +5292,10 @@ MODEL_DERIVED_META_PERFORMANCE_GROUP_KEYS = {
     "META_SELF_FEATURE_KEYS",
     "META_RECENT_DISAGREEMENT_FEATURE_KEYS",
     "META_MODEL_UNCERTAINTY_FEATURE_KEYS",
+    "BASE_LGBM_META_UNCERTAINTY_FEATURE_KEYS",
+    "BASE_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS",
+    "BASE_LGBM_AE_GMM_FEATURE_KEYS",
+    "META_LGBM_AE_GMM_FEATURE_KEYS",
 }
 MODEL_DERIVED_META_PERFORMANCE_FEATURE_KEYS = set()
 for _group_key in MODEL_DERIVED_META_PERFORMANCE_GROUP_KEYS:
@@ -4946,6 +5374,10 @@ for _name in (
     "META_SELF_FEATURE_KEYS",
     "META_RECENT_DISAGREEMENT_FEATURE_KEYS",
     "META_MODEL_UNCERTAINTY_FEATURE_KEYS",
+    "BASE_LGBM_META_UNCERTAINTY_FEATURE_KEYS",
+    "BASE_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS",
+    "BASE_LGBM_AE_GMM_FEATURE_KEYS",
+    "META_LGBM_AE_GMM_FEATURE_KEYS",
 ):
     CFG[_name] = _portable_feature_list(CFG.get(_name, []))
 

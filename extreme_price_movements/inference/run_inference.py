@@ -100,8 +100,11 @@ from extreme_price_movements.inference.data_fetcher import (
 )
 from extreme_price_movements.inference.feature_generator import (
     _compute_policy_barrier_pct,
+    _coerce_feature_source_run_ids,
     _feature_runtime_cfg_hash,
     _hash_values,
+    _is_live_source_derived_feature_key,
+    _meta_model_derived_raw_dependencies,
     _merge_missing_feature_dicts,
     _required_tail_warmup_hours,
     compute_selector_features,
@@ -110,7 +113,9 @@ from extreme_price_movements.inference.feature_generator import (
     get_inference_required_feature_keys,
     get_market_data,
     is_model_derived_feature_key,
+    live_model_feature_store_strict,
     load_or_compute_features,
+    prewarm_selected_model_feature_cache_for_live,
     raw_required_feature_keys,
 )
 from extreme_price_movements.inference.feature_layer_debug import (
@@ -167,6 +172,11 @@ from extreme_price_movements.inference.training_live_parity_contract import (
     validate_training_live_parity_contract,
 )
 from extreme_price_movements.inference.prediction_ledger import PredictionLedger
+from extreme_price_movements.drift_monitoring import write_live_drift_recap
+try:
+    from extreme_price_movements.lgbm_pipeline import LGBM_INTERNAL_METRIC_FEATURE_NAMES
+except Exception:  # pragma: no cover - keep live runner importable with old envs
+    LGBM_INTERNAL_METRIC_FEATURE_NAMES = ()
 from extreme_price_movements.inference.safety_switches import (
     MarketKillSwitch,
     StrategyKillSwitch,
@@ -332,6 +342,20 @@ def _fetch_live_closeable_price(
     }
 
 
+def _executable_stop_breached(side: str, stop_price: float, price: float) -> bool:
+    """Return whether the executable close-side price has crossed the stop."""
+    stop = _finite_positive_float(stop_price)
+    current = _finite_positive_float(price)
+    if not (np.isfinite(stop) and np.isfinite(current)):
+        return False
+    side_l = str(side or "").strip().lower()
+    if side_l == "long":
+        return current <= stop
+    if side_l == "short":
+        return current >= stop
+    return False
+
+
 def _position_policy_entry_price(position_state: Mapping[str, Any]) -> tuple[float, str]:
     """Return the fill reference used for live policy MFE/MAE accounting."""
     for key in (
@@ -349,6 +373,108 @@ def _position_policy_entry_price(position_state: Mapping[str, Any]) -> tuple[flo
         if np.isfinite(value):
             return float(value), key
     return float("nan"), "unavailable"
+
+
+def _shadow_execution_realism_enabled() -> bool:
+    raw = str(os.getenv("EPM_LIVE_EXECUTION_REALISM_SHADOW", "1")).strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _shadow_side_return(side: str, price: float, entry_price: float) -> float:
+    if not (np.isfinite(price) and np.isfinite(entry_price) and entry_price > 0.0):
+        return float("nan")
+    if str(side).lower() == "short":
+        return float((entry_price - price) / max(abs(entry_price), 1e-12))
+    return float((price - entry_price) / max(abs(entry_price), 1e-12))
+
+
+def _shadow_bps_delta(side: str, observed: Any, reference: Any) -> float:
+    obs = _finite_positive_float(observed)
+    ref = _finite_positive_float(reference)
+    if not (np.isfinite(obs) and np.isfinite(ref) and ref > 0.0):
+        return float("nan")
+    sign = -1.0 if str(side).lower() == "short" else 1.0
+    return float(sign * (obs / max(ref, 1e-12) - 1.0) * 10000.0)
+
+
+def _ensure_simple_policy_shadow_state(
+    position_state: Dict[str, Any],
+    *,
+    symbol: str,
+    side: str,
+    policy_entry_price: float,
+    policy_entry_price_source: str,
+    realized_entry_price: float,
+    stop_price: float,
+    stop_reason: str,
+    params: Mapping[str, Any],
+) -> Dict[str, Any]:
+    shadow = position_state.get("simple_policy_shadow")
+    if not isinstance(shadow, dict):
+        shadow = {
+            "schema": "simple_policy_execution_shadow_v1",
+            "enabled": True,
+            "status": "open",
+            "symbol": symbol,
+            "side": side,
+            "strategy_id": position_state.get("strategy_id")
+            or position_state.get("bucket_key"),
+            "bucket_key": position_state.get("bucket_key"),
+            "entry_time": _json_safe_audit_value(position_state.get("entry_time")),
+            "policy_entry_price": (
+                float(policy_entry_price) if np.isfinite(policy_entry_price) else None
+            ),
+            "policy_entry_price_source": policy_entry_price_source,
+            "realized_entry_price": (
+                float(realized_entry_price)
+                if np.isfinite(realized_entry_price)
+                else None
+            ),
+            "entry_gap_bps": _shadow_bps_delta(
+                side, realized_entry_price, policy_entry_price
+            ),
+            "initial_shadow_stop_price": (
+                float(stop_price) if np.isfinite(stop_price) else None
+            ),
+            "shadow_stop_price": (
+                float(stop_price) if np.isfinite(stop_price) else None
+            ),
+            "shadow_stop_reason": stop_reason,
+            "params_source": position_state.get("stop_policy_params_source")
+            or params.get("params_source"),
+            "params_hash": position_state.get("stop_policy_params_hash")
+            or params.get("params_hash"),
+            "params_schema": position_state.get("stop_policy_schema")
+            or params.get("params_schema")
+            or "simple_policy_v1",
+            "events": [],
+        }
+        position_state["simple_policy_shadow"] = shadow
+    return shadow
+
+
+def _append_simple_policy_shadow_event(
+    shadow: Dict[str, Any],
+    event: str,
+    **payload: Any,
+) -> None:
+    events = shadow.setdefault("events", [])
+    if not isinstance(events, list):
+        events = []
+        shadow["events"] = events
+    if len(events) >= 250:
+        del events[: len(events) - 249]
+    clean = {
+        str(key): _json_safe_audit_value(value)
+        for key, value in payload.items()
+    }
+    events.append(
+        {
+            "ts": pd.Timestamp.now(tz="UTC").isoformat(),
+            "event": str(event),
+            **clean,
+        }
+    )
 
 
 def _strategy_mask_count_diagnostics(
@@ -461,44 +587,12 @@ def _load_normalized_threshold_map(
 ) -> Dict[str, Dict[str, Any]]:
     _raise_if_policy_export_invalid(data_root, run_id)
     rows_out: Dict[str, Dict[str, Any]] = {}
-    threshold_paths = [
-        path
-        for base in _policy_artifact_bases(data_root, run_id)
-        for path in (
-            base / "simple_position_sizer" / "normalized_strategy_thresholds.json",
-            base / "ridge_sizer" / "normalized_strategy_thresholds.json",
-        )
-    ]
-    for path in threshold_paths:
-        if not path.exists():
-            continue
-        try:
-            payload = json.loads(path.read_text())
-            rows = payload.get("strategies", {}) if isinstance(payload, dict) else {}
-            if isinstance(rows, dict):
-                threshold_space = str(payload.get("threshold_space", "") or "")
-                for sid, row in rows.items():
-                    if isinstance(row, dict):
-                        row = dict(row)
-                        row.setdefault("threshold_space", threshold_space)
-                        row.setdefault("threshold_source", str(path))
-                        core = strategy_core_id(str(sid))
-                        aliases = {str(sid), core}
-                        if core:
-                            aliases.add(f"long_{core}")
-                            aliases.add(f"short_{core}")
-                        for alias in aliases:
-                            if alias:
-                                rows_out[str(alias)] = dict(row)
-                tprint(f"Loaded {len(rows)} normalized strategy thresholds from {path}")
-                break
-        except Exception as exc:
-            tprint(f"Could not load normalized strategy thresholds: {exc}")
-
     strategy_paths = [
         path
         for base in _policy_artifact_bases(data_root, run_id)
         for path in (
+            base / "simple_policy_optimiser" / "deployment" / "best_policy_params_perps.json",
+            base / "simple_policy_optimiser" / "deployment" / "best_policy_params.json",
             base / "policy_params" / "strategy_for_inference.json",
             base / "strategy_for_inference.json",
         )
@@ -555,10 +649,11 @@ def _load_normalized_threshold_map(
                     aliases.add(f"{side}_{core}")
                 for alias in aliases:
                     if alias:
-                        # strategy_for_inference.json is the source of truth for
-                        # deployable rank gates. Older sizing artifacts can be loaded
-                        # first, but must not override the optimiser deployment
-                        # threshold for a selected live strategy.
+                        # The simple_policy_optimiser deployment export is the
+                        # source of truth for deployable rank gates. The
+                        # strategy_for_inference fallbacks remain only for
+                        # pre-export artifacts that do not yet have a deployment
+                        # policy file.
                         rows_out[str(alias)] = dict(nrow)
                 loaded += 1
             tprint(f"Loaded {loaded} deployment rank thresholds from {strategy_path}")
@@ -1157,16 +1252,43 @@ def _load_meta_hit_rate_calibration(data_root: str, run_id: str) -> Dict[str, An
             )
             if not curve:
                 continue
-            keys = {str(raw_key)}
-            if str(raw_key).endswith("_clf"):
-                keys.add(str(raw_key)[: -len("_clf")])
-            core = strategy_core_id(str(raw_key))
-            if core:
-                keys.add(core)
-                keys.add(f"{core}_clf")
-            for k in keys:
+            for k in _meta_hit_rate_calibration_aliases(raw_key):
                 out[k] = curve
     _META_HIT_RATE_CALIBRATION_CACHE[key] = out
+    return out
+
+
+def _meta_hit_rate_calibration_aliases(
+    strategy_id: Any,
+    *,
+    side: Optional[Any] = None,
+) -> List[str]:
+    """Return strategy-key aliases used by meta calibration reports and live rows."""
+    sid = str(strategy_id or "").strip()
+    if not sid:
+        return []
+    stripped = sid
+    had_model_suffix = False
+    for suffix in ("_tbm_clf", "_clf", "_reg", "_early_inval"):
+        if stripped.endswith(suffix):
+            stripped = stripped[: -len(suffix)]
+            had_model_suffix = True
+            break
+    inferred_side = str(side or strategy_side(stripped) or strategy_side(sid) or "").strip()
+    core = strategy_core_id(stripped)
+    bases: List[tuple[str, bool]] = [(sid, not had_model_suffix), (stripped, True)]
+    if core:
+        bases.append((core, True))
+        if inferred_side:
+            bases.append((f"{inferred_side}_{core}", True))
+    out: List[str] = []
+    for base, expand in bases:
+        if not base:
+            continue
+        keys = (base, f"{base}_clf", f"{base}_tbm_clf") if expand else (base,)
+        for key in keys:
+            if key and key not in out:
+                out.append(key)
     return out
 
 
@@ -1337,12 +1459,13 @@ def _estimated_hit_rate_from_meta_prediction(
             "estimated_hit_rate_source": "meta_prediction_non_finite",
             "estimated_hit_rate_calibration_n": 0,
         }
-    sid = str(strategy_id or "")
-    candidates = [sid, f"{sid}_clf", strategy_core_id(sid), f"{strategy_core_id(sid)}_clf"]
+    candidates = _meta_hit_rate_calibration_aliases(strategy_id)
     curve = None
+    matched_key = ""
     for key in candidates:
         if key and key in calibration:
             curve = calibration[key]
+            matched_key = key
             break
     if not curve:
         return {
@@ -1371,7 +1494,10 @@ def _estimated_hit_rate_from_meta_prediction(
     est = float(np.interp(raw, xs, ys))
     return {
         "estimated_hit_rate": float(np.clip(est, 0.0, 1.0)),
-        "estimated_hit_rate_source": "meta_oof_reliability_curve_isotonic_interp",
+        "estimated_hit_rate_source": (
+            "meta_oof_reliability_curve_isotonic_interp"
+            + (f":{matched_key}" if matched_key else "")
+        ),
         "estimated_hit_rate_calibration_n": int(sum(p[2] for p in points)),
     }
 
@@ -1628,6 +1754,160 @@ def _adverse_signal_gap_bps(*, side: str, signal_price: Any, decision_mid: Any) 
     return 0.0
 
 
+def _panel_symbol_series(
+    panel: Mapping[str, Any],
+    key: str,
+    symbol: str,
+) -> Optional[pd.Series]:
+    frame = panel.get(key) if isinstance(panel, Mapping) else None
+    if not isinstance(frame, pd.DataFrame) or symbol not in frame.columns:
+        return None
+    series = pd.to_numeric(frame[symbol], errors="coerce")
+    try:
+        series.index = pd.to_datetime(series.index, utc=True, errors="coerce")
+    except Exception:
+        pass
+    return series.replace([np.inf, -np.inf], np.nan)
+
+
+def _latest_panel_value(
+    panel: Mapping[str, Any],
+    key: str,
+    symbol: str,
+) -> tuple[float, Optional[pd.Timestamp]]:
+    series = _panel_symbol_series(panel, key, symbol)
+    if series is None:
+        return np.nan, None
+    non_null = series.dropna()
+    if non_null.empty:
+        return np.nan, None
+    ts = pd.to_datetime(non_null.index[-1], utc=True, errors="coerce")
+    return _safe_float(non_null.iloc[-1], np.nan), (
+        pd.Timestamp(ts) if not pd.isna(ts) else None
+    )
+
+
+def _panel_value_at_or_before(
+    panel: Mapping[str, Any],
+    key: str,
+    symbol: str,
+    ts: Optional[pd.Timestamp],
+) -> tuple[float, Optional[pd.Timestamp]]:
+    series = _panel_symbol_series(panel, key, symbol)
+    if series is None:
+        return np.nan, None
+    if ts is not None:
+        try:
+            series = series.loc[series.index <= pd.Timestamp(ts)]
+        except Exception:
+            pass
+    non_null = series.dropna()
+    if non_null.empty:
+        return np.nan, None
+    out_ts = pd.to_datetime(non_null.index[-1], utc=True, errors="coerce")
+    return _safe_float(non_null.iloc[-1], np.nan), (
+        pd.Timestamp(out_ts) if not pd.isna(out_ts) else None
+    )
+
+
+def _raw_close_reference_gap_bps(
+    runtime_config: Mapping[str, Any],
+    default: float,
+) -> float:
+    raw = os.environ.get(
+        "EPM_RAW_CLOSE_REFERENCE_GAP_BPS",
+        runtime_config.get("raw_close_reference_gap_bps", default),
+    )
+    try:
+        out = float(raw)
+    except (TypeError, ValueError):
+        out = float(default)
+    return out if np.isfinite(out) and out >= 0.0 else float(default)
+
+
+def _raw_signal_close_reliability_snapshot(
+    panel: Mapping[str, Any],
+    symbol: str,
+    *,
+    max_reference_gap_bps: float = 150.0,
+) -> Dict[str, Any]:
+    """Audit whether the raw close used by live features is tradable enough.
+
+    We intentionally do not replace raw close with mark/index here: doing so
+    would make live execution diverge from the feature values already scored.
+    If raw close is stale or inconsistent enough to be unreliable, the caller
+    should skip the candidate.
+    """
+    close, close_ts = _latest_panel_value(panel, "close", symbol)
+    snap: Dict[str, Any] = {
+        "signal_price": close if np.isfinite(close) and close > 0.0 else None,
+        "raw_signal_close": close if np.isfinite(close) else None,
+        "raw_signal_close_ts": close_ts.isoformat() if close_ts is not None else None,
+        "raw_signal_close_unreliable": False,
+        "raw_signal_close_unreliable_reason": "",
+        "raw_signal_close_reference_gap_bps": np.nan,
+        "raw_signal_close_reference_price": np.nan,
+        "raw_signal_close_reference_source": "",
+        "raw_signal_close_reference_ts": None,
+    }
+    if not (np.isfinite(close) and close > 0.0):
+        snap["raw_signal_close_unreliable"] = True
+        snap["raw_signal_close_unreliable_reason"] = "missing_raw_close"
+        return snap
+
+    volume, volume_ts = _panel_value_at_or_before(panel, "volume", symbol, close_ts)
+    snap["raw_signal_volume"] = volume if np.isfinite(volume) else None
+    snap["raw_signal_volume_ts"] = (
+        volume_ts.isoformat() if volume_ts is not None else None
+    )
+
+    best_source = ""
+    best_price = np.nan
+    best_ts: Optional[pd.Timestamp] = None
+    best_gap = np.nan
+    for ref_key in (
+        "mark_close",
+        "mark_price",
+        "index_price",
+        "index_close",
+        "spot_close",
+        "canonical_index",
+    ):
+        ref_price, ref_ts = _panel_value_at_or_before(
+            panel, ref_key, symbol, close_ts
+        )
+        if not (np.isfinite(ref_price) and ref_price > 0.0):
+            continue
+        gap = abs(close / ref_price - 1.0) * 10000.0
+        if not np.isfinite(best_gap) or gap < best_gap:
+            best_gap = float(gap)
+            best_price = float(ref_price)
+            best_source = ref_key
+            best_ts = ref_ts
+
+    if np.isfinite(best_gap):
+        snap["raw_signal_close_reference_gap_bps"] = float(best_gap)
+        snap["raw_signal_close_reference_price"] = float(best_price)
+        snap["raw_signal_close_reference_source"] = best_source
+        snap["raw_signal_close_reference_ts"] = (
+            best_ts.isoformat() if best_ts is not None else None
+        )
+
+    if np.isfinite(volume) and volume <= 0.0:
+        snap["raw_signal_close_unreliable"] = True
+        snap["raw_signal_close_unreliable_reason"] = "zero_volume_raw_close"
+    elif (
+        np.isfinite(best_gap)
+        and np.isfinite(max_reference_gap_bps)
+        and best_gap >= float(max_reference_gap_bps)
+    ):
+        snap["raw_signal_close_unreliable"] = True
+        snap["raw_signal_close_unreliable_reason"] = (
+            "raw_close_reference_gap_too_large"
+        )
+    return snap
+
+
 def _signal_bar_close_ts(signal_bar_ts: Any, *, bar_hours: float = 1.0) -> pd.Timestamp | None:
     ts = pd.to_datetime(signal_bar_ts, utc=True, errors="coerce")
     if pd.isna(ts):
@@ -1698,6 +1978,407 @@ def _signal_to_entry_alert_seconds(runtime_config: Mapping[str, Any]) -> float:
         return float(raw)
     except (TypeError, ValueError):
         return 600.0
+
+
+_LIVE_PRESCORE_MARKET_MASK_MODES = {
+    "live",
+    "live-test",
+    "live_test",
+    "livetest",
+    "paper",
+    "shadow_live",
+}
+
+
+def _runtime_flag(
+    runtime_config: Mapping[str, Any],
+    key: str,
+    env_name: str,
+    default: bool,
+) -> bool:
+    raw = os.environ.get(env_name, runtime_config.get(key, default))
+    return str(raw).strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _runtime_float(
+    runtime_config: Mapping[str, Any],
+    key: str,
+    env_name: str,
+    default: float,
+) -> float:
+    raw = os.environ.get(env_name, runtime_config.get(key, default))
+    try:
+        out = float(raw)
+    except (TypeError, ValueError):
+        out = float(default)
+    return out if np.isfinite(out) else float(default)
+
+
+def _runtime_int(
+    runtime_config: Mapping[str, Any],
+    key: str,
+    env_name: str,
+    default: int,
+) -> int:
+    raw = os.environ.get(env_name, runtime_config.get(key, default))
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _live_prescore_market_mask_enabled(
+    runtime_config: Mapping[str, Any],
+    executor_mode: str,
+) -> bool:
+    default = str(executor_mode or "").strip().lower() in _LIVE_PRESCORE_MARKET_MASK_MODES
+    return _runtime_flag(
+        runtime_config,
+        "live_prescore_market_mask_enabled",
+        "EPM_LIVE_PRESCORE_MARKET_MASK_ENABLED",
+        default,
+    )
+
+
+def _live_prescore_orderbook_enabled(
+    runtime_config: Mapping[str, Any],
+    executor_mode: str,
+    policy: PortfolioPolicyConfig,
+) -> bool:
+    default = (
+        str(executor_mode or "").strip().lower() in _LIVE_PRESCORE_MARKET_MASK_MODES
+        and bool(policy.orderbook_precheck_enabled)
+    )
+    return _runtime_flag(
+        runtime_config,
+        "live_prescore_orderbook_enabled",
+        "EPM_LIVE_PRESCORE_ORDERBOOK_ENABLED",
+        default,
+    )
+
+
+def _panel_metric_snapshot(
+    panel: Mapping[str, Any],
+    keys: Sequence[str],
+    symbol: str,
+    at_ts: Optional[pd.Timestamp],
+) -> Dict[str, Any]:
+    for key in keys:
+        if at_ts is None:
+            value, ts = _latest_panel_value(panel, key, symbol)
+        else:
+            value, ts = _panel_value_at_or_before(panel, key, symbol, at_ts)
+        if np.isfinite(value):
+            return {"key": key, "value": float(value), "ts": ts}
+    return {"key": "", "value": np.nan, "ts": None}
+
+
+def _pre_score_market_mask_snapshot(
+    *,
+    panel: Mapping[str, Any],
+    symbol: str,
+    side: str,
+    strategy_id: str,
+    executor: TradeExecutor,
+    policy: PortfolioPolicyConfig,
+    runtime_config: Mapping[str, Any],
+    now: pd.Timestamp,
+    signal_bar_ts: Any,
+    raw_close_reference_gap_bps: float,
+    max_signal_close_to_entry_seconds: float,
+) -> Dict[str, Any]:
+    """Fail fast on live market/data-quality inputs before model scoring.
+
+    The final execution path still repeats ticker/orderbook checks after rank
+    sizing because position size is only known later. This pre-score pass is a
+    cheap mask that keeps stale, untradable, or clearly illiquid symbols out of
+    the base/meta model chain.
+    """
+    snapshot: Dict[str, Any] = {
+        "prescore_market_mask_enabled": True,
+        "prescore_market_mask_allowed": True,
+        "prescore_market_mask_reason": "",
+        "prescore_strategy_id": str(strategy_id),
+    }
+
+    def _reject(reason: str) -> Dict[str, Any]:
+        snapshot["prescore_market_mask_allowed"] = False
+        snapshot["prescore_market_mask_reason"] = reason
+        return snapshot
+
+    close_snapshot = _raw_signal_close_reliability_snapshot(
+        panel,
+        symbol,
+        max_reference_gap_bps=raw_close_reference_gap_bps,
+    )
+    snapshot.update(
+        {
+            "prescore_signal_price": close_snapshot.get("signal_price"),
+            "prescore_raw_signal_close": close_snapshot.get("raw_signal_close"),
+            "prescore_raw_signal_close_ts": close_snapshot.get("raw_signal_close_ts"),
+            "prescore_raw_signal_volume": close_snapshot.get("raw_signal_volume"),
+            "prescore_raw_signal_volume_ts": close_snapshot.get("raw_signal_volume_ts"),
+            "prescore_raw_signal_close_reference_gap_bps": close_snapshot.get(
+                "raw_signal_close_reference_gap_bps"
+            ),
+            "prescore_raw_signal_close_reference_source": close_snapshot.get(
+                "raw_signal_close_reference_source"
+            ),
+        }
+    )
+    if bool(close_snapshot.get("raw_signal_close_unreliable")):
+        return _reject(
+            "unreliable_raw_signal_close:"
+            + str(close_snapshot.get("raw_signal_close_unreliable_reason") or "")
+        )
+
+    timing_snapshot = _entry_timing_snapshot(
+        decision={"signal_bar_ts": signal_bar_ts},
+        now=now,
+        signal_bar_ts=signal_bar_ts,
+        max_signal_close_age_seconds=max_signal_close_to_entry_seconds,
+    )
+    snapshot.update(
+        {
+            "prescore_signal_bar_close_ts": timing_snapshot.get("signal_bar_close_ts"),
+            "prescore_signal_close_to_decision_seconds": timing_snapshot.get(
+                "signal_close_to_decision_seconds"
+            ),
+            "prescore_max_signal_close_to_entry_seconds": timing_snapshot.get(
+                "max_signal_close_to_entry_seconds"
+            ),
+            "prescore_stale_signal_age_gate_exceeded": timing_snapshot.get(
+                "stale_signal_age_gate_exceeded"
+            ),
+        }
+    )
+    if bool(timing_snapshot.get("stale_signal_age_gate_exceeded")):
+        return _reject("stale_signal_age_exceeded")
+
+    signal_close_ts_raw = pd.to_datetime(
+        timing_snapshot.get("signal_bar_close_ts"), utc=True, errors="coerce"
+    )
+    signal_close_ts = None if pd.isna(signal_close_ts_raw) else pd.Timestamp(signal_close_ts_raw)
+    oi_snapshot = _panel_metric_snapshot(
+        panel,
+        (
+            "open_interest",
+            "open_interest_value",
+            "open_interest_usd",
+            "oi",
+            "oi_value",
+            "openInterest",
+        ),
+        symbol,
+        signal_close_ts,
+    )
+    oi_ts = oi_snapshot.get("ts")
+    oi_age_hours = np.nan
+    if signal_close_ts is not None and isinstance(oi_ts, pd.Timestamp):
+        oi_age_hours = max(
+            float((signal_close_ts - oi_ts).total_seconds()) / 3600.0,
+            0.0,
+        )
+    snapshot.update(
+        {
+            "prescore_oi_key": oi_snapshot.get("key"),
+            "prescore_oi_value": oi_snapshot.get("value"),
+            "prescore_oi_ts": oi_ts.isoformat() if isinstance(oi_ts, pd.Timestamp) else None,
+            "prescore_oi_age_hours": oi_age_hours,
+        }
+    )
+    require_oi = _runtime_flag(
+        runtime_config,
+        "live_prescore_require_open_interest",
+        "EPM_LIVE_PRESCORE_REQUIRE_OI",
+        _is_perps_config(dict(runtime_config)),
+    )
+    max_oi_age_hours = _runtime_float(
+        runtime_config,
+        "live_prescore_max_open_interest_age_hours",
+        "EPM_LIVE_PRESCORE_MAX_OI_AGE_HOURS",
+        24.0,
+    )
+    oi_value = _safe_float(oi_snapshot.get("value"), np.nan)
+    if require_oi:
+        if not (np.isfinite(oi_value) and oi_value > 0.0):
+            return _reject("missing_or_nonpositive_open_interest")
+        if np.isfinite(oi_age_hours) and oi_age_hours > max_oi_age_hours:
+            return _reject("stale_open_interest")
+
+    exchange = getattr(executor, "exchange", None)
+    require_ticker = _runtime_flag(
+        runtime_config,
+        "live_prescore_require_ticker",
+        "EPM_LIVE_PRESCORE_REQUIRE_TICKER",
+        True,
+    )
+    if exchange is None:
+        return _reject("missing_exchange_for_prescore_ticker") if require_ticker else snapshot
+    api_symbol = _live_exchange_symbol(exchange, dict(runtime_config), symbol)
+    try:
+        ticker_snapshot = fetch_ticker_snapshot(
+            exchange=exchange,
+            symbol=api_symbol,
+            side=side,
+            policy=policy,
+            mode=str(getattr(executor, "mode", "")),
+            now=now,
+        )
+    except Exception as exc:
+        snapshot["prescore_ticker_error"] = f"{type(exc).__name__}: {exc}"
+        return _reject("ticker_fetch_failed")
+    ticker_dict = ticker_snapshot.to_dict()
+    details = ticker_dict.get("details") if isinstance(ticker_dict.get("details"), dict) else {}
+    snapshot.update(
+        {
+            "prescore_ticker_bid": ticker_dict.get("bid"),
+            "prescore_ticker_ask": ticker_dict.get("ask"),
+            "prescore_ticker_mid": ticker_dict.get("mid"),
+            "prescore_ticker_last": ticker_dict.get("last"),
+            "prescore_ticker_spread_bps": ticker_dict.get("spread_bps"),
+            "prescore_ticker_spread_weight": ticker_dict.get("spread_weight"),
+            "prescore_ticker_age_seconds": details.get("exchange_ticker_age_seconds"),
+            "prescore_ticker_fetch_latency_seconds": details.get(
+                "ticker_fetch_latency_seconds"
+            ),
+            "prescore_ticker_reject_reason": ticker_dict.get("reject_reason"),
+        }
+    )
+    if bool(ticker_dict.get("hard_reject")):
+        return _reject(str(ticker_dict.get("reject_reason") or "ticker_rejected"))
+    max_spread_bps = _runtime_float(
+        runtime_config,
+        "live_prescore_max_spread_bps",
+        "EPM_LIVE_PRESCORE_MAX_SPREAD_BPS",
+        float(policy.max_spread_bps),
+    )
+    spread_bps = _safe_float(ticker_dict.get("spread_bps"), np.nan)
+    if not np.isfinite(spread_bps):
+        return _reject("missing_ticker_spread")
+    if spread_bps > max_spread_bps:
+        snapshot["prescore_max_spread_bps"] = float(max_spread_bps)
+        return _reject("ticker_spread_above_prescore_max")
+    snapshot["prescore_max_spread_bps"] = float(max_spread_bps)
+
+    if _live_prescore_orderbook_enabled(
+        runtime_config,
+        str(getattr(executor, "mode", "")),
+        policy,
+    ):
+        intended_quote_size = _runtime_float(
+            runtime_config,
+            "live_prescore_liquidity_probe_quote_notional",
+            "EPM_LIVE_PRESCORE_LIQUIDITY_PROBE_QUOTE_NOTIONAL",
+            max(
+                float(policy.live_test_min_quote_notional),
+                min(100.0, float(policy.max_position_quote_notional) * 0.02),
+            ),
+        )
+        try:
+            liquidity_snapshot = evaluate_orderbook_liquidity(
+                exchange=exchange,
+                symbol=api_symbol,
+                side=side,
+                intended_quote_size=float(intended_quote_size),
+                ticker_snapshot=ticker_snapshot,
+                policy=policy,
+                mode=str(getattr(executor, "mode", "")),
+            )
+        except Exception as exc:
+            snapshot["prescore_orderbook_error"] = f"{type(exc).__name__}: {exc}"
+            return _reject("orderbook_fetch_failed")
+        liq_dict = liquidity_snapshot.to_dict()
+        snapshot.update(
+            {
+                "prescore_orderbook_side": liq_dict.get("orderbook_side"),
+                "prescore_orderbook_capacity_quote_within_slippage": liq_dict.get(
+                    "orderbook_capacity_quote_within_slippage"
+                ),
+                "prescore_orderbook_intended_quote_size": liq_dict.get(
+                    "intended_quote_size"
+                ),
+                "prescore_orderbook_depth_weight": liq_dict.get("depth_weight"),
+                "prescore_liquidity_capacity_weight": liq_dict.get(
+                    "liquidity_capacity_weight"
+                ),
+                "prescore_orderbook_slippage_bps": liq_dict.get(
+                    "expected_fill_slippage_bps"
+                ),
+                "prescore_orderbook_reject_reason": liq_dict.get("reject_reason"),
+            }
+        )
+        if bool(liq_dict.get("hard_reject")):
+            return _reject(str(liq_dict.get("reject_reason") or "orderbook_rejected"))
+
+    return snapshot
+
+
+def _apply_pre_score_market_masks(
+    *,
+    panel: Mapping[str, Any],
+    candidates: Sequence[str],
+    side: str,
+    strategy_id: str,
+    executor: TradeExecutor,
+    policy: PortfolioPolicyConfig,
+    runtime_config: Mapping[str, Any],
+    now: pd.Timestamp,
+    signal_bar_ts: Any,
+    raw_close_reference_gap_bps: float,
+    max_signal_close_to_entry_seconds: float,
+    side_metrics: Dict[str, Any],
+) -> tuple[List[str], Dict[str, Dict[str, Any]]]:
+    kept: List[str] = []
+    snapshots: Dict[str, Dict[str, Any]] = {}
+    reason_counts: Dict[str, int] = {}
+    for symbol in candidates:
+        snap = _pre_score_market_mask_snapshot(
+            panel=panel,
+            symbol=str(symbol),
+            side=side,
+            strategy_id=strategy_id,
+            executor=executor,
+            policy=policy,
+            runtime_config=runtime_config,
+            now=now,
+            signal_bar_ts=signal_bar_ts,
+            raw_close_reference_gap_bps=raw_close_reference_gap_bps,
+            max_signal_close_to_entry_seconds=max_signal_close_to_entry_seconds,
+        )
+        snapshots[str(symbol)] = snap
+        side_metrics["prescore_market_mask_input"] += 1
+        if bool(snap.get("prescore_market_mask_allowed")):
+            kept.append(str(symbol))
+            side_metrics["prescore_market_mask_pass"] += 1
+            continue
+        reason = str(snap.get("prescore_market_mask_reason") or "unknown")
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+        side_metrics["prescore_market_mask_block"] += 1
+        side_metrics["non_fatal_issues"] += 1
+    if candidates:
+        side_metrics.setdefault("prescore_market_mask_reasons", {})
+        merged_reasons = dict(side_metrics.get("prescore_market_mask_reasons") or {})
+        for reason, count in reason_counts.items():
+            merged_reasons[reason] = int(merged_reasons.get(reason, 0) or 0) + int(count)
+        side_metrics["prescore_market_mask_reasons"] = merged_reasons
+        _emit_structured_event(
+            "LIVE_PRESCORE_MARKET_MASK",
+            {
+                "side": side,
+                "strategy_id": strategy_core_id(str(strategy_id)),
+                "input": len(candidates),
+                "kept": len(kept),
+                "blocked": int(len(candidates) - len(kept)),
+                "reasons": reason_counts,
+                "sample_blocked": [
+                    {"symbol": sym, "reason": snapshots[sym].get("prescore_market_mask_reason")}
+                    for sym in snapshots
+                    if not bool(snapshots[sym].get("prescore_market_mask_allowed"))
+                ][:10],
+            },
+        )
+    return kept, snapshots
 
 
 def _live_entry_adverse_hourly_close_gate(runtime_config: Dict[str, Any]) -> Tuple[bool, float]:
@@ -1777,11 +2458,15 @@ def _assert_policy_rank_threshold_source(decision: Mapping[str, Any]) -> None:
         )
         or ""
     )
-    if threshold_source != "cross_strategy_auction_reference":
+    allowed_threshold_sources = {
+        "cross_strategy_auction_reference",
+        "fullscope_score_distribution_auction_reference_in_sample",
+    }
+    if threshold_source not in allowed_threshold_sources:
         raise RuntimeError(
             "Policy rank threshold guard failed: auction rank is available but "
             f"threshold_rank_score_source={threshold_source!r}; expected "
-            "cross_strategy_auction_reference."
+            f"one of {sorted(allowed_threshold_sources)!r}."
         )
     if not np.isfinite(threshold_rank) or not np.isclose(
         threshold_rank, auction_rank, rtol=0.0, atol=1e-12
@@ -1821,6 +2506,35 @@ def _prediction_ledger_row(
     )
     final_threshold = _safe_float(
         chain.get("effective_threshold", decision.get("effective_threshold", np.nan))
+    )
+    portfolio_gate_info = (
+        chain.get("portfolio_gate_after_liquidity")
+        if isinstance(chain.get("portfolio_gate_after_liquidity"), dict)
+        else chain.get("portfolio_gate")
+        if isinstance(chain.get("portfolio_gate"), dict)
+        else {}
+    )
+    portfolio_gate_rank = _safe_float(
+        portfolio_gate_info.get("rank_score")
+        if isinstance(portfolio_gate_info, dict)
+        else np.nan,
+        np.nan,
+    )
+    portfolio_gate_threshold = _safe_float(
+        portfolio_gate_info.get("final_threshold")
+        if isinstance(portfolio_gate_info, dict)
+        else np.nan,
+        final_threshold,
+    )
+    final_gate_rank = (
+        portfolio_gate_rank
+        if np.isfinite(portfolio_gate_rank)
+        else _safe_float(snap.get("adjusted_rank_score"), normalized_rank)
+    )
+    final_gate_threshold = (
+        portfolio_gate_threshold
+        if np.isfinite(portfolio_gate_threshold)
+        else final_threshold
     )
     order = trade.get("order") if isinstance(trade.get("order"), dict) else {}
     entry_notional_quote = _safe_float(
@@ -2030,6 +2744,27 @@ def _prediction_ledger_row(
         "adjusted_rank_score": snap.get("adjusted_rank_score", normalized_rank),
         "initial_rank_threshold": decision.get("rank_threshold"),
         "final_threshold": final_threshold,
+        "final_gate_rank_score": final_gate_rank,
+        "final_gate_threshold": final_gate_threshold,
+        "final_gate_rank_score_source": (
+            "portfolio_gate"
+            if np.isfinite(portfolio_gate_rank)
+            else "execution_adjusted_rank_score"
+            if np.isfinite(_safe_float(snap.get("adjusted_rank_score"), np.nan))
+            else "normalized_rank_score"
+        ),
+        "portfolio_gate_rank_score": portfolio_gate_info.get("rank_score")
+        if isinstance(portfolio_gate_info, dict)
+        else None,
+        "portfolio_gate_initial_threshold": portfolio_gate_info.get("initial_threshold")
+        if isinstance(portfolio_gate_info, dict)
+        else None,
+        "portfolio_gate_final_threshold": portfolio_gate_info.get("final_threshold")
+        if isinstance(portfolio_gate_info, dict)
+        else None,
+        "portfolio_gate_threshold_viability_margin": snap.get(
+            "threshold_viability_margin"
+        ),
         "dynamic_performance_multiplier": chain.get(
             "dynamic_performance_multiplier",
             decision.get("dynamic_performance_multiplier"),
@@ -2057,9 +2792,9 @@ def _prediction_ledger_row(
             "uncertainty_score", decision.get("uncertainty_score")
         ),
         "passed_rank_gate": bool(
-            np.isfinite(normalized_rank)
-            and np.isfinite(final_threshold)
-            and normalized_rank >= final_threshold
+            np.isfinite(final_gate_rank)
+            and np.isfinite(final_gate_threshold)
+            and final_gate_rank >= final_gate_threshold
         ),
         "portfolio_priority": decision.get("portfolio_priority"),
         "portfolio_state_snapshot_json": decision.get(
@@ -2113,6 +2848,126 @@ def _prediction_ledger_row(
         ),
         "portfolio_decision": portfolio_decision,
         "portfolio_reject_reason": portfolio_reject_reason,
+        "prescore_market_mask_enabled": snap.get(
+            "prescore_market_mask_enabled", chain.get("prescore_market_mask_enabled")
+        ),
+        "prescore_market_mask_allowed": snap.get(
+            "prescore_market_mask_allowed", chain.get("prescore_market_mask_allowed")
+        ),
+        "prescore_market_mask_reason": snap.get(
+            "prescore_market_mask_reason", chain.get("prescore_market_mask_reason")
+        ),
+        "prescore_signal_price": snap.get(
+            "prescore_signal_price", chain.get("prescore_signal_price")
+        ),
+        "prescore_raw_signal_close": snap.get(
+            "prescore_raw_signal_close", chain.get("prescore_raw_signal_close")
+        ),
+        "prescore_raw_signal_close_ts": snap.get(
+            "prescore_raw_signal_close_ts",
+            chain.get("prescore_raw_signal_close_ts"),
+        ),
+        "prescore_raw_signal_volume": snap.get(
+            "prescore_raw_signal_volume", chain.get("prescore_raw_signal_volume")
+        ),
+        "prescore_raw_signal_volume_ts": snap.get(
+            "prescore_raw_signal_volume_ts",
+            chain.get("prescore_raw_signal_volume_ts"),
+        ),
+        "prescore_raw_signal_close_reference_gap_bps": snap.get(
+            "prescore_raw_signal_close_reference_gap_bps",
+            chain.get("prescore_raw_signal_close_reference_gap_bps"),
+        ),
+        "prescore_raw_signal_close_reference_source": snap.get(
+            "prescore_raw_signal_close_reference_source",
+            chain.get("prescore_raw_signal_close_reference_source"),
+        ),
+        "prescore_signal_bar_close_ts": snap.get(
+            "prescore_signal_bar_close_ts",
+            chain.get("prescore_signal_bar_close_ts"),
+        ),
+        "prescore_signal_close_to_decision_seconds": snap.get(
+            "prescore_signal_close_to_decision_seconds",
+            chain.get("prescore_signal_close_to_decision_seconds"),
+        ),
+        "prescore_max_signal_close_to_entry_seconds": snap.get(
+            "prescore_max_signal_close_to_entry_seconds",
+            chain.get("prescore_max_signal_close_to_entry_seconds"),
+        ),
+        "prescore_stale_signal_age_gate_exceeded": snap.get(
+            "prescore_stale_signal_age_gate_exceeded",
+            chain.get("prescore_stale_signal_age_gate_exceeded"),
+        ),
+        "prescore_oi_key": snap.get("prescore_oi_key", chain.get("prescore_oi_key")),
+        "prescore_oi_value": snap.get(
+            "prescore_oi_value", chain.get("prescore_oi_value")
+        ),
+        "prescore_oi_ts": snap.get("prescore_oi_ts", chain.get("prescore_oi_ts")),
+        "prescore_oi_age_hours": snap.get(
+            "prescore_oi_age_hours", chain.get("prescore_oi_age_hours")
+        ),
+        "prescore_ticker_bid": snap.get(
+            "prescore_ticker_bid", chain.get("prescore_ticker_bid")
+        ),
+        "prescore_ticker_ask": snap.get(
+            "prescore_ticker_ask", chain.get("prescore_ticker_ask")
+        ),
+        "prescore_ticker_mid": snap.get(
+            "prescore_ticker_mid", chain.get("prescore_ticker_mid")
+        ),
+        "prescore_ticker_last": snap.get(
+            "prescore_ticker_last", chain.get("prescore_ticker_last")
+        ),
+        "prescore_ticker_spread_bps": snap.get(
+            "prescore_ticker_spread_bps",
+            chain.get("prescore_ticker_spread_bps"),
+        ),
+        "prescore_max_spread_bps": snap.get(
+            "prescore_max_spread_bps", chain.get("prescore_max_spread_bps")
+        ),
+        "prescore_ticker_spread_weight": snap.get(
+            "prescore_ticker_spread_weight",
+            chain.get("prescore_ticker_spread_weight"),
+        ),
+        "prescore_ticker_age_seconds": snap.get(
+            "prescore_ticker_age_seconds",
+            chain.get("prescore_ticker_age_seconds"),
+        ),
+        "prescore_ticker_fetch_latency_seconds": snap.get(
+            "prescore_ticker_fetch_latency_seconds",
+            chain.get("prescore_ticker_fetch_latency_seconds"),
+        ),
+        "prescore_ticker_reject_reason": snap.get(
+            "prescore_ticker_reject_reason",
+            chain.get("prescore_ticker_reject_reason"),
+        ),
+        "prescore_orderbook_side": snap.get(
+            "prescore_orderbook_side", chain.get("prescore_orderbook_side")
+        ),
+        "prescore_orderbook_capacity_quote_within_slippage": snap.get(
+            "prescore_orderbook_capacity_quote_within_slippage",
+            chain.get("prescore_orderbook_capacity_quote_within_slippage"),
+        ),
+        "prescore_orderbook_intended_quote_size": snap.get(
+            "prescore_orderbook_intended_quote_size",
+            chain.get("prescore_orderbook_intended_quote_size"),
+        ),
+        "prescore_orderbook_depth_weight": snap.get(
+            "prescore_orderbook_depth_weight",
+            chain.get("prescore_orderbook_depth_weight"),
+        ),
+        "prescore_liquidity_capacity_weight": snap.get(
+            "prescore_liquidity_capacity_weight",
+            chain.get("prescore_liquidity_capacity_weight"),
+        ),
+        "prescore_orderbook_slippage_bps": snap.get(
+            "prescore_orderbook_slippage_bps",
+            chain.get("prescore_orderbook_slippage_bps"),
+        ),
+        "prescore_orderbook_reject_reason": snap.get(
+            "prescore_orderbook_reject_reason",
+            chain.get("prescore_orderbook_reject_reason"),
+        ),
         "ticker_bid": snap.get("ticker_bid", snap.get("bid")),
         "ticker_ask": snap.get("ticker_ask", snap.get("ask")),
         "ticker_mid": snap.get("ticker_mid", snap.get("mid")),
@@ -2268,6 +3123,24 @@ def _prediction_ledger_row(
         "liquidity_capacity_weight": snap.get("liquidity_capacity_weight"),
         "liquidity_reject_reason": liquidity_reject_reason,
         "signal_price": snap.get("signal_price"),
+        "raw_signal_close": snap.get("raw_signal_close"),
+        "raw_signal_close_ts": snap.get("raw_signal_close_ts"),
+        "raw_signal_volume": snap.get("raw_signal_volume"),
+        "raw_signal_volume_ts": snap.get("raw_signal_volume_ts"),
+        "raw_signal_close_unreliable": snap.get("raw_signal_close_unreliable"),
+        "raw_signal_close_unreliable_reason": snap.get(
+            "raw_signal_close_unreliable_reason"
+        ),
+        "raw_signal_close_reference_gap_bps": snap.get(
+            "raw_signal_close_reference_gap_bps"
+        ),
+        "raw_signal_close_reference_price": snap.get(
+            "raw_signal_close_reference_price"
+        ),
+        "raw_signal_close_reference_source": snap.get(
+            "raw_signal_close_reference_source"
+        ),
+        "raw_signal_close_reference_ts": snap.get("raw_signal_close_reference_ts"),
         "decision_mid": snap.get(
             "decision_mid", snap.get("ticker_mid", snap.get("mid"))
         ),
@@ -2296,22 +3169,40 @@ def _prediction_ledger_row(
     lgbm_diagnostics = chain.get("lgbm_diagnostics")
     if not isinstance(lgbm_diagnostics, dict):
         lgbm_diagnostics = {}
-    for diag_key in (
-        "feature_drift_psi_core",
-        "feature_drift_cov_shift",
-        "regime_centroid_similarity_train",
-        "rare_leaf_fraction",
-        "leaf_count_p10",
-        "leaf_count_min",
-        "leaf_weight_p10",
-        "contrib_top1_abs_share",
-        "contrib_top3_abs_share",
-        "contrib_entropy",
-        "contrib_balance",
-        "num_material_contrib_features",
-        "prob_uncertainty",
-    ):
-        row[diag_key] = chain.get(diag_key, lgbm_diagnostics.get(diag_key))
+    meta_lgbm_diagnostics = chain.get("meta_lgbm_diagnostics")
+    if not isinstance(meta_lgbm_diagnostics, dict):
+        meta_lgbm_diagnostics = lgbm_diagnostics
+    base_lgbm_diagnostics = chain.get("base_lgbm_diagnostics")
+    if not isinstance(base_lgbm_diagnostics, dict):
+        base_lgbm_diagnostics = {}
+    diag_keys = tuple(
+        dict.fromkeys(
+            list(LGBM_INTERNAL_METRIC_FEATURE_NAMES)
+            + [
+                "feature_drift_psi_core",
+                "feature_drift_ks_core",
+                "feature_drift_cov_shift",
+                "regime_centroid_similarity_train",
+                "rare_leaf_fraction",
+                "leaf_count_p10",
+                "leaf_count_min",
+                "leaf_weight_p10",
+                "contrib_top1_abs_share",
+                "contrib_top3_abs_share",
+                "contrib_entropy",
+                "contrib_balance",
+                "num_material_contrib_features",
+                "prob_uncertainty",
+            ]
+        )
+    )
+    for diag_key in diag_keys:
+        if diag_key in chain or diag_key in meta_lgbm_diagnostics:
+            row[diag_key] = chain.get(diag_key, meta_lgbm_diagnostics.get(diag_key))
+        if diag_key in meta_lgbm_diagnostics:
+            row[f"meta_lgbm_{diag_key}"] = meta_lgbm_diagnostics.get(diag_key)
+        if diag_key in base_lgbm_diagnostics:
+            row[f"base_lgbm_{diag_key}"] = base_lgbm_diagnostics.get(diag_key)
     return row
 
 
@@ -2482,11 +3373,6 @@ def _build_executor_bucket_params(config: Dict[str, Any]) -> Dict[str, Any]:
         if params_per_bucket
         else dict(full_state.get("bucket_params", {}) or {})
     )
-    ridge_sizer = full_state.get("ridge_sizer")
-    if ridge_sizer is not None and getattr(ridge_sizer, "best_params_", None):
-        bucket_params.setdefault(
-            "cooldown_hours", float(ridge_sizer.best_params_.get("cooldown_hours", 0.0))
-        )
     stop_params = load_simple_policy_stop_params_by_strategy(
         str(config.get("data_root", "data")), str(config.get("run_id", ""))
     )
@@ -2507,6 +3393,11 @@ def _attach_runtime_bucket_params(config: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _resolve_live_feature_source_run_id(config: Dict[str, Any]) -> Optional[str]:
+    run_ids = _resolve_live_feature_source_run_ids(config)
+    return run_ids[0] if run_ids else None
+
+
+def _resolve_live_feature_source_run_ids(config: Dict[str, Any]) -> List[str]:
     """Return the selected-feature source run for live feature fallback.
 
     The live rolling transformed-feature cache is keyed by the active run and
@@ -2525,7 +3416,10 @@ def _resolve_live_feature_source_run_id(config: Dict[str, Any]) -> Optional[str]
         if isinstance(parity_contract.get("feature_source"), dict)
         else {}
     )
+    values: List[str] = []
     for value in (
+        config.get("live_feature_source_run_ids"),
+        config.get("feature_source_run_ids"),
         config.get("live_feature_source_run_id"),
         config.get("feature_source_run_id"),
         config.get("artifact_source_run_id"),
@@ -2533,29 +3427,32 @@ def _resolve_live_feature_source_run_id(config: Dict[str, Any]) -> Optional[str]
         os.getenv("EPM_FEATURE_SOURCE_RUN_ID"),
         os.getenv("EPM_ARTIFACT_SOURCE_RUN_ID"),
         os.getenv("EPM_SOURCE_RUN_ID"),
+        parity_contract.get("feature_sources"),
         feature_source.get("run_id"),
     ):
-        text = str(value or "").strip()
-        if text:
-            return text
-    return None
+        values.extend(_coerce_feature_source_run_ids(value))
+    deduped: List[str] = []
+    for value in values:
+        if value and value not in deduped:
+            deduped.append(value)
+    return deduped
 
 
 def _model_feature_offline_cache_enabled(config: Dict[str, Any]) -> bool:
     """Return whether live model features should read the selected-feature handoff.
 
-    When deployment artifacts carry an explicit feature-source run, model
-    scoring must use that selected-feature store by default. Otherwise live
-    inference can silently fall back to recomputed transformed features that do
-    not match the training/OOS policy handoff.
+    Model scoring should use the selected-feature store by default, because the
+    deployed score is only parity-safe when missing/non-finite values match the
+    training/OOS policy handoff. Operators can explicitly disable this for live
+    recompute audits.
     """
 
     if not isinstance(config, dict):
-        return False
+        return True
     explicit = config.get("live_model_feature_offline_cache_enabled")
     if explicit is not None:
-        return bool(explicit)
-    return _resolve_live_feature_source_run_id(config) is not None
+        return str(explicit).strip().lower() not in {"0", "false", "no", "off"}
+    return True
 
 
 def _force_shadow_entry_for_integration(executor: Any) -> bool:
@@ -2601,6 +3498,408 @@ def _allow_model_feature_tail_recompute_for_reconciliation(
     if "live_model_feature_tail_recompute_enabled" in (config or {}):
         return bool((config or {}).get("live_model_feature_tail_recompute_enabled"))
     return _env_flag("EPM_SHADOW_MODEL_FEATURE_TAIL_RECOMPUTE", True)
+
+
+def _build_live_feature_runtime_cfg(
+    *,
+    config: Mapping[str, Any],
+    accepted_strategies: Optional[Iterable[str]],
+    policy_selection_rules: Mapping[str, Any],
+    latest_closed_hour: pd.Timestamp,
+    hourly_refresh_updates: int,
+) -> Dict[str, Any]:
+    """Build the feature runtime config shared by prewarm and scoring."""
+    feature_runtime_cfg = {
+        **dict(config.get("runtime_cfg") or get_runtime_cfg()),
+        "data_root": str(config.get("live_data_root") or config["data_root"]),
+        "artifact_data_root": str(config["data_root"]),
+        "offline_feature_data_root": str(config["data_root"]),
+        "live_data_root": str(config.get("live_data_root") or config["data_root"]),
+        "accepted_strategy_ids": sorted(accepted_strategies or []),
+        "policy_selection_rules": dict(policy_selection_rules or {}),
+    }
+    live_feature_state_dir = (
+        Path(str(config["data_root"]))
+        / "artifacts"
+        / str(config["run_id"])
+        / "live_state"
+    )
+    feature_runtime_cfg.setdefault(
+        "live_feature_snapshot_cache_dir",
+        str(live_feature_state_dir / "feature_cache"),
+    )
+    feature_runtime_cfg.setdefault("live_feature_snapshot_cache_enabled", True)
+    feature_runtime_cfg.setdefault("live_feature_rolling_cache_enabled", True)
+    feature_runtime_cfg.setdefault(
+        "live_feature_rolling_cache_cross_key_fallback_enabled", True
+    )
+    feature_runtime_cfg.setdefault(
+        "live_feature_rolling_cache_model_superset_for_mask_enabled", True
+    )
+    feature_runtime_cfg.setdefault(
+        "live_feature_rolling_cache_latest_only_read_enabled", True
+    )
+    feature_runtime_cfg.setdefault("live_feature_memory_cache_enabled", True)
+    feature_runtime_cfg.setdefault("live_raw_rolling_state_enabled", True)
+    feature_runtime_cfg.setdefault(
+        "live_raw_rolling_state_path",
+        str(live_feature_state_dir / "raw_rolling_state.npz"),
+    )
+    feature_runtime_cfg.setdefault("live_causal_transform_state_enabled", True)
+    feature_runtime_cfg.setdefault(
+        "live_causal_transform_state_path",
+        str(live_feature_state_dir / "causal_transform_state.npz"),
+    )
+    feature_runtime_cfg.setdefault(
+        "live_model_feature_auto_sync_blocking",
+        _env_flag("EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_BLOCKING", False),
+    )
+    if _allow_model_feature_tail_recompute_for_reconciliation(config):
+        feature_runtime_cfg["live_model_feature_tail_recompute_enabled"] = True
+    live_feature_source_run_ids = _resolve_live_feature_source_run_ids(dict(config))
+    live_feature_source_run_id = (
+        live_feature_source_run_ids[0] if live_feature_source_run_ids else None
+    )
+    if live_feature_source_run_ids:
+        feature_runtime_cfg["live_feature_source_run_ids"] = list(
+            live_feature_source_run_ids
+        )
+    if live_feature_source_run_id:
+        feature_runtime_cfg["live_feature_source_run_id"] = str(
+            live_feature_source_run_id
+        )
+    if hourly_refresh_updates > 0:
+        feature_runtime_cfg["live_feature_cache_raw_refresh_token"] = (
+            f"{pd.Timestamp(latest_closed_hour).isoformat()}:{hourly_refresh_updates}"
+        )
+    return feature_runtime_cfg
+
+
+def _live_warmup_state_fail_closed(config: Mapping[str, Any]) -> bool:
+    mode = str((config or {}).get("mode", "")).strip().lower()
+    default = mode in _LIVE_PRESCORE_MARKET_MASK_MODES
+    return _runtime_flag(
+        config,
+        "live_warmup_state_fail_closed",
+        "EPM_LIVE_WARMUP_STATE_FAIL_CLOSED",
+        default,
+    )
+
+
+def _state_file_health(
+    path_raw: Any, *, now: pd.Timestamp, max_age_hours: float
+) -> Dict[str, Any]:
+    path = Path(str(path_raw)) if path_raw else None
+    out: Dict[str, Any] = {
+        "path": str(path) if path is not None else "",
+        "exists": False,
+        "exact_exists": False,
+        "mtime": None,
+        "age_hours": np.nan,
+        "hashed_count": 0,
+        "latest_hashed_path": "",
+        "latest_hashed_mtime": None,
+        "latest_hashed_age_hours": np.nan,
+        "ok": False,
+        "reason": "missing_path",
+    }
+    if path is None:
+        return out
+    if not path.exists():
+        hashed_candidates: List[Path] = []
+        try:
+            if path.parent.exists():
+                if path.suffix:
+                    pattern = f"{path.stem}.*{path.suffix}"
+                else:
+                    pattern = f"{path.name}.*"
+                hashed_candidates = [
+                    candidate
+                    for candidate in path.parent.glob(pattern)
+                    if candidate.is_file() and candidate.name != path.name
+                ]
+        except Exception as exc:
+            out["reason"] = f"inventory_scan_failed:{type(exc).__name__}"
+            return out
+        out["hashed_count"] = len(hashed_candidates)
+        if not hashed_candidates:
+            out["reason"] = "missing_file"
+            return out
+        try:
+            latest_path = max(
+                hashed_candidates, key=lambda candidate: candidate.stat().st_mtime
+            )
+            mtime = pd.Timestamp(latest_path.stat().st_mtime, unit="s", tz="UTC")
+            age_hours = max(
+                float((pd.Timestamp(now) - mtime).total_seconds()) / 3600.0,
+                0.0,
+            )
+            fresh = bool(np.isfinite(age_hours) and age_hours <= float(max_age_hours))
+            out.update(
+                {
+                    "exists": True,
+                    "mtime": mtime.isoformat(),
+                    "age_hours": age_hours,
+                    "latest_hashed_path": str(latest_path),
+                    "latest_hashed_mtime": mtime.isoformat(),
+                    "latest_hashed_age_hours": age_hours,
+                    "ok": fresh,
+                    "reason": (
+                        "ok_hashed_state_inventory"
+                        if fresh
+                        else "stale_hashed_state_inventory"
+                    ),
+                }
+            )
+        except Exception as exc:
+            out["reason"] = f"inventory_stat_failed:{type(exc).__name__}"
+        return out
+    try:
+        mtime = pd.Timestamp(path.stat().st_mtime, unit="s", tz="UTC")
+        age_hours = max(
+            float((pd.Timestamp(now) - mtime).total_seconds()) / 3600.0,
+            0.0,
+        )
+        out.update(
+            {
+                "exists": True,
+                "exact_exists": True,
+                "mtime": mtime.isoformat(),
+                "age_hours": age_hours,
+                "ok": bool(
+                    np.isfinite(age_hours) and age_hours <= float(max_age_hours)
+                ),
+                "reason": (
+                    "ok"
+                    if np.isfinite(age_hours) and age_hours <= float(max_age_hours)
+                    else "stale_file"
+                ),
+            }
+        )
+    except Exception as exc:
+        out["reason"] = f"stat_failed:{type(exc).__name__}"
+    return out
+
+
+def _latest_rolling_meta_health(
+    feature_runtime_cfg: Mapping[str, Any],
+    *,
+    latest_closed_hour: pd.Timestamp,
+    now: pd.Timestamp,
+    max_age_hours: float,
+) -> Dict[str, Any]:
+    root = Path(
+        str(
+            feature_runtime_cfg.get("live_feature_snapshot_cache_dir")
+            or feature_runtime_cfg.get("live_feature_cache_dir")
+            or ""
+        )
+    )
+    out: Dict[str, Any] = {
+        "root": str(root) if str(root) else "",
+        "path": "",
+        "exists": False,
+        "end_ts": None,
+        "mtime": None,
+        "age_hours": np.nan,
+        "ok": False,
+        "reason": "missing_root",
+    }
+    if not str(root) or not root.exists():
+        return out
+    metas: List[tuple[pd.Timestamp, Path, Dict[str, Any]]] = []
+    try:
+        for meta_path in root.glob("*/rolling_meta.json"):
+            try:
+                payload = json.loads(meta_path.read_text(encoding="utf-8"))
+                end_raw = pd.to_datetime(payload.get("end_ts"), utc=True, errors="coerce")
+                end_ts = (
+                    pd.Timestamp(end_raw)
+                    if not pd.isna(end_raw)
+                    else pd.Timestamp("1970-01-01", tz="UTC")
+                )
+                metas.append((end_ts, meta_path, payload))
+            except Exception:
+                continue
+    except Exception as exc:
+        out["reason"] = f"scan_failed:{type(exc).__name__}"
+        return out
+    if not metas:
+        out["reason"] = "missing_rolling_meta"
+        return out
+    end_ts, meta_path, payload = max(metas, key=lambda item: item[0])
+    try:
+        mtime = pd.Timestamp(meta_path.stat().st_mtime, unit="s", tz="UTC")
+        age_hours = max(float((pd.Timestamp(now) - mtime).total_seconds()) / 3600.0, 0.0)
+    except Exception:
+        mtime = None
+        age_hours = np.nan
+    end_ok = bool(pd.Timestamp(end_ts) >= pd.Timestamp(latest_closed_hour))
+    age_ok = bool(np.isfinite(age_hours) and age_hours <= float(max_age_hours))
+    out.update(
+        {
+            "path": str(meta_path),
+            "exists": True,
+            "end_ts": pd.Timestamp(end_ts).isoformat(),
+            "mtime": mtime.isoformat() if mtime is not None else None,
+            "age_hours": age_hours,
+            "rows": payload.get("rows"),
+            "features": len(payload.get("features") or []),
+            "ok": bool(end_ok and age_ok),
+            "reason": (
+                "ok"
+                if end_ok and age_ok
+                else "stale_end_ts"
+                if not end_ok
+                else "stale_rolling_meta"
+            ),
+        }
+    )
+    return out
+
+
+def _live_warmup_state_health_snapshot(
+    *,
+    panel: Mapping[str, Any],
+    symbols: Sequence[str],
+    lookback_hours: int,
+    required_model_warmup_hours: int,
+    latest_closed_hour: pd.Timestamp,
+    feature_runtime_cfg: Mapping[str, Any],
+    config: Mapping[str, Any],
+    prewarm_result: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    now = pd.Timestamp.now(tz="UTC")
+    close = panel.get("close") if isinstance(panel, Mapping) else None
+    min_required_panel_hours = _runtime_float(
+        config,
+        "live_min_panel_warmup_hours",
+        "EPM_LIVE_MIN_PANEL_WARMUP_HOURS",
+        float(min(int(lookback_hours), 24 * 32)),
+    )
+    min_coverage = _runtime_float(
+        config,
+        "live_panel_warmup_min_coverage_ratio",
+        "EPM_LIVE_PANEL_WARMUP_MIN_COVERAGE_RATIO",
+        0.95,
+    )
+    max_panel_lag_hours = _runtime_float(
+        config,
+        "live_panel_max_latest_lag_hours",
+        "EPM_LIVE_PANEL_MAX_LATEST_LAG_HOURS",
+        1.25,
+    )
+    panel_ok = False
+    panel_reason = "missing_close_panel"
+    panel_rows = 0
+    panel_symbols = 0
+    panel_min_ts = None
+    panel_max_ts = None
+    panel_span_hours = np.nan
+    panel_latest_lag_hours = np.nan
+    if isinstance(close, pd.DataFrame) and not close.empty:
+        cols = [c for c in close.columns if str(c) in {str(s) for s in symbols}]
+        close_scoped = close.loc[:, cols] if cols else close
+        non_empty = close_scoped.dropna(how="all")
+        panel_rows = int(len(non_empty.index))
+        panel_symbols = int(len(close_scoped.columns))
+        if not non_empty.empty:
+            panel_min_ts = pd.Timestamp(pd.to_datetime(non_empty.index.min(), utc=True))
+            panel_max_ts = pd.Timestamp(pd.to_datetime(non_empty.index.max(), utc=True))
+            panel_span_hours = max(
+                float((panel_max_ts - panel_min_ts).total_seconds()) / 3600.0,
+                0.0,
+            )
+            panel_latest_lag_hours = max(
+                float((pd.Timestamp(latest_closed_hour) - panel_max_ts).total_seconds())
+                / 3600.0,
+                0.0,
+            )
+            required_span = float(min_required_panel_hours) * float(min_coverage)
+            span_ok = bool(panel_span_hours >= required_span)
+            lag_ok = bool(panel_latest_lag_hours <= float(max_panel_lag_hours))
+            panel_ok = bool(span_ok and lag_ok)
+            panel_reason = (
+                "ok"
+                if panel_ok
+                else "insufficient_panel_warmup"
+                if not span_ok
+                else "stale_panel_latest_ts"
+            )
+    max_state_age_hours = _runtime_float(
+        config,
+        "live_rolling_state_max_age_hours",
+        "EPM_LIVE_ROLLING_STATE_MAX_AGE_HOURS",
+        26.0,
+    )
+    raw_state = (
+        _state_file_health(
+            feature_runtime_cfg.get("live_raw_rolling_state_path"),
+            now=now,
+            max_age_hours=max_state_age_hours,
+        )
+        if bool(feature_runtime_cfg.get("live_raw_rolling_state_enabled", True))
+        else {"ok": True, "reason": "disabled"}
+    )
+    causal_state = (
+        _state_file_health(
+            feature_runtime_cfg.get("live_causal_transform_state_path"),
+            now=now,
+            max_age_hours=max_state_age_hours,
+        )
+        if bool(feature_runtime_cfg.get("live_causal_transform_state_enabled", True))
+        else {"ok": True, "reason": "disabled"}
+    )
+    rolling_meta = _latest_rolling_meta_health(
+        feature_runtime_cfg,
+        latest_closed_hour=latest_closed_hour,
+        now=now,
+        max_age_hours=max_state_age_hours,
+    )
+    prewarm_status = (
+        str((prewarm_result or {}).get("status") or "")
+        if isinstance(prewarm_result, Mapping)
+        else ""
+    )
+    prewarm_ok = prewarm_status in {
+        "cache_hit",
+        "sync_complete_verified",
+        "sync_complete",
+        "no_training_path_features",
+        "no_required_features",
+    }
+    state_or_cache_ok = bool(
+        rolling_meta.get("ok")
+        or (raw_state.get("ok") and causal_state.get("ok"))
+        or prewarm_ok
+    )
+    ok = bool(panel_ok and state_or_cache_ok)
+    reason = (
+        "ok"
+        if ok
+        else panel_reason
+        if not panel_ok
+        else "stale_or_missing_rolling_state"
+    )
+    return {
+        "ok": ok,
+        "reason": reason,
+        "panel_ok": panel_ok,
+        "panel_reason": panel_reason,
+        "panel_rows": panel_rows,
+        "panel_symbols": panel_symbols,
+        "panel_min_ts": panel_min_ts.isoformat() if panel_min_ts is not None else None,
+        "panel_max_ts": panel_max_ts.isoformat() if panel_max_ts is not None else None,
+        "panel_span_hours": panel_span_hours,
+        "panel_min_required_hours": float(min_required_panel_hours),
+        "panel_latest_lag_hours": panel_latest_lag_hours,
+        "required_model_warmup_hours": int(required_model_warmup_hours),
+        "loaded_lookback_hours": int(lookback_hours),
+        "raw_rolling_state": raw_state,
+        "causal_transform_state": causal_state,
+        "rolling_feature_cache": rolling_meta,
+        "selected_feature_prewarm": dict(prewarm_result or {}),
+    }
 
 
 def _subset_panel(
@@ -2816,7 +4115,20 @@ def _symbols_with_required_feature_coverage(
     if not required_feature_keys or not symbol_list:
         return symbol_list, {}
     missing_by_symbol: Dict[str, List[str]] = {}
-    if hasattr(feats, "latest_values_at"):
+    if hasattr(feats, "raw_symbols_for_key"):
+        for key in sorted(required_feature_keys):
+            try:
+                available = {str(sym) for sym in feats.raw_symbols_for_key(key)}
+            except Exception:
+                available = set()
+            if not available:
+                for sym in symbol_list:
+                    missing_by_symbol.setdefault(sym, []).append(str(key))
+                continue
+            for sym in symbol_list:
+                if sym not in available:
+                    missing_by_symbol.setdefault(sym, []).append(str(key))
+    elif hasattr(feats, "latest_values_at"):
         # Lazy/overlay live feature stores can represent sparse selected-cache
         # coverage by returning NaN cells for a requested symbol while still
         # carrying the trained feature column. Do not prune candidates on raw
@@ -2833,19 +4145,6 @@ def _symbols_with_required_feature_coverage(
                     missing_by_symbol.setdefault(sym, []).append(str(key))
         allowed = [sym for sym in symbol_list if sym not in missing_by_symbol]
         return allowed, missing_by_symbol
-    if hasattr(feats, "raw_symbols_for_key"):
-        for key in sorted(required_feature_keys):
-            try:
-                available = {str(sym) for sym in feats.raw_symbols_for_key(key)}
-            except Exception:
-                available = set()
-            if not available:
-                for sym in symbol_list:
-                    missing_by_symbol.setdefault(sym, []).append(str(key))
-                continue
-            for sym in symbol_list:
-                if sym not in available:
-                    missing_by_symbol.setdefault(sym, []).append(str(key))
     else:
         for key in sorted(required_feature_keys):
             value = feats.get(key) if hasattr(feats, "get") else None
@@ -2977,10 +4276,12 @@ def _strategy_feature_contracts_from_orchestrator(
             orchestrator, side=side, strategy_id=str(strategy_id)
         )
         feat_cols = list(model_contracts.get("base_features") or [])
+        raw_meta_cols = [str(c) for c in (model_contracts.get("meta_features") or []) if str(c)]
+        feat_cols.extend(sorted(_meta_model_derived_raw_dependencies(raw_meta_cols)))
         feat_cols.extend(
             str(c)
-            for c in (model_contracts.get("meta_features") or [])
-            if str(c) and not is_model_derived_feature_key(str(c))
+            for c in raw_meta_cols
+            if not is_model_derived_feature_key(str(c))
         )
         if feat_cols:
             seen: set[str] = set()
@@ -2995,16 +4296,52 @@ def _strategy_feature_contracts_from_orchestrator(
     return contracts
 
 
+def _cfg_flag(
+    cfg: Optional[Mapping[str, Any]],
+    key: str,
+    env_key: str,
+    default: bool,
+) -> bool:
+    raw = (cfg or {}).get(key, os.environ.get(env_key, "1" if default else "0"))
+    return str(raw).strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _is_train_tolerated_live_nonfinite_feature_key(key: str) -> bool:
+    """Return True for selected inputs whose NaNs are handled by model scoring."""
+    key_s = str(key or "")
+    if _is_live_source_derived_feature_key(key_s):
+        return True
+    if key_s in {"G_VOL", "G_TREND"} or re.fullmatch(
+        r"^.+_G_(?:VOL|TREND)_[01]$",
+        key_s,
+    ):
+        return True
+    return (
+        key_s.startswith("volume_entropy_")
+        or key_s.startswith("volume_autocorr_")
+        or key_s.startswith("ker_")
+        or key_s.startswith("loc_ema_stack_pos_")
+        or key_s in {"impulse_reversal", "impulse_reversal_short"}
+    )
+
+
 def _filter_strategy_masks_by_finite_model_contract(
     feats: Dict[str, pd.DataFrame],
     strategy_candidate_masks: Dict[str, List[str]],
     strategy_feature_contracts: Mapping[str, Sequence[str]],
     *,
     latest_ts: Any,
+    cfg: Optional[Mapping[str, Any]] = None,
 ) -> tuple[Dict[str, List[str]], Dict[str, Dict[str, Any]]]:
-    """Keep only symbols whose exact deployed base-model contract is finite."""
+    """Keep symbols whose blocking deployed model inputs are finite."""
     if not strategy_candidate_masks or not strategy_feature_contracts:
         return strategy_candidate_masks, {}
+    allow_train_tolerated_nonfinite = _cfg_flag(
+        cfg,
+        "live_model_contract_allow_train_tolerated_nonfinite",
+        "EPM_LIVE_MODEL_CONTRACT_ALLOW_TRAIN_TOLERATED_NONFINITE",
+        True,
+    )
     filtered: Dict[str, List[str]] = {}
     diagnostics: Dict[str, Dict[str, Any]] = {}
     for strategy_id, symbols in strategy_candidate_masks.items():
@@ -3016,13 +4353,28 @@ def _filter_strategy_masks_by_finite_model_contract(
         matrix = _get_features_for_candidates_at_ts(feats, symbol_list, ts=latest_ts)
         missing_cols = [col for col in feat_cols if col not in matrix.columns]
         aligned = matrix.reindex(columns=feat_cols)
+        allowed_nonfinite_cols = {
+            col
+            for col in feat_cols
+            if (
+                allow_train_tolerated_nonfinite
+                and col not in missing_cols
+                and _is_train_tolerated_live_nonfinite_feature_key(col)
+            )
+        }
+        blocking_col_idx = [
+            idx for idx, col in enumerate(feat_cols) if col not in allowed_nonfinite_cols
+        ]
         try:
             values = aligned.astype(np.float32, copy=False).to_numpy(
                 dtype=np.float32,
                 copy=False,
             )
             finite = np.isfinite(values)
-            finite_rows = finite.all(axis=1)
+            if blocking_col_idx:
+                finite_rows = finite[:, blocking_col_idx].all(axis=1)
+            else:
+                finite_rows = np.ones(len(symbol_list), dtype=bool)
         except Exception:
             finite = np.zeros((len(symbol_list), len(feat_cols)), dtype=bool)
             finite_rows = np.zeros(len(symbol_list), dtype=bool)
@@ -3030,25 +4382,43 @@ def _filter_strategy_masks_by_finite_model_contract(
         filtered[str(strategy_id)] = kept
         if missing_cols or len(kept) != len(symbol_list):
             nonfinite_counts = (~finite).sum(axis=0) if finite.size else np.zeros(len(feat_cols), dtype=int)
-            top_idx = np.argsort(nonfinite_counts)[::-1]
-            top_features = [
-                {
-                    "feature": str(feat_cols[int(i)]),
-                    "rows": int(nonfinite_counts[int(i)]),
-                    "pct": round(
-                        float(nonfinite_counts[int(i)]) * 100.0 / max(1, len(symbol_list)),
-                        2,
-                    ),
-                }
-                for i in top_idx[:15]
-                if int(nonfinite_counts[int(i)]) > 0
+            allowed_idx = [
+                idx for idx, col in enumerate(feat_cols) if col in allowed_nonfinite_cols
             ]
+
+            def _top_features(indices: Sequence[int], limit: int = 15) -> List[Dict[str, Any]]:
+                ranked = sorted(
+                    [int(i) for i in indices],
+                    key=lambda i: int(nonfinite_counts[int(i)]),
+                    reverse=True,
+                )
+                return [
+                    {
+                        "feature": str(feat_cols[int(i)]),
+                        "rows": int(nonfinite_counts[int(i)]),
+                        "pct": round(
+                            float(nonfinite_counts[int(i)])
+                            * 100.0
+                            / max(1, len(symbol_list)),
+                            2,
+                        ),
+                    }
+                    for i in ranked[:limit]
+                    if int(nonfinite_counts[int(i)]) > 0
+                ]
+
+            top_features = _top_features(range(len(feat_cols)))
+            top_blocking = _top_features(blocking_col_idx)
+            top_allowed = _top_features(allowed_idx)
             diagnostics[str(strategy_id)] = {
                 "input": len(symbol_list),
                 "kept": len(kept),
                 "rejected": int(len(symbol_list) - len(kept)),
                 "missing_cols": missing_cols[:20],
                 "top_nonfinite_features": top_features,
+                "top_blocking_nonfinite_features": top_blocking,
+                "top_allowed_nonfinite_features": top_allowed,
+                "allowed_nonfinite_feature_count": int(len(allowed_nonfinite_cols)),
                 "sample_rejected_symbols": [
                     sym for sym, ok in zip(symbol_list, finite_rows) if not bool(ok)
                 ][:10],
@@ -3137,9 +4507,13 @@ def _select_candidates_and_load_features(
         mask_raw_feature_keys = _lgbm_mask_required_feature_keys(
             lgbm_strategy_mask_rows
         )
+        execution_policy_feature_keys = (
+            {"barrier_pct"} if model_features_required else set()
+        )
         raw_feature_keys = set(mask_raw_feature_keys)
         if model_features_required:
             raw_feature_keys |= set(model_raw_feature_keys)
+            raw_feature_keys |= execution_policy_feature_keys
         cache_key = None
         if bool((cfg or {}).get("live_feature_cycle_cache_enabled", True)) and not bool(
             (cfg or {}).get("live_feature_cycle_cache_bypass", False)
@@ -3182,6 +4556,7 @@ def _select_candidates_and_load_features(
         short_cands: List[str] = []
         candidate_feats: Dict[str, pd.DataFrame] = dict(selector_feats)
         strategy_candidate_masks: Dict[str, List[str]] = {}
+        pre_model_strategy_masks_authoritative = False
         if not lgbm_strategy_mask_rows:
             mode_cfg = dict((cfg or {}).get("candidate_mask_params_by_mode", {}) or {})
             policy_rules = dict((cfg or {}).get("policy_selection_rules", {}) or {})
@@ -3337,6 +4712,7 @@ def _select_candidates_and_load_features(
                         "strategy_candidate_masks": strategy_candidate_masks,
                     }
                 return result
+            pre_model_strategy_masks_authoritative = True
             if not model_features_required:
                 mask_long: set[str] = set()
                 mask_short: set[str] = set()
@@ -3476,7 +4852,11 @@ def _select_candidates_and_load_features(
                 before_model_keys = len(model_raw_feature_keys)
                 model_raw_feature_keys = raw_required_feature_keys(active_model_feature_keys)
                 model_decision_feature_keys = set(active_model_feature_keys)
-                raw_feature_keys = set(mask_raw_feature_keys).union(model_raw_feature_keys)
+                raw_feature_keys = (
+                    set(mask_raw_feature_keys)
+                    .union(model_raw_feature_keys)
+                    .union(execution_policy_feature_keys)
+                )
                 cache_key = None
                 tprint(
                     "Live feature parity: narrowed model feature contract to "
@@ -3513,12 +4893,22 @@ def _select_candidates_and_load_features(
                 "live_feature_offline_cache_enabled": _model_feature_offline_cache_enabled(
                     cfg or {}
                 ),
+                "live_feature_prefer_offline_cache": _model_feature_offline_cache_enabled(
+                    cfg or {}
+                ),
+                "live_model_feature_store_strict": live_model_feature_store_strict(
+                    cfg or {}
+                ),
                 "live_feature_return_latest_only": True,
             },
             lookback_hours=lookback_hours,
             required_feature_keys=raw_feature_keys,
         )
-        if lgbm_strategy_mask_rows and model_decision_feature_keys:
+        if (
+            lgbm_strategy_mask_rows
+            and model_decision_feature_keys
+            and not live_model_feature_store_strict(cfg or {})
+        ):
             try:
                 first_mask_cfg = dict(next(iter(lgbm_strategy_mask_rows.values())) or {})
                 first_mask_cfg.update(dict(first_mask_cfg.get("mask_params", {}) or {}))
@@ -3559,49 +4949,69 @@ def _select_candidates_and_load_features(
                 )
         timer.mark("model_features")
         if lgbm_strategy_mask_rows:
-            mask_panel = _latest_only_panel(panel, model_feature_symbols)
-            mask_close = mask_panel.get("close")
-            mask_latest_ts = (
-                mask_close.index.max()
-                if isinstance(mask_close, pd.DataFrame) and not mask_close.empty
-                else None
+            recompute_masks_after_model_features = bool(
+                (cfg or {}).get("live_recompute_lgbm_masks_after_model_features", False)
             )
-            mask_eval_feats = _latest_only_features(
-                model_feats,
-                latest_ts=mask_latest_ts,
-                symbols=model_feature_symbols,
-            )
-            mask_eval_feats.update(
-                _latest_only_features(
-                    selector_feats,
+            if pre_model_strategy_masks_authoritative and not recompute_masks_after_model_features:
+                timer.mark("lgbm_mask_eval_preserved_pre_model")
+                tprint(
+                    "LGBM strategy masks latest pass: preserving authoritative "
+                    "pre-model mask evaluation after model feature load."
+                )
+                if strategy_candidate_masks:
+                    mask_diag = _strategy_mask_count_diagnostics(
+                        strategy_candidate_masks,
+                        lgbm_strategy_mask_rows,
+                        model_feature_symbols,
+                    )
+                    tprint(
+                        "LGBM strategy mask pass/fail counts: "
+                        f"{ {strategy_core_id(k): {'pass': v.get('pass_count'), 'fail': v.get('fail_count'), 'universe': v.get('universe_count')} for k, v in mask_diag.items()} }"
+                    )
+            else:
+                mask_panel = _latest_only_panel(panel, model_feature_symbols)
+                mask_close = mask_panel.get("close")
+                mask_latest_ts = (
+                    mask_close.index.max()
+                    if isinstance(mask_close, pd.DataFrame) and not mask_close.empty
+                    else None
+                )
+                mask_eval_feats = _latest_only_features(
+                    model_feats,
                     latest_ts=mask_latest_ts,
                     symbols=model_feature_symbols,
                 )
-            )
-            strategy_candidate_masks = build_strategy_candidate_masks(
-                mask_panel,
-                mask_eval_feats,
-                lgbm_strategy_mask_rows.values(),
-            )
-            timer.mark("lgbm_mask_eval")
-            non_empty_masks = sum(
-                1 for symbols_ in strategy_candidate_masks.values() if symbols_
-            )
-            tprint(
-                "LGBM strategy masks latest pass: "
-                f"strategies={len(strategy_candidate_masks)} "
-                f"non_empty={non_empty_masks}"
-            )
-            if strategy_candidate_masks:
-                mask_diag = _strategy_mask_count_diagnostics(
-                    strategy_candidate_masks,
-                    lgbm_strategy_mask_rows,
-                    model_feature_symbols,
+                mask_eval_feats.update(
+                    _latest_only_features(
+                        selector_feats,
+                        latest_ts=mask_latest_ts,
+                        symbols=model_feature_symbols,
+                    )
+                )
+                strategy_candidate_masks = build_strategy_candidate_masks(
+                    mask_panel,
+                    mask_eval_feats,
+                    lgbm_strategy_mask_rows.values(),
+                )
+                timer.mark("lgbm_mask_eval")
+                non_empty_masks = sum(
+                    1 for symbols_ in strategy_candidate_masks.values() if symbols_
                 )
                 tprint(
-                    "LGBM strategy mask pass/fail counts: "
-                    f"{ {strategy_core_id(k): {'pass': v.get('pass_count'), 'fail': v.get('fail_count'), 'universe': v.get('universe_count')} for k, v in mask_diag.items()} }"
+                    "LGBM strategy masks latest pass: "
+                    f"strategies={len(strategy_candidate_masks)} "
+                    f"non_empty={non_empty_masks}"
                 )
+                if strategy_candidate_masks:
+                    mask_diag = _strategy_mask_count_diagnostics(
+                        strategy_candidate_masks,
+                        lgbm_strategy_mask_rows,
+                        model_feature_symbols,
+                    )
+                    tprint(
+                        "LGBM strategy mask pass/fail counts: "
+                        f"{ {strategy_core_id(k): {'pass': v.get('pass_count'), 'fail': v.get('fail_count'), 'universe': v.get('universe_count')} for k, v in mask_diag.items()} }"
+                    )
             mask_long: set[str] = set()
             mask_short: set[str] = set()
             for strategy_id, passed_symbols in strategy_candidate_masks.items():
@@ -3670,6 +5080,7 @@ def _select_candidates_and_load_features(
                     strategy_candidate_masks,
                     strategy_feature_contracts,
                     latest_ts=latest_ts,
+                    cfg=cfg,
                 )
             )
             if contract_diagnostics:
@@ -3679,6 +5090,8 @@ def _select_candidates_and_load_features(
                         f"candidates for {strategy_core_id(sid)} "
                         f"{diag.get('input')}->{diag.get('kept')} "
                         f"missing_cols={diag.get('missing_cols', [])[:5]} "
+                        f"blocking_nonfinite={diag.get('top_blocking_nonfinite_features', [])[:10]} "
+                        f"allowed_nonfinite={diag.get('top_allowed_nonfinite_features', [])[:10]} "
                         f"top_nonfinite={diag.get('top_nonfinite_features', [])[:10]} "
                         f"sample={diag.get('sample_rejected_symbols', [])[:8]}"
                     )
@@ -5104,7 +6517,7 @@ def _resolve_prediction_ledger_path(
     if explicit:
         return Path(explicit)
     state_dir = Path(live_data_root) / "live_state"
-    if bool(run_scoped) or _env_flag("EPM_RUN_SCOPED_PREDICTION_LEDGER", False):
+    if bool(run_scoped) or _env_flag("EPM_RUN_SCOPED_PREDICTION_LEDGER", True):
         return state_dir / "prediction_ledgers" / str(run_id) / "prediction_ledger.parquet"
     return state_dir / "prediction_ledger.parquet"
 
@@ -5545,7 +6958,7 @@ def _resolve_live_barrier_pct(
             continue
         if np.isfinite(barrier) and barrier > 0.0:
             return barrier
-    if isinstance(panel, dict):
+    if isinstance(panel, dict) and bool((cfg or {}).get("allow_raw_policy_barrier_recompute", False)):
         try:
             raw_barrier = _compute_policy_barrier_pct(panel, [symbol], cfg or {})
         except Exception as exc:
@@ -6129,6 +7542,8 @@ def run_inference_step(
         runtime_config.get("allow_live_batch_rank_fallback_for_debug", False)
     )
     executor_mode = str(getattr(executor, "mode", "") or "").lower()
+    if executor_mode in {"live", "live-test", "live_test", "paper", "shadow_live"}:
+        runtime_config.setdefault("allow_raw_policy_barrier_recompute", True)
     require_cross_strategy_auction_rank = bool(
         runtime_config.get(
             "require_cross_strategy_auction_rank",
@@ -6141,6 +7556,10 @@ def run_inference_step(
     )
     adverse_hourly_close_gate_enabled, adverse_hourly_close_gate_bps = (
         _live_entry_adverse_hourly_close_gate(runtime_config)
+    )
+    raw_close_reference_gap_bps = _raw_close_reference_gap_bps(
+        runtime_config,
+        adverse_hourly_close_gate_bps,
     )
     max_signal_close_to_entry_seconds = _max_signal_close_to_entry_seconds(runtime_config)
     hard_stale_gate_default = executor_mode in {
@@ -6257,6 +7676,11 @@ def run_inference_step(
             "current mid has moved against the hourly close by "
             f">= {adverse_hourly_close_gate_bps:.2f} bps."
         )
+    tprint(
+        "Raw signal-close reliability gate active: candidates are rejected when "
+        "the raw close used by features is missing, zero-volume, or diverges from "
+        f"mark/index by >= {raw_close_reference_gap_bps:.2f} bps."
+    )
     if max_signal_close_to_entry_seconds >= 0.0:
         signal_close_ts = _signal_bar_close_ts(signal_bar_ts)
         tprint(
@@ -6264,6 +7688,16 @@ def run_inference_step(
             f"decision_ts - signal_bar_close_ts > "
             f"{max_signal_close_to_entry_seconds:.0f}s "
             f"(signal_bar_ts={signal_bar_ts}, signal_bar_close_ts={signal_close_ts})."
+        )
+    pre_score_market_mask_enabled = bool(
+        max_entries_total > 0
+        and _live_prescore_market_mask_enabled(runtime_config, executor_mode)
+    )
+    if pre_score_market_mask_enabled:
+        tprint(
+            "Live pre-score market mask active: spread, ticker freshness, "
+            "raw signal close, open interest, and configured liquidity checks "
+            "run before base/meta model scoring."
         )
     global_auction_enabled = str(
         getattr(portfolio_policy, "portfolio_policy_version", "")
@@ -6350,6 +7784,10 @@ def run_inference_step(
             "lgbm_strategy_mask_pass": 0,
             "lgbm_strategy_mask_block": 0,
             "asset_exclusion_block": 0,
+            "prescore_market_mask_input": 0,
+            "prescore_market_mask_pass": 0,
+            "prescore_market_mask_block": 0,
+            "prescore_market_mask_reasons": {},
             "base_gate_pass": 0,
             "chain_enter": 0,
             "threshold_pass": 0,
@@ -6409,6 +7847,30 @@ def run_inference_step(
                                 f"for {selected_strategy}"
                             )
                     continue
+                pre_score_market_snapshots: Dict[str, Dict[str, Any]] = {}
+                if pre_score_market_mask_enabled:
+                    eligible_candidates, pre_score_market_snapshots = (
+                        _apply_pre_score_market_masks(
+                            panel=panel,
+                            candidates=eligible_candidates,
+                            side=side,
+                            strategy_id=str(selected_strategy),
+                            executor=executor,
+                            policy=portfolio_policy,
+                            runtime_config=runtime_config,
+                            now=now_utc,
+                            signal_bar_ts=signal_bar_ts,
+                            raw_close_reference_gap_bps=raw_close_reference_gap_bps,
+                            max_signal_close_to_entry_seconds=max_signal_close_to_entry_seconds,
+                            side_metrics=side_metrics,
+                        )
+                    )
+                    if not eligible_candidates:
+                        tprint(
+                            f"Pre-score market mask block: all {side} candidates "
+                            f"skipped before base/meta for {selected_strategy}"
+                        )
+                        continue
                 eligible_features = candidate_features.loc[
                     [
                         symbol
@@ -6583,6 +8045,9 @@ def run_inference_step(
                         )
                         continue
                     chain_results.update(base_gate.get(symbol, {}))
+                    prescore_snapshot = pre_score_market_snapshots.get(str(symbol))
+                    if prescore_snapshot:
+                        chain_results.update(prescore_snapshot)
                     if live_feature_layer_debug and np.isfinite(
                         _safe_float(chain_results.get("meta_pred"))
                     ):
@@ -7471,17 +8936,12 @@ def run_inference_step(
                             )
                             side_metrics["non_fatal_issues"] += 1
                             continue
-                    close = panel.get("close")
-                    price = None
-                    if close is not None and symbol in close.columns:
-                        close_col = close[symbol]
-                        dropped = close_col.dropna()
-                        price = (
-                            dropped.iloc[-1]
-                            if isinstance(dropped, (pd.DataFrame, pd.Series))
-                            and not dropped.empty
-                            else None
-                        )
+                    signal_close_snapshot = _raw_signal_close_reliability_snapshot(
+                        panel,
+                        symbol,
+                        max_reference_gap_bps=raw_close_reference_gap_bps,
+                    )
+                    price = signal_close_snapshot.get("signal_price")
                     predictions = {
                         "position_size": size,
                         "base_position_size": chain_results.get(
@@ -7591,6 +9051,7 @@ def run_inference_step(
                     if live_barrier_pct is not None:
                         features_log["barrier_pct"] = live_barrier_pct
                     execution_snapshot = {}
+                    execution_snapshot.update(signal_close_snapshot)
                     execution_kwargs: Dict[str, Any] = {}
                     execution_limit_price = None
                     timing_snapshot = _entry_timing_snapshot(
@@ -7615,6 +9076,38 @@ def run_inference_step(
                         }
                     )
                     execution_snapshot.update(timing_snapshot)
+                    if bool(signal_close_snapshot.get("raw_signal_close_unreliable")):
+                        reject_reason = (
+                            "unreliable_raw_signal_close:"
+                            f"{signal_close_snapshot.get('raw_signal_close_unreliable_reason')}"
+                        )
+                        if (
+                            prediction_ledger is not None
+                            and _should_log_prediction_candidate(
+                                decision, policy=portfolio_policy
+                            )
+                        ):
+                            prediction_ledger_rows.append(
+                                _prediction_ledger_row(
+                                    decision,
+                                    timestamp=now_utc.isoformat(),
+                                    side=side,
+                                    portfolio_decision="data_quality_rejected",
+                                    portfolio_reject_reason=reject_reason,
+                                    execution_snapshot=execution_snapshot,
+                                )
+                            )
+                        tprint(
+                            f"Raw signal-close quality block: {symbol} "
+                            f"{side}/{strategy_id} reason={reject_reason} "
+                            f"raw_close={signal_close_snapshot.get('raw_signal_close')} "
+                            f"volume={signal_close_snapshot.get('raw_signal_volume')} "
+                            f"reference={signal_close_snapshot.get('raw_signal_close_reference_source')} "
+                            f"reference_gap_bps="
+                            f"{_safe_float(signal_close_snapshot.get('raw_signal_close_reference_gap_bps'), np.nan):.2f}"
+                        )
+                        side_metrics["non_fatal_issues"] += 1
+                        continue
                     if bool(timing_snapshot.get("stale_signal_age_gate_exceeded")):
                         reject_reason = "stale_signal_age_exceeded"
                         if (
@@ -8929,12 +10422,44 @@ def run_inference_step(
                     decision.get("threshold_score", decision.get("calibrated_score")),
                 )
             )
+            barrier_features_log: Dict[str, Any] = {}
+            if (
+                isinstance(candidate_features, pd.DataFrame)
+                and symbol in candidate_features.index
+            ):
+                for barrier_key in ("barrier_pct", "barrier_frac"):
+                    if barrier_key in candidate_features.columns:
+                        barrier_features_log[barrier_key] = candidate_features.at[
+                            symbol, barrier_key
+                        ]
+            live_barrier_pct = _resolve_live_barrier_pct(
+                symbol,
+                barrier_features_log,
+                panel=panel,
+                cfg=runtime_config,
+            )
+            perp_rank = (
+                _perp_rank_context(
+                    data_root=str(runtime_config.get("data_root", "data")),
+                    run_id=str(runtime_config.get("run_id", "latest")),
+                    side=side,
+                    strategy_id=strategy_id,
+                    score=float(
+                        chain_results.get("meta_pred")
+                        or decision.get("calibrated_score")
+                        or rank_for_size
+                    ),
+                )
+                if _is_perps_config(runtime_config)
+                else {}
+            )
 
             def _log_global_auction_skip(
                 stage: str,
                 reason: str,
                 *,
                 extra: Optional[Dict[str, Any]] = None,
+                execution_snapshot: Optional[Dict[str, Any]] = None,
             ) -> None:
                 chain_results["global_auction_skip_stage"] = stage
                 chain_results["global_auction_skip_reason"] = reason
@@ -8954,6 +10479,7 @@ def run_inference_step(
                             portfolio_reject_reason=(
                                 f"global_auction_{stage}:{reason}"
                             ),
+                            execution_snapshot=execution_snapshot,
                         )
                     )
                 details: Dict[str, Any] = {
@@ -9023,9 +10549,13 @@ def run_inference_step(
                     open_positions=capacity.get("open_positions"),
                     market_mode=runtime_config.get("market_mode", "spot"),
                     available_wallet_value=capacity.get("available_wallet_quote"),
+                    stop_loss_pct=live_barrier_pct,
+                    rank_number=perp_rank.get("rank_number"),
+                    rank_x=perp_rank.get("rank_x"),
                 )
                 requested_position_usdt = float(sizing_audit["size_after_liquidity"])
                 chain_results["portfolio_rank_sizing"] = sizing_audit
+                decision["chain_results"] = chain_results
                 can_enter, info = portfolio_mgr.can_enter_position(
                     symbol=symbol,
                     side=side,
@@ -9036,6 +10566,7 @@ def run_inference_step(
                     requested_position_size=requested_position_usdt,
                 )
                 chain_results["portfolio_gate"] = info
+                decision["chain_results"] = chain_results
                 if not can_enter:
                     side_metrics["non_fatal_issues"] = (
                         int(side_metrics.get("non_fatal_issues", 0)) + 1
@@ -9076,12 +10607,14 @@ def run_inference_step(
                 _log_global_auction_skip("sizing", "invalid_or_zero_size", extra={"computed_size": size})
                 _commit_global_side_metrics()
                 continue
-            close = panel.get("close")
-            price = None
-            if close is not None and symbol in close.columns:
-                dropped = close[symbol].dropna()
-                price = dropped.iloc[-1] if not dropped.empty else None
+            signal_close_snapshot = _raw_signal_close_reliability_snapshot(
+                panel,
+                symbol,
+                max_reference_gap_bps=raw_close_reference_gap_bps,
+            )
+            price = signal_close_snapshot.get("signal_price")
             execution_snapshot: Dict[str, Any] = {}
+            execution_snapshot.update(signal_close_snapshot)
             execution_limit_price = None
             execution_kwargs: Dict[str, Any] = {}
             adjusted_rank = rank_for_size
@@ -9107,6 +10640,31 @@ def run_inference_step(
                 }
             )
             execution_snapshot.update(timing_snapshot)
+            if bool(signal_close_snapshot.get("raw_signal_close_unreliable")):
+                reason = (
+                    "unreliable_raw_signal_close:"
+                    f"{signal_close_snapshot.get('raw_signal_close_unreliable_reason')}"
+                )
+                side_metrics["non_fatal_issues"] = (
+                    int(side_metrics.get("non_fatal_issues", 0)) + 1
+                )
+                _log_global_auction_skip(
+                    "data_quality",
+                    reason,
+                    extra={
+                        "raw_close": signal_close_snapshot.get("raw_signal_close"),
+                        "volume": signal_close_snapshot.get("raw_signal_volume"),
+                        "reference": signal_close_snapshot.get(
+                            "raw_signal_close_reference_source"
+                        ),
+                        "reference_gap_bps": signal_close_snapshot.get(
+                            "raw_signal_close_reference_gap_bps"
+                        ),
+                    },
+                    execution_snapshot=execution_snapshot,
+                )
+                _commit_global_side_metrics()
+                continue
             if bool(timing_snapshot.get("stale_signal_age_gate_exceeded")):
                 if (
                     prediction_ledger is not None
@@ -9141,25 +10699,10 @@ def run_inference_step(
                             max_signal_close_to_entry_seconds
                         ),
                     },
+                    execution_snapshot=execution_snapshot,
                 )
                 _commit_global_side_metrics()
                 continue
-            barrier_features_log: Dict[str, Any] = {}
-            if (
-                isinstance(candidate_features, pd.DataFrame)
-                and symbol in candidate_features.index
-            ):
-                for barrier_key in ("barrier_pct", "barrier_frac"):
-                    if barrier_key in candidate_features.columns:
-                        barrier_features_log[barrier_key] = candidate_features.at[
-                            symbol, barrier_key
-                        ]
-            live_barrier_pct = _resolve_live_barrier_pct(
-                symbol,
-                barrier_features_log,
-                panel=panel,
-                cfg=runtime_config,
-            )
             exchange = getattr(executor, "exchange", None)
             api_symbol = (
                 _live_exchange_symbol(exchange, runtime_config, symbol)
@@ -9177,6 +10720,7 @@ def run_inference_step(
                         "has_exchange": exchange is not None,
                         "signal_price": price,
                     },
+                    execution_snapshot=execution_snapshot,
                 )
                 _commit_global_side_metrics()
                 continue
@@ -9231,6 +10775,7 @@ def run_inference_step(
                                 "spread_bps": ticker_snapshot.spread_bps,
                                 "mid": ticker_snapshot.mid,
                             },
+                            execution_snapshot=execution_snapshot,
                         )
                         _commit_global_side_metrics()
                         continue
@@ -9285,6 +10830,7 @@ def run_inference_step(
                                     "signal_price": price,
                                     "decision_mid": decision_mid,
                                 },
+                                execution_snapshot=execution_snapshot,
                             )
                             _commit_global_side_metrics()
                             continue
@@ -9348,6 +10894,7 @@ def run_inference_step(
                                 "hourly_close": price,
                                 "decision_mid": decision_mid,
                             },
+                            execution_snapshot=execution_snapshot,
                         )
                         _commit_global_side_metrics()
                         continue
@@ -9387,6 +10934,7 @@ def run_inference_step(
                                 "signal_price": price,
                                 "decision_mid": decision_mid,
                             },
+                            execution_snapshot=execution_snapshot,
                         )
                         _commit_global_side_metrics()
                         continue
@@ -9485,6 +11033,7 @@ def run_inference_step(
                                     "capacity_weight": book_snapshot.liquidity_capacity_weight,
                                     "expected_slippage_bps": book_snapshot.expected_fill_slippage_bps,
                                 },
+                                execution_snapshot=execution_snapshot,
                             )
                             _commit_global_side_metrics()
                             continue
@@ -9568,6 +11117,7 @@ def run_inference_step(
                                             "ev_adjusted_calibrated_score"
                                         ),
                                     },
+                                    execution_snapshot=execution_snapshot,
                                 )
                                 _commit_global_side_metrics()
                                 continue
@@ -9632,6 +11182,9 @@ def run_inference_step(
                             )
                             size = float(sizing_audit["size_after_liquidity"])
                             chain_results["portfolio_rank_sizing"] = sizing_audit
+                            execution_snapshot["threshold_viability_margin"] = getattr(
+                                portfolio_mgr, "threshold_viability_margin", None
+                            )
                             can_enter, info = portfolio_mgr.can_enter_position(
                                 symbol=symbol,
                                 side=side,
@@ -9642,6 +11195,7 @@ def run_inference_step(
                                 requested_position_size=size,
                             )
                             chain_results["portfolio_gate_after_liquidity"] = info
+                            decision["chain_results"] = chain_results
                             if not can_enter:
                                 if (
                                     prediction_ledger is not None
@@ -9680,6 +11234,7 @@ def run_inference_step(
                                             for x in info.get("constraints_checked", []) or []
                                         ),
                                     },
+                                    execution_snapshot=execution_snapshot,
                                 )
                                 _commit_global_side_metrics()
                                 continue
@@ -9727,6 +11282,7 @@ def run_inference_step(
                     _log_global_auction_skip(
                         "execution_precheck_exception",
                         f"{classify_api_error(exc)}: {exc}",
+                        execution_snapshot=execution_snapshot,
                     )
                     _commit_global_side_metrics()
                     continue
@@ -9763,6 +11319,7 @@ def run_inference_step(
                         "computed_size": size,
                         "exchange_min_notional": exchange_min_notional,
                     },
+                    execution_snapshot=execution_snapshot,
                 )
                 _commit_global_side_metrics()
                 continue
@@ -10030,6 +11587,102 @@ def run_inference_step(
                     entry_price=float(price if price is not None else 0.0),
                     entry_time=now_utc,
                 )
+            if trade_success and _shadow_execution_realism_enabled():
+                try:
+                    live_position_state = executor.get_position(symbol) or {}
+                    params_for_shadow = (
+                        executor.get_simple_policy_stop_params(strategy_id)
+                        if hasattr(executor, "get_simple_policy_stop_params")
+                        else {}
+                    )
+                    policy_entry_for_shadow, policy_entry_source = (
+                        _position_policy_entry_price(
+                            {
+                                **live_position_state,
+                                "realized_entry_price": trade_result.get(
+                                    "realized_entry_price"
+                                ),
+                                "expected_entry_price": trade_result.get(
+                                    "expected_entry_price"
+                                ),
+                                "signal_price": price,
+                            }
+                        )
+                    )
+                    realized_entry_for_shadow = _finite_positive_float(
+                        trade_result.get("realized_entry_price")
+                    )
+                    if not np.isfinite(realized_entry_for_shadow):
+                        realized_entry_for_shadow = _finite_positive_float(price)
+                    shadow_state = _ensure_simple_policy_shadow_state(
+                        live_position_state,
+                        symbol=symbol,
+                        side=side,
+                        policy_entry_price=policy_entry_for_shadow,
+                        policy_entry_price_source=policy_entry_source,
+                        realized_entry_price=realized_entry_for_shadow,
+                        stop_price=_finite_positive_float(
+                            trade_result.get("stop_price")
+                        ),
+                        stop_reason=str(
+                            live_position_state.get("stop_reason")
+                            or "original_stop_loss"
+                        ),
+                        params=params_for_shadow,
+                    )
+                    _append_simple_policy_shadow_event(
+                        shadow_state,
+                        "shadow_entry_seeded",
+                        policy_entry_price=policy_entry_for_shadow,
+                        policy_entry_price_source=policy_entry_source,
+                        realized_entry_price=realized_entry_for_shadow,
+                        entry_gap_bps=shadow_state.get("entry_gap_bps"),
+                        initial_shadow_stop_price=shadow_state.get(
+                            "initial_shadow_stop_price"
+                        ),
+                        live_stop_price=trade_result.get("stop_price"),
+                    )
+                    executor.update_position_policy_state(
+                        symbol,
+                        shadow_simple_policy_state=shadow_state,
+                    )
+                    features_log["simple_policy_shadow"] = shadow_state
+                    features_log.update(
+                        {
+                            "shadow_policy_schema": shadow_state.get("schema"),
+                            "shadow_policy_params_source": shadow_state.get(
+                                "params_source"
+                            ),
+                            "shadow_policy_params_hash": shadow_state.get(
+                                "params_hash"
+                            ),
+                            "shadow_policy_entry_price": shadow_state.get(
+                                "policy_entry_price"
+                            ),
+                            "shadow_realized_entry_price": shadow_state.get(
+                                "realized_entry_price"
+                            ),
+                            "shadow_entry_gap_bps": shadow_state.get(
+                                "entry_gap_bps"
+                            ),
+                            "shadow_initial_stop_price": shadow_state.get(
+                                "initial_shadow_stop_price"
+                            ),
+                            "shadow_latest_stop_price": shadow_state.get(
+                                "shadow_stop_price"
+                            ),
+                            "shadow_live_stop_price": trade_result.get("stop_price"),
+                            "shadow_stop_gap_bps": shadow_state.get(
+                                "latest_stop_gap_bps"
+                            ),
+                            "shadow_status": shadow_state.get("status"),
+                        }
+                    )
+                except Exception as exc:
+                    tprint(
+                        f"Warning: failed to seed execution-realism shadow for "
+                        f"{symbol} {side}/{strategy_id}: {exc}"
+                    )
             if trade_success:
                 tprint(
                     f"Trade entry accepted: {symbol} {side}/{strategy_id} "
@@ -10178,6 +11831,37 @@ def run_inference_step(
                 f"rows={len(prediction_ledger_rows)} "
                 f"path={prediction_ledger.path}"
             )
+            try:
+                live_root = Path(
+                    runtime_config.get("live_data_root")
+                    or runtime_config.get("data_root")
+                    or "data"
+                )
+                artifact_root = Path(runtime_config.get("data_root") or live_root)
+                run_id = str(runtime_config.get("run_id") or "")
+                benchmark_dir = (
+                    artifact_root / "artifacts" / run_id / "drift_benchmarks"
+                    if run_id
+                    else None
+                )
+                drift_recap = write_live_drift_recap(
+                    ledger_path=prediction_ledger.path,
+                    output_root=live_root / "live_state" / "drift_monitoring",
+                    benchmark_dir=benchmark_dir,
+                    asof_ts=pd.Timestamp.now(tz="UTC"),
+                    model_run_id=run_id,
+                    policy_run_id=run_id,
+                )
+                if drift_recap.get("reason") not in {None, ""}:
+                    tprint(f"Live drift recap skipped: {drift_recap.get('reason')}")
+                else:
+                    tprint(
+                        "Live drift recap updated: "
+                        f"rows={drift_recap.get('scored_metric_rows')} "
+                        f"regime_features={drift_recap.get('regime_feature_rows')}"
+                    )
+            except Exception as exc:
+                tprint(f"Warning: live drift recap update failed: {exc}")
         except Exception as exc:
             tprint(f"Warning: prediction ledger append failed: {exc}")
     _emit_structured_event("ORDER_HEALTH", results["order_error_summary"])
@@ -11018,8 +12702,8 @@ def main():
     parser.add_argument(
         "--challenger-interval",
         type=int,
-        default=60,
-        help="Position monitor interval in seconds (default: 60 = 1 min)",
+        default=120,
+        help="Position monitor interval in seconds (default: 120 = 2 min)",
     )
     parser.add_argument(
         "--lookback-hours",
@@ -11099,6 +12783,19 @@ def main():
         help="Artifact run id to load. Defaults to latest when omitted.",
     )
     parser.add_argument(
+        "--model-artifact-run-id",
+        default=None,
+        help=(
+            "Model artifact run id to load. Defaults to EPM_MODEL_ARTIFACT_RUN_ID, "
+            "then final_model_fit_manifest.json, then --run-id."
+        ),
+    )
+    parser.add_argument(
+        "--policy-artifact-run-id",
+        default=None,
+        help="Policy artifact run id to load. Defaults to EPM_POLICY_ARTIFACT_RUN_ID or --run-id.",
+    )
+    parser.add_argument(
         "--run-once",
         action="store_true",
         help="Run one inference batch and exit after optional daily reporting.",
@@ -11117,7 +12814,11 @@ def main():
     market_mode = "perps" if args.perps else _normalise_market_mode(args.market_mode)
     data_root = args.data_root or ("data_perp" if market_mode == "perps" else None)
     config = load_inference_config(
-        data_root=data_root, run_id=args.run_id, market_mode=market_mode
+        data_root=data_root,
+        run_id=args.run_id,
+        market_mode=market_mode,
+        model_artifact_run_id=args.model_artifact_run_id,
+        policy_artifact_run_id=args.policy_artifact_run_id,
     )
     config["market_mode"] = market_mode
     config["execution_account"] = (
@@ -11174,10 +12875,16 @@ def main():
     config["prediction_ledger_path"] = args.prediction_ledger_path
     config["run_scoped_prediction_ledger"] = bool(
         args.run_scoped_prediction_ledger
-        or _env_flag("EPM_RUN_SCOPED_PREDICTION_LEDGER", False)
+        or _env_flag("EPM_RUN_SCOPED_PREDICTION_LEDGER", True)
     )
     runtime_bucket_params = _attach_runtime_bucket_params(config)
-    model_bundle = load_full_state(config["run_id"], config["data_root"])
+    model_artifact_run_id = str(
+        config.get("model_artifact_run_id") or config["run_id"]
+    )
+    policy_artifact_run_id = str(
+        config.get("policy_artifact_run_id") or config["run_id"]
+    )
+    model_bundle = load_full_state(model_artifact_run_id, config["data_root"])
     if isinstance(model_bundle, dict):
         model_bundle["bucket_params"] = runtime_bucket_params
         loaded_bundle = (
@@ -11202,7 +12909,7 @@ def main():
     validate_live_feature_contract(effective_model_bundle, strict=True)
     portfolio_policy = load_portfolio_policy_config(
         data_root=config["data_root"],
-        run_id=config["run_id"],
+        run_id=policy_artifact_run_id,
         runtime_cfg=config,
         require_artifact=_is_live_test_mode(config["mode"])
         or str(config["mode"]).lower() == "live",
@@ -11213,7 +12920,7 @@ def main():
     )
     parity_contract = load_training_live_parity_contract(
         data_root=config["data_root"],
-        run_id=config["run_id"],
+        run_id=model_artifact_run_id,
         require=_is_live_test_mode(config["mode"])
         or str(config["mode"]).lower() == "live",
     )
@@ -11222,7 +12929,7 @@ def main():
     portfolio_policy_path = (
         Path(config["data_root"])
         / "artifacts"
-        / str(config["run_id"])
+        / policy_artifact_run_id
         / "policy_params"
         / "optimized_portfolio_policy_config.json"
     )
@@ -11241,7 +12948,9 @@ def main():
         parity_contract,
         _resolve_portfolio_contract_strategy_filter(
             portfolio_policy,
-            resolve_deployment_strategy_filter(config["data_root"], config["run_id"]),
+            resolve_deployment_strategy_filter(
+                config["data_root"], policy_artifact_run_id
+            ),
         ),
     )
     validate_portfolio_strategy_contract(
@@ -11255,7 +12964,7 @@ def main():
             sorted(accepted_strategies) if accepted_strategies is not None else []
         ),
         data_root=str(config["data_root"]),
-        run_id=str(config["run_id"]),
+        run_id=model_artifact_run_id,
         strict=True,
     )
     tprint(
@@ -11266,33 +12975,44 @@ def main():
     )
     validate_meta_feature_contract_artifact(
         config["data_root"],
-        config["run_id"],
+        model_artifact_run_id,
         effective_model_bundle,
         accepted_strategies,
         strict=True,
     )
-    config["model_artifact_run_id"] = str(config["run_id"])
-    config["policy_artifact_run_id"] = str(
-        config.get("policy_artifact_run_id") or config["run_id"]
-    )
+    config["model_artifact_run_id"] = model_artifact_run_id
+    config["policy_artifact_run_id"] = policy_artifact_run_id
     config["feature_contract_hash"] = _meta_feature_contract_hash(
-        config["data_root"], config["run_id"]
+        config["data_root"], model_artifact_run_id
     )
     required_feature_keys = get_inference_required_feature_keys(
         effective_model_bundle,
         accepted_strategies,
     )
-    from extreme_price_movements.simple_position_sizer import load_calibration_curves
+    use_legacy_sizer_calibration = str(
+        os.getenv("EPM_INFERENCE_USE_SIMPLE_POSITION_SIZER_CALIBRATION", "0")
+        or ""
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    if use_legacy_sizer_calibration:
+        from extreme_price_movements.simple_position_sizer import load_calibration_curves
 
-    calibration_data = load_calibration_curves(config["data_root"], config["run_id"])
+        calibration_data = load_calibration_curves(
+            config["data_root"], model_artifact_run_id
+        )
+    else:
+        calibration_data = {}
+        tprint(
+            "simple_position_sizer calibration disabled; using raw model scores "
+            "with simple_policy_optimiser rank references"
+        )
     normalized_thresholds = _load_normalized_threshold_map(
-        config["data_root"], config["run_id"]
+        config["data_root"], policy_artifact_run_id
     )
     policy_selection_rules = _load_policy_selection_rules(
-        config["data_root"], config["run_id"]
+        config["data_root"], policy_artifact_run_id
     )
     lgbm_strategy_mask_rows = _load_lgbm_strategy_mask_rows(
-        config["data_root"], config["run_id"], market_mode=config["market_mode"]
+        config["data_root"], policy_artifact_run_id, market_mode=config["market_mode"]
     )
     deployment_mask_coverage_error: str | None = None
     try:
@@ -11309,10 +13029,10 @@ def main():
             f"artifacts are fixed: {deployment_mask_coverage_error}"
         )
     validate_calibration_artifacts(
-        config["data_root"], config["run_id"], calibration_data, strict=False
+        config["data_root"], model_artifact_run_id, calibration_data, strict=False
     )
     strategy_asset_exclusions = load_strategy_asset_exclusion_filter(
-        config["data_root"], config["run_id"]
+        config["data_root"], policy_artifact_run_id
     )
     deployment_model_coverage_error: str | None = None
     try:
@@ -11586,8 +13306,8 @@ def main():
         )
         challenger_thread.start()
 
-    # Main inference loop - run after closed 15m candles. Model entry decisions
-    # only run after a closed hourly candle is available.
+    # Main entry loop - run only after closed hourly candles. Open-position
+    # monitoring is handled by the challenger thread on its own cadence.
     last_hourly_sync = None
     last_margin_reconciliation = pd.Timestamp.now(tz="UTC")
     margin_reconciliation_interval = pd.Timedelta(
@@ -11597,55 +13317,38 @@ def main():
     while True:
         try:
             loop_now = pd.Timestamp.now(tz="UTC")
-            fifteen_delay = float(config.get("fifteen_minute_ohlcv_delay_seconds", 5.0))
-            hourly_delay = float(config.get("hourly_ohlcv_delay_seconds", 5.0))
-            current_time = _latest_closed_candle_start(
-                loop_now,
-                timeframe_minutes=15,
-                delay_seconds=fifteen_delay,
+            hourly_delay = float(
+                os.environ.get(
+                    "EPM_HOURLY_OHLCV_DELAY_SECONDS",
+                    config.get("hourly_ohlcv_delay_seconds", 30.0),
+                )
             )
             latest_closed_hour = _latest_closed_candle_start(
                 loop_now,
                 timeframe_minutes=60,
                 delay_seconds=hourly_delay,
             )
-            current_close = current_time + pd.Timedelta(minutes=15)
+            current_time = latest_closed_hour
             latest_closed_hour_close = latest_closed_hour + pd.Timedelta(hours=1)
-            fifteen_age_seconds = _closed_candle_age_seconds(
-                loop_now,
-                current_time,
-                timeframe_minutes=15,
-            )
+            current_close = latest_closed_hour_close
             hourly_age_seconds = _closed_candle_age_seconds(
                 loop_now,
                 latest_closed_hour,
                 timeframe_minutes=60,
             )
-            max_entry_15m_age_seconds = float(
-                config.get("entry_15m_max_staleness_seconds", 15.0 * 60.0)
-            )
             max_entry_hourly_age_seconds = float(
                 config.get("entry_hourly_max_staleness_seconds", 15.0 * 60.0)
-            )
-            fifteen_entry_fresh = fifteen_age_seconds <= max(
-                max_entry_15m_age_seconds,
-                fifteen_delay,
             )
             hourly_entry_fresh = hourly_age_seconds <= max(
                 max_entry_hourly_age_seconds,
                 hourly_delay,
             )
-            entry_context_fresh = bool(fifteen_entry_fresh and hourly_entry_fresh)
+            entry_context_fresh = bool(hourly_entry_fresh)
             tprint(
-                f"\n=== Running inference after closed 15m candle "
-                f"start={current_time} close={current_close} "
-                f"age={fifteen_age_seconds:.0f}s "
-                f"fresh_15m_for_entries={fifteen_entry_fresh} "
-                f"(latest_closed_hour_start={latest_closed_hour} "
-                f"close={latest_closed_hour_close} "
+                f"\n=== Running inference after closed hourly candle "
+                f"start={latest_closed_hour} close={latest_closed_hour_close} "
                 f"age={hourly_age_seconds:.0f}s "
-                f"fresh_1h_for_entries={hourly_entry_fresh} "
-                f"fresh_for_entries={entry_context_fresh}) ==="
+                f"fresh_for_entries={entry_context_fresh} ==="
             )
             did_hourly_refresh = False
             loop_timer = _StageTimer("live_entry_loop")
@@ -11766,11 +13469,7 @@ def main():
                         "refreshing data and running model scoring for diagnostics/"
                         "parity only. New orders are blocked by "
                         "max_entries_total=0 "
-                        f"(latest_15m={current_time}, "
-                        f"latest_15m_closed_at={current_close}, "
-                        f"latest_15m_age={fifteen_age_seconds:.0f}s, "
-                        f"max_15m_age={max_entry_15m_age_seconds:.0f}s, "
-                        f"target_hour={latest_closed_hour}, "
+                        f"(target_hour={latest_closed_hour}, "
                         f"closed_at={latest_closed_hour_close}, "
                         f"hour_age={hourly_age_seconds:.0f}s, "
                         f"max_signal_close_age="
@@ -11780,11 +13479,7 @@ def main():
                     tprint(
                         "Late-entry override active: allowing new entries despite "
                         "stale entry context "
-                        f"(latest_15m={current_time}, "
-                        f"latest_15m_closed_at={current_close}, "
-                        f"latest_15m_age={fifteen_age_seconds:.0f}s, "
-                        f"max_15m_age={max_entry_15m_age_seconds:.0f}s, "
-                        f"target_hour={latest_closed_hour}, "
+                        f"(target_hour={latest_closed_hour}, "
                         f"closed_at={latest_closed_hour_close}, "
                         f"hour_age={hourly_age_seconds:.0f}s, "
                         f"max_hour_age={max_entry_hourly_age_seconds:.0f}s)."
@@ -11797,11 +13492,7 @@ def main():
                         "current-mid vs signal-price movement "
                         f"<= {stale_entry_max_abs_signal_gap_bps:.2f} bps before "
                         "any order can be placed "
-                        f"(latest_15m={current_time}, "
-                        f"latest_15m_closed_at={current_close}, "
-                        f"latest_15m_age={fifteen_age_seconds:.0f}s, "
-                        f"max_15m_age={max_entry_15m_age_seconds:.0f}s, "
-                        f"target_hour={latest_closed_hour}, "
+                        f"(target_hour={latest_closed_hour}, "
                         f"closed_at={latest_closed_hour_close}, "
                         f"hour_age={hourly_age_seconds:.0f}s, "
                         f"max_hour_age={max_entry_hourly_age_seconds:.0f}s)."
@@ -11811,11 +13502,7 @@ def main():
                         "Hourly context is stale for entries; refreshing data and "
                         "running model scoring for diagnostics/parity only. New "
                         "orders will be blocked by max_entries_total=0 "
-                        f"(latest_15m={current_time}, "
-                        f"latest_15m_closed_at={current_close}, "
-                        f"latest_15m_age={fifteen_age_seconds:.0f}s, "
-                        f"max_15m_age={max_entry_15m_age_seconds:.0f}s, "
-                        f"target_hour={latest_closed_hour}, "
+                        f"(target_hour={latest_closed_hour}, "
                         f"closed_at={latest_closed_hour_close}, "
                         f"hour_age={hourly_age_seconds:.0f}s, "
                         f"max_hour_age={max_entry_hourly_age_seconds:.0f}s)."
@@ -11975,6 +13662,50 @@ def main():
                 )
                 continue
 
+            feature_runtime_cfg = _build_live_feature_runtime_cfg(
+                config=config,
+                accepted_strategies=accepted_strategies,
+                policy_selection_rules=policy_selection_rules,
+                latest_closed_hour=latest_closed_hour,
+                hourly_refresh_updates=hourly_refresh_updates,
+            )
+            prewarm_result: Dict[str, Any] = {}
+            if (
+                _model_feature_offline_cache_enabled(config)
+                and live_model_feature_store_strict(feature_runtime_cfg)
+            ):
+                prewarm_symbols = sorted(
+                    set(feature_context_symbols or symbols or download_symbols).union(
+                        symbols
+                    )
+                )
+                prewarm_keys = set(raw_required_feature_keys(required_feature_keys))
+                prewarm_keys.update(_lgbm_mask_required_feature_keys(lgbm_strategy_mask_rows))
+                prewarm_keys.add("barrier_pct")
+                try:
+                    prewarm_result = prewarm_selected_model_feature_cache_for_live(
+                        run_id=str(config["run_id"]),
+                        data_root=str(config["data_root"]),
+                        symbols=prewarm_symbols,
+                        end_ts=latest_closed_hour,
+                        cfg=feature_runtime_cfg,
+                        required_feature_keys=prewarm_keys,
+                        source_run_ids=feature_runtime_cfg.get(
+                            "live_feature_source_run_ids"
+                        ),
+                    )
+                    tprint(
+                        "Live selected model-feature prewarm result: "
+                        f"{prewarm_result}"
+                    )
+                except Exception as exc:
+                    tprint(
+                        "Live selected model-feature prewarm failed; scoring path "
+                        "will still perform its strict fail-closed sync if needed: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+                loop_timer.mark("selected_feature_prewarm")
+
             if bool(config.get("hourly_fetch_model_universe_only", True)):
                 panel_symbols = sorted(
                     set(feature_context_symbols or symbols or download_symbols)
@@ -11986,6 +13717,33 @@ def main():
                 panel_symbols, lookback_hours=live_decision_panel_lookback_hours
             )
             loop_timer.mark("panel_load")
+            warmup_state_health = _live_warmup_state_health_snapshot(
+                panel=panel,
+                symbols=symbols,
+                lookback_hours=live_decision_panel_lookback_hours,
+                required_model_warmup_hours=panel_warmup_hours,
+                latest_closed_hour=latest_closed_hour,
+                feature_runtime_cfg=feature_runtime_cfg,
+                config=config,
+                prewarm_result=prewarm_result,
+            )
+            _emit_structured_event("LIVE_WARMUP_STATE_HEALTH", warmup_state_health)
+            if not bool(warmup_state_health.get("ok")):
+                message = (
+                    "Live warmup/state health check failed before model scoring: "
+                    f"reason={warmup_state_health.get('reason')} "
+                    f"panel_reason={warmup_state_health.get('panel_reason')} "
+                    f"rolling_cache_reason="
+                    f"{(warmup_state_health.get('rolling_feature_cache') or {}).get('reason')} "
+                    f"raw_state_reason="
+                    f"{(warmup_state_health.get('raw_rolling_state') or {}).get('reason')} "
+                    f"causal_state_reason="
+                    f"{(warmup_state_health.get('causal_transform_state') or {}).get('reason')}"
+                )
+                if _live_warmup_state_fail_closed(config):
+                    raise RuntimeError(message)
+                tprint("Warning: " + message)
+            loop_timer.mark("warmup_state_health")
             tradable_panel = _subset_panel(panel, symbols)
             loop_timer.mark("panel_subset")
             usdc_usdt_ticker = None
@@ -12013,62 +13771,12 @@ def main():
                 )
             if not market_decision.allow_new_entries and not ignore_market_kill_switch:
                 tprint(
-                    "Market kill switch active: blocking new entries, "
+                    "Market kill switch active: blocking new entries but continuing "
+                    "model scoring for diagnostics/parity with max_entries_total=0, "
                     f"reason={market_decision.reason}, "
                     f"details={market_decision.details}"
                 )
-                _monitor_active_position_price_action(
-                    executor,
-                    exchange=executor.exchange,
-                    now=current_time,
-                    config=config,
-                    portfolio_mgr=portfolio_mgr,
-                    trade_logger=logger,
-                    sheets_exporter=sheets_exporter,
-                )
-                _maybe_send_daily_deployment_report(
-                    daily_reporter=daily_reporter,
-                    exchange=exchange,
-                    portfolio_mgr=portfolio_mgr,
-                    trade_logger=logger,
-                    config=config,
-                )
-                _maybe_export_google_sheets(
-                    sheets_exporter=sheets_exporter,
-                    trade_logger=logger,
-                    executor=executor,
-                    force=bool(args.run_once),
-                )
-                if args.run_once:
-                    executor.shutdown()
-                    break
-                _sleep_until_next_candle_close(
-                    timeframe_minutes=60,
-                    delay_seconds=hourly_delay,
-                )
-                continue
-            feature_runtime_cfg = {
-                **dict(config.get("runtime_cfg") or get_runtime_cfg()),
-                "data_root": str(config.get("live_data_root") or config["data_root"]),
-                "artifact_data_root": str(config["data_root"]),
-                "offline_feature_data_root": str(config["data_root"]),
-                "live_data_root": str(
-                    config.get("live_data_root") or config["data_root"]
-                ),
-                "accepted_strategy_ids": sorted(accepted_strategies or []),
-                "policy_selection_rules": policy_selection_rules,
-            }
-            if _allow_model_feature_tail_recompute_for_reconciliation(config):
-                feature_runtime_cfg["live_model_feature_tail_recompute_enabled"] = True
-            live_feature_source_run_id = _resolve_live_feature_source_run_id(config)
-            if live_feature_source_run_id:
-                feature_runtime_cfg["live_feature_source_run_id"] = str(
-                    live_feature_source_run_id
-                )
-            if hourly_refresh_updates > 0:
-                feature_runtime_cfg["live_feature_cache_raw_refresh_token"] = (
-                    f"{latest_closed_hour.isoformat()}:{hourly_refresh_updates}"
-                )
+                scoring_entries_allowed = False
             (
                 thresholds,
                 long_cands,
@@ -12088,7 +13796,7 @@ def main():
                 strategy_feature_contracts=strategy_feature_contracts,
             )
             candidate_gap_days = int(
-                config.get("candidate_recent_gap_backfill_days", 1) or 0
+                config.get("candidate_recent_gap_backfill_days", 0) or 0
             )
             candidate_gap_results: Dict[str, str] = {}
             if candidate_gap_days > 0 and (long_cands or short_cands):
@@ -12142,6 +13850,28 @@ def main():
                         strategy_feature_contracts=strategy_feature_contracts,
                     )
             loop_timer.mark("candidate_and_feature_load")
+
+            pre_score_now = pd.Timestamp.now(tz="UTC")
+            pre_score_hourly_age_seconds = _closed_candle_age_seconds(
+                pre_score_now,
+                latest_closed_hour,
+                timeframe_minutes=60,
+            )
+            if (
+                scoring_entries_allowed
+                and hard_signal_close_gate_seconds >= 0.0
+                and pre_score_hourly_age_seconds > hard_signal_close_gate_seconds
+            ):
+                scoring_entries_allowed = False
+                tprint(
+                    "Hourly signal became stale during live feature preparation; "
+                    "running model scoring for diagnostics/parity only and "
+                    "blocking new orders with max_entries_total=0 "
+                    f"(target_hour={latest_closed_hour}, "
+                    f"closed_at={latest_closed_hour_close}, "
+                    f"hour_age={pre_score_hourly_age_seconds:.0f}s, "
+                    f"max_signal_close_age={hard_signal_close_gate_seconds:.0f}s)."
+                )
 
             results = run_inference_step(
                 orchestrator=orchestrator,
@@ -12342,6 +14072,19 @@ def _evaluate_oco_policy(
         mfe = float(position_state.get("mfe", 0.0) or 0.0)
         mae = float(position_state.get("mae", 0.0) or 0.0)
         stop_reason = str(position_state.get("stop_reason") or "original_stop_loss")
+        shadow_state: Optional[Dict[str, Any]] = None
+        if _shadow_execution_realism_enabled():
+            shadow_state = _ensure_simple_policy_shadow_state(
+                position_state,
+                symbol=symbol,
+                side=side,
+                policy_entry_price=entry_price,
+                policy_entry_price_source=entry_price_source,
+                realized_entry_price=realized_entry_price,
+                stop_price=stop_price,
+                stop_reason=stop_reason,
+                params=params,
+            )
         last_bar_ts = bars.index[-1]
         live_mode = str(getattr(executor, "mode", "") or "").lower() in {
             "live",
@@ -12418,6 +14161,48 @@ def _evaluate_oco_policy(
             )
             if len(position_state.get("trade_recap_events", [])) > 500:
                 del position_state["trade_recap_events"][:-500]
+
+            if (
+                isinstance(shadow_state, dict)
+                and str(shadow_state.get("status") or "open") == "open"
+            ):
+                shadow_stop = _finite_positive_float(
+                    shadow_state.get("shadow_stop_price")
+                )
+                touched = (
+                    np.isfinite(shadow_stop)
+                    and (bar_low <= shadow_stop if side == "long" else bar_high >= shadow_stop)
+                )
+                if touched:
+                    shadow_state.update(
+                        {
+                            "status": "shadow_exit_triggered",
+                            "shadow_exit_time": pd.Timestamp(bar_ts).isoformat(),
+                            "shadow_exit_price": float(shadow_stop),
+                            "shadow_exit_reason": (
+                                "shadow_stop_loss_filled:"
+                                f"{shadow_state.get('shadow_stop_reason') or stop_reason}"
+                            ),
+                            "shadow_exit_return": _shadow_side_return(
+                                side, float(shadow_stop), entry_price
+                            ),
+                            "shadow_exit_vs_live_stop_bps": _shadow_bps_delta(
+                                side, float(shadow_stop), stop_price
+                            ),
+                        }
+                    )
+                    _append_simple_policy_shadow_event(
+                        shadow_state,
+                        "shadow_stop_touch",
+                        bar_ts=pd.Timestamp(bar_ts).isoformat(),
+                        bar_low=bar_low,
+                        bar_high=bar_high,
+                        shadow_stop_price=shadow_stop,
+                        live_stop_price=stop_price,
+                        live_stop_gap_bps=shadow_state.get(
+                            "shadow_exit_vs_live_stop_bps"
+                        ),
+                    )
 
             if side == "long":
                 if np.isfinite(stop_price) and bar_low <= stop_price:
@@ -12544,6 +14329,61 @@ def _evaluate_oco_policy(
                 )
                 if len(position_state.get("trade_recap_events", [])) > 500:
                     del position_state["trade_recap_events"][:-500]
+                if _executable_stop_breached(
+                    side, float(stop_price), float(live_closeable_price)
+                ):
+                    exit_reason = f"software_executable_stop_breach:{stop_reason}"
+                    if (
+                        isinstance(shadow_state, dict)
+                        and str(shadow_state.get("status") or "open") == "open"
+                    ):
+                        shadow_state.update(
+                            {
+                                "status": "shadow_exit_triggered",
+                                "shadow_exit_time": position_state[
+                                    "current_price_ts"
+                                ].isoformat(),
+                                "shadow_exit_price": float(live_closeable_price),
+                                "shadow_exit_reason": exit_reason,
+                                "shadow_exit_return": _shadow_side_return(
+                                    side, float(live_closeable_price), entry_price
+                                ),
+                                "shadow_exit_vs_live_stop_bps": _shadow_bps_delta(
+                                    side, float(live_closeable_price), stop_price
+                                ),
+                            }
+                        )
+                        _append_simple_policy_shadow_event(
+                            shadow_state,
+                            "shadow_executable_stop_breach",
+                            exit_price=float(live_closeable_price),
+                            live_stop_price=float(stop_price),
+                            stop_reason=stop_reason,
+                            source=position_state["current_price_source"],
+                        )
+                    position_state["shadow_simple_policy_state"] = shadow_state
+                    position_state.setdefault("trade_recap_events", []).append(
+                        {
+                            "ts": position_state["current_price_ts"].isoformat(),
+                            "event": "software_executable_stop_breach",
+                            "side": side,
+                            "price": float(live_closeable_price),
+                            "source": position_state["current_price_source"],
+                            "stop_price": float(stop_price),
+                            "stop_reason": stop_reason,
+                            "exchange_stop_order_id": position_state.get(
+                                "stop_order_id"
+                            ),
+                            "exchange_stop_trigger_signal": position_state.get(
+                                "stop_trigger_signal"
+                            ),
+                        }
+                    )
+                    return executor.close_position(
+                        symbol,
+                        price=float(live_closeable_price),
+                        reason=exit_reason,
+                    )
 
         require_metadata = True
         decision = None
@@ -12563,17 +14403,86 @@ def _evaluate_oco_policy(
                 require_metadata=require_metadata,
             )
             if getattr(decision, "should_exit", False):
+                policy_bar_exit_price = float(bars.iloc[-1]["close"])
+                exit_price = (
+                    float(live_closeable_price)
+                    if np.isfinite(live_closeable_price)
+                    else policy_bar_exit_price
+                )
+                exit_ts = (
+                    pd.Timestamp(position_state.get("current_price_ts"))
+                    if np.isfinite(live_closeable_price)
+                    and position_state.get("current_price_ts") is not None
+                    else pd.Timestamp(last_bar_ts)
+                )
+                exit_price_source = (
+                    str(
+                        live_closeable_snapshot.get("source")
+                        or "live_closeable_touch"
+                    )
+                    if np.isfinite(live_closeable_price)
+                    else "trade_5m_close"
+                )
+                if (
+                    isinstance(shadow_state, dict)
+                    and str(shadow_state.get("status") or "open") == "open"
+                ):
+                    shadow_state.update(
+                        {
+                            "status": "shadow_exit_triggered",
+                            "shadow_exit_time": exit_ts.isoformat(),
+                            "shadow_exit_price": exit_price,
+                            "shadow_exit_reason": str(
+                                decision.exit_reason or decision.reason
+                            ),
+                            "shadow_exit_return": _shadow_side_return(
+                                side, exit_price, entry_price
+                            ),
+                            "shadow_policy_bar_exit_time": pd.Timestamp(
+                                last_bar_ts
+                            ).isoformat(),
+                            "shadow_policy_bar_exit_price": policy_bar_exit_price,
+                            "shadow_exit_price_source": exit_price_source,
+                            "shadow_policy_bar_vs_live_exit_bps": _shadow_bps_delta(
+                                side, policy_bar_exit_price, exit_price
+                            ),
+                            "shadow_mfe": float(
+                                decision.mfe if decision.mfe is not None else mfe
+                            ),
+                            "shadow_mae": float(
+                                decision.mae if decision.mae is not None else mae
+                            ),
+                        }
+                    )
+                    _append_simple_policy_shadow_event(
+                        shadow_state,
+                        "shadow_policy_exit",
+                        reason=decision.reason,
+                        exit_reason=decision.exit_reason,
+                        exit_price=exit_price,
+                        exit_price_source=exit_price_source,
+                        policy_bar_exit_price=policy_bar_exit_price,
+                        policy_bar_ts=pd.Timestamp(last_bar_ts).isoformat(),
+                        policy_bar_vs_live_exit_bps=shadow_state.get(
+                            "shadow_policy_bar_vs_live_exit_bps"
+                        ),
+                        mfe=shadow_state.get("shadow_mfe"),
+                        mae=shadow_state.get("shadow_mae"),
+                    )
                 position_state.setdefault("trade_recap_events", []).append(
                     {
-                        "ts": pd.Timestamp(last_bar_ts).isoformat(),
+                        "ts": exit_ts.isoformat(),
                         "event": "adverse_excursion_exit_triggered",
                         "reason": decision.reason,
                         "detail": decision.reason_detail,
+                        "exit_price": float(exit_price),
+                        "exit_price_source": exit_price_source,
+                        "policy_bar_exit_price": policy_bar_exit_price,
+                        "policy_bar_ts": pd.Timestamp(last_bar_ts).isoformat(),
                         "mfe": float(decision.mfe if decision.mfe is not None else mfe),
                         "mae": float(decision.mae if decision.mae is not None else mae),
                     }
                 )
-                exit_price = float(bars.iloc[-1]["close"])
                 return executor.close_position(
                     symbol,
                     price=exit_price,
@@ -12600,6 +14509,47 @@ def _evaluate_oco_policy(
         decision_mae = (
             decision.mae if decision is not None and decision.mae is not None else mae
         )
+        if isinstance(shadow_state, dict) and decision is not None:
+            decision_stop = _finite_positive_float(
+                getattr(decision, "stop_price", np.nan)
+            )
+            if np.isfinite(decision_stop):
+                current_shadow_stop = _finite_positive_float(
+                    shadow_state.get("shadow_stop_price")
+                )
+                improved = (
+                    (decision_stop > current_shadow_stop)
+                    if side == "long"
+                    else (decision_stop < current_shadow_stop)
+                ) if np.isfinite(current_shadow_stop) else True
+                if improved:
+                    shadow_state["shadow_stop_price"] = float(decision_stop)
+                    shadow_state["shadow_stop_reason"] = str(decision.reason)
+                    shadow_state["shadow_stop_reason_detail"] = str(
+                        decision.reason_detail
+                    )
+                shadow_state["latest_policy_requested_stop_price"] = float(
+                    decision_stop
+                )
+                shadow_state["latest_live_stop_price"] = (
+                    float(stop_price) if np.isfinite(stop_price) else None
+                )
+                shadow_state["latest_stop_gap_bps"] = _shadow_bps_delta(
+                    side, decision_stop, stop_price
+                )
+                shadow_state["shadow_mfe"] = float(decision_mfe)
+                shadow_state["shadow_mae"] = float(decision_mae)
+                _append_simple_policy_shadow_event(
+                    shadow_state,
+                    "shadow_stop_decision",
+                    requested_stop_price=decision_stop,
+                    live_stop_price=stop_price,
+                    stop_gap_bps=shadow_state.get("latest_stop_gap_bps"),
+                    reason=decision.reason,
+                    should_replace=getattr(decision, "should_replace", None),
+                    mfe=decision_mfe,
+                    mae=decision_mae,
+                )
         final_current_price = (
             float(live_closeable_price)
             if np.isfinite(live_closeable_price)
@@ -12616,7 +14566,7 @@ def _evaluate_oco_policy(
             if np.isfinite(live_closeable_price)
             else "trade_5m_close"
         )
-        executor.update_position_policy_state(
+        update_result = executor.update_position_policy_state(
             symbol,
             policy_stop_decision=decision,
             peak_price=decision_peak,
@@ -12630,7 +14580,13 @@ def _evaluate_oco_policy(
             policy_entry_price=float(entry_price),
             policy_entry_price_source=entry_price_source,
             current_price_ts=final_current_price_ts,
+            shadow_simple_policy_state=shadow_state,
         )
+        if (
+            isinstance(update_result, dict)
+            and isinstance(update_result.get("closed_trade"), dict)
+        ):
+            return update_result
     except Exception as e:
         tprint(f"  [STOP_LOSS] Error evaluating stop policy for {symbol}: {e}")
 

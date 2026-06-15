@@ -11,9 +11,55 @@ from extreme_price_movements.inference.execution_fill_model import (
 from extreme_price_movements.inference.execution_reconciliation import (
     build_ledger_replay_field_coverage,
     build_live_decision_replay_reconciliation,
+    build_shadow_trade_reconciliation,
     build_spread_slippage_reconciliation,
+    _logged_meta_prediction,
 )
 from extreme_price_movements.portfolio_policy_replay import PortfolioPolicyParams
+
+
+class _DummyMetaModel:
+    feature_columns = ["base_score", "drift_context"]
+
+    def predict(self, X):
+        return X["drift_context"].to_numpy(dtype=float)
+
+
+class _DummyOrchestrator:
+    meta_models = {"long_demo_tbm_clf": _DummyMetaModel()}
+
+
+def test_logged_meta_prediction_scores_final_logged_matrix_directly():
+    meta_features = pd.DataFrame(
+        [{"base_score": 0.42, "drift_context": 0.73}],
+        index=["BTC/USD:USD"],
+    )
+
+    pred, source = _logged_meta_prediction(
+        _DummyOrchestrator(),
+        meta_features,
+        side="long",
+        strategy_id="demo",
+        meta_model_key="long_demo_tbm_clf",
+    )
+
+    assert pred == pytest.approx(0.73)
+    assert source == "logged_final_meta_input"
+
+
+def test_logged_meta_prediction_requires_complete_logged_contract():
+    meta_features = pd.DataFrame([{"base_score": 0.42}], index=["BTC/USD:USD"])
+
+    pred, source = _logged_meta_prediction(
+        _DummyOrchestrator(),
+        meta_features,
+        side="long",
+        strategy_id="demo",
+        meta_model_key="long_demo_tbm_clf",
+    )
+
+    assert np.isnan(pred)
+    assert source == "incomplete_logged_meta_features:1"
 
 
 def test_spread_slippage_reconciliation_compares_policy_proxy_to_live():
@@ -167,6 +213,59 @@ def test_ledger_replay_field_coverage_accepts_portfolio_state_snapshot():
     assert summary["exact_portfolio_state_replayable_rows"] == 1
     state_rows = rows.loc[rows["field_group"].eq("exact_portfolio_state_replay")]
     assert state_rows["missing_rows"].sum() == 0
+
+
+def test_shadow_trade_reconciliation_reports_exit_parity_pass():
+    trade_log = pd.DataFrame(
+        [
+            {
+                "timestamp": pd.Timestamp("2026-01-01 00:00", tz="UTC"),
+                "symbol": "BIO/USD:USD",
+                "side": "short",
+                "strategy_id": "short_a",
+                "action": "exit",
+                "status": "closed",
+                "exit_price": 0.0312,
+                "shadow_exit_price": 0.0312,
+                "shadow_entry_gap_bps": 0.0,
+                "stop_price": 0.0318,
+                "shadow_latest_stop_price": 0.0318,
+                "shadow_status": "shadow_exit_triggered",
+            }
+        ]
+    )
+
+    rows, summary = build_shadow_trade_reconciliation(trade_log, tolerance_bps=1.0)
+
+    assert len(rows) == 1
+    assert summary["closed_shadow_rows"] == 1
+    assert summary["exit_gap_mismatch_rows"] == 0
+    assert summary["exit_execution_parity_status"] == "pass"
+
+
+def test_shadow_trade_reconciliation_reports_open_positions_pending():
+    trade_log = pd.DataFrame(
+        [
+            {
+                "timestamp": pd.Timestamp("2026-01-01 00:00", tz="UTC"),
+                "symbol": "PNUT/USD:USD",
+                "side": "short",
+                "strategy_id": "short_a",
+                "action": "entry",
+                "status": "open",
+                "shadow_entry_gap_bps": 0.0,
+                "stop_price": 0.0427,
+                "shadow_latest_stop_price": 0.0427,
+                "shadow_status": "open",
+            }
+        ]
+    )
+
+    _, summary = build_shadow_trade_reconciliation(trade_log, tolerance_bps=1.0)
+
+    assert summary["closed_shadow_rows"] == 0
+    assert summary["open_shadow_rows"] == 1
+    assert summary["exit_execution_parity_status"] == "pending_open_positions"
 
 
 def test_stop_exit_fill_model_scalar_and_array_match_long_short():

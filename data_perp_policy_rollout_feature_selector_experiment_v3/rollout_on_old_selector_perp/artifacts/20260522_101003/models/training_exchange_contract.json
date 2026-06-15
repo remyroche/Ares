@@ -1,8 +1,0 @@
-{
-  "data_root": "/Users/remyroche/Documents/Ares/data_perp_policy_rollout_feature_selector_experiment_v3/rollout_on_old_selector_perp",
-  "exchange_data_component": "krakenfutures",
-  "exchange_id": "kraken",
-  "exchange_scoped_data": true,
-  "market_mode": "perps",
-  "scoped_market_data_root": "/Users/remyroche/Documents/Ares/data_perp_policy_rollout_feature_selector_experiment_v3/rollout_on_old_selector_perp/exchanges/krakenfutures"
-}

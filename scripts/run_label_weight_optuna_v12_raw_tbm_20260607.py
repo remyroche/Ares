@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Run v17 direct-generator label-weight Optuna phases for long_dist.
+"""Run v19 top-k focused robust label-weight Optuna phases for long_dist.
 
-v17 tunes the native label/sample-weight generator numbers directly. The fast
-evaluator recomputes native soft labels and base sample weights from those
-recipe parameters instead of scoring only post-generation multipliers.
+v19 keeps the residual/native generator search and adds smoother robustness
+penalties so top 30/20/10% economics are optimized without over-concentrating
+weights or flattening ranking selectivity.
 """
 from __future__ import annotations
 
@@ -66,53 +66,60 @@ def _phase_cmd(
 
 
 def main() -> int:
-    base_out = Path("reports_perp/label_weight_optuna/long_dist_seq_fast_20260608_v17_aligned_economic_objective")
+    base_out = Path("reports_perp/label_weight_optuna/long_dist_seq_fast_20260608_v19_topk_smooth_robust")
     global_best_recipe = Path("reports_perp/label_weight_optuna/best_recipe.json")
     global_best_trial = Path("reports_perp/label_weight_optuna/best_trial.json")
     phases = [
         {
             "phase": "label_geometry",
             "out_dir": base_out / "00_label_geometry",
-            "study_name": "label_weight_long_dist_seq_fast_geometry_20260608_v17_aligned_economic_objective",
+            "study_name": "label_weight_long_dist_seq_fast_geometry_20260608_v19_topk_smooth_robust",
             "base_recipe": None,
         },
         {
             "phase": "labels",
             "out_dir": base_out / "01_labels",
-            "study_name": "label_weight_long_dist_seq_fast_labels_20260608_v17_aligned_economic_objective",
+            "study_name": "label_weight_long_dist_seq_fast_labels_20260608_v19_topk_smooth_robust",
             "base_recipe": base_out / "00_label_geometry" / "best_recipe.json",
         },
         {
             "phase": "weights",
             "out_dir": base_out / "02_weights",
-            "study_name": "label_weight_long_dist_seq_fast_weights_20260608_v17_aligned_economic_objective",
+            "study_name": "label_weight_long_dist_seq_fast_weights_20260608_v19_topk_smooth_robust",
             "base_recipe": base_out / "01_labels" / "best_recipe.json",
         },
         {
             "phase": "distillation",
             "out_dir": base_out / "03_distillation",
-            "study_name": "label_weight_long_dist_seq_fast_distillation_20260608_v17_aligned_economic_objective",
+            "study_name": "label_weight_long_dist_seq_fast_distillation_20260608_v19_topk_smooth_robust",
             "base_recipe": base_out / "02_weights" / "best_recipe.json",
         },
     ]
-    log_path = LOG_DIR / "label_weight_optuna_long_dist_sequential_20260608_v17_aligned_economic_objective.log"
+    log_path = LOG_DIR / "label_weight_optuna_long_dist_sequential_20260608_v19_topk_smooth_robust.log"
     with log_path.open("ab", buffering=0) as log_fp:
-        log_fp.write(b"\n=== START sequential label_weight_optuna long_dist v17_aligned_economic_objective ===\n")
+        log_fp.write(b"\n=== START sequential label_weight_optuna long_dist v19_topk_smooth_robust ===\n")
         any_promoted = False
+        published_recipe_source: Path | None = None
+        published_trial_source: Path | None = None
         neutral_baseline_metrics: Path | None = None
         for spec in phases:
             base_recipe = spec["base_recipe"]
             if base_recipe is not None and not Path(base_recipe).exists():
                 raise FileNotFoundError(f"Previous phase best recipe missing: {base_recipe}")
             phase_best = Path(spec["out_dir"]) / "best_recipe.json"
+            phase_best_trial = Path(spec["out_dir"]) / "best_trial.json"
             rejected_marker = Path(spec["out_dir"]) / "promotion_rejected.json"
             if phase_best.exists():
+                published_recipe_source = phase_best
+                if phase_best_trial.exists():
+                    published_trial_source = phase_best_trial
                 log_fp.write(
                     f"\n=== PHASE {spec['phase']} SKIP existing best_recipe={phase_best} ===\n".encode()
                 )
                 continue
             if rejected_marker.exists() and base_recipe is not None:
                 shutil.copyfile(base_recipe, phase_best)
+                published_recipe_source = phase_best
                 log_fp.write(
                     (
                         f"\n=== PHASE {spec['phase']} CARRY_FORWARD rejected_marker={rejected_marker} "
@@ -137,18 +144,24 @@ def main() -> int:
             log_fp.write(f"\n=== PHASE {spec['phase']} END ret={ret} ===\n".encode())
             if ret != 0:
                 return int(ret)
-            if not rejected_marker.exists():
+            phase_promoted = not rejected_marker.exists()
+            if phase_promoted:
                 any_promoted = True
+            if phase_best.exists():
+                published_recipe_source = phase_best
+            if phase_best_trial.exists():
+                published_trial_source = phase_best_trial
             if not phase_best.exists() and base_recipe is not None:
                 shutil.copyfile(base_recipe, phase_best)
+                published_recipe_source = phase_best
                 log_fp.write(
                     (
                         f"\n=== PHASE {spec['phase']} CARRY_FORWARD missing best after successful phase; "
                         f"base_recipe={base_recipe} best_recipe={phase_best} ===\n"
                     ).encode()
                 )
-        final_best_recipe = phases[-1]["out_dir"] / "best_recipe.json"
-        final_best_trial = phases[-1]["out_dir"] / "best_trial.json"
+        final_best_recipe = published_recipe_source or (phases[-1]["out_dir"] / "best_recipe.json")
+        final_best_trial = published_trial_source or (phases[-1]["out_dir"] / "best_trial.json")
         if final_best_recipe.exists():
             shutil.copyfile(final_best_recipe, base_out / "best_recipe.json")
             if any_promoted:
@@ -173,7 +186,7 @@ def main() -> int:
                     f"global_best={'updated:' + str(global_best_trial) if any_promoted else 'preserved'} ===\n"
                 ).encode()
             )
-        log_fp.write(b"\n=== END sequential label_weight_optuna long_dist v17_aligned_economic_objective ret=0 ===\n")
+        log_fp.write(b"\n=== END sequential label_weight_optuna long_dist v19_topk_smooth_robust ret=0 ===\n")
     return 0
 
 

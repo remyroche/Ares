@@ -1,3 +1,4 @@
+import re
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -49,6 +50,29 @@ def _meta_feature_keys_union(cfg) -> set[str]:
     keys.update(cfg.get("mr_meta_feature_keys", []) or [])
     keys.update(cfg.get("tf_meta_feature_keys", []) or [])
     return {k for k in keys if isinstance(k, str) and k}
+
+
+def _effective_alpha_feature_cols(model_info: dict) -> list[str]:
+    if not isinstance(model_info, dict):
+        return []
+    feat_cols = [
+        str(c)
+        for c in (model_info.get("feat_cols", []) or [])
+        if isinstance(c, str) and c
+    ]
+    model = model_info.get("model")
+    inner = getattr(model, "best_model", model)
+    selected = [str(c) for c in (getattr(inner, "selected_features", []) or [])]
+    input_features = [
+        str(c) for c in (getattr(inner, "input_feature_names", []) or [])
+    ]
+    if selected:
+        if input_features and len(input_features) == len(selected):
+            return input_features
+        if all(re.fullmatch(r"f\d+", name) is not None for name in selected):
+            return feat_cols
+        return selected
+    return feat_cols
 
 
 def _normalize_ridge_bucket_params(params_per_bucket: dict, bucket_key: str) -> dict:
@@ -1376,16 +1400,16 @@ def _build_side_score_df(
         if not m_bundle.get("mr") or not m_bundle.get("tf"):
             miss_model_stack += 1
             continue
-        bundle_feature_keys |= set(m_bundle["mr"].get("feat_cols", []) or [])
-        bundle_feature_keys |= set(m_bundle["tf"].get("feat_cols", []) or [])
+        bundle_feature_keys |= set(_effective_alpha_feature_cols(m_bundle["mr"]))
+        bundle_feature_keys |= set(_effective_alpha_feature_cols(m_bundle["tf"]))
         for _h_info in (m_bundle["mr"].get("models_by_h", {}) or {}).values():
-            bundle_feature_keys |= set(_h_info.get("feat_cols", []) or [])
+            bundle_feature_keys |= set(_effective_alpha_feature_cols(_h_info))
         for _h_info in (m_bundle["tf"].get("models_by_h", {}) or {}).values():
-            bundle_feature_keys |= set(_h_info.get("feat_cols", []) or [])
+            bundle_feature_keys |= set(_effective_alpha_feature_cols(_h_info))
     for _, _, _strategy_info in strategy_alpha_entries:
-        bundle_feature_keys |= set(_strategy_info.get("feat_cols", []) or [])
+        bundle_feature_keys |= set(_effective_alpha_feature_cols(_strategy_info))
         for _h_info in (_strategy_info.get("models_by_h", {}) or {}).values():
-            bundle_feature_keys |= set(_h_info.get("feat_cols", []) or [])
+            bundle_feature_keys |= set(_effective_alpha_feature_cols(_h_info))
 
     base_df = pd.DataFrame(index=pd.Index(valid_symbols, name="symbol"))
     base_df["mkt_ret24h"] = float(mrk["mkt_ret24h"])
@@ -1574,7 +1598,7 @@ def _build_side_score_df(
             if by_h:
                 for _h, _h_info in sorted(by_h.items(), key=lambda kv: int(kv[0])):
                     _model = _h_info.get("model")
-                    _fcols = [str(c) for c in (_h_info.get("feat_cols") or strategy_info.get("feat_cols") or [])]
+                    _fcols = _effective_alpha_feature_cols(_h_info) or _effective_alpha_feature_cols(strategy_info)
                     if _model is None or not _fcols:
                         continue
                     _X = (
@@ -1592,7 +1616,7 @@ def _build_side_score_df(
                 p_alpha = np.mean(preds, axis=0)
             else:
                 _model = strategy_info.get("model")
-                _fcols = [str(c) for c in (strategy_info.get("feat_cols") or [])]
+                _fcols = _effective_alpha_feature_cols(strategy_info)
                 if _model is None or not _fcols:
                     continue
                 _X = (

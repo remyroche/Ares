@@ -880,7 +880,7 @@ def _stop_trigger_reference_price(
     *,
     position_side: Optional[str] = None,
 ) -> Tuple[float, str]:
-    """Return the live price that matches the stop trigger submitted to exchange."""
+    """Return the executable-side live price used by software stop risk checks."""
     ticker = ticker if isinstance(ticker, dict) else {}
     if (
         _execution_account(config) == "perps"
@@ -901,6 +901,80 @@ def _stop_trigger_reference_price(
     if np.isfinite(bid) and bid > 0.0 and np.isfinite(ask) and ask > 0.0:
         return float((bid + ask) / 2.0), "bid_ask_mid"
     return np.nan, "unavailable"
+
+
+def _kraken_futures_last_stop_from_executable_stop(
+    ticker: Dict[str, Any],
+    config: Optional[Dict[str, Any]],
+    *,
+    position_side: str,
+    policy_stop_price: float,
+) -> Tuple[float, Dict[str, Any]]:
+    """Translate executable bid/ask stop into a conservative last-trigger stop."""
+    policy_stop = _safe_float(policy_stop_price, default=np.nan)
+    if not np.isfinite(policy_stop) or policy_stop <= 0.0:
+        return np.nan, {"status": "invalid_policy_stop"}
+
+    ticker = ticker if isinstance(ticker, dict) else {}
+    bid = _safe_float(ticker.get("bid"), default=np.nan)
+    ask = _safe_float(ticker.get("ask"), default=np.nan)
+    last = _safe_float(ticker.get("last") or ticker.get("close"), default=np.nan)
+    spread = (
+        float(ask - bid)
+        if np.isfinite(bid) and bid > 0.0 and np.isfinite(ask) and ask > bid
+        else np.nan
+    )
+    synthetic_last = False
+    if not (np.isfinite(last) and last > 0.0):
+        if np.isfinite(spread):
+            last = float((bid + ask) / 2.0)
+            synthetic_last = True
+
+    side = str(position_side or "").strip().lower()
+    gap = np.nan
+    gap_source = "unavailable"
+    if side == "short":
+        if np.isfinite(ask) and ask > 0.0 and np.isfinite(last) and last > 0.0:
+            gap = max(float(ask - last), 0.0)
+            gap_source = "ask_minus_last"
+        elif np.isfinite(spread):
+            gap = float(spread / 2.0)
+            gap_source = "half_spread"
+        else:
+            gap = 0.0
+            gap_source = "zero_no_spread"
+        exchange_stop = float(policy_stop - gap)
+    elif side == "long":
+        if np.isfinite(bid) and bid > 0.0 and np.isfinite(last) and last > 0.0:
+            gap = max(float(last - bid), 0.0)
+            gap_source = "last_minus_bid"
+        elif np.isfinite(spread):
+            gap = float(spread / 2.0)
+            gap_source = "half_spread"
+        else:
+            gap = 0.0
+            gap_source = "zero_no_spread"
+        exchange_stop = float(policy_stop + gap)
+    else:
+        exchange_stop = float(policy_stop)
+        gap = 0.0
+        gap_source = "unknown_side"
+
+    meta = {
+        "status": "ok",
+        "policy_stop_price": float(policy_stop),
+        "exchange_stop_price": float(exchange_stop),
+        "position_side": side,
+        "bid": float(bid) if np.isfinite(bid) else None,
+        "ask": float(ask) if np.isfinite(ask) else None,
+        "last": float(last) if np.isfinite(last) else None,
+        "last_synthetic_mid": bool(synthetic_last),
+        "spread": float(spread) if np.isfinite(spread) else None,
+        "last_to_executable_gap": float(gap) if np.isfinite(gap) else None,
+        "gap_source": gap_source,
+        "trigger_signal": "last",
+    }
+    return exchange_stop, meta
 
 
 def _configured_exchange_id(config: Optional[Dict[str, Any]] = None) -> str:
@@ -1173,6 +1247,16 @@ def _create_reduce_stop_loss_order(
                 },
             )
         if _exchange_id(exchange) == "krakenfutures":
+            native_order = _create_kraken_futures_native_reduce_stop_loss_order(
+                exchange,
+                symbol=symbol,
+                side=side,
+                amount=amount,
+                stop_price=stop_price,
+                config=config,
+            )
+            if native_order is not None:
+                return native_order
             trigger_signal = _kraken_futures_stop_trigger_signal_for_reduce_side(side)
             return exchange.create_order(
                 symbol=symbol,
@@ -1217,6 +1301,77 @@ def _create_reduce_stop_loss_order(
     if last_exc is not None:
         raise last_exc
     raise RuntimeError(f"STOP_LOSS creation did not run for {symbol}")
+
+
+def _create_kraken_futures_native_reduce_stop_loss_order(
+    exchange: Any,
+    *,
+    symbol: str,
+    side: str,
+    amount: float,
+    stop_price: float,
+    config: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Submit a Kraken Futures reduce stop through the native /sendorder method."""
+    cfg = config or {}
+    if not bool(cfg.get("kraken_futures_native_stop_orders", True)):
+        return None
+    send_order = getattr(exchange, "privatePostSendorder", None) or getattr(
+        exchange, "private_post_sendorder", None
+    )
+    if not callable(send_order):
+        return None
+    market = _load_market(exchange, symbol)
+    market_id = str(market.get("id") or symbol)
+    reduce_side = str(side or "").strip().lower()
+    trigger_signal = _kraken_futures_stop_trigger_signal_for_reduce_side(reduce_side)
+    amount_s = str(amount)
+    price_s = str(stop_price)
+    amount_to_precision = getattr(exchange, "amount_to_precision", None)
+    price_to_precision = getattr(exchange, "price_to_precision", None)
+    if callable(amount_to_precision):
+        try:
+            amount_s = str(amount_to_precision(symbol, amount))
+        except Exception:
+            amount_s = str(amount)
+    if callable(price_to_precision):
+        try:
+            price_s = str(price_to_precision(symbol, stop_price))
+        except Exception:
+            price_s = str(stop_price)
+    request = {
+        "symbol": market_id,
+        "side": reduce_side,
+        "size": amount_s,
+        "orderType": "stp",
+        "stopPrice": price_s,
+        "reduceOnly": True,
+        "triggerSignal": trigger_signal,
+    }
+    response = send_order(request)
+    info = response if isinstance(response, dict) else {"response": response}
+    send_status = info.get("sendStatus") if isinstance(info.get("sendStatus"), dict) else {}
+    order_id = (
+        info.get("order_id")
+        or info.get("orderId")
+        or info.get("id")
+        or send_status.get("order_id")
+        or send_status.get("orderId")
+    )
+    status = str(info.get("status") or info.get("result") or "open").lower()
+    return {
+        "id": order_id,
+        "symbol": symbol,
+        "type": "stop",
+        "side": reduce_side,
+        "amount": float(amount),
+        "price": None,
+        "stopPrice": float(stop_price),
+        "status": status,
+        "reduceOnly": True,
+        "triggerSignal": trigger_signal,
+        "info": info,
+    }
 
 
 def _create_reduce_market_order(
@@ -1327,6 +1482,32 @@ def _order_stop_price(order: Dict[str, Any]) -> float:
     )
 
 
+def _stop_is_at_least_as_protective(
+    position_side: str,
+    existing_stop: float,
+    candidate_stop: float,
+    *,
+    rel_tol: float = 1e-4,
+) -> bool:
+    """Return whether an existing stop is no looser than the candidate stop."""
+    existing = _safe_float(existing_stop, np.nan)
+    candidate = _safe_float(candidate_stop, np.nan)
+    if not (
+        np.isfinite(existing)
+        and existing > 0.0
+        and np.isfinite(candidate)
+        and candidate > 0.0
+    ):
+        return False
+    tol = max(abs(candidate) * float(rel_tol), 1e-8)
+    side = str(position_side or "").strip().lower()
+    if side == "short":
+        return existing <= candidate + tol
+    if side == "long":
+        return existing >= candidate - tol
+    return abs(existing - candidate) <= tol
+
+
 def _order_trigger_signal(order: Dict[str, Any]) -> str:
     """Extract the exchange stop trigger source when present."""
     info = order.get("info") if isinstance(order.get("info"), dict) else {}
@@ -1343,23 +1524,43 @@ def _order_trigger_signal(order: Dict[str, Any]) -> str:
     return str(raw or "").strip().lower()
 
 
+def _verify_exchange_stop_trigger_signal(
+    exchange: Any,
+    *,
+    symbol: str,
+    order_id: Any,
+    order: Dict[str, Any],
+    config: Optional[Dict[str, Any]],
+) -> Tuple[str, Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Return the exchange-reported stop trigger, fetching the order when possible."""
+    actual = _order_trigger_signal(order)
+    if order_id in (None, ""):
+        return actual, None, None
+    try:
+        fetched, meta = _fetch_order_with_list_fallback(
+            exchange,
+            order_id=order_id,
+            symbol=symbol,
+            config=config,
+        )
+        fetched_signal = _order_trigger_signal(fetched)
+        if fetched_signal:
+            return fetched_signal, fetched, meta
+        return actual, fetched, meta
+    except Exception as exc:
+        return actual, None, {
+            "trigger_verify_error_category": _classify_exchange_error(exc),
+            "trigger_verify_error": str(exc),
+        }
+
+
 def _kraken_futures_stop_trigger_signal_for_reduce_side(side: str) -> str:
-    """Return the executable trigger for a Kraken Futures reduce stop."""
-    reduce_side = str(side or "").strip().lower()
-    if reduce_side == "sell":
-        return "bid"
-    if reduce_side == "buy":
-        return "ask"
+    """Return the Kraken-hosted trigger for a Futures reduce stop."""
     return "last"
 
 
 def _kraken_futures_stop_trigger_signal_for_position_side(side: str) -> str:
-    """Return the executable trigger for a Kraken Futures position stop."""
-    position_side = str(side or "").strip().lower()
-    if position_side == "long":
-        return "bid"
-    if position_side == "short":
-        return "ask"
+    """Return the Kraken-hosted trigger for a Futures position stop."""
     return "last"
 
 
@@ -2039,6 +2240,10 @@ def _closed_trade_metrics(
         else np.nan
     )
     stop_price = _safe_float(state.get("stop_price"), default=np.nan)
+    placed_stop_price = _safe_float(
+        state.get("final_placed_stop"),
+        default=_safe_float(state.get("exchange_stop_price"), default=stop_price),
+    )
     requested_policy_stop = _safe_float(
         state.get("requested_policy_stop"),
         default=_safe_float(state.get("policy_stop_price"), default=stop_price),
@@ -2089,6 +2294,66 @@ def _closed_trade_metrics(
             holding_time_hours = float((exit_time - entry_ts).total_seconds() / 3600.0)
     except Exception:
         holding_time_hours = np.nan
+    shadow = (
+        state.get("simple_policy_shadow")
+        if isinstance(state.get("simple_policy_shadow"), dict)
+        else {}
+    )
+    if (
+        isinstance(shadow, dict)
+        and str(shadow.get("status") or "open") == "open"
+        and str(reason) == "stop_loss_filled"
+    ):
+        shadow_stop_price = _safe_float(
+            shadow.get("shadow_stop_price"),
+            default=_safe_float(shadow.get("initial_shadow_stop_price"), default=stop_price),
+        )
+        shadow_exit_price = shadow_stop_price if np.isfinite(shadow_stop_price) else exit_price
+        if np.isfinite(shadow_exit_price) and shadow_exit_price > 0.0:
+            shadow_exit_reason = (
+                "shadow_stop_loss_filled:"
+                f"{shadow.get('shadow_stop_reason') or stop_origin}"
+            )
+            shadow.update(
+                {
+                    "status": "shadow_exit_triggered",
+                    "shadow_exit_time": exit_time.isoformat(),
+                    "shadow_exit_price": float(shadow_exit_price),
+                    "shadow_exit_reason": shadow_exit_reason,
+                    "shadow_exit_return": (
+                        (float(shadow_exit_price) - float(entry_price))
+                        / max(abs(float(entry_price)), 1e-12)
+                        if side == "long"
+                        else (float(entry_price) - float(shadow_exit_price))
+                        / max(abs(float(entry_price)), 1e-12)
+                    )
+                    if np.isfinite(entry_price) and entry_price > 0.0
+                    else None,
+                    "shadow_exit_vs_live_stop_bps": _directional_price_gap_bps(
+                        side=side,
+                        actual_price=float(shadow_exit_price),
+                        reference_price=stop_price,
+                    ),
+                }
+            )
+            events = shadow.setdefault("events", [])
+            if isinstance(events, list):
+                events.append(
+                    {
+                        "ts": exit_time.isoformat(),
+                        "event": "shadow_exchange_stop_filled",
+                        "shadow_exit_price": float(shadow_exit_price),
+                        "live_exit_price": float(exit_price)
+                        if np.isfinite(exit_price)
+                        else None,
+                        "live_stop_price": float(stop_price)
+                        if np.isfinite(stop_price)
+                        else None,
+                        "stop_reason": stop_origin,
+                    }
+                )
+                if len(events) > 200:
+                    del events[:-200]
     return {
         "symbol": symbol,
         "side": side,
@@ -2162,7 +2427,12 @@ def _closed_trade_metrics(
         "mfe": mfe_value,
         "mae": mae_value,
         "requested_policy_stop": requested_policy_stop,
-        "final_placed_stop": stop_price,
+        "final_placed_stop": placed_stop_price,
+        "exchange_stop_price": state.get("exchange_stop_price"),
+        "exchange_stop_trigger_reference_source": state.get(
+            "exchange_stop_trigger_reference_source"
+        ),
+        "exchange_stop_adjustment": state.get("exchange_stop_adjustment"),
         "exit_vs_policy_stop_bps": exit_vs_policy_stop_bps,
         "exit_vs_peak_giveback_pct": exit_vs_peak_giveback_pct,
         "policy_parity_ok": policy_parity_ok,
@@ -2181,6 +2451,22 @@ def _closed_trade_metrics(
         "stop_policy_params_source": state.get("stop_policy_params_source"),
         "stop_policy_params_hash": state.get("stop_policy_params_hash"),
         "stop_policy_schema": state.get("stop_policy_schema"),
+        "simple_policy_shadow": state.get("simple_policy_shadow"),
+        "shadow_policy_schema": shadow.get("schema"),
+        "shadow_policy_params_source": shadow.get("params_source"),
+        "shadow_policy_params_hash": shadow.get("params_hash"),
+        "shadow_policy_entry_price": shadow.get("policy_entry_price"),
+        "shadow_realized_entry_price": shadow.get("realized_entry_price"),
+        "shadow_entry_gap_bps": shadow.get("entry_gap_bps"),
+        "shadow_initial_stop_price": shadow.get("initial_shadow_stop_price"),
+        "shadow_latest_stop_price": shadow.get("shadow_stop_price"),
+        "shadow_live_stop_price": shadow.get("latest_live_stop_price"),
+        "shadow_stop_gap_bps": shadow.get("latest_stop_gap_bps"),
+        "shadow_exit_time": shadow.get("shadow_exit_time"),
+        "shadow_exit_price": shadow.get("shadow_exit_price"),
+        "shadow_exit_reason": shadow.get("shadow_exit_reason"),
+        "shadow_exit_return": shadow.get("shadow_exit_return"),
+        "shadow_status": shadow.get("status"),
         "trade_recap": _format_trade_recap(state.get("trade_recap_events")),
         **_execution_audit_fields(state),
     }
@@ -2395,6 +2681,9 @@ class OCOExecutor:
             "trailing_power": initial_stop_decision.trailing_power,
             "trailing_squash_divisor": initial_stop_decision.trailing_squash_divisor,
             "giveback_beta": initial_stop_decision.giveback_beta,
+            "atr_power": initial_stop_decision.atr_power,
+            "atr_multiplier": initial_stop_decision.atr_multiplier,
+            "hard_tp_abs_pct": initial_stop_decision.hard_tp_abs_pct,
             "capital_protect_mfe_mult": initial_stop_decision.capital_protect_mfe_mult,
             "capital_protect_regression_frac": initial_stop_decision.capital_protect_regression_frac,
             "adverse_exit_enabled": initial_stop_decision.adverse_exit_enabled,
@@ -2441,6 +2730,9 @@ class OCOExecutor:
             trailing_power=initial_stop_decision.trailing_power,
             trailing_squash_divisor=initial_stop_decision.trailing_squash_divisor,
             giveback_beta=initial_stop_decision.giveback_beta,
+            atr_power=initial_stop_decision.atr_power,
+            atr_multiplier=initial_stop_decision.atr_multiplier,
+            hard_tp_abs_pct=initial_stop_decision.hard_tp_abs_pct,
             capital_protect_mfe_mult=initial_stop_decision.capital_protect_mfe_mult,
             capital_protect_regression_frac=initial_stop_decision.capital_protect_regression_frac,
             adverse_exit_enabled=initial_stop_decision.adverse_exit_enabled,
@@ -2459,6 +2751,7 @@ class OCOExecutor:
         )
         current_price = np.nan
         current_price_source = "unavailable"
+        ticker: Dict[str, Any] = {}
         try:
             ticker = self.exchange.fetch_ticker(symbol)
             current_price, current_price_source = _stop_trigger_reference_price(
@@ -2511,6 +2804,61 @@ class OCOExecutor:
                 }
         position_state["size"] = amount
         position_state["stop_price"] = stop_price
+        position_state["policy_stop_price"] = stop_price
+        position_state["requested_policy_stop"] = stop_price
+        exchange_stop_price = float(stop_price)
+        exchange_stop_meta: Dict[str, Any] = {}
+        if (
+            _execution_account(self.config) == "perps"
+            and _exchange_id(self.exchange) == "krakenfutures"
+        ):
+            exchange_stop_price, exchange_stop_meta = (
+                _kraken_futures_last_stop_from_executable_stop(
+                    ticker,
+                    self.config,
+                    position_side=side,
+                    policy_stop_price=float(stop_price),
+                )
+            )
+            if np.isfinite(exchange_stop_price) and exchange_stop_price > 0.0:
+                exchange_stop_price = _exchange_precision(
+                    self.exchange, symbol, float(exchange_stop_price), kind="price"
+                )
+                last_trigger_price = _safe_float(
+                    exchange_stop_meta.get("last"), default=np.nan
+                )
+                if np.isfinite(last_trigger_price) and last_trigger_price > 0.0:
+                    (
+                        exchange_stop_adjusted,
+                        exchange_adjusted,
+                        exchange_boundary,
+                    ) = _adjust_stop_to_min_current_distance(
+                        side, float(exchange_stop_price), float(last_trigger_price)
+                    )
+                    if exchange_adjusted:
+                        exchange_stop_adjusted = _exchange_precision(
+                            self.exchange,
+                            symbol,
+                            float(exchange_stop_adjusted),
+                            kind="price",
+                        )
+                        _append_position_event(
+                            position_state,
+                            "exchange_last_stop_min_current_distance_adjusted",
+                            policy_stop=float(stop_price),
+                            original_exchange_stop=float(exchange_stop_price),
+                            adjusted_exchange_stop=float(exchange_stop_adjusted),
+                            last_price=float(last_trigger_price),
+                            min_distance_pct=STOP_MIN_CURRENT_DISTANCE_PCT,
+                            boundary=float(exchange_boundary),
+                        )
+                        exchange_stop_price = float(exchange_stop_adjusted)
+            else:
+                exchange_stop_price = float(stop_price)
+        position_state["exchange_stop_price"] = float(exchange_stop_price)
+        position_state["exchange_stop_trigger_reference_source"] = "last"
+        position_state["exchange_stop_adjustment"] = exchange_stop_meta
+        position_state["final_placed_stop"] = float(exchange_stop_price)
         reduce_side = "sell" if side == "long" else "buy"
         stop_trigger_signal = (
             _kraken_futures_stop_trigger_signal_for_reduce_side(reduce_side)
@@ -2534,15 +2882,41 @@ class OCOExecutor:
                 symbol=symbol,
                 side=reduce_side,
                 amount=amount,
-                stop_price=stop_price,
+                stop_price=exchange_stop_price,
                 config=self.config,
             )
             position_state["stop_order_id"] = stop_order.get("id")
             if position_state["stop_order_id"]:
                 position_state["stop_order_ids"] = [position_state["stop_order_id"]]
-            actual_trigger_signal = _order_trigger_signal(stop_order)
+            requested_trigger_signal = position_state.get("stop_trigger_signal")
+            actual_trigger_signal, _verified_order, trigger_meta = (
+                _verify_exchange_stop_trigger_signal(
+                    self.exchange,
+                    symbol=symbol,
+                    order_id=position_state.get("stop_order_id"),
+                    order=stop_order,
+                    config=self.config,
+                )
+            )
             if actual_trigger_signal:
                 position_state["stop_trigger_signal"] = actual_trigger_signal
+            if (
+                requested_trigger_signal
+                and actual_trigger_signal
+                and str(actual_trigger_signal) != str(requested_trigger_signal)
+            ):
+                position_state["stop_trigger_signal_requested"] = str(
+                    requested_trigger_signal
+                )
+                position_state["stop_exchange_trigger_mismatch"] = True
+                _append_position_event(
+                    position_state,
+                    "stop_trigger_signal_mismatch",
+                    requested_trigger_signal=str(requested_trigger_signal),
+                    exchange_trigger_signal=str(actual_trigger_signal),
+                    stop_order_id=position_state.get("stop_order_id"),
+                    trigger_verify_meta=trigger_meta,
+                )
 
         except Exception as e:
             stop_order_error = str(e)
@@ -2630,6 +3004,9 @@ class OCOExecutor:
             "trailing_power": initial_stop_decision.trailing_power,
             "trailing_squash_divisor": initial_stop_decision.trailing_squash_divisor,
             "giveback_beta": initial_stop_decision.giveback_beta,
+            "atr_power": initial_stop_decision.atr_power,
+            "atr_multiplier": initial_stop_decision.atr_multiplier,
+            "hard_tp_abs_pct": initial_stop_decision.hard_tp_abs_pct,
             "capital_protect_mfe_mult": initial_stop_decision.capital_protect_mfe_mult,
             "capital_protect_regression_frac": initial_stop_decision.capital_protect_regression_frac,
             "adverse_exit_enabled": initial_stop_decision.adverse_exit_enabled,
@@ -2644,6 +3021,16 @@ class OCOExecutor:
             "stop_policy_params_source": initial_stop_decision.params_source,
             "stop_policy_params_hash": initial_stop_decision.params_hash,
             "stop_policy_schema": initial_stop_decision.params_schema,
+            "policy_stop_price": position_state.get("policy_stop_price", stop_price),
+            "requested_policy_stop": position_state.get(
+                "requested_policy_stop", stop_price
+            ),
+            "exchange_stop_price": position_state.get("exchange_stop_price"),
+            "exchange_stop_trigger_reference_source": position_state.get(
+                "exchange_stop_trigger_reference_source"
+            ),
+            "exchange_stop_adjustment": position_state.get("exchange_stop_adjustment"),
+            "final_placed_stop": position_state.get("final_placed_stop"),
             "error": stop_order_error,
             "error_category": stop_order_error_category,
             "aggtrades": aggtrades_data,
@@ -2738,6 +3125,9 @@ class OCOExecutor:
         state["trailing_power"] = decision.trailing_power
         state["trailing_squash_divisor"] = decision.trailing_squash_divisor
         state["giveback_beta"] = decision.giveback_beta
+        state["atr_power"] = decision.atr_power
+        state["atr_multiplier"] = decision.atr_multiplier
+        state["hard_tp_abs_pct"] = decision.hard_tp_abs_pct
         state["capital_protect_mfe_mult"] = decision.capital_protect_mfe_mult
         state["capital_protect_regression_frac"] = (
             decision.capital_protect_regression_frac
@@ -2791,7 +3181,16 @@ class OCOExecutor:
             )
             return
 
-        old_stop_price = _safe_float(state.get("stop_price"), default=np.nan)
+        old_stop_price = _safe_float(
+            state.get("policy_stop_price", state.get("stop_price")), default=np.nan
+        )
+        old_exchange_stop_price = _safe_float(
+            state.get(
+                "exchange_stop_price",
+                state.get("final_placed_stop", state.get("stop_price")),
+            ),
+            default=np.nan,
+        )
         side = str(state.get("side", "long")).lower()
         canceled_existing = False
         try:
@@ -2800,6 +3199,7 @@ class OCOExecutor:
             )
             current_price = np.nan
             current_price_source = "unavailable"
+            ticker: Dict[str, Any] = {}
             try:
                 ticker = self.exchange.fetch_ticker(symbol)
                 current_price, current_price_source = _stop_trigger_reference_price(
@@ -3127,6 +3527,85 @@ class OCOExecutor:
                             )
                             return
 
+            policy_stop_price = float(stop_price)
+            exchange_stop_price = float(policy_stop_price)
+            exchange_stop_meta: Dict[str, Any] = {}
+            if (
+                _execution_account(self.config) == "perps"
+                and _exchange_id(self.exchange) == "krakenfutures"
+            ):
+                exchange_stop_price, exchange_stop_meta = (
+                    _kraken_futures_last_stop_from_executable_stop(
+                        ticker,
+                        self.config,
+                        position_side=side,
+                        policy_stop_price=float(policy_stop_price),
+                    )
+                )
+                if np.isfinite(exchange_stop_price) and exchange_stop_price > 0.0:
+                    exchange_stop_price = _exchange_precision(
+                        self.exchange,
+                        symbol,
+                        float(exchange_stop_price),
+                        kind="price",
+                    )
+                else:
+                    exchange_stop_price = float(policy_stop_price)
+
+            if np.isfinite(old_stop_price) and not _stop_is_at_least_as_protective(
+                side,
+                float(policy_stop_price),
+                float(old_stop_price),
+            ):
+                state["stop_update_error"] = (
+                    "simple-policy stop would loosen current protection"
+                )
+                state["stop_update_error_category"] = "policy_stop_not_improved"
+                _append_position_event(
+                    state,
+                        "stop_replace_skipped",
+                        reason="replacement_stop_would_loosen_current_protection",
+                        previous_stop=float(old_stop_price),
+                        candidate_stop=float(policy_stop_price),
+                        requested_policy_stop=(
+                            float(requested_stop) if np.isfinite(requested_stop) else None
+                        ),
+                        stop_reason=getattr(decision, "reason", None),
+                        reason_detail=getattr(decision, "reason_detail", None),
+                )
+                tprint(
+                    f"Skipped SL update for {symbol}: candidate={float(policy_stop_price):.8g} "
+                    f"would loosen current stop={float(old_stop_price):.8g}"
+                )
+                return
+            if (
+                np.isfinite(old_exchange_stop_price)
+                and not _stop_is_at_least_as_protective(
+                    side,
+                    float(exchange_stop_price),
+                    float(old_exchange_stop_price),
+                )
+            ):
+                state["stop_update_error"] = (
+                    "spread-adjusted exchange stop would loosen current protection"
+                )
+                state["stop_update_error_category"] = "exchange_stop_not_improved"
+                _append_position_event(
+                    state,
+                    "stop_replace_skipped",
+                    reason="exchange_last_stop_would_loosen_current_protection",
+                    previous_exchange_stop=float(old_exchange_stop_price),
+                    candidate_exchange_stop=float(exchange_stop_price),
+                    candidate_policy_stop=float(policy_stop_price),
+                    exchange_stop_adjustment=exchange_stop_meta,
+                )
+                tprint(
+                    f"Skipped SL update for {symbol}: exchange candidate="
+                    f"{float(exchange_stop_price):.8g} would loosen current "
+                    f"exchange stop={float(old_exchange_stop_price):.8g}"
+                )
+                return
+
             existing_stops = _fetch_open_protective_stop_orders(
                 self.exchange, symbol=symbol, position_side=side, config=self.config
             )
@@ -3134,9 +3613,12 @@ class OCOExecutor:
                 existing_id = existing.get("id")
                 existing_stop = _order_stop_price(existing)
                 if np.isfinite(existing_stop) and abs(
-                    float(existing_stop) - float(stop_price)
-                ) <= max(abs(float(stop_price)) * 1e-4, 1e-8):
-                    state["stop_price"] = float(existing_stop)
+                    float(existing_stop) - float(exchange_stop_price)
+                ) <= max(abs(float(exchange_stop_price)) * 1e-4, 1e-8):
+                    state["stop_price"] = float(policy_stop_price)
+                    state["policy_stop_price"] = float(policy_stop_price)
+                    state["exchange_stop_price"] = float(existing_stop)
+                    state["final_placed_stop"] = float(existing_stop)
                     state["stop_order_id"] = existing_id
                     state["stop_order_ids"] = [existing_id] if existing_id else []
                     state.pop("stop_update_error", None)
@@ -3145,8 +3627,10 @@ class OCOExecutor:
                         state,
                         "existing_stop_adopted",
                         stop_order_id=existing_id,
-                        stop_price=float(existing_stop),
-                        requested_policy_stop=float(stop_price),
+                        stop_price=float(policy_stop_price),
+                        exchange_stop_price=float(existing_stop),
+                        requested_policy_stop=float(policy_stop_price),
+                        exchange_stop_adjustment=exchange_stop_meta,
                     )
                     tprint(
                         f"Adopted existing protective SL for {symbol}: "
@@ -3222,17 +3706,53 @@ class OCOExecutor:
                 symbol=symbol,
                 side="sell" if state["side"] == "long" else "buy",
                 amount=amount,
-                stop_price=stop_price,
+                stop_price=exchange_stop_price,
                 config=self.config,
             )
-            state["stop_price"] = stop_price
+            state["stop_price"] = policy_stop_price
+            state["policy_stop_price"] = policy_stop_price
+            state["exchange_stop_price"] = float(exchange_stop_price)
+            state["exchange_stop_trigger_reference_source"] = "last"
+            state["exchange_stop_adjustment"] = exchange_stop_meta
+            state["final_placed_stop"] = float(exchange_stop_price)
             state["stop_order_id"] = new_stop_order.get("id")
             state["stop_order_ids"] = (
                 [state["stop_order_id"]] if state.get("stop_order_id") else []
             )
-            actual_trigger_signal = _order_trigger_signal(new_stop_order)
+            requested_trigger_signal = (
+                _kraken_futures_stop_trigger_signal_for_reduce_side(
+                    "sell" if state["side"] == "long" else "buy"
+                )
+                if _execution_account(self.config) == "perps"
+                and _exchange_id(self.exchange) == "krakenfutures"
+                else state.get("stop_trigger_signal")
+            )
+            actual_trigger_signal, _verified_order, trigger_meta = (
+                _verify_exchange_stop_trigger_signal(
+                    self.exchange,
+                    symbol=symbol,
+                    order_id=state.get("stop_order_id"),
+                    order=new_stop_order,
+                    config=self.config,
+                )
+            )
             if actual_trigger_signal:
                 state["stop_trigger_signal"] = actual_trigger_signal
+            if (
+                requested_trigger_signal
+                and actual_trigger_signal
+                and str(actual_trigger_signal) != str(requested_trigger_signal)
+            ):
+                state["stop_trigger_signal_requested"] = str(requested_trigger_signal)
+                state["stop_exchange_trigger_mismatch"] = True
+                _append_position_event(
+                    state,
+                    "stop_trigger_signal_mismatch",
+                    requested_trigger_signal=str(requested_trigger_signal),
+                    exchange_trigger_signal=str(actual_trigger_signal),
+                    stop_order_id=state.get("stop_order_id"),
+                    trigger_verify_meta=trigger_meta,
+                )
             if current_price_source and current_price_source != "unavailable":
                 state["stop_trigger_reference_source"] = current_price_source
             state["size"] = amount
@@ -3248,9 +3768,16 @@ class OCOExecutor:
                 "stop_replaced",
                 stop_reason=stop_reason,
                 previous_stop=old_stop_price,
-                new_stop=float(stop_price),
+                previous_exchange_stop=(
+                    float(old_exchange_stop_price)
+                    if np.isfinite(old_exchange_stop_price)
+                    else None
+                ),
+                new_stop=float(policy_stop_price),
+                new_exchange_stop=float(exchange_stop_price),
                 requested_policy_stop=state.get("requested_policy_stop"),
-                final_placed_stop=float(stop_price),
+                final_placed_stop=float(exchange_stop_price),
+                exchange_stop_adjustment=exchange_stop_meta,
                 stop_order_id=state.get("stop_order_id"),
                 stop_trigger_signal=state.get("stop_trigger_signal"),
                 stop_trigger_reference_source=state.get(
@@ -3387,6 +3914,14 @@ class OCOExecutor:
                             and recompute_stop_price > 0.0
                             and _stop_side_is_valid(
                                 side, recompute_stop_price, current_price
+                            )
+                            and (
+                                not np.isfinite(old_stop_price)
+                                or _stop_is_at_least_as_protective(
+                                    side,
+                                    float(recompute_stop_price),
+                                    float(old_stop_price),
+                                )
                             )
                         ):
                             amount = _exchange_precision(
@@ -3629,16 +4164,26 @@ class OCOExecutor:
         ):
             existing_id = existing.get("id")
             existing_stop = _order_stop_price(existing)
-            if not _protective_stop_trigger_matches_policy(
+            trigger_matches_policy = _protective_stop_trigger_matches_policy(
                 self.exchange,
                 existing,
                 self.config,
                 position_side=str(state.get("side", "long")).lower(),
+            )
+            if (
+                not trigger_matches_policy
+                and not _stop_is_at_least_as_protective(
+                    str(state.get("side", "long")).lower(),
+                    float(existing_stop),
+                    float(stop_price),
+                )
             ):
                 continue
-            if np.isfinite(existing_stop) and abs(
-                float(existing_stop) - float(stop_price)
-            ) <= max(abs(float(stop_price)) * 1e-4, 1e-8):
+            if _stop_is_at_least_as_protective(
+                str(state.get("side", "long")).lower(),
+                float(existing_stop),
+                float(stop_price),
+            ):
                 state["stop_order_id"] = existing_id
                 state["stop_order_ids"] = [existing_id] if existing_id else []
                 state["stop_price"] = float(existing_stop)
@@ -5874,6 +6419,45 @@ class TradeExecutor:
                     "sl_mult": float(sl_mult),
                 }
             )
+            policy_stop_price = float(stop_price)
+            exchange_stop_price = float(policy_stop_price)
+            exchange_stop_meta: Dict[str, Any] = {}
+            if (
+                _execution_account(self.config) == "perps"
+                and _exchange_id(self.exchange) == "krakenfutures"
+            ):
+                ticker: Dict[str, Any] = {}
+                try:
+                    ticker = self.exchange.fetch_ticker(symbol)
+                except Exception as exc:
+                    _append_position_event(
+                        oco_state,
+                        "reconciliation_exchange_stop_ticker_fetch_failed",
+                        error_category=_classify_exchange_error(exc),
+                        error=str(exc),
+                    )
+                exchange_candidate, exchange_stop_meta = (
+                    _kraken_futures_last_stop_from_executable_stop(
+                        ticker,
+                        self.config,
+                        position_side=side,
+                        policy_stop_price=float(policy_stop_price),
+                    )
+                )
+                if np.isfinite(exchange_candidate) and exchange_candidate > 0.0:
+                    exchange_stop_price = _exchange_precision(
+                        self.exchange,
+                        symbol,
+                        float(exchange_candidate),
+                        kind="price",
+                    )
+            oco_state["stop_price"] = float(policy_stop_price)
+            oco_state["policy_stop_price"] = float(policy_stop_price)
+            oco_state["requested_policy_stop"] = float(policy_stop_price)
+            oco_state["exchange_stop_price"] = float(exchange_stop_price)
+            oco_state["exchange_stop_trigger_reference_source"] = "last"
+            oco_state["exchange_stop_adjustment"] = exchange_stop_meta
+            oco_state["final_placed_stop"] = float(exchange_stop_price)
             existing_oco_state: Dict[str, Any] = {}
             try:
                 with self.oco_executor._positions_lock:
@@ -5904,6 +6488,10 @@ class TradeExecutor:
                         "theoretical_entry_price",
                         "realized_entry_price",
                         "stop_price",
+                        "policy_stop_price",
+                        "exchange_stop_price",
+                        "exchange_stop_trigger_reference_source",
+                        "exchange_stop_adjustment",
                         "stop_order_id",
                         "stop_order_ids",
                         "stop_reason",
@@ -5917,6 +6505,7 @@ class TradeExecutor:
                         "bars_in_trade",
                         "last_5m_eval_ts",
                         "trade_recap_events",
+                        "simple_policy_shadow",
                     ):
                         if key in existing_oco_state:
                             oco_state[key] = existing_oco_state[key]
@@ -5929,6 +6518,17 @@ class TradeExecutor:
                     preserved_stop = _safe_float(oco_state.get("stop_price"), np.nan)
                     if np.isfinite(preserved_stop) and preserved_stop > 0.0:
                         stop_price = float(preserved_stop)
+                        policy_stop_price = float(preserved_stop)
+                        oco_state["policy_stop_price"] = float(policy_stop_price)
+                        oco_state["requested_policy_stop"] = float(policy_stop_price)
+                    preserved_exchange_stop = _safe_float(
+                        oco_state.get("exchange_stop_price"), default=np.nan
+                    )
+                    if (
+                        np.isfinite(preserved_exchange_stop)
+                        and preserved_exchange_stop > 0.0
+                    ):
+                        exchange_stop_price = float(preserved_exchange_stop)
             adopted_stop_orders: List[Dict[str, Any]] = []
             mismatched_stop_orders: List[Dict[str, Any]] = []
             try:
@@ -5942,14 +6542,27 @@ class TradeExecutor:
                     stop_px = _order_stop_price(order)
                     if not (np.isfinite(stop_px) and stop_px > 0.0):
                         continue
-                    if not _protective_stop_trigger_matches_policy(
+                    trigger_matches_policy = _protective_stop_trigger_matches_policy(
                         self.exchange, order, self.config, position_side=side
+                    )
+                    if (
+                        not trigger_matches_policy
+                        and not _stop_is_at_least_as_protective(
+                            side,
+                            float(stop_px),
+                            float(stop_price),
+                        )
                     ):
                         mismatched_stop_orders.append(order)
                         continue
-                    if np.isfinite(stop_price) and abs(
-                        stop_px - float(stop_price)
-                    ) > max(abs(float(stop_price)) * 1e-4, 1e-8):
+                    if (
+                        np.isfinite(exchange_stop_price)
+                        and not _stop_is_at_least_as_protective(
+                            side,
+                            float(stop_px),
+                            float(exchange_stop_price),
+                        )
+                    ):
                         mismatched_stop_orders.append(order)
                         continue
                     adopted_stop_orders.append(order)
@@ -5983,7 +6596,8 @@ class TradeExecutor:
                             tprint(
                                 f"Cancelled mismatched recovered STOP_LOSS for "
                                 f"{symbol}: order_id={order_id} "
-                                f"expected_stop={float(stop_price):.12g} "
+                                f"expected_stop={float(policy_stop_price):.12g} "
+                                f"expected_exchange_stop={float(exchange_stop_price):.12g} "
                                 f"trigger_signal={_order_trigger_signal(order) or 'unknown'}"
                             )
 
@@ -6008,7 +6622,8 @@ class TradeExecutor:
                     default=np.nan,
                 )
                 if np.isfinite(adopted_stop) and adopted_stop > 0.0:
-                    oco_state["stop_price"] = float(adopted_stop)
+                    oco_state["exchange_stop_price"] = float(adopted_stop)
+                    oco_state["final_placed_stop"] = float(adopted_stop)
                 stop_coverage = 0.0
                 for order in adopted_stop_orders:
                     remaining = _order_remaining_amount(order)
@@ -6023,7 +6638,8 @@ class TradeExecutor:
                 tprint(
                     f"Imported external margin position with existing STOP_LOSS: "
                     f"{symbol} side={side} stop_order_ids={stop_order_ids} "
-                    f"stop={oco_state.get('stop_price')} "
+                    f"policy_stop={oco_state.get('stop_price')} "
+                    f"exchange_stop={oco_state.get('exchange_stop_price')} "
                     f"coverage={oco_state.get('stop_order_coverage')}"
                 )
                 return True
@@ -6048,6 +6664,32 @@ class TradeExecutor:
                             tracked["stop_order_id"] = stop_result.get("stop_order_id")
                             tracked["stop_price"] = stop_result.get(
                                 "stop_price", tracked.get("stop_price")
+                            )
+                            tracked["policy_stop_price"] = stop_result.get(
+                                "policy_stop_price", tracked.get("policy_stop_price")
+                            )
+                            tracked["requested_policy_stop"] = stop_result.get(
+                                "requested_policy_stop",
+                                tracked.get("requested_policy_stop"),
+                            )
+                            tracked["exchange_stop_price"] = stop_result.get(
+                                "exchange_stop_price",
+                                tracked.get("exchange_stop_price"),
+                            )
+                            tracked["exchange_stop_trigger_reference_source"] = (
+                                stop_result.get(
+                                    "exchange_stop_trigger_reference_source",
+                                    tracked.get(
+                                        "exchange_stop_trigger_reference_source"
+                                    ),
+                                )
+                            )
+                            tracked["exchange_stop_adjustment"] = stop_result.get(
+                                "exchange_stop_adjustment",
+                                tracked.get("exchange_stop_adjustment"),
+                            )
+                            tracked["final_placed_stop"] = stop_result.get(
+                                "final_placed_stop", tracked.get("final_placed_stop")
                             )
                             tracked["stop_reason"] = state["stop_reason"]
                             tracked["stop_reason_detail"] = state["stop_reason_detail"]
@@ -7701,6 +8343,9 @@ class TradeExecutor:
                 "trailing_power": initial_stop_decision.trailing_power,
                 "trailing_squash_divisor": initial_stop_decision.trailing_squash_divisor,
                 "giveback_beta": initial_stop_decision.giveback_beta,
+                "atr_power": initial_stop_decision.atr_power,
+                "atr_multiplier": initial_stop_decision.atr_multiplier,
+                "hard_tp_abs_pct": initial_stop_decision.hard_tp_abs_pct,
                 "capital_protect_mfe_mult": initial_stop_decision.capital_protect_mfe_mult,
                 "capital_protect_regression_frac": initial_stop_decision.capital_protect_regression_frac,
                 "decision_module": initial_stop_decision.decision_module,
@@ -7733,6 +8378,9 @@ class TradeExecutor:
                 trailing_power=initial_stop_decision.trailing_power,
                 trailing_squash_divisor=initial_stop_decision.trailing_squash_divisor,
                 giveback_beta=initial_stop_decision.giveback_beta,
+                atr_power=initial_stop_decision.atr_power,
+                atr_multiplier=initial_stop_decision.atr_multiplier,
+                hard_tp_abs_pct=initial_stop_decision.hard_tp_abs_pct,
                 capital_protect_mfe_mult=initial_stop_decision.capital_protect_mfe_mult,
                 capital_protect_regression_frac=initial_stop_decision.capital_protect_regression_frac,
             )
@@ -7839,6 +8487,7 @@ class TradeExecutor:
                 "symbol": symbol,
                 "side": "closed",
                 "size": size,
+                "reason": reason,
             }
         except Exception as e:
             category = _classify_exchange_error(e)
@@ -8023,7 +8672,8 @@ class TradeExecutor:
         policy_entry_price: Optional[float] = None,
         policy_entry_price_source: Optional[str] = None,
         current_price_ts: Optional[pd.Timestamp] = None,
-    ) -> None:
+        shadow_simple_policy_state: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
         """Persist monitor state and apply policy-authorised stop decisions only."""
 
         decision = policy_stop_decision
@@ -8031,11 +8681,16 @@ class TradeExecutor:
             with self.oco_executor._positions_lock:
                 state = self.oco_executor.active_positions.get(symbol)
                 if state is None:
-                    return
+                    return None
                 if decision is not None:
                     self.oco_executor._update_stop_loss_from_policy_decision(
                         symbol, state, decision
                     )
+                    close_metrics = state.get("last_close_metrics")
+                    if isinstance(close_metrics, dict):
+                        with self._state_lock:
+                            self.positions.pop(symbol, None)
+                        return {"closed_trade": close_metrics}
                 if limit_price is not None and np.isfinite(limit_price):
                     state["limit_price"] = float(limit_price)
                 if peak_price is not None and np.isfinite(peak_price):
@@ -8056,16 +8711,18 @@ class TradeExecutor:
                     state["policy_entry_price_source"] = str(policy_entry_price_source)
                 if current_price_ts is not None:
                     state["current_price_ts"] = pd.Timestamp(current_price_ts)
+                if isinstance(shadow_simple_policy_state, dict):
+                    state["simple_policy_shadow"] = shadow_simple_policy_state
                 if bars_in_trade is not None:
                     state["bars_in_trade"] = int(max(0, bars_in_trade))
                 if last_5m_eval_ts is not None:
                     state["last_5m_eval_ts"] = pd.Timestamp(last_5m_eval_ts)
                     state["last_update"] = pd.Timestamp.now(tz="UTC")
-            return
+            return None
         with self._state_lock:
             state = self.positions.get(symbol)
             if state is None:
-                return
+                return None
             if decision is not None:
                 artifact_params = self.get_simple_policy_stop_params(
                     str(state.get("strategy_id") or state.get("bucket_key") or "")
@@ -8159,11 +8816,14 @@ class TradeExecutor:
                 state["policy_entry_price_source"] = str(policy_entry_price_source)
             if current_price_ts is not None:
                 state["current_price_ts"] = pd.Timestamp(current_price_ts)
+            if isinstance(shadow_simple_policy_state, dict):
+                state["simple_policy_shadow"] = shadow_simple_policy_state
             if bars_in_trade is not None:
                 state["bars_in_trade"] = int(max(0, bars_in_trade))
             if last_5m_eval_ts is not None:
                 state["last_5m_eval_ts"] = pd.Timestamp(last_5m_eval_ts)
                 state["last_update"] = pd.Timestamp.now(tz="UTC")
+        return None
 
     def get_oco_positions(self) -> Dict[str, Dict[str, Any]]:
         """Get current OCO positions."""

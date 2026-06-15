@@ -13,10 +13,12 @@ from extreme_price_movements.simple_policy_optimiser import (
     _apply_deployment_strategy_contract,
     _assert_deployment_has_selected_strategies,
     _apply_local_candidate_hit_rate_guard,
+    _apply_simple_policy_calibrated_drift_risk,
     _build_deployment_payload,
     _deployment_selected_strategy_ids,
     _filter_candidates_to_deployment_strategies,
     _filter_policy_quote_rows,
+    _fit_simple_policy_calibrated_drift_risk,
     _finalise_simple_policy_candidates,
     _load_feature_rows_for_events,
     _load_policy_1m_klines_cached,
@@ -58,6 +60,41 @@ def _result(avg_pnl: float, *, holding: dict | None = None) -> dict:
         "best_params": {"sl_mult": 1.2},
         "best_size_power": 1.1,
     }
+
+
+def test_simple_policy_calibrated_drift_risk_adds_policy_only_columns():
+    rng = np.random.default_rng(123)
+    n = 180
+    risk_axis = np.linspace(0.0, 1.0, n)
+    rows = pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2026-01-01", periods=n, freq="h", tz="UTC"),
+            "symbol": np.where(np.arange(n) % 2 == 0, "BTC/USD:USD", "ETH/USD:USD"),
+            "rank_pct": np.linspace(0.70, 0.99, n),
+            "ood_risk_score": risk_axis,
+            "similarity_support_score": 1.0 - risk_axis,
+            "knn_dist_pct_k50": risk_axis + rng.normal(0.0, 0.02, n),
+            "atlas_support_quality": 1.0 - risk_axis,
+            "net_gain": np.where(risk_axis > 0.55, -0.015, 0.012)
+            + rng.normal(0.0, 0.001, n),
+        }
+    )
+
+    fit, summary = _fit_simple_policy_calibrated_drift_risk(rows)
+    assert summary["enabled"] is True
+    assert summary["oof_rows"] > 0
+    out, apply_summary = _apply_simple_policy_calibrated_drift_risk(
+        rows.drop(columns=["net_gain"]),
+        fit,
+        context="unit_test",
+    )
+
+    assert apply_summary["enabled"] is True
+    assert "simple_policy_calibrated_bad_trade_prob" in out.columns
+    assert "simple_policy_calibrated_expected_net_gain" in out.columns
+    high = out.loc[risk_axis > 0.75, "simple_policy_calibrated_bad_trade_prob"].mean()
+    low = out.loc[risk_axis < 0.25, "simple_policy_calibrated_bad_trade_prob"].mean()
+    assert high > low
 
 
 def test_strategy_allowlist_matches_side_prefixed_and_core_ids():
@@ -432,6 +469,24 @@ def test_candidate_finalise_splits_strategy_rank_from_cross_strategy_score():
     assert by_symbol.loc["HIGH_CAL", "strategy_rank_pct"] == 0.55
     assert by_symbol.loc["LOW_CAL", "normalized_rank_score"] == 0.5
     assert by_symbol.loc["HIGH_CAL", "normalized_rank_score"] == 1.0
+
+
+def test_candidate_finalise_default_export_floor_starts_at_70pct_rank():
+    rows = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(["2026-01-01T00:00:00Z"] * 20),
+            "symbol": [f"SYM_{i}" for i in range(20)],
+            "strategy_rank_pct": np.linspace(0.05, 1.0, 20),
+            "normalized_rank_score": np.linspace(0.05, 1.0, 20),
+            "calibrated_score": np.arange(20, dtype=float),
+        }
+    )
+
+    out = _finalise_simple_policy_candidates([rows])
+
+    assert out["normalized_rank_score"].min() == pytest.approx(0.70)
+    assert len(out) == 7
+    assert out["base_strategy_threshold"].unique().tolist() == [0.70]
 
 
 def test_policy_prediction_source_summary_uses_actual_sources():

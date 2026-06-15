@@ -547,6 +547,11 @@ class StrategyPerformanceMonitor:
             "feature_drift_psi_core_50",
             "feature_drift_psi_core",
         )
+        feature_drift_ks = _mean_col(
+            recent,
+            "feature_drift_ks_core",
+            "feature_drift_ks_bin_mean",
+        )
         feature_drift_cov_shift = _mean_col(recent, "feature_drift_cov_shift")
         contribution_drift_jsd = _delta_col("contrib_balance")
         contrib_top1_abs_share_drift = _delta_col("contrib_top1_abs_share")
@@ -566,6 +571,7 @@ class StrategyPerformanceMonitor:
             rank_pct_psi,
             abs(topq_threshold_drift),
             feature_drift_psi,
+            feature_drift_ks,
             feature_drift_cov_shift,
             abs(rare_leaf_fraction_drift),
             abs(leaf_support_drift),
@@ -579,6 +585,7 @@ class StrategyPerformanceMonitor:
             "feature_drift_psi_core_80": _mean_col(
                 recent, "feature_drift_psi_core_80", "feature_drift_psi_core"
             ),
+            "feature_drift_ks_core": feature_drift_ks,
             "feature_drift_cov_shift": feature_drift_cov_shift,
             "prediction_score_psi": prediction_score_psi,
             "raw_logit_psi": raw_logit_psi,

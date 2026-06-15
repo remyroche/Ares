@@ -1641,12 +1641,33 @@ class ModelRace(BaseEstimator, ClassifierMixin):
 
     def transform_meta_features(self, X):
         """Generate artifact-backed drift/context features for downstream heads."""
-        return transform_model_drift_features(
+        drift = transform_model_drift_features(
             X,
             getattr(self, "model_drift_state_", None),
             model=self,
             index=getattr(X, "index", None),
         )
+        inner = getattr(self, "best_model", None)
+        inner_transform = getattr(inner, "transform_meta_features", None)
+        if not callable(inner_transform):
+            return drift
+        try:
+            inner_context = inner_transform(X)
+        except Exception:
+            return drift
+        if not isinstance(inner_context, pd.DataFrame) or inner_context.empty:
+            return drift
+        if not isinstance(drift, pd.DataFrame) or drift.empty:
+            return inner_context
+        merged = pd.concat(
+            [
+                drift.reindex(getattr(X, "index", drift.index)),
+                inner_context.reindex(getattr(X, "index", inner_context.index)),
+            ],
+            axis=1,
+            copy=False,
+        )
+        return merged.loc[:, ~merged.columns.astype(str).duplicated(keep="last")]
 
     def strip_for_serialization(self):
         """Drop heavy internals not needed for inference or meta training."""

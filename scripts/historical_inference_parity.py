@@ -45,6 +45,9 @@ from extreme_price_movements.inference.run_inference import (  # noqa: E402
     _load_lgbm_strategy_mask_rows,
     _select_candidates_and_load_features,
 )
+from extreme_price_movements.inference.training_live_parity_contract import (  # noqa: E402
+    load_training_live_parity_contract,
+)
 from extreme_price_movements.model_loader import load_full_state  # noqa: E402
 from extreme_price_movements.pipeline_steps import (  # noqa: E402
     _load_external_kraken_spot_panels,
@@ -289,6 +292,56 @@ def _sample_policy_rank_reference_rows(
             df = df.sort_values(["timestamp", "symbol"]).head(int(sample_rows))
     tprint(
         "Selected policy rank-reference rows: "
+        f"rows={len(df):,} symbols={df['symbol'].nunique():,} "
+        f"timestamps={df['timestamp'].nunique():,} global_cap={sample_rows if sample_rows > 0 else 'none'}"
+    )
+    return df.reset_index(drop=True)
+
+
+def _sample_policy_candidate_rows(
+    data_root: Path,
+    run_id: str,
+    strategy_id: str,
+    *,
+    sample_rows: int,
+    min_timestamp: str | None,
+    candidate_path: Path | None = None,
+) -> pd.DataFrame:
+    path = (
+        Path(candidate_path)
+        if candidate_path is not None
+        else data_root
+        / "artifacts"
+        / run_id
+        / "simple_policy_optimiser"
+        / "simple_policy_candidates.parquet"
+    )
+    tprint(f"Loading simple-policy candidate rows from {path}")
+    df = pd.read_parquet(path)
+    if df.empty:
+        return df
+    df = df.copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
+    df = df.dropna(subset=["timestamp", "symbol"]).sort_values(["timestamp", "symbol"])
+    allowed = {str(strategy_id), strategy_core_id(str(strategy_id))}
+    strategy_col = df.get("strategy_id")
+    if strategy_col is None:
+        raise ValueError(f"Policy candidate file is missing strategy_id: {path}")
+    strategy_query = str(strategy_id)
+    mask = strategy_col.astype(str).map(
+        lambda value: strategy_id_matches(value, allowed)
+        or value == strategy_query
+        or value.startswith(f"{strategy_query}_")
+    )
+    df = df[mask].copy()
+    if min_timestamp:
+        start = pd.Timestamp(min_timestamp)
+        start = start.tz_localize("UTC") if start.tzinfo is None else start.tz_convert("UTC")
+        df = df[df["timestamp"] >= start]
+    if sample_rows and sample_rows > 0 and len(df) > int(sample_rows):
+        df = df.tail(int(sample_rows)).copy()
+    tprint(
+        "Selected simple-policy candidate rows: "
         f"rows={len(df):,} symbols={df['symbol'].nunique():,} "
         f"timestamps={df['timestamp'].nunique():,} global_cap={sample_rows if sample_rows > 0 else 'none'}"
     )
@@ -579,6 +632,37 @@ def _build_runtime_cfg(
             "historical_inference_parity_preserve_cached_features": True,
         }
     )
+    parity_contract: dict[str, Any] = {}
+    try:
+        parity_contract = load_training_live_parity_contract(
+            data_root=str(artifact_data_root),
+            run_id=run_id,
+        )
+    except Exception as exc:
+        tprint(f"Training-live parity contract load failed for replay; continuing without it: {exc}")
+    if isinstance(parity_contract, dict) and parity_contract:
+        feature_cfg.setdefault("training_live_parity_contract", parity_contract)
+        runtime_cfg.setdefault("training_live_parity_contract", parity_contract)
+        feature_source = (
+            parity_contract.get("feature_source")
+            if isinstance(parity_contract.get("feature_source"), dict)
+            else {}
+        )
+        contract_feature_source_run_id = feature_source.get("run_id")
+        if contract_feature_source_run_id:
+            runtime_cfg.setdefault(
+                "live_feature_source_run_id",
+                str(contract_feature_source_run_id),
+            )
+            runtime_cfg.setdefault(
+                "feature_source_run_id",
+                str(contract_feature_source_run_id),
+            )
+            tprint(
+                "Historical replay loaded training-live parity contract: "
+                f"feature_source_run_id={contract_feature_source_run_id} "
+                f"path={parity_contract.get('_contract_path', '')}"
+            )
     if feature_source_run_id:
         runtime_cfg["offline_feature_run_id"] = str(feature_source_run_id)
     if disable_rolling_cache:
@@ -602,6 +686,43 @@ def _build_runtime_cfg(
             runtime_cfg[key] = value
     feature_cfg["runtime_cfg"] = runtime_cfg
     return feature_cfg
+
+
+def _reference_feature_run_id(
+    feature_cfg: dict[str, Any],
+    *,
+    active_run_id: str,
+    override_run_id: str | None = None,
+) -> str:
+    if override_run_id:
+        return str(override_run_id)
+    runtime_cfg = feature_cfg.get("runtime_cfg") if isinstance(feature_cfg, dict) else {}
+    if not isinstance(runtime_cfg, dict):
+        runtime_cfg = {}
+    parity_contract = (
+        runtime_cfg.get("training_live_parity_contract")
+        if isinstance(runtime_cfg.get("training_live_parity_contract"), dict)
+        else feature_cfg.get("training_live_parity_contract")
+        if isinstance(feature_cfg.get("training_live_parity_contract"), dict)
+        else {}
+    )
+    feature_source = (
+        parity_contract.get("feature_source")
+        if isinstance(parity_contract.get("feature_source"), dict)
+        else {}
+    )
+    source_run_id = feature_source.get("run_id")
+    if source_run_id:
+        return str(source_run_id)
+    for key in (
+        "live_feature_source_run_id",
+        "offline_feature_run_id",
+        "feature_source_run_id",
+    ):
+        value = runtime_cfg.get(key)
+        if value:
+            return str(value)
+    return str(active_run_id)
 
 
 def _root_for_exchange_scoped_data(data_root: Path) -> Path:
@@ -716,6 +837,138 @@ def _compare_features(
     return out
 
 
+def _canonical_hash_value(value: float) -> str:
+    value = _safe_float(value)
+    if not np.isfinite(value):
+        return "missing"
+    return float(value).hex()
+
+
+def _feature_vector_hash_report(
+    samples: pd.DataFrame,
+    fresh_feats: dict[str, pd.DataFrame],
+    reference_rows: dict[tuple[str, pd.Timestamp], pd.Series],
+    feature_keys: set[str],
+    *,
+    tolerance: float,
+) -> pd.DataFrame:
+    import hashlib
+
+    started = time.monotonic()
+    lazy_lookup = hasattr(fresh_feats, "latest_values_at")
+    fresh_by_feature: dict[str, pd.DataFrame] = {}
+    if not lazy_lookup:
+        fresh_by_feature = {
+            str(feature): frame
+            for feature, frame in fresh_feats.items()
+            if str(feature) in feature_keys and isinstance(frame, pd.DataFrame) and not frame.empty
+        }
+    ordered_features = sorted(str(feature) for feature in feature_keys)
+    rows: list[dict[str, Any]] = []
+    total = len(samples)
+    tprint(
+        "Hashing feature vectors: "
+        f"samples={total:,} comparable_features={len(ordered_features):,}"
+    )
+    for i, (_, sample) in enumerate(samples.iterrows(), start=1):
+        if i == 1 or i % 100 == 0 or i == total:
+            elapsed = time.monotonic() - started
+            tprint(f"  vector hash progress: {i:,}/{total:,} samples elapsed={elapsed:.1f}s")
+        symbol = _normalise_symbol(sample["symbol"])
+        ts = pd.Timestamp(sample["timestamp"])
+        ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+        ref = reference_rows.get((symbol, ts), pd.Series(dtype=float))
+        inference_payload: list[tuple[str, str]] = []
+        training_payload: list[tuple[str, str]] = []
+        mismatched: list[str] = []
+        missing_inference: list[str] = []
+        missing_training: list[str] = []
+        max_abs = float("nan")
+        worst_feature = ""
+        both_finite = 0
+        inference_finite = 0
+        training_finite = 0
+        for feature in ordered_features:
+            matrix = fresh_by_feature.get(feature)
+            fresh_has_value = (
+                feature in fresh_feats
+                if lazy_lookup
+                else matrix is not None and ts in matrix.index and symbol in matrix.columns
+            )
+            if lazy_lookup and feature in fresh_feats:
+                values = fresh_feats.latest_values_at(feature, [symbol], ts)
+                fval = _safe_float(values.get(symbol, np.nan))
+            else:
+                fval = _safe_float(matrix.at[ts, symbol] if fresh_has_value else np.nan)
+            rval = _safe_float(ref.get(feature, np.nan))
+            fresh_finite = np.isfinite(fval)
+            ref_finite = np.isfinite(rval)
+            if fresh_finite:
+                inference_finite += 1
+            if ref_finite:
+                training_finite += 1
+            if fresh_finite and ref_finite:
+                both_finite += 1
+                delta = abs(float(fval) - float(rval))
+                if not np.isfinite(max_abs) or delta > max_abs:
+                    max_abs = float(delta)
+                    worst_feature = feature
+                if delta > float(tolerance):
+                    mismatched.append(feature)
+            elif ref_finite and not fresh_finite:
+                missing_inference.append(feature)
+            elif fresh_finite and not ref_finite:
+                missing_training.append(feature)
+            inference_payload.append((feature, _canonical_hash_value(fval)))
+            training_payload.append((feature, _canonical_hash_value(rval)))
+        inference_hash = hashlib.sha256(
+            json.dumps(inference_payload, separators=(",", ":"), sort_keys=False).encode("utf-8")
+        ).hexdigest()
+        training_hash = hashlib.sha256(
+            json.dumps(training_payload, separators=(",", ":"), sort_keys=False).encode("utf-8")
+        ).hexdigest()
+        rows.append(
+            {
+                "timestamp": ts,
+                "symbol": symbol,
+                "strategy_id": sample.get("strategy_id", ""),
+                "feature_count": len(ordered_features),
+                "inference_finite_count": inference_finite,
+                "training_finite_count": training_finite,
+                "both_finite_count": both_finite,
+                "missing_inference_count": len(missing_inference),
+                "missing_training_count": len(missing_training),
+                "mismatch_count_gt_tolerance": len(mismatched),
+                "max_abs_diff": max_abs,
+                "worst_feature": worst_feature,
+                "inference_vector_hash": inference_hash,
+                "training_vector_hash": training_hash,
+                "exact_hash_equal": inference_hash == training_hash,
+                "parity_ok": (
+                    inference_hash == training_hash
+                    and not missing_inference
+                    and not missing_training
+                    and not mismatched
+                ),
+                "mismatched_features_json": json.dumps(mismatched, separators=(",", ":")),
+                "missing_inference_features_json": json.dumps(
+                    missing_inference,
+                    separators=(",", ":"),
+                ),
+                "missing_training_features_json": json.dumps(
+                    missing_training,
+                    separators=(",", ":"),
+                ),
+            }
+        )
+    out = pd.DataFrame(rows)
+    tprint(
+        "Feature vector hash report complete: "
+        f"rows={len(out):,} elapsed={time.monotonic() - started:.1f}s"
+    )
+    return out
+
+
 def _score_predictions(
     samples: pd.DataFrame,
     fresh_feats: dict[str, pd.DataFrame],
@@ -827,7 +1080,12 @@ def _score_predictions(
                 else np.nan
             )
             out["policy_calibrated_score_ref"] = _safe_float(sample.get("calibrated_score"))
-            out["policy_rank_pct_ref"] = _safe_float(sample.get("rank_pct"))
+            out["policy_rank_pct_ref"] = _safe_float(
+                sample.get(
+                    "rank_pct",
+                    sample.get("strategy_rank_pct", sample.get("normalized_rank_score")),
+                )
+            )
             out["policy_calibrated_score_abs_diff"] = (
                 abs(out.get("final_fit_calibrated_score", np.nan) - out["policy_calibrated_score_ref"])
                 if np.isfinite(out.get("final_fit_calibrated_score", np.nan))
@@ -855,13 +1113,23 @@ def _score_predictions(
     return out
 
 
-def _summary(features: pd.DataFrame, preds: pd.DataFrame) -> dict[str, Any]:
+def _summary(
+    features: pd.DataFrame,
+    preds: pd.DataFrame,
+    vector_report: pd.DataFrame | None = None,
+) -> dict[str, Any]:
+    both_missing = (
+        features["both_missing"].astype(bool)
+        if "both_missing" in features
+        else pd.Series(False, index=features.index)
+    )
     common = features[
         ~features["inference_missing"].astype(bool)
         & ~features["training_missing"].astype(bool)
+        & ~both_missing
     ]
     mismatched = common[pd.to_numeric(common["abs_diff"], errors="coerce") > 1e-6]
-    return {
+    summary = {
         "feature_rows": int(len(features)),
         "feature_common_rows": int(len(common)),
         "feature_missing_inference": int(features["inference_missing"].sum()) if not features.empty else 0,
@@ -883,6 +1151,65 @@ def _summary(features: pd.DataFrame, preds: pd.DataFrame) -> dict[str, Any]:
         if "policy_rank_pct_abs_diff" in preds and preds["policy_rank_pct_abs_diff"].notna().any()
         else None,
     }
+    if vector_report is not None and not vector_report.empty:
+        summary.update(
+            {
+                "feature_vector_rows": int(len(vector_report)),
+                "feature_vector_parity_ok_rows": int(
+                    vector_report["parity_ok"].astype(bool).sum()
+                    if "parity_ok" in vector_report
+                    else 0
+                ),
+                "feature_vector_exact_hash_mismatch_rows": int(
+                    (~vector_report["exact_hash_equal"].astype(bool)).sum()
+                    if "exact_hash_equal" in vector_report
+                    else len(vector_report)
+                ),
+                "feature_vector_tolerance_mismatch_rows": int(
+                    pd.to_numeric(
+                        vector_report.get(
+                            "mismatch_count_gt_tolerance",
+                            pd.Series(0, index=vector_report.index),
+                        ),
+                        errors="coerce",
+                    )
+                    .fillna(0)
+                    .gt(0)
+                    .sum()
+                ),
+                "feature_vector_missing_inference_rows": int(
+                    pd.to_numeric(
+                        vector_report.get(
+                            "missing_inference_count",
+                            pd.Series(0, index=vector_report.index),
+                        ),
+                        errors="coerce",
+                    )
+                    .fillna(0)
+                    .gt(0)
+                    .sum()
+                ),
+                "feature_vector_missing_training_rows": int(
+                    pd.to_numeric(
+                        vector_report.get(
+                            "missing_training_count",
+                            pd.Series(0, index=vector_report.index),
+                        ),
+                        errors="coerce",
+                    )
+                    .fillna(0)
+                    .gt(0)
+                    .sum()
+                ),
+                "feature_vector_max_abs_diff": float(
+                    pd.to_numeric(vector_report["max_abs_diff"], errors="coerce").max()
+                )
+                if "max_abs_diff" in vector_report
+                and pd.to_numeric(vector_report["max_abs_diff"], errors="coerce").notna().any()
+                else None,
+            }
+        )
+    return summary
 
 
 def main() -> int:
@@ -893,9 +1220,12 @@ def main() -> int:
     parser.add_argument("--strategy-id", default=None)
     parser.add_argument(
         "--sample-source",
-        choices=("oof", "policy_rank_reference"),
+        choices=("oof", "policy_rank_reference", "policy_candidates"),
         default="oof",
-        help="Replay OOF rows or exact simple_policy_optimiser policy rank-reference rows.",
+        help=(
+            "Replay OOF rows, policy rank-reference rows, or selected "
+            "simple_policy_optimiser candidate rows."
+        ),
     )
     parser.add_argument("--market-mode", choices=("spot", "perps"), default="spot")
     parser.add_argument("--live-quote-currency", default="USDC")
@@ -949,6 +1279,12 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--policy-candidates-path",
+        type=Path,
+        default=None,
+        help="Override simple_policy_optimiser candidate parquet path.",
+    )
+    parser.add_argument(
         "--policy-artifact-root",
         type=Path,
         default=None,
@@ -976,6 +1312,28 @@ def main() -> int:
         "--skip-feature-comparison",
         action="store_true",
         help="Skip per-cell feature parity rows; useful after full feature parity is already proven.",
+    )
+    parser.add_argument(
+        "--dump-feature-vectors",
+        action="store_true",
+        help=(
+            "Write per-row selected-feature vector hashes and strict parity "
+            "status in feature_vector_parity.csv."
+        ),
+    )
+    parser.add_argument(
+        "--feature-vector-tolerance",
+        default=1e-9,
+        type=float,
+        help="Absolute tolerance for per-row vector mismatch counts.",
+    )
+    parser.add_argument(
+        "--fail-on-feature-mismatch",
+        action="store_true",
+        help=(
+            "Exit non-zero if feature comparison or vector-hash parity finds "
+            "missing/asymmetric/tolerance mismatches."
+        ),
     )
     parser.add_argument(
         "--score-full-universe",
@@ -1010,6 +1368,30 @@ def main() -> int:
             min_timestamp=args.min_timestamp,
             rank_reference_dir=args.rank_reference_dir,
         )
+    elif args.sample_source == "policy_candidates":
+        if not args.strategy_id:
+            raise SystemExit("--strategy-id is required with --sample-source policy_candidates")
+        strategy_id = str(args.strategy_id)
+        tprint(f"Resolved strategy={strategy_id} sample_source=policy_candidates")
+        samples = _sample_policy_candidate_rows(
+            artifact_data_root,
+            args.run_id,
+            strategy_id,
+            sample_rows=args.sample_rows,
+            min_timestamp=args.min_timestamp,
+            candidate_path=args.policy_candidates_path,
+        )
+        concrete_strategy_ids = sorted(
+            str(value)
+            for value in samples.get("strategy_id", pd.Series(dtype=str)).dropna().unique()
+            if str(value)
+        )
+        if len(concrete_strategy_ids) == 1 and concrete_strategy_ids[0] != strategy_id:
+            tprint(
+                "Resolved policy candidate alias to concrete strategy id: "
+                f"{strategy_id} -> {concrete_strategy_ids[0]}"
+            )
+            strategy_id = concrete_strategy_ids[0]
     else:
         meta_path = _meta_oof_path(artifact_data_root, args.run_id, args.strategy_id)
         strategy_id = _strategy_from_meta_oof_path(meta_path)
@@ -1244,6 +1626,24 @@ def main() -> int:
     comparable_feature_keys = {
         key for key in required_keys if not _runtime_only_feature_key(key)
     }
+    reference_feature_run_id = _reference_feature_run_id(
+        feature_cfg,
+        active_run_id=str(args.run_id),
+        override_run_id=args.feature_source_run_id,
+    )
+    feature_path_audit["reference_feature_run_id"] = reference_feature_run_id
+    tprint(
+        "Reference feature rows will be loaded from feature source run: "
+        f"{reference_feature_run_id}"
+    )
+    reference_rows: dict[tuple[str, pd.Timestamp], pd.Series] = {}
+    if not args.skip_feature_comparison or args.dump_feature_vectors:
+        reference_rows = _load_reference_feature_rows(
+            artifact_data_root,
+            reference_feature_run_id,
+            samples,
+            comparable_feature_keys,
+        )
     if args.skip_feature_comparison:
         tprint("Skipping feature value comparison by request")
         feature_report = pd.DataFrame(
@@ -1260,18 +1660,22 @@ def main() -> int:
             ]
         )
     else:
-        reference_rows = _load_reference_feature_rows(
-            artifact_data_root,
-            str(args.feature_source_run_id or args.run_id),
-            samples,
-            comparable_feature_keys,
-        )
         feature_report = _compare_features(
             samples,
             fresh_feats,
             reference_rows,
             comparable_feature_keys,
         )
+    if args.dump_feature_vectors:
+        vector_report = _feature_vector_hash_report(
+            samples,
+            fresh_feats,
+            reference_rows,
+            comparable_feature_keys,
+            tolerance=float(args.feature_vector_tolerance),
+        )
+    else:
+        vector_report = pd.DataFrame()
     if args.skip_predictions:
         tprint("Skipping prediction parity by request")
         prediction_report = pd.DataFrame()
@@ -1304,12 +1708,14 @@ def main() -> int:
             policy_rank_scores=policy_rank_scores,
             prediction_universe_symbols=symbols if args.score_full_universe else None,
         )
-    summary = _summary(feature_report, prediction_report)
+    summary = _summary(feature_report, prediction_report, vector_report)
     out_dir = args.output_dir or (
         artifact_data_root / "artifacts" / args.run_id / "historical_inference_parity"
     )
     out_dir.mkdir(parents=True, exist_ok=True)
     feature_report.to_csv(out_dir / "feature_parity.csv", index=False)
+    if args.dump_feature_vectors:
+        vector_report.to_csv(out_dir / "feature_vector_parity.csv", index=False)
     prediction_report.to_csv(out_dir / "prediction_parity.csv", index=False)
     (out_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True, default=str) + "\n",
@@ -1322,6 +1728,36 @@ def main() -> int:
     tprint(json.dumps(summary, indent=2, sort_keys=True, default=str))
     tprint(f"Wrote {out_dir}")
     tprint(f"Historical inference parity complete: elapsed={time.monotonic() - started:.1f}s")
+    if args.fail_on_feature_mismatch:
+        failures: list[str] = []
+        if not feature_report.empty:
+            feature_missing_inference = int(feature_report["inference_missing"].sum())
+            feature_missing_training = int(feature_report["training_missing"].sum())
+            feature_mismatches = int(
+                pd.to_numeric(feature_report["abs_diff"], errors="coerce")
+                .fillna(0.0)
+                .gt(float(args.feature_vector_tolerance))
+                .sum()
+            )
+            if feature_missing_inference:
+                failures.append(f"feature_missing_inference={feature_missing_inference}")
+            if feature_missing_training:
+                failures.append(f"feature_missing_training={feature_missing_training}")
+            if feature_mismatches:
+                failures.append(f"feature_mismatches_gt_tolerance={feature_mismatches}")
+        if args.dump_feature_vectors:
+            if vector_report.empty:
+                failures.append("feature_vector_rows=0")
+            else:
+                bad_vectors = int((~vector_report["parity_ok"].astype(bool)).sum())
+                if bad_vectors:
+                    failures.append(f"feature_vector_parity_failed_rows={bad_vectors}")
+        if failures:
+            print(
+                "Feature parity failed: " + ", ".join(failures),
+                file=sys.stderr,
+            )
+            return 2
     return 0
 
 

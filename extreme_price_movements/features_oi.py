@@ -48,8 +48,24 @@ OI_NORMALIZED_FEATURE_KEYS = [
     *OI_ALIAS_FEATURE_KEYS,
 ]
 
+OI_CHANGE_POINT_FEATURE_KEYS = [
+    "oi_value_log_cp_z_8_32_96",
+    "oi_value_log_cp_logstd_8_32",
+    "oi_value_log_cp_absratio_8_32",
+    "oi_value_1d_log_chg_cp_z_8_32_96",
+    "oi_value_1d_log_chg_cp_logstd_8_32",
+    "oi_value_1d_log_chg_cp_absratio_8_32",
+    "log_oi_to_volume_1d_cp_z_8_32_96",
+    "log_oi_to_volume_1d_cp_logstd_8_32",
+    "log_oi_to_volume_1d_cp_absratio_8_32",
+    "asset_minus_mkt_oi_1d_cp_z_8_32_96",
+    "asset_minus_mkt_oi_1d_cp_logstd_8_32",
+    "asset_minus_mkt_oi_1d_cp_absratio_8_32",
+]
+
 OI_TRADING_FEATURE_KEYS = [
     *OI_NORMALIZED_FEATURE_KEYS,
+    *OI_CHANGE_POINT_FEATURE_KEYS,
     "log_oi_to_volume_1d",
     "log_oi_to_volume_7d",
     "oi_to_volume_1d_z_90d",
@@ -123,6 +139,41 @@ def get_oi_feature_names() -> list[str]:
             OI_INTERNAL_FEATURE_KEYS + OI_TRADING_FEATURE_KEYS + OI_ALIAS_FEATURE_KEYS
         )
     )
+
+
+def _short_long_change_point_features(
+    frame: pd.DataFrame,
+    *,
+    prefix: str,
+    short_window: int = 8,
+    long_window: int = 32,
+    sigma_window: int = 96,
+    eps: float = 1e-9,
+) -> dict[str, pd.DataFrame]:
+    """Causal short-vs-long shift diagnostics down each symbol column."""
+    x = frame.replace([np.inf, -np.inf], np.nan).astype(np.float32)
+    sw = max(2, int(short_window))
+    lw = max(sw * 2, int(long_window))
+    sigw = max(lw, int(sigma_window))
+    mu_short = ff.numba_rolling_mean(x, sw).astype(np.float32)
+    mu_long = ff.numba_rolling_mean(x, lw).astype(np.float32)
+    sigma_long = ff.numba_rolling_std(x, sigw).astype(np.float32).replace(0.0, np.nan)
+    short_std = ff.numba_rolling_std(x, sw).astype(np.float32).replace(0.0, np.nan)
+    long_std = ff.numba_rolling_std(x, lw).astype(np.float32).replace(0.0, np.nan)
+    z = ((mu_short - mu_long) / (sigma_long + np.float32(eps))).replace(
+        [np.inf, -np.inf], np.nan
+    )
+    logstd = (
+        np.log(short_std.clip(lower=eps)) - np.log(long_std.clip(lower=eps))
+    ).replace([np.inf, -np.inf], np.nan)
+    absratio = (mu_short.abs() / (mu_long.abs() + np.float32(eps))).replace(
+        [np.inf, -np.inf], np.nan
+    )
+    return {
+        f"{prefix}_cp_z_{sw}_{lw}_{sigw}": z.astype(np.float32),
+        f"{prefix}_cp_logstd_{sw}_{lw}": logstd.astype(np.float32),
+        f"{prefix}_cp_absratio_{sw}_{lw}": absratio.astype(np.float32),
+    }
 
 
 def rolling_zscore_by_symbol(
@@ -351,6 +402,24 @@ def compute_oi_features(
     out["oi_to_volume_7d_z_180d"] = rolling_long_iqr_robust_zscore_by_symbol(
         log_oi_to_volume_7d, w_180d
     ).clip(-10, 10).astype(np.float32)
+    out.update(
+        _short_long_change_point_features(
+            oi_value_log,
+            prefix="oi_value_log",
+        )
+    )
+    out.update(
+        _short_long_change_point_features(
+            log_chg["1d"],
+            prefix="oi_value_1d_log_chg",
+        )
+    )
+    out.update(
+        _short_long_change_point_features(
+            log_oi_to_volume_1d,
+            prefix="log_oi_to_volume_1d",
+        )
+    )
 
     oi_value_log_1d = oi_value_log.rolling(w_1d, min_periods=1).mean()
     oi_value_log_7d = oi_value_log.rolling(w_7d, min_periods=1).mean()
@@ -403,6 +472,12 @@ def compute_oi_features(
     out["asset_minus_mkt_oi_7d_z_180d"] = rolling_long_iqr_robust_zscore_by_symbol(
         asset_minus_mkt_oi_7d, w_180d
     ).clip(-10, 10).astype(np.float32)
+    out.update(
+        _short_long_change_point_features(
+            asset_minus_mkt_oi_1d,
+            prefix="asset_minus_mkt_oi_1d",
+        )
+    )
 
     out["mkt_oi_z_30d"] = _broadcast(cross_sectional_mean(oi_value_z_30d), oi_native)
     out["mkt_oi_chg_z_24h"] = _broadcast(cross_sectional_mean(oi_chg_z["1d"]), oi_native)

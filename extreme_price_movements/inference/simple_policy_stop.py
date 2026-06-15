@@ -84,6 +84,8 @@ def _policy_export_invalid_marker(run_dir: Path) -> Optional[Path]:
         if marker_path.exists():
             return marker_path
     return None
+
+
 _ALLOWED_SIMPLE_POLICY_STOP_FIELDS = (
     set(SIMPLE_POLICY_STOP_PARAM_KEYS) | _ARTIFACT_AUDIT_FIELDS
 )
@@ -207,7 +209,9 @@ def extract_simple_policy_stop_params_by_strategy(
 
 
 def _iter_simple_policy_artifact_paths(data_root: str, run_id: Optional[str] = None):
-    override = str(os.environ.get("EPM_INFERENCE_POLICY_ARTIFACT_ROOT", "") or "").strip()
+    override = str(
+        os.environ.get("EPM_INFERENCE_POLICY_ARTIFACT_ROOT", "") or ""
+    ).strip()
     if override:
         run_dirs = [Path(override)]
         artifacts_root = None
@@ -241,7 +245,9 @@ def _iter_simple_policy_artifact_paths(data_root: str, run_id: Optional[str] = N
                     if candidate.is_file() and candidate not in seen:
                         seen.add(candidate)
                         yield candidate
-                for candidate in sorted(deployment_dir.glob("best_policy_params*.json")):
+                for candidate in sorted(
+                    deployment_dir.glob("best_policy_params*.json")
+                ):
                     if candidate.is_file() and candidate not in seen:
                         seen.add(candidate)
                         yield candidate
@@ -730,10 +736,14 @@ def compute_simple_policy_stop_decision(
 
     bars = _latest_bars(latest_market_state)
     if not bars.empty:
-        for _, row in bars.iterrows():
+        for _, high, low in zip(
+            bars.index.to_numpy(),
+            bars.get("high", pd.Series(np.nan, index=bars.index)).to_numpy(),
+            bars.get("low", pd.Series(np.nan, index=bars.index)).to_numpy(),
+        ):
             bars_in_trade += 1
-            high = _safe_float(row.get("high"), default=np.nan)
-            low = _safe_float(row.get("low"), default=np.nan)
+            high = _safe_float(high, default=np.nan)
+            low = _safe_float(low, default=np.nan)
             if side_l == "long":
                 if np.isfinite(high):
                     peak_price = max(peak_price, high)

@@ -162,13 +162,13 @@ def _short_long_change_point_features(
     long_std = ff.numba_rolling_std(x, lw).astype(np.float32).replace(0.0, np.nan)
     z = ((mu_short - mu_long) / (sigma_long + np.float32(eps))).replace(
         [np.inf, -np.inf], np.nan
-    )
+    ).clip(-12.0, 12.0).fillna(0.0)
     logstd = (
         np.log(short_std.clip(lower=eps)) - np.log(long_std.clip(lower=eps))
-    ).replace([np.inf, -np.inf], np.nan)
+    ).replace([np.inf, -np.inf], np.nan).clip(-8.0, 8.0).fillna(0.0)
     absratio = (mu_short.abs() / (mu_long.abs() + np.float32(eps))).replace(
         [np.inf, -np.inf], np.nan
-    )
+    ).clip(0.0, 100.0).fillna(1.0)
     return {
         f"{prefix}_cp_z_{sw}_{lw}_{sigw}": z.astype(np.float32),
         f"{prefix}_cp_logstd_{sw}_{lw}": logstd.astype(np.float32),

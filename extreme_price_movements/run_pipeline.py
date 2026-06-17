@@ -4576,8 +4576,11 @@ def main():
             1, int(os.environ["EPM_FEATURE_BACKFILL_SYMBOL_CHUNK_SIZE"])
         )
     if os.environ.get("EPM_FEATURE_BACKFILL_KEY_BATCH_SIZE"):
+        # 0 means "do not split requested keys into smaller batches"; this is
+        # the default and avoids recomputing shared feature dependencies once
+        # per key during targeted historical backfills.
         cfg["feature_backfill_key_batch_size"] = max(
-            1, int(os.environ["EPM_FEATURE_BACKFILL_KEY_BATCH_SIZE"])
+            0, int(os.environ["EPM_FEATURE_BACKFILL_KEY_BATCH_SIZE"])
         )
     if os.environ.get("EPM_FEATURE_BACKFILL_COMPUTE_WORKERS"):
         cfg["feature_backfill_compute_workers"] = min(

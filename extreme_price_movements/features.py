@@ -17,6 +17,7 @@ from numba import njit, prange
 import extreme_price_movements.fast_funcs as ff
 from extreme_price_movements.config import (
     PORTABLE_SOURCE_NORMALIZED_FEATURE_KEYS,
+    ROLLING_ALPHA_FEATURE_KEYS,
     is_non_portable_feature_key,
 )
 from extreme_price_movements.feature_transforms import CausalFeatureTransformer
@@ -9218,6 +9219,77 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
         feats["ret6h"] - beta_24h.multiply(mkt_ret6h, axis=0)
     ).astype(np.float32)
     feats["xs_rank_vol_z"] = _row_pct_rank_average_fast(feats["vol_z"])
+
+    if bool(cfg.get("rolling_alpha_features_enabled", False)) or _needs_feature(
+        *ROLLING_ALPHA_FEATURE_KEYS
+    ):
+        ra_window = max(24, int(cfg.get("rolling_alpha_feature_norm_window", 336)))
+        ra_items: list[tuple[str, pd.DataFrame]] = []
+
+        def _ra_add_robust_z(out_name: str, source_name: str) -> None:
+            if _needs_feature(out_name):
+                ra_items.append(
+                    (
+                        out_name,
+                        feats.get(source_name, _zero_panel()).astype(np.float32),
+                    )
+                )
+
+        _ra_add_robust_z("ra_ret1h_robust_z", "ret1h")
+        _ra_add_robust_z("ra_ret5h_robust_z", "ret5h")
+        _ra_add_robust_z("ra_ret24h_robust_z", "ret24h")
+        _ra_add_robust_z("ra_resid_ret_6h_robust_z", "resid_ret_6h")
+        _ra_add_robust_z("ra_rv24h_robust_z", "rv_24h")
+        _ra_add_robust_z("ra_log_quote_volume_robust_z", "log_quote_volume")
+        if _needs_feature("ra_amihud_robust_z"):
+            _amihud_raw = feats.get("amihud_illiq", _zero_panel()).astype(np.float32)
+            ra_items.append(
+                (
+                    "ra_amihud_robust_z",
+                    np.log(_amihud_raw.clip(lower=0.0) + np.float32(1e-12)).astype(
+                        np.float32
+                    ),
+                )
+            )
+        if ra_items:
+            for _ra_name, _ra_df in _batch_roll_robust_zscore(
+                ra_items, ra_window
+            ).items():
+                feats[_ra_name] = _ra_df.clip(-8.0, 8.0).astype(np.float32)
+
+        if _needs_feature("ra_symbol_minus_mkt_ret_4h_cs_rank"):
+            feats["ra_symbol_minus_mkt_ret_4h_cs_rank"] = (
+                _row_pct_rank_average_fast(
+                    feats.get("symbol_minus_mkt_ret_4h", _zero_panel())
+                )
+                - 0.5
+            ).astype(np.float32)
+        if _needs_feature("ra_symbol_minus_mkt_ret_24h_cs_rank"):
+            feats["ra_symbol_minus_mkt_ret_24h_cs_rank"] = (
+                _row_pct_rank_average_fast(
+                    feats.get("symbol_minus_mkt_ret_24h", _zero_panel())
+                )
+                - 0.5
+            ).astype(np.float32)
+        if _needs_feature("ra_market_dispersion_24h_pct"):
+            feats["ra_market_dispersion_24h_pct"] = _roll_rank_pct(
+                "market_dispersion_24h",
+                feats.get("market_dispersion_24h", _zero_panel()),
+                ra_window,
+            ).fillna(0.5).astype(np.float32)
+        if _needs_feature("ra_market_breadth_24h_pct"):
+            feats["ra_market_breadth_24h_pct"] = _roll_rank_pct(
+                "market_breadth_24h",
+                feats.get("market_breadth_24h", _zero_panel()),
+                ra_window,
+            ).fillna(0.5).astype(np.float32)
+        if _needs_feature("ra_market_beta_24h"):
+            feats["ra_market_beta_24h"] = feats["beta_24h"].clip(-5.0, 5.0).astype(
+                np.float32
+            )
+        if _needs_feature("ra_market_resid_ret_6h"):
+            feats["ra_market_resid_ret_6h"] = feats["resid_ret_6h"].astype(np.float32)
+        del ra_items
 
     # ---------------------------------------------------------------------
     # Entry/trap quality features for 2h/4h/8h opportunity framing

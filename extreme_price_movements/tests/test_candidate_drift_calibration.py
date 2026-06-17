@@ -6,12 +6,14 @@ from extreme_price_movements.candidate_drift_calibration import (
     CANDIDATE_DRIFT_FEATURE_COLUMNS,
     CANDIDATE_DRIFT_LEGACY_ALIAS_COLUMNS,
     _transform_calibration_atlas_features,
+    candidate_drift_forward_oos_feature_frame,
     compact_candidate_drift_calibrator_state,
     fit_transform_candidate_drift_calibrator,
     hydrate_candidate_drift_calibrator_state,
     transform_candidate_drift_features,
 )
 from extreme_price_movements.regime_adaptor import _append_candidate_drift_calibration_features
+from extreme_price_movements.regime_adaptor import _append_candidate_drift_calibration_fit_blocks
 from extreme_price_movements.regime_adaptor import _resolve_direct_label_regime_targets
 
 
@@ -201,6 +203,53 @@ def test_candidate_drift_forward_oos_report_is_time_safe():
             assert fold["train_rows"] > 0
             assert fold["validation_rows"] > 0
             assert fold["train_end_ts"] < fold["validation_start_ts"]
+
+
+def test_candidate_drift_forward_oos_feature_frame_is_time_safe():
+    x, candidates, ts = _synthetic_panel(260)
+    features, report = candidate_drift_forward_oos_feature_frame(
+        x,
+        candidates,
+        timestamps=ts,
+        max_features=8,
+        max_reference_rows=120,
+        n_folds=3,
+    )
+
+    assert report["enabled"] is True
+    assert report["split"] == "fit_past_transform_future"
+    assert report["covered_rows"] > 0
+    assert report["neutral_rows"] < len(x)
+    assert set(CANDIDATE_DRIFT_FEATURE_COLUMNS).issubset(features.columns)
+    assert set(CANDIDATE_DRIFT_DIAGNOSTIC_COLUMNS).issubset(features.columns)
+    assert np.isfinite(features.to_numpy(dtype=float)).all()
+    for fold in report["folds"]:
+        if fold.get("enabled"):
+            assert fold["train_end_ts"] < fold["validation_start_ts"]
+
+
+def test_candidate_drift_fit_blocks_use_oos_training_and_full_final_features():
+    x, candidates, ts = _atlas_panel()
+    train_block, final_block, state, report = _append_candidate_drift_calibration_fit_blocks(
+        x,
+        candidates,
+        timestamps=ts,
+    )
+
+    assert state["enabled"] is True
+    assert report["training_feature_mode"] == "forward_oos_past_fit_future_transform"
+    assert report["final_fit_feature_mode"] == "full_artifact_fit_for_live_parity"
+    assert train_block.shape[0] == len(x)
+    assert final_block.shape[0] == len(x)
+    assert "nearest_regime_distance_pct_global" in train_block.columns
+    assert "nearest_regime_distance_pct_global" in final_block.columns
+    for col in CANDIDATE_DRIFT_DIAGNOSTIC_COLUMNS:
+        assert col not in train_block.columns
+        assert col not in final_block.columns
+    for col in CANDIDATE_DRIFT_LEGACY_ALIAS_COLUMNS:
+        assert col not in train_block.columns
+        assert col not in final_block.columns
+    assert report["forward_oos_training_features"]["covered_rows"] > 0
 
 
 def test_candidate_drift_compact_sidecar_save_load_parity(tmp_path):

@@ -236,6 +236,11 @@ def _filter_meta_shared_feature_keys(keys: List[str]) -> List[str]:
         filtered.append(key)
     return filtered
 
+
+def _filter_regime_adaptor_only_feature_keys(keys: List[str]) -> List[str]:
+    return [key for key in keys if not str(key).startswith("ra_")]
+
+
 def expand_feature_group_refs(keys: List[str], cfg: Dict[str, Any], visited=None) -> List[str]:
     if visited is None:
         visited = set()
@@ -262,31 +267,41 @@ def expand_feature_group_refs(keys: List[str], cfg: Dict[str, Any], visited=None
             expanded.append(k)
     return expanded
 
+
 def get_base_feature_keys(side: str, cfg: Dict[str, Any]) -> List[str]:
     if side not in {"long", "short"}:
         raise ValueError(f"Invalid side {side}")
 
-    shared = expand_feature_group_refs(cfg.get("base_shared_feature_keys", []), cfg)
+    shared_refs = list(cfg.get("base_shared_feature_keys", []))
+    shared = expand_feature_group_refs(shared_refs, cfg)
     if side == "long":
         specific = expand_feature_group_refs(cfg.get("base_long_feature_keys", []), cfg)
     else:
         specific = expand_feature_group_refs(cfg.get("base_short_feature_keys", []), cfg)
 
-    return dedupe_keep_order(_filter_base_feature_keys(shared + specific))
+    return dedupe_keep_order(
+        _filter_regime_adaptor_only_feature_keys(
+            _filter_base_feature_keys(shared + specific)
+        )
+    )
+
 
 def get_meta_feature_keys(head: str, cfg: Dict[str, Any]) -> List[str]:
     if head not in {"reg", "clf", "mfe", "mae", "asym"}:
         raise ValueError(f"Invalid head {head}")
 
+    shared_refs = list(cfg.get("meta_shared_feature_keys", []))
     shared = _filter_meta_shared_feature_keys(
-        expand_feature_group_refs(cfg.get("meta_shared_feature_keys", []), cfg)
+        expand_feature_group_refs(shared_refs, cfg)
     )
+    shared = _filter_regime_adaptor_only_feature_keys(shared)
     base_union = set(get_base_feature_keys("long", cfg)) | set(
         get_base_feature_keys("short", cfg)
     )
     meta_product = set(
         expand_feature_group_refs(cfg.get("meta_product_feature_keys", []), cfg)
     )
+    meta_product = {k for k in meta_product if not str(k).startswith("ra_")}
 
     def _filter_shared_overlap(specific_keys: List[str]) -> List[str]:
         allowed_overlap = set(specific_keys) | meta_product
@@ -298,21 +313,26 @@ def get_meta_feature_keys(head: str, cfg: Dict[str, Any]) -> List[str]:
 
     if head == "reg":
         specific = expand_feature_group_refs(cfg.get("meta_reg_feature_keys", []), cfg)
+        specific = _filter_regime_adaptor_only_feature_keys(specific)
         return dedupe_keep_order(_filter_shared_overlap(specific) + specific)
     elif head == "clf":
         specific = expand_feature_group_refs(cfg.get("meta_clf_feature_keys", []), cfg)
+        specific = _filter_regime_adaptor_only_feature_keys(specific)
         return dedupe_keep_order(_filter_shared_overlap(specific) + specific)
     elif head == "mfe":
         specific = expand_feature_group_refs(cfg.get("meta_mfe_feature_keys", []), cfg)
+        specific = _filter_regime_adaptor_only_feature_keys(specific)
         return dedupe_keep_order(_filter_shared_overlap(specific) + specific)
     elif head == "mae":
         specific = expand_feature_group_refs(cfg.get("meta_mae_feature_keys", []), cfg)
+        specific = _filter_regime_adaptor_only_feature_keys(specific)
         return dedupe_keep_order(_filter_shared_overlap(specific) + specific)
     elif head == "asym":
         mfe_specific = expand_feature_group_refs(cfg.get("meta_mfe_feature_keys", []), cfg)
         mae_specific = expand_feature_group_refs(cfg.get("meta_mae_feature_keys", []), cfg)
         asym_specific = expand_feature_group_refs(cfg.get("meta_asym_feature_keys", []), cfg)
         specific = mfe_specific + mae_specific + asym_specific
+        specific = _filter_regime_adaptor_only_feature_keys(specific)
         return dedupe_keep_order(_filter_shared_overlap(specific) + specific)
 
 def validate_feature_keys_exist(df, keys: List[str], context: str) -> None:

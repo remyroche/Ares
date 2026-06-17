@@ -373,14 +373,22 @@ def _add_scope_features(
             )
         if stats_ts.empty:
             continue
+        left_ts = g[[ts_col]].copy()
+        left_ts[ts_col] = pd.to_datetime(
+            left_ts[ts_col], errors="coerce", utc=True
+        ).dt.tz_localize(None)
+        right_ts = stats_ts.copy()
+        right_ts[ts_col] = pd.to_datetime(
+            right_ts[ts_col], errors="coerce", utc=True
+        ).dt.tz_localize(None)
         mapped = pd.merge_asof(
-            g[[ts_col]].sort_values(ts_col),
-            stats_ts.sort_values(ts_col),
+            left_ts.sort_values(ts_col),
+            right_ts.sort_values(ts_col),
             on=ts_col,
             direction="backward",
             allow_exact_matches=True,
         )
-        mapped.index = g[[ts_col]].sort_values(ts_col).index
+        mapped.index = left_ts.sort_values(ts_col).index
         assign_cols: dict[str, np.ndarray] = {}
         for win in windows:
             sfx = win.lower()

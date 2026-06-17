@@ -28,9 +28,12 @@ def test_model_drift_features_are_artifact_backed_and_stable():
     assert drift["feature_drift_psi_core_80"].between(0.0, 1.0).all()
     assert drift["feature_drift_ks_bin_mean"].between(0.0, 1.0).all()
     assert drift["feature_drift_ks_bin_max"].between(0.0, 1.0).all()
-    assert np.allclose(drift["feature_drift_psi_core_80"], 0.0)
-    assert np.allclose(drift["feature_drift_ks_bin_mean"], 0.0)
     assert np.allclose(drift["feature_drift_cov_shift"], 0.0)
+    assert drift["regime_centroid_similarity_train_window_p10"].between(0.0, 1.0).all()
+    assert (
+        drift["regime_centroid_similarity_train_window_p10"]
+        <= drift["regime_centroid_similarity_train_window_mean"] + 1e-7
+    ).all()
     for key in ROW_LOCAL_DRIFT_FEATURE_KEYS:
         assert key in drift.columns
         assert np.isfinite(drift[key].to_numpy(dtype=np.float32)).all()
@@ -59,8 +62,13 @@ def test_model_drift_score_increases_for_shifted_rows():
     assert float(shifted["row_drift_v1_ks_bin_mean"].mean()) >= float(
         in_domain["row_drift_v1_ks_bin_mean"].mean()
     )
+    assert float(shifted["feature_drift_psi_core_80"].mean()) > float(
+        in_domain["feature_drift_psi_core_80"].mean()
+    )
+    assert float(shifted["feature_drift_ks_bin_mean"].mean()) >= float(
+        in_domain["feature_drift_ks_bin_mean"].mean()
+    )
     assert np.allclose(shifted["feature_drift_cov_shift"], 0.0)
-    assert np.allclose(shifted["feature_drift_psi_bin_mean"], 0.0)
 
 
 def test_model_drift_features_are_row_stable_across_batch_shapes():

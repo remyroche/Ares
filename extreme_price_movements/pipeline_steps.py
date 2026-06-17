@@ -1438,6 +1438,12 @@ def _feature_missing_columns_recent_tail_enabled() -> bool:
     return raw.lower() in {"1", "true", "yes", "on"}
 
 
+def _feature_backfill_force_full_history_enabled() -> bool:
+    """Return whether explicit requested-key backfills should rewrite full history."""
+    raw = os.environ.get("EPM_FEATURE_BACKFILL_FORCE_FULL_HISTORY", "0")
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
 _DISABLED_PIPELINE_FEATURE_KEYS: tuple[str, ...] = (
     "base_model_score",
     "base_model_score_pct",
@@ -1747,6 +1753,14 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
 
     keys.update(_base_feature_keys_union(cfg))
     keys.update(_meta_feature_keys_union(cfg))
+    if bool(cfg.get("regime_adaptor.enabled", False)) or bool(
+        cfg.get("enable_regime_adaptor", False)
+    ):
+        vals = cfg.get("ROLLING_ALPHA_FEATURE_KEYS", [])
+        if isinstance(vals, (list, tuple)):
+            for v in vals:
+                if isinstance(v, str) and v:
+                    keys.add(v)
     for name in (
         "CROSS_ASSET_FEATURE_KEYS",
         "META_CROSS_SECTIONAL_REGIME_KEYS",
@@ -5955,6 +5969,7 @@ def run_base_hpo_step(ts_sig, cfg):
                         if "__y_ret__" in df_hpo.columns
                         else None
                     ),
+                    cfg=cfg,
                 )
                 y_reg_all = np.asarray(reg_target_bundle["target"], dtype=np.float32)
                 reg_weight_bundle = _build_base_regression_sample_weight(
@@ -8742,7 +8757,22 @@ def run_feature_generation_step(
         if explicit_backfill_keys:
             explicit_backfill_keys_active = True
             backfill_keys = explicit_backfill_keys
-            full_rewrite_symbols_for_backfill = set(missing_symbols_for_backfill)
+            if (
+                _feature_backfill_force_full_history_enabled()
+                and close_panel_light is not None
+                and not close_panel_light.empty
+            ):
+                full_rewrite_symbols_for_backfill = set(
+                    str(s) for s in close_panel_light.columns
+                )
+                tprint(
+                    "Explicit feature backfill full-history override: "
+                    f"{len(full_rewrite_symbols_for_backfill)} symbols"
+                )
+            else:
+                full_rewrite_symbols_for_backfill = set(
+                    full_rewrite_symbols_for_backfill
+                ).union(set(missing_symbols_for_backfill))
             if close_panel_light is not None and not close_panel_light.empty:
                 (
                     precomputed_tail_cutoffs,
@@ -9862,10 +9892,17 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
             continue
 
         try:
-            schema_cols = set(pq.ParquetFile(fpath).schema.names)
+            schema_cols = set(_feature_schema_names(str(fpath)))
         except Exception as exc:
-            tprint(f"Feature injection: failed to inspect {fpath}: {exc}")
-            continue
+            tprint(
+                f"Feature injection: failed to inspect feature-store overlay {fpath}: {exc}; "
+                "falling back to base parquet schema."
+            )
+            try:
+                schema_cols = set(pq.ParquetFile(fpath).schema.names)
+            except Exception as exc2:
+                tprint(f"Feature injection: failed to inspect {fpath}: {exc2}")
+                continue
 
         load_cols = [k for k in keys_for_symbol if k in schema_cols]
         ts_in_schema = "ts" in schema_cols or "timestamp" in schema_cols
@@ -9873,44 +9910,78 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
             continue
 
         try:
-            read_cols = list(load_cols)
             sym_bounds = symbol_time_bounds.get(str(sym))
-            read_kwargs = {}
-            if "ts" in schema_cols:
-                read_cols = ["ts", *read_cols]
-                if (
-                    sym_bounds
-                    and sym_bounds[0] is not None
-                    and sym_bounds[1] is not None
-                ):
-                    read_kwargs["filters"] = _build_parquet_ts_filters(
-                        start_ts=sym_bounds[0],
-                        end_ts=sym_bounds[1] + pd.Timedelta(seconds=1),
-                    )
-            elif "timestamp" in schema_cols:
-                read_cols = ["timestamp", *read_cols]
-                if (
-                    sym_bounds
-                    and sym_bounds[0] is not None
-                    and sym_bounds[1] is not None
-                ):
-                    start_ts = pd.Timestamp(sym_bounds[0])
-                    end_ts = pd.Timestamp(sym_bounds[1] + pd.Timedelta(seconds=1))
-                    if start_ts.tzinfo is None:
-                        start_ts = start_ts.tz_localize("UTC")
-                    else:
-                        start_ts = start_ts.tz_convert("UTC")
-                    if end_ts.tzinfo is None:
-                        end_ts = end_ts.tz_localize("UTC")
-                    else:
-                        end_ts = end_ts.tz_convert("UTC")
-                    read_kwargs["filters"] = [
-                        [
-                            ("timestamp", ">=", start_ts.to_pydatetime()),
-                            ("timestamp", "<", end_ts.to_pydatetime()),
+            feat_df = pd.DataFrame()
+            overlay_exc = None
+            try:
+                feat_df = read_symbol_features(
+                    str(fpath),
+                    columns=list(load_cols),
+                    start_ts=(
+                        sym_bounds[0]
+                        if sym_bounds
+                        and sym_bounds[0] is not None
+                        and sym_bounds[1] is not None
+                        else None
+                    ),
+                    end_ts=(
+                        sym_bounds[1] + pd.Timedelta(seconds=1)
+                        if sym_bounds
+                        and sym_bounds[0] is not None
+                        and sym_bounds[1] is not None
+                        else None
+                    ),
+                )
+            except Exception as exc:
+                overlay_exc = exc
+
+            if feat_df.empty and overlay_exc is not None:
+                read_cols = list(load_cols)
+                read_kwargs = {}
+                if "ts" in schema_cols:
+                    read_cols = ["ts", *read_cols]
+                    if (
+                        sym_bounds
+                        and sym_bounds[0] is not None
+                        and sym_bounds[1] is not None
+                    ):
+                        read_kwargs["filters"] = _build_parquet_ts_filters(
+                            start_ts=sym_bounds[0],
+                            end_ts=sym_bounds[1] + pd.Timedelta(seconds=1),
+                        )
+                elif "timestamp" in schema_cols:
+                    read_cols = ["timestamp", *read_cols]
+                    if (
+                        sym_bounds
+                        and sym_bounds[0] is not None
+                        and sym_bounds[1] is not None
+                    ):
+                        start_ts = pd.Timestamp(sym_bounds[0])
+                        end_ts = pd.Timestamp(sym_bounds[1] + pd.Timedelta(seconds=1))
+                        if start_ts.tzinfo is None:
+                            start_ts = start_ts.tz_localize("UTC")
+                        else:
+                            start_ts = start_ts.tz_convert("UTC")
+                        if end_ts.tzinfo is None:
+                            end_ts = end_ts.tz_localize("UTC")
+                        else:
+                            end_ts = end_ts.tz_convert("UTC")
+                        read_kwargs["filters"] = [
+                            [
+                                ("timestamp", ">=", start_ts.to_pydatetime()),
+                                ("timestamp", "<", end_ts.to_pydatetime()),
+                            ]
                         ]
-                    ]
-            feat_df = pd.read_parquet(fpath, columns=read_cols, **read_kwargs)
+                feat_df = pd.read_parquet(fpath, columns=read_cols, **read_kwargs)
+                tprint(
+                    f"Feature injection: feature-store overlay load failed for {fpath}: "
+                    f"{overlay_exc}; used base parquet fallback."
+                )
+            elif overlay_exc is not None:
+                tprint(
+                    f"Feature injection: feature-store overlay load failed for {fpath}: "
+                    f"{overlay_exc}"
+                )
         except Exception as exc:
             tprint(f"Feature injection: failed to load {fpath}: {exc}")
             continue

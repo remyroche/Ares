@@ -199,6 +199,67 @@ def test_meta_lgbm_predictive_atlas_fit_and_apply_features_are_finite():
     assert np.isfinite(live[list(ra.META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS)].to_numpy()).all()
 
 
+def test_meta_correctness_apply_materializes_current_regime_ae_features():
+    from extreme_price_movements.regime_ae_features import fit_current_regime_ae_state
+
+    class RequiresAeModel:
+        selected_features = ["z_ae_1"]
+        input_feature_names = ["z_ae_1"]
+
+        def predict(self, frame):
+            assert "z_ae_1" in frame.columns
+            assert np.isfinite(frame["z_ae_1"].to_numpy(dtype=np.float32)).all()
+            return np.full(len(frame), 0.70, dtype=np.float32)
+
+        def inference_schema_diagnostics(self, frame):
+            return {"missing_selected_features_preview": []}
+
+    n = 24
+    ts = pd.date_range("2026-01-01", periods=n, freq="h", tz="UTC")
+    frame = pd.DataFrame(
+        {
+            "timestamp": ts,
+            "symbol": ["AAA/USD:USD"] * n,
+            **{
+                f"selected_feature_{i}": np.sin(np.arange(n) / (i + 2.0))
+                for i in range(6)
+            },
+        }
+    )
+    state = fit_current_regime_ae_state(
+        frame,
+        feature_columns=[f"selected_feature_{i}" for i in range(6)],
+        score_target=np.linspace(0.2, 0.8, n),
+        cfg={
+            "regime_ae_min_rows": 10,
+            "regime_ae_min_features": 4,
+            "regime_ae_max_epochs": 1,
+            "regime_ae_batch_size": 16,
+        },
+    )
+    pred = np.linspace(0.35, 0.75, n)
+    applied = apply_regime_adaptor(
+        frame,
+        pred,
+        {
+            "schema_version": "rolling_meta_correctness_v2",
+            "model_type": "meta_correctness_lgbm",
+            "enable_regime_adaptor": True,
+            "_meta_correctness_model_object": RequiresAeModel(),
+            "current_regime_ae_state": state,
+            "selected_correctness_integration_params": {
+                "lambda_correctness": 0.1,
+                "correctness_offset_cap": 0.05,
+            },
+        },
+        timestamps=ts,
+        symbols=frame["symbol"].to_numpy(),
+    )
+
+    assert applied["regime_adjustment_enabled"].all()
+    assert applied["feature_mapping"]["current_regime_ae"]["enabled"] is True
+
+
 def test_pooled_walk_forward_split_is_by_time_and_keeps_assets_together():
     from extreme_price_movements.regime_adaptor import _walk_forward_splits
 

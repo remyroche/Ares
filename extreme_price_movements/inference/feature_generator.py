@@ -75,7 +75,7 @@ DEFAULT_GATE_TREND_THR = 0.0
 DEFAULT_CAUSAL_TRANSFORM_ROLL_WINDOW_HOURS = 24 * 30
 DEFAULT_IDENTITY_EWMA_WARMUP_HOURS = 24 * 60 * 5
 DEFAULT_TAIL_WARMUP_BUFFER_HOURS = 72
-LIVE_FEATURE_CACHE_VERSION = 15
+LIVE_FEATURE_CACHE_VERSION = 16
 _LIVE_FEATURE_MEMORY_CACHE: Dict[str, Dict[str, Any]] = {}
 _SELECTED_FEATURE_LATEST_MEMORY_CACHE: Dict[str, Dict[str, Any]] = {}
 _TRAINING_FEATURE_VARIATION_CACHE: Dict[tuple[str, str], Dict[str, bool]] = {}
@@ -1301,7 +1301,7 @@ def _live_feature_cache_key(
             str(data_root or ""),
             _hash_values(symbols),
             _hash_values(required_feature_keys),
-            str(_feature_transform_contract_hash_from_cfg(cfg) or ""),
+            str(_live_feature_cache_contract_hash_from_cfg(cfg) or ""),
             _feature_runtime_cfg_hash(cfg),
         ]
     )
@@ -1573,6 +1573,30 @@ def _feature_transform_contract_hash_from_cfg(
     return None
 
 
+def _live_feature_cache_applies_feature_transform(cfg: Optional[Dict[str, Any]]) -> bool:
+    """Return whether this cache namespace stores fitted transformed features."""
+    if not _feature_transform_contract_hash_from_cfg(cfg):
+        return False
+    namespace = _live_feature_cache_namespace(cfg)
+    if namespace == "model":
+        return True
+    if not isinstance(cfg, dict):
+        return False
+    raw = cfg.get(
+        "live_feature_transform_non_model_namespaces",
+        os.environ.get("EPM_LIVE_FEATURE_TRANSFORM_NON_MODEL_NAMESPACES", "0"),
+    )
+    return str(raw).strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _live_feature_cache_contract_hash_from_cfg(
+    cfg: Optional[Dict[str, Any]],
+) -> str | None:
+    if not _live_feature_cache_applies_feature_transform(cfg):
+        return None
+    return _feature_transform_contract_hash_from_cfg(cfg)
+
+
 def _latest_feature_matrix(
     feats: Dict[str, pd.DataFrame],
     symbols: List[str],
@@ -1832,7 +1856,7 @@ def _load_live_feature_rolling_cache(
     root_dir = _feature_snapshot_root(cfg, run_id)
     expected_symbols_hash = _hash_values(symbols)
     expected_required_hash = _hash_values(required_feature_keys)
-    expected_contract_hash = _feature_transform_contract_hash_from_cfg(cfg)
+    expected_contract_hash = _live_feature_cache_contract_hash_from_cfg(cfg)
     expected_namespace = _live_feature_cache_namespace(cfg)
     required_feature_key_set = {str(k) for k in required_feature_keys if str(k)}
     allow_cross_key = bool(
@@ -1894,9 +1918,8 @@ def _load_live_feature_rolling_cache(
             if not required_ok:
                 rejected_meta_paths += 1
                 continue
-            if (
-                expected_contract_hash
-                and meta.get("contract_hash") != expected_contract_hash
+            if (meta.get("contract_hash") or None) != (
+                expected_contract_hash or None
             ):
                 rejected_meta_paths += 1
                 continue
@@ -2008,7 +2031,7 @@ def _write_live_feature_rolling_cache(
         meta_path = cache_dir / "rolling_meta.json"
         expected_symbols_hash = _hash_values(symbols)
         expected_required_hash = _hash_values(required_feature_keys)
-        expected_contract_hash = _feature_transform_contract_hash_from_cfg(cfg)
+        expected_contract_hash = _live_feature_cache_contract_hash_from_cfg(cfg)
         expected_namespace = _live_feature_cache_namespace(cfg)
         old_meta: Dict[str, Any] = {}
         try:
@@ -2044,9 +2067,8 @@ def _write_live_feature_rolling_cache(
                     continue
                 if candidate_meta.get("required_hash") != expected_required_hash:
                     continue
-                if (
-                    expected_contract_hash
-                    and candidate_meta.get("contract_hash") != expected_contract_hash
+                if (candidate_meta.get("contract_hash") or None) != (
+                    expected_contract_hash or None
                 ):
                     continue
                 fallback_cursor_meta = candidate_meta
@@ -2139,7 +2161,7 @@ def _write_live_feature_rolling_cache(
             "cache_key": cache_key,
             "cache_namespace": expected_namespace,
             "feature_runtime_cfg_hash": _feature_runtime_cfg_hash(cfg),
-            "contract_hash": _feature_transform_contract_hash_from_cfg(cfg),
+            "contract_hash": _live_feature_cache_contract_hash_from_cfg(cfg),
             "symbols_hash": _hash_values(symbols),
             "required_hash": _hash_values(required_feature_keys),
             "end_ts": pd.Timestamp(end_ts).isoformat(),
@@ -2207,11 +2229,8 @@ def _load_live_feature_snapshot(
             return {}
         if meta.get("required_hash") != _hash_values(required_feature_keys):
             return {}
-        expected_contract_hash = _feature_transform_contract_hash_from_cfg(cfg)
-        if (
-            expected_contract_hash
-            and meta.get("contract_hash") != expected_contract_hash
-        ):
+        expected_contract_hash = _live_feature_cache_contract_hash_from_cfg(cfg)
+        if (meta.get("contract_hash") or None) != (expected_contract_hash or None):
             return {}
         matrix = _read_live_feature_matrix_parquet(data_path, required_feature_keys)
     except Exception:
@@ -2310,7 +2329,7 @@ def _write_live_feature_snapshot(
             "cache_key": cache_key,
             "cache_namespace": _live_feature_cache_namespace(cfg),
             "feature_runtime_cfg_hash": _feature_runtime_cfg_hash(cfg),
-            "contract_hash": _feature_transform_contract_hash_from_cfg(cfg),
+            "contract_hash": _live_feature_cache_contract_hash_from_cfg(cfg),
             "symbols_hash": _hash_values(symbols),
             "required_hash": _hash_values(required_feature_keys),
             "end_ts": pd.Timestamp(end_ts).isoformat(),
@@ -4792,7 +4811,8 @@ def load_or_compute_features(
         f"lookback_hours={lookback_hours} start={start_ts} end={end_ts} "
         f"namespace={_live_feature_cache_namespace(cfg)} "
         f"cache_key={hashlib.sha256(cache_key.encode('utf-8')).hexdigest()[:12]} "
-        f"contract_hash={_feature_transform_contract_hash_from_cfg(cfg)}"
+        f"transform_contract_hash={_feature_transform_contract_hash_from_cfg(cfg)} "
+        f"cache_contract_hash={_live_feature_cache_contract_hash_from_cfg(cfg)}"
     )
     offline_feature_run_ids = _offline_feature_lookup_run_ids(cfg, run_id)
     offline_feature_run_id = offline_feature_run_ids[0] if offline_feature_run_ids else str(run_id)
@@ -5677,7 +5697,7 @@ def load_or_compute_features(
     )
     if (
         _live_feature_cache_namespace(cfg) != "model"
-        and not _feature_transform_contract_hash_from_cfg(cfg)
+        and not _live_feature_cache_applies_feature_transform(cfg)
     ):
         try:
             mask_tail_warmup_hours = int(
@@ -5740,7 +5760,7 @@ def load_or_compute_features(
         "Live feature tail raw compute complete: "
         f"features={len(full_tail_feats or {})} rss={_process_rss_mb():.1f}MB"
     )
-    if _feature_transform_contract_hash_from_cfg(cfg):
+    if _live_feature_cache_applies_feature_transform(cfg):
         transform_t0 = time.perf_counter()
         full_tail_feats = _transform_feature_panels_for_inference(
             full_tail_feats,
@@ -5759,7 +5779,7 @@ def load_or_compute_features(
         basket_syms,
         required_feature_keys,
     )
-    if market_tail_feats and _feature_transform_contract_hash_from_cfg(cfg):
+    if market_tail_feats and _live_feature_cache_applies_feature_transform(cfg):
         market_tail_feats = _transform_feature_panels_for_inference(
             market_tail_feats,
             cfg,

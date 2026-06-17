@@ -8,6 +8,10 @@ from extreme_price_movements.features_oi import (
 from extreme_price_movements.features_residual import residual_feature_names
 from extreme_price_movements.model_drift_features import MODEL_DRIFT_FEATURE_KEYS
 from extreme_price_movements.features_gmm_ae import AE_GMM_FEATURE_COLUMNS
+from extreme_price_movements.lgbm_archetype_features import (
+    RAW_STATE_DIAGNOSTIC_FEATURE_NAMES,
+    RAW_STATE_SVD_SUMMARY_FEATURE_NAMES,
+)
 
 # =============================================================================
 # CANONICAL Horizons & Buckets - Single Source of Truth
@@ -1206,6 +1210,50 @@ TRAINING_RESIDUALIZATION_FEATURE_KEYS = [
     "volatility_autocorr_48",
 ]
 
+ROLLING_ALPHA_FEATURE_KEYS = [
+    "ra_ret1h_robust_z",
+    "ra_ret5h_robust_z",
+    "ra_ret24h_robust_z",
+    "ra_resid_ret_6h_robust_z",
+    "ra_rv24h_robust_z",
+    "ra_log_quote_volume_robust_z",
+    "ra_amihud_robust_z",
+    "ra_symbol_minus_mkt_ret_4h_cs_rank",
+    "ra_symbol_minus_mkt_ret_24h_cs_rank",
+    "ra_market_dispersion_24h_pct",
+    "ra_market_breadth_24h_pct",
+    "ra_market_beta_24h",
+    "ra_market_resid_ret_6h",
+]
+
+ROLLING_ALPHA_TARGET_AUDIT_COLUMNS = [
+    "target_gross_residual_alpha_5h",
+    "raw_gross_residual_alpha_5h",
+    "market_factor_component_5h",
+    "cluster_factor_component_5h",
+    "market_beta_5h",
+    "cluster_beta_5h",
+    "gross_residual_alpha_scale_5h",
+    "kalman_gross_residual_alpha_5h",
+]
+
+CURRENT_REGIME_AE_FEATURE_KEYS = [
+    "z_ae_1",
+    "z_ae_2",
+    "z_ae_3",
+    "z_ae_4",
+    "z_ae_5",
+    "z_ae_6",
+    "z_ae_7",
+    "z_ae_8",
+    "ae_reconstruction_error",
+    "ae_reconstruction_error_percentile",
+    "ae_latent_norm",
+    "ae_latent_norm_percentile",
+    "ae_latent_distance",
+    "ae_latent_distance_percentile",
+]
+
 
 LOC_CONTINUOUS_FAMILY_MAP = {
     "loc_ema_stack_pos_24": "trend",
@@ -1701,6 +1749,7 @@ CFG = {
     "meta_move_top_frac": 0.15,
     "meta_trade_topx_values": [40],
     "enable_recent_effectiveness_features": True,
+    "recent_effectiveness_top_frac": 0.15,
     "recent_effectiveness_min_samples": 100,
     "recent_effectiveness_min_top_samples": 25,
     "meta_product_feature_keys": [
@@ -2078,6 +2127,109 @@ CFG = {
     # Horizon scaling
     "label_horizon_base": 4,  # base horizon for sqrt(H/H_base) scaling
     "label_min_net_rr": 0.9,  # min reward:risk ratio after fees
+    # Optional rolling-alpha feature/target architecture. Disabled by default
+    # because it changes the base regression objective and adds extra feature
+    # computation.
+    "rolling_alpha_features_enabled": False,
+    "rolling_alpha_feature_norm_window": 336,
+    "rolling_alpha_target_enabled": False,
+    "rolling_alpha_target_mode": "legacy",
+    "rolling_alpha_target_horizon_hours": 5,
+    "rolling_alpha_target_transform": "asinh_scaled",
+    "rolling_alpha_target_scale_window": 336,
+    "rolling_alpha_target_scale_min_periods": 48,
+    "rolling_alpha_target_scale_floor": 1e-4,
+    "rolling_alpha_target_market_beta_window": 720,
+    "rolling_alpha_target_cluster_beta_window": 720,
+    "rolling_alpha_target_beta_min_periods": 168,
+    "rolling_alpha_target_beta_var_floor": 1e-10,
+    "rolling_alpha_target_default_market_beta": 1.0,
+    "rolling_alpha_target_default_cluster_beta": 1.0,
+    "rolling_alpha_target_cluster_columns": [
+        "__asset_cluster__",
+        "__cluster__",
+        "asset_cluster",
+        "cluster_label",
+        "cluster_id",
+        "liquidity_tier",
+        "volatility_tier",
+    ],
+    "rolling_alpha_target_cluster_feature_columns": [
+        "asset_vol_level_pct",
+        "asset_atr_level_pct",
+        "vol_z",
+        "rvol_z",
+        "trend_strength_percentile",
+        "asset_volume_level_pct",
+    ],
+    "rolling_alpha_target_cluster_feature_max_columns": 3,
+    "rolling_alpha_target_kalman_enabled": False,
+    "rolling_alpha_target_kalman_blend": 0.35,
+    "rolling_alpha_target_kalman_process_var": 1e-6,
+    "rolling_alpha_target_kalman_obs_var": 1e-4,
+    "rolling_alpha_target_clip_abs": 20.0,
+    "simple_policy_regime_ae_enabled": True,
+    "regime_ae_backend": "sklearn_mlp",
+    "regime_ae_lookback_days": 92,
+    "regime_ae_allow_full_history_fallback": False,
+    "regime_ae_source_fail_closed": True,
+    "regime_ae_candidate_generation": "walk_forward_prior_only",
+    "regime_ae_oof_block_hours": 168,
+    "regime_ae_walk_forward_min_prior_rows": 200,
+    "regime_ae_min_rows": 200,
+    "regime_ae_max_train_rows": 30000,
+    "regime_ae_min_features": 8,
+    "regime_ae_max_features": 180,
+    "regime_ae_max_epochs": 50,
+    "regime_ae_batch_size": 8192,
+    "regime_ae_learning_rate": 1e-3,
+    "regime_ae_min_learning_rate": 1e-5,
+    "regime_ae_input_noise_std": 0.03,
+    "regime_ae_alpha_loss_weight": 0.25,
+    "regime_ae_rank_loss_weight": 0.25,
+    "regime_ae_latent_l1": 1e-4,
+    "regime_ae_latent_stability": 0.005,
+    "regime_ae_weight_decay": 1e-4,
+    "regime_ae_random_state": 42,
+    # Current-regime specialist similarity for LGBM training. Disabled by
+    # default because it is heavier and should be shadowed before activation.
+    "lgbm_regime_specialist_enabled": False,
+    "lgbm_regime_specialist_objectives": ["train_base", "train_meta"],
+    "lgbm_regime_specialist_shadow_only": True,
+    "lgbm_regime_specialist_apply_sample_weight": False,
+    "lgbm_regime_specialist_apply_distillation_shrink": False,
+    "lgbm_regime_specialist_distillation_power": 1.0,
+    "lgbm_regime_specialist_current_window_days": 21.0,
+    "lgbm_regime_specialist_candidate_window_days": 21.0,
+    "lgbm_regime_specialist_day_window_days": 1.0,
+    "lgbm_regime_specialist_recency_decay_per_week": 0.67,
+    "lgbm_regime_specialist_drift_weight": 0.40,
+    "lgbm_regime_specialist_covariance_weight": 0.35,
+    "lgbm_regime_specialist_regime_weight": 0.15,
+    "lgbm_regime_specialist_knn_weight": 0.10,
+    "lgbm_regime_specialist_ae_weight": 0.10,
+    "lgbm_regime_specialist_alpha": 1.5,
+    "lgbm_regime_specialist_analogue_threshold": 0.55,
+    "lgbm_regime_specialist_normal_threshold": 0.15,
+    "lgbm_regime_specialist_knn_k": 25,
+    "lgbm_regime_specialist_max_knn_current_rows": 2000,
+    "lgbm_regime_specialist_max_knn_historical_rows": 50000,
+    "lgbm_regime_specialist_max_covariance_features": 48,
+    "lgbm_regime_specialist_max_window_diagnostics": 50,
+    "lgbm_regime_specialist_top_eigenvalues": 5,
+    "lgbm_regime_specialist_asset_return_col": None,
+    "lgbm_regime_specialist_ae_enabled": False,
+    "lgbm_regime_specialist_ae_min_windows": 50,
+    "lgbm_regime_specialist_ae_latent_dim": 4,
+    "lgbm_regime_specialist_ae_max_iter": 50,
+    "lgbm_regime_specialist_ae_input_noise": 0.02,
+    "lgbm_regime_specialist_day_similarity_min_rows": 24,
+    "lgbm_regime_specialist_day_similarity_strength": 0.50,
+    "lgbm_regime_specialist_min_candidate_rows": 24,
+    "lgbm_regime_specialist_min_current_rows": 24,
+    "lgbm_regime_specialist_weight_min": 0.05,
+    "lgbm_regime_specialist_weight_max": 20.0,
+    "lgbm_regime_specialist_min_adaptive_reliability_to_train": 0.20,
     # Legacy / deprecated params
     "label_tp_mults": [0.5, 1.0, 1.5, 2.0],  # DEPRECATED: use barrier_k_tp_grid
     "label_sl_mults": [0.3, 0.5, 0.7, 1.0],  # DEPRECATED: use barrier_sl_base_grid
@@ -3775,6 +3927,9 @@ CFG["VOLUME_FREE_PERP_META_FEATURE_KEYS"] = VOLUME_FREE_PERP_META_FEATURE_KEYS
 CFG["RESIDUAL_FEATURE_KEYS"] = RESIDUAL_FEATURE_KEYS
 CFG["RESIDUAL_BASE_FEATURE_KEYS"] = RESIDUAL_BASE_FEATURE_KEYS
 CFG["RESIDUAL_META_FEATURE_KEYS"] = RESIDUAL_META_FEATURE_KEYS
+CFG["ROLLING_ALPHA_FEATURE_KEYS"] = ROLLING_ALPHA_FEATURE_KEYS
+CFG["ROLLING_ALPHA_TARGET_AUDIT_COLUMNS"] = ROLLING_ALPHA_TARGET_AUDIT_COLUMNS
+CFG["CURRENT_REGIME_AE_FEATURE_KEYS"] = CURRENT_REGIME_AE_FEATURE_KEYS
 CFG["PRICE_MEMORY_FEATURE_KEYS"] = PRICE_MEMORY_FEATURE_KEYS
 CFG["OI_WEIGHTED_LOCATION_BASE_FEATURE_KEYS"] = OI_WEIGHTED_LOCATION_BASE_FEATURE_KEYS
 CFG["OI_WEIGHTED_LOCATION_META_FEATURE_KEYS"] = OI_WEIGHTED_LOCATION_META_FEATURE_KEYS
@@ -4138,7 +4293,9 @@ CFG["META_SELF_FEATURE_KEYS"] = [
     "recent_meta_global_top15_hit_rate_10d",
     "recent_meta_global_top15_hit_rate_5d",
 ]
-CFG["meta_shared_feature_keys"] += ["META_SELF_FEATURE_KEYS"]
+# Meta-self features are generated after the meta OOF/policy-candidate layer
+# exists. They are downstream inputs for regime_adaptor/reporting, not
+# same-layer meta-model inputs.
 
 
 CFG["META_RECENT_DISAGREEMENT_FEATURE_KEYS"] = [
@@ -4167,7 +4324,8 @@ CFG["META_RECENT_DISAGREEMENT_FEATURE_KEYS"] = [
     "recent_base_internal_disagreement_range_max_7d",
     "recent_base_internal_disagreement_range_max_15d",
 ]
-CFG["meta_shared_feature_keys"] += ["META_RECENT_DISAGREEMENT_FEATURE_KEYS"]
+# Recent base/meta disagreement also depends on meta predictions, so it is
+# consumed downstream instead of being requested by train_meta itself.
 
 CFG["META_MODEL_UNCERTAINTY_FEATURE_KEYS"] = [
     "feature_drift_psi_core",
@@ -4262,12 +4420,76 @@ CFG["META_MODEL_UNCERTAINTY_FEATURE_KEYS"] = [
     "base_error_distance_to_bad_archetype",
     "base_error_distance_to_good_archetype",
 ]
-CFG["meta_shared_feature_keys"] += ["META_MODEL_UNCERTAINTY_FEATURE_KEYS"]
+
+
+def _meta_same_layer_safe_uncertainty_key(name: str) -> bool:
+    """Return true for model-context fields known before the meta head is fit."""
+    key = str(name)
+    if key.startswith(
+        (
+            "leaf_",
+            "reg_leaf_",
+            "shap_archetype_",
+            "base_error_",
+            "distance_to_archetype_",
+            "distance_to_bad_archetype",
+            "distance_to_good_archetype",
+            "distance_to_nearest_bad_archetype",
+        )
+    ):
+        return False
+    if key in {
+        "archetype_oof_bad_rate_lift",
+        "support_gap",
+    }:
+        return False
+    return True
+
+
+CFG["META_MODEL_UNCERTAINTY_META_INPUT_FEATURE_KEYS"] = [
+    key
+    for key in CFG["META_MODEL_UNCERTAINTY_FEATURE_KEYS"]
+    if _meta_same_layer_safe_uncertainty_key(key)
+]
+CFG["meta_shared_feature_keys"] += ["META_MODEL_UNCERTAINTY_META_INPUT_FEATURE_KEYS"]
+
+
+def _base_lgbm_meta_input_uncertainty_key(name: str) -> bool:
+    """Return true for base LGBM diagnostics exported by the base OOF contract."""
+    key = str(name)
+    if key.startswith("shap_archetype_"):
+        return False
+    if key.startswith("distance_to_archetype_") or key in {
+        "archetype_oof_bad_rate_lift",
+        "distance_to_bad_archetype",
+        "distance_to_good_archetype",
+        "distance_to_nearest_bad_archetype",
+    }:
+        return False
+    if key in {
+        "leaf_centroid_radius_mean",
+        "leaf_centroid_dist_std",
+        "leaf_centroid_dist_p90",
+        "leaf_centroid_dist_norm_mean",
+        "leaf_centroid_dist_norm_p90",
+        "leaf_centroid_dist_norm_max",
+    }:
+        return False
+    return True
+
+
 CFG["BASE_LGBM_META_UNCERTAINTY_FEATURE_KEYS"] = [
     f"base_lgbm_{key}"
     for key in CFG["META_MODEL_UNCERTAINTY_FEATURE_KEYS"]
+    if _base_lgbm_meta_input_uncertainty_key(key)
 ]
 CFG["meta_shared_feature_keys"] += ["BASE_LGBM_META_UNCERTAINTY_FEATURE_KEYS"]
+CFG["BASE_LGBM_RAW_STATE_DRIFT_FEATURE_KEYS"] = [
+    f"base_lgbm_{key}"
+    for key in RAW_STATE_DIAGNOSTIC_FEATURE_NAMES
+    if key not in RAW_STATE_SVD_SUMMARY_FEATURE_NAMES
+]
+CFG["meta_shared_feature_keys"] += ["BASE_LGBM_RAW_STATE_DRIFT_FEATURE_KEYS"]
 CFG["BASE_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS"] = [
     "base_lgbm_predictive_atlas_ic",
     "base_lgbm_predictive_atlas_rank_ic",
@@ -4352,6 +4574,8 @@ REGIME_ADAPTOR_BASE_FEATURE_KEYS = [
     "rare_leaf_low_support_score",
     "contribution_drift_score",
 ]
+REGIME_ADAPTOR_BASE_FEATURE_KEYS += ROLLING_ALPHA_FEATURE_KEYS
+REGIME_ADAPTOR_BASE_FEATURE_KEYS += CURRENT_REGIME_AE_FEATURE_KEYS
 REGIME_ADAPTOR_BASE_FEATURE_KEYS += CFG["REGIME_ADAPTOR_MODEL_ERROR_FEATURE_KEYS"]
 REGIME_ADAPTOR_ARCHETYPE_FEATURE_KEYS = (
     [
@@ -4462,6 +4686,8 @@ REGIME_ADAPTOR_META_LGBM_AE_GMM_FEATURE_KEYS = list(
     CFG["META_LGBM_AE_GMM_FEATURE_KEYS"]
 )
 REGIME_ADAPTOR_BASE_FEATURE_KEYS += REGIME_ADAPTOR_META_LGBM_AE_GMM_FEATURE_KEYS
+REGIME_ADAPTOR_BASE_FEATURE_KEYS += CFG["META_SELF_FEATURE_KEYS"]
+REGIME_ADAPTOR_BASE_FEATURE_KEYS += CFG["META_RECENT_DISAGREEMENT_FEATURE_KEYS"]
 
 try:
     from extreme_price_movements.drift_monitoring import drift_regime_feature_names
@@ -4784,6 +5010,8 @@ REGIME_ADAPTOR_FEATURE_ORDER = (
     + REGIME_ADAPTOR_STRATEGY_ASSET_FEATURE_KEYS
     + REGIME_ADAPTOR_EBM_CONSOLIDATED_FEATURE_KEYS
 )
+CFG["REGIME_ADAPTOR_BASE_FEATURE_KEYS"] = REGIME_ADAPTOR_BASE_FEATURE_KEYS
+CFG["REGIME_ADAPTOR_FEATURE_ORDER"] = REGIME_ADAPTOR_FEATURE_ORDER
 
 REGIME_ADAPTOR_OBJECTIVE_WEIGHTS = {
     "pnl_ratio": 0.30,
@@ -5293,6 +5521,7 @@ MODEL_DERIVED_META_PERFORMANCE_GROUP_KEYS = {
     "META_RECENT_DISAGREEMENT_FEATURE_KEYS",
     "META_MODEL_UNCERTAINTY_FEATURE_KEYS",
     "BASE_LGBM_META_UNCERTAINTY_FEATURE_KEYS",
+    "BASE_LGBM_RAW_STATE_DRIFT_FEATURE_KEYS",
     "BASE_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS",
     "BASE_LGBM_AE_GMM_FEATURE_KEYS",
     "META_LGBM_AE_GMM_FEATURE_KEYS",
@@ -5354,6 +5583,9 @@ for _name in (
     "ORDERBOOK_EXCLUDED_STALE_FEATURE_KEYS",
     "ORDERBOOK_FEATURE_KEYS",
     "CROSS_ASSET_FEATURE_KEYS",
+    "ROLLING_ALPHA_FEATURE_KEYS",
+    "CURRENT_REGIME_AE_FEATURE_KEYS",
+    "REGIME_ADAPTOR_BASE_FEATURE_KEYS",
     "REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS",
     "REGIME_ADAPTOR_FUNDING_FEATURE_KEYS",
     "REGIME_ADAPTOR_ORDERBOOK_FEATURE_KEYS",
@@ -5375,6 +5607,7 @@ for _name in (
     "META_RECENT_DISAGREEMENT_FEATURE_KEYS",
     "META_MODEL_UNCERTAINTY_FEATURE_KEYS",
     "BASE_LGBM_META_UNCERTAINTY_FEATURE_KEYS",
+    "BASE_LGBM_RAW_STATE_DRIFT_FEATURE_KEYS",
     "BASE_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS",
     "BASE_LGBM_AE_GMM_FEATURE_KEYS",
     "META_LGBM_AE_GMM_FEATURE_KEYS",
@@ -5411,6 +5644,8 @@ CFG["position_sizer_features"] = _portable_feature_list(
 )
 
 REGIME_ADAPTOR_FEATURE_ORDER = _portable_feature_list(REGIME_ADAPTOR_FEATURE_ORDER)
+CFG["REGIME_ADAPTOR_BASE_FEATURE_KEYS"] = REGIME_ADAPTOR_BASE_FEATURE_KEYS
+CFG["REGIME_ADAPTOR_FEATURE_ORDER"] = REGIME_ADAPTOR_FEATURE_ORDER
 REGIME_ADAPTOR_DEFAULT_CONFIG[
     RegimeAdaptorKey.REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS
 ] = REGIME_ADAPTOR_GLOBAL_FEATURE_KEYS

@@ -83,6 +83,16 @@ def test_meta_performance_feature_groups_survive_portable_config():
     assert "recent_hit_rate_20" in clf_keys
 
 
+def test_base_lgbm_raw_state_drift_features_are_meta_candidates():
+    clf_keys = set(get_meta_feature_keys("clf", CFG))
+
+    assert "BASE_LGBM_RAW_STATE_DRIFT_FEATURE_KEYS" in CFG["meta_shared_feature_keys"]
+    assert "base_lgbm_feature_drift_cov_shift" in clf_keys
+    assert "base_lgbm_raw_state_knn_distance" in clf_keys
+    assert "base_lgbm_raw_state_mahalanobis" in clf_keys
+    assert "base_lgbm_raw_state_transition_mahalanobis" in clf_keys
+
+
 def test_inference_materializes_base_performance_meta_features():
     model = type(
         "MetaModelStub",

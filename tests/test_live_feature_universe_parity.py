@@ -911,6 +911,60 @@ def test_live_feature_cache_key_splits_mask_and_model_namespaces():
     assert key_mask != key_model
 
 
+def test_live_feature_cache_transform_contract_applies_to_model_not_mask_by_default():
+    cfg_model = {
+        "live_feature_cache_namespace": "model",
+        "feature_transform_contract_hash": "transform_hash",
+    }
+    cfg_mask = {
+        "live_feature_cache_namespace": "mask",
+        "feature_transform_contract_hash": "transform_hash",
+    }
+
+    assert feature_generator._live_feature_cache_applies_feature_transform(cfg_model)
+    assert feature_generator._live_feature_cache_contract_hash_from_cfg(cfg_model) == "transform_hash"
+    assert not feature_generator._live_feature_cache_applies_feature_transform(cfg_mask)
+    assert feature_generator._live_feature_cache_contract_hash_from_cfg(cfg_mask) is None
+
+
+def test_live_feature_cache_mask_transform_contract_requires_explicit_opt_in():
+    cfg = {
+        "live_feature_cache_namespace": "mask",
+        "feature_transform_contract_hash": "transform_hash",
+        "live_feature_transform_non_model_namespaces": True,
+    }
+
+    assert feature_generator._live_feature_cache_applies_feature_transform(cfg)
+    assert feature_generator._live_feature_cache_contract_hash_from_cfg(cfg) == "transform_hash"
+
+
+def test_live_feature_cache_key_splits_raw_mask_from_transformed_mask():
+    base = {
+        "run_id": "run_a",
+        "symbols": ["AAA/USDC"],
+        "required_feature_keys": {"compression_ratio"},
+        "lookback_hours": 24 * 60,
+    }
+
+    key_raw_mask = feature_generator._live_feature_cache_key(
+        **base,
+        cfg={
+            "live_feature_cache_namespace": "mask",
+            "feature_transform_contract_hash": "transform_hash",
+        },
+    )
+    key_transformed_mask = feature_generator._live_feature_cache_key(
+        **base,
+        cfg={
+            "live_feature_cache_namespace": "mask",
+            "feature_transform_contract_hash": "transform_hash",
+            "live_feature_transform_non_model_namespaces": True,
+        },
+    )
+
+    assert key_raw_mask != key_transformed_mask
+
+
 def test_prediction_ledger_row_persists_live_execution_fee_diagnostics():
     row = run_inference._prediction_ledger_row(
         {

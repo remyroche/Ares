@@ -2076,6 +2076,171 @@ def _forward_oos_splits(
     return splits, split_basis
 
 
+def candidate_drift_forward_oos_feature_frame(
+    feature_frame: pd.DataFrame,
+    candidate_frame: pd.DataFrame,
+    *,
+    timestamps: Sequence[Any] | None = None,
+    max_features: int = 96,
+    max_reference_rows: int = 5000,
+    enable_denoising_ae: bool = False,
+    denoising_ae_max_iter: int = 80,
+    n_folds: int = 3,
+    min_train_rows: int = 100,
+    min_validation_rows: int = 30,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Return past-fit/future-transform candidate drift features for training.
+
+    The fitted calibrator artifact can use the full training sample for live
+    inference, but validation evidence should not let a row's realized PnL shape
+    its own good/bad centroid or atlas assignment. This helper builds a compact
+    expanding-window OOS feature frame and leaves rows without sufficient past
+    support at neutral defaults.
+    """
+    n = min(len(feature_frame), len(candidate_frame))
+    all_cols = list(
+        dict.fromkeys(
+            [
+                *CANDIDATE_DRIFT_FEATURE_COLUMNS,
+                *CANDIDATE_DRIFT_LEGACY_ALIAS_COLUMNS,
+                *CANDIDATE_DRIFT_DIAGNOSTIC_COLUMNS,
+            ]
+        )
+    )
+    index = feature_frame.index[:n]
+    out = pd.DataFrame(
+        {col: np.zeros(n, dtype=np.float32) for col in all_cols},
+        index=index,
+    )
+    neutral_defaults = {
+        "local_hit_rate_k50": 0.5,
+        "directional_local_hit_rate_k50": 0.5,
+        "local_directional_hit_rate": 0.5,
+        "local_regime_hit_rate": 0.5,
+        "nearest_archetype_bad_rate_lift": 1.0,
+        "local_neighbor_age_days": 365.0,
+        "nearest_regime_id": -1.0,
+        "medoid_reference_index": -1.0,
+        "distribution_ood_score": 0.5,
+        "prediction_disagreement_score": 0.5,
+        "recent_calibration_risk_score": 0.5,
+        "ood_risk_score": 0.5,
+        "unknown_direction_score": 1.0,
+        "unknown_unsupported_score": 1.0,
+        "local_unknown_direction_score": 1.0,
+        "local_unknown_unsupported_score": 1.0,
+    }
+    for col in all_cols:
+        if col.endswith("_pct") or col in {
+            "nearest_regime_distance_pct_global",
+            "nearest_regime_distance_pct_local",
+        }:
+            neutral_defaults.setdefault(col, 0.5)
+    for col, value in neutral_defaults.items():
+        if col in out.columns:
+            out[col] = np.full(n, float(value), dtype=np.float32)
+    if n <= 0:
+        return out, {"enabled": False, "reason": "empty_candidate_frame"}
+    if "net_return" not in candidate_frame.columns:
+        return out, {
+            "enabled": False,
+            "reason": "missing_realized_net_return",
+            "rows": int(n),
+        }
+    frame = feature_frame.iloc[:n].copy()
+    candidates = candidate_frame.iloc[:n].copy()
+    ts_values = timestamps if timestamps is not None else candidates.get("timestamp")
+    ts_ns = _timestamp_ns(ts_values, n)
+    splits, split_basis = _forward_oos_splits(
+        ts_ns,
+        n,
+        n_folds=max(1, int(n_folds)),
+        min_train_rows=max(20, int(min_train_rows)),
+        min_validation_rows=max(10, int(min_validation_rows)),
+    )
+    if not splits:
+        return out, {
+            "enabled": False,
+            "reason": "insufficient_rows_for_forward_oos_splits",
+            "rows": int(n),
+            "split_basis": split_basis,
+            "requested_folds": int(n_folds),
+            "neutral_rows": int(n),
+        }
+
+    fold_rows: list[dict[str, Any]] = []
+    covered = np.zeros(n, dtype=bool)
+    ts_array = np.asarray(ts_values) if ts_values is not None and len(ts_values) >= n else None
+    for fold_no, (train_idx, valid_idx) in enumerate(splits, start=1):
+        train_frame = frame.iloc[train_idx].copy()
+        train_candidates = candidates.iloc[train_idx].copy()
+        valid_frame = frame.iloc[valid_idx].copy()
+        valid_candidates = candidates.iloc[valid_idx].copy()
+        train_ts = ts_array[train_idx] if ts_array is not None else None
+        valid_ts = ts_array[valid_idx] if ts_array is not None else None
+        state, _, train_report = fit_transform_candidate_drift_calibrator(
+            train_frame,
+            train_candidates,
+            timestamps=train_ts,
+            max_features=max_features,
+            max_reference_rows=min(max(100, int(max_reference_rows)), max(100, len(train_frame))),
+            enable_denoising_ae=bool(enable_denoising_ae),
+            denoising_ae_max_iter=int(denoising_ae_max_iter),
+            include_forward_oos_report=False,
+        )
+        row: dict[str, Any] = {
+            "fold": int(fold_no),
+            "train_rows": int(len(train_frame)),
+            "validation_rows": int(len(valid_frame)),
+            "enabled": bool(state.get("enabled", False)),
+            "reason": str(state.get("reason", "")),
+            "selected_feature_count": int(len(state.get("feature_columns", []) or [])),
+        }
+        if bool(state.get("enabled", False)):
+            part = transform_candidate_drift_features(
+                valid_frame,
+                state,
+                candidate_frame=valid_candidates,
+                timestamps=valid_ts,
+                training_mode=False,
+            )
+            valid_cols = [c for c in all_cols if c in part.columns]
+            if valid_cols:
+                out.iloc[valid_idx, out.columns.get_indexer(valid_cols)] = part[valid_cols].to_numpy(
+                    dtype=np.float32,
+                    copy=False,
+                )
+                covered[valid_idx] = True
+            row["validation_feature_rows"] = int(len(part))
+            row["calibration_atlas_enabled"] = bool(
+                (state.get("calibration_atlas", {}) or {}).get("enabled", False)
+            )
+        else:
+            row["train_report"] = train_report
+        for key, arr in (("train", ts_ns[train_idx]), ("validation", ts_ns[valid_idx])):
+            arr = arr[arr != np.iinfo(np.int64).min]
+            if len(arr):
+                row[f"{key}_start_ts"] = pd.Timestamp(int(np.min(arr)), unit="ns", tz="UTC").isoformat()
+                row[f"{key}_end_ts"] = pd.Timestamp(int(np.max(arr)), unit="ns", tz="UTC").isoformat()
+        fold_rows.append(row)
+
+    report = {
+        "enabled": bool(np.any(covered)),
+        "schema_version": "candidate_drift_forward_oos_feature_frame_v1",
+        "split": "fit_past_transform_future",
+        "split_basis": split_basis,
+        "rows": int(n),
+        "covered_rows": int(np.sum(covered)),
+        "neutral_rows": int(n - np.sum(covered)),
+        "coverage": float(np.mean(covered)) if n else 0.0,
+        "folds_completed": int(sum(1 for row in fold_rows if row.get("enabled"))),
+        "folds": fold_rows,
+    }
+    if not np.any(covered):
+        report["reason"] = "no_enabled_forward_oos_folds"
+    return out.replace([np.inf, -np.inf], np.nan).fillna(0.0).astype(np.float32), report
+
+
 def candidate_drift_forward_oos_report(
     feature_frame: pd.DataFrame,
     candidate_frame: pd.DataFrame,
@@ -2083,6 +2248,8 @@ def candidate_drift_forward_oos_report(
     timestamps: Sequence[Any] | None = None,
     max_features: int = 96,
     max_reference_rows: int = 5000,
+    enable_denoising_ae: bool = False,
+    denoising_ae_max_iter: int = 80,
     n_folds: int = 3,
     min_train_rows: int = 100,
     min_validation_rows: int = 30,
@@ -2135,7 +2302,8 @@ def candidate_drift_forward_oos_report(
             timestamps=train_ts,
             max_features=max_features,
             max_reference_rows=min(max(100, int(max_reference_rows)), max(100, len(train_frame))),
-            enable_denoising_ae=False,
+            enable_denoising_ae=bool(enable_denoising_ae),
+            denoising_ae_max_iter=int(denoising_ae_max_iter),
             include_forward_oos_report=False,
         )
         row: dict[str, Any] = {

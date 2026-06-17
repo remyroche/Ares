@@ -43,6 +43,7 @@ from extreme_price_movements.candidate_drift_calibration import (
     CANDIDATE_DRIFT_FEATURE_COLUMNS,
     CANDIDATE_DRIFT_LEGACY_ALIAS_COLUMNS,
     DRIFT_SOURCE_COLUMNS as CANDIDATE_DRIFT_SOURCE_COLUMNS,
+    candidate_drift_forward_oos_feature_frame,
     candidate_drift_report,
     compact_candidate_drift_calibrator_state,
     fit_transform_candidate_drift_calibrator,
@@ -5182,13 +5183,47 @@ def _apply_meta_correctness_regime_adaptor(
         else {}
     )
     try:
+        feature_live = feature_frame.iloc[:n].copy()
+        ae_state = artifact.get("current_regime_ae_state", {})
+        ae_live_diag: Dict[str, Any] = {"enabled": False}
+        if isinstance(ae_state, Mapping) and bool(ae_state.get("enabled", False)):
+            try:
+                from extreme_price_movements.regime_ae_features import (
+                    CURRENT_REGIME_AE_FEATURE_COLUMNS,
+                    transform_current_regime_ae_features,
+                )
+
+                ae_features = transform_current_regime_ae_features(
+                    feature_live,
+                    ae_state,
+                    index=feature_live.index,
+                )
+                for col in CURRENT_REGIME_AE_FEATURE_COLUMNS:
+                    feature_live[col] = pd.to_numeric(
+                        ae_features.get(col, 0.0),
+                        errors="coerce",
+                    ).fillna(0.0).to_numpy(dtype=np.float32)
+                ae_live_diag = {
+                    "enabled": True,
+                    "schema_version": ae_state.get(
+                        "schema_version", "ae_current_regime_v1"
+                    ),
+                    "backend": ae_state.get("backend", ""),
+                    "columns": list(CURRENT_REGIME_AE_FEATURE_COLUMNS),
+                    "source_feature_count": int(
+                        ae_state.get("source_feature_count", 0) or 0
+                    ),
+                }
+            except Exception:
+                ae_live_diag = {"enabled": False, "reason": "live_transform_failed"}
         x_live_base, mapping = _build_meta_correctness_feature_frame(
-            feature_frame.iloc[:n], score, timestamps, symbols
+            feature_live, score, timestamps, symbols
         )
+        mapping["current_regime_ae"] = ae_live_diag
         x_live_atlas, meta_predictive_atlas_state, meta_predictive_atlas_diag = (
             _append_meta_lgbm_predictive_atlas_features(
                 x_live_base,
-                feature_frame.iloc[:n],
+                feature_live,
                 score,
                 timestamps=timestamps,
                 fit=False,
@@ -5198,7 +5233,7 @@ def _apply_meta_correctness_regime_adaptor(
         mapping["meta_lgbm_predictive_atlas"] = meta_predictive_atlas_diag
         x_live, candidate_drift_state, candidate_drift_diag = _append_candidate_drift_calibration_features(
             x_live_atlas,
-            feature_frame.iloc[:n],
+            feature_live,
             timestamps=timestamps,
             state=artifact.get("candidate_drift_calibrator", {}),
             fit=False,
@@ -6641,6 +6676,81 @@ def _append_candidate_drift_calibration_features(
     )
     out = out.loc[:, ~out.columns.astype(str).duplicated(keep="last")]
     return out.astype(np.float32, copy=False), dict(fitted_state), dict(report or {})
+
+
+def _append_candidate_drift_feature_block(
+    x_base: pd.DataFrame,
+    features: pd.DataFrame,
+    *,
+    fit: bool,
+) -> pd.DataFrame:
+    """Append model-safe candidate-drift columns from a precomputed block."""
+    if x_base is None or x_base.empty or features is None or features.empty:
+        return x_base
+    diagnostic_cols = set(CANDIDATE_DRIFT_DIAGNOSTIC_COLUMNS)
+    if fit:
+        diagnostic_cols.update(CANDIDATE_DRIFT_LEGACY_ALIAS_COLUMNS)
+    feature_block = features.reindex(x_base.index)
+    feature_block = feature_block.loc[:, ~feature_block.columns.astype(str).duplicated(keep="last")]
+    model_feature_cols = [c for c in feature_block.columns if str(c) not in diagnostic_cols]
+    if not model_feature_cols:
+        return x_base
+    out = pd.concat(
+        [x_base, feature_block[model_feature_cols]],
+        axis=1,
+        copy=False,
+    )
+    out = out.loc[:, ~out.columns.astype(str).duplicated(keep="last")]
+    return out.astype(np.float32, copy=False)
+
+
+def _append_candidate_drift_calibration_fit_blocks(
+    x_base: pd.DataFrame,
+    candidate_frame: pd.DataFrame,
+    *,
+    timestamps: Optional[Sequence[Any]] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, Any], Dict[str, Any]]:
+    """Return no-leak training and full-artifact candidate drift feature blocks."""
+    if x_base is None or x_base.empty:
+        return x_base, x_base, {}, {"enabled": False, "reason": "empty_feature_frame"}
+    fitted_state, final_features, report = fit_transform_candidate_drift_calibrator(
+        x_base,
+        candidate_frame,
+        timestamps=timestamps,
+        max_features=int(CFG.get("candidate_drift_max_features", 96)),
+        max_reference_rows=int(CFG.get("candidate_drift_max_reference_rows", 5000)),
+        enable_denoising_ae=bool(CFG.get("candidate_drift_denoising_ae_enabled", True)),
+        denoising_ae_max_iter=int(CFG.get("candidate_drift_denoising_ae_max_iter", 80)),
+        include_forward_oos_report=bool(CFG.get("candidate_drift_forward_oos_report", True)),
+        forward_oos_folds=int(CFG.get("candidate_drift_forward_oos_folds", 3)),
+    )
+    if not bool(fitted_state.get("enabled", False)):
+        return x_base, x_base, dict(fitted_state), dict(report or {})
+    training_features, training_report = candidate_drift_forward_oos_feature_frame(
+        x_base,
+        candidate_frame,
+        timestamps=timestamps,
+        max_features=int(CFG.get("candidate_drift_max_features", 96)),
+        max_reference_rows=int(CFG.get("candidate_drift_max_reference_rows", 5000)),
+        enable_denoising_ae=False,
+        denoising_ae_max_iter=int(CFG.get("candidate_drift_denoising_ae_max_iter", 80)),
+        n_folds=int(CFG.get("candidate_drift_forward_oos_folds", 3)),
+    )
+    train_augmented = _append_candidate_drift_feature_block(
+        x_base,
+        training_features,
+        fit=True,
+    )
+    final_augmented = _append_candidate_drift_feature_block(
+        x_base,
+        final_features,
+        fit=True,
+    )
+    report = dict(report or {})
+    report["training_feature_mode"] = "forward_oos_past_fit_future_transform"
+    report["forward_oos_training_features"] = training_report
+    report["final_fit_feature_mode"] = "full_artifact_fit_for_live_parity"
+    return train_augmented, final_augmented, dict(fitted_state), report
 
 
 def _normalise_direct_label_values(values: Sequence[Any]) -> np.ndarray:
@@ -8874,6 +8984,7 @@ def _fit_meta_correctness_lgbm_one_pass(
     cfg: Dict[str, Any],
     policy_size_power: float = 1.0,
     deployment_rank_threshold: Optional[float] = None,
+    final_X_fit: Optional[pd.DataFrame] = None,
 ) -> Dict[str, Any]:
     n = int(len(X_fit))
     if n < META_CORRECTNESS_MIN_ROWS:
@@ -9122,8 +9233,21 @@ def _fit_meta_correctness_lgbm_one_pass(
                 objective_mode="train_meta",
             )
         )
+        X_final_model_fit = (
+            final_X_fit.reset_index(drop=True)
+            if isinstance(final_X_fit, pd.DataFrame) and len(final_X_fit) == n
+            else X_fit
+        )
+        final_missing = [c for c in selected_features if c not in X_final_model_fit.columns]
+        if final_missing:
+            return {
+                "model": None,
+                "reason": "selected_features_missing_from_final_fit_matrix",
+                "missing_features": final_missing[:20],
+                "missing_feature_count": int(len(final_missing)),
+            }
         final_raw_model = lgbm_pipe._fit_lgbm_model(
-            X_fit[selected_features].reset_index(drop=True),
+            X_final_model_fit[selected_features].reset_index(drop=True),
             y_soft_fit,
             sw_model,
             classifier=True,
@@ -9135,7 +9259,7 @@ def _fit_meta_correctness_lgbm_one_pass(
         model.input_feature_names = list(selected_features)
         model.best_params = dict(final_params)
         history_defaults = lgbm_pipe.build_model_effectiveness_history_defaults(
-            X_fit[selected_features].reset_index(drop=True),
+            X_final_model_fit[selected_features].reset_index(drop=True),
             selected_features,
             timestamps=ts_fit,
         )
@@ -9146,7 +9270,7 @@ def _fit_meta_correctness_lgbm_one_pass(
             history_defaults.get("sources", {})
         )
         model.feature_stats_train = lgbm_pipe._feature_stats_frame(
-            X_fit[selected_features].reset_index(drop=True),
+            X_final_model_fit[selected_features].reset_index(drop=True),
             selected_features,
         )
         model.oof_probs = np.full(n, np.nan, dtype=np.float32)
@@ -9169,7 +9293,7 @@ def _fit_meta_correctness_lgbm_one_pass(
             cumulative_fraction=0.50,
         )
         model.drift_reference = lgbm_pipe._fit_feature_drift_reference(
-            X_fit[selected_features].reset_index(drop=True),
+            X_final_model_fit[selected_features].reset_index(drop=True),
             drift_features,
         )
         model.metrics = dict(candidate.get("metrics", {}) or {})
@@ -9357,12 +9481,11 @@ def fit_meta_correctness_regime_adaptor(
         "feature_count": int(len(META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS)),
         "columns": list(META_LGBM_PREDICTIVE_ATLAS_FEATURE_KEYS),
     }
-    X, candidate_drift_calibrator, candidate_drift_calibration_report = (
-        _append_candidate_drift_calibration_features(
+    X, X_final_model, candidate_drift_calibrator, candidate_drift_calibration_report = (
+        _append_candidate_drift_calibration_fit_blocks(
             X_atlas,
             work,
             timestamps=timestamps,
-            fit=True,
         )
     )
     feature_mapping["candidate_drift_calibration"] = {
@@ -9411,6 +9534,7 @@ def fit_meta_correctness_regime_adaptor(
             "recent_scope": recent_scope,
         }
     X_fit = X.loc[valid].reset_index(drop=True)
+    X_final_fit = X_final_model.loc[valid].reset_index(drop=True)
     y_soft_fit = y_soft[valid]
     y_hard_fit = y_hard[valid]
     sw_fit = sample_weight[valid]
@@ -9451,6 +9575,7 @@ def fit_meta_correctness_regime_adaptor(
             cfg=lgbm_cfg,
             policy_size_power=policy_size_power,
             deployment_rank_threshold=deployment_rank_threshold,
+            final_X_fit=X_final_fit,
         )
     finally:
         lgbm_pipe.LGBM_TRUE_SOFT_LABELS = old_soft
@@ -9584,6 +9709,7 @@ def fit_meta_correctness_regime_adaptor(
                     cfg=lgbm_cfg,
                     policy_size_power=policy_size_power,
                     deployment_rank_threshold=deployment_rank_threshold,
+                    final_X_fit=X_final_model.loc[direct_valid].reset_index(drop=True),
                 )
                 direct_label_model = direct_fit.get("model")
                 if direct_label_model is None:

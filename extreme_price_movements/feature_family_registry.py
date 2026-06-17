@@ -273,6 +273,11 @@ def get_feature_family(feature_name: str) -> FeatureFamily:
         return FeatureFamily.ALREADY_STANDARDIZED
     if lowered.startswith("spread_proxy_") and lowered.endswith("_robust_z"):
         return FeatureFamily.ALREADY_STANDARDIZED
+    if lowered.startswith("ra_"):
+        if lowered.endswith("_robust_z") or lowered in {"ra_market_beta_24h"}:
+            return FeatureFamily.ALREADY_STANDARDIZED
+        if lowered.endswith("_cs_rank") or lowered.endswith("_pct"):
+            return FeatureFamily.BOUNDED_GEOMETRY
     if lowered.startswith(("loc_", "dist_", "zscore_")):
         return FeatureFamily.BOUNDED_GEOMETRY
     if any(

@@ -110,6 +110,76 @@ def test_policy_candidate_export_includes_entry_slippage_in_friction(monkeypatch
     assert out["meta_lgbm_predictive_atlas_hit_rate_surprise"].iloc[0] == pytest.approx(0.07)
 
 
+def test_policy_candidate_export_adds_regime_ae_features_without_raw_source_passthrough(monkeypatch):
+    from extreme_price_movements.regime_ae_features import CURRENT_REGIME_AE_FEATURE_COLUMNS
+
+    def fake_simulate_and_score(df, *args, **kwargs):
+        n = len(df)
+        return {
+            "selected_mask": np.ones(n, dtype=bool),
+            "raw_gains": np.linspace(-0.01, 0.02, n, dtype=np.float64),
+            "gross_gains": np.linspace(-0.008, 0.024, n, dtype=np.float64),
+            "sizes": np.ones(n, dtype=np.float64),
+            "exit_bars": np.ones(n, dtype=np.int32),
+            "exit_reason": np.repeat("time", n).astype(object),
+        }
+
+    monkeypatch.setattr(spo, "simulate_and_score", fake_simulate_and_score)
+    monkeypatch.setitem(spo.CFG, "regime_ae_min_rows", 10)
+    monkeypatch.setitem(spo.CFG, "regime_ae_min_features", 4)
+    monkeypatch.setitem(spo.CFG, "regime_ae_max_features", 12)
+    monkeypatch.setitem(spo.CFG, "regime_ae_max_train_rows", 64)
+    monkeypatch.setitem(spo.CFG, "regime_ae_max_epochs", 1)
+    monkeypatch.setitem(spo.CFG, "regime_ae_batch_size", 16)
+    monkeypatch.setitem(spo.CFG, "regime_ae_candidate_generation", "walk_forward_prior_only")
+    monkeypatch.setitem(spo.CFG, "regime_ae_oof_block_hours", 12)
+    monkeypatch.setitem(spo.CFG, "regime_ae_walk_forward_min_prior_rows", 20)
+
+    n = 40
+    rows = pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2026-01-01", periods=n, freq="h", tz="UTC"),
+            "symbol": np.where(np.arange(n) % 2 == 0, "BTC/USD:USD", "ETH/USD:USD"),
+            "side": np.ones(n, dtype=np.float32),
+            "rank_pct": np.linspace(0.80, 1.0, n),
+            "calibrated_score": np.linspace(0.30, 0.90, n),
+            "barrier_pct": np.full(n, 0.02),
+            **{
+                f"selected_feature_{i}": np.sin(np.arange(n) / (i + 2.0))
+                for i in range(10)
+            },
+        }
+    )
+    paths = (
+        np.full((n, 2), 100.0, dtype=np.float32),
+        np.full((n, 2), 101.0, dtype=np.float32),
+        np.full((n, 2), 99.0, dtype=np.float32),
+        np.full((n, 2), 100.5, dtype=np.float32),
+    )
+
+    out = spo._build_simple_policy_candidate_rows(
+        strategy_id="long_test",
+        df_top=rows,
+        paths=paths,
+        cost_pct=0.001,
+        best_params={"sl_mult": 1.0, "trailing_activation_mult": 1.0},
+        best_size_power=1.0,
+        base_strategy_threshold=0.80,
+        market_mode="perps",
+        regime_ae_feature_columns=[f"selected_feature_{i}" for i in range(10)],
+        regime_ae_fit_frame=rows,
+    )
+
+    assert set(CURRENT_REGIME_AE_FEATURE_COLUMNS).issubset(out.columns)
+    assert np.isfinite(out[list(CURRENT_REGIME_AE_FEATURE_COLUMNS)].to_numpy()).all()
+    assert "selected_feature_0" not in out.columns
+    assert out.attrs["current_regime_ae_state"]["enabled"] is True
+    assert out.attrs["current_regime_ae_diagnostics"]["source_feature_count"] >= 4
+    generation = out.attrs["current_regime_ae_diagnostics"]["candidate_generation"]
+    assert generation["mode"] == "walk_forward_prior_only"
+    assert generation["enabled_blocks"] >= 1
+
+
 def test_alpha_uncertainty_context_exports_base_lgbm_drift_features():
     class AlphaModel:
         def transform_meta_features(self, frame):

@@ -7,7 +7,7 @@ import pickle
 import time
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -1535,6 +1535,555 @@ def _cfg_env_float(
         return float(raw)
     except Exception:
         return float(default)
+
+
+def _cfg_value(cfg: dict[str, Any] | None, key: str, default: Any = None) -> Any:
+    raw = os.environ.get(f"EPM_{key.upper()}")
+    if raw is None and isinstance(cfg, dict):
+        raw = cfg.get(key)
+    return default if raw is None else raw
+
+
+def _cfg_bool_value(cfg: dict[str, Any] | None, key: str, default: bool = False) -> bool:
+    raw = _cfg_value(cfg, key, default)
+    if isinstance(raw, bool):
+        return bool(raw)
+    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _cfg_float_value(cfg: dict[str, Any] | None, key: str, default: float) -> float:
+    raw = _cfg_value(cfg, key, default)
+    try:
+        return float(raw)
+    except Exception:
+        return float(default)
+
+
+def _cfg_int_value(cfg: dict[str, Any] | None, key: str, default: int) -> int:
+    raw = _cfg_value(cfg, key, default)
+    try:
+        return int(raw)
+    except Exception:
+        return int(default)
+
+
+def _lgbm_regime_specialist_enabled(
+    cfg: dict[str, Any] | None,
+    objective_mode: str | None,
+) -> bool:
+    if not _cfg_bool_value(cfg, "lgbm_regime_specialist_enabled", False):
+        return False
+    mode = _normalize_objective_mode(objective_mode)
+    raw = _cfg_value(cfg, "lgbm_regime_specialist_objectives", ["train_base", "train_meta"])
+    if isinstance(raw, str):
+        allowed = {part.strip().lower() for part in raw.split(",") if part.strip()}
+    else:
+        try:
+            allowed = {str(part).strip().lower() for part in raw if str(part).strip()}
+        except Exception:
+            allowed = {"train_base", "train_meta"}
+    return mode in allowed
+
+
+def _regime_specialist_similarity_config(cfg: dict[str, Any] | None):
+    from extreme_price_movements.regime_specialist_similarity import RegimeSimilarityConfig
+
+    kwargs: dict[str, Any] = {}
+    defaults = RegimeSimilarityConfig()
+    for name in RegimeSimilarityConfig.__dataclass_fields__:
+        key = f"lgbm_regime_specialist_{name}"
+        default = getattr(defaults, name)
+        raw = _cfg_value(cfg, key, default)
+        if isinstance(default, bool):
+            kwargs[name] = str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+        elif isinstance(default, int) and not isinstance(default, bool):
+            kwargs[name] = _cfg_int_value(cfg, key, int(default))
+        elif isinstance(default, float):
+            kwargs[name] = _cfg_float_value(cfg, key, float(default))
+        else:
+            kwargs[name] = raw
+    return RegimeSimilarityConfig(**kwargs)
+
+
+def _regime_specialist_weight_config(cfg: dict[str, Any] | None):
+    from extreme_price_movements.regime_specialist_similarity import SpecialistWeightConfig
+
+    defaults = SpecialistWeightConfig()
+    kwargs: dict[str, Any] = {}
+    alias = {
+        "min_weight": "lgbm_regime_specialist_weight_min",
+        "max_weight": "lgbm_regime_specialist_weight_max",
+    }
+    for name in SpecialistWeightConfig.__dataclass_fields__:
+        key = alias.get(name, f"lgbm_regime_specialist_{name}")
+        default = getattr(defaults, name)
+        if isinstance(default, bool):
+            kwargs[name] = _cfg_bool_value(cfg, key, bool(default))
+        elif isinstance(default, int) and not isinstance(default, bool):
+            kwargs[name] = _cfg_int_value(cfg, key, int(default))
+        else:
+            kwargs[name] = _cfg_float_value(cfg, key, float(default))
+    return SpecialistWeightConfig(**kwargs)
+
+
+def _lgbm_regime_specialist_build_frame(
+    X_df: pd.DataFrame,
+    selected_features: list[str],
+    *,
+    extra_features: Sequence[str] | None = None,
+    timestamps: Any = None,
+    assets: Any = None,
+) -> pd.DataFrame:
+    cols = [
+        str(c)
+        for c in list(selected_features or []) + list(extra_features or [])
+        if str(c) in X_df.columns
+    ]
+    cols = list(dict.fromkeys(cols))
+    frame = X_df.reindex(columns=cols, fill_value=0.0).copy(deep=False)
+    n = len(frame)
+    if timestamps is not None and len(np.asarray(timestamps)) == n:
+        frame = frame.copy(deep=False)
+        frame["timestamp"] = np.asarray(timestamps)
+    elif "timestamp" in X_df.columns:
+        frame = frame.copy(deep=False)
+        frame["timestamp"] = X_df["timestamp"].to_numpy(copy=False)
+    if assets is not None and len(np.asarray(assets)) == n:
+        frame = frame.copy(deep=False)
+        frame["symbol"] = np.asarray(assets)
+    elif "symbol" in X_df.columns:
+        frame = frame.copy(deep=False)
+        frame["symbol"] = X_df["symbol"].to_numpy(copy=False)
+    return frame
+
+
+def _build_lgbm_regime_specialist_bundle(
+    X_df: pd.DataFrame,
+    selected_features: list[str],
+    *,
+    timestamps: Any = None,
+    assets: Any = None,
+    objective_mode: str | None,
+    cfg: dict[str, Any] | None,
+    random_state: int,
+    label: str,
+) -> dict[str, Any]:
+    n = len(X_df)
+    disabled = {
+        "enabled": False,
+        "label": str(label),
+        "objective_mode": _normalize_objective_mode(objective_mode),
+        "weights": np.ones(n, dtype=np.float32),
+        "similarity": np.ones(n, dtype=np.float32),
+        "diagnostics": {"enabled": False, "reason": "disabled"},
+        "metrics": {
+            "regime_specialist_enabled": False,
+            "regime_specialist_sample_weight_applied": False,
+            "regime_specialist_distillation_shrink_enabled": False,
+        },
+    }
+    if not _lgbm_regime_specialist_enabled(cfg, objective_mode):
+        return disabled
+    try:
+        from extreme_price_movements.regime_specialist_similarity import (
+            REGIME_SPECIALIST_SCHEMA_VERSION,
+            build_regime_specialist_training_frame,
+            infer_regime_specialist_columns,
+        )
+    except Exception as exc:
+        out = dict(disabled)
+        out["enabled"] = False
+        out["diagnostics"] = {"enabled": False, "reason": f"import_failed:{exc}"}
+        out["metrics"] = dict(disabled["metrics"])
+        out["metrics"]["regime_specialist_enabled"] = True
+        out["metrics"]["regime_specialist_reason"] = "import_failed"
+        return out
+    if timestamps is None and "timestamp" not in X_df.columns:
+        out = dict(disabled)
+        out["enabled"] = False
+        out["diagnostics"] = {"enabled": False, "reason": "missing_timestamps"}
+        out["metrics"] = dict(disabled["metrics"])
+        out["metrics"]["regime_specialist_enabled"] = True
+        out["metrics"]["regime_specialist_reason"] = "missing_timestamps"
+        return out
+    sim_cfg = _regime_specialist_similarity_config(cfg)
+    weight_cfg = _regime_specialist_weight_config(cfg)
+    specialist_columns = infer_regime_specialist_columns(
+        X_df,
+        selected_feature_columns=selected_features,
+        config=sim_cfg,
+    )
+    specialist_extra_features = list(
+        dict.fromkeys(
+            list(specialist_columns.get("market", []))
+            + list(specialist_columns.get("drift", []))
+            + list(specialist_columns.get("covariance", []))
+            + list(specialist_columns.get("knn", []))
+        )
+    )
+    frame = _lgbm_regime_specialist_build_frame(
+        X_df,
+        selected_features,
+        extra_features=specialist_extra_features,
+        timestamps=timestamps,
+        assets=assets,
+    )
+    try:
+        generated, diag = build_regime_specialist_training_frame(
+            frame,
+            selected_feature_columns=selected_features,
+            current_end=_cfg_value(cfg, "lgbm_regime_specialist_current_end", None),
+            similarity_config=sim_cfg,
+            weight_config=weight_cfg,
+            market_columns=specialist_columns.get("market", []),
+            drift_columns=specialist_columns.get("drift", []),
+            covariance_columns=specialist_columns.get("covariance", []),
+            knn_columns=specialist_columns.get("knn", []),
+            asset_return_col=_cfg_value(cfg, "lgbm_regime_specialist_asset_return_col", None),
+            include_input_columns=False,
+        )
+    except Exception as exc:
+        out = dict(disabled)
+        out["enabled"] = False
+        out["diagnostics"] = {"enabled": False, "reason": f"build_failed:{exc}"}
+        out["metrics"] = dict(disabled["metrics"])
+        out["metrics"]["regime_specialist_enabled"] = True
+        out["metrics"]["regime_specialist_reason"] = "build_failed"
+        return out
+    weight = pd.to_numeric(
+        generated.get("regime_specialist_sample_weight", pd.Series(1.0, index=X_df.index)),
+        errors="coerce",
+    ).fillna(1.0).to_numpy(dtype=np.float32)
+    similarity = pd.to_numeric(
+        generated.get("similarity_to_current", pd.Series(1.0, index=X_df.index)),
+        errors="coerce",
+    ).fillna(1.0).clip(0.0, 1.0).to_numpy(dtype=np.float32)
+    bucket = (
+        generated.get("regime_specialist_bucket", pd.Series("normal", index=X_df.index))
+        .astype(str)
+        .to_numpy(dtype=object)
+    )
+    current_recency_weight = pd.to_numeric(
+        generated.get("current_regime_recency_weight", pd.Series(0.0, index=X_df.index)),
+        errors="coerce",
+    ).fillna(0.0).clip(lower=0.0).to_numpy(dtype=np.float32)
+    if len(weight) != n:
+        weight = np.ones(n, dtype=np.float32)
+    if len(similarity) != n:
+        similarity = np.ones(n, dtype=np.float32)
+    if len(bucket) != n:
+        bucket = np.repeat("normal", n).astype(object)
+    if len(current_recency_weight) != n:
+        current_recency_weight = np.zeros(n, dtype=np.float32)
+    sim_diag = dict((diag or {}).get("similarity", {}) or {})
+    weight_diag = dict((diag or {}).get("sample_weight", {}) or {})
+    drift_baseline_diag = dict((diag or {}).get("weighted_drift_baseline", {}) or {})
+    drift_baseline_stats = (
+        drift_baseline_diag.get("stats", {})
+        if isinstance(drift_baseline_diag.get("stats", {}), dict)
+        else {}
+    )
+    drift_weighted_means = np.asarray(
+        [
+            abs(float(v.get("weighted_mean", np.nan)))
+            for v in drift_baseline_stats.values()
+            if isinstance(v, dict)
+        ],
+        dtype=np.float64,
+    )
+    drift_weighted_medians = np.asarray(
+        [
+            abs(float(v.get("weighted_median", np.nan)))
+            for v in drift_baseline_stats.values()
+            if isinstance(v, dict)
+        ],
+        dtype=np.float64,
+    )
+    enabled = bool(sim_diag.get("enabled", False))
+    should_train = bool(weight_diag.get("should_train_specialist", False))
+    shadow_only = _cfg_bool_value(cfg, "lgbm_regime_specialist_shadow_only", True)
+    apply_weight = (
+        enabled
+        and should_train
+        and not shadow_only
+        and _cfg_bool_value(cfg, "lgbm_regime_specialist_apply_sample_weight", False)
+    )
+    apply_shrink = (
+        enabled
+        and should_train
+        and not shadow_only
+        and _cfg_bool_value(cfg, "lgbm_regime_specialist_apply_distillation_shrink", False)
+    )
+    metrics = {
+        "regime_specialist_enabled": True,
+        "regime_specialist_schema_version": REGIME_SPECIALIST_SCHEMA_VERSION,
+        "regime_specialist_shadow_only": bool(shadow_only),
+        "regime_specialist_similarity_enabled": bool(enabled),
+        "regime_specialist_should_train": bool(should_train),
+        "regime_specialist_sample_weight_applied": bool(apply_weight),
+        "regime_specialist_distillation_shrink_enabled": bool(apply_shrink),
+        "regime_specialist_similarity_mean": float(np.nanmean(similarity)) if len(similarity) else float("nan"),
+        "regime_specialist_similarity_p10": float(np.nanpercentile(similarity, 10.0)) if len(similarity) else float("nan"),
+        "regime_specialist_similarity_p90": float(np.nanpercentile(similarity, 90.0)) if len(similarity) else float("nan"),
+        "regime_specialist_weight_mean": float(np.nanmean(weight)) if len(weight) else float("nan"),
+        "regime_specialist_weight_p10": float(np.nanpercentile(weight, 10.0)) if len(weight) else float("nan"),
+        "regime_specialist_weight_p90": float(np.nanpercentile(weight, 90.0)) if len(weight) else float("nan"),
+        "regime_specialist_adaptive_reliability": float(weight_diag.get("adaptive_reliability", 0.0) or 0.0),
+        "regime_specialist_current_mass": float(weight_diag.get("current_mass", 0.0) or 0.0),
+        "regime_specialist_analogue_mass": float(weight_diag.get("analogue_mass", 0.0) or 0.0),
+        "regime_specialist_normal_mass": float(weight_diag.get("normal_mass", 0.0) or 0.0),
+        "regime_specialist_irrelevant_mass": float(weight_diag.get("irrelevant_mass", 0.0) or 0.0),
+        "regime_specialist_candidate_window_count": int(sim_diag.get("candidate_window_count", 0) or 0),
+        "regime_specialist_weighted_drift_baseline_enabled": bool(drift_baseline_diag.get("enabled", False)),
+        "regime_specialist_weighted_drift_baseline_feature_count": int(drift_baseline_diag.get("feature_count", 0) or 0),
+        "regime_specialist_weighted_drift_baseline_abs_mean": float(np.nanmean(drift_weighted_means)) if drift_weighted_means.size else float("nan"),
+        "regime_specialist_weighted_drift_baseline_abs_median": float(np.nanmean(drift_weighted_medians)) if drift_weighted_medians.size else float("nan"),
+        "regime_specialist_random_state": int(random_state),
+        "regime_specialist_label": str(label),
+    }
+    return {
+        "enabled": True,
+        "label": str(label),
+        "objective_mode": _normalize_objective_mode(objective_mode),
+        "weights": np.nan_to_num(weight, nan=1.0, posinf=1.0, neginf=1.0).astype(np.float32),
+        "similarity": np.nan_to_num(similarity, nan=1.0, posinf=1.0, neginf=0.0).astype(np.float32),
+        "bucket": bucket,
+        "current_regime_recency_weight": np.nan_to_num(
+            current_recency_weight,
+            nan=0.0,
+            posinf=0.0,
+            neginf=0.0,
+        ).astype(np.float32),
+        "diagnostics": _json_sanitize(diag),
+        "metrics": metrics,
+        "apply_sample_weight": bool(apply_weight),
+        "apply_distillation_shrink": bool(apply_shrink),
+    }
+
+
+def _normalize_weights_between(
+    weights: np.ndarray,
+    *,
+    min_weight: float,
+    max_weight: float,
+) -> tuple[np.ndarray, float]:
+    """Normalize to mean one, then compress deviations inside a fixed range."""
+    lo = float(min(min_weight, max_weight))
+    hi = float(max(min_weight, max_weight))
+    if not np.isfinite(lo) or not np.isfinite(hi) or lo <= 0.0 or hi <= 0.0 or lo >= hi:
+        lo, hi = 0.7, 1.3
+
+    w = np.nan_to_num(np.asarray(weights, dtype=np.float32), nan=1.0, posinf=hi, neginf=lo)
+    if len(w) == 0:
+        return w.astype(np.float32), 0.0
+    w = np.clip(w, 0.0, None)
+    mean = float(np.mean(w))
+    if not np.isfinite(mean) or mean <= 1e-12:
+        out = np.ones(len(w), dtype=np.float32)
+        return out, float(len(out))
+
+    unit = w / mean
+    delta = unit - 1.0
+    shrink = 1.0
+    max_positive_delta = float(np.max(delta))
+    max_negative_delta = float(np.max(-delta))
+    if max_positive_delta > hi - 1.0:
+        shrink = min(shrink, (hi - 1.0) / max(max_positive_delta, 1e-12))
+    if max_negative_delta > 1.0 - lo:
+        shrink = min(shrink, (1.0 - lo) / max(max_negative_delta, 1e-12))
+
+    out = (1.0 + shrink * delta).astype(np.float32)
+    out = np.clip(out, lo, hi)
+    ess = float((out.sum() ** 2) / max(float(np.sum(out**2)), 1e-6))
+    return out.astype(np.float32), ess
+
+
+def _apply_lgbm_regime_specialist_weights(
+    base_weight: np.ndarray,
+    bundle: dict[str, Any] | None,
+    idx: np.ndarray | None = None,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    w = np.asarray(base_weight, dtype=np.float32)
+    if not bundle or not bool(bundle.get("apply_sample_weight", False)):
+        return w, {"applied": False, "reason": "disabled_or_shadow"}
+    multiplier = np.asarray(bundle.get("weights", np.ones(0, dtype=np.float32)), dtype=np.float32)
+    if idx is not None:
+        take = np.asarray(idx, dtype=np.int64)
+        if len(multiplier) <= int(np.max(take, initial=-1)):
+            return w, {"applied": False, "reason": "index_length_mismatch"}
+        multiplier = multiplier[take]
+    if len(multiplier) != len(w):
+        return w, {"applied": False, "reason": "length_mismatch"}
+    w_preconditioned, precondition_ess = _normalize_weights_between(
+        w,
+        min_weight=0.7,
+        max_weight=1.3,
+    )
+    out, ess = _normalize_weights(w_preconditioned * multiplier)
+    return out.astype(np.float32), {
+        "applied": True,
+        "effective_sample_size": float(ess),
+        "base_weight_preconditioned": True,
+        "base_weight_preconditioned_policy": "unit_mean_compress_0.7_1.3",
+        "base_weight_preconditioned_min": float(np.nanmin(w_preconditioned)) if len(w_preconditioned) else float("nan"),
+        "base_weight_preconditioned_max": float(np.nanmax(w_preconditioned)) if len(w_preconditioned) else float("nan"),
+        "base_weight_preconditioned_mean": float(np.nanmean(w_preconditioned)) if len(w_preconditioned) else float("nan"),
+        "base_weight_preconditioned_effective_sample_size": float(precondition_ess),
+        "multiplier_mean": float(np.nanmean(multiplier)) if len(multiplier) else float("nan"),
+        "multiplier_p90": float(np.nanpercentile(multiplier, 90.0)) if len(multiplier) else float("nan"),
+    }
+
+
+def _lgbm_regime_specialist_similarity_for_idx(
+    bundle: dict[str, Any] | None,
+    idx: np.ndarray | None = None,
+) -> np.ndarray | None:
+    if not bundle or not bool(bundle.get("apply_distillation_shrink", False)):
+        return None
+    sim = np.asarray(bundle.get("similarity", np.ones(0, dtype=np.float32)), dtype=np.float32)
+    if idx is not None:
+        take = np.asarray(idx, dtype=np.int64)
+        if len(sim) <= int(np.max(take, initial=-1)):
+            return None
+        sim = sim[take]
+    return np.clip(sim, 0.0, 1.0).astype(np.float32)
+
+
+def _lgbm_regime_specialist_current_metrics(
+    y_true: np.ndarray,
+    pred: np.ndarray,
+    bundle: dict[str, Any] | None,
+    *,
+    classifier: bool,
+    groups: Any = None,
+    returns: Any = None,
+    idx: np.ndarray | None = None,
+    label_context: Mapping[str, Any] | None = None,
+    label_context_total_rows: int | None = None,
+) -> dict[str, Any]:
+    prefix = "current_regime_"
+    y = np.asarray(y_true)
+    p = np.asarray(pred)
+    n = min(len(y), len(p))
+    out: dict[str, Any] = {
+        f"{prefix}metrics_available": False,
+        f"{prefix}metric_rows": 0,
+        f"{prefix}metric_row_fraction": 0.0,
+        f"{prefix}metric_reason": "disabled",
+    }
+    if bundle is None or not bool(bundle.get("enabled", False)) or n <= 0:
+        return out
+    bucket = np.asarray(bundle.get("bucket", np.asarray([], dtype=object)), dtype=object)
+    recency = np.asarray(
+        bundle.get("current_regime_recency_weight", np.asarray([], dtype=np.float32)),
+        dtype=np.float32,
+    )
+    full_idx: np.ndarray | None = None
+    if idx is not None:
+        take = np.asarray(idx, dtype=np.int64)
+        if len(bucket) <= int(np.max(take, initial=-1)):
+            out[f"{prefix}metric_reason"] = "index_length_mismatch"
+            return out
+        full_idx = take[:n]
+        bucket = bucket[full_idx]
+        recency = recency[full_idx] if len(recency) > int(np.max(full_idx, initial=-1)) else np.zeros(len(full_idx), dtype=np.float32)
+    elif len(bucket) != n:
+        out[f"{prefix}metric_reason"] = "length_mismatch"
+        return out
+    else:
+        full_idx = np.arange(n, dtype=np.int64)
+    if len(recency) != len(bucket):
+        recency = np.zeros(len(bucket), dtype=np.float32)
+    bucket_s = pd.Series(bucket).astype(str).str.lower().to_numpy(dtype=object)
+    current_mask = (bucket_s == "current") | (recency > 0.0)
+    current_mask = current_mask[:n]
+    rows = int(np.sum(current_mask))
+    out[f"{prefix}metric_rows"] = rows
+    out[f"{prefix}metric_row_fraction"] = float(rows / max(n, 1))
+    out[f"{prefix}metric_recency_weight_sum"] = float(np.nansum(recency[:n][current_mask])) if rows else 0.0
+    if rows < 8:
+        out[f"{prefix}metric_reason"] = "insufficient_current_rows"
+        return out
+    local = np.flatnonzero(current_mask).astype(np.int64)
+    ret = None
+    if returns is not None:
+        ret_arr = np.asarray(returns)
+        if len(ret_arr) == n:
+            ret = ret_arr[local]
+    grp = _groups_take(groups, local) if groups is not None else None
+    metrics = _metric_pack(
+        y[:n][local],
+        p[:n][local],
+        classifier=classifier,
+        groups=grp,
+        returns=ret,
+    )
+    out.update({f"{prefix}{str(k)}": v for k, v in metrics.items()})
+    if label_context is not None and full_idx is not None:
+        label_n = int(label_context_total_rows) if label_context_total_rows is not None else n
+        ctx = _label_context_take(label_context, full_idx[local], label_n)
+        out.update(
+            {
+                f"{prefix}{str(k)}": v
+                for k, v in _vol_normalized_tp_sl_precision_metrics(
+                    p[:n][local],
+                    ctx,
+                ).items()
+            }
+        )
+    out[f"{prefix}metrics_available"] = True
+    out[f"{prefix}metric_reason"] = "ok"
+    return out
+
+
+def _regime_specialist_shrink_weight_towards_one(
+    weights: np.ndarray,
+    similarity: np.ndarray | None,
+    *,
+    cfg: dict[str, Any] | None = None,
+) -> np.ndarray:
+    w = np.asarray(weights, dtype=np.float32)
+    if similarity is None:
+        return w
+    sim = np.asarray(similarity, dtype=np.float32)
+    if len(sim) != len(w):
+        return w
+    try:
+        from extreme_price_movements.regime_specialist_similarity import (
+            shrink_self_distillation_towards_one,
+        )
+
+        return shrink_self_distillation_towards_one(
+            w,
+            sim,
+            power=_cfg_float_value(cfg, "lgbm_regime_specialist_distillation_power", 1.0),
+        ).astype(np.float32)
+    except Exception:
+        power = _cfg_float_value(cfg, "lgbm_regime_specialist_distillation_power", 1.0)
+        factor = np.power(np.clip(sim, 0.0, 1.0), float(power))
+        return (1.0 + (w - 1.0) * factor).astype(np.float32)
+
+
+def _save_lgbm_regime_specialist_diagnostics(
+    reference_artifact_dir: str | os.PathLike[str] | None,
+    bundle: dict[str, Any] | None,
+    *,
+    objective_mode: str,
+    label: str,
+) -> None:
+    if reference_artifact_dir is None or not bundle:
+        return
+    try:
+        out_dir = Path(reference_artifact_dir) / "regime_specialist_similarity"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / f"{str(objective_mode)}_{str(label)}.json"
+        payload = {
+            "metrics": _json_sanitize(bundle.get("metrics", {})),
+            "diagnostics": _json_sanitize(bundle.get("diagnostics", {})),
+        }
+        path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    except Exception as exc:
+        tprint(f"WARNING: failed to save LGBM regime specialist diagnostics: {exc}")
 
 
 def _recency_hpo_candidate_override_cfg(
@@ -3149,6 +3698,143 @@ def _tail_control_metrics(
     }
 
 
+_VOL_NORM_TPSL_GEOMETRIES: tuple[tuple[str, float, float], ...] = (
+    ("tp3_sl2", 3.0, 2.0),
+    ("tp2_sl1", 2.0, 1.0),
+)
+_VOL_NORM_TPSL_TOP_FRACS: tuple[float, ...] = (0.30, 0.20, 0.10)
+
+
+def _label_context_array(
+    label_context: Mapping[str, Any] | None,
+    names: tuple[str, ...],
+    n: int,
+) -> np.ndarray | None:
+    if not isinstance(label_context, Mapping):
+        return None
+    for name in names:
+        if name not in label_context:
+            continue
+        value = label_context.get(name)
+        if value is None:
+            continue
+        try:
+            arr = np.asarray(value, dtype=np.float64)
+        except (TypeError, ValueError):
+            continue
+        if arr.ndim != 1 or len(arr) != n:
+            continue
+        return arr
+    return None
+
+
+def _label_context_take(
+    label_context: Mapping[str, Any] | None,
+    idx: Any,
+    n: int,
+) -> dict[str, np.ndarray] | None:
+    if not isinstance(label_context, Mapping):
+        return None
+    idx_arr = np.asarray(idx, dtype=np.int64)
+    if idx_arr.ndim != 1 or len(idx_arr) == 0:
+        return None
+    if int(np.min(idx_arr)) < 0 or int(np.max(idx_arr)) >= int(n):
+        return None
+    out: dict[str, np.ndarray] = {}
+    for key, value in label_context.items():
+        if value is None:
+            continue
+        try:
+            arr = np.asarray(value)
+        except (TypeError, ValueError):
+            continue
+        if arr.ndim != 1 or len(arr) != n:
+            continue
+        out[str(key)] = arr[idx_arr]
+    return out or None
+
+
+def _vol_normalized_tp_sl_precision_metrics(
+    pred: np.ndarray,
+    label_context: Mapping[str, Any] | None,
+) -> dict[str, float]:
+    out: dict[str, float] = {
+        "vol_norm_tpsl_metrics_available": 0.0,
+        "vol_norm_tpsl_metric_rows": 0.0,
+    }
+    for geom_name, _, _ in _VOL_NORM_TPSL_GEOMETRIES:
+        out[f"baseline_{geom_name}_vol_norm"] = float("nan")
+        out[f"support_{geom_name}_vol_norm"] = 0.0
+        for frac in _VOL_NORM_TPSL_TOP_FRACS:
+            pct = int(round(frac * 100.0))
+            out[f"precision_at_{pct}_{geom_name}_vol_norm"] = float("nan")
+            out[f"lift_at_{pct}_{geom_name}_vol_norm"] = float("nan")
+
+    p = np.asarray(pred, dtype=np.float64)
+    n = int(len(p))
+    if n < 8:
+        return out
+    mfe = _label_context_array(
+        label_context,
+        ("mfe", "mfe_ret", "__mfe_ret__", "mfe_return", "__mfe__"),
+        n,
+    )
+    mae = _label_context_array(
+        label_context,
+        ("mae", "mae_ret", "__mae_ret__", "mae_return", "__mae__"),
+        n,
+    )
+    vol = _label_context_array(
+        label_context,
+        ("atr", "barrier_pct", "__barrier_pct__", "vol", "volatility", "tp", "__tp__"),
+        n,
+    )
+    if mfe is None or mae is None or vol is None:
+        return out
+
+    tau_tp = _label_context_array(
+        label_context,
+        ("tau_tp", "__tau_tp__", "bars_to_tp", "__bars_to_tp__", "time_to_mfe", "__t_mfe__"),
+        n,
+    )
+    tau_sl = _label_context_array(
+        label_context,
+        ("tau_sl", "__tau_sl__", "bars_to_sl", "__bars_to_sl__", "time_to_mae", "__t_mae__"),
+        n,
+    )
+    valid = np.isfinite(p) & np.isfinite(mfe) & np.isfinite(mae) & np.isfinite(vol) & (vol > 0.0)
+    if int(np.sum(valid)) < 8:
+        return out
+    p_v = p[valid]
+    mfe_v = mfe[valid]
+    mae_v = np.abs(mae[valid])
+    vol_v = vol[valid]
+    tau_tp_v = tau_tp[valid] if tau_tp is not None and len(tau_tp) == n else None
+    tau_sl_v = tau_sl[valid] if tau_sl is not None and len(tau_sl) == n else None
+    out["vol_norm_tpsl_metrics_available"] = 1.0
+    out["vol_norm_tpsl_metric_rows"] = float(len(p_v))
+    order = np.argsort(p_v)
+    for geom_name, tp_mult, sl_mult in _VOL_NORM_TPSL_GEOMETRIES:
+        tp_hit = mfe_v >= (float(tp_mult) * vol_v)
+        sl_hit = mae_v >= (float(sl_mult) * vol_v)
+        if tau_tp_v is not None and tau_sl_v is not None:
+            tp_first = np.isfinite(tau_tp_v) & np.isfinite(tau_sl_v) & (tau_tp_v <= tau_sl_v)
+            success = tp_hit & ((~sl_hit) | tp_first)
+        else:
+            success = tp_hit & (~sl_hit)
+        y_win = success.astype(np.float64)
+        baseline = float(np.mean(y_win)) if len(y_win) else float("nan")
+        out[f"baseline_{geom_name}_vol_norm"] = baseline
+        out[f"support_{geom_name}_vol_norm"] = float(np.sum(y_win))
+        for frac in _VOL_NORM_TPSL_TOP_FRACS:
+            pct = int(round(frac * 100.0))
+            top_idx = _top_idx(order, frac, len(y_win))
+            precision = float(np.mean(y_win[top_idx])) if len(top_idx) else float("nan")
+            out[f"precision_at_{pct}_{geom_name}_vol_norm"] = precision
+            out[f"lift_at_{pct}_{geom_name}_vol_norm"] = precision / max(baseline, 1e-6) if np.isfinite(precision) else float("nan")
+    return out
+
+
 def _metric_pack(
     y_true: np.ndarray,
     pred: np.ndarray,
@@ -3400,10 +4086,20 @@ def _record_lgbm_stage_metric_comparison(
         "lift10",
         "mean_return10_gross",
         "mean_return30_gross",
-        "hit_tp2_sl1_top10",
-        "hit_tp2_sl1_top30",
-        "hit_tp3_sl15_top10",
-        "hit_tp3_sl15_top30",
+        "precision_at_30_tp3_sl2_vol_norm",
+        "precision_at_20_tp3_sl2_vol_norm",
+        "precision_at_10_tp3_sl2_vol_norm",
+        "precision_at_30_tp2_sl1_vol_norm",
+        "precision_at_20_tp2_sl1_vol_norm",
+        "precision_at_10_tp2_sl1_vol_norm",
+        "lift_at_30_tp3_sl2_vol_norm",
+        "lift_at_20_tp3_sl2_vol_norm",
+        "lift_at_10_tp3_sl2_vol_norm",
+        "lift_at_30_tp2_sl1_vol_norm",
+        "lift_at_20_tp2_sl1_vol_norm",
+        "lift_at_10_tp2_sl1_vol_norm",
+        "baseline_tp3_sl2_vol_norm",
+        "baseline_tp2_sl1_vol_norm",
         "stability20",
         "rank_bucket_monotonicity",
         "ndcg_at_20",
@@ -10121,6 +10817,7 @@ def _oof_distilled_sample_weights_lgbm(
     label: str,
     objective_mode: str | None = "train_base",
     cfg: dict[str, Any] | None = None,
+    specialist_similarity: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     base, _ = _normalize_weights(base_weight)
     current = base.copy()
@@ -10162,6 +10859,16 @@ def _oof_distilled_sample_weights_lgbm(
             fp_weight,
             timestamps,
             objective_mode=objective_mode,
+            cfg=cfg,
+        )
+        distill = _regime_specialist_shrink_weight_towards_one(
+            distill,
+            specialist_similarity,
+            cfg=cfg,
+        )
+        fp_weight = _regime_specialist_shrink_weight_towards_one(
+            fp_weight,
+            specialist_similarity,
             cfg=cfg,
         )
         distill, fp_weight = apply_distillation_recipe(
@@ -11021,6 +11728,32 @@ def train_lgbm_stability_candidate(
     )
     if preset_best_params:
         tprint("LGBM candidate using native preset best_params; HPO is skipped for base preset candidate scoring.")
+    regime_specialist_bundle = _build_lgbm_regime_specialist_bundle(
+        X_df,
+        selected_features,
+        timestamps=timestamps,
+        assets=assets,
+        objective_mode=objective_mode,
+        cfg=cfg,
+        random_state=random_state + 1549,
+        label="candidate",
+    )
+    candidate_train_idx = race_idx[select_local]
+    sw_select, regime_specialist_apply_diag = _apply_lgbm_regime_specialist_weights(
+        sw_select,
+        regime_specialist_bundle,
+        idx=candidate_train_idx,
+    )
+    if bool(regime_specialist_apply_diag.get("applied", False)):
+        tprint(
+            "LGBM candidate regime specialist sample weighting applied: "
+            f"objective={objective_mode}, "
+            f"ess={float(regime_specialist_apply_diag.get('effective_sample_size', float('nan'))):.1f}."
+        )
+    specialist_similarity_select = _lgbm_regime_specialist_similarity_for_idx(
+        regime_specialist_bundle,
+        idx=candidate_train_idx,
+    )
     final_weights, _ = _oof_distilled_sample_weights_lgbm(
         X_select,
         y_select,
@@ -11037,6 +11770,7 @@ def train_lgbm_stability_candidate(
         label="candidate",
         objective_mode=objective_mode,
         cfg=cfg,
+        specialist_similarity=specialist_similarity_select,
     )
     eval_preds: list[np.ndarray] = []
     eval_configs = (
@@ -11064,6 +11798,25 @@ def train_lgbm_stability_candidate(
         )
     eval_pred = np.mean(np.vstack(eval_preds), axis=0).astype(np.float32)
     metrics = _metric_pack(y_metric_eval, eval_pred, classifier=classifier, groups=eval_groups, returns=ret_eval)
+    metrics.update(
+        _vol_normalized_tp_sl_precision_metrics(
+            eval_pred,
+            _label_context_take(label_context, race_idx[eval_local], n),
+        )
+    )
+    metrics.update(
+        _lgbm_regime_specialist_current_metrics(
+            y_metric_eval,
+            eval_pred,
+            regime_specialist_bundle,
+            classifier=classifier,
+            groups=eval_groups,
+            returns=ret_eval,
+            idx=race_idx[eval_local],
+            label_context=label_context,
+            label_context_total_rows=n,
+        )
+    )
     metrics.update(_aggregate_j([metrics], objective_mode=objective_mode))
     for key, value in prune_metrics.items():
         if key not in metrics:
@@ -11078,6 +11831,14 @@ def train_lgbm_stability_candidate(
     metrics["candidate_elapsed_sec"] = float(time.perf_counter() - t0)
     metrics["hpo_objective_mode"] = objective_mode
     metrics["oof_distillation_passes"] = int(distill_passes)
+    metrics.update(regime_specialist_bundle.get("metrics", {}))
+    metrics["regime_specialist_apply_reason"] = str(
+        regime_specialist_apply_diag.get("reason", "")
+    )
+    if bool(regime_specialist_apply_diag.get("applied", False)):
+        metrics["regime_specialist_applied_effective_sample_size"] = float(
+            regime_specialist_apply_diag.get("effective_sample_size", float("nan"))
+        )
     if preset_features:
         metrics["feature_selection_source"] = "native_preset"
         metrics["native_preset_source"] = str(preset_source or "")
@@ -11587,6 +12348,44 @@ def fit_lgbm_stability_full_model(
         hpo_metrics["label_weight_hpo_reused_from_native_preset"] = bool(
             label_weight_hpo_report.get("reused_from_native_preset", False)
         )
+    regime_specialist_bundle = _build_lgbm_regime_specialist_bundle(
+        X_model_df,
+        selected_features,
+        timestamps=timestamps,
+        assets=assets,
+        objective_mode=objective_mode,
+        cfg=cfg,
+        random_state=random_state + 9157,
+        label="final",
+    )
+    sw, regime_specialist_apply_diag = _apply_lgbm_regime_specialist_weights(
+        sw,
+        regime_specialist_bundle,
+    )
+    if bool(regime_specialist_apply_diag.get("applied", False)):
+        _, final_fit_weight_ess = _normalize_weights(sw[fit_idx])
+        tprint(
+            "LGBM final regime specialist sample weighting applied: "
+            f"objective={objective_mode}, "
+            f"ess={float(regime_specialist_apply_diag.get('effective_sample_size', float('nan'))):.1f}."
+        )
+    hpo_metrics.update(regime_specialist_bundle.get("metrics", {}))
+    hpo_metrics["regime_specialist_apply_reason"] = str(
+        regime_specialist_apply_diag.get("reason", "")
+    )
+    if bool(regime_specialist_apply_diag.get("applied", False)):
+        hpo_metrics["regime_specialist_applied_effective_sample_size"] = float(
+            regime_specialist_apply_diag.get("effective_sample_size", float("nan"))
+        )
+    specialist_similarity_all = _lgbm_regime_specialist_similarity_for_idx(
+        regime_specialist_bundle,
+    )
+    _save_lgbm_regime_specialist_diagnostics(
+        reference_artifact_dir,
+        regime_specialist_bundle,
+        objective_mode=objective_mode,
+        label="final",
+    )
     if distill_passes > 0:
         final_weights, pre_final_oof = _oof_distilled_sample_weights_lgbm(
             X_model_df,
@@ -11604,11 +12403,18 @@ def fit_lgbm_stability_full_model(
             label="final",
             objective_mode=objective_mode,
             cfg=cfg,
+            specialist_similarity=specialist_similarity_all,
         )
     else:
         final_weights = sw.copy()
         pre_final_oof = np.asarray(oof_probs if oof_probs is not None else np.full(n, float(np.mean(y_arr))), dtype=np.float32)
     model = LGBMStabilityModel(mode=mode)
+    model.regime_specialist_diagnostics_ = dict(
+        regime_specialist_bundle.get("diagnostics", {}) if regime_specialist_bundle else {}
+    )
+    model.regime_specialist_metrics_ = dict(
+        regime_specialist_bundle.get("metrics", {}) if regime_specialist_bundle else {}
+    )
     model.label_weight_hpo_report_ = dict(label_weight_hpo_report or {})
     if elected_label_soft is not None:
         model.label_weight_hpo_soft_label_ = np.asarray(elected_label_soft, dtype=np.float32)
@@ -11733,6 +12539,16 @@ def fit_lgbm_stability_full_model(
                 objective_mode=objective_mode,
                 cfg=cfg,
             )
+            distill = _regime_specialist_shrink_weight_towards_one(
+                distill,
+                specialist_similarity_all,
+                cfg=cfg,
+            )
+            fp_weight = _regime_specialist_shrink_weight_towards_one(
+                fp_weight,
+                specialist_similarity_all,
+                cfg=cfg,
+            )
             distill, fp_weight = apply_distillation_recipe(
                 distill,
                 fp_weight,
@@ -11820,7 +12636,21 @@ def fit_lgbm_stability_full_model(
         )
         fill = float(np.nanmean(pre_final_oof)) if np.isfinite(pre_final_oof).any() else float(np.mean(y_arr))
         final_oof = np.nan_to_num(pre_final_oof, nan=fill).astype(np.float32)
-        final_fold_metrics = [_metric_pack(y_metric, final_oof, classifier=classifier, groups=stability_groups, returns=ret_arr)]
+        skip_metrics = _metric_pack(y_metric, final_oof, classifier=classifier, groups=stability_groups, returns=ret_arr)
+        skip_metrics.update(_vol_normalized_tp_sl_precision_metrics(final_oof, label_context))
+        skip_metrics.update(
+            _lgbm_regime_specialist_current_metrics(
+                y_metric,
+                final_oof,
+                regime_specialist_bundle,
+                classifier=classifier,
+                groups=stability_groups,
+                returns=ret_arr,
+                label_context=label_context,
+                label_context_total_rows=n,
+            )
+        )
+        final_fold_metrics = [skip_metrics]
         full_rank = _safe_rank_pct(final_oof)
         meta_oof_features = _lgbm_meta_features_from_predictions(
             final_oof,
@@ -12126,6 +12956,19 @@ def fit_lgbm_stability_full_model(
                 copy=True,
             )
     final_metrics = _metric_pack(y_metric, final_oof, classifier=classifier, groups=stability_groups, returns=ret_arr)
+    final_metrics.update(_vol_normalized_tp_sl_precision_metrics(final_oof, label_context))
+    final_metrics.update(
+        _lgbm_regime_specialist_current_metrics(
+            y_metric,
+            final_oof,
+            regime_specialist_bundle,
+            classifier=classifier,
+            groups=stability_groups,
+            returns=ret_arr,
+            label_context=label_context,
+            label_context_total_rows=n,
+        )
+    )
     final_metrics.update(_aggregate_j(final_fold_metrics, objective_mode=objective_mode))
     candidate_metrics = dict(metrics or {})
     model.metrics = dict(candidate_metrics)
@@ -12326,6 +13169,19 @@ def fit_lgbm_stability_full_model(
     fit_oof_metrics_for_stage: dict[str, Any] | None = None
     if pre_final_oof is not None and len(pre_final_oof) == n:
         pre_metrics = _metric_pack(y_metric, pre_final_oof, classifier=classifier, groups=stability_groups, returns=ret_arr)
+        pre_metrics.update(_vol_normalized_tp_sl_precision_metrics(pre_final_oof, label_context))
+        pre_metrics.update(
+            _lgbm_regime_specialist_current_metrics(
+                y_metric,
+                pre_final_oof,
+                regime_specialist_bundle,
+                classifier=classifier,
+                groups=stability_groups,
+                returns=ret_arr,
+                label_context=label_context,
+                label_context_total_rows=n,
+            )
+        )
         pre_metrics.update(_aggregate_j([pre_metrics], objective_mode=objective_mode))
         if distill_passes > 0:
             fit_oof_metrics_for_stage = dict(pre_metrics)

@@ -3440,6 +3440,8 @@ def _build_simple_policy_candidate_rows(
     best_size_power: float,
     base_strategy_threshold: float,
     market_mode: str,
+    regime_ae_feature_columns: Optional[Sequence[str]] = None,
+    regime_ae_fit_frame: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Build the pre-portfolio candidate table for accepted local strategy rows."""
     if df_top.empty:
@@ -3798,7 +3800,14 @@ def _build_simple_policy_candidate_rows(
         out.attrs["candidate_context_passthrough_columns"] = sorted(
             dict.fromkeys(passthrough_added)
         )
-    return out.replace([np.inf, -np.inf], np.nan).dropna(
+    out = _append_current_regime_ae_candidate_features(
+        out,
+        source_rows=rows,
+        reference_rows=regime_ae_fit_frame,
+        feature_columns=regime_ae_feature_columns,
+        strategy_id=strategy_id,
+    )
+    result = out.replace([np.inf, -np.inf], np.nan).dropna(
         subset=[
             "timestamp",
             "symbol",
@@ -3809,6 +3818,8 @@ def _build_simple_policy_candidate_rows(
             "net_return",
         ]
     )
+    result.attrs.update(out.attrs)
+    return result
 
 
 def _finalise_simple_policy_candidates(
@@ -7858,6 +7869,184 @@ def _attach_regime_model_context_columns(
     return out
 
 
+def _simple_policy_regime_ae_enabled() -> bool:
+    env_value = os.environ.get("EPM_SIMPLE_POLICY_REGIME_AE")
+    if env_value is not None:
+        return str(env_value).strip().lower() not in {"0", "false", "no", "off"}
+    return bool(CFG.get("simple_policy_regime_ae_enabled", True))
+
+
+def _is_regime_ae_source_feature_name(name: str) -> bool:
+    low = str(name).lower()
+    if low in {
+        "timestamp",
+        "ts",
+        "symbol",
+        "side",
+        "strategy_id",
+        "label",
+        "target",
+        "net_return",
+        "gross_return",
+        "wallet_return",
+        "future_return",
+        "raw_return",
+    }:
+        return False
+    if low.startswith(("__", "y_", "target_", "label_")):
+        return False
+    if any(token in low for token in ("future", "forward", "exit_price", "net_pnl")):
+        return False
+    return True
+
+
+def _regime_ae_source_feature_columns(
+    base_feature_cols: Optional[Sequence[str]] = None,
+    meta_feature_cols: Optional[Sequence[str]] = None,
+) -> List[str]:
+    cols = [
+        str(col)
+        for col in list(base_feature_cols or []) + list(meta_feature_cols or [])
+        if str(col).strip() and _is_regime_ae_source_feature_name(str(col))
+    ]
+    return list(dict.fromkeys(cols))
+
+
+def _infer_regime_ae_source_feature_columns(
+    frame: pd.DataFrame,
+    configured: Optional[Sequence[str]] = None,
+    *,
+    allow_numeric_fallback: Optional[bool] = None,
+) -> List[str]:
+    configured_cols = [
+        str(c)
+        for c in (configured or [])
+        if str(c) in frame.columns and _is_regime_ae_source_feature_name(str(c))
+    ]
+    if configured_cols:
+        return list(dict.fromkeys(configured_cols))
+    attr_cols = [
+        str(c)
+        for c in frame.attrs.get("regime_ae_source_feature_columns", []) or []
+        if str(c) in frame.columns and _is_regime_ae_source_feature_name(str(c))
+    ]
+    if attr_cols:
+        return list(dict.fromkeys(attr_cols))
+    if allow_numeric_fallback is None:
+        allow_numeric_fallback = not bool(CFG.get("regime_ae_source_fail_closed", True))
+    if not allow_numeric_fallback:
+        return []
+    candidates: List[str] = []
+    for col in frame.columns:
+        col_s = str(col)
+        if not _is_regime_ae_source_feature_name(col_s):
+            continue
+        if not pd.api.types.is_numeric_dtype(frame[col]):
+            continue
+        if is_model_derived_feature_key(col_s):
+            continue
+        candidates.append(col_s)
+    return list(dict.fromkeys(candidates))
+
+
+def _append_current_regime_ae_candidate_features(
+    out: pd.DataFrame,
+    *,
+    source_rows: pd.DataFrame,
+    reference_rows: Optional[pd.DataFrame],
+    feature_columns: Optional[Sequence[str]],
+    strategy_id: str,
+) -> pd.DataFrame:
+    if out.empty or source_rows.empty or not _simple_policy_regime_ae_enabled():
+        return out
+    fit_reference = reference_rows if reference_rows is not None and not reference_rows.empty else source_rows
+    cols = _infer_regime_ae_source_feature_columns(
+        fit_reference,
+        configured=feature_columns,
+    )
+    if not cols:
+        out.attrs["current_regime_ae_diagnostics"] = {
+            "enabled": False,
+            "reason": "no_source_feature_columns",
+        }
+        return out
+    try:
+        from extreme_price_movements.regime_ae_features import (
+            CURRENT_REGIME_AE_FEATURE_COLUMNS,
+            fit_transform_current_regime_ae_features,
+            fit_transform_current_regime_ae_features_walk_forward,
+        )
+
+        score_target = None
+        for score_col in ("calibrated_score", "clf", "oof_pred", "oof_meta_clf"):
+            if score_col in fit_reference.columns:
+                score_target = pd.to_numeric(
+                    fit_reference[score_col],
+                    errors="coerce",
+                ).to_numpy(dtype=np.float32)
+                break
+        generation_mode = str(
+            CFG.get("regime_ae_candidate_generation", "walk_forward_prior_only")
+            or "walk_forward_prior_only"
+        ).strip().lower()
+        if generation_mode in {"walk_forward", "walk_forward_prior_only", "oof"}:
+            ae_features, state = fit_transform_current_regime_ae_features_walk_forward(
+                fit_reference,
+                source_rows,
+                feature_columns=cols,
+                score_target=score_target,
+                cfg=CFG,
+                index=out.index,
+            )
+        else:
+            ae_features, state = fit_transform_current_regime_ae_features(
+                fit_reference,
+                source_rows,
+                feature_columns=cols,
+                score_target=score_target,
+                cfg=CFG,
+                index=out.index,
+            )
+        for col in CURRENT_REGIME_AE_FEATURE_COLUMNS:
+            out[col] = pd.to_numeric(
+                ae_features.get(col, 0.0),
+                errors="coerce",
+            ).fillna(0.0).to_numpy(dtype=np.float32)
+        state = dict(state or {})
+        diagnostics = {
+            "enabled": bool(state.get("enabled", False)),
+            "schema_version": state.get("schema_version", "ae_current_regime_v1"),
+            "backend": state.get("backend", ""),
+            "fit_rows": int(state.get("fit_rows", 0) or 0),
+            "source_feature_count": int(state.get("source_feature_count", 0) or 0),
+            "input_dim": int(state.get("feature_columns_after_missing_indicators", 0) or 0),
+            "requested_feature_count": int(len(cols)),
+            "columns": list(CURRENT_REGIME_AE_FEATURE_COLUMNS),
+            "source_columns_preview": list(state.get("feature_columns", cols))[:50],
+            "strategy_id": str(strategy_id),
+            "reason": state.get("reason", ""),
+            "training_summary": state.get("training_summary", {}),
+            "candidate_generation": state.get("candidate_generation", {}),
+        }
+        out.attrs["current_regime_ae_state"] = state
+        out.attrs["current_regime_ae_diagnostics"] = diagnostics
+        out.attrs["regime_ae_source_feature_columns"] = list(
+            state.get("feature_columns", cols)
+        )
+        return out
+    except Exception as exc:
+        logger.warning(
+            "[%s] Current-regime AE feature generation failed; continuing without AE features: %s",
+            strategy_id,
+            exc,
+        )
+        out.attrs["current_regime_ae_diagnostics"] = {
+            "enabled": False,
+            "reason": f"ae_generation_failed:{exc}",
+        }
+        return out
+
+
 def _strip_policy_side(strategy_id: str) -> str:
     for prefix in ("long_", "short_"):
         if str(strategy_id).startswith(prefix):
@@ -8067,6 +8256,10 @@ def _fit_meta_correctness_regime_adaptor_from_simple_policy(
         save_regime_adaptor_outputs,
     )
 
+    ae_state = dict(trade_candidate_oof.attrs.get("current_regime_ae_state", {}) or {})
+    ae_diag = dict(
+        trade_candidate_oof.attrs.get("current_regime_ae_diagnostics", {}) or {}
+    )
     candidate_frame = trade_candidate_oof.copy().reset_index(drop=True)
     if "wallet_return" not in candidate_frame.columns and "net_return" in candidate_frame.columns:
         candidate_frame["wallet_return"] = pd.to_numeric(
@@ -8090,6 +8283,42 @@ def _fit_meta_correctness_regime_adaptor_from_simple_policy(
         deployment_rank_threshold=float(deployment_rank_threshold),
     )
     fit["foundation"] = "simple_policy_optimiser"
+    if ae_state:
+        fit["current_regime_ae_state"] = ae_state
+        fit["current_regime_ae_diagnostics"] = ae_diag
+        fit["current_regime_ae_feature_columns"] = list(
+            ae_diag.get("columns", [])
+            or [
+                "z_ae_1",
+                "z_ae_2",
+                "z_ae_3",
+                "z_ae_4",
+                "z_ae_5",
+                "z_ae_6",
+                "z_ae_7",
+                "z_ae_8",
+                "ae_reconstruction_error",
+                "ae_reconstruction_error_percentile",
+                "ae_latent_norm",
+                "ae_latent_norm_percentile",
+                "ae_latent_distance",
+                "ae_latent_distance_percentile",
+            ]
+        )
+        feature_mapping = dict(fit.get("feature_mapping", {}) or {})
+        feature_mapping["current_regime_ae"] = {
+            "enabled": bool(ae_state.get("enabled", False)),
+            "schema_version": ae_state.get("schema_version", "ae_current_regime_v1"),
+            "backend": ae_state.get("backend", ""),
+            "source_feature_count": int(ae_state.get("source_feature_count", 0) or 0),
+            "input_dim": int(
+                ae_state.get("feature_columns_after_missing_indicators", 0) or 0
+            ),
+            "columns": list(fit["current_regime_ae_feature_columns"]),
+            "source_columns_preview": list(ae_state.get("feature_columns", []))[:50],
+            "scope": "regime_adaptor_only",
+        }
+        fit["feature_mapping"] = feature_mapping
     fit["prediction_context"] = {
         "base_meta_prediction_columns": sorted(
             [
@@ -10382,8 +10611,114 @@ def _finite_model_feature_mask(
     return row_ok, diag
 
 
+def _policy_meta_neutral_default(feature_name: str) -> float | None:
+    """Neutral live fallback for selected meta features without current labels.
+
+    These columns summarize matured historical model/error state in training.
+    At policy replay or live decision time the current row outcome is unknown,
+    so absence/non-finiteness should not make the entire meta contract unusable.
+    Keep this whitelist intentionally narrow; raw market/source features remain
+    strict and continue to fail the finite mask when unavailable.
+    """
+
+    key = str(feature_name)
+    lower = key.lower()
+    atlas_prefixes = ("base_lgbm_predictive_atlas_", "meta_lgbm_predictive_atlas_")
+    if lower.startswith(atlas_prefixes):
+        if lower.endswith(("_hit_rate", "_expected_hit_rate", "_score_mean")):
+            return 0.5
+        if lower.endswith("_score_std"):
+            return 0.0
+        if lower.endswith(("_support_n", "_effective_n", "_support_quality")):
+            return 0.0
+        if "surprise" in lower or lower.endswith(("_ic", "_rank_ic")):
+            return 0.0
+        return 0.0
+    if lower in {
+        "signed_prediction_error",
+        "surprise_error_z",
+        "wrong_confident",
+    }:
+        return 0.0
+    if lower == "negative_log_likelihood":
+        return 0.6931471805599453
+    if lower in {
+        "prob_error",
+        "recent_prob_error_20",
+        "base_model_abs_error_roll20",
+    }:
+        return 0.5
+    if lower == "recent_hit_rate_20":
+        return 0.5
+    return None
+
+
+def _fill_live_unavailable_policy_meta_features(
+    features: pd.DataFrame,
+    *,
+    feature_cols: Sequence[str],
+) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
+    """Fill selected live-unavailable meta diagnostics with neutral values."""
+
+    cols = [str(c) for c in (feature_cols or []) if str(c)]
+    if not cols or features.empty:
+        return features, []
+    out = features.copy()
+    filled: list[dict[str, Any]] = []
+    for col in cols:
+        default = _policy_meta_neutral_default(col)
+        if default is None:
+            continue
+        if col not in out.columns:
+            out[col] = np.full(len(out), float(default), dtype=np.float32)
+            filled.append(
+                {
+                    "feature": col,
+                    "default": float(default),
+                    "missing_column": True,
+                    "filled_rows": int(len(out)),
+                }
+            )
+            continue
+        vals = pd.to_numeric(out[col], errors="coerce").to_numpy(
+            dtype=np.float32,
+            copy=True,
+        )
+        bad = ~np.isfinite(vals)
+        bad_n = int(bad.sum())
+        if bad_n <= 0:
+            continue
+        vals[bad] = float(default)
+        out[col] = vals
+        filled.append(
+            {
+                "feature": col,
+                "default": float(default),
+                "missing_column": False,
+                "filled_rows": bad_n,
+            }
+        )
+    return out, filled
+
+
 def _parity_source_family(feature_name: str) -> str:
     name = str(feature_name).lower()
+    if (
+        name.startswith("base_lgbm_predictive_atlas_")
+        or name.startswith("meta_lgbm_predictive_atlas_")
+        or name
+        in {
+            "prob_error",
+            "recent_prob_error_20",
+            "recent_hit_rate_20",
+            "base_model_abs_error_roll20",
+            "signed_prediction_error",
+            "negative_log_likelihood",
+            "surprise_error_z",
+            "wrong_confident",
+        }
+    ):
+        return "live_unavailable_model_error_context"
     if "index" in name or "premium" in name:
         return "index_or_premium_reference"
     if "basis" in name:
@@ -10414,6 +10749,8 @@ def _parity_likely_root_cause(feature_name: str, *, missing_column: bool) -> str
         return "raw_source_missing_or_sparse"
     if family in {"index_or_premium_reference", "basis_reference"}:
         return "unavailable_or_nonportable_reference_source"
+    if family == "live_unavailable_model_error_context":
+        return "filled_with_live_neutral_context_when_selected"
     if family == "model_derived":
         return "model_derived_context_missing_or_nonfinite"
     return "feature_computation_or_source_window_gap"
@@ -11126,6 +11463,27 @@ def _generate_policy_predictions_from_models(
                 kind=strategy_id,
             )
             _log_generation_timing("materialize_meta_model_features", stage_started, len(meta_base))
+        neutral_meta_fills: list[dict[str, Any]] = []
+        if meta_feature_cols:
+            stage_started = time.monotonic()
+            meta_base, neutral_meta_fills = _fill_live_unavailable_policy_meta_features(
+                meta_base,
+                feature_cols=meta_feature_cols,
+            )
+            if neutral_meta_fills:
+                logger.warning(
+                    "[%s] Filled %d selected live-unavailable meta context "
+                    "features with neutral decision-time defaults before policy "
+                    "prediction. sample=%s",
+                    strategy_id,
+                    len(neutral_meta_fills),
+                    neutral_meta_fills[:8],
+                )
+            _log_generation_timing(
+                "fill_live_unavailable_meta_context",
+                stage_started,
+                len(meta_base),
+            )
         if meta_feature_cols:
             stage_started = time.monotonic()
             meta_finite_mask, meta_finite_diag = _finite_model_feature_mask(
@@ -11148,6 +11506,7 @@ def _generate_policy_predictions_from_models(
             meta_finite_diag["meta_model_key"] = str(meta_key)
             meta_finite_diag["rows_after_base_gate"] = int(len(meta_base))
             meta_finite_diag["feature_contract_count"] = int(len(meta_feature_cols))
+            meta_finite_diag["neutral_live_unavailable_feature_fills"] = neutral_meta_fills
             diag_path.write_text(
                 json.dumps(meta_finite_diag, indent=2, sort_keys=True)
             )
@@ -11236,6 +11595,28 @@ def _generate_policy_predictions_from_models(
             dtype=np.float32
         )
         events["base_gate_top_frac"] = float(base_to_meta_top_frac)
+        if _simple_policy_regime_ae_enabled():
+            ae_source_cols = _regime_ae_source_feature_columns(
+                required_feature_keys,
+                meta_feature_cols,
+            )
+            attached_ae_cols: List[str] = []
+            for col in ae_source_cols:
+                source = meta_base[col] if col in meta_base.columns else features.get(col)
+                if source is None:
+                    continue
+                try:
+                    values = pd.to_numeric(source, errors="coerce").reindex(events.index)
+                except Exception:
+                    continue
+                if not bool(np.isfinite(values.to_numpy(dtype=np.float64, copy=False)).any()):
+                    continue
+                events[col] = values.to_numpy(dtype=np.float32, copy=False)
+                attached_ae_cols.append(str(col))
+            if attached_ae_cols:
+                events.attrs["regime_ae_source_feature_columns"] = list(
+                    dict.fromkeys(attached_ae_cols)
+                )
         generated[strategy_id] = events
         sources[strategy_id] = f"{source_tag}:{label_source}"
         _log_generation_timing("total", strategy_started, len(events))
@@ -13255,6 +13636,10 @@ def run_simple_policy_optimisation(
             best_size_power=final_size_power,
             base_strategy_threshold=deployment_rank_threshold,
             market_mode=market_mode,
+            regime_ae_feature_columns=_infer_regime_ae_source_feature_columns(
+                df_policy_all
+            ),
+            regime_ae_fit_frame=df_policy_all,
         )
         candidate_rows, candidate_risk_apply = _apply_simple_policy_calibrated_drift_risk(
             candidate_rows,
@@ -14049,6 +14434,10 @@ def run_regime_adaptor_only_from_simple_policy(
             best_size_power=final_size_power,
             base_strategy_threshold=deployment_rank_threshold,
             market_mode=market_mode,
+            regime_ae_feature_columns=_infer_regime_ae_source_feature_columns(
+                df_policy_all
+            ),
+            regime_ae_fit_frame=df_policy_all,
         )
         summary = _fit_meta_correctness_regime_adaptor_from_simple_policy(
             data_root=data_root,

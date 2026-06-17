@@ -52,6 +52,11 @@ STRATEGIES: list[dict[str, str]] = [
             "leverage_build_score_0_45107844_return_autocorr_48_1_18643_"
             "rolling_range_20_-0_25967735"
         ),
+        "canonical_key": (
+            "(*)|(dist_ema20_atr<=-0.92271453&loc_bb_channel_pos_48<=0.60767579)|"
+            "(leverage_build_score>0.45107844&return_autocorr_48<=1.18643"
+            "&rolling_range_20>-0.25967735)"
+        ),
     },
     {
         "side": "long",
@@ -60,6 +65,12 @@ STRATEGIES: list[dict[str, str]] = [
             "loc_swing_range_pos_24_1_0002919_atr_percentile_-1_477338_"
             "range_24h_pct_0_13988039_variance_ratio_10_48_0_92117828"
         ),
+        "canonical_key": (
+            "(*)|(bars_in_high_vol_state_log_norm>-0.49417102"
+            "&loc_range_pos_48>0.22034115&loc_swing_range_pos_24>1.0002919)|"
+            "(atr_percentile>-1.477338&range_24h_pct<=0.13988039"
+            "&variance_ratio_10_48<=0.92117828)"
+        ),
     },
     {
         "side": "short",
@@ -67,12 +78,20 @@ STRATEGIES: list[dict[str, str]] = [
             "bollinger_band_width_-0_0062114433_oi_value_z_90d_0_082444385_"
             "price_rv_15d_robust_z_0_060036644"
         ),
+        "canonical_key": (
+            "(*)|(*)|(bollinger_band_width<=-0.0062114433"
+            "&oi_value_z_90d>0.082444385&price_rv_15d_robust_z>0.060036644)"
+        ),
     },
     {
         "side": "short",
         "strategy_id": (
             "asset_minus_mkt_oi_1d_peer_resid_0_34164831_"
             "oi_expansion_compression_balance_24h_0_42287597"
+        ),
+        "canonical_key": (
+            "(*)|(*)|(asset_minus_mkt_oi_1d_peer_resid>0.34164831"
+            "&oi_expansion_compression_balance_24h>0.42287597)"
         ),
     },
 ]
@@ -224,6 +243,12 @@ def _write_registry(run_id: str) -> Path:
             sid = f"{side}_{core}"
             src = source_rows.get(f"{side}_{core}") or source_rows.get(core) or {}
             score = src.get("stage_e_rank_score") or src.get("ranking_score") or str(10 - rank)
+            canonical_key = (
+                src.get("canonical_key")
+                or src.get("base_event_trigger")
+                or item.get("canonical_key")
+                or core
+            )
             writer.writerow(
                 {
                     "market_mode": "perps",
@@ -233,8 +258,8 @@ def _write_registry(run_id: str) -> Path:
                     "source_target": src.get("source_target", "returns_target"),
                     "strategy_id": sid,
                     "old_strategy_id": src.get("strategy_id", ""),
-                    "canonical_key": src.get("canonical_key", core),
-                    "base_event_trigger": src.get("base_event_trigger", src.get("canonical_key", core)),
+                    "canonical_key": canonical_key,
+                    "base_event_trigger": src.get("base_event_trigger", canonical_key),
                     "move_bucket": src.get("move_bucket", ""),
                     "candidate_bucket": "worst",
                     "ranking_score": score,
@@ -568,6 +593,120 @@ def _materialize_label_manifest(run_id: str, env: dict[str, str]) -> Path:
     return out
 
 
+def _label_manifest_symbols(run_id: str) -> list[str]:
+    labels_root = DATA_ROOT / "artifacts" / run_id / "labels"
+    manifest_path = labels_root / "labels_manifest.json"
+    if not manifest_path.exists() or manifest_path.stat().st_size <= 0:
+        return []
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    symbols: set[str] = set()
+    for payload in (manifest.get("datasets") or {}).values():
+        rel = str((payload or {}).get("file") or "").strip()
+        if not rel:
+            continue
+        path = labels_root / rel
+        if not path.exists() or path.stat().st_size <= 0:
+            continue
+        try:
+            schema = pq.ParquetFile(path).schema.names
+            sym_col = "__symbol__" if "__symbol__" in schema else "symbol" if "symbol" in schema else ""
+            if not sym_col:
+                continue
+            frame = pd.read_parquet(path, columns=[sym_col])
+            symbols.update(str(s) for s in frame[sym_col].dropna().unique() if str(s).strip())
+        except Exception as exc:
+            _append(f"WARNING: failed reading label symbols from {path}: {exc}")
+    return sorted(symbols)
+
+
+def _restrict_policy_slice_to_label_symbols(run_id: str) -> None:
+    symbols = _label_manifest_symbols(run_id)
+    if not symbols:
+        _append(f"{run_id}: no label symbols found; keeping copied policy slice unchanged")
+        return
+    symbol_set = set(symbols)
+    path = DATA_ROOT / "artifacts" / run_id / "slices" / "slice_plan.json"
+    if not path.exists() or path.stat().st_size <= 0:
+        _append(f"{run_id}: slice plan missing; cannot restrict policy symbols")
+        return
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    def _restrict_symbol_list(obj: dict[str, Any], key: str) -> tuple[int, int]:
+        values = obj.get(key)
+        if not isinstance(values, list) or not values:
+            return 0, 0
+        if not all(isinstance(v, str) for v in values):
+            return 0, 0
+        before = len(values)
+        after_values = [v for v in values if v in symbol_set]
+        if len(after_values) == before:
+            return before, before
+        obj[key] = sorted(after_values)
+        return before, len(after_values)
+
+    changes: list[tuple[str, int, int]] = []
+    for section_name in ("materialized_views",):
+        section = payload.get(section_name) or {}
+        if isinstance(section, dict):
+            for stage_name in ("policy_optimiser", "utility_policy_optimisation"):
+                stage = section.get(stage_name)
+                if isinstance(stage, dict):
+                    for key in ("symbols", "allowed_symbols"):
+                        before, after = _restrict_symbol_list(stage, key)
+                        if before:
+                            changes.append((f"{section_name}.{stage_name}.{key}", before, after))
+    consumer = payload.get("consumer_plans") or {}
+    if isinstance(consumer, dict):
+        for stage_name in ("policy_optimiser", "utility_policy_tuning"):
+            plans = consumer.get(stage_name)
+            if isinstance(plans, list):
+                for idx, plan in enumerate(plans):
+                    if not isinstance(plan, dict):
+                        continue
+                    for key in ("symbols", "allowed_symbols", "symbols_fit", "symbols_predict"):
+                        before, after = _restrict_symbol_list(plan, key)
+                        if before:
+                            changes.append((f"consumer_plans.{stage_name}[{idx}].{key}", before, after))
+                    meta = plan.get("metadata")
+                    if isinstance(meta, dict):
+                        for meta_key, symbol_key in (
+                            ("n_symbols_fit", "symbols_fit"),
+                            ("n_symbols_predict", "symbols_predict"),
+                        ):
+                            if symbol_key in plan and isinstance(plan[symbol_key], list):
+                                meta[meta_key] = len(plan[symbol_key])
+    diagnostics = payload.get("allocation_diagnostics") or {}
+    if isinstance(diagnostics, dict):
+        for stage_name in ("policy_optimiser", "utility_policy_optimisation"):
+            stage = diagnostics.get(stage_name)
+            if isinstance(stage, dict):
+                before = int(stage.get("symbols_allocated") or 0)
+                stage["symbols_allocated"] = min(before, len(symbols)) if before else len(symbols)
+
+    payload["label_universe_symbol_restriction"] = {
+        "enabled": True,
+        "source": "labels_manifest",
+        "label_symbol_count": len(symbols),
+        "changes": [
+            {"path": name, "before": before, "after": after}
+            for name, before, after in changes
+            if before != after
+        ],
+    }
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
+    changed = [c for c in changes if c[1] != c[2]]
+    if changed:
+        _append(
+            f"{run_id}: restricted policy slice symbols to label universe "
+            f"({len(symbols)} symbols); changes={changed[:6]}"
+        )
+    else:
+        _append(f"{run_id}: policy slice already matched label universe ({len(symbols)} symbols)")
+
+
 def _run_policy_variants(run_id: str, env: dict[str, str]) -> None:
     policy_cmd = _policy_cmd(run_id)
     if _policy_variant_ready(run_id, "with_regime_adaptor"):
@@ -604,6 +743,7 @@ def _run_variant(run_id: str, *, label_hpo: bool) -> None:
         f"base_hpo={env.get('EPM_BASE_HPO_TRIALS')} meta_hpo={env.get('EPM_META_HPO_TRIALS')}"
     )
     _materialize_label_manifest(run_id, env)
+    _restrict_policy_slice_to_label_symbols(run_id)
     env = dict(env)
     env["EPM_LABEL_SOURCE_RUN_ID"] = run_id
     env["EPM_LABEL_ARTIFACT_RUN_ID"] = run_id
@@ -634,7 +774,14 @@ def _run_variant(run_id: str, *, label_hpo: bool) -> None:
         _append(f"{run_id}: meta artifacts ready; skipping train_meta")
     else:
         meta_env = dict(env)
-        meta_env["EPM_META_PRESERVE_EXISTING_OOF"] = "0"
+        meta_env["EPM_META_PRESERVE_EXISTING_OOF"] = os.environ.get(
+            "EPM_META_PRESERVE_EXISTING_OOF",
+            "0",
+        )
+        meta_env["EPM_META_RESUME_FROM_CHECKPOINT"] = os.environ.get(
+            "EPM_META_RESUME_FROM_CHECKPOINT",
+            "0",
+        )
         _run_step(f"{run_id}_train_meta", _pipeline_cmd("train_meta", run_id), meta_env)
     _require_file(DATA_ROOT / "artifacts" / run_id / "models" / "model_state_meta.pkl", "meta state")
     if _policy_oos_ready(run_id):

@@ -121,6 +121,89 @@ LGBM_DIAGNOSTIC_LEDGER_KEYS = {
 }
 
 
+def _meta_live_unavailable_neutral_default(feature_name: str) -> float | None:
+    """Decision-time neutral value for historical meta diagnostics.
+
+    These features summarize matured historical model-error or predictive-atlas
+    context. They are valid training/meta inputs when built causally, but the
+    current live row cannot have a same-row outcome. Keep this whitelist narrow;
+    ordinary raw/source features still fail strict parity when missing.
+    """
+
+    key = str(feature_name).lower()
+    if key.startswith(("base_lgbm_predictive_atlas_", "meta_lgbm_predictive_atlas_")):
+        if key.endswith(("_hit_rate", "_expected_hit_rate", "_score_mean")):
+            return 0.5
+        if key.endswith("_score_std"):
+            return 0.0
+        if key.endswith(("_support_n", "_effective_n", "_support_quality")):
+            return 0.0
+        if "surprise" in key or key.endswith(("_ic", "_rank_ic")):
+            return 0.0
+        return 0.0
+    if key in {
+        "signed_prediction_error",
+        "surprise_error_z",
+        "wrong_confident",
+    }:
+        return 0.0
+    if key == "negative_log_likelihood":
+        return 0.6931471805599453
+    if key in {
+        "prob_error",
+        "recent_prob_error_20",
+        "base_model_abs_error_roll20",
+    }:
+        return 0.5
+    if key == "recent_hit_rate_20":
+        return 0.5
+    return None
+
+
+def _fill_live_unavailable_meta_contract_features(
+    features: pd.DataFrame,
+    feature_cols: List[str],
+) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
+    if not isinstance(features, pd.DataFrame) or features.empty:
+        return features, []
+    out = features.copy()
+    filled: list[dict[str, Any]] = []
+    for col in [str(c) for c in (feature_cols or []) if str(c)]:
+        default = _meta_live_unavailable_neutral_default(col)
+        if default is None:
+            continue
+        if col not in out.columns:
+            out[col] = np.full(len(out), float(default), dtype=np.float32)
+            filled.append(
+                {
+                    "feature": col,
+                    "default": float(default),
+                    "missing_column": True,
+                    "filled_rows": int(len(out)),
+                }
+            )
+            continue
+        vals = pd.to_numeric(out[col], errors="coerce").to_numpy(
+            dtype=np.float32,
+            copy=True,
+        )
+        bad = ~np.isfinite(vals)
+        bad_n = int(bad.sum())
+        if bad_n <= 0:
+            continue
+        vals[bad] = float(default)
+        out[col] = vals
+        filled.append(
+            {
+                "feature": col,
+                "default": float(default),
+                "missing_column": False,
+                "filled_rows": bad_n,
+            }
+        )
+    return out, filled
+
+
 def _first_row_diagnostics(frame: Any) -> Dict[str, float]:
     if not isinstance(frame, pd.DataFrame) or frame.empty:
         return {}
@@ -2229,6 +2312,22 @@ class ModelOrchestrator:
                 side=side,
                 kind=requested_kind,
             )
+            features, neutral_meta_fills = _fill_live_unavailable_meta_contract_features(
+                features,
+                feat_cols,
+            )
+            if neutral_meta_fills:
+                self._last_results["meta_live_unavailable_neutral_fills"] = {
+                    "key": key,
+                    "features": neutral_meta_fills,
+                }
+                if timing_enabled:
+                    tprint(
+                        "Meta inference: filled selected live-unavailable "
+                        "historical model-error/context features with neutral "
+                        f"decision-time defaults for {key} "
+                        f"(n={len(neutral_meta_fills)}, sample={neutral_meta_fills[:8]})."
+                    )
             try:
                 from extreme_price_movements.rule_mask_features import (
                     append_rule_mask_features as _append_rule_mask_features,

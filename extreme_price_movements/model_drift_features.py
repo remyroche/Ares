@@ -340,8 +340,7 @@ def transform_model_drift_features(
     # causal state, not in this row-local artifact transform.
     frob = np.zeros(len(frame), dtype=np.float32)
     legacy_feature_drift = np.zeros(len(frame), dtype=np.float32)
-    sim_s = pd.Series(sim, index=out_index)
-    window = int(state.get("window", 240) or 240)
+    component_sims: list[np.ndarray] = []
     contrib = _model_predict_contrib(model, frame)
     if contrib is not None and contrib.ndim == 2 and contrib.shape[0] == len(frame):
         ref = np.asarray(state.get("contrib_abs_mean") or [], dtype=np.float32)
@@ -364,17 +363,25 @@ def transform_model_drift_features(
     for i in range(3):
         if i < scores.shape[1]:
             comp_dist = np.abs((scores[:, i] - centroid[i]) / max(float(pca_scale[i]), 1e-6))
-            out[f"regime_centroid_similarity_train_pc{i}"] = (1.0 / (1.0 + comp_dist)).astype(np.float32)
+            comp_sim = (1.0 / (1.0 + comp_dist)).astype(np.float32)
+            out[f"regime_centroid_similarity_train_pc{i}"] = comp_sim
+            component_sims.append(comp_sim)
         else:
             out[f"regime_centroid_similarity_train_pc{i}"] = np.float32(1.0)
-    out["regime_centroid_similarity_train_window_mean"] = sim_s.to_numpy(dtype=np.float32)
-    out["regime_centroid_similarity_train_window_p10"] = sim_s.to_numpy(dtype=np.float32)
-    out["feature_drift_psi_core_50"] = legacy_feature_drift
-    out["feature_drift_psi_core_80"] = legacy_feature_drift
-    out["feature_drift_psi_bin_mean"] = legacy_feature_drift
-    out["feature_drift_psi_bin_max"] = legacy_feature_drift
-    out["feature_drift_ks_bin_mean"] = legacy_feature_drift
-    out["feature_drift_ks_bin_max"] = legacy_feature_drift
+    # Legacy "window" names are kept for artifact compatibility. Live batches are
+    # arbitrary candidate sets, so these must remain row-local and batch-stable.
+    # Use cross-component similarity summaries instead of duplicating the scalar.
+    sim_parts = [sim.astype(np.float32)]
+    sim_parts.extend(component_sims)
+    sim_matrix = np.column_stack(sim_parts).astype(np.float32, copy=False)
+    out["regime_centroid_similarity_train_window_mean"] = np.nanmean(sim_matrix, axis=1).astype(np.float32)
+    out["regime_centroid_similarity_train_window_p10"] = np.nanpercentile(sim_matrix, 10, axis=1).astype(np.float32)
+    out["feature_drift_psi_core_50"] = psi50
+    out["feature_drift_psi_core_80"] = psi80
+    out["feature_drift_psi_bin_mean"] = psi_bin_mean
+    out["feature_drift_psi_bin_max"] = psi_bin_max
+    out["feature_drift_ks_bin_mean"] = ks_bin_mean
+    out["feature_drift_ks_bin_max"] = ks_bin_max
     out["mahalanobis_mean_shift"] = maha
     out["frobenius_corr_shift"] = frob
     out["feature_drift_cov_shift"] = legacy_feature_drift

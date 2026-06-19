@@ -1,3 +1,5 @@
+import errno
+import os
 import sys
 import time
 import functools
@@ -26,10 +28,64 @@ def retry_with_backoff(retries=3, backoff_in_seconds=1):
         return wrapper
     return decorator
 
+def _tprint_fallback_write(line: str) -> None:
+    try:
+        path = os.environ.get("EPM_TPRINT_FALLBACK_LOG")
+        if not path:
+            stamp = pd.Timestamp.now("UTC").strftime("%Y%m%d")
+            path = os.path.join("logs", f"tprint_fallback_{stamp}.log")
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(line)
+    except Exception:
+        # tprint is used inside exception handlers and live loops; never let
+        # logging failure become the primary failure mode.
+        pass
+
+
+def _tprint_stdout_nonblocking(line: str) -> bool:
+    try:
+        fd = sys.stdout.fileno()
+    except Exception:
+        return False
+    try:
+        import fcntl
+
+        flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+        try:
+            fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+            os.write(fd, line.encode("utf-8", errors="replace"))
+            return True
+        except OSError as exc:
+            if exc.errno in {
+                errno.EAGAIN,
+                errno.EWOULDBLOCK,
+                errno.EPIPE,
+                errno.EBADF,
+            }:
+                return False
+            return False
+        finally:
+            try:
+                fcntl.fcntl(fd, fcntl.F_SETFL, flags)
+            except Exception:
+                pass
+    except Exception:
+        try:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            return True
+        except Exception:
+            return False
+
+
 def tprint(msg: str):
     ts = pd.Timestamp.now('UTC').strftime("%Y-%m-%d %H:%M:%S")
-    sys.stdout.write(f"[{ts} UTC] {msg}\n")
-    sys.stdout.flush()
+    line = f"[{ts} UTC] {msg}\n"
+    if not _tprint_stdout_nonblocking(line):
+        _tprint_fallback_write(line)
 
 _PIPELINE_WARNINGS = []
 

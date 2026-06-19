@@ -1953,7 +1953,14 @@ def run_backtest(cfg, ts_override=None, store=None):
     except Exception as e:
         tprint(f"Slice plan loading failed: {e}")
 
-    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    feature_run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    run_id = str(
+        os.environ.get("EPM_OUTPUT_RUN_ID", "")
+        or cfg.get("output_run_id")
+        or feature_run_id
+    ).strip()
+    if not run_id:
+        run_id = feature_run_id
     import os
 
     state_file = os.path.join(
@@ -3806,7 +3813,14 @@ def _run_final_model_fit(
     if ts_sig is None:
         tprint("ERROR: No feature directories found.")
         return
-    run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    feature_run_id = ts_sig.strftime("%Y%m%d_%H%M%S")
+    run_id = str(
+        os.environ.get("EPM_OUTPUT_RUN_ID", "")
+        or cfg.get("output_run_id")
+        or feature_run_id
+    ).strip()
+    if not run_id:
+        run_id = feature_run_id
     policy_run_id = str(
         os.environ.get("EPM_POLICY_ARTIFACT_RUN_ID", "")
         or cfg.get("policy_artifact_run_id")
@@ -3827,6 +3841,14 @@ def _run_final_model_fit(
 
     ids_csv = ",".join(strategy_ids)
     fit_cfg = dict(cfg)
+    fit_cfg["run_id"] = run_id
+    fit_cfg["output_run_id"] = run_id
+    label_artifact_run_id = str(
+        os.environ.get("EPM_LABEL_ARTIFACT_RUN_ID", "") or policy_run_id
+    ).strip()
+    fit_cfg["_label_artifact_run_id"] = label_artifact_run_id
+    fit_cfg["label_source_run_id"] = label_artifact_run_id
+    fit_cfg["feature_source_run_id"] = feature_run_id
     fit_cfg["train_full_inference_models"] = True
     fit_cfg["lgbm_use_native_preset"] = True
     fit_cfg["lgbm_require_native_preset"] = True
@@ -3843,33 +3865,89 @@ def _run_final_model_fit(
         "EPM_LGBM_USE_NATIVE_PRESET": "1",
         "EPM_LGBM_REQUIRE_NATIVE_PRESET": "1",
         "EPM_LGBM_NATIVE_PRESET_SOURCE_RUN_ID": policy_run_id,
+        "EPM_FEATURE_SOURCE_RUN_ID": feature_run_id,
         "EPM_RECENCY_HPO_USE_WINNER": "1",
+        "EPM_LGBM_BASE_LABEL_WEIGHT_HPO": "0",
         "EPM_TRAIN_EXTEND_TO_LATEST": "1",
         "EPM_TRAIN_EXTEND_DISABLE_EXACT_PLAN_FILTER": "1",
         "EPM_BASE_STRATEGY_IDS": ids_csv,
         "EPM_META_STRATEGY_IDS": ids_csv,
+        "EPM_LABEL_STRATEGY_IDS": ids_csv,
         "EPM_POLICY_STRATEGY_IDS": ids_csv,
+        "EPM_FINAL_MODEL_STRATEGY_IDS": ids_csv,
     }
+    registry_dir = (
+        Path(fit_cfg["data_root"]) / "artifacts" / policy_run_id / "strategy_registry"
+    )
+    registry_candidates = sorted(registry_dir.glob("*.csv")) if registry_dir.exists() else []
+    if registry_candidates and not os.environ.get("EPM_MASK_STRATEGY_SOURCE_CSV"):
+        env["EPM_MASK_STRATEGY_SOURCE_CSV"] = str(registry_candidates[0])
+        env["EPM_MASK_STRATEGY_TOP_N"] = str(max(10, len(strategy_ids)))
+        env["EPM_MASK_STRATEGY_RANKING_METRIC"] = "stage_e_rank_score"
+        env["EPM_REQUIRE_STRATEGY_ALLOWLIST"] = "1"
+
+    out_dir = Path(fit_cfg["data_root"]) / "artifacts" / run_id
+
+    def _require_final_fit_artifacts(stage: str, rel_paths: list[str]) -> None:
+        missing = [rel for rel in rel_paths if not (out_dir / rel).exists()]
+        if missing:
+            raise RuntimeError(
+                "final_model_fit failed after "
+                f"{stage}: missing required artifacts for run_id={run_id}: "
+                + ", ".join(missing)
+            )
+
     tprint(
         "FINAL MODEL FIT START: "
-        f"run_id={run_id} policy_run_id={policy_run_id} "
+        f"run_id={run_id} feature_run_id={feature_run_id} policy_run_id={policy_run_id} "
+        f"label_artifact_run_id={label_artifact_run_id} "
+        f"feature_source_run_id={fit_cfg.get('feature_source_run_id')} "
         f"strategies={len(strategy_ids)} native_preset=yes recency_hpo_winner=yes "
         "fit_window=all_available_rows"
     )
     with _temporary_env(env):
         run_train(
             fit_cfg,
-            ts_override=ts_sig.strftime("%Y%m%d_%H%M%S"),
+            ts_override=feature_run_id,
             base_only=True,
             meta_only=False,
         )
-        run_train_meta(fit_cfg, ts_override=ts_sig.strftime("%Y%m%d_%H%M%S"))
+        _require_final_fit_artifacts(
+            "train_base",
+            ["base_models_intermediate.pkl", "models/trained_state.pkl"],
+        )
+        try:
+            from extreme_price_movements.base_error_archetype_backfill import (
+                backfill_artifact_base_error_archetypes,
+            )
+
+            _base_error_manifest = backfill_artifact_base_error_archetypes(
+                out_dir,
+                random_state=int(fit_cfg.get("seed", 42) or 42),
+                force=False,
+            )
+            tprint(
+                "FINAL MODEL FIT: base-error archetype OOF backfill complete "
+                f"(states={int((_base_error_manifest or {}).get('state_count', 0) or 0)})."
+            )
+        except Exception as exc:
+            tprint(
+                "WARNING: final_model_fit base-error archetype backfill failed before "
+                f"train_meta: {exc}"
+            )
+        run_train_meta(fit_cfg, ts_override=feature_run_id)
+        _require_final_fit_artifacts(
+            "train_meta",
+            ["models/model_state_meta.pkl"],
+        )
 
     manifest = {
         "mode": "final_model_fit",
         "run_id": run_id,
         "model_artifact_run_id": run_id,
+        "feature_run_id": feature_run_id,
         "policy_artifact_run_id": policy_run_id,
+        "label_artifact_run_id": label_artifact_run_id,
         "strategy_ids": strategy_ids,
         "strategy_source": (
             "EPM_FINAL_MODEL_STRATEGY_IDS" if explicit_ids else "policy_winners"
@@ -3884,7 +3962,6 @@ def _run_final_model_fit(
             "validation because all available rows may be used for fitting."
         ),
     }
-    out_dir = Path(fit_cfg["data_root"]) / "artifacts" / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
     _write_json(out_dir / "final_model_fit_manifest.json", manifest)
     if policy_run_id != run_id:
@@ -4585,6 +4662,22 @@ def main():
     if os.environ.get("EPM_FEATURE_BACKFILL_COMPUTE_WORKERS"):
         cfg["feature_backfill_compute_workers"] = min(
             2, max(1, int(os.environ["EPM_FEATURE_BACKFILL_COMPUTE_WORKERS"]))
+        )
+    if os.environ.get("EPM_FEATURE_PORTABILITY_MODE"):
+        cfg["feature_portability_mode"] = str(
+            os.environ["EPM_FEATURE_PORTABILITY_MODE"]
+        ).strip()
+    if os.environ.get("EPM_FEATURE_PORTABILITY_STRICT"):
+        cfg["feature_portability_strict"] = (
+            os.environ["EPM_FEATURE_PORTABILITY_STRICT"].strip().lower()
+            not in {"0", "false", "no", "off"}
+        )
+    if os.environ.get("EPM_FEATURE_PORTABILITY_ALLOW_VOLUME_SOURCE_DEPENDENT"):
+        cfg["feature_portability_allow_volume_source_dependent"] = (
+            os.environ["EPM_FEATURE_PORTABILITY_ALLOW_VOLUME_SOURCE_DEPENDENT"]
+            .strip()
+            .lower()
+            not in {"0", "false", "no", "off"}
         )
     if os.environ.get("EPM_FEATURE_TAIL_COMPUTE_WARMUP_HOURS"):
         cfg["feature_tail_compute_warmup_hours"] = max(

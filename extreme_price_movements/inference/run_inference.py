@@ -142,6 +142,7 @@ from extreme_price_movements.inference.model_orchestrator import (
     ModelOrchestrator,
     _effective_alpha_feature_contract,
     _effective_selected_feature_contract,
+    _meta_live_unavailable_neutral_default,
 )
 from extreme_price_movements.inference.parity import (
     _policy_artifact_bases,
@@ -691,6 +692,244 @@ def _load_policy_selection_rules(data_root: str, run_id: str) -> Dict[str, Any]:
     return {}
 
 
+_LIVE_SPREAD_BASELINE_CACHE: Dict[str, Dict[str, Any]] = {}
+
+
+def _live_spread_baseline_candidates(data_root: str) -> List[Path]:
+    paths: List[Path] = []
+    explicit = str(os.environ.get("EPM_SIMPLE_POLICY_SPREAD_BASELINE_PATH", "")).strip()
+    if explicit:
+        paths.append(Path(explicit))
+    root = Path(data_root or "data")
+    paths.extend(
+        [
+            root
+            / "exchanges"
+            / "krakenfutures"
+            / "spread_model"
+            / "per_asset_spread_baseline_latest.csv",
+            root
+            / "exchanges"
+            / "krakenfutures"
+            / "spread_model"
+            / "per_asset_spread_baseline_latest.json",
+            root / "spread_model" / "per_asset_spread_baseline_latest.csv",
+            root / "spread_model" / "per_asset_spread_baseline_latest.json",
+        ]
+    )
+    out: List[Path] = []
+    seen: set[str] = set()
+    for path in paths:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(path)
+    return out
+
+
+def _spread_symbol_aliases(symbol: Any) -> set[str]:
+    raw = str(symbol or "").strip()
+    aliases = {raw}
+    if raw:
+        aliases.add(raw.upper())
+        aliases.add(normalise_symbol(raw))
+        aliases.add(normalise_symbol(raw.replace(":USD", "")))
+        aliases.add(normalise_symbol(raw.replace(":USDT", "")))
+    return {alias for alias in aliases if alias}
+
+
+def _spread_fallback_average(
+    values: Sequence[float],
+    weights: Optional[Sequence[float]] = None,
+) -> float:
+    vals = np.asarray(values, dtype=np.float64)
+    valid = np.isfinite(vals) & (vals >= 0.0)
+    vals = vals[valid]
+    weight_arr: Optional[np.ndarray] = None
+    if weights is not None:
+        raw_weights = np.asarray(weights, dtype=np.float64)
+        if raw_weights.shape == valid.shape:
+            weight_arr = raw_weights[valid]
+            weight_arr = np.where(
+                np.isfinite(weight_arr) & (weight_arr > 0.0), weight_arr, 0.0
+            )
+
+    def _average(local_vals: np.ndarray, local_weights: Optional[np.ndarray]) -> float:
+        if local_weights is not None and float(local_weights.sum()) > 0.0:
+            return float(np.average(local_vals, weights=local_weights))
+        return float(np.nanmean(local_vals))
+
+    if vals.size == 0:
+        return float("nan")
+    if vals.size >= 20:
+        cap = float(np.nanquantile(vals, 0.75))
+        keep = vals <= cap
+        trimmed = vals[keep]
+        if trimmed.size >= 20:
+            return _average(
+                trimmed,
+                weight_arr[keep] if weight_arr is not None else None,
+            )
+    return _average(vals, weight_arr)
+
+
+def _load_live_spread_baseline(data_root: str) -> Dict[str, Any]:
+    paths = _live_spread_baseline_candidates(data_root)
+    cache_key = "|".join(str(path) for path in paths)
+    cached = _LIVE_SPREAD_BASELINE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    loaded: Dict[str, Any] = {}
+
+    def _finish(
+        *,
+        path: Path,
+        rows: Sequence[Mapping[str, Any]],
+        payload_fallback: Any = None,
+    ) -> Dict[str, Any]:
+        by_symbol: Dict[str, float] = {}
+        values: List[float] = []
+        weights: List[float] = []
+        for row in rows:
+            symbol = str(row.get("symbol") or "").strip()
+            if not symbol:
+                continue
+            value = row.get(
+                "average_spread_bps",
+                row.get("baseline_spread_bps", row.get("spread_bps")),
+            )
+            try:
+                spread = float(value)
+            except Exception:
+                continue
+            if not np.isfinite(spread) or spread < 0.0:
+                continue
+            values.append(spread)
+            try:
+                weight = max(0.0, float(row.get("rows", 0.0)))
+            except Exception:
+                weight = 0.0
+            weights.append(weight)
+            for alias in _spread_symbol_aliases(symbol):
+                by_symbol[alias] = spread
+        try:
+            fallback = float(payload_fallback)
+        except Exception:
+            fallback = float("nan")
+        if not np.isfinite(fallback) or fallback < 0.0:
+            fallback = _spread_fallback_average(values, weights=weights)
+        unique_symbols = {
+            str(row.get("symbol") or "").strip()
+            for row in rows
+            if isinstance(row, Mapping) and str(row.get("symbol") or "").strip()
+        }
+        return {
+            "source": str(path),
+            "by_symbol": by_symbol,
+            "effective_fallback_spread_bps": (
+                max(0.0, float(fallback)) if np.isfinite(fallback) else None
+            ),
+            "symbol_count": int(len(unique_symbols)),
+        }
+
+    for path in paths:
+        if not path.exists():
+            continue
+        try:
+            if path.suffix.lower() == ".csv":
+                frame = pd.read_csv(path)
+                spread_col = next(
+                    (
+                        col
+                        for col in (
+                            "average_spread_bps",
+                            "baseline_spread_bps",
+                            "spread_bps",
+                        )
+                        if col in frame.columns
+                    ),
+                    None,
+                )
+                if "symbol" not in frame.columns or spread_col is None:
+                    continue
+                cols = ["symbol", spread_col]
+                if "rows" in frame.columns:
+                    cols.append("rows")
+                rows = frame[cols].rename(
+                    columns={spread_col: "average_spread_bps"}
+                ).to_dict("records")
+                loaded = _finish(path=path, rows=rows)
+            else:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                rows = (
+                    payload.get("per_asset_spread_baseline")
+                    or payload.get("per_asset_average_spread")
+                    or []
+                )
+                if not isinstance(rows, list):
+                    continue
+                loaded = _finish(
+                    path=path,
+                    rows=[row for row in rows if isinstance(row, Mapping)],
+                    payload_fallback=payload.get(
+                        "effective_fallback_spread_bps",
+                        payload.get("global_average_spread_bps"),
+                    ),
+                )
+            if loaded.get("by_symbol"):
+                break
+        except Exception as exc:
+            tprint(f"Could not load live spread baseline from {path}: {exc}")
+            continue
+    _LIVE_SPREAD_BASELINE_CACHE[cache_key] = loaded
+    return loaded
+
+
+def _live_ev_haircut_spread_baseline_bps(
+    *,
+    symbol: Any,
+    data_root: str,
+    fallback_bps: Any,
+) -> Tuple[float, str]:
+    baseline = _load_live_spread_baseline(data_root)
+    by_symbol = baseline.get("by_symbol") if isinstance(baseline, dict) else {}
+    if isinstance(by_symbol, dict):
+        for alias in _spread_symbol_aliases(symbol):
+            value = by_symbol.get(alias)
+            try:
+                spread = float(value)
+            except Exception:
+                continue
+            if np.isfinite(spread) and spread >= 0.0:
+                return (
+                    float(spread),
+                    f"per_asset_spread_baseline.average_spread_bps:{baseline.get('source')}",
+                )
+    fallback = (
+        baseline.get("effective_fallback_spread_bps")
+        if isinstance(baseline, dict)
+        else None
+    )
+    try:
+        fallback_spread = float(fallback)
+    except Exception:
+        fallback_spread = float("nan")
+    if np.isfinite(fallback_spread) and fallback_spread >= 0.0:
+        return (
+            float(fallback_spread),
+            f"per_asset_spread_baseline.effective_fallback:{baseline.get('source')}",
+        )
+    try:
+        policy_spread = float(fallback_bps)
+    except Exception:
+        policy_spread = 0.0
+    policy_spread = (
+        max(0.0, float(policy_spread)) if np.isfinite(policy_spread) else 0.0
+    )
+    return policy_spread, "portfolio_policy.ev_haircut_expected_spread_bps"
+
+
 def _strategy_row_aliases(strategy_id: str, side: str = "") -> set[str]:
     sid = str(strategy_id or "")
     core = strategy_core_id(sid)
@@ -882,6 +1121,44 @@ def _resolve_training_live_contract_strategy_filter(
     if contracted_cores:
         return contracted_cores
     return fallback
+
+
+def _resolve_active_strategy_filter_for_policy(
+    *,
+    parity_contract: Optional[Dict[str, Any]],
+    portfolio_policy: PortfolioPolicyConfig,
+    policy_strategy_filter: Optional[set[str]],
+    prefer_policy_contract: bool,
+) -> Optional[set[str]]:
+    """Resolve active deployment strategies for a model/policy artifact pair.
+
+    A final-fit model artifact can be reused with a freshly optimized policy
+    artifact. In that case the model-run training/live parity contract may
+    still describe the previous deployed strategy subset, while the policy
+    artifact intentionally declares the current portfolio strategy contract.
+    Keep the portfolio contract strict, but do not let the stale parity
+    strategy list downselect the policy artifact.
+    """
+    policy_filter = _resolve_portfolio_contract_strategy_filter(
+        portfolio_policy,
+        policy_strategy_filter,
+    )
+    if prefer_policy_contract and policy_filter:
+        parity_filter = _resolve_training_live_contract_strategy_filter(
+            parity_contract,
+            None,
+        )
+        if parity_filter and set(parity_filter) != set(policy_filter):
+            tprint(
+                "Policy artifact strategy contract overrides training-live "
+                "parity strategy filter: "
+                f"policy={sorted(policy_filter)} parity={sorted(parity_filter)}"
+            )
+        return policy_filter
+    return _resolve_training_live_contract_strategy_filter(
+        parity_contract,
+        policy_filter,
+    )
 
 
 def _load_lgbm_strategy_mask_rows(
@@ -1600,6 +1877,7 @@ def _ev_adjusted_prediction_after_entry_friction(
     orderbook_slippage_bps: Any = None,
     adverse_signal_gap_bps: Any = None,
     spread_baseline_bps: float = 97.32886619027215,
+    spread_baseline_source: str = "portfolio_policy.ev_haircut_expected_spread_bps",
     delay_slippage_baseline_bps: float = 40.0,
     policy_rank_reference_store: Optional[PolicyRankReferenceStore] = None,
 ) -> Dict[str, Any]:
@@ -1656,6 +1934,7 @@ def _ev_adjusted_prediction_after_entry_friction(
         "ev_haircut_observed_spread_bps": float(spread_bps),
         "ev_haircut_observed_half_spread_bps": float(observed_half_spread_bps),
         "ev_haircut_spread_baseline_bps": float(spread_baseline),
+        "ev_haircut_spread_baseline_source": str(spread_baseline_source or ""),
         "ev_haircut_half_spread_baseline_bps": float(half_spread_baseline),
         "ev_haircut_spread_excess_bps": float(spread_excess_bps),
         "ev_haircut_orderbook_slippage_bps": float(slippage_bps),
@@ -1670,7 +1949,8 @@ def _ev_adjusted_prediction_after_entry_friction(
             delay_slippage_excess_bps
         ),
         "ev_haircut_contract": (
-            "spread_excess=max(0, spread_bps/2 - expected_spread_bps/2); "
+            "spread_excess=max(0, observed_spread_bps/2 - "
+            "symbol_average_spread_bps/2); "
             "delay_slippage_excess=max(0, adverse_signal_gap_bps + "
             "orderbook_slippage_bps - delay_slippage_baseline_bps)"
         ),
@@ -3068,6 +3348,9 @@ def _prediction_ledger_row(
         "ev_haircut_spread_baseline_bps": snap.get(
             "ev_haircut_spread_baseline_bps"
         ),
+        "ev_haircut_spread_baseline_source": snap.get(
+            "ev_haircut_spread_baseline_source"
+        ),
         "ev_haircut_half_spread_baseline_bps": snap.get(
             "ev_haircut_half_spread_baseline_bps"
         ),
@@ -3373,9 +3656,19 @@ def _build_executor_bucket_params(config: Dict[str, Any]) -> Dict[str, Any]:
         if params_per_bucket
         else dict(full_state.get("bucket_params", {}) or {})
     )
-    stop_params = load_simple_policy_stop_params_by_strategy(
-        str(config.get("data_root", "data")), str(config.get("run_id", ""))
+    data_root = str(config.get("data_root", "data"))
+    policy_run_id = str(
+        config.get("policy_artifact_run_id") or config.get("run_id", "")
     )
+    stop_params = load_simple_policy_stop_params_by_strategy(
+        data_root,
+        policy_run_id,
+    )
+    if not stop_params and policy_run_id != str(config.get("run_id", "")):
+        stop_params = load_simple_policy_stop_params_by_strategy(
+            data_root,
+            str(config.get("run_id", "")),
+        )
     bucket_params["simple_policy_stop_params_by_strategy"] = stop_params
     return bucket_params
 
@@ -4282,6 +4575,7 @@ def _strategy_feature_contracts_from_orchestrator(
             str(c)
             for c in raw_meta_cols
             if not is_model_derived_feature_key(str(c))
+            and _meta_live_unavailable_neutral_default(str(c)) is None
         )
         if feat_cols:
             seen: set[str] = set()
@@ -7601,9 +7895,13 @@ def run_inference_step(
     portfolio_policy = portfolio_policy or PortfolioPolicyConfig()
     parity_contract = runtime_config.get("training_live_parity_contract")
     if isinstance(parity_contract, dict) and parity_contract:
-        accepted_strategies = _resolve_training_live_contract_strategy_filter(
-            parity_contract,
-            accepted_strategies,
+        accepted_strategies = _resolve_active_strategy_filter_for_policy(
+            parity_contract=parity_contract,
+            portfolio_policy=portfolio_policy,
+            policy_strategy_filter=accepted_strategies,
+            prefer_policy_contract=bool(
+                runtime_config.get("policy_strategy_contract_overrides_parity", False)
+            ),
         )
     validate_portfolio_strategy_contract(
         portfolio_policy,
@@ -7624,8 +7922,14 @@ def run_inference_step(
                 else []
             ),
             data_root=str(runtime_config.get("data_root") or ""),
-            run_id=str(runtime_config.get("run_id") or ""),
-            strict=True,
+            run_id=str(
+                runtime_config.get("model_artifact_run_id")
+                or runtime_config.get("run_id")
+                or ""
+            ),
+            strict=not bool(
+                runtime_config.get("policy_strategy_contract_overrides_parity", False)
+            ),
         )
     if portfolio_mgr is None:
         portfolio_mgr = PortfolioManager.from_policy_config(
@@ -9353,6 +9657,17 @@ def run_inference_step(
                                 )
                                 side_metrics["non_fatal_issues"] += 1
                                 continue
+                            spread_baseline_bps, spread_baseline_source = (
+                                _live_ev_haircut_spread_baseline_bps(
+                                    symbol=symbol,
+                                    data_root=str(
+                                        runtime_config.get("data_root", "data")
+                                    ),
+                                    fallback_bps=(
+                                        portfolio_policy.ev_haircut_expected_spread_bps
+                                    ),
+                                )
+                            )
                             if not portfolio_policy.orderbook_precheck_enabled:
                                 ev_adjusted = _ev_adjusted_prediction_after_entry_friction(
                                     calibrated_score=decision.get("calibrated_score"),
@@ -9365,7 +9680,8 @@ def run_inference_step(
                                     ),
                                     orderbook_slippage_bps=0.0,
                                     adverse_signal_gap_bps=float(adverse_gap_bps),
-                                    spread_baseline_bps=portfolio_policy.ev_haircut_expected_spread_bps,
+                                    spread_baseline_bps=spread_baseline_bps,
+                                    spread_baseline_source=spread_baseline_source,
                                     delay_slippage_baseline_bps=(
                                         portfolio_policy.ev_haircut_delay_slippage_baseline_bps
                                     ),
@@ -9458,9 +9774,8 @@ def run_inference_step(
                                             book_snapshot.expected_fill_slippage_bps
                                         ),
                                         adverse_signal_gap_bps=float(adverse_gap_bps),
-                                        spread_baseline_bps=(
-                                            portfolio_policy.ev_haircut_expected_spread_bps
-                                        ),
+                                        spread_baseline_bps=spread_baseline_bps,
+                                        spread_baseline_source=spread_baseline_source,
                                         delay_slippage_baseline_bps=(
                                             portfolio_policy.ev_haircut_delay_slippage_baseline_bps
                                         ),
@@ -10017,6 +10332,9 @@ def run_inference_step(
                             "ev_haircut_spread_baseline_bps": chain_results.get(
                                 "ev_haircut_spread_baseline_bps"
                             ),
+                            "ev_haircut_spread_baseline_source": chain_results.get(
+                                "ev_haircut_spread_baseline_source"
+                            ),
                             "ev_haircut_half_spread_baseline_bps": chain_results.get(
                                 "ev_haircut_half_spread_baseline_bps"
                             ),
@@ -10397,11 +10715,54 @@ def run_inference_step(
             "Global auction execution: "
             f"candidates={len(global_auction_decisions)} cap={global_entry_cap}"
         )
+
+        def _log_global_auction_capacity_rejects(
+            remaining_decisions: Sequence[Dict[str, Any]],
+            *,
+            stage: str,
+            reason: str,
+        ) -> None:
+            if prediction_ledger is None:
+                return
+            for skipped_decision in remaining_decisions:
+                if not _should_log_prediction_candidate(
+                    skipped_decision, policy=portfolio_policy
+                ):
+                    continue
+                skip_side = str(
+                    skipped_decision.get("_auction_side")
+                    or skipped_decision.get("side")
+                    or ""
+                )
+                skip_chain = dict(skipped_decision.get("chain_results") or {})
+                skip_chain["global_auction_skip_stage"] = stage
+                skip_chain["global_auction_skip_reason"] = reason
+                skipped_decision["chain_results"] = skip_chain
+                prediction_ledger_rows.append(
+                    _prediction_ledger_row(
+                        skipped_decision,
+                        timestamp=now_utc.isoformat(),
+                        side=skip_side,
+                        portfolio_decision="portfolio_rejected",
+                        portfolio_reject_reason=f"global_auction_{stage}:{reason}",
+                    )
+                )
+
         entries_this_bar = 0
-        for decision in global_auction_decisions:
+        for auction_i, decision in enumerate(global_auction_decisions):
             if total_entries_executed >= global_entry_cap:
+                _log_global_auction_capacity_rejects(
+                    global_auction_decisions[auction_i:],
+                    stage="capacity",
+                    reason="global_entry_cap_reached",
+                )
                 break
             if entries_this_bar >= int(portfolio_policy.max_new_entries_per_bar):
+                _log_global_auction_capacity_rejects(
+                    global_auction_decisions[auction_i:],
+                    stage="capacity",
+                    reason="max_new_entries_per_bar_reached",
+                )
                 break
             side = str(decision.get("_auction_side") or decision.get("side") or "")
             side_metrics = decision.get("_auction_side_metrics")
@@ -10938,6 +11299,15 @@ def run_inference_step(
                         )
                         _commit_global_side_metrics()
                         continue
+                    spread_baseline_bps, spread_baseline_source = (
+                        _live_ev_haircut_spread_baseline_bps(
+                            symbol=symbol,
+                            data_root=str(runtime_config.get("data_root", "data")),
+                            fallback_bps=(
+                                portfolio_policy.ev_haircut_expected_spread_bps
+                            ),
+                        )
+                    )
                     if not portfolio_policy.orderbook_precheck_enabled:
                         ev_adjusted = _ev_adjusted_prediction_after_entry_friction(
                             calibrated_score=decision.get("calibrated_score"),
@@ -10950,7 +11320,8 @@ def run_inference_step(
                             ),
                             orderbook_slippage_bps=0.0,
                             adverse_signal_gap_bps=float(adverse_gap_bps),
-                            spread_baseline_bps=portfolio_policy.ev_haircut_expected_spread_bps,
+                            spread_baseline_bps=spread_baseline_bps,
+                            spread_baseline_source=spread_baseline_source,
                             delay_slippage_baseline_bps=(
                                 portfolio_policy.ev_haircut_delay_slippage_baseline_bps
                             ),
@@ -11052,9 +11423,8 @@ def run_inference_step(
                                 book_snapshot.expected_fill_slippage_bps
                             ),
                             adverse_signal_gap_bps=float(adverse_gap_bps),
-                            spread_baseline_bps=(
-                                portfolio_policy.ev_haircut_expected_spread_bps
-                            ),
+                            spread_baseline_bps=spread_baseline_bps,
+                            spread_baseline_source=spread_baseline_source,
                             delay_slippage_baseline_bps=(
                                 portfolio_policy.ev_haircut_delay_slippage_baseline_bps
                             ),
@@ -11461,6 +11831,9 @@ def run_inference_step(
                     ),
                     "ev_haircut_spread_baseline_bps": chain_results.get(
                         "ev_haircut_spread_baseline_bps"
+                    ),
+                    "ev_haircut_spread_baseline_source": chain_results.get(
+                        "ev_haircut_spread_baseline_source"
                     ),
                     "ev_haircut_half_spread_baseline_bps": chain_results.get(
                         "ev_haircut_half_spread_baseline_bps"
@@ -11899,9 +12272,11 @@ def run_inference_loop(
     thresholds = config["thresholds"]
     run_id = config["run_id"]
     data_root = str(config.get("data_root", "data"))
+    model_artifact_run_id = str(config.get("model_artifact_run_id") or run_id)
+    policy_artifact_run_id = str(config.get("policy_artifact_run_id") or run_id)
     portfolio_policy = load_portfolio_policy_config(
         data_root=data_root,
-        run_id=run_id,
+        run_id=policy_artifact_run_id,
         runtime_cfg=config,
         require_artifact=_is_live_test_mode(mode) or str(mode).lower() == "live",
     )
@@ -11913,16 +12288,26 @@ def run_inference_loop(
     if not isinstance(parity_contract, dict) or not parity_contract:
         parity_contract = load_training_live_parity_contract(
             data_root=data_root,
-            run_id=run_id,
+            run_id=model_artifact_run_id,
             require=_is_live_test_mode(mode) or str(mode).lower() == "live",
         )
         config["training_live_parity_contract"] = parity_contract
-    accepted_strategies = _resolve_training_live_contract_strategy_filter(
-        parity_contract,
-        _resolve_portfolio_contract_strategy_filter(
-            portfolio_policy,
-            resolve_deployment_strategy_filter(data_root, run_id),
-        ),
+    policy_strategy_filter = resolve_deployment_strategy_filter(
+        data_root,
+        policy_artifact_run_id,
+    )
+    prefer_policy_contract = (
+        policy_artifact_run_id != model_artifact_run_id
+        and policy_strategy_filter is not None
+    )
+    accepted_strategies = _resolve_active_strategy_filter_for_policy(
+        parity_contract=parity_contract,
+        portfolio_policy=portfolio_policy,
+        policy_strategy_filter=policy_strategy_filter,
+        prefer_policy_contract=prefer_policy_contract,
+    )
+    config["policy_strategy_contract_overrides_parity"] = bool(
+        prefer_policy_contract
     )
     validate_portfolio_strategy_contract(
         portfolio_policy,
@@ -11935,10 +12320,13 @@ def run_inference_loop(
             sorted(accepted_strategies) if accepted_strategies is not None else []
         ),
         data_root=data_root,
-        run_id=run_id,
-        strict=True,
+        run_id=model_artifact_run_id,
+        strict=not prefer_policy_contract,
     )
-    strategy_asset_exclusions = load_strategy_asset_exclusion_filter(data_root, run_id)
+    strategy_asset_exclusions = load_strategy_asset_exclusion_filter(
+        data_root,
+        policy_artifact_run_id,
+    )
 
     # Initialize orchestrator
     orchestrator = ModelOrchestrator(model_bundle, full_state)
@@ -12844,6 +13232,11 @@ def main():
             "WARNING: late-entry override enabled; entries may be placed with "
             "hourly/15m context outside the normal freshness window."
         )
+    neutral_fill_nonfinite = _env_flag(
+        "EPM_STRICT_FEATURE_PARITY_NEUTRAL_FILL_NONFINITE",
+        bool(config.get("strict_feature_parity_neutral_fill_nonfinite", False)),
+    )
+    config["strict_feature_parity_neutral_fill_nonfinite"] = neutral_fill_nonfinite
     runtime_cfg = dict(config.get("runtime_cfg") or get_runtime_cfg())
     runtime_cfg["use_perps"] = config["market_mode"] == "perps"
     runtime_cfg["market_mode"] = config["market_mode"]
@@ -12853,6 +13246,9 @@ def main():
         "cross_asset_portable",
     )
     runtime_cfg.setdefault("feature_portability_strict", True)
+    runtime_cfg["strict_feature_parity_neutral_fill_nonfinite"] = (
+        neutral_fill_nonfinite
+    )
     config["runtime_cfg"] = runtime_cfg
     config.setdefault(
         "cross_margin_dust_quote_threshold",
@@ -12944,14 +13340,25 @@ def main():
         f"version={portfolio_policy.portfolio_policy_version} "
         f"strategy_contract={len(portfolio_policy.strategy_ids) or len(portfolio_policy.strategy_cores)}"
     )
-    accepted_strategies = _resolve_training_live_contract_strategy_filter(
-        parity_contract,
-        _resolve_portfolio_contract_strategy_filter(
-            portfolio_policy,
-            resolve_deployment_strategy_filter(
-                config["data_root"], policy_artifact_run_id
-            ),
-        ),
+    policy_strategy_filter = resolve_deployment_strategy_filter(
+        config["data_root"],
+        policy_artifact_run_id,
+    )
+    prefer_policy_contract = (
+        policy_artifact_run_id != model_artifact_run_id
+        and policy_strategy_filter is not None
+    )
+    accepted_strategies = _resolve_active_strategy_filter_for_policy(
+        parity_contract=parity_contract,
+        portfolio_policy=portfolio_policy,
+        policy_strategy_filter=policy_strategy_filter,
+        prefer_policy_contract=prefer_policy_contract,
+    )
+    config["policy_strategy_contract_overrides_parity"] = bool(
+        prefer_policy_contract
+    )
+    runtime_cfg["policy_strategy_contract_overrides_parity"] = bool(
+        prefer_policy_contract
     )
     validate_portfolio_strategy_contract(
         portfolio_policy,
@@ -12965,7 +13372,7 @@ def main():
         ),
         data_root=str(config["data_root"]),
         run_id=model_artifact_run_id,
-        strict=True,
+        strict=not prefer_policy_contract,
     )
     tprint(
         "Training-live parity contract loaded: "

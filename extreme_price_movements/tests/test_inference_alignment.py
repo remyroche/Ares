@@ -78,6 +78,54 @@ def test_prefixed_base_drift_aliases_materialize_from_binned_sources():
     assert np.allclose(out["base_H5_feature_drift_ks_core"], [0.3, 0.4])
 
 
+def test_prefixed_raw_state_aliases_materialize_from_equivalent_base_prefix():
+    frame = pd.DataFrame(
+        {
+            "pred_short_short_asset_alpha_H5_raw_state_svd_03": [0.2, -0.1],
+            "pred_short_short_asset_alpha_H5_raw_state_reconstruction_error": [
+                0.05,
+                0.08,
+            ],
+        }
+    )
+
+    out, added = _materialize_model_drift_feature_aliases(
+        frame,
+        {
+            "pred_short_asset_alpha_H5_raw_state_svd_03",
+            "pred_short_asset_alpha_H5_raw_state_reconstruction_error",
+        },
+    )
+
+    assert added == 2
+    assert np.allclose(out["pred_short_asset_alpha_H5_raw_state_svd_03"], [0.2, -0.1])
+    assert np.allclose(
+        out["pred_short_asset_alpha_H5_raw_state_reconstruction_error"],
+        [0.05, 0.08],
+    )
+
+
+def test_raw_state_aliases_materialize_from_unrecognized_equivalent_prefix():
+    frame = pd.DataFrame(
+        {
+            "short_short_asset_alpha_H5_raw_state_svd_03": [0.2, -0.1],
+            "short_short_asset_alpha_H5_state_tod_mahalanobis": [1.5, 2.0],
+        }
+    )
+
+    out, added = _materialize_model_drift_feature_aliases(
+        frame,
+        {
+            "pred_short_asset_alpha_H5_raw_state_svd_03",
+            "pred_short_asset_alpha_H5_state_tod_mahalanobis",
+        },
+    )
+
+    assert added == 2
+    assert np.allclose(out["pred_short_asset_alpha_H5_raw_state_svd_03"], [0.2, -0.1])
+    assert np.allclose(out["pred_short_asset_alpha_H5_state_tod_mahalanobis"], [1.5, 2.0])
+
+
 def test_regime_adaptor_score_precedence_keeps_legacy_deployment_path():
     final = np.asarray([0.4, 0.6], dtype=np.float64)
     weight = np.asarray([1.2, 0.8], dtype=np.float64)
@@ -615,6 +663,49 @@ def test_predict_meta_uses_training_history_defaults_for_recent_effectiveness():
     assert np.allclose(model.seen["symbol_recent_utility_shrunk"], [-0.03, -0.03])
     default_report = orchestrator._last_results["meta_historical_effectiveness_defaults"]
     assert default_report["count"] == 4
+
+
+def test_predict_meta_fills_missing_raw_state_alias_from_training_stats():
+    raw_state_feature = (
+        "pred_short_asset_alpha_H5_raw_state_reconstruction_error"
+    )
+
+    class CapturingMetaModel:
+        feature_columns = ["short_asset_alpha", raw_state_feature]
+        feature_stats_train = {
+            raw_state_feature: {
+                "mean": 0.0,
+                "p50": 0.0,
+                "std": 0.0,
+                "missing_rate": 0.0,
+            }
+        }
+
+        def __init__(self):
+            self.seen = None
+
+        def predict(self, X):
+            self.seen = X.copy()
+            return [0.55] * len(X)
+
+    model = CapturingMetaModel()
+    orchestrator = ModelOrchestrator(
+        {"meta_models": {"short_asset_alpha_clf": model}},
+        {"strict_feature_parity": True},
+    )
+    features = pd.DataFrame(
+        {"short_asset_alpha": [0.62, 0.71]},
+        index=["AAA/USDC", "BBB/USDC"],
+    )
+
+    preds = orchestrator.predict_meta(features, "short", "short_asset_alpha")
+
+    assert list(preds.index) == ["AAA/USDC", "BBB/USDC"]
+    assert np.allclose(model.seen[raw_state_feature], [0.0, 0.0])
+    default_report = orchestrator._last_results[
+        "meta_artifact_context_training_defaults"
+    ]
+    assert default_report["features"][0]["feature"] == raw_state_feature
 
 
 def test_run_full_chain_fails_closed_when_position_sizer_rejects(monkeypatch):

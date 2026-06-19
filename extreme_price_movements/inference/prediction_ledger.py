@@ -130,6 +130,7 @@ PREDICTION_LEDGER_DIAGNOSTIC_COLUMNS = [
     "ev_haircut_observed_spread_bps",
     "ev_haircut_observed_half_spread_bps",
     "ev_haircut_spread_baseline_bps",
+    "ev_haircut_spread_baseline_source",
     "ev_haircut_half_spread_baseline_bps",
     "ev_haircut_spread_excess_bps",
     "ev_haircut_orderbook_slippage_bps",

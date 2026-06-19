@@ -217,6 +217,150 @@ def test_alpha_uncertainty_context_exports_base_lgbm_drift_features():
     assert "base_H10_pred_std" in out.columns
 
 
+def test_replay_threshold_selector_can_lower_threshold_without_trade_count_floor(tmp_path):
+    n = 12
+    timestamps = pd.date_range("2026-01-01", periods=n, freq="6h", tz="UTC")
+    ranks = np.linspace(0.70, 0.99, n)
+    # Lower-rank candidates are still positive, so the replay objective should
+    # prefer throughput over the previous high threshold.
+    net_returns = np.linspace(0.018, 0.010, n)
+    candidates = pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "symbol": [f"SYM{i}/USD:USD" for i in range(n)],
+            "side": ["short"] * n,
+            "strategy_id": ["short_test"] * n,
+            "base_strategy_threshold": [0.92] * n,
+            "calibrated_score": ranks,
+            "normalized_rank_score": ranks,
+            "strategy_rank_pct": ranks,
+            "entry_price": [100.0] * n,
+            "exit_timestamp": timestamps + pd.Timedelta(hours=2),
+            "exit_price": [98.0] * n,
+            "net_return": net_returns,
+            "gross_return": net_returns + 0.002,
+            "holding_bars": [8] * n,
+            "simple_policy_exit_reason": ["trailing"] * n,
+        }
+    )
+    payload = {
+        "strategies": [
+            {
+                "strategy_id": "short_test",
+                "selected": True,
+                "deployment_rank_threshold": 0.92,
+                "deployment_threshold_metrics": {},
+            }
+        ],
+        "selection_rules": {},
+    }
+
+    updated_candidates, updated_replay, report = (
+        spo._select_deployment_threshold_by_portfolio_replay(
+            payload,
+            candidates.copy(),
+            candidates.copy(),
+            output_dir=tmp_path,
+            market_mode="perps",
+        )
+    )
+
+    assert report["updated"] is True
+    assert report["selected_threshold"] < 0.92
+    assert report["global_min_trade_count_is_diagnostic_only"] is True
+    assert report["selected"]["global_min_trade_count_met"] is False
+    assert payload["strategies"][0]["deployment_rank_threshold"] == pytest.approx(
+        report["selected_threshold"]
+    )
+    assert updated_candidates["base_strategy_threshold"].eq(
+        report["selected_threshold"]
+    ).all()
+    assert updated_replay["base_strategy_threshold"].eq(
+        report["selected_threshold"]
+    ).all()
+    assert (tmp_path / "deployment_threshold_sensitivity.csv").exists()
+    assert (tmp_path / "deployment_threshold_sensitivity.json").exists()
+
+
+def test_replay_threshold_selector_blocks_negative_recent_windows(tmp_path):
+    timestamps = pd.date_range("2026-01-01", periods=42, freq="1D", tz="UTC")
+    rows = []
+    for i, ts in enumerate(timestamps):
+        in_recent_week = ts > timestamps.max() - pd.Timedelta(days=7)
+        high_ts = ts + pd.Timedelta(hours=12)
+        rows.append(
+            {
+                "timestamp": ts,
+                "symbol": f"LOW{i}/USD:USD",
+                "side": "short",
+                "strategy_id": "short_test",
+                "base_strategy_threshold": 0.92,
+                "calibrated_score": 0.72,
+                "normalized_rank_score": 0.72,
+                "strategy_rank_pct": 0.72,
+                "entry_price": 100.0,
+                "exit_timestamp": ts + pd.Timedelta(hours=2),
+                "exit_price": 98.0,
+                "net_return": -0.02 if in_recent_week else 0.03,
+                "gross_return": -0.018 if in_recent_week else 0.032,
+                "holding_bars": 8,
+                "simple_policy_exit_reason": "trailing",
+            }
+        )
+        rows.append(
+            {
+                "timestamp": high_ts,
+                "symbol": f"HIGH{i}/USD:USD",
+                "side": "short",
+                "strategy_id": "short_test",
+                "base_strategy_threshold": 0.92,
+                "calibrated_score": 0.94,
+                "normalized_rank_score": 0.94,
+                "strategy_rank_pct": 0.94,
+                "entry_price": 100.0,
+                "exit_timestamp": high_ts + pd.Timedelta(hours=2),
+                "exit_price": 98.0,
+                "net_return": 0.01,
+                "gross_return": 0.012,
+                "holding_bars": 8,
+                "simple_policy_exit_reason": "trailing",
+            }
+        )
+    candidates = pd.DataFrame(rows)
+    payload = {
+        "strategies": [
+            {
+                "strategy_id": "short_test",
+                "selected": True,
+                "deployment_rank_threshold": 0.92,
+                "deployment_threshold_metrics": {},
+            }
+        ],
+        "selection_rules": {},
+    }
+
+    _, _, report = spo._select_deployment_threshold_by_portfolio_replay(
+        payload,
+        candidates.copy(),
+        candidates.copy(),
+        output_dir=tmp_path,
+        market_mode="perps",
+    )
+
+    sensitivity = pd.read_csv(tmp_path / "deployment_threshold_sensitivity.csv")
+    row_070 = sensitivity.loc[
+        sensitivity["deployment_rank_threshold"].round(2).eq(0.70)
+    ].iloc[0]
+    assert bool(row_070["full_hard_floor_pass"]) is True
+    assert bool(row_070["hard_floor_window_7d_pass"]) is False
+    assert bool(row_070["hard_floor_pass"]) is False
+    assert report["updated"] is True
+    assert report["selected_threshold"] > 0.72
+    assert report["selected"]["hard_floor_window_7d_pass"] is True
+    assert report["selected"]["hard_floor_window_14d_pass"] is True
+    assert report["selected"]["hard_floor_window_28d_pass"] is True
+
+
 def test_simulate_and_score_reanchors_entry_spread_into_path_geometry(monkeypatch):
     monkeypatch.setenv("EPM_SIMPLE_POLICY_EXIT_QUOTE_HALF_SPREAD_BPS", "0")
     rows = pd.DataFrame(
@@ -319,6 +463,90 @@ def test_policy_spread_columns_use_asset_average_with_global_fallback(monkeypatc
     assert out["expected_spread_bps"].tolist() == pytest.approx([6.0, 9.0])
     assert out["expected_half_spread_bps"].tolist() == pytest.approx([3.0, 4.5])
     assert out["exit_spread_cost_bps"].tolist() == pytest.approx([3.0, 4.5])
+
+
+def test_policy_spread_columns_accept_baseline_json_summary(monkeypatch, tmp_path):
+    baseline_path = tmp_path / "per_asset_spread_baseline_latest.json"
+    baseline_path.write_text(
+        """
+        {
+          "schema": "per_asset_spread_baseline_v1",
+          "global_average_spread_bps": 11.0,
+          "per_asset_spread_baseline": [
+            {"symbol": "BTC/USD:USD", "rows": 3, "average_spread_bps": 6.0},
+            {"symbol": "ETH/USD:USD", "rows": 1, "average_spread_bps": 18.0}
+          ]
+        }
+        """,
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("EPM_SIMPLE_POLICY_USE_SPREAD_MODEL", "1")
+    monkeypatch.setenv("EPM_SIMPLE_POLICY_SPREAD_BASELINE_PATH", str(baseline_path))
+    spo._SPREAD_MODEL_COST_CACHE.clear()
+    spo._SPREAD_BASELINE_CACHE.clear()
+    rows = pd.DataFrame(
+        {
+            "symbol": ["BTC/USD:USD", "MISSING/USD:USD"],
+            "market_mode": ["perps", "perps"],
+        }
+    )
+
+    out = spo._with_policy_spread_cost_columns(rows, market_mode="perps")
+    audit = spo._policy_spread_baseline_audit()
+
+    assert out["expected_spread_bps"].tolist() == pytest.approx([6.0, 11.0])
+    assert out["expected_half_spread_bps"].tolist() == pytest.approx([3.0, 5.5])
+    assert out["exit_spread_cost_bps"].tolist() == pytest.approx([3.0, 5.5])
+    assert audit["loaded"] is True
+    assert audit["format"] == "json"
+    assert audit["symbol_count"] == 2
+    assert audit["global_average_spread_bps"] == pytest.approx(11.0)
+
+
+def test_policy_spread_fallback_trims_illiquid_tail_and_uses_slice_universe(
+    monkeypatch, tmp_path
+):
+    baseline_path = tmp_path / "per_asset_spread_baseline_latest.csv"
+    rows = [
+        "symbol,rows,average_spread_bps,median_spread_bps,p75_spread_bps,average_spread_ticks",
+        "LOW/USD:USD,1,10.0,10.0,10.0,1.0",
+        "MID/USD:USD,1,30.0,30.0,30.0,1.0",
+    ]
+    rows.extend(
+        f"OK{i}/USD:USD,1,50.0,50.0,50.0,1.0"
+        for i in range(27)
+    )
+    rows.append("WIDE/USD:USD,1,1000.0,1000.0,1000.0,1.0")
+    baseline_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    monkeypatch.setenv("EPM_SIMPLE_POLICY_USE_SPREAD_MODEL", "1")
+    monkeypatch.setenv("EPM_SIMPLE_POLICY_SPREAD_BASELINE_PATH", str(baseline_path))
+    monkeypatch.setattr(spo, "POLICY_SPREAD_FALLBACK_MAX_QUANTILE", 0.75)
+    monkeypatch.setattr(spo, "POLICY_SPREAD_FALLBACK_MIN_SYMBOLS", 20)
+    spo._SPREAD_MODEL_COST_CACHE.clear()
+    spo._SPREAD_BASELINE_CACHE.clear()
+
+    rows = pd.DataFrame(
+        {
+            "symbol": ["LOW/USD:USD", "MID/USD:USD", "MISSING/USD:USD"],
+            "market_mode": ["perps", "perps", "perps"],
+        }
+    )
+
+    out = spo._with_policy_spread_cost_columns(rows, market_mode="perps")
+    audit = spo._policy_spread_baseline_audit()
+
+    assert out["expected_spread_bps"].tolist() == pytest.approx([10.0, 30.0, 20.0])
+    assert spo._policy_expected_spread_bps("perps") == pytest.approx(
+        (10.0 + 30.0 + 27.0 * 50.0) / 29.0
+    )
+    assert audit["raw_global_average_spread_bps"] == pytest.approx(
+        (10.0 + 30.0 + 27.0 * 50.0 + 1000.0) / 30.0
+    )
+    assert audit["global_average_spread_bps"] == pytest.approx(
+        (10.0 + 30.0 + 27.0 * 50.0) / 29.0
+    )
+    assert audit["fallback_method"] == "liquidity_tail_trimmed_average"
+    assert audit["fallback_symbol_count"] == 29
 
 
 def test_simple_rank_net_ev_prefilter_subtracts_row_level_spread():

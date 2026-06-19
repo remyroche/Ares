@@ -9786,6 +9786,13 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
         return datasets
 
     meta_keys_all = set(_meta_feature_keys_union(cfg))
+    native_required = str(
+        os.environ.get(
+            "EPM_LGBM_REQUIRE_NATIVE_PRESET",
+            cfg.get("lgbm_require_native_preset", ""),
+        )
+        or ""
+    ).strip().lower() in {"1", "true", "yes", "y", "on"}
     progress_every = max(
         1, int(cfg.get("feature_injection_progress_every_symbols", 25))
     )
@@ -10061,6 +10068,7 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
         dataset_meta[name]["df"] = datasets[name]
 
     variant_base_groups: dict[str, dict[str, set[str]]] = {}
+    native_zero_load_failures: list[dict[str, object]] = []
     for name, stat in injection_stats.items():
         req_missing = set(stat.get("requested_missing", []))
         loaded = set(stat.get("loaded_keys", set()))
@@ -10075,6 +10083,15 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
             tprint(
                 f"  Feature injection [{name}] missing_after sample: "
                 f"{sorted(list(missing_after))[:12]}"
+            )
+        if native_required and req_missing and not loaded:
+            native_zero_load_failures.append(
+                {
+                    "dataset": str(name),
+                    "requested_missing": int(len(req_missing)),
+                    "missing_after": int(len(missing_after)),
+                    "sample": sorted(list(missing_after))[:12],
+                }
             )
         base_name = name
         variant_tag = "primary"
@@ -10113,6 +10130,28 @@ def inject_features_into_datasets(datasets, ts_sig, cfg, req_keys):
         f"Feature injection: loaded {loaded_symbols} symbol files and injected requested "
         f"features into {len(missing_keys_per_dataset)} datasets in {elapsed_total:.1f}s."
     )
+    if native_zero_load_failures:
+        feature_source = str(
+            os.environ.get("EPM_FEATURE_SOURCE_RUN_ID", "")
+            or cfg.get("feature_source_run_id")
+            or cfg.get("_feature_availability_run_id")
+            or ts_sig
+        )
+        label_source = str(
+            os.environ.get("EPM_LABEL_ARTIFACT_RUN_ID", "")
+            or cfg.get("label_source_run_id")
+            or cfg.get("_label_artifact_run_id")
+            or ""
+        )
+        preview = native_zero_load_failures[:5]
+        raise RuntimeError(
+            "Native preset feature injection failed: zero requested feature keys "
+            "were loaded for one or more datasets. This usually means the feature "
+            "source run id points at a label-only artifact run or the selected "
+            "native-preset features are unavailable in the feature store. "
+            f"feature_source_run_id={feature_source}, "
+            f"label_source_run_id={label_source}, failures={preview}"
+        )
     return datasets
 
 

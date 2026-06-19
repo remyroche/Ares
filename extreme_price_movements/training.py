@@ -37,6 +37,7 @@ from .data_store import _feature_schema_names, read_symbol_features, save_artifa
 from .ebm_on_lgbm import train_ebm_on_lgbm_candidate
 from .lgbm_archetype_features import (
     ARCHETYPE_FEATURE_NAMES,
+    BASE_ERROR_ARCHETYPE_FEATURE_NAMES,
     RAW_CONTRIB_FEATURE_PREFIX,
     is_archetype_feature_name,
     is_raw_contrib_feature_name,
@@ -8078,17 +8079,37 @@ def _load_native_lgbm_training_preset(
             source_run_id=source_run_id,
             scope_key=scope_key,
         )
-    model_path = (
+    native_root = (
         Path(str(cfg_local.get("data_root", "data")))
         / "artifacts"
         / source_run_id
         / "models"
         / "native"
-        / str(scope_key)
-        / "model.joblib"
+    )
+    scope_raw = str(scope_key)
+    scope_candidates: list[str] = []
+
+    def _add_scope_candidate(value: str) -> None:
+        value = str(value or "").strip()
+        if value and value not in scope_candidates:
+            scope_candidates.append(value)
+
+    _add_scope_candidate(scope_raw)
+    if scope_raw.startswith(("long_", "short_")):
+        side = scope_raw.split("_", 1)[0]
+        _add_scope_candidate(f"{side}_{scope_raw}")
+    model_path = next(
+        (native_root / candidate / "model.joblib"
+         for candidate in scope_candidates
+         if (native_root / candidate / "model.joblib").exists()),
+        native_root / scope_raw / "model.joblib",
     )
     if not model_path.exists():
-        msg = f"LGBM native preset not found for {scope_key}: {model_path}"
+        checked = [str(native_root / candidate / "model.joblib") for candidate in scope_candidates]
+        msg = (
+            f"LGBM native preset not found for {scope_key}: "
+            f"checked={checked}"
+        )
         if require_preset:
             raise RuntimeError(msg)
         tprint(msg)
@@ -8185,9 +8206,49 @@ def _load_native_lgbm_meta_training_preset(
             cfg_local.get("lgbm_require_native_preset", ""),
         )
     ).strip().lower() in {"1", "true", "yes", "y", "on"}
-    cache_key = (str(source_run_id), str(scope_key))
-    if cache_key in _NATIVE_LGBM_META_PRESET_CACHE:
-        return dict(_NATIVE_LGBM_META_PRESET_CACHE[cache_key])
+    candidates: list[str] = []
+
+    def _add_candidate(value: str) -> None:
+        value = str(value or "").strip()
+        if value and value not in candidates:
+            candidates.append(value)
+
+    def _normalise_meta_key(value: str) -> list[str]:
+        raw = str(value or "").strip()
+        out: list[str] = []
+        if not raw:
+            return out
+        out.append(raw)
+        no_meta = raw[len("meta_") :] if raw.startswith("meta_") else raw
+        out.append(no_meta)
+        for suffix in ("_correctness_clf", "_tbm_clf", "_base_target_clf"):
+            if no_meta.endswith(suffix):
+                out.append(no_meta[: -len(suffix)] + "_clf")
+        if no_meta.endswith("_clf"):
+            stem = no_meta[: -len("_clf")]
+            out.append(stem + "_tbm_clf")
+            out.append(stem + "_correctness_clf")
+        if not no_meta.endswith("_clf"):
+            out.append(no_meta + "_clf")
+        return out
+
+    for key in _normalise_meta_key(str(scope_key)):
+        _add_candidate(key)
+        if not key.startswith("meta_"):
+            _add_candidate(f"meta_{key}")
+
+    for candidate in candidates:
+        cache_key = (str(source_run_id), str(candidate))
+        if cache_key in _NATIVE_LGBM_META_PRESET_CACHE:
+            cached = dict(_NATIVE_LGBM_META_PRESET_CACHE[cache_key])
+            for alias in candidates:
+                _NATIVE_LGBM_META_PRESET_CACHE[(str(source_run_id), str(alias))] = dict(cached)
+            tprint(
+                f"LGBM meta preset cache hit for {scope_key}: "
+                f"alias={candidate}, source={cached.get('source', 'unknown')}"
+            )
+            return cached
+
     state_path = (
         Path(str(cfg_local.get("data_root", "data")))
         / "artifacts"
@@ -8207,36 +8268,6 @@ def _load_native_lgbm_meta_training_preset(
         state = joblib.load(state_path)
         bundle = state.get("bundle", state) if isinstance(state, dict) else {}
         meta_models = bundle.get("meta_models", {}) if isinstance(bundle, dict) else {}
-        candidates: list[str] = []
-
-        def _add_candidate(value: str) -> None:
-            value = str(value or "").strip()
-            if value and value not in candidates:
-                candidates.append(value)
-
-        def _normalise_meta_key(value: str) -> list[str]:
-            raw = str(value or "").strip()
-            out: list[str] = []
-            if not raw:
-                return out
-            out.append(raw)
-            no_meta = raw[len("meta_") :] if raw.startswith("meta_") else raw
-            out.append(no_meta)
-            for suffix in ("_correctness_clf", "_tbm_clf", "_base_target_clf"):
-                if no_meta.endswith(suffix):
-                    out.append(no_meta[: -len(suffix)] + "_clf")
-            if no_meta.endswith("_clf"):
-                stem = no_meta[: -len("_clf")]
-                out.append(stem + "_tbm_clf")
-                out.append(stem + "_correctness_clf")
-            if not no_meta.endswith("_clf"):
-                out.append(no_meta + "_clf")
-            return out
-
-        for key in _normalise_meta_key(str(scope_key)):
-            _add_candidate(key)
-            if not key.startswith("meta_"):
-                _add_candidate(f"meta_{key}")
         race = None
         matched_key = ""
         for key in candidates:
@@ -8279,7 +8310,9 @@ def _load_native_lgbm_meta_training_preset(
             "source": str(state_path) + f"::{matched_key}",
             "source_run_id": str(source_run_id),
         }
-        _NATIVE_LGBM_META_PRESET_CACHE[cache_key] = dict(out)
+        for alias in candidates:
+            _NATIVE_LGBM_META_PRESET_CACHE[(str(source_run_id), str(alias))] = dict(out)
+        _NATIVE_LGBM_META_PRESET_CACHE[(str(source_run_id), str(matched_key))] = dict(out)
         tprint(
             f"LGBM meta preset loaded for {scope_key}: "
             f"features={len(selected)}, params={len(params)}, source={out['source']}"
@@ -14062,6 +14095,92 @@ def train_meta_models_from_artifacts(
             and not _is_lgbm_model_derived_meta_feature(str(k))
         ]
 
+    def _raw_dependencies_for_generated_meta_keys(
+        feature_keys: Sequence[str],
+    ) -> list[str]:
+        """Raw source columns needed to construct generated meta interactions."""
+        dependency_map: dict[str, tuple[str, ...]] = {
+            "base_med_x_compression_score": ("compression_score",),
+            "base_med_x_compression_x_vol_z": (
+                "compression_score",
+                "volatility_zscore",
+                "vol_z",
+            ),
+            "base_prob_x_compression_score": ("compression_score",),
+            "base_med_x_vol_z": ("volatility_zscore", "vol_z"),
+            "base_med_x_vol_z_24h_minus_96h": (
+                "vol_z24",
+                "vol_z_4h",
+                "vol_z",
+                "volatility_zscore",
+            ),
+            "base_med_x_side_aligned_trend": (
+                "trend_slope_72h",
+                "trend_slope_48h",
+                "trend_slope_24h",
+                "trend_t",
+                "trend_pct",
+            ),
+            "base_med_x_side_trend_x_vol_z": (
+                "trend_slope_72h",
+                "trend_slope_48h",
+                "trend_slope_24h",
+                "trend_t",
+                "trend_pct",
+                "volatility_zscore",
+                "vol_z",
+            ),
+            "base_med_x_efficiency_ratio": (
+                "efficiency_ratio_20",
+                "path_efficiency_24",
+            ),
+            "base_med_x_side_trend_x_efficiency": (
+                "trend_slope_72h",
+                "trend_slope_48h",
+                "trend_slope_24h",
+                "trend_t",
+                "trend_pct",
+                "efficiency_ratio_20",
+                "path_efficiency_24",
+            ),
+            "base_med_x_trend_24h_x_trend_72h": (
+                "trend_slope_24h",
+                "trend_slope_72h",
+                "trend_slope_48h",
+                "trend_t",
+                "trend_pct",
+            ),
+            "base_med_x_ema_vwap_extension": (
+                "dist_ema_fast",
+                "dist_ema_fast_base",
+                "loc_vwap_dev_z_48",
+                "loc_vwap_dev_z_24",
+                "dist_vwap_norm",
+            ),
+            "base_med_x_abs_ema_vwap_gt1": (
+                "dist_ema_fast",
+                "dist_ema_fast_base",
+                "loc_vwap_dev_z_48",
+                "loc_vwap_dev_z_24",
+                "dist_vwap_norm",
+            ),
+            "base_prob_x_dist_prior_day_low": ("dist_prior_day_low",),
+            "base_prob_x_vol_regime": (
+                "regime_vol_score",
+                "asset_vol_level",
+            ),
+            "base_prob_x_entropy": ("regime_transition_entropy_12h",),
+        }
+        out: list[str] = []
+        for key in feature_keys or []:
+            deps = dependency_map.get(str(key))
+            if not deps:
+                continue
+            for dep in deps:
+                if dep not in out:
+                    out.append(dep)
+        return out
+
     def _neutral_model_derived_meta_value(feature_key: str) -> float:
         key = str(feature_key).lower()
         if key.endswith("_is_neutral"):
@@ -14145,6 +14264,117 @@ def train_meta_models_from_artifacts(
             f"(sample={missing[:12]})."
         )
         return frame, missing
+
+    def _materialize_model_derived_meta_aliases(
+        frame: pd.DataFrame,
+        feature_keys: Sequence[str],
+        *,
+        strategy_id: str,
+        trade_side: str,
+        primary_horizon: int,
+        context: str,
+    ) -> tuple[pd.DataFrame, dict[str, str]]:
+        """Create exact requested native-preset names from equivalent OOF/context aliases."""
+
+        if frame is None or frame.empty or not feature_keys:
+            return frame, {}
+
+        h_token = f"_H{int(primary_horizon)}_"
+        side_strategy = f"{str(trade_side)}_{str(strategy_id)}"
+        alias_cols: dict[str, np.ndarray] = {}
+        alias_sources: dict[str, str] = {}
+
+        def _pred_suffix(key: str) -> str | None:
+            if not key.startswith("pred_") or h_token not in key:
+                return None
+            owner, suffix = key[5:].split(h_token, 1)
+            if owner in {str(strategy_id), side_strategy, str(trade_side)}:
+                return suffix
+            return None
+
+        def _source_candidates(key: str) -> list[str]:
+            candidates: list[str] = []
+            suffix: str | None = None
+            pred_suffix = _pred_suffix(key)
+            if pred_suffix:
+                suffix = pred_suffix
+                candidates.extend(
+                    [
+                        f"pred_{side_strategy}_H{int(primary_horizon)}_{suffix}",
+                        f"pred_{strategy_id}_H{int(primary_horizon)}_{suffix}",
+                        f"pred_H{int(primary_horizon)}_{suffix}",
+                        f"base_H{int(primary_horizon)}_{suffix}",
+                        f"base_lgbm_{suffix}",
+                        suffix,
+                    ]
+                )
+            elif key.startswith("base_lgbm_"):
+                suffix = key[len("base_lgbm_") :]
+                candidates.extend(
+                    [
+                        f"base_H{int(primary_horizon)}_{suffix}",
+                        f"pred_{side_strategy}_H{int(primary_horizon)}_{suffix}",
+                        f"pred_{strategy_id}_H{int(primary_horizon)}_{suffix}",
+                        f"pred_H{int(primary_horizon)}_{suffix}",
+                        suffix,
+                    ]
+                )
+            elif key in BASE_ERROR_ARCHETYPE_FEATURE_NAMES:
+                suffix = key
+                candidates.extend(
+                    [
+                        f"base_lgbm_{suffix}",
+                        f"base_H{int(primary_horizon)}_{suffix}",
+                        f"pred_{side_strategy}_H{int(primary_horizon)}_{suffix}",
+                        f"pred_{strategy_id}_H{int(primary_horizon)}_{suffix}",
+                        f"pred_H{int(primary_horizon)}_{suffix}",
+                    ]
+                )
+            if suffix is not None:
+                candidates.append(f"oof_{suffix}")
+            return list(dict.fromkeys([c for c in candidates if c != key]))
+
+        for raw_key in feature_keys or []:
+            key = str(raw_key)
+            if (
+                not key
+                or key in frame.columns
+                or not _is_lgbm_model_derived_meta_feature(key)
+            ):
+                continue
+            src_col = next(
+                (candidate for candidate in _source_candidates(key) if candidate in frame.columns),
+                None,
+            )
+            if src_col is None:
+                continue
+            vals = pd.to_numeric(frame[src_col], errors="coerce").to_numpy(
+                dtype=np.float32,
+                copy=False,
+            )
+            alias_cols[key] = np.nan_to_num(
+                vals,
+                nan=0.0,
+                posinf=0.0,
+                neginf=0.0,
+            ).astype(np.float32, copy=False)
+            alias_sources[key] = str(src_col)
+
+        if not alias_cols:
+            return frame, {}
+
+        frame = pd.concat(
+            [frame, pd.DataFrame(alias_cols, index=frame.index)],
+            axis=1,
+            copy=False,
+        )
+        sample = list(alias_sources.items())[:8]
+        tprint(
+            f"  Meta {context}: materialized {len(alias_sources)} native-preset "
+            f"generated/model-derived aliases from equivalent OOF/context columns "
+            f"(sample={sample})."
+        )
+        return frame, alias_sources
 
     def _alpha_conf_for_strategy(trade_side: str, strategy_id: str):
         if not alpha_models:
@@ -19391,6 +19621,18 @@ def train_meta_models_from_artifacts(
                 f"features={len(getattr(base_error_archetype_state_for_meta, 'feature_names', []) or [])})."
             )
         raw_preselected_keys = _raw_meta_feature_keys(sorted(preselected_raw_keys))
+        _generated_raw_deps = _raw_dependencies_for_generated_meta_keys(
+            model_derived_meta_requested
+        )
+        if _generated_raw_deps:
+            raw_preselected_keys = list(
+                dict.fromkeys(list(raw_preselected_keys) + _generated_raw_deps)
+            )
+            tprint(
+                f"  Meta {k}: added {len(_generated_raw_deps)} raw dependency "
+                "keys for generated interaction features "
+                f"(sample={_generated_raw_deps[:12]})."
+            )
         tprint(
             f"  Meta {k}: stage1 preselection kept {len(preselected_raw_keys)} meta features "
             f"({len(raw_preselected_keys)} raw-injectable, "
@@ -19434,8 +19676,23 @@ def train_meta_models_from_artifacts(
                 if _raw_injection_scope_idx is not None
                 else df
             )
+            _availability_feature_dict: dict[str, Any] = {}
+            for _mk in feat_cols:
+                _src = feat_source_map.get(str(_mk))
+                if _src is None or _src not in _availability_df.columns:
+                    continue
+                _col_val = _availability_df[_src]
+                if isinstance(_col_val, pd.DataFrame):
+                    _availability_feature_dict[str(_mk)] = _col_val.iloc[:, 0].values
+                else:
+                    _availability_feature_dict[str(_mk)] = _col_val.values
+            _availability_filter_df = (
+                pd.DataFrame(_availability_feature_dict, index=_availability_df.index)
+                if _availability_feature_dict
+                else _availability_df
+            )
             feat_cols = _recent_feature_availability_filter(
-                _availability_df,
+                _availability_filter_df,
                 feat_cols,
                 cfg=cfg,
                 context=f"meta {k} raw feature matrix",
@@ -19447,9 +19704,26 @@ def train_meta_models_from_artifacts(
             )
             continue
 
-        # Bulk initialize to avoid fragmentation PerformanceWarnings
+        # Bulk initialize to avoid fragmentation PerformanceWarnings. Raw
+        # dependencies for generated interaction features are construction
+        # inputs only; keep them available in X_meta_base without promoting
+        # them to selected raw meta inputs unless they survived feat_cols.
+        _interaction_source_keys = [
+            dep
+            for dep in _generated_raw_deps
+            if dep in feat_source_map and dep not in set(feat_cols)
+        ]
+        if _interaction_source_keys:
+            tprint(
+                f"  Meta {k}: preserving {len(_interaction_source_keys)} raw "
+                "dependency columns for generated interaction construction "
+                f"(sample={_interaction_source_keys[:12]})."
+            )
+        _feature_build_cols = list(
+            dict.fromkeys(list(feat_cols) + _interaction_source_keys)
+        )
         _feat_dict = {}
-        for mk in feat_cols:
+        for mk in _feature_build_cols:
             _col_val = df[feat_source_map[mk]]
             if isinstance(_col_val, pd.DataFrame):
                 # Handle unexpected duplicate column names by taking the first one
@@ -19501,6 +19775,9 @@ def train_meta_models_from_artifacts(
             _primary_base_prefix = f"base_H{int(_strategy_primary_h)}_"
             _base_lgbm_source_keys = set(LGBM_INTERNAL_METRIC_FEATURE_NAMES)
             _base_lgbm_source_keys.update(str(c) for c in MODEL_DRIFT_FEATURE_KEYS)
+            _base_lgbm_source_keys.update(
+                str(c) for c in BASE_ERROR_ARCHETYPE_FEATURE_NAMES
+            )
             _requested_model_context_keys = set(model_derived_meta_requested)
             _base_lgbm_alias_cols: dict[str, np.ndarray] = {}
             for _src_col in list(primary_tree_feat_df.columns):
@@ -20240,7 +20517,14 @@ def train_meta_models_from_artifacts(
 
         X_meta_base, neutral_model_derived_cols = (
             _append_neutral_model_derived_meta_columns(
-                X_meta_base,
+                _materialize_model_derived_meta_aliases(
+                    X_meta_base,
+                    model_derived_meta_requested,
+                    strategy_id=str(k),
+                    trade_side=str(side),
+                    primary_horizon=int(_strategy_primary_h),
+                    context=str(k),
+                )[0],
                 model_derived_meta_requested,
                 context=str(k),
             )
@@ -21106,6 +21390,26 @@ def train_meta_models_from_artifacts(
                         else None
                     ),
                 }
+                if (
+                    (
+                        bool(cfg.get("lgbm_regime_specialist_enabled", False))
+                        or bool(
+                            cfg.get(
+                                "lgbm_regime_specialist_feature_engineering_diagnostics_enabled",
+                                True,
+                            )
+                        )
+                    )
+                    and bool(cfg.get("lgbm_regime_specialist_global_assessment_enabled", True))
+                    and len(X_meta_models) > int(np.sum(_valid))
+                ):
+                    _label_context_direct["regime_specialist_assessment_frame"] = (
+                        X_meta_models.reset_index(drop=True)
+                    )
+                    if meta_groups is not None and len(np.asarray(meta_groups)) == len(X_meta_models):
+                        _label_context_direct["regime_specialist_assessment_timestamps"] = np.asarray(meta_groups)
+                    if _sym_ebm is not None and len(np.asarray(_sym_ebm)) == len(X_meta_models):
+                        _label_context_direct["regime_specialist_assessment_assets"] = np.asarray(_sym_ebm)
                 _race, _diag = _fit_direct_extratrees_base_model(
                     kind_name=f"meta_{head_key}",
                     native_scope_key=head_key,
@@ -24907,6 +25211,87 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
             return False
         return True
 
+    _regime_assessment_log_keys: set[tuple[int, int, int]] = set()
+
+    def _base_regime_specialist_assessment_context(
+        horizon: int,
+        feature_cols,
+        *,
+        local_rows: int,
+    ) -> dict[str, object]:
+        if not (
+            bool(cfg.get("lgbm_regime_specialist_enabled", False))
+            or bool(
+                cfg.get(
+                    "lgbm_regime_specialist_feature_engineering_diagnostics_enabled",
+                    True,
+                )
+            )
+        ):
+            return {}
+        if not bool(cfg.get("lgbm_regime_specialist_global_assessment_enabled", True)):
+            return {}
+        cols_raw = [] if feature_cols is None else list(feature_cols)
+        cols = [str(c) for c in cols_raw if str(c).strip()]
+        cols = list(dict.fromkeys(cols))
+        if not cols:
+            return {}
+        meta_cols = ["__ts__", "__symbol__"]
+        parts = []
+        h_token = str(int(horizon))
+        for ds_key, ds_df in datasets.items():
+            if not isinstance(ds_df, pd.DataFrame) or ds_df.empty:
+                continue
+            if not str(ds_key).startswith("train_"):
+                continue
+            if str(ds_key).rsplit("_", 1)[-1] != h_token:
+                continue
+            if not all(col in ds_df.columns for col in meta_cols):
+                continue
+            available = [col for col in cols if col in ds_df.columns]
+            if not available:
+                continue
+            parts.append(ds_df.reindex(columns=available + meta_cols, fill_value=0.0))
+        if not parts:
+            return {}
+        assessment = pd.concat(parts, axis=0, ignore_index=True, copy=False)
+        if len(assessment) <= int(local_rows):
+            return {}
+        max_rows = int(cfg.get("lgbm_regime_specialist_global_assessment_max_rows", 250000) or 0)
+        if max_rows > 0 and len(assessment) > max_rows:
+            ts_vals = pd.to_datetime(assessment["__ts__"], utc=True, errors="coerce")
+            end = ts_vals.max()
+            if pd.notna(end):
+                current_days = float(cfg.get("lgbm_regime_specialist_current_window_days", 28.0) or 28.0)
+                current = (ts_vals >= (end - pd.Timedelta(days=current_days))) & (ts_vals <= end)
+                current_idx = np.flatnonzero(current.to_numpy(dtype=bool))
+                hist_idx = np.flatnonzero(~current.to_numpy(dtype=bool))
+                keep = current_idx
+                remaining = max(0, int(max_rows) - len(keep))
+                if remaining > 0 and len(hist_idx) > 0:
+                    if len(hist_idx) > remaining:
+                        take_pos = np.linspace(0, len(hist_idx) - 1, remaining).round().astype(np.int64)
+                        hist_idx = hist_idx[np.unique(take_pos)]
+                    keep = np.concatenate([hist_idx, keep])
+                if len(keep) > 0:
+                    assessment = assessment.iloc[np.sort(np.unique(keep))].reset_index(drop=True)
+            if len(assessment) > max_rows:
+                take_pos = np.linspace(0, len(assessment) - 1, max_rows).round().astype(np.int64)
+                assessment = assessment.iloc[np.unique(take_pos)].reset_index(drop=True)
+        log_key = (int(horizon), len(cols), len(assessment))
+        if log_key not in _regime_assessment_log_keys:
+            _regime_assessment_log_keys.add(log_key)
+            tprint(
+                "Base regime-specialist global assessment frame: "
+                f"H={int(horizon)}, rows={len(assessment):,}, "
+                f"local_rows={int(local_rows):,}, features={len(cols)}."
+            )
+        return {
+            "regime_specialist_assessment_frame": assessment,
+            "regime_specialist_assessment_timestamps": assessment["__ts__"].to_numpy(copy=False),
+            "regime_specialist_assessment_assets": assessment["__symbol__"].to_numpy(copy=False),
+        }
+
     def _record_alpha_fit_diag(
         side_name,
         kind_name,
@@ -26205,6 +26590,13 @@ def train_models_from_artifacts(datasets, cfg, train_meta=True, train_base=True)
                     ):
                         if _src in df.columns:
                             _label_context_fit[_dst] = df[_src].values
+                    _label_context_fit.update(
+                        _base_regime_specialist_assessment_context(
+                            H,
+                            X_sel.columns,
+                            local_rows=len(X_sel),
+                        )
+                    )
                     race, base_fit_diag = _fit_direct_extratrees_base_model(
                         kind_name=k,
                         hpo_scope_key=key,

@@ -455,6 +455,9 @@ def _run_training_path_feature_sync_for_live(
         requested_keys_raw,
         cfg,
     )
+    if any(_is_live_source_derived_feature_key(key) for key in requested_keys):
+        env["EPM_FEATURE_PORTABILITY_MODE"] = "off"
+        env["EPM_FEATURE_PORTABILITY_ALLOW_VOLUME_SOURCE_DEPENDENT"] = "1"
     if skipped_live_repairable:
         tprint(
             "Live model selected-feature cache auto-sync skipping live-repairable "
@@ -726,12 +729,21 @@ def _run_training_path_feature_sync_for_live(
     t0 = time.perf_counter()
     label = _safe_feature_sync_label(sync_label)
     keys_hash = _hash_values(requested_keys or [])
+    log_dir = Path("logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    safe_ts = pd.Timestamp(end_ts).strftime("%Y%m%d_%H%M%S")
+    log_path = log_dir / (
+        f"live_feature_{label}_sync_{run_id}_{safe_ts}_{keys_hash}.log"
+    )
     try:
-        proc = subprocess.Popen(
-            cmd,
-            cwd=Path.cwd(),
-            env=env,
-        )
+        with log_path.open("ab") as log_fh:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=Path.cwd(),
+                env=env,
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
+            )
     except Exception as exc:
         tprint(f"Live model selected-feature cache auto-sync failed to launch: {exc}")
         return False
@@ -749,6 +761,7 @@ def _run_training_path_feature_sync_for_live(
             "requested_keys_hash": keys_hash,
             "decision_only": bool(decision_only and requested_keys),
             "large_selected_repair": bool(large_selected_repair),
+            "log_path": str(log_path),
             "status": "running",
             "started_at": pd.Timestamp.utcnow().isoformat(),
         },
@@ -2584,6 +2597,7 @@ def _live_training_path_sync_feature_keys(
 ) -> Tuple[List[str], List[str]]:
     """Split feature keys into training-path sync keys and live-repair keys."""
     cfg = cfg or {}
+    strict_store = live_model_feature_store_strict(cfg)
     skip_repairable = str(
         cfg.get(
             "live_model_feature_auto_sync_skip_live_repairable_keys",
@@ -2599,7 +2613,11 @@ def _live_training_path_sync_feature_keys(
         if _is_live_synthesized_feature_key(key) or _gate_feature_base_key(key) is not None:
             skipped.append(key)
             continue
-        if skip_repairable and _is_live_source_derived_feature_key(key):
+        if (
+            skip_repairable
+            and not strict_store
+            and _is_live_source_derived_feature_key(key)
+        ):
             skipped.append(key)
         else:
             sync_keys.append(key)
@@ -5043,7 +5061,10 @@ def load_or_compute_features(
                     for key in missing_offline_keys
                     if (
                         _is_live_synthesized_feature_key(key)
-                        or _is_live_source_derived_feature_key(key)
+                        or (
+                            not strict_store
+                            and _is_live_source_derived_feature_key(key)
+                        )
                         or _gate_feature_base_key(key) is not None
                     )
                 }

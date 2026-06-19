@@ -1567,12 +1567,10 @@ def _cfg_int_value(cfg: dict[str, Any] | None, key: str, default: int) -> int:
         return int(default)
 
 
-def _lgbm_regime_specialist_enabled(
+def _lgbm_regime_specialist_objective_allowed(
     cfg: dict[str, Any] | None,
     objective_mode: str | None,
 ) -> bool:
-    if not _cfg_bool_value(cfg, "lgbm_regime_specialist_enabled", False):
-        return False
     mode = _normalize_objective_mode(objective_mode)
     raw = _cfg_value(cfg, "lgbm_regime_specialist_objectives", ["train_base", "train_meta"])
     if isinstance(raw, str):
@@ -1583,6 +1581,41 @@ def _lgbm_regime_specialist_enabled(
         except Exception:
             allowed = {"train_base", "train_meta"}
     return mode in allowed
+
+
+def _lgbm_regime_specialist_enabled(
+    cfg: dict[str, Any] | None,
+    objective_mode: str | None,
+) -> bool:
+    if not _cfg_bool_value(cfg, "lgbm_regime_specialist_enabled", False):
+        return False
+    return _lgbm_regime_specialist_objective_allowed(cfg, objective_mode)
+
+
+def _lgbm_regime_specialist_feature_engineering_diagnostics_enabled(
+    cfg: dict[str, Any] | None,
+    objective_mode: str | None,
+) -> bool:
+    if not _cfg_bool_value(
+        cfg,
+        "lgbm_regime_specialist_feature_engineering_diagnostics_enabled",
+        True,
+    ):
+        return False
+    return _lgbm_regime_specialist_objective_allowed(cfg, objective_mode)
+
+
+def _lgbm_regime_specialist_should_build_bundle(
+    cfg: dict[str, Any] | None,
+    objective_mode: str | None,
+) -> bool:
+    return _lgbm_regime_specialist_enabled(
+        cfg,
+        objective_mode,
+    ) or _lgbm_regime_specialist_feature_engineering_diagnostics_enabled(
+        cfg,
+        objective_mode,
+    )
 
 
 def _regime_specialist_similarity_config(cfg: dict[str, Any] | None):
@@ -1626,6 +1659,878 @@ def _regime_specialist_weight_config(cfg: dict[str, Any] | None):
     return SpecialistWeightConfig(**kwargs)
 
 
+_REGIME_SPECIALIST_FE_DIAGNOSTIC_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
+_REGIME_SPECIALIST_FE_DIAGNOSTIC_CACHE_MAX = 8
+_REGIME_SPECIALIST_SCORE_FEATURE_CACHE: dict[tuple[Any, ...], tuple[pd.DataFrame, dict[str, Any]]] = {}
+_REGIME_SPECIALIST_SCORE_FEATURE_CACHE_MAX = 4
+_REGIME_SPECIALIST_UNSUPERVISED_CACHE: dict[tuple[Any, ...], tuple[Any, dict[str, Any]]] = {}
+_REGIME_SPECIALIST_UNSUPERVISED_CACHE_MAX = 4
+_LGBM_REGIME_SCORE_FEATURE_NAME = "regime_lgbm_elasticnet_similarity"
+_LGBM_REGIME_SCORE_SOURCE_COLUMN = "regime_domain_current_likeness"
+_LGBM_REGIME_SCORE_FEATURE_SOURCES: tuple[tuple[str, str], ...] = (
+    ("regime_lgbm_current_likeness", "regime_lgbm_current_likeness"),
+    ("regime_elasticnet_current_likeness", "regime_elasticnet_current_likeness"),
+    (_LGBM_REGIME_SCORE_FEATURE_NAME, _LGBM_REGIME_SCORE_SOURCE_COLUMN),
+)
+
+
+def _unsupervised_regime_learning_cfg(cfg: dict[str, Any] | None) -> dict[str, Any]:
+    from extreme_price_movements.unsupervised_regime_learning.feature_registry import (
+        UNSUPERVISED_REGIME_LEARNING_DEFAULTS,
+    )
+
+    out: dict[str, Any] = dict(UNSUPERVISED_REGIME_LEARNING_DEFAULTS)
+    raw = cfg.get("UNSUPERVISED_REGIME_LEARNING") if isinstance(cfg, dict) else None
+    if isinstance(raw, Mapping):
+        for key, value in raw.items():
+            if isinstance(value, Mapping) and isinstance(out.get(key), Mapping):
+                nested = dict(out[key])
+                nested.update(dict(value))
+                out[key] = nested
+            else:
+                out[key] = value
+    regime = dict(out.get("regime_models", {}) or {})
+    flat_enabled = _cfg_value(cfg, "lgbm_unsupervised_regime_learning_enabled", None)
+    if flat_enabled is not None:
+        regime["enabled"] = str(flat_enabled).strip().lower() in {"1", "true", "yes", "y", "on"}
+    elif "enabled" in regime and not isinstance(regime.get("enabled"), bool):
+        regime["enabled"] = str(regime.get("enabled")).strip().lower() in {"1", "true", "yes", "y", "on"}
+    out["regime_models"] = regime
+    return out
+
+
+def _coerce_advanced_regime_config_value(default: Any, value: Any) -> Any:
+    if isinstance(default, bool):
+        if isinstance(value, bool):
+            return bool(value)
+        return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+    if isinstance(default, int) and not isinstance(default, bool):
+        try:
+            return int(value)
+        except Exception:
+            return int(default)
+    if isinstance(default, float):
+        try:
+            return float(value)
+        except Exception:
+            return float(default)
+    return value
+
+
+def _lgbm_frame_feature_fingerprint(
+    frame: pd.DataFrame,
+    features: Sequence[str],
+) -> tuple[int, int, int]:
+    cols = [col for col in ["timestamp", "symbol"] if col in frame.columns]
+    cols.extend(str(feature) for feature in features if str(feature) in frame.columns)
+    cols = list(dict.fromkeys(cols))
+    if not cols:
+        return (int(len(frame)), 0, 0)
+    try:
+        hashes = pd.util.hash_pandas_object(frame.loc[:, cols], index=True).to_numpy(dtype=np.uint64, copy=False)
+        if hashes.size == 0:
+            return (0, 0, 0)
+        xor_value = int(np.bitwise_xor.reduce(hashes))
+        sum_value = int(np.sum(hashes, dtype=np.uint64))
+        return (int(hashes.size), xor_value, sum_value)
+    except Exception:
+        numeric = frame.reindex(columns=[col for col in features if col in frame.columns])
+        arr = numeric.apply(pd.to_numeric, errors="coerce").to_numpy(dtype=np.float64, copy=False)
+        finite = np.nan_to_num(arr, nan=0.0, posinf=1e12, neginf=-1e12)
+        return (
+            int(finite.size),
+            int(np.round(float(np.sum(finite)) * 1e6)),
+            int(np.round(float(np.sum(finite * finite)) * 1e6)),
+        )
+
+
+def _lgbm_unsupervised_regime_artifact(
+    frame: pd.DataFrame,
+    candidate_features: Sequence[str],
+    *,
+    cfg: dict[str, Any] | None,
+    random_state: int,
+) -> tuple[Any | None, dict[str, Any]]:
+    active = _unsupervised_regime_learning_cfg(cfg)
+    regime_cfg = dict(active.get("regime_models", {}) or {})
+    if not bool(regime_cfg.get("enabled", False)):
+        return None, {"enabled": False, "used": False, "reason": "disabled"}
+    features = [str(c) for c in dict.fromkeys(candidate_features) if str(c) in frame.columns]
+    if not features:
+        return None, {"enabled": True, "used": False, "reason": "no_candidate_features"}
+    try:
+        from extreme_price_movements.unsupervised_regime_learning.regime_models import (
+            AdvancedRegimeLearningConfig,
+            fit_advanced_regime_learning,
+            regime_artifact_assessment_summary,
+            save_advanced_regime_learning_artifact,
+        )
+    except Exception as exc:
+        return None, {"enabled": True, "used": False, "reason": f"import_failed:{exc}"}
+
+    ts = pd.to_datetime(frame["timestamp"], utc=True, errors="coerce") if "timestamp" in frame.columns else pd.Series(pd.NaT, index=frame.index)
+    start_val = ts.min()
+    end_val = ts.max()
+    cfg_fingerprint = tuple(
+        sorted(
+            (str(k), str(v))
+            for k, v in regime_cfg.items()
+            if k not in {"artifact_output_dir"}
+        )
+    )
+    cache_key = (
+        int(len(frame)),
+        int(pd.Timestamp(start_val).value) if pd.notna(start_val) else 0,
+        int(pd.Timestamp(end_val).value) if pd.notna(end_val) else 0,
+        tuple(features),
+        _lgbm_frame_feature_fingerprint(frame, features),
+        int(random_state),
+        cfg_fingerprint,
+    )
+    cached = _REGIME_SPECIALIST_UNSUPERVISED_CACHE.get(cache_key)
+    if cached is not None:
+        artifact, diag = cached
+        out = dict(diag)
+        out["cache_hit"] = True
+        output_dir = str(regime_cfg.get("artifact_output_dir", "") or "").strip()
+        if output_dir:
+            try:
+                from extreme_price_movements.unsupervised_regime_learning.regime_models import (
+                    save_advanced_regime_learning_artifact,
+                )
+
+                out["saved_paths"] = save_advanced_regime_learning_artifact(artifact, output_dir)
+            except Exception as exc:
+                out["save_failed"] = str(exc)
+        return artifact, out
+    try:
+        fields = set(AdvancedRegimeLearningConfig.__dataclass_fields__)
+        defaults = AdvancedRegimeLearningConfig()
+        values = {
+            key: _coerce_advanced_regime_config_value(getattr(defaults, key), value)
+            for key, value in regime_cfg.items()
+            if key in fields
+        }
+        values["timestamp_col"] = "timestamp"
+        values["symbol_col"] = "symbol"
+        values["random_state"] = int(random_state)
+        artifact = fit_advanced_regime_learning(
+            frame,
+            features,
+            config=AdvancedRegimeLearningConfig(**values),
+        )
+        output_dir = str(regime_cfg.get("artifact_output_dir", "") or "").strip()
+        saved_paths: dict[str, str] = {}
+        if output_dir:
+            saved_paths = save_advanced_regime_learning_artifact(artifact, output_dir)
+        assessment_summary = regime_artifact_assessment_summary(artifact)
+        diag = {
+            "enabled": True,
+            "used": False,
+            "reason": "assessment_only_not_injected",
+            "candidate_feature_count": int(len(features)),
+            "selected_feature_count": int(len(getattr(artifact, "selected_features", []) or [])),
+            "specialist_candidate_feature_count": int(len(getattr(artifact, "specialist_candidate_features", []) or [])),
+            "kept_methods": list((getattr(artifact, "diagnostics", {}) or {}).get("kept_methods", [])),
+            "baseline_score": (getattr(artifact, "diagnostics", {}) or {}).get("baseline_score"),
+            "top_method": assessment_summary.get("top_method"),
+            "top_total_score": assessment_summary.get("top_total_score"),
+            "assessment": assessment_summary.get("assessment", {}),
+            "cache_hit": False,
+            "saved_paths": saved_paths,
+        }
+        if len(_REGIME_SPECIALIST_UNSUPERVISED_CACHE) >= _REGIME_SPECIALIST_UNSUPERVISED_CACHE_MAX:
+            _REGIME_SPECIALIST_UNSUPERVISED_CACHE.pop(next(iter(_REGIME_SPECIALIST_UNSUPERVISED_CACHE)))
+        _REGIME_SPECIALIST_UNSUPERVISED_CACHE[cache_key] = (artifact, dict(diag))
+        return artifact, diag
+    except Exception as exc:
+        return None, {"enabled": True, "used": False, "reason": f"failed:{exc}"}
+
+
+def _regime_specialist_feature_engineering_config(
+    cfg: dict[str, Any] | None,
+    *,
+    random_state: int,
+):
+    from extreme_price_movements.regime_specialist_feature_engineering import (
+        RegimeFeatureEngineeringConfig,
+    )
+
+    defaults = RegimeFeatureEngineeringConfig()
+    kwargs: dict[str, Any] = {}
+    for name in RegimeFeatureEngineeringConfig.__dataclass_fields__:
+        default = getattr(defaults, name)
+        key = f"lgbm_regime_specialist_feature_engineering_{name}"
+        if name == "random_state":
+            kwargs[name] = int(random_state)
+        elif isinstance(default, bool):
+            kwargs[name] = _cfg_bool_value(cfg, key, bool(default))
+        elif isinstance(default, int) and not isinstance(default, bool):
+            kwargs[name] = _cfg_int_value(cfg, key, int(default))
+        elif isinstance(default, float):
+            kwargs[name] = _cfg_float_value(cfg, key, float(default))
+        else:
+            kwargs[name] = _cfg_value(cfg, key, default)
+    return RegimeFeatureEngineeringConfig(**kwargs)
+
+
+def _top_score_items(score_map: Mapping[str, Any] | None, *, limit: int = 40) -> list[dict[str, Any]]:
+    if not isinstance(score_map, Mapping):
+        return []
+    items: list[tuple[str, float]] = []
+    for key, value in score_map.items():
+        try:
+            score = float(value)
+        except Exception:
+            continue
+        if np.isfinite(score):
+            items.append((str(key), score))
+    items.sort(key=lambda item: item[1], reverse=True)
+    return [{"feature": key, "score": score} for key, score in items[: int(limit)]]
+
+
+def _feature_report_records(report: Any, *, limit: int = 80) -> list[dict[str, Any]]:
+    if not isinstance(report, pd.DataFrame) or report.empty:
+        return []
+    preferred = [
+        "feature",
+        "univariate_score",
+        "auc_lift_mean",
+        "auc_lift_std",
+        "ks_mean",
+        "ks_std",
+        "median_shift_mean",
+        "median_shift_std",
+        "sign_consistency",
+        "fold_pass_rate",
+        "selected_univariate",
+    ]
+    cols = [col for col in preferred if col in report.columns]
+    if "univariate_score" in report.columns:
+        view = report.sort_values("univariate_score", ascending=False)
+    else:
+        view = report
+    return _json_sanitize(view.loc[:, cols].head(int(limit)).to_dict(orient="records"))
+
+
+def _regime_specialist_feature_engineering_summary(artifact: Any) -> dict[str, Any]:
+    diagnostics = getattr(artifact, "diagnostics", {}) or {}
+    row_scores = getattr(artifact, "row_scores", None)
+    row_score_summary: dict[str, Any] = {}
+    if isinstance(row_scores, pd.DataFrame) and not row_scores.empty:
+        for col in row_scores.columns:
+            arr = pd.to_numeric(row_scores[col], errors="coerce").to_numpy(dtype=np.float64)
+            row_score_summary[str(col)] = {
+                "mean": float(np.nanmean(arr)) if arr.size else float("nan"),
+                "std": float(np.nanstd(arr)) if arr.size else float("nan"),
+                "p10": float(np.nanpercentile(arr, 10.0)) if arr.size else float("nan"),
+                "p90": float(np.nanpercentile(arr, 90.0)) if arr.size else float("nan"),
+            }
+    summary = {
+        "enabled": True,
+        "used": False,
+        "diagnostic_only": True,
+        "reason": "diagnostics_only",
+        "schema_version": str(getattr(artifact, "schema_version", "")),
+        "selected_features": list(getattr(artifact, "selected_features", []) or []),
+        "selected_raw_features": list(getattr(artifact, "selected_raw_features", []) or []),
+        "selected_pair_features": list(getattr(artifact, "selected_pair_features", []) or []),
+        "selected_drift_features": list(getattr(artifact, "selected_drift_features", []) or []),
+        "selected_feature_count": int(len(getattr(artifact, "selected_features", []) or [])),
+        "selected_raw_feature_count": int(len(getattr(artifact, "selected_raw_features", []) or [])),
+        "selected_pair_feature_count": int(len(getattr(artifact, "selected_pair_features", []) or [])),
+        "selected_drift_feature_count": int(len(getattr(artifact, "selected_drift_features", []) or [])),
+        "lgbm_features": list(getattr(artifact, "lgbm_features", []) or []),
+        "elasticnet_features": list(getattr(artifact, "elasticnet_features", []) or []),
+        "lgbm_feature_count": int(len(getattr(artifact, "lgbm_features", []) or [])),
+        "elasticnet_feature_count": int(len(getattr(artifact, "elasticnet_features", []) or [])),
+        "top_final_features": _top_score_items(
+            getattr(artifact, "final_feature_scores", {}) or {},
+            limit=40,
+        ),
+        "top_lgbm_features": _top_score_items(
+            getattr(artifact, "lgbm_feature_scores", {}) or {},
+            limit=40,
+        ),
+        "top_elasticnet_features": _top_score_items(
+            getattr(artifact, "elasticnet_feature_scores", {}) or {},
+            limit=40,
+        ),
+        "feature_report_top": _feature_report_records(
+            getattr(artifact, "feature_report", None),
+            limit=80,
+        ),
+        "row_score_summary": row_score_summary,
+        "diagnostics": diagnostics,
+    }
+    return _json_sanitize(summary)
+
+
+def _regime_specialist_feature_engineering_metric_summary(
+    feature_engineering_diag: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(feature_engineering_diag, Mapping):
+        return {
+            "regime_specialist_feature_engineering_diagnostics_enabled": False,
+            "regime_specialist_feature_engineering_reason": "unavailable",
+        }
+    diagnostics = feature_engineering_diag.get("diagnostics", {})
+    if not isinstance(diagnostics, Mapping):
+        diagnostics = {}
+    lgbm_diag = diagnostics.get("lgbm", {})
+    elastic_diag = diagnostics.get("elasticnet", {})
+    validation = diagnostics.get("validation", {})
+    if not isinstance(lgbm_diag, Mapping):
+        lgbm_diag = {}
+    if not isinstance(elastic_diag, Mapping):
+        elastic_diag = {}
+    if not isinstance(validation, Mapping):
+        validation = {}
+
+    def _validation_value(block: str, key: str) -> float:
+        raw = validation.get(block, {})
+        if not isinstance(raw, Mapping):
+            return float("nan")
+        try:
+            return float(raw.get(key, float("nan")))
+        except Exception:
+            return float("nan")
+
+    def _float_metric(source: Mapping[str, Any], key: str) -> float:
+        try:
+            return float(source.get(key, float("nan")))
+        except Exception:
+            return float("nan")
+
+    out = {
+        "regime_specialist_feature_engineering_diagnostics_enabled": bool(
+            feature_engineering_diag.get("enabled", False)
+        ),
+        "regime_specialist_feature_engineering_diagnostic_only": bool(
+            feature_engineering_diag.get("diagnostic_only", False)
+        ),
+        "regime_specialist_feature_engineering_used_in_similarity": bool(
+            feature_engineering_diag.get("used", False)
+        ),
+        "regime_specialist_feature_engineering_reason": str(
+            feature_engineering_diag.get("reason", "")
+        ),
+        "regime_specialist_feature_engineering_selected_feature_count": int(
+            feature_engineering_diag.get("selected_feature_count", 0) or 0
+        ),
+        "regime_specialist_feature_engineering_selected_raw_feature_count": int(
+            feature_engineering_diag.get("selected_raw_feature_count", 0) or 0
+        ),
+        "regime_specialist_feature_engineering_selected_pair_feature_count": int(
+            feature_engineering_diag.get("selected_pair_feature_count", 0) or 0
+        ),
+        "regime_specialist_feature_engineering_selected_drift_feature_count": int(
+            feature_engineering_diag.get("selected_drift_feature_count", 0) or 0
+        ),
+        "regime_specialist_feature_engineering_lgbm_feature_count": int(
+            len(feature_engineering_diag.get("lgbm_features", []) or [])
+        ),
+        "regime_specialist_feature_engineering_elasticnet_feature_count": int(
+            len(feature_engineering_diag.get("elasticnet_features", []) or [])
+        ),
+        "regime_specialist_feature_engineering_lgbm_enabled": bool(lgbm_diag.get("enabled", False)),
+        "regime_specialist_feature_engineering_lgbm_oof_rows": int(lgbm_diag.get("oof_rows", 0) or 0),
+        "regime_specialist_feature_engineering_lgbm_fold_auc_lift_mean": _float_metric(
+            lgbm_diag,
+            "fold_auc_lift_mean",
+        ),
+        "regime_specialist_feature_engineering_lgbm_fold_auc_lift_std": _float_metric(
+            lgbm_diag,
+            "fold_auc_lift_std",
+        ),
+        "regime_specialist_feature_engineering_elasticnet_enabled": bool(elastic_diag.get("enabled", False)),
+        "regime_specialist_feature_engineering_elasticnet_oof_rows": int(elastic_diag.get("oof_rows", 0) or 0),
+        "regime_specialist_feature_engineering_elasticnet_fold_auc_lift_mean": _float_metric(
+            elastic_diag,
+            "fold_auc_lift_mean",
+        ),
+        "regime_specialist_feature_engineering_elasticnet_fold_auc_lift_std": _float_metric(
+            elastic_diag,
+            "fold_auc_lift_std",
+        ),
+        "regime_specialist_feature_engineering_validation_enabled": bool(validation.get("enabled", False)),
+        "regime_specialist_feature_engineering_validation_raw_auc_lift_mean": _validation_value("raw", "mean"),
+        "regime_specialist_feature_engineering_validation_drift_auc_lift_mean": _validation_value("drift", "mean"),
+        "regime_specialist_feature_engineering_validation_raw_plus_drift_auc_lift_mean": _validation_value("raw_plus_drift", "mean"),
+    }
+    return out
+
+
+def _lgbm_regime_score_features_enabled(
+    cfg: dict[str, Any] | None,
+    objective_mode: str | None,
+) -> bool:
+    if not _cfg_bool_value(cfg, "lgbm_regime_score_features_enabled", False):
+        return False
+    return _lgbm_regime_specialist_objective_allowed(cfg, objective_mode)
+
+
+def _is_lgbm_regime_score_feature_name(name: str) -> bool:
+    value = str(name)
+    score_names = {feature for feature, _source in _LGBM_REGIME_SCORE_FEATURE_SOURCES}
+    return value in score_names or any(value.startswith(f"{feature}__") for feature in score_names)
+
+
+def _lgbm_regime_score_feature_metric_summary(
+    diag: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(diag, Mapping):
+        return {
+            "regime_score_features_enabled": False,
+            "regime_score_features_added_count": 0,
+            "regime_score_features_reason": "unavailable",
+        }
+    out = {
+        "regime_score_features_enabled": bool(diag.get("enabled", False)),
+        "regime_score_features_added_count": int(
+            len(diag.get("added_feature_names", []) or [])
+        ),
+        "regime_score_features_reason": str(diag.get("reason", "")),
+        "regime_score_features_source_feature_count": int(
+            diag.get("source_feature_count", 0) or 0
+        ),
+        "regime_score_features_current_rows": int(diag.get("current_rows", 0) or 0),
+        "regime_score_features_historical_rows": int(
+            diag.get("historical_rows", 0) or 0
+        ),
+        "regime_score_features_cache_hit": bool(diag.get("cache_hit", False)),
+    }
+    for feature_name, _source_col in _LGBM_REGIME_SCORE_FEATURE_SOURCES:
+        metric_prefix = feature_name.replace("regime_", "regime_score_", 1)
+        for key in ("mean", "std", "p10", "p90"):
+            raw = diag.get(f"{feature_name}_{key}")
+            try:
+                out[f"{metric_prefix}_{key}"] = float(raw)
+            except Exception:
+                out[f"{metric_prefix}_{key}"] = float("nan")
+    fe_summary = diag.get("feature_engineering", {})
+    if isinstance(fe_summary, Mapping):
+        out.update(_regime_specialist_feature_engineering_metric_summary(fe_summary))
+        out["regime_specialist_feature_engineering_used_as_model_feature"] = bool(
+            diag.get("used_as_model_feature", False)
+        )
+    return out
+
+
+def _append_lgbm_regime_score_features(
+    X_df: pd.DataFrame,
+    selected_features: Sequence[str],
+    *,
+    timestamps: Any = None,
+    assets: Any = None,
+    objective_mode: str | None,
+    cfg: dict[str, Any] | None,
+    random_state: int,
+    label: str,
+) -> tuple[pd.DataFrame, list[str], dict[str, Any]]:
+    selected = [str(c) for c in selected_features if str(c).strip()]
+    if not _lgbm_regime_score_features_enabled(cfg, objective_mode):
+        return X_df, selected, {"enabled": False, "reason": "disabled"}
+    n = len(X_df)
+    diag_base: dict[str, Any] = {
+        "enabled": True,
+        "label": str(label),
+        "objective_mode": _normalize_objective_mode(objective_mode),
+        "target_feature_names": [
+            feature for feature, _source in _LGBM_REGIME_SCORE_FEATURE_SOURCES
+        ],
+        "source_score_columns": [
+            source for _feature, source in _LGBM_REGIME_SCORE_FEATURE_SOURCES
+        ],
+    }
+    source_features = [
+        feature
+        for feature in selected
+        if feature in X_df.columns and not _is_lgbm_regime_score_feature_name(feature)
+    ]
+    if len(source_features) < 2:
+        out = dict(diag_base)
+        out.update(
+            {
+                "reason": "insufficient_source_features",
+                "source_feature_count": int(len(source_features)),
+            }
+        )
+        return X_df, selected, out
+    try:
+        from extreme_price_movements.regime_specialist_feature_engineering import (
+            build_regime_specialist_feature_engineering_artifact,
+            build_regime_specialist_frozen_feature_score_artifact,
+        )
+    except Exception as exc:
+        out = dict(diag_base)
+        out.update({"reason": f"import_failed:{exc}", "source_feature_count": int(len(source_features))})
+        return X_df, selected, out
+
+    try:
+        frame = _lgbm_regime_specialist_build_frame(
+            X_df,
+            source_features,
+            timestamps=timestamps,
+            assets=assets,
+        )
+        if "timestamp" not in frame.columns:
+            out = dict(diag_base)
+            out.update({"reason": "missing_timestamps", "source_feature_count": int(len(source_features))})
+            return X_df, selected, out
+        ts = pd.to_datetime(frame["timestamp"], utc=True, errors="coerce")
+        valid_ts = ts.notna()
+        if not bool(valid_ts.any()):
+            out = dict(diag_base)
+            out.update({"reason": "missing_valid_timestamps", "source_feature_count": int(len(source_features))})
+            return X_df, selected, out
+        current_end_raw = _cfg_value(cfg, "lgbm_regime_specialist_current_end", None)
+        end = (
+            pd.to_datetime(current_end_raw, utc=True, errors="coerce")
+            if current_end_raw is not None
+            else ts.max()
+        )
+        if pd.isna(end):
+            end = ts.max()
+        current_days = float(
+            _cfg_float_value(cfg, "lgbm_regime_specialist_current_window_days", 28.0)
+        )
+        current_start = end - pd.Timedelta(days=current_days)
+        current_mask = (ts >= current_start) & (ts <= end)
+        historical_cutoff = current_start - pd.Timedelta(
+            days=max(0.0, _cfg_float_value(cfg, "lgbm_regime_specialist_embargo_days", 0.0))
+        )
+        historical_mask = valid_ts & (ts < historical_cutoff)
+        min_current_rows = _cfg_int_value(cfg, "lgbm_regime_specialist_min_current_rows", 24)
+        if int(current_mask.sum()) < int(min_current_rows):
+            out = dict(diag_base)
+            out.update(
+                {
+                    "reason": "insufficient_current_rows",
+                    "source_feature_count": int(len(source_features)),
+                    "current_rows": int(current_mask.sum()),
+                    "historical_rows": int(historical_mask.sum()),
+                }
+            )
+            return X_df, selected, out
+        if int(historical_mask.sum()) < 200:
+            out = dict(diag_base)
+            out.update(
+                {
+                    "reason": "insufficient_historical_rows",
+                    "source_feature_count": int(len(source_features)),
+                    "current_rows": int(current_mask.sum()),
+                    "historical_rows": int(historical_mask.sum()),
+                }
+            )
+            return X_df, selected, out
+        start_val = ts.loc[valid_ts].min()
+        end_val = ts.loc[valid_ts].max()
+        cache_key = (
+            "score_feature",
+            _normalize_objective_mode(objective_mode),
+            int(n),
+            int(pd.Timestamp(start_val).value) if pd.notna(start_val) else 0,
+            int(pd.Timestamp(end_val).value) if pd.notna(end_val) else 0,
+            tuple(source_features),
+            _lgbm_frame_feature_fingerprint(frame, source_features),
+            int(random_state),
+            int(_cfg_int_value(cfg, "lgbm_regime_specialist_feature_engineering_max_final_features", 40)),
+            bool(_cfg_bool_value(cfg, "lgbm_regime_specialist_feature_engineering_lgbm_enabled", True)),
+            bool(_cfg_bool_value(cfg, "lgbm_regime_specialist_feature_engineering_elasticnet_enabled", True)),
+            bool(_cfg_bool_value(cfg, "lgbm_regime_score_feature_full_engineering_enabled", False)),
+        )
+        cached = _REGIME_SPECIALIST_SCORE_FEATURE_CACHE.get(cache_key)
+        if cached is None:
+            full_feature_engineering = _cfg_bool_value(
+                cfg,
+                "lgbm_regime_score_feature_full_engineering_enabled",
+                False,
+            )
+            tprint(
+                "LGBM regime score feature build started: "
+                f"label={label}, objective={_normalize_objective_mode(objective_mode)}, "
+                f"rows={n}, source_features={len(source_features)}, "
+                f"current_rows={int(current_mask.sum())}, historical_rows={int(historical_mask.sum())}, "
+                f"mode={'full_feature_engineering' if full_feature_engineering else 'frozen_feature_scores'}."
+            )
+            fe_config = _regime_specialist_feature_engineering_config(
+                cfg,
+                random_state=random_state,
+            )
+            if full_feature_engineering:
+                artifact = build_regime_specialist_feature_engineering_artifact(
+                    frame,
+                    timestamp_col="timestamp",
+                    symbol_col="symbol",
+                    candidate_features=source_features,
+                    unsupervised_regime_artifact=None,
+                    current_mask=current_mask.to_numpy(dtype=bool),
+                    historical_mask=historical_mask.to_numpy(dtype=bool),
+                    config=fe_config,
+                )
+            else:
+                artifact = build_regime_specialist_frozen_feature_score_artifact(
+                    frame,
+                    timestamp_col="timestamp",
+                    symbol_col="symbol",
+                    candidate_features=source_features,
+                    current_mask=current_mask.to_numpy(dtype=bool),
+                    historical_mask=historical_mask.to_numpy(dtype=bool),
+                    config=fe_config,
+                )
+            row_scores = getattr(artifact, "row_scores", pd.DataFrame())
+            available_sources = (
+                {
+                    source_col
+                    for _feature_name, source_col in _LGBM_REGIME_SCORE_FEATURE_SOURCES
+                    if isinstance(row_scores, pd.DataFrame) and source_col in row_scores.columns
+                }
+                if isinstance(row_scores, pd.DataFrame)
+                else set()
+            )
+            if not available_sources:
+                out = dict(diag_base)
+                out.update(
+                    {
+                        "reason": "missing_source_score_column",
+                        "source_feature_count": int(len(source_features)),
+                        "current_rows": int(current_mask.sum()),
+                        "historical_rows": int(historical_mask.sum()),
+                        "missing_source_score_columns": [
+                            source
+                            for _feature_name, source in _LGBM_REGIME_SCORE_FEATURE_SOURCES
+                        ],
+                        "feature_engineering": _regime_specialist_feature_engineering_summary(artifact),
+                    }
+                )
+                return X_df, selected, out
+            score_columns: dict[str, np.ndarray] = {}
+            missing_score_sources: list[str] = []
+            for feature_name, source_col in _LGBM_REGIME_SCORE_FEATURE_SOURCES:
+                if source_col not in available_sources:
+                    missing_score_sources.append(source_col)
+                    continue
+                score = pd.to_numeric(
+                    row_scores[source_col],
+                    errors="coerce",
+                ).reindex(frame.index)
+                fill_value = (
+                    float(np.nanmean(score.to_numpy(dtype=np.float64)))
+                    if score.notna().any()
+                    else 0.5
+                )
+                score = score.fillna(fill_value).clip(0.0, 1.0).astype(np.float32)
+                score_columns[feature_name] = score.to_numpy(dtype=np.float32)
+            scores_df = pd.DataFrame(score_columns, index=X_df.index)
+            fe_summary = _regime_specialist_feature_engineering_summary(artifact)
+            diag = dict(diag_base)
+            diag.update(
+                {
+                    "reason": "built",
+                    "used_as_model_feature": True,
+                    "added_feature_names": list(scores_df.columns),
+                    "missing_source_score_columns": missing_score_sources,
+                    "source_feature_count": int(len(source_features)),
+                    "current_rows": int(current_mask.sum()),
+                    "historical_rows": int(historical_mask.sum()),
+                    "cache_hit": False,
+                    "feature_engineering": fe_summary,
+                }
+            )
+            for feature_name in scores_df.columns:
+                score_arr = scores_df[feature_name].to_numpy(dtype=np.float64)
+                diag.update(
+                    {
+                        f"{feature_name}_mean": float(np.nanmean(score_arr)),
+                        f"{feature_name}_std": float(np.nanstd(score_arr)),
+                        f"{feature_name}_p10": float(np.nanpercentile(score_arr, 10.0)),
+                        f"{feature_name}_p90": float(np.nanpercentile(score_arr, 90.0)),
+                    }
+                )
+            if len(_REGIME_SPECIALIST_SCORE_FEATURE_CACHE) >= _REGIME_SPECIALIST_SCORE_FEATURE_CACHE_MAX:
+                _REGIME_SPECIALIST_SCORE_FEATURE_CACHE.pop(
+                    next(iter(_REGIME_SPECIALIST_SCORE_FEATURE_CACHE))
+                )
+            _REGIME_SPECIALIST_SCORE_FEATURE_CACHE[cache_key] = (scores_df, dict(diag))
+            del artifact
+            gc.collect()
+        else:
+            scores_df, cached_diag = cached
+            diag = dict(cached_diag)
+            diag["cache_hit"] = True
+        X_out = X_df.copy(deep=False)
+        for col in scores_df.columns:
+            X_out[col] = scores_df[col].reindex(X_df.index).fillna(0.5).to_numpy(
+                dtype=np.float32,
+                copy=False,
+            )
+        selected_out = list(
+            dict.fromkeys(
+                [feature for feature in selected if feature in X_out.columns]
+                + [str(col) for col in scores_df.columns]
+            )
+        )
+        diag["added_feature_names"] = [str(col) for col in scores_df.columns]
+        diag["used_as_model_feature"] = True
+        tprint(
+            "LGBM regime score feature ready: "
+            f"label={label}, features={list(scores_df.columns)}, "
+            f"selected_features={len(selected)}->{len(selected_out)}, "
+            f"cache_hit={bool(diag.get('cache_hit', False))}."
+        )
+        return X_out, selected_out, diag
+    except Exception as exc:
+        out = dict(diag_base)
+        out.update(
+            {
+                "reason": f"failed:{exc}",
+                "source_feature_count": int(len(source_features)),
+            }
+        )
+        tprint(f"WARNING: LGBM regime score feature build failed: {exc}")
+        return X_df, selected, out
+
+
+def _lgbm_regime_specialist_feature_engineering_diagnostics(
+    X_df: pd.DataFrame,
+    selected_features: list[str],
+    *,
+    timestamps: Any = None,
+    assets: Any = None,
+    assessment_X_df: pd.DataFrame | None = None,
+    assessment_timestamps: Any = None,
+    assessment_assets: Any = None,
+    objective_mode: str | None,
+    cfg: dict[str, Any] | None,
+    random_state: int,
+) -> dict[str, Any]:
+    if not _lgbm_regime_specialist_feature_engineering_diagnostics_enabled(cfg, objective_mode):
+        return {"enabled": False, "used": False, "reason": "disabled"}
+    try:
+        from extreme_price_movements.regime_specialist_similarity import infer_regime_specialist_columns
+        from extreme_price_movements.regime_specialist_feature_engineering import (
+            build_regime_specialist_feature_engineering_artifact,
+        )
+    except Exception as exc:
+        return {"enabled": True, "used": False, "reason": f"import_failed:{exc}"}
+
+    source_df = assessment_X_df if isinstance(assessment_X_df, pd.DataFrame) and len(assessment_X_df) > len(X_df) else X_df
+    source_ts = assessment_timestamps if source_df is assessment_X_df else timestamps
+    source_assets = assessment_assets if source_df is assessment_X_df else assets
+    try:
+        sim_cfg = _regime_specialist_similarity_config(cfg)
+        inferred = infer_regime_specialist_columns(
+            source_df,
+            selected_feature_columns=selected_features,
+            config=sim_cfg,
+        )
+        extra_features = list(
+            dict.fromkeys(
+                list(inferred.get("market", []))
+                + list(inferred.get("covariance", []))
+                + list(inferred.get("knn", []))
+            )
+        )
+        frame = _lgbm_regime_specialist_build_frame(
+            source_df,
+            selected_features,
+            extra_features=extra_features,
+            timestamps=source_ts,
+            assets=source_assets,
+        )
+        if "timestamp" not in frame.columns:
+            return {"enabled": True, "used": False, "reason": "missing_timestamps"}
+        ts = pd.to_datetime(frame["timestamp"], utc=True, errors="coerce")
+        valid_ts = ts.notna()
+        if not bool(valid_ts.any()):
+            return {"enabled": True, "used": False, "reason": "missing_valid_timestamps"}
+        current_end_raw = _cfg_value(cfg, "lgbm_regime_specialist_current_end", None)
+        end = (
+            pd.to_datetime(current_end_raw, utc=True, errors="coerce")
+            if current_end_raw is not None
+            else ts.max()
+        )
+        if pd.isna(end):
+            end = ts.max()
+        current_days = float(_cfg_float_value(cfg, "lgbm_regime_specialist_current_window_days", 28.0))
+        current_start = end - pd.Timedelta(days=current_days)
+        current_mask = (ts >= current_start) & (ts <= end)
+        historical_cutoff = current_start - pd.Timedelta(
+            days=max(0.0, _cfg_float_value(cfg, "lgbm_regime_specialist_embargo_days", 0.0))
+        )
+        historical_mask = valid_ts & (ts < historical_cutoff)
+        if int(current_mask.sum()) < _cfg_int_value(cfg, "lgbm_regime_specialist_min_current_rows", 24):
+            return {
+                "enabled": True,
+                "used": False,
+                "reason": "insufficient_current_rows",
+                "current_rows": int(current_mask.sum()),
+            }
+        candidate_features = list(
+            dict.fromkeys([str(c) for c in list(selected_features or []) + extra_features if str(c) in frame.columns])
+        )
+        if not candidate_features:
+            return {"enabled": True, "used": False, "reason": "no_candidate_features"}
+        start_val = ts.loc[valid_ts].min()
+        end_val = ts.loc[valid_ts].max()
+        cache_key = (
+            _normalize_objective_mode(objective_mode),
+            int(len(frame)),
+            int(pd.Timestamp(start_val).value) if pd.notna(start_val) else 0,
+            int(pd.Timestamp(end_val).value) if pd.notna(end_val) else 0,
+            tuple(candidate_features),
+            int(random_state),
+            int(_cfg_int_value(cfg, "lgbm_regime_specialist_feature_engineering_max_final_features", 40)),
+            bool(_cfg_bool_value(cfg, "lgbm_regime_specialist_feature_engineering_lgbm_enabled", True)),
+            bool(_cfg_bool_value(cfg, "lgbm_regime_specialist_feature_engineering_elasticnet_enabled", True)),
+            bool(_cfg_bool_value(cfg, "lgbm_regime_specialist_feature_engineering_run_validation_diagnostics", False)),
+            str(_unsupervised_regime_learning_cfg(cfg).get("regime_models", {})),
+        )
+        cached = _REGIME_SPECIALIST_FE_DIAGNOSTIC_CACHE.get(cache_key)
+        if cached is not None:
+            out = dict(cached)
+            out["cache_hit"] = True
+            return out
+        unsup_artifact, unsup_diag = _lgbm_unsupervised_regime_artifact(
+            frame,
+            candidate_features,
+            cfg=cfg,
+            random_state=random_state,
+        )
+        artifact = build_regime_specialist_feature_engineering_artifact(
+            frame,
+            timestamp_col="timestamp",
+            symbol_col="symbol",
+            candidate_features=candidate_features,
+            unsupervised_regime_artifact=unsup_artifact,
+            current_mask=current_mask.to_numpy(dtype=bool),
+            historical_mask=historical_mask.to_numpy(dtype=bool),
+            config=_regime_specialist_feature_engineering_config(
+                cfg,
+                random_state=random_state,
+            ),
+        )
+        summary = _regime_specialist_feature_engineering_summary(artifact)
+        summary.update(
+            {
+                "assessment_rows": int(len(frame)),
+                "assessment_mode": "global" if source_df is assessment_X_df else "local",
+                "candidate_feature_count": int(len(candidate_features)),
+                "current_rows": int(current_mask.sum()),
+                "historical_rows": int(historical_mask.sum()),
+                "cache_hit": False,
+                "unsupervised_regime_learning": unsup_diag,
+            }
+        )
+        if len(_REGIME_SPECIALIST_FE_DIAGNOSTIC_CACHE) >= _REGIME_SPECIALIST_FE_DIAGNOSTIC_CACHE_MAX:
+            _REGIME_SPECIALIST_FE_DIAGNOSTIC_CACHE.pop(next(iter(_REGIME_SPECIALIST_FE_DIAGNOSTIC_CACHE)))
+        _REGIME_SPECIALIST_FE_DIAGNOSTIC_CACHE[cache_key] = dict(summary)
+        return summary
+    except Exception as exc:
+        return {"enabled": True, "used": False, "reason": f"failed:{exc}"}
+
+
 def _lgbm_regime_specialist_build_frame(
     X_df: pd.DataFrame,
     selected_features: list[str],
@@ -1657,12 +2562,68 @@ def _lgbm_regime_specialist_build_frame(
     return frame
 
 
+def _lgbm_regime_specialist_context_value(
+    label_context: Mapping[str, Any] | None,
+    *names: str,
+) -> Any:
+    if not isinstance(label_context, Mapping):
+        return None
+    for name in names:
+        if name in label_context and label_context.get(name) is not None:
+            return label_context.get(name)
+    return None
+
+
+def _lgbm_regime_specialist_assessment_inputs(
+    assessment_X: Any = None,
+    assessment_timestamps: Any = None,
+    assessment_assets: Any = None,
+    *,
+    label_context: Mapping[str, Any] | None = None,
+) -> tuple[pd.DataFrame | None, Any, Any]:
+    frame_source = assessment_X
+    if frame_source is None:
+        frame_source = _lgbm_regime_specialist_context_value(
+            label_context,
+            "regime_specialist_assessment_frame",
+            "regime_specialist_assessment_X",
+            "regime_assessment_frame",
+            "regime_assessment_X",
+        )
+    frame = None
+    if frame_source is not None:
+        try:
+            frame = _frame(frame_source)
+        except Exception:
+            frame = None
+    ts = assessment_timestamps
+    if ts is None:
+        ts = _lgbm_regime_specialist_context_value(
+            label_context,
+            "regime_specialist_assessment_timestamps",
+            "regime_assessment_timestamps",
+        )
+    asset_values = assessment_assets
+    if asset_values is None:
+        asset_values = _lgbm_regime_specialist_context_value(
+            label_context,
+            "regime_specialist_assessment_assets",
+            "regime_assessment_assets",
+            "regime_specialist_assessment_symbols",
+            "regime_assessment_symbols",
+        )
+    return frame, ts, asset_values
+
+
 def _build_lgbm_regime_specialist_bundle(
     X_df: pd.DataFrame,
     selected_features: list[str],
     *,
     timestamps: Any = None,
     assets: Any = None,
+    assessment_X_df: pd.DataFrame | None = None,
+    assessment_timestamps: Any = None,
+    assessment_assets: Any = None,
     objective_mode: str | None,
     cfg: dict[str, Any] | None,
     random_state: int,
@@ -1682,8 +2643,62 @@ def _build_lgbm_regime_specialist_bundle(
             "regime_specialist_distillation_shrink_enabled": False,
         },
     }
-    if not _lgbm_regime_specialist_enabled(cfg, objective_mode):
+    specialist_enabled = _lgbm_regime_specialist_enabled(cfg, objective_mode)
+    diagnostic_enabled = _lgbm_regime_specialist_feature_engineering_diagnostics_enabled(
+        cfg,
+        objective_mode,
+    )
+    diagnostic_final_only = _cfg_bool_value(
+        cfg,
+        "lgbm_regime_specialist_feature_engineering_diagnostics_final_only",
+        True,
+    )
+    diagnostic_label_allowed = (not diagnostic_final_only) or str(label).strip().lower() == "final"
+    if not specialist_enabled and not diagnostic_enabled:
         return disabled
+    if not specialist_enabled and diagnostic_enabled and not diagnostic_label_allowed:
+        out = dict(disabled)
+        out["diagnostics"] = {
+            "enabled": False,
+            "reason": "regime_specialist_disabled_feature_engineering_diagnostics_deferred_to_final",
+            "feature_engineering": {
+                "enabled": True,
+                "used": False,
+                "diagnostic_only": True,
+                "reason": "deferred_to_final",
+            },
+        }
+        out["metrics"] = dict(disabled["metrics"])
+        out["metrics"]["regime_specialist_reason"] = "disabled_feature_engineering_diagnostics_deferred_to_final"
+        out["metrics"].update(
+            _regime_specialist_feature_engineering_metric_summary(
+                out["diagnostics"]["feature_engineering"]
+            )
+        )
+        return out
+    if not specialist_enabled and diagnostic_enabled:
+        fe_diag = _lgbm_regime_specialist_feature_engineering_diagnostics(
+            X_df,
+            selected_features,
+            timestamps=timestamps,
+            assets=assets,
+            assessment_X_df=assessment_X_df,
+            assessment_timestamps=assessment_timestamps,
+            assessment_assets=assessment_assets,
+            objective_mode=objective_mode,
+            cfg=cfg,
+            random_state=random_state,
+        )
+        out = dict(disabled)
+        out["diagnostics"] = {
+            "enabled": False,
+            "reason": "regime_specialist_disabled_feature_engineering_diagnostics_only",
+            "feature_engineering": fe_diag,
+        }
+        out["metrics"] = dict(disabled["metrics"])
+        out["metrics"]["regime_specialist_reason"] = "disabled_feature_engineering_diagnostics_only"
+        out["metrics"].update(_regime_specialist_feature_engineering_metric_summary(fe_diag))
+        return out
     try:
         from extreme_price_movements.regime_specialist_similarity import (
             REGIME_SPECIALIST_SCHEMA_VERSION,
@@ -1728,6 +2743,39 @@ def _build_lgbm_regime_specialist_bundle(
         timestamps=timestamps,
         assets=assets,
     )
+    assessment_frame = None
+    unsup_source_frame = frame
+    unsup_candidate_features = list(dict.fromkeys(list(selected_features or []) + specialist_extra_features))
+    if assessment_X_df is not None and isinstance(assessment_X_df, pd.DataFrame) and len(assessment_X_df) > len(X_df):
+        assessment_columns = infer_regime_specialist_columns(
+            assessment_X_df,
+            selected_feature_columns=selected_features,
+            config=sim_cfg,
+        )
+        assessment_extra_features = list(
+            dict.fromkeys(
+                specialist_extra_features
+                + list(assessment_columns.get("market", []))
+                + list(assessment_columns.get("drift", []))
+                + list(assessment_columns.get("covariance", []))
+                + list(assessment_columns.get("knn", []))
+            )
+        )
+        assessment_frame = _lgbm_regime_specialist_build_frame(
+            assessment_X_df,
+            selected_features,
+            extra_features=assessment_extra_features,
+            timestamps=assessment_timestamps,
+            assets=assessment_assets,
+        )
+        unsup_source_frame = assessment_frame
+        unsup_candidate_features = list(dict.fromkeys(list(selected_features or []) + assessment_extra_features))
+    unsup_artifact, unsup_diag = _lgbm_unsupervised_regime_artifact(
+        unsup_source_frame,
+        unsup_candidate_features,
+        cfg=cfg,
+        random_state=random_state,
+    )
     try:
         generated, diag = build_regime_specialist_training_frame(
             frame,
@@ -1741,7 +2789,11 @@ def _build_lgbm_regime_specialist_bundle(
             knn_columns=specialist_columns.get("knn", []),
             asset_return_col=_cfg_value(cfg, "lgbm_regime_specialist_asset_return_col", None),
             include_input_columns=False,
+            assessment_frame=assessment_frame,
+            unsupervised_regime_artifact=unsup_artifact,
         )
+        if isinstance(diag, dict):
+            diag.setdefault("unsupervised_regime_learning_artifact", unsup_diag)
     except Exception as exc:
         out = dict(disabled)
         out["enabled"] = False
@@ -1778,6 +2830,11 @@ def _build_lgbm_regime_specialist_bundle(
     sim_diag = dict((diag or {}).get("similarity", {}) or {})
     weight_diag = dict((diag or {}).get("sample_weight", {}) or {})
     drift_baseline_diag = dict((diag or {}).get("weighted_drift_baseline", {}) or {})
+    unsup_artifact_diag = (
+        dict((diag or {}).get("unsupervised_regime_learning_artifact", {}) or {})
+        if isinstance((diag or {}).get("unsupervised_regime_learning_artifact", {}), Mapping)
+        else {}
+    )
     drift_baseline_stats = (
         drift_baseline_diag.get("stats", {})
         if isinstance(drift_baseline_diag.get("stats", {}), dict)
@@ -1801,6 +2858,31 @@ def _build_lgbm_regime_specialist_bundle(
     )
     enabled = bool(sim_diag.get("enabled", False))
     should_train = bool(weight_diag.get("should_train_specialist", False))
+    assessment_scope = sim_diag.get("assessment_scope", {}) if isinstance(sim_diag.get("assessment_scope", {}), dict) else {}
+    feature_engineering_diag = (
+        sim_diag.get("feature_engineering", {})
+        if isinstance(sim_diag.get("feature_engineering", {}), dict)
+        else {}
+    )
+    if (
+        diagnostic_enabled
+        and diagnostic_label_allowed
+        and not bool(feature_engineering_diag.get("used", False))
+        and not bool(feature_engineering_diag.get("diagnostic_only", False))
+    ):
+        feature_engineering_diag = _lgbm_regime_specialist_feature_engineering_diagnostics(
+            X_df,
+            selected_features,
+            timestamps=timestamps,
+            assets=assets,
+            assessment_X_df=assessment_X_df,
+            assessment_timestamps=assessment_timestamps,
+            assessment_assets=assessment_assets,
+            objective_mode=objective_mode,
+            cfg=cfg,
+            random_state=random_state,
+        )
+        sim_diag["feature_engineering"] = feature_engineering_diag
     shadow_only = _cfg_bool_value(cfg, "lgbm_regime_specialist_shadow_only", True)
     apply_weight = (
         enabled
@@ -1822,6 +2904,12 @@ def _build_lgbm_regime_specialist_bundle(
         "regime_specialist_should_train": bool(should_train),
         "regime_specialist_sample_weight_applied": bool(apply_weight),
         "regime_specialist_distillation_shrink_enabled": bool(apply_shrink),
+        "regime_specialist_assessment_mode": str(assessment_scope.get("mode", "local")),
+        "regime_specialist_assessment_rows": int(assessment_scope.get("assessment_rows", len(frame)) or 0),
+        "regime_specialist_local_training_rows": int(assessment_scope.get("local_training_rows", len(frame)) or 0),
+        "regime_specialist_assessment_alignment": str(assessment_scope.get("alignment", "local")),
+        "regime_specialist_assessment_aligned_fraction": float(assessment_scope.get("aligned_fraction", 1.0) or 0.0),
+        "regime_specialist_assessment_alignment_ok": bool(assessment_scope.get("alignment_ok", True)),
         "regime_specialist_similarity_mean": float(np.nanmean(similarity)) if len(similarity) else float("nan"),
         "regime_specialist_similarity_p10": float(np.nanpercentile(similarity, 10.0)) if len(similarity) else float("nan"),
         "regime_specialist_similarity_p90": float(np.nanpercentile(similarity, 90.0)) if len(similarity) else float("nan"),
@@ -1833,7 +2921,38 @@ def _build_lgbm_regime_specialist_bundle(
         "regime_specialist_analogue_mass": float(weight_diag.get("analogue_mass", 0.0) or 0.0),
         "regime_specialist_normal_mass": float(weight_diag.get("normal_mass", 0.0) or 0.0),
         "regime_specialist_irrelevant_mass": float(weight_diag.get("irrelevant_mass", 0.0) or 0.0),
+        "regime_specialist_less_interesting_mass": float(weight_diag.get("less_interesting_mass", 0.0) or 0.0),
+        "regime_specialist_less_interesting_mass_cap": float(weight_diag.get("less_interesting_mass_cap", 0.0) or 0.0),
+        "regime_specialist_adaptive_n_eff": float(weight_diag.get("adaptive_n_eff", 0.0) or 0.0),
+        "regime_specialist_replay_n_eff": float(weight_diag.get("replay_n_eff", 0.0) or 0.0),
+        "regime_specialist_adaptive_n_eff_reliability": float(
+            weight_diag.get("adaptive_n_eff_reliability", 0.0) or 0.0
+        ),
+        "regime_specialist_replay_n_eff_reliability": float(
+            weight_diag.get("replay_n_eff_reliability", 0.0) or 0.0
+        ),
+        "regime_specialist_replay_need": float(weight_diag.get("replay_need", 0.0) or 0.0),
+        "regime_specialist_actual_adaptive_weight_mass": float(
+            weight_diag.get("actual_current_weight_mass", 0.0) or 0.0
+        )
+        + float(weight_diag.get("actual_analogue_weight_mass", 0.0) or 0.0),
+        "regime_specialist_actual_less_interesting_weight_mass": float(
+            weight_diag.get("actual_less_interesting_weight_mass", 0.0) or 0.0
+        ),
+        "regime_specialist_actual_less_interesting_weight_cap_ok": bool(
+            weight_diag.get("actual_less_interesting_weight_cap_ok", True)
+        ),
+        "regime_specialist_bucket_mass_basis": str(weight_diag.get("bucket_mass_basis", "")),
+        "regime_specialist_recency_power": float(weight_diag.get("recency_power", 1.0) or 1.0),
         "regime_specialist_candidate_window_count": int(sim_diag.get("candidate_window_count", 0) or 0),
+        "regime_specialist_unsupervised_regime_learning_enabled": bool(unsup_artifact_diag.get("enabled", False)),
+        "regime_specialist_unsupervised_regime_learning_used": bool(unsup_artifact_diag.get("used", False)),
+        "regime_specialist_unsupervised_regime_learning_selected_feature_count": int(
+            unsup_artifact_diag.get("selected_feature_count", 0) or 0
+        ),
+        "regime_specialist_unsupervised_regime_learning_specialist_candidate_count": int(
+            unsup_artifact_diag.get("specialist_candidate_feature_count", 0) or 0
+        ),
         "regime_specialist_weighted_drift_baseline_enabled": bool(drift_baseline_diag.get("enabled", False)),
         "regime_specialist_weighted_drift_baseline_feature_count": int(drift_baseline_diag.get("feature_count", 0) or 0),
         "regime_specialist_weighted_drift_baseline_abs_mean": float(np.nanmean(drift_weighted_means)) if drift_weighted_means.size else float("nan"),
@@ -1841,6 +2960,7 @@ def _build_lgbm_regime_specialist_bundle(
         "regime_specialist_random_state": int(random_state),
         "regime_specialist_label": str(label),
     }
+    metrics.update(_regime_specialist_feature_engineering_metric_summary(feature_engineering_diag))
     return {
         "enabled": True,
         "label": str(label),
@@ -3004,6 +4124,81 @@ def _feature_stats_frame(X: pd.DataFrame, features: list[str]) -> dict[str, dict
     return stats
 
 
+def _native_preset_selected_feature_variance_guard(
+    X: pd.DataFrame,
+    features: list[str],
+    *,
+    cfg: Mapping[str, Any] | None,
+    label: str,
+    preset_source: str | None = None,
+) -> dict[str, Any]:
+    native_required = str(
+        os.environ.get(
+            "EPM_LGBM_REQUIRE_NATIVE_PRESET",
+            (cfg or {}).get("lgbm_require_native_preset", ""),
+        )
+        or ""
+    ).strip().lower() in {"1", "true", "yes", "y", "on"}
+    if not native_required:
+        return {"enabled": False, "reason": "native_preset_not_required"}
+    selected = [str(c) for c in features if str(c) in X.columns]
+    missing = [str(c) for c in features if str(c) not in X.columns]
+    zero_std: list[str] = []
+    nonzero_std: list[str] = []
+    all_missing: list[str] = []
+    for col in selected:
+        vals = pd.to_numeric(X[col], errors="coerce").to_numpy(dtype=np.float32, copy=False)
+        finite = vals[np.isfinite(vals)]
+        if finite.size == 0:
+            all_missing.append(col)
+            zero_std.append(col)
+            continue
+        if float(np.nanstd(finite)) <= 1e-12:
+            zero_std.append(col)
+        else:
+            nonzero_std.append(col)
+    feature_count = int(len(features))
+    zero_std_count = int(len(zero_std) + len(missing))
+    nonzero_std_count = int(len(nonzero_std))
+    zero_std_fraction = float(zero_std_count / max(feature_count, 1))
+    min_nonzero_default = max(5, int(np.ceil(0.05 * max(feature_count, 1))))
+    min_nonzero = int(
+        os.environ.get(
+            "EPM_LGBM_NATIVE_PRESET_MIN_NONZERO_FEATURES",
+            str(min_nonzero_default),
+        )
+        or min_nonzero_default
+    )
+    max_zero_fraction = float(
+        os.environ.get("EPM_LGBM_NATIVE_PRESET_MAX_ZERO_STD_FRACTION", "0.90")
+        or 0.90
+    )
+    diag = {
+        "enabled": True,
+        "label": str(label),
+        "feature_count": feature_count,
+        "present_feature_count": int(len(selected)),
+        "missing_feature_count": int(len(missing)),
+        "zero_std_count": zero_std_count,
+        "zero_std_fraction": zero_std_fraction,
+        "nonzero_std_count": nonzero_std_count,
+        "min_nonzero_required": int(min_nonzero),
+        "max_zero_std_fraction": float(max_zero_fraction),
+        "zero_std_preview": zero_std[:12],
+        "missing_preview": missing[:12],
+        "all_missing_preview": all_missing[:12],
+        "preset_source": str(preset_source or ""),
+    }
+    if nonzero_std_count < min_nonzero or zero_std_fraction > max_zero_fraction:
+        raise RuntimeError(
+            "Native preset selected-feature matrix is effectively constant before "
+            "LightGBM fit. This usually indicates failed feature injection or the "
+            "wrong feature_source_run_id. "
+            f"diagnostics={diag}"
+        )
+    return diag
+
+
 def _feature_distribution_diagnostics(X: pd.DataFrame, train_stats: dict[str, dict[str, float]]) -> dict[str, Any]:
     if not train_stats:
         return {"available": False, "feature_count": 0, "drifted_feature_count": 0, "drifted_features_preview": []}
@@ -4042,7 +5237,15 @@ def _aggregate_j(fold_metrics: list[dict[str, float]], objective_mode: str | Non
     robust = float(q50 - 0.50 * (q75 - q25))
     means: dict[str, float] = {}
     for key in sorted(set().union(*(m.keys() for m in fold_metrics))):
-        arr = np.asarray([float(m.get(key, np.nan)) for m in fold_metrics], dtype=np.float64)
+        numeric_values: list[float] = []
+        for m in fold_metrics:
+            raw_value = m.get(key, np.nan)
+            try:
+                value = float(raw_value)
+            except (TypeError, ValueError):
+                continue
+            numeric_values.append(value)
+        arr = np.asarray(numeric_values, dtype=np.float64)
         arr = arr[np.isfinite(arr)]
         if len(arr):
             means[key] = float(np.mean(arr))
@@ -11408,6 +12611,9 @@ def train_lgbm_stability_candidate(
     preset_source: str | None = None,
     cfg: dict[str, Any] | None = None,
     label_context: dict[str, Any] | None = None,
+    assessment_X: Any = None,
+    assessment_timestamps: Any = None,
+    assessment_assets: Any = None,
 ) -> Optional[dict[str, Any]]:
     objective_mode = _normalize_objective_mode(hpo_objective_mode)
     distill_passes = _distillation_passes_for_objective(objective_mode)
@@ -11480,6 +12686,19 @@ def train_lgbm_stability_candidate(
             "LGBM stability candidate skipped: fewer than 2 features meet recent coverage threshold."
         )
         return None
+    preset_features = [str(c) for c in (preset_feature_names or []) if str(c).strip()]
+    regime_score_feature_diag: dict[str, Any] = {"enabled": False, "reason": "disabled"}
+    if preset_features:
+        X_df, preset_features, regime_score_feature_diag = _append_lgbm_regime_score_features(
+            X_df,
+            preset_features,
+            timestamps=timestamps,
+            assets=assets,
+            objective_mode=objective_mode,
+            cfg=cfg,
+            random_state=random_state + 17431,
+            label="candidate",
+        )
     tprint(
         "LGBM candidate input: "
         f"rows={n}, features={X_df.shape[1]}, classifier={classifier}, "
@@ -11624,7 +12843,6 @@ def train_lgbm_stability_candidate(
     ret_eval = ret_race[eval_local]
     eval_groups = _groups_take(race_groups, eval_local)
     tprint(f"LGBM candidate split: select={len(y_select)}, eval={len(y_eval)}, features={X_select.shape[1]}.")
-    preset_features = [str(c) for c in (preset_feature_names or []) if str(c).strip()]
     if preset_features:
         missing_preset = [c for c in preset_features if c not in X_df.columns]
         if missing_preset:
@@ -11722,17 +12940,37 @@ def train_lgbm_stability_candidate(
         f"{len(selected_features)} after {len(history)} prune rounds; "
         f"preview={selected_features[:10]}."
     )
+    _candidate_guard_cols = [c for c in selected_features if c in X_select.columns]
+    _native_preset_selected_feature_variance_guard(
+        X_select.iloc[:, [X_select.columns.get_loc(c) for c in _candidate_guard_cols]],
+        selected_features,
+        cfg=cfg,
+        label=f"candidate_{objective_mode}",
+        preset_source=preset_source,
+    )
     base_params = _effective_lgbm_params(
         dict(preset_best_params or _default_hpo_params(random_state + 401, classifier)),
         classifier=classifier,
     )
     if preset_best_params:
         tprint("LGBM candidate using native preset best_params; HPO is skipped for base preset candidate scoring.")
+    if _lgbm_regime_specialist_should_build_bundle(cfg, objective_mode):
+        assessment_X_df, assessment_ts, assessment_asset_values = _lgbm_regime_specialist_assessment_inputs(
+            assessment_X,
+            assessment_timestamps,
+            assessment_assets,
+            label_context=label_context,
+        )
+    else:
+        assessment_X_df, assessment_ts, assessment_asset_values = None, None, None
     regime_specialist_bundle = _build_lgbm_regime_specialist_bundle(
         X_df,
         selected_features,
         timestamps=timestamps,
         assets=assets,
+        assessment_X_df=assessment_X_df,
+        assessment_timestamps=assessment_ts,
+        assessment_assets=assessment_asset_values,
         objective_mode=objective_mode,
         cfg=cfg,
         random_state=random_state + 1549,
@@ -11831,6 +13069,7 @@ def train_lgbm_stability_candidate(
     metrics["candidate_elapsed_sec"] = float(time.perf_counter() - t0)
     metrics["hpo_objective_mode"] = objective_mode
     metrics["oof_distillation_passes"] = int(distill_passes)
+    metrics.update(_lgbm_regime_score_feature_metric_summary(regime_score_feature_diag))
     metrics.update(regime_specialist_bundle.get("metrics", {}))
     metrics["regime_specialist_apply_reason"] = str(
         regime_specialist_apply_diag.get("reason", "")
@@ -11974,6 +13213,9 @@ def fit_lgbm_stability_full_model(
     preset_label_weight_hpo_report: Optional[dict[str, Any]] = None,
     cfg: dict[str, Any] | None = None,
     label_context: dict[str, Any] | None = None,
+    assessment_X: Any = None,
+    assessment_timestamps: Any = None,
+    assessment_assets: Any = None,
 ) -> Optional[LGBMStabilityModel]:
     t0 = time.perf_counter()
     objective_mode = _normalize_objective_mode(hpo_objective_mode)
@@ -11997,6 +13239,16 @@ def fit_lgbm_stability_full_model(
     if not selected_features:
         tprint("LGBM full fit skipped: no selected features.")
         return None
+    X_df, selected_features, regime_score_feature_diag = _append_lgbm_regime_score_features(
+        X_df,
+        selected_features,
+        timestamps=timestamps,
+        assets=assets,
+        objective_mode=objective_mode,
+        cfg=cfg,
+        random_state=random_state + 17431,
+        label="final",
+    )
     for col in selected_features:
         if col not in X_df.columns:
             X_df[col] = 0.0
@@ -12078,6 +13330,14 @@ def fit_lgbm_stability_full_model(
         f"rows={n}, selected_features={len(selected_features)}, "
         f"hpo_rows={len(hpo_idx)}, fit_rows={len(fit_idx)}, "
         f"objective={objective_mode}."
+    )
+    _final_guard_cols = [c for c in selected_features if c in X_df.columns]
+    _native_preset_selected_feature_variance_guard(
+        X_df.iloc[fit_idx, [X_df.columns.get_loc(c) for c in _final_guard_cols]],
+        selected_features,
+        cfg=cfg,
+        label=f"final_{objective_mode}",
+        preset_source=preset_source,
     )
     input_selected_features = list(selected_features)
     raw_contrib_input_features = _raw_contrib_input_columns(input_selected_features)
@@ -12209,6 +13469,7 @@ def fit_lgbm_stability_full_model(
         best_params = _effective_lgbm_params(dict(best_params), classifier=classifier)
         hpo_metrics["hpo_best_params"] = dict(best_params)
     hpo_metrics.update(ae_gmm_metrics)
+    hpo_metrics.update(_lgbm_regime_score_feature_metric_summary(regime_score_feature_diag))
     if (not preset_best_params) or bool(LGBM_FINAL_LEAF_FLOOR_PRESET):
         params_before_leaf_floor = dict(best_params)
         best_params, leaf_floor_diag = _final_fit_leaf_floor(
@@ -12348,11 +13609,23 @@ def fit_lgbm_stability_full_model(
         hpo_metrics["label_weight_hpo_reused_from_native_preset"] = bool(
             label_weight_hpo_report.get("reused_from_native_preset", False)
         )
+    if _lgbm_regime_specialist_should_build_bundle(cfg, objective_mode):
+        assessment_X_df, assessment_ts, assessment_asset_values = _lgbm_regime_specialist_assessment_inputs(
+            assessment_X,
+            assessment_timestamps,
+            assessment_assets,
+            label_context=label_context,
+        )
+    else:
+        assessment_X_df, assessment_ts, assessment_asset_values = None, None, None
     regime_specialist_bundle = _build_lgbm_regime_specialist_bundle(
         X_model_df,
         selected_features,
         timestamps=timestamps,
         assets=assets,
+        assessment_X_df=assessment_X_df,
+        assessment_timestamps=assessment_ts,
+        assessment_assets=assessment_asset_values,
         objective_mode=objective_mode,
         cfg=cfg,
         random_state=random_state + 9157,
@@ -12409,6 +13682,7 @@ def fit_lgbm_stability_full_model(
         final_weights = sw.copy()
         pre_final_oof = np.asarray(oof_probs if oof_probs is not None else np.full(n, float(np.mean(y_arr))), dtype=np.float32)
     model = LGBMStabilityModel(mode=mode)
+    model.regime_score_feature_diagnostics_ = dict(regime_score_feature_diag or {})
     model.regime_specialist_diagnostics_ = dict(
         regime_specialist_bundle.get("diagnostics", {}) if regime_specialist_bundle else {}
     )
@@ -13244,6 +14518,9 @@ def train_lgbm_stability_pipeline(
     reference_artifact_dir: str | os.PathLike[str] | None = None,
     cfg: dict[str, Any] | None = None,
     label_context: dict[str, Any] | None = None,
+    assessment_X: Any = None,
+    assessment_timestamps: Any = None,
+    assessment_assets: Any = None,
 ) -> Optional[LGBMStabilityModel]:
     objective_mode = _normalize_objective_mode(hpo_objective_mode)
     candidate = train_lgbm_stability_candidate(
@@ -13258,6 +14535,10 @@ def train_lgbm_stability_pipeline(
         hard_labels=hard_labels,
         hpo_objective_mode=objective_mode,
         cfg=cfg,
+        label_context=label_context,
+        assessment_X=assessment_X,
+        assessment_timestamps=assessment_timestamps,
+        assessment_assets=assessment_assets,
     )
     if candidate is None:
         return None
@@ -13364,6 +14645,9 @@ def train_lgbm_stability_pipeline(
         reference_artifact_dir=reference_artifact_dir,
         cfg=cfg,
         label_context=label_context,
+        assessment_X=assessment_X,
+        assessment_timestamps=assessment_timestamps,
+        assessment_assets=assessment_assets,
     )
 
 

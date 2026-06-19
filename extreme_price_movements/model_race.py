@@ -197,6 +197,35 @@ class NativeLGBMBoosterClassifier(BaseEstimator, ClassifierMixin):
         return (self.predict_proba(X)[:, 1] >= 0.5).astype(np.int8)
 
 
+_NATIVE_CONTEXT_ATTRS = (
+    "contrib_archetype_state",
+    "raw_state_archetype_state",
+    "base_error_archetype_state",
+    "base_error_archetype_state_",
+    "raw_contrib_input_features",
+    "raw_contrib_passthrough_features",
+    "raw_contrib_transformed_feature_names",
+    "raw_contrib_input_state",
+    "raw_contrib_feature_mapping",
+    "raw_contrib_oof_feature_names",
+    "ae_gmm_input_features",
+    "ae_gmm_feature_names",
+    "ae_gmm_context_feature_names",
+    "ae_gmm_state",
+    "oof_uncertainty_features",
+)
+
+
+def _first_context_attr(*owners, name: str):
+    for owner in owners:
+        if owner is None:
+            continue
+        value = getattr(owner, name, None)
+        if value is not None:
+            return value
+    return None
+
+
 class ScaledLogisticRegression(LogisticRegression):
     """
     Wrapper to apply StandardScaler internally, ensuring sample_weight
@@ -1714,6 +1743,8 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             "oof_model_drift_features": getattr(self, "oof_model_drift_features", None),
             "model_file": fmt,
         }
+        for attr in _NATIVE_CONTEXT_ATTRS:
+            sidecar[attr] = _first_context_attr(inner, self.best_model, self, name=attr)
         with open(os.path.join(directory, "sidecar.pkl"), "wb") as f:
             pickle.dump(sidecar, f)
 
@@ -1741,6 +1772,10 @@ class ModelRace(BaseEstimator, ClassifierMixin):
             inner = joblib.load(mp)
         wrapper = Float64Wrapper(estimator=inner)
         wrapper.classes_ = sc.get("classes_", np.array([0, 1]))
+        for attr in _NATIVE_CONTEXT_ATTRS:
+            if attr in sc:
+                setattr(inner, attr, sc.get(attr))
+                setattr(wrapper, attr, sc.get(attr))
         obj = cls.__new__(cls)
         obj.best_model = wrapper
         obj.best_model_name = sc["best_model_name"]
@@ -1756,4 +1791,7 @@ class ModelRace(BaseEstimator, ClassifierMixin):
         obj.best_model_leaf_context_ = sc.get("best_model_leaf_context_")
         obj.model_drift_state_ = sc.get("model_drift_state_")
         obj.oof_model_drift_features = sc.get("oof_model_drift_features")
+        for attr in _NATIVE_CONTEXT_ATTRS:
+            if attr in sc:
+                setattr(obj, attr, sc.get(attr))
         return obj

@@ -41,7 +41,7 @@ class PortfolioPolicyParams:
     max_total_wallet_allocation_pct: float = 0.75
 
     global_threshold_floor: float = 0.60
-    threshold_viability_margin: float = 0.01
+    threshold_viability_margin: float = 0.0
     occupancy_threshold_alpha: float = 0.30
     occupancy_threshold_power: float = 1.50
 
@@ -1327,7 +1327,6 @@ def compute_replay_metrics(
         + 0.05 * sortino_component
         - 0.75 * abs(max_drawdown)
         - 0.05 * concentration_penalty
-        - 0.10 * turnover_penalty
     )
     exit_counts = (
         merged["simple_policy_exit_reason"].astype(str).value_counts(normalize=True)
@@ -1411,6 +1410,10 @@ def compute_replay_metrics(
         "sortino_objective_component": sortino_component,
         "max_drawdown": max_drawdown,
         "realized_wallet_max_drawdown": realized_wallet_max_drawdown,
+        "objective_formula": (
+            "compounded_return + 0.05*tanh(sortino/2) "
+            "- 0.75*abs(max_drawdown) - 0.05*concentration_penalty"
+        ),
         "risk_equity_source": (
             "mtm_equity"
             if not equity_curve.empty and "mtm_equity" in equity_curve.columns
@@ -1463,7 +1466,7 @@ def _parameter_grid() -> Iterable[PortfolioPolicyParams]:
             for max_strat in [3, 4, 5, 6, None]:
                 for max_bar in [1, 2, 3]:
                     for floor in [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90]:
-                        for margin in [0.00, 0.01, 0.02, 0.03, 0.04]:
+                        for margin in [0.00]:
                             for alpha in [0.0, 0.15, 0.30, 0.50, 0.75]:
                                 for power in [0.75, 1.0, 1.5, 2.0]:
                                     for side_conc in [0.90, None]:
@@ -1518,7 +1521,7 @@ def _suggest_params(trial: optuna.Trial) -> PortfolioPolicyParams:
         global_threshold_floor=trial.suggest_float(
             "global_threshold_floor", 0.45, 0.95, step=0.01
         ),
-        threshold_viability_margin=0.05,
+        threshold_viability_margin=0.0,
         occupancy_threshold_alpha=trial.suggest_float(
             "occupancy_threshold_alpha", 0.0, 0.90
         ),

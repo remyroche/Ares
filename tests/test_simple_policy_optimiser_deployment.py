@@ -13,6 +13,7 @@ from extreme_price_movements.simple_policy_optimiser import (
     _apply_deployment_strategy_contract,
     _assert_deployment_has_selected_strategies,
     _apply_local_candidate_hit_rate_guard,
+    _apply_simple_rank_net_ev_prefilter,
     _apply_simple_policy_calibrated_drift_risk,
     _build_deployment_payload,
     _deployment_selected_strategy_ids,
@@ -36,6 +37,58 @@ from extreme_price_movements.simple_policy_optimiser import (
     _write_simple_policy_candidate_metadata,
     simulate_and_score,
 )
+
+
+def test_simple_rank_net_ev_prefilter_is_diagnostic_only_by_default():
+    rows = pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2026-01-01", periods=3, freq="h", tz="UTC"),
+            "symbol": ["BTC/USD:USD", "ETH/USD:USD", "SOL/USD:USD"],
+            "side": [1, 1, -1],
+            "rank_pct": [0.72, 0.81, 0.96],
+        }
+    )
+    fit = {
+        "enabled": True,
+        "status": "fit",
+        "selected_sl_mult": 1.2,
+        "selected_tp_mult": 2.5,
+        "bucket_count": 2,
+        "min_net_ev_bps": 0.0,
+        "global_gross_ev_bps": -25.0,
+        "global_net_ev_bps": -35.0,
+        "global_execution_friction_bps": 10.0,
+        "bucket_table": [
+            {
+                "bucket": 0,
+                "gross_ev_bps": -25.0,
+                "net_ev_bps": -35.0,
+                "execution_friction_bps": 10.0,
+            },
+            {
+                "bucket": 1,
+                "gross_ev_bps": -25.0,
+                "net_ev_bps": -35.0,
+                "execution_friction_bps": 10.0,
+            },
+        ],
+    }
+
+    out, keep, summary = _apply_simple_rank_net_ev_prefilter(
+        rows,
+        fit,
+        cost_pct=0.001,
+        market_mode="spot",
+        context="unit_test",
+    )
+
+    assert len(out) == len(rows)
+    assert keep.tolist() == [True, True, True]
+    assert summary["status"] == "diagnostic_only"
+    assert summary["binding"] is False
+    assert summary["rows_after"] == len(rows)
+    assert summary["diagnostic_rows_after"] == 0
+    assert "simple_grid_net_ev_bps" in out.columns
 
 
 def _result(avg_pnl: float, *, holding: dict | None = None) -> dict:
@@ -1046,7 +1099,7 @@ def test_local_candidate_guard_requires_lower_band_gross_hit_and_ev(tmp_path, mo
     assert deployment_payload["rejected_strategies"] == []
 
 
-def test_local_candidate_guard_searches_upward_for_passing_band(
+def test_local_candidate_guard_uses_lowest_ev_positive_band(
     tmp_path, monkeypatch
 ):
     import extreme_price_movements.simple_policy_optimiser as spo
@@ -1115,12 +1168,14 @@ def test_local_candidate_guard_searches_upward_for_passing_band(
 
     guard = summary["strategies"]["long_dist"]
     assert guard["passed"] is True
-    assert np.isclose(guard["selected_threshold"], 0.93)
-    assert np.isclose(guard["selected_local_band_lo"], 0.93)
-    assert np.isclose(guard["selected_local_band_hi"], 0.98)
-    assert guard["selected_gross_hit_rate"] >= 0.55
+    assert np.isclose(guard["selected_threshold"], 0.89)
+    assert np.isclose(guard["selected_local_band_lo"], 0.89)
+    assert np.isclose(guard["selected_local_band_hi"], 0.94)
+    assert guard["selected_gross_hit_rate"] < 0.55
+    assert guard["hit_rate_floors_are_diagnostic_only"] is True
+    assert guard["next_band_positive_count"] == 1
     assert guard["selected_mean_net_return"] >= 0.002
-    assert deployment_payload["strategies"][0]["deployment_rank_threshold"] == 0.93
+    assert deployment_payload["strategies"][0]["deployment_rank_threshold"] == 0.89
     assert deployment_payload["rejected_strategies"] == []
 
 
@@ -1163,7 +1218,12 @@ def test_local_candidate_guard_rejects_strategy_when_no_lower_band_meets_floor(
 
     guard = summary["strategies"]["long_a"]
     assert guard["passed"] is False
+    assert guard["threshold_applied"] is False
+    assert guard["applied_threshold"] == 0.80
+    assert guard["deployment_threshold_after_guard"] == 0.80
+    assert guard["fallback_candidate_threshold"] != 0.80
     assert deployment_payload["strategies"] == []
+    assert deployment_payload["rejected_strategies"][0]["deployment_rank_threshold"] == 0.80
     assert deployment_payload["rejected_strategies"][0]["reject_reasons"] == [
         "local_lower_band_hit_or_ev_floor_not_met"
     ]

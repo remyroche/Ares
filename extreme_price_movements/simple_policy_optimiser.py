@@ -277,28 +277,61 @@ DEPLOYMENT_LOCAL_CANDIDATE_HIT_GUARD_ENABLED = _env_flag(
     "EPM_POLICY_LOCAL_CANDIDATE_HIT_GUARD_ENABLED", True
 )
 DEPLOYMENT_LOCAL_CANDIDATE_MIN_NET_HIT_RATE = float(
-    os.environ.get("EPM_POLICY_LOCAL_CANDIDATE_MIN_NET_HIT_RATE", "0.50")
+    os.environ.get("EPM_POLICY_LOCAL_CANDIDATE_MIN_NET_HIT_RATE", "0.45")
 )
 DEPLOYMENT_LOCAL_CANDIDATE_MIN_GROSS_HIT_RATE = float(
-    os.environ.get("EPM_POLICY_LOCAL_CANDIDATE_MIN_GROSS_HIT_RATE", "0.55")
+    os.environ.get("EPM_POLICY_LOCAL_CANDIDATE_MIN_GROSS_HIT_RATE", "0.0")
 )
 DEPLOYMENT_LOCAL_CANDIDATE_MIN_BPS_WEIGHTED_HIT = float(
-    os.environ.get("EPM_POLICY_LOCAL_CANDIDATE_MIN_BPS_WEIGHTED_HIT", "0.50")
+    os.environ.get("EPM_POLICY_LOCAL_CANDIDATE_MIN_BPS_WEIGHTED_HIT", "0.0")
 )
 DEPLOYMENT_LOCAL_CANDIDATE_MIN_MEAN_NET_RETURN = float(
-    os.environ.get("EPM_POLICY_LOCAL_CANDIDATE_MIN_MEAN_NET_RETURN", "0.0")
+    os.environ.get("EPM_POLICY_LOCAL_CANDIDATE_MIN_MEAN_NET_RETURN", "0.005")
 )
 DEPLOYMENT_LOCAL_CANDIDATE_BAND_WIDTH = float(
-    os.environ.get("EPM_POLICY_LOCAL_CANDIDATE_BAND_WIDTH", "0.05")
+    os.environ.get("EPM_POLICY_LOCAL_CANDIDATE_BAND_WIDTH", "0.002")
 )
 DEPLOYMENT_LOCAL_CANDIDATE_MIN_ROWS = int(
-    os.environ.get("EPM_POLICY_LOCAL_CANDIDATE_MIN_ROWS", "50")
+    os.environ.get("EPM_POLICY_LOCAL_CANDIDATE_MIN_ROWS", "1")
 )
 DEPLOYMENT_LOCAL_CANDIDATE_CONFIRMATION_BANDS = int(
-    os.environ.get("EPM_POLICY_LOCAL_CANDIDATE_CONFIRMATION_BANDS", "2")
+    os.environ.get("EPM_POLICY_LOCAL_CANDIDATE_CONFIRMATION_BANDS", "1")
 )
 DEPLOYMENT_LOCAL_CANDIDATE_CONFIRMATION_MIN_POSITIVE = int(
     os.environ.get("EPM_POLICY_LOCAL_CANDIDATE_CONFIRMATION_MIN_POSITIVE", "1")
+)
+DEPLOYMENT_REPLAY_THRESHOLD_SELECTOR_ENABLED = _env_flag(
+    "EPM_POLICY_REPLAY_THRESHOLD_SELECTOR_ENABLED", True
+)
+DEPLOYMENT_REPLAY_THRESHOLD_MIN = float(
+    os.environ.get("EPM_POLICY_REPLAY_THRESHOLD_MIN", "0.70")
+)
+DEPLOYMENT_REPLAY_THRESHOLD_MAX = float(
+    os.environ.get("EPM_POLICY_REPLAY_THRESHOLD_MAX", "0.99")
+)
+DEPLOYMENT_STAGE_B_CANDIDATE_RANK_FLOOR = float(
+    os.environ.get(
+        "EPM_POLICY_STAGE_B_CANDIDATE_RANK_FLOOR",
+        str(DEPLOYMENT_REPLAY_THRESHOLD_MIN),
+    )
+)
+DEPLOYMENT_REPLAY_THRESHOLD_LOCAL_BAND_WIDTH = float(
+    os.environ.get("EPM_POLICY_REPLAY_THRESHOLD_LOCAL_BAND_WIDTH", "0.05")
+)
+DEPLOYMENT_REPLAY_THRESHOLD_MIN_MEAN_NET_RETURN = float(
+    os.environ.get("EPM_POLICY_REPLAY_THRESHOLD_MIN_MEAN_NET_RETURN", "0.005")
+)
+DEPLOYMENT_REPLAY_THRESHOLD_MIN_NET_HIT_RATE = float(
+    os.environ.get("EPM_POLICY_REPLAY_THRESHOLD_MIN_NET_HIT_RATE", "0.45")
+)
+DEPLOYMENT_REPLAY_THRESHOLD_GLOBAL_MIN_TRADES = int(
+    os.environ.get("EPM_POLICY_REPLAY_THRESHOLD_GLOBAL_MIN_TRADES", "30")
+)
+DEPLOYMENT_REPLAY_THRESHOLD_GLOBAL_MIN_TRADES_PER_DAY = float(
+    os.environ.get("EPM_POLICY_REPLAY_THRESHOLD_GLOBAL_MIN_TRADES_PER_DAY", "0.4")
+)
+DEPLOYMENT_REPLAY_THRESHOLD_HARD_FLOOR_WINDOWS_DAYS_RAW = os.environ.get(
+    "EPM_POLICY_REPLAY_THRESHOLD_HARD_FLOOR_WINDOWS_DAYS", "7,14,28"
 )
 PORTFOLIO_CANDIDATE_EXPORT_NORMALIZED_RANK_FLOOR = float(
     os.environ.get("EPM_PORTFOLIO_CANDIDATE_EXPORT_RANK_FLOOR", "0.70")
@@ -319,6 +352,10 @@ SIMPLE_DISCOVERY_SIZE_POWER = 1.0
 SIMPLE_NET_EV_PREFILTER_ENABLED = _env_flag(
     "EPM_POLICY_STAGE_A0_NET_EV_PREFILTER_ENABLED",
     True,
+)
+SIMPLE_NET_EV_PREFILTER_BINDING = _env_flag(
+    "EPM_POLICY_STAGE_A0_NET_EV_PREFILTER_BINDING",
+    False,
 )
 SIMPLE_NET_EV_PREFILTER_MIN_NET_EV_BPS = float(
     os.environ.get("EPM_POLICY_STAGE_A0_MIN_NET_EV_BPS", "0.0")
@@ -418,6 +455,15 @@ DEFAULT_PERP_SPREAD_BASELINE_PATH = os.environ.get(
     "EPM_SIMPLE_POLICY_SPREAD_BASELINE_PATH",
     "data_perp/exchanges/krakenfutures/spread_model/per_asset_spread_baseline_latest.csv",
 )
+POLICY_SPREAD_FALLBACK_MAX_QUANTILE = float(
+    os.environ.get("EPM_SIMPLE_POLICY_SPREAD_FALLBACK_MAX_QUANTILE", "0.75")
+)
+POLICY_SPREAD_FALLBACK_MIN_SYMBOLS = int(
+    os.environ.get("EPM_SIMPLE_POLICY_SPREAD_FALLBACK_MIN_SYMBOLS", "20")
+)
+POLICY_SPREAD_UNIVERSE_FALLBACK_MIN_SYMBOLS = int(
+    os.environ.get("EPM_SIMPLE_POLICY_SPREAD_UNIVERSE_FALLBACK_MIN_SYMBOLS", "2")
+)
 _SPREAD_MODEL_COST_CACHE: Dict[str, Optional[float]] = {}
 _SPREAD_BASELINE_CACHE: Dict[str, Optional[Dict[str, Any]]] = {}
 SIMPLE_DISCOVERY_ROUND_TRIP_COST_PCT = float(
@@ -449,6 +495,109 @@ def _spread_baseline_path() -> Path:
     return Path(DEFAULT_PERP_SPREAD_BASELINE_PATH)
 
 
+def _spread_fallback_quantile() -> float:
+    try:
+        value = float(POLICY_SPREAD_FALLBACK_MAX_QUANTILE)
+    except Exception:
+        value = 0.75
+    return float(min(max(value, 0.50), 1.0))
+
+
+def _spread_fallback_min_symbols() -> int:
+    try:
+        value = int(POLICY_SPREAD_FALLBACK_MIN_SYMBOLS)
+    except Exception:
+        value = 20
+    return max(1, value)
+
+
+def _spread_universe_fallback_min_symbols() -> int:
+    try:
+        value = int(POLICY_SPREAD_UNIVERSE_FALLBACK_MIN_SYMBOLS)
+    except Exception:
+        value = 2
+    return max(1, value)
+
+
+def _average_spread(values: np.ndarray, weights: Optional[np.ndarray] = None) -> float:
+    vals = np.asarray(values, dtype=np.float64)
+    valid = np.isfinite(vals) & (vals >= 0.0)
+    if not np.any(valid):
+        return float("nan")
+    vals = vals[valid]
+    if weights is not None:
+        w = np.asarray(weights, dtype=np.float64)
+        if w.shape == valid.shape:
+            w = w[valid]
+            w = np.where(np.isfinite(w) & (w > 0.0), w, 0.0)
+            if float(w.sum()) > 0.0:
+                return float(np.average(vals, weights=w))
+    return float(np.nanmean(vals))
+
+
+def _effective_spread_fallback(
+    values: Sequence[float],
+    *,
+    weights: Optional[Sequence[float]] = None,
+) -> Dict[str, Any]:
+    vals = np.asarray(values, dtype=np.float64)
+    valid = np.isfinite(vals) & (vals >= 0.0)
+    vals = vals[valid]
+    w_arr: Optional[np.ndarray] = None
+    if weights is not None:
+        raw_w = np.asarray(weights, dtype=np.float64)
+        if raw_w.shape == valid.shape:
+            w_arr = raw_w[valid]
+            w_arr = np.where(np.isfinite(w_arr) & (w_arr > 0.0), w_arr, 0.0)
+    raw_average = _average_spread(vals, w_arr)
+    if vals.size == 0 or not np.isfinite(raw_average):
+        return {
+            "value": float("nan"),
+            "raw_average": float("nan"),
+            "method": "none",
+            "quantile": None,
+            "cap_bps": None,
+            "symbol_count": 0,
+            "fallback_symbol_count": 0,
+        }
+    min_symbols = _spread_fallback_min_symbols()
+    quantile = _spread_fallback_quantile()
+    if vals.size < min_symbols or quantile >= 1.0:
+        return {
+            "value": max(0.0, float(raw_average)),
+            "raw_average": max(0.0, float(raw_average)),
+            "method": "all_symbol_average",
+            "quantile": None,
+            "cap_bps": None,
+            "symbol_count": int(vals.size),
+            "fallback_symbol_count": int(vals.size),
+        }
+    cap = float(np.nanquantile(vals, quantile))
+    keep = np.isfinite(vals) & (vals <= cap)
+    if int(keep.sum()) < min_symbols:
+        return {
+            "value": max(0.0, float(raw_average)),
+            "raw_average": max(0.0, float(raw_average)),
+            "method": "all_symbol_average_min_support",
+            "quantile": float(quantile),
+            "cap_bps": cap if np.isfinite(cap) else None,
+            "symbol_count": int(vals.size),
+            "fallback_symbol_count": int(vals.size),
+        }
+    trimmed_average = _average_spread(vals[keep], w_arr[keep] if w_arr is not None else None)
+    if not np.isfinite(trimmed_average):
+        trimmed_average = raw_average
+    return {
+        "value": max(0.0, float(trimmed_average)),
+        "raw_average": max(0.0, float(raw_average)),
+        "method": "liquidity_tail_trimmed_average",
+        "quantile": float(quantile),
+        "cap_bps": cap if np.isfinite(cap) else None,
+        "symbol_count": int(vals.size),
+        "fallback_symbol_count": int(keep.sum()),
+    }
+
+
 def _load_spread_baseline_from_csv(path: Path) -> Optional[Dict[str, Any]]:
     try:
         frame = pd.read_csv(path)
@@ -474,17 +623,25 @@ def _load_spread_baseline_from_csv(path: Path) -> Optional[Dict[str, Any]]:
     if valid.empty:
         return None
     by_symbol = dict(zip(valid["symbol"].astype(str), valid[spread_col].astype(float)))
+    spread_values = valid[spread_col].to_numpy(dtype=np.float64)
+    weights_array: Optional[np.ndarray] = None
     if "rows" in valid.columns:
         weights = pd.to_numeric(valid["rows"], errors="coerce").fillna(0.0).clip(lower=0.0)
-        if float(weights.sum()) > 0.0:
-            global_spread = float(np.average(valid[spread_col].to_numpy(dtype=np.float64), weights=weights.to_numpy(dtype=np.float64)))
-        else:
-            global_spread = float(valid[spread_col].mean())
-    else:
-        global_spread = float(valid[spread_col].mean())
+        weights_array = weights.to_numpy(dtype=np.float64)
+    fallback = _effective_spread_fallback(spread_values, weights=weights_array)
+    raw_global = fallback["raw_average"]
+    effective_global = fallback["value"]
     return {
         "source": str(path),
-        "global_average_spread_bps": max(0.0, global_spread),
+        "format": "csv",
+        "spread_column": str(spread_col),
+        "global_average_spread_bps": max(0.0, float(effective_global)),
+        "effective_fallback_spread_bps": max(0.0, float(effective_global)),
+        "raw_global_average_spread_bps": max(0.0, float(raw_global)),
+        "fallback_method": fallback["method"],
+        "fallback_quantile": fallback["quantile"],
+        "fallback_cap_bps": fallback["cap_bps"],
+        "fallback_symbol_count": fallback["fallback_symbol_count"],
         "by_symbol": by_symbol,
         "rows": int(len(valid)),
     }
@@ -523,20 +680,30 @@ def _load_spread_baseline_from_artifact(path: Path) -> Optional[Dict[str, Any]]:
         weighted_rows.append(weight)
     if not by_symbol:
         return None
+    fallback = _effective_spread_fallback(weighted_values, weights=weighted_rows)
     try:
-        global_spread = float(payload.get("global_average_spread_bps"))
+        payload_global_spread = float(payload.get("global_average_spread_bps"))
     except Exception:
-        global_spread = np.nan
-    if not np.isfinite(global_spread) or global_spread < 0.0:
-        weights = np.asarray(weighted_rows, dtype=np.float64)
-        values = np.asarray(weighted_values, dtype=np.float64)
-        if float(weights.sum()) > 0.0:
-            global_spread = float(np.average(values, weights=weights))
-        else:
-            global_spread = float(np.nanmean(values))
+        payload_global_spread = np.nan
+    raw_global = (
+        payload_global_spread
+        if np.isfinite(payload_global_spread) and payload_global_spread >= 0.0
+        else fallback["raw_average"]
+    )
+    if fallback["method"] in {"all_symbol_average", "all_symbol_average_min_support"}:
+        effective_global = raw_global
+    else:
+        effective_global = fallback["value"]
     return {
         "source": str(path),
-        "global_average_spread_bps": max(0.0, float(global_spread)),
+        "format": "json",
+        "global_average_spread_bps": max(0.0, float(effective_global)),
+        "effective_fallback_spread_bps": max(0.0, float(effective_global)),
+        "raw_global_average_spread_bps": max(0.0, float(raw_global)),
+        "fallback_method": fallback["method"],
+        "fallback_quantile": fallback["quantile"],
+        "fallback_cap_bps": fallback["cap_bps"],
+        "fallback_symbol_count": fallback["fallback_symbol_count"],
         "by_symbol": by_symbol,
         "rows": int(len(by_symbol)),
     }
@@ -545,23 +712,70 @@ def _load_spread_baseline_from_artifact(path: Path) -> Optional[Dict[str, Any]]:
 def _load_policy_spread_baseline() -> Optional[Dict[str, Any]]:
     if not _spread_model_enabled():
         return None
-    candidates = [
-        _spread_baseline_path(),
-        Path(os.environ.get("EPM_SIMPLE_POLICY_SPREAD_MODEL_PATH", DEFAULT_PERP_SPREAD_MODEL_PATH)),
-    ]
+    baseline_path = _spread_baseline_path()
+    model_path = Path(
+        os.environ.get("EPM_SIMPLE_POLICY_SPREAD_MODEL_PATH", DEFAULT_PERP_SPREAD_MODEL_PATH)
+    )
+    candidates = [baseline_path, model_path]
     cache_key = "|".join(str(path) for path in candidates)
     if cache_key in _SPREAD_BASELINE_CACHE:
         return _SPREAD_BASELINE_CACHE[cache_key]
     baseline: Optional[Dict[str, Any]] = None
-    csv_path = candidates[0]
-    if csv_path.exists():
-        baseline = _load_spread_baseline_from_csv(csv_path)
+    if baseline_path.exists():
+        baseline = _load_spread_baseline_from_csv(baseline_path)
+        if baseline is None:
+            baseline = _load_spread_baseline_from_artifact(baseline_path)
+    if baseline is None and baseline_path.suffix.lower() == ".csv":
+        summary_path = baseline_path.with_suffix(".json")
+        if summary_path.exists():
+            baseline = _load_spread_baseline_from_artifact(summary_path)
     if baseline is None:
-        artifact_path = candidates[1]
-        if artifact_path.exists():
-            baseline = _load_spread_baseline_from_artifact(artifact_path)
+        if model_path.exists():
+            baseline = _load_spread_baseline_from_artifact(model_path)
     _SPREAD_BASELINE_CACHE[cache_key] = baseline
     return baseline
+
+
+def _policy_spread_baseline_audit() -> Dict[str, Any]:
+    baseline = _load_policy_spread_baseline()
+    if not baseline:
+        return {
+            "enabled": bool(_spread_model_enabled()),
+            "loaded": False,
+            "configured_baseline_path": str(_spread_baseline_path()),
+            "configured_model_path": str(
+                Path(
+                    os.environ.get(
+                        "EPM_SIMPLE_POLICY_SPREAD_MODEL_PATH",
+                        DEFAULT_PERP_SPREAD_MODEL_PATH,
+                    )
+                )
+            ),
+        }
+    by_symbol = baseline.get("by_symbol") or {}
+    global_value = baseline.get("global_average_spread_bps")
+    try:
+        global_spread = float(global_value)
+    except Exception:
+        global_spread = np.nan
+    return {
+        "enabled": True,
+        "loaded": True,
+        "source": baseline.get("source"),
+        "format": baseline.get("format"),
+        "spread_column": baseline.get("spread_column"),
+        "rows": int(baseline.get("rows", len(by_symbol)) or 0),
+        "symbol_count": int(len(by_symbol)),
+        "global_average_spread_bps": (
+            float(global_spread) if np.isfinite(global_spread) else None
+        ),
+        "effective_fallback_spread_bps": baseline.get("effective_fallback_spread_bps"),
+        "raw_global_average_spread_bps": baseline.get("raw_global_average_spread_bps"),
+        "fallback_method": baseline.get("fallback_method"),
+        "fallback_quantile": baseline.get("fallback_quantile"),
+        "fallback_cap_bps": baseline.get("fallback_cap_bps"),
+        "fallback_symbol_count": baseline.get("fallback_symbol_count"),
+    }
 
 
 def _spread_baseline_global_bps() -> Optional[float]:
@@ -569,7 +783,12 @@ def _spread_baseline_global_bps() -> Optional[float]:
     if not baseline:
         return None
     try:
-        value = float(baseline.get("global_average_spread_bps"))
+        value = float(
+            baseline.get(
+                "effective_fallback_spread_bps",
+                baseline.get("global_average_spread_bps"),
+            )
+        )
     except Exception:
         return None
     return value if np.isfinite(value) and value >= 0.0 else None
@@ -768,6 +987,281 @@ def _policy_market_data_root(data_root: str | Path, market_mode: str) -> str:
     return str(data_root)
 
 
+class _PerpPolicy15mReplayStore:
+    """True 15m replay store for perps.
+
+    The main Kraken futures OHLCV cache is hourly in this workspace. Policy
+    optimisation needs 15m paths, so this store resamples local execution_1m
+    candles and can optionally fill gaps from Kraken Futures chart candles.
+    """
+
+    timeframe = "15m"
+
+    def __init__(self, data_root: str | Path, market_mode: str):
+        self.market_mode = _normalise_market_mode(market_mode)
+        self.execution_root = Path(_policy_execution_1m_data_root(data_root, market_mode))
+        self.root_dir = str(self.execution_root)
+        self.ohlcv_dir = str(self.execution_root / "ohlcv")
+        self.download_missing_15m = _env_flag(
+            "EPM_SIMPLE_POLICY_15M_DOWNLOAD",
+            False,
+        )
+        self._cache: Dict[Tuple[str, str, str], pd.DataFrame] = {}
+        self._exchange: Any = None
+        self.downloaded_15m_rows = 0
+        self.downloaded_15m_symbols: Set[str] = set()
+
+    @staticmethod
+    def _empty_frame() -> pd.DataFrame:
+        return pd.DataFrame(
+            columns=["open", "high", "low", "close", "ts"],
+            index=pd.DatetimeIndex([], tz="UTC"),
+        )
+
+    @staticmethod
+    def _select_columns(
+        df: pd.DataFrame,
+        columns: Optional[Iterable[str]],
+    ) -> pd.DataFrame:
+        if not columns:
+            return df.copy()
+        requested = list(dict.fromkeys([*columns, "ts"]))
+        available = [col for col in requested if col in df.columns]
+        return df.loc[:, available].copy()
+
+    @staticmethod
+    def _symbol_candidates(symbol: str) -> Iterable[str]:
+        raw = str(symbol or "").strip()
+        if not raw:
+            return
+        yield raw
+        yield raw.replace("/", "_")
+        if raw.endswith("/USD:USD"):
+            yield raw.replace("/USD:USD", "_USD:USD")
+        if raw.endswith("_USD:USD"):
+            yield raw.replace("_USD:USD", "/USD:USD")
+
+    def _symbol_dir(self, symbol: str) -> Optional[Path]:
+        for candidate in self._symbol_candidates(symbol):
+            safe = str(candidate).replace("/", "_")
+            path = Path(self.ohlcv_dir) / f"symbol={safe}"
+            if path.exists():
+                return path
+        return None
+
+    def _fetch_15m_chart(
+        self,
+        symbol: str,
+        start: pd.Timestamp,
+        end: pd.Timestamp,
+    ) -> pd.DataFrame:
+        if not self.download_missing_15m:
+            return self._empty_frame()
+        chunk_days = max(
+            1,
+            int(os.environ.get("EPM_SIMPLE_POLICY_15M_FETCH_CHUNK_DAYS", "14") or "14"),
+        )
+        try:
+            if self._exchange is None:
+                self._exchange = make_perp_exchange()
+            chunks: List[pd.DataFrame] = []
+            cursor = pd.Timestamp(start).floor("15min")
+            end_ts = pd.Timestamp(end).ceil("15min")
+            while cursor < end_ts:
+                chunk_end = min(cursor + pd.Timedelta(days=chunk_days), end_ts)
+                fetched_chunk = _fetch_ohlcv_paged(
+                    self._exchange,
+                    str(symbol),
+                    int(cursor.value // 10**6),
+                    int(chunk_end.value // 10**6),
+                    timeframe="15m",
+                    limit=1000,
+                )
+                if fetched_chunk is not None and not fetched_chunk.empty:
+                    chunks.append(fetched_chunk)
+                cursor = chunk_end
+        except Exception as exc:
+            logger.warning(
+                "[%s] Kraken 15m chart fallback failed for policy replay: %s",
+                symbol,
+                exc,
+            )
+            return self._empty_frame()
+        fetched = pd.concat(chunks, axis=0) if chunks else pd.DataFrame()
+        if fetched is None or fetched.empty:
+            return self._empty_frame()
+        out = fetched.copy()
+        out.index = pd.to_datetime(out.index, utc=True, errors="coerce")
+        out = out[~out.index.isna()].sort_index()
+        out = out[["open", "high", "low", "close"]].astype("float32")
+        out.index.name = None
+        out["ts"] = out.index
+        self.downloaded_15m_symbols.add(str(symbol))
+        self.downloaded_15m_rows += int(len(out))
+        return out
+
+    def _maybe_fill_from_chart(
+        self,
+        symbol: str,
+        local_15m: pd.DataFrame,
+        start: Optional[pd.Timestamp],
+        end: Optional[pd.Timestamp],
+    ) -> pd.DataFrame:
+        if start is None or end is None:
+            return local_15m
+        if not self.download_missing_15m:
+            return local_15m
+        expected = pd.date_range(
+            start.floor("15min"),
+            end.ceil("15min"),
+            freq="15min",
+            tz="UTC",
+        )
+        local_idx = (
+            pd.DatetimeIndex(local_15m.index).tz_convert("UTC")
+            if isinstance(local_15m.index, pd.DatetimeIndex) and len(local_15m)
+            else pd.DatetimeIndex([], tz="UTC")
+        )
+        coverage = float(len(local_idx.intersection(expected)) / max(len(expected), 1))
+        if coverage >= 0.995:
+            return local_15m
+        fetched = self._fetch_15m_chart(str(symbol), start, end)
+        if fetched.empty:
+            return local_15m
+        if local_15m.empty:
+            return fetched
+        out = pd.concat([local_15m, fetched], axis=0)
+        out = out[~out.index.duplicated(keep="last")].sort_index()
+        out["ts"] = out.index
+        return out
+
+    def load(
+        self,
+        symbol: str,
+        columns: Optional[Iterable[str]] = None,
+        start_ts: Optional[pd.Timestamp] = None,
+        end_ts: Optional[pd.Timestamp] = None,
+    ) -> pd.DataFrame:
+        start = pd.Timestamp(start_ts).tz_convert("UTC") if start_ts is not None else None
+        end = pd.Timestamp(end_ts).tz_convert("UTC") if end_ts is not None else None
+        cache_key = (
+            str(symbol),
+            str(start.isoformat() if start is not None else ""),
+            str(end.isoformat() if end is not None else ""),
+        )
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return self._select_columns(cached, columns)
+
+        sym_dir = self._symbol_dir(symbol)
+        if sym_dir is None:
+            out = self._maybe_fill_from_chart(
+                str(symbol),
+                self._empty_frame(),
+                start,
+                end,
+            )
+            self._cache[cache_key] = out
+            return self._select_columns(out, columns)
+
+        start_sec = int(start.timestamp()) if start is not None else 0
+        end_sec = int(end.timestamp()) if end is not None else 2**63 - 1
+        files: List[Path] = []
+        for fpath in sym_dir.glob("year=*/*.parquet"):
+            parts = fpath.name.replace(".parquet", "").split("-")
+            include = True
+            if len(parts) >= 3:
+                try:
+                    file_min = int(parts[-2])
+                    file_max = int(parts[-1])
+                    include = not (file_min > end_sec or file_max < start_sec)
+                except ValueError:
+                    include = True
+            if include:
+                files.append(fpath)
+        pieces: List[pd.DataFrame] = []
+        for fpath in files:
+            try:
+                pieces.append(
+                    pd.read_parquet(
+                        fpath,
+                        columns=["ts", "open", "high", "low", "close"],
+                    )
+                )
+            except Exception:
+                continue
+        if not pieces:
+            out = self._maybe_fill_from_chart(
+                str(symbol),
+                self._empty_frame(),
+                start,
+                end,
+            )
+            self._cache[cache_key] = out
+            return self._select_columns(out, columns)
+
+        raw = pd.concat(pieces, ignore_index=True)
+        raw["ts"] = pd.to_datetime(raw["ts"], utc=True, errors="coerce")
+        raw = raw.dropna(subset=["ts"]).drop_duplicates("ts", keep="last")
+        raw = raw.sort_values("ts").set_index("ts")
+        if start is not None:
+            raw = raw.loc[raw.index >= start]
+        if end is not None:
+            raw = raw.loc[raw.index <= end]
+        if raw.empty:
+            out = self._maybe_fill_from_chart(
+                str(symbol),
+                self._empty_frame(),
+                start,
+                end,
+            )
+            self._cache[cache_key] = out
+            return self._select_columns(out, columns)
+        for col in ("open", "high", "low", "close"):
+            raw[col] = pd.to_numeric(raw[col], errors="coerce")
+        out = raw.resample(
+            "15min",
+            label="left",
+            closed="left",
+            origin="epoch",
+        ).agg(
+            {
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+            }
+        )
+        out = out.dropna(subset=["open", "high", "low", "close"])
+        out = out.astype(
+            {"open": "float32", "high": "float32", "low": "float32", "close": "float32"}
+        )
+        out.index.name = None
+        out["ts"] = out.index
+        out = self._maybe_fill_from_chart(str(symbol), out, start, end)
+        self._cache[cache_key] = out
+        return self._select_columns(out, columns)
+
+
+def _make_policy_replay_store(data_root: str | Path, market_mode: str) -> Any:
+    if _normalise_market_mode(market_mode) == "perps" and _env_flag(
+        "EPM_SIMPLE_POLICY_TRUE_15M_REPLAY",
+        True,
+    ):
+        store = _PerpPolicy15mReplayStore(data_root, market_mode)
+        logger.info(
+            "Using true 15m perp replay store: execution_root=%s "
+            "download_missing_15m=%s",
+            store.execution_root,
+            store.download_missing_15m,
+        )
+        return store
+    return PartitionedOHLCVStore(
+        _policy_market_data_root(data_root, market_mode),
+        timeframe="15m",
+    )
+
+
 def _mode_stem(path: Path, market_mode: str) -> Path:
     return path.with_name(f"{path.stem}_{market_mode}{path.suffix}")
 
@@ -958,12 +1452,34 @@ def _policy_full_spread_bps_array(
         baseline = _load_policy_spread_baseline()
         if baseline:
             by_symbol = baseline.get("by_symbol") or {}
-            global_default = float(baseline.get("global_average_spread_bps", default))
+            global_default = float(
+                baseline.get(
+                    "effective_fallback_spread_bps",
+                    baseline.get("global_average_spread_bps", default),
+                )
+            )
             if np.isfinite(global_default) and global_default >= 0.0:
                 default = global_default
             if "symbol" in df.columns and by_symbol:
                 mapped = df["symbol"].astype(str).map(by_symbol)
                 mapped_arr = pd.to_numeric(mapped, errors="coerce").to_numpy(dtype=np.float64)
+                if np.any(np.isfinite(mapped_arr)):
+                    known_symbol_spreads = (
+                        pd.Series(df["symbol"].astype(str).unique(), dtype="object")
+                        .map(by_symbol)
+                        .pipe(pd.to_numeric, errors="coerce")
+                        .to_numpy(dtype=np.float64)
+                    )
+                    known_symbol_count = int(
+                        np.isfinite(known_symbol_spreads).sum()
+                    )
+                    universe_default = _average_spread(known_symbol_spreads)
+                    if (
+                        known_symbol_count >= _spread_universe_fallback_min_symbols()
+                        and np.isfinite(universe_default)
+                        and universe_default >= 0.0
+                    ):
+                        default = float(universe_default)
                 full = np.where(np.isfinite(mapped_arr), mapped_arr, float(default))
             else:
                 full = np.full(len(df), float(default), dtype=np.float64)
@@ -4156,6 +4672,7 @@ def _write_simple_policy_candidate_metadata(
         "configured_spot_exit_quote_half_spread_bps": float(
             DEFAULT_SPOT_POLICY_EXIT_QUOTE_HALF_SPREAD_BPS
         ),
+        "policy_spread_baseline": _policy_spread_baseline_audit(),
         "expected_spread_application": (
             "simulator re-anchors the entry path to side-aware executable_entry = "
             "theoretical_entry * (1 + side * "
@@ -4710,23 +5227,29 @@ def _apply_simple_rank_net_ev_prefilter(
     market_mode: Optional[str],
     context: str,
 ) -> Tuple[pd.DataFrame, np.ndarray, Dict[str, Any]]:
+    binding = bool(SIMPLE_NET_EV_PREFILTER_BINDING)
     if rows.empty:
         return rows.copy(), np.zeros(0, dtype=bool), {
             "enabled": bool(fit.get("enabled", False)),
+            "binding": binding,
             "context": context,
             "rows_before": 0,
             "rows_after": 0,
+            "diagnostic_rows_after": 0,
         }
     if not bool(fit.get("enabled", False)) or fit.get("status") != "fit":
         mask = np.ones(len(rows), dtype=bool)
         summary = {
             "enabled": bool(fit.get("enabled", False)),
+            "binding": binding,
             "status": fit.get("status", "not_fit"),
             "reason": fit.get("reason"),
             "context": context,
             "rows_before": int(len(rows)),
             "rows_after": int(len(rows)),
             "dropped_rows": 0,
+            "diagnostic_rows_after": int(len(rows)),
+            "diagnostic_dropped_rows": 0,
         }
         return rows.copy(), mask, summary
 
@@ -4794,12 +5317,16 @@ def _apply_simple_rank_net_ev_prefilter(
     keep = np.isfinite(net_ev) & (net_ev >= float(min_net_ev))
     summary = {
         "enabled": True,
-        "status": "applied",
+        "binding": binding,
+        "status": "applied" if binding else "diagnostic_only",
         "context": context,
         "rows_before": int(len(out)),
-        "rows_after": int(keep.sum()),
-        "dropped_rows": int(len(out) - int(keep.sum())),
-        "kept_rate": float(keep.mean()) if len(keep) else 0.0,
+        "rows_after": int(keep.sum()) if binding else int(len(out)),
+        "dropped_rows": int(len(out) - int(keep.sum())) if binding else 0,
+        "kept_rate": float(keep.mean()) if binding and len(keep) else 1.0,
+        "diagnostic_rows_after": int(keep.sum()),
+        "diagnostic_dropped_rows": int(len(out) - int(keep.sum())),
+        "diagnostic_kept_rate": float(keep.mean()) if len(keep) else 0.0,
         "min_net_ev_bps": float(min_net_ev),
         "selected_sl_mult": _safe_float(fit.get("selected_sl_mult"), np.nan),
         "selected_tp_mult": _safe_float(fit.get("selected_tp_mult"), np.nan),
@@ -4846,6 +5373,9 @@ def _apply_simple_rank_net_ev_prefilter(
                 ),
             }
         )
+    if not binding:
+        keep_all = np.ones(len(out), dtype=bool)
+        return out.copy().reset_index(drop=True), keep_all, summary
     return out.loc[keep].copy().reset_index(drop=True), keep, summary
 
 
@@ -5330,7 +5860,14 @@ def _apply_local_candidate_hit_rate_guard(
     *,
     candidate_path: Path,
 ) -> Dict[str, Any]:
-    """Raise deployment thresholds until exported OOS candidates clear hit floor."""
+    """Set the lowest deployment threshold with clear local net EV.
+
+    The binding rule is intentionally simple: choose the lowest non-empty local
+    rank band whose mean net return clears the configured margin, provided the
+    immediately higher band is also positive. Hit-rate, gross-return, and
+    cumulative metrics are retained as diagnostics but do not block threshold
+    selection.
+    """
     if not DEPLOYMENT_LOCAL_CANDIDATE_HIT_GUARD_ENABLED:
         return {"enabled": False, "reason": "disabled"}
     if candidate_table.empty or "strategy_id" not in candidate_table.columns:
@@ -5373,6 +5910,7 @@ def _apply_local_candidate_hit_rate_guard(
     band_width = float(np.clip(DEPLOYMENT_LOCAL_CANDIDATE_BAND_WIDTH, 1e-6, 1.0))
     min_rows = int(max(1, DEPLOYMENT_LOCAL_CANDIDATE_MIN_ROWS))
     precision = float(max(DEPLOYMENT_THRESHOLD_PRECISION, 1e-6))
+    threshold_step = float(min(precision, band_width))
     confirmation_bands = int(max(0, DEPLOYMENT_LOCAL_CANDIDATE_CONFIRMATION_BANDS))
     confirmation_min_positive = int(
         min(
@@ -5390,6 +5928,8 @@ def _apply_local_candidate_hit_rate_guard(
         "min_rows": min_rows,
         "confirmation_bands": confirmation_bands,
         "confirmation_min_positive": confirmation_min_positive,
+        "binding_rule": "lowest_local_net_ev_band_with_positive_next_band",
+        "hit_rate_floors_are_diagnostic_only": True,
         "rank_col": rank_col,
         "rank_scope": (
             "per_strategy" if rank_col in {"strategy_rank_pct", "policy_rank_pct", "rank_pct"}
@@ -5434,14 +5974,20 @@ def _apply_local_candidate_hit_rate_guard(
             }
             continue
 
+        grid_lo = float(
+            min(
+                current_threshold,
+                max(DEPLOYMENT_REPLAY_THRESHOLD_MIN, DEPLOYMENT_THRESHOLD_MIN),
+            )
+        )
         grid = np.arange(
-            current_threshold,
-            DEPLOYMENT_THRESHOLD_MAX + precision / 2.0,
-            precision,
+            grid_lo,
+            DEPLOYMENT_THRESHOLD_MAX + threshold_step / 2.0,
+            threshold_step,
             dtype=np.float64,
         )
         grid = np.unique(
-            np.round(np.clip(grid, current_threshold, DEPLOYMENT_THRESHOLD_MAX), 4)
+            np.round(np.clip(grid, grid_lo, DEPLOYMENT_THRESHOLD_MAX), 4)
         )
         threshold_rows: list[dict[str, Any]] = []
         selected: dict[str, Any] | None = None
@@ -5492,11 +6038,7 @@ def _apply_local_candidate_hit_rate_guard(
                 next_bps_weighted_hit = _bps_weighted_hit_rate(next_net)
                 next_positive = bool(
                     len(next_net) > 0
-                    and float(next_net.mean()) >= target_mean_net
-                    and (
-                        not np.isfinite(next_bps_weighted_hit)
-                        or next_bps_weighted_hit >= target_bps_weighted_hit
-                    )
+                    and float(next_net.mean()) > 0.0
                 )
                 if next_positive:
                     next_positive_count += 1
@@ -5541,12 +6083,6 @@ def _apply_local_candidate_hit_rate_guard(
             if (
                 selected is None
                 and item["n_candidates"] >= min_rows
-                and item["net_hit_rate"] >= target_hit
-                and item["gross_hit_rate"] >= target_gross_hit
-                and (
-                    np.isfinite(item["bps_weighted_hit"])
-                    and item["bps_weighted_hit"] >= target_bps_weighted_hit
-                )
                 and item["mean_net_return"] >= target_mean_net
                 and item["next_band_positive_count"] >= confirmation_min_positive
             ):
@@ -5580,28 +6116,30 @@ def _apply_local_candidate_hit_rate_guard(
             )
             reason = "no_local_band_met_hit_and_ev_floors"
         else:
-            reason = "lowest_threshold_meeting_local_hit_and_ev_floors"
+            reason = "lowest_threshold_with_clear_local_net_ev_and_positive_next_band"
 
-        selected_threshold = float(
-            max(current_threshold, selected["deployment_rank_threshold"])
-        )
+        selected_threshold = float(selected["deployment_rank_threshold"])
         passed = bool(
             int(selected.get("n_candidates", 0) or 0) >= min_rows
-            and float(selected.get("net_hit_rate", float("nan"))) >= target_hit
-            and float(selected.get("gross_hit_rate", float("nan"))) >= target_gross_hit
-            and float(selected.get("bps_weighted_hit", float("nan")))
-            >= target_bps_weighted_hit
             and float(selected.get("mean_net_return", float("nan"))) >= target_mean_net
             and int(selected.get("next_band_positive_count", 0) or 0)
             >= confirmation_min_positive
         )
-        strategy["deployment_rank_threshold"] = selected_threshold
+        applied_threshold = selected_threshold if passed else current_threshold
+        if passed:
+            strategy["deployment_rank_threshold"] = applied_threshold
         strategy["local_candidate_hit_rate_guard"] = {
             "enabled": True,
             "rank_col": rank_col,
             "rank_scope": summary["rank_scope"],
             "previous_threshold": current_threshold,
             "selected_threshold": selected_threshold,
+            "applied_threshold": applied_threshold,
+            "deployment_threshold_after_guard": applied_threshold,
+            "threshold_applied": bool(passed),
+            "fallback_candidate_threshold": (
+                float(selected_threshold) if not passed else float("nan")
+            ),
             "min_net_hit_rate": target_hit,
             "min_gross_hit_rate": target_gross_hit,
             "min_bps_weighted_hit": target_bps_weighted_hit,
@@ -5609,6 +6147,8 @@ def _apply_local_candidate_hit_rate_guard(
             "local_band_width": band_width,
             "confirmation_bands": confirmation_bands,
             "confirmation_min_positive": confirmation_min_positive,
+            "binding_rule": "lowest_local_net_ev_band_with_positive_next_band",
+            "hit_rate_floors_are_diagnostic_only": True,
             "selected_local_band_lo": float(selected.get("local_band_lo", np.nan)),
             "selected_local_band_hi": float(selected.get("local_band_hi", np.nan)),
             "min_rows": min_rows,
@@ -5644,10 +6184,10 @@ def _apply_local_candidate_hit_rate_guard(
             "net_hit=%.4f gross_hit=%.4f bps_hit=%.4f mean_net=%.6f "
             "next_positive=%s/%s n=%s targets=(net_hit>=%.4f "
             "gross_hit>=%.4f bps_hit>=%.4f mean_net>=%.6f "
-            "next_positive>=%s) passed=%s rank_col=%s",
+            "next_positive>=%s) passed=%s applied=%s rank_col=%s",
             strategy_id,
             current_threshold,
-            selected_threshold,
+            applied_threshold,
             _safe_float(selected.get("net_hit_rate"), np.nan),
             _safe_float(selected.get("gross_hit_rate"), np.nan),
             _safe_float(selected.get("bps_weighted_hit"), np.nan),
@@ -5661,6 +6201,7 @@ def _apply_local_candidate_hit_rate_guard(
             target_mean_net,
             confirmation_min_positive,
             passed,
+            bool(passed),
             rank_col,
         )
 
@@ -5683,6 +6224,517 @@ def _apply_local_candidate_hit_rate_guard(
         "local_candidate_hit_rate_guard"
     ] = summary
     return summary
+
+
+def _candidate_span_days(rows: pd.DataFrame) -> float:
+    if rows.empty or "timestamp" not in rows.columns:
+        return 1.0
+    ts = pd.to_datetime(rows["timestamp"], utc=True, errors="coerce").dropna()
+    if ts.empty:
+        return 1.0
+    return float(max((ts.max() - ts.min()).total_seconds() / 86400.0, 1.0))
+
+
+def _rank_threshold_return_metrics(
+    rows: pd.DataFrame,
+    *,
+    rank_col: str,
+    threshold: float,
+    band_width: float,
+) -> Dict[str, Any]:
+    if rows.empty or rank_col not in rows.columns or "net_return" not in rows.columns:
+        return {
+            "local_n": 0,
+            "cumulative_n": 0,
+            "local_mean_net_return": float("nan"),
+            "cumulative_mean_net_return": float("nan"),
+            "local_net_hit_rate": float("nan"),
+            "cumulative_net_hit_rate": float("nan"),
+            "local_band_lo": float(threshold),
+            "local_band_hi": float(min(1.0, threshold + band_width)),
+        }
+    work = rows[[rank_col, "net_return"]].copy()
+    work[rank_col] = pd.to_numeric(work[rank_col], errors="coerce")
+    work["net_return"] = pd.to_numeric(work["net_return"], errors="coerce")
+    work = work.replace([np.inf, -np.inf], np.nan).dropna()
+    band_hi = float(min(1.0, float(threshold) + float(band_width)))
+    if band_hi >= 1.0:
+        local = work.loc[
+            (work[rank_col] >= float(threshold)) & (work[rank_col] <= band_hi)
+        ]
+    else:
+        local = work.loc[
+            (work[rank_col] >= float(threshold)) & (work[rank_col] < band_hi)
+        ]
+    cumulative = work.loc[work[rank_col] >= float(threshold)]
+
+    def _metrics(prefix: str, frame: pd.DataFrame) -> Dict[str, Any]:
+        net = pd.to_numeric(frame.get("net_return"), errors="coerce").dropna()
+        return {
+            f"{prefix}_n": int(len(net)),
+            f"{prefix}_mean_net_return": (
+                float(net.mean()) if len(net) else float("nan")
+            ),
+            f"{prefix}_net_hit_rate": (
+                float((net > 0.0).mean()) if len(net) else float("nan")
+            ),
+        }
+
+    out = {
+        "local_band_lo": float(threshold),
+        "local_band_hi": band_hi,
+        **_metrics("local", local),
+        **_metrics("cumulative", cumulative),
+    }
+    return out
+
+
+def _deployment_replay_threshold_hard_floor_windows_days() -> Tuple[int, ...]:
+    raw = str(DEPLOYMENT_REPLAY_THRESHOLD_HARD_FLOOR_WINDOWS_DAYS_RAW or "").strip()
+    if not raw:
+        return ()
+    windows: List[int] = []
+    for token in raw.replace(";", ",").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            days = int(round(float(token)))
+        except Exception:
+            continue
+        if days > 0:
+            windows.append(days)
+    return tuple(sorted(set(windows)))
+
+
+def _portfolio_replay_hard_floor_metrics(
+    candidates: pd.DataFrame,
+    decisions: pd.DataFrame,
+    *,
+    windows_days: Sequence[int],
+) -> Dict[str, Any]:
+    """Compute global hard-floor metrics for full and trailing replay windows."""
+    out: Dict[str, Any] = {}
+
+    def _empty(prefix: str) -> Dict[str, Any]:
+        return {
+            f"{prefix}_trade_count": 0,
+            f"{prefix}_net_pnl": 0.0,
+            f"{prefix}_mean_net_return_per_trade": 0.0,
+            f"{prefix}_pass": False,
+        }
+
+    if decisions.empty or candidates.empty:
+        out.update(_empty("full_hard_floor"))
+        for days in windows_days:
+            out.update(_empty(f"hard_floor_window_{int(days)}d"))
+        out["trailing_hard_floor_pass"] = False
+        return out
+
+    accepted = decisions.loc[decisions.get("accepted", False).astype(bool)].copy()
+    if accepted.empty:
+        out.update(_empty("full_hard_floor"))
+        for days in windows_days:
+            out.update(_empty(f"hard_floor_window_{int(days)}d"))
+        out["trailing_hard_floor_pass"] = False
+        return out
+
+    merge_cols = ["timestamp", "symbol", "side", "strategy_id"]
+    required = set(merge_cols + ["net_return"])
+    if not required.issubset(candidates.columns):
+        out.update(_empty("full_hard_floor"))
+        for days in windows_days:
+            out.update(_empty(f"hard_floor_window_{int(days)}d"))
+        out["trailing_hard_floor_pass"] = False
+        return out
+
+    cand = candidates[list(required)].copy()
+    cand["timestamp"] = pd.to_datetime(cand["timestamp"], utc=True, errors="coerce")
+    accepted["timestamp"] = pd.to_datetime(
+        accepted["timestamp"], utc=True, errors="coerce"
+    )
+    merged = accepted.merge(cand, on=merge_cols, how="left")
+    merged["position_size"] = pd.to_numeric(
+        merged.get("position_size"), errors="coerce"
+    ).fillna(0.0)
+    merged["net_return"] = pd.to_numeric(
+        merged.get("net_return"), errors="coerce"
+    ).fillna(0.0)
+    merged = merged.dropna(subset=["timestamp"])
+
+    def _metrics(prefix: str, frame: pd.DataFrame) -> Dict[str, Any]:
+        trade_count = int(len(frame))
+        if trade_count <= 0:
+            return _empty(prefix)
+        net_pnl = float((frame["position_size"] * frame["net_return"]).sum())
+        mean_net_return = float(frame["net_return"].mean())
+        passed = bool(net_pnl > 0.0 and mean_net_return > 0.0)
+        return {
+            f"{prefix}_trade_count": trade_count,
+            f"{prefix}_net_pnl": net_pnl,
+            f"{prefix}_mean_net_return_per_trade": mean_net_return,
+            f"{prefix}_pass": passed,
+        }
+
+    out.update(_metrics("full_hard_floor", merged))
+    ts_all = pd.to_datetime(candidates.get("timestamp"), utc=True, errors="coerce")
+    end_ts = ts_all.dropna().max()
+    if pd.isna(end_ts):
+        end_ts = merged["timestamp"].dropna().max()
+    trailing_passes: List[bool] = []
+    for days in windows_days:
+        prefix = f"hard_floor_window_{int(days)}d"
+        if pd.isna(end_ts):
+            window_metrics = _empty(prefix)
+        else:
+            start_ts = pd.Timestamp(end_ts) - pd.Timedelta(days=int(days))
+            window = merged.loc[
+                (merged["timestamp"] > start_ts)
+                & (merged["timestamp"] <= pd.Timestamp(end_ts))
+            ]
+            window_metrics = _metrics(prefix, window)
+        out.update(window_metrics)
+        trailing_passes.append(bool(window_metrics[f"{prefix}_pass"]))
+    out["trailing_hard_floor_pass"] = bool(
+        all(trailing_passes) if trailing_passes else True
+    )
+    return out
+
+
+def _rewrite_deployment_payload_artifacts(
+    deployment_payload: Dict[str, Any],
+    *,
+    deployment_paths: Sequence[Path],
+    market_mode: str,
+) -> None:
+    text = json.dumps(_json_safe(deployment_payload), indent=2)
+    for deployment_path in deployment_paths:
+        _write_text_with_mode_alias(deployment_path, text, market_mode)
+        logger.info(
+            "Updated deployment policy contract after replay threshold selection: %s",
+            deployment_path,
+        )
+
+
+def _select_deployment_threshold_by_portfolio_replay(
+    deployment_payload: Dict[str, Any],
+    candidate_table: pd.DataFrame,
+    replay_candidate_table: pd.DataFrame,
+    *,
+    output_dir: Path,
+    market_mode: str,
+) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, Any]]:
+    """Select the live rank threshold using final policy candidates and replay.
+
+    Stage A remains useful for diagnostics, but its simple TP/SL assumptions are
+    not the deployment source of truth. This selector uses the already exported
+    optimized simple-policy candidates, applies a relaxed positive-return guard,
+    then chooses the threshold with the best portfolio replay objective.
+    """
+    if not DEPLOYMENT_REPLAY_THRESHOLD_SELECTOR_ENABLED:
+        return candidate_table, replay_candidate_table, {
+            "enabled": False,
+            "reason": "disabled",
+        }
+    if replay_candidate_table.empty:
+        return candidate_table, replay_candidate_table, {
+            "enabled": True,
+            "reason": "empty_replay_candidate_table",
+        }
+    selected_strategy_ids = _deployment_selected_strategy_ids(deployment_payload)
+    if not selected_strategy_ids:
+        return candidate_table, replay_candidate_table, {
+            "enabled": True,
+            "reason": "no_selected_strategies",
+        }
+
+    try:
+        from extreme_price_movements.portfolio_policy_replay import (
+            PortfolioPolicyParams,
+            fit_monotone_ev_curve,
+            normalise_candidate_table,
+            replay_candidates,
+        )
+    except Exception as exc:
+        return candidate_table, replay_candidate_table, {
+            "enabled": True,
+            "reason": "portfolio_replay_import_failed",
+            "error": str(exc),
+        }
+
+    try:
+        base_candidates = normalise_candidate_table(replay_candidate_table)
+    except Exception as exc:
+        return candidate_table, replay_candidate_table, {
+            "enabled": True,
+            "reason": "candidate_normalisation_failed",
+            "error": str(exc),
+        }
+    if base_candidates.empty:
+        return candidate_table, replay_candidate_table, {
+            "enabled": True,
+            "reason": "no_valid_replay_candidates_after_normalisation",
+        }
+
+    rank_col = (
+        "normalized_rank_score"
+        if "normalized_rank_score" in base_candidates.columns
+        else "strategy_rank_pct"
+    )
+    lo = float(
+        np.clip(
+            DEPLOYMENT_REPLAY_THRESHOLD_MIN,
+            DEPLOYMENT_THRESHOLD_MIN,
+            DEPLOYMENT_THRESHOLD_MAX,
+        )
+    )
+    hi = float(
+        np.clip(
+            DEPLOYMENT_REPLAY_THRESHOLD_MAX,
+            lo,
+            DEPLOYMENT_THRESHOLD_MAX,
+        )
+    )
+    precision = float(max(DEPLOYMENT_THRESHOLD_PRECISION, 1e-6))
+    thresholds = np.unique(
+        np.round(np.arange(lo, hi + precision / 2.0, precision), 4)
+    )
+    band_width = float(
+        np.clip(DEPLOYMENT_REPLAY_THRESHOLD_LOCAL_BAND_WIDTH, precision, 1.0)
+    )
+    min_mean_net = float(DEPLOYMENT_REPLAY_THRESHOLD_MIN_MEAN_NET_RETURN)
+    min_hit_rate = float(
+        np.clip(DEPLOYMENT_REPLAY_THRESHOLD_MIN_NET_HIT_RATE, 0.0, 1.0)
+    )
+    span_days = _candidate_span_days(base_candidates)
+    hard_floor_windows_days = _deployment_replay_threshold_hard_floor_windows_days()
+    global_min_trades = int(
+        max(
+            int(DEPLOYMENT_REPLAY_THRESHOLD_GLOBAL_MIN_TRADES),
+            int(np.ceil(DEPLOYMENT_REPLAY_THRESHOLD_GLOBAL_MIN_TRADES_PER_DAY * span_days)),
+        )
+    )
+    ev_curve = fit_monotone_ev_curve(base_candidates)
+    replay_params = PortfolioPolicyParams(
+        global_threshold_floor=0.0,
+        threshold_viability_margin=0.0,
+    )
+    rows: List[Dict[str, Any]] = []
+    best: Optional[Dict[str, Any]] = None
+    fallback_best: Optional[Dict[str, Any]] = None
+    for threshold in thresholds:
+        threshold = float(threshold)
+        guard_metrics = _rank_threshold_return_metrics(
+            base_candidates,
+            rank_col=rank_col,
+            threshold=threshold,
+            band_width=band_width,
+        )
+        local_ev_margin_pass = bool(
+            _safe_float(guard_metrics.get("local_mean_net_return"), -np.inf)
+            >= min_mean_net
+        )
+        positive_guard_pass = bool(
+            local_ev_margin_pass
+            and _safe_float(
+                guard_metrics.get("cumulative_mean_net_return"), -np.inf
+            )
+            >= min_mean_net
+            and _safe_float(guard_metrics.get("local_net_hit_rate"), -np.inf)
+            >= min_hit_rate
+            and _safe_float(guard_metrics.get("cumulative_net_hit_rate"), -np.inf)
+            >= min_hit_rate
+        )
+        replay_rows = base_candidates.copy()
+        replay_rows["base_strategy_threshold"] = threshold
+        replay_decisions, _, replay_metrics = replay_candidates(
+            replay_rows,
+            replay_params,
+            mode="global_auction",
+            ev_curve=ev_curve,
+            market_mode=market_mode,
+        )
+        hard_floor_metrics = _portfolio_replay_hard_floor_metrics(
+            replay_rows,
+            replay_decisions,
+            windows_days=hard_floor_windows_days,
+        )
+        net_pnl = _safe_float(replay_metrics.get("net_pnl"), 0.0)
+        mean_net_return = _safe_float(
+            replay_metrics.get("mean_net_return_per_trade"), 0.0
+        )
+        full_hard_floor_pass = bool(net_pnl > 0.0 and mean_net_return > 0.0)
+        trailing_hard_floor_pass = bool(
+            hard_floor_metrics.get("trailing_hard_floor_pass", True)
+        )
+        hard_floor_pass = bool(full_hard_floor_pass and trailing_hard_floor_pass)
+        trade_count = int(replay_metrics.get("trade_count", 0) or 0)
+        item = {
+            "deployment_rank_threshold": threshold,
+            "rank_col": rank_col,
+            "local_ev_margin_pass": local_ev_margin_pass,
+            "positive_guard_pass": positive_guard_pass,
+            "full_hard_floor_pass": full_hard_floor_pass,
+            "trailing_hard_floor_pass": trailing_hard_floor_pass,
+            "hard_floor_pass": hard_floor_pass,
+            "eligible": bool(hard_floor_pass),
+            "positive_guard_is_diagnostic_only": True,
+            "global_min_trade_count_diagnostic": global_min_trades,
+            "global_min_trade_count_met": bool(trade_count >= global_min_trades),
+            "min_mean_net_return": min_mean_net,
+            "min_net_hit_rate": min_hit_rate,
+            **guard_metrics,
+            **hard_floor_metrics,
+            "objective": _safe_float(replay_metrics.get("objective"), -np.inf),
+            "net_pnl": net_pnl,
+            "mean_net_return_per_trade": mean_net_return,
+            "trade_count": trade_count,
+            "trades_per_day": _safe_float(replay_metrics.get("trades_per_day"), 0.0),
+            "max_drawdown": _safe_float(replay_metrics.get("max_drawdown"), 0.0),
+            "sortino": _safe_float(replay_metrics.get("sortino"), 0.0),
+            "compounded_return": _safe_float(
+                replay_metrics.get("compounded_return"), 0.0
+            ),
+            "rejection_reasons": replay_metrics.get("rejection_reasons", {}),
+        }
+        rows.append(item)
+        score = (
+            float(item["objective"]),
+            float(item["net_pnl"]),
+            -abs(float(item["max_drawdown"])),
+            -float(item["deployment_rank_threshold"]),
+        )
+        if item["eligible"] and (best is None or score > best["_score"]):
+            best = {**item, "_score": score}
+        if item["hard_floor_pass"] and (
+            fallback_best is None or score > fallback_best["_score"]
+        ):
+            fallback_best = {**item, "_score": score}
+
+    selected = best or fallback_best
+    output_dir.mkdir(parents=True, exist_ok=True)
+    report_df = pd.DataFrame(rows)
+    csv_path = output_dir / "deployment_threshold_sensitivity.csv"
+    json_path = output_dir / "deployment_threshold_sensitivity.json"
+    if not report_df.empty:
+        report_df.to_csv(csv_path, index=False)
+    report: Dict[str, Any] = {
+        "enabled": True,
+        "method": "portfolio_replay_threshold_grid_with_diagnostic_local_guard_v2",
+        "rank_col": rank_col,
+        "lo": lo,
+        "hi": hi,
+        "precision": precision,
+        "local_band_width": band_width,
+        "min_mean_net_return": min_mean_net,
+        "min_net_hit_rate": min_hit_rate,
+        "hard_floors": {
+            "net_pnl": "> 0",
+            "mean_net_return_per_trade": "> 0",
+            "scope": "full replay and each configured trailing replay window",
+            "trailing_windows_days": list(hard_floor_windows_days),
+        },
+        "global_min_trade_count_diagnostic": global_min_trades,
+        "global_min_trade_count_is_diagnostic_only": True,
+        "candidate_span_days": span_days,
+        "evaluated_threshold_count": int(len(rows)),
+        "eligible_threshold_count": int(sum(bool(r.get("eligible")) for r in rows)),
+        "positive_guard_is_diagnostic_only": True,
+        "sensitivity_csv": str(csv_path),
+    }
+    if selected is None:
+        report.update(
+            {
+                "updated": False,
+                "reason": "no_threshold_passed_hard_floors",
+            }
+        )
+        json_path.write_text(
+            json.dumps(_json_safe({**report, "thresholds": rows}), indent=2),
+            encoding="utf-8",
+        )
+        return candidate_table, replay_candidate_table, report
+
+    selected = {k: v for k, v in selected.items() if k != "_score"}
+    selected_threshold = float(selected["deployment_rank_threshold"])
+    selected_reason = (
+        "best_portfolio_objective_passing_global_hard_floors"
+        if bool(selected.get("eligible"))
+        else "fallback_best_portfolio_objective_passing_hard_floors"
+    )
+    selected_summary = {
+        k: v
+        for k, v in selected.items()
+        if k
+        not in {
+            "rejection_reasons",
+        }
+    }
+    report.update(
+        {
+            "updated": True,
+            "reason": selected_reason,
+            "selected_threshold": selected_threshold,
+            "selected": selected_summary,
+        }
+    )
+    selected_set = {str(sid) for sid in selected_strategy_ids}
+    applied_threshold_by_strategy: Dict[str, float] = {}
+    for strategy in deployment_payload.get("strategies", []) or []:
+        if not isinstance(strategy, dict):
+            continue
+        sid = str(strategy.get("strategy_id", "") or "")
+        if sid not in selected_set:
+            continue
+        previous = _safe_float(strategy.get("deployment_rank_threshold"), np.nan)
+        applied_threshold = (
+            max(float(previous), selected_threshold)
+            if np.isfinite(previous)
+            else selected_threshold
+        )
+        strategy["deployment_rank_threshold"] = applied_threshold
+        applied_threshold_by_strategy[sid] = applied_threshold
+        threshold_metrics = dict(strategy.get("deployment_threshold_metrics") or {})
+        threshold_metrics["portfolio_replay_threshold_selector"] = {
+            "previous_threshold": previous,
+            "selected_threshold": selected_threshold,
+            "applied_threshold": applied_threshold,
+            "reason": selected_reason,
+            "selected": selected_summary,
+        }
+        strategy["deployment_threshold_metrics"] = threshold_metrics
+
+    deployment_payload.setdefault("selection_rules", {})[
+        "portfolio_replay_threshold_selector"
+    ] = report
+    for frame in (candidate_table, replay_candidate_table):
+        if frame.empty or "strategy_id" not in frame.columns:
+            continue
+        strategy_values = frame["strategy_id"].astype(str)
+        if "base_strategy_threshold" in frame.columns:
+            for sid, applied_threshold in applied_threshold_by_strategy.items():
+                frame.loc[strategy_values == sid, "base_strategy_threshold"] = (
+                    applied_threshold
+                )
+        if "deployment_rank_threshold" in frame.columns:
+            for sid, applied_threshold in applied_threshold_by_strategy.items():
+                frame.loc[strategy_values == sid, "deployment_rank_threshold"] = (
+                    applied_threshold
+                )
+    json_path.write_text(
+        json.dumps(_json_safe({**report, "thresholds": rows}), indent=2),
+        encoding="utf-8",
+    )
+    logger.info(
+        "Selected deployment threshold by portfolio replay: threshold=%.4f "
+        "reason=%s objective=%.6f net_pnl=%.4f trades=%s",
+        selected_threshold,
+        selected_reason,
+        _safe_float(selected.get("objective"), np.nan),
+        _safe_float(selected.get("net_pnl"), np.nan),
+        int(selected.get("trade_count", 0) or 0),
+    )
+    return candidate_table, replay_candidate_table, report
 
 
 def _clean_series(s: pd.Series) -> pd.Series:
@@ -13046,14 +14098,10 @@ def run_simple_policy_optimisation(
     )
     n_trials = max(1, n_trials)
 
-    from extreme_price_movements.data_store import PartitionedOHLCVStore
     from extreme_price_movements.inference.parity import calibrated_score_and_threshold
     from extreme_price_movements.simple_position_sizer import load_calibration_curves
 
-    ds = PartitionedOHLCVStore(
-        _policy_market_data_root(data_root, market_mode),
-        timeframe="15m",
-    )
+    ds = _make_policy_replay_store(data_root, market_mode)
     calibration_data = load_calibration_curves(data_root, run_id)
     prediction_source_summary = _summarize_policy_prediction_sources(
         meta_oof.keys(), meta_oof_sources
@@ -13128,8 +14176,10 @@ def run_simple_policy_optimisation(
             else:
                 df["side"] = 1
 
-        # Stage A discovers the deployable rank threshold from the full policy
-        # OOS population. Reporting top-N slices are applied only after this.
+        # Stage A is diagnostic: it describes how the simple TP/SL proxy behaves
+        # across ranks, but it is deliberately not the source of truth for
+        # deployability. Stage B receives a broad rank floor and tests optimized
+        # exits on that wider candidate set.
         df_policy_all = df.dropna(
             subset=["timestamp", "symbol", "rank_pct", "calibrated_score"]
         ).copy()
@@ -13286,7 +14336,7 @@ def run_simple_policy_optimisation(
         raw_deployment_rank_threshold = float(
             deployment_threshold_metrics.get("deployment_rank_threshold", 1.0)
         )
-        deployment_rank_threshold = float(
+        stage_a_diagnostic_rank_threshold = float(
             np.clip(
                 raw_deployment_rank_threshold
                 + DEPLOYMENT_RANK_THRESHOLD_EXTRA_REQUIREMENT,
@@ -13294,8 +14344,22 @@ def run_simple_policy_optimisation(
                 DEPLOYMENT_THRESHOLD_MAX,
             )
         )
+        deployment_rank_threshold = float(
+            np.clip(
+                DEPLOYMENT_STAGE_B_CANDIDATE_RANK_FLOOR,
+                DEPLOYMENT_THRESHOLD_MIN,
+                DEPLOYMENT_THRESHOLD_MAX,
+            )
+        )
         deployment_threshold_metrics["raw_deployment_rank_threshold"] = float(
             raw_deployment_rank_threshold
+        )
+        deployment_threshold_metrics["stage_a_diagnostic_rank_threshold"] = float(
+            stage_a_diagnostic_rank_threshold
+        )
+        deployment_threshold_metrics["stage_a_role"] = "diagnostic_only"
+        deployment_threshold_metrics["stage_b_candidate_rank_floor"] = float(
+            deployment_rank_threshold
         )
         deployment_threshold_metrics["deployment_rank_threshold"] = float(
             deployment_rank_threshold
@@ -13334,18 +14398,21 @@ def run_simple_policy_optimisation(
         }
         n = len(df_top)
         logger.info(
-            "[%s] Stage A threshold discovery selected raw_rank>=%.4f; "
-            "candidate_floor_rank>=%.4f after extra_requirement=%.4f from %s full "
-            "policy rows -> %s Stage B optimisation rows after net-EV gate "
-            "(%s/%s kept). simple_sl=%.2f simple_tp=%.2f mean_net_trade=%.6f n_trades=%s "
-            "stage_a_round_trip_cost=%.4f",
+            "[%s] Stage A diagnostic selected raw_rank>=%.4f; "
+            "diagnostic_rank_after_extra=%.4f extra_requirement=%.4f. "
+            "Stage B broad candidate_floor_rank>=%.4f from %s full policy rows "
+            "-> %s Stage B optimisation rows. simple net-EV prefilter "
+            "binding=%s diagnostic_keep=%s/%s. simple_sl=%.2f simple_tp=%.2f "
+            "mean_net_trade=%.6f n_trades=%s stage_a_round_trip_cost=%.4f",
             strategy_id,
             raw_deployment_rank_threshold,
-            deployment_rank_threshold,
+            stage_a_diagnostic_rank_threshold,
             DEPLOYMENT_RANK_THRESHOLD_EXTRA_REQUIREMENT,
+            deployment_rank_threshold,
             len(df_policy_fit),
             n,
-            int(stage_a0_apply_summary.get("rows_after", n) or 0),
+            bool(stage_a0_apply_summary.get("binding", False)),
+            int(stage_a0_apply_summary.get("diagnostic_rows_after", n) or 0),
             int(stage_a0_apply_summary.get("rows_before", n) or 0),
             _safe_float(deployment_threshold_metrics.get("simple_sl_mult"), np.nan),
             _safe_float(deployment_threshold_metrics.get("simple_tp_mult"), np.nan),
@@ -13355,7 +14422,7 @@ def run_simple_policy_optimisation(
         )
         if n < SIMPLE_NET_EV_PREFILTER_MIN_STAGE_B_ROWS:
             logger.warning(
-                "[%s] Stage A threshold rank>=%.4f and net-EV gate left only %s rows "
+                "[%s] Stage B broad floor rank>=%.4f left only %s rows "
                 "(minimum=%s). Skipping.",
                 strategy_id,
                 deployment_rank_threshold,
@@ -13974,7 +15041,7 @@ def run_simple_policy_optimisation(
     policy_params_dir = output_run_root / "policy_params"
     policy_params_dir.mkdir(parents=True, exist_ok=True)
     deployment_text = json.dumps(_json_safe(deployment_payload), indent=2)
-    for deployment_path in [
+    deployment_paths = [
         policy_params_dir / "strategy_for_inference.json",
         output_run_root / "strategy_for_inference.json",
         policy_params_dir / "best_policy_params.json",
@@ -13983,7 +15050,8 @@ def run_simple_policy_optimisation(
         / "simple_policy_optimiser"
         / "deployment"
         / "best_policy_params.json",
-    ]:
+    ]
+    for deployment_path in deployment_paths:
         _write_text_with_mode_alias(deployment_path, deployment_text, market_mode)
         logger.info(f"Saved deployment policy contract to {deployment_path}")
     portfolio_policy_path = policy_params_dir / "portfolio_policy_config.json"
@@ -14079,6 +15147,26 @@ def run_simple_policy_optimisation(
             raise RuntimeError(
                 "No simple policy candidate rows remain after filtering to "
                 f"deployed strategies: strategies={deployed_strategy_ids}"
+            )
+        candidate_table, replay_candidate_table, threshold_selector_report = (
+            _select_deployment_threshold_by_portfolio_replay(
+                deployment_payload,
+                candidate_table,
+                replay_candidate_table,
+                output_dir=candidate_path.parent,
+                market_mode=market_mode,
+            )
+        )
+        if threshold_selector_report.get("updated"):
+            candidate_table.to_parquet(candidate_path, index=False)
+            _write_simple_policy_candidate_metadata(
+                candidate_table,
+                output_path=candidate_metadata_path,
+            )
+            _rewrite_deployment_payload_artifacts(
+                deployment_payload,
+                deployment_paths=deployment_paths,
+                market_mode=market_mode,
             )
         replay_candidate_path = (
             candidate_path.parent / "simple_policy_candidates_deployable.parquet"
@@ -14294,7 +15382,6 @@ def run_regime_adaptor_only_from_simple_policy(
         )
         return {}
 
-    from extreme_price_movements.data_store import PartitionedOHLCVStore
     from extreme_price_movements.inference.parity import calibrated_score_and_threshold
     from extreme_price_movements.simple_position_sizer import load_calibration_curves
 
@@ -14302,10 +15389,7 @@ def run_regime_adaptor_only_from_simple_policy(
     stage_view, stage_name = _load_policy_stage_view(slice_plan_path)
     source_validation = _load_slice_plan_source_validation(slice_plan_path)
     meta_oof_dir = run_root / "meta_oof"
-    ds = PartitionedOHLCVStore(
-        _policy_market_data_root(data_root, market_mode),
-        timeframe="15m",
-    )
+    ds = _make_policy_replay_store(data_root, market_mode)
     calibration_data = load_calibration_curves(data_root, str(run_id))
     summaries: Dict[str, Any] = {
         "generated_by": "simple_policy_regime_adaptor_only",

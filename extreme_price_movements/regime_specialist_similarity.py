@@ -10,6 +10,7 @@ itself.
 from __future__ import annotations
 
 import math
+import re
 import warnings
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
@@ -83,16 +84,22 @@ DEFAULT_COVARIANCE_TOKENS: tuple[str, ...] = (
 )
 
 DRIFT_FAMILY_ORDER: tuple[str, ...] = (
-    "base_model",
-    "meta_model",
-    "psi_ks",
+    "psi",
+    "ks",
+    "wasserstein",
+    "mahalanobis",
     "prediction_distribution",
     "covariance",
     "contribution",
+    "base_model",
+    "meta_model",
     "row_drift",
     "raw_state",
     "other",
 )
+
+DRIFT_GLOBAL_METRIC_COUNT = 11
+DRIFT_FAMILY_METRIC_COUNT = 5
 
 DEFAULT_ASSET_RETURN_CANDIDATES: tuple[str, ...] = (
     "beta_neutral_residual_return",
@@ -118,15 +125,21 @@ DEFAULT_EXCLUDE_TOKENS: tuple[str, ...] = (
 
 @dataclass(frozen=True)
 class RegimeSimilarityConfig:
-    current_window_days: float = 21.0
-    candidate_window_days: float = 21.0
+    current_window_days: float = 28.0
+    candidate_window_days: float = 28.0
     day_window_days: float = 1.0
+    embargo_days: float = 0.0
+    label_horizon_hours: float = 0.0
+    label_end_col: Optional[str] = None
     recency_decay_per_week: float = 0.67
 
     drift_weight: float = 0.40
     covariance_weight: float = 0.35
     regime_weight: float = 0.15
     knn_weight: float = 0.10
+    domain_classifier_weight: float = 0.10
+    assessment_min_aligned_fraction: float = 0.80
+    assessment_allow_timestamp_only_alignment: bool = False
     ae_weight: float = 0.10
     alpha: float = 1.5
     tau: Optional[float] = None
@@ -138,18 +151,63 @@ class RegimeSimilarityConfig:
     max_knn_current_rows: int = 2000
     max_knn_candidate_rows: int = 5000
     max_knn_historical_rows: int = 50000
+    knn_fallback_chunk_pairs: int = 2_000_000
+    max_fingerprint_rows_per_window: int = 20000
+    max_day_fingerprint_rows: int = 10000
     max_covariance_features: int = 48
+    max_asset_covariance_assets: int = 100
+    max_asset_covariance_time_rows: int = 50000
+    min_asset_observation_fraction: float = 0.60
+    asset_covariance_shrinkage: float = 0.10
+    cov_feature_cov_eig_weight: float = 0.15
+    cov_feature_corr_eig_weight: float = 0.20
+    cov_feature_concentration_weight: float = 0.20
+    cov_asset_cov_eig_weight: float = 0.10
+    cov_asset_corr_eig_weight: float = 0.20
+    cov_asset_concentration_weight: float = 0.15
+    drift_psi_scale: float = 0.25
+    drift_psi_weight: float = 0.18
+    drift_ks_weight: float = 0.14
+    drift_wasserstein_weight: float = 0.14
+    drift_mahalanobis_weight: float = 0.10
+    drift_prediction_weight: float = 0.14
+    drift_covariance_weight: float = 0.12
+    drift_contribution_weight: float = 0.12
+    drift_other_weight: float = 0.06
     max_window_diagnostics: int = 50
     top_eigenvalues: int = 5
     asset_return_col: Optional[str] = None
 
     ae_enabled: bool = True
     ae_min_windows: int = 50
+    ae_max_windows: int = 5000
     ae_latent_dim: int = 4
     ae_max_iter: int = 50
     ae_input_noise: float = 0.02
     day_similarity_min_rows: int = 24
     day_similarity_strength: float = 0.50
+    feature_engineering_enabled: bool = False
+    feature_engineering_max_final_features: int = 40
+    feature_engineering_max_pair_candidates: int = 2500
+    feature_engineering_univariate_subsample_per_class: int = 8000
+    feature_engineering_lgbm_enabled: bool = True
+    feature_engineering_elasticnet_enabled: bool = True
+    feature_engineering_grouped_cv_folds: int = 5
+    feature_engineering_grouped_cv_repeats: int = 3
+    feature_engineering_permutation_repeats: int = 2
+    feature_engineering_max_permutation_features: int = 80
+    feature_engineering_max_permutation_rows: int = 4000
+    feature_engineering_max_shap_rows: int = 4000
+    feature_engineering_drift_window_days: float = 28.0
+    feature_engineering_max_drift_raw_features: int = 80
+    feature_engineering_drift_window_max_rows: int = 20000
+    feature_engineering_drift_knn_max_rows: int = 4000
+    feature_engineering_drift_knn_chunk_pairs: int = 2_000_000
+    feature_engineering_domain_score_smoothing_enabled: bool = True
+    feature_engineering_domain_score_ewma_half_life_days: float = 1.0
+    feature_engineering_domain_score_ewma_max_days: float = 4.0
+    feature_engineering_diagnostics_enabled: bool = True
+    feature_engineering_run_validation_diagnostics: bool = False
     random_state: int = 42
 
     min_candidate_rows: int = 24
@@ -161,6 +219,10 @@ class RegimeSimilarityConfig:
 class SpecialistWeightConfig:
     current_gamma: float = 1.0
     analogue_gamma: float = 2.0
+    replay_gamma: float = 2.0
+    recency_power: float = 0.5
+    # Legacy per-band knobs retained for config compatibility; replay rows are
+    # allocated as one continuous normal+irrelevant bucket via replay_gamma.
     normal_gamma: float = 1.0
     irrelevant_gamma: float = 2.0
 
@@ -174,10 +236,16 @@ class SpecialistWeightConfig:
     normal_prior: float = 0.20
     irrelevant_prior: float = 0.03
 
+    # Legacy replay-strength knobs retained for config compatibility. Active
+    # replay mass is governed by n_eff reliability and less_interesting_min/max.
     replay_min: float = 0.10
     replay_max: float = 0.30
 
-    min_current_plus_analogue_mass: float = 0.70
+    min_current_plus_analogue_mass: float = 0.50
+    less_interesting_min_mass: float = 0.10
+    less_interesting_max_mass: float = 0.50
+    # Legacy individual caps retained for config compatibility; active cap is
+    # less_interesting_min/max_mass over normal+irrelevant combined.
     max_normal_mass: float = 0.25
     max_irrelevant_mass: float = 0.05
     min_adaptive_reliability_to_train: float = 0.20
@@ -438,78 +506,90 @@ def _per_asset_robust_z(
     if numeric.empty:
         return numeric
     fit = fit_frame if fit_frame is not None and not fit_frame.empty else frame
-    fit_numeric = _safe_numeric_frame(fit, columns)
-    out = pd.DataFrame(index=frame.index)
+    cols = [str(col) for col in numeric.columns]
+    values = numeric.loc[:, cols].to_numpy(dtype=np.float32, copy=True)
+    fit_numeric = _safe_numeric_frame(fit, cols).reindex(columns=cols)
+    fit_values = fit_numeric.to_numpy(dtype=np.float32, copy=True)
+
+    global_centers = np.zeros(len(cols), dtype=np.float32)
+    global_scales = np.ones(len(cols), dtype=np.float32)
+    for j in range(len(cols)):
+        fit_col = fit_values[:, j] if fit_values.shape[0] else values[:, j]
+        if not bool(np.isfinite(fit_col).any()):
+            fit_col = values[:, j]
+        _fit_z, center, scale = _robust_scale(fit_col)
+        global_centers[j] = float(center)
+        global_scales[j] = max(float(scale), 1e-9)
+
+    out_values = np.clip(
+        (
+            np.where(np.isfinite(values), values, global_centers.reshape(1, -1))
+            - global_centers.reshape(1, -1)
+        )
+        / np.maximum(global_scales.reshape(1, -1), 1e-9),
+        -8.0,
+        8.0,
+    ).astype(np.float32)
+
     if symbol_col not in frame.columns:
-        for col in numeric.columns:
-            fit_vals = (
-                fit_numeric[col].to_numpy(dtype=np.float64)
-                if col in fit_numeric.columns
-                else numeric[col].to_numpy(dtype=np.float64)
-            )
-            _fit_z, center, scale = _robust_scale(fit_vals)
-            vals = numeric[col].to_numpy(dtype=np.float64)
-            filled = np.where(np.isfinite(vals), vals, center)
-            out[col] = np.clip((filled - center) / max(scale, 1e-9), -8.0, 8.0).astype(
-                np.float32,
-            )
-        return out.astype(np.float32, copy=False)
-    symbols = frame[symbol_col].astype(str)
-    fit_symbols = fit[symbol_col].astype(str) if symbol_col in fit.columns else pd.Series("", index=fit.index)
-    frame_symbol_groups = {
-        str(sym): idx for sym, idx in symbols.groupby(symbols, sort=False).groups.items()
-    }
-    fit_symbol_groups = {
-        str(sym): idx for sym, idx in fit_symbols.groupby(fit_symbols, sort=False).groups.items()
-    }
-    for col in numeric.columns:
-        series = numeric[col]
-        fit_series = (
-            fit_numeric[col]
-            if col in fit_numeric.columns
-            else pd.Series(np.nan, index=fit.index, dtype=np.float64)
+        return pd.DataFrame(out_values, index=frame.index, columns=cols, dtype=np.float32)
+
+    def _position_groups(raw: Sequence[Any]) -> dict[str, np.ndarray]:
+        symbols_arr = pd.Series(raw).astype("string").fillna("").to_numpy(dtype=str)
+        if symbols_arr.size == 0:
+            return {}
+        order = np.argsort(symbols_arr, kind="mergesort")
+        sorted_symbols = symbols_arr[order]
+        starts = np.r_[0, np.flatnonzero(sorted_symbols[1:] != sorted_symbols[:-1]) + 1]
+        ends = np.r_[starts[1:], len(sorted_symbols)]
+        return {
+            str(sorted_symbols[start]): order[start:end].astype(np.int64, copy=False)
+            for start, end in zip(starts, ends)
+        }
+
+    frame_groups = _position_groups(frame[symbol_col].to_numpy())
+    fit_groups = (
+        _position_groups(fit[symbol_col].to_numpy())
+        if symbol_col in fit.columns
+        else {}
+    )
+    min_rows = max(1, int(min_symbol_fit_rows))
+    for sym, frame_pos in frame_groups.items():
+        fit_pos = fit_groups.get(str(sym))
+        if fit_pos is None or fit_pos.size == 0:
+            continue
+        fit_sub = fit_values[fit_pos]
+        finite_counts = np.isfinite(fit_sub).sum(axis=0)
+        eligible = finite_counts >= min_rows
+        if not bool(eligible.any()):
+            continue
+        eligible_idx = np.flatnonzero(eligible)
+        sub = fit_sub[:, eligible_idx].astype(np.float64, copy=False)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            centers = np.nanmedian(np.where(np.isfinite(sub), sub, np.nan), axis=0)
+            mad = np.nanmedian(np.abs(sub - centers.reshape(1, -1)), axis=0)
+            scales = 1.4826 * mad
+            bad_scale = ~np.isfinite(scales) | (scales <= 1e-9)
+            if bool(bad_scale.any()):
+                std = np.nanstd(np.where(np.isfinite(sub), sub, np.nan), axis=0)
+                scales = np.where(bad_scale & np.isfinite(std) & (std > 1e-9), std, scales)
+        bad_scale = ~np.isfinite(scales) | (scales <= 1e-9)
+        centers = np.where(
+            np.isfinite(centers),
+            centers,
+            global_centers[eligible_idx].astype(np.float64, copy=False),
         )
-        _global_z, global_center, global_scale = _robust_scale(
-            fit_series.to_numpy(dtype=np.float64),
-        )
-        vals_all = series.to_numpy(dtype=np.float64)
-        z = pd.Series(
-            np.clip(
-                (np.where(np.isfinite(vals_all), vals_all, global_center) - global_center)
-                / max(global_scale, 1e-9),
-                -8.0,
-                8.0,
-            ).astype(np.float32),
-            index=frame.index,
-            dtype=np.float32,
-        )
-        for _sym, idx in frame_symbol_groups.items():
-            fit_idx = fit_symbol_groups.get(str(_sym), [])
-            fit_vals = (
-                fit_series.loc[fit_idx].to_numpy(dtype=np.float64)
-                if len(fit_idx) > 0
-                else np.asarray([], dtype=np.float64)
-            )
-            finite_fit = np.isfinite(fit_vals)
-            if int(np.sum(finite_fit)) < int(min_symbol_fit_rows):
-                continue
-            center = float(np.nanmedian(fit_vals[finite_fit]))
-            mad = float(np.nanmedian(np.abs(fit_vals[finite_fit] - center)))
-            scale = 1.4826 * mad
-            if not np.isfinite(scale) or scale <= 1e-9:
-                scale = float(np.nanstd(fit_vals[finite_fit]))
-            if not np.isfinite(scale) or scale <= 1e-9:
-                scale = global_scale
-                center = global_center
-            vals = series.loc[idx].to_numpy(dtype=np.float64)
-            finite = np.isfinite(vals)
-            z.loc[idx] = np.clip(
-                (np.where(finite, vals, center) - center) / max(scale, 1e-9),
-                -8.0,
-                8.0,
-            ).astype(np.float32)
-        out[col] = z.to_numpy(dtype=np.float32, copy=False)
-    return out.astype(np.float32, copy=False)
+        centers = np.where(bad_scale, global_centers[eligible_idx], centers)
+        scales = np.where(bad_scale, global_scales[eligible_idx], scales)
+        vals = values[np.ix_(frame_pos, eligible_idx)].astype(np.float64, copy=False)
+        out_values[np.ix_(frame_pos, eligible_idx)] = np.clip(
+            (np.where(np.isfinite(vals), vals, centers.reshape(1, -1)) - centers.reshape(1, -1))
+            / np.maximum(scales.reshape(1, -1), 1e-9),
+            -8.0,
+            8.0,
+        ).astype(np.float32)
+    return pd.DataFrame(out_values, index=frame.index, columns=cols, dtype=np.float32)
 
 
 def _matches_any_token(name: str, tokens: Sequence[str]) -> bool:
@@ -522,6 +602,53 @@ def _is_excluded_feature(name: str) -> bool:
     return low in {"timestamp", "symbol", "asset", "strategy_id", "side"} or _matches_any_token(
         low, DEFAULT_EXCLUDE_TOKENS
     )
+
+
+def _stable_unique_strings(values: Sequence[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in values:
+        key = str(value)
+        if key not in seen:
+            seen.add(key)
+            out.append(key)
+    return out
+
+
+def _feature_engineering_knn_unsafe_reason(column: str) -> str | None:
+    low = str(column).lower()
+    unsafe_substrings = (
+        "knn",
+        "nearest",
+        "neighbor",
+        "distance",
+        "mahalanobis",
+        "reconstruction",
+        "anomaly",
+        "rarity",
+        "drift",
+        "wasserstein",
+        "score",
+        "uncertainty",
+    )
+    for token in unsafe_substrings:
+        if token in low:
+            return token
+    parts = {part for part in re.split(r"[^a-z0-9]+", low) if part}
+    if "psi" in parts:
+        return "psi"
+    if "ks" in parts or "kolmogorov" in parts:
+        return "ks"
+    return None
+
+
+def _feature_engineering_knn_safe_columns(columns: Sequence[str]) -> list[str]:
+    safe: list[str] = []
+    for col in columns:
+        if _feature_engineering_knn_unsafe_reason(str(col)) is not None:
+            continue
+        safe.append(str(col))
+    return safe
 
 
 def infer_regime_specialist_columns(
@@ -662,19 +789,22 @@ def _numeric_matrix(
     scaler: Mapping[str, tuple[float, float]] | None = None,
     fill_scaled_missing: bool = False,
 ) -> tuple[list[str], np.ndarray, np.ndarray]:
+    candidate_cols = [
+        str(col)
+        for col in columns
+        if str(col) in frame.columns and (scaler is None or str(col) in scaler)
+    ]
+    if not candidate_cols:
+        return [], np.zeros((len(frame), 0), dtype=np.float32), np.zeros((len(frame), 0), dtype=bool)
+    values = np.empty((len(frame), len(candidate_cols)), dtype=np.float32)
+    missing_values = np.empty((len(frame), len(candidate_cols)), dtype=bool)
     cols: list[str] = []
-    arrays: list[np.ndarray] = []
-    missing_arrays: list[np.ndarray] = []
-    for col in columns:
-        col_s = str(col)
-        if col_s not in frame.columns:
-            continue
-        vals = pd.to_numeric(frame[col_s], errors="coerce").replace([np.inf, -np.inf], np.nan)
-        arr = vals.to_numpy(dtype=np.float32, copy=False)
+    out_j = 0
+    for col_s in candidate_cols:
+        arr = pd.to_numeric(frame[col_s], errors="coerce").to_numpy(dtype=np.float32, copy=True)
+        arr[~np.isfinite(arr)] = np.nan
         missing = ~np.isfinite(arr)
         if scaler is not None:
-            if col_s not in scaler:
-                continue
             center, scale = scaler[col_s]
             filled = np.where(missing, float(center), arr.astype(np.float64, copy=False))
             arr = np.clip(
@@ -686,22 +816,20 @@ def _numeric_matrix(
             z, _center, _scale = _robust_scale(arr)
             arr = z.astype(np.float32, copy=False)
         cols.append(col_s)
-        arrays.append(arr.astype(np.float32, copy=False))
-        missing_arrays.append(missing.astype(bool, copy=False))
-    if not arrays:
-        return [], np.zeros((len(frame), 0), dtype=np.float32), np.zeros((len(frame), 0), dtype=bool)
-    return (
-        cols,
-        np.column_stack(arrays).astype(np.float32, copy=False),
-        np.column_stack(missing_arrays).astype(bool, copy=False),
-    )
+        values[:, out_j] = arr.astype(np.float32, copy=False)
+        missing_values[:, out_j] = missing.astype(bool, copy=False)
+        out_j += 1
+    if out_j != values.shape[1]:
+        values = values[:, :out_j]
+        missing_values = missing_values[:, :out_j]
+    return cols, values, missing_values
 
 
 def _matrix_from_frame(frame: pd.DataFrame, columns: Sequence[str]) -> tuple[list[str], np.ndarray]:
     cols = [str(c) for c in columns if str(c) in frame.columns]
     if not cols:
         return [], np.zeros((len(frame), 0), dtype=np.float32)
-    return cols, frame.loc[:, cols].to_numpy(dtype=np.float32, copy=True)
+    return cols, frame.loc[:, cols].to_numpy(dtype=np.float32, copy=False)
 
 
 def _market_fingerprint_array(
@@ -967,6 +1095,9 @@ def _build_asset_return_cache(
     return_col: str | None,
     timestamp_col: str,
     symbol_col: str,
+    max_assets: int,
+    max_time_rows: int,
+    min_observation_fraction: float,
 ) -> _AssetReturnCache:
     disabled = _AssetReturnCache(
         enabled=False,
@@ -998,10 +1129,24 @@ def _build_asset_return_cache(
     pivot = work.pivot_table(index="_ts", columns="_symbol", values="_return", aggfunc="mean")
     if pivot.shape[0] < 3 or pivot.shape[1] < 2:
         return disabled
+    coverage = pivot.notna().mean(axis=0).sort_values(ascending=False)
+    min_obs = float(np.clip(min_observation_fraction, 0.0, 1.0))
+    keep = list(coverage[coverage >= min_obs].index)
+    if len(keep) < 2:
+        keep = list(coverage.head(max(2, min(len(coverage), int(max_assets or len(coverage))))).index)
+    if int(max_assets) > 0 and len(keep) > int(max_assets):
+        keep = keep[: int(max_assets)]
+    pivot = pivot.reindex(columns=keep)
+    if pivot.shape[0] < 3 or pivot.shape[1] < 2:
+        return disabled
     time_ns = _timestamp_ns(pd.Series(pivot.index))
     order = np.argsort(time_ns, kind="mergesort")
     time_ns = time_ns[order]
     matrix = pivot.to_numpy(dtype=np.float32, copy=True)[order]
+    if int(max_time_rows) > 0 and len(time_ns) > int(max_time_rows):
+        keep_pos = _subsample_positions(np.arange(len(time_ns), dtype=np.int64), max_rows=int(max_time_rows))
+        time_ns = time_ns[keep_pos]
+        matrix = matrix[keep_pos]
     row_ts_ns = _timestamp_ns(ts)
     row_time_pos = np.searchsorted(time_ns, row_ts_ns)
     valid = (row_time_pos >= 0) & (row_time_pos < len(time_ns)) & (time_ns[np.clip(row_time_pos, 0, max(len(time_ns) - 1, 0))] == row_ts_ns)
@@ -1021,6 +1166,7 @@ def _asset_covariance_fingerprint_from_cache(
     weights: np.ndarray,
     *,
     top_eigenvalues: int,
+    shrinkage: float,
     eps: float,
 ) -> np.ndarray:
     k = int(top_eigenvalues)
@@ -1049,6 +1195,9 @@ def _asset_covariance_fingerprint_from_cache(
     cov = _weighted_covariance(arr, time_weights, eps)
     if cov.size == 0:
         return empty
+    shrink = float(np.clip(shrinkage, 0.0, 1.0))
+    if shrink > 0.0:
+        cov = ((1.0 - shrink) * cov + shrink * np.diag(np.diag(cov))).astype(np.float32)
     diag = np.sqrt(np.maximum(np.diag(cov), eps))
     corr = cov / np.maximum(np.outer(diag, diag), eps)
     corr = np.clip(corr, -1.0, 1.0)
@@ -1094,12 +1243,29 @@ def _top_mean(vals: np.ndarray, frac: float) -> float:
 
 def _drift_family(name: str) -> str:
     low = str(name).lower()
+    if "wasserstein" in low:
+        return "wasserstein"
+    if (
+        low == "psi"
+        or low.startswith("psi_")
+        or low.endswith("_psi")
+        or "_psi_" in low
+    ):
+        return "psi"
+    if (
+        low == "ks"
+        or low.startswith("ks_")
+        or low.endswith("_ks")
+        or "_ks_" in low
+        or "kolmogorov" in low
+    ):
+        return "ks"
+    if "mahalanobis" in low:
+        return "mahalanobis"
     if low.startswith("base_lgbm_") or low.startswith("base_") or "base_model" in low:
         return "base_model"
     if low.startswith("meta_lgbm_") or low.startswith("meta_") or "meta_model" in low:
         return "meta_model"
-    if "psi" in low or "_ks" in low or "ks_" in low or "wasserstein" in low:
-        return "psi_ks"
     if "prediction_distribution" in low or "pred_distribution" in low or "pred_dist" in low:
         return "prediction_distribution"
     if "cov" in low or "frobenius" in low or "corr_shift" in low:
@@ -1191,7 +1357,7 @@ def _drift_fingerprint(
 ) -> np.ndarray:
     numeric = _safe_numeric_frame(frame, columns)
     if numeric.empty:
-        return np.zeros(11 + len(DRIFT_FAMILY_ORDER) * 5, dtype=np.float32)
+        return np.zeros(DRIFT_GLOBAL_METRIC_COUNT + len(DRIFT_FAMILY_ORDER) * DRIFT_FAMILY_METRIC_COUNT, dtype=np.float32)
     ts = _timestamp_series(frame, timestamp_col)
     per_feature_abs = []
     per_feature_signed = []
@@ -1221,7 +1387,7 @@ def _drift_fingerprint(
     missing_arr = np.asarray(per_feature_missing, dtype=np.float64)
     finite_abs = abs_arr[np.isfinite(abs_arr)]
     if finite_abs.size == 0:
-        return np.zeros(11 + len(DRIFT_FAMILY_ORDER) * 5, dtype=np.float32)
+        return np.zeros(DRIFT_GLOBAL_METRIC_COUNT + len(DRIFT_FAMILY_ORDER) * DRIFT_FAMILY_METRIC_COUNT, dtype=np.float32)
     total = float(np.sum(np.abs(finite_abs)))
     top10 = _top_mean(finite_abs, 0.10)
     feats: list[float] = [
@@ -1277,7 +1443,7 @@ def _drift_fingerprint_array(
 ) -> np.ndarray:
     pos = np.asarray(positions, dtype=np.int64)
     if drift_values.ndim != 2 or drift_values.shape[1] == 0 or pos.size == 0:
-        return np.zeros(11 + len(DRIFT_FAMILY_ORDER) * 5, dtype=np.float32)
+        return np.zeros(DRIFT_GLOBAL_METRIC_COUNT + len(DRIFT_FAMILY_ORDER) * DRIFT_FAMILY_METRIC_COUNT, dtype=np.float32)
     sub = drift_values[pos].astype(np.float64, copy=False)
     miss = missing[pos] if missing.ndim == 2 and missing.shape[1] == sub.shape[1] else ~np.isfinite(sub)
     ts = np.asarray(timestamp_ns, dtype=np.int64)[pos]
@@ -1301,7 +1467,7 @@ def _drift_fingerprint_array(
     missing_arr = np.asarray(per_feature_missing, dtype=np.float64)
     finite_abs = abs_arr[np.isfinite(abs_arr)]
     if finite_abs.size == 0:
-        return np.zeros(11 + len(DRIFT_FAMILY_ORDER) * 5, dtype=np.float32)
+        return np.zeros(DRIFT_GLOBAL_METRIC_COUNT + len(DRIFT_FAMILY_ORDER) * DRIFT_FAMILY_METRIC_COUNT, dtype=np.float32)
     total = float(np.sum(np.abs(finite_abs)))
     top10 = _top_mean(finite_abs, 0.10)
     feats: list[float] = [
@@ -1379,6 +1545,263 @@ def _normalise_distances_with_scale(values: np.ndarray, eps: float) -> tuple[np.
     )
 
 
+def _component_scales(matrix: np.ndarray, current: np.ndarray, eps: float) -> np.ndarray:
+    mat = np.asarray(matrix, dtype=np.float64)
+    cur = np.asarray(current, dtype=np.float64).reshape(1, -1)
+    if mat.ndim != 2 or mat.shape[1] == 0:
+        return np.ones(0, dtype=np.float64)
+    n = min(mat.shape[1], cur.shape[1])
+    stack = np.vstack([mat[:, :n], cur[:, :n]])
+    scales = np.ones(n, dtype=np.float64)
+    for j in range(n):
+        vals = stack[:, j]
+        vals = vals[np.isfinite(vals)]
+        if vals.size == 0:
+            continue
+        q25, q75 = np.nanpercentile(vals, [25.0, 75.0])
+        scale = float(q75 - q25)
+        if not np.isfinite(scale) or scale <= eps:
+            med = float(np.nanmedian(vals))
+            scale = float(np.nanmedian(np.abs(vals - med)))
+        if not np.isfinite(scale) or scale <= eps:
+            scale = float(np.nanmedian(np.abs(vals)))
+        scales[j] = scale if np.isfinite(scale) and scale > eps else 1.0
+    return scales
+
+
+def _scaled_euclidean_by_indices(
+    matrix: np.ndarray,
+    current: np.ndarray,
+    indices: Sequence[int],
+    eps: float,
+) -> np.ndarray:
+    mat = np.asarray(matrix, dtype=np.float64)
+    cur = np.asarray(current, dtype=np.float64)
+    if mat.ndim != 2 or mat.shape[0] == 0 or cur.size == 0:
+        return np.zeros(mat.shape[0] if mat.ndim == 2 else 0, dtype=np.float64)
+    idx = np.asarray([int(i) for i in indices if 0 <= int(i) < mat.shape[1] and int(i) < cur.size], dtype=np.int64)
+    if idx.size == 0:
+        return np.zeros(mat.shape[0], dtype=np.float64)
+    block = mat[:, idx]
+    cur_block = cur[idx]
+    scales = _component_scales(block, cur_block, eps)
+    diff = (block - cur_block.reshape(1, -1)) / np.maximum(scales.reshape(1, -1), eps)
+    diff = np.where(np.isfinite(diff), diff, 0.0)
+    return np.sqrt(np.mean(diff * diff, axis=1))
+
+
+def _normalize_weight_map(weights: Mapping[str, float], eps: float) -> dict[str, float]:
+    clean = {
+        str(key): max(float(value), 0.0)
+        for key, value in weights.items()
+        if np.isfinite(float(value)) and float(value) > 0.0
+    }
+    total = float(sum(clean.values()))
+    if total <= eps:
+        n = max(len(weights), 1)
+        return {str(key): 1.0 / n for key in weights}
+    return {key: value / total for key, value in clean.items()}
+
+
+def _combine_block_distances(
+    matrix: np.ndarray,
+    current: np.ndarray,
+    blocks: Mapping[str, Sequence[int]],
+    weights: Mapping[str, float],
+    eps: float,
+) -> tuple[np.ndarray, dict[str, np.ndarray], dict[str, Any]]:
+    mat = np.asarray(matrix, dtype=np.float64)
+    if mat.ndim != 2:
+        mat = np.zeros((0, 0), dtype=np.float64)
+    norm_weights = _normalize_weight_map(weights, eps)
+    block_distances: dict[str, np.ndarray] = {}
+    total = np.zeros(mat.shape[0], dtype=np.float64)
+    diagnostics: dict[str, Any] = {"weights": norm_weights, "blocks": {}}
+    for name, idx in blocks.items():
+        dist = _scaled_euclidean_by_indices(mat, current, idx, eps)
+        block_distances[str(name)] = dist
+        total += float(norm_weights.get(str(name), 0.0)) * dist
+        finite = dist[np.isfinite(dist)]
+        diagnostics["blocks"][str(name)] = {
+            "feature_count": int(len([i for i in idx if 0 <= int(i) < mat.shape[1]])),
+            "median_distance": float(np.nanmedian(finite)) if finite.size else 0.0,
+        }
+    return total.astype(np.float64), block_distances, diagnostics
+
+
+def _covariance_block_indices(top_eigenvalues: int) -> dict[str, np.ndarray]:
+    k = int(top_eigenvalues)
+    feature_offset = 0
+    asset_offset = k * 2 + 5
+    return {
+        "feature_cov_eig": np.arange(feature_offset, feature_offset + k),
+        "feature_corr_eig": np.arange(feature_offset + k, feature_offset + 2 * k),
+        "feature_concentration": np.arange(feature_offset + 2 * k, feature_offset + 2 * k + 5),
+        "asset_cov_eig": np.arange(asset_offset, asset_offset + k),
+        "asset_corr_eig": np.arange(asset_offset + k, asset_offset + 2 * k),
+        "asset_concentration": np.arange(asset_offset + 2 * k, asset_offset + 2 * k + 5),
+    }
+
+
+def _covariance_block_distances(
+    matrix: np.ndarray,
+    current: np.ndarray,
+    *,
+    top_eigenvalues: int,
+    config: RegimeSimilarityConfig,
+) -> tuple[np.ndarray, dict[str, np.ndarray], dict[str, Any]]:
+    weights = {
+        "feature_cov_eig": config.cov_feature_cov_eig_weight,
+        "feature_corr_eig": config.cov_feature_corr_eig_weight,
+        "feature_concentration": config.cov_feature_concentration_weight,
+        "asset_cov_eig": config.cov_asset_cov_eig_weight,
+        "asset_corr_eig": config.cov_asset_corr_eig_weight,
+        "asset_concentration": config.cov_asset_concentration_weight,
+    }
+    return _combine_block_distances(
+        matrix,
+        current,
+        _covariance_block_indices(top_eigenvalues),
+        weights,
+        float(config.eps),
+    )
+
+
+def _drift_block_indices() -> dict[str, np.ndarray]:
+    family_slices: dict[str, np.ndarray] = {}
+    for i, family in enumerate(DRIFT_FAMILY_ORDER):
+        start = DRIFT_GLOBAL_METRIC_COUNT + i * DRIFT_FAMILY_METRIC_COUNT
+        family_slices[family] = np.arange(start, start + DRIFT_FAMILY_METRIC_COUNT)
+    other_parts = [
+        np.arange(0, DRIFT_GLOBAL_METRIC_COUNT),
+        family_slices.get("base_model", np.zeros(0, dtype=np.int64)),
+        family_slices.get("meta_model", np.zeros(0, dtype=np.int64)),
+        family_slices.get("row_drift", np.zeros(0, dtype=np.int64)),
+        family_slices.get("raw_state", np.zeros(0, dtype=np.int64)),
+        family_slices.get("other", np.zeros(0, dtype=np.int64)),
+    ]
+    return {
+        "psi": family_slices.get("psi", np.zeros(0, dtype=np.int64)),
+        "ks": family_slices.get("ks", np.zeros(0, dtype=np.int64)),
+        "wasserstein": family_slices.get("wasserstein", np.zeros(0, dtype=np.int64)),
+        "mahalanobis": family_slices.get("mahalanobis", np.zeros(0, dtype=np.int64)),
+        "prediction": family_slices.get("prediction_distribution", np.zeros(0, dtype=np.int64)),
+        "covariance": family_slices.get("covariance", np.zeros(0, dtype=np.int64)),
+        "contribution": family_slices.get("contribution", np.zeros(0, dtype=np.int64)),
+        "other": np.concatenate(other_parts).astype(np.int64),
+    }
+
+
+def _drift_block_distances(
+    matrix: np.ndarray,
+    current: np.ndarray,
+    *,
+    config: RegimeSimilarityConfig,
+) -> tuple[np.ndarray, dict[str, np.ndarray], dict[str, Any]]:
+    weights = {
+        "psi": config.drift_psi_weight,
+        "ks": config.drift_ks_weight,
+        "wasserstein": config.drift_wasserstein_weight,
+        "mahalanobis": config.drift_mahalanobis_weight,
+        "prediction": config.drift_prediction_weight,
+        "covariance": config.drift_covariance_weight,
+        "contribution": config.drift_contribution_weight,
+        "other": config.drift_other_weight,
+    }
+    return _combine_block_distances(
+        matrix,
+        current,
+        _drift_block_indices(),
+        weights,
+        float(config.eps),
+    )
+
+
+def _historical_iqr_scale(values: np.ndarray, historical_mask: np.ndarray, eps: float) -> float:
+    vals = np.asarray(values, dtype=np.float64)
+    hist = np.asarray(historical_mask, dtype=bool)
+    if hist.size != vals.size:
+        hist = np.ones(vals.size, dtype=bool)
+    finite = vals[hist & np.isfinite(vals)]
+    if finite.size == 0:
+        finite = vals[np.isfinite(vals)]
+    if finite.size == 0:
+        return 1.0
+    q25, q75 = np.nanpercentile(finite, [25.0, 75.0])
+    scale = float(q75 - q25)
+    if not np.isfinite(scale) or scale <= eps:
+        scale = float(np.nanmedian(np.abs(finite)))
+    return scale if np.isfinite(scale) and scale > eps else 1.0
+
+
+def _baseline_covariance_norm(matrix: np.ndarray, historical_mask: np.ndarray, eps: float) -> float:
+    arr = np.asarray(matrix, dtype=np.float64)
+    hist = np.asarray(historical_mask, dtype=bool)
+    if arr.ndim != 2 or arr.shape[1] < 2 or hist.size != arr.shape[0] or not bool(hist.any()):
+        return 1.0
+    sub = arr[hist]
+    if sub.shape[0] < 3:
+        return 1.0
+    weights = np.ones(sub.shape[0], dtype=np.float64)
+    cov = _weighted_covariance(sub, weights, eps)
+    if cov.size == 0:
+        return 1.0
+    norm = float(np.linalg.norm(cov.astype(np.float64), ord="fro"))
+    return norm if np.isfinite(norm) and norm > eps else 1.0
+
+
+def _normalize_drift_values_by_family(
+    drift_values: np.ndarray,
+    columns: Sequence[str],
+    historical_mask: np.ndarray,
+    *,
+    baseline_covariance_norm: float,
+    config: RegimeSimilarityConfig,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    arr = np.asarray(drift_values, dtype=np.float64)
+    if arr.ndim != 2 or arr.shape[1] == 0:
+        return arr.astype(np.float32, copy=False), {"enabled": False, "reason": "empty_matrix"}
+    out = arr.copy()
+    eps = float(config.eps)
+    psi_scale = max(float(config.drift_psi_scale), eps)
+    feature_dim = max(int(arr.shape[1]), 1)
+    counts: dict[str, int] = {}
+    scale_values: dict[str, list[float]] = {}
+    for j, col in enumerate(columns):
+        family = _drift_family(str(col))
+        counts[family] = counts.get(family, 0) + 1
+        vals = arr[:, j]
+        if family == "psi":
+            out[:, j] = np.log1p(np.maximum(vals, 0.0)) / psi_scale
+            scale = psi_scale
+        elif family == "ks":
+            out[:, j] = vals
+            scale = 1.0
+        elif family == "mahalanobis":
+            out[:, j] = np.sqrt(np.maximum(vals, 0.0)) / math.sqrt(float(feature_dim))
+            scale = math.sqrt(float(feature_dim))
+        elif family == "covariance":
+            iqr_scale = _historical_iqr_scale(vals, historical_mask, eps)
+            scale = max(float(baseline_covariance_norm), iqr_scale, eps)
+            out[:, j] = vals / max(scale, eps)
+        else:
+            scale = _historical_iqr_scale(vals, historical_mask, eps)
+            out[:, j] = vals / max(scale, eps)
+        scale_values.setdefault(family, []).append(float(scale))
+    scale_summary = {
+        family: float(np.nanmedian(values)) if values else 1.0
+        for family, values in scale_values.items()
+    }
+    return out.astype(np.float32, copy=False), {
+        "enabled": True,
+        "counts": counts,
+        "scale_median_by_family": scale_summary,
+        "psi_scale": float(psi_scale),
+        "mahalanobis_feature_dim": int(feature_dim),
+        "baseline_covariance_norm": float(baseline_covariance_norm),
+    }
+
+
 def _window_ids(ts: pd.Series, *, anchor: pd.Timestamp, window_days: float) -> np.ndarray:
     seconds = (ts - anchor).dt.total_seconds().to_numpy(dtype=np.float64)
     seconds = np.nan_to_num(seconds, nan=-1.0, neginf=-1.0, posinf=-1.0)
@@ -1398,6 +1821,54 @@ def _subsample_positions(
     return positions[np.unique(idx)]
 
 
+def _subsample_positions_by_window(
+    positions: np.ndarray,
+    window_ids: np.ndarray,
+    *,
+    max_rows_per_window: int,
+) -> np.ndarray:
+    pos = np.asarray(positions, dtype=np.int64)
+    if max_rows_per_window <= 0 or pos.size == 0:
+        return pos
+    ids = np.asarray(window_ids, dtype=np.int64)[pos]
+    order = np.argsort(ids, kind="mergesort")
+    sorted_pos = pos[order]
+    sorted_ids = ids[order]
+    splits = np.flatnonzero(np.diff(sorted_ids)) + 1
+    groups = np.split(sorted_pos, splits)
+    capped = [
+        _subsample_positions(group, max_rows=int(max_rows_per_window))
+        for group in groups
+        if len(group)
+    ]
+    if not capped:
+        return np.zeros(0, dtype=np.int64)
+    return np.sort(np.concatenate(capped).astype(np.int64))
+
+
+def _knn_mean_scaled_distances(
+    block: np.ndarray,
+    reference: np.ndarray,
+) -> np.ndarray:
+    if block.size == 0 or reference.size == 0:
+        return np.zeros((len(block), len(reference)), dtype=np.float32)
+    block64 = np.asarray(block, dtype=np.float64)
+    ref64 = np.asarray(reference, dtype=np.float64)
+    dim = max(int(block64.shape[1]), 1)
+    block_sq = np.sum(block64 * block64, axis=1, keepdims=True)
+    ref_sq = np.sum(ref64 * ref64, axis=1, keepdims=True).T
+    dist_sq = np.maximum((block_sq + ref_sq - 2.0 * (block64 @ ref64.T)) / float(dim), 0.0)
+    return np.sqrt(dist_sq).astype(np.float32, copy=False)
+
+
+def _knn_fallback_block_size(reference_rows: int, *, chunk_pairs: int, default: int = 256) -> int:
+    if int(reference_rows) <= 0:
+        return 1
+    if int(chunk_pairs) <= 0:
+        return max(1, int(default))
+    return max(1, min(int(default), int(chunk_pairs) // max(int(reference_rows), 1)))
+
+
 def _knn_window_distance(
     scaled_knn: np.ndarray,
     current_pos: np.ndarray,
@@ -1408,6 +1879,7 @@ def _knn_window_distance(
     max_current_rows: int,
     max_candidate_rows: int,
     eps: float,
+    fallback_chunk_pairs: int = 2_000_000,
 ) -> float:
     if scaled_knn.size == 0 or len(current_pos) == 0 or len(candidate_pos) == 0:
         return 1.0
@@ -1438,9 +1910,10 @@ def _knn_window_distance(
         row_dist = np.mean(distances, axis=1)
     except Exception:
         row_dist_chunks: list[np.ndarray] = []
-        for start in range(0, len(cur), 256):
-            block = cur[start : start + 256]
-            d = np.sqrt(np.maximum(((block[:, None, :] - cand[None, :, :]) ** 2).mean(axis=2), 0.0))
+        block_size = _knn_fallback_block_size(len(cand), chunk_pairs=int(fallback_chunk_pairs))
+        for start in range(0, len(cur), block_size):
+            block = cur[start : start + block_size]
+            d = _knn_mean_scaled_distances(block, cand)
             d.sort(axis=1)
             row_dist_chunks.append(d[:, :kk].mean(axis=1))
         row_dist = np.concatenate(row_dist_chunks) if row_dist_chunks else np.asarray([1.0])
@@ -1465,7 +1938,9 @@ def _knn_window_distances_global(
     *,
     k: int,
     max_current_rows: int,
+    max_candidate_rows: int,
     max_historical_rows: int,
+    fallback_chunk_pairs: int,
     eps: float,
 ) -> tuple[dict[int, float], float, dict[str, Any]]:
     if (
@@ -1485,7 +1960,12 @@ def _knn_window_distances_global(
     else:
         cur_local = np.arange(len(current_pos), dtype=np.int64)
         cur_pos = current_pos
-    hist_pos = _subsample_positions(historical_pos, max_rows=int(max_historical_rows))
+    hist_pos = _subsample_positions_by_window(
+        historical_pos,
+        window_id_full,
+        max_rows_per_window=int(max_candidate_rows),
+    )
+    hist_pos = _subsample_positions(hist_pos, max_rows=int(max_historical_rows))
     cur = scaled_knn[cur_pos]
     hist = scaled_knn[hist_pos]
     if cur.ndim != 2 or hist.ndim != 2 or len(hist) == 0:
@@ -1501,9 +1981,10 @@ def _knn_window_distances_global(
     except Exception:
         row_dist_chunks: list[np.ndarray] = []
         row_idx_chunks: list[np.ndarray] = []
-        for start in range(0, len(cur), 256):
-            block = cur[start : start + 256]
-            d = np.sqrt(np.maximum(((block[:, None, :] - hist[None, :, :]) ** 2).mean(axis=2), 0.0))
+        block_size = _knn_fallback_block_size(len(hist), chunk_pairs=int(fallback_chunk_pairs))
+        for start in range(0, len(cur), block_size):
+            block = cur[start : start + block_size]
+            d = _knn_mean_scaled_distances(block, hist)
             idx = np.argsort(d, axis=1)[:, :neighbor_count]
             row_idx_chunks.append(idx)
             row_dist_chunks.append(np.take_along_axis(d, idx, axis=1))
@@ -1549,6 +2030,9 @@ def _knn_window_distances_global(
         "enabled": True,
         "current_rows_used": int(len(cur_pos)),
         "historical_rows_used": int(len(hist_pos)),
+        "max_candidate_rows_per_window": int(max_candidate_rows),
+        "fallback_chunk_pairs": int(fallback_chunk_pairs),
+        "fallback_block_size": int(_knn_fallback_block_size(len(hist), chunk_pairs=int(fallback_chunk_pairs))),
         "neighbors_per_current_row": int(neighbor_count),
         "windows_with_neighbor_support": int(len(distances_by_window)),
     }
@@ -1620,15 +2104,35 @@ def _ae_similarity(
     ):
         return np.zeros(n, dtype=np.float32)
     all_x = np.vstack([window_matrix, current_vector.reshape(1, -1)]).astype(np.float32)
+    max_windows = int(config.ae_max_windows)
+    if max_windows > 0 and n > max_windows:
+        fit_window_idx = np.linspace(0, n - 1, max_windows).round().astype(np.int64)
+        fit_window_idx = np.unique(fit_window_idx)
+        fit_idx = np.concatenate([fit_window_idx, np.asarray([n], dtype=np.int64)])
+    else:
+        fit_idx = np.arange(n + 1, dtype=np.int64)
+    fit_idx = np.unique(fit_idx)
+    fit_x = all_x[fit_idx]
+    centers = np.zeros(all_x.shape[1], dtype=np.float32)
+    scales = np.ones(all_x.shape[1], dtype=np.float32)
     for j in range(all_x.shape[1]):
-        all_x[:, j], _center, _scale = _robust_scale(all_x[:, j])
+        _fit_z, center, scale = _robust_scale(fit_x[:, j])
+        centers[j] = float(center)
+        scales[j] = max(float(scale), 1e-9)
+    all_x = np.clip(
+        (np.where(np.isfinite(all_x), all_x, centers.reshape(1, -1)) - centers.reshape(1, -1))
+        / np.maximum(scales.reshape(1, -1), 1e-9),
+        -8.0,
+        8.0,
+    ).astype(np.float32)
+    train_x = all_x[fit_idx]
     try:
         from sklearn.exceptions import ConvergenceWarning
         from sklearn.neural_network import MLPRegressor
 
         rng = np.random.default_rng(int(config.random_state))
         noisy = np.clip(
-            all_x + rng.normal(0.0, float(config.ae_input_noise), size=all_x.shape).astype(np.float32),
+            train_x + rng.normal(0.0, float(config.ae_input_noise), size=train_x.shape).astype(np.float32),
             -8.0,
             8.0,
         )
@@ -1638,14 +2142,14 @@ def _ae_similarity(
             solver="adam",
             alpha=1e-4,
             max_iter=max(1, int(config.ae_max_iter)),
-            batch_size=min(1024, max(1, len(all_x))),
+            batch_size=min(1024, max(1, len(train_x))),
             random_state=int(config.random_state),
             early_stopping=False,
             verbose=False,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", ConvergenceWarning)
-            model.fit(noisy, all_x)
+            model.fit(noisy, train_x)
         coefs = [np.asarray(w, dtype=np.float32) for w in model.coefs_]
         intercepts = [np.asarray(b, dtype=np.float32) for b in model.intercepts_]
         latent, recon = _mlp_forward(
@@ -1659,8 +2163,9 @@ def _ae_similarity(
         try:
             from sklearn.decomposition import PCA
 
-            pca = PCA(n_components=min(int(config.ae_latent_dim), all_x.shape[0], all_x.shape[1]))
-            latent = pca.fit_transform(all_x).astype(np.float32)
+            pca = PCA(n_components=min(int(config.ae_latent_dim), train_x.shape[0], train_x.shape[1]))
+            pca.fit(train_x)
+            latent = pca.transform(all_x).astype(np.float32)
             recon = pca.inverse_transform(latent).astype(np.float32)
         except Exception:
             return np.zeros(n, dtype=np.float32)
@@ -1704,6 +2209,7 @@ def _finalize_similarity_output(
     for col in (
         "window_similarity",
         "day_similarity",
+        "day_similarity_available",
         "similarity_to_current",
         "current_regime_recency_weight",
     ):
@@ -1711,9 +2217,16 @@ def _finalize_similarity_output(
             out[col] = np.nan
     if "regime_specialist_bucket" not in out.columns:
         out["regime_specialist_bucket"] = "irrelevant"
+    else:
+        out["regime_specialist_bucket"] = (
+            out["regime_specialist_bucket"]
+            .astype("object")
+            .where(out["regime_specialist_bucket"].notna(), "irrelevant")
+        )
     if len(future_index) > 0:
         out.loc[future_index, "window_similarity"] = 0.0
         out.loc[future_index, "day_similarity"] = 0.0
+        out.loc[future_index, "day_similarity_available"] = False
         out.loc[future_index, "similarity_to_current"] = 0.0
         out.loc[future_index, "current_regime_recency_weight"] = 0.0
         out.loc[future_index, "regime_specialist_bucket"] = "future_excluded"
@@ -1725,6 +2238,9 @@ def _finalize_similarity_output(
         out["day_similarity"],
         errors="coerce",
     ).fillna(0.0).astype(np.float32)
+    out["day_similarity_available"] = (
+        out["day_similarity_available"].astype("boolean").fillna(False).to_numpy(dtype=bool)
+    )
     out["similarity_to_current"] = pd.to_numeric(
         out["similarity_to_current"],
         errors="coerce",
@@ -1736,6 +2252,274 @@ def _finalize_similarity_output(
     diagnostics = dict(diagnostics)
     diagnostics["future_excluded_rows"] = int(len(future_index))
     diagnostics["asof_rows"] = int(len(original_index) - len(future_index))
+    return out, diagnostics
+
+
+_SIMILARITY_RESULT_COLUMNS: tuple[str, ...] = (
+    "window_similarity",
+    "day_similarity",
+    "day_similarity_available",
+    "similarity_to_current",
+    "current_regime_recency_weight",
+)
+
+
+def _local_label_overlap_mask(
+    frame: pd.DataFrame,
+    *,
+    timestamp_col: str,
+    end: pd.Timestamp,
+    config: RegimeSimilarityConfig,
+) -> tuple[pd.Series, str]:
+    ts = _timestamp_series(frame, timestamp_col)
+    valid_ts = ts.notna()
+    asof_mask = valid_ts & (ts <= end)
+    label_end = None
+    source = "none"
+    if config.label_end_col is not None and str(config.label_end_col) in frame.columns:
+        label_end = pd.to_datetime(frame[str(config.label_end_col)], utc=True, errors="coerce")
+        source = str(config.label_end_col)
+    elif float(config.label_horizon_hours or 0.0) > 0.0:
+        label_end = ts + pd.Timedelta(hours=float(config.label_horizon_hours))
+        source = "label_horizon_hours"
+    if label_end is None:
+        return pd.Series(False, index=frame.index), source
+    label_complete = label_end.notna() & (label_end <= end)
+    return asof_mask & ~label_complete, source
+
+
+def _derive_local_buckets_from_similarity(
+    frame: pd.DataFrame,
+    similarity: np.ndarray,
+    *,
+    timestamp_col: str,
+    end: pd.Timestamp,
+    config: RegimeSimilarityConfig,
+    label_overlap_mask: pd.Series | None = None,
+) -> np.ndarray:
+    ts = _timestamp_series(frame, timestamp_col)
+    valid_ts = ts.notna()
+    future = (valid_ts & (ts > end)).to_numpy(dtype=bool)
+    current_start = end - pd.Timedelta(days=float(config.current_window_days))
+    current = (valid_ts & (ts >= current_start) & (ts <= end)).to_numpy(dtype=bool)
+    sim = np.nan_to_num(np.asarray(similarity, dtype=np.float64), nan=0.0, posinf=1.0, neginf=0.0)
+    bucket = np.where(
+        sim >= float(config.analogue_threshold),
+        "analogue",
+        np.where(sim >= float(config.normal_threshold), "normal", "irrelevant"),
+    ).astype(object)
+    bucket[current] = "current"
+    if label_overlap_mask is not None:
+        overlap = label_overlap_mask.reindex(frame.index).fillna(False).to_numpy(dtype=bool)
+        bucket[overlap] = "irrelevant"
+    bucket[future] = "future_excluded"
+    return bucket
+
+
+def _aggregate_similarity_by_keys(
+    assessment_similarity: pd.DataFrame,
+    keys: list[str],
+) -> pd.DataFrame:
+    value_cols = [
+        col
+        for col in _SIMILARITY_RESULT_COLUMNS
+        if col in assessment_similarity.columns
+    ]
+    if not value_cols or not all(key in assessment_similarity.columns for key in keys):
+        return pd.DataFrame()
+    work = assessment_similarity[keys + value_cols].copy(deep=False)
+    if "day_similarity_available" in work.columns:
+        work["day_similarity_available"] = work["day_similarity_available"].astype(float)
+    grouped = work.groupby(keys, sort=False, dropna=False)[value_cols].mean(numeric_only=True)
+    return grouped.reset_index()
+
+
+def _index_alignment_matches_keys(
+    frame: pd.DataFrame,
+    aligned: pd.DataFrame,
+    *,
+    timestamp_col: str,
+    symbol_col: str,
+) -> bool:
+    checked = False
+    if timestamp_col in frame.columns and timestamp_col in aligned.columns:
+        left_ts = pd.to_datetime(frame[timestamp_col], utc=True, errors="coerce")
+        right_ts = pd.to_datetime(aligned[timestamp_col], utc=True, errors="coerce")
+        valid = left_ts.notna() & right_ts.notna()
+        if not bool(valid.any()):
+            return False
+        checked = True
+        if not bool((left_ts[valid].to_numpy() == right_ts[valid].to_numpy()).all()):
+            return False
+    if symbol_col in frame.columns and symbol_col in aligned.columns:
+        left_symbol = frame[symbol_col].astype("string")
+        right_symbol = aligned[symbol_col].astype("string")
+        valid = left_symbol.notna() & right_symbol.notna()
+        if not bool(valid.any()):
+            return False
+        checked = True
+        if not bool((left_symbol[valid].to_numpy() == right_symbol[valid].to_numpy()).all()):
+            return False
+    return bool(checked)
+
+
+def _align_global_assessment_similarity(
+    frame: pd.DataFrame,
+    assessment_similarity: pd.DataFrame,
+    *,
+    timestamp_col: str,
+    symbol_col: str,
+    current_end: pd.Timestamp,
+    config: RegimeSimilarityConfig,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    original_index = frame.index
+    out = pd.DataFrame(index=original_index)
+    value_cols = [
+        col
+        for col in _SIMILARITY_RESULT_COLUMNS
+        if col in assessment_similarity.columns
+    ]
+    alignment = "none"
+    left = frame.copy(deep=False)
+    left["_local_index"] = np.arange(len(frame), dtype=np.int64)
+    if timestamp_col in left.columns:
+        left["_align_timestamp"] = pd.to_datetime(left[timestamp_col], utc=True, errors="coerce")
+    if symbol_col in left.columns:
+        left["_align_symbol"] = left[symbol_col].astype("string")
+    right_base = assessment_similarity.copy(deep=False)
+    if timestamp_col in right_base.columns:
+        right_base = right_base.copy(deep=False)
+        right_base["_align_timestamp"] = pd.to_datetime(right_base[timestamp_col], utc=True, errors="coerce")
+    if symbol_col in right_base.columns:
+        right_base = right_base.copy(deep=False)
+        right_base["_align_symbol"] = right_base[symbol_col].astype("string")
+    key_sets: list[tuple[str, list[str]]] = []
+    if "_align_timestamp" in left.columns and "_align_timestamp" in right_base.columns:
+        if "_align_symbol" in left.columns and "_align_symbol" in right_base.columns:
+            key_sets.append(("timestamp_symbol", ["_align_timestamp", "_align_symbol"]))
+        if bool(config.assessment_allow_timestamp_only_alignment):
+            key_sets.append(("timestamp", ["_align_timestamp"]))
+    for name, keys in key_sets:
+        if not value_cols:
+            break
+        if not all(key in left.columns for key in keys) or not all(key in right_base.columns for key in keys):
+            continue
+        aggregated = _aggregate_similarity_by_keys(right_base, keys)
+        if aggregated.empty:
+            continue
+        merged = left[["_local_index"] + keys].merge(
+            aggregated,
+            on=keys,
+            how="left",
+            sort=False,
+        )
+        merged = merged.sort_values("_local_index")
+        if int(merged[value_cols].notna().any(axis=1).sum()) > 0:
+            for col in value_cols:
+                out[col] = merged[col].to_numpy()
+            alignment = name
+            break
+    if (
+        alignment == "none"
+        and value_cols
+        and assessment_similarity.index.is_unique
+        and original_index.isin(assessment_similarity.index).all()
+    ):
+        aligned = assessment_similarity.reindex(original_index)
+        if _index_alignment_matches_keys(
+            frame,
+            aligned,
+            timestamp_col=timestamp_col,
+            symbol_col=symbol_col,
+        ):
+            for col in value_cols:
+                out[col] = aligned[col]
+            alignment = "index"
+        elif not any(col in assessment_similarity.columns for col in (timestamp_col, symbol_col)):
+            for col in value_cols:
+                out[col] = aligned[col]
+            alignment = "index_unverified"
+    if (
+        alignment == "none"
+        and value_cols
+        and bool(config.assessment_allow_timestamp_only_alignment)
+        and "_align_timestamp" in left.columns
+        and "_align_timestamp" in right_base.columns
+    ):
+        aggregated = _aggregate_similarity_by_keys(right_base, ["_align_timestamp"])
+        if not aggregated.empty:
+            merged = left[["_local_index", "_align_timestamp"]].merge(
+                aggregated,
+                on="_align_timestamp",
+                how="left",
+                sort=False,
+            )
+            merged = merged.sort_values("_local_index")
+            if int(merged[value_cols].notna().any(axis=1).sum()) > 0:
+                for col in value_cols:
+                    out[col] = merged[col].to_numpy()
+                alignment = "timestamp"
+    ts = _timestamp_series(frame, timestamp_col)
+    valid_ts = ts.notna()
+    future = valid_ts & (ts > current_end)
+    current_start = current_end - pd.Timedelta(days=float(config.current_window_days))
+    current = valid_ts & (ts >= current_start) & (ts <= current_end)
+    label_overlap_mask, label_source = _local_label_overlap_mask(
+        frame,
+        timestamp_col=timestamp_col,
+        end=current_end,
+        config=config,
+    )
+    for col in _SIMILARITY_RESULT_COLUMNS:
+        if col not in out.columns:
+            out[col] = np.nan
+    out["similarity_to_current"] = pd.to_numeric(out["similarity_to_current"], errors="coerce")
+    out["window_similarity"] = pd.to_numeric(out["window_similarity"], errors="coerce")
+    out["day_similarity"] = pd.to_numeric(out["day_similarity"], errors="coerce")
+    out["current_regime_recency_weight"] = pd.to_numeric(
+        out["current_regime_recency_weight"],
+        errors="coerce",
+    )
+    matched_rows = int(out["similarity_to_current"].notna().sum())
+    local_recency = current_regime_recency_weights(
+        ts,
+        current_end=current_end,
+        decay_per_week=float(config.recency_decay_per_week),
+    )
+    missing_similarity = out["similarity_to_current"].isna()
+    out.loc[missing_similarity & current, "similarity_to_current"] = 1.0
+    out.loc[missing_similarity & ~current, "similarity_to_current"] = 0.0
+    out["similarity_to_current"] = out["similarity_to_current"].fillna(0.0).clip(0.0, 1.0)
+    out["window_similarity"] = out["window_similarity"].fillna(out["similarity_to_current"]).clip(0.0, 1.0)
+    out["day_similarity_available"] = out["day_similarity_available"].astype("boolean").fillna(False)
+    out.loc[current, "day_similarity_available"] = True
+    out["day_similarity"] = out["day_similarity"].fillna(0.0).clip(0.0, 1.0)
+    out.loc[current, "day_similarity"] = 1.0
+    out["current_regime_recency_weight"] = out["current_regime_recency_weight"].fillna(
+        pd.Series(local_recency.to_numpy(dtype=np.float32), index=original_index)
+    )
+    out.loc[~current, "current_regime_recency_weight"] = 0.0
+    out.loc[future, list(_SIMILARITY_RESULT_COLUMNS)] = [0.0, 0.0, False, 0.0, 0.0]
+    out.loc[label_overlap_mask, ["window_similarity", "similarity_to_current"]] = 0.0
+    out.loc[label_overlap_mask, "current_regime_recency_weight"] = 0.0
+    out["regime_specialist_bucket"] = _derive_local_buckets_from_similarity(
+        frame,
+        out["similarity_to_current"].to_numpy(dtype=np.float32),
+        timestamp_col=timestamp_col,
+        end=current_end,
+        config=config,
+        label_overlap_mask=label_overlap_mask,
+    )
+    diagnostics = {
+        "alignment": alignment,
+        "aligned_rows": matched_rows,
+        "aligned_fraction": float(matched_rows / max(len(frame), 1)),
+        "local_rows": int(len(frame)),
+        "local_current_rows": int(current.sum()),
+        "local_future_rows": int(future.sum()),
+        "local_label_end_source": label_source,
+        "local_label_overlap_excluded_rows": int(label_overlap_mask.sum()),
+    }
     return out, diagnostics
 
 
@@ -1752,6 +2536,8 @@ def compute_regime_similarity_to_current(
     covariance_columns: Sequence[str] | None = None,
     knn_columns: Sequence[str] | None = None,
     asset_return_col: str | None = None,
+    assessment_frame: pd.DataFrame | None = None,
+    unsupervised_regime_artifact: Any | None = None,
 ) -> tuple[pd.DataFrame, Dict[str, Any]]:
     if frame is None or frame.empty:
         out = pd.DataFrame(index=getattr(frame, "index", None))
@@ -1760,6 +2546,88 @@ def compute_regime_similarity_to_current(
             "enabled": False,
             "reason": "empty_frame",
         }
+    if (
+        assessment_frame is not None
+        and not assessment_frame.empty
+        and not (
+            assessment_frame is frame
+            or (
+                len(assessment_frame) == len(frame)
+                and assessment_frame.index.equals(frame.index)
+            )
+        )
+    ):
+        assessment_ts = _timestamp_series(assessment_frame, timestamp_col)
+        assessment_end = (
+            pd.to_datetime(current_end, utc=True, errors="coerce")
+            if current_end is not None
+            else assessment_ts.max()
+        )
+        if pd.isna(assessment_end):
+            assessment_end = _timestamp_series(frame, timestamp_col).max()
+        assessment_similarity, assessment_diag = compute_regime_similarity_to_current(
+            assessment_frame,
+            timestamp_col=timestamp_col,
+            symbol_col=symbol_col,
+            selected_feature_columns=selected_feature_columns,
+            current_end=assessment_end,
+            config=config,
+            market_columns=market_columns,
+            drift_columns=drift_columns,
+            covariance_columns=covariance_columns,
+            knn_columns=knn_columns,
+            asset_return_col=asset_return_col,
+            assessment_frame=None,
+            unsupervised_regime_artifact=unsupervised_regime_artifact,
+        )
+        for key_col in (timestamp_col, symbol_col):
+            if key_col in assessment_frame.columns and key_col not in assessment_similarity.columns:
+                assessment_similarity = assessment_similarity.copy(deep=False)
+                assessment_similarity[key_col] = assessment_frame[key_col].to_numpy(copy=False)
+        aligned, alignment_diag = _align_global_assessment_similarity(
+            frame,
+            assessment_similarity,
+            timestamp_col=timestamp_col,
+            symbol_col=symbol_col,
+            current_end=assessment_end,
+            config=config,
+        )
+        future_index = aligned.index[
+            aligned["regime_specialist_bucket"].astype(str).str.lower().eq("future_excluded").to_numpy(dtype=bool)
+        ]
+        aligned_fraction = float(alignment_diag.get("aligned_fraction", 0.0) or 0.0)
+        min_aligned_fraction = float(np.clip(config.assessment_min_aligned_fraction, 0.0, 1.0))
+        alignment_ok = aligned_fraction >= min_aligned_fraction
+        assessment_enabled = bool(assessment_diag.get("enabled", False))
+        reason = str(assessment_diag.get("reason", ""))
+        if not alignment_ok:
+            reason = (
+                "global_alignment_insufficient:"
+                f"{int(alignment_diag.get('aligned_rows', 0))}/{int(len(frame))}"
+            )
+        diagnostics = {
+            "schema_version": REGIME_SPECIALIST_SCHEMA_VERSION,
+            "enabled": bool(assessment_enabled and alignment_ok),
+            "reason": reason,
+            "assessment_scope": {
+                "mode": "global_assessment_local_training",
+                "assessment_rows": int(len(assessment_frame)),
+                "local_training_rows": int(len(frame)),
+                "alignment": alignment_diag.get("alignment", "none"),
+                "aligned_rows": int(alignment_diag.get("aligned_rows", 0)),
+                "aligned_fraction": aligned_fraction,
+                "min_aligned_fraction": min_aligned_fraction,
+                "alignment_ok": bool(alignment_ok),
+            },
+            "assessment_diagnostics": assessment_diag,
+            "local_alignment": alignment_diag,
+        }
+        return _finalize_similarity_output(
+            aligned,
+            original_index=frame.index,
+            future_index=future_index,
+            diagnostics=diagnostics,
+        )
     original_index = frame.index
     full_ts = _timestamp_series(frame, timestamp_col)
     valid_ts_full = full_ts.notna()
@@ -1771,11 +2639,25 @@ def compute_regime_similarity_to_current(
         end = full_ts.max()
     future_mask = valid_ts_full & (full_ts > end)
     asof_mask = valid_ts_full & (full_ts <= end)
+    label_overlap_mask = pd.Series(False, index=frame.index)
+    label_end = None
+    label_end_source = "none"
+    if config.label_end_col is not None and str(config.label_end_col) in frame.columns:
+        label_end = pd.to_datetime(frame[str(config.label_end_col)], utc=True, errors="coerce")
+        label_end_source = str(config.label_end_col)
+    elif float(config.label_horizon_hours or 0.0) > 0.0:
+        label_end = full_ts + pd.Timedelta(hours=float(config.label_horizon_hours))
+        label_end_source = "label_horizon_hours"
+    if label_end is not None:
+        label_complete = label_end.notna() & (label_end <= end)
+        label_overlap_mask = asof_mask & ~label_complete
+        asof_mask = asof_mask & label_complete
     if not bool(asof_mask.any()):
         out = pd.DataFrame(index=original_index)
         out["similarity_to_current"] = 0.0
         out["window_similarity"] = 0.0
         out["day_similarity"] = 0.0
+        out["day_similarity_available"] = False
         out["current_regime_recency_weight"] = 0.0
         out["regime_specialist_bucket"] = np.where(
             future_mask.to_numpy(dtype=bool),
@@ -1790,16 +2672,42 @@ def compute_regime_similarity_to_current(
                 "schema_version": REGIME_SPECIALIST_SCHEMA_VERSION,
                 "enabled": False,
                 "reason": "no_asof_rows",
+                "similarity_unavailable": True,
+                "label_end_source": label_end_source,
+                "label_overlap_excluded_rows": int(label_overlap_mask.sum()),
             },
         )
-    work = frame.loc[asof_mask].copy()
+    work = frame.loc[asof_mask].copy(deep=False)
+    unsupervised_regime_diag: dict[str, Any] = {
+        "enabled": bool(unsupervised_regime_artifact is not None),
+        "used": False,
+    }
+    if unsupervised_regime_artifact is not None:
+        try:
+            from .unsupervised_regime_learning.regime_models import (
+                regime_artifact_assessment_summary,
+            )
+
+            unsupervised_regime_diag = regime_artifact_assessment_summary(
+                unsupervised_regime_artifact
+            )
+        except Exception as exc:
+            unsupervised_regime_diag = {
+                "enabled": True,
+                "used": False,
+                "reason": f"artifact_assessment_failed:{type(exc).__name__}",
+            }
     ts = full_ts.loc[asof_mask]
     valid_ts = ts.notna()
     if not bool(valid_ts.any()):
         out = pd.DataFrame(
             {
-                "similarity_to_current": np.ones(len(work), dtype=np.float32),
-                "regime_specialist_bucket": np.repeat("current", len(work)),
+                "similarity_to_current": np.zeros(len(work), dtype=np.float32),
+                "window_similarity": np.zeros(len(work), dtype=np.float32),
+                "day_similarity": np.zeros(len(work), dtype=np.float32),
+                "day_similarity_available": np.zeros(len(work), dtype=bool),
+                "current_regime_recency_weight": np.zeros(len(work), dtype=np.float32),
+                "regime_specialist_bucket": np.repeat("irrelevant", len(work)),
             },
             index=work.index,
         )
@@ -1811,6 +2719,9 @@ def compute_regime_similarity_to_current(
                 "schema_version": REGIME_SPECIALIST_SCHEMA_VERSION,
                 "enabled": False,
                 "reason": "missing_valid_timestamps",
+                "similarity_unavailable": True,
+                "label_end_source": label_end_source,
+                "label_overlap_excluded_rows": int(label_overlap_mask.sum()),
             },
         )
     current_start = end - pd.Timedelta(days=float(config.current_window_days))
@@ -1818,10 +2729,11 @@ def compute_regime_similarity_to_current(
     if int(current_mask.sum()) < int(config.min_current_rows):
         out = pd.DataFrame(
             {
-                "similarity_to_current": np.ones(len(work), dtype=np.float32),
+                "similarity_to_current": np.where(current_mask, 1.0, 0.0).astype(np.float32),
                 "regime_specialist_bucket": np.where(current_mask, "current", "normal"),
-                "window_similarity": np.ones(len(work), dtype=np.float32),
-                "day_similarity": np.ones(len(work), dtype=np.float32),
+                "window_similarity": np.where(current_mask, 1.0, 0.0).astype(np.float32),
+                "day_similarity": np.where(current_mask, 1.0, 0.0).astype(np.float32),
+                "day_similarity_available": current_mask.to_numpy(dtype=bool),
                 "current_regime_recency_weight": np.zeros(len(work), dtype=np.float32),
             },
             index=work.index,
@@ -1834,8 +2746,11 @@ def compute_regime_similarity_to_current(
                 "schema_version": REGIME_SPECIALIST_SCHEMA_VERSION,
                 "enabled": False,
                 "reason": "insufficient_current_rows",
+                "similarity_unavailable": True,
                 "current_rows": int(current_mask.sum()),
                 "min_current_rows": int(config.min_current_rows),
+                "label_end_source": label_end_source,
+                "label_overlap_excluded_rows": int(label_overlap_mask.sum()),
             },
         )
     columns = infer_regime_specialist_columns(
@@ -1855,7 +2770,166 @@ def compute_regime_similarity_to_current(
         covariance_columns=covariance_columns,
         knn_columns=knn_columns,
     )
-    historical_mask = valid_ts & (ts < current_start)
+    historical_cutoff = current_start - pd.Timedelta(days=max(0.0, float(config.embargo_days or 0.0)))
+    historical_mask = valid_ts & (ts < historical_cutoff)
+    feature_engineering_diag: dict[str, Any] = {
+        "enabled": bool(config.feature_engineering_enabled),
+        "used": False,
+        "reason": "disabled",
+    }
+    feature_engineering_scores: np.ndarray | None = None
+    if bool(config.feature_engineering_enabled):
+        try:
+            from .regime_specialist_feature_engineering import (
+                RegimeFeatureEngineeringConfig,
+                build_regime_specialist_feature_engineering_artifact,
+            )
+
+            fe_candidate_features = _stable_unique_strings(
+                list(selected_feature_columns or [])
+                + list(columns.get("market", []))
+                + list(columns.get("covariance", []))
+                + list(columns.get("knn", []))
+            )
+            fe_artifact = build_regime_specialist_feature_engineering_artifact(
+                work,
+                timestamp_col=timestamp_col,
+                symbol_col=symbol_col,
+                candidate_features=fe_candidate_features,
+                unsupervised_regime_artifact=unsupervised_regime_artifact,
+                current_mask=current_mask.to_numpy(dtype=bool),
+                historical_mask=historical_mask.to_numpy(dtype=bool),
+                config=RegimeFeatureEngineeringConfig(
+                    max_final_features=int(config.feature_engineering_max_final_features),
+                    max_pair_candidates=int(config.feature_engineering_max_pair_candidates),
+                    univariate_subsample_per_class=int(config.feature_engineering_univariate_subsample_per_class),
+                    lgbm_enabled=bool(config.feature_engineering_lgbm_enabled),
+                    elasticnet_enabled=bool(config.feature_engineering_elasticnet_enabled),
+                    grouped_cv_folds=int(config.feature_engineering_grouped_cv_folds),
+                    grouped_cv_repeats=int(config.feature_engineering_grouped_cv_repeats),
+                    permutation_repeats=int(config.feature_engineering_permutation_repeats),
+                    max_permutation_features=int(config.feature_engineering_max_permutation_features),
+                    max_permutation_rows=int(config.feature_engineering_max_permutation_rows),
+                    max_shap_rows=int(config.feature_engineering_max_shap_rows),
+                    drift_window_days=float(config.feature_engineering_drift_window_days),
+                    max_drift_raw_features=int(config.feature_engineering_max_drift_raw_features),
+                    drift_window_max_rows=int(config.feature_engineering_drift_window_max_rows),
+                    drift_knn_max_rows=int(config.feature_engineering_drift_knn_max_rows),
+                    drift_knn_chunk_pairs=int(config.feature_engineering_drift_knn_chunk_pairs),
+                    domain_score_smoothing_enabled=bool(config.feature_engineering_domain_score_smoothing_enabled),
+                    domain_score_ewma_half_life_days=float(config.feature_engineering_domain_score_ewma_half_life_days),
+                    domain_score_ewma_max_days=float(config.feature_engineering_domain_score_ewma_max_days),
+                    run_validation_diagnostics=bool(config.feature_engineering_run_validation_diagnostics),
+                    random_state=int(config.random_state),
+                    eps=float(config.eps),
+                ),
+            )
+            fe_materialized = getattr(fe_artifact, "materialized_features", pd.DataFrame(index=work.index))
+            fe_groups = getattr(fe_artifact, "materialized_feature_groups", {}) or {}
+            if isinstance(fe_materialized, pd.DataFrame) and not fe_materialized.empty:
+                aligned_materialized = fe_materialized.reindex(work.index)
+                for col in aligned_materialized.columns:
+                    if col not in work.columns:
+                        work[col] = pd.to_numeric(aligned_materialized[col], errors="coerce").astype(np.float32)
+            selected_raw_fe = [
+                feature
+                for feature in getattr(fe_artifact, "selected_raw_features", fe_artifact.selected_features)
+                if feature in work.columns
+            ]
+            raw_materialized_fe = [
+                feature
+                for feature in list(fe_groups.get("raw_state", []))
+                if feature in work.columns
+            ]
+            pair_materialized_fe = [
+                feature
+                for feature in list(fe_groups.get("pair_geometry", []))
+                if feature in work.columns
+            ]
+            drift_materialized_fe = [
+                feature
+                for feature in list(fe_groups.get("generated_drift", []))
+                if feature in work.columns
+            ]
+            raw_state_route_fe = raw_materialized_fe if raw_materialized_fe else selected_raw_fe
+            raw_state_safe_fe = _feature_engineering_knn_safe_columns(raw_state_route_fe)
+            pair_safe_fe = _feature_engineering_knn_safe_columns(pair_materialized_fe)
+            if raw_state_route_fe:
+                columns["covariance"] = raw_state_safe_fe
+                columns["knn"] = raw_state_safe_fe
+                columns["market"] = _stable_unique_strings(list(columns.get("market", [])) + raw_state_safe_fe)
+            if pair_safe_fe:
+                columns["covariance"] = _stable_unique_strings(list(columns.get("covariance", [])) + pair_safe_fe)
+                columns["knn"] = _stable_unique_strings(list(columns.get("knn", [])) + pair_safe_fe)
+            if drift_materialized_fe:
+                columns["drift"] = _stable_unique_strings(list(columns.get("drift", [])) + drift_materialized_fe)
+            raw_state_excluded_from_knn = [
+                feature
+                for feature in raw_state_route_fe
+                if _feature_engineering_knn_unsafe_reason(feature) is not None
+            ]
+            pair_geometry_excluded_from_knn = [
+                feature
+                for feature in pair_materialized_fe
+                if _feature_engineering_knn_unsafe_reason(feature) is not None
+            ]
+            score_materialized_fe = [str(feature) for feature in list(fe_groups.get("score", []))]
+            excluded_from_knn = _stable_unique_strings(
+                raw_state_excluded_from_knn
+                + pair_geometry_excluded_from_knn
+                + drift_materialized_fe
+                + score_materialized_fe
+            )
+            lgbm_score_used = bool(fe_artifact.diagnostics.get("lgbm", {}).get("enabled", False))
+            elastic_score_used = bool(fe_artifact.diagnostics.get("elasticnet", {}).get("enabled", False))
+            if lgbm_score_used or elastic_score_used:
+                score_series = fe_artifact.row_scores["regime_domain_current_likeness"].reindex(work.index)
+                feature_engineering_scores = pd.to_numeric(score_series, errors="coerce").fillna(0.5).to_numpy(dtype=np.float32)
+            if selected_raw_fe or raw_materialized_fe or pair_materialized_fe or drift_materialized_fe or feature_engineering_scores is not None:
+                feature_engineering_diag = {
+                    "enabled": True,
+                    "used": True,
+                    "classifier_score_used": bool(feature_engineering_scores is not None),
+                    "selected_features": getattr(fe_artifact, "selected_features", []),
+                    "selected_raw_features": selected_raw_fe,
+                    "selected_pair_features": getattr(fe_artifact, "selected_pair_features", []),
+                    "selected_drift_features": getattr(fe_artifact, "selected_drift_features", []),
+                    "selected_feature_count": int(len(getattr(fe_artifact, "selected_features", []))),
+                    "selected_raw_feature_count": int(len(selected_raw_fe)),
+                    "materialized_feature_groups": fe_groups,
+                    "materialized_feature_usage": {
+                        "raw_state_to_market_covariance": raw_state_safe_fe,
+                        "raw_state_to_knn": raw_state_safe_fe,
+                        "raw_state_to_market_covariance_knn": raw_state_safe_fe,
+                        "raw_state_fallback_to_original_columns": selected_raw_fe if not raw_materialized_fe else [],
+                        "raw_state_excluded_from_knn": raw_state_excluded_from_knn,
+                        "raw_state_excluded_from_state_blocks": raw_state_excluded_from_knn,
+                        "pair_geometry_to_covariance": pair_safe_fe,
+                        "pair_geometry_to_knn": pair_safe_fe,
+                        "pair_geometry_to_covariance_knn": pair_safe_fe,
+                        "pair_geometry_excluded_from_knn": pair_geometry_excluded_from_knn,
+                        "pair_geometry_excluded_from_state_blocks": pair_geometry_excluded_from_knn,
+                        "generated_drift_to_drift_only": drift_materialized_fe,
+                        "score_to_domain_classifier_only": score_materialized_fe,
+                        "excluded_from_knn": excluded_from_knn,
+                    },
+                    "lgbm_features": fe_artifact.lgbm_features,
+                    "elasticnet_features": fe_artifact.elasticnet_features,
+                    "diagnostics": fe_artifact.diagnostics,
+                }
+            else:
+                feature_engineering_diag = {
+                    "enabled": True,
+                    "used": False,
+                    "reason": "no_selected_features",
+                    "diagnostics": fe_artifact.diagnostics,
+                }
+        except Exception as exc:
+            feature_engineering_diag = {
+                "enabled": True,
+                "used": False,
+                "reason": f"failed: {exc}",
+            }
     timestamp_ns = _timestamp_ns(ts)
     current_pos = np.flatnonzero(current_mask.to_numpy(dtype=bool))
     end_ns = int(pd.Timestamp(end).value) if not pd.isna(end) else None
@@ -1868,7 +2942,8 @@ def compute_regime_similarity_to_current(
     )
     out = pd.DataFrame(index=work.index)
     out["window_similarity"] = np.where(current_mask, 1.0, 0.0).astype(np.float32)
-    out["day_similarity"] = np.where(current_mask, 1.0, 1.0).astype(np.float32)
+    out["day_similarity"] = np.where(current_mask, 1.0, np.nan).astype(np.float32)
+    out["day_similarity_available"] = current_mask.to_numpy(dtype=bool)
     out["similarity_to_current"] = np.where(current_mask, 1.0, 0.0).astype(np.float32)
     cur_weight_full = np.zeros(len(work), dtype=np.float32)
     cur_weight_full[np.flatnonzero(current_mask.to_numpy(dtype=bool))] = current_weights.astype(np.float32)
@@ -1886,6 +2961,10 @@ def compute_regime_similarity_to_current(
                 "reason": "insufficient_historical_candidate_rows",
                 "current_rows": int(current_mask.sum()),
                 "historical_rows": int(historical_mask.sum()),
+                "historical_cutoff": str(historical_cutoff),
+                "embargo_days": float(config.embargo_days),
+                "label_end_source": label_end_source,
+                "label_overlap_excluded_rows": int(label_overlap_mask.sum()),
                 "columns": columns,
                 "column_selection": column_selection,
             },
@@ -1917,31 +2996,59 @@ def compute_regime_similarity_to_current(
     )
     drift_cols, drift_arr, drift_missing = _numeric_matrix(work, columns["drift"])
     drift_families = [_drift_family(col) for col in drift_cols]
+    historical_mask_arr = historical_mask.to_numpy(dtype=bool)
+    baseline_cov_norm = _baseline_covariance_norm(
+        cov_arr,
+        historical_mask_arr,
+        float(config.eps),
+    )
+    drift_arr, drift_normalization = _normalize_drift_values_by_family(
+        drift_arr,
+        drift_cols,
+        historical_mask_arr,
+        baseline_covariance_norm=baseline_cov_norm,
+        config=config,
+    )
     asset_return_cache = _build_asset_return_cache(
         work,
         return_col=resolved_asset_return_col,
         timestamp_col=timestamp_col,
         symbol_col=symbol_col,
+        max_assets=int(config.max_asset_covariance_assets),
+        max_time_rows=int(config.max_asset_covariance_time_rows),
+        min_observation_fraction=float(config.min_asset_observation_fraction),
+    )
+    current_fp_pos = _subsample_positions(
+        current_pos,
+        max_rows=int(config.max_fingerprint_rows_per_window),
+    )
+    current_fp_weights = _position_recency_weights(
+        timestamp_ns,
+        current_fp_pos,
+        current_end_ns=end_ns,
+        decay_per_week=float(config.recency_decay_per_week),
+        eps=float(config.eps),
     )
     current_market = _market_fingerprint_array(
         market_arr,
         market_missing,
         timestamp_ns,
-        current_pos,
-        current_weights,
+        current_fp_pos,
+        current_fp_weights,
     )
     current_feature_cov = _covariance_fingerprint_array(
         cov_arr,
-        current_pos,
-        weights=current_weights,
+        current_fp_pos,
+        weights=current_fp_weights,
         top_eigenvalues=int(config.top_eigenvalues),
         eps=float(config.eps),
     )
     current_asset_cov = _asset_covariance_fingerprint_from_cache(
         asset_return_cache,
-        current_pos,
-        current_weights,
+        current_fp_pos,
+        current_fp_weights,
         top_eigenvalues=int(config.top_eigenvalues),
+        shrinkage=float(config.asset_covariance_shrinkage),
         eps=float(config.eps),
     )
     current_cov = np.concatenate([current_feature_cov, current_asset_cov]).astype(np.float32)
@@ -1950,8 +3057,8 @@ def compute_regime_similarity_to_current(
         drift_missing,
         drift_families,
         timestamp_ns,
-        current_pos,
-        current_weights,
+        current_fp_pos,
+        current_fp_weights,
         eps=float(config.eps),
     )
     current_fingerprint = _concat_fingerprint(current_market, current_cov, current_drift)
@@ -1974,18 +3081,34 @@ def compute_regime_similarity_to_current(
         current_weights,
         k=int(config.knn_k),
         max_current_rows=int(config.max_knn_current_rows),
+        max_candidate_rows=int(config.max_knn_candidate_rows),
         max_historical_rows=int(config.max_knn_historical_rows),
+        fallback_chunk_pairs=int(config.knn_fallback_chunk_pairs),
         eps=float(config.eps),
     )
     window_rows: list[dict[str, Any]] = []
     fingerprints: list[np.ndarray] = []
+    market_fingerprints: list[np.ndarray] = []
+    covariance_fingerprints: list[np.ndarray] = []
+    drift_fingerprints: list[np.ndarray] = []
     for window_id in sorted(set(window_id_full[window_id_full >= 0])):
         pos = np.flatnonzero(window_id_full == int(window_id))
         if len(pos) < int(config.min_candidate_rows):
             continue
-        weights = _position_recency_weights(
+        weights_all = _position_recency_weights(
             timestamp_ns,
             pos,
+            current_end_ns=None,
+            decay_per_week=float(config.recency_decay_per_week),
+            eps=float(config.eps),
+        )
+        fp_pos = _subsample_positions(
+            pos,
+            max_rows=int(config.max_fingerprint_rows_per_window),
+        )
+        weights = _position_recency_weights(
+            timestamp_ns,
+            fp_pos,
             current_end_ns=None,
             decay_per_week=float(config.recency_decay_per_week),
             eps=float(config.eps),
@@ -1994,21 +3117,22 @@ def compute_regime_similarity_to_current(
             market_arr,
             market_missing,
             timestamp_ns,
-            pos,
+            fp_pos,
             weights,
         )
         feature_cov_fp = _covariance_fingerprint_array(
             cov_arr,
-            pos,
+            fp_pos,
             weights=weights,
             top_eigenvalues=int(config.top_eigenvalues),
             eps=float(config.eps),
         )
         asset_cov_fp = _asset_covariance_fingerprint_from_cache(
             asset_return_cache,
-            pos,
+            fp_pos,
             weights=weights,
             top_eigenvalues=int(config.top_eigenvalues),
+            shrinkage=float(config.asset_covariance_shrinkage),
             eps=float(config.eps),
         )
         cov_fp = np.concatenate([feature_cov_fp, asset_cov_fp]).astype(np.float32)
@@ -2017,23 +3141,32 @@ def compute_regime_similarity_to_current(
             drift_missing,
             drift_families,
             timestamp_ns,
-            pos,
+            fp_pos,
             weights,
             eps=float(config.eps),
         )
         knn_distance = knn_distance_map.get(int(window_id), float(knn_distance_fallback))
+        domain_similarity = 1.0
+        if feature_engineering_scores is not None and len(feature_engineering_scores) == len(work):
+            domain_similarity = _weighted_mean(
+                np.asarray(feature_engineering_scores, dtype=np.float64)[pos],
+                weights_all,
+            )
         row = {
             "window_id": int(window_id),
             "start": str(ts.iloc[pos].min()),
             "end": str(ts.iloc[pos].max()),
             "rows": int(len(pos)),
-            "d_regime": _euclidean(market_fp, current_market),
-            "d_cov": _euclidean(cov_fp, current_cov),
-            "d_drift": _euclidean(drift_fp, current_drift),
+            "fingerprint_rows": int(len(fp_pos)),
             "d_knn": float(knn_distance),
+            "domain_classifier_similarity": float(np.clip(domain_similarity, 0.0, 1.0)),
+            "d_domain_classifier": float(1.0 - np.clip(domain_similarity, 0.0, 1.0)),
         }
         window_rows.append(row)
         fingerprints.append(_concat_fingerprint(market_fp, cov_fp, drift_fp))
+        market_fingerprints.append(market_fp)
+        covariance_fingerprints.append(cov_fp)
+        drift_fingerprints.append(drift_fp)
 
     if not window_rows:
         out["regime_specialist_bucket"] = np.where(current_mask, "current", "normal")
@@ -2047,26 +3180,68 @@ def compute_regime_similarity_to_current(
                 "reason": "no_candidate_windows",
                 "current_rows": int(current_mask.sum()),
                 "historical_rows": int(historical_mask.sum()),
+                "historical_cutoff": str(historical_cutoff),
+                "embargo_days": float(config.embargo_days),
+                "label_end_source": label_end_source,
+                "label_overlap_excluded_rows": int(label_overlap_mask.sum()),
                 "columns": columns,
                 "column_selection": column_selection,
             },
         )
 
+    market_fp_matrix = np.vstack(market_fingerprints).astype(np.float32)
+    cov_fp_matrix = np.vstack(covariance_fingerprints).astype(np.float32)
+    drift_fp_matrix = np.vstack(drift_fingerprints).astype(np.float32)
+    d_regime = _scaled_euclidean_by_indices(
+        market_fp_matrix,
+        current_market,
+        np.arange(market_fp_matrix.shape[1]),
+        float(config.eps),
+    )
+    d_cov, cov_block_distances, cov_block_scaling = _covariance_block_distances(
+        cov_fp_matrix,
+        current_cov,
+        top_eigenvalues=int(config.top_eigenvalues),
+        config=config,
+    )
+    d_drift, drift_block_distances, drift_block_scaling = _drift_block_distances(
+        drift_fp_matrix,
+        current_drift,
+        config=config,
+    )
+    for i, row in enumerate(window_rows):
+        row["d_regime"] = float(d_regime[i])
+        row["d_cov"] = float(d_cov[i])
+        row["d_drift"] = float(d_drift[i])
+        for block_name, values in cov_block_distances.items():
+            row[f"d_cov_{block_name}"] = float(values[i])
+        for block_name, values in drift_block_distances.items():
+            row[f"d_drift_{block_name}"] = float(values[i])
+
     d_regime_norm, d_regime_scale = _normalise_distances_with_scale(
-        np.asarray([r["d_regime"] for r in window_rows]),
+        d_regime,
         float(config.eps),
     )
     d_cov_norm, d_cov_scale = _normalise_distances_with_scale(
-        np.asarray([r["d_cov"] for r in window_rows]),
+        d_cov,
         float(config.eps),
     )
     d_drift_norm, d_drift_scale = _normalise_distances_with_scale(
-        np.asarray([r["d_drift"] for r in window_rows]),
+        d_drift,
         float(config.eps),
     )
     d_knn_norm, d_knn_scale = _normalise_distances_with_scale(
         np.asarray([r["d_knn"] for r in window_rows]),
         float(config.eps),
+    )
+    d_domain_norm, d_domain_scale = _normalise_distances_with_scale(
+        np.asarray([r["d_domain_classifier"] for r in window_rows]),
+        float(config.eps),
+    )
+    effective_domain_classifier_weight = (
+        float(config.domain_classifier_weight)
+        if feature_engineering_scores is not None
+        else 0.0
     )
     fp_matrix = np.vstack(fingerprints).astype(np.float32)
     ae_used = bool(config.ae_enabled) and len(window_rows) >= int(config.ae_min_windows)
@@ -2083,6 +3258,7 @@ def compute_regime_similarity_to_current(
         + float(config.covariance_weight) * d_cov_norm
         + float(config.regime_weight) * d_regime_norm
         + float(config.knn_weight) * d_knn_norm
+        + effective_domain_classifier_weight * d_domain_norm
     )
     tau = (
         float(config.tau)
@@ -2093,7 +3269,17 @@ def compute_regime_similarity_to_current(
     base_similarity = np.exp(
         -np.power(np.maximum(composite_distance, 0.0) / tau, float(config.alpha))
     )
-    analogue_quality = np.clip(base_similarity + float(config.ae_weight) * sim_ae, 0.0, 1.0)
+    ae_weight = float(np.clip(config.ae_weight, 0.0, 1.0))
+    if ae_used and ae_weight > 0.0:
+        analogue_quality = np.clip(
+            (1.0 - ae_weight) * base_similarity + ae_weight * sim_ae,
+            0.0,
+            1.0,
+        )
+        ae_blend_mode = "convex_blend"
+    else:
+        analogue_quality = np.clip(base_similarity, 0.0, 1.0)
+        ae_blend_mode = "disabled_or_unavailable"
     window_similarity_map: dict[int, float] = {}
     for i, row in enumerate(window_rows):
         row.update(
@@ -2102,6 +3288,7 @@ def compute_regime_similarity_to_current(
                 "d_cov_norm": float(d_cov_norm[i]),
                 "d_drift_norm": float(d_drift_norm[i]),
                 "d_knn_norm": float(d_knn_norm[i]),
+                "d_domain_classifier_norm": float(d_domain_norm[i]),
                 "sim_ae": float(sim_ae[i]),
                 "composite_distance": float(composite_distance[i]),
                 "analogue_quality": float(analogue_quality[i]),
@@ -2128,12 +3315,19 @@ def compute_regime_similarity_to_current(
         timestamp_ns=timestamp_ns,
         config=config,
     )
-    out.loc[day_similarity.index, "day_similarity"] = day_similarity.to_numpy(dtype=np.float32)
+    day_available = day_similarity.notna()
+    current_mask_work = current_mask.reindex(day_similarity.index).fillna(False)
+    day_output = day_similarity.copy()
+    day_output.loc[current_mask_work] = 1.0
+    day_available_output = day_available | current_mask_work
+    out.loc[day_similarity.index, "day_similarity_available"] = day_available_output.to_numpy(dtype=bool)
+    out.loc[day_similarity.index, "day_similarity"] = day_output.fillna(0.0).to_numpy(dtype=np.float32)
     hist_idx = historical_mask.to_numpy(dtype=bool)
     day_strength = float(np.clip(config.day_similarity_strength, 0.0, 1.0))
+    day_for_multiplier = day_similarity.reindex(out.index).fillna(1.0).to_numpy(dtype=np.float32)
     day_multiplier = (
         (1.0 - day_strength)
-        + day_strength * out["day_similarity"].to_numpy(dtype=np.float32)
+        + day_strength * day_for_multiplier
     ).astype(np.float32)
     row_similarity = (
         out["window_similarity"].to_numpy(dtype=np.float32)
@@ -2153,9 +3347,18 @@ def compute_regime_similarity_to_current(
         "enabled": True,
         "current_start": str(current_start),
         "current_end": str(end),
+        "historical_cutoff": str(historical_cutoff),
+        "embargo_days": float(config.embargo_days),
+        "label_end_source": label_end_source,
+        "label_overlap_excluded_rows": int(label_overlap_mask.sum()),
         "current_rows": int(current_mask.sum()),
+        "current_fingerprint_rows": int(len(current_fp_pos)),
         "historical_rows": int(historical_mask.sum()),
         "candidate_window_count": int(len(window_rows)),
+        "fingerprint_limits": {
+            "max_rows_per_window": int(config.max_fingerprint_rows_per_window),
+            "max_day_rows": int(config.max_day_fingerprint_rows),
+        },
         "columns": columns,
         "column_selection": column_selection,
         "scaling": {
@@ -2165,12 +3368,19 @@ def compute_regime_similarity_to_current(
             "covariance_columns_scaled": int(len(cov_cols)),
             "knn_columns_scaled": int(len(knn_scaler)),
         },
+        "feature_engineering": feature_engineering_diag,
+        "unsupervised_regime_learning": unsupervised_regime_diag,
+        "drift_normalization": drift_normalization,
         "asset_covariance": {
             "enabled": bool(asset_return_cache.enabled),
             "return_col": asset_return_cache.return_col,
             "feature_count": int(len(current_asset_cov)),
             "time_rows": int(len(asset_return_cache.time_ns)),
             "asset_count": int(asset_return_cache.matrix.shape[1]) if asset_return_cache.matrix.ndim == 2 else 0,
+            "max_assets": int(config.max_asset_covariance_assets),
+            "max_time_rows": int(config.max_asset_covariance_time_rows),
+            "min_observation_fraction": float(config.min_asset_observation_fraction),
+            "shrinkage": float(config.asset_covariance_shrinkage),
         },
         "knn": knn_diagnostics,
         "autoencoder": {
@@ -2178,26 +3388,37 @@ def compute_regime_similarity_to_current(
             "used": bool(ae_used),
             "reason": ae_reason,
             "min_windows": int(config.ae_min_windows),
+            "max_windows": int(config.ae_max_windows),
+            "blend_mode": ae_blend_mode,
         },
         "day_similarity": {
             "strength": day_strength,
             "min_rows": int(config.day_similarity_min_rows),
+            "available_rows": int(day_available_output.sum()),
+            "unavailable_policy": "neutral_multiplier_output_zero",
         },
         "weights": {
             "feature_drift_distance": float(config.drift_weight),
             "covariance_distance": float(config.covariance_weight),
             "regime_state_distance": float(config.regime_weight),
             "knn_distance": float(config.knn_weight),
+            "domain_classifier_distance": float(effective_domain_classifier_weight),
+            "domain_classifier_distance_configured": float(config.domain_classifier_weight),
             "ae_similarity": float(config.ae_weight),
         },
         "block_scaling": {
             "combined_from_normalized_distances": True,
+            "internal_distance_scaling": "component_robust_scale_within_weighted_blocks",
             "regime_distance_median": float(d_regime_scale),
             "covariance_distance_median": float(d_cov_scale),
             "drift_distance_median": float(d_drift_scale),
             "knn_distance_median": float(d_knn_scale),
+            "domain_classifier_distance_median": float(d_domain_scale),
+            "covariance_subblocks": cov_block_scaling,
+            "drift_subblocks": drift_block_scaling,
             "tau": float(tau),
             "alpha": float(config.alpha),
+            "threshold_calibration": "relative_candidate_distribution",
         },
         "window_diagnostics": window_rows[: max(0, int(config.max_window_diagnostics))],
         "window_diagnostics_count": int(len(window_rows)),
@@ -2211,6 +3432,7 @@ def compute_regime_similarity_to_current(
             {
                 "window_similarity": np.float32,
                 "day_similarity": np.float32,
+                "day_similarity_available": bool,
                 "similarity_to_current": np.float32,
                 "current_regime_recency_weight": np.float32,
             },
@@ -2240,7 +3462,7 @@ def _compute_day_similarity(
     timestamp_ns: np.ndarray,
     config: RegimeSimilarityConfig,
 ) -> pd.Series:
-    out = pd.Series(1.0, index=work.index, dtype=np.float32)
+    out = pd.Series(np.nan, index=work.index, dtype=np.float32)
     hist_ts = ts.loc[historical_mask]
     if hist_ts.empty:
         return out
@@ -2251,15 +3473,22 @@ def _compute_day_similarity(
         anchor=anchor,
         window_days=float(config.day_window_days),
     )
-    rows = []
     ids = []
+    day_positions: list[np.ndarray] = []
+    market_fingerprints: list[np.ndarray] = []
+    covariance_fingerprints: list[np.ndarray] = []
+    drift_fingerprints: list[np.ndarray] = []
     for day_id in sorted(set(day_ids[day_ids >= 0])):
         pos = np.flatnonzero(day_ids == int(day_id))
         if len(pos) < int(config.day_similarity_min_rows):
             continue
+        fp_pos = _subsample_positions(
+            pos,
+            max_rows=int(config.max_day_fingerprint_rows),
+        )
         weights = _position_recency_weights(
             timestamp_ns,
-            pos,
+            fp_pos,
             current_end_ns=None,
             decay_per_week=float(config.recency_decay_per_week),
             eps=float(config.eps),
@@ -2268,21 +3497,22 @@ def _compute_day_similarity(
             market_arr,
             market_missing,
             timestamp_ns,
-            pos,
+            fp_pos,
             weights,
         )
         feature_cov_fp = _covariance_fingerprint_array(
             cov_arr,
-            pos,
+            fp_pos,
             weights=weights,
             top_eigenvalues=int(config.top_eigenvalues),
             eps=float(config.eps),
         )
         asset_cov_fp = _asset_covariance_fingerprint_from_cache(
             asset_return_cache,
-            pos,
+            fp_pos,
             weights=weights,
             top_eigenvalues=int(config.top_eigenvalues),
+            shrinkage=float(config.asset_covariance_shrinkage),
             eps=float(config.eps),
         )
         cov_fp = np.concatenate([feature_cov_fp, asset_cov_fp]).astype(np.float32)
@@ -2291,33 +3521,50 @@ def _compute_day_similarity(
             drift_missing,
             drift_families,
             timestamp_ns,
-            pos,
+            fp_pos,
             weights,
             eps=float(config.eps),
         )
-        rows.append(
-            [
-                _euclidean(market_fp, current_market),
-                _euclidean(cov_fp, current_cov),
-                _euclidean(drift_fp, current_drift),
-            ]
-        )
+        market_fingerprints.append(market_fp)
+        covariance_fingerprints.append(cov_fp)
+        drift_fingerprints.append(drift_fp)
         ids.append(int(day_id))
-    if not rows:
+        day_positions.append(pos)
+    if not ids:
         return out
-    arr = np.asarray(rows, dtype=np.float64)
-    regime_n = _normalise_distances(arr[:, 0], float(config.eps))
-    cov_n = _normalise_distances(arr[:, 1], float(config.eps))
-    drift_n = _normalise_distances(arr[:, 2], float(config.eps))
+    market_fp_matrix = np.vstack(market_fingerprints).astype(np.float32)
+    cov_fp_matrix = np.vstack(covariance_fingerprints).astype(np.float32)
+    drift_fp_matrix = np.vstack(drift_fingerprints).astype(np.float32)
+    regime_d = _scaled_euclidean_by_indices(
+        market_fp_matrix,
+        current_market,
+        np.arange(market_fp_matrix.shape[1]),
+        float(config.eps),
+    )
+    cov_d, _cov_blocks, _cov_diag = _covariance_block_distances(
+        cov_fp_matrix,
+        current_cov,
+        top_eigenvalues=int(config.top_eigenvalues),
+        config=config,
+    )
+    drift_d, _drift_blocks, _drift_diag = _drift_block_distances(
+        drift_fp_matrix,
+        current_drift,
+        config=config,
+    )
+    regime_n = _normalise_distances(regime_d, float(config.eps))
+    cov_n = _normalise_distances(cov_d, float(config.eps))
+    drift_n = _normalise_distances(drift_d, float(config.eps))
     d = (
         float(config.drift_weight) * drift_n
         + float(config.covariance_weight) * cov_n
         + float(config.regime_weight) * regime_n
     )
     sim = np.exp(-np.power(np.maximum(d, 0.0), float(config.alpha)))
-    sim_by_day = {day_id: float(np.clip(value, 0.0, 1.0)) for day_id, value in zip(ids, sim)}
-    for day_id, value in sim_by_day.items():
-        out.iloc[np.flatnonzero(day_ids == int(day_id))] = float(value)
+    out_values = out.to_numpy(dtype=np.float32, copy=True)
+    for pos, value in zip(day_positions, sim):
+        out_values[pos] = float(np.clip(value, 0.0, 1.0))
+    out = pd.Series(out_values, index=work.index, dtype=np.float32)
     return out.astype(np.float32, copy=False)
 
 
@@ -2327,24 +3574,69 @@ def _saturating_reliability(effective_count: float, tau: float) -> float:
     return 1.0 - math.exp(-effective_count / tau)
 
 
+def _less_interesting_mass_bounds(
+    config: SpecialistWeightConfig,
+) -> tuple[float, float]:
+    lo = float(np.clip(config.less_interesting_min_mass, 0.0, 1.0))
+    hi = float(np.clip(config.less_interesting_max_mass, 0.0, 1.0))
+    if hi < lo:
+        lo, hi = hi, lo
+    return lo, hi
+
+
+def _less_interesting_mass_cap(
+    config: SpecialistWeightConfig,
+    adaptive_n_eff_reliability: float,
+    replay_n_eff_reliability: float,
+) -> float:
+    lo, hi = _less_interesting_mass_bounds(config)
+    adaptive_rel = float(np.clip(adaptive_n_eff_reliability, 0.0, 1.0))
+    replay_rel = float(np.clip(replay_n_eff_reliability, 0.0, 1.0))
+    replay_need = 1.0 - adaptive_rel
+    cap = lo + (hi - lo) * replay_need * replay_rel
+    max_replay_from_adaptive_floor = 1.0 - float(
+        np.clip(config.min_current_plus_analogue_mass, 0.0, 1.0),
+    )
+    upper = max(0.0, min(hi, max_replay_from_adaptive_floor))
+    if upper < lo:
+        return float(upper)
+    return float(np.clip(cap, lo, upper))
+
+
+def _normalize_bucket_mass(mass: Dict[str, float], eps: float) -> Dict[str, float]:
+    total = float(sum(mass.values()))
+    if total > eps:
+        return {k: float(v) / total for k, v in mass.items()}
+    return {k: float(v) for k, v in mass.items()}
+
+
 def _cap_bucket_masses(
     bucket_mass: Dict[str, float],
     config: SpecialistWeightConfig,
-) -> Dict[str, float]:
+    *,
+    adaptive_n_eff: float,
+    replay_n_eff: float,
+    adaptive_n_eff_reliability: float,
+    replay_n_eff_reliability: float,
+) -> tuple[Dict[str, float], Dict[str, float | bool | str]]:
     mass = dict(bucket_mass)
-    if mass["irrelevant"] > config.max_irrelevant_mass:
-        excess = mass["irrelevant"] - config.max_irrelevant_mass
-        mass["irrelevant"] = config.max_irrelevant_mass
-        mass["normal"] += excess
-    if mass["normal"] > config.max_normal_mass:
-        excess = mass["normal"] - config.max_normal_mass
-        mass["normal"] = config.max_normal_mass
-        adaptive_total = mass["current"] + mass["analogue"]
-        if adaptive_total > config.eps:
-            mass["current"] += excess * mass["current"] / adaptive_total
-            mass["analogue"] += excess * mass["analogue"] / adaptive_total
-        else:
-            mass["normal"] += excess
+    replay_need = 1.0 - float(np.clip(adaptive_n_eff_reliability, 0.0, 1.0))
+    cap_diag: dict[str, float | bool | str] = {
+        "bucket_mass_caps_enforced": False,
+        "bucket_mass_cap_reason": "no_current_or_analogue_rows",
+        "bucket_mass_basis": "n_eff_reliability",
+        "less_interesting_mass_before_caps": float(
+            mass.get("normal", 0.0) + mass.get("irrelevant", 0.0)
+        ),
+        "less_interesting_mass_cap": float(config.less_interesting_max_mass),
+        "less_interesting_mass_min": float(config.less_interesting_min_mass),
+        "less_interesting_mass_max": float(config.less_interesting_max_mass),
+        "adaptive_n_eff": float(adaptive_n_eff),
+        "replay_n_eff": float(replay_n_eff),
+        "adaptive_n_eff_reliability": float(adaptive_n_eff_reliability),
+        "replay_n_eff_reliability": float(replay_n_eff_reliability),
+        "replay_need": float(replay_need),
+    }
     adaptive_total = mass["current"] + mass["analogue"]
     if adaptive_total > config.eps and adaptive_total < config.min_current_plus_analogue_mass:
         needed = config.min_current_plus_analogue_mass - adaptive_total
@@ -2357,10 +3649,119 @@ def _cap_bucket_masses(
             mass["irrelevant"] -= irrelevant_take
             mass["current"] += transfer * mass["current"] / adaptive_total
             mass["analogue"] += transfer * mass["analogue"] / adaptive_total
-    total = sum(mass.values())
-    if total > config.eps:
-        mass = {k: v / total for k, v in mass.items()}
-    return mass
+    mass = _normalize_bucket_mass(mass, float(config.eps))
+    adaptive_total = float(mass["current"] + mass["analogue"])
+    less_total = float(mass["normal"] + mass["irrelevant"])
+    cap_diag["bucket_mass_caps_enforced"] = bool(adaptive_total > config.eps)
+    if adaptive_total > config.eps:
+        cap_diag["bucket_mass_cap_reason"] = "ok"
+        less_min, less_max = _less_interesting_mass_bounds(config)
+        less_cap = _less_interesting_mass_cap(
+            config,
+            adaptive_n_eff_reliability,
+            replay_n_eff_reliability,
+        )
+        cap_diag["less_interesting_mass_cap"] = float(less_cap)
+        cap_diag["less_interesting_mass_min"] = float(less_min)
+        cap_diag["less_interesting_mass_max"] = float(less_max)
+        if less_total > less_cap + config.eps:
+            excess = less_total - less_cap
+            if less_total > config.eps:
+                mass["normal"] -= excess * mass["normal"] / less_total
+                mass["irrelevant"] -= excess * mass["irrelevant"] / less_total
+            adaptive_total = mass["current"] + mass["analogue"]
+            mass["current"] += excess * mass["current"] / max(adaptive_total, config.eps)
+            mass["analogue"] += excess * mass["analogue"] / max(adaptive_total, config.eps)
+        elif less_total > config.eps and less_total < less_min - config.eps:
+            transfer = min(less_min - less_total, adaptive_total)
+            adaptive_total = mass["current"] + mass["analogue"]
+            if transfer > 0.0 and adaptive_total > config.eps:
+                mass["current"] -= transfer * mass["current"] / adaptive_total
+                mass["analogue"] -= transfer * mass["analogue"] / adaptive_total
+                less_total = mass["normal"] + mass["irrelevant"]
+                if less_total > config.eps:
+                    mass["normal"] += transfer * mass["normal"] / less_total
+                    mass["irrelevant"] += transfer * mass["irrelevant"] / less_total
+                else:
+                    normal_share = float(config.normal_prior) / max(
+                        float(config.normal_prior + config.irrelevant_prior),
+                        config.eps,
+                    )
+                    mass["normal"] += transfer * normal_share
+                    mass["irrelevant"] += transfer * (1.0 - normal_share)
+    mass = _normalize_bucket_mass(mass, float(config.eps))
+    cap_diag["less_interesting_mass_after_caps"] = float(mass["normal"] + mass["irrelevant"])
+    return mass, cap_diag
+
+
+def _normalize_with_bounds(
+    values: np.ndarray,
+    *,
+    lower: float,
+    upper: float,
+    target_mean: float = 1.0,
+    eps: float = 1e-12,
+) -> np.ndarray:
+    w = np.nan_to_num(np.asarray(values, dtype=np.float64), nan=target_mean, posinf=upper, neginf=lower)
+    if w.size == 0:
+        return w.astype(np.float32)
+    lo = float(min(lower, upper))
+    hi = float(max(lower, upper))
+    if not np.isfinite(lo) or not np.isfinite(hi) or lo <= 0.0 or hi < lo:
+        lo, hi = 0.05, 20.0
+    target_sum = float(target_mean) * float(len(w))
+    w = np.clip(w, lo, hi)
+    free = np.ones(len(w), dtype=bool)
+    for _ in range(20):
+        fixed_sum = float(np.sum(w[~free]))
+        free_sum = float(np.sum(w[free]))
+        if free_sum <= eps or not bool(free.any()):
+            break
+        scale = (target_sum - fixed_sum) / max(free_sum, eps)
+        w[free] *= scale
+        below = free & (w < lo)
+        above = free & (w > hi)
+        if not bool(below.any()) and not bool(above.any()):
+            break
+        w[below] = lo
+        w[above] = hi
+        free[below | above] = False
+    return np.clip(w, lo, hi).astype(np.float32)
+
+
+def _normalize_group_sum_with_bounds(
+    values: np.ndarray,
+    *,
+    target_sum: float,
+    lower: float,
+    upper: float,
+    eps: float = 1e-12,
+) -> np.ndarray:
+    w = np.nan_to_num(np.asarray(values, dtype=np.float64), nan=0.0, posinf=upper, neginf=lower)
+    if w.size == 0:
+        return w.astype(np.float32)
+    lo = float(min(lower, upper))
+    hi = float(max(lower, upper))
+    if not np.isfinite(lo) or not np.isfinite(hi) or lo <= 0.0 or hi < lo:
+        lo, hi = 0.05, 20.0
+    target = float(np.clip(target_sum, lo * len(w), hi * len(w)))
+    w = np.clip(w, lo, hi)
+    free = np.ones(len(w), dtype=bool)
+    for _ in range(20):
+        fixed_sum = float(np.sum(w[~free]))
+        free_sum = float(np.sum(w[free]))
+        if free_sum <= eps or not bool(free.any()):
+            break
+        scale = (target - fixed_sum) / max(free_sum, eps)
+        w[free] *= scale
+        below = free & (w < lo)
+        above = free & (w > hi)
+        if not bool(below.any()) and not bool(above.any()):
+            break
+        w[below] = lo
+        w[above] = hi
+        free[below | above] = False
+    return np.clip(w, lo, hi).astype(np.float32)
 
 
 def compute_specialist_sample_weights(
@@ -2369,7 +3770,7 @@ def compute_specialist_sample_weights(
     similarity_col: str = "similarity_to_current",
     recency_col: Optional[str] = None,
     config: SpecialistWeightConfig = SpecialistWeightConfig(),
-) -> Tuple[pd.Series, Dict[str, float]]:
+) -> Tuple[pd.Series, Dict[str, Any]]:
     allowed = {"current", "analogue", "normal", "irrelevant", "future_excluded"}
     buckets = df[bucket_col].astype(str).str.lower()
     bad = set(buckets.unique()) - allowed
@@ -2386,6 +3787,12 @@ def compute_specialist_sample_weights(
             "analogue_mass": 0.0,
             "normal_mass": 0.0,
             "irrelevant_mass": 0.0,
+            "less_interesting_mass": 0.0,
+            "less_interesting_mass_cap": float(config.less_interesting_max_mass),
+            "less_interesting_mass_min": float(config.less_interesting_min_mass),
+            "less_interesting_mass_max": float(config.less_interesting_max_mass),
+            "min_current_plus_analogue_mass": float(config.min_current_plus_analogue_mass),
+            "actual_less_interesting_weight_mass": 0.0,
             "future_excluded_rows": int(excluded.sum()),
         }
     sim = df[similarity_col].astype(float).clip(0.0, 1.0)
@@ -2393,19 +3800,34 @@ def compute_specialist_sample_weights(
         recency = pd.Series(1.0, index=df.index)
     else:
         recency = df[recency_col].astype(float).clip(lower=0.0)
+    recency_power = float(config.recency_power)
+    if not np.isfinite(recency_power):
+        recency_power = 0.5
+    recency_factor = recency.pow(max(recency_power, 0.0))
     masks = {
         "current": buckets == "current",
         "analogue": buckets == "analogue",
         "normal": buckets == "normal",
         "irrelevant": buckets == "irrelevant",
     }
+    replay_mask = masks["normal"] | masks["irrelevant"]
     row_score = pd.Series(0.0, index=df.index)
-    row_score.loc[masks["current"]] = sim.loc[masks["current"]].pow(config.current_gamma) * recency.loc[masks["current"]]
-    row_score.loc[masks["analogue"]] = sim.loc[masks["analogue"]].pow(config.analogue_gamma) * recency.loc[masks["analogue"]]
-    row_score.loc[masks["normal"]] = sim.loc[masks["normal"]].pow(config.normal_gamma) * recency.loc[masks["normal"]]
-    row_score.loc[masks["irrelevant"]] = sim.loc[masks["irrelevant"]].pow(config.irrelevant_gamma) * recency.loc[masks["irrelevant"]]
+    row_score.loc[masks["current"]] = (
+        sim.loc[masks["current"]].pow(config.current_gamma)
+        * recency_factor.loc[masks["current"]]
+    )
+    row_score.loc[masks["analogue"]] = (
+        sim.loc[masks["analogue"]].pow(config.analogue_gamma)
+        * recency_factor.loc[masks["analogue"]]
+    )
+    row_score.loc[replay_mask] = (
+        sim.loc[replay_mask].pow(config.replay_gamma)
+        * recency_factor.loc[replay_mask]
+    )
     row_score = row_score.clip(lower=config.eps)
     eff = {name: float(row_score.loc[mask].sum()) for name, mask in masks.items()}
+    adaptive_n_eff = float(eff["current"] + eff["analogue"])
+    replay_n_eff = float(eff["normal"] + eff["irrelevant"])
     reliability = {
         "current": _saturating_reliability(eff["current"], config.tau_current),
         "analogue": _saturating_reliability(eff["analogue"], config.tau_analogue),
@@ -2413,20 +3835,34 @@ def compute_specialist_sample_weights(
         "irrelevant": _saturating_reliability(eff["irrelevant"], config.tau_irrelevant),
     }
     adaptive_reliability = 1.0 - (1.0 - reliability["current"]) * (1.0 - reliability["analogue"])
-    replay_strength = config.replay_min + (config.replay_max - config.replay_min) * (1.0 - adaptive_reliability)
-    adaptive_strength = 1.0 - replay_strength
+    adaptive_tau = min(float(config.tau_current), float(config.tau_analogue))
+    replay_tau = min(float(config.tau_normal), float(config.tau_irrelevant))
+    adaptive_n_eff_reliability = _saturating_reliability(adaptive_n_eff, adaptive_tau)
+    replay_n_eff_reliability = _saturating_reliability(replay_n_eff, replay_tau)
+    replay_score = (
+        replay_n_eff_reliability
+        if bool(replay_mask.any())
+        else 0.0
+    )
     bucket_score = {
-        "current": config.current_prior * adaptive_strength * reliability["current"],
-        "analogue": config.analogue_prior * adaptive_strength * reliability["analogue"],
-        "normal": config.normal_prior * replay_strength * reliability["normal"],
-        "irrelevant": config.irrelevant_prior * replay_strength * reliability["irrelevant"],
+        "current": config.current_prior * reliability["current"],
+        "analogue": config.analogue_prior * reliability["analogue"],
+        "normal": 0.0,
+        "irrelevant": 0.0,
     }
-    for name, mask in masks.items():
+    replay_normal_share = eff["normal"] / max(replay_n_eff, config.eps)
+    bucket_score["normal"] = replay_score * replay_normal_share
+    bucket_score["irrelevant"] = replay_score * (1.0 - replay_normal_share)
+    for name, mask in {"current": masks["current"], "analogue": masks["analogue"]}.items():
         if not bool(mask.any()):
             bucket_score[name] = 0.0
+    if not bool(replay_mask.any()):
+        bucket_score["normal"] = 0.0
+        bucket_score["irrelevant"] = 0.0
     total_score = sum(bucket_score.values())
     if total_score <= config.eps:
         weights = pd.Series(1.0, index=df.index, name="sample_weight")
+        less_min, less_max = _less_interesting_mass_bounds(config)
         diagnostics = {
             "adaptive_reliability": 0.0,
             "should_train_specialist": False,
@@ -2434,24 +3870,98 @@ def compute_specialist_sample_weights(
             "analogue_mass": 0.0,
             "normal_mass": 0.0,
             "irrelevant_mass": 0.0,
+            "less_interesting_mass": 0.0,
+            "less_interesting_mass_cap": float(less_max),
+            "less_interesting_mass_min": float(less_min),
+            "less_interesting_mass_max": float(less_max),
+            "min_current_plus_analogue_mass": float(config.min_current_plus_analogue_mass),
         }
         return weights, diagnostics
     bucket_mass = {k: v / total_score for k, v in bucket_score.items()}
-    bucket_mass = _cap_bucket_masses(bucket_mass, config)
-    raw_weight = pd.Series(0.0, index=df.index)
-    for bucket_name, mask in masks.items():
-        if not bool(mask.any()):
-            continue
-        score_sum = float(row_score.loc[mask].sum())
-        raw_weight.loc[mask] = bucket_mass[bucket_name] * row_score.loc[mask] / max(score_sum, config.eps)
-    weights = raw_weight * int(active.sum())
-    weights.loc[active] = weights.loc[active].clip(config.min_weight, config.max_weight)
-    weights.loc[excluded] = 0.0
-    weights.loc[active] = weights.loc[active] / max(
-        float(weights.loc[active].mean()),
-        config.eps,
+    adaptive_mass_before_caps = float(bucket_mass.get("current", 0.0) + bucket_mass.get("analogue", 0.0))
+    bucket_mass, cap_diag = _cap_bucket_masses(
+        bucket_mass,
+        config,
+        adaptive_n_eff=adaptive_n_eff,
+        replay_n_eff=replay_n_eff,
+        adaptive_n_eff_reliability=adaptive_n_eff_reliability,
+        replay_n_eff_reliability=replay_n_eff_reliability,
     )
+    raw_weight = pd.Series(0.0, index=df.index)
+    for bucket_name in ("current", "analogue"):
+        mask = masks[bucket_name]
+        if bool(mask.any()):
+            score_sum = float(row_score.loc[mask].sum())
+            raw_weight.loc[mask] = bucket_mass[bucket_name] * row_score.loc[mask] / max(score_sum, config.eps)
+    if bool(replay_mask.any()):
+        replay_mass = float(bucket_mass["normal"] + bucket_mass["irrelevant"])
+        replay_score_sum = float(row_score.loc[replay_mask].sum())
+        raw_weight.loc[replay_mask] = replay_mass * row_score.loc[replay_mask] / max(replay_score_sum, config.eps)
+    weights = raw_weight * int(active.sum())
+    weights.loc[active] = _normalize_with_bounds(
+        weights.loc[active].to_numpy(dtype=np.float64),
+        lower=float(config.min_weight),
+        upper=float(config.max_weight),
+        target_mean=1.0,
+        eps=float(config.eps),
+    )
+    less_interesting_active = active & (masks["normal"] | masks["irrelevant"])
+    adaptive_active = active & (masks["current"] | masks["analogue"])
+    less_cap = float(cap_diag.get("less_interesting_mass_cap", config.less_interesting_max_mass))
+    if bool(less_interesting_active.any()) and bool(adaptive_active.any()):
+        target_total = float(int(active.sum()))
+        current_less_sum = float(np.nansum(weights.loc[less_interesting_active].to_numpy(dtype=np.float64)))
+        current_total = float(np.nansum(weights.loc[active].to_numpy(dtype=np.float64)))
+        current_less_mass = current_less_sum / max(current_total, config.eps)
+        if current_less_mass > less_cap + config.eps:
+            target_less_sum = float(less_cap * target_total)
+            target_less_sum = float(
+                np.clip(
+                    target_less_sum,
+                    float(config.min_weight) * int(less_interesting_active.sum()),
+                    float(config.max_weight) * int(less_interesting_active.sum()),
+                )
+            )
+            target_adaptive_sum = target_total - target_less_sum
+            target_adaptive_sum = float(
+                np.clip(
+                    target_adaptive_sum,
+                    float(config.min_weight) * int(adaptive_active.sum()),
+                    float(config.max_weight) * int(adaptive_active.sum()),
+                )
+            )
+            target_less_sum = target_total - target_adaptive_sum
+            weights.loc[less_interesting_active] = _normalize_group_sum_with_bounds(
+                weights.loc[less_interesting_active].to_numpy(dtype=np.float64),
+                target_sum=target_less_sum,
+                lower=float(config.min_weight),
+                upper=float(config.max_weight),
+                eps=float(config.eps),
+            )
+            weights.loc[adaptive_active] = _normalize_group_sum_with_bounds(
+                weights.loc[adaptive_active].to_numpy(dtype=np.float64),
+                target_sum=target_adaptive_sum,
+                lower=float(config.min_weight),
+                upper=float(config.max_weight),
+                eps=float(config.eps),
+            )
+    weights.loc[excluded] = 0.0
     weights = weights.rename("sample_weight")
+    active_weights = weights.loc[active].to_numpy(dtype=np.float64)
+    active_weight_total = float(np.nansum(active_weights))
+    actual_bucket_mass: dict[str, float] = {}
+    if active_weight_total > config.eps:
+        for name, mask in masks.items():
+            actual_bucket_mass[name] = float(
+                np.nansum(weights.loc[mask & active].to_numpy(dtype=np.float64))
+                / active_weight_total
+            )
+    else:
+        actual_bucket_mass = {name: 0.0 for name in masks}
+    actual_less_interesting_mass = float(
+        actual_bucket_mass.get("normal", 0.0)
+        + actual_bucket_mass.get("irrelevant", 0.0)
+    )
     diagnostics = {
         "adaptive_reliability": adaptive_reliability,
         "should_train_specialist": adaptive_reliability >= config.min_adaptive_reliability_to_train,
@@ -2459,12 +3969,33 @@ def compute_specialist_sample_weights(
         "analogue_mass": bucket_mass["analogue"],
         "normal_mass": bucket_mass["normal"],
         "irrelevant_mass": bucket_mass["irrelevant"],
+        "less_interesting_mass": float(bucket_mass["normal"] + bucket_mass["irrelevant"]),
+        "min_current_plus_analogue_mass": float(config.min_current_plus_analogue_mass),
+        "actual_current_weight_mass": actual_bucket_mass.get("current", 0.0),
+        "actual_analogue_weight_mass": actual_bucket_mass.get("analogue", 0.0),
+        "actual_normal_weight_mass": actual_bucket_mass.get("normal", 0.0),
+        "actual_irrelevant_weight_mass": actual_bucket_mass.get("irrelevant", 0.0),
+        "actual_less_interesting_weight_mass": actual_less_interesting_mass,
+        "actual_less_interesting_weight_cap_ok": bool(
+            actual_less_interesting_mass
+            <= float(cap_diag.get("less_interesting_mass_cap", config.less_interesting_max_mass))
+            + 1e-9
+        ),
         "effective_current": eff["current"],
         "effective_analogue": eff["analogue"],
         "effective_normal": eff["normal"],
         "effective_irrelevant": eff["irrelevant"],
+        "recency_power": float(max(recency_power, 0.0)),
         "future_excluded_rows": int(excluded.sum()),
+        "bucket_mass_caps_enforced": bool(cap_diag.get("bucket_mass_caps_enforced", False)),
+        "bucket_mass_cap_reason": str(cap_diag.get("bucket_mass_cap_reason", "")),
+        "adaptive_mass_before_caps": adaptive_mass_before_caps,
+        "weight_min": float(np.nanmin(active_weights)) if active_weights.size else 0.0,
+        "weight_mean": float(np.nanmean(active_weights)) if active_weights.size else 0.0,
+        "weight_max": float(np.nanmax(active_weights)) if active_weights.size else 0.0,
+        "weight_bounds": [float(config.min_weight), float(config.max_weight)],
     }
+    diagnostics.update(cap_diag)
     return weights.astype(np.float32), diagnostics
 
 
@@ -2484,6 +4015,8 @@ def build_regime_specialist_training_frame(
     knn_columns: Sequence[str] | None = None,
     asset_return_col: str | None = None,
     include_input_columns: bool = True,
+    assessment_frame: pd.DataFrame | None = None,
+    unsupervised_regime_artifact: Any | None = None,
 ) -> tuple[pd.DataFrame, Dict[str, Any]]:
     similarity, sim_diag = compute_regime_similarity_to_current(
         frame,
@@ -2497,8 +4030,19 @@ def build_regime_specialist_training_frame(
         covariance_columns=covariance_columns,
         knn_columns=knn_columns,
         asset_return_col=asset_return_col,
+        assessment_frame=assessment_frame,
+        unsupervised_regime_artifact=unsupervised_regime_artifact,
     )
     out = frame.copy(deep=False) if bool(include_input_columns) else pd.DataFrame(index=frame.index)
+    if unsupervised_regime_artifact is not None:
+        try:
+            from .unsupervised_regime_learning.regime_models import (
+                regime_artifact_assessment_summary,
+            )
+
+            _regime_diag = regime_artifact_assessment_summary(unsupervised_regime_artifact)
+        except Exception:
+            pass
     for col in similarity.columns:
         out[col] = similarity[col].reindex(out.index)
     drift_cols = list(

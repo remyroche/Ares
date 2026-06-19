@@ -9,6 +9,7 @@ from extreme_price_movements.inference.feature_generator import (
 from extreme_price_movements.inference.feature_parity import FeatureParityError
 from extreme_price_movements.inference.model_orchestrator import (
     ModelOrchestrator,
+    _fill_live_sparse_meta_context_features,
     _strict_finite_model_matrix,
 )
 from extreme_price_movements.lgbm_pipeline import LGBMStabilityModel, score_for_trading
@@ -58,7 +59,7 @@ def test_strict_final_matrix_refuses_nonfinite_without_dropping_rows():
         )
 
 
-def test_alpha_contract_uses_training_equivalent_nonfinite_adapter():
+def test_alpha_contract_strict_mode_rejects_nonfinite_adapter_input():
     X = pd.DataFrame(
         {"ret24h": [0.1, np.nan], "range_24h_pct": [np.inf, 0.03]},
         index=["AAA/USDC", "BBB/USDC"],
@@ -71,10 +72,62 @@ def test_alpha_contract_uses_training_equivalent_nonfinite_adapter():
     )
 
     assert list(aligned.index) == ["AAA/USDC", "BBB/USDC"]
+    assert aligned.empty
+
+
+def test_alpha_contract_legacy_neutral_fill_adapter_is_explicit():
+    X = pd.DataFrame(
+        {"ret24h": [0.1, np.nan], "range_24h_pct": [np.inf, 0.03]},
+        index=["AAA/USDC", "BBB/USDC"],
+    )
+    orchestrator = ModelOrchestrator(
+        {},
+        {
+            "strict_feature_parity": True,
+            "strict_feature_parity_neutral_fill_nonfinite": True,
+        },
+    )
+
+    aligned = orchestrator._align_alpha_feature_contract(
+        X,
+        ["ret24h", "range_24h_pct"],
+    )
+
+    assert list(aligned.index) == ["AAA/USDC", "BBB/USDC"]
     assert list(aligned.columns) == ["ret24h", "range_24h_pct"]
     assert np.isfinite(aligned.to_numpy(dtype=np.float32)).all()
     assert aligned.loc["AAA/USDC", "range_24h_pct"] == 0.0
     assert aligned.loc["BBB/USDC", "ret24h"] == 0.0
+
+
+def test_live_sparse_meta_context_fill_is_narrow_and_column_preserving():
+    X = pd.DataFrame(
+        {
+            "oi_7d_chg_z": [np.nan, 1.25],
+            "price_trend_7d_vol_norm": [np.inf, -0.3],
+            "ret24h": [0.1, np.nan],
+        },
+        index=["AAA/USDC", "BBB/USDC"],
+    )
+
+    out, filled = _fill_live_sparse_meta_context_features(
+        X,
+        [
+            "oi_7d_chg_z",
+            "price_trend_7d_vol_norm",
+            "ret24h",
+            "missing_sparse_feature",
+        ],
+    )
+
+    assert out.loc["AAA/USDC", "oi_7d_chg_z"] == 0.0
+    assert out.loc["AAA/USDC", "price_trend_7d_vol_norm"] == 0.0
+    assert np.isnan(out.loc["BBB/USDC", "ret24h"])
+    assert "missing_sparse_feature" not in out.columns
+    assert {item["feature"] for item in filled} == {
+        "oi_7d_chg_z",
+        "price_trend_7d_vol_norm",
+    }
 
 
 def test_gated_selected_feature_missing_base_materializes_nan_frame():
@@ -115,13 +168,30 @@ def test_live_training_path_sync_skips_deterministic_live_synthesized_keys():
         {"live_model_feature_store_strict": True},
     )
 
-    assert sync_keys == ["ret12h"]
+    assert sync_keys == ["lr_12h", "oi_3d_chg_z", "ret12h"]
     assert skipped == [
         "barrier_pct",
-        "lr_12h",
-        "oi_3d_chg_z",
         "ret1h_G_VOL_0",
         "ret1h_G_VOL_1",
+    ]
+
+
+def test_live_training_path_sync_can_skip_source_derived_keys_when_not_strict():
+    sync_keys, skipped = _live_training_path_sync_feature_keys(
+        [
+            "distance_to_resistance_daily_donchian_atr",
+            "mom_slow",
+            "oi_3d_chg_z",
+            "ret12h",
+        ],
+        {"live_model_feature_store_strict": False},
+    )
+
+    assert sync_keys == ["ret12h"]
+    assert skipped == [
+        "distance_to_resistance_daily_donchian_atr",
+        "mom_slow",
+        "oi_3d_chg_z",
     ]
 
 

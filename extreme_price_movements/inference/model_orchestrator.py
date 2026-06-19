@@ -204,6 +204,17 @@ def _fill_live_unavailable_meta_contract_features(
     return out, filled
 
 
+def _fill_live_sparse_meta_context_features(
+    features: pd.DataFrame,
+    feature_cols: List[str],
+) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
+    # Sparse live source/context inputs must remain strict: rows with missing
+    # trained values are dropped by the meta matrix finite-parity path below.
+    # Keep the helper as a no-op so older call sites and diagnostics stay stable
+    # without silently substituting raw market/context features at decision time.
+    return features, []
+
+
 def _first_row_diagnostics(frame: Any) -> Dict[str, float]:
     if not isinstance(frame, pd.DataFrame) or frame.empty:
         return {}
@@ -440,12 +451,148 @@ def _materialize_model_drift_feature_aliases(
                 for candidate in list(source_candidates)
                 if candidate != src
             )
+        source_candidates.extend(
+            str(existing)
+            for existing in out.columns
+            if str(existing) != str(col)
+            and _model_drift_feature_alias_source(str(existing)) == src
+            and str(existing) not in source_candidates
+        )
+        source_candidates.extend(
+            str(existing)
+            for existing in out.columns
+            if str(existing) != str(col)
+            and (
+                str(existing) == src
+                or str(existing).endswith(f"_{src}")
+            )
+            and str(existing) not in source_candidates
+        )
         for source in source_candidates:
             if source in out.columns:
                 out[col] = pd.to_numeric(out[source], errors="coerce").astype(np.float32)
                 added += 1
                 break
     return out, added
+
+
+def _iter_model_contract_owners(owner: Any) -> list[Any]:
+    """Return a shallow owner list for wrapper/model contract metadata."""
+    owners: list[Any] = []
+    seen: set[int] = set()
+
+    def _add(candidate: Any) -> None:
+        if candidate is None:
+            return
+        ident = id(candidate)
+        if ident in seen:
+            return
+        seen.add(ident)
+        owners.append(candidate)
+        if isinstance(candidate, Mapping):
+            return
+        for attr in ("best_model", "model", "estimator", "clf", "classifier"):
+            try:
+                nested = getattr(candidate, attr, None)
+            except Exception:
+                nested = None
+            if nested is not candidate:
+                _add(nested)
+
+    _add(owner)
+    return owners
+
+
+def _feature_stats_default(owner: Any, feature: str) -> float | None:
+    """Return a finite training-stat default for a selected feature."""
+    feature_s = str(feature)
+    for candidate in _iter_model_contract_owners(owner):
+        raw = (
+            candidate.get("feature_stats_train")
+            if isinstance(candidate, Mapping)
+            else getattr(candidate, "feature_stats_train", None)
+        )
+        if not isinstance(raw, Mapping):
+            contract = (
+                candidate.get("meta_feature_contract")
+                if isinstance(candidate, Mapping)
+                else getattr(candidate, "meta_feature_contract_", None)
+            )
+            if isinstance(contract, Mapping):
+                raw = contract.get("feature_stats_train")
+        if not isinstance(raw, Mapping):
+            continue
+        stats = raw.get(feature_s)
+        if not isinstance(stats, Mapping):
+            continue
+        for key in ("p50", "median", "mean"):
+            try:
+                value = float(stats.get(key))
+            except Exception:
+                continue
+            if np.isfinite(value):
+                return value
+    return None
+
+
+def _fill_artifact_context_training_defaults(
+    frame: pd.DataFrame,
+    features: list[str],
+    owner: Any,
+    *,
+    allowed_sources: set[str],
+) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
+    """Fill missing artifact-derived context aliases from train stats.
+
+    This is intentionally narrow: live rows can lack artifact transformer state
+    for diagnostic drift/context aliases that were persisted as constant or
+    otherwise neutral during training. Ordinary source/model inputs still fail
+    strict parity when absent.
+    """
+    if not isinstance(frame, pd.DataFrame) or frame.empty or not features:
+        return frame, []
+    out = frame
+    fills: list[dict[str, Any]] = []
+    for feature in dict.fromkeys(str(c) for c in features):
+        source = _model_drift_feature_alias_source(feature)
+        if source not in allowed_sources:
+            continue
+        value = _feature_stats_default(owner, feature)
+        if value is None and source is not None:
+            value = _feature_stats_default(owner, source)
+        if value is None:
+            continue
+        if feature not in out.columns:
+            if out is frame:
+                out = frame.copy()
+            out[feature] = np.full(len(out), value, dtype=np.float32)
+            fills.append(
+                {
+                    "feature": feature,
+                    "source": source,
+                    "default": float(value),
+                    "missing_column": True,
+                    "filled_rows": int(len(out)),
+                }
+            )
+            continue
+        values = pd.to_numeric(out[feature], errors="coerce").to_numpy(dtype=np.float32)
+        bad = ~np.isfinite(values)
+        if bad.any():
+            if out is frame:
+                out = frame.copy()
+            values[bad] = np.float32(value)
+            out[feature] = values.astype(np.float32, copy=False)
+            fills.append(
+                {
+                    "feature": feature,
+                    "source": source,
+                    "default": float(value),
+                    "missing_column": False,
+                    "filled_rows": int(bad.sum()),
+                }
+            )
+    return out, fills
 
 
 def _required_model_drift_sources(needed: set[str]) -> set[str]:
@@ -2017,6 +2164,32 @@ class ModelOrchestrator:
             overwrite=False,
         )
         added += alias_added
+        alias_source_frame = pd.concat(
+            [out, meta_context.reindex(out.index)],
+            axis=1,
+            copy=False,
+        )
+        alias_source_frame = alias_source_frame.loc[
+            :,
+            ~alias_source_frame.columns.astype(str).duplicated(keep="first"),
+        ]
+        alias_source_frame, _ = _materialize_model_drift_feature_aliases(
+            alias_source_frame,
+            needed,
+            overwrite=False,
+        )
+        alias_copy_added = 0
+        for alias in sorted(needed):
+            if alias in out.columns or alias not in alias_source_frame.columns:
+                continue
+            if _model_drift_feature_alias_source(alias) is None:
+                continue
+            out[str(alias)] = pd.to_numeric(
+                alias_source_frame[alias],
+                errors="coerce",
+            ).astype(np.float32)
+            alias_copy_added += 1
+        added += alias_copy_added
         if added and not getattr(self, "_alpha_meta_context_warned", False):
             tprint(
                 "Meta inference: materialized alpha drift/context columns "
@@ -2328,6 +2501,42 @@ class ModelOrchestrator:
                         f"decision-time defaults for {key} "
                         f"(n={len(neutral_meta_fills)}, sample={neutral_meta_fills[:8]})."
                     )
+            features, live_sparse_fills = _fill_live_sparse_meta_context_features(
+                features,
+                feat_cols,
+            )
+            if live_sparse_fills:
+                self._last_results["meta_live_sparse_context_neutral_fills"] = {
+                    "key": key,
+                    "features": live_sparse_fills,
+                }
+                if timing_enabled:
+                    tprint(
+                        "Meta inference: neutral-filled selected live-sparse "
+                        f"context features for {key} "
+                        f"(n={len(live_sparse_fills)}, sample={live_sparse_fills[:8]})."
+                    )
+            raw_state_default_sources = set(RAW_STATE_SVD_FEATURE_NAMES) | set(
+                RAW_STATE_DIAGNOSTIC_FEATURE_NAMES
+            )
+            features, artifact_context_fills = _fill_artifact_context_training_defaults(
+                features,
+                feat_cols,
+                meta_model,
+                allowed_sources=raw_state_default_sources,
+            )
+            if artifact_context_fills:
+                self._last_results["meta_artifact_context_training_defaults"] = {
+                    "key": key,
+                    "features": artifact_context_fills,
+                }
+                if timing_enabled:
+                    tprint(
+                        "Meta inference: filled missing artifact-backed raw-state "
+                        "context features from training feature stats "
+                        f"for {key} (n={len(artifact_context_fills)}, "
+                        f"sample={artifact_context_fills[:8]})."
+                    )
             try:
                 from extreme_price_movements.rule_mask_features import (
                     append_rule_mask_features as _append_rule_mask_features,
@@ -2386,12 +2595,52 @@ class ModelOrchestrator:
                 missing = [c for c in feat_cols if c not in features.columns]
                 if missing:
                     reason = "missing_meta_feature_contract"
+                    missing_sources = {
+                        str(src)
+                        for src in (
+                            _model_drift_feature_alias_source(str(c)) for c in missing
+                        )
+                        if src is not None
+                    }
+                    related_columns: list[str] = []
+                    if missing_sources:
+                        for existing in map(str, features.columns):
+                            existing_src = _model_drift_feature_alias_source(existing)
+                            if existing_src in missing_sources or any(
+                                existing == src or existing.endswith(f"_{src}")
+                                for src in missing_sources
+                            ):
+                                related_columns.append(existing)
+                        related_columns = sorted(dict.fromkeys(related_columns))
                     self._last_results["meta_contract_error"] = {
                         "key": key,
                         "reason": reason,
                         "missing_features_count": len(missing),
                         "missing_features_sample": missing[:20],
+                        "missing_feature_sources_sample": sorted(missing_sources)[:20],
+                        "available_related_features_sample": related_columns[:40],
+                        "available_feature_count": int(len(features.columns)),
                     }
+                    if missing_sources and not related_columns:
+                        raw_state_like = sorted(
+                            c
+                            for c in map(str, features.columns)
+                            if "raw_state" in c or "state_tod" in c
+                        )
+                        self._last_results["meta_contract_error"][
+                            "available_raw_state_like_sample"
+                        ] = raw_state_like[:40]
+                        tprint(
+                            "Meta feature contract debug: missing sources "
+                            f"{sorted(missing_sources)[:20]} but no related "
+                            f"columns found; raw_state_like_sample={raw_state_like[:20]}"
+                        )
+                    elif missing_sources:
+                        tprint(
+                            "Meta feature contract debug: missing sources "
+                            f"{sorted(missing_sources)[:20]} related_columns_sample="
+                            f"{related_columns[:20]}"
+                        )
                     tprint(
                         f"Error predicting meta for {key}: {reason} "
                         f"({len(missing)} missing trained features): {missing[:20]}"

@@ -410,6 +410,59 @@ def test_ev_adjustment_haircuts_only_excess_execution_costs():
     )
 
 
+def test_live_ev_haircut_uses_symbol_average_spread_baseline(tmp_path, monkeypatch):
+    baseline_path = (
+        tmp_path
+        / "exchanges"
+        / "krakenfutures"
+        / "spread_model"
+        / "per_asset_spread_baseline_latest.csv"
+    )
+    baseline_path.parent.mkdir(parents=True)
+    baseline_path.write_text(
+        "symbol,rows,average_spread_bps\n"
+        "BTC/USD:USD,10,20.0\n"
+        "NMR/USD:USD,10,60.0\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("EPM_SIMPLE_POLICY_SPREAD_BASELINE_PATH", raising=False)
+    run_inference._LIVE_SPREAD_BASELINE_CACHE.clear()
+
+    spread_baseline, source = run_inference._live_ev_haircut_spread_baseline_bps(
+        symbol="BTC/USD:USD",
+        data_root=str(tmp_path),
+        fallback_bps=100.0,
+    )
+    adjusted = _ev_adjusted_prediction_after_entry_friction(
+        calibrated_score=0.80,
+        strategy_id="long_demo",
+        side="long",
+        calibration={
+            "long_demo": [
+                {"mean_score": 0.70, "mean_net_return": 0.010, "count": 100},
+                {"mean_score": 0.80, "mean_net_return": 0.020, "count": 100},
+                {"mean_score": 0.90, "mean_net_return": 0.030, "count": 100},
+            ]
+        },
+        live_entry_friction_bps=15.0,
+        observed_spread_bps=30.0,
+        orderbook_slippage_bps=0.0,
+        adverse_signal_gap_bps=0.0,
+        spread_baseline_bps=spread_baseline,
+        spread_baseline_source=source,
+        delay_slippage_baseline_bps=0.0,
+        policy_rank_reference_store=None,
+    )
+
+    assert spread_baseline == pytest.approx(20.0)
+    assert "per_asset_spread_baseline.average_spread_bps" in source
+    assert adjusted["ev_haircut_observed_half_spread_bps"] == pytest.approx(15.0)
+    assert adjusted["ev_haircut_half_spread_baseline_bps"] == pytest.approx(10.0)
+    assert adjusted["ev_haircut_spread_excess_bps"] == pytest.approx(5.0)
+    assert adjusted["ev_haircut_bps"] == pytest.approx(5.0)
+    assert adjusted["ev_haircut_spread_baseline_source"] == source
+
+
 def test_simple_policy_stop_params_honor_policy_artifact_root_override(
     tmp_path, monkeypatch
 ):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -15,6 +16,10 @@ from extreme_price_movements.inference.simple_policy_stop import (
     SIMPLE_POLICY_GENERATOR,
     SIMPLE_POLICY_SCHEMA,
     is_concrete_simple_policy_params_source,
+)
+from extreme_price_movements.model_effectiveness_history import (
+    extract_model_effectiveness_history_defaults,
+    is_model_effectiveness_history_feature,
 )
 from extreme_price_movements.simple_position_sizer import (
     calibrate_score,
@@ -887,9 +892,30 @@ def validate_meta_feature_contract_artifact(
         else:
             selected_feature_columns = feature_columns
 
-        unavailable = sorted(set(selected_feature_columns) & LIVE_UNAVAILABLE_FEATURES)
+        unavailable = set(selected_feature_columns) & LIVE_UNAVAILABLE_FEATURES
         if unavailable:
-            errors.append(f"{key}: live-unavailable meta features {unavailable}")
+            defaults = extract_model_effectiveness_history_defaults(meta_models.get(key))
+            defaulted: Set[str] = set()
+            for feature in unavailable:
+                if not is_model_effectiveness_history_feature(feature):
+                    continue
+                try:
+                    value = float(defaults.get(feature))
+                except Exception:
+                    continue
+                if math.isfinite(value):
+                    defaulted.add(feature)
+            missing_defaults = sorted(unavailable - defaulted)
+            if missing_defaults:
+                errors.append(
+                    f"{key}: live-unavailable meta features {missing_defaults}"
+                )
+            if defaulted:
+                tprint(
+                    "[MetaFeatureContract] Allowing live-unavailable historical "
+                    "model-effectiveness features with persisted decision-time "
+                    f"defaults for {key}: {sorted(defaulted)}"
+                )
 
         positional_required = [
             feat
@@ -977,14 +1003,59 @@ def validate_live_feature_contract(
                     str(v) for v in model_info.get("feat_cols", []) or []
                 )
 
-    for meta in _meta_models(model_bundle).values():
+    for meta_key, meta in _meta_models(model_bundle).items():
         selected = _model_raw_selected_features(meta)
         if selected:
-            active_features.update(str(v) for v in selected)
+            meta_features = [str(v) for v in selected]
+            unavailable = set(meta_features) & LIVE_UNAVAILABLE_FEATURES
+            if unavailable:
+                defaults = extract_model_effectiveness_history_defaults(meta)
+                defaulted: Set[str] = set()
+                for feature in unavailable:
+                    if not is_model_effectiveness_history_feature(feature):
+                        continue
+                    try:
+                        value = float(defaults.get(feature))
+                    except Exception:
+                        continue
+                    if math.isfinite(value):
+                        defaulted.add(feature)
+                missing_defaults = sorted(unavailable - defaulted)
+                if missing_defaults:
+                    active_features.update(missing_defaults)
+                if defaulted:
+                    tprint(
+                        "[FeatureContract] Allowing meta historical "
+                        "model-effectiveness features with persisted training "
+                        f"defaults for {meta_key}: {sorted(defaulted)}"
+                    )
+            active_features.update(str(v) for v in meta_features if v not in unavailable)
             continue
         meta_cols = _model_meta_feature_columns(meta)
         if meta_cols:
-            active_features.update(meta_cols)
+            unavailable = set(meta_cols) & LIVE_UNAVAILABLE_FEATURES
+            if unavailable:
+                defaults = extract_model_effectiveness_history_defaults(meta)
+                defaulted: Set[str] = set()
+                for feature in unavailable:
+                    if not is_model_effectiveness_history_feature(feature):
+                        continue
+                    try:
+                        value = float(defaults.get(feature))
+                    except Exception:
+                        continue
+                    if math.isfinite(value):
+                        defaulted.add(feature)
+                missing_defaults = sorted(unavailable - defaulted)
+                if missing_defaults:
+                    active_features.update(missing_defaults)
+                if defaulted:
+                    tprint(
+                        "[FeatureContract] Allowing meta historical "
+                        "model-effectiveness features with persisted training "
+                        f"defaults for {meta_key}: {sorted(defaulted)}"
+                    )
+            active_features.update(str(v) for v in meta_cols if v not in unavailable)
 
     ridge_weights = bundle.get("ridge_weights", {}) if isinstance(bundle, dict) else {}
     if isinstance(ridge_weights, dict):

@@ -43,6 +43,45 @@ def test_prediction_ledger_exposes_prefixed_lgbm_diagnostic_columns(tmp_path):
         assert f"{prefix}_prob_uncertainty" in df.columns
 
 
+def test_prediction_ledger_upserts_same_signal_bar_candidate(tmp_path):
+    path = tmp_path / "prediction_ledger.parquet"
+    ledger = PredictionLedger(path)
+    base = {
+        "signal_bar_ts": "2026-05-10T12:00:00Z",
+        "symbol": "BTC/USDC",
+        "side": "long",
+        "strategy_id": "long_test",
+        "meta_head_hash": "abc123",
+        "model_artifact_run_id": "model_a",
+        "policy_artifact_run_id": "policy_a",
+    }
+    ledger.append_rows(
+        [
+            {
+                **base,
+                "timestamp": "2026-05-10T12:01:00Z",
+                "normalized_rank_score": 0.71,
+            }
+        ]
+    )
+    ledger.append_rows(
+        [
+            {
+                **base,
+                "timestamp": "2026-05-10T12:05:00Z",
+                "normalized_rank_score": 0.84,
+            }
+        ]
+    )
+
+    df = pd.read_parquet(path)
+    assert len(df) == 1
+    assert df.iloc[0]["normalized_rank_score"] == 0.84
+    assert pd.Timestamp(df.iloc[0]["timestamp"]) == pd.Timestamp(
+        "2026-05-10T12:05:00Z"
+    )
+
+
 def test_prediction_ledger_marks_resolved(tmp_path):
     path = tmp_path / "prediction_ledger.parquet"
     ledger = PredictionLedger(path)

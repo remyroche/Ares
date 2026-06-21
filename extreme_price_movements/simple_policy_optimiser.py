@@ -23,7 +23,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Set, Tuple
 
 import numpy as np
 import optuna
@@ -68,6 +68,10 @@ from extreme_price_movements.inference.training_live_parity_contract import (
 from extreme_price_movements.inference.execution_fill_model import (
     stop_exit_fill_price,
     stop_exit_fill_price_array,
+)
+from extreme_price_movements.late_window_metrics import (
+    compute_late_window_hit_rate_summary,
+    flatten_late_window_summary,
 )
 from extreme_price_movements.mr_tf_masks import (
     MASK_COLUMNS,
@@ -268,7 +272,7 @@ def _base_to_meta_top_frac() -> float:
         return float(BASE_TO_META_TOP_FRAC)
     return float(min(max(value, 0.01), 1.0))
 DEPLOYMENT_THRESHOLD_MIN = 0.50
-DEPLOYMENT_THRESHOLD_MAX = 0.99
+DEPLOYMENT_THRESHOLD_MAX = 0.998
 DEPLOYMENT_THRESHOLD_PRECISION = 0.01
 DEPLOYMENT_RANK_THRESHOLD_EXTRA_REQUIREMENT = float(
     os.environ.get("EPM_POLICY_DEPLOYMENT_RANK_EXTRA_REQUIREMENT", "0.0")
@@ -307,7 +311,7 @@ DEPLOYMENT_REPLAY_THRESHOLD_MIN = float(
     os.environ.get("EPM_POLICY_REPLAY_THRESHOLD_MIN", "0.70")
 )
 DEPLOYMENT_REPLAY_THRESHOLD_MAX = float(
-    os.environ.get("EPM_POLICY_REPLAY_THRESHOLD_MAX", "0.99")
+    os.environ.get("EPM_POLICY_REPLAY_THRESHOLD_MAX", str(DEPLOYMENT_THRESHOLD_MAX))
 )
 DEPLOYMENT_STAGE_B_CANDIDATE_RANK_FLOOR = float(
     os.environ.get(
@@ -383,6 +387,25 @@ SIMPLE_POLICY_CALIBRATED_DRIFT_RISK_MIN_ROWS = max(
 SIMPLE_POLICY_CALIBRATED_DRIFT_RISK_MAX_FEATURES = max(
     4,
     int(os.environ.get("EPM_SIMPLE_POLICY_CALIBRATED_DRIFT_RISK_MAX_FEATURES", "32") or "32"),
+)
+UNCERTAINTY_ADJUSTED_EV_ENABLED = _env_flag(
+    "EPM_SIMPLE_POLICY_UNCERTAINTY_ADJUSTED_EV_ENABLED",
+    True,
+)
+UNCERTAINTY_ADJUSTED_EV_RANK_BAND_WIDTH = float(
+    os.environ.get("EPM_SIMPLE_POLICY_UNCERTAINTY_EV_RANK_BAND_WIDTH", "0.05")
+)
+UNCERTAINTY_ADJUSTED_EV_UNCERTAINTY_BINS = max(
+    2,
+    int(os.environ.get("EPM_SIMPLE_POLICY_UNCERTAINTY_EV_BINS", "5") or "5"),
+)
+UNCERTAINTY_ADJUSTED_EV_MIN_ROWS = max(
+    20,
+    int(os.environ.get("EPM_SIMPLE_POLICY_UNCERTAINTY_EV_MIN_ROWS", "50") or "50"),
+)
+UNCERTAINTY_ADJUSTED_EV_SHRINKAGE_ROWS = max(
+    1.0,
+    float(os.environ.get("EPM_SIMPLE_POLICY_UNCERTAINTY_EV_SHRINKAGE_ROWS", "80")),
 )
 DEFAULT_POLICY_ROUND_TRIP_COST_PCT = float(
     os.environ.get("EPM_SIMPLE_POLICY_ROUND_TRIP_COST_PCT", "0.002")
@@ -3118,6 +3141,33 @@ def _slippage_adjusted_mean_gross_positive(metrics: Dict[str, Any]) -> bool:
     )
 
 
+def _policy_expected_hit_probability(
+    rows: pd.DataFrame,
+) -> tuple[np.ndarray | None, str | None]:
+    """Best available policy-row probability for hit-rate surprise diagnostics."""
+
+    for col in (
+        "expected_hit_rate",
+        "calibrated_score",
+        "oof_p_move",
+        "oof_pred",
+        "deployment_score",
+        "auction_rank_score",
+        "rank_pct",
+        "deployment_rank_pct",
+        "policy_rank_pct",
+    ):
+        if col not in rows.columns:
+            continue
+        vals = pd.to_numeric(rows[col], errors="coerce").to_numpy(dtype=np.float64)
+        finite = vals[np.isfinite(vals)]
+        if finite.size < 3:
+            continue
+        vals = np.clip(vals, 1e-5, 1.0 - 1e-5)
+        return vals, str(col)
+    return None, None
+
+
 def score_deployment_threshold_rows(rows: pd.DataFrame) -> Dict[str, Any]:
     empty_metrics = {
         "net_pnl": 0.0,
@@ -3166,6 +3216,21 @@ def score_deployment_threshold_rows(rows: pd.DataFrame) -> Dict[str, Any]:
         if "exit_bars" in rows.columns
         else _holding_time_metrics([])
     )
+    late_window_metrics: Dict[str, Any] = {}
+    expected_prob, expected_source = _policy_expected_hit_probability(rows.loc[gains.index])
+    if expected_prob is not None and "timestamp" in rows.columns:
+        try:
+            late_summary = compute_late_window_hit_rate_summary(
+                timestamps=rows.loc[gains.index, "timestamp"],
+                actual_hit=(gains.to_numpy(dtype=np.float64) > 0.0).astype(np.float64),
+                expected_probability=expected_prob,
+                pnl=gains.to_numpy(dtype=np.float64),
+            )
+            late_window_metrics["late_window_hit_rate"] = late_summary
+            late_window_metrics["late_window_expected_probability_source"] = expected_source
+            late_window_metrics.update(flatten_late_window_summary(late_summary))
+        except Exception as exc:
+            late_window_metrics["late_window_status"] = f"error:{type(exc).__name__}"
 
     return {
         "net_pnl": float(gains.sum()),
@@ -3178,6 +3243,7 @@ def score_deployment_threshold_rows(rows: pd.DataFrame) -> Dict[str, Any]:
         "max_drawdown": float(dd.min()) if len(dd) else 0.0,
         "sortino": float(sortino),
         **holding_metrics,
+        **late_window_metrics,
     }
 
 
@@ -4338,6 +4404,179 @@ def _build_simple_policy_candidate_rows(
     return result
 
 
+def _uncertainty_ev_column(frame: pd.DataFrame) -> Optional[str]:
+    for col in (
+        "meta_lgbm_prob_uncertainty",
+        "uncertainty_score",
+        "prob_uncertainty",
+        "meta_lgbm_uncertainty_score",
+        "base_lgbm_prob_uncertainty",
+    ):
+        if col in frame.columns:
+            values = pd.to_numeric(frame[col], errors="coerce")
+            if values.replace([np.inf, -np.inf], np.nan).notna().any():
+                return col
+    return None
+
+
+def _rank_band_low(values: pd.Series, width: float) -> pd.Series:
+    width = float(np.clip(width, 1e-6, 1.0))
+    numeric = pd.to_numeric(values, errors="coerce").clip(lower=0.0, upper=1.0)
+    bands = np.floor(numeric.to_numpy(dtype=np.float64) / width) * width
+    bands = np.minimum(bands, 1.0 - width)
+    return pd.Series(np.round(bands, 6), index=values.index)
+
+
+def _fit_uncertainty_adjusted_ev(
+    candidates: pd.DataFrame,
+    *,
+    strategy_id: str,
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """Estimate net EV by policy-rank band and uncertainty percentile bin."""
+    if not UNCERTAINTY_ADJUSTED_EV_ENABLED or candidates.empty:
+        return candidates, {"enabled": False, "reason": "disabled_or_empty"}
+    uncertainty_col = _uncertainty_ev_column(candidates)
+    if uncertainty_col is None:
+        return candidates, {"enabled": True, "status": "missing_uncertainty_column"}
+    out = candidates.copy()
+    rank = pd.to_numeric(out.get("strategy_rank_pct", out.get("rank_pct")), errors="coerce")
+    uncertainty = pd.to_numeric(out[uncertainty_col], errors="coerce")
+    net = pd.to_numeric(out["net_return"], errors="coerce")
+    valid = (
+        rank.replace([np.inf, -np.inf], np.nan).notna()
+        & uncertainty.replace([np.inf, -np.inf], np.nan).notna()
+        & net.replace([np.inf, -np.inf], np.nan).notna()
+    )
+    if int(valid.sum()) < int(UNCERTAINTY_ADJUSTED_EV_MIN_ROWS):
+        return out, {
+            "enabled": True,
+            "status": "insufficient_rows",
+            "rows": int(valid.sum()),
+            "min_rows": int(UNCERTAINTY_ADJUSTED_EV_MIN_ROWS),
+            "uncertainty_col": uncertainty_col,
+        }
+    fit = out.loc[valid].copy()
+    fit["_policy_rank_band_low"] = _rank_band_low(
+        rank.loc[valid],
+        UNCERTAINTY_ADJUSTED_EV_RANK_BAND_WIDTH,
+    )
+    uncertainty_pct = uncertainty.loc[valid].rank(method="max", pct=True).clip(0.0, 1.0)
+    n_bins = int(UNCERTAINTY_ADJUSTED_EV_UNCERTAINTY_BINS)
+    fit["_uncertainty_pct"] = uncertainty_pct
+    fit["_uncertainty_bin"] = np.minimum(
+        np.floor(uncertainty_pct.to_numpy(dtype=np.float64) * n_bins).astype(int),
+        n_bins - 1,
+    )
+    parent = (
+        fit.groupby("_policy_rank_band_low", observed=True)["net_return"]
+        .agg(parent_n="count", parent_mean_net_return="mean")
+        .reset_index()
+    )
+    cell = (
+        fit.groupby(["_policy_rank_band_low", "_uncertainty_bin"], observed=True)
+        .agg(
+            n=("net_return", "count"),
+            mean_net_return=("net_return", "mean"),
+            hit_rate=("net_return", lambda s: float(np.mean(np.asarray(s) > 0.0))),
+            mean_uncertainty_score=(uncertainty_col, "mean"),
+            mean_uncertainty_pct=("_uncertainty_pct", "mean"),
+        )
+        .reset_index()
+        .merge(parent, on="_policy_rank_band_low", how="left")
+    )
+    shrink_rows = float(UNCERTAINTY_ADJUSTED_EV_SHRINKAGE_ROWS)
+    w = cell["n"].astype(float) / (cell["n"].astype(float) + shrink_rows)
+    cell["shrink_weight"] = w
+    cell["adjusted_mean_net_return"] = (
+        w * cell["mean_net_return"].astype(float)
+        + (1.0 - w) * cell["parent_mean_net_return"].astype(float)
+    )
+    cell["ev_adjustment_vs_parent"] = (
+        cell["adjusted_mean_net_return"] - cell["parent_mean_net_return"]
+    )
+    eps = 1e-6
+    cell["size_multiplier"] = np.where(
+        cell["adjusted_mean_net_return"] > 0.0,
+        np.sqrt(
+            np.maximum(cell["adjusted_mean_net_return"], 0.0)
+            / np.maximum(cell["parent_mean_net_return"].clip(lower=eps), eps)
+        ),
+        0.0,
+    )
+    cell["size_multiplier"] = cell["size_multiplier"].clip(0.0, 1.25)
+    table = cell.rename(
+        columns={
+            "_policy_rank_band_low": "policy_rank_band_low",
+            "_uncertainty_bin": "uncertainty_bin",
+        }
+    )
+    table["policy_rank_band_high"] = (
+        table["policy_rank_band_low"].astype(float)
+        + float(UNCERTAINTY_ADJUSTED_EV_RANK_BAND_WIDTH)
+    ).clip(upper=1.0)
+    table["uncertainty_bin_low"] = table["uncertainty_bin"].astype(float) / float(n_bins)
+    table["uncertainty_bin_high"] = (table["uncertainty_bin"].astype(float) + 1.0) / float(n_bins)
+    edges = [
+        _safe_float(uncertainty.loc[valid].quantile(i / n_bins), np.nan)
+        for i in range(n_bins + 1)
+    ]
+    lookup_cols = [
+        "policy_rank_band_low",
+        "uncertainty_bin",
+        "adjusted_mean_net_return",
+        "parent_mean_net_return",
+        "size_multiplier",
+        "n",
+    ]
+    mapped = fit[["_policy_rank_band_low", "_uncertainty_bin"]].merge(
+        table[lookup_cols],
+        left_on=["_policy_rank_band_low", "_uncertainty_bin"],
+        right_on=["policy_rank_band_low", "uncertainty_bin"],
+        how="left",
+    )
+    out.loc[fit.index, "uncertainty_ev_score_col"] = uncertainty_col
+    out.loc[fit.index, "uncertainty_ev_percentile"] = fit["_uncertainty_pct"].to_numpy(
+        dtype=np.float32
+    )
+    out.loc[fit.index, "uncertainty_ev_rank_band_low"] = fit[
+        "_policy_rank_band_low"
+    ].to_numpy(dtype=np.float32)
+    out.loc[fit.index, "uncertainty_ev_bin"] = fit["_uncertainty_bin"].to_numpy(
+        dtype=np.int16
+    )
+    out.loc[fit.index, "uncertainty_adjusted_ev_net_return"] = mapped[
+        "adjusted_mean_net_return"
+    ].to_numpy(dtype=np.float32)
+    out.loc[fit.index, "uncertainty_ev_parent_net_return"] = mapped[
+        "parent_mean_net_return"
+    ].to_numpy(dtype=np.float32)
+    out.loc[fit.index, "uncertainty_ev_size_multiplier"] = mapped[
+        "size_multiplier"
+    ].to_numpy(dtype=np.float32)
+    out.loc[fit.index, "uncertainty_ev_calibration_n"] = mapped["n"].to_numpy(
+        dtype=np.float32
+    )
+    ev_adj = pd.to_numeric(
+        out.get("uncertainty_adjusted_ev_net_return"), errors="coerce"
+    )
+    # Rows outside the fitted uncertainty/rank table remain pass-through so
+    # sparse calibration bins do not silently remove otherwise valid evidence.
+    out["uncertainty_ev_gate_pass"] = ev_adj.isna() | (ev_adj > 0.0)
+    summary = {
+        "enabled": True,
+        "status": "fit",
+        "strategy_id": str(strategy_id),
+        "uncertainty_col": uncertainty_col,
+        "rows": int(valid.sum()),
+        "rank_band_width": float(UNCERTAINTY_ADJUSTED_EV_RANK_BAND_WIDTH),
+        "uncertainty_bins": n_bins,
+        "shrinkage_rows": shrink_rows,
+        "uncertainty_quantile_edges": edges,
+        "table": table.replace([np.inf, -np.inf], np.nan).to_dict(orient="records"),
+    }
+    return out, summary
+
+
 def _finalise_simple_policy_candidates(
     frames: Sequence[pd.DataFrame],
     *,
@@ -5227,11 +5466,24 @@ def _apply_simple_rank_net_ev_prefilter(
     market_mode: Optional[str],
     context: str,
 ) -> Tuple[pd.DataFrame, np.ndarray, Dict[str, Any]]:
-    binding = bool(SIMPLE_NET_EV_PREFILTER_BINDING)
+    binding_requested = bool(SIMPLE_NET_EV_PREFILTER_BINDING)
+    uses_final_exit_policy = bool(
+        fit.get("uses_final_exit_policy", False)
+        or fit.get("exit_policy_source") in {"final_policy", "deployed_policy"}
+    )
+    binding = bool(binding_requested and uses_final_exit_policy)
+    binding_disabled_reason = (
+        "simple_tp_sl_prefilter_not_final_exit_policy"
+        if binding_requested and not uses_final_exit_policy
+        else None
+    )
     if rows.empty:
         return rows.copy(), np.zeros(0, dtype=bool), {
             "enabled": bool(fit.get("enabled", False)),
             "binding": binding,
+            "binding_requested": binding_requested,
+            "uses_final_exit_policy": uses_final_exit_policy,
+            "binding_disabled_reason": binding_disabled_reason,
             "context": context,
             "rows_before": 0,
             "rows_after": 0,
@@ -5242,6 +5494,9 @@ def _apply_simple_rank_net_ev_prefilter(
         summary = {
             "enabled": bool(fit.get("enabled", False)),
             "binding": binding,
+            "binding_requested": binding_requested,
+            "uses_final_exit_policy": uses_final_exit_policy,
+            "binding_disabled_reason": binding_disabled_reason,
             "status": fit.get("status", "not_fit"),
             "reason": fit.get("reason"),
             "context": context,
@@ -5318,6 +5573,9 @@ def _apply_simple_rank_net_ev_prefilter(
     summary = {
         "enabled": True,
         "binding": binding,
+        "binding_requested": binding_requested,
+        "uses_final_exit_policy": uses_final_exit_policy,
+        "binding_disabled_reason": binding_disabled_reason,
         "status": "applied" if binding else "diagnostic_only",
         "context": context,
         "rows_before": int(len(out)),
@@ -5854,11 +6112,90 @@ def _bps_weighted_hit_rate(values: pd.Series) -> float:
     return float(positive / denom) if denom > 0.0 else float("nan")
 
 
+def _strategy_threshold_recent_ev_metrics(
+    rows: pd.DataFrame,
+    *,
+    rank_col: str,
+    threshold: float,
+    windows_days: Sequence[int],
+) -> Dict[str, Any]:
+    """Per-strategy trailing EV floors for a candidate deployment threshold."""
+    windows = tuple(int(d) for d in windows_days if int(d) > 0)
+    if not windows:
+        return {
+            "recent_window_hard_floor_pass": True,
+            "recent_window_hard_floor_available": False,
+            "recent_window_metrics": [],
+        }
+    if (
+        rows.empty
+        or "timestamp" not in rows.columns
+        or rank_col not in rows.columns
+        or "net_return" not in rows.columns
+    ):
+        return {
+            "recent_window_hard_floor_pass": True,
+            "recent_window_hard_floor_available": False,
+            "recent_window_metrics": [],
+            "recent_window_unavailable_reason": "missing_timestamp_rank_or_net_return",
+        }
+
+    work = rows[["timestamp", rank_col, "net_return"]].copy()
+    work["timestamp"] = pd.to_datetime(work["timestamp"], utc=True, errors="coerce")
+    work[rank_col] = pd.to_numeric(work[rank_col], errors="coerce")
+    work["net_return"] = pd.to_numeric(work["net_return"], errors="coerce")
+    work = work.replace([np.inf, -np.inf], np.nan).dropna(
+        subset=["timestamp", rank_col, "net_return"]
+    )
+    if work.empty:
+        return {
+            "recent_window_hard_floor_pass": False,
+            "recent_window_hard_floor_available": True,
+            "recent_window_metrics": [],
+            "recent_window_unavailable_reason": "no_valid_timestamp_rank_or_net_return_rows",
+        }
+
+    end_ts = work["timestamp"].max()
+    metrics: List[Dict[str, Any]] = []
+    passes: List[bool] = []
+    ranked = work.loc[work[rank_col] >= float(threshold)]
+    for days in windows:
+        start_ts = pd.Timestamp(end_ts) - pd.Timedelta(days=int(days))
+        window = ranked.loc[
+            (ranked["timestamp"] > start_ts)
+            & (ranked["timestamp"] <= pd.Timestamp(end_ts))
+        ]
+        net = pd.to_numeric(window["net_return"], errors="coerce").dropna()
+        n = int(len(net))
+        net_pnl = float(net.sum()) if n else 0.0
+        mean_net = float(net.mean()) if n else float("nan")
+        hit_rate = float((net > 0.0).mean()) if n else float("nan")
+        passed = bool(n > 0 and net_pnl > 0.0 and np.isfinite(mean_net) and mean_net > 0.0)
+        metrics.append(
+            {
+                "window_days": int(days),
+                "trade_count": n,
+                "net_pnl": net_pnl,
+                "mean_net_return_per_trade": mean_net,
+                "net_hit_rate": hit_rate,
+                "passed": passed,
+            }
+        )
+        passes.append(passed)
+
+    return {
+        "recent_window_hard_floor_pass": bool(all(passes) if passes else True),
+        "recent_window_hard_floor_available": True,
+        "recent_window_metrics": metrics,
+    }
+
+
 def _apply_local_candidate_hit_rate_guard(
     deployment_payload: Dict[str, Any],
     candidate_table: pd.DataFrame,
     *,
     candidate_path: Path,
+    _allow_rejected_rescue: bool = True,
 ) -> Dict[str, Any]:
     """Set the lowest deployment threshold with clear local net EV.
 
@@ -5918,6 +6255,7 @@ def _apply_local_candidate_hit_rate_guard(
             max(confirmation_bands, 1),
         )
     )
+    recent_windows_days = _deployment_replay_threshold_hard_floor_windows_days()
     summary: Dict[str, Any] = {
         "enabled": True,
         "min_net_hit_rate": target_hit,
@@ -5930,6 +6268,13 @@ def _apply_local_candidate_hit_rate_guard(
         "confirmation_min_positive": confirmation_min_positive,
         "binding_rule": "lowest_local_net_ev_band_with_positive_next_band",
         "hit_rate_floors_are_diagnostic_only": True,
+        "recent_window_hard_floors": {
+            "binding": True,
+            "windows_days": [int(d) for d in recent_windows_days],
+            "net_pnl": "> 0",
+            "mean_net_return_per_trade": "> 0",
+            "minimum_trade_count_per_window": 1,
+        },
         "rank_col": rank_col,
         "rank_scope": (
             "per_strategy" if rank_col in {"strategy_rank_pct", "policy_rank_pct", "rank_pct"}
@@ -5937,6 +6282,7 @@ def _apply_local_candidate_hit_rate_guard(
         ),
         "candidate_path": str(candidate_path),
         "strategies": {},
+        "rescued_strategies": {},
     }
 
     rejected_by_guard: List[Dict[str, Any]] = []
@@ -6079,12 +6425,21 @@ def _apply_local_candidate_hit_rate_guard(
                 "confirmation_min_positive": int(confirmation_min_positive),
                 "next_band_metrics": next_band_metrics,
             }
+            item.update(
+                _strategy_threshold_recent_ev_metrics(
+                    rows,
+                    rank_col=rank_col,
+                    threshold=float(threshold),
+                    windows_days=recent_windows_days,
+                )
+            )
             threshold_rows.append(item)
             if (
                 selected is None
                 and item["n_candidates"] >= min_rows
                 and item["mean_net_return"] >= target_mean_net
                 and item["next_band_positive_count"] >= confirmation_min_positive
+                and bool(item.get("recent_window_hard_floor_pass", True))
             ):
                 selected = item
 
@@ -6114,9 +6469,12 @@ def _apply_local_candidate_hit_rate_guard(
                     "next_band_metrics": [],
                 }
             )
-            reason = "no_local_band_met_hit_and_ev_floors"
+            reason = "no_local_band_met_ev_and_recent_window_floors"
         else:
-            reason = "lowest_threshold_with_clear_local_net_ev_and_positive_next_band"
+            reason = (
+                "lowest_threshold_with_clear_local_net_ev_positive_next_band"
+                "_and_recent_window_ev"
+            )
 
         selected_threshold = float(selected["deployment_rank_threshold"])
         passed = bool(
@@ -6124,14 +6482,20 @@ def _apply_local_candidate_hit_rate_guard(
             and float(selected.get("mean_net_return", float("nan"))) >= target_mean_net
             and int(selected.get("next_band_positive_count", 0) or 0)
             >= confirmation_min_positive
+            and bool(selected.get("recent_window_hard_floor_pass", True))
         )
         applied_threshold = selected_threshold if passed else current_threshold
         if passed:
             strategy["deployment_rank_threshold"] = applied_threshold
+            strategy["threshold_rank_score_source"] = "policy_rank_pct"
+            strategy["threshold_rank_score_source_reason"] = (
+                "local_candidate_ev_guard_uses_strategy_policy_rank_pct"
+            )
         strategy["local_candidate_hit_rate_guard"] = {
             "enabled": True,
             "rank_col": rank_col,
             "rank_scope": summary["rank_scope"],
+            "threshold_rank_score_source": "policy_rank_pct",
             "previous_threshold": current_threshold,
             "selected_threshold": selected_threshold,
             "applied_threshold": applied_threshold,
@@ -6149,6 +6513,20 @@ def _apply_local_candidate_hit_rate_guard(
             "confirmation_min_positive": confirmation_min_positive,
             "binding_rule": "lowest_local_net_ev_band_with_positive_next_band",
             "hit_rate_floors_are_diagnostic_only": True,
+            "recent_window_hard_floor_binding": True,
+            "recent_window_hard_floor_windows_days": [
+                int(d) for d in recent_windows_days
+            ],
+            "recent_window_hard_floor_pass": bool(
+                selected.get("recent_window_hard_floor_pass", True)
+            ),
+            "recent_window_hard_floor_available": bool(
+                selected.get("recent_window_hard_floor_available", False)
+            ),
+            "recent_window_metrics": selected.get("recent_window_metrics", []),
+            "recent_window_unavailable_reason": selected.get(
+                "recent_window_unavailable_reason"
+            ),
             "selected_local_band_lo": float(selected.get("local_band_lo", np.nan)),
             "selected_local_band_hi": float(selected.get("local_band_hi", np.nan)),
             "min_rows": min_rows,
@@ -6204,6 +6582,94 @@ def _apply_local_candidate_hit_rate_guard(
             bool(passed),
             rank_col,
         )
+
+    if _allow_rejected_rescue:
+        structural_reject_reasons = {
+            "missing_trained_meta_model",
+            "unknown_side",
+            "missing_lgbm_mask_contract",
+            "non_finite_selection_rank",
+        }
+        selected_ids = {
+            str(strategy.get("strategy_id") or "")
+            for strategy in deployment_payload.get("strategies", []) or []
+            if isinstance(strategy, dict)
+        }
+        rejected_rows = list(deployment_payload.get("rejected_strategies", []) or [])
+        kept_rejected: List[Dict[str, Any]] = []
+        for rejected_strategy in rejected_rows:
+            if not isinstance(rejected_strategy, dict):
+                kept_rejected.append(rejected_strategy)
+                continue
+            strategy_id = str(rejected_strategy.get("strategy_id", "") or "").strip()
+            if not strategy_id or strategy_id in selected_ids:
+                kept_rejected.append(rejected_strategy)
+                continue
+            reasons = {
+                str(reason)
+                for reason in (rejected_strategy.get("reject_reasons") or [])
+            }
+            if reasons & structural_reject_reasons:
+                kept_rejected.append(rejected_strategy)
+                continue
+
+            candidate = dict(rejected_strategy)
+            candidate["selected"] = True
+            candidate["rescued_from_reject_reasons"] = sorted(reasons)
+            temp_payload: Dict[str, Any] = {
+                "strategies": [candidate],
+                "rejected_strategies": [],
+                "selection_rules": {},
+            }
+            _apply_local_candidate_hit_rate_guard(
+                temp_payload,
+                candidate_table,
+                candidate_path=candidate_path,
+                _allow_rejected_rescue=False,
+            )
+            rescued_rows = [
+                row
+                for row in temp_payload.get("strategies", []) or []
+                if isinstance(row, dict)
+            ]
+            guard = (
+                dict(rescued_rows[0].get("local_candidate_hit_rate_guard") or {})
+                if rescued_rows
+                else {}
+            )
+            if rescued_rows and bool(guard.get("passed")):
+                rescued = dict(rescued_rows[0])
+                rescued["selected"] = True
+                rescued.pop("reject_reasons", None)
+                rescued["deployment_selection_rescue"] = {
+                    "enabled": True,
+                    "previous_reject_reasons": sorted(reasons),
+                    "reason": (
+                        "rejected_strategy_passed_recent_oos_ev_at_higher_threshold"
+                    ),
+                    "selected_threshold": guard.get("selected_threshold"),
+                    "applied_threshold": guard.get("applied_threshold"),
+                    "recent_window_metrics": guard.get("recent_window_metrics", []),
+                }
+                deployment_payload.setdefault("strategies", []).append(rescued)
+                selected_ids.add(strategy_id)
+                summary["rescued_strategies"][strategy_id] = dict(
+                    rescued["deployment_selection_rescue"]
+                )
+                logger.info(
+                    "[%s] Rescued rejected strategy via local/recent EV guard: "
+                    "threshold=%.4f previous_reasons=%s",
+                    strategy_id,
+                    _safe_float(guard.get("applied_threshold"), np.nan),
+                    sorted(reasons),
+                )
+            else:
+                rejected_with_diag = dict(rejected_strategy)
+                if guard:
+                    rejected_with_diag["local_candidate_hit_rate_guard"] = guard
+                    summary["strategies"][strategy_id] = guard
+                kept_rejected.append(rejected_with_diag)
+        deployment_payload["rejected_strategies"] = kept_rejected
 
     if rejected_by_guard:
         rejected = list(deployment_payload.get("rejected_strategies", []) or [])
@@ -6476,10 +6942,18 @@ def _select_deployment_threshold_by_portfolio_replay(
             "reason": "no_valid_replay_candidates_after_normalisation",
         }
 
-    rank_col = (
+    rank_col = next(
+        (
+            col
+            for col in ("strategy_rank_pct", "policy_rank_pct", "rank_pct")
+            if col in base_candidates.columns
+        ),
+        "normalized_rank_score",
+    )
+    portfolio_order_rank_col = (
         "normalized_rank_score"
         if "normalized_rank_score" in base_candidates.columns
-        else "strategy_rank_pct"
+        else rank_col
     )
     lo = float(
         np.clip(
@@ -6572,6 +7046,7 @@ def _select_deployment_threshold_by_portfolio_replay(
         item = {
             "deployment_rank_threshold": threshold,
             "rank_col": rank_col,
+            "portfolio_order_rank_col": portfolio_order_rank_col,
             "local_ev_margin_pass": local_ev_margin_pass,
             "positive_guard_pass": positive_guard_pass,
             "full_hard_floor_pass": full_hard_floor_pass,
@@ -6622,6 +7097,8 @@ def _select_deployment_threshold_by_portfolio_replay(
         "enabled": True,
         "method": "portfolio_replay_threshold_grid_with_diagnostic_local_guard_v2",
         "rank_col": rank_col,
+        "portfolio_order_rank_col": portfolio_order_rank_col,
+        "deployment_threshold_updates_are_diagnostic_only": True,
         "lo": lo,
         "hi": hi,
         "precision": precision,
@@ -6647,6 +7124,7 @@ def _select_deployment_threshold_by_portfolio_replay(
             {
                 "updated": False,
                 "reason": "no_threshold_passed_hard_floors",
+                "deployment_threshold_updates_are_diagnostic_only": True,
             }
         )
         json_path.write_text(
@@ -6676,6 +7154,9 @@ def _select_deployment_threshold_by_portfolio_replay(
             "reason": selected_reason,
             "selected_threshold": selected_threshold,
             "selected": selected_summary,
+            "diagnostic_selected_threshold": selected_threshold,
+            "deployment_threshold_updated": False,
+            "deployment_threshold_updates_are_diagnostic_only": True,
         }
     )
     selected_set = {str(sid) for sid in selected_strategy_ids}
@@ -6687,19 +7168,25 @@ def _select_deployment_threshold_by_portfolio_replay(
         if sid not in selected_set:
             continue
         previous = _safe_float(strategy.get("deployment_rank_threshold"), np.nan)
-        applied_threshold = (
-            max(float(previous), selected_threshold)
-            if np.isfinite(previous)
-            else selected_threshold
+        threshold_rank_source = str(
+            strategy.get("threshold_rank_score_source") or "policy_rank_pct"
         )
-        strategy["deployment_rank_threshold"] = applied_threshold
+        applied_threshold = (
+            float(previous) if np.isfinite(previous) else selected_threshold
+        )
         applied_threshold_by_strategy[sid] = applied_threshold
         threshold_metrics = dict(strategy.get("deployment_threshold_metrics") or {})
         threshold_metrics["portfolio_replay_threshold_selector"] = {
             "previous_threshold": previous,
+            "previous_threshold_rank_score_source": threshold_rank_source,
             "selected_threshold": selected_threshold,
             "applied_threshold": applied_threshold,
-            "reason": selected_reason,
+            "applied_to_deployment_threshold": False,
+            "reason": (
+                "diagnostic_only_portfolio_replay_threshold; "
+                "per_strategy_policy_rank_threshold_is_authoritative"
+            ),
+            "selected_reason": selected_reason,
             "selected": selected_summary,
         }
         strategy["deployment_threshold_metrics"] = threshold_metrics
@@ -6726,8 +7213,9 @@ def _select_deployment_threshold_by_portfolio_replay(
         encoding="utf-8",
     )
     logger.info(
-        "Selected deployment threshold by portfolio replay: threshold=%.4f "
-        "reason=%s objective=%.6f net_pnl=%.4f trades=%s",
+        "Selected diagnostic portfolio replay threshold: threshold=%.4f "
+        "reason=%s objective=%.6f net_pnl=%.4f trades=%s "
+        "(per-strategy policy thresholds unchanged)",
         selected_threshold,
         selected_reason,
         _safe_float(selected.get("objective"), np.nan),
@@ -7800,6 +8288,12 @@ def calculate_advanced_metrics(
         )
         return {}
 
+    expected_prob, expected_source = _policy_expected_hit_probability(df_sub)
+    expected_prob_arr = (
+        expected_prob
+        if expected_prob is not None and len(expected_prob) == len(df_sub)
+        else np.full(len(df_sub), np.nan, dtype=np.float64)
+    )
     df_trades = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(df_sub["timestamp"].values),
@@ -7808,6 +8302,7 @@ def calculate_advanced_metrics(
             "size": sizes,
             "exit_reason": exit_reasons_arr,
             "exit_bars": exit_bars_arr,
+            "expected_hit_probability": expected_prob_arr,
         }
     )
     df_trades = df_trades[np.isfinite(df_trades["net_gain"])]
@@ -7871,6 +8366,25 @@ def calculate_advanced_metrics(
         .dropna()
     )
     weekly_pnl_positive_rate = (df_trades["net_gain"] > 0).resample("W").mean().dropna()
+    late_window_metrics: Dict[str, Any] = {}
+    if expected_source is not None:
+        try:
+            late_frame = df_trades.reset_index()
+            late_summary = compute_late_window_hit_rate_summary(
+                timestamps=late_frame["timestamp"],
+                actual_hit=(
+                    late_frame["net_gain"].to_numpy(dtype=np.float64) > 0.0
+                ).astype(np.float64),
+                expected_probability=late_frame[
+                    "expected_hit_probability"
+                ].to_numpy(dtype=np.float64),
+                pnl=late_frame["net_gain"].to_numpy(dtype=np.float64),
+            )
+            late_window_metrics["late_window_hit_rate"] = late_summary
+            late_window_metrics["late_window_expected_probability_source"] = expected_source
+            late_window_metrics.update(flatten_late_window_summary(late_summary))
+        except Exception as exc:
+            late_window_metrics["late_window_status"] = f"error:{type(exc).__name__}"
 
     w_std = w_pnl.std()
     m_std = m_pnl.std()
@@ -7996,6 +8510,7 @@ def calculate_advanced_metrics(
         )
         - _series_quantile(weekly_pnl_positive_rate, 0.10),
         **holding_metrics,
+        **late_window_metrics,
     }
 
 
@@ -10636,6 +11151,32 @@ def _average_validation_metrics(
         "weekly_pnl_positive_rate_q90_q10_delta",
         "candidate_count",
         "skipped_concurrency",
+        "late_window_3d_eligible_window_count",
+        "late_window_3d_bad_window_count",
+        "late_window_3d_bad_window_share",
+        "late_window_3d_bad_day_share",
+        "late_window_3d_bad_hit_rate_delta_mean",
+        "late_window_3d_bad_hit_rate_delta_p10",
+        "late_window_3d_bad_hit_rate_surprise_z_mean",
+        "late_window_3d_bad_hit_rate_surprise_z_p10",
+        "late_window_3d_bad_window_severity_mean",
+        "late_window_3d_bad_window_severity_max",
+        "late_window_3d_worst_hit_rate_delta",
+        "late_window_3d_worst_hit_rate_surprise_z",
+        "late_window_3d_worst_window_severity",
+        "late_window_5d_eligible_window_count",
+        "late_window_5d_bad_window_count",
+        "late_window_5d_bad_window_share",
+        "late_window_5d_bad_day_share",
+        "late_window_5d_bad_hit_rate_delta_mean",
+        "late_window_5d_bad_hit_rate_delta_p10",
+        "late_window_5d_bad_hit_rate_surprise_z_mean",
+        "late_window_5d_bad_hit_rate_surprise_z_p10",
+        "late_window_5d_bad_window_severity_mean",
+        "late_window_5d_bad_window_severity_max",
+        "late_window_5d_worst_hit_rate_delta",
+        "late_window_5d_worst_hit_rate_surprise_z",
+        "late_window_5d_worst_window_severity",
     ]
     for top_key in top_keys:
         rows = [fm.get(top_key, {}) for fm in fold_metrics if isinstance(fm, dict)]
@@ -13253,6 +13794,10 @@ def _build_deployment_payload(
             "selection_rank": _selection_rank(metrics),
             "deployment_rank_threshold": float(deployment_rank_threshold),
             "threshold_space": "rank_percentile",
+            "threshold_rank_score_source": "policy_rank_pct",
+            "threshold_rank_score_source_reason": (
+                "simple_policy_optimiser_deployment_thresholds_are_per_strategy"
+            ),
             "deployment_threshold_source": (
                 "policy_optimiser_pnl_concurrency"
                 if isinstance(deployment_threshold_metrics, dict)
@@ -13260,6 +13805,7 @@ def _build_deployment_payload(
                 else "policy_optimiser_formula_fallback"
             ),
             "deployment_threshold_metrics": deployment_threshold_metrics,
+            "uncertainty_adjusted_ev": result.get("uncertainty_adjusted_ev", {}),
             "excluded_symbols": sorted(
                 {
                     str(asset.get("symbol"))
@@ -13463,6 +14009,7 @@ def _build_deployment_payload(
             "runtime_rank_threshold_scope": (
                 "per_strategy_prediction_rank_with_per_asset_and_cross_asset_limits"
             ),
+            "runtime_rank_threshold_score_source": "policy_rank_pct",
             "ranking_space": "rank-normalized score per-strategy rank percentiles",
             "deployment_threshold_bounds": {
                 "lo": DEPLOYMENT_THRESHOLD_MIN,
@@ -13639,6 +14186,27 @@ def _deployment_selected_strategy_ids(
     return sorted(ids)
 
 
+def _refresh_deployment_reconciliation(
+    deployment_payload: MutableMapping[str, Any],
+) -> None:
+    """Keep deployment reconciliation counts aligned after in-place filters."""
+    selected = deployment_payload.get("strategies", []) or []
+    rejected = deployment_payload.get("rejected_strategies", []) or []
+    reconciliation = deployment_payload.setdefault("reconciliation", {})
+    if not isinstance(reconciliation, MutableMapping):
+        reconciliation = {}
+        deployment_payload["reconciliation"] = reconciliation
+    reconciliation["deployment_selected"] = len(selected)
+    reconciliation["deployment_rejected"] = len(rejected)
+    reconciliation["lgbm_mask_contract_covered"] = int(
+        sum(
+            1
+            for row in selected
+            if isinstance(row, Mapping) and row.get("lgbm_regime_mask")
+        )
+    )
+
+
 def _assert_deployment_has_selected_strategies(
     deployment_payload: Mapping[str, Any],
     *,
@@ -13684,6 +14252,7 @@ def _filter_candidates_to_deployment_strategies(
         return out
 
     thresholds: Dict[str, float] = {}
+    threshold_sources: Dict[str, str] = {}
     for row in deployment_payload.get("strategies", []) or []:
         if not isinstance(row, Mapping):
             continue
@@ -13693,13 +14262,162 @@ def _filter_candidates_to_deployment_strategies(
         threshold = _safe_float(row.get("deployment_rank_threshold"), np.nan)
         if np.isfinite(threshold):
             thresholds[sid] = float(threshold)
+            threshold_sources[sid] = str(
+                row.get("threshold_rank_score_source") or "policy_rank_pct"
+            )
     if not thresholds:
         return out
 
     rank = pd.to_numeric(out["strategy_rank_pct"], errors="coerce")
     per_row_threshold = out["strategy_id"].astype(str).map(thresholds)
     threshold_mask = rank >= pd.to_numeric(per_row_threshold, errors="coerce")
-    return out.loc[threshold_mask.fillna(False)].copy()
+    if "uncertainty_adjusted_ev_net_return" in out.columns:
+        ev_adj = pd.to_numeric(
+            out["uncertainty_adjusted_ev_net_return"], errors="coerce"
+        )
+        # Candidate rows without an uncertainty-EV fit are kept for backwards
+        # compatibility; fitted rows must have positive adjusted net EV.
+        threshold_mask &= ev_adj.isna() | (ev_adj > 0.0)
+    out = out.loc[threshold_mask.fillna(False)].copy()
+    if out.empty:
+        return out
+    strategy_values = out["strategy_id"].astype(str)
+    out["base_strategy_threshold"] = pd.to_numeric(
+        strategy_values.map(thresholds), errors="coerce"
+    ).astype(np.float32)
+    out["deployment_rank_threshold"] = out["base_strategy_threshold"]
+    out["threshold_rank_score_source"] = strategy_values.map(threshold_sources).fillna(
+        "policy_rank_pct"
+    )
+    return out
+
+
+def _strategy_support_funnel_stage(
+    strategy_id: str,
+    stage: str,
+    frame: Optional[pd.DataFrame],
+) -> pd.DataFrame:
+    """Summarise per-day strategy support at one policy/inference stage."""
+    columns = [
+        "strategy_id",
+        "stage",
+        "date",
+        "rows",
+        "symbols",
+        "rank_max",
+        "rank_mean",
+        "score_max",
+        "score_mean",
+    ]
+    if frame is None or frame.empty or "timestamp" not in frame.columns:
+        return pd.DataFrame(columns=columns)
+    ts = pd.to_datetime(frame["timestamp"], utc=True, errors="coerce")
+    work = frame.loc[ts.notna()].copy()
+    if work.empty:
+        return pd.DataFrame(columns=columns)
+    work["_support_date"] = ts.loc[work.index].dt.strftime("%Y-%m-%d")
+    rank_col = next(
+        (
+            col
+            for col in (
+                "strategy_rank_pct",
+                "policy_rank_pct",
+                "rank_pct",
+                "normalized_rank_score",
+            )
+            if col in work.columns
+        ),
+        None,
+    )
+    score_col = next(
+        (col for col in ("calibrated_score", "clf", "oof_pred") if col in work.columns),
+        None,
+    )
+    rows: List[Dict[str, Any]] = []
+    for day, group in work.groupby("_support_date", sort=True):
+        rank = (
+            pd.to_numeric(group[rank_col], errors="coerce")
+            if rank_col is not None
+            else pd.Series(np.nan, index=group.index)
+        )
+        score = (
+            pd.to_numeric(group[score_col], errors="coerce")
+            if score_col is not None
+            else pd.Series(np.nan, index=group.index)
+        )
+        rows.append(
+            {
+                "strategy_id": str(strategy_id),
+                "stage": str(stage),
+                "date": str(day),
+                "rows": int(len(group)),
+                "symbols": int(
+                    group["symbol"].astype(str).nunique()
+                    if "symbol" in group.columns
+                    else 0
+                ),
+                "rank_max": _safe_float(rank.max(), np.nan),
+                "rank_mean": _safe_float(rank.mean(), np.nan),
+                "score_max": _safe_float(score.max(), np.nan),
+                "score_mean": _safe_float(score.mean(), np.nan),
+            }
+        )
+    return pd.DataFrame(rows, columns=columns)
+
+
+def _write_strategy_support_funnel_report(
+    stages: Sequence[pd.DataFrame],
+    *,
+    output_dir: Path,
+    market_mode: str,
+) -> Dict[str, Any]:
+    non_empty = [stage for stage in stages if stage is not None and not stage.empty]
+    if not non_empty:
+        return {"enabled": True, "status": "empty", "rows": 0}
+    output_dir.mkdir(parents=True, exist_ok=True)
+    report = pd.concat(non_empty, ignore_index=True, sort=False)
+    report = report.sort_values(["strategy_id", "date", "stage"]).reset_index(
+        drop=True
+    )
+    csv_path = output_dir / "strategy_support_funnel_daily.csv"
+    json_path = output_dir / "strategy_support_funnel_summary.json"
+    report.to_csv(csv_path, index=False)
+    latest = (
+        report.sort_values(["strategy_id", "stage", "date"])
+        .groupby(["strategy_id", "stage"], as_index=False)
+        .tail(1)
+        .sort_values(["strategy_id", "stage"])
+    )
+    summary = {
+        "enabled": True,
+        "status": "written",
+        "rows": int(len(report)),
+        "report_path": str(csv_path),
+        "latest_by_strategy_stage": latest.to_dict(orient="records"),
+    }
+    _write_text_with_mode_alias(
+        json_path,
+        json.dumps(_json_safe(summary), indent=2),
+        market_mode,
+    )
+    logger.info(
+        "Saved strategy support funnel report to %s rows=%s",
+        csv_path,
+        len(report),
+    )
+    return summary
+
+
+def _strategy_support_funnel_table_stages(
+    stage: str,
+    frame: Optional[pd.DataFrame],
+) -> List[pd.DataFrame]:
+    if frame is None or frame.empty or "strategy_id" not in frame.columns:
+        return []
+    stages: List[pd.DataFrame] = []
+    for strategy_id, group in frame.groupby(frame["strategy_id"].astype(str)):
+        stages.append(_strategy_support_funnel_stage(str(strategy_id), stage, group))
+    return stages
 
 
 def _apply_deployment_strategy_contract(
@@ -14110,6 +14828,7 @@ def run_simple_policy_optimisation(
     results_json = {}
     strategy_top5_daily_weekly: list[dict[str, Any]] = []
     simple_policy_candidate_frames: List[pd.DataFrame] = []
+    strategy_support_funnel_frames: List[pd.DataFrame] = []
     recent_oof_asset_report_frames: List[pd.DataFrame] = []
     recent_oof_asset_summaries: List[Dict[str, Any]] = []
     oos_results_json = {
@@ -14169,6 +14888,9 @@ def run_simple_policy_optimisation(
         )
         df["rank_pct"] = df["calibrated_score"].rank(method="max", pct=True)
         df["strategy_id"] = strategy_id
+        strategy_support_funnel_frames.append(
+            _strategy_support_funnel_stage(strategy_id, "meta_prediction_rows", df)
+        )
 
         if "side" not in df.columns:
             if strategy_id.startswith("short"):
@@ -14192,6 +14914,9 @@ def run_simple_policy_optimisation(
             df_policy_all = df_policy_all.sort_index().reset_index(drop=True)
 
         n_policy = len(df_policy_all)
+        strategy_support_funnel_frames.append(
+            _strategy_support_funnel_stage(strategy_id, "policy_clean_rows", df_policy_all)
+        )
         if n_policy < 10:
             continue
         opt_mask_all, validation_mask_all, policy_outer_split = (
@@ -14227,6 +14952,9 @@ def run_simple_policy_optimisation(
         df_policy_outer_validation = df_policy_all.iloc[
             validation_indices_all
         ].copy().reset_index(drop=True)
+        strategy_support_funnel_frames.append(
+            _strategy_support_funnel_stage(strategy_id, "policy_fit_window_rows", df_policy_fit)
+        )
         logger.info(
             "[%s] Policy outer split: optimisation_rows=%s validation_rows=%s "
             "recent_split=%s",
@@ -14287,6 +15015,13 @@ def run_simple_policy_optimisation(
         df_policy_outer_validation = df_policy_all.iloc[
             validation_indices_all
         ].copy().reset_index(drop=True)
+        strategy_support_funnel_frames.append(
+            _strategy_support_funnel_stage(
+                strategy_id,
+                "policy_fit_after_entry_model_rows",
+                df_policy_fit,
+            )
+        )
         opt_policy_paths = _path_take(all_policy_paths, opt_indices_all)
         validation_policy_paths = _path_take(all_policy_paths, validation_indices_all)
         finite_path_rows, total_path_rows, path_coverage = _assert_policy_path_coverage(
@@ -14372,6 +15107,9 @@ def run_simple_policy_optimisation(
             >= deployment_rank_threshold
         )
         df_top = df_policy_fit.iloc[trade_idx].copy().reset_index(drop=True)
+        strategy_support_funnel_frames.append(
+            _strategy_support_funnel_stage(strategy_id, "stage_b_rank_floor_rows", df_top)
+        )
         all_paths = _path_take(opt_policy_paths, trade_idx)
         stage_a0_ev_prefilter = _fit_simple_rank_net_ev_prefilter(
             df_top,
@@ -14386,6 +15124,13 @@ def run_simple_policy_optimisation(
                 cost_pct=stage_a_cost_pct,
                 market_mode=market_mode,
                 context="stage_b_fit",
+            )
+        )
+        strategy_support_funnel_frames.append(
+            _strategy_support_funnel_stage(
+                strategy_id,
+                "stage_b_after_simple_net_ev_prefilter",
+                df_top,
             )
         )
         if len(stage_a0_keep_mask) == len(trade_idx):
@@ -14713,6 +15458,17 @@ def run_simple_policy_optimisation(
             policy_drift_risk_fit,
             context="simple_policy_candidate_export",
         )
+        candidate_rows, uncertainty_ev_summary = _fit_uncertainty_adjusted_ev(
+            candidate_rows,
+            strategy_id=strategy_id,
+        )
+        strategy_support_funnel_frames.append(
+            _strategy_support_funnel_stage(
+                strategy_id,
+                "candidate_export_pre_global_rank_rows",
+                candidate_rows,
+            )
+        )
         if not candidate_rows.empty:
             logger.info(
                 "[%s] Portfolio candidate export pre-normalization rows=%s "
@@ -14817,6 +15573,7 @@ def run_simple_policy_optimisation(
                 "fit": policy_drift_risk_fit_summary,
                 "candidate_export": candidate_risk_apply,
             },
+            "uncertainty_adjusted_ev": uncertainty_ev_summary,
             "policy_outer_split": policy_outer_split,
             "asset_metrics": asset_metric_rows,
             "cv_folds": fold_results,
@@ -14902,6 +15659,7 @@ def run_simple_policy_optimisation(
                 "fit": policy_drift_risk_fit_summary,
                 "candidate_export": candidate_risk_apply,
             },
+            "uncertainty_adjusted_ev": uncertainty_ev_summary,
             "asset_metrics": asset_metric_rows,
             "recent_oof_asset_exclusion_summary": recent_oof_summary,
             "regime_adaptor": regime_adaptor_summary,
@@ -14999,11 +15757,42 @@ def run_simple_policy_optimisation(
         rank_floor=0.0,
     )
     candidate_table = _finalise_simple_policy_candidates(simple_policy_candidate_frames)
+    strategy_support_funnel_frames.extend(
+        _strategy_support_funnel_table_stages(
+            "broad_candidate_export_rows",
+            auction_reference_table,
+        )
+    )
+    strategy_support_funnel_frames.extend(
+        _strategy_support_funnel_table_stages(
+            "global_export_rank_floor_rows",
+            candidate_table,
+        )
+    )
     candidate_path = (
         output_run_root
         / "simple_policy_optimiser"
         / "simple_policy_candidates.parquet"
     )
+    broad_candidate_path = (
+        candidate_path.parent / "simple_policy_candidates_broad.parquet"
+    )
+    if not auction_reference_table.empty:
+        candidate_path.parent.mkdir(parents=True, exist_ok=True)
+        auction_reference_table.to_parquet(broad_candidate_path, index=False)
+        broad_candidate_metadata_path = (
+            candidate_path.parent / "simple_policy_candidates_broad_metadata.json"
+        )
+        _write_simple_policy_candidate_metadata(
+            auction_reference_table,
+            output_path=broad_candidate_metadata_path,
+        )
+        logger.info(
+            "Saved broad simple policy candidate table to %s rows=%s metadata=%s",
+            broad_candidate_path,
+            len(auction_reference_table),
+            broad_candidate_metadata_path,
+        )
     if not candidate_table.empty:
         try:
             _validate_delayed_entry_execution_coverage(
@@ -15038,6 +15827,7 @@ def run_simple_policy_optimisation(
         auction_reference_table,
         candidate_path=candidate_path,
     )
+    _refresh_deployment_reconciliation(deployment_payload)
     policy_params_dir = output_run_root / "policy_params"
     policy_params_dir.mkdir(parents=True, exist_ok=True)
     deployment_text = json.dumps(_json_safe(deployment_payload), indent=2)
@@ -15139,9 +15929,20 @@ def run_simple_policy_optimisation(
             deployment_payload
         )
         replay_candidate_table = _filter_candidates_to_deployment_strategies(
-            candidate_table,
+            auction_reference_table,
             deployed_strategy_ids,
             deployment_payload=deployment_payload,
+        )
+        strategy_support_funnel_frames.extend(
+            _strategy_support_funnel_table_stages(
+                "deployable_strategy_threshold_rows",
+                replay_candidate_table,
+            )
+        )
+        _write_strategy_support_funnel_report(
+            strategy_support_funnel_frames,
+            output_dir=candidate_path.parent,
+            market_mode=market_mode,
         )
         if replay_candidate_table.empty:
             raise RuntimeError(
@@ -15239,6 +16040,21 @@ def run_simple_policy_optimisation(
                     json.dumps(_json_safe(optimized_portfolio_payload), indent=2),
                     encoding="utf-8",
                 )
+                policy_params_optimized_path = (
+                    policy_params_dir / "optimized_portfolio_policy_config.json"
+                )
+                if policy_params_optimized_path != optimized_portfolio_path:
+                    _write_text_with_mode_alias(
+                        policy_params_optimized_path,
+                        json.dumps(
+                            _json_safe(optimized_portfolio_payload), indent=2
+                        ),
+                        market_mode,
+                    )
+                    logger.info(
+                        "Mirrored optimized live portfolio policy config to %s",
+                        policy_params_optimized_path,
+                    )
                 logger.info(
                     "Updated live portfolio policy strategy contract to deployed "
                     "strategy set: %s strategies",

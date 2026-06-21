@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -58,6 +58,10 @@ from .label_weight_optuna import (
     apply_label_recipe,
     apply_weight_recipe,
     load_recipe_from_env_or_cfg,
+)
+from .late_window_metrics import (
+    compute_late_window_hit_rate_summary,
+    flatten_late_window_summary,
 )
 
 # from .spike_anatomy import SpikeAnatomyModel
@@ -3757,6 +3761,53 @@ def _fit_direct_extratrees_base_model(
             "EPM_LGBM_NATIVE_PRESET_PARAMS_ONLY",
             str(_cfg_local.get("lgbm_native_preset_params_only", "")),
         )
+        if _native_lgbm_preset and not _native_lgbm_preset_params_only:
+            _preset_scope = str(native_scope_key or hpo_scope_key or kind_name)
+            _preset_extra = _native_lgbm_preset_extra_features(
+                _cfg_local,
+                scope_key=_preset_scope,
+                objective_mode="train_meta" if _is_meta_hpo else "train_base",
+            )
+            if _preset_extra:
+                _selected_existing = [
+                    str(c)
+                    for c in ((_native_lgbm_preset or {}).get("selected_features") or [])
+                    if str(c).strip()
+                ]
+                _available_cols = set(map(str, _race_X_df.columns))
+                _extra_present = [
+                    str(c)
+                    for c in _preset_extra
+                    if str(c) in _available_cols and str(c) not in set(_selected_existing)
+                ]
+                _extra_missing = [
+                    str(c)
+                    for c in _preset_extra
+                    if str(c) not in _available_cols
+                ]
+                if _extra_present:
+                    _native_lgbm_preset = dict(_native_lgbm_preset)
+                    _native_lgbm_preset["selected_features"] = list(
+                        dict.fromkeys(_selected_existing + _extra_present)
+                    )
+                    _native_lgbm_preset["extra_selected_features"] = list(
+                        _extra_present
+                    )
+                    _native_lgbm_preset[
+                        "extra_selected_feature_report_missing"
+                    ] = list(_extra_missing)
+                    tprint(
+                        f"Model Race [{kind_name}]: appended "
+                        f"{len(_extra_present)} native-preset extra features "
+                        f"from report/config for scope={_preset_scope}; "
+                        f"missing={len(_extra_missing)}."
+                    )
+                elif _extra_missing:
+                    tprint(
+                        f"Model Race [{kind_name}]: native-preset extra features "
+                        f"requested for scope={_preset_scope}, but none were "
+                        f"materialized; missing sample={_extra_missing[:20]}"
+                    )
         if not _native_lgbm_preset_params_only:
             _native_lgbm_preset_features = {
                 str(c)
@@ -7681,7 +7732,7 @@ def build_horizon_prediction_features(conf: dict, X_eval: pd.DataFrame) -> pd.Da
 
 
 def _aggregate_alpha_oof_metrics(
-    y_true, probs, returns, sample_weight=None, groups=None
+    y_true, probs, returns, sample_weight=None, groups=None, timestamps=None
 ):
     """Aggregate tradability and calibration metrics for alpha models."""
     metrics = {}
@@ -7762,6 +7813,21 @@ def _aggregate_alpha_oof_metrics(
         grp = np.asarray(groups)[mask]
         ic = ic_cross_sectional(p_m, r_m, groups=grp)
         metrics["ic_cs"] = float(ic)
+
+    ts_source = timestamps if timestamps is not None else groups
+    if ts_source is not None:
+        try:
+            ts_arr = np.asarray(ts_source)[mask]
+            late_summary = compute_late_window_hit_rate_summary(
+                timestamps=ts_arr,
+                actual_hit=y_m,
+                expected_probability=p_m,
+                pnl=r_m,
+            )
+            metrics["late_window_hit_rate"] = late_summary
+            metrics.update(flatten_late_window_summary(late_summary))
+        except Exception as exc:
+            metrics["late_window_status"] = f"error:{type(exc).__name__}"
 
     return metrics
 
@@ -8322,6 +8388,151 @@ def _load_native_lgbm_meta_training_preset(
         raise RuntimeError(
             f"Failed to load LGBM meta preset for {scope_key} from {state_path}: {exc}"
         ) from exc
+
+
+def _native_preset_scope_aliases(scope_key: str) -> set[str]:
+    raw = str(scope_key or "").strip()
+    aliases: set[str] = set()
+    if not raw:
+        return aliases
+
+    def _add(value: str) -> None:
+        value = str(value or "").strip()
+        if value:
+            aliases.add(value)
+
+    _add(raw)
+    no_meta = raw[len("meta_") :] if raw.startswith("meta_") else raw
+    _add(no_meta)
+    for suffix in (
+        "_correctness_clf",
+        "_base_target_clf",
+        "_tbm_clf",
+        "_clf",
+        "_reg",
+    ):
+        if no_meta.endswith(suffix):
+            stem = no_meta[: -len(suffix)]
+            _add(stem)
+            no_meta = stem
+            break
+    if no_meta.startswith(("long_", "short_")):
+        _add(no_meta.split("_", 1)[1])
+    return aliases
+
+
+def _csv_env_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return [str(v).strip() for v in value if str(v).strip()]
+    raw = str(value or "").strip()
+    if not raw:
+        return []
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def _native_preset_extra_feature_allowed(feature: str, cfg: dict[str, Any]) -> bool:
+    name = str(feature or "").strip()
+    if not name or name == "meta_en_x_efficiency":
+        return False
+    prefixes = tuple(
+        str(p)
+        for p in (
+            cfg.get("lgbm_native_preset_extra_feature_allow_prefixes")
+            or ["mkt_", "xs_", "eig_", "q_"]
+        )
+        if str(p)
+    )
+    exact = {
+        str(v)
+        for v in (
+            cfg.get("lgbm_native_preset_extra_feature_allow_exact")
+            or ["xasset_mkt_spread_bps", "regime_liquidity_score"]
+        )
+    }
+    return name in exact or bool(prefixes and name.startswith(prefixes))
+
+
+def _native_lgbm_preset_extra_features(
+    cfg: dict[str, Any] | None,
+    *,
+    scope_key: str,
+    objective_mode: str,
+) -> list[str]:
+    cfg_local = cfg if isinstance(cfg, dict) else {}
+    objective = str(objective_mode or "").strip().lower()
+    layer = "meta" if objective in {"train_meta", "meta"} else "base"
+    aliases = _native_preset_scope_aliases(scope_key)
+
+    extras: list[str] = []
+    extras.extend(_csv_env_list(cfg_local.get("lgbm_native_preset_extra_features")))
+    extras.extend(_csv_env_list(os.getenv("EPM_LGBM_NATIVE_PRESET_EXTRA_FEATURES")))
+    extras.extend(
+        _csv_env_list(
+            cfg_local.get(f"lgbm_native_preset_extra_features_{layer}")
+        )
+    )
+    extras.extend(
+        _csv_env_list(
+            os.getenv(f"EPM_LGBM_NATIVE_PRESET_EXTRA_FEATURES_{layer.upper()}")
+        )
+    )
+
+    for map_key in (
+        "lgbm_native_preset_extra_features_by_scope",
+        "lgbm_native_preset_extra_features_by_strategy",
+    ):
+        mapping = cfg_local.get(map_key)
+        if isinstance(mapping, Mapping):
+            for alias in aliases:
+                extras.extend(_csv_env_list(mapping.get(alias)))
+
+    report_path = str(
+        os.getenv("EPM_LGBM_NATIVE_PRESET_EXTRA_FEATURE_REPORT", "")
+        or cfg_local.get("lgbm_native_preset_extra_feature_report", "")
+        or ""
+    ).strip()
+    if report_path:
+        try:
+            report = pd.read_csv(report_path)
+            if {"layer", "strategy", "feature"}.issubset(report.columns):
+                layer_mask = report["layer"].astype(str).str.lower() == layer
+                strategy_mask = report["strategy"].astype(str).isin(aliases)
+                slice_name = str(
+                    os.getenv(
+                        "EPM_LGBM_NATIVE_PRESET_EXTRA_FEATURE_REPORT_SLICE",
+                        str(
+                            cfg_local.get(
+                                "lgbm_native_preset_extra_feature_report_slice",
+                                "top30",
+                            )
+                        ),
+                    )
+                    or ""
+                ).strip()
+                if slice_name and "slice" in report.columns:
+                    slice_mask = report["slice"].astype(str) == slice_name
+                else:
+                    slice_mask = pd.Series(True, index=report.index)
+                report_features = (
+                    report.loc[layer_mask & strategy_mask & slice_mask, "feature"]
+                    .astype(str)
+                    .tolist()
+                )
+                extras.extend(report_features)
+        except Exception as exc:
+            tprint(
+                "WARNING: failed to load native preset extra-feature report "
+                f"{report_path}: {exc}"
+            )
+
+    filtered = [
+        str(feature)
+        for feature in extras
+        if _native_preset_extra_feature_allowed(str(feature), cfg_local)
+    ]
+    return list(dict.fromkeys(filtered))
 
 
 def _payload_put_oof_vector(
@@ -19416,6 +19627,23 @@ def train_meta_models_from_artifacts(
                 if not _native_meta_preset_params_only
                 else []
             )
+            _native_meta_extra_features = _native_lgbm_preset_extra_features(
+                cfg,
+                scope_key=_native_meta_scope,
+                objective_mode="train_meta",
+            )
+            if _native_meta_extra_features:
+                _pre_cfg_extra_n = len(configured_meta)
+                configured_meta = list(
+                    dict.fromkeys(configured_meta + _native_meta_extra_features)
+                )
+                tprint(
+                    f"  Meta {k}: requested "
+                    f"{len(_native_meta_extra_features)} native-preset extra "
+                    "features from report/config; "
+                    f"added {len(configured_meta) - _pre_cfg_extra_n} to the "
+                    "raw/meta feature request."
+                )
             if _native_meta_preset and _native_meta_preset_params_only:
                 tprint(
                     f"  Meta {k}: native LGBM preset params-only mode; "
@@ -24319,8 +24547,6 @@ def train_meta_models_from_artifacts(
                 if _strategy_key.endswith("_tbm_clf")
                 else _strategy_key
             )
-            if _metric_key in _meta_head_metrics:
-                continue
             try:
                 _oof_df = pd.read_parquet(_path)
             except Exception as _exc:
@@ -24334,10 +24560,10 @@ def train_meta_models_from_artifacts(
                 _score_col = "oof_pred"
             else:
                 continue
-            if "y_move" in _oof_df.columns:
-                _target_col = "y_move"
-            elif "y_bin" in _oof_df.columns:
+            if "y_bin" in _oof_df.columns:
                 _target_col = "y_bin"
+            elif "y_move" in _oof_df.columns:
+                _target_col = "y_move"
             else:
                 continue
 
@@ -24444,6 +24670,21 @@ def train_meta_models_from_artifacts(
                         )
                 except Exception:
                     pass
+                try:
+                    _late_summary = compute_late_window_hit_rate_summary(
+                        timestamps=_oof_df.loc[_valid, "timestamp"],
+                        actual_hit=_target_v,
+                        expected_probability=_score_v,
+                        pnl=(
+                            _oof_df.loc[_valid, "return"]
+                            if "return" in _oof_df.columns
+                            else None
+                        ),
+                    )
+                    _mr["late_window_hit_rate"] = _late_summary
+                    _mr.update(flatten_late_window_summary(_late_summary))
+                except Exception as _exc:
+                    _mr["late_window_status"] = f"error:{type(_exc).__name__}"
             _meta_head_metrics[_metric_key] = _mr
 
     for _mhk, _mhm in meta_models.items():

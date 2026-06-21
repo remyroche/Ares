@@ -402,6 +402,301 @@ def _broadcast_series_to_frame(
     )
 
 
+_REGIME_XS_PREFIXES = (
+    "xs_mean__",
+    "xs_median__",
+    "xs_std__",
+    "xs_dispersion__",
+)
+_REGIME_TAIL_PREFIXES = (
+    "q_lower_tail__",
+    "q_upper_tail__",
+    "q_iqr__",
+    "q_tail_width__",
+    "q_tail_asym__",
+)
+_REGIME_EIGEN_PREFIXES = ("eig_", "xs_cov_")
+
+
+def _regime_composite_parent_from_key(key: str) -> str | None:
+    for prefix in _REGIME_XS_PREFIXES + _REGIME_TAIL_PREFIXES:
+        if key.startswith(prefix):
+            parent = key[len(prefix) :]
+            return parent or None
+    return None
+
+
+def _regime_composite_group_from_key(key: str) -> str | None:
+    if key.startswith(_REGIME_EIGEN_PREFIXES) and "__" in key:
+        group = key.rsplit("__", 1)[-1]
+        return group or None
+    return None
+
+
+def _is_regime_composite_key(key: str) -> bool:
+    return key.startswith(_REGIME_XS_PREFIXES + _REGIME_TAIL_PREFIXES + _REGIME_EIGEN_PREFIXES)
+
+
+def _expand_regime_composite_dependencies(
+    requested_feature_set: set[str],
+    cfg: dict | None,
+) -> set[str]:
+    """Ensure requested cross-symbol composites have their raw parents built."""
+    if not requested_feature_set:
+        return requested_feature_set
+    cfg = cfg or {}
+    out = set(requested_feature_set)
+    group_map = cfg.get("MODEL_REGIME_COMPOSITE_EIGEN_GROUPS", {}) or {}
+
+    def _parent_dependency_allowed(parent_key: str) -> bool:
+        req = _feature_source_requirements(parent_key)
+        if "deleted" in req:
+            return False
+        if "orderbook" in req and not bool(cfg.get("enable_orderbook_features", False)):
+            return False
+        if "funding" in req and str(cfg.get("feature_portability_mode", "")).lower() == "no_funding_source":
+            return False
+        return True
+
+    for key in list(requested_feature_set):
+        parent = _regime_composite_parent_from_key(str(key))
+        if parent and _parent_dependency_allowed(parent):
+            out.add(parent)
+            continue
+        group = _regime_composite_group_from_key(str(key))
+        if group:
+            for parent_key in list(group_map.get(group, []) or []):
+                parent_key = str(parent_key)
+                if _parent_dependency_allowed(parent_key):
+                    out.add(parent_key)
+    return out
+
+
+def _regime_broadcast_values(
+    values: np.ndarray,
+    index: pd.Index,
+    columns: pd.Index,
+) -> pd.DataFrame:
+    arr = np.asarray(values, dtype=np.float32)
+    arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+    view = np.broadcast_to(arr[:, None], (len(index), len(columns)))
+    return pd.DataFrame(view, index=index, columns=columns, copy=False).astype(
+        np.float32, copy=False
+    )
+
+
+def _regime_feature_matrix(
+    feats: dict[str, pd.DataFrame],
+    keys: Sequence[str],
+    index: pd.Index,
+    columns: pd.Index,
+) -> tuple[list[np.ndarray], list[str]]:
+    arrays: list[np.ndarray] = []
+    used: list[str] = []
+    for key in keys:
+        frame = feats.get(str(key))
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            continue
+        aligned = frame.reindex(index=index, columns=columns)
+        arr = aligned.to_numpy(dtype=np.float32, copy=False)
+        if arr.size and np.isfinite(arr).any():
+            arrays.append(arr)
+            used.append(str(key))
+    return arrays, used
+
+
+def _row_eigen_summary_from_arrays(
+    arrays: list[np.ndarray],
+    *,
+    use_corr: bool,
+) -> dict[str, np.ndarray]:
+    if not arrays:
+        empty = np.zeros(0, dtype=np.float32)
+        return {
+            "effective_rank": empty,
+            "participation_ratio": empty,
+            "pc1_concentration": empty,
+            "mean_abs_corr": empty,
+        }
+    n_rows = arrays[0].shape[0]
+    n_assets = arrays[0].shape[1]
+    n_features = len(arrays)
+    effective_rank = np.zeros(n_rows, dtype=np.float32)
+    participation_ratio = np.zeros(n_rows, dtype=np.float32)
+    pc1_concentration = np.zeros(n_rows, dtype=np.float32)
+    mean_abs_corr = np.zeros(n_rows, dtype=np.float32)
+    if n_assets < 3 or n_features < 2:
+        return {
+            "effective_rank": effective_rank,
+            "participation_ratio": participation_ratio,
+            "pc1_concentration": pc1_concentration,
+            "mean_abs_corr": mean_abs_corr,
+        }
+    eps = np.float32(1e-12)
+    for i in range(n_rows):
+        row = np.empty((n_assets, n_features), dtype=np.float32)
+        for j, arr in enumerate(arrays):
+            row[:, j] = arr[i, :]
+        mask = np.isfinite(row).all(axis=1)
+        if int(mask.sum()) < 3:
+            continue
+        x = row[mask, :].astype(np.float64, copy=False)
+        if x.shape[0] < 3 or x.shape[1] < 2:
+            continue
+        x = x - np.nanmean(x, axis=0, keepdims=True)
+        std = np.nanstd(x, axis=0, ddof=1)
+        keep = np.isfinite(std) & (std > 1e-9)
+        if int(keep.sum()) < 2:
+            continue
+        x = x[:, keep]
+        if use_corr:
+            x = x / std[keep][None, :]
+        mat = (x.T @ x) / max(float(x.shape[0] - 1), 1.0)
+        mat = np.nan_to_num(mat, nan=0.0, posinf=0.0, neginf=0.0)
+        try:
+            eig = np.linalg.eigvalsh(mat)
+        except np.linalg.LinAlgError:
+            continue
+        eig = np.clip(np.asarray(eig, dtype=np.float64), 0.0, None)
+        total = float(eig.sum())
+        if total <= 1e-12:
+            continue
+        p = eig / total
+        effective_rank[i] = np.float32(np.exp(-np.sum(p * np.log(p + eps))))
+        participation_ratio[i] = np.float32((total * total) / (np.sum(eig * eig) + eps))
+        pc1_concentration[i] = np.float32(float(eig[-1]) / total)
+        if mat.shape[0] > 1:
+            diag = np.sqrt(np.maximum(np.diag(mat), 0.0))
+            denom = np.outer(diag, diag)
+            corr = np.divide(mat, denom, out=np.zeros_like(mat), where=denom > 1e-12)
+            off = np.abs(corr[np.triu_indices_from(corr, k=1)])
+            if off.size:
+                mean_abs_corr[i] = np.float32(np.nanmean(off))
+    return {
+        "effective_rank": effective_rank,
+        "participation_ratio": participation_ratio,
+        "pc1_concentration": pc1_concentration,
+        "mean_abs_corr": mean_abs_corr,
+    }
+
+
+def _add_regime_panel_composite_features(
+    feats: dict[str, pd.DataFrame],
+    requested_feature_set: set[str],
+    cfg: dict | None,
+    index: pd.Index,
+    columns: pd.Index,
+) -> set[str]:
+    cfg = cfg or {}
+    configured = {str(k) for k in cfg.get("MODEL_REGIME_COMPOSITE_META_FEATURE_KEYS", []) or []}
+    if requested_feature_set:
+        requested = {str(k) for k in requested_feature_set if _is_regime_composite_key(str(k))}
+        requested.update(k for k in configured if k in requested_feature_set)
+    else:
+        requested = set(configured)
+    if not requested:
+        return set()
+
+    generated: set[str] = set()
+    zero = np.zeros(len(index), dtype=np.float32)
+    parent_cache: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = {}
+
+    def _parent_stats(parent: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        cached = parent_cache.get(parent)
+        if cached is not None:
+            return cached
+        frame = feats.get(parent)
+        if isinstance(frame, pd.DataFrame) and not frame.empty:
+            aligned = frame.reindex(index=index, columns=columns)
+            q10 = _row_quantile_fast(aligned, 0.10)
+            q25 = _row_quantile_fast(aligned, 0.25)
+            q50 = _row_median_fast(aligned)
+            q75 = _row_quantile_fast(aligned, 0.75)
+            q90 = _row_quantile_fast(aligned, 0.90)
+            stats = tuple(
+                np.nan_to_num(x.astype(np.float32, copy=False), nan=0.0, posinf=0.0, neginf=0.0)
+                for x in (q10, q25, q50, q75, q90)
+            )
+        else:
+            stats = (zero, zero, zero, zero, zero)
+        parent_cache[parent] = stats
+        return stats
+
+    for key in sorted(k for k in requested if k.startswith(_REGIME_XS_PREFIXES + _REGIME_TAIL_PREFIXES)):
+        parent = _regime_composite_parent_from_key(key)
+        if not parent:
+            continue
+        frame = feats.get(parent)
+        values: np.ndarray
+        if key.startswith("xs_mean__"):
+            values = _row_mean_fast(frame.reindex(index=index, columns=columns)) if isinstance(frame, pd.DataFrame) else zero
+        elif key.startswith("xs_median__"):
+            values = _row_median_fast(frame.reindex(index=index, columns=columns)) if isinstance(frame, pd.DataFrame) else zero
+        elif key.startswith("xs_std__"):
+            values = _row_std_fast(frame.reindex(index=index, columns=columns)) if isinstance(frame, pd.DataFrame) else zero
+        elif key.startswith("xs_dispersion__"):
+            q10, q25, q50, q75, q90 = _parent_stats(parent)
+            values = q75 - q25
+        else:
+            q10, q25, q50, q75, q90 = _parent_stats(parent)
+            if key.startswith("q_lower_tail__"):
+                values = q10
+            elif key.startswith("q_upper_tail__"):
+                values = q90
+            elif key.startswith("q_iqr__"):
+                values = q75 - q25
+            elif key.startswith("q_tail_width__"):
+                values = q90 - q10
+            elif key.startswith("q_tail_asym__"):
+                values = (q90 + q10) - (2.0 * q50)
+            else:
+                continue
+        feats[key] = _regime_broadcast_values(values, index, columns)
+        generated.add(key)
+
+    group_map = cfg.get("MODEL_REGIME_COMPOSITE_EIGEN_GROUPS", {}) or {}
+    grouped: dict[str, list[str]] = {}
+    for key in sorted(k for k in requested if k.startswith(_REGIME_EIGEN_PREFIXES)):
+        group = _regime_composite_group_from_key(key)
+        if group:
+            grouped.setdefault(group, []).append(key)
+    for group, keys in grouped.items():
+        arrays, used = _regime_feature_matrix(
+            feats,
+            [str(k) for k in group_map.get(group, []) or []],
+            index,
+            columns,
+        )
+        use_corr = True
+        summaries = _row_eigen_summary_from_arrays(arrays, use_corr=use_corr)
+        for key in keys:
+            if "effective_rank__" in key:
+                values = summaries["effective_rank"]
+            elif "participation_ratio__" in key:
+                values = summaries["participation_ratio"]
+            elif "pc1_concentration__" in key:
+                values = summaries["pc1_concentration"]
+            elif "mean_abs_corr__" in key:
+                values = summaries["mean_abs_corr"]
+            else:
+                values = zero
+            if values.size != len(index):
+                values = zero
+            feats[key] = _regime_broadcast_values(values, index, columns)
+            generated.add(key)
+        if keys:
+            tprint(
+                f"Regime panel composites group={group} requested={len(keys)} "
+                f"parents_used={len(used)}"
+            )
+
+    missing = sorted(requested - generated)
+    for key in missing:
+        feats[key] = _regime_broadcast_values(zero, index, columns)
+        generated.add(key)
+    return generated
+
+
 @njit(parallel=True, cache=True)
 def _row_nanmean_nb(mat: np.ndarray) -> np.ndarray:
     n_rows, n_cols = mat.shape
@@ -3044,6 +3339,7 @@ def compute_features_hourly(panel, mkt_gates, cfg, requested_feature_keys=None):
     """
     if requested_feature_keys is not None:
         requested_set = {str(k) for k in requested_feature_keys if str(k)}
+        requested_set = _expand_regime_composite_dependencies(requested_set, cfg or {})
         fast_result = _compute_live_lgbm_mask_features_fast(
             panel,
             cfg or {},
@@ -3084,6 +3380,7 @@ def compute_features_hourly(panel, mkt_gates, cfg, requested_feature_keys=None):
                     tu.expand_feature_group_refs(getattr(cfg_mod, group), cfg)
                 )
 
+        all_keys = _expand_regime_composite_dependencies(all_keys, cfg or {})
         requested_feature_keys = list(all_keys)
 
     return _compute_features_impl(
@@ -3261,6 +3558,10 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feature_timer = _FeatureStageTimer("compute_features_hourly")
     tprint("Features: compute base matrices")
     requested_feature_set = set(requested_feature_keys or [])
+    requested_feature_set = _expand_regime_composite_dependencies(
+        {str(k) for k in requested_feature_set},
+        cfg or {},
+    )
 
     def _needs_feature(*keys: str) -> bool:
         return (not requested_feature_set) or any(
@@ -4208,6 +4509,16 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     direction = (c_log - c_log.shift(20)).abs()
     volatility = _roll_sum("c_log_abs_diff", (c_log - c_log.shift(1)).abs(), 20)
     feats["efficiency_ratio_20"] = (direction / (volatility + 1e-12)).astype(np.float32)
+    for ker_window in (10, 16, 24):
+        ker_direction = (c_log - c_log.shift(ker_window)).abs()
+        ker_volatility = _roll_sum(
+            f"c_log_abs_diff_ker_{ker_window}",
+            (c_log - c_log.shift(1)).abs(),
+            ker_window,
+        )
+        feats[f"ker_{ker_window}"] = (
+            ker_direction / (ker_volatility + 1e-12)
+        ).astype(np.float32)
 
     # Choppiness index over 20
     atr_sum = _roll_sum("tr_ln", tr_ln, 20)
@@ -8871,6 +9182,10 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
     feats["higher_highs_count_48h"] = ff.numba_rolling_sum(higher_high, 48).astype(
         np.float32
     )
+    lower_low = (l < l.shift(1)).astype(np.float32)
+    feats["lower_lows_count_48h"] = ff.numba_rolling_sum(lower_low, 48).astype(
+        np.float32
+    )
 
     # trend_retest_success_rate: past-only proxy for whether EMA retests held.
     # A retest attempt is a completed prior-bar EMA touch; success is evaluated
@@ -10571,6 +10886,18 @@ def _compute_features_impl(panel, mkt_gates, cfg, requested_feature_keys=None):
             "Features: skipping position sizer feature block; no requested "
             "position-sizer keys in active feature contract"
         )
+
+    regime_composite_skip_keys = _add_regime_panel_composite_features(
+        feats,
+        requested_feature_set,
+        cfg or {},
+        c_log.index,
+        c_log.columns,
+    )
+    if regime_composite_skip_keys:
+        skip_transform_set.update(regime_composite_skip_keys)
+        _mark_feature_stage("regime_panel_composites")
+        tprint(f"Regime panel composites added: {len(regime_composite_skip_keys)}")
 
     tprint(f"Features: done ({len(feats)} keys)")
     _mark_feature_stage("final")

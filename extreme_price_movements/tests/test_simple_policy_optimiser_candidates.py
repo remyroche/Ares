@@ -267,17 +267,20 @@ def test_replay_threshold_selector_can_lower_threshold_without_trade_count_floor
 
     assert report["updated"] is True
     assert report["selected_threshold"] < 0.92
+    assert report["deployment_threshold_updated"] is False
+    assert report["deployment_threshold_updates_are_diagnostic_only"] is True
     assert report["global_min_trade_count_is_diagnostic_only"] is True
     assert report["selected"]["global_min_trade_count_met"] is False
     assert payload["strategies"][0]["deployment_rank_threshold"] == pytest.approx(
-        report["selected_threshold"]
+        0.92
     )
-    assert updated_candidates["base_strategy_threshold"].eq(
-        report["selected_threshold"]
-    ).all()
-    assert updated_replay["base_strategy_threshold"].eq(
-        report["selected_threshold"]
-    ).all()
+    selector = payload["strategies"][0]["deployment_threshold_metrics"][
+        "portfolio_replay_threshold_selector"
+    ]
+    assert selector["applied_to_deployment_threshold"] is False
+    assert selector["applied_threshold"] == pytest.approx(0.92)
+    assert updated_candidates["base_strategy_threshold"].eq(0.92).all()
+    assert updated_replay["base_strategy_threshold"].eq(0.92).all()
     assert (tmp_path / "deployment_threshold_sensitivity.csv").exists()
     assert (tmp_path / "deployment_threshold_sensitivity.json").exists()
 
@@ -549,7 +552,7 @@ def test_policy_spread_fallback_trims_illiquid_tail_and_uses_slice_universe(
     assert audit["fallback_symbol_count"] == 29
 
 
-def test_simple_rank_net_ev_prefilter_subtracts_row_level_spread():
+def test_simple_rank_net_ev_prefilter_subtracts_row_level_spread(monkeypatch):
     rows = pd.DataFrame(
         {
             "timestamp": [
@@ -594,11 +597,29 @@ def test_simple_rank_net_ev_prefilter_subtracts_row_level_spread():
     )
 
     assert fit["status"] == "fit"
-    assert keep_mask.tolist() == [True, False]
-    assert summary["rows_after"] == 1
-    assert filtered["symbol"].tolist() == ["LOW/USD:USD"]
+    assert keep_mask.tolist() == [True, True]
+    assert summary["binding"] is False
+    assert summary["status"] == "diagnostic_only"
+    assert summary["diagnostic_rows_after"] == 1
+    assert summary["rows_after"] == 2
+    assert filtered["symbol"].tolist() == ["LOW/USD:USD", "WIDE/USD:USD"]
     assert filtered["simple_grid_gross_ev_bps"].iloc[0] > 80.0
     assert filtered["simple_grid_net_ev_bps"].iloc[0] > 70.0
+
+    monkeypatch.setattr(spo, "SIMPLE_NET_EV_PREFILTER_BINDING", True)
+    binding_filtered, binding_keep_mask, binding_summary = (
+        spo._apply_simple_rank_net_ev_prefilter(
+            rows,
+            {**fit, "uses_final_exit_policy": True},
+            cost_pct=0.0,
+            market_mode="perps",
+            context="unit_test_final_policy",
+        )
+    )
+    assert binding_keep_mask.tolist() == [True, False]
+    assert binding_summary["binding"] is True
+    assert binding_summary["rows_after"] == 1
+    assert binding_filtered["symbol"].tolist() == ["LOW/USD:USD"]
 
 
 def test_simulate_and_score_uses_row_level_exit_half_spread():
@@ -908,4 +929,10 @@ def test_local_candidate_guard_uses_per_strategy_rank_and_filters_replay(monkeyp
     )
 
     assert replay["strategy_rank_pct"].min() == pytest.approx(0.54)
+    assert replay["base_strategy_threshold"].tolist() == pytest.approx([0.54, 0.54])
+    assert replay["deployment_rank_threshold"].tolist() == pytest.approx([0.54, 0.54])
+    assert replay["threshold_rank_score_source"].tolist() == [
+        "policy_rank_pct",
+        "policy_rank_pct",
+    ]
     assert len(replay) == 2

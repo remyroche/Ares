@@ -18,7 +18,7 @@ import sys
 import time
 from collections.abc import MutableMapping
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 import numpy as np
 import pandas as pd
@@ -45,6 +45,9 @@ from extreme_price_movements.inference.parity import (
 from extreme_price_movements.inference.live_zscore_state import (
     live_raw_rolling_state_path,
     live_zscore_state_path,
+)
+from extreme_price_movements.optional_model_features import (
+    is_optional_generated_model_feature_key,
 )
 from extreme_price_movements.regime_adaptor import regime_adaptor_inference_enabled
 from extreme_price_movements.utils import tprint
@@ -82,12 +85,31 @@ _TRAINING_FEATURE_VARIATION_CACHE: Dict[tuple[str, str], Dict[str, bool]] = {}
 _FEATURE_STORE_RUN_TS_CACHE: Dict[tuple[str, str], pd.Timestamp] = {}
 
 
+def _feature_store_dir_has_materialized_data(path: Path) -> bool:
+    try:
+        return (
+            (path / "_feature_cache_scan_manifest.json").exists()
+            or any(path.glob("symbol=*.parquet"))
+            or any((path / "_live_latest_matrix").glob("matrix_*.parquet"))
+        )
+    except Exception:
+        return False
+
+
 def _resolve_feature_store_ts(run_id: str, root_dir: str, end_ts: Optional[pd.Timestamp] = None) -> pd.Timestamp:
     """Resolve a model/source run id to the timestamped feature-store directory."""
     run_id_s = str(run_id or "").strip()
     match = re.match(r"^(\d{8}_\d{6})(?:_|$)", run_id_s)
     if match:
-        return pd.to_datetime(match.group(1), format="%Y%m%d_%H%M%S", utc=True)
+        ts_str = match.group(1)
+        feature_dir = Path(str(root_dir or "")) / "features" / ts_str
+        if feature_dir.exists() and _feature_store_dir_has_materialized_data(feature_dir):
+            return pd.to_datetime(ts_str, format="%Y%m%d_%H%M%S", utc=True)
+        tprint(
+            "Feature-store timestamp prefix exists in run id but no matching "
+            "feature directory is present; falling back to explicit/latest "
+            f"feature source: run_id={run_id_s} feature_dir={feature_dir}"
+        )
 
     root_s = str(root_dir or "")
     cache_key = (root_s, run_id_s)
@@ -108,7 +130,7 @@ def _resolve_feature_store_ts(run_id: str, root_dir: str, end_ts: Optional[pd.Ti
                 ts = pd.to_datetime(name, format="%Y%m%d_%H%M%S", utc=True)
             except Exception:
                 continue
-            if (path / "_feature_cache_scan_manifest.json").exists() or any(path.glob("symbol=*.parquet")):
+            if _feature_store_dir_has_materialized_data(path):
                 candidates.append((ts, path))
     except Exception:
         candidates = []
@@ -214,7 +236,12 @@ def _live_feature_sync_progress_snapshot(
 ) -> str:
     parts: List[str] = []
     now = time.time()
-    sidecar_dir = Path(data_root) / "features" / str(run_id) / "_live_latest_matrix"
+    feature_dir = _resolved_feature_store_dir(
+        data_root,
+        run_id,
+        end_ts=pd.Timestamp(end_ts),
+    )
+    sidecar_dir = feature_dir / "_live_latest_matrix"
     try:
         sidecars = sorted(
             sidecar_dir.glob("matrix_*.parquet"),
@@ -230,7 +257,7 @@ def _live_feature_sync_progress_snapshot(
     except Exception as exc:
         parts.append(f"latest_sidecar_error={exc}")
 
-    manifest = Path(data_root) / "features" / str(run_id) / "_feature_cache_scan_manifest.json"
+    manifest = feature_dir / "_feature_cache_scan_manifest.json"
     try:
         if manifest.exists():
             age = now - manifest.stat().st_mtime
@@ -400,6 +427,137 @@ def _write_live_feature_sync_state(
         tprint(f"Warning: failed to write live feature sync state: {exc}")
 
 
+def _kraken_perp_ohlcv_gap_backfill_cmd_for_live_feature_sync(
+    *,
+    cfg: Dict[str, Any],
+    data_root: str,
+    end_ts: pd.Timestamp,
+    exchange: str,
+    is_perps: bool,
+) -> List[str]:
+    """Build a bounded raw OHLCV gap repair command for selected-feature sync."""
+
+    if not is_perps or str(exchange).lower() != "kraken":
+        return []
+    raw = cfg.get(
+        "live_model_feature_kraken_perp_ohlcv_gap_backfill",
+        os.environ.get("EPM_LIVE_FEATURE_SYNC_KRAKEN_PERP_OHLCV_GAP_BACKFILL", "0"),
+    )
+    if str(raw).strip().lower() in {"0", "false", "no", "off"}:
+        return []
+    data_root_path = Path(str(data_root))
+    perp_root = Path(
+        cfg.get(
+            "live_model_feature_kraken_perp_root",
+            os.environ.get(
+                "EPM_LIVE_FEATURE_SYNC_KRAKEN_PERP_ROOT",
+                str(data_root_path / "exchanges" / "krakenfutures"),
+            ),
+        )
+    )
+    if not (perp_root / "ohlcv").exists():
+        return []
+    manifest = Path(
+        cfg.get(
+            "live_model_feature_kraken_perp_manifest",
+            os.environ.get(
+                "EPM_LIVE_FEATURE_SYNC_KRAKEN_PERP_MANIFEST",
+                str(
+                    perp_root
+                    / "manifests"
+                    / "kraken_dual_market_verified_universe_latest.json"
+                ),
+            ),
+        )
+    )
+    script_path = Path("scripts/backfill_kraken_missing_ohlcv_gaps.py")
+    if not script_path.exists() or not manifest.exists():
+        return []
+    try:
+        lookback_days = float(
+            cfg.get(
+                "live_model_feature_kraken_perp_ohlcv_gap_backfill_lookback_days",
+                os.environ.get(
+                    "EPM_LIVE_FEATURE_SYNC_KRAKEN_PERP_OHLCV_GAP_BACKFILL_DAYS",
+                    "3",
+                ),
+            )
+        )
+    except (TypeError, ValueError):
+        lookback_days = 3.0
+    try:
+        max_gap_hours = int(
+            cfg.get(
+                "live_model_feature_kraken_perp_ohlcv_gap_backfill_max_gap_hours",
+                os.environ.get(
+                    "EPM_LIVE_FEATURE_SYNC_KRAKEN_PERP_OHLCV_GAP_MAX_HOURS",
+                    "720",
+                ),
+            )
+        )
+    except (TypeError, ValueError):
+        max_gap_hours = 720
+    try:
+        sleep_seconds = float(
+            cfg.get(
+                "live_model_feature_kraken_perp_ohlcv_gap_backfill_sleep_seconds",
+                os.environ.get(
+                    "EPM_LIVE_FEATURE_SYNC_KRAKEN_PERP_OHLCV_GAP_SLEEP_SECONDS",
+                    "0.01",
+                ),
+            )
+        )
+    except (TypeError, ValueError):
+        sleep_seconds = 0.01
+    try:
+        rate_limit_ms = int(
+            cfg.get(
+                "live_model_feature_kraken_perp_ohlcv_gap_backfill_rate_limit_ms",
+                os.environ.get(
+                    "EPM_LIVE_FEATURE_SYNC_KRAKEN_PERP_OHLCV_GAP_RATE_LIMIT_MS",
+                    "200",
+                ),
+            )
+        )
+    except (TypeError, ValueError):
+        rate_limit_ms = 200
+    return [
+        sys.executable,
+        "-u",
+        str(script_path),
+        "--manifest",
+        str(manifest),
+        "--perp-root",
+        str(perp_root),
+        "--end-ts",
+        pd.Timestamp(end_ts).isoformat(),
+        "--lookback-days",
+        f"{max(0.0, lookback_days):.6g}",
+        "--max-gap-hours",
+        str(max(1, max_gap_hours)),
+        "--rate-limit-ms",
+        str(max(0, rate_limit_ms)),
+        "--sleep",
+        f"{max(0.0, sleep_seconds):.6g}",
+    ]
+
+
+def _chain_subprocess_commands(cmds: List[List[str]], env: Dict[str, str]) -> List[str]:
+    filtered = [list(cmd) for cmd in cmds if cmd]
+    if len(filtered) <= 1:
+        return filtered[0] if filtered else []
+    env["EPM_LIVE_FEATURE_SYNC_COMMANDS_JSON"] = json.dumps(filtered)
+    runner = (
+        "import json, os, subprocess, sys\n"
+        "cmds = json.loads(os.environ['EPM_LIVE_FEATURE_SYNC_COMMANDS_JSON'])\n"
+        "for cmd in cmds:\n"
+        "    rc = subprocess.run(cmd).returncode\n"
+        "    if rc:\n"
+        "        sys.exit(int(rc))\n"
+    )
+    return [sys.executable, "-u", "-c", runner]
+
+
 def _run_training_path_feature_sync_for_live(
     *,
     run_id: str,
@@ -407,6 +565,7 @@ def _run_training_path_feature_sync_for_live(
     end_ts: pd.Timestamp,
     cfg: Dict[str, Any],
     required_feature_keys: Optional[Iterable[str]] = None,
+    symbols: Optional[Iterable[str]] = None,
     background_full_union: bool = True,
     blocking: bool = True,
     sync_label: str = "selected_cache",
@@ -451,6 +610,9 @@ def _run_training_path_feature_sync_for_live(
         }
     )
     requested_keys_raw = sorted({str(k) for k in (required_feature_keys or []) if str(k)})
+    requested_symbols = sorted({str(s) for s in (symbols or []) if str(s)})
+    if requested_symbols:
+        env["EPM_FEATURE_SYMBOLS"] = ",".join(requested_symbols)
     requested_keys, skipped_live_repairable = _live_training_path_sync_feature_keys(
         requested_keys_raw,
         cfg,
@@ -491,6 +653,8 @@ def _run_training_path_feature_sync_for_live(
     )
     if decision_only and requested_keys and not large_selected_repair:
         env["EPM_FEATURE_BACKFILL_KEYS"] = ",".join(requested_keys)
+        env["EPM_FEATURE_LIVE_DECISION_TAIL_ONLY"] = "1"
+        env["EPM_FEATURE_FORCE_LIVE_SELECTED_LATEST_MATRIX"] = "1"
         # Keep the blocking live decision path scoped to the exact feature
         # contract needed for current decisions. The optional background sync
         # below still refreshes the full union off the latency path.
@@ -537,8 +701,28 @@ def _run_training_path_feature_sync_for_live(
         # repeats parquet writes. Repair the active decision contract once,
         # without expanding to every incomplete feature in the store.
         env["EPM_FEATURE_BACKFILL_KEYS"] = ",".join(requested_keys)
+        env["EPM_FEATURE_LIVE_DECISION_TAIL_ONLY"] = "1"
+        env["EPM_FEATURE_FORCE_LIVE_SELECTED_LATEST_MATRIX"] = "1"
         env["EPM_FEATURE_BACKFILL_ALL_INCOMPLETE_KEYS"] = "0"
         env.pop("EPM_FEATURE_BACKFILL_KEY_BATCH_SIZE", None)
+        env.setdefault(
+            "EPM_FEATURE_BACKFILL_SYMBOL_CHUNK_SIZE",
+            str(
+                max(
+                    1,
+                    int(
+                        cfg.get(
+                            "live_model_feature_auto_sync_large_symbol_chunk_size",
+                            os.environ.get(
+                                "EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_LARGE_SYMBOL_CHUNK_SIZE",
+                                "64",
+                            ),
+                        )
+                        or 512
+                    ),
+                )
+            ),
+        )
     raw_state_path = cfg.get("live_raw_rolling_state_path") or str(
         live_raw_rolling_state_path(data_root_s, str(run_id))
     )
@@ -577,10 +761,24 @@ def _run_training_path_feature_sync_for_live(
         ),
     )
     env.setdefault("EPM_FEATURE_SAVE_WORKERS", str(cfg.get("feature_save_workers", 1)))
+    ohlcv_backfill_cmd = _kraken_perp_ohlcv_gap_backfill_cmd_for_live_feature_sync(
+        cfg=cfg,
+        data_root=data_root_s,
+        end_ts=end_ts,
+        exchange=exchange,
+        is_perps=is_perps,
+    )
+    if ohlcv_backfill_cmd:
+        tprint(
+            "Live model selected-feature sync will repair recent Kraken perps "
+            "OHLCV gaps before rebuilding selected features: "
+            f"end_ts={end_ts.isoformat()} cmd={' '.join(ohlcv_backfill_cmd)}"
+        )
+        cmd = _chain_subprocess_commands([ohlcv_backfill_cmd, cmd], env)
     timeout_s = float(
         cfg.get(
             "live_model_feature_auto_sync_timeout_seconds",
-            os.environ.get("EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_TIMEOUT_SECONDS", "1200"),
+            os.environ.get("EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_TIMEOUT_SECONDS", "2400"),
         )
     )
     heartbeat_s = float(
@@ -597,6 +795,7 @@ def _run_training_path_feature_sync_for_live(
         f"exchange={exchange} perps={is_perps} "
         f"decision_only={decision_only and bool(requested_keys)} "
         f"requested_keys={len(requested_keys)} "
+        f"requested_symbols={len(requested_symbols)} "
         f"large_selected_repair={large_selected_repair} "
         f"key_batch_mode_max_keys={key_batch_mode_max_keys} "
         f"blocking={blocking}"
@@ -707,8 +906,11 @@ def _run_training_path_feature_sync_for_live(
                     "end_ts": pd.Timestamp(end_ts).isoformat(),
                     "requested_keys": int(len(requested_keys)),
                     "requested_keys_hash": keys_hash,
+                    "requested_symbols": int(len(requested_symbols)),
+                    "requested_symbols_hash": _hash_values(requested_symbols),
                     "decision_only": bool(decision_only and requested_keys),
                     "large_selected_repair": bool(large_selected_repair),
+                    "ohlcv_gap_backfill": bool(ohlcv_backfill_cmd),
                     "log_path": str(log_path),
                     "status": "running",
                     "started_at": pd.Timestamp.utcnow().isoformat(),
@@ -759,8 +961,11 @@ def _run_training_path_feature_sync_for_live(
             "end_ts": pd.Timestamp(end_ts).isoformat(),
             "requested_keys": int(len(requested_keys)),
             "requested_keys_hash": keys_hash,
+            "requested_symbols": int(len(requested_symbols)),
+            "requested_symbols_hash": _hash_values(requested_symbols),
             "decision_only": bool(decision_only and requested_keys),
             "large_selected_repair": bool(large_selected_repair),
+            "ohlcv_gap_backfill": bool(ohlcv_backfill_cmd),
             "log_path": str(log_path),
             "status": "running",
             "started_at": pd.Timestamp.utcnow().isoformat(),
@@ -811,8 +1016,11 @@ def _run_training_path_feature_sync_for_live(
                     "end_ts": pd.Timestamp(end_ts).isoformat(),
                     "requested_keys": int(len(requested_keys)),
                     "requested_keys_hash": keys_hash,
+                    "requested_symbols": int(len(requested_symbols)),
+                    "requested_symbols_hash": _hash_values(requested_symbols),
                     "decision_only": bool(decision_only and requested_keys),
                     "large_selected_repair": bool(large_selected_repair),
+                    "ohlcv_gap_backfill": bool(ohlcv_backfill_cmd),
                     "status": "timeout",
                     "finished_at": pd.Timestamp.utcnow().isoformat(),
                     "elapsed_seconds": float(elapsed),
@@ -852,8 +1060,11 @@ def _run_training_path_feature_sync_for_live(
                 "end_ts": pd.Timestamp(end_ts).isoformat(),
                 "requested_keys": int(len(requested_keys)),
                 "requested_keys_hash": keys_hash,
+                "requested_symbols": int(len(requested_symbols)),
+                "requested_symbols_hash": _hash_values(requested_symbols),
                 "decision_only": bool(decision_only and requested_keys),
                 "large_selected_repair": bool(large_selected_repair),
+                "ohlcv_gap_backfill": bool(ohlcv_backfill_cmd),
                 "status": "failed",
                 "returncode": int(returncode),
                 "finished_at": pd.Timestamp.utcnow().isoformat(),
@@ -877,8 +1088,11 @@ def _run_training_path_feature_sync_for_live(
             "end_ts": pd.Timestamp(end_ts).isoformat(),
             "requested_keys": int(len(requested_keys)),
             "requested_keys_hash": keys_hash,
+            "requested_symbols": int(len(requested_symbols)),
+            "requested_symbols_hash": _hash_values(requested_symbols),
             "decision_only": bool(decision_only and requested_keys),
             "large_selected_repair": bool(large_selected_repair),
+            "ohlcv_gap_backfill": bool(ohlcv_backfill_cmd),
             "status": "complete",
             "returncode": 0,
             "finished_at": pd.Timestamp.utcnow().isoformat(),
@@ -1270,11 +1484,17 @@ def _feature_runtime_cfg_hash(cfg: Optional[Dict[str, Any]]) -> str:
                     "live_model_feature_auto_sync_decision_only",
                     "live_model_feature_auto_sync_key_batch_mode_max_keys",
                     "live_model_feature_auto_sync_symbol_chunk_size",
+                    "live_model_feature_auto_sync_large_symbol_chunk_size",
                     "live_model_feature_auto_sync_key_batch_size",
                     "live_model_feature_auto_sync_timeout_seconds",
                     "live_model_feature_auto_sync_heartbeat_seconds",
                     "live_model_feature_full_union_background_sync",
                     "live_model_feature_auto_sync_on_low_finite",
+                    "live_model_feature_kraken_perp_ohlcv_gap_backfill",
+                    "live_model_feature_kraken_perp_ohlcv_gap_backfill_lookback_days",
+                    "live_model_feature_kraken_perp_ohlcv_gap_backfill_max_gap_hours",
+                    "live_model_feature_kraken_perp_ohlcv_gap_backfill_sleep_seconds",
+                    "live_model_feature_kraken_perp_ohlcv_gap_backfill_rate_limit_ms",
                 }
             }
         return str(value)
@@ -1692,6 +1912,24 @@ def _latest_only_feature_dict(
     return _matrix_to_feature_dict(matrix, end_ts=end_ts)
 
 
+def _is_decision_time_unavailable_feature_key(feature_name: str) -> bool:
+    key = str(feature_name or "").lower()
+    if key in LIVE_UNAVAILABLE_FEATURES:
+        return True
+    if key.startswith(("base_lgbm_predictive_atlas_", "meta_lgbm_predictive_atlas_")):
+        return True
+    return key in {
+        "signed_prediction_error",
+        "negative_log_likelihood",
+        "surprise_error_z",
+        "wrong_confident",
+        "prob_error",
+        "recent_prob_error_20",
+        "recent_hit_rate_20",
+        "base_model_abs_error_roll20",
+    }
+
+
 def _latest_required_feature_low_finite_support(
     feats: Dict[str, pd.DataFrame],
     *,
@@ -1710,6 +1948,8 @@ def _latest_required_feature_low_finite_support(
     threshold = max(1, int(np.ceil(float(min_fraction) * total)))
     issues: list[dict[str, Any]] = []
     for key in sorted(str(k) for k in required_feature_keys):
+        if _is_decision_time_unavailable_feature_key(key):
+            continue
         if key not in matrix.columns:
             continue
         values = pd.to_numeric(matrix[key], errors="coerce").replace(
@@ -1728,6 +1968,136 @@ def _latest_required_feature_low_finite_support(
         if len(issues) >= int(max_report):
             break
     return issues
+
+
+def _latest_matrix_low_finite_support(
+    matrix: pd.DataFrame,
+    *,
+    required_feature_keys: Set[str],
+    min_fraction: float,
+    max_report: int = 20,
+) -> list[dict[str, Any]]:
+    if matrix is None or matrix.empty or not required_feature_keys:
+        return []
+    total = max(1, int(matrix.shape[0]))
+    threshold = max(1, int(np.ceil(float(min_fraction) * total)))
+    issues: list[dict[str, Any]] = []
+    for key in sorted(str(k) for k in required_feature_keys if str(k)):
+        if _is_decision_time_unavailable_feature_key(key):
+            continue
+        if key not in matrix.columns:
+            issues.append(
+                {
+                    "feature": key,
+                    "finite": 0,
+                    "total": total,
+                    "finite_fraction": 0.0,
+                    "reason": "missing",
+                }
+            )
+            continue
+        values = pd.to_numeric(matrix[key], errors="coerce").to_numpy(
+            dtype=float, copy=False
+        )
+        finite_n = int(np.isfinite(values).sum())
+        if finite_n < threshold:
+            issues.append(
+                {
+                    "feature": key,
+                    "finite": finite_n,
+                    "total": total,
+                    "finite_fraction": float(finite_n / total),
+                    "reason": "low_finite",
+                }
+            )
+        if len(issues) >= max_report:
+            break
+    return issues
+
+
+def _selected_latest_feature_requires_long_history(feature: str) -> bool:
+    key = str(feature or "").lower()
+    if not key:
+        return False
+    if re.fullmatch(r"lr_\d+h", key):
+        return True
+    if re.fullmatch(r"ker_\d+", key):
+        return True
+    if re.fullmatch(r"(?:efficiency_ratio|path_efficiency)_\d+", key):
+        return True
+    day_match = re.search(r"_(\d+)d(?:_|$)", key)
+    if day_match and int(day_match.group(1)) >= 30:
+        return True
+    return any(
+        token in key
+        for token in (
+            "oi_1d_chg_z",
+            "oi_3d_chg_z",
+            "oi_7d_chg_z",
+            "funding_z",
+            "funding_1d_chg_z",
+            "asset_minus_mkt_oi_1d_peer_resid",
+            "asset_minus_mkt_oi_1d_ts_resid",
+            "cs_rank_oi_chg_1d_z",
+            "price_x_oi_1d",
+            "price_x_oi_3d",
+            "price_x_oi_7d",
+            "crowded_long_",
+            "crowded_short_",
+            "_x_funding",
+        )
+    )
+
+
+def _latest_matrix_low_finite_repair_incidents(
+    low_finite: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return low-finite latest-matrix features that should trigger repair.
+
+    Long-history features can legitimately be sparse for newly listed symbols
+    even when the exchange source panel is present. Short-window selected-store
+    features should not be sparse at decision time; accepting those caches hides
+    feature-generation gaps and drops otherwise eligible symbols.
+    """
+    incidents: list[dict[str, Any]] = []
+    for item in low_finite or []:
+        feature = str((item or {}).get("feature") or "")
+        if not feature or _is_decision_time_unavailable_feature_key(feature):
+            continue
+        if _selected_latest_feature_requires_long_history(feature):
+            continue
+        incidents.append(dict(item))
+    return incidents
+
+
+def _sidecar_backed_feature_keys(feature_keys: Optional[Iterable[str]]) -> Set[str]:
+    """Return selected-feature keys that must be physically present in sidecars.
+
+    Some trained contracts include deterministic live materializations such as
+    ``barrier_pct`` and gate-expanded ``*_G_VOL_*`` columns.  Those are rebuilt
+    from the live panel after loading the sidecar, so requiring them in the
+    persisted latest-matrix sidecar only forces a slow fallback load.
+    """
+    out: Set[str] = set()
+    for key in feature_keys or []:
+        key_s = str(key or "")
+        if not key_s:
+            continue
+        if _is_decision_time_unavailable_feature_key(key_s):
+            continue
+        if _is_live_synthesized_feature_key(key_s):
+            continue
+        out.add(key_s)
+    return out
+
+
+def _selected_latest_cache_min_finite_fraction() -> float:
+    raw = os.getenv("EPM_SELECTED_FEATURE_LATEST_MATRIX_MIN_FINITE_FRACTION", "0.80")
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        value = 0.05
+    return float(np.clip(value, 0.0, 1.0))
 
 
 def _feature_history_matrix(
@@ -2403,6 +2773,7 @@ def raw_required_feature_keys(
         if str(key)
         and str(key) not in DELETED_INFERENCE_FEATURE_KEYS
         and not is_model_derived_feature_key(str(key))
+        and not is_optional_generated_model_feature_key(str(key))
     }
 
 
@@ -2544,7 +2915,8 @@ def _is_live_source_derived_feature_key(key: str) -> bool:
         or key_s.startswith("price_x_oi_")
         or key_s.startswith("loc_vwap_dev_z_")
         or key_s.startswith("prog_eff_")
-        or key_s in {"lr_12h", "mom_slow", "mom_slow_z", "unwind_score"}
+        or key_s.startswith("price_trend_")
+        or key_s in {"lr_12h", "lr_24h", "mom_slow", "mom_slow_z", "unwind_score"}
     )
 
 
@@ -3994,12 +4366,33 @@ def _selected_feature_latest_cache_dir(
     )
 
 
-def _source_feature_manifest_mtime(source_root: str, source_run_id: str) -> float:
+def _resolved_feature_store_dir(
+    source_root: str,
+    source_run_id: str,
+    *,
+    end_ts: Optional[pd.Timestamp] = None,
+) -> Path:
+    try:
+        ts = _resolve_feature_store_ts(source_run_id, source_root, end_ts=end_ts)
+        ts_str = pd.Timestamp(ts).strftime("%Y%m%d_%H%M%S")
+        return Path(source_root) / "features" / ts_str
+    except Exception:
+        return Path(source_root) / "features" / str(source_run_id)
+
+
+def _source_feature_manifest_mtime(
+    source_root: str,
+    source_run_id: str,
+    *,
+    end_ts: Optional[pd.Timestamp] = None,
+) -> float:
     try:
         source_manifest = (
-            Path(source_root)
-            / "features"
-            / str(source_run_id)
+            _resolved_feature_store_dir(
+                source_root,
+                source_run_id,
+                end_ts=end_ts,
+            )
             / "_feature_cache_scan_manifest.json"
         )
         if source_manifest.exists():
@@ -4027,7 +4420,11 @@ def _selected_latest_memory_key(
         end_ts=end_ts,
         allowed_periods=allowed_periods,
     )
-    manifest_mtime = _source_feature_manifest_mtime(source_root, source_run_id)
+    manifest_mtime = _source_feature_manifest_mtime(
+        source_root,
+        source_run_id,
+        end_ts=end_ts,
+    )
     return f"{prefix}{base_key}:manifest_mtime={manifest_mtime:.6f}"
 
 
@@ -4067,12 +4464,32 @@ def _recall_selected_latest_matrix(
         matrix = payload.get("matrix")
         if not isinstance(matrix, pd.DataFrame) or matrix.empty:
             return {}
-        missing = {str(k) for k in (feature_keys or []) if str(k)}.difference(
+        feature_key_set = _sidecar_backed_feature_keys(feature_keys)
+        missing = feature_key_set.difference(
             str(c) for c in matrix.columns
         )
         if missing:
             return {}
         matrix = matrix.reindex(index=[str(sym) for sym in symbols])
+        low_finite = _latest_matrix_low_finite_support(
+            matrix,
+            required_feature_keys=feature_key_set,
+            min_fraction=_selected_latest_cache_min_finite_fraction(),
+        )
+        if low_finite:
+            repair_incidents = _latest_matrix_low_finite_repair_incidents(low_finite)
+            if repair_incidents:
+                tprint(
+                    "Selected-feature latest matrix in-process cache rejected: "
+                    "low finite support requires source repair/fallback "
+                    f"issues={repair_incidents[:10]}"
+                )
+                return {}
+            tprint(
+                "Selected-feature latest matrix in-process cache has low finite "
+                "support for some symbols; loading compact matrix and relying on "
+                f"row-strict scoring for model inputs issues={low_finite[:10]}"
+            )
         tprint(
             "Loaded selected-feature latest matrix from in-process cache: "
             f"symbols={len(matrix.index)} features={len(matrix.columns)} "
@@ -4095,18 +4512,19 @@ def _load_selected_feature_latest_matrix_cache(
     end_ts: pd.Timestamp,
     allowed_periods: Any = None,
 ) -> Dict[str, pd.DataFrame]:
+    cache_feature_keys = _sidecar_backed_feature_keys(feature_keys)
     memory_key = _selected_latest_memory_key(
         source_run_id=source_run_id,
         source_root=source_root,
         symbols=symbols,
-        feature_keys=feature_keys,
+        feature_keys=cache_feature_keys,
         end_ts=end_ts,
         allowed_periods=allowed_periods,
     )
     recalled = _recall_selected_latest_matrix(
         memory_key,
         symbols=symbols,
-        feature_keys=feature_keys,
+        feature_keys=cache_feature_keys,
         end_ts=end_ts,
     )
     if recalled:
@@ -4116,7 +4534,7 @@ def _load_selected_feature_latest_matrix_cache(
         source_run_id=source_run_id,
         source_root=source_root,
         symbols=symbols,
-        feature_keys=feature_keys,
+        feature_keys=cache_feature_keys,
         end_ts=end_ts,
         allowed_periods=allowed_periods,
     )
@@ -4136,10 +4554,14 @@ def _load_selected_feature_latest_matrix_cache(
             return {}
         if meta.get("symbols_hash") != _hash_values(symbols):
             return {}
-        feature_key_set = {str(k) for k in (feature_keys or []) if str(k)}
+        feature_key_set = set(cache_feature_keys)
         if meta.get("feature_keys_hash") != _hash_values(feature_key_set):
             return {}
-        source_feature_dir = Path(source_root) / "features" / str(source_run_id)
+        source_feature_dir = _resolved_feature_store_dir(
+            source_root,
+            source_run_id,
+            end_ts=end_ts,
+        )
         source_manifest = source_feature_dir / "_feature_cache_scan_manifest.json"
         if source_manifest.exists():
             cache_mtime = min(meta_path.stat().st_mtime, data_path.stat().st_mtime)
@@ -4155,7 +4577,7 @@ def _load_selected_feature_latest_matrix_cache(
         return {}
     if matrix is None or matrix.empty:
         return {}
-    missing = {str(k) for k in (feature_keys or []) if str(k)}.difference(
+    missing = set(cache_feature_keys).difference(
         str(c) for c in matrix.columns
     )
     if missing:
@@ -4164,6 +4586,26 @@ def _load_selected_feature_latest_matrix_cache(
         matrix = matrix.reindex(index=[str(sym) for sym in symbols])
     except Exception:
         pass
+    low_finite = _latest_matrix_low_finite_support(
+        matrix,
+        required_feature_keys=set(cache_feature_keys),
+        min_fraction=_selected_latest_cache_min_finite_fraction(),
+    )
+    if low_finite:
+        repair_incidents = _latest_matrix_low_finite_repair_incidents(low_finite)
+        if repair_incidents:
+            tprint(
+                "Selected-feature latest matrix cache rejected: low finite "
+                "support requires source repair/fallback "
+                f"issues={repair_incidents[:10]}"
+            )
+            return {}
+        tprint(
+            "Selected-feature latest matrix cache has low finite support for "
+            "some symbols; loading compact matrix and relying on row-strict "
+            "scoring for model inputs: "
+            f"issues={low_finite[:10]}"
+        )
     tprint(
         "Loaded selected-feature latest matrix cache: "
         f"symbols={len(matrix.index)} features={len(matrix.columns)} "
@@ -4193,11 +4635,12 @@ def _load_live_latest_feature_matrix_sidecar(
     try:
         ts = _resolve_feature_store_ts(source_run_id, source_root, end_ts=end_ts)
         feature_key_set = {str(k) for k in (feature_keys or []) if str(k)}
+        sidecar_feature_key_set = _sidecar_backed_feature_keys(feature_key_set)
         memory_key = _selected_latest_memory_key(
             source_run_id=source_run_id,
             source_root=source_root,
             symbols=symbols,
-            feature_keys=feature_key_set,
+            feature_keys=sidecar_feature_key_set,
             end_ts=end_ts,
             allowed_periods=allowed_periods,
             prefix="source-sidecar:",
@@ -4205,7 +4648,7 @@ def _load_live_latest_feature_matrix_sidecar(
         recalled = _recall_selected_latest_matrix(
             memory_key,
             symbols=symbols,
-            feature_keys=feature_key_set,
+            feature_keys=sidecar_feature_key_set,
             end_ts=end_ts,
         )
         if recalled:
@@ -4219,22 +4662,25 @@ def _load_live_latest_feature_matrix_sidecar(
         )
         if matrix is None or matrix.empty:
             return {}
-        missing = feature_key_set.difference(str(c) for c in matrix.columns)
+        missing = sidecar_feature_key_set.difference(str(c) for c in matrix.columns)
         if missing:
             sample = sorted(missing)[:20]
             tprint(
                 "Live latest feature matrix sidecar missing requested keys; "
-                "using available columns and deferring repair to the live "
-                f"model adapter: missing={len(missing)} sample={sample}"
+                "falling back to selected feature store before scoring: "
+                f"missing={len(missing)} sample={sample}"
             )
-        if feature_key_set:
-            available = [str(c) for c in matrix.columns if str(c) in feature_key_set]
+            return {}
+        if sidecar_feature_key_set:
+            available = [
+                str(c) for c in matrix.columns if str(c) in sidecar_feature_key_set
+            ]
             if not available:
                 return {}
             matrix = matrix.loc[:, available]
             zero_finite = []
             for col in available:
-                if _is_live_source_derived_feature_key(col):
+                if _is_live_source_derived_feature_key(col) or _is_live_synthesized_feature_key(col):
                     continue
                 values = pd.to_numeric(matrix[col], errors="coerce")
                 if int(np.isfinite(values.to_numpy(dtype=float, copy=False)).sum()) == 0:
@@ -4247,6 +4693,25 @@ def _load_live_latest_feature_matrix_sidecar(
                 )
                 return {}
         matrix = matrix.reindex(index=[str(sym) for sym in symbols])
+        low_finite = _latest_matrix_low_finite_support(
+            matrix,
+            required_feature_keys=sidecar_feature_key_set,
+            min_fraction=_selected_latest_cache_min_finite_fraction(),
+        )
+        if low_finite:
+            repair_incidents = _latest_matrix_low_finite_repair_incidents(low_finite)
+            if repair_incidents:
+                tprint(
+                    "Live latest feature matrix sidecar rejected: low finite "
+                    "support requires selected feature-store fallback "
+                    f"issues={repair_incidents[:10]}"
+                )
+                return {}
+            tprint(
+                "Live latest feature matrix sidecar has low finite support for "
+                "some symbols; loading compact matrix and relying on row-strict "
+                f"scoring for model inputs issues={low_finite[:10]}"
+            )
         tprint(
             "Loaded live latest feature matrix sidecar: "
             f"source_root={source_root} symbols={len(matrix.index)} "
@@ -4258,7 +4723,7 @@ def _load_live_latest_feature_matrix_sidecar(
             source_run_id=source_run_id,
             source_root=source_root,
             symbols=symbols,
-            feature_keys=feature_key_set,
+            feature_keys=sidecar_feature_key_set,
             end_ts=pd.Timestamp(end_ts),
             allowed_periods=allowed_periods,
             feats=_matrix_to_feature_dict(matrix, end_ts=pd.Timestamp(end_ts)),
@@ -4282,7 +4747,7 @@ def _write_selected_feature_latest_matrix_cache(
     allowed_periods: Any = None,
     feats: Dict[str, pd.DataFrame],
 ) -> None:
-    feature_key_set = {str(k) for k in (feature_keys or []) if str(k)}
+    feature_key_set = _sidecar_backed_feature_keys(feature_keys)
     try:
         matrix = _latest_feature_matrix(
             feats,
@@ -4383,22 +4848,6 @@ def load_cached_features_for_inference(
                     f"start={pd.Timestamp(start_ts)} end={pd.Timestamp(end_ts)} "
                     f"keys={len(feature_keys)} symbols={len(symbols)}"
                 )
-            cached = _load_selected_feature_latest_matrix_cache(
-                cache_root=data_root,
-                source_run_id=run_id_s,
-                source_root=root,
-                symbols=symbols,
-                feature_keys=feature_keys,
-                end_ts=pd.Timestamp(end_ts),
-                allowed_periods=normalized_periods,
-            )
-            if cached:
-                if root != str(data_root):
-                    tprint(
-                        "Loaded selected-feature latest matrix from fallback data root: "
-                        f"{root}"
-                    )
-                return cached
             sidecar = _load_live_latest_feature_matrix_sidecar(
                 cache_root=data_root,
                 source_run_id=run_id_s,
@@ -4415,6 +4864,22 @@ def load_cached_features_for_inference(
                         f"data root: {root}"
                     )
                 return sidecar
+            cached = _load_selected_feature_latest_matrix_cache(
+                cache_root=data_root,
+                source_run_id=run_id_s,
+                source_root=root,
+                symbols=symbols,
+                feature_keys=feature_keys,
+                end_ts=pd.Timestamp(end_ts),
+                allowed_periods=normalized_periods,
+            )
+            if cached:
+                if root != str(data_root):
+                    tprint(
+                        "Loaded selected-feature latest matrix from fallback data root: "
+                        f"{root}"
+                    )
+                return cached
         load_t0 = time.perf_counter()
         feats = load_features_selected(
             ts,
@@ -4492,7 +4957,7 @@ def _live_latest_feature_matrix_presence(
     symbols: Optional[List[str]],
     end_ts: pd.Timestamp,
     feature_keys: Optional[Iterable[str]] = None,
-    min_symbol_coverage: float = 0.70,
+    min_symbol_coverage: float = 0.98,
 ) -> Tuple[bool, Dict[str, Any]]:
     """Cheaply check whether the exact-hour selected-feature sidecar exists."""
     feature_key_set = sorted({str(k) for k in (feature_keys or []) if str(k)})
@@ -4523,13 +4988,22 @@ def _live_latest_feature_matrix_presence(
                         f"min_fraction={min_symbol_coverage:.2f}"
                     )
                     continue
+            missing_features = sorted(set(feature_key_set) - set(str(c) for c in matrix.columns))
+            full_feature_rows = int(covered_rows)
+            if feature_key_set and not missing_features:
+                feature_matrix = matrix.loc[:, sorted(feature_key_set)]
+                feature_values = feature_matrix.to_numpy(dtype=float, copy=False)
+                full_feature_rows = int(np.isfinite(feature_values).all(axis=1).sum())
             return True, {
                 "source_root": str(root),
                 "feature_ts": ts.strftime("%Y%m%d_%H%M%S"),
                 "rows": int(len(matrix.index)),
                 "covered_rows": int(covered_rows),
+                "full_feature_rows": int(full_feature_rows),
                 "features": int(len(matrix.columns)),
                 "required_features": int(len(feature_key_set)),
+                "missing_features": int(len(missing_features)),
+                "missing_feature_sample": missing_features[:20],
             }
         except Exception as exc:
             last_error = f"{type(exc).__name__}: {exc}"
@@ -4555,6 +5029,95 @@ def _live_model_feature_prewarm_blocking(cfg: Dict[str, Any]) -> bool:
         os.environ.get("EPM_LIVE_MODEL_FEATURE_PREWARM_BLOCKING", "1"),
     )
     return str(raw).strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _prewarm_selected_latest_matrix_memory(
+    *,
+    run_id: str,
+    data_root: str,
+    symbols: List[str],
+    end_ts: pd.Timestamp,
+    feature_keys: Iterable[str],
+    cfg: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Load the selected-feature latest matrix into the process cache."""
+    feature_key_set = _sidecar_backed_feature_keys(feature_keys)
+    if not feature_key_set:
+        return {"matrix_loaded": False, "matrix_reason": "no_feature_keys"}
+    try:
+        feats = load_cached_features_for_inference(
+            run_id=str(run_id),
+            data_root=str(data_root),
+            symbols=[str(sym) for sym in symbols],
+            feature_keys=feature_key_set,
+            start_ts=pd.Timestamp(end_ts),
+            end_ts=pd.Timestamp(end_ts),
+            allowed_periods=(cfg or {}).get("live_feature_offline_allowed_periods"),
+        )
+    except Exception as exc:
+        return {
+            "matrix_loaded": False,
+            "matrix_error": f"{type(exc).__name__}: {exc}",
+        }
+    if not feats:
+        return {"matrix_loaded": False, "matrix_reason": "load_returned_empty"}
+    missing = sorted(feature_key_set.difference(str(k) for k in feats))
+    low_finite: List[Dict[str, Any]] = []
+    full_feature_rows: Optional[int] = None
+    try:
+        latest_matrix = _latest_feature_matrix(
+            feats,
+            symbols=[str(sym) for sym in symbols],
+            end_ts=pd.Timestamp(end_ts),
+            required_feature_keys=feature_key_set,
+        )
+        if not latest_matrix.empty:
+            if not missing:
+                full_feature_rows = int(
+                    np.isfinite(
+                        latest_matrix.loc[:, sorted(feature_key_set)].to_numpy(
+                            dtype=float,
+                            copy=False,
+                        )
+                    ).all(axis=1).sum()
+                )
+            low_finite = _latest_matrix_low_finite_support(
+                latest_matrix,
+                required_feature_keys=feature_key_set,
+                min_fraction=_selected_latest_cache_min_finite_fraction(),
+            )
+    except Exception as exc:
+        low_finite = [
+            {
+                "feature": "__matrix_probe__",
+                "reason": f"{type(exc).__name__}: {exc}",
+            }
+        ]
+    repair_incidents = _latest_matrix_low_finite_repair_incidents(low_finite)
+    row_count = 0
+    for frame in feats.values():
+        if isinstance(frame, pd.DataFrame):
+            row_count = max(row_count, int(len(frame.index)))
+    return {
+        "matrix_loaded": True,
+        "matrix_complete": (
+            not missing
+            and not repair_incidents
+            and (
+                not low_finite
+                or (full_feature_rows is not None and int(full_feature_rows) > 0)
+            )
+        ),
+        "matrix_missing_features": len(missing),
+        "matrix_missing_feature_sample": missing[:20],
+        "matrix_low_finite_features": len(low_finite),
+        "matrix_low_finite_sample": low_finite[:10],
+        "matrix_repair_incident_features": len(repair_incidents),
+        "matrix_repair_incident_sample": repair_incidents[:10],
+        "matrix_full_feature_rows": full_feature_rows,
+        "matrix_features_loaded": int(len(feats)),
+        "matrix_rows_loaded": int(row_count),
+    }
 
 
 def prewarm_selected_model_feature_cache_for_live(
@@ -4592,18 +5155,19 @@ def prewarm_selected_model_feature_cache_for_live(
         source_ids = _offline_feature_lookup_run_ids(cfg, run_id)
     source_run_id = str(source_ids[0] if source_ids else run_id)
     source_data_root = _offline_feature_lookup_data_root(cfg, data_root)
+    presence_feature_keys = _sidecar_backed_feature_keys(sync_feature_keys)
     try:
         min_symbol_coverage = float(
             cfg.get(
                 "live_model_feature_prewarm_min_symbol_coverage",
                 os.environ.get(
                     "EPM_LIVE_MODEL_FEATURE_PREWARM_MIN_SYMBOL_COVERAGE",
-                    "0.70",
+                    "0.98",
                 ),
             )
         )
     except (TypeError, ValueError):
-        min_symbol_coverage = 0.70
+        min_symbol_coverage = 0.98
     blocking = _live_model_feature_prewarm_blocking(cfg)
     existing_syncs = _live_feature_syncs_for_target(
         data_root=source_data_root,
@@ -4626,7 +5190,7 @@ def prewarm_selected_model_feature_cache_for_live(
                     "live_model_feature_auto_sync_timeout_seconds",
                     os.environ.get(
                         "EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_TIMEOUT_SECONDS",
-                        "1200",
+                        "2400",
                     ),
                 )
             ),
@@ -4653,20 +5217,74 @@ def prewarm_selected_model_feature_cache_for_live(
         data_root=source_data_root,
         symbols=symbols,
         end_ts=end_ts,
-        feature_keys=sync_feature_keys,
+        feature_keys=presence_feature_keys,
         min_symbol_coverage=min_symbol_coverage,
     )
     if sidecar_present:
+        matrix_prewarm = _prewarm_selected_latest_matrix_memory(
+            run_id=source_run_id,
+            data_root=source_data_root,
+            symbols=symbols,
+            end_ts=end_ts,
+            feature_keys=sync_feature_keys,
+            cfg=cfg,
+        )
         tprint(
             "Live selected model-feature prewarm cache hit: "
             f"source_run_id={source_run_id} end_ts={end_ts.isoformat()} "
             f"rows={sidecar_meta.get('rows')} features={sidecar_meta.get('features')} "
-            f"feature_ts={sidecar_meta.get('feature_ts')}"
+            f"feature_ts={sidecar_meta.get('feature_ts')} "
+            f"matrix_loaded={matrix_prewarm.get('matrix_loaded')}"
+        )
+        if matrix_prewarm.get("matrix_loaded") and matrix_prewarm.get("matrix_complete"):
+            status = (
+                "cache_hit"
+                if int(sidecar_meta.get("missing_features") or 0) == 0
+                else "selected_matrix_cache_ready"
+            )
+            return {
+                "status": status,
+                "source_run_id": source_run_id,
+                **sidecar_meta,
+                **matrix_prewarm,
+            }
+        tprint(
+            "Live selected model-feature prewarm sidecar has incomplete "
+            "finite support; forcing training-path repair before scoring: "
+            f"source_run_id={source_run_id} end_ts={end_ts.isoformat()} "
+            f"missing={matrix_prewarm.get('matrix_missing_features')} "
+            f"low_finite={matrix_prewarm.get('matrix_low_finite_features')} "
+            f"full_rows={matrix_prewarm.get('matrix_full_feature_rows')}"
+        )
+
+    # The globally persisted latest-matrix sidecar can be incomplete after an
+    # incremental live repair because the repair only rewrites the keys that
+    # were stale/missing.  Before paying for another training-path feature sync,
+    # try to compact the complete selected model contract from the authoritative
+    # per-symbol feature store into the selected-feature latest cache.  This is
+    # still strict: the cache is accepted only if every sidecar-backed selected
+    # feature is present.
+    matrix_prewarm = _prewarm_selected_latest_matrix_memory(
+        run_id=source_run_id,
+        data_root=source_data_root,
+        symbols=symbols,
+        end_ts=end_ts,
+        feature_keys=sync_feature_keys,
+        cfg=cfg,
+    )
+    if matrix_prewarm.get("matrix_loaded") and matrix_prewarm.get("matrix_complete"):
+        tprint(
+            "Live selected model-feature prewarm compacted full selected "
+            "matrix from feature store after sidecar miss: "
+            f"source_run_id={source_run_id} end_ts={end_ts.isoformat()} "
+            f"features={matrix_prewarm.get('matrix_features_loaded')} "
+            f"rows={matrix_prewarm.get('matrix_rows_loaded')}"
         )
         return {
-            "status": "cache_hit",
+            "status": "selected_matrix_cache_ready",
             "source_run_id": source_run_id,
             **sidecar_meta,
+            **matrix_prewarm,
         }
 
     tprint(
@@ -4683,6 +5301,7 @@ def prewarm_selected_model_feature_cache_for_live(
         end_ts=end_ts,
         cfg=cfg,
         required_feature_keys=sync_feature_keys,
+        symbols=symbols,
         blocking=blocking,
         sync_label="selected_prewarm",
     )
@@ -4695,15 +5314,28 @@ def prewarm_selected_model_feature_cache_for_live(
             data_root=source_data_root,
             symbols=symbols,
             end_ts=end_ts,
-            feature_keys=sync_feature_keys,
+            feature_keys=presence_feature_keys,
             min_symbol_coverage=min_symbol_coverage,
         )
         status = "sync_complete_verified" if verify_present else "sync_complete_unverified"
+    matrix_prewarm: Dict[str, Any] = {}
+    if ok and blocking:
+        matrix_prewarm = _prewarm_selected_latest_matrix_memory(
+            run_id=source_run_id,
+            data_root=source_data_root,
+            symbols=symbols,
+            end_ts=end_ts,
+            feature_keys=sync_feature_keys,
+            cfg=cfg,
+        )
+        if matrix_prewarm.get("matrix_loaded") and matrix_prewarm.get("matrix_complete"):
+            status = "sync_complete_selected_matrix_verified"
     tprint(
         "Live selected model-feature prewarm finished: "
         f"status={status} source_run_id={source_run_id} "
         f"end_ts={end_ts.isoformat()} "
-        f"rows={verify_meta.get('rows')} features={verify_meta.get('features')}"
+        f"rows={verify_meta.get('rows')} features={verify_meta.get('features')} "
+        f"matrix_loaded={matrix_prewarm.get('matrix_loaded')}"
     )
     return {
         "status": status,
@@ -4711,6 +5343,7 @@ def prewarm_selected_model_feature_cache_for_live(
         "ok": bool(ok),
         "verified": bool(verify_present),
         **verify_meta,
+        **matrix_prewarm,
     }
 
 
@@ -5126,17 +5759,33 @@ def load_or_compute_features(
                 not bool(cfg.get("_live_model_feature_auto_sync_attempted", False))
                 and _live_model_feature_auto_sync_enabled(cfg)
             ):
-                cfg["_live_model_feature_auto_sync_attempted"] = True
-                sync_blocking = _live_model_feature_auto_sync_blocking(cfg)
-                synced = _run_training_path_feature_sync_for_live(
-                    run_id=str(offline_feature_run_id),
-                    data_root=str(offline_feature_data_root),
-                    end_ts=pd.Timestamp(end_ts),
-                    cfg=cfg,
-                    required_feature_keys=missing_offline_keys,
-                    blocking=sync_blocking,
-                    sync_label="selected_missing_contract",
-                )
+                sync_missing_keys = [
+                    key
+                    for key in missing_offline_keys
+                    if not _is_decision_time_unavailable_feature_key(key)
+                ]
+                synced = False
+                sync_blocking = False
+                if sync_missing_keys:
+                    cfg["_live_model_feature_auto_sync_attempted"] = True
+                    sync_blocking = _live_model_feature_auto_sync_blocking(cfg)
+                    synced = _run_training_path_feature_sync_for_live(
+                        run_id=str(offline_feature_run_id),
+                        data_root=str(offline_feature_data_root),
+                        end_ts=pd.Timestamp(end_ts),
+                        cfg=cfg,
+                        required_feature_keys=sync_missing_keys,
+                        symbols=basket_syms,
+                        blocking=sync_blocking,
+                        sync_label="selected_missing_contract",
+                    )
+                else:
+                    tprint(
+                        "Live model selected-feature cache missing keys are "
+                        "decision-time unavailable labels/context only; "
+                        "skipping training-path sync and using neutral/default "
+                        f"materialization: sample={missing_offline_keys[:20]}"
+                    )
                 if synced and not sync_blocking:
                     tprint(
                         "Live model selected-feature cache warmup was scheduled "
@@ -5307,7 +5956,7 @@ def load_or_compute_features(
             min_latest_finite_fraction = float(
                 cfg.get(
                     "live_model_feature_selected_cache_min_latest_finite_fraction",
-                    0.05,
+                    0.80,
                 )
             )
         except (TypeError, ValueError):
@@ -5319,12 +5968,68 @@ def load_or_compute_features(
             required_feature_keys=set(required_feature_keys or set()),
             min_fraction=max(0.0, min(1.0, min_latest_finite_fraction)),
         )
-        sync_on_low_finite = bool(
-            cfg.get("live_model_feature_auto_sync_on_low_finite", False)
+        try:
+            min_full_feature_rows = int(
+                cfg.get(
+                    "live_model_feature_store_gap_min_full_rows",
+                    os.environ.get("EPM_LIVE_MODEL_FEATURE_STORE_GAP_MIN_FULL_ROWS", "5"),
+                )
+            )
+        except (TypeError, ValueError):
+            min_full_feature_rows = 5
+        full_feature_rows_for_low_finite: Optional[int] = None
+        low_finite_sync_needed = bool(low_finite_latest)
+        if low_finite_latest:
+            try:
+                finite_required_keys = _sidecar_backed_feature_keys(required_feature_keys)
+                latest_matrix = _latest_feature_matrix(
+                    cached_feats,
+                    symbols=basket_syms,
+                    end_ts=end_ts,
+                    required_feature_keys=finite_required_keys,
+                )
+                if finite_required_keys and not latest_matrix.empty:
+                    missing_for_matrix = finite_required_keys.difference(
+                        str(col) for col in latest_matrix.columns
+                    )
+                    if missing_for_matrix:
+                        full_feature_rows_for_low_finite = 0
+                    else:
+                        full_feature_rows_for_low_finite = int(
+                            np.isfinite(
+                                latest_matrix.loc[:, sorted(finite_required_keys)].to_numpy(
+                                    dtype=float,
+                                    copy=False,
+                                )
+                            )
+                            .all(axis=1)
+                            .sum()
+                        )
+                elif not finite_required_keys:
+                    full_feature_rows_for_low_finite = int(len(basket_syms))
+                else:
+                    full_feature_rows_for_low_finite = 0
+                low_finite_sync_needed = (
+                    int(full_feature_rows_for_low_finite)
+                    < max(1, int(min_full_feature_rows))
+                )
+            except Exception:
+                full_feature_rows_for_low_finite = None
+                low_finite_sync_needed = True
+        sync_on_low_finite_raw = cfg.get(
+            "live_model_feature_auto_sync_on_low_finite",
+            os.environ.get("EPM_LIVE_MODEL_FEATURE_AUTO_SYNC_ON_LOW_FINITE", "0"),
         )
+        sync_on_low_finite = str(sync_on_low_finite_raw).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
         if (
             low_finite_latest
             and sync_on_low_finite
+            and low_finite_sync_needed
             and not bool(cfg.get("_live_model_feature_auto_sync_attempted", False))
             and _live_model_feature_auto_sync_enabled(cfg)
         ):
@@ -5346,6 +6051,7 @@ def load_or_compute_features(
                     for issue in low_finite_latest
                     if isinstance(issue, dict) and issue.get("feature")
                 ],
+                symbols=basket_syms,
                 blocking=sync_blocking,
                 sync_label="selected_low_finite",
             )
@@ -5425,8 +6131,10 @@ def load_or_compute_features(
             tprint(
                 "Live model selected-feature cache latest finite-support warning; "
                 "continuing without training-path auto-sync because selected-input "
-                "non-finites are handled by the model adapter and candidate/source "
+                "non-finites are handled by row-strict scoring and candidate/source "
                 "guards: "
+                f"full_rows={full_feature_rows_for_low_finite} "
+                f"min_full_rows={min_full_feature_rows} "
                 f"issues={low_finite_latest[:10]}"
             )
         return_feats = cached_feats
@@ -5495,6 +6203,7 @@ def load_or_compute_features(
                 end_ts=pd.Timestamp(end_ts),
                 cfg=cfg,
                 required_feature_keys=required_feature_keys,
+                symbols=basket_syms,
                 blocking=sync_blocking,
                 sync_label="selected_stale_cache",
             )
@@ -6021,7 +6730,15 @@ def _meta_model_derived_raw_dependencies(feature_cols: Iterable[str]) -> Set[str
             deps.add(col.removeprefix("base_prob_x_"))
         elif col.startswith("base_med_x_"):
             deps.add(col.removeprefix("base_med_x_"))
-    return {dep for dep in deps if dep and dep not in DELETED_INFERENCE_FEATURE_KEYS}
+    return {
+        dep
+        for dep in deps
+        if dep
+        and dep not in DELETED_INFERENCE_FEATURE_KEYS
+        and dep not in LIVE_UNAVAILABLE_FEATURES
+        and not is_model_derived_feature_key(dep)
+        and not is_optional_generated_model_feature_key(dep)
+    }
 
 
 def get_inference_required_feature_keys(
@@ -6041,11 +6758,21 @@ def get_inference_required_feature_keys(
         else {}
     )
 
+    def _is_required_live_feature_key(key: object) -> bool:
+        key_s = str(key or "")
+        return bool(
+            key_s
+            and key_s not in DELETED_INFERENCE_FEATURE_KEYS
+            and key_s not in LIVE_UNAVAILABLE_FEATURES
+            and not is_model_derived_feature_key(key_s)
+            and not is_optional_generated_model_feature_key(key_s)
+        )
+
     def _effective_alpha_feature_cols(model_info: Dict[str, Any]) -> List[str]:
         feat_cols = [
             str(k)
             for k in (model_info.get("feat_cols", []) or [])
-            if str(k) not in DELETED_INFERENCE_FEATURE_KEYS
+            if _is_required_live_feature_key(k)
         ]
         model = model_info.get("model")
         inner = getattr(model, "best_model", model)
@@ -6055,12 +6782,10 @@ def get_inference_required_feature_keys(
         ]
         if selected:
             if input_features and len(input_features) == len(selected):
-                return [
-                    k for k in input_features if k not in DELETED_INFERENCE_FEATURE_KEYS
-                ]
+                return [k for k in input_features if _is_required_live_feature_key(k)]
             if all(re.fullmatch(r"f\d+", name) is not None for name in selected):
                 return feat_cols
-            return [k for k in selected if k not in DELETED_INFERENCE_FEATURE_KEYS]
+            return [k for k in selected if _is_required_live_feature_key(k)]
         return feat_cols
 
     alpha_models = bundle.get("alpha_models", {}) if isinstance(bundle, dict) else {}
@@ -6089,7 +6814,7 @@ def get_inference_required_feature_keys(
             meta_cols = _meta_feature_columns(meta)
         if meta_cols:
             required.update(
-                k for k in meta_cols if str(k) not in DELETED_INFERENCE_FEATURE_KEYS
+                k for k in meta_cols if _is_required_live_feature_key(k)
             )
             required.update(_meta_model_derived_raw_dependencies(meta_cols))
             continue
@@ -6099,7 +6824,7 @@ def get_inference_required_feature_keys(
                 str(v)
                 for v in selected
                 if str(v)
-                and str(v) not in DELETED_INFERENCE_FEATURE_KEYS
+                and _is_required_live_feature_key(v)
                 and not re.fullmatch(r"f\d+", str(v))
             )
 
@@ -6115,7 +6840,7 @@ def get_inference_required_feature_keys(
                         v
                         for v in vals
                         if v != "sizer_score_oof"
-                        and str(v) not in DELETED_INFERENCE_FEATURE_KEYS
+                        and _is_required_live_feature_key(v)
                     ]
                 )
 
@@ -6132,7 +6857,7 @@ def get_inference_required_feature_keys(
                 required.update(
                     k
                     for k in (booster.get("feature_keys", []) or [])
-                    if str(k) not in DELETED_INFERENCE_FEATURE_KEYS
+                    if _is_required_live_feature_key(k)
                 )
 
     regime_adaptors = (
@@ -6150,14 +6875,14 @@ def get_inference_required_feature_keys(
                 mapping = adaptor.get("feature_mapping", {}) or {}
                 for value in mapping.values():
                     if isinstance(value, str):
-                        if value not in DELETED_INFERENCE_FEATURE_KEYS:
+                        if _is_required_live_feature_key(value):
                             required.add(value)
                     elif isinstance(value, dict):
                         required.update(
                             str(v)
                             for v in value.values()
                             if isinstance(v, str)
-                            and str(v) not in DELETED_INFERENCE_FEATURE_KEYS
+                            and _is_required_live_feature_key(v)
                         )
 
     ridge_weights = bundle.get("ridge_weights", {}) if isinstance(bundle, dict) else {}
@@ -6173,7 +6898,7 @@ def get_inference_required_feature_keys(
             required.update(
                 k
                 for k in (bucket_cfg.get("feature_names", []) or [])
-                if str(k) not in DELETED_INFERENCE_FEATURE_KEYS
+                if _is_required_live_feature_key(k)
             )
 
     # Keep a small set of always-needed raw features used across inference glue.
@@ -6194,9 +6919,7 @@ def get_inference_required_feature_keys(
         k
         for k in required
         if isinstance(k, str)
-        and k
-        and k not in LIVE_UNAVAILABLE_FEATURES
-        and k not in DELETED_INFERENCE_FEATURE_KEYS
+        and _is_required_live_feature_key(k)
     }
 
 

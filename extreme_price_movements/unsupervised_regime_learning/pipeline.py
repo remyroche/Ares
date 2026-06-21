@@ -493,6 +493,8 @@ def fit_unsupervised_regime_learning_features(
     *,
     cfg: Mapping[str, object] | None = None,
     feature_columns: Sequence[str] | None = None,
+    regime_assessment_target: np.ndarray | pd.Series | None = None,
+    regime_assessment_oof_pred: np.ndarray | pd.Series | None = None,
 ) -> UnsupervisedRegimeLearningResult:
     """Run the full primitive and operator feature-selection contract."""
 
@@ -605,6 +607,8 @@ def fit_unsupervised_regime_learning_features(
         regime_models = fit_advanced_regime_learning(
             model_frame,
             model_features,
+            downstream_target=regime_assessment_target,
+            base_oof_pred=regime_assessment_oof_pred,
             config=_advanced_regime_config(
                 regime_cfg,
                 timestamp_col=str(quality_cfg.get("timestamp_col", "timestamp")),

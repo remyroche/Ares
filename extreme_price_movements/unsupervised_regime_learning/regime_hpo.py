@@ -1081,15 +1081,19 @@ def _score_artifact(
     if "TotalScore" not in diag.columns:
         diag = diag.assign(TotalScore=0.0)
     diag["TotalScore"] = pd.to_numeric(diag["TotalScore"], errors="coerce").fillna(0.0)
+    if "UsefulRegimeScore" not in diag.columns:
+        diag = diag.assign(UsefulRegimeScore=diag["TotalScore"])
+    diag["UsefulRegimeScore"] = pd.to_numeric(diag["UsefulRegimeScore"], errors="coerce").fillna(0.0)
     candidate = diag
     if bool(hpo_config.prefer_non_baseline) and "is_baseline" in diag.columns:
         non_baseline = diag.loc[~diag["is_baseline"].astype(bool)]
         if not non_baseline.empty:
             candidate = non_baseline
-    candidate = candidate.sort_values("TotalScore", ascending=False, kind="mergesort")
+    candidate = candidate.sort_values("UsefulRegimeScore", ascending=False, kind="mergesort")
     top = candidate.iloc[0].to_dict()
     total_score = _float_from_row(top, "TotalScore")
-    score_std = float(np.nanstd(pd.to_numeric(candidate["TotalScore"], errors="coerce").to_numpy(dtype=np.float64)))
+    useful_score = _float_from_row(top, "UsefulRegimeScore")
+    score_std = float(np.nanstd(pd.to_numeric(candidate["UsefulRegimeScore"], errors="coerce").to_numpy(dtype=np.float64)))
     min_support = _float_from_row(top, "min_support")
     turnover = _float_from_row(top, "turnover")
     replica_penalty = _clamp01(_float_from_row(top, "TrendVolReplicaPenalty"))
@@ -1107,7 +1111,7 @@ def _score_artifact(
         + float(hpo_config.compute_cost_penalty_weight) * compute_penalty
     )
     structure_score = (
-        total_score
+        useful_score
         - penalty_total
     )
     method_name = str(top.get("method", ""))
@@ -1139,7 +1143,9 @@ def _score_artifact(
         "learnability_hpo_score": float(learnability_score),
         "penalty_total": float(penalty_total),
         "top_method": method_name,
+        "top_useful_regime_score": useful_score,
         "top_total_score": total_score,
+        "top_model_helpfulness": _float_from_row(top, "ModelHelpfulness"),
         "top_nontriviality": _float_from_row(top, "NonTriviality"),
         "top_oos_stability": _float_from_row(top, "OOS_Stability"),
         "top_dwell_quality": _float_from_row(top, "Dwell_Quality"),

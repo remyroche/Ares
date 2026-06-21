@@ -203,6 +203,9 @@ def _sample_rows(
     *,
     max_rows: int,
     current_window_days: float,
+    timestamp_balanced: bool = True,
+    rows_per_timestamp_cap: int = 0,
+    random_state: int = 42,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     rows = rows.loc[:, ["dataset", "timestamp", "symbol"]].copy()
     rows["timestamp"] = pd.to_datetime(rows["timestamp"], utc=True, errors="coerce")
@@ -210,30 +213,102 @@ def _sample_rows(
     rows = rows.sort_values("timestamp", kind="mergesort").reset_index(drop=True)
     end = rows["timestamp"].max()
     start = end - pd.Timedelta(days=float(current_window_days))
-    current = (rows["timestamp"] >= start) & (rows["timestamp"] <= end)
-    current_idx = np.flatnonzero(current.to_numpy(dtype=bool))
-    hist_idx = np.flatnonzero(~current.to_numpy(dtype=bool))
-    keep = current_idx
-    remaining = max(0, int(max_rows) - len(keep))
-    if remaining > 0 and len(hist_idx) > 0:
-        if len(hist_idx) > remaining:
-            take = np.linspace(0, len(hist_idx) - 1, remaining).round().astype(np.int64)
-            hist_idx = hist_idx[np.unique(take)]
-        keep = np.concatenate([hist_idx, keep])
-    if len(keep) > int(max_rows):
-        take = np.linspace(0, len(keep) - 1, int(max_rows)).round().astype(np.int64)
-        keep = keep[np.unique(take)]
+    timestamp_count = int(rows["timestamp"].nunique()) if len(rows) else 0
+    sampling_diag: dict[str, Any] = {
+        "timestamp_balanced": bool(timestamp_balanced),
+        "source_timestamp_count": timestamp_count,
+    }
+    if bool(timestamp_balanced) and timestamp_count > 0:
+        if int(rows_per_timestamp_cap) > 0:
+            cap = int(rows_per_timestamp_cap)
+            cap_source = "explicit"
+        else:
+            cap = max(1, int(max_rows) // max(timestamp_count, 1))
+            cap_source = "auto_budget"
+        sampling_diag.update(
+            {
+                "rows_per_timestamp_cap": int(cap),
+                "rows_per_timestamp_cap_source": cap_source,
+            }
+        )
+        rng = np.random.default_rng(int(random_state))
+        keep_parts: list[np.ndarray] = []
+        # Sample the same way for current and historical timestamps so the
+        # discriminator cannot learn the current window from row density alone.
+        for positions in rows.groupby("timestamp", sort=False).indices.values():
+            pos = np.asarray(positions, dtype=np.int64)
+            if pos.size > cap:
+                pos = rng.choice(pos, size=cap, replace=False).astype(np.int64)
+            keep_parts.append(pos)
+        keep = (
+            np.sort(np.concatenate(keep_parts).astype(np.int64))
+            if keep_parts
+            else np.zeros(0, dtype=np.int64)
+        )
+        if len(keep) > int(max_rows):
+            take = np.linspace(0, len(keep) - 1, int(max_rows)).round().astype(np.int64)
+            keep = keep[np.unique(take)]
+            sampling_diag["post_cap_budget_trimmed"] = True
+        else:
+            sampling_diag["post_cap_budget_trimmed"] = False
+    else:
+        current = (rows["timestamp"] >= start) & (rows["timestamp"] <= end)
+        current_idx = np.flatnonzero(current.to_numpy(dtype=bool))
+        hist_idx = np.flatnonzero(~current.to_numpy(dtype=bool))
+        keep = current_idx
+        remaining = max(0, int(max_rows) - len(keep))
+        if remaining > 0 and len(hist_idx) > 0:
+            if len(hist_idx) > remaining:
+                take = np.linspace(0, len(hist_idx) - 1, remaining).round().astype(np.int64)
+                hist_idx = hist_idx[np.unique(take)]
+            keep = np.concatenate([hist_idx, keep])
+        if len(keep) > int(max_rows):
+            take = np.linspace(0, len(keep) - 1, int(max_rows)).round().astype(np.int64)
+            keep = keep[np.unique(take)]
+        sampling_diag.update(
+            {
+                "rows_per_timestamp_cap": None,
+                "rows_per_timestamp_cap_source": "disabled",
+                "post_cap_budget_trimmed": len(keep) > int(max_rows),
+            }
+        )
     sample = rows.iloc[np.sort(np.unique(keep))].reset_index(drop=True)
+    sample_current = (sample["timestamp"] >= start) & (sample["timestamp"] <= end)
+
+    def _rows_per_timestamp_summary(mask: pd.Series) -> dict[str, float | int]:
+        counts = sample.loc[mask, "timestamp"].value_counts()
+        if counts.empty:
+            return {
+                "timestamp_count": 0,
+                "mean": 0.0,
+                "p50": 0.0,
+                "p90": 0.0,
+                "max": 0,
+            }
+        arr = counts.to_numpy(dtype=np.float64)
+        return {
+            "timestamp_count": int(len(arr)),
+            "mean": float(np.mean(arr)),
+            "p50": float(np.quantile(arr, 0.50)),
+            "p90": float(np.quantile(arr, 0.90)),
+            "max": int(np.max(arr)),
+        }
+
     diag = {
         "source_rows": int(len(rows)),
         "sample_rows": int(len(sample)),
-        "current_rows": int(((sample["timestamp"] >= start) & (sample["timestamp"] <= end)).sum()),
+        "current_rows": int(sample_current.sum()),
         "history_rows": int((sample["timestamp"] < start).sum()),
         "start": rows["timestamp"].min().isoformat() if len(rows) else None,
         "end": end.isoformat() if pd.notna(end) else None,
         "current_start": start.isoformat() if pd.notna(start) else None,
         "dataset_count": int(sample["dataset"].nunique()) if len(sample) else 0,
         "symbol_count": int(sample["symbol"].nunique()) if len(sample) else 0,
+        "sampling": sampling_diag,
+        "rows_per_timestamp": {
+            "history": _rows_per_timestamp_summary(~sample_current),
+            "current": _rows_per_timestamp_summary(sample_current),
+        },
     }
     return sample, diag
 
@@ -295,6 +370,23 @@ def main() -> int:
         help="Hydrate every requested key even if no sampled symbol schema exposes it.",
     )
     parser.add_argument("--max-rows", type=int, default=250000)
+    parser.add_argument(
+        "--rows-per-timestamp-cap",
+        type=int,
+        default=0,
+        help=(
+            "Maximum sampled rows per timestamp. Default 0 derives a cap from "
+            "--max-rows / timestamp_count."
+        ),
+    )
+    parser.add_argument(
+        "--disable-timestamp-balanced-sampling",
+        action="store_true",
+        help=(
+            "Use legacy sampling that keeps all current rows and thins history. "
+            "Not recommended for domain-classifier diagnostics."
+        ),
+    )
     parser.add_argument("--current-window-days", type=float, default=28.0)
     parser.add_argument("--validation-metrics", action="store_true")
     parser.add_argument("--max-final-features", type=int, default=40)
@@ -347,6 +439,9 @@ def main() -> int:
         rows,
         max_rows=int(args.max_rows),
         current_window_days=float(args.current_window_days),
+        timestamp_balanced=not bool(args.disable_timestamp_balanced_sampling),
+        rows_per_timestamp_cap=int(args.rows_per_timestamp_cap),
+        random_state=int(args.random_state),
     )
     _log(f"row sample built: {sample_diag} elapsed={_elapsed(stage_start)}")
 

@@ -220,6 +220,42 @@ class PredictionLedger:
         df.to_parquet(tmp, index=False)
         tmp.replace(self.path)
 
+    @staticmethod
+    def _identity_columns(df: pd.DataFrame) -> List[str]:
+        """Return the stable candidate identity used for append/resolve upserts."""
+        if df is None or df.empty:
+            return []
+        signal_ts = df.get("signal_bar_ts")
+        has_signal_ts = False
+        if signal_ts is not None:
+            try:
+                has_signal_ts = bool(
+                    pd.to_datetime(signal_ts, utc=True, errors="coerce").notna().any()
+                )
+            except Exception:
+                has_signal_ts = bool(signal_ts.notna().any())
+        ts_col = "signal_bar_ts" if has_signal_ts else "timestamp"
+        preferred = (
+            ts_col,
+            "symbol",
+            "side",
+            "strategy_id",
+            "meta_head_hash",
+            "model_artifact_run_id",
+            "policy_artifact_run_id",
+        )
+        subset = [c for c in preferred if c in df.columns]
+        if ts_col in subset and len(subset) >= 2:
+            return subset
+        fallback = (
+            "timestamp",
+            "symbol",
+            "side",
+            "strategy_id",
+            "meta_head_hash",
+        )
+        return [c for c in fallback if c in df.columns]
+
     def append_rows(self, rows: List[Dict[str, Any]]) -> None:
         if not rows:
             return
@@ -235,18 +271,7 @@ class PredictionLedger:
                 )
         old = self._read()
         out = new if old.empty else pd.concat([old, new], ignore_index=True, sort=False)
-        subset = [
-            c
-            for c in (
-                "timestamp",
-                "signal_bar_ts",
-                "symbol",
-                "side",
-                "strategy_id",
-                "meta_head_hash",
-            )
-            if c in out.columns
-        ]
+        subset = self._identity_columns(out)
         if subset:
             out = out.drop_duplicates(subset=subset, keep="last")
         self._write_atomic(out)
@@ -269,16 +294,7 @@ class PredictionLedger:
             self._write_atomic(updates.copy())
             return
         key_cols = [
-            c
-            for c in (
-                "timestamp",
-                "signal_bar_ts",
-                "symbol",
-                "side",
-                "strategy_id",
-                "meta_head_hash",
-            )
-            if c in old.columns and c in updates.columns
+            c for c in self._identity_columns(old) if c in old.columns and c in updates.columns
         ]
         if not key_cols:
             self._write_atomic(pd.concat([old, updates], ignore_index=True, sort=False))

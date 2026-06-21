@@ -90,9 +90,16 @@ from extreme_price_movements.unsupervised_regime_learning.diagnostics import (
     stratified_period_sample_positions,
     time_sort_order,
 )
+from extreme_price_movements.unsupervised_regime_learning.feature_registry import (
+    FAMILY_REGIME_SPECS as DEFAULT_FAMILY_REGIME_SPECS,
+)
 
 
 ADVANCED_REGIME_LEARNING_SCHEMA_VERSION = "unsupervised_regime_learning_v2"
+
+
+def _default_family_regime_specs() -> tuple[dict[str, Any], ...]:
+    return tuple(dict(spec) for spec in DEFAULT_FAMILY_REGIME_SPECS)
 
 
 @dataclass(frozen=True)
@@ -132,8 +139,17 @@ class AdvancedRegimeLearningConfig:
     leaf_trees: int = 80
     leaf_embedding_dim: int = 8
     raw_embedding_dim: int = 8
+    umap_embedding_max_rows: int = 6000
     n_regimes: int = 5
     min_regime_duration: int = 4
+    primary_trading_horizon_hours: int = 6
+    transition_change_horizons: tuple[int, ...] = (1, 4, 6, 12, 24)
+    residual_regime_control_families: tuple[str, ...] = ("trend", "volatility")
+    residual_regime_embedding_dim: int = 8
+    family_regime_embedding_dim: int = 6
+    enable_residual_structure_regimes: bool = True
+    enable_family_regime_specs: bool = True
+    family_regime_specs: Sequence[Mapping[str, Any]] = field(default_factory=_default_family_regime_specs)
     bayesian_gmm_covariance_type: str = "diag"
     bayesian_gmm_weight_concentration_prior: float = 0.0
     bayesian_gmm_reg_covar: float = 1e-6
@@ -153,6 +169,8 @@ class AdvancedRegimeLearningConfig:
     spectral_affinity: str = "nearest_neighbors"
     spectral_assign_labels: str = "kmeans"
     spectral_gamma: float = 1.0
+    spectral_embedding_max_rows: int = 6000
+    spectral_clustering_max_rows: int = 6000
     kmeans_n_init: int = 10
     kmeans_max_iter: int = 300
     kmeans_tol: float = 1e-4
@@ -195,6 +213,23 @@ class AdvancedRegimeLearningConfig:
     regime_assessment_max_auc_rows: int = 20000
     regime_assessment_max_robustness_rows: int = 20000
     regime_assessment_max_geometry_rows_per_regime: int = 512
+    model_helpfulness_incremental_auc_target: float = 0.05
+    model_helpfulness_min_score_to_keep: float = 0.05
+    model_helpfulness_min_stability_to_keep: float = 0.10
+    conditional_signal_learnability_weight: float = 0.65
+    conditional_signal_learnability_incremental_auc_target: float = 0.03
+    conditional_signal_learnability_max_signal_features: int = 24
+    conditional_signal_learnability_interaction_features: int = 12
+    conditional_signal_learnability_max_rows: int = 12000
+    conditional_signal_learnability_min_score_to_keep: float = 0.05
+    future_structure_family_min_score_to_keep: float = 0.50
+    oof_failure_helpfulness_weight: float = 0.20
+    oof_failure_helpfulness_target: float = 0.10
+    oof_failure_top_quantile: float = 0.67
+    oof_failure_min_coverage: float = 0.50
+    family_regime_market_summary_enabled: bool = True
+    family_regime_market_summary_max_features: int = 32
+    useful_regime_model_helpfulness_weight: float = 0.55
     leaf_embedding_max_trees: int = 64
     persistence_split_dataframes: bool = True
     eps: float = 1e-8
@@ -248,6 +283,90 @@ def _stable_unique(values: Sequence[str]) -> list[str]:
 
 def _feature_family(name: str) -> str:
     low = str(name).lower()
+    for mechanism_family in [
+        "session_microstructure",
+        "cross_asset_orderbook",
+        "orderbook",
+        "mark_index",
+        "spread_proxy",
+        "basis",
+    ]:
+        if f"__{mechanism_family}" in low:
+            return mechanism_family
+    if "resid" in low:
+        if "fund" in low:
+            return "funding"
+        if "oi" in low or "open_interest" in low:
+            return "open_interest"
+        if "basis" in low:
+            return "basis"
+        if "volume" in low or "amihud" in low or "liquidity" in low or "rvol" in low:
+            return "liquidity"
+        if "coherence" in low or "path_efficiency" in low:
+            return "path_structure"
+        if "trend" in low:
+            return "trend"
+        if "vol" in low or "atr" in low or low.startswith("rv_"):
+            return "volatility"
+        return "residual"
+    if any(
+        token in low
+        for token in [
+            "loc_session",
+            "loc_initial_balance",
+            "loc_prev_day",
+            "fund_hours",
+            "funding_phase",
+            "fund_next_event",
+            "fund_pre_drift",
+            "fund_post_reversal",
+            "fund_ret_cond_sign",
+            "fund_payment_pressure",
+        ]
+    ):
+        return "session_microstructure"
+    if "xasset_asset_minus" in low and ("ob_" in low or "orderbook" in low or "ob_pressure" in low):
+        return "asset_relative_orderbook"
+    if "xasset_asset_minus" in low and "fund" in low:
+        return "asset_relative_funding"
+    if any(
+        token in low
+        for token in [
+            "symbol_minus_mkt_ret",
+            "asset_minus_universe",
+            "asset_mom_minus_basket",
+            "asset_ret_vs_universe",
+        ]
+    ):
+        return "asset_relative_return"
+    if "basis" in low:
+        return "basis"
+    if any(token in low for token in ["mark_", "markindex", "perp_index", "premium_proxy"]):
+        return "mark_index"
+    if any(token in low for token in ["leverage", "unwind", "squeeze"]):
+        return "crowding"
+    if any(token in low for token in ["orderbook", "ob_", "spread_bps", "depth_z", "liquidity_void"]):
+        if low.startswith("xasset_") or "xasset_mkt" in low:
+            return "cross_asset_orderbook"
+        return "orderbook"
+    if low.startswith("spread_proxy_"):
+        return "spread_proxy"
+    if "oi" in low or "open_interest" in low:
+        return "open_interest"
+    if "fund" in low:
+        return "funding"
+    if (
+        low.startswith("mkt_")
+        or low.startswith("cs_")
+        or "market_" in low
+        or "_mkt_" in low
+        or "breadth" in low
+        or "dispersion" in low
+        or "bench_resid" in low
+        or "peer_resid" in low
+        or "mkt_resid" in low
+    ):
+        return "cross_sectional" if low.startswith("cs_") or "breadth" in low or "dispersion" in low else "cross_asset"
     if low.startswith("cov_"):
         return "covariance"
     if low.startswith("corr_"):
@@ -260,10 +379,8 @@ def _feature_family(name: str) -> str:
         return "eigen"
     if low.startswith("svd") or "knn" in low:
         return "svd_knn"
-    if "fund" in low:
-        return "funding"
-    if "oi" in low or "open_interest" in low:
-        return "open_interest"
+    if "compression" in low or "bollinger" in low or "band_width" in low:
+        return "compression"
     if "volume" in low or "amihud" in low or "liquidity" in low:
         return "liquidity"
     if "rvol" in low:
@@ -819,6 +936,7 @@ def _bayesian_gmm_model(
     config: AdvancedRegimeLearningConfig,
     random_state: int,
     max_iter: int | None = None,
+    reg_covar: float | None = None,
 ) -> BayesianGaussianMixture:
     prior = float(config.bayesian_gmm_weight_concentration_prior)
     covariance_type = "diag"
@@ -833,7 +951,10 @@ def _bayesian_gmm_model(
         n_components=int(n_components),
         covariance_type=covariance_type,
         weight_concentration_prior_type="dirichlet_process",
-        reg_covar=max(float(config.bayesian_gmm_reg_covar), 1e-12),
+        reg_covar=max(
+            float(config.bayesian_gmm_reg_covar if reg_covar is None else reg_covar),
+            1e-12,
+        ),
         random_state=int(random_state),
         max_iter=int(max_iter if max_iter is not None else config.bayesian_gmm_max_iter),
         **kwargs,
@@ -928,6 +1049,44 @@ def _spectral_kwargs(
     return kwargs
 
 
+def _bounded_spectral_fit_positions(n: int, max_rows: int) -> np.ndarray:
+    cap = int(max_rows or 0)
+    if cap <= 0 or int(n) <= cap:
+        return np.arange(int(n), dtype=np.int64)
+    idx = np.linspace(0, int(n) - 1, cap, dtype=np.float64)
+    return np.unique(np.round(idx).astype(np.int64))
+
+
+def _spectral_labels_bounded(
+    x: np.ndarray,
+    *,
+    n_clusters: int,
+    random_state: int,
+    config: AdvancedRegimeLearningConfig,
+    max_rows: int,
+) -> tuple[np.ndarray, str]:
+    n = int(x.shape[0])
+    k = max(2, min(int(n_clusters), n))
+    fit_pos = _bounded_spectral_fit_positions(n, int(max_rows or 0))
+    if fit_pos.size < k + 2:
+        fit_pos = np.arange(n, dtype=np.int64)
+    fit_x = x[fit_pos]
+    labels_fit = SpectralClustering(
+        n_clusters=k,
+        random_state=int(random_state),
+        **_spectral_kwargs(int(fit_x.shape[0]), config=config),
+    ).fit_predict(fit_x)
+    if fit_pos.size == n:
+        return np.asarray(labels_fit, dtype=np.int64), "spectral"
+    labels = _assign_by_centroid(
+        fit_x,
+        np.asarray(labels_fit, dtype=np.int64),
+        x,
+    ).astype(np.int64, copy=False)
+    labels[fit_pos] = np.asarray(labels_fit, dtype=np.int64)
+    return labels, "spectral_sampled"
+
+
 def _kmeans_model(
     n_clusters: int,
     *,
@@ -963,16 +1122,35 @@ def _reduce_embedding(
     if x.shape[0] < 2:
         return np.zeros((x.shape[0], dim), dtype=np.float32)
     if method == "umap" and _UMAP_AVAILABLE and x.shape[0] > 10:
-        reducer = umap.UMAP(n_components=dim, random_state=random_state, n_neighbors=min(30, max(2, x.shape[0] // 10)))
-        return reducer.fit_transform(x).astype(np.float32)
+        fit_pos = _bounded_spectral_fit_positions(
+            int(x.shape[0]),
+            int(config.umap_embedding_max_rows),
+        )
+        fit_x = x[fit_pos]
+        n_neighbors = min(30, max(2, int(fit_x.shape[0]) // 10))
+        reducer = umap.UMAP(
+            n_components=dim,
+            random_state=random_state,
+            n_neighbors=n_neighbors,
+        )
+        fit_z = reducer.fit_transform(fit_x).astype(np.float32)
+        if fit_pos.size == x.shape[0]:
+            return fit_z
+        try:
+            return reducer.transform(x).astype(np.float32)
+        except Exception:
+            nearest = NearestNeighbors(n_neighbors=1).fit(fit_x)
+            nn_idx = nearest.kneighbors(x, return_distance=False).reshape(-1)
+            return fit_z[nn_idx].astype(np.float32, copy=False)
     if method == "spectral" and x.shape[0] > dim + 2:
         try:
-            reducer = SpectralClustering(
+            labels, _used = _spectral_labels_bounded(
+                x,
                 n_clusters=max(2, dim),
                 random_state=random_state,
-                **_spectral_kwargs(x.shape[0], config=config),
+                config=config,
+                max_rows=int(config.spectral_embedding_max_rows),
             )
-            labels = reducer.fit_predict(x)
             one_hot = np.eye(int(labels.max()) + 1, dtype=np.float32)[labels]
             return PCA(n_components=min(dim, one_hot.shape[1]), random_state=random_state).fit_transform(one_hot).astype(np.float32)
         except Exception:
@@ -1029,19 +1207,39 @@ def _cluster_embedding(
         except Exception:
             pass
     if method == "bayesian_gmm":
-        model = _bayesian_gmm_model(k, config=config, random_state=random_state)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", ConvergenceWarning)
-            labels = model.fit_predict(x)
-        return labels.astype(np.int64), model.predict_proba(x).astype(np.float32), "bayesian_gmm"
+        base_reg = max(float(config.bayesian_gmm_reg_covar), 1e-12)
+        retry_regs = [base_reg]
+        retry_regs.extend(float(v) for v in (1e-5, 1e-4, 1e-3) if float(v) > base_reg)
+        for reg_covar in retry_regs:
+            try:
+                model = _bayesian_gmm_model(
+                    k,
+                    config=config,
+                    random_state=random_state,
+                    reg_covar=reg_covar,
+                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", ConvergenceWarning)
+                    labels = model.fit_predict(x.astype(np.float64, copy=False))
+                used = (
+                    "bayesian_gmm"
+                    if np.isclose(reg_covar, base_reg)
+                    else f"bayesian_gmm_reg{reg_covar:g}"
+                )
+                probs = model.predict_proba(x.astype(np.float64, copy=False)).astype(np.float32)
+                return labels.astype(np.int64), probs, used
+            except Exception:
+                continue
     if method == "spectral" and n >= k + 2:
         try:
-            labels = SpectralClustering(
+            labels, used = _spectral_labels_bounded(
+                x,
                 n_clusters=k,
                 random_state=random_state,
-                **_spectral_kwargs(n, config=config),
-            ).fit_predict(x)
-            return labels.astype(np.int64), None, "spectral"
+                config=config,
+                max_rows=int(config.spectral_clustering_max_rows),
+            )
+            return labels.astype(np.int64, copy=False), None, used
         except Exception:
             pass
     with warnings.catch_warnings():
@@ -1276,6 +1474,246 @@ def _non_trend_vol_matrix(matrix: np.ndarray, features: Sequence[str]) -> np.nda
     )
 
 
+def _family_indices(
+    features: Sequence[str],
+    *,
+    include: set[str] | None = None,
+    exclude: set[str] | None = None,
+) -> list[int]:
+    include = set(include or set())
+    exclude = set(exclude or set())
+    out: list[int] = []
+    for i, feature in enumerate(features):
+        family = _feature_family(str(feature))
+        if include and family not in include:
+            continue
+        if family in exclude:
+            continue
+        out.append(int(i))
+    return out
+
+
+def _finite_filled(arr: np.ndarray) -> np.ndarray:
+    values = np.asarray(arr, dtype=np.float32)
+    if values.ndim != 2 or values.size == 0:
+        return np.zeros_like(values, dtype=np.float32)
+    out = values.astype(np.float32, copy=True)
+    finite = np.isfinite(out)
+    if not bool(np.all(finite)):
+        med = np.nanmedian(np.where(finite, out, np.nan), axis=0)
+        med = np.where(np.isfinite(med), med, 0.0).astype(np.float32)
+        rows, cols = np.where(~finite)
+        if rows.size:
+            out[rows, cols] = med[cols]
+    return np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32, copy=False)
+
+
+def _residualize_against_controls(
+    matrix: np.ndarray,
+    features: Sequence[str],
+    *,
+    control_families: Sequence[str] = ("trend", "volatility"),
+    eps: float = 1e-8,
+) -> tuple[np.ndarray, list[str], dict[str, Any]]:
+    """Residualize non-control features against obvious trend/vol state.
+
+    This produces an unsupervised residual-structure surface so downstream
+    clustering is less likely to rediscover simple trend/vol buckets.
+    """
+
+    arr = np.asarray(matrix, dtype=np.float32)
+    if arr.ndim != 2 or arr.shape[0] == 0 or arr.shape[1] == 0:
+        return np.zeros((arr.shape[0] if arr.ndim == 2 else 0, 0), dtype=np.float32), [], {
+            "status": "empty_input",
+            "control_feature_count": 0,
+            "residual_feature_count": 0,
+        }
+    control_set = {str(family) for family in control_families}
+    control_idx = _family_indices(features, include=control_set)
+    target_idx = _family_indices(features, exclude=control_set)
+    if not control_idx or not target_idx:
+        return np.zeros((arr.shape[0], 0), dtype=np.float32), [], {
+            "status": "missing_controls_or_targets",
+            "control_feature_count": int(len(control_idx)),
+            "residual_feature_count": int(len(target_idx)),
+            "control_families": sorted(control_set),
+        }
+    x = _finite_filled(arr[:, np.asarray(control_idx, dtype=np.int64)]).astype(np.float64, copy=False)
+    y = _finite_filled(arr[:, np.asarray(target_idx, dtype=np.int64)]).astype(np.float64, copy=False)
+    x_design = np.concatenate([np.ones((x.shape[0], 1), dtype=np.float64), x], axis=1)
+    ridge = max(float(eps), 1e-6)
+    xtx = x_design.T @ x_design
+    xtx.flat[:: xtx.shape[0] + 1] += ridge
+    try:
+        beta = np.linalg.solve(xtx, x_design.T @ y)
+    except np.linalg.LinAlgError:
+        beta = np.linalg.pinv(xtx) @ (x_design.T @ y)
+    resid = y - x_design @ beta
+    resid = np.clip(np.nan_to_num(resid, nan=0.0, posinf=0.0, neginf=0.0), -8.0, 8.0)
+    residual_features = [str(features[i]) for i in target_idx]
+    diagnostics = {
+        "status": "completed",
+        "control_families": sorted(control_set),
+        "control_feature_count": int(len(control_idx)),
+        "residual_feature_count": int(len(residual_features)),
+        "residual_surface": "non_control_features_minus_ridge_projection_on_control_families",
+    }
+    return resid.astype(np.float32), residual_features, diagnostics
+
+
+def _embedded_family_matrix(
+    matrix: np.ndarray,
+    *,
+    name: str,
+    method: str,
+    n_components: int,
+    random_state: int,
+    config: AdvancedRegimeLearningConfig,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    arr = np.asarray(matrix, dtype=np.float32)
+    if arr.ndim != 2 or arr.shape[0] == 0 or arr.shape[1] == 0:
+        return np.zeros((arr.shape[0] if arr.ndim == 2 else 0, 0), dtype=np.float32), {
+            "name": str(name),
+            "status": "empty",
+            "input_feature_count": 0,
+            "embedding_dim": 0,
+        }
+    dim = max(1, min(int(n_components), arr.shape[1], max(arr.shape[0] - 1, 1)))
+    if arr.shape[1] <= dim:
+        embedded = arr.astype(np.float32, copy=False)
+        reduce_method = "identity"
+    else:
+        embedded = _reduce_embedding(
+            arr,
+            method=method,
+            n_components=dim,
+            random_state=random_state,
+            config=config,
+        )
+        reduce_method = str(method)
+    return embedded.astype(np.float32, copy=False), {
+        "name": str(name),
+        "status": "completed",
+        "input_feature_count": int(arr.shape[1]),
+        "embedding_dim": int(embedded.shape[1]) if embedded.ndim == 2 else 0,
+        "reduction_method": reduce_method,
+    }
+
+
+def _configured_family_regime_defs(
+    config: AdvancedRegimeLearningConfig,
+) -> list[tuple[str, set[str], str, str, bool]]:
+    raw_specs = getattr(config, "family_regime_specs", None) or DEFAULT_FAMILY_REGIME_SPECS
+    out: list[tuple[str, set[str], str, str, bool]] = []
+    for raw in raw_specs:
+        if not isinstance(raw, Mapping):
+            continue
+        base_name = str(raw.get("base_name", "")).strip()
+        raw_families = raw.get("feature_families", raw.get("families", ()))
+        if isinstance(raw_families, str):
+            families = {raw_families}
+        elif isinstance(raw_families, Sequence):
+            families = {str(family).strip() for family in raw_families if str(family).strip()}
+        else:
+            families = set()
+        if not base_name or not families:
+            continue
+        regime_family = str(raw.get("regime_family", base_name.removeprefix("family_"))).strip()
+        objective = str(raw.get("regime_objective", raw.get("objective", base_name))).strip()
+        market_summary = bool(raw.get("market_summary", False))
+        out.append((base_name, families, regime_family, objective, market_summary))
+    return out
+
+
+def _family_regime_candidates(
+    matrix: np.ndarray,
+    features: Sequence[str],
+    *,
+    frame: pd.DataFrame,
+    index: pd.Index,
+    config: AdvancedRegimeLearningConfig,
+) -> tuple[list[tuple[str, np.ndarray, str]], dict[str, dict[str, Any]], dict[str, pd.DataFrame], dict[str, Any]]:
+    specs: list[tuple[str, np.ndarray, str]] = []
+    meta: dict[str, dict[str, Any]] = {}
+    embeddings: dict[str, pd.DataFrame] = {}
+    diagnostics: dict[str, Any] = {}
+    if bool(config.enable_residual_structure_regimes):
+        residual, residual_features, residual_diag = _residualize_against_controls(
+            matrix,
+            features,
+            control_families=tuple(config.residual_regime_control_families),
+            eps=float(config.eps),
+        )
+        residual_emb, emb_diag = _embedded_family_matrix(
+            residual,
+            name="residual_structure",
+            method="pca",
+            n_components=int(config.residual_regime_embedding_dim),
+            random_state=int(config.random_state) + 401,
+            config=config,
+        )
+        diagnostics["residual_structure"] = {**residual_diag, **emb_diag}
+        if residual_emb.shape[1] > 0:
+            for method, cluster in [
+                ("residual_structure_kmeans", "kmeans"),
+                ("residual_structure_bayesian_gmm", "bayesian_gmm"),
+            ]:
+                specs.append((method, residual_emb, cluster))
+                meta[method] = {
+                    "regime_family": "residual_structure",
+                    "regime_objective": "incremental_structure_after_trend_vol_control",
+                    "input_feature_count": int(len(residual_features)),
+                }
+            embeddings["residual_structure"] = _embedding_frame(index, "url_residual_structure", residual_emb)
+
+    if not bool(config.enable_family_regime_specs):
+        return specs, meta, embeddings, diagnostics
+
+    for base_name, families, regime_family, objective, market_summary in _configured_family_regime_defs(config):
+        idx = _family_indices(features, include=families)
+        diagnostics[base_name] = {
+            "families": sorted(families),
+            "input_feature_count": int(len(idx)),
+            "status": "empty" if not idx else "candidate",
+        }
+        if not idx:
+            continue
+        fam_matrix = np.asarray(matrix, dtype=np.float32)[:, np.asarray(idx, dtype=np.int64)]
+        if (
+            bool(config.family_regime_market_summary_enabled)
+            and bool(market_summary)
+        ):
+            fam_matrix, market_summary_diag = _market_timestamp_summary_matrix(
+                frame=frame,
+                matrix=fam_matrix,
+                timestamp_col=str(config.timestamp_col),
+                max_features=int(config.family_regime_market_summary_max_features),
+                eps=float(config.eps),
+            )
+            diagnostics[base_name].update(market_summary_diag)
+        fam_emb, emb_diag = _embedded_family_matrix(
+            fam_matrix,
+            name=base_name,
+            method="pca",
+            n_components=int(config.family_regime_embedding_dim),
+            random_state=int(config.random_state) + 500 + len(specs),
+            config=config,
+        )
+        diagnostics[base_name].update(emb_diag)
+        if fam_emb.shape[1] == 0:
+            continue
+        method = f"{base_name}_bayesian_gmm"
+        specs.append((method, fam_emb, "bayesian_gmm"))
+        meta[method] = {
+            "regime_family": regime_family,
+            "regime_objective": objective,
+            "input_feature_count": int(len(idx)),
+            "feature_families": sorted(families),
+        }
+        embeddings[base_name] = _embedding_frame(index, f"url_{base_name}", fam_emb)
+    return specs, meta, embeddings, diagnostics
+
+
 def _cv_auc_regime_classifier(
     values: np.ndarray,
     labels: np.ndarray,
@@ -1483,12 +1921,19 @@ def _fit_predict_cluster_for_positions(
                 return np.asarray(pred, dtype=np.int64)
             return _assign_by_centroid(train, train_labels, test)
         if str(method) == "spectral" and len(train_idx) >= k + 2:
+            fit_pos = _bounded_spectral_fit_positions(
+                int(train.shape[0]),
+                int(config.spectral_clustering_max_rows),
+            )
+            if fit_pos.size < k + 2:
+                fit_pos = np.arange(int(train.shape[0]), dtype=np.int64)
+            fit_train = train[fit_pos]
             train_labels = SpectralClustering(
                 n_clusters=k,
                 random_state=int(random_state),
-                **_spectral_kwargs(len(train_idx), config=config),
-            ).fit_predict(train)
-            return _assign_by_centroid(train, np.asarray(train_labels, dtype=np.int64), test)
+                **_spectral_kwargs(int(fit_train.shape[0]), config=config),
+            ).fit_predict(fit_train)
+            return _assign_by_centroid(fit_train, np.asarray(train_labels, dtype=np.int64), test)
         if str(method) == "hmm" and _HMM_AVAILABLE and len(train_idx) >= k * 4:
             model = _hmm_model(
                 k,
@@ -1985,14 +2430,21 @@ def _assess_regime_method(
     cluster_method: str,
     embedding: np.ndarray,
     labels: np.ndarray,
+    probs: np.ndarray | None,
     matrix: np.ndarray,
     feature_names: Sequence[str],
     trend_vol: np.ndarray,
     non_trend_vol: np.ndarray,
+    signal_matrix: np.ndarray,
     frame: pd.DataFrame,
     oos_blocks: Sequence[np.ndarray],
     window_blocks: Sequence[np.ndarray],
     robustness_positions: np.ndarray,
+    future_structure_target: np.ndarray | None,
+    future_structure_trend_vol_auc: float | None,
+    future_structure_signal_auc: float | None,
+    downstream_target: np.ndarray | None,
+    base_oof_pred: np.ndarray | None,
     config: AdvancedRegimeLearningConfig,
 ) -> dict[str, float]:
     auc_tv = _cv_auc_trend_vol(
@@ -2070,6 +2522,44 @@ def _assess_regime_method(
         labels,
         config=config,
     )
+    future_helpfulness = _future_structure_helpfulness_score(
+        labels,
+        probs,
+        future_structure_target=future_structure_target,
+        future_structure_trend_vol_auc=future_structure_trend_vol_auc,
+        oos_blocks=oos_blocks,
+        config=config,
+    )
+    conditional_helpfulness = _conditional_signal_learnability_score(
+        labels,
+        probs,
+        signal_matrix=signal_matrix,
+        future_structure_target=future_structure_target,
+        future_structure_signal_auc=future_structure_signal_auc,
+        future_structure_trend_vol_auc=future_structure_trend_vol_auc,
+        oos_blocks=oos_blocks,
+        config=config,
+    )
+    oof_helpfulness = _oof_failure_mode_helpfulness_score(
+        labels,
+        probs,
+        downstream_target=downstream_target,
+        base_oof_pred=base_oof_pred,
+        oos_blocks=oos_blocks,
+        config=config,
+    )
+    conditional_weight = _clamp01(float(config.conditional_signal_learnability_weight))
+    structural_helpfulness = _clamp01(
+        conditional_weight * float(conditional_helpfulness["ConditionalSignalLearnability"])
+        + (1.0 - conditional_weight) * float(future_helpfulness["FutureStructureHelpfulness"])
+    )
+    oof_weight = _clamp01(float(config.oof_failure_helpfulness_weight))
+    if float(oof_helpfulness["OOFCoverage"]) < float(config.oof_failure_min_coverage):
+        oof_weight = 0.0
+    model_helpfulness = _clamp01(
+        (1.0 - oof_weight) * structural_helpfulness
+        + oof_weight * float(oof_helpfulness["OOFFailureModeHelpfulness"])
+    )
     total = (
         0.20 * nontriviality
         + 0.15 * oos_stability
@@ -2079,6 +2569,17 @@ def _assess_regime_method(
         + 0.10 * null_robustness
         + 0.10 * window_robustness
         + 0.10 * geometry
+    )
+    helpfulness_weight = _clamp01(float(config.useful_regime_model_helpfulness_weight))
+    residual_weight = 1.0 - helpfulness_weight
+    unsupervised_quality = _clamp01(
+        0.50 * _clamp01(total)
+        + 0.30 * _clamp01(feature_stability)
+        + 0.20 * _clamp01(oos_stability)
+    )
+    useful_score = _clamp01(
+        helpfulness_weight * model_helpfulness
+        + residual_weight * unsupervised_quality
     )
     return {
         "AUC_tv": float(auc_tv),
@@ -2097,6 +2598,13 @@ def _assess_regime_method(
         "Window_Robustness": _clamp01(window_robustness),
         "Geometry_Separation": _clamp01(geometry),
         "TotalScore": _clamp01(total),
+        "UnsupervisedQualityScore": unsupervised_quality,
+        "UsefulRegimeScore": useful_score,
+        "ModelHelpfulness": model_helpfulness,
+        "StructuralModelHelpfulness": structural_helpfulness,
+        **future_helpfulness,
+        **conditional_helpfulness,
+        **oof_helpfulness,
     }
 
 
@@ -2770,6 +3278,73 @@ def _embedding_frame(index: pd.Index, prefix: str, matrix: np.ndarray) -> pd.Dat
     )
 
 
+def _market_timestamp_summary_matrix(
+    frame: pd.DataFrame,
+    matrix: np.ndarray,
+    *,
+    timestamp_col: str,
+    max_features: int,
+    eps: float,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    arr = _finite_filled(np.asarray(matrix, dtype=np.float32))
+    if arr.ndim != 2 or arr.shape[0] == 0 or arr.shape[1] == 0 or timestamp_col not in frame.columns:
+        return arr, {
+            "market_timestamp_summary_status": "unavailable",
+            "market_timestamp_summary_input_features": int(arr.shape[1]) if arr.ndim == 2 else 0,
+            "market_timestamp_summary_features": int(arr.shape[1]) if arr.ndim == 2 else 0,
+        }
+    cap = int(max_features or 0)
+    if cap > 0 and arr.shape[1] > cap:
+        variance = np.nanvar(arr, axis=0)
+        variance = np.nan_to_num(variance, nan=0.0, posinf=0.0, neginf=0.0)
+        keep = np.argpartition(variance, -cap)[-cap:]
+        keep = keep[np.argsort(variance[keep])[::-1]]
+        arr = arr[:, keep].astype(np.float32, copy=False)
+    ts = pd.to_datetime(frame[timestamp_col], utc=True, errors="coerce")
+    ts_codes = pd.factorize(ts, sort=False)[0].astype(np.int64, copy=False)
+    valid_ts = ts_codes >= 0
+    if int(np.sum(valid_ts)) != arr.shape[0] or int(np.max(ts_codes[valid_ts], initial=-1)) < 0:
+        return arr, {
+            "market_timestamp_summary_status": "invalid_timestamps",
+            "market_timestamp_summary_input_features": int(matrix.shape[1]),
+            "market_timestamp_summary_features": int(arr.shape[1]),
+        }
+    n_groups = int(np.max(ts_codes)) + 1
+    order = np.argsort(ts_codes, kind="mergesort")
+    summaries = np.zeros((n_groups, arr.shape[1] * 5), dtype=np.float32)
+    start = 0
+    while start < order.size:
+        code = int(ts_codes[order[start]])
+        end = start + 1
+        while end < order.size and int(ts_codes[order[end]]) == code:
+            end += 1
+        block = arr[order[start:end]].astype(np.float32, copy=False)
+        mean = np.nanmean(block, axis=0)
+        std = np.nanstd(block, axis=0)
+        q10 = np.nanpercentile(block, 10.0, axis=0)
+        q90 = np.nanpercentile(block, 90.0, axis=0)
+        breadth = np.nanmean(block > 0.0, axis=0)
+        summaries[code] = np.concatenate([mean, std, q10, q90, breadth]).astype(np.float32, copy=False)
+        start = end
+    summaries = np.nan_to_num(summaries, nan=0.0, posinf=0.0, neginf=0.0)
+    center = np.nanmedian(summaries, axis=0).astype(np.float32)
+    scale = np.nanpercentile(summaries, 75.0, axis=0) - np.nanpercentile(summaries, 25.0, axis=0)
+    scale = np.where(np.isfinite(scale) & (scale > eps), scale, 1.0).astype(np.float32)
+    summaries = np.clip(
+        (summaries - center.reshape(1, -1)) / np.maximum(scale.reshape(1, -1), eps),
+        -8.0,
+        8.0,
+    )
+    out = summaries[ts_codes].astype(np.float32, copy=False)
+    return out, {
+        "market_timestamp_summary_status": "completed",
+        "market_timestamp_summary_input_features": int(matrix.shape[1]),
+        "market_timestamp_summary_selected_features": int(arr.shape[1]),
+        "market_timestamp_summary_features": int(out.shape[1]),
+        "market_timestamp_count": int(n_groups),
+    }
+
+
 def _method_probability_columns(columns: Sequence[str], method: str) -> list[str]:
     prefix = f"{method}_regime_prob_"
     return [str(col) for col in columns if str(col).startswith(prefix)]
@@ -2843,6 +3418,397 @@ def _lagged_positions(
             for i in range(step, pos.size):
                 out[pos[i]] = pos[i - step]
     return out
+
+
+def _future_positions(
+    frame: pd.DataFrame,
+    *,
+    timestamp_col: str,
+    symbol_col: str,
+    horizon_hours: float,
+) -> np.ndarray:
+    n = len(frame)
+    out = np.full(n, -1, dtype=np.int64)
+    if n == 0:
+        return out
+    lagged = _lagged_positions(
+        frame,
+        timestamp_col=timestamp_col,
+        symbol_col=symbol_col,
+        horizon_hours=horizon_hours,
+    )
+    for future_pos, prior_pos in enumerate(lagged):
+        if prior_pos >= 0 and out[int(prior_pos)] < 0:
+            out[int(prior_pos)] = int(future_pos)
+    return out
+
+
+def _future_structure_target(
+    matrix: np.ndarray,
+    features: Sequence[str],
+    frame: pd.DataFrame,
+    *,
+    config: AdvancedRegimeLearningConfig,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Build a horizon-aligned, label-free target for structural regime usefulness."""
+
+    arr = _non_trend_vol_matrix(matrix, features)
+    target_surface = "non_trend_vol_features"
+    if arr.shape[1] == 0:
+        arr = np.asarray(matrix, dtype=np.float32)
+        target_surface = "all_selected_features"
+    if arr.ndim != 2 or arr.shape[0] == 0 or arr.shape[1] == 0:
+        return np.full(len(frame), -1, dtype=np.int64), {
+            "status": "empty_input",
+            "target_surface": target_surface,
+            "horizon_hours": int(config.primary_trading_horizon_hours),
+            "valid_fraction": 0.0,
+            "positive_rate": 0.0,
+            "target_feature_count": 0,
+        }
+    max_cols = int(config.regime_assessment_max_auc_features or 0)
+    if max_cols > 0 and arr.shape[1] > max_cols:
+        variances = np.nanvar(arr, axis=0)
+        variances = np.nan_to_num(variances, nan=0.0, posinf=0.0, neginf=0.0)
+        keep = np.argpartition(variances, -max_cols)[-max_cols:]
+        keep = keep[np.argsort(variances[keep])[::-1]]
+        arr = arr[:, keep].astype(np.float32, copy=False)
+    future_pos = _future_positions(
+        frame,
+        timestamp_col=config.timestamp_col,
+        symbol_col=config.symbol_col,
+        horizon_hours=float(config.primary_trading_horizon_hours),
+    )
+    labels = np.full(arr.shape[0], -1, dtype=np.int64)
+    valid = future_pos >= 0
+    if not bool(np.any(valid)):
+        return labels, {
+            "status": "no_future_rows",
+            "target_surface": target_surface,
+            "horizon_hours": int(config.primary_trading_horizon_hours),
+            "valid_fraction": 0.0,
+            "positive_rate": 0.0,
+            "target_feature_count": int(arr.shape[1]),
+        }
+    diff = np.abs(arr[future_pos[valid]] - arr[valid]).astype(np.float32, copy=False)
+    finite = np.isfinite(diff)
+    finite_count = finite.sum(axis=1)
+    score = np.full(diff.shape[0], np.nan, dtype=np.float32)
+    ok = finite_count > 0
+    if bool(np.any(ok)):
+        sums = np.where(finite, diff, 0.0).sum(axis=1, dtype=np.float64)
+        score[ok] = (sums[ok] / finite_count[ok]).astype(np.float32, copy=False)
+    full_score = np.full(arr.shape[0], np.nan, dtype=np.float32)
+    full_score[valid] = score
+    valid_target = np.isfinite(full_score)
+    if int(np.count_nonzero(valid_target)) < 12:
+        return labels, {
+            "status": "too_few_valid_rows",
+            "target_surface": target_surface,
+            "horizon_hours": int(config.primary_trading_horizon_hours),
+            "valid_fraction": float(np.mean(valid_target)) if valid_target.size else 0.0,
+            "positive_rate": 0.0,
+            "target_feature_count": int(arr.shape[1]),
+        }
+    threshold = float(np.nanmedian(full_score[valid_target]))
+    labels[valid_target] = (full_score[valid_target] > threshold).astype(np.int64)
+    positives = int(np.count_nonzero(labels[valid_target] == 1))
+    negatives = int(np.count_nonzero(labels[valid_target] == 0))
+    if positives < 2 or negatives < 2:
+        labels[:] = -1
+        status = "degenerate_target"
+    else:
+        status = "completed"
+    return labels, {
+        "status": status,
+        "target_surface": target_surface,
+        "horizon_hours": int(config.primary_trading_horizon_hours),
+        "valid_fraction": float(np.mean(valid_target)) if valid_target.size else 0.0,
+        "positive_rate": float(positives / max(positives + negatives, 1)),
+        "target_feature_count": int(arr.shape[1]),
+        "threshold": threshold if np.isfinite(threshold) else None,
+    }
+
+
+def _regime_predictor_matrix(labels: np.ndarray, probs: np.ndarray | None) -> np.ndarray:
+    y = np.asarray(labels, dtype=np.int64)
+    if probs is not None:
+        raw = np.asarray(probs, dtype=np.float32)
+        if raw.ndim == 2 and raw.shape[0] == y.size and raw.shape[1] > 0:
+            raw = np.nan_to_num(raw, nan=0.0, posinf=0.0, neginf=0.0)
+            raw = np.clip(raw, 0.0, np.inf)
+            denom = raw.sum(axis=1, keepdims=True)
+            return np.divide(
+                raw,
+                np.maximum(denom, 1e-12),
+                out=np.full_like(raw, 1.0 / max(raw.shape[1], 1), dtype=np.float32),
+                where=denom > 1e-12,
+            ).astype(np.float32, copy=False)
+    states = np.asarray([state for state in sorted(np.unique(y)) if state >= 0], dtype=np.int64)
+    if states.size == 0:
+        return np.zeros((y.size, 0), dtype=np.float32)
+    out = np.zeros((y.size, states.size), dtype=np.float32)
+    for i, state in enumerate(states):
+        out[:, i] = (y == int(state)).astype(np.float32, copy=False)
+    return out
+
+
+def _top_variance_matrix(values: np.ndarray, *, max_features: int) -> np.ndarray:
+    arr = _finite_filled(np.asarray(values, dtype=np.float32))
+    if arr.ndim != 2 or arr.shape[0] == 0 or arr.shape[1] == 0:
+        return np.zeros((arr.shape[0] if arr.ndim == 2 else 0, 0), dtype=np.float32)
+    cap = int(max_features or 0)
+    if cap > 0 and arr.shape[1] > cap:
+        variance = np.nanvar(arr, axis=0)
+        variance = np.nan_to_num(variance, nan=0.0, posinf=0.0, neginf=0.0)
+        keep = np.argpartition(variance, -cap)[-cap:]
+        keep = keep[np.argsort(variance[keep])[::-1]]
+        arr = arr[:, keep].astype(np.float32, copy=False)
+    return arr.astype(np.float32, copy=False)
+
+
+def _regime_conditioned_signal_matrix(
+    signal_matrix: np.ndarray,
+    labels: np.ndarray,
+    probs: np.ndarray | None,
+    *,
+    config: AdvancedRegimeLearningConfig,
+) -> np.ndarray:
+    signals = _top_variance_matrix(
+        signal_matrix,
+        max_features=int(config.conditional_signal_learnability_max_signal_features),
+    )
+    regimes = _regime_predictor_matrix(labels, probs)
+    if signals.shape[0] == 0 or regimes.shape[0] != signals.shape[0] or regimes.shape[1] == 0:
+        return signals
+    interactions_n = min(
+        int(config.conditional_signal_learnability_interaction_features or 0),
+        signals.shape[1],
+    )
+    parts = [signals, regimes.astype(np.float32, copy=False)]
+    if interactions_n > 0:
+        interactions = (
+            signals[:, :interactions_n, None].astype(np.float32, copy=False)
+            * regimes[:, None, :].astype(np.float32, copy=False)
+        )
+        parts.append(interactions.reshape(signals.shape[0], -1).astype(np.float32, copy=False))
+    return np.concatenate(parts, axis=1).astype(np.float32, copy=False)
+
+
+def _future_structure_helpfulness_score(
+    labels: np.ndarray,
+    probs: np.ndarray | None,
+    *,
+    future_structure_target: np.ndarray | None,
+    future_structure_trend_vol_auc: float | None,
+    oos_blocks: Sequence[np.ndarray],
+    config: AdvancedRegimeLearningConfig,
+) -> dict[str, float]:
+    if future_structure_target is None:
+        return {
+            "FutureStructureAUC": 0.5,
+            "TrendVolFutureStructureAUC": 0.5,
+            "IncrementalFutureStructureAUC": 0.0,
+            "FutureStructureHelpfulness": 0.0,
+        }
+    target = np.asarray(future_structure_target, dtype=np.int64)
+    predictors = _regime_predictor_matrix(labels, probs)
+    future_auc = _cv_auc_regime_classifier(
+        predictors,
+        target,
+        blocks=oos_blocks,
+        random_state=int(config.random_state) + 6900,
+        max_features=int(config.regime_assessment_max_auc_features),
+        max_rows=int(config.regime_assessment_max_auc_rows),
+    )
+    trend_auc = float(future_structure_trend_vol_auc) if future_structure_trend_vol_auc is not None else 0.5
+    if not np.isfinite(trend_auc):
+        trend_auc = 0.5
+    incremental = max(float(future_auc) - max(0.5, trend_auc), 0.0)
+    target_auc = max(float(config.model_helpfulness_incremental_auc_target), float(config.eps))
+    helpfulness = _clamp01(incremental / target_auc)
+    return {
+        "FutureStructureAUC": float(future_auc),
+        "TrendVolFutureStructureAUC": float(trend_auc),
+        "IncrementalFutureStructureAUC": float(incremental),
+        "FutureStructureHelpfulness": helpfulness,
+    }
+
+
+def _conditional_signal_learnability_score(
+    labels: np.ndarray,
+    probs: np.ndarray | None,
+    *,
+    signal_matrix: np.ndarray,
+    future_structure_target: np.ndarray | None,
+    future_structure_signal_auc: float | None,
+    future_structure_trend_vol_auc: float | None,
+    oos_blocks: Sequence[np.ndarray],
+    config: AdvancedRegimeLearningConfig,
+) -> dict[str, float]:
+    if future_structure_target is None:
+        return {
+            "SignalOnlyFutureStructureAUC": 0.5,
+            "RegimeConditionedSignalAUC": 0.5,
+            "IncrementalConditionalSignalAUC": 0.0,
+            "ConditionalSignalLearnability": 0.0,
+            "ConditionalSignalLearnabilityProxy": 0.0,
+        }
+    target = np.asarray(future_structure_target, dtype=np.int64)
+    conditioned = _regime_conditioned_signal_matrix(
+        signal_matrix,
+        labels,
+        probs,
+        config=config,
+    )
+    conditioned_auc = _cv_auc_regime_classifier(
+        conditioned,
+        target,
+        blocks=oos_blocks,
+        random_state=int(config.random_state) + 6930,
+        max_features=int(config.regime_assessment_max_auc_features),
+        max_rows=int(config.conditional_signal_learnability_max_rows),
+    )
+    signal_auc = float(future_structure_signal_auc) if future_structure_signal_auc is not None else 0.5
+    trend_auc = float(future_structure_trend_vol_auc) if future_structure_trend_vol_auc is not None else 0.5
+    if not np.isfinite(signal_auc):
+        signal_auc = 0.5
+    if not np.isfinite(trend_auc):
+        trend_auc = 0.5
+    baseline = max(0.5, signal_auc, trend_auc)
+    incremental = max(float(conditioned_auc) - baseline, 0.0)
+    target_auc = max(float(config.conditional_signal_learnability_incremental_auc_target), float(config.eps))
+    score = _clamp01(incremental / target_auc)
+    return {
+        "SignalOnlyFutureStructureAUC": float(signal_auc),
+        "RegimeConditionedSignalAUC": float(conditioned_auc),
+        "IncrementalConditionalSignalAUC": float(incremental),
+        "ConditionalSignalLearnability": score,
+        "ConditionalSignalLearnabilityProxy": score,
+    }
+
+
+def _oof_failure_mode_helpfulness_score(
+    labels: np.ndarray,
+    probs: np.ndarray | None,
+    *,
+    downstream_target: np.ndarray | None,
+    base_oof_pred: np.ndarray | None,
+    oos_blocks: Sequence[np.ndarray],
+    config: AdvancedRegimeLearningConfig,
+) -> dict[str, float]:
+    if downstream_target is None or base_oof_pred is None:
+        return {
+            "OOFCoverage": 0.0,
+            "OOFFailureAUC": 0.5,
+            "OOFFailureAUCIncrement": 0.0,
+            "OOFResidualStateSeparation": 0.0,
+            "OOFFalsePositiveStateSeparation": 0.0,
+            "OOFPrecisionStateSeparation": 0.0,
+            "OOFFailureModeHelpfulness": 0.0,
+        }
+    y = np.asarray(downstream_target, dtype=np.float32).reshape(-1)
+    pred = np.asarray(base_oof_pred, dtype=np.float32).reshape(-1)
+    n = int(len(labels))
+    if y.size != n or pred.size != n:
+        return {
+            "OOFCoverage": 0.0,
+            "OOFFailureAUC": 0.5,
+            "OOFFailureAUCIncrement": 0.0,
+            "OOFResidualStateSeparation": 0.0,
+            "OOFFalsePositiveStateSeparation": 0.0,
+            "OOFPrecisionStateSeparation": 0.0,
+            "OOFFailureModeHelpfulness": 0.0,
+        }
+    valid = np.isfinite(y) & np.isfinite(pred)
+    valid &= (y >= 0.0) & (y <= 1.0)
+    coverage = float(np.mean(valid)) if n else 0.0
+    min_coverage = max(float(config.oof_failure_min_coverage), float(config.eps))
+    if int(np.sum(valid)) < 24 or coverage < min_coverage:
+        return {
+            "OOFCoverage": coverage,
+            "OOFFailureAUC": 0.5,
+            "OOFFailureAUCIncrement": 0.0,
+            "OOFResidualStateSeparation": 0.0,
+            "OOFFalsePositiveStateSeparation": 0.0,
+            "OOFPrecisionStateSeparation": 0.0,
+            "OOFFailureModeHelpfulness": 0.0,
+        }
+    pred = np.clip(pred, 0.0, 1.0)
+    q = float(np.clip(config.oof_failure_top_quantile, 0.50, 0.95))
+    pred_hi = float(np.nanquantile(pred[valid], q))
+    residual = np.abs(y - pred)
+    false_positive = valid & (pred >= pred_hi) & (y < 0.5)
+    failure_pressure = residual + false_positive.astype(np.float32) * 0.50
+    failure_threshold = float(np.nanquantile(failure_pressure[valid], q))
+    failure_target = np.full(n, -1, dtype=np.int64)
+    failure_target[valid] = (failure_pressure[valid] >= failure_threshold).astype(np.int64)
+    predictors = _regime_predictor_matrix(labels, probs)
+    failure_auc = _cv_auc_regime_classifier(
+        predictors,
+        failure_target,
+        blocks=oos_blocks,
+        random_state=int(config.random_state) + 6970,
+        max_features=int(config.regime_assessment_max_auc_features),
+        max_rows=int(config.regime_assessment_max_auc_rows),
+    )
+    auc_increment = max(float(failure_auc) - 0.5, 0.0)
+
+    states = np.asarray(sorted(int(x) for x in np.unique(labels[valid]) if int(x) >= 0), dtype=np.int64)
+    if states.size == 0:
+        return {
+            "OOFCoverage": coverage,
+            "OOFFailureAUC": float(failure_auc),
+            "OOFFailureAUCIncrement": float(auc_increment),
+            "OOFResidualStateSeparation": 0.0,
+            "OOFFalsePositiveStateSeparation": 0.0,
+            "OOFPrecisionStateSeparation": 0.0,
+            "OOFFailureModeHelpfulness": _clamp01(auc_increment / max(float(config.oof_failure_helpfulness_target), float(config.eps))),
+        }
+    support = []
+    residual_shift = []
+    fp_shift = []
+    precision_shift = []
+    global_residual = float(np.nanmean(residual[valid]))
+    high_score = valid & (pred >= pred_hi)
+    global_fp = float(np.mean(y[high_score] < 0.5)) if int(np.sum(high_score)) >= 3 else 0.0
+    global_precision = float(np.mean(y[high_score] >= 0.5)) if int(np.sum(high_score)) >= 3 else 0.0
+    for state in states:
+        mask = valid & (np.asarray(labels, dtype=np.int64) == int(state))
+        count = int(np.sum(mask))
+        if count < 3:
+            continue
+        support.append(float(count) / float(np.sum(valid)))
+        residual_shift.append(abs(float(np.nanmean(residual[mask])) - global_residual))
+        local_high = mask & high_score
+        if int(np.sum(local_high)) >= 3:
+            local_fp = float(np.mean(y[local_high] < 0.5))
+            local_precision = float(np.mean(y[local_high] >= 0.5))
+            fp_shift.append(abs(local_fp - global_fp))
+            precision_shift.append(abs(local_precision - global_precision))
+    weights = np.asarray(support, dtype=np.float64)
+    if weights.size:
+        weights = weights / max(float(np.sum(weights)), float(config.eps))
+    residual_arr = np.asarray(residual_shift, dtype=np.float64)
+    residual_sep = float(np.sum(weights[: residual_arr.size] * residual_arr)) if residual_arr.size and weights.size else 0.0
+    fp_sep = float(np.nanmean(fp_shift)) if fp_shift else 0.0
+    precision_sep = float(np.nanmean(precision_shift)) if precision_shift else 0.0
+    target = max(float(config.oof_failure_helpfulness_target), float(config.eps))
+    score = _clamp01(
+        0.45 * _clamp01(auc_increment / target)
+        + 0.25 * _clamp01(residual_sep / target)
+        + 0.15 * _clamp01(fp_sep / target)
+        + 0.15 * _clamp01(precision_sep / target)
+    )
+    return {
+        "OOFCoverage": coverage,
+        "OOFFailureAUC": float(failure_auc),
+        "OOFFailureAUCIncrement": float(auc_increment),
+        "OOFResidualStateSeparation": float(residual_sep),
+        "OOFFalsePositiveStateSeparation": float(fp_sep),
+        "OOFPrecisionStateSeparation": float(precision_sep),
+        "OOFFailureModeHelpfulness": score,
+    }
 
 
 def _transition_duration_arrays(
@@ -3029,25 +3995,24 @@ def _build_regime_transition_features(
     if len(frame) == 0 or not methods:
         return pd.DataFrame(index=frame.index)
     cols: dict[str, np.ndarray] = {}
+    horizons: list[int] = []
+    for horizon in tuple(config.transition_change_horizons):
+        try:
+            h = int(round(float(horizon)))
+        except Exception:
+            continue
+        if h > 0 and h not in horizons:
+            horizons.append(h)
+    if not horizons:
+        horizons = [1, 4, 6, 12, 24]
     lag_positions = {
-        1: _lagged_positions(
+        horizon: _lagged_positions(
             frame,
             timestamp_col=config.timestamp_col,
             symbol_col=config.symbol_col,
-            horizon_hours=1.0,
-        ),
-        4: _lagged_positions(
-            frame,
-            timestamp_col=config.timestamp_col,
-            symbol_col=config.symbol_col,
-            horizon_hours=4.0,
-        ),
-        24: _lagged_positions(
-            frame,
-            timestamp_col=config.timestamp_col,
-            symbol_col=config.symbol_col,
-            horizon_hours=24.0,
-        ),
+            horizon_hours=float(horizon),
+        )
+        for horizon in horizons
     }
     for method in methods:
         prob_cols = _method_probability_columns(regime_probabilities.columns, str(method))
@@ -3666,6 +4631,18 @@ def _model_regime_feature_metrics(
                 "method_count": int(len(scope)),
                 "candidate_tier": str(candidate_tier),
                 "selected_by_method_keep": bool(any(method in kept_methods for method in scope)),
+                "method_useful_regime_score": _method_score_metric(scope, diag_by_method, "UsefulRegimeScore"),
+                "method_model_helpfulness": _method_score_metric(scope, diag_by_method, "ModelHelpfulness"),
+                "method_structural_model_helpfulness": _method_score_metric(
+                    scope,
+                    diag_by_method,
+                    "StructuralModelHelpfulness",
+                ),
+                "method_oof_failure_helpfulness": _method_score_metric(
+                    scope,
+                    diag_by_method,
+                    "OOFFailureModeHelpfulness",
+                ),
                 "method_total_score": _method_score_metric(scope, diag_by_method, "TotalScore"),
                 "method_oos_stability": _method_score_metric(scope, diag_by_method, "OOS_Stability"),
                 "method_null_robustness": _method_score_metric(scope, diag_by_method, "Null_Robustness"),
@@ -3678,6 +4655,10 @@ def _model_regime_feature_metrics(
         )
     out = pd.DataFrame(rows)
     float_cols = [
+        "method_useful_regime_score",
+        "method_model_helpfulness",
+        "method_structural_model_helpfulness",
+        "method_oof_failure_helpfulness",
         "method_total_score",
         "method_oos_stability",
         "method_null_robustness",
@@ -3703,6 +4684,8 @@ def fit_advanced_regime_learning(
     frame: pd.DataFrame,
     feature_columns: Sequence[str],
     *,
+    downstream_target: np.ndarray | pd.Series | None = None,
+    base_oof_pred: np.ndarray | pd.Series | None = None,
     config: AdvancedRegimeLearningConfig = AdvancedRegimeLearningConfig(),
 ) -> AdvancedRegimeLearningArtifact:
     """Fit the unsupervised regime-learning stack on selected/generated features."""
@@ -3719,6 +4702,20 @@ def fit_advanced_regime_learning(
         eps=float(config.eps),
     )
     index = frame.index
+    downstream_target_arr = (
+        np.asarray(downstream_target, dtype=np.float32).reshape(-1)
+        if downstream_target is not None
+        else None
+    )
+    base_oof_pred_arr = (
+        np.asarray(base_oof_pred, dtype=np.float32).reshape(-1)
+        if base_oof_pred is not None
+        else None
+    )
+    if downstream_target_arr is not None and downstream_target_arr.size != len(frame):
+        downstream_target_arr = None
+    if base_oof_pred_arr is not None and base_oof_pred_arr.size != len(frame):
+        base_oof_pred_arr = None
     row_key_cols = [
         col
         for col in [str(config.timestamp_col), str(config.symbol_col)]
@@ -3922,6 +4919,12 @@ def fit_advanced_regime_learning(
     step_rows.append(
         _pipeline_step_row(
             "04_autoencoder_latents",
+            sparse_input_source="05_final_regime_learning_feature_set",
+            contrastive_input_source="05_final_regime_learning_feature_set",
+            contrastive_leaf_input_source="03_leaf_and_raw_embeddings",
+            sparse_input_feature_count=int(len(selected_features)),
+            contrastive_input_feature_count=int(len(selected_features)),
+            contrastive_leaf_input_feature_count=int(leaf_reduced.shape[1]) if leaf_reduced.ndim == 2 else 0,
             backend=str(ae_diag.get("backend", config.ae_backend)) if isinstance(ae_diag, Mapping) else str(config.ae_backend),
             sparse_ae_dim=int(ae_latents.shape[1]),
             contrastive_ae_dim=int(contrastive_ae_latents.shape[1]),
@@ -3975,6 +4978,8 @@ def fit_advanced_regime_learning(
     step_rows.append(
         _pipeline_step_row(
             "05_mixture_factor_analyzers",
+            input_source="05_final_regime_learning_feature_set",
+            input_feature_count=int(len(selected_features)),
             regime_count=int(gamma.shape[1]) if gamma.ndim == 2 else 0,
             factor_count=int(config.mfa_factors),
             responsibility_columns=int(mfa_responsibilities.shape[1]),
@@ -3986,6 +4991,13 @@ def fit_advanced_regime_learning(
         )
     )
 
+    family_specs, method_meta, family_embeddings, family_diag = _family_regime_candidates(
+        selected_matrix,
+        selected_features,
+        frame=frame,
+        index=index,
+        config=config,
+    )
     method_specs: list[tuple[str, np.ndarray, str]] = [
         ("raw_selected_kmeans", selected_matrix, "kmeans"),
         ("raw_pca_kmeans", raw_pca, "kmeans"),
@@ -4014,6 +5026,12 @@ def fit_advanced_regime_learning(
         ("contrastive_leaf_spectral", leaf_contrast_z, "spectral"),
         ("mfa", gamma, "direct"),
     ]
+    method_specs.extend(family_specs)
+    method_meta.setdefault("mfa", {
+        "regime_family": "factor_structure",
+        "regime_objective": "mixture_of_factor_analyzers_responsibility_structure",
+        "input_feature_count": int(len(selected_features)),
+    })
     baseline_methods = {
         "raw_selected_kmeans",
         "raw_pca_kmeans",
@@ -4046,6 +5064,30 @@ def fit_advanced_regime_learning(
         max_rows=int(config.regime_assessment_max_robustness_rows),
         random_state=int(config.random_state) + 7150,
     )
+    future_structure_target, future_structure_diag = _future_structure_target(
+        selected_matrix,
+        selected_features,
+        frame,
+        config=config,
+    )
+    future_structure_trend_vol_auc = _cv_auc_regime_classifier(
+        trend_vol,
+        future_structure_target,
+        blocks=oos_blocks,
+        random_state=int(config.random_state) + 6910,
+        max_features=int(config.regime_assessment_max_auc_features),
+        max_rows=int(config.regime_assessment_max_auc_rows),
+    )
+    future_structure_signal_auc = _cv_auc_regime_classifier(
+        non_trend_vol,
+        future_structure_target,
+        blocks=oos_blocks,
+        random_state=int(config.random_state) + 6920,
+        max_features=int(config.regime_assessment_max_auc_features),
+        max_rows=int(config.regime_assessment_max_auc_rows),
+    )
+    future_structure_diag["trend_vol_future_structure_auc"] = float(future_structure_trend_vol_auc)
+    future_structure_diag["signal_future_structure_auc"] = float(future_structure_signal_auc)
     for name, z, cluster_method in method_specs:
         labels, probs, used = _cluster_embedding(
             z,
@@ -4067,6 +5109,12 @@ def fit_advanced_regime_learning(
         metrics = _label_diagnostics(smoothed, z)
         metrics["method"] = name
         metrics["cluster_method"] = used
+        if name in method_meta:
+            metrics.update(method_meta[name])
+        else:
+            metrics["regime_family"] = "baseline_or_generic_embedding"
+            metrics["regime_objective"] = "generic_unsupervised_geometry"
+            metrics["input_feature_count"] = int(np.asarray(z).shape[1]) if np.asarray(z).ndim == 2 else 0
         legacy_stability = _stability_score(z, smoothed, config)
         metrics["stability"] = legacy_stability
         if cluster_method == "direct":
@@ -4088,18 +5136,25 @@ def fit_advanced_regime_learning(
             cluster_method=assessment_cluster_method,
             embedding=z,
             labels=smoothed,
+            probs=probs,
             matrix=selected_matrix,
             feature_names=selected_features,
             trend_vol=trend_vol,
             non_trend_vol=non_trend_vol,
+            signal_matrix=non_trend_vol if non_trend_vol.shape[1] else selected_matrix,
             frame=frame,
             oos_blocks=oos_blocks,
             window_blocks=window_blocks,
             robustness_positions=robustness_positions,
+            future_structure_target=future_structure_target,
+            future_structure_trend_vol_auc=future_structure_trend_vol_auc,
+            future_structure_signal_auc=future_structure_signal_auc,
+            downstream_target=downstream_target_arr,
+            base_oof_pred=base_oof_pred_arr,
             config=config,
         )
         metrics.update(assessment)
-        metrics["score"] = float(assessment["TotalScore"])
+        metrics["score"] = float(assessment["UsefulRegimeScore"])
         metrics["is_baseline"] = bool(name in baseline_methods)
         diag_rows.append(metrics)
     label_arrays = {
@@ -4110,11 +5165,11 @@ def fit_advanced_regime_learning(
     for col in regime_labels.columns:
         regime_labels[col] = regime_labels[col].astype("category")
     regime_probabilities = pd.concat(prob_frames, axis=1) if prob_frames else pd.DataFrame(index=index)
-    regime_diagnostics = pd.DataFrame(diag_rows).sort_values("TotalScore", ascending=False, kind="mergesort")
+    regime_diagnostics = pd.DataFrame(diag_rows).sort_values("UsefulRegimeScore", ascending=False, kind="mergesort")
     baseline_values = pd.to_numeric(
         regime_diagnostics.loc[
             regime_diagnostics["method"].isin(baseline_methods),
-            "TotalScore",
+            "UsefulRegimeScore",
         ],
         errors="coerce",
     ).to_numpy(dtype=np.float64)
@@ -4133,20 +5188,50 @@ def fit_advanced_regime_learning(
     for row in regime_diagnostics.itertuples(index=False):
         is_baseline = bool(getattr(row, "is_baseline", False))
         total_score = float(getattr(row, "TotalScore", getattr(row, "score", 0.0)))
-        beats_baseline = total_score > baseline_score + float(config.keep_candidate_margin)
+        useful_score = float(getattr(row, "UsefulRegimeScore", total_score))
+        model_helpfulness = float(getattr(row, "ModelHelpfulness", 0.0))
+        structural_model_helpfulness = float(getattr(row, "StructuralModelHelpfulness", model_helpfulness))
+        oof_failure_helpfulness = float(getattr(row, "OOFFailureModeHelpfulness", 0.0))
+        conditional_signal_learnability = float(getattr(row, "ConditionalSignalLearnability", 0.0))
+        future_structure_helpfulness = float(getattr(row, "FutureStructureHelpfulness", 0.0))
+        regime_family = str(getattr(row, "regime_family", "baseline_or_generic_embedding"))
+        is_family_or_residual = regime_family not in {"", "baseline_or_generic_embedding"}
+        beats_baseline = useful_score > baseline_score + float(config.keep_candidate_margin)
         beats_stability = float(row.stability) > baseline_stability + float(config.keep_candidate_margin)
+        conditional_enough = conditional_signal_learnability >= float(
+            config.conditional_signal_learnability_min_score_to_keep
+        )
+        strong_family_structure = bool(
+            is_family_or_residual
+            and future_structure_helpfulness >= float(config.future_structure_family_min_score_to_keep)
+        )
+        helpful_enough = bool(
+            model_helpfulness >= float(config.model_helpfulness_min_score_to_keep)
+            and (conditional_enough or strong_family_structure)
+        )
+        stable_enough = float(row.stability) >= float(config.model_helpfulness_min_stability_to_keep)
         keep_rows.append(
             {
                 "method": row.method,
-                "score": total_score,
+                "score": useful_score,
                 "TotalScore": total_score,
+                "UsefulRegimeScore": useful_score,
+                "ModelHelpfulness": model_helpfulness,
+                "StructuralModelHelpfulness": structural_model_helpfulness,
+                "OOFFailureModeHelpfulness": oof_failure_helpfulness,
+                "ConditionalSignalLearnability": conditional_signal_learnability,
+                "FutureStructureHelpfulness": future_structure_helpfulness,
                 "baseline_score": baseline_score,
                 "stability": float(row.stability),
                 "baseline_stability": baseline_stability,
                 "is_baseline": is_baseline,
                 "beats_baseline": bool(beats_baseline),
                 "beats_stability": bool(beats_stability),
-                "keep": bool((not is_baseline) and beats_baseline and beats_stability),
+                "conditional_signal_enough": bool(conditional_enough),
+                "strong_family_structure": bool(strong_family_structure),
+                "helpful_enough": bool(helpful_enough),
+                "stable_enough": bool(stable_enough),
+                "keep": bool((not is_baseline) and beats_baseline and helpful_enough and stable_enough),
             }
         )
     method_keep = pd.DataFrame(keep_rows)
@@ -4161,17 +5246,31 @@ def fit_advanced_regime_learning(
         if not regime_diagnostics.empty and "TotalScore" in regime_diagnostics.columns
         else None
     )
+    top_useful_score = (
+        float(pd.to_numeric(regime_diagnostics["UsefulRegimeScore"], errors="coerce").iloc[0])
+        if not regime_diagnostics.empty and "UsefulRegimeScore" in regime_diagnostics.columns
+        else None
+    )
     step_rows.append(
         _pipeline_step_row(
             "06_regime_discovery_assessment",
             candidate_method_count=int(len(method_specs)),
+            family_candidate_method_count=int(len(family_specs)),
+            residual_structure_enabled=bool(config.enable_residual_structure_regimes),
+            family_regime_specs_enabled=bool(config.enable_family_regime_specs),
             assessed_method_count=int(len(regime_diagnostics)),
             baseline_method_count=int(len(baseline_methods)),
             kept_method_count=int(len(kept_methods)),
             top_method=top_method,
             top_total_score=top_total_score,
+            top_useful_regime_score=top_useful_score,
             baseline_score=baseline_score if np.isfinite(baseline_score) else None,
+            baseline_useful_regime_score=baseline_score if np.isfinite(baseline_score) else None,
             baseline_stability=baseline_stability if np.isfinite(baseline_stability) else None,
+            future_structure_target_status=future_structure_diag.get("status"),
+            future_structure_target_valid_fraction=future_structure_diag.get("valid_fraction"),
+            trend_vol_future_structure_auc=float(future_structure_trend_vol_auc),
+            signal_future_structure_auc=float(future_structure_signal_auc),
             label_column_count=int(regime_labels.shape[1]),
             probability_column_count=int(regime_probabilities.shape[1]),
         )
@@ -4241,6 +5340,11 @@ def fit_advanced_regime_learning(
     use_contrastive_ae = any(method.startswith("contrastive_ae_") for method in model_methods)
     use_contrastive_leaf = any(method.startswith("contrastive_leaf_") for method in model_methods)
     use_mfa = "mfa" in model_methods
+    used_family_embeddings = {
+        key: part
+        for key, part in family_embeddings.items()
+        if any(str(method).startswith(str(key)) for method in model_methods)
+    }
     if use_raw_pca:
         _add_materialized_part("raw_pca_embedding", raw_baseline_embeddings)
     if use_raw_spectral:
@@ -4257,6 +5361,8 @@ def fit_advanced_regime_learning(
         _add_materialized_part("contrastive_leaf_latent", contrastive_leaf_latents)
     if use_mfa:
         _add_materialized_part("mfa_responsibility", mfa_responsibilities)
+    for key, part in used_family_embeddings.items():
+        _add_materialized_part(f"{key}_embedding", part)
     label_part = pd.DataFrame(
         {
             col: label_arrays[col].astype(np.float32, copy=False)
@@ -4326,6 +5432,7 @@ def fit_advanced_regime_learning(
         "contrastive_ae": contrastive_ae_latents,
         "contrastive_leaf": contrastive_leaf_latents,
     }
+    method_embeddings.update(family_embeddings)
     diagnostics = {
         "schema_version": ADVANCED_REGIME_LEARNING_SCHEMA_VERSION,
         "matrix": matrix_diag,
@@ -4342,8 +5449,12 @@ def fit_advanced_regime_learning(
         "contrastive_autoencoder": contrast_diag,
         "contrastive_leaf_autoencoder": leaf_contrast_diag,
         "mfa_log_likelihood": mfa_ll,
+        "residual_and_family_regimes": family_diag,
+        "regime_method_metadata": method_meta,
+        "future_structure_helpfulness_target": future_structure_diag,
         "baseline_methods": sorted(baseline_methods),
         "baseline_score": baseline_score,
+        "baseline_useful_regime_score": baseline_score,
         "baseline_stability": baseline_stability,
         "kept_methods": sorted(kept_methods),
         "model_regime_methods": model_methods,
@@ -4352,23 +5463,55 @@ def fit_advanced_regime_learning(
         "model_regime_feature_count": int(model_regime_features.shape[1]),
         "model_regime_feature_metric_rows": int(len(model_regime_feature_metrics)),
         "model_regime_feature_groups": {key: len(value) for key, value in materialized_groups.items()},
+        "training_inference_contract": {
+            "regime_model_scope": "pooled_across_assets",
+            "row_application_scope": "per_asset_independent",
+            "input_normalization": str(config.scaling_mode),
+            "per_asset_normalized_inputs": str(config.scaling_mode).strip().lower()
+            in {"causal", "causal_expanding", "expanding"},
+            "base_model_context": "per_asset_regime_outputs",
+            "meta_model_context": "cross_sectional_market_regime_aggregates",
+            "context_feature_builder": "build_regime_context_feature_frame",
+            "parity_surface": "same_row_level_regime_outputs_same_context_features",
+            "primary_trading_horizon_hours": int(config.primary_trading_horizon_hours),
+            "transition_change_horizons": [int(h) for h in tuple(config.transition_change_horizons)],
+        },
         "pipeline_step_count": int(len(pipeline_steps)),
         "persistence_split_dataframes": bool(config.persistence_split_dataframes),
         "assessment": {
-            "score": "TotalScore",
+            "score": "UsefulRegimeScore",
             "formula": (
-                "0.20*NonTriviality(incremental_after_trend_vol_control) + 0.15*OOS_Stability + "
-                "0.10*Dwell_Quality + 0.10*Transition_Stability + "
-                "0.15*Feature_Stability + 0.10*Null_Robustness + "
-                "0.10*Window_Robustness + 0.10*Geometry_Separation"
+                "useful_regime_model_helpfulness_weight*ModelHelpfulness + remaining_weight*"
+                "UnsupervisedQualityScore. ModelHelpfulness primarily rewards conditional "
+                "signal learnability from regime-conditioned signal interactions, secondarily "
+                "rewards direct future structural movement over the primary trading horizon, and "
+                "can include an optional OOF failure-mode term when aligned base OOF predictions "
+                "are supplied by the caller."
+            ),
+            "legacy_total_score_formula": (
+                "0.20*NonTriviality(incremental_after_trend_vol_control) + "
+                "0.15*OOS_Stability + 0.10*Dwell_Quality + 0.10*Transition_Stability + "
+                "0.15*Feature_Stability + 0.10*Null_Robustness + 0.10*Window_Robustness + "
+                "0.10*Geometry_Separation"
             ),
             "nontriviality": (
                 "Penalizes pure trend/vol replicas and rewards AUC improvement from "
                 "non-trend/vol structure after controlling for trend/vol predictability."
             ),
+            "model_helpfulness": (
+                "Measures whether regime labels/probabilities make selected signals more learnable "
+                "for future structural movement after comparing against signal-only and trend/vol "
+                "baselines. When base OOF predictions and targets are supplied, also measures "
+                "whether regimes explain model residual/failure modes."
+            ),
             "top_method": (
                 str(regime_diagnostics["method"].iloc[0])
                 if not regime_diagnostics.empty
+                else None
+            ),
+            "top_useful_regime_score": (
+                float(regime_diagnostics["UsefulRegimeScore"].iloc[0])
+                if not regime_diagnostics.empty and "UsefulRegimeScore" in regime_diagnostics.columns
                 else None
             ),
             "top_total_score": (
@@ -4514,14 +5657,22 @@ def regime_artifact_assessment_summary(
     regime_diagnostics = getattr(artifact, "regime_diagnostics", pd.DataFrame())
     if isinstance(regime_diagnostics, pd.DataFrame) and not regime_diagnostics.empty:
         out["assessment_method_count"] = int(len(regime_diagnostics))
-        if "TotalScore" in regime_diagnostics.columns:
+        score_col = "UsefulRegimeScore" if "UsefulRegimeScore" in regime_diagnostics.columns else "TotalScore"
+        if score_col in regime_diagnostics.columns:
             ordered = regime_diagnostics.sort_values(
-                "TotalScore",
+                score_col,
                 ascending=False,
                 kind="mergesort",
             )
             out["top_method"] = str(ordered["method"].iloc[0]) if "method" in ordered.columns else None
-            out["top_total_score"] = float(pd.to_numeric(ordered["TotalScore"], errors="coerce").iloc[0])
+            out["top_score"] = float(pd.to_numeric(ordered[score_col], errors="coerce").iloc[0])
+            out["top_score_metric"] = score_col
+            if "UsefulRegimeScore" in ordered.columns:
+                out["top_useful_regime_score"] = float(
+                    pd.to_numeric(ordered["UsefulRegimeScore"], errors="coerce").iloc[0]
+                )
+            if "TotalScore" in ordered.columns:
+                out["top_total_score"] = float(pd.to_numeric(ordered["TotalScore"], errors="coerce").iloc[0])
     return out
 
 

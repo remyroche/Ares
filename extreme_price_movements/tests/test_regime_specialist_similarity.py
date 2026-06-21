@@ -3,10 +3,12 @@ import pandas as pd
 import pytest
 
 from extreme_price_movements.regime_specialist_similarity import (
+    RegimeDriftSupportConfig,
     RegimeSimilarityConfig,
     SpecialistWeightConfig,
     build_regime_specialist_training_frame,
     compute_regime_similarity_to_current,
+    compute_regime_drift_support_diagnostics,
     compute_specialist_sample_weights,
     current_regime_recency_weights,
     shrink_self_distillation_towards_one,
@@ -174,6 +176,120 @@ def test_regime_specialist_training_frame_reports_unsupervised_regime_artifact_w
     assert unsup["used"] is False
     assert unsup["reason"] == "assessment_only_not_injected"
     assert "url_leaf_00" not in out.columns
+
+
+def test_regime_drift_support_diagnostics_identifies_concept_drift_region():
+    rng = np.random.default_rng(123)
+    n_hist = 320
+    n_recent = 96
+    ts = pd.date_range("2026-01-01", periods=n_hist + n_recent, freq="h", tz="UTC")
+    x0 = np.concatenate(
+        [
+            rng.normal(0.0, 0.7, n_hist - 96),
+            rng.normal(3.0, 0.25, 96),
+            rng.normal(3.0, 0.25, n_recent),
+        ]
+    )
+    x1 = rng.normal(0.0, 0.5, n_hist + n_recent)
+    pred = 1.0 / (1.0 + np.exp(-(x0 - 2.7) * 3.0))
+    label = (pred > 0.50).astype(float)
+    label[n_hist:] = 1.0 - label[n_hist:]
+    q = np.concatenate(
+        [
+            np.full(n_hist - 96, 0.08),
+            np.full(96, 0.62),
+            np.full(n_recent, 0.72),
+        ]
+    )
+    frame = pd.DataFrame(
+        {
+            "timestamp": ts,
+            "symbol": np.where(np.arange(n_hist + n_recent) % 2 == 0, "BTC", "ETH"),
+            "prediction": pred.astype(np.float32),
+            "label": label.astype(np.float32),
+            "return": np.where(label > 0.5, 0.01, -0.01).astype(np.float32),
+            "regime_domain_current_likeness": q.astype(np.float32),
+            "x0": x0.astype(np.float32),
+            "x1": x1.astype(np.float32),
+        }
+    )
+
+    report, diag = compute_regime_drift_support_diagnostics(
+        frame,
+        prediction_col="prediction",
+        label_col="label",
+        return_col="return",
+        matching_feature_columns=["x0", "x1"],
+        config=RegimeDriftSupportConfig(
+            current_window_days=4.0,
+            matching_k=3,
+            matching_caliper=0.20,
+            min_effective_sample_size=1.0,
+            min_matched_historical_rows=20,
+            min_matched_recent_fraction=0.30,
+            residual_domain_cv_folds=3,
+            residual_domain_max_rows=500,
+            random_state=7,
+        ),
+    )
+
+    assert diag["enabled"] is True
+    assert diag["diagnosis"] == "conditional_or_concept_drift"
+    assert diag["matching"]["matched_historical_rows"] >= 20
+    assert diag["density_ratio_ess"]["enabled"] is True
+    assert set(report["group"]) == {"all_historical", "matched_historical", "recent"}
+    perf = {row["group"]: row for row in report.to_dict(orient="records")}
+    assert perf["matched_historical"]["auc"] > 0.90
+    assert perf["recent"]["auc"] < 0.20
+    residual_diag = diag["residual_domain_check"]
+    assert residual_diag["x_only"]["enabled"] is True
+    assert residual_diag["x_plus_residual"]["enabled"] is True
+    assert residual_diag["log_loss_improvement_from_residual"] > 0.0
+
+
+def test_regime_drift_support_auto_matching_features_avoid_knn_on_knn():
+    rng = np.random.default_rng(321)
+    n_hist = 120
+    n_recent = 48
+    ts = pd.date_range("2026-02-01", periods=n_hist + n_recent, freq="h", tz="UTC")
+    drift = np.concatenate(
+        [rng.normal(0.0, 0.8, n_hist), rng.normal(2.0, 0.4, n_recent)]
+    )
+    pred = 1.0 / (1.0 + np.exp(-drift))
+    label = (pred > 0.55).astype(float)
+    frame = pd.DataFrame(
+        {
+            "timestamp": ts,
+            "symbol": np.where(np.arange(n_hist + n_recent) % 2 == 0, "BTC", "ETH"),
+            "prediction": pred.astype(np.float32),
+            "label": label.astype(np.float32),
+            "regime_domain_current_likeness": np.clip(pred, 0.05, 0.95).astype(np.float32),
+            "feature_drift_mean": drift.astype(np.float32),
+            "volatility_percentile": (50.0 + 10.0 * drift).astype(np.float32),
+            "state_knn_distance": np.abs(drift).astype(np.float32),
+        }
+    )
+
+    _report, diag = compute_regime_drift_support_diagnostics(
+        frame,
+        prediction_col="prediction",
+        label_col="label",
+        config=RegimeDriftSupportConfig(
+            current_window_days=2.0,
+            matching_k=1,
+            matching_caliper=None,
+            min_effective_sample_size=1.0,
+            min_matched_historical_rows=1,
+            min_matched_recent_fraction=0.10,
+            residual_domain_max_rows=200,
+        ),
+    )
+
+    assert diag["enabled"] is True
+    assert diag["matching_feature_source"] == "auto_inferred_safe"
+    assert "feature_drift_mean" in diag["matching_features"]
+    assert "volatility_percentile" in diag["matching_features"]
+    assert "state_knn_distance" not in diag["matching_features"]
 
 
 def test_feature_engineering_artifact_selects_safe_regime_features():

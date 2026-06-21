@@ -296,14 +296,59 @@ def test_live_gate_can_require_cross_strategy_auction_rank(tmp_path):
         decision,
         store=store,
         require_cross_strategy_auction_rank=True,
-    ) == (False, "rank_below_dynamic_threshold")
+    ) == (True, None)
     assert decision["policy_rank_pct"] == 0.8
     assert decision["normalized_rank_score"] == 0.0
-    assert decision["threshold_rank_score"] == 0.0
-    assert decision["threshold_rank_score_source"] == "cross_strategy_auction_reference"
+    assert decision["threshold_rank_score"] == 0.8
+    assert decision["threshold_rank_score_source"] == "policy_rank_reference_percentile"
 
 
-def test_deployment_threshold_uses_auction_rank_not_strategy_rank(tmp_path):
+def test_deployment_threshold_uses_strategy_rank_with_auction_rank_for_ordering(tmp_path):
+    persist_policy_rank_reference(
+        pd.DataFrame(
+            {
+                "strategy_id": ["long_demo"] * 5,
+                "calibrated_score": [0.10, 0.20, 0.30, 0.40, 0.90],
+                "rank_pct": [0.2, 0.4, 0.6, 0.8, 1.0],
+            }
+        ),
+        data_root=tmp_path,
+        run_id="run_a",
+        strategy_id="long_demo",
+        market_mode="perps",
+    )
+    persist_auction_rank_reference(
+        pd.DataFrame(
+            {
+                "calibrated_score": [0.50, 0.60, 0.70, 0.80],
+                "strategy_id": ["short_a", "long_b", "short_c", "long_d"],
+            }
+        ),
+        data_root=tmp_path,
+        run_id="run_a",
+    )
+    store = PolicyRankReferenceStore(data_root=tmp_path, run_id="run_a")
+    decision = {
+        "strategy_id": "long_demo",
+        "side": "long",
+        "threshold_space": "rank_percentile",
+        "calibrated_score": 0.40,
+        "effective_threshold": 0.70,
+        "chain_results": {},
+    }
+
+    assert apply_policy_rank_percentile_gate(
+        decision,
+        store=store,
+        require_cross_strategy_auction_rank=True,
+    ) == (True, None)
+    assert decision["policy_rank_pct"] == 0.8
+    assert decision["auction_rank_pct"] == 0.0
+    assert decision["threshold_rank_score"] == 0.8
+    assert decision["threshold_rank_score_source"] == "policy_rank_reference_percentile"
+
+
+def test_legacy_gate_can_explicitly_use_auction_rank_for_threshold(tmp_path):
     persist_policy_rank_reference(
         pd.DataFrame(
             {

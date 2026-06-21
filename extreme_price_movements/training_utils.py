@@ -27,7 +27,6 @@ _BASE_NON_LOCATION_48H_PLUS_EXACT = {
     "volume_autocorr_48",
     "volatility_of_volatility_48",
     "volatility_autocorr_48",
-    "trend_slope_48h",
     "trend_slope_120h",
     "trend_accel_120h",
     "rv_ratio_24_120",

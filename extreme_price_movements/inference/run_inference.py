@@ -217,8 +217,52 @@ def _get_features_for_candidates_at_ts(
     except (TypeError, ValueError):
         accepts_ts = True
     if accepts_ts:
-        return get_features_for_candidates(feats, candidates, ts=ts)
-    return get_features_for_candidates(feats, candidates)
+        out = get_features_for_candidates(feats, candidates, ts=ts)
+    else:
+        out = get_features_for_candidates(feats, candidates)
+    return _float32_inference_frame(out)
+
+
+def _float32_inference_frame(frame: Any) -> Any:
+    """Keep live model/audit matrices compact once they enter inference."""
+    if not isinstance(frame, pd.DataFrame) or frame.empty:
+        return frame
+    numeric_cols = list(frame.select_dtypes(include=[np.number]).columns)
+    if not numeric_cols:
+        return frame.copy()
+    dtype_map = {
+        col: np.float32
+        for col in numeric_cols
+        if getattr(frame[col], "dtype", None) != np.dtype(np.float32)
+    }
+    if not dtype_map:
+        return frame.copy()
+    try:
+        return frame.astype(dtype_map, copy=False)
+    except Exception:
+        out = frame.copy()
+        for col in numeric_cols:
+            try:
+                out[col] = pd.to_numeric(out[col], errors="coerce").astype(
+                    np.float32,
+                    copy=False,
+                )
+            except Exception:
+                continue
+        return out
+
+
+def _float32_feature_dict(
+    feats: Optional[Mapping[str, pd.DataFrame]],
+) -> Dict[str, pd.DataFrame]:
+    """Downcast numeric feature frames without changing feature keys."""
+    out: Dict[str, pd.DataFrame] = {}
+    for key, value in (feats or {}).items():
+        if isinstance(value, pd.DataFrame):
+            out[str(key)] = _float32_inference_frame(value)
+        else:
+            out[str(key)] = value
+    return out
 
 
 _FEATURE_COMPUTE_LOCK = threading.RLock()
@@ -624,11 +668,28 @@ def _load_normalized_threshold_map(
                 if not sid:
                     continue
                 threshold = _deployment_rank_threshold_from_strategy_row(row)
+                threshold_rank_score_source = str(
+                    row.get("threshold_rank_score_source")
+                    or row.get("threshold_score_source")
+                    or row.get("deployment_threshold_rank_score_source")
+                    or ""
+                ).strip()
+                threshold_rank_score_source_reason = str(
+                    row.get("threshold_rank_score_source_reason") or ""
+                )
+                if not threshold_rank_score_source:
+                    threshold_rank_score_source = "policy_rank_pct"
+                    threshold_rank_score_source_reason = (
+                        threshold_rank_score_source_reason
+                        or "default_per_strategy_policy_rank_threshold"
+                    )
                 nrow = {
                     "threshold_space": "rank_percentile",
                     "normalized_threshold": threshold,
                     "deployment_rank_threshold": threshold,
                     "viability_margin": 0.0,
+                    "threshold_rank_score_source": threshold_rank_score_source,
+                    "threshold_rank_score_source_reason": threshold_rank_score_source_reason,
                     "threshold_source": str(strategy_path),
                     "threshold_scope": "per_strategy_prediction_rank_only",
                     "avg_trades_per_day_at_top_1pct": float(
@@ -1866,6 +1927,105 @@ def _estimated_ev_from_strategy_prediction(
     }
 
 
+def _uncertainty_adjusted_ev_from_policy(
+    *,
+    policy_params: Mapping[str, Any],
+    rank_pct: Any,
+    chain_results: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Lookup uncertainty-adjusted net EV from a deployed policy table."""
+    config = policy_params.get("uncertainty_adjusted_ev")
+    if not isinstance(config, Mapping) or not bool(config.get("enabled", False)):
+        return {
+            "uncertainty_ev_enabled": False,
+            "uncertainty_ev_source": "missing_uncertainty_adjusted_ev_table",
+            "uncertainty_ev_gate_pass": True,
+            "uncertainty_ev_size_multiplier": 1.0,
+        }
+    table = config.get("table") or []
+    if not isinstance(table, list) or not table:
+        return {
+            "uncertainty_ev_enabled": True,
+            "uncertainty_ev_source": "empty_uncertainty_adjusted_ev_table",
+            "uncertainty_ev_gate_pass": True,
+            "uncertainty_ev_size_multiplier": 1.0,
+        }
+    uncertainty_col = str(config.get("uncertainty_col") or "prob_uncertainty")
+    uncertainty_value = _safe_float(
+        chain_results.get(uncertainty_col),
+        _safe_float(
+            chain_results.get(f"meta_lgbm_{uncertainty_col}"),
+            _safe_float(
+                chain_results.get("uncertainty_score"),
+                _safe_float(chain_results.get("prob_uncertainty"), np.nan),
+            ),
+        ),
+    )
+    rank_value = _safe_float(rank_pct, np.nan)
+    if not (np.isfinite(rank_value) and np.isfinite(uncertainty_value)):
+        return {
+            "uncertainty_ev_enabled": True,
+            "uncertainty_ev_source": "missing_rank_or_uncertainty_value",
+            "uncertainty_ev_gate_pass": True,
+            "uncertainty_ev_size_multiplier": 1.0,
+        }
+    edges = config.get("uncertainty_quantile_edges") or []
+    edge_values = [
+        float(x)
+        for x in edges
+        if x is not None and np.isfinite(_safe_float(x, np.nan))
+    ]
+    bins = int(config.get("uncertainty_bins") or 5)
+    if len(edge_values) >= 2:
+        bin_idx = int(np.searchsorted(edge_values, uncertainty_value, side="right") - 1)
+        bin_idx = int(np.clip(bin_idx, 0, len(edge_values) - 2))
+        uncertainty_pct = float((bin_idx + 0.5) / max(len(edge_values) - 1, 1))
+    else:
+        bin_idx = int(np.clip(np.floor(0.5 * bins), 0, bins - 1))
+        uncertainty_pct = float("nan")
+    band_width = float(config.get("rank_band_width") or 0.05)
+    band_width = float(np.clip(band_width, 1e-6, 1.0))
+    rank_band = float(np.floor(np.clip(rank_value, 0.0, 1.0) / band_width) * band_width)
+    rank_band = float(np.round(min(rank_band, 1.0 - band_width), 6))
+    match = None
+    for row in table:
+        if not isinstance(row, Mapping):
+            continue
+        row_band = _safe_float(row.get("policy_rank_band_low"), np.nan)
+        row_bin = int(_safe_float(row.get("uncertainty_bin"), -1))
+        if np.isclose(row_band, rank_band, rtol=0.0, atol=1e-6) and row_bin == bin_idx:
+            match = row
+            break
+    if match is None:
+        return {
+            "uncertainty_ev_enabled": True,
+            "uncertainty_ev_source": "missing_uncertainty_rank_bin",
+            "uncertainty_ev_rank_band_low": rank_band,
+            "uncertainty_ev_bin": bin_idx,
+            "uncertainty_ev_percentile": uncertainty_pct,
+            "uncertainty_ev_gate_pass": True,
+            "uncertainty_ev_size_multiplier": 1.0,
+        }
+    adjusted_ev = _safe_float(match.get("adjusted_mean_net_return"), np.nan)
+    parent_ev = _safe_float(match.get("parent_mean_net_return"), np.nan)
+    multiplier = _safe_float(match.get("size_multiplier"), 1.0)
+    gate_pass = bool(np.isfinite(adjusted_ev) and adjusted_ev > 0.0)
+    return {
+        "uncertainty_ev_enabled": True,
+        "uncertainty_ev_source": "policy_rank_uncertainty_ev_table",
+        "uncertainty_ev_score_col": uncertainty_col,
+        "uncertainty_ev_score": uncertainty_value,
+        "uncertainty_ev_percentile": uncertainty_pct,
+        "uncertainty_ev_rank_band_low": rank_band,
+        "uncertainty_ev_bin": bin_idx,
+        "uncertainty_adjusted_ev_net_return": adjusted_ev,
+        "uncertainty_ev_parent_net_return": parent_ev,
+        "uncertainty_ev_calibration_n": int(_safe_float(match.get("n"), 0)),
+        "uncertainty_ev_gate_pass": gate_pass,
+        "uncertainty_ev_size_multiplier": float(np.clip(multiplier, 0.0, 1.25)),
+    }
+
+
 def _ev_adjusted_prediction_after_entry_friction(
     *,
     calibrated_score: Any,
@@ -2738,15 +2898,50 @@ def _assert_policy_rank_threshold_source(decision: Mapping[str, Any]) -> None:
         )
         or ""
     )
-    allowed_threshold_sources = {
+    preferred_source = str(
+        decision.get("threshold_rank_score_source_preference")
+        or decision.get("threshold_rank_score_source_config")
+        or ""
+    )
+    wants_policy_rank = preferred_source in {
+        "policy_rank_pct",
+        "strategy_rank_pct",
+        "rank_pct",
+        "policy_rank_reference_percentile",
+    }
+    if wants_policy_rank:
+        policy_rank = _safe_float(
+            chain.get("policy_rank_pct", decision.get("policy_rank_pct")), np.nan
+        )
+        allowed_threshold_sources = {
+            "policy_rank_reference_percentile",
+            "fullscope_score_distribution_percentile_in_sample",
+            "live_batch_percentile_fallback_debug",
+        }
+        if threshold_source not in allowed_threshold_sources:
+            raise RuntimeError(
+                "Policy rank threshold guard failed: strategy-rank threshold "
+                f"configured but threshold_rank_score_source={threshold_source!r}; "
+                f"expected one of {sorted(allowed_threshold_sources)!r}."
+            )
+        if not np.isfinite(threshold_rank) or not np.isclose(
+            threshold_rank, policy_rank, rtol=0.0, atol=1e-12
+        ):
+            raise RuntimeError(
+                "Policy rank threshold guard failed: threshold_rank_score does not "
+                f"match policy_rank_pct ({threshold_rank!r} vs {policy_rank!r})."
+            )
+        return
+
+    allowed_auction_threshold_sources = {
         "cross_strategy_auction_reference",
         "fullscope_score_distribution_auction_reference_in_sample",
     }
-    if threshold_source not in allowed_threshold_sources:
+    if threshold_source not in allowed_auction_threshold_sources:
         raise RuntimeError(
             "Policy rank threshold guard failed: auction rank is available but "
             f"threshold_rank_score_source={threshold_source!r}; expected "
-            f"one of {sorted(allowed_threshold_sources)!r}."
+            f"one of {sorted(allowed_auction_threshold_sources)!r}."
         )
     if not np.isfinite(threshold_rank) or not np.isclose(
         threshold_rank, auction_rank, rtol=0.0, atol=1e-12
@@ -2959,7 +3154,52 @@ def _prediction_ledger_row(
         "estimated_ev_calibration_n": chain.get(
             "estimated_ev_calibration_n", decision.get("estimated_ev_calibration_n")
         ),
+        "uncertainty_ev_enabled": chain.get(
+            "uncertainty_ev_enabled", decision.get("uncertainty_ev_enabled")
+        ),
+        "uncertainty_ev_source": chain.get(
+            "uncertainty_ev_source", decision.get("uncertainty_ev_source")
+        ),
+        "uncertainty_ev_score_col": chain.get(
+            "uncertainty_ev_score_col", decision.get("uncertainty_ev_score_col")
+        ),
+        "uncertainty_ev_score": chain.get(
+            "uncertainty_ev_score", decision.get("uncertainty_ev_score")
+        ),
+        "uncertainty_ev_percentile": chain.get(
+            "uncertainty_ev_percentile", decision.get("uncertainty_ev_percentile")
+        ),
+        "uncertainty_ev_rank_band_low": chain.get(
+            "uncertainty_ev_rank_band_low",
+            decision.get("uncertainty_ev_rank_band_low"),
+        ),
+        "uncertainty_ev_bin": chain.get(
+            "uncertainty_ev_bin", decision.get("uncertainty_ev_bin")
+        ),
+        "uncertainty_adjusted_ev_net_return": chain.get(
+            "uncertainty_adjusted_ev_net_return",
+            decision.get("uncertainty_adjusted_ev_net_return"),
+        ),
+        "uncertainty_ev_parent_net_return": chain.get(
+            "uncertainty_ev_parent_net_return",
+            decision.get("uncertainty_ev_parent_net_return"),
+        ),
+        "uncertainty_ev_calibration_n": chain.get(
+            "uncertainty_ev_calibration_n",
+            decision.get("uncertainty_ev_calibration_n"),
+        ),
+        "uncertainty_ev_gate_pass": chain.get(
+            "uncertainty_ev_gate_pass", decision.get("uncertainty_ev_gate_pass")
+        ),
+        "uncertainty_ev_size_multiplier": chain.get(
+            "uncertainty_ev_size_multiplier",
+            decision.get("uncertainty_ev_size_multiplier"),
+        ),
         "base_train_rank_pct": chain.get("base_train_rank_pct"),
+        "base_batch_rank_pct": chain.get("base_rank_pct"),
+        "base_gate_top_frac": chain.get("base_gate_top_frac"),
+        "base_gate_min_kept_score": chain.get("base_gate_min_kept_score"),
+        "base_gate_pass": chain.get("base_gate_pass"),
         "meta_train_rank_pct": chain.get("meta_train_rank_pct"),
         "rank_score_source": chain.get(
             "rank_score_source", decision.get("rank_score_source")
@@ -3501,12 +3741,24 @@ def _historical_score_paths(
     sid = str(strategy_id or "")
     core = strategy_core_id(sid)
     if kind == "meta":
-        names = [
-            f"meta_oof_{sid}_clf.parquet",
-            f"meta_oof_{core}_clf.parquet",
-        ]
+        names = []
+        for stem in (sid, core):
+            if not stem:
+                continue
+            names.extend(
+                [
+                    f"meta_oof_{stem}_clf.parquet",
+                    f"meta_oof_{stem}_tbm_clf.parquet",
+                ]
+            )
         paths = [base / "meta_oof" / name for name in names if name]
-        paths.extend(sorted((base / "meta_oof").glob(f"meta_oof_*{core}_clf.parquet")))
+        if core:
+            paths.extend(
+                sorted((base / "meta_oof").glob(f"meta_oof_*{core}_clf.parquet"))
+            )
+            paths.extend(
+                sorted((base / "meta_oof").glob(f"meta_oof_*{core}_tbm_clf.parquet"))
+            )
         return paths
     if kind == "base":
         return sorted((base / "oof").glob(f"oof_{core}_H*.parquet"))
@@ -4767,7 +5019,7 @@ def _copy_candidate_feature_cycle_entry(
         dict(entry.get("thresholds") or {}),
         list(entry.get("long_cands") or []),
         list(entry.get("short_cands") or []),
-        dict(entry.get("features") or {}),
+        _float32_feature_dict(entry.get("features") or {}),
         {
             str(k): list(v or [])
             for k, v in (entry.get("strategy_candidate_masks") or {}).items()
@@ -4835,7 +5087,7 @@ def _select_candidates_and_load_features(
                 )
                 timer.mark("hourly_feature_matrix_cache_hit")
                 return _copy_candidate_feature_cycle_entry(cached)
-        selector_feats = compute_selector_features(panel, symbols)
+        selector_feats = _float32_feature_dict(compute_selector_features(panel, symbols))
         timer.mark("selector_features")
         thresholds = get_candidate_thresholds(
             market_mode=(
@@ -4950,6 +5202,7 @@ def _select_candidates_and_load_features(
                     lookback_hours=lookback_hours,
                     required_feature_keys=mask_raw_feature_keys,
                 )
+                pre_mask_feats = _float32_feature_dict(pre_mask_feats)
                 pre_mask_feats = _latest_only_features(
                     pre_mask_feats,
                     latest_ts=mask_latest_ts,
@@ -5198,6 +5451,7 @@ def _select_candidates_and_load_features(
             lookback_hours=lookback_hours,
             required_feature_keys=raw_feature_keys,
         )
+        model_feats = _float32_feature_dict(model_feats)
         if (
             lgbm_strategy_mask_rows
             and model_decision_feature_keys
@@ -5231,6 +5485,7 @@ def _select_candidates_and_load_features(
                         model_feats,
                         prepared_model_feats,
                     )
+                    model_feats = _float32_feature_dict(model_feats)
                     tprint(
                         "Live model feature parity: merged prepared "
                         "FeatureProcessor contract frames "
@@ -6208,6 +6463,72 @@ def _model_feature_ledger_snapshot_for_decision(
     }
 
 
+def _base_model_feature_ledger_snapshot_for_decision(
+    *,
+    orchestrator: Any,
+    side: str,
+    strategy_id: str,
+    symbol: str,
+    candidate_features: Optional[pd.DataFrame],
+    feats: Dict[str, pd.DataFrame],
+    chain_results: Dict[str, Any],
+    signal_bar_ts: Optional[Any],
+) -> Dict[str, Any]:
+    """Return selected base-model feature values without materializing meta inputs."""
+    contracts = _model_feature_contracts_for_audit(
+        orchestrator, side=side, strategy_id=strategy_id
+    )
+    base_features = [str(c) for c in (contracts.get("base_features") or [])]
+    base_values: Dict[str, Any] = {}
+    sources: Dict[str, Any] = {}
+    missing = {"base": [], "meta": []}
+    for feat_name in base_features:
+        value, source = _feature_audit_value(
+            feat_name,
+            symbol=symbol,
+            candidate_features=candidate_features,
+            feats=feats,
+            chain_results=chain_results,
+            strategy_id=strategy_id,
+            signal_bar_ts=signal_bar_ts,
+        )
+        base_values[feat_name] = value
+        sources[feat_name] = source
+        if source == "missing":
+            missing["base"].append(feat_name)
+    payload = {
+        "schema": "selected_model_features_v1",
+        "symbol": symbol,
+        "side": side,
+        "strategy_id": strategy_id,
+        "base_model_key": contracts.get("base_model_key"),
+        "meta_model_key": contracts.get("meta_model_key"),
+        "base_features": list(base_values.keys()),
+        "meta_features": [],
+        "base_values": base_values,
+        "meta_values": {},
+        "sources": sources,
+        "missing": missing,
+    }
+    snapshot_json = _audit_json_dumps(payload)
+    return {
+        "model_feature_audit_schema": "selected_model_features_v1",
+        "model_feature_snapshot_hash": hashlib.sha256(
+            snapshot_json.encode("utf-8")
+        ).hexdigest(),
+        "base_model_key": contracts.get("base_model_key"),
+        "meta_model_feature_key": contracts.get("meta_model_key"),
+        "base_model_feature_count": len(base_values),
+        "meta_model_feature_count": 0,
+        "base_model_features_json": _audit_json_dumps(list(base_values.keys())),
+        "meta_model_features_json": _audit_json_dumps([]),
+        "base_model_feature_values_json": _audit_json_dumps(base_values),
+        "meta_model_feature_values_json": _audit_json_dumps({}),
+        "model_feature_value_sources_json": _audit_json_dumps(sources),
+        "model_feature_missing_json": _audit_json_dumps(missing),
+    }
+
+
 def _raw_data_audit_for_trade(
     *,
     panel: Dict[str, pd.DataFrame],
@@ -6345,6 +6666,21 @@ def _holding_time_hours(entry_time: Any, exit_time: Any) -> float:
 _PERP_RANK_CONTEXT_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
+def _perp_rank_context_run_id(runtime_config: Mapping[str, Any]) -> str:
+    """Use the model artifact run for historical OOF rank context.
+
+    The active inference run may be a shadow/live collection run that only owns
+    ledgers and live state. Historical meta_oof rank context is part of the
+    trained model artifact.
+    """
+    return str(
+        runtime_config.get("model_artifact_run_id")
+        or runtime_config.get("artifact_run_id")
+        or runtime_config.get("run_id")
+        or "latest"
+    )
+
+
 def _normalise_market_mode(mode: Any) -> str:
     raw = str(mode or "spot").strip().lower()
     return "perps" if raw in {"perp", "perps", "future", "futures", "swap"} else "spot"
@@ -6373,15 +6709,23 @@ def _perp_rank_context(
     cached = _PERP_RANK_CONTEXT_CACHE.get(cache_key)
     if cached is None:
         core = strategy_core_id(strategy_id)
-        path = (
-            Path(data_root)
-            / "artifacts"
-            / str(run_id)
-            / "meta_oof"
-            / f"meta_oof_{side}_{core}_clf.parquet"
-        )
+        base = Path(data_root) / "artifacts" / str(run_id) / "meta_oof"
+        names = [
+            f"meta_oof_{side}_{core}_clf.parquet",
+            f"meta_oof_{side}_{core}_tbm_clf.parquet",
+        ]
+        paths = [base / name for name in names if core]
+        if core:
+            paths.extend(sorted(base.glob(f"meta_oof_*{core}_clf.parquet")))
+            paths.extend(sorted(base.glob(f"meta_oof_*{core}_tbm_clf.parquet")))
         cached = {"rank_x": 1, "scores": np.array([], dtype=float)}
         try:
+            path = next((candidate for candidate in paths if candidate.exists()), None)
+            if path is None:
+                tried = ", ".join(str(candidate) for candidate in paths[:4])
+                raise FileNotFoundError(
+                    f"no meta OOF rank context file for {side}/{core}; tried {tried}"
+                )
             df = pd.read_parquet(path)
             pred_col = next(
                 (
@@ -7384,6 +7728,7 @@ def _select_top_base_prediction_symbols(
     strategy_id: str,
     *,
     top_frac: float = BASE_TO_META_TOP_FRAC,
+    all_predictions_out: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, Dict[str, float]]:
     """Rank base-model predictions and keep only the top fraction for meta."""
 
@@ -7457,7 +7802,9 @@ def _select_top_base_prediction_symbols(
                         f"dropping {len(dropped_symbols)}/{len(candidate_features.index)} "
                         f"rows during strict alpha alignment sample={dropped_symbols[:10]}"
                     )
-                    candidate_features = candidate_features.loc[aligned.index].copy()
+                    candidate_features = _float32_inference_frame(
+                        candidate_features.loc[aligned.index]
+                    )
                     candidates = [
                         str(symbol)
                         for symbol in candidates
@@ -7480,6 +7827,7 @@ def _select_top_base_prediction_symbols(
                 f"available={available_cols} nonzero={nonzero_cols} "
                 f"varying={varying_cols} unique_rows={row_fingerprint}"
             )
+    candidate_features = _float32_inference_frame(candidate_features)
     try:
         preds = orchestrator.predict_alpha(candidate_features, side, strategy_id)
     except Exception as exc:
@@ -7498,6 +7846,18 @@ def _select_top_base_prediction_symbols(
     winners = ranked.sort_values(ascending=False).head(top_n)
     ranks = ranked.rank(method="first", pct=True, ascending=True)
     min_kept_score = float(winners.min()) if len(winners) else float("nan")
+    winner_symbols = {str(symbol) for symbol in winners.index}
+    if all_predictions_out is not None:
+        all_predictions_out.clear()
+        for symbol, score in ranked.items():
+            symbol_s = str(symbol)
+            all_predictions_out[symbol_s] = {
+                "base_pred": float(score),
+                "base_rank_pct": float(ranks.loc[symbol]),
+                "base_gate_top_frac": float(top_frac),
+                "base_gate_min_kept_score": min_kept_score,
+                "base_gate_pass": bool(symbol_s in winner_symbols),
+            }
     tprint(
         f"Base gate {side}/{strategy_core_id(strategy_id)}: "
         f"{len(winners)}/{len(ranked)} candidates kept for meta "
@@ -7512,6 +7872,72 @@ def _select_top_base_prediction_symbols(
         }
         for symbol, score in winners.items()
     }
+
+
+def _diagnostic_row_for_symbol(frame: Any, symbol: str) -> Dict[str, float]:
+    if not isinstance(frame, pd.DataFrame) or frame.empty:
+        return {}
+    try:
+        if symbol not in frame.index:
+            return {}
+        row = frame.loc[symbol]
+        if isinstance(row, pd.DataFrame):
+            if row.empty:
+                return {}
+            row = row.iloc[0]
+        out: Dict[str, float] = {}
+        for key, value in row.items():
+            try:
+                val = float(value)
+            except Exception:
+                continue
+            if np.isfinite(val):
+                out[str(key)] = val
+        return out
+    except Exception:
+        return {}
+
+
+def _chain_results_from_batch_meta_prediction(
+    *,
+    symbol: str,
+    side: str,
+    selected_strategy: str,
+    batch_meta_preds: Any,
+    batch_meta_model_inputs: Optional[pd.DataFrame],
+    batch_meta_diagnostics: Optional[pd.DataFrame],
+) -> Optional[Dict[str, Any]]:
+    """Return a policy-ready chain result from already computed batch meta data."""
+    if not isinstance(batch_meta_model_inputs, pd.DataFrame):
+        return None
+    strategy_id = strategy_core_id(str(selected_strategy))
+    results: Dict[str, Any] = {
+        "symbol": str(symbol),
+        "side": str(side),
+        "strategy_id": strategy_id,
+        "meta_prediction_source": "batch_meta_after_base_gate",
+    }
+    if not isinstance(batch_meta_preds, pd.Series) or symbol not in batch_meta_preds.index:
+        results["action"] = "no_meta_prediction"
+        results["reason"] = "batch_meta_prediction_missing_after_strict_alignment"
+        return results
+    try:
+        meta_val = float(batch_meta_preds.loc[symbol])
+    except Exception:
+        meta_val = float("nan")
+    if not np.isfinite(meta_val):
+        results["action"] = "no_meta_prediction"
+        results["reason"] = "batch_meta_prediction_non_finite_after_strict_alignment"
+        return results
+    meta_diagnostics = _diagnostic_row_for_symbol(batch_meta_diagnostics, symbol)
+    if meta_diagnostics:
+        results["meta_lgbm_diagnostics"] = dict(meta_diagnostics)
+        results["lgbm_diagnostics"] = dict(meta_diagnostics)
+        for diag_key, diag_value in meta_diagnostics.items():
+            results[str(diag_key)] = diag_value
+    results["meta_pred"] = meta_val
+    results["action"] = "enter"
+    return results
 
 
 def _json_safe(value: Any) -> Any:
@@ -7631,6 +8057,479 @@ def _log_feature_coverage(candidate_features: pd.DataFrame, side: str) -> None:
         tprint(
             f"Inference feature coverage [{side}] low-finite numeric cols(<80%): {low_finite}"
         )
+
+
+def _selected_feature_source_groups(feature_name: str) -> List[Dict[str, Any]]:
+    """Return live source panel groups likely needed for a selected feature."""
+    key = str(feature_name or "").lower()
+    groups: List[Dict[str, Any]] = []
+
+    def add(group: str, panels: Sequence[str]) -> None:
+        groups.append({"group": group, "panels": [str(p) for p in panels]})
+
+    if (
+        key.startswith("price_trend_")
+        or key.startswith("price_rv_")
+        or key.startswith("ret")
+        or key.startswith("lr_")
+        or key.startswith("ker_")
+        or key.startswith("efficiency_ratio")
+        or "atr" in key
+        or "range" in key
+        or "volatility" in key
+        or key.startswith("dist_ema")
+        or key.startswith("bollinger")
+    ):
+        add("ohlcv", ("close", "high", "low"))
+    if "volume" in key or "vwap" in key or key.startswith("dist_vwap_"):
+        add("ohlcv_volume", ("close", "volume"))
+    if (
+        key.startswith("oi_")
+        or "_oi_" in key
+        or key.startswith("price_x_oi_")
+        or "open_interest" in key
+    ):
+        add("open_interest", ("open_interest",))
+    if "funding" in key:
+        add("funding", ("funding_rate",))
+    if key.startswith("basis"):
+        add("basis", ("close", "funding_rate", "open_interest"))
+    if key.startswith("ob_") or key.startswith("obw_") or "orderbook" in key:
+        add(
+            "orderbook",
+            ("orderbook_mid", "orderbook_best_bid", "orderbook_best_ask"),
+        )
+    if not groups and _is_live_source_derived_feature_key(feature_name):
+        add("source_derived_unknown", ("close",))
+    if not groups:
+        add("selected_feature_cache", ())
+    deduped: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in groups:
+        name = str(item.get("group") or "")
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        deduped.append(item)
+    return deduped
+
+
+def _source_panel_coverage_at_ts(
+    *,
+    panel: Mapping[str, pd.DataFrame],
+    panels: Sequence[str],
+    symbols: Sequence[str],
+    signal_bar_ts: pd.Timestamp,
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    ts = pd.Timestamp(signal_bar_ts)
+    ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+    symbols_s = [str(sym) for sym in symbols if str(sym)]
+    total = max(1, len(symbols_s))
+    for panel_key in panels:
+        frame = panel.get(str(panel_key)) if isinstance(panel, Mapping) else None
+        item: Dict[str, Any] = {
+            "panel": str(panel_key),
+            "present": isinstance(frame, pd.DataFrame) and not frame.empty,
+            "finite": 0,
+            "rows": int(total),
+            "finite_fraction": 0.0,
+        }
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            item["reason"] = "missing_source_panel"
+            out.append(item)
+            continue
+        available = [sym for sym in symbols_s if sym in frame.columns]
+        item["missing_symbols"] = int(max(0, len(symbols_s) - len(available)))
+        if not available:
+            item["reason"] = "missing_source_symbols"
+            out.append(item)
+            continue
+        try:
+            latest_ts: Optional[pd.Timestamp] = None
+            idx = pd.to_datetime(frame.index, utc=True, errors="coerce")
+            valid_idx = idx[~pd.isna(idx)]
+            if len(valid_idx):
+                eligible = valid_idx[valid_idx <= ts]
+                latest_ts = (
+                    pd.Timestamp(eligible.max())
+                    if len(eligible)
+                    else pd.Timestamp(valid_idx.max())
+                )
+            if ts in frame.index:
+                values = frame.loc[ts, available]
+            else:
+                values = frame.loc[:, available].ffill().iloc[-1]
+            arr = pd.to_numeric(values, errors="coerce").to_numpy(
+                dtype=float,
+                copy=False,
+            )
+            finite = int(np.isfinite(arr).sum())
+            item["finite"] = finite
+            item["finite_fraction"] = float(finite / total)
+            if latest_ts is not None:
+                item["latest_ts"] = latest_ts.isoformat()
+                item["stale_hours"] = max(
+                    0.0,
+                    float((ts - latest_ts).total_seconds() / 3600.0),
+                )
+            item["reason"] = (
+                "ok"
+                if finite == len(available) and not item["missing_symbols"]
+                else "low_source_coverage"
+            )
+        except Exception as exc:
+            item["reason"] = f"source_coverage_error:{type(exc).__name__}"
+        out.append(item)
+    return out
+
+
+def _selected_feature_required_history_hours(feature_name: str) -> Optional[float]:
+    """Approximate minimum lookback needed before a live selected feature matures."""
+    key = str(feature_name or "").lower()
+    if not key:
+        return None
+    hour_match = re.fullmatch(r"lr_(\d+)h", key)
+    required_hours = int(hour_match.group(1)) if hour_match else 0
+    ker_match = re.fullmatch(r"ker_(\d+)", key)
+    if ker_match:
+        required_hours = max(required_hours, int(ker_match.group(1)))
+    efficiency_match = re.fullmatch(r"(?:efficiency_ratio|path_efficiency)_(\d+)", key)
+    if efficiency_match:
+        required_hours = max(required_hours, int(efficiency_match.group(1)))
+    day_match = re.search(r"_(\d+)d(?:_|$)", key)
+    required_days = int(day_match.group(1)) if day_match else 0
+    if "180d" in key:
+        required_days = max(required_days, 180)
+    if "90d" in key:
+        required_days = max(required_days, 90)
+    if "30d" in key:
+        required_days = max(required_days, 30)
+    if any(
+        token in key
+        for token in (
+            "oi_1d_chg_z",
+            "oi_3d_chg_z",
+            "oi_7d_chg_z",
+            "funding_z",
+            "funding_1d_chg_z",
+            "asset_minus_mkt_oi_1d_peer_resid",
+            "asset_minus_mkt_oi_1d_ts_resid",
+            "cs_rank_oi_chg_1d_z",
+            "price_x_oi_1d",
+            "price_x_oi_3d",
+            "price_x_oi_7d",
+            "crowded_long_",
+            "crowded_short_",
+            "_x_funding",
+        )
+    ):
+        required_days = max(required_days, 90)
+    if key.startswith("price_trend_") and day_match:
+        required_days = max(required_days, int(day_match.group(1)))
+    if required_days <= 0 and required_hours <= 0:
+        return None
+    return float(max(required_hours, required_days * 24))
+
+
+def _selected_feature_required_history_floor_hours(
+    feature_names: Iterable[str],
+    *,
+    buffer_hours: float = 24.0,
+) -> int:
+    """Minimum live panel span needed to avoid artificial sparse selected features."""
+    max_required = 0.0
+    for feature_name in feature_names or []:
+        try:
+            required = _selected_feature_required_history_hours(str(feature_name))
+        except Exception:
+            required = None
+        if required is not None and np.isfinite(required):
+            max_required = max(max_required, float(required))
+    if max_required <= 0.0:
+        return 0
+    return int(np.ceil(max_required + max(float(buffer_hours), 0.0)))
+
+
+def _source_panel_history_context(
+    *,
+    panel: Mapping[str, pd.DataFrame],
+    panels: Sequence[str],
+    signal_bar_ts: pd.Timestamp,
+    required_history_hours: float,
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    ts = pd.Timestamp(signal_bar_ts)
+    ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+    for panel_key in panels:
+        frame = panel.get(str(panel_key)) if isinstance(panel, Mapping) else None
+        item: Dict[str, Any] = {
+            "panel": str(panel_key),
+            "required_history_hours": float(required_history_hours),
+            "history_span_hours": 0.0,
+            "history_context_available": False,
+        }
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            item["reason"] = "missing_source_panel"
+            out.append(item)
+            continue
+        try:
+            idx = pd.to_datetime(frame.index, utc=True, errors="coerce")
+            valid_idx = idx[~pd.isna(idx)]
+            eligible = valid_idx[valid_idx <= ts]
+            if len(eligible):
+                span_hours = max(
+                    0.0,
+                    float(
+                        (pd.Timestamp(eligible.max()) - pd.Timestamp(eligible.min()))
+                        .total_seconds()
+                        / 3600.0
+                    ),
+                )
+                item["history_span_hours"] = span_hours
+                item["history_context_available"] = True
+                item["reason"] = (
+                    "history_span_ok"
+                    if span_hours >= float(required_history_hours) * 0.95
+                    else "loaded_context_shorter_than_feature_lookback"
+                )
+            else:
+                item["reason"] = "no_history_before_signal"
+        except Exception as exc:
+            item["reason"] = f"history_context_error:{type(exc).__name__}"
+        out.append(item)
+    return out
+
+
+def _sparse_selected_feature_source_attribution(
+    *,
+    key: str,
+    panel: Mapping[str, pd.DataFrame],
+    symbols: Sequence[str],
+    signal_bar_ts: pd.Timestamp,
+    reason: str,
+    finite: int,
+    total: int,
+    missing_symbols_count: int,
+    latest_feature_ts: Optional[pd.Timestamp],
+    stale_hours: float,
+) -> Dict[str, Any]:
+    """Explain why a selected model feature is sparse at the latest signal bar."""
+    source_groups = _selected_feature_source_groups(key)
+    source_coverage: List[Dict[str, Any]] = []
+    has_panel_context = isinstance(panel, Mapping) and bool(panel)
+    for group in source_groups:
+        source_coverage.extend(
+            _source_panel_coverage_at_ts(
+                panel=panel,
+                panels=group.get("panels") or (),
+                symbols=symbols,
+                signal_bar_ts=signal_bar_ts,
+            )
+        )
+    source_bad = [
+        item
+        for item in source_coverage
+        if str(item.get("reason") or "") not in {"ok", ""}
+        and float(item.get("finite_fraction", 0.0) or 0.0) < 0.80
+    ]
+    feature_family = (
+        "source_derived"
+        if _is_live_source_derived_feature_key(key)
+        else "selected_feature_cache"
+    )
+    source_context_ok = bool(has_panel_context) and bool(source_coverage) and not source_bad
+    required_history_hours = _selected_feature_required_history_hours(key)
+    history_context: List[Dict[str, Any]] = []
+    if required_history_hours is not None:
+        for group in source_groups:
+            history_context.extend(
+                _source_panel_history_context(
+                    panel=panel,
+                    panels=group.get("panels") or (),
+                    signal_bar_ts=signal_bar_ts,
+                    required_history_hours=required_history_hours,
+                )
+            )
+    if reason in {"missing_frame", "missing_symbols"}:
+        if source_bad and has_panel_context:
+            attribution = "exchange_source_data_lacking"
+        elif _is_live_source_derived_feature_key(key):
+            attribution = "feature_generator_or_selected_cache_missing"
+        else:
+            attribution = "selected_feature_cache_missing"
+    elif np.isfinite(stale_hours) and stale_hours >= 1.0:
+        attribution = "feature_cache_stale"
+    elif source_bad and has_panel_context:
+        attribution = "exchange_source_data_lacking"
+    elif (
+        source_context_ok
+        and required_history_hours is not None
+        and 0 < int(finite) < int(total)
+    ):
+        attribution = "insufficient_symbol_history"
+    elif _is_live_source_derived_feature_key(key):
+        attribution = "feature_generator_or_transform_gap"
+    else:
+        attribution = "selected_feature_cache_sparse"
+    out: Dict[str, Any] = {
+        "source_attribution": attribution,
+        "feature_family": feature_family,
+        "source_groups": [str(g.get("group") or "") for g in source_groups],
+        "source_coverage": source_coverage[:12],
+        "source_context_available": bool(has_panel_context),
+        "missing_symbols": int(missing_symbols_count),
+        "finite_fraction": float(int(finite) / max(1, int(total))),
+    }
+    if required_history_hours is not None:
+        out["required_history_hours"] = float(required_history_hours)
+        out["history_context"] = history_context[:12]
+    if latest_feature_ts is not None:
+        out["latest_feature_ts"] = latest_feature_ts.isoformat()
+    if np.isfinite(stale_hours):
+        out["feature_stale_hours"] = float(stale_hours)
+    return out
+
+
+def _selected_model_feature_store_gap_report(
+    *,
+    feats: Dict[str, pd.DataFrame],
+    panel: Optional[Dict[str, pd.DataFrame]] = None,
+    symbols: Sequence[str],
+    required_feature_keys: Iterable[str],
+    signal_bar_ts: pd.Timestamp,
+    min_finite_fraction: float,
+    min_full_rows: int = 5,
+    max_report: int = 20,
+) -> Dict[str, Any]:
+    keys = sorted(
+        {
+            str(key)
+            for key in raw_required_feature_keys(required_feature_keys)
+            if str(key) and _meta_live_unavailable_neutral_default(str(key)) is None
+        }
+    )
+    symbols_s = [str(sym) for sym in symbols if str(sym)]
+    min_finite_fraction = float(np.clip(float(min_finite_fraction), 0.0, 1.0))
+    total = max(1, len(symbols_s))
+    min_finite = int(np.ceil(total * min_finite_fraction))
+    min_full_rows = max(1, int(min_full_rows))
+    issues: List[Dict[str, Any]] = []
+    full_row_ok = np.ones(len(symbols_s), dtype=bool)
+    ts = pd.Timestamp(signal_bar_ts)
+    ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+    for key in keys:
+        frame = (feats or {}).get(key)
+        finite = 0
+        reason = ""
+        latest_feature_ts: Optional[pd.Timestamp] = None
+        stale_hours = float("nan")
+        missing_symbols_count = 0
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            reason = "missing_frame"
+            missing_symbols_count = int(total)
+        else:
+            available = [sym for sym in symbols_s if sym in frame.columns]
+            missing_symbols_count = int(max(0, len(symbols_s) - len(available)))
+            if not available:
+                reason = "missing_symbols"
+            else:
+                try:
+                    try:
+                        idx = pd.to_datetime(frame.index, utc=True, errors="coerce")
+                        valid_idx = idx[~pd.isna(idx)]
+                        if len(valid_idx):
+                            eligible = valid_idx[valid_idx <= ts]
+                            if len(eligible):
+                                latest_feature_ts = pd.Timestamp(eligible.max())
+                            else:
+                                latest_feature_ts = pd.Timestamp(valid_idx.max())
+                            stale_hours = max(
+                                0.0,
+                                float((ts - latest_feature_ts).total_seconds() / 3600.0),
+                            )
+                    except Exception:
+                        latest_feature_ts = None
+                    if ts in frame.index:
+                        values = frame.loc[ts, available]
+                    else:
+                        values = frame.loc[:, available].ffill().iloc[-1]
+                    arr = pd.to_numeric(values, errors="coerce").to_numpy(
+                        dtype=float, copy=False
+                    )
+                    finite_mask = np.isfinite(arr)
+                    finite = int(finite_mask.sum())
+                    if available:
+                        available_pos = {
+                            str(sym): pos for pos, sym in enumerate(symbols_s)
+                        }
+                        row_mask = np.zeros(len(symbols_s), dtype=bool)
+                        for src_idx, sym in enumerate(available):
+                            dst_idx = available_pos.get(str(sym))
+                            if dst_idx is not None and bool(finite_mask[src_idx]):
+                                row_mask[dst_idx] = True
+                        full_row_ok &= row_mask
+                except Exception as exc:
+                    reason = f"coverage_error:{type(exc).__name__}"
+        if reason:
+            full_row_ok &= np.zeros(len(symbols_s), dtype=bool)
+        if finite < min_finite and len(issues) < int(max_report):
+            attribution = _sparse_selected_feature_source_attribution(
+                key=key,
+                panel=panel or {},
+                symbols=symbols_s,
+                signal_bar_ts=ts,
+                reason=reason or "low_finite_coverage",
+                finite=finite,
+                total=total,
+                missing_symbols_count=missing_symbols_count,
+                latest_feature_ts=latest_feature_ts,
+                stale_hours=stale_hours,
+            )
+            issues.append(
+                {
+                    "feature": key,
+                    "finite": int(finite),
+                    "rows": int(total),
+                    "pct": round(100.0 * finite / total, 2),
+                    "reason": reason or "low_finite_coverage",
+                    **attribution,
+                }
+            )
+    full_rows = int(full_row_ok.sum()) if keys else int(total)
+    ok_by_feature_fraction = not issues
+    ok_by_full_rows = full_rows >= min_full_rows
+    ok = bool(ok_by_feature_fraction or ok_by_full_rows)
+    repair_incident_features = [
+        issue
+        for issue in issues
+        if str(issue.get("source_attribution") or "")
+        not in {"exchange_source_data_lacking", "insufficient_symbol_history"}
+    ]
+    return {
+        "ok": ok,
+        "reason": (
+            "ok"
+            if ok_by_feature_fraction
+            else (
+                "ok_min_full_rows"
+                if ok_by_full_rows
+                else "feature_store_gap"
+            )
+        ),
+        "signal_bar_ts": pd.Timestamp(signal_bar_ts).isoformat(),
+        "symbols": int(total),
+        "required_features": int(len(keys)),
+        "min_finite_fraction": float(min_finite_fraction),
+        "min_finite": int(min_finite),
+        "min_full_rows": int(min_full_rows),
+        "full_feature_rows": int(full_rows),
+        "ok_by_feature_fraction": bool(ok_by_feature_fraction),
+        "ok_by_full_rows": bool(ok_by_full_rows),
+        "low_finite_features": issues,
+        "repair_incident": bool(repair_incident_features),
+        "repair_incident_features": repair_incident_features[: int(max_report)],
+    }
 
 
 def _close_series_for_base(
@@ -7815,13 +8714,20 @@ def run_inference_step(
     normalized_thresholds = normalized_thresholds or {}
     strategy_candidate_masks = strategy_candidate_masks or {}
     runtime_config = dict(getattr(executor, "config", {}) or {})
+    artifact_data_root = str(runtime_config.get("data_root", "data"))
+    model_context_run_id = _perp_rank_context_run_id(runtime_config)
+    policy_context_run_id = str(
+        runtime_config.get("policy_artifact_run_id")
+        or runtime_config.get("run_id")
+        or "latest"
+    )
     meta_hit_rate_calibration = _load_meta_hit_rate_calibration(
-        str(runtime_config.get("data_root", "data")),
-        str(runtime_config.get("run_id", "latest")),
+        artifact_data_root,
+        model_context_run_id,
     )
     strategy_ev_calibration = _load_strategy_ev_calibration(
-        str(runtime_config.get("data_root", "data")),
-        str(runtime_config.get("run_id", "latest")),
+        artifact_data_root,
+        policy_context_run_id,
     )
     if policy_rank_reference_store is None:
         policy_rank_reference_store = PolicyRankReferenceStore(
@@ -7956,6 +8862,9 @@ def run_inference_step(
             portfolio_policy.threshold_viability_margin
         )
     prediction_ledger_rows: List[Dict[str, Any]] = []
+    log_base_gate_rejected_prediction_candidates = _env_flag(
+        "EPM_LOG_BASE_GATE_REJECTED_PREDICTION_CANDIDATES", False
+    )
     _log_generated_feature_frames(feats)
     _log_concurrent_positions_snapshot(portfolio_mgr, label="start")
     timer.mark("startup_logging")
@@ -8182,6 +9091,7 @@ def run_inference_step(
                         if symbol in candidate_features.index
                     ]
                 ]
+                eligible_features = _float32_inference_frame(eligible_features)
                 if eligible_features.empty:
                     tprint(
                         f"Feature block: no feature rows available after asset "
@@ -8212,9 +9122,9 @@ def run_inference_step(
                         )
                     if available_contract:
                         before_cols = int(eligible_features.shape[1])
-                        eligible_features = eligible_features.loc[
-                            :, available_contract
-                        ].copy()
+                        eligible_features = _float32_inference_frame(
+                            eligible_features.loc[:, available_contract]
+                        )
                         if before_cols != len(available_contract):
                             tprint(
                                 "Strategy-scoped model feature frame: "
@@ -8233,19 +9143,134 @@ def run_inference_step(
                         f"{selected_strategy}"
                     )
                     continue
+                all_base_predictions: Dict[str, Dict[str, Any]] = {}
                 base_gate = _select_top_base_prediction_symbols(
                     orchestrator=orchestrator,
                     candidate_features=eligible_features,
                     candidates=eligible_candidates,
                     side=side,
                     strategy_id=str(selected_strategy),
+                    all_predictions_out=(
+                        all_base_predictions
+                        if log_base_gate_rejected_prediction_candidates
+                        else None
+                    ),
                 )
                 timer.mark(
                     f"{side}_{strategy_core_id(str(selected_strategy))}_base_gate"
                 )
                 side_metrics["base_gate_pass"] += int(len(base_gate))
-                batch_meta_preds = pd.Series(dtype=float)
+                if (
+                    log_base_gate_rejected_prediction_candidates
+                    and prediction_ledger is not None
+                    and all_base_predictions
+                ):
+                    strategy_core = strategy_core_id(str(selected_strategy))
+                    run_cfg = getattr(executor, "config", {}) or {}
+                    artifact_run_id = str(
+                        run_cfg.get("model_artifact_run_id")
+                        or run_cfg.get("run_id", "latest")
+                    )
+                    policy_artifact_run_id = str(
+                        run_cfg.get("policy_artifact_run_id") or artifact_run_id
+                    )
+                    nrow = normalized_thresholds.get(strategy_core, {}) or normalized_thresholds.get(
+                        str(selected_strategy), {}
+                    )
+                    base_reject_threshold = _safe_float(
+                        nrow.get("normalized_threshold"), np.nan
+                    )
+                    base_diag_by_key = dict(
+                        getattr(orchestrator, "_last_base_lgbm_diagnostics_by_key", {})
+                        or {}
+                    )
+                    base_diag = base_diag_by_key.get(str(selected_strategy)) or base_diag_by_key.get(
+                        strategy_core
+                    )
+                    if not base_diag and base_diag_by_key:
+                        base_diag = next(iter(base_diag_by_key.values()))
+                    if not base_diag:
+                        base_diag = dict(
+                            getattr(orchestrator, "_last_base_lgbm_diagnostics", {})
+                            or {}
+                        )
+                    for symbol in eligible_candidates:
+                        symbol_s = str(symbol)
+                        if (
+                            symbol_s in base_gate
+                            or symbol_s not in all_base_predictions
+                            or symbol_s not in eligible_features.index.astype(str)
+                        ):
+                            continue
+                        chain_results = dict(all_base_predictions.get(symbol_s) or {})
+                        chain_results["action"] = "base_gate_rejected"
+                        chain_results["reason"] = "base_below_meta_gate_top_frac"
+                        chain_results["strategy_id"] = strategy_core
+                        chain_results["effective_threshold"] = base_reject_threshold
+                        if base_diag:
+                            chain_results["base_lgbm_diagnostics"] = dict(base_diag)
+                            for diag_key, diag_value in dict(base_diag).items():
+                                chain_results[f"base_lgbm_{diag_key}"] = diag_value
+                        try:
+                            chain_results.update(
+                                _base_model_feature_ledger_snapshot_for_decision(
+                                    orchestrator=orchestrator,
+                                    side=side,
+                                    strategy_id=strategy_core,
+                                    symbol=symbol_s,
+                                    candidate_features=eligible_features.loc[[symbol]],
+                                    feats=feats,
+                                    chain_results=chain_results,
+                                    signal_bar_ts=signal_bar_ts,
+                                )
+                            )
+                        except Exception as exc:
+                            tprint(
+                                "Warning: failed to build base-gate reject feature "
+                                f"snapshot for {symbol_s} {side}/{strategy_core}: {exc}"
+                            )
+                        prediction_ledger_rows.append(
+                            _prediction_ledger_row(
+                                {
+                                    "symbol": symbol_s,
+                                    "side": side,
+                                    "strategy_id": strategy_core,
+                                    "chain_results": chain_results,
+                                    "raw_score": np.nan,
+                                    "calibrated_score": np.nan,
+                                    "normalized_rank_score": np.nan,
+                                    "effective_threshold": base_reject_threshold,
+                                    "decision_ts": now_utc.isoformat(),
+                                    "signal_bar_ts": signal_bar_ts.isoformat(),
+                                    "signal_bar_close_ts": (
+                                        _signal_bar_close_ts(signal_bar_ts).isoformat()
+                                        if _signal_bar_close_ts(signal_bar_ts) is not None
+                                        else None
+                                    ),
+                                    "feature_source_max_ts": (
+                                        feature_source_max_ts.isoformat()
+                                        if feature_source_max_ts is not None
+                                        else None
+                                    ),
+                                    "feature_available_ts": feature_available_ts.isoformat(),
+                                    "feature_contract_hash": runtime_config.get(
+                                        "feature_contract_hash"
+                                    ),
+                                    "feature_transform_contract_hash": runtime_config.get(
+                                        "feature_transform_contract_hash"
+                                    ),
+                                    "model_artifact_run_id": artifact_run_id,
+                                    "policy_artifact_run_id": policy_artifact_run_id,
+                                },
+                                timestamp=now_utc.isoformat(),
+                                side=side,
+                                portfolio_decision="base_gate_rejected",
+                                portfolio_reject_reason="base_below_meta_gate_top_frac",
+                            )
+                        )
+                batch_meta_preds = pd.Series(dtype=np.float32)
                 batch_meta_model_inputs: Optional[pd.DataFrame] = None
+                batch_meta_diagnostics: Optional[pd.DataFrame] = None
                 if base_gate:
                     base_gate_symbols = [
                         symbol
@@ -8253,15 +9278,15 @@ def run_inference_step(
                         if symbol in base_gate and symbol in eligible_features.index
                     ]
                     if base_gate_symbols:
-                        meta_batch_features = eligible_features.loc[
-                            base_gate_symbols
-                        ].copy()
+                        meta_batch_features = _float32_inference_frame(
+                            eligible_features.loc[base_gate_symbols]
+                        )
                         meta_batch_features[str(selected_strategy)] = pd.Series(
                             {
                                 symbol: vals.get("base_pred", np.nan)
                                 for symbol, vals in base_gate.items()
                             },
-                            dtype=float,
+                            dtype=np.float32,
                         ).reindex(meta_batch_features.index)
                         try:
                             batch_meta_preds = orchestrator.predict_meta(
@@ -8269,11 +9294,25 @@ def run_inference_step(
                                 side,
                                 str(selected_strategy),
                             )
+                            if isinstance(batch_meta_preds, pd.Series):
+                                batch_meta_preds = pd.to_numeric(
+                                    batch_meta_preds,
+                                    errors="coerce",
+                                ).astype(np.float32, copy=False)
                             last_meta_input = getattr(
                                 orchestrator, "_last_meta_model_input", None
                             )
                             if isinstance(last_meta_input, pd.DataFrame):
-                                batch_meta_model_inputs = last_meta_input.copy()
+                                batch_meta_model_inputs = _float32_inference_frame(
+                                    last_meta_input
+                                )
+                            last_meta_diag_frame = getattr(
+                                orchestrator, "_last_meta_diagnostics_frame", None
+                            )
+                            if isinstance(last_meta_diag_frame, pd.DataFrame):
+                                batch_meta_diagnostics = _float32_inference_frame(
+                                    last_meta_diag_frame
+                                )
                             timer.mark(
                                 f"{side}_{strategy_core_id(str(selected_strategy))}_meta_pred"
                             )
@@ -8293,7 +9332,7 @@ def run_inference_step(
                             tprint(
                                 f"Batch meta prediction failed for {side}/{strategy_core_id(str(selected_strategy))}: {exc}"
                             )
-                            batch_meta_preds = pd.Series(dtype=float)
+                            batch_meta_preds = pd.Series(dtype=np.float32)
                 for symbol in eligible_candidates:
                     if (
                         symbol not in candidate_features.index
@@ -8308,26 +9347,38 @@ def run_inference_step(
                             f"{selected_strategy}"
                         )
                         continue
-                    try:
-                        chain_results = orchestrator.run_full_chain(
-                            symbol,
-                            side,
-                            candidate_features.loc[[symbol]],
-                            panel=panel,
-                            kind=selected_strategy,
-                        )
-                    except TypeError as exc:
-                        if "kind" not in str(exc):
-                            raise
-                        chain_results = orchestrator.run_full_chain(
-                            symbol, side, candidate_features.loc[[symbol]]
-                        )
-                    strategy_id = str(
-                        chain_results.get("strategy_id")
-                        or strategy_core_id(str(selected_strategy))
+                    chain_results = _chain_results_from_batch_meta_prediction(
+                        symbol=symbol,
+                        side=side,
+                        selected_strategy=str(selected_strategy),
+                        batch_meta_preds=batch_meta_preds,
+                        batch_meta_model_inputs=batch_meta_model_inputs,
+                        batch_meta_diagnostics=batch_meta_diagnostics,
                     )
+                    if chain_results is None:
+                        try:
+                            chain_results = orchestrator.run_full_chain(
+                                symbol,
+                                side,
+                                candidate_features.loc[[symbol]],
+                                panel=panel,
+                                kind=selected_strategy,
+                            )
+                        except TypeError as exc:
+                            if "kind" not in str(exc):
+                                raise
+                            chain_results = orchestrator.run_full_chain(
+                                symbol, side, candidate_features.loc[[symbol]]
+                            )
+                    else:
+                        chain_results["batch_meta_fast_path"] = True
+                        if isinstance(batch_meta_model_inputs, pd.DataFrame):
+                            chain_results["batch_meta_model_input_rows"] = int(
+                                len(batch_meta_model_inputs.index)
+                            )
                     if (
-                        isinstance(batch_meta_preds, pd.Series)
+                        chain_results.get("action") == "enter"
+                        and isinstance(batch_meta_preds, pd.Series)
                         and symbol in batch_meta_preds.index
                     ):
                         batch_meta_val = float(batch_meta_preds.loc[symbol])
@@ -8337,6 +9388,10 @@ def run_inference_step(
                                 "batch_meta_after_base_gate"
                             )
                             chain_results["action"] = "enter"
+                    strategy_id = str(
+                        chain_results.get("strategy_id")
+                        or strategy_core_id(str(selected_strategy))
+                    )
                     if accepted_strategies is not None and not strategy_id_matches(
                         strategy_id, accepted_strategies
                     ):
@@ -8472,6 +9527,18 @@ def run_inference_step(
                     normalized_threshold = float(
                         nrow.get("normalized_threshold", rank_threshold)
                     )
+                    threshold_rank_score_source_config = str(
+                        nrow.get("threshold_rank_score_source") or ""
+                    ).strip()
+                    use_auction_rank_for_threshold = (
+                        threshold_rank_score_source_config
+                        not in {
+                            "policy_rank_pct",
+                            "strategy_rank_pct",
+                            "rank_pct",
+                            "policy_rank_reference_percentile",
+                        }
+                    )
                     viability_margin = float(nrow.get("viability_margin", 0.0))
                     policy_threshold_floor = float(
                         np.clip(
@@ -8500,13 +9567,20 @@ def run_inference_step(
                         min_hit_rate=AUCTION_EV_MIN_HIT_RATE,
                         fallback_threshold=1.0,
                     )
+                    policy_artifact_threshold = _safe_float(
+                        normalized_threshold,
+                        _safe_float(rank_threshold, initial_rank_threshold),
+                    )
+                    policy_artifact_threshold = float(
+                        np.clip(policy_artifact_threshold, 0.0, 1.0)
+                    )
                     strategy_ev_threshold = (
                         policy_rank_reference_store.strategy_threshold_for_ev(
                             strategy_id=strategy_id,
                             side=side,
                             target_mean_net_return=auction_ev_target,
                             min_hit_rate=AUCTION_EV_MIN_HIT_RATE,
-                            fallback_threshold=1.0,
+                            fallback_threshold=policy_artifact_threshold,
                         )
                     )
                     strategy_ev_gate = policy_rank_reference_store.strategy_ev_gate(
@@ -8517,14 +9591,14 @@ def run_inference_step(
                     )
                     if not strategy_ev_threshold.enabled:
                         tprint(
-                            f"Strategy EV threshold block: {symbol} {side}/{strategy_id} "
+                            f"Strategy EV threshold diagnostic: {symbol} {side}/{strategy_id} "
                             f"reason={strategy_ev_threshold.reason} "
                             f"best_avg_net={strategy_ev_threshold.mean_net_return:.6f} "
                             f"target={strategy_ev_threshold.target_mean_net_return:.6f} "
                             f"best_hit={strategy_ev_threshold.hit_rate:.6f} "
-                            f"min_hit={strategy_ev_threshold.target_hit_rate:.6f}"
+                            f"min_hit={strategy_ev_threshold.target_hit_rate:.6f}; "
+                            f"using_policy_artifact_threshold={policy_artifact_threshold:.6f}"
                         )
-                        continue
                     meta_contracts = _model_feature_contracts_for_audit(
                         orchestrator,
                         side=side,
@@ -8554,18 +9628,18 @@ def run_inference_step(
                     dynamic_multiplier = float(
                         np.clip(dynamic_multiplier, 0.8, 1.2)
                     )
-                    raw_strategy_threshold = float(
-                        np.clip(strategy_ev_threshold.threshold, 0.0, 1.0)
-                    )
-                    policy_threshold_floor = float(
+                    raw_strategy_threshold = float(policy_artifact_threshold)
+                    dynamic_adjusted_policy_artifact_threshold = float(
                         np.clip(raw_strategy_threshold * dynamic_multiplier, 0.0, 1.0)
                     )
+                    policy_threshold_floor = raw_strategy_threshold
                     if dynamic_performance_monitor is not None:
                         tprint(
-                            f"Dynamic performance threshold: {symbol} {side}/{strategy_id} "
+                            f"Dynamic performance threshold diagnostic: {symbol} {side}/{strategy_id} "
                             f"meta_hash={meta_hash} raw={raw_strategy_threshold:.6f} "
                             f"mult={dynamic_multiplier:.3f} "
-                            f"adjusted={policy_threshold_floor:.6f} "
+                            f"diagnostic_adjusted={dynamic_adjusted_policy_artifact_threshold:.6f} "
+                            f"applied={policy_threshold_floor:.6f} "
                             f"recent_hit={_safe_float(getattr(dynamic_state, 'recent_hit_rate', np.nan)):.4f} "
                             f"expected_hit={_safe_float(getattr(dynamic_state, 'expected_hit_rate', np.nan)):.4f} "
                             f"n={int(getattr(dynamic_state, 'recent_n', 0) or 0)} "
@@ -8622,6 +9696,9 @@ def run_inference_step(
                     chain_results["rank_threshold"] = rank_threshold
                     chain_results["normalized_threshold"] = normalized_threshold
                     chain_results["deployment_rank_threshold"] = normalized_threshold
+                    chain_results["threshold_rank_score_source_config"] = (
+                        threshold_rank_score_source_config
+                    )
                     chain_results["initial_rank_threshold_floor"] = (
                         policy_threshold_floor
                     )
@@ -8650,11 +9727,26 @@ def run_inference_step(
                         auction_ev_gate.n_trades
                     )
                     chain_results["strategy_ev_threshold"] = float(
-                        strategy_ev_threshold.threshold
+                        policy_threshold_floor
                     )
                     chain_results["strategy_ev_threshold_before_dynamic"] = float(
                         raw_strategy_threshold
                     )
+                    chain_results["strategy_ev_threshold_source"] = (
+                        "policy_artifact_threshold"
+                    )
+                    chain_results["strategy_ev_diagnostic_threshold"] = float(
+                        strategy_ev_threshold.threshold
+                    )
+                    chain_results["strategy_ev_diagnostic_threshold_enabled"] = bool(
+                        strategy_ev_threshold.enabled
+                    )
+                    chain_results["strategy_ev_diagnostic_threshold_reason"] = (
+                        strategy_ev_threshold.reason
+                    )
+                    chain_results[
+                        "dynamic_performance_diagnostic_adjusted_threshold"
+                    ] = float(dynamic_adjusted_policy_artifact_threshold)
                     chain_results["dynamic_performance_multiplier"] = float(
                         dynamic_multiplier
                     )
@@ -8676,17 +9768,15 @@ def run_inference_step(
                     chain_results["dynamic_performance_recent_n"] = int(
                         getattr(dynamic_state, "recent_n", 0) or 0
                     )
-                    chain_results["strategy_ev_threshold_enabled"] = bool(
-                        strategy_ev_threshold.enabled
-                    )
+                    chain_results["strategy_ev_threshold_enabled"] = True
                     chain_results["strategy_ev_threshold_reason"] = (
-                        strategy_ev_threshold.reason
+                        "policy_artifact_threshold_live_spread_adjusted_ev_guard"
                     )
                     chain_results["strategy_ev_threshold_mean_net_return"] = float(
-                        strategy_ev_threshold.mean_net_return
+                        strategy_ev_gate.mean_net_return
                     )
                     chain_results["strategy_ev_threshold_hit_rate"] = float(
-                        strategy_ev_threshold.hit_rate
+                        strategy_ev_gate.hit_rate
                     )
                     chain_results["strategy_ev_threshold_n_trades"] = int(
                         strategy_ev_threshold.n_trades
@@ -8769,6 +9859,12 @@ def run_inference_step(
                             **estimated_ev,
                             "normalized_threshold": normalized_threshold,
                             "deployment_rank_threshold": normalized_threshold,
+                            "threshold_rank_score_source_config": (
+                                threshold_rank_score_source_config
+                            ),
+                            "threshold_rank_score_source_preference": (
+                                threshold_rank_score_source_config
+                            ),
                             "initial_rank_threshold_floor": policy_threshold_floor,
                             "auction_ev_threshold": float(auction_ev_gate.threshold),
                             "auction_ev_threshold_enabled": bool(
@@ -8791,10 +9887,25 @@ def run_inference_step(
                                 auction_ev_gate.n_trades
                             ),
                             "strategy_ev_threshold": float(
-                                strategy_ev_threshold.threshold
+                                policy_threshold_floor
                             ),
                             "strategy_ev_threshold_before_dynamic": float(
                                 raw_strategy_threshold
+                            ),
+                            "strategy_ev_threshold_source": (
+                                "policy_artifact_threshold"
+                            ),
+                            "strategy_ev_diagnostic_threshold": float(
+                                strategy_ev_threshold.threshold
+                            ),
+                            "strategy_ev_diagnostic_threshold_enabled": bool(
+                                strategy_ev_threshold.enabled
+                            ),
+                            "strategy_ev_diagnostic_threshold_reason": (
+                                strategy_ev_threshold.reason
+                            ),
+                            "dynamic_performance_diagnostic_adjusted_threshold": float(
+                                dynamic_adjusted_policy_artifact_threshold
                             ),
                             "dynamic_performance_multiplier": float(
                                 dynamic_multiplier
@@ -8817,17 +9928,15 @@ def run_inference_step(
                             "dynamic_performance_recent_n": int(
                                 getattr(dynamic_state, "recent_n", 0) or 0
                             ),
-                            "strategy_ev_threshold_enabled": bool(
-                                strategy_ev_threshold.enabled
-                            ),
+                            "strategy_ev_threshold_enabled": True,
                             "strategy_ev_threshold_reason": (
-                                strategy_ev_threshold.reason
+                                "policy_artifact_threshold_live_spread_adjusted_ev_guard"
                             ),
                             "strategy_ev_threshold_mean_net_return": float(
-                                strategy_ev_threshold.mean_net_return
+                                strategy_ev_gate.mean_net_return
                             ),
                             "strategy_ev_threshold_hit_rate": float(
-                                strategy_ev_threshold.hit_rate
+                                strategy_ev_gate.hit_rate
                             ),
                             "strategy_ev_threshold_n_trades": int(
                                 strategy_ev_threshold.n_trades
@@ -8848,6 +9957,7 @@ def run_inference_step(
                             ),
                             "effective_threshold": effective_threshold,
                             "policy_sizing": policy_size,
+                            "_policy_params_for_uncertainty_ev": policy_params,
                             "chain_results": chain_results,
                             "decision_ts": now_utc.isoformat(),
                             "signal_bar_ts": signal_bar_ts.isoformat(),
@@ -8891,7 +10001,18 @@ def run_inference_step(
                     allow_live_batch_rank_fallback_for_debug=allow_live_batch_rank_fallback_for_debug,
                     inference_min_base_train_rank_pct=inference_min_base_train_rank_pct,
                     require_cross_strategy_auction_rank=require_cross_strategy_auction_rank,
-                    use_auction_rank_for_threshold=True,
+                    use_auction_rank_for_threshold=bool(
+                        decision.get(
+                            "threshold_rank_score_source_preference",
+                            decision.get("threshold_rank_score_source_config", ""),
+                        )
+                        not in {
+                            "policy_rank_pct",
+                            "strategy_rank_pct",
+                            "rank_pct",
+                            "policy_rank_reference_percentile",
+                        }
+                    ),
                 )
                 _assert_policy_rank_threshold_source(decision)
                 rank_pct = float(
@@ -8971,6 +10092,60 @@ def run_inference_step(
                     "policy_rank_reference_source"
                 )
                 chain_results["effective_threshold"] = threshold
+                uncertainty_ev = _uncertainty_adjusted_ev_from_policy(
+                    policy_params=decision.get("_policy_params_for_uncertainty_ev")
+                    or {},
+                    rank_pct=rank_pct,
+                    chain_results=chain_results,
+                )
+                chain_results.update(uncertainty_ev)
+                decision.update(uncertainty_ev)
+                decision["chain_results"] = chain_results
+                if not bool(uncertainty_ev.get("uncertainty_ev_gate_pass", True)):
+                    reject_reason = "uncertainty_adjusted_ev_non_positive"
+                    update_live_feature_layer_rank_summary(
+                        chain_results.get("live_feature_layer_debug_dir"),
+                        decision=decision,
+                        chain_results=chain_results,
+                        gate_allowed=False,
+                        gate_reason=reject_reason,
+                    )
+                    if (
+                        prediction_ledger is not None
+                        and _should_log_prediction_candidate(
+                            decision, policy=portfolio_policy
+                        )
+                    ):
+                        prediction_ledger_rows.append(
+                            _prediction_ledger_row(
+                                decision,
+                                timestamp=now_utc.isoformat(),
+                                side=str(decision.get("side", "")),
+                                portfolio_decision="rank_rejected",
+                                portfolio_reject_reason=reject_reason,
+                            )
+                        )
+                    tprint(
+                        f"Uncertainty-EV block: {decision['symbol']} "
+                        f"{decision['side']}/{decision['strategy_id']} "
+                        f"rank={rank_pct:.6f} threshold={threshold:.6f} "
+                        f"ev_adj={_safe_float(uncertainty_ev.get('uncertainty_adjusted_ev_net_return')):.6f} "
+                        f"bin={uncertainty_ev.get('uncertainty_ev_bin')}"
+                    )
+                    continue
+                uncertainty_size_multiplier = _safe_float(
+                    uncertainty_ev.get("uncertainty_ev_size_multiplier"),
+                    1.0,
+                )
+                if np.isfinite(uncertainty_size_multiplier):
+                    decision["size"] = float(decision.get("size") or 0.0) * float(
+                        np.clip(uncertainty_size_multiplier, 0.0, 1.25)
+                    )
+                    policy_sizing = dict(decision.get("policy_sizing") or {})
+                    policy_sizing["uncertainty_ev_size_multiplier"] = float(
+                        np.clip(uncertainty_size_multiplier, 0.0, 1.25)
+                    )
+                    decision["policy_sizing"] = policy_sizing
                 update_live_feature_layer_rank_summary(
                     chain_results.get("live_feature_layer_debug_dir"),
                     decision=decision,
@@ -9139,7 +10314,7 @@ def run_inference_step(
                     perp_rank = (
                         _perp_rank_context(
                             data_root=runtime_config["data_root"],
-                            run_id=runtime_config["run_id"],
+                            run_id=_perp_rank_context_run_id(runtime_config),
                             side=side,
                             strategy_id=strategy_id,
                             score=float(
@@ -9172,6 +10347,23 @@ def run_inference_step(
                     requested_position_usdt = float(
                         sizing_audit["size_after_liquidity"]
                     )
+                    uncertainty_size_multiplier = _safe_float(
+                        chain_results.get(
+                            "uncertainty_ev_size_multiplier",
+                            decision.get("uncertainty_ev_size_multiplier"),
+                        ),
+                        1.0,
+                    )
+                    if np.isfinite(uncertainty_size_multiplier):
+                        requested_position_usdt *= float(
+                            np.clip(uncertainty_size_multiplier, 0.0, 1.25)
+                        )
+                        sizing_audit["uncertainty_ev_size_multiplier"] = float(
+                            np.clip(uncertainty_size_multiplier, 0.0, 1.25)
+                        )
+                        sizing_audit["size_after_uncertainty_ev"] = float(
+                            requested_position_usdt
+                        )
                     chain_results["portfolio_rank_sizing"] = sizing_audit
                     can_enter, info = portfolio_mgr.can_enter_position(
                         symbol=symbol,
@@ -9853,7 +11045,9 @@ def run_inference_step(
                                     perp_rank = (
                                         _perp_rank_context(
                                             data_root=runtime_config["data_root"],
-                                            run_id=runtime_config["run_id"],
+                                            run_id=_perp_rank_context_run_id(
+                                                runtime_config
+                                            ),
                                             side=side,
                                             strategy_id=strategy_id,
                                             score=float(
@@ -10802,7 +11996,7 @@ def run_inference_step(
             perp_rank = (
                 _perp_rank_context(
                     data_root=str(runtime_config.get("data_root", "data")),
-                    run_id=str(runtime_config.get("run_id", "latest")),
+                    run_id=_perp_rank_context_run_id(runtime_config),
                     side=side,
                     strategy_id=strategy_id,
                     score=float(
@@ -10915,6 +12109,23 @@ def run_inference_step(
                     rank_x=perp_rank.get("rank_x"),
                 )
                 requested_position_usdt = float(sizing_audit["size_after_liquidity"])
+                uncertainty_size_multiplier = _safe_float(
+                    chain_results.get(
+                        "uncertainty_ev_size_multiplier",
+                        decision.get("uncertainty_ev_size_multiplier"),
+                    ),
+                    1.0,
+                )
+                if np.isfinite(uncertainty_size_multiplier):
+                    requested_position_usdt *= float(
+                        np.clip(uncertainty_size_multiplier, 0.0, 1.25)
+                    )
+                    sizing_audit["uncertainty_ev_size_multiplier"] = float(
+                        np.clip(uncertainty_size_multiplier, 0.0, 1.25)
+                    )
+                    sizing_audit["size_after_uncertainty_ev"] = float(
+                        requested_position_usdt
+                    )
                 chain_results["portfolio_rank_sizing"] = sizing_audit
                 decision["chain_results"] = chain_results
                 can_enter, info = portfolio_mgr.can_enter_position(
@@ -11505,20 +12716,22 @@ def run_inference_step(
                                 perp_rank = (
                                     _perp_rank_context(
                                         data_root=str(
-                                        runtime_config.get("data_root", "data")
-                                    ),
-                                    run_id=str(runtime_config.get("run_id", "latest")),
-                                    side=side,
-                                    strategy_id=strategy_id,
-                                    score=float(
-                                        chain_results.get("meta_pred")
-                                        or decision.get("calibrated_score")
-                                        or adjusted_rank
-                                    ),
+                                            runtime_config.get("data_root", "data")
+                                        ),
+                                        run_id=_perp_rank_context_run_id(
+                                            runtime_config
+                                        ),
+                                        side=side,
+                                        strategy_id=strategy_id,
+                                        score=float(
+                                            chain_results.get("meta_pred")
+                                            or decision.get("calibrated_score")
+                                            or adjusted_rank
+                                        ),
+                                    )
+                                    if _is_perps_config(runtime_config)
+                                    else {}
                                 )
-                                if _is_perps_config(runtime_config)
-                                else {}
-                            )
                             sizing_audit = compute_rank_based_position_size(
                                 wallet_value=float(capacity["wallet_value"]),
                                 open_notional=float(capacity["open_notional"]),
@@ -13493,7 +14706,21 @@ def main():
             )
         except Exception:
             decision_cap_hours = 24 * 45
-        decision_cap_hours = max(24 * 32, int(decision_cap_hours))
+        try:
+            history_buffer_hours = float(
+                config.get(
+                    "live_decision_panel_history_buffer_hours",
+                    os.getenv("EPM_LIVE_DECISION_PANEL_HISTORY_BUFFER_HOURS", 24),
+                )
+            )
+        except Exception:
+            history_buffer_hours = 24.0
+        selected_history_floor_hours = _selected_feature_required_history_floor_hours(
+            raw_required_feature_keys(required_feature_keys),
+            buffer_hours=history_buffer_hours,
+        )
+        decision_floor_hours = max(24 * 32, int(selected_history_floor_hours))
+        decision_cap_hours = max(decision_floor_hours, int(decision_cap_hours))
         live_decision_panel_lookback_hours = min(
             int(panel_lookback_hours),
             decision_cap_hours,
@@ -13502,6 +14729,7 @@ def main():
             tprint(
                 "Live decision panel lookback capped: "
                 f"{panel_lookback_hours}->{live_decision_panel_lookback_hours}h. "
+                f"selected_feature_history_floor={selected_history_floor_hours}h. "
                 "Model scoring uses selected-feature caches; raw panel history is "
                 "bounded for latest masks, market checks, and deterministic repairs."
             )
@@ -14088,7 +15316,6 @@ def main():
                 )
                 prewarm_keys = set(raw_required_feature_keys(required_feature_keys))
                 prewarm_keys.update(_lgbm_mask_required_feature_keys(lgbm_strategy_mask_rows))
-                prewarm_keys.add("barrier_pct")
                 try:
                     prewarm_result = prewarm_selected_model_feature_cache_for_live(
                         run_id=str(config["run_id"]),
@@ -14257,6 +15484,118 @@ def main():
                         strategy_feature_contracts=strategy_feature_contracts,
                     )
             loop_timer.mark("candidate_and_feature_load")
+
+            feature_store_gap_guard = str(
+                config.get(
+                    "live_model_feature_store_gap_guard_enabled",
+                    os.environ.get(
+                        "EPM_LIVE_MODEL_FEATURE_STORE_GAP_GUARD_ENABLED",
+                        os.environ.get("EPM_LIVE_MODEL_FEATURE_STORE_GAP_GUARD", "1"),
+                    ),
+                )
+            ).strip().lower() not in {"0", "false", "no", "off"}
+            try:
+                feature_store_gap_min_fraction = float(
+                    config.get(
+                        "live_model_feature_store_gap_min_finite_fraction",
+                        os.environ.get(
+                            "EPM_LIVE_MODEL_FEATURE_STORE_GAP_MIN_FINITE_FRACTION",
+                            "0.80",
+                        ),
+                    )
+                )
+            except (TypeError, ValueError):
+                feature_store_gap_min_fraction = 0.80
+            try:
+                feature_store_gap_min_full_rows = int(
+                    config.get(
+                        "live_model_feature_store_gap_min_full_rows",
+                        os.environ.get(
+                            "EPM_LIVE_MODEL_FEATURE_STORE_GAP_MIN_FULL_ROWS",
+                            "5",
+                        ),
+                    )
+                )
+            except (TypeError, ValueError):
+                feature_store_gap_min_full_rows = 5
+            feature_store_gap_report = (
+                _selected_model_feature_store_gap_report(
+                    feats=features,
+                    panel=panel,
+                    symbols=panel_symbols,
+                    required_feature_keys=required_feature_keys,
+                    signal_bar_ts=latest_closed_hour,
+                    min_finite_fraction=feature_store_gap_min_fraction,
+                    min_full_rows=feature_store_gap_min_full_rows,
+                )
+                if feature_store_gap_guard
+                else {"ok": True, "reason": "disabled"}
+            )
+            if (
+                feature_store_gap_guard
+                and bool(feature_store_gap_report.get("ok"))
+                and not bool(feature_store_gap_report.get("ok_by_feature_fraction", True))
+            ):
+                tprint(
+                    "FEATURE_STORE_GAP_WARN selected model features below broad "
+                    "coverage threshold, but enough rows have full feature parity "
+                    "for row-strict scoring: "
+                    f"full_rows={feature_store_gap_report.get('full_feature_rows')} "
+                    f"min_full_rows={feature_store_gap_report.get('min_full_rows')} "
+                    f"issues={feature_store_gap_report.get('low_finite_features')}"
+                )
+                _emit_structured_event("FEATURE_STORE_GAP_WARN", feature_store_gap_report)
+            if feature_store_gap_guard and bool(
+                feature_store_gap_report.get("repair_incident")
+            ):
+                tprint(
+                    "FEATURE_STORE_REPAIR_INCIDENT unexplained selected-feature "
+                    "sparsity detected; scoring may continue only for full-parity "
+                    "rows, but the feature cache/generator needs repair: "
+                    f"issues={feature_store_gap_report.get('repair_incident_features')}"
+                )
+                _emit_structured_event(
+                    "FEATURE_STORE_REPAIR_INCIDENT",
+                    feature_store_gap_report,
+                )
+            if not bool(feature_store_gap_report.get("ok")):
+                tprint(
+                    "FEATURE_STORE_GAP selected model features below finite "
+                    "coverage threshold; skipping model scoring and prediction "
+                    "ledger writes for this batch: "
+                    f"issues={feature_store_gap_report.get('low_finite_features')}"
+                )
+                _emit_structured_event("FEATURE_STORE_GAP", feature_store_gap_report)
+                _monitor_active_position_price_action(
+                    executor,
+                    exchange=executor.exchange,
+                    now=current_time,
+                    config=config,
+                    portfolio_mgr=portfolio_mgr,
+                    trade_logger=logger,
+                    sheets_exporter=sheets_exporter,
+                )
+                _maybe_send_daily_deployment_report(
+                    daily_reporter=daily_reporter,
+                    exchange=exchange,
+                    portfolio_mgr=portfolio_mgr,
+                    trade_logger=logger,
+                    config=config,
+                )
+                _maybe_export_google_sheets(
+                    sheets_exporter=sheets_exporter,
+                    trade_logger=logger,
+                    executor=executor,
+                    force=bool(args.run_once),
+                )
+                if args.run_once:
+                    executor.shutdown()
+                    break
+                _sleep_until_next_candle_close(
+                    timeframe_minutes=60,
+                    delay_seconds=hourly_delay,
+                )
+                continue
 
             pre_score_now = pd.Timestamp.now(tz="UTC")
             pre_score_hourly_age_seconds = _closed_candle_age_seconds(

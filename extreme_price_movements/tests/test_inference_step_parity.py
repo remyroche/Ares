@@ -104,6 +104,64 @@ def test_load_normalized_threshold_map_prefers_policy_deployment_rank(tmp_path):
     assert thresholds["mr"]["normalized_threshold"] == 0.73
 
 
+def test_policy_rank_threshold_source_assertion_accepts_strategy_rank_gate():
+    decision = {
+        "threshold_space": "rank_percentile",
+        "policy_rank_pct": 0.82,
+        "auction_rank_pct": 0.41,
+        "threshold_rank_score": 0.82,
+        "threshold_rank_score_source": "policy_rank_reference_percentile",
+        "threshold_rank_score_source_preference": "policy_rank_pct",
+        "chain_results": {
+            "policy_rank_pct": 0.82,
+            "auction_rank_pct": 0.41,
+            "threshold_rank_score": 0.82,
+            "threshold_rank_score_source": "policy_rank_reference_percentile",
+        },
+    }
+
+    ri._assert_policy_rank_threshold_source(decision)
+
+
+def test_perp_rank_context_prefers_model_artifact_run_for_shadow(tmp_path):
+    strategy_id = "short_demo"
+    model_run_id = "model_run"
+    shadow_run_id = "shadow_run"
+    core = ri.strategy_core_id(strategy_id)
+    meta_dir = tmp_path / "artifacts" / model_run_id / "meta_oof"
+    meta_dir.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "oof_pred": [0.95, 0.80, 0.40, 0.20],
+            "target": [1, 1, 0, 0],
+        }
+    ).to_parquet(meta_dir / f"meta_oof_short_{core}_tbm_clf.parquet", index=False)
+    (tmp_path / "artifacts" / shadow_run_id).mkdir(parents=True)
+
+    ri._PERP_RANK_CONTEXT_CACHE.clear()
+    resolved_run_id = ri._perp_rank_context_run_id(
+        {
+            "run_id": shadow_run_id,
+            "model_artifact_run_id": model_run_id,
+        }
+    )
+    context = ri._perp_rank_context(
+        data_root=str(tmp_path),
+        run_id=resolved_run_id,
+        side="short",
+        strategy_id=strategy_id,
+        score=0.90,
+    )
+
+    assert resolved_run_id == model_run_id
+    assert context["rank_number"] == 2
+    assert f"{tmp_path}|{model_run_id}|short|{strategy_id}" in ri._PERP_RANK_CONTEXT_CACHE
+    assert (
+        f"{tmp_path}|{shadow_run_id}|short|{strategy_id}"
+        not in ri._PERP_RANK_CONTEXT_CACHE
+    )
+
+
 def test_meta_hit_rate_calibration_resolves_side_tbm_alias(tmp_path):
     run_id = "run"
     report_dir = tmp_path / "artifacts" / run_id / "meta_oof"
@@ -531,6 +589,103 @@ def test_run_inference_step_applies_strategy_rank_and_portfolio_caps(monkeypatch
     assert executor.calls[0]["size"] <= 1500.0 + 1e-9
 
 
+def test_run_inference_step_does_not_replace_policy_threshold_with_ev_table_gate(
+    monkeypatch,
+):
+    idx = pd.date_range("2026-03-01", periods=10, freq="1h", tz="UTC")
+    close = pd.DataFrame({"BTC/USDT": [100.0] * len(idx)}, index=idx)
+    panel = {
+        "close": close,
+        "high": close,
+        "low": close,
+        "open": close,
+        "volume": close,
+    }
+    feats = {
+        "ret12h": close.pct_change().fillna(0.0),
+        "ret24h": close.pct_change().fillna(0.0),
+        "range_12h_pct": close * 0.0,
+        "volatility_zscore": close * 0.0,
+    }
+
+    monkeypatch.setattr(ri, "select_candidates", lambda **kwargs: (["BTC/USDT"], []))
+    monkeypatch.setattr(
+        ri,
+        "get_features_for_candidates",
+        lambda feats, candidates: pd.DataFrame(
+            {"dummy": [1.0] * len(candidates)}, index=candidates
+        ),
+    )
+
+    def _disabled_ev_table_threshold(
+        self, *, strategy_id, side, target_mean_net_return, min_hit_rate, fallback_threshold
+    ):
+        return AuctionEvThresholdResult(
+            threshold=float(fallback_threshold),
+            target_mean_net_return=float(target_mean_net_return),
+            target_hit_rate=float(min_hit_rate),
+            mean_net_return=0.011,
+            hit_rate=0.53,
+            n_trades=269,
+            source="synthetic_disabled_ev_table",
+            enabled=False,
+            reason="no_strategy_threshold_meets_ev_and_hit_rate_constraints",
+        )
+
+    def _diagnostic_failed_ev_gate(
+        self, *, strategy_id, side, target_mean_net_return, min_hit_rate
+    ):
+        return StrategyEvGateResult(
+            allowed=False,
+            target_mean_net_return=float(target_mean_net_return),
+            min_hit_rate=float(min_hit_rate),
+            mean_net_return=0.011,
+            hit_rate=0.53,
+            source="synthetic_policy_artifact",
+            reason="strategy_ev_gate_failed",
+        )
+
+    monkeypatch.setattr(
+        ri.PolicyRankReferenceStore,
+        "strategy_threshold_for_ev",
+        _disabled_ev_table_threshold,
+    )
+    monkeypatch.setattr(
+        ri.PolicyRankReferenceStore,
+        "strategy_ev_gate",
+        _diagnostic_failed_ev_gate,
+    )
+
+    executor = _DummyExecutor()
+    results = ri.run_inference_step(
+        orchestrator=_DummyOrchestrator(),
+        panel=panel,
+        feats=feats,
+        thresholds={
+            "extreme_pct": None,
+            "min_move_12h_pct": None,
+            "min_range_pct": None,
+            "min_vol_zscore": None,
+            "metric": "ret12h",
+        },
+        executor=executor,
+        logger=_DummyLogger(),
+        accepted_strategies={"long_mr"},
+        calibration_data={
+            "long_mr": {
+                "p75_threshold": 0.7,
+                "calibration_curve": [(0.0, 0.0), (1.0, 1.0)],
+            }
+        },
+        portfolio_mgr=PortfolioManager(portfolio_value=10000.0),
+        initial_rank_threshold=0.7,
+    )
+
+    assert len(results["trades"]) == 1
+    assert executor.calls, "policy artifact threshold should remain deployable"
+    assert results["side_metrics"]["long"]["threshold_pass"] == 1
+
+
 def test_run_inference_step_global_auction_executes_best_cross_side_first(monkeypatch):
     idx = pd.date_range("2026-03-01", periods=3, freq="1h", tz="UTC")
     close = pd.DataFrame(
@@ -683,6 +838,20 @@ def test_run_inference_step_global_auction_keeps_ticker_liquidity_gate(monkeypat
     executor.exchange = _WideSpreadExchange()
     executor.config = {"allow_live_batch_rank_fallback_for_debug": True}
 
+    def _gate(decision, **kwargs):
+        score = float(decision.get("calibrated_score") or 0.9)
+        decision["threshold_rank_score"] = score
+        decision["policy_rank_pct"] = score
+        decision["normalized_rank_score"] = score
+        chain = dict(decision.get("chain_results") or {})
+        chain["policy_rank_pct"] = score
+        chain["sizer_rank_percentile"] = score
+        chain["normalized_rank_score"] = score
+        decision["chain_results"] = chain
+        return True, None
+
+    monkeypatch.setattr(ri, "apply_policy_rank_percentile_gate", _gate)
+
     results = ri.run_inference_step(
         orchestrator=_DummyOrchestrator(),
         panel=panel,
@@ -692,7 +861,7 @@ def test_run_inference_step_global_auction_keeps_ticker_liquidity_gate(monkeypat
         logger=_DummyLogger(),
         accepted_strategies={"long_mr"},
         calibration_data={
-            "long_mr": {
+            "mr": {
                 "p75_threshold": 0.5,
                 "calibration_curve": [(0.0, 0.0), (1.0, 1.0)],
             }
@@ -1199,6 +1368,84 @@ def test_run_inference_step_gates_meta_to_top_quartile_base_preds(monkeypatch):
     assert orchestrator.full_chain_symbols == ["B/USDT", "D/USDT"]
     assert [call["symbol"] for call in executor.calls] == ["B/USDT", "D/USDT"]
     assert results["trades"][0]["symbol"] == "B/USDT"
+
+
+def test_run_inference_step_reuses_batch_meta_without_full_chain(monkeypatch):
+    idx = pd.date_range("2026-03-01", periods=3, freq="1h", tz="UTC")
+    symbols = ["A/USDT", "B/USDT"]
+    close = pd.DataFrame(
+        {symbol: [100.0, 100.0, 100.0] for symbol in symbols},
+        index=idx,
+    )
+    panel = {
+        "close": close,
+        "high": close,
+        "low": close,
+        "open": close,
+        "volume": close,
+    }
+    feats = {"ret12h": close.pct_change().fillna(0.0)}
+
+    monkeypatch.setattr(ri, "select_candidates", lambda **kwargs: (symbols, []))
+    monkeypatch.setattr(
+        ri,
+        "get_features_for_candidates",
+        lambda feats, candidates: pd.DataFrame(
+            {"dummy": [1.0] * len(candidates)}, index=candidates
+        ),
+    )
+
+    class _BatchOnlyOrchestrator:
+        bucket_params = {}
+        alpha_by_strategy = {"long_mr": {"feat_cols": ["dummy"]}}
+
+        def __init__(self):
+            self.run_full_chain_calls = 0
+            self._last_meta_model_input = pd.DataFrame()
+            self._last_meta_diagnostics_frame = pd.DataFrame()
+
+        def available_strategies(self, side, accepted=None):
+            return ["long_mr"]
+
+        def _align_alpha_feature_contract(self, features, feat_cols):
+            return features.reindex(columns=feat_cols)
+
+        def predict_alpha(self, features, side, kind):
+            return pd.Series(0.9, index=features.index, dtype=float)
+
+        def predict_meta(self, features, side, kind):
+            self._last_meta_model_input = features.copy()
+            self._last_meta_diagnostics_frame = pd.DataFrame(
+                {"prob_uncertainty": [0.10] * len(features.index)},
+                index=features.index,
+            )
+            return pd.Series(0.95, index=features.index, dtype=float)
+
+        def run_full_chain(self, symbol, side, features, panel=None, kind=None):
+            self.run_full_chain_calls += 1
+            raise AssertionError("run_full_chain should not be called")
+
+    orchestrator = _BatchOnlyOrchestrator()
+    executor = _DummyExecutor()
+
+    results = ri.run_inference_step(
+        orchestrator=orchestrator,
+        panel=panel,
+        feats=feats,
+        thresholds={"metric": "ret12h"},
+        executor=executor,
+        logger=_DummyLogger(),
+        accepted_strategies={"long_mr"},
+        calibration_data={
+            "long_mr": {
+                "p75_threshold": 0.5,
+                "calibration_curve": [(0.0, 0.0), (1.0, 1.0)],
+            }
+        },
+    )
+
+    assert orchestrator.run_full_chain_calls == 0
+    assert results["side_metrics"]["long"]["base_gate_pass"] == 1
 
 
 def test_trade_execution_health_records_rejections_and_api_failures():

@@ -256,6 +256,31 @@ class SpecialistWeightConfig:
     eps: float = 1e-12
 
 
+@dataclass(frozen=True)
+class RegimeDriftSupportConfig:
+    current_window_days: float = 28.0
+    embargo_days: float = 0.0
+    domain_score_col: str = "regime_domain_current_likeness"
+    max_matching_feature_columns: int = 80
+    matching_k: int = 5
+    matching_caliper: float | None = 0.05
+    matching_block_days: float = 1.0
+    matching_neighbor_multiplier: int = 20
+    domain_score_weight: float = 1.0
+    feature_weight: float = 1.0
+    max_recent_rows: int = 5000
+    max_historical_rows: int = 50000
+    min_matched_recent_fraction: float = 0.50
+    min_matched_historical_rows: int = 200
+    min_effective_sample_size: float = 500.0
+    min_good_auc: float = 0.55
+    min_good_precision_lift_30: float = 1.05
+    residual_domain_cv_folds: int = 5
+    residual_domain_max_rows: int = 50000
+    random_state: int = 42
+    eps: float = 1e-12
+
+
 def _safe_numeric_frame(frame: pd.DataFrame, columns: Sequence[str]) -> pd.DataFrame:
     data: dict[str, np.ndarray] = {}
     for col in columns:
@@ -646,6 +671,29 @@ def _feature_engineering_knn_safe_columns(columns: Sequence[str]) -> list[str]:
     safe: list[str] = []
     for col in columns:
         if _feature_engineering_knn_unsafe_reason(str(col)) is not None:
+            continue
+        safe.append(str(col))
+    return safe
+
+
+def _support_matching_safe_columns(columns: Sequence[str]) -> list[str]:
+    """Columns safe for support matching; drift diagnostics are allowed here."""
+
+    unsafe_substrings = (
+        "knn",
+        "nearest",
+        "neighbor",
+        "distance",
+        "mahalanobis",
+        "reconstruction",
+        "anomaly",
+        "rarity",
+        "score",
+    )
+    safe: list[str] = []
+    for col in columns:
+        low = str(col).lower()
+        if any(token in low for token in unsafe_substrings):
             continue
         safe.append(str(col))
     return safe
@@ -4163,3 +4211,663 @@ def weighted_drift_baseline(
         "feature_count": int(len(stats)),
         "stats": stats,
     }
+
+
+def _classification_performance_summary(
+    frame: pd.DataFrame,
+    *,
+    prediction_col: str,
+    label_col: str,
+    return_col: str | None,
+    eps: float,
+) -> dict[str, Any]:
+    required = [prediction_col, label_col]
+    if return_col is not None and return_col in frame.columns:
+        required.append(return_col)
+    work = frame[required].copy(deep=False)
+    for col in required:
+        work[col] = pd.to_numeric(work[col], errors="coerce")
+    work = work.replace([np.inf, -np.inf], np.nan).dropna(subset=[prediction_col, label_col])
+    out: dict[str, Any] = {
+        "rows": int(len(work)),
+        "return_col": str(return_col or ""),
+    }
+    if len(work) <= 0:
+        return out
+    pred = np.clip(work[prediction_col].to_numpy(dtype=np.float64), eps, 1.0 - eps)
+    label = (work[label_col].to_numpy(dtype=np.float64) > 0.5).astype(np.int8)
+    residual = label.astype(np.float64) - pred
+    out.update(
+        {
+            "label_rate": float(np.mean(label)),
+            "mean_prediction": float(np.mean(pred)),
+            "mean_residual": float(np.mean(residual)),
+            "mae_residual": float(np.mean(np.abs(residual))),
+            "residual_std": float(np.std(residual)),
+        }
+    )
+    if len(np.unique(label)) >= 2:
+        try:
+            from sklearn.metrics import average_precision_score, brier_score_loss, log_loss, roc_auc_score
+
+            out["auc"] = float(roc_auc_score(label, pred))
+            out["average_precision"] = float(average_precision_score(label, pred))
+            out["brier"] = float(brier_score_loss(label, pred))
+            out["log_loss"] = float(log_loss(label, pred, labels=[0, 1]))
+        except Exception as exc:
+            out["metric_error"] = f"{type(exc).__name__}: {exc}"
+    order = np.argsort(-pred)
+    for frac, suffix in ((0.10, "10"), (0.20, "20"), (0.30, "30")):
+        k = max(1, int(math.ceil(len(work) * frac)))
+        top = order[:k]
+        precision = float(np.mean(label[top]))
+        out[f"p_at_{suffix}"] = precision
+        out[f"lift_at_{suffix}"] = float(precision / max(out["label_rate"], eps))
+        out[f"n_at_{suffix}"] = int(k)
+        if return_col is not None and return_col in work.columns:
+            ret = work[return_col].to_numpy(dtype=np.float64)
+            finite_ret = np.isfinite(ret[top])
+            if bool(finite_ret.any()):
+                out[f"mean_return_at_{suffix}"] = float(np.mean(ret[top][finite_ret]))
+    if return_col is not None and return_col in work.columns:
+        ret_all = work[return_col].to_numpy(dtype=np.float64)
+        finite_ret_all = np.isfinite(ret_all)
+        if bool(finite_ret_all.any()):
+            out["mean_return"] = float(np.mean(ret_all[finite_ret_all]))
+    if "p_at_10" in out and "p_at_20" in out and "p_at_30" in out:
+        out["precision_blend_10_20_30"] = float(
+            0.25 * out["p_at_10"] + 0.50 * out["p_at_20"] + out["p_at_30"]
+        )
+    return out
+
+
+def _density_ratio_ess(
+    q: np.ndarray,
+    *,
+    n_old: int,
+    n_recent: int,
+    eps: float,
+) -> dict[str, Any]:
+    q = np.clip(np.asarray(q, dtype=np.float64), eps, 1.0 - eps)
+    ratio = (q / (1.0 - q)) * (float(max(n_old, 1)) / float(max(n_recent, 1)))
+    finite = np.isfinite(ratio) & (ratio >= 0.0)
+    ratio = ratio[finite]
+    if ratio.size == 0:
+        return {"enabled": False, "reason": "no_finite_weights"}
+    weight_sum = float(np.sum(ratio))
+    weight_sq = float(np.sum(np.square(ratio)))
+    ess = float((weight_sum * weight_sum) / max(weight_sq, eps))
+    return {
+        "enabled": True,
+        "rows": int(ratio.size),
+        "ess": ess,
+        "ess_fraction": float(ess / max(ratio.size, 1)),
+        "weight_mean": float(np.mean(ratio)),
+        "weight_std": float(np.std(ratio)),
+        "weight_p50": float(np.quantile(ratio, 0.50)),
+        "weight_p90": float(np.quantile(ratio, 0.90)),
+        "weight_p99": float(np.quantile(ratio, 0.99)),
+        "weight_max": float(np.max(ratio)),
+    }
+
+
+def _subsample_positions_for_support(
+    positions: np.ndarray,
+    *,
+    max_rows: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    positions = np.asarray(positions, dtype=np.int64)
+    if max_rows <= 0 or positions.size <= max_rows:
+        return positions
+    chosen = rng.choice(positions, size=int(max_rows), replace=False)
+    return np.sort(chosen.astype(np.int64))
+
+
+def _support_block_ids(
+    ts_ns: np.ndarray,
+    positions: np.ndarray,
+    *,
+    block_days: float,
+) -> np.ndarray:
+    if positions.size == 0:
+        return np.zeros(0, dtype=np.int64)
+    block_ns = max(float(block_days), 1e-9) * 24.0 * 3600.0 * 1e9
+    anchor = float(np.nanmin(ts_ns[positions]))
+    return np.floor((ts_ns[positions].astype(np.float64) - anchor) / block_ns).astype(np.int64)
+
+
+def _build_support_matching_matrix(
+    frame: pd.DataFrame,
+    *,
+    feature_columns: Sequence[str],
+    domain_score_col: str,
+    historical_positions: np.ndarray,
+    eps: float,
+    domain_score_weight: float,
+    feature_weight: float,
+) -> tuple[np.ndarray, list[str], dict[str, Any]]:
+    feature_columns = [str(c) for c in feature_columns if str(c) in frame.columns]
+    numeric = _safe_numeric_frame(frame, feature_columns)
+    used_features = list(numeric.columns)
+    parts: list[np.ndarray] = []
+    if used_features:
+        hist = numeric.iloc[historical_positions]
+        center = hist.median(axis=0).to_numpy(dtype=np.float64)
+        spread = (hist - center).abs().median(axis=0).to_numpy(dtype=np.float64)
+        spread = np.where(np.isfinite(spread) & (spread > eps), spread, 1.0)
+        arr = (numeric.to_numpy(dtype=np.float64) - center) / spread
+        arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+        arr = np.clip(arr, -8.0, 8.0) * float(feature_weight)
+        parts.append(arr.astype(np.float32))
+    q = pd.to_numeric(frame[domain_score_col], errors="coerce").fillna(0.5).clip(0.0, 1.0)
+    q_arr = q.to_numpy(dtype=np.float64)
+    hist_q = q_arr[historical_positions] if historical_positions.size else q_arr
+    q_center = float(np.nanmedian(hist_q)) if hist_q.size else 0.5
+    q_spread = float(np.nanmedian(np.abs(hist_q - q_center))) if hist_q.size else 1.0
+    if not np.isfinite(q_spread) or q_spread <= eps:
+        q_spread = max(float(np.nanstd(hist_q)) if hist_q.size else 0.0, 0.05)
+    q_scaled = ((q_arr - q_center) / max(q_spread, eps)).reshape(-1, 1)
+    parts.insert(0, np.clip(q_scaled, -8.0, 8.0).astype(np.float32) * float(domain_score_weight))
+    matrix = np.hstack(parts).astype(np.float32) if parts else np.zeros((len(frame), 0), dtype=np.float32)
+    return matrix, used_features, {
+        "used_feature_count": int(len(used_features)),
+        "domain_score_center": q_center,
+        "domain_score_scale": float(q_spread),
+        "matrix_columns": int(matrix.shape[1]),
+    }
+
+
+def _block_aware_nearest_matches(
+    matrix: np.ndarray,
+    domain_scores: np.ndarray,
+    recent_positions: np.ndarray,
+    historical_positions: np.ndarray,
+    timestamp_ns: np.ndarray,
+    *,
+    config: RegimeDriftSupportConfig,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    if recent_positions.size == 0 or historical_positions.size == 0 or matrix.shape[1] == 0:
+        return np.zeros(0, dtype=np.int64), {
+            "enabled": False,
+            "reason": "missing_recent_historical_or_matrix",
+        }
+    hist_blocks = _support_block_ids(
+        timestamp_ns,
+        historical_positions,
+        block_days=float(config.matching_block_days),
+    )
+    neighbor_count = min(
+        int(historical_positions.size),
+        max(
+            int(config.matching_k),
+            int(config.matching_k) * max(1, int(config.matching_neighbor_multiplier)),
+        ),
+    )
+    try:
+        from sklearn.neighbors import NearestNeighbors
+
+        nn = NearestNeighbors(n_neighbors=neighbor_count, metric="euclidean")
+        nn.fit(matrix[historical_positions])
+        distances, neighbor_idx = nn.kneighbors(matrix[recent_positions], return_distance=True)
+    except Exception as exc:
+        return np.zeros(0, dtype=np.int64), {
+            "enabled": False,
+            "reason": f"nearest_neighbors_failed:{type(exc).__name__}",
+        }
+    matched: list[int] = []
+    recent_with_match = 0
+    distance_values: list[float] = []
+    caliper = (
+        None
+        if config.matching_caliper is None
+        else max(float(config.matching_caliper), 0.0)
+    )
+    for row_i, recent_pos in enumerate(recent_positions):
+        seen_blocks: set[int] = set()
+        row_matches = 0
+        recent_q = float(domain_scores[recent_pos])
+        for local_j, dist in zip(neighbor_idx[row_i], distances[row_i]):
+            hist_pos = int(historical_positions[int(local_j)])
+            if caliper is not None and abs(float(domain_scores[hist_pos]) - recent_q) > caliper:
+                continue
+            block = int(hist_blocks[int(local_j)])
+            if block in seen_blocks:
+                continue
+            seen_blocks.add(block)
+            matched.append(hist_pos)
+            distance_values.append(float(dist))
+            row_matches += 1
+            if row_matches >= int(config.matching_k):
+                break
+        if row_matches > 0:
+            recent_with_match += 1
+    matched_unique = np.asarray(sorted(set(matched)), dtype=np.int64)
+    matched_block_count = int(
+        len(set(_support_block_ids(timestamp_ns, matched_unique, block_days=float(config.matching_block_days)).tolist()))
+    ) if matched_unique.size else 0
+    return matched_unique, {
+        "enabled": True,
+        "recent_rows_considered": int(recent_positions.size),
+        "historical_rows_considered": int(historical_positions.size),
+        "matched_historical_rows": int(matched_unique.size),
+        "matched_recent_rows": int(recent_with_match),
+        "matched_recent_fraction": float(recent_with_match / max(int(recent_positions.size), 1)),
+        "matched_block_count": matched_block_count,
+        "matching_k": int(config.matching_k),
+        "matching_caliper": None if caliper is None else float(caliper),
+        "matching_block_days": float(config.matching_block_days),
+        "neighbor_count": int(neighbor_count),
+        "distance_mean": float(np.mean(distance_values)) if distance_values else float("nan"),
+        "distance_p90": float(np.quantile(distance_values, 0.90)) if distance_values else float("nan"),
+    }
+
+
+def _blocked_domain_logloss(
+    matrix: np.ndarray,
+    domain_label: np.ndarray,
+    timestamp_ns: np.ndarray,
+    sample_mask: np.ndarray,
+    *,
+    config: RegimeDriftSupportConfig,
+) -> dict[str, Any]:
+    positions = np.flatnonzero(sample_mask)
+    if positions.size < 100 or matrix.shape[1] == 0:
+        return {"enabled": False, "reason": "insufficient_rows_or_features"}
+    rng = np.random.default_rng(int(config.random_state))
+    pos_recent = positions[domain_label[positions] == 1]
+    pos_old = positions[domain_label[positions] == 0]
+    if pos_recent.size < 20 or pos_old.size < 20:
+        return {"enabled": False, "reason": "insufficient_class_rows"}
+    max_per_class = max(1, int(config.residual_domain_max_rows) // 2)
+    pos_recent = _subsample_positions_for_support(pos_recent, max_rows=max_per_class, rng=rng)
+    pos_old = _subsample_positions_for_support(pos_old, max_rows=max_per_class, rng=rng)
+    positions = np.sort(np.concatenate([pos_recent, pos_old]).astype(np.int64))
+    order = np.argsort(timestamp_ns[positions], kind="mergesort")
+    positions = positions[order]
+    block_ids = _support_block_ids(
+        timestamp_ns,
+        positions,
+        block_days=float(config.matching_block_days),
+    )
+    unique_blocks = np.unique(block_ids)
+    recent_blocks: list[int] = []
+    old_blocks: list[int] = []
+    for block in unique_blocks:
+        local = np.flatnonzero(block_ids == int(block))
+        if local.size == 0:
+            continue
+        block_recent_rate = float(np.mean(domain_label[positions[local]]))
+        if block_recent_rate >= 0.5:
+            recent_blocks.append(int(block))
+        else:
+            old_blocks.append(int(block))
+    folds = max(
+        2,
+        min(
+            int(config.residual_domain_cv_folds),
+            len(recent_blocks),
+            len(old_blocks),
+        ),
+    )
+    if folds < 2:
+        return {"enabled": False, "reason": "insufficient_time_blocks_per_class"}
+    fold_block_sets: list[set[int]] = [set() for _ in range(folds)]
+    for i, block in enumerate(sorted(recent_blocks)):
+        fold_block_sets[i % folds].add(int(block))
+    for i, block in enumerate(sorted(old_blocks)):
+        fold_block_sets[i % folds].add(int(block))
+    fold_ids = [
+        np.flatnonzero(np.isin(block_ids, np.asarray(sorted(blocks), dtype=np.int64)))
+        for blocks in fold_block_sets
+    ]
+    losses: list[float] = []
+    aucs: list[float] = []
+    used_folds = 0
+    try:
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.metrics import log_loss, roc_auc_score
+        from sklearn.preprocessing import RobustScaler
+    except Exception as exc:
+        return {"enabled": False, "reason": f"sklearn_unavailable:{type(exc).__name__}"}
+    for fold_local in fold_ids:
+        valid_pos = positions[fold_local]
+        train_mask = np.ones(positions.size, dtype=bool)
+        train_mask[fold_local] = False
+        train_pos = positions[train_mask]
+        y_train = domain_label[train_pos]
+        y_valid = domain_label[valid_pos]
+        if len(np.unique(y_train)) < 2 or len(np.unique(y_valid)) < 2:
+            continue
+        scaler = RobustScaler(quantile_range=(25.0, 75.0))
+        X_train = scaler.fit_transform(matrix[train_pos])
+        X_valid = scaler.transform(matrix[valid_pos])
+        model = LogisticRegression(
+            penalty="l2",
+            C=1.0,
+            solver="lbfgs",
+            max_iter=300,
+            class_weight="balanced",
+            random_state=int(config.random_state),
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            model.fit(X_train, y_train)
+        pred = np.clip(model.predict_proba(X_valid)[:, 1], float(config.eps), 1.0 - float(config.eps))
+        losses.append(float(log_loss(y_valid, pred, labels=[0, 1])))
+        aucs.append(float(roc_auc_score(y_valid, pred)))
+        used_folds += 1
+    if not losses:
+        return {"enabled": False, "reason": "no_valid_blocked_folds"}
+    return {
+        "enabled": True,
+        "folds": int(used_folds),
+        "rows": int(positions.size),
+        "log_loss_mean": float(np.mean(losses)),
+        "log_loss_std": float(np.std(losses)),
+        "auc_mean": float(np.mean(aucs)) if aucs else float("nan"),
+        "auc_std": float(np.std(aucs)) if aucs else float("nan"),
+    }
+
+
+def compute_regime_drift_support_diagnostics(
+    frame: pd.DataFrame,
+    *,
+    timestamp_col: str = "timestamp",
+    symbol_col: str = "symbol",
+    prediction_col: str,
+    label_col: str,
+    return_col: str | None = None,
+    domain_score_col: str = "regime_domain_current_likeness",
+    matching_feature_columns: Sequence[str] | None = None,
+    current_end: Any | None = None,
+    config: RegimeDriftSupportConfig = RegimeDriftSupportConfig(),
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Diagnose whether recent degradation is support, covariate, or concept drift.
+
+    The report compares all eligible historical rows, historical rows matched to
+    recent rows in domain-score/feature space, and recent rows. It also computes
+    recent-to-historical density-ratio ESS and a residual-domain check:
+    ``D ~ X`` versus ``D ~ X + residual`` under blocked CV.
+    """
+
+    if frame is None or frame.empty:
+        return pd.DataFrame(), {
+            "schema_version": REGIME_SPECIALIST_SCHEMA_VERSION,
+            "enabled": False,
+            "reason": "empty_frame",
+        }
+    if timestamp_col not in frame.columns:
+        return pd.DataFrame(), {
+            "schema_version": REGIME_SPECIALIST_SCHEMA_VERSION,
+            "enabled": False,
+            "reason": f"missing_timestamp_col:{timestamp_col}",
+        }
+    score_col = str(domain_score_col or config.domain_score_col)
+    if score_col not in frame.columns:
+        return pd.DataFrame(), {
+            "schema_version": REGIME_SPECIALIST_SCHEMA_VERSION,
+            "enabled": False,
+            "reason": f"missing_domain_score_col:{score_col}",
+        }
+    missing_required = [
+        col for col in (prediction_col, label_col) if str(col) not in frame.columns
+    ]
+    if missing_required:
+        return pd.DataFrame(), {
+            "schema_version": REGIME_SPECIALIST_SCHEMA_VERSION,
+            "enabled": False,
+            "reason": f"missing_required_columns:{missing_required}",
+        }
+    explicit_matching_features = matching_feature_columns is not None
+    if explicit_matching_features:
+        resolved_matching_features = [
+            str(c)
+            for c in (matching_feature_columns or [])
+            if str(c) in frame.columns
+        ]
+    else:
+        inferred_columns = infer_regime_specialist_columns(frame)
+        inferred_candidates = _stable_unique_strings(
+            list(inferred_columns.get("drift", []))
+            + list(inferred_columns.get("market", []))
+            + list(inferred_columns.get("covariance", []))
+        )
+        forbidden_matching_columns = {
+            str(timestamp_col),
+            str(symbol_col),
+            str(prediction_col),
+            str(label_col),
+            str(score_col),
+        }
+        if return_col is not None:
+            forbidden_matching_columns.add(str(return_col))
+        resolved_matching_features = [
+            c
+            for c in _support_matching_safe_columns(inferred_candidates)
+            if c in frame.columns and c not in forbidden_matching_columns
+        ][: max(0, int(config.max_matching_feature_columns))]
+    work_cols = _stable_unique_strings(
+        [
+            timestamp_col,
+            symbol_col,
+            prediction_col,
+            label_col,
+            score_col,
+            *(([return_col] if return_col is not None else [])),
+            *resolved_matching_features,
+        ]
+    )
+    work = frame[[c for c in work_cols if c in frame.columns]].copy(deep=False)
+    ts = pd.to_datetime(work[timestamp_col], utc=True, errors="coerce")
+    valid_ts = ts.notna()
+    if current_end is None:
+        end = ts.max()
+    else:
+        end = pd.to_datetime(current_end, utc=True, errors="coerce")
+    if pd.isna(end):
+        end = ts.max()
+    current_start = end - pd.Timedelta(days=float(config.current_window_days))
+    historical_cutoff = current_start - pd.Timedelta(days=max(float(config.embargo_days), 0.0))
+    current_mask = valid_ts & (ts >= current_start) & (ts <= end)
+    historical_mask = valid_ts & (ts < historical_cutoff)
+    active_mask = current_mask | historical_mask
+    if int(current_mask.sum()) <= 0 or int(historical_mask.sum()) <= 0:
+        return pd.DataFrame(), {
+            "schema_version": REGIME_SPECIALIST_SCHEMA_VERSION,
+            "enabled": False,
+            "reason": "missing_current_or_historical_rows",
+            "current_rows": int(current_mask.sum()),
+            "historical_rows": int(historical_mask.sum()),
+        }
+    q = pd.to_numeric(work[score_col], errors="coerce").fillna(0.5).clip(0.0, 1.0).to_numpy(dtype=np.float64)
+    rng = np.random.default_rng(int(config.random_state))
+    current_pos_all = np.flatnonzero(current_mask.to_numpy(dtype=bool))
+    historical_pos_all = np.flatnonzero(historical_mask.to_numpy(dtype=bool))
+    current_pos = _subsample_positions_for_support(
+        current_pos_all,
+        max_rows=int(config.max_recent_rows),
+        rng=rng,
+    )
+    historical_pos = _subsample_positions_for_support(
+        historical_pos_all,
+        max_rows=int(config.max_historical_rows),
+        rng=rng,
+    )
+    feature_columns = [str(c) for c in resolved_matching_features if str(c) in work.columns]
+    matrix, used_features, matrix_diag = _build_support_matching_matrix(
+        work,
+        feature_columns=feature_columns,
+        domain_score_col=score_col,
+        historical_positions=historical_pos,
+        eps=float(config.eps),
+        domain_score_weight=float(config.domain_score_weight),
+        feature_weight=float(config.feature_weight),
+    )
+    timestamp_ns = ts.astype("int64").to_numpy(dtype=np.int64)
+    matched_pos, match_diag = _block_aware_nearest_matches(
+        matrix,
+        q,
+        current_pos,
+        historical_pos,
+        timestamp_ns,
+        config=config,
+    )
+    all_historical = work.iloc[historical_pos_all].copy(deep=False)
+    matched_historical = work.iloc[matched_pos].copy(deep=False)
+    recent = work.iloc[current_pos_all].copy(deep=False)
+    report_rows = [
+        {
+            "group": "all_historical",
+            **_classification_performance_summary(
+                all_historical,
+                prediction_col=prediction_col,
+                label_col=label_col,
+                return_col=return_col,
+                eps=float(config.eps),
+            ),
+        },
+        {
+            "group": "matched_historical",
+            **_classification_performance_summary(
+                matched_historical,
+                prediction_col=prediction_col,
+                label_col=label_col,
+                return_col=return_col,
+                eps=float(config.eps),
+            ),
+        },
+        {
+            "group": "recent",
+            **_classification_performance_summary(
+                recent,
+                prediction_col=prediction_col,
+                label_col=label_col,
+                return_col=return_col,
+                eps=float(config.eps),
+            ),
+        },
+    ]
+    report = pd.DataFrame(report_rows)
+    ess_diag = _density_ratio_ess(
+        q[historical_pos_all],
+        n_old=int(historical_pos_all.size),
+        n_recent=int(current_pos_all.size),
+        eps=float(config.eps),
+    )
+    residual = (
+        (pd.to_numeric(work[label_col], errors="coerce").fillna(0.0).to_numpy(dtype=np.float64) > 0.5).astype(np.float64)
+        - pd.to_numeric(work[prediction_col], errors="coerce").fillna(0.5).to_numpy(dtype=np.float64)
+    )
+    active_arr = active_mask.to_numpy(dtype=bool)
+    domain_label = current_mask.to_numpy(dtype=bool).astype(np.int8)
+    residual_matrix = np.column_stack([matrix, residual.astype(np.float32)])
+    domain_x = _blocked_domain_logloss(
+        matrix,
+        domain_label,
+        timestamp_ns,
+        active_arr,
+        config=config,
+    )
+    domain_x_resid = _blocked_domain_logloss(
+        residual_matrix.astype(np.float32),
+        domain_label,
+        timestamp_ns,
+        active_arr,
+        config=config,
+    )
+    residual_improvement = float("nan")
+    if bool(domain_x.get("enabled", False)) and bool(domain_x_resid.get("enabled", False)):
+        residual_improvement = float(
+            domain_x["log_loss_mean"] - domain_x_resid["log_loss_mean"]
+        )
+    no_support = (
+        float(match_diag.get("matched_recent_fraction", 0.0) or 0.0)
+        < float(config.min_matched_recent_fraction)
+        or int(match_diag.get("matched_historical_rows", 0) or 0)
+        < int(config.min_matched_historical_rows)
+        or (
+            bool(ess_diag.get("enabled", False))
+            and float(ess_diag.get("ess", 0.0) or 0.0)
+            < float(config.min_effective_sample_size)
+        )
+    )
+
+    def _is_good(group_name: str) -> bool:
+        row = report.loc[report["group"].eq(group_name)]
+        if row.empty:
+            return False
+        auc = float(row["auc"].iloc[0]) if "auc" in row.columns and pd.notna(row["auc"].iloc[0]) else float("nan")
+        lift = (
+            float(row["lift_at_30"].iloc[0])
+            if "lift_at_30" in row.columns and pd.notna(row["lift_at_30"].iloc[0])
+            else float("nan")
+        )
+        return (
+            np.isfinite(auc) and auc >= float(config.min_good_auc)
+        ) or (
+            np.isfinite(lift) and lift >= float(config.min_good_precision_lift_30)
+        )
+
+    matched_good = _is_good("matched_historical")
+    recent_good = _is_good("recent")
+    if no_support:
+        diagnosis = "new_support_or_insufficient_historical_overlap"
+    elif not matched_good and not recent_good:
+        diagnosis = "model_weak_in_this_feature_region"
+    elif matched_good and not recent_good:
+        diagnosis = "conditional_or_concept_drift"
+    elif matched_good and recent_good:
+        diagnosis = "primarily_compositional_covariate_shift"
+    else:
+        diagnosis = "mixed_or_inconclusive"
+    diagnostics = {
+        "schema_version": REGIME_SPECIALIST_SCHEMA_VERSION,
+        "enabled": True,
+        "diagnosis": diagnosis,
+        "period": {
+            "current_start": str(current_start),
+            "current_end": str(end),
+            "historical_cutoff": str(historical_cutoff),
+            "current_window_days": float(config.current_window_days),
+            "embargo_days": float(config.embargo_days),
+        },
+        "rows": {
+            "total": int(len(work)),
+            "active": int(active_arr.sum()),
+            "current": int(current_pos_all.size),
+            "historical": int(historical_pos_all.size),
+            "current_sampled_for_matching": int(current_pos.size),
+            "historical_sampled_for_matching": int(historical_pos.size),
+        },
+        "domain_score": {
+            "column": score_col,
+            "recent_mean": float(np.nanmean(q[current_pos_all])),
+            "historical_mean": float(np.nanmean(q[historical_pos_all])),
+            "recent_p10": float(np.nanquantile(q[current_pos_all], 0.10)),
+            "recent_p90": float(np.nanquantile(q[current_pos_all], 0.90)),
+            "historical_p90": float(np.nanquantile(q[historical_pos_all], 0.90)),
+        },
+        "density_ratio_ess": ess_diag,
+        "matching": match_diag,
+        "matching_matrix": matrix_diag,
+        "matching_feature_source": "explicit" if explicit_matching_features else "auto_inferred_safe",
+        "matching_features": used_features,
+        "performance_groups": report.to_dict(orient="records"),
+        "residual_domain_check": {
+            "x_only": domain_x,
+            "x_plus_residual": domain_x_resid,
+            "log_loss_improvement_from_residual": residual_improvement,
+            "residual_improves_domain_log_loss": bool(
+                np.isfinite(residual_improvement) and residual_improvement > 0.0
+            ),
+        },
+        "interpretation_thresholds": {
+            "min_matched_recent_fraction": float(config.min_matched_recent_fraction),
+            "min_matched_historical_rows": int(config.min_matched_historical_rows),
+            "min_effective_sample_size": float(config.min_effective_sample_size),
+            "min_good_auc": float(config.min_good_auc),
+            "min_good_precision_lift_30": float(config.min_good_precision_lift_30),
+        },
+    }
+    return report, diagnostics

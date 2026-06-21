@@ -3,14 +3,20 @@ import pandas as pd
 import pytest
 
 from extreme_price_movements.inference.feature_generator import (
+    get_inference_required_feature_keys,
+    _latest_matrix_low_finite_repair_incidents,
     _live_training_path_sync_feature_keys,
     _synthesize_gated_feature_keys,
 )
 from extreme_price_movements.inference.feature_parity import FeatureParityError
 from extreme_price_movements.inference.model_orchestrator import (
     ModelOrchestrator,
+    _fill_optional_generated_model_features,
     _fill_live_sparse_meta_context_features,
     _strict_finite_model_matrix,
+)
+from extreme_price_movements.inference.run_inference import (
+    _sparse_selected_feature_source_attribution,
 )
 from extreme_price_movements.lgbm_pipeline import LGBMStabilityModel, score_for_trading
 
@@ -43,6 +49,37 @@ def test_score_for_trading_refuses_nonfinite_features_before_prediction():
 
     with pytest.raises(ValueError, match="Non-finite live features"):
         score_for_trading(model, X)
+
+
+def test_lgbm_optional_generated_features_are_neutral_not_required():
+    model = LGBMStabilityModel(
+        selected_features=["ret24h", "dae_b16_00", "gmm_prob_0", "cluster_entropy_norm"]
+    )
+    X = pd.DataFrame({"ret24h": [0.1]}, index=["AAA/USDC"])
+
+    diagnostics = model.inference_schema_diagnostics(X)
+    assert diagnostics["missing_selected_features_count"] == 0
+    assert diagnostics["missing_optional_generated_features_count"] == 3
+
+    frame = model._frame(X)
+
+    assert list(frame.columns) == model.selected_features
+    assert frame.loc["AAA/USDC", "ret24h"] == pytest.approx(0.1)
+    assert frame.loc["AAA/USDC", "dae_b16_00"] == 0.0
+    assert frame.loc["AAA/USDC", "gmm_prob_0"] == 0.0
+    assert frame.loc["AAA/USDC", "cluster_entropy_norm"] == 0.0
+
+
+def test_lgbm_optional_generated_features_do_not_hide_core_gaps():
+    model = LGBMStabilityModel(selected_features=["ret24h", "dae_b16_00"])
+    X = pd.DataFrame({"dae_b16_00": [0.2]}, index=["AAA/USDC"])
+
+    diagnostics = model.inference_schema_diagnostics(X)
+    assert diagnostics["missing_selected_features_count"] == 1
+    assert diagnostics["missing_selected_features_preview"] == ["ret24h"]
+
+    with pytest.raises(ValueError, match="contracted features are missing"):
+        model._frame(X)
 
 
 def test_strict_final_matrix_refuses_nonfinite_without_dropping_rows():
@@ -100,7 +137,64 @@ def test_alpha_contract_legacy_neutral_fill_adapter_is_explicit():
     assert aligned.loc["BBB/USDC", "ret24h"] == 0.0
 
 
-def test_live_sparse_meta_context_fill_is_narrow_and_column_preserving():
+def test_meta_optional_generated_features_are_neutral_before_strict_validation():
+    X = pd.DataFrame(
+        {"ret24h": [0.1], "dae_b16_00": [np.inf]},
+        index=["AAA/USDC"],
+    )
+
+    filled, added, repaired = _fill_optional_generated_model_features(
+        X,
+        model_feature_cols=[
+            "ret24h",
+            "dae_b16_00",
+            "gmm_prob_0",
+            "cluster_entropy_norm",
+        ],
+    )
+
+    assert added == ["gmm_prob_0", "cluster_entropy_norm"]
+    assert repaired == ["dae_b16_00"]
+    assert filled.loc["AAA/USDC", "dae_b16_00"] == 0.0
+    assert filled.loc["AAA/USDC", "gmm_prob_0"] == 0.0
+    assert filled.loc["AAA/USDC", "cluster_entropy_norm"] == 0.0
+
+    strict = _strict_finite_model_matrix(
+        filled.reindex(columns=["ret24h", "dae_b16_00", "gmm_prob_0"]),
+        model_feature_cols=["ret24h", "dae_b16_00", "gmm_prob_0"],
+        model_key="meta",
+    )
+    assert np.isfinite(strict.to_numpy(dtype=np.float32)).all()
+
+
+def test_inference_required_keys_exclude_optional_generated_representations():
+    class DummyMeta:
+        selected_features = [
+            "ret24h",
+            "dae_b16_00",
+            "meta_dae_b16_00",
+            "gmm_prob_0",
+            "meta_gmm_prob_0",
+            "cluster_entropy_norm",
+            "meta_cluster_entropy_norm",
+            "pred_demo_raw_state_svd_03",
+        ]
+
+    required = get_inference_required_feature_keys(
+        {"bundle": {"meta_models": {"long_demo": DummyMeta()}}},
+    )
+
+    assert "ret24h" in required
+    assert "dae_b16_00" not in required
+    assert "meta_dae_b16_00" not in required
+    assert "gmm_prob_0" not in required
+    assert "meta_gmm_prob_0" not in required
+    assert "cluster_entropy_norm" not in required
+    assert "meta_cluster_entropy_norm" not in required
+    assert "pred_demo_raw_state_svd_03" not in required
+
+
+def test_live_sparse_meta_context_features_remain_strict():
     X = pd.DataFrame(
         {
             "oi_7d_chg_z": [np.nan, 1.25],
@@ -120,14 +214,11 @@ def test_live_sparse_meta_context_fill_is_narrow_and_column_preserving():
         ],
     )
 
-    assert out.loc["AAA/USDC", "oi_7d_chg_z"] == 0.0
-    assert out.loc["AAA/USDC", "price_trend_7d_vol_norm"] == 0.0
+    assert np.isnan(out.loc["AAA/USDC", "oi_7d_chg_z"])
+    assert np.isinf(out.loc["AAA/USDC", "price_trend_7d_vol_norm"])
     assert np.isnan(out.loc["BBB/USDC", "ret24h"])
     assert "missing_sparse_feature" not in out.columns
-    assert {item["feature"] for item in filled} == {
-        "oi_7d_chg_z",
-        "price_trend_7d_vol_norm",
-    }
+    assert filled == []
 
 
 def test_gated_selected_feature_missing_base_materializes_nan_frame():
@@ -193,6 +284,63 @@ def test_live_training_path_sync_can_skip_source_derived_keys_when_not_strict():
         "mom_slow",
         "oi_3d_chg_z",
     ]
+
+
+def test_latest_matrix_low_finite_exempts_history_dependent_features():
+    low_finite = [
+        {"feature": "efficiency_ratio_20", "finite": 10, "total": 20},
+        {"feature": "ker_16", "finite": 10, "total": 20},
+        {"feature": "lr_24h", "finite": 10, "total": 20},
+        {"feature": "oi_1d_x_funding", "finite": 10, "total": 20},
+        {"feature": "cs_rank_oi_chg_1d_z_90d", "finite": 10, "total": 20},
+    ]
+
+    incidents = _latest_matrix_low_finite_repair_incidents(low_finite)
+
+    assert incidents == []
+
+
+@pytest.mark.parametrize(
+    ("feature", "expected_hours"),
+    [
+        ("efficiency_ratio_20", 20.0),
+        ("ker_16", 16.0),
+        ("lr_24h", 24.0),
+    ],
+)
+def test_latest_matrix_history_dependent_sparsity_is_attributed_to_symbol_history(
+    feature, expected_hours
+):
+    idx = pd.date_range("2026-01-01", periods=48, freq="h", tz="UTC")
+    symbols = [f"S{i}/USD:USD" for i in range(20)]
+    close = pd.DataFrame(
+        np.linspace(100.0, 110.0, len(idx) * len(symbols)).reshape(
+            len(idx), len(symbols)
+        ),
+        index=idx,
+        columns=symbols,
+    )
+    panel = {
+        "close": close,
+        "high": close * 1.01,
+        "low": close * 0.99,
+    }
+
+    attribution = _sparse_selected_feature_source_attribution(
+        key=feature,
+        panel=panel,
+        symbols=symbols,
+        signal_bar_ts=idx[-1],
+        reason="low_finite",
+        finite=10,
+        total=20,
+        missing_symbols_count=0,
+        latest_feature_ts=idx[-1],
+        stale_hours=0.0,
+    )
+
+    assert attribution["source_attribution"] == "insufficient_symbol_history"
+    assert attribution["required_history_hours"] == pytest.approx(expected_hours)
 
 
 def test_gated_selected_feature_overwrites_nan_placeholder_from_base():

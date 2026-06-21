@@ -1,11 +1,12 @@
 import json
+import os
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from extreme_price_movements import features
-from extreme_price_movements.data_store import LazyFeatureDict
+from extreme_price_movements.data_store import LazyFeatureDict, write_live_latest_feature_matrix
 from extreme_price_movements.inference import feature_generator
 from extreme_price_movements.inference import run_inference
 
@@ -111,6 +112,202 @@ def test_stale_model_feature_detail_does_not_materialize_lazy_cache():
     assert detail == ["model_feature=2026-06-03 09:00:00+00:00"]
     assert lazy._assembled == {}
     assert "model_feature" in lazy._raw
+
+
+def test_latest_matrix_support_ignores_live_synthesized_sidecar_keys():
+    matrix = pd.DataFrame(
+        {
+            "core_feature": [1.0, 2.0, 3.0],
+        },
+        index=["AAA/USD:USD", "BBB/USD:USD", "CCC/USD:USD"],
+    )
+
+    sidecar_keys = feature_generator._sidecar_backed_feature_keys(
+        {
+            "core_feature",
+            "barrier_pct",
+            "ret1h_G_VOL_0",
+            "ret1h_G_VOL_1",
+        }
+    )
+
+    assert sidecar_keys == {"core_feature"}
+    assert (
+        feature_generator._latest_matrix_low_finite_support(
+            matrix,
+            required_feature_keys=sidecar_keys,
+            min_fraction=0.8,
+        )
+        == []
+    )
+    assert feature_generator._latest_matrix_low_finite_support(
+        matrix,
+        required_feature_keys={"core_feature", "missing_core"},
+        min_fraction=0.8,
+    )[0]["feature"] == "missing_core"
+
+
+def test_prewarm_compacts_full_selected_matrix_when_global_sidecar_partial(
+    tmp_path, monkeypatch
+):
+    run_id = "20260101_000000"
+    end_ts = pd.Timestamp("2026-01-01 03:00:00", tz="UTC")
+    feature_dir = tmp_path / "features" / run_id
+    feature_dir.mkdir(parents=True)
+    idx = pd.date_range("2026-01-01 00:00:00", periods=4, freq="1h", tz="UTC")
+    for symbol, offset in [("AAA/USD:USD", 0.0), ("BBB/USD:USD", 10.0)]:
+        frame = pd.DataFrame(
+            {
+                "core_a": np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
+                + offset,
+                "core_b": np.array([5.0, 6.0, 7.0, 8.0], dtype=np.float32)
+                + offset,
+                "__symbol__": symbol,
+            },
+            index=idx,
+        )
+        frame.to_parquet(feature_dir / f"symbol={symbol.replace('/', '_')}.parquet")
+
+    write_live_latest_feature_matrix(
+        {
+            "core_a": pd.DataFrame(
+                {
+                    "AAA/USD:USD": [4.0],
+                    "BBB/USD:USD": [14.0],
+                },
+                index=pd.DatetimeIndex([end_ts]),
+                dtype=np.float32,
+            )
+        },
+        pd.to_datetime(run_id, format="%Y%m%d_%H%M%S", utc=True),
+        str(tmp_path),
+        end_ts=end_ts,
+        symbols=["AAA/USD:USD", "BBB/USD:USD"],
+        merge_existing=False,
+    )
+
+    def fail_sync(**kwargs):
+        raise AssertionError("feature sync should not run when selected files are complete")
+
+    monkeypatch.setattr(
+        feature_generator,
+        "_run_training_path_feature_sync_for_live",
+        fail_sync,
+    )
+
+    result = feature_generator.prewarm_selected_model_feature_cache_for_live(
+        run_id=run_id,
+        data_root=str(tmp_path),
+        symbols=["AAA/USD:USD", "BBB/USD:USD"],
+        end_ts=end_ts,
+        cfg={},
+        required_feature_keys={"core_a", "core_b"},
+        source_run_ids=[run_id],
+    )
+
+    assert result["status"] == "selected_matrix_cache_ready"
+    assert result["matrix_complete"] is True
+    loaded = feature_generator._load_selected_feature_latest_matrix_cache(
+        cache_root=str(tmp_path),
+        source_run_id=run_id,
+        source_root=str(tmp_path),
+        symbols=["AAA/USD:USD", "BBB/USD:USD"],
+        feature_keys={"core_a", "core_b"},
+        end_ts=end_ts,
+    )
+    assert set(loaded) == {"core_a", "core_b"}
+    assert loaded["core_b"].loc[end_ts, "BBB/USD:USD"] == np.float32(18.0)
+
+
+def test_selected_latest_matrix_rejects_core_low_finite_for_source_fallback(
+    tmp_path, monkeypatch
+):
+    run_id = "20260101_000000"
+    end_ts = pd.Timestamp("2026-01-01 03:00:00", tz="UTC")
+    symbols = ["AAA/USD:USD", "BBB/USD:USD", "CCC/USD:USD", "DDD/USD:USD"]
+    monkeypatch.setenv("EPM_SELECTED_FEATURE_LATEST_MATRIX_MIN_FINITE_FRACTION", "0.80")
+
+    feats = {
+        "core_a": pd.DataFrame(
+            {symbol: [1.0] for symbol in symbols},
+            index=pd.DatetimeIndex([end_ts]),
+            dtype=np.float32,
+        ),
+        "core_b": pd.DataFrame(
+            {
+                "AAA/USD:USD": [2.0],
+                "BBB/USD:USD": [3.0],
+                "CCC/USD:USD": [np.nan],
+                "DDD/USD:USD": [np.nan],
+            },
+            index=pd.DatetimeIndex([end_ts]),
+            dtype=np.float32,
+        ),
+    }
+    feature_generator._write_selected_feature_latest_matrix_cache(
+        cache_root=str(tmp_path),
+        source_run_id=run_id,
+        source_root=str(tmp_path),
+        symbols=symbols,
+        feature_keys={"core_a", "core_b"},
+        end_ts=end_ts,
+        feats=feats,
+    )
+
+    loaded = feature_generator._load_selected_feature_latest_matrix_cache(
+        cache_root=str(tmp_path),
+        source_run_id=run_id,
+        source_root=str(tmp_path),
+        symbols=symbols,
+        feature_keys={"core_a", "core_b"},
+        end_ts=end_ts,
+    )
+
+    assert loaded == {}
+
+
+def test_selected_latest_matrix_loads_history_low_finite_for_row_strict_scoring(
+    tmp_path, monkeypatch
+):
+    run_id = "20260101_000000"
+    end_ts = pd.Timestamp("2026-01-01 03:00:00", tz="UTC")
+    symbols = ["AAA/USD:USD", "BBB/USD:USD", "CCC/USD:USD", "DDD/USD:USD"]
+    monkeypatch.setenv("EPM_SELECTED_FEATURE_LATEST_MATRIX_MIN_FINITE_FRACTION", "0.80")
+
+    feats = {
+        "lr_24h": pd.DataFrame(
+            {
+                "AAA/USD:USD": [2.0],
+                "BBB/USD:USD": [3.0],
+                "CCC/USD:USD": [np.nan],
+                "DDD/USD:USD": [np.nan],
+            },
+            index=pd.DatetimeIndex([end_ts]),
+            dtype=np.float32,
+        ),
+    }
+    feature_generator._write_selected_feature_latest_matrix_cache(
+        cache_root=str(tmp_path),
+        source_run_id=run_id,
+        source_root=str(tmp_path),
+        symbols=symbols,
+        feature_keys={"lr_24h"},
+        end_ts=end_ts,
+        feats=feats,
+    )
+
+    loaded = feature_generator._load_selected_feature_latest_matrix_cache(
+        cache_root=str(tmp_path),
+        source_run_id=run_id,
+        source_root=str(tmp_path),
+        symbols=symbols,
+        feature_keys={"lr_24h"},
+        end_ts=end_ts,
+    )
+
+    assert set(loaded) == {"lr_24h"}
+    assert np.isfinite(loaded["lr_24h"].loc[end_ts, "AAA/USD:USD"])
+    assert np.isnan(float(loaded["lr_24h"].loc[end_ts, "DDD/USD:USD"]))
 
 
 def test_candidate_loader_can_stop_after_mask_features(monkeypatch):
@@ -728,6 +925,38 @@ def test_live_feature_cache_key_ignores_selected_sync_controls():
     assert key_a == key_b
 
 
+def test_live_feature_cache_key_ignores_kraken_perp_ohlcv_gap_repair_controls():
+    base = {
+        "run_id": "run_a",
+        "symbols": ["AAA/USD:USD"],
+        "required_feature_keys": {"price_trend_10d_vol_norm"},
+        "lookback_hours": 24 * 60,
+    }
+
+    key_a = feature_generator._live_feature_cache_key(
+        **base,
+        cfg={
+            "market_mode": "perps",
+            "exchange": "kraken",
+            "live_model_feature_kraken_perp_ohlcv_gap_backfill": True,
+            "live_model_feature_kraken_perp_ohlcv_gap_backfill_lookback_days": 21,
+            "live_model_feature_kraken_perp_ohlcv_gap_backfill_max_gap_hours": 720,
+        },
+    )
+    key_b = feature_generator._live_feature_cache_key(
+        **base,
+        cfg={
+            "market_mode": "perps",
+            "exchange": "kraken",
+            "live_model_feature_kraken_perp_ohlcv_gap_backfill": False,
+            "live_model_feature_kraken_perp_ohlcv_gap_backfill_lookback_days": 7,
+            "live_model_feature_kraken_perp_ohlcv_gap_backfill_max_gap_hours": 48,
+        },
+    )
+
+    assert key_a == key_b
+
+
 def test_selected_feature_sync_can_launch_out_of_band(tmp_path, monkeypatch):
     launched = {}
 
@@ -747,6 +976,7 @@ def test_selected_feature_sync_can_launch_out_of_band(tmp_path, monkeypatch):
         end_ts=pd.Timestamp("2026-06-10T09:00:00Z"),
         cfg={"exchange": "kraken", "market_mode": "perps"},
         required_feature_keys={"ret24h"},
+        symbols=["BBB/USD:USD", "AAA/USD:USD"],
         blocking=False,
         sync_label="selected_missing_contract",
     )
@@ -754,6 +984,10 @@ def test_selected_feature_sync_can_launch_out_of_band(tmp_path, monkeypatch):
     assert ok is True
     assert "--perps" in launched["cmd"]
     assert launched["cmd"][-4:] == ["--exchange", "kraken", "--run-id", "feature_run"]
+    assert launched["kwargs"]["env"]["EPM_FEATURE_SYMBOLS"] == (
+        "AAA/USD:USD,BBB/USD:USD"
+    )
+    assert launched["kwargs"]["env"]["EPM_FEATURE_LIVE_DECISION_TAIL_ONLY"] == "1"
     assert launched["kwargs"]["start_new_session"] is True
     state_dir = tmp_path / "artifacts" / "feature_run" / "live_state"
     assert (state_dir / "feature_selected_missing_contract_sync.pid").read_text() == "12345"
@@ -761,7 +995,369 @@ def test_selected_feature_sync_can_launch_out_of_band(tmp_path, monkeypatch):
         (state_dir / "feature_selected_missing_contract_sync.json").read_text()
     )
     assert meta["requested_keys"] == 1
+    assert meta["requested_symbols"] == 2
     assert meta["end_ts"] == "2026-06-10T09:00:00+00:00"
+
+
+def test_selected_feature_sync_large_repair_uses_bounded_symbol_chunk(tmp_path, monkeypatch):
+    launched = {}
+
+    class FakeProc:
+        pid = 12345
+
+    def fake_popen(cmd, **kwargs):
+        launched["cmd"] = list(cmd)
+        launched["kwargs"] = dict(kwargs)
+        return FakeProc()
+
+    monkeypatch.setattr(feature_generator.subprocess, "Popen", fake_popen)
+
+    ok = feature_generator._run_training_path_feature_sync_for_live(
+        run_id="feature_run",
+        data_root=str(tmp_path),
+        end_ts=pd.Timestamp("2026-06-10T09:00:00Z"),
+        cfg={"exchange": "kraken", "market_mode": "perps"},
+        required_feature_keys={f"feat_{i}" for i in range(150)},
+        symbols=[f"S{i}/USD:USD" for i in range(247)],
+        blocking=False,
+        sync_label="selected_large_contract",
+    )
+
+    assert ok is True
+    env = launched["kwargs"]["env"]
+    assert env["EPM_FEATURE_BACKFILL_ALL_INCOMPLETE_KEYS"] == "0"
+    assert env["EPM_FEATURE_LIVE_DECISION_TAIL_ONLY"] == "1"
+    assert "EPM_FEATURE_BACKFILL_KEY_BATCH_SIZE" not in env
+    assert env["EPM_FEATURE_BACKFILL_SYMBOL_CHUNK_SIZE"] == "64"
+    assert len(env["EPM_FEATURE_SYMBOLS"].split(",")) == 247
+
+
+def test_kraken_perp_selected_feature_sync_repairs_ohlcv_gaps_first(tmp_path, monkeypatch):
+    data_root = tmp_path / "data_perp"
+    perp_root = data_root / "exchanges" / "krakenfutures"
+    (perp_root / "ohlcv").mkdir(parents=True)
+    manifest = perp_root / "manifests" / "kraken_dual_market_verified_universe_latest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps({"symbols": ["AAA/USD:USD"]}))
+    launched = {}
+
+    class FakeProc:
+        pid = 12345
+
+    def fake_popen(cmd, **kwargs):
+        launched["cmd"] = list(cmd)
+        launched["kwargs"] = dict(kwargs)
+        return FakeProc()
+
+    monkeypatch.setattr(feature_generator.subprocess, "Popen", fake_popen)
+
+    ok = feature_generator._run_training_path_feature_sync_for_live(
+        run_id="feature_run",
+        data_root=str(data_root),
+        end_ts=pd.Timestamp("2026-06-19T18:00:00Z"),
+        cfg={
+            "exchange": "kraken",
+            "market_mode": "perps",
+            "live_model_feature_kraken_perp_ohlcv_gap_backfill": True,
+            "live_model_feature_kraken_perp_ohlcv_gap_backfill_lookback_days": 21,
+        },
+        required_feature_keys={"price_trend_10d_vol_norm"},
+        blocking=False,
+        sync_label="selected_missing_contract",
+    )
+
+    assert ok is True
+    assert launched["cmd"][:3] == [feature_generator.sys.executable, "-u", "-c"]
+    chain = json.loads(
+        launched["kwargs"]["env"]["EPM_LIVE_FEATURE_SYNC_COMMANDS_JSON"]
+    )
+    assert "scripts/backfill_kraken_missing_ohlcv_gaps.py" in chain[0]
+    assert "--lookback-days" in chain[0]
+    assert chain[0][chain[0].index("--lookback-days") + 1] == "21"
+    assert chain[1][-4:] == ["--exchange", "kraken", "--run-id", "feature_run"]
+    state_dir = data_root / "artifacts" / "feature_run" / "live_state"
+    meta = json.loads(
+        (state_dir / "feature_selected_missing_contract_sync.json").read_text()
+    )
+    assert meta["ohlcv_gap_backfill"] is True
+
+
+def test_kraken_perp_selected_feature_sync_does_not_repair_ohlcv_by_default(tmp_path, monkeypatch):
+    data_root = tmp_path / "data_perp"
+    perp_root = data_root / "exchanges" / "krakenfutures"
+    (perp_root / "ohlcv").mkdir(parents=True)
+    manifest = perp_root / "manifests" / "kraken_dual_market_verified_universe_latest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps({"symbols": ["AAA/USD:USD"]}))
+    launched = {}
+
+    class FakeProc:
+        pid = 12345
+
+    def fake_popen(cmd, **kwargs):
+        launched["cmd"] = list(cmd)
+        launched["kwargs"] = dict(kwargs)
+        return FakeProc()
+
+    monkeypatch.setattr(feature_generator.subprocess, "Popen", fake_popen)
+
+    ok = feature_generator._run_training_path_feature_sync_for_live(
+        run_id="feature_run",
+        data_root=str(data_root),
+        end_ts=pd.Timestamp("2026-06-19T18:00:00Z"),
+        cfg={"exchange": "kraken", "market_mode": "perps"},
+        required_feature_keys={"price_trend_10d_vol_norm"},
+        blocking=False,
+        sync_label="selected_missing_contract",
+    )
+
+    assert ok is True
+    assert "scripts/backfill_kraken_missing_ohlcv_gaps.py" not in launched["cmd"]
+    assert launched["cmd"][-4:] == ["--exchange", "kraken", "--run-id", "feature_run"]
+    state_dir = data_root / "artifacts" / "feature_run" / "live_state"
+    meta = json.loads(
+        (state_dir / "feature_selected_missing_contract_sync.json").read_text()
+    )
+    assert meta["ohlcv_gap_backfill"] is False
+
+
+def test_selected_model_feature_store_gap_report_excludes_live_unavailable_labels():
+    idx = pd.date_range("2026-06-19 18:00", periods=1, freq="1h", tz="UTC")
+    symbols = [f"S{i}/USD:USD" for i in range(10)]
+    feats = {
+        "price_trend_10d_vol_norm": pd.DataFrame(
+            [[1.0, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]],
+            columns=symbols,
+            index=idx,
+        ),
+        "signed_prediction_error": pd.DataFrame(
+            [[np.nan] * len(symbols)],
+            columns=symbols,
+            index=idx,
+        ),
+    }
+
+    report = run_inference._selected_model_feature_store_gap_report(
+        feats=feats,
+        symbols=symbols,
+        required_feature_keys={
+            "price_trend_10d_vol_norm",
+            "signed_prediction_error",
+        },
+        signal_bar_ts=idx[-1],
+        min_finite_fraction=0.8,
+    )
+
+    assert report["ok"] is False
+    assert report["reason"] == "feature_store_gap"
+    assert report["min_finite"] == 8
+    assert [row["feature"] for row in report["low_finite_features"]] == [
+        "price_trend_10d_vol_norm"
+    ]
+
+    low_finite = feature_generator._latest_required_feature_low_finite_support(
+        feats,
+        symbols=symbols,
+        required_feature_keys={
+            "price_trend_10d_vol_norm",
+            "signed_prediction_error",
+        },
+        end_ts=idx[-1],
+        min_fraction=0.8,
+    )
+    assert [row["feature"] for row in low_finite] == [
+        "price_trend_10d_vol_norm"
+    ]
+
+
+def test_selected_model_feature_store_gap_report_attributes_stale_cache():
+    signal_ts = pd.Timestamp("2026-06-19 18:00", tz="UTC")
+    stale_ts = signal_ts - pd.Timedelta(hours=1)
+    symbols = [f"S{i}/USD:USD" for i in range(10)]
+    feats = {
+        "price_trend_10d_vol_norm": pd.DataFrame(
+            [[1.0] + [np.nan] * 9],
+            columns=symbols,
+            index=pd.DatetimeIndex([stale_ts]),
+        )
+    }
+    panel = {
+        key: pd.DataFrame(
+            [np.arange(10, dtype=np.float32) + 1.0],
+            columns=symbols,
+            index=pd.DatetimeIndex([signal_ts]),
+        )
+        for key in ("close", "high", "low")
+    }
+
+    report = run_inference._selected_model_feature_store_gap_report(
+        feats=feats,
+        panel=panel,
+        symbols=symbols,
+        required_feature_keys={"price_trend_10d_vol_norm"},
+        signal_bar_ts=signal_ts,
+        min_finite_fraction=0.8,
+    )
+
+    issue = report["low_finite_features"][0]
+    assert issue["feature"] == "price_trend_10d_vol_norm"
+    assert issue["source_attribution"] == "feature_cache_stale"
+    assert issue["source_groups"] == ["ohlcv"]
+    assert issue["feature_stale_hours"] == pytest.approx(1.0)
+    assert {item["reason"] for item in issue["source_coverage"]} == {"ok"}
+
+
+def test_selected_model_feature_store_gap_report_attributes_exchange_source_gap():
+    signal_ts = pd.Timestamp("2026-06-19 18:00", tz="UTC")
+    symbols = [f"S{i}/USD:USD" for i in range(10)]
+    feats = {
+        "oi_7d_x_funding_1d_chg": pd.DataFrame(
+            [[1.0] + [np.nan] * 9],
+            columns=symbols,
+            index=pd.DatetimeIndex([signal_ts]),
+        )
+    }
+    panel = {
+        "open_interest": pd.DataFrame(
+            [[np.nan] * len(symbols)],
+            columns=symbols,
+            index=pd.DatetimeIndex([signal_ts]),
+        ),
+        "funding_rate": pd.DataFrame(
+            [[np.nan] * len(symbols)],
+            columns=symbols,
+            index=pd.DatetimeIndex([signal_ts]),
+        ),
+    }
+
+    report = run_inference._selected_model_feature_store_gap_report(
+        feats=feats,
+        panel=panel,
+        symbols=symbols,
+        required_feature_keys={"oi_7d_x_funding_1d_chg"},
+        signal_bar_ts=signal_ts,
+        min_finite_fraction=0.8,
+    )
+
+    issue = report["low_finite_features"][0]
+    assert issue["feature"] == "oi_7d_x_funding_1d_chg"
+    assert issue["source_attribution"] == "exchange_source_data_lacking"
+    assert set(issue["source_groups"]) == {"open_interest", "funding"}
+    assert {item["reason"] for item in issue["source_coverage"]} == {
+        "low_source_coverage"
+    }
+
+
+def test_selected_latest_cache_invalidation_resolves_descriptive_feature_run_id(
+    tmp_path,
+):
+    data_root = tmp_path / "data_perp"
+    source_run_id = "20260619_011500_no_mkt4_evband002_shadow"
+    feature_dir = data_root / "features" / "20260619_011500"
+    feature_dir.mkdir(parents=True)
+    manifest = feature_dir / "_feature_cache_scan_manifest.json"
+    manifest.write_text("{}")
+    end_ts = pd.Timestamp("2026-06-19T19:00:00Z")
+    symbols = ["AAA/USD:USD"]
+    feature_keys = {"price_trend_10d_vol_norm"}
+    feats = {
+        "price_trend_10d_vol_norm": pd.DataFrame(
+            [[1.0]],
+            index=pd.DatetimeIndex([end_ts]),
+            columns=symbols,
+        )
+    }
+
+    feature_generator._write_selected_feature_latest_matrix_cache(
+        cache_root=str(data_root),
+        source_run_id=source_run_id,
+        source_root=str(data_root),
+        symbols=symbols,
+        feature_keys=feature_keys,
+        end_ts=end_ts,
+        feats=feats,
+    )
+    cache_dir = feature_generator._selected_feature_latest_cache_dir(
+        cache_root=str(data_root),
+        source_run_id=source_run_id,
+        source_root=str(data_root),
+        symbols=symbols,
+        feature_keys=feature_keys,
+        end_ts=end_ts,
+    )
+    cache_mtime = (cache_dir / "latest.parquet").stat().st_mtime
+    os.utime(manifest, (cache_mtime + 10.0, cache_mtime + 10.0))
+
+    loaded = feature_generator._load_selected_feature_latest_matrix_cache(
+        cache_root=str(data_root),
+        source_run_id=source_run_id,
+        source_root=str(data_root),
+        symbols=symbols,
+        feature_keys=feature_keys,
+        end_ts=end_ts,
+    )
+
+    assert loaded == {}
+
+
+def test_selected_latest_cache_low_finite_falls_back_to_live_sidecar(
+    tmp_path,
+    monkeypatch,
+):
+    data_root = tmp_path / "data_perp"
+    source_run_id = "20260619_011500_no_mkt4_evband002_shadow"
+    end_ts = pd.Timestamp("2026-06-19T19:00:00Z")
+    source_ts = pd.Timestamp("2026-06-19T01:15:00Z")
+    symbols = [f"S{i}/USD:USD" for i in range(10)]
+    feature_keys = {"price_trend_10d_vol_norm"}
+    sparse = [1.0, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+    stale_feats = {
+        "price_trend_10d_vol_norm": pd.DataFrame(
+            [sparse],
+            index=pd.DatetimeIndex([end_ts]),
+            columns=symbols,
+        )
+    }
+    repaired_feats = {
+        "price_trend_10d_vol_norm": pd.DataFrame(
+            [np.arange(10, dtype=np.float32)],
+            index=pd.DatetimeIndex([end_ts]),
+            columns=symbols,
+        )
+    }
+    monkeypatch.setenv(
+        "EPM_SELECTED_FEATURE_LATEST_MATRIX_MIN_FINITE_FRACTION",
+        "0.8",
+    )
+    feature_generator._write_selected_feature_latest_matrix_cache(
+        cache_root=str(data_root),
+        source_run_id=source_run_id,
+        source_root=str(data_root),
+        symbols=symbols,
+        feature_keys=feature_keys,
+        end_ts=end_ts,
+        feats=stale_feats,
+    )
+    write_live_latest_feature_matrix(
+        repaired_feats,
+        source_ts,
+        str(data_root),
+        end_ts=end_ts,
+        symbols=symbols,
+        feature_keys=feature_keys,
+    )
+
+    loaded = feature_generator.load_cached_features_for_inference(
+        source_run_id,
+        str(data_root),
+        symbols=symbols,
+        feature_keys=feature_keys,
+        start_ts=end_ts,
+        end_ts=end_ts,
+    )
+
+    values = loaded["price_trend_10d_vol_norm"].loc[end_ts, symbols]
+    assert int(np.isfinite(values.to_numpy(dtype=float)).sum()) == len(symbols)
 
 
 def test_live_feature_cache_key_ignores_coverage_symbols():
@@ -1217,6 +1813,60 @@ def test_model_feature_ledger_snapshot_prefers_exact_meta_model_input_matrix():
     assert values["ret24h"] == 0.04
 
 
+def test_feature_store_gap_guard_allows_enough_full_rows():
+    ts = pd.Timestamp("2026-06-19 20:00", tz="UTC")
+    symbols = [f"S{i}/USD:USD" for i in range(10)]
+    valid = symbols[:6]
+    frame_a = pd.DataFrame(
+        {sym: [1.0 if sym in valid else np.nan] for sym in symbols},
+        index=[ts],
+    )
+    frame_b = pd.DataFrame(
+        {sym: [2.0 if sym in valid else np.nan] for sym in symbols},
+        index=[ts],
+    )
+
+    report = run_inference._selected_model_feature_store_gap_report(
+        feats={"ret24h": frame_a, "adx_10": frame_b},
+        symbols=symbols,
+        required_feature_keys={"ret24h", "adx_10"},
+        signal_bar_ts=ts,
+        min_finite_fraction=0.80,
+        min_full_rows=5,
+    )
+
+    assert report["ok"]
+    assert report["reason"] == "ok_min_full_rows"
+    assert report["full_feature_rows"] == 6
+    assert report["low_finite_features"]
+
+
+def test_feature_store_gap_guard_blocks_when_no_full_rows():
+    ts = pd.Timestamp("2026-06-19 20:00", tz="UTC")
+    symbols = [f"S{i}/USD:USD" for i in range(10)]
+    frame_a = pd.DataFrame(
+        {sym: [1.0 if i < 6 else np.nan] for i, sym in enumerate(symbols)},
+        index=[ts],
+    )
+    frame_b = pd.DataFrame(
+        {sym: [2.0 if i >= 6 else np.nan] for i, sym in enumerate(symbols)},
+        index=[ts],
+    )
+
+    report = run_inference._selected_model_feature_store_gap_report(
+        feats={"ret24h": frame_a, "adx_10": frame_b},
+        symbols=symbols,
+        required_feature_keys={"ret24h", "adx_10"},
+        signal_bar_ts=ts,
+        min_finite_fraction=0.80,
+        min_full_rows=5,
+    )
+
+    assert not report["ok"]
+    assert report["reason"] == "feature_store_gap"
+    assert report["full_feature_rows"] == 0
+
+
 def test_prediction_ledger_path_supports_run_scoped_override(monkeypatch, tmp_path):
     monkeypatch.delenv("EPM_PREDICTION_LEDGER_PATH", raising=False)
     monkeypatch.delenv("EPM_RUN_SCOPED_PREDICTION_LEDGER", raising=False)
@@ -1423,20 +2073,23 @@ def test_model_feature_source_override_does_not_backfill_missing_offline_keys(mo
     assert np.isnan(feats["feat_missing"].loc[idx[-1], "AAA/USD:USD"])
 
 
-def test_strict_model_source_override_materializes_source_derived_without_sync(monkeypatch):
+def test_strict_model_source_override_repairs_source_derived_before_strict_nan(
+    monkeypatch,
+):
     idx = pd.date_range("2026-06-04 10:00", periods=2, freq="1h", tz="UTC")
     symbols = ["AAA/USD:USD"]
     panel = {
         "close": pd.DataFrame({"AAA/USD:USD": [100.0, 101.0]}, index=idx),
     }
 
-    def fail_sync(*args, **kwargs):
-        raise AssertionError(
-            "source-derived live keys should not trigger selected-cache sync"
-        )
+    sync_calls = []
+
+    def record_sync(*args, **kwargs):
+        sync_calls.append(kwargs)
+        return False
 
     monkeypatch.setattr(
-        feature_generator, "_run_training_path_feature_sync_for_live", fail_sync
+        feature_generator, "_run_training_path_feature_sync_for_live", record_sync
     )
     monkeypatch.setattr(
         feature_generator,
@@ -1472,8 +2125,84 @@ def test_strict_model_source_override_materializes_source_derived_without_sync(m
     )
 
     assert float(feats["feat_a"].loc[idx[-1], "AAA/USD:USD"]) == 2.0
+    assert sync_calls
+    assert sync_calls[0]["required_feature_keys"] == ["oi_3d_chg_z"]
+    assert sync_calls[0]["symbols"] == symbols
     assert "oi_3d_chg_z" in feats
     assert np.isnan(feats["oi_3d_chg_z"].loc[idx[-1], "AAA/USD:USD"])
+
+
+def test_low_finite_selected_cache_does_not_sync_when_full_rows_available(monkeypatch):
+    idx = pd.date_range("2026-06-04 10:00", periods=2, freq="1h", tz="UTC")
+    symbols = [f"S{i}/USD:USD" for i in range(4)]
+    panel = {
+        "close": pd.DataFrame(
+            {symbol: [100.0, 101.0] for symbol in symbols},
+            index=idx,
+        ),
+    }
+    offline = {
+        "feat_a": pd.DataFrame(
+            {symbol: [1.0] for symbol in symbols},
+            index=idx[-1:],
+        ),
+        "feat_b": pd.DataFrame(
+            {
+                symbols[0]: [2.0],
+                symbols[1]: [3.0],
+                symbols[2]: [np.nan],
+                symbols[3]: [np.nan],
+            },
+            index=idx[-1:],
+        ),
+    }
+
+    def fail_sync(*args, **kwargs):
+        raise AssertionError(
+            "low finite support should not trigger selected-cache sync when "
+            "enough full-parity rows remain"
+        )
+
+    monkeypatch.setattr(
+        feature_generator, "_run_training_path_feature_sync_for_live", fail_sync
+    )
+    monkeypatch.setattr(
+        feature_generator,
+        "load_cached_features_for_inference",
+        lambda **kwargs: offline,
+    )
+    monkeypatch.setattr(
+        feature_generator, "_write_live_feature_snapshot", lambda **kwargs: None
+    )
+    monkeypatch.setattr(
+        feature_generator, "_write_live_feature_rolling_cache", lambda **kwargs: None
+    )
+
+    feats = feature_generator.load_or_compute_features(
+        panel=panel,
+        basket_syms=symbols,
+        run_id="deploy_run",
+        data_root="data_perp/exchanges/krakenfutures",
+        cfg={
+            "live_feature_cache_namespace": "model",
+            "live_feature_offline_cache_enabled": True,
+            "live_feature_prefer_offline_cache": True,
+            "live_model_feature_store_strict": True,
+            "live_model_feature_auto_sync_selected_cache": True,
+            "live_model_feature_auto_sync_on_low_finite": True,
+            "live_model_feature_store_gap_min_full_rows": 2,
+            "live_model_feature_selected_cache_min_latest_finite_fraction": 0.80,
+            "training_live_parity_contract": {
+                "feature_source": {"run_id": "feature_run"}
+            },
+        },
+        lookback_hours=2,
+        required_feature_keys={"feat_a", "feat_b"},
+    )
+
+    assert int(
+        np.isfinite(feats["feat_b"].loc[idx[-1], symbols].to_numpy(dtype=float)).sum()
+    ) == 2
 
 
 def test_model_feature_source_override_materializes_execution_barrier(monkeypatch):

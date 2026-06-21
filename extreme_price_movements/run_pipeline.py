@@ -592,6 +592,13 @@ def _load_contract_strategies(cfg: dict, source_run_id: str) -> dict[str, dict]:
         tprint(f"WARNING: failed to read strategy contract {contract_path}: {exc}")
         return {}
     policy_overrides = _load_policy_strategy_overrides(cfg, source_run_id)
+    allow_contract_only = (
+        _truthy_env("EPM_ALLOW_CONTRACT_STRATEGY_WITHOUT_POLICY_MASK")
+        or str(cfg.get("allow_contract_strategy_without_policy_mask", ""))
+        .strip()
+        .lower()
+        in {"1", "true", "yes", "y", "on"}
+    )
     out: dict[str, dict] = {}
     for row in payload.get("strategies", []) or []:
         if not isinstance(row, dict):
@@ -608,10 +615,27 @@ def _load_contract_strategies(cfg: dict, source_run_id: str) -> dict[str, dict]:
         if override is None:
             # The base/meta contract alone tells us the artifact strategy id and
             # side, but not the original canonical mask expression used to
-            # generate labels. Do not invent a mask for retraining.
-            continue
-        horizons = row.get("horizons") or [override.get("source_horizon", 5)]
-        strategy = dict(override)
+            # generate labels. Do not invent a mask for ordinary retraining.
+            # Opt-in contract-only hydration is allowed for artifact-reuse
+            # train_meta runs where labels/OOF are loaded from existing files and
+            # the mask is not recomputed.
+            if not allow_contract_only:
+                continue
+            horizons = row.get("horizons") or [5]
+            strategy = {
+                "strategy_id": sid,
+                "trade_side": "short" if side == "short" else "long",
+                "base_event_trigger": str(row.get("base_event_trigger") or sid),
+                "regime_filters": [],
+                "source_horizon": int(horizons[0] if horizons else 5),
+                "mask_params": {
+                    "canonical_key": str(row.get("base_event_trigger") or sid)
+                },
+                "contract_only_artifact_reuse": True,
+            }
+        else:
+            horizons = row.get("horizons") or [override.get("source_horizon", 5)]
+            strategy = dict(override)
         strategy["strategy_id"] = sid
         strategy["trade_side"] = "short" if side == "short" else "long"
         strategy["source_horizon"] = int(horizons[0] if horizons else 5)

@@ -49,6 +49,9 @@ from extreme_price_movements.model_effectiveness_history import (
     apply_model_effectiveness_history_defaults,
     extract_model_effectiveness_history_defaults,
 )
+from extreme_price_movements.optional_model_features import (
+    is_optional_generated_model_feature_key,
+)
 from extreme_price_movements.drift_monitoring import load_latest_drift_regime_features
 from extreme_price_movements.lgbm_archetype_features import (
     BASE_ERROR_ARCHETYPE_FEATURE_NAMES,
@@ -867,6 +870,48 @@ def _training_neutral_filled_model_matrix(
     return pd.DataFrame(filled, index=X_float.index, columns=cols, dtype=np.float32)
 
 
+def _fill_optional_generated_model_features(
+    X: pd.DataFrame,
+    *,
+    model_feature_cols: List[str],
+) -> tuple[pd.DataFrame, list[str], list[str]]:
+    """Neutral-fill optional generated representation features only.
+
+    AE/GMM/raw-state-SVD columns are downstream context features. Missing or
+    non-finite values should not block a live row, but ordinary selected market
+    and model-derived features must remain strict.
+    """
+
+    optional_cols = [
+        str(c)
+        for c in model_feature_cols
+        if is_optional_generated_model_feature_key(c)
+    ]
+    if not optional_cols or not isinstance(X, pd.DataFrame):
+        return X, [], []
+    out = X.copy()
+    added: list[str] = []
+    repaired: list[str] = []
+    for col in optional_cols:
+        if col not in out.columns:
+            out[col] = np.float32(0.0)
+            added.append(col)
+            continue
+        series = pd.to_numeric(out[col], errors="coerce")
+        values = series.to_numpy(dtype=np.float32, copy=False)
+        if not np.isfinite(values).all():
+            out[col] = np.nan_to_num(
+                values,
+                nan=0.0,
+                posinf=0.0,
+                neginf=0.0,
+            ).astype(np.float32, copy=False)
+            repaired.append(col)
+        elif str(out[col].dtype) != "float32":
+            out[col] = values.astype(np.float32, copy=False)
+    return out, added, repaired
+
+
 class ModelOrchestrator:
     """Orchestrates model inference pipeline with proper prediction order."""
 
@@ -947,6 +992,7 @@ class ModelOrchestrator:
         self._last_base_lgbm_diagnostics: Dict[str, float] = {}
         self._last_base_lgbm_diagnostics_by_key: Dict[str, Dict[str, float]] = {}
         self._last_meta_diagnostics: Dict[str, float] = {}
+        self._last_meta_diagnostics_frame: pd.DataFrame = pd.DataFrame()
         self._last_mr_tf_route_frames_by_key: Dict[str, pd.DataFrame] = {}
 
         # Entry policy config from runtime_cfg or bucket_params
@@ -1342,19 +1388,20 @@ class ModelOrchestrator:
         try:
             pred_t0 = time.perf_counter()
             preds = model.predict(X)
-            diag_t0 = time.perf_counter()
-            base_diag_frame = _lgbm_internal_metrics_frame(model, X)
-            base_diag = _first_row_diagnostics(base_diag_frame)
-            if base_diag:
-                self._last_base_lgbm_diagnostics = dict(base_diag)
-                self._last_base_lgbm_diagnostics_by_key[str(key)] = dict(base_diag)
-                if timing_enabled:
-                    tprint(
-                        "[Timing] model.alpha_diagnostics: "
-                        f"key={key} fields={len(base_diag)} "
-                        f"stage={time.perf_counter() - diag_t0:.3f}s "
-                        f"rss={_process_rss_mb():.1f}MB"
-                    )
+            if bool(self.cfg.get("inference_lgbm_internal_diagnostics_enabled", True)):
+                diag_t0 = time.perf_counter()
+                base_diag_frame = _lgbm_internal_metrics_frame(model, X)
+                base_diag = _first_row_diagnostics(base_diag_frame)
+                if base_diag:
+                    self._last_base_lgbm_diagnostics = dict(base_diag)
+                    self._last_base_lgbm_diagnostics_by_key[str(key)] = dict(base_diag)
+                    if timing_enabled:
+                        tprint(
+                            "[Timing] model.alpha_diagnostics: "
+                            f"key={key} fields={len(base_diag)} "
+                            f"stage={time.perf_counter() - diag_t0:.3f}s "
+                            f"rss={_process_rss_mb():.1f}MB"
+                        )
             if timing_enabled:
                 tprint(
                     "[Timing] model.alpha_predict: "
@@ -1916,6 +1963,37 @@ class ModelOrchestrator:
             except Exception:
                 continue
 
+        missing_sources_after_raw = {
+            str(src)
+            for src in needed_sources
+            if (
+                str(src) in ALPHA_MODEL_META_FEATURE_KEYS
+                or is_raw_contrib_feature_name(str(src))
+            )
+            and not any(
+                str(src) in map(str, ctx.columns)
+                for ctx in contexts
+                if isinstance(ctx, pd.DataFrame)
+            )
+        }
+        if missing_sources_after_raw:
+            try:
+                alpha_feat_cols = _effective_alpha_feature_contract(model_info)
+                aligned = self._align_alpha_feature_contract(features, alpha_feat_cols)
+                if not aligned.empty:
+                    alpha_frame = _alpha_prediction_frame_for_model(
+                        alpha_model,
+                        aligned,
+                        alpha_feat_cols,
+                    )
+                    for transform_owner in transform_owners:
+                        try:
+                            _append_context(transform_owner.transform_meta_features(alpha_frame))
+                        except Exception:
+                            continue
+            except Exception:
+                pass
+
         if not contexts:
             last_exc: Exception | None = None
             try:
@@ -2469,22 +2547,28 @@ class ModelOrchestrator:
                         )
                         self._stale_meta_model_derived_warned = True
 
-            features = self._materialize_alpha_model_meta_features(
-                features,
-                meta_model,
-                side=side,
-                kind=requested_kind,
-            )
-            features = self._materialize_meta_model_drift_features(
-                features,
-                meta_model,
-            )
-            features = self._materialize_meta_model_derived_features(
-                features,
-                meta_model,
-                side=side,
-                kind=requested_kind,
-            )
+            if not bool(
+                self.cfg.get(
+                    "historical_inference_parity_skip_meta_materialization",
+                    False,
+                )
+            ):
+                features = self._materialize_alpha_model_meta_features(
+                    features,
+                    meta_model,
+                    side=side,
+                    kind=requested_kind,
+                )
+                features = self._materialize_meta_model_drift_features(
+                    features,
+                    meta_model,
+                )
+                features = self._materialize_meta_model_derived_features(
+                    features,
+                    meta_model,
+                    side=side,
+                    kind=requested_kind,
+                )
             features, neutral_meta_fills = _fill_live_unavailable_meta_contract_features(
                 features,
                 feat_cols,
@@ -2590,9 +2674,41 @@ class ModelOrchestrator:
                 return pd.Series(dtype=float)
 
             strict = bool(self.cfg.get("strict_feature_parity", True))
+            features, optional_added, optional_repaired = (
+                _fill_optional_generated_model_features(
+                    features,
+                    model_feature_cols=feat_cols,
+                )
+            )
+            if optional_added or optional_repaired:
+                self._last_results["meta_optional_generated_features"] = {
+                    "key": key,
+                    "neutral_filled_missing_count": int(len(optional_added)),
+                    "neutral_filled_missing_sample": optional_added[:20],
+                    "repaired_nonfinite_count": int(len(optional_repaired)),
+                    "repaired_nonfinite_sample": optional_repaired[:20],
+                }
+                if not getattr(
+                    self,
+                    "_meta_optional_generated_feature_warned",
+                    False,
+                ):
+                    tprint(
+                        "Meta inference: optional generated representation "
+                        "features were neutral-filled; core feature parity remains "
+                        "strict "
+                        f"(missing={len(optional_added)}, "
+                        f"nonfinite={len(optional_repaired)}, key={key})."
+                    )
+                    self._meta_optional_generated_feature_warned = True
             matrix_t0 = time.perf_counter()
             if strict:
-                missing = [c for c in feat_cols if c not in features.columns]
+                missing = [
+                    c
+                    for c in feat_cols
+                    if c not in features.columns
+                    and not is_optional_generated_model_feature_key(c)
+                ]
                 if missing:
                     reason = "missing_meta_feature_contract"
                     missing_sources = {
@@ -2648,6 +2764,12 @@ class ModelOrchestrator:
                     return pd.Series(dtype=float)
                 try:
                     model_matrix = features.reindex(columns=feat_cols)
+                    model_matrix, _optional_added, _optional_repaired = (
+                        _fill_optional_generated_model_features(
+                            model_matrix,
+                            model_feature_cols=feat_cols,
+                        )
+                    )
                     try:
                         X = _strict_finite_model_matrix(
                             model_matrix,
@@ -2752,22 +2874,26 @@ class ModelOrchestrator:
             self._last_meta_model_features = [str(c) for c in list(X.columns)]
             self._last_meta_model_input = X.copy()
             self._last_meta_diagnostics = {}
-            try:
-                diag_t0 = time.perf_counter()
-                self._last_meta_diagnostics = _first_row_diagnostics(
-                    _lgbm_internal_metrics_frame(meta_model, X)
-                )
-                if timing_enabled and self._last_meta_diagnostics:
-                    tprint(
-                        "[Timing] model.meta_diagnostics: "
-                        f"key={key} fields={len(self._last_meta_diagnostics)} "
-                        f"stage={time.perf_counter() - diag_t0:.3f}s "
-                        f"rss={_process_rss_mb():.1f}MB"
-                    )
-            except Exception as exc:
-                self._last_meta_diagnostics = {
-                    "lgbm_diagnostics_error": str(exc)[:240]
-                }
+            self._last_meta_diagnostics_frame = pd.DataFrame()
+            if bool(self.cfg.get("inference_lgbm_internal_diagnostics_enabled", True)):
+                try:
+                    diag_t0 = time.perf_counter()
+                    diag_frame = _lgbm_internal_metrics_frame(meta_model, X)
+                    if isinstance(diag_frame, pd.DataFrame) and not diag_frame.empty:
+                        self._last_meta_diagnostics_frame = diag_frame.copy()
+                    self._last_meta_diagnostics = _first_row_diagnostics(diag_frame)
+                    if timing_enabled and self._last_meta_diagnostics:
+                        tprint(
+                            "[Timing] model.meta_diagnostics: "
+                            f"key={key} fields={len(self._last_meta_diagnostics)} "
+                            f"stage={time.perf_counter() - diag_t0:.3f}s "
+                            f"rss={_process_rss_mb():.1f}MB"
+                        )
+                except Exception as exc:
+                    self._last_meta_diagnostics_frame = pd.DataFrame()
+                    self._last_meta_diagnostics = {
+                        "lgbm_diagnostics_error": str(exc)[:240]
+                    }
             pred_t0 = time.perf_counter()
             preds = meta_model.predict(X)
             if timing_enabled:

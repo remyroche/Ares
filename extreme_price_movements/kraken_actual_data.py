@@ -211,18 +211,13 @@ def overlay_actual_volume_sidecar(
     if not bool(valid.any()):
         return out
     aligned = sidecar.reindex(out.index)
-    if "volume" in aligned.columns:
-        out.loc[valid, "volume"] = pd.to_numeric(aligned.loc[valid, "volume"], errors="coerce")
-    if "quote_volume" in aligned.columns:
-        out.loc[valid, "quote_volume"] = pd.to_numeric(
-            aligned.loc[valid, "quote_volume"], errors="coerce"
-        )
-    if "trade_count" in aligned.columns:
-        out.loc[valid, "trade_count"] = pd.to_numeric(
-            aligned.loc[valid, "trade_count"], errors="coerce"
-        )
-    if "vwap" in aligned.columns:
-        out.loc[valid, "vwap"] = pd.to_numeric(aligned.loc[valid, "vwap"], errors="coerce")
+    for column in ("volume", "quote_volume", "trade_count", "vwap"):
+        if column not in aligned.columns:
+            continue
+        values = pd.to_numeric(aligned.loc[valid, column], errors="coerce")
+        if column in out.columns and pd.api.types.is_numeric_dtype(out[column].dtype):
+            values = values.astype(out[column].dtype, copy=False)
+        out.loc[valid, column] = values
     return out
 
 

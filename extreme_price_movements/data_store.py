@@ -3358,11 +3358,17 @@ class PartitionedOHLCVStore:
             elif last_ts_ms > 0:
                 existing_frame = self.load(symbol)
                 existing_idx = existing_frame.index
-                if not existing_idx.empty and _has_sparse_perp_auxiliary_data(
+                has_internal_ohlcv_gaps = (
+                    _download_backfill_internal_gaps_enabled()
+                    and not existing_idx.empty
+                    and _has_internal_time_gaps(existing_idx, self.timeframe)
+                )
+                has_sparse_auxiliary = not existing_idx.empty and _has_sparse_perp_auxiliary_data(
                     existing_frame,
                     since_ms=since_ms,
                     timeframe=self.timeframe,
-                ):
+                )
+                if has_sparse_auxiliary:
                     auxiliary_only_ranges = _perp_auxiliary_missing_ranges(
                         existing_frame,
                         since_ms=since_ms,
@@ -3372,17 +3378,14 @@ class PartitionedOHLCVStore:
                         f"Detected incomplete perp auxiliary data for {symbol}; "
                         f"backfilling {len(auxiliary_only_ranges)} missing aux range(s)"
                     )
-                    start_ms = last_ts_ms + 1
-                elif (
-                    _download_backfill_internal_gaps_enabled()
-                    and not existing_idx.empty
-                    and _has_internal_time_gaps(existing_idx, self.timeframe)
-                ):
+                if has_internal_ohlcv_gaps:
                     tprint(
                         f"Detected internal perp OHLCV gaps for {symbol}; "
                         "backfilling from requested start instead of last_ts_ms"
                     )
                     start_ms = since_ms
+                elif has_sparse_auxiliary:
+                    start_ms = last_ts_ms + 1
                 elif (
                     not existing_idx.empty
                     and int(existing_idx.min().value // 10**6) > since_ms

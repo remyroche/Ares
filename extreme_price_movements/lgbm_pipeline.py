@@ -7,7 +7,7 @@ import pickle
 import time
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Iterable, Mapping, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -74,6 +74,7 @@ except Exception:  # pragma: no cover - standalone fallback
         print(message, flush=True)
 
 from .model_drift_features import MODEL_DRIFT_FEATURE_KEYS
+from .optional_model_features import is_optional_generated_model_feature_key
 from .features_gmm_ae import (
     AE_GMM_FEATURE_COLUMNS,
     AE_GMM_LATENT_FEATURE_COLUMNS,
@@ -908,6 +909,7 @@ class LGBMStabilityModel:
                 for c in getattr(self, "raw_contrib_passthrough_features", []) or []
             ]
             contract_features = list(dict.fromkeys(passthrough + raw_contrib_inputs))
+            X_df = _fill_optional_generated_columns(X_df, contract_features)
             missing = [c for c in contract_features if c not in X_df.columns]
             if missing:
                 preview = missing[:20]
@@ -934,13 +936,25 @@ class LGBMStabilityModel:
                 )
                 out = pd.concat([passthrough_df, contrib_df], axis=1)
                 if use_ae_gmm:
-                    out = _append_ae_gmm_features_to_model_frame(
-                        out,
-                        ae_gmm_input_features,
-                        ae_gmm_state,
-                        selected,
-                        index=X_df.index,
-                    )
+                    try:
+                        out = _append_ae_gmm_features_to_model_frame(
+                            out,
+                            ae_gmm_input_features,
+                            ae_gmm_state,
+                            selected,
+                            index=X_df.index,
+                        )
+                    except Exception as exc:
+                        tprint(
+                            "WARNING: optional AE/GMM representation unavailable "
+                            "for LGBM raw-contribution path; neutral-filling generated "
+                            f"columns. error={exc}"
+                        )
+                        out = _fill_optional_generated_columns(out, selected)
+                        out = out.reindex(columns=selected, fill_value=0.0).astype(
+                            np.float32,
+                            copy=False,
+                        )
                 else:
                     out = out.reindex(columns=selected, fill_value=0.0).astype(
                         np.float32,
@@ -951,6 +965,7 @@ class LGBMStabilityModel:
                     "LGBM inference feature contract violation: raw contribution "
                     f"features cannot be transformed: {exc}"
                 ) from exc
+            out = _fill_optional_generated_columns(out, out.columns)
             _validate_finite_contract_frame(out)
             return out
         input_features = [str(c) for c in getattr(self, "input_feature_names", []) or []]
@@ -960,6 +975,7 @@ class LGBMStabilityModel:
         else:
             use_input_aliases = len(input_features) == len(selected) and input_features != selected
             contract_features = input_features if use_input_aliases else selected
+        X_df = _fill_optional_generated_columns(X_df, contract_features)
         if getattr(self, "model_effectiveness_history_defaults_", None):
             default_features = contract_features
             if use_input_aliases:
@@ -1005,10 +1021,16 @@ class LGBMStabilityModel:
                     index=X_df.index,
                 )
             except Exception as exc:
-                raise ValueError(
-                    "LGBM inference feature contract violation: AE/GMM selected-feature "
-                    f"representation cannot be transformed: {exc}"
-                ) from exc
+                tprint(
+                    "WARNING: optional AE/GMM selected-feature representation "
+                    f"unavailable; neutral-filling generated columns. error={exc}"
+                )
+                out = _fill_optional_generated_columns(out, selected)
+                out = out.reindex(columns=selected, fill_value=0.0).astype(
+                    np.float32,
+                    copy=False,
+                )
+        out = _fill_optional_generated_columns(out, out.columns)
         values = out.to_numpy(dtype=np.float32, copy=False)
         finite_mask = np.isfinite(values)
         if not finite_mask.all():
@@ -1073,16 +1095,26 @@ class LGBMStabilityModel:
                 getattr(self, "model_effectiveness_history_defaults_", {}) or {},
             )
             live_cols = set(map(str, X_df.columns))
-        missing = [c for c in contract if c not in live_cols]
+        optional_generated = [
+            c for c in contract if is_optional_generated_model_feature_key(c)
+        ]
+        missing_optional_generated = [c for c in optional_generated if c not in live_cols]
+        missing = [
+            c
+            for c in contract
+            if c not in live_cols and not is_optional_generated_model_feature_key(c)
+        ]
         overlap = len(set(contract) & live_cols)
         nonfinite: list[str] = []
         if not missing and contract:
             try:
-                values = X_df.loc[:, contract].astype(np.float32, copy=False)
+                X_diag = _fill_optional_generated_columns(X_df, contract)
+                values = X_diag.loc[:, contract].astype(np.float32, copy=False)
                 nonfinite = [
                     str(col)
                     for col in values.columns
-                    if not np.isfinite(values[col].to_numpy(dtype=np.float32, copy=False)).all()
+                    if not is_optional_generated_model_feature_key(col)
+                    and not np.isfinite(values[col].to_numpy(dtype=np.float32, copy=False)).all()
                 ]
             except Exception:
                 nonfinite = list(contract)
@@ -1093,6 +1125,10 @@ class LGBMStabilityModel:
             "missing_selected_features_count": int(len(missing)),
             "missing_selected_features_fraction": float(len(missing) / max(len(contract), 1)),
             "missing_selected_features_preview": missing[:20],
+            "missing_optional_generated_features_count": int(
+                len(missing_optional_generated)
+            ),
+            "missing_optional_generated_features_preview": missing_optional_generated[:20],
             "nonfinite_selected_features_count": int(len(nonfinite)),
             "nonfinite_selected_features_preview": nonfinite[:20],
             "selected_features_preview": contract[:50],
@@ -1210,13 +1246,26 @@ class LGBMStabilityModel:
             str(c) for c in getattr(self, "ae_gmm_input_features", []) or []
         ]
         if ae_gmm_context_feature_names and ae_gmm_input_features:
-            ae_context = _append_ae_gmm_features_to_model_frame(
-                X_df,
-                ae_gmm_input_features,
-                getattr(self, "ae_gmm_state", {}) or {},
-                ae_gmm_context_feature_names,
-                index=X_df.index,
-            )
+            try:
+                ae_context = _append_ae_gmm_features_to_model_frame(
+                    X_df,
+                    ae_gmm_input_features,
+                    getattr(self, "ae_gmm_state", {}) or {},
+                    ae_gmm_context_feature_names,
+                    index=X_df.index,
+                )
+            except Exception as exc:
+                tprint(
+                    "WARNING: optional AE/GMM context features unavailable; "
+                    f"neutral-filling generated columns. error={exc}"
+                )
+                ae_context = _neutral_optional_generated_frame(
+                    X_df.index,
+                    ae_gmm_context_feature_names,
+                ).reindex(
+                    columns=ae_gmm_context_feature_names,
+                    fill_value=0.0,
+                )
             for col in ae_gmm_context_feature_names:
                 if col in ae_context.columns:
                     features[col] = ae_context[col].to_numpy(dtype=np.float32, copy=False)
@@ -1348,6 +1397,40 @@ def _append_ae_gmm_features_to_model_frame(
         np.float32,
         copy=False,
     )
+
+
+def _neutral_optional_generated_frame(
+    index: Any,
+    columns: Iterable[str],
+) -> pd.DataFrame:
+    optional_cols = [
+        str(c) for c in columns if is_optional_generated_model_feature_key(c)
+    ]
+    return pd.DataFrame(0.0, index=index, columns=optional_cols, dtype=np.float32)
+
+
+def _fill_optional_generated_columns(
+    frame: pd.DataFrame,
+    columns: Iterable[str],
+) -> pd.DataFrame:
+    optional_cols = [
+        str(c) for c in columns if is_optional_generated_model_feature_key(c)
+    ]
+    if not optional_cols:
+        return frame
+    out = frame.copy()
+    for col in optional_cols:
+        if col not in out.columns:
+            out[col] = np.float32(0.0)
+    present = [col for col in optional_cols if col in out.columns]
+    if present:
+        out.loc[:, present] = (
+            out.loc[:, present]
+            .replace([np.inf, -np.inf], 0.0)
+            .fillna(0.0)
+            .astype(np.float32, copy=False)
+        )
+    return out
 
 
 def _fit_ae_gmm_post_selection_state(

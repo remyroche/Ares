@@ -630,6 +630,11 @@ def _build_runtime_cfg(
             "historical_inference_parity_allow_legacy_deleted_keys": True,
             "historical_inference_parity_allow_missing_live_sources": True,
             "historical_inference_parity_preserve_cached_features": True,
+            # Final-fit replay only needs strict feature contract checks and
+            # predictions. Internal LGBM diagnostics are expensive historical
+            # enrichments and are not part of the 1:1 feature-vector parity
+            # contract being verified here.
+            "inference_lgbm_internal_diagnostics_enabled": False,
         }
     )
     parity_contract: dict[str, Any] = {}
@@ -987,6 +992,7 @@ def _score_predictions(
     work = samples.copy()
     work["timestamp"] = pd.to_datetime(work["timestamp"], utc=True, errors="coerce")
     work["symbol_norm"] = work["symbol"].map(_normalise_symbol)
+    work["__row_id"] = [f"row_{i}" for i in range(len(work))]
     universe_symbols = (
         list(dict.fromkeys(_normalise_symbol(symbol) for symbol in prediction_universe_symbols))
         if prediction_universe_symbols
@@ -994,6 +1000,183 @@ def _score_predictions(
     )
     model_strategy_id = strategy_id
     core_strategy_id = strategy_core_id(strategy_id)
+    if universe_symbols is None:
+        feature_frames: list[pd.DataFrame] = []
+        row_lookup: dict[str, pd.Series] = {}
+        for ts, group in work.groupby("timestamp", sort=True):
+            sample_symbols = list(
+                dict.fromkeys(group["symbol_norm"].dropna().astype(str).tolist())
+            )
+            feature_rows = get_features_for_candidates(fresh_feats, sample_symbols, ts=ts)
+            if feature_rows.empty:
+                continue
+            for _, sample in group.iterrows():
+                symbol = str(sample["symbol_norm"])
+                row_id = str(sample["__row_id"])
+                if symbol not in feature_rows.index:
+                    continue
+                row = feature_rows.loc[symbol].copy()
+                if isinstance(row, pd.DataFrame):
+                    row = row.iloc[0]
+                frame = row.to_frame().T
+                frame.index = pd.Index([row_id], name="row_id")
+                frame["__symbol__"] = symbol
+                frame["__ts__"] = ts
+                feature_frames.append(frame)
+                row_lookup[row_id] = sample
+        if feature_frames:
+            all_feature_rows = pd.concat(feature_frames, axis=0, copy=False)
+        else:
+            all_feature_rows = pd.DataFrame()
+        if "is_long" in work.columns:
+            side = "long" if bool(work["is_long"].astype(bool).mode().iloc[0]) else "short"
+        else:
+            side = side_default
+        alpha = pd.Series(dtype=float)
+        meta = pd.Series(dtype=float)
+        base_error = None
+        meta_error = None
+        if not all_feature_rows.empty:
+            try:
+                alpha_parts: list[pd.Series] = []
+                chunk_size = int(
+                    os.environ.get("EPM_HISTORICAL_PARITY_PREDICT_CHUNK_ROWS", "512")
+                    or "512"
+                )
+                chunk_size = max(1, chunk_size)
+                for start in range(0, len(all_feature_rows), chunk_size):
+                    chunk = all_feature_rows.iloc[start : start + chunk_size]
+                    pred = orchestrator.predict_alpha(chunk, side, model_strategy_id)
+                    alpha_parts.append(pred.reindex(chunk.index))
+                    if len(all_feature_rows) > chunk_size:
+                        tprint(
+                            "  alpha prediction chunk: "
+                            f"{min(start + chunk_size, len(all_feature_rows)):,}/"
+                            f"{len(all_feature_rows):,}"
+                        )
+                alpha = (
+                    pd.concat(alpha_parts).reindex(all_feature_rows.index)
+                    if alpha_parts
+                    else pd.Series(index=all_feature_rows.index, data=np.nan, dtype=float)
+                )
+            except Exception as exc:
+                base_error = str(exc)
+                alpha = pd.Series(index=all_feature_rows.index, data=np.nan, dtype=float)
+            try:
+                if isinstance(alpha, pd.Series) and not alpha.empty:
+                    meta_base = all_feature_rows.copy()
+                    meta_base[model_strategy_id] = alpha.reindex(meta_base.index)
+                    meta_parts: list[pd.Series] = []
+                    for start in range(0, len(meta_base), chunk_size):
+                        chunk = meta_base.iloc[start : start + chunk_size]
+                        pred = orchestrator.predict_meta(
+                            chunk,
+                            side,
+                            model_strategy_id or core_strategy_id,
+                        )
+                        meta_parts.append(pred.reindex(chunk.index))
+                        if len(meta_base) > chunk_size:
+                            tprint(
+                                "  meta prediction chunk: "
+                                f"{min(start + chunk_size, len(meta_base)):,}/"
+                                f"{len(meta_base):,}"
+                            )
+                    meta = (
+                        pd.concat(meta_parts).reindex(meta_base.index)
+                        if meta_parts
+                        else pd.Series(index=meta_base.index, data=np.nan, dtype=float)
+                    )
+                else:
+                    meta = pd.Series(index=all_feature_rows.index, data=np.nan, dtype=float)
+            except Exception as exc:
+                meta_error = str(exc)
+                meta = pd.Series(index=all_feature_rows.index, data=np.nan, dtype=float)
+        for _, sample in work.iterrows():
+            row_id = str(sample["__row_id"])
+            symbol = str(sample["symbol_norm"])
+            has_features = row_id in row_lookup
+            out = {
+                "timestamp": sample["timestamp"],
+                "symbol": symbol,
+                "side": side,
+                "strategy_id": strategy_id,
+                "feature_cols": int(all_feature_rows.shape[1]) if has_features else 0,
+                "oof_base_clf": _safe_float(sample.get("oof_base_clf")),
+                "oof_meta_clf": _safe_float(sample.get("oof_meta_clf")),
+                "oof_pred": _safe_float(sample.get("oof_pred")),
+            }
+            if not has_features:
+                out["prediction_error"] = "missing_feature_row"
+                out["final_fit_base_pred"] = np.nan
+                out["final_fit_meta_pred"] = np.nan
+            else:
+                if base_error:
+                    out["base_prediction_error"] = base_error
+                if meta_error:
+                    out["meta_prediction_error"] = meta_error
+                out["final_fit_base_pred"] = _safe_float(alpha.get(row_id, np.nan))
+                out["final_fit_meta_pred"] = _safe_float(meta.get(row_id, np.nan))
+                out["chain_action"] = (
+                    "meta_prediction"
+                    if np.isfinite(out["final_fit_meta_pred"])
+                    else "no_meta_prediction"
+                )
+                out["chain_reason"] = "batched_meta_replay"
+            if np.isfinite(out.get("final_fit_meta_pred", np.nan)):
+                calibrated, _ = calibrated_score_and_threshold(
+                    raw_score=float(out["final_fit_meta_pred"]),
+                    strategy_id=strategy_id,
+                    calibration_data=calibration_data or {},
+                    default_threshold=1.0,
+                )
+                out["final_fit_calibrated_score"] = _safe_float(calibrated)
+                if policy_rank_scores is not None:
+                    out["final_fit_policy_rank_pct"] = _safe_float(
+                        policy_rank_pct_from_sorted_scores(policy_rank_scores, float(calibrated))
+                    )
+            out["base_pred_abs_diff_vs_oof"] = (
+                abs(out["final_fit_base_pred"] - out["oof_base_clf"])
+                if np.isfinite(out.get("final_fit_base_pred", np.nan))
+                and np.isfinite(out.get("oof_base_clf", np.nan))
+                else np.nan
+            )
+            oof_meta = out["oof_meta_clf"] if np.isfinite(out["oof_meta_clf"]) else out["oof_pred"]
+            out["meta_pred_abs_diff_vs_oof"] = (
+                abs(out["final_fit_meta_pred"] - oof_meta)
+                if np.isfinite(out.get("final_fit_meta_pred", np.nan))
+                and np.isfinite(oof_meta)
+                else np.nan
+            )
+            out["policy_calibrated_score_ref"] = _safe_float(sample.get("calibrated_score"))
+            out["policy_rank_pct_ref"] = _safe_float(
+                sample.get(
+                    "rank_pct",
+                    sample.get("strategy_rank_pct", sample.get("normalized_rank_score")),
+                )
+            )
+            out["policy_calibrated_score_abs_diff"] = (
+                abs(
+                    out.get("final_fit_calibrated_score", np.nan)
+                    - out["policy_calibrated_score_ref"]
+                )
+                if np.isfinite(out.get("final_fit_calibrated_score", np.nan))
+                and np.isfinite(out["policy_calibrated_score_ref"])
+                else np.nan
+            )
+            out["policy_rank_pct_abs_diff"] = (
+                abs(out.get("final_fit_policy_rank_pct", np.nan) - out["policy_rank_pct_ref"])
+                if np.isfinite(out.get("final_fit_policy_rank_pct", np.nan))
+                and np.isfinite(out["policy_rank_pct_ref"])
+                else np.nan
+            )
+            rows.append(out)
+        out = pd.DataFrame(rows)
+        tprint(
+            "Prediction scoring complete: "
+            f"rows={len(out):,} elapsed={time.monotonic() - started:.1f}s "
+            "mode=batched"
+        )
+        return out
     done = 0
     for ts, group in work.groupby("timestamp", sort=True):
         ts_started = time.monotonic()
@@ -1681,10 +1864,12 @@ def main() -> int:
         prediction_report = pd.DataFrame()
     else:
         runtime_cfg = feature_cfg.get("runtime_cfg", feature_cfg)
+        prediction_runtime_cfg = dict(runtime_cfg or {})
+        prediction_runtime_cfg["inference_lgbm_internal_diagnostics_enabled"] = False
         tprint("Initializing ModelOrchestrator for prediction parity")
         orchestrator = ModelOrchestrator(
             state,
-            runtime_cfg={"model_bundle": state.get("bundle", {}), **dict(runtime_cfg or {})},
+            runtime_cfg={"model_bundle": state.get("bundle", {}), **prediction_runtime_cfg},
         )
         calibration_data = load_calibration_curves(str(artifact_data_root), args.run_id)
         policy_rank_scores = None

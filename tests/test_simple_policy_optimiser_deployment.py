@@ -1229,6 +1229,211 @@ def test_local_candidate_guard_rejects_strategy_when_no_lower_band_meets_floor(
     ]
 
 
+def test_local_candidate_guard_requires_recent_window_positive_ev(
+    tmp_path, monkeypatch
+):
+    import extreme_price_movements.simple_policy_optimiser as spo
+
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_ROWS", 2)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_MEAN_NET_RETURN", 0.002)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_BAND_WIDTH", 0.05)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_CONFIRMATION_BANDS", 1)
+    monkeypatch.setattr(
+        spo,
+        "DEPLOYMENT_LOCAL_CANDIDATE_CONFIRMATION_MIN_POSITIVE",
+        1,
+    )
+    monkeypatch.setattr(
+        spo,
+        "DEPLOYMENT_REPLAY_THRESHOLD_HARD_FLOOR_WINDOWS_DAYS_RAW",
+        "7,14,28",
+    )
+
+    deployment_payload = {
+        "strategies": [
+            {
+                "strategy_id": "long_recent",
+                "strategy_for_inference": "long_recent",
+                "selected": True,
+                "deployment_rank_threshold": 0.70,
+            }
+        ],
+        "rejected_strategies": [],
+    }
+    candidates = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2026-05-11T00:00:00Z",
+                    "2026-05-12T00:00:00Z",
+                    "2026-05-13T00:00:00Z",
+                    "2026-05-14T00:00:00Z",
+                    "2026-06-06T00:00:00Z",
+                ],
+                utc=True,
+            ),
+            "strategy_id": ["long_recent"] * 5,
+            "auction_rank_score": [0.701, 0.712, 0.755, 0.762, 0.905],
+            "net_return": [0.010, 0.012, 0.008, 0.009, -0.020],
+            "gross_return": [0.011, 0.013, 0.009, 0.010, -0.019],
+        }
+    )
+
+    summary = _apply_local_candidate_hit_rate_guard(
+        deployment_payload,
+        candidates,
+        candidate_path=tmp_path / "simple_policy_candidates.parquet",
+    )
+
+    guard = summary["strategies"]["long_recent"]
+    assert guard["passed"] is False
+    assert guard["recent_window_hard_floor_pass"] is False
+    assert guard["recent_window_hard_floor_available"] is True
+    assert guard["recent_window_metrics"][0]["window_days"] == 7
+    assert guard["recent_window_metrics"][0]["net_pnl"] < 0
+    assert deployment_payload["strategies"] == []
+    assert deployment_payload["rejected_strategies"][0]["strategy_id"] == "long_recent"
+
+
+def test_local_candidate_guard_rescues_performance_rejected_strategy_at_higher_threshold(
+    tmp_path, monkeypatch
+):
+    import extreme_price_movements.simple_policy_optimiser as spo
+
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_ROWS", 2)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_MEAN_NET_RETURN", 0.002)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_BAND_WIDTH", 0.05)
+    monkeypatch.setattr(spo, "DEPLOYMENT_THRESHOLD_PRECISION", 0.01)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_CONFIRMATION_BANDS", 1)
+    monkeypatch.setattr(
+        spo,
+        "DEPLOYMENT_LOCAL_CANDIDATE_CONFIRMATION_MIN_POSITIVE",
+        1,
+    )
+    monkeypatch.setattr(
+        spo,
+        "DEPLOYMENT_REPLAY_THRESHOLD_HARD_FLOOR_WINDOWS_DAYS_RAW",
+        "",
+    )
+
+    deployment_payload = {
+        "strategies": [],
+        "rejected_strategies": [
+            {
+                "strategy_id": "short_rejected",
+                "strategy_for_inference": "short_rejected",
+                "side": "short",
+                "selected": False,
+                "deployment_rank_threshold": 0.70,
+                "reject_reasons": ["top_5_net_pnl_not_positive"],
+            }
+        ],
+    }
+    candidates = pd.DataFrame(
+        {
+            "strategy_id": ["short_rejected"] * 4,
+            "strategy_rank_pct": [0.901, 0.912, 0.951, 0.962],
+            "net_return": [0.010, 0.012, 0.008, 0.009],
+            "gross_return": [0.011, 0.013, 0.009, 0.010],
+        }
+    )
+
+    summary = _apply_local_candidate_hit_rate_guard(
+        deployment_payload,
+        candidates,
+        candidate_path=tmp_path / "simple_policy_candidates.parquet",
+    )
+
+    assert len(deployment_payload["strategies"]) == 1
+    rescued = deployment_payload["strategies"][0]
+    assert rescued["strategy_id"] == "short_rejected"
+    assert rescued["selected"] is True
+    assert "reject_reasons" not in rescued
+    assert rescued["deployment_rank_threshold"] == pytest.approx(0.87)
+    assert rescued["threshold_rank_score_source"] == "policy_rank_pct"
+    assert rescued["deployment_selection_rescue"]["previous_reject_reasons"] == [
+        "top_5_net_pnl_not_positive"
+    ]
+    assert deployment_payload["rejected_strategies"] == []
+    assert summary["rescued_strategies"]["short_rejected"]["applied_threshold"] == pytest.approx(
+        0.87
+    )
+
+
+def test_local_candidate_guard_can_rescue_rejected_strategy_above_099(
+    tmp_path, monkeypatch
+):
+    import extreme_price_movements.simple_policy_optimiser as spo
+
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_ROWS", 1)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_MIN_MEAN_NET_RETURN", 0.002)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_BAND_WIDTH", 0.002)
+    monkeypatch.setattr(spo, "DEPLOYMENT_THRESHOLD_PRECISION", 0.002)
+    monkeypatch.setattr(spo, "DEPLOYMENT_LOCAL_CANDIDATE_CONFIRMATION_BANDS", 1)
+    monkeypatch.setattr(
+        spo,
+        "DEPLOYMENT_LOCAL_CANDIDATE_CONFIRMATION_MIN_POSITIVE",
+        1,
+    )
+    monkeypatch.setattr(
+        spo,
+        "DEPLOYMENT_REPLAY_THRESHOLD_HARD_FLOOR_WINDOWS_DAYS_RAW",
+        "7,14,28",
+    )
+
+    deployment_payload = {
+        "strategies": [],
+        "rejected_strategies": [
+            {
+                "strategy_id": "long_tail",
+                "strategy_for_inference": "long_tail",
+                "side": "long",
+                "selected": False,
+                "deployment_rank_threshold": 0.70,
+                "reject_reasons": ["top_5_net_pnl_not_positive"],
+            }
+        ],
+    }
+    candidates = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2026-06-09T00:00:00Z",
+                    "2026-06-09T01:00:00Z",
+                    "2026-06-09T02:00:00Z",
+                    "2026-06-09T03:00:00Z",
+                ],
+                utc=True,
+            ),
+            "strategy_id": ["long_tail"] * 4,
+            "strategy_rank_pct": [0.9905, 0.9925, 0.9930, 0.9945],
+            "net_return": [-0.020, 0.030, 0.025, 0.010],
+            "gross_return": [-0.018, 0.032, 0.027, 0.012],
+        }
+    )
+
+    summary = _apply_local_candidate_hit_rate_guard(
+        deployment_payload,
+        candidates,
+        candidate_path=tmp_path / "simple_policy_candidates_broad.parquet",
+    )
+
+    assert len(deployment_payload["strategies"]) == 1
+    rescued = deployment_payload["strategies"][0]
+    assert rescued["strategy_id"] == "long_tail"
+    assert rescued["deployment_rank_threshold"] == pytest.approx(0.992)
+    guard = rescued["local_candidate_hit_rate_guard"]
+    assert guard["passed"] is True
+    assert guard["recent_window_hard_floor_pass"] is True
+    assert guard["threshold_rows"][0]["deployment_rank_threshold"] == pytest.approx(
+        0.99
+    )
+    assert guard["threshold_rows"][0]["mean_net_return"] < 0.0
+    assert summary["rescued_strategies"]["long_tail"]["applied_threshold"] == pytest.approx(
+        0.992
+    )
+
+
 def test_policy_feature_loader_falls_back_to_source_run(tmp_path, monkeypatch):
     data_root = tmp_path / "data_perp"
     source_run_id = "source_run"

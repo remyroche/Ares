@@ -1419,9 +1419,15 @@ def apply_policy_rank_percentile_gate(
     allow_live_batch_rank_fallback_for_debug: bool = False,
     inference_min_base_train_rank_pct: float | None = None,
     require_cross_strategy_auction_rank: bool = False,
-    use_auction_rank_for_threshold: bool = True,
+    use_auction_rank_for_threshold: bool = False,
 ) -> tuple[bool, str | None]:
-    """Populate and enforce the live rank-percentile gate for one decision row."""
+    """Populate and enforce the live rank-percentile gate for one decision row.
+
+    Thresholds are per-strategy policy-rank gates by default. Cross-strategy
+    auction rank is still attached when available and may be required for
+    portfolio ordering/capacity, but it should not replace the per-head gate
+    unless a legacy caller explicitly opts into that behavior.
+    """
     threshold_space = str(decision.get("threshold_space") or "rank_percentile")
     if threshold_space != "rank_percentile":
         return True, None

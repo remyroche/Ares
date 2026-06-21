@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from extreme_price_movements.features_gmm_ae import (
     AE_GMM_FEATURE_COLUMNS,
@@ -96,3 +97,37 @@ def test_model_uses_no_same_layer_ae_gmm_features_but_exports_context():
 
     assert set(AE_GMM_FEATURE_COLUMNS).issubset(meta.columns)
     assert np.isfinite(meta[list(AE_GMM_FEATURE_COLUMNS)].to_numpy(dtype=np.float32)).all()
+
+
+def test_ae_gmm_context_export_is_optional_when_transform_fails(monkeypatch):
+    import extreme_price_movements.lgbm_pipeline as lp
+
+    model = LGBMStabilityModel()
+    model.selected_features = ["ret24h"]
+    model.input_feature_names = ["ret24h"]
+    model.ae_gmm_input_features = ["ret24h"]
+    model.ae_gmm_context_feature_names = [
+        "dae_b16_00",
+        "gmm_prob_0",
+        "cluster_entropy_norm",
+    ]
+    model.ae_gmm_state = {"enabled": True}
+
+    def fail_transform(*args, **kwargs):
+        raise RuntimeError("simulated optional transform failure")
+
+    monkeypatch.setattr(lp, "transform_ae_gmm_features", fail_transform)
+
+    meta = model.transform_internal_model_metrics(
+        pd.DataFrame({"ret24h": [0.1, 0.2]}, index=["AAA/USDC", "BBB/USDC"])
+    )
+
+    assert list(meta[model.ae_gmm_context_feature_names].columns) == (
+        model.ae_gmm_context_feature_names
+    )
+    assert (
+        meta[model.ae_gmm_context_feature_names]
+        .to_numpy(dtype=np.float32)
+        .sum()
+        == pytest.approx(0.0)
+    )

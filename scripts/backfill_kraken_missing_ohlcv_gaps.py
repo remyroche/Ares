@@ -33,6 +33,7 @@ def _gap_ranges(
     *,
     end_ts: pd.Timestamp,
     max_gap_hours: int,
+    start_ts: pd.Timestamp | None = None,
 ) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
     if index.empty:
         return []
@@ -40,8 +41,18 @@ def _gap_ranges(
     idx = idx[~idx.isna()].drop_duplicates().sort_values()
     if idx.empty:
         return []
-    start_ts = idx.min()
-    full = pd.date_range(start_ts, end_ts, freq="1h", tz="UTC")
+    if start_ts is None:
+        range_start_bound = idx.min()
+    else:
+        range_start_bound = pd.Timestamp(start_ts)
+        if range_start_bound.tzinfo is None:
+            range_start_bound = range_start_bound.tz_localize("UTC")
+        else:
+            range_start_bound = range_start_bound.tz_convert("UTC")
+        range_start_bound = range_start_bound.floor("h")
+    range_start_bound = max(range_start_bound, idx.min())
+    full = pd.date_range(range_start_bound, end_ts, freq="1h", tz="UTC")
+    idx = idx[(idx >= range_start_bound) & (idx <= end_ts)]
     missing = full.difference(idx)
     if missing.empty:
         return []
@@ -95,6 +106,15 @@ def main() -> int:
     parser.add_argument("--partition-count", type=int, default=1)
     parser.add_argument("--partition-id", type=int, default=0)
     parser.add_argument("--max-gap-hours", type=int, default=720)
+    parser.add_argument(
+        "--lookback-days",
+        type=float,
+        default=0.0,
+        help=(
+            "Only inspect gaps in the trailing N days before --end-ts. "
+            "Use 0 to scan from each symbol's first local row."
+        ),
+    )
     parser.add_argument("--rate-limit-ms", type=int, default=200)
     parser.add_argument("--sleep", type=float, default=0.02)
     parser.add_argument("--dry-run", action="store_true")
@@ -111,6 +131,11 @@ def main() -> int:
         if args.end_ts
         else pd.Timestamp.utcnow().floor("h")
     )
+    start_ts = (
+        end_ts - pd.Timedelta(days=float(args.lookback_days))
+        if float(args.lookback_days or 0.0) > 0.0
+        else None
+    )
 
     store = PartitionedOHLCVStore(args.perp_root, "1h")
     exchange = None
@@ -122,7 +147,12 @@ def main() -> int:
                 stats["skipped_no_local"] += 1
                 tprint(f"[{i:04d}/{len(symbols):04d}] {symbol}: skip no local OHLCV seed")
                 continue
-            ranges = _gap_ranges(existing.index, end_ts=end_ts, max_gap_hours=int(args.max_gap_hours))
+            ranges = _gap_ranges(
+                existing.index,
+                end_ts=end_ts,
+                max_gap_hours=int(args.max_gap_hours),
+                start_ts=start_ts,
+            )
             if not ranges:
                 stats["no_gaps"] += 1
                 continue

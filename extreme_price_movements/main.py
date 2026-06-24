@@ -272,6 +272,21 @@ def _load_label_datasets(cfg, run_id, *, allow_oof_fallback: bool = True):
 
     datasets = {}
     tprint("Loading label datasets from artifacts...")
+    label_run_id = str(
+        cfg.get("_label_artifact_run_id")
+        or cfg.get("label_source_run_id")
+        or run_id
+    ).strip()
+    oof_source_run_id = str(
+        cfg.get("artifact_source_run_id")
+        or cfg.get("label_source_run_id")
+        or run_id
+    ).strip()
+    if label_run_id != str(run_id) or oof_source_run_id != str(run_id):
+        tprint(
+            "Label dataset source override: "
+            f"labels={label_run_id}, oof_fallback={oof_source_run_id}, output={run_id}"
+        )
     _train_symbols_env = str(_os.environ.get("EPM_TRAIN_SYMBOLS", "")).strip()
     _train_symbols_filter = set(
         s.strip() for s in _train_symbols_env.split(",") if s.strip()
@@ -293,11 +308,17 @@ def _load_label_datasets(cfg, run_id, *, allow_oof_fallback: bool = True):
             out["oof_pred"] = out["oof_prob"]
         return _sort_label_dataset_for_time_cv(out)
 
-    def _load_label_or_oof_artifact(name: str) -> pd.DataFrame | None:
-        df = load_artifact_df(cfg["data_root"], run_id, "labels", name)
+    def _load_label_or_oof_artifact(
+        name: str,
+        *,
+        allow_oof: bool | None = None,
+    ) -> pd.DataFrame | None:
+        if allow_oof is None:
+            allow_oof = allow_oof_fallback
+        df = load_artifact_df(cfg["data_root"], label_run_id, "labels", name)
         if df is not None:
             return _sort_label_dataset_for_time_cv(df)
-        if not allow_oof_fallback:
+        if not allow_oof:
             return None
         oof_candidates = []
         base_name = name.removeprefix("train_")
@@ -308,7 +329,7 @@ def _load_label_datasets(cfg, run_id, *, allow_oof_fallback: bool = True):
             suffix = f"_{variant}" if variant else ""
             oof_candidates.insert(0, f"oof_{stem}_H{int(horizon)}{suffix}")
         for oof_name in oof_candidates:
-            df = load_artifact_df(cfg["data_root"], run_id, "oof", oof_name)
+            df = load_artifact_df(cfg["data_root"], oof_source_run_id, "oof", oof_name)
             if df is None:
                 continue
             tprint(
@@ -316,6 +337,51 @@ def _load_label_datasets(cfg, run_id, *, allow_oof_fallback: bool = True):
             )
             return _normalize_label_like_df(df)
         return None
+
+    def _label_dataset_aliases(strategy_id: str, horizon: int, suffix: str = "") -> list[str]:
+        sid_raw = str(strategy_id or "").strip()
+        stems: list[str] = []
+        if sid_raw:
+            stems.append(sid_raw)
+            for prefix in ("long_", "short_"):
+                if sid_raw.startswith(prefix):
+                    stripped = sid_raw[len(prefix) :]
+                    if stripped:
+                        stems.append(stripped)
+                    break
+        out: list[str] = []
+        seen: set[str] = set()
+        for stem in stems:
+            name = f"train_{stem}_{int(horizon)}{suffix}"
+            if name in seen:
+                continue
+            seen.add(name)
+            out.append(name)
+        return out
+
+    def _load_strategy_label_artifact(
+        strategy_id: str,
+        horizon: int,
+        *,
+        suffix: str = "",
+    ) -> tuple[str, pd.DataFrame | None]:
+        names = _label_dataset_aliases(strategy_id, horizon, suffix=suffix)
+        if not names:
+            return "", None
+        primary = names[0]
+        for candidate_name in names:
+            df_candidate = _load_label_or_oof_artifact(candidate_name, allow_oof=False)
+            if df_candidate is not None:
+                if candidate_name != primary:
+                    tprint(f"  Loaded {primary} via label alias {candidate_name}")
+                return primary, df_candidate
+        for candidate_name in names:
+            df_candidate = _load_label_or_oof_artifact(candidate_name, allow_oof=True)
+            if df_candidate is not None:
+                if candidate_name != primary:
+                    tprint(f"  Loaded {primary} via label alias {candidate_name}")
+                return primary, df_candidate
+        return primary, None
 
     # Spike
     for mode in ["best", "worst"]:
@@ -338,8 +404,7 @@ def _load_label_datasets(cfg, run_id, *, allow_oof_fallback: bool = True):
             continue
         for H in strategy_runtime_horizons(strat, cfg):
             H_int = int(H)
-            name = f"train_{strategy_id}_{H_int}"
-            df = _load_label_or_oof_artifact(name)
+            name, df = _load_strategy_label_artifact(strategy_id, H_int)
             if df is not None:
                 if _train_symbols_filter and "__symbol__" in df.columns:
                     df = df[df["__symbol__"].isin(_train_symbols_filter)].reset_index(
@@ -351,8 +416,11 @@ def _load_label_datasets(cfg, run_id, *, allow_oof_fallback: bool = True):
             for variant in base_geometry_archetypes:
                 if variant == "balanced":
                     continue
-                vname = f"train_{strategy_id}_{H_int}_{variant}"
-                df_v = _load_label_or_oof_artifact(vname)
+                vname, df_v = _load_strategy_label_artifact(
+                    strategy_id,
+                    H_int,
+                    suffix=f"_{variant}",
+                )
                 if df_v is not None:
                     if _train_symbols_filter and "__symbol__" in df_v.columns:
                         df_v = df_v[
@@ -791,6 +859,36 @@ def train_daily_meta(ts_sig, margin_symbols, cfg, store, ex):
                 f"{_added_saved_oof} alpha entries from saved OOF artifacts "
                 "for explicitly configured strategies."
             )
+        _aligned_strategies: list[dict[str, Any]] = []
+        _horizon_aligned = 0
+        for _strategy in _cfg_strategies or []:
+            if not isinstance(_strategy, dict):
+                continue
+            _row = dict(_strategy)
+            _sid = str(_row.get("strategy_id", "")).strip()
+            _side = (
+                "short"
+                if str(_row.get("trade_side", "")).strip().lower() == "short"
+                else "long"
+            )
+            _conf = (alpha_models.get(_side) or {}).get(_sid)
+            if isinstance(_conf, dict) and _conf.get("H") is not None:
+                try:
+                    _h_val = int(_conf.get("H"))
+                    if int(_row.get("source_horizon") or -1) != _h_val:
+                        _horizon_aligned += 1
+                    _row["source_horizon"] = _h_val
+                except Exception:
+                    pass
+            _aligned_strategies.append(_row)
+        if _aligned_strategies:
+            cfg["strategies"] = _aligned_strategies
+            if _horizon_aligned:
+                tprint(
+                    "Meta training: aligned "
+                    f"{_horizon_aligned} configured strategy horizons to the "
+                    "loaded base-model intermediate."
+                )
     if not _cfg_strategy_ids or not (_cfg_strategy_ids & _alpha_strategy_ids):
         cfg["strategies"] = _strategies_from_alpha_models()
         tprint(

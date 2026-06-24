@@ -656,6 +656,28 @@ def _select_explicit_strategies(
     requested_set = set(requested_ids)
     selected: list[dict] = []
     selected_aliases: set[str] = set()
+    source_run_id = _strategy_source_run_id(cfg)
+    hydrated = _load_contract_strategies(cfg, source_run_id) if source_run_id else {}
+    if hydrated:
+        for sid in requested_ids:
+            strategy = hydrated.get(sid)
+            if strategy is None:
+                continue
+            aliases = _strategy_aliases(
+                str(strategy.get("strategy_id", "")).strip(),
+                str(strategy.get("trade_side", "")).strip(),
+            )
+            if aliases & selected_aliases:
+                selected_aliases.update(aliases)
+                continue
+            selected.append(strategy)
+            selected_aliases.update(aliases)
+        if selected_aliases & requested_set:
+            tprint(
+                f"{env_label}: hydrated {len(selected_aliases & requested_set)}/"
+                f"{len(requested_ids)} requested strategies from source contract "
+                f"run_id={source_run_id}"
+            )
     for strategy in get_strategies(cfg):
         aliases = _strategy_aliases(
             str(strategy.get("strategy_id", "")).strip(),
@@ -667,8 +689,6 @@ def _select_explicit_strategies(
 
     missing = [sid for sid in requested_ids if sid not in selected_aliases]
     if missing:
-        source_run_id = _strategy_source_run_id(cfg)
-        hydrated = _load_contract_strategies(cfg, source_run_id) if source_run_id else {}
         for sid in list(missing):
             strategy = hydrated.get(sid)
             if strategy is None:
@@ -4761,6 +4781,27 @@ def main():
     if os.environ.get("EPM_BASE_OOF_EXPECTANCY_TOP_FRAC"):
         cfg["base_oof_expectancy_top_frac"] = float(
             os.environ["EPM_BASE_OOF_EXPECTANCY_TOP_FRAC"]
+        )
+    if os.environ.get("EPM_META_REQUIRE_DISTILLED_BASE_OOF"):
+        cfg["meta_require_distilled_base_oof"] = (
+            os.environ["EPM_META_REQUIRE_DISTILLED_BASE_OOF"].strip().lower()
+            not in {"0", "false", "no", "off"}
+        )
+        tprint(
+            "Meta base-OOF provenance override: "
+            f"meta_require_distilled_base_oof={bool(cfg['meta_require_distilled_base_oof'])}"
+        )
+    if os.environ.get("EPM_META_MIN_BASE_OOF_DISTILLATION_PASSES"):
+        cfg["meta_min_base_oof_distillation_passes"] = max(
+            0, int(float(os.environ["EPM_META_MIN_BASE_OOF_DISTILLATION_PASSES"]))
+        )
+        tprint(
+            "Meta base-OOF provenance override: "
+            f"meta_min_base_oof_distillation_passes={int(cfg['meta_min_base_oof_distillation_passes'])}"
+        )
+    if os.environ.get("EPM_LGBM_MIN_OOF_DISTILLATION_PASSES"):
+        cfg["lgbm_min_oof_distillation_passes"] = max(
+            0, int(float(os.environ["EPM_LGBM_MIN_OOF_DISTILLATION_PASSES"]))
         )
 
     _configure_report_roots(cfg)

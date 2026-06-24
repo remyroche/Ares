@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import gc
+import hashlib
 import json
 import os
 import pickle
+import re
 import time
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -119,6 +121,7 @@ from .model_effectiveness_history import (
     apply_model_effectiveness_history_defaults,
     build_model_effectiveness_history_defaults,
 )
+from .low_performance_period_weights import apply_low_performance_period_weights
 
 
 LGBM_CV_SPLITS = int(os.environ.get("EPM_LGBM_CV_SPLITS", "3"))
@@ -158,6 +161,18 @@ LGBM_MAX_ROUNDS = int(os.environ.get("EPM_LGBM_MAX_ROUNDS", "10"))
 LGBM_ROW_SUBSAMPLE_FRAC = float(os.environ.get("EPM_LGBM_ROW_SUBSAMPLE_FRAC", "1.0"))
 LGBM_UNIVARIATE_MAX_ROWS = int(os.environ.get("EPM_LGBM_UNIVARIATE_MAX_ROWS", "20000"))
 LGBM_UNIVARIATE_ROW_SUBSAMPLE_FRAC = float(os.environ.get("EPM_LGBM_UNIVARIATE_ROW_SUBSAMPLE_FRAC", os.environ.get("EPM_LGBM_ROW_SUBSAMPLE_FRAC", "1.0")))
+LGBM_FEATURE_SELECTION_RECENT_DAYS = float(
+    os.environ.get("EPM_LGBM_FEATURE_SELECTION_RECENT_DAYS", "21")
+)
+LGBM_FEATURE_SELECTION_FORCE_RECENT_ROWS = os.environ.get(
+    "EPM_LGBM_FEATURE_SELECTION_FORCE_RECENT_ROWS", "1"
+).strip().lower() not in {"0", "false", "no", "n", "off"}
+LGBM_UNIVARIATE_RECENT_MIN_FRACTION = float(
+    os.environ.get("EPM_LGBM_UNIVARIATE_RECENT_MIN_FRACTION", "0.20")
+)
+LGBM_UNIVARIATE_RECENT_MAX_ROWS = int(
+    os.environ.get("EPM_LGBM_UNIVARIATE_RECENT_MAX_ROWS", "20000")
+)
 LGBM_RELIEF_ENABLED = os.environ.get("EPM_LGBM_RELIEF_ENABLED", "1") != "0"
 LGBM_RELIEF_REPEATS = int(os.environ.get("EPM_LGBM_RELIEF_REPEATS", "4"))
 LGBM_RELIEF_PRESENCE_MIN = float(os.environ.get("EPM_LGBM_RELIEF_PRESENCE_MIN", "0.35"))
@@ -261,6 +276,34 @@ LGBM_AE_GMM_FEATURES = os.environ.get("EPM_LGBM_AE_GMM_FEATURES", "1").strip().l
 LGBM_AE_GMM_MAX_TRAIN_ROWS = int(os.environ.get("EPM_LGBM_AE_GMM_MAX_TRAIN_ROWS", "5000"))
 LGBM_AE_GMM_MAX_ITER = int(os.environ.get("EPM_LGBM_AE_GMM_MAX_ITER", "80"))
 LGBM_FINAL_MODEL_CHECKPOINT_DIR = os.environ.get("EPM_LGBM_FINAL_MODEL_CHECKPOINT_DIR", "").strip()
+LGBM_TRAIN_PROVENANCE_ENABLED = os.environ.get(
+    "EPM_LGBM_TRAIN_PROVENANCE_ENABLED",
+    "1",
+).strip().lower() not in {"0", "false", "no", "n", "off"}
+LGBM_TRAIN_PROVENANCE_SAVE_MATRIX = os.environ.get(
+    "EPM_LGBM_TRAIN_PROVENANCE_SAVE_MATRIX",
+    "0",
+).strip().lower() in {"1", "true", "yes", "y", "on"}
+LGBM_TRAIN_PROVENANCE_SAVE_LEAF_IDS = os.environ.get(
+    "EPM_LGBM_TRAIN_PROVENANCE_SAVE_LEAF_IDS",
+    "1",
+).strip().lower() not in {"0", "false", "no", "n", "off"}
+LGBM_TRAIN_PROVENANCE_SAVE_LEAF_HASHES = os.environ.get(
+    "EPM_LGBM_TRAIN_PROVENANCE_SAVE_LEAF_HASHES",
+    "1",
+).strip().lower() not in {"0", "false", "no", "n", "off"}
+LGBM_TRAIN_PROVENANCE_MAX_MATRIX_CELLS = int(
+    os.environ.get("EPM_LGBM_TRAIN_PROVENANCE_MAX_MATRIX_CELLS", "0")
+)
+LGBM_TRAIN_PROVENANCE_MAX_LEAF_CELLS = int(
+    os.environ.get("EPM_LGBM_TRAIN_PROVENANCE_MAX_LEAF_CELLS", "50000000")
+)
+LGBM_TRAIN_PROVENANCE_MAX_LEAF_HASH_CELLS = int(
+    os.environ.get("EPM_LGBM_TRAIN_PROVENANCE_MAX_LEAF_HASH_CELLS", "250000000")
+)
+LGBM_TRAIN_PROVENANCE_MAX_LEAF_TREES_PER_MODEL = int(
+    os.environ.get("EPM_LGBM_TRAIN_PROVENANCE_MAX_LEAF_TREES_PER_MODEL", "0")
+)
 LGBM_META_LEAF_DIAGNOSTICS = os.environ.get("EPM_LGBM_META_LEAF_DIAGNOSTICS", "0").strip().lower() not in {
     "0",
     "false",
@@ -5509,6 +5552,69 @@ def _stratified_spread_subsample_indices(
     return idx
 
 
+def _recent_selection_indices(timestamps: Any, n: int) -> np.ndarray:
+    if (
+        not bool(LGBM_FEATURE_SELECTION_FORCE_RECENT_ROWS)
+        or timestamps is None
+        or n <= 0
+        or float(LGBM_FEATURE_SELECTION_RECENT_DAYS) <= 0.0
+    ):
+        return np.array([], dtype=np.int32)
+    try:
+        ts_raw = np.asarray(timestamps)
+    except Exception:
+        return np.array([], dtype=np.int32)
+    if len(ts_raw) != n:
+        return np.array([], dtype=np.int32)
+    ts = pd.to_datetime(ts_raw, utc=True, errors="coerce")
+    valid = np.asarray(pd.Series(ts).notna(), dtype=bool)
+    if not bool(np.any(valid)):
+        return np.array([], dtype=np.int32)
+    end = pd.Series(ts[valid]).max()
+    if pd.isna(end):
+        return np.array([], dtype=np.int32)
+    start = end - pd.Timedelta(days=float(LGBM_FEATURE_SELECTION_RECENT_DAYS))
+    mask = valid & np.asarray(ts >= start, dtype=bool) & np.asarray(ts <= end, dtype=bool)
+    return np.flatnonzero(mask).astype(np.int32)
+
+
+def _merge_required_indices(
+    sampled: np.ndarray,
+    required: np.ndarray,
+    *,
+    n: int,
+) -> np.ndarray:
+    sampled_arr = np.asarray(sampled, dtype=np.int32)
+    required_arr = np.asarray(required, dtype=np.int32)
+    if n <= 0:
+        return np.array([], dtype=np.int32)
+    sampled_arr = sampled_arr[(sampled_arr >= 0) & (sampled_arr < n)]
+    required_arr = required_arr[(required_arr >= 0) & (required_arr < n)]
+    if len(required_arr) == 0:
+        return np.unique(sampled_arr).astype(np.int32)
+    return np.unique(np.concatenate([sampled_arr, required_arr])).astype(np.int32)
+
+
+def _recent_prescreen_subset(
+    recent_idx: np.ndarray,
+    *,
+    cap: int,
+    random_state: int,
+) -> np.ndarray:
+    recent_arr = np.asarray(recent_idx, dtype=np.int32)
+    if len(recent_arr) == 0 or cap <= 0:
+        return np.array([], dtype=np.int32)
+    frac_cap = int(np.ceil(float(np.clip(LGBM_UNIVARIATE_RECENT_MIN_FRACTION, 0.0, 1.0)) * cap))
+    hard_cap = int(LGBM_UNIVARIATE_RECENT_MAX_ROWS)
+    take = max(1, frac_cap)
+    if hard_cap > 0:
+        take = min(take, hard_cap)
+    take = min(take, len(recent_arr))
+    if len(recent_arr) <= take:
+        return np.sort(recent_arr.astype(np.int32, copy=False))
+    return _evenly_spaced_take(np.sort(recent_arr), take)
+
+
 def _stage_partition_indices(y: np.ndarray, *, timestamps: Any = None, assets: Any = None, random_state: int) -> dict[str, np.ndarray]:
     y_arr = np.asarray(y)
     n = len(y_arr)
@@ -5563,36 +5669,88 @@ def _stage_partition_indices(y: np.ndarray, *, timestamps: Any = None, assets: A
     return result
 
 
-def _subsample_stage_indices(stage_indices: dict[str, np.ndarray], y: np.ndarray, *, max_fraction: float, random_state: int, classifier: bool) -> dict[str, np.ndarray]:
+def _subsample_stage_indices(
+    stage_indices: dict[str, np.ndarray],
+    y: np.ndarray,
+    *,
+    max_fraction: float,
+    random_state: int,
+    classifier: bool,
+    timestamps: Any = None,
+) -> dict[str, np.ndarray]:
     frac = float(np.clip(float(max_fraction), 0.01, 1.0))
     if frac >= 0.999:
         return stage_indices
     n = len(y)
     cap = max(1, int(np.ceil(frac * max(n, 1))))
+    recent_idx = _recent_selection_indices(timestamps, n)
     out = dict(stage_indices)
     for offset, stage_key in enumerate(("lgbm_select", "hpo", "fit_oof"), start=1):
         idx = np.asarray(out.get(stage_key, []), dtype=np.int32)
         if len(idx) <= cap:
             continue
+        stage_recent = (
+            np.intersect1d(idx, recent_idx, assume_unique=False).astype(np.int32)
+            if len(recent_idx)
+            else np.array([], dtype=np.int32)
+        )
         sampler = (
             _stratified_spread_subsample_indices
             if stage_key == "lgbm_select"
             else _stratified_subsample_indices
         )
         keep_local = sampler(np.asarray(y, dtype=np.float32)[idx], max_n=cap, random_state=int(random_state) + offset * 10007, classifier=classifier)
-        out[stage_key] = np.sort(idx[keep_local].astype(np.int32))
+        keep = idx[keep_local].astype(np.int32)
+        if len(stage_recent):
+            keep = _merge_required_indices(keep, stage_recent, n=n)
+        out[stage_key] = np.sort(keep.astype(np.int32))
     return out
 
 
-def _cap_stage_and_move_unused_to_fit_oof(stage_indices: dict[str, np.ndarray], y: np.ndarray, *, stage_key: str, cap: int, random_state: int, classifier: bool, spread: bool = False) -> dict[str, np.ndarray]:
+def _cap_stage_and_move_unused_to_fit_oof(
+    stage_indices: dict[str, np.ndarray],
+    y: np.ndarray,
+    *,
+    stage_key: str,
+    cap: int,
+    random_state: int,
+    classifier: bool,
+    spread: bool = False,
+    protected_indices: Any = None,
+) -> dict[str, np.ndarray]:
     if cap <= 0:
         return stage_indices
     idx = np.asarray(stage_indices.get(stage_key, []), dtype=np.int32)
     if len(idx) <= cap:
         return stage_indices
+    n = len(y)
+    protected = (
+        np.intersect1d(idx, np.asarray(protected_indices, dtype=np.int32), assume_unique=False).astype(np.int32)
+        if protected_indices is not None
+        else np.array([], dtype=np.int32)
+    )
     sampler = _stratified_spread_subsample_indices if spread else _stratified_subsample_indices
-    keep_local = sampler(np.asarray(y, dtype=np.float32)[idx], max_n=int(cap), random_state=int(random_state), classifier=classifier)
-    keep = np.sort(idx[keep_local].astype(np.int32))
+    if len(protected) >= int(cap):
+        keep = np.sort(protected.astype(np.int32))
+        tprint(
+            "LGBM feature-selection row cap exceeded by protected recent rows: "
+            f"stage={stage_key}, cap={int(cap)}, protected={len(protected)}."
+        )
+    else:
+        unprotected = np.setdiff1d(idx, protected, assume_unique=False).astype(np.int32)
+        take_unprotected = max(0, int(cap) - len(protected))
+        keep_unprotected = np.array([], dtype=np.int32)
+        if len(unprotected) and take_unprotected > 0:
+            keep_local = sampler(
+                np.asarray(y, dtype=np.float32)[unprotected],
+                max_n=int(take_unprotected),
+                random_state=int(random_state),
+                classifier=classifier,
+            )
+            keep_unprotected = unprotected[keep_local].astype(np.int32)
+        keep = np.sort(
+            _merge_required_indices(keep_unprotected, protected, n=n).astype(np.int32)
+        )
     unused = np.setdiff1d(idx, keep, assume_unique=False).astype(np.int32)
     out = dict(stage_indices)
     out[stage_key] = keep
@@ -5864,6 +6022,7 @@ def _univariate_directional_filter(
     classifier: bool,
     groups: Any = None,
     returns: Any = None,
+    timestamps: Any = None,
     random_state: int,
     objective_mode: str | None = "train_base",
 ) -> tuple[list[str], pd.DataFrame]:
@@ -5877,27 +6036,39 @@ def _univariate_directional_filter(
     if LGBM_UNIVARIATE_MAX_ROWS > 0:
         uni_cap = min(uni_cap, int(LGBM_UNIVARIATE_MAX_ROWS))
     if len(y_arr) > uni_cap:
+        recent_idx = _recent_selection_indices(timestamps, len(y_arr))
+        recent_keep = _recent_prescreen_subset(
+            recent_idx,
+            cap=uni_cap,
+            random_state=random_state + 719,
+        )
         uni_idx = _stratified_spread_subsample_indices(
             y_arr,
             uni_cap,
             random_state + 593,
             classifier,
         )
+        if len(recent_keep):
+            uni_idx = _merge_required_indices(uni_idx, recent_keep, n=len(y_arr))
         X_work = X.iloc[uni_idx].reset_index(drop=True)
         y_work = y_arr[uni_idx]
         ret_work = ret_arr_all[uni_idx]
         groups_work = _groups_take(groups, uni_idx)
+        recent_work_n = int(len(np.intersect1d(uni_idx, recent_idx, assume_unique=False)))
     else:
         X_work = X.reset_index(drop=True)
         y_work = y_arr
         ret_work = ret_arr_all
         groups_work = groups
+        recent_idx = _recent_selection_indices(timestamps, len(y_arr))
+        recent_work_n = int(len(recent_idx))
     t0 = time.perf_counter()
     tprint(
         "LGBM univariate filter started: "
         f"rows={len(X_work)}/{len(X)}, features={len(names)}, cv_splits={LGBM_CV_SPLITS}, "
         f"row_subsample_frac={uni_frac:.3f}, max_rows={int(LGBM_UNIVARIATE_MAX_ROWS)}, "
         "sample_policy=stratified_spread, "
+        f"recent_rows={recent_work_n}/{len(recent_idx)}, "
         f"objective={_normalize_objective_mode(objective_mode)}."
     )
     splitter, y_split = _splitter(y_work, classifier, random_state, n_splits=LGBM_CV_SPLITS)
@@ -8242,6 +8413,438 @@ def _json_sanitize(value: Any) -> Any:
     except Exception:
         pass
     return str(value)
+
+
+def _write_dataframe_artifact(
+    frame: pd.DataFrame,
+    path: Path,
+    *,
+    label: str,
+    index: bool = False,
+) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        frame.to_parquet(path, index=index)
+        return path
+    except Exception as exc:
+        fallback = path.with_suffix(path.suffix + ".pkl")
+        frame.to_pickle(fallback)
+        tprint(
+            f"WARNING: failed to write {label} as parquet ({exc}); "
+            f"wrote pickle to {fallback}."
+        )
+        return fallback
+
+
+def _mask_from_indices(indices: Any, n: int) -> np.ndarray:
+    mask = np.zeros(int(n), dtype=bool)
+    try:
+        idx = np.asarray(indices, dtype=np.int64)
+    except Exception:
+        return mask
+    idx = idx[(idx >= 0) & (idx < int(n))]
+    if idx.size:
+        mask[idx] = True
+    return mask
+
+
+def _stage_indices_summary(stage_indices: Mapping[str, Any] | None, n: int) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    if not isinstance(stage_indices, Mapping):
+        return out
+    for key, values in stage_indices.items():
+        try:
+            idx = np.asarray(values, dtype=np.int64)
+            idx = idx[(idx >= 0) & (idx < int(n))]
+        except Exception:
+            idx = np.asarray([], dtype=np.int64)
+        out[str(key)] = {
+            "rows": int(idx.size),
+            "coverage": float(idx.size / max(int(n), 1)),
+            "min_index": int(np.min(idx)) if idx.size else None,
+            "max_index": int(np.max(idx)) if idx.size else None,
+        }
+    return out
+
+
+def _model_hash(model: LGBMStabilityModel) -> str:
+    h = hashlib.sha256()
+    h.update(str(model.mode).encode("utf-8", errors="ignore"))
+    h.update(json.dumps(list(map(str, model.selected_features)), sort_keys=True).encode("utf-8"))
+    h.update(json.dumps(_json_sanitize(model.best_params), sort_keys=True).encode("utf-8"))
+    for fitted in getattr(model, "models", []) or []:
+        booster = getattr(fitted, "booster_", None)
+        if booster is not None:
+            try:
+                h.update(str(booster.model_to_string(num_iteration=-1)).encode("utf-8", errors="ignore"))
+                continue
+            except Exception:
+                pass
+        try:
+            h.update(pickle.dumps(fitted, protocol=pickle.HIGHEST_PROTOCOL))
+        except Exception:
+            h.update(repr(type(fitted)).encode("utf-8", errors="ignore"))
+    return h.hexdigest()
+
+
+def _estimated_leaf_cells(
+    models: Sequence[Any],
+    n_rows: int,
+    *,
+    max_trees_per_model: int,
+) -> tuple[int, list[int]]:
+    tree_counts: list[int] = []
+    total_trees = 0
+    for fitted in models:
+        tree_count = int(_model_num_iterations(fitted))
+        if max_trees_per_model > 0:
+            tree_count = min(tree_count, int(max_trees_per_model))
+        tree_count = max(tree_count, 0)
+        tree_counts.append(tree_count)
+        total_trees += tree_count
+    return int(max(int(n_rows), 0) * total_trees), tree_counts
+
+
+def _predict_leaf_ids_for_models(
+    models: Sequence[Any],
+    X: pd.DataFrame,
+    *,
+    max_trees_per_model: int,
+) -> tuple[np.ndarray | None, list[str], list[int]]:
+    arrays: list[np.ndarray] = []
+    names: list[str] = []
+    tree_counts: list[int] = []
+    for model_i, fitted in enumerate(models):
+        try:
+            leaves = np.asarray(fitted.predict(X, pred_leaf=True), dtype=np.int32)
+        except TypeError:
+            leaves = np.asarray(fitted.predict(X, pred_leaf=True), dtype=np.int32)
+        except Exception:
+            tree_counts.append(0)
+            continue
+        if leaves.ndim == 1:
+            leaves = leaves.reshape(-1, 1)
+        if leaves.shape[0] != len(X):
+            tree_counts.append(0)
+            continue
+        tree_n = int(leaves.shape[1])
+        if max_trees_per_model > 0:
+            tree_n = min(tree_n, int(max_trees_per_model))
+        if tree_n <= 0:
+            tree_counts.append(0)
+            continue
+        leaf_slice = np.asarray(leaves[:, :tree_n], dtype=np.int32, copy=False)
+        arrays.append(leaf_slice)
+        names.extend([f"model_{model_i}_tree_{tree_i}" for tree_i in range(tree_n)])
+        tree_counts.append(tree_n)
+    if not arrays:
+        return None, [], tree_counts
+    return np.hstack(arrays).astype(np.int32, copy=False), names, tree_counts
+
+
+def _leaf_path_hash_frame(
+    models: Sequence[Any],
+    X: pd.DataFrame,
+    *,
+    max_trees_per_model: int,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    n = int(len(X))
+    out = pd.DataFrame({"row_index": np.arange(n, dtype=np.int32)})
+    combined = np.full(n, np.uint64(1469598103934665603), dtype=np.uint64)
+    tree_counts: list[int] = []
+    for model_i, fitted in enumerate(models):
+        try:
+            leaves = np.asarray(fitted.predict(X, pred_leaf=True), dtype=np.int64)
+        except TypeError:
+            leaves = np.asarray(fitted.predict(X, pred_leaf=True), dtype=np.int64)
+        except Exception:
+            tree_counts.append(0)
+            continue
+        if leaves.ndim == 1:
+            leaves = leaves.reshape(-1, 1)
+        if leaves.shape[0] != n:
+            tree_counts.append(0)
+            continue
+        tree_n = int(leaves.shape[1])
+        if max_trees_per_model > 0:
+            tree_n = min(tree_n, int(max_trees_per_model))
+        if tree_n <= 0:
+            tree_counts.append(0)
+            continue
+        h = np.full(n, np.uint64(1469598103934665603), dtype=np.uint64)
+        for tree_i in range(tree_n):
+            vals = leaves[:, tree_i].astype(np.uint64, copy=False)
+            vals = vals + np.uint64((model_i + 1) * 1000003 + tree_i + 17)
+            h = (h ^ vals) * np.uint64(1099511628211)
+        out[f"model_{model_i}_leaf_path_hash"] = h
+        combined = (combined ^ (h + np.uint64((model_i + 1) * 16777619))) * np.uint64(1099511628211)
+        tree_counts.append(tree_n)
+    out["ensemble_leaf_path_hash"] = combined
+    return out, {"tree_counts": tree_counts, "hash_algorithm": "fnv1a_uint64_per_model_path"}
+
+
+def _save_lgbm_train_time_provenance(
+    model: LGBMStabilityModel,
+    output_dir: str | os.PathLike[str] | None,
+    *,
+    X_selected: pd.DataFrame,
+    y_metric: np.ndarray,
+    returns: np.ndarray | None,
+    timestamps: Any,
+    assets: Any,
+    sample_weight: np.ndarray | None,
+    final_weights: np.ndarray | None,
+    stage_indices: Mapping[str, Any] | None,
+    fit_idx: np.ndarray,
+    hpo_idx: np.ndarray,
+    oof_fold_ids: np.ndarray | None,
+    objective_mode: str,
+    mode: str,
+    cfg: dict[str, Any] | None,
+) -> None:
+    if not output_dir:
+        return
+    enabled = _cfg_env_bool(
+        cfg,
+        "lgbm_train_provenance_enabled",
+        "EPM_LGBM_TRAIN_PROVENANCE_ENABLED",
+        bool(LGBM_TRAIN_PROVENANCE_ENABLED),
+    )
+    if not enabled:
+        return
+    path = Path(output_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    t0 = time.perf_counter()
+    n = int(len(X_selected))
+    features = list(map(str, X_selected.columns))
+    artifacts: dict[str, str] = {}
+    manifest: dict[str, Any] = {
+        "schema_version": 1,
+        "artifact_type": "lgbm_train_time_provenance",
+        "created_at_utc": pd.Timestamp.utcnow().isoformat(),
+        "objective_mode": str(objective_mode),
+        "layer": "meta" if str(objective_mode).lower() in {"train_meta", "meta"} else "base",
+        "mode": str(mode),
+        "row_count": n,
+        "selected_features_count": int(len(features)),
+        "selected_features": features,
+        "input_feature_names": list(map(str, getattr(model, "input_feature_names", []) or [])),
+        "model_count": int(len(getattr(model, "models", []) or [])),
+        "model_hash": _model_hash(model),
+        "best_params": _json_sanitize(dict(getattr(model, "best_params", {}) or {})),
+        "stage_indices_summary": _stage_indices_summary(stage_indices, n),
+    }
+
+    row_refs = pd.DataFrame({"row_index": np.arange(n, dtype=np.int32)})
+    if timestamps is not None and len(timestamps) == n:
+        row_refs["timestamp"] = np.asarray(timestamps)
+    if assets is not None and len(assets) == n:
+        row_refs["asset"] = np.asarray(assets).astype(str)
+    row_refs["target"] = np.asarray(y_metric, dtype=np.float32)[:n]
+    if returns is not None and len(returns) == n:
+        row_refs["return"] = np.asarray(returns, dtype=np.float32)[:n]
+    if sample_weight is not None and len(sample_weight) == n:
+        row_refs["sample_weight"] = np.asarray(sample_weight, dtype=np.float32)[:n]
+    if final_weights is not None and len(final_weights) == n:
+        row_refs["final_weight"] = np.asarray(final_weights, dtype=np.float32)[:n]
+    if oof_fold_ids is not None and len(oof_fold_ids) == n:
+        row_refs["oof_fold_id"] = np.asarray(oof_fold_ids, dtype=np.int16)[:n]
+    else:
+        row_refs["oof_fold_id"] = np.full(n, -1, dtype=np.int16)
+    row_refs["is_hpo_row"] = _mask_from_indices(hpo_idx, n)
+    row_refs["is_final_fit_row"] = _mask_from_indices(fit_idx, n)
+    if isinstance(stage_indices, Mapping):
+        for key, values in stage_indices.items():
+            safe_key = re.sub(r"[^A-Za-z0-9_]+", "_", str(key)).strip("_") or "stage"
+            row_refs[f"is_stage_{safe_key}"] = _mask_from_indices(values, n)
+    artifacts["row_references"] = str(
+        _write_dataframe_artifact(row_refs, path / "row_references.parquet", label="LGBM train provenance row references")
+    )
+
+    oof = np.asarray(model.oof_probs, dtype=np.float32) if model.oof_probs is not None else None
+    predictions = pd.DataFrame({"row_index": np.arange(n, dtype=np.int32)})
+    if oof is not None and len(oof) == n:
+        predictions["oof_prediction"] = oof
+        if str(mode) == "classifier":
+            clipped = np.clip(oof.astype(np.float64), 1e-7, 1.0 - 1e-7)
+            predictions["oof_raw_margin"] = np.log(clipped / (1.0 - clipped)).astype(np.float32)
+            predictions["oof_calibrated_probability"] = oof.astype(np.float32, copy=False)
+        else:
+            predictions["oof_raw_margin"] = oof.astype(np.float32, copy=False)
+        predictions["oof_rank_pct"] = _safe_rank_pct(oof).astype(np.float32)
+    artifacts["predictions"] = str(
+        _write_dataframe_artifact(predictions, path / "predictions.parquet", label="LGBM train provenance predictions")
+    )
+
+    meta_oof = getattr(model, "meta_oof_features", None)
+    if isinstance(meta_oof, pd.DataFrame) and len(meta_oof) == n:
+        score_cols = [
+            c for c in LGBM_META_SCORE_PATH_FEATURE_NAMES
+            if c in meta_oof.columns
+        ]
+        support_cols = [
+            c for c in (
+                list(LGBM_META_LEAF_LITE_FEATURE_NAMES)
+                + list(LGBM_META_LEAF_SUPPORT_FEATURE_NAMES)
+                + list(LGBM_META_LEAF_CENTROID_FEATURE_NAMES)
+            )
+            if c in meta_oof.columns
+        ]
+        if score_cols:
+            score_frame = pd.concat(
+                [pd.DataFrame({"row_index": np.arange(n, dtype=np.int32)}), meta_oof[score_cols].reset_index(drop=True)],
+                axis=1,
+            ).astype({c: np.float32 for c in score_cols}, copy=False)
+            artifacts["score_path_features"] = str(
+                _write_dataframe_artifact(score_frame, path / "score_path_features.parquet", label="LGBM train provenance score-path features")
+            )
+        if support_cols:
+            support_frame = pd.concat(
+                [pd.DataFrame({"row_index": np.arange(n, dtype=np.int32)}), meta_oof[support_cols].reset_index(drop=True)],
+                axis=1,
+            ).astype({c: np.float32 for c in support_cols}, copy=False)
+            artifacts["leaf_support_features"] = str(
+                _write_dataframe_artifact(support_frame, path / "leaf_support_features.parquet", label="LGBM train provenance leaf support features")
+            )
+        manifest["score_path_feature_count"] = int(len(score_cols))
+        manifest["leaf_support_feature_count"] = int(len(support_cols))
+
+    save_matrix = _cfg_env_bool(
+        cfg,
+        "lgbm_train_provenance_save_matrix",
+        "EPM_LGBM_TRAIN_PROVENANCE_SAVE_MATRIX",
+        bool(LGBM_TRAIN_PROVENANCE_SAVE_MATRIX),
+    )
+    matrix_cell_cap = _cfg_env_int(
+        cfg,
+        "lgbm_train_provenance_max_matrix_cells",
+        "EPM_LGBM_TRAIN_PROVENANCE_MAX_MATRIX_CELLS",
+        int(LGBM_TRAIN_PROVENANCE_MAX_MATRIX_CELLS),
+    )
+    matrix_cells = int(n * max(len(features), 1))
+    manifest["selected_matrix_cells"] = int(matrix_cells)
+    manifest["selected_matrix_saved"] = False
+    if save_matrix and (matrix_cell_cap <= 0 or matrix_cells <= int(matrix_cell_cap)):
+        matrix_frame = X_selected.reset_index(drop=True).astype(np.float32, copy=False)
+        matrix_frame.insert(0, "row_index", np.arange(n, dtype=np.int32))
+        artifacts["selected_input_matrix"] = str(
+            _write_dataframe_artifact(matrix_frame, path / "selected_input_matrix.parquet", label="LGBM train provenance selected input matrix")
+        )
+        manifest["selected_matrix_saved"] = True
+    elif save_matrix:
+        manifest["selected_matrix_skipped_reason"] = (
+            f"cell_cap_exceeded:{matrix_cells}>{matrix_cell_cap}"
+        )
+    else:
+        manifest["selected_matrix_skipped_reason"] = "disabled; row_references plus selected_features preserve reproducible contract"
+
+    max_leaf_trees = _cfg_env_int(
+        cfg,
+        "lgbm_train_provenance_max_leaf_trees_per_model",
+        "EPM_LGBM_TRAIN_PROVENANCE_MAX_LEAF_TREES_PER_MODEL",
+        int(LGBM_TRAIN_PROVENANCE_MAX_LEAF_TREES_PER_MODEL),
+    )
+    leaf_cells, estimated_tree_counts = _estimated_leaf_cells(
+        getattr(model, "models", []) or [],
+        n,
+        max_trees_per_model=max_leaf_trees,
+    )
+    manifest["leaf_cells_estimate"] = int(leaf_cells)
+    manifest["leaf_tree_counts_estimate"] = list(map(int, estimated_tree_counts))
+    save_leaf_ids = _cfg_env_bool(
+        cfg,
+        "lgbm_train_provenance_save_leaf_ids",
+        "EPM_LGBM_TRAIN_PROVENANCE_SAVE_LEAF_IDS",
+        bool(LGBM_TRAIN_PROVENANCE_SAVE_LEAF_IDS),
+    )
+    leaf_cell_cap = _cfg_env_int(
+        cfg,
+        "lgbm_train_provenance_max_leaf_cells",
+        "EPM_LGBM_TRAIN_PROVENANCE_MAX_LEAF_CELLS",
+        int(LGBM_TRAIN_PROVENANCE_MAX_LEAF_CELLS),
+    )
+    manifest["leaf_ids_saved"] = False
+    if save_leaf_ids and leaf_cells > 0 and (leaf_cell_cap <= 0 or leaf_cells <= int(leaf_cell_cap)):
+        leaf_ids, leaf_columns, leaf_tree_counts = _predict_leaf_ids_for_models(
+            getattr(model, "models", []) or [],
+            X_selected,
+            max_trees_per_model=max_leaf_trees,
+        )
+        if leaf_ids is not None and leaf_ids.size:
+            leaf_path = path / "leaf_ids.npz"
+            np.savez_compressed(leaf_path, leaf_ids=leaf_ids)
+            artifacts["leaf_ids"] = str(leaf_path)
+            (path / "leaf_id_columns.json").write_text(
+                json.dumps(
+                    _json_sanitize(
+                        {
+                            "columns": leaf_columns,
+                            "tree_counts": list(map(int, leaf_tree_counts)),
+                            "shape": list(leaf_ids.shape),
+                        }
+                    ),
+                    indent=2,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+            artifacts["leaf_id_columns"] = str(path / "leaf_id_columns.json")
+            manifest["leaf_ids_saved"] = True
+            manifest["leaf_ids_shape"] = list(map(int, leaf_ids.shape))
+        else:
+            manifest["leaf_ids_skipped_reason"] = "prediction_unavailable"
+    elif save_leaf_ids:
+        manifest["leaf_ids_skipped_reason"] = f"cell_cap_exceeded:{leaf_cells}>{leaf_cell_cap}"
+    else:
+        manifest["leaf_ids_skipped_reason"] = "disabled"
+
+    save_hashes = _cfg_env_bool(
+        cfg,
+        "lgbm_train_provenance_save_leaf_hashes",
+        "EPM_LGBM_TRAIN_PROVENANCE_SAVE_LEAF_HASHES",
+        bool(LGBM_TRAIN_PROVENANCE_SAVE_LEAF_HASHES),
+    )
+    hash_cell_cap = _cfg_env_int(
+        cfg,
+        "lgbm_train_provenance_max_leaf_hash_cells",
+        "EPM_LGBM_TRAIN_PROVENANCE_MAX_LEAF_HASH_CELLS",
+        int(LGBM_TRAIN_PROVENANCE_MAX_LEAF_HASH_CELLS),
+    )
+    manifest["leaf_hashes_saved"] = False
+    if save_hashes and leaf_cells > 0 and (hash_cell_cap <= 0 or leaf_cells <= int(hash_cell_cap)):
+        hash_frame, hash_diag = _leaf_path_hash_frame(
+            getattr(model, "models", []) or [],
+            X_selected,
+            max_trees_per_model=max_leaf_trees,
+        )
+        artifacts["leaf_path_hashes"] = str(
+            _write_dataframe_artifact(hash_frame, path / "leaf_path_hashes.parquet", label="LGBM train provenance leaf path hashes")
+        )
+        manifest["leaf_hashes_saved"] = True
+        manifest["leaf_hash_diagnostics"] = hash_diag
+    elif save_hashes:
+        manifest["leaf_hashes_skipped_reason"] = f"cell_cap_exceeded:{leaf_cells}>{hash_cell_cap}"
+    else:
+        manifest["leaf_hashes_skipped_reason"] = "disabled"
+
+    manifest["artifacts"] = artifacts
+    manifest["elapsed_sec"] = float(time.perf_counter() - t0)
+    manifest_path = path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(_json_sanitize(manifest), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    model.metrics["lgbm_train_provenance_dir"] = str(path)
+    model.metrics["lgbm_train_provenance_manifest_path"] = str(manifest_path)
+    model.metrics["lgbm_train_provenance_leaf_ids_saved"] = bool(manifest.get("leaf_ids_saved", False))
+    model.metrics["lgbm_train_provenance_leaf_hashes_saved"] = bool(manifest.get("leaf_hashes_saved", False))
+    tprint(
+        "LGBM train-time provenance saved: "
+        f"{path} (rows={n}, features={len(features)}, "
+        f"leaf_ids={manifest.get('leaf_ids_saved', False)}, "
+        f"leaf_hashes={manifest.get('leaf_hashes_saved', False)}, "
+        f"elapsed={manifest['elapsed_sec']:.1f}s)."
+    )
 
 
 def _resolve_lgbm_final_model_checkpoint_dir(
@@ -11593,7 +12196,7 @@ def _cross_val_oof_lgbm_with_meta_features(
     ae_gmm_feature_names: list[str] | None = None,
     ae_gmm_context_feature_names: list[str] | None = None,
     ae_gmm_enabled: bool = False,
-) -> tuple[np.ndarray, list[dict[str, float]], pd.DataFrame, pd.DataFrame]:
+) -> tuple[np.ndarray, list[dict[str, float]], pd.DataFrame, pd.DataFrame, np.ndarray]:
     t0 = time.perf_counter()
     raw_input_features = [str(c) for c in (raw_contrib_input_features or [])]
     raw_passthrough = [str(c) for c in (raw_contrib_passthrough_features or [])]
@@ -11646,6 +12249,7 @@ def _cross_val_oof_lgbm_with_meta_features(
         prefix="final_oof_cv",
     )
     oof = np.full(len(y_arr), np.nan, dtype=np.float32)
+    fold_ids = np.full(len(y_arr), -1, dtype=np.int16)
     metrics: list[dict[str, float]] = []
     meta_features = pd.DataFrame(index=np.arange(len(y_arr)), columns=LGBM_META_FEATURE_NAMES, dtype=np.float32)
     raw_contrib_feature_map = raw_contrib_feature_mapping(features)
@@ -11760,6 +12364,7 @@ def _cross_val_oof_lgbm_with_meta_features(
             f"in {time.perf_counter() - step_t0:.1f}s."
         )
         oof[va] = pred
+        fold_ids[va] = np.int16(fold_i)
         fold_metrics = _metric_pack(y_metric[va], pred, classifier=classifier, groups=_groups_take(groups, va), returns=ret_arr[va])
         if fold_support_diag:
             fold_metrics.update(fold_support_diag)
@@ -12083,6 +12688,7 @@ def _cross_val_oof_lgbm_with_meta_features(
         metrics,
         meta_features.reindex(columns=LGBM_META_FEATURE_NAMES, fill_value=0.0).astype(np.float32),
         raw_contrib_features,
+        fold_ids,
     )
 
 
@@ -12790,6 +13396,20 @@ def train_lgbm_stability_candidate(
     )
     sw = np.ones(n, dtype=np.float32) if sample_weight is None else np.asarray(sample_weight, dtype=np.float32)
     sw, _ = _normalize_weights(sw)
+    sw, low_period_weight_diag = apply_low_performance_period_weights(
+        sw,
+        timestamps,
+        cfg,
+        objective_mode=objective_mode,
+        label="candidate",
+    )
+    if bool(low_period_weight_diag.get("low_performance_period_weight_applied", False)):
+        tprint(
+            "LGBM candidate low-performance period weighting applied: "
+            f"objective={objective_mode}, "
+            f"matched={int(low_period_weight_diag.get('low_performance_period_weight_matched_rows', 0))}/{n}, "
+            f"ess={float(low_period_weight_diag.get('low_performance_period_final_weight_ess', float('nan'))):.1f}."
+        )
     sw, recency_applied = _apply_recency_sample_weight(
         sw,
         timestamps,
@@ -12835,8 +13455,31 @@ def train_lgbm_stability_candidate(
             )
         )
     label_diag.update(rebalance_diag)
+    recent_feature_selection_idx = _recent_selection_indices(timestamps, n)
     stage_indices = _stage_partition_indices(y_metric, timestamps=timestamps, assets=assets, random_state=random_state + 701)
-    stage_indices = _subsample_stage_indices(stage_indices, y_metric, max_fraction=LGBM_ROW_SUBSAMPLE_FRAC, random_state=random_state + 3701, classifier=classifier)
+    stage_indices = _subsample_stage_indices(
+        stage_indices,
+        y_metric,
+        max_fraction=LGBM_ROW_SUBSAMPLE_FRAC,
+        random_state=random_state + 3701,
+        classifier=classifier,
+        timestamps=timestamps,
+    )
+    if len(recent_feature_selection_idx):
+        select_before_recent = int(len(np.asarray(stage_indices.get("lgbm_select", []), dtype=np.int32)))
+        stage_indices["lgbm_select"] = np.sort(
+            _merge_required_indices(
+                np.asarray(stage_indices.get("lgbm_select", []), dtype=np.int32),
+                recent_feature_selection_idx,
+                n=n,
+            )
+        )
+        tprint(
+            "LGBM feature-selection recent-row guard: "
+            f"window_days={float(LGBM_FEATURE_SELECTION_RECENT_DAYS):.1f}, "
+            f"recent_rows={len(recent_feature_selection_idx)}, "
+            f"select_rows={select_before_recent}->{len(stage_indices['lgbm_select'])}."
+        )
     if oi_present_mask is not None:
         select_idx = np.asarray(stage_indices.get("lgbm_select", []), dtype=np.int32)
         keep_idx = select_idx[oi_present_mask[select_idx]]
@@ -12871,7 +13514,16 @@ def train_lgbm_stability_candidate(
         f"select_rows={select_rows_before_cap}, cap={stability_select_cap}, "
         f"race_max_rows={int(LGBM_RACE_MAX_ROWS)}."
     )
-    stage_indices = _cap_stage_and_move_unused_to_fit_oof(stage_indices, y_metric, stage_key="lgbm_select", cap=stability_select_cap, random_state=random_state + 1701, classifier=classifier, spread=True)
+    stage_indices = _cap_stage_and_move_unused_to_fit_oof(
+        stage_indices,
+        y_metric,
+        stage_key="lgbm_select",
+        cap=stability_select_cap,
+        random_state=random_state + 1701,
+        classifier=classifier,
+        spread=True,
+        protected_indices=recent_feature_selection_idx,
+    )
     stage_indices = _cap_stage_and_move_unused_to_fit_oof(stage_indices, y_metric, stage_key="hpo", cap=LGBM_HPO_MAX_ROWS, random_state=random_state + 2701, classifier=classifier)
     race_idx = np.asarray(stage_indices["lgbm_select"], dtype=np.int32)
     if len(race_idx) < 200:
@@ -12893,6 +13545,8 @@ def train_lgbm_stability_candidate(
             classifier=classifier,
         )
         race_idx = np.sort(fallback_pool[keep_local].astype(np.int32))
+        if len(recent_feature_selection_idx):
+            race_idx = np.sort(_merge_required_indices(race_idx, recent_feature_selection_idx, n=n))
         stage_indices["lgbm_select"] = race_idx
     X_race = X_df.iloc[race_idx].reset_index(drop=True)
     y_race = y_arr[race_idx]
@@ -12914,6 +13568,26 @@ def train_lgbm_stability_candidate(
     select_local, eval_local = train_test_split(local_idx, test_size=LGBM_RACE_EVAL_FRACTION, stratify=stratify_arg, random_state=random_state + 1701)
     select_local = np.asarray(select_local, dtype=np.int32)
     eval_local = np.asarray(eval_local, dtype=np.int32)
+    recent_race_local = (
+        np.flatnonzero(np.isin(race_idx, recent_feature_selection_idx)).astype(np.int32)
+        if len(recent_feature_selection_idx)
+        else np.array([], dtype=np.int32)
+    )
+    if len(recent_race_local):
+        select_before_split_recent = int(len(select_local))
+        select_local = np.unique(np.concatenate([select_local, recent_race_local])).astype(np.int32)
+        eval_without_recent = np.setdiff1d(eval_local, recent_race_local, assume_unique=False).astype(np.int32)
+        if len(eval_without_recent) >= max(200, int(0.25 * len(eval_local))):
+            eval_local = eval_without_recent
+            eval_recent_overlap = 0
+        else:
+            eval_recent_overlap = int(len(np.intersect1d(eval_local, recent_race_local, assume_unique=False)))
+        tprint(
+            "LGBM candidate split recent-row guard: "
+            f"recent_race_rows={len(recent_race_local)}, "
+            f"select={select_before_split_recent}->{len(select_local)}, "
+            f"eval={len(eval_local)}, eval_recent_overlap={eval_recent_overlap}."
+        )
     X_select = X_race.iloc[select_local].reset_index(drop=True)
     y_select = y_race[select_local]
     y_metric_select = y_metric_race[select_local]
@@ -12966,7 +13640,16 @@ def train_lgbm_stability_candidate(
             f"selected={len(selected_features)}, source={preset_source or 'unknown'}."
         )
     else:
-        uni_features, uni_stats = _univariate_directional_filter(X_select, y_metric_select, classifier=classifier, groups=select_groups, returns=ret_select, random_state=random_state + 101, objective_mode=objective_mode)
+        uni_features, uni_stats = _univariate_directional_filter(
+            X_select,
+            y_metric_select,
+            classifier=classifier,
+            groups=select_groups,
+            returns=ret_select,
+            timestamps=_take_aligned(timestamps, race_idx[select_local], n),
+            random_state=random_state + 101,
+            objective_mode=objective_mode,
+        )
         tprint(f"LGBM candidate after univariate filter: {len(uni_features)} features.")
         score_map = dict(zip(uni_stats["feature"].astype(str), uni_stats["univariate_j"].astype(float)))
         relief_features, relief_stats = _relief_rescue_filter(
@@ -13104,13 +13787,13 @@ def train_lgbm_stability_candidate(
             {"max_depth": 5, "reg_lambda": 15.0},
         ][: min(4, int(LGBM_STABILITY_CONFIGS))]
     )
-    for i, cfg in enumerate(eval_configs, start=1):
+    for i, eval_cfg in enumerate(eval_configs, start=1):
         fit_t0 = time.perf_counter()
         tprint(
             f"LGBM candidate eval ensemble model {i}/{len(eval_configs)} started: "
-            f"rows={len(y_select)}, features={len(selected_features)}, cfg={cfg}."
+            f"rows={len(y_select)}, features={len(selected_features)}, cfg={eval_cfg}."
         )
-        params = dict(cfg) if preset_best_params else _base_lgbm_params(random_state + 500 + i, classifier=classifier, overrides=cfg)
+        params = dict(eval_cfg) if preset_best_params else _base_lgbm_params(random_state + 500 + i, classifier=classifier, overrides=eval_cfg)
         model = _fit_lgbm_model(X_select[selected_features], y_select, final_weights, classifier=classifier, params=params)
         eval_preds.append(_predict_lgbm_raw(model, X_eval[selected_features], mode))
         tprint(
@@ -13170,6 +13853,7 @@ def train_lgbm_stability_candidate(
         _active_recency_hpo_metrics
     )
     metrics["recency_sample_weight_applied"] = bool(recency_applied)
+    metrics.update(low_period_weight_diag)
     metrics["recency_weighting_scheme"] = (
         "composite_hpo"
         if _active_recency_hpo_metrics
@@ -13212,6 +13896,24 @@ def train_lgbm_stability_candidate(
     metrics["race_n"] = int(len(eval_local))
     metrics["race_select_n"] = int(len(select_local))
     metrics["race_total_n"] = int(len(race_idx))
+    metrics["feature_selection_recent_window_days"] = float(LGBM_FEATURE_SELECTION_RECENT_DAYS)
+    metrics["feature_selection_recent_guard_enabled"] = bool(LGBM_FEATURE_SELECTION_FORCE_RECENT_ROWS)
+    metrics["feature_selection_recent_rows_total"] = int(len(recent_feature_selection_idx))
+    metrics["feature_selection_recent_rows_in_race"] = int(
+        len(np.intersect1d(race_idx, recent_feature_selection_idx, assume_unique=False))
+        if len(recent_feature_selection_idx)
+        else 0
+    )
+    metrics["feature_selection_recent_rows_in_select"] = int(
+        len(np.intersect1d(race_idx[select_local], recent_feature_selection_idx, assume_unique=False))
+        if len(recent_feature_selection_idx)
+        else 0
+    )
+    metrics["feature_selection_recent_rows_in_eval"] = int(
+        len(np.intersect1d(race_idx[eval_local], recent_feature_selection_idx, assume_unique=False))
+        if len(recent_feature_selection_idx)
+        else 0
+    )
     oof_full = np.full(n, np.nan, dtype=np.float32)
     oof_race = np.full(len(y_race), np.nan, dtype=np.float32)
     oof_race[eval_local] = eval_pred
@@ -13337,6 +14039,20 @@ def fit_lgbm_stability_full_model(
             X_df[col] = 0.0
     sw = np.ones(n, dtype=np.float32) if sample_weight is None else np.asarray(sample_weight, dtype=np.float32)
     sw, _ = _normalize_weights(sw)
+    sw, low_period_weight_diag = apply_low_performance_period_weights(
+        sw,
+        timestamps,
+        cfg,
+        objective_mode=objective_mode,
+        label="final",
+    )
+    if bool(low_period_weight_diag.get("low_performance_period_weight_applied", False)):
+        tprint(
+            "LGBM final low-performance period weighting applied: "
+            f"objective={objective_mode}, "
+            f"matched={int(low_period_weight_diag.get('low_performance_period_weight_matched_rows', 0))}/{n}, "
+            f"ess={float(low_period_weight_diag.get('low_performance_period_final_weight_ess', float('nan'))):.1f}."
+        )
     sw, recency_applied = _apply_recency_sample_weight(
         sw,
         timestamps,
@@ -13991,6 +14707,7 @@ def fit_lgbm_stability_full_model(
             "LGBM final OOF/meta CV skipped by EPM_LGBM_SKIP_FINAL_OOF_META_CV=1; "
             "using filled pre-final OOF for trial scoring."
         )
+        final_oof_fold_ids = np.full(n, -1, dtype=np.int16)
         fill = float(np.nanmean(pre_final_oof)) if np.isfinite(pre_final_oof).any() else float(np.mean(y_arr))
         final_oof = np.nan_to_num(pre_final_oof, nan=fill).astype(np.float32)
         skip_metrics = _metric_pack(y_metric, final_oof, classifier=classifier, groups=stability_groups, returns=ret_arr)
@@ -14160,7 +14877,13 @@ def fit_lgbm_stability_full_model(
             raw_contrib_oof_features = pd.DataFrame(index=np.arange(n))
             tprint("LGBM final OOF/meta skip path: raw contribution OOF export skipped.")
     else:
-        final_oof, final_fold_metrics, meta_oof_features, raw_contrib_oof_features = _cross_val_oof_lgbm_with_meta_features(
+        (
+            final_oof,
+            final_fold_metrics,
+            meta_oof_features,
+            raw_contrib_oof_features,
+            final_oof_fold_ids,
+        ) = _cross_val_oof_lgbm_with_meta_features(
             X_oof_source_df,
             y_arr,
             final_weights,
@@ -14456,6 +15179,7 @@ def fit_lgbm_stability_full_model(
         _active_recency_hpo_metrics
     )
     model.metrics["recency_sample_weight_applied"] = bool(recency_applied)
+    model.metrics.update(low_period_weight_diag)
     model.metrics["recency_weighting_scheme"] = (
         "composite_hpo"
         if _active_recency_hpo_metrics
@@ -14523,6 +15247,28 @@ def fit_lgbm_stability_full_model(
             objective_mode=objective_mode,
             mode=mode,
         )
+    if ref_dir is not None:
+        try:
+            _save_lgbm_train_time_provenance(
+                model,
+                Path(ref_dir) / "train_time_provenance",
+                X_selected=X_all_selected,
+                y_metric=y_metric,
+                returns=ret_arr,
+                timestamps=timestamps,
+                assets=assets,
+                sample_weight=sw,
+                final_weights=final_weights,
+                stage_indices=stage_indices,
+                fit_idx=fit_idx,
+                hpo_idx=hpo_idx,
+                oof_fold_ids=final_oof_fold_ids,
+                objective_mode=objective_mode,
+                mode=mode,
+                cfg=cfg,
+            )
+        except Exception as exc:
+            tprint(f"WARNING: failed to save LGBM train-time provenance: {exc}")
     fit_oof_metrics_for_stage: dict[str, Any] | None = None
     if pre_final_oof is not None and len(pre_final_oof) == n:
         pre_metrics = _metric_pack(y_metric, pre_final_oof, classifier=classifier, groups=stability_groups, returns=ret_arr)

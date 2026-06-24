@@ -2688,7 +2688,7 @@ def _enforce_feature_snapshot_completeness(
     }
 
 
-_FEATURE_CACHE_SCAN_MANIFEST_VERSION = 3
+_FEATURE_CACHE_SCAN_MANIFEST_VERSION = 4
 
 
 def _feature_cache_scan_manifest_path(in_dir: str) -> str:
@@ -3017,13 +3017,13 @@ def _scan_feature_cache_light(
                         continue
                     non_all_nan_cols.add(c)
                 delta_only_cols = sorted(set(feat_cols) - set(base_schema_names))
-                if delta_only_cols and non_all_nan_cols:
+                if delta_only_cols:
                     req_first, _ = required_bounds[sym]
                     probe_timestamps = _feature_historical_probe_timestamps(
                         req_first,
                         req_last,
                     )
-                    probe_cols = sorted(set(delta_only_cols).intersection(non_all_nan_cols))
+                    probe_cols = sorted(delta_only_cols)
                     probe_df = _read_feature_probe_rows(
                         fpath,
                         probe_cols,
@@ -4692,8 +4692,9 @@ def run_training_step(
     run_id = str(cfg.get("output_run_id") or ts_sig.strftime("%Y%m%d_%H%M%S")).strip()
     cfg["run_id"] = run_id
     source_run_id = str(
-        cfg.get("artifact_source_run_id")
+        cfg.get("_label_artifact_run_id")
         or cfg.get("label_source_run_id")
+        or cfg.get("artifact_source_run_id")
         or ts_sig.strftime("%Y%m%d_%H%M%S")
     ).strip()
     feature_source_run_id = str(
@@ -4781,6 +4782,46 @@ def run_training_step(
             dataset_cache[name] = df_local
         return df_local
 
+    def _label_dataset_aliases(strategy_id: str, horizon: int, suffix: str = "") -> list[str]:
+        sid_raw = str(strategy_id or "").strip()
+        base_names: list[str] = []
+        if sid_raw:
+            base_names.append(sid_raw)
+            for _prefix in ("long_", "short_"):
+                if sid_raw.startswith(_prefix):
+                    stripped = sid_raw[len(_prefix) :]
+                    if stripped:
+                        base_names.append(stripped)
+                    break
+        out: list[str] = []
+        seen_names: set[str] = set()
+        for sid_name in base_names:
+            candidate = f"train_{sid_name}_{int(horizon)}{suffix}"
+            if candidate in seen_names:
+                continue
+            seen_names.add(candidate)
+            out.append(candidate)
+        return out
+
+    def _load_label_dataset_for_strategy(
+        strategy_id: str,
+        horizon: int,
+        *,
+        suffix: str = "",
+    ) -> tuple[str, pd.DataFrame | None]:
+        names = _label_dataset_aliases(strategy_id, horizon, suffix=suffix)
+        if not names:
+            return "", None
+        primary = names[0]
+        for alias_name in names:
+            df_alias = _load_label_dataset(alias_name)
+            if df_alias is not None:
+                if alias_name != primary:
+                    dataset_cache[primary] = df_alias
+                    tprint(f"  Loaded {primary} via label alias {alias_name}")
+                return primary, df_alias
+        return primary, None
+
     include_variant_datasets = bool(cfg.get("base_geometry_train_variants", False))
     base_geometry_archetypes = (
         [
@@ -4796,8 +4837,7 @@ def run_training_step(
         # Determine kind (mr/tf) for backward compatibility with naming if needed
         # but the actual name will be 'train_{s_id}_{H}'
         for H in strategy_horizons.get(s_id, []):
-            name = f"train_{s_id}_{H}"
-            df = _load_label_dataset(name)
+            name, df = _load_label_dataset_for_strategy(s_id, int(H))
             if df is not None:
                 datasets[name] = df
                 found_count += 1
@@ -4806,8 +4846,11 @@ def run_training_step(
             for variant in base_geometry_archetypes:
                 if variant == "balanced":
                     continue
-                vname = f"train_{s_id}_{H}_{variant}"
-                df_v = _load_label_dataset(vname)
+                vname, df_v = _load_label_dataset_for_strategy(
+                    s_id,
+                    int(H),
+                    suffix=f"_{variant}",
+                )
                 if df_v is not None:
                     datasets[vname] = df_v
                     tprint(f"  Loaded {vname}: {len(datasets[vname])} rows")
@@ -9043,7 +9086,10 @@ def run_feature_generation_step(
                 continue
 
             df = df.tail(24 * lookback_days)
-            cutoff_ts = precomputed_tail_cutoffs.get(s)
+            if s in full_rewrite_symbols_for_backfill:
+                cutoff_ts = None
+            else:
+                cutoff_ts = precomputed_tail_cutoffs.get(s)
             if (
                 cutoff_ts is None
                 and live_decision_tail_only
@@ -9678,7 +9724,7 @@ def run_feature_generation_step(
         tprint("Computing Asset Features (Hourly)...")
         requested_feature_keys = None
         if backfill_keys and not force_full_recompute:
-            if explicit_feature_backfill_keys_active:
+            if explicit_backfill_keys_active:
                 # Live selected-model repairs pass an explicit deployed feature
                 # contract.  Do not narrow it by inspecting old symbol parquet
                 # schemas: a key can exist historically while still being stale

@@ -71,6 +71,7 @@ Thumbs.db
 /data_perp/funding_hourly/
 /data_perp/exchanges/
 /data_perp/artifacts/*/reports/
+/data_perp/reports/
 /data_perp/artifacts/*/labels/tb_cache/
 /data_spot/features_raw/
 /data_spot/features/
@@ -107,6 +108,7 @@ Thumbs.db
 ares_*.log
 ares_errors_*.log
 ares_full_*.log
+screenlog.*
 
 # Runtime state
 /state/

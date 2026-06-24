@@ -24,6 +24,11 @@ from extreme_price_movements.unsupervised_regime_learning.context_features impor
     generate_signal_regime_interaction_features,
     market_regime_aggregate_features,
 )
+from extreme_price_movements.unsupervised_regime_learning.bad_regime_archetypes import (
+    BadRegimeArchetypeFeatureConfig,
+    build_bad_regime_archetype_feature_frame,
+    load_bad_regime_archetype_definitions,
+)
 from extreme_price_movements.unsupervised_regime_learning.lgbm_feature_filter import (
     RegimeFeatureLGBMFilterConfig,
     RegimeFeatureLGBMFilterResult,
@@ -42,6 +47,7 @@ __all__ = [
     "RegimeHPOConfig",
     "RegimeHPOResult",
     "RegimeContextFeatureConfig",
+    "BadRegimeArchetypeFeatureConfig",
     "RegimeFeatureLGBMFilterConfig",
     "RegimeFeatureLGBMFilterResult",
     "RegimePipelineValidationConfig",
@@ -49,11 +55,13 @@ __all__ = [
     "UNSUPERVISED_REGIME_PRIMITIVE_FEATURES",
     "build_regime_context_feature_frame",
     "build_regime_context_features_from_artifact",
+    "build_bad_regime_archetype_feature_frame",
     "cross_sectional_regime_residuals",
     "extract_lgbm_reuse_contract",
     "fit_advanced_regime_learning",
     "generate_signal_regime_interaction_features",
     "load_advanced_regime_learning_artifact",
+    "load_bad_regime_archetype_definitions",
     "market_regime_aggregate_features",
     "regime_pipeline_validation_summary",
     "run_advanced_regime_learning_hpo",

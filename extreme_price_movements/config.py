@@ -2098,11 +2098,19 @@ CFG = {
         "xs_",
         "eig_",
         "q_",
+        "xasset_mkt_spread_bps",
     ],
     "lgbm_native_preset_extra_feature_allow_exact": [
         "xasset_mkt_spread_bps",
+        "xasset_mkt_spread_bps_z_24h",
         "regime_liquidity_score",
     ],
+    "lgbm_native_preset_extra_feature_deny_exact": [
+        "q_iqr__xasset_mkt_spread_bps",
+        "q_tail_asym__xasset_mkt_spread_bps",
+        "q_tail_width__xasset_mkt_spread_bps",
+    ],
+    "lgbm_native_preset_extra_allow_orderbook_features": False,
     # per-hour cross-sectional training selection
     "variance_filter_pct": 1.0,  # Keep all non-constant assets
     "variance_filter_stride": 100,

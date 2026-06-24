@@ -38,6 +38,7 @@ class PortfolioPolicyParams:
     max_concurrent_per_strategy: Optional[int] = 4
     max_concurrent_per_symbol: int = 1
     max_new_entries_per_bar: int = 2
+    max_new_entries_per_strategy_per_bar: Optional[int] = None
     max_total_wallet_allocation_pct: float = 0.75
 
     global_threshold_floor: float = 0.60
@@ -79,6 +80,11 @@ class PortfolioPolicyParams:
                 "max_concurrent_per_strategy": self.max_concurrent_per_strategy,
                 "max_concurrent_per_symbol": int(self.max_concurrent_per_symbol),
                 "max_new_entries_per_bar": int(self.max_new_entries_per_bar),
+                "max_new_entries_per_strategy_per_bar": (
+                    None
+                    if self.max_new_entries_per_strategy_per_bar is None
+                    else int(self.max_new_entries_per_strategy_per_bar)
+                ),
             },
             "allocation": {
                 "max_total_wallet_allocation_pct": float(
@@ -114,6 +120,11 @@ class PortfolioPolicyParams:
             occupancy_threshold_power=float(self.occupancy_threshold_power),
             portfolio_policy_version=self.portfolio_policy_version,
             max_new_entries_per_bar=int(self.max_new_entries_per_bar),
+            max_new_entries_per_strategy_per_bar=(
+                None
+                if self.max_new_entries_per_strategy_per_bar is None
+                else int(self.max_new_entries_per_strategy_per_bar)
+            ),
             max_concurrent_per_symbol=int(self.max_concurrent_per_symbol),
             max_total_wallet_allocation_pct=float(
                 self.max_total_wallet_allocation_pct
@@ -203,6 +214,13 @@ def portfolio_policy_params_from_live_config(
                 concurrency,
                 "max_new_entries_per_bar",
                 PortfolioPolicyParams.max_new_entries_per_bar,
+            )
+        ),
+        max_new_entries_per_strategy_per_bar=_none_or_int(
+            _section_get(
+                concurrency,
+                "max_new_entries_per_strategy_per_bar",
+                PortfolioPolicyParams.max_new_entries_per_strategy_per_bar,
             )
         ),
         max_total_wallet_allocation_pct=float(
@@ -420,6 +438,7 @@ class PortfolioState:
 
 @dataclass
 class ReplayDecision:
+    candidate_index: int
     timestamp: pd.Timestamp
     symbol: str
     side: str
@@ -435,6 +454,7 @@ class ReplayDecision:
     open_positions_after: int
     side_count_before: int
     strategy_count_before: int
+    strategy_entries_this_bar_before: int
     wallet_before: float
     wallet_after: float
     open_notional_before: float
@@ -941,6 +961,7 @@ def replay_candidates(
             cooldown_hours_after_loss=float(params.cooldown_hours_after_loss),
         )
         entries_this_bar = 0
+        strategy_entries_this_bar: Dict[str, int] = {}
         thresholds = dynamic_threshold_values(
             cache.base_threshold[group_idx], len(state.open_positions), params
         )
@@ -977,6 +998,7 @@ def replay_candidates(
             open_before = len(state.open_positions)
             side_count_before = state.side_open.get(side, 0)
             strategy_count_before = state.strategy_open.get(strategy_id, 0)
+            strategy_bar_count_before = int(strategy_entries_this_bar.get(strategy_id, 0))
             wallet_before = float(state.wallet)
             open_notional_before = float(state.open_notional)
             capital_limit = (
@@ -1008,6 +1030,11 @@ def replay_candidates(
                 strategy_count_before, params.max_concurrent_per_strategy
             ):
                 reason = "max_concurrent_per_strategy_reached"
+            elif _cap_reached(
+                strategy_bar_count_before,
+                params.max_new_entries_per_strategy_per_bar,
+            ):
+                reason = "max_new_entries_per_strategy_per_bar_reached"
             elif entries_this_bar >= int(params.max_new_entries_per_bar):
                 reason = "max_new_entries_per_bar_reached"
             elif remaining_capital <= float(params.min_position_size):
@@ -1048,6 +1075,7 @@ def replay_candidates(
                 else:
                     accepted = True
                     entries_this_bar += 1
+                    strategy_entries_this_bar[strategy_id] = strategy_bar_count_before + 1
                     exit_ts = pd.Timestamp(cache.exit_timestamp[idx])
                     if pd.isna(exit_ts) or exit_ts <= ts:
                         bars = max(1, int(_coerce_float(cache.holding_bars[idx], 1.0)))
@@ -1074,6 +1102,7 @@ def replay_candidates(
 
             decisions.append(
                 ReplayDecision(
+                    candidate_index=int(idx),
                     timestamp=ts,
                     symbol=symbol,
                     side=side,
@@ -1089,6 +1118,7 @@ def replay_candidates(
                     open_positions_after=int(len(state.open_positions)),
                     side_count_before=int(side_count_before),
                     strategy_count_before=int(strategy_count_before),
+                    strategy_entries_this_bar_before=int(strategy_bar_count_before),
                     wallet_before=float(wallet_before),
                     wallet_after=float(state.wallet),
                     open_notional_before=float(open_notional_before),
@@ -1464,25 +1494,27 @@ def _parameter_grid() -> Iterable[PortfolioPolicyParams]:
     for max_pos in [5, 6, 7, 8, 9]:
         for max_side in [4, 5, 6, 7, None]:
             for max_strat in [3, 4, 5, 6, None]:
-                for max_bar in [1, 2, 3]:
-                    for floor in [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90]:
-                        for margin in [0.00]:
-                            for alpha in [0.0, 0.15, 0.30, 0.50, 0.75]:
-                                for power in [0.75, 1.0, 1.5, 2.0]:
-                                    for side_conc in [0.90, None]:
-                                        for strat_conc in [0.75, None]:
-                                            yield PortfolioPolicyParams(
-                                                max_concurrent_positions=max_pos,
-                                                max_concurrent_per_side=max_side,
-                                                max_concurrent_per_strategy=max_strat,
-                                                max_new_entries_per_bar=max_bar,
-                                                global_threshold_floor=floor,
-                                                threshold_viability_margin=margin,
-                                                occupancy_threshold_alpha=alpha,
-                                                occupancy_threshold_power=power,
-                                                max_side_concentration=side_conc,
-                                                max_strategy_concentration=strat_conc,
-                                            )
+                for max_bar in [1, 2, 3, 4]:
+                    for max_strat_bar in [1, 2, None]:
+                        for floor in [0.70, 0.75, 0.80, 0.85, 0.90]:
+                            for margin in [0.00]:
+                                for alpha in [0.0, 0.15, 0.30, 0.50, 0.75]:
+                                    for power in [0.75, 1.0, 1.5, 2.0]:
+                                        for side_conc in [0.90, None]:
+                                            for strat_conc in [0.75, None]:
+                                                yield PortfolioPolicyParams(
+                                                    max_concurrent_positions=max_pos,
+                                                    max_concurrent_per_side=max_side,
+                                                    max_concurrent_per_strategy=max_strat,
+                                                    max_new_entries_per_bar=max_bar,
+                                                    max_new_entries_per_strategy_per_bar=max_strat_bar,
+                                                    global_threshold_floor=floor,
+                                                    threshold_viability_margin=margin,
+                                                    occupancy_threshold_alpha=alpha,
+                                                    occupancy_threshold_power=power,
+                                                    max_side_concentration=side_conc,
+                                                    max_strategy_concentration=strat_conc,
+                                                )
 
 
 def _sizing_variants(base: PortfolioPolicyParams) -> Iterable[PortfolioPolicyParams]:
@@ -1513,13 +1545,18 @@ def _suggest_params(trial: optuna.Trial) -> PortfolioPolicyParams:
         max_concurrent_positions=max_concurrent_positions,
         max_concurrent_per_side=None,
         max_concurrent_per_strategy=max_concurrent_per_strategy,
-        max_new_entries_per_bar=2,
+        max_new_entries_per_bar=trial.suggest_categorical(
+            "max_new_entries_per_bar", [2, 3, 4]
+        ),
+        max_new_entries_per_strategy_per_bar=trial.suggest_categorical(
+            "max_new_entries_per_strategy_per_bar", [1, 2, None]
+        ),
         max_concurrent_per_symbol=1,
         max_total_wallet_allocation_pct=trial.suggest_categorical(
             "max_total_wallet_allocation_pct", [0.60, 0.70, 0.80]
         ),
         global_threshold_floor=trial.suggest_float(
-            "global_threshold_floor", 0.45, 0.95, step=0.01
+            "global_threshold_floor", 0.70, 0.95, step=0.01
         ),
         threshold_viability_margin=0.0,
         occupancy_threshold_alpha=trial.suggest_float(

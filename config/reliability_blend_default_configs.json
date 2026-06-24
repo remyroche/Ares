@@ -1,0 +1,82 @@
+{
+  "description": "Default per-head reliability blend configs seeded from the 2026-06-24 50k LGBM-only auxiliary-selector run. These are enqueued as the first Optuna trial by scripts/run_reliability_blend_optuna.py.",
+  "source_report": "data_perp/reports/reliability_blend_optuna_20260623_native_lgbm_only_50k",
+  "selection_rule": "Use soft q_fail variants by default; keep raw objective winners separately for audit.",
+  "updated_at_utc": "2026-06-24T01:08:14Z",
+  "configs": {
+    "long_bars": {
+      "variant": "B3_new_period_soft_qfail",
+      "alpha": 0.060872,
+      "beta": -0.100505,
+      "period_power": 0.75,
+      "period_side": "low",
+      "qfail_power": 1.0,
+      "qfail_side": "high"
+    },
+    "long_dist": {
+      "variant": "B4_old_period_soft_qfail",
+      "alpha": -0.019932,
+      "beta": -0.475102,
+      "period_power": 0.75,
+      "period_side": "high",
+      "qfail_power": 1.25,
+      "qfail_side": "high"
+    },
+    "short_asset": {
+      "variant": "B3_new_period_soft_qfail",
+      "alpha": -0.26693,
+      "beta": -0.370418,
+      "period_power": 1.0,
+      "period_side": "high",
+      "qfail_power": 1.0,
+      "qfail_side": "high"
+    },
+    "short_boll": {
+      "variant": "B3_new_period_soft_qfail",
+      "alpha": -0.052988,
+      "beta": 0.393208,
+      "period_power": 0.5,
+      "period_side": "high",
+      "qfail_power": 2.0,
+      "qfail_side": "low"
+    }
+  },
+  "raw_objective_winners": {
+    "long_bars": {
+      "variant": "B3_new_period_soft_qfail",
+      "alpha": 0.060872,
+      "beta": -0.100505,
+      "period_power": 0.75,
+      "period_side": "low",
+      "qfail_power": 1.0,
+      "qfail_side": "high"
+    },
+    "long_dist": {
+      "variant": "B2_new_period_hard_qfail",
+      "alpha": 0.116306,
+      "beta": -0.379054,
+      "period_power": 1.5,
+      "period_side": "low",
+      "qfail_power": 1.0,
+      "qfail_side": "high"
+    },
+    "short_asset": {
+      "variant": "B3_new_period_soft_qfail",
+      "alpha": -0.26693,
+      "beta": -0.370418,
+      "period_power": 1.0,
+      "period_side": "high",
+      "qfail_power": 1.0,
+      "qfail_side": "high"
+    },
+    "short_boll": {
+      "variant": "B3_new_period_soft_qfail",
+      "alpha": -0.052988,
+      "beta": 0.393208,
+      "period_power": 0.5,
+      "period_side": "high",
+      "qfail_power": 2.0,
+      "qfail_side": "low"
+    }
+  }
+}

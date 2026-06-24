@@ -8436,11 +8436,14 @@ def _native_preset_extra_feature_allowed(feature: str, cfg: dict[str, Any]) -> b
     name = str(feature or "").strip()
     if not name or name == "meta_en_x_efficiency":
         return False
+    deny_exact = {str(v) for v in cfg.get("lgbm_native_preset_extra_feature_deny_exact", []) or []}
+    if name in deny_exact:
+        return False
     prefixes = tuple(
         str(p)
         for p in (
             cfg.get("lgbm_native_preset_extra_feature_allow_prefixes")
-            or ["mkt_", "xs_", "eig_", "q_"]
+            or ["mkt_", "xs_", "eig_", "q_", "xasset_mkt_spread_bps"]
         )
         if str(p)
     )
@@ -8451,7 +8454,60 @@ def _native_preset_extra_feature_allowed(feature: str, cfg: dict[str, Any]) -> b
             or ["xasset_mkt_spread_bps", "regime_liquidity_score"]
         )
     }
-    return name in exact or bool(prefixes and name.startswith(prefixes))
+    allowed_by_name = name in exact or bool(prefixes and name.startswith(prefixes))
+    if not allowed_by_name:
+        return False
+
+    def _composite_parent(feature_name: str) -> str | None:
+        for prefix in (
+            "xs_mean__",
+            "xs_median__",
+            "xs_std__",
+            "xs_dispersion__",
+            "q_lower_tail__",
+            "q_upper_tail__",
+            "q_iqr__",
+            "q_tail_width__",
+            "q_tail_asym__",
+        ):
+            if feature_name.startswith(prefix):
+                parent = feature_name[len(prefix) :]
+                return parent or None
+        return None
+
+    dependency_names = [name]
+    parent = _composite_parent(name)
+    if parent:
+        dependency_names.append(parent)
+    elif (name.startswith("eig_") or name.startswith("xs_cov_")) and "__" in name:
+        group = name.rsplit("__", 1)[-1]
+        group_map = cfg.get("MODEL_REGIME_COMPOSITE_EIGEN_GROUPS", {}) or {}
+        dependency_names.extend(str(v) for v in group_map.get(group, []) or [])
+
+    try:
+        from extreme_price_movements.features import _feature_source_requirements
+    except Exception:
+        _feature_source_requirements = None
+
+    portability_mode = str(cfg.get("feature_portability_mode", "") or "").lower()
+    orderbook_enabled = bool(
+        cfg.get("lgbm_native_preset_extra_allow_orderbook_features", False)
+    )
+    for dep in dependency_names:
+        if not dep:
+            continue
+        reqs = (
+            _feature_source_requirements(str(dep))
+            if _feature_source_requirements is not None
+            else set()
+        )
+        if "deleted" in reqs:
+            return False
+        if "orderbook" in reqs and not orderbook_enabled:
+            return False
+        if "funding" in reqs and portability_mode == "no_funding_source":
+            return False
+    return True
 
 
 def _native_lgbm_preset_extra_features(
@@ -15170,20 +15226,32 @@ def train_meta_models_from_artifacts(
     def _load_saved_oof_frame(
         trade_side: str, strategy_id: str, horizon: int
     ) -> pd.DataFrame | None:
-        run_id = str(cfg.get("run_id", "default"))
-        oof_dir = os.path.join(
-            str(cfg.get("data_root", "data")), "artifacts", run_id, "oof"
-        )
+        run_ids = [
+            str(cfg.get("run_id", "default")),
+            str(cfg.get("artifact_source_run_id") or "").strip(),
+        ]
+        run_ids = [rid for rid in dict.fromkeys(run_ids) if rid]
         candidates = list(
             dict.fromkeys(
                 [
                     os.path.join(
-                        oof_dir, f"oof_{strategy_id}_H{int(horizon)}.parquet"
-                    ),
+                        str(cfg.get("data_root", "data")),
+                        "artifacts",
+                        run_id,
+                        "oof",
+                        f"oof_{strategy_id}_H{int(horizon)}.parquet",
+                    )
+                    for run_id in run_ids
+                ]
+                + [
                     os.path.join(
-                        oof_dir,
+                        str(cfg.get("data_root", "data")),
+                        "artifacts",
+                        run_id,
+                        "oof",
                         f"oof_{trade_side}_{strategy_id}_H{int(horizon)}.parquet",
-                    ),
+                    )
+                    for run_id in run_ids
                 ]
             )
         )
@@ -15574,6 +15642,18 @@ def train_meta_models_from_artifacts(
             if len(oof_local) != len(source_df):
                 skip[h_local] = f"oof_len_mismatch:{len(oof_local)}!={len(source_df)}"
                 continue
+            finite_oof = np.isfinite(np.asarray(oof_local, dtype=np.float64))
+            if not bool(np.all(finite_oof)):
+                missing_oof = int((~finite_oof).sum())
+                if int(finite_oof.sum()) <= 0:
+                    skip[h_local] = f"missing_aligned_oof:{missing_oof}"
+                    continue
+                source_df = source_df.loc[finite_oof].reset_index(drop=True)
+                oof_local = np.asarray(oof_local, dtype=np.float32)[finite_oof]
+                tprint(
+                    f"Meta training: aligned base OOF for {strategy_id} H={int(h_local)} "
+                    f"dropped {missing_oof} rows without OOF support; kept={len(source_df)}."
+                )
             out[h_local] = (source_df, oof_local)
         tprint(
             f"Meta training: horizons found for {strategy_id}: {list(out.keys())} (skip: {skip})"

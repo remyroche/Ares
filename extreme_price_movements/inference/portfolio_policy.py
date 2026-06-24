@@ -43,6 +43,7 @@ class PortfolioPolicyConfig:
     occupancy_threshold_power: float = 1.0
     portfolio_policy_version: str = "global_auction_v1"
     max_new_entries_per_bar: int = 4
+    max_new_entries_per_strategy_per_bar: Optional[int] = None
     max_concurrent_per_symbol: int = 1
 
     side_crowding_penalty_max: float = 0.03
@@ -196,6 +197,7 @@ def load_portfolio_policy_config(
             "max_concurrent_per_strategy",
             "max_concurrent_per_symbol",
             "max_new_entries_per_bar",
+            "max_new_entries_per_strategy_per_bar",
         },
         "allocation": {
             "max_total_wallet_allocation_pct",
@@ -278,6 +280,10 @@ def load_portfolio_policy_config(
 
     values["max_concurrent_positions"] = max(1, int(values["max_concurrent_positions"]))
     values["max_new_entries_per_bar"] = max(1, int(values["max_new_entries_per_bar"]))
+    if values.get("max_new_entries_per_strategy_per_bar") is not None:
+        values["max_new_entries_per_strategy_per_bar"] = max(
+            1, int(values["max_new_entries_per_strategy_per_bar"])
+        )
     values["max_concurrent_per_symbol"] = max(
         1, int(values["max_concurrent_per_symbol"])
     )

@@ -48,3 +48,7 @@ Action: In feature injection (`pipeline_steps.py`), replace `pd.concat([df, pd.D
 Learning: `iterrows()` in pandas is extremely slow due to box/unbox overhead and index checking. Simple iteration is often better performed by converting dataframe columns to numpy arrays and using `zip()` to iterate, or vectorizing the operations entirely, especially inside inner loops for tasks like pruning dominance fronts or pairwise metrics processing.
 Action: Search for and replace `iterrows()` with vectorized alternatives or numpy iteration whenever optimizing loops in a DataFrame.
 ## 2026-04-21 - [Data Converter] Learning: Iterating through DataFrame rows with iterrows() to build OHLC mapping or fallback stats is critically slow. Action: Extract columns using .values and iterate via zip() or vectorize with boolean masking.
+
+## 2026-06-29 - Vectorized DataFrame Index Matching over `iterrows()`
+Learning: Updating rows conditionally based on index matching using `.iterrows()` (`if key in old_idx.index: old_idx.loc[key, col] = value`) introduces massive overhead for large dataframes (e.g. going from 26s down to 0.3s when fixed).
+Action: Bulk update missing or matched rows by utilizing `.index.intersection()` for common indices mapped with `.loc[common_idx] = upd.loc[common_idx]`, and `pd.concat` to append `.index.difference()`. To prevent schema evolution from breaking dtypes when new columns have missing entries on old index, preemptively declare them on the old dataframe using `old_idx[col] = pd.Series(dtype=upd[col].dtype)`.

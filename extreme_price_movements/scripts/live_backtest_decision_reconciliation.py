@@ -109,6 +109,56 @@ def _feature_source_ts(run_id: str) -> pd.Timestamp:
     return pd.to_datetime(run_id, format="%Y%m%d_%H%M%S", utc=True)
 
 
+def _live_latest_matrix_path(
+    *,
+    data_root: str,
+    feature_source_run_id: str,
+    signal_ts: pd.Timestamp,
+) -> Path:
+    ts = pd.Timestamp(signal_ts)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("UTC")
+    else:
+        ts = ts.tz_convert("UTC")
+    stamp = ts.strftime("%Y%m%dT%H%M%SZ")
+    return (
+        Path(data_root)
+        / "features"
+        / str(feature_source_run_id)
+        / "_live_latest_matrix"
+        / f"matrix_{stamp}.parquet"
+    )
+
+
+def _training_feature_values_from_latest_matrix(
+    *,
+    feature_source_run_id: str,
+    data_root: str,
+    signal_ts: pd.Timestamp,
+    symbol: str,
+    feature_keys: Iterable[str],
+) -> dict[str, float]:
+    keys = [str(k) for k in feature_keys if str(k)]
+    path = _live_latest_matrix_path(
+        data_root=data_root,
+        feature_source_run_id=feature_source_run_id,
+        signal_ts=signal_ts,
+    )
+    if not path.exists() or not keys:
+        return {}
+    try:
+        matrix = pd.read_parquet(path)
+    except Exception:
+        return {}
+    if "symbol" in matrix.columns:
+        matrix = matrix.set_index("symbol")
+    matrix.index = matrix.index.map(str)
+    if str(symbol) not in matrix.index:
+        return {k: np.nan for k in keys}
+    row = matrix.loc[str(symbol)]
+    return {k: _safe_float(row.get(k, np.nan)) for k in keys}
+
+
 def _compact_symbol(symbol: Any) -> str:
     return str(symbol or "").upper().strip().replace(":USDT", "").replace("/", "_")
 
@@ -264,7 +314,13 @@ def _training_feature_values(
         end_ts=pd.Timestamp(signal_ts) + pd.Timedelta(minutes=1),
     )
     if feats is None:
-        return {k: np.nan for k in keys}
+        return _training_feature_values_from_latest_matrix(
+            feature_source_run_id=feature_source_run_id,
+            data_root=data_root,
+            signal_ts=signal_ts,
+            symbol=symbol,
+            feature_keys=keys,
+        ) or {k: np.nan for k in keys}
     out: dict[str, float] = {}
     for key in keys:
         try:
@@ -272,6 +328,16 @@ def _training_feature_values(
             out[key] = _safe_float(vals.iloc[0] if hasattr(vals, "iloc") else np.asarray(vals)[0])
         except Exception:
             out[key] = np.nan
+    matrix_values = _training_feature_values_from_latest_matrix(
+        feature_source_run_id=feature_source_run_id,
+        data_root=data_root,
+        signal_ts=signal_ts,
+        symbol=symbol,
+        feature_keys=[k for k, v in out.items() if not np.isfinite(v)],
+    )
+    for key, value in matrix_values.items():
+        if np.isfinite(value):
+            out[key] = value
     return out
 
 
@@ -483,10 +549,26 @@ def compare_predictions(
         else pd.Series(dtype=bool)
     )
     fresh_current = fresh_policy & fresh_auction if not report.empty else pd.Series(dtype=bool)
+    base_unverifiable = report["base_abs_diff"].isna() if not report.empty else pd.Series(dtype=bool)
+    meta_unverifiable = report["meta_abs_diff"].isna() if not report.empty else pd.Series(dtype=bool)
+    policy_rank_unverifiable = (
+        report["policy_rank_live_score_abs_diff"].isna()
+        if not report.empty
+        else pd.Series(dtype=bool)
+    )
+    auction_rank_unverifiable = (
+        report["auction_rank_live_score_abs_diff"].isna()
+        if not report.empty
+        else pd.Series(dtype=bool)
+    )
     summary = {
         "rows": int(len(report)),
         "base_mismatches": int((report["base_abs_diff"] > 1e-9).sum()) if not report.empty else 0,
         "meta_mismatches": int((report["meta_abs_diff"] > 1e-9).sum()) if not report.empty else 0,
+        "base_unverifiable": int(base_unverifiable.sum()) if not report.empty else 0,
+        "meta_unverifiable": int(meta_unverifiable.sum()) if not report.empty else 0,
+        "policy_rank_unverifiable": int(policy_rank_unverifiable.sum()) if not report.empty else 0,
+        "auction_rank_unverifiable": int(auction_rank_unverifiable.sum()) if not report.empty else 0,
         "policy_rank_rows_with_current_reference_after_decision": int(report["policy_rank_reference_current_after_decision"].sum()) if not report.empty else 0,
         "auction_rank_rows_with_current_reference_after_decision": int(report["auction_rank_reference_current_after_decision"].sum()) if not report.empty else 0,
         "policy_rank_mismatches_on_fresh_reference": int(((report["policy_rank_live_score_abs_diff"] > 1e-12) & fresh_policy).sum()) if not report.empty else 0,
@@ -498,6 +580,10 @@ def compare_predictions(
         "fresh_current_rows": int(fresh_current.sum()) if not report.empty else 0,
         "fresh_current_base_mismatches": int(((report["base_abs_diff"] > 1e-9) & fresh_current).sum()) if not report.empty else 0,
         "fresh_current_meta_mismatches": int(((report["meta_abs_diff"] > 1e-9) & fresh_current).sum()) if not report.empty else 0,
+        "fresh_current_base_unverifiable": int((base_unverifiable & fresh_current).sum()) if not report.empty else 0,
+        "fresh_current_meta_unverifiable": int((meta_unverifiable & fresh_current).sum()) if not report.empty else 0,
+        "fresh_current_policy_rank_unverifiable": int((policy_rank_unverifiable & fresh_current).sum()) if not report.empty else 0,
+        "fresh_current_auction_rank_unverifiable": int((auction_rank_unverifiable & fresh_current).sum()) if not report.empty else 0,
         "fresh_current_policy_rank_mismatches": int(((report["policy_rank_live_score_abs_diff"] > 1e-12) & fresh_current).sum()) if not report.empty else 0,
         "fresh_current_auction_rank_mismatches": int(((report["auction_rank_live_score_abs_diff"] > 1e-12) & fresh_current).sum()) if not report.empty else 0,
     }
@@ -792,6 +878,9 @@ def write_report(path: Path, summaries: dict[str, Any]) -> None:
     feature_mismatches = int(current_feature.get("mismatches", feature.get("mismatches") or 0))
     base_mismatches = int(current_pred.get("base_mismatches", pred.get("base_mismatches") or 0))
     meta_mismatches = int(current_pred.get("meta_mismatches", pred.get("meta_mismatches") or 0))
+    prediction_unverifiable = int(
+        current_pred.get("base_unverifiable", pred.get("base_unverifiable") or 0)
+    ) + int(current_pred.get("meta_unverifiable", pred.get("meta_unverifiable") or 0))
     fresh_policy_rank_mismatches = int(
         current_pred.get(
             "policy_rank_mismatches",
@@ -812,7 +901,13 @@ def write_report(path: Path, summaries: dict[str, Any]) -> None:
         "PASS" if strict_rows > 0 and strict_mismatches == 0 else "UNPROVEN" if strict_rows == 0 else "FAIL"
     )
     feature_verdict = "PASS" if feature_mismatches == 0 else "FAIL"
-    prediction_verdict = "PASS" if base_mismatches == 0 and meta_mismatches == 0 else "FAIL"
+    prediction_verdict = (
+        "UNPROVEN"
+        if prediction_unverifiable > 0
+        else "PASS"
+        if base_mismatches == 0 and meta_mismatches == 0
+        else "FAIL"
+    )
     if int(current_pred.get("rows") or 0) > 0:
         rank_verdict = (
             "PASS"
@@ -937,6 +1032,10 @@ def main(argv: list[str] | None = None) -> int:
             "rows": int(len(fresh_current_pred)),
             "base_mismatches": int((fresh_current_pred["base_abs_diff"] > 1e-9).sum()),
             "meta_mismatches": int((fresh_current_pred["meta_abs_diff"] > 1e-9).sum()),
+            "base_unverifiable": int(fresh_current_pred["base_abs_diff"].isna().sum()),
+            "meta_unverifiable": int(fresh_current_pred["meta_abs_diff"].isna().sum()),
+            "policy_rank_unverifiable": int(fresh_current_pred["policy_rank_live_score_abs_diff"].isna().sum()),
+            "auction_rank_unverifiable": int(fresh_current_pred["auction_rank_live_score_abs_diff"].isna().sum()),
             "policy_rank_mismatches": int((fresh_current_pred["policy_rank_live_score_abs_diff"] > 1e-12).sum()),
             "auction_rank_mismatches": int((fresh_current_pred["auction_rank_live_score_abs_diff"] > 1e-12).sum()),
             "max_base_abs_diff": float(fresh_current_pred["base_abs_diff"].max()) if fresh_current_pred["base_abs_diff"].notna().any() else np.nan,

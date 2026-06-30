@@ -4843,11 +4843,32 @@ def main():
     elif args.mode == "labels":
         run_labels(cfg, horizons=args.horizons, ts_override=args.ts_override)
     elif args.mode == "features":
+        _feature_symbols_file_arg = str(
+            os.environ.get("EPM_FEATURE_SYMBOLS_FILE", "")
+        ).strip()
+        _feature_symbols_from_file = ""
+        if _feature_symbols_file_arg:
+            try:
+                _feature_symbols_from_file = Path(_feature_symbols_file_arg).read_text(
+                    encoding="utf-8"
+                )
+                tprint(
+                    "Feature symbol allowlist file loaded: "
+                    f"{_feature_symbols_file_arg}"
+                )
+            except Exception as exc:
+                tprint(
+                    "WARNING: could not read EPM_FEATURE_SYMBOLS_FILE="
+                    f"{_feature_symbols_file_arg!r}: {exc}"
+                )
         _feature_symbols_arg = args.feature_symbols or os.environ.get(
             "EPM_FEATURE_SYMBOLS", ""
-        )
+        ) or _feature_symbols_from_file
         _feature_symbols = [
-            s.strip() for s in str(_feature_symbols_arg).split(",") if s.strip()
+            s.strip()
+            for part in str(_feature_symbols_arg).splitlines()
+            for s in part.split(",")
+            if s.strip()
         ]
         run_features(
             cfg,

@@ -35,6 +35,66 @@ def test_portfolio_manager_defaults_to_75pct_total_and_15pct_position_cap():
     assert state["max_position_pct"] == 0.15
 
 
+def test_portfolio_manager_leveraged_caps_apply_before_quote_notional():
+    pm = PortfolioManager(
+        portfolio_value=100.0,
+        max_portfolio_pct=0.75,
+        max_position_pct=0.15,
+        max_position_usdt=5000.0,
+        leverage_wallet_multiplier=10.0,
+    )
+    pm.update_margin_account_metrics(
+        total_assets_quote=100.0,
+        total_liabilities_quote=0.0,
+    )
+
+    cap = pm.get_portfolio_capacity(side="long", strategy_id="long_mr")
+    assert cap["max_position_notional"] == 150.0
+    assert cap["max_total_notional"] == 750.0
+    assert cap["margin_surplus_notional"] == 1000.0
+
+    can_enter, info = pm.can_enter_position(
+        symbol="BTC/USD:USD",
+        side="long",
+        strategy_id="long_mr",
+        confidence_score=1.0,
+        initial_threshold=0.5,
+        current_time=pd.Timestamp("2026-01-01", tz="UTC"),
+        requested_position_size=200.0,
+    )
+
+    assert can_enter
+    assert info["position_size_cap"] == 150.0
+
+
+def test_portfolio_manager_clips_oversized_request_to_remaining_capacity():
+    pm = PortfolioManager(portfolio_value=10000.0)
+    t0 = pd.Timestamp("2026-01-01", tz="UTC")
+    pm.record_position_open(
+        symbol="OPEN/USDT",
+        side="long",
+        strategy_id="long_mr",
+        position_size=6500.0,
+        entry_price=100.0,
+        entry_time=t0,
+    )
+
+    can_enter, info = pm.can_enter_position(
+        symbol="NEXT/USDT",
+        side="long",
+        strategy_id="long_mr_2",
+        confidence_score=1.0,
+        initial_threshold=0.5,
+        current_time=t0 + pd.Timedelta(minutes=1),
+        requested_position_size=2000.0,
+    )
+
+    assert can_enter
+    assert info["reason"] == "allowed"
+    assert info["position_size_cap"] == 1000.0
+    assert info["requested_size_clipped_to_remaining_total_notional"] is True
+
+
 def test_portfolio_manager_allows_six_positions_per_strategy_by_default():
     pm = PortfolioManager(portfolio_value=10000.0)
     t0 = pd.Timestamp("2026-01-01", tz="UTC")

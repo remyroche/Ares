@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import hashlib
 import os
 import pickle
@@ -38,6 +40,9 @@ from extreme_price_movements.intraday_crypto_library import (
 from extreme_price_movements.perp_features import (
     compute_features as compute_perp_features,
     get_perp_feature_names,
+)
+from extreme_price_movements.performance_regimes.spectral_position import (
+    MARKET_SPECTRAL_POSITION_BASE_FEATURES,
 )
 from extreme_price_movements.time_utils import ensure_utc
 from extreme_price_movements.utils import tprint
@@ -416,6 +421,7 @@ _REGIME_TAIL_PREFIXES = (
     "q_tail_asym__",
 )
 _REGIME_EIGEN_PREFIXES = ("eig_", "xs_cov_")
+_REGIME_SPECTRAL_PREFIXES = ("state_spectral_",)
 
 
 def _regime_composite_parent_from_key(key: str) -> str | None:
@@ -434,7 +440,12 @@ def _regime_composite_group_from_key(key: str) -> str | None:
 
 
 def _is_regime_composite_key(key: str) -> bool:
-    return key.startswith(_REGIME_XS_PREFIXES + _REGIME_TAIL_PREFIXES + _REGIME_EIGEN_PREFIXES)
+    return key.startswith(
+        _REGIME_XS_PREFIXES
+        + _REGIME_TAIL_PREFIXES
+        + _REGIME_EIGEN_PREFIXES
+        + _REGIME_SPECTRAL_PREFIXES
+    )
 
 
 def _expand_regime_composite_dependencies(
@@ -462,6 +473,12 @@ def _expand_regime_composite_dependencies(
         parent = _regime_composite_parent_from_key(str(key))
         if parent and _parent_dependency_allowed(parent):
             out.add(parent)
+            continue
+        if str(key).startswith(_REGIME_SPECTRAL_PREFIXES):
+            for parent_key in list(cfg.get("MARKET_SPECTRAL_POSITION_SOURCE_FEATURE_KEYS", []) or []):
+                parent_key = str(parent_key)
+                if _parent_dependency_allowed(parent_key):
+                    out.add(parent_key)
             continue
         group = _regime_composite_group_from_key(str(key))
         if group:
@@ -580,6 +597,140 @@ def _row_eigen_summary_from_arrays(
     }
 
 
+def _market_spectral_source_frame(
+    feats: dict[str, pd.DataFrame],
+    source_keys: Sequence[str],
+    index: pd.Index,
+    columns: pd.Index,
+    *,
+    max_source_features: int,
+) -> tuple[pd.DataFrame, list[str]]:
+    values: dict[str, np.ndarray] = {}
+    used: list[str] = []
+    for key in dict.fromkeys(str(k) for k in source_keys if str(k)):
+        frame = feats.get(key)
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            continue
+        aligned = frame.reindex(index=index, columns=columns)
+        mean = _row_mean_fast(aligned)
+        std = _row_std_fast(aligned)
+        median = _row_median_fast(aligned)
+        for suffix, arr in (
+            ("mean", mean),
+            ("std", std),
+            ("median", median),
+        ):
+            safe = np.nan_to_num(np.asarray(arr, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0)
+            if safe.size != len(index) or float(np.nanvar(safe)) <= 1e-12:
+                continue
+            values[f"{key}__{suffix}"] = safe
+        used.append(key)
+        if len(values) >= int(max_source_features):
+            break
+    if not values:
+        return pd.DataFrame(index=index), used
+    frame = pd.DataFrame(values, index=index)
+    coverage_var: list[tuple[float, float, str]] = []
+    for col in frame.columns:
+        vals = pd.to_numeric(frame[col], errors="coerce")
+        coverage = float(vals.notna().mean())
+        var = float(vals.var(ddof=0)) if vals.notna().sum() > 1 else 0.0
+        if coverage > 0.0 and np.isfinite(var) and var > 1e-12:
+            coverage_var.append((coverage, var, str(col)))
+    coverage_var.sort(key=lambda item: (-item[0], -item[1], item[2]))
+    keep = [col for _, _, col in coverage_var[: max(1, int(max_source_features))]]
+    return frame.loc[:, keep].astype(np.float32, copy=False), used
+
+
+def _rolling_market_spectral_values(
+    source: pd.DataFrame,
+    *,
+    lookback: int,
+    min_periods: int,
+    top_k: int,
+    shrinkage: float,
+    eps: float = 1e-8,
+) -> dict[str, np.ndarray]:
+    n_rows = int(len(source))
+    n_features = int(source.shape[1])
+    zero = np.zeros(n_rows, dtype=np.float32)
+    out = {name: zero.copy() for name in MARKET_SPECTRAL_POSITION_BASE_FEATURES}
+    if n_rows == 0 or n_features < 2:
+        return out
+    lookback = max(2, int(lookback))
+    min_periods = max(2, min(int(min_periods), lookback))
+    top_k = max(1, min(int(top_k), n_features))
+    shrinkage = float(np.clip(shrinkage, 0.0, 1.0))
+    x_raw = source.replace([np.inf, -np.inf], np.nan).fillna(0.0).to_numpy(dtype=np.float64, copy=False)
+    prior = pd.DataFrame(x_raw, index=source.index, columns=source.columns).shift(1)
+    roll_mean = prior.rolling(lookback, min_periods=min_periods).mean()
+    roll_std = prior.rolling(lookback, min_periods=min_periods).std(ddof=0)
+    mean_arr = roll_mean.to_numpy(dtype=np.float64, copy=False)
+    std_arr = np.maximum(roll_std.to_numpy(dtype=np.float64, copy=False), eps)
+    z = np.nan_to_num(np.clip((x_raw - mean_arr) / std_arr, -8.0, 8.0), nan=0.0, posinf=8.0, neginf=-8.0)
+    prev_vecs: np.ndarray | None = None
+    eye = np.eye(n_features, dtype=np.float64)
+    for i in range(n_rows):
+        start = max(0, i - lookback)
+        if i - start < min_periods:
+            continue
+        window = z[start:i]
+        if window.shape[0] < 2:
+            continue
+        cov = np.cov(window, rowvar=False, ddof=1)
+        cov = np.nan_to_num(np.asarray(cov, dtype=np.float64), nan=0.0, posinf=0.0, neginf=0.0)
+        if cov.ndim != 2 or cov.shape[0] != n_features:
+            continue
+        cov = 0.5 * (cov + cov.T)
+        cov = (1.0 - shrinkage) * cov + shrinkage * eye
+        try:
+            eigvals, eigvecs = np.linalg.eigh(cov)
+        except np.linalg.LinAlgError:
+            continue
+        order = np.argsort(eigvals)[::-1]
+        eigvals = np.maximum(eigvals[order], eps)
+        eigvecs = eigvecs[:, order]
+        if prev_vecs is not None and prev_vecs.shape == eigvecs.shape:
+            for comp in range(min(top_k, prev_vecs.shape[1])):
+                if float(np.dot(eigvecs[:, comp], prev_vecs[:, comp])) < 0.0:
+                    eigvecs[:, comp] *= -1.0
+        prev_vecs = eigvecs.copy()
+        total = float(np.sum(eigvals))
+        if total <= eps:
+            continue
+        p = eigvals / total
+        entropy = float(-np.sum(p * np.log(np.maximum(p, eps))))
+        top_vecs = eigvecs[:, :top_k]
+        row = z[i]
+        scores = top_vecs.T @ row
+        zscores = scores / np.sqrt(eigvals[:top_k] + eps)
+        x_hat = top_vecs @ scores
+        residual = row - x_hat
+        score3 = np.zeros(3, dtype=np.float64)
+        zscore3 = np.zeros(3, dtype=np.float64)
+        score3[: min(3, len(scores))] = scores[: min(3, len(scores))]
+        zscore3[: min(3, len(zscores))] = zscores[: min(3, len(zscores))]
+        top3 = min(3, len(eigvals))
+        row_norm = float(np.linalg.norm(row))
+        recon_error = float(np.linalg.norm(residual))
+        out["eig_lambda1_share"][i] = np.float32(eigvals[0] / total)
+        out["eig_top3_share"][i] = np.float32(np.sum(eigvals[:top3]) / total)
+        out["eig_effective_rank"][i] = np.float32(np.exp(entropy))
+        out["eig_entropy"][i] = np.float32(entropy)
+        out["eig_gap_1_2"][i] = np.float32(eigvals[0] - eigvals[1] if len(eigvals) > 1 else 0.0)
+        out["eig_gap_ratio_1_2"][i] = np.float32(eigvals[0] / max(eigvals[1] if len(eigvals) > 1 else eps, eps))
+        out["eig_condition"][i] = np.float32(eigvals[0] / max(eigvals[-1], eps))
+        out["pc1_score"][i], out["pc2_score"][i], out["pc3_score"][i] = score3.astype(np.float32)
+        out["pc1_z"][i], out["pc2_z"][i], out["pc3_z"][i] = zscore3.astype(np.float32)
+        out["abs_pc1_z"][i], out["abs_pc2_z"][i], out["abs_pc3_z"][i] = np.abs(zscore3).astype(np.float32)
+        out["sum_abs_top3_pc_z"][i] = np.float32(np.sum(np.abs(zscore3[:top3])))
+        out["projection_norm_top3"][i] = np.float32(np.linalg.norm(scores[:top_k]))
+        out["top3_reconstruction_error"][i] = np.float32(recon_error)
+        out["top3_reconstruction_ratio"][i] = np.float32(recon_error / max(row_norm, eps))
+        out["top3_mahalanobis"][i] = np.float32(np.sum((scores[:top_k] ** 2) / (eigvals[:top_k] + eps)))
+    return out
+
+
 def _add_regime_panel_composite_features(
     feats: dict[str, pd.DataFrame],
     requested_feature_set: set[str],
@@ -689,6 +840,35 @@ def _add_regime_panel_composite_features(
                 f"Regime panel composites group={group} requested={len(keys)} "
                 f"parents_used={len(used)}"
             )
+
+    spectral_requested = sorted(k for k in requested if k.startswith(_REGIME_SPECTRAL_PREFIXES))
+    if spectral_requested:
+        source_keys = [str(k) for k in cfg.get("MARKET_SPECTRAL_POSITION_SOURCE_FEATURE_KEYS", []) or []]
+        source, used = _market_spectral_source_frame(
+            feats,
+            source_keys,
+            index,
+            columns,
+            max_source_features=int(cfg.get("market_spectral_position_max_source_features", 64) or 64),
+        )
+        spectral_values = _rolling_market_spectral_values(
+            source,
+            lookback=int(cfg.get("market_spectral_position_lookback", 48) or 48),
+            min_periods=int(cfg.get("market_spectral_position_min_periods", 24) or 24),
+            top_k=int(cfg.get("market_spectral_position_top_k", 3) or 3),
+            shrinkage=float(cfg.get("market_spectral_position_shrinkage", 0.10) or 0.10),
+        )
+        for key in spectral_requested:
+            suffix = key[len(_REGIME_SPECTRAL_PREFIXES[0]) :]
+            values = spectral_values.get(suffix)
+            if values is None or values.size != len(index):
+                values = zero
+            feats[key] = _regime_broadcast_values(values, index, columns)
+            generated.add(key)
+        tprint(
+            "Market spectral position composites: "
+            f"generated={len(spectral_requested)} source_features={len(source.columns)} parents_used={len(used)}"
+        )
 
     missing = sorted(requested - generated)
     for key in missing:

@@ -26,6 +26,58 @@ from extreme_price_movements.utils import tprint
 DEFAULT_LOG_DIR = "extreme_price_movements/logs"
 
 
+def _safe_finite_float(value: Any) -> float:
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return float("nan")
+    return out if np.isfinite(out) else float("nan")
+
+
+def _derive_entry_notional_quote(decision: Dict[str, Any]) -> Any:
+    """Return a positive quote notional for fee/PnL audit when the direct field is missing."""
+    direct_keys = (
+        "entry_notional_quote",
+        "notional_quote",
+        "position_size_after_liquidity",
+        "intended_quote_size",
+        "position_size_before_liquidity",
+        "quote_size",
+        "ridge_position_size",
+    )
+    for key in direct_keys:
+        value = _safe_finite_float(decision.get(key))
+        if np.isfinite(value) and abs(value) > 0.0:
+            return abs(value)
+
+    base_amount = _safe_finite_float(
+        decision.get("requested_base_amount") or decision.get("base_amount")
+    )
+    if np.isfinite(base_amount) and abs(base_amount) > 0.0:
+        for key in (
+            "realized_entry_price",
+            "actual_entry_price",
+            "price",
+            "expected_entry_price",
+            "entry_px",
+        ):
+            price = _safe_finite_float(decision.get(key))
+            if np.isfinite(price) and abs(price) > 0.0:
+                return abs(base_amount * price)
+
+    fee_quote = _safe_finite_float(decision.get("entry_fee_estimate_quote"))
+    fee_bps = _safe_finite_float(decision.get("entry_fee_estimate_bps"))
+    if (
+        np.isfinite(fee_quote)
+        and abs(fee_quote) > 0.0
+        and np.isfinite(fee_bps)
+        and abs(fee_bps) > 0.0
+    ):
+        return abs(fee_quote) * 10000.0 / abs(fee_bps)
+
+    return decision.get("entry_notional_quote")
+
+
 # Expanded CSV columns for detailed trade logging
 TRADE_LOG_COLUMNS = [
     # Core identifiers
@@ -59,6 +111,7 @@ TRADE_LOG_COLUMNS = [
     "entry_time",
     "exit_time",
     "decision_to_entry_seconds",
+    "signal_close_to_entry_seconds",
     "signal_to_entry_seconds",
     "entry_notional_quote",
     "exit_notional_quote",
@@ -71,6 +124,12 @@ TRADE_LOG_COLUMNS = [
     "net_pnl_pct_wallet",
     "leverage_adjusted_gross_pnl_pct",
     "leverage_adjusted_net_pnl_pct",
+    "net_pnl_pct_wallet_estimated",
+    "leverage_adjusted_net_pnl_pct_estimated",
+    "configured_entry_leverage",
+    "gross_pnl_pct_configured_leverage",
+    "net_pnl_pct_configured_leverage",
+    "net_pnl_pct_configured_leverage_estimated",
     "price_slippage_pct",
     "ohlcv_entry_price",
     "entry_price_delta_vs_ohlcv",
@@ -82,6 +141,34 @@ TRADE_LOG_COLUMNS = [
     "ticker_ask",
     "ticker_mid",
     "ticker_spread_bps",
+    "expected_spread_bps",
+    "expected_spread_source",
+    "expected_half_spread_bps",
+    "entry_spread_bps",
+    "entry_spread_source",
+    "entry_vs_expected_spread_bps",
+    "actual_exit_spread_bps",
+    "actual_exit_ticker_spread_bps",
+    "actual_exit_orderbook_spread_bps",
+    "actual_exit_spread_source",
+    "exit_vs_expected_spread_bps",
+    "actual_exit_bid",
+    "actual_exit_ask",
+    "actual_exit_last",
+    "close_execution_method",
+    "close_execution_detail",
+    "close_price_source",
+    "close_trigger_type",
+    "close_trigger_reference",
+    "close_touch_side",
+    "sentinel_executable_price",
+    "sentinel_executable_price_source",
+    "sentinel_stop_distance_bps",
+    "sentinel_stop_breach_overshoot_bps",
+    "sentinel_pretrigger_enabled",
+    "sentinel_pretrigger_buffer_bps",
+    "sentinel_pretriggered",
+    "last_lightweight_stop_sentinel_ts",
     "expected_fill_price",
     "expected_fill_slippage_bps",
     "orderbook_slippage_bps",
@@ -104,6 +191,10 @@ TRADE_LOG_COLUMNS = [
     "ev_haircut_observed_delay_slippage_bps",
     "ev_haircut_delay_slippage_baseline_bps",
     "ev_haircut_delay_slippage_excess_bps",
+    "ev_haircut_expected_stop_exit_friction_bps",
+    "ev_haircut_stop_exit_baseline_bps",
+    "ev_haircut_stop_exit_excess_bps",
+    "ev_haircut_stop_exit_source",
     "ev_haircut_contract",
     "ev_adjusted_entry_friction_bps",
     "ev_adjusted_net_return_before_friction",
@@ -215,6 +306,10 @@ TRADE_LOG_COLUMNS = [
     "exchange_order_id",
     "stop_price",
     "stop_order_id",
+    "policy_stop_price",
+    "exchange_stop_price",
+    "exchange_stop_trigger_reference_source",
+    "exchange_stop_adjustment",
     "stop_trigger_signal",
     "stop_trigger_reference_source",
     "stop_policy_params_source",
@@ -233,6 +328,10 @@ TRADE_LOG_COLUMNS = [
     "shadow_stop_gap_bps",
     "shadow_exit_time",
     "shadow_exit_price",
+    "shadow_exit_price_source",
+    "shadow_theoretical_exit_price",
+    "shadow_stop_trigger_price",
+    "shadow_trigger_vs_live_exit_gap_bps",
     "shadow_exit_reason",
     "shadow_exit_return",
     "shadow_status",
@@ -257,6 +356,22 @@ TRADE_LOG_COLUMNS = [
     "entry_fee_source",
     "exit_fee_source",
     "fees_verified",
+    "entry_fee_estimate_quote",
+    "entry_fee_estimate_bps",
+    "entry_fee_estimate_source",
+    "exit_fee_estimate_quote",
+    "exit_fee_estimate_bps",
+    "exit_fee_estimate_source",
+    "estimated_fees_amount",
+    "estimated_fee_source",
+    "fees_estimated",
+    "fees_estimated_complete",
+    "net_pnl_estimated",
+    "net_pnl_pct_estimated",
+    "gross_to_estimated_net_cost_quote",
+    "gross_to_estimated_net_cost_pct",
+    "gross_to_estimated_net_friction_drag_bps",
+    "net_pnl_verification_status",
     "gross_to_net_cost_quote",
     "gross_to_net_cost_pct",
     "net_pnl",
@@ -695,7 +810,7 @@ class TradeLogger:
             "exit_time": decision.get("exit_time"),
             "decision_to_entry_seconds": decision.get("decision_to_entry_seconds"),
             "signal_to_entry_seconds": decision.get("signal_to_entry_seconds"),
-            "entry_notional_quote": decision.get("entry_notional_quote"),
+            "entry_notional_quote": _derive_entry_notional_quote(decision),
             "exit_notional_quote": decision.get("exit_notional_quote"),
             "holding_time_hours": decision.get("holding_time_hours")
             or decision.get("time_in_trade_hours"),
@@ -713,6 +828,32 @@ class TradeLogger:
             "ticker_mid": decision.get("ticker_mid") or decision.get("mid"),
             "ticker_spread_bps": decision.get("ticker_spread_bps")
             or decision.get("spread_bps"),
+            "expected_spread_bps": decision.get("expected_spread_bps"),
+            "expected_spread_source": decision.get("expected_spread_source"),
+            "expected_half_spread_bps": decision.get("expected_half_spread_bps"),
+            "entry_spread_bps": decision.get("entry_spread_bps"),
+            "entry_spread_source": decision.get("entry_spread_source"),
+            "entry_vs_expected_spread_bps": decision.get(
+                "entry_vs_expected_spread_bps"
+            ),
+            "actual_exit_spread_bps": decision.get("actual_exit_spread_bps"),
+            "actual_exit_ticker_spread_bps": decision.get(
+                "actual_exit_ticker_spread_bps"
+            ),
+            "actual_exit_orderbook_spread_bps": decision.get(
+                "actual_exit_orderbook_spread_bps"
+            ),
+            "actual_exit_spread_source": decision.get("actual_exit_spread_source"),
+            "exit_vs_expected_spread_bps": decision.get("exit_vs_expected_spread_bps"),
+            "actual_exit_bid": decision.get("actual_exit_bid"),
+            "actual_exit_ask": decision.get("actual_exit_ask"),
+            "actual_exit_last": decision.get("actual_exit_last"),
+            "close_execution_method": decision.get("close_execution_method"),
+            "close_execution_detail": decision.get("close_execution_detail"),
+            "close_price_source": decision.get("close_price_source"),
+            "close_trigger_type": decision.get("close_trigger_type"),
+            "close_trigger_reference": decision.get("close_trigger_reference"),
+            "close_touch_side": decision.get("close_touch_side"),
             "expected_fill_price": decision.get("expected_fill_price"),
             "expected_fill_slippage_bps": decision.get("expected_fill_slippage_bps"),
             "expected_total_entry_friction_bps": decision.get(
@@ -845,6 +986,12 @@ class TradeLogger:
             "exchange_order_id": decision.get("exchange_order_id"),
             "stop_price": decision.get("stop_price"),
             "stop_order_id": decision.get("stop_order_id"),
+            "policy_stop_price": decision.get("policy_stop_price"),
+            "exchange_stop_price": decision.get("exchange_stop_price"),
+            "exchange_stop_trigger_reference_source": decision.get(
+                "exchange_stop_trigger_reference_source"
+            ),
+            "exchange_stop_adjustment": decision.get("exchange_stop_adjustment"),
             "stop_trigger_signal": decision.get("stop_trigger_signal"),
             "stop_trigger_reference_source": decision.get(
                 "stop_trigger_reference_source"
@@ -871,14 +1018,75 @@ class TradeLogger:
             "net_pnl_pct": decision.get("net_pnl_pct"),
             "gross_pnl_amount": decision.get("gross_pnl_amount"),
             "net_pnl_amount": decision.get("net_pnl_amount"),
+            "wallet_value_at_entry": decision.get("wallet_value_at_entry"),
+            "open_notional_at_entry": decision.get("open_notional_at_entry"),
+            "leverage_wallet_multiplier": decision.get("leverage_wallet_multiplier"),
+            "configured_entry_leverage": decision.get("configured_entry_leverage"),
+            "effective_position_leverage": decision.get("effective_position_leverage"),
+            "gross_pnl_pct_wallet": decision.get("gross_pnl_pct_wallet"),
+            "net_pnl_pct_wallet": decision.get("net_pnl_pct_wallet"),
+            "leverage_adjusted_gross_pnl_pct": decision.get(
+                "leverage_adjusted_gross_pnl_pct"
+            ),
+            "leverage_adjusted_net_pnl_pct": decision.get(
+                "leverage_adjusted_net_pnl_pct"
+            ),
+            "net_pnl_pct_wallet_estimated": decision.get(
+                "net_pnl_pct_wallet_estimated"
+            ),
+            "leverage_adjusted_net_pnl_pct_estimated": decision.get(
+                "leverage_adjusted_net_pnl_pct_estimated"
+            ),
+            "gross_pnl_pct_configured_leverage": decision.get(
+                "gross_pnl_pct_configured_leverage"
+            ),
+            "net_pnl_pct_configured_leverage": decision.get(
+                "net_pnl_pct_configured_leverage"
+            ),
+            "net_pnl_pct_configured_leverage_estimated": decision.get(
+                "net_pnl_pct_configured_leverage_estimated"
+            ),
             "fees_amount": decision.get("fees_amount"),
             "entry_fee_quote": decision.get("entry_fee_quote"),
             "exit_fee_quote": decision.get("exit_fee_quote"),
+            "fee_source": decision.get("fee_source"),
+            "entry_fee_source": decision.get("entry_fee_source"),
+            "exit_fee_source": decision.get("exit_fee_source"),
+            "fees_verified": decision.get("fees_verified"),
+            "entry_fee_estimate_quote": decision.get("entry_fee_estimate_quote"),
+            "entry_fee_estimate_bps": decision.get("entry_fee_estimate_bps"),
+            "entry_fee_estimate_source": decision.get("entry_fee_estimate_source"),
+            "exit_fee_estimate_quote": decision.get("exit_fee_estimate_quote"),
+            "exit_fee_estimate_bps": decision.get("exit_fee_estimate_bps"),
+            "exit_fee_estimate_source": decision.get("exit_fee_estimate_source"),
+            "estimated_fees_amount": decision.get("estimated_fees_amount"),
+            "estimated_fee_source": decision.get("estimated_fee_source"),
+            "fees_estimated": decision.get("fees_estimated"),
+            "fees_estimated_complete": decision.get("fees_estimated_complete"),
+            "net_pnl_estimated": decision.get("net_pnl_estimated"),
+            "net_pnl_pct_estimated": decision.get("net_pnl_pct_estimated"),
+            "gross_to_estimated_net_cost_quote": decision.get(
+                "gross_to_estimated_net_cost_quote"
+            ),
+            "gross_to_estimated_net_cost_pct": decision.get(
+                "gross_to_estimated_net_cost_pct"
+            ),
+            "gross_to_estimated_net_friction_drag_bps": decision.get(
+                "gross_to_estimated_net_friction_drag_bps"
+            ),
+            "net_pnl_verification_status": decision.get(
+                "net_pnl_verification_status"
+            ),
             "gross_to_net_cost_quote": decision.get("gross_to_net_cost_quote"),
             "gross_to_net_cost_pct": decision.get("gross_to_net_cost_pct"),
             "net_pnl": decision.get("net_pnl"),
             "mfe": decision.get("mfe"),
             "mae": decision.get("mae"),
+            "requested_policy_stop": decision.get("requested_policy_stop"),
+            "final_placed_stop": decision.get("final_placed_stop"),
+            "exit_vs_policy_stop_bps": decision.get("exit_vs_policy_stop_bps"),
+            "exit_vs_peak_giveback_pct": decision.get("exit_vs_peak_giveback_pct"),
+            "policy_parity_ok": decision.get("policy_parity_ok"),
             "exit_reason_detail": decision.get("exit_reason_detail"),
             "trade_recap": decision.get("trade_recap"),
             "expected_hit_rate": decision.get("expected_hit_rate"),
@@ -1353,6 +1561,40 @@ class TradeLogger:
             row["ticker_spread_bps"] = context.get(
                 "ticker_spread_bps", context.get("spread_bps", "")
             )
+            for key in (
+                "expected_spread_bps",
+                "expected_spread_source",
+                "expected_half_spread_bps",
+                "entry_spread_bps",
+                "entry_spread_source",
+                "entry_vs_expected_spread_bps",
+                "actual_exit_spread_bps",
+                "actual_exit_ticker_spread_bps",
+                "actual_exit_orderbook_spread_bps",
+                "actual_exit_spread_source",
+                "exit_vs_expected_spread_bps",
+                "actual_exit_bid",
+                "actual_exit_ask",
+                "actual_exit_last",
+                "close_execution_method",
+                "close_execution_detail",
+                "close_price_source",
+                "close_trigger_type",
+                "close_trigger_reference",
+                "close_touch_side",
+            ):
+                row[key] = context.get(key, "")
+            for key in (
+                "sentinel_executable_price",
+                "sentinel_executable_price_source",
+                "sentinel_stop_distance_bps",
+                "sentinel_stop_breach_overshoot_bps",
+                "sentinel_pretrigger_enabled",
+                "sentinel_pretrigger_buffer_bps",
+                "sentinel_pretriggered",
+                "last_lightweight_stop_sentinel_ts",
+            ):
+                row[key] = context.get(key, "")
             row["expected_fill_price"] = context.get("expected_fill_price", "")
             row["expected_fill_slippage_bps"] = context.get(
                 "expected_fill_slippage_bps", ""
@@ -1397,6 +1639,10 @@ class TradeLogger:
                 "ev_haircut_observed_delay_slippage_bps",
                 "ev_haircut_delay_slippage_baseline_bps",
                 "ev_haircut_delay_slippage_excess_bps",
+                "ev_haircut_expected_stop_exit_friction_bps",
+                "ev_haircut_stop_exit_baseline_bps",
+                "ev_haircut_stop_exit_excess_bps",
+                "ev_haircut_stop_exit_source",
                 "ev_haircut_contract",
                 "ev_adjusted_entry_friction_bps",
                 "ev_adjusted_net_return_before_friction",
@@ -1411,6 +1657,9 @@ class TradeLogger:
             row["entry_delay_abs_bps"] = context.get("entry_delay_abs_bps", "")
             row["decision_to_entry_seconds"] = context.get(
                 "decision_to_entry_seconds", ""
+            )
+            row["signal_close_to_entry_seconds"] = context.get(
+                "signal_close_to_entry_seconds", ""
             )
             row["signal_to_entry_seconds"] = context.get("signal_to_entry_seconds", "")
             row["gross_to_net_friction_drag_bps"] = context.get(

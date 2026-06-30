@@ -1,8 +1,10 @@
 {
-  "description": "Default per-head reliability blend configs seeded from the 2026-06-24 50k LGBM-only auxiliary-selector run. These are enqueued as the first Optuna trial by scripts/run_reliability_blend_optuna.py.",
+  "description": "Shadow-only per-head reliability blend configs seeded from the 2026-06-24 50k LGBM-only auxiliary-selector run. These remain available for audit/research reruns but are not the active production policy stack.",
   "source_report": "data_perp/reports/reliability_blend_optuna_20260623_native_lgbm_only_50k",
-  "selection_rule": "Use soft q_fail variants by default; keep raw objective winners separately for audit.",
-  "updated_at_utc": "2026-06-24T01:08:14Z",
+  "selection_rule": "Shadow only. Production disables q_fail and market-state threshold control; see config/reliability_blend_production_stack.json.",
+  "updated_at_utc": "2026-06-25T15:00:00Z",
+  "production_active": false,
+  "active_production_config": "config/reliability_blend_production_stack.json",
   "configs": {
     "long_bars": {
       "variant": "B3_new_period_soft_qfail",

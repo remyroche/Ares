@@ -8,6 +8,14 @@ from extreme_price_movements.inference.portfolio_policy import (
     load_portfolio_policy_config,
     validate_portfolio_strategy_contract,
 )
+from extreme_price_movements.inference.dynamic_hr_surprise_threshold import (
+    DynamicHrHeadState,
+    apply_dynamic_hr_surprise_threshold,
+    dynamic_hr_state_payload_from_daily_params,
+    load_dynamic_hr_surprise_state,
+    patch_portfolio_policy_payload_with_dynamic_hr_surprise,
+    validate_dynamic_hr_replay_gate,
+)
 from extreme_price_movements.inference.training_live_parity_contract import (
     load_training_live_parity_contract,
     validate_training_live_parity_contract,
@@ -27,8 +35,210 @@ def test_portfolio_policy_defaults_resolve_to_8_and_dynamic_75pct_caps():
     assert policy.book_notional_multiplier == 1.0
     assert policy.leverage_wallet_multiplier == 1.0
     assert policy.min_margin_level_after_entry == 2.5
+    assert policy.min_entry_quote_notional == 3.0
+    assert policy.perp_default_leverage == 10.0
     assert policy.live_test_min_quote_notional == 5.0
     assert policy.live_test_quote_notional == 10.0
+
+
+def test_portfolio_policy_loads_dynamic_hr_surprise_selection_config(tmp_path):
+    root = tmp_path / "data"
+    path = root / "artifacts" / "RID" / "policy_params"
+    path.mkdir(parents=True)
+    (path / "optimized_portfolio_policy_config.json").write_text(
+        json.dumps(
+            {
+                "selection": {
+                    "dynamic_hr_surprise_enabled": True,
+                    "dynamic_hr_surprise_artifact_path": "state.json",
+                    "dynamic_hr_surprise_use_deployed_floor": False,
+                    "dynamic_hr_surprise_fallback_to_deployed": False,
+                    "dynamic_hr_surprise_stale_fallback_to_deployed": True,
+                    "dynamic_hr_surprise_max_state_age_days": 3.5,
+                    "dynamic_hr_surprise_lower_bound": -0.25,
+                    "dynamic_hr_surprise_upper_bound": 1.25,
+                }
+            }
+        )
+    )
+
+    policy = load_portfolio_policy_config(data_root=str(root), run_id="RID")
+
+    assert policy.dynamic_hr_surprise_enabled is True
+    assert policy.dynamic_hr_surprise_artifact_path == "state.json"
+    assert policy.dynamic_hr_surprise_use_deployed_floor is False
+    assert policy.dynamic_hr_surprise_fallback_to_deployed is False
+    assert policy.dynamic_hr_surprise_stale_fallback_to_deployed is True
+    assert policy.dynamic_hr_surprise_max_state_age_days == pytest.approx(3.5)
+    assert policy.dynamic_hr_surprise_lower_bound == -0.25
+    assert policy.dynamic_hr_surprise_upper_bound == 1.25
+
+
+def test_dynamic_hr_surprise_rejected_head_falls_back_to_deployed():
+    result = apply_dynamic_hr_surprise_threshold(
+        strategy_id="short_asset_alpha",
+        deployed_threshold=0.94,
+        enabled=True,
+        state={
+            "short_asset": DynamicHrHeadState(
+                head="short_asset",
+                guarded_y=1.50,
+                dynamic_rejected=True,
+                fallback_to_deployed=True,
+                reason="robust<=deployed",
+            )
+        },
+    )
+
+    assert result.threshold == 0.94
+    assert result.applied is False
+    assert result.reason == "robust<=deployed"
+
+
+def test_dynamic_hr_surprise_can_raise_threshold_above_one():
+    result = apply_dynamic_hr_surprise_threshold(
+        strategy_id="long_bars_alpha",
+        deployed_threshold=0.70,
+        enabled=True,
+        state={
+            "long_bars": DynamicHrHeadState(
+                head="long_bars",
+                guarded_y=0.90,
+                w_lower=0.05,
+                w_raise=0.40,
+                z_eff=-1.0,
+            )
+        },
+    )
+
+    assert result.threshold == 1.30
+    assert result.applied is True
+
+
+def test_dynamic_hr_surprise_stale_state_falls_back_to_deployed():
+    result = apply_dynamic_hr_surprise_threshold(
+        strategy_id="short_asset_alpha",
+        deployed_threshold=0.70,
+        enabled=True,
+        max_state_age_days=2.0,
+        now="2026-06-28T00:00:00Z",
+        state={
+            "short_asset": DynamicHrHeadState(
+                head="short_asset",
+                guarded_y=0.10,
+                w_lower=0.10,
+                w_raise=0.40,
+                z_eff=3.0,
+                as_of="2026-06-25T00:00:00Z",
+            )
+        },
+    )
+
+    assert result.threshold == 0.70
+    assert result.applied is False
+    assert result.reason == "stale_head_state"
+    assert result.state_age_days == pytest.approx(3.0)
+
+
+def test_dynamic_hr_surprise_payload_from_daily_params_keeps_t16_semantics():
+    import pandas as pd
+
+    params = pd.DataFrame(
+        [
+            {
+                "day_start": "2026-06-24T00:00:00Z",
+                "day_end": "2026-06-25T00:00:00Z",
+                "head": "short_asset",
+                "guarded_y": 0.67,
+                "w_lower": 0.108,
+                "w_raise": 0.164,
+                "deployed_fixed_threshold": 0.702,
+                "recent_validation_guarded": False,
+            },
+            {
+                "day_start": "2026-06-25T00:00:00Z",
+                "day_end": "2026-06-25T23:59:59Z",
+                "head": "short_asset",
+                "guarded_y": 0.71,
+                "w_lower": 0.111,
+                "w_raise": 0.222,
+                "deployed_fixed_threshold": 0.702,
+                "recent_validation_guarded": True,
+            },
+        ]
+    )
+
+    payload = dynamic_hr_state_payload_from_daily_params(params)
+    head = payload["heads"]["short_asset"]
+
+    assert head["guarded_y"] == pytest.approx(0.71)
+    assert head["w_lower"] == pytest.approx(0.111)
+    assert head["w_raise"] == pytest.approx(0.222)
+    assert head["deployed_threshold"] == pytest.approx(0.702)
+    assert head["recent_validation_guarded"] is True
+
+
+def test_dynamic_hr_surprise_promotion_gate_requires_non_degrading_replay():
+    import pandas as pd
+
+    summary = pd.DataFrame(
+        [
+            {
+                "policy": "fixed_deployed_thresholds",
+                "total_net_pnl": 1.0,
+                "objective": 0.0,
+                "q05_rolling_week_pnl": -1.0,
+                "q15_rolling_week_pnl": -0.5,
+            },
+            {
+                "policy": "calendar_dynamic_hr_surprise",
+                "total_net_pnl": 2.0,
+                "objective": 0.5,
+                "q05_rolling_week_pnl": -0.2,
+                "q15_rolling_week_pnl": -0.1,
+            },
+        ]
+    )
+
+    gate = validate_dynamic_hr_replay_gate(summary)
+
+    assert gate["accepted"] is True
+    assert gate["deltas"]["total_net_pnl_delta"] == pytest.approx(1.0)
+
+
+def test_patch_portfolio_policy_payload_enables_no_floor_t16():
+    payload = {"selection": {"global_threshold_floor": 0.60}}
+
+    patched = patch_portfolio_policy_payload_with_dynamic_hr_surprise(
+        payload,
+        artifact_path="policy_params/dynamic_hr_surprise_t16_state.json",
+        enabled=True,
+    )
+
+    assert patched["selection"]["global_threshold_floor"] == 0.60
+    assert patched["selection"]["dynamic_hr_surprise_enabled"] is True
+    assert patched["selection"]["dynamic_hr_surprise_use_deployed_floor"] is False
+    assert patched["selection"]["dynamic_hr_surprise_fallback_to_deployed"] is False
+    assert patched["selection"]["dynamic_hr_surprise_stale_fallback_to_deployed"] is True
+
+
+def test_dynamic_hr_surprise_loads_latest_table_row(tmp_path):
+    path = tmp_path / "dynamic_hr.csv"
+    path.write_text(
+        "\n".join(
+            [
+                "day_start,head,guarded_y,w_lower,w_raise,z_eff,dynamic_rejected,fallback_to_deployed",
+                "2026-06-25,long_bars,0.80,0.01,0.20,-1.0,False,False",
+                "2026-06-26,long_bars,0.90,0.02,0.30,-2.0,False,False",
+            ]
+        )
+    )
+
+    state = load_dynamic_hr_surprise_state(path)
+
+    assert state["long_bars"].guarded_y == 0.90
+    assert state["long_bars"].w_raise == 0.30
+    assert state["long_bars"].z_eff == -2.0
 
 
 def test_portfolio_policy_loads_artifact_before_runtime(tmp_path):
@@ -222,6 +432,12 @@ def test_portfolio_manager_from_policy_config_enforces_caps():
     assert mgr.max_position_usdt == 5000.0
 
 
+def test_portfolio_manager_preserves_above_one_deactivation_threshold():
+    mgr = PortfolioManager(portfolio_value=10000.0)
+
+    assert mgr.calculate_dynamic_threshold(1.25) == 1.25
+
+
 def test_rank_based_position_size_caps_and_live_test_override():
     policy = PortfolioPolicyConfig()
     prod = compute_rank_based_position_size(
@@ -304,7 +520,7 @@ def test_rank_based_position_size_rank_scales_under_position_cap():
     assert low_rank["size_after_liquidity"] < high_rank["size_after_liquidity"]
 
 
-def test_perps_rank_sizing_uses_same_dynamic_leverage_in_live_and_live_test():
+def test_perps_rank_sizing_uses_same_default_leverage_in_live_and_live_test():
     policy = PortfolioPolicyConfig()
     prod = compute_rank_based_position_size(
         wallet_value=100.0,
@@ -337,12 +553,94 @@ def test_perps_rank_sizing_uses_same_dynamic_leverage_in_live_and_live_test():
         orderbook_capacity_quote=1_000.0,
     )
 
-    assert prod["perp_rank_leverage"] == 25.0
-    assert prod["perp_effective_leverage"] == 25.0
+    assert prod["perp_rank_leverage"] == 10.0
+    assert prod["perp_default_leverage"] == 10.0
+    assert prod["perp_effective_leverage"] == 10.0
     assert live_test["perp_rank_leverage"] == prod["perp_rank_leverage"]
     assert live_test["perp_effective_leverage"] == prod["perp_effective_leverage"]
     assert live_test["size_after_liquidity"] == policy.live_test_quote_notional
     assert prod["size_after_liquidity"] > live_test["size_after_liquidity"]
+
+
+def test_perps_rank_sizing_caps_request_to_remaining_total_notional():
+    policy = PortfolioPolicyConfig()
+    sizing = compute_rank_based_position_size(
+        wallet_value=100.0,
+        open_notional=58.0,
+        adjusted_rank_score=0.99,
+        final_threshold=0.70,
+        policy=policy,
+        liquidity_capacity_weight=1.0,
+        live_test_mode=False,
+        market_mode="perps",
+        available_wallet_value=100.0,
+        remaining_total_notional=17.0,
+        stop_loss_pct=0.01,
+        rank_number=1,
+        rank_x=5,
+        orderbook_capacity_quote=1_000.0,
+    )
+
+    assert sizing["perp_rank_leverage"] == 10.0
+    assert sizing["perp_dynamic_rank_notional_cap"] == 1000.0
+    assert sizing["max_total_notional"] == 75.0
+    assert sizing["remaining_total_notional"] == 17.0
+    assert sizing["size_before_liquidity"] == 17.0
+    assert sizing["size_after_liquidity"] == 17.0
+
+
+def test_perps_rank_sizing_applies_position_pct_before_leverage():
+    policy = PortfolioPolicyConfig(
+        max_total_wallet_allocation_pct=1.0,
+        max_position_wallet_pct=0.01,
+        max_position_quote_notional=1_000_000.0,
+        perp_default_leverage=10.0,
+    )
+    sizing = compute_rank_based_position_size(
+        wallet_value=100.0,
+        open_notional=0.0,
+        adjusted_rank_score=0.99,
+        final_threshold=0.70,
+        policy=policy,
+        liquidity_capacity_weight=1.0,
+        live_test_mode=False,
+        market_mode="perps",
+        available_wallet_value=100.0,
+        stop_loss_pct=0.01,
+        rank_number=1,
+        rank_x=5,
+        orderbook_capacity_quote=1_000.0,
+    )
+
+    assert sizing["perp_effective_leverage"] == 10.0
+    assert sizing["configured_book_notional"] == 1000.0
+    assert sizing["max_position_wallet_allocation"] == 1.0
+    assert sizing["max_position_notional"] == 10.0
+    assert sizing["size_before_liquidity"] == 10.0
+    assert sizing["size_after_liquidity"] == 10.0
+
+
+def test_perps_default_leverage_is_capped_by_stop_loss_risk():
+    policy = PortfolioPolicyConfig(perp_default_leverage=10.0)
+    sizing = compute_rank_based_position_size(
+        wallet_value=100.0,
+        open_notional=0.0,
+        adjusted_rank_score=0.99,
+        final_threshold=0.70,
+        policy=policy,
+        liquidity_capacity_weight=1.0,
+        live_test_mode=False,
+        market_mode="perps",
+        available_wallet_value=100.0,
+        stop_loss_pct=0.10,
+        rank_number=1,
+        rank_x=5,
+        orderbook_capacity_quote=1_000.0,
+    )
+
+    assert sizing["perp_rank_leverage"] == 10.0
+    assert sizing["perp_risk_cap_leverage"] == pytest.approx(100.0 / 15.0)
+    assert sizing["perp_effective_leverage"] == pytest.approx(100.0 / 15.0)
 
 
 def test_capacity_api_reports_remaining_slots_and_notional():

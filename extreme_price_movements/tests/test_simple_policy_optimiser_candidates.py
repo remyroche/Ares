@@ -18,6 +18,10 @@ def _isolate_policy_spread_baseline(monkeypatch):
     spo._SPREAD_BASELINE_CACHE.clear()
 
 
+def test_policy_spread_fallback_quantile_defaults_to_p85():
+    assert spo._spread_fallback_quantile() == pytest.approx(0.85)
+
+
 def test_policy_candidate_export_includes_entry_slippage_in_friction(monkeypatch):
     def fake_simulate_and_score(*args, **kwargs):
         return {
@@ -65,7 +69,11 @@ def test_policy_candidate_export_includes_entry_slippage_in_friction(monkeypatch
         df_top=rows,
         paths=paths,
         cost_pct=0.001,
-        best_params={"sl_mult": 1.0, "trailing_activation_mult": 1.0},
+        best_params={
+            "sl_mult": 1.0,
+            "trailing_activation_mult": 2.5,
+            "trailing_activation_cap_pct": 0.03,
+        },
         best_size_power=1.0,
         base_strategy_threshold=0.75,
         market_mode="perps",
@@ -90,12 +98,23 @@ def test_policy_candidate_export_includes_entry_slippage_in_friction(monkeypatch
         0.009
     )
     assert out["legacy_posthoc_entry_spread_haircut_bps"].iloc[0] == pytest.approx(0.0)
-    assert out["net_return"].iloc[0] == pytest.approx(0.009)
+    assert out["spread_adjustment_bps"].iloc[0] == pytest.approx(
+        spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS
+    )
+    assert out["net_return"].iloc[0] == pytest.approx(
+        0.009 - spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 10_000.0
+    )
     assert out["policy_executable_entry_price"].iloc[0] == pytest.approx(100.15)
     assert out["theoretical_entry_price"].iloc[0] == pytest.approx(100.15)
     assert out["entry_reanchor_bps"].iloc[0] == pytest.approx(
         spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0 + 4.5
     )
+    assert out["policy_trailing_activation_mult"].iloc[0] == pytest.approx(2.5)
+    assert out["policy_trailing_activation_cap_pct"].iloc[0] == pytest.approx(0.03)
+    assert out["policy_uncapped_trailing_activation_return"].iloc[0] == pytest.approx(
+        0.05
+    )
+    assert out["policy_trailing_activation_return"].iloc[0] == pytest.approx(0.03)
     assert out["expected_friction_bps"].iloc[0] == pytest.approx(
         14.5
         + spo.DEFAULT_PERP_POLICY_EXPECTED_SPREAD_BPS / 2.0
@@ -108,6 +127,50 @@ def test_policy_candidate_export_includes_entry_slippage_in_friction(monkeypatch
     assert out["meta_lgbm_inference_drift_score"].iloc[0] == pytest.approx(0.42)
     assert out["meta_lgbm_feature_drift_psi_core"].iloc[0] == pytest.approx(0.18)
     assert out["meta_lgbm_predictive_atlas_hit_rate_surprise"].iloc[0] == pytest.approx(0.07)
+
+
+def test_simulator_applies_trailing_activation_cap_pct():
+    rows = pd.DataFrame(
+        {
+            "timestamp": pd.date_range(
+                "2026-01-01 00:00:00",
+                periods=1,
+                tz="UTC",
+            ),
+            "symbol": ["TEST/USD:USD"],
+            "side": [1.0],
+            "rank_pct": [0.95],
+            "barrier_pct": [0.02],
+        }
+    )
+    paths = (
+        np.array([[100.0, 100.0, 100.0]], dtype=np.float32),
+        np.array([[100.0, 104.0, 104.0]], dtype=np.float32),
+        np.array([[100.0, 103.0, 102.0]], dtype=np.float32),
+        np.array([[100.0, 103.8, 103.0]], dtype=np.float32),
+    )
+
+    uncapped = spo.simulate_and_score(
+        rows,
+        *paths,
+        cost_pct=0.0,
+        sl_mult=1.0,
+        trailing_activation_mult=2.5,
+        trailing_activation_cap_pct=0.0,
+        capital_protect_mfe_mult=0.0,
+    )
+    capped = spo.simulate_and_score(
+        rows,
+        *paths,
+        cost_pct=0.0,
+        sl_mult=1.0,
+        trailing_activation_mult=2.5,
+        trailing_activation_cap_pct=0.03,
+        capital_protect_mfe_mult=0.0,
+    )
+
+    assert list(uncapped["exit_reason"]) == ["timeout"]
+    assert list(capped["exit_reason"]) == ["trailing"]
 
 
 def test_policy_candidate_export_adds_regime_ae_features_without_raw_source_passthrough(monkeypatch):

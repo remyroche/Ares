@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import gc
 import hashlib
 import json
@@ -14448,6 +14450,214 @@ def train_meta_models_from_artifacts(
                     out.append(dep)
         return out
 
+    def _raw_dependencies_for_regime_composite_meta_keys(
+        feature_keys: Sequence[str],
+    ) -> list[str]:
+        """Raw source columns needed to build requested regime panel composites."""
+        requested = {
+            str(k)
+            for k in feature_keys or []
+            if isinstance(k, str) and str(k).strip()
+        }
+        if not requested:
+            return []
+        try:
+            from extreme_price_movements import features as epm_features
+
+            expanded = epm_features._expand_regime_composite_dependencies(
+                set(requested),
+                cfg,
+            )
+        except Exception as exc:
+            tprint(
+                "Meta regime composite dependency expansion failed; "
+                f"continuing without extra raw deps: {exc}"
+            )
+            return []
+        out: list[str] = []
+        for key in sorted(str(k) for k in expanded):
+            if key in requested:
+                continue
+            if _is_lgbm_model_derived_meta_feature(key):
+                continue
+            if key not in out:
+                out.append(key)
+        return out
+
+    def _materialize_regime_composite_meta_columns(
+        frame: pd.DataFrame,
+        source_frame: pd.DataFrame,
+        feature_keys: Sequence[str],
+        *,
+        context: str,
+    ) -> tuple[pd.DataFrame, list[str]]:
+        """Materialize requested timestamp/symbol regime composites in meta frames.
+
+        The normal feature pipeline generates these through panel-wide feature
+        dictionaries. Meta training assembles row-level frames from saved OOF
+        artifacts, so we reconstruct the narrow panel needed for the requested
+        composite keys and map the generated values back to the row order.
+        """
+        requested = {
+            str(k)
+            for k in feature_keys or []
+            if isinstance(k, str) and str(k).strip() and str(k) not in frame.columns
+        }
+        if not requested or frame.empty:
+            return frame, []
+        try:
+            from extreme_price_movements import features as epm_features
+
+            requested = {
+                key
+                for key in requested
+                if epm_features._is_regime_composite_key(str(key))
+            }
+            if not requested:
+                return frame, []
+            expanded = epm_features._expand_regime_composite_dependencies(
+                set(requested),
+                cfg,
+            )
+        except Exception as exc:
+            tprint(
+                f"  Meta {context}: warning regime composite request inspection "
+                f"failed: {exc}"
+            )
+            return frame, []
+
+        ts_col = "__ts__" if "__ts__" in source_frame.columns else (
+            "timestamp" if "timestamp" in source_frame.columns else None
+        )
+        sym_col = "__symbol__" if "__symbol__" in source_frame.columns else (
+            "symbol" if "symbol" in source_frame.columns else None
+        )
+        if ts_col is None:
+            tprint(
+                f"  Meta {context}: cannot materialize {len(requested)} regime "
+                "composites because no timestamp column is available."
+            )
+            return frame, []
+
+        timestamps = pd.to_datetime(source_frame[ts_col], errors="coerce", utc=True)
+        valid_ts = timestamps.notna().to_numpy(dtype=bool)
+        if not bool(np.any(valid_ts)):
+            return frame, []
+        symbols = (
+            source_frame[sym_col].astype(str).to_numpy()
+            if sym_col is not None
+            else np.repeat("all", len(source_frame))
+        )
+        panel_index = pd.Index(pd.Series(timestamps[valid_ts]).drop_duplicates().sort_values())
+        panel_columns = pd.Index(pd.Series(symbols[valid_ts]).drop_duplicates().sort_values())
+        if panel_index.empty or panel_columns.empty:
+            return frame, []
+
+        def _source_values(key: str) -> np.ndarray | None:
+            candidates = (key, f"__meta_raw__{key}")
+            for col in candidates:
+                if col in frame.columns:
+                    series = frame[col]
+                    if isinstance(series, pd.DataFrame):
+                        series = series.iloc[:, 0]
+                    return pd.to_numeric(series, errors="coerce").to_numpy(
+                        dtype=np.float32,
+                        copy=False,
+                    )
+                if col in source_frame.columns:
+                    series = source_frame[col]
+                    if isinstance(series, pd.DataFrame):
+                        series = series.iloc[:, 0]
+                    return pd.to_numeric(series, errors="coerce").to_numpy(
+                        dtype=np.float32,
+                        copy=False,
+                    )
+            return None
+
+        feats: dict[str, pd.DataFrame] = {}
+        source_count = 0
+        for dep in sorted(str(k) for k in expanded):
+            if dep in requested or _is_lgbm_model_derived_meta_feature(dep):
+                continue
+            values = _source_values(dep)
+            if values is None or len(values) != len(source_frame):
+                continue
+            tmp = pd.DataFrame(
+                {
+                    "__ts__": timestamps,
+                    "__symbol__": symbols,
+                    "__value__": np.nan_to_num(
+                        values.astype(np.float32, copy=False),
+                        nan=0.0,
+                        posinf=0.0,
+                        neginf=0.0,
+                    ),
+                }
+            )
+            tmp = tmp.loc[valid_ts]
+            if tmp.empty:
+                continue
+            panel = tmp.pivot_table(
+                index="__ts__",
+                columns="__symbol__",
+                values="__value__",
+                aggfunc="mean",
+            ).reindex(index=panel_index, columns=panel_columns)
+            feats[dep] = panel.fillna(0.0).astype(np.float32, copy=False)
+            source_count += 1
+
+        if not feats:
+            tprint(
+                f"  Meta {context}: no raw sources available for "
+                f"{len(requested)} requested regime composites; leaving strict "
+                "generated-column check to decide."
+            )
+            return frame, []
+
+        try:
+            generated = epm_features._add_regime_panel_composite_features(
+                feats,
+                set(requested),
+                cfg,
+                panel_index,
+                panel_columns,
+            )
+        except Exception as exc:
+            tprint(
+                f"  Meta {context}: warning regime composite materialization "
+                f"failed: {exc}"
+            )
+            return frame, []
+
+        generated_cols = sorted(k for k in generated if k in requested and k in feats)
+        if not generated_cols:
+            return frame, []
+        time_pos = panel_index.get_indexer(pd.Index(timestamps))
+        symbol_pos = panel_columns.get_indexer(pd.Index(symbols))
+        valid_pos = (time_pos >= 0) & (symbol_pos >= 0)
+        new_cols: dict[str, np.ndarray] = {}
+        for key in generated_cols:
+            panel_values = feats[key].to_numpy(dtype=np.float32, copy=False)
+            row_values = np.zeros(len(frame), dtype=np.float32)
+            row_values[valid_pos] = panel_values[time_pos[valid_pos], symbol_pos[valid_pos]]
+            new_cols[key] = np.nan_to_num(
+                row_values,
+                nan=0.0,
+                posinf=0.0,
+                neginf=0.0,
+            ).astype(np.float32, copy=False)
+        frame = pd.concat(
+            [frame, pd.DataFrame(new_cols, index=frame.index)],
+            axis=1,
+            copy=False,
+        )
+        tprint(
+            f"  Meta {context}: materialized {len(generated_cols)} regime "
+            f"panel composite columns from {source_count} raw sources "
+            f"(sample={generated_cols[:8]})."
+        )
+        return frame, generated_cols
+
     def _neutral_model_derived_meta_value(feature_key: str) -> float:
         key = str(feature_key).lower()
         if key.endswith("_is_neutral"):
@@ -19932,6 +20142,9 @@ def train_meta_models_from_artifacts(
         _generated_raw_deps = _raw_dependencies_for_generated_meta_keys(
             model_derived_meta_requested
         )
+        _regime_composite_raw_deps = _raw_dependencies_for_regime_composite_meta_keys(
+            model_derived_meta_requested
+        )
         if _generated_raw_deps:
             raw_preselected_keys = list(
                 dict.fromkeys(list(raw_preselected_keys) + _generated_raw_deps)
@@ -19940,6 +20153,15 @@ def train_meta_models_from_artifacts(
                 f"  Meta {k}: added {len(_generated_raw_deps)} raw dependency "
                 "keys for generated interaction features "
                 f"(sample={_generated_raw_deps[:12]})."
+            )
+        if _regime_composite_raw_deps:
+            raw_preselected_keys = list(
+                dict.fromkeys(list(raw_preselected_keys) + _regime_composite_raw_deps)
+            )
+            tprint(
+                f"  Meta {k}: added {len(_regime_composite_raw_deps)} raw "
+                "dependency keys for generated regime composite features "
+                f"(sample={_regime_composite_raw_deps[:12]})."
             )
         tprint(
             f"  Meta {k}: stage1 preselection kept {len(preselected_raw_keys)} meta features "
@@ -20822,6 +21044,20 @@ def train_meta_models_from_artifacts(
                     f"  Meta {k}: warning meta model drift feature generation "
                     f"failed: {_meta_drift_exc}"
                 )
+
+        X_meta_base, regime_composite_meta_cols = (
+            _materialize_regime_composite_meta_columns(
+                X_meta_base,
+                df,
+                model_derived_meta_requested,
+                context=str(k),
+            )
+        )
+        if regime_composite_meta_cols:
+            X_meta_base = _downcast_meta_numeric_frame(
+                X_meta_base,
+                context=f"Meta {k} frame after regime composite materialization",
+            )
 
         X_meta_base, neutral_model_derived_cols = (
             _append_neutral_model_derived_meta_columns(

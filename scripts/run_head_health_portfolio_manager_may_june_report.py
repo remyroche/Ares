@@ -190,6 +190,69 @@ def _metric_rows(
     return pd.DataFrame(out)
 
 
+def _complete_zero_trade_weeks(
+    metrics: pd.DataFrame,
+    *,
+    candidates: pd.DataFrame,
+    variants: list[str],
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    group_col: str | None = None,
+) -> pd.DataFrame:
+    timestamps = pd.to_datetime(candidates["timestamp"], utc=True, errors="coerce")
+    weeks = (
+        pd.DataFrame({"week_start": _week_start(timestamps.loc[(timestamps >= start) & (timestamps <= end)])})
+        .dropna()
+        .drop_duplicates()
+        .sort_values("week_start")
+    )
+    if weeks.empty:
+        return metrics
+    group_values: list[Any | None] = [None]
+    if group_col is not None:
+        group_values = sorted(candidates[group_col].dropna().astype(str).unique().tolist())
+    existing = set()
+    if not metrics.empty:
+        key_cols = ["variant", "week_start"] + ([group_col] if group_col is not None else [])
+        for row in metrics[key_cols].itertuples(index=False, name=None):
+            existing.add(tuple(row))
+    rows: list[dict[str, Any]] = []
+    for variant in variants:
+        for week_start in weeks["week_start"]:
+            week_end = pd.Timestamp(week_start) + pd.Timedelta(days=6)
+            for group_value in group_values:
+                key = (variant, week_start) if group_col is None else (variant, week_start, group_value)
+                if key in existing:
+                    continue
+                rec: dict[str, Any] = {
+                    "week_start": week_start,
+                    "week_end": week_end,
+                    "variant": variant,
+                    "trade_count": 0,
+                    "timestamp_count": 0,
+                    "symbol_count": 0,
+                    "net_pnl": 0.0,
+                    "gross_pnl": 0.0,
+                    "cost_pnl": 0.0,
+                    "win_rate": np.nan,
+                    "full_sl_rate": np.nan,
+                    "timeout_rate": np.nan,
+                    "mean_net_return": np.nan,
+                    "median_net_return": np.nan,
+                    "q05_net_return": np.nan,
+                    "q25_net_return": np.nan,
+                    "notional_weighted_net_return": np.nan,
+                    "mean_position_size": np.nan,
+                }
+                if group_col is not None:
+                    rec[group_col] = group_value
+                rows.append(rec)
+    if rows:
+        metrics = pd.concat([metrics, pd.DataFrame(rows)], ignore_index=True, sort=False)
+    sort_cols = ["week_start", "variant"] + ([group_col] if group_col is not None else [])
+    return metrics.sort_values(sort_cols, kind="mergesort").reset_index(drop=True)
+
+
 def _overall_metrics(accepted: pd.DataFrame, *, variant: str, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
     weekly = _metric_rows(accepted, variant=variant, start=start, end=end)
     if weekly.empty:
@@ -221,6 +284,11 @@ def _overall_metrics(accepted: pd.DataFrame, *, variant: str, start: pd.Timestam
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--allow-deprecated-head-health",
+        action="store_true",
+        help="Run this deprecated historical audit tool. HeadHealth is disabled from active policy logic.",
+    )
     parser.add_argument("--candidate", action="append", type=Path, default=[])
     parser.add_argument("--train-candidates", type=Path, default=DEFAULT_TRAIN_CANDIDATES)
     parser.add_argument("--portfolio-manifest", type=Path, default=DEFAULT_PORTFOLIO_MANIFEST)
@@ -231,6 +299,12 @@ def main() -> None:
     parser.add_argument("--report-end", default="2026-06-30 23:59:59")
     parser.add_argument("--market-mode", default="perps")
     args = parser.parse_args()
+    if not bool(args.allow_deprecated_head_health):
+        raise SystemExit(
+            "HeadHealth active execution is deprecated and disabled. Use the "
+            "reliability-blend parity/portfolio ablation path instead, or pass "
+            "--allow-deprecated-head-health for historical audit reproduction."
+        )
 
     candidate_paths = args.candidate or [
         DEFAULT_TRAIN_CANDIDATES,
@@ -242,6 +316,17 @@ def main() -> None:
     candidates = _load_candidates(candidate_paths)
     params = _load_portfolio_params(args.portfolio_manifest, args.portfolio_variant)
     config = _read_base_config(args.head_health_config)
+    config["base_max_new_entries_per_bar"] = int(params.max_new_entries_per_bar)
+    config["base_max_new_entries_per_strategy_per_bar"] = int(
+        params.max_new_entries_per_strategy_per_bar
+        if params.max_new_entries_per_strategy_per_bar is not None
+        else params.max_new_entries_per_bar
+    )
+    config["base_max_concurrent_per_strategy"] = int(
+        params.max_concurrent_per_strategy
+        if params.max_concurrent_per_strategy is not None
+        else params.max_concurrent_positions
+    )
     health_state = HeadHealthState.fit(train, config)
     head_health_candidates = _apply_head_health(
         candidates,
@@ -277,6 +362,13 @@ def main() -> None:
         ],
         ignore_index=True,
     )
+    weekly_global = _complete_zero_trade_weeks(
+        weekly_global,
+        candidates=candidates,
+        variants=["baseline_portfolio", "head_health_portfolio"],
+        start=start,
+        end=end,
+    )
     weekly_by_head = pd.concat(
         [
             _metric_rows(
@@ -295,6 +387,14 @@ def main() -> None:
             ),
         ],
         ignore_index=True,
+    )
+    weekly_by_head = _complete_zero_trade_weeks(
+        weekly_by_head,
+        candidates=candidates,
+        variants=["baseline_portfolio", "head_health_portfolio"],
+        start=start,
+        end=end,
+        group_col="head",
     )
     baseline_accepted.to_parquet(args.output_dir / "baseline_accepted_trades.parquet", index=False)
     health_accepted.to_parquet(args.output_dir / "head_health_accepted_trades.parquet", index=False)

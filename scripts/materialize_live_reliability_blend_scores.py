@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Score live ledgers with a distilled reliability-blend model.
+"""Score live ledgers with an audit-only distilled reliability-blend model.
 
 The original reliability-blend experiment exported OOF component/blend scores but
 did not persist deployable q_fail/new_period models.  This script trains a
-head-specific distillation model:
+head-specific distillation model for A2/A3 audit comparisons only:
 
     live-available model-state features -> selected reliability blend score
 
 on historical OOF rows, then scores post-boundary live ledgers.  It is not a
-calibrated probability model; the output is a ranking score intended for the
-native simple-policy replay.
+calibrated probability model, and it is not the default deployed reliability
+blend.  The native component scorers are the production path.
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ OOF_TO_LIVE_FEATURES: tuple[tuple[str, str, str], ...] = (
     ("oof_leaf_count_p10", "oof_leaf_count_p10", "meta_lgbm_leaf_count_p10"),
     ("oof_leaf_count_min", "oof_leaf_count_min", "meta_lgbm_leaf_count_min"),
     ("oof_leaf_weight_p10", "oof_leaf_weight_p10", "meta_lgbm_leaf_weight_p10"),
-    ("oof_leaf_depth_mean", "oof_leaf_depth_mean", "meta_lgbm_leaf_count_p10"),
+    ("oof_leaf_depth_mean", "oof_leaf_depth_mean", "meta_lgbm_leaf_depth_mean"),
     ("oof_contrib_top1_abs_share", "oof_contrib_top1_abs_share", "meta_lgbm_contrib_top1_abs_share"),
     ("oof_contrib_top3_abs_share", "oof_contrib_top3_abs_share", "meta_lgbm_contrib_top3_abs_share"),
     ("oof_contrib_entropy", "oof_contrib_entropy", "meta_lgbm_contrib_entropy"),
@@ -120,14 +120,61 @@ def _timestamp_features(frame: pd.DataFrame, score_col: str) -> pd.DataFrame:
     out = pd.DataFrame(index=frame.index)
     score = pd.to_numeric(frame[score_col], errors="coerce")
     ts = pd.to_datetime(frame["timestamp"], utc=True, errors="coerce")
-    grouped = score.groupby(ts)
+    if "head" in frame.columns:
+        head = frame["head"].astype(str)
+        grouped = score.groupby([head, ts], sort=False)
+        rank_group = [head, ts]
+        size = grouped.transform("size")
+    else:
+        grouped = score.groupby(ts, sort=False)
+        rank_group = ts
+        size = ts.groupby(ts, sort=False).transform("size")
     mean = grouped.transform("mean")
     std = grouped.transform("std").replace(0.0, np.nan)
     out["score_minus_ts_mean"] = score - mean
     out["score_ts_z"] = (score - mean) / std
-    out["score_ts_rank"] = score.groupby(ts).rank(method="average", pct=True)
-    out["timestamp_row_count_log"] = np.log1p(ts.groupby(ts).transform("size").astype(float))
+    out["score_ts_rank"] = score.groupby(rank_group, sort=False).rank(method="average", pct=True)
+    out["timestamp_row_count_log"] = np.log1p(pd.to_numeric(size, errors="coerce").astype(float))
     return out
+
+
+def _timestamp_block_split(
+    frame: pd.DataFrame,
+    *,
+    train_fraction: float,
+    embargo_hours: float,
+    min_rows: int = 500,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
+    ts = pd.to_datetime(frame["timestamp"], utc=True, errors="coerce")
+    unique_ts = np.array(sorted(ts.dropna().unique()))
+    if len(unique_ts) < 3:
+        raise RuntimeError(
+            "Need at least three complete timestamps for distilled reliability-blend validation split."
+        )
+
+    split_pos = int(np.floor(len(unique_ts) * float(train_fraction)))
+    split_pos = max(1, min(split_pos, len(unique_ts) - 2))
+    split_ts = pd.Timestamp(unique_ts[split_pos - 1])
+    split_ts = split_ts.tz_localize("UTC") if split_ts.tzinfo is None else split_ts.tz_convert("UTC")
+    valid_start = split_ts + pd.Timedelta(hours=float(embargo_hours))
+    train = frame.loc[ts <= split_ts].copy()
+    valid = frame.loc[ts > valid_start].copy()
+    split_type = "complete_timestamp_embargo"
+    if len(train) < min_rows or len(valid) < min_rows:
+        valid = frame.loc[ts > split_ts].copy()
+        split_type = "complete_timestamp_no_embargo_fallback"
+    if len(train) == 0 or len(valid) == 0:
+        raise RuntimeError("Complete-timestamp validation split produced an empty train or valid block.")
+    if len(train) < min_rows or len(valid) < min_rows:
+        split_type = f"{split_type}_min_rows_not_met"
+    return train, valid, {
+        "split_type": split_type,
+        "split_timestamp": split_ts.isoformat(),
+        "valid_start_after_embargo": valid_start.isoformat(),
+        "embargo_hours": float(embargo_hours),
+        "train_timestamps": int(pd.to_datetime(train["timestamp"], utc=True).nunique()),
+        "valid_timestamps": int(pd.to_datetime(valid["timestamp"], utc=True).nunique()),
+    }
 
 
 def _build_train_features(comp: pd.DataFrame, oof: pd.DataFrame) -> pd.DataFrame:
@@ -194,6 +241,49 @@ def _prepare_matrices(
     return pd.concat(train_parts, axis=1), pd.concat(valid_parts, axis=1), selected_cols, medians
 
 
+def _feature_contract_diagnostics(
+    *,
+    live: pd.DataFrame,
+    live_features: pd.DataFrame,
+    selected_cols: list[str],
+) -> dict[str, Any]:
+    selected = [str(c) for c in selected_cols]
+    missing_selected = [c for c in selected if c not in live_features.columns]
+    finite_fractions = {
+        c: float(pd.to_numeric(live_features[c], errors="coerce").replace([np.inf, -np.inf], np.nan).notna().mean())
+        for c in selected
+        if c in live_features.columns
+    }
+    source_rows: list[dict[str, Any]] = []
+    for name, _oof_col, live_col in OOF_TO_LIVE_FEATURES:
+        if live_col == "__live_anchor_score__":
+            source = "calibrated_score"
+        elif live_col == "__live_rank__":
+            source = "policy_rank_pct" if "policy_rank_pct" in live.columns else "batch_rank_pct"
+        else:
+            source = live_col
+        source_rows.append(
+            {
+                "feature": name,
+                "live_source": source,
+                "source_present": bool(source in live.columns),
+                "selected": bool(name in selected),
+                "finite_fraction": finite_fractions.get(name),
+            }
+        )
+    coverage_values = [v for v in finite_fractions.values() if np.isfinite(v)]
+    return {
+        "feature_contract_version": "distilled_reliability_blend_semantic_contract_v1",
+        "selected_feature_count": int(len(selected)),
+        "missing_selected_features": missing_selected,
+        "missing_selected_feature_count": int(len(missing_selected)),
+        "selected_live_finite_fraction_min": float(np.nanmin(coverage_values)) if coverage_values else np.nan,
+        "selected_live_finite_fraction_median": float(np.nanmedian(coverage_values)) if coverage_values else np.nan,
+        "selected_live_finite_fraction_mean": float(np.nanmean(coverage_values)) if coverage_values else np.nan,
+        "feature_sources": source_rows,
+    }
+
+
 def _fit_model(x: pd.DataFrame, y: np.ndarray, *, seed: int) -> Any:
     min_child = max(50, int(math.ceil(0.025 * len(y))))
     model = lgb.LGBMRegressor(
@@ -234,8 +324,24 @@ def main() -> None:
     parser.add_argument("--start", default=None)
     parser.add_argument("--end", default=None)
     parser.add_argument("--max-train-rows", type=int, default=90000)
+    parser.add_argument("--embargo-hours", type=float, default=5.0)
     parser.add_argument("--seed", type=int, default=37)
+    parser.add_argument(
+        "--allow-distilled-audit-fallback",
+        action="store_true",
+        help=(
+            "Required because this script materializes a distilled audit/fallback "
+            "student, not the native reliability-blend deployment path."
+        ),
+    )
     args = parser.parse_args()
+
+    if not bool(args.allow_distilled_audit_fallback):
+        raise SystemExit(
+            "Distilled reliability-blend scoring is disabled as a default live path. "
+            "Use native component scorers for deployment, or pass "
+            "--allow-distilled-audit-fallback for A2/A3 audit comparisons."
+        )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     variants = _load_default_variants(args.blend_config)
@@ -267,10 +373,13 @@ def main() -> None:
         if len(train_frame) < 1000:
             diag_rows.append({"head": head, "status": "insufficient_train_rows", "rows": int(len(train_frame))})
             continue
-        split = int(len(train_frame) * 0.80)
-        split = max(500, min(split, len(train_frame) - 500))
-        train_part = _sample_rows(train_frame.iloc[:split].copy(), int(args.max_train_rows))
-        valid_part = train_frame.iloc[split:].copy()
+        train_block, valid_part, split_diag = _timestamp_block_split(
+            train_frame,
+            train_fraction=0.80,
+            embargo_hours=float(args.embargo_hours),
+            min_rows=500,
+        )
+        train_part = _sample_rows(train_block, int(args.max_train_rows))
         x_tr, x_va, keep_cols, medians = _prepare_matrices(train_part, valid_part)
         y_tr = pd.to_numeric(train_part["target"], errors="coerce").to_numpy(dtype=np.float32)
         y_va = pd.to_numeric(valid_part["target"], errors="coerce").to_numpy(dtype=np.float32)
@@ -286,6 +395,7 @@ def main() -> None:
             "train_rows_full": int(len(train_frame)),
             "train_rows_eval": int(len(train_part)),
             "valid_rows_eval": int(len(valid_part)),
+            "validation_split": split_diag,
             "feature_count": int(len(keep_cols)),
             "valid_spearman": float(rho) if np.isfinite(rho) else np.nan,
             "valid_mae": float(mean_absolute_error(y_va, pred_va)),
@@ -302,18 +412,30 @@ def main() -> None:
         live_mask = live["head"].astype(str).eq(head)
         if live_mask.any():
             live_x_raw = live_features.loc[live_mask].copy()
+            contract_diag = _feature_contract_diagnostics(
+                live=live.loc[live_mask].copy(),
+                live_features=live_x_raw,
+                selected_cols=keep_cols,
+            )
+            if contract_diag["missing_selected_feature_count"]:
+                raise RuntimeError(
+                    f"Distilled reliability blend missing selected live features for {head}: "
+                    f"{contract_diag['missing_selected_features'][:20]}"
+                )
             _x_unused, live_x, _cols, _med = _prepare_matrices(full_train.loc[:, keep_cols], live_x_raw, selected_cols=keep_cols)
             pred_live = final_model.predict(live_x).astype(np.float32)
             pred_live = np.clip(pred_live, diag["target_min"], diag["target_max"])
             frame = live.loc[live_mask, ["timestamp", "symbol", "head", "strategy_id"]].copy()
             frame["anchor_score"] = pd.to_numeric(live.loc[live_mask, "calibrated_score"], errors="coerce").to_numpy(dtype=np.float32)
             frame["reliability_blend_score"] = pred_live
-            frame["score_source"] = "distilled_reliability_blend_oof_target"
+            frame["score_source"] = "distilled_reliability_blend_audit_fallback"
             frame["blend_variant"] = variant
             score_frames.append(frame)
             diag["live_rows_scored"] = int(len(frame))
             diag["live_score_min"] = float(np.nanmin(pred_live)) if len(pred_live) else np.nan
             diag["live_score_max"] = float(np.nanmax(pred_live)) if len(pred_live) else np.nan
+            diag.update({f"contract_{k}": v for k, v in contract_diag.items() if k != "feature_sources"})
+            diag["contract_feature_sources"] = contract_diag["feature_sources"]
         else:
             diag["live_rows_scored"] = 0
         diag_rows.append(diag)
@@ -341,6 +463,9 @@ def main() -> None:
         "start": args.start,
         "end": args.end,
         "rows": int(len(scores)),
+        "deployment_status": "audit_fallback_only_not_native_reliability_blend",
+        "timestamp_feature_scope": "head_x_timestamp",
+        "leaf_depth_mapping": "oof_leaf_depth_mean -> meta_lgbm_leaf_depth_mean",
         "timestamp_min": pd.to_datetime(scores["timestamp"], utc=True).min().isoformat(),
         "timestamp_max": pd.to_datetime(scores["timestamp"], utc=True).max().isoformat(),
         "diagnostics": diag_rows,

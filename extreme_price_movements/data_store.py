@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import concurrent.futures
 import fcntl
 import gc as _gc
@@ -2284,7 +2286,14 @@ def fetch_ohlcv_all_7d_chunks(
     limit, chunk_ms = _ohlcv_fetch_profile(exchange, timeframe, limit)
     now_ms = int(pd.Timestamp.utcnow().value // 10**6)
 
-    start = since_ms
+    start = int(since_ms)
+    history_days_raw = str(os.getenv("EPM_OHLCV_HISTORY_DAYS", "")).strip()
+    if history_days_raw:
+        try:
+            floor_ms = _recent_history_floor_ms("EPM_OHLCV_HISTORY_DAYS", float(history_days_raw))
+            start = max(start, int(floor_ms))
+        except Exception:
+            pass
     while start < now_ms:
         end = min(start + chunk_ms, now_ms)
         df = _fetch_ohlcv_paged(

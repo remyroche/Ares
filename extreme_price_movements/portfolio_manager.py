@@ -198,6 +198,12 @@ class PortfolioManager:
         self.manual_reset_required = False
         self.hard_limit_reason = ""
 
+    def _portfolio_notional_multiplier(self) -> float:
+        """Convert wallet allocation caps into quote-notional caps."""
+        return max(
+            float(self.book_notional_multiplier), 0.0
+        ) * max(float(self.leverage_wallet_multiplier), 1.0)
+
     @classmethod
     def from_policy_config(
         cls,
@@ -213,13 +219,16 @@ class PortfolioManager:
         max_same_strategy = kwargs.pop(
             "max_same_strategy", policy.resolved_max_concurrent_per_strategy()
         )
+        leverage_wallet_multiplier = kwargs.pop(
+            "leverage_wallet_multiplier", policy.leverage_wallet_multiplier
+        )
         return cls(
             max_positions=policy.max_concurrent_positions,
             max_portfolio_pct=policy.max_total_wallet_allocation_pct,
             max_position_usdt=policy.max_position_quote_notional,
             max_position_pct=policy.max_position_wallet_pct,
             book_notional_multiplier=policy.book_notional_multiplier,
-            leverage_wallet_multiplier=policy.leverage_wallet_multiplier,
+            leverage_wallet_multiplier=leverage_wallet_multiplier,
             min_margin_level_after_entry=policy.min_margin_level_after_entry,
             occupancy_threshold_alpha=policy.occupancy_threshold_alpha,
             occupancy_threshold_power=policy.occupancy_threshold_power,
@@ -361,6 +370,9 @@ class PortfolioManager:
 
         As more positions are open, thresholds tighten toward 1.0.
         """
+        if np.isfinite(initial_threshold) and float(initial_threshold) >= 1.0:
+            return float(initial_threshold)
+
         n_positions = len([p for p in self.positions.values() if p.is_open])
 
         occupancy = n_positions / max(self.max_positions, 1)
@@ -391,11 +403,12 @@ class PortfolioManager:
             self.get_portfolio_capacity(side="", strategy_id="")["max_total_notional"]
         )
 
+        notional_multiplier = self._portfolio_notional_multiplier()
         caps = [
             float(requested_size),
             float(self.portfolio_value)
             * float(self.max_position_pct)
-            * float(self.book_notional_multiplier),
+            * notional_multiplier,
         ]
         if self.max_position_usdt is not None and np.isfinite(self.max_position_usdt):
             caps.append(float(self.max_position_usdt) * self.book_notional_multiplier)
@@ -423,10 +436,11 @@ class PortfolioManager:
         strategy_open = sum(1 for p in open_positions if p.strategy_id == strategy_id)
         open_notional = float(sum(p.position_size for p in open_positions))
 
+        notional_multiplier = self._portfolio_notional_multiplier()
         configured_book_notional = (
             float(self.max_portfolio_pct)
             * wallet
-            * float(self.book_notional_multiplier)
+            * notional_multiplier
             if self.max_portfolio_pct is not None
             and np.isfinite(float(self.max_portfolio_pct))
             else float("inf")
@@ -439,9 +453,12 @@ class PortfolioManager:
             and np.isfinite(float(self.margin_total_liabilities_quote))
         ):
             margin_surplus_notional = max(
-                float(self.margin_total_assets_quote)
-                - float(self.min_margin_level_after_entry)
-                * float(self.margin_total_liabilities_quote),
+                (
+                    float(self.margin_total_assets_quote)
+                    - float(self.min_margin_level_after_entry)
+                    * float(self.margin_total_liabilities_quote)
+                )
+                * notional_multiplier,
                 0.0,
             )
         max_total_notional = min(configured_book_notional, margin_surplus_notional)
@@ -449,7 +466,7 @@ class PortfolioManager:
             max_total_notional = configured_book_notional
         remaining_total = max(max_total_notional - open_notional, 0.0)
         per_position_caps = [
-            float(self.max_position_pct) * wallet * float(self.book_notional_multiplier)
+            float(self.max_position_pct) * wallet * notional_multiplier
         ]
         if self.max_position_usdt is not None and np.isfinite(
             float(self.max_position_usdt)
@@ -922,8 +939,7 @@ class PortfolioManager:
             info["reason"] = "no_remaining_portfolio_capacity"
             return False, info
         if requested_size > float(capacity["remaining_total_notional"]):
-            info["reason"] = "requested_size_exceeds_remaining_total_notional"
-            return False, info
+            info["requested_size_clipped_to_remaining_total_notional"] = True
 
         info["reason"] = "allowed"
         return True, info

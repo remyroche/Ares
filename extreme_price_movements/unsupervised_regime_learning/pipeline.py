@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Mapping, Sequence
 
+import numpy as np
 import pandas as pd
 
 from extreme_price_movements.unsupervised_regime_learning.diagnostics import (
@@ -338,6 +339,213 @@ def build_operator_feature_frame(
         axis=1,
     )
     return derived, pair_scores, svd_state
+
+
+def _seeded_pair_frame(
+    seeded_pairs: pd.DataFrame | Sequence[tuple[str, str]] | None,
+    seeded_triples: pd.DataFrame | Sequence[tuple[str, str, str]] | None = None,
+) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    if seeded_pairs is not None:
+        if isinstance(seeded_pairs, pd.DataFrame):
+            for row in seeded_pairs.itertuples(index=False):
+                if hasattr(row, "feature_i") and hasattr(row, "feature_j"):
+                    rows.append(
+                        {
+                            "feature_i": str(row.feature_i),
+                            "feature_j": str(row.feature_j),
+                            "pair_score": float(getattr(row, "candidate_score", 1.0) or 1.0),
+                            "rho_variation": np.nan,
+                            "rho_persistence": np.nan,
+                            "reliability": 1.0,
+                            "graph_edge_stability": np.nan,
+                            "graph_edge_strength": np.nan,
+                            "sparse_graph_score": np.nan,
+                            "mechanism_i": "leaf_guided",
+                            "mechanism_j": "leaf_guided",
+                        }
+                    )
+        else:
+            for left, right in seeded_pairs:
+                rows.append(
+                    {
+                        "feature_i": str(left),
+                        "feature_j": str(right),
+                        "pair_score": 1.0,
+                        "rho_variation": np.nan,
+                        "rho_persistence": np.nan,
+                        "reliability": 1.0,
+                        "graph_edge_stability": np.nan,
+                        "graph_edge_strength": np.nan,
+                        "sparse_graph_score": np.nan,
+                        "mechanism_i": "leaf_guided",
+                        "mechanism_j": "leaf_guided",
+                    }
+                )
+    if seeded_triples is not None:
+        triples_iter = []
+        if isinstance(seeded_triples, pd.DataFrame):
+            for row in seeded_triples.itertuples(index=False):
+                if all(hasattr(row, name) for name in ("feature_i", "feature_j", "feature_k")):
+                    triples_iter.append((str(row.feature_i), str(row.feature_j), str(row.feature_k)))
+        else:
+            triples_iter = [(str(a), str(b), str(c)) for a, b, c in seeded_triples]
+        for a, b, c in triples_iter:
+            for left, right in ((a, b), (a, c), (b, c)):
+                rows.append(
+                    {
+                        "feature_i": str(left),
+                        "feature_j": str(right),
+                        "pair_score": 0.75,
+                        "rho_variation": np.nan,
+                        "rho_persistence": np.nan,
+                        "reliability": 1.0,
+                        "graph_edge_stability": np.nan,
+                        "graph_edge_strength": np.nan,
+                        "sparse_graph_score": np.nan,
+                        "mechanism_i": "leaf_guided_triple",
+                        "mechanism_j": "leaf_guided_triple",
+                    }
+                )
+    if not rows:
+        return pd.DataFrame(
+            columns=[
+                "feature_i",
+                "feature_j",
+                "pair_score",
+                "rho_variation",
+                "rho_persistence",
+                "reliability",
+                "graph_edge_stability",
+                "graph_edge_strength",
+                "sparse_graph_score",
+                "mechanism_i",
+                "mechanism_j",
+            ]
+        )
+    out = pd.DataFrame(rows).drop_duplicates(["feature_i", "feature_j"], keep="first")
+    return out.sort_values("pair_score", ascending=False, kind="mergesort").reset_index(drop=True)
+
+
+def _seeded_triple_composites(
+    frame: pd.DataFrame,
+    seeded_triples: pd.DataFrame | Sequence[tuple[str, str, str]] | None,
+) -> pd.DataFrame:
+    if seeded_triples is None:
+        return pd.DataFrame(index=frame.index, dtype=np.float32)
+    triples: list[tuple[str, str, str]] = []
+    if isinstance(seeded_triples, pd.DataFrame):
+        for row in seeded_triples.itertuples(index=False):
+            if all(hasattr(row, name) for name in ("feature_i", "feature_j", "feature_k")):
+                triples.append((str(row.feature_i), str(row.feature_j), str(row.feature_k)))
+    else:
+        triples = [(str(a), str(b), str(c)) for a, b, c in seeded_triples]
+    cols: dict[str, pd.Series] = {}
+    for a, b, c in triples:
+        if a not in frame.columns or b not in frame.columns or c not in frame.columns:
+            continue
+        safe = "__".join(
+            str(v)
+            .replace("/", "_")
+            .replace(" ", "_")
+            .replace("(", "")
+            .replace(")", "")
+            .replace(",", "_")
+            for v in (a, b, c)
+        )
+        xa = pd.to_numeric(frame[a], errors="coerce")
+        xb = pd.to_numeric(frame[b], errors="coerce")
+        xc = pd.to_numeric(frame[c], errors="coerce")
+        cols[f"triple_joint_pressure__{safe}"] = (
+            (xa.rank(pct=True) + xb.rank(pct=True) + xc.rank(pct=True)) / 3.0
+        ).astype(np.float32)
+        cols[f"triple_dispersion__{safe}"] = pd.concat([xa, xb, xc], axis=1).std(axis=1).astype(np.float32)
+    return pd.DataFrame(cols, index=frame.index, dtype=np.float32)
+
+
+def generate_operator_features(
+    frame: pd.DataFrame,
+    *,
+    primitive_features: Sequence[str],
+    seeded_pairs: pd.DataFrame | Sequence[tuple[str, str]] | None = None,
+    seeded_triples: pd.DataFrame | Sequence[tuple[str, str, str]] | None = None,
+    mode: str = "leaf_guided",
+    cfg: Mapping[str, object] | None = None,
+) -> pd.DataFrame:
+    """Public operator wrapper with optional leaf-guided candidate seeds.
+
+    This deliberately delegates to the existing quantile/autocorr/eigen/pair
+    operators and only bounds seeded triples by decomposing them into pair
+    operators plus two compact row-wise composites.
+    """
+
+    active_cfg = _defaulted_config(cfg)
+    quality_cfg = _cfg_section(active_cfg, "quality")
+    operator_cfg = _cfg_section(active_cfg, "operators")
+    symbol_col = str(quality_cfg.get("symbol_col", "symbol"))
+    timestamp_col = str(quality_cfg.get("timestamp_col", "timestamp"))
+    context = prepare_frame_context(
+        frame,
+        symbol_col=symbol_col,
+        timestamp_col=timestamp_col,
+    )
+    min_periods = _positive_int_or_none(operator_cfg, "min_periods")
+    features = [str(c) for c in dict.fromkeys(primitive_features) if str(c) in frame.columns]
+    quantile = generate_quantile_operator_features(
+        frame,
+        features,
+        window=int(operator_cfg.get("quantile_window", 168)),
+        min_periods=min_periods,
+        symbol_col=symbol_col,
+        timestamp_col=timestamp_col,
+        context=context,
+    )
+    autocorr = generate_autocorr_operator_features(
+        frame,
+        features,
+        window=int(operator_cfg.get("autocorr_window", 168)),
+        lag=int(operator_cfg.get("autocorr_lag", 1)),
+        min_periods=min_periods,
+        symbol_col=symbol_col,
+        timestamp_col=timestamp_col,
+        context=context,
+    )
+    mechanisms = active_cfg.get("feature_mechanisms", {})
+    mechanisms = mechanisms if isinstance(mechanisms, Mapping) else {}
+    eigen = generate_eigenvalue_summary_features(
+        frame,
+        make_mechanism_feature_groups(features, mechanisms),
+        window=int(operator_cfg.get("eigen_window", 168)),
+        min_periods=min_periods,
+        top_k=int(operator_cfg.get("eigen_top_k", 3)),
+        symbol_col=symbol_col,
+        timestamp_col=timestamp_col,
+        context=context,
+    )
+    if str(mode) == "leaf_guided":
+        pair_scores = _seeded_pair_frame(seeded_pairs, seeded_triples)
+    else:
+        pair_scores = score_pair_candidates(
+            frame,
+            features,
+            mechanisms=mechanisms,
+            rolling_window=int(operator_cfg.get("pair_window", 168)),
+            min_periods=min_periods,
+            symbol_col=symbol_col,
+            timestamp_col=timestamp_col,
+            context=context,
+        )
+    pair_features = generate_pair_operator_features(
+        frame,
+        pair_scores,
+        window=int(operator_cfg.get("pair_window", 168)),
+        min_periods=min_periods,
+        symbol_col=symbol_col,
+        timestamp_col=timestamp_col,
+        context=context,
+    )
+    triples = _seeded_triple_composites(frame, seeded_triples)
+    return pd.concat([quantile, autocorr, eigen, pair_features, triples], axis=1)
 
 
 def select_operator_features(

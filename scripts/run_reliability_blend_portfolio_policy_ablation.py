@@ -23,7 +23,7 @@ import pandas as pd
 from extreme_price_movements.portfolio_policy_replay import (
     INITIAL_WALLET,
     PortfolioPolicyParams,
-    fit_monotone_ev_curve,
+    fit_hierarchical_ev_curves,
     load_portfolio_policy_params,
     normalise_candidate_table,
     optimise_params,
@@ -391,7 +391,7 @@ def main() -> None:
         legacy_params=legacy_params,
         refit_params=refit_params,
     )
-    ev_curve = fit_monotone_ev_curve(train)
+    ev_curve = fit_hierarchical_ev_curves(train)
     summary_rows, window_rows, strategy_window_rows = _evaluate(
         sample="historical_refit",
         candidates=train,

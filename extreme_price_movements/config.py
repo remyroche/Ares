@@ -2288,8 +2288,8 @@ CFG = {
     "lgbm_regime_specialist_feature_engineering_max_final_features": 40,
     "lgbm_regime_specialist_feature_engineering_max_pair_candidates": 2500,
     "lgbm_regime_specialist_feature_engineering_univariate_subsample_per_class": 8000,
-    "lgbm_regime_specialist_feature_engineering_lgbm_enabled": False,
-    "lgbm_regime_specialist_feature_engineering_elasticnet_enabled": True,
+    "lgbm_regime_specialist_feature_engineering_lgbm_enabled": True,
+    "lgbm_regime_specialist_feature_engineering_elasticnet_enabled": False,
     "lgbm_regime_specialist_feature_engineering_grouped_cv_folds": 5,
     "lgbm_regime_specialist_feature_engineering_grouped_cv_repeats": 3,
     "lgbm_regime_specialist_feature_engineering_permutation_repeats": 2,
@@ -3506,6 +3506,36 @@ CFG = {
     # Backward-compatible selector aliases
     "base_mdi_selector_target": "classification",
     "base_mdi_selector_loss": "binary_logloss",
+    "mda_config": {
+        "enabled": True,
+        "objective": "topk_opportunity_precision",
+        "topk_fracs": [0.10, 0.20, 0.30],
+        "topk_frac_weights": [0.50, 0.30, 0.20],
+        "positive_label": 1,
+        "use_sample_weight": True,
+        "permutation_mode": "path_gated_lgbm",
+        "permutation_style": "row_shuffle",
+        "block_size": None,
+        "min_repeats": 3,
+        "max_repeats": 20,
+        "repeat_batch_size": 2,
+        "confidence_level": 0.95,
+        "early_stop_strong_keep": True,
+        "early_stop_null_drop": True,
+        "min_effect_size": 0.0,
+        "decision_default_for_borderline": "keep",
+        "shadow_null_enabled": True,
+        "shadow_max_features": 50,
+        "shadow_sample_strategy": "variance_quantiles",
+        "shadow_null_quantile": 0.95,
+        "shadow_n_repeats": 5,
+        "group_mda_enabled": True,
+        "correlation_method": "spearman",
+        "correlation_threshold": 0.85,
+        "group_permutation_style": "joint_row_shuffle",
+        "write_mda_report": True,
+        "report_format": ["json", "csv"],
+    },
     # Layer A Ablations and Config
     "model1_target_mode": "race",  # "race" | "fixed"
     "fixed_model1_target_name": "robust_utility_target",
@@ -3573,6 +3603,29 @@ def _append_missing(existing, extra):
         out.append(item)
         seen.add(item)
     return out
+
+
+TIME_CYCLICAL_FEATURE_KEYS = [
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+]
+
+CFG["time_cyclical_feature_keys"] = TIME_CYCLICAL_FEATURE_KEYS
+CFG["lgbm_time_feature_selector_bypass_enabled"] = True
+CFG["lgbm_time_feature_selector_bypass_modes"] = ["train_base", "train_meta"]
+CFG["lgbm_time_feature_selector_bypass_features"] = TIME_CYCLICAL_FEATURE_KEYS
+for _time_feature_target in (
+    "causal_cols",
+    "base_long_feature_keys",
+    "base_short_feature_keys",
+    "meta_shared_feature_keys",
+):
+    CFG[_time_feature_target] = _append_missing(
+        CFG.get(_time_feature_target, []),
+        TIME_CYCLICAL_FEATURE_KEYS,
+    )
 
 
 def enable_perp_feature_keys(cfg: dict) -> dict:
@@ -4392,6 +4445,76 @@ MODEL_REGIME_EIGEN_META_FEATURE_KEYS = [
     "xs_cov_effective_rank__xs_open_interest",
 ]
 
+MARKET_SPECTRAL_POSITION_META_FEATURE_KEYS = [
+    "state_spectral_eig_lambda1_share",
+    "state_spectral_eig_top3_share",
+    "state_spectral_eig_effective_rank",
+    "state_spectral_eig_entropy",
+    "state_spectral_eig_gap_1_2",
+    "state_spectral_eig_gap_ratio_1_2",
+    "state_spectral_eig_condition",
+    "state_spectral_pc1_score",
+    "state_spectral_pc2_score",
+    "state_spectral_pc3_score",
+    "state_spectral_pc1_z",
+    "state_spectral_pc2_z",
+    "state_spectral_pc3_z",
+    "state_spectral_abs_pc1_z",
+    "state_spectral_abs_pc2_z",
+    "state_spectral_abs_pc3_z",
+    "state_spectral_sum_abs_top3_pc_z",
+    "state_spectral_projection_norm_top3",
+    "state_spectral_top3_reconstruction_error",
+    "state_spectral_top3_reconstruction_ratio",
+    "state_spectral_top3_mahalanobis",
+]
+
+MARKET_SPECTRAL_POSITION_SOURCE_FEATURE_KEYS = [
+    "mkt_ret_eq_1h",
+    "mkt_ret_eq_4h",
+    "mkt_ret_eq_24h",
+    "market_breadth_1h",
+    "market_breadth_4h",
+    "market_breadth_24h",
+    "market_dispersion_1h",
+    "market_dispersion_4h",
+    "market_dispersion_24h",
+    "symbol_minus_mkt_ret_1h",
+    "symbol_minus_mkt_ret_4h",
+    "symbol_minus_mkt_ret_24h",
+    "rv_24h",
+    "realized_volatility_24h",
+    "volume_percentile",
+    "volume_zscore_48h",
+    "volume_z_12",
+    "volume_z_24",
+    "vol_z24",
+    "amihud_z",
+    "amihud_z_peer_resid",
+    "liquidity_ratio_peer_resid",
+    "funding_per_hour",
+    "funding_z",
+    "funding_abs_z",
+    "oi_value_1d_chg_z_90d",
+    "oi_value_3d_chg_z_90d",
+    "oi_value_7d_chg_z_90d",
+    "oi_value_z_90d",
+    "oi_1d_x_funding",
+    "oi_3d_x_funding",
+    "oi_7d_x_funding",
+    "oi_to_volume_7d_z_180d",
+    "price_x_oi_1d",
+    "price_x_oi_3d",
+    "price_x_oi_7d",
+    "xasset_mkt_spread_bps",
+    "xasset_ob_liquidity_peer_resid",
+    "xasset_ob_liquidity_ts_resid",
+    "trend_pct_mkt_resid",
+    "efficiency_ratio_20",
+    "choppiness_index_20",
+    "coherence_24",
+]
+
 MODEL_REGIME_COMPOSITE_EIGEN_GROUPS = {
     "breakout_all": [
         "bars_in_high_vol_state_log_norm",
@@ -4471,6 +4594,7 @@ MODEL_REGIME_COMPOSITE_META_FEATURE_KEYS = list(
         + MODEL_REGIME_XS_META_FEATURE_KEYS
         + MODEL_REGIME_TAIL_META_FEATURE_KEYS
         + MODEL_REGIME_EIGEN_META_FEATURE_KEYS
+        + MARKET_SPECTRAL_POSITION_META_FEATURE_KEYS
     )
 )
 
@@ -4479,6 +4603,13 @@ CFG["MODEL_REGIME_CONTEXT_META_FEATURE_KEYS"] = MODEL_REGIME_CONTEXT_META_FEATUR
 CFG["MODEL_REGIME_XS_META_FEATURE_KEYS"] = MODEL_REGIME_XS_META_FEATURE_KEYS
 CFG["MODEL_REGIME_TAIL_META_FEATURE_KEYS"] = MODEL_REGIME_TAIL_META_FEATURE_KEYS
 CFG["MODEL_REGIME_EIGEN_META_FEATURE_KEYS"] = MODEL_REGIME_EIGEN_META_FEATURE_KEYS
+CFG["MARKET_SPECTRAL_POSITION_META_FEATURE_KEYS"] = MARKET_SPECTRAL_POSITION_META_FEATURE_KEYS
+CFG["MARKET_SPECTRAL_POSITION_SOURCE_FEATURE_KEYS"] = MARKET_SPECTRAL_POSITION_SOURCE_FEATURE_KEYS
+CFG["market_spectral_position_lookback"] = 48
+CFG["market_spectral_position_min_periods"] = 24
+CFG["market_spectral_position_top_k"] = 3
+CFG["market_spectral_position_max_source_features"] = 64
+CFG["market_spectral_position_shrinkage"] = 0.10
 CFG["MODEL_REGIME_COMPOSITE_EIGEN_GROUPS"] = MODEL_REGIME_COMPOSITE_EIGEN_GROUPS
 CFG["MODEL_REGIME_COMPOSITE_META_FEATURE_KEYS"] = MODEL_REGIME_COMPOSITE_META_FEATURE_KEYS
 CFG["base_shared_feature_keys"] += [
@@ -6020,6 +6151,8 @@ for _name in (
     "MODEL_REGIME_XS_META_FEATURE_KEYS",
     "MODEL_REGIME_TAIL_META_FEATURE_KEYS",
     "MODEL_REGIME_EIGEN_META_FEATURE_KEYS",
+    "MARKET_SPECTRAL_POSITION_META_FEATURE_KEYS",
+    "MARKET_SPECTRAL_POSITION_SOURCE_FEATURE_KEYS",
     "MODEL_REGIME_COMPOSITE_META_FEATURE_KEYS",
 ):
     globals()[_name] = _portable_feature_list(globals().get(_name, []))

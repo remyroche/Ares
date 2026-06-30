@@ -1,3 +1,4 @@
+import json
 import sqlite3
 
 import pandas as pd
@@ -23,6 +24,11 @@ def test_trade_logger_includes_required_parity_fields(tmp_path):
         "entry_time": "2026-05-12T09:00:00Z",
         "exit_time": "2026-05-12T10:30:00Z",
         "holding_time_hours": 1.5,
+        "fee_source": "verified_order_fees",
+        "fees_verified": True,
+        "net_pnl_estimated": 0.009,
+        "estimated_fee_source": "configured_entry_market_fee_bps",
+        "net_pnl_verification_status": "verified_exchange_fees",
     }
     model_results = {"meta_pred": 0.8, "position_size": 0.5, "alpha_preds": {}}
     market_data = {"close": 100.0, "volume": 1234.0}
@@ -45,6 +51,11 @@ def test_trade_logger_includes_required_parity_fields(tmp_path):
         "entry_time",
         "exit_time",
         "holding_time_hours",
+        "fee_source",
+        "fees_verified",
+        "net_pnl_estimated",
+        "estimated_fee_source",
+        "net_pnl_verification_status",
     }
     assert required.issubset(df.columns)
     assert df.loc[0, "strategy_id"] == "long_mr"
@@ -55,7 +66,9 @@ def test_trade_logger_includes_required_parity_fields(tmp_path):
     with sqlite3.connect(db_path) as conn:
         rows = conn.execute(
             "SELECT strategy_id, orderbook_snapshot, net_pnl, lifecycle_event, "
-            "entry_time, exit_time, holding_time_hours FROM trades"
+            "entry_time, exit_time, holding_time_hours, fee_source, fees_verified, "
+            "net_pnl_estimated, estimated_fee_source, net_pnl_verification_status "
+            "FROM trades"
         ).fetchall()
     assert rows == [
         (
@@ -66,8 +79,105 @@ def test_trade_logger_includes_required_parity_fields(tmp_path):
             "2026-05-12T09:00:00Z",
             "2026-05-12T10:30:00Z",
             "1.5",
+            "verified_order_fees",
+            "True",
+            "0.009",
+            "configured_entry_market_fee_bps",
+            "verified_exchange_fees",
         )
     ]
+
+
+def test_trade_logger_persists_policy_and_exchange_stop_observability(tmp_path):
+    path = tmp_path / "trades.csv"
+    logger = TradeLogger(output_path=str(path), run_id="r1")
+
+    adjustment = {
+        "status": "ok",
+        "policy_stop_price": 0.17,
+        "exchange_stop_price": 0.1696,
+        "position_side": "short",
+        "bid": 0.1617,
+        "ask": 0.1621,
+        "last": 0.1617,
+        "spread": 0.0004,
+        "last_to_executable_gap": 0.0004,
+        "gap_source": "ask_minus_last",
+        "trigger_signal": "last",
+    }
+    logger.log_trade(
+        {
+            "symbol": "DYDX/USD:USD",
+            "side": "short",
+            "action": "enter",
+            "strategy_id": "short_asset",
+            "stop_price": 0.17,
+            "policy_stop_price": 0.17,
+            "requested_policy_stop": 0.17,
+            "exchange_stop_price": 0.1696,
+            "final_placed_stop": 0.1696,
+            "exchange_stop_trigger_reference_source": "last",
+            "exchange_stop_adjustment": adjustment,
+            "stop_trigger_signal": "last",
+            "stop_order_id": "stop-1",
+        },
+        {"meta_pred": 0.8, "position_size": 7.0, "alpha_preds": {}},
+        {"close": 0.1621},
+        {"run_id": "r1", "mode": "live"},
+    )
+
+    df = pd.read_csv(path, dtype=str)
+    assert df.loc[0, "stop_price"] == "0.17"
+    assert df.loc[0, "policy_stop_price"] == "0.17"
+    assert df.loc[0, "requested_policy_stop"] == "0.17"
+    assert df.loc[0, "exchange_stop_price"] == "0.1696"
+    assert df.loc[0, "final_placed_stop"] == "0.1696"
+    assert df.loc[0, "exchange_stop_trigger_reference_source"] == "last"
+    assert json.loads(df.loc[0, "exchange_stop_adjustment"]) == adjustment
+
+    with sqlite3.connect(path.with_suffix(".sqlite")) as conn:
+        rows = conn.execute(
+            "SELECT policy_stop_price, requested_policy_stop, exchange_stop_price, "
+            "final_placed_stop, exchange_stop_trigger_reference_source, "
+            "exchange_stop_adjustment FROM trades"
+        ).fetchall()
+    assert rows[0][:5] == ("0.17", "0.17", "0.1696", "0.1696", "last")
+    assert json.loads(rows[0][5]) == adjustment
+
+
+def test_trade_logger_derives_entry_notional_for_fee_audit(tmp_path):
+    path = tmp_path / "trades.csv"
+    logger = TradeLogger(output_path=str(path), run_id="r1")
+
+    decision = {
+        "symbol": "PUMP/USD:USD",
+        "side": "long",
+        "action": "enter",
+        "strategy_id": "long_bars",
+        "intended_quote_size": 7.0,
+        "realized_entry_price": 0.001483,
+        "base_amount": 4900.0,
+        "entry_fee_estimate_quote": 0.0035,
+        "entry_fee_estimate_bps": 5.0,
+        "entry_fee_estimate_source": "env_EPM_LIVE_FEE_FALLBACK_BPS_entry_limit",
+    }
+    logger.log_trade(
+        decision,
+        {"meta_pred": 0.8, "position_size": 7.0, "alpha_preds": {}},
+        {"close": 0.001483},
+        {"run_id": "r1", "mode": "live-test"},
+    )
+
+    df = pd.read_csv(path)
+    assert float(df.loc[0, "entry_notional_quote"]) == 7.0
+    assert float(df.loc[0, "entry_fee_estimate_quote"]) == 0.0035
+
+    with sqlite3.connect(path.with_suffix(".sqlite")) as conn:
+        rows = conn.execute(
+            "SELECT entry_notional_quote, entry_fee_estimate_quote, "
+            "entry_fee_estimate_bps FROM trades"
+        ).fetchall()
+    assert rows == [("7.0", "0.0035", "5.0")]
 
 
 def test_trade_logger_reads_sqlite_and_repairs_csv_schema(tmp_path):

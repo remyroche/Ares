@@ -68,12 +68,64 @@ DEFAULT_HEAD_HEALTH_CONFIG: Dict[str, Any] = {
     "cross_head_crowding_max_penalty": 0.6689023208983774,
     "health_clip": 0.56627201976981,
     "rank_shift_scale": 0.01491044367175787,
+    "positive_rank_shift_scale": 0.006,
+    "negative_rank_shift_scale": 0.025,
     "max_rank_shift": 0.09324844561648114,
     "threshold_shift_scale": 0.008835009945747364,
+    "positive_threshold_shift_scale": 0.004,
+    "negative_threshold_shift_scale": 0.035,
     "max_threshold_shift": 0.07171829305783929,
     "threshold_floor": 0.70,
+    "hard_crowding_stop_share": 0.75,
+    "hard_crowding_stop_health": -0.45,
+    "hard_crowding_stop_threshold": 0.999,
+    "hard_crowding_threshold_scale": 0.04,
+    "base_max_new_entries_per_bar": 4,
+    "base_max_new_entries_per_strategy_per_bar": 2,
+    "base_max_concurrent_per_strategy": 6,
+    "positive_bar_capacity_scale": 0.10,
+    "negative_bar_capacity_scale": 1.25,
+    "crowding_bar_capacity_scale": 1.50,
+    "size_negative_health_start": 0.00,
+    "threshold_negative_health_start": 0.20,
+    "capacity_negative_health_start": 0.55,
+    "crowding_threshold_start": 0.00,
+    "crowding_capacity_start": 0.15,
+    "min_bar_capacity_when_not_stopped": 1.0,
+    "min_strategy_capacity_when_not_stopped": 1.0,
+    "min_strategy_concurrent_when_not_stopped": 1.0,
+    "positive_strategy_capacity_scale": 0.10,
+    "negative_strategy_capacity_scale": 1.10,
+    "crowding_strategy_capacity_scale": 1.25,
+    "positive_size_scale": 0.10,
+    "negative_size_scale": 0.75,
+    "crowding_size_scale": 0.75,
+    "negative_asymmetry_min_ratio": 1.50,
+    "min_size_multiplier": 0.15,
+    "max_size_multiplier": 1.05,
+    "objective_worst_week_weight": 0.20,
+    "objective_full_sl_penalty_weight": 0.08,
+    "objective_cost_drag_penalty_weight": 0.05,
+    "objective_crowding_penalty_weight": 0.04,
+    "objective_defensive_success_weight": 0.25,
 }
 EPS = 1e-9
+
+
+def _negative_scale(
+    config: Dict[str, Any],
+    positive_value: float,
+    negative_key: str,
+    default_value: float,
+) -> float:
+    """Keep negative health controls stronger than positive risk increases."""
+    ratio = max(float(config.get("negative_asymmetry_min_ratio", 1.0)), 1.0)
+    proposed = float(config.get(negative_key, default_value))
+    return max(proposed, positive_value * ratio)
+
+
+def _ramp_after(values: np.ndarray, start: float) -> np.ndarray:
+    return np.maximum(np.asarray(values, dtype=float) - float(start), 0.0)
 
 
 def _json_safe(value: Any) -> Any:
@@ -504,16 +556,74 @@ def _apply_head_health(
     original_rank = pd.to_numeric(work["normalized_rank_score"], errors="coerce")
     original_score = pd.to_numeric(work["calibrated_score"], errors="coerce")
     original_threshold = pd.to_numeric(work["base_strategy_threshold"], errors="coerce")
+    health_values = work["head_health"].to_numpy(dtype=float)
+    positive_health = np.maximum(health_values, 0.0)
+    negative_health = np.maximum(-health_values, 0.0)
+    crowding_penalty = pd.to_numeric(
+        work.get("cross_head_crowding_penalty", pd.Series(0.0, index=work.index)),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(dtype=float)
+    degraded_share = pd.to_numeric(
+        work.get("cross_head_degraded_share", pd.Series(0.0, index=work.index)),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(dtype=float)
+    size_negative_health = _ramp_after(
+        negative_health,
+        float(config.get("size_negative_health_start", 0.0)),
+    )
+    threshold_negative_health = _ramp_after(
+        negative_health,
+        float(config.get("threshold_negative_health_start", 0.0)),
+    )
+    capacity_negative_health = _ramp_after(
+        negative_health,
+        float(config.get("capacity_negative_health_start", 0.0)),
+    )
+    threshold_crowding = _ramp_after(
+        crowding_penalty,
+        float(config.get("crowding_threshold_start", 0.0)),
+    )
+    capacity_crowding = _ramp_after(
+        crowding_penalty,
+        float(config.get("crowding_capacity_start", 0.0)),
+    )
+
+    positive_rank_scale = float(config.get("positive_rank_shift_scale", config["rank_shift_scale"]))
+    negative_rank_scale = _negative_scale(
+        config,
+        positive_rank_scale,
+        "negative_rank_shift_scale",
+        float(config["rank_shift_scale"]),
+    )
     score_delta = np.clip(
-        float(config["rank_shift_scale"]) * work["head_health"].to_numpy(dtype=float),
+        positive_rank_scale * positive_health - negative_rank_scale * size_negative_health,
         -float(config["max_rank_shift"]),
         float(config["max_rank_shift"]),
     )
+    positive_threshold_scale = float(
+        config.get("positive_threshold_shift_scale", config["threshold_shift_scale"])
+    )
+    negative_threshold_scale = _negative_scale(
+        config,
+        positive_threshold_scale,
+        "negative_threshold_shift_scale",
+        float(config["threshold_shift_scale"]),
+    )
+    threshold_raise = (
+        negative_threshold_scale * threshold_negative_health
+        + float(config.get("hard_crowding_threshold_scale", 0.0)) * threshold_crowding
+    )
+    threshold_cut = positive_threshold_scale * positive_health
     threshold_delta = np.clip(
-        float(config["threshold_shift_scale"]) * work["head_health"].to_numpy(dtype=float),
+        threshold_cut - threshold_raise,
         -float(config["max_threshold_shift"]),
         float(config["max_threshold_shift"]),
     )
+    hard_brake = (
+        (degraded_share >= float(config.get("hard_crowding_stop_share", 1.01)))
+        & (health_values <= float(config.get("hard_crowding_stop_health", -np.inf)))
+    )
+    work["head_health_hard_brake"] = hard_brake
     work["head_health_score_delta"] = score_delta
     work["head_health_threshold_delta"] = threshold_delta
     work["head_health_original_rank_score"] = original_rank
@@ -526,8 +636,188 @@ def _apply_head_health(
         float(config["threshold_floor"]),
         0.999,
     )
+    if hard_brake.any():
+        work.loc[hard_brake, "base_strategy_threshold"] = float(
+            config.get("hard_crowding_stop_threshold", 0.999)
+        )
     work["deployment_rank_threshold"] = work["base_strategy_threshold"]
+    bar_multiplier = 1.0 - float(config.get("crowding_bar_capacity_scale", 0.0)) * capacity_crowding
+    strategy_multiplier = (
+        1.0
+        + float(config.get("positive_strategy_capacity_scale", 0.0)) * positive_health
+        - _negative_scale(
+            config,
+            float(config.get("positive_strategy_capacity_scale", 0.0)),
+            "negative_strategy_capacity_scale",
+            0.0,
+        )
+        * capacity_negative_health
+        - float(config.get("crowding_strategy_capacity_scale", 0.0)) * capacity_crowding
+    )
+    size_multiplier = (
+        1.0
+        + float(config.get("positive_size_scale", 0.0)) * positive_health
+        - _negative_scale(
+            config,
+            float(config.get("positive_size_scale", 0.0)),
+            "negative_size_scale",
+            0.0,
+        )
+        * size_negative_health
+        - float(config.get("crowding_size_scale", 0.0)) * crowding_penalty
+    )
+    max_size_multiplier = float(config.get("max_size_multiplier", 1.0))
+    min_size_multiplier = float(config.get("min_size_multiplier", 0.0))
+    work["portfolio_size_multiplier"] = np.clip(
+        size_multiplier,
+        min_size_multiplier,
+        max_size_multiplier,
+    )
+    bar_cap = np.floor(
+        float(config.get("base_max_new_entries_per_bar", 4.0))
+        * np.clip(bar_multiplier, 0.0, 2.0)
+    )
+    strategy_bar_cap = np.floor(
+        float(config.get("base_max_new_entries_per_strategy_per_bar", 2.0))
+        * np.clip(strategy_multiplier, 0.0, 2.0)
+    )
+    strategy_concurrent_cap = np.floor(
+        float(config.get("base_max_concurrent_per_strategy", 6.0))
+        * np.clip(strategy_multiplier, 0.0, 2.0)
+    )
+    work["portfolio_max_new_entries_per_bar"] = np.maximum(
+        bar_cap,
+        float(config.get("min_bar_capacity_when_not_stopped", 1.0)),
+    )
+    work["portfolio_max_new_entries_per_strategy_per_bar"] = np.maximum(
+        strategy_bar_cap,
+        float(config.get("min_strategy_capacity_when_not_stopped", 1.0)),
+    )
+    work["portfolio_max_concurrent_per_strategy"] = np.maximum(
+        strategy_concurrent_cap,
+        float(config.get("min_strategy_concurrent_when_not_stopped", 1.0)),
+    )
+    if hard_brake.any():
+        work.loc[hard_brake, "portfolio_size_multiplier"] = 0.0
+        work.loc[hard_brake, "portfolio_max_new_entries_per_strategy_per_bar"] = 0.0
+        work.loc[hard_brake, "portfolio_max_concurrent_per_strategy"] = 0.0
+    for col in (
+        "portfolio_max_new_entries_per_bar",
+        "portfolio_max_new_entries_per_strategy_per_bar",
+        "portfolio_max_concurrent_per_strategy",
+    ):
+        work[col] = pd.to_numeric(work[col], errors="coerce").fillna(0.0).clip(lower=0.0)
     return work
+
+
+def _calendar_week_metrics(
+    accepted: pd.DataFrame,
+    *,
+    sample: str,
+    variant: str,
+) -> list[dict[str, Any]]:
+    if accepted.empty:
+        return []
+    work = accepted.copy()
+    work["timestamp"] = pd.to_datetime(work["timestamp"], utc=True, errors="coerce")
+    work = work.dropna(subset=["timestamp"])
+    if work.empty:
+        return []
+    work["week_start"] = work["timestamp"].dt.floor("D") - pd.to_timedelta(
+        work["timestamp"].dt.weekday,
+        unit="D",
+    )
+    net_return = pd.to_numeric(work["candidate_net_return"], errors="coerce").fillna(0.0)
+    gross_return = pd.to_numeric(
+        work.get("candidate_gross_return", work["candidate_net_return"]),
+        errors="coerce",
+    ).fillna(0.0)
+    size = pd.to_numeric(work["position_size"], errors="coerce").fillna(0.0)
+    work["_net_pnl"] = net_return * size
+    work["_gross_pnl"] = gross_return * size
+    work["_cost_pnl"] = work["_gross_pnl"] - work["_net_pnl"]
+    work["_win"] = work["_net_pnl"] > 0.0
+    reason = work.get(
+        "candidate_simple_policy_exit_reason",
+        pd.Series("", index=work.index),
+    ).astype(str).str.lower()
+    work["_full_sl"] = reason.str.contains("full_sl", regex=False)
+    work["_timeout"] = reason.str.contains("timeout", regex=False)
+    rows: list[dict[str, Any]] = []
+    for week_start, group in work.groupby("week_start", sort=True):
+        strategies = group["strategy_id"].astype(str).value_counts(normalize=True)
+        rows.append(
+            {
+                "sample": sample,
+                "variant": variant,
+                "window": f"week_{pd.Timestamp(week_start).strftime('%Y-%m-%d')}",
+                "trade_count": int(len(group)),
+                "timestamp_count": int(group["timestamp"].nunique()),
+                "symbol_count": int(group["symbol"].astype(str).nunique()),
+                "strategy_count": int(group["strategy_id"].astype(str).nunique()),
+                "win_rate": float(group["_win"].mean()),
+                "net_pnl": float(group["_net_pnl"].sum()),
+                "gross_pnl": float(group["_gross_pnl"].sum()),
+                "cost_pnl": float(group["_cost_pnl"].sum()),
+                "full_sl_rate": float(group["_full_sl"].mean()),
+                "timeout_rate": float(group["_timeout"].mean()),
+                "strategy_concentration": (
+                    float(strategies.max()) if len(strategies) else np.nan
+                ),
+            }
+        )
+    return rows
+
+
+def _defensive_success_metrics(
+    candidate_accepted: pd.DataFrame,
+    baseline_accepted: Optional[pd.DataFrame],
+) -> dict[str, Any]:
+    if baseline_accepted is None or baseline_accepted.empty:
+        return {
+            "defensive_removed_trade_count": 0,
+            "defensive_removed_winner_count": 0,
+            "defensive_removed_loser_count": 0,
+            "defensive_loss_avoided": 0.0,
+            "defensive_winner_pnl_sacrificed": 0.0,
+            "defensive_success": 0.0,
+        }
+    key_cols = ["timestamp", "strategy_id", "symbol", "side"]
+    baseline = baseline_accepted.copy()
+    candidate = candidate_accepted.copy()
+    for frame in (baseline, candidate):
+        frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True, errors="coerce")
+        for col in key_cols[1:]:
+            frame[col] = frame[col].astype(str)
+    candidate_keys = candidate[key_cols].drop_duplicates()
+    merged = baseline.merge(
+        candidate_keys.assign(**{"_candidate_kept": 1}),
+        on=key_cols,
+        how="left",
+    )
+    removed = merged.loc[merged["_candidate_kept"].isna()].copy()
+    if removed.empty:
+        return {
+            "defensive_removed_trade_count": 0,
+            "defensive_removed_winner_count": 0,
+            "defensive_removed_loser_count": 0,
+            "defensive_loss_avoided": 0.0,
+            "defensive_winner_pnl_sacrificed": 0.0,
+            "defensive_success": 0.0,
+        }
+    net_return = pd.to_numeric(removed["candidate_net_return"], errors="coerce").fillna(0.0)
+    size = pd.to_numeric(removed["position_size"], errors="coerce").fillna(0.0)
+    pnl = net_return * size
+    loss_avoided = float((-pnl[pnl < 0.0]).sum())
+    winner_sacrificed = float(pnl[pnl > 0.0].sum())
+    return {
+        "defensive_removed_trade_count": int(len(removed)),
+        "defensive_removed_winner_count": int((pnl > 0.0).sum()),
+        "defensive_removed_loser_count": int((pnl < 0.0).sum()),
+        "defensive_loss_avoided": loss_avoided,
+        "defensive_winner_pnl_sacrificed": winner_sacrificed,
+        "defensive_success": float(loss_avoided - winner_sacrificed),
+    }
 
 
 def _evaluate_variant(
@@ -539,7 +829,8 @@ def _evaluate_variant(
     ev_curve: Dict[str, Any],
     market_mode: str,
     output_dir: Optional[Path] = None,
-) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    baseline_accepted: Optional[pd.DataFrame] = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], pd.DataFrame]:
     decisions, equity, metrics = replay_candidates(
         candidates,
         params,
@@ -573,12 +864,14 @@ def _evaluate_variant(
         "side_concentration": metrics.get("side_concentration"),
         "missed_high_confidence_trades": metrics.get("missed_high_confidence_trades"),
     }
+    summary.update(_defensive_success_metrics(accepted, baseline_accepted))
     windows = _windowed_metrics(
         accepted,
         sample=sample,
         variant=variant,
         max_timestamp=max_ts,
     )
+    windows.extend(_calendar_week_metrics(accepted, sample=sample, variant=variant))
     strategy_windows = _windowed_metrics(
         accepted,
         sample=sample,
@@ -586,7 +879,7 @@ def _evaluate_variant(
         max_timestamp=max_ts,
         group_cols=("strategy_id",),
     )
-    return summary, windows, strategy_windows
+    return summary, windows, strategy_windows, accepted
 
 
 def _window_map(rows: list[dict[str, Any]]) -> Dict[str, dict[str, Any]]:
@@ -596,7 +889,11 @@ def _window_map(rows: list[dict[str, Any]]) -> Dict[str, dict[str, Any]]:
 def _objective_from_windows(
     candidate_windows: list[dict[str, Any]],
     baseline_windows: Dict[str, dict[str, Any]],
+    config: Optional[Dict[str, Any]] = None,
+    candidate_summary: Optional[dict[str, Any]] = None,
+    baseline_summary: Optional[dict[str, Any]] = None,
 ) -> float:
+    config = config or {}
     cand = _window_map(candidate_windows)
     score = 0.0
     penalties = 0.0
@@ -621,6 +918,56 @@ def _objective_from_windows(
         penalties += (0.75 - trade_ratio) * 2.0
     if trade_ratio > 1.35:
         penalties += (trade_ratio - 1.35) * 0.75
+    defensive_weight = float(config.get("objective_defensive_success_weight", 0.0))
+    if defensive_weight > 0.0 and candidate_summary is not None:
+        defensive_success = float(candidate_summary.get("defensive_success", 0.0) or 0.0)
+        baseline_pnl = 0.0
+        if baseline_summary is not None:
+            baseline_pnl = float(baseline_summary.get("net_pnl", 0.0) or 0.0)
+        denom = max(abs(baseline_pnl), 1_000.0)
+        defensive_delta = defensive_success / denom
+        score += defensive_weight * defensive_delta
+        if defensive_delta < 0.0:
+            penalties += defensive_weight * abs(defensive_delta)
+    full_sl_penalty_weight = float(config.get("objective_full_sl_penalty_weight", 0.0))
+    cost_drag_penalty_weight = float(config.get("objective_cost_drag_penalty_weight", 0.0))
+    crowding_penalty_weight = float(config.get("objective_crowding_penalty_weight", 0.0))
+    for window, weight in weights.items():
+        c = cand.get(window, {})
+        b = baseline_windows.get(window, {})
+        if not c or not b:
+            continue
+        c_full_sl = float(c.get("full_sl_rate", 0.0) or 0.0)
+        b_full_sl = float(b.get("full_sl_rate", 0.0) or 0.0)
+        penalties += weight * full_sl_penalty_weight * max(c_full_sl - b_full_sl, 0.0)
+        c_cost = float(c.get("cost_pnl", 0.0) or 0.0)
+        b_cost = float(b.get("cost_pnl", 0.0) or 0.0)
+        cost_denom = max(abs(float(b.get("gross_pnl", 0.0) or 0.0)), abs(b_cost), 1_000.0)
+        penalties += weight * cost_drag_penalty_weight * max(c_cost - b_cost, 0.0) / cost_denom
+        c_conc = float(c.get("strategy_concentration", 0.0) or 0.0)
+        b_conc = float(b.get("strategy_concentration", 0.0) or 0.0)
+        penalties += weight * crowding_penalty_weight * max(c_conc - b_conc, 0.0)
+
+    week_weight = float(config.get("objective_worst_week_weight", 0.0))
+    if week_weight > 0.0:
+        candidate_weeks = [
+            row
+            for row in candidate_windows
+            if str(row.get("window", "")).startswith("week_")
+        ]
+        baseline_weeks = [
+            row
+            for row in baseline_windows.values()
+            if str(row.get("window", "")).startswith("week_")
+        ]
+        if candidate_weeks and baseline_weeks:
+            cand_worst = min(float(row.get("net_pnl", 0.0) or 0.0) for row in candidate_weeks)
+            base_worst = min(float(row.get("net_pnl", 0.0) or 0.0) for row in baseline_weeks)
+            denom = max(abs(base_worst), 1_000.0)
+            worst_delta = (cand_worst - base_worst) / denom
+            score += week_weight * worst_delta
+            if worst_delta < 0:
+                penalties += week_weight * abs(worst_delta)
     return float(score - penalties)
 
 
@@ -701,18 +1048,172 @@ def _suggest_config(
             2.0,
         )
     if tune_action:
+        asym_ratio = max(float(base_config.get("negative_asymmetry_min_ratio", 1.5)), 1.0)
+        config["negative_asymmetry_min_ratio"] = asym_ratio
         config["health_clip"] = trial.suggest_float("health_clip", 0.5, 3.0)
         config["rank_shift_scale"] = trial.suggest_float("rank_shift_scale", 0.0, 0.08)
+        config["positive_rank_shift_scale"] = trial.suggest_float(
+            "positive_rank_shift_scale",
+            0.0,
+            0.025,
+        )
+        config["negative_rank_shift_scale"] = trial.suggest_float(
+            "negative_rank_shift_scale",
+            max(0.005, config["positive_rank_shift_scale"] * asym_ratio),
+            0.08,
+        )
         config["max_rank_shift"] = trial.suggest_float("max_rank_shift", 0.005, 0.10)
         config["threshold_shift_scale"] = trial.suggest_float(
             "threshold_shift_scale",
             0.0,
             0.08,
         )
+        config["positive_threshold_shift_scale"] = trial.suggest_float(
+            "positive_threshold_shift_scale",
+            0.0,
+            0.02,
+        )
+        config["negative_threshold_shift_scale"] = trial.suggest_float(
+            "negative_threshold_shift_scale",
+            max(0.005, config["positive_threshold_shift_scale"] * asym_ratio),
+            0.08,
+        )
         config["max_threshold_shift"] = trial.suggest_float(
             "max_threshold_shift",
             0.005,
             0.08,
+        )
+        config["hard_crowding_stop_share"] = trial.suggest_float(
+            "hard_crowding_stop_share",
+            0.50,
+            1.00,
+        )
+        config["hard_crowding_stop_health"] = trial.suggest_float(
+            "hard_crowding_stop_health",
+            -1.25,
+            -0.05,
+        )
+        config["hard_crowding_threshold_scale"] = trial.suggest_float(
+            "hard_crowding_threshold_scale",
+            0.0,
+            0.08,
+        )
+        config["size_negative_health_start"] = trial.suggest_float(
+            "size_negative_health_start",
+            0.0,
+            0.20,
+        )
+        config["threshold_negative_health_start"] = trial.suggest_float(
+            "threshold_negative_health_start",
+            config["size_negative_health_start"],
+            0.60,
+        )
+        config["capacity_negative_health_start"] = trial.suggest_float(
+            "capacity_negative_health_start",
+            max(config["threshold_negative_health_start"], 0.35),
+            1.20,
+        )
+        config["crowding_threshold_start"] = trial.suggest_float(
+            "crowding_threshold_start",
+            0.0,
+            0.25,
+        )
+        config["crowding_capacity_start"] = trial.suggest_float(
+            "crowding_capacity_start",
+            config["crowding_threshold_start"],
+            0.50,
+        )
+        config["min_bar_capacity_when_not_stopped"] = trial.suggest_categorical(
+            "min_bar_capacity_when_not_stopped",
+            [1.0, 2.0],
+        )
+        config["min_strategy_capacity_when_not_stopped"] = trial.suggest_categorical(
+            "min_strategy_capacity_when_not_stopped",
+            [1.0, 2.0],
+        )
+        config["min_strategy_concurrent_when_not_stopped"] = trial.suggest_categorical(
+            "min_strategy_concurrent_when_not_stopped",
+            [1.0, 2.0],
+        )
+        config["positive_bar_capacity_scale"] = trial.suggest_float(
+            "positive_bar_capacity_scale",
+            0.0,
+            0.35,
+        )
+        config["negative_bar_capacity_scale"] = trial.suggest_float(
+            "negative_bar_capacity_scale",
+            config["positive_bar_capacity_scale"] * asym_ratio,
+            2.5,
+        )
+        config["crowding_bar_capacity_scale"] = trial.suggest_float(
+            "crowding_bar_capacity_scale",
+            0.0,
+            3.0,
+        )
+        config["positive_strategy_capacity_scale"] = trial.suggest_float(
+            "positive_strategy_capacity_scale",
+            0.0,
+            0.35,
+        )
+        config["negative_strategy_capacity_scale"] = trial.suggest_float(
+            "negative_strategy_capacity_scale",
+            config["positive_strategy_capacity_scale"] * asym_ratio,
+            2.5,
+        )
+        config["crowding_strategy_capacity_scale"] = trial.suggest_float(
+            "crowding_strategy_capacity_scale",
+            0.0,
+            3.0,
+        )
+        config["positive_size_scale"] = trial.suggest_float(
+            "positive_size_scale",
+            0.0,
+            0.35,
+        )
+        config["negative_size_scale"] = trial.suggest_float(
+            "negative_size_scale",
+            config["positive_size_scale"] * asym_ratio,
+            2.0,
+        )
+        config["crowding_size_scale"] = trial.suggest_float(
+            "crowding_size_scale",
+            0.0,
+            2.0,
+        )
+        config["min_size_multiplier"] = trial.suggest_float(
+            "min_size_multiplier",
+            0.0,
+            0.50,
+        )
+        config["max_size_multiplier"] = trial.suggest_float(
+            "max_size_multiplier",
+            0.75,
+            1.20,
+        )
+        config["objective_worst_week_weight"] = trial.suggest_float(
+            "objective_worst_week_weight",
+            0.0,
+            0.30,
+        )
+        config["objective_full_sl_penalty_weight"] = trial.suggest_float(
+            "objective_full_sl_penalty_weight",
+            0.0,
+            0.15,
+        )
+        config["objective_cost_drag_penalty_weight"] = trial.suggest_float(
+            "objective_cost_drag_penalty_weight",
+            0.0,
+            0.08,
+        )
+        config["objective_crowding_penalty_weight"] = trial.suggest_float(
+            "objective_crowding_penalty_weight",
+            0.0,
+            0.08,
+        )
+        config["objective_defensive_success_weight"] = trial.suggest_float(
+            "objective_defensive_success_weight",
+            0.0,
+            0.35,
         )
         config["health_volatility_max_penalty"] = trial.suggest_float(
             "health_volatility_max_penalty",
@@ -732,11 +1233,72 @@ def _suggest_config(
 def _component_configs(best: Dict[str, Any]) -> dict[str, Dict[str, Any]]:
     out = {
         "head_health_best": dict(best),
-        "head_health_rank_only": {**best, "threshold_shift_scale": 0.0},
-        "head_health_threshold_only": {**best, "rank_shift_scale": 0.0},
+        "head_health_rank_only": {
+            **best,
+            "threshold_shift_scale": 0.0,
+            "positive_threshold_shift_scale": 0.0,
+            "negative_threshold_shift_scale": 0.0,
+            "hard_crowding_threshold_scale": 0.0,
+            "hard_crowding_stop_share": 1.01,
+            "positive_bar_capacity_scale": 0.0,
+            "negative_bar_capacity_scale": 0.0,
+            "crowding_bar_capacity_scale": 0.0,
+            "positive_strategy_capacity_scale": 0.0,
+            "negative_strategy_capacity_scale": 0.0,
+            "crowding_strategy_capacity_scale": 0.0,
+            "positive_size_scale": 0.0,
+            "negative_size_scale": 0.0,
+            "crowding_size_scale": 0.0,
+            "min_size_multiplier": 1.0,
+            "max_size_multiplier": 1.0,
+        },
+        "head_health_threshold_only": {
+            **best,
+            "rank_shift_scale": 0.0,
+            "positive_rank_shift_scale": 0.0,
+            "negative_rank_shift_scale": 0.0,
+            "positive_bar_capacity_scale": 0.0,
+            "negative_bar_capacity_scale": 0.0,
+            "crowding_bar_capacity_scale": 0.0,
+            "positive_strategy_capacity_scale": 0.0,
+            "negative_strategy_capacity_scale": 0.0,
+            "crowding_strategy_capacity_scale": 0.0,
+            "positive_size_scale": 0.0,
+            "negative_size_scale": 0.0,
+            "crowding_size_scale": 0.0,
+            "min_size_multiplier": 1.0,
+            "max_size_multiplier": 1.0,
+        },
+        "head_health_no_capacity_controls": {
+            **best,
+            "positive_bar_capacity_scale": 0.0,
+            "negative_bar_capacity_scale": 0.0,
+            "crowding_bar_capacity_scale": 0.0,
+            "positive_strategy_capacity_scale": 0.0,
+            "negative_strategy_capacity_scale": 0.0,
+            "crowding_strategy_capacity_scale": 0.0,
+        },
+        "head_health_no_size_controls": {
+            **best,
+            "positive_size_scale": 0.0,
+            "negative_size_scale": 0.0,
+            "crowding_size_scale": 0.0,
+            "min_size_multiplier": 1.0,
+            "max_size_multiplier": 1.0,
+        },
+        "head_health_no_hard_brake": {
+            **best,
+            "hard_crowding_stop_share": 1.01,
+            "hard_crowding_threshold_scale": 0.0,
+        },
         "head_health_no_weighted_hr": {**best, "weighted_hr_weight": 0.0},
         "head_health_no_volatility": {**best, "health_volatility_weight": 0.0},
-        "head_health_no_cross_head": {**best, "cross_head_crowding_weight": 0.0},
+        "head_health_no_cross_head": {
+            **best,
+            "cross_head_crowding_weight": 0.0,
+            "hard_crowding_stop_share": 1.01,
+            "hard_crowding_threshold_scale": 0.0,
+        },
         "head_health_no_ic": {**best, "ic_weight": 0.0},
         "head_health_no_ev": {**best, "ev_weight": 0.0},
         "head_health_no_adverse": {**best, "adverse_weight": 0.0},
@@ -746,6 +1308,11 @@ def _component_configs(best: Dict[str, Any]) -> dict[str, Dict[str, Any]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--allow-deprecated-head-health",
+        action="store_true",
+        help="Run this deprecated historical audit tool. HeadHealth is disabled from active policy logic.",
+    )
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--max-evaluations", type=int, default=160)
@@ -772,6 +1339,12 @@ def main() -> None:
         help="JSON object or manifest containing best_config used as the layer base.",
     )
     args = parser.parse_args()
+    if not bool(args.allow_deprecated_head_health):
+        raise SystemExit(
+            "HeadHealth active execution is deprecated and disabled. Use the "
+            "reliability-blend parity/portfolio ablation path instead, or pass "
+            "--allow-deprecated-head-health for historical audit reproduction."
+        )
 
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     train_path = Path(manifest["train_candidates"])
@@ -787,8 +1360,19 @@ def main() -> None:
     output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
     base_config = _read_base_config(args.base_config)
+    base_config["base_max_new_entries_per_bar"] = int(params.max_new_entries_per_bar)
+    base_config["base_max_new_entries_per_strategy_per_bar"] = int(
+        params.max_new_entries_per_strategy_per_bar
+        if params.max_new_entries_per_strategy_per_bar is not None
+        else params.max_new_entries_per_bar
+    )
+    base_config["base_max_concurrent_per_strategy"] = int(
+        params.max_concurrent_per_strategy
+        if params.max_concurrent_per_strategy is not None
+        else params.max_concurrent_positions
+    )
 
-    baseline_summary, baseline_windows, baseline_strategy = _evaluate_variant(
+    baseline_summary, baseline_windows, baseline_strategy, baseline_accepted = _evaluate_variant(
         sample="historical_refit",
         variant="static_refit_bar4_strategy_bar2",
         candidates=train,
@@ -816,7 +1400,7 @@ def main() -> None:
             reference=train,
             config=config,
         )
-        _, windows, _ = _evaluate_variant(
+        summary, windows, _, _ = _evaluate_variant(
             sample="historical_refit",
             variant=f"trial_{trial.number}",
             candidates=transformed,
@@ -824,14 +1408,26 @@ def main() -> None:
             ev_curve=ev_curve,
             market_mode=args.market_mode,
             output_dir=None,
+            baseline_accepted=baseline_accepted,
         )
-        value = _objective_from_windows(windows, baseline_window_map)
+        value = _objective_from_windows(
+            windows,
+            baseline_window_map,
+            config=config,
+            candidate_summary=summary,
+            baseline_summary=baseline_summary,
+        )
         trial.set_user_attr("config", config)
         trial.set_user_attr("windows", windows)
         trial_rows.append(
             {
                 "trial": int(trial.number),
                 "objective": float(value),
+                "defensive_success": float(summary.get("defensive_success", 0.0) or 0.0),
+                "defensive_loss_avoided": float(summary.get("defensive_loss_avoided", 0.0) or 0.0),
+                "defensive_winner_pnl_sacrificed": float(
+                    summary.get("defensive_winner_pnl_sacrificed", 0.0) or 0.0
+                ),
                 **{f"config_{k}": _json_safe(v) for k, v in config.items() if k != "thresholds"},
             }
         )
@@ -848,7 +1444,7 @@ def main() -> None:
             reference=train,
             config=best_config,
         )
-        _, windows, _ = _evaluate_variant(
+        summary, windows, _, _ = _evaluate_variant(
             sample="historical_refit",
             variant="fixed_config",
             candidates=transformed,
@@ -856,12 +1452,24 @@ def main() -> None:
             ev_curve=ev_curve,
             market_mode=args.market_mode,
             output_dir=None,
+            baseline_accepted=baseline_accepted,
         )
-        best_objective = _objective_from_windows(windows, baseline_window_map)
+        best_objective = _objective_from_windows(
+            windows,
+            baseline_window_map,
+            config=best_config,
+            candidate_summary=summary,
+            baseline_summary=baseline_summary,
+        )
         trial_rows.append(
             {
                 "trial": 0,
                 "objective": float(best_objective),
+                "defensive_success": float(summary.get("defensive_success", 0.0) or 0.0),
+                "defensive_loss_avoided": float(summary.get("defensive_loss_avoided", 0.0) or 0.0),
+                "defensive_winner_pnl_sacrificed": float(
+                    summary.get("defensive_winner_pnl_sacrificed", 0.0) or 0.0
+                ),
                 "fixed_config": True,
                 **{
                     f"config_{k}": _json_safe(v)
@@ -896,7 +1504,7 @@ def main() -> None:
             reference=train,
             config=config,
         )
-        summary, windows, strategy = _evaluate_variant(
+        summary, windows, strategy, _ = _evaluate_variant(
             sample="historical_refit",
             variant=variant,
             candidates=transformed,
@@ -904,12 +1512,13 @@ def main() -> None:
             ev_curve=ev_curve,
             market_mode=args.market_mode,
             output_dir=output_dir,
+            baseline_accepted=baseline_accepted,
         )
         summaries.append(summary)
         windows_all.extend(windows)
         strategy_all.extend(strategy)
 
-    oos_baseline_summary, oos_baseline_windows, oos_baseline_strategy = _evaluate_variant(
+    oos_baseline_summary, oos_baseline_windows, oos_baseline_strategy, oos_baseline_accepted = _evaluate_variant(
         sample=oos_sample_name,
         variant="static_refit_bar4_strategy_bar2",
         candidates=oos,
@@ -929,7 +1538,7 @@ def main() -> None:
             reference=train,
             config=config,
         )
-        summary, windows, strategy = _evaluate_variant(
+        summary, windows, strategy, _ = _evaluate_variant(
             sample=oos_sample_name,
             variant=variant,
             candidates=transformed_oos,
@@ -937,6 +1546,7 @@ def main() -> None:
             ev_curve=ev_curve,
             market_mode=args.market_mode,
             output_dir=output_dir,
+            baseline_accepted=oos_baseline_accepted,
         )
         summaries.append(summary)
         windows_all.extend(windows)

@@ -21,12 +21,25 @@ from extreme_price_movements.pipeline_steps import (
     _build_tail_only_backfill_cutoffs,
     _chunked_partial_backfill_is_fully_covered,
     _check_feature_source_target_coverage,
+    _feature_backfill_keys_from_env,
     _feature_scan_has_broad_target_gap,
     _feature_time_coverage_backfill_keys,
     _filter_requested_feature_keys_for_runtime_sources,
+    _initial_feature_cache_write_symbols,
     _scan_feature_cache_light,
     _validate_feature_snapshot_completeness,
 )
+
+
+def test_feature_backfill_keys_from_env_reads_inline_and_file(
+    tmp_path, monkeypatch
+):
+    keys_file = tmp_path / "keys.txt"
+    keys_file.write_text("beta\nalpha,gamma\n", encoding="utf-8")
+    monkeypatch.setenv("EPM_FEATURE_BACKFILL_KEYS", "gamma,delta")
+    monkeypatch.setenv("EPM_FEATURE_BACKFILL_KEYS_FILE", str(keys_file))
+
+    assert _feature_backfill_keys_from_env() == ["alpha", "beta", "delta", "gamma"]
 
 
 def test_meta_policy_slice_availability_exempts_model_derived_lgbm_features(monkeypatch):
@@ -502,6 +515,30 @@ def test_feature_cache_scan_manifest_reuses_clean_scan(tmp_path, monkeypatch):
 def test_chunked_partial_backfill_only_skips_when_no_symbol_work_remains():
     assert _chunked_partial_backfill_is_fully_covered([])
     assert not _chunked_partial_backfill_is_fully_covered(["BTC/USD:USD"])
+
+
+def test_missing_feature_cache_marks_all_output_symbols_write_needed():
+    assert _initial_feature_cache_write_symbols(
+        existing_files=[],
+        force_full_recompute=False,
+        output_symbols=["BTC/USD:USD", "ETH/USD:USD"],
+    ) == {"BTC/USD:USD", "ETH/USD:USD"}
+    assert (
+        _initial_feature_cache_write_symbols(
+            existing_files=["symbol=BTC_USD:USD.parquet"],
+            force_full_recompute=False,
+            output_symbols=["BTC/USD:USD", "ETH/USD:USD"],
+        )
+        == set()
+    )
+    assert (
+        _initial_feature_cache_write_symbols(
+            existing_files=[],
+            force_full_recompute=True,
+            output_symbols=["BTC/USD:USD", "ETH/USD:USD"],
+        )
+        == set()
+    )
 
 
 def test_feature_snapshot_validation_allows_naturally_sparse_latest_vwap(tmp_path):

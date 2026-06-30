@@ -7,7 +7,7 @@ import json
 import os
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import optuna
@@ -361,6 +361,19 @@ class PortfolioState:
                     int(self.symbol_open.get(pos.symbol, 0)) + 1
                 )
 
+    def clone(self) -> "PortfolioState":
+        """Return a lossless replay-state copy for exact counterfactual branches."""
+        return PortfolioState(
+            wallet=float(self.wallet),
+            open_positions=[replace(pos) for pos in self.open_positions],
+            closed_positions=[replace(pos) for pos in self.closed_positions],
+            cooldowns={str(symbol): pd.Timestamp(until) for symbol, until in self.cooldowns.items()},
+            open_notional_value=float(self.open_notional_value),
+            side_open={str(key): int(value) for key, value in self.side_open.items()},
+            strategy_open={str(key): int(value) for key, value in self.strategy_open.items()},
+            symbol_open={str(key): int(value) for key, value in self.symbol_open.items()},
+        )
+
     def _decrement_position_counts(self, pos: OpenPosition) -> None:
         self.open_notional_value = max(
             0.0, float(self.open_notional_value) - float(pos.position_size)
@@ -444,6 +457,7 @@ class ReplayDecision:
     side: str
     strategy_id: str
     normalized_rank_score: float
+    effective_rank_score: float
     base_threshold: float
     dynamic_threshold: float
     portfolio_priority: float
@@ -459,6 +473,11 @@ class ReplayDecision:
     wallet_after: float
     open_notional_before: float
     open_notional_after: float
+    position_exit_timestamp: Optional[pd.Timestamp] = None
+    position_net_return: float = np.nan
+    position_gross_return: float = np.nan
+    position_exit_reason: str = ""
+    position_exit_price: float = np.nan
 
 
 @dataclass(frozen=True)
@@ -476,6 +495,15 @@ class CandidateReplayCache:
     price_gap_bps: np.ndarray
     expected_friction_bps: np.ndarray
     liquidity_capacity_weight: np.ndarray
+    portfolio_max_new_entries_per_bar: np.ndarray
+    portfolio_max_new_entries_per_strategy_per_bar: np.ndarray
+    portfolio_max_concurrent_per_strategy: np.ndarray
+    portfolio_wallet_cap_multiplier: np.ndarray
+    portfolio_size_multiplier: np.ndarray
+    portfolio_priority_multiplier: np.ndarray
+    portfolio_priority_adjustment: np.ndarray
+    portfolio_rank_adjustment: np.ndarray
+    portfolio_fixed_position_size: np.ndarray
     exit_timestamp: np.ndarray
     holding_bars: np.ndarray
     net_return: np.ndarray
@@ -514,6 +542,64 @@ def _candidate_cache(candidates: pd.DataFrame) -> CandidateReplayCache:
         price_gap_bps=pd.to_numeric(work["price_gap_bps"], errors="coerce").fillna(0.0).to_numpy(dtype=float),
         expected_friction_bps=pd.to_numeric(work["expected_friction_bps"], errors="coerce").fillna(0.0).to_numpy(dtype=float),
         liquidity_capacity_weight=pd.to_numeric(work["liquidity_capacity_weight"], errors="coerce").fillna(1.0).to_numpy(dtype=float),
+        portfolio_max_new_entries_per_bar=pd.to_numeric(
+            work.get("portfolio_max_new_entries_per_bar"),
+            errors="coerce",
+        ).to_numpy(dtype=float)
+        if "portfolio_max_new_entries_per_bar" in work.columns
+        else np.full(len(work), np.nan, dtype=float),
+        portfolio_max_new_entries_per_strategy_per_bar=pd.to_numeric(
+            work.get("portfolio_max_new_entries_per_strategy_per_bar"),
+            errors="coerce",
+        ).to_numpy(dtype=float)
+        if "portfolio_max_new_entries_per_strategy_per_bar" in work.columns
+        else np.full(len(work), np.nan, dtype=float),
+        portfolio_max_concurrent_per_strategy=pd.to_numeric(
+            work.get("portfolio_max_concurrent_per_strategy"),
+            errors="coerce",
+        ).to_numpy(dtype=float)
+        if "portfolio_max_concurrent_per_strategy" in work.columns
+        else np.full(len(work), np.nan, dtype=float),
+        portfolio_wallet_cap_multiplier=pd.to_numeric(
+            work.get("portfolio_wallet_cap_multiplier"),
+            errors="coerce",
+        ).fillna(1.0).clip(lower=0.0, upper=1.0).to_numpy(dtype=float)
+        if "portfolio_wallet_cap_multiplier" in work.columns
+        else np.ones(len(work), dtype=float),
+        portfolio_size_multiplier=pd.to_numeric(
+            work.get("portfolio_size_multiplier"),
+            errors="coerce",
+        ).fillna(1.0).clip(lower=0.0).to_numpy(dtype=float)
+        if "portfolio_size_multiplier" in work.columns
+        else np.ones(len(work), dtype=float),
+        portfolio_priority_multiplier=pd.to_numeric(
+            work.get("portfolio_priority_multiplier"),
+            errors="coerce",
+        )
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(1.0)
+        .clip(lower=0.0)
+        .to_numpy(dtype=float)
+        if "portfolio_priority_multiplier" in work.columns
+        else np.ones(len(work), dtype=float),
+        portfolio_priority_adjustment=pd.to_numeric(
+            work.get("portfolio_priority_adjustment"),
+            errors="coerce",
+        ).replace([np.inf, -np.inf], np.nan).fillna(0.0).to_numpy(dtype=float)
+        if "portfolio_priority_adjustment" in work.columns
+        else np.zeros(len(work), dtype=float),
+        portfolio_rank_adjustment=pd.to_numeric(
+            work.get("portfolio_rank_adjustment"),
+            errors="coerce",
+        ).replace([np.inf, -np.inf], np.nan).fillna(0.0).to_numpy(dtype=float)
+        if "portfolio_rank_adjustment" in work.columns
+        else np.zeros(len(work), dtype=float),
+        portfolio_fixed_position_size=pd.to_numeric(
+            work.get("portfolio_fixed_position_size"),
+            errors="coerce",
+        ).replace([np.inf, -np.inf], np.nan).to_numpy(dtype=float)
+        if "portfolio_fixed_position_size" in work.columns
+        else np.full(len(work), np.nan, dtype=float),
         exit_timestamp=work["exit_timestamp"].to_numpy(),
         holding_bars=pd.to_numeric(work["holding_bars"], errors="coerce").fillna(1.0).to_numpy(dtype=float),
         net_return=pd.to_numeric(work["net_return"], errors="coerce").fillna(0.0).to_numpy(dtype=float),
@@ -655,6 +741,15 @@ def normalise_candidate_table(candidates: pd.DataFrame) -> pd.DataFrame:
         "price_gap_bps",
         "expected_friction_bps",
         "liquidity_capacity_weight",
+        "portfolio_max_new_entries_per_bar",
+        "portfolio_max_new_entries_per_strategy_per_bar",
+        "portfolio_max_concurrent_per_strategy",
+        "portfolio_wallet_cap_multiplier",
+        "portfolio_size_multiplier",
+        "portfolio_priority_multiplier",
+        "portfolio_priority_adjustment",
+        "portfolio_rank_adjustment",
+        "portfolio_fixed_position_size",
         "orderbook_slippage_bps",
     ]
     for col in numeric:
@@ -696,6 +791,13 @@ def normalise_candidate_table(candidates: pd.DataFrame) -> pd.DataFrame:
             "gross_return",
         ]
     )
+    key_cols = ["timestamp", "symbol", "strategy_id"]
+    dupes = int(out.duplicated(key_cols).sum())
+    if dupes:
+        raise ValueError(
+            "candidate table has duplicate decision keys "
+            f"{key_cols}: {dupes} duplicate rows"
+        )
     out = out.sort_values(["timestamp", "strategy_id", "symbol"]).reset_index(drop=True)
     out.attrs["portfolio_policy_candidates_normalised"] = True
     return out
@@ -748,10 +850,10 @@ def dynamic_threshold_values(
 
 def fit_monotone_ev_curve(candidates: pd.DataFrame, bins: int = 20) -> Dict[str, Any]:
     if candidates.empty:
-        return {"x": [0.0, 1.0], "y": [0.0, 0.0], "ev_span": 0.0}
+        return {"schema": "monotone_ev_curve_v1", "x": [0.0, 1.0], "y": [0.0, 0.0], "ev_span": 0.0, "n_rows": 0}
     work = candidates[["normalized_rank_score", "net_return"]].dropna().copy()
     if work.empty:
-        return {"x": [0.0, 1.0], "y": [0.0, 0.0], "ev_span": 0.0}
+        return {"schema": "monotone_ev_curve_v1", "x": [0.0, 1.0], "y": [0.0, 0.0], "ev_span": 0.0, "n_rows": 0}
     work["bin"] = pd.qcut(
         work["normalized_rank_score"].rank(method="first"),
         q=min(int(bins), max(2, len(work))),
@@ -764,12 +866,102 @@ def fit_monotone_ev_curve(candidates: pd.DataFrame, bins: int = 20) -> Dict[str,
         .sort_values("x")
     )
     if grouped.empty:
-        return {"x": [0.0, 1.0], "y": [0.0, 0.0], "ev_span": 0.0}
+        return {"schema": "monotone_ev_curve_v1", "x": [0.0, 1.0], "y": [0.0, 0.0], "ev_span": 0.0, "n_rows": int(len(work))}
     x = grouped["x"].to_numpy(dtype=float)
     y = np.maximum.accumulate(grouped["y"].to_numpy(dtype=float))
     x = np.concatenate(([0.0], x, [1.0]))
     y = np.concatenate(([y[0]], y, [y[-1]]))
-    return {"x": x.tolist(), "y": y.tolist(), "ev_span": float(max(y) - min(y))}
+    return {"schema": "monotone_ev_curve_v1", "x": x.tolist(), "y": y.tolist(), "ev_span": float(max(y) - min(y)), "n_rows": int(len(work))}
+
+
+def _shrunk_ev_curve(
+    specific: Dict[str, Any],
+    global_curve: Dict[str, Any],
+    *,
+    support_rows: int,
+    shrink_rows: int,
+) -> Dict[str, Any]:
+    gx, gy, _ = _ev_arrays(global_curve)
+    sx, sy, _ = _ev_arrays(specific)
+    target_x = np.unique(np.clip(np.concatenate([gx, sx, np.asarray([0.0, 1.0])]), 0.0, 1.0))
+    if target_x.size < 2:
+        target_x = np.asarray([0.0, 1.0], dtype=float)
+    global_y = np.interp(target_x, gx, gy)
+    specific_y = np.interp(target_x, sx, sy)
+    weight = float(support_rows) / max(float(support_rows + max(int(shrink_rows), 0)), EPS)
+    y = weight * specific_y + (1.0 - weight) * global_y
+    y = np.maximum.accumulate(y)
+    return {
+        "schema": "monotone_ev_curve_v1",
+        "x": target_x.tolist(),
+        "y": y.tolist(),
+        "ev_span": float(np.nanmax(y) - np.nanmin(y)) if y.size else 0.0,
+        "n_rows": int(support_rows),
+        "shrink_weight": float(weight),
+    }
+
+
+def fit_hierarchical_ev_curves(
+    candidates: pd.DataFrame,
+    *,
+    bins: int = 20,
+    min_group_rows: int = 80,
+    shrink_rows: int = 240,
+) -> Dict[str, Any]:
+    """Fit strategy/side EV curves with shrinkage to a global monotone curve."""
+    work = normalise_candidate_table(candidates)
+    global_curve = fit_monotone_ev_curve(work, bins=bins)
+    by_strategy_side: Dict[str, Any] = {}
+    by_strategy: Dict[str, Any] = {}
+    if not work.empty:
+        for strategy_id, group in work.groupby("strategy_id", sort=True):
+            curve = fit_monotone_ev_curve(group, bins=bins)
+            n = int(curve.get("n_rows", len(group)))
+            if n >= int(min_group_rows):
+                by_strategy[str(strategy_id)] = _shrunk_ev_curve(
+                    curve,
+                    global_curve,
+                    support_rows=n,
+                    shrink_rows=int(shrink_rows),
+                )
+            for side, side_group in group.groupby("side", sort=True):
+                side_curve = fit_monotone_ev_curve(side_group, bins=bins)
+                n_side = int(side_curve.get("n_rows", len(side_group)))
+                if n_side >= int(min_group_rows):
+                    by_strategy_side[f"{strategy_id}|{side}"] = _shrunk_ev_curve(
+                        side_curve,
+                        global_curve,
+                        support_rows=n_side,
+                        shrink_rows=int(shrink_rows),
+                    )
+    return {
+        "schema": "hierarchical_ev_curve_v1",
+        "global": global_curve,
+        "strategy_side": by_strategy_side,
+        "strategy": by_strategy,
+        "min_group_rows": int(min_group_rows),
+        "shrink_rows": int(shrink_rows),
+        "bins": int(bins),
+    }
+
+
+def _select_ev_curve(
+    ev_curve: Dict[str, Any],
+    *,
+    strategy_id: str,
+    side: str,
+) -> Dict[str, Any]:
+    if str(ev_curve.get("schema") or "") != "hierarchical_ev_curve_v1":
+        return ev_curve
+    strategy_side = ev_curve.get("strategy_side") if isinstance(ev_curve.get("strategy_side"), dict) else {}
+    strategy = ev_curve.get("strategy") if isinstance(ev_curve.get("strategy"), dict) else {}
+    key = f"{strategy_id}|{side}"
+    if key in strategy_side:
+        return strategy_side[key]
+    if strategy_id in strategy:
+        return strategy[strategy_id]
+    global_curve = ev_curve.get("global")
+    return global_curve if isinstance(global_curve, dict) else {"x": [0.0, 1.0], "y": [0.0, 0.0], "ev_span": 0.0}
 
 
 def _ev_arrays(curve: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray, float]:
@@ -844,13 +1036,56 @@ def portfolio_priority(
     rank_score = _coerce_float(row.get("normalized_rank_score"), np.nan)
     gap_bps = max(_coerce_float(row.get("price_gap_bps"), 0.0), 0.0)
     friction_bps = max(_coerce_float(row.get("expected_friction_bps"), 0.0), 0.0)
+    selected_curve = _select_ev_curve(
+        ev_curve,
+        strategy_id=str(row.get("strategy_id", "")),
+        side=_side(row.get("side"), row.get("strategy_id", "")),
+    )
     return portfolio_priority_from_values(
         rank_score,
         dynamic_threshold_value,
         gap_bps,
         friction_bps,
-        ev_curve,
+        selected_curve,
     )
+
+
+def portfolio_priority_values_for_rows(
+    *,
+    rank_scores: np.ndarray,
+    dynamic_thresholds: np.ndarray,
+    gap_bps: np.ndarray,
+    friction_bps: np.ndarray,
+    strategy_ids: np.ndarray,
+    sides: np.ndarray,
+    ev_curve: Dict[str, Any],
+) -> np.ndarray:
+    if str(ev_curve.get("schema") or "") != "hierarchical_ev_curve_v1":
+        return portfolio_priority_values(
+            rank_scores,
+            dynamic_thresholds,
+            gap_bps,
+            friction_bps,
+            ev_curve,
+        )
+    out = np.full(len(rank_scores), float("-inf"), dtype=float)
+    strategy_values = np.asarray(strategy_ids).astype(str)
+    side_values = np.asarray(sides).astype(str)
+    keys = np.asarray([f"{sid}|{side}" for sid, side in zip(strategy_values, side_values)], dtype=object)
+    for key in np.unique(keys):
+        mask = keys == key
+        if not bool(np.any(mask)):
+            continue
+        strategy_id, side = str(key).rsplit("|", 1)
+        curve = _select_ev_curve(ev_curve, strategy_id=strategy_id, side=side)
+        out[mask] = portfolio_priority_values(
+            np.asarray(rank_scores)[mask],
+            np.asarray(dynamic_thresholds)[mask],
+            np.asarray(gap_bps)[mask],
+            np.asarray(friction_bps)[mask],
+            curve,
+        )
+    return out
 
 
 def _side_sort_key(side: str) -> int:
@@ -882,7 +1117,11 @@ def _candidate_order_indices(
     *,
     mode: str,
 ) -> np.ndarray:
-    rank = cache.rank_score[indices]
+    rank = np.clip(
+        cache.rank_score[indices] + cache.portfolio_rank_adjustment[indices],
+        0.0,
+        1.0,
+    )
     calibrated = cache.calibrated_score[indices]
     friction = cache.expected_friction_bps[indices]
     if mode == "live_baseline":
@@ -944,12 +1183,31 @@ def replay_candidates(
     mode: str = "global_auction",
     ev_curve: Optional[Dict[str, Any]] = None,
     initial_wallet: float = INITIAL_WALLET,
+    initial_state: Optional[PortfolioState] = None,
+    pre_decision_snapshot_callback: Optional[
+        Callable[[pd.Timestamp, PortfolioState, np.ndarray, CandidateReplayCache], None]
+    ] = None,
+    accepted_position_callback: Optional[
+        Callable[
+            [
+                int,
+                pd.Timestamp,
+                PortfolioState,
+                CandidateReplayCache,
+                float,
+                float,
+                float,
+                np.ndarray,
+            ],
+            Optional[Dict[str, Any]],
+        ]
+    ] = None,
     market_mode: str = "spot",
 ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, Any]]:
     cache = _candidate_cache(candidates)
     work = cache.frame
-    state = PortfolioState(wallet=float(initial_wallet))
-    ev_curve = ev_curve or fit_monotone_ev_curve(work)
+    state = initial_state.clone() if initial_state is not None else PortfolioState(wallet=float(initial_wallet))
+    ev_curve = ev_curve or fit_hierarchical_ev_curves(work)
     decisions: List[ReplayDecision] = []
     equity_rows: List[Dict[str, Any]] = []
     policy = params.to_policy_config()
@@ -960,18 +1218,38 @@ def replay_candidates(
             ts,
             cooldown_hours_after_loss=float(params.cooldown_hours_after_loss),
         )
+        if pre_decision_snapshot_callback is not None:
+            pre_decision_snapshot_callback(ts, state.clone(), group_idx.copy(), cache)
         entries_this_bar = 0
         strategy_entries_this_bar: Dict[str, int] = {}
         thresholds = dynamic_threshold_values(
             cache.base_threshold[group_idx], len(state.open_positions), params
         )
-        priorities = portfolio_priority_values(
-            cache.rank_score[group_idx],
-            thresholds,
-            cache.price_gap_bps[group_idx],
-            cache.expected_friction_bps[group_idx],
-            ev_curve,
+        effective_rank_scores = np.clip(
+            cache.rank_score[group_idx] + cache.portfolio_rank_adjustment[group_idx],
+            0.0,
+            1.0,
         )
+        priorities = portfolio_priority_values_for_rows(
+            rank_scores=effective_rank_scores,
+            dynamic_thresholds=thresholds,
+            gap_bps=cache.price_gap_bps[group_idx],
+            friction_bps=cache.expected_friction_bps[group_idx],
+            strategy_ids=cache.strategy_id[group_idx],
+            sides=cache.side[group_idx],
+            ev_curve=ev_curve,
+        )
+        priorities = (
+            priorities * cache.portfolio_priority_multiplier[group_idx]
+            + cache.portfolio_priority_adjustment[group_idx]
+        )
+        max_entries_this_bar = int(params.max_new_entries_per_bar)
+        dynamic_bar_caps = cache.portfolio_max_new_entries_per_bar[group_idx]
+        finite_bar_caps = dynamic_bar_caps[np.isfinite(dynamic_bar_caps)]
+        if finite_bar_caps.size:
+            max_entries_this_bar = int(
+                max(0, np.floor(float(np.nanmin(finite_bar_caps))))
+            )
         ordered_idx = _candidate_order_indices(cache, group_idx, priorities, mode=mode)
 
         for idx in ordered_idx:
@@ -979,6 +1257,9 @@ def replay_candidates(
             strategy_id = str(cache.strategy_id[idx])
             symbol = str(cache.symbol[idx])
             rank_score = float(cache.rank_score[idx])
+            effective_rank_score = float(
+                np.clip(rank_score + float(cache.portfolio_rank_adjustment[idx]), 0.0, 1.0)
+            )
             base_threshold = max(
                 float(cache.base_threshold[idx]),
                 float(params.global_threshold_floor),
@@ -989,20 +1270,39 @@ def replay_candidates(
             price_gap_bps = float(cache.price_gap_bps[idx])
             expected_friction_bps = float(cache.expected_friction_bps[idx])
             priority = portfolio_priority_from_values(
-                rank_score,
+                effective_rank_score,
                 dyn,
                 price_gap_bps,
                 expected_friction_bps,
-                ev_curve,
+                _select_ev_curve(ev_curve, strategy_id=strategy_id, side=side),
+            )
+            priority = (
+                priority * float(cache.portfolio_priority_multiplier[idx])
+                + float(cache.portfolio_priority_adjustment[idx])
             )
             open_before = len(state.open_positions)
             side_count_before = state.side_open.get(side, 0)
             strategy_count_before = state.strategy_open.get(strategy_id, 0)
             strategy_bar_count_before = int(strategy_entries_this_bar.get(strategy_id, 0))
+            strategy_concurrent_cap = params.max_concurrent_per_strategy
+            row_strategy_cap = float(cache.portfolio_max_concurrent_per_strategy[idx])
+            if np.isfinite(row_strategy_cap):
+                strategy_concurrent_cap = int(max(0, np.floor(row_strategy_cap)))
+            strategy_bar_cap = params.max_new_entries_per_strategy_per_bar
+            row_strategy_bar_cap = float(
+                cache.portfolio_max_new_entries_per_strategy_per_bar[idx]
+            )
+            if np.isfinite(row_strategy_bar_cap):
+                strategy_bar_cap = int(max(0, np.floor(row_strategy_bar_cap)))
             wallet_before = float(state.wallet)
             open_notional_before = float(state.open_notional)
+            wallet_cap_multiplier = max(
+                _coerce_float(cache.portfolio_wallet_cap_multiplier[idx], 1.0),
+                0.0,
+            )
             capital_limit = (
                 max(float(params.max_total_wallet_allocation_pct), 0.0)
+                * min(wallet_cap_multiplier, 1.0)
                 * max(wallet_before, 0.0)
             )
             remaining_capital = max(capital_limit - open_notional_before, 0.0)
@@ -1010,7 +1310,7 @@ def replay_candidates(
             accepted = False
             position_size = 0.0
 
-            if not np.isfinite(rank_score) or rank_score < dyn + float(
+            if not np.isfinite(effective_rank_score) or effective_rank_score < dyn + float(
                 params.threshold_viability_margin
             ):
                 reason = "below_dynamic_threshold"
@@ -1027,15 +1327,15 @@ def replay_candidates(
             elif _cap_reached(side_count_before, params.max_concurrent_per_side):
                 reason = "max_concurrent_per_side_reached"
             elif _cap_reached(
-                strategy_count_before, params.max_concurrent_per_strategy
+                strategy_count_before, strategy_concurrent_cap
             ):
                 reason = "max_concurrent_per_strategy_reached"
             elif _cap_reached(
                 strategy_bar_count_before,
-                params.max_new_entries_per_strategy_per_bar,
+                strategy_bar_cap,
             ):
                 reason = "max_new_entries_per_strategy_per_bar_reached"
-            elif entries_this_bar >= int(params.max_new_entries_per_bar):
+            elif entries_this_bar >= max_entries_this_bar:
                 reason = "max_new_entries_per_bar_reached"
             elif remaining_capital <= float(params.min_position_size):
                 reason = "max_capital_allocation_reached"
@@ -1051,7 +1351,7 @@ def replay_candidates(
                 sizing = compute_rank_based_position_size(
                     wallet_value=state.wallet,
                     open_notional=state.open_notional,
-                    adjusted_rank_score=rank_score,
+                    adjusted_rank_score=effective_rank_score,
                     final_threshold=dyn,
                     policy=policy,
                     liquidity_capacity_weight=_coerce_float(
@@ -1061,11 +1361,20 @@ def replay_candidates(
                     open_positions=len(state.open_positions),
                     market_mode=market_mode,
                     available_wallet_value=remaining_capital,
+                    remaining_total_notional=remaining_capital,
                 )
                 position_size = min(
                     _coerce_float(sizing.get("size_after_liquidity"), 0.0),
                     remaining_capital,
                 )
+                position_size = min(
+                    position_size
+                    * max(_coerce_float(cache.portfolio_size_multiplier[idx], 1.0), 0.0),
+                    remaining_capital,
+                )
+                fixed_position_size = float(cache.portfolio_fixed_position_size[idx])
+                if np.isfinite(fixed_position_size) and fixed_position_size > 0.0:
+                    position_size = min(fixed_position_size, remaining_capital)
                 if position_size <= 0.0 or position_size < float(
                     params.min_position_size
                 ):
@@ -1080,6 +1389,40 @@ def replay_candidates(
                     if pd.isna(exit_ts) or exit_ts <= ts:
                         bars = max(1, int(_coerce_float(cache.holding_bars[idx], 1.0)))
                         exit_ts = ts + pd.Timedelta(minutes=DEFAULT_BAR_MINUTES * bars)
+                    position_net_return = float(cache.net_return[idx])
+                    position_gross_return = float(cache.gross_return[idx])
+                    position_exit_reason = str(cache.exit_reason[idx] or "")
+                    position_exit_price = float(cache.exit_price[idx])
+                    if accepted_position_callback is not None:
+                        adjusted = accepted_position_callback(
+                            int(idx),
+                            ts,
+                            state,
+                            cache,
+                            float(position_size),
+                            float(capital_limit),
+                            float(remaining_capital),
+                            group_idx,
+                        )
+                        if adjusted:
+                            adj_exit_ts = adjusted.get("exit_timestamp")
+                            if adj_exit_ts is not None:
+                                exit_ts = pd.Timestamp(adj_exit_ts)
+                            position_net_return = _coerce_float(
+                                adjusted.get("net_return"),
+                                position_net_return,
+                            )
+                            position_gross_return = _coerce_float(
+                                adjusted.get("gross_return"),
+                                position_gross_return,
+                            )
+                            position_exit_reason = str(
+                                adjusted.get("exit_reason", position_exit_reason) or ""
+                            )
+                            position_exit_price = _coerce_float(
+                                adjusted.get("exit_price"),
+                                position_exit_price,
+                            )
                     state.open_position(
                         OpenPosition(
                             symbol=symbol,
@@ -1088,11 +1431,11 @@ def replay_candidates(
                             entry_timestamp=ts,
                             exit_timestamp=exit_ts,
                             position_size=float(position_size),
-                            net_return=float(cache.net_return[idx]),
-                            gross_return=float(cache.gross_return[idx]),
-                            exit_reason=str(cache.exit_reason[idx] or ""),
+                            net_return=float(position_net_return),
+                            gross_return=float(position_gross_return),
+                            exit_reason=str(position_exit_reason),
                             entry_price=float(cache.entry_price[idx]),
-                            exit_price=float(cache.exit_price[idx]),
+                            exit_price=float(position_exit_price),
                             fees_bps=float(cache.fees_bps[idx]),
                             mtm_path_gross_returns=_coerce_return_path(
                                 cache.mtm_path_gross_returns[idx]
@@ -1108,6 +1451,7 @@ def replay_candidates(
                     side=side,
                     strategy_id=strategy_id,
                     normalized_rank_score=float(rank_score),
+                    effective_rank_score=float(effective_rank_score),
                     base_threshold=float(base_threshold),
                     dynamic_threshold=float(dyn),
                     portfolio_priority=float(priority),
@@ -1123,6 +1467,11 @@ def replay_candidates(
                     wallet_after=float(state.wallet),
                     open_notional_before=float(open_notional_before),
                     open_notional_after=float(state.open_notional),
+                    position_exit_timestamp=exit_ts if accepted else None,
+                    position_net_return=float(position_net_return) if accepted else np.nan,
+                    position_gross_return=float(position_gross_return) if accepted else np.nan,
+                    position_exit_reason=str(position_exit_reason) if accepted else "",
+                    position_exit_price=float(position_exit_price) if accepted else np.nan,
                 )
             )
         unrealized_pnl = state.unrealized_pnl(ts)
@@ -1206,6 +1555,26 @@ def compute_replay_metrics(
         on=["timestamp", "symbol", "side", "strategy_id"],
         how="left",
     )
+    if "position_net_return" in merged.columns:
+        adjusted_net = pd.to_numeric(
+            merged["position_net_return"], errors="coerce"
+        ).replace([np.inf, -np.inf], np.nan)
+        merged["net_return"] = adjusted_net.where(
+            adjusted_net.notna(), merged["net_return"]
+        )
+    if "position_gross_return" in merged.columns:
+        adjusted_gross = pd.to_numeric(
+            merged["position_gross_return"], errors="coerce"
+        ).replace([np.inf, -np.inf], np.nan)
+        merged["gross_return"] = adjusted_gross.where(
+            adjusted_gross.notna(), merged["gross_return"]
+        )
+    if "position_exit_reason" in merged.columns:
+        adjusted_reason = merged["position_exit_reason"].astype(str)
+        merged["simple_policy_exit_reason"] = adjusted_reason.where(
+            adjusted_reason.str.len() > 0,
+            merged["simple_policy_exit_reason"],
+        )
     trade_count = int(len(accepted))
     net_pnl = float(
         (
@@ -1278,9 +1647,12 @@ def compute_replay_metrics(
         if pd.notna(start) and pd.notna(end)
         else 1.0
     )
-    annualized_return = float(
-        (final_equity / max(initial_wallet, EPS)) ** (365.0 / days) - 1.0
-    )
+    equity_ratio = max(float(final_equity) / max(float(initial_wallet), EPS), EPS)
+    annualized_log_return = np.log(equity_ratio) * (365.0 / max(float(days), EPS))
+    if not np.isfinite(annualized_log_return):
+        annualized_return = 0.0
+    else:
+        annualized_return = float(np.expm1(np.clip(annualized_log_return, -50.0, 50.0)))
     running_max = equity_for_risk.cummax()
     drawdown = equity_for_risk / running_max.replace(0.0, np.nan) - 1.0
     max_drawdown = float(drawdown.min()) if len(drawdown.dropna()) else 0.0
@@ -1651,7 +2023,7 @@ def optimise_params(
         )
     )
     train = _normalised_candidate_table(train_candidates)
-    ev_curve = fit_monotone_ev_curve(train)
+    ev_curve = fit_hierarchical_ev_curves(train)
     best_params: Optional[PortfolioPolicyParams] = None
     best_metrics: Dict[str, Any] = {"objective": float("-inf")}
     progress_interval = max(
@@ -1757,7 +2129,7 @@ def walk_forward_validate(
     timestamps = np.array(sorted(work["timestamp"].dropna().unique()))
     if len(timestamps) < 3:
         params = PortfolioPolicyParams()
-        ev_curve = fit_monotone_ev_curve(work)
+        ev_curve = fit_hierarchical_ev_curves(work)
         baseline_decisions, baseline_eq, baseline_metrics = replay_candidates(
             work,
             params,
@@ -1803,7 +2175,7 @@ def walk_forward_validate(
         max_evaluations=max_evaluations,
         market_mode=market_mode,
     )
-    ev_curve = fit_monotone_ev_curve(train)
+    ev_curve = fit_hierarchical_ev_curves(train)
     _, _, baseline_metrics = replay_candidates(
         validation,
         PortfolioPolicyParams(),
@@ -1966,7 +2338,7 @@ def run_portfolio_policy_replay(
         ev_curve_candidates = normalise_candidate_table(
             pd.read_parquet(ev_curve_source_path)
         )
-    ev_curve = fit_monotone_ev_curve(ev_curve_candidates)
+    ev_curve = fit_hierarchical_ev_curves(ev_curve_candidates)
     decisions, equity, metrics = replay_candidates(
         candidates,
         params,

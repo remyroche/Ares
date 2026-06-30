@@ -28,6 +28,9 @@ def test_regime_panel_composites_are_present_finite_and_broadcast():
         "q_tail_asym__price_x_oi_3d",
         "eig_effective_rank__open_interest",
         "xs_cov_effective_rank__xs_open_interest",
+        "state_spectral_eig_lambda1_share",
+        "state_spectral_pc1_z",
+        "state_spectral_top3_mahalanobis",
     }
 
     expanded = _expand_regime_composite_dependencies(requested, CFG)
@@ -64,6 +67,8 @@ def test_requested_model_regime_keys_route_to_meta_not_base():
         "q_tail_width__price_x_oi_1d",
         "eig_effective_rank__open_interest",
         "xs_cov_effective_rank__xs_open_interest",
+        "state_spectral_eig_lambda1_share",
+        "state_spectral_top3_mahalanobis",
         "xasset_mkt_spread_bps",
         "regime_liquidity_score",
     ]:

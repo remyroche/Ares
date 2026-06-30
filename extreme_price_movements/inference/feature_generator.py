@@ -7,6 +7,8 @@ This module generates features for inference:
 - Computes per-symbol features needed by candidate selector
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
 import os
@@ -22,6 +24,11 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 import numpy as np
 import pandas as pd
+
+try:
+    import psutil as _psutil
+except Exception:  # pragma: no cover - optional runtime dependency
+    _psutil = None
 
 from extreme_price_movements.data_store import (
     load_features_selected,
@@ -1394,15 +1401,27 @@ class _StageTimer:
     def mark(self, stage: str) -> None:
         now = time.perf_counter()
         rss = _process_rss_mb()
+        peak_rss = _process_peak_rss_mb()
         tprint(
             f"[Timing] {self.label}.{stage}: "
             f"stage={now - self.last:.3f}s total={now - self.start:.3f}s "
-            f"rss={rss:.1f}MB"
+            f"rss={rss:.1f}MB peak_rss={peak_rss:.1f}MB"
         )
         self.last = now
 
 
 def _process_rss_mb() -> float:
+    if _psutil is not None:
+        try:
+            return float(_psutil.Process(os.getpid()).memory_info().rss) / (
+                1024.0 * 1024.0
+            )
+        except Exception:
+            pass
+    return _process_peak_rss_mb()
+
+
+def _process_peak_rss_mb() -> float:
     try:
         rss = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
     except Exception:
@@ -4679,12 +4698,24 @@ def _load_live_latest_feature_matrix_sidecar(
                 return {}
             matrix = matrix.loc[:, available]
             zero_finite = []
+            zero_finite_long_history = []
             for col in available:
                 if _is_live_source_derived_feature_key(col) or _is_live_synthesized_feature_key(col):
                     continue
                 values = pd.to_numeric(matrix[col], errors="coerce")
                 if int(np.isfinite(values.to_numpy(dtype=float, copy=False)).sum()) == 0:
-                    zero_finite.append(col)
+                    if _selected_latest_feature_requires_long_history(col):
+                        zero_finite_long_history.append(col)
+                    else:
+                        zero_finite.append(col)
+            if zero_finite_long_history:
+                tprint(
+                    "Live latest feature matrix sidecar has zero finite coverage "
+                    "for long-history selected features; keeping the sidecar and "
+                    "letting row-strict scoring handle affected symbols: "
+                    f"n={len(zero_finite_long_history)} "
+                    f"sample={sorted(zero_finite_long_history)[:20]}"
+                )
             if zero_finite:
                 tprint(
                     "Live latest feature matrix sidecar rejected: requested "

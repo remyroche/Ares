@@ -84,7 +84,7 @@ def _load_matrix_rows(feature_root: Path, start: str, end: str) -> tuple[pd.Data
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--feature-root", type=Path, default=Path("data_perp/features/20260605_070000"))
+    parser.add_argument("--feature-root", type=Path, default=Path("data_perp/features/20260627_120000"))
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--start", default="2026-06-15")
     parser.add_argument("--end", default="2026-06-22 23:59:59")

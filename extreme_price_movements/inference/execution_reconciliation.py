@@ -1207,6 +1207,7 @@ def build_shadow_trade_reconciliation(
     trade_log: pd.DataFrame,
     *,
     tolerance_bps: float = 50.0,
+    run_id: str | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     if trade_log is None or trade_log.empty:
         return pd.DataFrame(), {
@@ -1247,10 +1248,15 @@ def build_shadow_trade_reconciliation(
         ["realized_exit_price", "actual_exit_price", "exit_price"],
     )
     shadow_exit = _first_numeric(scoped, ["shadow_exit_price"])
+    shadow_theoretical_exit = _first_numeric(
+        scoped,
+        ["shadow_theoretical_exit_price", "shadow_stop_trigger_price"],
+    )
     live_stop = _first_numeric(scoped, ["final_placed_stop", "stop_price", "shadow_live_stop_price"])
     shadow_stop = _first_numeric(scoped, ["shadow_latest_stop_price", "shadow_initial_stop_price"])
     entry_gap = _first_numeric(scoped, ["shadow_entry_gap_bps", "entry_gap_bps"])
     stop_gap = _first_numeric(scoped, ["shadow_stop_gap_bps"])
+    trigger_gap = _first_numeric(scoped, ["shadow_trigger_vs_live_exit_gap_bps"])
     side_sign = np.where(scoped_side.eq("short"), -1.0, 1.0)
     with np.errstate(divide="ignore", invalid="ignore"):
         exit_gap_bps = side_sign * (
@@ -1263,7 +1269,16 @@ def build_shadow_trade_reconciliation(
             / np.maximum(live_stop.to_numpy(dtype=float), 1e-12)
             - 1.0
         ) * 10000.0
+        trigger_gap_fallback = side_sign * (
+            live_exit.to_numpy(dtype=float)
+            / np.maximum(shadow_theoretical_exit.to_numpy(dtype=float), 1e-12)
+            - 1.0
+        ) * 10000.0
     stop_gap = stop_gap.where(stop_gap.notna(), pd.Series(stop_gap_fallback, index=scoped.index))
+    trigger_gap = trigger_gap.where(
+        trigger_gap.notna(),
+        pd.Series(trigger_gap_fallback, index=scoped.index),
+    )
     out = pd.DataFrame(
         {
             "timestamp": scoped.get("timestamp"),
@@ -1281,7 +1296,13 @@ def build_shadow_trade_reconciliation(
             "shadow_vs_live_stop_gap_bps": stop_gap,
             "live_exit_price": live_exit,
             "shadow_exit_price": shadow_exit,
+            "shadow_exit_price_source": scoped.get(
+                "shadow_exit_price_source",
+                pd.Series("", index=scoped.index),
+            ),
+            "shadow_theoretical_exit_price": shadow_theoretical_exit,
             "live_vs_shadow_exit_gap_bps": exit_gap_bps,
+            "shadow_trigger_vs_live_exit_gap_bps": trigger_gap,
             "shadow_exit_reason": scoped.get("shadow_exit_reason"),
             "shadow_exit_return": _first_numeric(scoped, ["shadow_exit_return"]),
         }
@@ -1314,12 +1335,56 @@ def build_shadow_trade_reconciliation(
         "entry_gap_bps": _numeric_summary(out["entry_gap_bps"]),
         "shadow_vs_live_stop_gap_bps": _numeric_summary(out["shadow_vs_live_stop_gap_bps"]),
         "live_vs_shadow_exit_gap_bps": _numeric_summary(closed_out["live_vs_shadow_exit_gap_bps"]),
+        "shadow_trigger_vs_live_exit_gap_bps": _numeric_summary(
+            closed_out["shadow_trigger_vs_live_exit_gap_bps"]
+        ),
         "entry_gap_mismatch_rows": int((~out["entry_gap_within_tolerance"].fillna(False)).sum()),
         "stop_gap_mismatch_rows": int((~out["stop_gap_within_tolerance"].fillna(False)).sum()),
         "exit_gap_mismatch_rows": exit_gap_mismatch_rows,
         "exit_execution_parity_status": parity_status,
         "shadow_status_counts": out.get("shadow_status", pd.Series(dtype=object)).value_counts(dropna=False).to_dict(),
     }
+    if run_id:
+        run_text = str(run_id)
+        scoped_mask = pd.Series(False, index=out.index, dtype=bool)
+        for col in ("position_id", "trade_id"):
+            if col in out.columns:
+                scoped_mask |= out[col].astype(str).str.contains(run_text, regex=False, na=False)
+        scoped_out = out.loc[scoped_mask].copy()
+        scoped_closed_mask = scoped_closed.reindex(out.index, fill_value=False).loc[scoped_out.index]
+        scoped_closed_out = scoped_out.loc[scoped_closed_mask].copy()
+        scoped_exit_mismatch_rows = (
+            int((~scoped_closed_out["exit_gap_within_tolerance"].fillna(False)).sum())
+            if not scoped_closed_out.empty
+            else 0
+        )
+        if scoped_closed_out.empty:
+            scoped_parity_status = (
+                "pending_open_positions"
+                if int((~scoped_closed_mask).sum()) > 0
+                else "pending_no_closed_rows"
+            )
+        elif scoped_exit_mismatch_rows == 0:
+            scoped_parity_status = "pass"
+        else:
+            scoped_parity_status = "fail"
+        summary["current_run"] = {
+            "run_id": run_text,
+            "shadow_rows": int(len(scoped_out)),
+            "closed_shadow_rows": int(len(scoped_closed_out)),
+            "open_shadow_rows": int((~scoped_closed_mask).sum()),
+            "live_vs_shadow_exit_gap_bps": _numeric_summary(
+                scoped_closed_out["live_vs_shadow_exit_gap_bps"]
+            ),
+            "shadow_trigger_vs_live_exit_gap_bps": _numeric_summary(
+                scoped_closed_out["shadow_trigger_vs_live_exit_gap_bps"]
+            ),
+            "exit_gap_mismatch_rows": scoped_exit_mismatch_rows,
+            "exit_execution_parity_status": scoped_parity_status,
+            "shadow_status_counts": scoped_out.get(
+                "shadow_status", pd.Series(dtype=object)
+            ).value_counts(dropna=False).to_dict(),
+        }
     return out, summary
 
 
@@ -1341,6 +1406,20 @@ def _render_markdown(
 ) -> str:
     prediction_summary = prediction_summary or {}
     shadow_trade_summary = shadow_trade_summary or {}
+    current_run_summary = shadow_trade_summary.get("current_run") or {}
+    current_run_lines = []
+    if current_run_summary:
+        current_run_lines = [
+            "",
+            "### Current Run Shadow Execution",
+            f"- Run id: `{current_run_summary.get('run_id', '')}`",
+            f"- Shadow rows: `{current_run_summary.get('shadow_rows', 0)}`",
+            f"- Closed shadow rows: `{current_run_summary.get('closed_shadow_rows', 0)}`",
+            f"- Live vs shadow exit gap: `{current_run_summary.get('live_vs_shadow_exit_gap_bps', {})}`",
+            f"- Exit gap mismatches: `{current_run_summary.get('exit_gap_mismatch_rows', 0)}`",
+            f"- Exit execution parity status: `{current_run_summary.get('exit_execution_parity_status', '')}`",
+            f"- Status counts: `{current_run_summary.get('shadow_status_counts', {})}`",
+        ]
     return "\n".join(
         [
             "# Execution and Decision Reconciliation",
@@ -1360,6 +1439,7 @@ def _render_markdown(
             f"- Shadow vs live stop gap: `{shadow_trade_summary.get('shadow_vs_live_stop_gap_bps', {})}`",
             f"- Live vs shadow exit gap: `{shadow_trade_summary.get('live_vs_shadow_exit_gap_bps', {})}`",
             f"- Status counts: `{shadow_trade_summary.get('shadow_status_counts', {})}`",
+            *current_run_lines,
             "",
             "## Spread / Slippage",
             f"- Rows: `{spread_summary.get('rows', 0)}`",
@@ -1445,6 +1525,7 @@ def run_reconciliation(
     shadow_rows, shadow_summary = build_shadow_trade_reconciliation(
         trade_log,
         tolerance_bps=float(shadow_tolerance_bps),
+        run_id=run_id,
     )
     spread_rows.to_csv(out_dir / "spread_slippage_reconciliation.csv", index=False)
     field_rows.to_csv(out_dir / "ledger_replay_field_coverage.csv", index=False)

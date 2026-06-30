@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a simple-policy threshold pass on reliability-blend fixed TP/SL outcomes.
+"""Run a simple-policy threshold pass on reliability-blend TP/SL outcomes.
 
 This is intentionally a narrow wrapper around the reliability-blend outcome
 ledger.  The native ``simple_policy_optimiser`` builds candidates from model
@@ -21,13 +21,15 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from scripts.reliability_blend_rank_reference import apply_frozen_policy_rank_reference
+
 
 DEFAULT_SOURCE_DIR = Path(
     "data_perp/reports/reliability_blend_optuna_20260623_native_lgbm_only_50k"
 )
-DEFAULT_OUTPUT_RUN_ID = "reliability_blend_fixed_tpsl_3_2_h5_policy_fees_20260624"
+DEFAULT_OUTPUT_RUN_ID = "reliability_blend_volnorm_tpsl_policy_fees_20260624"
 DEFAULT_CONFIG_PATH = Path("config/reliability_blend_default_configs.json")
-DEFAULT_ROW_OUTCOMES = "reliability_blend_fixed_tpsl_3_2_h5_row_outcomes.parquet"
+DEFAULT_ROW_OUTCOMES = "reliability_blend_volnorm_tpsl_tp150_sl100_h5_v48_row_outcomes.parquet"
 
 STRATEGY_IDS = {
     "long_bars": (
@@ -166,7 +168,7 @@ def _materialise_candidates(
         subset=["timestamp", "head", "symbol", "reliability_blend_score", "fixed_return"]
     ).copy()
 
-    work["blend_strategy_rank_pct"] = work.groupby("head", group_keys=False)[
+    work["blend_strategy_rank_pct_debug"] = work.groupby("head", group_keys=False)[
         "reliability_blend_score"
     ].apply(_rank_pct)
     work["anchor_strategy_rank_pct"] = work.groupby("head", group_keys=False)[
@@ -191,10 +193,7 @@ def _materialise_candidates(
             "strategy_id": work["head"].map(STRATEGY_IDS).fillna(work["head"]),
             "head": work["head"],
             "row_id": work.get("row_id"),
-            "strategy_rank_pct": work["blend_strategy_rank_pct"],
-            "policy_rank_pct": work["blend_strategy_rank_pct"],
-            "normalized_rank_score": work["blend_strategy_rank_pct"],
-            "auction_rank_score": work["blend_strategy_rank_pct"],
+            "blend_strategy_rank_pct_debug": work["blend_strategy_rank_pct_debug"],
             "calibrated_score": work["reliability_blend_score"],
             "reliability_blend_score": work["reliability_blend_score"],
             "reliability_blend_variant": work["reliability_blend_variant"],
@@ -216,22 +215,29 @@ def _materialise_candidates(
             "slippage_bps": 0.0,
             "holding_bars": 5,
             "simple_policy_exit_reason": outcome_name,
-            "barrier_pct": 0.03,
-            "policy_effective_barrier_pct": 0.03,
-            "policy_sl_mult": 2.0 / 3.0,
+            "barrier_pct": pd.to_numeric(work.get("fixed_barrier_pct", pd.Series(0.03, index=work.index)), errors="coerce").fillna(0.03),
+            "policy_effective_barrier_pct": pd.to_numeric(work.get("fixed_barrier_pct", pd.Series(0.03, index=work.index)), errors="coerce").fillna(0.03),
+            "policy_sl_mult": (
+                pd.to_numeric(work.get("fixed_effective_sl", pd.Series(0.02, index=work.index)), errors="coerce")
+                / pd.to_numeric(work.get("fixed_effective_tp", pd.Series(0.03, index=work.index)), errors="coerce").replace(0.0, np.nan)
+            ).fillna(2.0 / 3.0),
             "policy_atr_power": 0.0,
             "policy_atr_multiplier": np.nan,
-            "policy_hard_tp_abs_pct": 0.03,
+            "policy_hard_tp_abs_pct": pd.to_numeric(work.get("fixed_effective_tp", pd.Series(0.03, index=work.index)), errors="coerce").fillna(0.03),
             "policy_target_holding_hours": 5.0,
             "market_mode": "perps",
             "fixed_outcome": outcome_name,
             "fixed_y_tp": work["fixed_y_tp"],
             "fixed_return": gross_return,
+            "fixed_barrier_pct": work.get("fixed_barrier_pct"),
+            "fixed_effective_tp": work.get("fixed_effective_tp"),
+            "fixed_effective_sl": work.get("fixed_effective_sl"),
+            "fixed_barrier_mode": work.get("fixed_barrier_mode"),
             "fixed_return_net_after_cost": net_return,
             "round_trip_cost_pct": float(round_trip_cost_pct),
             "fixed_conflict_same_bar": work["fixed_conflict_same_bar"].astype(bool),
             "score_source": "reliability_blend_default_variant",
-            "outcome_source": "fixed_tpsl_3pct_2pct_h5",
+            "outcome_source": work.get("fixed_barrier_mode", pd.Series("fixed_or_volnorm_tpsl", index=work.index)),
         }
     )
     return out.reset_index(drop=True), missing
@@ -489,6 +495,12 @@ def main() -> None:
     parser.add_argument("--confirmation-bands", type=int, default=3)
     parser.add_argument("--confirmation-min-positive", type=int, default=2)
     parser.add_argument("--min-trades", type=int, default=5)
+    parser.add_argument("--rank-reference-run-id", type=str, default=None)
+    parser.add_argument(
+        "--allow-window-rank-debug",
+        action="store_true",
+        help="Allow non-deployable whole-window rank fallback when no frozen rank reference exists.",
+    )
     args = parser.parse_args()
 
     source_path = args.source_dir / args.row_outcomes
@@ -500,6 +512,13 @@ def main() -> None:
         rows,
         variants,
         round_trip_cost_pct=float(args.round_trip_cost_pct),
+    )
+    candidates, rank_reference_diag = apply_frozen_policy_rank_reference(
+        candidates,
+        data_root=args.data_root,
+        run_id=args.rank_reference_run_id,
+        score_col="calibrated_score",
+        allow_window_rank_debug=bool(args.allow_window_rank_debug),
     )
     if candidates.empty:
         raise RuntimeError("No blend-scored candidate rows were materialised.")
@@ -560,18 +579,31 @@ def main() -> None:
     }
     strategies = []
     for item in blend_selected:
+        head_candidates = candidates.loc[candidates["head"].astype(str).eq(str(item["head"]))]
+        median_barrier = pd.to_numeric(head_candidates.get("barrier_pct"), errors="coerce").median()
+        median_tp = pd.to_numeric(head_candidates.get("policy_hard_tp_abs_pct"), errors="coerce").median()
+        median_sl_mult = pd.to_numeric(head_candidates.get("policy_sl_mult"), errors="coerce").median()
+        rank_sources = (
+            head_candidates.get("threshold_rank_score_source", pd.Series(dtype=object))
+            .dropna()
+            .astype(str)
+            .unique()
+            .tolist()
+        )
         strategies.append(
             {
                 "strategy_id": item["strategy_id"],
                 "head": item["head"],
                 "side": SIDES.get(str(item["head"]), "unknown"),
                 "deployment_rank_threshold": float(item["deployment_rank_threshold"]),
-                "threshold_rank_score_source": "policy_rank_pct",
+                "threshold_rank_score_source": rank_sources[0]
+                if len(rank_sources) == 1
+                else "policy_rank_reference_percentile_mixed",
                 "score_source": "reliability_blend_default_variant",
                 "blend_variant": variants.get(str(item["head"])),
-                "policy_effective_barrier_pct": 0.03,
-                "policy_sl_mult": 2.0 / 3.0,
-                "policy_hard_tp_abs_pct": 0.03,
+                "policy_effective_barrier_pct": float(median_barrier) if np.isfinite(median_barrier) else 0.03,
+                "policy_sl_mult": float(median_sl_mult) if np.isfinite(median_sl_mult) else 2.0 / 3.0,
+                "policy_hard_tp_abs_pct": float(median_tp) if np.isfinite(median_tp) else 0.03,
                 "policy_target_holding_hours": 5.0,
                 "deployment_threshold_metrics": _json_safe(item),
             }
@@ -583,14 +615,18 @@ def main() -> None:
         "run_id": args.output_run_id,
         "market_mode": "perps",
         "selection_rules": {
-            "metric_type": "OOF_fixed_tpsl_proxy",
+            "metric_type": "OOF_tpsl_proxy",
             "score_source": "reliability_blend_default_variant",
-            "outcome_source": "fixed_tpsl_3pct_2pct_h5",
+            "outcome_source": str(candidates.get("fixed_barrier_mode", pd.Series(["fixed_or_volnorm_tpsl"])).dropna().astype(str).iloc[0])
+            if "fixed_barrier_mode" in candidates.columns and candidates["fixed_barrier_mode"].notna().any()
+            else "fixed_or_volnorm_tpsl",
             "costs_included": bool(float(args.round_trip_cost_pct) != 0.0),
             "round_trip_cost_pct": float(args.round_trip_cost_pct),
             "round_trip_cost_bps": float(args.round_trip_cost_pct) * 10_000.0,
             "threshold_space": "per_strategy_rank_percentile",
-            "threshold_rank_score_source": "policy_rank_pct",
+            "threshold_rank_score_source": str(candidates["threshold_rank_score_source"].dropna().astype(str).iloc[0])
+            if "threshold_rank_score_source" in candidates.columns and candidates["threshold_rank_score_source"].notna().any()
+            else "policy_rank_pct",
             "threshold_lo": float(args.threshold_lo),
             "threshold_hi": float(args.threshold_hi),
             "threshold_step": float(args.threshold_step),
@@ -609,6 +645,7 @@ def main() -> None:
             "default_config_sha256": _file_sha256(args.config),
             "default_variants": variants,
             "missing_blend_score_columns": missing,
+            "rank_reference": rank_reference_diag,
         },
         "candidate_artifacts": {
             "broad_candidates": str(broad_path),
@@ -632,14 +669,24 @@ def main() -> None:
     )
     anchor_summary = _portfolio_summary(anchor_deployable)
     optimisation = {
-        "schema_version": "fixed_tpsl_blend_simple_policy_optimiser_v1",
+        "schema_version": "tpsl_blend_simple_policy_optimiser_v2",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "metric_type": "OOF_fixed_tpsl_proxy",
+        "metric_type": "OOF_tpsl_proxy",
         "costs_included": bool(float(args.round_trip_cost_pct) != 0.0),
         "round_trip_cost_pct": float(args.round_trip_cost_pct),
         "round_trip_cost_bps": float(args.round_trip_cost_pct) * 10_000.0,
-        "tp_pct": 0.03,
-        "sl_pct": 0.02,
+        "barrier_mode": str(candidates.get("fixed_barrier_mode", pd.Series([""])).dropna().astype(str).iloc[0])
+        if "fixed_barrier_mode" in candidates.columns and candidates["fixed_barrier_mode"].notna().any()
+        else None,
+        "effective_tp_mean": float(pd.to_numeric(candidates.get("fixed_effective_tp"), errors="coerce").mean())
+        if "fixed_effective_tp" in candidates.columns
+        else None,
+        "effective_sl_mean": float(pd.to_numeric(candidates.get("fixed_effective_sl"), errors="coerce").mean())
+        if "fixed_effective_sl" in candidates.columns
+        else None,
+        "barrier_pct_mean": float(pd.to_numeric(candidates.get("fixed_barrier_pct"), errors="coerce").mean())
+        if "fixed_barrier_pct" in candidates.columns
+        else None,
         "horizon_hours": 5,
         "source_rows": int(len(rows)),
         "candidate_rows": int(len(candidates)),
@@ -662,7 +709,7 @@ def main() -> None:
                     **optimisation,
                     "oos_status": "not_oos",
                     "note": (
-                        "This run optimises the reliability-blend fixed TP/SL OOF ledger. "
+                        "This run optimises the reliability-blend TP/SL OOF ledger. "
                         "It is not a fresh chronological OOS policy result."
                     ),
                 }
@@ -672,10 +719,10 @@ def main() -> None:
     )
 
     report_lines = [
-        "# Fixed TP/SL Reliability-Blend Simple Policy Optimiser",
+        "# TP/SL Reliability-Blend Simple Policy Optimiser",
         "",
         (
-            "Metric type: OOF fixed TP/SL proxy. "
+            "Metric type: OOF TP/SL proxy using persisted row outcome barriers. "
             f"Round-trip cost: {float(args.round_trip_cost_pct) * 10_000.0:.1f} bps."
         ),
         "",
@@ -730,7 +777,7 @@ def main() -> None:
             "",
         ]
     )
-    report_path = policy_dir / "fixed_tpsl_blend_simple_policy_report.md"
+    report_path = policy_dir / "tpsl_blend_simple_policy_report.md"
     report_path.write_text("\n".join(report_lines))
 
     print(json.dumps(_json_safe(optimisation), indent=2)[:6000])

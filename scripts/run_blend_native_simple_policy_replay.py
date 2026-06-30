@@ -37,6 +37,7 @@ from scripts.run_fixed_tpsl_blend_simple_policy_optimiser import (
     _file_sha256,
     _json_safe,
 )
+from scripts.reliability_blend_rank_reference import apply_frozen_policy_rank_reference
 
 
 DEFAULT_NATIVE_CANDIDATES = Path(
@@ -236,7 +237,13 @@ def _load_and_join(
     return joined.reset_index(drop=True), pd.DataFrame(coverage_rows), missing_rows
 
 
-def _materialise_blend_ranked_candidates(joined: pd.DataFrame) -> pd.DataFrame:
+def _materialise_blend_ranked_candidates(
+    joined: pd.DataFrame,
+    *,
+    data_root: Path,
+    rank_reference_run_id: str | None,
+    allow_window_rank_debug: bool,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
     out = joined.copy()
     out["anchor_calibrated_score"] = pd.to_numeric(out["calibrated_score"], errors="coerce")
     if "normalized_rank_score" in out.columns:
@@ -249,11 +256,8 @@ def _materialise_blend_ranked_candidates(joined: pd.DataFrame) -> pd.DataFrame:
         out["anchor_policy_rank_pct"] = pd.to_numeric(out["policy_rank_pct"], errors="coerce")
 
     out["calibrated_score"] = pd.to_numeric(out["reliability_blend_score"], errors="coerce")
-    out["strategy_rank_pct"] = out.groupby("strategy_id", group_keys=False)["calibrated_score"].apply(_rank_pct)
-    out["policy_rank_pct"] = out["strategy_rank_pct"]
-    out["normalized_rank_score"] = _rank_pct(out["calibrated_score"])
-    out["auction_rank_score"] = out["normalized_rank_score"]
-    out["threshold_rank_score_source"] = "policy_rank_pct"
+    out["blend_window_strategy_rank_pct_debug"] = out.groupby("strategy_id", group_keys=False)["calibrated_score"].apply(_rank_pct)
+    out["blend_window_auction_rank_pct_debug"] = _rank_pct(out["calibrated_score"])
     out["score_source"] = "reliability_blend_default_variant"
     out["blend_native_replay_key"] = (
         out["head"].astype(str)
@@ -262,7 +266,14 @@ def _materialise_blend_ranked_candidates(joined: pd.DataFrame) -> pd.DataFrame:
         + "|"
         + out["symbol"].astype(str)
     )
-    return out
+    out, rank_diag = apply_frozen_policy_rank_reference(
+        out,
+        data_root=data_root,
+        run_id=rank_reference_run_id,
+        score_col="calibrated_score",
+        allow_window_rank_debug=bool(allow_window_rank_debug),
+    )
+    return out, rank_diag
 
 
 def _select_thresholds(
@@ -532,6 +543,12 @@ def main() -> None:
     parser.add_argument("--local-band-width", type=float, default=0.05)
     parser.add_argument("--min-trades", type=int, default=10)
     parser.add_argument("--min-mean-net", type=float, default=0.0)
+    parser.add_argument("--rank-reference-run-id", type=str, default=None)
+    parser.add_argument(
+        "--allow-window-rank-debug",
+        action="store_true",
+        help="Allow non-deployable current-window rank fallback for audit runs only.",
+    )
     parser.add_argument(
         "--force-threshold",
         action="append",
@@ -550,7 +567,12 @@ def main() -> None:
     )
     if bool(args.keep_missing_blend) and joined["reliability_blend_score"].isna().any():
         raise RuntimeError("--keep-missing-blend is for audit only; ranking missing blend rows is unsupported.")
-    candidates = _materialise_blend_ranked_candidates(joined)
+    candidates, rank_reference_diag = _materialise_blend_ranked_candidates(
+        joined,
+        data_root=args.data_root,
+        rank_reference_run_id=args.rank_reference_run_id,
+        allow_window_rank_debug=bool(args.allow_window_rank_debug),
+    )
     grid, selected = _select_thresholds(
         candidates,
         threshold_lo=float(args.threshold_lo),
@@ -589,13 +611,24 @@ def main() -> None:
 
     strategies: list[dict[str, Any]] = []
     for row in selected.to_dict("records"):
+        head_rank_sources = (
+            candidates.loc[candidates["head"].eq(row["head"]), "threshold_rank_score_source"]
+            .dropna()
+            .astype(str)
+            .unique()
+            .tolist()
+            if "threshold_rank_score_source" in candidates.columns
+            else []
+        )
         strategies.append(
             {
                 "strategy_id": row["strategy_id"],
                 "head": row["head"],
                 "side": SIDES.get(str(row["head"]), "unknown"),
                 "deployment_rank_threshold": float(row["deployment_rank_threshold"]),
-                "threshold_rank_score_source": "policy_rank_pct",
+                "threshold_rank_score_source": head_rank_sources[0]
+                if len(head_rank_sources) == 1
+                else "policy_rank_reference_percentile_mixed",
                 "score_source": "reliability_blend_default_variant",
                 "blend_variant": candidates.loc[candidates["head"].eq(row["head"]), "reliability_blend_variant"].dropna().astype(str).head(1).squeeze(),
                 "deployment_threshold_metrics": _json_safe(row),
@@ -610,8 +643,11 @@ def main() -> None:
             "metric_type": "native_simple_policy_candidate_replay",
             "score_source": "reliability_blend_default_variant",
             "threshold_selection_objective": "max_native_net_pnl",
-            "threshold_space": "per_strategy_rank_percentile_within_materialized_native_candidate_source",
-            "threshold_rank_score_source": "policy_rank_pct",
+            "threshold_space": "per_strategy_rank_percentile",
+            "threshold_rank_score_source": str(candidates["threshold_rank_score_source"].dropna().astype(str).iloc[0])
+            if "threshold_rank_score_source" in candidates.columns and candidates["threshold_rank_score_source"].notna().any()
+            else "policy_rank_pct",
+            "rank_reference": rank_reference_diag,
             "costs_included": True,
             "fees_spread_slippage_source": "native_simple_policy_optimiser_candidate_table",
             "threshold_lo": float(args.threshold_lo),
@@ -635,6 +671,7 @@ def main() -> None:
             "blend_config_sha256": _file_sha256(args.blend_config),
             "missing_blend_score_columns": missing,
             "blend_score_coverage": coverage.to_dict("records"),
+            "rank_reference": rank_reference_diag,
         },
         "candidate_artifacts": {
             "broad_candidates": str(broad_path),
@@ -670,6 +707,7 @@ def main() -> None:
         "portfolio_candidate_summary": _metric_block(deployable),
         "selected_thresholds": selected.to_dict("records"),
         "coverage": coverage.to_dict("records"),
+        "rank_reference": rank_reference_diag,
         "output_root": str(output_root),
     }
     (output_root / "policy_optimisation.json").write_text(

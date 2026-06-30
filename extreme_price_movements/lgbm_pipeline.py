@@ -9,6 +9,8 @@ import re
 import time
 from pathlib import Path
 from dataclasses import dataclass, field
+from collections import Counter, defaultdict
+from statistics import NormalDist
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
 import numpy as np
@@ -431,6 +433,42 @@ LGBM_PERMUTATION_MAX_ROWS = int(os.environ.get("EPM_LGBM_PERMUTATION_MAX_ROWS", 
 LGBM_PERMUTATION_TOP_CONFIGS = int(os.environ.get("EPM_LGBM_PERMUTATION_TOP_CONFIGS", "2"))
 LGBM_PERMUTATION_SKIP_STRONG_TOP_FRAC = float(os.environ.get("EPM_LGBM_PERMUTATION_SKIP_STRONG_TOP_FRAC", "0.10"))
 LGBM_PERMUTATION_SKIP_WEAK_BOTTOM_FRAC = float(os.environ.get("EPM_LGBM_PERMUTATION_SKIP_WEAK_BOTTOM_FRAC", "0.50"))
+LGBM_MDA_CONFIG_DEFAULTS: dict[str, Any] = {
+    "enabled": True,
+    "objective": "topk_opportunity_precision",
+    "topk_fracs": [0.10, 0.20, 0.30],
+    "topk_frac_weights": [0.50, 0.30, 0.20],
+    "positive_label": 1,
+    "use_sample_weight": True,
+    "permutation_mode": "path_gated_lgbm",
+    "permutation_style": "row_shuffle",
+    "block_size": None,
+    "min_repeats": 3,
+    "max_repeats": 20,
+    "repeat_batch_size": 2,
+    "confidence_level": 0.95,
+    "early_stop_strong_keep": True,
+    "early_stop_null_drop": True,
+    "min_effect_size": 0.0,
+    "decision_default_for_borderline": "keep",
+    "shadow_null_enabled": True,
+    "shadow_max_features": 50,
+    "shadow_sample_strategy": "variance_quantiles",
+    "shadow_null_quantile": 0.95,
+    "shadow_n_repeats": 5,
+    "group_mda_enabled": True,
+    "correlation_method": "spearman",
+    "correlation_threshold": 0.92,
+    "group_permutation_style": "joint_row_shuffle",
+    "write_mda_report": True,
+    "report_format": ["json", "csv"],
+}
+LGBM_TIME_FEATURE_SELECTOR_BYPASS_DEFAULTS: tuple[str, ...] = (
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+)
 LGBM_OVERFIT_GAP_PENALTY = float(os.environ.get("EPM_LGBM_OVERFIT_GAP_PENALTY", "0.0"))
 LGBM_OVERFIT_GAP_DEADBAND = float(os.environ.get("EPM_LGBM_OVERFIT_GAP_DEADBAND", "0.02"))
 LGBM_OVERFIT_GAP_CAP = float(os.environ.get("EPM_LGBM_OVERFIT_GAP_CAP", "0.50"))
@@ -1791,7 +1829,7 @@ _REGIME_SPECIALIST_SCORE_FEATURE_CACHE: dict[tuple[Any, ...], tuple[pd.DataFrame
 _REGIME_SPECIALIST_SCORE_FEATURE_CACHE_MAX = 4
 _REGIME_SPECIALIST_UNSUPERVISED_CACHE: dict[tuple[Any, ...], tuple[Any, dict[str, Any]]] = {}
 _REGIME_SPECIALIST_UNSUPERVISED_CACHE_MAX = 4
-_LGBM_REGIME_SCORE_FEATURE_NAME = "regime_lgbm_elasticnet_similarity"
+_LGBM_REGIME_SCORE_FEATURE_NAME = "regime_lgbm_mda_similarity"
 _LGBM_REGIME_SCORE_SOURCE_COLUMN = "regime_domain_current_likeness"
 _LGBM_REGIME_SCORE_FEATURE_SOURCES: tuple[tuple[str, str], ...] = (
     ("regime_lgbm_current_likeness", "regime_lgbm_current_likeness"),
@@ -2090,6 +2128,28 @@ def _regime_specialist_feature_engineering_summary(artifact: Any) -> dict[str, A
         "diagnostics": diagnostics,
     }
     return _json_sanitize(summary)
+
+
+def _active_lgbm_regime_score_feature_sources(
+    artifact: Any,
+) -> tuple[tuple[str, str], ...]:
+    diagnostics = getattr(artifact, "diagnostics", {}) or {}
+    if not isinstance(diagnostics, Mapping):
+        diagnostics = {}
+    lgbm_diag = diagnostics.get("lgbm", {})
+    elastic_diag = diagnostics.get("elasticnet", {})
+    if not isinstance(lgbm_diag, Mapping):
+        lgbm_diag = {}
+    if not isinstance(elastic_diag, Mapping):
+        elastic_diag = {}
+    out: list[tuple[str, str]] = []
+    if bool(lgbm_diag.get("enabled", False)):
+        out.append(("regime_lgbm_current_likeness", "regime_lgbm_current_likeness"))
+    if bool(elastic_diag.get("enabled", False)):
+        out.append(("regime_elasticnet_current_likeness", "regime_elasticnet_current_likeness"))
+    if out:
+        out.append((_LGBM_REGIME_SCORE_FEATURE_NAME, _LGBM_REGIME_SCORE_SOURCE_COLUMN))
+    return tuple(out)
 
 
 def _regime_specialist_feature_engineering_metric_summary(
@@ -2406,10 +2466,14 @@ def _append_lgbm_regime_score_features(
                     config=fe_config,
                 )
             row_scores = getattr(artifact, "row_scores", pd.DataFrame())
+            fe_summary = _regime_specialist_feature_engineering_summary(artifact)
+            score_feature_sources = _active_lgbm_regime_score_feature_sources(artifact)
+            if not score_feature_sources:
+                score_feature_sources = ((_LGBM_REGIME_SCORE_FEATURE_NAME, _LGBM_REGIME_SCORE_SOURCE_COLUMN),)
             available_sources = (
                 {
                     source_col
-                    for _feature_name, source_col in _LGBM_REGIME_SCORE_FEATURE_SOURCES
+                    for _feature_name, source_col in score_feature_sources
                     if isinstance(row_scores, pd.DataFrame) and source_col in row_scores.columns
                 }
                 if isinstance(row_scores, pd.DataFrame)
@@ -2425,15 +2489,15 @@ def _append_lgbm_regime_score_features(
                         "historical_rows": int(historical_mask.sum()),
                         "missing_source_score_columns": [
                             source
-                            for _feature_name, source in _LGBM_REGIME_SCORE_FEATURE_SOURCES
+                            for _feature_name, source in score_feature_sources
                         ],
-                        "feature_engineering": _regime_specialist_feature_engineering_summary(artifact),
+                        "feature_engineering": fe_summary,
                     }
                 )
                 return X_df, selected, out
             score_columns: dict[str, np.ndarray] = {}
             missing_score_sources: list[str] = []
-            for feature_name, source_col in _LGBM_REGIME_SCORE_FEATURE_SOURCES:
+            for feature_name, source_col in score_feature_sources:
                 if source_col not in available_sources:
                     missing_score_sources.append(source_col)
                     continue
@@ -2449,7 +2513,6 @@ def _append_lgbm_regime_score_features(
                 score = score.fillna(fill_value).clip(0.0, 1.0).astype(np.float32)
                 score_columns[feature_name] = score.to_numpy(dtype=np.float32)
             scores_df = pd.DataFrame(score_columns, index=X_df.index)
-            fe_summary = _regime_specialist_feature_engineering_summary(artifact)
             diag = dict(diag_base)
             diag.update(
                 {
@@ -4178,6 +4241,367 @@ def _recent_feature_coverage_survivors(
     return survivors, diagnostics
 
 
+_FEATURE_FAMILY_DRIFT_RE = re.compile(
+    r"(feature_drift|row_drift|inference_drift|contribution_drift|"
+    r"drift_score|psi_|_psi|ks_|_ks|cov_shift|corr_shift|frobenius_corr_shift)",
+    re.IGNORECASE,
+)
+
+
+def _feature_selection_family(feature: str) -> str:
+    name = str(feature)
+    s = name.lower()
+    if _FEATURE_FAMILY_DRIFT_RE.search(name):
+        return "drift_novelty"
+    if (
+        s.startswith("pred_")
+        or "base_model" in s
+        or "score_path" in s
+        or "rank_path" in s
+        or "vote_margin" in s
+        or "leaf_" in s
+        or "tree_" in s
+        or "lgbm_" in s
+    ):
+        return "model_path_reliability"
+    if (
+        s.startswith("recent_")
+        or "surprise_error" in s
+        or "rolling_ic" in s
+        or "calibration_error" in s
+        or "confidence_surprise" in s
+    ):
+        return "recent_performance"
+    if (
+        s.startswith("q_")
+        or "__" in s
+        or "tail_width" in s
+        or "tail_asym" in s
+        or "upper_tail" in s
+        or "lower_tail" in s
+    ):
+        return "operator_quantile"
+    if (
+        s.startswith(("btc_", "eth_"))
+        or s.startswith(("mkt_", "market_", "cs_"))
+        or "pct_assets" in s
+        or "breadth" in s
+        or "dispersion" in s
+        or "state_spectral" in s
+        or "regime_" in s
+        or "raw_state" in s
+        or s.startswith("eig_")
+        or "network" in s
+        or "universe" in s
+    ):
+        return "market_cross_asset_state"
+    if any(
+        token in s
+        for token in (
+            "fund",
+            "oi_",
+            "_oi",
+            "open_interest",
+            "liquidity",
+            "spread",
+            "amihud",
+            "volume",
+            "rvol",
+            "cost",
+        )
+    ):
+        return "oi_funding_liquidity"
+    if "resid" in s or "peer" in s or "bench" in s or "asset_minus" in s:
+        return "relative_residual"
+    if any(
+        token in s
+        for token in (
+            "ema",
+            "atr",
+            "rv",
+            "volatility",
+            "range",
+            "trend",
+            "vwap",
+            "ret",
+            "return",
+            "mom",
+            "draw",
+            "adx",
+            "body",
+            "chop",
+            "entropy",
+            "efficiency",
+            "breakout",
+            "compression",
+            "slope",
+            "semivariance",
+            "variance",
+            "price",
+            "bar",
+            "loc_",
+            "ffd",
+        )
+    ):
+        return "asset_path_technical"
+    return "other"
+
+
+def _ordered_unique_features(features: Sequence[Any]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    iterable = [] if features is None else features
+    for feature in iterable:
+        name = str(feature)
+        if not name or name in seen:
+            continue
+        out.append(name)
+        seen.add(name)
+    return out
+
+
+def _feature_selection_quality_snapshot(
+    X: pd.DataFrame,
+    features: Sequence[str],
+    *,
+    max_rows: int = 5000,
+) -> dict[str, dict[str, float]]:
+    names = [str(c) for c in _ordered_unique_features(features) if str(c) in X.columns]
+    if not names or X.empty:
+        return {
+            name: {"finite_rate": 0.0, "variance": 0.0}
+            for name in names
+        }
+    if len(X) > max_rows > 0:
+        idx = np.linspace(0, len(X) - 1, int(max_rows), dtype=np.int64)
+        sample = X.iloc[idx][names]
+    else:
+        sample = X[names]
+    numeric = sample.apply(pd.to_numeric, errors="coerce")
+    arr = numeric.to_numpy(dtype=np.float32, copy=False)
+    finite = np.isfinite(arr)
+    finite_rate = finite.mean(axis=0) if arr.size else np.zeros(len(names), dtype=np.float32)
+    arr = np.where(finite, arr, np.nan).astype(np.float32, copy=False)
+    with np.errstate(invalid="ignore"):
+        variance = np.nanvar(arr, axis=0)
+    variance = np.nan_to_num(variance, nan=0.0, posinf=0.0, neginf=0.0).astype(
+        np.float32,
+        copy=False,
+    )
+    return {
+        name: {
+            "finite_rate": float(finite_rate[i]),
+            "variance": float(variance[i]),
+        }
+        for i, name in enumerate(names)
+    }
+
+
+def _quality_mean(
+    quality: Mapping[str, Mapping[str, float]],
+    features: Sequence[str],
+    key: str,
+) -> float:
+    vals = [
+        float((quality.get(str(feature)) or {}).get(key, np.nan))
+        for feature in features
+    ]
+    vals = [v for v in vals if np.isfinite(v)]
+    return float(np.mean(vals)) if vals else float("nan")
+
+
+def _quality_median(
+    quality: Mapping[str, Mapping[str, float]],
+    features: Sequence[str],
+    key: str,
+) -> float:
+    vals = [
+        float((quality.get(str(feature)) or {}).get(key, np.nan))
+        for feature in features
+    ]
+    vals = [v for v in vals if np.isfinite(v)]
+    return float(np.median(vals)) if vals else float("nan")
+
+
+def _preview_join(features: Sequence[str], *, limit: int = 12) -> str:
+    return "|".join([str(feature) for feature in list(features)[:limit]])
+
+
+def _feature_selection_family_audit_rows(
+    *,
+    stage_order: int,
+    stage: str,
+    candidate_features: Sequence[str],
+    selected_features: Sequence[str],
+    quality: Mapping[str, Mapping[str, float]],
+    default_drop_reason: str,
+    drop_reason_by_feature: Mapping[str, str] | None = None,
+    objective_mode: str | None = None,
+) -> list[dict[str, Any]]:
+    candidates = _ordered_unique_features(candidate_features)
+    selected_set = set(_ordered_unique_features(selected_features))
+    reason_map = {str(k): str(v) for k, v in (drop_reason_by_feature or {}).items()}
+    by_family: dict[str, list[str]] = defaultdict(list)
+    for feature in candidates:
+        by_family[_feature_selection_family(feature)].append(feature)
+    rows: list[dict[str, Any]] = []
+    for family in sorted(by_family):
+        family_features = by_family[family]
+        selected = [feature for feature in family_features if feature in selected_set]
+        dropped = [feature for feature in family_features if feature not in selected_set]
+        reason_counts: Counter[str] = Counter(
+            reason_map.get(feature, default_drop_reason) for feature in dropped
+        )
+        if not reason_counts:
+            reason_counts["none"] = 0
+        for drop_reason, dropped_count in sorted(reason_counts.items()):
+            dropped_with_reason = [
+                feature
+                for feature in dropped
+                if reason_map.get(feature, default_drop_reason) == drop_reason
+            ]
+            rows.append(
+                {
+                    "objective_mode": str(objective_mode or ""),
+                    "stage_order": int(stage_order),
+                    "stage": str(stage),
+                    "feature_family": str(family),
+                    "drop_reason": str(drop_reason),
+                    "candidate_count": int(len(family_features)),
+                    "selected_count": int(len(selected)),
+                    "dropped_count": int(dropped_count),
+                    "selected_fraction": float(len(selected) / max(len(family_features), 1)),
+                    "candidate_finite_rate_mean": _quality_mean(
+                        quality,
+                        family_features,
+                        "finite_rate",
+                    ),
+                    "selected_finite_rate_mean": _quality_mean(
+                        quality,
+                        selected,
+                        "finite_rate",
+                    ),
+                    "candidate_variance_median": _quality_median(
+                        quality,
+                        family_features,
+                        "variance",
+                    ),
+                    "selected_variance_median": _quality_median(
+                        quality,
+                        selected,
+                        "variance",
+                    ),
+                    "selected_preview": _preview_join(selected),
+                    "dropped_preview": _preview_join(dropped_with_reason),
+                }
+            )
+    return rows
+
+
+def _univariate_drop_reasons(uni_stats: pd.DataFrame) -> dict[str, str]:
+    if uni_stats.empty or "feature" not in uni_stats.columns:
+        return {}
+    out: dict[str, str] = {}
+    for _, row in uni_stats.iterrows():
+        feature = str(row.get("feature", ""))
+        if not feature or bool(row.get("passed", False)):
+            continue
+        direction_stability = float(row.get("direction_stability", 0.0) or 0.0)
+        pass_precision = bool(row.get("pass_precision", False))
+        pass_lift = bool(row.get("pass_lift", False))
+        pass_monotonicity = bool(row.get("pass_monotonicity", False))
+        univariate_j = float(row.get("univariate_j", 0.0) or 0.0)
+        if direction_stability < LGBM_DIRECTION_STABILITY_MIN:
+            reason = "failed_direction_stability"
+        elif not (pass_precision or pass_lift or pass_monotonicity):
+            reason = "failed_univariate_signal_tests"
+        elif abs(univariate_j) <= 1e-12:
+            reason = "zero_univariate_score"
+        else:
+            reason = "failed_univariate_filter"
+        out[feature] = reason
+    return out
+
+
+def _prune_drop_reasons(feature_stats: pd.DataFrame) -> dict[str, str]:
+    if feature_stats.empty or "feature" not in feature_stats.columns:
+        return {}
+    out: dict[str, str] = {}
+    for _, row in feature_stats.iterrows():
+        feature = str(row.get("feature", ""))
+        if not feature:
+            continue
+        hard_drop = bool(row.get("hard_drop", False))
+        if not hard_drop:
+            continue
+        label = str(
+            row.get(
+                "mda_confidence_label",
+                row.get("confidence_label", ""),
+            )
+            or ""
+        )
+        action = str(row.get("mda_final_action", row.get("final_action", "")) or "")
+        if label:
+            reason = f"mda_{label}"
+        elif action:
+            reason = f"mda_action_{action}"
+        elif float(row.get("direction_stability", 1.0) or 0.0) < LGBM_DIRECTION_STABILITY_MIN:
+            reason = "failed_direction_stability"
+        else:
+            reason = "iterative_prune_hard_drop"
+        out[feature] = reason
+    return out
+
+
+def _write_feature_selection_stage_family_audit(
+    cfg: Mapping[str, Any],
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    objective_mode: str | None,
+) -> dict[str, Any]:
+    if not rows or not bool(cfg.get("write_mda_report", True)):
+        return {}
+    report_dir_raw = str(cfg.get("report_dir", "") or "").strip()
+    if not report_dir_raw:
+        return {}
+    out_dir = Path(report_dir_raw)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    df = pd.DataFrame([dict(row) for row in rows])
+    csv_path = out_dir / "selection_stage_family_audit.csv"
+    json_path = out_dir / "selection_stage_family_audit.json"
+    df.to_csv(csv_path, index=False)
+    summary: dict[str, Any] = {
+        "objective_mode": str(objective_mode or ""),
+        "row_count": int(len(df)),
+        "stage_count": int(df["stage"].nunique()) if "stage" in df.columns else 0,
+        "family_count": int(df["feature_family"].nunique()) if "feature_family" in df.columns else 0,
+    }
+    if not df.empty and {"stage", "candidate_count", "selected_count"}.issubset(df.columns):
+        stage_summary = []
+        for stage, part in df.groupby("stage", sort=False):
+            dedup = part.drop_duplicates(["feature_family"], keep="first")
+            stage_summary.append(
+                {
+                    "stage": str(stage),
+                    "candidate_count": int(pd.to_numeric(dedup["candidate_count"], errors="coerce").sum()),
+                    "selected_count": int(pd.to_numeric(dedup["selected_count"], errors="coerce").sum()),
+                }
+            )
+        summary["stages"] = stage_summary
+    json_path.write_text(
+        json.dumps(_json_sanitize({"summary": summary, "rows": rows}), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return {
+        "selection_stage_family_audit_csv": str(csv_path),
+        "selection_stage_family_audit_json": str(json_path),
+        "selection_stage_family_audit_rows": int(len(df)),
+        "selection_stage_family_audit_stage_count": int(summary.get("stage_count", 0)),
+        "selection_stage_family_audit_family_count": int(summary.get("family_count", 0)),
+    }
+
+
 def _prediction_diagnostics(pred: np.ndarray) -> dict[str, float]:
     p = np.asarray(pred, dtype=np.float32)
     finite = p[np.isfinite(p)]
@@ -4399,6 +4823,126 @@ def _normalize_objective_mode(objective_mode: str | None) -> str:
     if mode not in {"train_base", "train_meta"}:
         raise ValueError('hpo_objective_mode must be either "train_base" or "train_meta"')
     return mode
+
+
+def _config_bool(
+    cfg: Mapping[str, Any] | None,
+    key: str,
+    default: bool,
+    *,
+    env_key: str | None = None,
+) -> bool:
+    raw: Any = default
+    if isinstance(cfg, Mapping) and key in cfg:
+        raw = cfg.get(key)
+    if env_key and env_key in os.environ:
+        raw = os.environ.get(env_key)
+    if isinstance(raw, str):
+        return raw.strip().lower() not in {"0", "false", "no", "n", "off", ""}
+    return bool(raw)
+
+
+def _string_list_config(
+    value: Any,
+    default: Sequence[str],
+    *,
+    env_key: str | None = None,
+) -> list[str]:
+    raw = os.environ.get(env_key) if env_key and env_key in os.environ else value
+    if raw is None:
+        return [str(v) for v in default if str(v).strip()]
+    if isinstance(raw, str):
+        vals = [p.strip() for p in raw.split(",") if p.strip()]
+    else:
+        try:
+            vals = [str(v).strip() for v in raw if str(v).strip()]
+        except TypeError:
+            vals = []
+    return vals or [str(v) for v in default if str(v).strip()]
+
+
+def _append_lgbm_forced_selector_features(
+    selected_features: Sequence[str],
+    all_columns: Sequence[str],
+    forced_features: Sequence[str],
+) -> list[str]:
+    available = {str(c) for c in all_columns}
+    out = [str(c) for c in selected_features if str(c).strip()]
+    seen = set(out)
+    for feature in forced_features:
+        name = str(feature)
+        if name not in available or name in seen:
+            continue
+        out.append(name)
+        seen.add(name)
+    return out
+
+
+def _resolve_lgbm_time_feature_selector_bypass_features(
+    all_columns: Sequence[str],
+    cfg: Mapping[str, Any] | None,
+    *,
+    objective_mode: str | None,
+) -> list[str]:
+    if not _config_bool(
+        cfg,
+        "lgbm_time_feature_selector_bypass_enabled",
+        True,
+        env_key="EPM_LGBM_TIME_FEATURE_SELECTOR_BYPASS_ENABLED",
+    ):
+        return []
+    modes = {
+        str(v).strip().lower()
+        for v in _string_list_config(
+            (cfg or {}).get("lgbm_time_feature_selector_bypass_modes")
+            if isinstance(cfg, Mapping)
+            else None,
+            ("train_base", "train_meta"),
+            env_key="EPM_LGBM_TIME_FEATURE_SELECTOR_BYPASS_MODES",
+        )
+        if str(v).strip()
+    }
+    mode = _normalize_objective_mode(objective_mode)
+    if modes and mode not in modes:
+        return []
+    configured = _string_list_config(
+        (cfg or {}).get("lgbm_time_feature_selector_bypass_features")
+        if isinstance(cfg, Mapping)
+        else None,
+        LGBM_TIME_FEATURE_SELECTOR_BYPASS_DEFAULTS,
+        env_key="EPM_LGBM_TIME_FEATURE_SELECTOR_BYPASS_FEATURES",
+    )
+    available = {str(c) for c in all_columns}
+    return [feature for feature in configured if feature in available]
+
+
+def _mark_lgbm_forced_selector_bypass(
+    stats: pd.DataFrame,
+    forced_features: Sequence[str],
+) -> pd.DataFrame:
+    if stats.empty or "feature" not in stats.columns or not forced_features:
+        return stats
+    forced = {str(f) for f in forced_features}
+    out = stats.copy()
+    mask = out["feature"].astype(str).isin(forced)
+    if mask.any():
+        out.loc[mask, "passed"] = True
+        out.loc[mask, "selector_bypass"] = True
+        out.loc[mask, "selector_bypass_reason"] = "time_feature_forced_base_meta"
+    return out
+
+
+def _extend_lgbm_mda_force_include(
+    mda_config: Mapping[str, Any],
+    forced_features: Sequence[str],
+) -> dict[str, Any]:
+    out = dict(mda_config or {})
+    forced = [str(f) for f in forced_features if str(f).strip()]
+    if not forced:
+        return out
+    for key in ("force_include_features", "protected_features"):
+        out[key] = list(dict.fromkeys([str(v) for v in (out.get(key, []) or [])] + forced))
+    return out
 
 
 def _distillation_passes_for_objective(objective_mode: str | None = "train_base") -> int:
@@ -6364,7 +6908,10 @@ def _redundancy_cluster_filter(
     arr = X.iloc[sub][features].to_numpy(dtype=np.float32)
     ranks = pd.DataFrame(arr).rank(pct=True).to_numpy(dtype=np.float32)
     corr = np.abs(np.corrcoef(ranks, rowvar=False))
-    corr = np.nan_to_num(corr, nan=0.0, posinf=0.0, neginf=0.0)
+    corr = np.nan_to_num(corr, nan=0.0, posinf=0.0, neginf=0.0).astype(
+        np.float32,
+        copy=False,
+    )
     if corr.shape[0] != len(features):
         return list(features)
     dist = 1.0 - np.clip(corr, 0.0, 1.0)
@@ -10959,7 +11506,10 @@ def _safe_corr_matrix(values: np.ndarray) -> np.ndarray:
     if arr.shape[0] < 2:
         return np.eye(arr.shape[1], dtype=np.float32)
     corr = np.corrcoef(arr, rowvar=False)
-    corr = np.nan_to_num(corr, nan=0.0, posinf=0.0, neginf=0.0)
+    corr = np.nan_to_num(corr, nan=0.0, posinf=0.0, neginf=0.0).astype(
+        np.float32,
+        copy=False,
+    )
     if corr.ndim != 2:
         return np.eye(arr.shape[1], dtype=np.float32)
     np.fill_diagonal(corr, 1.0)
@@ -11333,6 +11883,1256 @@ def _combined_gain_split_instability(
     }
 
 
+def _parse_float_list(value: Any, default: Sequence[float]) -> list[float]:
+    if value is None:
+        return [float(v) for v in default]
+    if isinstance(value, str):
+        parts = [p.strip() for p in value.split(",") if p.strip()]
+        if not parts:
+            return [float(v) for v in default]
+        try:
+            return [float(p) for p in parts]
+        except ValueError:
+            return [float(v) for v in default]
+    try:
+        vals = [float(v) for v in value]
+    except Exception:
+        return [float(v) for v in default]
+    return vals or [float(v) for v in default]
+
+
+def _resolve_lgbm_mda_config(
+    cfg: Mapping[str, Any] | None = None,
+    *,
+    reference_artifact_dir: str | os.PathLike[str] | None = None,
+) -> dict[str, Any]:
+    out = dict(LGBM_MDA_CONFIG_DEFAULTS)
+    cfg_map = dict(cfg or {})
+    user_cfg: Mapping[str, Any] = {}
+    for key in ("mda_config", "lgbm_mda_config", "mda"):
+        val = cfg_map.get(key)
+        if isinstance(val, Mapping):
+            user_cfg = val
+            break
+    if not user_cfg and any(k in cfg_map for k in LGBM_MDA_CONFIG_DEFAULTS):
+        user_cfg = cfg_map
+    out.update(dict(user_cfg))
+    if "EPM_LGBM_MDA_ENABLED" in os.environ:
+        out["enabled"] = os.environ.get("EPM_LGBM_MDA_ENABLED", "1").strip().lower() not in {
+            "0",
+            "false",
+            "no",
+            "n",
+            "off",
+        }
+    if "EPM_LGBM_MDA_OBJECTIVE" in os.environ:
+        out["objective"] = os.environ["EPM_LGBM_MDA_OBJECTIVE"].strip()
+    if "EPM_LGBM_MDA_PERMUTATION_MODE" in os.environ:
+        out["permutation_mode"] = os.environ["EPM_LGBM_MDA_PERMUTATION_MODE"].strip()
+    if "EPM_LGBM_MDA_TOPK_FRACS" in os.environ:
+        out["topk_fracs"] = _parse_float_list(
+            os.environ.get("EPM_LGBM_MDA_TOPK_FRACS"),
+            LGBM_MDA_CONFIG_DEFAULTS["topk_fracs"],
+        )
+    if "EPM_LGBM_MDA_TOPK_WEIGHTS" in os.environ:
+        out["topk_frac_weights"] = _parse_float_list(
+            os.environ.get("EPM_LGBM_MDA_TOPK_WEIGHTS"),
+            LGBM_MDA_CONFIG_DEFAULTS["topk_frac_weights"],
+        )
+    if "EPM_LGBM_MDA_REPORT_DIR" in os.environ:
+        out["report_dir"] = os.environ["EPM_LGBM_MDA_REPORT_DIR"]
+    if "report_dir" not in out or not str(out.get("report_dir") or "").strip():
+        if reference_artifact_dir is not None:
+            out["report_dir"] = str(Path(reference_artifact_dir) / "mda_feature_selection")
+        else:
+            out["report_dir"] = str(Path("data_perp") / "reports" / "lgbm_mda_feature_selection")
+    out["topk_fracs"] = _parse_float_list(
+        out.get("topk_fracs"),
+        LGBM_MDA_CONFIG_DEFAULTS["topk_fracs"],
+    )
+    out["topk_frac_weights"] = _parse_float_list(
+        out.get("topk_frac_weights"),
+        LGBM_MDA_CONFIG_DEFAULTS["topk_frac_weights"],
+    )
+    if len(out["topk_frac_weights"]) != len(out["topk_fracs"]):
+        out["topk_frac_weights"] = [1.0] * len(out["topk_fracs"])
+    out["topk_fracs"] = [
+        float(np.clip(v, 1.0 / 10_000.0, 1.0)) for v in out["topk_fracs"]
+    ]
+    weights = np.asarray(out["topk_frac_weights"], dtype=np.float64)
+    weights = np.where(np.isfinite(weights) & (weights > 0), weights, 0.0)
+    if float(weights.sum()) <= 0.0:
+        weights = np.ones(len(out["topk_fracs"]), dtype=np.float64)
+    out["topk_frac_weights"] = (weights / float(weights.sum())).tolist()
+    out["permutation_mode"] = str(out.get("permutation_mode", "path_gated_lgbm")).strip().lower()
+    if out["permutation_mode"] not in {"full", "path_gated_lgbm"}:
+        out["permutation_mode"] = "path_gated_lgbm"
+    out["permutation_style"] = str(out.get("permutation_style", "row_shuffle")).strip().lower()
+    if out["permutation_style"] not in {"row_shuffle", "block_shuffle"}:
+        out["permutation_style"] = "row_shuffle"
+    out["group_permutation_style"] = str(
+        out.get("group_permutation_style", "joint_row_shuffle")
+    ).strip().lower()
+    out["min_repeats"] = max(1, int(out.get("min_repeats", 3) or 3))
+    out["max_repeats"] = max(out["min_repeats"], int(out.get("max_repeats", 20) or 20))
+    out["repeat_batch_size"] = max(1, int(out.get("repeat_batch_size", 2) or 2))
+    out["confidence_level"] = float(np.clip(float(out.get("confidence_level", 0.95)), 0.50, 0.999))
+    out["min_effect_size"] = float(out.get("min_effect_size", 0.0) or 0.0)
+    out["shadow_max_features"] = max(0, int(out.get("shadow_max_features", 50) or 0))
+    out["shadow_n_repeats"] = max(1, int(out.get("shadow_n_repeats", 5) or 5))
+    out["shadow_null_quantile"] = float(
+        np.clip(float(out.get("shadow_null_quantile", 0.95)), 0.0, 1.0)
+    )
+    out["correlation_threshold"] = float(
+        np.clip(
+            float(
+                out.get(
+                    "correlation_threshold",
+                    LGBM_MDA_CONFIG_DEFAULTS["correlation_threshold"],
+                )
+            ),
+            0.0,
+            0.999,
+        )
+    )
+    out["block_size"] = (
+        None
+        if out.get("block_size") in {None, "", 0}
+        else max(1, int(out.get("block_size")))
+    )
+    out["decision_default_for_borderline"] = str(
+        out.get("decision_default_for_borderline", "keep")
+    ).strip().lower()
+    if out["decision_default_for_borderline"] not in {"keep", "review"}:
+        out["decision_default_for_borderline"] = "keep"
+    return out
+
+
+def topk_opportunity_score(
+    y_true: Any,
+    y_score: Any,
+    sample_weight: Any = None,
+    topk_fracs: Sequence[float] = (0.10, 0.20, 0.30),
+    topk_frac_weights: Sequence[float] = (0.50, 0.30, 0.20),
+    positive_label: int | float | str = 1,
+) -> dict[str, float]:
+    y = np.asarray(y_true).reshape(-1)
+    score = np.asarray(y_score, dtype=np.float32).reshape(-1)
+    n = int(min(len(y), len(score)))
+    if n <= 0:
+        out = {"score": 0.0}
+        for frac in topk_fracs:
+            pct = int(round(float(frac) * 100))
+            out[f"precision_at_{pct}"] = 0.0
+            out[f"recall_at_{pct}"] = 0.0
+            out[f"f1_at_{pct}"] = 0.0
+        return out
+    y = y[:n]
+    score = np.nan_to_num(score[:n], nan=-np.inf, posinf=np.inf, neginf=-np.inf)
+    if sample_weight is None:
+        w = np.ones(n, dtype=np.float32)
+    else:
+        w = np.asarray(sample_weight, dtype=np.float32).reshape(-1)[:n]
+        if len(w) != n:
+            w = np.ones(n, dtype=np.float32)
+        w = np.nan_to_num(w, nan=0.0, posinf=0.0, neginf=0.0)
+        w = np.maximum(w, 0.0)
+    if str(positive_label) in {"1", "1.0", "True", "true"}:
+        try:
+            pos = np.asarray(y, dtype=np.float32)
+        except (TypeError, ValueError):
+            pos = pd.to_numeric(pd.Series(y), errors="coerce").to_numpy(dtype=np.float32)
+        pos_mask = np.isfinite(pos) & (pos >= 0.5)
+    else:
+        pos_mask = y == positive_label
+    order = np.argsort(score, kind="mergesort")[::-1]
+    pos_w_total = float(np.sum(w[pos_mask], dtype=np.float64))
+    fracs = [float(np.clip(v, 1.0 / max(n, 1), 1.0)) for v in topk_fracs]
+    weights = np.asarray(topk_frac_weights, dtype=np.float64)
+    if len(weights) != len(fracs):
+        weights = np.ones(len(fracs), dtype=np.float64)
+    weights = np.where(np.isfinite(weights) & (weights > 0), weights, 0.0)
+    if float(weights.sum()) <= 0.0:
+        weights = np.ones(len(fracs), dtype=np.float64)
+    weights = weights / float(weights.sum())
+    precisions: list[float] = []
+    out: dict[str, float] = {}
+    for frac in fracs:
+        pct = int(round(frac * 100))
+        k = max(1, min(n, int(np.ceil(frac * n))))
+        selected = order[:k]
+        selected_weight = w[selected]
+        denom = float(np.sum(selected_weight, dtype=np.float64))
+        hit = float(
+            np.sum(
+                selected_weight * pos_mask[selected].astype(np.float32, copy=False),
+                dtype=np.float64,
+            )
+        )
+        precision = hit / denom if denom > 0.0 else 0.0
+        recall = hit / pos_w_total if pos_w_total > 0.0 else 0.0
+        f1 = (
+            2.0 * precision * recall / (precision + recall)
+            if (precision + recall) > 0.0
+            else 0.0
+        )
+        out[f"precision_at_{pct}"] = float(precision)
+        out[f"recall_at_{pct}"] = float(recall)
+        out[f"f1_at_{pct}"] = float(f1)
+        precisions.append(float(precision))
+    out["score"] = float(np.sum(np.asarray(precisions, dtype=np.float64) * weights))
+    return out
+
+
+def _topk_mda_score(
+    y_true: np.ndarray,
+    y_score: np.ndarray,
+    *,
+    sample_weight: np.ndarray | None,
+    cfg: Mapping[str, Any],
+) -> dict[str, float]:
+    return topk_opportunity_score(
+        y_true,
+        y_score,
+        sample_weight=sample_weight if bool(cfg.get("use_sample_weight", True)) else None,
+        topk_fracs=cfg.get("topk_fracs", LGBM_MDA_CONFIG_DEFAULTS["topk_fracs"]),
+        topk_frac_weights=cfg.get(
+            "topk_frac_weights",
+            LGBM_MDA_CONFIG_DEFAULTS["topk_frac_weights"],
+        ),
+        positive_label=cfg.get("positive_label", 1),
+    )
+
+
+def _mda_confidence_interval(values: Sequence[float], confidence_level: float) -> tuple[float, float, float, float, float]:
+    arr = np.asarray(values, dtype=np.float64)
+    arr = arr[np.isfinite(arr)]
+    if len(arr) == 0:
+        return 0.0, 0.0, 0.0, 0.0, 0.0
+    mean = float(np.mean(arr))
+    std = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
+    std_err = float(std / np.sqrt(max(len(arr), 1)))
+    z = float(NormalDist().inv_cdf((1.0 + float(confidence_level)) / 2.0))
+    return mean, std, std_err, float(mean - z * std_err), float(mean + z * std_err)
+
+
+def _mda_label_from_bounds(mean: float, lower: float, upper: float, theta: float) -> str:
+    if float(upper) < 0.0:
+        return "harmful"
+    if float(lower) > float(theta):
+        return "strong_keep"
+    if float(upper) <= float(theta):
+        return "null_or_weak"
+    if float(mean) > float(theta):
+        return "weak_keep"
+    return "borderline"
+
+
+def _mda_final_action(label: str, *, borderline_default: str = "keep") -> str:
+    if label in {"forced_keep", "strong_keep", "weak_keep"}:
+        return "keep"
+    if label == "borderline":
+        return "keep" if str(borderline_default).lower() == "keep" else "review"
+    if label == "redundant_group_member":
+        return "drop_candidate"
+    return "drop_candidate"
+
+
+def _get_lgbm_booster(model: Any) -> Any | None:
+    booster = getattr(model, "booster_", None)
+    if booster is not None:
+        return booster
+    if hasattr(model, "dump_model") and hasattr(model, "feature_importance"):
+        return model
+    return None
+
+
+def _lgbm_feature_names_from_booster(booster: Any, fallback: Sequence[str]) -> list[str]:
+    try:
+        names = list(map(str, booster.feature_name()))
+        if names:
+            return names
+    except Exception:
+        pass
+    return [str(c) for c in fallback]
+
+
+def _predict_lgbm_leaf_matrix(booster: Any, X: pd.DataFrame) -> np.ndarray | None:
+    try:
+        leaves = np.asarray(booster.predict(X, pred_leaf=True), dtype=np.int32)
+    except Exception:
+        return None
+    if leaves.ndim == 1:
+        leaves = leaves.reshape(len(X), 1)
+    if leaves.shape[0] != len(X) or leaves.shape[1] == 0:
+        return None
+    return leaves
+
+
+def _path_features_for_tree(tree_structure: Mapping[str, Any], feature_names: Sequence[str]) -> dict[int, set[str]]:
+    by_leaf: dict[int, set[str]] = {}
+
+    def _feature_name(raw: Any) -> str | None:
+        try:
+            idx = int(raw)
+            if 0 <= idx < len(feature_names):
+                return str(feature_names[idx])
+        except Exception:
+            pass
+        if raw is None:
+            return None
+        return str(raw)
+
+    def _walk(node: Mapping[str, Any], path: tuple[str, ...]) -> None:
+        if "leaf_index" in node:
+            try:
+                by_leaf[int(node.get("leaf_index"))] = set(path)
+            except Exception:
+                return
+            return
+        fname = _feature_name(node.get("split_feature"))
+        next_path = path + ((fname,) if fname else tuple())
+        left = node.get("left_child")
+        right = node.get("right_child")
+        if isinstance(left, Mapping):
+            _walk(left, next_path)
+        if isinstance(right, Mapping):
+            _walk(right, next_path)
+
+    _walk(tree_structure, tuple())
+    return by_leaf
+
+
+def _build_lgbm_path_index(
+    model: Any,
+    X_valid: pd.DataFrame,
+    feature_names: Sequence[str],
+) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    booster = _get_lgbm_booster(model)
+    if booster is None:
+        return {}, {"available": False, "reason": "not_lgbm_booster"}
+    leaves = _predict_lgbm_leaf_matrix(booster, X_valid)
+    if leaves is None:
+        return {}, {"available": False, "reason": "leaf_prediction_failed"}
+    try:
+        dump = booster.dump_model()
+        tree_info = list(dump.get("tree_info", []) or [])
+    except Exception as exc:
+        return {}, {"available": False, "reason": f"dump_failed:{exc}"}
+    booster_features = _lgbm_feature_names_from_booster(booster, feature_names)
+    feature_set = set(map(str, feature_names))
+    affected: dict[str, set[int]] = defaultdict(set)
+    n_trees = min(int(leaves.shape[1]), len(tree_info))
+    for tree_i in range(n_trees):
+        tree = tree_info[tree_i].get("tree_structure", {})
+        if not isinstance(tree, Mapping):
+            continue
+        leaf_features = _path_features_for_tree(tree, booster_features)
+        col = leaves[:, tree_i]
+        for row_i, leaf_id in enumerate(col):
+            for fname in leaf_features.get(int(leaf_id), set()):
+                if fname in feature_set:
+                    affected[fname].add(int(row_i))
+    out = {
+        fname: np.asarray(sorted(rows), dtype=np.int32)
+        for fname, rows in affected.items()
+    }
+    return out, {
+        "available": True,
+        "reason": "ok",
+        "n_rows": int(len(X_valid)),
+        "n_trees": int(n_trees),
+        "features_with_affected_rows": int(len(out)),
+    }
+
+
+def _permutation_order(
+    n: int,
+    rng: np.random.Generator,
+    *,
+    style: str = "row_shuffle",
+    block_size: int | None = None,
+) -> np.ndarray:
+    n = int(n)
+    if n <= 1:
+        return np.arange(n, dtype=np.int32)
+    if str(style).lower() != "block_shuffle" or not block_size or int(block_size) <= 1:
+        return rng.permutation(n).astype(np.int32)
+    bs = max(1, int(block_size))
+    blocks = [np.arange(start, min(start + bs, n), dtype=np.int32) for start in range(0, n, bs)]
+    order = rng.permutation(len(blocks))
+    return np.concatenate([blocks[int(i)] for i in order]).astype(np.int32)
+
+
+def _predict_permuted_rows(
+    model: Any,
+    X_valid: pd.DataFrame,
+    baseline_pred: np.ndarray,
+    feature_indices: Sequence[int],
+    perm_order: np.ndarray,
+    *,
+    classifier: bool,
+    feature_names: Sequence[str],
+    affected_rows_by_feature: Mapping[str, np.ndarray] | None,
+    mode: str,
+) -> tuple[np.ndarray, int, float, str]:
+    n = len(X_valid)
+    pred_perm = np.asarray(baseline_pred, dtype=np.float32).copy()
+    affected_idx: np.ndarray
+    method = "full_permutation"
+    if mode == "path_gated_lgbm" and affected_rows_by_feature is not None:
+        affected_sets: list[np.ndarray] = []
+        for j in feature_indices:
+            fname = str(feature_names[int(j)])
+            rows = np.asarray(affected_rows_by_feature.get(fname, np.array([], dtype=np.int32)), dtype=np.int32)
+            if len(rows):
+                affected_sets.append(rows)
+        if affected_sets:
+            affected_idx = np.unique(np.concatenate(affected_sets)).astype(np.int32)
+        else:
+            affected_idx = np.array([], dtype=np.int32)
+        method = "path_gated_lgbm"
+    else:
+        affected_idx = np.arange(n, dtype=np.int32)
+    if len(affected_idx) == 0:
+        return pred_perm, 0, 0.0, method
+    X_subset = X_valid.iloc[affected_idx].copy()
+    for j in feature_indices:
+        fname = str(feature_names[int(j)])
+        vals = X_valid.iloc[:, int(j)].to_numpy(copy=False)
+        permuted_vals = vals[perm_order]
+        X_subset.loc[:, fname] = permuted_vals[affected_idx]
+    pred_perm[affected_idx] = _predict_lgbm_raw(
+        model,
+        X_subset,
+        "classifier" if classifier else "regressor",
+    )
+    return (
+        pred_perm,
+        int(len(affected_idx)),
+        float(len(affected_idx) / max(n, 1)),
+        method,
+    )
+
+
+def _adaptive_mda_for_indices(
+    model: Any,
+    X_valid: pd.DataFrame,
+    y_valid: np.ndarray,
+    *,
+    baseline_pred: np.ndarray,
+    baseline_score: float,
+    classifier: bool,
+    sample_weight_valid: np.ndarray | None,
+    rng: np.random.Generator,
+    feature_indices: Sequence[int],
+    feature_names: Sequence[str],
+    cfg: Mapping[str, Any],
+    affected_rows_by_feature: Mapping[str, np.ndarray] | None,
+    theta: float,
+    entity_id: str,
+    entity_type: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    imports: list[float] = []
+    repeat_records: list[dict[str, Any]] = []
+    min_repeats = int(cfg.get("min_repeats", 3))
+    max_repeats = int(cfg.get("max_repeats", 20))
+    batch = int(cfg.get("repeat_batch_size", 2))
+    confidence_level = float(cfg.get("confidence_level", 0.95))
+    mode = str(cfg.get("permutation_mode", "path_gated_lgbm"))
+    style = str(cfg.get("permutation_style", "row_shuffle"))
+    block_size = cfg.get("block_size")
+    affected_count_last = 0
+    affected_frac_last = 0.0
+    method_last = "full_permutation"
+    stop_reason = "max_repeats"
+    while len(imports) < max_repeats:
+        target_repeats = min(max_repeats, max(min_repeats, len(imports) + batch))
+        while len(imports) < target_repeats:
+            perm_order = _permutation_order(
+                len(X_valid),
+                rng,
+                style=style,
+                block_size=int(block_size) if block_size else None,
+            )
+            pred_perm, affected_count, affected_frac, method = _predict_permuted_rows(
+                model,
+                X_valid,
+                baseline_pred,
+                feature_indices,
+                perm_order,
+                classifier=classifier,
+                feature_names=feature_names,
+                affected_rows_by_feature=affected_rows_by_feature,
+                mode=mode,
+            )
+            perm_metrics = _topk_mda_score(
+                y_valid,
+                pred_perm,
+                sample_weight=sample_weight_valid,
+                cfg=cfg,
+            )
+            importance = float(baseline_score - float(perm_metrics.get("score", 0.0)))
+            imports.append(importance)
+            affected_count_last = affected_count
+            affected_frac_last = affected_frac
+            method_last = method
+            repeat_records.append(
+                {
+                    "entity_type": str(entity_type),
+                    "entity_id": str(entity_id),
+                    "repeat": int(len(imports)),
+                    "importance": float(importance),
+                    "permuted_topk_score": float(perm_metrics.get("score", np.nan)),
+                    "affected_row_count": int(affected_count),
+                    "affected_row_fraction": float(affected_frac),
+                    "method": str(method),
+                }
+            )
+        mean, std, std_err, lower, upper = _mda_confidence_interval(imports, confidence_level)
+        if len(imports) >= min_repeats:
+            if upper < 0.0:
+                stop_reason = "harmful_ci"
+                break
+            if upper <= theta and bool(cfg.get("early_stop_null_drop", True)):
+                stop_reason = "null_or_weak_ci"
+                break
+            if lower > theta and bool(cfg.get("early_stop_strong_keep", True)):
+                stop_reason = "strong_keep_ci"
+                break
+    mean, std, std_err, lower, upper = _mda_confidence_interval(imports, confidence_level)
+    label = _mda_label_from_bounds(mean, lower, upper, theta)
+    return (
+        {
+            "mda_mean": float(mean),
+            "mda_std": float(std),
+            "mda_std_err": float(std_err),
+            "mda_lower_95": float(lower),
+            "mda_upper_95": float(upper),
+            "n_repeats": int(len(imports)),
+            "negative_repeat_rate": float(np.mean(np.asarray(imports) < 0.0)) if imports else 0.0,
+            "confidence_label": str(label),
+            "affected_row_count": int(affected_count_last),
+            "affected_row_fraction": float(affected_frac_last),
+            "method": str(method_last),
+            "stop_reason": str(stop_reason),
+        },
+        repeat_records,
+    )
+
+
+def _representative_shadow_templates(
+    X_train: pd.DataFrame,
+    feature_names: Sequence[str],
+    max_features: int,
+) -> list[str]:
+    names = [str(c) for c in feature_names if str(c) in X_train.columns]
+    cap = min(max(0, int(max_features)), len(names))
+    if cap <= 0:
+        return []
+    vals = X_train[names].replace([np.inf, -np.inf], np.nan)
+    var = vals.var(axis=0, skipna=True).fillna(0.0).to_numpy(dtype=np.float64)
+    finite = np.isfinite(var)
+    if not np.any(finite):
+        return names[:cap]
+    order = np.argsort(var)
+    if cap >= len(order):
+        return [names[int(i)] for i in order]
+    take = np.unique(np.linspace(0, len(order) - 1, cap).round().astype(int))
+    while len(take) < cap:
+        missing = [i for i in range(len(order)) if i not in set(take)]
+        if not missing:
+            break
+        take = np.append(take, missing[0])
+    return [names[int(order[int(i)])] for i in take[:cap]]
+
+
+def _shadow_null_mda_calibration(
+    model_params: Mapping[str, Any],
+    X_train: pd.DataFrame,
+    y_train: np.ndarray,
+    sample_weight_train: np.ndarray,
+    X_valid: pd.DataFrame,
+    y_valid: np.ndarray,
+    *,
+    classifier: bool,
+    sample_weight_valid: np.ndarray | None,
+    feature_names: Sequence[str],
+    cfg: Mapping[str, Any],
+    random_state: int,
+) -> tuple[float, pd.DataFrame]:
+    if not bool(cfg.get("shadow_null_enabled", True)) or not classifier:
+        return 0.0, pd.DataFrame()
+    templates = _representative_shadow_templates(
+        X_train,
+        feature_names,
+        int(cfg.get("shadow_max_features", 50)),
+    )
+    if not templates:
+        return 0.0, pd.DataFrame()
+    rng = np.random.default_rng(random_state)
+    Xtr = X_train.copy()
+    Xva = X_valid.copy()
+    shadow_cols: list[str] = []
+    for idx, feature in enumerate(templates):
+        shadow = f"__shadow__{re.sub(r'[^A-Za-z0-9_]+', '_', str(feature))}__{idx}"
+        shadow_cols.append(shadow)
+        tr_vals = Xtr[str(feature)].to_numpy(copy=True)
+        va_vals = Xva[str(feature)].to_numpy(copy=True)
+        Xtr[shadow] = tr_vals[_permutation_order(len(tr_vals), rng, style=str(cfg.get("permutation_style", "row_shuffle")), block_size=cfg.get("block_size"))]
+        Xva[shadow] = va_vals[_permutation_order(len(va_vals), rng, style=str(cfg.get("permutation_style", "row_shuffle")), block_size=cfg.get("block_size"))]
+    try:
+        shadow_model = _fit_lgbm_model(
+            Xtr,
+            y_train,
+            sample_weight_train,
+            classifier=classifier,
+            params=dict(model_params),
+        )
+        base_pred = _predict_lgbm_raw(shadow_model, Xva, "classifier")
+    except Exception as exc:
+        tprint(f"WARNING: LGBM shadow-null MDA calibration failed: {exc}")
+        return 0.0, pd.DataFrame()
+    baseline_metrics = _topk_mda_score(
+        y_valid,
+        base_pred,
+        sample_weight=sample_weight_valid,
+        cfg=cfg,
+    )
+    baseline_score = float(baseline_metrics.get("score", 0.0))
+    records: list[dict[str, Any]] = []
+    n_real = int(len(feature_names))
+    repeats = int(cfg.get("shadow_n_repeats", 5))
+    shadow_cfg = dict(cfg)
+    shadow_cfg["min_repeats"] = repeats
+    shadow_cfg["max_repeats"] = repeats
+    shadow_cfg["early_stop_strong_keep"] = False
+    shadow_cfg["early_stop_null_drop"] = False
+    for local_i, col in enumerate(shadow_cols):
+        stats, _repeat_records = _adaptive_mda_for_indices(
+            shadow_model,
+            Xva,
+            y_valid,
+            baseline_pred=base_pred,
+            baseline_score=baseline_score,
+            classifier=classifier,
+            sample_weight_valid=sample_weight_valid,
+            rng=rng,
+            feature_indices=[n_real + local_i],
+            feature_names=list(feature_names) + shadow_cols,
+            cfg=shadow_cfg,
+            affected_rows_by_feature=None,
+            theta=0.0,
+            entity_id=col,
+            entity_type="shadow_feature",
+        )
+        records.append(
+            {
+                "shadow_feature": col,
+                "template_feature": templates[local_i],
+                "shadow_mda_mean": float(stats["mda_mean"]),
+                "shadow_mda_std": float(stats["mda_std"]),
+                "shadow_mda_std_err": float(stats["mda_std_err"]),
+                "shadow_mda_lower_95": float(stats["mda_lower_95"]),
+                "shadow_mda_upper_95": float(stats["mda_upper_95"]),
+                "n_repeats": int(stats["n_repeats"]),
+            }
+        )
+    shadow_df = pd.DataFrame(records)
+    vals = pd.to_numeric(shadow_df.get("shadow_mda_mean"), errors="coerce").to_numpy(dtype=np.float64)
+    vals = vals[np.isfinite(vals)]
+    threshold = (
+        float(np.quantile(vals, float(cfg.get("shadow_null_quantile", 0.95))))
+        if len(vals)
+        else 0.0
+    )
+    return threshold, shadow_df
+
+
+def _correlation_groups_for_mda(
+    X_valid: pd.DataFrame,
+    feature_names: Sequence[str],
+    *,
+    threshold: float,
+    random_state: int,
+) -> list[list[int]]:
+    names = [str(c) for c in feature_names if str(c) in X_valid.columns]
+    p = len(names)
+    if p <= 1:
+        return []
+    rng = np.random.default_rng(random_state)
+    sub_n = min(len(X_valid), 2500)
+    sub = rng.choice(len(X_valid), size=sub_n, replace=False) if len(X_valid) > sub_n else np.arange(len(X_valid))
+    try:
+        ranks = (
+            X_valid.iloc[sub][names]
+            .replace([np.inf, -np.inf], np.nan)
+            .rank(pct=True)
+            .fillna(0.5)
+            .to_numpy(dtype=np.float32)
+        )
+        corr = np.abs(np.corrcoef(ranks, rowvar=False))
+    except Exception:
+        return []
+    corr = np.nan_to_num(corr, nan=0.0, posinf=0.0, neginf=0.0).astype(
+        np.float32,
+        copy=False,
+    )
+    if corr.shape != (p, p):
+        return []
+    parent = np.arange(p, dtype=np.int32)
+
+    def _find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = int(parent[x])
+        return int(x)
+
+    def _union(a: int, b: int) -> None:
+        ra = _find(a)
+        rb = _find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    rows, cols = np.where(np.triu(corr >= float(threshold), k=1))
+    for a, b in zip(rows, cols):
+        _union(int(a), int(b))
+    groups: dict[int, list[int]] = defaultdict(list)
+    for i in range(p):
+        groups[_find(i)].append(i)
+    return [members for members in groups.values() if len(members) > 1]
+
+
+def _compute_topk_mda_audit(
+    model: Any,
+    X_train: pd.DataFrame,
+    y_train: np.ndarray,
+    sample_weight_train: np.ndarray,
+    X_valid: pd.DataFrame,
+    y_valid: np.ndarray,
+    *,
+    base_pred: np.ndarray,
+    classifier: bool,
+    sample_weight_valid: np.ndarray | None,
+    rng: np.random.Generator,
+    cfg: Mapping[str, Any],
+    feature_names: Sequence[str],
+    split_counts: np.ndarray,
+    gain_importance: np.ndarray,
+    model_params: Mapping[str, Any],
+    random_state: int,
+) -> tuple[np.ndarray, np.ndarray, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, Any]]:
+    p = len(feature_names)
+    baseline_metrics = _topk_mda_score(
+        y_valid,
+        base_pred,
+        sample_weight=sample_weight_valid,
+        cfg=cfg,
+    )
+    baseline_score = float(baseline_metrics.get("score", 0.0))
+    shadow_threshold, shadow_df = _shadow_null_mda_calibration(
+        model_params,
+        X_train,
+        y_train,
+        sample_weight_train,
+        X_valid,
+        y_valid,
+        classifier=classifier,
+        sample_weight_valid=sample_weight_valid,
+        feature_names=feature_names,
+        cfg=cfg,
+        random_state=random_state + 19,
+    )
+    theta = max(float(cfg.get("min_effect_size", 0.0)), float(shadow_threshold))
+    affected_rows_by_feature: dict[str, np.ndarray] | None = None
+    path_diag: dict[str, Any] = {"available": False, "reason": "disabled"}
+    if str(cfg.get("permutation_mode", "path_gated_lgbm")) == "path_gated_lgbm":
+        affected_rows_by_feature, path_diag = _build_lgbm_path_index(
+            model,
+            X_valid,
+            feature_names,
+        )
+        if not bool(path_diag.get("available", False)):
+            tprint(
+                "WARNING: LGBM path-gated MDA unavailable; falling back to full permutation "
+                f"({path_diag.get('reason')})."
+            )
+            cfg = dict(cfg)
+            cfg["permutation_mode"] = "full"
+            affected_rows_by_feature = None
+    perm = np.zeros(p, dtype=np.float32)
+    evaluated = np.zeros(p, dtype=bool)
+    feature_records: list[dict[str, Any]] = []
+    repeat_records: list[dict[str, Any]] = []
+    split_arr = np.asarray(split_counts, dtype=np.float64)
+    gain_arr = np.asarray(gain_importance, dtype=np.float64)
+    if len(split_arr) < p:
+        split_arr = np.pad(split_arr, (0, p - len(split_arr)))
+    if len(gain_arr) < p:
+        gain_arr = np.pad(gain_arr, (0, p - len(gain_arr)))
+    for j, feature in enumerate(feature_names):
+        split_count = float(split_arr[j]) if j < len(split_arr) else 0.0
+        gain_value = float(gain_arr[j]) if j < len(gain_arr) else 0.0
+        if split_count <= 0.0:
+            record = {
+                "feature": str(feature),
+                "method": "exact_unused_skip",
+                "split_count": float(split_count),
+                "gain_importance": float(gain_value),
+                "affected_row_count": 0,
+                "affected_row_fraction": 0.0,
+                "baseline_topk_score": float(baseline_score),
+                "mda_mean": 0.0,
+                "mda_std": 0.0,
+                "mda_std_err": 0.0,
+                "mda_lower_95": 0.0,
+                "mda_upper_95": 0.0,
+                "n_repeats": 0,
+                "negative_repeat_rate": 0.0,
+                "shadow_null_threshold": float(shadow_threshold),
+                "confidence_label": "unused_exact_zero",
+                "final_action": "drop_candidate",
+                "selected": False,
+                "reason": "LightGBM split_count == 0; exact zero MDA.",
+            }
+            feature_records.append(record)
+            evaluated[j] = True
+            continue
+        stats, repeats = _adaptive_mda_for_indices(
+            model,
+            X_valid,
+            y_valid,
+            baseline_pred=base_pred,
+            baseline_score=baseline_score,
+            classifier=classifier,
+            sample_weight_valid=sample_weight_valid,
+            rng=rng,
+            feature_indices=[j],
+            feature_names=feature_names,
+            cfg=cfg,
+            affected_rows_by_feature=affected_rows_by_feature,
+            theta=theta,
+            entity_id=str(feature),
+            entity_type="feature",
+        )
+        label = str(stats["confidence_label"])
+        final_action = _mda_final_action(
+            label,
+            borderline_default=str(cfg.get("decision_default_for_borderline", "keep")),
+        )
+        perm[j] = float(stats["mda_mean"])
+        evaluated[j] = True
+        feature_records.append(
+            {
+                "feature": str(feature),
+                "method": str(stats["method"]),
+                "split_count": float(split_count),
+                "gain_importance": float(gain_value),
+                "affected_row_count": int(stats["affected_row_count"]),
+                "affected_row_fraction": float(stats["affected_row_fraction"]),
+                "baseline_topk_score": float(baseline_score),
+                "mda_mean": float(stats["mda_mean"]),
+                "mda_std": float(stats["mda_std"]),
+                "mda_std_err": float(stats["mda_std_err"]),
+                "mda_lower_95": float(stats["mda_lower_95"]),
+                "mda_upper_95": float(stats["mda_upper_95"]),
+                "n_repeats": int(stats["n_repeats"]),
+                "negative_repeat_rate": float(stats["negative_repeat_rate"]),
+                "shadow_null_threshold": float(shadow_threshold),
+                "confidence_label": label,
+                "final_action": str(final_action),
+                "selected": bool(final_action in {"keep", "review"}),
+                "reason": str(stats.get("stop_reason", "")),
+            }
+        )
+        repeat_records.extend(repeats)
+    group_records: list[dict[str, Any]] = []
+    lower_bound_by_idx = {
+        j: float(rec.get("mda_lower_95", 0.0))
+        for j, rec in enumerate(feature_records)
+        if str(rec.get("feature", "")) == str(feature_names[j])
+    }
+    if bool(cfg.get("group_mda_enabled", True)):
+        groups = _correlation_groups_for_mda(
+            X_valid,
+            feature_names,
+            threshold=float(
+                cfg.get(
+                    "correlation_threshold",
+                    LGBM_MDA_CONFIG_DEFAULTS["correlation_threshold"],
+                )
+            ),
+            random_state=random_state + 337,
+        )
+        for group_i, members in enumerate(groups):
+            group_id = f"group_{group_i:04d}"
+            group_cfg = dict(cfg)
+            if str(group_cfg.get("group_permutation_style", "joint_row_shuffle")) == "joint_row_shuffle":
+                group_cfg["permutation_style"] = "row_shuffle"
+            stats, repeats = _adaptive_mda_for_indices(
+                model,
+                X_valid,
+                y_valid,
+                baseline_pred=base_pred,
+                baseline_score=baseline_score,
+                classifier=classifier,
+                sample_weight_valid=sample_weight_valid,
+                rng=rng,
+                feature_indices=members,
+                feature_names=feature_names,
+                cfg=group_cfg,
+                affected_rows_by_feature=affected_rows_by_feature,
+                theta=theta,
+                entity_id=group_id,
+                entity_type="group",
+            )
+            label = str(stats["confidence_label"])
+            member_features = [str(feature_names[int(i)]) for i in members]
+            representative = sorted(
+                members,
+                key=lambda idx: (
+                    float(lower_bound_by_idx.get(int(idx), 0.0)),
+                    float(perm[int(idx)]),
+                    float(gain_arr[int(idx)]) if int(idx) < len(gain_arr) else 0.0,
+                    float(split_arr[int(idx)]) if int(idx) < len(split_arr) else 0.0,
+                ),
+                reverse=True,
+            )[:1]
+            group_records.append(
+                {
+                    "group_id": group_id,
+                    "features": "|".join(member_features),
+                    "feature_count": int(len(member_features)),
+                    "group_mda_mean": float(stats["mda_mean"]),
+                    "group_mda_std_err": float(stats["mda_std_err"]),
+                    "group_mda_lower_95": float(stats["mda_lower_95"]),
+                    "group_mda_upper_95": float(stats["mda_upper_95"]),
+                    "n_repeats": int(stats["n_repeats"]),
+                    "group_label": label,
+                    "selected_representatives": "|".join(
+                        [str(feature_names[int(i)]) for i in representative]
+                    ),
+                }
+            )
+            repeat_records.extend(repeats)
+    feature_df = pd.DataFrame(feature_records)
+    group_df = pd.DataFrame(group_records)
+    if not group_df.empty and not feature_df.empty:
+        feature_df["group_id"] = ""
+        feature_df["group_mda_mean"] = np.nan
+        feature_df["group_mda_lower_95"] = np.nan
+        feature_df["group_mda_upper_95"] = np.nan
+        significant_groups = group_df[
+            pd.to_numeric(group_df["group_mda_lower_95"], errors="coerce") > theta
+        ]
+        for _, grow in significant_groups.iterrows():
+            members = [m for m in str(grow.get("features", "")).split("|") if m]
+            reps = {m for m in str(grow.get("selected_representatives", "")).split("|") if m}
+            m_mask = feature_df["feature"].astype(str).isin(members)
+            feature_df.loc[m_mask, "group_id"] = str(grow["group_id"])
+            feature_df.loc[m_mask, "group_mda_mean"] = float(grow["group_mda_mean"])
+            feature_df.loc[m_mask, "group_mda_lower_95"] = float(grow["group_mda_lower_95"])
+            feature_df.loc[m_mask, "group_mda_upper_95"] = float(grow["group_mda_upper_95"])
+            weak_mask = m_mask & ~feature_df["feature"].astype(str).isin(reps)
+            weak_mask &= feature_df["confidence_label"].astype(str).isin(
+                ["unused_exact_zero", "null_or_weak", "borderline", "weak_keep"]
+            )
+            feature_df.loc[weak_mask, "confidence_label"] = "redundant_group_member"
+            feature_df.loc[weak_mask, "final_action"] = "drop_candidate"
+            feature_df.loc[weak_mask, "selected"] = False
+            rep_mask = m_mask & feature_df["feature"].astype(str).isin(reps)
+            feature_df.loc[rep_mask, "final_action"] = "keep"
+            feature_df.loc[rep_mask, "selected"] = True
+    if "group_id" not in feature_df.columns:
+        feature_df["group_id"] = ""
+        feature_df["group_mda_mean"] = np.nan
+        feature_df["group_mda_lower_95"] = np.nan
+        feature_df["group_mda_upper_95"] = np.nan
+    repeat_df = pd.DataFrame(repeat_records)
+    diag = {
+        "baseline_metrics": baseline_metrics,
+        "shadow_null_threshold": float(shadow_threshold),
+        "theta": float(theta),
+        "path_gated": path_diag,
+        "shadow_feature_count": int(len(shadow_df)) if not shadow_df.empty else 0,
+    }
+    return (
+        perm,
+        evaluated,
+        feature_df,
+        group_df,
+        shadow_df,
+        repeat_df,
+        diag,
+    )
+
+
+def _aggregate_mda_feature_audit(
+    feature_names: Sequence[str],
+    feature_audit: pd.DataFrame,
+    *,
+    cfg: Mapping[str, Any],
+) -> pd.DataFrame:
+    names = [str(f) for f in feature_names]
+    force_include = {
+        str(v)
+        for key in ("force_include", "force_include_features", "protected_features")
+        for v in (cfg.get(key, []) or [])
+        if str(v).strip()
+    }
+    if feature_audit.empty:
+        return pd.DataFrame({"feature": names})
+    confidence_level = float(cfg.get("confidence_level", 0.95))
+    z = float(NormalDist().inv_cdf((1.0 + confidence_level) / 2.0))
+    rows: list[dict[str, Any]] = []
+    grouped = feature_audit.groupby("feature", sort=False, dropna=False)
+    for feature in names:
+        if feature not in grouped.groups:
+            rows.append(
+                {
+                    "feature": feature,
+                    "mda_mean": 0.0,
+                    "mda_std": 0.0,
+                    "mda_std_err": 0.0,
+                    "mda_lower_95": 0.0,
+                    "mda_upper_95": 0.0,
+                    "mda_n_folds": 0,
+                    "mda_n_repeats": 0,
+                    "mda_confidence_label": "not_evaluated",
+                    "mda_final_action": "review",
+                    "mda_selected": True,
+                    "mda_reason": "not_evaluated",
+                }
+            )
+            continue
+        part = grouped.get_group(feature)
+        vals = pd.to_numeric(part.get("mda_mean"), errors="coerce").to_numpy(dtype=np.float64)
+        vals = vals[np.isfinite(vals)]
+        n = int(len(vals))
+        mean = float(np.mean(vals)) if n else 0.0
+        std = float(np.std(vals, ddof=1)) if n > 1 else 0.0
+        std_err = float(std / np.sqrt(max(n, 1)))
+        lower = float(mean - z * std_err)
+        upper = float(mean + z * std_err)
+        shadow_vals = pd.to_numeric(
+            part.get("shadow_null_threshold"),
+            errors="coerce",
+        ).to_numpy(dtype=np.float64)
+        shadow_vals = shadow_vals[np.isfinite(shadow_vals)]
+        shadow_threshold = float(np.nanmean(shadow_vals)) if len(shadow_vals) else 0.0
+        theta = max(float(cfg.get("min_effect_size", 0.0)), float(shadow_threshold))
+        split_vals = pd.to_numeric(part.get("split_count"), errors="coerce").to_numpy(dtype=np.float64)
+        split_max = float(np.nanmax(split_vals)) if len(split_vals) and np.isfinite(split_vals).any() else 0.0
+        labels = set(part.get("confidence_label", pd.Series(dtype=str)).astype(str))
+        if feature in force_include:
+            label = "forced_keep"
+        elif split_max <= 0.0 and "unused_exact_zero" in labels:
+            label = "unused_exact_zero"
+        elif "forced_keep" in labels:
+            label = "forced_keep"
+        else:
+            label = _mda_label_from_bounds(mean, lower, upper, theta)
+            if (
+                "redundant_group_member" in labels
+                and label in {"null_or_weak", "borderline", "weak_keep"}
+            ):
+                label = "redundant_group_member"
+        final_action = _mda_final_action(
+            label,
+            borderline_default=str(cfg.get("decision_default_for_borderline", "keep")),
+        )
+        selected = bool(final_action in {"keep", "review", "keep_representative_required"})
+        n_repeats = int(
+            pd.to_numeric(part.get("n_repeats"), errors="coerce").fillna(0).sum()
+        )
+        group_ids = [
+            str(v)
+            for v in part.get("group_id", pd.Series(dtype=str)).astype(str).tolist()
+            if str(v).strip()
+        ]
+        rows.append(
+            {
+                "feature": feature,
+                "method": "|".join(sorted(set(part.get("method", pd.Series(dtype=str)).astype(str)))),
+                "split_count": split_max,
+                "gain_importance": float(
+                    pd.to_numeric(part.get("gain_importance"), errors="coerce").max()
+                )
+                if "gain_importance" in part
+                else 0.0,
+                "affected_row_count": float(
+                    pd.to_numeric(part.get("affected_row_count"), errors="coerce").mean()
+                )
+                if "affected_row_count" in part
+                else 0.0,
+                "affected_row_fraction": float(
+                    pd.to_numeric(part.get("affected_row_fraction"), errors="coerce").mean()
+                )
+                if "affected_row_fraction" in part
+                else 0.0,
+                "baseline_topk_score": float(
+                    pd.to_numeric(part.get("baseline_topk_score"), errors="coerce").mean()
+                )
+                if "baseline_topk_score" in part
+                else 0.0,
+                "mda_mean": mean,
+                "mda_std": std,
+                "mda_std_err": std_err,
+                "mda_lower_95": lower,
+                "mda_upper_95": upper,
+                "mda_n_folds": n,
+                "mda_n_repeats": n_repeats,
+                "negative_repeat_rate": float(
+                    pd.to_numeric(part.get("negative_repeat_rate"), errors="coerce").mean()
+                )
+                if "negative_repeat_rate" in part
+                else 0.0,
+                "shadow_null_threshold": shadow_threshold,
+                "group_id": "|".join(sorted(set(group_ids))),
+                "group_mda_mean": float(
+                    pd.to_numeric(part.get("group_mda_mean"), errors="coerce").mean()
+                )
+                if "group_mda_mean" in part
+                else np.nan,
+                "group_mda_lower_95": float(
+                    pd.to_numeric(part.get("group_mda_lower_95"), errors="coerce").mean()
+                )
+                if "group_mda_lower_95" in part
+                else np.nan,
+                "group_mda_upper_95": float(
+                    pd.to_numeric(part.get("group_mda_upper_95"), errors="coerce").mean()
+                )
+                if "group_mda_upper_95" in part
+                else np.nan,
+                "confidence_label": label,
+                "final_action": final_action,
+                "selected": selected,
+                "reason": "|".join(sorted(set(part.get("reason", pd.Series(dtype=str)).astype(str))))[:500],
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _write_lgbm_mda_report(
+    cfg: Mapping[str, Any],
+    feature_audit: pd.DataFrame,
+    group_audit: pd.DataFrame,
+    shadow_null: pd.DataFrame,
+    repeat_importances: pd.DataFrame,
+    *,
+    selected_features: Sequence[str],
+    baseline_metrics: Mapping[str, Any],
+) -> dict[str, str]:
+    if not bool(cfg.get("write_mda_report", True)):
+        return {}
+    report_dir_raw = str(cfg.get("report_dir", "") or "").strip()
+    if not report_dir_raw:
+        return {}
+    out_dir = Path(report_dir_raw)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    paths: dict[str, str] = {}
+    feature_path = out_dir / "mda_feature_audit.csv"
+    group_path = out_dir / "mda_group_audit.csv"
+    shadow_path = out_dir / "mda_shadow_null.csv"
+    repeat_path = out_dir / "mda_repeat_importances.csv"
+    feature_audit.to_csv(feature_path, index=False)
+    group_audit.to_csv(group_path, index=False)
+    shadow_null.to_csv(shadow_path, index=False)
+    repeat_importances.to_csv(repeat_path, index=False)
+    paths["feature_audit_path"] = str(feature_path)
+    paths["group_audit_path"] = str(group_path)
+    paths["shadow_null_path"] = str(shadow_path)
+    paths["repeat_importances_path"] = str(repeat_path)
+    confidence = (
+        feature_audit["confidence_label"].astype(str)
+        if "confidence_label" in feature_audit.columns
+        else pd.Series(dtype=str)
+    )
+    final_action = (
+        feature_audit["final_action"].astype(str)
+        if "final_action" in feature_audit.columns
+        else pd.Series(dtype=str)
+    )
+    selected = (
+        feature_audit["selected"].astype(bool)
+        if "selected" in feature_audit.columns
+        else pd.Series(dtype=bool)
+    )
+    shadow_threshold = 0.0
+    shadow_quantile_threshold = 0.0
+    if "shadow_mda_mean" in shadow_null.columns and not shadow_null.empty:
+        vals = pd.to_numeric(shadow_null["shadow_mda_mean"], errors="coerce").to_numpy(dtype=np.float64)
+        vals = vals[np.isfinite(vals)]
+        if len(vals):
+            shadow_quantile_threshold = float(np.quantile(vals, float(cfg.get("shadow_null_quantile", 0.95))))
+            shadow_threshold = shadow_quantile_threshold
+    threshold_cols = [
+        col
+        for col in ("shadow_null_threshold", "mda_shadow_null_threshold")
+        if col in feature_audit.columns
+    ]
+    if threshold_cols:
+        vals = pd.to_numeric(
+            feature_audit[threshold_cols[0]],
+            errors="coerce",
+        ).to_numpy(dtype=np.float64)
+        vals = vals[np.isfinite(vals)]
+        if len(vals):
+            shadow_threshold = float(np.nanmean(vals))
+    selected_list = [str(f) for f in selected_features]
+    drop_candidates = (
+        feature_audit.loc[final_action == "drop_candidate", "feature"].astype(str).tolist()
+        if "feature" in feature_audit.columns
+        else []
+    )
+    borderline = (
+        feature_audit.loc[confidence == "borderline", "feature"].astype(str).tolist()
+        if "feature" in feature_audit.columns
+        else []
+    )
+    report = {
+        "config": _json_sanitize(dict(cfg)),
+        "objective": {
+            "name": "topk_opportunity_precision",
+            "topk_fracs": list(cfg.get("topk_fracs", [])),
+            "topk_frac_weights": list(cfg.get("topk_frac_weights", [])),
+            "baseline_metrics": _json_sanitize(dict(baseline_metrics or {})),
+        },
+        "shadow_null": {
+            "enabled": bool(cfg.get("shadow_null_enabled", True)),
+            "threshold": float(shadow_threshold),
+            "shadow_distribution_quantile_threshold": float(shadow_quantile_threshold),
+            "quantile": float(cfg.get("shadow_null_quantile", 0.95)),
+            "n_shadow_features": int(len(shadow_null)) if not shadow_null.empty else 0,
+        },
+        "summary": {
+            "n_features_total": int(len(feature_audit)),
+            "n_selected": int(selected.sum()) if len(selected) else int(len(selected_list)),
+            "n_drop_candidates": int((final_action == "drop_candidate").sum()) if len(final_action) else 0,
+            "n_unused_exact_zero": int((confidence == "unused_exact_zero").sum()) if len(confidence) else 0,
+            "n_harmful": int((confidence == "harmful").sum()) if len(confidence) else 0,
+            "n_borderline": int((confidence == "borderline").sum()) if len(confidence) else 0,
+            "n_redundant_group_members": int((confidence == "redundant_group_member").sum()) if len(confidence) else 0,
+        },
+        "selected_features": selected_list,
+        "drop_candidates": drop_candidates,
+        "borderline_features": borderline,
+        "forced_features": (
+            feature_audit.loc[confidence == "forced_keep", "feature"].astype(str).tolist()
+            if "feature" in feature_audit.columns
+            else []
+        ),
+        "feature_audit_path": str(feature_path),
+        "group_audit_path": str(group_path),
+        "shadow_null_path": str(shadow_path),
+        "repeat_importances_path": str(repeat_path),
+    }
+    report_path = out_dir / "mda_feature_selection_report.json"
+    report_path.write_text(json.dumps(_json_sanitize(report), indent=2, sort_keys=True), encoding="utf-8")
+    paths["report_json_path"] = str(report_path)
+    return paths
+
+
 def _permutation_delta_j(
     model: Any,
     X_valid: pd.DataFrame,
@@ -11416,7 +13216,10 @@ def _redundancy_penalty(X: pd.DataFrame, features: list[str], quality: np.ndarra
     sub = rng.choice(len(X), size=sub_n, replace=False) if len(X) > sub_n else np.arange(len(X))
     ranks = pd.DataFrame(X.iloc[sub][features].to_numpy(dtype=np.float32)).rank(pct=True).to_numpy(dtype=np.float32)
     corr = np.abs(np.corrcoef(ranks, rowvar=False))
-    corr = np.nan_to_num(corr, nan=0.0, posinf=0.0, neginf=0.0)
+    corr = np.nan_to_num(corr, nan=0.0, posinf=0.0, neginf=0.0).astype(
+        np.float32,
+        copy=False,
+    )
     order = np.argsort(np.asarray(quality, dtype=np.float32))[::-1]
     seen: list[int] = []
     for idx in order:
@@ -11469,6 +13272,7 @@ def _lgbm_stability_selection_pass(
     seeds: list[int] | None = None,
     objective_mode: str | None = "train_base",
     preset_best_params: Optional[dict[str, Any]] = None,
+    mda_config: Mapping[str, Any] | None = None,
 ) -> tuple[pd.DataFrame, np.ndarray, dict[str, Any]]:
     t0 = time.perf_counter()
     if seeds is None:
@@ -11575,12 +13379,20 @@ def _lgbm_stability_selection_pass(
     topk_contrib_available_flags: list[float] = []
     topk_effective_rows: list[float] = []
     config_records: list[dict[str, Any]] = []
+    mda_cfg = _resolve_lgbm_mda_config(mda_config)
+    mda_enabled = bool(mda_cfg.get("enabled", True)) and classifier
+    mda_feature_audit_frames: list[pd.DataFrame] = []
+    mda_group_audit_frames: list[pd.DataFrame] = []
+    mda_shadow_frames: list[pd.DataFrame] = []
+    mda_repeat_frames: list[pd.DataFrame] = []
+    mda_fold_diagnostics: list[dict[str, Any]] = []
     total_fits = len(seeds) * len(configs) * stability_splits
     tprint(
         "LGBM stability selection pass started: "
         f"rows={len(y_arr)}, features={p}, seeds={len(seeds)}, "
         f"configs={len(configs)}, expected_fits={total_fits}, "
-        f"objective={_normalize_objective_mode(objective_mode)}."
+        f"objective={_normalize_objective_mode(objective_mode)}, "
+        f"mda_objective={mda_cfg.get('objective') if mda_enabled else 'legacy_or_disabled'}."
     )
     for seed in seeds:
         for cfg_i, cfg in enumerate(configs, start=1):
@@ -11688,10 +13500,13 @@ def _lgbm_stability_selection_pass(
                         "cfg_i": int(cfg_i),
                         "fold_i": int(fold_i),
                         "model": model,
+                        "tr": np.asarray(tr, dtype=np.int32),
                         "va": np.asarray(va, dtype=np.int32),
+                        "train_weight": np.asarray(current_weight[tr], dtype=np.float32),
                         "pred": np.asarray(pred, dtype=np.float32),
                         "gain": np.asarray(gain, dtype=np.float32),
                         "split": np.asarray(split, dtype=np.float32),
+                        "params": dict(params),
                     }
                 )
                 all_fit_direction.append(round_direction.copy())
@@ -11751,33 +13566,106 @@ def _lgbm_stability_selection_pass(
         seed = int(rec.get("seed", random_state))
         for fold_rec in rec.get("folds", []):
             va = np.asarray(fold_rec["va"], dtype=np.int32)
-            candidate_idx = _permutation_candidate_indices(
-                np.asarray(fold_rec["gain"], dtype=np.float32),
-                np.asarray(fold_rec["split"], dtype=np.float32),
-                p,
+            candidate_idx = (
+                np.arange(p, dtype=np.int32)
+                if mda_enabled
+                else _permutation_candidate_indices(
+                    np.asarray(fold_rec["gain"], dtype=np.float32),
+                    np.asarray(fold_rec["split"], dtype=np.float32),
+                    p,
+                )
             )
             fit_id = int(fold_rec["fit_id"])
             fold_i = int(fold_rec.get("fold_i", 0))
             tprint(
                 "LGBM stability permutation started: "
                 f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/{stability_splits}, "
-                f"candidate_features={len(candidate_idx)}."
+                f"candidate_features={len(candidate_idx)}, "
+                f"mda_mode={mda_cfg.get('permutation_mode') if mda_enabled else 'legacy'}."
             )
-            perm = _permutation_delta_j(
-                fold_rec["model"],
-                Xf.iloc[va].reset_index(drop=True),
-                y_metric[va],
-                base_pred=np.asarray(fold_rec["pred"], dtype=np.float32),
-                classifier=classifier,
-                groups_valid=_groups_take(groups, va),
-                returns_valid=ret_arr[va],
-                rng=rng_perm,
-                feature_indices=np.asarray(candidate_idx, dtype=np.int32),
-                objective_mode=objective_mode,
-            )
+            if mda_enabled:
+                tr = np.asarray(fold_rec["tr"], dtype=np.int32)
+                sample_weight_valid = (
+                    base_weight[va]
+                    if bool(mda_cfg.get("use_sample_weight", True))
+                    and len(base_weight) == len(y_arr)
+                    else None
+                )
+                (
+                    perm,
+                    evaluated,
+                    feature_audit,
+                    group_audit,
+                    shadow_null,
+                    repeat_audit,
+                    fold_mda_diag,
+                ) = _compute_topk_mda_audit(
+                    fold_rec["model"],
+                    Xf.iloc[tr].reset_index(drop=True),
+                    y_arr[tr],
+                    np.asarray(fold_rec.get("train_weight", base_weight[tr]), dtype=np.float32),
+                    Xf.iloc[va].reset_index(drop=True),
+                    y_metric[va],
+                    base_pred=np.asarray(fold_rec["pred"], dtype=np.float32),
+                    classifier=classifier,
+                    sample_weight_valid=sample_weight_valid,
+                    rng=rng_perm,
+                    cfg=mda_cfg,
+                    feature_names=features,
+                    split_counts=np.asarray(fold_rec["split"], dtype=np.float32),
+                    gain_importance=np.asarray(fold_rec["gain"], dtype=np.float32),
+                    model_params=dict(fold_rec.get("params") or {}),
+                    random_state=int(seed) + cfg_i * 1000 + fold_i * 17,
+                )
+                if not feature_audit.empty:
+                    feature_audit.insert(0, "fit_id", int(fit_id))
+                    feature_audit.insert(1, "seed", int(seed))
+                    feature_audit.insert(2, "cfg_i", int(cfg_i))
+                    feature_audit.insert(3, "fold_i", int(fold_i))
+                    mda_feature_audit_frames.append(feature_audit)
+                if not group_audit.empty:
+                    group_audit.insert(0, "fit_id", int(fit_id))
+                    group_audit.insert(1, "seed", int(seed))
+                    group_audit.insert(2, "cfg_i", int(cfg_i))
+                    group_audit.insert(3, "fold_i", int(fold_i))
+                    mda_group_audit_frames.append(group_audit)
+                if not shadow_null.empty:
+                    shadow_null.insert(0, "fit_id", int(fit_id))
+                    shadow_null.insert(1, "seed", int(seed))
+                    shadow_null.insert(2, "cfg_i", int(cfg_i))
+                    shadow_null.insert(3, "fold_i", int(fold_i))
+                    mda_shadow_frames.append(shadow_null)
+                if not repeat_audit.empty:
+                    repeat_audit.insert(0, "fit_id", int(fit_id))
+                    repeat_audit.insert(1, "seed", int(seed))
+                    repeat_audit.insert(2, "cfg_i", int(cfg_i))
+                    repeat_audit.insert(3, "fold_i", int(fold_i))
+                    mda_repeat_frames.append(repeat_audit)
+                fold_mda_diag.update(
+                    {
+                        "fit_id": int(fit_id),
+                        "seed": int(seed),
+                        "cfg_i": int(cfg_i),
+                        "fold_i": int(fold_i),
+                    }
+                )
+                mda_fold_diagnostics.append(fold_mda_diag)
+            else:
+                perm = _permutation_delta_j(
+                    fold_rec["model"],
+                    Xf.iloc[va].reset_index(drop=True),
+                    y_metric[va],
+                    base_pred=np.asarray(fold_rec["pred"], dtype=np.float32),
+                    classifier=classifier,
+                    groups_valid=_groups_take(groups, va),
+                    returns_valid=ret_arr[va],
+                    rng=rng_perm,
+                    feature_indices=np.asarray(candidate_idx, dtype=np.int32),
+                    objective_mode=objective_mode,
+                )
+                evaluated = np.zeros(p, dtype=bool)
+                evaluated[np.asarray(candidate_idx, dtype=np.int32)] = True
             all_fit_perm[fit_id] = perm
-            evaluated = np.zeros(p, dtype=bool)
-            evaluated[np.asarray(candidate_idx, dtype=np.int32)] = True
             all_fit_perm_evaluated[fit_id] = evaluated
             permuted_folds += 1
             permuted_features += int(len(candidate_idx))
@@ -11840,9 +13728,40 @@ def _lgbm_stability_selection_pass(
     for j in range(p):
         vals = perm_mat[perm_evaluated[:, j], j]
         median_perm[j] = float(np.median(vals)) if len(vals) else 0.0
+    mda_feature_audit_all = (
+        pd.concat(mda_feature_audit_frames, ignore_index=True)
+        if mda_feature_audit_frames
+        else pd.DataFrame()
+    )
+    mda_group_audit_all = (
+        pd.concat(mda_group_audit_frames, ignore_index=True)
+        if mda_group_audit_frames
+        else pd.DataFrame()
+    )
+    mda_shadow_null_all = (
+        pd.concat(mda_shadow_frames, ignore_index=True)
+        if mda_shadow_frames
+        else pd.DataFrame()
+    )
+    mda_repeat_importances_all = (
+        pd.concat(mda_repeat_frames, ignore_index=True)
+        if mda_repeat_frames
+        else pd.DataFrame()
+    )
+    mda_agg = (
+        _aggregate_mda_feature_audit(features, mda_feature_audit_all, cfg=mda_cfg)
+        if mda_enabled
+        else pd.DataFrame({"feature": features})
+    )
+    if mda_enabled and not mda_agg.empty and "mda_mean" in mda_agg.columns:
+        mda_mean_map = dict(zip(mda_agg["feature"].astype(str), mda_agg["mda_mean"].astype(float)))
+        median_perm = np.asarray(
+            [float(mda_mean_map.get(str(feature), 0.0)) for feature in features],
+            dtype=np.float32,
+        )
     direction_stability = np.asarray([_weighted_direction_stability(dirs[:, j], margins[:, j]) for j in range(p)], dtype=np.float32)
     direction = np.asarray([1 if np.sum(dirs[:, j] * margins[:, j]) >= 0 else -1 for j in range(p)], dtype=np.int8)
-    norm_perm = _rank01(np.maximum(median_perm, 0.0))
+    norm_perm = _rank01(median_perm if mda_enabled else np.maximum(median_perm, 0.0))
     prelim_quality = 0.50 * norm_perm + 0.25 * positive_perm_rate + 0.15 * presence_rate + 0.10 * direction_stability
     redundancy = _redundancy_penalty(Xf, features, prelim_quality, random_state=random_state + 677)
     worst_context_activity_penalty = np.zeros(p, dtype=np.float32)
@@ -11871,11 +13790,18 @@ def _lgbm_stability_selection_pass(
         - float(LGBM_TAIL_WORST_FEATURE_PENALTY) * worst_context_activity_penalty
     ).astype(np.float32)
     perm_filter_applies = permutation_evaluated_rate > 0.0
-    hard_drop = (
-        (direction_stability < LGBM_DIRECTION_STABILITY_MIN)
-        | (perm_filter_applies & (positive_perm_rate < LGBM_POSITIVE_PERM_RATE_MIN))
-        | (perm_filter_applies & (median_perm < -LGBM_PERMUTATION_EPS) & (presence_rate < LGBM_LOW_PRESENCE_RATE))
-    )
+    if mda_enabled and not mda_agg.empty and "final_action" in mda_agg.columns:
+        action_map = dict(zip(mda_agg["feature"].astype(str), mda_agg["final_action"].astype(str)))
+        hard_drop = np.asarray(
+            [action_map.get(str(feature), "review") == "drop_candidate" for feature in features],
+            dtype=bool,
+        )
+    else:
+        hard_drop = (
+            (direction_stability < LGBM_DIRECTION_STABILITY_MIN)
+            | (perm_filter_applies & (positive_perm_rate < LGBM_POSITIVE_PERM_RATE_MIN))
+            | (perm_filter_applies & (median_perm < -LGBM_PERMUTATION_EPS) & (presence_rate < LGBM_LOW_PRESENCE_RATE))
+        )
     rescue = np.zeros(p, dtype=bool)
     feature_score = np.where(hard_drop, -1.0, feature_score).astype(np.float32)
     stats = pd.DataFrame(
@@ -11902,6 +13828,25 @@ def _lgbm_stability_selection_pass(
             "rescue": rescue.astype(bool),
         }
     )
+    if mda_enabled and not mda_agg.empty:
+        mda_cols = [c for c in mda_agg.columns if c != "feature"]
+        rename_cols = {
+            c: (c if c.startswith("mda_") or c in {"confidence_label", "final_action", "selected", "reason"} else f"mda_{c}")
+            for c in mda_cols
+        }
+        mda_merge = mda_agg.rename(columns=rename_cols)
+        stats = stats.merge(mda_merge, on="feature", how="left")
+        if "confidence_label" in stats.columns:
+            stats["mda_confidence_label"] = stats["confidence_label"].astype(str)
+        if "final_action" in stats.columns:
+            stats["mda_final_action"] = stats["final_action"].astype(str)
+        if "selected" in stats.columns:
+            stats["mda_selected"] = stats["selected"].fillna(True).astype(bool)
+        stats["mda_objective"] = str(mda_cfg.get("objective", "topk_opportunity_precision"))
+        stats["mda_shadow_null_enabled"] = bool(mda_cfg.get("shadow_null_enabled", True))
+        stats["mda_group_mda_enabled"] = bool(mda_cfg.get("group_mda_enabled", True))
+    else:
+        stats["mda_objective"] = "legacy_permutation_delta_J"
     agg_all = _aggregate_j(fold_metrics_all, objective_mode=objective_mode)
     instability_info = _combined_gain_split_instability(
         all_fit_gain_focus,
@@ -11945,6 +13890,78 @@ def _lgbm_stability_selection_pass(
     agg_all["worst_context_activity_penalty_mean"] = float(
         np.mean(worst_context_activity_penalty) if len(worst_context_activity_penalty) else 0.0
     )
+    if mda_enabled:
+        agg_all["mda_enabled"] = True
+        agg_all["mda_objective"] = str(mda_cfg.get("objective", "topk_opportunity_precision"))
+        agg_all["mda_permutation_mode"] = str(mda_cfg.get("permutation_mode", ""))
+        agg_all["mda_topk_fracs"] = list(mda_cfg.get("topk_fracs", []))
+        agg_all["mda_topk_frac_weights"] = list(mda_cfg.get("topk_frac_weights", []))
+        agg_all["mda_feature_audit_rows"] = int(len(mda_feature_audit_all))
+        agg_all["mda_group_audit_rows"] = int(len(mda_group_audit_all))
+        agg_all["mda_shadow_null_rows"] = int(len(mda_shadow_null_all))
+        agg_all["mda_repeat_importance_rows"] = int(len(mda_repeat_importances_all))
+        agg_all["mda_unused_exact_zero_count"] = int(
+            (stats.get("mda_confidence_label", pd.Series(dtype=str)).astype(str) == "unused_exact_zero").sum()
+        )
+        agg_all["mda_harmful_count"] = int(
+            (stats.get("mda_confidence_label", pd.Series(dtype=str)).astype(str) == "harmful").sum()
+        )
+        agg_all["mda_borderline_count"] = int(
+            (stats.get("mda_confidence_label", pd.Series(dtype=str)).astype(str) == "borderline").sum()
+        )
+        agg_all["mda_redundant_group_member_count"] = int(
+            (stats.get("mda_confidence_label", pd.Series(dtype=str)).astype(str) == "redundant_group_member").sum()
+        )
+        if mda_fold_diagnostics:
+            baseline_scores = [
+                float((rec.get("baseline_metrics") or {}).get("score", np.nan))
+                for rec in mda_fold_diagnostics
+            ]
+            baseline_scores = [v for v in baseline_scores if np.isfinite(v)]
+            if baseline_scores:
+                agg_all["mda_baseline_topk_score_mean"] = float(np.mean(baseline_scores))
+            thresholds = [
+                float(rec.get("shadow_null_threshold", np.nan))
+                for rec in mda_fold_diagnostics
+            ]
+            thresholds = [v for v in thresholds if np.isfinite(v)]
+            if thresholds:
+                agg_all["mda_shadow_null_threshold_mean"] = float(np.mean(thresholds))
+                agg_all["mda_shadow_null_threshold_max"] = float(np.max(thresholds))
+        try:
+            baseline_metric_keys = sorted(
+                {
+                    str(k)
+                    for rec in mda_fold_diagnostics
+                    for k in ((rec.get("baseline_metrics") or {}).keys())
+                }
+            )
+            baseline_metrics_report: dict[str, float] = {}
+            for key in baseline_metric_keys:
+                vals = [
+                    float((rec.get("baseline_metrics") or {}).get(key, np.nan))
+                    for rec in mda_fold_diagnostics
+                ]
+                vals = [v for v in vals if np.isfinite(v)]
+                if vals:
+                    baseline_metrics_report[key] = float(np.mean(vals))
+            report_paths = _write_lgbm_mda_report(
+                mda_cfg,
+                stats,
+                mda_group_audit_all,
+                mda_shadow_null_all,
+                mda_repeat_importances_all,
+                selected_features=stats.loc[~hard_drop, "feature"].astype(str).tolist(),
+                baseline_metrics=baseline_metrics_report,
+            )
+            for key, value in report_paths.items():
+                agg_all[f"mda_{key}"] = str(value)
+        except Exception as exc:
+            tprint(f"WARNING: failed to write LGBM MDA feature-selection report: {exc}")
+            agg_all["mda_report_error"] = str(exc)
+    else:
+        agg_all["mda_enabled"] = False
+        agg_all["mda_objective"] = "legacy_permutation_delta_J"
     agg_all["J_final"] = float(raw_j_final - importance_penalty)
     agg_all["selected_objective"] = agg_all["J_final"]
     mode_obj = _normalize_objective_mode(objective_mode)
@@ -11995,9 +14012,12 @@ def _iterative_feature_prune(
     random_state: int,
     objective_mode: str | None = "train_base",
     preset_best_params: Optional[dict[str, Any]] = None,
+    mda_config: Mapping[str, Any] | None = None,
+    protected_features: Sequence[str] | None = None,
 ) -> tuple[list[str], list[dict[str, Any]], pd.DataFrame, np.ndarray, dict[str, Any]]:
     t0 = time.perf_counter()
     active = list(initial_features)
+    protected = {str(f) for f in (protected_features or []) if str(f) in set(active)}
     y_metric = np.asarray(metric_y if metric_y is not None else y)
     history: list[dict[str, Any]] = []
     last_stats = pd.DataFrame()
@@ -12015,6 +14035,10 @@ def _iterative_feature_prune(
             f"LGBM prune round {round_id} started: evaluating {len(active)} "
             f"features, max_rounds={LGBM_MAX_ROUNDS}."
         )
+        round_mda_config = dict(mda_config or {})
+        report_dir = str(round_mda_config.get("report_dir", "") or "").strip()
+        if report_dir:
+            round_mda_config["report_dir"] = str(Path(report_dir) / f"round_{round_id:02d}")
         stats, oof, metrics = _lgbm_stability_selection_pass(
             X,
             y,
@@ -12028,6 +14052,7 @@ def _iterative_feature_prune(
             seeds=[random_state],
             objective_mode=objective_mode,
             preset_best_params=preset_best_params,
+            mda_config=round_mda_config,
         )
         rec = {
             "round": int(round_id),
@@ -12056,7 +14081,8 @@ def _iterative_feature_prune(
         keep_n = max(LGBM_MIN_FEATURES, int(np.ceil(len(active) * (1.0 - drop_frac))))
         keep_n = min(keep_n, len(hard_kept), len(active))
         next_active = hard_kept.sort_values("feature_score", ascending=False)["feature"].astype(str).head(keep_n).tolist()
-        next_active = [f for f in active if f in set(next_active)]
+        next_active_set = set(next_active).union(protected.intersection(active))
+        next_active = [f for f in active if f in next_active_set]
         rec.update(
             {
                 "n_features_start": int(len(active)),
@@ -12082,13 +14108,16 @@ def _iterative_feature_prune(
     selected = list(chosen.get("active_features_end", chosen.get("active_features", active))) if chosen else active
     if len(selected) > LGBM_SELECTED_FEATURES_MAX > 0 and not last_stats.empty:
         selected_set = set(selected)
+        protected_selected = [f for f in selected if f in protected]
+        cap = max(int(LGBM_SELECTED_FEATURES_MAX) - len(protected_selected), 0)
         selected = (
             last_stats[last_stats["feature"].astype(str).isin(selected_set)]
             .sort_values("feature_score", ascending=False)["feature"]
             .astype(str)
-            .head(LGBM_SELECTED_FEATURES_MAX)
+            .head(cap)
             .tolist()
         )
+        selected = [f for f in list(dict.fromkeys(protected_selected + selected)) if f in selected_set]
     tprint(
         "LGBM prune complete: "
         f"initial={len(initial_features)}, selected={len(selected)}, "
@@ -13298,6 +15327,7 @@ def train_lgbm_stability_candidate(
     preset_feature_names: Optional[list[str]] = None,
     preset_best_params: Optional[dict[str, Any]] = None,
     preset_source: str | None = None,
+    reference_artifact_dir: str | os.PathLike[str] | None = None,
     cfg: dict[str, Any] | None = None,
     label_context: dict[str, Any] | None = None,
     assessment_X: Any = None,
@@ -13306,6 +15336,7 @@ def train_lgbm_stability_candidate(
 ) -> Optional[dict[str, Any]]:
     objective_mode = _normalize_objective_mode(hpo_objective_mode)
     distill_passes = _distillation_passes_for_objective(objective_mode)
+    mda_config = _resolve_lgbm_mda_config(cfg, reference_artifact_dir=reference_artifact_dir)
     tprint(f"LGBM stability candidate training started (objective={objective_mode}).")
     t0 = time.perf_counter()
     classifier = mode == "classifier"
@@ -13327,6 +15358,12 @@ def train_lgbm_stability_candidate(
     if oi_metadata_cols:
         X_df = X_df.drop(columns=[c for c in oi_metadata_cols if c in X_df.columns], errors="ignore")
         X_raw_df = X_raw_df.drop(columns=[c for c in oi_metadata_cols if c in X_raw_df.columns], errors="ignore")
+    selection_stage_family_audit_rows: list[dict[str, Any]] = []
+    pre_coverage_features = list(map(str, X_df.columns))
+    pre_coverage_quality = _feature_selection_quality_snapshot(
+        X_raw_df.reindex(columns=pre_coverage_features),
+        pre_coverage_features,
+    )
     coverage_exempt_features = (
         {
             str(c)
@@ -13340,6 +15377,17 @@ def train_lgbm_stability_candidate(
         X_raw_df.reindex(columns=list(X_df.columns)),
         timestamps,
         exempt_features=coverage_exempt_features,
+    )
+    selection_stage_family_audit_rows.extend(
+        _feature_selection_family_audit_rows(
+            stage_order=10,
+            stage="recent_coverage_filter",
+            candidate_features=pre_coverage_features,
+            selected_features=coverage_survivors,
+            quality=pre_coverage_quality,
+            default_drop_reason="recent_coverage_filter",
+            objective_mode=objective_mode,
+        )
     )
     if len(coverage_survivors) < len(X_df.columns):
         removed_preview = coverage_diagnostics.get("feature_recent_removed_lowest", [])[:10]
@@ -13375,9 +15423,25 @@ def train_lgbm_stability_candidate(
             "LGBM stability candidate skipped: fewer than 2 features meet recent coverage threshold."
         )
         return None
+    forced_time_features = _resolve_lgbm_time_feature_selector_bypass_features(
+        X_df.columns,
+        cfg,
+        objective_mode=objective_mode,
+    )
+    mda_config = _extend_lgbm_mda_force_include(mda_config, forced_time_features)
+    if forced_time_features:
+        tprint(
+            "LGBM selector time-feature bypass active: "
+            f"objective={objective_mode}, features={forced_time_features}."
+        )
     preset_features = [str(c) for c in (preset_feature_names or []) if str(c).strip()]
     regime_score_feature_diag: dict[str, Any] = {"enabled": False, "reason": "disabled"}
     if preset_features:
+        preset_features = _append_lgbm_forced_selector_features(
+            preset_features,
+            X_df.columns,
+            forced_time_features,
+        )
         X_df, preset_features, regime_score_feature_diag = _append_lgbm_regime_score_features(
             X_df,
             preset_features,
@@ -13600,6 +15664,10 @@ def train_lgbm_stability_candidate(
     ret_eval = ret_race[eval_local]
     eval_groups = _groups_take(race_groups, eval_local)
     tprint(f"LGBM candidate split: select={len(y_select)}, eval={len(y_eval)}, features={X_select.shape[1]}.")
+    selection_quality = _feature_selection_quality_snapshot(
+        X_select,
+        list(map(str, X_select.columns)),
+    )
     if preset_features:
         missing_preset = [c for c in preset_features if c not in X_df.columns]
         if missing_preset:
@@ -13635,6 +15703,17 @@ def train_lgbm_stability_candidate(
             "feature_selection_source": "native_preset",
             "feature_pruning_rounds_completed": 0,
         }
+        selection_stage_family_audit_rows.extend(
+            _feature_selection_family_audit_rows(
+                stage_order=20,
+                stage="native_preset",
+                candidate_features=list(X_select.columns),
+                selected_features=selected_features,
+                quality=selection_quality,
+                default_drop_reason="not_in_native_preset",
+                objective_mode=objective_mode,
+            )
+        )
         tprint(
             "LGBM candidate using native preset features; "
             f"selected={len(selected_features)}, source={preset_source or 'unknown'}."
@@ -13650,7 +15729,28 @@ def train_lgbm_stability_candidate(
             random_state=random_state + 101,
             objective_mode=objective_mode,
         )
+        uni_features = _append_lgbm_forced_selector_features(
+            uni_features,
+            X_select.columns,
+            forced_time_features,
+        )
+        uni_stats = _mark_lgbm_forced_selector_bypass(
+            uni_stats,
+            forced_time_features,
+        )
         tprint(f"LGBM candidate after univariate filter: {len(uni_features)} features.")
+        selection_stage_family_audit_rows.extend(
+            _feature_selection_family_audit_rows(
+                stage_order=20,
+                stage="univariate_directional_filter",
+                candidate_features=list(X_select.columns),
+                selected_features=uni_features,
+                quality=selection_quality,
+                default_drop_reason="failed_univariate_filter",
+                drop_reason_by_feature=_univariate_drop_reasons(uni_stats),
+                objective_mode=objective_mode,
+            )
+        )
         score_map = dict(zip(uni_stats["feature"].astype(str), uni_stats["univariate_j"].astype(float)))
         relief_features, relief_stats = _relief_rescue_filter(
             X_select,
@@ -13673,10 +15773,26 @@ def train_lgbm_stability_candidate(
             set(uni_features).union(relief_features),
             key=lambda c: feature_order.get(str(c), len(feature_order)),
         )
+        precluster_features = _append_lgbm_forced_selector_features(
+            precluster_features,
+            X_select.columns,
+            forced_time_features,
+        )
         tprint(
             "LGBM candidate after ReliefF rescue: "
             f"univariate={len(uni_features)}, rescued={len(relief_features)}, "
             f"precluster={len(precluster_features)} features."
+        )
+        selection_stage_family_audit_rows.extend(
+            _feature_selection_family_audit_rows(
+                stage_order=30,
+                stage="univariate_plus_relief_union",
+                candidate_features=list(X_select.columns),
+                selected_features=precluster_features,
+                quality=selection_quality,
+                default_drop_reason="failed_univariate_and_not_relief_rescued",
+                objective_mode=objective_mode,
+            )
         )
         cluster_features = _redundancy_cluster_filter(
             X_select,
@@ -13684,7 +15800,23 @@ def train_lgbm_stability_candidate(
             score_map,
             random_state=random_state + 211,
         )
+        cluster_features = _append_lgbm_forced_selector_features(
+            cluster_features,
+            X_select.columns,
+            forced_time_features,
+        )
         tprint(f"LGBM candidate after redundancy clustering: {len(cluster_features)} features.")
+        selection_stage_family_audit_rows.extend(
+            _feature_selection_family_audit_rows(
+                stage_order=40,
+                stage="redundancy_cluster_filter",
+                candidate_features=precluster_features,
+                selected_features=cluster_features,
+                quality=selection_quality,
+                default_drop_reason="redundancy_cluster_filter",
+                objective_mode=objective_mode,
+            )
+        )
         selected_features, history, feature_stats, prune_oof, prune_metrics = _iterative_feature_prune(
             X_select,
             y_select,
@@ -13697,6 +15829,36 @@ def train_lgbm_stability_candidate(
             random_state=random_state + 307,
             objective_mode=objective_mode,
             preset_best_params=preset_best_params,
+            mda_config=mda_config,
+            protected_features=forced_time_features,
+        )
+        for rec in history:
+            round_id = int(rec.get("round", 0) or 0)
+            start_features = rec.get("active_features_start", rec.get("active_features", [])) or []
+            end_features = rec.get("active_features_end", rec.get("active_features", [])) or []
+            selection_stage_family_audit_rows.extend(
+                _feature_selection_family_audit_rows(
+                    stage_order=50 + round_id,
+                    stage=f"iterative_prune_round_{round_id:02d}",
+                    candidate_features=start_features,
+                    selected_features=end_features,
+                    quality=selection_quality,
+                    default_drop_reason=f"iterative_prune_round_{round_id:02d}",
+                    objective_mode=objective_mode,
+                )
+            )
+        prune_reason_map = _prune_drop_reasons(feature_stats)
+        selection_stage_family_audit_rows.extend(
+            _feature_selection_family_audit_rows(
+                stage_order=90,
+                stage="final_selected_features",
+                candidate_features=cluster_features,
+                selected_features=selected_features,
+                quality=selection_quality,
+                default_drop_reason="iterative_prune_rank_or_one_se",
+                drop_reason_by_feature=prune_reason_map,
+                objective_mode=objective_mode,
+            )
         )
     if not selected_features:
         tprint("LGBM candidate rejected: no selected features.")
@@ -13831,6 +15993,9 @@ def train_lgbm_stability_candidate(
     metrics["n_relief_rescued_features"] = int(len(relief_features))
     metrics["n_precluster_features"] = int(len(precluster_features))
     metrics["n_cluster_features"] = int(len(cluster_features))
+    metrics["time_feature_selector_bypass_enabled"] = bool(forced_time_features)
+    metrics["time_feature_selector_bypass_features"] = list(forced_time_features)
+    metrics["time_feature_selector_bypass_feature_count"] = int(len(forced_time_features))
     metrics["feature_pruning_rounds_completed"] = int(len(history))
     metrics["candidate_elapsed_sec"] = float(time.perf_counter() - t0)
     metrics["hpo_objective_mode"] = objective_mode
@@ -13914,6 +16079,23 @@ def train_lgbm_stability_candidate(
         if len(recent_feature_selection_idx)
         else 0
     )
+    try:
+        stage_audit_paths = _write_feature_selection_stage_family_audit(
+            mda_config,
+            selection_stage_family_audit_rows,
+            objective_mode=objective_mode,
+        )
+        for key, value in stage_audit_paths.items():
+            metrics[f"feature_selection_{key}"] = value
+        if stage_audit_paths:
+            tprint(
+                "LGBM feature-selection stage family audit saved: "
+                f"rows={stage_audit_paths.get('selection_stage_family_audit_rows')}, "
+                f"path={stage_audit_paths.get('selection_stage_family_audit_csv')}."
+            )
+    except Exception as exc:
+        metrics["feature_selection_stage_family_audit_error"] = str(exc)
+        tprint(f"WARNING: failed to save feature-selection stage family audit: {exc}")
     oof_full = np.full(n, np.nan, dtype=np.float32)
     oof_race = np.full(len(y_race), np.nan, dtype=np.float32)
     oof_race[eval_local] = eval_pred
@@ -14021,9 +16203,24 @@ def fit_lgbm_stability_full_model(
         idx = np.asarray(selected_features_from_cv if selected_features_from_cv is not None else [], dtype=np.int32)
         idx = idx[(idx >= 0) & (idx < X_df.shape[1])]
         selected_features = [str(X_df.columns[i]) for i in idx]
+    forced_time_features = _resolve_lgbm_time_feature_selector_bypass_features(
+        X_df.columns,
+        cfg,
+        objective_mode=objective_mode,
+    )
+    selected_features = _append_lgbm_forced_selector_features(
+        selected_features,
+        X_df.columns,
+        forced_time_features,
+    )
     if not selected_features:
         tprint("LGBM full fit skipped: no selected features.")
         return None
+    if forced_time_features:
+        tprint(
+            "LGBM full fit time-feature bypass active: "
+            f"objective={objective_mode}, features={forced_time_features}."
+        )
     X_df, selected_features, regime_score_feature_diag = _append_lgbm_regime_score_features(
         X_df,
         selected_features,
@@ -15057,6 +17254,9 @@ def fit_lgbm_stability_full_model(
     model.metrics["feature_count"] = int(len(selected_features))
     model.metrics["selected_features_count"] = int(len(selected_features))
     model.metrics["selected_features_preview"] = list(selected_features[:50])
+    model.metrics["time_feature_selector_bypass_enabled"] = bool(forced_time_features)
+    model.metrics["time_feature_selector_bypass_features"] = list(forced_time_features)
+    model.metrics["time_feature_selector_bypass_feature_count"] = int(len(forced_time_features))
     model.metrics["lgbm_meta_leaf_lite_diagnostics_enabled"] = bool(model.meta_leaf_lite_diagnostics_enabled)
     model.metrics["lgbm_meta_leaf_support_diagnostics_enabled"] = bool(model.meta_leaf_support_diagnostics_enabled)
     model.metrics["lgbm_meta_leaf_target_diagnostics_enabled"] = bool(model.meta_leaf_target_diagnostics_enabled)
@@ -15343,6 +17543,9 @@ def train_lgbm_stability_pipeline(
     hpo_trials_override: int | None = None,
     hpo_patience_override: int | None = None,
     hpo_objective_mode: str = "train_base",
+    preset_feature_names: Optional[list[str]] = None,
+    preset_best_params: Optional[dict[str, Any]] = None,
+    preset_source: str | None = None,
     meta_feature_output_path: str | os.PathLike[str] | None = None,
     reference_artifact_dir: str | os.PathLike[str] | None = None,
     cfg: dict[str, Any] | None = None,
@@ -15363,6 +17566,10 @@ def train_lgbm_stability_pipeline(
         returns=returns,
         hard_labels=hard_labels,
         hpo_objective_mode=objective_mode,
+        preset_feature_names=preset_feature_names,
+        preset_best_params=preset_best_params,
+        preset_source=preset_source,
+        reference_artifact_dir=reference_artifact_dir,
         cfg=cfg,
         label_context=label_context,
         assessment_X=assessment_X,
@@ -15470,6 +17677,8 @@ def train_lgbm_stability_pipeline(
         hpo_trials_override=hpo_trials_override,
         hpo_patience_override=hpo_patience_override,
         hpo_objective_mode=objective_mode,
+        preset_best_params=preset_best_params,
+        preset_source=preset_source,
         meta_feature_output_path=meta_feature_output_path,
         reference_artifact_dir=reference_artifact_dir,
         cfg=cfg,

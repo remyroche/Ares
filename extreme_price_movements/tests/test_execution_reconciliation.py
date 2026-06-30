@@ -105,7 +105,7 @@ def test_decision_replay_flags_replay_accept_live_reject(tmp_path):
     ledger = pd.DataFrame(
         [
             {
-                "signal_bar_ts": pd.Timestamp("2026-01-01 00:00", tz="UTC"),
+                "signal_bar_ts": pd.Timestamp.now(tz="UTC").floor("min"),
                 "symbol": "BTC/USD:USD",
                 "side": "long",
                 "strategy_id": "long_a",
@@ -113,7 +113,7 @@ def test_decision_replay_flags_replay_accept_live_reject(tmp_path):
                 "initial_rank_threshold": 0.50,
                 "theoretical_entry_price": 100.0,
                 "portfolio_decision": "portfolio_rejected",
-                "portfolio_reject_reason": "global_auction_stale_signal_age:stale_signal_age_exceeded",
+                "portfolio_reject_reason": "global_auction_capacity:global_entry_cap_reached",
                 "was_traded": False,
             }
         ]
@@ -127,7 +127,10 @@ def test_decision_replay_flags_replay_accept_live_reject(tmp_path):
     assert summary["replay_accepted"] == 1
     assert summary["live_traded"] == 0
     assert rows["replay_live_gap_class"].iloc[0] == "replay_accept_live_reject"
-    assert rows["replay_live_gap_explanation"].iloc[0] == "live_stale_signal_or_data_gate"
+    assert (
+        rows["replay_live_gap_explanation"].iloc[0]
+        == "live_reject:global_auction_capacity:global_entry_cap_reached"
+    )
 
 
 def test_ledger_replay_field_coverage_flags_missing_traded_entry_fields():
@@ -238,9 +241,94 @@ def test_shadow_trade_reconciliation_reports_exit_parity_pass():
     rows, summary = build_shadow_trade_reconciliation(trade_log, tolerance_bps=1.0)
 
     assert len(rows) == 1
-    assert summary["closed_shadow_rows"] == 1
-    assert summary["exit_gap_mismatch_rows"] == 0
     assert summary["exit_execution_parity_status"] == "pass"
+
+
+def test_shadow_trade_reconciliation_reports_trigger_slippage_separately():
+    trade_log = pd.DataFrame(
+        [
+            {
+                "timestamp": pd.Timestamp("2026-01-01 00:00", tz="UTC"),
+                "symbol": "BIO/USD:USD",
+                "side": "long",
+                "strategy_id": "long_a",
+                "action": "exit",
+                "status": "closed",
+                "realized_exit_price": 90.0,
+                "shadow_exit_price": 90.0,
+                "shadow_exit_price_source": "observed_exchange_stop_fill",
+                "shadow_theoretical_exit_price": 100.0,
+                "shadow_entry_gap_bps": 0.0,
+                "stop_price": 100.0,
+                "shadow_latest_stop_price": 100.0,
+                "shadow_status": "shadow_exit_triggered",
+            }
+        ]
+    )
+
+    rows, summary = build_shadow_trade_reconciliation(trade_log, tolerance_bps=1.0)
+
+    assert len(rows) == 1
+    assert summary["exit_execution_parity_status"] == "pass"
+    assert rows.iloc[0]["live_vs_shadow_exit_gap_bps"] == pytest.approx(0.0)
+    assert rows.iloc[0]["shadow_trigger_vs_live_exit_gap_bps"] == pytest.approx(-1000.0)
+    assert rows.iloc[0]["shadow_exit_price_source"] == "observed_exchange_stop_fill"
+    assert rows.iloc[0]["shadow_theoretical_exit_price"] == pytest.approx(100.0)
+    assert summary["shadow_trigger_vs_live_exit_gap_bps"]["mean"] == pytest.approx(-1000.0)
+
+
+def test_shadow_trade_reconciliation_reports_current_run_scope():
+    trade_log = pd.DataFrame(
+        [
+            {
+                "timestamp": pd.Timestamp("2026-01-01 00:00", tz="UTC"),
+                "run_id": "old_run",
+                "trade_id": "old_run:pos1|exit",
+                "position_id": "old_run:pos1",
+                "symbol": "OLD/USD:USD",
+                "side": "long",
+                "strategy_id": "long_a",
+                "action": "exit",
+                "status": "closed",
+                "realized_exit_price": 90.0,
+                "shadow_exit_price": 100.0,
+                "shadow_entry_gap_bps": 0.0,
+                "stop_price": 99.0,
+                "shadow_latest_stop_price": 99.0,
+                "shadow_status": "shadow_exit_triggered",
+            },
+            {
+                "timestamp": pd.Timestamp("2026-01-01 01:00", tz="UTC"),
+                "run_id": "current_run",
+                "trade_id": "current_run:pos2|exit",
+                "position_id": "current_run:pos2",
+                "symbol": "CUR/USD:USD",
+                "side": "long",
+                "strategy_id": "long_a",
+                "action": "exit",
+                "status": "closed",
+                "realized_exit_price": 100.1,
+                "shadow_exit_price": 100.0,
+                "shadow_entry_gap_bps": 0.0,
+                "stop_price": 99.0,
+                "shadow_latest_stop_price": 99.0,
+                "shadow_status": "shadow_exit_triggered",
+            },
+        ]
+    )
+
+    _, summary = build_shadow_trade_reconciliation(
+        trade_log,
+        tolerance_bps=50.0,
+        run_id="current_run",
+    )
+
+    assert summary["exit_execution_parity_status"] == "fail"
+    assert summary["exit_gap_mismatch_rows"] == 1
+    assert summary["current_run"]["exit_execution_parity_status"] == "pass"
+    assert summary["current_run"]["exit_gap_mismatch_rows"] == 0
+    assert summary["current_run"]["closed_shadow_rows"] == 1
+    assert summary["closed_shadow_rows"] == 2
 
 
 def test_shadow_trade_reconciliation_reports_open_positions_pending():

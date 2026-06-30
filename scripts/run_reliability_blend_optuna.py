@@ -31,6 +31,12 @@ import pandas as pd
 from scipy.stats import spearmanr
 from sklearn.metrics import average_precision_score, log_loss, roc_auc_score
 
+from extreme_price_movements.performance_regimes.spectral_position import (
+    MarketSpectralPositionConfig,
+    fit_market_spectral_position_encoder,
+    market_spectral_position_feature_names,
+    transform_market_spectral_position,
+)
 from scripts import run_anchored_reliability_meta_correction as anchored
 from scripts import run_canonical_context_retrain_experiment as canon
 from scripts import run_contextual_meta_stack_trials as stack
@@ -50,6 +56,7 @@ from scripts.quantify_bad_regime_archetype_usefulness import _pick_realized_retu
 
 HEADS = anchored.HEADS
 optuna.logging.set_verbosity(optuna.logging.WARNING)
+SPECTRAL_POSITION_STATE_COLUMNS = market_spectral_position_feature_names("state_spectral_")
 
 BLEND_OLD_HARD = "B1_old_period_hard_qfail"
 BLEND_NEW_HARD = "B2_new_period_hard_qfail"
@@ -190,6 +197,29 @@ META_OUTPUT_FORBIDDEN_TOKENS = (
     "future",
     "pnl",
 )
+LIVE_CONTRACT_OOF_FEATURES = {
+    "oof_lgbm_prob",
+    "oof_meta_clf",
+    "oof_base_clf",
+    "oof_p_move",
+    "oof_rank_pct",
+    "oof_prob_uncertainty",
+    "oof_entropy",
+    "oof_rare_leaf_fraction",
+    "oof_leaf_count_p10",
+    "oof_leaf_count_min",
+    "oof_leaf_weight_p10",
+    "oof_leaf_depth_mean",
+    "oof_contrib_top1_abs_share",
+    "oof_contrib_top3_abs_share",
+    "oof_contrib_entropy",
+    "oof_contrib_balance",
+    "oof_num_material_contrib_features",
+    "oof_feature_drift_psi_core",
+    "oof_feature_drift_ks_core",
+    "oof_feature_drift_cov_shift",
+    "oof_regime_centroid_similarity_train",
+}
 
 
 def _json_default(value: Any) -> Any:
@@ -204,6 +234,316 @@ def _stable_seed_offset(*parts: Any) -> int:
 def _ensure_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _public_arg_dict(args: argparse.Namespace) -> dict[str, Any]:
+    return {str(k): v for k, v in vars(args).items() if not str(k).startswith("_")}
+
+
+def _feature_contract_hash(columns: list[str]) -> str:
+    payload = json.dumps([str(c) for c in columns], separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _component_label_name(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"period", "period_new", "new_period", "q_period", "q_period_soft"}:
+        return "new_period"
+    if text in {"qfail", "q_fail", "qfail_soft", "soft_qfail", "high_confidence_failure"}:
+        return "qfail_soft"
+    return text
+
+
+def _scope_name(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if text == "full_fit":
+        return "full_fit"
+    return "oof"
+
+
+def _feature_reuse_key(head: str, label: str, scope: str) -> tuple[str, str, str]:
+    return (str(head), _component_label_name(label), _scope_name(scope))
+
+
+def _empty_feature_reuse_cache() -> dict[tuple[str, str, str], dict[str, Any]]:
+    return {}
+
+
+def _add_feature_reuse_entry(
+    cache: dict[tuple[str, str, str], dict[str, Any]],
+    *,
+    head: str,
+    label: str,
+    scope: str,
+    features: list[str],
+    params: dict[str, Any] | None = None,
+    source: str,
+    priority: int,
+    allow_partial_match: bool = False,
+) -> None:
+    clean_features = [str(c) for c in dict.fromkeys(features or []) if str(c).strip()]
+    if not clean_features:
+        return
+    key = _feature_reuse_key(head, label, scope)
+    prior = cache.get(key)
+    if prior is not None and int(prior.get("priority", -1)) > int(priority):
+        return
+    cache[key] = {
+        "head": str(head),
+        "label": _component_label_name(label),
+        "scope": _scope_name(scope),
+        "features": clean_features,
+        "params": dict(params or {}),
+        "source": str(source),
+        "priority": int(priority),
+        "feature_count": int(len(clean_features)),
+        "feature_sha256": _feature_contract_hash(clean_features),
+        "has_params": bool(params),
+        "allow_partial_match": bool(allow_partial_match),
+    }
+
+
+def _load_feature_reuse_from_manifest(
+    cache: dict[tuple[str, str, str], dict[str, Any]],
+    path: Path,
+) -> None:
+    obj = json.loads(path.read_text())
+    features_by_head = obj.get("features", {}) if isinstance(obj, dict) else {}
+    if not isinstance(features_by_head, dict):
+        return
+    for head, feature_blocks in features_by_head.items():
+        if not isinstance(feature_blocks, dict):
+            continue
+        for name, features in feature_blocks.items():
+            if not isinstance(features, list):
+                continue
+            lower = str(name).lower()
+            if "period_timestamp" in lower:
+                label = "new_period"
+            elif "qfail_row" in lower:
+                label = "qfail_soft"
+            else:
+                continue
+            scope = "full_fit" if lower.startswith("full_fit") else "oof"
+            _add_feature_reuse_entry(
+                cache,
+                head=str(head),
+                label=label,
+                scope=scope,
+                features=[str(c) for c in features],
+                params=None,
+                source=f"{path}::{name}",
+                priority=10,
+                allow_partial_match=True,
+            )
+
+
+def _iter_component_artifacts(obj: Any) -> list[dict[str, Any]]:
+    artifacts: list[dict[str, Any]] = []
+    if not isinstance(obj, dict):
+        return artifacts
+    for head, head_bundle in dict(obj.get("heads", {}) or {}).items():
+        if not isinstance(head_bundle, dict):
+            continue
+        for artifact in list(head_bundle.get("models", []) or []):
+            if isinstance(artifact, dict):
+                artifact = dict(artifact)
+                artifact.setdefault("head", str(head))
+                artifacts.append(artifact)
+    return artifacts
+
+
+def _load_feature_reuse_from_component_bundle(
+    cache: dict[tuple[str, str, str], dict[str, Any]],
+    path: Path,
+) -> None:
+    obj = joblib.load(path)
+    for artifact in _iter_component_artifacts(obj):
+        head = str(artifact.get("head", ""))
+        label = _component_label_name(artifact.get("component") or artifact.get("target_label"))
+        if label not in {"new_period", "qfail_soft"}:
+            continue
+        scope = _scope_name(artifact.get("model_scope") or artifact.get("fold"))
+        selected = [str(c) for c in (artifact.get("selected_features") or []) if str(c).strip()]
+        inputs = [str(c) for c in (artifact.get("input_feature_columns") or []) if str(c).strip()]
+        params = dict(artifact.get("hpo_params") or {})
+        if selected:
+            _add_feature_reuse_entry(
+                cache,
+                head=head,
+                label=label,
+                scope=scope,
+                features=selected,
+                params=params,
+                source=f"{path}::{head}:{scope}:{label}:selected_features",
+                priority=50 if scope == "full_fit" else 40,
+            )
+        elif inputs:
+            _add_feature_reuse_entry(
+                cache,
+                head=head,
+                label=label,
+                scope=scope,
+                features=inputs,
+                params=params,
+                source=f"{path}::{head}:{scope}:{label}:input_feature_columns",
+                priority=20 if scope == "full_fit" else 15,
+            )
+
+
+def _load_native_aux_feature_reuse_cache(paths_text: str) -> dict[tuple[str, str, str], dict[str, Any]]:
+    cache = _empty_feature_reuse_cache()
+    for raw_path in str(paths_text or "").split(","):
+        if not raw_path.strip():
+            continue
+        path = Path(raw_path.strip())
+        if path.is_dir():
+            candidates = [
+                path / "reliability_blend_component_models" / "reliability_blend_native_component_models.joblib",
+                path / "reliability_blend_component_models" / "reliability_blend_native_component_model_manifest.json",
+                path / "reliability_blend_feature_target_manifest.json",
+                path / "reliability_blend_native_component_models.joblib",
+                path / "reliability_blend_native_component_model_manifest.json",
+            ]
+        else:
+            candidates = [path]
+        for candidate in candidates:
+            if not candidate.exists():
+                continue
+            name = candidate.name
+            try:
+                if name.endswith(".joblib"):
+                    _load_feature_reuse_from_component_bundle(cache, candidate)
+                elif name == "reliability_blend_feature_target_manifest.json":
+                    _load_feature_reuse_from_manifest(cache, candidate)
+            except Exception as exc:
+                print(f"[reliability_blend] WARNING: failed to load feature reuse source {candidate}: {exc}", flush=True)
+    return cache
+
+
+def _resolve_native_aux_feature_reuse(
+    args: argparse.Namespace,
+    *,
+    head: str | None,
+    label: str,
+    scope: str,
+    available_columns: list[str],
+) -> tuple[list[str] | None, dict[str, Any] | None, dict[str, Any]]:
+    cache = getattr(args, "_native_aux_feature_reuse_cache", None) or {}
+    if not bool(getattr(args, "aux_native_reuse_features", True)):
+        return None, None, {"enabled": False, "reason": "disabled"}
+    if not cache:
+        return None, None, {"enabled": True, "reason": "empty_cache"}
+    heads = [str(head)] if head else []
+    labels = [_component_label_name(label)]
+    scopes = [_scope_name(scope)]
+    if "full_fit" in scopes:
+        scopes.append("oof")
+    else:
+        scopes.append("full_fit")
+    available = set(map(str, available_columns))
+    best: dict[str, Any] | None = None
+    best_present: list[str] = []
+    for candidate_head in heads:
+        for candidate_scope in scopes:
+            entry = cache.get(_feature_reuse_key(candidate_head, labels[0], candidate_scope))
+            if not entry:
+                continue
+            present = [c for c in entry.get("features", []) if c in available]
+            min_features = int(getattr(args, "aux_native_reuse_min_features", 8))
+            min_fraction = float(getattr(args, "aux_native_reuse_min_fraction", 0.25))
+            if bool(entry.get("allow_partial_match", False)):
+                required = min_features
+            else:
+                required = max(min_features, int(math.ceil(min_fraction * max(1, len(entry.get("features", []))))))
+            if len(present) < required:
+                continue
+            score = (int(entry.get("priority", 0)), len(present), -len(entry.get("features", [])))
+            if best is None or score > best.get("_score", (-1, -1, -10**9)):
+                best = dict(entry)
+                best["_score"] = score
+                best_present = present
+    if best is None:
+        return None, None, {
+            "enabled": True,
+            "reason": "no_compatible_reuse_entry",
+            "head": str(head or ""),
+            "label": _component_label_name(label),
+            "scope": _scope_name(scope),
+            "cache_entries": int(len(cache)),
+        }
+    params = dict(best.get("params") or {})
+    return best_present, (params or None), {
+        "enabled": True,
+        "reason": "reused",
+        "head": str(head or ""),
+        "label": _component_label_name(label),
+        "scope": _scope_name(scope),
+        "source": str(best.get("source", "")),
+        "source_scope": str(best.get("scope", "")),
+        "source_feature_count": int(best.get("feature_count", 0) or 0),
+        "matched_feature_count": int(len(best_present)),
+        "matched_fraction": float(len(best_present) / max(int(best.get("feature_count", 0) or 0), 1)),
+        "feature_sha256": _feature_contract_hash(best_present),
+        "reused_hpo_params": bool(params),
+    }
+
+
+def _timestamp_bounds(values: pd.Series | np.ndarray | list[Any]) -> dict[str, Any]:
+    ts = pd.to_datetime(pd.Series(values), utc=True, errors="coerce")
+    if ts.notna().any():
+        return {
+            "min": ts.min().isoformat(),
+            "max": ts.max().isoformat(),
+            "rows": int(len(ts)),
+        }
+    return {"min": None, "max": None, "rows": int(len(ts))}
+
+
+def _component_model_summary(artifact: dict[str, Any] | None) -> dict[str, Any]:
+    if not artifact:
+        return {}
+    out: dict[str, Any] = {}
+    for key, value in artifact.items():
+        if key == "model":
+            out["model_class"] = type(value).__name__
+        elif key in {"input_feature_columns", "selected_features", "timestamp_feature_columns"}:
+            vals = [str(v) for v in (value or [])]
+            out[key] = vals[:100]
+            out[f"{key}_count"] = int(len(vals))
+            out[f"{key}_sha256"] = _feature_contract_hash(vals)
+        elif isinstance(value, (str, int, float, bool)) or value is None:
+            out[key] = value
+        elif isinstance(value, dict):
+            out[key] = _json_default(value)
+        elif isinstance(value, (list, tuple)):
+            out[key] = _json_default(list(value[:100]))
+            out[f"{key}_count"] = int(len(value))
+        else:
+            out[key] = type(value).__name__
+    return out
+
+
+def _score_reference_payload(values: np.ndarray) -> dict[str, Any]:
+    arr = np.asarray(values, dtype=np.float32)
+    arr = arr[np.isfinite(arr)]
+    arr.sort()
+    return {
+        "scores": arr.tolist(),
+        "n_rows": int(arr.size),
+        "sha256": hashlib.sha256(arr.tobytes()).hexdigest(),
+        "min": float(arr[0]) if arr.size else np.nan,
+        "max": float(arr[-1]) if arr.size else np.nan,
+    }
+
+
+def _score_reference_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "n_rows": int(payload.get("n_rows", 0) or 0),
+        "sha256": payload.get("sha256"),
+        "min": payload.get("min"),
+        "max": payload.get("max"),
+    }
 
 
 def _safe_auc(y: np.ndarray, score: np.ndarray) -> float:
@@ -790,16 +1130,32 @@ def _fit_timestamp_regressor(
     sample_weight: np.ndarray | None,
     seed: int,
     args: argparse.Namespace,
-) -> tuple[np.ndarray, Any | None, dict[str, Any]]:
+) -> tuple[np.ndarray, Any | None, dict[str, Any], dict[str, Any] | None]:
     mask = np.isfinite(y_train)
     ids = np.flatnonzero(mask)
     if len(ids) < int(args.period_soft_min_train_timestamps):
         fill = float(np.nanmean(y_train[ids])) if len(ids) else 0.5
-        return np.full(len(x_valid), fill, dtype=np.float32), None, {"reason": "insufficient_period_rows", "train_rows": int(len(ids))}
+        diag = {"reason": "insufficient_period_rows", "train_rows": int(len(ids))}
+        artifact = {
+            "backend": "constant",
+            "reason": diag["reason"],
+            "fill_value": float(fill),
+            "target_label": "new_period",
+            "seed": int(seed),
+        }
+        return np.full(len(x_valid), fill, dtype=np.float32), None, diag, artifact
     keep_cols = [c for c in x_train.columns if pd.to_numeric(x_train[c], errors="coerce").notna().mean() > 0.02]
     if not keep_cols:
         fill = float(np.nanmean(y_train[ids]))
-        return np.full(len(x_valid), fill, dtype=np.float32), None, {"reason": "empty_period_matrix", "train_rows": int(len(ids))}
+        diag = {"reason": "empty_period_matrix", "train_rows": int(len(ids))}
+        artifact = {
+            "backend": "constant",
+            "reason": diag["reason"],
+            "fill_value": float(fill),
+            "target_label": "new_period",
+            "seed": int(seed),
+        }
+        return np.full(len(x_valid), fill, dtype=np.float32), None, diag, artifact
     x_all = pd.concat([x_train, x_valid], axis=0, ignore_index=True, copy=False).replace([np.inf, -np.inf], np.nan)
     prepared = _prepare_model_matrix(x_all.loc[:, keep_cols])
     x_tr = prepared.iloc[: len(x_train)]
@@ -827,7 +1183,24 @@ def _fit_timestamp_regressor(
         warnings.simplefilter("ignore")
         reg.fit(x_tr.iloc[ids], y_train[ids].astype(np.float32), sample_weight=weights)
     pred = np.clip(reg.predict(x_va), 0.0, 1.0).astype(np.float32, copy=False)
-    return pred, reg, {"reason": "", "train_rows": int(len(ids)), "feature_count": int(len(keep_cols)), "min_child_samples": int(min_child)}
+    diag = {
+        "reason": "",
+        "train_rows": int(len(ids)),
+        "feature_count": int(len(keep_cols)),
+        "min_child_samples": int(min_child),
+    }
+    artifact = {
+        "backend": "lightweight_lgbm_fallback",
+        "model": reg,
+        "target_label": "new_period",
+        "input_feature_columns": [str(c) for c in keep_cols],
+        "feature_contract_sha256": _feature_contract_hash([str(c) for c in keep_cols]),
+        "matrix_preparation": "diagnose_meta_recent_failures._prepare_model_matrix on persisted input_feature_columns; LightGBM handles missing values",
+        "seed": int(seed),
+        "params": reg.get_params(),
+        "diagnostics": dict(diag),
+    }
+    return pred, reg, diag, artifact
 
 
 def _fit_native_aux_regressor(
@@ -841,8 +1214,10 @@ def _fit_native_aux_regressor(
     seed: int,
     min_train_rows: int,
     label: str,
+    head: str | None,
+    scope: str,
     args: argparse.Namespace,
-) -> tuple[np.ndarray | None, dict[str, Any]]:
+) -> tuple[np.ndarray | None, dict[str, Any], dict[str, Any] | None]:
     """Fit an auxiliary learner through the native train-meta LGBM pipeline.
 
     The production meta head is not retrained here. This wrapper only reuses the
@@ -862,7 +1237,7 @@ def _fit_native_aux_regressor(
             "native_backend": "lgbm_stability_pipeline",
             "native_reason": "insufficient_native_aux_rows",
             "native_train_rows": int(len(ids)),
-        }
+        }, None
     try:
         x_tr, x_va, keep_cols = fixed._prepare_train_pred_matrix(x_train, x_valid)
         if not keep_cols:
@@ -870,7 +1245,14 @@ def _fit_native_aux_regressor(
                 "native_backend": "lgbm_stability_pipeline",
                 "native_reason": "empty_native_aux_matrix",
                 "native_train_rows": int(len(ids)),
-            }
+            }, None
+        preset_features, preset_params, preset_diag = _resolve_native_aux_feature_reuse(
+            args,
+            head=head,
+            label=label,
+            scope=scope,
+            available_columns=[str(c) for c in x_tr.columns],
+        )
         from extreme_price_movements.lgbm_pipeline import train_lgbm_stability_pipeline
 
         ts = pd.to_datetime(timestamps_train, utc=True, errors="coerce").reset_index(drop=True)
@@ -890,6 +1272,9 @@ def _fit_native_aux_regressor(
             hpo_trials_override=int(args.aux_native_hpo_trials),
             hpo_patience_override=int(args.aux_native_hpo_patience),
             hpo_objective_mode="train_meta",
+            preset_feature_names=preset_features,
+            preset_best_params=preset_params,
+            preset_source=str(preset_diag.get("source", "")) if preset_diag else None,
             reference_artifact_dir=None,
             cfg={
                 "auxiliary_lgbm_label": str(label),
@@ -908,15 +1293,16 @@ def _fit_native_aux_regressor(
                 "native_reason": "native_pipeline_returned_none",
                 "native_train_rows": int(len(ids)),
                 "native_input_feature_count": int(len(keep_cols)),
-            }
+            }, None
         pred = np.clip(model.predict(x_va), 0.0, 1.0).astype(np.float32, copy=False)
         metrics = dict(getattr(model, "metrics", {}) or {})
+        selected = [str(c) for c in (getattr(model, "selected_features", []) or [])]
         diag = {
             "native_backend": "lgbm_stability_pipeline",
             "native_reason": "",
             "native_train_rows": int(len(ids)),
             "native_input_feature_count": int(len(keep_cols)),
-            "native_selected_feature_count": int(len(getattr(model, "selected_features", []) or [])),
+            "native_selected_feature_count": int(len(selected)),
             "native_hpo_available": bool(metrics.get("hpo_available", False)),
             "native_hpo_completed_trials": int(metrics.get("hpo_completed_trials", 0) or 0),
             "native_hpo_best_value": float(metrics.get("hpo_best_value", np.nan)),
@@ -924,14 +1310,31 @@ def _fit_native_aux_regressor(
             "native_auc_or_spearman": float(metrics.get("auc", np.nan)),
             "native_prune_rounds": int(metrics.get("feature_pruning_rounds_completed", 0) or 0),
             "native_aux_feature_selector": "lgbm_only",
+            **{f"native_reuse_{k}": v for k, v in dict(preset_diag or {}).items()},
         }
-        return pred, diag
+        artifact = {
+            "backend": "lgbm_stability_pipeline",
+            "model": model,
+            "target_label": str(label),
+            "input_feature_columns": [str(c) for c in keep_cols],
+            "selected_features": selected,
+            "feature_contract_sha256": _feature_contract_hash([str(c) for c in keep_cols]),
+            "selected_features_sha256": _feature_contract_hash(selected),
+            "matrix_preparation": "scripts.run_fixed_band_qfail_ablation._prepare_train_pred_matrix persisted input_feature_columns; model._frame selects selected_features",
+            "seed": int(seed),
+            "hpo_objective_mode": "train_meta",
+            "hpo_params": dict(getattr(model, "best_params", {}) or {}),
+            "native_reuse": dict(preset_diag or {}),
+            "metrics": metrics,
+            "diagnostics": dict(diag),
+        }
+        return pred, diag, artifact
     except Exception as exc:
         return None, {
             "native_backend": "lgbm_stability_pipeline",
             "native_reason": f"native_pipeline_failed: {type(exc).__name__}: {exc}",
             "native_train_rows": int(len(ids)),
-        }
+        }, None
 
 
 def _period_sample_weights(
@@ -985,7 +1388,7 @@ def _choose_period_soft_hpo(
                     ramp_power=float(args.period_soft_tail_ramp_power),
                     badness_base_weight=float(args.period_soft_badness_base_weight),
                 )
-                p, _model, _diag = _fit_timestamp_regressor(
+                p, _model, _diag, _artifact = _fit_timestamp_regressor(
                     z_train.iloc[tr].reset_index(drop=True),
                     target[tr],
                     z_train.iloc[va].reset_index(drop=True),
@@ -1034,8 +1437,10 @@ def _fit_soft_qfail_regressor(
     timestamps_train: pd.Series,
     assets_train: pd.Series | np.ndarray | None,
     seed: int,
+    head: str | None,
+    scope: str,
     args: argparse.Namespace,
-) -> tuple[np.ndarray, dict[str, Any]]:
+) -> tuple[np.ndarray, dict[str, Any], dict[str, Any] | None]:
     y = np.asarray(y_train, dtype=np.float64)
     p = np.clip(np.asarray(anchor_train, dtype=np.float64), 0.0, 1.0)
     r = np.asarray(rank_train, dtype=np.float64)
@@ -1044,15 +1449,31 @@ def _fit_soft_qfail_regressor(
     target[mask] = ((1.0 - y[mask]) * p[mask]).astype(np.float32)
     if int(mask.sum()) < int(args.qfail_soft_min_train_rows):
         fill = float(np.nanmean(target[mask])) if mask.any() else 0.0
-        return np.full(len(x_valid), fill, dtype=np.float32), {"reason": "insufficient_soft_qfail_rows", "train_rows": int(mask.sum())}
+        diag = {"reason": "insufficient_soft_qfail_rows", "train_rows": int(mask.sum())}
+        artifact = {
+            "backend": "constant",
+            "reason": diag["reason"],
+            "fill_value": float(fill),
+            "target_label": "qfail_soft",
+            "seed": int(seed),
+        }
+        return np.full(len(x_valid), fill, dtype=np.float32), diag, artifact
     x_tr, x_va, keep_cols = fixed._prepare_train_pred_matrix(x_train, x_valid)
     if not keep_cols:
         fill = float(np.nanmean(target[mask]))
-        return np.full(len(x_valid), fill, dtype=np.float32), {"reason": "empty_soft_qfail_matrix", "train_rows": int(mask.sum())}
+        diag = {"reason": "empty_soft_qfail_matrix", "train_rows": int(mask.sum())}
+        artifact = {
+            "backend": "constant",
+            "reason": diag["reason"],
+            "fill_value": float(fill),
+            "target_label": "qfail_soft",
+            "seed": int(seed),
+        }
+        return np.full(len(x_valid), fill, dtype=np.float32), diag, artifact
     weights = fixed._equal_timestamp_weights(timestamps_train, mask)
     weights *= (1.0 + 1.0 * ((r >= 0.70) & mask).astype(np.float32) + 0.5 * ((r >= 0.50) & (r < 0.70) & mask).astype(np.float32))
     if bool(args.aux_native_lgbm):
-        pred_native, native_diag = _fit_native_aux_regressor(
+        pred_native, native_diag, native_artifact = _fit_native_aux_regressor(
             x_train,
             target,
             x_valid,
@@ -1062,6 +1483,8 @@ def _fit_soft_qfail_regressor(
             seed=int(seed),
             min_train_rows=int(args.qfail_soft_min_train_rows),
             label="qfail_soft",
+            head=head,
+            scope=scope,
             args=args,
         )
         if pred_native is not None:
@@ -1069,7 +1492,11 @@ def _fit_soft_qfail_regressor(
             native_diag["train_rows"] = int(mask.sum())
             native_diag["target_mean"] = float(np.nanmean(target[mask]))
             native_diag["selection_objective"] = "native_train_meta_stability_hpo_on_soft_failure_magnitude"
-            return pred_native, native_diag
+            if native_artifact is not None:
+                native_artifact["selection_objective"] = native_diag["selection_objective"]
+                native_artifact["target_definition"] = "(1-y_bin) * anchor_score inside anchor top50 rank>=0.50"
+                native_artifact["diagnostics"] = dict(native_diag)
+            return pred_native, native_diag, native_artifact
     ids = np.flatnonzero(mask)
     min_child = max(50, int(math.ceil(float(args.qfail_soft_min_child_fraction) * len(ids))))
     reg = lgb.LGBMRegressor(
@@ -1093,13 +1520,26 @@ def _fit_soft_qfail_regressor(
         warnings.simplefilter("ignore")
         reg.fit(x_tr.iloc[ids], target[ids], sample_weight=np.where(weights[ids] > 0.0, weights[ids], 1.0))
     pred = np.clip(reg.predict(x_va), 0.0, 1.0).astype(np.float32, copy=False)
-    return pred, {
+    diag = {
         "reason": "",
         "train_rows": int(len(ids)),
         "feature_count": int(len(keep_cols)),
         "min_child_samples": int(min_child),
         "target_mean": float(np.nanmean(target[ids])),
     }
+    artifact = {
+        "backend": "lightweight_lgbm_fallback",
+        "model": reg,
+        "target_label": "qfail_soft",
+        "target_definition": "(1-y_bin) * anchor_score inside anchor top50 rank>=0.50",
+        "input_feature_columns": [str(c) for c in keep_cols],
+        "feature_contract_sha256": _feature_contract_hash([str(c) for c in keep_cols]),
+        "matrix_preparation": "scripts.run_fixed_band_qfail_ablation._prepare_train_pred_matrix persisted input_feature_columns; LightGBM handles missing values",
+        "seed": int(seed),
+        "params": reg.get_params(),
+        "diagnostics": dict(diag),
+    }
+    return pred, diag, artifact
 
 
 def _timestamp_anchor_state(timestamps: pd.Series, anchor_score: np.ndarray, rank0: np.ndarray) -> pd.DataFrame:
@@ -1150,6 +1590,103 @@ def _timestamp_anchor_state(timestamps: pd.Series, anchor_score: np.ndarray, ran
     state["anchor_ts_rank_q90_q10"] = state["anchor_ts_rank_q90"] - state["anchor_ts_rank_q10"]
     state = state.replace([np.inf, -np.inf], np.nan).fillna(0.0)
     return _downcast_numeric(state)
+
+
+_SPECTRAL_SOURCE_EXCLUDE_TOKENS = (
+    "target",
+    "label",
+    "future",
+    "realized",
+    "pnl",
+    "barrier",
+    "candidate",
+    "qfail",
+    "fail",
+    "period_bad",
+    "period_tail",
+)
+
+
+def _append_fold_spectral_position_features(
+    z_train_base: pd.DataFrame,
+    z_valid_base: pd.DataFrame,
+    *,
+    args: argparse.Namespace,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
+    if not bool(getattr(args, "period_spectral_features", True)):
+        return z_train_base, z_valid_base.reindex(columns=z_train_base.columns), {
+            "spectral_enabled": False,
+            "spectral_feature_count": 0,
+            "spectral_source_feature_count": 0,
+        }
+    train = z_train_base.copy()
+    valid = z_valid_base.copy()
+    train.index = pd.to_datetime(train.index, utc=True, errors="coerce")
+    valid.index = pd.to_datetime(valid.index, utc=True, errors="coerce")
+    source_cols: list[str] = []
+    for col in train.columns:
+        low = str(col).lower()
+        if any(tok in low for tok in _SPECTRAL_SOURCE_EXCLUDE_TOKENS):
+            continue
+        if str(col).startswith(("anchor_ts_", "q_period_", "q_fail_", "rank_", "score_")):
+            continue
+        vals = pd.to_numeric(train[col], errors="coerce").replace([np.inf, -np.inf], np.nan)
+        if float(vals.notna().mean()) < 0.05:
+            continue
+        var = float(vals.var(ddof=0)) if vals.notna().sum() > 1 else 0.0
+        if np.isfinite(var) and var > 1e-12:
+            source_cols.append(str(col))
+    if len(source_cols) < 2:
+        aligned_valid = valid.reindex(columns=train.columns)
+        return train, aligned_valid, {
+            "spectral_enabled": True,
+            "spectral_reason": "insufficient_source_columns",
+            "spectral_feature_count": 0,
+            "spectral_source_feature_count": int(len(source_cols)),
+        }
+    max_features = int(getattr(args, "period_spectral_max_features", 64))
+    source_cols = source_cols[: max(2, max_features)]
+
+    def _to_spectral_frame(frame: pd.DataFrame) -> pd.DataFrame:
+        out = frame.loc[:, [c for c in source_cols if c in frame.columns]].copy()
+        out.insert(0, "timestamp", pd.to_datetime(frame.index, utc=True, errors="coerce"))
+        return out.reset_index(drop=True)
+
+    cfg = MarketSpectralPositionConfig(
+        lookback=int(getattr(args, "period_spectral_lookback", 48)),
+        min_periods=int(getattr(args, "period_spectral_min_periods", 24)),
+        top_k=int(getattr(args, "period_spectral_top_k", 3)),
+        max_features=max_features,
+        shrinkage=float(getattr(args, "period_spectral_shrinkage", 0.10)),
+        prefix="state_spectral_",
+    )
+    encoder = fit_market_spectral_position_encoder(
+        _to_spectral_frame(train),
+        timestamp_col="timestamp",
+        feature_columns=source_cols,
+        config=cfg,
+    )
+    spectral_train = transform_market_spectral_position(_to_spectral_frame(train), encoder).set_index("timestamp")
+    spectral_valid = transform_market_spectral_position(_to_spectral_frame(valid), encoder).set_index("timestamp")
+    spectral_train = spectral_train.reindex(train.index).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    spectral_valid = spectral_valid.reindex(valid.index).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    train_out = _downcast_numeric(train.join(spectral_train, how="left").replace([np.inf, -np.inf], np.nan).fillna(0.0))
+    valid_out = _downcast_numeric(
+        valid.join(spectral_valid, how="left")
+        .reindex(columns=train_out.columns)
+        .replace([np.inf, -np.inf], np.nan)
+        .fillna(0.0)
+    )
+    spectral_cols = [c for c in train_out.columns if str(c).startswith("state_spectral_")]
+    return train_out, valid_out, {
+        "spectral_enabled": True,
+        "spectral_reason": "",
+        "spectral_feature_count": int(len(spectral_cols)),
+        "spectral_source_feature_count": int(len(encoder.get("feature_columns") or [])),
+        "spectral_lookback": int(cfg.lookback),
+        "spectral_min_periods": int(cfg.min_periods),
+        "spectral_output_columns": list(spectral_cols),
+    }
 
 
 def _lagged_by_symbol(
@@ -1364,6 +1901,7 @@ def _select_qfail_context_columns(structural: pd.DataFrame, *, max_context_cols:
         "leaf_path_rarity",
         "leaf_depth",
         "leaf_structural_uncertainty",
+        "state_spectral_",
     )
     candidates = [
         c
@@ -1410,6 +1948,268 @@ def _qfail_context_interactions(
     return _downcast_numeric(pd.DataFrame(out, index=extra.index))
 
 
+def _normalised_live_contract_oof_name(name: str) -> str:
+    raw = str(name)
+    for prefix in ("control__", "metaout__", "export__", "metaout__export_", "control__export__"):
+        if raw.startswith(prefix):
+            raw = raw[len(prefix) :]
+    if raw.startswith("export_oof_"):
+        raw = "oof_" + raw[len("export_oof_") :]
+    if raw.startswith("export__"):
+        raw = raw[len("export__") :]
+    if not raw.startswith("oof_") and raw in {"lgbm_prob", "meta_clf", "base_clf", "p_move", "rank_pct"}:
+        raw = f"oof_{raw}"
+    return raw
+
+
+def _is_live_contract_oof_feature(name: str) -> bool:
+    return _normalised_live_contract_oof_name(name) in LIVE_CONTRACT_OOF_FEATURES
+
+
+def _live_contract_component_source_features(
+    *,
+    raw: pd.DataFrame,
+    timestamps: pd.Series,
+    symbols: pd.Series | np.ndarray,
+    anchor_score: np.ndarray,
+    rank0: np.ndarray,
+    max_control_path_features: int,
+    max_meta_output_features: int,
+    max_meta_output_derived_features: int,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Build native component inputs that the live feature ledger can resolve."""
+    ts = pd.to_datetime(timestamps, utc=True, errors="coerce").reset_index(drop=True)
+    sym = pd.Series(symbols).reset_index(drop=True).astype(str)
+    deployable_path_cols = [
+        c
+        for c in raw.columns
+        if _is_live_contract_oof_feature(c)
+    ][: int(max_control_path_features)]
+    anchor_ctrl, path_cols = anchored._anchor_control_features(
+        raw,
+        ts,
+        anchor_score,
+        max_path_cols=int(max_control_path_features),
+        selected_cols=deployable_path_cols,
+    )
+    extra = _anchor_extra_features(ts, anchor_score, rank0)
+    drift = _anchor_meta_drift_features(ts, sym, anchor_score, rank0)
+    metaout_cols = [
+        c
+        for c in _select_meta_output_columns(raw, max_cols=max(int(max_meta_output_features) * 4, int(max_meta_output_features)))
+        if _is_live_contract_oof_feature(c)
+    ][: int(max_meta_output_features)]
+    metaout = _meta_output_extra_features(
+        raw,
+        ts,
+        sym,
+        selected_cols=metaout_cols,
+        max_derived_cols=int(max_meta_output_derived_features),
+    )
+    out = stack._combine_features(anchor_ctrl, extra, drift, metaout)
+    return out, {
+        "live_contract_path_control_cols": int(len(path_cols)),
+        "live_contract_metaout_cols": int(len(metaout_cols)),
+        "live_contract_feature_count": int(out.shape[1]),
+    }
+
+
+def _fit_full_fit_live_contract_components(
+    *,
+    head: str,
+    panel: pd.DataFrame,
+    raw: pd.DataFrame,
+    y: np.ndarray,
+    anchor_score: np.ndarray,
+    rank0: np.ndarray,
+    args: argparse.Namespace,
+    feature_manifest: dict[str, Any],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    ts = pd.to_datetime(panel["timestamp"], utc=True, errors="coerce").reset_index(drop=True)
+    symbols = panel["symbol"].reset_index(drop=True).astype(str) if "symbol" in panel.columns else pd.Series([""] * len(panel))
+    source, source_diag = _live_contract_component_source_features(
+        raw=raw.reset_index(drop=True),
+        timestamps=ts,
+        symbols=symbols,
+        anchor_score=anchor_score,
+        rank0=rank0,
+        max_control_path_features=int(args.max_control_path_features),
+        max_meta_output_features=int(args.qfail_meta_output_max_features),
+        max_meta_output_derived_features=int(args.qfail_meta_output_max_derived_features),
+    )
+    qfail_context_cols = _select_qfail_context_columns(
+        source,
+        max_context_cols=int(args.qfail_interaction_max_context_features),
+    )
+    extra_cols = [
+        c
+        for c in (
+            "anchor_rank0",
+            "anchor_rank_gap_to_70",
+            "anchor_is_top30",
+            "anchor_is_candidate_30_50",
+            "anchor_score_z_timestamp",
+            "anchor_uncertainty_p1mp",
+        )
+        if c in source.columns
+    ]
+    qfail_ix = _qfail_context_interactions(
+        source,
+        source.loc[:, extra_cols] if extra_cols else source,
+        context_cols=qfail_context_cols,
+    )
+    qfail_x = stack._combine_features(source, qfail_ix)
+    feature_manifest["features"].setdefault(head, {})["full_fit_live_contract_qfail_row"] = sorted(map(str, qfail_x.columns))
+
+    artifacts: list[dict[str, Any]] = []
+    diag: dict[str, Any] = {
+        **source_diag,
+        "live_contract_qfail_context_cols": int(len(qfail_context_cols)),
+        "live_contract_qfail_feature_count": int(qfail_x.shape[1]),
+    }
+
+    qfail_valid = qfail_x.iloc[: max(1, min(16, len(qfail_x)))].reset_index(drop=True)
+    soft_pred, soft_diag, soft_artifact = _fit_soft_qfail_regressor(
+        qfail_x.reset_index(drop=True),
+        y,
+        anchor_score,
+        rank0,
+        qfail_valid,
+        timestamps_train=ts,
+        assets_train=symbols,
+        seed=int(args.seed + _stable_seed_offset(head, "full_fit_qfail_soft")),
+        head=head,
+        scope="full_fit",
+        args=args,
+    )
+    diag.update({f"full_fit_qfail_soft_{k}": v for k, v in soft_diag.items()})
+    diag["full_fit_qfail_soft_preview_rows"] = int(len(soft_pred))
+    if soft_artifact is not None:
+        soft_artifact.update(
+            {
+                "head": head,
+                "fold": "full_fit",
+                "model_scope": "full_fit",
+                "component": "qfail_soft",
+                "live_feature_contract": "live_contract_safe_v1",
+                "train_timestamps": _timestamp_bounds(ts),
+                "target_definition": "(1-y_bin) * anchor_score inside anchor top50 rank>=0.50",
+                "diagnostics": dict(soft_diag),
+            }
+        )
+        artifacts.append(soft_artifact)
+
+    timestamp_base = stack._timestamp_feature_table(
+        source,
+        ts,
+        max_columns=int(args.max_timestamp_features),
+    )
+    timestamp_market, _timestamp_preview, spectral_diag = _append_fold_spectral_position_features(
+        timestamp_base,
+        timestamp_base.iloc[: max(1, min(16, len(timestamp_base)))],
+        args=args,
+    )
+    timestamp_source = timestamp_market.join(_timestamp_anchor_state(ts, anchor_score, rank0), how="left")
+    timestamp_source = _downcast_numeric(timestamp_source.replace([np.inf, -np.inf], np.nan).fillna(0.0))
+    diag["live_contract_period_spectral_feature_count"] = int(spectral_diag.get("spectral_feature_count", 0))
+    diag["live_contract_period_spectral_source_feature_count"] = int(
+        spectral_diag.get("spectral_source_feature_count", 0)
+    )
+    feature_manifest["features"].setdefault(head, {})["full_fit_live_contract_period_timestamp"] = sorted(
+        map(str, timestamp_source.columns)
+    )
+    target_raw = _soft_difficulty_target(
+        ts,
+        y,
+        anchor_score,
+        rank0,
+        rank_threshold=float(args.period_soft_rank_threshold),
+        horizon_hours=int(args.period_soft_horizon_hours),
+        halflife_hours=float(args.period_soft_halflife_hours),
+    ).reindex(timestamp_source.index)
+    target = pd.Series(
+        _percentile_from_train(
+            target_raw.to_numpy(dtype=np.float32),
+            target_raw.to_numpy(dtype=np.float32),
+            nonfinite_fill=None,
+        ),
+        index=target_raw.index,
+        dtype="float32",
+    )
+    share, boost, hpo_table = _choose_period_soft_hpo(
+        timestamp_source,
+        target,
+        seed=int(args.seed + _stable_seed_offset(head, "full_fit_period_hpo")),
+        args=args,
+    )
+    weights = _period_sample_weights(
+        target.to_numpy(dtype=np.float32),
+        bottom_share=float(share),
+        boost=float(boost),
+        ramp_share=float(args.period_soft_tail_ramp_share),
+        ramp_power=float(args.period_soft_tail_ramp_power),
+        badness_base_weight=float(args.period_soft_badness_base_weight),
+    )
+    period_target = target.to_numpy(dtype=np.float32)
+    period_transform = "soft_future_error_percentile"
+    if str(args.period_soft_selection_target).strip().lower() == "tail_severity":
+        period_target = _period_tail_labels(period_target)["period_tail_severity"].astype(np.float32)
+        period_transform = "tail_severity_from_soft_future_error"
+    period_valid = timestamp_source.iloc[: max(1, min(16, len(timestamp_source)))].reset_index(drop=True)
+    period_pred = None
+    period_diag: dict[str, Any]
+    period_artifact: dict[str, Any] | None = None
+    if bool(args.aux_native_lgbm):
+        period_pred, period_diag, period_artifact = _fit_native_aux_regressor(
+            timestamp_source.reset_index(drop=True),
+            period_target,
+            period_valid,
+            sample_weight=weights,
+            timestamps_train=pd.Series(timestamp_source.index),
+            assets_train=None,
+            seed=int(args.seed + _stable_seed_offset(head, "full_fit_new_period")),
+            min_train_rows=int(args.period_soft_min_train_timestamps),
+            label="new_period",
+            head=head,
+            scope="full_fit",
+            args=args,
+        )
+    if period_pred is None:
+        period_pred, _period_model, period_diag, period_artifact = _fit_timestamp_regressor(
+            timestamp_source.reset_index(drop=True),
+            period_target,
+            period_valid,
+            sample_weight=weights,
+            seed=int(args.seed + _stable_seed_offset(head, "full_fit_new_period_fallback")),
+            args=args,
+        )
+        period_diag["native_backend"] = "lightweight_lgbm_fallback"
+    period_diag["selection_objective"] = f"full_fit_live_contract_on_{period_transform}"
+    diag.update({f"full_fit_new_period_{k}": v for k, v in period_diag.items()})
+    diag["full_fit_new_period_preview_rows"] = int(len(period_pred) if period_pred is not None else 0)
+    diag["full_fit_period_hpo_rows"] = int(len(hpo_table))
+    diag["full_fit_period_selected_bottom_share"] = float(share)
+    diag["full_fit_period_selected_boost"] = float(boost)
+    if period_artifact is not None:
+        period_artifact.update(
+            {
+                "head": head,
+                "fold": "full_fit",
+                "model_scope": "full_fit",
+                "component": "new_period",
+                "live_feature_contract": "live_contract_safe_v1",
+                "train_timestamps": _timestamp_bounds(pd.Series(timestamp_source.index)),
+                "period_soft_selected_bottom_share": float(share),
+                "period_soft_selected_boost": float(boost),
+                "target_definition": feature_manifest["period_new_target"],
+                "target_transform": period_transform,
+                "diagnostics": dict(period_diag),
+            }
+        )
+        artifacts.append(period_artifact)
+    return artifacts, diag
+
+
 def _load_heads(args: argparse.Namespace) -> tuple[list[Any], Any, Any, list[str]]:
     meta_artifact_dir = Path(args.meta_artifact_dir)
     baseline_artifact_dir = Path(args.baseline_artifact_dir)
@@ -1432,13 +2232,31 @@ def run(args: argparse.Namespace) -> Path:
     heads, meta_models, base_bundle, symbol_columns = _load_heads(args)
     transform_cache = Path(args.transform_cache) if str(args.transform_cache).strip() else None
     blend_default_configs = _load_blend_default_configs(args.blend_default_config) if bool(args.enqueue_blend_defaults) else {}
+    native_aux_feature_reuse_cache = _load_native_aux_feature_reuse_cache(args.aux_native_reuse_feature_source)
+    setattr(args, "_native_aux_feature_reuse_cache", native_aux_feature_reuse_cache)
+    if bool(args.aux_native_reuse_features):
+        print(
+            "[reliability_blend] native aux feature reuse cache: "
+            f"entries={len(native_aux_feature_reuse_cache)}, source={args.aux_native_reuse_feature_source or 'none'}",
+            flush=True,
+        )
 
     all_score_frames: list[pd.DataFrame] = []
     period_hpo_rows: list[pd.DataFrame] = []
     component_diag_rows: list[dict[str, Any]] = []
+    component_model_bundle: dict[str, Any] = {
+        "schema_version": "reliability_blend_native_component_models_v1",
+        "status": "oof_component_models_and_full_fit_live_contract",
+        "native_component_scoring": "default_required_for_new_runs; deployable scoring uses full_fit live_contract_safe_v1 component models",
+        "distilled_student_status": "audit_fallback_only",
+        "full_fit_component_models_enabled": bool(getattr(args, "persist_full_fit_component_models", True)),
+        "full_fit_live_feature_contract": "live_contract_safe_v1",
+        "heads": {},
+    }
     feature_manifest: dict[str, Any] = {
         "period_old_target": "binary difficult period from rolling HR@30 surprise using anchored._period_increment_features",
         "period_new_target": "future 24h EWMA of timestamp mean abs(anchor_score - y_bin) for rows with anchor_rank>=0.5, percentile-normalized on each training fold",
+        "period_new_spectral_inputs": "causal state_spectral_* features from rolling prior market-feature covariance/projection geometry; fitted inside each outer fold and scored on held-out timestamps",
         "period_new_tail_labels": "fold-local labels period_bad_05/10/15 and period_tail_severity are derived from period_new_target for period-learner weighting and HPO diagnostics only",
         "period_new_hpo_objective": "0.45*APLift@5 + 0.25*APLift@10 + 0.15*Recall@10 + 0.10*NDCG@10 + 0.05*difficulty_decile_spread",
         "period_new_sample_weights": "asymmetric smooth ramp: base weight increases only for above-median difficulty; selected bad-share boost is applied gradually over the configured tail ramp",
@@ -1450,6 +2268,15 @@ def run(args: argparse.Namespace) -> Path:
         "qfail_hard_target": "1[y_bin=0] inside anchor top30 rank>=0.70",
         "qfail_soft_target": "(1-y_bin) * anchor_score inside anchor top50 rank>=0.50, no timestamp smoothing",
         "calibration": "disabled: reliability blend exports ranking scores only; no calibrated probability layer is fitted or consumed",
+        "native_component_model_persistence": "enabled by default; fitted qfail_soft/new_period models, feature contracts, HPO params, diagnostics, and blend coefficients are persisted for future live-equivalent scoring",
+        "native_aux_feature_reuse": {
+            "enabled": bool(args.aux_native_reuse_features),
+            "source": str(args.aux_native_reuse_feature_source or ""),
+            "cache_entries": int(len(native_aux_feature_reuse_cache)),
+            "min_features": int(args.aux_native_reuse_min_features),
+            "min_fraction": float(args.aux_native_reuse_min_fraction),
+            "contract": "reuse same-head qfail_soft/new_period selected features and HPO params when available; otherwise reuse prior same-head component feature contract; fall back to fresh LGBM selection when incompatible",
+        },
         "qfail_added_feature_blocks": [
             "anchor boundary/location features: rank gaps to 70/90, top10/top20/top30 flags, 30-50 replacement band flag",
             "timestamp-relative anchor features: score/rank z-score, distance to timestamp q10/q90, timestamp dispersion",
@@ -1470,7 +2297,7 @@ def run(args: argparse.Namespace) -> Path:
             "default_configs_loaded": {head: sorted(configs.keys()) for head, configs in blend_default_configs.items()},
         },
         "features": {},
-        "params": vars(args),
+        "params": _public_arg_dict(args),
     }
 
     for head in heads:
@@ -1519,6 +2346,18 @@ def run(args: argparse.Namespace) -> Path:
         fold_valid = np.zeros(len(panel), dtype=bool)
         path_cols: list[str] | None = None
         feature_manifest["features"].setdefault(head.head, {"period_timestamp": set(), "qfail_row": set()})
+        component_model_bundle["heads"].setdefault(
+            head.head,
+            {
+                "models": [],
+                "score_columns": {
+                    "anchor_score": "anchor_score",
+                    "period_new": "period_new_score",
+                    "qfail_soft": "qfail_soft_score",
+                    "qfail_hard": "qfail_hard_score",
+                },
+            },
+        )
 
         folds = canon._make_chrono_folds(panel["timestamp"], int(args.outer_folds), embargo_hours=int(args.embargo_hours))
         for fold in folds:
@@ -1615,12 +2454,23 @@ def run(args: argparse.Namespace) -> Path:
             z_source_valid = stack._combine_features(canonical_valid, current_x.iloc[va].reset_index(drop=True))
             anchor_state_train = _timestamp_anchor_state(ts_train, anchor_score[tr], rank0[tr])
             anchor_state_valid = _timestamp_anchor_state(ts_valid, anchor_score[va], rank0[va])
-            z_train = stack._timestamp_feature_table(z_source_train, ts_train, max_columns=int(args.max_timestamp_features)).join(anchor_state_train, how="left")
-            z_valid = (
-                stack._timestamp_feature_table(z_source_valid, ts_valid, max_columns=int(args.max_timestamp_features))
-                .join(anchor_state_valid, how="left")
-                .reindex(columns=z_train.columns)
+            z_train_base = stack._timestamp_feature_table(
+                z_source_train,
+                ts_train,
+                max_columns=int(args.max_timestamp_features),
             )
+            z_valid_base = stack._timestamp_feature_table(
+                z_source_valid,
+                ts_valid,
+                max_columns=int(args.max_timestamp_features),
+            )
+            z_train_market, z_valid_market, spectral_diag = _append_fold_spectral_position_features(
+                z_train_base,
+                z_valid_base,
+                args=args,
+            )
+            z_train = z_train_market.join(anchor_state_train, how="left")
+            z_valid = z_valid_market.join(anchor_state_valid, how="left").reindex(columns=z_train.columns)
             z_train = _downcast_numeric(z_train.replace([np.inf, -np.inf], np.nan).fillna(0.0))
             z_valid = _downcast_numeric(z_valid.replace([np.inf, -np.inf], np.nan).fillna(0.0))
             nuisance_train = anchored._timestamp_nuisance_table(ts_train, panel["symbol"].iloc[tr] if "symbol" in panel.columns else None)
@@ -1679,8 +2529,9 @@ def run(args: argparse.Namespace) -> Path:
                 period_selection_objective = "tail_severity_from_soft_future_error"
             period_pred = None
             new_period_diag: dict[str, Any]
+            new_period_artifact: dict[str, Any] | None = None
             if bool(args.aux_native_lgbm):
-                period_pred, new_period_diag = _fit_native_aux_regressor(
+                period_pred, new_period_diag, new_period_artifact = _fit_native_aux_regressor(
                     z_train.reset_index(drop=True),
                     period_selection_target,
                     z_valid.reset_index(drop=True),
@@ -1690,12 +2541,19 @@ def run(args: argparse.Namespace) -> Path:
                     seed=int(args.seed + 307 * fold.fold_id),
                     min_train_rows=int(args.period_soft_min_train_timestamps),
                     label="new_period",
+                    head=head.head,
+                    scope="oof",
                     args=args,
                 )
                 if period_pred is not None:
                     new_period_diag["selection_objective"] = f"native_train_meta_stability_hpo_on_{period_selection_objective}"
+                    if new_period_artifact is not None:
+                        new_period_artifact["selection_objective"] = new_period_diag["selection_objective"]
+                        new_period_artifact["target_definition"] = feature_manifest["period_new_target"]
+                        new_period_artifact["target_transform"] = period_selection_objective
+                        new_period_artifact["diagnostics"] = dict(new_period_diag)
             if period_pred is None:
-                period_pred, _period_model, new_period_diag = _fit_timestamp_regressor(
+                period_pred, _period_model, new_period_diag, new_period_artifact = _fit_timestamp_regressor(
                     z_train.reset_index(drop=True),
                     period_selection_target,
                     z_valid.reset_index(drop=True),
@@ -1705,6 +2563,24 @@ def run(args: argparse.Namespace) -> Path:
                 )
                 new_period_diag["native_backend"] = "lightweight_lgbm_fallback"
                 new_period_diag["selection_objective"] = f"lightweight_lgbm_on_{period_selection_objective}"
+                if new_period_artifact is not None:
+                    new_period_artifact["selection_objective"] = new_period_diag["selection_objective"]
+                    new_period_artifact["target_definition"] = feature_manifest["period_new_target"]
+                    new_period_artifact["target_transform"] = period_selection_objective
+                    new_period_artifact["diagnostics"] = dict(new_period_diag)
+            if bool(args.persist_component_models) and new_period_artifact is not None:
+                new_period_artifact.update(
+                    {
+                        "head": head.head,
+                        "fold": int(fold.fold_id),
+                        "component": "new_period",
+                        "train_timestamps": _timestamp_bounds(ts_train),
+                        "valid_timestamps": _timestamp_bounds(ts_valid),
+                        "period_soft_selected_bottom_share": float(share),
+                        "period_soft_selected_boost": float(boost),
+                    }
+                )
+                component_model_bundle["heads"][head.head]["models"].append(new_period_artifact)
             pred_series = pd.Series(period_pred, index=z_valid.index)
             new_period[va] = stack._align_timestamp_features(ts_valid, pd.DataFrame({"q_period_soft": pred_series}))["q_period_soft"].to_numpy(dtype=np.float32)
 
@@ -1724,7 +2600,7 @@ def run(args: argparse.Namespace) -> Path:
                 args=args,
             )
             qfail_hard[va] = fail_pred["full_valid"]
-            soft_pred, soft_diag = _fit_soft_qfail_regressor(
+            soft_pred, soft_diag, soft_artifact = _fit_soft_qfail_regressor(
                 full_train,
                 y[tr],
                 anchor_score[tr],
@@ -1733,9 +2609,22 @@ def run(args: argparse.Namespace) -> Path:
                 timestamps_train=ts_train,
                 assets_train=sym_train,
                 seed=int(args.seed + 503 * fold.fold_id),
+                head=head.head,
+                scope="oof",
                 args=args,
             )
             qfail_soft[va] = soft_pred
+            if bool(args.persist_component_models) and soft_artifact is not None:
+                soft_artifact.update(
+                    {
+                        "head": head.head,
+                        "fold": int(fold.fold_id),
+                        "component": "qfail_soft",
+                        "train_timestamps": _timestamp_bounds(ts_train),
+                        "valid_timestamps": _timestamp_bounds(ts_valid),
+                    }
+                )
+                component_model_bundle["heads"][head.head]["models"].append(soft_artifact)
 
             valid_period_target_raw = global_soft_target.reindex(pd.to_datetime(ts_valid, utc=True, errors="coerce").drop_duplicates()).dropna()
             component_diag_rows.append(
@@ -1747,6 +2636,8 @@ def run(args: argparse.Namespace) -> Path:
                     "period_soft_selected_bottom_share": share,
                     "period_soft_selected_boost": boost,
                     "period_timestamp_feature_count": int(z_train.shape[1]),
+                    "period_spectral_feature_count": int(spectral_diag.get("spectral_feature_count", 0)),
+                    "period_spectral_source_feature_count": int(spectral_diag.get("spectral_source_feature_count", 0)),
                     "qfail_meta_output_selected_cols": int(len(metaout_cols)),
                     "qfail_meta_output_feature_count": int(metaout_train.shape[1] + anchor_drift_train.shape[1]),
                     "qfail_interaction_context_cols": int(len(qfail_context_cols)),
@@ -1762,6 +2653,34 @@ def run(args: argparse.Namespace) -> Path:
                 }
             )
             print(f"[reliability_blend] head={head.head} fold={fold.fold_id}/{len(folds)} train={len(tr)} valid={len(va)}", flush=True)
+
+        if bool(args.persist_component_models) and bool(getattr(args, "persist_full_fit_component_models", True)):
+            full_fit_artifacts, full_fit_diag = _fit_full_fit_live_contract_components(
+                head=head.head,
+                panel=panel,
+                raw=raw,
+                y=y,
+                anchor_score=anchor_score,
+                rank0=rank0,
+                args=args,
+                feature_manifest=feature_manifest,
+            )
+            component_model_bundle["heads"][head.head]["models"].extend(full_fit_artifacts)
+            component_diag_rows.append(
+                {
+                    "head": head.head,
+                    "fold": "full_fit",
+                    "train_rows": int(len(panel)),
+                    "valid_rows": 0,
+                    "full_fit_model_count": int(len(full_fit_artifacts)),
+                    **full_fit_diag,
+                }
+            )
+            print(
+                "[reliability_blend] "
+                f"head={head.head} full_fit_live_contract_models={len(full_fit_artifacts)}",
+                flush=True,
+            )
 
         component_frame = pd.DataFrame(
             {
@@ -1798,6 +2717,14 @@ def run(args: argparse.Namespace) -> Path:
         new_period_rank = _rank01(eval_group["period_new_score"].to_numpy(dtype=np.float32))
         hard_qfail_rank = _rank01(eval_group["qfail_hard_score"].to_numpy(dtype=np.float32))
         soft_qfail_rank = _rank01(eval_group["qfail_soft_score"].to_numpy(dtype=np.float32))
+        if head in component_model_bundle.get("heads", {}):
+            component_model_bundle["heads"][head]["component_rank_references"] = {
+                "anchor_score": _score_reference_payload(eval_group["anchor_score"].to_numpy(dtype=np.float32)),
+                "period_old_score": _score_reference_payload(eval_group["period_old_score"].to_numpy(dtype=np.float32)),
+                "period_new_score": _score_reference_payload(eval_group["period_new_score"].to_numpy(dtype=np.float32)),
+                "qfail_hard_score": _score_reference_payload(eval_group["qfail_hard_score"].to_numpy(dtype=np.float32)),
+                "qfail_soft_score": _score_reference_payload(eval_group["qfail_soft_score"].to_numpy(dtype=np.float32)),
+            }
         full_target = _soft_difficulty_target(
             ts,
             y,
@@ -1872,6 +2799,18 @@ def run(args: argparse.Namespace) -> Path:
         for _head, group in soft_candidates.groupby("head", sort=True):
             default_soft_rows.append(group.sort_values(["objective", "global_tophr", "q25_tophr"], ascending=False).iloc[0])
     default_soft_summary = pd.DataFrame(default_soft_rows)
+    deployable_rows: list[pd.Series] = []
+    if not blend_summary.empty:
+        deployable_candidates = blend_summary[
+            blend_summary["variant"].isin((BLEND_NEW_SOFT, BLEND_NEW_HARD))
+        ].copy()
+        for _head, group in deployable_candidates.groupby("head", sort=True):
+            preferred = group.loc[group["variant"].astype(str).eq(BLEND_NEW_SOFT)]
+            chooser = preferred if not preferred.empty else group
+            deployable_rows.append(
+                chooser.sort_values(["objective", "global_tophr", "q25_tophr"], ascending=False).iloc[0]
+            )
+    deployable_default_summary = pd.DataFrame(deployable_rows)
     optuna_trials = pd.concat(trial_frames, axis=0, ignore_index=True) if trial_frames else pd.DataFrame()
     component_diag = pd.DataFrame(component_diag_rows)
     period_hpo = pd.concat(period_hpo_rows, axis=0, ignore_index=True) if period_hpo_rows else pd.DataFrame()
@@ -1880,10 +2819,66 @@ def run(args: argparse.Namespace) -> Path:
     scores.to_parquet(out_dir / "reliability_blend_component_scores.parquet", index=False)
     blend_summary.to_csv(out_dir / "reliability_blend_optuna_winners.csv", index=False)
     default_soft_summary.to_csv(out_dir / "reliability_blend_soft_qfail_default_by_head.csv", index=False)
+    deployable_default_summary.to_csv(out_dir / "reliability_blend_deployable_default_by_head.csv", index=False)
     optuna_trials.to_csv(out_dir / "reliability_blend_optuna_trials.csv", index=False)
     component_diag.to_csv(out_dir / "reliability_blend_component_diagnostics.csv", index=False)
     period_hpo.to_csv(out_dir / "reliability_blend_period_soft_hpo_trials.csv", index=False)
     period_eval.to_csv(out_dir / "reliability_blend_period_detection_metrics.csv", index=False)
+    component_model_manifest_path = None
+    component_model_bundle_path = None
+    if bool(args.persist_component_models):
+        component_model_dir = Path(args.component_model_dir) if str(args.component_model_dir).strip() else out_dir / "reliability_blend_component_models"
+        component_model_dir = _ensure_dir(component_model_dir)
+        component_model_bundle["blend_winners"] = blend_summary.to_dict("records")
+        component_model_bundle["default_soft_qfail_config_by_head"] = default_soft_summary.to_dict("records")
+        component_model_bundle["default_deployable_config_by_head"] = deployable_default_summary.to_dict("records")
+        component_model_bundle["optuna_trials_path"] = str(out_dir / "reliability_blend_optuna_trials.csv")
+        component_model_bundle["component_scores_path"] = str(out_dir / "reliability_blend_component_scores.parquet")
+        component_model_bundle["feature_target_manifest_path"] = str(out_dir / "reliability_blend_feature_target_manifest.json")
+        component_model_bundle["params"] = _public_arg_dict(args)
+        component_model_bundle_path = component_model_dir / "reliability_blend_native_component_models.joblib"
+        joblib.dump(component_model_bundle, component_model_bundle_path, compress=3)
+        manifest = {
+            "schema_version": component_model_bundle["schema_version"],
+            "status": component_model_bundle["status"],
+            "native_component_scoring": component_model_bundle["native_component_scoring"],
+            "distilled_student_status": component_model_bundle["distilled_student_status"],
+            "component_model_bundle_path": str(component_model_bundle_path),
+            "component_scores_path": str(out_dir / "reliability_blend_component_scores.parquet"),
+            "blend_winners_path": str(out_dir / "reliability_blend_optuna_winners.csv"),
+            "default_soft_qfail_config_path": str(out_dir / "reliability_blend_soft_qfail_default_by_head.csv"),
+            "default_deployable_config_path": str(out_dir / "reliability_blend_deployable_default_by_head.csv"),
+            "heads": {},
+        }
+        for model_head, bundle in component_model_bundle.get("heads", {}).items():
+            model_rows = [
+                _component_model_summary(artifact)
+                for artifact in list(bundle.get("models", []) or [])
+            ]
+            full_fit_rows = [
+                row
+                for row in model_rows
+                if str(row.get("fold", "")).lower() == "full_fit"
+                or str(row.get("model_scope", "")).lower() == "full_fit"
+            ]
+            manifest["heads"][str(model_head)] = {
+                "score_columns": dict(bundle.get("score_columns", {}) or {}),
+                "model_count": int(len(model_rows)),
+                "full_fit_model_count": int(len(full_fit_rows)),
+                "full_fit_components": sorted(
+                    str(row.get("component"))
+                    for row in full_fit_rows
+                    if row.get("component") is not None
+                ),
+                "models": model_rows,
+                "component_rank_references": {
+                    str(name): _score_reference_summary(payload)
+                    for name, payload in dict(bundle.get("component_rank_references", {}) or {}).items()
+                    if isinstance(payload, dict)
+                },
+            }
+        component_model_manifest_path = component_model_dir / "reliability_blend_native_component_model_manifest.json"
+        component_model_manifest_path.write_text(json.dumps(manifest, indent=2, default=_json_default))
     (out_dir / "reliability_blend_feature_target_manifest.json").write_text(json.dumps(feature_manifest, indent=2, default=_json_default))
     train_meta_wiring = {
         "status": "handoff_plan",
@@ -1897,6 +2892,7 @@ def run(args: argparse.Namespace) -> Path:
             "qfail_soft_score and timestamp/global ranks",
             "period_new_score and timestamp/global ranks",
             "best nonlinear blend score/rank per frozen variant",
+            "fold-fitted state_spectral_* market spectral-position context for difficult-period learning and optional meta joins",
             "fold-fitted canonical model-state context",
             "fold-fitted canonical market-state context",
             "leaf structural support/novelty summaries",
@@ -1906,6 +2902,12 @@ def run(args: argparse.Namespace) -> Path:
             "scope": "auxiliary learners only; the production train_meta model is not physically retrained with these features",
             "change": "reuse native train-meta LGBM stability-selection/HPO mechanics while changing auxiliary targets/objectives: period tail severity and soft q_fail magnitude",
             "leakage_guard": "all qfail/period/context features must be generated in the outer training fold and scored on held-out rows before feature selection",
+        },
+        "native_component_artifacts": {
+            "status": "persisted" if bool(args.persist_component_models) else "disabled",
+            "bundle": str(component_model_bundle_path) if component_model_bundle_path is not None else None,
+            "manifest": str(component_model_manifest_path) if component_model_manifest_path is not None else None,
+            "live_path": "native component models and blend coefficients are the default for future reliability scoring; distilled student is audit/fallback only",
         },
         "policy_objective": {
             "name": "top_tail_reliability_objective",
@@ -1931,6 +2933,12 @@ def run(args: argparse.Namespace) -> Path:
             "period_soft_tail_ramp_share": float(args.period_soft_tail_ramp_share),
             "period_soft_tail_ramp_power": float(args.period_soft_tail_ramp_power),
             "period_soft_selection_target": str(args.period_soft_selection_target),
+            "period_spectral_features": bool(args.period_spectral_features),
+            "period_spectral_lookback": int(args.period_spectral_lookback),
+            "period_spectral_min_periods": int(args.period_spectral_min_periods),
+            "period_spectral_top_k": int(args.period_spectral_top_k),
+            "period_spectral_max_features": int(args.period_spectral_max_features),
+            "period_spectral_shrinkage": float(args.period_spectral_shrinkage),
             "aux_native_lgbm": bool(args.aux_native_lgbm),
             "aux_native_hpo_trials": int(args.aux_native_hpo_trials),
             "aux_native_hpo_patience": int(args.aux_native_hpo_patience),
@@ -1977,7 +2985,7 @@ def run(args: argparse.Namespace) -> Path:
             "## Added Feature Blocks",
             "",
             "- soft q_fail: anchor boundary/rank-band features, timestamp-relative anchor score/rank features, meta-output drift/uncertainty/path diagnostics, and capped fold-selected support/context interactions.",
-            "- difficult period: timestamp anchor-state aggregates, uncertainty/entropy summaries, and existing canonical/current timestamp aggregates.",
+            "- difficult period: timestamp anchor-state aggregates, uncertainty/entropy summaries, existing canonical/current timestamp aggregates, and causal `state_spectral_*` market spectral-position features.",
             "",
             "## train_meta Wiring",
             "",
@@ -2047,6 +3055,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--period-soft-tail-ramp-power", type=float, default=1.5)
     parser.add_argument("--period-soft-badness-base-weight", type=float, default=1.0)
     parser.add_argument("--period-soft-selection-target", choices=["tail_severity", "soft_percentile"], default="tail_severity")
+    parser.add_argument("--period-spectral-features", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--period-spectral-lookback", type=int, default=48)
+    parser.add_argument("--period-spectral-min-periods", type=int, default=24)
+    parser.add_argument("--period-spectral-top-k", type=int, default=3)
+    parser.add_argument("--period-spectral-max-features", type=int, default=64)
+    parser.add_argument("--period-spectral-shrinkage", type=float, default=0.10)
     parser.add_argument("--qfail-soft-rank-threshold", type=float, default=0.50)
     parser.add_argument("--qfail-soft-min-train-rows", type=int, default=500)
     parser.add_argument("--qfail-soft-max-depth", type=int, default=3)
@@ -2061,8 +3075,37 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--aux-native-max-depth", type=int, default=5)
     parser.add_argument("--aux-native-min-child-pct-min", type=float, default=0.02)
     parser.add_argument("--aux-native-min-child-pct-max", type=float, default=0.07)
+    parser.add_argument("--aux-native-reuse-features", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--aux-native-reuse-feature-source",
+        default=(
+            "data_perp/reports/reliability_blend_optuna_fullfit_smoke_v2_20260624,"
+            "data_perp/reports/reliability_blend_optuna_20260623_native_lgbm_only_50k"
+        ),
+        help=(
+            "Comma-separated component bundle/report directories or feature-target manifests "
+            "used to reuse same-head native q_fail/new_period feature contracts and HPO params."
+        ),
+    )
+    parser.add_argument("--aux-native-reuse-min-features", type=int, default=8)
+    parser.add_argument("--aux-native-reuse-min-fraction", type=float, default=0.25)
     parser.add_argument("--blend-default-config", default=str(DEFAULT_BLEND_CONFIG_PATH))
     parser.add_argument("--enqueue-blend-defaults", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--persist-component-models", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--persist-full-fit-component-models",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "After OOF component scoring, fit deployable full_fit qfail/new_period "
+            "native components on live-contract-safe inputs. Disable only for cheap diagnostics."
+        ),
+    )
+    parser.add_argument(
+        "--component-model-dir",
+        default="",
+        help="Directory for fitted native q_fail/new_period component bundles. Defaults to output-dir/reliability_blend_component_models.",
+    )
     parser.add_argument("--optuna-trials", type=int, default=120)
     parser.add_argument("--min-week-rows", type=int, default=100)
     parser.add_argument("--seed", type=int, default=37)

@@ -28,6 +28,7 @@ from extreme_price_movements.simple_policy_optimiser import (
     _policy_prediction_source_uses_policy_oos,
     _policy_prediction_source_uses_precomputed_meta_oof,
     _strategy_id_matches_allowlist,
+    _sync_deployment_threshold_metrics_with_active_policy,
     _summarize_policy_prediction_sources,
     _validate_delayed_entry_execution_coverage,
     _validate_policy_rows_in_trained_universe,
@@ -89,6 +90,23 @@ def test_simple_rank_net_ev_prefilter_is_diagnostic_only_by_default():
     assert summary["rows_after"] == len(rows)
     assert summary["diagnostic_rows_after"] == 0
     assert "simple_grid_net_ev_bps" in out.columns
+
+
+def test_deployment_threshold_metadata_uses_active_sl_mult():
+    out = _sync_deployment_threshold_metrics_with_active_policy(
+        {
+            "deployment_rank_threshold": 0.7,
+            "simple_sl_mult": 1.5,
+            "simple_tp_mult": 2.0,
+        },
+        {"sl_mult": 1.2},
+    )
+
+    assert out["simple_sl_mult"] == pytest.approx(1.2)
+    assert out["active_policy_sl_mult"] == pytest.approx(1.2)
+    assert out["simple_sl_mult_source"] == "active_best_params.sl_mult"
+    assert out["diagnostic_simple_sl_mult"] == pytest.approx(1.5)
+    assert out["simple_tp_mult"] == pytest.approx(2.0)
 
 
 def _result(avg_pnl: float, *, holding: dict | None = None) -> dict:

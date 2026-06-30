@@ -1686,6 +1686,136 @@ def test_prediction_ledger_row_persists_selected_model_feature_snapshot():
     }
 
 
+def test_prediction_ledger_row_persists_dynamic_hr_surprise_diagnostics():
+    row = run_inference._prediction_ledger_row(
+        {
+            "symbol": "BTC/USD:USD",
+            "strategy_id": "short_asset_demo",
+            "raw_score": 0.74,
+            "rank_threshold": 0.70,
+            "effective_threshold": 0.736165,
+            "chain_results": {
+                "normalized_rank_score": 0.72,
+                "meta_head_hash": "head123",
+                "dynamic_hr_surprise_threshold": 0.736165,
+                "dynamic_hr_surprise_applied": True,
+                "dynamic_hr_surprise_reason": "applied",
+                "dynamic_hr_surprise_head": "short_asset",
+                "dynamic_hr_surprise_z_eff": -0.402695,
+                "dynamic_hr_surprise_guarded_y": 0.67,
+                "dynamic_hr_surprise_w_lower": 0.1083,
+                "dynamic_hr_surprise_w_raise": 0.1643,
+                "dynamic_hr_surprise_state_age_days": 2.96,
+            },
+        },
+        timestamp="2026-06-27T22:00:00Z",
+        side="short",
+        portfolio_decision="rejected",
+        portfolio_reject_reason="rank_below_dynamic_threshold",
+    )
+
+    assert row["final_threshold"] == pytest.approx(0.736165)
+    assert row["dynamic_hr_surprise_threshold"] == pytest.approx(0.736165)
+    assert row["dynamic_hr_surprise_applied"] is True
+    assert row["dynamic_hr_surprise_reason"] == "applied"
+    assert row["dynamic_hr_surprise_head"] == "short_asset"
+    assert row["dynamic_hr_surprise_z_eff"] == pytest.approx(-0.402695)
+    assert row["dynamic_hr_surprise_guarded_y"] == pytest.approx(0.67)
+    assert row["dynamic_hr_surprise_w_lower"] == pytest.approx(0.1083)
+    assert row["dynamic_hr_surprise_w_raise"] == pytest.approx(0.1643)
+    assert row["dynamic_hr_surprise_state_age_days"] == pytest.approx(2.96)
+
+
+def test_prediction_ledger_uses_threshold_rank_for_portfolio_gate():
+    row = run_inference._prediction_ledger_row(
+        {
+            "symbol": "IMX/USD:USD",
+            "strategy_id": "long_dist_demo",
+            "raw_score": 0.88,
+            "rank_threshold": 0.91,
+            "effective_threshold": 0.9244368837,
+            "threshold_rank_score": 0.9877,
+            "threshold_rank_score_source": "policy_rank_reference_percentile",
+            "normalized_rank_score": 0.6313,
+            "auction_rank_pct": 0.6313,
+            "chain_results": {
+                "meta_head_hash": "head123",
+                "policy_rank_pct": 0.9877,
+                "threshold_rank_score": 0.9877,
+                "threshold_rank_score_source": "policy_rank_reference_percentile",
+                "normalized_rank_score": 0.6313,
+                "auction_rank_pct": 0.6313,
+                "portfolio_gate": {
+                    "rank_score": 0.9877,
+                    "rank_score_source": "policy_rank_reference_percentile",
+                    "ordering_rank_score": 0.6313,
+                    "allocation_rank_score": 0.6313,
+                    "initial_threshold": 0.9244368837,
+                    "final_threshold": 0.9244368837,
+                },
+            },
+        },
+        timestamp="2026-06-28T06:00:00Z",
+        side="long",
+        portfolio_decision="accepted",
+    )
+
+    assert row["passed_rank_gate"] is True
+    assert row["final_gate_rank_score"] == pytest.approx(0.9877)
+    assert row["final_gate_rank_score_source"] == "policy_rank_reference_percentile"
+    assert row["portfolio_gate_rank_score"] == pytest.approx(0.9877)
+    assert row["portfolio_gate_rank_score_source"] == "policy_rank_reference_percentile"
+    assert row["portfolio_ordering_rank_score"] == pytest.approx(0.6313)
+    assert row["auction_rank_pct"] == pytest.approx(0.6313)
+
+
+def test_live_spread_ev_haircut_lowers_policy_rank_score():
+    class FakePolicyRankStore:
+        def lookup(self, *, strategy_id, calibrated_score, side):
+            del strategy_id, side
+            return type(
+                "Lookup",
+                (),
+                {
+                    "policy_rank_pct": float(calibrated_score),
+                    "n_rows": 100,
+                    "source": "unit_test_policy_rank_reference",
+                },
+            )()
+
+    out = run_inference._ev_adjusted_prediction_after_entry_friction(
+        calibrated_score=0.80,
+        strategy_id="short_asset_demo",
+        side="short",
+        calibration={
+            "short_asset_demo": [
+                {"mean_score": 0.60, "mean_net_return": 0.010, "count": 100},
+                {"mean_score": 0.80, "mean_net_return": 0.030, "count": 100},
+            ]
+        },
+        live_entry_friction_bps=120.0,
+        observed_spread_bps=120.0,
+        orderbook_slippage_bps=0.0,
+        adverse_signal_gap_bps=0.0,
+        spread_baseline_bps=20.0,
+        spread_baseline_source="unit_test_symbol_average_spread",
+        delay_slippage_baseline_bps=0.0,
+        policy_rank_reference_store=FakePolicyRankStore(),
+    )
+
+    assert out["ev_haircut_observed_spread_bps"] == pytest.approx(120.0)
+    assert out["ev_haircut_spread_baseline_bps"] == pytest.approx(20.0)
+    assert out["ev_haircut_spread_excess_bps"] == pytest.approx(50.0)
+    assert out["ev_adjusted_net_return_after_friction"] < out[
+        "ev_adjusted_net_return_before_friction"
+    ]
+    assert out["ev_adjusted_calibrated_score"] < 0.80
+    assert out["ev_adjusted_rank_score"] < 0.80
+    assert out["ev_adjusted_source"] == (
+        "strategy_ev_curve_inverse_after_excess_live_entry_friction"
+    )
+
+
 def test_model_feature_ledger_snapshot_uses_selected_base_and_meta_contracts_only():
     class DummyModel:
         def __init__(self, selected_features):

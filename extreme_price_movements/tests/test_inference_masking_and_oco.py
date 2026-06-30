@@ -13,6 +13,7 @@ from extreme_price_movements.inference.candidate_selector import (
 from extreme_price_movements.inference.feature_generator import (
     _synthesize_live_safe_feature_keys,
 )
+from extreme_price_movements.inference.portfolio_policy import PortfolioPolicyConfig
 import extreme_price_movements.inference.run_inference as run_inference
 from extreme_price_movements.inference.run_inference import (
     _evaluate_oco_policy,
@@ -40,6 +41,7 @@ from extreme_price_movements.inference.trade_executor import (
     _closed_trade_metrics,
     _create_reduce_stop_loss_order,
     _default_cross_margin_dust_quote_threshold,
+    _enrich_order_from_exchange,
     _kraken_futures_last_stop_from_executable_stop,
     _protective_stop_trigger_matches_policy,
     _stop_is_at_least_as_protective,
@@ -208,6 +210,27 @@ def test_pre_score_market_mask_accepts_fresh_liquid_candidate():
     assert snap["prescore_market_mask_reason"] == ""
     assert snap["prescore_oi_value"] == pytest.approx(1000000.0)
     assert snap["prescore_orderbook_capacity_quote_within_slippage"] >= 50.0
+
+
+def test_trade_result_merge_derives_entry_notional_quote_for_fee_audit():
+    features_log = {
+        "symbol": "PUMP/USD:USD",
+        "side": "long",
+        "position_size_after_liquidity": 7.0,
+    }
+    trade_result = {
+        "base_amount": 4900.0,
+        "realized_entry_price": 0.001483,
+        "entry_fee_estimate_quote": 0.0035,
+        "entry_fee_estimate_bps": 5.0,
+    }
+
+    merged = run_inference._merge_trade_result_entry_log_fields(
+        features_log, trade_result
+    )
+
+    assert merged["entry_notional_quote"] == pytest.approx(7.0)
+    assert merged["entry_fee_estimate_quote"] == pytest.approx(0.0035)
 
 
 def test_live_warmup_state_health_requires_panel_span_or_current_cache(tmp_path):
@@ -410,6 +433,40 @@ def test_ev_adjustment_haircuts_only_excess_execution_costs():
     )
 
 
+def test_ev_adjustment_includes_stop_exit_haircut():
+    calibration = {
+        "short_demo": [
+            {"mean_score": 0.70, "mean_net_return": 0.010, "count": 100},
+            {"mean_score": 0.80, "mean_net_return": 0.020, "count": 100},
+            {"mean_score": 0.90, "mean_net_return": 0.030, "count": 100},
+        ]
+    }
+
+    adjusted = _ev_adjusted_prediction_after_entry_friction(
+        calibrated_score=0.80,
+        strategy_id="short_demo",
+        side="short",
+        calibration=calibration,
+        live_entry_friction_bps=0.0,
+        observed_spread_bps=0.0,
+        orderbook_slippage_bps=0.0,
+        adverse_signal_gap_bps=0.0,
+        spread_baseline_bps=100.0,
+        delay_slippage_baseline_bps=40.0,
+        expected_stop_exit_friction_bps=90.0,
+        stop_exit_baseline_bps=15.0,
+        stop_exit_friction_source="test.stop_exit",
+        policy_rank_reference_store=None,
+    )
+
+    assert adjusted["ev_haircut_stop_exit_excess_bps"] == pytest.approx(75.0)
+    assert adjusted["ev_haircut_bps"] == pytest.approx(75.0)
+    assert adjusted["ev_haircut_stop_exit_source"] == "test.stop_exit"
+    assert adjusted["ev_adjusted_net_return_after_friction"] == pytest.approx(
+        adjusted["ev_adjusted_net_return_before_friction"] - 0.0075
+    )
+
+
 def test_live_ev_haircut_uses_symbol_average_spread_baseline(tmp_path, monkeypatch):
     baseline_path = (
         tmp_path
@@ -461,6 +518,38 @@ def test_live_ev_haircut_uses_symbol_average_spread_baseline(tmp_path, monkeypat
     assert adjusted["ev_haircut_spread_excess_bps"] == pytest.approx(5.0)
     assert adjusted["ev_haircut_bps"] == pytest.approx(5.0)
     assert adjusted["ev_haircut_spread_baseline_source"] == source
+
+
+def test_live_stop_exit_friction_estimate_uses_spread_and_orderbook():
+    class _Book:
+        spread_bps = 12.0
+        expected_fill_slippage_bps = 7.5
+
+    policy = PortfolioPolicyConfig(
+        ev_haircut_expected_stop_exit_bps=50.0,
+        ev_haircut_stop_exit_spread_multiplier=0.5,
+        ev_haircut_stop_exit_orderbook_multiplier=2.0,
+    )
+
+    estimate, source = run_inference._estimate_live_stop_exit_friction_bps(
+        portfolio_policy=policy,
+        ticker_snapshot={"spread_bps": 999.0},
+        book_snapshot=_Book(),
+    )
+
+    assert estimate == pytest.approx(50.0 + 6.0 + 15.0)
+    assert "base=50.0000" in source
+    assert "spread_component=6.0000" in source
+    assert "orderbook_component=15.0000" in source
+
+    estimate, source = run_inference._estimate_live_stop_exit_friction_bps(
+        portfolio_policy=policy,
+        ticker_snapshot={"spread_bps": 20.0},
+        book_snapshot=None,
+    )
+
+    assert estimate == pytest.approx(60.0)
+    assert "spread_component=10.0000" in source
 
 
 def test_simple_policy_stop_params_honor_policy_artifact_root_override(
@@ -868,6 +957,51 @@ def test_policy_optimiser_stop_decision_uses_max_favorable_giveback():
     assert decision.stop_price == pytest.approx(expected)
 
 
+def test_policy_optimiser_stop_decision_caps_trailing_activation():
+    base_state = {
+        "side": "long",
+        "entry_price": 100.0,
+        "peak_price": 103.5,
+        "mfe": 0.035,
+        "mae": 0.0,
+        "stop_price": 98.0,
+        "strategy_id": "long_mr",
+        "barrier_frac": 0.02,
+        "sl_mult": 1.0,
+    }
+    uncapped = compute_simple_policy_stop_decision(
+        side="long",
+        state=base_state,
+        latest_market_state={},
+        policy_params=_simple_policy_params(
+            barrier_frac=0.02,
+            sl_mult=1.0,
+            trailing_activation_mult=2.5,
+            trailing_activation_cap_pct=0.0,
+            capital_protect_mfe_mult=0.0,
+        ),
+    )
+    capped = compute_simple_policy_stop_decision(
+        side="long",
+        state=base_state,
+        latest_market_state={},
+        policy_params=_simple_policy_params(
+            barrier_frac=0.02,
+            sl_mult=1.0,
+            trailing_activation_mult=2.5,
+            trailing_activation_cap_pct=0.03,
+            capital_protect_mfe_mult=0.0,
+        ),
+    )
+
+    assert uncapped.reason != "trailing_profit"
+    assert uncapped.effective_trailing_activation_return == pytest.approx(0.05)
+    assert capped.reason == "trailing_profit"
+    assert capped.trailing_activation_cap_pct == pytest.approx(0.03)
+    assert capped.effective_trailing_activation_return == pytest.approx(0.03)
+    assert capped.stop_price > base_state["stop_price"]
+
+
 def test_policy_optimiser_stop_decision_applies_exit_pressure_tightening():
     params = _simple_policy_params(
         barrier_frac=0.02,
@@ -1040,6 +1174,28 @@ def test_live_candidate_selection_preserves_authoritative_pre_model_lgbm_masks(
     assert long_cands == ["A"]
     assert short_cands == []
     assert strategy_masks["long_test"] == ["A"]
+
+
+def test_active_strategy_gap_guard_contract_uses_only_nonempty_masks():
+    masks = {
+        "long_active": ["A"],
+        "short_inactive": [],
+        "long_no_symbols": [""],
+    }
+    contracts = {
+        "long_active": ["ret24h", "base_probability_long_active"],
+        "short_inactive": ["ret1h", "z_r_12"],
+    }
+
+    active = run_inference._active_strategy_required_feature_keys_from_masks(
+        masks,
+        contracts,
+    )
+
+    assert "ret24h" in active
+    assert "base_probability_long_active" in active
+    assert "ret1h" not in active
+    assert "z_r_12" not in active
 
 
 def test_select_candidates_falls_back_when_optimized_masks_are_silent():
@@ -1472,6 +1628,7 @@ def test_exchange_error_classifier_covers_binance_failure_modes():
         "network timeout while sending order": "network_timeout",
         "cancel rejected by exchange": "cancel_failed",
         "Duplicate clientOrderId was sent": "duplicate_client_order_id",
+        "krakenfutures: createOrder failed due to wouldNotReducePosition": "position_already_reduced",
     }
     for message, expected in cases.items():
         assert _classify_exchange_error(RuntimeError(message)) == expected
@@ -1705,6 +1862,431 @@ def test_live_policy_closes_when_executable_side_breaches_stop(monkeypatch):
     assert "PNUT/USD:USD" not in executor.get_active_positions()
 
 
+def test_kraken_software_stop_breach_cancels_hosted_stop_before_market_close():
+    class _KrakenCloseFirstExchange(_FilterAwareExchange):
+        id = "krakenfutures"
+
+        def __init__(self):
+            super().__init__()
+            self.events = []
+
+        def create_order(self, **kwargs):
+            self.events.append(("create_order", kwargs["type"], kwargs["side"]))
+            order = super().create_order(**kwargs)
+            order["average"] = 0.0008637
+            order["filled"] = kwargs["amount"]
+            return order
+
+        def cancel_order(self, order_id, symbol, params=None):
+            self.events.append(("cancel_order", order_id, symbol))
+            return super().cancel_order(order_id, symbol, params)
+
+    exchange = _KrakenCloseFirstExchange()
+    executor = OCOExecutor(
+        exchange,
+        {},
+        config={
+            "execution_account": "perps",
+            "market_mode": "perps",
+        },
+    )
+    state = {
+        "side": "short",
+        "entry_price": 0.0008211,
+        "size": 8900.0,
+        "bucket_key": "short_asset",
+        "stop_price": 0.0008445,
+        "final_placed_stop": 0.0008445,
+        "requested_policy_stop": 0.0008445,
+        "stop_reason": "original_stop_loss",
+        "stop_order_id": "stop-order",
+        "mfe": 0.0,
+        "mae": 0.0,
+    }
+    executor.active_positions["TURBO/USD:USD"] = state
+
+    executor._close_position(
+        "TURBO/USD:USD",
+        state,
+        0.0008562,
+        "software_executable_stop_breach:original_stop_loss",
+    )
+
+    assert exchange.events[0][0] == "cancel_order"
+    assert exchange.events[1] == ("create_order", "market", "buy")
+    assert "TURBO/USD:USD" not in executor.active_positions
+    assert state["trade_recap_events"][0]["event"] == "protective_stops_cancelled_before_close"
+    assert state["last_close_metrics"]["exit_price"] == pytest.approx(0.0008637)
+
+
+def test_lightweight_stop_sentinel_closes_short_on_executable_ask():
+    class _KrakenSentinelExchange(_FilterAwareExchange):
+        id = "krakenfutures"
+
+        def __init__(self):
+            super().__init__()
+            self.events = []
+
+        def fetch_ticker(self, symbol):
+            return {
+                "bid": 0.0008320,
+                "ask": 0.0008500,
+                "last": 0.0008310,
+                "timestamp": 1_780_000_000_000,
+            }
+
+        def fetch_order_book(self, symbol):
+            return {
+                "bids": [[0.0008315, 10_000.0]],
+                "asks": [[0.0008562, 10_000.0]],
+                "timestamp": 1_780_000_000_100,
+            }
+
+        def create_order(self, **kwargs):
+            self.events.append(("create_order", kwargs["type"], kwargs["side"]))
+            order = super().create_order(**kwargs)
+            order["average"] = kwargs.get("price")
+            order["filled"] = kwargs["amount"]
+            return order
+
+        def cancel_order(self, order_id, symbol, params=None):
+            self.events.append(("cancel_order", order_id, symbol))
+            return super().cancel_order(order_id, symbol, params)
+
+    exchange = _KrakenSentinelExchange()
+    executor = OCOExecutor(
+        exchange,
+        {},
+        config={"execution_account": "perps", "market_mode": "perps"},
+    )
+    state = {
+        "side": "short",
+        "entry_price": 0.0008211,
+        "size": 8900.0,
+        "bucket_key": "short_asset",
+        "stop_price": 0.0008445,
+        "final_placed_stop": 0.0008445,
+        "requested_policy_stop": 0.0008445,
+        "stop_reason": "original_stop_loss",
+        "stop_order_id": "stop-order",
+        "mfe": 0.0,
+        "mae": 0.0,
+    }
+    executor.active_positions["TURBO/USD:USD"] = state
+
+    statuses = executor.monitor_executable_stops_once()
+
+    status = statuses["TURBO/USD:USD"]
+    assert status["status"] == "closed"
+    assert status["reason"] == "software_executable_stop_breach:original_stop_loss"
+    assert status["executable_price"] == pytest.approx(0.0008562)
+    assert status["executable_price_source"] == "orderbook_best_ask"
+    assert status["stop_breach_overshoot_bps"] > 0.0
+    assert exchange.events[0][0] == "cancel_order"
+    assert exchange.events[1] == ("create_order", "market", "buy")
+    assert "TURBO/USD:USD" not in executor.active_positions
+
+    closed_trade = status["closed_trade"]
+    assert closed_trade["exit_price"] == pytest.approx(0.0008562)
+    assert closed_trade["sentinel_executable_price"] == pytest.approx(0.0008562)
+    assert closed_trade["sentinel_executable_price_source"] == "orderbook_best_ask"
+    assert closed_trade["sentinel_stop_breach_overshoot_bps"] > 0.0
+    assert closed_trade["ticker_bid"] == pytest.approx(0.0008320)
+    assert "lightweight_stop_sentinel_sample" in closed_trade["trade_recap"]
+    assert "lightweight_stop_sentinel_breach" in closed_trade["trade_recap"]
+
+
+def test_lightweight_stop_sentinel_pretriggers_short_near_executable_ask():
+    class _KrakenSentinelExchange(_FilterAwareExchange):
+        id = "krakenfutures"
+
+        def __init__(self):
+            super().__init__()
+            self.events = []
+
+        def fetch_ticker(self, symbol):
+            return {
+                "bid": 99.90,
+                "ask": 99.995,
+                "last": 99.80,
+                "timestamp": 1_780_000_000_000,
+            }
+
+        def fetch_order_book(self, symbol):
+            return {
+                "bids": [[99.90, 10_000.0]],
+                "asks": [[99.995, 10_000.0]],
+                "timestamp": 1_780_000_000_100,
+            }
+
+        def create_order(self, **kwargs):
+            self.events.append(("create_order", kwargs["type"], kwargs["side"]))
+            order = super().create_order(**kwargs)
+            order["average"] = kwargs.get("price")
+            order["filled"] = kwargs["amount"]
+            return order
+
+        def cancel_order(self, order_id, symbol, params=None):
+            self.events.append(("cancel_order", order_id, symbol))
+            return super().cancel_order(order_id, symbol, params)
+
+    exchange = _KrakenSentinelExchange()
+    executor = OCOExecutor(
+        exchange,
+        {},
+        config={
+            "execution_account": "perps",
+            "market_mode": "perps",
+            "lightweight_stop_sentinel_pretrigger_buffer_bps": 1.0,
+        },
+    )
+    state = {
+        "side": "short",
+        "entry_price": 98.0,
+        "size": 1.0,
+        "bucket_key": "short_asset",
+        "stop_price": 100.0,
+        "final_placed_stop": 100.0,
+        "requested_policy_stop": 100.0,
+        "stop_reason": "original_stop_loss",
+        "stop_order_id": "stop-order",
+        "mfe": 0.0,
+        "mae": 0.0,
+    }
+    executor.active_positions["ZEC/USD:USD"] = state
+
+    statuses = executor.monitor_executable_stops_once()
+
+    status = statuses["ZEC/USD:USD"]
+    assert status["status"] == "closed"
+    assert status["reason"] == "software_executable_stop_breach_pretrigger:original_stop_loss"
+    assert status["pretriggered"] is True
+    assert status["pretrigger_buffer_bps"] == pytest.approx(1.0)
+    assert status["stop_distance_bps"] == pytest.approx(0.5000250012)
+    assert status["stop_breach_overshoot_bps"] == pytest.approx(0.0)
+    assert exchange.events[0][0] == "cancel_order"
+    assert exchange.events[1] == ("create_order", "market", "buy")
+    assert "ZEC/USD:USD" not in executor.active_positions
+
+    closed_trade = status["closed_trade"]
+    assert closed_trade["sentinel_pretriggered"] is True
+    assert closed_trade["sentinel_pretrigger_buffer_bps"] == pytest.approx(1.0)
+    assert closed_trade["sentinel_stop_distance_bps"] == pytest.approx(0.5000250012)
+    assert closed_trade["sentinel_stop_breach_overshoot_bps"] == pytest.approx(0.0)
+    assert "lightweight_stop_sentinel_sample" in closed_trade["trade_recap"]
+    assert "lightweight_stop_sentinel_pretrigger" in closed_trade["trade_recap"]
+
+
+def test_lightweight_stop_sentinel_uses_wider_profit_lock_pretrigger():
+    class _KrakenSentinelExchange(_FilterAwareExchange):
+        id = "krakenfutures"
+
+        def __init__(self):
+            super().__init__()
+            self.events = []
+
+        def fetch_ticker(self, symbol):
+            return {
+                "bid": 99.70,
+                "ask": 99.80,
+                "last": 99.70,
+                "timestamp": 1_780_000_000_000,
+            }
+
+        def fetch_order_book(self, symbol):
+            return {
+                "bids": [[99.70, 10_000.0]],
+                "asks": [[99.80, 10_000.0]],
+                "timestamp": 1_780_000_000_100,
+            }
+
+        def create_order(self, **kwargs):
+            self.events.append(("create_order", kwargs["type"], kwargs["side"]))
+            order = super().create_order(**kwargs)
+            order["average"] = kwargs.get("price")
+            order["filled"] = kwargs["amount"]
+            return order
+
+        def cancel_order(self, order_id, symbol, params=None):
+            self.events.append(("cancel_order", order_id, symbol))
+            return super().cancel_order(order_id, symbol, params)
+
+    exchange = _KrakenSentinelExchange()
+    executor = OCOExecutor(
+        exchange,
+        {},
+        config={
+            "execution_account": "perps",
+            "market_mode": "perps",
+            "lightweight_stop_sentinel_pretrigger_buffer_bps": 1.0,
+            "lightweight_stop_sentinel_profit_lock_pretrigger_buffer_bps": 25.0,
+        },
+    )
+    state = {
+        "side": "short",
+        "entry_price": 100.50,
+        "size": 1.0,
+        "bucket_key": "short_asset",
+        "stop_price": 100.0,
+        "final_placed_stop": 100.0,
+        "requested_policy_stop": 100.0,
+        "stop_reason": "trailing_profit",
+        "stop_order_id": "stop-order",
+        "mfe": 0.01,
+        "mae": 0.0,
+    }
+    executor.active_positions["AAVE/USD:USD"] = state
+
+    statuses = executor.monitor_executable_stops_once()
+
+    status = statuses["AAVE/USD:USD"]
+    assert status["status"] == "closed"
+    assert status["reason"] == "software_executable_stop_breach_pretrigger:trailing_profit"
+    assert status["pretriggered"] is True
+    assert status["pretrigger_buffer_bps"] == pytest.approx(25.0)
+    assert status["stop_distance_bps"] == pytest.approx(20.0400801603)
+    assert exchange.events[0][0] == "cancel_order"
+    assert exchange.events[1] == ("create_order", "market", "buy")
+
+    closed_trade = status["closed_trade"]
+    assert closed_trade["sentinel_pretriggered"] is True
+    assert closed_trade["sentinel_pretrigger_buffer_bps"] == pytest.approx(25.0)
+    assert closed_trade["sentinel_executable_price_source"] == "orderbook_best_ask"
+
+
+def test_lightweight_stop_sentinel_does_not_close_on_last_only_breach():
+    class _KrakenSentinelExchange(_FilterAwareExchange):
+        id = "krakenfutures"
+
+        def fetch_ticker(self, symbol):
+            return {
+                "bid": 0.0008500,
+                "ask": 0.0008700,
+                "last": 0.0008300,
+                "timestamp": 1_780_000_000_000,
+            }
+
+        def fetch_order_book(self, symbol):
+            return {
+                "bids": [[0.0008500, 10_000.0]],
+                "asks": [[0.0008700, 10_000.0]],
+                "timestamp": 1_780_000_000_100,
+            }
+
+    exchange = _KrakenSentinelExchange()
+    executor = OCOExecutor(
+        exchange,
+        {},
+        config={"execution_account": "perps", "market_mode": "perps"},
+    )
+    state = {
+        "side": "long",
+        "entry_price": 0.0008600,
+        "size": 8900.0,
+        "bucket_key": "long_asset",
+        "stop_price": 0.0008445,
+        "stop_reason": "original_stop_loss",
+        "stop_order_id": "stop-order",
+        "mfe": 0.0,
+        "mae": 0.0,
+    }
+    executor.active_positions["TURBO/USD:USD"] = state
+
+    statuses = executor.monitor_executable_stops_once()
+
+    status = statuses["TURBO/USD:USD"]
+    assert status["status"] == "open"
+    assert status["executable_price"] == pytest.approx(0.0008500)
+    assert status["executable_price_source"] == "orderbook_best_bid"
+    assert status["stop_distance_bps"] > 0.0
+    assert "TURBO/USD:USD" in executor.active_positions
+
+
+def test_monitor_active_position_runs_lightweight_sentinel_before_5m_policy(monkeypatch):
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.run_inference.hf_data_loader.fetch_specific_period",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("5m OHLCV should not be fetched after sentinel close")
+        ),
+    )
+
+    class _KrakenSentinelExchange(_FilterAwareExchange):
+        id = "krakenfutures"
+
+        def fetch_ticker(self, symbol):
+            return {
+                "bid": 0.0008320,
+                "ask": 0.0008500,
+                "last": 0.0008310,
+                "timestamp": 1_780_000_000_000,
+            }
+
+        def fetch_order_book(self, symbol):
+            return {
+                "bids": [[0.0008315, 10_000.0]],
+                "asks": [[0.0008562, 10_000.0]],
+                "timestamp": 1_780_000_000_100,
+            }
+
+        def fetch_order(self, order_id, symbol, params=None):
+            return {
+                "id": order_id,
+                "status": "open",
+                "side": "buy",
+                "type": "stop_loss",
+                "info": {"triggerSignal": "last", "stopPrice": "0.0008445"},
+            }
+
+        def create_order(self, **kwargs):
+            order = super().create_order(**kwargs)
+            order["average"] = kwargs.get("price")
+            order["filled"] = kwargs["amount"]
+            return order
+
+    exchange = _KrakenSentinelExchange()
+    executor = TradeExecutor(
+        mode="live-test",
+        exchange=exchange,
+        bucket_params={},
+        config={
+            "execution_account": "perps",
+            "market_mode": "perps",
+            "lightweight_stop_sentinel_enabled": True,
+        },
+    )
+    state = {
+        "side": "short",
+        "entry_price": 0.0008211,
+        "size": 8900.0,
+        "bucket_key": "short_asset",
+        "strategy_id": "short_asset",
+        "stop_price": 0.0008445,
+        "final_placed_stop": 0.0008445,
+        "requested_policy_stop": 0.0008445,
+        "stop_reason": "original_stop_loss",
+        "stop_order_id": "stop-order",
+        "stop_order_ids": ["stop-order"],
+        "entry_time": pd.Timestamp("2026-03-01 00:00", tz="UTC"),
+        "mfe": 0.0,
+        "mae": 0.0,
+    }
+    executor.positions["TURBO/USD:USD"] = state
+    executor.oco_executor.active_positions["TURBO/USD:USD"] = state
+
+    statuses = _monitor_active_position_price_action(
+        executor,
+        exchange=exchange,
+        now=pd.Timestamp("2026-03-01 00:01", tz="UTC"),
+        config=executor.config,
+    )
+
+    sentinel = statuses["TURBO/USD:USD"]["executable_stop_sentinel"]
+    assert sentinel["status"] == "closed"
+    assert sentinel["executable_price"] == pytest.approx(0.0008562)
+    assert "price_action" not in statuses["TURBO/USD:USD"]
+    assert executor.get_position("TURBO/USD:USD") is None
+
+
 def test_kraken_futures_existing_mark_stop_does_not_match_policy():
     class _KrakenFuturesExchange:
         id = "krakenfutures"
@@ -1897,6 +2479,41 @@ def test_live_executor_rejects_exchange_filter_failures(monkeypatch):
     assert not result["success"]
     assert result["error_category"] == "invalid_precision_or_filter"
     assert exchange.orders == []
+
+
+def test_live_executor_treats_subunit_size_as_quote_not_fraction(monkeypatch):
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
+        lambda *args, **kwargs: pd.DataFrame(),
+    )
+    exchange = _FilterAwareExchange(min_cost=0.01)
+    executor = TradeExecutor(
+        mode="live",
+        exchange=exchange,
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params(barrier_pct=0.50)
+            }
+        },
+        config={"monitor_interval_seconds": 300},
+    )
+    try:
+        result = executor.execute_trade(
+            "BTC/USDT",
+            "long",
+            0.5,
+            price=100.0,
+            bucket_key="long_mr",
+            trade_context={"barrier_pct": 0.50},
+        )
+    finally:
+        executor.shutdown()
+
+    assert result["success"]
+    entry_orders = [order for order in exchange.orders if order["type"] == "limit"]
+    assert len(entry_orders) == 1
+    assert entry_orders[0]["amount"] == pytest.approx(0.005)
+    assert executor.get_active_positions()["BTC/USDT"]["quote_size"] == pytest.approx(0.5)
 
 
 def test_live_executor_rejects_halted_symbols(monkeypatch):
@@ -3131,11 +3748,573 @@ def test_stop_fill_close_metrics_marks_open_shadow_exit():
     )
 
     assert metrics["shadow_status"] == "shadow_exit_triggered"
-    assert metrics["shadow_exit_price"] == pytest.approx(0.316)
+    assert metrics["shadow_exit_price"] == pytest.approx(0.3208)
+    assert metrics["shadow_exit_price_source"] == "observed_exchange_stop_fill"
+    assert metrics["shadow_theoretical_exit_price"] == pytest.approx(0.316)
+    assert metrics["shadow_stop_trigger_price"] == pytest.approx(0.316)
+    assert metrics["shadow_trigger_vs_live_exit_gap_bps"] == pytest.approx(
+        (1.0 - 0.3208 / 0.316) * 10000.0
+    )
     assert metrics["shadow_exit_reason"] == "shadow_stop_loss_filled:original_stop_loss"
     assert metrics["simple_policy_shadow"]["events"][-1]["event"] == (
         "shadow_exchange_stop_filled"
     )
+    assert metrics["simple_policy_shadow"]["events"][-1]["shadow_exit_price"] == pytest.approx(
+        0.3208
+    )
+    assert metrics["simple_policy_shadow"]["events"][-1][
+        "shadow_theoretical_exit_price"
+    ] == pytest.approx(0.316)
+
+
+def test_stop_fill_close_metrics_reconciles_pretriggered_shadow_exit():
+    state = {
+        "side": "short",
+        "entry_price": 0.0008211,
+        "size": 8900.0,
+        "bucket_key": "short_asset",
+        "stop_price": 0.0008445,
+        "final_placed_stop": 0.0008445,
+        "requested_policy_stop": 0.0008445,
+        "stop_reason": "original_stop_loss",
+        "simple_policy_shadow": {
+            "schema": "simple_policy_execution_shadow_v1",
+            "status": "shadow_exit_triggered",
+            "shadow_stop_price": 0.0008445,
+            "shadow_stop_reason": "original_stop_loss",
+            "shadow_exit_price": 0.0008562,
+            "shadow_exit_reason": "software_executable_stop_breach:original_stop_loss",
+            "events": [],
+        },
+    }
+    order = {
+        "id": "stop-order",
+        "average": 0.0008637,
+        "filled": 8900.0,
+        "status": "closed",
+        "type": "market",
+    }
+
+    metrics = _closed_trade_metrics(
+        "TURBO/USD:USD", state, order, reason="stop_loss_filled"
+    )
+
+    assert metrics["shadow_status"] == "shadow_exit_triggered"
+    assert metrics["shadow_exit_price"] == pytest.approx(0.0008637)
+    assert metrics["shadow_exit_price_source"] == "observed_exchange_stop_fill"
+    assert metrics["shadow_theoretical_exit_price"] == pytest.approx(0.0008562)
+    assert metrics["shadow_trigger_vs_live_exit_gap_bps"] == pytest.approx(
+        (1.0 - 0.0008637 / 0.0008562) * 10000.0
+    )
+    assert metrics["shadow_exit_reason"] == "shadow_stop_loss_filled:original_stop_loss"
+
+
+def test_closed_trade_metrics_uses_exchange_fees_for_verified_net_pnl():
+    state = {
+        "side": "long",
+        "entry_price": 100.0,
+        "size": 1.0,
+        "bucket_key": "long_bars",
+        "stop_price": 95.0,
+        "requested_policy_stop": 95.0,
+        "entry_fee_quote": 0.01,
+        "entry_fee_source": "order_fee",
+        "entry_order_type": "market",
+    }
+    order = {
+        "id": "close-order",
+        "average": 110.0,
+        "filled": 1.0,
+        "status": "closed",
+        "type": "market",
+        "fee": {"cost": 0.02, "currency": "USD"},
+    }
+
+    metrics = _closed_trade_metrics(
+        "BTC/USD:USD", state, order, reason="software_executable_stop_breach"
+    )
+
+    assert metrics["gross_pnl"] == pytest.approx(10.0)
+    assert metrics["fees_verified"] is True
+    assert metrics["fee_source"] == "verified_order_fees"
+    assert metrics["fees_amount"] == pytest.approx(0.03)
+    assert metrics["net_pnl"] == pytest.approx(9.97)
+    assert metrics["net_pnl_pct"] == pytest.approx(9.97 / 100.0)
+    assert metrics["net_pnl_verification_status"] == "verified_exchange_fees"
+
+
+def test_order_fee_enrichment_uses_matching_private_trade_fill_fee():
+    class _SparseFeeExchange:
+        def fetch_order(self, order_id, symbol, params=None):
+            raise RuntimeError("fetchOrder unsupported")
+
+        def fetch_closed_orders(self, symbol, since=None, limit=None, params=None):
+            return [
+                {
+                    "id": "close-order",
+                    "symbol": symbol,
+                    "side": "buy",
+                    "type": "market",
+                    "status": "closed",
+                    "average": 1.578,
+                    "filled": 4.6,
+                    "fees": [],
+                    "info": {"order_id": "close-order"},
+                }
+            ]
+
+        def fetch_open_orders(self, symbol, since=None, limit=None, params=None):
+            return []
+
+        def fetch_my_trades(self, symbol, since=None, limit=None):
+            return [
+                {
+                    "id": "fill-1",
+                    "order": "other-order",
+                    "symbol": symbol,
+                    "side": "buy",
+                    "price": 1.579,
+                    "amount": 1.0,
+                    "fee": {"cost": 0.01, "currency": "USD"},
+                },
+                {
+                    "id": "fill-2",
+                    "order": "close-order",
+                    "symbol": symbol,
+                    "side": "buy",
+                    "price": 1.578,
+                    "amount": 4.6,
+                    "fee": {"cost": 0.0036, "currency": "USD"},
+                },
+            ]
+
+    order = _enrich_order_from_exchange(
+        _SparseFeeExchange(),
+        {
+            "id": "close-order",
+            "symbol": "LPT/USD:USD",
+            "side": "buy",
+            "type": "market",
+            "average": 1.578,
+            "filled": 4.6,
+        },
+        symbol="LPT/USD:USD",
+        config={"market_mode": "perps"},
+        price=1.578,
+    )
+
+    assert order["fee_source_order_fetch"] == "fetch_my_trades"
+    assert order["fees"] == [{"cost": pytest.approx(0.0036), "currency": "USD"}]
+    metrics = _closed_trade_metrics(
+        "LPT/USD:USD",
+        {
+            "side": "short",
+            "entry_price": 1.569,
+            "size": 4.6,
+            "entry_fee_quote": 0.0036381,
+            "entry_order_type": "market",
+        },
+        order,
+        reason="software_executable_stop_breach_pretrigger:exit_pressure_stop_tightening",
+        config={"market_mode": "perps"},
+    )
+    assert metrics["fees_verified"] is True
+    assert metrics["exit_fee_quote"] == pytest.approx(0.0036)
+    assert metrics["net_pnl_verification_status"] == "verified_exchange_fees"
+
+
+def test_closed_trade_metrics_separates_estimated_net_pnl_when_fees_missing():
+    state = {
+        "side": "long",
+        "entry_price": 100.0,
+        "size": 1.0,
+        "bucket_key": "long_bars",
+        "stop_price": 95.0,
+        "requested_policy_stop": 95.0,
+        "entry_order_type": "market",
+    }
+    order = {
+        "id": "close-order",
+        "average": 110.0,
+        "filled": 1.0,
+        "status": "closed",
+        "type": "market",
+    }
+
+    metrics = _closed_trade_metrics(
+        "BTC/USD:USD",
+        state,
+        order,
+        reason="software_executable_stop_breach",
+        config={"fee_bps_market": 5.0, "fee_bps_market_exit": 7.0},
+    )
+
+    assert metrics["fees_verified"] is False
+    assert np.isnan(metrics["net_pnl"])
+    assert metrics["entry_fee_estimate_quote"] == pytest.approx(0.05)
+    assert metrics["exit_fee_estimate_quote"] == pytest.approx(0.077)
+    assert metrics["estimated_fees_amount"] == pytest.approx(0.127)
+    assert metrics["fees_estimated"] is True
+    assert metrics["fees_estimated_complete"] is True
+    assert metrics["net_pnl_estimated"] == pytest.approx(9.873)
+    assert metrics["net_pnl_pct_estimated"] == pytest.approx(9.873 / 100.0)
+    assert metrics["net_pnl_verification_status"] == "estimated_missing_exchange_fees"
+
+
+def test_closed_trade_metrics_flags_partial_exchange_fees():
+    state = {
+        "side": "long",
+        "entry_price": 100.0,
+        "size": 1.0,
+        "bucket_key": "long_bars",
+        "stop_price": 95.0,
+        "requested_policy_stop": 95.0,
+        "entry_fee_quote": 0.01,
+        "entry_fee_source": "order_fee",
+        "entry_order_type": "market",
+    }
+    order = {
+        "id": "close-order",
+        "average": 110.0,
+        "filled": 1.0,
+        "status": "closed",
+        "type": "market",
+    }
+
+    metrics = _closed_trade_metrics(
+        "BTC/USD:USD",
+        state,
+        order,
+        reason="software_executable_stop_breach",
+        config={"fee_bps_market": 5.0, "fee_bps_market_exit": 7.0},
+    )
+
+    assert metrics["fees_verified"] is False
+    assert metrics["net_pnl_verification_status"] == (
+        "partial_exchange_fees_estimated_missing_side"
+    )
+    assert metrics["entry_fee_quote"] == pytest.approx(0.01)
+    assert metrics["exit_fee_estimate_quote"] == pytest.approx(0.077)
+
+
+def test_closed_trade_metrics_estimates_missing_fees_with_live_perp_default(monkeypatch):
+    for key in (
+        "EPM_LIVE_FEE_FALLBACK_BPS",
+        "EPM_LIVE_PERP_FEE_BPS",
+        "EPM_KRAKEN_FUTURES_TAKER_FEE_BPS",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    state = {
+        "side": "short",
+        "entry_price": 312.7,
+        "size": 0.02,
+        "bucket_key": "short_asset",
+        "stop_price": 314.65,
+        "requested_policy_stop": 314.65,
+        "entry_order_type": "limit",
+    }
+    order = {
+        "id": "close-order",
+        "average": 317.68,
+        "filled": 0.02,
+        "status": "closed",
+        "type": "market",
+    }
+
+    metrics = _closed_trade_metrics(
+        "XMR/USD:USD",
+        state,
+        order,
+        reason="stop_loss_filled",
+        config={"market_mode": "perps"},
+    )
+
+    gross = (312.7 - 317.68) * 0.02
+    expected_fees = (312.7 * 0.02 + 317.68 * 0.02) * 5.0 / 10000.0
+    assert metrics["gross_pnl"] == pytest.approx(gross)
+    assert metrics["fees_verified"] is False
+    assert metrics["entry_fee_estimate_bps"] == pytest.approx(5.0)
+    assert metrics["exit_fee_estimate_bps"] == pytest.approx(5.0)
+    assert metrics["entry_fee_estimate_source"] == (
+        "default_live_perp_fee_bps_entry_limit"
+    )
+    assert metrics["exit_fee_estimate_source"] == (
+        "default_live_perp_fee_bps_exit_market"
+    )
+    assert metrics["estimated_fees_amount"] == pytest.approx(expected_fees)
+    assert metrics["net_pnl_estimated"] == pytest.approx(gross - expected_fees)
+    assert metrics["net_pnl_verification_status"] == "estimated_missing_exchange_fees"
+
+
+def test_closed_trade_metrics_uses_actual_exchange_leverage_for_levered_pnl():
+    state = {
+        "side": "short",
+        "entry_price": 0.04938,
+        "size": 1000.0,
+        "bucket_key": "short_asset",
+        "stop_price": 0.0500,
+        "requested_policy_stop": 0.0500,
+        "entry_order_type": "market",
+        "requested_entry_leverage": 18.2939652165,
+        "configured_entry_leverage": 18.2939652165,
+        "actual_entry_leverage": 10.0,
+        "max_entry_leverage": 10.0,
+        "wallet_value_at_entry": 48.4392770384,
+    }
+    order = {
+        "id": "close-order",
+        "average": 0.04841,
+        "filled": 1000.0,
+        "status": "closed",
+        "type": "market",
+    }
+
+    metrics = _closed_trade_metrics(
+        "SEI/USD:USD",
+        state,
+        order,
+        reason="software_executable_stop_breach_pre_replace:trailing_profit",
+        config={"market_mode": "perps", "fee_bps_market": 0.0, "fee_bps_market_exit": 0.0},
+    )
+
+    assert metrics["configured_entry_leverage"] == pytest.approx(10.0)
+    assert metrics["actual_entry_leverage"] == pytest.approx(10.0)
+    assert metrics["requested_entry_leverage"] == pytest.approx(18.2939652165)
+    assert metrics["max_entry_leverage"] == pytest.approx(10.0)
+    assert metrics["net_pnl_pct_configured_leverage_estimated"] == pytest.approx(
+        metrics["net_pnl_pct_estimated"] * 10.0
+    )
+
+
+def test_closed_trade_metrics_caps_legacy_requested_leverage_for_perps():
+    state = {
+        "side": "short",
+        "entry_price": 0.149,
+        "size": 48.0,
+        "bucket_key": "short_asset",
+        "stop_price": 0.1526,
+        "requested_policy_stop": 0.1526,
+        "entry_order_type": "market",
+        "configured_entry_leverage": 18.8142223551,
+        "perp_effective_leverage": 18.8142223551,
+        "wallet_value_at_entry": 48.3612,
+    }
+    order = {
+        "id": "close-order",
+        "average": 0.1526,
+        "filled": 48.0,
+        "status": "closed",
+        "type": "market",
+    }
+
+    metrics = _closed_trade_metrics(
+        "SUSHI/USD:USD",
+        state,
+        order,
+        reason="software_executable_stop_breach:original_stop_loss",
+        config={"market_mode": "perps"},
+    )
+
+    assert metrics["actual_entry_leverage"] == pytest.approx(10.0)
+    assert metrics["configured_entry_leverage"] == pytest.approx(10.0)
+    assert metrics["max_entry_leverage"] == pytest.approx(10.0)
+    assert metrics["requested_entry_leverage"] == pytest.approx(18.8142223551)
+    assert metrics["net_pnl_pct_configured_leverage_estimated"] == pytest.approx(
+        metrics["net_pnl_pct_estimated"] * 10.0
+    )
+
+
+def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
+    close_body = run_inference._build_trade_close_email_body(
+        closed_trade={
+            "symbol": "SPX/USD:USD",
+            "side": "long",
+            "strategy_id": "long_bars",
+            "reason": "stop_loss_filled:exchange_valid_giveback_fallback",
+            "entry_price": 0.3434,
+            "exit_price": 0.3408,
+            "ticker_spread_bps": 8.7349,
+            "ev_haircut_expected_stop_exit_friction_bps": 79.5,
+            "ev_haircut_stop_exit_excess_bps": 64.5,
+            "net_pnl_pct": -0.0123,
+            "net_pnl_estimated": -0.0042,
+            "net_pnl_pct_estimated": -0.0195,
+            "estimated_fees_amount": 0.0007,
+            "estimated_fee_source": "configured_entry_market_fee_bps+configured_exit_market_fee_bps",
+            "fees_estimated": True,
+            "fees_estimated_complete": True,
+            "net_pnl_verification_status": "estimated_missing_exchange_fees",
+            "entry_fee_quote": np.nan,
+            "shadow_exit_price": 0.3408,
+            "shadow_exit_price_source": "observed_exchange_stop_fill",
+            "shadow_theoretical_exit_price": 0.3445,
+            "shadow_trigger_vs_live_exit_gap_bps": -108.5,
+            "sentinel_executable_price": 0.3408,
+            "sentinel_executable_price_source": "orderbook_best_bid",
+            "sentinel_stop_distance_bps": -108.5,
+            "sentinel_stop_breach_overshoot_bps": 108.5,
+            "trade_recap": "line 1\nline 2",
+        },
+        config={"market_mode": "perps"},
+    )
+
+    assert "Summary\n" in close_body
+    assert "PnL and fees\n" in close_body
+    assert "Entry execution\n" in close_body
+    assert "Shadow and parity\n" in close_body
+    assert "net_pnl_quote_estimated_fees: -0.00420000" in close_body
+    assert "estimated_fees_amount: 0.00070000" in close_body
+    assert "net_pnl_verification_status: estimated_missing_exchange_fees" in close_body
+    assert "ev_haircut_expected_stop_exit_friction_bps: 79.5000" in close_body
+    assert "ev_haircut_stop_exit_excess_bps: 64.5000" in close_body
+    assert "sentinel_executable_price_source: orderbook_best_bid" in close_body
+    assert "sentinel_stop_breach_overshoot_bps: 108.5000" in close_body
+    assert "shadow_exit_price_source: observed_exchange_stop_fill" in close_body
+    assert "shadow_trigger_vs_live_exit_gap_bps: -108.5000" in close_body
+    assert "entry_fee_quote" not in close_body
+    assert "nan" not in close_body.lower()
+
+    close_html = run_inference._build_trade_close_email_html_body(
+        closed_trade={
+            "symbol": "SPX/USD:USD",
+            "side": "long",
+            "strategy_id": "long_bars",
+            "reason": "stop_loss_filled:trailing_profit",
+            "net_pnl_pct_estimated": -0.0195,
+            "net_pnl_estimated": -0.0042,
+            "configured_entry_leverage": 18.2939652165,
+            "requested_entry_leverage": 18.2939652165,
+            "max_entry_leverage": 10.0,
+            "base_rank_pct": 0.93,
+            "exit_vs_policy_stop_bps": -108.5,
+            "exit_vs_expected_spread_bps": 12.3,
+            "net_pnl_verification_status": "estimated_missing_exchange_fees",
+            "policy_rank_pct": 0.91,
+            "deployment_rank_threshold": 0.71,
+            "base_pred": 0.81,
+            "base_rank_pct": 0.93,
+            "meta_pred": 0.67,
+            "inference_drift_score": 0.12,
+            "uncertainty_score": 0.34,
+            "dynamic_hr_surprise_z_eff": -0.45,
+            "dynamic_hr_threshold": 0.805,
+        },
+        config={"market_mode": "perps", "perp_default_leverage": 10.0},
+    )
+    assert "<!doctype html>" in close_html
+    assert "EPM Trade Closed" in close_html
+    assert "Outcome" in close_html
+    assert "Prediction Versus Outcome" in close_html
+    assert "Estimated Margin ROI % @ Entry Leverage" in close_html
+    assert "Exchange Entry Leverage Used" in close_html
+    assert "Base Rank pct" in close_html
+    assert "Base Pred" not in close_html
+    assert "-19.5000%" in close_html
+    assert "Configured Lev" not in close_html
+    assert "Estimated Configured-Leverage Net PnL %" not in close_html
+    assert "Stop Gap bps" not in close_html
+    assert "Exit Spread Delta bps" not in close_html
+    assert "Pred vs Outcome Gap" in close_html
+    assert "Exit vs Policy Stop Quality" in close_html
+    assert "Exit vs Expected Spread Quality" in close_html
+    assert "Gap as % of Outcome" in close_html
+    assert "trailing profit" in close_html
+    assert "Metrics" in close_html
+    assert "Dynamic HR z_eff" in close_html
+    assert "Drift Score" in close_html
+    assert "Uncertainty Score" in close_html
+    assert "Full Audit Detail" in close_html
+    assert "estimated_missing_exchange_fees" in close_html
+
+    open_body = run_inference._build_trade_open_email_body(
+        symbol="TURBO/USD:USD",
+        side="short",
+        strategy_id="short_asset",
+        size=25.0,
+        decision={
+            "policy_rank_pct": 0.92,
+            "rank_threshold": 0.89,
+            "ev_haircut_expected_stop_exit_friction_bps": 79.5,
+            "ev_haircut_stop_exit_excess_bps": 64.5,
+        },
+        trade_result={
+            "realized_entry_price": 0.0008211,
+            "ticker_spread_bps": 8.5215,
+            "expected_total_entry_friction_bps": 4.2608,
+            "entry_notional_quote": 25.0,
+            "entry_fee_estimate_quote": 0.0125,
+            "entry_fee_estimate_bps": 5.0,
+            "entry_fee_estimate_source": "configured_entry_market_fee_bps",
+            "stop_price": 0.0008445,
+            "entry_order_type": "market",
+            "order": {"id": "entry-order"},
+            "base_amount": np.nan,
+        },
+        predictions={"base_pred": 0.81, "meta_pred": 0.67},
+        config={"market_mode": "perps"},
+    )
+
+    assert "Decision and rank\n" in open_body
+    assert "Entry execution\n" in open_body
+    assert "Stops\n" in open_body
+    assert "Entry fees\n" in open_body
+    assert "entry_fee_estimate_quote: 0.01250000" in open_body
+    assert "entry_fee_estimate_bps: 5.0000" in open_body
+    assert "entry_fee_estimate_source: configured_entry_market_fee_bps" in open_body
+    assert "ev_haircut_expected_stop_exit_friction_bps: 79.5000" in open_body
+    assert "ev_haircut_stop_exit_excess_bps: 64.5000" in open_body
+    assert "base_amount" not in open_body
+    assert "nan" not in open_body.lower()
+
+    open_html = run_inference._build_trade_open_email_html_body(
+        symbol="TURBO/USD:USD",
+        side="short",
+        strategy_id="short_asset",
+        size=25.0,
+        decision={"policy_rank_pct": 0.92, "rank_threshold": 0.89},
+        trade_result={
+            "realized_entry_price": 0.0008211,
+            "entry_notional_quote": 25.0,
+            "entry_fee_estimate_quote": 0.0125,
+            "entry_fee_estimate_bps": 5.0,
+            "entry_fee_estimate_source": "configured_entry_market_fee_bps",
+            "stop_price": 0.0008445,
+            "entry_order_type": "market",
+            "order": {"id": "entry-order"},
+        },
+        predictions={"base_pred": 0.81, "meta_pred": 0.67},
+        config={"market_mode": "perps"},
+    )
+    assert "EPM Trade Opened" in open_html
+    assert "Action" in open_html
+    assert "Entry Fee Est." in open_html
+    assert "Full Audit Detail" in open_html
+
+
+def test_trade_result_entry_fields_merge_into_trade_logger_context():
+    features_log = {"symbol": "PUMP/USD:USD"}
+    merged = run_inference._merge_trade_result_entry_log_fields(
+        features_log,
+        {
+            "order": {"id": "entry-order"},
+            "entry_notional_quote": 7.2635,
+            "entry_fee_estimate_quote": 0.00363175,
+            "entry_fee_estimate_bps": 5.0,
+            "entry_fee_estimate_source": "configured_entry_market_fee_bps",
+            "entry_fee_quote": np.nan,
+            "entry_fee_source": "missing_exchange_fee",
+            "oco_result": {"stop_order_id": "stop-order", "stop_price": 0.00142},
+        },
+    )
+
+    assert merged["exchange_order_id"] == "entry-order"
+    assert merged["entry_notional_quote"] == pytest.approx(7.2635)
+    assert merged["entry_fee_estimate_quote"] == pytest.approx(0.00363175)
+    assert merged["entry_fee_estimate_bps"] == pytest.approx(5.0)
+    assert merged["entry_fee_estimate_source"] == "configured_entry_market_fee_bps"
+    assert merged["entry_fee_source"] == "missing_exchange_fee"
+    assert merged["stop_order_id"] == "stop-order"
+    assert merged["stop_price"] == pytest.approx(0.00142)
 
 
 def test_live_entry_uses_context_barrier_when_artifact_has_none(monkeypatch):

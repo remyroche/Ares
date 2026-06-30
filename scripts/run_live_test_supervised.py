@@ -33,7 +33,7 @@ def main() -> int:
     restart_delay = float(os.environ.get("RESTART_DELAY_SECONDS", "30"))
     max_restarts = int(os.environ.get("MAX_RESTARTS", "0"))
     inference_interval = os.environ.get("INFERENCE_INTERVAL", "60")
-    challenger_interval = os.environ.get("CHALLENGER_INTERVAL", "60")
+    challenger_interval = os.environ.get("CHALLENGER_INTERVAL", "30")
     exchange = os.environ.get("EPM_EXCHANGE", "kraken")
     live_data_root = os.environ.get("LIVE_DATA_ROOT", "")
     python_bin = os.environ.get(

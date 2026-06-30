@@ -1466,6 +1466,41 @@ def test_lgbm_unsupervised_string_false_disables_stage():
     assert active["regime_models"]["enabled"] is False
 
 
+def test_lgbm_pipeline_regime_feature_engineering_defaults_to_lgbm_mda():
+    from extreme_price_movements import config as epm_config
+    from extreme_price_movements import lgbm_pipeline as lp
+
+    assert epm_config.CFG["lgbm_regime_specialist_feature_engineering_lgbm_enabled"] is True
+    assert epm_config.CFG["lgbm_regime_specialist_feature_engineering_elasticnet_enabled"] is False
+
+    fe_config = lp._regime_specialist_feature_engineering_config(
+        epm_config.CFG,
+        random_state=17,
+    )
+
+    assert fe_config.lgbm_enabled is True
+    assert fe_config.elasticnet_enabled is False
+    assert fe_config.permutation_repeats > 0
+    assert fe_config.max_permutation_features > 0
+    assert fe_config.max_permutation_rows > 0
+
+
+def test_lgbm_regime_score_sources_skip_disabled_elasticnet():
+    from extreme_price_movements import lgbm_pipeline as lp
+
+    artifact = type(
+        "Artifact",
+        (),
+        {"diagnostics": {"lgbm": {"enabled": True}, "elasticnet": {"enabled": False}}},
+    )()
+
+    sources = lp._active_lgbm_regime_score_feature_sources(artifact)
+
+    assert ("regime_lgbm_current_likeness", "regime_lgbm_current_likeness") in sources
+    assert ("regime_lgbm_mda_similarity", "regime_domain_current_likeness") in sources
+    assert ("regime_elasticnet_current_likeness", "regime_elasticnet_current_likeness") not in sources
+
+
 def test_lgbm_regime_specialist_distillation_shrink_hook():
     from extreme_price_movements import lgbm_pipeline as lp
 

@@ -11,6 +11,9 @@ This module orchestrates the full inference chain:
 Returns full prediction chain results for each candidate.
 """
 
+from __future__ import annotations
+
+import os
 import re
 import resource
 import time
@@ -18,6 +21,11 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+
+try:
+    import psutil as _psutil
+except Exception:  # pragma: no cover - psutil is an optional runtime aid
+    _psutil = None
 
 from extreme_price_movements.engine import _calculate_disagreement_features
 from extreme_price_movements.entry_policy import (
@@ -87,12 +95,25 @@ DELETED_MODEL_FEATURE_KEYS = {
 }
 
 
-def _process_rss_mb() -> float:
+def _process_peak_rss_mb() -> float:
     try:
         rss = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
     except Exception:
         return float("nan")
     return rss / (1024.0 * 1024.0) if rss > 10_000_000 else rss / 1024.0
+
+
+def _process_rss_mb() -> float:
+    if _psutil is not None:
+        try:
+            return float(_psutil.Process(os.getpid()).memory_info().rss) / (1024.0 * 1024.0)
+        except Exception:
+            pass
+    return _process_peak_rss_mb()
+
+
+def _process_rss_log_fields() -> str:
+    return f"rss={_process_rss_mb():.1f}MB peak_rss={_process_peak_rss_mb():.1f}MB"
 
 
 ALPHA_MODEL_META_FEATURE_KEYS = {
@@ -1366,7 +1387,7 @@ class ModelOrchestrator:
                 "[Timing] model.alpha_align: "
                 f"key={key} rows_in={len(features.index)} "
                 f"rows_out={len(aligned_features.index)} features={len(feat_cols)} "
-                f"stage={time.perf_counter() - t0:.3f}s rss={_process_rss_mb():.1f}MB"
+                f"stage={time.perf_counter() - t0:.3f}s {_process_rss_log_fields()}"
             )
 
         if aligned_features.empty:
@@ -1381,7 +1402,7 @@ class ModelOrchestrator:
                 "[Timing] model.alpha_matrix: "
                 f"key={key} shape={getattr(X, 'shape', None)} "
                 f"stage={time.perf_counter() - matrix_t0:.3f}s "
-                f"rss={_process_rss_mb():.1f}MB"
+                f"{_process_rss_log_fields()}"
             )
 
         # Predict
@@ -1400,7 +1421,7 @@ class ModelOrchestrator:
                             "[Timing] model.alpha_diagnostics: "
                             f"key={key} fields={len(base_diag)} "
                             f"stage={time.perf_counter() - diag_t0:.3f}s "
-                            f"rss={_process_rss_mb():.1f}MB"
+                            f"{_process_rss_log_fields()}"
                         )
             if timing_enabled:
                 tprint(
@@ -1408,7 +1429,7 @@ class ModelOrchestrator:
                     f"key={key} rows={len(aligned_features.index)} "
                     f"stage={time.perf_counter() - pred_t0:.3f}s "
                     f"total={time.perf_counter() - t0:.3f}s "
-                    f"rss={_process_rss_mb():.1f}MB"
+                    f"{_process_rss_log_fields()}"
                 )
             out = pd.Series(preds, index=aligned_features.index)
             specialists = model_info.get("mr_tf_specialists")
@@ -2655,7 +2676,7 @@ class ModelOrchestrator:
                     f"features_available={len(features.columns)} "
                     f"contract_features={len(feat_cols)} "
                     f"stage={time.perf_counter() - t0:.3f}s "
-                    f"rss={_process_rss_mb():.1f}MB"
+                    f"{_process_rss_log_fields()}"
                 )
 
             missing_ebm_raw = _missing_ebm_raw_contract(meta_model, features)
@@ -2868,7 +2889,7 @@ class ModelOrchestrator:
                     "[Timing] model.meta_matrix: "
                     f"key={key} shape={getattr(X, 'shape', None)} "
                     f"strict={strict} stage={time.perf_counter() - matrix_t0:.3f}s "
-                    f"rss={_process_rss_mb():.1f}MB"
+                    f"{_process_rss_log_fields()}"
                 )
             self._last_meta_model_key = key
             self._last_meta_model_features = [str(c) for c in list(X.columns)]
@@ -2887,7 +2908,7 @@ class ModelOrchestrator:
                             "[Timing] model.meta_diagnostics: "
                             f"key={key} fields={len(self._last_meta_diagnostics)} "
                             f"stage={time.perf_counter() - diag_t0:.3f}s "
-                            f"rss={_process_rss_mb():.1f}MB"
+                            f"{_process_rss_log_fields()}"
                         )
                 except Exception as exc:
                     self._last_meta_diagnostics_frame = pd.DataFrame()
@@ -2902,7 +2923,7 @@ class ModelOrchestrator:
                     f"key={key} rows={len(X.index)} "
                     f"stage={time.perf_counter() - pred_t0:.3f}s "
                     f"total={time.perf_counter() - t0:.3f}s "
-                    f"rss={_process_rss_mb():.1f}MB"
+                    f"{_process_rss_log_fields()}"
                 )
 
             out = pd.Series(preds, index=X.index)

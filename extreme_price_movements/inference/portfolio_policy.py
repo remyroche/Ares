@@ -32,12 +32,25 @@ class PortfolioPolicyConfig:
     leverage_wallet_multiplier: float = 1.0
     min_margin_level_after_entry: float = 2.50
 
+    min_entry_quote_notional: float = 3.0
     live_test_min_quote_notional: float = 5.0
     live_test_quote_notional: float = 10.0
+    perp_default_leverage: float = 10.0
 
     initial_rank_threshold: float = 0.90
     initial_rank_threshold_floor: float = 0.90
     dynamic_threshold_enabled: bool = True
+    dynamic_hr_surprise_enabled: bool = False
+    dynamic_hr_surprise_artifact_path: str = ""
+    dynamic_hr_surprise_use_deployed_floor: bool = True
+    dynamic_hr_surprise_fallback_to_deployed: bool = True
+    dynamic_hr_surprise_stale_fallback_to_deployed: bool = True
+    dynamic_hr_surprise_max_state_age_days: float = 7.0
+    dynamic_hr_surprise_lower_bound: float = -0.50
+    dynamic_hr_surprise_upper_bound: float = 1.50
+    prehead_symbol_guard_enabled: bool = False
+    prehead_symbol_guard_artifact_path: str = ""
+    prehead_symbol_guard_max_state_age_days: float = 7.0
     threshold_viability_margin: float = 0.0
     occupancy_threshold_alpha: float = 1.0
     occupancy_threshold_power: float = 1.0
@@ -62,6 +75,13 @@ class PortfolioPolicyConfig:
     hard_max_spread_bps: float = 100.0
     ev_haircut_expected_spread_bps: float = 97.32886619027215
     ev_haircut_delay_slippage_baseline_bps: float = 40.0
+    ev_haircut_stop_exit_enabled: bool = True
+    ev_haircut_expected_stop_exit_bps: float = 75.0
+    ev_haircut_stop_exit_baseline_bps: float = 15.0
+    ev_haircut_stop_exit_spread_multiplier: float = 0.50
+    ev_haircut_stop_exit_orderbook_multiplier: float = 1.00
+    live_friction_ev_net_gate_enabled: bool = True
+    min_ev_adjusted_net_return_after_friction: float = 0.0
     min_liquidity_capacity_weight: float = 0.25
     max_ticker_age_seconds: float = 4.0
 
@@ -207,11 +227,24 @@ def load_portfolio_policy_config(
             "book_notional_multiplier",
             "leverage_wallet_multiplier",
             "min_margin_level_after_entry",
+            "min_entry_quote_notional",
+            "perp_default_leverage",
         },
         "selection": {
             "global_threshold_floor",
             "initial_rank_threshold",
             "initial_rank_threshold_floor",
+            "dynamic_hr_surprise_enabled",
+            "dynamic_hr_surprise_artifact_path",
+            "dynamic_hr_surprise_use_deployed_floor",
+            "dynamic_hr_surprise_fallback_to_deployed",
+            "dynamic_hr_surprise_stale_fallback_to_deployed",
+            "dynamic_hr_surprise_max_state_age_days",
+            "dynamic_hr_surprise_lower_bound",
+            "dynamic_hr_surprise_upper_bound",
+            "prehead_symbol_guard_enabled",
+            "prehead_symbol_guard_artifact_path",
+            "prehead_symbol_guard_max_state_age_days",
             "threshold_viability_margin",
             "occupancy_threshold_alpha",
             "occupancy_threshold_power",
@@ -220,6 +253,8 @@ def load_portfolio_policy_config(
             "rank_multiplier_min",
             "rank_multiplier_max",
             "rank_size_power",
+            "min_entry_quote_notional",
+            "perp_default_leverage",
         },
         "friction": {
             "max_signal_gap_bps_default",
@@ -232,6 +267,8 @@ def load_portfolio_policy_config(
             "rank_multiplier_min",
             "rank_multiplier_max",
             "rank_size_power",
+            "min_entry_quote_notional",
+            "perp_default_leverage",
         },
         "liquidity": {
             "max_orderbook_slippage_bps",
@@ -305,6 +342,12 @@ def load_portfolio_policy_config(
     values["leverage_wallet_multiplier"] = max(
         1.0, float(values.get("leverage_wallet_multiplier", 1.0))
     )
+    values["min_entry_quote_notional"] = max(
+        0.0, float(values.get("min_entry_quote_notional", 3.0))
+    )
+    values["perp_default_leverage"] = max(
+        1.0, float(values.get("perp_default_leverage", 10.0))
+    )
     values["min_margin_level_after_entry"] = max(
         1.0, float(values.get("min_margin_level_after_entry", 2.5))
     )
@@ -328,6 +371,7 @@ def compute_rank_based_position_size(
     open_positions: int | None = None,
     market_mode: str = "spot",
     available_wallet_value: float | None = None,
+    remaining_total_notional: float | None = None,
     stop_loss_pct: float | None = None,
     rank_number: int | None = None,
     rank_x: int | None = None,
@@ -346,10 +390,7 @@ def compute_rank_based_position_size(
         )
         rank = max(1, int(rank_number or 1))
         rx = max(1, int(rank_x or rank))
-        if rx <= 1:
-            rank_leverage = 5.0
-        else:
-            rank_leverage = 5.0 + 20.0 * max(float(rx - rank), 0.0) / float(rx - 1)
+        rank_leverage = max(float(policy.perp_default_leverage), 1.0)
         sl_raw = (
             float(stop_loss_pct)
             if stop_loss_pct is not None and np.isfinite(float(stop_loss_pct))
@@ -364,9 +405,32 @@ def compute_rank_based_position_size(
         leverage = min(rank_leverage, risk_cap)
         leverage = max(float(leverage), 0.0) if np.isfinite(leverage) else rank_leverage
         leverage_power = leverage**1.5
+        book_multiplier = max(float(policy.book_notional_multiplier), 0.0)
+        notional_multiplier = book_multiplier * max(float(leverage), 1.0)
+        configured_book_notional = (
+            float(policy.max_total_wallet_allocation_pct)
+            * wallet
+            * notional_multiplier
+        )
+        if (
+            remaining_total_notional is not None
+            and np.isfinite(float(remaining_total_notional))
+        ):
+            remaining_total = max(float(remaining_total_notional), 0.0)
+            max_total_notional = max(open_notional + remaining_total, 0.0)
+        else:
+            max_total_notional = max(configured_book_notional, 0.0)
+            remaining_total = max(max_total_notional - open_notional, 0.0)
         full_wallet_size = wallet * leverage_power / 100.0
         available_wallet_size = available_wallet * 2.5 * leverage_power / 100.0
-        size_before_liquidity = max(0.0, min(full_wallet_size, available_wallet_size))
+        position_cap = min(
+            float(policy.max_position_wallet_pct) * wallet * notional_multiplier,
+            float(policy.max_position_quote_notional) * book_multiplier,
+        )
+        size_before_liquidity = max(
+            0.0,
+            min(full_wallet_size, available_wallet_size, position_cap, remaining_total),
+        )
         book_cap = (
             float(orderbook_capacity_quote)
             if orderbook_capacity_quote is not None
@@ -388,20 +452,21 @@ def compute_rank_based_position_size(
         return {
             "market_mode": "perps",
             "wallet_value": wallet,
-            "book_notional_multiplier": 1.0,
+            "book_notional_multiplier": book_multiplier,
             "leverage_wallet_multiplier": leverage,
             "min_margin_level_after_entry": float(policy.min_margin_level_after_entry),
             "total_assets_quote": total_assets_quote,
             "total_liabilities_quote": total_liabilities_quote,
             "current_margin_level": None,
             "max_total_equity_allocation": wallet,
-            "configured_book_notional": wallet * leverage,
+            "configured_book_notional": configured_book_notional,
             "margin_surplus_notional": None,
-            "safe_book_notional": wallet * leverage,
-            "max_total_notional": wallet * leverage,
+            "safe_book_notional": max_total_notional,
+            "max_total_notional": max_total_notional,
+            "perp_dynamic_rank_notional_cap": wallet * leverage,
             "open_notional": open_notional,
             "open_equity_allocation": open_notional,
-            "remaining_total_notional": max(wallet * leverage - open_notional, 0.0),
+            "remaining_total_notional": remaining_total,
             "open_position_count": int(open_positions or 0),
             "reserved_position_slots": int(
                 policy.reserved_position_slots or policy.max_concurrent_positions
@@ -421,7 +486,11 @@ def compute_rank_based_position_size(
             "rank_multiplier": leverage,
             "rank_slot_fraction": None,
             "provisional_size": size_before_liquidity,
-            "position_cap": size_before_liquidity,
+            "max_position_wallet_allocation": (
+                float(policy.max_position_wallet_pct) * wallet * book_multiplier
+            ),
+            "max_position_notional": position_cap,
+            "position_cap": position_cap,
             "size_before_liquidity": size_before_liquidity,
             "liquidity_capacity_weight": liq_weight,
             "configured_live_test_min_notional": (
@@ -432,6 +501,7 @@ def compute_rank_based_position_size(
             "live_test_mode": bool(live_test_mode),
             "perp_rank_number": rank,
             "perp_rank_x": rx,
+            "perp_default_leverage": rank_leverage,
             "perp_rank_leverage": rank_leverage,
             "perp_risk_cap_leverage": risk_cap if np.isfinite(risk_cap) else None,
             "perp_effective_leverage": leverage,

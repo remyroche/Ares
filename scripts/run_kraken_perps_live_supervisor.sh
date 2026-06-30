@@ -7,10 +7,12 @@ cd "$ROOT_DIR" || exit 1
 mkdir -p logs
 
 RUN_ID="${RUN_ID:-20260612_203000_top2_fullscope_labelhpo_drift_leaflite_native}"
+MODEL_ARTIFACT_RUN_ID="${EPM_MODEL_ARTIFACT_RUN_ID:-$RUN_ID}"
+POLICY_ARTIFACT_RUN_ID="${EPM_POLICY_ARTIFACT_RUN_ID:-$RUN_ID}"
 SESSION_LOG="logs/kraken_perps_live_supervisor_${RUN_ID}.log"
 PID_FILE="logs/kraken_perps_live_supervisor_${RUN_ID}.pid"
 LEDGER_PATH="data_perp/exchanges/krakenfutures/live_state/prediction_ledgers/${RUN_ID}/prediction_ledger.parquet"
-POLICY_CONFIG_PATH="data_perp/artifacts/${RUN_ID}/policy_params/best_policy_params.json"
+POLICY_CONFIG_PATH="data_perp/artifacts/${POLICY_ARTIFACT_RUN_ID}/policy_params/best_policy_params.json"
 RECONCILIATION_DIR="data_perp/exchanges/krakenfutures/live_state/reconciliation/${RUN_ID}/execution_realism"
 TRADE_LOG_PATH="inference_trades.csv"
 
@@ -24,7 +26,7 @@ fi
 
 echo "$$" > "$PID_FILE"
 trap 'rm -f "$PID_FILE"' EXIT
-printf '[%s] supervisor_start pid=%s run_id=%s ledger=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$$" "$RUN_ID" "$LEDGER_PATH" | tee -a "$SESSION_LOG"
+printf '[%s] supervisor_start pid=%s run_id=%s model_artifact_run_id=%s policy_artifact_run_id=%s ledger=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$$" "$RUN_ID" "$MODEL_ARTIFACT_RUN_ID" "$POLICY_ARTIFACT_RUN_ID" "$LEDGER_PATH" | tee -a "$SESSION_LOG"
 
 reconciliation_loop() {
   while true; do
@@ -76,8 +78,10 @@ while true; do
         --perps \
         --data-root data_perp \
         --run-id "$RUN_ID" \
+        --model-artifact-run-id "$MODEL_ARTIFACT_RUN_ID" \
+        --policy-artifact-run-id "$POLICY_ARTIFACT_RUN_ID" \
         --run-scoped-prediction-ledger \
-        --challenger-interval 120
+        --challenger-interval "${EPM_CHALLENGER_INTERVAL_SECONDS:-30}"
     rc=$?
     printf '[%s] live inference exited rc=%s; restarting in 60s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$rc"
   } >> "$SESSION_LOG" 2>&1

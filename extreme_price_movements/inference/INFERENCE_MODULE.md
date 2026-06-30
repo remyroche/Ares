@@ -44,7 +44,7 @@ python3 -m extreme_price_movements.inference.run_inference --live --lookback-hou
 - `--shadow` - Run shadow trading mode (default)
 - `--symbols` - Symbols to trade
 - `--inference-interval` - Inference interval in seconds (default: 3600 = 1 hour)
-- `--challenger-interval` - Challenger check interval in seconds (default: 300 = 5 min)
+- `--challenger-interval` - Challenger check interval in seconds (default: 30s)
 - `--lookback-hours` - Lookback hours for features (default: 48)
 
 ### 2. feature_generator.py

@@ -64,6 +64,7 @@ SIMPLE_POLICY_STOP_PARAM_KEYS = (
     "policy_median_atr_frac",
     "enable_trailing",
     "trailing_activation_mult",
+    "trailing_activation_cap_pct",
     "trailing_override_alpha",
     "trailing_power",
     "trailing_squash_divisor",
@@ -392,6 +393,8 @@ class ValidatedSimplePolicyParams:
     sl_mult: float
     barrier_frac: float
     trailing_activation_mult: float
+    trailing_activation_cap_pct: float
+    effective_trailing_activation_return: float
     trailing_power: float
     trailing_squash_divisor: float
     giveback_beta: float
@@ -443,6 +446,8 @@ class SimplePolicyStopDecision:
     barrier_frac: float
     sl_mult: float
     trailing_activation_mult: Optional[float] = None
+    trailing_activation_cap_pct: Optional[float] = None
+    effective_trailing_activation_return: Optional[float] = None
     trailing_power: Optional[float] = None
     trailing_squash_divisor: Optional[float] = None
     giveback_beta: Optional[float] = None
@@ -599,6 +604,9 @@ def validate_simple_policy_stop_params(
     values["atr_power"] = _safe_float(params.get("atr_power"), 1.0)
     values["atr_multiplier"] = _safe_float(params.get("atr_multiplier"), 1.0)
     values["hard_tp_abs_pct"] = _safe_float(params.get("hard_tp_abs_pct"), 0.0)
+    values["trailing_activation_cap_pct"] = _safe_float(
+        params.get("trailing_activation_cap_pct"), 0.0
+    )
     values["exit_pressure_alpha"] = _safe_float(params.get("exit_pressure_alpha"), 1.0)
     values["exit_pressure_beta"] = _safe_float(params.get("exit_pressure_beta"), 0.0)
     values["exit_pressure_delta"] = _safe_float(params.get("exit_pressure_delta"), 1.0)
@@ -628,6 +636,9 @@ def validate_simple_policy_stop_params(
         raise SimplePolicyStopParamsError(
             "simple-policy hard_tp_abs_pct must be non-negative"
         )
+    values["trailing_activation_cap_pct"] = max(
+        0.0, float(values["trailing_activation_cap_pct"])
+    )
     values["exit_pressure_alpha"] = float(np.clip(values["exit_pressure_alpha"], 0.25, 4.0))
     values["exit_pressure_beta"] = max(0.0, float(values["exit_pressure_beta"]))
     values["exit_pressure_delta"] = float(np.clip(values["exit_pressure_delta"], 0.25, 4.0))
@@ -697,11 +708,23 @@ def validate_simple_policy_stop_params(
         )
 
     effective_barrier_frac = _effective_barrier_frac(barrier_frac, params, state)
+    effective_trailing_activation_return = float(activation) * float(
+        effective_barrier_frac
+    )
+    if values["trailing_activation_cap_pct"] > 0.0:
+        effective_trailing_activation_return = min(
+            effective_trailing_activation_return,
+            float(values["trailing_activation_cap_pct"]),
+        )
 
     return ValidatedSimplePolicyParams(
         sl_mult=float(values["sl_mult"]),
         barrier_frac=float(effective_barrier_frac),
         trailing_activation_mult=float(activation),
+        trailing_activation_cap_pct=float(values["trailing_activation_cap_pct"]),
+        effective_trailing_activation_return=float(
+            effective_trailing_activation_return
+        ),
         trailing_power=float(values["trailing_power"]),
         trailing_squash_divisor=float(values["trailing_squash_divisor"]),
         giveback_beta=float(values["giveback_beta"]),
@@ -941,12 +964,17 @@ def compute_initial_simple_policy_stop_decision(
         barrier_frac=validated.barrier_frac,
         sl_mult=validated.sl_mult,
         trailing_activation_mult=validated.trailing_activation_mult,
+        trailing_activation_cap_pct=validated.trailing_activation_cap_pct,
+        effective_trailing_activation_return=(
+            validated.effective_trailing_activation_return
+        ),
         trailing_power=validated.trailing_power,
         trailing_squash_divisor=validated.trailing_squash_divisor,
         giveback_beta=validated.giveback_beta,
         atr_power=validated.atr_power,
         atr_multiplier=validated.atr_multiplier,
         hard_tp_abs_pct=validated.hard_tp_abs_pct,
+        effective_trailing_activation_mult=validated.trailing_activation_mult,
         capital_protect_mfe_mult=validated.capital_protect_mfe_mult,
         capital_protect_regression_frac=validated.capital_protect_regression_frac,
         adverse_exit_enabled=validated.adverse_exit_enabled,
@@ -1092,6 +1120,12 @@ def compute_simple_policy_stop_decision(
                         barrier_frac=validated.barrier_frac,
                         sl_mult=validated.sl_mult,
                         trailing_activation_mult=validated.trailing_activation_mult,
+                        trailing_activation_cap_pct=(
+                            validated.trailing_activation_cap_pct
+                        ),
+                        effective_trailing_activation_return=(
+                            validated.effective_trailing_activation_return
+                        ),
                         trailing_power=validated.trailing_power,
                         trailing_squash_divisor=validated.trailing_squash_divisor,
                         giveback_beta=validated.giveback_beta,
@@ -1198,6 +1232,10 @@ def compute_simple_policy_stop_decision(
             barrier_frac=validated.barrier_frac,
             sl_mult=validated.sl_mult,
             trailing_activation_mult=validated.trailing_activation_mult,
+            trailing_activation_cap_pct=validated.trailing_activation_cap_pct,
+            effective_trailing_activation_return=(
+                validated.effective_trailing_activation_return
+            ),
             trailing_power=validated.trailing_power,
             trailing_squash_divisor=validated.trailing_squash_divisor,
             giveback_beta=validated.giveback_beta,
@@ -1281,6 +1319,10 @@ def compute_simple_policy_stop_decision(
         barrier_frac=validated.barrier_frac,
         sl_mult=validated.sl_mult,
         trailing_activation_mult=validated.trailing_activation_mult,
+        trailing_activation_cap_pct=validated.trailing_activation_cap_pct,
+        effective_trailing_activation_return=(
+            validated.effective_trailing_activation_return
+        ),
         trailing_power=validated.trailing_power,
         trailing_squash_divisor=validated.trailing_squash_divisor,
         giveback_beta=validated.giveback_beta,

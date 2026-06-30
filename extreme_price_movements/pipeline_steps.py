@@ -84,6 +84,35 @@ def _truthy_env(name: str, default: str = "") -> bool:
     }
 
 
+def _feature_backfill_keys_from_env() -> list[str]:
+    """Return explicit feature backfill keys from env string and optional file."""
+
+    raw_values: list[str] = []
+    raw_inline = os.environ.get("EPM_FEATURE_BACKFILL_KEYS", "").strip()
+    if raw_inline:
+        raw_values.append(raw_inline)
+    raw_file = os.environ.get("EPM_FEATURE_BACKFILL_KEYS_FILE", "").strip()
+    if raw_file:
+        try:
+            raw_values.append(Path(raw_file).read_text(encoding="utf-8"))
+        except Exception as exc:
+            tprint(
+                "WARNING: could not read EPM_FEATURE_BACKFILL_KEYS_FILE="
+                f"{raw_file!r}: {exc}"
+            )
+    if not raw_values:
+        return []
+    return sorted(
+        {
+            key.strip()
+            for raw in raw_values
+            for part in str(raw).replace("\n", ",").split(",")
+            for key in [part]
+            if key.strip()
+        }
+    )
+
+
 def _strategy_aliases(strategy_id: str, trade_side: str | None = None) -> set[str]:
     raw = str(strategy_id or "").strip()
     aliases = {raw} if raw else set()
@@ -2688,7 +2717,7 @@ def _enforce_feature_snapshot_completeness(
     }
 
 
-_FEATURE_CACHE_SCAN_MANIFEST_VERSION = 4
+_FEATURE_CACHE_SCAN_MANIFEST_VERSION = 5
 
 
 def _feature_cache_scan_manifest_path(in_dir: str) -> str:
@@ -2958,6 +2987,7 @@ def _scan_feature_cache_light(
     uncovered_symbols: set[str] = set()
     stale_symbols: set[str] = set()
     full_rewrite_symbols: set[str] = set()
+    schema_missing_by_symbol: dict[str, set[str]] = {}
     all_nan_symbol_keys: dict[str, set[str]] = {}
     historical_sparse_symbol_keys: dict[str, set[str]] = {}
 
@@ -2976,15 +3006,13 @@ def _scan_feature_cache_light(
                 first_ts = pd.Timestamp(first_ts).tz_localize(None)
             if last_ts is not None and pd.Timestamp(last_ts).tzinfo is not None:
                 last_ts = pd.Timestamp(last_ts).tz_localize(None)
-            if (
-                first_ts is None
-                or last_ts is None
-                or first_ts > req_first
-                or last_ts < req_last
-            ):
+            if first_ts is None or last_ts is None or first_ts > req_first:
                 uncovered_symbols.add(sym)
                 stale_symbols.add(sym)
                 full_rewrite_symbols.add(sym)
+            elif last_ts < req_last:
+                uncovered_symbols.add(sym)
+                stale_symbols.add(sym)
 
         schema_names = _feature_schema_names(fpath)
         base_schema_names = _feature_base_parquet_schema_names(fpath)
@@ -2995,8 +3023,9 @@ def _scan_feature_cache_light(
             missing_schema_cols = set(expected_keys) - set(schema_names)
             if missing_schema_cols:
                 stale_symbols.add(sym)
-                full_rewrite_symbols.add(sym)
-                all_nan_symbol_keys.setdefault(sym, set()).update(missing_schema_cols)
+                schema_missing_by_symbol.setdefault(sym, set()).update(
+                    missing_schema_cols
+                )
         feat_cols = [c for c in schema_names if c in expected_keys]
         covered_cols = set(feat_cols)
         if sym in required_bounds and feat_cols:
@@ -3044,7 +3073,8 @@ def _scan_feature_cache_light(
                 empty_cols = set(feat_cols) - non_all_nan_cols
                 if empty_cols or stale_cols:
                     stale_symbols.add(sym)
-                    full_rewrite_symbols.add(sym)
+                    if stale_cols:
+                        full_rewrite_symbols.add(sym)
                     all_nan_symbol_keys[sym] = set(empty_cols).union(stale_cols)
             except Exception:
                 stale_symbols.add(sym)
@@ -3081,6 +3111,15 @@ def _scan_feature_cache_light(
             missing_keys.append(k)
         elif present_n < required_n:
             partial_keys.add(k)
+
+    globally_missing_keys = set(missing_keys)
+    for sym, cols in schema_missing_by_symbol.items():
+        symbol_specific_missing = set(cols) - globally_missing_keys
+        if symbol_specific_missing:
+            full_rewrite_symbols.add(sym)
+            all_nan_symbol_keys.setdefault(sym, set()).update(
+                symbol_specific_missing
+            )
 
     # Removed: If some symbols have missing files or incomplete time bounds, all present keys are partial.
     # This was causing redundant re-computation of ~1000 features when only a few were missing.
@@ -3139,6 +3178,17 @@ def _chunked_partial_backfill_is_fully_covered(symbols_to_compute: Sequence[str]
     return len(symbols_to_compute) == 0
 
 
+def _initial_feature_cache_write_symbols(
+    existing_files: Sequence[str],
+    force_full_recompute: bool,
+    output_symbols: Sequence[str],
+) -> set[str]:
+    """Symbols that must be materialized when the target feature cache is absent."""
+    if existing_files or force_full_recompute:
+        return set()
+    return {str(s) for s in output_symbols}
+
+
 def _feature_scan_has_broad_target_gap(scan: dict | None) -> bool:
     """Return True when many required symbols have sparse/null target rows."""
     if not scan:
@@ -3184,6 +3234,7 @@ def _build_tail_only_backfill_cutoffs(
         "already_covered": 0,
         "tail_bound_fastpath": 0,
         "target_row_fastpath": 0,
+        "recent_interior_gap_fastpath": 0,
     }
 
     if not backfill_set:
@@ -3271,6 +3322,56 @@ def _build_tail_only_backfill_cutoffs(
             continue
 
         backfill_cols = sorted(backfill_set)
+        if backfill_cols:
+            recent_start = max(
+                pd.Timestamp(req_first),
+                pd.Timestamp(req_last) - pd.Timedelta(hours=recent_scan_hours),
+            )
+            sample_col = next(
+                (
+                    col
+                    for col in backfill_cols
+                    if col not in {"ts", "timestamp", "__index_level_0__"}
+                ),
+                None,
+            )
+            if sample_col is not None:
+                try:
+                    recent_ts_df = read_symbol_features(
+                        fpath,
+                        columns=[sample_col],
+                        start_ts=recent_start,
+                        end_ts=req_last,
+                    )
+                except Exception:
+                    recent_ts_df = pd.DataFrame()
+                if not recent_ts_df.empty and isinstance(
+                    recent_ts_df.index, pd.DatetimeIndex
+                ):
+                    present_hours = set(
+                        pd.DatetimeIndex(recent_ts_df.index)
+                        .dropna()
+                        .floor("h")
+                        .unique()
+                    )
+                    expected_hours = pd.date_range(
+                        start=pd.Timestamp(recent_start).floor("h"),
+                        end=pd.Timestamp(req_last).floor("h"),
+                        freq="1h",
+                    )
+                    missing_hours = [
+                        pd.Timestamp(hour)
+                        for hour in expected_hours
+                        if pd.Timestamp(hour) not in present_hours
+                    ]
+                    if missing_hours:
+                        first_missing = missing_hours[0]
+                        cutoffs[sym] = pd.Timestamp(first_missing) - pd.Timedelta(
+                            microseconds=1
+                        )
+                        stats["eligible_tail_only"] += 1
+                        stats["recent_interior_gap_fastpath"] += 1
+                        continue
         try:
             target_df = _read_target_feature_row(
                 fpath,
@@ -3341,6 +3442,7 @@ def _build_tail_only_backfill_cutoffs(
         f"already_covered={stats['already_covered']} "
         f"tail_bound_fastpath={stats['tail_bound_fastpath']} "
         f"target_row_fastpath={stats['target_row_fastpath']} "
+        f"recent_interior_gap_fastpath={stats['recent_interior_gap_fastpath']} "
         f"recent_fallbacks={recent_scan_fallbacks} "
         f"elapsed={time.time() - cutoff_start:.1f}s"
     )
@@ -8809,24 +8911,14 @@ def run_feature_generation_step(
                     "but no narrow backfill keys were derived; backfilling the full "
                     f"requested contract ({len(backfill_keys)} keys)."
                 )
-            explicit_backfill_keys_raw_precheck = os.environ.get(
-                "EPM_FEATURE_BACKFILL_KEYS", ""
-            ).strip()
-            if explicit_backfill_keys_raw_precheck and not force_full_recompute:
-                explicit_backfill_keys_precheck = sorted(
-                    {
-                        k.strip()
-                        for k in explicit_backfill_keys_raw_precheck.replace("\n", ",").split(",")
-                        if k.strip()
-                    }
+            explicit_backfill_keys_precheck = _feature_backfill_keys_from_env()
+            if explicit_backfill_keys_precheck and not force_full_recompute:
+                backfill_keys = explicit_backfill_keys_precheck
+                full_rewrite_symbols_for_backfill = set(missing_symbols_for_backfill)
+                tprint(
+                    "Explicit feature backfill key override (precheck): "
+                    f"{len(backfill_keys)} keys"
                 )
-                if explicit_backfill_keys_precheck:
-                    backfill_keys = explicit_backfill_keys_precheck
-                    full_rewrite_symbols_for_backfill = set(missing_symbols_for_backfill)
-                    tprint(
-                        "Explicit feature backfill key override (precheck): "
-                        f"{len(backfill_keys)} keys"
-                    )
             if backfill_keys:
                 tprint(
                     f"Feature cache incomplete for {ts_sig}: "
@@ -8916,7 +9008,7 @@ def run_feature_generation_step(
                     f"already_covered={tail_cutoff_stats['already_covered']}"
                 )
             else:
-                if not os.environ.get("EPM_FEATURE_BACKFILL_KEYS", "").strip():
+                if not _feature_backfill_keys_from_env():
                     _n_syms = len(close_panel_light.columns)
                     _n_feats = len(expected_keys)
                     tprint(
@@ -8942,66 +9034,63 @@ def run_feature_generation_step(
             backfill_keys = sorted(expected_keys)
     elif not existing_files and not force_full_recompute:
         backfill_keys = sorted(expected_keys)
+        full_rewrite_symbols_for_backfill = _initial_feature_cache_write_symbols(
+            existing_files,
+            force_full_recompute,
+            output_syms,
+        )
         tprint(
             f"No existing feature cache found for {ts_sig}; "
             "streaming all expected features in chunked non-force mode."
         )
 
-    explicit_backfill_keys_raw = os.environ.get("EPM_FEATURE_BACKFILL_KEYS", "").strip()
+    explicit_backfill_keys = _feature_backfill_keys_from_env()
     explicit_backfill_keys_active = False
-    if explicit_backfill_keys_raw and not force_full_recompute:
-        explicit_backfill_keys = sorted(
-            {
-                k.strip()
-                for k in explicit_backfill_keys_raw.replace("\n", ",").split(",")
-                if k.strip()
+    if explicit_backfill_keys and not force_full_recompute:
+        explicit_backfill_keys_active = True
+        backfill_keys = explicit_backfill_keys
+        if (
+            _feature_backfill_force_full_history_enabled()
+            and close_panel_light is not None
+            and not close_panel_light.empty
+        ):
+            full_rewrite_symbols_for_backfill = set(
+                str(s) for s in close_panel_light.columns
+            )
+            precomputed_tail_cutoffs = {}
+            tail_cutoff_stats = {
+                "eligible_tail_only": 0,
+                "missing_symbol_file": 0,
+                "missing_backfill_columns": 0,
+                "structural_or_interior": 0,
+                "already_covered": 0,
             }
-        )
-        if explicit_backfill_keys:
-            explicit_backfill_keys_active = True
-            backfill_keys = explicit_backfill_keys
-            if (
-                _feature_backfill_force_full_history_enabled()
-                and close_panel_light is not None
-                and not close_panel_light.empty
-            ):
-                full_rewrite_symbols_for_backfill = set(
-                    str(s) for s in close_panel_light.columns
-                )
-                precomputed_tail_cutoffs = {}
-                tail_cutoff_stats = {
-                    "eligible_tail_only": 0,
-                    "missing_symbol_file": 0,
-                    "missing_backfill_columns": 0,
-                    "structural_or_interior": 0,
-                    "already_covered": 0,
-                }
-                tprint(
-                    "Explicit feature backfill full-history override: "
-                    f"{len(full_rewrite_symbols_for_backfill)} symbols; "
-                    "tail-only cutoffs disabled"
+            tprint(
+                "Explicit feature backfill full-history override: "
+                f"{len(full_rewrite_symbols_for_backfill)} symbols; "
+                "tail-only cutoffs disabled"
+            )
+        else:
+            full_rewrite_symbols_for_backfill = set(
+                full_rewrite_symbols_for_backfill
+            ).union(set(missing_symbols_for_backfill))
+            if close_panel_light is not None and not close_panel_light.empty:
+                (
+                    precomputed_tail_cutoffs,
+                    tail_cutoff_stats,
+                ) = _build_tail_only_backfill_cutoffs(
+                    ts_sig=ts_sig,
+                    data_root=cfg["data_root"],
+                    panel_close=close_panel_light,
+                    backfill_keys=backfill_keys,
                 )
             else:
-                full_rewrite_symbols_for_backfill = set(
-                    full_rewrite_symbols_for_backfill
-                ).union(set(missing_symbols_for_backfill))
-                if close_panel_light is not None and not close_panel_light.empty:
-                    (
-                        precomputed_tail_cutoffs,
-                        tail_cutoff_stats,
-                    ) = _build_tail_only_backfill_cutoffs(
-                        ts_sig=ts_sig,
-                        data_root=cfg["data_root"],
-                        panel_close=close_panel_light,
-                        backfill_keys=backfill_keys,
-                    )
-                else:
-                    precomputed_tail_cutoffs = {}
-                    tail_cutoff_stats = None
-            tprint(
-                "Explicit feature backfill key override: "
-                f"{len(backfill_keys)} keys"
-            )
+                precomputed_tail_cutoffs = {}
+                tail_cutoff_stats = None
+        tprint(
+            "Explicit feature backfill key override: "
+            f"{len(backfill_keys)} keys"
+        )
 
     # 3. Load Data
     dfs = {}

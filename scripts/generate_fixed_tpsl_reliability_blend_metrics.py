@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Generate fixed TP/SL metrics for reliability blend scores.
+"""Generate TP/SL metrics for reliability blend scores.
 
 This audit recomputes first-touch triple-barrier outcomes from hourly OHLCV
-using a fixed TP/SL pair, then evaluates baseline anchor scores versus the
-selected reliability blend on recent OOF windows.
+using either a volatility-normalized barrier or an explicit fixed TP/SL pair,
+then evaluates baseline anchor scores versus the selected reliability blend on
+recent OOF windows.
 """
 
 from __future__ import annotations
@@ -34,10 +35,69 @@ DEFAULT_OHLCV_ROOT = Path("data_perp/exchanges/krakenfutures/ohlcv")
 
 
 @dataclass(frozen=True)
-class FixedBarrierConfig:
-    tp: float
-    sl: float
+class BarrierConfig:
+    barrier_mode: str
+    tp_mult: float
+    sl_mult: float
+    fixed_tp: float
+    fixed_sl: float
     horizon_hours: float
+    vol_lookback_hours: int
+    vol_min_periods: int
+    min_barrier: float
+    max_barrier: float
+
+    @property
+    def fallback_barrier(self) -> float:
+        if self.barrier_mode == "fixed":
+            return max(float(self.fixed_tp) / max(float(self.tp_mult), 1e-9), 1e-9)
+        return float(np.clip(float(self.fixed_tp) / max(float(self.tp_mult), 1e-9), self.min_barrier, self.max_barrier))
+
+
+def _empty_outcome_row(row: Any, reason: str) -> dict[str, Any]:
+    return {
+        "head": row.head,
+        "row_id": int(row.row_id),
+        "timestamp": row.timestamp,
+        "symbol": row.symbol,
+        "fixed_outcome": np.nan,
+        "fixed_y_tp": np.nan,
+        "fixed_return": np.nan,
+        "fixed_conflict_same_bar": False,
+        "fixed_missing_reason": reason,
+        "fixed_barrier_pct": np.nan,
+        "fixed_effective_tp": np.nan,
+        "fixed_effective_sl": np.nan,
+        "fixed_barrier_mode": "",
+    }
+
+
+def _row_timestamp_utc(value: Any) -> pd.Timestamp:
+    ts = pd.Timestamp(value)
+    return ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+
+
+def _barrier_for_index(closes: np.ndarray, index: int, cfg: BarrierConfig) -> float:
+    if cfg.barrier_mode == "fixed":
+        return float(cfg.fallback_barrier)
+    end = int(index)
+    start = max(1, end - int(cfg.vol_lookback_hours) + 1)
+    if end <= start:
+        return float(cfg.fallback_barrier)
+    prev = closes[start - 1 : end]
+    curr = closes[start : end + 1]
+    mask = np.isfinite(prev) & np.isfinite(curr) & (prev > 0.0) & (curr > 0.0)
+    if int(mask.sum()) < int(cfg.vol_min_periods):
+        return float(cfg.fallback_barrier)
+    rets = np.diff(np.log(closes[start - 1 : end + 1]))
+    rets = rets[np.isfinite(rets)]
+    if int(rets.size) < int(cfg.vol_min_periods):
+        return float(cfg.fallback_barrier)
+    hourly_vol = float(np.nanstd(rets, ddof=1)) if rets.size > 1 else float(np.nanstd(rets))
+    if not np.isfinite(hourly_vol) or hourly_vol <= 0.0:
+        return float(cfg.fallback_barrier)
+    barrier = hourly_vol * math.sqrt(max(float(cfg.horizon_hours), 1.0))
+    return float(np.clip(barrier, float(cfg.min_barrier), float(cfg.max_barrier)))
 
 
 def _safe_auc(y: np.ndarray, score: np.ndarray) -> float:
@@ -108,7 +168,7 @@ def _label_symbol_rows(
     rows: pd.DataFrame,
     *,
     side: str,
-    cfg: FixedBarrierConfig,
+    cfg: BarrierConfig,
 ) -> pd.DataFrame:
     times_ns = ohlcv["ts"].to_numpy(dtype="datetime64[ns]").astype("int64")
     highs = ohlcv["high"].to_numpy(dtype="float64", copy=False)
@@ -120,40 +180,31 @@ def _label_symbol_rows(
 
     out_rows: list[dict[str, Any]] = []
     for row in rows.itertuples(index=False):
-        row_ts = pd.Timestamp(row.timestamp).tz_convert("UTC")
+        row_ts = _row_timestamp_utc(row.timestamp)
         row_ns = int(row_ts.to_datetime64().astype("datetime64[ns]").astype("int64"))
         i = ts_to_idx.get(row_ns)
         if i is None:
-            out_rows.append(
-                {
-                    "head": row.head,
-                    "row_id": int(row.row_id),
-                    "timestamp": row.timestamp,
-                    "symbol": row.symbol,
-                    "fixed_outcome": np.nan,
-                    "fixed_y_tp": np.nan,
-                    "fixed_return": np.nan,
-                    "fixed_conflict_same_bar": False,
-                    "fixed_missing_reason": "timestamp_missing",
-                }
-            )
+            out_rows.append(_empty_outcome_row(row, "timestamp_missing"))
             continue
 
         entry = closes[i]
         if not np.isfinite(entry) or entry <= 0:
-            out_rows.append(
-                {
-                    "head": row.head,
-                    "row_id": int(row.row_id),
-                    "timestamp": row.timestamp,
-                    "symbol": row.symbol,
-                    "fixed_outcome": np.nan,
-                    "fixed_y_tp": np.nan,
-                    "fixed_return": np.nan,
-                    "fixed_conflict_same_bar": False,
-                    "fixed_missing_reason": "bad_entry",
-                }
-            )
+            out_rows.append(_empty_outcome_row(row, "bad_entry"))
+            continue
+
+        barrier = _barrier_for_index(closes, i, cfg)
+        tp_dist = (
+            float(cfg.fixed_tp)
+            if cfg.barrier_mode == "fixed"
+            else float(np.clip(float(cfg.tp_mult) * barrier, float(cfg.min_barrier), float(cfg.max_barrier) * max(float(cfg.tp_mult), 1.0)))
+        )
+        sl_dist = (
+            float(cfg.fixed_sl)
+            if cfg.barrier_mode == "fixed"
+            else float(np.clip(float(cfg.sl_mult) * barrier, float(cfg.min_barrier), float(cfg.max_barrier) * max(float(cfg.sl_mult), 1.0)))
+        )
+        if not (np.isfinite(tp_dist) and np.isfinite(sl_dist) and tp_dist > 0.0 and sl_dist > 0.0):
+            out_rows.append(_empty_outcome_row(row, "bad_barrier"))
             continue
 
         cutoff = row_ns + horizon_ns
@@ -171,16 +222,20 @@ def _label_symbol_rows(
                     "fixed_return": 0.0,
                     "fixed_conflict_same_bar": False,
                     "fixed_missing_reason": "",
+                    "fixed_barrier_pct": float(barrier),
+                    "fixed_effective_tp": float(tp_dist),
+                    "fixed_effective_sl": float(sl_dist),
+                    "fixed_barrier_mode": cfg.barrier_mode,
                 }
             )
             continue
 
         if is_long:
-            tp_price = entry * (1.0 + cfg.tp)
-            sl_price = entry * (1.0 - cfg.sl)
+            tp_price = entry * (1.0 + tp_dist)
+            sl_price = entry * (1.0 - sl_dist)
         else:
-            tp_price = entry * (1.0 - cfg.tp)
-            sl_price = entry * (1.0 + cfg.sl)
+            tp_price = entry * (1.0 - tp_dist)
+            sl_price = entry * (1.0 + sl_dist)
 
         outcome = OUT_TO
         fixed_ret = 0.0
@@ -205,16 +260,16 @@ def _label_symbol_rows(
             # Match the conservative convention used by the project labeler for same-bar conflicts.
             if hit_tp and hit_sl:
                 outcome = OUT_SL
-                fixed_ret = -float(cfg.sl)
+                fixed_ret = -float(sl_dist)
                 conflict = True
                 break
             if hit_sl:
                 outcome = OUT_SL
-                fixed_ret = -float(cfg.sl)
+                fixed_ret = -float(sl_dist)
                 break
             if hit_tp:
                 outcome = OUT_TP
-                fixed_ret = float(cfg.tp)
+                fixed_ret = float(tp_dist)
                 break
             if np.isfinite(cc):
                 last_close = cc
@@ -233,6 +288,10 @@ def _label_symbol_rows(
                 "fixed_return": float(fixed_ret),
                 "fixed_conflict_same_bar": bool(conflict),
                 "fixed_missing_reason": "",
+                "fixed_barrier_pct": float(barrier),
+                "fixed_effective_tp": float(tp_dist),
+                "fixed_effective_sl": float(sl_dist),
+                "fixed_barrier_mode": cfg.barrier_mode,
             }
         )
 
@@ -268,7 +327,7 @@ def _top_fraction_metrics(frame: pd.DataFrame, score_col: str, y_col: str, ret_c
 def _compute_window_metrics(
     scores: pd.DataFrame,
     variants: dict[str, str],
-    cfg: FixedBarrierConfig,
+    cfg: BarrierConfig,
 ) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for head, group in scores.groupby("head", sort=True):
@@ -294,8 +353,11 @@ def _compute_window_metrics(
                 "rows_labeled_exact": labeled_rows,
                 "coverage": float(labeled_rows / total_rows) if total_rows else float("nan"),
                 "current_variant": variant,
-                "fixed_tp": float(cfg.tp),
-                "fixed_sl": float(cfg.sl),
+                "barrier_mode": cfg.barrier_mode,
+                "tp_mult": float(cfg.tp_mult),
+                "sl_mult": float(cfg.sl_mult),
+                "fixed_tp": float(cfg.fixed_tp),
+                "fixed_sl": float(cfg.fixed_sl),
                 "fixed_horizon_hours": float(cfg.horizon_hours),
             }
             if w.empty:
@@ -310,6 +372,9 @@ def _compute_window_metrics(
             row["all_timeout_rate"] = float((w["fixed_outcome"] == OUT_TO).mean())
             row["all_conflict_rate"] = float(w["fixed_conflict_same_bar"].mean())
             row["all_mean_return"] = float(w["fixed_return"].mean())
+            row["barrier_mean"] = float(pd.to_numeric(w.get("fixed_barrier_pct"), errors="coerce").mean())
+            row["effective_tp_mean"] = float(pd.to_numeric(w.get("fixed_effective_tp"), errors="coerce").mean())
+            row["effective_sl_mean"] = float(pd.to_numeric(w.get("fixed_effective_sl"), errors="coerce").mean())
             for frac, label in ((0.10, "10"), (0.20, "20"), (0.30, "30")):
                 b = _top_fraction_metrics(w, "anchor_score", "fixed_y_tp", "fixed_return", frac)
                 c = _top_fraction_metrics(w, current_col, "fixed_y_tp", "fixed_return", frac)
@@ -364,9 +429,16 @@ def main() -> None:
     ap.add_argument("--report-dir", default=str(DEFAULT_REPORT_DIR))
     ap.add_argument("--default-config", default=str(DEFAULT_CONFIG_PATH))
     ap.add_argument("--ohlcv-root", default=str(DEFAULT_OHLCV_ROOT))
-    ap.add_argument("--tp", type=float, default=0.03)
-    ap.add_argument("--sl", type=float, default=0.02)
+    ap.add_argument("--barrier-mode", choices=("vol_norm", "fixed"), default="vol_norm")
+    ap.add_argument("--tp-mult", type=float, default=1.5)
+    ap.add_argument("--sl-mult", type=float, default=1.0)
+    ap.add_argument("--fixed-tp", "--tp", dest="fixed_tp", type=float, default=0.03)
+    ap.add_argument("--fixed-sl", "--sl", dest="fixed_sl", type=float, default=0.02)
     ap.add_argument("--horizon-hours", type=float, default=5.0)
+    ap.add_argument("--vol-lookback-hours", type=int, default=48)
+    ap.add_argument("--vol-min-periods", type=int, default=12)
+    ap.add_argument("--min-barrier", type=float, default=0.005)
+    ap.add_argument("--max-barrier", type=float, default=0.06)
     args = ap.parse_args()
 
     report_dir = Path(args.report_dir)
@@ -374,7 +446,18 @@ def main() -> None:
     score_path = report_dir / "reliability_blend_component_scores.parquet"
     scores = pd.read_parquet(score_path)
     scores["timestamp"] = pd.to_datetime(scores["timestamp"], utc=True, errors="coerce")
-    cfg = FixedBarrierConfig(tp=float(args.tp), sl=float(args.sl), horizon_hours=float(args.horizon_hours))
+    cfg = BarrierConfig(
+        barrier_mode=str(args.barrier_mode),
+        tp_mult=float(args.tp_mult),
+        sl_mult=float(args.sl_mult),
+        fixed_tp=float(args.fixed_tp),
+        fixed_sl=float(args.fixed_sl),
+        horizon_hours=float(args.horizon_hours),
+        vol_lookback_hours=int(args.vol_lookback_hours),
+        vol_min_periods=int(args.vol_min_periods),
+        min_barrier=float(args.min_barrier),
+        max_barrier=float(args.max_barrier),
+    )
 
     needed_parts: list[pd.DataFrame] = []
     for head, group in scores.groupby("head", sort=True):
@@ -420,6 +503,10 @@ def main() -> None:
                         "fixed_return": np.nan,
                         "fixed_conflict_same_bar": False,
                         "fixed_missing_reason": "symbol_ohlcv_missing",
+                        "fixed_barrier_pct": np.nan,
+                        "fixed_effective_tp": np.nan,
+                        "fixed_effective_sl": np.nan,
+                        "fixed_barrier_mode": "",
                     }
                 )
             continue
@@ -438,7 +525,16 @@ def main() -> None:
     )
     metrics = _compute_window_metrics(enriched, variants, cfg)
 
-    tag = f"fixed_tpsl_{int(round(cfg.tp * 100))}_{int(round(cfg.sl * 100))}_h{int(round(cfg.horizon_hours))}"
+    if cfg.barrier_mode == "fixed":
+        tag = f"fixed_tpsl_{int(round(cfg.fixed_tp * 100))}_{int(round(cfg.fixed_sl * 100))}_h{int(round(cfg.horizon_hours))}"
+    else:
+        tag = (
+            "volnorm_tpsl_"
+            f"tp{int(round(cfg.tp_mult * 100)):03d}_"
+            f"sl{int(round(cfg.sl_mult * 100)):03d}_"
+            f"h{int(round(cfg.horizon_hours))}_"
+            f"v{int(cfg.vol_lookback_hours)}"
+        )
     rows_path = report_dir / f"reliability_blend_{tag}_row_outcomes.parquet"
     metrics_path = report_dir / f"reliability_blend_{tag}_last_1_2_4w_metrics.csv"
     report_path = report_dir / f"reliability_blend_{tag}_metrics.md"
@@ -447,14 +543,22 @@ def main() -> None:
 
     exact_count = int(np.isfinite(enriched["fixed_y_tp"].to_numpy(dtype="float64")).sum())
     lines = [
-        f"# Reliability Blend Fixed TP/SL Metrics ({cfg.tp:.2%}/{cfg.sl:.2%}, H={cfg.horizon_hours:g}h)",
+        (
+            "# Reliability Blend TP/SL Metrics "
+            f"({cfg.barrier_mode}, tp_mult={cfg.tp_mult:g}, sl_mult={cfg.sl_mult:g}, "
+            f"fixed={cfg.fixed_tp:.2%}/{cfg.fixed_sl:.2%}, H={cfg.horizon_hours:g}h)"
+        ),
         "",
         "Metric type: OOF sampled blend rows with exact first-touch labels recomputed from Kraken futures hourly OHLCV.",
+        "Default mode uses causal prior-volatility-normalized TP/SL barriers with min/max absolute caps.",
         "Same-bar TP/SL conflicts are treated conservatively as SL, matching the project labeler convention.",
         "",
         f"- rows evaluated: {len(enriched)}",
         f"- exact labeled rows: {exact_count}",
         f"- exact coverage: {exact_count / max(1, len(enriched)):.2%}",
+        f"- barrier mode: `{cfg.barrier_mode}`",
+        f"- tp/sl multipliers: {cfg.tp_mult:g}/{cfg.sl_mult:g}",
+        f"- barrier caps: {cfg.min_barrier:.2%} to {cfg.max_barrier:.2%}",
         f"- source scores: `{score_path}`",
         f"- row outcomes: `{rows_path}`",
         f"- metrics csv: `{metrics_path}`",

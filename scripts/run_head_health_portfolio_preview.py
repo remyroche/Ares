@@ -189,6 +189,24 @@ def _summarise(
                 "head_health_median": float(pd.to_numeric(after.get("head_health"), errors="coerce").median()),
                 "rank_shift_median": float(pd.to_numeric(after.get("head_health_score_delta"), errors="coerce").median()),
                 "threshold_after_median": float(pd.to_numeric(after["base_strategy_threshold"], errors="coerce").median()),
+                "hard_brake_rows": int(
+                    pd.Series(after.get("head_health_hard_brake", False), index=after.index)
+                    .fillna(False)
+                    .astype(bool)
+                    .sum()
+                ),
+                "size_multiplier_median": float(
+                    pd.to_numeric(after.get("portfolio_size_multiplier"), errors="coerce").median()
+                ),
+                "max_new_entries_bar_median": float(
+                    pd.to_numeric(after.get("portfolio_max_new_entries_per_bar"), errors="coerce").median()
+                ),
+                "max_new_entries_strategy_median": float(
+                    pd.to_numeric(
+                        after.get("portfolio_max_new_entries_per_strategy_per_bar"),
+                        errors="coerce",
+                    ).median()
+                ),
             }
         )
     return pd.DataFrame(rows)
@@ -196,6 +214,11 @@ def _summarise(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--allow-deprecated-head-health",
+        action="store_true",
+        help="Run this deprecated historical audit tool. HeadHealth is disabled from active policy logic.",
+    )
     parser.add_argument("--score-path", type=Path, default=DEFAULT_SCORE_PATH)
     parser.add_argument("--score-column", default="reliability_blend_score")
     parser.add_argument("--train-candidates", type=Path, default=DEFAULT_TRAIN_CANDIDATES)
@@ -207,6 +230,12 @@ def main() -> None:
     parser.add_argument("--bar-minutes", type=int, default=15)
     parser.add_argument("--market-mode", default="perps")
     args = parser.parse_args()
+    if not bool(args.allow_deprecated_head_health):
+        raise SystemExit(
+            "HeadHealth active execution is deprecated and disabled. Use the "
+            "reliability-blend parity/portfolio ablation path instead, or pass "
+            "--allow-deprecated-head-health for historical audit reproduction."
+        )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     scores = pd.read_parquet(args.score_path)
@@ -214,6 +243,17 @@ def main() -> None:
     train = normalise_candidate_table(pd.read_parquet(args.train_candidates))
     params = _load_portfolio_params(args.portfolio_manifest, args.portfolio_variant)
     config = _read_base_config(args.head_health_config)
+    config["base_max_new_entries_per_bar"] = int(params.max_new_entries_per_bar)
+    config["base_max_new_entries_per_strategy_per_bar"] = int(
+        params.max_new_entries_per_strategy_per_bar
+        if params.max_new_entries_per_strategy_per_bar is not None
+        else params.max_new_entries_per_bar
+    )
+    config["base_max_concurrent_per_strategy"] = int(
+        params.max_concurrent_per_strategy
+        if params.max_concurrent_per_strategy is not None
+        else params.max_concurrent_positions
+    )
     candidates = _build_score_only_candidates(
         scores,
         score_column=args.score_column,

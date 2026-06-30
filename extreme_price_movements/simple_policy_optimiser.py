@@ -65,6 +65,11 @@ from extreme_price_movements.inference.training_live_parity_contract import (
     build_training_live_parity_contract,
     persist_training_live_parity_contract,
 )
+from extreme_price_movements.inference.dynamic_hr_surprise_threshold import (
+    T16_POLICY_NAME,
+    patch_portfolio_policy_payload_with_dynamic_hr_surprise,
+    write_dynamic_hr_surprise_state_from_replay,
+)
 from extreme_price_movements.inference.execution_fill_model import (
     stop_exit_fill_price,
     stop_exit_fill_price_array,
@@ -204,6 +209,7 @@ MIN_TRAILING_GIVEBACK_FRAC = 0.003
 TRAILING_CLUSTER_FEATURE_RANGES: Dict[str, Tuple[float, float]] = {
     "sl_mult": (0.5, 1.5),
     "trailing_activation_mult": (0.5, 2.5),
+    "trailing_activation_cap_pct": (0.0, 0.04),
     "trailing_power": (1.2, 2.0),
     "trailing_squash_divisor": (1.0, 6.0),
     "giveback_beta": (0.3, 0.95),
@@ -255,6 +261,8 @@ PORTFOLIO_POLICY_MAX_POSITION_QUOTE_NOTIONAL = 5000.0
 PORTFOLIO_POLICY_BOOK_NOTIONAL_MULTIPLIER = 1.0
 PORTFOLIO_POLICY_LEVERAGE_WALLET_MULTIPLIER = 1.0
 PORTFOLIO_POLICY_MIN_MARGIN_LEVEL_AFTER_ENTRY = 2.50
+PORTFOLIO_POLICY_MIN_ENTRY_QUOTE_NOTIONAL = 3.0
+PORTFOLIO_POLICY_PERP_DEFAULT_LEVERAGE = 10.0
 PORTFOLIO_POLICY_INITIAL_RANK_THRESHOLD_FLOOR = 0.90
 PORTFOLIO_POLICY_LIVE_TEST_MIN_QUOTE_NOTIONAL = 5.0
 PORTFOLIO_POLICY_LIVE_TEST_QUOTE_NOTIONAL = 10.0
@@ -479,7 +487,7 @@ DEFAULT_PERP_SPREAD_BASELINE_PATH = os.environ.get(
     "data_perp/exchanges/krakenfutures/spread_model/per_asset_spread_baseline_latest.csv",
 )
 POLICY_SPREAD_FALLBACK_MAX_QUANTILE = float(
-    os.environ.get("EPM_SIMPLE_POLICY_SPREAD_FALLBACK_MAX_QUANTILE", "0.75")
+    os.environ.get("EPM_SIMPLE_POLICY_SPREAD_FALLBACK_MAX_QUANTILE", "0.85")
 )
 POLICY_SPREAD_FALLBACK_MIN_SYMBOLS = int(
     os.environ.get("EPM_SIMPLE_POLICY_SPREAD_FALLBACK_MIN_SYMBOLS", "20")
@@ -522,7 +530,7 @@ def _spread_fallback_quantile() -> float:
     try:
         value = float(POLICY_SPREAD_FALLBACK_MAX_QUANTILE)
     except Exception:
-        value = 0.75
+        value = 0.85
     return float(min(max(value, 0.50), 1.0))
 
 
@@ -1297,6 +1305,110 @@ def _write_text_with_mode_alias(path: Path, text: str, market_mode: str) -> None
         mode_path.write_text(text)
 
 
+def _maybe_publish_dynamic_hr_surprise_t16_policy(
+    *,
+    output_run_root: Path,
+    policy_params_dir: Path,
+    market_mode: str,
+) -> None:
+    """Publish the validated T16 dynamic-threshold artifact when requested."""
+    replay_dir_value = os.environ.get(
+        "EPM_SIMPLE_POLICY_DYNAMIC_HR_SURPRISE_T16_REPLAY_DIR", ""
+    ).strip()
+    if not replay_dir_value:
+        return
+    replay_dir = Path(replay_dir_value)
+    if not replay_dir.exists():
+        logger.warning(
+            "Skipping %s dynamic HR surprise publication; replay dir does not exist: %s",
+            T16_POLICY_NAME,
+            replay_dir,
+        )
+        return
+    state_path = policy_params_dir / "dynamic_hr_surprise_t16_state.json"
+    state_payload = write_dynamic_hr_surprise_state_from_replay(
+        replay_dir,
+        state_path,
+        policy_name=T16_POLICY_NAME,
+    )
+    gate = state_payload.get("promotion_gate") or {}
+    accepted = bool(gate.get("accepted"))
+    if not accepted:
+        logger.warning(
+            "Not enabling %s because replay promotion gate failed: %s",
+            T16_POLICY_NAME,
+            gate,
+        )
+    try:
+        max_age_days = float(
+            os.environ.get(
+                "EPM_SIMPLE_POLICY_DYNAMIC_HR_SURPRISE_MAX_STATE_AGE_DAYS", "7.0"
+            )
+        )
+    except (TypeError, ValueError):
+        max_age_days = 7.0
+    config_paths = [
+        policy_params_dir / "optimized_portfolio_policy_config.json",
+        policy_params_dir / "portfolio_policy_config.json",
+        output_run_root
+        / "portfolio_policy_replay"
+        / "optimized_portfolio_policy_config.json",
+    ]
+    patched_paths: list[str] = []
+    for config_path in config_paths:
+        if not config_path.exists():
+            continue
+        try:
+            payload = json.loads(config_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning(
+                "Skipping dynamic HR policy patch for unreadable config %s: %s",
+                config_path,
+                exc,
+            )
+            continue
+        if not isinstance(payload, Mapping):
+            continue
+        patched = patch_portfolio_policy_payload_with_dynamic_hr_surprise(
+            payload,
+            artifact_path=str(state_path),
+            enabled=accepted,
+            max_state_age_days=max_age_days,
+            use_deployed_floor=False,
+            fallback_to_deployed=False,
+            stale_fallback_to_deployed=True,
+            lower_bound=-0.50,
+            upper_bound=1.50,
+        )
+        _write_text_with_mode_alias(
+            config_path,
+            json.dumps(_json_safe(patched), indent=2),
+            market_mode,
+        )
+        patched_paths.append(str(config_path))
+    manifest = {
+        "policy_name": T16_POLICY_NAME,
+        "status": "enabled" if accepted else "disabled_gate_failed",
+        "state_path": str(state_path),
+        "source_replay_dir": str(replay_dir),
+        "patched_config_paths": patched_paths,
+        "promotion_gate": gate,
+        "max_state_age_days": max_age_days,
+    }
+    _write_text_with_mode_alias(
+        policy_params_dir / "dynamic_hr_surprise_t16_promotion_manifest.json",
+        json.dumps(_json_safe(manifest), indent=2),
+        market_mode,
+    )
+    logger.info(
+        "Published %s dynamic HR surprise policy artifact status=%s state=%s patched=%s",
+        T16_POLICY_NAME,
+        manifest["status"],
+        state_path,
+        len(patched_paths),
+    )
+
+
 def _simple_policy_output_run_root(default_run_root: Path) -> Path:
     override = str(os.environ.get("EPM_SIMPLE_POLICY_OUTPUT_RUN_ROOT", "")).strip()
     if not override:
@@ -1966,6 +2078,7 @@ def simulate_and_score(
     size_power: float = 1.0,
     sl_mult: float = 1.0,
     trailing_activation_mult: float = 1.0,
+    trailing_activation_cap_pct: float = 0.0,
     trailing_power: float = 1.5,
     trailing_squash_divisor: float = 2.0,
     giveback_beta: float = 0.5,
@@ -2182,6 +2295,9 @@ def simulate_and_score(
 
     sl_dist = barrier_price_dist * sl_mult
     tp_act = barrier_price_dist * trailing_activation_mult
+    trailing_activation_cap = np.float32(
+        max(0.0, float(trailing_activation_cap_pct or 0.0))
+    )
     hard_tp_abs = max(0.0, float(hard_tp_abs_pct))
     hard_tp_dist = entry_prices * np.float32(hard_tp_abs)
     exit_pressure_enabled = bool(exit_pressure_enabled)
@@ -2385,6 +2501,11 @@ def simulate_and_score(
         is_short_mask = is_short_arr[active_idx]
         effective_sl_dist = sl_dist * latest_tightening_multiplier
         effective_tp_act = tp_act * latest_tightening_multiplier
+        if trailing_activation_cap > 0.0:
+            effective_tp_act = np.minimum(
+                effective_tp_act,
+                entry_prices * trailing_activation_cap,
+            )
         effective_hard_tp_dist = hard_tp_dist * latest_tightening_multiplier
 
         # 1. Check SL (Pessimistic: happens first)
@@ -4122,7 +4243,8 @@ def _build_simple_policy_candidate_rows(
         rows_with_costs["exit_spread_cost_bps"].to_numpy(dtype=np.float64),
     )
     exit_quote_half_spread_bps = exit_spread_cost_bps
-    net_return = net_return_before_spread.copy()
+    spread_adjustment_bps = np.maximum(spread_cost_bps, 0.0) + np.maximum(exit_spread_cost_bps, 0.0)
+    net_return = net_return_before_spread - spread_adjustment_bps / 10_000.0
     exit_price = entry_prices * (1.0 + side_values * gross_return)
     timestamps = pd.to_datetime(rows["timestamp"], utc=True, errors="coerce")
     exit_timestamps = timestamps + pd.to_timedelta(
@@ -4136,6 +4258,9 @@ def _build_simple_policy_candidate_rows(
     ).fillna(0.02).to_numpy(dtype=np.float64)
     trailing_activation_mult = float(
         best_params.get("trailing_activation_mult", 1.0) or 1.0
+    )
+    trailing_activation_cap_pct = max(
+        0.0, float(best_params.get("trailing_activation_cap_pct", 0.0) or 0.0)
     )
     sl_mult = float(best_params.get("sl_mult", 1.0) or 1.0)
     atr_power = float(best_params.get("atr_power", 1.0) or 1.0)
@@ -4154,7 +4279,15 @@ def _build_simple_policy_candidate_rows(
         atr_multiplier=atr_multiplier,
         median_barrier_frac=median_barrier_frac,
     ).astype(np.float64, copy=False)
-    trailing_activation_return = effective_barrier_pct * trailing_activation_mult
+    uncapped_trailing_activation_return = (
+        effective_barrier_pct * trailing_activation_mult
+    )
+    trailing_activation_return = uncapped_trailing_activation_return
+    if trailing_activation_cap_pct > 0.0:
+        trailing_activation_return = np.minimum(
+            trailing_activation_return,
+            trailing_activation_cap_pct,
+        )
     entry_slippage_proxy_bps = _metric_array(
         "entry_slippage_proxy_bps",
         pd.to_numeric(
@@ -4209,6 +4342,7 @@ def _build_simple_policy_candidate_rows(
             "net_return_before_legacy_entry_spread_haircut": net_return_before_spread,
             "gross_return": gross_return,
             "fees_bps": fees_bps,
+            "spread_adjustment_bps": spread_adjustment_bps,
             "expected_spread_bps": expected_spread_bps,
             "expected_half_spread_bps": spread_cost_bps,
             "spread_cost_bps": spread_cost_bps,
@@ -4248,6 +4382,8 @@ def _build_simple_policy_candidate_rows(
             ),
             "policy_median_barrier_frac": median_barrier_frac,
             "policy_trailing_activation_mult": trailing_activation_mult,
+            "policy_trailing_activation_cap_pct": trailing_activation_cap_pct,
+            "policy_uncapped_trailing_activation_return": uncapped_trailing_activation_return,
             "policy_trailing_activation_return": trailing_activation_return,
             "policy_trailing_power": float(best_params.get("trailing_power", 1.5) or 1.5),
             "policy_trailing_squash_divisor": float(
@@ -5255,6 +5391,39 @@ def _safe_float(x: Any, default: float = 0.0) -> float:
         return default
 
 
+def _sync_deployment_threshold_metrics_with_active_policy(
+    deployment_threshold_metrics: Mapping[str, Any] | None,
+    best_params: Mapping[str, Any] | None,
+) -> Dict[str, Any]:
+    """Keep threshold replay metadata aligned with the active deployed policy.
+
+    The threshold-search stage can use a diagnostic simple grid before the final
+    policy fit selects the deployed stop geometry. Downstream deployment
+    artifacts should make the final active ``sl_mult`` unambiguous while
+    preserving the diagnostic grid value for auditability.
+    """
+
+    metrics = dict(deployment_threshold_metrics or {})
+    params = dict(best_params or {})
+    active_sl_mult = _safe_float(params.get("sl_mult"), np.nan)
+    if not np.isfinite(active_sl_mult) or active_sl_mult <= 0.0:
+        return metrics
+
+    diagnostic_sl_mult = _safe_float(metrics.get("simple_sl_mult"), np.nan)
+    if (
+        np.isfinite(diagnostic_sl_mult)
+        and diagnostic_sl_mult > 0.0
+        and not np.isclose(diagnostic_sl_mult, active_sl_mult, rtol=1e-9, atol=1e-12)
+    ):
+        metrics.setdefault("diagnostic_simple_sl_mult", float(diagnostic_sl_mult))
+        metrics.setdefault("diagnostic_simple_sl_mult_source", "threshold_search_grid")
+
+    metrics["simple_sl_mult"] = float(active_sl_mult)
+    metrics["active_policy_sl_mult"] = float(active_sl_mult)
+    metrics["simple_sl_mult_source"] = "active_best_params.sl_mult"
+    return metrics
+
+
 def _rank_ev_bucket_codes(rank_pct: np.ndarray, bucket_count: int) -> np.ndarray:
     rank = np.asarray(rank_pct, dtype=np.float64)
     rank = np.nan_to_num(rank, nan=0.0, posinf=1.0, neginf=0.0)
@@ -6183,10 +6352,26 @@ def _strategy_threshold_recent_ev_metrics(
         )
         passes.append(passed)
 
+    non_empty = [m for m in metrics if int(m.get("trade_count", 0) or 0) > 0]
+    empty_recent_windows = [
+        int(m.get("window_days", 0) or 0)
+        for m in metrics
+        if int(m.get("trade_count", 0) or 0) <= 0
+    ]
+    non_empty_passes = [bool(m.get("passed", False)) for m in non_empty]
+    sparse_no_trade_rescue_pass = bool(
+        empty_recent_windows
+        and len(non_empty) >= min(2, len(metrics))
+        and all(non_empty_passes)
+    )
+    hard_floor_pass = bool((all(passes) if passes else True) or sparse_no_trade_rescue_pass)
+
     return {
-        "recent_window_hard_floor_pass": bool(all(passes) if passes else True),
+        "recent_window_hard_floor_pass": hard_floor_pass,
         "recent_window_hard_floor_available": True,
         "recent_window_metrics": metrics,
+        "recent_window_sparse_no_trade_rescue_pass": sparse_no_trade_rescue_pass,
+        "recent_window_sparse_no_trade_rescue_windows": empty_recent_windows,
     }
 
 
@@ -6917,7 +7102,7 @@ def _select_deployment_threshold_by_portfolio_replay(
     try:
         from extreme_price_movements.portfolio_policy_replay import (
             PortfolioPolicyParams,
-            fit_monotone_ev_curve,
+            fit_hierarchical_ev_curves,
             normalise_candidate_table,
             replay_candidates,
         )
@@ -6988,7 +7173,7 @@ def _select_deployment_threshold_by_portfolio_replay(
             int(np.ceil(DEPLOYMENT_REPLAY_THRESHOLD_GLOBAL_MIN_TRADES_PER_DAY * span_days)),
         )
     )
-    ev_curve = fit_monotone_ev_curve(base_candidates)
+    ev_curve = fit_hierarchical_ev_curves(base_candidates)
     replay_params = PortfolioPolicyParams(
         global_threshold_floor=0.0,
         threshold_viability_margin=0.0,
@@ -9983,6 +10168,9 @@ def _suggest_policy_params(trial: optuna.Trial) -> Dict[str, Any]:
         "trailing_activation_mult": trial.suggest_categorical(
             "trailing_activation_mult", [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5]
         ),
+        "trailing_activation_cap_pct": trial.suggest_categorical(
+            "trailing_activation_cap_pct", [0.0, 0.03, 0.035, 0.04]
+        ),
         "trailing_power": trial.suggest_categorical(
             "trailing_power", [1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0]
         ),
@@ -10110,13 +10298,24 @@ def _trial_metric_summary(metrics: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _finite_float_or(value: Any, default: float) -> float:
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return float(default)
+    if not np.isfinite(out):
+        return float(default)
+    return out
+
+
 def _policy_objective_scalar(metrics: Dict[str, Any], adv: Dict[str, Any]) -> float:
     # Optimise deployable economics. Hit/win rate is tracked for diagnostics only.
-    avg_std = 0.5 * float(adv.get("w_std", 10.0) or 10.0) + 0.5 * float(
-        adv.get("m_std", 10.0) or 10.0
+    avg_std = 0.5 * _finite_float_or(adv.get("w_std"), 10.0) + 0.5 * _finite_float_or(
+        adv.get("m_std"), 10.0
     )
-    max_dd = abs(float(_trial_metric_summary(metrics).get("max_drawdown", 0.0)))
-    return float(metrics.get("net_pnl", 0.0)) - 0.25 * avg_std - 0.10 * max_dd
+    max_dd = abs(_finite_float_or(_trial_metric_summary(metrics).get("max_drawdown"), 0.0))
+    net_pnl = _finite_float_or(metrics.get("net_pnl"), 0.0)
+    return float(net_pnl - 0.25 * avg_std - 0.10 * max_dd)
 
 
 def _median_policy_barrier_frac(df_rows: pd.DataFrame) -> float:
@@ -10971,10 +11170,7 @@ def _legacy_optimise_policy_on_rows(
             metrics.get("exit_reason"),
             metrics.get("exit_bars"),
         )
-        avg_std = 0.5 * float(adv.get("w_std", 10.0) or 10.0) + 0.5 * float(
-            adv.get("m_std", 10.0) or 10.0
-        )
-        return float(metrics["net_pnl"] - 0.25 * avg_std)
+        return _policy_objective_scalar(metrics, adv)
 
     study = optuna.create_study(direction="maximize")
     study.optimize(objective, n_trials=int(n_trials), show_progress_bar=False)
@@ -13527,6 +13723,7 @@ def _runtime_params_hash(params: Dict[str, Any]) -> str:
 def _policy_runtime_params(best_params: Dict[str, Any]) -> Dict[str, Any]:
     params = dict(best_params)
     params["enable_trailing"] = True
+    params.setdefault("trailing_activation_cap_pct", 0.0)
     params.setdefault("atr_power", 1.0)
     params.setdefault("atr_multiplier", 1.0)
     params.setdefault("hard_tp_abs_pct", 0.0)
@@ -13687,8 +13884,59 @@ def _require_lgbm_mask_contracts_for_deployment() -> bool:
     }
 
 
+def _load_artifact_lgbm_mask_contract_rows(
+    *,
+    run_id: str = "",
+    market_mode: str = "spot",
+) -> List[Dict[str, Any]]:
+    """Load exact rule-mask provenance saved beside the model/policy artifact."""
+    artifact_run_id = str(run_id or os.environ.get("EPM_RUN_ID", "") or "").strip()
+    if not artifact_run_id:
+        return []
+    data_root = Path(str(os.environ.get("EPM_DATA_ROOT", "data") or "data"))
+    mode = normalize_market_mode(market_mode)
+    registry_dir = data_root / "artifacts" / artifact_run_id / "strategy_registry"
+    candidates = [
+        registry_dir / f"deployed_four_heads_{mode}.csv",
+        registry_dir / "deployed_four_heads.csv",
+        registry_dir / f"strategy_registry_{mode}.csv",
+        registry_dir / "strategy_registry.csv",
+        data_root
+        / "artifacts"
+        / artifact_run_id
+        / f"policy_oos_retrain_strategy_source_{mode}.csv",
+        data_root
+        / "artifacts"
+        / artifact_run_id
+        / "policy_oos_retrain_strategy_source.csv",
+    ]
+    for path in candidates:
+        try:
+            if not path.exists() or path.stat().st_size <= 20:
+                continue
+            df = pd.read_csv(path)
+        except Exception as exc:
+            tprint(f"[deployment] could not read artifact LGBM mask contracts {path}: {exc}")
+            continue
+        if df.empty:
+            continue
+        if "market_mode" in df.columns:
+            df = df[df["market_mode"].map(normalize_market_mode) == mode].copy()
+            if df.empty:
+                continue
+        rows = df.to_dict("records")
+        tprint(
+            "[deployment] loaded artifact LGBM mask contracts: "
+            f"path={path} rows={len(rows)}"
+        )
+        return rows
+    return []
+
+
 def _load_lgbm_mask_contracts_for_deployment(
     market_mode: str = "spot",
+    *,
+    run_id: str = "",
 ) -> Dict[str, Dict[str, Any]]:
     """Load the LGBM rule-mask contracts needed to rebuild live regime masks."""
     try:
@@ -13711,6 +13959,7 @@ def _load_lgbm_mask_contracts_for_deployment(
 
     rows = (
         _load_env_lgbm_mask_contract_rows(market_mode)
+        + _load_artifact_lgbm_mask_contract_rows(run_id=run_id, market_mode=market_mode)
         + list(rows or [])
         + _load_source_run_lgbm_mask_contract_rows(market_mode)
     )
@@ -13744,6 +13993,7 @@ def _build_deployment_payload(
     rejected: List[Dict[str, Any]] = []
     lgbm_mask_contracts = _load_lgbm_mask_contracts_for_deployment(
         market_mode=market_mode,
+        run_id=run_id,
     )
     require_lgbm_mask_contracts = _require_lgbm_mask_contracts_for_deployment()
     for strategy_id, result in oos_results_json.get("strategies", {}).items():
@@ -13769,7 +14019,10 @@ def _build_deployment_payload(
             )
             or {}
         )
-        deployment_threshold_metrics = result.get("deployment_threshold_metrics", {})
+        deployment_threshold_metrics = _sync_deployment_threshold_metrics_with_active_policy(
+            result.get("deployment_threshold_metrics", {}),
+            result.get("best_params", {}),
+        )
         deployment_rank_threshold = (
             float(deployment_threshold_metrics.get("deployment_rank_threshold"))
             if isinstance(deployment_threshold_metrics, dict)
@@ -14083,6 +14336,8 @@ def _build_portfolio_policy_config_payload() -> Dict[str, Any]:
         "book_notional_multiplier": PORTFOLIO_POLICY_BOOK_NOTIONAL_MULTIPLIER,
         "leverage_wallet_multiplier": PORTFOLIO_POLICY_LEVERAGE_WALLET_MULTIPLIER,
         "min_margin_level_after_entry": PORTFOLIO_POLICY_MIN_MARGIN_LEVEL_AFTER_ENTRY,
+        "min_entry_quote_notional": PORTFOLIO_POLICY_MIN_ENTRY_QUOTE_NOTIONAL,
+        "perp_default_leverage": PORTFOLIO_POLICY_PERP_DEFAULT_LEVERAGE,
         "live_test_min_quote_notional": PORTFOLIO_POLICY_LIVE_TEST_MIN_QUOTE_NOTIONAL,
         "live_test_quote_notional": PORTFOLIO_POLICY_LIVE_TEST_QUOTE_NOTIONAL,
         "initial_rank_threshold": PORTFOLIO_POLICY_INITIAL_RANK_THRESHOLD_FLOOR,
@@ -14117,6 +14372,8 @@ def _build_portfolio_policy_config_payload() -> Dict[str, Any]:
             "min_margin_level_after_entry": (
                 PORTFOLIO_POLICY_MIN_MARGIN_LEVEL_AFTER_ENTRY
             ),
+            "min_entry_quote_notional": PORTFOLIO_POLICY_MIN_ENTRY_QUOTE_NOTIONAL,
+            "perp_default_leverage": PORTFOLIO_POLICY_PERP_DEFAULT_LEVERAGE,
             "rank_multiplier_min": 0.80,
             "rank_multiplier_max": 1.60,
             "rank_size_power": 1.10,
@@ -15557,6 +15814,12 @@ def run_simple_policy_optimisation(
             ),
             float(final_policy_deployment_metrics.get("mean_net_trade", np.nan)),
         )
+        deployment_threshold_metrics = (
+            _sync_deployment_threshold_metrics_with_active_policy(
+                deployment_threshold_metrics,
+                final_params,
+            )
+        )
 
         strategy_results = {
             "best_params": final_params,
@@ -16075,6 +16338,11 @@ def run_simple_policy_optimisation(
                     "EPM_SIMPLE_POLICY_OUTPUT_RUN_ROOT is set: %s",
                     output_run_root,
                 )
+            _maybe_publish_dynamic_hr_surprise_t16_policy(
+                output_run_root=output_run_root,
+                policy_params_dir=policy_params_dir,
+                market_mode=market_mode,
+            )
             logger.info(
                 "Portfolio policy replay completed: objective=%.6f trades=%s accepted=%s",
                 float(
@@ -16103,6 +16371,7 @@ def _policy_params_from_deployment_strategy(
     param_keys = (
         "sl_mult",
         "trailing_activation_mult",
+        "trailing_activation_cap_pct",
         "trailing_power",
         "trailing_squash_divisor",
         "giveback_beta",

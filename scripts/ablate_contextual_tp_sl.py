@@ -394,8 +394,8 @@ def _objective(metrics: Mapping[str, Any]) -> float:
     stats = _period_stats(metrics)
     return float(
         stats["avg_week_pnl"]
-        + 0.5 * stats["q35_day_pnl"]
-        + 0.2 * stats["q20_day_pnl"]
+        + 0.7 * stats["q35_day_pnl"]
+        + 0.3 * stats["q20_day_pnl"]
     )
 
 
@@ -934,7 +934,7 @@ def main() -> None:
         f"Rows after min-rank filter: {len(rows)}",
         f"Min rank: {float(args.min_rank):.2f}",
         f"Trials per arm/head: {int(args.n_trials)}",
-        "Objective: `avg_week_pnl + 0.5 * q35_day_pnl + 0.2 * q20_day_pnl`",
+        "Objective: `avg_week_pnl + 0.7 * q35_day_pnl + 0.3 * q20_day_pnl`",
         "",
     ]
     if not summary.empty:

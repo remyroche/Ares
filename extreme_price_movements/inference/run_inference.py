@@ -2677,8 +2677,9 @@ def _accepted_entry_ev_log_fields(chain_results: Mapping[str, Any]) -> str:
     """Compact EV breakdown for accepted-entry logs.
 
     `estimated_ev_net_return` is the policy calibration curve output. The live
-    gate can additionally haircut it for current spread, slippage, and expected
-    stop-exit friction, so both values must be visible in live logs.
+    gate subtracts `ev_haircut_bps`, not raw entry friction. Keep the raw
+    components visible so live logs do not imply that entry friction alone is
+    the difference between policy and live-adjusted EV.
     """
     policy_net_ev = _safe_float(chain_results.get("estimated_ev_net_return"), np.nan)
     live_net_ev = _safe_float(
@@ -2693,18 +2694,33 @@ def _accepted_entry_ev_log_fields(chain_results: Mapping[str, Any]) -> str:
     raw_entry_friction_bps = _safe_float(
         chain_results.get("ev_haircut_raw_live_entry_friction_bps"), np.nan
     )
+    spread_excess_bps = _safe_float(
+        chain_results.get("ev_haircut_spread_excess_bps"), np.nan
+    )
+    delay_slippage_excess_bps = _safe_float(
+        chain_results.get("ev_haircut_delay_slippage_excess_bps"), np.nan
+    )
+    stop_exit_excess_bps = _safe_float(
+        chain_results.get("ev_haircut_stop_exit_excess_bps"), np.nan
+    )
     stop_exit_friction_bps = _safe_float(
         chain_results.get("ev_haircut_expected_stop_exit_friction_bps"), np.nan
     )
     return (
         f"policy_net_ev={policy_net_ev:.4f} "
         f"live_adjusted_net_ev={live_net_ev:.4f} "
+        f"ev_subtracted_bps={haircut_bps:.1f} "
+        f"ev_equation=policy_net_ev-ev_subtracted_bps/10000 "
         f"curve_net_ev_before_friction={before_friction_ev:.4f} "
         f"gross_ev={gross_ev:.4f} "
         f"policy_cost_bps={cost_bps:.1f} "
         f"live_haircut_bps={haircut_bps:.1f} "
-        f"entry_friction_bps={raw_entry_friction_bps:.1f} "
-        f"stop_exit_reserve_bps={stop_exit_friction_bps:.1f}"
+        f"live_haircut_components_bps="
+        f"spread_excess:{spread_excess_bps:.1f},"
+        f"delay_slippage_excess:{delay_slippage_excess_bps:.1f},"
+        f"stop_exit_excess:{stop_exit_excess_bps:.1f} "
+        f"raw_entry_friction_bps_not_subtracted_directly={raw_entry_friction_bps:.1f} "
+        f"expected_stop_exit_reserve_bps={stop_exit_friction_bps:.1f}"
     )
 
 

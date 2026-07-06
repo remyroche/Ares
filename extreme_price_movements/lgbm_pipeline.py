@@ -11,7 +11,7 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from collections import Counter, defaultdict
 from statistics import NormalDist
-from typing import Any, Iterable, Mapping, Optional, Sequence
+from typing import Any, Collection, Iterable, Mapping, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -138,9 +138,32 @@ LGBM_PURGED_CV = os.environ.get("EPM_LGBM_PURGED_CV", "0").strip().lower() in {
 LGBM_CV_MODE = (
     _LGBM_CV_MODE_RAW
     if _LGBM_CV_MODE_RAW
-    else ("purged_time" if LGBM_PURGED_CV else "interleaved_spread")
+    else ("purged_time" if LGBM_PURGED_CV else "forward_burnin")
 )
 LGBM_PURGE_HOURS = float(os.environ.get("EPM_LGBM_PURGE_HOURS", "10"))
+LGBM_BASE_FORWARD_BURN_IN_DAYS = float(
+    os.environ.get("EPM_LGBM_BASE_FORWARD_BURN_IN_DAYS", "365")
+)
+LGBM_META_FORWARD_VALIDATION_MONTHS = int(
+    os.environ.get("EPM_LGBM_META_FORWARD_VALIDATION_MONTHS", "6")
+)
+LGBM_FORWARD_MIN_TRAIN_ROWS = int(os.environ.get("EPM_LGBM_FORWARD_MIN_TRAIN_ROWS", "200"))
+LGBM_FORWARD_MIN_VALID_ROWS = int(os.environ.get("EPM_LGBM_FORWARD_MIN_VALID_ROWS", "20"))
+LGBM_FORWARD_BURNIN_STRICT = (
+    os.environ.get("EPM_LGBM_FORWARD_BURNIN_STRICT", "1").strip().lower()
+    in {"1", "true", "yes", "y", "on"}
+)
+LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK = (
+    os.environ.get("EPM_LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK", "0").strip().lower()
+    in {"1", "true", "yes", "y", "on"}
+)
+LGBM_FORWARD_SHORT_HISTORY_FALLBACK_FRAC = float(
+    os.environ.get("EPM_LGBM_FORWARD_SHORT_HISTORY_FALLBACK_FRAC", "0.70")
+)
+LGBM_TIME_SPREAD_HPO_SELECTION = (
+    os.environ.get("EPM_LGBM_TIME_SPREAD_HPO_SELECTION", "1").strip().lower()
+    in {"1", "true", "yes", "y", "on"}
+)
 LGBM_RECENCY_WEIGHTING = os.environ.get("EPM_LGBM_RECENCY_WEIGHTING", "0").strip().lower() in {
     "1",
     "true",
@@ -240,6 +263,10 @@ LGBM_DISABLE_SELF_DISTILLATION = os.environ.get("EPM_LGBM_DISABLE_SELF_DISTILLAT
     "y",
     "on",
 }
+LGBM_SKIP_DISTILLATION_ON_FORWARD_CV_FAILURE = (
+    os.environ.get("EPM_LGBM_SKIP_DISTILLATION_ON_FORWARD_CV_FAILURE", "1").strip().lower()
+    in {"1", "true", "yes", "y", "on"}
+)
 LGBM_SKIP_FINAL_OOF_META_CV = os.environ.get("EPM_LGBM_SKIP_FINAL_OOF_META_CV", "0").strip().lower() in {
     "1",
     "true",
@@ -261,6 +288,54 @@ LGBM_ARCHETYPE_FEATURES = os.environ.get("EPM_LGBM_ARCHETYPE_FEATURES", "1").str
     "n",
     "off",
 }
+LGBM_ARCHETYPE_FEATURE_SELECTION = os.environ.get(
+    "EPM_LGBM_ARCHETYPE_FEATURE_SELECTION",
+    "1",
+).strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "n",
+    "off",
+}
+LGBM_ARCHETYPE_FEATURE_SELECTION_MIN_ROWS = int(
+    os.environ.get("EPM_LGBM_ARCHETYPE_FEATURE_SELECTION_MIN_ROWS", "256")
+)
+LGBM_ARCHETYPE_FEATURE_SELECTION_PROTECTED_MIN_ROWS = int(
+    os.environ.get("EPM_LGBM_ARCHETYPE_FEATURE_SELECTION_PROTECTED_MIN_ROWS", "64")
+)
+LGBM_ARCHETYPE_FEATURE_SELECTION_MAX_ARCHETYPES = int(
+    os.environ.get("EPM_LGBM_ARCHETYPE_FEATURE_SELECTION_MAX_ARCHETYPES", "12")
+)
+LGBM_ARCHETYPE_LABEL_TIME_BUCKETS = os.environ.get(
+    "EPM_LGBM_ARCHETYPE_LABEL_TIME_BUCKETS",
+    "0",
+).strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+}
+LGBM_ARCHETYPE_VIABILITY_BAD_MAE_MAX = float(
+    os.environ.get("EPM_LGBM_ARCHETYPE_VIABILITY_BAD_MAE_MAX", "0.65")
+)
+LGBM_ARCHETYPE_VIABILITY_TIMEOUT_MAX = float(
+    os.environ.get("EPM_LGBM_ARCHETYPE_VIABILITY_TIMEOUT_MAX", "0.15")
+)
+LGBM_ARCHETYPE_VIABILITY_MIN_TIME_BUCKET_FRAC = float(
+    os.environ.get("EPM_LGBM_ARCHETYPE_VIABILITY_MIN_TIME_BUCKET_FRAC", "0.05")
+)
+LGBM_META_POST_SELECTION_OOD_FEATURES = os.environ.get(
+    "EPM_LGBM_META_POST_SELECTION_OOD_FEATURES",
+    "1",
+).strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "n",
+    "off",
+}
 LGBM_RAW_CONTRIB_OOF_EXPORT = os.environ.get("EPM_LGBM_RAW_CONTRIB_OOF_EXPORT", "0").strip().lower() not in {
     "0",
     "false",
@@ -275,8 +350,37 @@ LGBM_AE_GMM_FEATURES = os.environ.get("EPM_LGBM_AE_GMM_FEATURES", "1").strip().l
     "n",
     "off",
 }
+LGBM_AE_GMM_MODEL_FEATURES = os.environ.get("EPM_LGBM_AE_GMM_MODEL_FEATURES", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "n",
+    "off",
+}
 LGBM_AE_GMM_MAX_TRAIN_ROWS = int(os.environ.get("EPM_LGBM_AE_GMM_MAX_TRAIN_ROWS", "5000"))
 LGBM_AE_GMM_MAX_ITER = int(os.environ.get("EPM_LGBM_AE_GMM_MAX_ITER", "80"))
+LGBM_AE_GMM_CLUSTER_CANDIDATES = os.environ.get("EPM_LGBM_AE_GMM_CLUSTER_CANDIDATES", "").strip()
+LGBM_AE_GMM_REG_COVAR_CANDIDATES = os.environ.get("EPM_LGBM_AE_GMM_REG_COVAR_CANDIDATES", "").strip()
+LGBM_AE_GMM_SMOOTH_LAMBDA_CANDIDATES = os.environ.get("EPM_LGBM_AE_GMM_SMOOTH_LAMBDA_CANDIDATES", "").strip()
+LGBM_AE_GMM_REQUIRE_BOTH_SIDES = os.environ.get("EPM_LGBM_AE_GMM_REQUIRE_BOTH_SIDES", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "n",
+    "off",
+}
+LGBM_AE_GMM_INCLUDE_CLUSTER_ID_MODEL_FEATURES = os.environ.get(
+    "EPM_LGBM_AE_GMM_INCLUDE_CLUSTER_ID_MODEL_FEATURES",
+    "0",
+).strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+}
+LGBM_AE_GMM_MIN_SIDE_CLUSTER_FRAC = float(os.environ.get("EPM_LGBM_AE_GMM_MIN_SIDE_CLUSTER_FRAC", "0.02"))
+LGBM_AE_GMM_MIN_SIDE_CLUSTER_ROWS = int(os.environ.get("EPM_LGBM_AE_GMM_MIN_SIDE_CLUSTER_ROWS", "10"))
 LGBM_FINAL_MODEL_CHECKPOINT_DIR = os.environ.get("EPM_LGBM_FINAL_MODEL_CHECKPOINT_DIR", "").strip()
 LGBM_TRAIN_PROVENANCE_ENABLED = os.environ.get(
     "EPM_LGBM_TRAIN_PROVENANCE_ENABLED",
@@ -413,6 +517,21 @@ LGBM_OPTUNA_CANDIDATE_ONLY = os.environ.get("EPM_LGBM_OPTUNA_CANDIDATE_ONLY", "0
     "y",
     "on",
 }
+LGBM_RANKER_ENABLED = os.environ.get("EPM_LGBM_RANKER_ENABLED", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+}
+LGBM_RANKER_OBJECTIVES = {
+    part.strip()
+    for part in os.environ.get("EPM_LGBM_RANKER_OBJECTIVES", "train_base").split(",")
+    if part.strip()
+}
+LGBM_RANKER_GROUP_MODE = os.environ.get("EPM_LGBM_RANKER_GROUP_MODE", "timestamp_side").strip().lower()
+LGBM_RANKER_RELEVANCE_BINS = max(2, int(os.environ.get("EPM_LGBM_RANKER_RELEVANCE_BINS", "5")))
+LGBM_RANKER_RELEVANCE_MODE = os.environ.get("EPM_LGBM_RANKER_RELEVANCE_MODE", "target_quantile").strip().lower()
 LGBM_FINAL_FIT_USE_ALL_ROWS = os.environ.get("EPM_LGBM_FINAL_FIT_USE_ALL_ROWS", "1") == "1"
 LGBM_META_RANK_BINS = int(os.environ.get("EPM_LGBM_META_RANK_BINS", "10"))
 LGBM_DIRECTION_STABILITY_MIN = float(os.environ.get("EPM_LGBM_DIRECTION_STABILITY_MIN", "0.75"))
@@ -539,9 +658,29 @@ LGBM_TAIL_WORST_FEATURE_PENALTY = float(os.environ.get("EPM_LGBM_TAIL_WORST_FEAT
 LGBM_N_JOBS = int(os.environ.get("EPM_LGBM_N_JOBS", "3"))
 
 LGBM_CV_SPLITS = max(2, int(LGBM_CV_SPLITS))
-if LGBM_CV_MODE not in {"", "shuffled", "purged_time", "interleaved", "interleaved_spread"}:
+_LGBM_FORWARD_BURNIN_CV_MODES = {
+    "forward_burnin",
+    "walk_forward_burnin",
+    "forward_time",
+    "walk_forward_time",
+}
+if LGBM_CV_MODE not in {
+    "",
+    "shuffled",
+    "purged_time",
+    "interleaved",
+    "interleaved_spread",
+    *_LGBM_FORWARD_BURNIN_CV_MODES,
+}:
     LGBM_CV_MODE = "shuffled"
 LGBM_PURGE_HOURS = max(0.0, float(LGBM_PURGE_HOURS))
+LGBM_BASE_FORWARD_BURN_IN_DAYS = max(0.0, float(LGBM_BASE_FORWARD_BURN_IN_DAYS))
+LGBM_META_FORWARD_VALIDATION_MONTHS = max(1, int(LGBM_META_FORWARD_VALIDATION_MONTHS))
+LGBM_FORWARD_MIN_TRAIN_ROWS = max(1, int(LGBM_FORWARD_MIN_TRAIN_ROWS))
+LGBM_FORWARD_MIN_VALID_ROWS = max(1, int(LGBM_FORWARD_MIN_VALID_ROWS))
+LGBM_FORWARD_SHORT_HISTORY_FALLBACK_FRAC = float(
+    np.clip(float(LGBM_FORWARD_SHORT_HISTORY_FALLBACK_FRAC), 0.10, 0.90)
+)
 LGBM_BASE_RECENCY_HALF_LIFE_DAYS = max(1e-6, float(LGBM_BASE_RECENCY_HALF_LIFE_DAYS))
 LGBM_META_RECENCY_HALF_LIFE_DAYS = max(1e-6, float(LGBM_META_RECENCY_HALF_LIFE_DAYS))
 LGBM_RACE_EVAL_FRACTION = float(np.clip(LGBM_RACE_EVAL_FRACTION, 0.10, 0.50))
@@ -600,6 +739,30 @@ LGBM_META_LEAF_MAX_TREES = max(0, int(LGBM_META_LEAF_MAX_TREES))
 LGBM_META_SCORE_PATH_MAX_TREES = max(0, int(LGBM_META_SCORE_PATH_MAX_TREES))
 LGBM_META_DRIFT_MAX_ROWS = max(0, int(LGBM_META_DRIFT_MAX_ROWS))
 LGBM_META_DRIFT_MAX_FEATURES = max(1, int(LGBM_META_DRIFT_MAX_FEATURES))
+LGBM_ARCHETYPE_FEATURE_SELECTION_MIN_ROWS = max(
+    32,
+    int(LGBM_ARCHETYPE_FEATURE_SELECTION_MIN_ROWS),
+)
+LGBM_ARCHETYPE_FEATURE_SELECTION_PROTECTED_MIN_ROWS = max(
+    16,
+    min(
+        int(LGBM_ARCHETYPE_FEATURE_SELECTION_MIN_ROWS),
+        int(LGBM_ARCHETYPE_FEATURE_SELECTION_PROTECTED_MIN_ROWS),
+    ),
+)
+LGBM_ARCHETYPE_FEATURE_SELECTION_MAX_ARCHETYPES = max(
+    1,
+    int(LGBM_ARCHETYPE_FEATURE_SELECTION_MAX_ARCHETYPES),
+)
+LGBM_ARCHETYPE_VIABILITY_BAD_MAE_MAX = float(
+    np.clip(LGBM_ARCHETYPE_VIABILITY_BAD_MAE_MAX, 0.0, 1.0)
+)
+LGBM_ARCHETYPE_VIABILITY_TIMEOUT_MAX = float(
+    np.clip(LGBM_ARCHETYPE_VIABILITY_TIMEOUT_MAX, 0.0, 1.0)
+)
+LGBM_ARCHETYPE_VIABILITY_MIN_TIME_BUCKET_FRAC = float(
+    np.clip(LGBM_ARCHETYPE_VIABILITY_MIN_TIME_BUCKET_FRAC, 0.0, 1.0 / 3.0)
+)
 LGBM_OOF_DISTILLATION_PASSES = max(0, int(LGBM_OOF_DISTILLATION_PASSES))
 LGBM_MIN_OOF_DISTILLATION_PASSES = max(0, int(LGBM_MIN_OOF_DISTILLATION_PASSES))
 LGBM_META_MIN_OOF_DISTILLATION_PASSES = max(0, int(LGBM_META_MIN_OOF_DISTILLATION_PASSES))
@@ -773,6 +936,15 @@ LGBM_META_DRIFT_FEATURE_NAMES = [
     "feature_drift_cov_shift",
 ]
 
+LGBM_META_POST_SELECTION_OOD_FEATURE_NAMES = [
+    "meta_sel_ood_abs_z_mean",
+    "meta_sel_ood_abs_z_max",
+    "meta_sel_ood_abs_z_p95",
+    "meta_sel_ood_iqr_exceed_frac",
+    "meta_sel_ood_missing_frac",
+    "meta_sel_ood_centroid_l2",
+]
+
 LGBM_META_CONTRIB_CONTEXT_FEATURE_NAMES = [name for name in CONTRIB_ARCHETYPE_FEATURE_NAMES]
 LGBM_META_RAW_STATE_CONTEXT_FEATURE_NAMES = list(RAW_STATE_SVD_FEATURE_NAMES) + list(
     RAW_STATE_DIAGNOSTIC_FEATURE_NAMES
@@ -928,6 +1100,7 @@ class LGBMStabilityModel:
     meta_oof_features: Optional[pd.DataFrame] = None
     rank_bin_stats_oof: pd.DataFrame = field(default_factory=pd.DataFrame)
     allow_missing_features_at_inference: bool = False
+    allow_native_missing_at_inference: bool = False
     feature_stats_train: dict[str, dict[str, float]] = field(default_factory=dict)
     input_feature_names: list[str] = field(default_factory=list)
     drift_reference: dict[str, Any] = field(default_factory=dict)
@@ -942,6 +1115,9 @@ class LGBMStabilityModel:
     raw_contrib_passthrough_features: list[str] = field(default_factory=list)
     raw_contrib_transformed_feature_names: list[str] = field(default_factory=list)
     raw_contrib_input_state: ContribArchetypeState | None = None
+    meta_post_selection_ood_enabled: bool = False
+    meta_post_selection_ood_input_features: list[str] = field(default_factory=list)
+    meta_post_selection_ood_reference: dict[str, Any] = field(default_factory=dict)
     ae_gmm_input_features: list[str] = field(default_factory=list)
     ae_gmm_feature_names: list[str] = field(default_factory=list)
     ae_gmm_context_feature_names: list[str] = field(default_factory=list)
@@ -966,6 +1142,50 @@ class LGBMStabilityModel:
     label_weight_hpo_hard_label_: Optional[np.ndarray] = None
     label_weight_hpo_sample_weight_: Optional[np.ndarray] = None
 
+    def _allow_native_missing_at_inference(self) -> bool:
+        if bool(getattr(self, "allow_native_missing_at_inference", False)):
+            return True
+        return (
+            os.environ.get("EPM_SIMPLE_POLICY_ALLOW_LGBM_NATIVE_MISSING", "0")
+            .strip()
+            .lower()
+            in {"1", "true", "yes", "y", "on"}
+        )
+
+    def _validate_contract_values(self, out: pd.DataFrame) -> None:
+        values = out.to_numpy(dtype=np.float32, copy=False)
+        if np.isfinite(values).all():
+            return
+        allow_native_missing = self._allow_native_missing_at_inference()
+        if allow_native_missing and not np.isinf(values).any():
+            return
+        if allow_native_missing:
+            bad_cols = [
+                str(col)
+                for col in out.columns
+                if np.isinf(
+                    out[col].to_numpy(dtype=np.float32, copy=False)
+                ).any()
+            ]
+            bad_rows = int(np.isinf(values).any(axis=1).sum())
+            reason = "infinite"
+        else:
+            finite_mask = np.isfinite(values)
+            bad_cols = [
+                str(col)
+                for col in out.columns
+                if not np.isfinite(
+                    out[col].to_numpy(dtype=np.float32, copy=False)
+                ).all()
+            ]
+            bad_rows = int((~finite_mask.all(axis=1)).sum())
+            reason = "non-finite"
+        raise ValueError(
+            "LGBM inference feature contract violation: "
+            f"{bad_rows}/{len(out)} rows contain {reason} contracted features. "
+            f"Examples: {bad_cols[:20]}"
+        )
+
     def _frame(self, X: Any) -> pd.DataFrame:
         if isinstance(X, pd.DataFrame):
             X_df = X.copy()
@@ -973,6 +1193,15 @@ class LGBMStabilityModel:
             X_df = pd.DataFrame(X)
         X_df.columns = [str(c) for c in X_df.columns]
         selected = [str(c) for c in self.selected_features]
+        post_ood_enabled = bool(
+            getattr(self, "meta_post_selection_ood_enabled", False)
+            and getattr(self, "meta_post_selection_ood_reference", None)
+        )
+        post_ood_input_features = [
+            str(c)
+            for c in getattr(self, "meta_post_selection_ood_input_features", []) or []
+            if str(c).strip()
+        ]
         ae_gmm_input_features = [
             str(c) for c in getattr(self, "ae_gmm_input_features", []) or []
         ]
@@ -1036,6 +1265,15 @@ class LGBMStabilityModel:
                             np.float32,
                             copy=False,
                         )
+                if post_ood_enabled:
+                    out = _append_meta_post_selection_ood_features(
+                        out,
+                        out,
+                        getattr(self, "meta_post_selection_ood_reference", {}) or {},
+                    ).reindex(columns=selected, fill_value=0.0).astype(
+                        np.float32,
+                        copy=False,
+                    )
                 else:
                     out = out.reindex(columns=selected, fill_value=0.0).astype(
                         np.float32,
@@ -1047,11 +1285,14 @@ class LGBMStabilityModel:
                     f"features cannot be transformed: {exc}"
                 ) from exc
             out = _fill_optional_generated_columns(out, out.columns)
-            _validate_finite_contract_frame(out)
+            self._validate_contract_values(out)
             return out
         input_features = [str(c) for c in getattr(self, "input_feature_names", []) or []]
         if use_ae_gmm:
             contract_features = list(ae_gmm_input_features)
+            use_input_aliases = False
+        elif post_ood_enabled and post_ood_input_features:
+            contract_features = list(post_ood_input_features)
             use_input_aliases = False
         else:
             use_input_aliases = len(input_features) == len(selected) and input_features != selected
@@ -1111,21 +1352,14 @@ class LGBMStabilityModel:
                     np.float32,
                     copy=False,
                 )
+        if post_ood_enabled:
+            out = _append_meta_post_selection_ood_features(
+                out,
+                out,
+                getattr(self, "meta_post_selection_ood_reference", {}) or {},
+            ).reindex(columns=selected, fill_value=0.0).astype(np.float32, copy=False)
         out = _fill_optional_generated_columns(out, out.columns)
-        values = out.to_numpy(dtype=np.float32, copy=False)
-        finite_mask = np.isfinite(values)
-        if not finite_mask.all():
-            bad_cols = [
-                str(col)
-                for col in out.columns
-                if not np.isfinite(out[col].to_numpy(dtype=np.float32, copy=False)).all()
-            ]
-            bad_rows = int((~finite_mask.all(axis=1)).sum())
-            raise ValueError(
-                "LGBM inference feature contract violation: "
-                f"{bad_rows}/{len(out)} rows contain non-finite contracted features. "
-                f"Examples: {bad_cols[:20]}"
-            )
+        self._validate_contract_values(out)
         if use_input_aliases:
             out = out.copy()
             out.columns = selected
@@ -1152,6 +1386,15 @@ class LGBMStabilityModel:
             str(c) for c in getattr(self, "ae_gmm_feature_names", []) or []
         ]
         use_ae_gmm = bool(ae_gmm_input_features and ae_gmm_feature_names)
+        post_ood_enabled = bool(
+            getattr(self, "meta_post_selection_ood_enabled", False)
+            and getattr(self, "meta_post_selection_ood_reference", None)
+        )
+        post_ood_input_features = [
+            str(c)
+            for c in getattr(self, "meta_post_selection_ood_input_features", []) or []
+            if str(c).strip()
+        ]
         if raw_contrib_inputs:
             passthrough = [
                 str(c)
@@ -1160,6 +1403,8 @@ class LGBMStabilityModel:
             contract = list(dict.fromkeys(passthrough + raw_contrib_inputs))
         elif use_ae_gmm:
             contract = list(ae_gmm_input_features)
+        elif post_ood_enabled and post_ood_input_features:
+            contract = list(post_ood_input_features)
         else:
             contract = (
                 input_features
@@ -1442,12 +1687,17 @@ def _ae_gmm_state_enabled(state: Any) -> bool:
 def _ae_gmm_model_feature_names_for_objective(objective_mode: str | None) -> list[str]:
     """Columns from the selected-feature AE/GMM transform that may enter LGBM.
 
-    Selected-feature representations are generated by the current layer and are
-    therefore exported only to downstream consumers. Older artifacts may still
-    carry generated columns in ``selected_features``; inference keeps supporting
-    those through ``ae_gmm_feature_names`` persisted in the artifact.
+    The raw selected features remain the inference contract. Generated columns
+    are materialized inside the model frame for OOF/OOS/final fit/inference from
+    the persisted AE/GMM state.
     """
-    return []
+    del objective_mode
+    if not bool(LGBM_AE_GMM_MODEL_FEATURES):
+        return []
+    if bool(LGBM_AE_GMM_INCLUDE_CLUSTER_ID_MODEL_FEATURES):
+        return list(AE_GMM_FEATURE_COLUMNS)
+    hard_cluster_cols = {"gmm_cluster_id", "cluster_t"}
+    return [str(col) for col in AE_GMM_FEATURE_COLUMNS if str(col) not in hard_cluster_cols]
 
 
 def _ae_gmm_context_feature_names_for_objective(objective_mode: str | None) -> list[str]:
@@ -1521,6 +1771,8 @@ def _fit_ae_gmm_post_selection_state(
     *,
     y_metric: np.ndarray | None = None,
     returns: np.ndarray | None = None,
+    label_context: Mapping[str, Any] | None = None,
+    timestamps: Any = None,
     random_state: int = 42,
 ) -> dict[str, Any]:
     input_cols = [str(c) for c in input_features]
@@ -1533,12 +1785,95 @@ def _fit_ae_gmm_post_selection_state(
         economic_targets["target"] = np.asarray(y_metric, dtype=np.float32)[idx]
     if returns is not None and len(returns) == len(X_model_df):
         economic_targets["returns"] = np.asarray(returns, dtype=np.float32)[idx]
+    if isinstance(label_context, Mapping):
+        context_aliases = {
+            "exit_code": ("exit_code", "outcome", "label_outcome"),
+            "is_timeout": ("is_timeout", "timeout", "__is_timeout__"),
+            "mfe": ("mfe", "mfe_ret", "__mfe_ret__"),
+            "mae": ("mae", "mae_ret", "__mae_ret__"),
+            "time_to_mfe": ("time_to_mfe", "t_mfe", "__t_mfe__"),
+            "time_to_mae": ("time_to_mae", "t_mae", "__t_mae__"),
+            "bars_to_mfe": ("bars_to_mfe", "__bars_to_mfe__"),
+            "bars_to_mae": ("bars_to_mae", "__bars_to_mae__"),
+            "tau_tp": ("tau_tp", "__tau_tp__"),
+            "tau_sl": ("tau_sl", "__tau_sl__"),
+            "bars_to_tp": ("bars_to_tp", "__bars_to_tp__"),
+            "bars_to_sl": ("bars_to_sl", "__bars_to_sl__"),
+            "tp": ("tp", "__tp__"),
+            "sl": ("sl", "__sl__"),
+            "atr": ("atr", "barrier_pct", "__barrier_pct__"),
+            "path_quality": ("path_quality", "quality", "__quality__"),
+            "geometry_tp_votes": ("geometry_tp_votes", "n_tp", "__n_tp__"),
+            "geometry_sl_votes": ("geometry_sl_votes", "n_sl", "__n_sl__"),
+            "geometry_consensus": ("geometry_consensus", "w_consensus", "__w_consensus__"),
+            "bad_mae": ("bad_mae", "bad_mae_1r", "is_bad_mae"),
+            "adverse_excursion": ("adverse_excursion", "mae", "mae_ret"),
+            "favorable_excursion": ("favorable_excursion", "mfe", "mfe_ret"),
+            "lower_tail_risk": ("lower_tail_risk", "lower_tail_utility"),
+            "full_stop_loss": ("full_stop_loss", "full_sl", "stop_loss"),
+        }
+        for target_name, aliases in context_aliases.items():
+            if target_name in economic_targets:
+                continue
+            for alias in aliases:
+                if alias not in label_context:
+                    continue
+                arr = np.asarray(label_context.get(alias))
+                if len(arr) != len(X_model_df):
+                    continue
+                arr_num = pd.to_numeric(pd.Series(arr), errors="coerce").to_numpy(
+                    dtype=np.float32,
+                    copy=False,
+                )
+                if np.isfinite(arr_num).any():
+                    economic_targets[target_name] = arr_num[idx]
+                    break
+    if timestamps is not None:
+        ts_arr = _take_aligned(timestamps, idx, len(X_model_df))
+        if ts_arr is not None:
+            ts = pd.to_datetime(pd.Series(ts_arr), utc=True, errors="coerce")
+            bucket = pd.factorize(ts.dt.to_period("M").astype(str), sort=True)[0].astype(np.float32)
+            if len(bucket) == len(idx):
+                economic_targets["time_bucket"] = bucket
+    if "side" in X_model_df.columns:
+        side_values = pd.to_numeric(X_model_df["side"], errors="coerce").fillna(1.0)
+        if len(side_values) == len(X_model_df):
+            economic_targets["side"] = side_values.to_numpy(dtype=np.float32)[idx]
+    if "returns" in economic_targets and "clean_positive" not in economic_targets:
+        returns_arr = np.asarray(economic_targets["returns"], dtype=np.float32)
+        bad_arr = np.asarray(
+            economic_targets.get("bad_mae", economic_targets.get("bad_mae_1r", np.zeros_like(returns_arr))),
+            dtype=np.float32,
+        )
+        timeout_arr = np.asarray(
+            economic_targets.get("timeout", economic_targets.get("is_timeout", np.zeros_like(returns_arr))),
+            dtype=np.float32,
+        )
+        stop_arr = np.asarray(
+            economic_targets.get("full_stop_loss", np.zeros_like(returns_arr)),
+            dtype=np.float32,
+        )
+        positive = np.isfinite(returns_arr) & (returns_arr > 0.0)
+        bad_flag = np.nan_to_num(bad_arr, nan=0.0) >= 0.5
+        timeout_flag = np.nan_to_num(timeout_arr, nan=0.0) >= 0.5
+        stop_flag = np.nan_to_num(stop_arr, nan=0.0) >= 0.5
+        dirty = positive & (bad_flag | timeout_flag | stop_flag)
+        clean = positive & ~dirty
+        economic_targets["clean_positive"] = clean.astype(np.float32)
+        economic_targets["dirty_positive"] = dirty.astype(np.float32)
+    require_sides = bool(LGBM_AE_GMM_REQUIRE_BOTH_SIDES and "side" in X_model_df.columns)
     return fit_ae_gmm_state(
         X_model_df.iloc[idx].reindex(columns=input_cols, fill_value=0.0),
         economic_targets=economic_targets,
         random_state=random_state,
         max_train_rows=int(LGBM_AE_GMM_MAX_TRAIN_ROWS),
         ae_max_iter=int(LGBM_AE_GMM_MAX_ITER),
+        cluster_candidates=LGBM_AE_GMM_CLUSTER_CANDIDATES or None,
+        reg_covar_candidates=LGBM_AE_GMM_REG_COVAR_CANDIDATES or None,
+        smooth_lambda_candidates=LGBM_AE_GMM_SMOOTH_LAMBDA_CANDIDATES or None,
+        require_both_sides=require_sides,
+        min_side_cluster_frac=float(LGBM_AE_GMM_MIN_SIDE_CLUSTER_FRAC),
+        min_side_cluster_rows=int(LGBM_AE_GMM_MIN_SIDE_CLUSTER_ROWS),
     )
 
 
@@ -1572,6 +1907,554 @@ def _timestamp_ns(timestamps: Any, n: int) -> np.ndarray | None:
     ns = pd.Series(ts).astype("int64").to_numpy(dtype=np.int64)
     ns[~valid] = np.iinfo(np.int64).min
     return ns
+
+
+def _lgbm_ranker_enabled_for_objective(objective_mode: str | None) -> bool:
+    if not bool(LGBM_RANKER_ENABLED):
+        return False
+    mode = _normalize_objective_mode(objective_mode)
+    return mode in {str(v).strip() for v in LGBM_RANKER_OBJECTIVES if str(v).strip()}
+
+
+def _side_label_values(X: pd.DataFrame, n: int) -> np.ndarray:
+    if "side_name" in X.columns:
+        raw = X["side_name"].to_numpy()
+    elif "side" in X.columns:
+        raw = X["side"].to_numpy()
+    elif "__side__" in X.columns:
+        raw = X["__side__"].to_numpy()
+    else:
+        return np.full(n, "both", dtype=object)
+    side_series = pd.Series(raw)
+    side_num = pd.to_numeric(side_series, errors="coerce")
+    side_text = side_series.astype(str).str.lower()
+    is_short = side_text.str.contains("short", regex=False).to_numpy()
+    numeric = side_num.to_numpy(dtype=np.float64, copy=False)
+    is_short |= np.isfinite(numeric) & (numeric < 0.0)
+    return np.where(is_short, "short", "long").astype(object)
+
+
+def _lgbm_ranker_group_keys(
+    X: pd.DataFrame,
+    timestamps: Any,
+    *,
+    mode: str | None = None,
+) -> np.ndarray | None:
+    n = int(len(X))
+    ns = _timestamp_ns(timestamps, n)
+    if ns is None:
+        return None
+    mode_norm = str(mode or LGBM_RANKER_GROUP_MODE or "timestamp_side").strip().lower()
+    ts_key = pd.Series(ns).astype(str).to_numpy(dtype=object)
+    if mode_norm == "timestamp":
+        return ts_key
+    if mode_norm in {"timestamp_side", "side_timestamp"}:
+        side = _side_label_values(X, n)
+        return np.asarray([f"{t}|{s}" for t, s in zip(ts_key, side)], dtype=object)
+    raise ValueError(f"Unsupported LGBM ranker group mode: {mode_norm}")
+
+
+def _lgbm_ranker_group_order(group_keys: Any) -> tuple[np.ndarray, np.ndarray]:
+    keys = np.asarray(group_keys, dtype=object)
+    if keys.ndim != 1:
+        keys = keys.reshape(-1)
+    n = int(len(keys))
+    if n == 0:
+        return np.zeros(0, dtype=np.int32), np.zeros(0, dtype=np.int32)
+    order = np.argsort(keys.astype(str), kind="mergesort").astype(np.int32)
+    ordered = keys[order].astype(str)
+    _, counts = np.unique(ordered, return_counts=True)
+    return order, counts.astype(np.int32)
+
+
+def _lgbm_ranker_relevance(y: np.ndarray, group_keys: Any, *, bins: int | None = None) -> np.ndarray:
+    y_arr = np.asarray(y, dtype=np.float64).reshape(-1)
+    keys = np.asarray(group_keys, dtype=object).reshape(-1)
+    if len(y_arr) != len(keys):
+        raise ValueError("ranker relevance y and group_keys must have the same length")
+    n_bins = max(2, int(bins or LGBM_RANKER_RELEVANCE_BINS))
+    y_clean = np.nan_to_num(y_arr, nan=float(np.nanmedian(y_arr[np.isfinite(y_arr)])) if np.isfinite(y_arr).any() else 0.0)
+    rel = np.zeros(len(y_clean), dtype=np.int32)
+    grouped = pd.DataFrame({"y": y_clean, "key": keys.astype(str)})
+    ranks = grouped.groupby("key", sort=False)["y"].rank(method="average", pct=True).to_numpy(dtype=np.float64)
+    rel = np.floor(np.clip(ranks, 0.0, 0.999999) * float(n_bins)).astype(np.int32)
+    return np.clip(rel, 0, n_bins - 1).astype(np.int32)
+
+
+def _lgbm_ranker_absolute_relevance_mode(mode: str | None = None) -> bool:
+    mode_norm = str(mode or LGBM_RANKER_RELEVANCE_MODE or "").strip().lower()
+    return mode_norm in {
+        "s52_firstpass_exec_ev",
+        "firstpass_exec_ev",
+        "first_pass_exec_ev",
+        "path_ordered_firstpass_exec_ev",
+    }
+
+
+def _lgbm_ranker_absolute_relevance(y: np.ndarray, *, bins: int | None = None) -> np.ndarray:
+    n_bins = max(2, int(bins or LGBM_RANKER_RELEVANCE_BINS))
+    y_arr = np.asarray(y, dtype=np.float64).reshape(-1)
+    rel = np.nan_to_num(y_arr, nan=0.0, posinf=float(n_bins - 1), neginf=0.0)
+    return np.clip(np.rint(rel), 0, n_bins - 1).astype(np.int32)
+
+
+def _context_numeric(
+    label_context: Mapping[str, Any] | None,
+    names: Sequence[str],
+    n: int,
+    *,
+    default: float = np.nan,
+) -> np.ndarray:
+    if isinstance(label_context, Mapping):
+        for name in names:
+            if name not in label_context:
+                continue
+            try:
+                arr = pd.to_numeric(pd.Series(label_context.get(name)), errors="coerce").to_numpy(
+                    dtype=np.float64,
+                    copy=False,
+                )
+            except Exception:
+                continue
+            if arr.ndim == 1 and len(arr) == int(n):
+                return arr
+    return np.full(int(n), float(default), dtype=np.float64)
+
+
+def _lgbm_ranker_relevance_source(
+    y: np.ndarray,
+    *,
+    label_context: Mapping[str, Any] | None = None,
+    mode: str | None = None,
+) -> np.ndarray | None:
+    mode_norm = str(mode or LGBM_RANKER_RELEVANCE_MODE or "target_quantile").strip().lower()
+    if mode_norm not in {
+        "s52_path_order",
+        "path_order",
+        "first_touch_path_order",
+        "s52_soft_ordered_ev",
+        "soft_ordered_ev",
+        "path_ordered_ev",
+        "s52_exec_ordered_ev",
+        "exec_ordered_ev",
+        "executable_ordered_ev",
+        "net_ordered_ev",
+        "path_ordered_net_ev",
+        "s52_soft_exec_ordered_ev",
+        "soft_exec_ordered_ev",
+        "soft_executable_ordered_ev",
+        "soft_net_ordered_ev",
+        "path_ordered_soft_net_ev",
+        "s52_soft_breadth_ordered_ev",
+        "soft_breadth_ordered_ev",
+        "breadth_ordered_ev",
+        "path_ordered_breadth_ev",
+        "s52_firstpass_exec_ev",
+        "firstpass_exec_ev",
+        "first_pass_exec_ev",
+        "path_ordered_firstpass_exec_ev",
+        "s52_full_path",
+        "full_path_clean",
+        "first_touch_full_path",
+    }:
+        return None
+    y_arr = np.asarray(y, dtype=np.float64).reshape(-1)
+    n = int(len(y_arr))
+    if n <= 0 or not isinstance(label_context, Mapping):
+        return None
+    capture_net = _context_numeric(
+        label_context,
+        ("__first_touch_capture_net__", "first_touch_capture_net", "capture_net", "__u_policy_net__", "u_policy_net"),
+        n,
+        default=np.nan,
+    )
+    round_trip_cost = _context_numeric(
+        label_context,
+        ("__first_touch_round_trip_cost__", "first_touch_round_trip_cost", "round_trip_cost"),
+        n,
+        default=0.0,
+    )
+    gross = np.nan_to_num(capture_net, nan=0.0) + np.nan_to_num(round_trip_cost, nan=0.0)
+    hit = _context_numeric(label_context, ("__first_touch_hit__", "first_touch_hit"), n, default=0.0) >= 0.5
+    stop = _context_numeric(label_context, ("__first_touch_stop__", "first_touch_stop"), n, default=0.0) >= 0.5
+    timeout = _context_numeric(label_context, ("__first_touch_timeout__", "first_touch_timeout", "is_timeout", "timeout"), n, default=0.0) >= 0.5
+    valid = _context_numeric(label_context, ("__first_touch_valid_path__", "first_touch_valid_path"), n, default=1.0) >= 0.5
+    same_bar = _context_numeric(label_context, ("__first_touch_same_bar_both__", "first_touch_same_bar_both"), n, default=0.0) >= 0.5
+    mae_norm = _context_numeric(label_context, ("__first_touch_mae_norm__", "first_touch_mae_norm", "mae_norm"), n, default=np.nan)
+    mfe_norm = _context_numeric(label_context, ("__first_touch_mfe_norm__", "first_touch_mfe_norm", "mfe_norm"), n, default=np.nan)
+    fullpath_aware = mode_norm in {"s52_full_path", "full_path_clean", "first_touch_full_path"}
+    soft_ordered_ev_aware = mode_norm in {"s52_soft_ordered_ev", "soft_ordered_ev", "path_ordered_ev"}
+    exec_ordered_ev_aware = mode_norm in {
+        "s52_exec_ordered_ev",
+        "exec_ordered_ev",
+        "executable_ordered_ev",
+        "net_ordered_ev",
+        "path_ordered_net_ev",
+    }
+    soft_exec_ordered_ev_aware = mode_norm in {
+        "s52_soft_exec_ordered_ev",
+        "soft_exec_ordered_ev",
+        "soft_executable_ordered_ev",
+        "soft_net_ordered_ev",
+        "path_ordered_soft_net_ev",
+    }
+    soft_breadth_ordered_ev_aware = mode_norm in {
+        "s52_soft_breadth_ordered_ev",
+        "soft_breadth_ordered_ev",
+        "breadth_ordered_ev",
+        "path_ordered_breadth_ev",
+    }
+    firstpass_exec_ev_aware = _lgbm_ranker_absolute_relevance_mode(mode_norm)
+    full_path_mae_norm = _context_numeric(
+        label_context,
+        ("__first_touch_full_path_mae_norm__", "first_touch_full_path_mae_norm", "mae_norm"),
+        n,
+        default=np.nan,
+    )
+    mfe_before = _context_numeric(
+        label_context,
+        ("__mfe_1r_before_mae_1r__", "mfe_1r_before_mae_1r"),
+        n,
+        default=0.0,
+    ) >= 0.5
+    mae_before = _context_numeric(
+        label_context,
+        ("__mae_1r_before_mfe_1r__", "mae_1r_before_mfe_1r"),
+        n,
+        default=0.0,
+    ) >= 0.5
+    underwater_fraction = _context_numeric(
+        label_context,
+        ("__underwater_fraction_before_mfe_1r__", "underwater_fraction_before_mfe_1r"),
+        n,
+        default=np.nan,
+    )
+    underwater_bars = _context_numeric(
+        label_context,
+        ("__underwater_bars_before_mfe_1r__", "underwater_bars_before_mfe_1r"),
+        n,
+        default=np.nan,
+    )
+    adverse_before = _context_numeric(
+        label_context,
+        ("__max_adverse_before_mfe_1r__", "max_adverse_before_mfe_1r"),
+        n,
+        default=np.nan,
+    )
+    gross_pos = np.clip(gross, 0.0, None)
+    finite_pos = gross_pos[np.isfinite(gross_pos) & (gross_pos > 0.0)]
+    scale = float(np.nanquantile(finite_pos, 0.90)) if len(finite_pos) else 1.0
+    scale = max(scale, 1e-6)
+    gross_score = np.clip(gross_pos / scale, 0.0, 2.0)
+    bad_mae = np.nan_to_num(mae_norm, nan=0.0) >= 1.0
+    full_path_bad_mae = np.nan_to_num(full_path_mae_norm, nan=0.0) >= 1.0
+    full_path_excess = np.clip(np.nan_to_num(full_path_mae_norm, nan=0.0) - 1.0, 0.0, 4.0)
+    underwater_fraction_clean = np.clip(np.nan_to_num(underwater_fraction, nan=0.0), 0.0, 1.0)
+    underwater_bars_clean = np.clip(np.nan_to_num(underwater_bars, nan=0.0), 0.0, 64.0)
+    adverse_before_clean = np.clip(np.nan_to_num(adverse_before, nan=0.0), 0.0, 5.0)
+    if firstpass_exec_ev_aware:
+        slow_path = (
+            (underwater_bars_clean > 10.0)
+            | (underwater_fraction_clean > 0.45)
+            | (adverse_before_clean > 1.25)
+        )
+        near_clean_path = (
+            (underwater_bars_clean <= 8.0)
+            & (underwater_fraction_clean <= 0.35)
+            & (adverse_before_clean <= 1.00)
+        )
+        clean_path = (
+            (underwater_bars_clean <= 6.0)
+            & (underwater_fraction_clean <= 0.30)
+            & (adverse_before_clean <= 0.75)
+        )
+    elif soft_breadth_ordered_ev_aware:
+        slow_path = (
+            (underwater_bars_clean > 12.0)
+            | (underwater_fraction_clean > 0.50)
+            | (adverse_before_clean > 1.50)
+        )
+        near_clean_path = (
+            (underwater_bars_clean <= 10.0)
+            & (underwater_fraction_clean <= 0.45)
+            & (adverse_before_clean <= 1.25)
+        )
+        clean_path = (
+            (underwater_bars_clean <= 8.0)
+            & (underwater_fraction_clean <= 0.35)
+            & (adverse_before_clean <= 1.00)
+        )
+    elif soft_ordered_ev_aware or exec_ordered_ev_aware or soft_exec_ordered_ev_aware:
+        slow_path = (
+            (underwater_bars_clean > 18.0)
+            | (underwater_fraction_clean > 0.65)
+            | (adverse_before_clean > 1.75)
+        )
+        near_clean_path = (
+            (underwater_bars_clean <= 14.0)
+            & (underwater_fraction_clean <= 0.55)
+            & (adverse_before_clean <= 1.60)
+        )
+        clean_path = (
+            (underwater_bars_clean <= 10.0)
+            & (underwater_fraction_clean <= 0.45)
+            & (adverse_before_clean <= 1.25)
+        )
+    else:
+        slow_path = (
+            (underwater_bars_clean > 10.0)
+            | (underwater_fraction_clean > 0.45)
+            | (adverse_before_clean > 1.5)
+        )
+        near_clean_path = ~slow_path
+        clean_path = ~slow_path
+    dirty = stop | timeout | bad_mae | mae_before | same_bar | slow_path | ~valid
+    if fullpath_aware:
+        dirty = dirty | full_path_bad_mae
+    clean_hit = hit & valid & ~same_bar & ~dirty & (gross > 0.0)
+    score = np.zeros(n, dtype=np.float64)
+    if firstpass_exec_ev_aware:
+        loose_hit = (
+            hit
+            & valid
+            & ~same_bar
+            & ~stop
+            & ~timeout
+            & ~bad_mae
+            & ~mae_before
+            & ~slow_path
+            & (gross > 0.0)
+        )
+        near_clean_hit = loose_hit & near_clean_path
+        strong_clean_hit = near_clean_hit & clean_path
+        net_pos = np.clip(np.nan_to_num(capture_net, nan=0.0), 0.0, None)
+        finite_net = net_pos[np.isfinite(net_pos) & (net_pos > 0.0)]
+        net_scale = float(np.nanquantile(finite_net, 0.90)) if len(finite_net) else 1.0
+        net_scale = max(net_scale, 1e-6)
+        net_score = np.clip(net_pos / net_scale, 0.0, 2.0)
+        path_pain = (
+            0.85 * np.clip(adverse_before_clean - 0.60, 0.0, 3.0)
+            + 0.14 * np.clip(underwater_bars_clean - 4.0, 0.0, 24.0)
+            + 0.55 * np.clip(underwater_fraction_clean - 0.25, 0.0, 1.0)
+        )
+        score += 1.00 * loose_hit.astype(np.float64)
+        score += 0.90 * near_clean_hit.astype(np.float64)
+        score += 0.80 * strong_clean_hit.astype(np.float64)
+        score += 0.55 * gross_score * loose_hit.astype(np.float64)
+        score += 0.85 * net_score * near_clean_hit.astype(np.float64)
+        score += 0.35 * net_score * strong_clean_hit.astype(np.float64)
+        score -= path_pain
+        dirty_fp = stop | timeout | bad_mae | mae_before | same_bar | slow_path | ~valid | (gross <= 0.0)
+        score -= 2.00 * dirty_fp.astype(np.float64)
+        score[dirty_fp] = np.minimum(score[dirty_fp], 0.05)
+        nonpositive_cleanish = loose_hit & (capture_net <= 0.0)
+        score[nonpositive_cleanish] = np.minimum(score[nonpositive_cleanish], 1.20)
+        positive_near = near_clean_hit & (capture_net > 0.0)
+        positive_strong = strong_clean_hit & (capture_net > 0.0)
+        score[positive_near] = np.maximum(score[positive_near], 2.10 + 1.00 * net_score[positive_near])
+        score[positive_strong] = np.maximum(
+            score[positive_strong],
+            3.15 + 0.75 * gross_score[positive_strong] + 0.95 * net_score[positive_strong],
+        )
+        relevance = np.zeros(n, dtype=np.int32)
+        relevance[score >= 0.90] = 1
+        relevance[score >= 1.80] = 2
+        relevance[score >= 2.80] = 3
+        relevance[score >= 3.80] = 4
+        return np.clip(relevance, 0, 4).astype(np.float32)
+    if soft_ordered_ev_aware or soft_exec_ordered_ev_aware or soft_breadth_ordered_ev_aware:
+        near_clean_hit = hit & valid & ~same_bar & ~stop & ~timeout & ~bad_mae & ~mae_before & near_clean_path & (gross > 0.0)
+        strong_clean_hit = near_clean_hit & clean_path
+        if soft_breadth_ordered_ev_aware:
+            score += 1.05 * near_clean_hit.astype(np.float64)
+            score += 0.95 * strong_clean_hit.astype(np.float64)
+        else:
+            score += 1.75 * near_clean_hit.astype(np.float64)
+            score += 0.75 * strong_clean_hit.astype(np.float64)
+    elif exec_ordered_ev_aware:
+        near_clean_hit = hit & valid & ~same_bar & ~stop & ~timeout & ~bad_mae & ~mae_before & near_clean_path & (capture_net > 0.0)
+        strong_clean_hit = near_clean_hit & clean_path
+        score += 1.25 * near_clean_hit.astype(np.float64)
+        score += 0.90 * strong_clean_hit.astype(np.float64)
+    else:
+        near_clean_hit = clean_hit
+        strong_clean_hit = clean_hit
+        score += 2.5 * clean_hit.astype(np.float64)
+    score += 1.2 * gross_score
+    score += 0.8 * mfe_before.astype(np.float64)
+    score += 0.3 * np.clip(np.nan_to_num(mfe_norm, nan=0.0), 0.0, 2.0)
+    score -= 1.2 * mae_before.astype(np.float64)
+    score -= 0.9 * bad_mae.astype(np.float64)
+    if fullpath_aware:
+        score -= 0.9 * full_path_bad_mae.astype(np.float64)
+        score -= 0.25 * full_path_excess
+    score -= 0.8 * timeout.astype(np.float64)
+    score -= 0.9 * stop.astype(np.float64)
+    score -= 0.4 * same_bar.astype(np.float64)
+    score -= 0.35 * np.maximum(underwater_fraction_clean - 0.35, 0.0)
+    score -= 0.08 * np.clip(underwater_bars_clean - 6.0, 0.0, 24.0)
+    score -= 0.30 * np.clip(adverse_before_clean - 1.0, 0.0, 3.0)
+    if soft_breadth_ordered_ev_aware:
+        path_pain = (
+            0.55 * np.clip(adverse_before_clean - 0.75, 0.0, 3.0)
+            + 0.10 * np.clip(underwater_bars_clean - 6.0, 0.0, 24.0)
+            + 0.35 * np.clip(underwater_fraction_clean - 0.30, 0.0, 1.0)
+        )
+        score -= path_pain
+    if soft_ordered_ev_aware or soft_exec_ordered_ev_aware or soft_breadth_ordered_ev_aware:
+        score += 0.35 * gross_score * near_clean_hit.astype(np.float64)
+        score += 0.20 * gross_score * strong_clean_hit.astype(np.float64)
+    if soft_exec_ordered_ev_aware or soft_breadth_ordered_ev_aware:
+        net_pos = np.clip(np.nan_to_num(capture_net, nan=0.0), 0.0, None)
+        finite_net = net_pos[np.isfinite(net_pos) & (net_pos > 0.0)]
+        net_scale = float(np.nanquantile(finite_net, 0.90)) if len(finite_net) else 1.0
+        net_scale = max(net_scale, 1e-6)
+        net_score = np.clip(net_pos / net_scale, 0.0, 2.0)
+        nonpositive_cleanish = near_clean_hit & (capture_net <= 0.0)
+        score += 0.45 * net_score * near_clean_hit.astype(np.float64)
+        score += 0.20 * net_score * strong_clean_hit.astype(np.float64)
+        score[nonpositive_cleanish] = np.minimum(score[nonpositive_cleanish], 1.15)
+    if exec_ordered_ev_aware:
+        net_pos = np.clip(np.nan_to_num(capture_net, nan=0.0), 0.0, None)
+        finite_net = net_pos[np.isfinite(net_pos) & (net_pos > 0.0)]
+        net_scale = float(np.nanquantile(finite_net, 0.90)) if len(finite_net) else 1.0
+        net_scale = max(net_scale, 1e-6)
+        net_score = np.clip(net_pos / net_scale, 0.0, 2.0)
+        non_executable = capture_net <= 0.0
+        score += 0.65 * net_score * near_clean_hit.astype(np.float64)
+        score += 0.35 * net_score * strong_clean_hit.astype(np.float64)
+        score[non_executable] = np.minimum(score[non_executable], 0.05)
+    score[slow_path] = np.minimum(score[slow_path], 0.05 + 0.12 * hit[slow_path].astype(np.float64))
+    dirty_positive = (gross > 0.0) & dirty & ~clean_hit
+    score[dirty_positive] = np.minimum(score[dirty_positive], 0.75)
+    if fullpath_aware:
+        dirty_after_touch = hit & full_path_bad_mae & ~bad_mae
+        score[dirty_after_touch] = np.minimum(score[dirty_after_touch], 0.25)
+    if soft_ordered_ev_aware or soft_exec_ordered_ev_aware or soft_breadth_ordered_ev_aware:
+        if soft_breadth_ordered_ev_aware:
+            score[near_clean_hit] = np.maximum(score[near_clean_hit], 1.35 + 0.65 * gross_score[near_clean_hit])
+            score[strong_clean_hit] = np.maximum(score[strong_clean_hit], 2.35 + 0.85 * gross_score[strong_clean_hit])
+        else:
+            score[near_clean_hit] = np.maximum(score[near_clean_hit], 2.2 + 0.65 * gross_score[near_clean_hit])
+            score[strong_clean_hit] = np.maximum(score[strong_clean_hit], 3.0 + gross_score[strong_clean_hit])
+        if soft_exec_ordered_ev_aware or soft_breadth_ordered_ev_aware:
+            net_pos = np.clip(np.nan_to_num(capture_net, nan=0.0), 0.0, None)
+            finite_net = net_pos[np.isfinite(net_pos) & (net_pos > 0.0)]
+            net_scale = float(np.nanquantile(finite_net, 0.90)) if len(finite_net) else 1.0
+            net_scale = max(net_scale, 1e-6)
+            net_score = np.clip(net_pos / net_scale, 0.0, 2.0)
+            positive_near = near_clean_hit & (capture_net > 0.0)
+            positive_strong = strong_clean_hit & (capture_net > 0.0)
+            if soft_breadth_ordered_ev_aware:
+                score[positive_near] = np.maximum(score[positive_near], 1.45 + 0.55 * net_score[positive_near])
+                score[positive_strong] = np.maximum(score[positive_strong], 2.45 + 0.75 * net_score[positive_strong])
+            else:
+                score[positive_near] = np.maximum(score[positive_near], 2.35 + 0.75 * net_score[positive_near])
+                score[positive_strong] = np.maximum(score[positive_strong], 3.15 + net_score[positive_strong])
+    elif exec_ordered_ev_aware:
+        net_pos = np.clip(np.nan_to_num(capture_net, nan=0.0), 0.0, None)
+        finite_net = net_pos[np.isfinite(net_pos) & (net_pos > 0.0)]
+        net_scale = float(np.nanquantile(finite_net, 0.90)) if len(finite_net) else 1.0
+        net_scale = max(net_scale, 1e-6)
+        net_score = np.clip(net_pos / net_scale, 0.0, 2.0)
+        score[near_clean_hit] = np.maximum(score[near_clean_hit], 1.8 + 0.8 * net_score[near_clean_hit])
+        score[strong_clean_hit] = np.maximum(score[strong_clean_hit], 2.8 + net_score[strong_clean_hit])
+    else:
+        score[clean_hit] = np.maximum(score[clean_hit], 3.0 + gross_score[clean_hit])
+    score[~np.isfinite(score)] = 0.0
+    if not np.isfinite(score).any() or float(np.nanmax(score) - np.nanmin(score)) <= 1e-12:
+        return None
+    return score.astype(np.float32)
+
+
+def _is_forward_burnin_cv_mode(mode: str | None = None) -> bool:
+    return str(mode or LGBM_CV_MODE).strip().lower() in _LGBM_FORWARD_BURNIN_CV_MODES
+
+
+def _lgbm_cv_mode_label(mode: str | None = None) -> str:
+    mode_norm = str(mode or LGBM_CV_MODE).strip().lower()
+    if mode_norm in {"interleaved", "interleaved_spread"}:
+        return "interleaved_spread"
+    if mode_norm == "purged_time" or (bool(LGBM_PURGED_CV) and not mode_norm):
+        return "purged_time"
+    if mode_norm in _LGBM_FORWARD_BURNIN_CV_MODES:
+        return "forward_burnin"
+    return "shuffled"
+
+
+def _lgbm_cv_metric_fields(objective_mode: str | None = None) -> dict[str, Any]:
+    cv_mode = _lgbm_cv_mode_label()
+    uses_purge = cv_mode in {"purged_time", "forward_burnin"}
+    out: dict[str, Any] = {
+        "cv_mode": cv_mode,
+        "cv_splits": int(LGBM_CV_SPLITS),
+        "purge_hours": float(LGBM_PURGE_HOURS if uses_purge else 0.0),
+        "hpo_feature_selection_time_spread_sample": bool(LGBM_TIME_SPREAD_HPO_SELECTION),
+    }
+    if cv_mode == "forward_burnin":
+        out.update(
+            {
+                "forward_burnin_objective_mode": _normalize_objective_mode(objective_mode),
+                "forward_base_burn_in_days": float(LGBM_BASE_FORWARD_BURN_IN_DAYS),
+                "forward_meta_validation_months": int(LGBM_META_FORWARD_VALIDATION_MONTHS),
+                "forward_min_train_rows": int(LGBM_FORWARD_MIN_TRAIN_ROWS),
+                "forward_min_valid_rows": int(LGBM_FORWARD_MIN_VALID_ROWS),
+                "forward_burnin_strict": bool(LGBM_FORWARD_BURNIN_STRICT),
+                "forward_allow_short_history_fallback": bool(
+                    LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK
+                ),
+                "forward_short_history_fallback_frac": float(
+                    LGBM_FORWARD_SHORT_HISTORY_FALLBACK_FRAC
+                ),
+                "forward_skip_distillation_on_cv_failure": bool(
+                    LGBM_SKIP_DISTILLATION_ON_FORWARD_CV_FAILURE
+                ),
+            }
+        )
+    return out
+
+
+def _forward_burnin_validation_start_ns(
+    ns: np.ndarray,
+    valid: np.ndarray,
+    *,
+    objective_mode: str | None,
+) -> int:
+    valid_ns = np.asarray(ns, dtype=np.int64)[np.asarray(valid, dtype=bool)]
+    if len(valid_ns) == 0:
+        raise ValueError("forward_burnin CV requires at least one valid timestamp")
+    earliest = int(np.min(valid_ns))
+    latest = int(np.max(valid_ns))
+    if _normalize_objective_mode(objective_mode) == "train_meta":
+        latest_ts = pd.Timestamp(latest, unit="ns", tz="UTC")
+        start_ts = latest_ts - pd.DateOffset(
+            months=int(LGBM_META_FORWARD_VALIDATION_MONTHS)
+        )
+        return int(max(earliest, min(latest, int(start_ts.value))))
+    earliest_ts = pd.Timestamp(earliest, unit="ns", tz="UTC")
+    start_ts = earliest_ts + pd.Timedelta(days=float(LGBM_BASE_FORWARD_BURN_IN_DAYS))
+    return int(start_ts.value)
+
+
+def _forward_short_history_validation_start_ns(ns: np.ndarray, valid: np.ndarray) -> int | None:
+    valid_ns = np.asarray(ns[valid], dtype=np.int64)
+    if len(valid_ns) < 2:
+        return None
+    unique_ts = np.asarray(sorted(np.unique(valid_ns).tolist()), dtype=np.int64)
+    if len(unique_ts) < 2:
+        return None
+    split_pos = int(np.floor(float(LGBM_FORWARD_SHORT_HISTORY_FALLBACK_FRAC) * len(unique_ts)))
+    split_pos = max(1, min(int(split_pos), len(unique_ts) - 1))
+    return int(unique_ts[split_pos])
+
+
+def _aligned_mask_take(values: Any, mask: np.ndarray, n: int) -> Any:
+    if values is None:
+        return None
+    arr = np.asarray(values)
+    if len(arr) != int(n):
+        return None
+    return arr[np.asarray(mask, dtype=bool)]
 
 
 def _recency_half_life_days(objective_mode: str | None) -> float:
@@ -3971,6 +4854,21 @@ def _take_aligned(values: Any, idx: np.ndarray, n: int) -> Any:
     return arr[np.asarray(idx, dtype=np.int32)]
 
 
+def _slice_label_context(
+    label_context: Mapping[str, Any] | None,
+    idx: np.ndarray,
+    n: int,
+) -> dict[str, Any] | None:
+    if not isinstance(label_context, Mapping):
+        return None
+    out: dict[str, Any] = {}
+    for key, value in label_context.items():
+        sliced = _take_aligned(value, idx, n)
+        if sliced is not None:
+            out[str(key)] = sliced
+    return out or None
+
+
 def _feature_selection_oi_present_mask(
     X_raw: Any,
     n: int,
@@ -6096,6 +6994,899 @@ def _stratified_spread_subsample_indices(
     return idx
 
 
+def _time_spread_subsample_indices(
+    y: np.ndarray,
+    max_n: int,
+    random_state: int,
+    classifier: bool,
+    timestamps: Any = None,
+) -> np.ndarray:
+    """Stratified cap with explicit beginning/middle/end time coverage."""
+    n = len(y)
+    if n <= int(max_n):
+        return np.arange(n, dtype=np.int32)
+    if int(max_n) <= 0:
+        return np.array([], dtype=np.int32)
+    ns = _timestamp_ns(timestamps, n)
+    if ns is None:
+        return _stratified_spread_subsample_indices(
+            y,
+            max_n=int(max_n),
+            random_state=int(random_state),
+            classifier=classifier,
+        )
+    valid = ns != np.iinfo(np.int64).min
+    ordered = np.where(valid)[0][np.argsort(ns[valid])].astype(np.int32)
+    if len(ordered) == 0:
+        return _stratified_spread_subsample_indices(
+            y,
+            max_n=int(max_n),
+            random_state=int(random_state),
+            classifier=classifier,
+        )
+    band_count = min(3, len(ordered))
+    bands = [np.asarray(b, dtype=np.int32) for b in np.array_split(ordered, band_count)]
+    base_take = int(max_n) // band_count
+    remainder = int(max_n) % band_count
+    selected: list[np.ndarray] = []
+    for band_i, band in enumerate(bands):
+        take = min(len(band), base_take + (1 if band_i < remainder else 0))
+        if take <= 0:
+            continue
+        local = _stratified_spread_subsample_indices(
+            np.asarray(y, dtype=np.float32)[band],
+            max_n=take,
+            random_state=int(random_state) + band_i * 1009,
+            classifier=classifier,
+        )
+        selected.append(band[local].astype(np.int32))
+    idx = (
+        np.sort(np.unique(np.concatenate(selected)).astype(np.int32))
+        if selected
+        else np.array([], dtype=np.int32)
+    )
+    target = min(int(max_n), n)
+    if len(idx) < target:
+        missing = np.setdiff1d(np.arange(n, dtype=np.int32), idx, assume_unique=False)
+        fill_local = _stratified_spread_subsample_indices(
+            np.asarray(y, dtype=np.float32)[missing],
+            max_n=target - len(idx),
+            random_state=int(random_state) + 7919,
+            classifier=classifier,
+        )
+        idx = np.sort(np.concatenate([idx, missing[fill_local]]).astype(np.int32))
+    if len(idx) > target:
+        keep_local = _stratified_spread_subsample_indices(
+            np.asarray(y, dtype=np.float32)[idx],
+            max_n=target,
+            random_state=int(random_state) + 1543,
+            classifier=classifier,
+        )
+        idx = idx[keep_local]
+    return np.sort(idx.astype(np.int32, copy=False))
+
+
+def _begin_middle_end_sample_indices(
+    n: int,
+    *,
+    max_rows: int,
+    timestamps: Any = None,
+    y: Any = None,
+    classifier: bool = False,
+    random_state: int = 42,
+) -> np.ndarray:
+    """Capped in-sample sampler with explicit early/middle/late coverage."""
+    n = int(n)
+    cap = int(max_rows)
+    if n <= 0 or cap <= 0:
+        return np.array([], dtype=np.int32)
+    if n <= cap:
+        return np.arange(n, dtype=np.int32)
+    ns = _timestamp_ns(timestamps, n)
+    if ns is not None:
+        valid = ns != np.iinfo(np.int64).min
+        ordered = np.where(valid)[0][np.argsort(ns[valid])].astype(np.int32)
+        if len(ordered) == 0:
+            ordered = np.arange(n, dtype=np.int32)
+    else:
+        ordered = np.arange(n, dtype=np.int32)
+    bands = [np.asarray(b, dtype=np.int32) for b in np.array_split(ordered, min(3, len(ordered)))]
+    if not bands:
+        return np.array([], dtype=np.int32)
+    base_take = cap // len(bands)
+    remainder = cap % len(bands)
+    y_arr = np.asarray(y if y is not None and len(np.asarray(y)) == n else np.arange(n), dtype=np.float32)
+    selected: list[np.ndarray] = []
+    for band_i, band in enumerate(bands):
+        take = min(len(band), base_take + (1 if band_i < remainder else 0))
+        if take <= 0:
+            continue
+        local = _stratified_spread_subsample_indices(
+            y_arr[band],
+            max_n=take,
+            random_state=int(random_state) + band_i * 1009,
+            classifier=classifier,
+        )
+        selected.append(band[local].astype(np.int32))
+    idx = (
+        np.sort(np.unique(np.concatenate(selected)).astype(np.int32))
+        if selected
+        else np.array([], dtype=np.int32)
+    )
+    if len(idx) < min(cap, n):
+        missing = np.setdiff1d(np.arange(n, dtype=np.int32), idx, assume_unique=False)
+        fill = _evenly_spaced_take(missing, min(cap, n) - len(idx))
+        idx = np.sort(np.concatenate([idx, fill]).astype(np.int32))
+    return idx[: min(cap, len(idx))].astype(np.int32, copy=False)
+
+
+def _feature_selection_context_array(
+    label_context: Mapping[str, Any] | None,
+    names: Sequence[str],
+    n: int,
+) -> tuple[np.ndarray | None, str]:
+    if not isinstance(label_context, Mapping):
+        return None, ""
+    for name in names:
+        if name not in label_context:
+            continue
+        try:
+            arr = np.asarray(label_context.get(name))
+        except Exception:
+            continue
+        if len(arr) != int(n):
+            continue
+        return arr, str(name)
+    return None, ""
+
+
+def _archetype_label_priority(label: str) -> int:
+    """Lower priority value means the label should survive frequency capping first."""
+    key = str(label).lower()
+    priority_terms = (
+        ("dirty_positive_bad_mae_timeout", 0),
+        ("dirty_positive_bad_mae", 1),
+        ("dirty_positive_timeout", 2),
+        ("stop_loss", 3),
+        ("bad_mae", 4),
+        ("timeout", 5),
+        ("adverse_path", 6),
+        ("fast_adverse", 7),
+        ("low_quality", 8),
+        ("clean_take_profit", 9),
+        ("take_profit", 10),
+        ("favored_path", 11),
+        ("path_neutral", 12),
+    )
+    for term, priority in priority_terms:
+        if term in key:
+            return int(priority)
+    return 50
+
+
+def _is_protected_archetype_label(label: str) -> bool:
+    key = str(label).lower()
+    return any(
+        term in key
+        for term in (
+            "dirty_positive",
+            "bad_mae",
+            "stop_loss",
+            "timeout",
+            "adverse_path",
+            "fast_adverse",
+            "low_quality",
+        )
+    )
+
+
+def _usable_archetype_counts(counts: pd.Series) -> pd.Series:
+    if counts is None or len(counts) == 0:
+        return pd.Series(dtype=np.int64)
+    counts_i = counts.astype(np.int64, copy=False)
+    regular_min = int(LGBM_ARCHETYPE_FEATURE_SELECTION_MIN_ROWS)
+    protected_min = max(1, int(LGBM_ARCHETYPE_FEATURE_SELECTION_PROTECTED_MIN_ROWS))
+    regular = counts_i[counts_i >= regular_min]
+    protected = counts_i[
+        [
+            _is_protected_archetype_label(str(label)) and int(value) >= protected_min
+            for label, value in counts_i.items()
+        ]
+    ]
+    merged_index = list(dict.fromkeys(list(regular.index) + list(protected.index)))
+    if not merged_index:
+        return pd.Series(dtype=np.int64)
+    return counts_i.loc[merged_index].sort_values(ascending=False)
+
+
+def _coerce_archetype_labels(
+    values: Any,
+    n: int,
+    *,
+    protected_labels: Collection[str] | None = None,
+) -> np.ndarray | None:
+    try:
+        series = pd.Series(np.asarray(values))
+    except Exception:
+        return None
+    if len(series) != int(n):
+        return None
+    if pd.api.types.is_numeric_dtype(series):
+        vals = pd.to_numeric(series, errors="coerce")
+        finite = vals.notna().to_numpy(dtype=bool)
+        if int(np.sum(finite)) < max(2, int(0.05 * n)):
+            return None
+        rounded = np.round(vals.fillna(-999999.0).to_numpy(dtype=np.float64), 6)
+        labels = np.asarray([f"a_{v:g}" if np.isfinite(v) else "__missing__" for v in rounded], dtype=object)
+    else:
+        labels = series.astype(str).replace({"": "__missing__", "nan": "__missing__", "None": "__missing__"}).to_numpy(dtype=object)
+    counts = pd.Series(labels).value_counts(dropna=False)
+    usable = _usable_archetype_counts(counts)
+    if len(usable) == 0:
+        return None
+    max_labels = max(1, int(LGBM_ARCHETYPE_FEATURE_SELECTION_MAX_ARCHETYPES))
+    protected = {str(v) for v in (protected_labels or []) if str(v)}
+    protected.update(
+        str(v) for v in usable.index.astype(str) if _is_protected_archetype_label(str(v))
+    )
+    protected_usable = [
+        str(v)
+        for v in usable.index.astype(str)
+        if str(v) in protected
+    ]
+    protected_usable = sorted(
+        protected_usable,
+        key=lambda v: (
+            _archetype_label_priority(v),
+            -int(usable.get(v, 0)),
+            str(v),
+        ),
+    )
+    selected_order: list[str] = []
+    for label in protected_usable:
+        if label not in selected_order:
+            selected_order.append(label)
+        if len(selected_order) >= max_labels:
+            break
+    for label in usable.index.astype(str):
+        if len(selected_order) >= max_labels:
+            break
+        if str(label) not in selected_order:
+            selected_order.append(str(label))
+    top = set(selected_order[:max_labels])
+    labels = np.asarray([str(v) if str(v) in top else "__other__" for v in labels], dtype=object)
+    if len(set(labels.tolist())) < 1:
+        return None
+    return labels
+
+
+def _gmm_probability_archetype_labels(X: pd.DataFrame) -> np.ndarray | None:
+    prob_cols: list[str] = []
+    for col in X.columns:
+        key = str(col)
+        if re.search(r"(^|_)gmm_prob_[0-9]+$", key):
+            prob_cols.append(key)
+    if len(prob_cols) < 2:
+        return None
+    prob_cols = sorted(
+        prob_cols,
+        key=lambda c: int(re.search(r"([0-9]+)$", str(c)).group(1)) if re.search(r"([0-9]+)$", str(c)) else 999,
+    )
+    arr = X.reindex(columns=prob_cols).apply(pd.to_numeric, errors="coerce").to_numpy(dtype=np.float32)
+    if arr.ndim != 2 or arr.shape[0] == 0:
+        return None
+    arr = np.nan_to_num(arr, nan=-np.inf, posinf=-np.inf, neginf=-np.inf)
+    finite_row = np.isfinite(arr).any(axis=1)
+    if int(np.sum(finite_row)) < max(2, int(0.05 * len(X))):
+        return None
+    labels = np.argmax(arr, axis=1).astype(np.int32)
+    return np.asarray([f"gmm_{int(v)}" for v in labels], dtype=object)
+
+
+def _label_context_behavior_archetype_labels(
+    X: pd.DataFrame,
+    *,
+    label_context: Mapping[str, Any] | None,
+    timestamps: Any = None,
+) -> tuple[np.ndarray | None, str]:
+    """Build in-sample feature-selection states from outcome/path descriptors."""
+    if not isinstance(label_context, Mapping):
+        return None, ""
+    n = int(len(X))
+    if n <= 0:
+        return None, ""
+
+    def _ctx_array(names: Sequence[str]) -> np.ndarray | None:
+        for name in names:
+            if name not in label_context:
+                continue
+            try:
+                arr = np.asarray(label_context.get(name))
+            except Exception:
+                continue
+            if len(arr) == n:
+                return arr
+        return None
+
+    def _num(names: Sequence[str]) -> np.ndarray | None:
+        arr = _ctx_array(names)
+        if arr is None:
+            return None
+        out = pd.to_numeric(pd.Series(arr), errors="coerce").to_numpy(
+            dtype=np.float32,
+            copy=False,
+        )
+        return out if np.isfinite(out).any() else None
+
+    side_arr = _ctx_array(("side", "side_name", "__side__"))
+    if side_arr is None and "side" in X.columns:
+        side_arr = X["side"].to_numpy()
+    side_labels = np.full(n, "both", dtype=object)
+    if side_arr is not None and len(side_arr) == n:
+        side_series = pd.Series(side_arr)
+        side_num = pd.to_numeric(side_series, errors="coerce")
+        side_text = side_series.astype(str).str.lower()
+        side_labels = np.where(
+            side_text.str.contains("short", regex=False).to_numpy()
+            | (side_num.fillna(1.0).to_numpy(dtype=np.float32) < 0.0),
+            "short",
+            "long",
+        ).astype(object)
+
+    timeout = _num(("is_timeout", "timeout", "__is_timeout__"))
+    bad_mae = _num(("bad_mae_1r", "bad_mae", "is_bad_mae"))
+    mfe = _num(("mfe", "mfe_ret", "__mfe_ret__"))
+    mae = _num(("mae", "mae_ret", "__mae_ret__"))
+    y_ret = _num(("y_ret", "__y_ret__", "return", "net_utility", "utility"))
+    y_bin = _num(("y_bin", "__y_bin__", "target", "positive_label"))
+    tp = _num(("tp", "take_profit", "__tp__"))
+    sl = _num(("sl", "stop_loss", "__sl__"))
+    quality = _num(("quality", "path_quality", "__quality__"))
+    n_tp = _num(("n_tp", "geometry_tp_votes", "__n_tp__"))
+    n_sl = _num(("n_sl", "geometry_sl_votes", "__n_sl__"))
+    bars_to_mfe = _num(("bars_to_mfe", "time_to_mfe", "t_mfe"))
+    bars_to_mae = _num(("bars_to_mae", "time_to_mae", "t_mae"))
+    exit_arr = _ctx_array(("exit_code", "outcome", "label_outcome", "__y_outcome__"))
+
+    if (
+        timeout is None
+        and bad_mae is None
+        and mfe is None
+        and mae is None
+        and quality is None
+        and exit_arr is None
+    ):
+        return None, ""
+
+    timeout_mask = (
+        np.asarray(timeout >= 0.5, dtype=bool)
+        if timeout is not None
+        else np.zeros(n, dtype=bool)
+    )
+    bad_mask = (
+        np.asarray(bad_mae >= 0.5, dtype=bool)
+        if bad_mae is not None
+        else np.zeros(n, dtype=bool)
+    )
+    if y_ret is not None:
+        positive_mask = np.asarray(y_ret > 0.0, dtype=bool)
+    elif y_bin is not None:
+        positive_mask = np.asarray(y_bin >= 0.5, dtype=bool)
+    else:
+        positive_mask = np.zeros(n, dtype=bool)
+    state = np.full(n, "path_neutral", dtype=object)
+    stop_like = np.zeros(n, dtype=bool)
+    if exit_arr is not None and len(exit_arr) == n:
+        exit_text = pd.Series(exit_arr).astype(str).str.lower()
+        tp_like = (
+            exit_text.str.contains("tp", regex=False)
+            | exit_text.str.contains("profit", regex=False)
+            | exit_text.str.contains("target", regex=False)
+        ).to_numpy(dtype=bool)
+        sl_like = (
+            exit_text.str.contains("sl", regex=False)
+            | exit_text.str.contains("stop", regex=False)
+            | exit_text.str.contains("loss", regex=False)
+        ).to_numpy(dtype=bool)
+        stop_like |= sl_like
+        state = np.where(tp_like, "take_profit", state)
+        state = np.where(sl_like, "stop_loss", state)
+        exit_num = pd.to_numeric(pd.Series(exit_arr), errors="coerce").to_numpy(
+            dtype=np.float32,
+            copy=False,
+        )
+        finite_exit = np.isfinite(exit_num)
+        state = np.where(finite_exit & (exit_num > 0), "take_profit", state)
+        state = np.where(finite_exit & (exit_num < 0), "stop_loss", state)
+        stop_like |= finite_exit & (exit_num < 0)
+
+    if mfe is not None and mae is not None:
+        fav = np.nan_to_num(np.asarray(mfe, dtype=np.float32), nan=0.0)
+        adv = np.abs(np.nan_to_num(np.asarray(mae, dtype=np.float32), nan=0.0))
+        state = np.where(
+            (fav > adv * 1.25) & (state == "path_neutral"),
+            "favored_path",
+            state,
+        )
+        state = np.where(
+            (adv > fav * 1.25) & (state == "path_neutral"),
+            "adverse_path",
+            state,
+        )
+    if n_tp is not None and n_sl is not None:
+        state = np.where((n_tp > n_sl) & (state == "path_neutral"), "tp_consensus", state)
+        state = np.where((n_sl > n_tp) & (state == "path_neutral"), "sl_consensus", state)
+    if quality is not None and np.isfinite(quality).any():
+        q25 = float(np.nanpercentile(quality[np.isfinite(quality)], 25.0))
+        state = np.where((quality <= q25) & (state == "path_neutral"), "low_quality", state)
+    if bars_to_mfe is not None and bars_to_mae is not None:
+        finite_speed = np.isfinite(bars_to_mfe) & np.isfinite(bars_to_mae)
+        if finite_speed.any():
+            fast_adv = finite_speed & (bars_to_mae < bars_to_mfe)
+            state = np.where(fast_adv & (state == "path_neutral"), "fast_adverse", state)
+    if tp is not None and sl is not None and mae is not None:
+        mae_abs = np.abs(np.nan_to_num(np.asarray(mae, dtype=np.float32), nan=0.0))
+        sl_abs = np.abs(np.nan_to_num(np.asarray(sl, dtype=np.float32), nan=0.0))
+        stop_like |= (sl_abs > 1e-12) & (mae_abs >= sl_abs)
+
+    clean_positive = positive_mask & ~bad_mask & ~timeout_mask & ~stop_like
+    state = np.where(clean_positive & (state == "take_profit"), "clean_take_profit", state)
+    state = np.where(clean_positive & (state == "path_neutral"), "clean_positive", state)
+    state = np.where(
+        positive_mask & bad_mask & timeout_mask,
+        "dirty_positive_bad_mae_timeout",
+        state,
+    )
+    state = np.where(
+        positive_mask & bad_mask & ~timeout_mask,
+        "dirty_positive_bad_mae",
+        state,
+    )
+    state = np.where(
+        positive_mask & timeout_mask & ~bad_mask,
+        "dirty_positive_timeout",
+        state,
+    )
+    state = np.where(stop_like & ~positive_mask, "stop_loss", state)
+    state = np.where(timeout_mask & ~positive_mask, "timeout", state)
+    state = np.where(bad_mask & ~timeout_mask & ~positive_mask, "bad_mae", state)
+
+    ns = _timestamp_ns(timestamps, n)
+    time_bucket = np.full(n, "t_all", dtype=object)
+    if ns is not None:
+        valid = ns != np.iinfo(np.int64).min
+        if int(np.sum(valid)) >= 3:
+            ranks = pd.Series(ns[valid]).rank(pct=True).to_numpy(dtype=np.float32)
+            local = np.where(
+                ranks <= 1.0 / 3.0,
+                "t_early",
+                np.where(ranks <= 2.0 / 3.0, "t_mid", "t_late"),
+            )
+            time_bucket[valid] = local.astype(object)
+
+    if bool(LGBM_ARCHETYPE_LABEL_TIME_BUCKETS):
+        labels = np.asarray(
+            [
+                f"{side_labels[i]}_{str(state[i])}_{str(time_bucket[i])}"
+                for i in range(n)
+            ],
+            dtype=object,
+        )
+    else:
+        labels = np.asarray(
+            [f"{side_labels[i]}_{str(state[i])}" for i in range(n)],
+            dtype=object,
+        )
+    protected = {str(v) for v in np.unique(labels) if _is_protected_archetype_label(str(v))}
+    labels = _coerce_archetype_labels(labels, n, protected_labels=protected)
+    if labels is None:
+        return None, ""
+    source = (
+        "label_context:outcome_risk_path_time"
+        if bool(LGBM_ARCHETYPE_LABEL_TIME_BUCKETS)
+        else "label_context:outcome_risk_path_state"
+    )
+    return labels, source
+
+
+def _archetype_time_buckets(timestamps: Any, n: int) -> np.ndarray:
+    n = int(n)
+    out = np.full(n, "unknown", dtype=object)
+    ns = _timestamp_ns(timestamps, n)
+    if ns is None:
+        return out
+    valid = ns != np.iinfo(np.int64).min
+    if int(np.sum(valid)) < 3:
+        return out
+    ranks = pd.Series(ns[valid]).rank(pct=True).to_numpy(dtype=np.float32)
+    out[valid] = np.where(
+        ranks <= 1.0 / 3.0,
+        "early",
+        np.where(ranks <= 2.0 / 3.0, "middle", "late"),
+    ).astype(object)
+    return out
+
+
+def _label_context_numeric_array(
+    label_context: Mapping[str, Any] | None,
+    names: Sequence[str],
+    n: int,
+) -> np.ndarray | None:
+    arr, _name = _feature_selection_context_array(label_context, names, n)
+    if arr is None:
+        return None
+    out = pd.to_numeric(pd.Series(arr), errors="coerce").to_numpy(
+        dtype=np.float32,
+        copy=False,
+    )
+    return out if np.isfinite(out).any() else None
+
+
+def _archetype_viability_matrix(
+    labels: np.ndarray,
+    *,
+    label_context: Mapping[str, Any] | None,
+    timestamps: Any = None,
+) -> dict[str, Any]:
+    n = int(len(labels))
+    if n <= 0:
+        return {"enabled": False, "reason": "empty_labels"}
+    y_ret = _label_context_numeric_array(
+        label_context,
+        ("y_ret", "__y_ret__", "return", "net_utility", "utility"),
+        n,
+    )
+    y_bin = _label_context_numeric_array(
+        label_context,
+        ("y_bin", "__y_bin__", "target", "positive_label"),
+        n,
+    )
+    bad_mae = _label_context_numeric_array(
+        label_context,
+        ("bad_mae_1r", "bad_mae", "is_bad_mae"),
+        n,
+    )
+    timeout = _label_context_numeric_array(
+        label_context,
+        ("is_timeout", "timeout", "__is_timeout__"),
+        n,
+    )
+    time_bucket = _archetype_time_buckets(timestamps, n)
+    if y_ret is None and y_bin is None and bad_mae is None and timeout is None:
+        return {"enabled": False, "reason": "no_economic_context"}
+    bad_arr = (
+        np.asarray(bad_mae >= 0.5, dtype=np.float32)
+        if bad_mae is not None
+        else np.full(n, np.nan, dtype=np.float32)
+    )
+    timeout_arr = (
+        np.asarray(timeout >= 0.5, dtype=np.float32)
+        if timeout is not None
+        else np.full(n, np.nan, dtype=np.float32)
+    )
+    if y_ret is not None:
+        positive_arr = np.asarray(y_ret > 0.0, dtype=np.float32)
+    elif y_bin is not None:
+        positive_arr = np.asarray(y_bin >= 0.5, dtype=np.float32)
+    else:
+        positive_arr = np.full(n, np.nan, dtype=np.float32)
+
+    def _nanmean_or_none(arr: np.ndarray, mask: np.ndarray) -> float | None:
+        vals = np.asarray(arr)[mask]
+        vals = vals[np.isfinite(vals)]
+        return float(np.mean(vals)) if len(vals) else None
+
+    rows: list[dict[str, Any]] = []
+    for label, count in pd.Series(labels).value_counts(dropna=False).items():
+        mask = np.asarray(labels.astype(str) == str(label), dtype=bool)
+        if int(np.sum(mask)) <= 0:
+            continue
+        tb_counts = {
+            bucket: int(np.sum(mask & (time_bucket.astype(str) == bucket)))
+            for bucket in ("early", "middle", "late")
+        }
+        known_time = sum(tb_counts.values())
+        min_time_frac = (
+            float(min(tb_counts.values()) / max(known_time, 1))
+            if known_time > 0
+            else 0.0
+        )
+        mean_u = _nanmean_or_none(y_ret, mask) if y_ret is not None else None
+        positive_rate = _nanmean_or_none(positive_arr, mask)
+        bad_rate = _nanmean_or_none(bad_arr, mask)
+        timeout_rate = _nanmean_or_none(timeout_arr, mask)
+        pass_positive_utility = bool(mean_u is not None and mean_u > 0.0)
+        pass_positive_rate = bool(positive_rate is not None and positive_rate > 0.0)
+        pass_bad_mae = bool(
+            bad_rate is None
+            or bad_rate <= float(LGBM_ARCHETYPE_VIABILITY_BAD_MAE_MAX)
+        )
+        pass_timeout = bool(
+            timeout_rate is None
+            or timeout_rate <= float(LGBM_ARCHETYPE_VIABILITY_TIMEOUT_MAX)
+        )
+        pass_time_coverage = bool(
+            known_time == 0
+            or min_time_frac >= float(LGBM_ARCHETYPE_VIABILITY_MIN_TIME_BUCKET_FRAC)
+        )
+        viability_score = int(pass_positive_utility) + int(pass_positive_rate)
+        viability_score += int(pass_bad_mae) + int(pass_timeout) + int(pass_time_coverage)
+        rows.append(
+            {
+                "label": str(label),
+                "rows": int(count),
+                "share": float(int(count) / max(n, 1)),
+                "mean_utility": mean_u,
+                "positive_rate": positive_rate,
+                "bad_mae_rate": bad_rate,
+                "timeout_rate": timeout_rate,
+                "time_rows_early": tb_counts["early"],
+                "time_rows_middle": tb_counts["middle"],
+                "time_rows_late": tb_counts["late"],
+                "min_time_bucket_frac": min_time_frac,
+                "pass_positive_utility": pass_positive_utility,
+                "pass_positive_rate": pass_positive_rate,
+                "pass_bad_mae_cap": pass_bad_mae,
+                "pass_timeout_cap": pass_timeout,
+                "pass_time_coverage": pass_time_coverage,
+                "label_viability_score": int(viability_score),
+                "active_candidate": bool(
+                    pass_positive_utility
+                    and pass_positive_rate
+                    and pass_bad_mae
+                    and pass_timeout
+                    and pass_time_coverage
+                ),
+            }
+        )
+    rows = sorted(
+        rows,
+        key=lambda r: (
+            -int(r.get("active_candidate", False)),
+            -int(r.get("label_viability_score", 0)),
+            -int(r.get("rows", 0)),
+            str(r.get("label", "")),
+        ),
+    )
+    return {
+        "enabled": True,
+        "rows": int(n),
+        "bad_mae_cap": float(LGBM_ARCHETYPE_VIABILITY_BAD_MAE_MAX),
+        "timeout_cap": float(LGBM_ARCHETYPE_VIABILITY_TIMEOUT_MAX),
+        "min_time_bucket_frac": float(LGBM_ARCHETYPE_VIABILITY_MIN_TIME_BUCKET_FRAC),
+        "active_candidate_count": int(sum(1 for row in rows if row.get("active_candidate"))),
+        "matrix": rows,
+    }
+
+
+def _feature_selection_archetype_labels(
+    X: pd.DataFrame,
+    *,
+    label_context: Mapping[str, Any] | None = None,
+    timestamps: Any = None,
+    objective_mode: str | None = "train_base",
+) -> tuple[np.ndarray | None, dict[str, Any]]:
+    n = int(len(X))
+    diag: dict[str, Any] = {
+        "enabled": bool(LGBM_ARCHETYPE_FEATURE_SELECTION),
+        "objective_mode": _normalize_objective_mode(objective_mode),
+        "source": "",
+        "usable": False,
+        "rows": n,
+    }
+    if not bool(LGBM_ARCHETYPE_FEATURE_SELECTION) or n <= 0:
+        diag["reason"] = "disabled_or_empty"
+        return None, diag
+    context_names = (
+        "feature_selection_archetype",
+        "archetype",
+        "archetype_id",
+        "label_archetype",
+        "source_archetype",
+        "geometry_archetype",
+        "gmm_cluster",
+        "cluster_t",
+        "base_error_archetype_id",
+        "shap_archetype_id",
+    )
+    ctx_arr, ctx_name = _feature_selection_context_array(label_context, context_names, n)
+    labels = _coerce_archetype_labels(ctx_arr, n) if ctx_arr is not None else None
+    if labels is not None:
+        source = f"label_context:{ctx_name}"
+    else:
+        source = ""
+        for col in context_names:
+            if col not in X.columns:
+                continue
+            labels = _coerce_archetype_labels(X[col].to_numpy(), n)
+            if labels is not None:
+                source = f"column:{col}"
+                break
+    if labels is None:
+        labels, source = _label_context_behavior_archetype_labels(
+            X,
+            label_context=label_context,
+            timestamps=timestamps,
+        )
+    if labels is None:
+        labels = _gmm_probability_archetype_labels(X)
+        source = "columns:gmm_prob_argmax" if labels is not None else source
+    if labels is None and ("side" in X.columns or isinstance(label_context, Mapping)):
+        side_source = X["side"].to_numpy() if "side" in X.columns else None
+        if side_source is None and isinstance(label_context, Mapping):
+            for _side_key in ("side", "__side__", "side_name"):
+                if _side_key not in label_context:
+                    continue
+                try:
+                    _side_candidate = np.asarray(label_context.get(_side_key))
+                except Exception:
+                    continue
+                if len(_side_candidate) == n:
+                    side_source = _side_candidate
+                    break
+        side = (
+            pd.to_numeric(pd.Series(side_source), errors="coerce")
+            .fillna(0.0)
+            .to_numpy(dtype=np.float32)
+            if side_source is not None
+            else np.zeros(n, dtype=np.float32)
+        )
+        ns = _timestamp_ns(timestamps, n)
+        if ns is not None:
+            valid = ns != np.iinfo(np.int64).min
+            order = np.full(n, 1, dtype=np.int8)
+            if int(np.sum(valid)) >= 3:
+                ranks = pd.Series(ns[valid]).rank(pct=True).to_numpy(dtype=np.float32)
+                order[valid] = np.clip((ranks * 3).astype(np.int8), 0, 2)
+            labels = np.asarray(
+                [f"{'long' if s >= 0 else 'short'}_t{int(t)}" for s, t in zip(side, order)],
+                dtype=object,
+            )
+            source = "fallback:side_time_tercile"
+    labels = _coerce_archetype_labels(labels, n) if labels is not None else None
+    if labels is None:
+        diag["reason"] = "no_supported_archetype_labels"
+        return None, diag
+    counts = pd.Series(labels).value_counts(dropna=False)
+    usable = _usable_archetype_counts(counts)
+    diag.update(
+        {
+            "usable": bool(len(usable) > 0),
+            "source": source,
+            "archetype_count": int(len(counts)),
+            "usable_archetype_count": int(len(usable)),
+            "min_rows": int(LGBM_ARCHETYPE_FEATURE_SELECTION_MIN_ROWS),
+            "protected_min_rows": int(LGBM_ARCHETYPE_FEATURE_SELECTION_PROTECTED_MIN_ROWS),
+            "counts": {str(k): int(v) for k, v in counts.head(20).items()},
+        }
+    )
+    viability = _archetype_viability_matrix(
+        labels,
+        label_context=label_context,
+        timestamps=timestamps,
+    )
+    diag["economic_viability"] = viability
+    if bool(viability.get("enabled", False)):
+        matrix = list(viability.get("matrix", []) or [])
+        preview = [
+            {
+                "label": str(row.get("label", "")),
+                "rows": int(row.get("rows", 0) or 0),
+                "score": int(row.get("label_viability_score", 0) or 0),
+                "active": bool(row.get("active_candidate", False)),
+                "mean_u": row.get("mean_utility"),
+                "bad_mae": row.get("bad_mae_rate"),
+                "timeout": row.get("timeout_rate"),
+            }
+            for row in matrix[:8]
+        ]
+        tprint(
+            "LGBM archetype economic viability snapshot: "
+            f"source={source}, active_candidates={int(viability.get('active_candidate_count', 0) or 0)}, "
+            f"preview={preview}."
+        )
+    if len(usable) == 0:
+        diag["reason"] = "insufficient_archetype_support"
+        return None, diag
+    return labels, diag
+
+
+def _fit_meta_post_selection_ood_reference(
+    X_ref: pd.DataFrame,
+    feature_names: Sequence[str],
+) -> dict[str, Any]:
+    features = [str(c) for c in feature_names if str(c) in X_ref.columns]
+    features = [c for c in features if c not in LGBM_META_POST_SELECTION_OOD_FEATURE_NAMES]
+    features = features[: max(1, int(LGBM_META_DRIFT_MAX_FEATURES))]
+    if not features:
+        return {"enabled": False, "reason": "no_input_features", "feature_names": []}
+    ref_frame = X_ref.reindex(columns=features).apply(pd.to_numeric, errors="coerce")
+    n_ref = int(len(ref_frame))
+    if LGBM_META_DRIFT_MAX_ROWS > 0 and n_ref > LGBM_META_DRIFT_MAX_ROWS:
+        idx = _begin_middle_end_sample_indices(
+            n_ref,
+            max_rows=int(LGBM_META_DRIFT_MAX_ROWS),
+            y=np.arange(n_ref, dtype=np.float32),
+            classifier=False,
+        )
+        ref_frame = ref_frame.iloc[idx].reset_index(drop=True)
+    values = ref_frame.to_numpy(dtype=np.float32, copy=True)
+    missing = ~np.isfinite(values)
+    med = np.nanmedian(values, axis=0).astype(np.float32)
+    q25 = np.nanpercentile(values, 25.0, axis=0).astype(np.float32)
+    q75 = np.nanpercentile(values, 75.0, axis=0).astype(np.float32)
+    q05 = np.nanpercentile(values, 5.0, axis=0).astype(np.float32)
+    q95 = np.nanpercentile(values, 95.0, axis=0).astype(np.float32)
+    std = np.nanstd(values, axis=0).astype(np.float32)
+    iqr = q75 - q25
+    scale = np.where(np.isfinite(iqr) & (iqr > 1e-6), iqr / 1.349, std)
+    scale = np.where(np.isfinite(scale) & (scale > 1e-6), scale, 1.0).astype(np.float32)
+    med = np.where(np.isfinite(med), med, 0.0).astype(np.float32)
+    q05 = np.where(np.isfinite(q05), q05, med).astype(np.float32)
+    q95 = np.where(np.isfinite(q95), q95, med).astype(np.float32)
+    values = np.where(missing, med[None, :], values).astype(np.float32, copy=False)
+    z = (values - med[None, :]) / scale[None, :]
+    centroid = np.nanmean(z, axis=0).astype(np.float32)
+    centroid = np.nan_to_num(centroid, nan=0.0, posinf=0.0, neginf=0.0)
+    return {
+        "enabled": True,
+        "schema_version": "meta_post_selection_ood_v1",
+        "feature_names": features,
+        "median": med,
+        "scale": scale,
+        "q05": q05,
+        "q95": q95,
+        "centroid": centroid,
+        "fit_rows": int(len(ref_frame)),
+        "source_rows": n_ref,
+        "max_rows": int(LGBM_META_DRIFT_MAX_ROWS),
+        "max_features": int(LGBM_META_DRIFT_MAX_FEATURES),
+    }
+
+
+def _append_meta_post_selection_ood_features(
+    frame: pd.DataFrame,
+    source: pd.DataFrame,
+    reference: Mapping[str, Any] | None,
+) -> pd.DataFrame:
+    out = frame.copy()
+    n = int(len(out))
+    if not reference or not bool(reference.get("enabled", False)):
+        for name in LGBM_META_POST_SELECTION_OOD_FEATURE_NAMES:
+            out[name] = np.zeros(n, dtype=np.float32)
+        return out
+    features = [str(c) for c in reference.get("feature_names", []) if str(c) in source.columns]
+    if not features:
+        for name in LGBM_META_POST_SELECTION_OOD_FEATURE_NAMES:
+            out[name] = np.zeros(n, dtype=np.float32)
+        return out
+    ref_pos = {str(name): i for i, name in enumerate(reference.get("feature_names", []))}
+    idx = np.asarray([ref_pos[name] for name in features], dtype=np.int32)
+    values = source.reindex(columns=features).apply(pd.to_numeric, errors="coerce").to_numpy(dtype=np.float32, copy=True)
+    missing = ~np.isfinite(values)
+    med = np.asarray(reference.get("median", np.zeros(len(ref_pos))), dtype=np.float32)[idx]
+    scale = np.asarray(reference.get("scale", np.ones(len(ref_pos))), dtype=np.float32)[idx]
+    q05 = np.asarray(reference.get("q05", med), dtype=np.float32)[idx]
+    q95 = np.asarray(reference.get("q95", med), dtype=np.float32)[idx]
+    centroid = np.asarray(reference.get("centroid", np.zeros(len(ref_pos))), dtype=np.float32)[idx]
+    scale = np.where(np.isfinite(scale) & (scale > 1e-6), scale, 1.0).astype(np.float32)
+    values_filled = np.where(missing, med[None, :], values).astype(np.float32, copy=False)
+    z = (values_filled - med[None, :]) / scale[None, :]
+    abs_z = np.abs(np.nan_to_num(z, nan=0.0, posinf=0.0, neginf=0.0)).astype(np.float32, copy=False)
+    exceed = (values_filled < q05[None, :]) | (values_filled > q95[None, :])
+    centered = z - centroid[None, :]
+    denom = max(float(np.sqrt(max(len(features), 1))), 1.0)
+    out["meta_sel_ood_abs_z_mean"] = np.mean(abs_z, axis=1).astype(np.float32)
+    out["meta_sel_ood_abs_z_max"] = np.max(abs_z, axis=1).astype(np.float32)
+    out["meta_sel_ood_abs_z_p95"] = np.percentile(abs_z, 95.0, axis=1).astype(np.float32)
+    out["meta_sel_ood_iqr_exceed_frac"] = np.mean(exceed, axis=1).astype(np.float32)
+    out["meta_sel_ood_missing_frac"] = np.mean(missing, axis=1).astype(np.float32)
+    out["meta_sel_ood_centroid_l2"] = (
+        np.sqrt(np.sum(np.square(centered), axis=1)) / denom
+    ).astype(np.float32)
+    return out
+
+
 def _recent_selection_indices(timestamps: Any, n: int) -> np.ndarray:
     if (
         not bool(LGBM_FEATURE_SELECTION_FORCE_RECENT_ROWS)
@@ -6238,12 +8029,21 @@ def _subsample_stage_indices(
             if len(recent_idx)
             else np.array([], dtype=np.int32)
         )
-        sampler = (
-            _stratified_spread_subsample_indices
-            if stage_key == "lgbm_select"
-            else _stratified_subsample_indices
-        )
-        keep_local = sampler(np.asarray(y, dtype=np.float32)[idx], max_n=cap, random_state=int(random_state) + offset * 10007, classifier=classifier)
+        if bool(LGBM_TIME_SPREAD_HPO_SELECTION) and stage_key in {"lgbm_select", "hpo"}:
+            keep_local = _time_spread_subsample_indices(
+                np.asarray(y, dtype=np.float32)[idx],
+                max_n=cap,
+                random_state=int(random_state) + offset * 10007,
+                classifier=classifier,
+                timestamps=_take_aligned(timestamps, idx, n),
+            )
+        else:
+            sampler = (
+                _stratified_spread_subsample_indices
+                if stage_key == "lgbm_select"
+                else _stratified_subsample_indices
+            )
+            keep_local = sampler(np.asarray(y, dtype=np.float32)[idx], max_n=cap, random_state=int(random_state) + offset * 10007, classifier=classifier)
         keep = idx[keep_local].astype(np.int32)
         if len(stage_recent):
             keep = _merge_required_indices(keep, stage_recent, n=n)
@@ -6261,6 +8061,8 @@ def _cap_stage_and_move_unused_to_fit_oof(
     classifier: bool,
     spread: bool = False,
     protected_indices: Any = None,
+    timestamps: Any = None,
+    time_spread: bool = False,
 ) -> dict[str, np.ndarray]:
     if cap <= 0:
         return stage_indices
@@ -6285,12 +8087,21 @@ def _cap_stage_and_move_unused_to_fit_oof(
         take_unprotected = max(0, int(cap) - len(protected))
         keep_unprotected = np.array([], dtype=np.int32)
         if len(unprotected) and take_unprotected > 0:
-            keep_local = sampler(
-                np.asarray(y, dtype=np.float32)[unprotected],
-                max_n=int(take_unprotected),
-                random_state=int(random_state),
-                classifier=classifier,
-            )
+            if bool(time_spread):
+                keep_local = _time_spread_subsample_indices(
+                    np.asarray(y, dtype=np.float32)[unprotected],
+                    max_n=int(take_unprotected),
+                    random_state=int(random_state),
+                    classifier=classifier,
+                    timestamps=_take_aligned(timestamps, unprotected, n),
+                )
+            else:
+                keep_local = sampler(
+                    np.asarray(y, dtype=np.float32)[unprotected],
+                    max_n=int(take_unprotected),
+                    random_state=int(random_state),
+                    classifier=classifier,
+                )
             keep_unprotected = unprotected[keep_local].astype(np.int32)
         keep = np.sort(
             _merge_required_indices(keep_unprotected, protected, n=n).astype(np.int32)
@@ -6322,6 +8133,10 @@ def _splitter(y: np.ndarray, classifier: bool, random_state: int, n_splits: int 
 class _PrecomputedSplitter:
     def __init__(self, folds: list[tuple[np.ndarray, np.ndarray]]) -> None:
         self._folds = folds
+
+    def get_n_splits(self, X: Any = None, y: Any = None, groups: Any = None) -> int:
+        del X, y, groups
+        return int(len(self._folds))
 
     def split(self, X: Any, y: Any = None, groups: Any = None) -> Any:
         del X, y, groups
@@ -6372,6 +8187,108 @@ def _purged_time_splitter(
     return _PrecomputedSplitter(folds), y_split
 
 
+def _forward_burnin_splitter(
+    y: np.ndarray,
+    classifier: bool,
+    random_state: int,
+    *,
+    timestamps: Any,
+    n_splits: int = LGBM_CV_SPLITS,
+    purge_hours: float = LGBM_PURGE_HOURS,
+    objective_mode: str | None = "train_base",
+) -> tuple[Any, np.ndarray]:
+    del random_state
+    y_arr = np.asarray(y)
+    n = len(y_arr)
+    y_split = (
+        np.asarray(y_arr >= 0.5, dtype=np.int8)
+        if classifier
+        else np.asarray(y_arr, dtype=np.float32)
+    )
+    ns = _timestamp_ns(timestamps, n)
+    if ns is None or n < 2:
+        if bool(LGBM_FORWARD_BURNIN_STRICT):
+            raise ValueError(
+                "forward_burnin CV requires aligned timestamps; "
+                f"got timestamps={'present' if timestamps is not None else 'missing'} "
+                f"for rows={n}."
+            )
+        return _splitter(y_arr, classifier, 0, n_splits=n_splits)
+    valid = ns != np.iinfo(np.int64).min
+    validation_start = _forward_burnin_validation_start_ns(
+        ns,
+        valid,
+        objective_mode=objective_mode,
+    )
+    eligible = valid & (ns >= int(validation_start))
+    unique_ts = np.asarray(sorted(np.unique(ns[eligible]).tolist()), dtype=np.int64)
+    if len(unique_ts) == 0:
+        msg = (
+            "forward_burnin CV has no validation timestamps after burn-in: "
+            f"objective={_normalize_objective_mode(objective_mode)}, "
+            f"base_burn_in_days={float(LGBM_BASE_FORWARD_BURN_IN_DAYS):.1f}, "
+            f"meta_validation_months={int(LGBM_META_FORWARD_VALIDATION_MONTHS)}, "
+            f"rows={n}."
+        )
+        if bool(LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK):
+            fallback_start = _forward_short_history_validation_start_ns(ns, valid)
+            if fallback_start is not None:
+                validation_start = int(fallback_start)
+                eligible = valid & (ns >= int(validation_start))
+                unique_ts = np.asarray(
+                    sorted(np.unique(ns[eligible]).tolist()),
+                    dtype=np.int64,
+                )
+                if len(unique_ts) > 0:
+                    start_ts = pd.Timestamp(validation_start, unit="ns", tz="UTC")
+                    tprint(
+                        "WARNING: "
+                        f"{msg} Using chronological short-history fallback at "
+                        f"{start_ts.isoformat()} "
+                        f"(frac={float(LGBM_FORWARD_SHORT_HISTORY_FALLBACK_FRAC):.2f})."
+                    )
+        if bool(LGBM_FORWARD_BURNIN_STRICT):
+            if len(unique_ts) == 0:
+                raise ValueError(msg)
+        elif len(unique_ts) == 0:
+            tprint(f"WARNING: {msg} Falling back to shuffled CV.")
+            return _splitter(y_arr, classifier, 0, n_splits=n_splits)
+    n_splits_local = max(1, min(int(n_splits), int(len(unique_ts))))
+    purge_ns = int(max(0.0, float(purge_hours)) * 3600.0 * 1_000_000_000.0)
+    ts_blocks = np.array_split(unique_ts, n_splits_local)
+    all_idx = np.arange(n, dtype=np.int32)
+    folds: list[tuple[np.ndarray, np.ndarray]] = []
+    for block in ts_blocks:
+        if len(block) == 0:
+            continue
+        lo = int(np.min(block))
+        hi = int(np.max(block))
+        va_mask = eligible & (ns >= lo) & (ns <= hi)
+        tr_mask = valid & (ns < lo - purge_ns)
+        va = all_idx[va_mask]
+        tr = all_idx[tr_mask]
+        if len(va) < int(LGBM_FORWARD_MIN_VALID_ROWS):
+            continue
+        if len(tr) < int(LGBM_FORWARD_MIN_TRAIN_ROWS):
+            continue
+        if classifier and len(np.unique(y_split[tr])) < 2:
+            continue
+        folds.append((tr.astype(np.int32, copy=False), va.astype(np.int32, copy=False)))
+    if not folds:
+        msg = (
+            "forward_burnin CV produced no usable folds: "
+            f"objective={_normalize_objective_mode(objective_mode)}, "
+            f"splits={int(n_splits)}, purge_hours={float(purge_hours):.2f}, "
+            f"min_train_rows={int(LGBM_FORWARD_MIN_TRAIN_ROWS)}, "
+            f"min_valid_rows={int(LGBM_FORWARD_MIN_VALID_ROWS)}, rows={n}."
+        )
+        if bool(LGBM_FORWARD_BURNIN_STRICT):
+            raise ValueError(msg)
+        tprint(f"WARNING: {msg} Falling back to shuffled CV.")
+        return _splitter(y_arr, classifier, 0, n_splits=n_splits)
+    return _PrecomputedSplitter(folds), y_split
+
+
 def _cv_splitter(
     y: np.ndarray,
     classifier: bool,
@@ -6379,7 +8296,18 @@ def _cv_splitter(
     *,
     timestamps: Any = None,
     n_splits: int = LGBM_CV_SPLITS,
+    objective_mode: str | None = "train_base",
 ) -> tuple[Any, np.ndarray]:
+    if _is_forward_burnin_cv_mode():
+        return _forward_burnin_splitter(
+            y,
+            classifier,
+            random_state,
+            timestamps=timestamps,
+            n_splits=n_splits,
+            purge_hours=LGBM_PURGE_HOURS,
+            objective_mode=objective_mode,
+        )
     if LGBM_CV_MODE in {"interleaved", "interleaved_spread"}:
         return _interleaved_spread_splitter(
             y,
@@ -6396,6 +8324,30 @@ def _cv_splitter(
             purge_hours=LGBM_PURGE_HOURS,
         )
     return _splitter(y, classifier, random_state, n_splits=n_splits)
+
+
+def _forward_burnin_latest_holdout_indices(
+    y: np.ndarray,
+    classifier: bool,
+    random_state: int,
+    *,
+    timestamps: Any,
+    objective_mode: str | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    splitter, y_split = _forward_burnin_splitter(
+        y,
+        classifier,
+        random_state,
+        timestamps=timestamps,
+        n_splits=max(1, int(LGBM_CV_SPLITS)),
+        purge_hours=LGBM_PURGE_HOURS,
+        objective_mode=objective_mode,
+    )
+    folds = list(splitter.split(np.zeros(len(y_split)), y_split))
+    if not folds:
+        raise ValueError("forward_burnin latest holdout produced no folds")
+    tr, va = folds[-1]
+    return np.asarray(tr, dtype=np.int32), np.asarray(va, dtype=np.int32)
 
 
 def _interleaved_spread_splitter(
@@ -6887,6 +8839,297 @@ def _relief_rescue_filter(
     return new_rescue, stats
 
 
+def _aggregate_univariate_archetype_stats(
+    stats_by_archetype: list[pd.DataFrame],
+    names: list[str],
+    *,
+    source: str,
+) -> pd.DataFrame:
+    if not stats_by_archetype:
+        return pd.DataFrame(columns=["feature", "passed", "univariate_j"])
+    detail = pd.concat(stats_by_archetype, ignore_index=True)
+    rows: list[dict[str, Any]] = []
+    for fi, name in enumerate(names):
+        part = detail[detail["feature"].astype(str) == str(name)]
+        if part.empty:
+            rows.append(
+                {
+                    "feature": str(name),
+                    "feature_index": int(fi),
+                    "passed": False,
+                    "univariate_j": 0.0,
+                    "direction_stability": 0.0,
+                    "archetype_source": source,
+                    "archetype_pass_count": 0,
+                    "best_archetype": "",
+                }
+            )
+            continue
+        score = pd.to_numeric(part.get("univariate_j"), errors="coerce").fillna(0.0)
+        best_pos = int(score.to_numpy(dtype=np.float64).argmax())
+        best = part.iloc[best_pos]
+        passed = part["passed"].astype(bool).to_numpy()
+        direction_raw = pd.to_numeric(
+            pd.Series([best.get("direction", 1)]), errors="coerce"
+        ).iloc[0]
+        direction = int(direction_raw) if np.isfinite(direction_raw) and direction_raw != 0 else 1
+        rows.append(
+            {
+                "feature": str(name),
+                "feature_index": int(fi),
+                "passed": bool(np.any(passed)),
+                "univariate_j": float(score.max()),
+                "J_pos_median": float(pd.to_numeric(part.get("J_pos_median"), errors="coerce").max()),
+                "J_neg_median": float(pd.to_numeric(part.get("J_neg_median"), errors="coerce").max()),
+                "direction": direction,
+                "direction_stability": float(
+                    pd.to_numeric(part.get("direction_stability"), errors="coerce").max()
+                ),
+                "direction_margin_median": float(
+                    pd.to_numeric(part.get("direction_margin_median"), errors="coerce").max()
+                ),
+                "precision20_norm_median": float(
+                    pd.to_numeric(part.get("precision20_norm_median"), errors="coerce").max()
+                ),
+                "lift20_median": float(
+                    pd.to_numeric(part.get("lift20_median"), errors="coerce").max()
+                ),
+                "monotonicity_median": float(
+                    pd.to_numeric(part.get("monotonicity_median"), errors="coerce").max()
+                ),
+                "pass_precision": bool(part.get("pass_precision", pd.Series(False, index=part.index)).astype(bool).any()),
+                "pass_lift": bool(part.get("pass_lift", pd.Series(False, index=part.index)).astype(bool).any()),
+                "pass_monotonicity": bool(part.get("pass_monotonicity", pd.Series(False, index=part.index)).astype(bool).any()),
+                "archetype_source": source,
+                "archetype_pass_count": int(np.sum(passed)),
+                "best_archetype": str(best.get("archetype", "")),
+                "best_archetype_rows": int(best.get("archetype_rows", 0) or 0),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _univariate_directional_filter_archetype_union(
+    X: pd.DataFrame,
+    y: np.ndarray,
+    *,
+    classifier: bool,
+    groups: Any = None,
+    returns: Any = None,
+    timestamps: Any = None,
+    random_state: int,
+    objective_mode: str | None = "train_base",
+    label_context: Mapping[str, Any] | None = None,
+) -> tuple[list[str], pd.DataFrame, dict[str, Any]]:
+    labels, diag = _feature_selection_archetype_labels(
+        X,
+        label_context=label_context,
+        timestamps=timestamps,
+        objective_mode=objective_mode,
+    )
+    if labels is None:
+        selected, stats = _univariate_directional_filter(
+            X,
+            y,
+            classifier=classifier,
+            groups=groups,
+            returns=returns,
+            timestamps=timestamps,
+            random_state=random_state,
+            objective_mode=objective_mode,
+        )
+        stats["archetype_source"] = diag.get("source", "global")
+        stats["archetype_pass_count"] = stats.get("passed", False)
+        return selected, stats, diag
+    names = list(map(str, X.columns))
+    counts = pd.Series(labels).value_counts(dropna=False)
+    usable = _usable_archetype_counts(counts)
+    stats_parts: list[pd.DataFrame] = []
+    tprint(
+        "LGBM archetype univariate filter started: "
+        f"source={diag.get('source')}, archetypes={len(usable)}, "
+        f"rows={len(X)}, features={len(names)}, "
+        f"target_mode=one_vs_rest_archetype, "
+        f"objective={_normalize_objective_mode(objective_mode)}."
+    )
+    for arch_i, (arch, rows) in enumerate(usable.items(), start=1):
+        idx = np.flatnonzero(labels.astype(str) == str(arch)).astype(np.int32)
+        if len(idx) < int(LGBM_ARCHETYPE_FEATURE_SELECTION_MIN_ROWS):
+            continue
+        tprint(
+            "LGBM archetype univariate one-vs-rest target: "
+            f"{arch_i}/{len(usable)} archetype={arch} positive_rows={len(idx)} "
+            f"total_rows={len(X)}."
+        )
+        y_arch = (labels.astype(str) == str(arch)).astype(np.float32)
+        selected_arch, stats_arch = _univariate_directional_filter(
+            X.reset_index(drop=True),
+            y_arch,
+            classifier=True,
+            groups=groups,
+            returns=None,
+            timestamps=timestamps,
+            random_state=random_state + arch_i * 173,
+            objective_mode=objective_mode,
+        )
+        stats_arch = stats_arch.copy()
+        stats_arch["archetype"] = str(arch)
+        stats_arch["archetype_rows"] = int(rows)
+        stats_arch["archetype_selected_by_slice"] = stats_arch["feature"].astype(str).isin(selected_arch)
+        stats_parts.append(stats_arch)
+    stats = _aggregate_univariate_archetype_stats(
+        stats_parts,
+        names,
+        source=str(diag.get("source", "")),
+    )
+    selected = stats.loc[stats["passed"].astype(bool), "feature"].astype(str).tolist()
+    if len(selected) < min(LGBM_MIN_FEATURES, len(names)):
+        eligible = stats[
+            pd.to_numeric(stats["direction_stability"], errors="coerce").fillna(0.0)
+            >= LGBM_DIRECTION_STABILITY_MIN
+        ]
+        rescue = (
+            eligible.sort_values("univariate_j", ascending=False)["feature"]
+            .astype(str)
+            .head(min(LGBM_MIN_FEATURES, len(names)))
+            .tolist()
+        )
+        selected = sorted(set(selected).union(rescue), key=lambda c: names.index(c))
+        stats["archetype_univariate_rescue"] = stats["feature"].astype(str).isin(rescue)
+    diag["selected_features"] = int(len(selected))
+    diag["archetype_union_features"] = int(stats["passed"].astype(bool).sum()) if not stats.empty else 0
+    tprint(
+        "LGBM archetype univariate filter complete: "
+        f"{len(names)} -> {len(selected)} features, "
+        f"source={diag.get('source')}, union_pass={diag.get('archetype_union_features', 0)}."
+    )
+    return selected, stats, diag
+
+
+def _aggregate_relief_archetype_stats(
+    stats_by_archetype: list[pd.DataFrame],
+    names: list[str],
+    *,
+    source: str,
+) -> pd.DataFrame:
+    if not stats_by_archetype:
+        return pd.DataFrame(
+            columns=["feature", "relief_score", "relief_presence", "relief_selected", "relief_rescued"]
+        )
+    detail = pd.concat(stats_by_archetype, ignore_index=True)
+    rows: list[dict[str, Any]] = []
+    for name in names:
+        part = detail[detail["feature"].astype(str) == str(name)]
+        if part.empty:
+            rows.append(
+                {
+                    "feature": str(name),
+                    "relief_score": 0.0,
+                    "relief_presence": 0.0,
+                    "relief_present_runs": 0,
+                    "relief_selected": False,
+                    "relief_rescued": False,
+                    "archetype_source": source,
+                    "relief_archetype_selected_count": 0,
+                    "relief_best_archetype": "",
+                }
+            )
+            continue
+        score = pd.to_numeric(part.get("relief_score"), errors="coerce").fillna(0.0)
+        best_pos = int(score.to_numpy(dtype=np.float64).argmax())
+        best = part.iloc[best_pos]
+        selected = part.get("relief_selected", pd.Series(False, index=part.index)).astype(bool)
+        rescued = part.get("relief_rescued", pd.Series(False, index=part.index)).astype(bool)
+        rows.append(
+            {
+                "feature": str(name),
+                "relief_score": float(score.max()),
+                "relief_presence": float(
+                    pd.to_numeric(part.get("relief_presence"), errors="coerce").max()
+                ),
+                "relief_present_runs": int(
+                    pd.to_numeric(part.get("relief_present_runs"), errors="coerce").fillna(0).max()
+                ),
+                "relief_selected": bool(selected.any()),
+                "relief_rescued": bool(rescued.any()),
+                "archetype_source": source,
+                "relief_archetype_selected_count": int(selected.sum()),
+                "relief_best_archetype": str(best.get("archetype", "")),
+                "relief_best_archetype_rows": int(best.get("archetype_rows", 0) or 0),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _relief_rescue_filter_archetype_union(
+    X: pd.DataFrame,
+    y: np.ndarray,
+    uni_features: list[str],
+    *,
+    classifier: bool,
+    random_state: int,
+    archetype_labels: np.ndarray | None = None,
+    archetype_diag: Mapping[str, Any] | None = None,
+) -> tuple[list[str], pd.DataFrame, dict[str, Any]]:
+    diag = dict(archetype_diag or {})
+    if archetype_labels is None:
+        rescued, stats = _relief_rescue_filter(
+            X,
+            y,
+            uni_features,
+            classifier=classifier,
+            random_state=random_state,
+        )
+        return rescued, stats, diag
+    names = list(map(str, X.columns))
+    labels = np.asarray(archetype_labels).astype(str)
+    counts = pd.Series(labels).value_counts(dropna=False)
+    usable = _usable_archetype_counts(counts)
+    stats_parts: list[pd.DataFrame] = []
+    rescued_union: set[str] = set()
+    tprint(
+        "LGBM archetype ReliefF rescue started: "
+        f"source={diag.get('source')}, archetypes={len(usable)}, "
+        f"rows={len(X)}, features={len(names)}, "
+        "target_mode=one_vs_rest_archetype."
+    )
+    for arch_i, (arch, rows) in enumerate(usable.items(), start=1):
+        idx = np.flatnonzero(labels == str(arch)).astype(np.int32)
+        if len(idx) < int(LGBM_ARCHETYPE_FEATURE_SELECTION_MIN_ROWS):
+            continue
+        y_arch = (labels == str(arch)).astype(np.float32)
+        rescued_arch, stats_arch = _relief_rescue_filter(
+            X.reset_index(drop=True),
+            y_arch,
+            uni_features,
+            classifier=True,
+            random_state=random_state + arch_i * 211,
+        )
+        rescued_union.update(str(f) for f in rescued_arch)
+        stats_arch = stats_arch.copy()
+        stats_arch["archetype"] = str(arch)
+        stats_arch["archetype_rows"] = int(rows)
+        stats_parts.append(stats_arch)
+    stats = _aggregate_relief_archetype_stats(
+        stats_parts,
+        names,
+        source=str(diag.get("source", "")),
+    )
+    uni_set = set(map(str, uni_features))
+    rescued = [
+        f
+        for f in names
+        if f in rescued_union and f not in uni_set
+    ]
+    stats["relief_rescued"] = stats["feature"].astype(str).isin(rescued)
+    diag["relief_rescued_features"] = int(len(rescued))
+    tprint(
+        "LGBM archetype ReliefF rescue complete: "
+        f"rescued={len(rescued)}, source={diag.get('source')}."
+    )
+    return rescued, stats, diag
+
+
 def _redundancy_cluster_filter(
     X: pd.DataFrame,
     features: list[str],
@@ -6977,6 +9220,18 @@ def _make_lgbm_model(params: dict[str, Any], classifier: bool) -> Any:
     if classifier:
         return lgb.LGBMClassifier(**params)
     return lgb.LGBMRegressor(**params)
+
+
+def _make_lgbm_ranker_model(params: dict[str, Any]) -> Any:
+    import lightgbm as lgb
+
+    ranker_params = _effective_lgbm_params(dict(params), classifier=False)
+    for key in ("objective", "metric", "scale_pos_weight", "is_unbalance", "class_weight"):
+        ranker_params.pop(key, None)
+    ranker_params["objective"] = "lambdarank"
+    ranker_params.setdefault("metric", "ndcg")
+    ranker_params.setdefault("eval_at", [10, 20, 30])
+    return lgb.LGBMRanker(**ranker_params)
 
 
 def _attach_lgbm_leaf_training_diagnostics(
@@ -7158,22 +9413,85 @@ def _fit_lgbm_model(
     y_valid: np.ndarray | None = None,
     early_stopping_rounds: int | None = None,
     attach_leaf_diagnostics: bool = False,
+    objective_mode: str | None = None,
+    ranker_train_groups: Any = None,
+    ranker_valid_groups: Any = None,
+    ranker_train_relevance: Any = None,
+    ranker_valid_relevance: Any = None,
 ) -> Any:
     import lightgbm as lgb
 
-    model = _make_lgbm_model(dict(params), classifier)
+    use_ranker = _lgbm_ranker_enabled_for_objective(objective_mode) and ranker_train_groups is not None
+    model = _make_lgbm_ranker_model(dict(params)) if use_ranker else _make_lgbm_model(dict(params), classifier)
     callbacks = []
     eval_set = None
-    if X_valid is not None and y_valid is not None and early_stopping_rounds and len(y_valid) > 10:
+    if (
+        not use_ranker
+        and X_valid is not None
+        and y_valid is not None
+        and early_stopping_rounds
+        and len(y_valid) > 10
+    ):
         callbacks.append(lgb.early_stopping(int(early_stopping_rounds), verbose=False))
         eval_set = [(X_valid, y_valid)]
     fit_kwargs: dict[str, Any] = {}
+    diagnostics_sample_weight = sample_weight
     if sample_weight is not None:
         fit_kwargs["sample_weight"] = np.asarray(sample_weight, dtype=np.float32)
     if eval_set is not None:
         fit_kwargs["eval_set"] = eval_set
         fit_kwargs["callbacks"] = callbacks
-    model.fit(X_train, y_train, **fit_kwargs)
+    X_fit = X_train
+    y_fit = y_train
+    if use_ranker:
+        train_keys = np.asarray(ranker_train_groups, dtype=object)
+        if len(train_keys) != len(X_train):
+            raise ValueError("ranker_train_groups must have the same length as X_train")
+        order, group = _lgbm_ranker_group_order(train_keys)
+        if len(order) != len(X_train) or len(group) == 0:
+            raise ValueError("invalid LightGBM ranker groups")
+        X_fit = X_train.iloc[order].reset_index(drop=True)
+        train_relevance_source = (
+            np.asarray(ranker_train_relevance)
+            if ranker_train_relevance is not None and len(np.asarray(ranker_train_relevance)) == len(X_train)
+            else np.asarray(y_train)
+        )
+        if _lgbm_ranker_absolute_relevance_mode():
+            y_fit = _lgbm_ranker_absolute_relevance(train_relevance_source)[order]
+        else:
+            y_fit = _lgbm_ranker_relevance(train_relevance_source, train_keys)[order]
+        fit_kwargs["group"] = group
+        if sample_weight is not None:
+            diagnostics_sample_weight = np.asarray(sample_weight, dtype=np.float32)[order]
+            fit_kwargs["sample_weight"] = diagnostics_sample_weight
+        if (
+            X_valid is not None
+            and y_valid is not None
+            and ranker_valid_groups is not None
+            and early_stopping_rounds
+            and len(y_valid) > 10
+        ):
+            valid_keys = np.asarray(ranker_valid_groups, dtype=object)
+            if len(valid_keys) == len(X_valid):
+                valid_order, valid_group = _lgbm_ranker_group_order(valid_keys)
+                X_eval = X_valid.iloc[valid_order].reset_index(drop=True)
+                valid_relevance_source = (
+                    np.asarray(ranker_valid_relevance)
+                    if ranker_valid_relevance is not None
+                    and len(np.asarray(ranker_valid_relevance)) == len(X_valid)
+                    else np.asarray(y_valid)
+                )
+                if _lgbm_ranker_absolute_relevance_mode():
+                    y_eval = _lgbm_ranker_absolute_relevance(valid_relevance_source)[valid_order]
+                else:
+                    y_eval = _lgbm_ranker_relevance(valid_relevance_source, valid_keys)[valid_order]
+                fit_kwargs["eval_set"] = [(X_eval, y_eval)]
+                fit_kwargs["eval_group"] = [valid_group]
+                fit_kwargs["callbacks"] = [lgb.early_stopping(int(early_stopping_rounds), verbose=False)]
+        setattr(model, "_ares_lgbm_ranker_enabled_", True)
+        setattr(model, "_ares_lgbm_ranker_group_mode_", str(LGBM_RANKER_GROUP_MODE))
+        setattr(model, "_ares_lgbm_ranker_relevance_mode_", str(LGBM_RANKER_RELEVANCE_MODE))
+    model.fit(X_fit, y_fit, **fit_kwargs)
     if attach_leaf_diagnostics and (
         LGBM_META_LEAF_DIAGNOSTICS
         or LGBM_META_LEAF_SUPPORT_DIAGNOSTICS
@@ -7182,9 +9500,9 @@ def _fit_lgbm_model(
     ):
         _attach_lgbm_leaf_training_diagnostics(
             model,
-            X_train,
-            y_train,
-            sample_weight=sample_weight,
+            X_fit,
+            y_fit,
+            sample_weight=diagnostics_sample_weight,
             include_target_stats=(
                 LGBM_META_LEAF_DIAGNOSTICS or LGBM_META_LEAF_TARGET_DIAGNOSTICS
             ),
@@ -8205,14 +10523,21 @@ def _fit_lgbm_archetype_states(
     ref_assets = assets
     cap = int(LGBM_ARCHETYPE_FIT_MAX_ROWS)
     if cap > 0 and n_train > cap:
-        idx = np.linspace(0, n_train - 1, cap, dtype=np.int32)
+        idx = _begin_middle_end_sample_indices(
+            n_train,
+            max_rows=cap,
+            timestamps=timestamps,
+            y=np.arange(n_train, dtype=np.float32),
+            classifier=False,
+            random_state=random_state + 391,
+        )
         X_ref = X_train.iloc[idx].reset_index(drop=True)
         ref_timestamps = _take_aligned(timestamps, idx, n_train)
         ref_assets = _take_aligned(assets, idx, n_train)
         tprint(
             "LGBM archetype reference fit sampled: "
             f"rows={n_train}->{len(X_ref)}, features={len(selected_features)}, "
-            f"max_rows={cap}."
+            f"max_rows={cap}, sample_policy=in_sample_begin_middle_end."
         )
     else:
         tprint(
@@ -8601,7 +10926,12 @@ def _rank_bin_indices(rank_pct: np.ndarray, n_bins: int | None = None) -> np.nda
 def _fit_rank_bin_stats_oof(y: np.ndarray, rank_pct: np.ndarray, *, classifier: bool, returns: Any = None) -> pd.DataFrame:
     y_arr = np.asarray(y, dtype=np.float32)
     ret = _as_returns(y_arr, returns)
-    bins = _rank_bin_indices(rank_pct)
+    rank_arr = np.asarray(rank_pct, dtype=np.float32)
+    valid = np.isfinite(y_arr) & np.isfinite(ret) & np.isfinite(rank_arr)
+    y_arr = y_arr[valid]
+    ret = ret[valid]
+    rank_arr = rank_arr[valid]
+    bins = _rank_bin_indices(rank_arr)
     win = (y_arr >= 0.5).astype(np.float32) if classifier else (y_arr > 0.0).astype(np.float32)
     baseline = float(np.mean(win)) if len(win) else 0.0
     rows: list[dict[str, float]] = []
@@ -10684,6 +13014,11 @@ def apply_label_weight_hpo_report_to_arrays(
     )
 
 
+def _explicit_label_ablation_mode_enabled() -> bool:
+    mode = str(os.getenv("EPM_LABEL_ABLATION_MODE", "") or "").strip().lower()
+    return mode not in {"", "0", "none", "off", "false", "baseline"}
+
+
 def _label_weight_hpo_pair_hit_mask(
     ctx: dict[str, np.ndarray],
     tp_mult: float,
@@ -10758,6 +13093,7 @@ def _evaluate_label_weight_hpo_candidate(
     best_params: dict[str, Any],
     *,
     classifier: bool,
+    objective_mode: str,
     timestamps: Any = None,
     random_state: int = 42,
     label_params: dict[str, float] | None = None,
@@ -10771,11 +13107,12 @@ def _evaluate_label_weight_hpo_candidate(
     row_cap = int(LGBM_LABEL_WEIGHT_HPO_MAX_ROWS if max_rows is None else max_rows)
     row_cap = max(0, row_cap)
     if row_cap > 0 and len(idx) > row_cap:
-        keep_local = _stratified_spread_subsample_indices(
+        keep_local = _time_spread_subsample_indices(
             np.asarray(y_metric_full, dtype=np.float32)[idx],
             int(row_cap),
             int(random_state) + 9029,
             classifier=True,
+            timestamps=_take_aligned(timestamps, idx, len(y_train_full)),
         )
         idx = np.sort(idx[keep_local].astype(np.int32))
     if len(idx) < LGBM_LABEL_WEIGHT_HPO_MIN_ROWS:
@@ -10804,6 +13141,7 @@ def _evaluate_label_weight_hpo_candidate(
         int(random_state),
         timestamps=ts_eval,
         n_splits=int(LGBM_LABEL_WEIGHT_HPO_CV_SPLITS),
+        objective_mode=objective_mode,
     )
     oof = np.full(len(idx), np.nan, dtype=np.float32)
     fold_count = 0
@@ -10959,6 +13297,7 @@ def _run_base_label_weight_hpo(
         ctx,
         best_params,
         classifier=classifier,
+        objective_mode=objective_mode,
         timestamps=timestamps,
         random_state=random_state + 12011,
     )
@@ -10995,6 +13334,7 @@ def _run_base_label_weight_hpo(
             ctx,
             best_params,
             classifier=classifier,
+            objective_mode=objective_mode,
             timestamps=timestamps,
             random_state=random_state + 13007 + int(trial.number) * 13,
             label_params=params,
@@ -11098,6 +13438,7 @@ def _run_base_label_weight_hpo(
                 ctx,
                 best_params,
                 classifier=classifier,
+                objective_mode=objective_mode,
                 timestamps=timestamps,
                 random_state=random_state + 17011 + int(trial.number) * 17,
                 label_params=best_label_params,
@@ -11201,6 +13542,7 @@ def _run_base_label_weight_hpo(
         ctx,
         best_params,
         classifier=classifier,
+        objective_mode=objective_mode,
         timestamps=timestamps,
         random_state=random_state + 19001,
         max_rows=int(LGBM_LABEL_WEIGHT_HPO_ELECTION_MAX_ROWS),
@@ -11230,6 +13572,7 @@ def _run_base_label_weight_hpo(
             ctx,
             best_params,
             classifier=classifier,
+            objective_mode=objective_mode,
             timestamps=timestamps,
             random_state=random_state + 20011 + int(i) * 101,
             label_params=spec.get("label_params"),
@@ -11530,7 +13873,13 @@ def _fit_feature_drift_reference(
     n_ref = int(len(X_ref))
     ref_frame = X_ref
     if LGBM_META_DRIFT_MAX_ROWS > 0 and n_ref > LGBM_META_DRIFT_MAX_ROWS:
-        idx = np.linspace(0, n_ref - 1, LGBM_META_DRIFT_MAX_ROWS, dtype=np.int32)
+        idx = _begin_middle_end_sample_indices(
+            n_ref,
+            max_rows=int(LGBM_META_DRIFT_MAX_ROWS),
+            y=np.arange(n_ref, dtype=np.float32),
+            classifier=False,
+            random_state=9109,
+        )
         ref_frame = X_ref.iloc[idx].reset_index(drop=True)
     ref = ref_frame.loc[:, features].astype(np.float32, copy=False)
     values = ref.to_numpy(dtype=np.float32, copy=False)
@@ -13266,6 +15615,7 @@ def _lgbm_stability_selection_pass(
     *,
     classifier: bool,
     groups: Any = None,
+    timestamps: Any = None,
     returns: Any = None,
     metric_y: np.ndarray | None = None,
     random_state: int,
@@ -13281,6 +15631,11 @@ def _lgbm_stability_selection_pass(
     y_arr = np.asarray(y)
     y_metric = np.asarray(metric_y if metric_y is not None else y_arr)
     ret_arr = _as_returns(y_metric, returns)
+    ranker_groups_all = (
+        _lgbm_ranker_group_keys(X.reset_index(drop=True), timestamps, mode=LGBM_RANKER_GROUP_MODE)
+        if _lgbm_ranker_enabled_for_objective(objective_mode)
+        else None
+    )
     p = len(features)
     configs = []
     selection_param_source = "base_grid"
@@ -13351,7 +15706,14 @@ def _lgbm_stability_selection_pass(
     current_weight = base_weight.copy()
     prev_oof: np.ndarray | None = None
     stability_splits = max(2, int(LGBM_CV_SPLITS))
-    splitter, y_split = _splitter(y_metric, classifier, random_state, n_splits=stability_splits)
+    splitter, y_split = _cv_splitter(
+        y_metric,
+        classifier,
+        random_state,
+        timestamps=timestamps,
+        n_splits=stability_splits,
+        objective_mode=objective_mode,
+    )
     dir_t0 = time.perf_counter()
     round_direction, round_margin = _direction_vectors_binned_mi(
         Xf,
@@ -13386,7 +15748,10 @@ def _lgbm_stability_selection_pass(
     mda_shadow_frames: list[pd.DataFrame] = []
     mda_repeat_frames: list[pd.DataFrame] = []
     mda_fold_diagnostics: list[dict[str, Any]] = []
-    total_fits = len(seeds) * len(configs) * stability_splits
+    actual_splits = (
+        int(splitter.get_n_splits()) if hasattr(splitter, "get_n_splits") else stability_splits
+    )
+    total_fits = len(seeds) * len(configs) * actual_splits
     tprint(
         "LGBM stability selection pass started: "
         f"rows={len(y_arr)}, features={p}, seeds={len(seeds)}, "
@@ -13404,7 +15769,7 @@ def _lgbm_stability_selection_pass(
                 fold_t0 = time.perf_counter()
                 tprint(
                     "LGBM stability fit started: "
-                    f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/{stability_splits}, "
+                    f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/{actual_splits}, "
                     f"train_rows={len(tr)}, valid_rows={len(va)}, features={p}, "
                     f"param_source={selection_param_source}, "
                     f"max_depth={int(cfg.get('max_depth', 0) or 0)}, "
@@ -13423,7 +15788,7 @@ def _lgbm_stability_selection_pass(
                 params = _effective_lgbm_params(params, classifier=classifier)
                 tprint(
                     "LGBM stability fit params: "
-                    f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/{stability_splits}, "
+                    f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/{actual_splits}, "
                     f"n_estimators={int(params.get('n_estimators', 0) or 0)}, "
                     f"param_source={selection_param_source}."
                 )
@@ -13433,10 +15798,12 @@ def _lgbm_stability_selection_pass(
                     current_weight[tr],
                     classifier=classifier,
                     params=params,
+                    objective_mode=objective_mode,
+                    ranker_train_groups=_take_aligned(ranker_groups_all, tr, len(y_arr)),
                 )
                 tprint(
                     "LGBM stability fit model complete: "
-                    f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/{stability_splits}, "
+                    f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/{actual_splits}, "
                     f"model_fit_elapsed={time.perf_counter() - fold_t0:.1f}s."
                 )
                 mode_name = "classifier" if classifier else "regressor"
@@ -13527,15 +15894,43 @@ def _lgbm_stability_selection_pass(
                 best_score = cfg_score
                 best_oof = cfg_oof.copy()
             metric_fill = float(np.mean(y_metric))
-            distill = _compute_weight_distillation(y_metric, np.nan_to_num(cfg_oof, nan=float(metric_fill)), prev_oof, is_classifier=classifier, include_false_positive_focus=False)
-            fp_weight = _false_positive_avoidance_weight(
-                y_metric,
-                np.nan_to_num(cfg_oof, nan=float(metric_fill)),
-                classifier=classifier,
-                top_frac=_target_top_fraction(objective_mode),
-            )
+            finite_cfg_oof = np.isfinite(cfg_oof)
+            if _is_forward_burnin_cv_mode():
+                active_mask = finite_cfg_oof
+                distill = np.ones(len(y_metric), dtype=np.float32)
+                fp_weight = np.ones(len(y_metric), dtype=np.float32)
+                if bool(np.any(active_mask)):
+                    prev_active = None
+                    if prev_oof is not None and len(prev_oof) == len(y_metric):
+                        prev_candidate = np.asarray(prev_oof, dtype=np.float32)[active_mask]
+                        if np.isfinite(prev_candidate).any():
+                            fill_prev = float(np.nanmean(prev_candidate[np.isfinite(prev_candidate)]))
+                            prev_active = np.nan_to_num(prev_candidate, nan=fill_prev).astype(np.float32)
+                    pred_active = np.asarray(cfg_oof, dtype=np.float32)[active_mask]
+                    distill[active_mask] = _compute_weight_distillation(
+                        y_metric[active_mask],
+                        pred_active,
+                        prev_active,
+                        is_classifier=classifier,
+                        include_false_positive_focus=False,
+                    )
+                    fp_weight[active_mask] = _false_positive_avoidance_weight(
+                        y_metric[active_mask],
+                        pred_active,
+                        classifier=classifier,
+                        top_frac=_target_top_fraction(objective_mode),
+                    )
+            else:
+                cfg_oof_filled = np.nan_to_num(cfg_oof, nan=float(metric_fill))
+                distill = _compute_weight_distillation(y_metric, cfg_oof_filled, prev_oof, is_classifier=classifier, include_false_positive_focus=False)
+                fp_weight = _false_positive_avoidance_weight(
+                    y_metric,
+                    cfg_oof_filled,
+                    classifier=classifier,
+                    top_frac=_target_top_fraction(objective_mode),
+                )
             current_weight, ess = _normalize_weights(base_weight * distill * fp_weight)
-            prev_oof = np.nan_to_num(cfg_oof, nan=float(metric_fill)).astype(np.float32)
+            prev_oof = cfg_oof.copy().astype(np.float32) if _is_forward_burnin_cv_mode() else np.nan_to_num(cfg_oof, nan=float(metric_fill)).astype(np.float32)
             tprint(
                 f"LGBM stability grid complete: seed={seed} config={cfg_i}/{len(configs)} "
                 f"score={cfg_score:.4f} ess={ess:.1f} "
@@ -13579,7 +15974,7 @@ def _lgbm_stability_selection_pass(
             fold_i = int(fold_rec.get("fold_i", 0))
             tprint(
                 "LGBM stability permutation started: "
-                f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/{stability_splits}, "
+                f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/{actual_splits}, "
                 f"candidate_features={len(candidate_idx)}, "
                 f"mda_mode={mda_cfg.get('permutation_mode') if mda_enabled else 'legacy'}."
             )
@@ -13671,7 +16066,7 @@ def _lgbm_stability_selection_pass(
             permuted_features += int(len(candidate_idx))
             tprint(
                 "LGBM stability permutation complete: "
-                f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/{stability_splits}."
+                f"seed={seed}, config={cfg_i}/{len(configs)}, fold={fold_i}/{actual_splits}."
             )
     tprint(
         "LGBM stability permutation audit complete: "
@@ -14007,6 +16402,7 @@ def _iterative_feature_prune(
     *,
     classifier: bool,
     groups: Any = None,
+    timestamps: Any = None,
     returns: Any = None,
     metric_y: np.ndarray | None = None,
     random_state: int,
@@ -14046,6 +16442,7 @@ def _iterative_feature_prune(
             active,
             classifier=classifier,
             groups=groups,
+            timestamps=timestamps,
             returns=returns,
             metric_y=y_metric,
             random_state=random_state + round_id * 1009,
@@ -14139,20 +16536,33 @@ def _cross_val_oof_lgbm(
     assets: Any = None,
     returns: Any = None,
     metric_y: np.ndarray | None = None,
+    label_context: Mapping[str, Any] | None = None,
     random_state: int,
     n_splits: int = LGBM_CV_SPLITS,
+    objective_mode: str | None = "train_base",
 ) -> tuple[np.ndarray, list[dict[str, float]]]:
     t0 = time.perf_counter()
     Xf = X[features].reset_index(drop=True)
     y_arr = np.asarray(y)
     y_metric = np.asarray(metric_y if metric_y is not None else y_arr)
     ret_arr = _as_returns(y_metric, returns)
+    ranker_groups_all = (
+        _lgbm_ranker_group_keys(X.reset_index(drop=True), timestamps, mode=LGBM_RANKER_GROUP_MODE)
+        if _lgbm_ranker_enabled_for_objective(objective_mode)
+        else None
+    )
+    ranker_relevance_all = (
+        _lgbm_ranker_relevance_source(y_metric, label_context=label_context)
+        if _lgbm_ranker_enabled_for_objective(objective_mode)
+        else None
+    )
     splitter, y_split = _cv_splitter(
         y_metric,
         classifier,
         random_state,
         timestamps=timestamps,
         n_splits=n_splits,
+        objective_mode=objective_mode,
     )
     fold_support_diag = _fold_support_diagnostics(
         splitter,
@@ -14183,6 +16593,11 @@ def _cross_val_oof_lgbm(
             X_valid=Xf.iloc[va].reset_index(drop=True),
             y_valid=y_arr[va],
             early_stopping_rounds=LGBM_EARLY_STOPPING_ROUNDS,
+            objective_mode=objective_mode,
+            ranker_train_groups=_take_aligned(ranker_groups_all, tr, len(y_arr)),
+            ranker_valid_groups=_take_aligned(ranker_groups_all, va, len(y_arr)),
+            ranker_train_relevance=_take_aligned(ranker_relevance_all, tr, len(y_arr)),
+            ranker_valid_relevance=_take_aligned(ranker_relevance_all, va, len(y_arr)),
         )
         pred = _predict_lgbm_raw(model, Xf.iloc[va].reset_index(drop=True), "classifier" if classifier else "regressor")
         oof[va] = pred
@@ -14198,6 +16613,14 @@ def _cross_val_oof_lgbm(
             f"LGBM OOF CV fold {fold_i}/{n_splits} complete: "
             f"elapsed={time.perf_counter() - fold_t0:.1f}s."
         )
+    finite_oof = np.isfinite(oof)
+    if _is_forward_burnin_cv_mode():
+        tprint(
+            "LGBM OOF CV complete with sparse forward coverage: "
+            f"finite={int(np.sum(finite_oof))}/{len(oof)}, "
+            f"burnin_or_unscored={int(len(oof) - np.sum(finite_oof))}."
+        )
+        return oof.astype(np.float32), metrics
     fill = float(np.nanmean(oof)) if np.isfinite(oof).any() else float(np.mean(y_arr))
     tprint(f"LGBM OOF CV complete in {time.perf_counter() - t0:.1f}s.")
     return np.nan_to_num(oof, nan=fill).astype(np.float32), metrics
@@ -14216,6 +16639,7 @@ def _cross_val_oof_lgbm_with_meta_features(
     assets: Any = None,
     returns: Any = None,
     metric_y: np.ndarray | None = None,
+    label_context: Mapping[str, Any] | None = None,
     random_state: int,
     n_splits: int = LGBM_CV_SPLITS,
     raw_contrib_input_features: list[str] | None = None,
@@ -14225,6 +16649,9 @@ def _cross_val_oof_lgbm_with_meta_features(
     ae_gmm_feature_names: list[str] | None = None,
     ae_gmm_context_feature_names: list[str] | None = None,
     ae_gmm_enabled: bool = False,
+    meta_post_selection_ood_input_features: list[str] | None = None,
+    meta_post_selection_ood_enabled: bool = False,
+    objective_mode: str | None = "train_base",
 ) -> tuple[np.ndarray, list[dict[str, float]], pd.DataFrame, pd.DataFrame, np.ndarray]:
     t0 = time.perf_counter()
     raw_input_features = [str(c) for c in (raw_contrib_input_features or [])]
@@ -14254,6 +16681,16 @@ def _cross_val_oof_lgbm_with_meta_features(
     use_ae_gmm_transform = bool(
         ae_gmm_enabled and ae_input_features and (ae_feature_names or ae_context_feature_names)
     )
+    post_ood_input_features = [
+        str(c)
+        for c in (meta_post_selection_ood_input_features or [])
+        if str(c).strip()
+    ]
+    post_ood_enabled = bool(
+        meta_post_selection_ood_enabled
+        and _normalize_objective_mode(objective_mode) == "train_meta"
+        and post_ood_input_features
+    )
     base_model_features = ae_input_features if use_ae_gmm_transform else [str(c) for c in features]
     X_base = X.reset_index(drop=True)
     Xf = (
@@ -14264,12 +16701,23 @@ def _cross_val_oof_lgbm_with_meta_features(
     y_arr = np.asarray(y)
     y_metric = np.asarray(metric_y if metric_y is not None else y_arr)
     ret_arr = _as_returns(y_metric, returns)
+    ranker_groups_all = (
+        _lgbm_ranker_group_keys(X_base, timestamps, mode=LGBM_RANKER_GROUP_MODE)
+        if _lgbm_ranker_enabled_for_objective(objective_mode)
+        else None
+    )
+    ranker_relevance_all = (
+        _lgbm_ranker_relevance_source(y_metric, label_context=label_context)
+        if _lgbm_ranker_enabled_for_objective(objective_mode)
+        else None
+    )
     splitter, y_split = _cv_splitter(
         y_metric,
         classifier,
         random_state,
         timestamps=timestamps,
         n_splits=n_splits,
+        objective_mode=objective_mode,
     )
     fold_support_diag = _fold_support_diagnostics(
         splitter,
@@ -14340,6 +16788,8 @@ def _cross_val_oof_lgbm_with_meta_features(
                 np.arange(len(X_tr), dtype=np.int32),
                 y_metric=y_metric[tr],
                 returns=ret_arr[tr],
+                label_context=_slice_label_context(label_context, tr, len(y_arr)),
+                timestamps=_take_aligned(timestamps, tr, len(y_arr)),
                 random_state=int(random_state + fold_i * 2221),
             )
             if ae_feature_names:
@@ -14363,6 +16813,21 @@ def _cross_val_oof_lgbm_with_meta_features(
         else:
             X_tr = X_tr.reindex(columns=features, fill_value=0.0).astype(np.float32, copy=False)
             X_va = X_va.reindex(columns=features, fill_value=0.0).astype(np.float32, copy=False)
+        if post_ood_enabled:
+            fold_post_ood_reference = _fit_meta_post_selection_ood_reference(
+                X_tr,
+                post_ood_input_features,
+            )
+            X_tr = _append_meta_post_selection_ood_features(
+                X_tr,
+                X_tr,
+                fold_post_ood_reference,
+            ).reindex(columns=features, fill_value=0.0).astype(np.float32, copy=False)
+            X_va = _append_meta_post_selection_ood_features(
+                X_va,
+                X_va,
+                fold_post_ood_reference,
+            ).reindex(columns=features, fill_value=0.0).astype(np.float32, copy=False)
         tprint(
             f"LGBM final OOF/meta fold {fold_i}/{n_splits}: input frames ready "
             f"train_shape={X_tr.shape}, valid_shape={X_va.shape}."
@@ -14379,6 +16844,11 @@ def _cross_val_oof_lgbm_with_meta_features(
             y_valid=y_arr[va],
             early_stopping_rounds=LGBM_EARLY_STOPPING_ROUNDS,
             attach_leaf_diagnostics=True,
+            objective_mode=objective_mode,
+            ranker_train_groups=_take_aligned(ranker_groups_all, tr, len(y_arr)),
+            ranker_valid_groups=_take_aligned(ranker_groups_all, va, len(y_arr)),
+            ranker_train_relevance=_take_aligned(ranker_relevance_all, tr, len(y_arr)),
+            ranker_valid_relevance=_take_aligned(ranker_relevance_all, va, len(y_arr)),
         )
         tprint(
             f"LGBM final OOF/meta fold {fold_i}/{n_splits}: fold model fit complete "
@@ -14684,9 +17154,14 @@ def _cross_val_oof_lgbm_with_meta_features(
             f"LGBM final OOF/meta fold {fold_i}/{n_splits} complete: "
             f"elapsed={time.perf_counter() - fold_t0:.1f}s."
         )
+    finite_oof = np.isfinite(oof)
     fill = float(np.nanmean(oof)) if np.isfinite(oof).any() else float(np.mean(y_arr))
-    oof = np.nan_to_num(oof, nan=fill).astype(np.float32)
-    full_rank = _safe_rank_pct(oof)
+    oof_for_rank = np.nan_to_num(oof, nan=fill).astype(np.float32)
+    full_rank = _safe_rank_pct(oof_for_rank)
+    if _is_forward_burnin_cv_mode():
+        full_rank = np.where(finite_oof, full_rank, np.nan).astype(np.float32)
+    else:
+        oof = oof_for_rank
     meta_features["lgbm_prob"] = oof
     fold_safe_fallbacks: dict[str, np.ndarray] = {
         "rank_pct": full_rank,
@@ -14710,7 +17185,15 @@ def _cross_val_oof_lgbm_with_meta_features(
             continue
         arr = pd.to_numeric(meta_features[col], errors="coerce").to_numpy(dtype=np.float32, copy=False)
         meta_features[col] = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
-    tprint(f"LGBM final OOF/meta CV complete in {time.perf_counter() - t0:.1f}s.")
+    if _is_forward_burnin_cv_mode():
+        tprint(
+            "LGBM final OOF/meta CV complete with sparse forward coverage: "
+            f"finite={int(np.sum(finite_oof))}/{len(oof)}, "
+            f"burnin_or_unscored={int(len(oof) - np.sum(finite_oof))}, "
+            f"elapsed={time.perf_counter() - t0:.1f}s."
+        )
+    else:
+        tprint(f"LGBM final OOF/meta CV complete in {time.perf_counter() - t0:.1f}s.")
     raw_contrib_features = raw_contrib_features.fillna(0.0).astype(np.float32, copy=False)
     return (
         oof,
@@ -14750,58 +17233,103 @@ def _oof_distilled_sample_weights_lgbm(
         return current.astype(np.float32), last_oof.astype(np.float32)
     for pass_i in range(1, int(passes) + 1):
         start = time.perf_counter()
-        last_oof, _fold_metrics = _cross_val_oof_lgbm(
-            X,
-            y,
-            current,
-            features,
-            classifier=classifier,
-            params=params,
-            groups=groups,
-            timestamps=timestamps,
-            returns=returns,
-            metric_y=y_metric,
-            random_state=random_state + pass_i * 7919,
-        )
-        distill = _compute_weight_distillation(y_metric, last_oof, prev_oof, is_classifier=classifier, include_false_positive_focus=False)
-        fp_weight = _false_positive_avoidance_weight(
-            y_metric,
-            last_oof,
-            classifier=classifier,
-            top_frac=_target_top_fraction(objective_mode),
-        )
-        distill = _recency_shrink_weight_towards_one(
-            distill,
-            timestamps,
-            objective_mode=objective_mode,
-            cfg=cfg,
-        )
-        fp_weight = _recency_shrink_weight_towards_one(
-            fp_weight,
-            timestamps,
-            objective_mode=objective_mode,
-            cfg=cfg,
-        )
-        distill = _regime_specialist_shrink_weight_towards_one(
-            distill,
-            specialist_similarity,
-            cfg=cfg,
-        )
-        fp_weight = _regime_specialist_shrink_weight_towards_one(
-            fp_weight,
-            specialist_similarity,
-            cfg=cfg,
-        )
-        distill, fp_weight = apply_distillation_recipe(
-            distill,
-            fp_weight,
-            y_metric=y_metric,
-            pred=last_oof,
-            returns=returns,
-            timestamps=timestamps,
-            objective_mode=objective_mode,
-            cfg=cfg,
-        )
+        try:
+            last_oof, _fold_metrics = _cross_val_oof_lgbm(
+                X,
+                y,
+                current,
+                features,
+                classifier=classifier,
+                params=params,
+                groups=groups,
+                timestamps=timestamps,
+                returns=returns,
+                metric_y=y_metric,
+                random_state=random_state + pass_i * 7919,
+                objective_mode=objective_mode,
+            )
+        except ValueError as exc:
+            if (
+                _is_forward_burnin_cv_mode()
+                and bool(LGBM_SKIP_DISTILLATION_ON_FORWARD_CV_FAILURE)
+            ):
+                tprint(
+                    f"WARNING: LGBM OOF distilled weights {label} pass {pass_i} "
+                    "skipped because forward CV could not form legal folds; "
+                    f"using base weights. error={exc}"
+                )
+                return current.astype(np.float32), last_oof.astype(np.float32)
+            raise
+        distill = np.ones(len(y_metric), dtype=np.float32)
+        fp_weight = np.ones(len(y_metric), dtype=np.float32)
+        finite_oof = np.isfinite(last_oof)
+        if _is_forward_burnin_cv_mode():
+            active_mask = finite_oof
+        else:
+            active_mask = np.ones(len(y_metric), dtype=bool)
+        if bool(np.any(active_mask)):
+            y_active = y_metric[active_mask]
+            pred_active = last_oof[active_mask]
+            prev_active = None
+            if prev_oof is not None and len(prev_oof) == len(y_metric):
+                prev_candidate = np.asarray(prev_oof, dtype=np.float32)[active_mask]
+                if np.isfinite(prev_candidate).any():
+                    fill_prev = float(np.nanmean(prev_candidate[np.isfinite(prev_candidate)]))
+                    prev_active = np.nan_to_num(prev_candidate, nan=fill_prev).astype(np.float32)
+            distill_active = _compute_weight_distillation(y_active, pred_active, prev_active, is_classifier=classifier, include_false_positive_focus=False)
+            fp_active = _false_positive_avoidance_weight(
+                y_active,
+                pred_active,
+                classifier=classifier,
+                top_frac=_target_top_fraction(objective_mode),
+            )
+            timestamps_active = _aligned_mask_take(timestamps, active_mask, len(y_metric))
+            returns_active = _aligned_mask_take(returns, active_mask, len(y_metric))
+            specialist_active = (
+                np.asarray(specialist_similarity, dtype=np.float32)[active_mask]
+                if specialist_similarity is not None and len(np.asarray(specialist_similarity)) == len(y_metric)
+                else None
+            )
+            distill_active = _recency_shrink_weight_towards_one(
+                distill_active,
+                timestamps_active,
+                objective_mode=objective_mode,
+                cfg=cfg,
+            )
+            fp_active = _recency_shrink_weight_towards_one(
+                fp_active,
+                timestamps_active,
+                objective_mode=objective_mode,
+                cfg=cfg,
+            )
+            distill_active = _regime_specialist_shrink_weight_towards_one(
+                distill_active,
+                specialist_active,
+                cfg=cfg,
+            )
+            fp_active = _regime_specialist_shrink_weight_towards_one(
+                fp_active,
+                specialist_active,
+                cfg=cfg,
+            )
+            distill_active, fp_active = apply_distillation_recipe(
+                distill_active,
+                fp_active,
+                y_metric=y_active,
+                pred=pred_active,
+                returns=returns_active,
+                timestamps=timestamps_active,
+                objective_mode=objective_mode,
+                cfg=cfg,
+            )
+            distill[active_mask] = np.asarray(distill_active, dtype=np.float32)
+            fp_weight[active_mask] = np.asarray(fp_active, dtype=np.float32)
+        if _is_forward_burnin_cv_mode():
+            tprint(
+                f"LGBM OOF distilled weights {label} pass {pass_i}: "
+                f"distillation_active_rows={int(np.sum(active_mask))}/{len(y_metric)}; "
+                "unscored burn-in multipliers kept at 1.0."
+            )
         current, ess = _normalize_weights(base * distill * fp_weight)
         prev_oof = last_oof.copy()
         tprint(
@@ -14904,6 +17432,7 @@ def _run_lgbm_hpo(
     *,
     classifier: bool,
     groups: Any = None,
+    timestamps: Any = None,
     returns: Any = None,
     metric_y: np.ndarray | None = None,
     random_state: int,
@@ -14950,7 +17479,13 @@ def _run_lgbm_hpo(
     if LGBM_HPO_MAX_ROWS > 0:
         hpo_cap = min(hpo_cap, int(LGBM_HPO_MAX_ROWS))
     if len(y_arr) > hpo_cap:
-        idx = _stratified_spread_subsample_indices(y_metric, hpo_cap, random_state + 71, classifier)
+        idx = _time_spread_subsample_indices(
+            y_metric,
+            hpo_cap,
+            random_state + 71,
+            classifier,
+            timestamps=timestamps,
+        )
     else:
         idx = np.arange(len(y_arr), dtype=np.int32)
     X_sub = X.iloc[idx][features].reset_index(drop=True)
@@ -14959,11 +17494,16 @@ def _run_lgbm_hpo(
     sw_sub = sample_weight[idx]
     ret_sub = _as_returns(y_metric, returns)[idx]
     groups_sub = _groups_take(groups, idx)
-    splitter, y_split = _interleaved_spread_splitter(
+    timestamps_sub = _take_aligned(timestamps, idx, len(y_arr))
+    splitter, y_split = _cv_splitter(
         y_metric_sub,
         classifier,
+        random_state,
+        timestamps=timestamps_sub,
         n_splits=max(2, int(LGBM_CV_SPLITS)),
+        objective_mode=objective_mode,
     )
+    actual_splits = int(splitter.get_n_splits()) if hasattr(splitter, "get_n_splits") else int(LGBM_CV_SPLITS)
     best_seen = {"value": -np.inf, "trial": -1}
     tprint(
         "LGBM HPO started: "
@@ -14971,7 +17511,8 @@ def _run_lgbm_hpo(
         f"row_subsample_frac={hpo_frac:.3f}, max_rows={int(LGBM_HPO_MAX_ROWS)}, "
         f"patience={int(patience)}, objective={_normalize_objective_mode(objective_mode)}, "
         f"param_set={LGBM_HPO_PARAM_SET}, "
-        "fold_mode=interleaved_spread, pruner=successive_halving, cegb_enabled=False, "
+        f"fold_mode={_lgbm_cv_mode_label()}, actual_splits={actual_splits}, "
+        "time_spread_sample=begin_middle_end, pruner=successive_halving, cegb_enabled=False, "
         f"max_depth_range=[3,{int(max_depth_upper)}], "
         f"subsample_range=[{float(LGBM_HPO_SUBSAMPLE_MIN):.2f},{float(LGBM_HPO_SUBSAMPLE_MAX):.2f}], "
         f"min_child_weight_range=[{float(LGBM_HPO_MIN_CHILD_WEIGHT_MIN):.1f},{float(LGBM_HPO_MIN_CHILD_WEIGHT_MAX):.1f}], "
@@ -15054,7 +17595,7 @@ def _run_lgbm_hpo(
         for step, (tr, va) in enumerate(splitter.split(np.zeros(len(y_split)), y_split)):
             fold_t0 = time.perf_counter()
             tprint(
-                f"LGBM HPO trial {trial.number} fold {step + 1}/3 started: "
+                f"LGBM HPO trial {trial.number} fold {step + 1}/{actual_splits} started: "
                 f"train_rows={len(tr)}, valid_rows={len(va)}, depth={depth}."
             )
             model = _fit_lgbm_model(
@@ -15130,12 +17671,12 @@ def _run_lgbm_hpo(
                 value_step = value_step_raw
             trial.report(value_step, step)
             tprint(
-                f"LGBM HPO trial {trial.number} fold {step + 1}/3 complete: "
+                f"LGBM HPO trial {trial.number} fold {step + 1}/{actual_splits} complete: "
                 f"partial_J={value_step:.4f}, elapsed={time.perf_counter() - fold_t0:.1f}s."
             )
             if trial.should_prune():
                 tprint(
-                    f"LGBM HPO trial {trial.number} pruned at fold {step + 1}/3 "
+                    f"LGBM HPO trial {trial.number} pruned at fold {step + 1}/{actual_splits} "
                     f"(partial_J={value_step:.4f})."
                 )
                 raise optuna.TrialPruned()
@@ -15519,7 +18060,11 @@ def train_lgbm_stability_candidate(
             )
         )
     label_diag.update(rebalance_diag)
-    recent_feature_selection_idx = _recent_selection_indices(timestamps, n)
+    recent_feature_selection_idx = (
+        np.array([], dtype=np.int32)
+        if _is_forward_burnin_cv_mode()
+        else _recent_selection_indices(timestamps, n)
+    )
     stage_indices = _stage_partition_indices(y_metric, timestamps=timestamps, assets=assets, random_state=random_state + 701)
     stage_indices = _subsample_stage_indices(
         stage_indices,
@@ -15587,8 +18132,19 @@ def train_lgbm_stability_candidate(
         classifier=classifier,
         spread=True,
         protected_indices=recent_feature_selection_idx,
+        timestamps=timestamps,
+        time_spread=bool(LGBM_TIME_SPREAD_HPO_SELECTION),
     )
-    stage_indices = _cap_stage_and_move_unused_to_fit_oof(stage_indices, y_metric, stage_key="hpo", cap=LGBM_HPO_MAX_ROWS, random_state=random_state + 2701, classifier=classifier)
+    stage_indices = _cap_stage_and_move_unused_to_fit_oof(
+        stage_indices,
+        y_metric,
+        stage_key="hpo",
+        cap=LGBM_HPO_MAX_ROWS,
+        random_state=random_state + 2701,
+        classifier=classifier,
+        timestamps=timestamps,
+        time_spread=bool(LGBM_TIME_SPREAD_HPO_SELECTION),
+    )
     race_idx = np.asarray(stage_indices["lgbm_select"], dtype=np.int32)
     if len(race_idx) < 200:
         fallback_pool = (
@@ -15623,13 +18179,27 @@ def train_lgbm_stability_candidate(
         assets=(np.asarray(assets)[race_idx] if assets is not None and len(np.asarray(assets)) == n else None),
     )
     local_idx = np.arange(len(y_race), dtype=np.int32)
-    split_strata = y_metric_race if classifier else np.clip((pd.Series(y_metric_race).rank(pct=True).to_numpy() * 5).astype(np.int32), 0, 4)
-    stratify_arg = None
-    if classifier and len(np.unique(split_strata)) > 1:
-        _, strata_counts = np.unique(split_strata, return_counts=True)
-        if int(np.min(strata_counts)) >= 2:
-            stratify_arg = split_strata
-    select_local, eval_local = train_test_split(local_idx, test_size=LGBM_RACE_EVAL_FRACTION, stratify=stratify_arg, random_state=random_state + 1701)
+    race_timestamps = _take_aligned(timestamps, race_idx, n)
+    if _is_forward_burnin_cv_mode():
+        select_local, eval_local = _forward_burnin_latest_holdout_indices(
+            y_metric_race,
+            classifier,
+            random_state + 1701,
+            timestamps=race_timestamps,
+            objective_mode=objective_mode,
+        )
+        tprint(
+            "LGBM candidate split using forward_burnin latest holdout: "
+            f"objective={objective_mode}, select={len(select_local)}, eval={len(eval_local)}."
+        )
+    else:
+        split_strata = y_metric_race if classifier else np.clip((pd.Series(y_metric_race).rank(pct=True).to_numpy() * 5).astype(np.int32), 0, 4)
+        stratify_arg = None
+        if classifier and len(np.unique(split_strata)) > 1:
+            _, strata_counts = np.unique(split_strata, return_counts=True)
+            if int(np.min(strata_counts)) >= 2:
+                stratify_arg = split_strata
+        select_local, eval_local = train_test_split(local_idx, test_size=LGBM_RACE_EVAL_FRACTION, stratify=stratify_arg, random_state=random_state + 1701)
     select_local = np.asarray(select_local, dtype=np.int32)
     eval_local = np.asarray(eval_local, dtype=np.int32)
     recent_race_local = (
@@ -15663,11 +18233,19 @@ def train_lgbm_stability_candidate(
     y_metric_eval = y_metric_race[eval_local]
     ret_eval = ret_race[eval_local]
     eval_groups = _groups_take(race_groups, eval_local)
+    select_label_context = _label_context_take(
+        label_context,
+        race_idx[select_local],
+        n,
+    )
+    select_timestamps = _take_aligned(timestamps, race_idx[select_local], n)
     tprint(f"LGBM candidate split: select={len(y_select)}, eval={len(y_eval)}, features={X_select.shape[1]}.")
     selection_quality = _feature_selection_quality_snapshot(
         X_select,
         list(map(str, X_select.columns)),
     )
+    archetype_fs_diag: dict[str, Any] = {"enabled": False, "reason": "native_preset_or_not_started"}
+    relief_archetype_diag: dict[str, Any] = {"enabled": False, "reason": "native_preset_or_not_started"}
     if preset_features:
         missing_preset = [c for c in preset_features if c not in X_df.columns]
         if missing_preset:
@@ -15719,15 +18297,16 @@ def train_lgbm_stability_candidate(
             f"selected={len(selected_features)}, source={preset_source or 'unknown'}."
         )
     else:
-        uni_features, uni_stats = _univariate_directional_filter(
+        uni_features, uni_stats, archetype_fs_diag = _univariate_directional_filter_archetype_union(
             X_select,
             y_metric_select,
             classifier=classifier,
             groups=select_groups,
             returns=ret_select,
-            timestamps=_take_aligned(timestamps, race_idx[select_local], n),
+            timestamps=select_timestamps,
             random_state=random_state + 101,
             objective_mode=objective_mode,
+            label_context=select_label_context,
         )
         uni_features = _append_lgbm_forced_selector_features(
             uni_features,
@@ -15752,12 +18331,20 @@ def train_lgbm_stability_candidate(
             )
         )
         score_map = dict(zip(uni_stats["feature"].astype(str), uni_stats["univariate_j"].astype(float)))
-        relief_features, relief_stats = _relief_rescue_filter(
+        archetype_labels, archetype_relief_diag = _feature_selection_archetype_labels(
+            X_select,
+            label_context=select_label_context,
+            timestamps=select_timestamps,
+            objective_mode=objective_mode,
+        )
+        relief_features, relief_stats, relief_archetype_diag = _relief_rescue_filter_archetype_union(
             X_select,
             y_metric_select,
             uni_features,
             classifier=classifier,
             random_state=random_state + 151,
+            archetype_labels=archetype_labels,
+            archetype_diag=archetype_relief_diag,
         )
         relief_score_map: dict[str, float] = {}
         if not relief_stats.empty:
@@ -15824,6 +18411,7 @@ def train_lgbm_stability_candidate(
             cluster_features,
             classifier=classifier,
             groups=select_groups,
+            timestamps=_take_aligned(timestamps, race_idx[select_local], n),
             returns=ret_select,
             metric_y=y_metric_select,
             random_state=random_state + 307,
@@ -15863,6 +18451,49 @@ def train_lgbm_stability_candidate(
     if not selected_features:
         tprint("LGBM candidate rejected: no selected features.")
         return None
+    meta_post_selection_ood_reference: dict[str, Any] = {"enabled": False, "reason": "not_train_meta"}
+    meta_post_selection_ood_input_features: list[str] = []
+    if (
+        objective_mode == "train_meta"
+        and bool(LGBM_META_POST_SELECTION_OOD_FEATURES)
+    ):
+        meta_post_selection_ood_input_features = [
+            str(c)
+            for c in selected_features
+            if str(c) in X_select.columns
+            and str(c) not in set(LGBM_META_POST_SELECTION_OOD_FEATURE_NAMES)
+        ]
+        meta_post_selection_ood_reference = _fit_meta_post_selection_ood_reference(
+            X_select,
+            meta_post_selection_ood_input_features,
+        )
+        X_select = _append_meta_post_selection_ood_features(
+            X_select,
+            X_select,
+            meta_post_selection_ood_reference,
+        )
+        X_eval = _append_meta_post_selection_ood_features(
+            X_eval,
+            X_eval,
+            meta_post_selection_ood_reference,
+        )
+        X_df = _append_meta_post_selection_ood_features(
+            X_df,
+            X_df,
+            meta_post_selection_ood_reference,
+        )
+        selected_features = list(
+            dict.fromkeys(
+                list(selected_features) + list(LGBM_META_POST_SELECTION_OOD_FEATURE_NAMES)
+            )
+        )
+        tprint(
+            "LGBM train_meta post-selection OOD features appended: "
+            f"input_features={len(meta_post_selection_ood_input_features)}, "
+            f"ood_features={len(LGBM_META_POST_SELECTION_OOD_FEATURE_NAMES)}, "
+            f"fit_rows={int(meta_post_selection_ood_reference.get('fit_rows', 0))}, "
+            f"reason={meta_post_selection_ood_reference.get('reason', 'ok')}."
+        )
     tprint(
         "LGBM candidate selected features: "
         f"{len(selected_features)} after {len(history)} prune rounds; "
@@ -15949,6 +18580,23 @@ def train_lgbm_stability_candidate(
             {"max_depth": 5, "reg_lambda": 15.0},
         ][: min(4, int(LGBM_STABILITY_CONFIGS))]
     )
+    candidate_ranker_groups = (
+        _lgbm_ranker_group_keys(
+            X_select.reset_index(drop=True),
+            _take_aligned(timestamps, race_idx[select_local], n),
+            mode=LGBM_RANKER_GROUP_MODE,
+        )
+        if _lgbm_ranker_enabled_for_objective(objective_mode)
+        else None
+    )
+    candidate_ranker_relevance = (
+        _lgbm_ranker_relevance_source(
+            y_metric_select,
+            label_context=_label_context_take(label_context, race_idx[select_local], n),
+        )
+        if _lgbm_ranker_enabled_for_objective(objective_mode)
+        else None
+    )
     for i, eval_cfg in enumerate(eval_configs, start=1):
         fit_t0 = time.perf_counter()
         tprint(
@@ -15956,7 +18604,16 @@ def train_lgbm_stability_candidate(
             f"rows={len(y_select)}, features={len(selected_features)}, cfg={eval_cfg}."
         )
         params = dict(eval_cfg) if preset_best_params else _base_lgbm_params(random_state + 500 + i, classifier=classifier, overrides=eval_cfg)
-        model = _fit_lgbm_model(X_select[selected_features], y_select, final_weights, classifier=classifier, params=params)
+        model = _fit_lgbm_model(
+            X_select[selected_features],
+            y_select,
+            final_weights,
+            classifier=classifier,
+            params=params,
+            objective_mode=objective_mode,
+            ranker_train_groups=candidate_ranker_groups,
+            ranker_train_relevance=candidate_ranker_relevance,
+        )
         eval_preds.append(_predict_lgbm_raw(model, X_eval[selected_features], mode))
         tprint(
             f"LGBM candidate eval ensemble model {i}/{len(eval_configs)} complete: "
@@ -15993,6 +18650,56 @@ def train_lgbm_stability_candidate(
     metrics["n_relief_rescued_features"] = int(len(relief_features))
     metrics["n_precluster_features"] = int(len(precluster_features))
     metrics["n_cluster_features"] = int(len(cluster_features))
+    metrics["archetype_feature_selection_enabled"] = bool(
+        archetype_fs_diag.get("enabled", False)
+    )
+    metrics["archetype_feature_selection_usable"] = bool(
+        archetype_fs_diag.get("usable", False)
+    )
+    metrics["archetype_feature_selection_source"] = str(
+        archetype_fs_diag.get("source", "")
+    )
+    metrics["archetype_feature_selection_count"] = int(
+        archetype_fs_diag.get("usable_archetype_count", 0) or 0
+    )
+    metrics["archetype_univariate_union_features"] = int(
+        archetype_fs_diag.get("archetype_union_features", 0) or 0
+    )
+    _arch_viability = (
+        archetype_fs_diag.get("economic_viability", {})
+        if isinstance(archetype_fs_diag, Mapping)
+        else {}
+    )
+    metrics["archetype_economic_viability_enabled"] = bool(
+        isinstance(_arch_viability, Mapping)
+        and _arch_viability.get("enabled", False)
+    )
+    metrics["archetype_economic_viability_active_count"] = int(
+        _arch_viability.get("active_candidate_count", 0) or 0
+    ) if isinstance(_arch_viability, Mapping) else 0
+    metrics["archetype_economic_viability_bad_mae_cap"] = float(
+        _arch_viability.get("bad_mae_cap", float("nan"))
+    ) if isinstance(_arch_viability, Mapping) else float("nan")
+    metrics["archetype_economic_viability_timeout_cap"] = float(
+        _arch_viability.get("timeout_cap", float("nan"))
+    ) if isinstance(_arch_viability, Mapping) else float("nan")
+    metrics["archetype_relief_rescued_features"] = int(
+        relief_archetype_diag.get("relief_rescued_features", 0) or 0
+    )
+    metrics["meta_post_selection_ood_features_enabled"] = bool(
+        objective_mode == "train_meta" and LGBM_META_POST_SELECTION_OOD_FEATURES
+    )
+    metrics["meta_post_selection_ood_feature_count"] = int(
+        len(LGBM_META_POST_SELECTION_OOD_FEATURE_NAMES)
+        if bool(meta_post_selection_ood_reference.get("enabled", False))
+        else 0
+    )
+    metrics["meta_post_selection_ood_input_feature_count"] = int(
+        len(meta_post_selection_ood_input_features)
+    )
+    metrics["meta_post_selection_ood_reference_fit_rows"] = int(
+        meta_post_selection_ood_reference.get("fit_rows", 0) or 0
+    )
     metrics["time_feature_selector_bypass_enabled"] = bool(forced_time_features)
     metrics["time_feature_selector_bypass_features"] = list(forced_time_features)
     metrics["time_feature_selector_bypass_feature_count"] = int(len(forced_time_features))
@@ -16040,21 +18747,7 @@ def train_lgbm_stability_candidate(
     metrics["true_soft_labels_enabled"] = bool(LGBM_TRUE_SOFT_LABELS)
     metrics["effective_class_rebalance_enabled"] = bool(LGBM_REBALANCE_EFFECTIVE_CLASSES)
     metrics.update(label_diag)
-    metrics["cv_mode"] = (
-        "interleaved_spread"
-        if LGBM_CV_MODE in {"interleaved", "interleaved_spread"}
-        else (
-            "purged_time"
-            if (bool(LGBM_PURGED_CV) or LGBM_CV_MODE == "purged_time")
-            else "shuffled"
-        )
-    )
-    metrics["cv_splits"] = int(LGBM_CV_SPLITS)
-    metrics["purge_hours"] = float(
-        LGBM_PURGE_HOURS
-        if (bool(LGBM_PURGED_CV) or LGBM_CV_MODE == "purged_time")
-        else 0.0
-    )
+    metrics.update(_lgbm_cv_metric_fields(objective_mode))
     metrics.update(oi_diagnostics)
     metrics.update(coverage_diagnostics)
     metrics["feature_selection_sample_policy"] = "stratified_spread_across_ordered_rows"
@@ -16203,6 +18896,14 @@ def fit_lgbm_stability_full_model(
         idx = np.asarray(selected_features_from_cv if selected_features_from_cv is not None else [], dtype=np.int32)
         idx = idx[(idx >= 0) & (idx < X_df.shape[1])]
         selected_features = [str(X_df.columns[i]) for i in idx]
+    meta_post_selection_ood_requested = bool(
+        objective_mode == "train_meta" and LGBM_META_POST_SELECTION_OOD_FEATURES
+    )
+    selected_features = [
+        str(c)
+        for c in selected_features
+        if str(c) not in set(LGBM_META_POST_SELECTION_OOD_FEATURE_NAMES)
+    ]
     forced_time_features = _resolve_lgbm_time_feature_selector_bypass_features(
         X_df.columns,
         cfg,
@@ -16400,11 +19101,25 @@ def fit_lgbm_stability_full_model(
                 repr_idx,
                 y_metric=y_metric,
                 returns=ret_arr,
+                label_context=label_context,
+                timestamps=timestamps,
                 random_state=random_state + 90221,
             )
-            ae_gmm_feature_names = _ae_gmm_model_feature_names_for_objective(objective_mode)
+            ae_gmm_feature_names = (
+                _ae_gmm_model_feature_names_for_objective(objective_mode)
+                if _ae_gmm_state_enabled(ae_gmm_state)
+                else []
+            )
             ae_gmm_context_feature_names = _ae_gmm_context_feature_names_for_objective(objective_mode)
-            selected_features = list(ae_gmm_input_features)
+            selected_features = list(dict.fromkeys(list(ae_gmm_input_features) + list(ae_gmm_feature_names)))
+            if ae_gmm_feature_names:
+                X_model_df = _append_ae_gmm_features_to_model_frame(
+                    X_model_df,
+                    ae_gmm_input_features,
+                    ae_gmm_state,
+                    selected_features,
+                    index=X_model_df.index,
+                )
             ae_gmm_metrics = {
                 "ae_gmm_features_enabled": bool(_ae_gmm_state_enabled(ae_gmm_state)),
                 "ae_gmm_feature_count": int(len(ae_gmm_feature_names)),
@@ -16415,7 +19130,16 @@ def fit_lgbm_stability_full_model(
                 "ae_gmm_selected_config": _json_sanitize(
                     ae_gmm_state.get("selected_config", ae_gmm_state.get("report", {}))
                 ),
-                "ae_gmm_model_feature_policy": "downstream_only",
+                "ae_gmm_supervised_hpo": bool(label_context is not None),
+                "ae_gmm_oof_generation_policy": "fold_train_state_for_oof_meta_cv",
+                "ae_gmm_model_hard_cluster_id_features_enabled": bool(
+                    LGBM_AE_GMM_INCLUDE_CLUSTER_ID_MODEL_FEATURES
+                ),
+                "ae_gmm_model_feature_policy": (
+                    "model_input_and_downstream_context"
+                    if ae_gmm_feature_names
+                    else "downstream_context_only"
+                ),
             }
             tprint(
                 "LGBM selected-feature AE/GMM representation "
@@ -16428,6 +19152,50 @@ def fit_lgbm_stability_full_model(
             )
         else:
             ae_gmm_metrics["ae_gmm_reason"] = "insufficient_selected_features"
+    meta_post_selection_ood_reference: dict[str, Any] = {"enabled": False, "reason": "not_train_meta"}
+    meta_post_selection_ood_input_features: list[str] = []
+    if meta_post_selection_ood_requested:
+        meta_post_selection_ood_input_features = [
+            str(c)
+            for c in selected_features
+            if str(c) in X_model_df.columns
+            and str(c) not in set(LGBM_META_POST_SELECTION_OOD_FEATURE_NAMES)
+        ]
+        meta_post_selection_ood_reference = _fit_meta_post_selection_ood_reference(
+            X_model_df.iloc[fit_idx].reset_index(drop=True),
+            meta_post_selection_ood_input_features,
+        )
+        X_model_df = _append_meta_post_selection_ood_features(
+            X_model_df,
+            X_model_df,
+            meta_post_selection_ood_reference,
+        )
+        selected_features = list(
+            dict.fromkeys(
+                list(selected_features) + list(LGBM_META_POST_SELECTION_OOD_FEATURE_NAMES)
+            )
+        )
+        ae_gmm_metrics["meta_post_selection_ood_features_enabled"] = bool(
+            meta_post_selection_ood_reference.get("enabled", False)
+        )
+        ae_gmm_metrics["meta_post_selection_ood_feature_count"] = int(
+            len(LGBM_META_POST_SELECTION_OOD_FEATURE_NAMES)
+            if bool(meta_post_selection_ood_reference.get("enabled", False))
+            else 0
+        )
+        ae_gmm_metrics["meta_post_selection_ood_input_feature_count"] = int(
+            len(meta_post_selection_ood_input_features)
+        )
+        ae_gmm_metrics["meta_post_selection_ood_reference_fit_rows"] = int(
+            meta_post_selection_ood_reference.get("fit_rows", 0) or 0
+        )
+        tprint(
+            "LGBM full train_meta post-selection OOD features appended: "
+            f"input_features={len(meta_post_selection_ood_input_features)}, "
+            f"ood_features={len(LGBM_META_POST_SELECTION_OOD_FEATURE_NAMES)}, "
+            f"fit_rows={int(meta_post_selection_ood_reference.get('fit_rows', 0))}, "
+            f"reason={meta_post_selection_ood_reference.get('reason', 'ok')}."
+        )
     stability_groups = _stability_group_bundle(n, timestamps=timestamps, assets=assets)
     hpo_groups = _groups_take(stability_groups, hpo_idx)
     hpo_weights, hpo_weight_ess = _normalize_weights(sw[hpo_idx])
@@ -16454,6 +19222,7 @@ def fit_lgbm_stability_full_model(
             selected_features,
             classifier=classifier,
             groups=hpo_groups,
+            timestamps=_take_aligned(timestamps, hpo_idx, n),
             returns=ret_arr[hpo_idx],
             metric_y=y_metric[hpo_idx],
             random_state=random_state + 131,
@@ -16534,6 +19303,7 @@ def fit_lgbm_stability_full_model(
         not bool(label_weight_hpo_report.get("enabled", False))
         and isinstance(preset_label_weight_hpo_report, dict)
         and preset_label_weight_hpo_report
+        and not _explicit_label_ablation_mode_enabled()
     ):
         y_reuse, y_metric_reuse, sw_reuse, reuse_diag = apply_label_weight_hpo_report_to_arrays(
             y_arr,
@@ -16569,6 +19339,19 @@ def fit_lgbm_stability_full_model(
                 "LGBM label/sample-weight HPO skipped; reused native preset "
                 "label/sample-weight winner for final fit."
             )
+    elif (
+        not bool(label_weight_hpo_report.get("enabled", False))
+        and isinstance(preset_label_weight_hpo_report, dict)
+        and preset_label_weight_hpo_report
+        and _explicit_label_ablation_mode_enabled()
+    ):
+        label_weight_hpo_report["reuse_skipped_reason"] = (
+            "explicit_label_ablation_mode"
+        )
+        tprint(
+            "LGBM label/sample-weight HPO skipped; native preset label/sample-weight "
+            "reuse disabled because EPM_LABEL_ABLATION_MODE is explicit."
+        )
     if bool(label_weight_hpo_report.get("enabled", False)):
         y_hard_diag = np.asarray(y_metric, dtype=np.float32)
         ret_arr = _as_returns(y_metric, returns)
@@ -16699,6 +19482,22 @@ def fit_lgbm_stability_full_model(
     elif bool((label_weight_hpo_report or {}).get("enabled", False)):
         model.label_weight_hpo_sample_weight_ = np.asarray(sw, dtype=np.float32)
     model.selected_features = list(selected_features)
+    model.meta_post_selection_ood_enabled = bool(
+        meta_post_selection_ood_requested
+        and meta_post_selection_ood_reference.get("enabled", False)
+    )
+    model.meta_post_selection_ood_input_features = list(
+        meta_post_selection_ood_input_features
+    )
+    model.meta_post_selection_ood_reference = dict(
+        meta_post_selection_ood_reference or {}
+    )
+    if (
+        model.meta_post_selection_ood_enabled
+        and not ae_gmm_input_features
+        and not raw_contrib_input_features
+    ):
+        model.input_feature_names = list(meta_post_selection_ood_input_features)
     if ae_gmm_input_features:
         model.input_feature_names = list(ae_gmm_input_features)
         model.ae_gmm_input_features = list(ae_gmm_input_features)
@@ -16739,6 +19538,16 @@ def fit_lgbm_stability_full_model(
     model.best_params = dict(best_params)
     X_fit = X_model_df.iloc[fit_idx][selected_features].reset_index(drop=True)
     X_all_selected = X_model_df[selected_features].reset_index(drop=True)
+    ranker_groups_all = (
+        _lgbm_ranker_group_keys(X_model_df.reset_index(drop=True), timestamps, mode=LGBM_RANKER_GROUP_MODE)
+        if _lgbm_ranker_enabled_for_objective(objective_mode)
+        else None
+    )
+    ranker_relevance_all = (
+        _lgbm_ranker_relevance_source(y_metric, label_context=label_context)
+        if _lgbm_ranker_enabled_for_objective(objective_mode)
+        else None
+    )
     history_defaults = build_model_effectiveness_history_defaults(
         X_model_df[selected_features].reset_index(drop=True),
         selected_features,
@@ -16774,6 +19583,9 @@ def fit_lgbm_stability_full_model(
             classifier=classifier,
             params=params_i,
             attach_leaf_diagnostics=True,
+            objective_mode=objective_mode,
+            ranker_train_groups=_take_aligned(ranker_groups_all, fit_idx, n),
+            ranker_train_relevance=_take_aligned(ranker_relevance_all, fit_idx, n),
         )
         model.models.append(fitted)
         model_pred_all = _predict_lgbm_raw_batched(fitted, X_all_selected, mode)
@@ -17092,6 +19904,7 @@ def fit_lgbm_stability_full_model(
             assets=assets,
             returns=ret_arr,
             metric_y=y_metric,
+            label_context=label_context,
             random_state=random_state + 11701,
             raw_contrib_input_features=raw_contrib_input_features,
             raw_contrib_passthrough_features=raw_contrib_passthrough_features,
@@ -17100,6 +19913,9 @@ def fit_lgbm_stability_full_model(
             ae_gmm_feature_names=ae_gmm_feature_names,
             ae_gmm_context_feature_names=ae_gmm_context_feature_names,
             ae_gmm_enabled=bool(ae_gmm_input_features),
+            meta_post_selection_ood_input_features=meta_post_selection_ood_input_features,
+            meta_post_selection_ood_enabled=bool(meta_post_selection_ood_reference.get("enabled", False)),
+            objective_mode=objective_mode,
         )
     model.oof_probs = final_oof.astype(np.float32)
     step_t0 = time.perf_counter()
@@ -17114,10 +19930,18 @@ def fit_lgbm_stability_full_model(
         base_error_fit_idx = np.arange(n, dtype=int)
         base_error_cap = int(LGBM_ARCHETYPE_FIT_MAX_ROWS)
         if base_error_cap > 0 and n > base_error_cap:
-            base_error_fit_idx = np.linspace(0, n - 1, base_error_cap, dtype=int)
+            base_error_fit_idx = _begin_middle_end_sample_indices(
+                n,
+                max_rows=base_error_cap,
+                timestamps=timestamps,
+                y=y_metric,
+                classifier=classifier,
+                random_state=random_state + 99303,
+            ).astype(int)
             tprint(
                 "LGBM base-error archetype final-state fit sampled: "
-                f"rows={n}->{len(base_error_fit_idx)}, max_rows={base_error_cap}."
+                f"rows={n}->{len(base_error_fit_idx)}, max_rows={base_error_cap}, "
+                "sample_policy=in_sample_begin_middle_end."
             )
         X_base_error_fit = X_all_selected.iloc[base_error_fit_idx].reset_index(drop=True)
         step_t0 = time.perf_counter()
@@ -17269,6 +20093,20 @@ def fit_lgbm_stability_full_model(
     model.metrics["lgbm_meta_drift_features_enabled"] = bool(model.meta_drift_features_enabled)
     model.metrics["lgbm_meta_drift_max_rows"] = int(LGBM_META_DRIFT_MAX_ROWS)
     model.metrics["lgbm_meta_drift_max_features"] = int(LGBM_META_DRIFT_MAX_FEATURES)
+    model.metrics["meta_post_selection_ood_features_enabled"] = bool(
+        model.meta_post_selection_ood_enabled
+    )
+    model.metrics["meta_post_selection_ood_feature_count"] = int(
+        len(LGBM_META_POST_SELECTION_OOD_FEATURE_NAMES)
+        if model.meta_post_selection_ood_enabled
+        else 0
+    )
+    model.metrics["meta_post_selection_ood_input_feature_count"] = int(
+        len(model.meta_post_selection_ood_input_features)
+    )
+    model.metrics["meta_post_selection_ood_reference_fit_rows"] = int(
+        model.meta_post_selection_ood_reference.get("fit_rows", 0) or 0
+    )
     model.metrics["lgbm_meta_context_features_enabled"] = bool(model.meta_context_features_enabled)
     model.metrics["lgbm_meta_contrib_context_features_enabled"] = bool(
         model.meta_contrib_context_features_enabled
@@ -17400,23 +20238,14 @@ def fit_lgbm_stability_full_model(
         model.metrics["recency_hpo_legacy_recency_disabled"] = True
     model.metrics["true_soft_labels_enabled"] = bool(LGBM_TRUE_SOFT_LABELS)
     model.metrics["effective_class_rebalance_enabled"] = bool(LGBM_REBALANCE_EFFECTIVE_CLASSES)
+    model.metrics["lgbm_ranker_enabled"] = bool(_lgbm_ranker_enabled_for_objective(objective_mode))
+    model.metrics["lgbm_ranker_group_mode"] = str(LGBM_RANKER_GROUP_MODE)
+    model.metrics["lgbm_ranker_objectives"] = sorted(str(v) for v in LGBM_RANKER_OBJECTIVES)
+    model.metrics["lgbm_ranker_relevance_bins"] = int(LGBM_RANKER_RELEVANCE_BINS)
+    model.metrics["lgbm_ranker_relevance_mode"] = str(LGBM_RANKER_RELEVANCE_MODE)
     model.metrics["label_weight_hpo_report"] = _json_sanitize(label_weight_hpo_report)
     model.metrics.update(label_diag)
-    model.metrics["cv_mode"] = (
-        "interleaved_spread"
-        if LGBM_CV_MODE in {"interleaved", "interleaved_spread"}
-        else (
-            "purged_time"
-            if (bool(LGBM_PURGED_CV) or LGBM_CV_MODE == "purged_time")
-            else "shuffled"
-        )
-    )
-    model.metrics["cv_splits"] = int(LGBM_CV_SPLITS)
-    model.metrics["purge_hours"] = float(
-        LGBM_PURGE_HOURS
-        if (bool(LGBM_PURGED_CV) or LGBM_CV_MODE == "purged_time")
-        else 0.0
-    )
+    model.metrics.update(_lgbm_cv_metric_fields(objective_mode))
     model.metrics["best_params"] = dict(best_params)
     model.metrics["hpo_objective_mode"] = objective_mode
     model.metrics["lgbm_meta_feature_names"] = list(model.meta_feature_names)

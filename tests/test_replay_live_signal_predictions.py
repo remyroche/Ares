@@ -8,10 +8,14 @@ from scripts.historical_inference_parity import (
     _build_runtime_cfg,
 )
 from scripts.replay_live_signal_predictions import (
+    _live_synthesized_feature_delta_summary,
     _live_feature_cache_symbols_for_end,
     _load_panel,
     _load_recent_decisions,
+    _model_runtime_cfg,
     _parity_failures,
+    _slice_panel,
+    _summary,
 )
 
 
@@ -60,6 +64,53 @@ def test_load_recent_decisions_filters_rank_source_and_start(tmp_path):
     assert set(decisions["rank_score_source"]) == {"policy_rank_reference_percentile"}
 
 
+def test_load_recent_decisions_does_not_overwrite_ledger_live_values(tmp_path):
+    ledger_path = tmp_path / "prediction_ledger.parquet"
+    trades_path = tmp_path / "inference_trades.csv"
+    ledger = pd.DataFrame(
+        {
+            "decision_ts": pd.to_datetime(["2026-05-15T10:00:00Z"], utc=True),
+            "signal_bar_ts": pd.to_datetime(["2026-05-15T09:00:00Z"], utc=True),
+            "symbol": ["AAA/USDC"],
+            "side": ["long"],
+            "strategy_id": ["long_demo"],
+            "base_pred": [0.2],
+            "meta_pred": [0.3],
+            "calibrated_score": [0.3],
+            "policy_rank_pct": [0.7],
+            "rank_score_source": ["policy_rank_reference_percentile"],
+        }
+    )
+    ledger.to_parquet(ledger_path, index=False)
+    pd.DataFrame(
+        {
+            "timestamp": ["2026-05-15T10:01:00Z"],
+            "lifecycle_event": ["entry_placed"],
+            "symbol": ["AAA/USDC"],
+            "side": ["long"],
+            "strategy_id": ["long_demo"],
+            "base_pred": [0.9],
+            "meta_pred": [0.8],
+            "calibrated_score": [0.8],
+            "policy_rank_pct": [0.1],
+            "rank_score_source": ["trade_log_copy"],
+        }
+    ).to_csv(trades_path, index=False)
+
+    decisions = _load_recent_decisions(
+        ledger_path=ledger_path,
+        trades_path=trades_path,
+        max_rows=10,
+    )
+
+    row = decisions.iloc[0]
+    assert row["live_base_pred"] == 0.2
+    assert row["live_meta_pred"] == 0.3
+    assert row["live_calibrated_score"] == 0.3
+    assert row["live_policy_rank_pct"] == 0.7
+    assert row["live_rank_score_source"] == "policy_rank_reference_percentile"
+
+
 def test_parity_failures_require_live_values_and_tolerance():
     frame = pd.DataFrame(
         {
@@ -89,6 +140,77 @@ def test_parity_failures_require_live_values_and_tolerance():
     assert failures == ["meta_pred_delta_max_abs=0.02"]
 
 
+def test_parity_failures_can_gate_on_logged_model_input():
+    frame = pd.DataFrame(
+        {
+            "live_base_pred": [0.1],
+            "live_meta_pred": [0.2],
+            "live_calibrated_score": [0.2],
+            "live_policy_rank_pct": [0.6],
+            "replay_base_pred": [0.5],
+            "replay_meta_pred": [0.2],
+            "replay_calibrated_score": [0.2],
+            "replay_policy_rank_pct": [0.6],
+            "logged_base_input_pred": [0.1],
+            "logged_meta_input_pred": [0.2],
+            "logged_meta_input_calibrated_score": [0.2],
+            "logged_meta_input_policy_rank_pct": [0.6],
+            "base_pred_delta": [0.4],
+            "logged_base_input_pred_delta": [0.0],
+            "logged_meta_input_pred_delta": [0.0],
+            "logged_meta_input_calibrated_score_delta": [0.0],
+            "logged_meta_input_rank_percentile_delta": [0.0],
+        }
+    )
+
+    assert _parity_failures(
+        frame,
+        tolerance=0.01,
+        parity_source="replay",
+    ) == ["base_pred_delta_max_abs=0.4"]
+    assert _parity_failures(
+        frame,
+        tolerance=0.01,
+        parity_source="logged-input",
+    ) == []
+
+
+def test_live_synthesized_feature_drift_summary_flags_gated_keys():
+    feature_row = pd.DataFrame(
+        [{"ret1h_G_VOL_1": 0.059209734, "ret1h": 0.059209734}],
+        index=["PORTAL/USD:USD"],
+    )
+    logged = json.dumps({"ret1h_G_VOL_1": -0.0088211894, "ret1h": 0.059209734})
+
+    drift = _live_synthesized_feature_delta_summary(
+        logged_values_raw=logged,
+        feature_row=feature_row,
+        symbol="PORTAL/USD:USD",
+    )
+
+    assert drift["count"] == 1
+    assert drift["worst_feature"] == "ret1h_G_VOL_1"
+    assert drift["max_abs"] > 0.068
+
+
+def test_summary_reports_live_synthesized_reconstruction_drift():
+    frame = pd.DataFrame(
+        {
+            "replay_missing_features": [False],
+            "base_live_synth_feature_value_max_abs_delta": [0.068],
+            "base_live_synth_feature_value_worst_feature": ["ret1h_G_VOL_1"],
+            "meta_live_synth_feature_value_max_abs_delta": [0.0],
+            "meta_live_synth_feature_value_worst_feature": [""],
+        }
+    )
+
+    summary = _summary(frame)
+
+    drift = summary["live_synthesized_feature_reconstruction_drift"]
+    assert drift["base"]["rows_gt_1e-7"] == 1
+    assert drift["base"]["top_worst_features"] == {"ret1h_G_VOL_1": 1}
+
+
 def test_parity_failures_detect_missing_policy_reference_and_live_fields():
     frame = pd.DataFrame(
         {
@@ -109,6 +231,39 @@ def test_parity_failures_detect_missing_policy_reference_and_live_fields():
     assert "missing_live_base_pred_rows=1" in failures
     assert "missing_live_calibrated_score_rows=1" in failures
     assert "missing_live_policy_rank_pct_rows=1" in failures
+
+
+def test_model_runtime_cfg_preserves_feature_cfg_and_can_disable_diagnostics():
+    model_bundle = {"models": {"demo": object()}}
+    cfg = _model_runtime_cfg(
+        model_bundle=model_bundle,
+        feature_runtime_cfg={"market_mode": "perps", "live_feature_source_run_id": "run_a"},
+        disable_model_diagnostics=True,
+        disable_model_timing=True,
+    )
+
+    assert cfg["model_bundle"] is model_bundle
+    assert cfg["market_mode"] == "perps"
+    assert cfg["live_feature_source_run_id"] == "run_a"
+    assert cfg["inference_lgbm_internal_diagnostics_enabled"] is False
+    assert cfg["inference_model_timing_enabled"] is False
+
+
+def test_slice_panel_limits_datetime_frames_to_replay_window():
+    idx = pd.date_range("2026-05-15T00:00:00Z", periods=4, freq="h")
+    panel = {
+        "close": pd.DataFrame({"AAA/USD:USD": [1, 2, 3, 4]}, index=idx),
+        "metadata": pd.DataFrame({"value": [1]}),
+    }
+
+    sliced = _slice_panel(
+        panel,
+        start_ts=pd.Timestamp("2026-05-15T01:00:00Z"),
+        end_ts=pd.Timestamp("2026-05-15T02:00:00Z"),
+    )
+
+    assert sliced["close"].index.tolist() == list(idx[1:3])
+    assert sliced["metadata"].equals(panel["metadata"])
 
 
 def test_live_feature_cache_symbols_prefers_smallest_matching_universe(tmp_path, monkeypatch):

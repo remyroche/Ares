@@ -56,6 +56,7 @@ SIMPLE_POLICY_STOP_PARAM_KEYS = (
     "params_hash",
     "strategy_id",
     "sl_mult",
+    "sl_abs_cap_pct",
     "barrier_pct",
     "barrier_frac",
     "median_barrier_frac",
@@ -65,6 +66,9 @@ SIMPLE_POLICY_STOP_PARAM_KEYS = (
     "enable_trailing",
     "trailing_activation_mult",
     "trailing_activation_cap_pct",
+    "trailing_activation_decay_half_life_bars",
+    "trailing_activation_decay_start_bars",
+    "trailing_activation_min_mult",
     "trailing_override_alpha",
     "trailing_power",
     "trailing_squash_divisor",
@@ -85,6 +89,8 @@ SIMPLE_POLICY_STOP_PARAM_KEYS = (
     "churn_penalty_bps",
     "capital_protect_mfe_mult",
     "capital_protect_regression_frac",
+    "capital_protect_lock_frac",
+    "capital_protect_min_lock_bps",
     *ADVERSE_SIMPLE_POLICY_STOP_FIELDS,
 )
 
@@ -97,6 +103,10 @@ _OPTIONAL_SIMPLE_POLICY_STOP_FIELDS = {
     "policy_median_atr_frac",
     "enable_trailing",
     "trailing_override_alpha",
+    "sl_abs_cap_pct",
+    "trailing_activation_decay_half_life_bars",
+    "trailing_activation_decay_start_bars",
+    "trailing_activation_min_mult",
     "atr_power",
     "atr_multiplier",
     "hard_tp_abs_pct",
@@ -111,6 +121,8 @@ _OPTIONAL_SIMPLE_POLICY_STOP_FIELDS = {
     "redeploy_scale_bps",
     "target_holding_hours",
     "churn_penalty_bps",
+    "capital_protect_lock_frac",
+    "capital_protect_min_lock_bps",
 }
 _ARTIFACT_AUDIT_FIELDS = {
     "_loaded_from_simple_policy_artifact",
@@ -391,9 +403,13 @@ def load_simple_policy_stop_params_by_strategy(
 @dataclass(frozen=True)
 class ValidatedSimplePolicyParams:
     sl_mult: float
+    sl_abs_cap_pct: float
     barrier_frac: float
     trailing_activation_mult: float
     trailing_activation_cap_pct: float
+    trailing_activation_decay_half_life_bars: float
+    trailing_activation_decay_start_bars: int
+    trailing_activation_min_mult: float
     effective_trailing_activation_return: float
     trailing_power: float
     trailing_squash_divisor: float
@@ -414,6 +430,8 @@ class ValidatedSimplePolicyParams:
     churn_penalty_bps: float
     capital_protect_mfe_mult: float
     capital_protect_regression_frac: float
+    capital_protect_lock_frac: float
+    capital_protect_min_lock_bps: float
     adverse_exit_enabled: bool
     adverse_exit_alpha: float
     adverse_exit_beta: float
@@ -445,8 +463,12 @@ class SimplePolicyStopDecision:
     params_hash: str
     barrier_frac: float
     sl_mult: float
+    sl_abs_cap_pct: Optional[float] = None
     trailing_activation_mult: Optional[float] = None
     trailing_activation_cap_pct: Optional[float] = None
+    trailing_activation_decay_half_life_bars: Optional[float] = None
+    trailing_activation_decay_start_bars: Optional[int] = None
+    trailing_activation_min_mult: Optional[float] = None
     effective_trailing_activation_return: Optional[float] = None
     trailing_power: Optional[float] = None
     trailing_squash_divisor: Optional[float] = None
@@ -463,6 +485,8 @@ class SimplePolicyStopDecision:
     churn_penalty_bps: Optional[float] = None
     capital_protect_mfe_mult: Optional[float] = None
     capital_protect_regression_frac: Optional[float] = None
+    capital_protect_lock_frac: Optional[float] = None
+    capital_protect_min_lock_bps: Optional[float] = None
     adverse_exit_enabled: bool = False
     adverse_exit_theta: Optional[float] = None
     adverse_exit_theta_quantile: Optional[float] = None
@@ -494,6 +518,53 @@ def _safe_float(value: Any, default: float = np.nan) -> float:
     except (TypeError, ValueError):
         return default
     return out if np.isfinite(out) else default
+
+
+def _effective_sl_return(
+    validated: "ValidatedSimplePolicyParams",
+    *,
+    multiplier: float = 1.0,
+) -> float:
+    raw = max(
+        0.0,
+        float(validated.sl_mult)
+        * float(validated.barrier_frac)
+        * float(multiplier),
+    )
+    cap = max(0.0, float(validated.sl_abs_cap_pct or 0.0))
+    if cap > 0.0:
+        return float(min(raw, cap))
+    return float(raw)
+
+
+def _effective_sl_mult(
+    validated: "ValidatedSimplePolicyParams",
+    *,
+    multiplier: float = 1.0,
+) -> float:
+    return float(
+        _effective_sl_return(validated, multiplier=multiplier)
+        / max(validated.barrier_frac, 1e-12)
+    )
+
+
+def _activation_decay_multiplier(
+    validated: "ValidatedSimplePolicyParams",
+    *,
+    bars_in_trade: int,
+) -> float:
+    half_life = max(0.0, float(validated.trailing_activation_decay_half_life_bars))
+    min_mult = float(np.clip(validated.trailing_activation_min_mult, 0.01, 1.0))
+    if half_life <= 0.0 or min_mult >= 1.0:
+        return 1.0
+    decay_bars = max(
+        0.0,
+        float(int(bars_in_trade) - int(validated.trailing_activation_decay_start_bars)),
+    )
+    if decay_bars <= 0.0:
+        return 1.0
+    decay = 0.5 ** (decay_bars / half_life)
+    return float(min_mult + (1.0 - min_mult) * decay)
 
 
 def _first_positive(params: Mapping[str, Any], *keys: str) -> float:
@@ -576,7 +647,11 @@ def validate_simple_policy_stop_params(
             "unknown simple-policy stop fields: " + ",".join(unknown)
         )
 
-    missing = [key for key in REQUIRED_SIMPLE_POLICY_STOP_FIELDS if key not in params]
+    missing = [
+        key
+        for key in REQUIRED_SIMPLE_POLICY_STOP_FIELDS
+        if key not in params and key not in _OPTIONAL_SIMPLE_POLICY_STOP_FIELDS
+    ]
     if missing:
         raise SimplePolicyStopParamsError(
             "missing simple-policy stop fields: " + ",".join(missing)
@@ -604,8 +679,18 @@ def validate_simple_policy_stop_params(
     values["atr_power"] = _safe_float(params.get("atr_power"), 1.0)
     values["atr_multiplier"] = _safe_float(params.get("atr_multiplier"), 1.0)
     values["hard_tp_abs_pct"] = _safe_float(params.get("hard_tp_abs_pct"), 0.0)
+    values["sl_abs_cap_pct"] = _safe_float(params.get("sl_abs_cap_pct"), 0.0)
     values["trailing_activation_cap_pct"] = _safe_float(
         params.get("trailing_activation_cap_pct"), 0.0
+    )
+    values["trailing_activation_decay_half_life_bars"] = _safe_float(
+        params.get("trailing_activation_decay_half_life_bars"), 0.0
+    )
+    values["trailing_activation_decay_start_bars"] = _safe_float(
+        params.get("trailing_activation_decay_start_bars"), 0.0
+    )
+    values["trailing_activation_min_mult"] = _safe_float(
+        params.get("trailing_activation_min_mult"), 1.0
     )
     values["exit_pressure_alpha"] = _safe_float(params.get("exit_pressure_alpha"), 1.0)
     values["exit_pressure_beta"] = _safe_float(params.get("exit_pressure_beta"), 0.0)
@@ -636,8 +721,18 @@ def validate_simple_policy_stop_params(
         raise SimplePolicyStopParamsError(
             "simple-policy hard_tp_abs_pct must be non-negative"
         )
+    values["sl_abs_cap_pct"] = max(0.0, float(values["sl_abs_cap_pct"]))
     values["trailing_activation_cap_pct"] = max(
         0.0, float(values["trailing_activation_cap_pct"])
+    )
+    values["trailing_activation_decay_half_life_bars"] = max(
+        0.0, float(values["trailing_activation_decay_half_life_bars"])
+    )
+    values["trailing_activation_decay_start_bars"] = max(
+        0.0, float(values["trailing_activation_decay_start_bars"])
+    )
+    values["trailing_activation_min_mult"] = float(
+        np.clip(values["trailing_activation_min_mult"], 0.01, 1.0)
     )
     values["exit_pressure_alpha"] = float(np.clip(values["exit_pressure_alpha"], 0.25, 4.0))
     values["exit_pressure_beta"] = max(0.0, float(values["exit_pressure_beta"]))
@@ -651,6 +746,14 @@ def validate_simple_policy_stop_params(
     values["redeploy_scale_bps"] = max(1e-6, float(values["redeploy_scale_bps"]))
     values["target_holding_hours"] = max(0.0, float(values["target_holding_hours"]))
     values["churn_penalty_bps"] = max(0.0, float(values["churn_penalty_bps"]))
+    capital_protect_lock_frac = _safe_float(
+        params.get("capital_protect_lock_frac"), np.nan
+    )
+    if np.isfinite(capital_protect_lock_frac):
+        capital_protect_lock_frac = float(np.clip(capital_protect_lock_frac, -1.0, 1.0))
+    capital_protect_min_lock_bps = max(
+        0.0, _safe_float(params.get("capital_protect_min_lock_bps"), 0.0)
+    )
 
     schema = str(
         params.get("schema")
@@ -719,9 +822,17 @@ def validate_simple_policy_stop_params(
 
     return ValidatedSimplePolicyParams(
         sl_mult=float(values["sl_mult"]),
+        sl_abs_cap_pct=float(values["sl_abs_cap_pct"]),
         barrier_frac=float(effective_barrier_frac),
         trailing_activation_mult=float(activation),
         trailing_activation_cap_pct=float(values["trailing_activation_cap_pct"]),
+        trailing_activation_decay_half_life_bars=float(
+            values["trailing_activation_decay_half_life_bars"]
+        ),
+        trailing_activation_decay_start_bars=int(
+            values["trailing_activation_decay_start_bars"]
+        ),
+        trailing_activation_min_mult=float(values["trailing_activation_min_mult"]),
         effective_trailing_activation_return=float(
             effective_trailing_activation_return
         ),
@@ -746,6 +857,8 @@ def validate_simple_policy_stop_params(
         capital_protect_regression_frac=float(
             values["capital_protect_regression_frac"]
         ),
+        capital_protect_lock_frac=float(capital_protect_lock_frac),
+        capital_protect_min_lock_bps=float(capital_protect_min_lock_bps),
         adverse_exit_enabled=bool(params.get("adverse_exit_enabled", False)),
         adverse_exit_alpha=float(_safe_float(params.get("adverse_exit_alpha"), 1.0)),
         adverse_exit_beta=float(_safe_float(params.get("adverse_exit_beta"), 1.0)),
@@ -929,10 +1042,11 @@ def compute_initial_simple_policy_stop_decision(
         require_barrier=True,
     )
     side_l = str(side or "long").lower()
+    sl_return = _effective_sl_return(validated)
     if side_l == "long":
-        stop_price = entry * (1.0 - validated.sl_mult * validated.barrier_frac)
+        stop_price = entry * (1.0 - sl_return)
     elif side_l == "short":
-        stop_price = entry * (1.0 + validated.sl_mult * validated.barrier_frac)
+        stop_price = entry * (1.0 + sl_return)
     else:
         raise SimplePolicyStopParamsError(
             f"unsupported side for simple-policy stop: {side}"
@@ -963,8 +1077,16 @@ def compute_initial_simple_policy_stop_decision(
         params_hash=validated.params_hash,
         barrier_frac=validated.barrier_frac,
         sl_mult=validated.sl_mult,
+        sl_abs_cap_pct=validated.sl_abs_cap_pct,
         trailing_activation_mult=validated.trailing_activation_mult,
         trailing_activation_cap_pct=validated.trailing_activation_cap_pct,
+        trailing_activation_decay_half_life_bars=(
+            validated.trailing_activation_decay_half_life_bars
+        ),
+        trailing_activation_decay_start_bars=(
+            validated.trailing_activation_decay_start_bars
+        ),
+        trailing_activation_min_mult=validated.trailing_activation_min_mult,
         effective_trailing_activation_return=(
             validated.effective_trailing_activation_return
         ),
@@ -975,8 +1097,11 @@ def compute_initial_simple_policy_stop_decision(
         atr_multiplier=validated.atr_multiplier,
         hard_tp_abs_pct=validated.hard_tp_abs_pct,
         effective_trailing_activation_mult=validated.trailing_activation_mult,
+        effective_sl_mult=_effective_sl_mult(validated),
         capital_protect_mfe_mult=validated.capital_protect_mfe_mult,
         capital_protect_regression_frac=validated.capital_protect_regression_frac,
+        capital_protect_lock_frac=validated.capital_protect_lock_frac,
+        capital_protect_min_lock_bps=validated.capital_protect_min_lock_bps,
         adverse_exit_enabled=validated.adverse_exit_enabled,
         adverse_exit_theta=validated.adverse_exit_theta,
         adverse_exit_theta_quantile=validated.adverse_exit_theta_quantile,
@@ -1047,7 +1172,7 @@ def compute_simple_policy_stop_decision(
         raise SimplePolicyStopParamsError("missing finite current stop_price")
     exit_pressure = 0.0
     tightening_multiplier = 1.0
-    effective_sl_mult = validated.sl_mult
+    effective_sl_mult = _effective_sl_mult(validated)
     effective_trailing_activation_mult = validated.trailing_activation_mult
     effective_hard_tp_abs_pct = validated.hard_tp_abs_pct
 
@@ -1090,7 +1215,7 @@ def compute_simple_policy_stop_decision(
                 eligible = (
                     bars_in_trade <= int(validated.adverse_exit_fast_bars)
                     and mae_atr >= validated.adverse_exit_min_mae_atr
-                    and mae_atr <= validated.sl_mult * ADVERSE_EXIT_MAX_SL_FRACTION
+                    and mae_atr <= effective_sl_mult * ADVERSE_EXIT_MAX_SL_FRACTION
                     and adverse_speed >= validated.adverse_exit_min_speed
                     and mfe_atr <= validated.adverse_exit_max_mfe_atr
                 )
@@ -1119,9 +1244,19 @@ def compute_simple_policy_stop_decision(
                         params_hash=validated.params_hash,
                         barrier_frac=validated.barrier_frac,
                         sl_mult=validated.sl_mult,
+                        sl_abs_cap_pct=validated.sl_abs_cap_pct,
                         trailing_activation_mult=validated.trailing_activation_mult,
                         trailing_activation_cap_pct=(
                             validated.trailing_activation_cap_pct
+                        ),
+                        trailing_activation_decay_half_life_bars=(
+                            validated.trailing_activation_decay_half_life_bars
+                        ),
+                        trailing_activation_decay_start_bars=(
+                            validated.trailing_activation_decay_start_bars
+                        ),
+                        trailing_activation_min_mult=(
+                            validated.trailing_activation_min_mult
                         ),
                         effective_trailing_activation_return=(
                             validated.effective_trailing_activation_return
@@ -1141,6 +1276,10 @@ def compute_simple_policy_stop_decision(
                         churn_penalty_bps=validated.churn_penalty_bps,
                         capital_protect_mfe_mult=validated.capital_protect_mfe_mult,
                         capital_protect_regression_frac=validated.capital_protect_regression_frac,
+                        capital_protect_lock_frac=validated.capital_protect_lock_frac,
+                        capital_protect_min_lock_bps=(
+                            validated.capital_protect_min_lock_bps
+                        ),
                         adverse_exit_enabled=True,
                         adverse_exit_theta=validated.adverse_exit_theta,
                         adverse_exit_theta_quantile=validated.adverse_exit_theta_quantile,
@@ -1167,9 +1306,18 @@ def compute_simple_policy_stop_decision(
         bars_in_trade=bars_in_trade,
         mfe=float(mfe),
     )
-    effective_sl_mult = validated.sl_mult * tightening_multiplier
+    effective_sl_mult = _effective_sl_mult(
+        validated,
+        multiplier=tightening_multiplier,
+    )
+    activation_decay_multiplier = _activation_decay_multiplier(
+        validated,
+        bars_in_trade=bars_in_trade,
+    )
     effective_trailing_activation_mult = (
-        validated.trailing_activation_mult * tightening_multiplier
+        validated.trailing_activation_mult
+        * tightening_multiplier
+        * activation_decay_multiplier
     )
     effective_hard_tp_abs_pct = validated.hard_tp_abs_pct * tightening_multiplier
     pressure_stop = (
@@ -1193,9 +1341,18 @@ def compute_simple_policy_stop_decision(
     cap_mfe_mult = validated.capital_protect_mfe_mult
     cap_reg_frac = validated.capital_protect_regression_frac
     if cap_mfe_mult > 0.0:
-        sl_dist_ret = effective_sl_mult * validated.barrier_frac
         x_dist = cap_mfe_mult * validated.barrier_frac
-        lock_dist = x_dist - cap_reg_frac * (x_dist + sl_dist_ret)
+        if np.isfinite(validated.capital_protect_lock_frac):
+            lock_dist = x_dist * validated.capital_protect_lock_frac
+            min_lock = max(0.0, validated.capital_protect_min_lock_bps) / 10_000.0
+            if min_lock > 0.0:
+                lock_dist = max(lock_dist, min_lock)
+        else:
+            sl_dist_ret = _effective_sl_return(
+                validated,
+                multiplier=tightening_multiplier,
+            )
+            lock_dist = x_dist - cap_reg_frac * (x_dist + sl_dist_ret)
         if float(mfe) >= x_dist:
             cap_stop = (
                 entry_price * (1.0 + lock_dist)
@@ -1231,8 +1388,16 @@ def compute_simple_policy_stop_decision(
             params_hash=validated.params_hash,
             barrier_frac=validated.barrier_frac,
             sl_mult=validated.sl_mult,
+            sl_abs_cap_pct=validated.sl_abs_cap_pct,
             trailing_activation_mult=validated.trailing_activation_mult,
             trailing_activation_cap_pct=validated.trailing_activation_cap_pct,
+            trailing_activation_decay_half_life_bars=(
+                validated.trailing_activation_decay_half_life_bars
+            ),
+            trailing_activation_decay_start_bars=(
+                validated.trailing_activation_decay_start_bars
+            ),
+            trailing_activation_min_mult=validated.trailing_activation_min_mult,
             effective_trailing_activation_return=(
                 validated.effective_trailing_activation_return
             ),
@@ -1251,6 +1416,8 @@ def compute_simple_policy_stop_decision(
             churn_penalty_bps=validated.churn_penalty_bps,
             capital_protect_mfe_mult=validated.capital_protect_mfe_mult,
             capital_protect_regression_frac=validated.capital_protect_regression_frac,
+            capital_protect_lock_frac=validated.capital_protect_lock_frac,
+            capital_protect_min_lock_bps=validated.capital_protect_min_lock_bps,
             adverse_exit_enabled=validated.adverse_exit_enabled,
             adverse_exit_theta=validated.adverse_exit_theta,
             adverse_exit_theta_quantile=validated.adverse_exit_theta_quantile,
@@ -1267,16 +1434,21 @@ def compute_simple_policy_stop_decision(
         )
 
     activation = effective_trailing_activation_mult * validated.barrier_frac
+    if validated.trailing_activation_cap_pct > 0.0:
+        activation = min(activation, validated.trailing_activation_cap_pct)
     if validated.enable_trailing and float(mfe) > activation:
-        profit_above_activation = max(float(mfe) - activation, 0.0)
-        power_giveback = (
-            profit_above_activation**validated.trailing_power
-        ) / max(validated.trailing_squash_divisor, 1e-12)
-        atr_giveback = validated.giveback_beta * validated.barrier_frac
-        lock_ret = max(
-            activation,
-            min(float(mfe) - power_giveback, float(mfe) - atr_giveback),
+        max_favorable_abs = float(mfe) * entry_price
+        barrier_price_dist = max(entry_price * validated.barrier_frac, 1e-12)
+        dynamic_giveback = (
+            max_favorable_abs
+            / (barrier_price_dist * max(validated.trailing_squash_divisor, 1e-12))
+        ) ** validated.trailing_power
+        dynamic_giveback = float(np.clip(dynamic_giveback, 0.0, 1.0))
+        trail_amount = max(
+            max_favorable_abs * validated.giveback_beta * (1.0 - dynamic_giveback),
+            entry_price * MIN_TRAILING_GIVEBACK_FRAC,
         )
+        lock_ret = (max_favorable_abs - trail_amount) / entry_price
         trail_stop = (
             entry_price * (1.0 + lock_ret)
             if side_l == "long"
@@ -1293,8 +1465,8 @@ def compute_simple_policy_stop_decision(
                 f"exit_pressure={exit_pressure:.6g} "
                 f"multiplier={tightening_multiplier:.6g} "
                 f"giveback_beta={validated.giveback_beta:.6g} "
-                f"power_giveback={power_giveback:.6g} "
-                f"atr_giveback={atr_giveback:.6g} "
+                f"dynamic_giveback={dynamic_giveback:.6g} "
+                f"trail_amount={trail_amount:.6g} "
                 f"lock_ret={lock_ret:.6g}"
             )
 
@@ -1318,8 +1490,16 @@ def compute_simple_policy_stop_decision(
         params_hash=validated.params_hash,
         barrier_frac=validated.barrier_frac,
         sl_mult=validated.sl_mult,
+        sl_abs_cap_pct=validated.sl_abs_cap_pct,
         trailing_activation_mult=validated.trailing_activation_mult,
         trailing_activation_cap_pct=validated.trailing_activation_cap_pct,
+        trailing_activation_decay_half_life_bars=(
+            validated.trailing_activation_decay_half_life_bars
+        ),
+        trailing_activation_decay_start_bars=(
+            validated.trailing_activation_decay_start_bars
+        ),
+        trailing_activation_min_mult=validated.trailing_activation_min_mult,
         effective_trailing_activation_return=(
             validated.effective_trailing_activation_return
         ),
@@ -1338,6 +1518,8 @@ def compute_simple_policy_stop_decision(
         churn_penalty_bps=validated.churn_penalty_bps,
         capital_protect_mfe_mult=validated.capital_protect_mfe_mult,
         capital_protect_regression_frac=validated.capital_protect_regression_frac,
+        capital_protect_lock_frac=validated.capital_protect_lock_frac,
+        capital_protect_min_lock_bps=validated.capital_protect_min_lock_bps,
         adverse_exit_enabled=validated.adverse_exit_enabled,
         adverse_exit_theta=validated.adverse_exit_theta,
         adverse_exit_theta_quantile=validated.adverse_exit_theta_quantile,

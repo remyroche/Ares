@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 import pandas as pd
@@ -26,6 +26,7 @@ from extreme_price_movements.features import (  # noqa: E402
     compute_market_features,
 )
 from extreme_price_movements.inference.feature_generator import (  # noqa: E402
+    _is_live_synthesized_feature_key,
     get_features_for_candidates,
     get_inference_required_feature_keys,
     load_or_compute_features,
@@ -64,6 +65,25 @@ from extreme_price_movements.simple_position_sizer import (  # noqa: E402
 )
 
 
+def _slice_panel(
+    panel: dict[str, pd.DataFrame],
+    *,
+    start_ts: pd.Timestamp,
+    end_ts: pd.Timestamp,
+) -> dict[str, pd.DataFrame]:
+    out: dict[str, pd.DataFrame] = {}
+    start_ts = pd.Timestamp(start_ts)
+    end_ts = pd.Timestamp(end_ts)
+    for name, frame in panel.items():
+        if not isinstance(frame, pd.DataFrame) or not isinstance(
+            frame.index, pd.DatetimeIndex
+        ):
+            out[name] = frame
+            continue
+        out[name] = frame.loc[(frame.index >= start_ts) & (frame.index <= end_ts)]
+    return out
+
+
 def _normalise_symbol(symbol: object) -> str:
     text = str(symbol or "").upper().strip()
     perp_suffix = ""
@@ -89,6 +109,18 @@ def _safe_float(value: Any) -> float:
     except (TypeError, ValueError):
         return float("nan")
     return out if np.isfinite(out) else float("nan")
+
+
+def _is_present(value: Any) -> bool:
+    if value is None:
+        return False
+    try:
+        if pd.isna(value):
+            return False
+    except Exception:
+        pass
+    text = str(value).strip()
+    return bool(text) and text.lower() not in {"nan", "none", "null"}
 
 
 def _read_table(path: Path) -> pd.DataFrame:
@@ -130,6 +162,7 @@ def _feature_value_delta_summary(
     logged_values_raw: Any,
     feature_row: pd.DataFrame,
     symbol: str,
+    feature_filter: Any = None,
 ) -> dict[str, Any]:
     logged_values = _json_mapping(logged_values_raw)
     if not logged_values or feature_row.empty or symbol not in feature_row.index:
@@ -142,12 +175,15 @@ def _feature_value_delta_summary(
     deltas: list[tuple[str, float]] = []
     row = feature_row.loc[symbol]
     for key, live_value in logged_values.items():
+        key_s = str(key)
+        if callable(feature_filter) and not bool(feature_filter(key_s)):
+            continue
         if key not in row.index:
             continue
         live_float = _safe_float(live_value)
         replay_float = _safe_float(row.get(key))
         if np.isfinite(live_float) and np.isfinite(replay_float):
-            deltas.append((str(key), abs(replay_float - live_float)))
+            deltas.append((key_s, abs(replay_float - live_float)))
     if not deltas:
         return {
             "count": 0,
@@ -162,6 +198,20 @@ def _feature_value_delta_summary(
         "mean_abs": float(np.mean([delta for _, delta in deltas])),
         "worst_feature": worst_feature,
     }
+
+
+def _live_synthesized_feature_delta_summary(
+    *,
+    logged_values_raw: Any,
+    feature_row: pd.DataFrame,
+    symbol: str,
+) -> dict[str, Any]:
+    return _feature_value_delta_summary(
+        logged_values_raw=logged_values_raw,
+        feature_row=feature_row,
+        symbol=symbol,
+        feature_filter=_is_live_synthesized_feature_key,
+    )
 
 
 def _logged_values_frame(raw: Any, *, symbol: str) -> pd.DataFrame:
@@ -343,7 +393,13 @@ def _load_recent_decisions(
                     "rank_score_source",
                 ):
                     if col in trade_row:
-                        out[f"live_{col}"] = trade_row[col]
+                        dst = f"live_{col}"
+                        # The prediction ledger is the source of truth for
+                        # model and rank values.  Trade logs may contain stale
+                        # or execution-path copies; use them only to fill older
+                        # ledgers that did not record the live fields.
+                        if not _is_present(out.get(dst)):
+                            out[dst] = trade_row[col]
         merged_rows.append(out)
     return pd.DataFrame(merged_rows)
 
@@ -640,6 +696,7 @@ def _score_row(
     orchestrator: ModelOrchestrator,
     calibration_data: dict[str, dict[str, Any]],
     rank_store: PolicyRankReferenceStore,
+    skip_full_chain_diagnostics: bool = False,
 ) -> dict[str, Any]:
     symbol = str(row["symbol"])
     side = str(row["side"]).lower()
@@ -695,16 +752,60 @@ def _score_row(
         feature_row=feature_row,
         symbol=symbol,
     )
+    base_synth_delta_summary = _live_synthesized_feature_delta_summary(
+        logged_values_raw=row.get("base_model_feature_values_json"),
+        feature_row=feature_row,
+        symbol=symbol,
+    )
+    meta_synth_delta_summary = _live_synthesized_feature_delta_summary(
+        logged_values_raw=row.get("meta_model_feature_values_json"),
+        feature_row=feature_row,
+        symbol=symbol,
+    )
     out.update(
         {
             "base_feature_value_common_count": base_delta_summary["count"],
             "base_feature_value_max_abs_delta": base_delta_summary["max_abs"],
             "base_feature_value_mean_abs_delta": base_delta_summary["mean_abs"],
             "base_feature_value_worst_feature": base_delta_summary["worst_feature"],
+            "base_feature_value_worst_is_live_synthesized": bool(
+                _is_live_synthesized_feature_key(
+                    base_delta_summary["worst_feature"]
+                )
+            ),
+            "base_live_synth_feature_value_common_count": base_synth_delta_summary[
+                "count"
+            ],
+            "base_live_synth_feature_value_max_abs_delta": base_synth_delta_summary[
+                "max_abs"
+            ],
+            "base_live_synth_feature_value_mean_abs_delta": base_synth_delta_summary[
+                "mean_abs"
+            ],
+            "base_live_synth_feature_value_worst_feature": base_synth_delta_summary[
+                "worst_feature"
+            ],
             "meta_feature_value_common_count": meta_delta_summary["count"],
             "meta_feature_value_max_abs_delta": meta_delta_summary["max_abs"],
             "meta_feature_value_mean_abs_delta": meta_delta_summary["mean_abs"],
             "meta_feature_value_worst_feature": meta_delta_summary["worst_feature"],
+            "meta_feature_value_worst_is_live_synthesized": bool(
+                _is_live_synthesized_feature_key(
+                    meta_delta_summary["worst_feature"]
+                )
+            ),
+            "meta_live_synth_feature_value_common_count": meta_synth_delta_summary[
+                "count"
+            ],
+            "meta_live_synth_feature_value_max_abs_delta": meta_synth_delta_summary[
+                "max_abs"
+            ],
+            "meta_live_synth_feature_value_mean_abs_delta": meta_synth_delta_summary[
+                "mean_abs"
+            ],
+            "meta_live_synth_feature_value_worst_feature": meta_synth_delta_summary[
+                "worst_feature"
+            ],
         }
     )
     logged_base_frame = _logged_values_frame(
@@ -783,44 +884,58 @@ def _score_row(
         )
     except Exception:
         replay_base_direct = float("nan")
-    chain = orchestrator.run_full_chain(
-        symbol,
-        side,
-        feature_row.loc[[symbol]],
-        kind=model_strategy_id,
+    chain: dict[str, Any] = {}
+    replay_base = replay_base_direct
+    replay_meta = float("nan")
+    full_chain_meta = float("nan")
+    full_chain_cal = float("nan")
+    full_chain_cal_threshold = float("nan")
+    full_chain_policy_rank_pct = float("nan")
+    replay_meta_input_delta_summary = {
+        "count": 0,
+        "max_abs": float("nan"),
+        "mean_abs": float("nan"),
+        "worst_feature": "",
+    }
+    meta_replay_source = "logged_batch_meta_input_skip_full_chain"
+    can_skip_full_chain = bool(skip_full_chain_diagnostics) and np.isfinite(
+        out.get("logged_meta_input_pred", np.nan)
     )
-    replay_base = _safe_float(chain.get("base_pred"))
-    if not np.isfinite(replay_base):
-        replay_base = replay_base_direct
-    replay_meta = _safe_float(chain.get("meta_pred"))
-    replay_meta_model_input = getattr(orchestrator, "_last_meta_model_input", None)
-    replay_meta_input_delta_summary = (
-        _feature_value_delta_summary(
-            logged_values_raw=row.get("meta_model_feature_values_json"),
-            feature_row=replay_meta_model_input,
-            symbol=symbol,
+    if not can_skip_full_chain:
+        chain = orchestrator.run_full_chain(
+            symbol,
+            side,
+            feature_row.loc[[symbol]],
+            kind=model_strategy_id,
         )
-        if isinstance(replay_meta_model_input, pd.DataFrame)
-        else {
-            "count": 0,
-            "max_abs": float("nan"),
-            "mean_abs": float("nan"),
-            "worst_feature": "",
-        }
-    )
-    full_chain_meta = replay_meta
-    full_chain_cal, full_chain_cal_threshold = calibrated_score_and_threshold(
-        raw_score=full_chain_meta,
-        strategy_id=core_strategy_id,
-        calibration_data=calibration_data,
-        default_threshold=1.0,
-    )
-    full_chain_rank = rank_store.lookup(
-        strategy_id=strategy_id,
-        side=side,
-        calibrated_score=full_chain_cal,
-    )
-    meta_replay_source = "single_row_full_chain"
+        replay_base = _safe_float(chain.get("base_pred"))
+        if not np.isfinite(replay_base):
+            replay_base = replay_base_direct
+        replay_meta = _safe_float(chain.get("meta_pred"))
+        replay_meta_model_input = getattr(orchestrator, "_last_meta_model_input", None)
+        replay_meta_input_delta_summary = (
+            _feature_value_delta_summary(
+                logged_values_raw=row.get("meta_model_feature_values_json"),
+                feature_row=replay_meta_model_input,
+                symbol=symbol,
+            )
+            if isinstance(replay_meta_model_input, pd.DataFrame)
+            else replay_meta_input_delta_summary
+        )
+        full_chain_meta = replay_meta
+        full_chain_cal, full_chain_cal_threshold = calibrated_score_and_threshold(
+            raw_score=full_chain_meta,
+            strategy_id=core_strategy_id,
+            calibration_data=calibration_data,
+            default_threshold=1.0,
+        )
+        full_chain_rank = rank_store.lookup(
+            strategy_id=strategy_id,
+            side=side,
+            calibrated_score=full_chain_cal,
+        )
+        full_chain_policy_rank_pct = full_chain_rank.policy_rank_pct
+        meta_replay_source = "single_row_full_chain"
     if np.isfinite(out.get("logged_meta_input_pred", np.nan)):
         # Live performs meta prediction in batch and records the exact selected
         # meta-model matrix per decision. Some diagnostic meta inputs, notably
@@ -855,9 +970,9 @@ def _score_row(
             "full_chain_meta_pred": full_chain_meta,
             "full_chain_calibrated_score": full_chain_cal,
             "full_chain_calibration_threshold": full_chain_cal_threshold,
-            "full_chain_policy_rank_pct": full_chain_rank.policy_rank_pct,
+            "full_chain_policy_rank_pct": full_chain_policy_rank_pct,
             "full_chain_meta_pred_delta": full_chain_meta - out["live_meta_pred"],
-            "full_chain_rank_percentile_delta": full_chain_rank.policy_rank_pct
+            "full_chain_rank_percentile_delta": full_chain_policy_rank_pct
             - out["live_policy_rank_pct"],
             "replay_meta_model_input_common_count": replay_meta_input_delta_summary[
                 "count"
@@ -925,6 +1040,35 @@ def _summary(frame: pd.DataFrame) -> dict[str, Any]:
             .to_dict()
             .items()
         }
+    if not frame.empty:
+        synth_summary: dict[str, Any] = {}
+        for scope in ("base", "meta"):
+            max_col = f"{scope}_live_synth_feature_value_max_abs_delta"
+            worst_col = f"{scope}_live_synth_feature_value_worst_feature"
+            if max_col not in frame:
+                continue
+            vals = pd.to_numeric(frame[max_col], errors="coerce")
+            drift_rows = int(vals.gt(1e-7).sum())
+            top_features: dict[str, int] = {}
+            if worst_col in frame and drift_rows:
+                top_features = {
+                    str(k): int(v)
+                    for k, v in frame.loc[vals.gt(1e-7), worst_col]
+                    .fillna("")
+                    .astype(str)
+                    .value_counts()
+                    .head(10)
+                    .to_dict()
+                    .items()
+                    if str(k)
+                }
+            synth_summary[scope] = {
+                "rows_gt_1e-7": drift_rows,
+                "max_abs": float(vals.abs().max()) if vals.notna().any() else None,
+                "top_worst_features": top_features,
+            }
+        if synth_summary:
+            summary["live_synthesized_feature_reconstruction_drift"] = synth_summary
     return summary
 
 
@@ -934,11 +1078,13 @@ def _parity_failures(
     tolerance: float,
     require_policy_rank_reference: bool = False,
     require_live_values: bool = False,
+    parity_source: str = "replay",
 ) -> list[str]:
     failures: list[str] = []
     if frame.empty:
         failures.append("no_rows")
         return failures
+    parity_source = str(parity_source or "replay")
     if require_policy_rank_reference:
         raw_ref_n = (
             frame["replay_policy_rank_reference_n"]
@@ -983,12 +1129,32 @@ def _parity_failures(
                 failures.append(
                     f"feature_transform_contract_hash_mismatch_rows={mismatch}"
                 )
-    required_replay_cols = (
-        "replay_base_pred",
-        "replay_meta_pred",
-        "replay_calibrated_score",
-        "replay_policy_rank_pct",
-    )
+    if parity_source == "logged-input":
+        required_replay_cols = (
+            "logged_base_input_pred",
+            "logged_meta_input_pred",
+            "logged_meta_input_calibrated_score",
+            "logged_meta_input_policy_rank_pct",
+        )
+        delta_cols = (
+            "logged_base_input_pred_delta",
+            "logged_meta_input_pred_delta",
+            "logged_meta_input_calibrated_score_delta",
+            "logged_meta_input_rank_percentile_delta",
+        )
+    else:
+        required_replay_cols = (
+            "replay_base_pred",
+            "replay_meta_pred",
+            "replay_calibrated_score",
+            "replay_policy_rank_pct",
+        )
+        delta_cols = (
+            "base_pred_delta",
+            "meta_pred_delta",
+            "calibrated_score_delta",
+            "rank_percentile_delta",
+        )
     for col in required_replay_cols:
         raw_vals = (
             frame[col] if col in frame.columns else pd.Series(np.nan, index=frame.index)
@@ -997,12 +1163,7 @@ def _parity_failures(
         missing = int(vals.isna().sum())
         if missing:
             failures.append(f"missing_{col}_rows={missing}")
-    for col in (
-        "base_pred_delta",
-        "meta_pred_delta",
-        "calibrated_score_delta",
-        "rank_percentile_delta",
-    ):
+    for col in delta_cols:
         if col not in frame:
             continue
         vals = pd.to_numeric(frame[col], errors="coerce").abs()
@@ -1017,6 +1178,22 @@ def _parity_failures(
         if max_abs > float(tolerance):
             failures.append(f"{col}_max_abs={max_abs:.12g}")
     return failures
+
+
+def _model_runtime_cfg(
+    *,
+    model_bundle: Mapping[str, Any],
+    feature_runtime_cfg: Mapping[str, Any],
+    disable_model_diagnostics: bool = False,
+    disable_model_timing: bool = False,
+) -> dict[str, Any]:
+    runtime_cfg = dict(feature_runtime_cfg or {})
+    runtime_cfg["model_bundle"] = model_bundle
+    if disable_model_diagnostics:
+        runtime_cfg["inference_lgbm_internal_diagnostics_enabled"] = False
+    if disable_model_timing:
+        runtime_cfg["inference_model_timing_enabled"] = False
+    return runtime_cfg
 
 
 def main() -> int:
@@ -1086,6 +1263,16 @@ def main() -> int:
         help="Exit non-zero if replay/live prediction deltas exceed tolerance.",
     )
     parser.add_argument(
+        "--parity-source",
+        choices=("replay", "logged-input"),
+        default="replay",
+        help=(
+            "Prediction source used by --fail-on-mismatch. 'replay' checks "
+            "selected-cache reconstruction; 'logged-input' checks the exact "
+            "model-input values recorded in the live ledger."
+        ),
+    )
+    parser.add_argument(
         "--tolerance",
         default=1e-9,
         type=float,
@@ -1100,6 +1287,32 @@ def main() -> int:
         "--require-live-values",
         action="store_true",
         help="Fail if base/meta/calibrated/policy-rank live values are absent.",
+    )
+    parser.add_argument(
+        "--disable-model-diagnostics",
+        action="store_true",
+        help="Disable expensive model-internal diagnostics during replay scoring.",
+    )
+    parser.add_argument(
+        "--disable-model-timing",
+        action="store_true",
+        help="Disable per-model timing instrumentation during replay scoring.",
+    )
+    parser.add_argument(
+        "--skip-full-chain-diagnostics",
+        action="store_true",
+        help=(
+            "Skip per-row full-chain diagnostic scoring when exact logged batch "
+            "meta inputs are available; base predictions are still replayed."
+        ),
+    )
+    parser.add_argument(
+        "--batch-by-signal-bar-cache",
+        action="store_true",
+        help=(
+            "Load latest-only live feature caches separately for each signal_bar_ts "
+            "instead of using the max replay timestamp for all rows."
+        ),
     )
     args = parser.parse_args()
     artifact_data_root = args.artifact_data_root or args.data_root
@@ -1237,29 +1450,80 @@ def main() -> int:
             feature_cfg[key] = value
             runtime_cfg[key] = value
     feature_cfg["runtime_cfg"] = runtime_cfg
-    feats = load_or_compute_features(
-        panel,
-        list(panel["close"].columns),
-        args.run_id,
-        str(args.data_root),
-        feature_cfg,
-        lookback_hours=int(args.lookback_hours),
-        required_feature_keys=set(required_keys),
+    orchestrator = ModelOrchestrator(
+        state,
+        runtime_cfg=_model_runtime_cfg(
+            model_bundle=state.get("bundle", {}),
+            feature_runtime_cfg=runtime_cfg,
+            disable_model_diagnostics=bool(args.disable_model_diagnostics),
+            disable_model_timing=bool(args.disable_model_timing),
+        ),
     )
-    orchestrator = ModelOrchestrator(state, runtime_cfg={"model_bundle": state.get("bundle", {})})
     calibration_data = load_calibration_curves(str(artifact_data_root), args.run_id)
     rank_store = PolicyRankReferenceStore(data_root=artifact_data_root, run_id=args.run_id)
 
-    rows = [
-        _score_row(
-            row=row,
-            feats=feats,
-            orchestrator=orchestrator,
-            calibration_data=calibration_data,
-            rank_store=rank_store,
+    rows: list[dict[str, Any]] = []
+    if args.batch_by_signal_bar_cache:
+        signal_times = pd.to_datetime(
+            decisions["signal_bar_ts"], utc=True, errors="coerce"
         )
-        for _, row in decisions.iterrows()
-    ]
+        for signal_ts, group in decisions.groupby(signal_times, sort=True):
+            signal_ts = pd.Timestamp(signal_ts)
+            if pd.isna(signal_ts):
+                continue
+            group_start_ts = signal_ts - pd.Timedelta(hours=int(args.lookback_hours))
+            panel_slice = _slice_panel(
+                panel,
+                start_ts=group_start_ts,
+                end_ts=signal_ts,
+            )
+            group_feature_cfg = dict(feature_cfg)
+            group_feature_cfg["runtime_cfg"] = dict(runtime_cfg)
+            print(
+                f"Loading replay features for signal_bar_ts={signal_ts} "
+                f"rows={len(group)} start={group_start_ts}"
+            )
+            feats = load_or_compute_features(
+                panel_slice,
+                list(panel_slice["close"].columns),
+                args.run_id,
+                str(args.data_root),
+                group_feature_cfg,
+                lookback_hours=int(args.lookback_hours),
+                required_feature_keys=set(required_keys),
+            )
+            rows.extend(
+                _score_row(
+                    row=row,
+                    feats=feats,
+                    orchestrator=orchestrator,
+                    calibration_data=calibration_data,
+                    rank_store=rank_store,
+                    skip_full_chain_diagnostics=bool(args.skip_full_chain_diagnostics),
+                )
+                for _, row in group.iterrows()
+            )
+    else:
+        feats = load_or_compute_features(
+            panel,
+            list(panel["close"].columns),
+            args.run_id,
+            str(args.data_root),
+            feature_cfg,
+            lookback_hours=int(args.lookback_hours),
+            required_feature_keys=set(required_keys),
+        )
+        rows = [
+            _score_row(
+                row=row,
+                feats=feats,
+                orchestrator=orchestrator,
+                calibration_data=calibration_data,
+                rank_store=rank_store,
+                skip_full_chain_diagnostics=bool(args.skip_full_chain_diagnostics),
+            )
+            for _, row in decisions.iterrows()
+        ]
     result = pd.DataFrame(rows)
     expected_transform_hash = runtime_cfg.get("feature_transform_contract_hash")
     if expected_transform_hash is not None:
@@ -1285,6 +1549,7 @@ def main() -> int:
             tolerance=float(args.tolerance),
             require_policy_rank_reference=bool(args.require_policy_rank_reference),
             require_live_values=bool(args.require_live_values),
+            parity_source=str(args.parity_source),
         )
         if failures:
             print(

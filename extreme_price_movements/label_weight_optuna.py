@@ -71,6 +71,7 @@ class LabelParams:
 
 @dataclass
 class WeightParams:
+    base_weight_power: float = 1.0
     weight_modifier_strength: float = 0.0
     positive_mass_target: float = 0.45
     class_rebalance_strength: float = 0.50
@@ -84,6 +85,11 @@ class WeightParams:
     concurrency_window_hours: float = 1.0
     robustness_strength: float = 0.0
     path_quality_strength: float = 0.0
+    utility_tail_rank_strength: float = 0.0
+    utility_tail_rank_power: float = 4.0
+    utility_tail_rank_base: float = 0.50
+    utility_tail_rank_scale: float = 4.0
+    timestamp_balance_strength: float = 0.0
 
 
 @dataclass
@@ -94,6 +100,10 @@ class GeneratorParams:
     net_executable_mae_lambda: float | None = None
     net_executable_center_vol: float | None = None
     net_executable_temperature_vol: float | None = None
+    policy_net_label_center: float | None = None
+    policy_net_label_temperature: float | None = None
+    policy_net_label_min_std: float | None = None
+    policy_net_label_min_finite_frac: float | None = None
     timeout_weight: float | None = None
     outcome_weight_clip_min: float | None = None
     outcome_weight_clip_max: float | None = None
@@ -115,6 +125,10 @@ GENERATOR_DEFAULTS: dict[str, float] = {
     "net_executable_mae_lambda": 0.35,
     "net_executable_center_vol": 0.0,
     "net_executable_temperature_vol": 0.35,
+    "policy_net_label_center": 0.0,
+    "policy_net_label_temperature": 0.004,
+    "policy_net_label_min_std": 1e-8,
+    "policy_net_label_min_finite_frac": 0.98,
     "timeout_weight": 0.4,
     "outcome_weight_clip_min": 0.5,
     "outcome_weight_clip_max": 2.0,
@@ -428,6 +442,671 @@ def _normalize_weights_to_reference(
 
 def _sigmoid(x: np.ndarray | float) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-np.clip(x, -60.0, 60.0)))
+
+
+POLICY_NET_SOFT_LABEL_MODES = {
+    "s10",
+    "policy_net",
+    "policy_net_soft_label",
+    "replayed_policy_net",
+    "u_policy_net",
+    "vanilla_independent_net",
+    "vanilla_independent_net_soft_label",
+}
+
+POLICY_NET_PATH_BLEND_LABEL_MODES = {
+    "s14",
+    "policy_net_path_blend",
+    "s14_policy_net_path_blend",
+    "policy_net_path_blend_soft_label",
+}
+
+POLICY_NET_EXEC_GUARD_LABEL_MODES = {
+    "s34",
+    "s34_exec_guard_broad_policy",
+    "exec_guard_broad_policy",
+}
+
+POLICY_NET_TIMEOUT_CAPPED_LABEL_MODES = {
+    "s53": ("barrier", "path_blend", "timeout_barrier_cap_path_blend"),
+    "s53_timeout_barrier_cap_path_blend": ("barrier", "path_blend", "timeout_barrier_cap_path_blend"),
+    "timeout_barrier_cap_path_blend": ("barrier", "path_blend", "timeout_barrier_cap_path_blend"),
+    "s55": ("barrier", "exec_guard", "timeout_barrier_cap_exec_guard"),
+    "s55_timeout_barrier_cap_exec_guard": ("barrier", "exec_guard", "timeout_barrier_cap_exec_guard"),
+    "timeout_barrier_cap_exec_guard": ("barrier", "exec_guard", "timeout_barrier_cap_exec_guard"),
+    "s57": ("tpnet", "path_blend", "timeout_tpnet_cap_path_blend"),
+    "s57_timeout_tpnet_cap_path_blend": ("tpnet", "path_blend", "timeout_tpnet_cap_path_blend"),
+    "timeout_tpnet_cap_path_blend": ("tpnet", "path_blend", "timeout_tpnet_cap_path_blend"),
+}
+
+
+def policy_net_soft_label_mode_requested(cfg: dict[str, Any] | None = None) -> bool:
+    cfg_local = cfg if isinstance(cfg, dict) else {}
+    mode = str(
+        os.getenv("EPM_LABEL_ABLATION_MODE", cfg_local.get("label_ablation_mode", ""))
+        or ""
+    ).strip().lower()
+    if mode in POLICY_NET_SOFT_LABEL_MODES:
+        return True
+    flag = os.getenv(
+        "EPM_POLICY_NET_SOFT_LABEL",
+        str(cfg_local.get("policy_net_soft_label_enabled", "") or ""),
+    ).strip().lower()
+    return flag in {"1", "true", "yes", "y", "on"}
+
+
+def policy_net_path_blend_label_mode_requested(cfg: dict[str, Any] | None = None) -> bool:
+    cfg_local = cfg if isinstance(cfg, dict) else {}
+    mode = str(
+        os.getenv("EPM_LABEL_ABLATION_MODE", cfg_local.get("label_ablation_mode", ""))
+        or ""
+    ).strip().lower()
+    return mode in POLICY_NET_PATH_BLEND_LABEL_MODES
+
+
+def policy_net_exec_guard_label_mode_requested(cfg: dict[str, Any] | None = None) -> bool:
+    cfg_local = cfg if isinstance(cfg, dict) else {}
+    mode = str(
+        os.getenv("EPM_LABEL_ABLATION_MODE", cfg_local.get("label_ablation_mode", ""))
+        or ""
+    ).strip().lower()
+    return mode in POLICY_NET_EXEC_GUARD_LABEL_MODES
+
+
+def policy_net_timeout_capped_label_mode(
+    cfg: dict[str, Any] | None = None,
+) -> tuple[str, str, str] | None:
+    cfg_local = cfg if isinstance(cfg, dict) else {}
+    mode = str(
+        os.getenv("EPM_LABEL_ABLATION_MODE", cfg_local.get("label_ablation_mode", ""))
+        or ""
+    ).strip().lower()
+    return POLICY_NET_TIMEOUT_CAPPED_LABEL_MODES.get(mode)
+
+
+def build_policy_net_soft_label_from_frame(
+    df: pd.DataFrame,
+    y_hard: np.ndarray,
+    *,
+    cfg: dict[str, Any] | None = None,
+    label: str = "native",
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Map replayed policy net utility to a soft label.
+
+    This is the execution-aligned S10-style target: the continuous label is
+    derived from the net utility that the current policy replay assigns to the
+    row, not from a generic MFE/MAE proxy.
+    """
+
+    cfg_local = cfg if isinstance(cfg, dict) else {}
+    y_ref = np.asarray(y_hard, dtype=np.float32).reshape(-1)
+    fallback = np.clip(np.nan_to_num(y_ref, nan=0.0), 0.0, 1.0).astype(np.float32)
+    n = min(len(df), len(y_ref))
+    if n <= 0:
+        return fallback[:0], {
+            "enabled": False,
+            "reason": "empty",
+            "target_mode": "policy_net_replay",
+        }
+
+    source_col = next((c for c in ("__u_policy_net__", "u_policy_net") if c in df.columns), None)
+    if source_col is None:
+        raise RuntimeError(
+            f"{label}: policy-net soft-label mode requires '__u_policy_net__' or "
+            "'u_policy_net'. Refusing to fall back to the old label."
+        )
+
+    raw = pd.to_numeric(df[source_col].iloc[:n], errors="coerce").to_numpy(dtype=np.float64)
+    finite = np.isfinite(raw)
+    finite_frac = float(np.mean(finite)) if len(finite) else 0.0
+    min_finite_frac = float(
+        os.getenv(
+            "EPM_POLICY_NET_LABEL_MIN_FINITE_FRAC",
+            cfg_local.get("policy_net_label_min_finite_frac", 0.98),
+        )
+    )
+    if finite_frac < min_finite_frac:
+        raise RuntimeError(
+            f"{label}: policy-net soft-label source '{source_col}' has only "
+            f"{finite_frac:.3f} finite values; required >= {min_finite_frac:.3f}."
+        )
+
+    finite_raw = raw[finite]
+    raw_std = float(np.std(finite_raw)) if len(finite_raw) else 0.0
+    min_std = float(
+        os.getenv(
+            "EPM_POLICY_NET_LABEL_MIN_STD",
+            cfg_local.get("policy_net_label_min_std", 1e-8),
+        )
+    )
+    if raw_std <= min_std:
+        raise RuntimeError(
+            f"{label}: policy-net soft-label source '{source_col}' is effectively "
+            f"constant (std={raw_std:.6g}). Refusing to train on an uninformative "
+            "execution target."
+        )
+
+    center = float(
+        os.getenv(
+            "EPM_POLICY_NET_LABEL_CENTER",
+            cfg_local.get("policy_net_label_center", 0.0),
+        )
+    )
+    temperature = max(
+        1e-12,
+        float(
+            os.getenv(
+                "EPM_POLICY_NET_LABEL_TEMPERATURE",
+                cfg_local.get("policy_net_label_temperature", 0.004),
+            )
+        ),
+    )
+    cleaned = np.where(finite, raw, center)
+    soft = _sigmoid((cleaned - center) / temperature)
+    soft = np.clip(np.nan_to_num(soft, nan=0.5), 0.0, 1.0).astype(np.float32)
+    if n < len(fallback):
+        merged = fallback.copy()
+        merged[:n] = soft
+        soft = merged
+
+    stats = {
+        "enabled": True,
+        "label": str(label),
+        "target_mode": "policy_net_replay",
+        "source_column": str(source_col),
+        "n": int(len(soft)),
+        "finite_frac": float(finite_frac),
+        "raw_mean": float(np.mean(finite_raw)) if len(finite_raw) else float("nan"),
+        "raw_std": float(raw_std),
+        "raw_p10": float(np.percentile(finite_raw, 10)) if len(finite_raw) else float("nan"),
+        "raw_p50": float(np.percentile(finite_raw, 50)) if len(finite_raw) else float("nan"),
+        "raw_p90": float(np.percentile(finite_raw, 90)) if len(finite_raw) else float("nan"),
+        "soft_mean": float(np.mean(soft)) if len(soft) else float("nan"),
+        "soft_std": float(np.std(soft)) if len(soft) else float("nan"),
+        "hard_mean": float(np.mean(fallback)) if len(fallback) else float("nan"),
+        "center": float(center),
+        "temperature": float(temperature),
+        "min_std": float(min_std),
+        "min_finite_frac": float(min_finite_frac),
+    }
+    return soft.astype(np.float32, copy=False), stats
+
+
+def build_policy_net_path_blend_label_from_frame(
+    df: pd.DataFrame,
+    y_hard: np.ndarray,
+    *,
+    cfg: dict[str, Any] | None = None,
+    label: str = "native",
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """S14-style replay-utility/path-quality blend used by proxy screens."""
+
+    cfg_local = cfg if isinstance(cfg, dict) else {}
+    y_ref = np.asarray(y_hard, dtype=np.float32).reshape(-1)
+    fallback = np.clip(np.nan_to_num(y_ref, nan=0.0), 0.0, 1.0).astype(np.float32)
+    n = min(len(df), len(y_ref))
+    if n <= 0:
+        return fallback[:0], {
+            "enabled": False,
+            "reason": "empty",
+            "target_mode": "policy_net_path_blend",
+        }
+
+    required = {"__mfe_ret__", "__mae_ret__", "__barrier_pct__"}
+    missing = sorted(c for c in required if c not in df.columns)
+    source_col = next((c for c in ("__u_policy_net__", "u_policy_net") if c in df.columns), None)
+    if source_col is None:
+        missing.append("__u_policy_net__")
+    if missing:
+        raise RuntimeError(
+            f"{label}: S14 policy-net path-blend mode requires columns {sorted(set(missing))}."
+        )
+
+    df_local = df.reset_index(drop=True)
+    raw_u = pd.to_numeric(df_local[source_col].iloc[:n], errors="coerce").to_numpy(dtype=np.float64)
+    finite = np.isfinite(raw_u)
+    finite_frac = float(np.mean(finite)) if len(finite) else 0.0
+    min_finite_frac = float(
+        os.getenv(
+            "EPM_POLICY_NET_LABEL_MIN_FINITE_FRAC",
+            cfg_local.get("policy_net_label_min_finite_frac", 0.98),
+        )
+    )
+    if finite_frac < min_finite_frac:
+        raise RuntimeError(
+            f"{label}: S14 source '{source_col}' has only {finite_frac:.3f} finite values; "
+            f"required >= {min_finite_frac:.3f}."
+        )
+    finite_raw = raw_u[finite]
+    raw_std = float(np.std(finite_raw)) if len(finite_raw) else 0.0
+    min_std = float(
+        os.getenv(
+            "EPM_POLICY_NET_LABEL_MIN_STD",
+            cfg_local.get("policy_net_label_min_std", 1e-8),
+        )
+    )
+    if raw_std <= min_std:
+        raise RuntimeError(
+            f"{label}: S14 source '{source_col}' is effectively constant (std={raw_std:.6g})."
+        )
+
+    center = float(
+        os.getenv(
+            "EPM_POLICY_NET_LABEL_CENTER",
+            cfg_local.get("policy_net_label_center", 0.0),
+        )
+    )
+    policy_temperature = max(
+        1e-12,
+        float(
+            os.getenv(
+                "EPM_POLICY_NET_LABEL_TEMPERATURE",
+                cfg_local.get("policy_net_label_temperature", 0.012),
+            )
+        ),
+    )
+    policy_soft = _sigmoid((np.where(finite, raw_u, center) - center) / policy_temperature)
+
+    mfe, mae_abs, barrier, _timeout = _path_arrays(df_local, n)
+    mfe_norm = np.clip(mfe / np.maximum(barrier, 1e-8), 0.0, 50.0)
+    mae_norm = np.clip(mae_abs / np.maximum(barrier, 1e-8), 0.0, 50.0)
+    if "__bars_to_mfe__" in df_local.columns:
+        bars_to_mfe = pd.to_numeric(
+            df_local["__bars_to_mfe__"].iloc[:n],
+            errors="coerce",
+        ).to_numpy(dtype=np.float64)
+    elif "__bars_policy__" in df_local.columns:
+        bars_to_mfe = pd.to_numeric(
+            df_local["__bars_policy__"].iloc[:n],
+            errors="coerce",
+        ).to_numpy(dtype=np.float64)
+    else:
+        bars_to_mfe = np.full(n, 24.0, dtype=np.float64)
+    bars_to_mfe = np.clip(np.nan_to_num(bars_to_mfe, nan=24.0, posinf=24.0, neginf=24.0), 0.0, None)
+
+    if "__y_ret__" in df_local.columns:
+        y_ret = pd.to_numeric(df_local["__y_ret__"].iloc[:n], errors="coerce").to_numpy(dtype=np.float64)
+    elif "__r_policy_net__" in df_local.columns:
+        y_ret = pd.to_numeric(df_local["__r_policy_net__"].iloc[:n], errors="coerce").to_numpy(dtype=np.float64)
+    else:
+        y_ret = raw_u
+    round_trip_cost = max(
+        0.0,
+        float(
+            os.getenv(
+                "EPM_POLICY_NET_PATH_BLEND_COST",
+                cfg_local.get("policy_net_path_blend_cost", 0.0030),
+            )
+        ),
+    )
+    ret_net = np.nan_to_num(y_ret, nan=0.0) - round_trip_cost
+    downside_raw = (
+        0.90 * mfe_norm
+        - 1.85 * mae_norm
+        + ret_net / np.maximum(barrier, 1e-8)
+        - 0.15 * np.log1p(bars_to_mfe)
+    )
+    path_temperature = max(
+        1e-12,
+        float(
+            os.getenv(
+                "EPM_POLICY_NET_PATH_BLEND_PATH_TEMPERATURE",
+                cfg_local.get("policy_net_path_blend_path_temperature", 1.25),
+            )
+        ),
+    )
+    path_center = float(
+        os.getenv(
+            "EPM_POLICY_NET_PATH_BLEND_PATH_CENTER",
+            cfg_local.get("policy_net_path_blend_path_center", 0.10),
+        )
+    )
+    asymmetric = _sigmoid((downside_raw - path_center) / path_temperature)
+    if "__y_outcome__" in df_local.columns:
+        outcome = pd.to_numeric(df_local["__y_outcome__"].iloc[:n], errors="coerce").to_numpy(dtype=np.float64)
+        bad_path = (mae_norm >= 1.0) | (np.isfinite(outcome) & (outcome == 0.0))
+    else:
+        bad_path = mae_norm >= 1.0
+    bad_cap = float(
+        os.getenv(
+            "EPM_POLICY_NET_PATH_BLEND_BAD_CAP",
+            cfg_local.get("policy_net_path_blend_bad_cap", 0.25),
+        )
+    )
+    asymmetric = np.where(bad_path, np.minimum(asymmetric, bad_cap), asymmetric)
+    policy_weight = float(
+        os.getenv(
+            "EPM_POLICY_NET_PATH_BLEND_POLICY_WEIGHT",
+            cfg_local.get("policy_net_path_blend_policy_weight", 0.50),
+        )
+    )
+    policy_weight = float(np.clip(policy_weight, 0.0, 1.0))
+    soft = (policy_weight * policy_soft) + ((1.0 - policy_weight) * asymmetric)
+    soft = np.clip(np.nan_to_num(soft, nan=0.5), 0.0, 1.0).astype(np.float32)
+    if n < len(fallback):
+        merged = fallback.copy()
+        merged[:n] = soft
+        soft = merged
+
+    stats = {
+        "enabled": True,
+        "label": str(label),
+        "target_mode": "policy_net_path_blend",
+        "source_column": str(source_col),
+        "n": int(len(soft)),
+        "finite_frac": float(finite_frac),
+        "raw_mean": float(np.mean(finite_raw)) if len(finite_raw) else float("nan"),
+        "raw_std": float(raw_std),
+        "policy_center": float(center),
+        "policy_temperature": float(policy_temperature),
+        "policy_weight": float(policy_weight),
+        "path_center": float(path_center),
+        "path_temperature": float(path_temperature),
+        "bad_cap": float(bad_cap),
+        "bad_path_rate": float(np.mean(bad_path)) if len(bad_path) else float("nan"),
+        "soft_mean": float(np.mean(soft)) if len(soft) else float("nan"),
+        "soft_std": float(np.std(soft)) if len(soft) else float("nan"),
+        "hard_mean": float(np.mean(fallback)) if len(fallback) else float("nan"),
+        "min_std": float(min_std),
+        "min_finite_frac": float(min_finite_frac),
+    }
+    return soft.astype(np.float32, copy=False), stats
+
+
+def build_policy_net_capped_execution_label_from_frame(
+    df: pd.DataFrame,
+    y_hard: np.ndarray,
+    *,
+    cfg: dict[str, Any] | None = None,
+    label: str = "native",
+    cap_kind: str = "none",
+    family: str = "exec_guard",
+    target_mode: str = "exec_guard_broad_policy",
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Build S34/S53/S55/S57-style execution-aligned soft labels.
+
+    These modes mirror the proxy candidates promoted by
+    ``run_label_economic_proxy_ablation.py``. The timeout-capped variants bound
+    positive timeout utility to executable TP/barrier geometry before deriving
+    the soft label, so the learner is not rewarded for unbounded late marks.
+    """
+
+    cfg_local = cfg if isinstance(cfg, dict) else {}
+    y_ref = np.asarray(y_hard, dtype=np.float32).reshape(-1)
+    fallback = np.clip(np.nan_to_num(y_ref, nan=0.0), 0.0, 1.0).astype(np.float32)
+    n = min(len(df), len(y_ref))
+    if n <= 0:
+        return fallback[:0], {
+            "enabled": False,
+            "reason": "empty",
+            "target_mode": target_mode,
+        }
+
+    required = {"__mfe_ret__", "__mae_ret__", "__barrier_pct__"}
+    missing = sorted(c for c in required if c not in df.columns)
+    source_col = next((c for c in ("__u_policy_net__", "u_policy_net") if c in df.columns), None)
+    if source_col is None:
+        missing.append("__u_policy_net__")
+    if missing:
+        raise RuntimeError(
+            f"{label}: {target_mode} mode requires columns {sorted(set(missing))}."
+        )
+
+    df_local = df.reset_index(drop=True)
+
+    def numeric_col(name: str, default: np.ndarray | float) -> np.ndarray:
+        if name in df_local.columns:
+            values = pd.to_numeric(df_local[name].iloc[:n], errors="coerce").to_numpy(dtype=np.float64)
+        else:
+            values = np.full(n, np.nan, dtype=np.float64)
+        if np.isscalar(default):
+            default_arr = np.full(n, float(default), dtype=np.float64)
+        else:
+            default_arr = np.asarray(default, dtype=np.float64).reshape(-1)[:n]
+            if len(default_arr) < n:
+                default_arr = np.pad(default_arr, (0, n - len(default_arr)), constant_values=np.nan)
+        return np.where(np.isfinite(values), values, default_arr)
+
+    raw_u = pd.to_numeric(df_local[source_col].iloc[:n], errors="coerce").to_numpy(dtype=np.float64)
+    finite = np.isfinite(raw_u)
+    finite_frac = float(np.mean(finite)) if len(finite) else 0.0
+    min_finite_frac = float(
+        os.getenv(
+            "EPM_POLICY_NET_LABEL_MIN_FINITE_FRAC",
+            cfg_local.get("policy_net_label_min_finite_frac", 0.98),
+        )
+    )
+    if finite_frac < min_finite_frac:
+        raise RuntimeError(
+            f"{label}: {target_mode} source '{source_col}' has only "
+            f"{finite_frac:.3f} finite values; required >= {min_finite_frac:.3f}."
+        )
+    finite_raw = raw_u[finite]
+    raw_std = float(np.std(finite_raw)) if len(finite_raw) else 0.0
+    min_std = float(
+        os.getenv(
+            "EPM_POLICY_NET_LABEL_MIN_STD",
+            cfg_local.get("policy_net_label_min_std", 1e-8),
+        )
+    )
+    if raw_std <= min_std:
+        raise RuntimeError(
+            f"{label}: {target_mode} source '{source_col}' is effectively constant "
+            f"(std={raw_std:.6g})."
+        )
+
+    center = float(
+        os.getenv(
+            "EPM_POLICY_NET_LABEL_CENTER",
+            cfg_local.get("policy_net_label_center", 0.0),
+        )
+    )
+    policy_temperature = max(
+        1e-12,
+        float(
+            os.getenv(
+                "EPM_POLICY_NET_LABEL_TEMPERATURE",
+                cfg_local.get("policy_net_label_temperature", 0.012),
+            )
+        ),
+    )
+    u = np.where(finite, raw_u, center)
+    policy_soft = np.clip(_sigmoid((u - center) / policy_temperature), 0.0, 1.0)
+
+    mfe, mae_abs, barrier, timeout_bool = _path_arrays(df_local, n)
+    mfe_norm = np.clip(mfe / np.maximum(barrier, 1e-8), 0.0, 50.0)
+    mae_norm = np.clip(mae_abs / np.maximum(barrier, 1e-8), 0.0, 50.0)
+    bars_to_mfe = numeric_col(
+        "__bars_to_mfe__",
+        numeric_col("__bars_policy__", 24.0),
+    )
+    bars_to_mfe = np.clip(np.nan_to_num(bars_to_mfe, nan=24.0, posinf=24.0, neginf=24.0), 0.0, None)
+    timeout_float = timeout_bool.astype(np.float64)
+
+    if "__y_ret__" in df_local.columns:
+        y_ret = pd.to_numeric(df_local["__y_ret__"].iloc[:n], errors="coerce").to_numpy(dtype=np.float64)
+    elif "__r_policy_net__" in df_local.columns:
+        y_ret = pd.to_numeric(df_local["__r_policy_net__"].iloc[:n], errors="coerce").to_numpy(dtype=np.float64)
+    else:
+        y_ret = u
+    round_trip_cost = max(
+        0.0,
+        float(
+            os.getenv(
+                "EPM_POLICY_NET_CAPPED_LABEL_COST",
+                cfg_local.get("policy_net_capped_label_cost", 0.0030),
+            )
+        ),
+    )
+    ret_net = np.nan_to_num(y_ret, nan=0.0) - round_trip_cost
+
+    downside_raw = (
+        0.90 * mfe_norm
+        - 1.85 * mae_norm
+        + ret_net / np.maximum(barrier, 1e-8)
+        - 0.15 * np.log1p(bars_to_mfe)
+    )
+    path_temperature = max(
+        1e-12,
+        float(
+            os.getenv(
+                "EPM_POLICY_NET_PATH_BLEND_PATH_TEMPERATURE",
+                cfg_local.get("policy_net_path_blend_path_temperature", 1.25),
+            )
+        ),
+    )
+    path_center = float(
+        os.getenv(
+            "EPM_POLICY_NET_PATH_BLEND_PATH_CENTER",
+            cfg_local.get("policy_net_path_blend_path_center", 0.10),
+        )
+    )
+    path_component = _sigmoid((downside_raw - path_center) / path_temperature)
+    if "__y_outcome__" in df_local.columns:
+        outcome = pd.to_numeric(df_local["__y_outcome__"].iloc[:n], errors="coerce").to_numpy(dtype=np.float64)
+        bad_path = (mae_norm >= 1.0) | (np.isfinite(outcome) & (outcome == 0.0))
+    else:
+        bad_path = mae_norm >= 1.0
+    bad_cap = float(
+        os.getenv(
+            "EPM_POLICY_NET_PATH_BLEND_BAD_CAP",
+            cfg_local.get("policy_net_path_blend_bad_cap", 0.25),
+        )
+    )
+    path_component = np.where(bad_path, np.minimum(path_component, bad_cap), path_component)
+    base_path_blend = np.clip(0.50 * policy_soft + 0.50 * path_component, 0.0, 1.0)
+
+    tail_soft = np.clip(_sigmoid((u - 0.005) / 0.018), 0.0, 1.0)
+    risk_adjusted_u = (
+        u
+        - 0.0012 * np.maximum(mae_norm - 1.50, 0.0)
+        - 0.00030 * np.log1p(np.maximum(bars_to_mfe, 0.0))
+        - 0.08 * np.maximum(barrier - 0.025, 0.0)
+        - 0.0010 * timeout_float
+    )
+    tail_risk_soft = np.clip(_sigmoid((risk_adjusted_u - 0.003) / 0.018), 0.0, 1.0)
+
+    fast_score = _sigmoid((14.0 - bars_to_mfe) / 6.0)
+    risk_clean_score = _sigmoid((3.00 - mae_norm) / 1.00) * _sigmoid((0.060 - barrier) / 0.020)
+    mfe_score = _sigmoid((mfe_norm - 1.20) / 0.75)
+    path_fast = np.clip(0.35 * fast_score + 0.35 * risk_clean_score + 0.30 * mfe_score, 0.0, 1.0)
+
+    exec_clean_score = (
+        _sigmoid((0.85 - mae_norm) / 0.25)
+        * _sigmoid((0.022 - barrier) / 0.004)
+        * (0.40 + 0.60 * _sigmoid((8.0 - bars_to_mfe) / 3.0))
+        * (0.35 + 0.65 * _sigmoid((mfe_norm - 1.15) / 0.45))
+    )
+    exec_clean_score = np.clip(exec_clean_score, 0.0, 1.0)
+
+    cap_kind_l = str(cap_kind or "none").strip().lower()
+    capped_u = u.copy()
+    if cap_kind_l in {"barrier", "tpnet"}:
+        effective_tp = np.abs(numeric_col("__first_touch_effective_tp_abs__", numeric_col("__tp__", barrier * 0.75)))
+        effective_sl = np.abs(numeric_col("__first_touch_effective_sl_abs__", numeric_col("__sl__", barrier * 1.50)))
+        barrier_cap = np.maximum(effective_tp, barrier)
+        if cap_kind_l == "tpnet":
+            positive_cap = np.clip(effective_tp - round_trip_cost, 0.00075, None)
+        else:
+            positive_cap = np.clip(barrier_cap, 0.00075, None)
+        loss_floor = -np.clip(effective_sl + round_trip_cost, 0.00075, None)
+        timeout_positive = timeout_bool & (u > 0.0)
+        capped_u = np.where(timeout_positive, np.minimum(capped_u, positive_cap), capped_u)
+        capped_u = np.where(timeout_bool, np.maximum(capped_u, loss_floor), capped_u)
+
+    capped_policy_soft = np.clip(_sigmoid(capped_u / 0.012), 0.0, 1.0)
+    capped_tail_soft = np.clip(_sigmoid((capped_u - 0.005) / 0.018), 0.0, 1.0)
+    capped_risk_u = (
+        capped_u
+        - 0.0012 * np.maximum(mae_norm - 1.50, 0.0)
+        - 0.00030 * np.log1p(np.maximum(bars_to_mfe, 0.0))
+        - 0.08 * np.maximum(barrier - 0.025, 0.0)
+        - 0.0010 * timeout_float
+    )
+    capped_tail_risk_soft = np.clip(_sigmoid((capped_risk_u - 0.003) / 0.018), 0.0, 1.0)
+    capped_path_blend = np.clip(0.50 * capped_policy_soft + 0.50 * path_component, 0.0, 1.0)
+    capped_broad_soft = np.clip(
+        0.35 * capped_path_blend
+        + 0.30 * capped_tail_risk_soft
+        + 0.20 * capped_tail_soft
+        + 0.15 * path_fast,
+        0.0,
+        1.0,
+    )
+
+    family_l = str(family or "exec_guard").strip().lower()
+    if cap_kind_l == "none":
+        broad_soft = np.clip(
+            0.35 * base_path_blend + 0.30 * tail_risk_soft + 0.20 * tail_soft + 0.15 * path_fast,
+            0.0,
+            1.0,
+        )
+        soft = broad_soft * (0.05 + 0.95 * exec_clean_score)
+        hard = (
+            (u > 0.001)
+            & (barrier <= 0.022)
+            & (mae_norm <= 1.05)
+            & (mfe_norm >= 1.00)
+            & (bars_to_mfe <= 12.0)
+            & (path_fast >= 0.40)
+        )
+    elif family_l == "path_blend":
+        soft = capped_path_blend
+        hard = (capped_u > 0.0) & (path_component >= 0.45)
+    elif family_l == "exec_guard":
+        soft = capped_broad_soft * (0.05 + 0.95 * exec_clean_score)
+        hard = (
+            (capped_u > (0.001 if cap_kind_l == "barrier" else 0.0))
+            & (barrier <= 0.022)
+            & (mae_norm <= 1.05)
+            & (mfe_norm >= 1.00)
+            & (bars_to_mfe <= 12.0)
+            & (path_fast >= 0.40)
+        )
+    else:
+        raise RuntimeError(f"{label}: unknown capped execution label family {family!r}.")
+
+    soft = np.clip(np.nan_to_num(soft, nan=0.5), 0.0, 1.0).astype(np.float32)
+    if n < len(fallback):
+        merged = fallback.copy()
+        merged[:n] = soft
+        soft = merged
+
+    stats = {
+        "enabled": True,
+        "label": str(label),
+        "target_mode": str(target_mode),
+        "source_column": str(source_col),
+        "n": int(len(soft)),
+        "finite_frac": float(finite_frac),
+        "raw_mean": float(np.mean(finite_raw)) if len(finite_raw) else float("nan"),
+        "raw_std": float(raw_std),
+        "policy_center": float(center),
+        "policy_temperature": float(policy_temperature),
+        "path_center": float(path_center),
+        "path_temperature": float(path_temperature),
+        "bad_cap": float(bad_cap),
+        "cap_kind": str(cap_kind_l),
+        "family": str(family_l),
+        "round_trip_cost": float(round_trip_cost),
+        "timeout_rate": float(np.mean(timeout_bool)) if len(timeout_bool) else float("nan"),
+        "timeout_positive_rate": float(np.mean(timeout_bool & (u > 0.0))) if len(timeout_bool) else float("nan"),
+        "soft_mean": float(np.mean(soft)) if len(soft) else float("nan"),
+        "soft_std": float(np.std(soft)) if len(soft) else float("nan"),
+        "hard_positive_rate_proxy": float(np.mean(hard)) if len(hard) else float("nan"),
+        "path_component_mean": float(np.mean(path_component)) if len(path_component) else float("nan"),
+        "exec_clean_mean": float(np.mean(exec_clean_score)) if len(exec_clean_score) else float("nan"),
+        "min_std": float(min_std),
+        "min_finite_frac": float(min_finite_frac),
+    }
+    if cap_kind_l in {"barrier", "tpnet"}:
+        stats.update(
+            {
+                "timeout_cap_delta_mean": float(np.mean(capped_u - u)) if len(capped_u) else float("nan"),
+                "timeout_cap_changed_rate": float(np.mean(np.abs(capped_u - u) > 1e-12)) if len(capped_u) else float("nan"),
+            }
+        )
+    return soft.astype(np.float32, copy=False), stats
 
 
 def _safe_logit(p: np.ndarray | float) -> np.ndarray:
@@ -1066,6 +1745,42 @@ def build_native_mfe_mae_soft_label_from_frame(
     cfg_local = apply_generator_recipe_to_cfg(cfg, stage=stage)
     y_ref = np.asarray(y_hard, dtype=np.float32).reshape(-1)
     fallback = np.clip(np.nan_to_num(y_ref, nan=0.0), 0.0, 1.0).astype(np.float32)
+    capped_mode = policy_net_timeout_capped_label_mode(cfg_local)
+    if capped_mode is not None:
+        cap_kind, family, target_mode = capped_mode
+        return build_policy_net_capped_execution_label_from_frame(
+            df,
+            y_ref,
+            cfg=cfg_local,
+            label=label,
+            cap_kind=cap_kind,
+            family=family,
+            target_mode=target_mode,
+        )
+    if policy_net_exec_guard_label_mode_requested(cfg_local):
+        return build_policy_net_capped_execution_label_from_frame(
+            df,
+            y_ref,
+            cfg=cfg_local,
+            label=label,
+            cap_kind="none",
+            family="exec_guard",
+            target_mode="s34_exec_guard_broad_policy",
+        )
+    if policy_net_path_blend_label_mode_requested(cfg_local):
+        return build_policy_net_path_blend_label_from_frame(
+            df,
+            y_ref,
+            cfg=cfg_local,
+            label=label,
+        )
+    if policy_net_soft_label_mode_requested(cfg_local):
+        return build_policy_net_soft_label_from_frame(
+            df,
+            y_ref,
+            cfg=cfg_local,
+            label=label,
+        )
     required = {"__mfe_ret__", "__mae_ret__", "__barrier_pct__"}
     missing = sorted(c for c in required if c not in df.columns)
     if missing:
@@ -1662,51 +2377,143 @@ def apply_weight_recipe(
     mask = _fit_mask_from_indices(n, fit_indices=fit_indices, fit_mask=fit_mask)
     p = recipe.weight
     weight_strength = float(np.clip(p.weight_modifier_strength, 0.0, 1.0))
-    if weight_strength <= 0.0:
+    utility_tail_strength = float(
+        np.clip(getattr(p, "utility_tail_rank_strength", 0.0), 0.0, 1.0)
+    )
+    timestamp_balance_strength = float(
+        np.clip(getattr(p, "timestamp_balance_strength", 0.0), 0.0, 1.0)
+    )
+    base_weight_power = float(np.clip(getattr(p, "base_weight_power", 1.0), 0.0, 1.0))
+    if (
+        weight_strength <= 0.0
+        and utility_tail_strength <= 0.0
+        and timestamp_balance_strength <= 0.0
+        and abs(base_weight_power - 1.0) <= 1e-12
+    ):
         return np.asarray(current_weight, dtype=np.float32), {
             "enabled": True,
             "recipe": recipe.name,
             "label": str(label),
             "stage": str(stage),
             "modifier_mode": "residual",
+            "base_weight_power": 1.0,
             "weight_modifier_strength": 0.0,
+            "utility_tail_rank_strength": 0.0,
+            "timestamp_balance_strength": 0.0,
             "reason": "zero_weight_modifier_strength",
             "fit_rows": int(np.sum(mask)),
         }
     df_local = df.reset_index(drop=True)
-    state = _path_economics_state(
-        df_local,
-        n=n,
-        y_hard=yh.astype(np.float64),
-        y_soft=ys,
-        recipe=recipe,
-        cfg=cfg,
-        fit_mask=mask,
+    base_reference = np.power(
+        np.clip(np.nan_to_num(w0, nan=1.0, posinf=1.0, neginf=1.0), 1e-6, None),
+        base_weight_power,
     )
-    geom_stats = dict(state["geom_stats"])
-    if bool(recipe.geometry.enabled):
-        yh = np.asarray(state["y_geom"], dtype=np.float64) >= 0.5
+    out = base_reference.copy()
+    geom_stats: dict[str, Any] = {}
     robust_strength = float(np.clip(p.robustness_strength, 0.0, 1.0))
     timing_strength = float(np.clip(p.path_quality_strength, 0.0, 1.0))
-    ambiguity = np.asarray(state["ambiguity"], dtype=np.float64)
-    uncertainty = np.asarray(state["uncertainty"], dtype=np.float64)
-    label_stability = np.asarray(state["label_stability"], dtype=np.float64)
-    timing_penalty = np.asarray(state["timing_penalty"], dtype=np.float64)
-    quick_profit = np.asarray(state["quick_profit"], dtype=np.float64)
-    mfe_ratio = np.clip(np.asarray(state["mfe"], dtype=np.float64) / np.maximum(state["vol"], 1e-8), 0.0, 10.0)
-    mae_ratio = np.clip(np.asarray(state["mae_abs"], dtype=np.float64) / np.maximum(state["vol"], 1e-8), 0.0, 10.0)
-    edge_budget = np.clip(np.maximum(np.asarray(state["edge_lcb_bps"], dtype=np.float64), 0.0) / 100.0, 0.0, 10.0)
-    hard_negative_signal = (~np.asarray(yh[:n], dtype=bool)).astype(np.float64) * label_stability
+    ambiguity = np.zeros(n, dtype=np.float64)
+    uncertainty = np.zeros(n, dtype=np.float64)
+    timing_penalty = np.zeros(n, dtype=np.float64)
+    quick_profit = np.zeros(n, dtype=np.float64)
+    near_barrier = np.full(n, np.nan, dtype=np.float64)
+    edge_lcb_bps = np.full(n, np.nan, dtype=np.float64)
     log_delta = np.zeros(n, dtype=np.float64)
-    log_delta += float(p.net_ev_weight_power) * np.log1p(edge_budget)
-    log_delta += float(p.mfe_weight_power) * np.log1p(mfe_ratio)
-    log_delta -= float(p.mae_weight_power) * np.log1p(mae_ratio)
-    log_delta -= (1.0 - float(np.clip(p.ambiguous_weight, 0.0, 1.0))) * ambiguity
-    log_delta -= robust_strength * uncertainty
-    log_delta += timing_strength * (0.75 * quick_profit - timing_penalty)
-    log_delta += np.log(max(float(p.hard_negative_weight), 1e-6)) * hard_negative_signal
-    out = np.clip(np.nan_to_num(w0, nan=1.0, posinf=1.0, neginf=1.0), 1e-6, None)
-    out[:n] = out[:n] * np.exp(weight_strength * np.clip(log_delta, -4.0, 4.0))
+    if weight_strength > 0.0:
+        state = _path_economics_state(
+            df_local,
+            n=n,
+            y_hard=yh.astype(np.float64),
+            y_soft=ys,
+            recipe=recipe,
+            cfg=cfg,
+            fit_mask=mask,
+        )
+        geom_stats = dict(state["geom_stats"])
+        if bool(recipe.geometry.enabled):
+            yh = np.asarray(state["y_geom"], dtype=np.float64) >= 0.5
+        ambiguity = np.asarray(state["ambiguity"], dtype=np.float64)
+        uncertainty = np.asarray(state["uncertainty"], dtype=np.float64)
+        label_stability = np.asarray(state["label_stability"], dtype=np.float64)
+        timing_penalty = np.asarray(state["timing_penalty"], dtype=np.float64)
+        quick_profit = np.asarray(state["quick_profit"], dtype=np.float64)
+        near_barrier = np.asarray(state["near_barrier"], dtype=np.float64)
+        edge_lcb_bps = np.asarray(state["edge_lcb_bps"], dtype=np.float64)
+        mfe_ratio = np.clip(
+            np.asarray(state["mfe"], dtype=np.float64)
+            / np.maximum(state["vol"], 1e-8),
+            0.0,
+            10.0,
+        )
+        mae_ratio = np.clip(
+            np.asarray(state["mae_abs"], dtype=np.float64)
+            / np.maximum(state["vol"], 1e-8),
+            0.0,
+            10.0,
+        )
+        edge_budget = np.clip(np.maximum(edge_lcb_bps, 0.0) / 100.0, 0.0, 10.0)
+        hard_negative_signal = (~np.asarray(yh[:n], dtype=bool)).astype(np.float64) * label_stability
+        log_delta += float(p.net_ev_weight_power) * np.log1p(edge_budget)
+        log_delta += float(p.mfe_weight_power) * np.log1p(mfe_ratio)
+        log_delta -= float(p.mae_weight_power) * np.log1p(mae_ratio)
+        log_delta -= (1.0 - float(np.clip(p.ambiguous_weight, 0.0, 1.0))) * ambiguity
+        log_delta -= robust_strength * uncertainty
+        log_delta += timing_strength * (0.75 * quick_profit - timing_penalty)
+        log_delta += np.log(max(float(p.hard_negative_weight), 1e-6)) * hard_negative_signal
+        out[:n] = out[:n] * np.exp(weight_strength * np.clip(log_delta, -4.0, 4.0))
+
+    utility_tail_multiplier = np.ones(n, dtype=np.float64)
+    proxy_multiplier = np.ones(n, dtype=np.float64)
+    utility_tail_source = "none"
+    if utility_tail_strength > 0.0:
+        if "__u_policy_net__" in df_local.columns:
+            utility_raw = pd.to_numeric(
+                df_local["__u_policy_net__"].iloc[:n],
+                errors="coerce",
+            ).to_numpy(dtype=np.float64)
+            utility_tail_source = "__u_policy_net__"
+        elif "u_policy_net" in df_local.columns:
+            utility_raw = pd.to_numeric(
+                df_local["u_policy_net"].iloc[:n],
+                errors="coerce",
+            ).to_numpy(dtype=np.float64)
+            utility_tail_source = "u_policy_net"
+        else:
+            utility_raw = ys[:n].astype(np.float64, copy=False)
+            utility_tail_source = "y_soft"
+        valid_ref = mask[:n] & np.isfinite(utility_raw)
+        if bool(np.any(valid_ref)):
+            sorted_ref = np.sort(utility_raw[valid_ref])
+            rank_pct = np.searchsorted(sorted_ref, utility_raw, side="right").astype(np.float64)
+            rank_pct /= max(float(len(sorted_ref)), 1.0)
+            rank_pct = np.clip(np.nan_to_num(rank_pct, nan=0.0), 0.0, 1.0)
+            tail_power = max(float(getattr(p, "utility_tail_rank_power", 4.0)), 0.0)
+            tail_base = max(float(getattr(p, "utility_tail_rank_base", 0.50)), 1e-6)
+            tail_scale = max(float(getattr(p, "utility_tail_rank_scale", 4.0)), 0.0)
+            raw_tail = tail_base + tail_scale * np.power(rank_pct, tail_power)
+            utility_tail_multiplier = _normalize_weights(raw_tail, fit_mask=mask[:n])
+            utility_tail_multiplier = np.clip(utility_tail_multiplier, 0.10, 5.0)
+            proxy_multiplier *= np.power(utility_tail_multiplier, utility_tail_strength)
+
+    timestamp_multiplier = np.ones(n, dtype=np.float64)
+    if timestamp_balance_strength > 0.0 and "__ts__" in df_local.columns:
+        ts = pd.to_datetime(df_local["__ts__"].iloc[:n], utc=True, errors="coerce")
+        ref_ts = ts[mask[:n]]
+        ref_counts = ref_ts.value_counts(dropna=False)
+        if len(ref_counts):
+            median_count = max(float(np.nanmedian(ref_counts.to_numpy(dtype=np.float64))), 1.0)
+            counts = ts.map(ref_counts).fillna(median_count).to_numpy(dtype=np.float64)
+            counts = np.clip(np.nan_to_num(counts, nan=median_count), 1.0, None)
+            raw_ts = 1.0 / counts
+            timestamp_multiplier = _normalize_weights(raw_ts, fit_mask=mask[:n])
+            timestamp_multiplier = np.clip(timestamp_multiplier, 0.10, 5.0)
+            proxy_multiplier *= np.power(timestamp_multiplier, timestamp_balance_strength)
+
+    if utility_tail_strength > 0.0 or timestamp_balance_strength > 0.0:
+        proxy_multiplier = _normalize_weights(proxy_multiplier, fit_mask=mask[:n])
+        proxy_multiplier = np.clip(proxy_multiplier, 0.10, 5.0)
+        out[:n] *= proxy_multiplier
+
     portfolio_strength = float(np.clip(recipe.objective.portfolio_alignment_strength, 0.0, 1.0))
     if portfolio_strength > 0.0:
         out[:n] *= _group_balance_multiplier(
@@ -1759,7 +2566,19 @@ def apply_weight_recipe(
             recency = np.power(0.5, np.maximum(age_days, 0.0) / max(float(p.recency_half_life_days), 1e-6))
             out[:n] *= np.clip(np.nan_to_num(recency, nan=1.0), 1e-6, 1.0)
 
-    out = _normalize_weights_to_reference(out, reference=w0, fit_mask=mask)
+    out = _normalize_weights_to_reference(out, reference=base_reference, fit_mask=mask)
+    edge_lcb_fit = edge_lcb_bps[mask[:n]]
+    near_barrier_fit = near_barrier[mask[:n]]
+    edge_lcb_mean = (
+        float(np.nanmean(edge_lcb_fit))
+        if np.isfinite(edge_lcb_fit).any()
+        else float("nan")
+    )
+    near_barrier_mean = (
+        float(np.nanmean(near_barrier_fit))
+        if np.isfinite(near_barrier_fit).any()
+        else float("nan")
+    )
     stats = {
         "enabled": True,
         "recipe": recipe.name,
@@ -1767,7 +2586,24 @@ def apply_weight_recipe(
         "stage": str(stage),
         "modifier_mode": "residual",
         "refinement_mode": "path_economics_log_budget",
+        "base_weight_power": base_weight_power,
         "weight_modifier_strength": weight_strength,
+        "utility_tail_rank_strength": utility_tail_strength,
+        "utility_tail_rank_source": utility_tail_source,
+        "utility_tail_rank_power": float(getattr(p, "utility_tail_rank_power", 4.0)),
+        "utility_tail_multiplier_p95": float(np.percentile(utility_tail_multiplier[mask[:n]], 95))
+        if np.any(mask[:n])
+        else float("nan"),
+        "timestamp_balance_strength": timestamp_balance_strength,
+        "timestamp_balance_multiplier_p95": float(np.percentile(timestamp_multiplier[mask[:n]], 95))
+        if np.any(mask[:n])
+        else float("nan"),
+        "proxy_multiplier_p95": float(np.percentile(proxy_multiplier[mask[:n]], 95))
+        if np.any(mask[:n])
+        else float("nan"),
+        "proxy_multiplier_p99": float(np.percentile(proxy_multiplier[mask[:n]], 99))
+        if np.any(mask[:n])
+        else float("nan"),
         "positive_mass_before": frac,
         "positive_mass_target": target,
         "fit_rows": int(np.sum(mask)),
@@ -1775,9 +2611,9 @@ def apply_weight_recipe(
         "log_delta_std": float(np.std(log_delta[mask])) if np.any(mask) else float("nan"),
         "mean": float(np.mean(out[mask])) if np.any(mask) else float("nan"),
         "p95": float(np.percentile(out[mask], 95)) if np.any(mask) else float("nan"),
-        "edge_lcb_bps_mean": float(np.mean(np.asarray(state["edge_lcb_bps"])[mask])) if np.any(mask) else float("nan"),
+        "edge_lcb_bps_mean": edge_lcb_mean,
         "ambiguity_mean": float(np.mean(ambiguity[mask])) if np.any(mask) else float("nan"),
-        "near_barrier_mean": float(np.mean(np.asarray(state["near_barrier"])[mask])) if np.any(mask) else float("nan"),
+        "near_barrier_mean": near_barrier_mean,
         "robustness_strength": robust_strength,
         "uncertainty_mean": float(np.mean(uncertainty[mask])) if np.any(mask) else float("nan"),
         "path_quality_strength": timing_strength,
@@ -2058,6 +2894,16 @@ def suggest_optuna_params(
                     )
                     if _layer_active(active_layer, "risk_path_caps")
                     else current_gen.net_executable_temperature_vol,
+                    "policy_net_label_center": trial.suggest_float(
+                        "policy_net_label_center", -0.010, 0.010
+                    )
+                    if _layer_active(active_layer, "net_edge_mapping")
+                    else current_gen.policy_net_label_center,
+                    "policy_net_label_temperature": trial.suggest_float(
+                        "policy_net_label_temperature", 0.001, 0.030, log=True
+                    )
+                    if _layer_active(active_layer, "net_edge_mapping")
+                    else current_gen.policy_net_label_temperature,
                 }
             )
     if phase in {"weights", "all"}:

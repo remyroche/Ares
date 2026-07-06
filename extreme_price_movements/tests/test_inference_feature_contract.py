@@ -43,6 +43,36 @@ def test_lgbm_inference_contract_refuses_nonfinite_features():
         model.predict(X)
 
 
+def test_lgbm_native_missing_inference_preserves_nan_features():
+    model = LGBMStabilityModel(
+        selected_features=["ret24h", "range_24h_pct"],
+        allow_native_missing_at_inference=True,
+    )
+    X = pd.DataFrame(
+        {"ret24h": [0.1, np.nan], "range_24h_pct": [0.02, 0.03]},
+        index=["AAA/USDC", "BBB/USDC"],
+    )
+
+    frame = model._frame(X)
+
+    assert list(frame.columns) == ["ret24h", "range_24h_pct"]
+    assert np.isnan(frame.loc["BBB/USDC", "ret24h"])
+
+
+def test_lgbm_native_missing_inference_rejects_infinite_features():
+    model = LGBMStabilityModel(
+        selected_features=["ret24h", "range_24h_pct"],
+        allow_native_missing_at_inference=True,
+    )
+    X = pd.DataFrame(
+        {"ret24h": [0.1, np.nan], "range_24h_pct": [np.inf, 0.03]},
+        index=["AAA/USDC", "BBB/USDC"],
+    )
+
+    with pytest.raises(ValueError, match="infinite contracted features"):
+        model._frame(X)
+
+
 def test_score_for_trading_refuses_nonfinite_features_before_prediction():
     model = LGBMStabilityModel(selected_features=["ret24h"])
     X = pd.DataFrame({"ret24h": [np.inf]}, index=["AAA/USDC"])
@@ -135,6 +165,53 @@ def test_alpha_contract_legacy_neutral_fill_adapter_is_explicit():
     assert np.isfinite(aligned.to_numpy(dtype=np.float32)).all()
     assert aligned.loc["AAA/USDC", "range_24h_pct"] == 0.0
     assert aligned.loc["BBB/USDC", "ret24h"] == 0.0
+
+
+def test_alpha_contract_native_lgbm_missing_preserves_nan_inputs():
+    X = pd.DataFrame(
+        {"ret24h": [0.1, np.nan], "range_24h_pct": [0.02, 0.03]},
+        index=["AAA/USDC", "BBB/USDC"],
+    )
+    orchestrator = ModelOrchestrator(
+        {},
+        {
+            "strict_feature_parity": True,
+            "simple_policy_allow_lgbm_native_missing": True,
+        },
+    )
+
+    aligned = orchestrator._align_alpha_feature_contract(
+        X,
+        ["ret24h", "range_24h_pct"],
+    )
+
+    assert list(aligned.index) == ["AAA/USDC", "BBB/USDC"]
+    assert list(aligned.columns) == ["ret24h", "range_24h_pct"]
+    assert np.isnan(aligned.loc["BBB/USDC", "ret24h"])
+    assert aligned.loc["AAA/USDC", "range_24h_pct"] == pytest.approx(0.02)
+
+
+def test_alpha_contract_native_lgbm_missing_still_blocks_infinite_rows():
+    X = pd.DataFrame(
+        {"ret24h": [0.1, np.nan], "range_24h_pct": [np.inf, 0.03]},
+        index=["AAA/USDC", "BBB/USDC"],
+    )
+    orchestrator = ModelOrchestrator(
+        {},
+        {
+            "strict_feature_parity": True,
+            "simple_policy_allow_lgbm_native_missing": True,
+        },
+    )
+
+    aligned = orchestrator._align_alpha_feature_contract(
+        X,
+        ["ret24h", "range_24h_pct"],
+    )
+
+    assert list(aligned.index) == ["BBB/USDC"]
+    assert list(aligned.columns) == ["ret24h", "range_24h_pct"]
+    assert np.isnan(aligned.loc["BBB/USDC", "ret24h"])
 
 
 def test_meta_optional_generated_features_are_neutral_before_strict_validation():

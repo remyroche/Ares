@@ -1,0 +1,343 @@
+timestamp_col: "__ts__"
+symbol_col: "__symbol__"
+candidate_id_col: null
+side_col: null
+
+regime_head_columns:
+  - "G_VOL"
+  - "__regime_vol_12h__"
+  - "__regime_vol_48h__"
+  - "__regime_volume_12h__"
+  - "__regime_volume_48h__"
+  - "__regime_trend_12h__"
+  - "__regime_trend_48h__"
+
+proxy_score_columns:
+  - "score"
+  - "proxy_score"
+  - "model_score"
+  - "pred_score"
+  - "p_hat"
+  - "y_hat"
+  - "ev"
+  - "expected_value"
+  - "expected_utility"
+  - "policy_score"
+  - "rank_score"
+  - "base_score"
+  - "meta_score"
+  - "__score__"
+
+explicit_causal_whitelist:
+  # Trailing historical realized volatility feature. The name matches the
+  # generic outcome guard, so it must be explicitly approved as causal.
+  - "realized_volatility_24h"
+
+allowed_causal_feature_groups:
+  trend_path_features:
+    - "trend_strength_percentile"
+    - "regime_trend_score"
+    - "trend_z_t"
+    - "trend_t"
+    - "trend_alignment_1_3_6"
+    - "trend_stack_6_12_24"
+    - "trend_acceleration"
+    - "trend_r2_24"
+    - "ema20_slope_5h"
+    - "dir_path_edge_2h"
+    - "dir_path_long_2h"
+    - "dir_path_short_2h"
+    - "resid_strength"
+    - "impulse"
+  shock_impulse_features:
+    - "speed"
+    - "shock_12h"
+    - "shock_vol_ratio"
+    - "jump_intensity"
+    - "breakout_24h"
+    - "breakout_confirmed"
+    - "breakout_soft"
+    - "pct_breakout_t"
+    - "vw_breakout"
+    - "range_24h_pct"
+    - "range_12h_pct"
+    - "range_pct"
+    - "second_leg_accel_1h"
+    - "second_leg_accel_2h"
+    - "second_leg_accel_vol_1h"
+    - "impulse_ratio_24"
+    - "climax_range_24"
+    - "climax_vol_12"
+  liquidity_execution_features:
+    - "spread_proxy_hl_range_bps_robust_z"
+    - "spread_proxy_abs_return_bps_robust_z"
+    - "median_spread_bps"
+    - "xasset_ob_liquidity_peer_resid"
+    - "log_quote_volume"
+    - "quote_volume_z_30d"
+    - "volume_trend_alignment"
+    - "dip_volume_profile"
+    - "volume_capitulation"
+    - "rejection_proxy"
+    - "tail_fail"
+    - "trap_strength"
+  oi_agreement_features:
+    - "oi_rank"
+    - "oi_chg_2h"
+    - "oi_up_agree"
+    - "leverage_build_score"
+    - "oi_expansion_compression_balance_24h"
+    - "abs_ret_per_oi_z_24h"
+    - "oiw_pos_delta_entry_dist_1d_atr"
+    - "oiw_pos_delta_entry_dist_7d_atr"
+    - "oiw_pos_delta_entry_dist_14d_atr"
+    - "dist_oiw_abs_delta_12h_atr"
+    - "dist_oiw_signed_delta_12h_atr"
+  location_features:
+    - "loc_prev_week_range_pos_24"
+    - "loc_range_pos_24"
+    - "loc_swing_range_pos_24"
+    - "distance_to_support_daily_vwap_atr"
+    - "distance_to_resistance_daily_vwap_atr"
+    - "dist_ema20_atr"
+    - "dist_ema50_atr"
+    - "dist_ema200_atr"
+    - "dist_rolling_7d_high"
+    - "dist_prior_day_low"
+    - "dist_local_swing"
+    - "trend_overextension_z"
+    - "pct_extreme"
+  pullback_retest_features:
+    - "pullback_depth"
+    - "loc_pullback_depth_24"
+    - "loc_pullback_depth_48"
+    - "pullback_2"
+    - "pullback_4"
+    - "pullback_8"
+    - "pullback_48"
+    - "retest_quality"
+    - "rejection_proxy"
+    - "pb_accel"
+    - "mr_potential"
+    - "mean_reversion_score"
+    - "support_reclaim_score"
+    - "resistance_reject_score"
+  compression_features:
+    - "atr_compression_ratio"
+    - "compression_score"
+    - "vol_compression"
+    - "vol_z_30_calm"
+    - "prior_range"
+    - "range_24h_pct"
+    - "range_12h_pct"
+    - "rolling_range_20"
+    - "bollinger_band_width"
+    - "realized_volatility_24h"
+  volume_confirmation_features:
+    - "volume_trend_alignment"
+    - "dip_volume_profile"
+    - "volume_capitulation"
+    - "quote_volume_z_30d"
+    - "vol_z_base"
+    - "flow_ratio"
+    - "flow_persistence"
+    - "vol_price_spread"
+    - "up_vol_6"
+    - "dn_vol_6"
+    - "zr_1h_x_volume_z_24h"
+    - "zr_3h_x_volume_z_24h"
+  barrier_pressure_features:
+    - "up_barrier_pressure_daily_vwap"
+    - "down_barrier_pressure_daily_vwap"
+    - "distance_to_support_daily_vwap_atr"
+    - "distance_to_resistance_daily_vwap_atr"
+    - "spread_proxy_hl_range_bps_robust_z"
+    - "spread_proxy_abs_return_bps_robust_z"
+    - "median_spread_bps"
+
+lower_is_better_features:
+  - "spread_bps"
+  - "slippage_proxy_bps"
+  - "illiquidity_score"
+  - "poor_fill_proxy"
+  - "rejection_rate"
+  - "spread_proxy_hl_range_bps_robust_z"
+  - "spread_proxy_abs_return_bps_robust_z"
+  - "median_spread_bps"
+  - "distance_to_support_daily_vwap_atr"
+  - "distance_to_resistance_daily_vwap_atr"
+  - "up_barrier_pressure_daily_vwap"
+  - "down_barrier_pressure_daily_vwap"
+  - "oiw_pos_delta_entry_dist_1d_atr"
+  - "oiw_pos_delta_entry_dist_7d_atr"
+  - "oiw_pos_delta_entry_dist_14d_atr"
+  - "dist_oiw_abs_delta_12h_atr"
+  - "dist_oiw_signed_delta_12h_atr"
+  - "trend_overextension_z"
+  - "pct_extreme"
+  - "pullback_depth"
+  - "loc_pullback_depth_24"
+  - "loc_pullback_depth_48"
+
+high_risk_features:
+  - "rejection_proxy"
+  - "tail_fail"
+  - "trap_strength"
+  - "trend_overextension_z"
+  - "pct_extreme"
+  - "mr_failure"
+
+outcome_columns:
+  realized_net_utility:
+    - "__u_policy_net__"
+    - "realized_net_utility"
+    - "net_utility"
+    - "utility"
+    - "pnl_net"
+  realized_return:
+    - "__r_policy_net__"
+    - "__y_ret__"
+    - "realized_return"
+    - "net_return"
+  adverse_mae:
+    - "__mae_ret__"
+    - "__mae__"
+    - "adverse_mae"
+    - "mae"
+  favorable_mfe:
+    - "__mfe_ret__"
+    - "__mfe__"
+    - "favorable_mfe"
+    - "mfe"
+  barrier_width:
+    - "__barrier_pct__"
+    - "barrier_pct"
+    - "barrier_width"
+  timeout_flag:
+    - "__is_timeout__"
+    - "timeout_flag"
+    - "is_timeout"
+  bad_mae_flag:
+    - "bad_mae"
+    - "bad_mae_flag"
+  wide_barrier_flag:
+    - "wide_barrier"
+    - "wide_barrier_flag"
+  execution_fill_quality:
+    - "fill_quality"
+    - "execution_quality_outcome"
+
+tag_thresholds:
+  min_timestamp_rows: 5
+  quiet_continuation: 0.25
+  loud_breakout_impulse: 0.20
+  dirty_shock_avoid: 0.15
+  clean_execution_context: 0.20
+  calm_positive_source: 0.20
+  loud_clean_execution: 0.10
+  clean_run_entry: 0.10
+  compression_capture_candidate: 0.10
+  risk_adjusted_capture_candidate: 0.10
+  clean_economic_capture_candidate: 0.10
+  misleading_location_risk: 0.15
+  retest_reversal: 0.20
+  compression_release: 0.20
+  run_entry: 0.20
+  late_run_continuation: 0.20
+  run_prior_hours: 3.0
+  run_prior_rows: 3
+  run_prior_low_threshold: 0.55
+  run_prior_high_threshold: 0.55
+
+label_thresholds:
+  good_top_frac: 0.30
+  bad_bottom_frac: 0.40
+  neutral_weight: 0.0
+  bad_mae_norm_threshold: 1.0
+  wide_barrier_abs_threshold: 0.025
+  fallback_bad_mae_quantile: 0.75
+  fallback_wide_barrier_quantile: 0.75
+  calibration_fraction: 0.50
+  source_conditioned_min_prior_rows: 200
+  source_conditioned_global_min_prior_rows: 1000
+  opportunity_mfe_norm_threshold: 1.0
+  opportunity_max_mae_norm: 1.0
+  clean_path_max_mae_norm: 0.75
+  recovery_ratio_threshold: 1.25
+  recovery_ratio_cap: 20.0
+  opportunity_capture_efficiency_threshold: 0.10
+  opportunity_capture_loss_efficiency_threshold: -0.05
+  opportunity_capture_efficiency_cap: 3.0
+  economic_capture_min_utility: 0.0
+  economic_capture_min_efficiency: 0.10
+  economic_capture_max_mae_norm: 0.75
+
+timeout_holding_labels:
+  timeout_risk_v1:
+    type: binary
+    target_side_only: true
+    positive_condition: reached_timeout_horizon_without_resolution
+    outcome_columns:
+      - "__is_timeout__"
+    intended_use: diagnostic_timeout_risk_head
+  holding_risk_v1:
+    type: binary
+    target_side_only: true
+    positive_condition: holding_time_exceeds_trailing_p80_budget
+    outcome_columns:
+      - "__bars_policy__"
+    calibration: prior_months_only
+    default_quantile: 0.80
+    intended_use: diagnostic_holding_risk_head
+  time_to_resolution_bucket_v1:
+    type: ordinal
+    target_side_only: true
+    positive_condition: ordinal_time_to_resolution_bucket
+    outcome_columns:
+      - "__bars_policy__"
+      - "__is_timeout__"
+      - "__u_policy_net__"
+    calibration: prior_months_only
+    fast_quantile: 0.40
+    slow_quantile: 0.80
+    buckets:
+      - fast_positive
+      - fast_negative
+      - slow_positive
+      - slow_negative
+      - timeout
+    intended_use: diagnostic_time_to_resolution_head
+
+sample_weight_multipliers:
+  quiet_continuation: 1.00
+  loud_breakout_impulse_clean: 1.00
+  dirty_shock_avoid: 0.25
+  run_entry: 1.25
+  late_run_continuation: 0.75
+  ambiguous_none: 0.50
+
+minimum_coverage_stability:
+  trainable_min_coverage: 0.05
+  preferred_min_coverage: 0.10
+  max_monthly_coverage_cv: 1.00
+  max_weekly_coverage_cv: 1.50
+
+diagnostics:
+  proxy_top_frac: 0.10
+  proxy_top_fracs:
+    - 0.01
+    - 0.05
+    - 0.10
+  prediction_min_match_rate: 0.80
+  capture_top_frac: 0.05
+  promotion_scorecard_top_frac: 0.10
+  promotion_walkforward_min_history_months: 2
+  promotion_stable_month_rate: 0.75
+  promotion_mixed_month_rate: 0.50
+  promotion_high_confidence_utility_positive_month_rate: 0.50
+  source_score_top_fracs:
+    - 0.005
+    - 0.01
+    - 0.03
+    - 0.05
+    - 0.10

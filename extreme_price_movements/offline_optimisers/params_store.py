@@ -112,7 +112,7 @@ STRATEGY_ID_TO_BUCKET = {v: k for k, v in BUCKET_TO_STRATEGY_ID.items()}
 
 # Canonical constants - import from central config
 TBM_BUCKET_NAMES = CANON_BUCKETS  # Now uses strategy_ids: ["long_tf", "long_mr", "short_tf", "short_mr"]
-TBM_HORIZONS = CANON_HORIZONS  # [5, 10]
+TBM_HORIZONS = CANON_HORIZONS  # [3, 5, 7]
 TBM_SIDES = CANON_SIDES
 TBM_SIDE_HORIZON_CELLS = CANON_SIDE_HORIZON_CELLS
 
@@ -126,6 +126,16 @@ def _side_horizon_alias_from_cell(cell_key: str) -> str | None:
     if side not in {"long", "short"} or not horizon.startswith("H"):
         return None
     return f"{side}_{horizon}"
+
+
+def _bucket_horizon_aliases_from_side_cell(cell_key: str) -> list[str]:
+    parts = str(cell_key or "").split("_")
+    if len(parts) != 2:
+        return []
+    side, horizon = parts
+    if side not in {"long", "short"} or not horizon.startswith("H"):
+        return []
+    return [f"MR_{side}_{horizon}", f"TF_{side}_{horizon}"]
 
 
 def _to_scalar(v: Any) -> Any:
@@ -773,6 +783,9 @@ def load_tbm_geometry_grid() -> Dict[str, Any]:
                 "tp_abs_lo_pct": float(min(tp_abs_vals)) if tp_abs_vals else None,
                 "sl_abs_lo_pct": float(min(sl_abs_vals)) if sl_abs_vals else None,
             }
+        for cell_key, payload in list(per_cell.items()):
+            for alias in _bucket_horizon_aliases_from_side_cell(cell_key):
+                per_cell.setdefault(alias, dict(payload))
 
         return {
             "per_cell": per_cell,
@@ -867,9 +880,10 @@ def load_tbm_best_params_per_cell() -> Dict[str, Dict[str, Any]]:
             }
         for cell, payload in list(result.items()):
             alias = _side_horizon_alias_from_cell(cell)
-            if alias is None or alias in result:
-                continue
-            result[alias] = dict(payload)
+            if alias is not None and alias not in result:
+                result[alias] = dict(payload)
+            for bucket_alias in _bucket_horizon_aliases_from_side_cell(cell):
+                result.setdefault(bucket_alias, dict(payload))
         return result
     except Exception:
         return load_tbm_best_params_per_bucket()
@@ -900,12 +914,15 @@ def load_tbm_all_params_per_cell() -> Dict[str, list[Dict[str, Any]]]:
             )
         for cell, rows in list(result.items()):
             alias = _side_horizon_alias_from_cell(cell)
-            if alias is None:
-                continue
-            alias_rows = result.setdefault(alias, [])
-            for row in rows:
-                if row not in alias_rows:
-                    alias_rows.append(dict(row))
+            alias_targets = []
+            if alias is not None:
+                alias_targets.append(alias)
+            alias_targets.extend(_bucket_horizon_aliases_from_side_cell(cell))
+            for alias_key in alias_targets:
+                alias_rows = result.setdefault(alias_key, [])
+                for row in rows:
+                    if row not in alias_rows:
+                        alias_rows.append(dict(row))
         return result
     except Exception:
         return {}

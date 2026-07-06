@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from extreme_price_movements.training_utils import (
@@ -146,17 +147,17 @@ def strategy_map(cfg: dict[str, Any] | None = None) -> dict[str, dict[str, Any]]
 def normalize_strategy_horizon(horizon: Any) -> int:
     """Normalize runtime horizons to the TBM geometry support contract.
 
-    Dynamic strategies may come from discovery with horizons like H3. The
-    simple/generated TBM geometry contract only supports H5 as the shortest
-    horizon, so any horizon below 5 is promoted to H5.
+    Dynamic strategies may come from discovery with noisy or missing horizons.
+    The current TBM geometry contract supports 3h as the shortest production
+    horizon, so only invalid/shorter values are promoted to H3.
     """
     try:
         h_int = int(horizon)
     except Exception:
         h_int = 0
     if h_int <= 0:
-        return 5
-    return 5 if h_int < 5 else h_int
+        return 3
+    return 3 if h_int < 3 else h_int
 
 
 def strategy_runtime_horizons(
@@ -167,15 +168,31 @@ def strategy_runtime_horizons(
     """Return the runtime horizons for a strategy.
 
     Priority:
-    1. strategy-level source_horizon
-    2. explicit requested horizons from the CLI/caller
-    3. config label_horizons_hours
+    1. explicit requested horizons when EPM_FORCE_REQUESTED_HORIZONS=1
+    2. strategy-level source_horizon
+    3. explicit requested horizons from the CLI/caller
+    4. config label_horizons_hours
 
     Dynamic mask strategies are mined for a specific source horizon. Once that
     horizon is present on the strategy, label/model cells must not expand into
-    every globally requested horizon.
+    every globally requested horizon unless an experiment explicitly opts into
+    that behavior.
     """
-    if strategy.get("source_horizon") is not None:
+    force_requested = str(os.environ.get("EPM_FORCE_REQUESTED_HORIZONS", "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }
+    if force_requested and requested_horizons:
+        vals = [normalize_strategy_horizon(h) for h in requested_horizons]
+    elif strategy.get("source_horizons") is not None:
+        raw_horizons = strategy.get("source_horizons") or []
+        if not isinstance(raw_horizons, (list, tuple, set)):
+            raw_horizons = [raw_horizons]
+        vals = [normalize_strategy_horizon(h) for h in raw_horizons]
+    elif strategy.get("source_horizon") is not None:
         vals = [normalize_strategy_horizon(strategy.get("source_horizon"))]
     elif requested_horizons:
         vals = [normalize_strategy_horizon(h) for h in requested_horizons]

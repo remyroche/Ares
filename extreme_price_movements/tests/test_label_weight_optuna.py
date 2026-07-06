@@ -13,6 +13,7 @@ from extreme_price_movements.label_weight_optuna import (
     apply_distillation_recipe,
     apply_label_recipe,
     apply_weight_recipe,
+    build_native_mfe_mae_soft_label_from_frame,
     load_recipe_from_env_or_cfg,
     objective_score,
     recipe_path_from_env_or_cfg,
@@ -37,6 +38,140 @@ def _path_df(n=4):
             "__symbol__": ["A", "A", "B", "C"][:n],
         }
     )
+
+
+def test_policy_net_soft_label_uses_replayed_utility_without_path_columns(monkeypatch):
+    monkeypatch.delenv("EPM_LABEL_WEIGHT_RECIPE", raising=False)
+    monkeypatch.delenv("EPM_LABEL_ABLATION_MODE", raising=False)
+    monkeypatch.delenv("EPM_POLICY_NET_SOFT_LABEL", raising=False)
+
+    df = pd.DataFrame({"__u_policy_net__": [-0.004, 0.0, 0.004, 0.008]})
+    soft, stats = build_native_mfe_mae_soft_label_from_frame(
+        df,
+        np.array([0, 0, 1, 1]),
+        cfg={
+            "label_ablation_mode": "s10",
+            "policy_net_label_center": 0.0,
+            "policy_net_label_temperature": 0.004,
+        },
+        stage="train_base",
+        label="policy_net_test",
+    )
+
+    assert stats["target_mode"] == "policy_net_replay"
+    assert stats["source_column"] == "__u_policy_net__"
+    assert soft[0] < soft[1] < soft[2] < soft[3]
+    assert soft[1] == pytest.approx(0.5, abs=1e-6)
+
+
+def test_policy_net_soft_label_fails_missing_or_constant_replay_utility(monkeypatch):
+    monkeypatch.delenv("EPM_LABEL_WEIGHT_RECIPE", raising=False)
+    monkeypatch.delenv("EPM_LABEL_ABLATION_MODE", raising=False)
+    monkeypatch.delenv("EPM_POLICY_NET_SOFT_LABEL", raising=False)
+    cfg = {"label_ablation_mode": "policy_net"}
+
+    with pytest.raises(RuntimeError, match="requires '__u_policy_net__' or 'u_policy_net'"):
+        build_native_mfe_mae_soft_label_from_frame(
+            _path_df(4),
+            np.array([0, 1, 0, 1]),
+            cfg=cfg,
+            stage="train_base",
+            label="missing_policy_net",
+        )
+
+    with pytest.raises(RuntimeError, match="effectively constant"):
+        build_native_mfe_mae_soft_label_from_frame(
+            pd.DataFrame({"u_policy_net": [0.0, 0.0, 0.0, 0.0]}),
+            np.array([0, 1, 0, 1]),
+            cfg=cfg,
+            stage="train_base",
+            label="constant_policy_net",
+        )
+
+
+def test_policy_net_path_blend_uses_replay_utility_and_path_caps(monkeypatch):
+    monkeypatch.delenv("EPM_LABEL_WEIGHT_RECIPE", raising=False)
+    monkeypatch.delenv("EPM_LABEL_ABLATION_MODE", raising=False)
+    monkeypatch.delenv("EPM_POLICY_NET_SOFT_LABEL", raising=False)
+
+    df = pd.DataFrame(
+        {
+            "__u_policy_net__": [-0.004, 0.0, 0.004, 0.016],
+            "__mfe_ret__": [0.010, 0.018, 0.020, 0.025],
+            "__mae_ret__": [-0.004, -0.030, -0.004, -0.003],
+            "__barrier_pct__": [0.010, 0.010, 0.010, 0.010],
+            "__bars_to_mfe__": [2.0, 3.0, 4.0, 2.0],
+            "__y_ret__": [0.006, -0.010, 0.012, 0.020],
+            "__y_outcome__": [1.0, 0.0, 1.0, 1.0],
+        }
+    )
+    soft, stats = build_native_mfe_mae_soft_label_from_frame(
+        df,
+        np.array([0, 0, 1, 1]),
+        cfg={
+            "label_ablation_mode": "s14_policy_net_path_blend",
+            "policy_net_label_center": 0.0,
+            "policy_net_label_temperature": 0.012,
+        },
+        stage="train_base",
+        label="s14_path_blend_test",
+    )
+
+    plain_policy = 1.0 / (1.0 + np.exp(-df["__u_policy_net__"].to_numpy(dtype=float) / 0.012))
+    assert stats["target_mode"] == "policy_net_path_blend"
+    assert stats["bad_path_rate"] > 0.0
+    assert not np.allclose(soft, plain_policy)
+    assert soft[1] < plain_policy[1]
+    assert soft[3] > soft[2] > soft[0]
+
+
+def test_policy_net_capped_execution_label_modes_are_callable(monkeypatch):
+    monkeypatch.delenv("EPM_LABEL_WEIGHT_RECIPE", raising=False)
+    monkeypatch.delenv("EPM_LABEL_ABLATION_MODE", raising=False)
+    monkeypatch.delenv("EPM_POLICY_NET_SOFT_LABEL", raising=False)
+
+    df = pd.DataFrame(
+        {
+            "__u_policy_net__": [0.080, 0.030, 0.010, -0.010, 0.020, 0.150],
+            "__mfe_ret__": [0.010, 0.008, 0.006, 0.002, 0.007, 0.012],
+            "__mae_ret__": [-0.003, -0.004, -0.002, -0.006, -0.003, -0.005],
+            "__barrier_pct__": [0.006, 0.006, 0.005, 0.006, 0.005, 0.007],
+            "__bars_to_mfe__": [4.0, 7.0, 10.0, 20.0, 5.0, 18.0],
+            "__is_timeout__": [1.0, 0.0, 0.0, 0.0, 1.0, 1.0],
+            "__y_ret__": [0.050, 0.010, 0.004, -0.010, 0.020, 0.100],
+            "__y_outcome__": [1.0, 1.0, 1.0, 0.0, 1.0, 1.0],
+            "__tp__": [0.006] * 6,
+            "__sl__": [0.009] * 6,
+        }
+    )
+    y = np.array([1, 1, 1, 0, 1, 1], dtype=np.float32)
+    plain_policy = 1.0 / (1.0 + np.exp(-df["__u_policy_net__"].to_numpy(dtype=float) / 0.012))
+
+    seen_modes = set()
+    for mode in ("s34", "s53", "s55", "s57"):
+        soft, stats = build_native_mfe_mae_soft_label_from_frame(
+            df,
+            y,
+            cfg={
+                "label_ablation_mode": mode,
+                "policy_net_label_min_finite_frac": 0.50,
+            },
+            stage="train_base",
+            label=f"{mode}_test",
+        )
+        assert np.isfinite(soft).all()
+        assert float(np.std(soft)) > 0.0
+        seen_modes.add(stats["target_mode"])
+        if mode in {"s53", "s55", "s57"}:
+            assert stats["timeout_cap_changed_rate"] > 0.0
+            assert not np.allclose(soft, plain_policy)
+
+    assert seen_modes == {
+        "s34_exec_guard_broad_policy",
+        "timeout_barrier_cap_path_blend",
+        "timeout_barrier_cap_exec_guard",
+        "timeout_tpnet_cap_path_blend",
+    }
 
 
 def test_recipe_hooks_reject_length_mismatch(tmp_path, monkeypatch):
@@ -88,6 +223,114 @@ def test_weight_recipe_normalizes_against_fit_mask_only(tmp_path, monkeypatch):
     assert stats["fit_rows"] == 2
     assert np.isclose(float(np.mean(out[fit_mask])), 1.0, atol=1e-6)
     assert not np.isclose(float(np.mean(out)), 1.0, atol=1e-3)
+
+
+def test_utility_tail_rank_weight_uses_fit_mask_reference(tmp_path, monkeypatch):
+    recipe = LabelWeightRecipe()
+    recipe.weight.weight_modifier_strength = 0.0
+    recipe.weight.class_rebalance_strength = 0.0
+    recipe.weight.recency_half_life_days = 0.0
+    recipe.weight.concurrency_penalty = 0.0
+    recipe.weight.utility_tail_rank_strength = 1.0
+    recipe.weight.utility_tail_rank_power = 4.0
+    recipe.weight.utility_tail_rank_base = 0.50
+    recipe.weight.utility_tail_rank_scale = 4.0
+    recipe_path = _write_recipe(tmp_path / "recipe.json", recipe)
+    monkeypatch.setenv("EPM_LABEL_WEIGHT_RECIPE", recipe_path)
+
+    df = pd.DataFrame(
+        {
+            "__u_policy_net__": [0.01, 0.02, 0.03, 100.0],
+            "__ts__": pd.date_range("2026-01-01", periods=4, freq="h"),
+        }
+    )
+    fit_mask = np.array([True, True, True, False])
+    out, stats = apply_weight_recipe(
+        df,
+        np.array([0, 1, 1, 1]),
+        np.array([0.2, 0.6, 0.8, 0.9]),
+        np.ones(4),
+        stage="train_base",
+        label="tail_rank",
+        fit_mask=fit_mask,
+    )
+
+    assert stats["utility_tail_rank_source"] == "__u_policy_net__"
+    assert np.isclose(float(np.mean(out[fit_mask])), 1.0, atol=1e-6)
+    assert out[0] < out[1] < out[2]
+    assert out[3] == pytest.approx(out[2], rel=1e-6)
+
+
+def test_timestamp_balance_weight_equalizes_fit_timestamp_mass(tmp_path, monkeypatch):
+    recipe = LabelWeightRecipe()
+    recipe.weight.weight_modifier_strength = 0.0
+    recipe.weight.class_rebalance_strength = 0.0
+    recipe.weight.recency_half_life_days = 0.0
+    recipe.weight.concurrency_penalty = 0.0
+    recipe.weight.timestamp_balance_strength = 1.0
+    recipe_path = _write_recipe(tmp_path / "recipe.json", recipe)
+    monkeypatch.setenv("EPM_LABEL_WEIGHT_RECIPE", recipe_path)
+
+    ts = pd.to_datetime(
+        [
+            "2026-01-01 00:00",
+            "2026-01-01 00:00",
+            "2026-01-01 00:00",
+            "2026-01-01 01:00",
+            "2026-01-01 01:00",
+        ],
+        utc=True,
+    )
+    df = pd.DataFrame({"__ts__": ts})
+    out, stats = apply_weight_recipe(
+        df,
+        np.array([0, 1, 0, 1, 0]),
+        np.array([0.2, 0.6, 0.3, 0.8, 0.4]),
+        np.ones(5),
+        stage="train_base",
+        label="timestamp_balance",
+        fit_mask=np.ones(5, dtype=bool),
+    )
+
+    dense_mass = float(np.sum(out[:3]))
+    sparse_mass = float(np.sum(out[3:]))
+    assert stats["timestamp_balance_strength"] == pytest.approx(1.0)
+    assert dense_mass == pytest.approx(sparse_mass, rel=1e-6)
+
+
+def test_timestamp_balance_can_ignore_base_weight_shape(tmp_path, monkeypatch):
+    recipe = LabelWeightRecipe()
+    recipe.weight.base_weight_power = 0.0
+    recipe.weight.weight_modifier_strength = 0.0
+    recipe.weight.class_rebalance_strength = 0.0
+    recipe.weight.recency_half_life_days = 0.0
+    recipe.weight.concurrency_penalty = 0.0
+    recipe.weight.timestamp_balance_strength = 1.0
+    recipe_path = _write_recipe(tmp_path / "recipe.json", recipe)
+    monkeypatch.setenv("EPM_LABEL_WEIGHT_RECIPE", recipe_path)
+
+    ts = pd.to_datetime(
+        [
+            "2026-01-01 00:00",
+            "2026-01-01 00:00",
+            "2026-01-01 01:00",
+        ],
+        utc=True,
+    )
+    out, stats = apply_weight_recipe(
+        pd.DataFrame({"__ts__": ts}),
+        np.array([0, 1, 0]),
+        np.array([0.2, 0.6, 0.3]),
+        np.array([100.0, 1.0, 1.0]),
+        stage="train_base",
+        label="timestamp_no_base_shape",
+        fit_mask=np.ones(3, dtype=bool),
+    )
+
+    assert stats["base_weight_power"] == pytest.approx(0.0)
+    assert float(np.mean(out)) == pytest.approx(1.0, abs=1e-6)
+    assert out[0] == pytest.approx(out[1], rel=1e-6)
+    assert out[2] > out[0]
 
 
 def test_distillation_recipe_can_load_from_cfg(tmp_path, monkeypatch):

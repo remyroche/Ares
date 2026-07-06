@@ -36,6 +36,7 @@ from compare_dynamic_hr_surprise_threshold import (  # noqa: E402
 
 NS_PER_HOUR = 60 * 60 * 1_000_000_000
 NS_PER_DAY = 24 * NS_PER_HOUR
+WRITE_CSV = True
 
 
 VARIANTS = (
@@ -45,6 +46,9 @@ VARIANTS = (
     "A4_soft_raise_loss2_zneg125",
     "A7_shared_symbol_side_hybrid",
     "A7_shared_symbol_hybrid",
+    "A8_rank_failure_soft_7d",
+    "A8_rank_failure_hard_7d",
+    "A8_rank_failure_soft_3d",
 )
 
 
@@ -64,6 +68,17 @@ class GuardConfig:
     soft_z_threshold: float = -1.25
     soft_penalty: float = 0.05
     severe_penalty: float = 0.10
+    rank_lookback_days: float = 7.0
+    rank_top_floor: float = 0.90
+    rank_lower_floor: float = 0.70
+    rank_lower_ceiling: float = 0.90
+    rank_min_top_count: int = 20
+    rank_min_lower_count: int = 40
+    rank_mean_margin: float = 0.0
+    rank_hr_margin: float = 0.10
+    rank_soft_penalty: float = 0.07
+    rank_severe_penalty: float = 0.12
+    rank_require_both_edges: bool = False
 
 
 def _variant_config(name: str, args: argparse.Namespace) -> GuardConfig:
@@ -79,6 +94,17 @@ def _variant_config(name: str, args: argparse.Namespace) -> GuardConfig:
         soft_z_threshold=float(args.soft_z_threshold),
         soft_penalty=float(args.soft_penalty),
         severe_penalty=float(args.severe_penalty),
+        rank_lookback_days=float(args.rank_failure_lookback_days),
+        rank_top_floor=float(args.rank_failure_top_floor),
+        rank_lower_floor=float(args.rank_failure_lower_floor),
+        rank_lower_ceiling=float(args.rank_failure_lower_ceiling),
+        rank_min_top_count=int(args.rank_failure_min_top_count),
+        rank_min_lower_count=int(args.rank_failure_min_lower_count),
+        rank_mean_margin=float(args.rank_failure_mean_margin),
+        rank_hr_margin=float(args.rank_failure_hr_margin),
+        rank_soft_penalty=float(args.rank_failure_soft_penalty),
+        rank_severe_penalty=float(args.rank_failure_severe_penalty),
+        rank_require_both_edges=bool(args.rank_failure_require_both_edges),
     )
     if name == "A0_current":
         return GuardConfig(name, scope="none", mode="none", **common)
@@ -92,6 +118,20 @@ def _variant_config(name: str, args: argparse.Namespace) -> GuardConfig:
         return GuardConfig(name, scope="symbol_side", mode="hybrid_hard", **common)
     if name == "A7_shared_symbol_hybrid":
         return GuardConfig(name, scope="symbol", mode="hybrid_hard", **common)
+    if name == "A8_rank_failure_soft_7d":
+        return GuardConfig(name, scope="head", mode="rank_failure_soft", **common)
+    if name == "A8_rank_failure_hard_7d":
+        return GuardConfig(name, scope="head", mode="rank_failure_hard", **common)
+    if name == "A8_rank_failure_soft_3d":
+        return GuardConfig(
+            name,
+            scope="head",
+            mode="rank_failure_soft",
+            rank_lookback_days=3.0,
+            rank_min_top_count=max(8, int(args.rank_failure_min_top_count // 2)),
+            rank_min_lower_count=max(16, int(args.rank_failure_min_lower_count // 2)),
+            **{k: v for k, v in common.items() if k not in {"rank_lookback_days", "rank_min_top_count", "rank_min_lower_count"}},
+        )
     raise ValueError(f"Unknown variant: {name}")
 
 
@@ -113,6 +153,8 @@ def _json_default(value: Any) -> Any:
 
 
 def _scope_columns(scope: str) -> list[str]:
+    if scope == "head":
+        return ["head"]
     if scope == "head_symbol_side":
         return ["head", "symbol", "side"]
     if scope == "symbol_side":
@@ -466,6 +508,173 @@ def _guard_decisions_fast(
     return out
 
 
+def _rank_failure_decisions(
+    frame: pd.DataFrame,
+    cfg: GuardConfig,
+) -> pd.DataFrame:
+    """Detect recent per-head rank inversion before threshold replay.
+
+    A head is considered to be in rank-failure state for a day when its recent
+    top-decile candidates underperform its own lower high-rank band. The rule
+    is causal: rows on day D only see candidates strictly before D.
+    """
+    if frame.empty:
+        return pd.DataFrame(columns=["__row_pos"])
+    required = {"timestamp", "head", "__row_pos", "__rank_for_guard", "__guard_net_return"}
+    missing = sorted(required - set(frame.columns))
+    if missing:
+        raise ValueError(f"Rank-failure guard missing required columns: {missing}")
+
+    work = frame.sort_values(["timestamp", "head"]).reset_index(drop=True).copy()
+    work["__guard_day"] = work["timestamp"].dt.floor("D")
+    days = pd.date_range(
+        pd.Timestamp(work["__guard_day"].min()),
+        pd.Timestamp(work["__guard_day"].max()) + pd.Timedelta(days=1),
+        freq="D",
+        tz="UTC",
+    )
+    out_parts: list[pd.DataFrame] = []
+    top_floor = float(cfg.rank_top_floor)
+    lower_floor = float(cfg.rank_lower_floor)
+    lower_ceiling = float(cfg.rank_lower_ceiling)
+    lookback = pd.Timedelta(days=float(cfg.rank_lookback_days))
+
+    for day_start in days[:-1]:
+        day_end = day_start + pd.Timedelta(days=1)
+        day_rows = work.loc[work["timestamp"].ge(day_start) & work["timestamp"].lt(day_end), ["__row_pos", "head"]]
+        if day_rows.empty:
+            continue
+        history = work.loc[work["timestamp"].ge(day_start - lookback) & work["timestamp"].lt(day_start)]
+        if history.empty:
+            part = day_rows[["__row_pos"]].copy()
+            part["prehead_symbol_guard_blocked"] = False
+            part["prehead_symbol_guard_penalty"] = 0.0
+            part["prehead_symbol_guard_reason"] = "rank_failure_no_history"
+            part["prehead_symbol_guard_rank_top_count"] = 0
+            part["prehead_symbol_guard_rank_lower_count"] = 0
+            part["prehead_symbol_guard_rank_top_avg_return"] = np.nan
+            part["prehead_symbol_guard_rank_lower_avg_return"] = np.nan
+            part["prehead_symbol_guard_rank_top_hit_rate"] = np.nan
+            part["prehead_symbol_guard_rank_lower_hit_rate"] = np.nan
+            part["prehead_symbol_guard_rank_mean_edge"] = np.nan
+            part["prehead_symbol_guard_rank_hr_edge"] = np.nan
+            out_parts.append(part)
+            continue
+
+        ranks = pd.to_numeric(history["__rank_for_guard"], errors="coerce")
+        top = history.loc[ranks.ge(top_floor)]
+        lower = history.loc[ranks.ge(lower_floor) & ranks.lt(lower_ceiling)]
+
+        top_stats = (
+            top.groupby("head", sort=False)
+            .agg(
+                rank_top_count=("__guard_net_return", "size"),
+                rank_top_avg_return=("__guard_net_return", "mean"),
+                rank_top_hit_rate=("__guard_net_return", lambda s: float(pd.Series(s).gt(0.0).mean())),
+            )
+            .reset_index()
+        )
+        lower_stats = (
+            lower.groupby("head", sort=False)
+            .agg(
+                rank_lower_count=("__guard_net_return", "size"),
+                rank_lower_avg_return=("__guard_net_return", "mean"),
+                rank_lower_hit_rate=("__guard_net_return", lambda s: float(pd.Series(s).gt(0.0).mean())),
+            )
+            .reset_index()
+        )
+        state = top_stats.merge(lower_stats, on="head", how="outer", sort=False)
+        if state.empty:
+            state = pd.DataFrame({"head": day_rows["head"].drop_duplicates().astype(str)})
+        for col in ("rank_top_count", "rank_lower_count"):
+            state[col] = pd.to_numeric(state.get(col, 0), errors="coerce").fillna(0).astype(int)
+        for col in (
+            "rank_top_avg_return",
+            "rank_lower_avg_return",
+            "rank_top_hit_rate",
+            "rank_lower_hit_rate",
+        ):
+            state[col] = pd.to_numeric(state.get(col, np.nan), errors="coerce")
+        state["rank_mean_edge"] = state["rank_top_avg_return"] - state["rank_lower_avg_return"]
+        state["rank_hr_edge"] = state["rank_top_hit_rate"] - state["rank_lower_hit_rate"]
+        enough = state["rank_top_count"].ge(int(cfg.rank_min_top_count)) & state["rank_lower_count"].ge(
+            int(cfg.rank_min_lower_count)
+        )
+        mean_failure = state["rank_mean_edge"].lt(-float(cfg.rank_mean_margin))
+        hr_failure = state["rank_hr_edge"].lt(-float(cfg.rank_hr_margin))
+        failure = enough & (
+            (mean_failure & hr_failure)
+            if bool(cfg.rank_require_both_edges)
+            else (mean_failure | hr_failure)
+        )
+        severe_failure = enough & mean_failure & hr_failure
+        state["prehead_symbol_guard_blocked"] = failure.to_numpy(dtype=bool) if cfg.mode == "rank_failure_hard" else False
+        if cfg.mode == "rank_failure_soft":
+            state["prehead_symbol_guard_penalty"] = np.where(
+                severe_failure.to_numpy(dtype=bool),
+                float(cfg.rank_severe_penalty),
+                np.where(failure.to_numpy(dtype=bool), float(cfg.rank_soft_penalty), 0.0),
+            )
+        else:
+            state["prehead_symbol_guard_penalty"] = 0.0
+        state["prehead_symbol_guard_reason"] = np.where(
+            failure,
+            np.where(severe_failure, "rank_failure_severe", "rank_failure"),
+            "rank_ok",
+        )
+
+        part = day_rows.merge(state, on="head", how="left", sort=False)
+        part["prehead_symbol_guard_blocked"] = part["prehead_symbol_guard_blocked"].fillna(False).astype(bool)
+        part["prehead_symbol_guard_penalty"] = pd.to_numeric(
+            part["prehead_symbol_guard_penalty"],
+            errors="coerce",
+        ).fillna(0.0)
+        part["prehead_symbol_guard_reason"] = part["prehead_symbol_guard_reason"].fillna("rank_failure_no_state")
+        part = part.rename(
+            columns={
+                "rank_top_count": "prehead_symbol_guard_rank_top_count",
+                "rank_lower_count": "prehead_symbol_guard_rank_lower_count",
+                "rank_top_avg_return": "prehead_symbol_guard_rank_top_avg_return",
+                "rank_lower_avg_return": "prehead_symbol_guard_rank_lower_avg_return",
+                "rank_top_hit_rate": "prehead_symbol_guard_rank_top_hit_rate",
+                "rank_lower_hit_rate": "prehead_symbol_guard_rank_lower_hit_rate",
+                "rank_mean_edge": "prehead_symbol_guard_rank_mean_edge",
+                "rank_hr_edge": "prehead_symbol_guard_rank_hr_edge",
+            }
+        )
+        out_parts.append(part.drop(columns=["head"], errors="ignore"))
+
+    if not out_parts:
+        decisions = frame[["__row_pos"]].copy()
+        decisions["prehead_symbol_guard_blocked"] = False
+        decisions["prehead_symbol_guard_penalty"] = 0.0
+        decisions["prehead_symbol_guard_reason"] = "rank_failure_no_days"
+    else:
+        decisions = pd.concat(out_parts, ignore_index=True)
+
+    defaults = {
+        "prehead_symbol_guard_rank_top_count": 0,
+        "prehead_symbol_guard_rank_lower_count": 0,
+        "prehead_symbol_guard_rank_top_avg_return": np.nan,
+        "prehead_symbol_guard_rank_lower_avg_return": np.nan,
+        "prehead_symbol_guard_rank_top_hit_rate": np.nan,
+        "prehead_symbol_guard_rank_lower_hit_rate": np.nan,
+        "prehead_symbol_guard_rank_mean_edge": np.nan,
+        "prehead_symbol_guard_rank_hr_edge": np.nan,
+    }
+    for col, value in defaults.items():
+        if col not in decisions.columns:
+            decisions[col] = value
+    decisions["prehead_symbol_guard_losses_last_n"] = 0
+    decisions["prehead_symbol_guard_recent_n"] = 0
+    decisions["prehead_symbol_guard_z_count"] = 0
+    decisions["prehead_symbol_guard_z"] = np.nan
+    decisions["prehead_symbol_guard_variant"] = cfg.variant
+    decisions["prehead_symbol_guard_scope"] = cfg.scope
+    decisions["prehead_symbol_guard_mode"] = cfg.mode
+    return decisions
+
+
 def _decision_for_day(
     frame: pd.DataFrame,
     day_start: pd.Timestamp,
@@ -599,6 +808,8 @@ def _guard_decisions(
     top_rank_floor: float,
     engine: str,
 ) -> pd.DataFrame:
+    if cfg.mode in {"rank_failure_soft", "rank_failure_hard"}:
+        return _rank_failure_decisions(frame, cfg)
     if engine == "pandas":
         return _guard_decisions_pandas(frame, cfg, top_rank_floor=top_rank_floor)
     if engine == "fast":
@@ -825,7 +1036,17 @@ def _apply_relative_symbol_weakness_filter(
 
 
 def _apply_variant(frame: pd.DataFrame, cfg: GuardConfig, decisions: pd.DataFrame) -> pd.DataFrame:
-    work = frame.merge(decisions, on="__row_pos", how="left", sort=False)
+    prior_guard_cols = [
+        col
+        for col in frame.columns
+        if col.startswith("prehead_symbol_guard_")
+    ]
+    work = frame.drop(columns=prior_guard_cols, errors="ignore").merge(
+        decisions,
+        on="__row_pos",
+        how="left",
+        sort=False,
+    )
     defaults = {
         "prehead_symbol_guard_blocked": False,
         "prehead_symbol_guard_penalty": 0.0,
@@ -844,9 +1065,9 @@ def _apply_variant(frame: pd.DataFrame, cfg: GuardConfig, decisions: pd.DataFram
         else:
             work[col] = work[col].fillna(value)
 
-    if cfg.mode in {"loss_cooldown", "z_guard", "hybrid_hard"}:
+    if cfg.mode in {"loss_cooldown", "z_guard", "hybrid_hard", "rank_failure_hard"}:
         work = work.loc[~work["prehead_symbol_guard_blocked"].astype(bool)].copy()
-    elif cfg.mode == "soft_raise":
+    elif cfg.mode in {"soft_raise", "rank_failure_soft"}:
         penalty = pd.to_numeric(work["prehead_symbol_guard_penalty"], errors="coerce").fillna(0.0).clip(lower=0.0)
         for col in ("normalized_rank_score", "policy_rank_pct", "rank_pct", "strategy_rank_pct"):
             if col in work.columns:
@@ -871,10 +1092,13 @@ def _summarize_variant(original: pd.DataFrame, variant: pd.DataFrame, decisions:
         if "prehead_symbol_guard_relative_peer_veto" in decisions
         else pd.Series(False)
     )
-    blacklist_fraction = pd.to_numeric(
-        decisions.get("prehead_symbol_guard_blacklist_asset_fraction", 0.0),
-        errors="coerce",
-    ).fillna(0.0)
+    if "prehead_symbol_guard_blacklist_asset_fraction" in decisions:
+        blacklist_fraction = pd.to_numeric(
+            decisions["prehead_symbol_guard_blacklist_asset_fraction"],
+            errors="coerce",
+        ).fillna(0.0)
+    else:
+        blacklist_fraction = pd.Series(0.0, index=decisions.index)
     return {
         "variant": cfg.variant,
         "scope": cfg.scope,
@@ -896,7 +1120,8 @@ def _summarize_variant(original: pd.DataFrame, variant: pd.DataFrame, decisions:
 def _write_frame(path: Path, frame: pd.DataFrame) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_parquet(path, index=False)
-    frame.to_csv(path.with_suffix(".csv"), index=False)
+    if WRITE_CSV:
+        frame.to_csv(path.with_suffix(".csv"), index=False)
 
 
 def _iter_variants(value: str) -> list[str]:
@@ -910,6 +1135,7 @@ def _iter_variants(value: str) -> list[str]:
 
 
 def main() -> None:
+    global WRITE_CSV
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--candidates", required=True)
     parser.add_argument("--output-dir", required=True)
@@ -927,6 +1153,18 @@ def main() -> None:
     parser.add_argument("--soft-z-threshold", type=float, default=-1.25)
     parser.add_argument("--soft-penalty", type=float, default=0.05)
     parser.add_argument("--severe-penalty", type=float, default=0.10)
+    parser.add_argument("--rank-failure-lookback-days", type=float, default=7.0)
+    parser.add_argument("--rank-failure-top-floor", type=float, default=0.90)
+    parser.add_argument("--rank-failure-lower-floor", type=float, default=0.70)
+    parser.add_argument("--rank-failure-lower-ceiling", type=float, default=0.90)
+    parser.add_argument("--rank-failure-min-top-count", type=int, default=20)
+    parser.add_argument("--rank-failure-min-lower-count", type=int, default=40)
+    parser.add_argument("--rank-failure-mean-margin", type=float, default=0.0)
+    parser.add_argument("--rank-failure-hr-margin", type=float, default=0.10)
+    parser.add_argument("--rank-failure-soft-penalty", type=float, default=0.07)
+    parser.add_argument("--rank-failure-severe-penalty", type=float, default=0.12)
+    parser.add_argument("--rank-failure-require-both-edges", action="store_true")
+    parser.add_argument("--parquet-only", action="store_true")
     parser.add_argument(
         "--max-blacklisted-asset-fraction",
         type=float,
@@ -957,6 +1195,7 @@ def main() -> None:
         help="Guard-state engine. auto/fast use a Numba single-pass state machine when available.",
     )
     args = parser.parse_args()
+    WRITE_CSV = not bool(args.parquet_only)
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -972,7 +1211,7 @@ def main() -> None:
             top_rank_floor=float(args.top_rank_floor),
             engine=str(args.engine),
         )
-        if bool(args.require_relative_symbol_weakness):
+        if bool(args.require_relative_symbol_weakness) and cfg.mode not in {"rank_failure_soft", "rank_failure_hard"}:
             decisions = _apply_relative_symbol_weakness_filter(
                 frame,
                 decisions,
@@ -983,11 +1222,12 @@ def main() -> None:
                 loss_peer_quantile=float(args.relative_loss_peer_quantile),
                 loss_margin=float(args.relative_loss_margin),
             )
-        decisions = _apply_blacklist_breadth_veto(
-            frame,
-            decisions,
-            max_asset_fraction=float(args.max_blacklisted_asset_fraction),
-        )
+        if cfg.mode not in {"rank_failure_soft", "rank_failure_hard"}:
+            decisions = _apply_blacklist_breadth_veto(
+                frame,
+                decisions,
+                max_asset_fraction=float(args.max_blacklisted_asset_fraction),
+            )
         variant_frame = _apply_variant(frame, cfg, decisions)
         variant_path = output_dir / name / "simple_policy_candidates_broad.parquet"
         decision_path = output_dir / name / "prehead_symbol_guard_decisions.parquet"

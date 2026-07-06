@@ -727,6 +727,219 @@ def evaluate_head_params_arm(
     return _summary_from_per_trade(name, all_trades, {"per_head": head_params}), all_trades
 
 
+def _saved_reference_per_trade(name: str, ctx: ReplayContext) -> pd.DataFrame:
+    rows = ctx.rows.reset_index(drop=True)
+    position_size = pd.to_numeric(
+        rows["accepted_position_size"], errors="coerce"
+    ).fillna(0.0).to_numpy(dtype=np.float64)
+    net_return = pd.to_numeric(
+        rows["accepted_net_return"], errors="coerce"
+    ).fillna(0.0).to_numpy(dtype=np.float64)
+    gross_return = pd.to_numeric(
+        rows["accepted_gross_return"], errors="coerce"
+    ).to_numpy(dtype=np.float64)
+    gross_return = np.nan_to_num(gross_return, nan=net_return)
+    holding_bars = pd.to_numeric(
+        rows.get("holding_bars", pd.Series(np.inf, index=rows.index)),
+        errors="coerce",
+    ).fillna(np.inf).to_numpy(dtype=np.float64)
+    exit_reason = rows["accepted_exit_reason"].astype(str).to_numpy(dtype=object)
+    per_trade = rows[
+        [
+            "timestamp",
+            "symbol",
+            "strategy_id",
+            "head",
+            "accepted_position_size",
+            "rank_pct",
+            "barrier_pct",
+            "candidate_index",
+        ]
+    ].copy()
+    per_trade["arm"] = name
+    per_trade["t1_net_return"] = net_return.astype(np.float32)
+    per_trade["t1_gross_return"] = gross_return.astype(np.float32)
+    per_trade["t1_holding_bars"] = holding_bars.astype(np.float32)
+    per_trade["sim_net_return"] = net_return.astype(np.float32)
+    per_trade["sim_gross_return"] = gross_return.astype(np.float32)
+    per_trade["sim_exit_bars"] = holding_bars.astype(np.float32)
+    per_trade["sim_exit_reason"] = exit_reason
+    per_trade["overlay_applied"] = False
+    per_trade["exit_mode"] = "t1_noop"
+    per_trade["net_return_replay"] = net_return.astype(np.float32)
+    per_trade["gross_return_replay"] = gross_return.astype(np.float32)
+    per_trade["net_pnl_replay"] = (net_return * position_size).astype(np.float32)
+    per_trade["gross_pnl_replay"] = (gross_return * position_size).astype(np.float32)
+    per_trade["cost_pnl_replay"] = (
+        (gross_return - net_return) * position_size
+    ).astype(np.float32)
+    per_trade["exit_reason_replay"] = np.char.add("t1_", exit_reason.astype(str))
+    return per_trade
+
+
+def _stateful_exit_masks(
+    rows: pd.DataFrame, params: dict[str, Any]
+) -> tuple[np.ndarray, np.ndarray]:
+    rank = pd.to_numeric(rows["rank_pct"], errors="coerce").fillna(0.5).to_numpy(
+        dtype=np.float64
+    )
+    defensive_enabled = bool(params.get("defensive_enabled", True))
+    aggressive_enabled = bool(params.get("aggressive_enabled", True))
+    defensive_rank_max = float(
+        np.clip(_safe_float(params.get("defensive_rank_max", 0.74)), 0.0, 1.0)
+    )
+    aggressive_rank_min = float(
+        np.clip(_safe_float(params.get("aggressive_rank_min", 0.93)), 0.0, 1.0)
+    )
+    defensive = defensive_enabled & (rank <= defensive_rank_max)
+    aggressive = aggressive_enabled & (rank >= aggressive_rank_min)
+    defensive = np.asarray(defensive, dtype=bool)
+    aggressive = np.asarray(aggressive, dtype=bool)
+    defensive &= ~aggressive
+    return defensive, aggressive
+
+
+def _stateful_defensive_params(params: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "sl_mult": _safe_float(params.get("defensive_sl_mult", 0.90), 0.90),
+        "trailing_activation_mult": _safe_float(
+            params.get("defensive_trailing_activation_mult", 0.95), 0.95
+        ),
+        "trailing_power": _safe_float(params.get("defensive_trailing_power", 1.25), 1.25),
+        "giveback_beta": _safe_float(params.get("defensive_giveback_beta", 0.45), 0.45),
+        "hard_tp_abs_pct": 0.0,
+        "rank_tighten_strength": _safe_float(
+            params.get("defensive_rank_tighten_strength", 0.0), 0.0
+        ),
+        "rank_tighten_center": _safe_float(
+            params.get("defensive_rank_tighten_center", 0.82), 0.82
+        ),
+        "rank_tighten_floor": _safe_float(
+            params.get("defensive_rank_tighten_floor", 0.85), 0.85
+        ),
+        "rank_tighten_power": _safe_float(
+            params.get("defensive_rank_tighten_power", 1.0), 1.0
+        ),
+        "exit_pressure_enabled": False,
+        "adverse_exit_enabled": False,
+    }
+
+
+def _stateful_aggressive_params(params: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "sl_mult": _safe_float(params.get("aggressive_sl_mult", 1.08), 1.08),
+        "trailing_activation_mult": _safe_float(
+            params.get("aggressive_trailing_activation_mult", 1.20), 1.20
+        ),
+        "trailing_power": _safe_float(params.get("aggressive_trailing_power", 1.50), 1.50),
+        "giveback_beta": _safe_float(params.get("aggressive_giveback_beta", 0.75), 0.75),
+        "hard_tp_abs_pct": 0.0,
+        "exit_pressure_enabled": False,
+        "adverse_exit_enabled": False,
+    }
+
+
+def evaluate_stateful_exit_arm(
+    name: str,
+    ctx: ReplayContext,
+    params: dict[str, Any],
+) -> tuple[dict[str, Any], pd.DataFrame]:
+    base = _saved_reference_per_trade(name, ctx)
+    defensive_mask, aggressive_mask = _stateful_exit_masks(ctx.rows, params)
+    if not bool(defensive_mask.any()) and not bool(aggressive_mask.any()):
+        return _summary_from_per_trade(name, base, params), base
+
+    combined = base.copy()
+    if bool(defensive_mask.any()):
+        _, defensive_trades = evaluate_arm(
+            f"{name}__defensive",
+            ctx,
+            _stateful_defensive_params(params),
+            overlay_on_t1=True,
+        )
+        for col in (
+            "sim_net_return",
+            "sim_gross_return",
+            "sim_exit_bars",
+            "sim_exit_reason",
+            "overlay_applied",
+            "net_return_replay",
+            "gross_return_replay",
+            "net_pnl_replay",
+            "gross_pnl_replay",
+            "cost_pnl_replay",
+            "exit_reason_replay",
+        ):
+            combined.loc[defensive_mask, col] = defensive_trades.loc[defensive_mask, col].to_numpy()
+        combined.loc[defensive_mask, "exit_mode"] = "defensive"
+
+    if bool(aggressive_mask.any()):
+        _, aggressive_trades = evaluate_arm(
+            f"{name}__aggressive",
+            ctx,
+            _stateful_aggressive_params(params),
+            overlay_on_t1=False,
+        )
+        changed = (
+            aggressive_mask
+            & (
+                np.abs(
+                    aggressive_trades["net_return_replay"].to_numpy(dtype=np.float64)
+                    - base["t1_net_return"].to_numpy(dtype=np.float64)
+                )
+                > 1e-9
+            )
+        )
+        for col in (
+            "sim_net_return",
+            "sim_gross_return",
+            "sim_exit_bars",
+            "sim_exit_reason",
+            "net_return_replay",
+            "gross_return_replay",
+            "net_pnl_replay",
+            "gross_pnl_replay",
+            "cost_pnl_replay",
+        ):
+            combined.loc[aggressive_mask, col] = aggressive_trades.loc[
+                aggressive_mask, col
+            ].to_numpy()
+        combined.loc[aggressive_mask, "overlay_applied"] = changed[aggressive_mask]
+        combined.loc[aggressive_mask, "exit_reason_replay"] = np.char.add(
+            "aggressive_",
+            aggressive_trades.loc[aggressive_mask, "sim_exit_reason"]
+            .astype(str)
+            .to_numpy(),
+        )
+        combined.loc[aggressive_mask, "exit_mode"] = "aggressive"
+
+    combined["arm"] = name
+    return _summary_from_per_trade(name, combined, params), combined
+
+
+def evaluate_stateful_head_params_arm(
+    name: str,
+    ctx: ReplayContext,
+    head_params: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any], pd.DataFrame]:
+    frames: list[pd.DataFrame] = []
+    for head in sorted(ctx.rows["head"].astype(str).unique()):
+        mask = ctx.rows["head"].astype(str).eq(head).to_numpy()
+        if not bool(mask.any()):
+            continue
+        subctx = _subset_context(ctx, mask)
+        _, trades = evaluate_stateful_exit_arm(
+            f"{name}__{head}",
+            subctx,
+            dict(head_params.get(head, {})),
+        )
+        frames.append(trades)
+    all_trades = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if not all_trades.empty:
+        all_trades["arm"] = name
+    return _summary_from_per_trade(name, all_trades, {"per_head": head_params}), all_trades
+
+
 def _static_arms(*, overlay_on_t1: bool = False) -> list[tuple[str, dict[str, Any]]]:
     arms = [
         ("baseline_replay", {}),
@@ -868,6 +1081,76 @@ def _suggest_overlay_params(
                 ),
                 "adverse_exit_max_mfe_atr": trial.suggest_float(
                     "adverse_exit_max_mfe_atr", 0.10, 0.80
+                ),
+            }
+        )
+    return params
+
+
+def _suggest_stateful_exit_params(trial: Any, *, safe_space: bool = True) -> dict[str, Any]:
+    defensive_enabled = trial.suggest_categorical("defensive_enabled", [False, True])
+    aggressive_enabled = trial.suggest_categorical("aggressive_enabled", [False, True])
+    params: dict[str, Any] = {
+        "defensive_enabled": defensive_enabled,
+        "aggressive_enabled": aggressive_enabled,
+    }
+    if defensive_enabled:
+        params.update(
+            {
+                "defensive_rank_max": trial.suggest_float(
+                    "defensive_rank_max", 0.70, 0.86 if safe_space else 0.92
+                ),
+                "defensive_sl_mult": trial.suggest_float(
+                    "defensive_sl_mult", 0.82 if safe_space else 0.65, 1.00
+                ),
+                "defensive_trailing_activation_mult": trial.suggest_float(
+                    "defensive_trailing_activation_mult",
+                    0.90 if safe_space else 0.70,
+                    1.08,
+                ),
+                "defensive_trailing_power": trial.suggest_float(
+                    "defensive_trailing_power", 0.80, 2.30
+                ),
+                "defensive_giveback_beta": trial.suggest_float(
+                    "defensive_giveback_beta", 0.25, 0.70
+                ),
+                "defensive_rank_tighten_strength": trial.suggest_float(
+                    "defensive_rank_tighten_strength", 0.0, 0.25 if safe_space else 0.45
+                ),
+                "defensive_rank_tighten_center": trial.suggest_float(
+                    "defensive_rank_tighten_center", 0.76, 0.90
+                ),
+                "defensive_rank_tighten_floor": trial.suggest_float(
+                    "defensive_rank_tighten_floor", 0.78 if safe_space else 0.60, 0.98
+                ),
+                "defensive_rank_tighten_power": trial.suggest_float(
+                    "defensive_rank_tighten_power", 0.50, 2.50
+                ),
+            }
+        )
+    if aggressive_enabled:
+        min_aggressive = 0.82
+        if defensive_enabled:
+            min_aggressive = max(
+                min_aggressive,
+                float(params["defensive_rank_max"]) + (0.03 if safe_space else 0.0),
+            )
+        params.update(
+            {
+                "aggressive_rank_min": trial.suggest_float(
+                    "aggressive_rank_min", min(min_aggressive, 0.98), 0.99
+                ),
+                "aggressive_sl_mult": trial.suggest_float(
+                    "aggressive_sl_mult", 1.00, 1.22 if safe_space else 1.45
+                ),
+                "aggressive_trailing_activation_mult": trial.suggest_float(
+                    "aggressive_trailing_activation_mult", 1.00, 1.45 if safe_space else 1.85
+                ),
+                "aggressive_trailing_power": trial.suggest_float(
+                    "aggressive_trailing_power", 0.80, 2.50
+                ),
+                "aggressive_giveback_beta": trial.suggest_float(
+                    "aggressive_giveback_beta", 0.55, 0.95 if safe_space else 1.20
                 ),
             }
         )
@@ -1095,6 +1378,125 @@ def _run_per_head_optuna(
     return combined_summary, combined_trades, trials_out, best_params_by_head
 
 
+def _run_stateful_optuna(
+    ctx: ReplayContext,
+    baseline_summary: dict[str, Any],
+    trials: int,
+    seed: int,
+    *,
+    safe_space: bool = True,
+    overlay_rate_cap: float = 0.35,
+    objective_window_hours: int = 24,
+) -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame]:
+    import optuna
+
+    records: list[dict[str, Any]] = []
+
+    noop_params = {"defensive_enabled": False, "aggressive_enabled": False}
+    noop_summary, noop_trades = evaluate_stateful_exit_arm(
+        "stateful_noop", ctx, noop_params
+    )
+    noop_objective, noop_components = _objective_value(
+        noop_summary,
+        noop_trades,
+        baseline_summary,
+        overlay_rate_cap=overlay_rate_cap,
+        objective_window_hours=objective_window_hours,
+    )
+    noop_record = dict(noop_summary)
+    noop_record["trial"] = -1
+    noop_record["objective_value"] = float(noop_objective)
+    noop_record.update({f"objective_{k}": v for k, v in noop_components.items()})
+    records.append(noop_record)
+
+    def objective(trial: optuna.Trial) -> float:
+        params = _suggest_stateful_exit_params(trial, safe_space=safe_space)
+        summary, trades = evaluate_stateful_exit_arm(
+            f"stateful_optuna_trial_{trial.number}", ctx, params
+        )
+        utility, components = _objective_value(
+            summary,
+            trades,
+            baseline_summary,
+            overlay_rate_cap=overlay_rate_cap,
+            objective_window_hours=objective_window_hours,
+        )
+        record = dict(summary)
+        record["trial"] = int(trial.number)
+        record["objective_value"] = float(utility)
+        record.update({f"objective_{k}": v for k, v in components.items()})
+        records.append(record)
+        return float(utility)
+
+    sampler = optuna.samplers.TPESampler(seed=seed)
+    study = optuna.create_study(direction="maximize", sampler=sampler)
+    study.optimize(objective, n_trials=int(trials), show_progress_bar=False)
+    best_params = dict(study.best_trial.params)
+    best_summary, best_trades = evaluate_stateful_exit_arm(
+        "stateful_optuna_best", ctx, best_params
+    )
+    best_summary["objective_value"] = float(study.best_value)
+    if noop_objective >= float(study.best_value):
+        best_summary, best_trades = evaluate_stateful_exit_arm(
+            "stateful_optuna_best_noop", ctx, noop_params
+        )
+        best_summary["objective_value"] = float(noop_objective)
+    trials_df = pd.DataFrame(records).sort_values("objective_value", ascending=False)
+    return best_summary, best_trades, trials_df
+
+
+def _run_per_head_stateful_optuna(
+    ctx: ReplayContext,
+    trials: int,
+    seed: int,
+    *,
+    safe_space: bool = True,
+    overlay_rate_cap: float = 0.35,
+    objective_window_hours: int = 24,
+) -> tuple[dict[str, Any], pd.DataFrame, pd.DataFrame, dict[str, dict[str, Any]]]:
+    best_params_by_head: dict[str, dict[str, Any]] = {}
+    trial_frames: list[pd.DataFrame] = []
+    for offset, head in enumerate(sorted(ctx.rows["head"].astype(str).unique())):
+        mask = ctx.rows["head"].astype(str).eq(head).to_numpy()
+        if not bool(mask.any()):
+            continue
+        subctx = _subset_context(ctx, mask)
+        if subctx.saved_reference_summary is None:
+            continue
+        best_summary, _, trials_df = _run_stateful_optuna(
+            subctx,
+            dict(subctx.saved_reference_summary),
+            trials=int(trials),
+            seed=int(seed) + 997 * offset,
+            safe_space=safe_space,
+            overlay_rate_cap=overlay_rate_cap,
+            objective_window_hours=objective_window_hours,
+        )
+        params = json.loads(str(best_summary.get("params_json", "{}")))
+        best_params_by_head[head] = dict(params)
+        if trials_df is not None and not trials_df.empty:
+            trials_df = trials_df.copy()
+            trials_df.insert(0, "head", head)
+            trial_frames.append(trials_df)
+    combined_summary, combined_trades = evaluate_stateful_head_params_arm(
+        "per_head_stateful_optuna_best",
+        ctx,
+        best_params_by_head,
+    )
+    baseline_summary = ctx.saved_reference_summary or {}
+    objective, components = _objective_value(
+        combined_summary,
+        combined_trades,
+        dict(baseline_summary),
+        overlay_rate_cap=overlay_rate_cap,
+        objective_window_hours=objective_window_hours,
+    )
+    combined_summary["objective_value"] = float(objective)
+    combined_summary.update({f"objective_{k}": v for k, v in components.items()})
+    trials_out = pd.concat(trial_frames, ignore_index=True) if trial_frames else pd.DataFrame()
+    return combined_summary, combined_trades, trials_out, best_params_by_head
+
+
 def _load_fixed_params(args: argparse.Namespace) -> dict[str, Any] | None:
     if args.fixed_params_json and args.fixed_params_file:
         raise ValueError("Use only one of --fixed-params-json or --fixed-params-file.")
@@ -1245,6 +1647,11 @@ def main() -> None:
         help="Run one Optuna study per head and combine the head-specific best overlays.",
     )
     parser.add_argument(
+        "--stateful-exit-optuna",
+        action="store_true",
+        help="Run a bidirectional no-op/defensive/aggressive exit controller Optuna study.",
+    )
+    parser.add_argument(
         "--unsafe-search-space",
         action="store_true",
         help="Use the original broad search space instead of the safer overlay bounds.",
@@ -1375,7 +1782,26 @@ def main() -> None:
     if args.trials and args.trials > 0:
         if baseline_summary is None:
             raise RuntimeError("Baseline summary missing before Optuna.")
-        if args.per_head_optuna:
+        if args.stateful_exit_optuna and args.per_head_optuna:
+            best_summary, best_trades, trials_df, best_head_params = _run_per_head_stateful_optuna(
+                ctx,
+                trials=int(args.trials),
+                seed=int(args.seed),
+                safe_space=not bool(args.unsafe_search_space),
+                overlay_rate_cap=float(args.overlay_rate_cap),
+                objective_window_hours=int(args.objective_window_hours),
+            )
+        elif args.stateful_exit_optuna:
+            best_summary, best_trades, trials_df = _run_stateful_optuna(
+                ctx,
+                baseline_summary,
+                trials=int(args.trials),
+                seed=int(args.seed),
+                safe_space=not bool(args.unsafe_search_space),
+                overlay_rate_cap=float(args.overlay_rate_cap),
+                objective_window_hours=int(args.objective_window_hours),
+            )
+        elif args.per_head_optuna:
             best_summary, best_trades, trials_df, best_head_params = _run_per_head_optuna(
                 ctx,
                 trials=int(args.trials),

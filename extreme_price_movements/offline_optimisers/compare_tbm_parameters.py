@@ -122,6 +122,7 @@ from extreme_price_movements.offline_optimisers.params_store import (
     _to_scalar,
     apply_offline_optimizer_best_params,
     load_inference_candidate_mask_params_per_bucket,
+    market_report_path,
     save_best_params_csv,
 )
 from extreme_price_movements.periods_symbols_management import (
@@ -1788,10 +1789,13 @@ def _read_symbol_parquet_dir(
     return dfs
 
 
-def load_panel(panel_path: Path) -> Dict[str, pd.DataFrame]:
+def load_panel(
+    panel_path: Path,
+    symbols: Optional[List[str]] = None,
+) -> Dict[str, pd.DataFrame]:
     tprint(f"Loading panel data from: {panel_path}")
     if panel_path.is_dir():
-        dfs = _read_symbol_parquet_dir(panel_path)
+        dfs = _read_symbol_parquet_dir(panel_path, symbols=symbols)
         has_ohlcv = {"open", "high", "low", "close", "volume"}.issubset(
             set(next(iter(dfs.values())).columns)
         )
@@ -2746,9 +2750,16 @@ def build_strategy_masks(
 
         trend_df = artifacts.features.get("trend_pct")
         if not isinstance(trend_df, pd.DataFrame):
-            out_mask = base_candidate_mask.astype(bool)
-            _legacy_move_mask_cache[move_bucket] = out_mask
-            return out_mask
+            for trend_key in ("ret24h", "ret12h", "ret6h", "ret4h", "ret2h"):
+                trend_df = artifacts.features.get(trend_key)
+                if isinstance(trend_df, pd.DataFrame):
+                    break
+        if not isinstance(trend_df, pd.DataFrame):
+            close_ret = artifacts.panel["close"].pct_change(24).shift(1)
+            trend_df = close_ret.reindex(
+                index=base_candidate_mask.index,
+                columns=base_candidate_mask.columns,
+            )
 
         trend_aligned = trend_df.reindex(
             index=base_candidate_mask.index,
@@ -2869,6 +2880,23 @@ def build_strategy_masks(
             
     if "Candidate" not in out:
         out["Candidate"] = out["up"] | out["down"]
+
+    _candidate_count = int(out["Candidate"].sum().sum())
+    if _candidate_count <= 0:
+        fallback_up = _legacy_move_mask("up")
+        fallback_down = _legacy_move_mask("down")
+        fallback_candidate = (fallback_up | fallback_down).fillna(False).astype(bool)
+        fallback_count = int(fallback_candidate.sum().sum())
+        if fallback_count > 0:
+            out["up"] = fallback_up.fillna(False).astype(bool)
+            out["down"] = fallback_down.fillna(False).astype(bool)
+            out["Candidate"] = fallback_candidate
+            tprint(
+                "[DIAGNOSTIC] Strategy union was empty; using legacy vectorized "
+                f"candidate fallback: up={int(out['up'].sum().sum()):,}, "
+                f"down={int(out['down'].sum().sum()):,}, "
+                f"Candidate={fallback_count:,}"
+            )
 
     tprint(f"[DIAGNOSTIC] Union Mask Counts: up={out['up'].sum().sum():,}, down={out['down'].sum().sum():,}, Candidate={out['Candidate'].sum().sum():,}")
     return out
@@ -3380,8 +3408,29 @@ def _build_sl_biased_grid(runtime_floor: float) -> Tuple[List[float], Dict[str, 
     return out, meta
 
 
-def _optuna_sampler() -> optuna.samplers.RandomSampler:
-    return optuna.samplers.RandomSampler(seed=42)
+def _optuna_sampler() -> optuna.samplers.BaseSampler:
+    sampler_name = str(os.environ.get("EPM_TBM_OPTUNA_SAMPLER", "tpe")).strip().lower()
+    try:
+        seed = int(os.environ.get("EPM_TBM_OPTUNA_SEED", "42"))
+    except Exception:
+        seed = 42
+    if sampler_name in {"random", "rand"}:
+        return optuna.samplers.RandomSampler(seed=seed)
+    try:
+        startup = int(os.environ.get("EPM_TBM_OPTUNA_STARTUP_TRIALS", "24"))
+    except Exception:
+        startup = 24
+    startup = max(1, startup)
+    try:
+        return optuna.samplers.TPESampler(
+            seed=seed,
+            n_startup_trials=startup,
+            multivariate=True,
+            group=True,
+            constant_liar=True,
+        )
+    except TypeError:
+        return optuna.samplers.TPESampler(seed=seed, n_startup_trials=startup)
 
 
 def compute_weights(events: pd.DataFrame, cfg: Dict[str, Any]) -> np.ndarray:
@@ -3713,6 +3762,81 @@ def evaluate_config(
                 ),
             )
             mfe_df = mae_df = t_mfe_df = t_mae_df = None
+
+            def _prepare_labeling_domain():
+                event_fraction = float(cfg.get("tbm_event_fraction", 0.15))
+                if event_fraction < 1.0:
+                    panel_sub = {}
+                    n_rows_sub = len(artifacts.panel["close"])
+                    target_rows_sub = max(1, int(np.ceil(n_rows_sub * event_fraction)))
+                    n_blocks_sub = min(100, target_rows_sub)
+                    block_size_sub = max(1, n_rows_sub // max(1, n_blocks_sub))
+                    rows_per_block_sub = max(1, target_rows_sub // max(1, n_blocks_sub))
+                    keep_indices_sub = []
+                    rng_sub = np.random.default_rng(42)
+                    for i_block in range(n_blocks_sub):
+                        start = i_block * block_size_sub
+                        end = min((i_block + 1) * block_size_sub, n_rows_sub)
+                        block_indices = np.arange(start, end)
+                        if len(block_indices) > 0:
+                            sampled = rng_sub.choice(
+                                block_indices,
+                                size=min(rows_per_block_sub, len(block_indices)),
+                                replace=False,
+                            )
+                            keep_indices_sub.extend(sampled)
+                    keep_indices_sub = np.sort(keep_indices_sub)
+                    keep_index_sub = artifacts.panel["close"].index[keep_indices_sub]
+                    for k_panel, df_panel in artifacts.panel.items():
+                        panel_sub[k_panel] = df_panel.loc[keep_index_sub]
+                    idx_flat_sub = pd.MultiIndex.from_product(
+                        [keep_index_sub, _panel_cols], names=["ts", "symbol"]
+                    )
+                    n_syms_sub = len(artifacts.panel["close"].columns)
+                    stacked_keep_sub = []
+                    for row_idx in keep_indices_sub:
+                        base = row_idx * n_syms_sub
+                        stacked_keep_sub.extend(range(base, base + n_syms_sub))
+                    bucket_sub = {
+                        bname: bmask[stacked_keep_sub]
+                        for bname, bmask in bucket_map.items()
+                    }
+                    panel_15m_sub = None
+                    if getattr(artifacts, "panel_15m", None) is not None:
+                        panel_15m_sub = {
+                            k_panel: df_panel.reindex(keep_index_sub)
+                            for k_panel, df_panel in artifacts.panel_15m.items()
+                        }
+                    return (
+                        panel_sub,
+                        bucket_sub,
+                        tp_df.loc[keep_index_sub],
+                        sl_df.loc[keep_index_sub],
+                        panel_15m_sub,
+                        idx_flat_sub,
+                        stacked_keep_sub,
+                    )
+                return (
+                    artifacts.panel,
+                    bucket_map,
+                    tp_df,
+                    sl_df,
+                    getattr(artifacts, "panel_15m", None),
+                    _idx_flat,
+                    np.arange(len(_idx_flat)),
+                )
+
+            (
+                panel_for_labeling,
+                bucket_map_subsampled,
+                tp_df_subsampled,
+                sl_df_subsampled,
+                panel_15m_for_labeling,
+                _idx_flat_labeling,
+                stacked_keep_indices,
+            ) = _prepare_labeling_domain()
+            _sampled_tp = tp_df_subsampled
+            _sampled_sl = sl_df_subsampled
 
             if key2 not in layer2_cache:
                 mfe_df = mae_df = t_mfe_df = t_mae_df = None
@@ -5233,7 +5357,7 @@ def evaluate_config(
     sharpe = float(top_payoff.mean() / (top_payoff.std() + EPS))
 
     # brier/ece/mono/ic_std_time/ic_std_asset: derived from per-cell values (already in bucket_h_metrics)
-    # rather than computed globally (which would mix all 4 buckets × 2 horizons).
+    # rather than computed globally (which would mix all bucket × horizon cells).
     _cell_briers = [
         v["brier"]
         for v in bucket_h_metrics.values()
@@ -7337,9 +7461,31 @@ def promote_stage1(stage1_results: pd.DataFrame, top_k: int = 10) -> List[str]:
 # ---------------------------
 # Per-cell feasible-set builder
 # ---------------------------
-_CELL_KEYS = [
-    f"{bucket}_H{h}" for bucket in TBM_BUCKET_NAMES for h in TBM_HORIZONS
-]
+def _normalise_tbm_horizons(horizons: Sequence[int] | None = None) -> list[int]:
+    vals = list(TBM_HORIZONS if horizons is None else horizons)
+    out: list[int] = []
+    seen: set[int] = set()
+    for h in vals:
+        try:
+            h_int = int(h)
+        except Exception:
+            continue
+        if h_int <= 0 or h_int in seen:
+            continue
+        seen.add(h_int)
+        out.append(h_int)
+    return out or list(TBM_HORIZONS)
+
+
+def _cell_keys_for_horizons(horizons: Sequence[int] | None = None) -> list[str]:
+    return [
+        f"{bucket}_H{h}"
+        for bucket in TBM_BUCKET_NAMES
+        for h in _normalise_tbm_horizons(horizons)
+    ]
+
+
+_CELL_KEYS = _cell_keys_for_horizons()
 
 
 def _build_per_cell_feasible_sets(
@@ -7347,6 +7493,7 @@ def _build_per_cell_feasible_sets(
     details: Dict[str, Any],
     min_distance: float = 1.0,
     max_configs_per_cell: int = 10,
+    horizons: Sequence[int] | None = None,
 ) -> Dict[str, pd.DataFrame]:
     """Build a diverse feasible set for each (bucket, horizon) cell independently.
 
@@ -7411,7 +7558,7 @@ def _build_per_cell_feasible_sets(
         for cid in _base_rows["config_id"].astype(str).tolist()
     }
 
-    for cell_key in _CELL_KEYS:
+    for cell_key in _cell_keys_for_horizons(horizons):
         # Extract per-cell metrics for each config.
         cell_rows = []
         for row in _base_rows.itertuples(index=False):
@@ -7589,14 +7736,15 @@ def _per_bucket_metrics_from_details(
     details: Dict[str, Any],
     bucket_name: str,
     global_row: pd.Series,
+    horizons: Sequence[int] | None = None,
 ) -> Dict[str, Any]:
     """Extract per-bucket aggregate metrics from bucket_horizon_metrics for one bucket.
 
-    Uses only the 3 horizon cells belonging to `bucket_name` (e.g. "MR_long_H1/H2/H4").
+    Uses only the requested horizon cells belonging to `bucket_name`.
     Falls back to global_row values for coverage/ess (which are config-level, not per-bucket).
     """
     bh = details.get(cid, {}).get("bucket_horizon_metrics", {})
-    cell_keys = [f"{bucket_name}_H{h}" for h in TBM_HORIZONS]
+    cell_keys = [f"{bucket_name}_H{h}" for h in _normalise_tbm_horizons(horizons)]
     cells = [bh[k] for k in cell_keys if k in bh and bh[k]]
 
     if not cells:
@@ -7720,11 +7868,12 @@ def _build_per_bucket_feasible_sets(
     details: Dict[str, Any],
     min_distance: float = 1.0,
     max_configs_per_bucket: int = 10,
+    horizons: Sequence[int] | None = None,
 ) -> Dict[str, pd.DataFrame]:
     """Build a diverse feasible set for each of the 4 buckets independently.
 
     For each bucket (TF_long, TF_short, MR_long, MR_short):
-    1. Recompute per-bucket aggregate metrics using only that bucket's 3 horizon cells.
+    1. Recompute per-bucket aggregate metrics using only that bucket's requested horizon cells.
     2. Apply _build_feasible_set (per_cell=True → relaxed bind gate).
     3. Apply _diverse_subset for diversity control.
 
@@ -7750,7 +7899,9 @@ def _build_per_bucket_feasible_sets(
         for row in base_df.itertuples(index=False):
             row_s = pd.Series(row._asdict())
             cid = str(row_s.get("config_id", ""))
-            bm = _per_bucket_metrics_from_details(cid, details, bucket_name, row_s)
+            bm = _per_bucket_metrics_from_details(
+                cid, details, bucket_name, row_s, horizons=horizons
+            )
             if not bm:
                 continue
             bucket_rows.append(bm)
@@ -7809,6 +7960,7 @@ def promote_stage1_per_cell(
     stage1_results: pd.DataFrame,
     details: Dict[str, Any],
     top_k_per_cell: int = 3,
+    horizons: Sequence[int] | None = None,
 ) -> Dict[str, List[str]]:
     """Run promotion independently for each of the 12 (bucket, horizon) cells.
 
@@ -7824,6 +7976,7 @@ def promote_stage1_per_cell(
         details,
         min_distance=1.0,
         max_configs_per_cell=max(top_k_per_cell, 2),
+        horizons=horizons,
     )
     out: Dict[str, List[str]] = {}
     for cell_key, cdf in per_cell_sets.items():
@@ -8495,6 +8648,31 @@ def run(args: argparse.Namespace) -> None:
 
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    report_output_dir = (
+        Path(args.report_output_dir)
+        if getattr(args, "report_output_dir", None)
+        else None
+    )
+    if report_output_dir is not None:
+        report_output_dir.mkdir(parents=True, exist_ok=True)
+    report_market_mode = "perps" if bool(args.perps) else None
+
+    def _market_report_path(path: Path) -> Path:
+        if report_output_dir is not None:
+            path = report_output_dir / path.name
+        return (
+            market_report_path(path, report_market_mode) if report_market_mode else path
+        )
+
+    def _market_named_report(name: str) -> Path:
+        return _market_report_path(TBM_GEOMETRY_GRID_CSV.with_name(name))
+
+    tbm_best_params_csv = _market_report_path(TBM_BEST_PARAMS_CSV)
+    tbm_best_params_per_bucket_csv = _market_report_path(
+        TBM_BEST_PARAMS_PER_BUCKET_CSV
+    )
+    tbm_best_params_per_cell_csv = _market_report_path(TBM_BEST_PARAMS_PER_CELL_CSV)
+    tbm_geometry_grid_csv = _market_report_path(TBM_GEOMETRY_GRID_CSV)
 
     tprint("Starting TBM parameter comparison run")
     try:
@@ -8504,8 +8682,23 @@ def run(args: argparse.Namespace) -> None:
     except Exception:
         pass
     runtime_cfg = dict(CFG)
+    requested_symbols = (
+        [s.strip() for s in str(args.symbols or "").split(",") if s.strip()]
+        if args.symbols
+        else None
+    )
     if args.data_root:
         runtime_cfg["data_root"] = str(args.data_root)
+    if args.trials_per_cell is not None:
+        runtime_cfg["tbm_optuna_trials_per_cell"] = int(args.trials_per_cell)
+    if args.sl_shrink_phase1_trials is not None:
+        runtime_cfg["tbm_sl_shrink_phase1_trials"] = int(
+            args.sl_shrink_phase1_trials
+        )
+    if args.tbm_symbol_subsample_step is not None:
+        runtime_cfg["tbm_symbol_subsample_step"] = int(args.tbm_symbol_subsample_step)
+    if args.tbm_max_symbols is not None:
+        runtime_cfg["tbm_max_symbols"] = int(args.tbm_max_symbols)
     if bool(args.perps):
         runtime_cfg["use_perps"] = True
         runtime_cfg["data_root"] = _append_suffix(
@@ -8576,12 +8769,20 @@ def run(args: argparse.Namespace) -> None:
     # Auto-detect panel if not provided
     train_syms = None
     if args.panel:
-        panel = load_panel(Path(args.panel))
+        panel = load_panel(Path(args.panel), symbols=requested_symbols)
+        train_syms = requested_symbols
     else:
         tprint(
             f"No --panel provided, auto-detecting from data_root: {runtime_cfg.get('data_root')}"
         )
         panel, train_syms = _load_panel_from_store(runtime_cfg)
+        if requested_symbols and panel is not None:
+            train_syms_set = set(requested_symbols)
+            panel = {
+                k: v.loc[:, [c for c in v.columns if c in train_syms_set]]
+                for k, v in panel.items()
+            }
+            train_syms = [s for s in requested_symbols if s in panel["close"].columns]
 
     if panel is None:
         raise ValueError("Could not load panel data. Please provide --panel path.")
@@ -9190,7 +9391,7 @@ def run(args: argparse.Namespace) -> None:
         tprint(f"Global feasible pool: {len(_best_pool)} configs (tier={_tier})")
 
         # Audit export: feasible layer-1 pool.
-        _feasible_pool_csv = TBM_GEOMETRY_GRID_CSV.with_name("tbm_feasible_pool.csv")
+        _feasible_pool_csv = _market_named_report("tbm_feasible_pool.csv")
         _best_pool.to_csv(_feasible_pool_csv, index=False)
 
         # ── Step 3: GRR diversity on entire feasible pool ─────────────────────
@@ -9264,12 +9465,10 @@ def run(args: argparse.Namespace) -> None:
                 "[global_diversity] empty after feasible+auc/econ gating; "
                 f"best_pool={len(_best_pool)} pr_auc_lift>0={int(_pr_s.gt(0).sum())} edge>0={int(_ed_s.gt(0).sum())}"
             )
-        _grr_pool_csv = TBM_GEOMETRY_GRID_CSV.with_name("tbm_grr_pool.csv")
+        _grr_pool_csv = _market_named_report("tbm_grr_pool.csv")
         _grr_pool_df = _diverse_pool.attrs.get("grr_pool_df", _candidate_set)
         _grr_pool_df.to_csv(_grr_pool_csv, index=False)
-        _diverse_winners_csv = TBM_GEOMETRY_GRID_CSV.with_name(
-            "tbm_diverse_winners.csv"
-        )
+        _diverse_winners_csv = _market_named_report("tbm_diverse_winners.csv")
         _diverse_pool.to_csv(_diverse_winners_csv, index=False)
         try:
             _dist_cols = [
@@ -9322,7 +9521,7 @@ def run(args: argparse.Namespace) -> None:
             canonical_mode = raw_mode.split("_2A")[0].split("_refine")[0]
             best_params["mode"] = canonical_mode
             save_best_params_csv(
-                TBM_BEST_PARAMS_CSV,
+                tbm_best_params_csv,
                 best_params,
                 metadata={
                     "source": "compare_tbm_parameters",
@@ -9331,18 +9530,26 @@ def run(args: argparse.Namespace) -> None:
                 },
             )
             tprint(
-                f"Saved best_stage1 convenience params CSV: {TBM_BEST_PARAMS_CSV} (best_stage1={best_cid})"
+                f"Saved best_stage1 convenience params CSV: {tbm_best_params_csv} (best_stage1={best_cid})"
             )
 
         # ── Step 5: per-(bucket, horizon) feasible sets — canonical output ───
-        # 8 cells = 4 buckets × 2 horizons; up to max_configs_per_cell diverse configs per cell.
+        # 4 buckets × requested horizons; up to max_configs_per_cell diverse configs per cell.
         # load_tbm_geometry_grid() collects all unique k_tp/sl_as_tp_pct per cell_key so
         # training.py sweeps the full set of selected geometries for each cell independently.
         per_cell_grids = _build_per_cell_feasible_sets(
-            out_df, details, min_distance=1.0, max_configs_per_cell=10
+            out_df,
+            details,
+            min_distance=1.0,
+            max_configs_per_cell=10,
+            horizons=horizons,
         )
         per_bucket_grids = _build_per_bucket_feasible_sets(
-            out_df, details, min_distance=1.0, max_configs_per_bucket=10
+            out_df,
+            details,
+            min_distance=1.0,
+            max_configs_per_bucket=10,
+            horizons=horizons,
         )
 
         # ── Step 6: save geometry grid CSV (per-cell format) ─────────────────
@@ -9453,7 +9660,7 @@ def run(args: argparse.Namespace) -> None:
         # so tbm_geometry_grid.csv always covers all 12 cell keys.
         _covered_cells = {r["cell_key"] for r in _grid_rows}
         _fb_params = best_params if isinstance(best_params, dict) else {}
-        for _ck in _CELL_KEYS:
+        for _ck in _cell_keys_for_horizons(horizons):
             if _ck in _covered_cells:
                 continue
             _ck_bucket = "_".join(_ck.split("_")[:-1])
@@ -9533,14 +9740,15 @@ def run(args: argparse.Namespace) -> None:
                 )
 
             REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-            _grid_df.to_csv(TBM_GEOMETRY_GRID_CSV, index=False)
+            tbm_geometry_grid_csv.parent.mkdir(parents=True, exist_ok=True)
+            _grid_df.to_csv(tbm_geometry_grid_csv, index=False)
             _cells_covered = _grid_df["cell_key"].nunique()
             _buckets_covered = (
                 _grid_df["bucket"].nunique() if "bucket" in _grid_df.columns else 0
             )
             _total_rows = len(_grid_df)
             tprint(
-                f"Saved geometry grid CSV: {TBM_GEOMETRY_GRID_CSV} "
+                f"Saved geometry grid CSV: {tbm_geometry_grid_csv} "
                 f"({_total_rows} rows across {_cells_covered} cells, {_buckets_covered} buckets)"
             )
             # Summary per cell
@@ -9550,7 +9758,7 @@ def run(args: argparse.Namespace) -> None:
                 tprint(f"  {ck:<18}: {len(cg):>2} configs  k_tp={_k}  sl={_s}")
 
             # ── Step 7: per-bucket best params (one winner per bucket) ──────────
-            # Selects the rank-1 config per bucket (aggregated across all horizons H1/H2/H4)
+            # Selects the rank-1 config per bucket aggregated across requested horizons.
             # using a composite learnability score and saves to tbm_best_params_per_bucket.csv.
             # Format: one row per bucket, same columns as tbm_best_params.csv + bucket col.
             # Downstream steps can call load_tbm_best_params_per_bucket()[bucket] to get the
@@ -9601,7 +9809,9 @@ def run(args: argparse.Namespace) -> None:
                     _cid = str(_row.get("config_id", ""))
                     if not _cid:
                         continue
-                    _agg_row = _per_bucket_metrics_from_details(_cid, details, _bkt, _row)
+                    _agg_row = _per_bucket_metrics_from_details(
+                        _cid, details, _bkt, _row, horizons=horizons
+                    )
                     if not _agg_row:
                         continue
                     _agg_row.update(
@@ -9859,16 +10069,16 @@ def run(args: argparse.Namespace) -> None:
 
             if _bucket_best_rows:
                 _bkt_best_df = pd.DataFrame(_bucket_best_rows)
-                _bkt_best_df.to_csv(TBM_BEST_PARAMS_PER_BUCKET_CSV, index=False)
+                _bkt_best_df.to_csv(tbm_best_params_per_bucket_csv, index=False)
                 tprint(
-                    f"Saved per-bucket best params: {TBM_BEST_PARAMS_PER_BUCKET_CSV} ({len(_bucket_best_rows)} buckets)"
+                    f"Saved per-bucket best params: {tbm_best_params_per_bucket_csv} ({len(_bucket_best_rows)} buckets)"
                 )
 
             if per_cell_rows:
                 pd.DataFrame(per_cell_rows).to_csv(
-                    TBM_BEST_PARAMS_PER_CELL_CSV, index=False
+                    tbm_best_params_per_cell_csv, index=False
                 )
-                tprint(f"Saved per-cell best params to {TBM_BEST_PARAMS_PER_CELL_CSV}")
+                tprint(f"Saved per-cell best params to {tbm_best_params_per_cell_csv}")
 
     tprint(f"Saved CSV: {output_path}")
     tprint(f"Saved JSON: {detail_path}")
@@ -9886,7 +10096,7 @@ def run(args: argparse.Namespace) -> None:
         _run_id = _re.sub(r"[^0-9_]", "", str(Path(output_path).stem)) or "tbm_run"
         _rp = report_compare_tbm(
             _run_id,
-            str(TBM_GEOMETRY_GRID_CSV),
+            str(tbm_geometry_grid_csv),
             base_dir=runtime_cfg.get("reports_root"),
         )
         tprint(f"TBM geometry bucket report: {_rp}")
@@ -10095,9 +10305,22 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Path to panel parquet or symbol parquet directory (auto-detected from data_root if not set)",
     )
     p.add_argument(
+        "--symbols",
+        default="",
+        help="Optional comma-separated symbol allowlist for explicit panel/features loads",
+    )
+    p.add_argument(
         "--output",
         default=str(REPORTS_DIR / "tbm_parameter_comparison.csv"),
         help="Output CSV path",
+    )
+    p.add_argument(
+        "--report-output-dir",
+        default=None,
+        help=(
+            "Optional directory for canonical TBM report sidecars "
+            "(best params, geometry grid, feasible pools). Defaults to the reports directory."
+        ),
     )
     p.add_argument("--quick", action="store_true", help="Quick stage1 subset")
     p.add_argument(
@@ -10141,6 +10364,30 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         type=int,
         default=1536,
         help="Max on-disk persisted TBM cache size in MB",
+    )
+    p.add_argument(
+        "--trials-per-cell",
+        type=int,
+        default=None,
+        help="Override tbm_optuna_trials_per_cell for bounded TBM runs",
+    )
+    p.add_argument(
+        "--sl-shrink-phase1-trials",
+        type=int,
+        default=None,
+        help="Override tbm_sl_shrink_phase1_trials",
+    )
+    p.add_argument(
+        "--tbm-symbol-subsample-step",
+        type=int,
+        default=None,
+        help="Override symbol subsample step used by the TBM optimiser",
+    )
+    p.add_argument(
+        "--tbm-max-symbols",
+        type=int,
+        default=None,
+        help="Override maximum symbol count used by the TBM optimiser",
     )
     p.add_argument("--data-root", default=None, help="Override cfg data_root")
     p.add_argument(

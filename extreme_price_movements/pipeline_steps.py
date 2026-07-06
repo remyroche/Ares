@@ -234,6 +234,8 @@ from extreme_price_movements.training import (  # generate_spike_anatomy_history
     _build_base_regression_sample_weight,
     _build_base_regression_target,
     _cap_selected_features,
+    _global_label_stream_enabled,
+    _global_label_strategies,
     _subsample_indices_time_balanced,
     generate_label_datasets,
     optimize_risk_params,
@@ -2021,11 +2023,13 @@ def _expected_feature_keys_from_cfg(cfg) -> set[str]:
 
 
 def _labeling_feature_keys(cfg) -> set[str]:
-    """Returns the minimal set of expected feature keys for the label generation step.
+    """Return expected feature keys for label generation.
 
-    This optimization aggressively strips all base features, since labels only need a
-    few key metrics to compute barriers and filters. Final models will fetch their
-    full feature sets dynamically during 'base_training' to avoid OOM.
+    The default is intentionally compact because ordinary label generation only
+    needs strategy predicates plus a few barrier/filter metrics. Broad LGBM
+    experiments are different: train_base consumes the label parquet feature
+    payload directly, so opt-in broad mode must carry the pre-existing model
+    feature universe through this handoff.
     """
     keys = {
         "ret24h",
@@ -2044,6 +2048,13 @@ def _labeling_feature_keys(cfg) -> set[str]:
     exh_keys = cfg.get("exh_feature_keys", [])
     if isinstance(exh_keys, (list, tuple)):
         keys.update(exh_keys)
+
+    broad_lgbm = (
+        _truthy_env("EPM_LGBM_BROAD_LABEL_FEATURES")
+        or bool(cfg.get("lgbm_broad_label_features", False))
+    )
+    if broad_lgbm:
+        keys.update(_expected_feature_keys_from_cfg(cfg))
 
     try:
         from extreme_price_movements.lgbm_based_mask_generation import (
@@ -2071,6 +2082,8 @@ def _labeling_feature_keys(cfg) -> set[str]:
             keys.update(extract_feature_names_from_key(rule_key))
     except Exception:
         pass
+    if broad_lgbm:
+        tprint(f"Label feature key scope: broad LGBM mode requested {len(keys)} keys")
     return keys
 
 
@@ -3725,12 +3738,22 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         for s in (cfg.get("strategies") or [])
         if isinstance(s, dict) and str(s.get("strategy_id", "")).strip()
     ]
-    if _truthy_env("EPM_SKIP_MASK_STRATEGY_PARAMS"):
+    global_label_stream = _global_label_stream_enabled(cfg)
+    if global_label_stream:
         cfg = dict(cfg)
+        cfg["global_label_stream_enabled"] = True
+        cfg["strategies"] = _global_label_strategies(cfg)
         tprint(
-            "Labels: skipping offline optimiser mask/strategy params because "
-            "EPM_SKIP_MASK_STRATEGY_PARAMS is set"
+            "Labels: global side-aware streams enabled; skipping strategy "
+            "allowlist restoration and mask-strategy bucket loading."
         )
+    if _truthy_env("EPM_SKIP_MASK_STRATEGY_PARAMS") or global_label_stream:
+        cfg = dict(cfg)
+        if not global_label_stream:
+            tprint(
+                "Labels: skipping offline optimiser mask/strategy params because "
+                "EPM_SKIP_MASK_STRATEGY_PARAMS is set"
+            )
     else:
         cfg = apply_offline_optimizer_best_params(dict(cfg))
 
@@ -3747,7 +3770,7 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
         or os.getenv("EPM_BASE_STRATEGY_IDS", "").strip()
         or os.getenv("EPM_META_STRATEGY_IDS", "").strip()
     )
-    if _strategy_allowlist_env or _preselected_strategy_defs:
+    if not global_label_stream and (_strategy_allowlist_env or _preselected_strategy_defs):
         requested_ids = [
             s.strip() for s in _strategy_allowlist_env.split(",") if s.strip()
         ] or [
@@ -3787,7 +3810,7 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
             if _truthy_env("EPM_REQUIRE_STRATEGY_ALLOWLIST"):
                 raise RuntimeError(msg)
             tprint(f"WARNING: {msg}")
-    if _bucket_csv.exists() and not _strategy_allowlist_env:
+    if _bucket_csv.exists() and not _strategy_allowlist_env and not global_label_stream:
         import json as _json
 
         try:
@@ -4008,7 +4031,9 @@ def run_label_generation_step_v2(ts_sig, margin_symbols, cfg, store, ex, horizon
     # Keep feature-key selection consistent with the shared cache/feature generation logic.
     label_feature_keys = _labeling_feature_keys(cfg)
     label_feature_start_ts = None
-    if bool(cfg.get("label_persist_incremental", False)):
+    if bool(cfg.get("label_persist_incremental", False)) and bool(
+        cfg.get("label_incremental_only_missing", bool(cfg.get("label_persist_incremental", False)))
+    ):
         existing_label_maxima: list[pd.Timestamp] = []
         for _existing_label_path in glob.glob(os.path.join(_labels_dir, "train_*.parquet")):
             try:
@@ -4740,15 +4765,25 @@ def run_training_step(
         for s in (cfg.get("strategies") or [])
         if isinstance(s, dict) and str(s.get("strategy_id", "")).strip()
     ]
-    if _truthy_env("EPM_SKIP_MASK_STRATEGY_PARAMS"):
+    global_label_stream = _global_label_stream_enabled(cfg)
+    if global_label_stream:
         cfg = dict(cfg)
+        cfg["global_label_stream_enabled"] = True
+        cfg["strategies"] = _global_label_strategies(cfg)
         tprint(
-            "Training step: skipping offline optimiser mask/strategy params because "
-            "EPM_SKIP_MASK_STRATEGY_PARAMS is set"
+            "Training step: global side-aware streams enabled; strategy "
+            "allowlists and mask-strategy dataset names are disabled."
         )
+    if _truthy_env("EPM_SKIP_MASK_STRATEGY_PARAMS") or global_label_stream:
+        cfg = dict(cfg)
+        if not global_label_stream:
+            tprint(
+                "Training step: skipping offline optimiser mask/strategy params because "
+                "EPM_SKIP_MASK_STRATEGY_PARAMS is set"
+            )
     else:
         cfg = apply_offline_optimizer_best_params(dict(cfg))
-    if _strategy_ids_env or _preselected_strategy_ids:
+    if not global_label_stream and (_strategy_ids_env or _preselected_strategy_ids):
         requested_ids = [
             s.strip() for s in _strategy_ids_env.split(",") if s.strip()
         ] or _preselected_strategy_ids
@@ -4794,8 +4829,8 @@ def run_training_step(
     run_id = str(cfg.get("output_run_id") or ts_sig.strftime("%Y%m%d_%H%M%S")).strip()
     cfg["run_id"] = run_id
     source_run_id = str(
-        cfg.get("_label_artifact_run_id")
-        or cfg.get("label_source_run_id")
+        cfg.get("label_source_run_id")
+        or cfg.get("_label_artifact_run_id")
         or cfg.get("artifact_source_run_id")
         or ts_sig.strftime("%Y%m%d_%H%M%S")
     ).strip()
@@ -4804,16 +4839,20 @@ def run_training_step(
         or cfg.get("artifact_source_run_id")
         or source_run_id
     ).strip()
-    source_run_ts = source_run_id[:15]
-    feature_run_ts = feature_source_run_id[:15]
-    source_ts_sig = (
-        pd.to_datetime(source_run_ts, format="%Y%m%d_%H%M%S", utc=True)
-        if source_run_id and source_run_id != run_id
+    def _source_timestamp_from_run_id(source_id: str, fallback: pd.Timestamp) -> pd.Timestamp:
+        prefix = str(source_id or "").strip()[:15]
+        if prefix and re.match(r"^\d{8}_\d{6}$", prefix):
+            return pd.to_datetime(prefix, format="%Y%m%d_%H%M%S", utc=True)
+        return fallback
+
+    feature_ts_sig = (
+        _source_timestamp_from_run_id(feature_source_run_id, ts_sig)
+        if feature_source_run_id and feature_source_run_id != run_id
         else ts_sig
     )
-    feature_ts_sig = (
-        pd.to_datetime(feature_run_ts, format="%Y%m%d_%H%M%S", utc=True)
-        if feature_source_run_id and feature_source_run_id != run_id
+    source_ts_sig = (
+        _source_timestamp_from_run_id(source_run_id, feature_ts_sig)
+        if source_run_id and source_run_id != run_id
         else ts_sig
     )
     if source_run_id != run_id or feature_source_run_id != run_id:
@@ -4832,14 +4871,17 @@ def run_training_step(
     labels_manifest = load_artifact_manifest(cfg["data_root"], source_run_id, "labels") or {}
     available_label_names = set((labels_manifest.get("datasets") or {}).keys())
 
-    # Alpha models (Dynamic Strategies from get_strategies)
-    strategies = get_strategies(cfg)
+    # Alpha models (Dynamic Strategies from get_strategies), or global side streams.
+    global_label_stream = _global_label_stream_enabled(cfg)
+    strategies = (
+        _global_label_strategies(cfg) if global_label_stream else get_strategies(cfg)
+    )
     strategy_horizons = {
         s["strategy_id"]: strategy_runtime_horizons(s, cfg) for s in strategies
     }
 
     _base_max_strats = int(cfg.get("base_max_strategy_ids", 0) or 0)
-    if _base_max_strats > 0 and len(strategies) > _base_max_strats:
+    if not global_label_stream and _base_max_strats > 0 and len(strategies) > _base_max_strats:
         strategies = strategies[:_base_max_strats]
         tprint(f"Training step: limiting to first {_base_max_strats} strategies")
 
@@ -4903,6 +4945,17 @@ def run_training_step(
                 continue
             seen_names.add(candidate)
             out.append(candidate)
+        if global_label_stream and sid_raw in {"global_long", "global_short"}:
+            side_prefix = "train_long_" if sid_raw == "global_long" else "train_short_"
+            side_suffix = f"_{int(horizon)}{suffix}"
+            for candidate in sorted(available_label_names):
+                candidate = str(candidate)
+                if not candidate.startswith(side_prefix) or not candidate.endswith(side_suffix):
+                    continue
+                if candidate in seen_names:
+                    continue
+                seen_names.add(candidate)
+                out.append(candidate)
         return out
 
     def _load_label_dataset_for_strategy(
@@ -5045,6 +5098,24 @@ def run_training_step(
         req_keys = _base_training_feature_requirements_from_native_presets(
             cfg, datasets, req_keys
         )
+    defer_base_feature_injection = bool(
+        base_only
+        and not meta_only
+        and (
+            _truthy_env("EPM_LGBM_BROAD_BASE_FEATURES")
+            or _truthy_env("EPM_LGBM_TRAIN_BASE_REHYDRATE_FEATURES")
+            or bool(cfg.get("lgbm_broad_base_features", False))
+            or bool(cfg.get("lgbm_train_base_rehydrate_features", False))
+        )
+    )
+    if defer_base_feature_injection:
+        cfg["_defer_base_feature_injection_to_train_loop"] = True
+        tprint(
+            "Base-only broad feature mode: deferring feature-store injection to "
+            "the per-dataset train loop to avoid materializing all global "
+            "side/horizon datasets at once."
+        )
+        req_keys = []
 
     try:
         from extreme_price_movements.rule_mask_features import (
@@ -5074,7 +5145,10 @@ def run_training_step(
         )
 
     cfg["_feature_snapshot_ts"] = feature_ts_sig
-    datasets = inject_features_into_datasets(datasets, feature_ts_sig, cfg, req_keys)
+    if req_keys:
+        datasets = inject_features_into_datasets(datasets, feature_ts_sig, cfg, req_keys)
+    else:
+        tprint("Feature injection skipped at pipeline level; no requested keys.")
 
     # 2. Train models
     # run_id is injected before loading artifacts so stage plan-row filtering can resolve
@@ -5918,13 +5992,16 @@ def run_base_hpo_step(ts_sig, cfg):
         tprint("BASE HPO: no label datasets found. Run labels first.")
         return None
 
-    strategies = get_strategies(cfg)
+    global_label_stream = _global_label_stream_enabled(cfg)
+    strategies = (
+        _global_label_strategies(cfg) if global_label_stream else get_strategies(cfg)
+    )
     strategy_horizons = {
         s["strategy_id"]: strategy_runtime_horizons(s, cfg) for s in strategies
     }
 
     _base_max_strats = int(cfg.get("base_max_strategy_ids", 0) or 0)
-    if _base_max_strats > 0 and len(strategies) > _base_max_strats:
+    if not global_label_stream and _base_max_strats > 0 and len(strategies) > _base_max_strats:
         strategies = strategies[:_base_max_strats]
         tprint(
             f"Base HPO: limiting to first {_base_max_strats} strategies for this run"
@@ -10560,7 +10637,11 @@ def _base_training_feature_requirements_from_native_presets(cfg, datasets, defau
         tprint(f"Base native preset feature requirements skipped: {exc}")
         return default_req_keys
 
-    strategies = get_strategies(cfg)
+    strategies = (
+        _global_label_strategies(cfg)
+        if _global_label_stream_enabled(cfg)
+        else get_strategies(cfg)
+    )
     dataset_to_scope: dict[str, str] = {}
     for strat in strategies:
         if not isinstance(strat, dict):

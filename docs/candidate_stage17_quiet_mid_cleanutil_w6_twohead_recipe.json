@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "name": "stage17_quiet_mid_cleanutility_w6_decisive_path_twohead_candidate_v1",
+  "status": "candidate_not_promoted",
+  "label_artifact": {
+    "path": "data_perp/artifacts/20260702_170000_stage15_quiet_mid_cleanutil_labels/labels",
+    "source_labels_path": "data_perp/artifacts/20260702_120500_first_touch_c0_fast6_s10_policy_net_labels_exitaligned/labels",
+    "fixed_target": "STAGE15_quiet_mid_clean_utility",
+    "source": "quiet_mid",
+    "utility_target": "clean_utility"
+  },
+  "model_screen": {
+    "model_kind": "lgbm",
+    "head_design": "two_head_utility_plus_bad_execution",
+    "weight_arm": "W6_decisive_path",
+    "score_rule": "utility_minus_bad025",
+    "bad_gate_mode": "train_coverage",
+    "bad_gate_value": 0.03,
+    "top_k": 10,
+    "selection_policy": "fit_profit_floors"
+  },
+  "fit_floors": {
+    "fit_min_mean_month_u": 0.0015,
+    "fit_min_worst_month_u": 0.0,
+    "fit_min_q25_week_u": 0.0,
+    "fit_min_selected_rows": 150,
+    "fit_min_candidate_timestamp_coverage": 0.08,
+    "fit_min_material_positive_week_rate": 0.70,
+    "fit_min_clean_exec": 0.65,
+    "fit_max_bad_mae": 0.22,
+    "fit_max_p90_mae": 1.60
+  },
+  "evidence": {
+    "fit_months": ["2026-04", "2026-05"],
+    "holdout_month": "2026-06",
+    "fit_mean_month_u": 0.00445096,
+    "fit_worst_month_u": 0.00324552,
+    "fit_q25_week_u": 0.00171989,
+    "fit_selected_rows": 281,
+    "fit_candidate_timestamp_coverage": 0.120686,
+    "fit_p90_first_touch_mae_to_sl": 1.121696,
+    "fit_first_touch_bad_mae_to_sl_rate": 0.145907,
+    "fit_clean_exec_actual_rate": 0.797153,
+    "holdout_mean_month_u": 0.00450649,
+    "holdout_q25_week_u": 0.00193834,
+    "holdout_selected_rows": 125,
+    "holdout_candidate_timestamp_coverage": 0.195556,
+    "holdout_p90_first_touch_mae_to_sl": 1.16858,
+    "holdout_first_touch_bad_mae_to_sl_rate": 0.144,
+    "holdout_clean_exec_actual_rate": 0.744,
+    "holdout_bounded_pass": true
+  },
+  "provenance": {
+    "two_head_report": "data_perp/reports/label_source_conditioned_two_head_lgbm_smoke_quiet_mid_cleanutil_profitfloors_roundb_weights_stage17_v1/source_conditioned_two_head_model_smoke.md",
+    "one_head_report": "data_perp/reports/label_feature_store_model_smoke_stage15_quiet_mid_roundb_w0_w1_w2_w3_w4_w6_w7_w8_stage17_v1/label_feature_store_model_smoke.md",
+    "pure_proxy_report": "data_perp/reports/label_weighted_proxy_ablation_stage15_quiet_mid_roundb_w0_w1_w2_w3_w4_w6_w7_w8_stage17_v1/label_weighted_proxy_ablation.md",
+    "note": "Candidate selected by Apr-May fit-only floors and verified on June proxy holdout. Still requires OOF/OOS replay versus baseline before promotion."
+  }
+}

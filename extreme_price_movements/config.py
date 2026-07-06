@@ -22,7 +22,7 @@ from extreme_price_movements.unsupervised_regime_learning.feature_registry impor
 # Canonical TBM horizons for current optimization/inference stack.
 # Legacy bucket naming (still used for grouping), but strategy_ids are canonical LGBM keys
 CANON_BUCKETS = ["MR_long", "MR_short", "TF_long", "TF_short"]
-CANON_HORIZONS = [5, 10]  # hours
+CANON_HORIZONS = [3, 5, 7]  # hours
 CANON_CELLS = [f"{b}_H{h}" for b in CANON_BUCKETS for h in CANON_HORIZONS]
 
 # Side-Horizon cells (agnostic to MR/TF distinction)
@@ -60,7 +60,7 @@ KRAKEN_INDEX_PREMIUM_FEATURE_KEYS = [
     "perp_index_basis_z",
     "premium_mean_reversion_halflife_24h",
 ]
-for _h in (5, 10):
+for _h in CANON_HORIZONS:
     KRAKEN_INDEX_PREMIUM_FEATURE_KEYS.extend(
         [
             f"premium_expansion_speed_{_h}h",
@@ -113,7 +113,7 @@ PERP_EVENT_RISK_FEATURE_KEYS = [
     "liq_stop_safety_long_atr",
     "liq_stop_safety_short_atr",
 ]
-for _h in (5, 10):
+for _h in CANON_HORIZONS:
     PERP_EVENT_RISK_FEATURE_KEYS.extend(
         [
             f"fund_pre_drift_{_h}h",
@@ -131,7 +131,7 @@ for _h in (5, 10):
         ]
     )
 PERP_CARRY_ALPHA_FEATURE_KEYS = []
-for _h in (5, 10):
+for _h in CANON_HORIZONS:
     PERP_CARRY_ALPHA_FEATURE_KEYS.extend(
         [
             f"carry_adj_ret_{_h}h",
@@ -1091,7 +1091,7 @@ CONTINUOUS_REGIME_FEATURES.update(
         },
     }
 )
-for _h in (5, 10):
+for _h in CANON_HORIZONS:
     CONTINUOUS_REGIME_FEATURES.update(
         {
             f"carry_adj_ret_self_z_{_h}h": {
@@ -1673,6 +1673,9 @@ CFG = {
     "base_variant_fit_max_samples": 0,
     "base_variant_selector_max_samples": 30000,
     "meta_fit_max_samples": 0,
+    # Broad global LGBM base runs rehydrate many feature-store columns per
+    # side/horizon head. Keep this bounded before feature materialization.
+    "lgbm_train_base_rehydrate_row_cap": 60000,
     # MFE/MAE-based sample weighting (Report 2026-02-12)
     # Weight samples by how "decisive" the price movement was relative to barriers
     # w = w_min + (1-w_min) * clip(max(MFE/TP, MAE/SL) / tau, 0, 1)

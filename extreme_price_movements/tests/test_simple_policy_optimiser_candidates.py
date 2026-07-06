@@ -173,6 +173,51 @@ def test_simulator_applies_trailing_activation_cap_pct():
     assert list(capped["exit_reason"]) == ["trailing"]
 
 
+def test_simulator_timeout_uses_final_close_net_of_costs():
+    rows = pd.DataFrame(
+        {
+            "timestamp": pd.date_range(
+                "2026-01-01 00:00:00",
+                periods=1,
+                tz="UTC",
+            ),
+            "symbol": ["TEST/USD:USD"],
+            "side": [1.0],
+            "rank_pct": [1.0],
+            "barrier_pct": [0.02],
+        }
+    )
+    paths = (
+        np.array([[100.0, 100.8, 102.0]], dtype=np.float32),
+        np.array([[100.0, 101.0, 102.0]], dtype=np.float32),
+        np.array([[100.0, 100.2, 101.0]], dtype=np.float32),
+        np.array([[100.0, 100.6, 102.0]], dtype=np.float32),
+    )
+
+    out = spo.simulate_and_score(
+        rows,
+        *paths,
+        cost_pct=0.001,
+        sl_mult=10.0,
+        trailing_activation_mult=99.0,
+        trailing_activation_cap_pct=0.0,
+        capital_protect_mfe_mult=0.0,
+    )
+
+    size = float(out["sizes"][0])
+    gross_return = float(out["gross_gains"][0]) / size
+    net_return = float(out["raw_gains"][0]) / size
+
+    assert list(out["exit_reason"]) == ["timeout"]
+    assert int(out["exit_bars"][0]) == 2
+    assert gross_return > 0.0
+    assert gross_return > -float(out["sl_return"][0])
+    assert net_return == pytest.approx(
+        gross_return - 0.001 - (1.0 + gross_return) * 0.001
+    )
+    assert net_return > 0.0
+
+
 def test_policy_candidate_export_adds_regime_ae_features_without_raw_source_passthrough(monkeypatch):
     from extreme_price_movements.regime_ae_features import CURRENT_REGIME_AE_FEATURE_COLUMNS
 

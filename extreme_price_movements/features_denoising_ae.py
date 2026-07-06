@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any, Mapping, Sequence
 
 import numpy as np
@@ -22,6 +23,56 @@ AE_FEATURE_COLUMNS: tuple[str, ...] = tuple(
     + [f"ae_b16_{i:02d}" for i in range(16)]
     + ["ae_b16_reconstruction_error"]
 )
+
+
+def _env_int_tuple(name: str, default: Sequence[int], *, allowed: Sequence[int]) -> tuple[int, ...]:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return tuple(int(v) for v in default)
+    allowed_set = {int(v) for v in allowed}
+    out: list[int] = []
+    for part in raw.split(","):
+        text = part.strip()
+        if not text:
+            continue
+        try:
+            value = int(text)
+        except ValueError:
+            continue
+        if value in allowed_set and value not in out:
+            out.append(value)
+    return tuple(out) if out else tuple(int(v) for v in default)
+
+
+def _env_float_tuple(name: str, default: Sequence[float]) -> tuple[float, ...]:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return tuple(float(v) for v in default)
+    out: list[float] = []
+    for part in raw.split(","):
+        text = part.strip()
+        if not text:
+            continue
+        try:
+            value = float(text)
+        except ValueError:
+            continue
+        if np.isfinite(value) and value >= 0.0 and value not in out:
+            out.append(value)
+    return tuple(out) if out else tuple(float(v) for v in default)
+
+
+def _env_str_tuple(name: str, default: Sequence[str], *, allowed: Sequence[str]) -> tuple[str, ...]:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return tuple(str(v) for v in default)
+    allowed_set = {str(v) for v in allowed}
+    out: list[str] = []
+    for part in raw.split(","):
+        value = part.strip()
+        if value in allowed_set and value not in out:
+            out.append(value)
+    return tuple(out) if out else tuple(str(v) for v in default)
 
 
 def _width_layers(bottleneck: int, width: str) -> tuple[int, int, int]:
@@ -239,7 +290,7 @@ def fit_denoising_autoencoder_state(
     if x.ndim != 2 or x.shape[0] < 200 or x.shape[1] < 2:
         return {"enabled": False, "reason": "insufficient_rows_or_features", "schema_version": "denoising_ae_v1"}
     x = np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
-    if len(x) > int(max_train_rows):
+    if int(max_train_rows) > 0 and len(x) > int(max_train_rows):
         idx = np.linspace(0, len(x) - 1, int(max_train_rows)).round().astype(int)
         x = x[np.unique(idx)]
     split = int(max(50, min(len(x) - 50, math_floor(0.80 * len(x)))))
@@ -251,11 +302,23 @@ def fit_denoising_autoencoder_state(
         x_val = x_train[-min(len(x_train), 100):]
     models: dict[str, Any] = {}
     reports: dict[str, Any] = {}
-    for bottleneck in AE_BOTTLENECKS:
+    bottlenecks = _env_int_tuple(
+        "EPM_DAE_BOTTLENECKS",
+        AE_BOTTLENECKS,
+        allowed=AE_BOTTLENECKS,
+    )
+    widths = _env_str_tuple(
+        "EPM_DAE_WIDTHS",
+        AE_WIDTHS,
+        allowed=AE_WIDTHS,
+    )
+    noise_levels = _env_float_tuple("EPM_DAE_NOISE_LEVELS", AE_NOISE_LEVELS)
+    for bottleneck in bottlenecks:
         width_trials: list[dict[str, Any]] = []
         best_width = None
+        best_width_spec = None
         best_width_score = float("inf")
-        for width in AE_WIDTHS:
+        for width in widths:
             spec = _fit_one(
                 x_train,
                 x_val,
@@ -272,22 +335,30 @@ def fit_denoising_autoencoder_state(
             if score < best_width_score:
                 best_width_score = float(score)
                 best_width = str(width)
+                best_width_spec = spec
         if best_width is None:
             reports[f"b{int(bottleneck)}"] = {"enabled": False, "reason": "no_width_model_fit"}
             continue
         noise_trials: list[dict[str, Any]] = []
         best_spec = None
         best_final_score = float("inf")
-        for noise in AE_NOISE_LEVELS:
-            spec = _fit_one(
-                x_train,
-                x_val,
-                bottleneck=int(bottleneck),
-                width=best_width,
-                noise=float(noise),
-                random_state=int(random_state) + int(bottleneck) * 37 + int(round(noise * 1000)),
-                max_iter=int(max_iter),
-            )
+        for noise in noise_levels:
+            if (
+                best_width_spec is not None
+                and str(best_width_spec.get("width")) == str(best_width)
+                and abs(float(noise) - 0.10) <= 1.0e-12
+            ):
+                spec = best_width_spec
+            else:
+                spec = _fit_one(
+                    x_train,
+                    x_val,
+                    bottleneck=int(bottleneck),
+                    width=best_width,
+                    noise=float(noise),
+                    random_state=int(random_state) + int(bottleneck) * 37 + int(round(noise * 1000)),
+                    max_iter=int(max_iter),
+                )
             if spec is None:
                 continue
             score = _score_final(spec.get("metrics", {}))
@@ -312,6 +383,11 @@ def fit_denoising_autoencoder_state(
         "models": models,
         "report": reports,
         "input_dim": int(x_reference.shape[1]) if np.asarray(x_reference).ndim == 2 else 0,
+        "fit_grid": {
+            "bottlenecks": [int(v) for v in bottlenecks],
+            "widths": [str(v) for v in widths],
+            "noise_levels": [float(v) for v in noise_levels],
+        },
     }
 
 

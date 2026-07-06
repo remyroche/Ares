@@ -16,6 +16,58 @@ from pathlib import Path
 # Avoid expensive/warning-prone Matplotlib cache initialization under read-only HOME.
 _mpl_cfg = os.environ.setdefault("MPLCONFIGDIR", "/tmp/mplconfig_epm")
 os.environ.setdefault("MPLBACKEND", "Agg")
+
+
+def _argv_mode_tokens(argv=None) -> set[str]:
+    raw = list(sys.argv if argv is None else argv)
+    return {
+        str(arg).strip().lower()
+        for arg in raw[1:]
+        if str(arg).strip() and not str(arg).strip().startswith("-")
+    }
+
+
+_TRAIN_BASE_META_MODES = {
+    "train",
+    "base_training",
+    "train_base",
+    "meta_training",
+    "train_meta",
+}
+_REQUESTED_ARG_MODES = _argv_mode_tokens()
+_is_train_base_meta_run = bool(_REQUESTED_ARG_MODES & _TRAIN_BASE_META_MODES)
+
+
+def _set_train_base_meta_lgbm_defaults() -> None:
+    """Set leakage-resistant LGBM defaults before lgbm_pipeline imports."""
+    if not _is_train_base_meta_run:
+        return
+    defaults = {
+        "EPM_LGBM_CV_MODE": "forward_burnin",
+        "EPM_LGBM_BASE_FORWARD_BURN_IN_DAYS": "365",
+        "EPM_LGBM_META_FORWARD_VALIDATION_MONTHS": "6",
+        "EPM_LGBM_FORWARD_BURNIN_STRICT": "1",
+        "EPM_LGBM_FORWARD_ALLOW_SHORT_HISTORY_FALLBACK": "0",
+        "EPM_LGBM_TIME_SPREAD_HPO_SELECTION": "1",
+        "EPM_LGBM_SKIP_DISTILLATION_ON_FORWARD_CV_FAILURE": "1",
+    }
+    for key, value in defaults.items():
+        os.environ.setdefault(key, value)
+
+    source_run_id = str(
+        os.environ.get("EPM_LGBM_NATIVE_PRESET_SOURCE_RUN_ID", "")
+        or os.environ.get("EPM_ARTIFACT_SOURCE_RUN_ID", "")
+        or os.environ.get("EPM_SOURCE_RUN_ID", "")
+        or ""
+    ).strip()
+    if source_run_id:
+        os.environ.setdefault("EPM_LGBM_USE_NATIVE_PRESET", "1")
+        os.environ.setdefault("EPM_LGBM_REQUIRE_NATIVE_PRESET", "1")
+        os.environ.setdefault("EPM_LGBM_NATIVE_PRESET_SOURCE_RUN_ID", source_run_id)
+        os.environ.setdefault("EPM_LGBM_NATIVE_PRESET_PARAMS_ONLY", "0")
+
+
+_set_train_base_meta_lgbm_defaults()
 #
 # Keep native thread pools conservative on Apple Silicon. The older meta-training
 # stack mixes Arrow, OpenBLAS, OpenMP/joblib and Python worker pools; unrestricted
@@ -28,6 +80,7 @@ _is_lgbm_pipeline_run = (
     or "lgbm_pipeline" in {str(arg).strip().lower() for arg in sys.argv}
     or "recency_hpo" in {str(arg).strip().lower() for arg in sys.argv}
     or "final_model_fit" in {str(arg).strip().lower() for arg in sys.argv}
+    or _is_train_base_meta_run
 )
 try:
     _lgbm_threads = str(max(1, int(os.environ.get("EPM_LGBM_N_JOBS", "3") or "3")))
@@ -396,6 +449,57 @@ def _truthy_env(name: str, default: str = "") -> bool:
         "y",
         "on",
     }
+
+
+def _apply_train_base_meta_lgbm_cfg_defaults(cfg: dict, mode: str) -> None:
+    """Make train_base/train_meta use forward validation and frozen source presets by default."""
+    if str(mode or "").strip().lower() not in _TRAIN_BASE_META_MODES:
+        return
+    cfg.setdefault("lgbm_cv_mode", os.environ.get("EPM_LGBM_CV_MODE", "forward_burnin"))
+    cfg.setdefault(
+        "lgbm_time_spread_hpo_selection",
+        _truthy_env("EPM_LGBM_TIME_SPREAD_HPO_SELECTION", "1"),
+    )
+
+    source_run_id = str(
+        os.environ.get("EPM_LGBM_NATIVE_PRESET_SOURCE_RUN_ID", "")
+        or cfg.get("lgbm_native_preset_source_run_id")
+        or cfg.get("artifact_source_run_id")
+        or ""
+    ).strip()
+    if not source_run_id:
+        tprint(
+            "LGBM train defaults: forward_burnin CV active; "
+            "feature selection/HPO will be fitted once for this source training run "
+            "using time-spread beginning/middle/end samples."
+        )
+        return
+
+    explicit_use = os.environ.get("EPM_LGBM_USE_NATIVE_PRESET")
+    if explicit_use is None and "lgbm_use_native_preset" not in cfg:
+        cfg["lgbm_use_native_preset"] = True
+        os.environ.setdefault("EPM_LGBM_USE_NATIVE_PRESET", "1")
+    if _truthy_env("EPM_LGBM_USE_NATIVE_PRESET", str(cfg.get("lgbm_use_native_preset", ""))):
+        cfg.setdefault("lgbm_native_preset_source_run_id", source_run_id)
+        os.environ.setdefault("EPM_LGBM_NATIVE_PRESET_SOURCE_RUN_ID", source_run_id)
+        if (
+            os.environ.get("EPM_LGBM_REQUIRE_NATIVE_PRESET") is None
+            and "lgbm_require_native_preset" not in cfg
+        ):
+            cfg["lgbm_require_native_preset"] = True
+            os.environ.setdefault("EPM_LGBM_REQUIRE_NATIVE_PRESET", "1")
+        cfg.setdefault("lgbm_native_preset_params_only", False)
+        os.environ.setdefault("EPM_LGBM_NATIVE_PRESET_PARAMS_ONLY", "0")
+        tprint(
+            "LGBM train defaults: frozen native preset reuse active "
+            f"(source_run_id={source_run_id}, require_preset="
+            f"{_truthy_env('EPM_LGBM_REQUIRE_NATIVE_PRESET', str(cfg.get('lgbm_require_native_preset', '')))})."
+        )
+    else:
+        tprint(
+            "LGBM train defaults: source run is configured but native preset reuse "
+            "was explicitly disabled; this run may redo feature selection/HPO."
+        )
 
 
 def _maybe_extend_training_stage_to_latest(stage_view: dict, *, stage_name: str) -> dict:
@@ -4610,7 +4714,8 @@ def main():
         cfg["output_run_id"] = str(args.run_id_override).strip()
     _label_artifact_run_id = str(
         os.environ.get("EPM_LABEL_ARTIFACT_RUN_ID")
-        or cfg.get("output_run_id")
+        or cfg.get("label_source_run_id")
+        or cfg.get("artifact_source_run_id")
         or ""
     ).strip()
     if _label_artifact_run_id:
@@ -4827,6 +4932,7 @@ def main():
     cfg["planned_max_assets"] = args.planned_max_assets
     cfg["planned_max_months"] = args.planned_max_months
     cfg["refresh_slice_plan"] = bool(args.refresh_slice_plan)
+    _apply_train_base_meta_lgbm_cfg_defaults(cfg, args.mode)
     if args.mode in {"train", "base_training", "train_base", "meta_training", "train_meta", "recency_hpo", "final_model_fit"}:
         _apply_training_no_penalty(cfg)
     if str(os.environ.get("EPM_DISABLE_REGIME_ADAPTORS", "")).strip().lower() in {

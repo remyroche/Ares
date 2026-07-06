@@ -36,6 +36,11 @@ class PortfolioPolicyConfig:
     live_test_min_quote_notional: float = 5.0
     live_test_quote_notional: float = 10.0
     perp_default_leverage: float = 10.0
+    perp_liquidation_guard_enabled: bool = True
+    perp_maintenance_margin_pct: float = 0.05
+    perp_liquidation_fee_buffer_pct: float = 0.005
+    perp_liquidation_safety_buffer_pct: float = 0.01
+    perp_liquidation_min_leverage: float = 1.0
 
     initial_rank_threshold: float = 0.90
     initial_rank_threshold_floor: float = 0.90
@@ -229,6 +234,11 @@ def load_portfolio_policy_config(
             "min_margin_level_after_entry",
             "min_entry_quote_notional",
             "perp_default_leverage",
+            "perp_liquidation_guard_enabled",
+            "perp_maintenance_margin_pct",
+            "perp_liquidation_fee_buffer_pct",
+            "perp_liquidation_safety_buffer_pct",
+            "perp_liquidation_min_leverage",
         },
         "selection": {
             "global_threshold_floor",
@@ -255,6 +265,11 @@ def load_portfolio_policy_config(
             "rank_size_power",
             "min_entry_quote_notional",
             "perp_default_leverage",
+            "perp_liquidation_guard_enabled",
+            "perp_maintenance_margin_pct",
+            "perp_liquidation_fee_buffer_pct",
+            "perp_liquidation_safety_buffer_pct",
+            "perp_liquidation_min_leverage",
         },
         "friction": {
             "max_signal_gap_bps_default",
@@ -269,6 +284,18 @@ def load_portfolio_policy_config(
             "rank_size_power",
             "min_entry_quote_notional",
             "perp_default_leverage",
+            "perp_liquidation_guard_enabled",
+            "perp_maintenance_margin_pct",
+            "perp_liquidation_fee_buffer_pct",
+            "perp_liquidation_safety_buffer_pct",
+            "perp_liquidation_min_leverage",
+        },
+        "risk": {
+            "perp_liquidation_guard_enabled",
+            "perp_maintenance_margin_pct",
+            "perp_liquidation_fee_buffer_pct",
+            "perp_liquidation_safety_buffer_pct",
+            "perp_liquidation_min_leverage",
         },
         "liquidity": {
             "max_orderbook_slippage_bps",
@@ -348,6 +375,18 @@ def load_portfolio_policy_config(
     values["perp_default_leverage"] = max(
         1.0, float(values.get("perp_default_leverage", 10.0))
     )
+    values["perp_maintenance_margin_pct"] = max(
+        0.0, float(values.get("perp_maintenance_margin_pct", 0.05))
+    )
+    values["perp_liquidation_fee_buffer_pct"] = max(
+        0.0, float(values.get("perp_liquidation_fee_buffer_pct", 0.005))
+    )
+    values["perp_liquidation_safety_buffer_pct"] = max(
+        0.0, float(values.get("perp_liquidation_safety_buffer_pct", 0.01))
+    )
+    values["perp_liquidation_min_leverage"] = max(
+        1.0, float(values.get("perp_liquidation_min_leverage", 1.0))
+    )
     values["min_margin_level_after_entry"] = max(
         1.0, float(values.get("min_margin_level_after_entry", 2.5))
     )
@@ -397,24 +436,36 @@ def compute_rank_based_position_size(
             else np.nan
         )
         sl_pct = sl_raw * 100.0 if np.isfinite(sl_raw) and sl_raw <= 1.0 else sl_raw
-        risk_cap = (
+        legacy_risk_cap = (
             100.0 / (1.5 * sl_pct)
             if np.isfinite(sl_pct) and sl_pct > 0
             else float("inf")
         )
+        liquidation_risk_cap = float("inf")
+        if (
+            bool(policy.perp_liquidation_guard_enabled)
+            and np.isfinite(sl_pct)
+            and sl_pct > 0
+        ):
+            stop_frac = float(sl_pct) / 100.0
+            denominator = (
+                stop_frac
+                + max(float(policy.perp_liquidation_safety_buffer_pct), 0.0)
+                + max(float(policy.perp_maintenance_margin_pct), 0.0)
+                + max(float(policy.perp_liquidation_fee_buffer_pct), 0.0)
+            )
+            liquidation_risk_cap = 1.0 / max(float(denominator), 1e-12)
+        risk_cap = min(float(legacy_risk_cap), float(liquidation_risk_cap))
         leverage = min(rank_leverage, risk_cap)
         leverage = max(float(leverage), 0.0) if np.isfinite(leverage) else rank_leverage
         leverage_power = leverage**1.5
         book_multiplier = max(float(policy.book_notional_multiplier), 0.0)
         notional_multiplier = book_multiplier * max(float(leverage), 1.0)
         configured_book_notional = (
-            float(policy.max_total_wallet_allocation_pct)
-            * wallet
-            * notional_multiplier
+            float(policy.max_total_wallet_allocation_pct) * wallet * notional_multiplier
         )
-        if (
-            remaining_total_notional is not None
-            and np.isfinite(float(remaining_total_notional))
+        if remaining_total_notional is not None and np.isfinite(
+            float(remaining_total_notional)
         ):
             remaining_total = max(float(remaining_total_notional), 0.0)
             max_total_notional = max(open_notional + remaining_total, 0.0)
@@ -503,6 +554,12 @@ def compute_rank_based_position_size(
             "perp_rank_x": rx,
             "perp_default_leverage": rank_leverage,
             "perp_rank_leverage": rank_leverage,
+            "perp_legacy_risk_cap_leverage": (
+                legacy_risk_cap if np.isfinite(legacy_risk_cap) else None
+            ),
+            "perp_liquidation_risk_cap_leverage": (
+                liquidation_risk_cap if np.isfinite(liquidation_risk_cap) else None
+            ),
             "perp_risk_cap_leverage": risk_cap if np.isfinite(risk_cap) else None,
             "perp_effective_leverage": leverage,
             "perp_stop_loss_pct": sl_pct if np.isfinite(sl_pct) else None,

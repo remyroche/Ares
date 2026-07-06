@@ -722,6 +722,8 @@ def _alpha_prediction_frame_for_model(
     model: Any,
     aligned_features: pd.DataFrame,
     feat_cols: List[str],
+    *,
+    allow_native_missing: bool = False,
 ) -> pd.DataFrame:
     """Return the actual prediction frame expected by a persisted alpha model.
 
@@ -737,12 +739,19 @@ def _alpha_prediction_frame_for_model(
     feat_cols = [str(c) for c in feat_cols]
     X = aligned_features.reindex(columns=feat_cols)
     try:
-        X = validate_final_model_matrix(
-            X,
-            model_feature_cols=feat_cols,
-            model_key="alpha_feature_contract",
-            strict=True,
-        )
+        if allow_native_missing:
+            X = _strict_lgbm_native_missing_model_matrix(
+                X,
+                model_feature_cols=feat_cols,
+                model_key="alpha_feature_contract",
+            )
+        else:
+            X = validate_final_model_matrix(
+                X,
+                model_feature_cols=feat_cols,
+                model_key="alpha_feature_contract",
+                strict=True,
+            )
     except FeatureParityError:
         raise
     inner = _selected_feature_owner(model)
@@ -762,6 +771,12 @@ def _alpha_prediction_frame_for_model(
             pos = int(name[1:])
             real_name = feat_cols[pos] if pos < len(feat_cols) else ""
             mapped[name] = X[real_name] if real_name in X.columns else np.nan
+        if allow_native_missing:
+            return _strict_lgbm_native_missing_model_matrix(
+                mapped,
+                model_feature_cols=selected,
+                model_key="alpha_synthetic_feature_contract",
+            )
         return validate_final_model_matrix(
             mapped,
             model_feature_cols=selected,
@@ -846,6 +861,81 @@ def _strict_finite_model_matrix(
         model_key=model_key,
         strict=True,
     )
+
+
+def _cfg_flag_enabled(
+    cfg: Optional[Mapping[str, Any]],
+    key: str,
+    env_key: str,
+    default: bool = False,
+) -> bool:
+    if isinstance(cfg, Mapping) and key in cfg:
+        value = cfg.get(key)
+    else:
+        value = os.environ.get(env_key, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _allow_lgbm_native_missing_model_inputs(
+    cfg: Optional[Mapping[str, Any]],
+) -> bool:
+    return _cfg_flag_enabled(
+        cfg,
+        "simple_policy_allow_lgbm_native_missing",
+        "EPM_SIMPLE_POLICY_ALLOW_LGBM_NATIVE_MISSING",
+        False,
+    )
+
+
+def _strict_lgbm_native_missing_model_matrix(
+    X: pd.DataFrame,
+    *,
+    model_feature_cols: List[str],
+    model_key: str,
+) -> pd.DataFrame:
+    """Return a final model matrix that preserves NaNs for LightGBM scoring."""
+    cols = [str(c) for c in model_feature_cols]
+    report = {
+        "model_key": model_key,
+        "global_errors": [],
+        "native_missing_allowed": True,
+    }
+    if X is None or not isinstance(X, pd.DataFrame) or X.empty:
+        report["global_errors"].append("empty_model_matrix")
+    elif list(map(str, X.columns)) != cols:
+        report["global_errors"].append("model_matrix_column_order_mismatch")
+        report["expected_columns_sample"] = cols[:50]
+        report["actual_columns_sample"] = list(map(str, X.columns))[:50]
+    if not cols:
+        report["global_errors"].append("empty_model_feature_contract")
+    if report["global_errors"]:
+        raise FeatureParityError("Final model matrix parity failed", report)
+
+    try:
+        X_float = X.astype(np.float32, copy=False)
+    except Exception as exc:
+        report["global_errors"].append(f"model_matrix_float32_cast_failed:{exc}")
+        raise FeatureParityError("Final model matrix dtype parity failed", report) from exc
+
+    values = X_float.to_numpy(dtype=np.float32, copy=False)
+    if np.isinf(values).any():
+        bad_cols = [
+            str(col)
+            for col in X_float.columns
+            if np.isinf(
+                X_float[col].to_numpy(dtype=np.float32, copy=False)
+            ).any()
+        ]
+        report["global_errors"].append("model_matrix_nonfinite")
+        report["infinite_features"] = bad_cols[:100]
+        raise FeatureParityError(
+            "Final model matrix contains infinite values", report
+        )
+    return X_float
 
 
 def _model_matrix_nonfinite_summary(
@@ -1176,8 +1266,29 @@ class ModelOrchestrator:
                     f"features ({len(missing)}): {missing[:20]}"
                 )
                 return pd.DataFrame(index=features.index)
+            allow_native_missing = _allow_lgbm_native_missing_model_inputs(self.cfg)
             try:
                 model_matrix = aligned.reindex(columns=feat_cols_s)
+                if allow_native_missing:
+                    X = _strict_lgbm_native_missing_model_matrix(
+                        model_matrix,
+                        model_feature_cols=feat_cols_s,
+                        model_key="alpha",
+                    )
+                    if (
+                        X.isna().to_numpy(dtype=bool, copy=False).any()
+                        and not getattr(
+                            self,
+                            "_alpha_native_missing_warned",
+                            False,
+                        )
+                    ):
+                        tprint(
+                            "Alpha inference: preserving NaN trained feature "
+                            "values for LightGBM native missing-value handling."
+                        )
+                        self._alpha_native_missing_warned = True
+                    return X
                 return _strict_finite_model_matrix(
                     model_matrix,
                     model_feature_cols=feat_cols_s,
@@ -1225,7 +1336,10 @@ class ModelOrchestrator:
                         return pd.DataFrame(index=features.index)
                 matrix_float = model_matrix.astype(np.float32, copy=False)
                 values = matrix_float.to_numpy(dtype=np.float32, copy=False)
-                row_ok = np.isfinite(values).all(axis=1)
+                if allow_native_missing:
+                    row_ok = ~np.isinf(values).any(axis=1)
+                else:
+                    row_ok = np.isfinite(values).all(axis=1)
                 valid_rows = int(row_ok.sum())
                 if valid_rows <= 0:
                     tprint(f"Error aligning alpha feature contract: {exc}")
@@ -1237,6 +1351,12 @@ class ModelOrchestrator:
                     f"features; predicting {valid_rows} strict rows."
                 )
                 try:
+                    if allow_native_missing:
+                        return _strict_lgbm_native_missing_model_matrix(
+                            matrix_float.loc[row_ok],
+                            model_feature_cols=feat_cols_s,
+                            model_key="alpha",
+                        )
                     return _strict_finite_model_matrix(
                         matrix_float.loc[row_ok],
                         model_feature_cols=feat_cols_s,
@@ -1396,7 +1516,12 @@ class ModelOrchestrator:
 
         # Get feature matrix
         matrix_t0 = time.perf_counter()
-        X = _alpha_prediction_frame_for_model(model, aligned_features, feat_cols)
+        X = _alpha_prediction_frame_for_model(
+            model,
+            aligned_features,
+            feat_cols,
+            allow_native_missing=_allow_lgbm_native_missing_model_inputs(self.cfg),
+        )
         if timing_enabled:
             tprint(
                 "[Timing] model.alpha_matrix: "
@@ -1518,6 +1643,9 @@ class ModelOrchestrator:
                                 route_model,
                                 route_aligned,
                                 route_feat_cols,
+                                allow_native_missing=(
+                                    _allow_lgbm_native_missing_model_inputs(self.cfg)
+                                ),
                             )
                             route_pred = route_model.predict(route_X)
                             out.loc[route_aligned.index] = route_pred
@@ -2006,6 +2134,9 @@ class ModelOrchestrator:
                         alpha_model,
                         aligned,
                         alpha_feat_cols,
+                        allow_native_missing=(
+                            _allow_lgbm_native_missing_model_inputs(self.cfg)
+                        ),
                     )
                     for transform_owner in transform_owners:
                         try:
@@ -2026,6 +2157,9 @@ class ModelOrchestrator:
                     alpha_model,
                     aligned,
                     alpha_feat_cols,
+                    allow_native_missing=(
+                        _allow_lgbm_native_missing_model_inputs(self.cfg)
+                    ),
                 )
                 for transform_owner in transform_owners:
                     try:
@@ -2783,6 +2917,9 @@ class ModelOrchestrator:
                         f"({len(missing)} missing trained features): {missing[:20]}"
                     )
                     return pd.Series(dtype=float)
+                allow_native_missing = _allow_lgbm_native_missing_model_inputs(
+                    self.cfg
+                )
                 try:
                     model_matrix = features.reindex(columns=feat_cols)
                     model_matrix, _optional_added, _optional_repaired = (
@@ -2792,11 +2929,32 @@ class ModelOrchestrator:
                         )
                     )
                     try:
-                        X = _strict_finite_model_matrix(
-                            model_matrix,
-                            model_feature_cols=feat_cols,
-                            model_key=key,
-                        )
+                        if allow_native_missing:
+                            X = _strict_lgbm_native_missing_model_matrix(
+                                model_matrix,
+                                model_feature_cols=feat_cols,
+                                model_key=key,
+                            )
+                            if (
+                                X.isna().to_numpy(dtype=bool, copy=False).any()
+                                and not getattr(
+                                    self,
+                                    "_meta_native_missing_warned",
+                                    False,
+                                )
+                            ):
+                                tprint(
+                                    f"Meta inference for {key}: preserving NaN "
+                                    "trained feature values for LightGBM native "
+                                    "missing-value handling."
+                                )
+                                self._meta_native_missing_warned = True
+                        else:
+                            X = _strict_finite_model_matrix(
+                                model_matrix,
+                                model_feature_cols=feat_cols,
+                                model_key=key,
+                            )
                     except FeatureParityError as exc:
                         report = getattr(exc, "report", {}) or {}
                         errors = set(report.get("global_errors") or [])
@@ -2845,7 +3003,10 @@ class ModelOrchestrator:
                                 dtype=np.float32,
                                 copy=False,
                             )
-                            row_ok = np.isfinite(values).all(axis=1)
+                            if allow_native_missing:
+                                row_ok = ~np.isinf(values).any(axis=1)
+                            else:
+                                row_ok = np.isfinite(values).all(axis=1)
                             valid_rows = int(row_ok.sum())
                             if valid_rows <= 0:
                                 raise
@@ -2862,11 +3023,18 @@ class ModelOrchestrator:
                                 f"{len(row_ok)} rows with non-finite trained "
                                 f"features; predicting {valid_rows} strict rows."
                             )
-                            X = _strict_finite_model_matrix(
-                                matrix_float.loc[row_ok],
-                                model_feature_cols=feat_cols,
-                                model_key=key,
-                            )
+                            if allow_native_missing:
+                                X = _strict_lgbm_native_missing_model_matrix(
+                                    matrix_float.loc[row_ok],
+                                    model_feature_cols=feat_cols,
+                                    model_key=key,
+                                )
+                            else:
+                                X = _strict_finite_model_matrix(
+                                    matrix_float.loc[row_ok],
+                                    model_feature_cols=feat_cols,
+                                    model_key=key,
+                                )
                 except FeatureParityError as exc:
                     self._last_results["meta_contract_error"] = {
                         "key": key,

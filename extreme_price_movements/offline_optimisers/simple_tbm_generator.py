@@ -55,7 +55,7 @@ def _normalize_horizon_token(value: object) -> str:
     try:
         return f"H{normalize_strategy_horizon(int(float(text)))}"
     except Exception:
-        return "H5"
+        return "H3"
 
 
 def _normalize_cell_key(cell_key: object) -> str:

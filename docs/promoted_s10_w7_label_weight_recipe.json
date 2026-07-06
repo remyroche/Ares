@@ -1,0 +1,58 @@
+{
+  "name": "s10_policy_net_soft_w7_timestamp_balanced_execution_holdout_v1",
+  "status": "rejected_by_no_training_proxy_gate",
+  "do_not_use_for_training": true,
+  "stage": "base",
+  "provenance": {
+    "source": "label_execution_alignment_temporal_holdout_s14_v2",
+    "candidate": "S10_vanilla_independent_net::W7_timestamp_balanced",
+    "fit_months": ["2026-04", "2026-05"],
+    "holdout_month": "2026-06",
+    "top_frac": 0.03,
+    "fit_net_pnl": 0.124278,
+    "fit_worst_month_net_pnl": 0.007137,
+    "holdout_net_pnl": 0.006701,
+    "holdout_n_trades": 22,
+    "holdout_mean_net_trade": 0.001768,
+    "holdout_full_sl_exit_rate": 0.409091,
+    "report": "data_perp/reports/label_execution_alignment_temporal_holdout_s14_v2/label_execution_temporal_holdout.md",
+    "required_label_ablation_mode": "s10",
+    "rejection": {
+      "source": "label_proxy_decision_pack_s10_w7_v1",
+      "reason": "Rejected by no-training learnability-within-economic-limits proxy gates before full model training.",
+      "decision_summary": "data_perp/reports/label_proxy_decision_pack_s10_w7_v1/decision_summary.csv",
+      "promotion_shortlist": "data_perp/reports/label_proxy_decision_pack_s10_w7_v1/promotion_shortlist.csv",
+      "best_proxy_decision": "reject_proxy",
+      "best_acceptance_mean_u": 0.000563,
+      "best_acceptance_worst_month_mean_u": -0.008867,
+      "best_acceptance_positive_months": 1,
+      "best_acceptance_q25_week_mean_u": -0.006019
+    }
+  },
+  "geometry": {
+    "enabled": false
+  },
+  "generator": {
+    "policy_net_label_center": 0.0,
+    "policy_net_label_temperature": 0.004,
+    "policy_net_label_min_std": 1e-8,
+    "policy_net_label_min_finite_frac": 0.98
+  },
+  "label": {
+    "label_modifier_strength": 0.0
+  },
+  "weight": {
+    "base_weight_power": 0.0,
+    "weight_modifier_strength": 0.0,
+    "class_rebalance_strength": 0.0,
+    "recency_half_life_days": 0.0,
+    "concurrency_penalty": 0.0,
+    "timestamp_balance_strength": 1.0
+  },
+  "distillation": {
+    "distillation_strength": 0.0
+  },
+  "objective": {
+    "portfolio_alignment_strength": 0.0
+  }
+}

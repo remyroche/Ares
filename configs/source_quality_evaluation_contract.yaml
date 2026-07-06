@@ -1,0 +1,192 @@
+# Shared diagnostic contract for source-quality labels, source archetypes, risk
+# heads, timeout heads, and downstream policy screens.
+#
+# This file is intentionally diagnostic-only. Do not use it to enable training,
+# inference, or production policy behavior directly.
+
+contract_name: source_quality_evaluation_contract_v1
+status_ladder:
+  - diagnostic_only
+  - label_or_archetype_candidate
+  - learnable_candidate
+  - economic_candidate
+  - weekly_robust_candidate
+  - candidate_for_training_ablation
+  - guarded_integration_candidate
+  - production_candidate
+
+walkforward_months:
+  - "2026-04"
+  - "2026-05"
+  - "2026-06"
+
+validation_months:
+  - "2026-07"
+
+ranking_policies:
+  - top1
+  - top3
+  - top5
+  - top10pct
+
+evaluation_modes:
+  - all_rows
+  - budget_matched
+
+required_risk_metrics:
+  - bad_mae_rate
+  - bad_mae_negative_rate
+  - bad_mae_recovered_rate
+  - fast_bad_mae_negative_rate
+  - timeout_rate
+  - wide_barrier_rate
+  - path_failure_rate
+
+required_robustness_metrics:
+  - mean_utility
+  - median_utility
+  - worst_month_utility
+  - worst_week_utility
+  - q25_weekly_utility
+  - positive_months
+  - positive_weeks
+  - selected_rows
+  - selected_rows_min_month
+  - selected_rows_min_week
+  - max_top_symbol_share
+  - max_symbol_utility_share
+
+minimum_candidate_report_metrics:
+  - mean_utility
+  - median_utility
+  - worst_month_utility
+  - worst_week_utility
+  - q25_weekly_utility
+  - positive_months
+  - total_months
+  - positive_weeks
+  - total_weeks
+  - bad_mae_rate
+  - bad_mae_negative_rate
+  - bad_mae_recovered_rate
+  - fast_bad_mae_negative_rate
+  - timeout_rate
+  - wide_barrier_rate
+  - selected_rows
+  - selected_rows_min_month
+  - selected_rows_min_week
+  - max_top_symbol_share
+  - max_symbol_utility_share
+
+label_candidate_gate:
+  positive_count_min_month: 25
+  negative_count_min_month: 25
+  positive_count_min_week: 5
+  negative_count_min_week: 5
+  max_top_symbol_share_within_label: 0.35
+  monthly_prevalence_cv_max: 0.50
+  weekly_prevalence_cv_max: 0.75
+  requires_economic_separation: true
+  requires_no_future_feature_dependency: true
+
+archetype_candidate_gate:
+  rows_min_month: 25
+  rows_min_week: 5
+  coverage_min: 0.05
+  positive_utility_months_min: 2
+  risk_reduction_weeks_min: 8
+  max_top_symbol_share: 0.35
+  leave_one_symbol_out_mean_utility_min: 0.0
+  redundancy_cramers_v_max: 0.80
+
+learnability_gate:
+  binary:
+    roc_auc_lift_vs_base_min: 0.03
+    pr_auc_lift_vs_prevalence_min: 1.20
+    precision_at_top_10pct_lift_vs_prevalence_min: 1.50
+    positive_lift_months_min: 2
+    ece_max: 0.10
+    negative_control_auc_target: 0.50
+  ranking:
+    mean_rank_ic_min: 0.03
+    positive_rank_ic_months_min: 2
+    top_decile_utility_lift_min: 0.0
+    positive_top_decile_lift_months_min: 2
+    negative_control_rank_ic_target: 0.0
+  timeout:
+    roc_auc_lift_vs_base_min: 0.03
+    pr_auc_lift_vs_prevalence_min: 1.20
+    high_risk_decile_timeout_lift_min: 1.50
+    timeout_rate_reduction_min: 0.10
+    utility_drawdown_max: 0.25
+
+economics_gate:
+  mean_utility_min: 0.0
+  worst_month_utility_min: 0.0
+  bad_mae_rate_max: 0.45
+  timeout_rate_max: 0.15
+  wide_barrier_rate_max: 0.10
+  selected_rows_min_month: 25
+  max_top_symbol_share: 0.35
+  max_symbol_utility_share: 0.35
+  timeout_rate_reduction_vs_baseline_min: 0.10
+
+weekly_robustness_gate:
+  positive_weeks_min: 9
+  expected_weeks: 12
+  q25_weekly_utility_min: 0.0
+  worst_week_utility_min: -0.003
+  bad_mae_rate_max: 0.45
+  timeout_rate_max: 0.15
+  wide_barrier_rate_max: 0.10
+  max_top_symbol_share: 0.35
+  max_weekly_top_symbol_share: 0.50
+  utility_without_top_symbol_min: 0.0
+  positive_weeks_without_top_symbol_min: 8
+
+training_ablation_gate:
+  mean_utility_lift_vs_baseline_min: 1.10
+  positive_weeks_min: 9
+  q25_weekly_utility_min: 0.0
+  timeout_rate_max: 0.15
+  bad_mae_rate_max: 0.42
+  wide_barrier_rate_max: 0.08
+  max_top_symbol_share: 0.35
+  utility_without_top_symbol_min: 0.0
+  timeout_head_auc_lift_vs_baseline_min: 0.03
+  timeout_pr_auc_lift_min: 1.20
+
+policy_integration:
+  enabled_default: false
+  initial_mode: shadow_only
+  allowed_modes:
+    - shadow_only
+    - report_only
+    - soft_rerank
+    - hard_gate
+    - production_enabled
+  require_explicit_feature_flag: true
+  source_quality_policy:
+    enabled: false
+    use_archetype_v2: true
+    use_utility_head: true
+    use_bad_mae_head: true
+    use_wide_barrier_head: true
+    use_timeout_head: true
+    timeout_penalty_mode: soft
+    max_symbol_share: 0.35
+    min_rows_per_month: 25
+
+do_not_promote_before:
+  - causal_label_audit_passes
+  - adequate_monthly_and_weekly_support
+  - not_symbol_dominated
+  - learnability_above_null
+  - economic_selection_improves
+  - timeout_behavior_improves_or_is_preserved
+  - bad_mae_behavior_improves_or_is_preserved
+  - wide_barrier_behavior_improves_or_is_preserved
+  - monthly_positive
+  - weekly_stable
+  - leave_one_symbol_out_passes
+  - budget_matched_evaluation_passes

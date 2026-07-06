@@ -128,7 +128,11 @@ class _PrescoreExchange:
         self._ask = ask
 
     def fetch_ticker(self, symbol):
-        return {"bid": self._bid, "ask": self._ask, "last": (self._bid + self._ask) / 2.0}
+        return {
+            "bid": self._bid,
+            "ask": self._ask,
+            "last": (self._bid + self._ask) / 2.0,
+        }
 
     def fetch_order_book(self, symbol):
         return {
@@ -241,7 +245,9 @@ def test_live_warmup_state_health_requires_panel_span_or_current_cache(tmp_path)
         "live_raw_rolling_state_enabled": True,
         "live_raw_rolling_state_path": str(tmp_path / "raw_rolling_state.npz"),
         "live_causal_transform_state_enabled": True,
-        "live_causal_transform_state_path": str(tmp_path / "causal_transform_state.npz"),
+        "live_causal_transform_state_path": str(
+            tmp_path / "causal_transform_state.npz"
+        ),
         "live_feature_snapshot_cache_dir": str(tmp_path / "feature_cache"),
     }
 
@@ -331,10 +337,7 @@ def test_live_warmup_state_health_accepts_hashed_feature_state_inventory(tmp_pat
     assert health["raw_rolling_state"]["ok"] is True
     assert health["raw_rolling_state"]["exact_exists"] is False
     assert health["raw_rolling_state"]["hashed_count"] == 1
-    assert (
-        health["raw_rolling_state"]["reason"]
-        == "ok_hashed_state_inventory"
-    )
+    assert health["raw_rolling_state"]["reason"] == "ok_hashed_state_inventory"
     assert health["causal_transform_state"]["ok"] is True
     assert health["causal_transform_state"]["exact_exists"] is False
     assert health["causal_transform_state"]["hashed_count"] == 1
@@ -343,7 +346,9 @@ def test_live_warmup_state_health_accepts_hashed_feature_state_inventory(tmp_pat
 def _simple_policy_params(**overrides):
     strategy_id = str(overrides.get("strategy_id", "long_mr"))
     base = Path("/tmp/ares_inference_policy_tests")
-    source = "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json"
+    source = (
+        "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json"
+    )
     artifact_path = base / source
     row = {
         "generated_by": SIMPLE_POLICY_GENERATOR,
@@ -373,7 +378,9 @@ def _simple_policy_params(**overrides):
             sort_keys=True,
         )
     )
-    params = load_simple_policy_stop_params_by_strategy(str(base), run_id="test-run")[strategy_id]
+    params = load_simple_policy_stop_params_by_strategy(str(base), run_id="test-run")[
+        strategy_id
+    ]
     params.update(overrides)
     return params
 
@@ -424,9 +431,7 @@ def test_ev_adjustment_haircuts_only_excess_execution_costs():
     )
 
     assert above_baseline["ev_haircut_spread_excess_bps"] == pytest.approx(10.0)
-    assert above_baseline["ev_haircut_delay_slippage_excess_bps"] == pytest.approx(
-        20.0
-    )
+    assert above_baseline["ev_haircut_delay_slippage_excess_bps"] == pytest.approx(20.0)
     assert above_baseline["ev_haircut_bps"] == pytest.approx(30.0)
     assert above_baseline["ev_adjusted_net_return_after_friction"] == pytest.approx(
         above_baseline["ev_adjusted_net_return_before_friction"] - 0.003
@@ -555,13 +560,7 @@ def test_live_stop_exit_friction_estimate_uses_spread_and_orderbook():
 def test_simple_policy_stop_params_honor_policy_artifact_root_override(
     tmp_path, monkeypatch
 ):
-    active = (
-        tmp_path
-        / "artifacts"
-        / "run_a"
-        / "simple_policy_optimiser"
-        / "deployment"
-    )
+    active = tmp_path / "artifacts" / "run_a" / "simple_policy_optimiser" / "deployment"
     active.mkdir(parents=True)
     active_row = {
         "strategy_id": "long_stale",
@@ -731,7 +730,9 @@ def test_live_adverse_policy_exit_shadow_uses_executable_close(monkeypatch):
             mae=0.03,
         )
 
-    monkeypatch.setattr(run_inference, "_shadow_execution_realism_enabled", lambda: True)
+    monkeypatch.setattr(
+        run_inference, "_shadow_execution_realism_enabled", lambda: True
+    )
     monkeypatch.setattr(
         run_inference,
         "_fetch_live_closeable_price",
@@ -1081,9 +1082,7 @@ def test_lgbm_strategy_masks_align_latest_symbol_vectors_with_panel_features():
     }
     feats = {
         "ret12h": close.pct_change().fillna(0.0),
-        "latest_symbol_score": pd.Series(
-            {"A": 0.9, "B": 0.1, "C": 0.8}, dtype=float
-        ),
+        "latest_symbol_score": pd.Series({"A": 0.9, "B": 0.1, "C": 0.8}, dtype=float),
         "panel_score": pd.DataFrame(
             {
                 "A": [0.1, 0.2, 0.3, 0.9],
@@ -1334,7 +1333,11 @@ def test_shadow_executor_exposes_monitorable_open_positions():
     executor = TradeExecutor(
         mode="shadow",
         exchange=None,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
     )
 
     rec = executor.execute_trade(
@@ -1357,7 +1360,9 @@ def test_shadow_retry_missing_protective_stop_reattaches_synthetic_stop():
         mode="shadow",
         exchange=None,
         bucket_params={
-            "simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
         },
     )
 
@@ -1382,7 +1387,9 @@ def test_shadow_monitor_updates_stop_from_trailing_price_action():
         mode="shadow",
         exchange=None,
         bucket_params={
-            "simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
         },
     )
     rec = executor.execute_trade(
@@ -1426,7 +1433,9 @@ def test_shadow_monitor_uses_closed_5m_price_action():
         mode="shadow",
         exchange=None,
         bucket_params={
-            "simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
         },
     )
     rec = executor.execute_trade(
@@ -1465,7 +1474,9 @@ def test_shadow_monitor_keeps_updating_after_initial_eight_hour_window():
         mode="shadow",
         exchange=None,
         bucket_params={
-            "simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
         },
     )
     rec = executor.execute_trade(
@@ -1531,7 +1542,11 @@ def test_live_executor_places_stop_loss_only_not_oco_or_take_profit(monkeypatch)
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -1915,7 +1930,10 @@ def test_kraken_software_stop_breach_cancels_hosted_stop_before_market_close():
     assert exchange.events[0][0] == "cancel_order"
     assert exchange.events[1] == ("create_order", "market", "buy")
     assert "TURBO/USD:USD" not in executor.active_positions
-    assert state["trade_recap_events"][0]["event"] == "protective_stops_cancelled_before_close"
+    assert (
+        state["trade_recap_events"][0]["event"]
+        == "protective_stops_cancelled_before_close"
+    )
     assert state["last_close_metrics"]["exit_price"] == pytest.approx(0.0008637)
 
 
@@ -2059,7 +2077,10 @@ def test_lightweight_stop_sentinel_pretriggers_short_near_executable_ask():
 
     status = statuses["ZEC/USD:USD"]
     assert status["status"] == "closed"
-    assert status["reason"] == "software_executable_stop_breach_pretrigger:original_stop_loss"
+    assert (
+        status["reason"]
+        == "software_executable_stop_breach_pretrigger:original_stop_loss"
+    )
     assert status["pretriggered"] is True
     assert status["pretrigger_buffer_bps"] == pytest.approx(1.0)
     assert status["stop_distance_bps"] == pytest.approx(0.5000250012)
@@ -2141,7 +2162,9 @@ def test_lightweight_stop_sentinel_uses_wider_profit_lock_pretrigger():
 
     status = statuses["AAVE/USD:USD"]
     assert status["status"] == "closed"
-    assert status["reason"] == "software_executable_stop_breach_pretrigger:trailing_profit"
+    assert (
+        status["reason"] == "software_executable_stop_breach_pretrigger:trailing_profit"
+    )
     assert status["pretriggered"] is True
     assert status["pretrigger_buffer_bps"] == pytest.approx(25.0)
     assert status["stop_distance_bps"] == pytest.approx(20.0400801603)
@@ -2185,6 +2208,10 @@ def test_lightweight_stop_sentinel_does_not_close_on_last_only_breach():
         "size": 8900.0,
         "bucket_key": "long_asset",
         "stop_price": 0.0008445,
+        "policy_stop_price": 0.0008445,
+        "requested_policy_stop": 0.0008445,
+        "exchange_stop_price": 0.0008525,
+        "final_placed_stop": 0.0008525,
         "stop_reason": "original_stop_loss",
         "stop_order_id": "stop-order",
         "mfe": 0.0,
@@ -2198,11 +2225,17 @@ def test_lightweight_stop_sentinel_does_not_close_on_last_only_breach():
     assert status["status"] == "open"
     assert status["executable_price"] == pytest.approx(0.0008500)
     assert status["executable_price_source"] == "orderbook_best_bid"
+    assert status["stop_basis"] == "policy_executable_bid_ask"
+    assert status["policy_executable_stop_price"] == pytest.approx(0.0008445)
+    assert status["exchange_trigger_stop_price"] == pytest.approx(0.0008525)
+    assert status["exchange_trigger_is_more_protective"] is True
     assert status["stop_distance_bps"] > 0.0
     assert "TURBO/USD:USD" in executor.active_positions
 
 
-def test_monitor_active_position_runs_lightweight_sentinel_before_5m_policy(monkeypatch):
+def test_monitor_active_position_runs_lightweight_sentinel_before_5m_policy(
+    monkeypatch,
+):
     monkeypatch.setattr(
         "extreme_price_movements.inference.run_inference.hf_data_loader.fetch_specific_period",
         lambda *args, **kwargs: (_ for _ in ()).throw(
@@ -2332,7 +2365,11 @@ def test_live_executor_converts_quote_notional_to_base_amount(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -2360,7 +2397,11 @@ def test_live_executor_preserves_margin_order_params(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={
             "execution_account": "margin",
             "margin_mode": "cross",
@@ -2466,7 +2507,11 @@ def test_live_executor_rejects_exchange_filter_failures(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -2513,7 +2558,9 @@ def test_live_executor_treats_subunit_size_as_quote_not_fraction(monkeypatch):
     entry_orders = [order for order in exchange.orders if order["type"] == "limit"]
     assert len(entry_orders) == 1
     assert entry_orders[0]["amount"] == pytest.approx(0.005)
-    assert executor.get_active_positions()["BTC/USDT"]["quote_size"] == pytest.approx(0.5)
+    assert executor.get_active_positions()["BTC/USDT"]["quote_size"] == pytest.approx(
+        0.5
+    )
 
 
 def test_live_executor_rejects_halted_symbols(monkeypatch):
@@ -2525,7 +2572,11 @@ def test_live_executor_rejects_halted_symbols(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -2567,7 +2618,11 @@ def test_live_executor_classifies_entry_order_failures(
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -2603,7 +2658,11 @@ def test_live_executor_uses_partial_fill_amount_for_stop_loss(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -2629,7 +2688,11 @@ def test_stop_loss_cancel_replace_uses_existing_base_amount(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -2698,7 +2761,11 @@ def test_stop_loss_cancel_replace_does_not_duplicate_on_cancel_failure(monkeypat
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -2746,7 +2813,11 @@ def test_stop_loss_replacement_rejects_immediate_trigger_without_widening(monkey
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={
             "monitor_interval_seconds": 300,
             "stop_replace_retry_backoff_seconds": 0.0,
@@ -2791,7 +2862,11 @@ def test_margin_executor_routes_entry_stop_cancel_and_close_params(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={
             "monitor_interval_seconds": 300,
             "execution_account": "margin",
@@ -2847,7 +2922,11 @@ def test_monitor_orders_once_removes_filled_stop(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -2877,7 +2956,11 @@ def test_monitor_orders_once_classifies_fetch_order_timeout(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -2921,7 +3004,11 @@ def test_monitor_orders_once_falls_back_to_open_orders_when_fetch_order_unsuppor
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -3014,7 +3101,7 @@ def test_perps_reconciliation_imports_existing_position_and_stop(monkeypatch):
                         "stopPrice": "0.03280",
                         "triggerSignal": "last",
                     },
-                }
+                },
             ]
 
     params = _simple_policy_params(strategy_id="short_mr")
@@ -3244,8 +3331,12 @@ def test_perps_reconciliation_imports_orphan_position_with_artifact_stop(monkeyp
     assert state["barrier_frac"] == pytest.approx(0.02)
     assert state["sl_mult"] == pytest.approx(1.0)
     assert state["stop_policy_params_hash"] == params["params_hash"]
-    assert state["reconciliation_barrier_source"] == "artifact_simple_policy_stop_params"
-    assert state["reconciliation_context_source"] == "artifact_fallback_external_position"
+    assert (
+        state["reconciliation_barrier_source"] == "artifact_simple_policy_stop_params"
+    )
+    assert (
+        state["reconciliation_context_source"] == "artifact_fallback_external_position"
+    )
     assert state.get("recovered_from_pending_trade_log") is not True
 
 
@@ -3258,7 +3349,11 @@ def test_raw_stop_replacement_api_removed_from_live_executor(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -3286,7 +3381,11 @@ def test_missing_policy_decision_does_not_authorise_replacement(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -3312,7 +3411,11 @@ def test_decision_missing_hash_blocks_live_replacement(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -3365,7 +3468,11 @@ def test_shadow_rejects_arbitrary_stop_price_without_policy_decision():
     executor = TradeExecutor(
         mode="shadow",
         exchange=None,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
     )
     result = executor.execute_trade(
         "BTC/USDT", "long", 0.5, price=100.0, bucket_key="long_mr"
@@ -3380,7 +3487,11 @@ def test_shadow_rejects_invalid_policy_decision_with_shared_validator():
     executor = TradeExecutor(
         mode="shadow",
         exchange=None,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
     )
     result = executor.execute_trade(
         "BTC/USDT", "long", 0.5, price=100.0, bucket_key="long_mr"
@@ -3411,7 +3522,11 @@ def test_policy_update_rejects_dict_decision_inputs():
     executor = TradeExecutor(
         mode="shadow",
         exchange=None,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
     )
     executor.execute_trade("BTC/USDT", "long", 0.5, price=100.0, bucket_key="long_mr")
 
@@ -3438,7 +3553,11 @@ def test_short_policy_decision_replacement_improves_downward():
     executor = TradeExecutor(
         mode="shadow",
         exchange=None,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"short_mr": _simple_policy_params(strategy_id="short_mr")}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "short_mr": _simple_policy_params(strategy_id="short_mr")
+            }
+        },
     )
     result = executor.execute_trade(
         "BTC/USDT", "short", 0.5, price=100.0, bucket_key="short_mr"
@@ -3452,7 +3571,9 @@ def test_short_policy_decision_replacement_improves_downward():
         reason_detail="trailing_profit: test",
     )
     executor.update_position_policy_state("BTC/USDT", policy_stop_decision=decision)
-    assert executor.get_active_positions()["BTC/USDT"]["stop_price"] == pytest.approx(99.0)
+    assert executor.get_active_positions()["BTC/USDT"]["stop_price"] == pytest.approx(
+        99.0
+    )
 
 
 def test_execute_trade_hard_blocks_stale_signal_before_order_recording():
@@ -3498,7 +3619,11 @@ def test_reattach_requires_policy_provenance(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -3526,7 +3651,11 @@ def test_reattach_succeeds_for_policy_derived_stop_state(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -3548,7 +3677,11 @@ def test_trade_context_cannot_override_validated_simple_policy_fields():
     executor = TradeExecutor(
         mode="shadow",
         exchange=None,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
     )
     result = executor.execute_trade(
         "BTC/USDT",
@@ -3569,13 +3702,19 @@ def test_trade_context_cannot_override_validated_simple_policy_fields():
     assert result["status"] == "recorded"
     expected_hash = _simple_policy_params()["params_hash"]
     assert result["stop_policy_params_hash"] == expected_hash
-    assert result["stop_policy_params_source"] == "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json"
+    assert (
+        result["stop_policy_params_source"]
+        == "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json"
+    )
     assert result["stop_policy_schema"] == SIMPLE_POLICY_SCHEMA
     assert result["sl_mult"] == pytest.approx(1.0)
     assert result["barrier_frac"] == pytest.approx(0.02)
     state = executor.get_active_positions()["BTC/USDT"]
     assert state["stop_policy_params_hash"] == expected_hash
-    assert state["stop_policy_params_source"] == "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json"
+    assert (
+        state["stop_policy_params_source"]
+        == "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json"
+    )
     assert state["stop_policy_schema"] == SIMPLE_POLICY_SCHEMA
     assert state["sl_mult"] == pytest.approx(1.0)
     assert state["barrier_frac"] == pytest.approx(0.02)
@@ -3590,7 +3729,9 @@ def test_trade_context_cannot_override_validated_simple_policy_fields():
         ({"schema": "wrong_schema"}, "schema"),
     ],
 )
-def test_live_entry_fails_closed_without_explicit_policy_metadata(monkeypatch, override, expected):
+def test_live_entry_fails_closed_without_explicit_policy_metadata(
+    monkeypatch, override, expected
+):
     monkeypatch.setattr(
         "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
         lambda *args, **kwargs: pd.DataFrame(),
@@ -3622,7 +3763,10 @@ def test_raw_stop_replacement_method_is_removed():
         "_replace_stop_order_" + "raw",
     )
 
-def test_strict_immediate_trigger_preflight_repairs_candidate_before_replace(monkeypatch):
+
+def test_strict_immediate_trigger_preflight_repairs_candidate_before_replace(
+    monkeypatch,
+):
     monkeypatch.setattr(
         "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
         lambda *args, **kwargs: pd.DataFrame(),
@@ -3631,7 +3775,11 @@ def test_strict_immediate_trigger_preflight_repairs_candidate_before_replace(mon
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -3649,7 +3797,9 @@ def test_strict_immediate_trigger_preflight_repairs_candidate_before_replace(mon
             reason_detail="invalid local trigger side",
         )
         executor.update_position_policy_state("BTC/USDT", policy_stop_decision=decision)
-        assert state["stop_price"] == pytest.approx(100.0 * (1.0 - STOP_MIN_CURRENT_DISTANCE_PCT))
+        assert state["stop_price"] == pytest.approx(
+            100.0 * (1.0 - STOP_MIN_CURRENT_DISTANCE_PCT)
+        )
         assert state["stop_price"] > old_stop
         assert state["stop_order_id"] != old_order_id
         assert exchange.canceled[0][0] == old_order_id
@@ -3759,9 +3909,9 @@ def test_stop_fill_close_metrics_marks_open_shadow_exit():
     assert metrics["simple_policy_shadow"]["events"][-1]["event"] == (
         "shadow_exchange_stop_filled"
     )
-    assert metrics["simple_policy_shadow"]["events"][-1]["shadow_exit_price"] == pytest.approx(
-        0.3208
-    )
+    assert metrics["simple_policy_shadow"]["events"][-1][
+        "shadow_exit_price"
+    ] == pytest.approx(0.3208)
     assert metrics["simple_policy_shadow"]["events"][-1][
         "shadow_theoretical_exit_price"
     ] == pytest.approx(0.316)
@@ -3997,7 +4147,9 @@ def test_closed_trade_metrics_flags_partial_exchange_fees():
     assert metrics["exit_fee_estimate_quote"] == pytest.approx(0.077)
 
 
-def test_closed_trade_metrics_estimates_missing_fees_with_live_perp_default(monkeypatch):
+def test_closed_trade_metrics_estimates_missing_fees_with_live_perp_default(
+    monkeypatch,
+):
     for key in (
         "EPM_LIVE_FEE_FALLBACK_BPS",
         "EPM_LIVE_PERP_FEE_BPS",
@@ -4074,7 +4226,11 @@ def test_closed_trade_metrics_uses_actual_exchange_leverage_for_levered_pnl():
         state,
         order,
         reason="software_executable_stop_breach_pre_replace:trailing_profit",
-        config={"market_mode": "perps", "fee_bps_market": 0.0, "fee_bps_market_exit": 0.0},
+        config={
+            "market_mode": "perps",
+            "fee_bps_market": 0.0,
+            "fee_bps_market_exit": 0.0,
+        },
     )
 
     assert metrics["configured_entry_leverage"] == pytest.approx(10.0)
@@ -4097,6 +4253,12 @@ def test_closed_trade_metrics_caps_legacy_requested_leverage_for_perps():
         "entry_order_type": "market",
         "configured_entry_leverage": 18.8142223551,
         "perp_effective_leverage": 18.8142223551,
+        "perp_liquidation_guard_reason": "capped_to_keep_liquidation_beyond_stop",
+        "perp_liquidation_requested_leverage": 18.8142223551,
+        "perp_liquidation_guarded_leverage": 7.5,
+        "perp_liquidation_safe_max_leverage": 7.5,
+        "perp_liquidation_leverage_capped": True,
+        "perp_liquidation_stop_distance_pct": 0.068,
         "wallet_value_at_entry": 48.3612,
     }
     order = {
@@ -4119,6 +4281,10 @@ def test_closed_trade_metrics_caps_legacy_requested_leverage_for_perps():
     assert metrics["configured_entry_leverage"] == pytest.approx(10.0)
     assert metrics["max_entry_leverage"] == pytest.approx(10.0)
     assert metrics["requested_entry_leverage"] == pytest.approx(18.8142223551)
+    assert metrics["perp_liquidation_guard_reason"] == (
+        "capped_to_keep_liquidation_beyond_stop"
+    )
+    assert metrics["perp_liquidation_guarded_leverage"] == pytest.approx(7.5)
     assert metrics["net_pnl_pct_configured_leverage_estimated"] == pytest.approx(
         metrics["net_pnl_pct_estimated"] * 10.0
     )
@@ -4154,6 +4320,15 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
             "sentinel_stop_distance_bps": -108.5,
             "sentinel_stop_breach_overshoot_bps": 108.5,
             "trade_recap": "line 1\nline 2",
+            "perp_liquidation_guard_reason": "capped_to_keep_liquidation_beyond_stop",
+            "perp_liquidation_leverage_capped": True,
+            "perp_liquidation_requested_leverage": 10.0,
+            "perp_liquidation_guarded_leverage": 4.0,
+            "perp_liquidation_safe_max_leverage": 4.0,
+            "perp_liquidation_stop_distance_pct": 0.1845,
+            "perp_liquidation_required_distance_pct": 0.1945,
+            "perp_liquidation_distance_at_requested_pct": 0.045,
+            "perp_liquidation_distance_at_guarded_pct": 0.195,
         },
         config={"market_mode": "perps"},
     )
@@ -4171,6 +4346,12 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
     assert "sentinel_stop_breach_overshoot_bps: 108.5000" in close_body
     assert "shadow_exit_price_source: observed_exchange_stop_fill" in close_body
     assert "shadow_trigger_vs_live_exit_gap_bps: -108.5000" in close_body
+    assert (
+        "perp_liquidation_guard_reason: capped_to_keep_liquidation_beyond_stop"
+        in close_body
+    )
+    assert "perp_liquidation_guarded_leverage: 4.0000x" in close_body
+    assert "perp_liquidation_stop_distance_pct: 18.4500%" in close_body
     assert "entry_fee_quote" not in close_body
     assert "nan" not in close_body.lower()
 
@@ -4198,6 +4379,12 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
             "uncertainty_score": 0.34,
             "dynamic_hr_surprise_z_eff": -0.45,
             "dynamic_hr_threshold": 0.805,
+            "perp_liquidation_guard_reason": "capped_to_keep_liquidation_beyond_stop",
+            "perp_liquidation_leverage_capped": True,
+            "perp_liquidation_requested_leverage": 10.0,
+            "perp_liquidation_guarded_leverage": 4.0,
+            "perp_liquidation_safe_max_leverage": 4.0,
+            "perp_liquidation_stop_distance_pct": 0.1845,
         },
         config={"market_mode": "perps", "perp_default_leverage": 10.0},
     )
@@ -4209,7 +4396,7 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
     assert "Exchange Entry Leverage Used" in close_html
     assert "Base Rank pct" in close_html
     assert "Base Pred" not in close_html
-    assert "-19.5000%" in close_html
+    assert "-7.8000%" in close_html
     assert "Configured Lev" not in close_html
     assert "Estimated Configured-Leverage Net PnL %" not in close_html
     assert "Stop Gap bps" not in close_html
@@ -4223,6 +4410,10 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
     assert "Dynamic HR z_eff" in close_html
     assert "Drift Score" in close_html
     assert "Uncertainty Score" in close_html
+    assert "Liquidation Guard" in close_html
+    assert "Guarded Leverage" in close_html
+    assert "capped_to_keep_liquidation_beyond_stop" in close_html
+    assert "4.0000x" in close_html
     assert "Full Audit Detail" in close_html
     assert "estimated_missing_exchange_fees" in close_html
 
@@ -4249,6 +4440,11 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
             "entry_order_type": "market",
             "order": {"id": "entry-order"},
             "base_amount": np.nan,
+            "perp_liquidation_guard_reason": "requested_leverage_safe",
+            "perp_liquidation_leverage_capped": False,
+            "perp_liquidation_requested_leverage": 4.0,
+            "perp_liquidation_guarded_leverage": 4.0,
+            "perp_liquidation_safe_max_leverage": 7.5,
         },
         predictions={"base_pred": 0.81, "meta_pred": 0.67},
         config={"market_mode": "perps"},
@@ -4263,6 +4459,8 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
     assert "entry_fee_estimate_source: configured_entry_market_fee_bps" in open_body
     assert "ev_haircut_expected_stop_exit_friction_bps: 79.5000" in open_body
     assert "ev_haircut_stop_exit_excess_bps: 64.5000" in open_body
+    assert "perp_liquidation_guard_reason: requested_leverage_safe" in open_body
+    assert "perp_liquidation_guarded_leverage: 4.0000x" in open_body
     assert "base_amount" not in open_body
     assert "nan" not in open_body.lower()
 
@@ -4281,6 +4479,9 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
             "stop_price": 0.0008445,
             "entry_order_type": "market",
             "order": {"id": "entry-order"},
+            "perp_liquidation_guard_reason": "requested_leverage_safe",
+            "perp_liquidation_guarded_leverage": 4.0,
+            "perp_liquidation_safe_max_leverage": 7.5,
         },
         predictions={"base_pred": 0.81, "meta_pred": 0.67},
         config={"market_mode": "perps"},
@@ -4288,6 +4489,8 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
     assert "EPM Trade Opened" in open_html
     assert "Action" in open_html
     assert "Entry Fee Est." in open_html
+    assert "Liquidation Guard" in open_html
+    assert "Safe Max Leverage" in open_html
     assert "Full Audit Detail" in open_html
 
 
@@ -4358,7 +4561,11 @@ def test_live_entry_artifact_barrier_wins_over_forged_context(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -4388,7 +4595,11 @@ def test_live_replacement_uses_position_barrier_when_artifact_has_none(monkeypat
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -4409,7 +4620,9 @@ def test_live_replacement_uses_position_barrier_when_artifact_has_none(monkeypat
         )
         _evaluate_oco_policy("BTC/USDT", state, bars, executor)
         assert state["barrier_frac"] == pytest.approx(0.02)
-        assert state["stop_price"] == pytest.approx(100.0 * (1.0 - STOP_MIN_CURRENT_DISTANCE_PCT))
+        assert state["stop_price"] == pytest.approx(
+            100.0 * (1.0 - STOP_MIN_CURRENT_DISTANCE_PCT)
+        )
         assert state["stop_price"] > old_stop
         assert state["stop_order_id"] != old_order_id
         assert exchange.canceled[0][0] == old_order_id
@@ -4440,7 +4653,11 @@ def test_forged_policy_decision_metadata_is_rejected(monkeypatch, decision_overr
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -4477,7 +4694,11 @@ def test_reattach_rejects_nan_policy_provenance(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -4506,7 +4727,11 @@ def test_initial_live_stop_uses_artifact_barrier_without_context(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -4535,7 +4760,11 @@ def test_live_trade_context_cannot_forge_mirror_stop_fields(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -4564,7 +4793,10 @@ def test_live_trade_context_cannot_forge_mirror_stop_fields(monkeypatch):
         assert mirror["barrier_pct"] == pytest.approx(0.02)
         assert mirror["sl_mult"] == pytest.approx(1.0)
         assert mirror["strategy_id"] == "long_mr"
-        assert mirror["stop_policy_params_source"] == "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json"
+        assert (
+            mirror["stop_policy_params_source"]
+            == "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json"
+        )
         assert mirror["stop_policy_params_hash"] == expected_hash
         assert mirror["stop_policy_schema"] == SIMPLE_POLICY_SCHEMA
     finally:
@@ -4575,7 +4807,11 @@ def test_shadow_trade_context_cannot_forge_initial_stop_fields():
     executor = TradeExecutor(
         mode="shadow",
         exchange=None,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
     )
     rec = executor.execute_trade(
         "BTC/USDT",
@@ -4604,7 +4840,10 @@ def test_shadow_trade_context_cannot_forge_initial_stop_fields():
     assert state["barrier_pct"] == pytest.approx(0.02)
     assert state["sl_mult"] == pytest.approx(1.0)
     assert state["strategy_id"] == "long_mr"
-    assert state["stop_policy_params_source"] == "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json"
+    assert (
+        state["stop_policy_params_source"]
+        == "artifacts/test-run/simple_policy_optimiser/deployment/best_policy_params.json"
+    )
     assert state["stop_policy_params_hash"] == expected_hash
     assert state["stop_policy_schema"] == SIMPLE_POLICY_SCHEMA
 
@@ -4618,7 +4857,11 @@ def test_initial_short_stop_uses_artifact_barrier_and_sl_mult(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"short_mr": _simple_policy_params(strategy_id="short_mr")}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "short_mr": _simple_policy_params(strategy_id="short_mr")
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:
@@ -4660,9 +4903,7 @@ def test_simple_policy_extraction_aliases_and_filters_non_stop_fields():
         "selected": [selected],
         "strategies": [selected, {**strategies, "ridge_alpha": 0.7}],
         "buckets": {"Long_Breakout": {**legacy_bucket, "max_hold_hours": 99}},
-        "simple_policy_stop_params_by_strategy": {
-            "short_breakout": explicit
-        },
+        "simple_policy_stop_params_by_strategy": {"short_breakout": explicit},
         "ridge_global": 123,
     }
     extracted = extract_simple_policy_stop_params_by_strategy(payload)
@@ -4687,7 +4928,11 @@ def test_reattach_rejects_open_tracked_stop(monkeypatch):
     executor = TradeExecutor(
         mode="live",
         exchange=exchange,
-        bucket_params={"simple_policy_stop_params_by_strategy": {"long_mr": _simple_policy_params()}},
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_mr": _simple_policy_params()
+            }
+        },
         config={"monitor_interval_seconds": 300},
     )
     try:

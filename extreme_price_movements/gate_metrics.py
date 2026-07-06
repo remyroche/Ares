@@ -26,6 +26,14 @@ def compute_stage_gate_metrics(y_true, y_prob, y_ret=None, model_type="classifie
     if len(y_true) < 10:
         return {"passed": False, "reason": "Insufficient data", "metrics": metrics}
 
+    score_min = float(np.nanmin(y_prob)) if len(y_prob) else np.nan
+    score_max = float(np.nanmax(y_prob)) if len(y_prob) else np.nan
+    score_is_probability = bool(np.isfinite(score_min) and np.isfinite(score_max) and score_min >= 0.0 and score_max <= 1.0)
+    y_prob_for_loss = np.clip(y_prob, 1e-7, 1.0 - 1e-7)
+    metrics["Score_Min"] = score_min
+    metrics["Score_Max"] = score_max
+    metrics["Score_Is_Probability"] = score_is_probability
+
     # --- Top 40% Focus (User Requirement) ---
     # Focus metrics on the top 40% of predictions to favor "sniper" models
     # that might have poor global consistency but excellent high-confidence ranking.
@@ -58,8 +66,8 @@ def compute_stage_gate_metrics(y_true, y_prob, y_ret=None, model_type="classifie
         metrics["Pass_PR_AUC"] = pass_pr_auc
 
         # 2. Brier & LogLoss Improvement (Global - standard)
-        brier = brier_score_loss(y_bin, y_prob)
-        ll = log_loss(y_bin, np.clip(y_prob, 1e-7, 1-1e-7))
+        brier = brier_score_loss(y_bin, y_prob_for_loss)
+        ll = log_loss(y_bin, y_prob_for_loss)
 
         base_prob = np.full_like(y_prob, base_prev)
         base_brier = brier_score_loss(y_bin, base_prob)
@@ -72,6 +80,7 @@ def compute_stage_gate_metrics(y_true, y_prob, y_ret=None, model_type="classifie
         metrics["Brier_Imp"] = brier_imp
         metrics["LogLoss"] = ll
         metrics["LogLoss_Imp"] = ll_imp
+        metrics["Probability_Metrics_Clipped"] = not score_is_probability
         pass_loss = (brier_imp >= 0.02) and (ll_imp >= 0.02)
         metrics["Pass_Loss"] = pass_loss
 

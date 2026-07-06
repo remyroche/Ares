@@ -219,7 +219,9 @@ def test_patch_portfolio_policy_payload_enables_no_floor_t16():
     assert patched["selection"]["dynamic_hr_surprise_enabled"] is True
     assert patched["selection"]["dynamic_hr_surprise_use_deployed_floor"] is False
     assert patched["selection"]["dynamic_hr_surprise_fallback_to_deployed"] is False
-    assert patched["selection"]["dynamic_hr_surprise_stale_fallback_to_deployed"] is True
+    assert (
+        patched["selection"]["dynamic_hr_surprise_stale_fallback_to_deployed"] is True
+    )
 
 
 def test_dynamic_hr_surprise_loads_latest_table_row(tmp_path):
@@ -419,7 +421,9 @@ def test_training_live_parity_contract_can_be_required_and_validated(tmp_path):
         active_strategy_ids=["short_beta", "long_alpha"],
     )
     with pytest.raises(ValueError, match="Training-live parity strategy contract"):
-        validate_training_live_parity_contract(contract, active_strategy_ids=["long_alpha"])
+        validate_training_live_parity_contract(
+            contract, active_strategy_ids=["long_alpha"]
+        )
 
 
 def test_portfolio_manager_from_policy_config_enforces_caps():
@@ -639,8 +643,13 @@ def test_perps_default_leverage_is_capped_by_stop_loss_risk():
     )
 
     assert sizing["perp_rank_leverage"] == 10.0
-    assert sizing["perp_risk_cap_leverage"] == pytest.approx(100.0 / 15.0)
-    assert sizing["perp_effective_leverage"] == pytest.approx(100.0 / 15.0)
+    expected_liquidation_cap = 1.0 / (0.10 + 0.01 + 0.05 + 0.005)
+    assert sizing["perp_legacy_risk_cap_leverage"] == pytest.approx(100.0 / 15.0)
+    assert sizing["perp_liquidation_risk_cap_leverage"] == pytest.approx(
+        expected_liquidation_cap
+    )
+    assert sizing["perp_risk_cap_leverage"] == pytest.approx(expected_liquidation_cap)
+    assert sizing["perp_effective_leverage"] == pytest.approx(expected_liquidation_cap)
 
 
 def test_capacity_api_reports_remaining_slots_and_notional():

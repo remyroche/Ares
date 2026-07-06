@@ -1,0 +1,32 @@
+{
+  "recipe_id": "clean_first_touch_dual_proxy_stage166_v1",
+  "scope": "label_quality_candidate_not_production_promotion",
+  "source_labels_dir": "data_perp/artifacts/20260703_170000_first_touch_two_head_stage164_labels/labels",
+  "selector_report": "data_perp/reports/clean_first_touch_dual_proxy_selector_stage166_v1",
+  "clean_label_ablation_report": "data_perp/reports/clean_first_touch_label_ablation_stage165_lowmae_v2",
+  "metric_prefix": "__stage164_primary",
+  "primary_prefix": "__stage164_primary",
+  "challenger_prefix": "__stage164_challenger",
+  "materialized_prefix": "__stage166",
+  "utility_arm": "B_stage164_primary_support",
+  "risk_arm": "D_low_mae_clean",
+  "risk_gate_frac": 0.05,
+  "utility_top_frac": 0.03,
+  "proxy_gate_evidence": {
+    "months": 3,
+    "positive_months": 3,
+    "mean_first_touch_net": 0.0040672509639989585,
+    "worst_month_first_touch_net": 0.000022153282770887017,
+    "clean_first_touch_exec_rate": 0.7642607092857361,
+    "first_touch_timeout_rate": 0.037137604021932384,
+    "bad_first_touch_mae_to_sl_rate": 0.1986016800382472,
+    "p90_first_touch_mae_to_sl": 1.3717566768328349,
+    "top_symbol_share": 0.02737392242989258
+  },
+  "notes": [
+    "This is a two-head training candidate, not a production policy promotion.",
+    "The utility target copies Stage164 primary support because it had the strongest utility proxy transfer among clean-enough labels.",
+    "The risk target is low-MAE clean first-touch execution, used as a separate risk/support head.",
+    "The passing proxy result used prior-month feature IC scores, not LightGBM, Optuna, or policy geometry."
+  ]
+}

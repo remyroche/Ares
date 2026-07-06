@@ -34,6 +34,8 @@ from extreme_price_movements.portfolio_policy_replay import (
 
 
 DEFAULT_BAR_MINUTES = 15
+Q35_DAY_OBJECTIVE_WEIGHT = 0.7
+Q20_DAY_OBJECTIVE_WEIGHT = 0.3
 
 RANK_FEATURES = [
     "rank_pct",
@@ -44,6 +46,8 @@ RANK_FEATURES = [
     "simple_policy_calibrated_good_trade_prob",
 ]
 UNCERTAINTY_FEATURES = [
+    "generated_score_uncertainty_p1mp",
+    "generated_score_entropy",
     "oof_prob_uncertainty",
     "oof_contrib_entropy",
     "oof_rank_bin_se_oof",
@@ -53,6 +57,7 @@ UNCERTAINTY_FEATURES = [
     "oof_score_reversal_count",
 ]
 UNCERTAINTY_INVERSE_FEATURES = [
+    "generated_score_abs_distance_from_half",
     "oof_score_margin_top10",
     "oof_score_margin_top20",
     "oof_score_margin_top30",
@@ -61,11 +66,20 @@ UNCERTAINTY_INVERSE_FEATURES = [
     "oof_rank_margin_top30",
 ]
 DRIFT_FEATURES = [
+    "generated_score_abs_diff_1",
+    "generated_score_abs_diff_4",
+    "generated_score_abs_diff_24",
+    "generated_score_abs_minus_prev24_mean",
+    "generated_score_prev24_std",
+    "generated_strategy_score_shift_abs_z",
     "oof_feature_drift_psi_core",
     "oof_feature_drift_ks_core",
     "oof_feature_drift_cov_shift",
 ]
 OOD_FEATURES = [
+    "generated_strategy_score_ood_abs_z",
+    "generated_strategy_barrier_ood_abs_z",
+    "generated_strategy_friction_ood_abs_z",
     "oof_dae_reconstruction_error",
     "oof_dae_reconstruction_error_zscore",
     "oof_latent_mahalanobis_drift",
@@ -81,6 +95,16 @@ OOD_INVERSE_FEATURES = [
     "oof_leaf_train_freq_mean",
     "oof_leaf_train_freq_p10",
     "oof_leaf_train_freq_min",
+]
+RECENT_PERFORMANCE_FEATURES = [
+    "generated_hr_surprise_24",
+    "generated_hr_surprise_96",
+    "generated_weighted_hr_surprise_24",
+    "generated_weighted_hr_surprise_96",
+    "generated_loss_rate_24",
+    "generated_loss_rate_96",
+    "generated_matured_count_24",
+    "generated_matured_count_96",
 ]
 
 
@@ -100,6 +124,159 @@ def _side_code(value: Any) -> float:
     return 1.0
 
 
+def _score_series(rows: pd.DataFrame) -> pd.Series:
+    for col in (
+        "reliability_blend_score",
+        "calibrated_score",
+        "normalized_rank_score",
+        "rank_pct",
+        "strategy_rank_pct",
+    ):
+        if col in rows.columns:
+            score = pd.to_numeric(rows[col], errors="coerce")
+            if score.notna().any():
+                return score.clip(0.0, 1.0)
+    return pd.Series(0.5, index=rows.index, dtype="float64")
+
+
+def _rolling_shifted_z(
+    values: pd.Series,
+    group_keys: Sequence[pd.Series],
+    *,
+    window: int,
+) -> pd.Series:
+    grouped = values.groupby(list(group_keys), sort=False)
+    mean = grouped.transform(lambda s: s.shift(1).rolling(window, min_periods=8).mean())
+    std = grouped.transform(lambda s: s.shift(1).rolling(window, min_periods=8).std())
+    z = (values - mean) / std.replace(0.0, np.nan)
+    return z.replace([np.inf, -np.inf], np.nan)
+
+
+def _add_score_diagnostics(rows: pd.DataFrame) -> pd.DataFrame:
+    out = rows.copy()
+    score = _score_series(out).astype("float64")
+    eps = 1e-6
+    clipped = score.clip(eps, 1.0 - eps)
+    out["generated_score_uncertainty_p1mp"] = (clipped * (1.0 - clipped)).astype("float32")
+    out["generated_score_entropy"] = (
+        -(clipped * np.log(clipped) + (1.0 - clipped) * np.log(1.0 - clipped))
+    ).astype("float32")
+    out["generated_score_abs_distance_from_half"] = (score - 0.5).abs().astype("float32")
+
+    sort_cols = ["strategy_id", "symbol", "timestamp"]
+    out = out.sort_values(sort_cols).copy()
+    score = _score_series(out).astype("float64")
+    by_symbol = out.groupby(["strategy_id", "symbol"], sort=False)
+    for lag in (1, 4, 24):
+        if score.name in out.columns:
+            diff = score - by_symbol[score.name].shift(lag)
+        else:
+            diff = pd.Series(np.nan, index=out.index, dtype="float64")
+        out[f"generated_score_abs_diff_{lag}"] = diff
+        out[f"generated_score_abs_diff_{lag}"] = (
+            pd.to_numeric(out[f"generated_score_abs_diff_{lag}"], errors="coerce")
+            .abs()
+            .astype("float32")
+        )
+    prev24_mean = by_symbol[score.name].transform(
+        lambda s: s.shift(1).rolling(24, min_periods=6).mean()
+    ) if score.name in out.columns else pd.Series(np.nan, index=out.index)
+    prev24_std = by_symbol[score.name].transform(
+        lambda s: s.shift(1).rolling(24, min_periods=6).std()
+    ) if score.name in out.columns else pd.Series(np.nan, index=out.index)
+    out["generated_score_abs_minus_prev24_mean"] = (score - prev24_mean).abs().astype("float32")
+    out["generated_score_prev24_std"] = prev24_std.astype("float32")
+
+    by_strategy = [out["strategy_id"]]
+    out["generated_strategy_score_shift_abs_z"] = _rolling_shifted_z(
+        score,
+        by_strategy,
+        window=96,
+    ).abs().astype("float32")
+    out["generated_strategy_score_ood_abs_z"] = _rolling_shifted_z(
+        score,
+        by_strategy,
+        window=384,
+    ).abs().astype("float32")
+    barrier = pd.to_numeric(out.get("policy_effective_barrier_pct", out["barrier_pct"]), errors="coerce")
+    out["generated_strategy_barrier_ood_abs_z"] = _rolling_shifted_z(
+        barrier,
+        by_strategy,
+        window=384,
+    ).abs().astype("float32")
+    friction = pd.to_numeric(
+        out.get("expected_friction_bps", pd.Series(np.nan, index=out.index)),
+        errors="coerce",
+    )
+    out["generated_strategy_friction_ood_abs_z"] = _rolling_shifted_z(
+        friction,
+        by_strategy,
+        window=384,
+    ).abs().astype("float32")
+    return out.sort_values(["strategy_id", "timestamp", "symbol"]).reset_index(drop=True)
+
+
+def _add_recent_performance_features(rows: pd.DataFrame) -> pd.DataFrame:
+    if "net_return" not in rows.columns or "exit_timestamp" not in rows.columns:
+        return rows
+    out = rows.copy()
+    out["exit_timestamp"] = pd.to_datetime(out["exit_timestamp"], utc=True, errors="coerce")
+    score = _score_series(out).astype("float64")
+    events = pd.DataFrame(
+        {
+            "strategy_id": out["strategy_id"].astype(str).to_numpy(),
+            "event_ts": out["exit_timestamp"].to_numpy(),
+            "win": (pd.to_numeric(out["net_return"], errors="coerce") > 0.0).astype(float).to_numpy(),
+            "expected": score.to_numpy(dtype=float),
+        }
+    )
+    events = events.dropna(subset=["event_ts"]).sort_values(["strategy_id", "event_ts"]).reset_index(drop=True)
+    if events.empty:
+        return out
+    events["error"] = events["win"] - events["expected"]
+    events["weighted_error"] = events["error"] * events["expected"].clip(0.0, 1.0)
+    feature_frames: List[pd.DataFrame] = []
+    for strategy_id, group in events.groupby("strategy_id", sort=False):
+        g = group.sort_values("event_ts").copy()
+        for window in (24, 96):
+            min_periods = max(4, min(window // 4, 12))
+            g[f"generated_hr_surprise_{window}"] = (
+                g["error"].rolling(window, min_periods=min_periods).mean()
+            )
+            g[f"generated_weighted_hr_surprise_{window}"] = (
+                g["weighted_error"].rolling(window, min_periods=min_periods).mean()
+            )
+            g[f"generated_loss_rate_{window}"] = (
+                (1.0 - g["win"]).rolling(window, min_periods=min_periods).mean()
+            )
+            g[f"generated_matured_count_{window}"] = (
+                g["win"].rolling(window, min_periods=1).count().clip(upper=window) / float(window)
+            )
+        feature_frames.append(g[["strategy_id", "event_ts", *RECENT_PERFORMANCE_FEATURES]])
+    perf = pd.concat(feature_frames, ignore_index=True).sort_values(["strategy_id", "event_ts"])
+    pieces: List[pd.DataFrame] = []
+    original_order = out.reset_index().rename(columns={"index": "_row_id"})
+    for strategy_id, group in original_order.groupby("strategy_id", sort=False):
+        left = group.sort_values("timestamp")
+        right = perf.loc[perf["strategy_id"].eq(strategy_id)].sort_values("event_ts")
+        if right.empty:
+            for col in RECENT_PERFORMANCE_FEATURES:
+                left[col] = np.nan
+            pieces.append(left)
+            continue
+        merged = pd.merge_asof(
+            left,
+            right.drop(columns=["strategy_id"]),
+            left_on="timestamp",
+            right_on="event_ts",
+            direction="backward",
+            allow_exact_matches=True,
+        ).drop(columns=["event_ts"], errors="ignore")
+        pieces.append(merged)
+    out = pd.concat(pieces, ignore_index=True).sort_values("_row_id").drop(columns=["_row_id"])
+    return out.reset_index(drop=True)
+
+
 def _prepare_rows(path: Path, *, min_rank: float) -> pd.DataFrame:
     rows = pd.read_parquet(path)
     required = {"timestamp", "symbol", "strategy_id", "rank_pct", "barrier_pct"}
@@ -115,6 +292,8 @@ def _prepare_rows(path: Path, *, min_rank: float) -> pd.DataFrame:
     rows["symbol"] = rows["symbol"].astype(str)
     rows["strategy_id"] = rows["strategy_id"].astype(str)
     rows = rows.sort_values(["strategy_id", "timestamp", "symbol"]).reset_index(drop=True)
+    rows = _add_score_diagnostics(rows)
+    rows = _add_recent_performance_features(rows)
     if rows.empty:
         raise ValueError(f"No rows left after rank_pct >= {min_rank}")
     return rows
@@ -159,6 +338,8 @@ def _feature_columns(rows: pd.DataFrame, groups: Sequence[str]) -> Tuple[List[st
     if "ood" in group_set:
         candidates += [(c, "ood", 1.0) for c in OOD_FEATURES]
         candidates += [(c, "ood", -1.0) for c in OOD_INVERSE_FEATURES]
+    if "performance" in group_set:
+        candidates += [(c, "performance", 1.0) for c in RECENT_PERFORMANCE_FEATURES]
 
     cols: List[str] = []
     out_groups: List[str] = []
@@ -198,13 +379,19 @@ def _fit_feature_state(
 def _transform_feature_groups(rows: pd.DataFrame, state: FeatureState) -> Dict[str, np.ndarray]:
     if not state.columns:
         zeros = np.zeros(len(rows), dtype=np.float32)
-        return {"rank": zeros, "uncertainty": zeros, "drift": zeros, "ood": zeros}
+        return {
+            "rank": zeros,
+            "uncertainty": zeros,
+            "drift": zeros,
+            "ood": zeros,
+            "performance": zeros,
+        }
     x = rows[state.columns].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=np.float64)
     x = np.where(np.isfinite(x), x, state.median)
     z = (x - state.median) / state.scale
     z = np.clip(z * state.signs, -6.0, 6.0)
     out: Dict[str, np.ndarray] = {}
-    for group in ("rank", "uncertainty", "drift", "ood"):
+    for group in ("rank", "uncertainty", "drift", "ood", "performance"):
         idx = [i for i, g in enumerate(state.groups) if g == group]
         if not idx:
             out[group] = np.zeros(len(rows), dtype=np.float32)
@@ -230,8 +417,10 @@ def _build_context_score(
 
     if arm == "rank_only":
         groups = ("rank",)
+    elif arm == "performance_only":
+        groups = ("rank", "performance")
     else:
-        groups = ("rank", "uncertainty", "drift", "ood")
+        groups = ("rank", "uncertainty", "drift", "ood", "performance")
 
     linear = np.zeros(n, dtype=np.float32)
     for group in groups:
@@ -394,8 +583,8 @@ def _objective(metrics: Mapping[str, Any]) -> float:
     stats = _period_stats(metrics)
     return float(
         stats["avg_week_pnl"]
-        + 0.7 * stats["q35_day_pnl"]
-        + 0.3 * stats["q20_day_pnl"]
+        + float(Q35_DAY_OBJECTIVE_WEIGHT) * stats["q35_day_pnl"]
+        + float(Q20_DAY_OBJECTIVE_WEIGHT) * stats["q20_day_pnl"]
     )
 
 
@@ -433,7 +622,7 @@ def _suggest_params(trial: optuna.Trial, *, arm: str) -> Dict[str, float]:
     }
     if arm == "joint_all":
         params["joint_strength"] = trial.suggest_float("joint_strength", -3.0, 3.0)
-    elif arm in {"independent_all", "rank_only"}:
+    elif arm != "static":
         params["sl_strength"] = trial.suggest_float("sl_strength", -3.0, 3.0)
         params["tp_strength"] = trial.suggest_float("tp_strength", -3.0, 3.0)
     return params
@@ -591,12 +780,21 @@ def _portfolio_candidate_table(
     out["contextual_same_bar_conflict"] = np.asarray(metrics["same_bar_conflict"], dtype=bool)
     if "base_strategy_threshold" not in out.columns:
         out["base_strategy_threshold"] = 0.70
+    else:
+        threshold = pd.to_numeric(out["base_strategy_threshold"], errors="coerce")
+        out["base_strategy_threshold"] = threshold.where(np.isfinite(threshold), 0.70)
     if "calibrated_score" not in out.columns:
         out["calibrated_score"] = pd.to_numeric(out["rank_pct"], errors="coerce")
     if "normalized_rank_score" not in out.columns:
         out["normalized_rank_score"] = pd.to_numeric(out["rank_pct"], errors="coerce")
     if "strategy_rank_pct" not in out.columns:
         out["strategy_rank_pct"] = pd.to_numeric(out["rank_pct"], errors="coerce")
+    if "auction_rank_score" not in out.columns:
+        out["auction_rank_score"] = pd.to_numeric(out["normalized_rank_score"], errors="coerce")
+    if "simple_policy_calibrated_good_trade_prob" not in out.columns:
+        out["simple_policy_calibrated_good_trade_prob"] = pd.to_numeric(
+            out["calibrated_score"], errors="coerce"
+        )
     return out
 
 
@@ -646,6 +844,43 @@ def _summarise_accepted(decisions: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(global_rows + rows)
 
 
+def _feature_family_audit(payload: Mapping[str, Any]) -> pd.DataFrame:
+    rows: List[Dict[str, Any]] = []
+    family_order = ("rank", "uncertainty", "drift", "ood", "performance")
+    for strategy_id, strategy_payload in payload.get("strategies", {}).items():
+        if not isinstance(strategy_payload, Mapping) or strategy_payload.get("status") != "ok":
+            continue
+        arms_payload = strategy_payload.get("arms", {})
+        if not isinstance(arms_payload, Mapping):
+            continue
+        best_arm = None
+        best_objective = -np.inf
+        for arm, arm_payload in arms_payload.items():
+            if not isinstance(arm_payload, Mapping):
+                continue
+            validation = arm_payload.get("validation", {})
+            objective = float(validation.get("objective", -np.inf)) if isinstance(validation, Mapping) else -np.inf
+            if np.isfinite(objective) and objective > best_objective:
+                best_arm = str(arm)
+                best_objective = objective
+        for arm, arm_payload in arms_payload.items():
+            if not isinstance(arm_payload, Mapping):
+                continue
+            groups = [str(g) for g in arm_payload.get("feature_groups", [])]
+            validation = arm_payload.get("validation", {})
+            rec: Dict[str, Any] = {
+                "strategy_id": str(strategy_id),
+                "arm": str(arm),
+                "is_best_validation_arm": bool(str(arm) == best_arm),
+                "validation_objective": float(validation.get("objective", np.nan)) if isinstance(validation, Mapping) else np.nan,
+                "feature_count": int(len(arm_payload.get("feature_columns", []) or [])),
+            }
+            for family in family_order:
+                rec[f"{family}_feature_count"] = int(sum(g == family for g in groups))
+            rows.append(rec)
+    return pd.DataFrame(rows)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -662,8 +897,13 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=104729)
     parser.add_argument("--strategy-ids", default="")
     parser.add_argument("--portfolio-replay", action="store_true")
+    parser.add_argument("--q35-day-weight", type=float, default=0.7)
+    parser.add_argument("--q20-day-weight", type=float, default=0.3)
     args = parser.parse_args()
 
+    global Q35_DAY_OBJECTIVE_WEIGHT, Q20_DAY_OBJECTIVE_WEIGHT
+    Q35_DAY_OBJECTIVE_WEIGHT = float(args.q35_day_weight)
+    Q20_DAY_OBJECTIVE_WEIGHT = float(args.q20_day_weight)
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -678,8 +918,9 @@ def main() -> None:
     arms = {
         "static": ("rank",),
         "rank_only": ("rank",),
-        "joint_all": ("rank", "uncertainty", "drift", "ood"),
-        "independent_all": ("rank", "uncertainty", "drift", "ood"),
+        "performance_only": ("rank", "performance"),
+        "joint_all": ("rank", "uncertainty", "drift", "ood", "performance"),
+        "independent_all": ("rank", "uncertainty", "drift", "ood", "performance"),
     }
     payload: Dict[str, Any] = {
         "generated_by": "ablate_contextual_tp_sl",
@@ -690,6 +931,12 @@ def main() -> None:
         "validation_frac": float(args.validation_frac),
         "n_trials": int(args.n_trials),
         "seed": int(args.seed),
+        "objective_formula": (
+            "avg_week_pnl + q35_day_weight*q35_day_pnl "
+            "+ q20_day_weight*q20_day_pnl"
+        ),
+        "q35_day_weight": float(args.q35_day_weight),
+        "q20_day_weight": float(args.q20_day_weight),
         "arms": list(arms),
         "strategies": {},
     }
@@ -699,6 +946,7 @@ def main() -> None:
     full_candidate_by_arm: Dict[str, List[pd.DataFrame]] = {
         "static": [],
         "rank_only": [],
+        "performance_only": [],
         "joint_all": [],
         "independent_all": [],
         "best_by_head": [],
@@ -853,6 +1101,7 @@ def main() -> None:
     summary = pd.DataFrame(summary_rows)
     deltas = pd.DataFrame(delta_rows)
     weekly = pd.concat(weekly_frames, ignore_index=True) if weekly_frames else pd.DataFrame()
+    family_audit = _feature_family_audit(payload)
     portfolio_summary_rows: List[Dict[str, Any]] = []
     portfolio_weekly_frames: List[pd.DataFrame] = []
     if args.portfolio_replay:
@@ -913,6 +1162,7 @@ def main() -> None:
     summary.to_csv(args.out_dir / "contextual_tp_sl_summary.csv", index=False)
     deltas.to_csv(args.out_dir / "contextual_tp_sl_deltas.csv", index=False)
     weekly.to_csv(args.out_dir / "contextual_tp_sl_weekly.csv", index=False)
+    family_audit.to_csv(args.out_dir / "contextual_tp_sl_feature_family_audit.csv", index=False)
     if args.portfolio_replay:
         portfolio_summary.to_csv(args.out_dir / "portfolio_replay_summary.csv", index=False)
         portfolio_weekly.to_csv(args.out_dir / "portfolio_replay_weekly.csv", index=False)
@@ -934,10 +1184,37 @@ def main() -> None:
         f"Rows after min-rank filter: {len(rows)}",
         f"Min rank: {float(args.min_rank):.2f}",
         f"Trials per arm/head: {int(args.n_trials)}",
-        "Objective: `avg_week_pnl + 0.7 * q35_day_pnl + 0.3 * q20_day_pnl`",
+        (
+            "Objective: `avg_week_pnl + "
+            f"{float(args.q35_day_weight):.3g} * q35_day_pnl + "
+            f"{float(args.q20_day_weight):.3g} * q20_day_pnl`"
+        ),
         "",
     ]
     if not summary.empty:
+        if not family_audit.empty:
+            lines.extend(
+                [
+                    "## Feature Family Audit",
+                    "",
+                    "Performance columns are the recent hit-rate surprise/loss-rate family.",
+                    "",
+                ]
+            )
+            keep_family = [
+                "strategy_id",
+                "arm",
+                "is_best_validation_arm",
+                "validation_objective",
+                "feature_count",
+                "rank_feature_count",
+                "uncertainty_feature_count",
+                "drift_feature_count",
+                "ood_feature_count",
+                "performance_feature_count",
+            ]
+            lines.append(family_audit[[c for c in keep_family if c in family_audit.columns]].to_markdown(index=False))
+            lines.extend(["", "## Validation Summary", ""])
         keep = [
             "strategy_id",
             "arm",

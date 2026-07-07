@@ -53,7 +53,6 @@ import json
 import os
 import re
 import resource
-import sys
 import threading
 import time
 from dataclasses import replace
@@ -115,7 +114,6 @@ from extreme_price_movements.inference.data_fetcher import (
     DataFetcher,
     classify_api_error,
     fetch_and_build_panel,
-    fetch_latest_ohlcv,
     make_exchange,
 )
 from extreme_price_movements.inference.feature_generator import (
@@ -131,7 +129,6 @@ from extreme_price_movements.inference.feature_generator import (
     generate_features,
     get_features_for_candidates,
     get_inference_required_feature_keys,
-    get_market_data,
     is_model_derived_feature_key,
     live_model_feature_store_strict,
     load_or_compute_features,
@@ -220,7 +217,6 @@ from extreme_price_movements.path_utils import mode_file_candidates
 from extreme_price_movements.inference.trade_executor import TradeExecutor
 from extreme_price_movements.inference.trade_logger import (
     TradeLogger,
-    log_trade_decision,
 )
 from extreme_price_movements.portfolio_manager import PortfolioManager
 from extreme_price_movements.utils import tprint
@@ -5208,7 +5204,9 @@ def _latest_rolling_meta_health(
             "reason": (
                 "ok"
                 if end_ok and age_ok
-                else "stale_end_ts" if not end_ok else "stale_rolling_meta"
+                else "stale_end_ts"
+                if not end_ok
+                else "stale_rolling_meta"
             ),
         }
     )
@@ -5338,7 +5336,9 @@ def _live_warmup_state_health_snapshot(
     reason = (
         "ok"
         if ok
-        else panel_reason if not panel_ok else "stale_or_missing_rolling_state"
+        else panel_reason
+        if not panel_ok
+        else "stale_or_missing_rolling_state"
     )
     return {
         "ok": ok,
@@ -13128,15 +13128,6 @@ def run_inference_step(
                     threshold_rank_score_source_config = str(
                         nrow.get("threshold_rank_score_source") or ""
                     ).strip()
-                    use_auction_rank_for_threshold = (
-                        threshold_rank_score_source_config
-                        not in {
-                            "policy_rank_pct",
-                            "strategy_rank_pct",
-                            "rank_pct",
-                            "policy_rank_reference_percentile",
-                        }
-                    )
                     viability_margin = float(nrow.get("viability_margin", 0.0))
                     policy_threshold_floor = float(
                         np.clip(
@@ -18721,7 +18712,6 @@ def _emit_inference_heartbeat(
 
 
 def main():
-    import argparse
 
     _load_local_env_if_present()
     _configure_numba_threading_layer()
@@ -19473,7 +19463,6 @@ def main():
             )
             current_time = latest_closed_hour
             latest_closed_hour_close = latest_closed_hour + pd.Timedelta(hours=1)
-            current_close = latest_closed_hour_close
             hourly_age_seconds = _closed_candle_age_seconds(
                 loop_now,
                 latest_closed_hour,
@@ -19869,8 +19858,7 @@ def main():
                         ),
                     )
                     tprint(
-                        "Live selected model-feature prewarm result: "
-                        f"{prewarm_result}"
+                        f"Live selected model-feature prewarm result: {prewarm_result}"
                     )
                     if bool(prewarm_result.get("ok")) or str(
                         prewarm_result.get("status") or ""
@@ -20535,11 +20523,19 @@ def _evaluate_oco_policy(
                     position_state.update(refreshed)
                     stop_price = float(position_state.get("stop_price", stop_price))
 
-        for bar_ts, row in bars.iterrows():
-            bar_open = float(row["open"])
-            bar_high = float(row["high"])
-            bar_low = float(row["low"])
-            bar_close = float(row["close"])
+        bar_indices = bars.index.to_numpy()
+        bar_opens = bars.get("open", pd.Series(np.nan, index=bars.index)).to_numpy()
+        bar_highs = bars.get("high", pd.Series(np.nan, index=bars.index)).to_numpy()
+        bar_lows = bars.get("low", pd.Series(np.nan, index=bars.index)).to_numpy()
+        bar_closes = bars.get("close", pd.Series(np.nan, index=bars.index)).to_numpy()
+
+        for bar_ts, bar_open, bar_high, bar_low, bar_close in zip(
+            bar_indices, bar_opens, bar_highs, bar_lows, bar_closes
+        ):
+            bar_open = float(bar_open)
+            bar_high = float(bar_high)
+            bar_low = float(bar_low)
+            bar_close = float(bar_close)
             price_dev_pct = (
                 (bar_close - entry_price) / max(abs(entry_price), 1e-12)
                 if side == "long"

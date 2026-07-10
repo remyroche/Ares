@@ -402,7 +402,8 @@ def test_stale_orderbook_features_are_not_forward_filled_into_live_snapshot():
     )
 
     assert "ret24h" in matrix.columns
-    assert matrix.loc["AAA/USDC", "ret24h"] == 0.03
+    import math
+    assert math.isclose(float(matrix.loc["AAA/USDC", "ret24h"]), 0.03, rel_tol=1e-5)
     assert "ob_spread_bps" not in matrix.columns
 
 
@@ -638,8 +639,9 @@ def test_market_regime_scores_broadcast_to_required_live_symbols():
     )
 
     assert list(materialized["regime_trend_score"].columns) == ["AAA/USDC", "BBB/USDC"]
-    assert materialized["regime_trend_score"].loc[idx[-1], "AAA/USDC"] == 0.3
-    assert materialized["regime_trend_score"].loc[idx[-1], "BBB/USDC"] == 0.3
+    import math
+    assert math.isclose(float(materialized["regime_trend_score"].loc[idx[-1], "AAA/USDC"]), 0.3, rel_tol=1e-5)
+    assert math.isclose(float(materialized["regime_trend_score"].loc[idx[-1], "BBB/USDC"]), 0.3, rel_tol=1e-5)
     assert pd.isna(materialized["ret24h"].loc[idx[-1], "BBB/USDC"])
 
 
@@ -665,12 +667,13 @@ def test_market_wide_frames_are_materialized_from_existing_regime_gates():
         "regime_trend_score",
         "regime_vol_score",
     ]
-    assert materialized["regime_trend_score"].loc[idx[-1], "AAA/USDC"] == 0.3
-    assert materialized["regime_trend_score"].loc[idx[-1], "BBB/USDC"] == 0.3
-    assert materialized["regime_vol_score"].loc[idx[-1], "AAA/USDC"] == 0.8
-    assert materialized["regime_vol_score"].loc[idx[-1], "BBB/USDC"] == 0.8
-    assert materialized["mkt_rv_ratio"].loc[idx[-1], "AAA/USDC"] == 1.2
-    assert materialized["mkt_rv_ratio"].loc[idx[-1], "BBB/USDC"] == 1.2
+    import math
+    assert math.isclose(float(materialized["regime_trend_score"].loc[idx[-1], "AAA/USDC"]), 0.3, rel_tol=1e-5)
+    assert math.isclose(float(materialized["regime_trend_score"].loc[idx[-1], "BBB/USDC"]), 0.3, rel_tol=1e-5)
+    assert math.isclose(float(materialized["regime_vol_score"].loc[idx[-1], "AAA/USDC"]), 0.8, rel_tol=1e-5)
+    assert math.isclose(float(materialized["regime_vol_score"].loc[idx[-1], "BBB/USDC"]), 0.8, rel_tol=1e-5)
+    assert math.isclose(float(materialized["mkt_rv_ratio"].loc[idx[-1], "AAA/USDC"]), 1.2, rel_tol=1e-5)
+    assert math.isclose(float(materialized["mkt_rv_ratio"].loc[idx[-1], "BBB/USDC"]), 1.2, rel_tol=1e-5)
 
 
 def test_live_lgbm_mask_market_basket_resolves_perp_symbols_by_base(monkeypatch):

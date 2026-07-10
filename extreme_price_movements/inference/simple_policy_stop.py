@@ -87,6 +87,9 @@ SIMPLE_POLICY_STOP_PARAM_KEYS = (
     "redeploy_scale_bps",
     "target_holding_hours",
     "churn_penalty_bps",
+    "round_trip_cost_pct",
+    "cost_pct_per_side",
+    "trailing_profit_buffer_bps",
     "capital_protect_mfe_mult",
     "capital_protect_regression_frac",
     "capital_protect_lock_frac",
@@ -121,6 +124,9 @@ _OPTIONAL_SIMPLE_POLICY_STOP_FIELDS = {
     "redeploy_scale_bps",
     "target_holding_hours",
     "churn_penalty_bps",
+    "round_trip_cost_pct",
+    "cost_pct_per_side",
+    "trailing_profit_buffer_bps",
     "capital_protect_lock_frac",
     "capital_protect_min_lock_bps",
 }
@@ -428,6 +434,9 @@ class ValidatedSimplePolicyParams:
     redeploy_scale_bps: float
     target_holding_hours: float
     churn_penalty_bps: float
+    round_trip_cost_pct: float
+    cost_pct_per_side: float
+    trailing_profit_buffer_bps: float
     capital_protect_mfe_mult: float
     capital_protect_regression_frac: float
     capital_protect_lock_frac: float
@@ -483,6 +492,9 @@ class SimplePolicyStopDecision:
     effective_hard_tp_abs_pct: Optional[float] = None
     target_holding_hours: Optional[float] = None
     churn_penalty_bps: Optional[float] = None
+    round_trip_cost_pct: Optional[float] = None
+    cost_pct_per_side: Optional[float] = None
+    trailing_profit_buffer_bps: Optional[float] = None
     capital_protect_mfe_mult: Optional[float] = None
     capital_protect_regression_frac: Optional[float] = None
     capital_protect_lock_frac: Optional[float] = None
@@ -704,6 +716,27 @@ def validate_simple_policy_stop_params(
     values["redeploy_scale_bps"] = _safe_float(params.get("redeploy_scale_bps"), 100.0)
     values["target_holding_hours"] = _safe_float(params.get("target_holding_hours"), 0.0)
     values["churn_penalty_bps"] = _safe_float(params.get("churn_penalty_bps"), 100.0)
+    values["round_trip_cost_pct"] = _safe_float(
+        params.get("round_trip_cost_pct"), np.nan
+    )
+    values["cost_pct_per_side"] = _safe_float(
+        params.get("cost_pct_per_side"), np.nan
+    )
+    values["trailing_profit_buffer_bps"] = _safe_float(
+        params.get("trailing_profit_buffer_bps"), 0.0
+    )
+    if not np.isfinite(values["round_trip_cost_pct"]) and np.isfinite(
+        values["cost_pct_per_side"]
+    ):
+        values["round_trip_cost_pct"] = 2.0 * values["cost_pct_per_side"]
+    if not np.isfinite(values["cost_pct_per_side"]) and np.isfinite(
+        values["round_trip_cost_pct"]
+    ):
+        values["cost_pct_per_side"] = 0.5 * values["round_trip_cost_pct"]
+    if not np.isfinite(values["round_trip_cost_pct"]):
+        values["round_trip_cost_pct"] = 0.0
+    if not np.isfinite(values["cost_pct_per_side"]):
+        values["cost_pct_per_side"] = 0.0
     bad = [key for key, value in values.items() if not np.isfinite(value)]
     if bad:
         raise SimplePolicyStopParamsError(
@@ -746,6 +779,11 @@ def validate_simple_policy_stop_params(
     values["redeploy_scale_bps"] = max(1e-6, float(values["redeploy_scale_bps"]))
     values["target_holding_hours"] = max(0.0, float(values["target_holding_hours"]))
     values["churn_penalty_bps"] = max(0.0, float(values["churn_penalty_bps"]))
+    values["round_trip_cost_pct"] = max(0.0, float(values["round_trip_cost_pct"]))
+    values["cost_pct_per_side"] = max(0.0, float(values["cost_pct_per_side"]))
+    values["trailing_profit_buffer_bps"] = max(
+        0.0, float(values["trailing_profit_buffer_bps"])
+    )
     capital_protect_lock_frac = _safe_float(
         params.get("capital_protect_lock_frac"), np.nan
     )
@@ -853,6 +891,9 @@ def validate_simple_policy_stop_params(
         redeploy_scale_bps=float(values["redeploy_scale_bps"]),
         target_holding_hours=float(values["target_holding_hours"]),
         churn_penalty_bps=float(values["churn_penalty_bps"]),
+        round_trip_cost_pct=float(values["round_trip_cost_pct"]),
+        cost_pct_per_side=float(values["cost_pct_per_side"]),
+        trailing_profit_buffer_bps=float(values["trailing_profit_buffer_bps"]),
         capital_protect_mfe_mult=float(values["capital_protect_mfe_mult"]),
         capital_protect_regression_frac=float(
             values["capital_protect_regression_frac"]
@@ -893,6 +934,74 @@ def _state_first_float(state: Mapping[str, Any], keys: tuple[str, ...], default:
         if np.isfinite(val):
             return float(val)
     return float(default)
+
+
+def _trailing_profit_cost_floor_return(
+    validated: ValidatedSimplePolicyParams,
+    state: Mapping[str, Any],
+) -> float:
+    """Return the minimum locked gross return required to call a trail profit.
+
+    The optimiser scores policy geometry net of its configured round-trip cost.
+    Live stop replacement should therefore not label a gross micro-lock as
+    ``trailing_profit`` unless the lock clears that same cost floor. Runtime
+    state can provide a higher explicit friction estimate, but never lowers the
+    optimiser-derived floor.
+    """
+
+    candidates = [
+        max(0.0, float(validated.round_trip_cost_pct or 0.0)),
+        max(0.0, 2.0 * float(validated.cost_pct_per_side or 0.0)),
+    ]
+    state_round_trip = _state_first_float(
+        state,
+        ("round_trip_cost_pct", "policy_round_trip_cost_pct"),
+        default=np.nan,
+    )
+    if np.isfinite(state_round_trip) and state_round_trip > 0.0:
+        candidates.append(float(state_round_trip))
+
+    explicit_friction_bps = _state_first_float(
+        state,
+        (
+            "expected_friction_bps",
+            "ev_inference_total_cost_bps",
+            "estimated_ev_cost_bps",
+        ),
+        default=np.nan,
+    )
+    if np.isfinite(explicit_friction_bps) and explicit_friction_bps > 0.0:
+        candidates.append(float(explicit_friction_bps) / 10_000.0)
+
+    fee_bps = _state_first_float(
+        state,
+        ("round_trip_fee_bps", "fees_bps"),
+        default=np.nan,
+    )
+    if np.isfinite(fee_bps) and fee_bps > 0.0:
+        candidates.append(float(fee_bps) / 10_000.0)
+    else:
+        entry_fee_bps = _state_first_float(
+            state,
+            ("entry_fee_estimate_bps", "entry_fee_bps"),
+            default=np.nan,
+        )
+        exit_fee_bps = _state_first_float(
+            state,
+            ("exit_fee_estimate_bps", "exit_fee_bps"),
+            default=np.nan,
+        )
+        fee_sum = 0.0
+        has_fee_part = False
+        for value in (entry_fee_bps, exit_fee_bps):
+            if np.isfinite(value) and value > 0.0:
+                fee_sum += float(value)
+                has_fee_part = True
+        if has_fee_part:
+            candidates.append(fee_sum / 10_000.0)
+
+    finite = [float(v) for v in candidates if np.isfinite(v) and v >= 0.0]
+    return float(max(finite, default=0.0))
 
 
 def _runtime_exit_pressure(
@@ -1330,13 +1439,27 @@ def compute_simple_policy_stop_decision(
     )
     if pressure_improved:
         candidate = float(pressure_stop)
-        reason = "exit_pressure_stop_tightening"
-        detail = (
-            "exit_pressure_stop_tightening: "
-            f"exit_pressure={exit_pressure:.6g} "
-            f"multiplier={tightening_multiplier:.6g} "
-            f"effective_sl_mult={effective_sl_mult:.6g}"
+        pressure_active = bool(
+            validated.exit_pressure_enabled
+            and exit_pressure > 1e-12
+            and tightening_multiplier < 1.0 - 1e-12
         )
+        if pressure_active:
+            reason = "exit_pressure_stop_tightening"
+            detail = (
+                "exit_pressure_stop_tightening: "
+                f"exit_pressure={exit_pressure:.6g} "
+                f"multiplier={tightening_multiplier:.6g} "
+                f"effective_sl_mult={effective_sl_mult:.6g}"
+            )
+        else:
+            reason = "policy_stop_loss"
+            detail = (
+                "policy_stop_loss: "
+                f"exit_pressure={exit_pressure:.6g} "
+                f"multiplier={tightening_multiplier:.6g} "
+                f"effective_sl_mult={effective_sl_mult:.6g}"
+            )
 
     cap_mfe_mult = validated.capital_protect_mfe_mult
     cap_reg_frac = validated.capital_protect_regression_frac
@@ -1458,16 +1581,25 @@ def compute_simple_policy_stop_decision(
             trail_stop > candidate if side_l == "long" else trail_stop < candidate
         )
         if improved:
+            cost_floor = _trailing_profit_cost_floor_return(validated, state)
+            profit_buffer = max(0.0, validated.trailing_profit_buffer_bps) / 10_000.0
+            profit_threshold = cost_floor + profit_buffer
+            net_lock_ret = float(lock_ret) - profit_threshold
+            is_net_profit_lock = net_lock_ret > 0.0
             candidate = float(trail_stop)
-            reason = "trailing_profit"
+            reason = "trailing_profit" if is_net_profit_lock else "trailing_risk_reduction"
+            detail_prefix = "trailing_profit" if is_net_profit_lock else "trailing_risk_reduction"
             detail = (
-                f"trailing_profit: mfe={float(mfe):.6g} activation={activation:.6g} "
+                f"{detail_prefix}: mfe={float(mfe):.6g} activation={activation:.6g} "
                 f"exit_pressure={exit_pressure:.6g} "
                 f"multiplier={tightening_multiplier:.6g} "
                 f"giveback_beta={validated.giveback_beta:.6g} "
                 f"dynamic_giveback={dynamic_giveback:.6g} "
                 f"trail_amount={trail_amount:.6g} "
-                f"lock_ret={lock_ret:.6g}"
+                f"lock_ret={lock_ret:.6g} "
+                f"profit_cost_floor={cost_floor:.6g} "
+                f"profit_buffer={profit_buffer:.6g} "
+                f"net_lock_ret={net_lock_ret:.6g}"
             )
 
     should_replace = (
@@ -1516,6 +1648,9 @@ def compute_simple_policy_stop_decision(
         effective_hard_tp_abs_pct=effective_hard_tp_abs_pct,
         target_holding_hours=validated.target_holding_hours,
         churn_penalty_bps=validated.churn_penalty_bps,
+        round_trip_cost_pct=validated.round_trip_cost_pct,
+        cost_pct_per_side=validated.cost_pct_per_side,
+        trailing_profit_buffer_bps=validated.trailing_profit_buffer_bps,
         capital_protect_mfe_mult=validated.capital_protect_mfe_mult,
         capital_protect_regression_frac=validated.capital_protect_regression_frac,
         capital_protect_lock_frac=validated.capital_protect_lock_frac,

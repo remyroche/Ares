@@ -1812,7 +1812,7 @@ def test_live_spread_ev_haircut_lowers_policy_rank_score():
     assert out["ev_adjusted_calibrated_score"] < 0.80
     assert out["ev_adjusted_rank_score"] < 0.80
     assert out["ev_adjusted_source"] == (
-        "strategy_ev_curve_inverse_after_excess_live_entry_friction"
+        "hierarchical_side_archetype_ev_curve_inverse_after_excess_live_entry_friction"
     )
 
 

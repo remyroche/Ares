@@ -30,6 +30,20 @@ PREDICTION_LEDGER_DIAGNOSTIC_COLUMNS = [
     "auction_rank_score_source",
     "threshold_rank_score",
     "threshold_rank_score_source",
+    "threshold_basis_policy_id",
+    "threshold_basis_family",
+    "threshold_basis_window_days",
+    "threshold_basis_rank_score",
+    "threshold_basis_rank_score_source",
+    "threshold_basis_selected",
+    "threshold_basis_reason",
+    "threshold_basis_dynamic_ev_target",
+    "threshold_basis_dynamic_score_threshold",
+    "threshold_basis_recent_reference_rows",
+    "threshold_basis_reference_rows",
+    "threshold_basis_baseline_activity_count",
+    "threshold_basis_global_dynamic_ev_target",
+    "threshold_basis_global_dynamic_score_threshold",
     "normalized_rank_score",
     "model_feature_audit_schema",
     "model_feature_snapshot_hash",
@@ -43,6 +57,19 @@ PREDICTION_LEDGER_DIAGNOSTIC_COLUMNS = [
     "meta_model_feature_values_json",
     "model_feature_value_sources_json",
     "model_feature_missing_json",
+    "source_strategy_id",
+    "canonical_strategy_id",
+    "decision_strategy_id",
+    "strategy_side",
+    "auction_policy_version",
+    "auction_candidate_count",
+    "auction_rank_number",
+    "auction_rank_index",
+    "auction_entry_cap",
+    "auction_max_new_entries_per_bar",
+    "auction_ordering_key_json",
+    "auction_sorted_at",
+    "auction_selected_before_capacity",
     "was_traded",
     "portfolio_decision",
     "portfolio_reject_reason",
@@ -127,6 +154,8 @@ PREDICTION_LEDGER_DIAGNOSTIC_COLUMNS = [
     "adverse_signal_gap_bps",
     "ev_haircut_bps",
     "ev_haircut_raw_live_entry_friction_bps",
+    "estimated_ev_historical_net_return",
+    "estimated_ev_historical_cost_bps",
     "ev_haircut_observed_spread_bps",
     "ev_haircut_observed_half_spread_bps",
     "ev_haircut_spread_baseline_bps",
@@ -143,7 +172,17 @@ PREDICTION_LEDGER_DIAGNOSTIC_COLUMNS = [
     "ev_haircut_stop_exit_excess_bps",
     "ev_haircut_stop_exit_source",
     "ev_haircut_contract",
+    "ev_inference_cost_rebase_enabled",
+    "ev_inference_cost_rebase_applied",
+    "ev_inference_fixed_round_trip_cost_bps",
+    "ev_inference_spread_multiplier",
+    "ev_inference_spread_observed_or_baseline_bps",
+    "ev_inference_spread_model_bps",
+    "ev_inference_total_cost_bps",
+    "ev_inference_cost_model_contract",
     "ev_adjusted_entry_friction_bps",
+    "ev_adjusted_gross_return_before_cost",
+    "ev_adjusted_historical_net_return_before_rebase",
     "ev_adjusted_net_return_before_friction",
     "ev_adjusted_net_return_after_friction",
     "ev_adjusted_calibrated_score",
@@ -158,6 +197,33 @@ PREDICTION_LEDGER_DIAGNOSTIC_COLUMNS = [
     "gross_to_net_friction_drag_bps",
     "entry_notional_quote",
     "base_amount",
+    "requested_entry_leverage",
+    "configured_entry_leverage",
+    "actual_entry_leverage",
+    "exchange_entry_leverage",
+    "max_entry_leverage",
+    "perp_default_leverage",
+    "perp_rank_leverage",
+    "perp_legacy_risk_cap_leverage",
+    "perp_liquidation_risk_cap_leverage",
+    "perp_risk_cap_leverage",
+    "perp_effective_leverage",
+    "perp_stop_loss_pct",
+    "perp_liquidation_guard_enabled",
+    "perp_liquidation_guard_reason",
+    "perp_liquidation_requested_leverage",
+    "perp_liquidation_guarded_leverage",
+    "perp_liquidation_safe_max_leverage",
+    "perp_liquidation_leverage_capped",
+    "perp_liquidation_guard_reject",
+    "perp_liquidation_stop_distance_pct",
+    "perp_liquidation_stop_distance_bps",
+    "perp_liquidation_required_distance_pct",
+    "perp_liquidation_distance_at_requested_pct",
+    "perp_liquidation_distance_at_guarded_pct",
+    "perp_liquidation_maintenance_margin_pct",
+    "perp_liquidation_fee_buffer_pct",
+    "perp_liquidation_safety_buffer_pct",
     "entry_fee_quote",
     "entry_fee_cost",
     "entry_fee_currency",
@@ -177,6 +243,18 @@ PREDICTION_LEDGER_DIAGNOSTIC_COLUMNS = [
     "dynamic_hr_surprise_w_lower",
     "dynamic_hr_surprise_w_raise",
     "dynamic_hr_surprise_state_age_days",
+    "policy_archetype",
+    "policy_archetype_source",
+    "archetype_hit_surprise_threshold",
+    "archetype_hit_surprise_mode",
+    "archetype_hit_surprise_applied",
+    "archetype_hit_surprise_reason",
+    "archetype_hit_surprise_matched_key",
+    "archetype_hit_surprise_threshold_delta",
+    "archetype_hit_surprise_quality_adjustment",
+    "archetype_hit_surprise_priority_multiplier",
+    "archetype_hit_surprise_priority_adjustment",
+    "archetype_hit_surprise_rank_adjustment",
     "feature_drift_psi_core",
     "feature_drift_ks_core",
     "feature_drift_cov_shift",
@@ -191,6 +269,15 @@ PREDICTION_LEDGER_DIAGNOSTIC_COLUMNS = [
     "contrib_balance",
     "num_material_contrib_features",
     "prob_uncertainty",
+    "portfolio_state_after_snapshot_json",
+    "portfolio_state_after_snapshot_hash",
+    "open_positions_after_json",
+    "active_positions_after_json",
+    "open_positions_after",
+    "open_positions_after_count",
+    "wallet_after",
+    "open_notional_after",
+    "available_wallet_after",
 ]
 
 _LGBM_DIAGNOSTIC_SUFFIXES = [
@@ -248,18 +335,39 @@ class PredictionLedger:
                 )
             except Exception:
                 has_signal_ts = bool(signal_ts.notna().any())
-        ts_col = "signal_bar_ts" if has_signal_ts else "timestamp"
-        preferred = (
-            ts_col,
-            "symbol",
-            "side",
-            "strategy_id",
-            "meta_head_hash",
-            "model_artifact_run_id",
-            "policy_artifact_run_id",
+        decision_ts = df.get("decision_ts")
+        has_decision_ts = False
+        if decision_ts is not None:
+            try:
+                has_decision_ts = bool(
+                    pd.to_datetime(decision_ts, utc=True, errors="coerce").notna().any()
+                )
+            except Exception:
+                has_decision_ts = bool(decision_ts.notna().any())
+        # A live signal can be reconsidered more than once before the next
+        # feature bar arrives.  Those attempts have different portfolio state
+        # and must remain separate for decision replay.  Legacy rows without a
+        # decision timestamp keep the older signal-bar upsert behavior.
+        time_cols: list[str] = []
+        if has_signal_ts:
+            time_cols.append("signal_bar_ts")
+        if has_decision_ts:
+            time_cols.append("decision_ts")
+        elif not has_signal_ts:
+            time_cols.append("timestamp")
+        preferred = tuple(
+            time_cols
+            + [
+                "symbol",
+                "side",
+                "strategy_id",
+                "meta_head_hash",
+                "model_artifact_run_id",
+                "policy_artifact_run_id",
+            ]
         )
         subset = [c for c in preferred if c in df.columns]
-        if ts_col in subset and len(subset) >= 2:
+        if any(c in subset for c in time_cols) and len(subset) >= 2:
             return subset
         fallback = (
             "timestamp",

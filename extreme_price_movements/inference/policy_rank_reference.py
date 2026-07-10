@@ -260,6 +260,40 @@ def strategy_rank_reference_aliases(
     return aliases
 
 
+def _normalise_policy_archetype(value: Any) -> str:
+    archetype = str(value or "").strip()
+    if not archetype or archetype.lower() in {"nan", "none", "null", "missing"}:
+        return ""
+    return re.sub(r"\s+", "_", archetype)
+
+
+def _strategy_ev_reference_aliases(
+    strategy_id: str,
+    side: str | None = None,
+    policy_archetype: str | None = None,
+) -> list[str]:
+    aliases: list[str] = []
+    base_aliases = strategy_rank_reference_aliases(strategy_id, side)
+    side_s = str(side or "").strip().lower()
+    arch = _normalise_policy_archetype(policy_archetype)
+    if arch:
+        for base in base_aliases:
+            if not base:
+                continue
+            if side_s in {"long", "short"}:
+                aliases.append(f"{base}::{side_s}::{arch}")
+            aliases.append(f"{base}::{arch}")
+    aliases.extend(base_aliases)
+    out: list[str] = []
+    seen: set[str] = set()
+    for alias in aliases:
+        alias_s = str(alias or "").strip()
+        if alias_s and alias_s not in seen:
+            out.append(alias_s)
+            seen.add(alias_s)
+    return out
+
+
 def persist_policy_rank_reference(
     df_policy_all: pd.DataFrame,
     *,
@@ -286,7 +320,15 @@ def persist_policy_rank_reference(
         POLICY_RANK_REFERENCE_SCORE_COL,
         POLICY_RANK_REFERENCE_RANK_COL,
     ]
-    for optional_col in ("timestamp", "symbol", "market_mode"):
+    for optional_col in (
+        "timestamp",
+        "symbol",
+        "side",
+        "policy_archetype",
+        "local_side_archetype",
+        "policy_archetype_source",
+        "market_mode",
+    ):
         if optional_col in df_policy_all.columns and optional_col not in cols:
             cols.append(optional_col)
     ref = df_policy_all.copy()
@@ -383,6 +425,9 @@ def persist_auction_rank_reference(
         "symbol",
         "side",
         "strategy_id",
+        "policy_archetype",
+        "local_side_archetype",
+        "policy_archetype_source",
         "strategy_rank_pct",
         "normalized_rank_score",
         "market_mode",
@@ -1120,52 +1165,90 @@ class PolicyRankReferenceStore:
             / "simple_policy_optimiser"
             / "simple_policy_candidates.parquet"
         )
-        try:
-            frame = pd.read_parquet(
-                candidates_path,
-                columns=["strategy_id", "side", "strategy_rank_pct", "net_return"],
+        def _threshold_table(group: pd.DataFrame) -> pd.DataFrame:
+            ranks = group["strategy_rank_pct"].to_numpy(dtype=np.float64)
+            returns = group["net_return"].to_numpy(dtype=np.float64)
+            rows: list[dict[str, Any]] = []
+            if ranks.size == 0:
+                return pd.DataFrame(rows)
+            thresholds = np.unique(np.round(ranks, 4))
+            thresholds = thresholds[(thresholds >= 0.0) & (thresholds <= 1.0)]
+            source_suffix = ""
+            if "policy_archetype" in group.columns:
+                arch_values = [
+                    _normalise_policy_archetype(x)
+                    for x in group["policy_archetype"].dropna().unique().tolist()
+                ]
+                arch_values = [x for x in arch_values if x]
+                if len(arch_values) == 1:
+                    source_suffix = f"#policy_archetype={arch_values[0]}"
+            for threshold in thresholds:
+                mask = ranks >= float(threshold)
+                n = int(mask.sum())
+                if n <= 0:
+                    continue
+                selected = returns[mask]
+                rows.append(
+                    {
+                        "threshold": float(threshold),
+                        "mean_net_return": float(np.nanmean(selected)),
+                        "hit_rate": float(np.nanmean(selected > 0.0)),
+                        "n_trades": n,
+                        "source": f"{candidates_path}{source_suffix}",
+                    }
+                )
+            return (
+                pd.DataFrame(rows)
+                .sort_values(
+                    ["threshold", "mean_net_return", "hit_rate"],
+                    ascending=[True, False, False],
+                )
+                .drop_duplicates(subset=["threshold"], keep="first")
+                .sort_values("threshold")
             )
-            frame["strategy_id"] = frame["strategy_id"].astype(str)
-            frame["side"] = frame["side"].astype(str).str.lower()
-            frame["strategy_rank_pct"] = pd.to_numeric(
-                frame["strategy_rank_pct"], errors="coerce"
+
+        def _read_candidate_ev_frame() -> pd.DataFrame:
+            cols = ["strategy_id", "side", "strategy_rank_pct", "net_return"]
+            try:
+                frame_in = pd.read_parquet(candidates_path, columns=cols + ["policy_archetype"])
+            except Exception:
+                try:
+                    frame_in = pd.read_parquet(
+                        candidates_path, columns=cols + ["local_side_archetype"]
+                    )
+                except Exception:
+                    frame_in = pd.read_parquet(candidates_path, columns=cols)
+            if "policy_archetype" not in frame_in.columns:
+                if "local_side_archetype" in frame_in.columns:
+                    frame_in["policy_archetype"] = frame_in["local_side_archetype"]
+                else:
+                    frame_in["policy_archetype"] = ""
+            frame_in["strategy_id"] = frame_in["strategy_id"].astype(str)
+            frame_in["side"] = frame_in["side"].astype(str).str.lower()
+            frame_in["policy_archetype"] = frame_in["policy_archetype"].map(
+                _normalise_policy_archetype
             )
-            frame["net_return"] = pd.to_numeric(frame["net_return"], errors="coerce")
-            frame = frame.replace([np.inf, -np.inf], np.nan).dropna(
+            frame_in["strategy_rank_pct"] = pd.to_numeric(
+                frame_in["strategy_rank_pct"], errors="coerce"
+            )
+            frame_in["net_return"] = pd.to_numeric(frame_in["net_return"], errors="coerce")
+            frame_in = frame_in.replace([np.inf, -np.inf], np.nan).dropna(
                 subset=["strategy_id", "strategy_rank_pct", "net_return"]
             )
-            frame = frame[
-                (frame["strategy_rank_pct"] >= 0.0)
-                & (frame["strategy_rank_pct"] <= 1.0)
+            return frame_in[
+                (frame_in["strategy_rank_pct"] >= 0.0)
+                & (frame_in["strategy_rank_pct"] <= 1.0)
             ]
+
+        try:
+            frame = _read_candidate_ev_frame()
             out: dict[str, pd.DataFrame] = {}
             for sid, group in frame.groupby("strategy_id", sort=False):
-                ranks = group["strategy_rank_pct"].to_numpy(dtype=np.float64)
-                returns = group["net_return"].to_numpy(dtype=np.float64)
-                if ranks.size == 0:
-                    continue
-                thresholds = np.unique(np.round(ranks, 4))
-                thresholds = thresholds[(thresholds >= 0.0) & (thresholds <= 1.0)]
-                rows: list[dict[str, Any]] = []
-                for threshold in thresholds:
-                    mask = ranks >= float(threshold)
-                    n = int(mask.sum())
-                    if n <= 0:
-                        continue
-                    selected = returns[mask]
-                    rows.append(
-                        {
-                            "threshold": float(threshold),
-                            "mean_net_return": float(np.nanmean(selected)),
-                            "hit_rate": float(np.nanmean(selected > 0.0)),
-                            "n_trades": n,
-                            "source": str(candidates_path),
-                        }
-                    )
+                table = _threshold_table(group)
                 deployed = deployed_rows.get(str(sid))
                 if deployed is not None:
-                    rows.append(deployed)
-                if not rows:
+                    table = pd.concat([table, pd.DataFrame([deployed])], ignore_index=True)
+                if table.empty:
                     continue
                 side = None
                 side_values = [
@@ -1174,18 +1257,26 @@ class PolicyRankReferenceStore:
                 ]
                 if len(side_values) == 1 and side_values[0] in {"long", "short"}:
                     side = side_values[0]
-                table = (
-                    pd.DataFrame(rows)
-                    .sort_values(
-                        ["threshold", "mean_net_return", "hit_rate"],
-                        ascending=[True, False, False],
-                    )
-                    .drop_duplicates(subset=["threshold"], keep="first")
-                    .sort_values("threshold")
-                )
+                table = table.sort_values(
+                    ["threshold", "mean_net_return", "hit_rate"],
+                    ascending=[True, False, False],
+                ).drop_duplicates(subset=["threshold"], keep="first").sort_values("threshold")
                 for alias in strategy_rank_reference_aliases(str(sid), side):
                     if alias:
                         out[str(alias)] = table
+            arch_frame = frame[frame["policy_archetype"].astype(str).str.len() > 0]
+            for (sid, side, arch), group in arch_frame.groupby(
+                ["strategy_id", "side", "policy_archetype"], sort=False
+            ):
+                if str(side) not in {"long", "short"}:
+                    continue
+                table = _threshold_table(group)
+                if table.empty:
+                    continue
+                for alias in strategy_rank_reference_aliases(str(sid), str(side)):
+                    if alias:
+                        out[f"{alias}::{side}::{arch}"] = table
+                        out[f"{alias}::{arch}"] = table
             if out:
                 self._strategy_ev_threshold_tables = out
                 return self._strategy_ev_threshold_tables
@@ -1250,6 +1341,7 @@ class PolicyRankReferenceStore:
         *,
         strategy_id: str,
         side: str | None = None,
+        policy_archetype: str | None = None,
         target_mean_net_return: float,
         min_hit_rate: float = 0.60,
         fallback_threshold: float = 1.0,
@@ -1257,9 +1349,13 @@ class PolicyRankReferenceStore:
         """Return the lowest per-strategy rank floor meeting EV and hit-rate constraints."""
         tables = self._load_strategy_ev_threshold_tables()
         table = None
-        for alias in strategy_rank_reference_aliases(strategy_id, side):
+        matched_alias = ""
+        for alias in _strategy_ev_reference_aliases(
+            strategy_id, side, policy_archetype
+        ):
             table = tables.get(alias)
             if table is not None:
+                matched_alias = str(alias)
                 break
         target = float(target_mean_net_return)
         hit_target = float(min_hit_rate)
@@ -1303,9 +1399,13 @@ class PolicyRankReferenceStore:
             mean_net_return=float(row["mean_net_return"]),
             hit_rate=float(row["hit_rate"]),
             n_trades=int(row["n_trades"]),
-            source=str(row.get("source", "")),
+            source=f"{row.get('source', '')}#alias={matched_alias}" if matched_alias else str(row.get("source", "")),
             enabled=True,
-            reason="strategy_ev_threshold",
+            reason=(
+                "strategy_side_archetype_ev_threshold"
+                if _normalise_policy_archetype(policy_archetype) and "::" in matched_alias
+                else "strategy_ev_threshold"
+            ),
         )
 
     def _load_strategy_ev_gate_table(self) -> dict[str, dict[str, Any]]:
@@ -1361,17 +1461,42 @@ class PolicyRankReferenceStore:
         *,
         strategy_id: str,
         side: str | None = None,
+        policy_archetype: str | None = None,
         target_mean_net_return: float,
         min_hit_rate: float = 0.60,
     ) -> StrategyEvGateResult:
         table = self._load_strategy_ev_gate_table()
         row = None
-        for alias in strategy_rank_reference_aliases(strategy_id, side):
+        matched_alias = ""
+        for alias in _strategy_ev_reference_aliases(
+            strategy_id, side, policy_archetype
+        ):
             row = table.get(alias)
             if row is not None:
+                matched_alias = str(alias)
                 break
         target = float(target_mean_net_return)
         hit_target = float(min_hit_rate)
+        if row is None:
+            threshold_tables = self._load_strategy_ev_threshold_tables()
+            for alias in _strategy_ev_reference_aliases(
+                strategy_id, side, policy_archetype
+            ):
+                threshold_table = threshold_tables.get(alias)
+                if threshold_table is None or threshold_table.empty:
+                    continue
+                best = threshold_table.sort_values(
+                    ["mean_net_return", "hit_rate", "threshold"],
+                    ascending=[False, False, True],
+                ).iloc[0]
+                row = {
+                    "strategy_id": strategy_id,
+                    "mean_net_return": float(best.get("mean_net_return", np.nan)),
+                    "hit_rate": float(best.get("hit_rate", np.nan)),
+                    "source": f"{best.get('source', '')}#alias={alias}",
+                }
+                matched_alias = str(alias)
+                break
         if row is None:
             return StrategyEvGateResult(
                 allowed=False,
@@ -1397,8 +1522,20 @@ class PolicyRankReferenceStore:
             mean_net_return=mean_net,
             hit_rate=hit_rate,
             source=str(row.get("source", "")),
-                reason="strategy_ev_gate_pass" if allowed else "strategy_ev_gate_failed",
-            )
+            reason=(
+                (
+                    "strategy_side_archetype_ev_gate_pass"
+                    if _normalise_policy_archetype(policy_archetype) and "::" in matched_alias
+                    else "strategy_ev_gate_pass"
+                )
+                if allowed
+                else (
+                    "strategy_side_archetype_ev_gate_failed"
+                    if _normalise_policy_archetype(policy_archetype) and "::" in matched_alias
+                    else "strategy_ev_gate_failed"
+                )
+            ),
+        )
 
 
 def _rank_percentile_source_label(source: str, *, auction: bool) -> str:
@@ -1442,9 +1579,66 @@ def apply_policy_rank_percentile_gate(
         if store is not None
         else PolicyRankLookupResult(float("nan"), 0, "", "")
     )
+    raw_result = PolicyRankLookupResult(float("nan"), 0, "", "")
+    try:
+        raw_calibrated_score = float(decision.get("raw_calibrated_score", np.nan))
+    except (TypeError, ValueError):
+        raw_calibrated_score = float("nan")
+    if store is not None and np.isfinite(raw_calibrated_score):
+        raw_result = store.lookup(
+            strategy_id=str(decision.get("strategy_id") or ""),
+            side=str(decision.get("side") or ""),
+            calibrated_score=raw_calibrated_score,
+        )
+    protected_floor = decision.get(
+        "regime_ev_protected_admission_floor",
+        chain.get("regime_ev_protected_admission_floor"),
+    )
+    try:
+        protected_floor_f = float(protected_floor)
+    except (TypeError, ValueError):
+        protected_floor_f = float("nan")
+    try:
+        retained_surplus_frac = float(
+            decision.get(
+                "regime_ev_retained_surplus_frac",
+                chain.get("regime_ev_retained_surplus_frac", 0.5),
+            )
+        )
+    except (TypeError, ValueError):
+        retained_surplus_frac = 0.5
+    retained_surplus_frac = float(np.clip(retained_surplus_frac, 0.0, 1.0))
+    protect_regime_ev = (
+        np.isfinite(protected_floor_f)
+        and bool(
+            decision.get(
+                "regime_ev_protect_admission_rank",
+                chain.get("regime_ev_protect_admission_rank", False),
+            )
+        )
+    )
     if np.isfinite(result.policy_rank_pct):
         policy_rank_pct = float(np.clip(result.policy_rank_pct, 0.0, 1.0))
         rank_source = _rank_percentile_source_label(result.source, auction=False)
+        raw_policy_rank_pct = (
+            float(np.clip(raw_result.policy_rank_pct, 0.0, 1.0))
+            if np.isfinite(raw_result.policy_rank_pct)
+            else float("nan")
+        )
+        if (
+            protect_regime_ev
+            and np.isfinite(raw_policy_rank_pct)
+            and raw_policy_rank_pct >= protected_floor_f
+            and policy_rank_pct
+            < protected_floor_f
+            + retained_surplus_frac * max(raw_policy_rank_pct - protected_floor_f, 0.0)
+        ):
+            policy_rank_pct = float(
+                protected_floor_f
+                + retained_surplus_frac
+                * max(raw_policy_rank_pct - protected_floor_f, 0.0)
+            )
+            rank_source = f"{rank_source}_protected_regime_ev_floor"
     elif allow_live_batch_rank_fallback_for_debug:
         policy_rank_pct = float(decision.get("sizer_rank_percentile", np.nan))
         rank_source = "live_batch_percentile_fallback_debug"
@@ -1467,6 +1661,16 @@ def apply_policy_rank_percentile_gate(
     decision["policy_rank_pct"] = policy_rank_pct
     decision["policy_rank_reference_n"] = int(result.n_rows)
     decision["policy_rank_reference_source"] = result.source
+    decision["policy_rank_pct_raw_calibrated_score"] = (
+        float(np.clip(raw_result.policy_rank_pct, 0.0, 1.0))
+        if np.isfinite(raw_result.policy_rank_pct)
+        else np.nan
+    )
+    decision["regime_ev_protected_admission_floor"] = (
+        protected_floor_f if np.isfinite(protected_floor_f) else np.nan
+    )
+    decision["regime_ev_protect_admission_rank"] = bool(protect_regime_ev)
+    decision["regime_ev_retained_surplus_frac"] = float(retained_surplus_frac)
     decision["rank_score_source"] = rank_source
     decision["rank_percentile"] = policy_rank_pct
     decision["sizer_rank_percentile"] = policy_rank_pct
@@ -1476,6 +1680,14 @@ def apply_policy_rank_percentile_gate(
             "policy_rank_pct": policy_rank_pct,
             "policy_rank_reference_n": int(result.n_rows),
             "policy_rank_reference_source": result.source,
+            "policy_rank_pct_raw_calibrated_score": decision[
+                "policy_rank_pct_raw_calibrated_score"
+            ],
+            "regime_ev_protected_admission_floor": decision[
+                "regime_ev_protected_admission_floor"
+            ],
+            "regime_ev_protect_admission_rank": bool(protect_regime_ev),
+            "regime_ev_retained_surplus_frac": float(retained_surplus_frac),
             "rank_score_source": rank_source,
             "rank_percentile": policy_rank_pct,
             "sizer_rank_percentile": policy_rank_pct,
@@ -1489,16 +1701,43 @@ def apply_policy_rank_percentile_gate(
         if store is not None
         else PolicyRankLookupResult(float("nan"), 0, "", "cross_strategy")
     )
+    raw_auction = (
+        store.lookup_auction(calibrated_score=raw_calibrated_score)
+        if store is not None and np.isfinite(raw_calibrated_score)
+        else PolicyRankLookupResult(float("nan"), 0, "", "cross_strategy")
+    )
     threshold_rank_pct = policy_rank_pct
     threshold_rank_source = rank_source
     if np.isfinite(auction.policy_rank_pct):
         auction_rank_pct = float(np.clip(auction.policy_rank_pct, 0.0, 1.0))
         auction_source = _rank_percentile_source_label(auction.source, auction=True)
+        raw_auction_rank_pct = (
+            float(np.clip(raw_auction.policy_rank_pct, 0.0, 1.0))
+            if np.isfinite(raw_auction.policy_rank_pct)
+            else float("nan")
+        )
+        if (
+            protect_regime_ev
+            and np.isfinite(raw_auction_rank_pct)
+            and raw_auction_rank_pct >= protected_floor_f
+            and auction_rank_pct
+            < protected_floor_f
+            + retained_surplus_frac * max(raw_auction_rank_pct - protected_floor_f, 0.0)
+        ):
+            auction_rank_pct = float(
+                protected_floor_f
+                + retained_surplus_frac
+                * max(raw_auction_rank_pct - protected_floor_f, 0.0)
+            )
+            auction_source = f"{auction_source}_protected_regime_ev_floor"
         decision["normalized_rank_score"] = auction_rank_pct
         decision["auction_rank_pct"] = auction_rank_pct
         decision["auction_rank_reference_n"] = int(auction.n_rows)
         decision["auction_rank_reference_source"] = auction.source
         decision["auction_rank_score_source"] = auction_source
+        decision["auction_rank_pct_raw_calibrated_score"] = (
+            raw_auction_rank_pct if np.isfinite(raw_auction_rank_pct) else np.nan
+        )
         if use_auction_rank_for_threshold:
             decision["threshold_score"] = auction_rank_pct
             threshold_rank_pct = auction_rank_pct
@@ -1510,6 +1749,9 @@ def apply_policy_rank_percentile_gate(
                 "auction_rank_reference_n": int(auction.n_rows),
                 "auction_rank_reference_source": auction.source,
                 "auction_rank_score_source": auction_source,
+                "auction_rank_pct_raw_calibrated_score": decision[
+                    "auction_rank_pct_raw_calibrated_score"
+                ],
             }
         )
     else:
@@ -1534,6 +1776,37 @@ def apply_policy_rank_percentile_gate(
             decision["chain_results"] = chain
             return False, "missing_cross_strategy_auction_reference"
 
+    threshold_basis_rank = np.nan
+    try:
+        threshold_basis_rank = float(
+            decision.get(
+                "threshold_basis_rank_score",
+                chain.get("threshold_basis_rank_score", np.nan),
+            )
+        )
+    except (TypeError, ValueError):
+        threshold_basis_rank = np.nan
+    if np.isfinite(threshold_basis_rank):
+        threshold_basis_rank = float(np.clip(threshold_basis_rank, 0.0, 1.0))
+        threshold_rank_pct = threshold_basis_rank
+        threshold_rank_source = str(
+            decision.get(
+                "threshold_basis_rank_score_source",
+                chain.get("threshold_basis_rank_score_source", "threshold_basis"),
+            )
+            or "threshold_basis"
+        )
+        decision["normalized_rank_score"] = threshold_basis_rank
+        decision["threshold_score"] = threshold_basis_rank
+        decision["rank_score_source"] = threshold_rank_source
+        chain.update(
+            {
+                "normalized_rank_score": threshold_basis_rank,
+                "threshold_score": threshold_basis_rank,
+                "rank_score_source": threshold_rank_source,
+            }
+        )
+
     floor = inference_min_base_train_rank_pct
     if floor is not None:
         try:
@@ -1551,12 +1824,30 @@ def apply_policy_rank_percentile_gate(
             decision["chain_results"] = chain
             return False, "base_train_rank_below_floor"
 
+    try:
+        rank_adjustment = float(
+            decision.get(
+                "portfolio_rank_adjustment",
+                chain.get("portfolio_rank_adjustment", 0.0),
+            )
+        )
+    except (TypeError, ValueError):
+        rank_adjustment = 0.0
+    if not np.isfinite(rank_adjustment):
+        rank_adjustment = 0.0
+    adjusted_threshold_rank_pct = float(
+        np.clip(float(threshold_rank_pct) + float(rank_adjustment), 0.0, 1.0)
+    )
+
     threshold = float(decision.get("effective_threshold", 1.0))
-    decision["threshold_rank_score"] = threshold_rank_pct
+    decision["threshold_rank_score_raw"] = threshold_rank_pct
+    decision["threshold_rank_score"] = adjusted_threshold_rank_pct
     decision["threshold_rank_score_source"] = threshold_rank_source
-    chain["threshold_rank_score"] = threshold_rank_pct
+    chain["threshold_rank_score_raw"] = threshold_rank_pct
+    chain["threshold_rank_score"] = adjusted_threshold_rank_pct
     chain["threshold_rank_score_source"] = threshold_rank_source
+    chain["portfolio_rank_adjustment"] = rank_adjustment
     decision["chain_results"] = chain
-    if not np.isfinite(threshold_rank_pct) or threshold_rank_pct < threshold:
+    if not np.isfinite(adjusted_threshold_rank_pct) or adjusted_threshold_rank_pct < threshold:
         return False, "rank_below_dynamic_threshold"
     return True, None

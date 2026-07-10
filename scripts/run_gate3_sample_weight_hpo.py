@@ -399,6 +399,7 @@ def _prepare_folds(
             valid_metrics=valid_metrics,
             enabled=bool(include_ae_gmm_state_features),
             max_train_rows=int(ae_gmm_state_feature_max_train_rows),
+            gmm_max_train_rows=int(ae_gmm_state_feature_max_train_rows),
             ae_max_iter=int(ae_gmm_state_feature_max_iter),
             random_state=int(seed) + offset,
         )

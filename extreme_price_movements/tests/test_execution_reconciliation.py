@@ -90,7 +90,7 @@ def test_spread_slippage_reconciliation_compares_policy_proxy_to_live():
     assert summary["traded_rows"] == 1
 
 
-def test_decision_replay_flags_replay_accept_live_reject(tmp_path):
+def test_decision_replay_ignores_live_hard_veto_rows_for_auction_capacity(tmp_path):
     config_path = tmp_path / "optimized_portfolio_policy_config.json"
     params = PortfolioPolicyParams(
         max_concurrent_positions=4,
@@ -124,9 +124,9 @@ def test_decision_replay_flags_replay_accept_live_reject(tmp_path):
         portfolio_policy_config_path=config_path,
     )
 
-    assert summary["replay_accepted"] == 1
+    assert summary["replay_accepted"] == 0
     assert summary["live_traded"] == 0
-    assert rows["replay_live_gap_class"].iloc[0] == "replay_accept_live_reject"
+    assert rows["replay_live_gap_class"].iloc[0] == "match"
     assert (
         rows["replay_live_gap_explanation"].iloc[0]
         == "live_reject:global_auction_capacity:global_entry_cap_reached"

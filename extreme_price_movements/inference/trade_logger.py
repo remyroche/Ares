@@ -78,6 +78,55 @@ def _derive_entry_notional_quote(decision: Dict[str, Any]) -> Any:
     return decision.get("entry_notional_quote")
 
 
+def _is_missing_log_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() == "" or value.strip().lower() in {"nan", "none", "null"}
+    try:
+        return bool(pd.isna(value))
+    except Exception:
+        return False
+
+
+def _fill_best_available_net_fields(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Populate primary net-PnL log fields from estimated net fields when needed."""
+    out = dict(record)
+
+    def _copy_if_missing(dst: str, src: str) -> None:
+        if _is_missing_log_value(out.get(dst)) and not _is_missing_log_value(
+            out.get(src)
+        ):
+            out[dst] = out.get(src)
+
+    _copy_if_missing("net_pnl", "net_pnl_estimated")
+    _copy_if_missing("net_pnl_amount", "net_pnl_estimated")
+    _copy_if_missing("net_pnl_pct", "net_pnl_pct_estimated")
+    _copy_if_missing("fees_amount", "estimated_fees_amount")
+    _copy_if_missing("gross_to_net_cost_quote", "gross_to_estimated_net_cost_quote")
+    _copy_if_missing("gross_to_net_cost_pct", "gross_to_estimated_net_cost_pct")
+    _copy_if_missing(
+        "gross_to_net_friction_drag_bps",
+        "gross_to_estimated_net_friction_drag_bps",
+    )
+    if (
+        not _is_missing_log_value(out.get("estimated_fees_amount"))
+        and _is_missing_log_value(out.get("fees_estimated"))
+    ):
+        out["fees_estimated"] = True
+    if (
+        not _is_missing_log_value(out.get("estimated_fee_source"))
+        and _is_missing_log_value(out.get("fee_source"))
+    ):
+        out["fee_source"] = out.get("estimated_fee_source")
+    if (
+        not _is_missing_log_value(out.get("net_pnl_pct_estimated"))
+        and _is_missing_log_value(out.get("net_pnl_verification_status"))
+    ):
+        out["net_pnl_verification_status"] = "estimated_missing_exchange_fees"
+    return out
+
+
 # Expanded CSV columns for detailed trade logging
 TRADE_LOG_COLUMNS = [
     # Core identifiers
@@ -130,6 +179,32 @@ TRADE_LOG_COLUMNS = [
     "gross_pnl_pct_configured_leverage",
     "net_pnl_pct_configured_leverage",
     "net_pnl_pct_configured_leverage_estimated",
+    "requested_entry_leverage",
+    "actual_entry_leverage",
+    "exchange_entry_leverage",
+    "max_entry_leverage",
+    "perp_default_leverage",
+    "perp_rank_leverage",
+    "perp_legacy_risk_cap_leverage",
+    "perp_liquidation_risk_cap_leverage",
+    "perp_risk_cap_leverage",
+    "perp_effective_leverage",
+    "perp_stop_loss_pct",
+    "perp_liquidation_guard_enabled",
+    "perp_liquidation_guard_reason",
+    "perp_liquidation_requested_leverage",
+    "perp_liquidation_guarded_leverage",
+    "perp_liquidation_safe_max_leverage",
+    "perp_liquidation_leverage_capped",
+    "perp_liquidation_guard_reject",
+    "perp_liquidation_stop_distance_pct",
+    "perp_liquidation_stop_distance_bps",
+    "perp_liquidation_required_distance_pct",
+    "perp_liquidation_distance_at_requested_pct",
+    "perp_liquidation_distance_at_guarded_pct",
+    "perp_liquidation_maintenance_margin_pct",
+    "perp_liquidation_fee_buffer_pct",
+    "perp_liquidation_safety_buffer_pct",
     "price_slippage_pct",
     "ohlcv_entry_price",
     "entry_price_delta_vs_ohlcv",
@@ -253,6 +328,43 @@ TRADE_LOG_COLUMNS = [
     "rank_threshold",
     "rank_percentile",
     "deployment_rank_threshold",
+    "policy_archetype",
+    "local_side_archetype",
+    "policy_archetype_source",
+    "archetype_hit_surprise_threshold",
+    "archetype_hit_surprise_mode",
+    "archetype_hit_surprise_applied",
+    "archetype_hit_surprise_reason",
+    "archetype_hit_surprise_matched_key",
+    "archetype_hit_surprise_threshold_delta",
+    "archetype_hit_surprise_quality_adjustment",
+    "archetype_hit_surprise_priority_multiplier",
+    "archetype_hit_surprise_priority_adjustment",
+    "archetype_hit_surprise_rank_adjustment",
+    "archetype_hit_surprise_actual_hit_rate",
+    "archetype_hit_surprise_expected_hit_rate",
+    "archetype_hit_surprise_hit_rate_delta",
+    "archetype_hit_surprise_hit_rate_surprise_z",
+    "archetype_hit_surprise_support_confidence",
+    "archetype_hit_surprise_n_eff",
+    "archetype_hit_surprise_rows",
+    "strategy_ev_threshold",
+    "strategy_ev_threshold_before_dynamic",
+    "strategy_ev_threshold_source",
+    "strategy_ev_threshold_enabled",
+    "strategy_ev_threshold_reason",
+    "strategy_ev_threshold_mean_net_return",
+    "strategy_ev_threshold_hit_rate",
+    "strategy_ev_threshold_n_trades",
+    "strategy_ev_gate_allowed",
+    "strategy_ev_gate_reason",
+    "strategy_ev_avg_net_return",
+    "strategy_ev_hit_rate",
+    "strategy_ev_target_mean_net_return",
+    "strategy_ev_min_hit_rate",
+    "strategy_ev_diagnostic_threshold",
+    "strategy_ev_diagnostic_threshold_enabled",
+    "strategy_ev_diagnostic_threshold_reason",
     "policy_artifact_run_id",
     "policy_schema_version",
     "base_pred",
@@ -692,7 +804,7 @@ class TradeLogger:
         return "|".join(self._stringify_value(part) for part in parts)
 
     def _normalize_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
-        enriched = dict(record)
+        enriched = _fill_best_available_net_fields(dict(record))
         enriched["lifecycle_event"] = self._default_lifecycle_event(enriched)
         enriched["position_id"] = self._derive_position_id(enriched)
         enriched["trade_id"] = self._derive_trade_id(enriched)

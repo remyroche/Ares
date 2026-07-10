@@ -63,6 +63,43 @@ def _coalesce(frame: pd.DataFrame, *columns: str, default: float = np.nan) -> pd
     return out.fillna(default)
 
 
+def _coalesce_text(frame: pd.DataFrame, *columns: str, default: str = "unknown") -> pd.Series:
+    out = pd.Series(pd.NA, index=frame.index, dtype="object")
+    for col in columns:
+        if col not in frame.columns:
+            continue
+        values = frame[col].astype("object")
+        valid = values.notna() & values.astype(str).str.len().gt(0) & ~values.astype(str).str.lower().isin({"nan", "none", "null"})
+        out = out.where(out.notna(), values.where(valid))
+    return out.fillna(str(default)).astype(str)
+
+
+def _handoff_rank_pct(frame: pd.DataFrame, score: pd.Series, month: pd.Series) -> tuple[pd.Series, pd.Series]:
+    rank = _coalesce(
+        frame,
+        "threshold_rank_score",
+        "policy_rank_pct",
+        "meta_threshold_rank_pct",
+        "historical_rank_pct",
+        "rank_pct",
+        default=np.nan,
+    )
+    source = _coalesce_text(
+        frame,
+        "rank_score_source",
+        default="historical_rank_from_handoff",
+    )
+    missing = ~np.isfinite(rank.to_numpy(dtype=float, copy=False))
+    if missing.any():
+        fallback = _rank_pct(score, month)
+        rank = rank.where(~missing, fallback)
+        source = source.where(
+            ~missing,
+            pd.Series("fallback_month_rank_pct_from_score", index=frame.index),
+        )
+    return rank.clip(0.0, 1.0), source
+
+
 def _materialize(
     source: pd.DataFrame,
     *,
@@ -79,18 +116,26 @@ def _materialize(
     score = _coalesce(
         frame,
         "meta_score_oof",
+        "meta_threshold_raw_score",
+        "meta_threshold_score",
         "exec_guard_score_oof",
         "meta_clean_exec_score_oos",
         "base_score_oof",
         default=0.0,
     )
     base_score = _coalesce(frame, "base_score_oof", "meta_score_oof", default=0.0)
-    rank_pct = _rank_pct(score, month)
-    policy_archetype = (
-        frame["source_tag"].astype(str)
-        if "source_tag" in frame.columns
-        else side_name.astype(str) + "__" + frame.get("source_semantic_family", "unknown").astype(str)
+    rank_pct, rank_score_source = _handoff_rank_pct(frame, score, month)
+    semantic_family = _coalesce_text(
+        frame,
+        "archetype_policy_key",
+        "__archetype_policy_key__",
+        "archetype_label_family",
+        "__archetype_label_family__",
+        "long_source_regime_split",
+        "source_semantic_family",
+        default="unknown",
     )
+    policy_archetype = side_name.astype(str) + "__" + semantic_family.astype(str)
 
     out = pd.DataFrame(
         {
@@ -99,12 +144,30 @@ def _materialize(
             "side": np.where(side_name.eq("short"), -1.0, 1.0),
             "strategy_id": side_name + "_s52_meta_threshold_handoff",
             "rank_pct": rank_pct.astype(float),
+            "strategy_rank_pct": rank_pct.astype(float),
+            "policy_rank_pct": rank_pct.astype(float),
+            "threshold_rank_score": rank_pct.astype(float),
+            "historical_rank_pct": _coalesce(frame, "historical_rank_pct", "meta_threshold_rank_pct", default=np.nan),
+            "rank_score_source": rank_score_source.astype(str),
+            "rank_reference_source": frame.get("rank_reference_source", pd.Series("", index=frame.index)).astype(str),
+            "rank_reference_score_col": frame.get("rank_reference_score_col", pd.Series("", index=frame.index)).astype(str),
+            "rank_reference_scope": frame.get("rank_reference_scope", pd.Series("", index=frame.index)).astype(str),
+            "rank_reference_n": _coalesce(frame, "rank_reference_n", default=np.nan),
+            "rank_reference_is_in_sample": frame.get(
+                "rank_reference_is_in_sample", pd.Series(False, index=frame.index)
+            ).fillna(False).astype(bool),
+            "historical_rank_threshold": _coalesce(
+                frame,
+                "meta_threshold_rank_threshold",
+                default=np.nan,
+            ),
             "calibrated_score": score.astype(float),
+            "raw_meta_score": _coalesce(frame, "meta_threshold_raw_score", "meta_score_oof", default=np.nan),
             "barrier_pct": float(barrier_pct),
             "base_strategy_threshold": float(base_threshold),
             "policy_archetype": policy_archetype.astype(str),
             "local_side_archetype": policy_archetype.astype(str),
-            "policy_archetype_source": "s52_source_tag",
+            "policy_archetype_source": "s52_archetype_policy_key",
             "side_name": side_name.astype(str),
             "month": month.astype(str),
             "handoff_row_id": frame.get("handoff_row_id", pd.Series("", index=frame.index)).astype(str),
@@ -129,6 +192,30 @@ def _materialize(
     )
     if "long_source_regime_split" in frame.columns:
         out["long_source_regime_split"] = frame["long_source_regime_split"].astype(str)
+    for col in (
+        "__archetype_label_family__",
+        "__archetype_label_source__",
+        "__archetype_policy_key__",
+        "__archetype_policy_role__",
+        "__archetype_policy_confidence__",
+        "__archetype_policy_tp_r__",
+        "__archetype_policy_sl_r__",
+        "__archetype_policy_trail_r__",
+        "__archetype_policy_max_bars_to_mfe__",
+        "__archetype_policy_max_barrier__",
+        "archetype_label_family",
+        "archetype_label_source",
+        "archetype_policy_key",
+        "archetype_policy_role",
+        "archetype_policy_confidence",
+        "archetype_policy_tp_r",
+        "archetype_policy_sl_r",
+        "archetype_policy_trail_r",
+        "archetype_policy_max_bars_to_mfe",
+        "archetype_policy_max_barrier",
+    ):
+        if col in frame.columns:
+            out[col] = frame[col]
     for col in (
         "aegmm_cluster",
         "aegmm_entropy_bin",
@@ -219,6 +306,7 @@ def main() -> None:
     manifest = {
         "generated_by": "materialize_s52_handoff_replay_candidates",
         "source_handoff": str(args.handoff),
+        "candidates": str(out_path),
         "output_candidates": str(out_path),
         "barrier_pct": float(args.barrier_pct),
         "base_threshold": float(args.base_threshold),

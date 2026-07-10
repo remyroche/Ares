@@ -1970,6 +1970,34 @@ def _train_meta_handoff(
     """Materialize row-level regime/source context for train_meta consumption."""
 
     key_cols = [col for col in ("__ts__", "__symbol__", "side_name", "month") if col in ledger.columns]
+    archetype_cols = [
+        col
+        for col in (
+            "__archetype_label_family__",
+            "__archetype_label_source__",
+            "__archetype_policy_key__",
+            "__archetype_policy_role__",
+            "__archetype_policy_confidence__",
+            "__archetype_policy_tp_r__",
+            "__archetype_policy_sl_r__",
+            "__archetype_policy_trail_r__",
+            "__archetype_policy_max_bars_to_mfe__",
+            "__archetype_policy_max_barrier__",
+            "archetype_label_family",
+            "archetype_label_source",
+            "archetype_policy_key",
+            "archetype_policy_role",
+            "archetype_policy_confidence",
+            "archetype_policy_tp_r",
+            "archetype_policy_sl_r",
+            "archetype_policy_trail_r",
+            "archetype_policy_max_bars_to_mfe",
+            "archetype_policy_max_barrier",
+            "policy_archetype",
+            "local_side_archetype",
+        )
+        if col in ledger.columns
+    ]
     base_cols = [
         col
         for col in (
@@ -2050,6 +2078,7 @@ def _train_meta_handoff(
     cols = []
     for col in (
         key_cols
+        + archetype_cols
         + base_cols
         + regime_models
         + continuous_cols
@@ -2060,6 +2089,29 @@ def _train_meta_handoff(
         if col in ledger.columns and col not in cols:
             cols.append(col)
     out = ledger[cols].copy()
+    for raw_col, alias_col in (
+        ("__archetype_label_family__", "archetype_label_family"),
+        ("__archetype_label_source__", "archetype_label_source"),
+        ("__archetype_policy_key__", "archetype_policy_key"),
+        ("__archetype_policy_role__", "archetype_policy_role"),
+        ("__archetype_policy_confidence__", "archetype_policy_confidence"),
+        ("__archetype_policy_tp_r__", "archetype_policy_tp_r"),
+        ("__archetype_policy_sl_r__", "archetype_policy_sl_r"),
+        ("__archetype_policy_trail_r__", "archetype_policy_trail_r"),
+        ("__archetype_policy_max_bars_to_mfe__", "archetype_policy_max_bars_to_mfe"),
+        ("__archetype_policy_max_barrier__", "archetype_policy_max_barrier"),
+    ):
+        if alias_col not in out.columns and raw_col in out.columns:
+            out[alias_col] = out[raw_col]
+    if "policy_archetype" not in out.columns:
+        if "archetype_policy_key" in out.columns:
+            out["policy_archetype"] = out["archetype_policy_key"].astype(str)
+        elif "__archetype_policy_key__" in out.columns:
+            out["policy_archetype"] = out["__archetype_policy_key__"].astype(str)
+        elif "source_tag" in out.columns:
+            out["policy_archetype"] = out["source_tag"].astype(str)
+    if "local_side_archetype" not in out.columns and "policy_archetype" in out.columns:
+        out["local_side_archetype"] = out["policy_archetype"].astype(str)
 
     action_names = [
         "upweight_or_lower_meta_threshold_candidate",
@@ -2146,6 +2198,7 @@ def _train_meta_handoff(
         "row_count": int(len(out)),
         "selected_col": selected_col,
         "key_columns": key_cols,
+        "archetype_columns": [col for col in out.columns if "archetype" in str(col).lower()],
         "source_columns": [col for col in base_cols if col.startswith("source_") or col == "source_tag"],
         "regime_columns": regime_models,
         "continuous_context_columns": continuous_cols + posterior_cols,

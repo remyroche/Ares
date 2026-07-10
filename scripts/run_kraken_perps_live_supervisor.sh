@@ -6,13 +6,13 @@ cd "$ROOT_DIR" || exit 1
 
 mkdir -p logs
 
-RUN_ID="${RUN_ID:-20260612_203000_top2_fullscope_labelhpo_drift_leaflite_native}"
+RUN_ID="${RUN_ID:-s59_s52_frozen_native_shadow_20260709}"
 MODEL_ARTIFACT_RUN_ID="${EPM_MODEL_ARTIFACT_RUN_ID:-$RUN_ID}"
 POLICY_ARTIFACT_RUN_ID="${EPM_POLICY_ARTIFACT_RUN_ID:-$RUN_ID}"
 SESSION_LOG="logs/kraken_perps_live_supervisor_${RUN_ID}.log"
 PID_FILE="logs/kraken_perps_live_supervisor_${RUN_ID}.pid"
 LEDGER_PATH="data_perp/exchanges/krakenfutures/live_state/prediction_ledgers/${RUN_ID}/prediction_ledger.parquet"
-POLICY_CONFIG_PATH="data_perp/artifacts/${POLICY_ARTIFACT_RUN_ID}/policy_params/best_policy_params.json"
+POLICY_CONFIG_PATH="data_perp/artifacts/${POLICY_ARTIFACT_RUN_ID}/policy_params/optimized_portfolio_policy_config.json"
 RECONCILIATION_DIR="data_perp/exchanges/krakenfutures/live_state/reconciliation/${RUN_ID}/execution_realism"
 TRADE_LOG_PATH="inference_trades.csv"
 
@@ -62,7 +62,9 @@ while true; do
       PYTHONUNBUFFERED=1 \
       PYTHONPATH=. \
       MPLCONFIGDIR=/private/tmp/mplconfig \
-      EPM_EXCHANGE=kraken \
+      EPM_EXCHANGE=krakenfutures \
+      EXCHANGE_NAME=krakenfutures \
+      PRIMARY_EXCHANGE=krakenfutures \
       EPM_LABEL_WEIGHT_DISABLE=1 \
       EPM_LABEL_WEIGHT_USE_BEST_DEFAULT=0 \
       EPM_FEATURE_SELECTED_LOAD_PARALLEL=0 \

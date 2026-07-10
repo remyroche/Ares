@@ -53,12 +53,27 @@ class PortfolioPolicyConfig:
     dynamic_hr_surprise_max_state_age_days: float = 7.0
     dynamic_hr_surprise_lower_bound: float = -0.50
     dynamic_hr_surprise_upper_bound: float = 1.50
+    archetype_hit_surprise_enabled: bool = False
+    archetype_hit_surprise_policy_path: str = ""
+    archetype_hit_surprise_mode: str = "threshold"
+    threshold_basis_policy_enabled: bool = False
+    threshold_basis_policy_path: str = ""
+    threshold_basis_policy_id: str = ""
+    regime_ev_calibration_enabled: bool = False
+    regime_ev_calibration_policy_id: str = "per_regime_archetype_calibration_v1"
+    regime_ev_calibration_artifact_path: str = ""
+    regime_ev_calibration_rank_source: str = "per_regime_archetype_calibration_v1"
+    regime_ev_protect_admission_rank: bool = True
+    regime_ev_protected_admission_floor: float = 0.90
+    regime_ev_retained_surplus_frac: float = 0.50
     prehead_symbol_guard_enabled: bool = False
     prehead_symbol_guard_artifact_path: str = ""
     prehead_symbol_guard_max_state_age_days: float = 7.0
     threshold_viability_margin: float = 0.0
     occupancy_threshold_alpha: float = 1.0
     occupancy_threshold_power: float = 1.0
+    allocation_threshold_alpha: float = 0.0
+    allocation_threshold_power: float = 1.0
     portfolio_policy_version: str = "global_auction_v1"
     max_new_entries_per_bar: int = 4
     max_new_entries_per_strategy_per_bar: Optional[int] = None
@@ -87,8 +102,14 @@ class PortfolioPolicyConfig:
     ev_haircut_stop_exit_orderbook_multiplier: float = 1.00
     live_friction_ev_net_gate_enabled: bool = True
     min_ev_adjusted_net_return_after_friction: float = 0.0
+    inference_ev_cost_rebase_enabled: bool = True
+    inference_ev_fixed_round_trip_cost_bps: float = 20.0
+    inference_ev_spread_multiplier: float = 1.50
     min_liquidity_capacity_weight: float = 0.25
     max_ticker_age_seconds: float = 4.0
+    max_consecutive_losing_trades: int = 10
+    max_consecutive_losing_trades_per_archetype: int = 5
+    archetype_loss_cooldown_hours: float = 24.0
 
     max_signal_gap_bps_default: float = 150.0
     max_order_chase_bps: float = 30.0
@@ -252,12 +273,27 @@ def load_portfolio_policy_config(
             "dynamic_hr_surprise_max_state_age_days",
             "dynamic_hr_surprise_lower_bound",
             "dynamic_hr_surprise_upper_bound",
+            "archetype_hit_surprise_enabled",
+            "archetype_hit_surprise_policy_path",
+            "archetype_hit_surprise_mode",
+            "threshold_basis_policy_enabled",
+            "threshold_basis_policy_path",
+            "threshold_basis_policy_id",
+            "regime_ev_calibration_enabled",
+            "regime_ev_calibration_policy_id",
+            "regime_ev_calibration_artifact_path",
+            "regime_ev_calibration_rank_source",
+            "regime_ev_protect_admission_rank",
+            "regime_ev_protected_admission_floor",
+            "regime_ev_retained_surplus_frac",
             "prehead_symbol_guard_enabled",
             "prehead_symbol_guard_artifact_path",
             "prehead_symbol_guard_max_state_age_days",
             "threshold_viability_margin",
             "occupancy_threshold_alpha",
             "occupancy_threshold_power",
+            "allocation_threshold_alpha",
+            "allocation_threshold_power",
         },
         "sizing": {
             "rank_multiplier_min",
@@ -296,6 +332,9 @@ def load_portfolio_policy_config(
             "perp_liquidation_fee_buffer_pct",
             "perp_liquidation_safety_buffer_pct",
             "perp_liquidation_min_leverage",
+            "max_consecutive_losing_trades",
+            "max_consecutive_losing_trades_per_archetype",
+            "archetype_loss_cooldown_hours",
         },
         "liquidity": {
             "max_orderbook_slippage_bps",
@@ -304,6 +343,9 @@ def load_portfolio_policy_config(
             "hard_max_spread_bps",
             "ev_haircut_expected_spread_bps",
             "ev_haircut_delay_slippage_baseline_bps",
+            "inference_ev_cost_rebase_enabled",
+            "inference_ev_fixed_round_trip_cost_bps",
+            "inference_ev_spread_multiplier",
             "min_liquidity_capacity_weight",
         },
         "strategy_contract": {
@@ -478,9 +520,33 @@ def compute_rank_based_position_size(
             float(policy.max_position_wallet_pct) * wallet * notional_multiplier,
             float(policy.max_position_quote_notional) * book_multiplier,
         )
+        denom = max(1.0 - float(final_threshold), 1e-9)
+        rank_excess = (float(adjusted_rank_score) - float(final_threshold)) / denom
+        rank_excess = float(np.clip(rank_excess, 0.0, 1.0))
+        size_power = (
+            float(policy.rank_size_power)
+            if rank_size_power is None
+            else float(rank_size_power)
+        )
+        size_power = max(size_power, 1.000001)
+        curved_rank_excess = float(rank_excess**size_power)
+        rank_multiplier = float(
+            policy.rank_multiplier_min
+            + (policy.rank_multiplier_max - policy.rank_multiplier_min)
+            * curved_rank_excess
+        )
+        rank_slot_fraction = rank_multiplier / max(
+            float(policy.rank_multiplier_max), 1e-9
+        )
+        rank_slot_fraction = float(np.clip(rank_slot_fraction, 0.0, 1.0))
         size_before_liquidity = max(
             0.0,
-            min(full_wallet_size, available_wallet_size, position_cap, remaining_total),
+            min(
+                full_wallet_size * rank_slot_fraction,
+                available_wallet_size * rank_slot_fraction,
+                position_cap,
+                remaining_total,
+            ),
         )
         book_cap = (
             float(orderbook_capacity_quote)
@@ -531,11 +597,11 @@ def compute_rank_based_position_size(
             "reserved_slot_notional": full_wallet_size,
             "remaining_slot_notional": available_wallet_size,
             "slot_cap_notional": size_before_liquidity,
-            "rank_excess": None,
-            "curved_rank_excess": None,
-            "rank_size_power": rank_size_power,
-            "rank_multiplier": leverage,
-            "rank_slot_fraction": None,
+            "rank_excess": rank_excess,
+            "curved_rank_excess": curved_rank_excess,
+            "rank_size_power": size_power,
+            "rank_multiplier": rank_multiplier,
+            "rank_slot_fraction": rank_slot_fraction,
             "provisional_size": size_before_liquidity,
             "max_position_wallet_allocation": (
                 float(policy.max_position_wallet_pct) * wallet * book_multiplier
@@ -554,6 +620,7 @@ def compute_rank_based_position_size(
             "perp_rank_x": rx,
             "perp_default_leverage": rank_leverage,
             "perp_rank_leverage": rank_leverage,
+            "perp_rank_slot_fraction": rank_slot_fraction,
             "perp_legacy_risk_cap_leverage": (
                 legacy_risk_cap if np.isfinite(legacy_risk_cap) else None
             ),

@@ -17,12 +17,15 @@ Leakage contract:
 from __future__ import annotations
 
 import argparse
+import gc
+import hashlib
 import json
 import math
 import sys
 from pathlib import Path
 from typing import Any
 
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor
@@ -94,6 +97,14 @@ BASE_SOFT_LABEL_COLUMNS = (
     "__first_touch_target_soft__",
     "target_soft",
     "__target_soft__",
+)
+META_POST_SELECTION_OOD_FEATURE_NAMES = (
+    "meta_sel_ood_abs_z_mean",
+    "meta_sel_ood_abs_z_max",
+    "meta_sel_ood_abs_z_p95",
+    "meta_sel_ood_iqr_exceed_frac",
+    "meta_sel_ood_missing_frac",
+    "meta_sel_ood_centroid_l2",
 )
 LEDGER_CONTEXT_COLUMNS = (
     "__archetype_label_family__",
@@ -301,6 +312,10 @@ META_HPO_PRESETS = (
     },
 )
 _FEATURE_SELECTION_CACHE: dict[tuple[Any, ...], tuple[list[str], pd.DataFrame]] = {}
+_HPO_FOLD_MATRIX_CACHE: dict[
+    tuple[Any, ...],
+    tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, list[str]],
+] = {}
 
 
 def _json_safe(value: Any) -> Any:
@@ -321,6 +336,93 @@ def _json_safe(value: Any) -> Any:
     if pd.isna(value):
         return None
     return value
+
+
+def _safe_artifact_stem(value: Any) -> str:
+    text = str(value)
+    stem = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in text)
+    return stem.strip("_") or "artifact"
+
+
+def _feature_contract_hash(feature_names: list[str]) -> str:
+    payload = json.dumps(list(feature_names), separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _save_meta_fold_models(
+    *,
+    out_dir: Path,
+    fold: str,
+    calendar_month: str,
+    valid_start: Any,
+    valid_end: Any,
+    fold_idx: int,
+    seed: int,
+    models: dict[str, Any],
+    feature_names: list[str],
+    classifier_params: dict[str, Any],
+    regressor_params: dict[str, Any],
+    meta_head_mode: str,
+    model_profile_name: str,
+    train_rows_available: int,
+    train_rows_fit: int,
+    valid_rows: int,
+    target_columns_used: set[str],
+) -> dict[str, Any]:
+    """Persist fold-fitted meta models and their exact feature contract."""
+
+    fold_dir = out_dir / "models" / _safe_artifact_stem(fold)
+    fold_dir.mkdir(parents=True, exist_ok=True)
+    saved: list[dict[str, Any]] = []
+    for label, model in sorted(models.items()):
+        model_path = fold_dir / f"{_safe_artifact_stem(label)}.joblib"
+        joblib.dump(model, model_path, compress=3)
+        saved.append(
+            {
+                "label": str(label),
+                "path": str(model_path),
+                "model_class": type(model).__name__,
+                "module": type(model).__module__,
+            }
+        )
+    columns_path = fold_dir / "columns.json"
+    columns_payload = {
+        "schema": "s52_meta_fold_feature_contract_v1",
+        "feature_names": list(feature_names),
+        "feature_count": int(len(feature_names)),
+        "feature_contract_hash": _feature_contract_hash(list(feature_names)),
+    }
+    columns_path.write_text(json.dumps(_json_safe(columns_payload), indent=2, sort_keys=True), encoding="utf-8")
+    manifest = {
+        "schema": "s52_meta_saved_fold_models_v1",
+        "fold": str(fold),
+        "calendar_month": str(calendar_month),
+        "valid_start": valid_start,
+        "valid_end": valid_end,
+        "fold_idx": int(fold_idx),
+        "seed": int(seed),
+        "model_profile_name": str(model_profile_name),
+        "meta_head_mode": str(meta_head_mode),
+        "train_rows_available": int(train_rows_available),
+        "train_rows_fit": int(train_rows_fit),
+        "valid_rows": int(valid_rows),
+        "models": saved,
+        "columns_path": str(columns_path),
+        "feature_count": int(len(feature_names)),
+        "feature_contract_hash": columns_payload["feature_contract_hash"],
+        "classifier_params": _json_safe(classifier_params),
+        "regressor_params": _json_safe(regressor_params),
+        "target_columns_used": sorted(str(c) for c in target_columns_used),
+        "leakage_contract": {
+            "fit_scope": "prior_rows_only_for_this_oos_fold",
+            "oos_rows": "valid_start <= timestamp < valid_end",
+            "feature_contract": "columns.json is the required inference-time feature order",
+            "outcome_columns": "used only for training labels and validation metrics, never as OOS features",
+        },
+    }
+    manifest_path = fold_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(_json_safe(manifest), indent=2, sort_keys=True), encoding="utf-8")
+    return {**manifest, "manifest_path": str(manifest_path), "model_dir": str(fold_dir)}
 
 
 def _num(values: Any, *, index: pd.Index | None = None, default: float = np.nan) -> pd.Series:
@@ -390,13 +492,34 @@ def _load_joined_frame(handoff_path: Path, ledger_path: Path, frontier: str) -> 
     missing = [col for col in KEY_COLUMNS if col not in handoff.columns or col not in ledger.columns]
     if missing:
         raise ValueError(f"Missing join key columns: {missing}")
-    merged = handoff.merge(
-        ledger,
-        on=list(KEY_COLUMNS),
-        how="left",
-        suffixes=("", "__ledger"),
-        validate="one_to_one",
-    )
+    aligned_keys = False
+    if len(handoff) == len(ledger):
+        try:
+            aligned_keys = all(
+                handoff[col].reset_index(drop=True).equals(ledger[col].reset_index(drop=True))
+                for col in KEY_COLUMNS
+                if col in handoff.columns and col in ledger.columns
+            )
+        except Exception:
+            aligned_keys = False
+    if aligned_keys:
+        merged = handoff
+        for col in ledger.columns:
+            if col in KEY_COLUMNS:
+                continue
+            ledger_col = f"{col}__ledger"
+            if col not in merged.columns:
+                merged[col] = ledger[col].to_numpy(copy=False)
+            else:
+                merged[ledger_col] = ledger[col].to_numpy(copy=False)
+    else:
+        merged = handoff.merge(
+            ledger,
+            on=list(KEY_COLUMNS),
+            how="left",
+            suffixes=("", "__ledger"),
+            validate="one_to_one",
+        )
     for col in ("month", "score", _candidate_column(frontier), *LEDGER_CONTEXT_COLUMNS):
         ledger_col = f"{col}__ledger"
         if ledger_col in merged.columns:
@@ -949,6 +1072,7 @@ def _make_xy(
     *,
     numeric_cols: list[str],
     categorical_cols: list[str],
+    selected_features: list[str] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
     train_parts: list[pd.DataFrame] = []
     valid_parts: list[pd.DataFrame] = []
@@ -959,16 +1083,64 @@ def _make_xy(
         train_parts.append(train_num.fillna(med).fillna(0.0).astype(np.float32))
         valid_parts.append(valid_num.fillna(med).fillna(0.0).astype(np.float32))
     if categorical_cols:
-        train_cat = pd.get_dummies(train.loc[:, categorical_cols].astype(str).fillna("missing"), dummy_na=False)
-        valid_cat = pd.get_dummies(valid.loc[:, categorical_cols].astype(str).fillna("missing"), dummy_na=False)
-        valid_cat = valid_cat.reindex(columns=train_cat.columns, fill_value=0)
-        train_parts.append(train_cat.astype(np.float32))
-        valid_parts.append(valid_cat.astype(np.float32))
+        selected = set(str(c) for c in (selected_features or []))
+        if selected:
+            train_cat_parts: list[pd.Series] = []
+            valid_cat_parts: list[pd.Series] = []
+            for col in categorical_cols:
+                prefix = f"{col}_"
+                wanted = sorted(feat for feat in selected if feat.startswith(prefix))
+                if not wanted:
+                    continue
+                train_vals = train[col].astype(str).fillna("missing") if col in train.columns else pd.Series("missing", index=train.index)
+                valid_vals = valid[col].astype(str).fillna("missing") if col in valid.columns else pd.Series("missing", index=valid.index)
+                for feat in wanted:
+                    category = feat[len(prefix) :]
+                    train_cat_parts.append(train_vals.eq(category).astype(np.float32).rename(feat))
+                    valid_cat_parts.append(valid_vals.eq(category).astype(np.float32).rename(feat))
+            if train_cat_parts:
+                train_parts.append(pd.concat(train_cat_parts, axis=1))
+                valid_parts.append(pd.concat(valid_cat_parts, axis=1))
+        else:
+            train_cat = pd.get_dummies(train.loc[:, categorical_cols].astype(str).fillna("missing"), dummy_na=False)
+            valid_cat = pd.get_dummies(valid.loc[:, categorical_cols].astype(str).fillna("missing"), dummy_na=False)
+            valid_cat = valid_cat.reindex(columns=train_cat.columns, fill_value=0)
+            train_parts.append(train_cat.astype(np.float32))
+            valid_parts.append(valid_cat.astype(np.float32))
     if not train_parts:
         raise ValueError("No meta feature columns available.")
     x_train = pd.concat(train_parts, axis=1)
     x_valid = pd.concat(valid_parts, axis=1).reindex(columns=x_train.columns, fill_value=0.0)
     return x_train, x_valid, list(x_train.columns)
+
+
+def _feature_source_columns_for_selected(
+    *,
+    selected_features: list[str] | None,
+    numeric_cols: list[str],
+    categorical_cols: list[str],
+) -> tuple[list[str], list[str]]:
+    """Reduce raw feature materialization once the global feature set is known.
+
+    Feature selection operates on the encoded matrix. Numeric selected features
+    map 1:1 to raw numeric columns. Categorical selected features are pandas
+    dummy columns named ``<raw_col>_<category>``; keep only raw categorical
+    columns whose dummy prefix appears in the selected set.
+    """
+    if not selected_features:
+        return list(numeric_cols), list(categorical_cols)
+    selected = {str(c) for c in selected_features}
+    selected_numeric = [col for col in numeric_cols if str(col) in selected]
+    selected_categorical: list[str] = []
+    for col in categorical_cols:
+        prefix = f"{col}_"
+        if any(feat.startswith(prefix) for feat in selected):
+            selected_categorical.append(col)
+    # Post-selection OOD features are appended after matrix construction and do
+    # not require raw source columns here.
+    if not selected_numeric and not selected_categorical:
+        return list(numeric_cols), list(categorical_cols)
+    return selected_numeric, selected_categorical
 
 
 def _classification_weights(target: pd.Series, train: pd.DataFrame) -> np.ndarray:
@@ -1114,6 +1286,119 @@ def _feature_selection_label_context(train: pd.DataFrame) -> dict[str, np.ndarra
     }
 
 
+def _append_post_selection_ood_features(
+    x_train: pd.DataFrame,
+    x_valid: pd.DataFrame,
+    selected: list[str],
+) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
+    base_features = [str(c) for c in selected if str(c) in x_train.columns]
+    if len(base_features) < 3:
+        return x_train, x_valid, []
+    train_arr = x_train.loc[:, base_features].to_numpy(dtype=np.float32, copy=True)
+    valid_arr = x_valid.reindex(columns=base_features, fill_value=np.nan).to_numpy(dtype=np.float32, copy=True)
+    finite_train = np.isfinite(train_arr)
+    safe_train = np.where(finite_train, train_arr, np.nan).astype(np.float32, copy=False)
+    mean = np.nanmean(safe_train, axis=0).astype(np.float32)
+    std = np.nanstd(safe_train, axis=0).astype(np.float32)
+    q25 = np.nanquantile(safe_train, 0.25, axis=0).astype(np.float32)
+    q75 = np.nanquantile(safe_train, 0.75, axis=0).astype(np.float32)
+    mean = np.nan_to_num(mean, nan=0.0).astype(np.float32)
+    std = np.where(np.isfinite(std) & (std > 1e-6), std, 1.0).astype(np.float32)
+    q25 = np.nan_to_num(q25, nan=mean).astype(np.float32)
+    q75 = np.nan_to_num(q75, nan=mean).astype(np.float32)
+    iqr = np.maximum(q75 - q25, 1e-6).astype(np.float32)
+    lower = q25 - 1.5 * iqr
+    upper = q75 + 1.5 * iqr
+
+    def _metrics(arr: np.ndarray) -> dict[str, np.ndarray]:
+        finite = np.isfinite(arr)
+        filled = np.where(finite, arr, mean).astype(np.float32, copy=False)
+        z = (filled - mean) / std
+        abs_z = np.abs(z).astype(np.float32, copy=False)
+        exceed = ((filled < lower) | (filled > upper)) & finite
+        return {
+            "meta_sel_ood_abs_z_mean": np.mean(abs_z, axis=1).astype(np.float32),
+            "meta_sel_ood_abs_z_max": np.max(abs_z, axis=1).astype(np.float32),
+            "meta_sel_ood_abs_z_p95": np.quantile(abs_z, 0.95, axis=1).astype(np.float32),
+            "meta_sel_ood_iqr_exceed_frac": np.mean(exceed, axis=1).astype(np.float32),
+            "meta_sel_ood_missing_frac": np.mean(~finite, axis=1).astype(np.float32),
+            "meta_sel_ood_centroid_l2": np.sqrt(np.mean(z * z, axis=1)).astype(np.float32),
+        }
+
+    x_train = x_train.copy()
+    x_valid = x_valid.copy()
+    train_metrics = _metrics(train_arr)
+    valid_metrics = _metrics(valid_arr)
+    for name in META_POST_SELECTION_OOD_FEATURE_NAMES:
+        x_train[name] = train_metrics[name]
+        x_valid[name] = valid_metrics[name]
+    return x_train, x_valid, list(META_POST_SELECTION_OOD_FEATURE_NAMES)
+
+
+def _load_fixed_selected_features(path: Path | None) -> list[str] | None:
+    if path is None:
+        return None
+    if not path.exists():
+        raise FileNotFoundError(path)
+    suffix = path.suffix.lower()
+    if suffix == ".json":
+        payload = json.loads(path.read_text())
+        if isinstance(payload, dict):
+            values = (
+                payload.get("selected_features")
+                or payload.get("selected_feature_union")
+                or payload.get("features")
+            )
+        else:
+            values = payload
+        if values is None:
+            raise ValueError(f"No selected feature list found in {path}")
+        return list(dict.fromkeys(str(v) for v in values if str(v).strip()))
+    frame = pd.read_csv(path)
+    feature_col = None
+    for candidate in ("feature", "selected_feature", "name"):
+        if candidate in frame.columns:
+            feature_col = candidate
+            break
+    if feature_col is None:
+        raise ValueError(f"Could not find a feature column in {path}")
+    if "selected" in frame.columns:
+        selected = frame["selected"]
+        if selected.dtype == object:
+            mask = selected.astype(str).str.lower().isin({"1", "true", "yes"})
+        else:
+            mask = selected.astype(bool)
+        frame = frame.loc[mask].copy()
+    if "rank" in frame.columns:
+        frame = frame.sort_values("rank", kind="stable")
+    return list(dict.fromkeys(str(v) for v in frame[feature_col].tolist() if str(v).strip()))
+
+
+def _load_fixed_model_params(path: Path | None) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    if not path.exists():
+        raise FileNotFoundError(path)
+    payload = json.loads(path.read_text())
+    if not isinstance(payload, dict):
+        raise ValueError(f"Expected JSON object in {path}")
+    if "classifier" in payload or "regressor" in payload:
+        return payload
+    params: dict[str, Any] = {}
+    if isinstance(payload.get("classifier_params"), dict):
+        params["classifier"] = dict(payload["classifier_params"])
+    if isinstance(payload.get("regressor_params"), dict):
+        params["regressor"] = dict(payload["regressor_params"])
+    if not params and isinstance(payload.get("model_params"), dict):
+        raw = payload["model_params"]
+        if "classifier" in raw or "regressor" in raw:
+            return raw
+        params["classifier"] = dict(raw)
+    if not params:
+        raise ValueError(f"No fixed model params found in {path}")
+    return params
+
+
 def _select_features_by_lgbm_pipeline(
     x_train: pd.DataFrame,
     x_valid: pd.DataFrame,
@@ -1169,6 +1454,15 @@ def _select_features_by_lgbm_pipeline(
         selected = selected[: int(top_n)]
     if not selected:
         raise RuntimeError("Canonical lgbm_pipeline feature selection returned no selected feature names.")
+    x_train_selected = x_train.loc[:, selected]
+    x_valid_selected = x_valid.reindex(columns=selected, fill_value=0.0)
+    x_train_selected, x_valid_selected, ood_features = _append_post_selection_ood_features(
+        x_train_selected,
+        x_valid_selected,
+        selected,
+    )
+    if ood_features:
+        selected = list(dict.fromkeys(list(selected) + list(ood_features)))
     stats = candidate.get("feature_stats")
     if isinstance(stats, pd.DataFrame) and "feature" in stats.columns:
         rows = stats.copy()
@@ -1205,7 +1499,27 @@ def _select_features_by_lgbm_pipeline(
     rows["lgbm_pipeline_selected_count"] = int(len(selected))
     rows["lgbm_pipeline_input_feature_count"] = int(x_train.shape[1])
     rows["lgbm_pipeline_selector_rows"] = int(len(selector_x))
-    return x_train.loc[:, selected], x_valid.reindex(columns=selected, fill_value=0.0), selected, rows
+    if ood_features:
+        ood_rows = pd.DataFrame(
+            {
+                "feature": list(ood_features),
+                "selected": True,
+                "rank": np.arange(int(rows["rank"].max()) + 1 if "rank" in rows.columns and len(rows) else 1, int(rows["rank"].max()) + 1 + len(ood_features) if "rank" in rows.columns and len(rows) else 1 + len(ood_features)),
+                "score": np.nan,
+                "fold": str(fold),
+                "feature_selection_target": str(target_name),
+                "feature_selection_method": "lgbm_pipeline_staged",
+                "feature_selection_status": "ok",
+                "feature_selection_requested_top_n": int(top_n),
+                "feature_selection_auto_selected_count": int(len(selected)),
+                "feature_selection_auto_mode": "post_mda_ood_append",
+                "lgbm_pipeline_selected_count": int(len(selected)),
+                "lgbm_pipeline_input_feature_count": int(x_train.shape[1]),
+                "lgbm_pipeline_selector_rows": int(len(selector_x)),
+            }
+        )
+        rows = pd.concat([rows, ood_rows], ignore_index=True, sort=False)
+    return x_train_selected.loc[:, selected], x_valid_selected.reindex(columns=selected, fill_value=0.0), selected, rows
 
 
 def _fit_classifier(
@@ -1291,6 +1605,24 @@ def _base_style_weights_for_soft_label(
     return _num(weights, index=train.index, default=1.0).replace([np.inf, -np.inf], np.nan).fillna(1.0).astype(np.float32)
 
 
+def _base_weight_context(train: pd.DataFrame, valid_mask: pd.Series) -> pd.DataFrame:
+    cols = [
+        "__ts__",
+        "u_policy_net",
+        "exec_margin",
+        "mae_norm",
+        "first_touch_full_path_mae_norm",
+        "mfe_norm",
+        "first_touch_full_path_mfe_norm",
+        "first_touch_bar",
+        "__archetype_policy_max_barrier__",
+        "timeout",
+        "side_name",
+    ]
+    available = [col for col in cols if col in train.columns]
+    return train.loc[valid_mask, available].copy()
+
+
 def _fit_base_soft_label_model(
     x: pd.DataFrame,
     y: pd.Series,
@@ -1303,7 +1635,8 @@ def _fit_base_soft_label_model(
     valid = target.notna()
     if int(valid.sum()) < 50 or float(target.loc[valid].std()) <= 1e-12:
         return None
-    weights = _base_style_weights_for_soft_label(train.loc[valid], target.loc[valid])
+    weight_context = _base_weight_context(train, valid)
+    weights = _base_style_weights_for_soft_label(weight_context, target.loc[valid])
     if _LIGHTGBM_AVAILABLE and LGBMRegressor is not None:
         params = _lgbm_params(DEFAULT_LGBM_CLASSIFIER_PARAMS, lgbm_params)
         model = LGBMRegressor(
@@ -1920,6 +2253,147 @@ def _summarize_threshold_policies(rows: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def _selector_to_score_col(selector: str) -> str:
+    selector = str(selector)
+    if selector == "base_score":
+        return "score_base"
+    if selector.startswith("meta_"):
+        return f"score_{selector}"
+    return selector
+
+
+def _group_topk_metrics(
+    frame: pd.DataFrame,
+    *,
+    score_col: str,
+    selector: str,
+    group_cols: list[str],
+    keep_fracs: tuple[float, ...] = (0.30, 0.20, 0.10, 0.05),
+) -> pd.DataFrame:
+    if frame.empty or score_col not in frame.columns:
+        return pd.DataFrame()
+    rows: list[dict[str, Any]] = []
+    work = frame.copy()
+    for col in group_cols:
+        if col not in work.columns:
+            work[col] = "missing"
+    for keys, group in work.groupby(group_cols, dropna=False, sort=True):
+        if not isinstance(keys, tuple):
+            keys = (keys,)
+        score = _num(group.get(score_col), index=group.index)
+        valid = group.loc[score.notna()].copy()
+        if valid.empty:
+            continue
+        ordered = valid.assign(__score__=_num(valid.get(score_col), index=valid.index)).sort_values(
+            "__score__",
+            ascending=False,
+            kind="mergesort",
+        )
+        for frac in keep_fracs:
+            selected = ordered.head(max(1, int(math.ceil(len(ordered) * float(frac)))))
+            rec: dict[str, Any] = {
+                "selector": str(selector),
+                "score_col": str(score_col),
+                "keep_frac": float(frac),
+                "candidate_rows": int(len(valid)),
+                "selected_rows": int(len(selected)),
+                "exec_margin": _mean(selected.get("exec_margin")),
+                "ev_after_1pct": _mean(selected.get("ev_after_1pct")),
+                "ret_net": _mean(selected.get("ret_net")),
+                "u_policy_net": _mean(selected.get("u_policy_net")),
+                "positive_exec_margin_rate": _rate(_num(selected.get("exec_margin")).gt(0.0)),
+                "clean_exec_precision": _rate(selected.get("clean_exec")),
+                "dirty_positive_rate": _rate(selected.get("dirty_positive")),
+                "first_touch_bad_mae_rate": _rate(selected.get("first_touch_bad_mae_1r")),
+                "full_path_bad_mae_rate": _rate(selected.get("full_path_bad_mae_1r")),
+                "timeout_rate": _rate(selected.get("timeout")),
+                "mfe_before_mae_rate": _rate(selected.get("mfe_before_mae_1r")),
+                "mae_before_mfe_rate": _rate(selected.get("mae_before_mfe_1r")),
+                "mean_underwater_bars": _mean(selected.get("underwater_bars_before_mfe_1r")),
+                "mean_score": _mean(selected.get(score_col)),
+                "mean_base_score": _mean(selected.get("score_base")),
+            }
+            for col, value in zip(group_cols, keys, strict=False):
+                rec[col] = "missing" if pd.isna(value) else value
+            rows.append(rec)
+    return pd.DataFrame(rows)
+
+
+def _write_meta_oos_breakdown_reports(
+    *,
+    out_dir: Path,
+    predictions: pd.DataFrame,
+    summary: pd.DataFrame,
+) -> dict[str, Any]:
+    report_dir = out_dir / "meta_oos_breakdown"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    if predictions.empty:
+        return {"enabled": False, "reason": "no_predictions"}
+    best_selector = "base_score"
+    if not summary.empty and "selector" in summary.columns:
+        best_selector = str(summary.iloc[0].get("selector", "base_score"))
+    selector_map = {
+        "base_score": "score_base",
+        best_selector: _selector_to_score_col(best_selector),
+    }
+    selector_map = {k: v for k, v in selector_map.items() if v in predictions.columns}
+    if not selector_map:
+        return {"enabled": False, "reason": "no_score_columns"}
+    work = predictions.copy()
+    for source_col, alias_col in LEDGER_CONTEXT_FEATURE_ALIASES.items():
+        if source_col in work.columns and alias_col not in work.columns:
+            work[alias_col] = work[source_col]
+    if "policy_archetype" not in work.columns:
+        if "archetype_policy_key" in work.columns:
+            work["policy_archetype"] = work["archetype_policy_key"].astype(str)
+        elif "__archetype_policy_key__" in work.columns:
+            work["policy_archetype"] = work["__archetype_policy_key__"].astype(str)
+        elif "source_tag" in work.columns:
+            work["policy_archetype"] = work["source_tag"].astype(str)
+        else:
+            work["policy_archetype"] = "missing"
+    if "calendar_month" not in work.columns:
+        work["calendar_month"] = pd.to_datetime(work.get("__ts__"), utc=True, errors="coerce").dt.to_period("M").astype(str)
+    output_files: dict[str, str] = {}
+    groupings = {
+        "month_side_archetype": ["calendar_month", "side_name", "policy_archetype"],
+        "month_side_family": ["calendar_month", "side_name", "source_semantic_family"],
+        "side_archetype": ["side_name", "policy_archetype"],
+        "month": ["calendar_month"],
+    }
+    for selector, score_col in selector_map.items():
+        for name, cols in groupings.items():
+            report = _group_topk_metrics(work, score_col=score_col, selector=selector, group_cols=list(cols))
+            path = report_dir / f"{selector}_{name}.csv"
+            report.to_csv(path, index=False)
+            output_files[f"{selector}_{name}"] = str(path)
+    comparison_frames = [
+        _group_topk_metrics(
+            work,
+            score_col=score_col,
+            selector=selector,
+            group_cols=["calendar_month", "side_name", "policy_archetype"],
+        )
+        for selector, score_col in selector_map.items()
+    ]
+    comparison_frames = [df for df in comparison_frames if not df.empty]
+    if comparison_frames:
+        comparison_path = report_dir / "base_vs_meta_month_side_archetype_comparison.csv"
+        pd.concat(comparison_frames, ignore_index=True).to_csv(comparison_path, index=False)
+        output_files["base_vs_meta_month_side_archetype_comparison"] = str(comparison_path)
+    manifest = {
+        "enabled": True,
+        "schema": "s52_meta_oos_breakdown_v1",
+        "best_selector": best_selector,
+        "selectors": selector_map,
+        "metrics_source": "OOS prediction rows only",
+        "objective_step": "8_meta_completion_breakdown_before_simple_policy_optimiser",
+        "output_files": output_files,
+    }
+    (report_dir / "manifest.json").write_text(json.dumps(_json_safe(manifest), indent=2, sort_keys=True), encoding="utf-8")
+    return manifest
+
+
 def run_smoke(
     *,
     handoff_dir: Path,
@@ -1943,6 +2417,15 @@ def run_smoke(
     model_params: dict[str, Any] | None = None,
     model_profile_name: str = "baseline",
     meta_head_mode: str = "multi",
+    minimal_artifacts: bool = False,
+    fixed_selected_features: list[str] | None = None,
+    eval_months: list[str] | None = None,
+    fold_feature_builder: Any | None = None,
+    fold_feature_profile_name: str = "none",
+    extra_prediction_columns: list[str] | None = None,
+    force_prediction_shards: bool = False,
+    combine_prediction_shards: bool = True,
+    save_fold_models: bool = False,
 ) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     handoff_path = handoff_dir / "train_meta_regime_handoff.parquet"
@@ -1959,7 +2442,10 @@ def run_smoke(
         raise ValueError(f"Need at least two months, got {months}")
     ts_utc = pd.to_datetime(data["__ts__"], utc=True, errors="coerce")
     validation_windows: list[dict[str, Any]] = []
+    eval_month_set = {str(m) for m in (eval_months or []) if str(m).strip()}
     for month in months[1:]:
+        if eval_month_set and str(month) not in eval_month_set:
+            continue
         month_start = pd.Timestamp(pd.Period(month).start_time, tz="UTC")
         month_end = pd.Timestamp((pd.Period(month) + 1).start_time, tz="UTC")
         if int(max_oos_model_age_days) > 0:
@@ -2003,8 +2489,11 @@ def run_smoke(
         key=lambda w: (int(w["train_rows_estimate"]), int(w["valid_rows_estimate"])),
     ) if calibration_candidates else None
     calibration_fold = str(calibration_window["fold"]) if calibration_window is not None else None
-    if str(validation_scope).strip().lower() == "largest":
+    validation_scope_norm = str(validation_scope).strip().lower()
+    if validation_scope_norm == "largest":
         validation_windows = [calibration_window] if calibration_window is not None else []
+    elif validation_scope_norm in {"chronological", "chrono"}:
+        validation_windows = list(eligible_windows)
     elif calibration_window is not None:
         validation_windows = [calibration_window] + [
             w for w in eligible_windows if str(w["fold"]) != calibration_fold
@@ -2025,7 +2514,11 @@ def run_smoke(
     importances: list[pd.DataFrame] = []
     feature_selection_frames: list[pd.DataFrame] = []
     selected_features_by_fold: dict[str, list[str]] = {}
+    fold_feature_metadata: list[dict[str, Any]] = []
+    saved_model_manifests: list[dict[str, Any]] = []
     prediction_frames: list[pd.DataFrame] = []
+    prediction_shard_paths: list[Path] = []
+    prediction_shard_dir = out_dir / "prediction_shards"
     classifier_params = dict((model_params or {}).get("classifier", DEFAULT_LGBM_CLASSIFIER_PARAMS))
     regressor_params = dict((model_params or {}).get("regressor", DEFAULT_LGBM_REGRESSOR_PARAMS))
     meta_head_mode = str(meta_head_mode).strip().lower()
@@ -2045,19 +2538,136 @@ def run_smoke(
         str(feature_selection_method),
         int(max_oos_model_age_days),
         str(meta_head_mode),
+        str(fold_feature_profile_name),
     )
     cached_feature_selection = _FEATURE_SELECTION_CACHE.get(fs_cache_key)
-    global_feature_names: list[str] | None = list(cached_feature_selection[0]) if cached_feature_selection else None
+    global_feature_names: list[str] | None = (
+        list(dict.fromkeys(str(c) for c in fixed_selected_features if str(c).strip()))
+        if fixed_selected_features is not None
+        else (list(cached_feature_selection[0]) if cached_feature_selection else None)
+    )
     global_feature_selection_df: pd.DataFrame | None = (
         cached_feature_selection[1].copy() if cached_feature_selection else None
     )
+    if fixed_selected_features is not None:
+        global_feature_selection_df = pd.DataFrame(
+            {
+                "fold": ["fixed_hpo_selected_features"] * len(global_feature_names or []),
+                "feature": list(global_feature_names or []),
+                "rank": np.arange(1, len(global_feature_names or []) + 1, dtype=np.int32),
+                "selected": True,
+                "feature_selection_target": str(feature_selection_target),
+                "feature_selection_method": "fixed_from_hpo",
+                "feature_selection_status": "fixed_replay",
+                "feature_selection_auto_selected_count": int(len(global_feature_names or [])),
+            }
+        )
     feature_selection_recorded = False
     meta_target_columns_used: set[str] = set()
     for fold_idx, window in enumerate(validation_windows, start=1):
         test_fold = str(window["fold"])
         test_month = str(window["month"])
-        train = data[ts_utc.lt(window["valid_start"])].copy()
-        valid = data[ts_utc.ge(window["valid_start"]) & ts_utc.lt(window["valid_end"])].copy()
+        safe_fold = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in str(test_fold))
+        shard_path = prediction_shard_dir / f"predictions_{fold_idx:04d}_{safe_fold}.parquet"
+        should_shard_predictions = (
+            bool(force_prediction_shards) or int(max_oos_model_age_days) > 0 or len(validation_windows) > 12
+        )
+        if (
+            should_shard_predictions
+            and not minimal_artifacts
+            and shard_path.exists()
+            and shard_path.stat().st_size > 0
+        ):
+            scored = pd.read_parquet(shard_path)
+            selector_cols = {
+                "base_score": "score_base",
+                "meta_base_soft_label": "score_meta_base_soft_label",
+                "meta_clean_exec": "score_meta_clean_exec",
+                "meta_positive_margin": "score_meta_positive_margin",
+                "meta_exec_margin": "score_meta_exec_margin",
+                "meta_clean_minus_risk": "score_meta_clean_minus_risk",
+                "meta_exec_margin_risk_blend": "score_meta_exec_margin_risk_blend",
+                "meta_context_hint_blend": "score_meta_context_hint_blend",
+                "meta_long_aware_clean_minus_risk": "score_meta_long_aware_clean_minus_risk",
+                "meta_path_order": "score_meta_path_order",
+                "meta_path_order_clean_minus_risk": "score_meta_path_order_clean_minus_risk",
+            }
+            selector_cols = {name: col for name, col in selector_cols.items() if col in scored.columns}
+            for selector, score_col in selector_cols.items():
+                selector_row = _selector_metrics(scored, score_col, selector, test_fold)
+                selector_row.update(
+                    {
+                        "calendar_month": str(test_month),
+                        "valid_start": window["valid_start"],
+                        "valid_end": window["valid_end"],
+                        "max_oos_model_age_days": int(max_oos_model_age_days),
+                    }
+                )
+                fold_rows.append(selector_row)
+                for keep_frac in (0.30, 0.20, 0.10):
+                    for row in _breakdown_rows(scored, score_col, selector, test_fold, keep_frac):
+                        row.update(
+                            {
+                                "calendar_month": str(test_month),
+                                "valid_start": window["valid_start"],
+                                "valid_end": window["valid_end"],
+                                "max_oos_model_age_days": int(max_oos_model_age_days),
+                            }
+                        )
+                        breakdown.append(row)
+                if selector in {
+                    "base_score",
+                    "meta_long_aware_clean_minus_risk",
+                    "meta_path_order_clean_minus_risk",
+                    "meta_exec_margin_risk_blend",
+                }:
+                    base_conditioned_diagnostics.extend(
+                        {
+                            **row,
+                            "calendar_month": str(test_month),
+                            "valid_start": window["valid_start"],
+                            "valid_end": window["valid_end"],
+                            "max_oos_model_age_days": int(max_oos_model_age_days),
+                        }
+                        for row in _base_conditioned_diagnostic_rows(
+                            scored,
+                            test_month=test_fold,
+                            selector=selector,
+                            score_col=score_col,
+                            keep_frac=0.30,
+                        )
+                    )
+            for row in _threshold_policy_rows(scored, selector_cols, test_fold):
+                row.update(
+                    {
+                        "calendar_month": str(test_month),
+                        "valid_start": window["valid_start"],
+                        "valid_end": window["valid_end"],
+                        "max_oos_model_age_days": int(max_oos_model_age_days),
+                    }
+                )
+                threshold_policy_rows.append(row)
+            prediction_shard_paths.append(shard_path)
+            print(
+                json.dumps(
+                    {
+                        "event": "s52_train_meta_prediction_shard_resume_hit",
+                        "fold": test_fold,
+                        "path": str(shard_path),
+                        "rows": int(len(scored)),
+                        "selectors": sorted(selector_cols),
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+            del scored
+            gc.collect()
+            continue
+        generated_feature_names: list[str] = []
+        fold_feature_meta: dict[str, Any] = {}
+        train = data.loc[ts_utc.lt(window["valid_start"])]
+        valid = data.loc[ts_utc.ge(window["valid_start"]) & ts_utc.lt(window["valid_end"])]
         if len(train) < 100 or len(valid) < 30:
             continue
         print(
@@ -2077,27 +2687,113 @@ def run_smoke(
             ),
                 flush=True,
             )
-        train, valid = _add_fold_base_prior_features(train, valid, selected_col=selected_col)
-        if enable_reliability_features:
-            train, valid = _add_fold_reliability_features(train, valid)
-        if enable_support_drift_features:
-            train, valid = _add_fold_support_drift_features(train, valid)
-        if enable_hit_surprise_features:
-            train, valid = _add_fold_hit_surprise_features(train, valid)
-        # HPO/feature-selection trials only need the capped, time-spread training
-        # sample. Build the feature matrix after sampling so the largest-fold
-        # search does not materialize a full 1M+ row x feature frame just to
-        # discard most rows before fitting.
-        train_matrix = train
-        if int(model_train_max_rows) > 0:
-            train_matrix_idx = _time_spread_cap_rows(len(train), int(model_train_max_rows))
-            train_matrix = train.iloc[train_matrix_idx].reset_index(drop=True)
-        x_train, x_valid, feature_names = _make_xy(
-            train_matrix,
-            valid,
-            numeric_cols=numeric_cols,
-            categorical_cols=categorical_cols,
-        )
+        fold_matrix_cache_key: tuple[Any, ...] | None = None
+        cached_fold_matrix = None
+        if int(model_train_max_rows) > 0 and str(validation_scope).strip().lower() == "largest":
+            fold_matrix_cache_key = (
+                "hpo_largest_fold_matrix",
+                fs_cache_key,
+                str(test_fold),
+                str(window["valid_start"]),
+                str(window["valid_end"]),
+                int(model_train_max_rows),
+                tuple(numeric_cols),
+                tuple(categorical_cols),
+            )
+            cached_fold_matrix = _HPO_FOLD_MATRIX_CACHE.get(fold_matrix_cache_key)
+        if cached_fold_matrix is not None:
+            train_matrix, valid, x_train, x_valid, feature_names = cached_fold_matrix
+            print(
+                json.dumps(
+                    {
+                        "event": "s52_train_meta_hpo_fold_matrix_cache_hit",
+                        "fold": str(test_fold),
+                        "train_rows": int(len(train_matrix)),
+                        "valid_rows": int(len(valid)),
+                        "features": int(len(feature_names)),
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+        else:
+            train_feature_source = train
+            if int(model_train_max_rows) > 0:
+                train_feature_idx = _time_spread_cap_rows(len(train), int(model_train_max_rows))
+                train_feature_source = train.iloc[train_feature_idx].reset_index(drop=True)
+            train, valid = _add_fold_base_prior_features(train_feature_source, valid, selected_col=selected_col)
+            if enable_reliability_features:
+                train, valid = _add_fold_reliability_features(train, valid)
+            if enable_support_drift_features:
+                train, valid = _add_fold_support_drift_features(train, valid)
+            if enable_hit_surprise_features:
+                train, valid = _add_fold_hit_surprise_features(train, valid)
+            if fold_feature_builder is not None:
+                built = fold_feature_builder(
+                    train=train,
+                    valid=valid,
+                    fold=str(test_fold),
+                    month=str(test_month),
+                    valid_start=window["valid_start"],
+                    valid_end=window["valid_end"],
+                    selected_col=selected_col,
+                )
+                if isinstance(built, tuple) and len(built) == 4:
+                    train, valid, generated_feature_names, fold_feature_meta = built
+                elif isinstance(built, tuple) and len(built) == 3:
+                    train, valid, generated_feature_names = built
+                    fold_feature_meta = {}
+                else:
+                    raise TypeError("fold_feature_builder must return (train, valid, feature_names[, metadata])")
+                generated_feature_names = [str(c) for c in generated_feature_names if str(c).strip()]
+                fold_feature_meta = dict(fold_feature_meta or {})
+            # HPO/feature-selection trials only need the capped, time-spread training
+            # sample. Expensive fold-derived features are also fit on that sample
+            # above; final full-OOS replay passes model_train_max_rows=0 and uses
+            # all prior rows.
+            train_matrix = train
+            matrix_numeric_cols, matrix_categorical_cols = _feature_source_columns_for_selected(
+                selected_features=global_feature_names,
+                numeric_cols=numeric_cols,
+                categorical_cols=categorical_cols,
+            )
+            if generated_feature_names:
+                generated_numeric = [
+                    col
+                    for col in generated_feature_names
+                    if col in train_matrix.columns and pd.api.types.is_numeric_dtype(train_matrix[col])
+                ]
+                generated_categorical = [
+                    col
+                    for col in generated_feature_names
+                    if col in train_matrix.columns and col not in set(generated_numeric)
+                ]
+                matrix_numeric_cols = sorted(set(matrix_numeric_cols).union(generated_numeric))
+                matrix_categorical_cols = sorted(set(matrix_categorical_cols).union(generated_categorical))
+            x_train, x_valid, feature_names = _make_xy(
+                train_matrix,
+                valid,
+                numeric_cols=matrix_numeric_cols,
+                categorical_cols=matrix_categorical_cols,
+                selected_features=global_feature_names,
+            )
+            if fold_matrix_cache_key is not None:
+                _HPO_FOLD_MATRIX_CACHE.clear()
+                _HPO_FOLD_MATRIX_CACHE[fold_matrix_cache_key] = (
+                    train_matrix.copy(deep=False),
+                    valid.copy(deep=False),
+                    x_train.copy(deep=False),
+                    x_valid.copy(deep=False),
+                    list(feature_names),
+                )
+        if fold_feature_meta:
+            fold_feature_metadata.append(
+                {
+                    "fold": str(test_fold),
+                    "calendar_month": str(test_month),
+                    **_json_safe(fold_feature_meta),
+                }
+            )
         if global_feature_names is None:
             fs_fold_name = f"largest_train_before_{window['valid_start']:%Y-%m-%d}"
             method = str(feature_selection_method).strip().lower()
@@ -2121,6 +2817,20 @@ def run_smoke(
             feature_selection_frames.append(feature_selection_df)
             feature_selection_recorded = True
         else:
+            requested_ood = [c for c in global_feature_names if c in META_POST_SELECTION_OOD_FEATURE_NAMES]
+            if requested_ood:
+                ood_base_features = [
+                    c for c in global_feature_names if c not in META_POST_SELECTION_OOD_FEATURE_NAMES
+                ]
+                x_train_ood = x_train.reindex(columns=ood_base_features, fill_value=0.0)
+                x_valid_ood = x_valid.reindex(columns=ood_base_features, fill_value=0.0)
+                x_train_ood, x_valid_ood, _ = _append_post_selection_ood_features(
+                    x_train_ood,
+                    x_valid_ood,
+                    ood_base_features,
+                )
+                x_train = x_train_ood
+                x_valid = x_valid_ood
             x_train = x_train.reindex(columns=global_feature_names, fill_value=0.0)
             x_valid = x_valid.reindex(columns=global_feature_names, fill_value=0.0)
             feature_names = list(global_feature_names)
@@ -2380,73 +3090,107 @@ def run_smoke(
                 }
             )
             threshold_policy_rows.append(row)
-        for label, model in models.items():
-            importances.append(_feature_importance(model, feature_names, label, test_fold))
-        keep_cols = [
-            "__ts__",
-            "__symbol__",
-            "side_name",
-            "month",
-            "oos_fold",
-            "calendar_month",
-            "valid_start",
-            "valid_end",
-            "max_oos_model_age_days",
-            "source_semantic_family",
-            "source_semantic_family_base",
-            "long_source_regime_split",
-            "aegmm_cluster",
-            "side_aegmm_cluster",
-            "aegmm_expected_distance_bin",
-            "reconstruction_bin",
-            "exec_margin",
-            "ev_after_1pct",
-            "ret_net",
-            "u_policy_net",
-            "first_touch_gross",
-            "first_touch_bad_mae_1r",
-            "full_path_bad_mae_1r",
-            "timeout",
-            "mfe_before_mae_1r",
-            "mae_before_mfe_1r",
-            "clean_exec",
-            "dirty_positive",
-            "underwater_bars_before_mfe_1r",
-            "long_path_clean_exec_label",
-            "long_path_dirty_positive_label",
-            "long_path_post_mfe_drawdown_norm",
-            "long_path_time_to_profit_bars",
-            "long_path_slow_profit",
-            "long_path_post_mfe_bad_drawdown",
-            "long_bad_path_label",
-            "__archetype_label_family__",
-            "__archetype_label_source__",
-            "__archetype_policy_key__",
-            "__archetype_policy_role__",
-            "__archetype_policy_confidence__",
-            "__archetype_policy_tp_r__",
-            "__archetype_policy_sl_r__",
-            "__archetype_policy_trail_r__",
-            "__archetype_policy_max_bars_to_mfe__",
-            "__archetype_policy_max_barrier__",
-            "score_meta_bad_path",
-            "score_meta_timeout",
-            "score_meta_mfe_before_mae",
-            "score_meta_mae_before_mfe",
-            "score_meta_underwater_duration",
-            "score_meta_path_order",
-            "score_meta_path_order_clean_minus_risk",
-            "score_meta_long_clean_exec",
-            "score_meta_long_bad_path",
-            "base_margin_to_cutoff",
-            "base_margin_to_cutoff_z",
-            "base_signal_zscore_within_archetype",
-            "base_score_rank_pct_train_prior",
-            "base_rank_band",
-            "base_margin_band",
-        ] + list(RELIABILITY_NUMERIC_FEATURES) + list(SUPPORT_DRIFT_NUMERIC_FEATURES) + list(HIT_SURPRISE_NUMERIC_FEATURES) + list(selector_cols.values())
-        export_cols = [col for col in dict.fromkeys(keep_cols) if col in scored.columns]
-        prediction_frames.append(scored[export_cols].copy())
+        if not minimal_artifacts:
+            for label, model in models.items():
+                importances.append(_feature_importance(model, feature_names, label, test_fold))
+            keep_cols = [
+                "__ts__",
+                "__symbol__",
+                "side_name",
+                "month",
+                "oos_fold",
+                "calendar_month",
+                "valid_start",
+                "valid_end",
+                "max_oos_model_age_days",
+                "source_semantic_family",
+                "source_semantic_family_base",
+                "long_source_regime_split",
+                "aegmm_cluster",
+                "side_aegmm_cluster",
+                "aegmm_expected_distance_bin",
+                "reconstruction_bin",
+                "exec_margin",
+                "ev_after_1pct",
+                "ret_net",
+                "u_policy_net",
+                "first_touch_gross",
+                "first_touch_bad_mae_1r",
+                "full_path_bad_mae_1r",
+                "timeout",
+                "mfe_before_mae_1r",
+                "mae_before_mfe_1r",
+                "clean_exec",
+                "dirty_positive",
+                "underwater_bars_before_mfe_1r",
+                "long_path_clean_exec_label",
+                "long_path_dirty_positive_label",
+                "long_path_post_mfe_drawdown_norm",
+                "long_path_time_to_profit_bars",
+                "long_path_slow_profit",
+                "long_path_post_mfe_bad_drawdown",
+                "long_bad_path_label",
+                "__archetype_label_family__",
+                "__archetype_label_source__",
+                "__archetype_policy_key__",
+                "__archetype_policy_role__",
+                "__archetype_policy_confidence__",
+                "__archetype_policy_tp_r__",
+                "__archetype_policy_sl_r__",
+                "__archetype_policy_trail_r__",
+                "__archetype_policy_max_bars_to_mfe__",
+                "__archetype_policy_max_barrier__",
+                *LEDGER_CONTEXT_FEATURE_ALIASES.values(),
+                "score_meta_bad_path",
+                "score_meta_timeout",
+                "score_meta_mfe_before_mae",
+                "score_meta_mae_before_mfe",
+                "score_meta_underwater_duration",
+                "score_meta_path_order",
+                "score_meta_path_order_clean_minus_risk",
+                "score_meta_long_clean_exec",
+                "score_meta_long_bad_path",
+                "base_margin_to_cutoff",
+                "base_margin_to_cutoff_z",
+                "base_signal_zscore_within_archetype",
+                "base_score_rank_pct_train_prior",
+                "base_rank_band",
+                "base_margin_band",
+            ] + list(RELIABILITY_NUMERIC_FEATURES) + list(SUPPORT_DRIFT_NUMERIC_FEATURES) + list(HIT_SURPRISE_NUMERIC_FEATURES) + list(generated_feature_names) + list(extra_prediction_columns or []) + list(selector_cols.values())
+            export_cols = [col for col in dict.fromkeys(keep_cols) if col in scored.columns]
+            fold_prediction = scored[export_cols].copy()
+            if should_shard_predictions:
+                prediction_shard_dir.mkdir(parents=True, exist_ok=True)
+                fold_prediction.to_parquet(shard_path, index=False)
+                prediction_shard_paths.append(shard_path)
+            else:
+                prediction_frames.append(fold_prediction)
+            if bool(save_fold_models):
+                saved_model_manifests.append(
+                    _save_meta_fold_models(
+                        out_dir=out_dir,
+                        fold=str(test_fold),
+                        calendar_month=str(test_month),
+                        valid_start=window["valid_start"],
+                        valid_end=window["valid_end"],
+                        fold_idx=int(fold_idx),
+                        seed=int(seed),
+                        models=models,
+                        feature_names=list(feature_names),
+                        classifier_params=classifier_params,
+                        regressor_params=regressor_params,
+                        meta_head_mode=str(meta_head_mode),
+                        model_profile_name=str(model_profile_name),
+                        train_rows_available=int(len(train_matrix)),
+                        train_rows_fit=int(len(x_train_fit)),
+                        valid_rows=int(len(valid)),
+                        target_columns_used=set(meta_target_columns_used),
+                    )
+                )
+        del train, valid, train_matrix, x_train, x_valid, x_train_fit, train_fit, scored, models
+        generated_feature_names = []
+        fold_feature_meta = {}
+        gc.collect()
     folds = pd.DataFrame(fold_rows)
     summary = _summarize(folds)
     threshold_policies = pd.DataFrame(threshold_policy_rows)
@@ -2473,21 +3217,31 @@ def run_smoke(
             ]
         )
     )
-    predictions = (
-        pd.concat(prediction_frames, ignore_index=True)
-        if prediction_frames
-        else pd.DataFrame()
-    )
+    if prediction_shard_paths and bool(combine_prediction_shards):
+        prediction_frames.extend(pd.read_parquet(path) for path in prediction_shard_paths)
+    predictions = pd.concat(prediction_frames, ignore_index=True) if prediction_frames else pd.DataFrame()
     folds.to_csv(out_dir / "s52_train_meta_regime_handoff_smoke_folds.csv", index=False)
     summary.to_csv(out_dir / "s52_train_meta_regime_handoff_smoke_summary.csv", index=False)
     threshold_policies.to_csv(out_dir / "s52_train_meta_regime_handoff_threshold_policy_folds.csv", index=False)
     threshold_summary.to_csv(out_dir / "s52_train_meta_regime_handoff_threshold_policy_summary.csv", index=False)
-    breakdown_df.to_csv(out_dir / "s52_train_meta_regime_handoff_smoke_breakdown.csv", index=False)
-    base_conditioned_df.to_csv(out_dir / "s52_train_meta_base_conditioned_diagnostics.csv", index=False)
-    importance_df.to_csv(out_dir / "s52_train_meta_regime_handoff_smoke_feature_importance.csv", index=False)
     feature_selection_all.to_csv(out_dir / "s52_train_meta_feature_selection_by_fold.csv", index=False)
-    if not predictions.empty:
-        predictions.to_parquet(out_dir / "s52_train_meta_regime_handoff_smoke_predictions.parquet", index=False)
+    if minimal_artifacts:
+        meta_oos_breakdown = {
+            "enabled": False,
+            "reason": "minimal_hpo_trial",
+            "metrics_source": "skipped_for_hpo_speed",
+        }
+    else:
+        breakdown_df.to_csv(out_dir / "s52_train_meta_regime_handoff_smoke_breakdown.csv", index=False)
+        base_conditioned_df.to_csv(out_dir / "s52_train_meta_base_conditioned_diagnostics.csv", index=False)
+        importance_df.to_csv(out_dir / "s52_train_meta_regime_handoff_smoke_feature_importance.csv", index=False)
+        if not predictions.empty:
+            predictions.to_parquet(out_dir / "s52_train_meta_regime_handoff_smoke_predictions.parquet", index=False)
+        meta_oos_breakdown = _write_meta_oos_breakdown_reports(
+            out_dir=out_dir,
+            predictions=predictions,
+            summary=summary,
+        )
     best = summary.iloc[0].to_dict() if not summary.empty else {}
     best_threshold = threshold_summary.iloc[0].to_dict() if not threshold_summary.empty else {}
     selected_sets = [set(v) for v in selected_features_by_fold.values()]
@@ -2495,6 +3249,7 @@ def run_smoke(
     selected_intersection = sorted(set.intersection(*selected_sets)) if selected_sets else []
     manifest = {
         "generated_by": "run_s52_train_meta_regime_handoff_smoke",
+        "output_dir": str(out_dir),
         "handoff_dir": str(handoff_dir),
         "handoff_path": str(handoff_path),
         "ledger_path": str(ledger_path),
@@ -2508,6 +3263,7 @@ def run_smoke(
         "feature_selection_calibration_fold": calibration_fold,
         "calibration_min_valid_rows": 1000,
         "validation_scope": str(validation_scope),
+        "eval_months": sorted(eval_month_set) if eval_month_set else None,
         "global_feature_selection_fold": (
             str(feature_selection_all["fold"].iloc[0]) if not feature_selection_all.empty else None
         ),
@@ -2528,6 +3284,11 @@ def run_smoke(
             if int(model_train_max_rows) > 0
             else "full_train_rows"
         ),
+        "minimal_artifacts": bool(minimal_artifacts),
+        "force_prediction_shards": bool(force_prediction_shards),
+        "combine_prediction_shards": bool(combine_prediction_shards),
+        "save_fold_models": bool(save_fold_models),
+        "saved_fold_models": _json_safe(saved_model_manifests),
         "fold_windows": [
             {
                 "fold": row.get("test_month"),
@@ -2545,7 +3306,12 @@ def run_smoke(
         "selected_feature_union_count": int(len(selected_union)),
         "selected_feature_intersection_count": int(len(selected_intersection)),
         "feature_selection_output": str(out_dir / "s52_train_meta_feature_selection_by_fold.csv"),
+        "prediction_shards": [str(path) for path in prediction_shard_paths],
+        "objective_step_8_meta_oos_breakdown": meta_oos_breakdown,
         "model_profile_name": str(model_profile_name),
+        "fold_feature_profile_name": str(fold_feature_profile_name),
+        "fold_feature_builder_enabled": bool(fold_feature_builder is not None),
+        "fold_feature_metadata": fold_feature_metadata,
         "classifier_params": _json_safe(classifier_params),
         "regressor_params": _json_safe(regressor_params),
         "added_path_order_targets": [
@@ -2585,7 +3351,8 @@ def run_smoke(
         },
     }
     (out_dir / "manifest.json").write_text(json.dumps(_json_safe(manifest), indent=2, sort_keys=True))
-    _write_markdown(out_dir, summary, folds, threshold_summary, manifest)
+    if not minimal_artifacts:
+        _write_markdown(out_dir, summary, folds, threshold_summary, manifest)
     return manifest
 
 
@@ -2788,6 +3555,7 @@ def run_hpo_smoke(
             model_params={"classifier": profile["classifier"], "regressor": profile["regressor"]},
             model_profile_name=trial_name,
             meta_head_mode=str(meta_head_mode),
+            minimal_artifacts=True,
         )
         objective = _meta_trial_objective(manifest)
         best = dict(manifest.get("best_selector", {}) or {})
@@ -2865,6 +3633,7 @@ def run_hpo_smoke(
             model_params={"classifier": best_profile["classifier"], "regressor": best_profile["regressor"]},
             model_profile_name=f"best_full_oos_{best_profile['name']}",
             meta_head_mode=str(meta_head_mode),
+            fixed_selected_features=list(best_manifest.get("selected_feature_union", []) or []),
         )
     best_params = {
         "trial": _json_safe(best_trial),
@@ -2924,7 +3693,16 @@ def _parse_args() -> argparse.Namespace:
         "--feature-selection-top-n",
         type=int,
         default=0,
-        help="0 lets lgbm_pipeline.py pick the feature count automatically; >0 caps the selected list explicitly.",
+        help=(
+            "Legacy explicit selected-feature cap. Default 0 lets "
+            "lgbm_pipeline.py pick the feature count automatically; positive "
+            "values are ignored unless --force-feature-selection-top-n is set."
+        ),
+    )
+    parser.add_argument(
+        "--force-feature-selection-top-n",
+        action="store_true",
+        help="Honor --feature-selection-top-n as an explicit cap instead of MDA auto-count.",
     )
     parser.add_argument(
         "--feature-selection-target",
@@ -2939,6 +3717,30 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--hpo-trials", type=int, default=0)
     parser.add_argument(
+        "--fixed-selected-features-csv",
+        type=Path,
+        default=None,
+        help="Reuse a frozen selected-feature list from a prior HPO/feature-selection artifact.",
+    )
+    parser.add_argument(
+        "--fixed-model-params-json",
+        type=Path,
+        default=None,
+        help="Reuse frozen LightGBM params from a prior meta manifest or params JSON.",
+    )
+    parser.add_argument(
+        "--model-profile-name",
+        type=str,
+        default="baseline",
+        help="Profile name recorded in the replay manifest.",
+    )
+    parser.add_argument(
+        "--eval-months",
+        type=str,
+        default="",
+        help="Comma-separated OOS months to score, e.g. 2026-07. Empty scores all eligible months.",
+    )
+    parser.add_argument(
         "--hpo-max-train-rows",
         type=int,
         default=300000,
@@ -2950,12 +3752,29 @@ def _parse_args() -> argparse.Namespace:
         default=0,
         help="Split each OOS month into expanding-window validation slices capped to this many days.",
     )
+    parser.add_argument(
+        "--save-fold-models",
+        action="store_true",
+        help="Persist each OOS fold's fitted meta models plus columns.json and leakage manifest.",
+    )
     parser.add_argument("--seed", type=int, default=20260705)
     return parser.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
+    fixed_selected_features = _load_fixed_selected_features(args.fixed_selected_features_csv)
+    fixed_model_params = _load_fixed_model_params(args.fixed_model_params_json)
+    eval_months = [m.strip() for m in str(args.eval_months or "").split(",") if m.strip()]
+    feature_selection_top_n = int(args.feature_selection_top_n)
+    if feature_selection_top_n > 0 and not bool(args.force_feature_selection_top_n):
+        print(
+            "[feature_selection] ignoring explicit --feature-selection-top-n="
+            f"{feature_selection_top_n}; using MDA auto-count. Pass "
+            "--force-feature-selection-top-n to cap intentionally.",
+            flush=True,
+        )
+        feature_selection_top_n = 0
     if int(args.hpo_trials) > 0:
         manifest = run_hpo_smoke(
             handoff_dir=args.handoff_dir,
@@ -2970,7 +3789,7 @@ def main() -> None:
             enable_hit_surprise_features=bool(args.enable_hit_surprise_features),
             enable_path_order_heads=bool(args.enable_path_order_heads),
             enable_path_order_blends=bool(args.enable_path_order_blends),
-            feature_selection_top_n=int(args.feature_selection_top_n),
+            feature_selection_top_n=int(feature_selection_top_n),
             feature_selection_target=str(args.feature_selection_target),
             feature_selection_method=str(args.feature_selection_method),
             hpo_trials=int(args.hpo_trials),
@@ -2992,12 +3811,17 @@ def main() -> None:
             enable_hit_surprise_features=bool(args.enable_hit_surprise_features),
             enable_path_order_heads=bool(args.enable_path_order_heads),
             enable_path_order_blends=bool(args.enable_path_order_blends),
-            feature_selection_top_n=int(args.feature_selection_top_n),
+            feature_selection_top_n=int(feature_selection_top_n),
             feature_selection_target=str(args.feature_selection_target),
             feature_selection_method=str(args.feature_selection_method),
             max_oos_model_age_days=int(args.max_oos_model_age_days),
             model_train_max_rows=0,
+            model_params=fixed_model_params,
+            model_profile_name=str(args.model_profile_name),
             meta_head_mode=str(args.meta_head_mode),
+            fixed_selected_features=fixed_selected_features,
+            eval_months=eval_months or None,
+            save_fold_models=bool(args.save_fold_models),
         )
     print(json.dumps(_json_safe({"event": "s52_train_meta_handoff_smoke_done", **manifest}), sort_keys=True))
 

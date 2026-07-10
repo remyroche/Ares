@@ -20,7 +20,16 @@ from extreme_price_movements.portfolio_manager import PortfolioManager
 def _synthetic_strategy_ev_contract(monkeypatch):
     """Step-parity fixtures do not mount policy-OOS EV tables."""
 
-    def _threshold(self, *, strategy_id, side, target_mean_net_return, min_hit_rate, fallback_threshold):
+    def _threshold(
+        self,
+        *,
+        strategy_id,
+        side,
+        policy_archetype=None,
+        target_mean_net_return,
+        min_hit_rate,
+        fallback_threshold,
+    ):
         return AuctionEvThresholdResult(
             threshold=0.0,
             target_mean_net_return=float(target_mean_net_return),
@@ -33,7 +42,15 @@ def _synthetic_strategy_ev_contract(monkeypatch):
             reason="synthetic_test_contract",
         )
 
-    def _gate(self, *, strategy_id, side, target_mean_net_return, min_hit_rate):
+    def _gate(
+        self,
+        *,
+        strategy_id,
+        side,
+        policy_archetype=None,
+        target_mean_net_return,
+        min_hit_rate,
+    ):
         return StrategyEvGateResult(
             allowed=True,
             target_mean_net_return=float(target_mean_net_return),
@@ -104,6 +121,123 @@ def test_load_normalized_threshold_map_prefers_policy_deployment_rank(tmp_path):
     assert thresholds["mr"]["normalized_threshold"] == 0.73
 
 
+def test_candidate_priority_uses_live_friction_ev_rank_and_hr_adjustment():
+    base_decision = {
+        "normalized_rank_score": 0.99,
+        "effective_threshold": 0.90,
+        "expected_friction_bps": 0.0,
+        "chain_results": {
+            "portfolio_rank_adjustment": -0.01,
+            "portfolio_priority_multiplier": 1.0,
+            "portfolio_priority_adjustment": 0.0,
+        },
+    }
+    live_ev_decision = {
+        **base_decision,
+        "chain_results": {
+            **base_decision["chain_results"],
+            "threshold_rank_score_after_friction_ev": 0.93,
+        },
+    }
+
+    assert ri._candidate_rank_score(base_decision) == pytest.approx(0.98)
+    assert ri._candidate_rank_score(live_ev_decision) == pytest.approx(0.92)
+    assert ri._candidate_threshold_rank_score(live_ev_decision) == pytest.approx(0.93)
+    assert ri._candidate_portfolio_priority(
+        live_ev_decision
+    ) < ri._candidate_portfolio_priority(base_decision)
+
+
+def test_prediction_ledger_row_persists_replay_strategy_auction_and_portfolio_state():
+    now = pd.Timestamp("2026-07-10T09:00:00Z")
+    pm = PortfolioManager(max_positions=4, portfolio_value=1000.0)
+    pm.record_position_open(
+        symbol="BTC/USD:USD",
+        side="long",
+        strategy_id="long_s52_meta_threshold_handoff",
+        position_size=25.0,
+        entry_price=100.0,
+        entry_time=now - pd.Timedelta(hours=1),
+    )
+    decision = {
+        "symbol": "ETH/USD:USD",
+        "side": "short",
+        "strategy_id": "s52_meta_threshold_handoff",
+        "raw_score": 0.88,
+        "calibrated_score": 0.91,
+        "normalized_rank_score": 0.96,
+        "effective_threshold": 0.90,
+        "model_artifact_run_id": "model_run",
+        "policy_artifact_run_id": "policy_run",
+        "chain_results": {
+            "meta_pred": 0.88,
+            "calibrated_score": 0.91,
+            "threshold_rank_score": 0.96,
+            "effective_threshold": 0.90,
+        },
+    }
+
+    before_capacity = pm.get_portfolio_capacity(
+        side="short",
+        strategy_id="short_s52_meta_threshold_handoff",
+    )
+    ri._attach_portfolio_replay_state_for_ledger(
+        decision,
+        portfolio_mgr=pm,
+        capacity=before_capacity,
+        now_utc=now,
+    )
+    ri._attach_global_auction_metadata(
+        [decision],
+        entry_cap=2,
+        max_new_entries_per_bar=1,
+        sorted_at=now,
+    )
+    pm.record_position_open(
+        symbol="ETH/USD:USD",
+        side="short",
+        strategy_id="short_s52_meta_threshold_handoff",
+        position_size=30.0,
+        entry_price=90.0,
+        entry_time=now,
+    )
+    after_capacity = pm.get_portfolio_capacity(
+        side="short",
+        strategy_id="short_s52_meta_threshold_handoff",
+    )
+    ri._attach_portfolio_replay_state_after_for_ledger(
+        decision,
+        portfolio_mgr=pm,
+        capacity=after_capacity,
+        now_utc=now,
+    )
+
+    row = ri._prediction_ledger_row(
+        decision,
+        timestamp=now.isoformat(),
+        side="short",
+        portfolio_decision="traded",
+        was_traded=True,
+    )
+
+    assert row["strategy_id"] == "short_s52_meta_threshold_handoff"
+    assert row["decision_strategy_id"] == "short_s52_meta_threshold_handoff"
+    assert row["source_strategy_id"] == "s52_meta_threshold_handoff"
+    assert row["canonical_strategy_id"] == "s52_meta_threshold_handoff"
+    assert row["auction_policy_version"] == "global_auction_v1"
+    assert row["auction_candidate_count"] == 1
+    assert row["auction_rank_number"] == 1
+    assert row["auction_selected_before_capacity"] is True
+    assert row["open_positions_before_count"] == 1
+    assert row["open_positions_after_count"] == 2
+    assert json.loads(row["portfolio_state_snapshot_json"])["schema"] == (
+        "portfolio_replay_state_v2"
+    )
+    assert json.loads(row["portfolio_state_after_snapshot_json"])["schema"] == (
+        "portfolio_replay_state_v2"
+    )
+
+
 def test_policy_rank_threshold_source_assertion_accepts_strategy_rank_gate():
     decision = {
         "threshold_space": "rank_percentile",
@@ -160,6 +294,40 @@ def test_perp_rank_context_prefers_model_artifact_run_for_shadow(tmp_path):
         f"{tmp_path}|{shadow_run_id}|short|{strategy_id}"
         not in ri._PERP_RANK_CONTEXT_CACHE
     )
+
+
+def test_perp_rank_context_falls_back_to_policy_rank_reference(tmp_path):
+    run_id = "frozen_run"
+    strategy_id = "long_demo"
+    ref_dir = (
+        tmp_path
+        / "artifacts"
+        / run_id
+        / "simple_policy_optimiser"
+        / "rank_reference"
+    )
+    ref_dir.mkdir(parents=True)
+    pd.DataFrame(
+        {
+            "strategy_id": [strategy_id] * 5,
+            "calibrated_score": [0.10, 0.20, 0.50, 0.80, 0.90],
+            "rank_pct": [0.20, 0.40, 0.60, 0.80, 1.00],
+        }
+    ).to_parquet(ref_dir / f"{strategy_id}.parquet", index=False)
+
+    ri._PERP_RANK_CONTEXT_CACHE.clear()
+    context = ri._perp_rank_context(
+        data_root=str(tmp_path),
+        run_id=run_id,
+        side="long",
+        strategy_id=strategy_id,
+        score=0.75,
+    )
+
+    assert context["rank_number"] == 3
+    assert context["rank_x"] == 1
+    assert context["profitable_rank_count"] == 1
+    assert context["rank_context_source"].endswith(f"{strategy_id}.parquet")
 
 
 def test_meta_hit_rate_calibration_resolves_side_tbm_alias(tmp_path):
@@ -618,7 +786,14 @@ def test_run_inference_step_does_not_replace_policy_threshold_with_ev_table_gate
     )
 
     def _disabled_ev_table_threshold(
-        self, *, strategy_id, side, target_mean_net_return, min_hit_rate, fallback_threshold
+        self,
+        *,
+        strategy_id,
+        side,
+        policy_archetype=None,
+        target_mean_net_return,
+        min_hit_rate,
+        fallback_threshold,
     ):
         return AuctionEvThresholdResult(
             threshold=float(fallback_threshold),
@@ -633,7 +808,13 @@ def test_run_inference_step_does_not_replace_policy_threshold_with_ev_table_gate
         )
 
     def _diagnostic_failed_ev_gate(
-        self, *, strategy_id, side, target_mean_net_return, min_hit_rate
+        self,
+        *,
+        strategy_id,
+        side,
+        policy_archetype=None,
+        target_mean_net_return,
+        min_hit_rate,
     ):
         return StrategyEvGateResult(
             allowed=False,
@@ -1061,9 +1242,13 @@ def test_run_inference_step_sizes_from_calibrated_meta_policy_power(monkeypatch)
 
 
 def test_portfolio_manager_hard_gates_require_manual_reset():
-    portfolio_mgr = PortfolioManager(portfolio_value=10000.0)
+    portfolio_mgr = PortfolioManager(
+        portfolio_value=10000.0,
+        max_consecutive_losing_trades=10,
+        max_consecutive_losing_trades_per_archetype=0,
+    )
     now = pd.Timestamp("2026-03-01 00:00", tz="UTC")
-    for i in range(5):
+    for i in range(10):
         symbol = f"LOSS{i}/USDT"
         portfolio_mgr.record_position_open(
             symbol=symbol,
@@ -1471,3 +1656,42 @@ def test_trade_execution_health_records_rejections_and_api_failures():
         },
     )
     assert len(portfolio_mgr.failed_api_events) == 1
+
+
+def test_live_policy_archetype_classifier_fallback_normalizes_side_prefix():
+    class _Classifier:
+        def predict(self, frame):
+            assert "__live_side_is_long" in frame.columns
+            assert "__live_side_is_short" in frame.columns
+            assert float(frame["feature_x"].iloc[0]) == 1.25
+            return ["long_mixed_wideslow_tentative"]
+
+    payload = {
+        "model": _Classifier(),
+        "feature_columns": ["feature_x", "__live_side_is_long", "__live_side_is_short"],
+        "feature_medians": {"feature_x": 0.0},
+        "side_defaults": {"long": "long__long_mixed_wideslow_tentative"},
+    }
+    predicted = ri.predict_live_policy_archetype(
+        side="long",
+        payload=payload,
+        candidate_feature_row=pd.DataFrame({"feature_x": [1.25]}, index=["BTC/USD:USD"]),
+        meta_model_input_row=None,
+    )
+    assert predicted == "long__long_mixed_wideslow_tentative"
+
+
+def test_live_policy_archetype_prefers_existing_row_value():
+    row = pd.DataFrame(
+        {"policy_archetype": ["short__short_breakout_precision"]},
+        index=["ETH/USD:USD"],
+    )
+    assert (
+        ri._infer_live_policy_archetype(
+            side="short",
+            chain_results={},
+            candidate_feature_row=row,
+            meta_model_input_row=None,
+        )
+        == "short__short_breakout_precision"
+    )

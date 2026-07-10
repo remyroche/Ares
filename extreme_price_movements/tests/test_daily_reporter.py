@@ -5,6 +5,7 @@ import pandas as pd
 
 from extreme_price_movements.inference.daily_reporter import (
     DailyDeploymentReporter,
+    _archetype_policy_recap,
     _confidence_calibration_recap,
     _format_trade_report,
     _strategy_trade_recap,
@@ -253,6 +254,39 @@ def test_confidence_calibration_recap_uses_net_amount_and_notional_fallback():
     assert ">=0.95 | 1 | 97.0000% | 100.0000% | 10.0000% | 20.0000 | 7.5000%" in recap
 
 
+def test_archetype_policy_recap_summarizes_thresholds_and_surprise():
+    trades = pd.DataFrame(
+        {
+            "status": ["closed", "pending"],
+            "policy_archetype": ["long__compression_release", "long__compression_release"],
+            "policy_rank_pct": [0.94, 0.91],
+            "effective_threshold": [0.88, 0.88],
+            "archetype_hit_surprise_threshold": [0.86, 0.86],
+            "archetype_hit_surprise_threshold_delta": [-0.02, -0.02],
+            "archetype_hit_surprise_applied": [True, True],
+            "archetype_hit_surprise_reason": ["applied", "applied"],
+            "archetype_hit_surprise_actual_hit_rate": [0.72, 0.72],
+            "archetype_hit_surprise_expected_hit_rate": [0.64, 0.64],
+            "archetype_hit_surprise_hit_rate_delta": [0.08, 0.08],
+            "archetype_hit_surprise_hit_rate_surprise_z": [1.4, 1.4],
+            "archetype_hit_surprise_support_confidence": [0.75, 0.75],
+            "strategy_ev_hit_rate": [0.70, 0.70],
+            "strategy_ev_avg_net_return": [0.004, 0.004],
+            "net_pnl_pct": [0.01, None],
+            "net_pnl_amount": [1.0, None],
+        }
+    )
+
+    recap = _archetype_policy_recap(trades)
+
+    assert "archetype_source=policy_archetype" in recap
+    assert "long__compression_release | 2 | 1 | 100.0000%" in recap
+    assert "72.0000%" in recap
+    assert "64.0000%" in recap
+    assert "8.0000%" in recap
+    assert "applied" in recap
+
+
 def test_daily_report_body_includes_confidence_calibration_and_live_drift_recap(tmp_path):
     reporter = DailyDeploymentReporter(state_path="unused")
     live_root = tmp_path / "live"
@@ -290,6 +324,15 @@ def test_daily_report_body_includes_confidence_calibration_and_live_drift_recap(
             {
                 "status": ["closed"],
                 "rank_percentile": [0.96],
+                "policy_archetype": ["short__late_run_continuation"],
+                "archetype_hit_surprise_threshold": [0.91],
+                "archetype_hit_surprise_threshold_delta": [0.03],
+                "archetype_hit_surprise_actual_hit_rate": [0.55],
+                "archetype_hit_surprise_expected_hit_rate": [0.68],
+                "archetype_hit_surprise_hit_rate_delta": [-0.13],
+                "archetype_hit_surprise_reason": ["applied"],
+                "strategy_ev_hit_rate": [0.61],
+                "strategy_ev_avg_net_return": [0.002],
                 "net_pnl_pct": [0.01],
                 "net_pnl_amount": [1.0],
             }
@@ -298,12 +341,18 @@ def test_daily_report_body_includes_confidence_calibration_and_live_drift_recap(
     )
 
     assert "Confidence Calibration Recap" in body
+    assert "Archetype Threshold Recap" in body
+    assert "short__late_run_continuation" in body
+    assert "55.0000%" in body
     assert "Live Drift Recap" in body
     assert "prediction_drift: score=0.700 coverage=1.00 reliable=0.50 matured=1.00" in body
     assert body.index("Model Drift And Execution") < body.index(
         "Live Drift Recap"
     )
     assert body.index("Live Drift Recap") < body.index(
+        "Archetype Threshold Recap"
+    )
+    assert body.index("Archetype Threshold Recap") < body.index(
         "Confidence Calibration Recap"
     )
     assert body.index("Confidence Calibration Recap") < body.index("Net Strategy Recap")

@@ -30,7 +30,14 @@ from extreme_price_movements.inference.feature_generator import (  # noqa: E402
     get_features_for_candidates,
     get_inference_required_feature_keys,
     load_or_compute_features,
+    live_model_feature_store_strict,
     raw_required_feature_keys,
+)
+from extreme_price_movements.inference.live_meta_feature_overlays import (  # noqa: E402
+    live_ae_gmm_input_feature_columns,
+    load_live_ae_gmm_state_payload,
+    materialize_live_ae_gmm_features,
+    materialize_live_source_regime_features,
 )
 from extreme_price_movements.inference.run_inference import (  # noqa: E402
     _lgbm_mask_required_feature_keys,
@@ -334,10 +341,35 @@ def _load_recent_decisions(
         "normalized_rank_score": "live_rank_percentile",
         "policy_rank_pct": "live_policy_rank_pct",
         "rank_score_source": "live_rank_score_source",
+        "threshold_basis_rank_score": "live_threshold_basis_rank_score",
+        "threshold_basis_policy_id": "live_threshold_basis_policy_id",
+        "threshold_basis_dynamic_score_threshold": "live_threshold_basis_dynamic_score_threshold",
+        "threshold_basis_dynamic_ev_target": "live_threshold_basis_dynamic_ev_target",
     }
     for src, dst in live_defaults.items():
         if src in ledger.columns and dst not in ledger.columns:
             ledger[dst] = ledger[src]
+    rank_source = (
+        ledger.get("live_rank_score_source", pd.Series("", index=ledger.index))
+        .fillna("")
+        .astype(str)
+    )
+    threshold_basis_mask = rank_source.str.startswith("threshold_basis:")
+    if threshold_basis_mask.any() and "live_threshold_basis_rank_score" in ledger.columns:
+        threshold_rank = pd.to_numeric(
+            ledger["live_threshold_basis_rank_score"], errors="coerce"
+        )
+        valid_threshold_rank = threshold_basis_mask & threshold_rank.notna()
+        # Threshold-basis policies intentionally override the legacy
+        # policy-rank CDF.  Keep the old CDF columns for diagnostics, but make
+        # the live policy rank used by this parity checker match the actual
+        # deployed gate/rank value.
+        ledger.loc[valid_threshold_rank, "live_policy_rank_pct"] = threshold_rank.loc[
+            valid_threshold_rank
+        ]
+        ledger.loc[valid_threshold_rank, "live_rank_percentile"] = threshold_rank.loc[
+            valid_threshold_rank
+        ]
 
     trades = _read_table(trades_path)
     if trades.empty:
@@ -494,39 +526,64 @@ def _live_feature_cache_symbols_for_end(
     live_quote_currency: str = "USDC",
 ) -> list[str]:
     """Return the exact symbol universe from a live feature cache for ``end_ts``."""
-    root = Path("cache") / "inference_live_features" / str(run_id)
     target = pd.Timestamp(end_ts)
     target = target.tz_localize("UTC") if target.tzinfo is None else target.tz_convert("UTC")
-    candidates: list[tuple[int, list[str]]] = []
-    for meta_path in root.glob("*/meta.json"):
-        try:
-            meta = json.loads(meta_path.read_text())
-            raw_end = meta.get("end_ts")
-            if not raw_end:
-                continue
-            cache_end = pd.Timestamp(raw_end)
-            cache_end = cache_end.tz_localize("UTC") if cache_end.tzinfo is None else cache_end.tz_convert("UTC")
-            if cache_end != target:
-                continue
-            quote = str(live_quote_currency or "USDC").upper()
-            symbols = [_normalise_symbol(s) for s in (meta.get("symbols") or [])]
-            symbols = sorted(
-                {
-                    s
-                    for s in symbols
-                    if s.endswith(f"/{quote}") or s.endswith(f"/{quote}:{quote}")
-                }
-            )
-            if symbols:
-                candidates.append((len(symbols), symbols))
-        except Exception:
+    roots: list[tuple[int, Path]] = [
+        (
+            0,
+            Path(data_root)
+            / "artifacts"
+            / str(run_id)
+            / "live_selected_feature_latest_matrix",
+        ),
+        (1, Path("cache") / "inference_live_features" / str(run_id)),
+    ]
+    candidates: list[tuple[int, int, float, list[str]]] = []
+    for priority, root in roots:
+        if not root.exists():
             continue
+        for meta_path in root.glob("**/meta.json"):
+            try:
+                meta = json.loads(meta_path.read_text())
+                raw_end = (
+                    meta.get("end_ts")
+                    or meta.get("target_end_ts")
+                    or meta.get("feature_end_ts")
+                )
+                if not raw_end:
+                    continue
+                cache_end = pd.Timestamp(raw_end)
+                cache_end = (
+                    cache_end.tz_localize("UTC")
+                    if cache_end.tzinfo is None
+                    else cache_end.tz_convert("UTC")
+                )
+                if cache_end != target:
+                    continue
+                quote = str(live_quote_currency or "USDC").upper()
+                symbols = [_normalise_symbol(s) for s in (meta.get("symbols") or [])]
+                symbols = sorted(
+                    {
+                        s
+                        for s in symbols
+                        if s.endswith(f"/{quote}") or s.endswith(f"/{quote}:{quote}")
+                    }
+                )
+                if symbols:
+                    candidates.append(
+                        (priority, len(symbols), float(meta_path.stat().st_mtime), symbols)
+                    )
+            except Exception:
+                continue
     if not candidates:
         return []
-    # Prefer the smallest non-trivial live universe. Replay/debug runs can add
-    # broader local-OHLCV caches for the same timestamp after the fact.
-    non_trivial = [item for item in candidates if item[0] >= 25]
-    return sorted(non_trivial or candidates, key=lambda item: item[0])[0][1]
+    # Prefer the artifact selected-feature sidecar over generic runtime caches:
+    # it is the production inference universe and replay/debug runs can add
+    # broader local-OHLCV caches for the same timestamp after the fact.  Within
+    # the same source, use the smallest non-trivial universe so later debug
+    # sidecars do not widen the batch and perturb AE/GMM/context features.
+    non_trivial = [item for item in candidates if item[1] >= 25]
+    return sorted(non_trivial or candidates, key=lambda item: (item[0], item[1], item[2]))[0][3]
 
 
 def _load_panel(
@@ -696,6 +753,9 @@ def _score_row(
     orchestrator: ModelOrchestrator,
     calibration_data: dict[str, dict[str, Any]],
     rank_store: PolicyRankReferenceStore,
+    overlay_required_columns: set[str] | None = None,
+    live_ae_gmm_state_payload: Mapping[str, Any] | None = None,
+    feature_row_override: pd.DataFrame | None = None,
     skip_full_chain_diagnostics: bool = False,
 ) -> dict[str, Any]:
     symbol = str(row["symbol"])
@@ -708,7 +768,33 @@ def _score_row(
     ):
         model_strategy_id = f"{side}_{core_strategy_id}"
     ts = pd.Timestamp(row["signal_bar_ts"])
-    feature_row = get_features_for_candidates(feats, [symbol], ts=ts)
+    override_supplied = isinstance(feature_row_override, pd.DataFrame)
+    feature_row = (
+        feature_row_override.copy()
+        if override_supplied
+        else get_features_for_candidates(feats, [symbol], ts=ts)
+    )
+    if not feature_row.empty:
+        feature_row = feature_row.copy()
+        feature_row["side"] = np.float32(
+            1.0 if str(side).lower().startswith("long") else -1.0
+        )
+        feature_row["side_name"] = str(side).lower()
+        overlay_cols = set(str(c) for c in (overlay_required_columns or set()) if str(c))
+        if overlay_cols and not override_supplied:
+            feature_row = materialize_live_source_regime_features(
+                feature_row,
+                side=side,
+                signal_bar_ts=ts,
+                required_columns=overlay_cols,
+            )
+            feature_row = materialize_live_ae_gmm_features(
+                feature_row,
+                side=side,
+                signal_bar_ts=ts,
+                required_columns=overlay_cols,
+                state_payload=live_ae_gmm_state_payload,
+            )
     out = {
         "decision_ts": row.get("decision_ts"),
         "signal_bar_ts": ts,
@@ -725,9 +811,40 @@ def _score_row(
         "live_rank_percentile": _safe_float(row.get("live_rank_percentile", row.get("normalized_rank_score"))),
         "live_policy_rank_pct": _safe_float(row.get("live_policy_rank_pct", row.get("policy_rank_pct"))),
         "live_rank_score_source": row.get("live_rank_score_source", row.get("rank_score_source")),
+        "live_threshold_basis_rank_score": _safe_float(
+            row.get("live_threshold_basis_rank_score", row.get("threshold_basis_rank_score"))
+        ),
+        "live_threshold_basis_policy_id": row.get(
+            "live_threshold_basis_policy_id", row.get("threshold_basis_policy_id")
+        ),
+        "live_threshold_basis_dynamic_score_threshold": _safe_float(
+            row.get(
+                "live_threshold_basis_dynamic_score_threshold",
+                row.get("threshold_basis_dynamic_score_threshold"),
+            )
+        ),
+        "live_threshold_basis_dynamic_ev_target": _safe_float(
+            row.get(
+                "live_threshold_basis_dynamic_ev_target",
+                row.get("threshold_basis_dynamic_ev_target"),
+            )
+        ),
         "replay_feature_cols": int(feature_row.shape[1]) if not feature_row.empty else 0,
         "replay_missing_features": bool(feature_row.empty),
     }
+    threshold_basis_mode = str(out["live_rank_score_source"] or "").startswith(
+        "threshold_basis:"
+    )
+    if threshold_basis_mode and np.isfinite(out["live_threshold_basis_rank_score"]):
+        out["threshold_basis_rank_internal_delta"] = (
+            out["live_rank_percentile"] - out["live_threshold_basis_rank_score"]
+        )
+        out["threshold_basis_policy_rank_internal_delta"] = (
+            out["live_policy_rank_pct"] - out["live_threshold_basis_rank_score"]
+        )
+    else:
+        out["threshold_basis_rank_internal_delta"] = float("nan")
+        out["threshold_basis_policy_rank_internal_delta"] = float("nan")
     live_cal_threshold = float("nan")
     if not np.isfinite(out["live_calibrated_score"]) and np.isfinite(
         out["live_meta_pred"]
@@ -992,8 +1109,130 @@ def _score_row(
             "rank_percentile_delta": rank_lookup.policy_rank_pct
             - out["live_policy_rank_pct"],
         }
-    )
+            )
     return out
+
+
+def _batched_replay_feature_rows(
+    *,
+    feats: dict[str, pd.DataFrame],
+    group: pd.DataFrame,
+    signal_bar_ts: pd.Timestamp,
+    overlay_required_columns: set[str] | None,
+    live_ae_gmm_state_payload: Mapping[str, Any] | None,
+    artifact_data_root: Path | None = None,
+    run_id: str | None = None,
+) -> dict[Any, pd.DataFrame]:
+    """Materialize live synthetic overlays once per side/timestamp batch.
+
+    Production inference creates the side candidate feature matrix first, then
+    appends source-regime and frozen AE/GMM overlays to that batch.  Replaying
+    each row independently changes row-order-dependent AE/GMM deltas such as
+    cluster speed and acceleration.  This helper mirrors the production shape
+    for the rows available in the live prediction ledger.
+    """
+
+    if not isinstance(group, pd.DataFrame) or group.empty:
+        return {}
+    overlay_cols = set(str(c) for c in (overlay_required_columns or set()) if str(c))
+    if not overlay_cols:
+        return {}
+    out: dict[Any, pd.DataFrame] = {}
+    side_series = group.get("side", pd.Series("", index=group.index)).fillna("").astype(str)
+    for side, side_group in group.groupby(side_series.str.lower(), sort=False):
+        if str(side) not in {"long", "short"} or side_group.empty:
+            continue
+        symbols = [
+            _normalise_symbol(s)
+            for s in side_group["symbol"].dropna().astype(str).tolist()
+        ]
+        symbols = list(dict.fromkeys(symbols))
+        if not symbols:
+            continue
+        feature_batch = _load_persisted_live_candidate_feature_matrix(
+            artifact_data_root=artifact_data_root,
+            run_id=run_id,
+            signal_bar_ts=signal_bar_ts,
+            side=side,
+        )
+        persisted_batch = isinstance(feature_batch, pd.DataFrame) and not feature_batch.empty
+        if not persisted_batch:
+            feature_batch = get_features_for_candidates(feats, symbols, ts=signal_bar_ts)
+        if not isinstance(feature_batch, pd.DataFrame) or feature_batch.empty:
+            continue
+        feature_batch = feature_batch.copy()
+        if not persisted_batch:
+            feature_batch["side"] = np.float32(1.0 if side == "long" else -1.0)
+            feature_batch["side_name"] = str(side)
+            feature_batch = materialize_live_source_regime_features(
+                feature_batch,
+                side=side,
+                signal_bar_ts=signal_bar_ts,
+                required_columns=overlay_cols,
+            )
+            feature_batch = materialize_live_ae_gmm_features(
+                feature_batch,
+                side=side,
+                signal_bar_ts=signal_bar_ts,
+                required_columns=overlay_cols,
+                state_payload=live_ae_gmm_state_payload,
+            )
+        for idx, row in side_group.iterrows():
+            symbol = _normalise_symbol(str(row.get("symbol", "")))
+            if symbol in feature_batch.index:
+                out[idx] = feature_batch.loc[[symbol]].copy()
+    return out
+
+
+def _load_persisted_live_candidate_feature_matrix(
+    *,
+    artifact_data_root: Path | None,
+    run_id: str | None,
+    signal_bar_ts: pd.Timestamp,
+    side: str,
+) -> pd.DataFrame:
+    if artifact_data_root is None or not run_id:
+        return pd.DataFrame()
+    try:
+        ts = pd.Timestamp(signal_bar_ts)
+        ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+    except Exception:
+        return pd.DataFrame()
+    side_s = "short" if str(side).lower().startswith("short") else "long"
+    root = (
+        Path(artifact_data_root)
+        / "artifacts"
+        / str(run_id)
+        / "live_candidate_feature_matrix"
+        / side_s
+    )
+    if not root.exists():
+        return pd.DataFrame()
+    candidates: list[tuple[float, Path]] = []
+    for meta_path in root.glob("*/meta.json"):
+        try:
+            meta = json.loads(meta_path.read_text())
+            raw_ts = meta.get("signal_bar_ts") or meta.get("end_ts")
+            if not raw_ts:
+                continue
+            meta_ts = pd.Timestamp(raw_ts)
+            meta_ts = meta_ts.tz_localize("UTC") if meta_ts.tzinfo is None else meta_ts.tz_convert("UTC")
+            if meta_ts != ts:
+                continue
+            data_path = meta_path.with_name("data.parquet")
+            if data_path.exists():
+                candidates.append((float(data_path.stat().st_mtime), data_path))
+        except Exception:
+            continue
+    if not candidates:
+        return pd.DataFrame()
+    data_path = sorted(candidates, key=lambda item: item[0], reverse=True)[0][1]
+    try:
+        frame = pd.read_parquet(data_path)
+        frame.index = frame.index.astype(str)
+        return frame
+    except Exception:
+        return pd.DataFrame()
 
 
 def _summary(frame: pd.DataFrame) -> dict[str, Any]:
@@ -1020,6 +1259,8 @@ def _summary(frame: pd.DataFrame) -> dict[str, Any]:
         "logged_meta_input_pred_delta",
         "logged_meta_input_calibrated_score_delta",
         "logged_meta_input_rank_percentile_delta",
+        "threshold_basis_rank_internal_delta",
+        "threshold_basis_policy_rank_internal_delta",
     ):
         if col not in frame:
             continue
@@ -1076,6 +1317,7 @@ def _parity_failures(
     frame: pd.DataFrame,
     *,
     tolerance: float,
+    prediction_tolerance: float | None = None,
     require_policy_rank_reference: bool = False,
     require_live_values: bool = False,
     parity_source: str = "replay",
@@ -1130,31 +1372,63 @@ def _parity_failures(
                     f"feature_transform_contract_hash_mismatch_rows={mismatch}"
                 )
     if parity_source == "logged-input":
-        required_replay_cols = (
+        required_replay_cols = [
             "logged_base_input_pred",
             "logged_meta_input_pred",
-            "logged_meta_input_calibrated_score",
-            "logged_meta_input_policy_rank_pct",
-        )
-        delta_cols = (
+        ]
+        delta_cols = [
             "logged_base_input_pred_delta",
             "logged_meta_input_pred_delta",
-            "logged_meta_input_calibrated_score_delta",
-            "logged_meta_input_rank_percentile_delta",
-        )
+        ]
     else:
-        required_replay_cols = (
+        required_replay_cols = [
             "replay_base_pred",
             "replay_meta_pred",
-            "replay_calibrated_score",
-            "replay_policy_rank_pct",
-        )
-        delta_cols = (
+        ]
+        delta_cols = [
             "base_pred_delta",
             "meta_pred_delta",
-            "calibrated_score_delta",
-            "rank_percentile_delta",
+        ]
+    rank_source = (
+        frame.get("live_rank_score_source", pd.Series("", index=frame.index))
+        .fillna("")
+        .astype(str)
+    )
+    threshold_basis_mask = rank_source.str.startswith("threshold_basis:")
+    if bool(threshold_basis_mask.all()):
+        required_replay_cols.extend(
+            [
+                "live_calibrated_score",
+                "live_threshold_basis_rank_score",
+                "live_threshold_basis_dynamic_score_threshold",
+            ]
         )
+        delta_cols.extend(
+            [
+                "threshold_basis_rank_internal_delta",
+                "threshold_basis_policy_rank_internal_delta",
+            ]
+        )
+    elif threshold_basis_mask.any():
+        failures.append(
+            f"mixed_threshold_basis_and_legacy_rank_rows={int(threshold_basis_mask.sum())}/{len(frame)}"
+        )
+        required_replay_cols.extend(
+            [
+                "live_calibrated_score",
+                "replay_calibrated_score",
+                "replay_policy_rank_pct",
+            ]
+        )
+        delta_cols.extend(["calibrated_score_delta", "rank_percentile_delta"])
+    else:
+        required_replay_cols.extend(
+            [
+                "replay_calibrated_score",
+                "replay_policy_rank_pct",
+            ]
+        )
+        delta_cols.extend(["calibrated_score_delta", "rank_percentile_delta"])
     for col in required_replay_cols:
         raw_vals = (
             frame[col] if col in frame.columns else pd.Series(np.nan, index=frame.index)
@@ -1163,6 +1437,7 @@ def _parity_failures(
         missing = int(vals.isna().sum())
         if missing:
             failures.append(f"missing_{col}_rows={missing}")
+    pred_tol = float(prediction_tolerance) if prediction_tolerance is not None else max(float(tolerance), 1e-7)
     for col in delta_cols:
         if col not in frame:
             continue
@@ -1175,8 +1450,9 @@ def _parity_failures(
         if missing_delta:
             failures.append(f"{col}_missing_rows={missing_delta}")
         max_abs = float(finite.max())
-        if max_abs > float(tolerance):
-            failures.append(f"{col}_max_abs={max_abs:.12g}")
+        col_tol = pred_tol if "pred_delta" in str(col) else float(tolerance)
+        if max_abs > col_tol:
+            failures.append(f"{col}_max_abs={max_abs:.12g}>tol={col_tol:.12g}")
     return failures
 
 
@@ -1276,7 +1552,17 @@ def main() -> int:
         "--tolerance",
         default=1e-9,
         type=float,
-        help="Absolute tolerance used by --fail-on-mismatch.",
+        help="Absolute tolerance used by --fail-on-mismatch for rank/calibration deltas.",
+    )
+    parser.add_argument(
+        "--prediction-tolerance",
+        default=1e-7,
+        type=float,
+        help=(
+            "Absolute tolerance for raw model prediction parity. Kept separate "
+            "from rank/calibration tolerance because native model paths can "
+            "differ at float32-scale without changing decisions."
+        ),
     )
     parser.add_argument(
         "--require-policy-rank-reference",
@@ -1398,9 +1684,15 @@ def main() -> int:
     # only the narrower set of logged model inputs. Some live-derived features
     # share rolling/orderbook primitives, so narrowing this request can change
     # the feature generation path and create false train/live parity breaks.
-    required_keys = raw_required_feature_keys(
-        get_inference_required_feature_keys(state, accepted_strategy_keys)
+    selected_feature_keys = set(
+        str(c)
+        for c in get_inference_required_feature_keys(state, accepted_strategy_keys)
+        if str(c)
     )
+    overlay_required_columns = set(selected_feature_keys).union(
+        str(c) for c in logged_feature_keys if str(c)
+    )
+    required_keys = raw_required_feature_keys(selected_feature_keys)
     required_keys |= raw_required_feature_keys(logged_feature_keys)
     try:
         mask_rows = _load_lgbm_strategy_mask_rows(
@@ -1430,12 +1722,15 @@ def main() -> int:
         args.live_feature_source_run_id
         or os.getenv("EPM_LIVE_FEATURE_SOURCE_RUN_ID")
     )
+    runtime_cfg["live_feature_cache_namespace"] = "model"
+    runtime_cfg["live_feature_prefer_offline_cache"] = True
+    runtime_cfg["live_feature_offline_cache_enabled"] = True
+    runtime_cfg["live_model_feature_store_strict"] = live_model_feature_store_strict(
+        feature_cfg
+    )
+    runtime_cfg["live_feature_return_latest_only"] = True
     if live_feature_source_run_id:
         runtime_cfg["live_feature_source_run_id"] = str(live_feature_source_run_id)
-        runtime_cfg["live_feature_cache_namespace"] = "model"
-        runtime_cfg["live_feature_prefer_offline_cache"] = True
-        runtime_cfg["live_feature_offline_cache_enabled"] = True
-        runtime_cfg["live_feature_return_latest_only"] = True
     state_bundle = state.get("bundle", {}) if isinstance(state.get("bundle"), dict) else {}
     runtime_cfg.setdefault("bundle", state_bundle)
     for key in (
@@ -1450,6 +1745,23 @@ def main() -> int:
             feature_cfg[key] = value
             runtime_cfg[key] = value
     feature_cfg["runtime_cfg"] = runtime_cfg
+    live_ae_gmm_state_payload = load_live_ae_gmm_state_payload(
+        str(artifact_data_root),
+        args.run_id,
+    )
+    live_ae_gmm_input_columns = live_ae_gmm_input_feature_columns(
+        live_ae_gmm_state_payload
+    )
+    if live_ae_gmm_input_columns:
+        required_keys |= raw_required_feature_keys(live_ae_gmm_input_columns)
+        overlay_required_columns.update(str(c) for c in live_ae_gmm_input_columns if str(c))
+        print(
+            "Replay frozen AE/GMM state loaded: "
+            f"state={live_ae_gmm_state_payload.get('state_path', '')} "
+            f"input_features={len(live_ae_gmm_input_columns)} "
+            f"raw_required_features={len(required_keys)} "
+            f"overlay_required_columns={len(overlay_required_columns)}"
+        )
     orchestrator = ModelOrchestrator(
         state,
         runtime_cfg=_model_runtime_cfg(
@@ -1492,6 +1804,15 @@ def main() -> int:
                 lookback_hours=int(args.lookback_hours),
                 required_feature_keys=set(required_keys),
             )
+            batched_feature_rows = _batched_replay_feature_rows(
+                feats=feats,
+                group=group,
+                signal_bar_ts=signal_ts,
+                overlay_required_columns=overlay_required_columns,
+                live_ae_gmm_state_payload=live_ae_gmm_state_payload,
+                artifact_data_root=artifact_data_root,
+                run_id=args.run_id,
+            )
             rows.extend(
                 _score_row(
                     row=row,
@@ -1499,9 +1820,12 @@ def main() -> int:
                     orchestrator=orchestrator,
                     calibration_data=calibration_data,
                     rank_store=rank_store,
+                    overlay_required_columns=overlay_required_columns,
+                    live_ae_gmm_state_payload=live_ae_gmm_state_payload,
+                    feature_row_override=batched_feature_rows.get(idx),
                     skip_full_chain_diagnostics=bool(args.skip_full_chain_diagnostics),
                 )
-                for _, row in group.iterrows()
+                for idx, row in group.iterrows()
             )
     else:
         feats = load_or_compute_features(
@@ -1520,6 +1844,8 @@ def main() -> int:
                 orchestrator=orchestrator,
                 calibration_data=calibration_data,
                 rank_store=rank_store,
+                overlay_required_columns=overlay_required_columns,
+                live_ae_gmm_state_payload=live_ae_gmm_state_payload,
                 skip_full_chain_diagnostics=bool(args.skip_full_chain_diagnostics),
             )
             for _, row in decisions.iterrows()
@@ -1547,6 +1873,7 @@ def main() -> int:
         failures = _parity_failures(
             result,
             tolerance=float(args.tolerance),
+            prediction_tolerance=float(args.prediction_tolerance),
             require_policy_rank_reference=bool(args.require_policy_rank_reference),
             require_live_values=bool(args.require_live_values),
             parity_source=str(args.parity_source),

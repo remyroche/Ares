@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from datetime import datetime, timezone
@@ -791,6 +792,8 @@ def run_materialization(
     resume: bool,
     overwrite: bool,
 ) -> dict[str, Any]:
+    if str(market_mode).strip().lower() == "perps":
+        os.environ.setdefault("EPM_SIMPLE_POLICY_15M_CHART_ONLY", "1")
     if output_labels_dir.exists() and any(output_labels_dir.iterdir()) and not overwrite and not resume:
         raise FileExistsError(f"{output_labels_dir} already exists; pass --overwrite to replace files")
     source_manifest = _read_manifest(source_labels_dir)
@@ -815,6 +818,10 @@ def run_materialization(
             "timeframe": str(timeframe),
             "path_len": int(path_len),
             "apply_delayed_entry": bool(apply_delayed_entry),
+            "native_15m_chart_only": str(
+                os.environ.get("EPM_SIMPLE_POLICY_15M_CHART_ONLY", "")
+            ).strip().lower()
+            not in {"0", "false", "no", "n", "off"},
             "policy_label_center": float(policy_label_center),
             "policy_label_temperature": float(policy_label_temperature),
             "outcome_mode": str(outcome_mode),
@@ -964,7 +971,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--exchange", default="krakenfutures")
     parser.add_argument("--timeframe", default="1h")
     parser.add_argument("--path-len", type=int, default=96)
-    parser.add_argument("--no-delayed-entry", action="store_true")
+    parser.add_argument(
+        "--apply-delayed-entry",
+        dest="apply_delayed_entry",
+        action="store_true",
+        help=(
+            "Opt into the delayed-entry execution proxy. This may use the "
+            "execution_1m store and is off by default for label materialization."
+        ),
+    )
+    parser.add_argument(
+        "--no-delayed-entry",
+        dest="apply_delayed_entry",
+        action="store_false",
+        help="Keep delayed-entry execution disabled. This is the default.",
+    )
     parser.add_argument("--policy-label-center", type=float, default=0.0)
     parser.add_argument("--policy-label-temperature", type=float, default=0.004)
     parser.add_argument("--outcome-mode", choices=("fixed_tp", "trailing_profit"), default="trailing_profit")
@@ -975,6 +996,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset-regex", default=None)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
+    parser.set_defaults(apply_delayed_entry=False)
     return parser.parse_args()
 
 
@@ -995,7 +1017,7 @@ def main() -> int:
         exchange=str(args.exchange),
         timeframe=str(args.timeframe),
         path_len=int(args.path_len),
-        apply_delayed_entry=not bool(args.no_delayed_entry),
+        apply_delayed_entry=bool(args.apply_delayed_entry),
         policy_label_center=float(args.policy_label_center),
         policy_label_temperature=float(args.policy_label_temperature),
         outcome_mode=str(args.outcome_mode),

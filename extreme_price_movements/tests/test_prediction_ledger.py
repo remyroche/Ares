@@ -82,6 +82,48 @@ def test_prediction_ledger_upserts_same_signal_bar_candidate(tmp_path):
     )
 
 
+def test_prediction_ledger_preserves_same_signal_bar_distinct_live_decisions(tmp_path):
+    path = tmp_path / "prediction_ledger.parquet"
+    ledger = PredictionLedger(path)
+    base = {
+        "signal_bar_ts": "2026-05-10T12:00:00Z",
+        "symbol": "BTC/USDC",
+        "side": "long",
+        "strategy_id": "long_test",
+        "meta_head_hash": "abc123",
+        "model_artifact_run_id": "model_a",
+        "policy_artifact_run_id": "policy_a",
+    }
+    ledger.append_rows(
+        [
+            {
+                **base,
+                "timestamp": "2026-05-10T12:01:00Z",
+                "decision_ts": "2026-05-10T12:01:00Z",
+                "portfolio_decision": "traded",
+                "normalized_rank_score": 0.84,
+            }
+        ]
+    )
+    ledger.append_rows(
+        [
+            {
+                **base,
+                "timestamp": "2026-05-10T12:05:00Z",
+                "decision_ts": "2026-05-10T12:05:00Z",
+                "portfolio_decision": "portfolio_rejected",
+                "portfolio_reject_reason": "global_auction_capacity:global_entry_cap_reached",
+                "normalized_rank_score": 0.71,
+            }
+        ]
+    )
+
+    df = pd.read_parquet(path).sort_values("decision_ts").reset_index(drop=True)
+    assert len(df) == 2
+    assert df.loc[0, "portfolio_decision"] == "traded"
+    assert df.loc[1, "portfolio_decision"] == "portfolio_rejected"
+
+
 def test_prediction_ledger_marks_resolved(tmp_path):
     path = tmp_path / "prediction_ledger.parquet"
     ledger = PredictionLedger(path)

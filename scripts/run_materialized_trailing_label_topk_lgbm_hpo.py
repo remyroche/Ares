@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
+import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
+import joblib
 import numpy as np
 import pandas as pd
 
@@ -25,16 +28,23 @@ except Exception:  # pragma: no cover - dependency check.
     LGBMRegressor = None
     _LIGHTGBM_AVAILABLE = False
 
+try:
+    import pyarrow.parquet as pq
+except Exception:  # pragma: no cover - optional fast schema reader.
+    pq = None
+
 from scripts.run_first_touch_label_training_smoke import (  # noqa: E402
     _first_touch_eval_metrics,
     _target_from_frame,
 )
 from scripts.run_label_feature_store_model_smoke import (  # noqa: E402
+    DEFAULT_AE_GMM_STATE_FEATURE_GMM_MAX_TRAIN_ROWS,
     DEFAULT_AE_GMM_STATE_FEATURE_MAX_ITER,
     DEFAULT_AE_GMM_STATE_FEATURE_MAX_TRAIN_ROWS,
     _ae_gmm_smoke_feature_policy_columns,
     _append_fold_ae_gmm_state_features,
     _fold_ae_gmm_economic_targets,
+    _persist_ae_gmm_state_artifact,
 )
 from scripts.run_label_quality_proxy_diagnostics import (  # noqa: E402
     DEFAULT_FEATURE_DIR,
@@ -68,6 +78,176 @@ TARGET_MODES = (
     "time_decay_policy",
 )
 
+AE_GMM_INPUT_POLICY = os.environ.get("EPM_LGBM_AE_GMM_INPUT_POLICY", "a0bis").strip().lower()
+AE_GMM_A0BIS_MOMENTUM_TOKENS = (
+    "lr_",
+    "ret",
+    "return",
+    "trend",
+    "mom",
+    "adx",
+    "impulse",
+    "breakout",
+    "z_r",
+    "zr_",
+    "convexity",
+    "slope",
+    "velocity",
+    "speed",
+    "thrust",
+)
+AE_GMM_A0BIS_NORMALIZED_TOKENS = (
+    "atr",
+    "vol_norm",
+    "_z",
+    "z_",
+    "cp_z",
+    "ts_resid",
+    "ratio",
+    "rank",
+    "pct",
+    "tanh",
+    "bps",
+    "rsi",
+    "autocorr",
+)
+
+
+def _safe_artifact_stem(value: Any) -> str:
+    text = str(value)
+    stem = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in text)
+    return stem.strip("_") or "artifact"
+
+
+def _feature_contract_hash(feature_names: list[str]) -> str:
+    payload = json.dumps(list(feature_names), separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _label_schema_columns(labels_path: Path) -> list[str]:
+    if pq is None:
+        return []
+    files = sorted(Path(labels_path).glob("*.parquet")) if Path(labels_path).is_dir() else [Path(labels_path)]
+    cols: list[str] = []
+    for path in files[:8]:
+        try:
+            cols.extend(str(c) for c in pq.read_schema(path).names)
+        except Exception:
+            continue
+    return list(dict.fromkeys(cols))
+
+
+def _contains_any_token(name: Any, tokens: Sequence[str]) -> bool:
+    text = str(name).lower()
+    return any(tok in text for tok in tokens)
+
+
+def _default_ae_gmm_input_features(
+    selected_features: Sequence[str] | None,
+    available_features: Sequence[str] | None,
+) -> tuple[list[str], dict[str, Any]]:
+    selected = [str(c) for c in (selected_features or []) if str(c).strip()]
+    available = [str(c) for c in (available_features or []) if str(c).strip()]
+    generated = {str(c) for c in AE_GMM_FEATURE_COLUMNS}
+    selected = [c for c in selected if c not in generated]
+    available = [c for c in available if c not in generated]
+    policy = str(AE_GMM_INPUT_POLICY or "a0bis").strip().lower()
+    if policy in {"a0", "selected", "legacy", "raw"}:
+        output = list(dict.fromkeys(selected))
+        return output, {
+            "policy": policy,
+            "selected_input_feature_count_before_policy": int(len(selected)),
+            "selected_input_feature_count_after_policy": int(len(output)),
+            "removed_raw_momentum_count": 0,
+            "added_normalized_momentum_count": 0,
+            "removed_raw_momentum_features": [],
+            "added_normalized_momentum_features": [],
+        }
+    raw_momentum = [
+        c
+        for c in selected
+        if _contains_any_token(c, AE_GMM_A0BIS_MOMENTUM_TOKENS)
+        and not _contains_any_token(c, AE_GMM_A0BIS_NORMALIZED_TOKENS)
+    ]
+    raw_set = set(raw_momentum)
+    normalized_momentum = [
+        c
+        for c in available
+        if _contains_any_token(c, AE_GMM_A0BIS_MOMENTUM_TOKENS)
+        and _contains_any_token(c, AE_GMM_A0BIS_NORMALIZED_TOKENS)
+    ]
+    output = list(dict.fromkeys([c for c in selected if c not in raw_set] + normalized_momentum))
+    return output, {
+        "policy": "a0bis",
+        "selected_input_feature_count_before_policy": int(len(selected)),
+        "selected_input_feature_count_after_policy": int(len(output)),
+        "removed_raw_momentum_count": int(len(raw_momentum)),
+        "added_normalized_momentum_count": int(len(set(normalized_momentum).difference(selected))),
+        "removed_raw_momentum_features": list(raw_momentum),
+        "added_normalized_momentum_features": sorted(set(normalized_momentum).difference(selected)),
+    }
+
+
+def _save_base_fold_model(
+    *,
+    model_dir: Path,
+    fold: dict[str, Any],
+    model: Any,
+    feature_names: list[str],
+    params: dict[str, Any],
+    trial_number: int,
+    seed: int,
+    train_rows_available: int,
+    train_rows_fit: int,
+    valid_rows: int,
+) -> dict[str, Any]:
+    fold_dir = model_dir / _safe_artifact_stem(fold.get("fold", "fold"))
+    fold_dir.mkdir(parents=True, exist_ok=True)
+    model_path = fold_dir / "base_model.joblib"
+    joblib.dump(model, model_path, compress=3)
+    columns_path = fold_dir / "columns.json"
+    columns_payload = {
+        "schema": "s59_base_fold_feature_contract_v1",
+        "feature_names": list(feature_names),
+        "feature_count": int(len(feature_names)),
+        "feature_contract_hash": _feature_contract_hash(list(feature_names)),
+    }
+    columns_path.write_text(json.dumps(_json_safe(columns_payload), indent=2, sort_keys=True), encoding="utf-8")
+    manifest = {
+        "schema": "s59_base_saved_fold_model_v1",
+        "fold": str(fold.get("fold")),
+        "calendar_month": str(fold.get("month")),
+        "valid_start": fold.get("valid_start"),
+        "valid_end": fold.get("valid_end"),
+        "max_oos_model_age_days": int(fold.get("max_oos_model_age_days", 0)),
+        "trial_number": int(trial_number),
+        "seed": int(seed),
+        "target_mode": str(params.get("target_mode")),
+        "weight_arm": str(params.get("weight_arm")),
+        "train_rows_available": int(train_rows_available),
+        "train_rows_fit": int(train_rows_fit),
+        "valid_rows": int(valid_rows),
+        "model_path": str(model_path),
+        "columns_path": str(columns_path),
+        "model_class": type(model).__name__,
+        "model_module": type(model).__module__,
+        "feature_count": int(len(feature_names)),
+        "feature_contract_hash": columns_payload["feature_contract_hash"],
+        "params": _json_safe(params),
+        "ae_gmm_generated_features": int(fold.get("ae_gmm_generated_features", 0)),
+        "ae_gmm_context_feature_count": int(fold.get("ae_gmm_context_feature_count", 0)),
+        "ae_gmm_status": fold.get("ae_gmm_status"),
+        "leakage_contract": {
+            "fit_scope": "prior_rows_only_for_this_oos_fold",
+            "oos_rows": "valid_start <= timestamp < valid_end",
+            "feature_contract": "columns.json is the required inference-time feature order",
+            "target": "materialized trailing-label soft economic target used only on train rows",
+        },
+    }
+    manifest_path = fold_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(_json_safe(manifest), indent=2, sort_keys=True), encoding="utf-8")
+    return {**manifest, "manifest_path": str(manifest_path), "model_dir": str(fold_dir)}
+
 
 def _append_single_side_ae_gmm_state_features(
     *,
@@ -76,8 +256,11 @@ def _append_single_side_ae_gmm_state_features(
     train_frame: pd.DataFrame,
     train_metrics: pd.DataFrame,
     max_train_rows: int,
+    gmm_max_train_rows: int,
     ae_max_iter: int,
     random_state: int,
+    state_artifact_dir: Path | None = None,
+    state_artifact_name: str = "",
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[str], dict[str, Any]]:
     base_features = [
         str(col)
@@ -100,18 +283,38 @@ def _append_single_side_ae_gmm_state_features(
         ),
         random_state=int(random_state),
         max_train_rows=int(max_train_rows),
+        gmm_max_train_rows=int(gmm_max_train_rows),
         ae_max_iter=int(ae_max_iter),
         require_both_sides=False,
         min_side_cluster_frac=0.02,
         min_side_cluster_rows=10,
     )
     if not bool(state.get("enabled", False)):
+        persisted_disabled = _persist_ae_gmm_state_artifact(
+            state=state,
+            artifact_dir=state_artifact_dir,
+            artifact_name=state_artifact_name,
+            scope="single_side_disabled",
+            train_rows=len(x_train_base),
+            valid_rows=len(x_valid_base),
+            input_feature_count=len(base_features),
+        )
         return x_train, x_valid, [], {
             "ae_gmm_state_feature_status": f"single_side_{state.get('reason', 'state_disabled')}",
             "ae_gmm_state_feature_count": 0,
             "ae_gmm_state_input_feature_count": int(len(base_features)),
             "ae_gmm_state_hpo_report_count": int(state.get("hpo_report_count", 0) or 0),
+            **persisted_disabled,
         }
+    persisted_artifacts = _persist_ae_gmm_state_artifact(
+        state=state,
+        artifact_dir=state_artifact_dir,
+        artifact_name=state_artifact_name,
+        scope="single_side",
+        train_rows=len(x_train_base),
+        valid_rows=len(x_valid_base),
+        input_feature_count=len(base_features),
+    )
     valid_generated = transform_ae_gmm_features(x_valid_base, state, index=x_valid.index)
     all_generated = [str(col) for col in valid_generated.columns]
     generated = _ae_gmm_smoke_feature_policy_columns(all_generated)
@@ -134,6 +337,12 @@ def _append_single_side_ae_gmm_state_features(
             "ae_gmm_state_all_feature_count": int(len(all_generated)),
             "ae_gmm_state_input_feature_count": int(len(base_features)),
             "ae_gmm_state_hpo_report_count": int(state.get("hpo_report_count", 0) or 0),
+            "ae_gmm_state_train_rows_available": int(state.get("train_rows_available", len(x_train_base)) or 0),
+            "ae_gmm_state_ae_fit_rows": int(state.get("ae_fit_rows", 0) or 0),
+            "ae_gmm_state_gmm_fit_rows": int(state.get("gmm_fit_rows", 0) or 0),
+            "ae_gmm_state_ae_max_train_rows": int(state.get("ae_max_train_rows", max_train_rows) or 0),
+            "ae_gmm_state_gmm_max_train_rows": int(state.get("gmm_max_train_rows", gmm_max_train_rows) or 0),
+            "ae_gmm_state_sample_policy": str(state.get("sample_policy", "")),
             "ae_gmm_state_n_components": int(state.get("gmm_n_components", 0) or 0),
             "ae_gmm_state_path_cleanliness_score": float(
                 selected_config.get("path_cleanliness_score", float("nan"))
@@ -143,6 +352,12 @@ def _append_single_side_ae_gmm_state_features(
             ),
             "ae_gmm_state_train_feature_scope": "outer_train_in_sample",
             "ae_gmm_state_validation_feature_scope": "frozen_outer_train_artifact",
+            "ae_gmm_state_artifact_dir": str(state_artifact_dir) if state_artifact_dir is not None else None,
+            "ae_gmm_frozen_replay_contract": (
+                "single-side AE/GMM state fit on the outer train fold is persisted; "
+                "validation/OOS rows are transformed with that frozen train-fitted state"
+            ),
+            **persisted_artifacts,
         },
     )
 
@@ -184,6 +399,80 @@ def _load_fixed_params(path: Path) -> dict[str, Any]:
     if "trial_number" in payload:
         out["_fixed_trial_number"] = int(float(payload["trial_number"]))
     return out
+
+
+def _load_fixed_selected_features(path: Path | None) -> list[str] | None:
+    if path is None:
+        return None
+    if not path.exists():
+        raise FileNotFoundError(path)
+    if path.suffix.lower() == ".json":
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        values = payload.get("selected_features") if isinstance(payload, dict) else payload
+        if isinstance(values, dict):
+            values = values.get("features")
+        features = [str(v) for v in (values or []) if str(v).strip()]
+    else:
+        frame = pd.read_csv(path)
+        if "feature" not in frame.columns:
+            raise ValueError(f"{path} must include a 'feature' column")
+        if "selected" in frame.columns:
+            selected = frame["selected"].astype(str).str.lower().isin({"1", "true", "yes", "y"})
+            frame = frame.loc[selected].copy()
+        if "rank" in frame.columns:
+            frame = frame.sort_values("rank", kind="mergesort")
+        features = [str(v) for v in frame["feature"].dropna().tolist() if str(v).strip()]
+    features = list(dict.fromkeys(features))
+    if not features:
+        raise ValueError(f"No fixed selected features found in {path}")
+    return features
+
+
+def _fixed_selected_ae_gmm_features(features: Sequence[str] | None) -> list[str]:
+    if not features:
+        return []
+    generated = set(str(col) for col in AE_GMM_FEATURE_COLUMNS)
+    return [str(col) for col in features if str(col) in generated]
+
+
+def _scored_key_tuples(frame: pd.DataFrame) -> set[tuple[int, str, int]]:
+    if frame.empty:
+        return set()
+    required = {"__ts__", "__symbol__", "side"}
+    missing = sorted(required.difference(frame.columns))
+    if missing:
+        raise ValueError(f"Cannot build scored keys; missing columns: {missing}")
+    ts = pd.to_datetime(frame["__ts__"], utc=True, errors="coerce").astype("int64").to_numpy()
+    sym = frame["__symbol__"].astype(str).to_numpy()
+    side = pd.to_numeric(frame["side"], errors="coerce").fillna(1.0).astype(np.int8).to_numpy()
+    bad_ts = np.iinfo(np.int64).min
+    return {
+        (int(t), str(s), int(sd))
+        for t, s, sd in zip(ts, sym, side, strict=False)
+        if int(t) != bad_ts
+    }
+
+
+def _load_existing_scored_keys(path: Path | None) -> set[tuple[int, str, int]]:
+    if path is None:
+        return set()
+    if not path.exists():
+        raise FileNotFoundError(path)
+    existing = pd.read_parquet(path, columns=["__ts__", "__symbol__", "side"])
+    return _scored_key_tuples(existing)
+
+
+def _missing_against_existing_mask(frame: pd.DataFrame, existing_keys: set[tuple[int, str, int]]) -> np.ndarray:
+    if not existing_keys or frame.empty:
+        return np.ones(len(frame), dtype=bool)
+    ts = pd.to_datetime(frame["__ts__"], utc=True, errors="coerce").astype("int64").to_numpy()
+    sym = frame["__symbol__"].astype(str).to_numpy()
+    side = pd.to_numeric(frame["side"], errors="coerce").fillna(1.0).astype(np.int8).to_numpy()
+    bad_ts = np.iinfo(np.int64).min
+    missing = np.ones(len(frame), dtype=bool)
+    for i, (t, s, sd) in enumerate(zip(ts, sym, side, strict=False)):
+        missing[i] = int(t) != bad_ts and (int(t), str(s), int(sd)) not in existing_keys
+    return missing
 
 
 def _safe_numeric(values: Any) -> pd.Series:
@@ -233,6 +522,28 @@ def _fold_frame_columns(frame: pd.DataFrame) -> list[str]:
     return list(dict.fromkeys([col for col in keep if col in frame.columns]))
 
 
+def _ae_gmm_context_columns(columns: Sequence[str]) -> list[str]:
+    context_tokens = (
+        "ae_gmm",
+        "aegmm",
+        "gmm_",
+        "cluster",
+        "posterior",
+        "entropy",
+        "mahalanobis",
+        "dae_",
+        "reconstruction",
+        "latent",
+    )
+    out: list[str] = []
+    for col in columns:
+        name = str(col)
+        lower = name.lower()
+        if any(token in lower for token in context_tokens):
+            out.append(name)
+    return list(dict.fromkeys(out))
+
+
 def _write_fold_payload(fold: dict[str, Any], cache_dir: Path) -> dict[str, Any]:
     fold_dir = cache_dir / _safe_fold_name(str(fold["fold"]))
     fold_dir.mkdir(parents=True, exist_ok=True)
@@ -244,9 +555,11 @@ def _write_fold_payload(fold: dict[str, Any], cache_dir: Path) -> dict[str, Any]
         "x_train": fold_dir / "x_train.parquet",
         "x_valid": fold_dir / "x_valid.parquet",
     }
+    if "ae_gmm_context_valid" in fold and isinstance(fold.get("ae_gmm_context_valid"), pd.DataFrame):
+        payload_paths["ae_gmm_context_valid"] = fold_dir / "ae_gmm_context_valid.parquet"
     for key, path in payload_paths.items():
         frame = fold[key]
-        if key in {"x_train", "x_valid"}:
+        if key in {"x_train", "x_valid", "ae_gmm_context_valid"}:
             frame = frame.clip(
                 lower=float(np.finfo(np.float16).min),
                 upper=float(np.finfo(np.float16).max),
@@ -266,7 +579,7 @@ def _load_fold_payload(fold: dict[str, Any]) -> dict[str, Any]:
     loaded = dict(fold)
     for key, path in dict(fold["payload_paths"]).items():
         frame = pd.read_parquet(path)
-        if key in {"x_train", "x_valid"}:
+        if key in {"x_train", "x_valid", "ae_gmm_context_valid"}:
             frame = frame.astype(np.float32, copy=False)
         loaded[key] = frame
     return loaded
@@ -749,40 +1062,32 @@ def _prepare_folds(
     months: list[str],
     include_ae_gmm_state_features: bool,
     ae_gmm_state_feature_max_train_rows: int,
+    ae_gmm_state_feature_gmm_max_train_rows: int,
     ae_gmm_state_feature_max_iter: int,
     feature_selection_top_n: int,
     feature_selection_target_mode: str,
     feature_selection_method: str,
     max_oos_model_age_days: int,
+    train_window_days: int,
+    ae_gmm_anchor_days: int,
     payload_max_train_rows: int,
     fold_cache_dir: Path | None,
+    fixed_selected_features: list[str] | None,
+    fixed_selected_features_path: Path | None,
+    fixed_ae_gmm_state_pkl: Path | None,
+    ae_gmm_input_features: list[str] | None,
+    freeze_ae_gmm_state_after_reference: bool,
+    existing_scored_ledger_path: Path | None,
+    missing_only: bool,
     seed: int,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     frame = _load_labels(labels_path).reset_index(drop=True)
-    selected_features = _read_feature_list(feature_list_csv, max_features=max_feature_store_features)
-    feature_matrix, feature_report = _load_feature_store_columns(
-        frame,
-        feature_dir=feature_dir,
-        selected_features=selected_features,
-    )
-    if not feature_matrix.empty:
-        new_cols = [col for col in feature_matrix.columns if col not in frame.columns]
-        if new_cols:
-            frame = pd.concat(
-                [frame, feature_matrix.loc[:, new_cols].reset_index(drop=True).astype(np.float32, copy=False)],
-                axis=1,
-                copy=False,
-            )
-    metrics = _first_touch_eval_metrics(frame, _path_metrics(frame)).reset_index(drop=True)
-    features = _feature_columns(frame)
-    fold_frame_columns = _fold_frame_columns(frame)
-    if fold_cache_dir is not None:
-        fold_cache_dir.mkdir(parents=True, exist_ok=True)
     all_months = sorted(frame["__ts__"].dt.to_period("M").dropna().astype(str).unique())
     if not months:
         months = all_months[1:]
     folds: list[dict[str, Any]] = []
     ts_utc = pd.to_datetime(frame["__ts__"], utc=True, errors="coerce")
+    existing_scored_keys = _load_existing_scored_keys(existing_scored_ledger_path) if bool(missing_only) else set()
     validation_windows: list[dict[str, Any]] = []
     periods = sorted(pd.Period(month) for month in months)
     contiguous_months = bool(periods) and periods == [periods[0] + i for i in range(len(periods))]
@@ -829,17 +1134,51 @@ def _prepare_folds(
                         "valid_end": month_end,
                     }
                 )
-    global_selected_features: list[str] | None = None
+    global_selected_features: list[str] | None = list(fixed_selected_features or []) or None
     global_feature_selection_df: pd.DataFrame | None = None
+    if global_selected_features is not None:
+        global_feature_selection_df = pd.DataFrame(
+            {
+                "fold": ["fixed_selected_features"] * len(global_selected_features),
+                "feature": list(global_selected_features),
+                "score": np.nan,
+                "rank": np.arange(1, len(global_selected_features) + 1, dtype=np.int32),
+                "selected": True,
+                "feature_selection_method": "fixed_selected_features",
+                "feature_selection_status": "fixed_replay",
+            }
+        )
     eligible_windows: list[dict[str, Any]] = []
     for window in validation_windows:
-        train_rows = int(ts_utc.lt(window["valid_start"]).sum())
-        valid_rows = int((ts_utc.ge(window["valid_start"]) & ts_utc.lt(window["valid_end"])).sum())
+        train_start = (
+            window["valid_start"] - pd.Timedelta(days=int(train_window_days))
+            if int(train_window_days) > 0
+            else None
+        )
+        train_mask_window = ts_utc.lt(window["valid_start"])
+        if train_start is not None:
+            train_mask_window = train_mask_window & ts_utc.ge(train_start)
+        train_rows = int(train_mask_window.sum())
+        valid_mask_window = ts_utc.ge(window["valid_start"]) & ts_utc.lt(window["valid_end"])
+        valid_rows_raw = int(valid_mask_window.sum())
+        if bool(missing_only) and existing_scored_keys:
+            valid_frame_window = frame.loc[valid_mask_window, ["__ts__", "__symbol__", "side"]]
+            valid_rows = int(np.sum(_missing_against_existing_mask(valid_frame_window, existing_scored_keys)))
+        else:
+            valid_rows = int(valid_rows_raw)
         if train_rows < 500 or valid_rows < 100:
             continue
         enriched = dict(window)
+        enriched["train_start"] = train_start
+        enriched["ae_gmm_anchor_start"] = (
+            train_start - pd.Timedelta(days=int(ae_gmm_anchor_days))
+            if train_start is not None and int(ae_gmm_anchor_days) > 0
+            else None
+        )
+        enriched["ae_gmm_anchor_end"] = train_start if train_start is not None and int(ae_gmm_anchor_days) > 0 else None
         enriched["train_rows_estimate"] = int(train_rows)
         enriched["valid_rows_estimate"] = int(valid_rows)
+        enriched["valid_rows_raw_estimate"] = int(valid_rows_raw)
         eligible_windows.append(enriched)
     fs_window_fold = None
     if eligible_windows:
@@ -848,6 +1187,58 @@ def _prepare_folds(
         ordered_windows = [fs_window] + [w for w in eligible_windows if str(w["fold"]) != fs_window_fold]
     else:
         ordered_windows = []
+    early_manifest: dict[str, Any] = {
+        "rows": int(len(frame)),
+        "symbols": int(frame["__symbol__"].nunique(dropna=True)) if "__symbol__" in frame.columns else 0,
+        "timestamp_min": frame["__ts__"].min() if "__ts__" in frame.columns else None,
+        "timestamp_max": frame["__ts__"].max() if "__ts__" in frame.columns else None,
+        "fold_months_requested": list(months),
+        "missing_only": bool(missing_only),
+        "existing_scored_ledger_path": str(existing_scored_ledger_path) if existing_scored_ledger_path is not None else None,
+        "existing_scored_key_count": int(len(existing_scored_keys)),
+        "eligible_window_count": int(len(ordered_windows)),
+        "eligible_windows": [
+            {
+                "fold": str(window["fold"]),
+                "month": str(window["month"]),
+                "valid_start": window["valid_start"],
+                "valid_end": window["valid_end"],
+                "train_start": window.get("train_start"),
+                "ae_gmm_anchor_start": window.get("ae_gmm_anchor_start"),
+                "ae_gmm_anchor_end": window.get("ae_gmm_anchor_end"),
+                "train_rows_estimate": int(window.get("train_rows_estimate", 0)),
+                "valid_rows_estimate": int(window.get("valid_rows_estimate", 0)),
+                "valid_rows_raw_estimate": int(window.get("valid_rows_raw_estimate", 0)),
+            }
+            for window in ordered_windows
+        ],
+    }
+    if not ordered_windows:
+        return [], early_manifest
+    selected_features = _read_feature_list(feature_list_csv, max_features=max_feature_store_features)
+    feature_matrix, feature_report = _load_feature_store_columns(
+        frame,
+        feature_dir=feature_dir,
+        selected_features=selected_features,
+    )
+    if not feature_matrix.empty:
+        new_cols = [col for col in feature_matrix.columns if col not in frame.columns]
+        if new_cols:
+            frame = pd.concat(
+                [frame, feature_matrix.loc[:, new_cols].reset_index(drop=True).astype(np.float32, copy=False)],
+                axis=1,
+                copy=False,
+            )
+    metrics = _first_touch_eval_metrics(frame, _path_metrics(frame)).reset_index(drop=True)
+    features = _feature_columns(frame)
+    fold_frame_columns = _fold_frame_columns(frame)
+    if fold_cache_dir is not None:
+        fold_cache_dir.mkdir(parents=True, exist_ok=True)
+    active_fixed_ae_gmm_state_pkl = fixed_ae_gmm_state_pkl
+    frozen_ae_gmm_reference_fold: str | None = None
+    frozen_ae_gmm_reference_state_path: str | None = (
+        str(fixed_ae_gmm_state_pkl) if fixed_ae_gmm_state_pkl is not None else None
+    )
     for fold_id, window in enumerate(ordered_windows):
         print(
             "[prepare_folds] start "
@@ -856,7 +1247,17 @@ def _prepare_folds(
             flush=True,
         )
         valid_mask = ts_utc.ge(window["valid_start"]) & ts_utc.lt(window["valid_end"])
+        valid_rows_raw = int(valid_mask.sum())
+        if bool(missing_only) and existing_scored_keys:
+            valid_frame_window = frame.loc[valid_mask, ["__ts__", "__symbol__", "side"]]
+            missing_mask_window = _missing_against_existing_mask(valid_frame_window, existing_scored_keys)
+            valid_mask_values = valid_mask.to_numpy(dtype=bool, copy=True)
+            valid_positions = np.flatnonzero(valid_mask_values)
+            valid_mask_values[valid_positions] = missing_mask_window
+            valid_mask = pd.Series(valid_mask_values, index=frame.index)
         train_mask = ts_utc.lt(window["valid_start"])
+        if window.get("train_start") is not None:
+            train_mask = train_mask & ts_utc.ge(window["train_start"])
         train_full_uncapped = frame.loc[train_mask]
         valid_full = frame.loc[valid_mask]
         train_metrics_uncapped = metrics.loc[train_mask].reset_index(drop=True)
@@ -882,6 +1283,32 @@ def _prepare_folds(
         med = x_train.iloc[med_idx].median(numeric_only=True)
         x_train = x_train.fillna(med).fillna(0.0).astype(np.float32, copy=False)
         x_valid = x_valid.fillna(med).fillna(0.0).astype(np.float32, copy=False)
+        ae_gmm_fit_x_base: pd.DataFrame | None = None
+        ae_gmm_fit_frame: pd.DataFrame | None = None
+        ae_gmm_fit_metrics: pd.DataFrame | None = None
+        ae_gmm_anchor_rows = 0
+        if (
+            bool(include_ae_gmm_state_features)
+            and fixed_ae_gmm_state_pkl is None
+            and window.get("ae_gmm_anchor_start") is not None
+            and window.get("ae_gmm_anchor_end") is not None
+        ):
+            anchor_mask = (
+                ts_utc.ge(window["ae_gmm_anchor_start"])
+                & ts_utc.lt(window["ae_gmm_anchor_end"])
+            )
+            anchor_full = frame.loc[anchor_mask]
+            ae_gmm_anchor_rows = int(len(anchor_full))
+            if ae_gmm_anchor_rows >= 500:
+                x_anchor = anchor_full.loc[:, features].replace([np.inf, -np.inf], np.nan).astype(
+                    np.float32,
+                    copy=False,
+                )
+                anchor_med_idx = _time_spread_cap_rows(len(x_anchor), 300_000)
+                anchor_med = x_anchor.iloc[anchor_med_idx].median(numeric_only=True)
+                ae_gmm_fit_x_base = x_anchor.fillna(anchor_med).fillna(0.0).astype(np.float32, copy=False)
+                ae_gmm_fit_frame = anchor_full.loc[:, fold_frame_columns].reset_index(drop=True)
+                ae_gmm_fit_metrics = metrics.loc[anchor_mask].reset_index(drop=True)
         print(
             "[prepare_folds] ae_gmm_start "
             f"{window['fold']} train_rows={len(x_train)} valid_rows={len(x_valid)}",
@@ -895,13 +1322,34 @@ def _prepare_folds(
             valid_metrics=valid_metrics,
             enabled=bool(include_ae_gmm_state_features),
             max_train_rows=int(ae_gmm_state_feature_max_train_rows),
+            gmm_max_train_rows=int(ae_gmm_state_feature_gmm_max_train_rows),
             ae_max_iter=int(ae_gmm_state_feature_max_iter),
             random_state=int(seed) + fold_id,
+            state_artifact_dir=(fold_cache_dir.parent / "ae_gmm_states") if fold_cache_dir is not None else None,
+            state_artifact_name=str(window["fold"]),
+            fixed_state_path=active_fixed_ae_gmm_state_pkl,
+            output_feature_subset=global_selected_features,
+            input_feature_cols=ae_gmm_input_features,
+            fit_x_base=ae_gmm_fit_x_base,
+            fit_train_frame=ae_gmm_fit_frame,
+            fit_train_metrics=ae_gmm_fit_metrics,
         )
+        if (
+            bool(freeze_ae_gmm_state_after_reference)
+            and active_fixed_ae_gmm_state_pkl is None
+            and bool(generated_features)
+            and str(ae_diag.get("ae_gmm_state_source", "")) == "fit_on_outer_train_fold"
+        ):
+            state_path = str(ae_diag.get("ae_gmm_global_state_path", "") or "").strip()
+            if state_path:
+                active_fixed_ae_gmm_state_pkl = Path(state_path)
+                frozen_ae_gmm_reference_state_path = state_path
+                frozen_ae_gmm_reference_fold = str(window["fold"])
         if (
             bool(include_ae_gmm_state_features)
             and not generated_features
             and str(ae_diag.get("ae_gmm_state_feature_status", "")).startswith("no_valid_gmm_config")
+            and active_fixed_ae_gmm_state_pkl is None
         ):
             x_train, x_valid, generated_features, ae_diag = _append_single_side_ae_gmm_state_features(
                 x_train=x_train,
@@ -909,13 +1357,24 @@ def _prepare_folds(
                 train_frame=train,
                 train_metrics=train_metrics,
                 max_train_rows=int(ae_gmm_state_feature_max_train_rows),
+                gmm_max_train_rows=int(ae_gmm_state_feature_gmm_max_train_rows),
                 ae_max_iter=int(ae_gmm_state_feature_max_iter),
                 random_state=int(seed) + fold_id + 90_000,
+                state_artifact_dir=(fold_cache_dir.parent / "ae_gmm_states") if fold_cache_dir is not None else None,
+                state_artifact_name=str(window["fold"]),
             )
         print(
             "[prepare_folds] ae_gmm_done "
             f"{window['fold']} generated={len(generated_features)} status={ae_diag.get('ae_gmm_state_feature_status')}",
             flush=True,
+        )
+        ae_gmm_context_features = _ae_gmm_context_columns(generated_features)
+        ae_gmm_context_valid = (
+            x_valid.reindex(columns=ae_gmm_context_features, fill_value=0.0)
+            .astype(np.float32, copy=False)
+            .reset_index(drop=True)
+            if ae_gmm_context_features
+            else pd.DataFrame(index=np.arange(len(x_valid)))
         )
         if global_selected_features is None:
             fs_target_frame = _target_from_frame(train, train_metrics, target_mode=str(feature_selection_target_mode))
@@ -954,9 +1413,16 @@ def _prepare_folds(
                 "month": str(window["month"]),
                 "valid_start": window["valid_start"],
                 "valid_end": window["valid_end"],
+                "train_start": window.get("train_start"),
+                "ae_gmm_anchor_start": window.get("ae_gmm_anchor_start"),
+                "ae_gmm_anchor_end": window.get("ae_gmm_anchor_end"),
+                "ae_gmm_anchor_rows": int(ae_gmm_anchor_rows),
                 "max_oos_model_age_days": int(max_oos_model_age_days),
                 "train_rows_uncapped": int(len(train_full_uncapped)),
                 "train_rows_payload": int(len(train_full)),
+                "valid_rows_raw": int(valid_rows_raw),
+                "missing_only": bool(missing_only),
+                "existing_scored_ledger_path": str(existing_scored_ledger_path) if existing_scored_ledger_path is not None else None,
                 "payload_train_sampling": (
                     "beginning_middle_end_time_spread"
                     if int(payload_max_train_rows) > 0 and len(train_full_uncapped) > int(payload_max_train_rows)
@@ -969,6 +1435,9 @@ def _prepare_folds(
                 "x_train": x_train,
                 "x_valid": x_valid,
                 "ae_gmm_generated_features": int(len(generated_features)),
+                "ae_gmm_context_feature_count": int(len(ae_gmm_context_features)),
+                "ae_gmm_context_features": list(ae_gmm_context_features),
+                "ae_gmm_context_valid": ae_gmm_context_valid,
                 "ae_gmm_status": ae_diag.get("ae_gmm_state_feature_status"),
                 "selected_features": selected_features_fold,
                 "feature_selection": feature_selection_df,
@@ -1003,6 +1472,10 @@ def _prepare_folds(
                 "month": str(fold["month"]),
                 "valid_start": fold["valid_start"],
                 "valid_end": fold["valid_end"],
+                "train_start": fold.get("train_start"),
+                "ae_gmm_anchor_start": fold.get("ae_gmm_anchor_start"),
+                "ae_gmm_anchor_end": fold.get("ae_gmm_anchor_end"),
+                "ae_gmm_anchor_rows": int(fold.get("ae_gmm_anchor_rows", 0)),
                 "max_oos_model_age_days": int(fold["max_oos_model_age_days"]),
                 "train_rows_uncapped": int(fold.get("train_rows_uncapped", fold.get("train_rows", 0))),
                 "train_rows_payload": int(fold.get("train_rows_payload", fold.get("train_rows", 0))),
@@ -1012,6 +1485,11 @@ def _prepare_folds(
         ],
         "fold_count": int(len(folds)),
         "max_oos_model_age_days": int(max_oos_model_age_days),
+        "train_window_days": int(train_window_days),
+        "ae_gmm_anchor_days": int(ae_gmm_anchor_days),
+        "ae_gmm_input_features_path": None,
+        "ae_gmm_input_feature_count": int(len(ae_gmm_input_features or [])),
+        "ae_gmm_input_features": list(ae_gmm_input_features or []),
         "payload_max_train_rows": int(payload_max_train_rows),
         "validation_windowing": (
             "continuous_rolling_max_age_windows"
@@ -1030,6 +1508,18 @@ def _prepare_folds(
             "features are selected once on the largest train fold and reused for all OOS scoring folds"
         ),
         "feature_selection_method": str(feature_selection_method),
+        "fixed_selected_features_path": str(fixed_selected_features_path) if fixed_selected_features_path is not None else None,
+        "fixed_selected_features_count": int(len(fixed_selected_features or [])),
+        "fixed_ae_gmm_state_pkl": str(fixed_ae_gmm_state_pkl) if fixed_ae_gmm_state_pkl is not None else None,
+        "ae_gmm_state_freeze_after_reference": bool(freeze_ae_gmm_state_after_reference),
+        "ae_gmm_state_reference_fold": frozen_ae_gmm_reference_fold,
+        "ae_gmm_state_reference_state_path": frozen_ae_gmm_reference_state_path,
+        "ae_gmm_state_ae_max_train_rows": int(ae_gmm_state_feature_max_train_rows),
+        "ae_gmm_state_gmm_max_train_rows": int(ae_gmm_state_feature_gmm_max_train_rows),
+        "ae_gmm_state_sample_policy": "train_only_time_spread_evenly_spaced",
+        "missing_only": bool(missing_only),
+        "existing_scored_ledger_path": str(existing_scored_ledger_path) if existing_scored_ledger_path is not None else None,
+        "existing_scored_key_count": int(len(existing_scored_keys)),
         "feature_selection_top_n": int(feature_selection_top_n),
         "feature_selection_target_mode": str(feature_selection_target_mode),
         "global_feature_selection_fold": (
@@ -1255,8 +1745,10 @@ def _score_best_oos_ledger(
     trial_number: int,
     max_train_rows: int,
     seed: int,
+    save_fold_models_dir: Path | None = None,
 ) -> pd.DataFrame:
     parts: list[pd.DataFrame] = []
+    saved_models: list[dict[str, Any]] = []
     for fold_id, fold in enumerate(folds):
         payload = _load_fold_payload(fold)
         train_target = _target_from_frame(
@@ -1271,14 +1763,34 @@ def _score_best_oos_ledger(
             arm=str(params["weight_arm"]),
         )
         idx = _time_spread_cap_rows(len(payload["x_train"]), int(max_train_rows))
-        pred = _fit_predict_lgbm(
-            x_train=payload["x_train"].iloc[idx].reset_index(drop=True),
-            y_train=train_target["target_soft"].iloc[idx].reset_index(drop=True),
-            w_train=weights.iloc[idx].reset_index(drop=True),
-            x_valid=payload["x_valid"],
+        x_train_fit = payload["x_train"].iloc[idx].reset_index(drop=True)
+        y_train_fit = train_target["target_soft"].iloc[idx].reset_index(drop=True)
+        w_train_fit = weights.iloc[idx].reset_index(drop=True)
+        model = _fit_lgbm_model(
+            x_train=x_train_fit,
+            y_train=y_train_fit,
+            w_train=w_train_fit,
             params=params,
             seed=int(seed) + 1000 * int(trial_number) + fold_id,
         )
+        pred = pd.Series(
+            model.predict(payload["x_valid"].reset_index(drop=True)).astype(np.float32)
+        )
+        if save_fold_models_dir is not None:
+            saved_models.append(
+                _save_base_fold_model(
+                    model_dir=save_fold_models_dir,
+                    fold=fold,
+                    model=model,
+                    feature_names=list(payload["x_train"].columns),
+                    params=params,
+                    trial_number=int(trial_number),
+                    seed=int(seed) + 1000 * int(trial_number) + fold_id,
+                    train_rows_available=int(len(payload["x_train"])),
+                    train_rows_fit=int(len(x_train_fit)),
+                    valid_rows=int(len(payload["x_valid"])),
+                )
+            )
         scored = payload["valid"].copy()
         scored["score"] = pred.to_numpy(dtype=np.float32, copy=False)
         scored["oos_fold"] = str(fold["fold"])
@@ -1292,6 +1804,11 @@ def _score_best_oos_ledger(
         scored["base_model_trial_number"] = int(trial_number)
         scored["base_model_target_mode"] = str(params["target_mode"])
         scored["base_model_weight_arm"] = str(params["weight_arm"])
+        ae_gmm_context = payload.get("ae_gmm_context_valid")
+        if isinstance(ae_gmm_context, pd.DataFrame) and len(ae_gmm_context) == len(scored):
+            for col in _ae_gmm_context_columns(ae_gmm_context.columns):
+                if col not in scored.columns:
+                    scored[col] = ae_gmm_context[col].to_numpy(copy=False)
         side = pd.to_numeric(scored.get("__side__", scored.get("side", np.nan)), errors="coerce")
         if "side_name" not in scored.columns:
             scored["side_name"] = np.where(side.to_numpy(dtype=np.float64, copy=False) < 0.0, "short", "long")
@@ -1303,12 +1820,14 @@ def _score_best_oos_ledger(
                 mask[idx_top] = True
             scored[col] = mask
         parts.append(scored)
-        del payload, train_target, weights, pred, scored
+        del payload, train_target, weights, pred, scored, model, x_train_fit, y_train_fit, w_train_fit
     if not parts:
         return pd.DataFrame()
     out = pd.concat(parts, ignore_index=True)
     out["__ts__"] = pd.to_datetime(out["__ts__"], errors="coerce")
     out = out.sort_values(["__ts__", "__symbol__", "side_name"], kind="mergesort").reset_index(drop=True)
+    if saved_models:
+        out.attrs["saved_fold_models"] = saved_models
     return out
 
 
@@ -1412,16 +1931,65 @@ def run_hpo(
     seed: int,
     include_ae_gmm_state_features: bool,
     ae_gmm_state_feature_max_train_rows: int,
+    ae_gmm_state_feature_gmm_max_train_rows: int,
     ae_gmm_state_feature_max_iter: int,
     feature_selection_top_n: int,
     feature_selection_target_mode: str,
     feature_selection_method: str,
     max_oos_model_age_days: int,
+    train_window_days: int = 0,
+    ae_gmm_anchor_days: int = 0,
+    ae_gmm_input_features_csv: Path | None = None,
     fixed_params_json: Path | None = None,
+    fixed_selected_features_csv: Path | None = None,
+    fixed_ae_gmm_state_pkl: Path | None = None,
+    allow_refit_ae_gmm_with_fixed_features: bool = False,
+    refit_ae_gmm_per_window: bool = False,
+    existing_scored_ledger_path: Path | None = None,
+    missing_only: bool = False,
     rerun_hpo: bool = False,
+    save_fold_models: bool = False,
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     fold_cache_dir = output_dir / "_fold_cache"
+    fixed_selected_features = _load_fixed_selected_features(fixed_selected_features_csv)
+    ae_gmm_input_features = _load_fixed_selected_features(ae_gmm_input_features_csv)
+    ae_gmm_input_policy_diag: dict[str, Any] = {
+        "policy": "explicit_csv" if ae_gmm_input_features_csv is not None else str(AE_GMM_INPUT_POLICY or "a0bis"),
+        "selected_input_feature_count_before_policy": int(len(fixed_selected_features or [])),
+        "selected_input_feature_count_after_policy": int(len(ae_gmm_input_features or [])),
+        "removed_raw_momentum_count": 0,
+        "added_normalized_momentum_count": 0,
+        "removed_raw_momentum_features": [],
+        "added_normalized_momentum_features": [],
+    }
+    if (
+        bool(include_ae_gmm_state_features)
+        and ae_gmm_input_features_csv is None
+        and fixed_selected_features
+    ):
+        ae_gmm_input_features, ae_gmm_input_policy_diag = _default_ae_gmm_input_features(
+            fixed_selected_features,
+            list(dict.fromkeys([*_label_schema_columns(labels_path), *_read_feature_list(feature_list_csv)])),
+        )
+    fixed_selected_ae_gmm = _fixed_selected_ae_gmm_features(fixed_selected_features)
+    if (
+        bool(include_ae_gmm_state_features)
+        and fixed_selected_features_csv is not None
+        and fixed_selected_ae_gmm
+        and fixed_ae_gmm_state_pkl is None
+        and not bool(allow_refit_ae_gmm_with_fixed_features)
+    ):
+        preview = ", ".join(fixed_selected_ae_gmm[:12])
+        raise ValueError(
+            "Refusing to refit AE/GMM while reusing a fixed selected-feature list "
+            "that contains AE/GMM-generated columns. This can change feature "
+            "semantics versus the feature-selection/HPO artifact and confuse "
+            "downstream frozen models. Pass --fixed-ae-gmm-state-pkl with the "
+            "train-fitted state from the source artifact, rerun feature selection/HPO, "
+            "or explicitly pass --allow-refit-ae-gmm-with-fixed-features for a "
+            f"diagnostic-only run. AE/GMM fixed features include: {preview}"
+        )
     folds, manifest = _prepare_folds(
         labels_path=labels_path,
         feature_dir=feature_dir,
@@ -1430,16 +1998,66 @@ def run_hpo(
         months=months,
         include_ae_gmm_state_features=include_ae_gmm_state_features,
         ae_gmm_state_feature_max_train_rows=ae_gmm_state_feature_max_train_rows,
+        ae_gmm_state_feature_gmm_max_train_rows=ae_gmm_state_feature_gmm_max_train_rows,
         ae_gmm_state_feature_max_iter=ae_gmm_state_feature_max_iter,
         feature_selection_top_n=feature_selection_top_n,
         feature_selection_target_mode=feature_selection_target_mode,
         feature_selection_method=feature_selection_method,
         max_oos_model_age_days=int(max_oos_model_age_days),
+        train_window_days=int(train_window_days),
+        ae_gmm_anchor_days=int(ae_gmm_anchor_days),
         payload_max_train_rows=int(max_train_rows),
         fold_cache_dir=fold_cache_dir,
+        fixed_selected_features=fixed_selected_features,
+        fixed_selected_features_path=fixed_selected_features_csv,
+        fixed_ae_gmm_state_pkl=fixed_ae_gmm_state_pkl,
+        ae_gmm_input_features=ae_gmm_input_features,
+        freeze_ae_gmm_state_after_reference=not bool(refit_ae_gmm_per_window),
+        existing_scored_ledger_path=existing_scored_ledger_path,
+        missing_only=bool(missing_only),
         seed=seed,
     )
     if not folds:
+        if bool(missing_only):
+            paths = {
+                "trial_summary": output_dir / "topk_lgbm_hpo_trials.csv",
+                "fold_metrics": output_dir / "topk_lgbm_hpo_folds.csv",
+                "diagnostics": output_dir / "topk_lgbm_hpo_diagnostics.csv",
+                "feature_selection": output_dir / "topk_lgbm_feature_selection_by_fold.csv",
+                "best_oos_scored_ledger": output_dir / "best_oos_scored_ledger.parquet",
+                "best_params": output_dir / "topk_lgbm_hpo_best.json",
+                "manifest": output_dir / "manifest.json",
+            }
+            pd.DataFrame().to_csv(paths["trial_summary"], index=False)
+            pd.DataFrame().to_csv(paths["fold_metrics"], index=False)
+            pd.DataFrame().to_csv(paths["diagnostics"], index=False)
+            pd.DataFrame().to_csv(paths["feature_selection"], index=False)
+            pd.DataFrame().to_parquet(paths["best_oos_scored_ledger"], index=False)
+            best_payload = {"status": "no_missing_rows", "params": {}}
+            paths["best_params"].write_text(json.dumps(_json_safe(best_payload), indent=2), encoding="utf-8")
+            manifest.update(
+                {
+                    "scope": "materialized_trailing_label_topk_lgbm_hpo",
+                    "status": "no_missing_rows",
+                    "labels_path": str(labels_path),
+                    "feature_dir": str(feature_dir),
+                    "feature_list_csv": str(feature_list_csv),
+                    "output_dir": str(output_dir),
+                    "months": list(months),
+                    "train_window_days": int(train_window_days),
+                    "ae_gmm_anchor_days": int(ae_gmm_anchor_days),
+                    "ae_gmm_input_features_csv": str(ae_gmm_input_features_csv) if ae_gmm_input_features_csv is not None else None,
+                    "ae_gmm_input_feature_count": int(len(ae_gmm_input_features or [])),
+                    "fixed_params_json": str(fixed_params_json) if fixed_params_json is not None else None,
+                    "fixed_selected_features_csv": str(fixed_selected_features_csv) if fixed_selected_features_csv is not None else None,
+                    "fixed_ae_gmm_state_pkl": str(fixed_ae_gmm_state_pkl) if fixed_ae_gmm_state_pkl is not None else None,
+                    "existing_scored_ledger_path": str(existing_scored_ledger_path) if existing_scored_ledger_path is not None else None,
+                    "missing_only": True,
+                    "outputs": {key: str(value) for key, value in paths.items()},
+                }
+            )
+            paths["manifest"].write_text(json.dumps(_json_safe(manifest), indent=2), encoding="utf-8")
+            return manifest
         raise RuntimeError("No valid OOS folds prepared")
     hpo_folds = [max(folds, key=lambda fold: int(fold.get("train_rows", 0)))]
     summaries: list[dict[str, Any]] = []
@@ -1535,6 +2153,8 @@ def run_hpo(
             trial_counter += 1
 
     summary_df = pd.DataFrame(summaries).sort_values("objective", ascending=False).reset_index(drop=True)
+    if "rank" in summary_df.columns:
+        summary_df = summary_df.drop(columns=["rank"])
     summary_df.insert(0, "rank", np.arange(1, len(summary_df) + 1, dtype=np.int32))
     folds_df = pd.DataFrame(fold_rows)
     diagnostics_df = pd.DataFrame(diagnostics)
@@ -1566,9 +2186,12 @@ def run_hpo(
             trial_number=best_trial_number,
             max_train_rows=int(max_train_rows),
             seed=int(seed),
+            save_fold_models_dir=(output_dir / "models") if bool(save_fold_models) else None,
         )
+        saved_fold_models = list(best_ledger.attrs.get("saved_fold_models", []))
         best_ledger.to_parquet(paths["best_oos_scored_ledger"], index=False)
     else:
+        saved_fold_models = []
         pd.DataFrame().to_parquet(paths["best_oos_scored_ledger"], index=False)
     paths["best_params"].write_text(json.dumps(_json_safe(best), indent=2), encoding="utf-8")
     manifest.update(
@@ -1590,7 +2213,42 @@ def run_hpo(
             "hpo_max_train_rows": int(hpo_max_train_rows),
             "n_trials_requested": int(n_trials),
             "fixed_params_json": str(fixed_params_path) if fixed_params_path is not None else None,
+            "fixed_selected_features_csv": str(fixed_selected_features_csv) if fixed_selected_features_csv is not None else None,
+            "fixed_selected_features_count": int(len(fixed_selected_features or [])),
+            "fixed_ae_gmm_state_pkl": str(fixed_ae_gmm_state_pkl) if fixed_ae_gmm_state_pkl is not None else None,
+            "train_window_days": int(train_window_days),
+            "ae_gmm_anchor_days": int(ae_gmm_anchor_days),
+            "ae_gmm_input_features_csv": str(ae_gmm_input_features_csv) if ae_gmm_input_features_csv is not None else None,
+            "ae_gmm_input_feature_count": int(len(ae_gmm_input_features or [])),
+            "ae_gmm_input_policy": str(ae_gmm_input_policy_diag.get("policy", "")),
+            "ae_gmm_input_feature_count_before_policy": int(
+                ae_gmm_input_policy_diag.get("selected_input_feature_count_before_policy", 0) or 0
+            ),
+            "ae_gmm_input_removed_raw_momentum_count": int(
+                ae_gmm_input_policy_diag.get("removed_raw_momentum_count", 0) or 0
+            ),
+            "ae_gmm_input_added_normalized_momentum_count": int(
+                ae_gmm_input_policy_diag.get("added_normalized_momentum_count", 0) or 0
+            ),
+            "ae_gmm_input_removed_raw_momentum_features": list(
+                ae_gmm_input_policy_diag.get("removed_raw_momentum_features", []) or []
+            ),
+            "ae_gmm_input_added_normalized_momentum_features": list(
+                ae_gmm_input_policy_diag.get("added_normalized_momentum_features", []) or []
+            ),
+            "ae_gmm_state_ae_max_train_rows": int(ae_gmm_state_feature_max_train_rows),
+            "ae_gmm_state_gmm_max_train_rows": int(ae_gmm_state_feature_gmm_max_train_rows),
+            "ae_gmm_refit_per_window": bool(refit_ae_gmm_per_window),
+            "ae_gmm_state_reuse_policy": (
+                "refit_each_window"
+                if bool(refit_ae_gmm_per_window)
+                else "fit_reference_feature_selection_hpo_fold_then_reuse_frozen_state"
+            ),
+            "existing_scored_ledger_path": str(existing_scored_ledger_path) if existing_scored_ledger_path is not None else None,
+            "missing_only": bool(missing_only),
             "rerun_hpo": bool(rerun_hpo),
+            "save_fold_models": bool(save_fold_models),
+            "saved_fold_models": _json_safe(saved_fold_models),
             "search_mode": "fixed_params_eval" if fixed_params_path is not None and not bool(rerun_hpo) else "hpo",
             "seed": int(seed),
             "top_fracs": list(TOP_FRACS),
@@ -1629,14 +2287,82 @@ def parse_args() -> argparse.Namespace:
         help="Evaluate this fixed parameter recipe instead of launching HPO. Pass an empty path with --rerun-hpo to search.",
     )
     parser.add_argument(
+        "--fixed-selected-features-csv",
+        type=Path,
+        default=None,
+        help="CSV/JSON of previously selected features. When set, skips feature selection and reuses these columns.",
+    )
+    parser.add_argument(
+        "--fixed-ae-gmm-state-pkl",
+        type=Path,
+        default=None,
+        help=(
+            "Persisted AE/GMM state artifact to reuse for generated AE/GMM features. "
+            "When set, the runner does not refit the global AE/GMM state on the scoring fold."
+        ),
+    )
+    parser.add_argument(
+        "--allow-refit-ae-gmm-with-fixed-features",
+        action="store_true",
+        help=(
+            "Diagnostic-only escape hatch. Allows refitting AE/GMM while reusing a "
+            "fixed selected-feature list that contains AE/GMM-generated columns. "
+            "For frozen replay/inference parity, pass --fixed-ae-gmm-state-pkl instead."
+        ),
+    )
+    parser.add_argument(
+        "--existing-scored-ledger",
+        type=Path,
+        default=None,
+        help="Existing scored ledger used to identify already-scored __ts__/__symbol__/side rows.",
+    )
+    parser.add_argument(
+        "--missing-only",
+        action="store_true",
+        help="Score only OOS rows absent from --existing-scored-ledger while keeping the full train window.",
+    )
+    parser.add_argument(
         "--rerun-hpo",
         action="store_true",
         help="Ignore --fixed-params-json for search control and run the baseline/Optuna HPO arms.",
     )
     parser.add_argument("--no-ae-gmm-state-features", action="store_true")
-    parser.add_argument("--ae-gmm-state-feature-max-train-rows", type=int, default=DEFAULT_AE_GMM_STATE_FEATURE_MAX_TRAIN_ROWS)
+    parser.add_argument(
+        "--ae-gmm-state-feature-max-train-rows",
+        type=int,
+        default=DEFAULT_AE_GMM_STATE_FEATURE_MAX_TRAIN_ROWS,
+        help="Rows used to fit the denoising AE state on the train-only reference sample.",
+    )
+    parser.add_argument(
+        "--ae-gmm-state-feature-gmm-max-train-rows",
+        type=int,
+        default=DEFAULT_AE_GMM_STATE_FEATURE_GMM_MAX_TRAIN_ROWS,
+        help="Latent train-only rows used to fit/HPO the GMM after the AE is frozen.",
+    )
     parser.add_argument("--ae-gmm-state-feature-max-iter", type=int, default=DEFAULT_AE_GMM_STATE_FEATURE_MAX_ITER)
-    parser.add_argument("--feature-selection-top-n", type=int, default=0)
+    parser.add_argument(
+        "--refit-ae-gmm-per-window",
+        action="store_true",
+        help=(
+            "Diagnostic-only legacy mode. Refit AE/GMM for every OOS window instead of "
+            "fitting once on the feature-selection/HPO reference fold and reusing that frozen state."
+        ),
+    )
+    parser.add_argument(
+        "--feature-selection-top-n",
+        type=int,
+        default=0,
+        help=(
+            "Legacy explicit selected-feature cap. Default 0 keeps the native MDA "
+            "auto-count path; positive values are ignored unless "
+            "--force-feature-selection-top-n is also set."
+        ),
+    )
+    parser.add_argument(
+        "--force-feature-selection-top-n",
+        action="store_true",
+        help="Honor --feature-selection-top-n as an explicit cap instead of MDA auto-count.",
+    )
     parser.add_argument("--feature-selection-target-mode", choices=TARGET_MODES, default="time_decay_policy")
     parser.add_argument(
         "--feature-selection-method",
@@ -1650,11 +2376,46 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="When positive, split each requested OOS month into windows no longer than this many days.",
     )
+    parser.add_argument(
+        "--train-window-days",
+        type=int,
+        default=0,
+        help="When positive, train each OOS fold only on rows in [valid_start-N days, valid_start).",
+    )
+    parser.add_argument(
+        "--ae-gmm-anchor-days",
+        type=int,
+        default=0,
+        help=(
+            "When positive with --train-window-days, fit the AE/GMM state on the N days "
+            "immediately before the train window, then transform train/OOS rows with it."
+        ),
+    )
+    parser.add_argument(
+        "--ae-gmm-input-features-csv",
+        type=Path,
+        default=None,
+        help="CSV/JSON feature list used only as AE/GMM state inputs; model columns remain controlled separately.",
+    )
+    parser.add_argument(
+        "--save-fold-models",
+        action="store_true",
+        help="Persist each final OOS scoring fold's fitted base model plus columns.json and leakage manifest.",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    feature_selection_top_n = int(args.feature_selection_top_n)
+    if feature_selection_top_n > 0 and not bool(args.force_feature_selection_top_n):
+        print(
+            "[feature_selection] ignoring explicit --feature-selection-top-n="
+            f"{feature_selection_top_n}; using MDA auto-count. Pass "
+            "--force-feature-selection-top-n to cap intentionally.",
+            flush=True,
+        )
+        feature_selection_top_n = 0
     manifest = run_hpo(
         labels_path=args.labels_path,
         feature_dir=args.feature_dir,
@@ -1668,13 +2429,24 @@ def main() -> int:
         seed=int(args.seed),
         include_ae_gmm_state_features=not bool(args.no_ae_gmm_state_features),
         ae_gmm_state_feature_max_train_rows=int(args.ae_gmm_state_feature_max_train_rows),
+        ae_gmm_state_feature_gmm_max_train_rows=int(args.ae_gmm_state_feature_gmm_max_train_rows),
         ae_gmm_state_feature_max_iter=int(args.ae_gmm_state_feature_max_iter),
-        feature_selection_top_n=int(args.feature_selection_top_n),
+        feature_selection_top_n=int(feature_selection_top_n),
         feature_selection_target_mode=str(args.feature_selection_target_mode),
         feature_selection_method=str(args.feature_selection_method),
         max_oos_model_age_days=int(args.max_oos_model_age_days),
+        train_window_days=int(args.train_window_days),
+        ae_gmm_anchor_days=int(args.ae_gmm_anchor_days),
+        ae_gmm_input_features_csv=args.ae_gmm_input_features_csv,
         fixed_params_json=args.fixed_params_json if str(args.fixed_params_json).strip() else None,
+        fixed_selected_features_csv=args.fixed_selected_features_csv,
+        fixed_ae_gmm_state_pkl=args.fixed_ae_gmm_state_pkl,
+        allow_refit_ae_gmm_with_fixed_features=bool(args.allow_refit_ae_gmm_with_fixed_features),
+        refit_ae_gmm_per_window=bool(args.refit_ae_gmm_per_window),
+        existing_scored_ledger_path=args.existing_scored_ledger,
+        missing_only=bool(args.missing_only),
         rerun_hpo=bool(args.rerun_hpo),
+        save_fold_models=bool(args.save_fold_models),
     )
     print(json.dumps(_json_safe(manifest), indent=2))
     return 0

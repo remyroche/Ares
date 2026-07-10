@@ -136,6 +136,64 @@ def test_dynamic_threshold_widens_with_open_positions():
     assert abs(thr - 0.75) < 1e-12
 
 
+def test_archetype_loss_streak_blocks_only_that_archetype():
+    pm = PortfolioManager(
+        portfolio_value=10000.0,
+        max_consecutive_losing_trades=10,
+        max_consecutive_losing_trades_per_archetype=5,
+    )
+    t0 = pd.Timestamp("2026-01-01", tz="UTC")
+    for i in range(5):
+        symbol = f"LOSS{i}/USDT"
+        pm.record_position_open(
+            symbol=symbol,
+            side="long",
+            strategy_id="long_meta",
+            position_size=100.0,
+            entry_price=100.0,
+            entry_time=t0 + pd.Timedelta(minutes=i),
+            policy_archetype="long__weak_path",
+        )
+        result = pm.record_position_close(
+            symbol=symbol,
+            exit_price=99.0,
+            exit_time=t0 + pd.Timedelta(minutes=i, seconds=1),
+            exit_reason="test_loss",
+        )
+
+    assert result is not None
+    assert result["consecutive_losing_trades"] == 5
+    assert result["archetype_consecutive_losing_trades"] == 5
+    assert result["risk_guard_events"][0]["event"] == "archetype_loss_streak_disabled"
+    assert not pm.manual_reset_required
+
+    blocked, blocked_info = pm.can_enter_position(
+        symbol="BLOCKED/USDT",
+        side="long",
+        strategy_id="long_meta",
+        confidence_score=1.0,
+        initial_threshold=0.5,
+        current_time=t0 + pd.Timedelta(minutes=10),
+        requested_position_size=100.0,
+        policy_archetype="long__weak_path",
+    )
+    assert not blocked
+    assert blocked_info["reason"] == "archetype_loss_streak_block"
+
+    allowed, allowed_info = pm.can_enter_position(
+        symbol="OTHER/USDT",
+        side="long",
+        strategy_id="long_meta",
+        confidence_score=1.0,
+        initial_threshold=0.5,
+        current_time=t0 + pd.Timedelta(minutes=10),
+        requested_position_size=100.0,
+        policy_archetype="long__clean_pullback",
+    )
+    assert allowed
+    assert allowed_info["reason"] == "allowed"
+
+
 def test_portfolio_manager_fetches_wallet_and_exchange_positions():
     class _Exchange:
         def __init__(self):

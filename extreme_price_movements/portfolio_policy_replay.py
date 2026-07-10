@@ -45,6 +45,8 @@ class PortfolioPolicyParams:
     threshold_viability_margin: float = 0.0
     occupancy_threshold_alpha: float = 0.30
     occupancy_threshold_power: float = 1.50
+    allocation_threshold_alpha: float = 0.0
+    allocation_threshold_power: float = 1.0
 
     rank_size_power: float = 1.50
     rank_multiplier_min: float = 0.50
@@ -54,6 +56,10 @@ class PortfolioPolicyParams:
     min_liquidity_capacity_weight: Optional[float] = None
     min_position_size: float = 1.0
     cooldown_hours_after_loss: float = 24.0
+    max_consecutive_losing_trades: int = 0
+    global_loss_cooldown_hours: float = 0.0
+    max_consecutive_losing_trades_per_archetype: int = 0
+    archetype_loss_cooldown_hours: float = 0.0
     max_side_concentration: Optional[float] = None
     max_strategy_concentration: Optional[float] = None
 
@@ -73,6 +79,8 @@ class PortfolioPolicyParams:
                 "threshold_viability_margin": float(self.threshold_viability_margin),
                 "occupancy_threshold_alpha": float(self.occupancy_threshold_alpha),
                 "occupancy_threshold_power": float(self.occupancy_threshold_power),
+                "allocation_threshold_alpha": float(self.allocation_threshold_alpha),
+                "allocation_threshold_power": float(self.allocation_threshold_power),
             },
             "concurrency": {
                 "max_concurrent_positions": int(self.max_concurrent_positions),
@@ -105,6 +113,19 @@ class PortfolioPolicyParams:
                 "max_side_concentration": self.max_side_concentration,
                 "max_strategy_concentration": self.max_strategy_concentration,
             },
+            "risk": {
+                "cooldown_hours_after_loss": float(self.cooldown_hours_after_loss),
+                "max_consecutive_losing_trades": int(
+                    self.max_consecutive_losing_trades
+                ),
+                "global_loss_cooldown_hours": float(self.global_loss_cooldown_hours),
+                "max_consecutive_losing_trades_per_archetype": int(
+                    self.max_consecutive_losing_trades_per_archetype
+                ),
+                "archetype_loss_cooldown_hours": float(
+                    self.archetype_loss_cooldown_hours
+                ),
+            },
             "adaptive_quality": {"enabled": False},
         }
 
@@ -118,6 +139,8 @@ class PortfolioPolicyParams:
             threshold_viability_margin=float(self.threshold_viability_margin),
             occupancy_threshold_alpha=float(self.occupancy_threshold_alpha),
             occupancy_threshold_power=float(self.occupancy_threshold_power),
+            allocation_threshold_alpha=float(self.allocation_threshold_alpha),
+            allocation_threshold_power=float(self.allocation_threshold_power),
             portfolio_policy_version=self.portfolio_policy_version,
             max_new_entries_per_bar=int(self.max_new_entries_per_bar),
             max_new_entries_per_strategy_per_bar=(
@@ -132,6 +155,10 @@ class PortfolioPolicyParams:
             rank_multiplier_min=float(self.rank_multiplier_min),
             rank_multiplier_max=float(self.rank_multiplier_max),
             rank_size_power=float(self.rank_size_power),
+            max_consecutive_losing_trades=int(self.max_consecutive_losing_trades),
+            max_consecutive_losing_trades_per_archetype=int(
+                self.max_consecutive_losing_trades_per_archetype
+            ),
             strategy_ids=tuple(self.strategy_ids),
             strategy_cores=tuple(self.strategy_cores),
         )
@@ -148,6 +175,7 @@ def portfolio_policy_params_from_live_config(
     sizing = payload.get("sizing", {})
     friction = payload.get("friction", {})
     guardrails = payload.get("guardrails", {})
+    risk = payload.get("risk", {})
     contract = payload.get("strategy_contract", {})
     if not isinstance(selection, dict):
         selection = {}
@@ -161,6 +189,8 @@ def portfolio_policy_params_from_live_config(
         friction = {}
     if not isinstance(guardrails, dict):
         guardrails = {}
+    if not isinstance(risk, dict):
+        risk = {}
     if not isinstance(contract, dict):
         contract = {}
 
@@ -258,6 +288,20 @@ def portfolio_policy_params_from_live_config(
                 PortfolioPolicyParams.occupancy_threshold_power,
             )
         ),
+        allocation_threshold_alpha=float(
+            _section_get(
+                selection,
+                "allocation_threshold_alpha",
+                PortfolioPolicyParams.allocation_threshold_alpha,
+            )
+        ),
+        allocation_threshold_power=float(
+            _section_get(
+                selection,
+                "allocation_threshold_power",
+                PortfolioPolicyParams.allocation_threshold_power,
+            )
+        ),
         rank_size_power=float(
             _section_get(sizing, "rank_size_power", PortfolioPolicyParams.rank_size_power)
         ),
@@ -303,6 +347,41 @@ def portfolio_policy_params_from_live_config(
                 PortfolioPolicyParams.max_strategy_concentration,
             )
         ),
+        cooldown_hours_after_loss=float(
+            _section_get(
+                risk,
+                "cooldown_hours_after_loss",
+                PortfolioPolicyParams.cooldown_hours_after_loss,
+            )
+        ),
+        max_consecutive_losing_trades=int(
+            _section_get(
+                risk,
+                "max_consecutive_losing_trades",
+                PortfolioPolicyParams.max_consecutive_losing_trades,
+            )
+        ),
+        global_loss_cooldown_hours=float(
+            _section_get(
+                risk,
+                "global_loss_cooldown_hours",
+                PortfolioPolicyParams.global_loss_cooldown_hours,
+            )
+        ),
+        max_consecutive_losing_trades_per_archetype=int(
+            _section_get(
+                risk,
+                "max_consecutive_losing_trades_per_archetype",
+                PortfolioPolicyParams.max_consecutive_losing_trades_per_archetype,
+            )
+        ),
+        archetype_loss_cooldown_hours=float(
+            _section_get(
+                risk,
+                "archetype_loss_cooldown_hours",
+                PortfolioPolicyParams.archetype_loss_cooldown_hours,
+            )
+        ),
         portfolio_policy_version=str(
             payload.get(
                 "portfolio_policy_version",
@@ -334,6 +413,7 @@ class OpenPosition:
     exit_price: float = np.nan
     fees_bps: float = 0.0
     mtm_path_gross_returns: Optional[Tuple[float, ...]] = None
+    policy_archetype: str = "missing"
 
 
 @dataclass
@@ -346,6 +426,11 @@ class PortfolioState:
     side_open: Dict[str, int] = field(default_factory=lambda: {"long": 0, "short": 0})
     strategy_open: Dict[str, int] = field(default_factory=dict)
     symbol_open: Dict[str, int] = field(default_factory=dict)
+    consecutive_losing_trades: int = 0
+    archetype_consecutive_losing_trades: Dict[str, int] = field(default_factory=dict)
+    global_loss_cooldown_until: Optional[pd.Timestamp] = None
+    archetype_loss_cooldowns: Dict[str, pd.Timestamp] = field(default_factory=dict)
+    loss_guard_events: List[Dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.open_positions and not self.strategy_open and not self.symbol_open:
@@ -372,6 +457,21 @@ class PortfolioState:
             side_open={str(key): int(value) for key, value in self.side_open.items()},
             strategy_open={str(key): int(value) for key, value in self.strategy_open.items()},
             symbol_open={str(key): int(value) for key, value in self.symbol_open.items()},
+            consecutive_losing_trades=int(self.consecutive_losing_trades),
+            archetype_consecutive_losing_trades={
+                str(key): int(value)
+                for key, value in self.archetype_consecutive_losing_trades.items()
+            },
+            global_loss_cooldown_until=(
+                pd.Timestamp(self.global_loss_cooldown_until)
+                if self.global_loss_cooldown_until is not None
+                else None
+            ),
+            archetype_loss_cooldowns={
+                str(key): pd.Timestamp(value)
+                for key, value in self.archetype_loss_cooldowns.items()
+            },
+            loss_guard_events=[dict(event) for event in self.loss_guard_events],
         )
 
     def _decrement_position_counts(self, pos: OpenPosition) -> None:
@@ -398,17 +498,129 @@ class PortfolioState:
         )
         self.symbol_open[pos.symbol] = int(self.symbol_open.get(pos.symbol, 0)) + 1
 
+    @staticmethod
+    def _manual_block_until() -> pd.Timestamp:
+        return pd.Timestamp("2262-01-01", tz="UTC")
+
+    @staticmethod
+    def _normalise_archetype_key(policy_archetype: Any) -> str:
+        text = str(policy_archetype or "").strip()
+        return text if text else "missing_policy_archetype"
+
+    @classmethod
+    def _block_until(cls, timestamp: pd.Timestamp, cooldown_hours: float) -> pd.Timestamp:
+        ts = pd.Timestamp(timestamp)
+        if ts.tzinfo is None:
+            ts = ts.tz_localize("UTC")
+        if float(cooldown_hours) > 0.0:
+            return ts + pd.Timedelta(hours=float(cooldown_hours))
+        return cls._manual_block_until()
+
+    def _expire_loss_guards(self, timestamp: pd.Timestamp) -> None:
+        ts = pd.Timestamp(timestamp)
+        if ts.tzinfo is None:
+            ts = ts.tz_localize("UTC")
+        if (
+            self.global_loss_cooldown_until is not None
+            and pd.Timestamp(self.global_loss_cooldown_until) <= ts
+        ):
+            self.global_loss_cooldown_until = None
+            self.consecutive_losing_trades = 0
+        self.archetype_loss_cooldowns = {
+            key: pd.Timestamp(until)
+            for key, until in self.archetype_loss_cooldowns.items()
+            if pd.Timestamp(until) > ts
+        }
+
+    def loss_guard_block_reason(
+        self, timestamp: pd.Timestamp, policy_archetype: Any
+    ) -> Optional[str]:
+        self._expire_loss_guards(timestamp)
+        ts = pd.Timestamp(timestamp)
+        if ts.tzinfo is None:
+            ts = ts.tz_localize("UTC")
+        if (
+            self.global_loss_cooldown_until is not None
+            and pd.Timestamp(self.global_loss_cooldown_until) > ts
+        ):
+            return "global_loss_streak_block"
+        archetype_key = self._normalise_archetype_key(policy_archetype)
+        until = self.archetype_loss_cooldowns.get(archetype_key)
+        if until is not None and pd.Timestamp(until) > ts:
+            return "archetype_loss_streak_block"
+        return None
+
     def close_due(
-        self, timestamp: pd.Timestamp, *, cooldown_hours_after_loss: float = 24.0
+        self,
+        timestamp: pd.Timestamp,
+        *,
+        cooldown_hours_after_loss: float = 24.0,
+        max_consecutive_losing_trades: int = 0,
+        global_loss_cooldown_hours: float = 0.0,
+        max_consecutive_losing_trades_per_archetype: int = 0,
+        archetype_loss_cooldown_hours: float = 0.0,
     ) -> float:
         realized = 0.0
         still_open: List[OpenPosition] = []
+        self._expire_loss_guards(timestamp)
         for pos in self.open_positions:
             if pos.exit_timestamp <= timestamp:
                 pnl = float(pos.position_size) * float(pos.net_return)
                 self.wallet += pnl
                 realized += pnl
                 self.closed_positions.append(pos)
+                archetype_key = self._normalise_archetype_key(pos.policy_archetype)
+                if pnl > 0.0:
+                    self.consecutive_losing_trades = 0
+                    self.archetype_consecutive_losing_trades[archetype_key] = 0
+                else:
+                    self.consecutive_losing_trades += 1
+                    archetype_streak = (
+                        int(self.archetype_consecutive_losing_trades.get(archetype_key, 0))
+                        + 1
+                    )
+                    self.archetype_consecutive_losing_trades[archetype_key] = (
+                        archetype_streak
+                    )
+                    if (
+                        int(max_consecutive_losing_trades_per_archetype) > 0
+                        and archetype_streak
+                        >= int(max_consecutive_losing_trades_per_archetype)
+                    ):
+                        until = self._block_until(
+                            pos.exit_timestamp, float(archetype_loss_cooldown_hours)
+                        )
+                        self.archetype_loss_cooldowns[archetype_key] = until
+                        self.loss_guard_events.append(
+                            {
+                                "event": "archetype_loss_streak_block",
+                                "timestamp": pd.Timestamp(pos.exit_timestamp),
+                                "policy_archetype": archetype_key,
+                                "streak": int(archetype_streak),
+                                "threshold": int(
+                                    max_consecutive_losing_trades_per_archetype
+                                ),
+                                "blocked_until": until,
+                            }
+                        )
+                    if (
+                        int(max_consecutive_losing_trades) > 0
+                        and self.consecutive_losing_trades
+                        >= int(max_consecutive_losing_trades)
+                    ):
+                        until = self._block_until(
+                            pos.exit_timestamp, float(global_loss_cooldown_hours)
+                        )
+                        self.global_loss_cooldown_until = until
+                        self.loss_guard_events.append(
+                            {
+                                "event": "global_loss_streak_block",
+                                "timestamp": pd.Timestamp(pos.exit_timestamp),
+                                "streak": int(self.consecutive_losing_trades),
+                                "threshold": int(max_consecutive_losing_trades),
+                                "blocked_until": until,
+                            }
+                        )
                 if pnl <= 0.0 and float(cooldown_hours_after_loss) > 0.0:
                     self.cooldowns[pos.symbol] = pos.exit_timestamp + pd.Timedelta(
                         hours=float(cooldown_hours_after_loss)
@@ -422,6 +634,7 @@ class PortfolioState:
             for symbol, until in self.cooldowns.items()
             if until > timestamp
         }
+        self._expire_loss_guards(timestamp)
         return realized
 
     @property
@@ -487,6 +700,7 @@ class CandidateReplayCache:
     groups: Tuple[np.ndarray, ...]
     symbol: np.ndarray
     side: np.ndarray
+    policy_archetype: np.ndarray
     side_order: np.ndarray
     strategy_id: np.ndarray
     rank_score: np.ndarray
@@ -500,6 +714,7 @@ class CandidateReplayCache:
     portfolio_max_concurrent_per_strategy: np.ndarray
     portfolio_wallet_cap_multiplier: np.ndarray
     portfolio_size_multiplier: np.ndarray
+    portfolio_rank_size_power: np.ndarray
     portfolio_priority_multiplier: np.ndarray
     portfolio_priority_adjustment: np.ndarray
     portfolio_rank_adjustment: np.ndarray
@@ -528,12 +743,19 @@ def _candidate_cache(candidates: pd.DataFrame) -> CandidateReplayCache:
         groups = ()
         unique_timestamps = np.asarray([], dtype="datetime64[ns]")
     side = work["side"].astype(str).to_numpy()
+    if "policy_archetype" in work.columns:
+        policy_archetype = work["policy_archetype"].fillna("missing").astype(str).to_numpy()
+    elif "local_side_archetype" in work.columns:
+        policy_archetype = work["local_side_archetype"].fillna("missing").astype(str).to_numpy()
+    else:
+        policy_archetype = np.full(len(work), "missing", dtype=object)
     return CandidateReplayCache(
         frame=work,
         timestamps=unique_timestamps,
         groups=groups,
         symbol=work["symbol"].astype(str).to_numpy(),
         side=side,
+        policy_archetype=policy_archetype,
         side_order=np.asarray([_side_sort_key(value) for value in side], dtype=np.int8),
         strategy_id=work["strategy_id"].astype(str).to_numpy(),
         rank_score=pd.to_numeric(work["normalized_rank_score"], errors="coerce").to_numpy(dtype=float),
@@ -572,6 +794,12 @@ def _candidate_cache(candidates: pd.DataFrame) -> CandidateReplayCache:
         ).fillna(1.0).clip(lower=0.0).to_numpy(dtype=float)
         if "portfolio_size_multiplier" in work.columns
         else np.ones(len(work), dtype=float),
+        portfolio_rank_size_power=pd.to_numeric(
+            work.get("portfolio_rank_size_power"),
+            errors="coerce",
+        ).replace([np.inf, -np.inf], np.nan).to_numpy(dtype=float)
+        if "portfolio_rank_size_power" in work.columns
+        else np.full(len(work), np.nan, dtype=float),
         portfolio_priority_multiplier=pd.to_numeric(
             work.get("portfolio_priority_multiplier"),
             errors="coerce",
@@ -746,6 +974,7 @@ def normalise_candidate_table(candidates: pd.DataFrame) -> pd.DataFrame:
         "portfolio_max_concurrent_per_strategy",
         "portfolio_wallet_cap_multiplier",
         "portfolio_size_multiplier",
+        "portfolio_rank_size_power",
         "portfolio_priority_multiplier",
         "portfolio_priority_adjustment",
         "portfolio_rank_adjustment",
@@ -791,14 +1020,17 @@ def normalise_candidate_table(candidates: pd.DataFrame) -> pd.DataFrame:
             "gross_return",
         ]
     )
-    key_cols = ["timestamp", "symbol", "strategy_id"]
+    # The live/base-meta handoff can contain simultaneous long and short
+    # candidates for the same symbol and strategy. Treating side as outside the
+    # decision key makes a valid side-aware candidate table look duplicated.
+    key_cols = ["timestamp", "symbol", "side", "strategy_id"]
     dupes = int(out.duplicated(key_cols).sum())
     if dupes:
         raise ValueError(
             "candidate table has duplicate decision keys "
             f"{key_cols}: {dupes} duplicate rows"
         )
-    out = out.sort_values(["timestamp", "strategy_id", "symbol"]).reset_index(drop=True)
+    out = out.sort_values(["timestamp", "strategy_id", "symbol", "side"]).reset_index(drop=True)
     out.attrs["portfolio_policy_candidates_normalised"] = True
     return out
 
@@ -819,33 +1051,49 @@ def dynamic_threshold_for_count(
     base_strategy_threshold: float,
     open_positions: int,
     params: PortfolioPolicyParams,
+    *,
+    allocation_share: float = 0.0,
 ) -> float:
     base = max(float(base_strategy_threshold), float(params.global_threshold_floor))
     occupancy = int(open_positions) / max(int(params.max_concurrent_positions), 1)
-    uplift = (
+    occupancy_uplift = (
         float(params.occupancy_threshold_alpha)
         * float(occupancy) ** float(params.occupancy_threshold_power)
         * (1.0 - base)
     )
-    return float(min(base + uplift, 0.999))
+    allocated = float(np.clip(allocation_share, 0.0, 1.0))
+    allocation_uplift = (
+        float(params.allocation_threshold_alpha)
+        * allocated ** float(params.allocation_threshold_power)
+        * (1.0 - base)
+    )
+    return float(min(base + occupancy_uplift + allocation_uplift, 0.999))
 
 
 def dynamic_threshold_values(
     base_strategy_thresholds: np.ndarray,
     open_positions: int,
     params: PortfolioPolicyParams,
+    *,
+    allocation_share: float = 0.0,
 ) -> np.ndarray:
     base = np.maximum(
         np.asarray(base_strategy_thresholds, dtype=float),
         float(params.global_threshold_floor),
     )
     occupancy = int(open_positions) / max(int(params.max_concurrent_positions), 1)
-    uplift = (
+    occupancy_uplift = (
         float(params.occupancy_threshold_alpha)
         * float(occupancy) ** float(params.occupancy_threshold_power)
         * (1.0 - base)
     )
-    return np.minimum(base + uplift, 0.999)
+    allocated = float(np.clip(allocation_share, 0.0, 1.0))
+    allocation_uplift = (
+        float(params.allocation_threshold_alpha)
+        * allocated ** float(params.allocation_threshold_power)
+        * (1.0 - base)
+    )
+    return np.minimum(base + occupancy_uplift + allocation_uplift, 0.999)
 
 
 def fit_monotone_ev_curve(candidates: pd.DataFrame, bins: int = 20) -> Dict[str, Any]:
@@ -908,12 +1156,30 @@ def fit_hierarchical_ev_curves(
     min_group_rows: int = 80,
     shrink_rows: int = 240,
 ) -> Dict[str, Any]:
-    """Fit strategy/side EV curves with shrinkage to a global monotone curve."""
+    """Fit strategy/side/archetype EV curves with shrinkage to a global curve."""
     work = normalise_candidate_table(candidates)
+    if "policy_archetype" not in work.columns:
+        if "local_side_archetype" in work.columns:
+            work["policy_archetype"] = work["local_side_archetype"]
+        else:
+            work["policy_archetype"] = "missing"
+    work["policy_archetype"] = work["policy_archetype"].fillna("missing").astype(str)
     global_curve = fit_monotone_ev_curve(work, bins=bins)
+    by_strategy_side_archetype: Dict[str, Any] = {}
+    by_side_archetype: Dict[str, Any] = {}
     by_strategy_side: Dict[str, Any] = {}
     by_strategy: Dict[str, Any] = {}
     if not work.empty:
+        for (side, archetype), group in work.groupby(["side", "policy_archetype"], sort=True):
+            curve = fit_monotone_ev_curve(group, bins=bins)
+            n = int(curve.get("n_rows", len(group)))
+            if n >= int(min_group_rows):
+                by_side_archetype[f"{side}|{archetype}"] = _shrunk_ev_curve(
+                    curve,
+                    global_curve,
+                    support_rows=n,
+                    shrink_rows=int(shrink_rows),
+                )
         for strategy_id, group in work.groupby("strategy_id", sort=True):
             curve = fit_monotone_ev_curve(group, bins=bins)
             n = int(curve.get("n_rows", len(group)))
@@ -934,9 +1200,21 @@ def fit_hierarchical_ev_curves(
                         support_rows=n_side,
                         shrink_rows=int(shrink_rows),
                     )
+                for archetype, archetype_group in side_group.groupby("policy_archetype", sort=True):
+                    archetype_curve = fit_monotone_ev_curve(archetype_group, bins=bins)
+                    n_archetype = int(archetype_curve.get("n_rows", len(archetype_group)))
+                    if n_archetype >= int(min_group_rows):
+                        by_strategy_side_archetype[f"{strategy_id}|{side}|{archetype}"] = _shrunk_ev_curve(
+                            archetype_curve,
+                            global_curve,
+                            support_rows=n_archetype,
+                            shrink_rows=int(shrink_rows),
+                        )
     return {
         "schema": "hierarchical_ev_curve_v1",
         "global": global_curve,
+        "strategy_side_archetype": by_strategy_side_archetype,
+        "side_archetype": by_side_archetype,
         "strategy_side": by_strategy_side,
         "strategy": by_strategy,
         "min_group_rows": int(min_group_rows),
@@ -950,11 +1228,26 @@ def _select_ev_curve(
     *,
     strategy_id: str,
     side: str,
+    policy_archetype: str | None = None,
 ) -> Dict[str, Any]:
     if str(ev_curve.get("schema") or "") != "hierarchical_ev_curve_v1":
         return ev_curve
+    strategy_side_archetype = (
+        ev_curve.get("strategy_side_archetype")
+        if isinstance(ev_curve.get("strategy_side_archetype"), dict)
+        else {}
+    )
+    side_archetype = ev_curve.get("side_archetype") if isinstance(ev_curve.get("side_archetype"), dict) else {}
     strategy_side = ev_curve.get("strategy_side") if isinstance(ev_curve.get("strategy_side"), dict) else {}
     strategy = ev_curve.get("strategy") if isinstance(ev_curve.get("strategy"), dict) else {}
+    archetype = str(policy_archetype or "").strip()
+    if archetype and archetype.lower() not in {"nan", "none", "missing"}:
+        key = f"{strategy_id}|{side}|{archetype}"
+        if key in strategy_side_archetype:
+            return strategy_side_archetype[key]
+        key = f"{side}|{archetype}"
+        if key in side_archetype:
+            return side_archetype[key]
     key = f"{strategy_id}|{side}"
     if key in strategy_side:
         return strategy_side[key]
@@ -1040,6 +1333,7 @@ def portfolio_priority(
         ev_curve,
         strategy_id=str(row.get("strategy_id", "")),
         side=_side(row.get("side"), row.get("strategy_id", "")),
+        policy_archetype=str(row.get("policy_archetype", row.get("local_side_archetype", ""))),
     )
     return portfolio_priority_from_values(
         rank_score,
@@ -1059,6 +1353,7 @@ def portfolio_priority_values_for_rows(
     strategy_ids: np.ndarray,
     sides: np.ndarray,
     ev_curve: Dict[str, Any],
+    policy_archetypes: np.ndarray | None = None,
 ) -> np.ndarray:
     if str(ev_curve.get("schema") or "") != "hierarchical_ev_curve_v1":
         return portfolio_priority_values(
@@ -1071,13 +1366,20 @@ def portfolio_priority_values_for_rows(
     out = np.full(len(rank_scores), float("-inf"), dtype=float)
     strategy_values = np.asarray(strategy_ids).astype(str)
     side_values = np.asarray(sides).astype(str)
-    keys = np.asarray([f"{sid}|{side}" for sid, side in zip(strategy_values, side_values)], dtype=object)
+    if policy_archetypes is None:
+        archetype_values = np.full(len(strategy_values), "", dtype=object)
+    else:
+        archetype_values = np.asarray(policy_archetypes).astype(str)
+    keys = np.asarray(
+        [f"{sid}|{side}|{arch}" for sid, side, arch in zip(strategy_values, side_values, archetype_values)],
+        dtype=object,
+    )
     for key in np.unique(keys):
         mask = keys == key
         if not bool(np.any(mask)):
             continue
-        strategy_id, side = str(key).rsplit("|", 1)
-        curve = _select_ev_curve(ev_curve, strategy_id=strategy_id, side=side)
+        strategy_id, side, archetype = str(key).split("|", 2)
+        curve = _select_ev_curve(ev_curve, strategy_id=strategy_id, side=side, policy_archetype=archetype)
         out[mask] = portfolio_priority_values(
             np.asarray(rank_scores)[mask],
             np.asarray(dynamic_thresholds)[mask],
@@ -1217,13 +1519,27 @@ def replay_candidates(
         realized = state.close_due(
             ts,
             cooldown_hours_after_loss=float(params.cooldown_hours_after_loss),
+            max_consecutive_losing_trades=int(params.max_consecutive_losing_trades),
+            global_loss_cooldown_hours=float(params.global_loss_cooldown_hours),
+            max_consecutive_losing_trades_per_archetype=int(
+                params.max_consecutive_losing_trades_per_archetype
+            ),
+            archetype_loss_cooldown_hours=float(
+                params.archetype_loss_cooldown_hours
+            ),
         )
         if pre_decision_snapshot_callback is not None:
             pre_decision_snapshot_callback(ts, state.clone(), group_idx.copy(), cache)
         entries_this_bar = 0
         strategy_entries_this_bar: Dict[str, int] = {}
+        allocation_share_before_bar = float(
+            state.open_notional / max(float(state.wallet), EPS)
+        )
         thresholds = dynamic_threshold_values(
-            cache.base_threshold[group_idx], len(state.open_positions), params
+            cache.base_threshold[group_idx],
+            len(state.open_positions),
+            params,
+            allocation_share=allocation_share_before_bar,
         )
         effective_rank_scores = np.clip(
             cache.rank_score[group_idx] + cache.portfolio_rank_adjustment[group_idx],
@@ -1237,6 +1553,7 @@ def replay_candidates(
             friction_bps=cache.expected_friction_bps[group_idx],
             strategy_ids=cache.strategy_id[group_idx],
             sides=cache.side[group_idx],
+            policy_archetypes=cache.policy_archetype[group_idx],
             ev_curve=ev_curve,
         )
         priorities = (
@@ -1264,8 +1581,15 @@ def replay_candidates(
                 float(cache.base_threshold[idx]),
                 float(params.global_threshold_floor),
             )
+            wallet_before = float(state.wallet)
+            open_notional_before = float(state.open_notional)
             dyn = dynamic_threshold_for_count(
-                base_threshold, len(state.open_positions), params
+                base_threshold,
+                len(state.open_positions),
+                params,
+                allocation_share=(
+                    float(open_notional_before) / max(float(wallet_before), EPS)
+                ),
             )
             price_gap_bps = float(cache.price_gap_bps[idx])
             expected_friction_bps = float(cache.expected_friction_bps[idx])
@@ -1274,7 +1598,12 @@ def replay_candidates(
                 dyn,
                 price_gap_bps,
                 expected_friction_bps,
-                _select_ev_curve(ev_curve, strategy_id=strategy_id, side=side),
+                _select_ev_curve(
+                    ev_curve,
+                    strategy_id=strategy_id,
+                    side=side,
+                    policy_archetype=str(cache.policy_archetype[idx]),
+                ),
             )
             priority = (
                 priority * float(cache.portfolio_priority_multiplier[idx])
@@ -1294,8 +1623,6 @@ def replay_candidates(
             )
             if np.isfinite(row_strategy_bar_cap):
                 strategy_bar_cap = int(max(0, np.floor(row_strategy_bar_cap)))
-            wallet_before = float(state.wallet)
-            open_notional_before = float(state.open_notional)
             wallet_cap_multiplier = max(
                 _coerce_float(cache.portfolio_wallet_cap_multiplier[idx], 1.0),
                 0.0,
@@ -1322,6 +1649,16 @@ def replay_candidates(
                 state.cooldowns.get(symbol) is not None and state.cooldowns[symbol] > ts
             ):
                 reason = "symbol_in_cooldown"
+            else:
+                loss_guard_reason = state.loss_guard_block_reason(
+                    ts, cache.policy_archetype[idx]
+                )
+                if loss_guard_reason is not None:
+                    reason = loss_guard_reason
+                else:
+                    loss_guard_reason = ""
+            if reason not in {"accepted", ""}:
+                pass
             elif len(state.open_positions) >= int(params.max_concurrent_positions):
                 reason = "max_concurrent_positions_reached"
             elif _cap_reached(side_count_before, params.max_concurrent_per_side):
@@ -1348,6 +1685,10 @@ def replay_candidates(
             ):
                 reason = "price_gap_too_large"
             else:
+                row_rank_size_power = _coerce_float(
+                    cache.portfolio_rank_size_power[idx],
+                    np.nan,
+                )
                 sizing = compute_rank_based_position_size(
                     wallet_value=state.wallet,
                     open_notional=state.open_notional,
@@ -1357,7 +1698,12 @@ def replay_candidates(
                     liquidity_capacity_weight=_coerce_float(
                         cache.liquidity_capacity_weight[idx], 1.0
                     ),
-                    rank_size_power=float(params.rank_size_power),
+                    rank_size_power=(
+                        float(row_rank_size_power)
+                        if np.isfinite(row_rank_size_power)
+                        and row_rank_size_power > 0.0
+                        else float(params.rank_size_power)
+                    ),
                     open_positions=len(state.open_positions),
                     market_mode=market_mode,
                     available_wallet_value=remaining_capital,
@@ -1440,6 +1786,7 @@ def replay_candidates(
                             mtm_path_gross_returns=_coerce_return_path(
                                 cache.mtm_path_gross_returns[idx]
                             ),
+                            policy_archetype=str(cache.policy_archetype[idx]),
                         )
                     )
 
@@ -1498,6 +1845,14 @@ def replay_candidates(
         state.close_due(
             pd.Timestamp(final_ts) + pd.Timedelta(minutes=DEFAULT_BAR_MINUTES),
             cooldown_hours_after_loss=float(params.cooldown_hours_after_loss),
+            max_consecutive_losing_trades=int(params.max_consecutive_losing_trades),
+            global_loss_cooldown_hours=float(params.global_loss_cooldown_hours),
+            max_consecutive_losing_trades_per_archetype=int(
+                params.max_consecutive_losing_trades_per_archetype
+            ),
+            archetype_loss_cooldown_hours=float(
+                params.archetype_loss_cooldown_hours
+            ),
         )
         unrealized_pnl = state.unrealized_pnl(pd.Timestamp(final_ts))
         equity_rows.append(
@@ -1526,6 +1881,13 @@ def replay_candidates(
         initial_wallet=initial_wallet,
         params=params,
     )
+    metrics["loss_guard_event_count"] = int(len(state.loss_guard_events))
+    metrics["loss_guard_events"] = _json_safe(state.loss_guard_events)
+    metrics["final_consecutive_losing_trades"] = int(state.consecutive_losing_trades)
+    metrics["final_archetype_loss_streaks"] = {
+        str(key): int(value)
+        for key, value in state.archetype_consecutive_losing_trades.items()
+    }
     return decisions_df, equity_df, metrics
 
 

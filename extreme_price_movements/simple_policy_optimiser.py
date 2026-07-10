@@ -78,6 +78,14 @@ from extreme_price_movements.late_window_metrics import (
     compute_late_window_hit_rate_summary,
     flatten_late_window_summary,
 )
+from extreme_price_movements.regime_ev_calibration import (
+    CALIBRATION_POLICY_ID,
+    apply_regime_ev_calibration,
+    default_regime_ev_calibration_artifact,
+    default_regime_ev_feature_handoff,
+    load_regime_ev_calibration,
+    required_feature_columns,
+)
 from extreme_price_movements.mr_tf_masks import (
     MASK_COLUMNS,
     MIXED_MASK_COL,
@@ -409,6 +417,19 @@ PER_ARCHETYPE_POLICY_MAX_ARCHETYPES = max(
 PER_ARCHETYPE_POLICY_MAX_TRIALS = max(
     1,
     int(os.environ.get("EPM_SIMPLE_POLICY_PER_ARCHETYPE_MAX_TRIALS", "24") or "24"),
+)
+STABLE_FOLD_POLICY_OBJECTIVE_ENABLED = _env_flag(
+    "EPM_SIMPLE_POLICY_STABLE_FOLD_OBJECTIVE",
+    True,
+)
+STABLE_FOLD_POLICY_OBJECTIVE_STD_WEIGHT = float(
+    os.environ.get("EPM_SIMPLE_POLICY_STABLE_FOLD_OBJECTIVE_STD_WEIGHT", "0.5") or "0.5"
+)
+STABLE_FOLD_POLICY_OBJECTIVE_WORST_WEIGHT = float(
+    os.environ.get("EPM_SIMPLE_POLICY_STABLE_FOLD_OBJECTIVE_WORST_WEIGHT", "0.25") or "0.25"
+)
+GEOMETRY_SHRINKAGE_MIN_STD = float(
+    os.environ.get("EPM_SIMPLE_POLICY_GEOMETRY_SHRINKAGE_MIN_STD", "1e-6") or "1e-6"
 )
 SIMPLE_NET_EV_PREFILTER_ENABLED = _env_flag(
     "EPM_POLICY_STAGE_A0_NET_EV_PREFILTER_ENABLED",
@@ -1086,6 +1107,7 @@ class _PerpPolicy15mReplayStore:
             "EPM_SIMPLE_POLICY_15M_DOWNLOAD",
             False,
         )
+        self.chart_only_15m = _env_flag("EPM_SIMPLE_POLICY_15M_CHART_ONLY", False)
         self._cache: Dict[Tuple[str, str, str], pd.DataFrame] = {}
         self._exchange: Any = None
         self.downloaded_15m_rows = 0
@@ -1233,6 +1255,11 @@ class _PerpPolicy15mReplayStore:
         if cached is not None:
             return self._select_columns(cached, columns)
 
+        if self.chart_only_15m:
+            out = self._fetch_15m_chart(str(symbol), start, end) if start is not None and end is not None else self._empty_frame()
+            self._cache[cache_key] = out
+            return self._select_columns(out, columns)
+
         sym_dir = self._symbol_dir(symbol)
         if sym_dir is None:
             out = self._maybe_fill_from_chart(
@@ -1331,9 +1358,10 @@ def _make_policy_replay_store(data_root: str | Path, market_mode: str) -> Any:
         store = _PerpPolicy15mReplayStore(data_root, market_mode)
         logger.info(
             "Using true 15m perp replay store: execution_root=%s "
-            "download_missing_15m=%s",
+            "download_missing_15m=%s chart_only_15m=%s",
             store.execution_root,
             store.download_missing_15m,
+            store.chart_only_15m,
         )
         return store
     return PartitionedOHLCVStore(
@@ -4979,6 +5007,292 @@ def _finalise_simple_policy_candidates(
     ).reset_index(drop=True)
 
 
+def _candidate_side_name(frame: pd.DataFrame) -> pd.Series:
+    if "side_name" in frame.columns:
+        return frame["side_name"].astype(str).str.lower()
+    if "side" in frame.columns:
+        side_num = pd.to_numeric(frame["side"], errors="coerce")
+        return pd.Series(
+            np.where(side_num.lt(0), "short", "long"),
+            index=frame.index,
+            dtype="object",
+        )
+    if "strategy_id" in frame.columns:
+        strategy = frame["strategy_id"].astype(str).str.lower()
+        return pd.Series(
+            np.where(strategy.str.startswith("short"), "short", "long"),
+            index=frame.index,
+            dtype="object",
+        )
+    return pd.Series("", index=frame.index, dtype="object")
+
+
+def _candidate_archetype_policy_key(frame: pd.DataFrame) -> pd.Series:
+    for col in (
+        "archetype_policy_key",
+        "policy_archetype",
+        "local_side_archetype",
+        "archetype_label_family",
+        "source_archetype",
+    ):
+        if col in frame.columns:
+            values = frame[col].astype(str)
+            if values.str.strip().ne("").any():
+                return values
+    return pd.Series("", index=frame.index, dtype="object")
+
+
+def _join_regime_ev_feature_handoff(
+    rows: pd.DataFrame,
+    *,
+    handoff_path: Path | None,
+    feature_cols: Sequence[str],
+) -> pd.DataFrame:
+    missing = [col for col in feature_cols if col not in rows.columns]
+    if not missing or handoff_path is None or not handoff_path.exists():
+        return rows
+    key_cols = [col for col in ("timestamp", "symbol") if col in rows.columns]
+    if "side_name" in rows.columns:
+        key_cols.append("side_name")
+    elif "side" in rows.columns:
+        key_cols.append("side")
+    if len(key_cols) < 2:
+        return rows
+    try:
+        available = set(pq.read_schema(handoff_path).names)
+        read_cols = [col for col in key_cols + missing if col in available]
+        if "timestamp" in key_cols and "timestamp" not in available and "__ts__" in available:
+            read_cols.append("__ts__")
+        if "symbol" in key_cols and "symbol" not in available and "__symbol__" in available:
+            read_cols.append("__symbol__")
+        if "side_name" in key_cols and "side_name" in available:
+            read_cols.append("side_name")
+        if len(read_cols) <= len(key_cols):
+            return rows
+        handoff = pd.read_parquet(handoff_path, columns=sorted(set(read_cols)))
+    except Exception as exc:
+        logger.warning("Failed to read regime EV feature handoff %s: %s", handoff_path, exc)
+        return rows
+    if handoff.empty:
+        return rows
+    if "__ts__" in handoff.columns and "timestamp" not in handoff.columns:
+        handoff["timestamp"] = pd.to_datetime(handoff["__ts__"], utc=True, errors="coerce")
+    if "__symbol__" in handoff.columns and "symbol" not in handoff.columns:
+        handoff["symbol"] = handoff["__symbol__"].astype(str)
+    if "side_name" in handoff.columns:
+        handoff["side_name"] = handoff["side_name"].astype(str).str.lower()
+    join_keys = [col for col in key_cols if col in handoff.columns]
+    if len(join_keys) < 2:
+        return rows
+    left = rows
+    if "timestamp" in join_keys:
+        left = left.copy()
+        left["timestamp"] = pd.to_datetime(left["timestamp"], utc=True, errors="coerce")
+        handoff["timestamp"] = pd.to_datetime(
+            handoff["timestamp"], utc=True, errors="coerce"
+        )
+    value_cols = [col for col in missing if col in handoff.columns]
+    if not value_cols:
+        return rows
+    handoff = handoff.drop_duplicates(join_keys, keep="last")
+    return left.merge(
+        handoff[join_keys + value_cols],
+        on=join_keys,
+        how="left",
+        copy=False,
+    )
+
+
+def _rerank_candidate_table_after_score_adjustment(
+    rows: pd.DataFrame,
+    *,
+    protected_admission_floor: float | None = None,
+    retained_surplus_frac: float = 0.5,
+) -> pd.DataFrame:
+    if rows.empty or "calibrated_score" not in rows.columns:
+        return rows
+    out = rows.copy()
+    raw_rank = pd.to_numeric(out.get("rank_pct"), errors="coerce")
+    score = pd.to_numeric(out["calibrated_score"], errors="coerce")
+    out["normalized_rank_score"] = score.rank(method="max", pct=True)
+    out["auction_rank_score"] = out["normalized_rank_score"]
+    if "strategy_id" in out.columns:
+        strategy_rank = (
+            out.groupby(out["strategy_id"].astype(str))["calibrated_score"]
+            .rank(method="max", pct=True)
+            .astype("float32")
+        )
+        out["strategy_rank_pct_regime_ev_unprotected"] = strategy_rank
+        out["strategy_rank_pct"] = strategy_rank
+        out["rank_pct"] = out["strategy_rank_pct"]
+        out["policy_rank_pct"] = out["strategy_rank_pct"]
+    else:
+        out["rank_pct"] = out["normalized_rank_score"]
+        out["strategy_rank_pct"] = out["normalized_rank_score"]
+        out["policy_rank_pct"] = out["normalized_rank_score"]
+    if protected_admission_floor is not None and np.isfinite(float(protected_admission_floor)):
+        floor = float(np.clip(float(protected_admission_floor), 0.0, 1.0))
+        retain = float(np.clip(float(retained_surplus_frac), 0.0, 1.0))
+        unprotected = pd.to_numeric(out["rank_pct"], errors="coerce")
+        protected_floor = floor + retain * (raw_rank - floor).clip(lower=0.0)
+        protected = unprotected.mask(
+            raw_rank.ge(floor) & unprotected.lt(protected_floor),
+            protected_floor,
+        )
+        out["rank_pct_regime_ev_unprotected"] = unprotected.astype("float32")
+        out["rank_pct"] = protected.astype("float32")
+        out["strategy_rank_pct"] = out["rank_pct"]
+        out["policy_rank_pct"] = out["rank_pct"]
+        out["regime_ev_protected_admission_floor"] = floor
+        out["regime_ev_retained_surplus_frac"] = retain
+        out["regime_ev_protected_by_admission_floor"] = (
+            raw_rank.ge(floor) & unprotected.lt(protected_floor)
+        ).astype(bool)
+    return out.sort_values(
+        ["timestamp", "normalized_rank_score", "calibrated_score"],
+        ascending=[True, False, False],
+    ).reset_index(drop=True)
+
+
+def _apply_regime_ev_calibration_to_simple_policy_candidates(
+    candidate_table: pd.DataFrame,
+) -> tuple[pd.DataFrame, Dict[str, Any]]:
+    rerank_admission = str(
+        os.environ.get("EPM_REGIME_EV_RERANK_ADMISSION", "protected")
+    ).strip().lower() not in {"0", "false", "no", "off", "context_only"}
+    protected_floor = float(
+        os.environ.get(
+            "EPM_REGIME_EV_PROTECTED_ADMISSION_FLOOR",
+            "0.90",
+        )
+        or "0.90"
+    )
+    retained_surplus_frac = float(
+        os.environ.get("EPM_REGIME_EV_RETAINED_SURPLUS_FRAC", "0.5") or "0.5"
+    )
+    artifact_path = default_regime_ev_calibration_artifact()
+    summary: Dict[str, Any] = {
+        "enabled": artifact_path is not None,
+        "policy_id": CALIBRATION_POLICY_ID,
+        "artifact_path": str(artifact_path) if artifact_path is not None else "",
+        "status": "disabled_or_missing_artifact",
+        "used_for_admission_rank": bool(rerank_admission),
+        "protected_admission_floor": (
+            float(protected_floor) if np.isfinite(protected_floor) else None
+        ),
+        "retained_surplus_frac": float(retained_surplus_frac),
+    }
+    if candidate_table.empty or artifact_path is None:
+        return candidate_table, summary
+    try:
+        artifact = load_regime_ev_calibration(artifact_path)
+    except Exception as exc:
+        summary.update({"enabled": False, "status": "artifact_load_failed", "error": str(exc)})
+        logger.warning("Failed to load regime EV calibration artifact %s: %s", artifact_path, exc)
+        return candidate_table, summary
+    if not artifact:
+        summary.update({"enabled": False, "status": "empty_artifact"})
+        return candidate_table, summary
+    feature_handoff = default_regime_ev_feature_handoff()
+    feature_cols = required_feature_columns(artifact)
+    rows = candidate_table.copy()
+    if "side_name" not in rows.columns:
+        rows["side_name"] = _candidate_side_name(rows)
+    else:
+        rows["side_name"] = rows["side_name"].astype(str).str.lower()
+    if "archetype_policy_key" not in rows.columns:
+        rows["archetype_policy_key"] = _candidate_archetype_policy_key(rows)
+    rows = _join_regime_ev_feature_handoff(
+        rows,
+        handoff_path=feature_handoff,
+        feature_cols=feature_cols,
+    )
+    source_score_col = str(
+        artifact.get("source_score_col")
+        or ("score_meta_base_soft_label" if "score_meta_base_soft_label" in rows.columns else "calibrated_score")
+    )
+    if source_score_col not in rows.columns and "calibrated_score" in rows.columns:
+        source_score_col = "calibrated_score"
+    if "calibrated_score_raw" not in rows.columns and "calibrated_score" in rows.columns:
+        rows["calibrated_score_raw"] = pd.to_numeric(rows["calibrated_score"], errors="coerce")
+    if "rank_pct_raw" not in rows.columns and "rank_pct" in rows.columns:
+        rows["rank_pct_raw"] = pd.to_numeric(rows["rank_pct"], errors="coerce")
+    try:
+        rows = apply_regime_ev_calibration(
+            rows,
+            artifact,
+            source_score_col=source_score_col,
+            copy=False,
+        )
+    except Exception as exc:
+        summary.update({"enabled": False, "status": "application_failed", "error": str(exc)})
+        logger.warning("Failed to apply regime EV calibration %s: %s", artifact_path, exc)
+        return candidate_table, summary
+    adjusted_col = str(artifact.get("adjusted_score_col") or "score_regime_calibrated")
+    if adjusted_col in rows.columns:
+        rows["calibrated_score_regime_ev"] = pd.to_numeric(
+            rows[adjusted_col], errors="coerce"
+        )
+        if rerank_admission:
+            rows["calibrated_score"] = pd.to_numeric(rows[adjusted_col], errors="coerce")
+    rows["rank_score_source"] = str(
+        artifact.get("policy_id") or artifact.get("artifact_id") or CALIBRATION_POLICY_ID
+    )
+    rows["regime_ev_calibration_policy_id"] = str(
+        artifact.get("policy_id") or artifact.get("artifact_id") or CALIBRATION_POLICY_ID
+    )
+    rows["regime_ev_calibration_artifact_path"] = str(artifact_path)
+    if rerank_admission:
+        rows = _rerank_candidate_table_after_score_adjustment(
+            rows,
+            protected_admission_floor=protected_floor,
+            retained_surplus_frac=retained_surplus_frac,
+        )
+    raw_after_sort = pd.to_numeric(rows.get("calibrated_score_raw"), errors="coerce")
+    adjusted_after_sort = pd.to_numeric(rows.get("calibrated_score"), errors="coerce")
+    changed = int(raw_after_sort.sub(adjusted_after_sort).abs().gt(1e-9).sum())
+    summary.update(
+        {
+            "enabled": True,
+            "status": "applied",
+            "artifact_id": str(artifact.get("artifact_id") or ""),
+            "policy_id": str(artifact.get("policy_id") or artifact.get("artifact_id") or CALIBRATION_POLICY_ID),
+            "feature_handoff_path": str(feature_handoff) if feature_handoff is not None else "",
+            "required_feature_count": int(len(feature_cols)),
+            "available_feature_count": int(sum(col in rows.columns for col in feature_cols)),
+            "rows": int(len(rows)),
+            "adjusted_rows": changed,
+            "source_score_col": source_score_col,
+            "adjusted_score_col": adjusted_col,
+            "used_for_admission_rank": bool(rerank_admission),
+            "protected_admission_floor": (
+                float(protected_floor) if np.isfinite(protected_floor) else None
+            ),
+            "retained_surplus_frac": float(retained_surplus_frac),
+            "protected_rows": int(
+                pd.to_numeric(
+                    rows.get("regime_ev_protected_by_admission_floor", 0),
+                    errors="coerce",
+                )
+                .fillna(0)
+                .astype(bool)
+                .sum()
+            )
+            if "regime_ev_protected_by_admission_floor" in rows.columns
+            else 0,
+        }
+    )
+    rows.attrs["regime_ev_calibration"] = dict(summary)
+    logger.info(
+        "Applied %s to simple policy candidates: rows=%s adjusted_rows=%s artifact=%s",
+        summary["policy_id"],
+        len(rows),
+        changed,
+        artifact_path,
+    )
+    return rows, summary
+
+
 def _write_delay_rejection_reports(
     candidate_table: pd.DataFrame,
     *,
@@ -5655,6 +5969,9 @@ def _write_simple_policy_candidate_metadata(
         ),
         "row_count": int(len(candidate_table)),
     }
+    regime_ev_calibration = dict(candidate_table.attrs.get("regime_ev_calibration") or {})
+    if regime_ev_calibration:
+        metadata["regime_ev_calibration"] = regime_ev_calibration
     if candidate_table.empty:
         output_path.write_text(json.dumps(_json_safe(metadata), indent=2))
         return
@@ -9094,6 +9411,7 @@ def calculate_advanced_metrics(
     df_trades["rop"] = df_trades["net_gain"] / df_trades["size"]
     df_trades["gross_rop"] = df_trades["gross_gain"] / df_trades["size"]
     avg_pnl_sized = df_trades["rop"].mean()
+    avg_pnl_notional = avg_pnl_sized
     avg_gross_pnl_per_trade = df_trades["gross_gain"].mean()
     avg_gross_return_per_trade = df_trades["gross_rop"].mean()
 
@@ -9226,6 +9544,7 @@ def calculate_advanced_metrics(
         "n_trades": n_trades,
         "avg_pnl_bankroll": avg_pnl_bankroll,
         "avg_pnl_sized": avg_pnl_sized,
+        "avg_pnl_notional": avg_pnl_notional,
         "avg_gross_pnl_per_trade": avg_gross_pnl_per_trade,
         "avg_gross_return_per_trade": avg_gross_return_per_trade,
         "avg_win": avg_win,
@@ -9914,7 +10233,15 @@ def _fetch_policy_paths(
     step = _policy_path_step(ds)
     lookahead = step * max(int(path_len), 1)
 
-    for symbol, group in df_subset.groupby("symbol", sort=False):
+    grouped_symbols = list(df_subset.groupby("symbol", sort=False))
+    total_symbols = len(grouped_symbols)
+    for symbol_idx, (symbol, group) in enumerate(grouped_symbols, start=1):
+        if symbol_idx == 1 or symbol_idx % 25 == 0 or symbol_idx == total_symbols:
+            print(
+                f"[fetch_policy_paths] symbol {symbol_idx}/{total_symbols} "
+                f"{symbol} rows={len(group)}",
+                flush=True,
+            )
         group_ts = pd.to_datetime(group["timestamp"], utc=True, errors="coerce")
         if group_ts.dropna().empty:
             continue
@@ -11561,6 +11888,172 @@ def _trial_record_from_evaluation(
     }
 
 
+def _stable_fold_policy_objective(
+    df_rows: pd.DataFrame,
+    paths: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    *,
+    params: Dict[str, Any],
+    cost_pct: float,
+    size_power: float,
+    n_folds: int = DEFAULT_CV_FOLDS,
+) -> Tuple[float, Dict[str, Any]]:
+    fold_scores: List[float] = []
+    fold_records: List[Dict[str, Any]] = []
+    folds = _build_equal_time_folds(len(df_rows), int(n_folds))
+    for fold_no, val_idx in enumerate(folds, start=1):
+        if len(val_idx) < 5:
+            continue
+        val_df = df_rows.iloc[val_idx].copy().reset_index(drop=True)
+        val_paths = _path_take(paths, val_idx)
+        metrics = simulate_and_score(
+            val_df,
+            *val_paths,
+            cost_pct=cost_pct,
+            size_power=size_power,
+            max_concurrent_trades=MAX_CONCURRENT_TRADES,
+            max_concurrent_per_asset=DEPLOYMENT_MAX_CONCURRENT_PER_ASSET,
+            **_without_concurrency_param(params),
+        )
+        adv = calculate_advanced_metrics(
+            val_df,
+            metrics.get("raw_gains", np.array([])),
+            metrics.get("sizes", np.array([])),
+            metrics.get("selected_mask"),
+            metrics.get("gross_gains"),
+            metrics.get("exit_reason"),
+            metrics.get("exit_bars"),
+        )
+        score = _policy_objective_scalar(metrics, adv)
+        if not np.isfinite(float(score)):
+            score = float("-1.0e9")
+        summary = _trial_metric_summary(metrics)
+        summary.update(
+            {
+                "fold": int(fold_no),
+                "fold_score": float(score),
+                "validation_rows": int(len(val_df)),
+            }
+        )
+        fold_records.append(summary)
+        fold_scores.append(float(score))
+    if not fold_scores:
+        return float("-1.0e9"), {
+            "fold_scores": [],
+            "mean_score": float("-1.0e9"),
+            "std_score": 0.0,
+            "worst_score": float("-1.0e9"),
+            "fold_metrics": [],
+            "objective_formula": "no_valid_folds",
+        }
+    arr = np.asarray(fold_scores, dtype=np.float64)
+    mean_score = float(np.mean(arr))
+    std_score = float(np.std(arr))
+    worst_score = float(np.min(arr))
+    objective_value = float(
+        mean_score
+        - float(STABLE_FOLD_POLICY_OBJECTIVE_STD_WEIGHT) * std_score
+        + float(STABLE_FOLD_POLICY_OBJECTIVE_WORST_WEIGHT) * worst_score
+    )
+    return objective_value, {
+        "fold_scores": [float(v) for v in arr],
+        "mean_score": mean_score,
+        "std_score": std_score,
+        "worst_score": worst_score,
+        "fold_metrics": fold_records,
+        "objective_formula": "mean_score - 0.5 * std_score + 0.25 * worst_score",
+    }
+
+
+GEOMETRY_SHRINKAGE_PARAM_KEYS = (
+    "sl_mult",
+    "sl_abs_cap_pct",
+    "atr_power",
+    "atr_multiplier",
+    "hard_tp_abs_pct",
+    "trailing_activation_mult",
+    "trailing_activation_cap_pct",
+    "capital_protect_mfe_mult",
+)
+
+
+def _fit_summary_mean_std_worst(fit_summary: Mapping[str, Any] | None) -> Tuple[float, float, float]:
+    summary = dict(fit_summary or {})
+    candidates: List[Mapping[str, Any]] = []
+    for key in ("stage2", "trailing_stage"):
+        value = summary.get(key)
+        if isinstance(value, Mapping):
+            candidates.append(value)
+    for candidate in candidates:
+        selected = candidate.get("selected_medoid_metrics")
+        if isinstance(selected, Mapping):
+            mean_score = _safe_float(candidate.get("selected_medoid_objective"), np.nan)
+            std_score = _safe_float(candidate.get("selected_cluster_fold_objective_std"), np.nan)
+            worst_score = _safe_float(selected.get("min_fold_objective"), np.nan)
+            if np.isfinite(mean_score):
+                return (
+                    float(mean_score),
+                    float(std_score if np.isfinite(std_score) else 0.0),
+                    float(worst_score if np.isfinite(worst_score) else mean_score),
+                )
+    return float("nan"), float("nan"), float("nan")
+
+
+def _blend_archetype_geometry_with_parent(
+    *,
+    archetype_params: Mapping[str, Any],
+    archetype_size_power: float,
+    parent_params: Mapping[str, Any] | None,
+    parent_size_power: float | None,
+    rows: int,
+    k: int,
+    mean_score_archetype: float,
+    std_score: float,
+    mean_score_parent: float,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    parent_params = dict(parent_params or {})
+    k_eff = max(1, int(k))
+    n_eff = max(0.0, float(rows))
+    support_conf = min(1.0, n_eff / max(150.0 * float(k_eff), 1.0))
+    if np.isfinite(mean_score_archetype) and np.isfinite(mean_score_parent) and abs(mean_score_parent) > 1e-12:
+        perf_conf = float(np.clip(mean_score_archetype / mean_score_parent, 0.0, 1.0))
+    elif np.isfinite(mean_score_archetype) and mean_score_archetype > 0.0:
+        perf_conf = 1.0
+    else:
+        perf_conf = 0.0
+    denom = max(float(std_score) if np.isfinite(std_score) else 0.0, GEOMETRY_SHRINKAGE_MIN_STD)
+    foundation = float(np.clip(support_conf * perf_conf / denom, 0.0, 1.0))
+    final_geometry: Dict[str, Any] = {}
+    for key in GEOMETRY_SHRINKAGE_PARAM_KEYS:
+        a_val = _safe_float(archetype_params.get(key), np.nan)
+        p_val = _safe_float(parent_params.get(key), np.nan)
+        if np.isfinite(a_val) and np.isfinite(p_val):
+            final_geometry[key] = float(foundation * a_val + (1.0 - foundation) * p_val)
+        elif np.isfinite(a_val):
+            final_geometry[key] = float(a_val)
+        elif np.isfinite(p_val):
+            final_geometry[key] = float(p_val)
+    a_size = _safe_float(archetype_size_power, np.nan)
+    p_size = _safe_float(parent_size_power, np.nan)
+    if np.isfinite(a_size) and np.isfinite(p_size):
+        final_geometry["size_power"] = float(foundation * a_size + (1.0 - foundation) * p_size)
+    elif np.isfinite(a_size):
+        final_geometry["size_power"] = float(a_size)
+    elif np.isfinite(p_size):
+        final_geometry["size_power"] = float(p_size)
+    diagnostics = {
+        "archetype_foundation": foundation,
+        "sample_support_confidence": float(support_conf),
+        "performance_stability_confidence": float(perf_conf),
+        "n_eff": float(n_eff),
+        "optimized_parameter_count": int(k_eff),
+        "mean_score_archetype": float(mean_score_archetype) if np.isfinite(mean_score_archetype) else None,
+        "mean_score_parent": float(mean_score_parent) if np.isfinite(mean_score_parent) else None,
+        "std_score": float(std_score) if np.isfinite(std_score) else None,
+        "formula": "foundation = clip(sample_support_confidence * performance_stability_confidence / std_score, 0, 1)",
+    }
+    return final_geometry, diagnostics
+
+
 def _optimise_policy_on_rows(
     df_train: pd.DataFrame,
     train_paths: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
@@ -11581,6 +12074,17 @@ def _optimise_policy_on_rows(
 
         def objective(trial: optuna.Trial) -> float:
             params = suggest_fn(trial)
+            stable_diag: Dict[str, Any] = {}
+            stable_value: Optional[float] = None
+            if STABLE_FOLD_POLICY_OBJECTIVE_ENABLED:
+                stable_value, stable_diag = _stable_fold_policy_objective(
+                    df_train,
+                    train_paths,
+                    params=params,
+                    cost_pct=cost_pct,
+                    size_power=1.0,
+                    n_folds=DEFAULT_CV_FOLDS,
+                )
             metrics = simulate_and_score(
                 df_train,
                 *train_paths,
@@ -11598,7 +12102,11 @@ def _optimise_policy_on_rows(
                 metrics.get("exit_reason"),
                 metrics.get("exit_bars"),
             )
-            value = _policy_objective_scalar(metrics, adv)
+            value = (
+                float(stable_value)
+                if STABLE_FOLD_POLICY_OBJECTIVE_ENABLED and stable_value is not None
+                else _policy_objective_scalar(metrics, adv)
+            )
             if not np.isfinite(float(value)):
                 value = float("-1.0e9")
             record = _trial_record_from_evaluation(
@@ -11608,6 +12116,14 @@ def _optimise_policy_on_rows(
                 adv=adv,
                 objective=value,
             )
+            if stable_diag:
+                record["fold_objectives"] = list(stable_diag.get("fold_scores", []))
+                record["min_fold_objective"] = float(stable_diag.get("worst_score", value))
+                record["stable_fold_mean_score"] = float(stable_diag.get("mean_score", value))
+                record["stable_fold_std_score"] = float(stable_diag.get("std_score", 0.0))
+                record["stable_fold_worst_score"] = float(stable_diag.get("worst_score", value))
+                record["stable_fold_objective_formula"] = str(stable_diag.get("objective_formula", ""))
+                record["per_fold_metrics"] = list(stable_diag.get("fold_metrics", []))
             trial.set_user_attr("policy_record", record)
             trial_records.append(record)
             return value
@@ -11694,6 +12210,16 @@ def _optimise_policy_on_rows(
             ),
             "selection": selected,
             "min_trades": int(min_trades),
+            "objective_source": (
+                "validation_folds_mean_minus_std_plus_worst"
+                if STABLE_FOLD_POLICY_OBJECTIVE_ENABLED
+                else "single_training_slice"
+            ),
+            "objective_formula": (
+                "mean_score - 0.5 * std_score + 0.25 * worst_score"
+                if STABLE_FOLD_POLICY_OBJECTIVE_ENABLED
+                else "legacy_policy_objective_scalar"
+            ),
         }
         if selected.get("stable_cluster_found"):
             cluster = selected.get("cluster", {})
@@ -11758,12 +12284,27 @@ def _optimise_policy_on_rows(
         cost_pct=cost_pct,
         params=best_params,
     )
-    best_params, holding_pressure_summary = _optimise_holding_pressure_on_rows(
-        df_train,
-        train_paths,
-        cost_pct=cost_pct,
-        params=best_params,
+    best_params.update(
+        {
+            "exit_pressure_enabled": False,
+            "exit_pressure_alpha": 1.0,
+            "exit_pressure_beta": 0.0,
+            "exit_pressure_delta": 1.0,
+            "exit_pressure_kappa": 0.0,
+            "exit_pressure_psi": 0.7,
+            "exit_pressure_omega": 1.0,
+            "exit_pressure_min_multiplier": 1.0,
+            "redeploy_scale_bps": 100.0,
+            "target_holding_hours": 0.0,
+            "churn_penalty_bps": float(HOLDING_PRESSURE_CHURN_PENALTY_BPS),
+        }
     )
+    holding_pressure_summary = {
+        "stage": "holding_pressure_exit_tightening",
+        "accepted": False,
+        "skipped": True,
+        "reason": "disabled_by_policy_default",
+    }
     best_params["max_concurrent_trades"] = MAX_CONCURRENT_TRADES
     best_params["max_concurrent_per_asset"] = DEPLOYMENT_MAX_CONCURRENT_PER_ASSET
     best_params["stage2_selection_method"] = (
@@ -11925,10 +12466,10 @@ def _evaluate_policy_subsets(
                 adv_metrics["skipped_concurrency"],
             )
             logger.info(
-                f"Net PnL/Trade (Bankroll): {adv_metrics['avg_pnl_bankroll'] * 100:.2f}%"
+                f"Net PnL/Trade (Notional): {adv_metrics['avg_pnl_notional'] * 100:.2f}%"
             )
             logger.info(
-                f"Net PnL/Trade (Sized): {adv_metrics['avg_pnl_sized'] * 100:.2f}%"
+                f"Net PnL/Trade (Bankroll contribution): {adv_metrics['avg_pnl_bankroll'] * 100:.2f}%"
             )
             logger.info(
                 f"Avg Win: {adv_metrics['avg_win'] * 100:.2f}%, Avg Loss: {adv_metrics['avg_loss'] * 100:.2f}%"
@@ -11972,6 +12513,8 @@ def _optimise_policy_by_archetype(
     stage_a_cost_pct: float,
     n_trials: int,
     market_mode: str,
+    parent_params: Mapping[str, Any] | None = None,
+    parent_size_power: float | None = None,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     if not PER_ARCHETYPE_POLICY_OPT_ENABLED:
         return pd.DataFrame(), {"enabled": False, "reason": "disabled"}
@@ -12054,6 +12597,33 @@ def _optimise_policy_by_archetype(
                     cost_pct=cost_pct,
                     n_trials=full_trials,
                 )
+                mean_score_arch, std_score_arch, worst_score_arch = _fit_summary_mean_std_worst(fit_summary)
+                parent_mean_score = float("nan")
+                if parent_params:
+                    parent_value, parent_diag = _stable_fold_policy_objective(
+                        sub_df,
+                        sub_paths,
+                        params=dict(parent_params),
+                        cost_pct=cost_pct,
+                        size_power=float(parent_size_power or 1.0),
+                        n_folds=DEFAULT_CV_FOLDS,
+                    )
+                    parent_mean_score = _safe_float(parent_diag.get("mean_score"), parent_value)
+                k_params = int(
+                    sum(1 for key in GEOMETRY_SHRINKAGE_PARAM_KEYS if key in best_params)
+                    + 1
+                )
+                final_geometry, shrinkage_diag = _blend_archetype_geometry_with_parent(
+                    archetype_params=best_params,
+                    archetype_size_power=best_size_power,
+                    parent_params=parent_params,
+                    parent_size_power=parent_size_power,
+                    rows=len(sub_df),
+                    k=k_params,
+                    mean_score_archetype=mean_score_arch,
+                    std_score=std_score_arch,
+                    mean_score_parent=parent_mean_score,
+                )
                 eval_metrics = _evaluate_policy_subsets(
                     strategy_id,
                     f"per_archetype_{archetype}",
@@ -12089,6 +12659,10 @@ def _optimise_policy_by_archetype(
                     {
                         "full_policy_opt_status": "ok",
                         "full_policy_trials": int(full_trials),
+                        "full_policy_objective_source": "validation_folds_only",
+                        "full_policy_fold_mean_score": _safe_float(mean_score_arch, np.nan),
+                        "full_policy_fold_std_score": _safe_float(std_score_arch, np.nan),
+                        "full_policy_fold_worst_score": _safe_float(worst_score_arch, np.nan),
                         "full_best_size_power": float(best_size_power),
                         "full_policy_sl_mult": _safe_float(
                             best_params.get("sl_mult"), np.nan
@@ -12124,11 +12698,20 @@ def _optimise_policy_by_archetype(
                             eval_metrics.get("top_5", {}).get("avg_pnl_bankroll"),
                             np.nan,
                         ),
+                        "full_eval_top5_avg_pnl_notional": _safe_float(
+                            eval_metrics.get("top_5", {}).get(
+                                "avg_pnl_notional",
+                                eval_metrics.get("top_5", {}).get("avg_pnl_sized"),
+                            ),
+                            np.nan,
+                        ),
                         "full_eval_top5_timeout_rate": _safe_float(
                             eval_metrics.get("top_5", {}).get("timeout_exit_rate"),
                             np.nan,
                         ),
                         "full_fit_summary": fit_summary,
+                        "shrinkage_final_geometry": final_geometry,
+                        "shrinkage_diagnostics": shrinkage_diag,
                     }
                 )
             except Exception as exc:
@@ -12162,6 +12745,7 @@ def _average_validation_metrics(
         "n_trades",
         "avg_pnl_bankroll",
         "avg_pnl_sized",
+        "avg_pnl_notional",
         "avg_gross_pnl_per_trade",
         "avg_gross_return_per_trade",
         "avg_win",
@@ -14901,7 +15485,14 @@ def _build_deployment_payload(
             metrics = {}
         selection_metric_name = _policy_selection_metric()
         selection_metrics = metrics.get(selection_metric_name, {})
-        avg_pnl = float(selection_metrics.get("avg_pnl_bankroll", 0.0) or 0.0)
+        avg_pnl_bankroll = float(selection_metrics.get("avg_pnl_bankroll", 0.0) or 0.0)
+        avg_pnl_notional = float(
+            selection_metrics.get(
+                "avg_pnl_notional",
+                selection_metrics.get("avg_pnl_sized", 0.0),
+            )
+            or 0.0
+        )
         side = _strategy_side(strategy_id)
         lgbm_mask_contract = (
             lgbm_mask_contracts.get(strategy_id)
@@ -14966,7 +15557,9 @@ def _build_deployment_payload(
                 }
             ),
             "asset_metrics": result.get("asset_metrics", []),
-            "avg_net_pnl_per_trade": avg_pnl,
+            "avg_net_pnl_per_trade": avg_pnl_notional,
+            "avg_net_pnl_per_trade_notional": avg_pnl_notional,
+            "avg_net_pnl_per_trade_bankroll": avg_pnl_bankroll,
             "hit_rate": selection_metrics.get("hit_rate"),
             "hit_rate_definition": selection_metrics.get(
                 "hit_rate_definition", "trailing_profit_exit_rate"
@@ -15074,7 +15667,7 @@ def _build_deployment_payload(
             reject_reasons.append("missing_trained_meta_model")
         if side not in {"long", "short"}:
             reject_reasons.append("unknown_side")
-        if avg_pnl <= 0.0:
+        if avg_pnl_bankroll <= 0.0:
             reject_reasons.append(f"{selection_metric_name}_net_pnl_not_positive")
         if not np.isfinite(float(row["selection_rank"])):
             reject_reasons.append("non_finite_selection_rank")
@@ -15215,6 +15808,18 @@ def _available_strategy_ids_from_meta_oof(meta_oof_dir: Path) -> Optional[Set[st
 
 def _build_portfolio_policy_config_payload() -> Dict[str, Any]:
     """Export the live portfolio policy used by offline deployment replay."""
+    regime_ev_artifact = default_regime_ev_calibration_artifact()
+    threshold_basis_path = str(
+        os.environ.get("EPM_THRESHOLD_BASIS_POLICY_PATH", "") or ""
+    ).strip()
+    threshold_basis_enabled = bool(threshold_basis_path)
+    threshold_basis_policy_id = str(
+        os.environ.get(
+            "EPM_THRESHOLD_BASIS_POLICY_ID",
+            "ev_target_archetype_reachable_match_current_activity_8d_hr_off_regimecal_v1",
+        )
+        or ""
+    ).strip()
     return {
         "schema_version": "portfolio_policy_v1",
         "max_concurrent_positions": PORTFOLIO_POLICY_MAX_CONCURRENT_POSITIONS,
@@ -15260,6 +15865,24 @@ def _build_portfolio_policy_config_payload() -> Dict[str, Any]:
         "top_prediction_ledger_pct": 0.15,
         "enable_symbol_underperformance_gates": False,
         "symbol_underperformance_gates_enabled": False,
+        "regime_ev_calibration_enabled": regime_ev_artifact is not None,
+        "regime_ev_calibration_policy_id": CALIBRATION_POLICY_ID,
+        "regime_ev_calibration_artifact_path": (
+            str(regime_ev_artifact) if regime_ev_artifact is not None else ""
+        ),
+        "regime_ev_calibration_rank_source": CALIBRATION_POLICY_ID,
+        "regime_ev_protect_admission_rank": True,
+        "regime_ev_protected_admission_floor": 0.90,
+        "regime_ev_retained_surplus_frac": 0.50,
+        "threshold_basis_policy_enabled": threshold_basis_enabled,
+        "threshold_basis_policy_path": threshold_basis_path,
+        "threshold_basis_policy_id": (
+            threshold_basis_policy_id if threshold_basis_enabled else ""
+        ),
+        "archetype_hit_surprise_enabled": False if threshold_basis_enabled else True,
+        "archetype_hit_surprise_mode": (
+            "disabled_hr_off" if threshold_basis_enabled else "hit_surprise_priority_rank_50"
+        ),
         "rank_sizing": {
             "max_available_wallet_position_pct": (
                 PORTFOLIO_POLICY_MAX_AVAILABLE_WALLET_POSITION_PCT
@@ -16400,16 +17023,16 @@ def run_simple_policy_optimisation(
                 DEFAULT_CV_FOLDS,
                 best_params,
                 best_size_power,
-                float(train_metrics.get("top_5", {}).get("avg_pnl_bankroll", np.nan)),
-                float(val_metrics.get("top_5", {}).get("avg_pnl_bankroll", np.nan)),
+                float(train_metrics.get("top_5", {}).get("avg_pnl_notional", np.nan)),
+                float(val_metrics.get("top_5", {}).get("avg_pnl_notional", np.nan)),
             )
             train_top5 = train_metrics.get("top_5", {})
             val_top5 = val_metrics.get("top_5", {})
             train_validation_gap = {
                 "avg_net_pnl_per_trade": float(
-                    train_top5.get("avg_pnl_bankroll", np.nan)
+                    train_top5.get("avg_pnl_notional", np.nan)
                 )
-                - float(val_top5.get("avg_pnl_bankroll", np.nan)),
+                - float(val_top5.get("avg_pnl_notional", np.nan)),
                 "win_rate": float(train_top5.get("hit_rate", np.nan))
                 - float(val_top5.get("hit_rate", np.nan)),
                 "sortino": float(train_top5.get("m_sortino", np.nan))
@@ -16444,11 +17067,11 @@ def run_simple_policy_optimisation(
 
         validation_metrics_average = _average_validation_metrics(fold_val_metrics)
         logger.info(
-            "[%s] CV validation average top5 avg_pnl_bankroll=%.6f n_trades=%.1f",
+            "[%s] CV validation average top5 avg_pnl_notional=%.6f n_trades=%.1f",
             strategy_id,
             float(
                 validation_metrics_average.get("top_5", {}).get(
-                    "avg_pnl_bankroll", np.nan
+                    "avg_pnl_notional", np.nan
                 )
             ),
             float(validation_metrics_average.get("top_5", {}).get("n_trades", np.nan)),
@@ -16515,6 +17138,8 @@ def run_simple_policy_optimisation(
                 stage_a_cost_pct=stage_a_cost_pct,
                 n_trials=n_trials,
                 market_mode=market_mode,
+                parent_params=final_params,
+                parent_size_power=final_size_power,
             )
         )
         if not per_archetype_policy_report.empty:
@@ -17010,7 +17635,39 @@ def run_simple_policy_optimisation(
         simple_policy_candidate_frames,
         rank_floor=0.0,
     )
-    candidate_table = _finalise_simple_policy_candidates(simple_policy_candidate_frames)
+    auction_reference_table, regime_ev_calibration_summary = (
+        _apply_regime_ev_calibration_to_simple_policy_candidates(
+            auction_reference_table
+        )
+    )
+    final_rank_floor = float(
+        np.clip(PORTFOLIO_CANDIDATE_EXPORT_NORMALIZED_RANK_FLOOR, 0.0, 1.0)
+    )
+    if auction_reference_table.empty:
+        candidate_table = auction_reference_table.copy()
+        candidate_table.attrs["regime_ev_calibration"] = dict(
+            regime_ev_calibration_summary
+        )
+    else:
+        before_final_floor = len(auction_reference_table)
+        candidate_table = auction_reference_table.loc[
+            pd.to_numeric(
+                auction_reference_table.get("normalized_rank_score"),
+                errors="coerce",
+            )
+            >= final_rank_floor
+        ].copy()
+        candidate_table["base_strategy_threshold"] = final_rank_floor
+        candidate_table.attrs["regime_ev_calibration"] = dict(
+            regime_ev_calibration_summary
+        )
+        logger.info(
+            "Portfolio candidate export applied calibrated cross-strategy "
+            "normalized rank floor %.4f: %s/%s rows retained.",
+            final_rank_floor,
+            len(candidate_table),
+            before_final_floor,
+        )
     strategy_support_funnel_frames.extend(
         _strategy_support_funnel_table_stages(
             "broad_candidate_export_rows",
@@ -17095,6 +17752,7 @@ def run_simple_policy_optimisation(
         market_mode=market_mode,
     )
     deployment_payload["market_mode"] = market_mode
+    deployment_payload["regime_ev_calibration"] = dict(regime_ev_calibration_summary)
     _apply_local_candidate_hit_rate_guard(
         deployment_payload,
         auction_reference_table,
@@ -17251,6 +17909,12 @@ def run_simple_policy_optimisation(
                 market_mode=market_mode,
             )
         )
+        candidate_table.attrs["regime_ev_calibration"] = dict(
+            regime_ev_calibration_summary
+        )
+        replay_candidate_table.attrs["regime_ev_calibration"] = dict(
+            regime_ev_calibration_summary
+        )
         if threshold_selector_report.get("updated"):
             candidate_table.to_parquet(candidate_path, index=False)
             _write_simple_policy_candidate_metadata(
@@ -17329,6 +17993,106 @@ def run_simple_policy_optimisation(
                     optimized_portfolio_payload,
                     deployed_strategy_ids,
                 )
+                regime_ev_artifact = default_regime_ev_calibration_artifact()
+                optimized_portfolio_payload["regime_ev_calibration_enabled"] = (
+                    regime_ev_artifact is not None
+                )
+                optimized_portfolio_payload["regime_ev_calibration_policy_id"] = (
+                    CALIBRATION_POLICY_ID
+                )
+                optimized_portfolio_payload["regime_ev_calibration_artifact_path"] = (
+                    str(regime_ev_artifact) if regime_ev_artifact is not None else ""
+                )
+                optimized_portfolio_payload["regime_ev_calibration_rank_source"] = (
+                    CALIBRATION_POLICY_ID
+                )
+                optimized_portfolio_payload["regime_ev_protect_admission_rank"] = True
+                optimized_portfolio_payload["regime_ev_protected_admission_floor"] = 0.90
+                optimized_portfolio_payload["regime_ev_retained_surplus_frac"] = 0.50
+                selection_payload = optimized_portfolio_payload.setdefault(
+                    "selection", {}
+                )
+                threshold_basis_path = str(
+                    os.environ.get("EPM_THRESHOLD_BASIS_POLICY_PATH", "") or ""
+                ).strip()
+                local_threshold_basis_path = policy_params_dir / "threshold_basis_policy.json"
+                if not threshold_basis_path and local_threshold_basis_path.exists():
+                    threshold_basis_path = str(local_threshold_basis_path)
+                threshold_basis_enabled = bool(threshold_basis_path)
+                threshold_basis_policy_id = str(
+                    os.environ.get(
+                        "EPM_THRESHOLD_BASIS_POLICY_ID",
+                        "ev_target_archetype_reachable_match_current_activity_8d_hr_off_regimecal_v1",
+                    )
+                    or ""
+                ).strip()
+                optimized_portfolio_payload["threshold_basis_policy_enabled"] = (
+                    threshold_basis_enabled
+                )
+                optimized_portfolio_payload["threshold_basis_policy_path"] = (
+                    threshold_basis_path
+                )
+                optimized_portfolio_payload["threshold_basis_policy_id"] = (
+                    threshold_basis_policy_id if threshold_basis_enabled else ""
+                )
+                optimized_portfolio_payload["archetype_hit_surprise_enabled"] = (
+                    False if threshold_basis_enabled else optimized_portfolio_payload.get(
+                        "archetype_hit_surprise_enabled", True
+                    )
+                )
+                optimized_portfolio_payload["archetype_hit_surprise_mode"] = (
+                    "disabled_hr_off"
+                    if threshold_basis_enabled
+                    else optimized_portfolio_payload.get(
+                        "archetype_hit_surprise_mode",
+                        "hit_surprise_priority_rank_50",
+                    )
+                )
+                selection_payload["threshold_basis_policy_enabled"] = (
+                    threshold_basis_enabled
+                )
+                selection_payload["threshold_basis_policy_path"] = threshold_basis_path
+                selection_payload["threshold_basis_policy_id"] = (
+                    threshold_basis_policy_id if threshold_basis_enabled else ""
+                )
+                selection_payload["threshold_basis_family"] = (
+                    "ev_target_archetype_reachable_matched_activity"
+                    if threshold_basis_enabled
+                    else selection_payload.get("threshold_basis_family", "")
+                )
+                selection_payload["threshold_basis_window_days"] = (
+                    8 if threshold_basis_enabled else selection_payload.get(
+                        "threshold_basis_window_days", None
+                    )
+                )
+                selection_payload["archetype_hit_surprise_enabled"] = (
+                    False if threshold_basis_enabled else selection_payload.get(
+                        "archetype_hit_surprise_enabled", True
+                    )
+                )
+                selection_payload["archetype_hit_surprise_mode"] = (
+                    "disabled_hr_off"
+                    if threshold_basis_enabled
+                    else selection_payload.get(
+                        "archetype_hit_surprise_mode",
+                        "hit_surprise_priority_rank_50",
+                    )
+                )
+                selection_payload["regime_ev_calibration_enabled"] = (
+                    regime_ev_artifact is not None
+                )
+                selection_payload["regime_ev_calibration_policy_id"] = (
+                    CALIBRATION_POLICY_ID
+                )
+                selection_payload["regime_ev_calibration_artifact_path"] = (
+                    str(regime_ev_artifact) if regime_ev_artifact is not None else ""
+                )
+                selection_payload["regime_ev_calibration_rank_source"] = (
+                    CALIBRATION_POLICY_ID
+                )
+                selection_payload["regime_ev_protect_admission_rank"] = True
+                selection_payload["regime_ev_protected_admission_floor"] = 0.90
+                selection_payload["regime_ev_retained_surplus_frac"] = 0.50
                 optimized_portfolio_path.write_text(
                     json.dumps(_json_safe(optimized_portfolio_payload), indent=2),
                     encoding="utf-8",
@@ -17712,7 +18476,7 @@ if __name__ == "__main__":
         default=DEFAULT_POLICY_ROUND_TRIP_COST_PCT,
         help=(
             "All-in round-trip execution cost used by policy optimisation. "
-            "Default is 0.002 for 0.2%%."
+            "Default is 0.01 for 1%%."
         ),
     )
     parser.add_argument(

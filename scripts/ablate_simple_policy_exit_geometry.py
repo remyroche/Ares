@@ -32,7 +32,16 @@ if str(ROOT) not in sys.path:
 from extreme_price_movements.portfolio_policy_replay import (  # noqa: E402
     PortfolioPolicyParams,
     fit_hierarchical_ev_curves,
+    portfolio_policy_params_from_live_config,
     replay_candidates,
+)
+from extreme_price_movements.regime_ev_calibration import (  # noqa: E402
+    CALIBRATION_POLICY_ID,
+    apply_regime_ev_calibration,
+    default_regime_ev_calibration_artifact,
+    default_regime_ev_feature_handoff,
+    load_regime_ev_calibration,
+    required_feature_columns,
 )
 from extreme_price_movements.simple_policy_optimiser import (  # noqa: E402
     DEFAULT_POLICY_PER_SIDE_COST_PCT,
@@ -78,6 +87,19 @@ LOCAL_POLICY_OVERRIDE_KEYS = {
     "deployment_rank_threshold",
     *ROW_LEVEL_POLICY_OVERRIDE_COLUMNS,
 }
+EXIT_PRESSURE_POLICY_KEYS = (
+    "exit_pressure_enabled",
+    "exit_pressure_alpha",
+    "exit_pressure_beta",
+    "exit_pressure_delta",
+    "exit_pressure_kappa",
+    "exit_pressure_psi",
+    "exit_pressure_omega",
+    "exit_pressure_min_multiplier",
+    "redeploy_scale_bps",
+    "target_holding_hours",
+    "churn_penalty_bps",
+)
 
 
 @dataclass
@@ -187,7 +209,144 @@ def _strategy_base_params(rows: pd.DataFrame) -> Dict[str, Any]:
     }
 
 
-def _prepare_rows(path: Path, *, min_rank: float) -> pd.DataFrame:
+def _load_strategy_policy_overrides(path: Optional[Path]) -> Dict[str, Dict[str, Any]]:
+    if path is None:
+        return {}
+    if not path.exists():
+        raise FileNotFoundError(path)
+    payload = json.loads(path.read_text())
+    strategies = payload.get("strategies") if isinstance(payload, dict) else None
+    if not isinstance(strategies, list):
+        return {}
+    out: Dict[str, Dict[str, Any]] = {}
+    for row in strategies:
+        if not isinstance(row, dict):
+            continue
+        strategy_id = str(row.get("strategy_id") or "").strip()
+        if not strategy_id:
+            continue
+        values: Dict[str, Any] = {}
+        for key in EXIT_PRESSURE_POLICY_KEYS:
+            if key in row:
+                values[f"policy_{key}"] = row[key]
+        if values:
+            out[strategy_id] = values
+    return out
+
+
+def _apply_strategy_policy_overrides(
+    rows: pd.DataFrame,
+    overrides_by_strategy: Mapping[str, Mapping[str, Any]],
+) -> pd.DataFrame:
+    if not overrides_by_strategy or "strategy_id" not in rows.columns:
+        return rows
+    out = rows.copy()
+    strategy = out["strategy_id"].astype(str)
+    for strategy_id, overrides in overrides_by_strategy.items():
+        mask = strategy.eq(str(strategy_id))
+        if not bool(mask.any()):
+            continue
+        for col, value in overrides.items():
+            if col not in out.columns:
+                out[col] = np.nan
+            out.loc[mask, col] = value
+    return out
+
+
+def _join_regime_feature_handoff(
+    rows: pd.DataFrame,
+    *,
+    handoff_path: Optional[Path],
+    feature_cols: Iterable[str],
+) -> pd.DataFrame:
+    missing = [col for col in feature_cols if col not in rows.columns]
+    if not missing or handoff_path is None:
+        return rows
+    if not handoff_path.exists():
+        raise FileNotFoundError(handoff_path)
+    import pyarrow.parquet as pq
+
+    schema_cols = set(pq.read_schema(handoff_path).names)
+    key_map = {
+        "timestamp": "__ts__",
+        "symbol": "__symbol__",
+        "side_name": "side_name",
+    }
+    read_cols = [col for col in key_map.values() if col in schema_cols]
+    read_cols += [col for col in missing if col in schema_cols]
+    if len(read_cols) <= 2:
+        return rows
+    features = pd.read_parquet(handoff_path, columns=sorted(set(read_cols)))
+    if "__ts__" in features.columns:
+        features["timestamp"] = pd.to_datetime(features["__ts__"], utc=True, errors="coerce")
+    if "__symbol__" in features.columns:
+        features["symbol"] = features["__symbol__"].astype(str)
+    if "side_name" in features.columns:
+        features["side_name"] = features["side_name"].astype(str).str.lower()
+    join_keys = [col for col in ("timestamp", "symbol", "side_name") if col in rows.columns and col in features.columns]
+    if len(join_keys) < 2:
+        return rows
+    keep_cols = [*join_keys, *[col for col in missing if col in features.columns]]
+    features = features[keep_cols].drop_duplicates(join_keys)
+    return rows.merge(features, on=join_keys, how="left", validate="many_to_one")
+
+
+def _rerank_rows(
+    rows: pd.DataFrame,
+    *,
+    score_col: str,
+    rank_scope: str,
+) -> pd.Series:
+    score = pd.to_numeric(rows[score_col], errors="coerce")
+    if rank_scope == "global":
+        return score.rank(method="max", pct=True)
+    if rank_scope == "side" and "side_name" in rows.columns:
+        return score.groupby(rows["side_name"].astype(str)).rank(method="max", pct=True)
+    if rank_scope == "timestamp_side" and {"timestamp", "side_name"}.issubset(rows.columns):
+        return score.groupby([rows["timestamp"], rows["side_name"].astype(str)]).rank(method="max", pct=True)
+    group_col = "strategy_id" if "strategy_id" in rows.columns else None
+    if group_col is not None:
+        return score.groupby(rows[group_col].astype(str)).rank(method="max", pct=True)
+    return score.rank(method="max", pct=True)
+
+
+def _protect_admission_rank_floor(
+    raw_rank: pd.Series,
+    adjusted_rank: pd.Series,
+    *,
+    admission_floor: Optional[float],
+    retained_surplus_frac: float = 0.5,
+) -> pd.Series:
+    if admission_floor is None or not np.isfinite(float(admission_floor)):
+        return adjusted_rank
+    floor = float(np.clip(float(admission_floor), 0.0, 1.0))
+    retain = float(np.clip(float(retained_surplus_frac), 0.0, 1.0))
+    raw = pd.to_numeric(raw_rank, errors="coerce")
+    adjusted = pd.to_numeric(adjusted_rank, errors="coerce")
+    protected_floor = floor + retain * (raw - floor).clip(lower=0.0)
+    protected = adjusted.mask(
+        raw.ge(floor) & adjusted.lt(protected_floor),
+        protected_floor,
+    )
+    return protected.astype("float32")
+
+
+def _prepare_rows(
+    path: Path,
+    *,
+    min_rank: float,
+    rank_score_col: str = "rank_pct",
+    rank_scope: str = "per_strategy",
+    regime_ev_calibration_artifact: Optional[Path] = None,
+    regime_ev_feature_handoff: Optional[Path] = None,
+    regime_ev_rerank_admission: bool = False,
+    regime_ev_protected_admission_floor: Optional[float] = None,
+    regime_ev_retained_surplus_frac: float = 0.5,
+) -> pd.DataFrame:
+    if regime_ev_calibration_artifact is None:
+        regime_ev_calibration_artifact = default_regime_ev_calibration_artifact()
+    if regime_ev_feature_handoff is None:
+        regime_ev_feature_handoff = default_regime_ev_feature_handoff()
     rows = pd.read_parquet(path)
     required = {"timestamp", "symbol", "strategy_id", "rank_pct", "barrier_pct"}
     missing = sorted(required - set(rows.columns))
@@ -197,6 +356,87 @@ def _prepare_rows(path: Path, *, min_rank: float) -> pd.DataFrame:
     rows["timestamp"] = pd.to_datetime(rows["timestamp"], utc=True, errors="coerce")
     rows = rows.dropna(subset=["timestamp", "symbol", "strategy_id"]).copy()
     rows["rank_pct"] = pd.to_numeric(rows["rank_pct"], errors="coerce")
+    if "side_name" not in rows.columns and "side" in rows.columns:
+        side_num = pd.to_numeric(rows["side"], errors="coerce")
+        rows["side_name"] = np.where(side_num.lt(0.0), "short", "long")
+    if "archetype_policy_key" not in rows.columns:
+        for col in ("policy_archetype", "local_side_archetype", "source_archetype"):
+            if col in rows.columns:
+                rows["archetype_policy_key"] = rows[col].astype(str)
+                break
+    if regime_ev_calibration_artifact is not None:
+        artifact = load_regime_ev_calibration(regime_ev_calibration_artifact)
+        rows = _join_regime_feature_handoff(
+            rows,
+            handoff_path=regime_ev_feature_handoff,
+            feature_cols=required_feature_columns(artifact),
+        )
+        rows = apply_regime_ev_calibration(
+            rows,
+            artifact,
+            source_score_col=artifact.get("source_score_col")
+            if str(artifact.get("source_score_col") or "") in rows.columns
+            else ("calibrated_score" if "calibrated_score" in rows.columns else None),
+            copy=False,
+        )
+        adjusted_score_col = str(
+            artifact.get("adjusted_score_col") or "score_regime_calibrated"
+        )
+        if (
+            adjusted_score_col in rows.columns
+            and "calibrated_score_regime_ev" not in rows.columns
+        ):
+            rows["calibrated_score_regime_ev"] = pd.to_numeric(
+                rows[adjusted_score_col], errors="coerce"
+            )
+        if regime_ev_rerank_admission:
+            rank_score_col = adjusted_score_col
+        rows["rank_score_source"] = str(
+            artifact.get("policy_id")
+            or artifact.get("artifact_id")
+            or CALIBRATION_POLICY_ID
+        )
+        rows["regime_ev_used_for_admission_rank"] = bool(regime_ev_rerank_admission)
+    if rank_score_col != "rank_pct":
+        if rank_score_col not in rows.columns:
+            raise ValueError(f"Requested rank score column is missing: {rank_score_col}")
+        rows["rank_pct_raw"] = rows["rank_pct"]
+        reranked = _rerank_rows(rows, score_col=rank_score_col, rank_scope=rank_scope)
+        rows["rank_pct_regime_ev_unprotected"] = reranked
+        rows["rank_pct"] = _protect_admission_rank_floor(
+            rows["rank_pct_raw"],
+            reranked,
+            admission_floor=regime_ev_protected_admission_floor,
+            retained_surplus_frac=float(regime_ev_retained_surplus_frac),
+        )
+        rows["rank_score_col"] = rank_score_col
+        rows["rank_scope"] = rank_scope
+        rows["regime_ev_protected_admission_floor"] = (
+            np.nan
+            if regime_ev_protected_admission_floor is None
+            else float(regime_ev_protected_admission_floor)
+        )
+        rows["regime_ev_retained_surplus_frac"] = float(regime_ev_retained_surplus_frac)
+        protected_floor = (
+            float(regime_ev_protected_admission_floor)
+            + float(regime_ev_retained_surplus_frac)
+            * (
+                pd.to_numeric(rows["rank_pct_raw"], errors="coerce")
+                - float(regime_ev_protected_admission_floor)
+            ).clip(lower=0.0)
+            if regime_ev_protected_admission_floor is not None
+            and np.isfinite(float(regime_ev_protected_admission_floor))
+            else np.nan
+        )
+        rows["regime_ev_protected_by_admission_floor"] = (
+            pd.to_numeric(rows["rank_pct_raw"], errors="coerce").ge(
+                float(regime_ev_protected_admission_floor)
+            )
+            & pd.to_numeric(rows["rank_pct_regime_ev_unprotected"], errors="coerce").lt(protected_floor)
+            if regime_ev_protected_admission_floor is not None
+            and np.isfinite(float(regime_ev_protected_admission_floor))
+            else False
+        )
     rows = rows.loc[rows["rank_pct"].ge(float(min_rank))].copy()
     rows["side"] = [_side_code(v) for v in rows.get("side", 1.0)]
     rows["symbol"] = rows["symbol"].astype(str)
@@ -221,6 +461,12 @@ def _load_bundles(
         group = group.sort_values(["timestamp", "symbol"]).reset_index(drop=True)
         if len(group) < int(min_rows_per_strategy):
             continue
+        print(
+            f"[load_bundles] fetching paths strategy={strategy_id} rows={len(group)} "
+            f"symbols={group['symbol'].astype(str).nunique()} "
+            f"ts_min={group['timestamp'].min()} ts_max={group['timestamp'].max()}",
+            flush=True,
+        )
         paths = _fetch_policy_paths(group, store, path_len=int(path_len))
         group, paths = _apply_delayed_entry_execution_model(
             group,
@@ -232,7 +478,16 @@ def _load_bundles(
         group = group.loc[finite].reset_index(drop=True)
         paths = _path_take(paths, np.flatnonzero(finite))
         if len(group) < int(min_rows_per_strategy):
+            print(
+                f"[load_bundles] dropped strategy={strategy_id} finite_rows={len(group)}",
+                flush=True,
+            )
             continue
+        print(
+            f"[load_bundles] ready strategy={strategy_id} finite_rows={len(group)} "
+            f"survival={len(group) / max(len(finite), 1):.3f}",
+            flush=True,
+        )
         bundles.append(
             StrategyBundle(
                 strategy_id=str(strategy_id),
@@ -329,11 +584,14 @@ def _score_replay(
     *,
     market_mode: str,
     global_threshold_floor: float,
+    portfolio_params: Optional[PortfolioPolicyParams] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, Any]]:
     if candidates.empty:
         return pd.DataFrame(), pd.DataFrame(), {"objective": float("-inf"), "trade_count": 0}
     ev_curve = fit_hierarchical_ev_curves(candidates)
-    params = PortfolioPolicyParams(global_threshold_floor=float(global_threshold_floor))
+    params = portfolio_params or PortfolioPolicyParams(
+        global_threshold_floor=float(global_threshold_floor)
+    )
     decisions, equity, metrics = replay_candidates(
         candidates,
         params,
@@ -432,6 +690,7 @@ def _optimise_stage(
     cost_pct: float,
     market_mode: str,
     global_threshold_floor: float,
+    portfolio_params: Optional[PortfolioPolicyParams],
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     sampler = optuna.samplers.TPESampler(seed=int(seed))
     study = optuna.create_study(direction="maximize", sampler=sampler)
@@ -450,6 +709,7 @@ def _optimise_stage(
             candidates,
             market_mode=market_mode,
             global_threshold_floor=global_threshold_floor,
+            portfolio_params=portfolio_params,
         )
         value = float(metrics.get("objective", -np.inf))
         row = _metrics_row(
@@ -507,6 +767,57 @@ def main() -> None:
     parser.add_argument("--market-mode", default="perps", choices=["spot", "perps"])
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     parser.add_argument("--min-rank", type=float, default=0.70)
+    parser.add_argument(
+        "--rank-score-col",
+        default="rank_pct",
+        help="Candidate column to rank into rank_pct before min-rank filtering.",
+    )
+    parser.add_argument(
+        "--rank-scope",
+        choices=["per_strategy", "side", "global", "timestamp_side"],
+        default="per_strategy",
+        help="Scope used when --rank-score-col is not rank_pct.",
+    )
+    parser.add_argument(
+        "--regime-ev-calibration-artifact",
+        type=Path,
+        default=default_regime_ev_calibration_artifact(),
+        help="Frozen regime EV calibration JSON to apply before rank filtering.",
+    )
+    parser.add_argument(
+        "--regime-ev-feature-handoff",
+        type=Path,
+        default=default_regime_ev_feature_handoff(),
+        help="Optional handoff parquet used to join missing regime feature columns.",
+    )
+    parser.add_argument(
+        "--regime-ev-rerank-admission",
+        action="store_true",
+        help=(
+            "Use regime-calibrated scores to recompute rank_pct before min-rank "
+            "filtering. Defaults off so regime calibration informs EV/context "
+            "without starving a month via global rank compression."
+        ),
+    )
+    parser.add_argument(
+        "--regime-ev-protected-admission-floor",
+        type=float,
+        default=np.nan,
+        help=(
+            "When regime EV reranking is enabled, rows whose original rank_pct "
+            "was above this floor cannot be pushed below it. Use this for "
+            "clipped admission-aware calibration."
+        ),
+    )
+    parser.add_argument(
+        "--regime-ev-retained-surplus-frac",
+        type=float,
+        default=0.5,
+        help=(
+            "Fraction of raw rank surplus above the protected admission floor "
+            "retained when clipping a negative regime EV rank adjustment."
+        ),
+    )
     parser.add_argument("--path-len", type=int, default=DEFAULT_PATH_LEN)
     parser.add_argument("--min-rows-per-strategy", type=int, default=50)
     parser.add_argument("--strategy-ids", default="")
@@ -514,6 +825,39 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=104729)
     parser.add_argument("--global-threshold-floor", type=float, default=0.0)
     parser.add_argument("--cost-pct", type=float, default=DEFAULT_POLICY_PER_SIDE_COST_PCT)
+    parser.add_argument(
+        "--deployment-rank-threshold",
+        type=float,
+        default=np.nan,
+        help=(
+            "Optional deployed base rank threshold to write into rebuilt "
+            "candidate rows before portfolio replay."
+        ),
+    )
+    parser.add_argument(
+        "--portfolio-policy-config",
+        type=Path,
+        default=None,
+        help="Optional deployed optimized_portfolio_policy_config.json.",
+    )
+    parser.add_argument(
+        "--policy-params",
+        type=Path,
+        default=None,
+        help=(
+            "Optional deployed policy JSON. Strategy-level exit-pressure fields "
+            "are overlaid onto candidates when the candidate parquet does not "
+            "carry policy_exit_pressure_* columns."
+        ),
+    )
+    parser.add_argument(
+        "--include-exit-pressure-off-ablation",
+        action="store_true",
+        help=(
+            "Also replay a matched counterfactual with only "
+            "exit_pressure_enabled=False."
+        ),
+    )
     parser.add_argument(
         "--enable-geometry-overrides",
         action="store_true",
@@ -542,10 +886,30 @@ def main() -> None:
         "1" if bool(args.download_missing_1m) else "0"
     )
 
-    rows = _prepare_rows(args.candidates, min_rank=float(args.min_rank))
+    rows = _prepare_rows(
+        args.candidates,
+        min_rank=float(args.min_rank),
+        rank_score_col=str(args.rank_score_col),
+        rank_scope=str(args.rank_scope),
+        regime_ev_calibration_artifact=args.regime_ev_calibration_artifact,
+        regime_ev_feature_handoff=args.regime_ev_feature_handoff,
+        regime_ev_rerank_admission=bool(args.regime_ev_rerank_admission),
+        regime_ev_protected_admission_floor=(
+            float(args.regime_ev_protected_admission_floor)
+            if np.isfinite(float(args.regime_ev_protected_admission_floor))
+            else None
+        ),
+        regime_ev_retained_surplus_frac=float(args.regime_ev_retained_surplus_frac),
+    )
+    strategy_policy_overrides = _load_strategy_policy_overrides(args.policy_params)
+    rows = _apply_strategy_policy_overrides(rows, strategy_policy_overrides)
     if args.strategy_ids.strip():
         allowed = {s.strip() for s in args.strategy_ids.split(",") if s.strip()}
         rows = rows.loc[rows["strategy_id"].isin(allowed)].copy()
+    portfolio_params: Optional[PortfolioPolicyParams] = None
+    if args.portfolio_policy_config is not None:
+        portfolio_payload = json.loads(args.portfolio_policy_config.read_text())
+        portfolio_params = portfolio_policy_params_from_live_config(portfolio_payload)
     bundles = _load_bundles(
         rows,
         data_root=str(args.data_root),
@@ -582,6 +946,52 @@ def main() -> None:
         "download_missing_1m": bool(args.download_missing_1m),
         "global_threshold_floor": float(args.global_threshold_floor),
         "cost_pct": float(args.cost_pct),
+        "deployment_rank_threshold": (
+            float(args.deployment_rank_threshold)
+            if np.isfinite(float(args.deployment_rank_threshold))
+            else None
+        ),
+        "portfolio_policy_config": {
+            "path": (
+                str(args.portfolio_policy_config)
+                if args.portfolio_policy_config is not None
+                else ""
+            ),
+            "loaded": portfolio_params is not None,
+        },
+        "policy_params_overlay": {
+            "path": str(args.policy_params) if args.policy_params is not None else "",
+            "strategy_count": int(len(strategy_policy_overrides)),
+            "fields": list(EXIT_PRESSURE_POLICY_KEYS),
+        },
+        "exit_pressure_off_ablation_enabled": bool(
+            args.include_exit_pressure_off_ablation
+        ),
+        "regime_ev_calibration": {
+            "enabled": args.regime_ev_calibration_artifact is not None,
+            "policy_id": CALIBRATION_POLICY_ID,
+            "artifact_path": (
+                str(args.regime_ev_calibration_artifact)
+                if args.regime_ev_calibration_artifact is not None
+                else ""
+            ),
+            "feature_handoff_path": (
+                str(args.regime_ev_feature_handoff)
+                if args.regime_ev_feature_handoff is not None
+                else ""
+            ),
+            "rank_score_col_after_calibration": "score_regime_calibrated",
+            "rank_scope": str(args.rank_scope),
+            "applied_before_rank_filtering": bool(args.regime_ev_rerank_admission),
+            "protected_admission_floor": (
+                float(args.regime_ev_protected_admission_floor)
+                if np.isfinite(float(args.regime_ev_protected_admission_floor))
+                else None
+            ),
+            "retained_surplus_frac": float(args.regime_ev_retained_surplus_frac),
+            "applied_as_context_before_rank_filtering": args.regime_ev_calibration_artifact
+            is not None,
+        },
         "strategy_count": int(len(bundles)),
         "strategies": [
             {
@@ -593,6 +1003,10 @@ def main() -> None:
         ],
         "arms": [],
     }
+    if np.isfinite(float(args.deployment_rank_threshold)):
+        threshold = float(args.deployment_rank_threshold)
+        stage_overrides["base_strategy_threshold"] = threshold
+        stage_overrides["deployment_rank_threshold"] = threshold
 
     for arm, stage, suggest in stage_plan:
         if suggest is not None:
@@ -606,6 +1020,7 @@ def main() -> None:
                 cost_pct=float(args.cost_pct),
                 market_mode=str(args.market_mode),
                 global_threshold_floor=float(args.global_threshold_floor),
+                portfolio_params=portfolio_params,
             )
             trial_rows.extend(rows_for_stage)
 
@@ -620,6 +1035,7 @@ def main() -> None:
             candidates,
             market_mode=str(args.market_mode),
             global_threshold_floor=float(args.global_threshold_floor),
+            portfolio_params=portfolio_params,
         )
         row = _write_arm_outputs(
             out_dir=args.out_dir,
@@ -633,6 +1049,36 @@ def main() -> None:
         )
         summary_rows.append(row)
         manifest["arms"].append(row)
+
+        if arm == "A0_baseline" and bool(args.include_exit_pressure_off_ablation):
+            off_overrides = {**stage_overrides, "exit_pressure_enabled": False}
+            off_arm = "A0_exit_pressure_off"
+            off_stage = "exit_pressure_off_counterfactual"
+            off_candidates = _candidate_table_for_overrides(
+                bundles,
+                overrides=off_overrides,
+                cost_pct=float(args.cost_pct),
+                market_mode=str(args.market_mode),
+                arm=off_arm,
+            )
+            off_decisions, off_equity, off_metrics = _score_replay(
+                off_candidates,
+                market_mode=str(args.market_mode),
+                global_threshold_floor=float(args.global_threshold_floor),
+                portfolio_params=portfolio_params,
+            )
+            off_row = _write_arm_outputs(
+                out_dir=args.out_dir,
+                arm=off_arm,
+                stage=off_stage,
+                overrides=off_overrides,
+                candidates=off_candidates,
+                decisions=off_decisions,
+                equity=off_equity,
+                metrics=off_metrics,
+            )
+            summary_rows.append(off_row)
+            manifest["arms"].append(off_row)
 
     summary = pd.DataFrame(summary_rows)
     trials = pd.DataFrame(trial_rows)

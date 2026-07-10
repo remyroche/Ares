@@ -53,6 +53,24 @@ _CLOSEABLE_SAMPLE_RE = re.compile(
     rf"(?P<ts>\d{{4}}-\d{{2}}-\d{{2}}T[^\s]+)\s+live_closeable_price_sample\s+"
     rf".*?\bprice=(?P<price>{_FLOAT_RE})\b"
 )
+_SENTINEL_SAMPLE_RE = re.compile(
+    rf"(?P<ts>\d{{4}}-\d{{2}}-\d{{2}}T[^\s]+)\s+lightweight_stop_sentinel_sample\s+"
+    rf".*?\bprice=(?P<price>{_FLOAT_RE})\b"
+)
+_SENTINEL_PRETRIGGER_RE = re.compile(
+    rf"(?P<ts>\d{{4}}-\d{{2}}-\d{{2}}T[^\s]+)\s+lightweight_stop_sentinel_pretrigger\s+"
+    rf".*?\bprice=(?P<price>{_FLOAT_RE})\b"
+    rf".*?\bstop_price=(?P<stop_price>{_FLOAT_RE})\b"
+    rf".*?\bstop_reason=(?P<stop_reason>[^\s]+)\s+"
+    rf".*?\bexit_reason=(?P<exit_reason>[^\s]+)"
+)
+_SOFTWARE_PRE_REPLACE_BREACH_RE = re.compile(
+    rf"(?P<ts>\d{{4}}-\d{{2}}-\d{{2}}T[^\s]+)\s+software_policy_stop_breached_before_exchange_replace\s+"
+    rf".*?\bpolicy_stop=(?P<stop_price>{_FLOAT_RE})\b"
+    rf".*?\bcurrent_price=(?P<price>{_FLOAT_RE})\b"
+    rf".*?\bstop_reason=(?P<stop_reason>[^\s]+)\s+"
+    rf".*?\bexit_reason=(?P<exit_reason>[^\s]+)"
+)
 _STOP_FILLED_RE = re.compile(
     rf"(?P<ts>\d{{4}}-\d{{2}}-\d{{2}}T[^\s]+)\s+stop_order_filled\s+"
     rf".*?\bfill_price=(?P<fill_price>{_FLOAT_RE})\b"
@@ -107,6 +125,35 @@ def _safe_float(value: Any, default: float = np.nan) -> float:
     except Exception:
         return default
     return out if np.isfinite(out) else default
+
+
+def _row_event_ts(row: Mapping[str, Any]) -> pd.Timestamp:
+    for key in ("exit_time", "entry_time", "timestamp", "created_at"):
+        ts = _to_ts(row.get(key))
+        if ts is not None:
+            return ts
+    return pd.Timestamp.min.tz_localize("UTC")
+
+
+def _select_closed_trade_rows(
+    closed: pd.DataFrame,
+    *,
+    symbols: str = "",
+    limit: Optional[int] = None,
+) -> pd.DataFrame:
+    """Filter closed trades and keep the latest rows for focused live audits."""
+    out = closed.copy()
+    if symbols:
+        wanted = {s.strip() for s in str(symbols).split(",") if s.strip()}
+        if wanted and "symbol" in out.columns:
+            out = out[out["symbol"].isin(wanted)].copy()
+    if out.empty:
+        return out
+    out["_event_ts_for_replay_sort"] = out.apply(_row_event_ts, axis=1)
+    out = out.sort_values("_event_ts_for_replay_sort")
+    if limit:
+        out = out.tail(int(limit)).copy()
+    return out.drop(columns=["_event_ts_for_replay_sort"], errors="ignore")
 
 
 def _parse_float_from_detail(pattern: re.Pattern[str], detail: Any) -> float:
@@ -280,6 +327,65 @@ def _parse_recap_observations(recap: str) -> ParsedRecap:
                     }
                 )
             continue
+        m = _SENTINEL_SAMPLE_RE.search(line)
+        if m:
+            ts = _to_ts(m.group("ts"))
+            px = _safe_float(m.group("price"))
+            if ts is not None and np.isfinite(px):
+                rows.append(
+                    {
+                        "ts": ts,
+                        "open": px,
+                        "high": px,
+                        "low": px,
+                        "close": px,
+                        "volume": np.nan,
+                        "observation_source": "live_trade_recap_stop_sentinel_sample",
+                    }
+                )
+            continue
+        m = _SENTINEL_PRETRIGGER_RE.search(line)
+        if m:
+            ts = _to_ts(m.group("ts"))
+            px = _safe_float(m.group("price"))
+            if ts is not None and np.isfinite(px):
+                rows.append(
+                    {
+                        "ts": ts,
+                        "open": px,
+                        "high": px,
+                        "low": px,
+                        "close": px,
+                        "volume": np.nan,
+                        "observation_source": "live_trade_recap_logged_exit_trigger",
+                        "logged_exit_trigger": True,
+                        "logged_stop_price": _safe_float(m.group("stop_price")),
+                        "logged_stop_reason": str(m.group("stop_reason") or ""),
+                        "logged_exit_reason": str(m.group("exit_reason") or ""),
+                    }
+                )
+            continue
+        m = _SOFTWARE_PRE_REPLACE_BREACH_RE.search(line)
+        if m:
+            ts = _to_ts(m.group("ts"))
+            px = _safe_float(m.group("price"))
+            if ts is not None and np.isfinite(px):
+                rows.append(
+                    {
+                        "ts": ts,
+                        "open": px,
+                        "high": px,
+                        "low": px,
+                        "close": px,
+                        "volume": np.nan,
+                        "observation_source": "live_trade_recap_logged_exit_trigger",
+                        "logged_exit_trigger": True,
+                        "logged_stop_price": _safe_float(m.group("stop_price")),
+                        "logged_stop_reason": str(m.group("stop_reason") or ""),
+                        "logged_exit_reason": str(m.group("exit_reason") or ""),
+                    }
+                )
+            continue
         m = _STOP_FILLED_RE.search(line)
         if m:
             stop_fill_ts = _to_ts(m.group("ts"))
@@ -296,6 +402,88 @@ def _parse_recap_observations(recap: str) -> ParsedRecap:
         bars = pd.DataFrame()
     source = "live_trade_recap_5m_and_closeable_samples" if not bars.empty else "none"
     return ParsedRecap(bars, stop_fill_ts, stop_fill_price, stop_reason, source)
+
+
+def _logged_live_software_handoff_exit(row: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """Return a replay-compatible logged exit for live-only software handoffs."""
+    reason = str(row.get("reason") or row.get("exit_reason") or "").strip()
+    detail = str(row.get("exit_reason_detail") or "").strip()
+    trigger_type = str(row.get("close_trigger_type") or "").strip().lower()
+    execution_method = str(row.get("close_execution_method") or "").strip().lower()
+    is_handoff = (
+        "exchange_valid_giveback_fallback_handoff" in reason
+        or "exchange_valid_giveback_fallback_handoff" in detail
+        or "software_executable_stop_breach_pre_replace" in reason
+        or "software_executable_stop_breach_pre_replace" in detail
+    )
+    if not is_handoff:
+        return None
+    if trigger_type and trigger_type not in {
+        "software_bid_ask_sentinel",
+        "software_policy_stop",
+        "software_policy_stop_pre_replace",
+    }:
+        return None
+    if (
+        execution_method
+        and "software" not in execution_method
+        and "ask_bid" not in execution_method
+    ):
+        return None
+    ts = _to_ts(row.get("exit_time"))
+    px = _safe_float(
+        row.get("exit_price"),
+        _safe_float(
+            row.get("actual_exit_price"),
+            _safe_float(row.get("realized_exit_price")),
+        ),
+    )
+    if ts is None or not (np.isfinite(px) and px > 0.0):
+        return None
+    return {
+        "reason": reason
+        or (
+            "software_executable_stop_breach_pretrigger:"
+            "exchange_valid_giveback_fallback_handoff"
+        ),
+        "ts": ts,
+        "price": float(px),
+        "status": "logged_live_software_handoff",
+    }
+
+
+def _logged_live_exchange_stop_fill(row: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """Return a replay-compatible logged exit for exchange stop fills."""
+    trigger_type = str(row.get("close_trigger_type") or "").strip().lower()
+    price_source = str(row.get("close_price_source") or "").strip().lower()
+    execution_method = str(row.get("close_execution_method") or "").strip().lower()
+    is_exchange_stop = (
+        trigger_type == "exchange_stop_order"
+        or price_source == "exchange_stop_order_fill"
+        or "exchange_stop_order" in execution_method
+    )
+    if not is_exchange_stop:
+        return None
+    ts = _to_ts(row.get("exit_time"))
+    px = _safe_float(
+        row.get("exit_price"),
+        _safe_float(
+            row.get("actual_exit_price"),
+            _safe_float(row.get("realized_exit_price")),
+        ),
+    )
+    if ts is None or not (np.isfinite(px) and px > 0.0):
+        return None
+    reason = str(row.get("reason") or row.get("exit_reason") or "").strip()
+    stop_reason = str(row.get("stop_reason") or "").strip()
+    if not reason:
+        reason = f"stop_order_filled:{stop_reason or 'exchange_stop_order'}"
+    return {
+        "reason": reason,
+        "ts": ts,
+        "price": float(px),
+        "status": "logged_live_exchange_stop_fill_from_closed_trade",
+    }
 
 
 def _combined_cached_bars(
@@ -440,7 +628,17 @@ def replay_one_anchor(
         row.get("policy_rank_pct"),
         _safe_float(row.get("rank_percentile"), _safe_float(row.get("rank_pct"), 0.5)),
     )
-    live_stop_price = _safe_float(row.get("stop_price"))
+    # Closed trade rows often carry the final/tightened stop in ``stop_price``.
+    # For an entry-to-exit replay, seed the path from the entry stop when the
+    # logger preserved it; otherwise compute the initial stop from policy params.
+    live_initial_stop_price = _safe_float(
+        row.get("shadow_initial_stop_price"),
+        _safe_float(row.get("initial_stop_price"), _safe_float(row.get("entry_stop_price"))),
+    )
+    live_final_stop_price = _safe_float(
+        row.get("shadow_live_stop_price"),
+        _safe_float(row.get("stop_price"), _safe_float(row.get("final_placed_stop"))),
+    )
     live_exit_price = _safe_float(
         row.get("exit_price"),
         _safe_float(row.get("actual_exit_price"), _safe_float(row.get("realized_exit_price"))),
@@ -456,7 +654,9 @@ def replay_one_anchor(
         "entry_price_used": entry_price,
         "live_entry_price": live_entry_price,
         "policy_entry_price": _safe_float(row.get("policy_entry_price")),
-        "live_stop_price": live_stop_price,
+        "live_initial_stop_price": live_initial_stop_price,
+        "live_final_stop_price": live_final_stop_price,
+        "live_stop_price": live_initial_stop_price,
         "live_exit_price": live_exit_price,
         "live_entry_to_exit_bps": _basis_points(live_exit_price, live_entry_price, side),
         "parsed_sl_mult": sl_mult,
@@ -486,8 +686,8 @@ def replay_one_anchor(
         return out
 
     computed_initial_stop = float(initial.stop_price)
-    use_logged_stop = np.isfinite(live_stop_price) and live_stop_price > 0.0
-    current_stop = float(live_stop_price if use_logged_stop else computed_initial_stop)
+    use_logged_stop = np.isfinite(live_initial_stop_price) and live_initial_stop_price > 0.0
+    current_stop = float(live_initial_stop_price if use_logged_stop else computed_initial_stop)
     current_stop_reason = str(initial.reason)
     state = _state_after_initial(
         entry_price=float(entry_price),
@@ -502,9 +702,41 @@ def replay_one_anchor(
             "computed_initial_stop": computed_initial_stop,
             "initial_stop_source": "logged_live_stop" if use_logged_stop else "computed_policy_stop",
             "initial_stop_reason": current_stop_reason,
-            "initial_stop_vs_live_stop_bps": _basis_points(current_stop, live_stop_price, side),
+            "initial_stop_vs_live_stop_bps": _basis_points(
+                current_stop,
+                live_initial_stop_price,
+                side,
+            ),
         }
     )
+
+    events: List[Dict[str, Any]] = []
+    logged_software_exit = _logged_live_software_handoff_exit(row)
+    if logged_software_exit is not None:
+        px = float(logged_software_exit["price"])
+        out.update(
+            {
+                "replay_hit": True,
+                "replay_exit_reason": str(logged_software_exit["reason"]),
+                "replay_exit_ts": logged_software_exit["ts"].isoformat(),
+                "replay_exit_price": px,
+                "replay_exit_price_vs_live_bps": _basis_points(
+                    px,
+                    live_exit_price,
+                    side,
+                ),
+                "replay_vs_live_exit_status": logged_software_exit["status"],
+                "replay_exit_vs_live_fill_event_bps": np.nan,
+                "replay_exit_from_observation_source": "closed_trade_logged_software_handoff",
+                "events_json": json.dumps(events, default=str),
+                "live_stop_fill_ts": recap.stop_fill_ts.isoformat()
+                if recap.stop_fill_ts is not None
+                else "",
+                "live_stop_fill_price_from_recap": recap.stop_fill_price,
+                "live_stop_reason_from_recap": recap.stop_reason,
+            }
+        )
+        return out
 
     if bars.empty:
         out.update(
@@ -518,9 +750,111 @@ def replay_one_anchor(
         )
         return out
 
-    events: List[Dict[str, Any]] = []
+    close_trigger_type = str(row.get("close_trigger_type") or "").lower()
+    close_execution_method = str(row.get("close_execution_method") or "").lower()
+    if (
+        recap.stop_fill_ts is not None
+        and np.isfinite(recap.stop_fill_price)
+        and (
+            close_trigger_type == "exchange_stop_order"
+            or "exchange" in close_execution_method
+            or str(row.get("close_price_source") or "").lower() == "exchange_stop_order_fill"
+        )
+    ):
+        out.update(
+            {
+                "replay_hit": True,
+                "replay_exit_reason": f"stop_order_filled:{recap.stop_reason or current_stop_reason}",
+                "replay_exit_ts": recap.stop_fill_ts.isoformat(),
+                "replay_exit_price": recap.stop_fill_price,
+                "replay_exit_price_vs_live_bps": _basis_points(
+                    recap.stop_fill_price,
+                    live_exit_price,
+                    side,
+                ),
+                "replay_vs_live_exit_status": "logged_live_exchange_stop_fill",
+                "replay_exit_vs_live_fill_event_bps": 0.0,
+                "replay_exit_from_observation_source": "live_trade_recap_stop_order_filled",
+                "events_json": json.dumps(events, default=str),
+                "live_stop_fill_ts": recap.stop_fill_ts.isoformat(),
+                "live_stop_fill_price_from_recap": recap.stop_fill_price,
+                "live_stop_reason_from_recap": recap.stop_reason,
+            }
+        )
+        return out
+
+    logged_exchange_stop = _logged_live_exchange_stop_fill(row)
+    if logged_exchange_stop is not None:
+        px = float(logged_exchange_stop["price"])
+        out.update(
+            {
+                "replay_hit": True,
+                "replay_exit_reason": str(logged_exchange_stop["reason"]),
+                "replay_exit_ts": logged_exchange_stop["ts"].isoformat(),
+                "replay_exit_price": px,
+                "replay_exit_price_vs_live_bps": _basis_points(
+                    px,
+                    live_exit_price,
+                    side,
+                ),
+                "replay_vs_live_exit_status": logged_exchange_stop["status"],
+                "replay_exit_vs_live_fill_event_bps": 0.0,
+                "replay_exit_from_observation_source": "closed_trade_exchange_stop_fill",
+                "events_json": json.dumps(events, default=str),
+                "live_stop_fill_ts": recap.stop_fill_ts.isoformat()
+                if recap.stop_fill_ts is not None
+                else "",
+                "live_stop_fill_price_from_recap": recap.stop_fill_price,
+                "live_stop_reason_from_recap": recap.stop_reason,
+            }
+        )
+        return out
+
+    logged_trigger_series = (
+        bars["logged_exit_trigger"]
+        if "logged_exit_trigger" in bars.columns
+        else pd.Series(False, index=bars.index)
+    )
+    use_logged_exit_trigger_path = logged_trigger_series.map(
+        lambda value: value is True
+        or str(value).strip().lower() in {"1", "true", "yes"}
+    ).any()
     for _, bar in bars.iterrows():
         bar_ts = _to_ts(bar.get("ts"))
+        logged_trigger_value = bar.get("logged_exit_trigger", False)
+        logged_trigger = (
+            logged_trigger_value is True
+            or str(logged_trigger_value).strip().lower() in {"1", "true", "yes"}
+        )
+        if logged_trigger:
+            px = _safe_float(bar.get("close"))
+            out.update(
+                {
+                    "replay_hit": True,
+                    "replay_exit_reason": str(
+                        bar.get("logged_exit_reason")
+                        or bar.get("logged_stop_reason")
+                        or current_stop_reason
+                    ),
+                    "replay_exit_ts": bar_ts.isoformat() if bar_ts is not None else "",
+                    "replay_exit_price": px,
+                    "replay_exit_price_vs_live_bps": _basis_points(px, live_exit_price, side),
+                    "replay_vs_live_exit_status": "logged_live_exit_trigger",
+                    "replay_exit_vs_live_fill_event_bps": _basis_points(
+                        px, recap.stop_fill_price, side
+                    ),
+                    "replay_exit_from_observation_source": bar.get("observation_source"),
+                    "events_json": json.dumps(events, default=str),
+                    "live_stop_fill_ts": recap.stop_fill_ts.isoformat() if recap.stop_fill_ts is not None else "",
+                    "live_stop_fill_price_from_recap": recap.stop_fill_price,
+                    "live_stop_reason_from_recap": recap.stop_reason,
+                    "logged_stop_price": bar.get("logged_stop_price"),
+                    "logged_stop_reason": bar.get("logged_stop_reason"),
+                }
+            )
+            return out
+        if use_logged_exit_trigger_path:
+            continue
         hit, fill_price = _stop_hit(
             side,
             current_stop,
@@ -676,12 +1010,11 @@ def run(args: argparse.Namespace) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         out_dir = workspace / out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    closed = pd.read_csv(closed_path)
-    if args.symbols:
-        wanted = {s.strip() for s in str(args.symbols).split(",") if s.strip()}
-        closed = closed[closed["symbol"].isin(wanted)].copy()
-    if args.limit:
-        closed = closed.head(int(args.limit)).copy()
+    closed = _select_closed_trade_rows(
+        pd.read_csv(closed_path),
+        symbols=str(args.symbols or ""),
+        limit=args.limit,
+    )
 
     params_by_strategy = load_simple_policy_stop_params_by_strategy(
         str(data_root), str(args.run_id)

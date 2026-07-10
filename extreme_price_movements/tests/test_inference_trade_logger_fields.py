@@ -237,6 +237,54 @@ def test_trade_logger_persists_holding_time_to_csv_and_sqlite(tmp_path):
     assert rows == [("2.5",)]
 
 
+def test_trade_logger_promotes_estimated_net_fields_for_exit_rows(tmp_path):
+    path = tmp_path / "trades.csv"
+    logger = TradeLogger(output_path=str(path), run_id="r1")
+
+    logger.log_trade_legacy(
+        symbol="UNI/USD:USD",
+        side="short",
+        action="exit",
+        size=3.0,
+        price=3.528,
+        status="closed",
+        context={
+            "lifecycle_event": "exit_filled",
+            "entry_time": "2026-07-10T07:12:00Z",
+            "exit_time": "2026-07-10T07:30:00Z",
+            "gross_pnl_pct": 0.001984,
+            "net_pnl_estimated": 0.010427,
+            "net_pnl_pct_estimated": 0.000985,
+            "estimated_fees_amount": 0.010573,
+            "estimated_fee_source": (
+                "default_live_perp_fee_bps_entry_market"
+                "+default_live_perp_fee_bps_exit_market"
+            ),
+            "gross_to_estimated_net_cost_quote": 0.010573,
+            "gross_to_estimated_net_cost_pct": 0.000999,
+            "gross_to_estimated_net_friction_drag_bps": 9.99,
+            "net_pnl_verification_status": "estimated_missing_exchange_fees",
+        },
+    )
+
+    df = pd.read_csv(path)
+    assert float(df.loc[0, "net_pnl"]) == 0.010427
+    assert float(df.loc[0, "net_pnl_amount"]) == 0.010427
+    assert float(df.loc[0, "net_pnl_pct"]) == 0.000985
+    assert float(df.loc[0, "fees_amount"]) == 0.010573
+    assert str(df.loc[0, "fees_estimated"]) == "True"
+    assert df.loc[0, "net_pnl_verification_status"] == (
+        "estimated_missing_exchange_fees"
+    )
+
+    with sqlite3.connect(path.with_suffix(".sqlite")) as conn:
+        rows = conn.execute(
+            'SELECT net_pnl, net_pnl_amount, net_pnl_pct, fees_amount '
+            'FROM trades WHERE symbol = "UNI/USD:USD"'
+        ).fetchall()
+    assert rows == [("0.010427", "0.010427", "0.000985", "0.010573")]
+
+
 def test_trade_logger_derives_holding_time_from_entry_and_exit_times(tmp_path):
     path = tmp_path / "trades.csv"
     logger = TradeLogger(output_path=str(path), run_id="r1")

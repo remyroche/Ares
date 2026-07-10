@@ -1,6 +1,7 @@
 import json
 
 import pandas as pd
+import pytest
 
 from extreme_price_movements.portfolio_policy_replay import (
     DEFAULT_OFFLINE_PRICE_GAP_BPS,
@@ -120,6 +121,62 @@ def test_dynamic_threshold_increases_with_occupancy():
     decisions, _, _ = replay_candidates(rows, params, mode="global_auction")
     second = decisions[decisions["symbol"] == "ETH/USD"].iloc[0]
     assert second["dynamic_threshold"] > 0.50
+
+
+def test_replay_dynamic_threshold_uses_allocated_share_and_caps_position_size():
+    first = _candidate(
+        "2026-01-01 00:00",
+        "BTC/USD",
+        "long",
+        "L_a",
+        0.99,
+        threshold=0.60,
+        holding_bars=8,
+    )
+    first["portfolio_fixed_position_size"] = 7000.0
+    low_rank_after_pressure = _candidate(
+        "2026-01-01 00:15",
+        "ETH/USD",
+        "long",
+        "L_a",
+        0.78,
+        threshold=0.60,
+        holding_bars=4,
+    )
+    high_rank_after_pressure = _candidate(
+        "2026-01-01 00:15",
+        "SOL/USD",
+        "long",
+        "L_a",
+        0.99,
+        threshold=0.60,
+        holding_bars=4,
+    )
+    high_rank_after_pressure["portfolio_fixed_position_size"] = 1000.0
+    rows = pd.DataFrame([first, low_rank_after_pressure, high_rank_after_pressure])
+    params = PortfolioPolicyParams(
+        max_concurrent_positions=10,
+        max_concurrent_per_side=None,
+        max_concurrent_per_strategy=None,
+        max_new_entries_per_bar=2,
+        max_total_wallet_allocation_pct=0.75,
+        global_threshold_floor=0.50,
+        occupancy_threshold_alpha=0.0,
+        allocation_threshold_alpha=1.0,
+        allocation_threshold_power=1.0,
+        min_position_size=1.0,
+    )
+
+    decisions, _, _ = replay_candidates(rows, params, mode="global_auction")
+
+    eth = decisions[decisions["symbol"] == "ETH/USD"].iloc[0]
+    sol = decisions[decisions["symbol"] == "SOL/USD"].iloc[0]
+    assert sol["dynamic_threshold"] == pytest.approx(0.88)
+    assert bool(sol["accepted"]) is True
+    assert sol["position_size"] == 500.0
+    assert sol["open_notional_after"] <= 7500.0
+    assert eth["dynamic_threshold"] == pytest.approx(0.90)
+    assert eth["rejection_reason"] == "below_dynamic_threshold"
 
 
 def test_replay_applies_loss_cooldown_before_reentry():

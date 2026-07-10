@@ -108,7 +108,9 @@ from extreme_price_movements.inference.dynamic_strategy_performance import (
     meta_head_hash,
 )
 from extreme_price_movements.inference.dynamic_hr_surprise_threshold import (
+    apply_archetype_hit_surprise_threshold,
     apply_dynamic_hr_surprise_threshold,
+    load_archetype_hit_surprise_policy,
     load_dynamic_hr_surprise_state,
 )
 from extreme_price_movements.inference.data_fetcher import (
@@ -124,6 +126,7 @@ from extreme_price_movements.inference.feature_generator import (
     _feature_runtime_cfg_hash,
     _hash_values,
     _is_live_source_derived_feature_key,
+    _is_live_synthesized_feature_key,
     _meta_model_derived_raw_dependencies,
     _merge_missing_feature_dicts,
     _required_tail_warmup_hours,
@@ -151,11 +154,24 @@ from extreme_price_movements.inference.google_sheets_exporter import (
 from extreme_price_movements.inference.feature_layer_debug import (
     update_live_feature_layer_rank_summary,
 )
+from extreme_price_movements.inference.live_meta_feature_overlays import (
+    apply_live_meta_reliability_priors,
+    live_ae_gmm_input_feature_columns,
+    load_live_ae_gmm_state_payload,
+    load_meta_reliability_prior_payload,
+    materialize_live_ae_gmm_features,
+    materialize_live_source_regime_features,
+)
 from extreme_price_movements.inference.liquidity_precheck import (
     compute_price_gap_rank_penalty,
     evaluate_orderbook_liquidity,
     fetch_ticker_snapshot,
     marketable_limit_price,
+)
+from extreme_price_movements.inference.live_policy_archetype import (
+    load_live_policy_archetype_classifier,
+    normalize_policy_archetype_label,
+    predict_live_policy_archetype,
 )
 from extreme_price_movements.inference.model_orchestrator import (
     DELETED_MODEL_FEATURE_KEYS,
@@ -179,8 +195,18 @@ from extreme_price_movements.inference.parity import (
     validate_required_feature_frames,
 )
 from extreme_price_movements.inference.policy_rank_reference import (
+    POLICY_RANK_REFERENCE_SCORE_COL,
     PolicyRankReferenceStore,
     apply_policy_rank_percentile_gate,
+    strategy_rank_reference_aliases,
+)
+from extreme_price_movements.inference.threshold_basis_policy import (
+    apply_threshold_basis_policy_to_decisions,
+    load_threshold_basis_policy,
+)
+from extreme_price_movements.regime_ev_calibration import (
+    apply_regime_ev_calibration,
+    load_regime_ev_calibration,
 )
 from extreme_price_movements.inference.portfolio_policy import (
     PortfolioPolicyConfig,
@@ -1598,6 +1624,187 @@ def _active_position_matches_scored_strategy(
     return strategy_core_id(pos_alias) == strategy_core_id(scored_alias)
 
 
+_MODEL_POLICY_CONTEXT_COPY_KEYS = (
+    "model_artifact_run_id",
+    "policy_artifact_run_id",
+    "base_pred",
+    "base_rank_pct",
+    "base_train_rank_pct",
+    "base_gate_top_frac",
+    "meta_pred",
+    "meta_train_rank_pct",
+    "rank_score_source",
+    "calibrated_score",
+    "raw_calibrated_score",
+    "score_regime_calibrated",
+    "regime_ev_risk_score",
+    "regime_ev_effect_count",
+    "regime_ev_calibration_source",
+    "regime_ev_calibration_artifact_path",
+    "policy_rank_pct",
+    "policy_rank_reference_n",
+    "policy_rank_reference_source",
+    "auction_rank_pct",
+    "auction_rank_reference_n",
+    "auction_rank_reference_source",
+    "auction_rank_score_source",
+    "normalized_rank_score",
+    "threshold_rank_score",
+    "threshold_rank_score_source",
+    "threshold_rank_score_after_friction_ev",
+    "threshold_basis_policy_id",
+    "threshold_basis_family",
+    "threshold_basis_window_days",
+    "threshold_basis_rank_score",
+    "threshold_basis_rank_score_source",
+    "threshold_basis_selected",
+    "threshold_basis_reason",
+    "threshold_basis_dynamic_ev_target",
+    "threshold_basis_dynamic_score_threshold",
+    "threshold_basis_recent_reference_rows",
+    "threshold_basis_reference_rows",
+    "threshold_basis_baseline_activity_count",
+    "threshold_basis_global_dynamic_ev_target",
+    "threshold_basis_global_dynamic_score_threshold",
+    "effective_threshold",
+    "deployment_rank_threshold",
+    "final_threshold",
+    "final_gate_rank_score",
+    "final_gate_threshold",
+    "final_gate_rank_score_source",
+    "portfolio_gate_rank_score",
+    "portfolio_gate_rank_score_source",
+    "portfolio_ordering_rank_score",
+    "portfolio_allocation_rank_score",
+    "portfolio_gate_initial_threshold",
+    "portfolio_gate_final_threshold",
+    "portfolio_gate_threshold_viability_margin",
+    "portfolio_priority",
+    "portfolio_priority_multiplier",
+    "portfolio_priority_adjustment",
+    "portfolio_rank_adjustment",
+    "portfolio_priority_after_live_friction_ev",
+    "policy_archetype",
+    "local_side_archetype",
+    "source_archetype",
+    "archetype_label_family",
+    "policy_archetype_source",
+    "archetype_hit_surprise_threshold",
+    "archetype_hit_surprise_mode",
+    "archetype_hit_surprise_applied",
+    "archetype_hit_surprise_reason",
+    "archetype_hit_surprise_matched_key",
+    "archetype_hit_surprise_threshold_delta",
+    "archetype_hit_surprise_quality_adjustment",
+    "archetype_hit_surprise_priority_multiplier",
+    "archetype_hit_surprise_priority_adjustment",
+    "archetype_hit_surprise_rank_adjustment",
+    "archetype_hit_surprise_actual_hit_rate",
+    "archetype_hit_surprise_expected_hit_rate",
+    "archetype_hit_surprise_hit_rate_delta",
+    "archetype_hit_surprise_hit_rate_surprise_z",
+    "archetype_hit_surprise_support_confidence",
+    "archetype_hit_surprise_n_eff",
+    "archetype_hit_surprise_rows",
+    "dynamic_hr_surprise_threshold",
+    "dynamic_hr_surprise_applied",
+    "dynamic_hr_surprise_reason",
+    "dynamic_hr_surprise_head",
+    "dynamic_hr_surprise_z_eff",
+    "dynamic_hr_surprise_guarded_y",
+    "dynamic_hr_surprise_w_lower",
+    "dynamic_hr_surprise_w_raise",
+    "dynamic_hr_surprise_state_age_days",
+    "dynamic_hr_threshold",
+    "dynamic_hr_base_threshold",
+    "dynamic_hr_surprise_active",
+    "hit_rate_surprise_z_eff",
+    "estimated_hit_rate",
+    "estimated_hit_rate_source",
+    "estimated_hit_rate_calibration_n",
+    "estimated_ev_gross_return",
+    "estimated_ev_net_return",
+    "estimated_ev_cost_bps",
+    "estimated_ev_historical_net_return",
+    "estimated_ev_historical_cost_bps",
+    "estimated_ev_hit_rate",
+    "estimated_ev_source",
+    "estimated_ev_calibration_n",
+    "ev_adjusted_entry_friction_bps",
+    "ev_haircut_bps",
+    "ev_haircut_raw_live_entry_friction_bps",
+    "ev_haircut_observed_spread_bps",
+    "ev_haircut_observed_half_spread_bps",
+    "ev_haircut_spread_baseline_bps",
+    "ev_haircut_spread_baseline_source",
+    "ev_haircut_half_spread_baseline_bps",
+    "ev_haircut_spread_excess_bps",
+    "ev_haircut_orderbook_slippage_bps",
+    "ev_haircut_adverse_signal_gap_bps",
+    "ev_haircut_observed_delay_slippage_bps",
+    "ev_haircut_delay_slippage_baseline_bps",
+    "ev_haircut_delay_slippage_excess_bps",
+    "ev_haircut_contract",
+    "ev_adjusted_net_return_before_friction",
+    "ev_adjusted_net_return_after_friction",
+    "ev_adjusted_calibrated_score",
+    "ev_adjusted_rank_score",
+    "ev_adjusted_source",
+    "ev_adjusted_historical_net_return_before_rebase",
+    "ev_inference_cost_rebase_enabled",
+    "ev_inference_cost_rebase_applied",
+    "ev_inference_fixed_round_trip_cost_bps",
+    "ev_inference_spread_multiplier",
+    "ev_inference_spread_observed_or_baseline_bps",
+    "ev_inference_spread_model_bps",
+    "ev_inference_total_cost_bps",
+    "ev_inference_cost_model_contract",
+    "inference_drift_score",
+    "base_lgbm_inference_drift_score",
+    "meta_lgbm_inference_drift_score",
+    "feature_drift_psi_core",
+    "feature_drift_psi_core_80",
+    "base_lgbm_feature_drift_psi_core",
+    "base_lgbm_feature_drift_ks_core",
+    "meta_lgbm_feature_drift_psi_core",
+    "meta_lgbm_feature_drift_ks_core",
+    "feature_drift_ks_bin_mean",
+    "ood_score",
+    "odd_score",
+    "uncertainty_score",
+    "base_lgbm_uncertainty_score",
+    "meta_lgbm_uncertainty_score",
+    "prob_uncertainty",
+    "prediction_entropy",
+)
+
+
+def _copy_model_policy_context_from_decision(
+    decision: Mapping[str, Any],
+    chain: Mapping[str, Any],
+    keys: Sequence[str] = _MODEL_POLICY_CONTEXT_COPY_KEYS,
+) -> Dict[str, Any]:
+    context: Dict[str, Any] = {}
+    for key in keys:
+        if key in chain:
+            value = chain.get(key)
+        elif key in decision:
+            value = decision.get(key)
+        else:
+            continue
+        if value is None or (isinstance(value, str) and value == ""):
+            continue
+        try:
+            if pd.isna(value):
+                continue
+        except (TypeError, ValueError):
+            pass
+        if isinstance(value, (float, np.floating)) and not np.isfinite(float(value)):
+            continue
+        context[key] = value
+    return context
+
+
 def _model_context_from_scored_decision(
     decision: Mapping[str, Any],
     *,
@@ -1632,6 +1839,26 @@ def _model_context_from_scored_decision(
         "calibrated_score": chain.get(
             "calibrated_score", decision.get("calibrated_score")
         ),
+        "raw_calibrated_score": chain.get(
+            "raw_calibrated_score", decision.get("raw_calibrated_score")
+        ),
+        "score_regime_calibrated": chain.get(
+            "score_regime_calibrated", decision.get("score_regime_calibrated")
+        ),
+        "regime_ev_risk_score": chain.get(
+            "regime_ev_risk_score", decision.get("regime_ev_risk_score")
+        ),
+        "regime_ev_effect_count": chain.get(
+            "regime_ev_effect_count", decision.get("regime_ev_effect_count")
+        ),
+        "regime_ev_calibration_source": chain.get(
+            "regime_ev_calibration_source",
+            decision.get("regime_ev_calibration_source"),
+        ),
+        "regime_ev_calibration_artifact_path": chain.get(
+            "regime_ev_calibration_artifact_path",
+            decision.get("regime_ev_calibration_artifact_path"),
+        ),
         "rank_percentile": rank_percentile,
         "sizer_rank_percentile": rank_percentile,
         "policy_rank_pct": chain.get(
@@ -1661,6 +1888,10 @@ def _model_context_from_scored_decision(
         ),
         "last_model_score_refresh_reason": refresh_reason,
     }
+    for key, value in _copy_model_policy_context_from_decision(
+        decision, chain
+    ).items():
+        context.setdefault(key, value)
     for metric_key in (
         "inference_drift_score",
         "base_lgbm_inference_drift_score",
@@ -1893,6 +2124,25 @@ def _artifact_file_mtime_iso(path: Path) -> Optional[str]:
     return None
 
 
+def _resolve_policy_sidecar_path(
+    *,
+    path_value: Any,
+    data_root: str,
+    run_id: str,
+) -> Optional[Path]:
+    text = str(path_value or "").strip()
+    if not text:
+        return None
+    path = Path(text).expanduser()
+    if path.is_absolute():
+        return path
+    for base in _policy_artifact_bases(data_root, str(run_id)):
+        candidate = base / path
+        if candidate.exists():
+            return candidate
+    return path
+
+
 def _meta_feature_contract_hash(data_root: str, run_id: str) -> Optional[str]:
     return _artifact_file_hash(
         Path(data_root)
@@ -2004,8 +2254,29 @@ def _meta_hit_rate_calibration_aliases(
     return out
 
 
+def _ev_calibration_aliases(
+    strategy_id: Any,
+    *,
+    side: Any = None,
+    policy_archetype: Any = None,
+) -> list[str]:
+    sid = str(strategy_id or "").strip()
+    core = strategy_core_id(sid)
+    side_text = str(side or "").strip().lower()
+    archetype = str(policy_archetype or "").strip()
+    aliases: list[str] = []
+    strategy_keys = [key for key in (sid, core) if key]
+    if side_text and archetype:
+        aliases.extend(f"{key}|{side_text}|{archetype}" for key in strategy_keys)
+        aliases.append(f"{side_text}|{archetype}")
+    if side_text:
+        aliases.extend(f"{key}|{side_text}" for key in strategy_keys)
+    aliases.extend(strategy_keys)
+    return list(dict.fromkeys(aliases))
+
+
 def _load_strategy_ev_calibration(data_root: str, run_id: str) -> Dict[str, Any]:
-    """Load per-strategy EV curves from the deployed simple-policy candidate table."""
+    """Load hierarchical EV curves from the deployed simple-policy candidate table."""
     key = (str(data_root), str(run_id))
     cached = _STRATEGY_EV_CALIBRATION_CACHE.get(key)
     if cached is not None:
@@ -2023,6 +2294,10 @@ def _load_strategy_ev_calibration(data_root: str, run_id: str) -> Dict[str, Any]
     try:
         cols = [
             "strategy_id",
+            "side",
+            "side_name",
+            "policy_archetype",
+            "local_side_archetype",
             "calibrated_score",
             "normalized_rank_score",
             "gross_return",
@@ -2030,7 +2305,19 @@ def _load_strategy_ev_calibration(data_root: str, run_id: str) -> Dict[str, Any]
             "fees_bps",
             "slippage_bps",
         ]
-        candidates = pd.read_parquet(path, columns=cols)
+        try:
+            candidates = pd.read_parquet(path, columns=cols)
+        except Exception:
+            required = [
+                "strategy_id",
+                "calibrated_score",
+                "normalized_rank_score",
+                "gross_return",
+                "net_return",
+                "fees_bps",
+                "slippage_bps",
+            ]
+            candidates = pd.read_parquet(path, columns=required)
     except Exception as exc:
         tprint(f"Warning: failed to load strategy EV calibration {path}: {exc}")
         _STRATEGY_EV_CALIBRATION_CACHE[key] = {}
@@ -2041,6 +2328,18 @@ def _load_strategy_ev_calibration(data_root: str, run_id: str) -> Dict[str, Any]
         return {}
     candidates = candidates.copy()
     candidates["strategy_id"] = candidates["strategy_id"].astype(str)
+    if "side_name" in candidates.columns:
+        candidates["ev_curve_side"] = candidates["side_name"].astype(str).str.lower()
+    elif "side" in candidates.columns:
+        candidates["ev_curve_side"] = candidates["side"].astype(str).str.lower()
+    else:
+        candidates["ev_curve_side"] = ""
+    if "policy_archetype" in candidates.columns:
+        candidates["ev_curve_archetype"] = candidates["policy_archetype"].astype(str)
+    elif "local_side_archetype" in candidates.columns:
+        candidates["ev_curve_archetype"] = candidates["local_side_archetype"].astype(str)
+    else:
+        candidates["ev_curve_archetype"] = ""
     for col in [
         "calibrated_score",
         "normalized_rank_score",
@@ -2057,10 +2356,14 @@ def _load_strategy_ev_calibration(data_root: str, run_id: str) -> Dict[str, Any]
         & np.isfinite(candidates["net_return"].to_numpy(dtype=float))
     ]
     out: Dict[str, Any] = {}
-    for strategy_id, group in candidates.groupby("strategy_id", sort=False):
+
+    def _add_curve(key: str, group: pd.DataFrame) -> None:
+        key = str(key or "").strip()
+        if not key or key in out:
+            return
         group = group.sort_values("calibrated_score")
         if len(group) < 20:
-            continue
+            return
         bins = min(20, max(5, len(group) // 500))
         try:
             bucket = pd.qcut(
@@ -2069,7 +2372,7 @@ def _load_strategy_ev_calibration(data_root: str, run_id: str) -> Dict[str, Any]
                 duplicates="drop",
             )
         except ValueError:
-            continue
+            return
         rows: list[dict[str, Any]] = []
         for _, bucket_df in group.groupby(bucket, observed=True):
             if bucket_df.empty:
@@ -2107,13 +2410,30 @@ def _load_strategy_ev_calibration(data_root: str, run_id: str) -> Dict[str, Any]
                 }
             )
         if not rows:
-            continue
-        keys = {str(strategy_id)}
-        core = strategy_core_id(str(strategy_id))
+            return
+        out[key] = rows
+
+    for strategy_id, group in candidates.groupby("strategy_id", sort=False):
+        sid = str(strategy_id)
+        _add_curve(sid, group)
+        core = strategy_core_id(sid)
         if core:
-            keys.add(core)
-        for out_key in keys:
-            out[out_key] = rows
+            _add_curve(core, group)
+        for side_text, side_group in group.groupby("ev_curve_side", sort=False):
+            side_text = str(side_text or "").strip().lower()
+            if not side_text:
+                continue
+            _add_curve(f"{sid}|{side_text}", side_group)
+            if core:
+                _add_curve(f"{core}|{side_text}", side_group)
+            for archetype, archetype_group in side_group.groupby("ev_curve_archetype", sort=False):
+                archetype = str(archetype or "").strip()
+                if not archetype:
+                    continue
+                _add_curve(f"{sid}|{side_text}|{archetype}", archetype_group)
+                if core:
+                    _add_curve(f"{core}|{side_text}|{archetype}", archetype_group)
+                _add_curve(f"{side_text}|{archetype}", archetype_group)
     _STRATEGY_EV_CALIBRATION_CACHE[key] = out
     return out
 
@@ -2216,8 +2536,11 @@ def _estimated_ev_from_strategy_prediction(
     calibrated_score: Any,
     strategy_id: str,
     calibration: Mapping[str, Any],
+    *,
+    side: Any = None,
+    policy_archetype: Any = None,
 ) -> Dict[str, Any]:
-    """Map live strategy score to per-strategy historical gross/net EV."""
+    """Map live score to historical gross/net EV, preferring side x archetype curves."""
     try:
         score = float(calibrated_score)
     except (TypeError, ValueError):
@@ -2231,12 +2554,14 @@ def _estimated_ev_from_strategy_prediction(
             "estimated_ev_source": "calibrated_score_non_finite",
             "estimated_ev_calibration_n": 0,
         }
-    sid = str(strategy_id or "")
-    candidates = [sid, strategy_core_id(sid)]
     curve = None
-    for key in candidates:
+    matched_key = ""
+    for key in _ev_calibration_aliases(
+        strategy_id, side=side, policy_archetype=policy_archetype
+    ):
         if key and key in calibration:
             curve = calibration[key]
+            matched_key = key
             break
     if not curve:
         return {
@@ -2294,7 +2619,10 @@ def _estimated_ev_from_strategy_prediction(
         "estimated_ev_net_return": net,
         "estimated_ev_cost_bps": cost,
         "estimated_ev_hit_rate": hit,
-        "estimated_ev_source": "strategy_simple_policy_candidate_curve_isotonic_interp",
+        "estimated_ev_source": (
+            "hierarchical_side_archetype_simple_policy_candidate_curve_isotonic_interp"
+            + (f":{matched_key}" if matched_key else "")
+        ),
         "estimated_ev_calibration_n": int(sum(p[2] for p in net_points)),
     }
 
@@ -2401,6 +2729,7 @@ def _ev_adjusted_prediction_after_entry_friction(
     calibrated_score: Any,
     strategy_id: str,
     side: str,
+    policy_archetype: Any = None,
     calibration: Mapping[str, Any],
     live_entry_friction_bps: Any,
     observed_spread_bps: Any = None,
@@ -2413,6 +2742,9 @@ def _ev_adjusted_prediction_after_entry_friction(
     stop_exit_baseline_bps: float = 15.0,
     stop_exit_friction_source: str = "",
     policy_rank_reference_store: Optional[PolicyRankReferenceStore] = None,
+    inference_cost_rebase_enabled: bool = False,
+    inference_fixed_round_trip_cost_bps: float = 20.0,
+    inference_spread_multiplier: float = 1.50,
 ) -> Dict[str, Any]:
     """Subtract only excess live execution drag from EV and remap to score/rank.
 
@@ -2432,6 +2764,7 @@ def _ev_adjusted_prediction_after_entry_friction(
         spread_bps = float(observed_spread_bps)
     except (TypeError, ValueError):
         spread_bps = float("nan")
+    observed_spread_is_finite = bool(np.isfinite(spread_bps) and spread_bps >= 0.0)
     try:
         slippage_bps = float(orderbook_slippage_bps)
     except (TypeError, ValueError):
@@ -2457,18 +2790,36 @@ def _ev_adjusted_prediction_after_entry_friction(
     if not np.isfinite(stop_exit_friction_bps) or stop_exit_friction_bps < 0.0:
         stop_exit_friction_bps = 0.0
     spread_baseline = max(0.0, float(spread_baseline_bps or 0.0))
-    half_spread_baseline = spread_baseline / 2.0
     delay_slippage_baseline = max(0.0, float(delay_slippage_baseline_bps or 0.0))
     stop_exit_baseline = max(0.0, float(stop_exit_baseline_bps or 0.0))
+    inference_fixed_cost_bps = max(
+        0.0, _safe_float(inference_fixed_round_trip_cost_bps, 20.0)
+    )
+    inference_spread_mult = max(
+        0.0, _safe_float(inference_spread_multiplier, 1.50)
+    )
     observed_half_spread_bps = spread_bps / 2.0
+    half_spread_baseline = spread_baseline / 2.0
     spread_excess_bps = max(0.0, observed_half_spread_bps - half_spread_baseline)
     observed_delay_slippage_bps = max(0.0, adverse_gap_bps) + max(0.0, slippage_bps)
     delay_slippage_excess_bps = max(
         0.0, observed_delay_slippage_bps - delay_slippage_baseline
     )
     stop_exit_excess_bps = max(0.0, stop_exit_friction_bps - stop_exit_baseline)
-    ev_haircut_bps = (
-        spread_excess_bps + delay_slippage_excess_bps + stop_exit_excess_bps
+    # The EV curve is already net of the policy/replay execution cost estimate.
+    # Keep the stop-exit reserve visible for monitoring, but do not subtract it
+    # again from the live EV/rank gate.
+    ev_haircut_bps = spread_excess_bps + delay_slippage_excess_bps
+    inference_spread_observed_or_baseline_bps = (
+        float(spread_bps) if observed_spread_is_finite else float(spread_baseline)
+    )
+    inference_spread_model_bps = (
+        inference_spread_mult * inference_spread_observed_or_baseline_bps
+    )
+    inference_total_cost_bps = (
+        inference_fixed_cost_bps
+        + inference_spread_model_bps
+        + observed_delay_slippage_bps
     )
     contract_fields = {
         "ev_adjusted_entry_friction_bps": float(friction_bps),
@@ -2489,38 +2840,67 @@ def _ev_adjusted_prediction_after_entry_friction(
         "ev_haircut_stop_exit_baseline_bps": float(stop_exit_baseline),
         "ev_haircut_stop_exit_excess_bps": float(stop_exit_excess_bps),
         "ev_haircut_stop_exit_source": str(stop_exit_friction_source or ""),
+        "ev_inference_cost_rebase_enabled": bool(inference_cost_rebase_enabled),
+        "ev_inference_fixed_round_trip_cost_bps": float(inference_fixed_cost_bps),
+        "ev_inference_spread_multiplier": float(inference_spread_mult),
+        "ev_inference_spread_observed_or_baseline_bps": float(
+            inference_spread_observed_or_baseline_bps
+        ),
+        "ev_inference_spread_model_bps": float(inference_spread_model_bps),
+        "ev_inference_total_cost_bps": float(inference_total_cost_bps),
+        "ev_inference_cost_model_contract": (
+            "inference_only: adjusted_net_ev = historical_gross_ev - "
+            "fixed_round_trip_cost_bps - spread_multiplier * live_full_spread_bps "
+            "- live_orderbook_slippage_bps - adverse_signal_gap_bps; "
+            "live spread falls back to train/replay spread baseline when missing"
+        ),
         "ev_haircut_contract": (
             "spread_excess=max(0, observed_spread_bps/2 - "
             "symbol_average_spread_bps/2); "
             "delay_slippage_excess=max(0, adverse_signal_gap_bps + "
             "orderbook_slippage_bps - delay_slippage_baseline_bps); "
-            "stop_exit_excess=max(0, expected_stop_exit_friction_bps - "
-            "stop_exit_baseline_bps)"
+            "stop_exit_excess=diagnostic_only because policy EV is already "
+            "net of execution cost"
         ),
     }
-    sid = str(strategy_id or "")
     curve = None
-    for key in (sid, strategy_core_id(sid)):
+    matched_key = ""
+    for key in _ev_calibration_aliases(
+        strategy_id, side=side, policy_archetype=policy_archetype
+    ):
         if key and key in calibration:
             curve = calibration[key]
+            matched_key = key
             break
     if not curve:
         return {
             **contract_fields,
             "ev_adjusted_source": "missing_strategy_ev_curve",
         }
+    gross_points: list[tuple[float, float, int]] = []
     net_points: list[tuple[float, float, int]] = []
     for row in curve:
         if not isinstance(row, Mapping):
             continue
         try:
             x = float(row.get("mean_score"))
-            y = float(row.get("mean_net_return"))
             n = int(row.get("count") or 0)
         except (TypeError, ValueError):
             continue
-        if np.isfinite(x) and np.isfinite(y):
-            net_points.append((x, y, n))
+        if not np.isfinite(x):
+            continue
+        try:
+            y_net = float(row.get("mean_net_return"))
+        except (TypeError, ValueError):
+            y_net = float("nan")
+        if np.isfinite(y_net):
+            net_points.append((x, y_net, n))
+        try:
+            y_gross = float(row.get("mean_gross_return"))
+        except (TypeError, ValueError):
+            y_gross = float("nan")
+        if np.isfinite(y_gross):
+            gross_points.append((x, y_gross, n))
     if not net_points:
         return {
             **contract_fields,
@@ -2532,8 +2912,18 @@ def _ev_adjusted_prediction_after_entry_friction(
             **contract_fields,
             "ev_adjusted_source": "empty_strategy_ev_curve",
         }
-    current_net_ev = float(np.interp(score, xs, ys))
-    adjusted_net_ev = current_net_ev - float(ev_haircut_bps) / 10000.0
+    historical_net_ev = float(np.interp(score, xs, ys))
+    current_net_ev = historical_net_ev
+    adjusted_net_ev = historical_net_ev - float(ev_haircut_bps) / 10000.0
+    rebase_applied = False
+    current_gross_ev = float("nan")
+    if bool(inference_cost_rebase_enabled) and gross_points:
+        gross_xs, gross_ys = _weighted_isotonic_points(gross_points)
+        if len(gross_xs) and len(gross_ys):
+            current_gross_ev = float(np.interp(score, gross_xs, gross_ys))
+            current_net_ev = historical_net_ev
+            adjusted_net_ev = current_gross_ev - float(inference_total_cost_bps) / 10000.0
+            rebase_applied = True
     if np.nanmax(ys) <= np.nanmin(ys):
         adjusted_score = float(score)
     else:
@@ -2546,7 +2936,7 @@ def _ev_adjusted_prediction_after_entry_friction(
     rank_source = ""
     if policy_rank_reference_store is not None:
         lookup = policy_rank_reference_store.lookup(
-            strategy_id=sid,
+            strategy_id=strategy_id,
             calibrated_score=adjusted_score,
             side=side,
         )
@@ -2556,13 +2946,23 @@ def _ev_adjusted_prediction_after_entry_friction(
     return {
         **contract_fields,
         "ev_adjusted_initial_calibrated_score": float(score),
+        "ev_adjusted_gross_return_before_cost": (
+            current_gross_ev if np.isfinite(current_gross_ev) else None
+        ),
+        "ev_adjusted_historical_net_return_before_rebase": historical_net_ev,
+        "ev_inference_cost_rebase_applied": bool(rebase_applied),
         "ev_adjusted_net_return_before_friction": current_net_ev,
         "ev_adjusted_net_return_after_friction": adjusted_net_ev,
         "ev_adjusted_calibrated_score": adjusted_score,
         "ev_adjusted_rank_score": adjusted_rank if np.isfinite(adjusted_rank) else None,
         "ev_adjusted_rank_reference_n": rank_n,
         "ev_adjusted_rank_reference_source": rank_source,
-        "ev_adjusted_source": "strategy_ev_curve_inverse_after_excess_live_entry_friction",
+        "ev_adjusted_curve_key": matched_key,
+        "ev_adjusted_source": (
+            "hierarchical_side_archetype_gross_ev_curve_inverse_after_inference_cost_rebase"
+            if rebase_applied
+            else "hierarchical_side_archetype_ev_curve_inverse_after_excess_live_entry_friction"
+        ),
     }
 
 
@@ -3476,6 +3876,13 @@ def _assert_policy_rank_threshold_source(decision: Mapping[str, Any]) -> None:
         chain.get("threshold_rank_score", decision.get("threshold_rank_score")),
         np.nan,
     )
+    threshold_rank_raw = _safe_float(
+        chain.get(
+            "threshold_rank_score_raw",
+            decision.get("threshold_rank_score_raw", threshold_rank),
+        ),
+        threshold_rank,
+    )
     threshold_source = str(
         chain.get(
             "threshold_rank_score_source",
@@ -3488,6 +3895,31 @@ def _assert_policy_rank_threshold_source(decision: Mapping[str, Any]) -> None:
         or decision.get("threshold_rank_score_source_config")
         or ""
     )
+    threshold_basis_rank = _safe_float(
+        chain.get(
+            "threshold_basis_rank_score",
+            decision.get("threshold_basis_rank_score"),
+        ),
+        np.nan,
+    )
+    if threshold_source.startswith("threshold_basis"):
+        if not np.isfinite(threshold_basis_rank):
+            raise RuntimeError(
+                "Policy rank threshold guard failed: threshold-basis source is "
+                "configured but threshold_basis_rank_score is not finite."
+            )
+        if not np.isfinite(threshold_rank_raw) or not np.isclose(
+            threshold_rank_raw,
+            threshold_basis_rank,
+            rtol=0.0,
+            atol=1e-12,
+        ):
+            raise RuntimeError(
+                "Policy rank threshold guard failed: threshold_rank_score does not "
+                "match threshold_basis_rank_score "
+                f"({threshold_rank_raw!r} vs {threshold_basis_rank!r})."
+            )
+        return
     wants_policy_rank = preferred_source in {
         "policy_rank_pct",
         "strategy_rank_pct",
@@ -3500,8 +3932,11 @@ def _assert_policy_rank_threshold_source(decision: Mapping[str, Any]) -> None:
         )
         allowed_threshold_sources = {
             "policy_rank_reference_percentile",
+            "policy_rank_reference_percentile_protected_regime_ev_floor",
             "fullscope_score_distribution_percentile_in_sample",
+            "fullscope_score_distribution_percentile_in_sample_protected_regime_ev_floor",
             "live_batch_percentile_fallback_debug",
+            "live_batch_percentile_fallback_debug_protected_regime_ev_floor",
         }
         if threshold_source not in allowed_threshold_sources:
             raise RuntimeError(
@@ -3509,18 +3944,20 @@ def _assert_policy_rank_threshold_source(decision: Mapping[str, Any]) -> None:
                 f"configured but threshold_rank_score_source={threshold_source!r}; "
                 f"expected one of {sorted(allowed_threshold_sources)!r}."
             )
-        if not np.isfinite(threshold_rank) or not np.isclose(
-            threshold_rank, policy_rank, rtol=0.0, atol=1e-12
+        if not np.isfinite(threshold_rank_raw) or not np.isclose(
+            threshold_rank_raw, policy_rank, rtol=0.0, atol=1e-12
         ):
             raise RuntimeError(
                 "Policy rank threshold guard failed: threshold_rank_score does not "
-                f"match policy_rank_pct ({threshold_rank!r} vs {policy_rank!r})."
+                f"match policy_rank_pct ({threshold_rank_raw!r} vs {policy_rank!r})."
             )
         return
 
     allowed_auction_threshold_sources = {
         "cross_strategy_auction_reference",
+        "cross_strategy_auction_reference_protected_regime_ev_floor",
         "fullscope_score_distribution_auction_reference_in_sample",
+        "fullscope_score_distribution_auction_reference_in_sample_protected_regime_ev_floor",
     }
     if threshold_source not in allowed_auction_threshold_sources:
         raise RuntimeError(
@@ -3528,12 +3965,12 @@ def _assert_policy_rank_threshold_source(decision: Mapping[str, Any]) -> None:
             f"threshold_rank_score_source={threshold_source!r}; expected "
             f"one of {sorted(allowed_auction_threshold_sources)!r}."
         )
-    if not np.isfinite(threshold_rank) or not np.isclose(
-        threshold_rank, auction_rank, rtol=0.0, atol=1e-12
+    if not np.isfinite(threshold_rank_raw) or not np.isclose(
+        threshold_rank_raw, auction_rank, rtol=0.0, atol=1e-12
     ):
         raise RuntimeError(
             "Policy rank threshold guard failed: threshold_rank_score does not "
-            f"match auction_rank_pct ({threshold_rank!r} vs {auction_rank!r})."
+            f"match auction_rank_pct ({threshold_rank_raw!r} vs {auction_rank!r})."
         )
 
 
@@ -3791,6 +4228,7 @@ def _prediction_ledger_row(
         if auction_rank_reference_source
         else None
     )
+    strategy_identity = _ledger_strategy_identity(decision, side=side)
 
     def _policy_audit_value(*keys: str) -> Any:
         for source in (trade, snap, snap_details, chain, decision):
@@ -3924,7 +4362,11 @@ def _prediction_ledger_row(
         "model_feature_missing_json": chain.get("model_feature_missing_json"),
         "symbol": decision.get("symbol"),
         "side": side,
-        "strategy_id": decision.get("strategy_id"),
+        "strategy_id": strategy_identity["decision_strategy_id"],
+        "source_strategy_id": strategy_identity["source_strategy_id"],
+        "canonical_strategy_id": strategy_identity["canonical_strategy_id"],
+        "decision_strategy_id": strategy_identity["decision_strategy_id"],
+        "strategy_side": strategy_identity["strategy_side"],
         "meta_model_key": chain.get("meta_model_key", decision.get("meta_model_key")),
         "meta_head_hash": chain.get("meta_head_hash", decision.get("meta_head_hash")),
         "raw_prediction_score": decision.get("raw_score"),
@@ -3951,6 +4393,14 @@ def _prediction_ledger_row(
         ),
         "estimated_ev_cost_bps": chain.get(
             "estimated_ev_cost_bps", decision.get("estimated_ev_cost_bps")
+        ),
+        "estimated_ev_historical_net_return": chain.get(
+            "estimated_ev_historical_net_return",
+            decision.get("estimated_ev_historical_net_return"),
+        ),
+        "estimated_ev_historical_cost_bps": chain.get(
+            "estimated_ev_historical_cost_bps",
+            decision.get("estimated_ev_historical_cost_bps"),
         ),
         "estimated_ev_hit_rate": chain.get(
             "estimated_ev_hit_rate", decision.get("estimated_ev_hit_rate")
@@ -4061,6 +4511,62 @@ def _prediction_ledger_row(
         "threshold_rank_score_source": chain.get(
             "threshold_rank_score_source",
             decision.get("threshold_rank_score_source"),
+        ),
+        "threshold_basis_policy_id": chain.get(
+            "threshold_basis_policy_id",
+            decision.get("threshold_basis_policy_id"),
+        ),
+        "threshold_basis_family": chain.get(
+            "threshold_basis_family",
+            decision.get("threshold_basis_family"),
+        ),
+        "threshold_basis_window_days": chain.get(
+            "threshold_basis_window_days",
+            decision.get("threshold_basis_window_days"),
+        ),
+        "threshold_basis_rank_score": chain.get(
+            "threshold_basis_rank_score",
+            decision.get("threshold_basis_rank_score"),
+        ),
+        "threshold_basis_rank_score_source": chain.get(
+            "threshold_basis_rank_score_source",
+            decision.get("threshold_basis_rank_score_source"),
+        ),
+        "threshold_basis_selected": chain.get(
+            "threshold_basis_selected",
+            decision.get("threshold_basis_selected"),
+        ),
+        "threshold_basis_reason": chain.get(
+            "threshold_basis_reason",
+            decision.get("threshold_basis_reason"),
+        ),
+        "threshold_basis_dynamic_ev_target": chain.get(
+            "threshold_basis_dynamic_ev_target",
+            decision.get("threshold_basis_dynamic_ev_target"),
+        ),
+        "threshold_basis_dynamic_score_threshold": chain.get(
+            "threshold_basis_dynamic_score_threshold",
+            decision.get("threshold_basis_dynamic_score_threshold"),
+        ),
+        "threshold_basis_recent_reference_rows": chain.get(
+            "threshold_basis_recent_reference_rows",
+            decision.get("threshold_basis_recent_reference_rows"),
+        ),
+        "threshold_basis_reference_rows": chain.get(
+            "threshold_basis_reference_rows",
+            decision.get("threshold_basis_reference_rows"),
+        ),
+        "threshold_basis_baseline_activity_count": chain.get(
+            "threshold_basis_baseline_activity_count",
+            decision.get("threshold_basis_baseline_activity_count"),
+        ),
+        "threshold_basis_global_dynamic_ev_target": chain.get(
+            "threshold_basis_global_dynamic_ev_target",
+            decision.get("threshold_basis_global_dynamic_ev_target"),
+        ),
+        "threshold_basis_global_dynamic_score_threshold": chain.get(
+            "threshold_basis_global_dynamic_score_threshold",
+            decision.get("threshold_basis_global_dynamic_score_threshold"),
         ),
         "historical_rank_pct": chain.get("meta_train_rank_pct"),
         "batch_rank_pct": decision.get("sizer_rank_percentile"),
@@ -4177,6 +4683,92 @@ def _prediction_ledger_row(
             "dynamic_hr_surprise_state_age_days",
             decision.get("dynamic_hr_surprise_state_age_days"),
         ),
+        "policy_archetype": chain.get(
+            "policy_archetype", decision.get("policy_archetype")
+        ),
+        "policy_archetype_source": chain.get(
+            "policy_archetype_source", decision.get("policy_archetype_source")
+        ),
+        "archetype_hit_surprise_threshold": chain.get(
+            "archetype_hit_surprise_threshold",
+            decision.get("archetype_hit_surprise_threshold"),
+        ),
+        "archetype_hit_surprise_mode": chain.get(
+            "archetype_hit_surprise_mode",
+            decision.get("archetype_hit_surprise_mode"),
+        ),
+        "archetype_hit_surprise_applied": chain.get(
+            "archetype_hit_surprise_applied",
+            decision.get("archetype_hit_surprise_applied"),
+        ),
+        "archetype_hit_surprise_reason": chain.get(
+            "archetype_hit_surprise_reason",
+            decision.get("archetype_hit_surprise_reason"),
+        ),
+        "archetype_hit_surprise_matched_key": chain.get(
+            "archetype_hit_surprise_matched_key",
+            decision.get("archetype_hit_surprise_matched_key"),
+        ),
+        "archetype_hit_surprise_threshold_delta": chain.get(
+            "archetype_hit_surprise_threshold_delta",
+            decision.get("archetype_hit_surprise_threshold_delta"),
+        ),
+        "archetype_hit_surprise_quality_adjustment": chain.get(
+            "archetype_hit_surprise_quality_adjustment",
+            decision.get("archetype_hit_surprise_quality_adjustment"),
+        ),
+        "archetype_hit_surprise_priority_multiplier": chain.get(
+            "archetype_hit_surprise_priority_multiplier",
+            decision.get("archetype_hit_surprise_priority_multiplier"),
+        ),
+        "archetype_hit_surprise_priority_adjustment": chain.get(
+            "archetype_hit_surprise_priority_adjustment",
+            decision.get("archetype_hit_surprise_priority_adjustment"),
+        ),
+        "archetype_hit_surprise_rank_adjustment": chain.get(
+            "archetype_hit_surprise_rank_adjustment",
+            decision.get("archetype_hit_surprise_rank_adjustment"),
+        ),
+        "archetype_hit_surprise_actual_hit_rate": chain.get(
+            "archetype_hit_surprise_actual_hit_rate",
+            decision.get("archetype_hit_surprise_actual_hit_rate"),
+        ),
+        "archetype_hit_surprise_expected_hit_rate": chain.get(
+            "archetype_hit_surprise_expected_hit_rate",
+            decision.get("archetype_hit_surprise_expected_hit_rate"),
+        ),
+        "archetype_hit_surprise_hit_rate_delta": chain.get(
+            "archetype_hit_surprise_hit_rate_delta",
+            decision.get("archetype_hit_surprise_hit_rate_delta"),
+        ),
+        "archetype_hit_surprise_hit_rate_surprise_z": chain.get(
+            "archetype_hit_surprise_hit_rate_surprise_z",
+            decision.get("archetype_hit_surprise_hit_rate_surprise_z"),
+        ),
+        "archetype_hit_surprise_support_confidence": chain.get(
+            "archetype_hit_surprise_support_confidence",
+            decision.get("archetype_hit_surprise_support_confidence"),
+        ),
+        "archetype_hit_surprise_n_eff": chain.get(
+            "archetype_hit_surprise_n_eff",
+            decision.get("archetype_hit_surprise_n_eff"),
+        ),
+        "archetype_hit_surprise_rows": chain.get(
+            "archetype_hit_surprise_rows",
+            decision.get("archetype_hit_surprise_rows"),
+        ),
+        "portfolio_priority_multiplier": chain.get(
+            "portfolio_priority_multiplier",
+            decision.get("portfolio_priority_multiplier"),
+        ),
+        "portfolio_priority_adjustment": chain.get(
+            "portfolio_priority_adjustment",
+            decision.get("portfolio_priority_adjustment"),
+        ),
+        "portfolio_rank_adjustment": chain.get(
+            "portfolio_rank_adjustment",
+            decision.get("portfolio_rank_adjustment"),
+        ),
         "inference_drift_score": chain.get(
             "inference_drift_score", decision.get("inference_drift_score")
         ),
@@ -4189,6 +4781,33 @@ def _prediction_ledger_row(
             and final_gate_rank >= final_gate_threshold
         ),
         "portfolio_priority": decision.get("portfolio_priority"),
+        "auction_policy_version": decision.get(
+            "auction_policy_version", chain.get("auction_policy_version")
+        ),
+        "auction_candidate_count": decision.get(
+            "auction_candidate_count", chain.get("auction_candidate_count")
+        ),
+        "auction_rank_number": decision.get(
+            "auction_rank_number", chain.get("auction_rank_number")
+        ),
+        "auction_rank_index": decision.get(
+            "auction_rank_index", chain.get("auction_rank_index")
+        ),
+        "auction_entry_cap": decision.get(
+            "auction_entry_cap", chain.get("auction_entry_cap")
+        ),
+        "auction_max_new_entries_per_bar": decision.get(
+            "auction_max_new_entries_per_bar",
+            chain.get("auction_max_new_entries_per_bar"),
+        ),
+        "auction_ordering_key_json": decision.get(
+            "auction_ordering_key_json", chain.get("auction_ordering_key_json")
+        ),
+        "auction_sorted_at": decision.get("auction_sorted_at", chain.get("auction_sorted_at")),
+        "auction_selected_before_capacity": decision.get(
+            "auction_selected_before_capacity",
+            chain.get("auction_selected_before_capacity"),
+        ),
         "portfolio_state_snapshot_json": decision.get("portfolio_state_snapshot_json"),
         "portfolio_state_snapshot_hash": decision.get("portfolio_state_snapshot_hash"),
         "portfolio_state_snapshot_error": decision.get(
@@ -4209,6 +4828,9 @@ def _prediction_ledger_row(
             "open_notional_before", sizing.get("open_notional")
         ),
         "available_wallet_before": decision.get("available_wallet_before"),
+        "wallet_after": decision.get("wallet_after"),
+        "open_notional_after": decision.get("open_notional_after"),
+        "available_wallet_after": decision.get("available_wallet_after"),
         "open_positions_before": decision.get(
             "open_positions_before",
             (
@@ -4225,6 +4847,25 @@ def _prediction_ledger_row(
         "open_positions_before_count": decision.get(
             "open_positions_before_count",
             decision.get("open_positions_before"),
+        ),
+        "portfolio_state_after_snapshot_json": decision.get(
+            "portfolio_state_after_snapshot_json"
+        ),
+        "portfolio_state_after_snapshot_hash": decision.get(
+            "portfolio_state_after_snapshot_hash"
+        ),
+        "portfolio_state_after_snapshot_error": decision.get(
+            "portfolio_state_after_snapshot_error"
+        ),
+        "open_positions_after_json": decision.get("open_positions_after_json"),
+        "active_positions_after_json": decision.get(
+            "active_positions_after_json",
+            decision.get("open_positions_after_json"),
+        ),
+        "open_positions_after": decision.get("open_positions_after"),
+        "open_positions_after_count": decision.get(
+            "open_positions_after_count",
+            decision.get("open_positions_after"),
         ),
         "wallet_value": sizing.get("wallet_value"),
         "open_notional": sizing.get("open_notional"),
@@ -4528,7 +5169,31 @@ def _prediction_ledger_row(
         "ev_haircut_stop_exit_excess_bps": snap.get("ev_haircut_stop_exit_excess_bps"),
         "ev_haircut_stop_exit_source": snap.get("ev_haircut_stop_exit_source"),
         "ev_haircut_contract": snap.get("ev_haircut_contract"),
+        "ev_inference_cost_rebase_enabled": snap.get(
+            "ev_inference_cost_rebase_enabled"
+        ),
+        "ev_inference_cost_rebase_applied": snap.get(
+            "ev_inference_cost_rebase_applied"
+        ),
+        "ev_inference_fixed_round_trip_cost_bps": snap.get(
+            "ev_inference_fixed_round_trip_cost_bps"
+        ),
+        "ev_inference_spread_multiplier": snap.get("ev_inference_spread_multiplier"),
+        "ev_inference_spread_observed_or_baseline_bps": snap.get(
+            "ev_inference_spread_observed_or_baseline_bps"
+        ),
+        "ev_inference_spread_model_bps": snap.get("ev_inference_spread_model_bps"),
+        "ev_inference_total_cost_bps": snap.get("ev_inference_total_cost_bps"),
+        "ev_inference_cost_model_contract": snap.get(
+            "ev_inference_cost_model_contract"
+        ),
         "ev_adjusted_entry_friction_bps": snap.get("ev_adjusted_entry_friction_bps"),
+        "ev_adjusted_gross_return_before_cost": snap.get(
+            "ev_adjusted_gross_return_before_cost"
+        ),
+        "ev_adjusted_historical_net_return_before_rebase": snap.get(
+            "ev_adjusted_historical_net_return_before_rebase"
+        ),
         "ev_adjusted_net_return_before_friction": snap.get(
             "ev_adjusted_net_return_before_friction"
         ),
@@ -6195,7 +6860,17 @@ def _select_candidates_and_load_features(
                         missing_after_model_cache = sorted(
                             mask_raw_feature_keys - set(cached_pre_mask_feats)
                         )
+                        non_finite_mask_keys: list[str] = []
                         if not missing_after_model_cache:
+                            for key in sorted(mask_raw_feature_keys):
+                                frame = cached_pre_mask_feats.get(key)
+                                if not isinstance(frame, pd.DataFrame) or frame.empty:
+                                    non_finite_mask_keys.append(key)
+                                    continue
+                                arr = frame.to_numpy(dtype=float, copy=False)
+                                if not np.isfinite(arr).any():
+                                    non_finite_mask_keys.append(key)
+                        if not missing_after_model_cache and not non_finite_mask_keys:
                             pre_mask_feats = cached_pre_mask_feats
                             timer.mark("lgbm_pre_mask_features_model_cache")
                             tprint(
@@ -6209,6 +6884,7 @@ def _select_candidates_and_load_features(
                                 "LGBM pre-mask selected-feature cache incomplete; "
                                 "falling back to live mask recompute: "
                                 f"missing={len(missing_after_model_cache)} "
+                                f"non_finite={len(non_finite_mask_keys)} "
                                 f"sample={missing_after_model_cache[:12]}"
                             )
                     except Exception as exc:
@@ -6974,7 +7650,7 @@ def _safe_float(value: Any, default: float = np.nan) -> float:
 
 def _candidate_rank_score(decision: Mapping[str, Any]) -> float:
     """Return the cross-strategy/auction rank score used for ordering."""
-    return _safe_float(
+    base = _safe_float(
         decision.get(
             "normalized_rank_score",
             decision.get(
@@ -6986,6 +7662,38 @@ def _candidate_rank_score(decision: Mapping[str, Any]) -> float:
             ),
         )
     )
+    chain = decision.get("chain_results")
+    if not isinstance(chain, Mapping):
+        chain = {}
+    live_ev_rank = _safe_float(
+        chain.get(
+            "threshold_rank_score_after_friction_ev",
+            decision.get(
+                "threshold_rank_score_after_friction_ev",
+                chain.get(
+                    "ev_adjusted_rank_score",
+                    decision.get("ev_adjusted_rank_score"),
+                ),
+            ),
+        ),
+        np.nan,
+    )
+    if np.isfinite(base) and np.isfinite(live_ev_rank):
+        base = min(float(base), float(live_ev_rank))
+    elif np.isfinite(live_ev_rank):
+        base = float(live_ev_rank)
+    adjustment = _safe_float(
+        decision.get(
+            "portfolio_rank_adjustment",
+            chain.get("portfolio_rank_adjustment", 0.0),
+        ),
+        0.0,
+    )
+    if not np.isfinite(base):
+        return base
+    if not np.isfinite(adjustment):
+        adjustment = 0.0
+    return float(np.clip(base + adjustment, 0.0, 1.0))
 
 
 def _candidate_threshold_rank_score(decision: Mapping[str, Any]) -> float:
@@ -6993,7 +7701,7 @@ def _candidate_threshold_rank_score(decision: Mapping[str, Any]) -> float:
     chain = decision.get("chain_results")
     if not isinstance(chain, Mapping):
         chain = {}
-    return _safe_float(
+    base = _safe_float(
         chain.get(
             "threshold_rank_score",
             decision.get(
@@ -7011,6 +7719,24 @@ def _candidate_threshold_rank_score(decision: Mapping[str, Any]) -> float:
             ),
         )
     )
+    live_ev_rank = _safe_float(
+        chain.get(
+            "threshold_rank_score_after_friction_ev",
+            decision.get(
+                "threshold_rank_score_after_friction_ev",
+                chain.get(
+                    "ev_adjusted_rank_score",
+                    decision.get("ev_adjusted_rank_score"),
+                ),
+            ),
+        ),
+        np.nan,
+    )
+    if np.isfinite(base) and np.isfinite(live_ev_rank):
+        base = min(float(base), float(live_ev_rank))
+    elif np.isfinite(live_ev_rank):
+        base = float(live_ev_rank)
+    return base
 
 
 def _annotate_portfolio_gate_info(
@@ -7060,7 +7786,86 @@ def _candidate_portfolio_priority(decision: Mapping[str, Any]) -> float:
         0.0,
     )
     friction_penalty = max(float(expected_friction_bps), 0.0) / 10000.0
-    return float(surplus - float(penalty) - friction_penalty)
+    priority = float(surplus - float(penalty) - friction_penalty)
+    multiplier = _safe_float(decision.get("portfolio_priority_multiplier"), 1.0)
+    if not np.isfinite(multiplier):
+        multiplier = 1.0
+    adjustment = _safe_float(decision.get("portfolio_priority_adjustment"), 0.0)
+    if not np.isfinite(adjustment):
+        adjustment = 0.0
+    return float(priority * max(float(multiplier), 0.0) + float(adjustment))
+
+
+def _auction_ordering_key(decision: Mapping[str, Any]) -> Dict[str, Any]:
+    """Return the exact global-auction ordering tuple as a named JSON payload."""
+    return {
+        "portfolio_priority": _safe_float(
+            decision.get("portfolio_priority"), -float("inf")
+        ),
+        "candidate_rank_score": _candidate_rank_score(decision),
+        "calibrated_score": _safe_float(decision.get("calibrated_score"), -float("inf")),
+        "negative_expected_friction": -_candidate_expected_friction(decision),
+    }
+
+
+def _attach_global_auction_metadata(
+    decisions: Sequence[MutableMapping[str, Any]],
+    *,
+    entry_cap: int,
+    max_new_entries_per_bar: int,
+    sorted_at: Any,
+) -> None:
+    """Persist the exact auction ordering context used for decision replay."""
+    total = int(len(decisions))
+    for idx, row in enumerate(decisions):
+        ordering_key = _auction_ordering_key(row)
+        payload = {
+            "schema": "global_auction_ordering_v1",
+            "sort_direction": "descending",
+            "keys": ordering_key,
+        }
+        row["auction_policy_version"] = "global_auction_v1"
+        row["auction_candidate_count"] = total
+        row["auction_rank_index"] = int(idx)
+        row["auction_rank_number"] = int(idx + 1)
+        row["auction_entry_cap"] = int(entry_cap)
+        row["auction_max_new_entries_per_bar"] = int(max_new_entries_per_bar)
+        row["auction_ordering_key_json"] = _audit_json_dumps(payload)
+        row["auction_sorted_at"] = _json_safe_audit_value(sorted_at)
+        row["auction_selected_before_capacity"] = bool(
+            idx < max(int(entry_cap), 0)
+            and idx < max(int(max_new_entries_per_bar), 0)
+        )
+        chain = row.get("chain_results")
+        if isinstance(chain, MutableMapping):
+            chain["auction_policy_version"] = row["auction_policy_version"]
+            chain["auction_candidate_count"] = row["auction_candidate_count"]
+            chain["auction_rank_index"] = row["auction_rank_index"]
+            chain["auction_rank_number"] = row["auction_rank_number"]
+            chain["auction_entry_cap"] = row["auction_entry_cap"]
+            chain["auction_max_new_entries_per_bar"] = row[
+                "auction_max_new_entries_per_bar"
+            ]
+            chain["auction_ordering_key_json"] = row["auction_ordering_key_json"]
+            chain["auction_sorted_at"] = row["auction_sorted_at"]
+            chain["auction_selected_before_capacity"] = row[
+                "auction_selected_before_capacity"
+            ]
+            row["chain_results"] = chain
+
+
+def _refresh_candidate_priority_after_live_friction_ev(
+    decision: MutableMapping[str, Any],
+    chain_results: MutableMapping[str, Any],
+) -> float:
+    """Update auction priority after live EV/friction rank fields are known."""
+    decision["chain_results"] = chain_results
+    priority = _candidate_portfolio_priority(decision)
+    decision["portfolio_priority"] = float(priority)
+    decision["portfolio_priority_after_live_friction_ev"] = float(priority)
+    chain_results["portfolio_priority"] = float(priority)
+    chain_results["portfolio_priority_after_live_friction_ev"] = float(priority)
+    return float(priority)
 
 
 def _auction_ev_target_for_occupancy(
@@ -7425,21 +8230,52 @@ def _audit_json_dumps(value: Any) -> str:
     )
 
 
-def _attach_portfolio_replay_state_for_ledger(
-    decision: Dict[str, Any],
+def _ledger_strategy_identity(
+    decision: Mapping[str, Any],
     *,
-    portfolio_mgr: Optional[PortfolioManager],
+    side: str,
+) -> Dict[str, str]:
+    """Return the replay-safe strategy identity for a live decision row."""
+    chain = decision.get("chain_results")
+    if not isinstance(chain, Mapping):
+        chain = {}
+    source_strategy_id = str(
+        decision.get("source_strategy_id")
+        or chain.get("source_strategy_id")
+        or decision.get("strategy_id")
+        or chain.get("strategy_id")
+        or ""
+    ).strip()
+    side_s = str(side or decision.get("side") or chain.get("side") or "").strip().lower()
+    canonical = strategy_core_id(source_strategy_id) if source_strategy_id else ""
+    decision_strategy_id = str(
+        decision.get("decision_strategy_id")
+        or chain.get("decision_strategy_id")
+        or ""
+    ).strip()
+    if not decision_strategy_id:
+        if source_strategy_id and strategy_side(source_strategy_id) in {"long", "short"}:
+            decision_strategy_id = source_strategy_id
+        elif side_s in {"long", "short"} and canonical:
+            decision_strategy_id = f"{side_s}_{canonical}"
+        else:
+            decision_strategy_id = source_strategy_id
+    return {
+        "source_strategy_id": source_strategy_id,
+        "canonical_strategy_id": canonical or strategy_core_id(decision_strategy_id),
+        "decision_strategy_id": decision_strategy_id,
+        "strategy_side": side_s,
+    }
+
+
+def _portfolio_replay_snapshot_payload(
+    *,
+    portfolio_mgr: PortfolioManager,
     capacity: Optional[Mapping[str, Any]] = None,
     now_utc: Optional[pd.Timestamp] = None,
-) -> None:
-    """Attach compact pre-decision portfolio state needed for exact replay."""
-    if portfolio_mgr is None:
-        return
-    try:
-        state = dict(portfolio_mgr.get_portfolio_state())
-    except Exception as exc:
-        decision["portfolio_state_snapshot_error"] = str(exc)
-        return
+) -> Dict[str, Any]:
+    """Return a JSON-safe portfolio snapshot for exact decision replay."""
+    state = dict(portfolio_mgr.get_portfolio_state())
     try:
         open_df = portfolio_mgr.get_open_positions_summary()
     except Exception:
@@ -7478,7 +8314,7 @@ def _attach_portfolio_replay_state_for_ledger(
         }
     }
     snapshot = {
-        "schema": "portfolio_replay_state_v1",
+        "schema": "portfolio_replay_state_v2",
         "asof": _json_safe_audit_value(now_utc or pd.Timestamp.now(tz="UTC")),
         "open_positions": open_positions,
         "cooldowns": _json_safe_audit_value(cooldowns),
@@ -7492,12 +8328,49 @@ def _attach_portfolio_replay_state_for_ledger(
                 "invested_pct",
                 "remaining_pct",
                 "strategy_counts",
+                "hard_limits",
+                "archetype_loss_streaks",
+                "disabled_archetypes",
             )
             if key in state
         },
         "capacity": capacity_payload,
     }
-    snapshot_json = _audit_json_dumps(snapshot)
+    return {
+        "snapshot": snapshot,
+        "snapshot_json": _audit_json_dumps(snapshot),
+        "open_positions": open_positions,
+        "cooldowns": cooldowns,
+        "capacity": capacity_payload,
+        "state": state,
+    }
+
+
+def _attach_portfolio_replay_state_for_ledger(
+    decision: Dict[str, Any],
+    *,
+    portfolio_mgr: Optional[PortfolioManager],
+    capacity: Optional[Mapping[str, Any]] = None,
+    now_utc: Optional[pd.Timestamp] = None,
+) -> None:
+    """Attach compact pre-decision portfolio state needed for exact replay."""
+    if portfolio_mgr is None:
+        return
+    try:
+        payload = _portfolio_replay_snapshot_payload(
+            portfolio_mgr=portfolio_mgr,
+            capacity=capacity,
+            now_utc=now_utc,
+        )
+    except Exception as exc:
+        decision["portfolio_state_snapshot_error"] = str(exc)
+        return
+
+    snapshot_json = payload["snapshot_json"]
+    open_positions = payload["open_positions"]
+    cooldowns = payload["cooldowns"]
+    capacity_payload = payload["capacity"]
+    state = payload["state"]
     decision["portfolio_state_snapshot_json"] = snapshot_json
     decision["portfolio_state_snapshot_hash"] = hashlib.sha256(
         snapshot_json.encode("utf-8")
@@ -7510,7 +8383,49 @@ def _attach_portfolio_replay_state_for_ledger(
         "wallet_value", state.get("portfolio_value")
     )
     decision["open_notional_before"] = capacity_payload.get("open_notional")
-    decision["available_wallet_before"] = capacity_payload.get("available_wallet_quote")
+    decision["available_wallet_before"] = capacity_payload.get(
+        "available_wallet_quote"
+    )
+
+
+def _attach_portfolio_replay_state_after_for_ledger(
+    decision: Dict[str, Any],
+    *,
+    portfolio_mgr: Optional[PortfolioManager],
+    capacity: Optional[Mapping[str, Any]] = None,
+    now_utc: Optional[pd.Timestamp] = None,
+) -> None:
+    """Attach compact post-decision portfolio state needed for exact replay."""
+    if portfolio_mgr is None:
+        return
+    try:
+        payload = _portfolio_replay_snapshot_payload(
+            portfolio_mgr=portfolio_mgr,
+            capacity=capacity,
+            now_utc=now_utc,
+        )
+    except Exception as exc:
+        decision["portfolio_state_after_snapshot_error"] = str(exc)
+        return
+    snapshot_json = payload["snapshot_json"]
+    open_positions = payload["open_positions"]
+    capacity_payload = payload["capacity"]
+    state = payload["state"]
+    decision["portfolio_state_after_snapshot_json"] = snapshot_json
+    decision["portfolio_state_after_snapshot_hash"] = hashlib.sha256(
+        snapshot_json.encode("utf-8")
+    ).hexdigest()
+    decision["open_positions_after_json"] = _audit_json_dumps(open_positions)
+    decision["active_positions_after_json"] = decision["open_positions_after_json"]
+    decision["open_positions_after"] = int(len(open_positions))
+    decision["open_positions_after_count"] = int(len(open_positions))
+    decision["wallet_after"] = capacity_payload.get(
+        "wallet_value", state.get("portfolio_value")
+    )
+    decision["open_notional_after"] = capacity_payload.get("open_notional")
+    decision["available_wallet_after"] = capacity_payload.get(
+        "available_wallet_quote"
+    )
 
 
 def _model_feature_ledger_snapshot_for_decision(
@@ -7707,6 +8622,29 @@ def _prediction_audit_for_trade(
                 "effective_threshold", decision.get("effective_threshold")
             ),
             "final_threshold": snap.get("final_threshold"),
+            "policy_archetype": chain.get(
+                "policy_archetype", decision.get("policy_archetype")
+            ),
+            "archetype_hit_surprise_threshold": chain.get(
+                "archetype_hit_surprise_threshold",
+                decision.get("archetype_hit_surprise_threshold"),
+            ),
+            "archetype_hit_surprise_threshold_delta": chain.get(
+                "archetype_hit_surprise_threshold_delta",
+                decision.get("archetype_hit_surprise_threshold_delta"),
+            ),
+            "archetype_hit_surprise_actual_hit_rate": chain.get(
+                "archetype_hit_surprise_actual_hit_rate",
+                decision.get("archetype_hit_surprise_actual_hit_rate"),
+            ),
+            "archetype_hit_surprise_expected_hit_rate": chain.get(
+                "archetype_hit_surprise_expected_hit_rate",
+                decision.get("archetype_hit_surprise_expected_hit_rate"),
+            ),
+            "archetype_hit_surprise_hit_rate_delta": chain.get(
+                "archetype_hit_surprise_hit_rate_delta",
+                decision.get("archetype_hit_surprise_hit_rate_delta"),
+            ),
         },
         "sizing": sizing,
     }
@@ -7846,70 +8784,125 @@ def _perp_rank_context(
         if core:
             paths.extend(sorted(base.glob(f"meta_oof_*{core}_clf.parquet")))
             paths.extend(sorted(base.glob(f"meta_oof_*{core}_tbm_clf.parquet")))
-        cached = {"rank_x": 1, "scores": np.array([], dtype=float)}
+        cached = {
+            "rank_x": 1,
+            "profitable_rank_count": 1,
+            "scores": np.array([], dtype=float),
+            "source": "missing",
+        }
         try:
             path = next((candidate for candidate in paths if candidate.exists()), None)
-            if path is None:
-                tried = ", ".join(str(candidate) for candidate in paths[:4])
-                raise FileNotFoundError(
-                    f"no meta OOF rank context file for {side}/{core}; tried {tried}"
+            if path is not None:
+                df = pd.read_parquet(path)
+                pred_col = next(
+                    (
+                        c
+                        for c in ("oof_pred", "oof_meta_pred", "meta_pred", "pred")
+                        if c in df.columns
+                    ),
+                    None,
                 )
-            df = pd.read_parquet(path)
-            pred_col = next(
-                (
-                    c
-                    for c in ("oof_pred", "oof_meta_pred", "meta_pred", "pred")
-                    if c in df.columns
-                ),
-                None,
-            )
-            target_col = next(
-                (c for c in ("y_bin", "target", "label", "y") if c in df.columns),
-                None,
-            )
-            if pred_col and target_col:
-                scores = pd.to_numeric(df[pred_col], errors="coerce").to_numpy(
-                    dtype=float
+                target_col = next(
+                    (c for c in ("y_bin", "target", "label", "y") if c in df.columns),
+                    None,
                 )
-                target = pd.to_numeric(df[target_col], errors="coerce").to_numpy(
-                    dtype=float
-                )
-                mask = np.isfinite(scores) & np.isfinite(target)
-                scores = scores[mask]
-                target = target[mask]
-                order = np.argsort(-scores)
-                scores_sorted = scores[order]
-                target_sorted = target[order]
-                ranks = np.arange(1, len(scores_sorted) + 1, dtype=float)
-                expected = None
-                if len(scores_sorted) >= 20 and np.unique(target_sorted).size > 1:
-                    try:
-                        from sklearn.isotonic import IsotonicRegression
+                if pred_col and target_col:
+                    scores = pd.to_numeric(df[pred_col], errors="coerce").to_numpy(
+                        dtype=float
+                    )
+                    target = pd.to_numeric(df[target_col], errors="coerce").to_numpy(
+                        dtype=float
+                    )
+                    mask = np.isfinite(scores) & np.isfinite(target)
+                    scores = scores[mask]
+                    target = target[mask]
+                    order = np.argsort(-scores)
+                    scores_sorted = scores[order]
+                    target_sorted = target[order]
+                    ranks = np.arange(1, len(scores_sorted) + 1, dtype=float)
+                    expected = None
+                    if len(scores_sorted) >= 20 and np.unique(target_sorted).size > 1:
+                        try:
+                            from sklearn.isotonic import IsotonicRegression
 
-                        iso = IsotonicRegression(increasing=False, out_of_bounds="clip")
-                        iso.fit(ranks, target_sorted)
-                        expected = np.asarray(iso.predict(ranks), dtype=float)
-                    except Exception:
-                        expected = None
-                if expected is None:
-                    buckets = pd.qcut(
-                        ranks, q=min(50, max(1, len(ranks) // 100)), duplicates="drop"
+                            iso = IsotonicRegression(increasing=False, out_of_bounds="clip")
+                            iso.fit(ranks, target_sorted)
+                            expected = np.asarray(iso.predict(ranks), dtype=float)
+                        except Exception:
+                            expected = None
+                    if expected is None:
+                        buckets = pd.qcut(
+                            ranks, q=min(50, max(1, len(ranks) // 100)), duplicates="drop"
+                        )
+                        means = (
+                            pd.Series(target_sorted)
+                            .groupby(buckets, observed=True)
+                            .transform("mean")
+                        )
+                        expected = means.to_numpy(dtype=float)
+                    profitable = np.flatnonzero(expected >= 0.50)
+                    profitable_rank_count = (
+                        int(profitable[-1] + 1) if len(profitable) else 1
                     )
-                    means = (
-                        pd.Series(target_sorted)
-                        .groupby(buckets, observed=True)
-                        .transform("mean")
-                    )
-                    expected = means.to_numpy(dtype=float)
-                profitable = np.flatnonzero(expected >= 0.50)
-                profitable_rank_count = (
-                    int(profitable[-1] + 1) if len(profitable) else 1
+                    cached = {
+                        "rank_x": max(1, profitable_rank_count // 2),
+                        "profitable_rank_count": profitable_rank_count,
+                        "scores": scores_sorted,
+                        "source": str(path),
+                    }
+            else:
+                rank_ref_root = (
+                    Path(data_root)
+                    / "artifacts"
+                    / str(run_id)
+                    / "simple_policy_optimiser"
+                    / "rank_reference"
                 )
-                cached = {
-                    "rank_x": max(1, profitable_rank_count // 2),
-                    "profitable_rank_count": profitable_rank_count,
-                    "scores": scores_sorted,
-                }
+                rank_ref_paths = [
+                    rank_ref_root / f"{alias}.parquet"
+                    for alias in strategy_rank_reference_aliases(strategy_id, side)
+                ]
+                rank_ref_path = next(
+                    (candidate for candidate in rank_ref_paths if candidate.exists()),
+                    None,
+                )
+                if rank_ref_path is not None:
+                    ref = pd.read_parquet(rank_ref_path)
+                    score_col = (
+                        POLICY_RANK_REFERENCE_SCORE_COL
+                        if POLICY_RANK_REFERENCE_SCORE_COL in ref.columns
+                        else next(
+                            (
+                                c
+                                for c in ("calibrated_score", "meta_pred", "pred")
+                                if c in ref.columns
+                            ),
+                            None,
+                        )
+                    )
+                    if score_col is not None:
+                        scores = pd.to_numeric(
+                            ref[score_col], errors="coerce"
+                        ).to_numpy(dtype=float)
+                        scores = scores[np.isfinite(scores)]
+                        if scores.size:
+                            scores_sorted = np.sort(scores)[::-1]
+                            rank_x = max(1, int(np.ceil(float(scores_sorted.size) * 0.10)))
+                            cached = {
+                                "rank_x": rank_x,
+                                "profitable_rank_count": rank_x,
+                                "scores": scores_sorted,
+                                "source": str(rank_ref_path),
+                            }
+                if rank_ref_path is None or not cached.get("scores", np.array([])).size:
+                    tried = ", ".join(str(candidate) for candidate in paths[:4])
+                    tried_rank_ref = ", ".join(
+                        str(candidate) for candidate in rank_ref_paths[:4]
+                    )
+                    raise FileNotFoundError(
+                        f"no meta OOF or policy rank context file for {side}/{core}; "
+                        f"tried {tried}; policy rank refs {tried_rank_ref}"
+                    )
         except Exception as exc:
             tprint(
                 f"Warning: failed to load perp OOF rank context for {side}/{strategy_id}: {exc}"
@@ -7923,6 +8916,7 @@ def _perp_rank_context(
         "rank_number": max(1, rank),
         "rank_x": int(cached.get("rank_x") or 1),
         "profitable_rank_count": int(cached.get("profitable_rank_count") or 1),
+        "rank_context_source": str(cached.get("source") or ""),
     }
 
 
@@ -8338,6 +9332,113 @@ def _email_close_exit_type(closed_trade: Mapping[str, Any]) -> str:
     )
 
 
+def _email_close_cause_plain(closed_trade: Mapping[str, Any]) -> str:
+    reason = str(
+        closed_trade.get("reason")
+        or closed_trade.get("exit_reason")
+        or ""
+    )
+    reason_detail = str(closed_trade.get("exit_reason_detail") or "")
+    trigger_type = str(closed_trade.get("close_trigger_type") or "")
+    method = str(closed_trade.get("close_execution_method") or "")
+    text = " ".join((reason, reason_detail, trigger_type, method)).lower()
+    policy_reason = str(
+        closed_trade.get("stop_origin")
+        or closed_trade.get("stop_reason")
+        or ""
+    ).strip()
+    if not policy_reason and ":" in reason:
+        policy_reason = reason.rsplit(":", 1)[-1].strip()
+    policy_text = " ".join((policy_reason, reason_detail)).lower()
+    if "exit_pressure_stop_tightening" in policy_text:
+        return "policy tightened the stop because exit pressure increased."
+    if "trailing_risk_reduction" in policy_text:
+        return "trailing stop reduced risk, but the locked return was below the configured cost floor."
+    if "trailing_profit" in policy_text:
+        return "trailing stop locked profit above the configured cost floor."
+    if "exchange_valid_giveback_fallback" in policy_text:
+        if "profit_locking=true" in policy_text:
+            return "policy used a profit-locking giveback fallback because the exchange stop had to remain valid."
+        if "profit_locking=false" in policy_text:
+            return "policy used a non-profit giveback fallback because the exchange stop had to remain valid."
+        return "policy used a giveback fallback because the exchange stop had to remain valid."
+    if (
+        "stop_loss" in policy_text
+        or "stop loss" in policy_text
+        or "full_sl" in policy_text
+        or policy_reason == "sl"
+    ):
+        return "policy stop loss was reached."
+    if "adverse_excursion_exit" in policy_text:
+        return "policy closed because adverse excursion exceeded the allowed path risk."
+    if "hard_take_profit_exit" in policy_text:
+        return "policy hard take-profit was reached."
+    side = str(closed_trade.get("side") or "").strip().lower()
+    executable = _email_first_finite(
+        closed_trade,
+        (
+            "sentinel_executable_price",
+            "actual_exit_price",
+            "realized_exit_price",
+            "exit_price",
+        ),
+    )
+    stop = _email_first_finite(
+        closed_trade,
+        (
+            "requested_policy_stop",
+            "shadow_latest_stop_price",
+            "final_placed_stop",
+            "exchange_stop_price",
+            "stop_price",
+        ),
+    )
+    source = str(
+        closed_trade.get("sentinel_executable_price_source")
+        or closed_trade.get("close_price_source")
+        or "executable_price"
+    )
+    overshoot_bps = _safe_float(
+        closed_trade.get("sentinel_stop_breach_overshoot_bps"),
+        default=np.nan,
+    )
+    if (
+        "software_executable_stop_breach" in text
+        and np.isfinite(executable)
+        and np.isfinite(stop)
+    ):
+        if side == "short":
+            comparison = f"{source} {_format_float(executable, 10)} >= policy_stop {_format_float(stop, 10)}"
+            action = "buy-to-cover price crossed the stop"
+        elif side == "long":
+            comparison = f"{source} {_format_float(executable, 10)} <= policy_stop {_format_float(stop, 10)}"
+            action = "sellable price crossed the stop"
+        else:
+            comparison = f"{source} {_format_float(executable, 10)} crossed policy_stop {_format_float(stop, 10)}"
+            action = "executable price crossed the stop"
+        if np.isfinite(overshoot_bps):
+            comparison = f"{comparison}; overshoot={overshoot_bps:.2f} bps"
+        if "pre_replace" in text:
+            return (
+                "software stop close before exchange stop replacement: "
+                f"{action} ({comparison}); replacing the stop would have submitted "
+                "an already-triggered candidate."
+            )
+        if "pretrigger" in text:
+            return (
+                "software stop pretrigger close: "
+                f"{action} ({comparison}) before waiting for the exchange stop trigger."
+            )
+        return f"software stop close: {action} ({comparison})."
+    if "exit_pressure_stop_tightening" in text:
+        return "policy tightened the stop because exit pressure increased."
+    if "trailing_risk_reduction" in text:
+        return "trailing stop reduced risk, but the locked return was below the configured cost floor."
+    if "trailing_profit" in text:
+        return "trailing stop locked profit above the configured cost floor."
+    return ""
+
+
 def _email_gap_quality_label(
     value_bps: Any,
     *,
@@ -8386,6 +9487,464 @@ def _email_gap_as_outcome_pct(
     return float(abs(gap_value) / 10000.0 / max(abs(outcome_pct), 1e-12))
 
 
+_EMAIL_DRIFT_UNCERTAINTY_KEYS: Tuple[str, ...] = (
+    "inference_drift_score",
+    "base_lgbm_inference_drift_score",
+    "meta_lgbm_inference_drift_score",
+    "feature_drift_psi_core",
+    "feature_drift_psi_core_80",
+    "base_lgbm_feature_drift_psi_core",
+    "meta_lgbm_feature_drift_psi_core",
+    "feature_drift_ks_bin_mean",
+    "base_lgbm_feature_drift_ks_core",
+    "meta_lgbm_feature_drift_ks_core",
+    "ood_score",
+    "odd_score",
+    "uncertainty_score",
+    "base_lgbm_uncertainty_score",
+    "meta_lgbm_uncertainty_score",
+    "prob_uncertainty",
+    "prediction_entropy",
+    "hit_rate_surprise_z_eff",
+    "support_drift_score",
+    "leaf_drift_score",
+    "aegmm_regime_drift_score",
+    "aegmm_cluster",
+    "side_aegmm_cluster",
+    "gmm_cluster_id",
+    "gmm_entropy",
+    "mahalanobis_distance",
+    "ae_reconstruction_error",
+    "AE_reconstruction_error",
+    "cluster_speed",
+    "cluster_acceleration",
+)
+
+
+def _email_archetype_recent_performance_plain_lines(
+    source: Mapping[str, Any],
+) -> List[Optional[str]]:
+    archetype_name = (
+        source.get("policy_archetype")
+        or source.get("local_side_archetype")
+        or source.get("source_archetype")
+        or source.get("archetype_label_family")
+    )
+    return [
+        _email_line("archetype_name", archetype_name),
+        _email_line("policy_archetype", source.get("policy_archetype")),
+        _email_line("policy_archetype_source", source.get("policy_archetype_source")),
+        _email_line("local_side_archetype", source.get("local_side_archetype")),
+        _email_line("source_archetype", source.get("source_archetype")),
+        _email_line("archetype_label_family", source.get("archetype_label_family")),
+        _email_line("recent_performance_mode", source.get("archetype_hit_surprise_mode")),
+        _email_line(
+            "recent_performance_threshold",
+            source.get("archetype_hit_surprise_threshold"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "recent_performance_threshold_delta",
+            source.get("archetype_hit_surprise_threshold_delta"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "recent_performance_quality_adjustment",
+            source.get("archetype_hit_surprise_quality_adjustment"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "archetype_priority_multiplier",
+            source.get("archetype_hit_surprise_priority_multiplier"),
+            _email_fmt_float(4),
+        ),
+        _email_line(
+            "archetype_rank_adjustment",
+            source.get("archetype_hit_surprise_rank_adjustment"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "recent_performance_applied",
+            source.get("archetype_hit_surprise_applied"),
+            _email_fmt_bool,
+        ),
+        _email_line(
+            "recent_performance_reason",
+            source.get("archetype_hit_surprise_reason"),
+        ),
+        _email_line(
+            "recent_performance_matched_key",
+            source.get("archetype_hit_surprise_matched_key"),
+        ),
+        _email_line(
+            "archetype_recent_hit_rate",
+            source.get("archetype_hit_surprise_actual_hit_rate"),
+            _email_fmt_pct,
+        ),
+        _email_line(
+            "archetype_baseline_hit_rate",
+            source.get("archetype_hit_surprise_expected_hit_rate"),
+            _email_fmt_pct,
+        ),
+        _email_line(
+            "archetype_recent_vs_baseline_hit_rate_delta",
+            source.get("archetype_hit_surprise_hit_rate_delta"),
+            _email_fmt_pct,
+        ),
+        _email_line(
+            "archetype_hit_rate_surprise_z",
+            source.get("archetype_hit_surprise_hit_rate_surprise_z"),
+            _email_fmt_float(4),
+        ),
+        _email_line(
+            "archetype_support_confidence",
+            source.get("archetype_hit_surprise_support_confidence"),
+            _email_fmt_float(4),
+        ),
+        _email_line(
+            "archetype_hit_surprise_n_eff",
+            source.get("archetype_hit_surprise_n_eff"),
+            _email_fmt_float(4),
+        ),
+        _email_line(
+            "archetype_hit_surprise_rows",
+            source.get("archetype_hit_surprise_rows"),
+            _email_fmt_float(4),
+        ),
+        _email_line(
+            "strategy_ev_gate_allowed",
+            source.get("strategy_ev_gate_allowed"),
+            _email_fmt_bool,
+        ),
+        _email_line("strategy_ev_gate_reason", source.get("strategy_ev_gate_reason")),
+        _email_line(
+            "strategy_ev_hit_rate",
+            source.get("strategy_ev_hit_rate"),
+            _email_fmt_pct,
+        ),
+        _email_line(
+            "strategy_ev_avg_net_return",
+            source.get("strategy_ev_avg_net_return"),
+            _email_fmt_pct,
+        ),
+    ]
+
+
+def _email_archetype_recent_performance_html_rows(
+    source: Mapping[str, Any],
+) -> List[Tuple[str, Any, Optional[Any]]]:
+    archetype_name = (
+        source.get("policy_archetype")
+        or source.get("local_side_archetype")
+        or source.get("source_archetype")
+        or source.get("archetype_label_family")
+    )
+    return [
+        ("Archetype Name", archetype_name, None),
+        ("Policy Archetype", source.get("policy_archetype"), None),
+        ("Policy Archetype Source", source.get("policy_archetype_source"), None),
+        ("Local Side Archetype", source.get("local_side_archetype"), None),
+        ("Source Archetype", source.get("source_archetype"), None),
+        ("Archetype Family", source.get("archetype_label_family"), None),
+        ("Recent Performance Mode", source.get("archetype_hit_surprise_mode"), None),
+        (
+            "Recent Performance Threshold",
+            source.get("archetype_hit_surprise_threshold"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Recent Performance Threshold Delta",
+            source.get("archetype_hit_surprise_threshold_delta"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Recent Performance Quality Adjustment",
+            source.get("archetype_hit_surprise_quality_adjustment"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Archetype Priority Multiplier",
+            source.get("archetype_hit_surprise_priority_multiplier"),
+            _email_fmt_float(4),
+        ),
+        (
+            "Archetype Rank Adjustment",
+            source.get("archetype_hit_surprise_rank_adjustment"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Recent Performance Applied",
+            source.get("archetype_hit_surprise_applied"),
+            _email_fmt_bool,
+        ),
+        ("Recent Performance Reason", source.get("archetype_hit_surprise_reason"), None),
+        (
+            "Recent Performance Matched Key",
+            source.get("archetype_hit_surprise_matched_key"),
+            None,
+        ),
+        (
+            "Archetype Recent Hit Rate",
+            source.get("archetype_hit_surprise_actual_hit_rate"),
+            _email_fmt_pct,
+        ),
+        (
+            "Archetype Baseline Hit Rate",
+            source.get("archetype_hit_surprise_expected_hit_rate"),
+            _email_fmt_pct,
+        ),
+        (
+            "Recent vs Baseline Hit Rate Delta",
+            source.get("archetype_hit_surprise_hit_rate_delta"),
+            _email_fmt_pct,
+        ),
+        (
+            "Archetype Hit-Rate Surprise z",
+            source.get("archetype_hit_surprise_hit_rate_surprise_z"),
+            _email_fmt_float(4),
+        ),
+        (
+            "Archetype Support Confidence",
+            source.get("archetype_hit_surprise_support_confidence"),
+            _email_fmt_float(4),
+        ),
+        (
+            "Archetype n_eff",
+            source.get("archetype_hit_surprise_n_eff"),
+            _email_fmt_float(4),
+        ),
+        (
+            "Archetype Rows",
+            source.get("archetype_hit_surprise_rows"),
+            _email_fmt_float(4),
+        ),
+        ("Strategy EV Gate Allowed", source.get("strategy_ev_gate_allowed"), _email_fmt_bool),
+        ("Strategy EV Gate Reason", source.get("strategy_ev_gate_reason"), None),
+        ("Strategy EV Hit Rate", source.get("strategy_ev_hit_rate"), _email_fmt_pct),
+        (
+            "Strategy EV Net Return",
+            source.get("strategy_ev_avg_net_return"),
+            _email_fmt_pct,
+        ),
+    ]
+
+
+def _email_drift_uncertainty_plain_lines(
+    source: Mapping[str, Any],
+) -> List[Optional[str]]:
+    return [
+        _email_line(
+            "inference_drift_score",
+            source.get("inference_drift_score"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "base_lgbm_inference_drift_score",
+            source.get("base_lgbm_inference_drift_score"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "meta_lgbm_inference_drift_score",
+            source.get("meta_lgbm_inference_drift_score"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "feature_drift_psi_core",
+            source.get("feature_drift_psi_core"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "feature_drift_psi_core_80",
+            source.get("feature_drift_psi_core_80"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "base_lgbm_feature_drift_psi_core",
+            source.get("base_lgbm_feature_drift_psi_core"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "meta_lgbm_feature_drift_psi_core",
+            source.get("meta_lgbm_feature_drift_psi_core"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "feature_drift_ks_bin_mean",
+            source.get("feature_drift_ks_bin_mean"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "base_lgbm_feature_drift_ks_core",
+            source.get("base_lgbm_feature_drift_ks_core"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "meta_lgbm_feature_drift_ks_core",
+            source.get("meta_lgbm_feature_drift_ks_core"),
+            _email_fmt_float(6),
+        ),
+        _email_line("ood_score", source.get("ood_score"), _email_fmt_float(6)),
+        _email_line("odd_score", source.get("odd_score"), _email_fmt_float(6)),
+        _email_line(
+            "uncertainty_score",
+            source.get("uncertainty_score"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "base_lgbm_uncertainty_score",
+            source.get("base_lgbm_uncertainty_score"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "meta_lgbm_uncertainty_score",
+            source.get("meta_lgbm_uncertainty_score"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "prob_uncertainty",
+            source.get("prob_uncertainty"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "prediction_entropy",
+            source.get("prediction_entropy"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "recent_hit_rate_surprise_z_eff",
+            source.get("hit_rate_surprise_z_eff"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "support_drift_score",
+            source.get("support_drift_score"),
+            _email_fmt_float(6),
+        ),
+        _email_line("leaf_drift_score", source.get("leaf_drift_score"), _email_fmt_float(6)),
+        _email_line(
+            "aegmm_regime_drift_score",
+            source.get("aegmm_regime_drift_score"),
+            _email_fmt_float(6),
+        ),
+        _email_line("aegmm_cluster", source.get("aegmm_cluster")),
+        _email_line("side_aegmm_cluster", source.get("side_aegmm_cluster")),
+        _email_line("gmm_cluster_id", source.get("gmm_cluster_id")),
+        _email_line("gmm_entropy", source.get("gmm_entropy"), _email_fmt_float(6)),
+        _email_line(
+            "mahalanobis_distance",
+            source.get("mahalanobis_distance"),
+            _email_fmt_float(6),
+        ),
+        _email_line(
+            "ae_reconstruction_error",
+            source.get("ae_reconstruction_error", source.get("AE_reconstruction_error")),
+            _email_fmt_float(6),
+        ),
+        _email_line("cluster_speed", source.get("cluster_speed"), _email_fmt_float(6)),
+        _email_line(
+            "cluster_acceleration",
+            source.get("cluster_acceleration"),
+            _email_fmt_float(6),
+        ),
+    ]
+
+
+def _email_drift_uncertainty_html_rows(
+    source: Mapping[str, Any],
+) -> List[Tuple[str, Any, Optional[Any]]]:
+    return [
+        ("Drift Score", source.get("inference_drift_score"), _email_fmt_float(6)),
+        (
+            "Base LGBM Drift Score",
+            source.get("base_lgbm_inference_drift_score"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Meta Drift Score",
+            source.get("meta_lgbm_inference_drift_score"),
+            _email_fmt_float(6),
+        ),
+        ("Feature Drift PSI Core", source.get("feature_drift_psi_core"), _email_fmt_float(6)),
+        (
+            "Feature Drift PSI Core 80",
+            source.get("feature_drift_psi_core_80"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Base Feature Drift PSI Core",
+            source.get("base_lgbm_feature_drift_psi_core"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Meta Feature Drift PSI Core",
+            source.get("meta_lgbm_feature_drift_psi_core"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Feature Drift KS Mean",
+            source.get("feature_drift_ks_bin_mean"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Base Feature Drift KS Core",
+            source.get("base_lgbm_feature_drift_ks_core"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Meta Feature Drift KS Core",
+            source.get("meta_lgbm_feature_drift_ks_core"),
+            _email_fmt_float(6),
+        ),
+        ("OOD Score", source.get("ood_score"), _email_fmt_float(6)),
+        ("ODD Score", source.get("odd_score"), _email_fmt_float(6)),
+        ("Uncertainty Score", source.get("uncertainty_score"), _email_fmt_float(6)),
+        (
+            "Base LGBM Uncertainty Score",
+            source.get("base_lgbm_uncertainty_score"),
+            _email_fmt_float(6),
+        ),
+        (
+            "Meta Uncertainty Score",
+            source.get("meta_lgbm_uncertainty_score"),
+            _email_fmt_float(6),
+        ),
+        ("Prob Uncertainty", source.get("prob_uncertainty"), _email_fmt_float(6)),
+        ("Prediction Entropy", source.get("prediction_entropy"), _email_fmt_float(6)),
+        (
+            "Recent Hit-Rate Surprise z_eff",
+            source.get("hit_rate_surprise_z_eff"),
+            _email_fmt_float(6),
+        ),
+        ("Support Drift Score", source.get("support_drift_score"), _email_fmt_float(6)),
+        ("Leaf Drift Score", source.get("leaf_drift_score"), _email_fmt_float(6)),
+        (
+            "AE/GMM Regime Drift Score",
+            source.get("aegmm_regime_drift_score"),
+            _email_fmt_float(6),
+        ),
+        ("AE/GMM Cluster", source.get("aegmm_cluster"), None),
+        ("Side AE/GMM Cluster", source.get("side_aegmm_cluster"), None),
+        ("GMM Cluster ID", source.get("gmm_cluster_id"), None),
+        ("GMM Entropy", source.get("gmm_entropy"), _email_fmt_float(6)),
+        (
+            "Mahalanobis Distance",
+            source.get("mahalanobis_distance"),
+            _email_fmt_float(6),
+        ),
+        (
+            "AE Reconstruction Error",
+            source.get("ae_reconstruction_error", source.get("AE_reconstruction_error")),
+            _email_fmt_float(6),
+        ),
+        ("Cluster Speed", source.get("cluster_speed"), _email_fmt_float(6)),
+        (
+            "Cluster Acceleration",
+            source.get("cluster_acceleration"),
+            _email_fmt_float(6),
+        ),
+    ]
+
+
 def _build_trade_close_email_body(
     *,
     closed_trade: Mapping[str, Any],
@@ -8399,6 +9958,7 @@ def _build_trade_close_email_body(
         )
     reason = closed_trade.get("reason") or "closed"
     reason_detail = closed_trade.get("exit_reason_detail") or reason
+    close_cause_plain = _email_close_cause_plain(closed_trade)
     actual_entry_leverage, actual_entry_leverage_source = _email_actual_entry_leverage(
         closed_trade,
         config,
@@ -8420,6 +9980,7 @@ def _build_trade_close_email_body(
                 _email_line("side", closed_trade.get("side")),
                 _email_line("strategy_id", closed_trade.get("strategy_id")),
                 _email_line("exit_reason", reason),
+                _email_line("close_cause_plain", close_cause_plain),
                 _email_line(
                     "close_execution_method", closed_trade.get("close_execution_method")
                 ),
@@ -9019,9 +10580,105 @@ def _build_trade_close_email_body(
                     closed_trade.get("policy_rank_reference_source"),
                 ),
                 _email_line(
+                    "auction_rank_pct",
+                    closed_trade.get("auction_rank_pct"),
+                    _email_fmt_float(6),
+                ),
+                _email_line(
+                    "normalized_rank_score",
+                    closed_trade.get("normalized_rank_score"),
+                    _email_fmt_float(6),
+                ),
+                _email_line(
+                    "threshold_rank_score",
+                    closed_trade.get("threshold_rank_score"),
+                    _email_fmt_float(6),
+                ),
+                _email_line(
+                    "threshold_rank_score_source",
+                    closed_trade.get("threshold_rank_score_source"),
+                ),
+                _email_line(
+                    "threshold_rank_score_after_friction_ev",
+                    closed_trade.get("threshold_rank_score_after_friction_ev"),
+                    _email_fmt_float(6),
+                ),
+                _email_line(
+                    "adjusted_rank_score",
+                    closed_trade.get("adjusted_rank_score"),
+                    _email_fmt_float(6),
+                ),
+                _email_line(
+                    "ev_adjusted_rank_score",
+                    closed_trade.get("ev_adjusted_rank_score"),
+                    _email_fmt_float(6),
+                ),
+                _email_line(
+                    "final_gate_rank_score",
+                    closed_trade.get("final_gate_rank_score"),
+                    _email_fmt_float(6),
+                ),
+                _email_line(
+                    "final_gate_threshold",
+                    closed_trade.get("final_gate_threshold"),
+                    _email_fmt_float(6),
+                ),
+                _email_line(
+                    "final_gate_rank_score_source",
+                    closed_trade.get("final_gate_rank_score_source"),
+                ),
+                _email_line(
+                    "portfolio_priority",
+                    closed_trade.get("portfolio_priority"),
+                    _email_fmt_float(6),
+                ),
+                _email_line(
+                    "portfolio_priority_multiplier",
+                    closed_trade.get("portfolio_priority_multiplier"),
+                    _email_fmt_float(6),
+                ),
+                _email_line(
+                    "portfolio_priority_adjustment",
+                    closed_trade.get("portfolio_priority_adjustment"),
+                    _email_fmt_float(6),
+                ),
+                _email_line(
+                    "portfolio_rank_adjustment",
+                    closed_trade.get("portfolio_rank_adjustment"),
+                    _email_fmt_float(6),
+                ),
+                _email_line(
+                    "portfolio_priority_after_live_friction_ev",
+                    closed_trade.get("portfolio_priority_after_live_friction_ev"),
+                    _email_fmt_float(6),
+                ),
+                _email_line(
                     "calibrated_score",
                     closed_trade.get("calibrated_score"),
                     _email_fmt_float(6),
+                ),
+                _email_line(
+                    "raw_calibrated_score",
+                    closed_trade.get("raw_calibrated_score"),
+                    _email_fmt_float(6),
+                ),
+                _email_line(
+                    "score_regime_calibrated",
+                    closed_trade.get("score_regime_calibrated"),
+                    _email_fmt_float(6),
+                ),
+                _email_line(
+                    "regime_ev_risk_score",
+                    closed_trade.get("regime_ev_risk_score"),
+                    _email_fmt_float(6),
+                ),
+                _email_line(
+                    "regime_ev_effect_count",
+                    closed_trade.get("regime_ev_effect_count"),
+                ),
+                _email_line(
+                    "regime_ev_calibration_source",
+                    closed_trade.get("regime_ev_calibration_source"),
                 ),
                 _email_line(
                     "rank_percentile",
@@ -9037,6 +10694,25 @@ def _build_trade_close_email_body(
                     "deployment_rank_threshold",
                     closed_trade.get("deployment_rank_threshold"),
                     _email_fmt_float(6),
+                ),
+                _email_line(
+                    "strategy_ev_gate_allowed",
+                    closed_trade.get("strategy_ev_gate_allowed"),
+                    _email_fmt_bool,
+                ),
+                _email_line(
+                    "strategy_ev_gate_reason",
+                    closed_trade.get("strategy_ev_gate_reason"),
+                ),
+                _email_line(
+                    "strategy_ev_hit_rate",
+                    closed_trade.get("strategy_ev_hit_rate"),
+                    _email_fmt_pct,
+                ),
+                _email_line(
+                    "strategy_ev_avg_net_return",
+                    closed_trade.get("strategy_ev_avg_net_return"),
+                    _email_fmt_pct,
                 ),
                 _email_line(
                     "estimated_hit_rate",
@@ -9062,8 +10738,18 @@ def _build_trade_close_email_body(
                     _email_fmt_pct,
                 ),
                 _email_line(
+                    "estimated_ev_historical_net_return",
+                    closed_trade.get("estimated_ev_historical_net_return"),
+                    _email_fmt_pct,
+                ),
+                _email_line(
                     "estimated_ev_cost_bps",
                     closed_trade.get("estimated_ev_cost_bps"),
+                    _email_fmt_float(4),
+                ),
+                _email_line(
+                    "estimated_ev_historical_cost_bps",
+                    closed_trade.get("estimated_ev_historical_cost_bps"),
                     _email_fmt_float(4),
                 ),
                 _email_line(
@@ -9078,119 +10764,68 @@ def _build_trade_close_email_body(
                     "estimated_ev_calibration_n",
                     closed_trade.get("estimated_ev_calibration_n"),
                 ),
+                _email_line(
+                    "ev_adjusted_net_return_before_friction",
+                    closed_trade.get("ev_adjusted_net_return_before_friction"),
+                    _email_fmt_pct,
+                ),
+                _email_line(
+                    "ev_adjusted_net_return_after_friction",
+                    closed_trade.get("ev_adjusted_net_return_after_friction"),
+                    _email_fmt_pct,
+                ),
+                _email_line(
+                    "ev_adjusted_historical_net_return_before_rebase",
+                    closed_trade.get("ev_adjusted_historical_net_return_before_rebase"),
+                    _email_fmt_pct,
+                ),
+                _email_line(
+                    "ev_inference_cost_rebase_enabled",
+                    closed_trade.get("ev_inference_cost_rebase_enabled"),
+                    _email_fmt_bool,
+                ),
+                _email_line(
+                    "ev_inference_cost_rebase_applied",
+                    closed_trade.get("ev_inference_cost_rebase_applied"),
+                    _email_fmt_bool,
+                ),
+                _email_line(
+                    "ev_inference_fixed_round_trip_cost_bps",
+                    closed_trade.get("ev_inference_fixed_round_trip_cost_bps"),
+                    _email_fmt_float(4),
+                ),
+                _email_line(
+                    "ev_inference_spread_multiplier",
+                    closed_trade.get("ev_inference_spread_multiplier"),
+                    _email_fmt_float(4),
+                ),
+                _email_line(
+                    "ev_inference_spread_model_bps",
+                    closed_trade.get("ev_inference_spread_model_bps"),
+                    _email_fmt_float(4),
+                ),
+                _email_line(
+                    "ev_inference_total_cost_bps",
+                    closed_trade.get("ev_inference_total_cost_bps"),
+                    _email_fmt_float(4),
+                ),
+                _email_line(
+                    "ev_inference_cost_model_contract",
+                    closed_trade.get("ev_inference_cost_model_contract"),
+                ),
             ],
         )
     )
     lines.extend(
         _email_section(
-            "Metrics",
-            [
-                _email_line(
-                    "inference_drift_score",
-                    closed_trade.get("inference_drift_score"),
-                    _email_fmt_float(6),
-                ),
-                _email_line(
-                    "base_lgbm_inference_drift_score",
-                    closed_trade.get("base_lgbm_inference_drift_score"),
-                    _email_fmt_float(6),
-                ),
-                _email_line(
-                    "meta_lgbm_inference_drift_score",
-                    closed_trade.get("meta_lgbm_inference_drift_score"),
-                    _email_fmt_float(6),
-                ),
-                _email_line(
-                    "feature_drift_psi_core",
-                    closed_trade.get("feature_drift_psi_core"),
-                    _email_fmt_float(6),
-                ),
-                _email_line(
-                    "feature_drift_psi_core_80",
-                    closed_trade.get("feature_drift_psi_core_80"),
-                    _email_fmt_float(6),
-                ),
-                _email_line(
-                    "base_lgbm_feature_drift_psi_core",
-                    closed_trade.get("base_lgbm_feature_drift_psi_core"),
-                    _email_fmt_float(6),
-                ),
-                _email_line(
-                    "meta_lgbm_feature_drift_psi_core",
-                    closed_trade.get("meta_lgbm_feature_drift_psi_core"),
-                    _email_fmt_float(6),
-                ),
-                _email_line(
-                    "feature_drift_ks_bin_mean",
-                    closed_trade.get("feature_drift_ks_bin_mean"),
-                    _email_fmt_float(6),
-                ),
-                _email_line(
-                    "base_lgbm_feature_drift_ks_core",
-                    closed_trade.get("base_lgbm_feature_drift_ks_core"),
-                    _email_fmt_float(6),
-                ),
-                _email_line(
-                    "meta_lgbm_feature_drift_ks_core",
-                    closed_trade.get("meta_lgbm_feature_drift_ks_core"),
-                    _email_fmt_float(6),
-                ),
-                _email_line(
-                    "ood_score", closed_trade.get("ood_score"), _email_fmt_float(6)
-                ),
-                _email_line(
-                    "odd_score", closed_trade.get("odd_score"), _email_fmt_float(6)
-                ),
-                _email_line(
-                    "uncertainty_score",
-                    closed_trade.get("uncertainty_score"),
-                    _email_fmt_float(6),
-                ),
-                _email_line(
-                    "base_lgbm_uncertainty_score",
-                    closed_trade.get("base_lgbm_uncertainty_score"),
-                    _email_fmt_float(6),
-                ),
-                _email_line(
-                    "meta_lgbm_uncertainty_score",
-                    closed_trade.get("meta_lgbm_uncertainty_score"),
-                    _email_fmt_float(6),
-                ),
-                _email_line(
-                    "prob_uncertainty",
-                    closed_trade.get("prob_uncertainty"),
-                    _email_fmt_float(6),
-                ),
-                _email_line(
-                    "prediction_entropy",
-                    closed_trade.get("prediction_entropy"),
-                    _email_fmt_float(6),
-                ),
-                _email_line(
-                    "dynamic_hr_surprise_z_eff",
-                    closed_trade.get("dynamic_hr_surprise_z_eff"),
-                    _email_fmt_float(6),
-                ),
-                _email_line(
-                    "hit_rate_surprise_z_eff",
-                    closed_trade.get("hit_rate_surprise_z_eff"),
-                    _email_fmt_float(6),
-                ),
-                _email_line(
-                    "dynamic_hr_threshold",
-                    closed_trade.get("dynamic_hr_threshold"),
-                    _email_fmt_float(6),
-                ),
-                _email_line(
-                    "dynamic_hr_base_threshold",
-                    closed_trade.get("dynamic_hr_base_threshold"),
-                    _email_fmt_float(6),
-                ),
-                _email_line(
-                    "dynamic_hr_surprise_active",
-                    closed_trade.get("dynamic_hr_surprise_active"),
-                ),
-            ],
+            "Archetype recent performance",
+            _email_archetype_recent_performance_plain_lines(closed_trade),
+        )
+    )
+    lines.extend(
+        _email_section(
+            "Drift, uncertainty, and OOD",
+            _email_drift_uncertainty_plain_lines(closed_trade),
         )
     )
     lines.extend(
@@ -9305,6 +10940,13 @@ def _build_trade_open_email_body(
             "base_pred": predictions.get("base_pred"),
             "meta_pred": predictions.get("meta_pred"),
             "calibrated_score": decision.get("calibrated_score"),
+            "raw_calibrated_score": decision.get("raw_calibrated_score"),
+            "score_regime_calibrated": decision.get("score_regime_calibrated"),
+            "regime_ev_risk_score": decision.get("regime_ev_risk_score"),
+            "regime_ev_effect_count": decision.get("regime_ev_effect_count"),
+            "regime_ev_calibration_source": decision.get(
+                "regime_ev_calibration_source"
+            ),
             "rank_score_source": decision.get("rank_score_source"),
             "policy_rank_pct": decision.get("policy_rank_pct"),
             "policy_rank_reference_n": decision.get("policy_rank_reference_n"),
@@ -9314,6 +10956,62 @@ def _build_trade_open_email_body(
             "rank_percentile": decision.get("rank_percentile"),
             "rank_threshold": decision.get("rank_threshold"),
             "deployment_rank_threshold": decision.get("deployment_rank_threshold"),
+            "effective_threshold": decision.get("effective_threshold"),
+            "policy_archetype": decision.get("policy_archetype"),
+            "policy_archetype_source": decision.get("policy_archetype_source"),
+            "local_side_archetype": decision.get("local_side_archetype"),
+            "source_archetype": decision.get("source_archetype"),
+            "archetype_label_family": decision.get("archetype_label_family"),
+            "archetype_hit_surprise_threshold": decision.get(
+                "archetype_hit_surprise_threshold"
+            ),
+            "archetype_hit_surprise_mode": decision.get(
+                "archetype_hit_surprise_mode"
+            ),
+            "archetype_hit_surprise_threshold_delta": decision.get(
+                "archetype_hit_surprise_threshold_delta"
+            ),
+            "archetype_hit_surprise_quality_adjustment": decision.get(
+                "archetype_hit_surprise_quality_adjustment"
+            ),
+            "archetype_hit_surprise_priority_multiplier": decision.get(
+                "archetype_hit_surprise_priority_multiplier"
+            ),
+            "archetype_hit_surprise_rank_adjustment": decision.get(
+                "archetype_hit_surprise_rank_adjustment"
+            ),
+            "archetype_hit_surprise_applied": decision.get(
+                "archetype_hit_surprise_applied"
+            ),
+            "archetype_hit_surprise_reason": decision.get(
+                "archetype_hit_surprise_reason"
+            ),
+            "archetype_hit_surprise_matched_key": decision.get(
+                "archetype_hit_surprise_matched_key"
+            ),
+            "archetype_hit_surprise_actual_hit_rate": decision.get(
+                "archetype_hit_surprise_actual_hit_rate"
+            ),
+            "archetype_hit_surprise_expected_hit_rate": decision.get(
+                "archetype_hit_surprise_expected_hit_rate"
+            ),
+            "archetype_hit_surprise_hit_rate_delta": decision.get(
+                "archetype_hit_surprise_hit_rate_delta"
+            ),
+            "archetype_hit_surprise_hit_rate_surprise_z": decision.get(
+                "archetype_hit_surprise_hit_rate_surprise_z"
+            ),
+            "archetype_hit_surprise_support_confidence": decision.get(
+                "archetype_hit_surprise_support_confidence"
+            ),
+            "archetype_hit_surprise_n_eff": decision.get(
+                "archetype_hit_surprise_n_eff"
+            ),
+            "archetype_hit_surprise_rows": decision.get("archetype_hit_surprise_rows"),
+            "strategy_ev_gate_allowed": decision.get("strategy_ev_gate_allowed"),
+            "strategy_ev_gate_reason": decision.get("strategy_ev_gate_reason"),
+            "strategy_ev_hit_rate": decision.get("strategy_ev_hit_rate"),
+            "strategy_ev_avg_net_return": decision.get("strategy_ev_avg_net_return"),
             "ev_haircut_bps": decision.get(
                 "ev_haircut_bps", trade_result.get("ev_haircut_bps")
             ),
@@ -9331,6 +11029,11 @@ def _build_trade_open_email_body(
             ),
         }
     )
+    for key in _EMAIL_DRIFT_UNCERTAINTY_KEYS:
+        payload.setdefault(
+            key,
+            decision.get(key, trade_result.get(key, predictions.get(key))),
+        )
     lines: List[str] = ["Extreme price movement trade open", ""]
     lines.extend(
         _email_section(
@@ -9373,6 +11076,29 @@ def _build_trade_open_email_body(
                     payload.get("policy_rank_reference_source"),
                 ),
                 _email_line(
+                    "raw_calibrated_score",
+                    payload.get("raw_calibrated_score"),
+                    _email_fmt_float(6),
+                ),
+                _email_line(
+                    "score_regime_calibrated",
+                    payload.get("score_regime_calibrated"),
+                    _email_fmt_float(6),
+                ),
+                _email_line(
+                    "regime_ev_risk_score",
+                    payload.get("regime_ev_risk_score"),
+                    _email_fmt_float(6),
+                ),
+                _email_line(
+                    "regime_ev_effect_count",
+                    payload.get("regime_ev_effect_count"),
+                ),
+                _email_line(
+                    "regime_ev_calibration_source",
+                    payload.get("regime_ev_calibration_source"),
+                ),
+                _email_line(
                     "rank_percentile",
                     payload.get("rank_percentile"),
                     _email_fmt_float(6),
@@ -9385,7 +11111,24 @@ def _build_trade_open_email_body(
                     payload.get("deployment_rank_threshold"),
                     _email_fmt_float(6),
                 ),
+                _email_line(
+                    "effective_threshold",
+                    payload.get("effective_threshold"),
+                    _email_fmt_float(6),
+                ),
             ],
+        )
+    )
+    lines.extend(
+        _email_section(
+            "Archetype recent performance",
+            _email_archetype_recent_performance_plain_lines(payload),
+        )
+    )
+    lines.extend(
+        _email_section(
+            "Drift, uncertainty, and OOD",
+            _email_drift_uncertainty_plain_lines(payload),
         )
     )
     lines.extend(
@@ -9755,15 +11498,20 @@ def _build_trade_close_email_html_body(
         "net_pnl_estimated",
         closed_trade.get("net_pnl_amount", closed_trade.get("gross_pnl")),
     )
-    wallet_pnl_pct = closed_trade.get(
-        "net_pnl_pct_wallet_estimated",
-        closed_trade.get("leverage_adjusted_net_pnl_pct"),
-    )
     actual_entry_leverage, actual_entry_leverage_source = _email_actual_entry_leverage(
         closed_trade,
         config,
     )
     actual_leverage_pnl_pct = _email_actual_leverage_pnl_pct(closed_trade, config)
+    wallet_pnl_pct_raw = closed_trade.get(
+        "net_pnl_pct_wallet_estimated",
+        closed_trade.get("leverage_adjusted_net_pnl_pct"),
+    )
+    wallet_pnl_pct = (
+        actual_leverage_pnl_pct
+        if _email_value_present(actual_leverage_pnl_pct)
+        else wallet_pnl_pct_raw
+    )
     prediction_outcome_gap_bps = _email_prediction_outcome_gap_bps(closed_trade)
     prediction_outcome_gap_as_outcome = _email_gap_as_outcome_pct(
         closed_trade,
@@ -9771,6 +11519,7 @@ def _build_trade_close_email_html_body(
     )
     base_rank_value = _email_base_rank_pct(closed_trade)
     exit_type = _email_close_exit_type(closed_trade)
+    close_cause_plain = _email_close_cause_plain(closed_trade)
     rank_value = closed_trade.get(
         "policy_rank_pct",
         closed_trade.get("rank_percentile", closed_trade.get("calibrated_score")),
@@ -9810,6 +11559,7 @@ def _build_trade_close_email_html_body(
                 tone=tone,
             ),
             _email_html_metric("Exit Type", exit_type),
+            _email_html_metric("Close Cause", close_cause_plain),
             _email_html_metric(
                 "Rank / Threshold",
                 f"{_format_float(rank_value, 4)} / {_format_float(threshold_value, 4)}",
@@ -9833,6 +11583,7 @@ def _build_trade_close_email_html_body(
                     ("Symbol", closed_trade.get("symbol"), None),
                     ("Side", closed_trade.get("side"), None),
                     ("Strategy", closed_trade.get("strategy_id"), None),
+                    ("Close Cause", close_cause_plain, None),
                     ("Entry Time", closed_trade.get("entry_time"), None),
                     ("Exit Time", closed_trade.get("exit_time"), None),
                     (
@@ -9859,7 +11610,67 @@ def _build_trade_close_email_html_body(
                         closed_trade.get("policy_rank_pct"),
                         _email_fmt_float(6),
                     ),
+                    (
+                        "Auction Rank pct",
+                        closed_trade.get("auction_rank_pct"),
+                        _email_fmt_float(6),
+                    ),
+                    (
+                        "Threshold Rank Score",
+                        closed_trade.get("threshold_rank_score"),
+                        _email_fmt_float(6),
+                    ),
+                    (
+                        "Threshold Rank Source",
+                        closed_trade.get("threshold_rank_score_source"),
+                        None,
+                    ),
+                    (
+                        "Adjusted Rank Score",
+                        closed_trade.get("adjusted_rank_score"),
+                        _email_fmt_float(6),
+                    ),
+                    (
+                        "EV Adjusted Rank Score",
+                        closed_trade.get("ev_adjusted_rank_score"),
+                        _email_fmt_float(6),
+                    ),
+                    (
+                        "Final Gate Rank Score",
+                        closed_trade.get("final_gate_rank_score"),
+                        _email_fmt_float(6),
+                    ),
+                    (
+                        "Final Gate Threshold",
+                        closed_trade.get("final_gate_threshold"),
+                        _email_fmt_float(6),
+                    ),
+                    (
+                        "Portfolio Priority",
+                        closed_trade.get("portfolio_priority"),
+                        _email_fmt_float(6),
+                    ),
+                    (
+                        "Portfolio Priority Multiplier",
+                        closed_trade.get("portfolio_priority_multiplier"),
+                        _email_fmt_float(6),
+                    ),
+                    (
+                        "Portfolio Rank Adjustment",
+                        closed_trade.get("portfolio_rank_adjustment"),
+                        _email_fmt_float(6),
+                    ),
                     ("Effective Threshold", threshold_value, _email_fmt_float(6)),
+                    (
+                        "Strategy EV Hit Rate",
+                        closed_trade.get("strategy_ev_hit_rate"),
+                        _email_fmt_pct,
+                    ),
+                    (
+                        "Strategy EV Net Return",
+                        closed_trade.get("strategy_ev_avg_net_return"),
+                        _email_fmt_pct,
+                    ),
                     (
                         "Estimated Hit Rate",
                         closed_trade.get("estimated_hit_rate"),
@@ -9869,6 +11680,36 @@ def _build_trade_close_email_html_body(
                         "Estimated EV Net Return",
                         closed_trade.get("estimated_ev_net_return"),
                         _email_fmt_pct,
+                    ),
+                    (
+                        "Historical EV Net Return",
+                        closed_trade.get("estimated_ev_historical_net_return"),
+                        _email_fmt_pct,
+                    ),
+                    (
+                        "EV After Live Friction",
+                        closed_trade.get("ev_adjusted_net_return_after_friction"),
+                        _email_fmt_pct,
+                    ),
+                    (
+                        "EV Rebase Historical Net",
+                        closed_trade.get("ev_adjusted_historical_net_return_before_rebase"),
+                        _email_fmt_pct,
+                    ),
+                    (
+                        "EV Inference Total Cost bps",
+                        closed_trade.get("ev_inference_total_cost_bps"),
+                        _email_fmt_float(4),
+                    ),
+                    (
+                        "EV Inference Spread Multiplier",
+                        closed_trade.get("ev_inference_spread_multiplier"),
+                        _email_fmt_float(4),
+                    ),
+                    (
+                        "EV Cost Contract",
+                        closed_trade.get("ev_inference_cost_model_contract"),
+                        None,
                     ),
                     ("Realized Net PnL % Position Notional", pnl_pct, _email_fmt_pct),
                     ("Estimated Wallet Net PnL %", wallet_pnl_pct, _email_fmt_pct),
@@ -9902,6 +11743,10 @@ def _build_trade_close_email_html_body(
                     ),
                 ]
             ),
+        ),
+        (
+            "Archetype Recent Performance",
+            _email_html_rows(_email_archetype_recent_performance_html_rows(closed_trade)),
         ),
         (
             "Liquidation Guard",
@@ -9985,157 +11830,8 @@ def _build_trade_close_email_html_body(
             ),
         ),
         (
-            "Metrics",
-            _email_html_rows(
-                [
-                    (
-                        "Drift Score",
-                        closed_trade.get("inference_drift_score"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Base LGBM Drift Score",
-                        closed_trade.get("base_lgbm_inference_drift_score"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Meta Drift Score",
-                        closed_trade.get("meta_lgbm_inference_drift_score"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Feature Drift PSI Core",
-                        closed_trade.get("feature_drift_psi_core"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Feature Drift PSI Core 80",
-                        closed_trade.get("feature_drift_psi_core_80"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Base Feature Drift PSI Core",
-                        closed_trade.get("base_lgbm_feature_drift_psi_core"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Meta Feature Drift PSI Core",
-                        closed_trade.get("meta_lgbm_feature_drift_psi_core"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Feature Drift KS Mean",
-                        closed_trade.get("feature_drift_ks_bin_mean"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Base Feature Drift KS Core",
-                        closed_trade.get("base_lgbm_feature_drift_ks_core"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Meta Feature Drift KS Core",
-                        closed_trade.get("meta_lgbm_feature_drift_ks_core"),
-                        _email_fmt_float(6),
-                    ),
-                    ("OOD Score", closed_trade.get("ood_score"), _email_fmt_float(6)),
-                    ("ODD Score", closed_trade.get("odd_score"), _email_fmt_float(6)),
-                    (
-                        "Uncertainty Score",
-                        closed_trade.get("uncertainty_score"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Base LGBM Uncertainty Score",
-                        closed_trade.get("base_lgbm_uncertainty_score"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Meta Uncertainty Score",
-                        closed_trade.get("meta_lgbm_uncertainty_score"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Prob Uncertainty",
-                        closed_trade.get("prob_uncertainty"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Prediction Entropy",
-                        closed_trade.get("prediction_entropy"),
-                        _email_fmt_float(6),
-                    ),
-                    ("Base Rank pct", base_rank_value, _email_fmt_float(6)),
-                    (
-                        "Base Train Rank pct",
-                        closed_trade.get("base_train_rank_pct"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Base Gate Top Fraction",
-                        closed_trade.get("base_gate_top_frac"),
-                        _email_fmt_float(6),
-                    ),
-                    ("Meta Pred", closed_trade.get("meta_pred"), _email_fmt_float(6)),
-                    (
-                        "Meta Train Rank pct",
-                        closed_trade.get("meta_train_rank_pct"),
-                        _email_fmt_float(6),
-                    ),
-                    ("Rank Score Source", closed_trade.get("rank_score_source"), None),
-                    (
-                        "Policy Rank pct",
-                        closed_trade.get("policy_rank_pct"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Auction Rank pct",
-                        closed_trade.get("auction_rank_pct"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Normalized Rank Score",
-                        closed_trade.get("normalized_rank_score"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Threshold Rank Score",
-                        closed_trade.get("threshold_rank_score"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Rank Percentile",
-                        closed_trade.get("rank_percentile"),
-                        _email_fmt_float(6),
-                    ),
-                    ("Effective Threshold", threshold_value, _email_fmt_float(6)),
-                    (
-                        "Dynamic HR z_eff",
-                        closed_trade.get("dynamic_hr_surprise_z_eff"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Hit-Rate Surprise z_eff",
-                        closed_trade.get("hit_rate_surprise_z_eff"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Dynamic HR Threshold",
-                        closed_trade.get("dynamic_hr_threshold"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Dynamic HR Base Threshold",
-                        closed_trade.get("dynamic_hr_base_threshold"),
-                        _email_fmt_float(6),
-                    ),
-                    (
-                        "Dynamic HR Active",
-                        closed_trade.get("dynamic_hr_surprise_active"),
-                        None,
-                    ),
-                ]
-            ),
+            "Drift, Uncertainty and OOD",
+            _email_html_rows(_email_drift_uncertainty_html_rows(closed_trade)),
         ),
         (
             "Fees",
@@ -10233,6 +11929,9 @@ def _build_trade_open_email_html_body(
         "deployment_rank_threshold",
         decision.get("effective_threshold", decision.get("rank_threshold")),
     )
+    email_context: Dict[str, Any] = dict(trade_result)
+    email_context.update(predictions)
+    email_context.update(decision)
     dashboard = "".join(
         [
             _email_html_metric("Action", "Opened", tone="good"),
@@ -10317,6 +12016,14 @@ def _build_trade_open_email_html_body(
                     ),
                 ]
             ),
+        ),
+        (
+            "Archetype Recent Performance",
+            _email_html_rows(_email_archetype_recent_performance_html_rows(email_context)),
+        ),
+        (
+            "Drift, Uncertainty and OOD",
+            _email_html_rows(_email_drift_uncertainty_html_rows(email_context)),
         ),
         (
             "Liquidation Guard",
@@ -10421,32 +12128,9 @@ def _build_trade_close_email_subject(closed_trade: Mapping[str, Any]) -> str:
         or closed_trade.get("reason")
         or "closed"
     )
-    policy_stop_reason = (
-        closed_trade.get("stop_origin")
-        or str(closed_trade.get("reason") or "").split(":", 1)[-1]
-        or "unknown"
-    )
-    reason_detail = str(closed_trade.get("exit_reason_detail") or "")
-    policy_context = str(policy_stop_reason)
-    if (
-        "exchange_valid_giveback_fallback" in policy_context
-        and "profit_locking=False" in reason_detail
-    ):
-        policy_context = f"{policy_context}, non-profit fallback"
-    elif (
-        "exchange_valid_giveback_fallback" in policy_context
-        and "profit_locking=True" in reason_detail
-    ):
-        policy_context = f"{policy_context}, profit-locking fallback"
-    stop_gap = closed_trade.get("exit_vs_policy_stop_bps")
-    gap_text = (
-        f", stop gap {_format_float(stop_gap, 1)} bps"
-        if _email_value_present(stop_gap)
-        else ""
-    )
     return (
         f"EPM trade closed: {symbol} {side} {outcome} {pnl_text} "
-        f"via {close_method} (policy {policy_context}{gap_text})"
+        f"via {close_method}"
     )
 
 
@@ -10553,6 +12237,208 @@ def _send_trade_open_email(
         return {"sent": True, "email_result": result}
     tprint(
         "[TradeOpenEmail] Open email failed: "
+        f"{result.get('error_category')}: {result.get('error')}"
+    )
+    return {"sent": False, "reason": "email_failed", "email_result": result}
+
+
+def _risk_guard_email_recipient(config: Mapping[str, Any]) -> str:
+    return str(
+        config.get("portfolio_risk_email_to")
+        or config.get("trade_close_email_to")
+        or config.get("daily_report_email_to")
+        or os.environ.get("EPM_PORTFOLIO_RISK_EMAIL_TO")
+        or os.environ.get("EPM_TRADE_EMAIL_TO")
+        or os.environ.get("EPM_REPORT_EMAIL_TO")
+        or ""
+    ).strip()
+
+
+def _build_portfolio_risk_guard_email_body(
+    *,
+    event: Mapping[str, Any],
+    closed_trade: Mapping[str, Any],
+    portfolio_result: Mapping[str, Any],
+) -> str:
+    hard_status = portfolio_result.get("hard_limit_status")
+    disabled = portfolio_result.get("disabled_archetypes")
+    lines = [
+        "EPM portfolio risk guard triggered.",
+        "",
+        "Trigger:",
+        f"- scope: {event.get('scope')}",
+        f"- event: {event.get('event')}",
+        f"- reason: {event.get('reason')}",
+        f"- streak: {event.get('streak')} / {event.get('threshold')}",
+        "",
+        "Last closed trade:",
+        f"- symbol: {closed_trade.get('symbol')}",
+        f"- side: {closed_trade.get('side')}",
+        f"- strategy_id: {closed_trade.get('strategy_id')}",
+        f"- policy_archetype: {portfolio_result.get('policy_archetype')}",
+        f"- exit_reason: {closed_trade.get('reason') or closed_trade.get('exit_reason')}",
+        f"- pnl_usdt: {_format_float(portfolio_result.get('pnl_usdt'), 6)}",
+        f"- pnl_pct: {_format_pct(portfolio_result.get('pnl_pct'))}",
+        "",
+        "Current counters:",
+        f"- total consecutive losses: {portfolio_result.get('consecutive_losing_trades')}",
+        f"- global threshold: {portfolio_result.get('max_consecutive_losing_trades')}",
+        f"- archetype consecutive losses: {portfolio_result.get('archetype_consecutive_losing_trades')}",
+        f"- archetype threshold: {portfolio_result.get('max_consecutive_losing_trades_per_archetype')}",
+        "",
+        "Current guard state:",
+        f"- hard limit status: {json.dumps(hard_status, sort_keys=True, default=str)}",
+        f"- disabled archetypes: {json.dumps(disabled, sort_keys=True, default=str)}",
+    ]
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _build_portfolio_risk_guard_email_html_body(
+    *,
+    event: Mapping[str, Any],
+    closed_trade: Mapping[str, Any],
+    portfolio_result: Mapping[str, Any],
+) -> str:
+    plain_body = _build_portfolio_risk_guard_email_body(
+        event=event,
+        closed_trade=closed_trade,
+        portfolio_result=portfolio_result,
+    )
+    scope = str(event.get("scope") or "unknown")
+    disabled = portfolio_result.get("disabled_archetypes")
+    hard_status = portfolio_result.get("hard_limit_status")
+    dashboard = "".join(
+        [
+            _email_html_metric("Scope", scope, tone="bad"),
+            _email_html_metric("Streak", event.get("streak"), tone="bad"),
+            _email_html_metric("Threshold", event.get("threshold"), tone="warn"),
+            _email_html_metric(
+                "Last PnL",
+                portfolio_result.get("pnl_pct"),
+                formatter=_email_fmt_pct,
+                tone="bad",
+            ),
+        ]
+    )
+    sections = [
+        (
+            "Trigger",
+            _email_html_rows(
+                [
+                    ("Event", event.get("event"), None),
+                    ("Scope", scope, None),
+                    ("Reason", event.get("reason"), None),
+                    ("Policy Archetype", portfolio_result.get("policy_archetype"), None),
+                    ("Streak", event.get("streak"), None),
+                    ("Threshold", event.get("threshold"), None),
+                ]
+            ),
+        ),
+        (
+            "Last Closed Trade",
+            _email_html_rows(
+                [
+                    ("Symbol", closed_trade.get("symbol"), None),
+                    ("Side", closed_trade.get("side"), None),
+                    ("Strategy", closed_trade.get("strategy_id"), None),
+                    (
+                        "Exit Reason",
+                        closed_trade.get("reason") or closed_trade.get("exit_reason"),
+                        None,
+                    ),
+                    ("PnL USDT", portfolio_result.get("pnl_usdt"), _email_fmt_float(6)),
+                    ("PnL pct", portfolio_result.get("pnl_pct"), _email_fmt_pct),
+                ]
+            ),
+        ),
+        (
+            "Counters",
+            _email_html_rows(
+                [
+                    (
+                        "Total Consecutive Losses",
+                        portfolio_result.get("consecutive_losing_trades"),
+                        None,
+                    ),
+                    (
+                        "Global Threshold",
+                        portfolio_result.get("max_consecutive_losing_trades"),
+                        None,
+                    ),
+                    (
+                        "Archetype Consecutive Losses",
+                        portfolio_result.get("archetype_consecutive_losing_trades"),
+                        None,
+                    ),
+                    (
+                        "Archetype Threshold",
+                        portfolio_result.get(
+                            "max_consecutive_losing_trades_per_archetype"
+                        ),
+                        None,
+                    ),
+                ]
+            ),
+        ),
+        (
+            "Guard State",
+            _email_html_rows(
+                [
+                    ("Hard Limit Status", json.dumps(hard_status, sort_keys=True, default=str), None),
+                    ("Disabled Archetypes", json.dumps(disabled, sort_keys=True, default=str), None),
+                ]
+            ),
+        ),
+    ]
+    return _email_html_document(
+        title="EPM Portfolio Risk Guard Triggered",
+        subtitle=f"{scope} loss-streak guard - {event.get('reason')}",
+        dashboard=dashboard,
+        sections=sections,
+        plain_body=plain_body,
+    )
+
+
+def _send_portfolio_risk_guard_email(
+    *,
+    event: Mapping[str, Any],
+    closed_trade: Dict[str, Any],
+    portfolio_result: Mapping[str, Any],
+    config: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Send a risk-guard notification using the daily reporter SMTP config."""
+    if not bool(config.get("portfolio_risk_email_enabled", True)):
+        return {"sent": False, "reason": "disabled"}
+    recipient = _risk_guard_email_recipient(config)
+    if not recipient:
+        return {"sent": False, "reason": "missing_recipient"}
+    scope = str(event.get("scope") or "unknown")
+    reason = str(event.get("reason") or "loss streak")
+    subject = f"EPM risk guard triggered: {scope} - {reason}"
+    body = _build_portfolio_risk_guard_email_body(
+        event=event,
+        closed_trade=closed_trade,
+        portfolio_result=portfolio_result,
+    )
+    html_body = _build_portfolio_risk_guard_email_html_body(
+        event=event,
+        closed_trade=closed_trade,
+        portfolio_result=portfolio_result,
+    )
+    result = DailyDeploymentReporter()._send_email(
+        subject=subject,
+        body=body,
+        html_body=html_body,
+        recipient=recipient,
+        config=config,
+    )
+    if result.get("success"):
+        tprint(
+            f"[PortfolioRiskEmail] Sent risk guard email for {scope} to {recipient}"
+        )
+        return {"sent": True, "email_result": result}
+    tprint(
+        "[PortfolioRiskEmail] Risk guard email failed: "
         f"{result.get('error_category')}: {result.get('error')}"
     )
     return {"sent": False, "reason": "email_failed", "email_result": result}
@@ -10685,6 +12571,11 @@ def _sync_reconciled_positions_to_portfolio_manager(
                 entry_time=pd.Timestamp(
                     state.get("entry_time") or pd.Timestamp.now(tz="UTC")
                 ),
+                policy_archetype=state.get("policy_archetype")
+                or state.get("local_side_archetype")
+                or state.get("source_archetype"),
+                local_side_archetype=state.get("local_side_archetype"),
+                source_archetype=state.get("source_archetype"),
             )
         except Exception as exc:
             tprint(
@@ -11136,9 +13027,17 @@ def _resolve_live_stop_loss_pct_for_sizing(
         stop_params.get("sl_mult", stop_params.get("simple_sl_mult")),
         np.nan,
     )
+    sl_abs_cap = _safe_float(
+        stop_params.get("sl_abs_cap_pct", stop_params.get("policy_sl_abs_cap_pct")),
+        np.nan,
+    )
     if np.isfinite(sl_mult) and sl_mult > 0.0:
-        return float(barrier * sl_mult)
-    return float(barrier)
+        stop_loss = float(barrier * sl_mult)
+    else:
+        stop_loss = float(barrier)
+    if np.isfinite(sl_abs_cap) and sl_abs_cap > 0.0:
+        stop_loss = min(float(stop_loss), float(sl_abs_cap))
+    return float(stop_loss)
 
 
 def _sleep_until_hourly_ohlcv_window(
@@ -11587,6 +13486,79 @@ def _log_feature_coverage(candidate_features: pd.DataFrame, side: str) -> None:
         )
 
 
+def _persist_live_candidate_feature_matrix(
+    candidate_features: pd.DataFrame,
+    *,
+    side: str,
+    signal_bar_ts: Any,
+    runtime_config: Mapping[str, Any],
+    run_id: str,
+) -> None:
+    """Persist post-overlay candidate features for exact replay parity.
+
+    This is observability only. It captures the batch context used by live
+    AE/GMM speed/acceleration style features, which cannot be reconstructed
+    exactly from the final prediction ledger alone.
+    """
+
+    if not isinstance(candidate_features, pd.DataFrame) or candidate_features.empty:
+        return
+    enabled = _runtime_flag(
+        runtime_config,
+        "live_persist_candidate_feature_matrix",
+        "EPM_LIVE_PERSIST_CANDIDATE_FEATURE_MATRIX",
+        True,
+    )
+    if not enabled:
+        return
+    try:
+        ts = pd.Timestamp(signal_bar_ts)
+        ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+    except Exception:
+        return
+    side_s = "short" if str(side).lower().startswith("short") else "long"
+    data_root = Path(str(runtime_config.get("data_root") or "data"))
+    run_s = str(run_id or runtime_config.get("run_id") or "latest")
+    key = hashlib.sha256(
+        f"{run_s}|{side_s}|{ts.isoformat()}|{len(candidate_features)}".encode("utf-8")
+    ).hexdigest()[:24]
+    out_dir = (
+        data_root
+        / "artifacts"
+        / run_s
+        / "live_candidate_feature_matrix"
+        / side_s
+        / key
+    )
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        data_path = out_dir / "data.parquet"
+        meta_path = out_dir / "meta.json"
+        tmp_data = out_dir / "data.tmp.parquet"
+        tmp_meta = out_dir / "meta.tmp.json"
+        frame = candidate_features.copy()
+        frame.index = frame.index.astype(str)
+        frame.to_parquet(tmp_data)
+        meta = {
+            "run_id": run_s,
+            "side": side_s,
+            "signal_bar_ts": ts.isoformat(),
+            "rows": int(len(frame)),
+            "columns": [str(c) for c in frame.columns],
+            "symbols": [str(s) for s in frame.index],
+            "schema": "live_candidate_feature_matrix_v1",
+        }
+        tmp_meta.write_text(json.dumps(meta, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+        os.replace(tmp_data, data_path)
+        os.replace(tmp_meta, meta_path)
+        tprint(
+            "Persisted live candidate feature matrix: "
+            f"side={side_s} rows={len(frame)} cols={frame.shape[1]} ts={ts}"
+        )
+    except Exception as exc:
+        tprint(f"Live candidate feature matrix persistence failed: {type(exc).__name__}: {exc}")
+
+
 def _selected_feature_source_groups(feature_name: str) -> List[Dict[str, Any]]:
     """Return live source panel groups likely needed for a selected feature."""
     key = str(feature_name or "").lower()
@@ -11938,6 +13910,7 @@ def _selected_model_feature_store_gap_report(
             str(key)
             for key in raw_required_feature_keys(required_feature_keys)
             if str(key) and _meta_live_unavailable_neutral_default(str(key)) is None
+            and not _is_live_synthesized_feature_key(str(key))
         }
     )
     symbols_s = [str(sym) for sym in symbols if str(sym)]
@@ -12177,6 +14150,66 @@ def _log_concurrent_positions_snapshot(
         tprint(f"Concurrent positions hourly snapshot [{label}] failed: {exc}")
 
 
+def _first_non_empty_mapping_value(
+    mapping: Optional[Mapping[str, Any]],
+    names: Sequence[str],
+) -> str:
+    if not isinstance(mapping, Mapping):
+        return ""
+    for name in names:
+        value = mapping.get(name)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text and text.lower() not in {"nan", "none", "null", "<na>"}:
+            return text
+    return ""
+
+
+def _first_non_empty_frame_value(
+    frame: Optional[pd.DataFrame],
+    names: Sequence[str],
+) -> str:
+    if not isinstance(frame, pd.DataFrame) or frame.empty:
+        return ""
+    row = frame.iloc[0]
+    for name in names:
+        if name not in row.index:
+            continue
+        value = row.get(name)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text and text.lower() not in {"nan", "none", "null", "<na>"}:
+            return text
+    return ""
+
+
+def _infer_live_policy_archetype(
+    *,
+    side: str,
+    chain_results: Mapping[str, Any],
+    candidate_feature_row: Optional[pd.DataFrame] = None,
+    meta_model_input_row: Optional[pd.DataFrame] = None,
+) -> str:
+    names = (
+        "policy_archetype",
+        "local_side_archetype",
+        "__archetype_policy_key__",
+        "archetype_policy_key",
+        "__archetype_label_family__",
+        "archetype_label_family",
+    )
+    value = _first_non_empty_mapping_value(chain_results, names)
+    if not value:
+        value = _first_non_empty_frame_value(meta_model_input_row, names)
+    if not value:
+        value = _first_non_empty_frame_value(candidate_feature_row, names)
+    if not value:
+        return ""
+    return normalize_policy_archetype_label(side, value)
+
+
 def run_inference_step(
     orchestrator: ModelOrchestrator,
     panel: Dict[str, pd.DataFrame],
@@ -12202,9 +14235,14 @@ def run_inference_step(
     prediction_ledger: Optional[PredictionLedger] = None,
     dynamic_performance_monitor: Optional[StrategyPerformanceMonitor] = None,
     dynamic_hr_surprise_state: Optional[Mapping[str, Any]] = None,
+    archetype_hit_surprise_policy: Optional[Mapping[str, Any]] = None,
+    threshold_basis_policy: Optional[Mapping[str, Any]] = None,
+    live_policy_archetype_classifier: Optional[Mapping[str, Any]] = None,
     strategy_kill_switch: Optional[StrategyKillSwitch] = None,
     policy_rank_reference_store: Optional[PolicyRankReferenceStore] = None,
     strategy_feature_contracts: Optional[Mapping[str, Sequence[str]]] = None,
+    live_ae_gmm_state_payload: Optional[Mapping[str, Any]] = None,
+    required_feature_keys: Optional[Iterable[str]] = None,
     stale_entry_context: bool = False,
     stale_entry_max_abs_signal_gap_bps: float | None = None,
 ) -> Dict[str, Any]:
@@ -12335,6 +14373,35 @@ def run_inference_step(
         live_test_mode=live_test_mode,
     )
     portfolio_policy = portfolio_policy or PortfolioPolicyConfig()
+    regime_ev_calibration_artifact: Dict[str, Any] = {}
+    regime_ev_calibration_path: Optional[Path] = None
+    if bool(getattr(portfolio_policy, "regime_ev_calibration_enabled", False)):
+        regime_ev_calibration_path = _resolve_policy_sidecar_path(
+            path_value=getattr(portfolio_policy, "regime_ev_calibration_artifact_path", ""),
+            data_root=str(runtime_config.get("data_root") or ""),
+            run_id=str(
+                runtime_config.get("policy_artifact_run_id")
+                or runtime_config.get("run_id")
+                or ""
+            ),
+        )
+        if regime_ev_calibration_path is not None and regime_ev_calibration_path.exists():
+            try:
+                regime_ev_calibration_artifact = load_regime_ev_calibration(
+                    regime_ev_calibration_path
+                )
+                tprint(
+                    "Loaded regime EV calibration artifact: "
+                    f"{regime_ev_calibration_path}"
+                )
+            except Exception as exc:
+                tprint(f"Failed to load regime EV calibration artifact: {exc}")
+                regime_ev_calibration_artifact = {}
+        else:
+            tprint(
+                "Regime EV calibration enabled but artifact path is missing: "
+                f"{regime_ev_calibration_path}"
+            )
     parity_contract = runtime_config.get("training_live_parity_contract")
     if isinstance(parity_contract, dict) and parity_contract:
         accepted_strategies = _resolve_active_strategy_filter_for_policy(
@@ -12399,8 +14466,24 @@ def run_inference_step(
         portfolio_mgr.occupancy_threshold_power = (
             portfolio_policy.occupancy_threshold_power
         )
+        portfolio_mgr.allocation_threshold_alpha = (
+            portfolio_policy.allocation_threshold_alpha
+        )
+        portfolio_mgr.allocation_threshold_power = (
+            portfolio_policy.allocation_threshold_power
+        )
         portfolio_mgr.threshold_viability_margin = (
             portfolio_policy.threshold_viability_margin
+        )
+        portfolio_mgr.max_consecutive_losing_trades = int(
+            getattr(portfolio_policy, "max_consecutive_losing_trades", 10)
+        )
+        portfolio_mgr.max_consecutive_losing_trades_per_archetype = int(
+            getattr(
+                portfolio_policy,
+                "max_consecutive_losing_trades_per_archetype",
+                5,
+            )
         )
     prediction_ledger_rows: List[Dict[str, Any]] = []
     log_base_gate_rejected_prediction_candidates = _env_flag(
@@ -12531,7 +14614,26 @@ def run_inference_step(
         if is_empty:
             continue
 
+        candidate_features = candidate_features.copy()
+        candidate_features["side"] = np.float32(
+            1.0 if str(side).lower().startswith("long") else -1.0
+        )
+        candidate_features["side_name"] = str(side).lower()
+        candidate_features = materialize_live_ae_gmm_features(
+            candidate_features,
+            side=side,
+            signal_bar_ts=signal_bar_ts,
+            required_columns=required_feature_keys,
+            state_payload=live_ae_gmm_state_payload,
+        )
         _log_feature_coverage(candidate_features, side)
+        _persist_live_candidate_feature_matrix(
+            candidate_features,
+            side=side,
+            signal_bar_ts=signal_bar_ts,
+            runtime_config=runtime_config,
+            run_id=model_context_run_id,
+        )
         side_metrics: Dict[str, Any] = {
             "input_candidates": int(len(candidates)),
             "eligible_candidates": 0,
@@ -12691,6 +14793,33 @@ def run_inference_step(
                     strategy_id=str(selected_strategy),
                 )
                 if decision_feature_contract:
+                    eligible_features = materialize_live_source_regime_features(
+                        eligible_features,
+                        side=side,
+                        signal_bar_ts=signal_bar_ts,
+                        required_columns=decision_feature_contract,
+                    )
+                    eligible_features = materialize_live_ae_gmm_features(
+                        eligible_features,
+                        side=side,
+                        signal_bar_ts=signal_bar_ts,
+                        required_columns=decision_feature_contract,
+                        state_payload=live_ae_gmm_state_payload,
+                    )
+                    try:
+                        candidate_features.loc[
+                            eligible_features.index, eligible_features.columns
+                        ] = eligible_features
+                    except Exception:
+                        pass
+                    _persist_live_candidate_feature_matrix(
+                        candidate_features,
+                        side=side,
+                        signal_bar_ts=signal_bar_ts,
+                        runtime_config=runtime_config,
+                        run_id=model_context_run_id,
+                    )
+                if decision_feature_contract:
                     available_contract = [
                         col
                         for col in decision_feature_contract
@@ -12719,6 +14848,39 @@ def run_inference_step(
                                 f"rows={len(eligible_features)} "
                                 f"cols={before_cols}->{len(available_contract)}"
                             )
+                alpha_model_info = getattr(orchestrator, "alpha_by_strategy", {}).get(
+                    str(selected_strategy)
+                )
+                if alpha_model_info is None:
+                    alpha_model_info = getattr(orchestrator, "alpha_by_strategy", {}).get(
+                        f"{side}_{selected_strategy}"
+                    )
+                alpha_feature_contract = (
+                    _effective_alpha_feature_contract(alpha_model_info)
+                    if isinstance(alpha_model_info, dict)
+                    else []
+                )
+                if alpha_feature_contract:
+                    eligible_features = materialize_live_ae_gmm_features(
+                        eligible_features,
+                        side=side,
+                        signal_bar_ts=signal_bar_ts,
+                        required_columns=alpha_feature_contract,
+                        state_payload=live_ae_gmm_state_payload,
+                    )
+                    try:
+                        candidate_features.loc[
+                            eligible_features.index, eligible_features.columns
+                        ] = eligible_features
+                    except Exception:
+                        pass
+                    _persist_live_candidate_feature_matrix(
+                        candidate_features,
+                        side=side,
+                        signal_bar_ts=signal_bar_ts,
+                        runtime_config=runtime_config,
+                        run_id=model_context_run_id,
+                    )
                 all_base_predictions: Dict[str, Dict[str, Any]] = {}
                 base_gate = _select_top_base_prediction_symbols(
                     orchestrator=orchestrator,
@@ -12757,6 +14919,38 @@ def run_inference_step(
                     f"{side}_{strategy_core_id(str(selected_strategy))}_base_gate"
                 )
                 side_metrics["base_gate_pass"] += int(len(base_gate))
+                if base_gate:
+                    run_cfg_for_priors = getattr(executor, "config", {}) or {}
+                    artifact_data_root_for_priors = str(
+                        run_cfg_for_priors.get("data_root", "data")
+                    )
+                    artifact_run_id_for_priors = str(
+                        run_cfg_for_priors.get("model_artifact_run_id")
+                        or run_cfg_for_priors.get("run_id", "latest")
+                    )
+                    prior_payload = load_meta_reliability_prior_payload(
+                        artifact_data_root_for_priors,
+                        artifact_run_id_for_priors,
+                    )
+                    if prior_payload:
+                        eligible_features = apply_live_meta_reliability_priors(
+                            eligible_features,
+                            side=side,
+                            base_predictions=base_gate,
+                            prior_payload=prior_payload,
+                        )
+                        try:
+                            candidate_features.loc[
+                                eligible_features.index, eligible_features.columns
+                            ] = eligible_features
+                        except Exception:
+                            pass
+                    else:
+                        tprint(
+                            "Meta reliability prior artifact not found for "
+                            f"{artifact_run_id_for_priors}; strict meta feature "
+                            "parity may fail if rel_* columns are selected."
+                        )
                 if (
                     log_base_gate_rejected_prediction_candidates
                     and prediction_ledger is not None
@@ -13092,11 +15286,30 @@ def run_inference_step(
                         calibration_data=calibration_data,
                         default_threshold=initial_rank_threshold,
                     )
-                    estimated_ev = _estimated_ev_from_strategy_prediction(
-                        calibrated_score,
-                        strategy_id,
-                        strategy_ev_calibration,
+                    archetype_meta_input_row = None
+                    if (
+                        isinstance(batch_meta_model_inputs, pd.DataFrame)
+                        and symbol in batch_meta_model_inputs.index
+                    ):
+                        archetype_meta_input_row = batch_meta_model_inputs.loc[[symbol]]
+                    live_policy_archetype = _infer_live_policy_archetype(
+                        side=side,
+                        chain_results=chain_results,
+                        candidate_feature_row=candidate_features.loc[[symbol]],
+                        meta_model_input_row=archetype_meta_input_row,
                     )
+                    live_policy_archetype_source = (
+                        "live_row" if live_policy_archetype else ""
+                    )
+                    if not live_policy_archetype and live_policy_archetype_classifier:
+                        live_policy_archetype = predict_live_policy_archetype(
+                            side=side,
+                            payload=live_policy_archetype_classifier,
+                            candidate_feature_row=candidate_features.loc[[symbol]],
+                            meta_model_input_row=archetype_meta_input_row,
+                        )
+                        if live_policy_archetype:
+                            live_policy_archetype_source = "frozen_classifier"
                     run_cfg = getattr(executor, "config", {}) or {}
                     artifact_data_root = str(run_cfg.get("data_root", "data"))
                     artifact_run_id = str(
@@ -13160,6 +15373,223 @@ def run_inference_step(
                         open_positions=auction_ev_open_positions,
                         policy=portfolio_policy,
                     )
+                    raw_calibrated_score_for_policy = float(calibrated_score)
+                    regime_ev_adjusted_score = float("nan")
+                    regime_ev_risk_score = float("nan")
+                    regime_ev_effect_count = 0
+                    regime_ev_source = ""
+                    regime_ev_protect_admission_rank = bool(
+                        getattr(portfolio_policy, "regime_ev_protect_admission_rank", True)
+                    )
+                    regime_ev_protected_admission_floor = float(
+                        np.clip(
+                            _safe_float(
+                                getattr(
+                                    portfolio_policy,
+                                    "regime_ev_protected_admission_floor",
+                                    getattr(portfolio_policy, "initial_rank_threshold", 0.90),
+                                ),
+                                0.90,
+                            ),
+                            0.0,
+                            1.0,
+                        )
+                    )
+                    regime_ev_retained_surplus_frac = float(
+                        np.clip(
+                            _safe_float(
+                                getattr(
+                                    portfolio_policy,
+                                    "regime_ev_retained_surplus_frac",
+                                    0.50,
+                                ),
+                                0.50,
+                            ),
+                            0.0,
+                            1.0,
+                        )
+                    )
+                    if regime_ev_calibration_artifact:
+                        try:
+                            regime_frame = candidate_features.loc[[symbol]].copy()
+                            if archetype_meta_input_row is not None:
+                                for col in archetype_meta_input_row.columns:
+                                    if col not in regime_frame.columns:
+                                        regime_frame[col] = archetype_meta_input_row[col].to_numpy()
+                            regime_frame["side_name"] = side
+                            regime_frame["archetype_policy_key"] = live_policy_archetype
+                            regime_frame["score_meta_base_soft_label"] = float(calibrated_score)
+                            regime_frame["calibrated_score"] = float(calibrated_score)
+                            regime_frame["score_base"] = _safe_float(
+                                chain_results.get("base_pred"), np.nan
+                            )
+                            regime_frame = apply_regime_ev_calibration(
+                                regime_frame,
+                                regime_ev_calibration_artifact,
+                                source_score_col="score_meta_base_soft_label",
+                                copy=False,
+                            )
+                            adjusted_col = str(
+                                regime_ev_calibration_artifact.get(
+                                    "adjusted_score_col", "score_regime_calibrated"
+                                )
+                            )
+                            regime_ev_adjusted_score = _safe_float(
+                                regime_frame[adjusted_col].iloc[0], np.nan
+                            )
+                            regime_ev_risk_score = _safe_float(
+                                regime_frame.get(
+                                    "regime_ev_risk_score",
+                                    pd.Series([np.nan], index=regime_frame.index),
+                                ).iloc[0],
+                                np.nan,
+                            )
+                            regime_ev_effect_count = int(
+                                _safe_float(
+                                    regime_frame.get(
+                                        "regime_ev_effect_count",
+                                        pd.Series([0], index=regime_frame.index),
+                                    ).iloc[0],
+                                    0.0,
+                                )
+                            )
+                            regime_ev_source = str(
+                                regime_ev_calibration_artifact.get("policy_id")
+                                or regime_ev_calibration_artifact.get("artifact_id")
+                                or getattr(
+                                    portfolio_policy,
+                                    "regime_ev_calibration_rank_source",
+                                    "per_regime_archetype_calibration_v1",
+                                )
+                                or "per_regime_archetype_calibration_v1"
+                            )
+                            if np.isfinite(regime_ev_adjusted_score):
+                                calibrated_score = float(regime_ev_adjusted_score)
+                                chain_results["raw_calibrated_score"] = float(
+                                    raw_calibrated_score_for_policy
+                                )
+                                chain_results["score_regime_calibrated"] = float(
+                                    regime_ev_adjusted_score
+                                )
+                                chain_results["regime_ev_risk_score"] = float(
+                                    regime_ev_risk_score
+                                )
+                                chain_results["regime_ev_effect_count"] = int(
+                                    regime_ev_effect_count
+                                )
+                                chain_results["regime_ev_calibration_source"] = (
+                                    regime_ev_source
+                                )
+                                chain_results["regime_ev_calibration_artifact_path"] = (
+                                    str(regime_ev_calibration_path)
+                                    if regime_ev_calibration_path is not None
+                                    else ""
+                                )
+                                chain_results["regime_ev_protect_admission_rank"] = bool(
+                                    regime_ev_protect_admission_rank
+                                )
+                                chain_results["regime_ev_protected_admission_floor"] = float(
+                                    regime_ev_protected_admission_floor
+                                )
+                                chain_results["regime_ev_retained_surplus_frac"] = float(
+                                    regime_ev_retained_surplus_frac
+                                )
+                        except Exception as exc:
+                            tprint(
+                                "Regime EV calibration failed for "
+                                f"{symbol} {side}/{strategy_id}: {exc}"
+                            )
+                    estimated_ev = _estimated_ev_from_strategy_prediction(
+                        calibrated_score,
+                        strategy_id,
+                        strategy_ev_calibration,
+                        side=side,
+                        policy_archetype=live_policy_archetype,
+                    )
+                    if bool(portfolio_policy.inference_ev_cost_rebase_enabled):
+                        spread_baseline_bps, spread_baseline_source = (
+                            _live_ev_haircut_spread_baseline_bps(
+                                symbol=symbol,
+                                data_root=str(
+                                    runtime_config.get("data_root", "data")
+                                ),
+                                fallback_bps=(
+                                    portfolio_policy.ev_haircut_expected_spread_bps
+                                ),
+                            )
+                        )
+                        pre_rank_ev_adjusted = _ev_adjusted_prediction_after_entry_friction(
+                            calibrated_score=calibrated_score,
+                            strategy_id=strategy_id,
+                            side=side,
+                            policy_archetype=live_policy_archetype,
+                            calibration=strategy_ev_calibration,
+                            live_entry_friction_bps=0.0,
+                            observed_spread_bps=chain_results.get(
+                                "prescore_ticker_spread_bps"
+                            ),
+                            orderbook_slippage_bps=chain_results.get(
+                                "prescore_orderbook_slippage_bps", 0.0
+                            ),
+                            adverse_signal_gap_bps=0.0,
+                            spread_baseline_bps=spread_baseline_bps,
+                            spread_baseline_source=spread_baseline_source,
+                            delay_slippage_baseline_bps=0.0,
+                            expected_stop_exit_friction_bps=0.0,
+                            stop_exit_baseline_bps=0.0,
+                            stop_exit_friction_source="pre_rank_inference_cost_rebase",
+                            policy_rank_reference_store=policy_rank_reference_store,
+                            inference_cost_rebase_enabled=True,
+                            inference_fixed_round_trip_cost_bps=(
+                                portfolio_policy.inference_ev_fixed_round_trip_cost_bps
+                            ),
+                            inference_spread_multiplier=(
+                                portfolio_policy.inference_ev_spread_multiplier
+                            ),
+                        )
+                        chain_results.update(pre_rank_ev_adjusted)
+                        adjusted_ev_after = _safe_float(
+                            pre_rank_ev_adjusted.get(
+                                "ev_adjusted_net_return_after_friction"
+                            ),
+                            np.nan,
+                        )
+                        adjusted_cost_bps = _safe_float(
+                            pre_rank_ev_adjusted.get("ev_inference_total_cost_bps"),
+                            np.nan,
+                        )
+                        adjusted_score = _safe_float(
+                            pre_rank_ev_adjusted.get("ev_adjusted_calibrated_score"),
+                            np.nan,
+                        )
+                        if bool(
+                            pre_rank_ev_adjusted.get(
+                                "ev_inference_cost_rebase_applied", False
+                            )
+                        ):
+                            estimated_ev[
+                                "estimated_ev_historical_net_return"
+                            ] = estimated_ev.get("estimated_ev_net_return")
+                            estimated_ev[
+                                "estimated_ev_historical_cost_bps"
+                            ] = estimated_ev.get("estimated_ev_cost_bps")
+                            if np.isfinite(adjusted_ev_after):
+                                estimated_ev["estimated_ev_net_return"] = float(
+                                    adjusted_ev_after
+                                )
+                            if np.isfinite(adjusted_cost_bps):
+                                estimated_ev["estimated_ev_cost_bps"] = float(
+                                    adjusted_cost_bps
+                                )
+                            estimated_ev["estimated_ev_source"] = (
+                                str(estimated_ev.get("estimated_ev_source") or "")
+                                + "|pre_rank_inference_live_cost_rebase"
+                            )
+                            if np.isfinite(adjusted_score):
+                                chain_results[
+                                    "pre_inference_cost_rebase_calibrated_score"
+                                ] = float(calibrated_score)
+                                calibrated_score = float(adjusted_score)
                     auction_ev_gate = (
                         policy_rank_reference_store.auction_threshold_for_ev(
                             target_mean_net_return=auction_ev_target,
@@ -13178,6 +15608,7 @@ def run_inference_step(
                         policy_rank_reference_store.strategy_threshold_for_ev(
                             strategy_id=strategy_id,
                             side=side,
+                            policy_archetype=live_policy_archetype,
                             target_mean_net_return=auction_ev_target,
                             min_hit_rate=AUCTION_EV_MIN_HIT_RATE,
                             fallback_threshold=policy_artifact_threshold,
@@ -13186,6 +15617,7 @@ def run_inference_step(
                     strategy_ev_gate = policy_rank_reference_store.strategy_ev_gate(
                         strategy_id=strategy_id,
                         side=side,
+                        policy_archetype=live_policy_archetype,
                         target_mean_net_return=auction_ev_target,
                         min_hit_rate=AUCTION_EV_MIN_HIT_RATE,
                     )
@@ -13315,6 +15747,48 @@ def run_inference_step(
                             f"changed={bool(dynamic_hr_result.applied)} "
                             f"reason={dynamic_hr_result.reason}"
                         )
+                    archetype_hr_result = apply_archetype_hit_surprise_threshold(
+                        strategy_id=strategy_id,
+                        side=side,
+                        deployed_threshold=policy_threshold_floor,
+                        policy=archetype_hit_surprise_policy,
+                        policy_archetype=live_policy_archetype,
+                        enabled=bool(
+                            getattr(
+                                portfolio_policy,
+                                "archetype_hit_surprise_enabled",
+                                False,
+                            )
+                        ),
+                    )
+                    policy_threshold_floor = float(archetype_hr_result.threshold)
+                    portfolio_priority_multiplier = float(
+                        getattr(archetype_hr_result, "priority_multiplier", 1.0)
+                    )
+                    portfolio_priority_adjustment = float(
+                        getattr(archetype_hr_result, "priority_adjustment", 0.0)
+                    )
+                    portfolio_rank_adjustment = float(
+                        getattr(archetype_hr_result, "rank_adjustment", 0.0)
+                    )
+                    if bool(
+                        getattr(
+                            portfolio_policy,
+                            "archetype_hit_surprise_enabled",
+                            False,
+                        )
+                    ):
+                        tprint(
+                            f"Archetype hit-surprise threshold: {symbol} {side}/{strategy_id} "
+                            f"archetype={live_policy_archetype or 'missing'} "
+                            f"matched={archetype_hr_result.matched_key or 'none'} "
+                            f"applied={policy_threshold_floor:.6f} "
+                            f"mode={getattr(archetype_hr_result, 'mode', 'threshold')} "
+                            f"priority_mult={portfolio_priority_multiplier:.4f} "
+                            f"rank_adj={portfolio_rank_adjustment:.6f} "
+                            f"changed={bool(archetype_hr_result.applied)} "
+                            f"reason={archetype_hr_result.reason}"
+                        )
                     if threshold_space == "calibrated_score":
                         effective_threshold = min(
                             1.0,
@@ -13403,9 +15877,17 @@ def run_inference_step(
                         raw_strategy_threshold
                     )
                     chain_results["strategy_ev_threshold_source"] = (
-                        "dynamic_hr_surprise_threshold"
-                        if bool(dynamic_hr_result.applied)
-                        else "policy_artifact_threshold"
+                        "archetype_hit_surprise_portfolio_adjustment"
+                        if bool(archetype_hr_result.applied)
+                        and str(getattr(archetype_hr_result, "mode", "") or "")
+                        != "threshold"
+                        else "archetype_hit_surprise_threshold"
+                        if bool(archetype_hr_result.applied)
+                        else (
+                            "dynamic_hr_surprise_threshold"
+                            if bool(dynamic_hr_result.applied)
+                            else "policy_artifact_threshold"
+                        )
                     )
                     chain_results["strategy_ev_diagnostic_threshold"] = float(
                         strategy_ev_threshold.threshold
@@ -13464,6 +15946,68 @@ def run_inference_step(
                     )
                     chain_results["dynamic_hr_surprise_state_age_days"] = float(
                         dynamic_hr_result.state_age_days
+                    )
+                    chain_results["policy_archetype"] = live_policy_archetype
+                    chain_results["policy_archetype_source"] = (
+                        live_policy_archetype_source
+                    )
+                    chain_results["archetype_hit_surprise_threshold"] = float(
+                        archetype_hr_result.threshold
+                    )
+                    chain_results["archetype_hit_surprise_mode"] = str(
+                        getattr(archetype_hr_result, "mode", "threshold")
+                    )
+                    chain_results["archetype_hit_surprise_applied"] = bool(
+                        archetype_hr_result.applied
+                    )
+                    chain_results["archetype_hit_surprise_reason"] = (
+                        archetype_hr_result.reason
+                    )
+                    chain_results["archetype_hit_surprise_matched_key"] = (
+                        archetype_hr_result.matched_key
+                    )
+                    chain_results["archetype_hit_surprise_threshold_delta"] = float(
+                        archetype_hr_result.threshold_delta
+                    )
+                    chain_results["archetype_hit_surprise_quality_adjustment"] = float(
+                        getattr(archetype_hr_result, "quality_adjustment", 0.0)
+                    )
+                    chain_results[
+                        "archetype_hit_surprise_priority_multiplier"
+                    ] = portfolio_priority_multiplier
+                    chain_results[
+                        "archetype_hit_surprise_priority_adjustment"
+                    ] = portfolio_priority_adjustment
+                    chain_results[
+                        "archetype_hit_surprise_rank_adjustment"
+                    ] = portfolio_rank_adjustment
+                    chain_results[
+                        "portfolio_priority_multiplier"
+                    ] = portfolio_priority_multiplier
+                    chain_results[
+                        "portfolio_priority_adjustment"
+                    ] = portfolio_priority_adjustment
+                    chain_results["portfolio_rank_adjustment"] = portfolio_rank_adjustment
+                    chain_results["archetype_hit_surprise_actual_hit_rate"] = float(
+                        archetype_hr_result.actual_hit_rate
+                    )
+                    chain_results["archetype_hit_surprise_expected_hit_rate"] = float(
+                        archetype_hr_result.expected_hit_rate
+                    )
+                    chain_results["archetype_hit_surprise_hit_rate_delta"] = float(
+                        archetype_hr_result.hit_rate_delta
+                    )
+                    chain_results["archetype_hit_surprise_hit_rate_surprise_z"] = float(
+                        archetype_hr_result.hit_rate_surprise_z
+                    )
+                    chain_results["archetype_hit_surprise_support_confidence"] = float(
+                        archetype_hr_result.support_confidence
+                    )
+                    chain_results["archetype_hit_surprise_n_eff"] = float(
+                        archetype_hr_result.n_eff
+                    )
+                    chain_results["archetype_hit_surprise_rows"] = float(
+                        archetype_hr_result.rows
                     )
                     chain_results["strategy_ev_threshold_enabled"] = True
                     chain_results["strategy_ev_threshold_reason"] = (
@@ -13537,16 +16081,52 @@ def run_inference_step(
                     chain_results.update(estimated_hit_rate)
                     chain_results.update(estimated_ev)
                     side_metrics["threshold_pass"] += 1
+                    source_strategy_id = strategy_id
+                    decision_strategy_id = (
+                        strategy_id
+                        if strategy_side(strategy_id) in {"long", "short"}
+                        else f"{side}_{strategy_core_id(strategy_id)}"
+                    )
+                    chain_results["source_strategy_id"] = source_strategy_id
+                    chain_results["canonical_strategy_id"] = strategy_core_id(
+                        strategy_id
+                    )
+                    chain_results["decision_strategy_id"] = decision_strategy_id
                     decision_rows.append(
                         {
                             "symbol": symbol,
                             "side": side,
                             "size": size,
                             "strategy_id": strategy_id,
+                            "source_strategy_id": source_strategy_id,
+                            "canonical_strategy_id": strategy_core_id(strategy_id),
+                            "decision_strategy_id": decision_strategy_id,
                             "meta_model_key": meta_model_key,
                             "meta_head_hash": meta_hash,
                             "raw_score": raw_score,
                             "calibrated_score": calibrated_score,
+                            "raw_calibrated_score": raw_calibrated_score_for_policy,
+                            "score_regime_calibrated": (
+                                regime_ev_adjusted_score
+                                if np.isfinite(regime_ev_adjusted_score)
+                                else np.nan
+                            ),
+                            "regime_ev_risk_score": (
+                                regime_ev_risk_score
+                                if np.isfinite(regime_ev_risk_score)
+                                else np.nan
+                            ),
+                            "regime_ev_effect_count": int(regime_ev_effect_count),
+                            "regime_ev_calibration_source": regime_ev_source,
+                            "regime_ev_protect_admission_rank": bool(
+                                regime_ev_protect_admission_rank
+                            ),
+                            "regime_ev_protected_admission_floor": float(
+                                regime_ev_protected_admission_floor
+                            ),
+                            "regime_ev_retained_surplus_frac": float(
+                                regime_ev_retained_surplus_frac
+                            ),
                             "threshold_space": threshold_space or "rank_percentile",
                             "rank_score": rank_score,
                             "rank_score_source": chain_results["rank_score_source"],
@@ -13588,9 +16168,17 @@ def run_inference_step(
                                 raw_strategy_threshold
                             ),
                             "strategy_ev_threshold_source": (
-                                "dynamic_hr_surprise_threshold"
-                                if bool(dynamic_hr_result.applied)
-                                else "policy_artifact_threshold"
+                                "archetype_hit_surprise_portfolio_adjustment"
+                                if bool(archetype_hr_result.applied)
+                                and str(getattr(archetype_hr_result, "mode", "") or "")
+                                != "threshold"
+                                else "archetype_hit_surprise_threshold"
+                                if bool(archetype_hr_result.applied)
+                                else (
+                                    "dynamic_hr_surprise_threshold"
+                                    if bool(dynamic_hr_result.applied)
+                                    else "policy_artifact_threshold"
+                                )
                             ),
                             "strategy_ev_diagnostic_threshold": float(
                                 strategy_ev_threshold.threshold
@@ -13644,6 +16232,52 @@ def run_inference_step(
                             "dynamic_hr_surprise_state_age_days": float(
                                 dynamic_hr_result.state_age_days
                             ),
+                            "policy_archetype": live_policy_archetype,
+                            "policy_archetype_source": live_policy_archetype_source,
+                            "archetype_hit_surprise_threshold": float(
+                                archetype_hr_result.threshold
+                            ),
+                            "archetype_hit_surprise_mode": str(
+                                getattr(archetype_hr_result, "mode", "threshold")
+                            ),
+                            "archetype_hit_surprise_applied": bool(
+                                archetype_hr_result.applied
+                            ),
+                            "archetype_hit_surprise_reason": (
+                                archetype_hr_result.reason
+                            ),
+                            "archetype_hit_surprise_matched_key": (
+                                archetype_hr_result.matched_key
+                            ),
+                            "archetype_hit_surprise_threshold_delta": float(
+                                archetype_hr_result.threshold_delta
+                            ),
+                            "archetype_hit_surprise_quality_adjustment": float(
+                                getattr(archetype_hr_result, "quality_adjustment", 0.0)
+                            ),
+                            "archetype_hit_surprise_priority_multiplier": portfolio_priority_multiplier,
+                            "archetype_hit_surprise_priority_adjustment": portfolio_priority_adjustment,
+                            "archetype_hit_surprise_rank_adjustment": portfolio_rank_adjustment,
+                            "archetype_hit_surprise_actual_hit_rate": float(
+                                archetype_hr_result.actual_hit_rate
+                            ),
+                            "archetype_hit_surprise_expected_hit_rate": float(
+                                archetype_hr_result.expected_hit_rate
+                            ),
+                            "archetype_hit_surprise_hit_rate_delta": float(
+                                archetype_hr_result.hit_rate_delta
+                            ),
+                            "archetype_hit_surprise_hit_rate_surprise_z": float(
+                                archetype_hr_result.hit_rate_surprise_z
+                            ),
+                            "archetype_hit_surprise_support_confidence": float(
+                                archetype_hr_result.support_confidence
+                            ),
+                            "archetype_hit_surprise_n_eff": float(archetype_hr_result.n_eff),
+                            "archetype_hit_surprise_rows": float(archetype_hr_result.rows),
+                            "portfolio_priority_multiplier": portfolio_priority_multiplier,
+                            "portfolio_priority_adjustment": portfolio_priority_adjustment,
+                            "portfolio_rank_adjustment": portfolio_rank_adjustment,
                             "strategy_ev_threshold_enabled": True,
                             "strategy_ev_threshold_reason": (
                                 "policy_artifact_threshold_live_spread_adjusted_ev_guard"
@@ -13704,6 +16338,14 @@ def run_inference_step(
                 decision_rows,
                 allow_live_batch_rank_fallback_for_debug=allow_live_batch_rank_fallback_for_debug,
             )
+            if bool(getattr(portfolio_policy, "threshold_basis_policy_enabled", False)):
+                decision_rows = list(
+                    apply_threshold_basis_policy_to_decisions(
+                        decision_rows,
+                        policy=threshold_basis_policy or {},
+                        store=policy_rank_reference_store,
+                    )
+                )
             filtered_decision_rows: List[Dict[str, Any]] = []
             for decision in decision_rows:
                 if str(decision.get("threshold_space", "")) == "calibrated_score":
@@ -13773,6 +16415,30 @@ def run_inference_step(
                             decision, policy=portfolio_policy
                         )
                     ):
+                        if (
+                            portfolio_mgr is not None
+                            and "portfolio_state_snapshot_json" not in decision
+                        ):
+                            try:
+                                reject_strategy_id = str(
+                                    decision.get("strategy_id")
+                                    or (decision.get("chain_results") or {}).get(
+                                        "strategy_id"
+                                    )
+                                    or ""
+                                )
+                                reject_capacity = portfolio_mgr.get_portfolio_capacity(
+                                    side=str(decision.get("side", side)),
+                                    strategy_id=reject_strategy_id,
+                                )
+                            except Exception:
+                                reject_capacity = None
+                            _attach_portfolio_replay_state_for_ledger(
+                                decision,
+                                portfolio_mgr=portfolio_mgr,
+                                capacity=reject_capacity,
+                                now_utc=now_utc,
+                            )
                         prediction_ledger_rows.append(
                             _prediction_ledger_row(
                                 decision,
@@ -13844,6 +16510,30 @@ def run_inference_step(
                             decision, policy=portfolio_policy
                         )
                     ):
+                        if (
+                            portfolio_mgr is not None
+                            and "portfolio_state_snapshot_json" not in decision
+                        ):
+                            try:
+                                reject_strategy_id = str(
+                                    decision.get("strategy_id")
+                                    or (decision.get("chain_results") or {}).get(
+                                        "strategy_id"
+                                    )
+                                    or ""
+                                )
+                                reject_capacity = portfolio_mgr.get_portfolio_capacity(
+                                    side=str(decision.get("side", side)),
+                                    strategy_id=reject_strategy_id,
+                                )
+                            except Exception:
+                                reject_capacity = None
+                            _attach_portfolio_replay_state_for_ledger(
+                                decision,
+                                portfolio_mgr=portfolio_mgr,
+                                capacity=reject_capacity,
+                                now_utc=now_utc,
+                            )
                         prediction_ledger_rows.append(
                             _prediction_ledger_row(
                                 decision,
@@ -14133,6 +16823,8 @@ def run_inference_step(
                         initial_threshold=threshold_for_size,
                         current_time=now_utc,
                         requested_position_size=requested_position_usdt,
+                        policy_archetype=decision.get("policy_archetype")
+                        or chain_results.get("policy_archetype"),
                     )
                     info = _annotate_portfolio_gate_info(
                         info,
@@ -14651,6 +17343,7 @@ def run_inference_step(
                                     calibrated_score=decision.get("calibrated_score"),
                                     strategy_id=strategy_id,
                                     side=side,
+                                    policy_archetype=decision.get("policy_archetype"),
                                     calibration=strategy_ev_calibration,
                                     live_entry_friction_bps=float(adverse_gap_bps),
                                     observed_spread_bps=getattr(
@@ -14669,6 +17362,15 @@ def run_inference_step(
                                     ),
                                     stop_exit_friction_source=stop_exit_friction_source,
                                     policy_rank_reference_store=policy_rank_reference_store,
+                                    inference_cost_rebase_enabled=(
+                                        portfolio_policy.inference_ev_cost_rebase_enabled
+                                    ),
+                                    inference_fixed_round_trip_cost_bps=(
+                                        portfolio_policy.inference_ev_fixed_round_trip_cost_bps
+                                    ),
+                                    inference_spread_multiplier=(
+                                        portfolio_policy.inference_ev_spread_multiplier
+                                    ),
                                 )
                                 chain_results.update(ev_adjusted)
                                 execution_snapshot.update(ev_adjusted)
@@ -14723,6 +17425,11 @@ def run_inference_step(
                                     chain_results[
                                         "threshold_rank_score_after_friction_ev"
                                     ] = float(adjusted_rank)
+                                    execution_snapshot[
+                                        "portfolio_priority_after_live_friction_ev"
+                                    ] = _refresh_candidate_priority_after_live_friction_ev(
+                                        decision, chain_results
+                                    )
                                     if adjusted_rank < threshold_for_size:
                                         side_metrics["non_fatal_issues"] += 1
                                         continue
@@ -14788,6 +17495,7 @@ def run_inference_step(
                                     calibrated_score=decision.get("calibrated_score"),
                                     strategy_id=strategy_id,
                                     side=side,
+                                    policy_archetype=decision.get("policy_archetype"),
                                     calibration=strategy_ev_calibration,
                                     live_entry_friction_bps=live_entry_friction_bps,
                                     observed_spread_bps=book_snapshot.spread_bps,
@@ -14811,6 +17519,15 @@ def run_inference_step(
                                     ),
                                     policy_rank_reference_store=(
                                         policy_rank_reference_store
+                                    ),
+                                    inference_cost_rebase_enabled=(
+                                        portfolio_policy.inference_ev_cost_rebase_enabled
+                                    ),
+                                    inference_fixed_round_trip_cost_bps=(
+                                        portfolio_policy.inference_ev_fixed_round_trip_cost_bps
+                                    ),
+                                    inference_spread_multiplier=(
+                                        portfolio_policy.inference_ev_spread_multiplier
                                     ),
                                 )
                                 chain_results.update(ev_adjusted)
@@ -14885,6 +17602,11 @@ def run_inference_step(
                                     chain_results[
                                         "threshold_rank_score_after_friction_ev"
                                     ] = float(adjusted_rank)
+                                    execution_snapshot[
+                                        "portfolio_priority_after_live_friction_ev"
+                                    ] = _refresh_candidate_priority_after_live_friction_ev(
+                                        decision, chain_results
+                                    )
                                     if adjusted_rank < float(
                                         decision["effective_threshold"]
                                     ):
@@ -15003,6 +17725,10 @@ def run_inference_step(
                                         ),
                                         current_time=now_utc,
                                         requested_position_size=size,
+                                        policy_archetype=decision.get(
+                                            "policy_archetype"
+                                        )
+                                        or chain_results.get("policy_archetype"),
                                     )
                                     info = _annotate_portfolio_gate_info(
                                         info,
@@ -15458,6 +18184,12 @@ def run_inference_step(
                         )
                         if key in chain_results or key in decision
                     }
+                    entry_model_policy_context = _model_context_from_scored_decision(
+                        decision,
+                        refresh_reason="trade_entry",
+                        timestamp=now_utc,
+                        signal_bar_ts=signal_bar_ts,
+                    )
                     trade_result = _execute_trade_with_optional_context(
                         executor,
                         symbol=symbol,
@@ -15629,6 +18361,7 @@ def run_inference_step(
                             ),
                             "signal_to_entry_alert_seconds": signal_to_entry_alert_seconds,
                             **reporting_metric_context,
+                            **entry_model_policy_context,
                             **perp_sizing_context,
                         },
                         execution_kwargs={
@@ -15700,6 +18433,25 @@ def run_inference_step(
                                 fallback_price=execution_price,
                             ),
                             entry_time=now_utc,
+                            policy_archetype=decision.get("policy_archetype")
+                            or chain_results.get("policy_archetype"),
+                            local_side_archetype=decision.get("local_side_archetype")
+                            or chain_results.get("local_side_archetype"),
+                            source_archetype=decision.get("source_archetype")
+                            or chain_results.get("source_archetype"),
+                        )
+                        try:
+                            post_capacity = portfolio_mgr.get_portfolio_capacity(
+                                side=side,
+                                strategy_id=strategy_id,
+                            )
+                        except Exception:
+                            post_capacity = None
+                        _attach_portfolio_replay_state_after_for_ledger(
+                            decision,
+                            portfolio_mgr=portfolio_mgr,
+                            capacity=post_capacity,
+                            now_utc=now_utc,
                         )
                     if trade_success:
                         tprint(
@@ -15908,6 +18660,12 @@ def run_inference_step(
             ),
             reverse=True,
         )
+        _attach_global_auction_metadata(
+            global_auction_decisions,
+            entry_cap=global_entry_cap,
+            max_new_entries_per_bar=int(portfolio_policy.max_new_entries_per_bar),
+            sorted_at=now_utc,
+        )
         tprint(
             "Global auction execution: "
             f"candidates={len(global_auction_decisions)} cap={global_entry_cap}"
@@ -15935,6 +18693,20 @@ def run_inference_step(
                 skip_chain["global_auction_skip_stage"] = stage
                 skip_chain["global_auction_skip_reason"] = reason
                 skipped_decision["chain_results"] = skip_chain
+                if portfolio_mgr is not None:
+                    try:
+                        skip_capacity = portfolio_mgr.get_portfolio_capacity(
+                            side=skip_side,
+                            strategy_id=str(skipped_decision.get("strategy_id") or ""),
+                        )
+                    except Exception:
+                        skip_capacity = None
+                    _attach_portfolio_replay_state_for_ledger(
+                        skipped_decision,
+                        portfolio_mgr=portfolio_mgr,
+                        capacity=skip_capacity,
+                        now_utc=now_utc,
+                    )
                 prediction_ledger_rows.append(
                     _prediction_ledger_row(
                         skipped_decision,
@@ -16059,6 +18831,20 @@ def run_inference_step(
                 chain_results["global_auction_skip_stage"] = stage
                 chain_results["global_auction_skip_reason"] = reason
                 decision["chain_results"] = chain_results
+                if portfolio_mgr is not None and "portfolio_state_snapshot_json" not in decision:
+                    try:
+                        skip_capacity = portfolio_mgr.get_portfolio_capacity(
+                            side=side,
+                            strategy_id=str(decision.get("strategy_id") or ""),
+                        )
+                    except Exception:
+                        skip_capacity = None
+                    _attach_portfolio_replay_state_for_ledger(
+                        decision,
+                        portfolio_mgr=portfolio_mgr,
+                        capacity=skip_capacity,
+                        now_utc=now_utc,
+                    )
                 if prediction_ledger is not None and _should_log_prediction_candidate(
                     decision, policy=portfolio_policy
                 ):
@@ -16199,6 +18985,8 @@ def run_inference_step(
                     initial_threshold=threshold_for_size,
                     current_time=now_utc,
                     requested_position_size=requested_position_usdt,
+                    policy_archetype=decision.get("policy_archetype")
+                    or chain_results.get("policy_archetype"),
                 )
                 info = _annotate_portfolio_gate_info(
                     info,
@@ -16628,6 +19416,7 @@ def run_inference_step(
                             calibrated_score=decision.get("calibrated_score"),
                             strategy_id=strategy_id,
                             side=side,
+                            policy_archetype=decision.get("policy_archetype"),
                             calibration=strategy_ev_calibration,
                             live_entry_friction_bps=float(adverse_gap_bps),
                             observed_spread_bps=getattr(
@@ -16646,6 +19435,15 @@ def run_inference_step(
                             ),
                             stop_exit_friction_source=stop_exit_friction_source,
                             policy_rank_reference_store=policy_rank_reference_store,
+                            inference_cost_rebase_enabled=(
+                                portfolio_policy.inference_ev_cost_rebase_enabled
+                            ),
+                            inference_fixed_round_trip_cost_bps=(
+                                portfolio_policy.inference_ev_fixed_round_trip_cost_bps
+                            ),
+                            inference_spread_multiplier=(
+                                portfolio_policy.inference_ev_spread_multiplier
+                            ),
                         )
                         chain_results.update(ev_adjusted)
                         execution_snapshot.update(ev_adjusted)
@@ -16703,6 +19501,11 @@ def run_inference_step(
                             )
                             chain_results["threshold_rank_score_after_friction_ev"] = (
                                 float(adjusted_rank)
+                            )
+                            execution_snapshot[
+                                "portfolio_priority_after_live_friction_ev"
+                            ] = _refresh_candidate_priority_after_live_friction_ev(
+                                decision, chain_results
                             )
                             if adjusted_rank < threshold_for_size:
                                 side_metrics["non_fatal_issues"] = (
@@ -16783,6 +19586,7 @@ def run_inference_step(
                             calibrated_score=decision.get("calibrated_score"),
                             strategy_id=strategy_id,
                             side=side,
+                            policy_archetype=decision.get("policy_archetype"),
                             calibration=strategy_ev_calibration,
                             live_entry_friction_bps=live_entry_friction_bps,
                             observed_spread_bps=book_snapshot.spread_bps,
@@ -16801,6 +19605,15 @@ def run_inference_step(
                             ),
                             stop_exit_friction_source=stop_exit_friction_source,
                             policy_rank_reference_store=policy_rank_reference_store,
+                            inference_cost_rebase_enabled=(
+                                portfolio_policy.inference_ev_cost_rebase_enabled
+                            ),
+                            inference_fixed_round_trip_cost_bps=(
+                                portfolio_policy.inference_ev_fixed_round_trip_cost_bps
+                            ),
+                            inference_spread_multiplier=(
+                                portfolio_policy.inference_ev_spread_multiplier
+                            ),
                         )
                         chain_results.update(ev_adjusted)
                         execution_snapshot.update(ev_adjusted)
@@ -16882,6 +19695,11 @@ def run_inference_step(
                             )
                             chain_results["threshold_rank_score_after_friction_ev"] = (
                                 float(adjusted_rank)
+                            )
+                            execution_snapshot[
+                                "portfolio_priority_after_live_friction_ev"
+                            ] = _refresh_candidate_priority_after_live_friction_ev(
+                                decision, chain_results
                             )
                             if adjusted_rank < threshold_for_size:
                                 if (
@@ -17004,6 +19822,8 @@ def run_inference_step(
                                 initial_threshold=threshold_for_size,
                                 current_time=now_utc,
                                 requested_position_size=size,
+                                policy_archetype=decision.get("policy_archetype")
+                                or chain_results.get("policy_archetype"),
                             )
                             info = _annotate_portfolio_gate_info(
                                 info,
@@ -17266,6 +20086,12 @@ def run_inference_step(
                 )
                 if key in sizing_context
             }
+            entry_model_policy_context = _model_context_from_scored_decision(
+                decision,
+                refresh_reason="trade_entry",
+                timestamp=now_utc,
+                signal_bar_ts=signal_bar_ts,
+            )
             trade_result = _execute_trade_with_optional_context(
                 executor,
                 symbol=symbol,
@@ -17380,6 +20206,7 @@ def run_inference_step(
                         "max_signal_close_to_entry_seconds"
                     ),
                     "signal_to_entry_alert_seconds": signal_to_entry_alert_seconds,
+                    **entry_model_policy_context,
                     **trade_audit,
                     **perp_sizing_context,
                 },
@@ -17456,6 +20283,25 @@ def run_inference_step(
                         fallback_price=execution_price,
                     ),
                     entry_time=now_utc,
+                    policy_archetype=decision.get("policy_archetype")
+                    or chain_results.get("policy_archetype"),
+                    local_side_archetype=decision.get("local_side_archetype")
+                    or chain_results.get("local_side_archetype"),
+                    source_archetype=decision.get("source_archetype")
+                    or chain_results.get("source_archetype"),
+                )
+                try:
+                    post_capacity = portfolio_mgr.get_portfolio_capacity(
+                        side=side,
+                        strategy_id=strategy_id,
+                    )
+                except Exception:
+                    post_capacity = None
+                _attach_portfolio_replay_state_after_for_ledger(
+                    decision,
+                    portfolio_mgr=portfolio_mgr,
+                    capacity=post_capacity,
+                    now_utc=now_utc,
                 )
             if trade_success and _shadow_execution_realism_enabled():
                 try:
@@ -17773,6 +20619,17 @@ def run_inference_loop(
         portfolio_policy,
         live_test_mode=_is_live_test_mode(mode),
     )
+    live_policy_archetype_classifier = load_live_policy_archetype_classifier(
+        data_root=data_root,
+        run_id=policy_artifact_run_id,
+        warn=tprint,
+    )
+    if live_policy_archetype_classifier:
+        tprint(
+            "Live policy archetype classifier loaded: "
+            f"features={len(live_policy_archetype_classifier.get('feature_columns') or [])} "
+            f"path={live_policy_archetype_classifier.get('artifact_path')}"
+        )
     parity_contract = config.get("training_live_parity_contract")
     if not isinstance(parity_contract, dict) or not parity_contract:
         parity_contract = load_training_live_parity_contract(
@@ -18040,6 +20897,9 @@ def run_inference_loop(
                 accepted_strategies=accepted_strategies,
                 strategy_asset_exclusions=strategy_asset_exclusions,
                 portfolio_policy=portfolio_policy,
+                live_policy_archetype_classifier=live_policy_archetype_classifier,
+                live_ae_gmm_state_payload={},
+                required_feature_keys=[],
             )
 
             tprint(f"Executed {len(results['trades'])} trades")
@@ -18063,19 +20923,20 @@ def _record_portfolio_close_from_trade(
     portfolio_mgr: Optional[PortfolioManager],
     *,
     closed_trade: Dict[str, Any],
-) -> None:
+    config: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
     """Synchronize PortfolioManager state after an executor-managed close."""
     if portfolio_mgr is None or not isinstance(closed_trade, dict):
-        return
+        return None
     symbol = str(closed_trade.get("symbol") or "")
     if not symbol:
-        return
+        return None
     try:
         exit_price = float(closed_trade.get("exit_price"))
     except (TypeError, ValueError):
-        return
+        return None
     if not np.isfinite(exit_price) or exit_price <= 0:
-        return
+        return None
     try:
         exit_time_raw = closed_trade.get("exit_time")
         exit_time = (
@@ -18092,14 +20953,51 @@ def _record_portfolio_close_from_trade(
             exit_price=exit_price,
             exit_time=exit_time,
             exit_reason=str(closed_trade.get("reason") or "closed"),
+            policy_archetype=closed_trade.get("policy_archetype"),
+            local_side_archetype=closed_trade.get("local_side_archetype"),
+            source_archetype=closed_trade.get("source_archetype"),
         )
         if result is not None:
+            closed_trade["portfolio_close_result"] = result
+            closed_trade["portfolio_consecutive_losing_trades"] = result.get(
+                "consecutive_losing_trades"
+            )
+            closed_trade["portfolio_policy_archetype"] = result.get(
+                "policy_archetype"
+            )
+            closed_trade["portfolio_archetype_consecutive_losing_trades"] = (
+                result.get("archetype_consecutive_losing_trades")
+            )
+            closed_trade["portfolio_disabled_archetypes"] = result.get(
+                "disabled_archetypes"
+            )
+            closed_trade["portfolio_risk_guard_events"] = result.get(
+                "risk_guard_events"
+            )
+            risk_guard_events = result.get("risk_guard_events") or []
+            if config is not None and isinstance(risk_guard_events, list):
+                email_results: List[Dict[str, Any]] = []
+                for event in risk_guard_events:
+                    if not isinstance(event, Mapping):
+                        continue
+                    email_results.append(
+                        _send_portfolio_risk_guard_email(
+                            event=event,
+                            closed_trade=closed_trade,
+                            portfolio_result=result,
+                            config=config,
+                        )
+                    )
+                if email_results:
+                    closed_trade["portfolio_risk_guard_email_results"] = email_results
             tprint(f"[PortfolioManager] Synced closed position for {symbol}")
+        return result
     except Exception as exc:
         tprint(
             f"Portfolio close sync failed for {symbol}: "
             f"{classify_api_error(exc)}: {exc}"
         )
+    return None
 
 
 def _log_closed_trade_event(
@@ -18208,7 +21106,7 @@ def _monitor_active_position_price_action(
                 )
                 if isinstance(closed_trade, dict):
                     _record_portfolio_close_from_trade(
-                        portfolio_mgr, closed_trade=closed_trade
+                        portfolio_mgr, closed_trade=closed_trade, config=cfg
                     )
                     _log_closed_trade_event(
                         trade_logger,
@@ -18257,7 +21155,7 @@ def _monitor_active_position_price_action(
                 if isinstance(closed_trade, dict):
                     executable_sentinel_closed += 1
                     _record_portfolio_close_from_trade(
-                        portfolio_mgr, closed_trade=closed_trade
+                        portfolio_mgr, closed_trade=closed_trade, config=cfg
                     )
                     _log_closed_trade_event(
                         trade_logger,
@@ -18423,7 +21321,9 @@ def _monitor_active_position_price_action(
                 if isinstance(closed_trade, dict):
                     status["closed_trade"] = closed_trade
                     _record_portfolio_close_from_trade(
-                        portfolio_mgr, closed_trade=closed_trade
+                        portfolio_mgr,
+                        closed_trade=closed_trade,
+                        config=dict(config or getattr(executor, "config", {}) or {}),
                     )
                     _log_closed_trade_event(
                         trade_logger,
@@ -18582,6 +21482,7 @@ def _monitor_executable_stop_sentinel_only(
                     _record_portfolio_close_from_trade(
                         portfolio_mgr,
                         closed_trade=closed_trade,
+                        config=cfg,
                     )
                     _log_closed_trade_event(
                         trade_logger,
@@ -19065,6 +21966,27 @@ def main():
         effective_model_bundle,
         accepted_strategies,
     )
+    live_ae_gmm_payload = load_live_ae_gmm_state_payload(
+        str(config["data_root"]),
+        model_artifact_run_id,
+    )
+    live_ae_gmm_input_columns = live_ae_gmm_input_feature_columns(live_ae_gmm_payload)
+    if live_ae_gmm_input_columns:
+        before_required = len(raw_required_feature_keys(required_feature_keys))
+        expanded_required = set(raw_required_feature_keys(required_feature_keys))
+        expanded_required.update(live_ae_gmm_input_columns)
+        required_feature_keys = expanded_required
+        tprint(
+            "Frozen AE/GMM state loaded for live inference: "
+            f"state={live_ae_gmm_payload.get('state_path', '')} "
+            f"input_features={len(live_ae_gmm_input_columns)} "
+            f"required_features={before_required}->{len(expanded_required)}"
+        )
+    else:
+        tprint(
+            "No frozen AE/GMM state packaged for live inference; AE/GMM-selected "
+            "base features will fail closed if present in the deployed contract."
+        )
     use_legacy_sizer_calibration = str(
         os.getenv("EPM_INFERENCE_USE_SIMPLE_POSITION_SIZER_CALIBRATION", "0") or ""
     ).strip().lower() in {"1", "true", "yes", "on"}
@@ -19326,6 +22248,55 @@ def main():
                 "Dynamic HR surprise threshold enabled but no artifact path is configured; "
                 "deployed thresholds will be used."
             )
+    archetype_hit_surprise_policy: dict[str, Any] = {}
+    if bool(getattr(portfolio_policy, "archetype_hit_surprise_enabled", False)):
+        archetype_policy_path = str(
+            getattr(portfolio_policy, "archetype_hit_surprise_policy_path", "") or ""
+        ).strip()
+        if archetype_policy_path:
+            archetype_hit_surprise_policy = load_archetype_hit_surprise_policy(
+                archetype_policy_path
+            )
+            tprint(
+                "Archetype hit-surprise threshold policy loaded: "
+                f"path={archetype_policy_path} "
+                f"thresholds={len(archetype_hit_surprise_policy.get('archetype_thresholds') or [])}"
+            )
+        else:
+            tprint(
+                "Archetype hit-surprise threshold enabled but no policy path is configured; "
+                "deployed thresholds will be used."
+            )
+    threshold_basis_policy: dict[str, Any] = {}
+    if bool(getattr(portfolio_policy, "threshold_basis_policy_enabled", False)):
+        threshold_basis_path = str(
+            getattr(portfolio_policy, "threshold_basis_policy_path", "") or ""
+        ).strip()
+        if threshold_basis_path:
+            threshold_basis_policy = load_threshold_basis_policy(threshold_basis_path)
+            tprint(
+                "Threshold-basis policy loaded: "
+                f"path={threshold_basis_path} "
+                f"policy_id={threshold_basis_policy.get('policy_id')} "
+                f"family={threshold_basis_policy.get('family')} "
+                f"window_days={threshold_basis_policy.get('window_days')}"
+            )
+        else:
+            tprint(
+                "Threshold-basis policy enabled but no policy path is configured; "
+                "rank thresholds will use the standard policy reference."
+            )
+    live_policy_archetype_classifier = load_live_policy_archetype_classifier(
+        data_root=str(config["data_root"]),
+        run_id=str(config.get("policy_artifact_run_id") or config["run_id"]),
+        warn=tprint,
+    )
+    if live_policy_archetype_classifier:
+        tprint(
+            "Live policy archetype classifier loaded: "
+            f"features={len(live_policy_archetype_classifier.get('feature_columns') or [])} "
+            f"path={live_policy_archetype_classifier.get('artifact_path')}"
+        )
     prehead_symbol_guard_state: dict[str, Any] = {}
     if bool(getattr(portfolio_policy, "prehead_symbol_guard_enabled", False)):
         prehead_guard_path = str(
@@ -20241,6 +23212,23 @@ def main():
                     dynamic_hr_surprise_state = load_dynamic_hr_surprise_state(
                         dynamic_hr_path
                     )
+            if bool(getattr(portfolio_policy, "archetype_hit_surprise_enabled", False)):
+                archetype_policy_path = str(
+                    getattr(portfolio_policy, "archetype_hit_surprise_policy_path", "")
+                    or ""
+                ).strip()
+                if archetype_policy_path:
+                    archetype_hit_surprise_policy = load_archetype_hit_surprise_policy(
+                        archetype_policy_path
+                    )
+            if bool(getattr(portfolio_policy, "threshold_basis_policy_enabled", False)):
+                threshold_basis_path = str(
+                    getattr(portfolio_policy, "threshold_basis_policy_path", "") or ""
+                ).strip()
+                if threshold_basis_path:
+                    threshold_basis_policy = load_threshold_basis_policy(
+                        threshold_basis_path
+                    )
             if bool(getattr(portfolio_policy, "prehead_symbol_guard_enabled", False)):
                 prehead_guard_path = str(
                     getattr(portfolio_policy, "prehead_symbol_guard_artifact_path", "")
@@ -20273,8 +23261,13 @@ def main():
                 prediction_ledger=prediction_ledger,
                 dynamic_performance_monitor=dynamic_performance_monitor,
                 dynamic_hr_surprise_state=dynamic_hr_surprise_state,
+                archetype_hit_surprise_policy=archetype_hit_surprise_policy,
+                threshold_basis_policy=threshold_basis_policy,
+                live_policy_archetype_classifier=live_policy_archetype_classifier,
                 strategy_kill_switch=strategy_kill_switch,
                 strategy_feature_contracts=strategy_feature_contracts,
+                live_ae_gmm_state_payload=live_ae_gmm_payload,
+                required_feature_keys=required_feature_keys,
                 max_entries_total=(
                     int(config.get("max_entries_total", 4))
                     if scoring_entries_allowed

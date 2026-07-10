@@ -2066,10 +2066,11 @@ def _fetch_kraken_futures_charts_ohlcv(
         "from": int(max(0, since_ms) // 1000),
         "to": int(max(0, until_ms) // 1000),
     }
+    timeout_s = float(os.environ.get("EPM_KRAKEN_CHART_TIMEOUT_SECONDS", "15") or "15")
     response = _public_data_session().get(
         url,
         params=params,
-        timeout=60,
+        timeout=(min(timeout_s, 10.0), timeout_s),
         headers={"User-Agent": _ARCHIVE_USER_AGENT},
     )
     response.raise_for_status()

@@ -10,8 +10,10 @@ from extreme_price_movements.inference.portfolio_policy import (
 )
 from extreme_price_movements.inference.dynamic_hr_surprise_threshold import (
     DynamicHrHeadState,
+    apply_archetype_hit_surprise_threshold,
     apply_dynamic_hr_surprise_threshold,
     dynamic_hr_state_payload_from_daily_params,
+    load_archetype_hit_surprise_policy,
     load_dynamic_hr_surprise_state,
     patch_portfolio_policy_payload_with_dynamic_hr_surprise,
     validate_dynamic_hr_replay_gate,
@@ -72,6 +74,202 @@ def test_portfolio_policy_loads_dynamic_hr_surprise_selection_config(tmp_path):
     assert policy.dynamic_hr_surprise_max_state_age_days == pytest.approx(3.5)
     assert policy.dynamic_hr_surprise_lower_bound == -0.25
     assert policy.dynamic_hr_surprise_upper_bound == 1.25
+
+
+def test_portfolio_policy_loads_archetype_hit_surprise_config(tmp_path):
+    root = tmp_path / "data"
+    path = root / "artifacts" / "RID" / "policy_params"
+    path.mkdir(parents=True)
+    (path / "optimized_portfolio_policy_config.json").write_text(
+        json.dumps(
+            {
+                "selection": {
+                    "archetype_hit_surprise_enabled": True,
+                    "archetype_hit_surprise_policy_path": "policy.json",
+                    "archetype_hit_surprise_mode": "hit_surprise_priority_rank_50",
+                },
+                "concurrency": {
+                    "max_concurrent_positions": 8,
+                    "max_concurrent_per_side": None,
+                },
+            }
+        )
+    )
+
+    policy = load_portfolio_policy_config(data_root=str(root), run_id="RID")
+
+    assert policy.archetype_hit_surprise_enabled is True
+    assert policy.archetype_hit_surprise_policy_path == "policy.json"
+    assert policy.archetype_hit_surprise_mode == "hit_surprise_priority_rank_50"
+    assert policy.max_concurrent_per_side is None
+
+
+def test_archetype_hit_surprise_applies_side_archetype_threshold(tmp_path):
+    path = tmp_path / "policy.json"
+    path.write_text(
+        json.dumps(
+            {
+                "selection": {"hit_surprise_threshold_enabled": True},
+                "archetype_thresholds": [
+                    {
+                        "side": "short",
+                        "strategy_id": "short_s52_meta_threshold_handoff",
+                        "policy_archetype": "short__short_mixed_clean_path",
+                        "base_rank_threshold": 0.90,
+                        "adjusted_rank_threshold": 0.995,
+                    }
+                ],
+            }
+        )
+    )
+    policy = load_archetype_hit_surprise_policy(path)
+
+    result = apply_archetype_hit_surprise_threshold(
+        strategy_id="short_s52_meta_threshold_handoff",
+        side="short",
+        deployed_threshold=0.90,
+        policy=policy,
+        policy_archetype="short_mixed_clean_path",
+        enabled=True,
+    )
+
+    assert result.threshold == pytest.approx(0.995)
+    assert result.applied is True
+    assert result.matched_key == "short__short_mixed_clean_path"
+
+
+def test_archetype_hit_surprise_applies_priority_rank_adjustment(tmp_path):
+    path = tmp_path / "policy.json"
+    path.write_text(
+        json.dumps(
+            {
+                "selection": {
+                    "hit_surprise_mode": "hit_surprise_priority_rank_50",
+                    "hit_surprise_threshold_enabled": False,
+                },
+                "archetype_adjustments": [
+                    {
+                        "side": "long",
+                        "strategy_id": "long_s52_meta_threshold_handoff",
+                        "policy_archetype": "long__long_mixed_wideslow_tentative",
+                        "base_rank_threshold": 0.90,
+                        "quality_adjustment": 0.04,
+                        "portfolio_priority_multiplier": 1.40,
+                        "portfolio_priority_adjustment": 0.0,
+                        "portfolio_rank_adjustment": 0.02,
+                        "actual_hit_rate": 0.92,
+                        "expected_hit_rate": 0.84,
+                    }
+                ],
+            }
+        )
+    )
+    policy = load_archetype_hit_surprise_policy(path)
+
+    result = apply_archetype_hit_surprise_threshold(
+        strategy_id="long_s52_meta_threshold_handoff",
+        side="long",
+        deployed_threshold=0.90,
+        policy=policy,
+        policy_archetype="long_mixed_wideslow_tentative",
+        enabled=True,
+    )
+
+    assert result.threshold == pytest.approx(0.90)
+    assert result.applied is True
+    assert result.mode == "priority_rank_50"
+    assert result.priority_multiplier == pytest.approx(1.40)
+    assert result.priority_adjustment == pytest.approx(0.0)
+    assert result.rank_adjustment == pytest.approx(0.02)
+    assert result.quality_adjustment == pytest.approx(0.04)
+    assert result.actual_hit_rate == pytest.approx(0.92)
+
+
+def test_archetype_hit_surprise_matches_side_prefixed_policy_strategy_from_core(tmp_path):
+    path = tmp_path / "policy.json"
+    path.write_text(
+        json.dumps(
+            {
+                "selection": {
+                    "hit_surprise_mode": "hit_surprise_priority_rank_50",
+                    "hit_surprise_threshold_enabled": False,
+                },
+                "archetype_adjustments": [
+                    {
+                        "side": "short",
+                        "strategy_id": "short_s52_meta_threshold_handoff",
+                        "policy_archetype": "short__short_mixed_clean_path",
+                        "portfolio_priority_multiplier": 1.25,
+                        "portfolio_rank_adjustment": 0.015,
+                    }
+                ],
+            }
+        )
+    )
+    policy = load_archetype_hit_surprise_policy(path)
+
+    result = apply_archetype_hit_surprise_threshold(
+        strategy_id="s52_meta_threshold_handoff",
+        side="short",
+        deployed_threshold=0.90,
+        policy=policy,
+        policy_archetype="short__short_mixed_clean_path",
+        enabled=True,
+    )
+
+    assert result.reason == "applied_priority_rank"
+    assert result.matched_key == "short__short_mixed_clean_path"
+    assert result.priority_multiplier == pytest.approx(1.25)
+    assert result.rank_adjustment == pytest.approx(0.015)
+
+
+def test_archetype_hit_surprise_applies_threshold_priority_rank_adjustment(tmp_path):
+    path = tmp_path / "policy.json"
+    path.write_text(
+        json.dumps(
+            {
+                "selection": {
+                    "hit_surprise_mode": "hit_surprise_threshold_priority_rank_50",
+                    "hit_surprise_threshold_enabled": True,
+                },
+                "archetype_adjustments": [
+                    {
+                        "side": "short",
+                        "strategy_id": "short_s52_meta_threshold_handoff",
+                        "policy_archetype": "short__short_breakout_precision",
+                        "base_rank_threshold": 0.90,
+                        "adjusted_rank_threshold": 0.85,
+                        "threshold_delta": -0.05,
+                        "quality_adjustment": 0.05,
+                        "portfolio_priority_multiplier": 1.50,
+                        "portfolio_priority_adjustment": 0.0,
+                        "portfolio_rank_adjustment": 0.025,
+                        "actual_hit_rate": 0.93,
+                        "expected_hit_rate": 0.82,
+                    }
+                ],
+            }
+        )
+    )
+    policy = load_archetype_hit_surprise_policy(path)
+
+    result = apply_archetype_hit_surprise_threshold(
+        strategy_id="short_s52_meta_threshold_handoff",
+        side="short",
+        deployed_threshold=0.90,
+        policy=policy,
+        policy_archetype="short_breakout_precision",
+        enabled=True,
+    )
+
+    assert result.threshold == pytest.approx(0.85)
+    assert result.threshold_delta == pytest.approx(-0.05)
+    assert result.applied is True
+    assert result.mode == "threshold_priority_rank_50"
+    assert result.reason == "applied_threshold_priority_rank"
+    assert result.priority_multiplier == pytest.approx(1.50)
+    assert result.rank_adjustment == pytest.approx(0.025)
+    assert result.quality_adjustment == pytest.approx(0.05)
 
 
 def test_dynamic_hr_surprise_rejected_head_falls_back_to_deployed():
@@ -322,6 +520,8 @@ def test_portfolio_policy_loads_nested_artifact_sections_and_aliases(tmp_path):
                 "selection": {
                     "occupancy_threshold_alpha": 0.3,
                     "occupancy_threshold_power": 1.5,
+                    "allocation_threshold_alpha": 0.4,
+                    "allocation_threshold_power": 2.0,
                     "threshold_viability_margin": 0.02,
                 },
                 "concurrency": {
@@ -337,6 +537,8 @@ def test_portfolio_policy_loads_nested_artifact_sections_and_aliases(tmp_path):
     assert policy.rank_multiplier_min == 0.7
     assert policy.occupancy_threshold_alpha == 0.3
     assert policy.occupancy_threshold_power == 1.5
+    assert policy.allocation_threshold_alpha == 0.4
+    assert policy.allocation_threshold_power == 2.0
     assert policy.threshold_viability_margin == 0.02
     assert policy.max_new_entries_per_bar == 2
     assert policy.max_concurrent_per_symbol == 1
@@ -440,6 +642,23 @@ def test_portfolio_manager_preserves_above_one_deactivation_threshold():
     mgr = PortfolioManager(portfolio_value=10000.0)
 
     assert mgr.calculate_dynamic_threshold(1.25) == 1.25
+
+
+def test_portfolio_manager_dynamic_threshold_uses_allocated_share():
+    mgr = PortfolioManager(
+        max_positions=10,
+        portfolio_value=10000.0,
+        occupancy_threshold_alpha=0.0,
+        allocation_threshold_alpha=1.0,
+        allocation_threshold_power=1.0,
+    )
+    mgr.positions["BTC/USD"] = type(
+        "OpenPosition",
+        (),
+        {"is_open": True, "position_size": 7000.0},
+    )()
+
+    assert mgr.calculate_dynamic_threshold(0.60) == pytest.approx(0.88)
 
 
 def test_rank_based_position_size_caps_and_live_test_override():
@@ -564,6 +783,45 @@ def test_perps_rank_sizing_uses_same_default_leverage_in_live_and_live_test():
     assert live_test["perp_effective_leverage"] == prod["perp_effective_leverage"]
     assert live_test["size_after_liquidity"] == policy.live_test_quote_notional
     assert prod["size_after_liquidity"] > live_test["size_after_liquidity"]
+
+
+def test_perps_rank_sizing_scales_with_adjusted_rank_above_threshold():
+    policy = PortfolioPolicyConfig()
+    low_rank = compute_rank_based_position_size(
+        wallet_value=100.0,
+        open_notional=0.0,
+        adjusted_rank_score=0.90,
+        final_threshold=0.90,
+        policy=policy,
+        liquidity_capacity_weight=1.0,
+        live_test_mode=False,
+        market_mode="perps",
+        available_wallet_value=100.0,
+        stop_loss_pct=0.01,
+        rank_number=1,
+        rank_x=5,
+        orderbook_capacity_quote=1_000.0,
+    )
+    high_rank = compute_rank_based_position_size(
+        wallet_value=100.0,
+        open_notional=0.0,
+        adjusted_rank_score=1.0,
+        final_threshold=0.90,
+        policy=policy,
+        liquidity_capacity_weight=1.0,
+        live_test_mode=False,
+        market_mode="perps",
+        available_wallet_value=100.0,
+        stop_loss_pct=0.01,
+        rank_number=1,
+        rank_x=5,
+        orderbook_capacity_quote=1_000.0,
+    )
+
+    assert low_rank["rank_excess"] == pytest.approx(0.0)
+    assert high_rank["rank_excess"] == pytest.approx(1.0)
+    assert low_rank["size_after_liquidity"] < high_rank["size_after_liquidity"]
+    assert low_rank["perp_rank_slot_fraction"] < high_rank["perp_rank_slot_fraction"]
 
 
 def test_perps_rank_sizing_caps_request_to_remaining_total_notional():

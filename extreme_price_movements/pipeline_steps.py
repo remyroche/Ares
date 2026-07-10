@@ -540,42 +540,76 @@ def _perp_required_market_data_mask(
         else:
             mask &= False
 
-    sidecar_root = os.path.join(scoped_data_root(cfg), "funding_hourly")
+    scoped_root = scoped_data_root(cfg)
+    funding_sidecar_root = os.path.join(scoped_root, "funding_hourly")
+    oi_sidecar_root = os.path.join(scoped_root, "open_interest_hourly")
     funding_ok: dict[str, pd.Series] = {}
     oi_ok: dict[str, pd.Series] = {}
+
+    def _sidecar_notna_series(
+        root: str,
+        symbol: str,
+        column: str,
+    ) -> pd.Series | None:
+        path = os.path.join(root, f"{_symbol_to_sidecar_filename(symbol)}.parquet")
+        if not os.path.exists(path):
+            return None
+        try:
+            side = pd.read_parquet(path)
+            side.index = pd.to_datetime(side.index, utc=True, errors="coerce").floor("h")
+            side = side[~side.index.isna()]
+            side = side[~side.index.duplicated(keep="last")].sort_index()
+            if column not in side.columns:
+                return None
+            values = pd.to_numeric(side[column], errors="coerce")
+            return values.notna().reindex(index).fillna(False)
+        except Exception as exc:
+            tprint(
+                f"WARN perp row data filter sidecar load failed for "
+                f"{symbol} {column}: {exc}"
+            )
+            return None
+
     for symbol in symbols:
-        path = os.path.join(sidecar_root, f"{_symbol_to_sidecar_filename(symbol)}.parquet")
-        if os.path.exists(path):
-            try:
-                side = pd.read_parquet(path)
-                side.index = pd.to_datetime(side.index, utc=True, errors="coerce").floor("h")
-                side = side[~side.index.isna()]
-                side = side[~side.index.duplicated(keep="last")].sort_index()
-                funding = pd.to_numeric(side.get("funding_rate"), errors="coerce")
-                oi = pd.to_numeric(side.get("open_interest"), errors="coerce")
-                funding_ok[symbol] = funding.notna().reindex(index).fillna(False)
-                oi_ok[symbol] = oi.notna().reindex(index).fillna(False)
-                continue
-            except Exception as exc:
-                tprint(f"WARN perp row data filter sidecar load failed for {symbol}: {exc}")
+        funding_series = _sidecar_notna_series(
+            funding_sidecar_root,
+            symbol,
+            "funding_rate",
+        )
+        oi_series = _sidecar_notna_series(
+            oi_sidecar_root,
+            symbol,
+            "open_interest",
+        )
         funding_panel = panel.get("funding_rate")
         oi_panel = panel.get("open_interest")
+        funding_sources: list[pd.Series] = []
+        if funding_series is not None:
+            funding_sources.append(funding_series)
         if isinstance(funding_panel, pd.DataFrame) and symbol in funding_panel.columns:
-            funding_ok[symbol] = (
+            funding_sources.append(
                 pd.to_numeric(funding_panel[symbol], errors="coerce")
                 .notna()
                 .reindex(index)
                 .fillna(False)
             )
+        if funding_sources:
+            funding_ok[symbol] = pd.concat(funding_sources, axis=1).any(axis=1)
         else:
             funding_ok[symbol] = pd.Series(False, index=index)
+
+        oi_sources: list[pd.Series] = []
+        if oi_series is not None:
+            oi_sources.append(oi_series)
         if isinstance(oi_panel, pd.DataFrame) and symbol in oi_panel.columns:
-            oi_ok[symbol] = (
+            oi_sources.append(
                 pd.to_numeric(oi_panel[symbol], errors="coerce")
                 .notna()
                 .reindex(index)
                 .fillna(False)
             )
+        if oi_sources:
+            oi_ok[symbol] = pd.concat(oi_sources, axis=1).any(axis=1)
         else:
             oi_ok[symbol] = pd.Series(False, index=index)
 

@@ -1055,6 +1055,16 @@ def run_download(cfg):
             str(cfg.get("download_microdata_enabled", True)),
         )
     ).strip().lower() in {"1", "true", "yes", "y", "on"}
+    _tail_only_download = str(
+        os.environ.get("EPM_DOWNLOAD_TAIL_ONLY", str(cfg.get("download_tail_only", False)))
+    ).strip().lower() in {"1", "true", "yes", "y", "on"}
+    _download_15m_tail_hours = float(
+        os.environ.get(
+            "EPM_DOWNLOAD_15M_TAIL_HOURS",
+            cfg.get("download_15m_tail_hours", 72.0),
+        )
+        or 72.0
+    )
 
     # --- Freshness check: skip download if data is < 6 days old ---
     import glob as _glob
@@ -1294,6 +1304,11 @@ def run_download(cfg):
     now_1h = now_utc.floor("1h")
     since_15m = since.floor("15min")
     now_15m = now_utc.floor("15min")
+    status_since_15m = (
+        max(since_15m, (now_utc - pd.Timedelta(hours=max(_download_15m_tail_hours, 1.0))).floor("15min"))
+        if _tail_only_download
+        else since_15m
+    )
     micro_since = since_1h
 
     def _panel_complete(
@@ -1378,11 +1393,40 @@ def run_download(cfg):
 
             df_local = _load_existing_data(sym)
             return (
-                _panel_complete(df_local, since_15m, now_15m, "15min"),
-                _panel_missing_days(df_local, since_15m, now_15m, "15min"),
+                _panel_complete(df_local, status_since_15m, now_15m, "15min"),
+                _panel_missing_days(df_local, status_since_15m, now_15m, "15min"),
             )
         except Exception:
             return False, 1e9
+
+    def _download_15m_since_for_symbol(dl_symbol: str) -> pd.Timestamp:
+        if not _tail_only_download:
+            return since
+        floor = (
+            pd.Timestamp.now(tz="UTC")
+            - pd.Timedelta(hours=max(_download_15m_tail_hours, 1.0))
+        ).floor("15min")
+        try:
+            from extreme_price_movements.hf_data_loader import _load_existing_data
+
+            existing = _load_existing_data(dl_symbol, allow_quote_fallback=False)
+            if existing is not None and not existing.empty:
+                idx = existing.index
+                idx = (
+                    idx
+                    if isinstance(idx, pd.DatetimeIndex)
+                    else pd.to_datetime(idx, utc=True, errors="coerce")
+                )
+                if idx.tz is None:
+                    idx = idx.tz_localize("UTC")
+                else:
+                    idx = idx.tz_convert("UTC")
+                ex_end = idx.max()
+                if pd.notna(ex_end):
+                    return max(floor, (pd.Timestamp(ex_end) + pd.Timedelta(minutes=15)).floor("15min"))
+        except Exception:
+            pass
+        return max(since_15m, floor)
 
     market_data_root = Path(scoped_data_root(cfg))
     ob_dir = market_data_root / "orderbook_hourly"
@@ -1681,12 +1725,18 @@ def run_download(cfg):
                 dl_15m_symbol = _resolve_perp_symbol(ex, sym) if use_perps else sym
                 if dl_15m_symbol is None:
                     raise ValueError(f"No perp 15m OHLCV symbol found for {sym}")
+                dl_15m_since = _download_15m_since_for_symbol(dl_15m_symbol)
+                dl_15m_until = pd.Timestamp.now(tz="UTC")
                 df_15m = sync_15m_ohlcv_range(
                     ex,
                     dl_15m_symbol,
-                    since,
-                    pd.Timestamp.now(tz="UTC"),
-                    full_backfill=bool(cfg.get("download_15m_full_backfill", False)),
+                    dl_15m_since,
+                    dl_15m_until,
+                    full_backfill=(
+                        False
+                        if _tail_only_download
+                        else bool(cfg.get("download_15m_full_backfill", False))
+                    ),
                 )
                 if df_15m is None or df_15m.empty:
                     fail_15m += 1

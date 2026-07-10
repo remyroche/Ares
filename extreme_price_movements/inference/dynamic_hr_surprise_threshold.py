@@ -43,6 +43,29 @@ class DynamicHrThresholdResult:
     state_age_days: float = np.nan
 
 
+@dataclass(frozen=True)
+class ArchetypeHitSurpriseThresholdResult:
+    threshold: float
+    applied: bool
+    reason: str
+    mode: str = "threshold"
+    policy_archetype: str = ""
+    matched_key: str = ""
+    base_threshold: float = np.nan
+    threshold_delta: float = np.nan
+    quality_adjustment: float = 0.0
+    priority_multiplier: float = 1.0
+    priority_adjustment: float = 0.0
+    rank_adjustment: float = 0.0
+    actual_hit_rate: float = np.nan
+    expected_hit_rate: float = np.nan
+    hit_rate_delta: float = np.nan
+    hit_rate_surprise_z: float = np.nan
+    support_confidence: float = np.nan
+    n_eff: float = np.nan
+    rows: float = np.nan
+
+
 def _json_safe(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
@@ -185,6 +208,272 @@ def load_dynamic_hr_surprise_state(path: str | Path | None) -> dict[str, Dynamic
         return _load_table(resolved)
     except Exception:
         return {}
+
+
+def load_archetype_hit_surprise_policy(path: str | Path | None) -> dict[str, Any]:
+    if not path:
+        return {}
+    resolved = Path(path)
+    if not resolved.exists():
+        return {}
+    try:
+        payload = json.loads(resolved.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _normalise_side(value: Any, strategy_id: Any = "") -> str:
+    text = str(value or "").strip().lower()
+    if text in {"1", "1.0", "long", "buy"} or text.startswith("long"):
+        return "long"
+    if text in {"-1", "-1.0", "short", "sell"} or text.startswith("short"):
+        return "short"
+    sid = str(strategy_id or "").strip().lower()
+    if sid.startswith("short"):
+        return "short"
+    return "long"
+
+
+def _candidate_archetype_keys(
+    *,
+    side: str,
+    strategy_id: Any,
+    policy_archetype: Any,
+) -> list[str]:
+    raw = str(policy_archetype or "").strip()
+    if not raw:
+        return []
+    side_norm = _normalise_side(side, strategy_id)
+    values = [raw]
+    if not raw.startswith(f"{side_norm}__"):
+        values.append(f"{side_norm}__{raw}")
+    # Some upstream labels already include the side text after the delimiter.
+    dedup: list[str] = []
+    for value in values:
+        if value and value not in dedup:
+            dedup.append(value)
+    return dedup
+
+
+def _normalise_hit_surprise_mode(value: Any, *, threshold_enabled: bool) -> str:
+    text = str(value or "").strip().lower()
+    if text.startswith("hit_surprise_"):
+        text = text[len("hit_surprise_") :]
+    if text in {"priority_rank_50", "priority_rank50", "rank_priority_50"}:
+        return "priority_rank_50"
+    if text in {
+        "threshold_priority_rank_50",
+        "threshold_priority_rank50",
+        "priority_rank_50_threshold",
+        "priority_rank50_threshold",
+    }:
+        return "threshold_priority_rank_50"
+    if text in {"priority", "rank", "combined", "size", "downweight_only"}:
+        return text
+    if text in {"threshold", ""}:
+        return "threshold" if threshold_enabled else "disabled"
+    return text
+
+
+def _matching_archetype_row(
+    rows: Any,
+    *,
+    keys: list[str],
+    side_text: str,
+    strategy_text: str,
+) -> Mapping[str, Any] | None:
+    if not isinstance(rows, list):
+        return None
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        row_arch = str(row.get("policy_archetype") or "").strip()
+        if row_arch not in keys:
+            continue
+        row_side = str(row.get("side") or "").strip().lower()
+        row_strategy = str(row.get("strategy_id") or "").strip()
+        if row_side and row_side != side_text:
+            continue
+        allowed_strategies = {
+            strategy_text,
+            f"{side_text}_{strategy_text}" if strategy_text else "",
+        }
+        if strategy_text.startswith(("long_", "short_")):
+            allowed_strategies.add(strategy_text.split("_", 1)[1])
+        if row_strategy.startswith(("long_", "short_")):
+            allowed_strategies.add(row_strategy.split("_", 1)[1])
+        allowed_strategies.discard("")
+        if row_strategy and row_strategy not in allowed_strategies:
+            continue
+        return row
+    return None
+
+
+def apply_archetype_hit_surprise_threshold(
+    *,
+    strategy_id: Any,
+    side: Any,
+    deployed_threshold: float,
+    policy: Mapping[str, Any] | None,
+    policy_archetype: Any = None,
+    enabled: bool = True,
+) -> ArchetypeHitSurpriseThresholdResult:
+    deployed = _finite(deployed_threshold, 1.0)
+    if not enabled:
+        return ArchetypeHitSurpriseThresholdResult(
+            deployed,
+            False,
+            "disabled",
+            mode="disabled",
+        )
+    payload = dict(policy or {})
+    if not payload:
+        return ArchetypeHitSurpriseThresholdResult(deployed, False, "missing_policy")
+    selection = payload.get("selection") or {}
+    threshold_enabled = _truthy(selection.get("hit_surprise_threshold_enabled", True))
+    mode = _normalise_hit_surprise_mode(
+        selection.get("hit_surprise_mode", selection.get("mode")),
+        threshold_enabled=threshold_enabled,
+    )
+    if mode == "disabled":
+        return ArchetypeHitSurpriseThresholdResult(
+            deployed,
+            False,
+            "policy_disabled",
+            mode=mode,
+        )
+    keys = _candidate_archetype_keys(
+        side=_normalise_side(side, strategy_id),
+        strategy_id=strategy_id,
+        policy_archetype=policy_archetype,
+    )
+    if not keys:
+        return ArchetypeHitSurpriseThresholdResult(deployed, False, "missing_archetype")
+    strategy_text = str(strategy_id or "")
+    side_text = _normalise_side(side, strategy_id)
+
+    adjustment_row = _matching_archetype_row(
+        payload.get("archetype_adjustments") or [],
+        keys=keys,
+        side_text=side_text,
+        strategy_text=strategy_text,
+    )
+    if adjustment_row is not None and mode in {
+        "priority_rank_50",
+        "threshold_priority_rank_50",
+        "priority",
+        "rank",
+        "combined",
+        "size",
+        "downweight_only",
+    }:
+        priority_multiplier = _finite(
+            adjustment_row.get("portfolio_priority_multiplier", adjustment_row.get("priority_multiplier")),
+            1.0,
+        )
+        priority_adjustment = _finite(
+            adjustment_row.get("portfolio_priority_adjustment", adjustment_row.get("priority_adjustment")),
+            0.0,
+        )
+        rank_adjustment = _finite(
+            adjustment_row.get("portfolio_rank_adjustment", adjustment_row.get("rank_adjustment")),
+            0.0,
+        )
+        quality_adjustment = _finite(
+            adjustment_row.get("quality_adjustment", adjustment_row.get("raw_quality_adjustment")),
+            0.0,
+        )
+        threshold = deployed
+        threshold_delta = 0.0
+        if mode == "threshold_priority_rank_50":
+            threshold = _finite(adjustment_row.get("adjusted_rank_threshold"), deployed)
+            threshold = float(np.clip(threshold, 0.0, 0.999))
+            threshold_delta = float(threshold - deployed)
+        applied = bool(
+            abs(threshold - deployed) > 1e-12
+            or abs(priority_multiplier - 1.0) > 1e-12
+            or abs(priority_adjustment) > 1e-12
+            or abs(rank_adjustment) > 1e-12
+        )
+        return ArchetypeHitSurpriseThresholdResult(
+            threshold=threshold,
+            applied=applied,
+            reason=(
+                "applied_threshold_priority_rank"
+                if applied and mode == "threshold_priority_rank_50"
+                else "applied_priority_rank"
+                if applied
+                else "neutral_priority_rank"
+            ),
+            mode=mode,
+            policy_archetype=keys[0],
+            matched_key=str(adjustment_row.get("policy_archetype") or ""),
+            base_threshold=_finite(adjustment_row.get("base_rank_threshold"), deployed),
+            threshold_delta=threshold_delta,
+            quality_adjustment=quality_adjustment,
+            priority_multiplier=float(max(priority_multiplier, 0.0)),
+            priority_adjustment=float(priority_adjustment),
+            rank_adjustment=float(rank_adjustment),
+            actual_hit_rate=_finite(adjustment_row.get("actual_hit_rate"), np.nan),
+            expected_hit_rate=_finite(adjustment_row.get("expected_hit_rate"), np.nan),
+            hit_rate_delta=_finite(adjustment_row.get("hit_rate_delta"), np.nan),
+            hit_rate_surprise_z=_finite(adjustment_row.get("hit_rate_surprise_z"), np.nan),
+            support_confidence=_finite(adjustment_row.get("support_confidence"), np.nan),
+            n_eff=_finite(adjustment_row.get("n_eff"), np.nan),
+            rows=_finite(adjustment_row.get("rows"), np.nan),
+        )
+
+    rows = payload.get("archetype_thresholds") or []
+    if not isinstance(rows, list):
+        return ArchetypeHitSurpriseThresholdResult(
+            deployed,
+            False,
+            "missing_threshold_rows",
+            mode=mode,
+        )
+    row = _matching_archetype_row(
+        rows,
+        keys=keys,
+        side_text=side_text,
+        strategy_text=strategy_text,
+    )
+    if row is not None:
+        if not threshold_enabled:
+            return ArchetypeHitSurpriseThresholdResult(
+                deployed,
+                False,
+                "threshold_disabled_no_adjustment_row",
+                mode=mode,
+                policy_archetype=keys[0],
+                matched_key=str(row.get("policy_archetype") or ""),
+            )
+        threshold = _finite(row.get("adjusted_rank_threshold"), deployed)
+        threshold = float(np.clip(threshold, 0.0, 0.999))
+        return ArchetypeHitSurpriseThresholdResult(
+            threshold=threshold,
+            applied=bool(abs(threshold - deployed) > 1e-12),
+            reason="applied",
+            mode=mode,
+            policy_archetype=keys[0],
+            matched_key=str(row.get("policy_archetype") or ""),
+            base_threshold=_finite(row.get("base_rank_threshold"), deployed),
+            threshold_delta=float(threshold - deployed),
+            actual_hit_rate=_finite(row.get("actual_hit_rate"), np.nan),
+            expected_hit_rate=_finite(row.get("expected_hit_rate"), np.nan),
+            hit_rate_delta=_finite(row.get("hit_rate_delta"), np.nan),
+            hit_rate_surprise_z=_finite(row.get("hit_rate_surprise_z"), np.nan),
+            support_confidence=_finite(row.get("support_confidence"), np.nan),
+            n_eff=_finite(row.get("n_eff"), np.nan),
+            rows=_finite(row.get("rows"), np.nan),
+        )
+    return ArchetypeHitSurpriseThresholdResult(
+        deployed,
+        False,
+        "missing_archetype_adjustment" if mode != "threshold" else "missing_archetype_threshold",
+        mode=mode,
+        policy_archetype=keys[0],
+    )
 
 
 def validate_dynamic_hr_replay_gate(

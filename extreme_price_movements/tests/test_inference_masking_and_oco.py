@@ -1,5 +1,6 @@
 import inspect
 import json
+import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -146,6 +147,200 @@ class _PrescoreExecutor:
 
     def __init__(self, exchange):
         self.exchange = exchange
+
+
+def test_executable_stop_sentinel_updates_mfe_and_intrabar_trailing(tmp_path):
+    artifact_path = tmp_path / "best_policy_params.json"
+    artifact_path.write_text("{}", encoding="utf-8")
+    artifact_hash = hashlib.sha256(artifact_path.read_bytes()).hexdigest()[:16]
+    strategy_id = "long_test"
+    params = {
+        strategy_id: {
+            "generated_by": SIMPLE_POLICY_GENERATOR,
+            "schema": SIMPLE_POLICY_SCHEMA,
+            "strategy_id": strategy_id,
+            "params_source": artifact_path.as_posix(),
+            "params_hash": artifact_hash,
+            "_loaded_from_simple_policy_artifact": True,
+            "_artifact_path": artifact_path.as_posix(),
+            "barrier_frac": 0.02,
+            "sl_mult": 1.0,
+            "sl_abs_cap_pct": 0.0,
+            "enable_trailing": True,
+            "trailing_activation_mult": 0.5,
+            "trailing_activation_cap_pct": 0.0,
+            "trailing_activation_decay_half_life_bars": 0.0,
+            "trailing_activation_decay_start_bars": 0,
+            "trailing_activation_min_mult": 1.0,
+            "trailing_power": 1.5,
+            "trailing_squash_divisor": 2.0,
+            "giveback_beta": 0.5,
+            "round_trip_cost_pct": 0.002,
+            "capital_protect_mfe_mult": 0.0,
+            "capital_protect_regression_frac": 0.45,
+            "capital_protect_min_lock_bps": 0.0,
+            "adverse_exit_enabled": False,
+            "adverse_exit_min_mae_atr": 1.0,
+            "adverse_exit_min_speed": 0.3,
+            "adverse_exit_fast_bars": 4,
+            "adverse_exit_max_mfe_atr": 0.25,
+        }
+    }
+    executor = OCOExecutor(
+        _PrescoreExchange(bid=103.0, ask=103.1),
+        {},
+        config={"lightweight_stop_sentinel_fetch_orderbook": False},
+    )
+    executor.simple_policy_stop_params_by_strategy = params
+    executor.active_positions["TEST/USD:USD"] = {
+        "side": "long",
+        "entry_price": 100.0,
+        "policy_entry_price": 100.0,
+        "size": 1.0,
+        "bucket_key": strategy_id,
+        "strategy_id": strategy_id,
+        "stop_price": 98.0,
+        "policy_stop_price": 98.0,
+        "requested_policy_stop": 98.0,
+        "exchange_stop_price": 98.0,
+        "final_placed_stop": 98.0,
+        "stop_order_id": "stub-stop",
+        "stop_reason": "original_stop_loss",
+        "barrier_frac": 0.02,
+        "barrier_pct": 0.02,
+        "sl_mult": 1.0,
+        "stop_policy_params_source": artifact_path.as_posix(),
+        "stop_policy_params_hash": artifact_hash,
+        "stop_policy_schema": SIMPLE_POLICY_SCHEMA,
+    }
+    updates = []
+
+    def fake_update(symbol, state, decision):
+        updates.append(
+            (
+                symbol,
+                bool(decision.should_replace),
+                float(decision.stop_price),
+                decision.reason,
+                float(decision.mfe),
+            )
+        )
+        state["stop_price"] = float(decision.stop_price)
+        state["policy_stop_price"] = float(decision.stop_price)
+        state["requested_policy_stop"] = float(decision.stop_price)
+        state["stop_reason"] = decision.reason
+
+    executor._update_stop_loss_from_policy_decision = fake_update
+
+    status = executor.monitor_executable_stops_once()["TEST/USD:USD"]
+    state = executor.active_positions["TEST/USD:USD"]
+
+    assert state["mfe"] == pytest.approx(0.03)
+    assert state["peak_price"] == pytest.approx(103.0)
+    assert updates
+    assert updates[0][1] is True
+    assert updates[0][3] == "trailing_profit"
+    assert state["stop_price"] > 98.0
+    assert status["mfe_updated"] is True
+    assert status["intrabar_policy_update"]["evaluated"] is True
+
+
+def test_lightweight_sentinel_updates_short_intrabar_mfe_and_trailing(
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "best_policy_params.json"
+    artifact_path.write_text("{}\n")
+    artifact_hash = hashlib.sha256(artifact_path.read_bytes()).hexdigest()[:16]
+    strategy_id = "short_test"
+    params = {
+        strategy_id: {
+            "generated_by": SIMPLE_POLICY_GENERATOR,
+            "schema": SIMPLE_POLICY_SCHEMA,
+            "strategy_id": strategy_id,
+            "params_source": artifact_path.as_posix(),
+            "params_hash": artifact_hash,
+            "_loaded_from_simple_policy_artifact": True,
+            "_artifact_path": artifact_path.as_posix(),
+            "barrier_frac": 0.02,
+            "sl_mult": 1.0,
+            "sl_abs_cap_pct": 0.0,
+            "enable_trailing": True,
+            "trailing_activation_mult": 0.5,
+            "trailing_activation_cap_pct": 0.0,
+            "trailing_activation_decay_half_life_bars": 0.0,
+            "trailing_activation_decay_start_bars": 0,
+            "trailing_activation_min_mult": 1.0,
+            "trailing_power": 1.5,
+            "trailing_squash_divisor": 2.0,
+            "giveback_beta": 0.5,
+            "round_trip_cost_pct": 0.002,
+            "capital_protect_mfe_mult": 0.0,
+            "capital_protect_regression_frac": 0.45,
+            "capital_protect_min_lock_bps": 0.0,
+            "adverse_exit_enabled": False,
+            "adverse_exit_min_mae_atr": 1.0,
+            "adverse_exit_min_speed": 0.3,
+            "adverse_exit_fast_bars": 4,
+            "adverse_exit_max_mfe_atr": 0.25,
+        }
+    }
+    executor = OCOExecutor(
+        _PrescoreExchange(bid=96.9, ask=97.0),
+        {},
+        config={"lightweight_stop_sentinel_fetch_orderbook": False},
+    )
+    executor.simple_policy_stop_params_by_strategy = params
+    executor.active_positions["TEST/USD:USD"] = {
+        "side": "short",
+        "entry_price": 100.0,
+        "policy_entry_price": 100.0,
+        "size": 1.0,
+        "bucket_key": strategy_id,
+        "strategy_id": strategy_id,
+        "stop_price": 102.0,
+        "policy_stop_price": 102.0,
+        "requested_policy_stop": 102.0,
+        "exchange_stop_price": 102.0,
+        "final_placed_stop": 102.0,
+        "stop_order_id": "stub-stop",
+        "stop_reason": "original_stop_loss",
+        "barrier_frac": 0.02,
+        "barrier_pct": 0.02,
+        "sl_mult": 1.0,
+        "stop_policy_params_source": artifact_path.as_posix(),
+        "stop_policy_params_hash": artifact_hash,
+        "stop_policy_schema": SIMPLE_POLICY_SCHEMA,
+    }
+    updates = []
+
+    def fake_update(symbol, state, decision):
+        updates.append(
+            (
+                symbol,
+                bool(decision.should_replace),
+                float(decision.stop_price),
+                decision.reason,
+                float(decision.mfe),
+            )
+        )
+        state["stop_price"] = float(decision.stop_price)
+        state["policy_stop_price"] = float(decision.stop_price)
+        state["requested_policy_stop"] = float(decision.stop_price)
+        state["stop_reason"] = decision.reason
+
+    executor._update_stop_loss_from_policy_decision = fake_update
+
+    status = executor.monitor_executable_stops_once()["TEST/USD:USD"]
+    state = executor.active_positions["TEST/USD:USD"]
+
+    assert state["mfe"] == pytest.approx(0.03)
+    assert state["peak_price"] == pytest.approx(97.0)
+    assert updates
+    assert updates[0][1] is True
+    assert updates[0][3] == "trailing_profit"
+    assert state["stop_price"] < 102.0
+    assert status["mfe_updated"] is True
+    assert status["intrabar_policy_update"]["evaluated"] is True
 
 
 def test_pre_score_market_mask_rejects_wide_spread_before_scoring():
@@ -438,7 +633,7 @@ def test_ev_adjustment_haircuts_only_excess_execution_costs():
     )
 
 
-def test_ev_adjustment_includes_stop_exit_haircut():
+def test_ev_adjustment_records_stop_exit_reserve_without_double_counting():
     calibration = {
         "short_demo": [
             {"mean_score": 0.70, "mean_net_return": 0.010, "count": 100},
@@ -465,10 +660,10 @@ def test_ev_adjustment_includes_stop_exit_haircut():
     )
 
     assert adjusted["ev_haircut_stop_exit_excess_bps"] == pytest.approx(75.0)
-    assert adjusted["ev_haircut_bps"] == pytest.approx(75.0)
+    assert adjusted["ev_haircut_bps"] == pytest.approx(0.0)
     assert adjusted["ev_haircut_stop_exit_source"] == "test.stop_exit"
     assert adjusted["ev_adjusted_net_return_after_friction"] == pytest.approx(
-        adjusted["ev_adjusted_net_return_before_friction"] - 0.0075
+        adjusted["ev_adjusted_net_return_before_friction"]
     )
 
 
@@ -958,6 +1153,41 @@ def test_policy_optimiser_stop_decision_uses_max_favorable_giveback():
     assert decision.stop_price == pytest.approx(expected)
 
 
+def test_policy_optimiser_stop_decision_does_not_call_sub_fee_lock_profit():
+    params = _simple_policy_params(
+        barrier_frac=0.02,
+        sl_mult=1.2,
+        trailing_activation_mult=0.05,
+        trailing_power=1.5,
+        trailing_squash_divisor=3.5,
+        giveback_beta=0.3,
+        capital_protect_mfe_mult=0.0,
+        round_trip_cost_pct=0.01,
+        cost_pct_per_side=0.005,
+    )
+    decision = compute_simple_policy_stop_decision(
+        side="long",
+        state={
+            "side": "long",
+            "entry_price": 100.0,
+            "peak_price": 100.4,
+            "mfe": 0.004,
+            "mae": 0.0,
+            "stop_price": 97.6,
+            "strategy_id": "long_mr",
+            "barrier_frac": 0.02,
+            "sl_mult": 1.2,
+        },
+        latest_market_state={},
+        policy_params=params,
+    )
+
+    assert decision.reason == "trailing_risk_reduction"
+    assert "profit_cost_floor=0.01" in decision.reason_detail
+    assert "net_lock_ret=-" in decision.reason_detail
+    assert decision.stop_price > 100.0
+
+
 def test_policy_optimiser_stop_decision_caps_trailing_activation():
     base_state = {
         "side": "long",
@@ -1039,6 +1269,41 @@ def test_policy_optimiser_stop_decision_applies_exit_pressure_tightening():
     assert decision.stop_price > 98.0
     assert decision.exit_pressure > 0.0
     assert decision.tightening_multiplier < 1.0
+
+
+def test_policy_optimiser_stop_decision_does_not_label_disabled_pressure():
+    params = _simple_policy_params(
+        barrier_frac=0.02,
+        sl_mult=1.8,
+        trailing_activation_mult=10.0,
+        hard_tp_abs_pct=0.0,
+        capital_protect_mfe_mult=0.0,
+        exit_pressure_enabled=False,
+        exit_pressure_beta=0.0,
+        exit_pressure_kappa=0.0,
+        exit_pressure_min_multiplier=1.0,
+    )
+    decision = compute_simple_policy_stop_decision(
+        side="long",
+        state={
+            "side": "long",
+            "entry_price": 100.0,
+            "peak_price": 100.0,
+            "mfe": 0.0,
+            "mae": 0.0,
+            "bars_in_trade": 1,
+            "stop_price": 90.0,
+            "strategy_id": "long_mr",
+            "barrier_frac": 0.02,
+        },
+        latest_market_state={},
+        policy_params=params,
+    )
+
+    assert decision.reason == "policy_stop_loss"
+    assert decision.stop_price == pytest.approx(96.4)
+    assert decision.exit_pressure == pytest.approx(0.0)
+    assert decision.tightening_multiplier == pytest.approx(1.0)
 
 
 def test_select_candidates_rejects_legacy_threshold_overrides():
@@ -2555,7 +2820,7 @@ def test_live_executor_treats_subunit_size_as_quote_not_fraction(monkeypatch):
         executor.shutdown()
 
     assert result["success"]
-    entry_orders = [order for order in exchange.orders if order["type"] == "limit"]
+    entry_orders = [order for order in exchange.orders if order["type"] == "market"]
     assert len(entry_orders) == 1
     assert entry_orders[0]["amount"] == pytest.approx(0.005)
     assert executor.get_active_positions()["BTC/USDT"]["quote_size"] == pytest.approx(
@@ -3340,6 +3605,128 @@ def test_perps_reconciliation_imports_orphan_position_with_artifact_stop(monkeyp
     assert state.get("recovered_from_pending_trade_log") is not True
 
 
+def test_perps_reconciliation_existing_stop_does_not_override_artifact_barrier(monkeypatch):
+    monkeypatch.setattr(
+        "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
+        lambda *args, **kwargs: pd.DataFrame(),
+    )
+
+    class _WideStopLongPerpsExchange(_FilterAwareExchange):
+        id = "krakenfutures"
+
+        def __init__(self):
+            super().__init__()
+            self.markets = {
+                "TRX/USD:USD": {
+                    "active": True,
+                    "limits": {
+                        "amount": {"min": 1.0, "max": 1_000_000.0},
+                        "cost": {"min": 1.0, "max": 1_000_000.0},
+                    },
+                    "contract": True,
+                    "swap": True,
+                    "quote": "USD",
+                    "settle": "USD",
+                    "info": {"status": "TRADING"},
+                }
+            }
+
+        def fetch_positions(self, symbols=None, params=None):
+            return [
+                {
+                    "symbol": "TRX/USD:USD",
+                    "contracts": 10.0,
+                    "side": "long",
+                    "entryPrice": 100.0,
+                    "contractSize": 1.0,
+                }
+            ]
+
+        def fetch_open_orders(self, symbol, since=None, limit=None, params=None):
+            return [
+                {
+                    "id": "wide-stop",
+                    "symbol": symbol,
+                    "type": "stop",
+                    "side": "sell",
+                    "amount": 10.0,
+                    "status": "open",
+                    "reduceOnly": True,
+                    "info": {
+                        "order_id": "wide-stop",
+                        "stopPrice": "80.0",
+                        "triggerSignal": "last",
+                    },
+                }
+            ]
+
+        def fetch_ticker(self, symbol):
+            return {"bid": 101.0, "ask": 101.1, "last": 101.05}
+
+        def fetch_order_book(self, symbol):
+            return {"bids": [[101.0, 10.0]], "asks": [[101.1, 10.0]]}
+
+    params = _simple_policy_params(
+        strategy_id="long_s52_meta_threshold_handoff",
+        barrier_pct=0.02,
+        barrier_frac=0.02,
+        sl_mult=1.0,
+        capital_protect_mfe_mult=3.0,
+    )
+    exchange = _WideStopLongPerpsExchange()
+    executor = TradeExecutor(
+        mode="live-test",
+        exchange=exchange,
+        bucket_params={
+            "simple_policy_stop_params_by_strategy": {
+                "long_s52_meta_threshold_handoff": params
+            }
+        },
+        config={
+            "execution_account": "perps",
+            "market_mode": "perps",
+            "live_quote_currency": "USD",
+            "monitor_interval_seconds": 300,
+        },
+    )
+    executor._load_pending_entry_context = lambda symbol: {
+        "symbol": symbol,
+        "status": "pending",
+        "action": "enter",
+        "strategy_id": "s52_meta_threshold_handoff",
+        "actual_entry_price": 100.0,
+        "stop_price": 80.0,
+        "barrier_frac": 0.20,
+        "barrier_pct": 0.20,
+        "sl_mult": 1.0,
+        "stop_policy_params_source": "artifacts/stale/policy_params/best_policy_params.json",
+        "stop_policy_params_hash": "stalehash",
+        "stop_policy_schema": SIMPLE_POLICY_SCHEMA,
+        "timestamp": "2026-07-10T13:00:00Z",
+    }
+    try:
+        report = executor.reconcile_cross_margin_account()
+        active = executor.get_active_positions()
+        state = active["TRX/USD:USD"]
+        assert report["summary"]["active_positions_after_reconcile"] == 1
+        assert exchange.canceled[0][0] == "wide-stop"
+        assert state["stop_price"] == pytest.approx(98.0)
+        assert state["policy_stop_price"] == pytest.approx(98.0)
+        assert state["barrier_frac"] == pytest.approx(0.02)
+        assert state["reconciliation_barrier_source"] == (
+            "artifact_simple_policy_stop_params"
+        )
+        assert state["stop_policy_params_source"] == params["params_source"]
+        assert state["stop_policy_params_hash"] == params["params_hash"]
+        assert state["reconciliation_previous_barrier_frac"] == pytest.approx(0.20)
+        if state.get("reconciliation_existing_stop_implied_barrier_frac") is not None:
+            assert state["reconciliation_existing_stop_implied_barrier_frac"] == (
+                pytest.approx(0.20)
+            )
+    finally:
+        executor.shutdown()
+
+
 def test_raw_stop_replacement_api_removed_from_live_executor(monkeypatch):
     monkeypatch.setattr(
         "extreme_price_movements.inference.trade_executor.hf_data_loader.fetch_ohlcv_5m",
@@ -3797,15 +4184,16 @@ def test_strict_immediate_trigger_preflight_repairs_candidate_before_replace(
             reason_detail="invalid local trigger side",
         )
         executor.update_position_policy_state("BTC/USDT", policy_stop_decision=decision)
-        assert state["stop_price"] == pytest.approx(
-            100.0 * (1.0 - STOP_MIN_CURRENT_DISTANCE_PCT)
+        assert "BTC/USDT" not in executor.oco_executor.active_positions
+        assert state["requested_policy_stop"] == pytest.approx(101.0)
+        assert state["sentinel_pretriggered"] is True
+        assert state["last_close_metrics"]["reason"].startswith(
+            "software_executable_stop_breach_pre_replace:"
         )
-        assert state["stop_price"] > old_stop
-        assert state["stop_order_id"] != old_order_id
-        assert exchange.canceled[0][0] == old_order_id
         assert "stop_update_error_category" not in state
         assert any(
-            event.get("event") == "simple_policy_stop_min_current_distance_adjusted"
+            event.get("event")
+            == "software_policy_stop_breached_before_exchange_replace"
             for event in state.get("trade_recap_events", [])
         )
     finally:
@@ -4073,7 +4461,7 @@ def test_order_fee_enrichment_uses_matching_private_trade_fill_fee():
     assert metrics["net_pnl_verification_status"] == "verified_exchange_fees"
 
 
-def test_closed_trade_metrics_separates_estimated_net_pnl_when_fees_missing():
+def test_closed_trade_metrics_promotes_estimated_net_pnl_when_fees_missing():
     state = {
         "side": "long",
         "entry_price": 100.0,
@@ -4100,12 +4488,16 @@ def test_closed_trade_metrics_separates_estimated_net_pnl_when_fees_missing():
     )
 
     assert metrics["fees_verified"] is False
-    assert np.isnan(metrics["net_pnl"])
     assert metrics["entry_fee_estimate_quote"] == pytest.approx(0.05)
     assert metrics["exit_fee_estimate_quote"] == pytest.approx(0.077)
     assert metrics["estimated_fees_amount"] == pytest.approx(0.127)
     assert metrics["fees_estimated"] is True
     assert metrics["fees_estimated_complete"] is True
+    assert metrics["fees_amount"] == pytest.approx(0.127)
+    assert metrics["gross_to_net_cost_quote"] == pytest.approx(0.127)
+    assert metrics["gross_to_net_cost_pct"] == pytest.approx(0.127 / 100.0)
+    assert metrics["net_pnl"] == pytest.approx(9.873)
+    assert metrics["net_pnl_pct"] == pytest.approx(9.873 / 100.0)
     assert metrics["net_pnl_estimated"] == pytest.approx(9.873)
     assert metrics["net_pnl_pct_estimated"] == pytest.approx(9.873 / 100.0)
     assert metrics["net_pnl_verification_status"] == "estimated_missing_exchange_fees"
@@ -4145,6 +4537,9 @@ def test_closed_trade_metrics_flags_partial_exchange_fees():
     )
     assert metrics["entry_fee_quote"] == pytest.approx(0.01)
     assert metrics["exit_fee_estimate_quote"] == pytest.approx(0.077)
+    assert metrics["fees_amount"] == pytest.approx(0.087)
+    assert metrics["net_pnl"] == pytest.approx(9.913)
+    assert metrics["net_pnl_pct"] == pytest.approx(9.913 / 100.0)
 
 
 def test_closed_trade_metrics_estimates_missing_fees_with_live_perp_default(
@@ -4194,6 +4589,11 @@ def test_closed_trade_metrics_estimates_missing_fees_with_live_perp_default(
         "default_live_perp_fee_bps_exit_market"
     )
     assert metrics["estimated_fees_amount"] == pytest.approx(expected_fees)
+    assert metrics["fees_amount"] == pytest.approx(expected_fees)
+    assert metrics["net_pnl"] == pytest.approx(gross - expected_fees)
+    assert metrics["net_pnl_pct"] == pytest.approx(
+        (gross - expected_fees) / (312.7 * 0.02)
+    )
     assert metrics["net_pnl_estimated"] == pytest.approx(gross - expected_fees)
     assert metrics["net_pnl_verification_status"] == "estimated_missing_exchange_fees"
 
@@ -4329,6 +4729,62 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
             "perp_liquidation_required_distance_pct": 0.1945,
             "perp_liquidation_distance_at_requested_pct": 0.045,
             "perp_liquidation_distance_at_guarded_pct": 0.195,
+            "policy_archetype": "long__compression_release",
+            "policy_archetype_source": "policy_archetype",
+            "local_side_archetype": "long__compression_release",
+            "source_archetype": "compression_release",
+            "archetype_label_family": "compression_release",
+            "auction_rank_pct": 0.9399,
+            "normalized_rank_score": 0.9411,
+            "threshold_rank_score": 0.9252,
+            "threshold_rank_score_source": "threshold_rank_score_after_friction_ev",
+            "adjusted_rank_score": 0.9252,
+            "ev_adjusted_rank_score": 0.9252,
+            "final_gate_rank_score": 0.9252,
+            "final_gate_threshold": 0.9,
+            "final_gate_rank_score_source": "portfolio_gate",
+            "portfolio_priority": 0.9188,
+            "portfolio_priority_multiplier": 1.03,
+            "portfolio_priority_adjustment": 0.012,
+            "portfolio_rank_adjustment": -0.006,
+            "portfolio_priority_after_live_friction_ev": 0.9188,
+            "archetype_hit_surprise_threshold": 0.86,
+            "archetype_hit_surprise_mode": "hit_surprise_priority_rank_50",
+            "archetype_hit_surprise_threshold_delta": -0.02,
+            "archetype_hit_surprise_applied": True,
+            "archetype_hit_surprise_reason": "applied",
+            "archetype_hit_surprise_matched_key": "long__compression_release",
+            "archetype_hit_surprise_actual_hit_rate": 0.72,
+            "archetype_hit_surprise_expected_hit_rate": 0.64,
+            "archetype_hit_surprise_hit_rate_delta": 0.08,
+            "archetype_hit_surprise_hit_rate_surprise_z": 1.4,
+            "archetype_hit_surprise_support_confidence": 0.75,
+            "archetype_hit_surprise_n_eff": 24.0,
+            "dynamic_hr_surprise_threshold": 0.805,
+            "dynamic_hr_surprise_applied": True,
+            "dynamic_hr_surprise_reason": "applied_recent_hr",
+            "dynamic_hr_surprise_head": "long",
+            "dynamic_hr_surprise_z_eff": -0.45,
+            "dynamic_hr_surprise_guarded_y": 0.68,
+            "dynamic_hr_surprise_w_lower": 0.11,
+            "dynamic_hr_surprise_w_raise": 0.16,
+            "dynamic_hr_surprise_state_age_days": 2.5,
+            "strategy_ev_hit_rate": 0.70,
+            "strategy_ev_avg_net_return": 0.004,
+            "strategy_ev_gate_allowed": True,
+            "strategy_ev_gate_reason": "pass",
+            "estimated_ev_net_return": 0.014269,
+            "estimated_ev_historical_net_return": 0.014269,
+            "estimated_ev_historical_cost_bps": 101.22,
+            "ev_adjusted_net_return_after_friction": 0.00628,
+            "ev_adjusted_historical_net_return_before_rebase": 0.014269,
+            "ev_inference_cost_rebase_enabled": True,
+            "ev_inference_cost_rebase_applied": True,
+            "ev_inference_fixed_round_trip_cost_bps": 20.0,
+            "ev_inference_spread_multiplier": 1.5,
+            "ev_inference_spread_model_bps": 73.2,
+            "ev_inference_total_cost_bps": 93.2,
+            "ev_inference_cost_model_contract": "fixed20bps_plus_1.5x_live_spread",
         },
         config={"market_mode": "perps"},
     )
@@ -4352,6 +4808,22 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
     )
     assert "perp_liquidation_guarded_leverage: 4.0000x" in close_body
     assert "perp_liquidation_stop_distance_pct: 18.4500%" in close_body
+    assert "policy_archetype: long__compression_release" in close_body
+    assert "policy_archetype_source: policy_archetype" in close_body
+    assert "auction_rank_pct: 0.939900" in close_body
+    assert "threshold_rank_score_source: threshold_rank_score_after_friction_ev" in close_body
+    assert "portfolio_priority_after_live_friction_ev: 0.918800" in close_body
+    assert "archetype_recent_hit_rate: 72.0000%" in close_body
+    assert "archetype_baseline_hit_rate: 64.0000%" in close_body
+    assert "archetype_recent_vs_baseline_hit_rate_delta: 8.0000%" in close_body
+    assert "archetype_hit_surprise_n_eff: 24.0000" in close_body
+    assert "dynamic_hr_surprise_threshold" not in close_body
+    assert "dynamic_hr_surprise_reason" not in close_body
+    assert "dynamic_hr_surprise_state_age_days" not in close_body
+    assert "strategy_ev_avg_net_return: 0.4000%" in close_body
+    assert "ev_adjusted_net_return_after_friction: 0.6280%" in close_body
+    assert "ev_inference_total_cost_bps: 93.2000" in close_body
+    assert "ev_inference_cost_model_contract: fixed20bps_plus_1.5x_live_spread" in close_body
     assert "entry_fee_quote" not in close_body
     assert "nan" not in close_body.lower()
 
@@ -4371,6 +4843,16 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
             "exit_vs_expected_spread_bps": 12.3,
             "net_pnl_verification_status": "estimated_missing_exchange_fees",
             "policy_rank_pct": 0.91,
+            "auction_rank_pct": 0.94,
+            "threshold_rank_score": 0.9252,
+            "threshold_rank_score_source": "threshold_rank_score_after_friction_ev",
+            "adjusted_rank_score": 0.9252,
+            "ev_adjusted_rank_score": 0.9252,
+            "final_gate_rank_score": 0.9252,
+            "final_gate_threshold": 0.9,
+            "portfolio_priority": 0.9188,
+            "portfolio_priority_multiplier": 1.03,
+            "portfolio_rank_adjustment": -0.006,
             "deployment_rank_threshold": 0.71,
             "base_pred": 0.81,
             "base_rank_pct": 0.93,
@@ -4378,7 +4860,34 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
             "inference_drift_score": 0.12,
             "uncertainty_score": 0.34,
             "dynamic_hr_surprise_z_eff": -0.45,
+            "dynamic_hr_surprise_threshold": 0.805,
+            "dynamic_hr_surprise_applied": True,
+            "dynamic_hr_surprise_reason": "applied_recent_hr",
+            "dynamic_hr_surprise_head": "long",
+            "dynamic_hr_surprise_guarded_y": 0.68,
+            "dynamic_hr_surprise_state_age_days": 2.5,
             "dynamic_hr_threshold": 0.805,
+            "policy_archetype": "long__compression_release",
+            "policy_archetype_source": "policy_archetype",
+            "source_archetype": "compression_release",
+            "archetype_label_family": "compression_release",
+            "archetype_hit_surprise_threshold": 0.86,
+            "archetype_hit_surprise_threshold_delta": -0.02,
+            "archetype_hit_surprise_actual_hit_rate": 0.72,
+            "archetype_hit_surprise_expected_hit_rate": 0.64,
+            "archetype_hit_surprise_hit_rate_delta": 0.08,
+            "archetype_hit_surprise_hit_rate_surprise_z": 1.4,
+            "archetype_hit_surprise_support_confidence": 0.75,
+            "archetype_hit_surprise_n_eff": 24.0,
+            "strategy_ev_hit_rate": 0.70,
+            "strategy_ev_avg_net_return": 0.004,
+            "estimated_ev_net_return": 0.014269,
+            "estimated_ev_historical_net_return": 0.014269,
+            "ev_adjusted_net_return_after_friction": 0.00628,
+            "ev_adjusted_historical_net_return_before_rebase": 0.014269,
+            "ev_inference_total_cost_bps": 93.2,
+            "ev_inference_spread_multiplier": 1.5,
+            "ev_inference_cost_model_contract": "fixed20bps_plus_1.5x_live_spread",
             "perp_liquidation_guard_reason": "capped_to_keep_liquidation_beyond_stop",
             "perp_liquidation_leverage_capped": True,
             "perp_liquidation_requested_leverage": 10.0,
@@ -4406,8 +4915,25 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
     assert "Exit vs Expected Spread Quality" in close_html
     assert "Gap as % of Outcome" in close_html
     assert "trailing profit" in close_html
-    assert "Metrics" in close_html
-    assert "Dynamic HR z_eff" in close_html
+    assert "Drift, Uncertainty and OOD" in close_html
+    assert "Dynamic HR z_eff" not in close_html
+    assert "Dynamic HR Threshold" not in close_html
+    assert "Dynamic HR Reason" not in close_html
+    assert "Policy Archetype" in close_html
+    assert "long__compression_release" in close_html
+    assert "Policy Archetype Source" in close_html
+    assert "Auction Rank pct" in close_html
+    assert "EV Adjusted Rank Score" in close_html
+    assert "Portfolio Priority" in close_html
+    assert "Archetype Recent Performance" in close_html
+    assert "Archetype Recent Hit Rate" in close_html
+    assert "Archetype Baseline Hit Rate" in close_html
+    assert "Recent vs Baseline Hit Rate Delta" in close_html
+    assert "Archetype n_eff" in close_html
+    assert "Strategy EV Net Return" in close_html
+    assert "EV After Live Friction" in close_html
+    assert "EV Inference Total Cost bps" in close_html
+    assert "fixed20bps_plus_1.5x_live_spread" in close_html
     assert "Drift Score" in close_html
     assert "Uncertainty Score" in close_html
     assert "Liquidation Guard" in close_html
@@ -4417,6 +4943,20 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
     assert "Full Audit Detail" in close_html
     assert "estimated_missing_exchange_fees" in close_html
 
+    close_subject = run_inference._build_trade_close_email_subject(
+        {
+            "symbol": "SPX/USD:USD",
+            "side": "long",
+            "reason": "software_executable_stop_breach_pretrigger:trailing_profit",
+            "close_execution_method": "market",
+            "net_pnl_pct_estimated": 0.0123,
+            "exit_vs_policy_stop_bps": 42.0,
+            "stop_origin": "trailing_profit",
+        }
+    )
+    assert close_subject == "EPM trade closed: SPX/USD:USD long Win 1.2300% via market"
+    assert "(policy" not in close_subject
+
     open_body = run_inference._build_trade_open_email_body(
         symbol="TURBO/USD:USD",
         side="short",
@@ -4425,6 +4965,17 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
         decision={
             "policy_rank_pct": 0.92,
             "rank_threshold": 0.89,
+            "policy_archetype": "short__late_run_continuation",
+            "archetype_hit_surprise_threshold": 0.91,
+            "archetype_hit_surprise_threshold_delta": 0.02,
+            "archetype_hit_surprise_applied": True,
+            "archetype_hit_surprise_reason": "applied",
+            "archetype_hit_surprise_matched_key": "short__late_run_continuation",
+            "archetype_hit_surprise_actual_hit_rate": 0.55,
+            "archetype_hit_surprise_expected_hit_rate": 0.68,
+            "archetype_hit_surprise_hit_rate_delta": -0.13,
+            "strategy_ev_hit_rate": 0.61,
+            "strategy_ev_avg_net_return": 0.002,
             "ev_haircut_expected_stop_exit_friction_bps": 79.5,
             "ev_haircut_stop_exit_excess_bps": 64.5,
         },
@@ -4459,6 +5010,10 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
     assert "entry_fee_estimate_source: configured_entry_market_fee_bps" in open_body
     assert "ev_haircut_expected_stop_exit_friction_bps: 79.5000" in open_body
     assert "ev_haircut_stop_exit_excess_bps: 64.5000" in open_body
+    assert "policy_archetype: short__late_run_continuation" in open_body
+    assert "archetype_recent_hit_rate: 55.0000%" in open_body
+    assert "archetype_baseline_hit_rate: 68.0000%" in open_body
+    assert "strategy_ev_hit_rate: 61.0000%" in open_body
     assert "perp_liquidation_guard_reason: requested_leverage_safe" in open_body
     assert "perp_liquidation_guarded_leverage: 4.0000x" in open_body
     assert "base_amount" not in open_body
@@ -4469,7 +5024,15 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
         side="short",
         strategy_id="short_asset",
         size=25.0,
-        decision={"policy_rank_pct": 0.92, "rank_threshold": 0.89},
+        decision={
+            "policy_rank_pct": 0.92,
+            "rank_threshold": 0.89,
+            "policy_archetype": "short__late_run_continuation",
+            "archetype_hit_surprise_threshold": 0.91,
+            "archetype_hit_surprise_actual_hit_rate": 0.55,
+            "archetype_hit_surprise_expected_hit_rate": 0.68,
+            "strategy_ev_hit_rate": 0.61,
+        },
         trade_result={
             "realized_entry_price": 0.0008211,
             "entry_notional_quote": 25.0,
@@ -4489,9 +5052,40 @@ def test_trade_email_bodies_are_sectioned_and_skip_unwired_nan_values():
     assert "EPM Trade Opened" in open_html
     assert "Action" in open_html
     assert "Entry Fee Est." in open_html
+    assert "Policy Archetype" in open_html
+    assert "short__late_run_continuation" in open_html
+    assert "Archetype Recent Hit Rate" in open_html
     assert "Liquidation Guard" in open_html
     assert "Safe Max Leverage" in open_html
     assert "Full Audit Detail" in open_html
+
+
+def test_trade_close_email_cause_prefers_policy_reason_over_execution_mechanism():
+    trailing = run_inference._email_close_cause_plain(
+        {
+            "side": "short",
+            "reason": "software_executable_stop_breach_pre_replace:trailing_profit",
+            "exit_reason_detail": "trailing_profit: mfe=0.005 lock_ret=0.002",
+            "sentinel_executable_price": 100.2,
+            "requested_policy_stop": 100.0,
+            "sentinel_executable_price_source": "orderbook_best_ask",
+        }
+    )
+    pressure = run_inference._email_close_cause_plain(
+        {
+            "side": "short",
+            "reason": "software_executable_stop_breach_pretrigger:exit_pressure_stop_tightening",
+            "exit_reason_detail": "exit_pressure_stop_tightening: exit_pressure=1.5",
+            "sentinel_executable_price": 100.2,
+            "requested_policy_stop": 100.0,
+            "sentinel_executable_price_source": "orderbook_best_ask",
+        }
+    )
+
+    assert trailing == "trailing stop locked profit above the configured cost floor."
+    assert pressure == "policy tightened the stop because exit pressure increased."
+    assert "buy-to-cover price crossed the stop" not in trailing
+    assert "buy-to-cover price crossed the stop" not in pressure
 
 
 def test_trade_result_entry_fields_merge_into_trade_logger_context():
@@ -4620,15 +5214,15 @@ def test_live_replacement_uses_position_barrier_when_artifact_has_none(monkeypat
         )
         _evaluate_oco_policy("BTC/USDT", state, bars, executor)
         assert state["barrier_frac"] == pytest.approx(0.02)
-        assert state["stop_price"] == pytest.approx(
-            100.0 * (1.0 - STOP_MIN_CURRENT_DISTANCE_PCT)
+        assert "BTC/USDT" not in executor.oco_executor.active_positions
+        assert state["sentinel_pretriggered"] is True
+        assert state["last_close_metrics"]["reason"].startswith(
+            "software_executable_stop_breach_pre_replace:"
         )
-        assert state["stop_price"] > old_stop
-        assert state["stop_order_id"] != old_order_id
-        assert exchange.canceled[0][0] == old_order_id
         assert "stop_update_error_category" not in state
         assert any(
-            event.get("event") == "simple_policy_stop_min_current_distance_adjusted"
+            event.get("event")
+            == "software_policy_stop_breached_before_exchange_replace"
             for event in state.get("trade_recap_events", [])
         )
     finally:

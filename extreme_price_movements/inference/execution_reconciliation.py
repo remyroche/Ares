@@ -324,10 +324,19 @@ def _logged_meta_prediction(
 
 def _normalise_ledger(ledger: pd.DataFrame) -> pd.DataFrame:
     out = ledger.copy()
+    decision_ts = (
+        pd.to_datetime(out["decision_ts"], utc=True, errors="coerce")
+        if "decision_ts" in out.columns
+        else pd.Series(pd.NaT, index=out.index, dtype="datetime64[ns, UTC]")
+    )
     if "signal_bar_ts" in out.columns:
-        out["timestamp"] = pd.to_datetime(out["signal_bar_ts"], utc=True, errors="coerce")
+        signal_ts = pd.to_datetime(out["signal_bar_ts"], utc=True, errors="coerce")
     else:
-        out["timestamp"] = pd.to_datetime(out.get("timestamp"), utc=True, errors="coerce")
+        signal_ts = pd.to_datetime(out.get("timestamp"), utc=True, errors="coerce")
+    # Decision replay must distinguish multiple live attempts on the same
+    # signal bar.  Use decision time as the replay timestamp when available,
+    # while retaining signal_bar_ts as a separate diagnostic field.
+    out["timestamp"] = decision_ts.where(decision_ts.notna(), signal_ts)
     out["symbol"] = out.get("symbol", pd.Series("", index=out.index)).astype(str)
     out["strategy_id"] = out.get("strategy_id", pd.Series("", index=out.index)).astype(str)
     side = out.get("side", pd.Series("", index=out.index))
@@ -644,15 +653,15 @@ def _build_live_candidate_table(ledger: pd.DataFrame) -> pd.DataFrame:
     reject_reason = work.get("portfolio_reject_reason", pd.Series("", index=work.index))
     reject_reason = reject_reason.fillna("").astype(str).str.lower()
     live_traded = work.apply(_live_traded, axis=1)
+    # This replay diagnoses row-level policy parity from a live decision ledger;
+    # it is not an independent exchange-state simulator. Rows live already
+    # rejected for non-rank hard reasons must not consume replay auction slots,
+    # otherwise capacity/friction/state rejects can displace the rows live
+    # actually traded and create false live-accept/replay-reject mismatches.
     hard_veto = (
         (~live_traded)
-        & reject_reason.str.contains(
-            "global_auction_data_quality|global_auction_adverse_hourly_close_gap|"
-            "global_auction_symbol_entry_block|recent_losing_trade_cooldown|"
-            "stale_signal|unreliable_raw_signal_close",
-            regex=True,
-            na=False,
-        )
+        & reject_reason.ne("")
+        & ~reject_reason.str.contains("rank_below_dynamic_threshold", na=False)
     )
     # Decision replay is a portfolio-policy diagnostic, not a second live
     # execution engine. Rows that live already hard-vetoed for source quality,

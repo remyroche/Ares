@@ -100,6 +100,9 @@ class Position:
     position_size: float  # As fraction of portfolio or absolute quote notional
     entry_price: float
     is_open: bool = True
+    policy_archetype: str = ""
+    local_side_archetype: str = ""
+    source_archetype: str = ""
 
 
 @dataclass
@@ -141,10 +144,14 @@ class PortfolioManager:
         min_margin_level_after_entry: float = 2.5,
         occupancy_threshold_alpha: float = 1.0,
         occupancy_threshold_power: float = 1.0,
+        allocation_threshold_alpha: float = 0.0,
+        allocation_threshold_power: float = 1.0,
         threshold_viability_margin: float = 0.0,
         max_daily_loss_pct: float = 0.10,
         max_weekly_loss_pct: float = 0.20,
-        max_consecutive_losing_trades: int = 5,
+        max_consecutive_losing_trades: Optional[int] = 10,
+        max_consecutive_losing_trades_per_archetype: Optional[int] = 5,
+        archetype_loss_cooldown_hours: float = 24.0,
         max_failed_api_calls_5m: int = 10,
         max_consecutive_order_rejections: int = 5,
     ):
@@ -159,6 +166,8 @@ class PortfolioManager:
         )
         self.occupancy_threshold_alpha = max(float(occupancy_threshold_alpha), 0.0)
         self.occupancy_threshold_power = max(float(occupancy_threshold_power), 0.0)
+        self.allocation_threshold_alpha = max(float(allocation_threshold_alpha), 0.0)
+        self.allocation_threshold_power = max(float(allocation_threshold_power), 0.0)
         self.threshold_viability_margin = max(float(threshold_viability_margin), 0.0)
         self.margin_total_assets_quote: Optional[float] = None
         self.margin_total_liabilities_quote: Optional[float] = None
@@ -182,7 +191,19 @@ class PortfolioManager:
         self.portfolio_value = portfolio_value
         self.max_daily_loss_pct = max_daily_loss_pct
         self.max_weekly_loss_pct = max_weekly_loss_pct
-        self.max_consecutive_losing_trades = max_consecutive_losing_trades
+        self.max_consecutive_losing_trades = (
+            int(max_consecutive_losing_trades)
+            if max_consecutive_losing_trades is not None
+            else 0
+        )
+        self.max_consecutive_losing_trades_per_archetype = (
+            int(max_consecutive_losing_trades_per_archetype)
+            if max_consecutive_losing_trades_per_archetype is not None
+            else 0
+        )
+        self.archetype_loss_cooldown_hours = max(
+            0.0, float(archetype_loss_cooldown_hours)
+        )
         self.max_failed_api_calls_5m = max_failed_api_calls_5m
         self.max_consecutive_order_rejections = max_consecutive_order_rejections
 
@@ -193,6 +214,8 @@ class PortfolioManager:
         self.pnl_events: List[Dict[str, Any]] = []
         self.failed_api_events: List[pd.Timestamp] = []
         self.consecutive_losing_trades = 0
+        self.archetype_consecutive_losing_trades: Dict[str, int] = {}
+        self.disabled_archetypes: Dict[str, Dict[str, Any]] = {}
         self.consecutive_order_rejections = 0
         self.order_rejection_backoff_until: Optional[pd.Timestamp] = None
         self.manual_reset_required = False
@@ -232,7 +255,16 @@ class PortfolioManager:
             min_margin_level_after_entry=policy.min_margin_level_after_entry,
             occupancy_threshold_alpha=policy.occupancy_threshold_alpha,
             occupancy_threshold_power=policy.occupancy_threshold_power,
+            allocation_threshold_alpha=policy.allocation_threshold_alpha,
+            allocation_threshold_power=policy.allocation_threshold_power,
             threshold_viability_margin=policy.threshold_viability_margin,
+            max_consecutive_losing_trades=policy.max_consecutive_losing_trades,
+            max_consecutive_losing_trades_per_archetype=getattr(
+                policy, "max_consecutive_losing_trades_per_archetype", 5
+            ),
+            archetype_loss_cooldown_hours=getattr(
+                policy, "archetype_loss_cooldown_hours", 24.0
+            ),
             max_same_side=max_same_side,
             max_same_strategy=max_same_strategy,
             portfolio_value=portfolio_value,
@@ -352,6 +384,57 @@ class PortfolioManager:
             "active_cooldowns": active_cooldowns,
             "open_symbols": list(self.positions.keys()),
             "hard_limits": self.get_hard_limit_status(),
+            "archetype_loss_streaks": dict(self.archetype_consecutive_losing_trades),
+            "disabled_archetypes": dict(self.disabled_archetypes),
+            "archetype_loss_cooldown_hours": float(
+                self.archetype_loss_cooldown_hours
+            ),
+        }
+
+    @staticmethod
+    def _normalise_archetype_key(policy_archetype: Optional[str]) -> str:
+        text = str(policy_archetype or "").strip()
+        return text if text else "missing_policy_archetype"
+
+    def _archetype_block_status(
+        self,
+        policy_archetype: Optional[str],
+        current_time: Optional[pd.Timestamp] = None,
+    ) -> Dict[str, Any]:
+        key = self._normalise_archetype_key(policy_archetype)
+        disabled = self.disabled_archetypes.get(key)
+        if disabled:
+            now = (
+                pd.Timestamp(current_time)
+                if current_time is not None
+                else pd.Timestamp.now(tz="UTC")
+            )
+            if now.tzinfo is None:
+                now = now.tz_localize("UTC")
+            disabled_until = disabled.get("disabled_until") or disabled.get(
+                "cooldown_until"
+            )
+            if disabled_until:
+                until = pd.Timestamp(disabled_until)
+                if until.tzinfo is None:
+                    until = until.tz_localize("UTC")
+                if until <= now:
+                    self.disabled_archetypes.pop(key, None)
+                    self.archetype_consecutive_losing_trades[key] = 0
+                    disabled = None
+        return {
+            "policy_archetype": key,
+            "disabled": bool(disabled),
+            "disable_info": dict(disabled or {}),
+            "consecutive_losing_trades": int(
+                self.archetype_consecutive_losing_trades.get(key, 0)
+            ),
+            "max_consecutive_losing_trades_per_archetype": int(
+                self.max_consecutive_losing_trades_per_archetype
+            ),
+            "archetype_loss_cooldown_hours": float(
+                self.archetype_loss_cooldown_hours
+            ),
         }
 
     def calculate_dynamic_threshold(
@@ -364,11 +447,14 @@ class PortfolioManager:
         strategy_penalty: float = 0.0,
         max_threshold: float = 0.99,
     ) -> float:
-        """Calculate adjusted entry threshold based on current position count.
+        """Calculate adjusted entry threshold based on current portfolio pressure.
 
-        Formula: final_threshold = initial_threshold + occupancy * (1.0 - initial_threshold)
+        Formula:
+        final_threshold = initial_threshold
+          + occupancy_pressure * (1.0 - initial_threshold)
+          + allocation_pressure * (1.0 - initial_threshold)
 
-        As more positions are open, thresholds tighten toward 1.0.
+        As more positions or wallet notional are open, thresholds tighten toward 1.0.
         """
         if np.isfinite(initial_threshold) and float(initial_threshold) >= 1.0:
             return float(initial_threshold)
@@ -376,14 +462,25 @@ class PortfolioManager:
         n_positions = len([p for p in self.positions.values() if p.is_open])
 
         occupancy = n_positions / max(self.max_positions, 1)
-        adjustment = (
+        occupancy_adjustment = (
             self.occupancy_threshold_alpha
             * occupancy**self.occupancy_threshold_power
             * (1.0 - initial_threshold)
         )
+        open_notional = float(
+            sum(p.position_size for p in self.positions.values() if p.is_open)
+        )
+        allocation_share = open_notional / max(float(self.portfolio_value), 1e-9)
+        allocation_share = float(np.clip(allocation_share, 0.0, 1.0))
+        allocation_adjustment = (
+            self.allocation_threshold_alpha
+            * allocation_share**self.allocation_threshold_power
+            * (1.0 - initial_threshold)
+        )
         final_threshold = (
             initial_threshold
-            + adjustment
+            + occupancy_adjustment
+            + allocation_adjustment
             + float(self.threshold_viability_margin)
             + float(side_penalty)
             + float(strategy_penalty)
@@ -563,7 +660,10 @@ class PortfolioManager:
             self._trip_hard_limit(
                 f"rolling_weekly_loss_pct {weekly_loss_pct:.4f} >= {self.max_weekly_loss_pct:.4f}"
             )
-        elif self.consecutive_losing_trades >= self.max_consecutive_losing_trades:
+        elif (
+            self.max_consecutive_losing_trades > 0
+            and self.consecutive_losing_trades >= self.max_consecutive_losing_trades
+        ):
             self._trip_hard_limit(
                 f"consecutive_losing_trades {self.consecutive_losing_trades} >= {self.max_consecutive_losing_trades}"
             )
@@ -590,6 +690,14 @@ class PortfolioManager:
                 "failed_api_calls_5m": len(self.failed_api_events),
                 "consecutive_order_rejections": self.consecutive_order_rejections,
                 "consecutive_losing_trades": self.consecutive_losing_trades,
+                "max_consecutive_losing_trades": self.max_consecutive_losing_trades,
+                "max_consecutive_losing_trades_per_archetype": (
+                    self.max_consecutive_losing_trades_per_archetype
+                ),
+                "archetype_loss_cooldown_hours": float(
+                    self.archetype_loss_cooldown_hours
+                ),
+                "disabled_archetypes": dict(self.disabled_archetypes),
             }
 
         allowed = not self.manual_reset_required
@@ -602,6 +710,14 @@ class PortfolioManager:
             "failed_api_calls_5m": len(self.failed_api_events),
             "consecutive_order_rejections": self.consecutive_order_rejections,
             "consecutive_losing_trades": self.consecutive_losing_trades,
+            "max_consecutive_losing_trades": self.max_consecutive_losing_trades,
+            "max_consecutive_losing_trades_per_archetype": (
+                self.max_consecutive_losing_trades_per_archetype
+            ),
+            "archetype_loss_cooldown_hours": float(
+                self.archetype_loss_cooldown_hours
+            ),
+            "disabled_archetypes": dict(self.disabled_archetypes),
         }
 
     def get_hard_limit_status(self) -> Dict[str, Any]:
@@ -669,6 +785,8 @@ class PortfolioManager:
         self.consecutive_order_rejections = 0
         self.order_rejection_backoff_until = None
         self.consecutive_losing_trades = 0
+        self.archetype_consecutive_losing_trades = {}
+        self.disabled_archetypes = {}
 
     def fetch_exchange_snapshot(
         self,
@@ -816,6 +934,7 @@ class PortfolioManager:
         wallet_value: Optional[float] = None,
         side_penalty: float = 0.0,
         strategy_penalty: float = 0.0,
+        policy_archetype: Optional[str] = None,
     ) -> Tuple[bool, Dict[str, Any]]:
         """Check if a new position can be entered.
 
@@ -857,6 +976,15 @@ class PortfolioManager:
             info["reason"] = "hard_limit_block"
             info["hard_limit_reason"] = hard_status.get("reason", "hard_limit_block")
             info["constraints_checked"].append("hard_limits")
+            return False, info
+
+        archetype_status = self._archetype_block_status(
+            policy_archetype, current_time=current_time
+        )
+        info["archetype_loss_guard"] = archetype_status
+        if archetype_status["disabled"]:
+            info["reason"] = "archetype_loss_streak_block"
+            info["constraints_checked"].append("archetype_loss_guard")
             return False, info
 
         capacity = self.get_portfolio_capacity(
@@ -952,6 +1080,9 @@ class PortfolioManager:
         position_size: float,
         entry_price: float,
         entry_time: Optional[pd.Timestamp] = None,
+        policy_archetype: Optional[str] = None,
+        local_side_archetype: Optional[str] = None,
+        source_archetype: Optional[str] = None,
     ) -> Position:
         """Record a new position opening."""
         if entry_time is None:
@@ -965,6 +1096,9 @@ class PortfolioManager:
             position_size=position_size,
             entry_price=entry_price,
             is_open=True,
+            policy_archetype=str(policy_archetype or ""),
+            local_side_archetype=str(local_side_archetype or ""),
+            source_archetype=str(source_archetype or ""),
         )
 
         self.positions[symbol] = position
@@ -981,6 +1115,9 @@ class PortfolioManager:
         exit_price: float,
         exit_time: Optional[pd.Timestamp] = None,
         exit_reason: str = "",
+        policy_archetype: Optional[str] = None,
+        local_side_archetype: Optional[str] = None,
+        source_archetype: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Record position closure and update cooldowns if needed.
 
@@ -1007,19 +1144,107 @@ class PortfolioManager:
 
         pnl_usdt = pnl_pct * position.position_size
         was_win = pnl_usdt > 0
+        resolved_policy_archetype = str(
+            policy_archetype
+            or position.policy_archetype
+            or local_side_archetype
+            or position.local_side_archetype
+            or source_archetype
+            or position.source_archetype
+            or ""
+        )
+        archetype_key = self._normalise_archetype_key(resolved_policy_archetype)
         self.pnl_events.append(
             {
                 "timestamp": exit_time,
                 "symbol": symbol,
+                "side": position.side,
                 "strategy_id": position.strategy_id,
+                "policy_archetype": resolved_policy_archetype,
+                "archetype_key": archetype_key,
                 "pnl_usdt": float(pnl_usdt),
             }
         )
+        risk_guard_events: List[Dict[str, Any]] = []
         if was_win:
             self.consecutive_losing_trades = 0
+            self.archetype_consecutive_losing_trades[archetype_key] = 0
         else:
             self.consecutive_losing_trades += 1
-        self.evaluate_hard_limits(exit_time)
+            archetype_streak = int(
+                self.archetype_consecutive_losing_trades.get(archetype_key, 0)
+            ) + 1
+            self.archetype_consecutive_losing_trades[archetype_key] = archetype_streak
+            if (
+                self.max_consecutive_losing_trades_per_archetype > 0
+                and archetype_streak
+                >= self.max_consecutive_losing_trades_per_archetype
+                and archetype_key not in self.disabled_archetypes
+            ):
+                disabled_at = pd.Timestamp(exit_time)
+                disabled_until = disabled_at + pd.Timedelta(
+                    hours=float(self.archetype_loss_cooldown_hours)
+                )
+                block_info = {
+                    "policy_archetype": archetype_key,
+                    "disabled_at": disabled_at.isoformat(),
+                    "disabled_until": disabled_until.isoformat(),
+                    "cooldown_hours": float(self.archetype_loss_cooldown_hours),
+                    "reason": (
+                        "archetype_consecutive_losing_trades "
+                        f"{archetype_streak} >= "
+                        f"{self.max_consecutive_losing_trades_per_archetype}; "
+                        f"cooldown {self.archetype_loss_cooldown_hours:.1f}h"
+                    ),
+                    "streak": int(archetype_streak),
+                    "threshold": int(
+                        self.max_consecutive_losing_trades_per_archetype
+                    ),
+                    "last_symbol": symbol,
+                    "last_side": position.side,
+                    "last_strategy_id": position.strategy_id,
+                    "last_pnl_usdt": float(pnl_usdt),
+                    "last_pnl_pct": float(pnl_pct),
+                }
+                self.disabled_archetypes[archetype_key] = block_info
+                tprint(
+                    "[PortfolioManager] Archetype cooldown after loss streak: "
+                    f"{block_info['reason']} symbol={symbol} "
+                    f"until={block_info['disabled_until']}"
+                )
+                risk_guard_events.append(
+                    {
+                        "event": "archetype_loss_streak_cooldown",
+                        "scope": "archetype",
+                        **block_info,
+                    }
+                )
+            if (
+                self.max_consecutive_losing_trades > 0
+                and self.consecutive_losing_trades
+                >= self.max_consecutive_losing_trades
+                and not self.manual_reset_required
+            ):
+                risk_guard_events.append(
+                    {
+                        "event": "global_loss_streak_hard_limit",
+                        "scope": "global",
+                        "reason": (
+                            "consecutive_losing_trades "
+                            f"{self.consecutive_losing_trades} >= "
+                            f"{self.max_consecutive_losing_trades}"
+                        ),
+                        "streak": int(self.consecutive_losing_trades),
+                        "threshold": int(self.max_consecutive_losing_trades),
+                        "last_symbol": symbol,
+                        "last_side": position.side,
+                        "last_strategy_id": position.strategy_id,
+                        "last_policy_archetype": archetype_key,
+                        "last_pnl_usdt": float(pnl_usdt),
+                        "last_pnl_pct": float(pnl_pct),
+                    }
+                )
+        _, hard_status = self.evaluate_hard_limits(exit_time)
 
         result = {
             "symbol": symbol,
@@ -1032,6 +1257,22 @@ class PortfolioManager:
             "was_win": was_win,
             "exit_reason": exit_reason,
             "holding_time": (exit_time - position.entry_time).total_seconds() / 3600,
+            "policy_archetype": archetype_key,
+            "local_side_archetype": str(
+                local_side_archetype or position.local_side_archetype or ""
+            ),
+            "source_archetype": str(source_archetype or position.source_archetype or ""),
+            "consecutive_losing_trades": int(self.consecutive_losing_trades),
+            "max_consecutive_losing_trades": int(self.max_consecutive_losing_trades),
+            "archetype_consecutive_losing_trades": int(
+                self.archetype_consecutive_losing_trades.get(archetype_key, 0)
+            ),
+            "max_consecutive_losing_trades_per_archetype": int(
+                self.max_consecutive_losing_trades_per_archetype
+            ),
+            "disabled_archetypes": dict(self.disabled_archetypes),
+            "hard_limit_status": hard_status,
+            "risk_guard_events": risk_guard_events,
         }
 
         # Update cooldown if it was a loss

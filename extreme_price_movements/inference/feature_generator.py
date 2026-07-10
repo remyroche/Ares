@@ -2891,6 +2891,50 @@ def _is_live_synthesized_feature_key(key: str) -> bool:
         or _is_calendar_feature_key(key_s)
         or _is_rolling30d_feature_key(key_s)
         or key_s == "barrier_pct"
+        or key_s == "side"
+        or key_s.startswith("__meta_raw__")
+        or (key_s.startswith("__regime_source_") and key_s.endswith("__"))
+        or key_s.startswith("rel_rankband_")
+        or key_s.startswith("rel_marginband_")
+        or bool(re.fullmatch(r"dae_b16_\d{2}", key_s))
+        or bool(re.fullmatch(r"gmm_prob_\d+", key_s))
+        or bool(re.fullmatch(r"gmm_cluster_posterior_\d+", key_s))
+        or bool(re.fullmatch(r"gmm_dist_center_\d+", key_s))
+        or bool(re.fullmatch(r"gmm_mahal_\d+", key_s))
+        or key_s
+        in {
+            "gmm_cluster_id",
+            "gmm_posterior_max",
+            "gmm_posterior_margin",
+            "gmm_posterior_delta_1",
+            "gmm_posterior_accel_1",
+            "gmm_entropy",
+            "cluster_entropy",
+            "cluster_entropy_norm",
+            "cluster_entropy_delta_1",
+            "cluster_entropy_accel_1",
+            "mahalanobis_distance",
+            "min_mahalanobis",
+            "min_mahalanobis_delta_1",
+            "expected_mahalanobis",
+            "expected_mahalanobis_delta_1",
+            "expected_mahalanobis_accel_1",
+            "cluster_t",
+            "cluster_speed",
+            "cluster_acceleration",
+            "time_since_cluster_change",
+            "rolling_cluster_stability",
+            "cluster_flip_count_20",
+            "AE_reconstruction_error",
+            "ae_reconstruction_error",
+            "dae_reconstruction_error",
+            "dae_reconstruction_error_zscore",
+            "dae_reconstruction_error_delta_1",
+            "dae_reconstruction_error_accel_1",
+            "latent_mahalanobis_drift",
+            "latent_speed",
+            "latent_acceleration",
+        }
     )
 
 
@@ -5279,6 +5323,34 @@ def prewarm_selected_model_feature_cache_for_live(
                 **sidecar_meta,
                 **matrix_prewarm,
             }
+        accept_low_finite = str(
+            cfg.get(
+                "live_model_feature_prewarm_accept_low_finite_with_row_strict",
+                os.environ.get(
+                    "EPM_LIVE_MODEL_FEATURE_PREWARM_ACCEPT_LOW_FINITE_WITH_ROW_STRICT",
+                    "1",
+                ),
+            )
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        if (
+            accept_low_finite
+            and matrix_prewarm.get("matrix_loaded")
+            and int(matrix_prewarm.get("matrix_missing_features") or 0) == 0
+        ):
+            tprint(
+                "Live selected model-feature prewarm sidecar has low finite "
+                "support but no missing feature keys; continuing with row-strict "
+                "model scoring instead of blocking on training-path repair: "
+                f"source_run_id={source_run_id} end_ts={end_ts.isoformat()} "
+                f"low_finite={matrix_prewarm.get('matrix_low_finite_features')} "
+                f"full_rows={matrix_prewarm.get('matrix_full_feature_rows')}"
+            )
+            return {
+                "status": "selected_matrix_cache_ready_low_finite_row_strict",
+                "source_run_id": source_run_id,
+                **sidecar_meta,
+                **matrix_prewarm,
+            }
         tprint(
             "Live selected model-feature prewarm sidecar has incomplete "
             "finite support; forcing training-path repair before scoring: "
@@ -5313,6 +5385,35 @@ def prewarm_selected_model_feature_cache_for_live(
         )
         return {
             "status": "selected_matrix_cache_ready",
+            "source_run_id": source_run_id,
+            **sidecar_meta,
+            **matrix_prewarm,
+        }
+    accept_low_finite = str(
+        cfg.get(
+            "live_model_feature_prewarm_accept_low_finite_with_row_strict",
+            os.environ.get(
+                "EPM_LIVE_MODEL_FEATURE_PREWARM_ACCEPT_LOW_FINITE_WITH_ROW_STRICT",
+                "1",
+            ),
+        )
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    if (
+        accept_low_finite
+        and matrix_prewarm.get("matrix_loaded")
+        and int(matrix_prewarm.get("matrix_missing_features") or 0) == 0
+    ):
+        tprint(
+            "Live selected model-feature prewarm compacted selected matrix with "
+            "low finite support but no missing feature keys; continuing with "
+            "row-strict model scoring instead of blocking on training-path "
+            "repair: "
+            f"source_run_id={source_run_id} end_ts={end_ts.isoformat()} "
+            f"low_finite={matrix_prewarm.get('matrix_low_finite_features')} "
+            f"full_rows={matrix_prewarm.get('matrix_full_feature_rows')}"
+        )
+        return {
+            "status": "selected_matrix_cache_ready_low_finite_row_strict",
             "source_run_id": source_run_id,
             **sidecar_meta,
             **matrix_prewarm,

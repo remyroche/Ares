@@ -27,9 +27,30 @@ REPORT_TRADE_COLUMNS = [
     "symbol",
     "side",
     "strategy_id",
+    "policy_archetype",
+    "local_side_archetype",
     "market_mode",
     "meta_pred",
     "calibrated_score",
+    "policy_rank_pct",
+    "rank_percentile",
+    "effective_threshold",
+    "deployment_rank_threshold",
+    "rank_threshold",
+    "archetype_hit_surprise_threshold",
+    "archetype_hit_surprise_threshold_delta",
+    "archetype_hit_surprise_applied",
+    "archetype_hit_surprise_reason",
+    "archetype_hit_surprise_matched_key",
+    "archetype_hit_surprise_actual_hit_rate",
+    "archetype_hit_surprise_expected_hit_rate",
+    "archetype_hit_surprise_hit_rate_delta",
+    "archetype_hit_surprise_hit_rate_surprise_z",
+    "archetype_hit_surprise_support_confidence",
+    "strategy_ev_hit_rate",
+    "strategy_ev_avg_net_return",
+    "strategy_ev_gate_allowed",
+    "strategy_ev_gate_reason",
     "ridge_position_size",
     "quote_size",
     "entry_notional_quote",
@@ -172,9 +193,16 @@ def _html_trade_table(trades: pd.DataFrame, *, max_rows: int = 40) -> str:
         "symbol",
         "side",
         "strategy_id",
+        "policy_archetype",
         "status",
         "calibrated_score",
+        "policy_rank_pct",
         "rank_percentile",
+        "effective_threshold",
+        "archetype_hit_surprise_threshold",
+        "archetype_hit_surprise_threshold_delta",
+        "archetype_hit_surprise_actual_hit_rate",
+        "strategy_ev_hit_rate",
         "entry_notional_quote",
         "net_pnl_amount",
         "net_pnl_pct",
@@ -445,6 +473,156 @@ def _mfe_losing_trade_recap(closed: pd.DataFrame) -> List[str]:
         for thr in thresholds
     ]
     return ["MFE-but-losing recap:", " | ".join(parts)]
+
+
+def _first_existing_column(frame: pd.DataFrame, candidates: List[str]) -> str:
+    for col in candidates:
+        if col in frame.columns:
+            return col
+    return ""
+
+
+def _numeric_column(frame: pd.DataFrame, col: str) -> pd.Series:
+    if not col:
+        return pd.Series(np.nan, index=frame.index, dtype=float)
+    return pd.to_numeric(frame.get(col, pd.Series(index=frame.index, dtype=float)), errors="coerce").replace(
+        [np.inf, -np.inf], np.nan
+    )
+
+
+def _mode_text(series: pd.Series) -> str:
+    values = series.dropna().astype(str)
+    values = values.loc[~values.str.lower().isin({"", "nan", "none", "na", "n/a"})]
+    if values.empty:
+        return "n/a"
+    return str(values.value_counts().idxmax())[:64]
+
+
+def _archetype_policy_recap(trades: pd.DataFrame) -> str:
+    """Summarise live thresholds and hit-rate-surprise context by policy archetype."""
+    if trades.empty:
+        return "No trade events logged in this reporting window."
+
+    arch_col = _first_existing_column(
+        trades,
+        ["policy_archetype", "local_side_archetype", "archetype_policy_key", "source_tag"],
+    )
+    if not arch_col:
+        return "No archetype column is available in the trade log yet."
+
+    work = trades.copy()
+    work["_policy_archetype"] = (
+        work[arch_col].fillna("missing").astype(str).replace("", "missing")
+    )
+    work["_closed"] = _trade_closed_mask(work)
+
+    rank_col = _first_existing_column(work, ["policy_rank_pct", "rank_percentile", "calibrated_score"])
+    threshold_col = _first_existing_column(
+        work,
+        [
+            "effective_threshold",
+            "deployment_rank_threshold",
+            "rank_threshold",
+            "archetype_hit_surprise_threshold",
+        ],
+    )
+    hit_threshold_col = _first_existing_column(
+        work, ["archetype_hit_surprise_threshold", threshold_col]
+    )
+    net_col = _first_existing_column(work, ["net_pnl_pct", "gross_pnl_pct"])
+    net_amount_col = _first_existing_column(work, ["net_pnl_amount", "net_pnl"])
+
+    work["_rank"] = _numeric_column(work, rank_col)
+    work["_threshold"] = _numeric_column(work, threshold_col)
+    work["_hit_threshold"] = _numeric_column(work, hit_threshold_col)
+    work["_threshold_delta"] = _numeric_column(
+        work, "archetype_hit_surprise_threshold_delta"
+    )
+    work["_quality_adjustment"] = _numeric_column(
+        work, "archetype_hit_surprise_quality_adjustment"
+    )
+    work["_priority_multiplier"] = _numeric_column(
+        work, "archetype_hit_surprise_priority_multiplier"
+    )
+    work["_rank_adjustment"] = _numeric_column(
+        work, "archetype_hit_surprise_rank_adjustment"
+    )
+    work["_actual_hr"] = _numeric_column(
+        work, "archetype_hit_surprise_actual_hit_rate"
+    )
+    work["_expected_hr"] = _numeric_column(
+        work, "archetype_hit_surprise_expected_hit_rate"
+    )
+    work["_hr_delta"] = _numeric_column(work, "archetype_hit_surprise_hit_rate_delta")
+    work["_hr_z"] = _numeric_column(
+        work, "archetype_hit_surprise_hit_rate_surprise_z"
+    )
+    work["_support_conf"] = _numeric_column(
+        work, "archetype_hit_surprise_support_confidence"
+    )
+    work["_ev_hr"] = _numeric_column(work, "strategy_ev_hit_rate")
+    work["_ev_net"] = _numeric_column(work, "strategy_ev_avg_net_return")
+    work["_net_pct"] = _numeric_column(work, net_col)
+    work["_net_amount"] = _numeric_column(work, net_amount_col)
+
+    lines = [
+        f"archetype_source={arch_col}",
+        (
+            "columns: archetype | events | closed | hit_rate | avg_net_pct | "
+            "avg_rank | avg_threshold | archetype_hr_threshold | threshold_delta | "
+            "quality_adj | priority_mult | rank_adj | "
+            "recent_hr | expected_hr | hr_delta | surprise_z | support | "
+            "strategy_ev_hr | strategy_ev_net | applied | reason"
+        ),
+    ]
+    for archetype, group in work.groupby("_policy_archetype", dropna=False, sort=True):
+        closed = group.loc[group["_closed"]]
+        closed_n = int(len(closed))
+        hit_rate = (
+            float((closed["_net_amount"].fillna(closed["_net_pct"]) > 0.0).mean())
+            if closed_n
+            else np.nan
+        )
+        avg_net_pct = float(closed["_net_pct"].mean()) if closed_n else np.nan
+        applied = int(
+            group.get(
+                "archetype_hit_surprise_applied",
+                pd.Series(False, index=group.index),
+            )
+            .fillna(False)
+            .astype(str)
+            .str.lower()
+            .isin({"1", "true", "yes", "y"})
+            .sum()
+        )
+        lines.append(
+            " | ".join(
+                [
+                    str(archetype)[:72],
+                    str(int(len(group))),
+                    str(closed_n),
+                    _format_pct(hit_rate),
+                    _format_pct(avg_net_pct),
+                    _format_pct(float(group["_rank"].mean())),
+                    _format_pct(float(group["_threshold"].mean())),
+                    _format_pct(float(group["_hit_threshold"].mean())),
+                    _format_pct(float(group["_threshold_delta"].mean())),
+                    _format_pct(float(group["_quality_adjustment"].mean())),
+                    _format_money(float(group["_priority_multiplier"].mean())),
+                    _format_pct(float(group["_rank_adjustment"].mean())),
+                    _format_pct(float(group["_actual_hr"].mean())),
+                    _format_pct(float(group["_expected_hr"].mean())),
+                    _format_pct(float(group["_hr_delta"].mean())),
+                    _format_money(float(group["_hr_z"].mean())),
+                    _format_money(float(group["_support_conf"].mean())),
+                    _format_pct(float(group["_ev_hr"].mean())),
+                    _format_pct(float(group["_ev_net"].mean())),
+                    str(applied),
+                    _mode_text(group.get("archetype_hit_surprise_reason", pd.Series(index=group.index, dtype=object))),
+                ]
+            )
+        )
+    return "\n".join(lines)
 
 
 def _trades_since(logger: TradeLogger, since_ts: Optional[str]) -> pd.DataFrame:
@@ -1060,6 +1238,9 @@ class DailyDeploymentReporter:
                 "Dynamic Strategy Performance",
                 _dynamic_strategy_performance_recap(cfg),
                 "",
+                "Archetype Threshold Recap",
+                _archetype_policy_recap(trades),
+                "",
                 "Confidence Calibration Recap",
                 _confidence_calibration_recap(trades),
                 "",
@@ -1111,6 +1292,10 @@ class DailyDeploymentReporter:
             _html_section(
                 "Dynamic Strategy Performance",
                 _html_pre(_dynamic_strategy_performance_recap(cfg)),
+            ),
+            _html_section(
+                "Archetype Threshold Recap",
+                _html_pre(_archetype_policy_recap(trades)),
             ),
             _html_section(
                 "Confidence Calibration",

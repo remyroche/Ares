@@ -83,6 +83,7 @@ from .features_gmm_ae import (
     AE_GMM_FEATURE_COLUMNS,
     AE_GMM_LATENT_FEATURE_COLUMNS,
     fit_ae_gmm_state,
+    save_ae_gmm_state_artifact,
     transform_ae_gmm_features,
 )
 
@@ -184,7 +185,7 @@ LGBM_SELECTED_FEATURES_MIN = int(os.environ.get("EPM_LGBM_SELECTED_FEATURES_MIN"
 LGBM_SELECTED_FEATURES_MAX = int(os.environ.get("EPM_LGBM_SELECTED_FEATURES_MAX", "350"))
 LGBM_MAX_ROUNDS = int(os.environ.get("EPM_LGBM_MAX_ROUNDS", "10"))
 LGBM_ROW_SUBSAMPLE_FRAC = float(os.environ.get("EPM_LGBM_ROW_SUBSAMPLE_FRAC", "1.0"))
-LGBM_UNIVARIATE_MAX_ROWS = int(os.environ.get("EPM_LGBM_UNIVARIATE_MAX_ROWS", "20000"))
+LGBM_UNIVARIATE_MAX_ROWS = int(os.environ.get("EPM_LGBM_UNIVARIATE_MAX_ROWS", "10000"))
 LGBM_UNIVARIATE_ROW_SUBSAMPLE_FRAC = float(os.environ.get("EPM_LGBM_UNIVARIATE_ROW_SUBSAMPLE_FRAC", os.environ.get("EPM_LGBM_ROW_SUBSAMPLE_FRAC", "1.0")))
 LGBM_FEATURE_SELECTION_RECENT_DAYS = float(
     os.environ.get("EPM_LGBM_FEATURE_SELECTION_RECENT_DAYS", "21")
@@ -357,11 +358,15 @@ LGBM_AE_GMM_MODEL_FEATURES = os.environ.get("EPM_LGBM_AE_GMM_MODEL_FEATURES", "1
     "n",
     "off",
 }
-LGBM_AE_GMM_MAX_TRAIN_ROWS = int(os.environ.get("EPM_LGBM_AE_GMM_MAX_TRAIN_ROWS", "5000"))
+LGBM_AE_GMM_MAX_TRAIN_ROWS = int(os.environ.get("EPM_LGBM_AE_GMM_MAX_TRAIN_ROWS", "15000"))
+LGBM_AE_GMM_GMM_MAX_TRAIN_ROWS = int(
+    os.environ.get("EPM_LGBM_AE_GMM_GMM_MAX_TRAIN_ROWS", "100000")
+)
 LGBM_AE_GMM_MAX_ITER = int(os.environ.get("EPM_LGBM_AE_GMM_MAX_ITER", "80"))
 LGBM_AE_GMM_CLUSTER_CANDIDATES = os.environ.get("EPM_LGBM_AE_GMM_CLUSTER_CANDIDATES", "").strip()
 LGBM_AE_GMM_REG_COVAR_CANDIDATES = os.environ.get("EPM_LGBM_AE_GMM_REG_COVAR_CANDIDATES", "").strip()
 LGBM_AE_GMM_SMOOTH_LAMBDA_CANDIDATES = os.environ.get("EPM_LGBM_AE_GMM_SMOOTH_LAMBDA_CANDIDATES", "").strip()
+LGBM_AE_GMM_INPUT_POLICY = os.environ.get("EPM_LGBM_AE_GMM_INPUT_POLICY", "a0bis").strip().lower()
 LGBM_AE_GMM_REQUIRE_BOTH_SIDES = os.environ.get("EPM_LGBM_AE_GMM_REQUIRE_BOTH_SIDES", "1").strip().lower() not in {
     "0",
     "false",
@@ -381,6 +386,39 @@ LGBM_AE_GMM_INCLUDE_CLUSTER_ID_MODEL_FEATURES = os.environ.get(
 }
 LGBM_AE_GMM_MIN_SIDE_CLUSTER_FRAC = float(os.environ.get("EPM_LGBM_AE_GMM_MIN_SIDE_CLUSTER_FRAC", "0.02"))
 LGBM_AE_GMM_MIN_SIDE_CLUSTER_ROWS = int(os.environ.get("EPM_LGBM_AE_GMM_MIN_SIDE_CLUSTER_ROWS", "10"))
+
+_AE_GMM_A0BIS_MOMENTUM_TOKENS = (
+    "lr_",
+    "ret",
+    "return",
+    "trend",
+    "mom",
+    "adx",
+    "impulse",
+    "breakout",
+    "z_r",
+    "zr_",
+    "convexity",
+    "slope",
+    "velocity",
+    "speed",
+    "thrust",
+)
+_AE_GMM_A0BIS_NORMALIZED_TOKENS = (
+    "atr",
+    "vol_norm",
+    "_z",
+    "z_",
+    "cp_z",
+    "ts_resid",
+    "ratio",
+    "rank",
+    "pct",
+    "tanh",
+    "bps",
+    "rsi",
+    "autocorr",
+)
 LGBM_FINAL_MODEL_CHECKPOINT_DIR = os.environ.get("EPM_LGBM_FINAL_MODEL_CHECKPOINT_DIR", "").strip()
 LGBM_TRAIN_PROVENANCE_ENABLED = os.environ.get(
     "EPM_LGBM_TRAIN_PROVENANCE_ENABLED",
@@ -647,6 +685,28 @@ LGBM_REBALANCE_POS_MASS_MIN = float(os.environ.get("EPM_LGBM_REBALANCE_POS_MASS_
 LGBM_REBALANCE_POS_MASS_MAX = float(os.environ.get("EPM_LGBM_REBALANCE_POS_MASS_MAX", "0.55"))
 LGBM_REBALANCE_MAX_MULTIPLIER = float(os.environ.get("EPM_LGBM_REBALANCE_MAX_MULTIPLIER", "2.0"))
 LGBM_HPO_PARAM_SET = str(os.environ.get("EPM_LGBM_HPO_PARAM_SET", "full")).strip().lower()
+LGBM_PER_SIDE_FEATURE_SELECTION = os.environ.get(
+    "EPM_LGBM_PER_SIDE_FEATURE_SELECTION", "1"
+).strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+}
+LGBM_PER_SIDE_HPO = os.environ.get("EPM_LGBM_PER_SIDE_HPO", "1").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+}
+LGBM_PER_SIDE_MIN_ROWS = int(os.environ.get("EPM_LGBM_PER_SIDE_MIN_ROWS", "500"))
+LGBM_HPO_MODEL_OBJECTIVE_CANDIDATES = [
+    item.strip().lower()
+    for item in os.environ.get("EPM_LGBM_HPO_MODEL_OBJECTIVE_CANDIDATES", "").split(",")
+    if item.strip()
+]
 LGBM_FEATURE_SELECTION_OBJECTIVE = str(
     os.environ.get("EPM_LGBM_FEATURE_SELECTION_OBJECTIVE", "")
 ).strip().lower()
@@ -775,10 +835,19 @@ LGBM_REBALANCE_POS_MASS_MAX = float(
     np.clip(max(LGBM_REBALANCE_POS_MASS_MAX, LGBM_REBALANCE_POS_MASS_MIN), 0.01, 0.95)
 )
 LGBM_REBALANCE_MAX_MULTIPLIER = max(1.0, float(LGBM_REBALANCE_MAX_MULTIPLIER))
-if LGBM_OBJECTIVE not in {"default", "tail_control"}:
+if LGBM_OBJECTIVE not in {
+    "default",
+    "tail_control",
+    "topk_ev",
+    "topk_precision",
+    "topk_precision_ev",
+    "topk_ndcg",
+    "balanced_topk",
+}:
     LGBM_OBJECTIVE = "default"
 if LGBM_HPO_PARAM_SET not in {"full", "reduced"}:
     LGBM_HPO_PARAM_SET = "full"
+LGBM_PER_SIDE_MIN_ROWS = max(100, int(LGBM_PER_SIDE_MIN_ROWS))
 LGBM_TAIL_WEEK_MIN_ROWS = max(1, int(LGBM_TAIL_WEEK_MIN_ROWS))
 LGBM_TAIL_ASSET_MIN_ROWS = max(1, int(LGBM_TAIL_ASSET_MIN_ROWS))
 LGBM_TAIL_ROLLING_ROWS = max(8, int(LGBM_TAIL_ROLLING_ROWS))
@@ -1210,6 +1279,10 @@ class LGBMStabilityModel:
         ]
         ae_gmm_state = getattr(self, "ae_gmm_state", {}) or {}
         use_ae_gmm = bool(ae_gmm_input_features and ae_gmm_feature_names)
+        generated_ae_ood_features = set(ae_gmm_feature_names).union(
+            set(map(str, LGBM_META_POST_SELECTION_OOD_FEATURE_NAMES))
+        )
+        selected_live_features = [c for c in selected if c not in generated_ae_ood_features]
         raw_contrib_inputs = [
             str(c) for c in getattr(self, "raw_contrib_input_features", []) or []
         ]
@@ -1289,7 +1362,7 @@ class LGBMStabilityModel:
             return out
         input_features = [str(c) for c in getattr(self, "input_feature_names", []) or []]
         if use_ae_gmm:
-            contract_features = list(ae_gmm_input_features)
+            contract_features = list(dict.fromkeys(list(selected_live_features) + list(ae_gmm_input_features)))
             use_input_aliases = False
         elif post_ood_enabled and post_ood_input_features:
             contract_features = list(post_ood_input_features)
@@ -1337,7 +1410,7 @@ class LGBMStabilityModel:
             try:
                 out = _append_ae_gmm_features_to_model_frame(
                     out,
-                    contract_features,
+                    ae_gmm_input_features,
                     ae_gmm_state,
                     selected,
                     index=X_df.index,
@@ -1386,6 +1459,10 @@ class LGBMStabilityModel:
             str(c) for c in getattr(self, "ae_gmm_feature_names", []) or []
         ]
         use_ae_gmm = bool(ae_gmm_input_features and ae_gmm_feature_names)
+        generated_ae_ood_features = set(ae_gmm_feature_names).union(
+            set(map(str, LGBM_META_POST_SELECTION_OOD_FEATURE_NAMES))
+        )
+        selected_live_features = [c for c in selected if c not in generated_ae_ood_features]
         post_ood_enabled = bool(
             getattr(self, "meta_post_selection_ood_enabled", False)
             and getattr(self, "meta_post_selection_ood_reference", None)
@@ -1402,7 +1479,7 @@ class LGBMStabilityModel:
             ]
             contract = list(dict.fromkeys(passthrough + raw_contrib_inputs))
         elif use_ae_gmm:
-            contract = list(ae_gmm_input_features)
+            contract = list(dict.fromkeys(list(selected_live_features) + list(ae_gmm_input_features)))
         elif post_ood_enabled and post_ood_input_features:
             contract = list(post_ood_input_features)
         else:
@@ -1705,6 +1782,72 @@ def _ae_gmm_context_feature_names_for_objective(objective_mode: str | None) -> l
     return list(AE_GMM_FEATURE_COLUMNS)
 
 
+def _contains_any_token(name: Any, tokens: Sequence[str]) -> bool:
+    text = str(name).lower()
+    return any(tok in text for tok in tokens)
+
+
+def _ae_gmm_a0bis_input_features(
+    selected_features: Sequence[str],
+    available_features: Sequence[str],
+) -> tuple[list[str], dict[str, Any]]:
+    """Prefer normalized trend/momentum inputs for AE/GMM state discovery."""
+    generated = {str(c) for c in AE_GMM_FEATURE_COLUMNS}
+    selected = [str(c) for c in selected_features if str(c).strip() and str(c) not in generated]
+    available = [str(c) for c in available_features if str(c).strip() and str(c) not in generated]
+    raw_momentum = [
+        c
+        for c in selected
+        if _contains_any_token(c, _AE_GMM_A0BIS_MOMENTUM_TOKENS)
+        and not _contains_any_token(c, _AE_GMM_A0BIS_NORMALIZED_TOKENS)
+    ]
+    raw_set = set(raw_momentum)
+    normalized_momentum = [
+        c
+        for c in available
+        if _contains_any_token(c, _AE_GMM_A0BIS_MOMENTUM_TOKENS)
+        and _contains_any_token(c, _AE_GMM_A0BIS_NORMALIZED_TOKENS)
+    ]
+    output = list(dict.fromkeys([c for c in selected if c not in raw_set] + normalized_momentum))
+    diagnostics = {
+        "policy": "a0bis",
+        "selected_input_feature_count_before_policy": int(len(selected)),
+        "selected_input_feature_count_after_policy": int(len(output)),
+        "removed_raw_momentum_count": int(len(raw_momentum)),
+        "added_normalized_momentum_count": int(len(set(normalized_momentum).difference(selected))),
+        "removed_raw_momentum_features": list(raw_momentum),
+        "added_normalized_momentum_features": sorted(set(normalized_momentum).difference(selected)),
+    }
+    return output, diagnostics
+
+
+def _apply_ae_gmm_input_feature_policy(
+    selected_features: Sequence[str],
+    available_features: Sequence[str],
+) -> tuple[list[str], dict[str, Any]]:
+    policy = str(LGBM_AE_GMM_INPUT_POLICY or "a0bis").strip().lower()
+    generated = {str(c) for c in AE_GMM_FEATURE_COLUMNS}
+    selected = [str(c) for c in selected_features if str(c).strip() and str(c) not in generated]
+    if policy in {"", "a0bis", "default"}:
+        return _ae_gmm_a0bis_input_features(selected, available_features)
+    if policy in {"a0", "selected", "legacy", "raw"}:
+        output = list(dict.fromkeys(selected))
+        return output, {
+            "policy": policy,
+            "selected_input_feature_count_before_policy": int(len(selected)),
+            "selected_input_feature_count_after_policy": int(len(output)),
+            "removed_raw_momentum_count": 0,
+            "added_normalized_momentum_count": 0,
+            "removed_raw_momentum_features": [],
+            "added_normalized_momentum_features": [],
+        }
+    tprint(
+        f"Unknown EPM_LGBM_AE_GMM_INPUT_POLICY={LGBM_AE_GMM_INPUT_POLICY!r}; "
+        "falling back to a0bis."
+    )
+    return _ae_gmm_a0bis_input_features(selected, available_features)
+
+
 def _append_ae_gmm_features_to_model_frame(
     base_frame: pd.DataFrame,
     input_features: list[str],
@@ -1723,7 +1866,16 @@ def _append_ae_gmm_features_to_model_frame(
         state,
         index=source.index if index is None else index,
     )
-    out = pd.concat([source, generated], axis=1)
+    generated_cols = {str(c) for c in generated.columns}
+    base_cols = [str(c) for c in base_frame.columns if str(c) not in generated_cols]
+    out = pd.concat(
+        [
+            base_frame.reindex(columns=base_cols).astype(np.float32, copy=False),
+            generated,
+        ],
+        axis=1,
+        copy=False,
+    )
     return out.reindex(columns=[str(c) for c in selected_features], fill_value=0.0).astype(
         np.float32,
         copy=False,
@@ -1867,6 +2019,7 @@ def _fit_ae_gmm_post_selection_state(
         economic_targets=economic_targets,
         random_state=random_state,
         max_train_rows=int(LGBM_AE_GMM_MAX_TRAIN_ROWS),
+        gmm_max_train_rows=int(LGBM_AE_GMM_GMM_MAX_TRAIN_ROWS),
         ae_max_iter=int(LGBM_AE_GMM_MAX_ITER),
         cluster_candidates=LGBM_AE_GMM_CLUSTER_CANDIDATES or None,
         reg_covar_candidates=LGBM_AE_GMM_REG_COVAR_CANDIDATES or None,
@@ -1916,22 +2069,67 @@ def _lgbm_ranker_enabled_for_objective(objective_mode: str | None) -> bool:
     return mode in {str(v).strip() for v in LGBM_RANKER_OBJECTIVES if str(v).strip()}
 
 
-def _side_label_values(X: pd.DataFrame, n: int) -> np.ndarray:
-    if "side_name" in X.columns:
-        raw = X["side_name"].to_numpy()
-    elif "side" in X.columns:
-        raw = X["side"].to_numpy()
-    elif "__side__" in X.columns:
-        raw = X["__side__"].to_numpy()
-    else:
+def _coerce_side_label_values(raw: Any, n: int) -> np.ndarray:
+    try:
+        arr = np.asarray(raw)
+    except (TypeError, ValueError):
         return np.full(n, "both", dtype=object)
-    side_series = pd.Series(raw)
+    if arr.ndim != 1 or len(arr) != int(n):
+        return np.full(n, "both", dtype=object)
+    side_series = pd.Series(arr)
     side_num = pd.to_numeric(side_series, errors="coerce")
     side_text = side_series.astype(str).str.lower()
-    is_short = side_text.str.contains("short", regex=False).to_numpy()
+    is_short = (
+        side_text.str.contains("short", regex=False)
+        | side_text.str.startswith("s_")
+        | side_text.str.startswith("s-")
+        | side_text.str.startswith("s__")
+        | side_text.str.fullmatch("s")
+    ).to_numpy(dtype=bool)
+    is_long = (
+        side_text.str.contains("long", regex=False)
+        | side_text.str.startswith("l_")
+        | side_text.str.startswith("l-")
+        | side_text.str.startswith("l__")
+        | side_text.str.fullmatch("l")
+    ).to_numpy(dtype=bool)
     numeric = side_num.to_numpy(dtype=np.float64, copy=False)
     is_short |= np.isfinite(numeric) & (numeric < 0.0)
-    return np.where(is_short, "short", "long").astype(object)
+    is_long |= np.isfinite(numeric) & (numeric > 0.0)
+    out = np.full(n, "both", dtype=object)
+    out[is_long] = "long"
+    out[is_short] = "short"
+    return out
+
+
+def _side_label_values(
+    X: pd.DataFrame,
+    n: int,
+    *,
+    label_context: Mapping[str, Any] | None = None,
+) -> np.ndarray:
+    for key in ("side_name", "side", "__side__"):
+        if key in X.columns:
+            labels = _coerce_side_label_values(X[key].to_numpy(), n)
+            if bool(np.any(labels != "both")):
+                return labels
+    if isinstance(label_context, Mapping):
+        for key in ("side_name", "side", "__side__"):
+            if key in label_context:
+                labels = _coerce_side_label_values(label_context.get(key), n)
+                if bool(np.any(labels != "both")):
+                    return labels
+        for key in (
+            "local_side_archetype",
+            "policy_archetype",
+            "source_archetype",
+            "archetype_label_family",
+        ):
+            if key in label_context:
+                labels = _coerce_side_label_values(label_context.get(key), n)
+                if bool(np.any(labels != "both")):
+                    return labels
+    return np.full(n, "both", dtype=object)
 
 
 def _lgbm_ranker_group_keys(
@@ -5866,6 +6064,44 @@ def _objective_value(metrics: dict[str, float], objective_mode: str | None = "tr
         if not np.isfinite(float(value)):
             return -999.0
         return float(value)
+    if LGBM_OBJECTIVE == "topk_ev":
+        value = (
+            0.60 * float(metrics.get("normalized_net_mean_ret10", 0.0))
+            + 0.40 * float(metrics.get("normalized_net_mean_ret20", 0.0))
+        )
+        return float(value) if np.isfinite(value) else -999.0
+    if LGBM_OBJECTIVE == "topk_precision":
+        value = float(metrics.get("precision_blend_top10_20_30", np.nan))
+        return float(value) if np.isfinite(value) else -999.0
+    if LGBM_OBJECTIVE == "topk_ndcg":
+        value = (
+            0.40 * float(metrics.get("ndcg_at_10", 0.0))
+            + 0.35 * float(metrics.get("ndcg_at_20", 0.0))
+            + 0.25 * float(metrics.get("ndcg_at_30", 0.0))
+        )
+        return float(value) if np.isfinite(value) else -999.0
+    if LGBM_OBJECTIVE == "topk_precision_ev":
+        value = (
+            0.45 * float(metrics.get("normalized_net_mean_ret10", 0.0))
+            + 0.25 * float(metrics.get("normalized_net_mean_ret20", 0.0))
+            + 0.30 * float(metrics.get("precision_blend_top10_20_30", 0.0))
+        )
+        return float(value) if np.isfinite(value) else -999.0
+    if LGBM_OBJECTIVE == "balanced_topk":
+        prefix = "meta" if mode == "train_meta" else "base"
+        tail = float(
+            metrics.get(
+                f"{prefix}_tail_control_score",
+                metrics.get("tail_control_score", 0.0),
+            )
+        )
+        value = (
+            0.30 * float(metrics.get("normalized_net_mean_ret10", 0.0))
+            + 0.20 * float(metrics.get("normalized_net_mean_ret20", 0.0))
+            + 0.30 * float(metrics.get("precision_blend_top10_20_30", 0.0))
+            + 0.20 * tail
+        )
+        return float(value) if np.isfinite(value) else -999.0
     key = "J_meta" if mode == "train_meta" else "J_base"
     value = metrics.get(key, metrics.get("J_final", np.nan))
     if not np.isfinite(float(value)):
@@ -7930,6 +8166,42 @@ def _merge_required_indices(
     return np.unique(np.concatenate([sampled_arr, required_arr])).astype(np.int32)
 
 
+def _merge_required_indices_capped(
+    sampled: np.ndarray,
+    required: np.ndarray,
+    *,
+    n: int,
+    cap: int,
+    y: Any = None,
+    classifier: bool = False,
+    random_state: int = 0,
+) -> np.ndarray:
+    merged = _merge_required_indices(sampled, required, n=n)
+    cap_i = int(cap)
+    if cap_i <= 0 or len(merged) <= cap_i:
+        return merged.astype(np.int32, copy=False)
+    required_arr = np.asarray(required, dtype=np.int32)
+    required_arr = np.unique(required_arr[(required_arr >= 0) & (required_arr < int(n))]).astype(np.int32)
+    if len(required_arr) >= cap_i:
+        return _evenly_spaced_take(required_arr, cap_i)
+    budget = cap_i - len(required_arr)
+    optional = np.setdiff1d(merged, required_arr, assume_unique=False).astype(np.int32)
+    if budget <= 0 or len(optional) == 0:
+        return np.sort(required_arr.astype(np.int32, copy=False))
+    y_arr = np.asarray(y) if y is not None else np.array([], dtype=np.float32)
+    if len(y_arr) == int(n) and len(optional) > budget:
+        local = _stratified_spread_subsample_indices(
+            y_arr[optional],
+            max_n=budget,
+            random_state=int(random_state),
+            classifier=bool(classifier),
+        )
+        optional = optional[local]
+    else:
+        optional = _evenly_spaced_take(optional, budget)
+    return np.sort(np.concatenate([required_arr, optional]).astype(np.int32))
+
+
 def _recent_prescreen_subset(
     recent_idx: np.ndarray,
     *,
@@ -8545,7 +8817,15 @@ def _univariate_directional_filter(
             classifier,
         )
         if len(recent_keep):
-            uni_idx = _merge_required_indices(uni_idx, recent_keep, n=len(y_arr))
+            uni_idx = _merge_required_indices_capped(
+                uni_idx,
+                recent_keep,
+                n=len(y_arr),
+                cap=uni_cap,
+                y=y_arr,
+                classifier=classifier,
+                random_state=random_state + 617,
+            )
         X_work = X.iloc[uni_idx].reset_index(drop=True)
         y_work = y_arr[uni_idx]
         ret_work = ret_arr_all[uni_idx]
@@ -9200,7 +9480,9 @@ def _base_lgbm_params(seed: int, *, classifier: bool, overrides: dict[str, Any] 
     if overrides:
         params.update(overrides)
     if classifier and LGBM_TRUE_SOFT_LABELS:
-        params["objective"] = "cross_entropy"
+        objective = str(params.get("objective", "") or "").strip().lower()
+        if objective in {"", "binary"}:
+            params["objective"] = "cross_entropy"
         params.pop("scale_pos_weight", None)
         params.pop("is_unbalance", None)
         params.pop("class_weight", None)
@@ -9395,7 +9677,9 @@ def _effective_lgbm_params(params: dict[str, Any], *, classifier: bool) -> dict[
             int(LGBM_N_ESTIMATORS_CAP),
         )
     if classifier and LGBM_TRUE_SOFT_LABELS:
-        out["objective"] = "cross_entropy"
+        objective = str(out.get("objective", "") or "").strip().lower()
+        if objective in {"", "binary"}:
+            out["objective"] = "cross_entropy"
         out.pop("scale_pos_weight", None)
         out.pop("is_unbalance", None)
         out.pop("class_weight", None)
@@ -11829,6 +12113,30 @@ def _save_lgbm_final_model_checkpoint(
     sidecar_path = path / "checkpoint_sidecar.pkl"
     with open(sidecar_path, "wb") as f:
         pickle.dump(sidecar, f, protocol=pickle.HIGHEST_PROTOCOL)
+    ae_gmm_paths: dict[str, str] = {}
+    ae_gmm_state_for_artifact = dict(getattr(model, "ae_gmm_state", {}) or {})
+    if _ae_gmm_state_enabled(ae_gmm_state_for_artifact):
+        try:
+            ae_gmm_paths = save_ae_gmm_state_artifact(
+                ae_gmm_state_for_artifact,
+                path / "ae_gmm_state.pkl",
+                manifest_path=path / "ae_gmm_state_manifest.json",
+                extra_manifest={
+                    "checkpoint_stage": "after_final_models_before_final_oof_meta_cv",
+                    "ae_gmm_input_features": list(getattr(model, "ae_gmm_input_features", []) or []),
+                    "ae_gmm_feature_names": list(getattr(model, "ae_gmm_feature_names", []) or []),
+                    "ae_gmm_context_feature_names": list(
+                        getattr(model, "ae_gmm_context_feature_names", []) or []
+                    ),
+                    "model_checkpoint_dir": str(path),
+                    "inference_note": (
+                        "This is the train-fitted AE/GMM state used to generate optional "
+                        "AE/GMM model/context features at inference."
+                    ),
+                },
+            )
+        except Exception as exc:
+            ae_gmm_paths = {"save_error": str(exc)}
     manifest = {
         "checkpoint_stage": "after_final_models_before_final_oof_meta_cv",
         "created_at_utc": pd.Timestamp.utcnow().isoformat(),
@@ -11850,6 +12158,7 @@ def _save_lgbm_final_model_checkpoint(
             (getattr(model, "label_weight_hpo_report_", {}) or {}).get("selected", False)
         ),
         "sidecar": sidecar_path.name,
+        "ae_gmm_state_artifact": ae_gmm_paths,
         "has_pre_final_oof": bool(pre_final_oof is not None),
         "has_final_weights": bool(final_weights is not None),
         "final_ensemble_sequential_weight_ess": float(final_ensemble_ess),
@@ -11873,6 +12182,7 @@ def _save_lgbm_final_model_checkpoint(
         "lgbm_selected_model_features": list(map(str, model.selected_features)),
         "lgbm_selected_input_features": list(map(str, getattr(model, "input_feature_names", []) or [])),
         "raw_contrib_input_features": list(getattr(model, "raw_contrib_input_features", []) or []),
+        "ae_gmm_state_artifact": ae_gmm_paths,
         "checkpoint_incomplete_final_oof_meta": True,
         "label_weight_hpo_winner": str(
             (getattr(model, "label_weight_hpo_report_", {}) or {}).get("winner", "none")
@@ -17359,6 +17669,29 @@ def _default_hpo_params(seed: int, classifier: bool) -> dict[str, Any]:
     )
 
 
+def _hpo_model_objective_candidates(classifier: bool) -> list[str]:
+    if LGBM_HPO_MODEL_OBJECTIVE_CANDIDATES:
+        raw = list(LGBM_HPO_MODEL_OBJECTIVE_CANDIDATES)
+    elif classifier and LGBM_TRUE_SOFT_LABELS:
+        raw = ["cross_entropy", "regression", "huber"]
+    elif classifier:
+        raw = ["binary"]
+    else:
+        raw = ["regression", "huber", "fair"]
+    if classifier and not LGBM_TRUE_SOFT_LABELS:
+        allowed = {"binary", "cross_entropy"}
+    else:
+        allowed = {"cross_entropy", "cross_entropy_lambda", "regression", "huber", "fair"}
+    out: list[str] = []
+    for item in raw:
+        key = str(item).strip().lower()
+        if key in allowed and key not in out:
+            out.append(key)
+    if out:
+        return out
+    return ["cross_entropy"] if classifier and LGBM_TRUE_SOFT_LABELS else (["binary"] if classifier else ["regression"])
+
+
 def _final_fit_leaf_floor(
     params: dict[str, Any],
     *,
@@ -17505,6 +17838,7 @@ def _run_lgbm_hpo(
     )
     actual_splits = int(splitter.get_n_splits()) if hasattr(splitter, "get_n_splits") else int(LGBM_CV_SPLITS)
     best_seen = {"value": -np.inf, "trial": -1}
+    model_objective_candidates = _hpo_model_objective_candidates(classifier)
     tprint(
         "LGBM HPO started: "
         f"rows={len(y_sub)}/{len(y_arr)}, features={len(features)}, trials={int(max_trials)}, "
@@ -17520,12 +17854,23 @@ def _run_lgbm_hpo(
         f"path_smooth_max={float(LGBM_HPO_PATH_SMOOTH_MAX):.3g}, "
         f"final_min_estimators={int(LGBM_HPO_FINAL_MIN_ESTIMATORS)}, "
         f"n_estimators_cap={int(LGBM_N_ESTIMATORS_CAP)}, "
-        f"early_stopping_rounds={int(LGBM_EARLY_STOPPING_ROUNDS)}."
+        f"early_stopping_rounds={int(LGBM_EARLY_STOPPING_ROUNDS)}, "
+        f"model_objectives={model_objective_candidates}."
     )
 
     def objective(trial: Any) -> float:
         trial_t0 = time.perf_counter()
         depth = trial.suggest_int("max_depth", 3, int(max_depth_upper))
+        model_objective = (
+            trial.suggest_categorical("model_objective", model_objective_candidates)
+            if len(model_objective_candidates) > 1
+            else model_objective_candidates[0]
+        )
+        objective_specific: dict[str, Any] = {"objective": str(model_objective)}
+        if str(model_objective) == "huber":
+            objective_specific["alpha"] = trial.suggest_float("huber_alpha", 0.70, 0.95)
+        elif str(model_objective) == "fair":
+            objective_specific["fair_c"] = trial.suggest_float("fair_c", 0.50, 3.00)
         subsample = trial.suggest_float(
             "subsample",
             float(LGBM_HPO_SUBSAMPLE_MIN),
@@ -17584,6 +17929,7 @@ def _run_lgbm_hpo(
                 "path_smooth": path_smooth,
                 "scale_pos_weight": trial.suggest_float("scale_pos_weight", 0.25, 4.0, log=True),
                 "max_delta_step": max_delta_step,
+                **objective_specific,
             },
         )
         fold_metrics: list[dict[str, float]] = []
@@ -17783,6 +18129,7 @@ def _run_lgbm_hpo(
         classifier=classifier,
         overrides={
             "boosting_type": "gbdt",
+            "objective": str(best.params.get("model_objective", model_objective_candidates[0])),
             "n_estimators": final_n_estimators,
             "learning_rate": LGBM_FINAL_LEARNING_RATE,
             "max_depth": depth,
@@ -17805,6 +18152,10 @@ def _run_lgbm_hpo(
             "scale_pos_weight": float(best.params.get("scale_pos_weight", 1.0)),
         },
     )
+    if str(best_params_raw.get("objective", "")).lower() == "huber":
+        best_params_raw["alpha"] = float(best.params.get("huber_alpha", 0.90))
+    elif str(best_params_raw.get("objective", "")).lower() == "fair":
+        best_params_raw["fair_c"] = float(best.params.get("fair_c", 1.0))
     if LGBM_HPO_PARAM_SET == "full":
         best_params_raw["feature_fraction_bynode"] = float(
             best.params.get("feature_fraction_bynode", 1.0)
@@ -17828,6 +18179,7 @@ def _run_lgbm_hpo(
             "hpo_early_stop_patience_trials": int(patience),
             "hpo_pruner": "successive_halving",
             "hpo_search_space": {
+                "model_objective": list(model_objective_candidates),
                 "max_depth": [3, int(max_depth_upper)],
                 "subsample": [
                     float(LGBM_HPO_SUBSAMPLE_MIN),
@@ -17852,6 +18204,432 @@ def _run_lgbm_hpo(
         f"params={json.dumps(best_params, sort_keys=True)}"
     )
     return best_params, attrs
+
+
+def _lgbm_side_split_indices(
+    X: pd.DataFrame,
+    n: int,
+    *,
+    label_context: Mapping[str, Any] | None = None,
+    min_rows: int = LGBM_PER_SIDE_MIN_ROWS,
+) -> tuple[np.ndarray, dict[str, np.ndarray], dict[str, Any]]:
+    labels = _side_label_values(X, n, label_context=label_context)
+    counts = {
+        "long": int(np.sum(labels == "long")),
+        "short": int(np.sum(labels == "short")),
+        "both": int(np.sum(labels == "both")),
+    }
+    side_indices: dict[str, np.ndarray] = {}
+    for side in ("long", "short"):
+        idx = np.flatnonzero(labels == side).astype(np.int32)
+        if len(idx) >= int(min_rows):
+            side_indices[side] = idx
+    return labels, side_indices, {
+        "side_counts": counts,
+        "side_min_rows": int(min_rows),
+        "eligible_sides": list(side_indices.keys()),
+    }
+
+
+def _aggregate_side_feature_stats(
+    side_stats: Mapping[str, pd.DataFrame],
+    selected_by_side: Mapping[str, Sequence[str]],
+    cluster_features: Sequence[str],
+    selected_features: Sequence[str],
+) -> pd.DataFrame:
+    selected_set = {str(f) for f in selected_features}
+    rows: list[dict[str, Any]] = []
+    for feature in _ordered_unique_features(cluster_features):
+        best_row: dict[str, Any] = {"feature": str(feature)}
+        best_score = -np.inf
+        support_sides: list[str] = []
+        hard_values: list[bool] = []
+        for side, stats in side_stats.items():
+            if stats.empty or "feature" not in stats.columns:
+                continue
+            hit = stats.loc[stats["feature"].astype(str) == str(feature)]
+            if hit.empty:
+                continue
+            row = hit.iloc[0].to_dict()
+            score = float(row.get("feature_score", row.get("mda_mean", -np.inf)) or -np.inf)
+            if np.isfinite(score) and score > best_score:
+                best_score = score
+                best_row = dict(row)
+            support_sides.append(str(side))
+            if "hard_drop" in row:
+                hard_values.append(bool(row.get("hard_drop", False)))
+        selected_sides = [
+            str(side)
+            for side, features in selected_by_side.items()
+            if str(feature) in {str(f) for f in features}
+        ]
+        best_row["feature"] = str(feature)
+        best_row["selection_side"] = "side_union"
+        best_row["selection_side_support"] = ",".join(sorted(set(support_sides)))
+        best_row["selected_by_sides"] = ",".join(sorted(set(selected_sides)))
+        best_row["hard_drop"] = bool(str(feature) not in selected_set and hard_values and all(hard_values))
+        if "feature_score" not in best_row and np.isfinite(best_score):
+            best_row["feature_score"] = float(best_score)
+        rows.append(best_row)
+    for feature in _ordered_unique_features(selected_features):
+        if feature in {str(row.get("feature", "")) for row in rows}:
+            continue
+        rows.append(
+            {
+                "feature": str(feature),
+                "selection_side": "side_union",
+                "selected_by_sides": "forced_or_protected",
+                "hard_drop": False,
+                "feature_score": 0.0,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _run_lgbm_side_aware_feature_selection_tail(
+    X: pd.DataFrame,
+    y: np.ndarray,
+    sample_weight: np.ndarray,
+    precluster_features: list[str],
+    score_map: dict[str, float],
+    *,
+    classifier: bool,
+    groups: Any = None,
+    timestamps: Any = None,
+    returns: Any = None,
+    metric_y: np.ndarray | None = None,
+    random_state: int,
+    objective_mode: str | None = "train_base",
+    preset_best_params: Optional[dict[str, Any]] = None,
+    mda_config: Mapping[str, Any] | None = None,
+    protected_features: Sequence[str] | None = None,
+    label_context: Mapping[str, Any] | None = None,
+) -> tuple[list[str], list[str], list[dict[str, Any]], pd.DataFrame, np.ndarray, dict[str, Any]]:
+    n = int(len(y))
+    metric_arr = np.asarray(metric_y if metric_y is not None else y)
+
+    def _run_global() -> tuple[list[str], list[str], list[dict[str, Any]], pd.DataFrame, np.ndarray, dict[str, Any]]:
+        cluster = _redundancy_cluster_filter(
+            X,
+            precluster_features,
+            score_map,
+            random_state=random_state,
+        )
+        selected, history, stats, oof, metrics = _iterative_feature_prune(
+            X,
+            y,
+            sample_weight,
+            cluster,
+            classifier=classifier,
+            groups=groups,
+            timestamps=timestamps,
+            returns=returns,
+            metric_y=metric_arr,
+            random_state=random_state + 96,
+            objective_mode=objective_mode,
+            preset_best_params=preset_best_params,
+            mda_config=mda_config,
+            protected_features=protected_features,
+        )
+        metrics = dict(metrics)
+        metrics["per_side_feature_selection_enabled"] = False
+        metrics["per_side_feature_selection_reason"] = "global_path"
+        return cluster, selected, history, stats, oof, metrics
+
+    if not bool(LGBM_PER_SIDE_FEATURE_SELECTION):
+        cluster, selected, history, stats, oof, metrics = _run_global()
+        metrics["per_side_feature_selection_reason"] = "disabled"
+        return cluster, selected, history, stats, oof, metrics
+    _, side_indices, side_diag = _lgbm_side_split_indices(
+        X,
+        n,
+        label_context=label_context,
+        min_rows=LGBM_PER_SIDE_MIN_ROWS,
+    )
+    if len(side_indices) < 2:
+        cluster, selected, history, stats, oof, metrics = _run_global()
+        metrics["per_side_feature_selection_reason"] = "insufficient_side_support"
+        metrics["per_side_feature_selection_side_counts"] = side_diag.get("side_counts", {})
+        return cluster, selected, history, stats, oof, metrics
+
+    t0 = time.perf_counter()
+    tprint(
+        "LGBM side-aware feature-selection tail started: "
+        f"sides={list(side_indices.keys())}, counts={side_diag.get('side_counts')}, "
+        f"precluster_features={len(precluster_features)}."
+    )
+    feature_order = {str(c): i for i, c in enumerate(X.columns)}
+    cluster_union: list[str] = []
+    selected_by_side: dict[str, list[str]] = {}
+    cluster_by_side: dict[str, list[str]] = {}
+    side_stats: dict[str, pd.DataFrame] = {}
+    history: list[dict[str, Any]] = []
+    oof = np.full(n, np.nan, dtype=np.float32)
+    per_side_metrics: dict[str, Any] = {}
+    for offset, (side, idx) in enumerate(side_indices.items(), start=1):
+        X_side = X.iloc[idx].reset_index(drop=True)
+        y_side = np.asarray(y)[idx]
+        sw_side, _ = _normalize_weights(np.asarray(sample_weight, dtype=np.float32)[idx])
+        metric_side = metric_arr[idx]
+        returns_side = None if returns is None else np.asarray(returns)[idx]
+        ts_side = _take_aligned(timestamps, idx, n)
+        groups_side = _groups_take(groups, idx)
+        side_mda_config = dict(mda_config or {})
+        report_dir = str(side_mda_config.get("report_dir", "") or "").strip()
+        if report_dir:
+            side_mda_config["report_dir"] = str(Path(report_dir) / f"side_{side}")
+        cluster_side = _redundancy_cluster_filter(
+            X_side,
+            precluster_features,
+            score_map,
+            random_state=random_state + offset * 503,
+        )
+        cluster_by_side[side] = list(cluster_side)
+        cluster_union = _ordered_unique_features(list(cluster_union) + list(cluster_side))
+        selected_side, history_side, stats_side, oof_side, metrics_side = _iterative_feature_prune(
+            X_side,
+            y_side,
+            sw_side,
+            cluster_side,
+            classifier=classifier,
+            groups=groups_side,
+            timestamps=ts_side,
+            returns=returns_side,
+            metric_y=metric_side,
+            random_state=random_state + offset * 1009,
+            objective_mode=objective_mode,
+            preset_best_params=preset_best_params,
+            mda_config=side_mda_config,
+            protected_features=protected_features,
+        )
+        selected_by_side[side] = list(selected_side)
+        if len(oof_side) == len(idx):
+            oof[idx] = np.asarray(oof_side, dtype=np.float32)
+        side_stats[side] = stats_side.copy() if not stats_side.empty else pd.DataFrame()
+        for rec in history_side:
+            rec_side = dict(rec)
+            rec_side["selection_side"] = str(side)
+            rec_side["side_rows"] = int(len(idx))
+            history.append(rec_side)
+        per_side_metrics[side] = {
+            "rows": int(len(idx)),
+            "cluster_feature_count": int(len(cluster_side)),
+            "selected_feature_count": int(len(selected_side)),
+            "J_final": float(metrics_side.get("J_final", np.nan)),
+            "J_base": float(metrics_side.get("J_base", np.nan)),
+            "J_meta": float(metrics_side.get("J_meta", np.nan)),
+        }
+        tprint(
+            "LGBM side-aware feature-selection side complete: "
+            f"side={side}, rows={len(idx)}, cluster={len(cluster_side)}, "
+            f"selected={len(selected_side)}, J={float(metrics_side.get('J_final', np.nan)):.4f}."
+        )
+    selected_union = _ordered_unique_features(
+        [f for side in ("long", "short") for f in selected_by_side.get(side, [])]
+    )
+    selected_union = sorted(selected_union, key=lambda f: feature_order.get(str(f), len(feature_order)))
+    cluster_union = sorted(cluster_union, key=lambda f: feature_order.get(str(f), len(feature_order)))
+    feature_stats = _aggregate_side_feature_stats(
+        side_stats,
+        selected_by_side,
+        cluster_union,
+        selected_union,
+    )
+    fill = float(np.nanmean(oof)) if np.isfinite(oof).any() else float(np.mean(y))
+    oof = np.nan_to_num(oof, nan=fill).astype(np.float32)
+    metrics = {
+        "per_side_feature_selection_enabled": True,
+        "per_side_feature_selection_reason": "side_local_tail_union",
+        "per_side_feature_selection_side_counts": side_diag.get("side_counts", {}),
+        "per_side_feature_selection_side_metrics": per_side_metrics,
+        "per_side_feature_selection_cluster_union_count": int(len(cluster_union)),
+        "per_side_feature_selection_selected_union_count": int(len(selected_union)),
+        "per_side_feature_selection_elapsed_sec": float(time.perf_counter() - t0),
+    }
+    tprint(
+        "LGBM side-aware feature-selection tail complete: "
+        f"cluster_union={len(cluster_union)}, selected_union={len(selected_union)}, "
+        f"elapsed={time.perf_counter() - t0:.1f}s."
+    )
+    return cluster_union, selected_union, history, feature_stats, oof, metrics
+
+
+def _run_lgbm_hpo_side_aware(
+    X: pd.DataFrame,
+    y: np.ndarray,
+    sample_weight: np.ndarray,
+    features: list[str],
+    *,
+    classifier: bool,
+    groups: Any = None,
+    timestamps: Any = None,
+    returns: Any = None,
+    metric_y: np.ndarray | None = None,
+    random_state: int,
+    max_trials: int = LGBM_HPO_TRIALS,
+    patience: int = LGBM_HPO_EARLY_STOP_PATIENCE,
+    objective_mode: str | None = "train_base",
+    cfg: dict[str, Any] | None = None,
+    label_context: Mapping[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    n = int(len(y))
+
+    def _run_global(reason: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        params, metrics = _run_lgbm_hpo(
+            X,
+            y,
+            sample_weight,
+            features,
+            classifier=classifier,
+            groups=groups,
+            timestamps=timestamps,
+            returns=returns,
+            metric_y=metric_y,
+            random_state=random_state,
+            max_trials=max_trials,
+            patience=patience,
+            objective_mode=objective_mode,
+            cfg=cfg,
+        )
+        metrics = dict(metrics)
+        metrics["per_side_hpo_enabled"] = False
+        metrics["per_side_hpo_reason"] = str(reason)
+        return params, metrics
+
+    if not bool(LGBM_PER_SIDE_HPO):
+        return _run_global("disabled")
+    if int(max_trials) <= 0:
+        return _run_global("no_trials")
+    _, side_indices, side_diag = _lgbm_side_split_indices(
+        X,
+        n,
+        label_context=label_context,
+        min_rows=LGBM_PER_SIDE_MIN_ROWS,
+    )
+    if len(side_indices) < 2:
+        params, metrics = _run_global("insufficient_side_support")
+        metrics["per_side_hpo_side_counts"] = side_diag.get("side_counts", {})
+        return params, metrics
+
+    t0 = time.perf_counter()
+    y_arr = np.asarray(y)
+    y_metric = np.asarray(metric_y if metric_y is not None else y_arr)
+    ret_arr = _as_returns(y_metric, returns)
+    side_results: dict[str, Any] = {}
+    candidate_params: list[dict[str, Any]] = []
+    tprint(
+        "LGBM side-aware HPO started: "
+        f"sides={list(side_indices.keys())}, counts={side_diag.get('side_counts')}, "
+        f"features={len(features)}, trials_per_side={int(max_trials)}."
+    )
+    for offset, (side, idx) in enumerate(side_indices.items(), start=1):
+        sw_side, _ = _normalize_weights(np.asarray(sample_weight, dtype=np.float32)[idx])
+        params_side, metrics_side = _run_lgbm_hpo(
+            X.iloc[idx].reset_index(drop=True),
+            y_arr[idx],
+            sw_side,
+            features,
+            classifier=classifier,
+            groups=_groups_take(groups, idx),
+            timestamps=_take_aligned(timestamps, idx, n),
+            returns=ret_arr[idx],
+            metric_y=y_metric[idx],
+            random_state=random_state + offset * 2003,
+            max_trials=max_trials,
+            patience=patience,
+            objective_mode=objective_mode,
+            cfg=cfg,
+        )
+        side_results[side] = {
+            "rows": int(len(idx)),
+            "hpo_best_value": float(metrics_side.get("hpo_best_value", np.nan)),
+            "hpo_completed_trials": int(metrics_side.get("hpo_completed_trials", 0) or 0),
+            "hpo_best_trial": int(metrics_side.get("hpo_best_trial", -1) or -1),
+            "hpo_best_params": dict(params_side),
+        }
+        candidate_params.append(dict(params_side))
+    unique_candidates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for params in candidate_params:
+        key = json.dumps(params, sort_keys=True, default=str)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_candidates.append(dict(params))
+    candidate_scores: list[dict[str, Any]] = []
+    for cand_i, params in enumerate(unique_candidates):
+        side_values: list[float] = []
+        side_eval: dict[str, Any] = {}
+        for offset, (side, idx) in enumerate(side_indices.items(), start=1):
+            sw_side, _ = _normalize_weights(np.asarray(sample_weight, dtype=np.float32)[idx])
+            _, fold_metrics = _cross_val_oof_lgbm(
+                X.iloc[idx].reset_index(drop=True),
+                y_arr[idx],
+                sw_side,
+                features,
+                classifier=classifier,
+                params=params,
+                groups=_groups_take(groups, idx),
+                timestamps=_take_aligned(timestamps, idx, n),
+                returns=ret_arr[idx],
+                metric_y=y_metric[idx],
+                label_context=_slice_label_context(label_context, idx, n),
+                random_state=random_state + cand_i * 4099 + offset * 509,
+                n_splits=max(2, int(LGBM_CV_SPLITS)),
+                objective_mode=objective_mode,
+            )
+            agg = _aggregate_j(fold_metrics, objective_mode=objective_mode)
+            value = float(agg.get("J_final", -999.0))
+            side_values.append(value)
+            side_eval[side] = {
+                "rows": int(len(idx)),
+                "J_final": value,
+                "J_mean": float(agg.get("J_mean", np.nan)),
+                "J_std": float(agg.get("J_std", np.nan)),
+            }
+        arr = np.asarray(side_values, dtype=np.float64)
+        arr = arr[np.isfinite(arr)]
+        robust = float(np.mean(arr) - 0.50 * np.std(arr) + 0.25 * np.min(arr)) if len(arr) else -999.0
+        candidate_scores.append(
+            {
+                "candidate_index": int(cand_i),
+                "robust_side_score": robust,
+                "side_eval": side_eval,
+                "params": dict(params),
+            }
+        )
+    if candidate_scores:
+        winner = max(candidate_scores, key=lambda item: float(item.get("robust_side_score", -999.0)))
+        best_params = dict(winner["params"])
+    else:
+        winner = {"candidate_index": -1, "robust_side_score": -999.0, "side_eval": {}, "params": {}}
+        best_params = dict(candidate_params[0]) if candidate_params else _effective_lgbm_params(
+            _default_hpo_params(random_state, classifier),
+            classifier=classifier,
+        )
+    metrics = {
+        "hpo_available": True,
+        "per_side_hpo_enabled": True,
+        "per_side_hpo_reason": "side_local_hpo_robust_shared_params",
+        "per_side_hpo_side_counts": side_diag.get("side_counts", {}),
+        "per_side_hpo_results": side_results,
+        "per_side_hpo_candidate_scores": candidate_scores,
+        "per_side_hpo_winner_candidate_index": int(winner.get("candidate_index", -1)),
+        "hpo_best_value": float(winner.get("robust_side_score", -999.0)),
+        "hpo_best_params": dict(best_params),
+        "hpo_objective_mode": _normalize_objective_mode(objective_mode),
+        "hpo_completed_trials": int(
+            sum(int(v.get("hpo_completed_trials", 0) or 0) for v in side_results.values())
+        ),
+        "hpo_elapsed_sec": float(time.perf_counter() - t0),
+    }
+    tprint(
+        "LGBM side-aware HPO complete: "
+        f"winner_candidate={metrics['per_side_hpo_winner_candidate_index']}, "
+        f"robust_side_score={float(metrics['hpo_best_value']):.4f}, "
+        f"elapsed={time.perf_counter() - t0:.1f}s."
+    )
+    return _effective_lgbm_params(best_params, classifier=classifier), metrics
 
 
 def train_lgbm_stability_candidate(
@@ -18381,11 +19159,23 @@ def train_lgbm_stability_candidate(
                 objective_mode=objective_mode,
             )
         )
-        cluster_features = _redundancy_cluster_filter(
+        cluster_features, selected_features, history, feature_stats, prune_oof, prune_metrics = _run_lgbm_side_aware_feature_selection_tail(
             X_select,
+            y_select,
+            sw_select,
             precluster_features,
             score_map,
+            classifier=classifier,
+            groups=select_groups,
+            timestamps=select_timestamps,
+            returns=ret_select,
+            metric_y=y_metric_select,
             random_state=random_state + 211,
+            objective_mode=objective_mode,
+            preset_best_params=preset_best_params,
+            mda_config=mda_config,
+            protected_features=forced_time_features,
+            label_context=select_label_context,
         )
         cluster_features = _append_lgbm_forced_selector_features(
             cluster_features,
@@ -18404,21 +19194,10 @@ def train_lgbm_stability_candidate(
                 objective_mode=objective_mode,
             )
         )
-        selected_features, history, feature_stats, prune_oof, prune_metrics = _iterative_feature_prune(
-            X_select,
-            y_select,
-            sw_select,
-            cluster_features,
-            classifier=classifier,
-            groups=select_groups,
-            timestamps=_take_aligned(timestamps, race_idx[select_local], n),
-            returns=ret_select,
-            metric_y=y_metric_select,
-            random_state=random_state + 307,
-            objective_mode=objective_mode,
-            preset_best_params=preset_best_params,
-            mda_config=mda_config,
-            protected_features=forced_time_features,
+        selected_features = _append_lgbm_forced_selector_features(
+            selected_features,
+            X_select.columns,
+            forced_time_features,
         )
         for rec in history:
             round_id = int(rec.get("round", 0) or 0)
@@ -19073,6 +19852,15 @@ def fit_lgbm_stability_full_model(
         )
     ae_gmm_state: dict[str, Any] = {}
     ae_gmm_input_features: list[str] = []
+    ae_gmm_input_policy_diag: dict[str, Any] = {
+        "policy": str(LGBM_AE_GMM_INPUT_POLICY or "a0bis").strip().lower(),
+        "selected_input_feature_count_before_policy": 0,
+        "selected_input_feature_count_after_policy": 0,
+        "removed_raw_momentum_count": 0,
+        "added_normalized_momentum_count": 0,
+        "removed_raw_momentum_features": [],
+        "added_normalized_momentum_features": [],
+    }
     ae_gmm_feature_names: list[str] = []
     ae_gmm_context_feature_names: list[str] = []
     ae_gmm_metrics: dict[str, Any] = {
@@ -19082,8 +19870,10 @@ def fit_lgbm_stability_full_model(
     }
     X_oof_source_df = X_df if raw_contrib_input_features else X_model_df
     if _lgbm_ae_gmm_enabled(cfg):
-        generated_set = {str(c) for c in AE_GMM_FEATURE_COLUMNS}
-        ae_gmm_input_features = [str(c) for c in selected_features if str(c) not in generated_set]
+        ae_gmm_input_features, ae_gmm_input_policy_diag = _apply_ae_gmm_input_feature_policy(
+            selected_features,
+            X_model_df.columns,
+        )
         if len(ae_gmm_input_features) >= 2:
             select_idx = np.asarray(stage_indices.get("lgbm_select", hpo_idx), dtype=np.int32)
             select_idx = select_idx[(select_idx >= 0) & (select_idx < n)]
@@ -19111,7 +19901,7 @@ def fit_lgbm_stability_full_model(
                 else []
             )
             ae_gmm_context_feature_names = _ae_gmm_context_feature_names_for_objective(objective_mode)
-            selected_features = list(dict.fromkeys(list(ae_gmm_input_features) + list(ae_gmm_feature_names)))
+            selected_features = list(dict.fromkeys(list(selected_features) + list(ae_gmm_feature_names)))
             if ae_gmm_feature_names:
                 X_model_df = _append_ae_gmm_features_to_model_frame(
                     X_model_df,
@@ -19125,7 +19915,31 @@ def fit_lgbm_stability_full_model(
                 "ae_gmm_feature_count": int(len(ae_gmm_feature_names)),
                 "ae_gmm_context_feature_count": int(len(ae_gmm_context_feature_names)),
                 "ae_gmm_input_feature_count": int(len(ae_gmm_input_features)),
+                "ae_gmm_input_policy": str(ae_gmm_input_policy_diag.get("policy", "")),
+                "ae_gmm_input_feature_count_before_policy": int(
+                    ae_gmm_input_policy_diag.get("selected_input_feature_count_before_policy", 0) or 0
+                ),
+                "ae_gmm_input_removed_raw_momentum_count": int(
+                    ae_gmm_input_policy_diag.get("removed_raw_momentum_count", 0) or 0
+                ),
+                "ae_gmm_input_added_normalized_momentum_count": int(
+                    ae_gmm_input_policy_diag.get("added_normalized_momentum_count", 0) or 0
+                ),
+                "ae_gmm_input_removed_raw_momentum_features": list(
+                    ae_gmm_input_policy_diag.get("removed_raw_momentum_features", []) or []
+                ),
+                "ae_gmm_input_added_normalized_momentum_features": list(
+                    ae_gmm_input_policy_diag.get("added_normalized_momentum_features", []) or []
+                ),
                 "ae_gmm_fit_rows": int(len(repr_idx)),
+                "ae_gmm_train_rows_available": int(ae_gmm_state.get("train_rows_available", 0) or 0),
+                "ae_gmm_ae_fit_rows": int(ae_gmm_state.get("ae_fit_rows", 0) or 0),
+                "ae_gmm_gmm_fit_rows": int(ae_gmm_state.get("gmm_fit_rows", 0) or 0),
+                "ae_gmm_ae_max_train_rows": int(ae_gmm_state.get("ae_max_train_rows", LGBM_AE_GMM_MAX_TRAIN_ROWS) or 0),
+                "ae_gmm_gmm_max_train_rows": int(
+                    ae_gmm_state.get("gmm_max_train_rows", LGBM_AE_GMM_GMM_MAX_TRAIN_ROWS) or 0
+                ),
+                "ae_gmm_sample_policy": str(ae_gmm_state.get("sample_policy", "")),
                 "ae_gmm_reason": str(ae_gmm_state.get("reason", "")),
                 "ae_gmm_selected_config": _json_sanitize(
                     ae_gmm_state.get("selected_config", ae_gmm_state.get("report", {}))
@@ -19144,7 +19958,10 @@ def fit_lgbm_stability_full_model(
             tprint(
                 "LGBM selected-feature AE/GMM representation "
                 f"{'enabled' if _ae_gmm_state_enabled(ae_gmm_state) else 'neutral'}: "
+                f"input_policy={ae_gmm_input_policy_diag.get('policy', '')}, "
                 f"input_features={len(ae_gmm_input_features)}, "
+                f"removed_raw_momentum={ae_gmm_input_policy_diag.get('removed_raw_momentum_count', 0)}, "
+                f"added_normalized_momentum={ae_gmm_input_policy_diag.get('added_normalized_momentum_count', 0)}, "
                 f"model_features={len(ae_gmm_feature_names)}, "
                 f"context_features={len(ae_gmm_context_feature_names)}, "
                 f"fit_rows={len(repr_idx)}, "
@@ -19215,7 +20032,7 @@ def fit_lgbm_stability_full_model(
         )
     else:
         tprint("LGBM full fit HPO using base sample weights; pre-HPO OOF distillation skipped.")
-        best_params, hpo_metrics = _run_lgbm_hpo(
+        best_params, hpo_metrics = _run_lgbm_hpo_side_aware(
             X_model_df.iloc[hpo_idx].reset_index(drop=True),
             y_arr[hpo_idx],
             hpo_weights,
@@ -19230,6 +20047,7 @@ def fit_lgbm_stability_full_model(
             patience=LGBM_HPO_EARLY_STOP_PATIENCE if hpo_patience_override is None else int(hpo_patience_override),
             objective_mode=objective_mode,
             cfg=cfg,
+            label_context=_slice_label_context(label_context, hpo_idx, n),
         )
         best_params = _effective_lgbm_params(dict(best_params), classifier=classifier)
         hpo_metrics["hpo_best_params"] = dict(best_params)
@@ -19499,7 +20317,15 @@ def fit_lgbm_stability_full_model(
     ):
         model.input_feature_names = list(meta_post_selection_ood_input_features)
     if ae_gmm_input_features:
-        model.input_feature_names = list(ae_gmm_input_features)
+        generated_ae_ood_features = set(map(str, ae_gmm_feature_names)).union(
+            set(map(str, LGBM_META_POST_SELECTION_OOD_FEATURE_NAMES))
+        )
+        live_selected_features = [
+            str(c) for c in selected_features if str(c) not in generated_ae_ood_features
+        ]
+        model.input_feature_names = list(
+            dict.fromkeys(list(live_selected_features) + list(ae_gmm_input_features))
+        )
         model.ae_gmm_input_features = list(ae_gmm_input_features)
         model.ae_gmm_feature_names = list(ae_gmm_feature_names)
         model.ae_gmm_context_feature_names = list(ae_gmm_context_feature_names)

@@ -1,0 +1,273 @@
+{
+  "xlsx": "outputs/autocorr_calendar_20260710/side_archetype_surprise_autocorr_calendar.xlsx",
+  "sheets": [
+    "Summary",
+    "Calendar",
+    "Risk Dates",
+    "Opportunity Dates",
+    "Side x Archetype",
+    "Archetype Summary",
+    "Side Daily",
+    "Overall Daily",
+    "Data Dictionary"
+  ],
+  "rows": {
+    "Summary": 31,
+    "Calendar": 48,
+    "Risk Dates": 22,
+    "Opportunity Dates": 26,
+    "Side x Archetype": 280,
+    "Archetype Summary": 8,
+    "Side Daily": 94,
+    "Overall Daily": 48,
+    "Data Dictionary": 11
+  },
+  "period_start": "2026-05-01",
+  "period_end": "2026-06-30",
+  "risk_flag_events": 21,
+  "opportunity_flag_events": 25,
+  "top_risk_dates": [
+    {
+      "date": "2026-06-30",
+      "side_name": "long",
+      "archetype_policy_key": "long_mixed_wideslow_tentative",
+      "rows": "11",
+      "mean_ev": "-0.027045866465196",
+      "hit_rate": "0.0909090909090909",
+      "loss_rate": "0.9090909090909092",
+      "risk_cluster_score": "1.76532962704086",
+      "signed_combined_autocorr": "-0.24908437216616158"
+    },
+    {
+      "date": "2026-06-10",
+      "side_name": "short",
+      "archetype_policy_key": "short_default_clean_path",
+      "rows": "22",
+      "mean_ev": "-0.0054203640815897",
+      "hit_rate": "0.3636363636363636",
+      "loss_rate": "0.6363636363636364",
+      "risk_cluster_score": "1.4549092705536069",
+      "signed_combined_autocorr": "-0.3132373473769686"
+    },
+    {
+      "date": "2026-05-20",
+      "side_name": "short",
+      "archetype_policy_key": "short_default_clean_path",
+      "rows": "13",
+      "mean_ev": "-0.0178375269166337",
+      "hit_rate": "0.1538461538461538",
+      "loss_rate": "0.8461538461538461",
+      "risk_cluster_score": "1.35163494249961",
+      "signed_combined_autocorr": "-0.27709498477091343"
+    },
+    {
+      "date": "2026-06-15",
+      "side_name": "short",
+      "archetype_policy_key": "short_mixed_clean_path",
+      "rows": "19",
+      "mean_ev": "-0.0047126642525147",
+      "hit_rate": "0.2631578947368421",
+      "loss_rate": "0.7368421052631579",
+      "risk_cluster_score": "1.1369078683903004",
+      "signed_combined_autocorr": "-0.26996803007354697"
+    },
+    {
+      "date": "2026-05-19",
+      "side_name": "short",
+      "archetype_policy_key": "short_default_clean_path",
+      "rows": "19",
+      "mean_ev": "-0.0015341421307235",
+      "hit_rate": "0.3157894736842105",
+      "loss_rate": "0.6842105263157895",
+      "risk_cluster_score": "1.1216499398495094",
+      "signed_combined_autocorr": "-0.31164029465567056"
+    },
+    {
+      "date": "2026-06-14",
+      "side_name": "short",
+      "archetype_policy_key": "short_mixed_clean_path",
+      "rows": "14",
+      "mean_ev": "-0.0039057249866891",
+      "hit_rate": "0.3571428571428571",
+      "loss_rate": "0.6428571428571429",
+      "risk_cluster_score": "1.1070893398310426",
+      "signed_combined_autocorr": "-0.23804180725022148"
+    },
+    {
+      "date": "2026-05-18",
+      "side_name": "short",
+      "archetype_policy_key": "short_breakout_precision",
+      "rows": "47",
+      "mean_ev": "-0.001702198711635",
+      "hit_rate": "0.3191489361702128",
+      "loss_rate": "0.6808510638297872",
+      "risk_cluster_score": "0.9975967200592981",
+      "signed_combined_autocorr": "-0.1975193432820567"
+    },
+    {
+      "date": "2026-05-09",
+      "side_name": "short",
+      "archetype_policy_key": "short_default_clean_path",
+      "rows": "13",
+      "mean_ev": "-0.0068889344913455",
+      "hit_rate": "0.1538461538461538",
+      "loss_rate": "0.8461538461538461",
+      "risk_cluster_score": "0.9796620435640166",
+      "signed_combined_autocorr": "-0.11190732779856323"
+    },
+    {
+      "date": "2026-06-17",
+      "side_name": "long",
+      "archetype_policy_key": "long_breakout_diagnostic_candidate",
+      "rows": "32",
+      "mean_ev": "-0.0019216020061867",
+      "hit_rate": "0.53125",
+      "loss_rate": "0.46875",
+      "risk_cluster_score": "0.9670686712005915",
+      "signed_combined_autocorr": "-0.14179558960262267"
+    },
+    {
+      "date": "2026-06-20",
+      "side_name": "short",
+      "archetype_policy_key": "short_mixed_clean_path",
+      "rows": "58",
+      "mean_ev": "-0.009014363945803",
+      "hit_rate": "0.1551724137931034",
+      "loss_rate": "0.8448275862068966",
+      "risk_cluster_score": "0.9455976017169216",
+      "signed_combined_autocorr": "-0.20577491717233068"
+    },
+    {
+      "date": "2026-06-17",
+      "side_name": "short",
+      "archetype_policy_key": "short_breakout_precision",
+      "rows": "23",
+      "mean_ev": "-0.0093648043550227",
+      "hit_rate": "0.3478260869565217",
+      "loss_rate": "0.6521739130434783",
+      "risk_cluster_score": "0.9218198009512386",
+      "signed_combined_autocorr": "-0.28210948963973653"
+    },
+    {
+      "date": "2026-05-19",
+      "side_name": "short",
+      "archetype_policy_key": "short_breakout_precision",
+      "rows": "50",
+      "mean_ev": "0.0016329049944761",
+      "hit_rate": "0.36",
+      "loss_rate": "0.64",
+      "risk_cluster_score": "0.918972794206193",
+      "signed_combined_autocorr": "-0.23427461596030108"
+    }
+  ],
+  "top_overall_dates": [
+    {
+      "date": "2026-05-23",
+      "rows": "11",
+      "mean_ev": "-0.011561837228523",
+      "hit_rate": "0.0",
+      "loss_rate": "1.0",
+      "loss_cluster_score": "1.4338063566531694",
+      "negative_hit_surprise_cluster_score": "0.5338063566531693"
+    },
+    {
+      "date": "2026-05-18",
+      "rows": "231",
+      "mean_ev": "0.000107649460212",
+      "hit_rate": "0.3246753246753247",
+      "loss_rate": "0.6753246753246753",
+      "loss_cluster_score": "0.6941342294819015",
+      "negative_hit_surprise_cluster_score": "0.1984820555688581"
+    },
+    {
+      "date": "2026-05-19",
+      "rows": "198",
+      "mean_ev": "-0.0002338299029631",
+      "hit_rate": "0.3484848484848485",
+      "loss_rate": "0.6515151515151515",
+      "loss_cluster_score": "0.6078378057512943",
+      "negative_hit_surprise_cluster_score": "0.2560611560051014"
+    },
+    {
+      "date": "2026-06-19",
+      "rows": "177",
+      "mean_ev": "-0.0009388649832828",
+      "hit_rate": "0.384180790960452",
+      "loss_rate": "0.615819209039548",
+      "loss_cluster_score": "0.5849550228303968",
+      "negative_hit_surprise_cluster_score": "0.2156368410122149"
+    },
+    {
+      "date": "2026-06-20",
+      "rows": "148",
+      "mean_ev": "-0.0002290839274575",
+      "hit_rate": "0.3716216216216216",
+      "loss_rate": "0.6283783783783784",
+      "loss_cluster_score": "0.5575608662658196",
+      "negative_hit_surprise_cluster_score": "0.283411206401874"
+    },
+    {
+      "date": "2026-06-17",
+      "rows": "189",
+      "mean_ev": "-0.0029855825479891",
+      "hit_rate": "0.455026455026455",
+      "loss_rate": "0.544973544973545",
+      "loss_cluster_score": "0.535852178563812",
+      "negative_hit_surprise_cluster_score": "0.2954266466489185"
+    },
+    {
+      "date": "2026-05-22",
+      "rows": "173",
+      "mean_ev": "0.0021294301638875",
+      "hit_rate": "0.3641618497109826",
+      "loss_rate": "0.6358381502890174",
+      "loss_cluster_score": "0.5214667628423981",
+      "negative_hit_surprise_cluster_score": "0.2028621116796074"
+    },
+    {
+      "date": "2026-06-30",
+      "rows": "164",
+      "mean_ev": "-0.0008107506933269",
+      "hit_rate": "0.3902439024390244",
+      "loss_rate": "0.6097560975609756",
+      "loss_cluster_score": "0.5106056536079049",
+      "negative_hit_surprise_cluster_score": "0.2241025861232422"
+    },
+    {
+      "date": "2026-05-01",
+      "rows": "214",
+      "mean_ev": "0.0028846966584133",
+      "hit_rate": "0.3504672897196261",
+      "loss_rate": "0.6495327102803738",
+      "loss_cluster_score": "0.4225352112676056",
+      "negative_hit_surprise_cluster_score": "0.0"
+    },
+    {
+      "date": "2026-06-10",
+      "rows": "203",
+      "mean_ev": "0.0044830447572324",
+      "hit_rate": "0.5221674876847291",
+      "loss_rate": "0.4778325123152709",
+      "loss_cluster_score": "0.4153120332905978",
+      "negative_hit_surprise_cluster_score": "0.2529357956668353"
+    },
+    {
+      "date": "2026-05-25",
+      "rows": "45",
+      "mean_ev": "0.0020064204329941",
+      "hit_rate": "0.4",
+      "loss_rate": "0.6",
+      "loss_cluster_score": "0.4090909090909091",
+      "negative_hit_surprise_cluster_score": "0.0"
+    },
+    {
+      "date": "2026-05-21",
+      "rows": "186",
+      "mean_ev": "0.002097526584678",
+      "hit_rate": "0.4193548387096774",
+      "loss_rate": "0.5806451612903226",
+      "loss_cluster_score": "0.3998933419959873",
+      "negative_hit_surprise_cluster_score": "0.1539473960500412"
+    }
+  ]
+}

@@ -111,11 +111,29 @@ MODEL_AND_POLICY_CONTEXT_KEYS = (
     "rank_percentile",
     "sizer_rank_percentile",
     "policy_rank_pct",
+    "policy_rank_reference_n",
+    "policy_rank_reference_source",
     "auction_rank_pct",
+    "auction_rank_reference_n",
+    "auction_rank_reference_source",
+    "auction_rank_score_source",
     "normalized_rank_score",
     "threshold_rank_score",
+    "threshold_rank_score_source",
+    "threshold_rank_score_after_friction_ev",
     "effective_threshold",
     "deployment_rank_threshold",
+    "final_threshold",
+    "final_gate_rank_score",
+    "final_gate_threshold",
+    "final_gate_rank_score_source",
+    "portfolio_gate_rank_score",
+    "portfolio_gate_rank_score_source",
+    "portfolio_ordering_rank_score",
+    "portfolio_allocation_rank_score",
+    "portfolio_gate_initial_threshold",
+    "portfolio_gate_final_threshold",
+    "portfolio_gate_threshold_viability_margin",
     "quote_size",
     "requested_base_amount",
     "entry_notional_quote",
@@ -141,6 +159,90 @@ MODEL_AND_POLICY_CONTEXT_KEYS = (
     "position_size_after_liquidity",
     "policy_artifact_run_id",
     "policy_schema_version",
+    "policy_archetype",
+    "local_side_archetype",
+    "source_archetype",
+    "archetype_label_family",
+    "policy_archetype_source",
+    "archetype_hit_surprise_threshold",
+    "archetype_hit_surprise_mode",
+    "archetype_hit_surprise_applied",
+    "archetype_hit_surprise_reason",
+    "archetype_hit_surprise_matched_key",
+    "archetype_hit_surprise_threshold_delta",
+    "archetype_hit_surprise_quality_adjustment",
+    "archetype_hit_surprise_priority_multiplier",
+    "archetype_hit_surprise_priority_adjustment",
+    "archetype_hit_surprise_rank_adjustment",
+    "archetype_hit_surprise_actual_hit_rate",
+    "archetype_hit_surprise_expected_hit_rate",
+    "archetype_hit_surprise_hit_rate_delta",
+    "archetype_hit_surprise_hit_rate_surprise_z",
+    "archetype_hit_surprise_support_confidence",
+    "archetype_hit_surprise_n_eff",
+    "archetype_hit_surprise_rows",
+    "strategy_ev_threshold",
+    "strategy_ev_threshold_before_dynamic",
+    "strategy_ev_threshold_source",
+    "strategy_ev_threshold_enabled",
+    "strategy_ev_threshold_reason",
+    "strategy_ev_threshold_mean_net_return",
+    "strategy_ev_threshold_hit_rate",
+    "strategy_ev_threshold_n_trades",
+    "strategy_ev_gate_allowed",
+    "strategy_ev_gate_reason",
+    "strategy_ev_avg_net_return",
+    "strategy_ev_hit_rate",
+    "strategy_ev_target_mean_net_return",
+    "strategy_ev_min_hit_rate",
+    "strategy_ev_diagnostic_threshold",
+    "strategy_ev_diagnostic_threshold_enabled",
+    "strategy_ev_diagnostic_threshold_reason",
+    "portfolio_priority",
+    "portfolio_priority_multiplier",
+    "portfolio_priority_adjustment",
+    "portfolio_rank_adjustment",
+    "portfolio_priority_after_live_friction_ev",
+    "estimated_hit_rate",
+    "estimated_hit_rate_source",
+    "estimated_hit_rate_calibration_n",
+    "estimated_ev_gross_return",
+    "estimated_ev_net_return",
+    "estimated_ev_cost_bps",
+    "estimated_ev_historical_net_return",
+    "estimated_ev_historical_cost_bps",
+    "estimated_ev_hit_rate",
+    "estimated_ev_source",
+    "estimated_ev_calibration_n",
+    "ev_adjusted_entry_friction_bps",
+    "ev_haircut_bps",
+    "ev_haircut_raw_live_entry_friction_bps",
+    "ev_haircut_observed_spread_bps",
+    "ev_haircut_observed_half_spread_bps",
+    "ev_haircut_spread_baseline_bps",
+    "ev_haircut_spread_baseline_source",
+    "ev_haircut_half_spread_baseline_bps",
+    "ev_haircut_spread_excess_bps",
+    "ev_haircut_orderbook_slippage_bps",
+    "ev_haircut_adverse_signal_gap_bps",
+    "ev_haircut_observed_delay_slippage_bps",
+    "ev_haircut_delay_slippage_baseline_bps",
+    "ev_haircut_delay_slippage_excess_bps",
+    "ev_haircut_contract",
+    "ev_adjusted_net_return_before_friction",
+    "ev_adjusted_net_return_after_friction",
+    "ev_adjusted_calibrated_score",
+    "ev_adjusted_rank_score",
+    "ev_adjusted_source",
+    "ev_adjusted_historical_net_return_before_rebase",
+    "ev_inference_cost_rebase_enabled",
+    "ev_inference_cost_rebase_applied",
+    "ev_inference_fixed_round_trip_cost_bps",
+    "ev_inference_spread_multiplier",
+    "ev_inference_spread_observed_or_baseline_bps",
+    "ev_inference_spread_model_bps",
+    "ev_inference_total_cost_bps",
+    "ev_inference_cost_model_contract",
     "inference_drift_score",
     "base_lgbm_inference_drift_score",
     "meta_lgbm_inference_drift_score",
@@ -159,6 +261,14 @@ MODEL_AND_POLICY_CONTEXT_KEYS = (
     "prediction_entropy",
     "prob_uncertainty",
     "dynamic_hr_surprise_z_eff",
+    "dynamic_hr_surprise_threshold",
+    "dynamic_hr_surprise_applied",
+    "dynamic_hr_surprise_reason",
+    "dynamic_hr_surprise_head",
+    "dynamic_hr_surprise_guarded_y",
+    "dynamic_hr_surprise_w_lower",
+    "dynamic_hr_surprise_w_raise",
+    "dynamic_hr_surprise_state_age_days",
     "hit_rate_surprise_z_eff",
     "dynamic_hr_threshold",
     "dynamic_hr_base_threshold",
@@ -1103,6 +1213,76 @@ def _executable_stop_breached(side: str, stop_price: Any, price: Any) -> bool:
     if side_l == "short":
         return float(current) >= float(stop)
     return False
+
+
+def _policy_entry_price_for_state(state: Dict[str, Any]) -> float:
+    for key in (
+        "policy_entry_price",
+        "realized_entry_price",
+        "actual_entry_price",
+        "entry_price",
+        "theoretical_entry_price",
+        "ohlcv_entry_price",
+        "signal_price",
+        "expected_entry_price",
+        "decision_mid",
+    ):
+        value = _safe_float(state.get(key), default=np.nan)
+        if np.isfinite(value) and value > 0.0:
+            return float(value)
+    return float("nan")
+
+
+def _update_live_path_extrema_from_price(
+    state: Dict[str, Any],
+    *,
+    side: str,
+    price: Any,
+    timestamp: Optional[pd.Timestamp] = None,
+) -> Dict[str, Any]:
+    """Update executable-path MFE/MAE from one live closeable-price sample."""
+    px = _safe_float(price, default=np.nan)
+    entry = _policy_entry_price_for_state(state)
+    if not (np.isfinite(px) and px > 0.0 and np.isfinite(entry) and entry > 0.0):
+        return {
+            "updated": False,
+            "entry_price": entry if np.isfinite(entry) else None,
+            "price": px if np.isfinite(px) else None,
+        }
+    side_l = str(side or state.get("side") or "").strip().lower()
+    prev_peak = _safe_float(state.get("peak_price"), default=entry)
+    if not np.isfinite(prev_peak) or prev_peak <= 0.0:
+        prev_peak = entry
+    prev_mfe = max(_safe_float(state.get("mfe"), default=0.0), 0.0)
+    prev_mae = max(_safe_float(state.get("mae"), default=0.0), 0.0)
+    if side_l == "short":
+        peak = min(float(prev_peak), float(px))
+        mfe = max(prev_mfe, (entry - px) / max(abs(entry), 1e-12))
+        mae = max(prev_mae, (px - entry) / max(abs(entry), 1e-12))
+    else:
+        peak = max(float(prev_peak), float(px))
+        mfe = max(prev_mfe, (px - entry) / max(abs(entry), 1e-12))
+        mae = max(prev_mae, (entry - px) / max(abs(entry), 1e-12))
+    ts = pd.Timestamp(timestamp if timestamp is not None else pd.Timestamp.now(tz="UTC"))
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("UTC")
+    else:
+        ts = ts.tz_convert("UTC")
+    state["policy_entry_price"] = float(entry)
+    state.setdefault("theoretical_entry_price", float(entry))
+    state["peak_price"] = float(peak)
+    state["mfe"] = float(max(mfe, 0.0))
+    state["mae"] = float(max(mae, 0.0))
+    state["last_mfe_update_ts"] = ts
+    return {
+        "updated": True,
+        "entry_price": float(entry),
+        "price": float(px),
+        "peak_price": float(peak),
+        "mfe": float(max(mfe, 0.0)),
+        "mae": float(max(mae, 0.0)),
+        "timestamp": ts.isoformat(),
+    }
 
 
 def _stop_distance_bps(side: str, stop_price: Any, price: Any) -> float:
@@ -3480,18 +3660,6 @@ def _closed_trade_metrics(
     entry_fee_quote = _safe_float(state.get("entry_fee_quote"), np.nan)
     entry_fee_source = str(state.get("entry_fee_source") or "")
     fee_quote, fees_verified = _combine_fee_quotes(entry_fee_quote, exit_fee_quote)
-    net_pnl = (
-        gross_pnl - fee_quote
-        if np.isfinite(gross_pnl) and np.isfinite(fee_quote)
-        else np.nan
-    )
-    net_pnl_pct = net_pnl / max(notional, 1e-12) if np.isfinite(notional) else np.nan
-    gross_to_net_cost = fee_quote if np.isfinite(fee_quote) else np.nan
-    gross_to_net_cost_pct = (
-        gross_to_net_cost / max(notional, 1e-12)
-        if np.isfinite(gross_to_net_cost) and np.isfinite(notional)
-        else np.nan
-    )
     entry_order_type = str(state.get("entry_order_type") or "market")
     close_order_type = str(order.get("type") or "market")
     entry_fee_estimate_quote = _safe_float(
@@ -3568,6 +3736,58 @@ def _closed_trade_metrics(
         )
         if source
     ]
+    fee_lookup_meta = order.get("fee_fetch_meta")
+    fee_status = "missing_fee_inputs"
+    if fees_verified:
+        fee_status = "verified_exchange_fees"
+    elif np.isfinite(entry_fee_quote) or np.isfinite(exit_fee_quote):
+        fee_status = "partial_exchange_fees_estimated_missing_side"
+    elif estimated_fees_complete:
+        fee_status = "estimated_missing_exchange_fees"
+
+    # Use verified exchange fees when available. If Kraken does not expose one or
+    # both fee legs for the close, promote the complete configured/default fee
+    # estimate into the primary net fields while keeping the verification status
+    # explicit. This keeps live logs and emails usable for net-PnL decisions
+    # without pretending estimated fees are exchange-verified.
+    primary_fee_quote = fee_quote if fees_verified else np.nan
+    primary_fee_source = "verified_order_fees" if fees_verified else ""
+    primary_fee_estimated = False
+    if not fees_verified and estimated_fees_complete and np.isfinite(
+        estimated_fee_quote
+    ):
+        primary_fee_quote = float(estimated_fee_quote)
+        primary_fee_source = (
+            f"estimated_fees({'+'.join(estimated_fee_sources)})"
+            if estimated_fee_sources
+            else "estimated_fees"
+        )
+        primary_fee_estimated = True
+    elif not fees_verified and np.isfinite(fee_quote):
+        primary_fee_quote = float(fee_quote)
+        primary_fee_source = (
+            f"partial_or_missing(entry={entry_fee_source or 'missing'},"
+            f"exit={exit_fee_source or 'missing'})"
+        )
+
+    net_pnl = (
+        float(gross_pnl - primary_fee_quote)
+        if np.isfinite(gross_pnl) and np.isfinite(primary_fee_quote)
+        else np.nan
+    )
+    net_pnl_pct = (
+        net_pnl / max(notional, 1e-12)
+        if np.isfinite(net_pnl) and np.isfinite(notional)
+        else np.nan
+    )
+    gross_to_net_cost = (
+        float(primary_fee_quote) if np.isfinite(primary_fee_quote) else np.nan
+    )
+    gross_to_net_cost_pct = (
+        gross_to_net_cost / max(notional, 1e-12)
+        if np.isfinite(gross_to_net_cost) and np.isfinite(notional)
+        else np.nan
+    )
     stop_price = _safe_float(state.get("stop_price"), default=np.nan)
     placed_stop_price = _safe_float(
         state.get("final_placed_stop"),
@@ -3848,15 +4068,6 @@ def _closed_trade_metrics(
         state.get("threshold_rank_score"),
         default=_safe_float(ranking_audit.get("threshold_score"), default=np.nan),
     )
-    fee_lookup_meta = order.get("fee_fetch_meta")
-    fee_status = "missing_fee_inputs"
-    if fees_verified:
-        fee_status = "verified_exchange_fees"
-    elif np.isfinite(entry_fee_quote) or np.isfinite(exit_fee_quote):
-        fee_status = "partial_exchange_fees_estimated_missing_side"
-    elif estimated_fees_complete:
-        fee_status = "estimated_missing_exchange_fees"
-
     reporting_metric_fields = {
         key: state.get(key)
         for key in MODEL_AND_POLICY_REPORTING_METRIC_KEYS
@@ -3953,11 +4164,7 @@ def _closed_trade_metrics(
         "exit_fee_quote": exit_fee_quote,
         "entry_fee_source": entry_fee_source,
         "exit_fee_source": exit_fee_source,
-        "fee_source": (
-            "verified_order_fees"
-            if fees_verified
-            else f"partial_or_missing(entry={entry_fee_source or 'missing'},exit={exit_fee_source})"
-        ),
+        "fee_source": primary_fee_source,
         "fee_fetch_meta": fee_lookup_meta,
         "fee_source_order_fetch": order.get("fee_source_order_fetch"),
         "fee_fetch_error_category": order.get("fee_fetch_error_category"),
@@ -3980,9 +4187,7 @@ def _closed_trade_metrics(
         "estimated_fee_source": (
             "+".join(estimated_fee_sources) if estimated_fee_sources else ""
         ),
-        "fees_estimated": (
-            bool(np.isfinite(estimated_fee_quote) and not fees_verified)
-        ),
+        "fees_estimated": bool(primary_fee_estimated),
         "fees_estimated_complete": estimated_fees_complete,
         "net_pnl_estimated": net_pnl_estimated,
         "net_pnl_pct_estimated": net_pnl_pct_estimated,
@@ -4017,7 +4222,7 @@ def _closed_trade_metrics(
         "close_order_cost": order.get("cost"),
         "fee_cost": fee_cost,
         "fee_currency": fee_currency,
-        "fees_amount": fee_quote,
+        "fees_amount": gross_to_net_cost,
         "decision_module": state.get("decision_module"),
         "stop_policy_params_source": state.get("stop_policy_params_source"),
         "stop_policy_params_hash": state.get("stop_policy_params_hash"),
@@ -6467,6 +6672,220 @@ class OCOExecutor:
                     "last_lightweight_stop_sentinel_ts": now_ts,
                 }
             )
+            extrema_update = _update_live_path_extrema_from_price(
+                state,
+                side=side,
+                price=price,
+                timestamp=now_ts,
+            )
+            intrabar_policy_update: Dict[str, Any] = {}
+            if extrema_update.get("updated"):
+                try:
+                    strategy_key = str(
+                        state.get("strategy_id") or state.get("bucket_key") or ""
+                    )
+                    params = self.get_simple_policy_stop_params(strategy_key)
+                    if params:
+                        decision = compute_simple_policy_stop_decision(
+                            state={
+                                **state,
+                                "entry_price": extrema_update["entry_price"],
+                                "peak_price": extrema_update["peak_price"],
+                                "mfe": extrema_update["mfe"],
+                                "mae": extrema_update["mae"],
+                            },
+                            latest_market_state=pd.DataFrame(),
+                            policy_params=params,
+                            side=side,
+                            require_metadata=True,
+                        )
+                        intrabar_policy_update = {
+                            "evaluated": True,
+                            "reason": decision.reason,
+                            "reason_detail": decision.reason_detail,
+                            "should_replace": bool(decision.should_replace),
+                            "should_exit": bool(decision.should_exit),
+                            "requested_policy_stop": (
+                                float(decision.requested_policy_stop)
+                                if decision.requested_policy_stop is not None
+                                and np.isfinite(
+                                    _safe_float(
+                                        decision.requested_policy_stop,
+                                        default=np.nan,
+                                    )
+                                )
+                                else None
+                            ),
+                            "mfe": float(decision.mfe)
+                            if decision.mfe is not None
+                            else extrema_update.get("mfe"),
+                            "mae": float(decision.mae)
+                            if decision.mae is not None
+                            else extrema_update.get("mae"),
+                            "peak_price": float(decision.peak_price)
+                            if decision.peak_price is not None
+                            else extrema_update.get("peak_price"),
+                        }
+                        state["last_intrabar_policy_update"] = intrabar_policy_update
+                        if decision.should_exit:
+                            exit_reason = str(
+                                decision.exit_reason
+                                or decision.reason
+                                or "simple_policy_intrabar_exit"
+                            )
+                            _append_position_event(
+                                state,
+                                "lightweight_stop_sentinel_policy_exit",
+                                price=float(price) if np.isfinite(price) else None,
+                                source=sample.get("source"),
+                                reason=exit_reason,
+                                reason_detail=decision.reason_detail,
+                                mfe=intrabar_policy_update.get("mfe"),
+                                mae=intrabar_policy_update.get("mae"),
+                                peak_price=intrabar_policy_update.get("peak_price"),
+                            )
+                            self._close_position(symbol, state, float(price), exit_reason)
+                            close_metrics = state.get("last_close_metrics")
+                            statuses[symbol] = {
+                                "status": "closed"
+                                if isinstance(close_metrics, dict)
+                                else "close_failed",
+                                "reason": exit_reason,
+                                "closed_trade": close_metrics
+                                if isinstance(close_metrics, dict)
+                                else None,
+                                "error_category": state.get("close_error_category"),
+                                "error": state.get("close_error"),
+                                "mfe": intrabar_policy_update.get("mfe"),
+                                "mae": intrabar_policy_update.get("mae"),
+                                "peak_price": intrabar_policy_update.get("peak_price"),
+                                "intrabar_policy_update": intrabar_policy_update,
+                            }
+                            continue
+                        if decision.should_replace:
+                            previous_policy_stop = _safe_float(
+                                state.get("stop_price"), default=np.nan
+                            )
+                            self._update_stop_loss_from_policy_decision(
+                                symbol,
+                                state,
+                                decision,
+                            )
+                            close_metrics = state.get("last_close_metrics")
+                            if isinstance(close_metrics, dict):
+                                statuses[symbol] = {
+                                    "status": "closed",
+                                    "reason": close_metrics.get("reason"),
+                                    "closed_trade": close_metrics,
+                                    "mfe": intrabar_policy_update.get("mfe"),
+                                    "mae": intrabar_policy_update.get("mae"),
+                                    "peak_price": intrabar_policy_update.get(
+                                        "peak_price"
+                                    ),
+                                    "intrabar_policy_update": intrabar_policy_update,
+                                }
+                                continue
+                            intrabar_policy_update["previous_policy_stop"] = (
+                                float(previous_policy_stop)
+                                if np.isfinite(previous_policy_stop)
+                                else None
+                            )
+                            intrabar_policy_update["active_policy_stop"] = (
+                                float(_safe_float(state.get("stop_price"), np.nan))
+                                if np.isfinite(
+                                    _safe_float(state.get("stop_price"), np.nan)
+                                )
+                                else None
+                            )
+                            stop_price = _safe_float(
+                                state.get("stop_price"),
+                                default=stop_price,
+                            )
+                            policy_executable_stop_price = _safe_float(
+                                state.get("policy_stop_price", state.get("stop_price")),
+                                default=stop_price,
+                            )
+                            requested_policy_stop_price = _safe_float(
+                                state.get("requested_policy_stop"),
+                                default=policy_executable_stop_price,
+                            )
+                            exchange_trigger_stop_price = _safe_float(
+                                state.get(
+                                    "exchange_stop_price",
+                                    state.get("final_placed_stop"),
+                                ),
+                                default=np.nan,
+                            )
+                            final_placed_stop_price = _safe_float(
+                                state.get("final_placed_stop"),
+                                default=exchange_trigger_stop_price,
+                            )
+                            exchange_trigger_is_more_protective = (
+                                np.isfinite(exchange_trigger_stop_price)
+                                and np.isfinite(policy_executable_stop_price)
+                                and _stop_is_at_least_as_protective(
+                                    side,
+                                    float(exchange_trigger_stop_price),
+                                    float(policy_executable_stop_price),
+                                )
+                            )
+                    else:
+                        intrabar_policy_update = {
+                            "evaluated": False,
+                            "reason": "missing_simple_policy_stop_params",
+                            "strategy_key": strategy_key,
+                        }
+                except SimplePolicyStopParamsError as exc:
+                    intrabar_policy_update = {
+                        "evaluated": False,
+                        "reason": "invalid_simple_policy_runtime_params",
+                        "error": str(exc),
+                    }
+                    _append_position_event(
+                        state,
+                        "lightweight_stop_sentinel_policy_update_skipped",
+                        **intrabar_policy_update,
+                    )
+                except Exception as exc:
+                    intrabar_policy_update = {
+                        "evaluated": False,
+                        "reason": "simple_policy_intrabar_update_error",
+                        "error_category": _classify_exchange_error(exc),
+                        "error": str(exc),
+                    }
+                    _append_position_event(
+                        state,
+                        "lightweight_stop_sentinel_policy_update_error",
+                        **intrabar_policy_update,
+                    )
+
+            distance_bps = _stop_distance_bps(side, stop_price, price)
+            overshoot_bps = _stop_breach_overshoot_bps(side, stop_price, price)
+            breached = _executable_stop_breached(side, stop_price, price)
+            effective_pretrigger_buffer_bps = _profit_lock_stop_pretrigger_buffer_bps(
+                self.config,
+                base_buffer_bps=float(pretrigger_buffer_bps),
+                stop_reason=state.get("stop_reason"),
+            )
+            pretriggered = bool(
+                pretrigger_enabled
+                and not breached
+                and effective_pretrigger_buffer_bps > 0.0
+                and np.isfinite(distance_bps)
+                and 0.0 <= float(distance_bps) <= float(effective_pretrigger_buffer_bps)
+            )
+            state.update(
+                {
+                    "sentinel_stop_distance_bps": distance_bps,
+                    "sentinel_stop_breach_overshoot_bps": overshoot_bps,
+                    "sentinel_pretrigger_buffer_bps": float(
+                        effective_pretrigger_buffer_bps
+                    ),
+                    "sentinel_pretriggered": pretriggered,
+                    "sentinel_mfe_updated": bool(extrema_update.get("updated")),
+                    "sentinel_intrabar_policy_update": intrabar_policy_update,
+                }
+            )
             event_payload = {
                 "side": side,
                 "price": float(price) if np.isfinite(price) else None,
@@ -6516,6 +6935,11 @@ class OCOExecutor:
                 "orderbook_ask": sample.get("orderbook_ask"),
                 "orderbook_spread_bps": sample.get("orderbook_spread_bps"),
                 "stop_reason": state.get("stop_reason"),
+                "mfe": state.get("mfe"),
+                "mae": state.get("mae"),
+                "peak_price": state.get("peak_price"),
+                "mfe_updated": extrema_update.get("updated"),
+                "intrabar_policy_update": intrabar_policy_update,
             }
             _append_position_event(
                 state,
@@ -6575,6 +6999,11 @@ class OCOExecutor:
                 "orderbook_error": sample.get("orderbook_error"),
                 "ticker_error_category": sample.get("ticker_error_category"),
                 "ticker_error": sample.get("ticker_error"),
+                "mfe": state.get("mfe"),
+                "mae": state.get("mae"),
+                "peak_price": state.get("peak_price"),
+                "mfe_updated": bool(extrema_update.get("updated")),
+                "intrabar_policy_update": intrabar_policy_update,
             }
             if breached or pretriggered:
                 stop_reason = str(state.get("stop_reason") or "original_stop_loss")
@@ -8413,6 +8842,7 @@ class TradeExecutor:
         pending_context = self._load_pending_entry_context(symbol)
         if not isinstance(pending_context, dict):
             pending_context = {}
+        had_pending_trade_log_context = bool(pending_context)
         raw_position_context = (
             dict(position_context) if isinstance(position_context, dict) else {}
         )
@@ -8424,7 +8854,6 @@ class TradeExecutor:
                 np.isfinite(value_float) and not np.isfinite(existing_float)
             ):
                 pending_context[key] = value
-        had_pending_context = bool(pending_context)
         pending_strategy = ""
         original_pending_strategy = ""
         if pending_context:
@@ -8487,9 +8916,20 @@ class TradeExecutor:
                 ("params_hash", "stop_policy_params_hash"),
                 ("schema", "stop_policy_schema"),
             ):
-                if not pending_context.get(dst_key) and artifact_params.get(src_key):
+                if artifact_params.get(src_key) and (
+                    fallback_strategy_used or not pending_context.get(dst_key)
+                ):
+                    old_value = pending_context.get(dst_key)
+                    if (
+                        fallback_strategy_used
+                        and old_value not in ("", None)
+                        and old_value != artifact_params.get(src_key)
+                    ):
+                        pending_context[f"reconciliation_previous_{dst_key}"] = old_value
                     pending_context[dst_key] = artifact_params.get(src_key)
-            if not pending_context.get("sl_mult") and artifact_params.get("sl_mult"):
+            if artifact_params.get("sl_mult") and (
+                fallback_strategy_used or not pending_context.get("sl_mult")
+            ):
                 pending_context["sl_mult"] = artifact_params.get("sl_mult")
             artifact_barrier = _safe_float(
                 artifact_params.get("barrier_frac")
@@ -8502,10 +8942,22 @@ class TradeExecutor:
                 default=np.nan,
             )
             if (
-                not (np.isfinite(context_barrier) and context_barrier > 0.0)
+                (
+                    fallback_strategy_used
+                    or not (np.isfinite(context_barrier) and context_barrier > 0.0)
+                )
                 and np.isfinite(artifact_barrier)
                 and artifact_barrier > 0.0
             ):
+                if (
+                    fallback_strategy_used
+                    and np.isfinite(context_barrier)
+                    and context_barrier > 0.0
+                    and abs(float(context_barrier) - float(artifact_barrier)) > 1e-12
+                ):
+                    pending_context["reconciliation_previous_barrier_frac"] = float(
+                        context_barrier
+                    )
                 pending_context["barrier_frac"] = float(artifact_barrier)
                 pending_context["barrier_pct"] = float(artifact_barrier)
                 pending_context["reconciliation_barrier_source"] = (
@@ -8666,7 +9118,19 @@ class TradeExecutor:
                 else (stop_price / entry_price - 1.0)
             )
             if np.isfinite(pending_stop_gap) and pending_stop_gap > 0.0:
-                attach_barrier_frac = float(pending_stop_gap) / float(sl_mult)
+                stop_implied_barrier = float(pending_stop_gap) / float(sl_mult)
+                pending_context["reconciliation_existing_stop_implied_barrier_frac"] = (
+                    stop_implied_barrier
+                )
+                if not (np.isfinite(pending_barrier) and pending_barrier > 0.0):
+                    attach_barrier_frac = stop_implied_barrier
+                    pending_context["reconciliation_barrier_source"] = (
+                        "existing_exchange_stop_gap"
+                    )
+                else:
+                    pending_context[
+                        "reconciliation_existing_stop_preserved_as_current_stop"
+                    ] = True
         else:
             stop_price = (
                 entry_price * (1.0 - sl_mult * attach_barrier_frac)
@@ -8764,9 +9228,24 @@ class TradeExecutor:
             "reconciliation_barrier_source": pending_context.get(
                 "reconciliation_barrier_source"
             ),
+            "reconciliation_previous_barrier_frac": pending_context.get(
+                "reconciliation_previous_barrier_frac"
+            ),
+            "reconciliation_existing_stop_implied_barrier_frac": pending_context.get(
+                "reconciliation_existing_stop_implied_barrier_frac"
+            ),
+            "reconciliation_existing_stop_preserved_as_current_stop": pending_context.get(
+                "reconciliation_existing_stop_preserved_as_current_stop"
+            ),
+            "reconciliation_previous_stop_policy_params_source": pending_context.get(
+                "reconciliation_previous_stop_policy_params_source"
+            ),
+            "reconciliation_previous_stop_policy_params_hash": pending_context.get(
+                "reconciliation_previous_stop_policy_params_hash"
+            ),
             "reconciliation_context_source": (
                 "pending_trade_log"
-                if had_pending_context
+                if had_pending_trade_log_context
                 else "artifact_fallback_external_position"
             ),
             "reconciliation_entry_fill_source": pending_context.get(
@@ -8783,7 +9262,7 @@ class TradeExecutor:
             for key, value in raw_position_context.items():
                 if value not in ("", None):
                     state[key] = value
-        if had_pending_context:
+        if had_pending_trade_log_context:
             state["recovered_from_pending_trade_log"] = True
         if pending_context:
             for key in tuple(EXECUTION_AUDIT_KEYS) + MODEL_AND_POLICY_CONTEXT_KEYS:
@@ -10070,13 +10549,27 @@ class TradeExecutor:
             live_bucket_params = self.oco_executor.get_simple_policy_stop_params(
                 bucket_key
             )
+            artifact_barrier_frac = _safe_float(
+                live_bucket_params.get("barrier_frac")
+                or live_bucket_params.get("barrier_pct"),
+                default=np.nan,
+            )
+            trusted_entry_barrier_frac = (
+                live_barrier_frac
+                if (
+                    (not np.isfinite(artifact_barrier_frac) or artifact_barrier_frac <= 0.0)
+                    and np.isfinite(live_barrier_frac)
+                    and live_barrier_frac > 0.0
+                )
+                else None
+            )
+            stop_validation_state = {"strategy_id": bucket_key}
+            if trusted_entry_barrier_frac is not None:
+                stop_validation_state["barrier_frac"] = trusted_entry_barrier_frac
             try:
                 validate_simple_policy_stop_params(
                     live_bucket_params,
-                    state={
-                        "strategy_id": bucket_key,
-                        "barrier_frac": live_barrier_frac,
-                    },
+                    state=stop_validation_state,
                     require_metadata=True,
                     require_barrier=True,
                 )
@@ -10110,7 +10603,7 @@ class TradeExecutor:
                     policy_params=live_bucket_params,
                     side=side,
                     strategy_id=bucket_key,
-                    barrier_frac=live_barrier_frac,
+                    barrier_frac=trusted_entry_barrier_frac,
                     require_metadata=True,
                 )
                 valid_pre_entry_stop, invalid_pre_entry_stop_reason = (
@@ -10247,12 +10740,12 @@ class TradeExecutor:
                         "continuing with leveraged order params/implicit margin"
                     )
 
-            force_market_entries = bool(
-                self.config.get("force_market_entry_orders", False)
-            )
             requested_order_type = str(order_type or "").lower()
-            if requested_order_type == "market":
-                force_market_entries = True
+            force_market_entries = True
+            if requested_order_type == "limit" and not bool(
+                self.config.get("force_market_entry_orders", False)
+            ):
+                force_market_entries = False
             if force_market_entries and price is not None:
                 tprint(
                     f"Live entry for {symbol}: forcing market order; "
@@ -10452,7 +10945,7 @@ class TradeExecutor:
                     entry_price=entry_price,
                     size=stop_amount,
                     bucket_key=bucket_key,
-                    barrier_frac=live_barrier_frac,
+                    barrier_frac=pre_entry_stop_decision.barrier_frac,
                 )
                 if isinstance(trade_context, dict):
                     with self.oco_executor._positions_lock:
@@ -10835,12 +11328,25 @@ class TradeExecutor:
                 or (trade_context or {}).get("barrier_pct"),
                 default=np.nan,
             )
+            artifact_barrier_frac = _safe_float(
+                params.get("barrier_frac") or params.get("barrier_pct"),
+                default=np.nan,
+            )
+            trusted_entry_barrier_frac = (
+                live_barrier_frac
+                if (
+                    (not np.isfinite(artifact_barrier_frac) or artifact_barrier_frac <= 0.0)
+                    and np.isfinite(live_barrier_frac)
+                    and live_barrier_frac > 0.0
+                )
+                else None
+            )
             initial_stop_decision = compute_initial_simple_policy_stop_decision(
                 entry_price=float(entry_price),
                 policy_params=params,
                 side=side,
                 strategy_id=bucket_key,
-                barrier_frac=live_barrier_frac,
+                barrier_frac=trusted_entry_barrier_frac,
                 require_metadata=True,
             )
         except SimplePolicyStopParamsError as exc:

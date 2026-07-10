@@ -16,7 +16,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
 import pandas as pd
@@ -39,6 +39,8 @@ if str(ROOT) not in sys.path:
 from extreme_price_movements.features_gmm_ae import (  # noqa: E402
     AE_GMM_FEATURE_COLUMNS,
     fit_ae_gmm_state,
+    load_ae_gmm_state_artifact,
+    save_ae_gmm_state_artifact,
     transform_ae_gmm_features,
 )
 from extreme_price_movements.economic_target_optimizer import (  # noqa: E402
@@ -151,7 +153,8 @@ DISCOVERY_CONTEXT_BUCKET_LIMITS = {
     "long_ae_gmm": 32,
     "short_ae_gmm": 32,
 }
-DEFAULT_AE_GMM_STATE_FEATURE_MAX_TRAIN_ROWS = 5000
+DEFAULT_AE_GMM_STATE_FEATURE_MAX_TRAIN_ROWS = 15000
+DEFAULT_AE_GMM_STATE_FEATURE_GMM_MAX_TRAIN_ROWS = 100000
 DEFAULT_AE_GMM_STATE_FEATURE_MAX_ITER = 32
 AE_GMM_SMOKE_FEATURE_POLICY = os.environ.get(
     "EPM_AE_GMM_SMOKE_FEATURE_POLICY",
@@ -1195,6 +1198,7 @@ def _fit_ae_gmm_state_for_rows(
     row_positions: np.ndarray,
     random_state: int,
     max_train_rows: int,
+    gmm_max_train_rows: int,
     ae_max_iter: int,
     require_both_sides: bool,
 ) -> dict[str, Any]:
@@ -1207,11 +1211,93 @@ def _fit_ae_gmm_state_for_rows(
         ),
         random_state=int(random_state),
         max_train_rows=int(max_train_rows),
+        gmm_max_train_rows=int(gmm_max_train_rows),
         ae_max_iter=int(ae_max_iter),
         require_both_sides=bool(require_both_sides),
         min_side_cluster_frac=0.02,
         min_side_cluster_rows=10,
     )
+
+
+def _persist_ae_gmm_state_artifact(
+    *,
+    state: dict[str, Any],
+    artifact_dir: Path | None,
+    artifact_name: str,
+    scope: str,
+    train_rows: int,
+    valid_rows: int,
+    input_feature_count: int,
+) -> dict[str, Any]:
+    if artifact_dir is None:
+        return {}
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(artifact_name or "fold")).strip("_") or "fold"
+    safe_scope = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(scope or "global")).strip("_") or "global"
+    stem = f"{safe_name}__{safe_scope}"
+    state_path = artifact_dir / f"{stem}_state.pkl"
+    manifest_path = artifact_dir / f"{stem}_manifest.json"
+    selected = dict(state.get("selected_config", {}) or {})
+    save_ae_gmm_state_artifact(
+        state,
+        state_path,
+        manifest_path=manifest_path,
+        extra_manifest={
+            "scope": str(scope),
+            "train_rows": int(train_rows),
+            "valid_rows": int(valid_rows),
+            "input_feature_count": int(input_feature_count),
+            "selected_config": selected,
+            "oos_transform_contract": "state_fit_on_fold_train_rows_only_then_frozen_transform_on_validation_rows",
+            "materialized_transform_rules": {
+                "emitted_feature_subset": list(state.get("_emitted_feature_subset", []) or []),
+                "emitted_feature_subset_count": int(len(state.get("_emitted_feature_subset", []) or [])),
+                "side_context_mode": str(state.get("_side_context_mode", "off")),
+                "chunk_rows": state.get("_transform_chunk_rows"),
+                "train_missing_value_policy": "median_from_train_matrix_then_zero_fill_remaining",
+                "validation_missing_value_policy": "same_train_median_then_zero_fill_remaining",
+                "feature_policy": str(AE_GMM_SMOKE_FEATURE_POLICY or "all"),
+            },
+        },
+    )
+    return {
+        f"ae_gmm_{safe_scope}_state_path": str(state_path),
+        f"ae_gmm_{safe_scope}_manifest_path": str(manifest_path),
+    }
+
+
+def _transform_ae_gmm_features_selected_chunked(
+    x_base: pd.DataFrame,
+    state: dict[str, Any],
+    *,
+    index: Any,
+    columns: list[str],
+    chunk_rows: int | None = None,
+) -> pd.DataFrame:
+    selected_columns = [str(col) for col in columns if str(col).strip()]
+    if not selected_columns:
+        return pd.DataFrame(index=index)
+    n_rows = int(len(x_base))
+    if n_rows == 0:
+        return pd.DataFrame(index=index, columns=selected_columns, dtype=np.float32)
+    chunk = int(
+        chunk_rows
+        if chunk_rows is not None
+        else os.environ.get("EPM_AE_GMM_TRANSFORM_CHUNK_ROWS", "200000")
+    )
+    chunk = max(10_000, int(chunk))
+    out = np.zeros((n_rows, len(selected_columns)), dtype=np.float32)
+    idx_values = x_base.index if index is None else index
+    for start in range(0, n_rows, chunk):
+        end = min(start + chunk, n_rows)
+        idx_slice = idx_values[start:end] if hasattr(idx_values, "__getitem__") else x_base.index[start:end]
+        values = transform_ae_gmm_features(
+            x_base.iloc[start:end],
+            state,
+            index=idx_slice,
+        ).reindex(columns=selected_columns, fill_value=0.0)
+        out[start:end, :] = values.to_numpy(dtype=np.float32, copy=False)
+    return pd.DataFrame(out, index=idx_values, columns=selected_columns)
 
 
 def _crossfit_ae_gmm_features(
@@ -1222,6 +1308,7 @@ def _crossfit_ae_gmm_features(
     generated_features: list[str],
     random_state: int,
     max_train_rows: int,
+    gmm_max_train_rows: int,
     ae_max_iter: int,
     require_both_sides: bool,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
@@ -1245,6 +1332,7 @@ def _crossfit_ae_gmm_features(
             row_positions=inner_train,
             random_state=int(random_state + 10_000 + fold_i * 101),
             max_train_rows=int(max_train_rows),
+            gmm_max_train_rows=int(gmm_max_train_rows),
             ae_max_iter=int(ae_max_iter),
             require_both_sides=bool(require_both_sides),
         )
@@ -1285,8 +1373,17 @@ def _append_fold_ae_gmm_state_features(
     valid_metrics: pd.DataFrame,
     enabled: bool,
     max_train_rows: int,
+    gmm_max_train_rows: int,
     ae_max_iter: int,
     random_state: int,
+    state_artifact_dir: Path | None = None,
+    state_artifact_name: str = "",
+    fixed_state_path: Path | None = None,
+    output_feature_subset: list[str] | None = None,
+    input_feature_cols: Sequence[str] | None = None,
+    fit_x_base: pd.DataFrame | None = None,
+    fit_train_frame: pd.DataFrame | None = None,
+    fit_train_metrics: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[str], dict[str, Any]]:
     if not enabled:
         return x_train, x_valid, [], {
@@ -1294,48 +1391,101 @@ def _append_fold_ae_gmm_state_features(
             "ae_gmm_state_feature_status": "disabled",
             "ae_gmm_state_feature_count": 0,
         }
-    base_features = [
-        str(col)
-        for col in x_train.columns
-        if str(col) not in set(str(v) for v in AE_GMM_FEATURE_COLUMNS)
-    ]
+    excluded_generated = set(str(v) for v in AE_GMM_FEATURE_COLUMNS)
+    if input_feature_cols is not None:
+        requested_inputs = [str(col) for col in input_feature_cols if str(col).strip()]
+        base_features = [
+            col
+            for col in dict.fromkeys(requested_inputs)
+            if col in x_train.columns and col not in excluded_generated
+        ]
+    else:
+        base_features = [
+            str(col)
+            for col in x_train.columns
+            if str(col) not in excluded_generated
+        ]
     if len(base_features) < 2 or len(x_train) < 500:
         return x_train, x_valid, [], {
             "ae_gmm_state_features_enabled": False,
             "ae_gmm_state_feature_status": "insufficient_rows_or_features",
             "ae_gmm_state_feature_count": 0,
             "ae_gmm_state_input_feature_count": int(len(base_features)),
+            "ae_gmm_state_input_feature_policy": "explicit_override" if input_feature_cols is not None else "all_non_generated",
         }
     x_train_base = x_train.reindex(columns=base_features).astype(np.float32, copy=False)
     x_valid_base = x_valid.reindex(columns=base_features).astype(np.float32, copy=False)
+    fit_x_base_local = (
+        fit_x_base.reindex(columns=base_features).astype(np.float32, copy=False)
+        if fit_x_base is not None
+        else x_train_base
+    )
     train_metrics_local = train_metrics.reset_index(drop=True)
     valid_metrics_local = valid_metrics.reset_index(drop=True)
     train_frame_local = train_frame.reset_index(drop=True)
-    all_train_positions = np.arange(len(x_train_base), dtype=np.int64)
-    state = _fit_ae_gmm_state_for_rows(
-        x_base=x_train_base,
-        metrics=train_metrics_local,
-        train_frame=train_frame_local,
-        row_positions=all_train_positions,
-        random_state=int(random_state),
-        max_train_rows=int(max_train_rows),
-        ae_max_iter=int(ae_max_iter),
-        require_both_sides=True,
+    fit_train_metrics_local = (
+        fit_train_metrics.reset_index(drop=True) if fit_train_metrics is not None else train_metrics_local
     )
+    fit_train_frame_local = (
+        fit_train_frame.reset_index(drop=True) if fit_train_frame is not None else train_frame_local
+    )
+    all_train_positions = np.arange(len(fit_x_base_local), dtype=np.int64)
+    if fixed_state_path is not None:
+        state = load_ae_gmm_state_artifact(fixed_state_path)
+        state_source = "loaded_fixed_state_artifact"
+    else:
+        state = _fit_ae_gmm_state_for_rows(
+            x_base=fit_x_base_local,
+            metrics=fit_train_metrics_local,
+            train_frame=fit_train_frame_local,
+            row_positions=all_train_positions,
+            random_state=int(random_state),
+            max_train_rows=int(max_train_rows),
+            gmm_max_train_rows=int(gmm_max_train_rows),
+            ae_max_iter=int(ae_max_iter),
+            require_both_sides=True,
+        )
+        state_source = "fit_on_outer_train_fold"
     if not bool(state.get("enabled", False)):
+        persisted_disabled = _persist_ae_gmm_state_artifact(
+            state=state,
+            artifact_dir=state_artifact_dir,
+            artifact_name=state_artifact_name,
+            scope="global_disabled",
+            train_rows=len(fit_x_base_local),
+            valid_rows=len(x_valid_base),
+            input_feature_count=len(base_features),
+        )
         return x_train, x_valid, [], {
             "ae_gmm_state_features_enabled": False,
             "ae_gmm_state_feature_status": str(state.get("reason", "state_disabled")),
             "ae_gmm_state_feature_count": 0,
             "ae_gmm_state_input_feature_count": int(len(base_features)),
+            "ae_gmm_state_input_feature_policy": "explicit_override" if input_feature_cols is not None else "all_non_generated",
             "ae_gmm_state_hpo_report_count": int(state.get("hpo_report_count", 0) or 0),
+            **persisted_disabled,
         }
     valid_generated = transform_ae_gmm_features(x_valid_base, state, index=x_valid.index)
     all_generated_features = [str(col) for col in valid_generated.columns]
     generated_features = _ae_gmm_smoke_feature_policy_columns(all_generated_features)
     generated_features = list(dict.fromkeys([*generated_features, "ae_gmm_oof_available"]))
+    output_subset = set(str(c) for c in (output_feature_subset or []) if str(c).strip())
+    if output_subset:
+        generated_features = [col for col in generated_features if col in output_subset]
+    state["_emitted_feature_subset"] = list(generated_features)
+    state["_side_context_mode"] = str(AE_GMM_SIDE_CONTEXT_MODE or "off")
+    state["_transform_chunk_rows"] = int(os.environ.get("EPM_AE_GMM_TRANSFORM_CHUNK_ROWS", "200000"))
+    persisted_artifacts: dict[str, Any] = _persist_ae_gmm_state_artifact(
+        state=state,
+        artifact_dir=state_artifact_dir,
+        artifact_name=state_artifact_name,
+        scope="global",
+        train_rows=len(fit_x_base_local),
+        valid_rows=len(x_valid_base),
+        input_feature_count=len(base_features),
+    )
     valid_generated["ae_gmm_oof_available"] = np.float32(1.0)
-    if bool(AE_GMM_CROSSFIT_TRAIN_FEATURES):
+    if bool(AE_GMM_CROSSFIT_TRAIN_FEATURES) and fixed_state_path is None:
         train_generated, crossfit_diag = _crossfit_ae_gmm_features(
             x_base=x_train_base,
             metrics=train_metrics_local,
@@ -1343,13 +1493,16 @@ def _append_fold_ae_gmm_state_features(
             generated_features=generated_features,
             random_state=int(random_state),
             max_train_rows=int(max_train_rows),
+            gmm_max_train_rows=int(gmm_max_train_rows),
             ae_max_iter=int(ae_max_iter),
             require_both_sides=True,
         )
     else:
-        train_generated = transform_ae_gmm_features(x_train_base, state, index=x_train.index).reindex(
+        train_generated = _transform_ae_gmm_features_selected_chunked(
+            x_train_base,
+            state,
+            index=x_train.index,
             columns=generated_features,
-            fill_value=0.0,
         )
         crossfit_diag = {
             "crossfit_enabled": False,
@@ -1368,172 +1521,218 @@ def _append_fold_ae_gmm_state_features(
     side_feature_frames_valid: list[pd.DataFrame] = []
     side_generated_features: list[str] = []
     if _side_context_enabled():
-        side_train = pd.to_numeric(
-            train_metrics_local.get("side", pd.Series(1.0, index=train_metrics_local.index)),
-            errors="coerce",
-        ).fillna(1.0)
-        side_valid = pd.to_numeric(
-            valid_metrics_local.get("side", pd.Series(1.0, index=valid_metrics_local.index)),
-            errors="coerce",
-        ).fillna(1.0)
-        for side_name, side_mask in (
-            ("long", side_train.ge(0.0).to_numpy(dtype=bool)),
-            ("short", side_train.lt(0.0).to_numpy(dtype=bool)),
-        ):
-            valid_side_mask = (
-                side_valid.ge(0.0).to_numpy(dtype=bool)
-                if side_name == "long"
-                else side_valid.lt(0.0).to_numpy(dtype=bool)
-            )
-            if int(side_mask.sum()) < 250:
-                side_context_reports.append(
-                    {
-                        "side": side_name,
-                        "status": "insufficient_train_rows",
-                        "train_rows": int(side_mask.sum()),
-                        "feature_count": 0,
-                    }
-                )
-                continue
-            side_state = fit_ae_gmm_state(
-                x_train_base.reset_index(drop=True).iloc[side_mask].reset_index(drop=True),
-                economic_targets=_fold_ae_gmm_economic_targets(
-                    train_metrics_local.iloc[side_mask].reset_index(drop=True),
-                    train_frame=train_frame_local.iloc[side_mask].reset_index(drop=True),
-                ),
-                random_state=int(random_state + (70_000 if side_name == "long" else 80_000)),
-                max_train_rows=max(200, int(max_train_rows // 2)) if int(max_train_rows) > 0 else 0,
-                ae_max_iter=int(ae_max_iter),
-                require_both_sides=False,
-            )
-            if not bool(side_state.get("enabled", False)):
-                side_context_reports.append(
-                    {
-                        "side": side_name,
-                        "status": str(side_state.get("reason", "state_disabled")),
-                        "train_rows": int(side_mask.sum()),
-                        "feature_count": 0,
-                    }
-                )
-                continue
-            side_train_generated = pd.DataFrame(
-                0.0,
-                index=x_train.index,
-                columns=generated_features,
-                dtype=np.float32,
-            )
-            side_train_available = pd.Series(0.0, index=x_train.index, dtype=np.float32)
-            side_valid_generated = pd.DataFrame(
-                0.0,
-                index=x_valid.index,
-                columns=generated_features,
-                dtype=np.float32,
-            )
-            side_valid_available = pd.Series(0.0, index=x_valid.index, dtype=np.float32)
-            side_crossfit_rows = 0
-            side_crossfit_folds = 0
-            side_crossfit_failed = 0
-            if bool(AE_GMM_CROSSFIT_TRAIN_FEATURES):
-                inner_splits = _chronological_inner_oof_splits(
-                    train_frame=train_frame_local,
-                    n_rows=len(x_train_base),
-                    min_train_rows=max(500, min(2_000, int(max_train_rows) if int(max_train_rows) > 0 else 500)),
-                )
-                for fold_i, (inner_train, inner_valid) in enumerate(inner_splits):
-                    side_inner_train = inner_train[side_mask[inner_train]]
-                    side_inner_valid = inner_valid[side_mask[inner_valid]]
-                    if int(side_inner_train.size) < 250 or int(side_inner_valid.size) <= 0:
-                        continue
-                    side_inner_state = _fit_ae_gmm_state_for_rows(
-                        x_base=x_train_base,
-                        metrics=train_metrics_local,
-                        train_frame=train_frame_local,
-                        row_positions=side_inner_train,
-                        random_state=int(
-                            random_state
-                            + (170_000 if side_name == "long" else 180_000)
-                            + fold_i * 101
-                        ),
-                        max_train_rows=max(200, int(max_train_rows // 2)) if int(max_train_rows) > 0 else 0,
-                        ae_max_iter=int(ae_max_iter),
-                        require_both_sides=False,
-                    )
-                    if not bool(side_inner_state.get("enabled", False)):
-                        side_crossfit_failed += 1
-                        continue
-                    side_train_values = transform_ae_gmm_features(
-                        x_train_base.reset_index(drop=True).iloc[side_inner_valid].reset_index(drop=True),
-                        side_inner_state,
-                        index=x_train.index[side_inner_valid],
-                    ).reindex(columns=generated_features, fill_value=0.0)
-                    side_train_generated.loc[
-                        x_train.index[side_inner_valid],
-                        generated_features,
-                    ] = side_train_values.to_numpy(dtype=np.float32, copy=False)
-                    side_train_available.loc[x_train.index[side_inner_valid]] = 1.0
-                    side_crossfit_rows += int(side_inner_valid.size)
-                    side_crossfit_folds += 1
-            else:
-                side_train_values = transform_ae_gmm_features(
-                    x_train_base.reset_index(drop=True).iloc[side_mask].reset_index(drop=True),
-                    side_state,
-                    index=x_train.index[side_mask],
-                ).reindex(columns=generated_features, fill_value=0.0)
-                side_train_generated.loc[x_train.index[side_mask], generated_features] = side_train_values.to_numpy(
-                    dtype=np.float32,
-                    copy=False,
-                )
-                side_train_available.loc[x_train.index[side_mask]] = 1.0
-                side_crossfit_rows = int(side_mask.sum())
-            if bool(valid_side_mask.any()):
-                side_valid_values = transform_ae_gmm_features(
-                    x_valid_base.reset_index(drop=True).iloc[valid_side_mask].reset_index(drop=True),
-                    side_state,
-                    index=x_valid.index[valid_side_mask],
-                ).reindex(columns=generated_features, fill_value=0.0)
-                side_valid_generated.loc[x_valid.index[valid_side_mask], generated_features] = side_valid_values.to_numpy(
-                    dtype=np.float32,
-                    copy=False,
-                )
-                side_valid_available.loc[x_valid.index[valid_side_mask]] = 1.0
-            if "ae_gmm_oof_available" in generated_features:
-                side_train_generated.loc[:, "ae_gmm_oof_available"] = side_train_available.to_numpy(
-                    dtype=np.float32,
-                    copy=False,
-                )
-                side_valid_generated.loc[:, "ae_gmm_oof_available"] = side_valid_available.to_numpy(
-                    dtype=np.float32,
-                    copy=False,
-                )
-            side_train_prefixed = _prefixed_side_context(side_train_generated, side_name)
-            side_valid_prefixed = _prefixed_side_context(side_valid_generated, side_name)
-            side_feature_frames_train.append(side_train_prefixed)
-            side_feature_frames_valid.append(side_valid_prefixed)
-            side_generated_features.extend(str(col) for col in side_train_prefixed.columns)
-            side_selected = dict(side_state.get("selected_config", {}) or {})
+        if fixed_state_path is not None:
             side_context_reports.append(
                 {
-                    "side": side_name,
-                    "status": "ok",
-                    "train_rows": int(side_mask.sum()),
-                    "valid_rows": int(valid_side_mask.sum()),
-                    "feature_count": int(side_train_prefixed.shape[1]),
-                    "train_crossfit_rows": int(side_crossfit_rows),
-                    "train_crossfit_uncovered_rows": int(max(int(side_mask.sum()) - side_crossfit_rows, 0)),
-                    "train_crossfit_coverage": float(side_crossfit_rows / max(int(side_mask.sum()), 1)),
-                    "train_crossfit_folds": int(side_crossfit_folds),
-                    "train_crossfit_failed_folds": int(side_crossfit_failed),
-                    "n_components": int(side_state.get("gmm_n_components", 0) or 0),
-                    "path_cleanliness_score": float(
-                        side_selected.get("path_cleanliness_score", float("nan"))
-                    ),
-                    "temporal_concentration_score": float(
-                        side_selected.get("temporal_concentration_score", float("nan"))
-                    ),
+                    "status": "skipped_for_fixed_global_state",
+                    "reason": "side-specific AE/GMM states require explicit side-state artifacts",
+                    "feature_count": 0,
                 }
             )
-    train_concat = [x_train, train_generated, *side_feature_frames_train]
-    valid_concat = [x_valid, valid_generated, *side_feature_frames_valid]
+        else:
+            side_train = pd.to_numeric(
+                train_metrics_local.get("side", pd.Series(1.0, index=train_metrics_local.index)),
+                errors="coerce",
+            ).fillna(1.0)
+            side_valid = pd.to_numeric(
+                valid_metrics_local.get("side", pd.Series(1.0, index=valid_metrics_local.index)),
+                errors="coerce",
+            ).fillna(1.0)
+            for side_name, side_mask in (
+                ("long", side_train.ge(0.0).to_numpy(dtype=bool)),
+                ("short", side_train.lt(0.0).to_numpy(dtype=bool)),
+            ):
+                valid_side_mask = (
+                    side_valid.ge(0.0).to_numpy(dtype=bool)
+                    if side_name == "long"
+                    else side_valid.lt(0.0).to_numpy(dtype=bool)
+                )
+                if int(side_mask.sum()) < 250:
+                    side_context_reports.append(
+                        {
+                            "side": side_name,
+                            "status": "insufficient_train_rows",
+                            "train_rows": int(side_mask.sum()),
+                            "feature_count": 0,
+                        }
+                    )
+                    continue
+                side_state = fit_ae_gmm_state(
+                    x_train_base.reset_index(drop=True).iloc[side_mask].reset_index(drop=True),
+                    economic_targets=_fold_ae_gmm_economic_targets(
+                        train_metrics_local.iloc[side_mask].reset_index(drop=True),
+                        train_frame=train_frame_local.iloc[side_mask].reset_index(drop=True),
+                    ),
+                    random_state=int(random_state + (70_000 if side_name == "long" else 80_000)),
+                    max_train_rows=max(200, int(max_train_rows // 2)) if int(max_train_rows) > 0 else 0,
+                    gmm_max_train_rows=max(500, int(gmm_max_train_rows // 2)) if int(gmm_max_train_rows) > 0 else 0,
+                    ae_max_iter=int(ae_max_iter),
+                    require_both_sides=False,
+                )
+                if not bool(side_state.get("enabled", False)):
+                    side_disabled_persist = _persist_ae_gmm_state_artifact(
+                        state=side_state,
+                        artifact_dir=state_artifact_dir,
+                        artifact_name=state_artifact_name,
+                        scope=f"side_{side_name}_disabled",
+                        train_rows=int(side_mask.sum()),
+                        valid_rows=int(valid_side_mask.sum()),
+                        input_feature_count=len(base_features),
+                    )
+                    side_context_reports.append(
+                        {
+                            "side": side_name,
+                            "status": str(side_state.get("reason", "state_disabled")),
+                            "train_rows": int(side_mask.sum()),
+                            "feature_count": 0,
+                            **side_disabled_persist,
+                        }
+                    )
+                    continue
+                side_train_generated = pd.DataFrame(
+                    0.0,
+                    index=x_train.index,
+                    columns=generated_features,
+                    dtype=np.float32,
+                )
+                side_train_available = pd.Series(0.0, index=x_train.index, dtype=np.float32)
+                side_valid_generated = pd.DataFrame(
+                    0.0,
+                    index=x_valid.index,
+                    columns=generated_features,
+                    dtype=np.float32,
+                )
+                side_valid_available = pd.Series(0.0, index=x_valid.index, dtype=np.float32)
+                side_crossfit_rows = 0
+                side_crossfit_folds = 0
+                side_crossfit_failed = 0
+                if bool(AE_GMM_CROSSFIT_TRAIN_FEATURES):
+                    inner_splits = _chronological_inner_oof_splits(
+                        train_frame=train_frame_local,
+                        n_rows=len(x_train_base),
+                        min_train_rows=max(500, min(2_000, int(max_train_rows) if int(max_train_rows) > 0 else 500)),
+                    )
+                    for fold_i, (inner_train, inner_valid) in enumerate(inner_splits):
+                        side_inner_train = inner_train[side_mask[inner_train]]
+                        side_inner_valid = inner_valid[side_mask[inner_valid]]
+                        if int(side_inner_train.size) < 250 or int(side_inner_valid.size) <= 0:
+                            continue
+                        side_inner_state = _fit_ae_gmm_state_for_rows(
+                            x_base=x_train_base,
+                            metrics=train_metrics_local,
+                            train_frame=train_frame_local,
+                            row_positions=side_inner_train,
+                            random_state=int(
+                                random_state
+                                + (170_000 if side_name == "long" else 180_000)
+                                + fold_i * 101
+                            ),
+                            max_train_rows=max(200, int(max_train_rows // 2)) if int(max_train_rows) > 0 else 0,
+                            gmm_max_train_rows=max(500, int(gmm_max_train_rows // 2)) if int(gmm_max_train_rows) > 0 else 0,
+                            ae_max_iter=int(ae_max_iter),
+                            require_both_sides=False,
+                        )
+                        if not bool(side_inner_state.get("enabled", False)):
+                            side_crossfit_failed += 1
+                            continue
+                        side_train_values = transform_ae_gmm_features(
+                            x_train_base.reset_index(drop=True).iloc[side_inner_valid].reset_index(drop=True),
+                            side_inner_state,
+                            index=x_train.index[side_inner_valid],
+                        ).reindex(columns=generated_features, fill_value=0.0)
+                        side_train_generated.loc[
+                            x_train.index[side_inner_valid],
+                            generated_features,
+                        ] = side_train_values.to_numpy(dtype=np.float32, copy=False)
+                        side_train_available.loc[x_train.index[side_inner_valid]] = 1.0
+                        side_crossfit_rows += int(side_inner_valid.size)
+                        side_crossfit_folds += 1
+                else:
+                    side_train_values = _transform_ae_gmm_features_selected_chunked(
+                        x_train_base.reset_index(drop=True).iloc[side_mask].reset_index(drop=True),
+                        side_state,
+                        index=x_train.index[side_mask],
+                        columns=generated_features,
+                    )
+                    side_train_generated.loc[x_train.index[side_mask], generated_features] = side_train_values.to_numpy(
+                        dtype=np.float32,
+                        copy=False,
+                    )
+                    side_train_available.loc[x_train.index[side_mask]] = 1.0
+                    side_crossfit_rows = int(side_mask.sum())
+                if bool(valid_side_mask.any()):
+                    side_valid_values = transform_ae_gmm_features(
+                        x_valid_base.reset_index(drop=True).iloc[valid_side_mask].reset_index(drop=True),
+                        side_state,
+                        index=x_valid.index[valid_side_mask],
+                    ).reindex(columns=generated_features, fill_value=0.0)
+                    side_valid_generated.loc[x_valid.index[valid_side_mask], generated_features] = side_valid_values.to_numpy(
+                        dtype=np.float32,
+                        copy=False,
+                    )
+                    side_valid_available.loc[x_valid.index[valid_side_mask]] = 1.0
+                if "ae_gmm_oof_available" in generated_features:
+                    side_train_generated.loc[:, "ae_gmm_oof_available"] = side_train_available.to_numpy(
+                        dtype=np.float32,
+                        copy=False,
+                    )
+                    side_valid_generated.loc[:, "ae_gmm_oof_available"] = side_valid_available.to_numpy(
+                        dtype=np.float32,
+                        copy=False,
+                    )
+                side_train_prefixed = _prefixed_side_context(side_train_generated, side_name)
+                side_valid_prefixed = _prefixed_side_context(side_valid_generated, side_name)
+                if output_subset:
+                    side_keep = [col for col in side_train_prefixed.columns if str(col) in output_subset]
+                    side_train_prefixed = side_train_prefixed.reindex(columns=side_keep, fill_value=0.0)
+                    side_valid_prefixed = side_valid_prefixed.reindex(columns=side_keep, fill_value=0.0)
+                side_feature_frames_train.append(side_train_prefixed)
+                side_feature_frames_valid.append(side_valid_prefixed)
+                side_generated_features.extend(str(col) for col in side_train_prefixed.columns)
+                side_state["_emitted_feature_subset"] = [str(col) for col in side_train_prefixed.columns]
+                side_state["_side_context_mode"] = f"side_{side_name}"
+                side_state["_transform_chunk_rows"] = int(os.environ.get("EPM_AE_GMM_TRANSFORM_CHUNK_ROWS", "200000"))
+                side_persisted = _persist_ae_gmm_state_artifact(
+                    state=side_state,
+                    artifact_dir=state_artifact_dir,
+                    artifact_name=state_artifact_name,
+                    scope=f"side_{side_name}",
+                    train_rows=int(side_mask.sum()),
+                    valid_rows=int(valid_side_mask.sum()),
+                    input_feature_count=len(base_features),
+                )
+                side_selected = dict(side_state.get("selected_config", {}) or {})
+                side_context_reports.append(
+                    {
+                        "side": side_name,
+                        "status": "ok",
+                        "train_rows": int(side_mask.sum()),
+                        "valid_rows": int(valid_side_mask.sum()),
+                        "feature_count": int(side_train_prefixed.shape[1]),
+                        "train_crossfit_rows": int(side_crossfit_rows),
+                        "train_crossfit_uncovered_rows": int(max(int(side_mask.sum()) - side_crossfit_rows, 0)),
+                        "train_crossfit_coverage": float(side_crossfit_rows / max(int(side_mask.sum()), 1)),
+                        "train_crossfit_folds": int(side_crossfit_folds),
+                        "train_crossfit_failed_folds": int(side_crossfit_failed),
+                        "n_components": int(side_state.get("gmm_n_components", 0) or 0),
+                        "path_cleanliness_score": float(
+                            side_selected.get("path_cleanliness_score", float("nan"))
+                        ),
+                        "temporal_concentration_score": float(
+                            side_selected.get("temporal_concentration_score", float("nan"))
+                        ),
+                        **side_persisted,
+                    }
+                )
+    if output_subset:
+        raw_keep = [col for col in output_feature_subset or [] if str(col) in x_train.columns]
+        x_train_emit = x_train.reindex(columns=raw_keep, fill_value=0.0)
+        x_valid_emit = x_valid.reindex(columns=raw_keep, fill_value=0.0)
+    else:
+        x_train_emit = x_train
+        x_valid_emit = x_valid
+    train_concat = [x_train_emit, train_generated, *side_feature_frames_train]
+    valid_concat = [x_valid_emit, valid_generated, *side_feature_frames_valid]
     x_train_out = pd.concat(train_concat, axis=1, copy=False)
     x_valid_out = pd.concat(valid_concat, axis=1, copy=False)
     emitted_features = list(generated_features) + list(side_generated_features)
@@ -1549,9 +1748,13 @@ def _append_fold_ae_gmm_state_features(
             "ae_gmm_state_feature_policy": str(AE_GMM_SMOKE_FEATURE_POLICY or "all"),
             "ae_gmm_state_all_feature_count": int(len(all_generated_features)),
             "ae_gmm_state_train_feature_scope": "inner_chronological_oof"
-            if bool(AE_GMM_CROSSFIT_TRAIN_FEATURES)
+            if bool(AE_GMM_CROSSFIT_TRAIN_FEATURES) and fixed_state_path is None
+            else "loaded_fixed_state_artifact"
+            if fixed_state_path is not None
             else "outer_train_in_sample",
             "ae_gmm_state_validation_feature_scope": "frozen_outer_train_artifact",
+            "ae_gmm_state_source": state_source,
+            "ae_gmm_state_fit_scope": "explicit_fit_frame" if fit_x_base is not None else "outer_train_fold",
             "ae_gmm_state_crossfit_enabled": bool(AE_GMM_CROSSFIT_TRAIN_FEATURES),
             "ae_gmm_state_crossfit_split_count": int(crossfit_diag.get("crossfit_split_count", 0)),
             "ae_gmm_state_crossfit_fitted_folds": int(crossfit_diag.get("crossfit_fitted_folds", 0)),
@@ -1564,7 +1767,14 @@ def _append_fold_ae_gmm_state_features(
             "ae_gmm_side_context_feature_count": int(len(side_generated_features)),
             "ae_gmm_side_context_report": json.dumps(_json_safe(side_context_reports)),
             "ae_gmm_state_input_feature_count": int(len(base_features)),
+            "ae_gmm_state_input_feature_policy": "explicit_override" if input_feature_cols is not None else "all_non_generated",
             "ae_gmm_state_hpo_report_count": int(state.get("hpo_report_count", 0) or 0),
+            "ae_gmm_state_train_rows_available": int(state.get("train_rows_available", len(fit_x_base_local)) or 0),
+            "ae_gmm_state_ae_fit_rows": int(state.get("ae_fit_rows", 0) or 0),
+            "ae_gmm_state_gmm_fit_rows": int(state.get("gmm_fit_rows", 0) or 0),
+            "ae_gmm_state_ae_max_train_rows": int(state.get("ae_max_train_rows", max_train_rows) or 0),
+            "ae_gmm_state_gmm_max_train_rows": int(state.get("gmm_max_train_rows", gmm_max_train_rows) or 0),
+            "ae_gmm_state_sample_policy": str(state.get("sample_policy", "")),
             "ae_gmm_state_n_components": int(state.get("gmm_n_components", 0) or 0),
             "ae_gmm_state_reg_covar": float(state.get("gmm_reg_covar", float("nan"))),
             "ae_gmm_state_smooth_lambda": float(state.get("smooth_lambda", float("nan"))),
@@ -1607,6 +1817,12 @@ def _append_fold_ae_gmm_state_features(
             ),
             "ae_gmm_state_min_occupancy": float(selected_config.get("min_occupancy", float("nan"))),
             "ae_gmm_state_max_occupancy": float(selected_config.get("max_occupancy", float("nan"))),
+            "ae_gmm_state_artifact_dir": str(state_artifact_dir) if state_artifact_dir is not None else None,
+            "ae_gmm_frozen_replay_contract": (
+                "global and side AE/GMM states fit on the outer train fold are persisted; "
+                "validation/OOS rows are transformed with those frozen train-fitted states"
+            ),
+            **persisted_artifacts,
         },
     )
 
@@ -3548,6 +3764,7 @@ def _run_month(
     candidate_ledger_fast_mode: bool,
     include_ae_gmm_state_features: bool,
     ae_gmm_state_feature_max_train_rows: int,
+    ae_gmm_state_feature_gmm_max_train_rows: int,
     ae_gmm_state_feature_max_iter: int,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     month_period = frame["__ts__"].dt.to_period("M").astype(str)
@@ -3585,6 +3802,7 @@ def _run_month(
         valid_metrics=valid_metrics,
         enabled=bool(include_ae_gmm_state_features),
         max_train_rows=int(ae_gmm_state_feature_max_train_rows),
+        gmm_max_train_rows=int(ae_gmm_state_feature_gmm_max_train_rows),
         ae_max_iter=int(ae_gmm_state_feature_max_iter),
         random_state=90221 + sum((i + 1) * ord(ch) for i, ch in enumerate(str(month))),
     )
@@ -10767,6 +10985,7 @@ def run_smoke(
     max_spread_bps: float | None = None,
     include_ae_gmm_state_features: bool = True,
     ae_gmm_state_feature_max_train_rows: int = DEFAULT_AE_GMM_STATE_FEATURE_MAX_TRAIN_ROWS,
+    ae_gmm_state_feature_gmm_max_train_rows: int = DEFAULT_AE_GMM_STATE_FEATURE_GMM_MAX_TRAIN_ROWS,
     ae_gmm_state_feature_max_iter: int = DEFAULT_AE_GMM_STATE_FEATURE_MAX_ITER,
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -10848,6 +11067,7 @@ def run_smoke(
             candidate_ledger_fast_mode=bool(candidate_ledger_fast_mode),
             include_ae_gmm_state_features=bool(include_ae_gmm_state_features),
             ae_gmm_state_feature_max_train_rows=int(ae_gmm_state_feature_max_train_rows),
+            ae_gmm_state_feature_gmm_max_train_rows=int(ae_gmm_state_feature_gmm_max_train_rows),
             ae_gmm_state_feature_max_iter=int(ae_gmm_state_feature_max_iter),
         )
         monthly_rows.extend(rows)
@@ -10923,6 +11143,7 @@ def run_smoke(
             "crossfit_train_features": bool(AE_GMM_CROSSFIT_TRAIN_FEATURES),
             "feature_names": ae_gmm_feature_names,
             "max_train_rows": int(ae_gmm_state_feature_max_train_rows),
+            "gmm_max_train_rows": int(ae_gmm_state_feature_gmm_max_train_rows),
             "ae_max_iter": int(ae_gmm_state_feature_max_iter),
             "fit_scope": "prior_month_fold_only",
             "validation_transform": "pre_entry_features_plus_prior_fold_state",
@@ -11077,7 +11298,13 @@ def parse_args() -> argparse.Namespace:
         "--ae-gmm-state-feature-max-train-rows",
         type=int,
         default=DEFAULT_AE_GMM_STATE_FEATURE_MAX_TRAIN_ROWS,
-        help="Maximum prior-fold rows used to fit the generated AE/GMM state feature transform.",
+        help="Maximum prior-fold rows used to fit the denoising AE in the generated AE/GMM state transform.",
+    )
+    parser.add_argument(
+        "--ae-gmm-state-feature-gmm-max-train-rows",
+        type=int,
+        default=DEFAULT_AE_GMM_STATE_FEATURE_GMM_MAX_TRAIN_ROWS,
+        help="Maximum prior-fold latent rows used to fit/HPO the GMM after the AE is frozen.",
     )
     parser.add_argument(
         "--ae-gmm-state-feature-max-iter",
@@ -11118,6 +11345,7 @@ def main() -> int:
         max_spread_bps=args.max_spread_bps,
         include_ae_gmm_state_features=not bool(args.disable_ae_gmm_state_features),
         ae_gmm_state_feature_max_train_rows=int(args.ae_gmm_state_feature_max_train_rows),
+        ae_gmm_state_feature_gmm_max_train_rows=int(args.ae_gmm_state_feature_gmm_max_train_rows),
         ae_gmm_state_feature_max_iter=int(args.ae_gmm_state_feature_max_iter),
     )
     print(json.dumps(_json_safe(manifest), indent=2))

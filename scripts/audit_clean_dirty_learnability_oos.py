@@ -960,6 +960,7 @@ def run_audit(
             valid_metrics=valid_metrics,
             enabled=True,
             max_train_rows=int(ae_gmm_state_feature_max_train_rows),
+            gmm_max_train_rows=int(ae_gmm_state_feature_max_train_rows),
             ae_max_iter=int(ae_gmm_state_feature_max_iter),
             random_state=70001 + sum((i + 1) * ord(ch) for i, ch in enumerate(str(month))),
         )

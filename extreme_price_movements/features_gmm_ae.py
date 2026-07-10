@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 import math
 import os
+import pickle
+from pathlib import Path
 from typing import Any, Sequence
 
 import numpy as np
@@ -17,6 +20,136 @@ from .features_denoising_ae import (
     fit_denoising_autoencoder_state,
     transform_denoising_autoencoder_features,
 )
+
+
+def _ae_gmm_json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(k): _ae_gmm_json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_ae_gmm_json_safe(v) for v in value]
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, np.ndarray):
+        return [_ae_gmm_json_safe(v) for v in value.tolist()]
+    if isinstance(value, (pd.Timestamp, pd.Timedelta)):
+        return str(value)
+    if isinstance(value, float) and not np.isfinite(value):
+        return None
+    return value
+
+
+def ae_gmm_state_manifest(state: dict[str, Any], *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Small JSON-safe manifest for a persisted AE/GMM inference state."""
+    selected = dict(state.get("selected_config", {}) or {})
+    feature_columns = [str(c) for c in state.get("feature_columns", []) or []]
+    generated_columns = ae_gmm_feature_columns()
+    manifest = {
+        "schema_version": str(state.get("schema_version", "ae_gmm_v1")),
+        "enabled": bool(state.get("enabled", False)),
+        "reason": state.get("reason"),
+        "input_feature_columns": feature_columns,
+        "input_feature_columns_count": int(len(feature_columns)),
+        "feature_columns_count": int(len(feature_columns)),
+        "latent_columns": list(state.get("latent_columns", []) or []),
+        "generated_feature_columns": list(generated_columns),
+        "generated_feature_columns_count": int(len(generated_columns)),
+        "gmm_n_components": int(state.get("gmm_n_components", 0) or 0),
+        "gmm_covariance_type": state.get("gmm_covariance_type"),
+        "gmm_reg_covar": state.get("gmm_reg_covar"),
+        "smooth_lambda": state.get("smooth_lambda"),
+        "max_components": int(state.get("max_components", AE_GMM_MAX_COMPONENTS) or AE_GMM_MAX_COMPONENTS),
+        "train_rows_available": int(state.get("train_rows_available", 0) or 0),
+        "ae_fit_rows": int(state.get("ae_fit_rows", 0) or 0),
+        "gmm_fit_rows": int(state.get("gmm_fit_rows", 0) or 0),
+        "ae_max_train_rows": int(state.get("ae_max_train_rows", 0) or 0),
+        "gmm_max_train_rows": int(state.get("gmm_max_train_rows", 0) or 0),
+        "sample_policy": str(state.get("sample_policy", "")),
+        "sample_manifest": state.get("sample_manifest"),
+        "selected_config": selected,
+        "hpo_grid": state.get("hpo_grid"),
+        "hpo_report_count": int(state.get("hpo_report_count", 0) or 0),
+        "inference_contract": (
+            "Use the stored train-fitted AE scaler/autoencoder/GMM state to transform "
+            "future rows with transform_ae_gmm_features; do not refit on OOS/inference rows."
+        ),
+        "transform_rules": {
+            "function": "extreme_price_movements.features_gmm_ae.transform_ae_gmm_features",
+            "input_alignment": "reindex incoming frame to input_feature_columns in saved order",
+            "missing_input_fill_value": 0.0,
+            "nonfinite_input_handling": "caller should replace +/-inf with NaN then fill using train medians before transform",
+            "robust_scaler": "saved center/scale vectors from train rows",
+            "clip_range": state.get("clip", [-8.0, 8.0]),
+            "autoencoder_state_key": "ae_state",
+            "gmm_state_keys": [
+                "gmm_weights",
+                "gmm_means",
+                "gmm_covariances",
+                "gmm_reg_covar",
+                "smooth_lambda",
+            ],
+            "output_columns": list(generated_columns),
+            "hard_cluster_columns": ["gmm_cluster_id", "cluster_t"],
+            "posterior_columns_prefix": "gmm_cluster_posterior_",
+            "distance_columns_prefix": "gmm_dist_center_",
+            "mahalanobis_columns_prefix": "gmm_mahal_",
+            "reconstruction_error_columns": [
+                "dae_reconstruction_error",
+                "dae_reconstruction_error_zscore",
+                "dae_reconstruction_error_delta_1",
+                "dae_reconstruction_error_accel_1",
+            ],
+            "temporal_features": [
+                "cluster_speed",
+                "cluster_acceleration",
+                "gmm_posterior_delta_1",
+                "gmm_posterior_accel_1",
+            ],
+        },
+    }
+    if extra:
+        manifest.update(dict(extra))
+    return _ae_gmm_json_safe(manifest)
+
+
+def save_ae_gmm_state_artifact(
+    state: dict[str, Any],
+    path: str | os.PathLike[str],
+    *,
+    manifest_path: str | os.PathLike[str] | None = None,
+    extra_manifest: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    """Persist AE/GMM state for OOS replay and live inference parity."""
+    state_path = Path(path)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    with state_path.open("wb") as fh:
+        pickle.dump(state, fh, protocol=pickle.HIGHEST_PROTOCOL)
+    manifest_file = Path(manifest_path) if manifest_path is not None else state_path.with_suffix(".manifest.json")
+    manifest_file.parent.mkdir(parents=True, exist_ok=True)
+    manifest = ae_gmm_state_manifest(
+        state,
+        extra={
+            **(extra_manifest or {}),
+            "state_path": str(state_path),
+            "manifest_path": str(manifest_file),
+        },
+    )
+    manifest_file.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    return {"state_path": str(state_path), "manifest_path": str(manifest_file)}
+
+
+def load_ae_gmm_state_artifact(path: str | os.PathLike[str]) -> dict[str, Any]:
+    """Load a persisted AE/GMM state and validate the minimal inference contract."""
+    state_path = Path(path)
+    with state_path.open("rb") as fh:
+        state = pickle.load(fh)
+    if not isinstance(state, dict):
+        raise TypeError(f"AE/GMM state artifact must contain a dict: {state_path}")
+    if not bool(state.get("enabled", False)):
+        raise ValueError(f"AE/GMM state artifact is disabled: {state_path} reason={state.get('reason')}")
+    feature_columns = state.get("feature_columns", [])
+    if not isinstance(feature_columns, list) or len(feature_columns) < 2:
+        raise ValueError(f"AE/GMM state artifact has no usable feature_columns: {state_path}")
+    return state
 
 
 def _env_int_tuple(name: str, default: Sequence[int], *, min_value: int, max_value: int) -> tuple[int, ...]:
@@ -889,12 +1022,51 @@ def _rank01(values: list[float], *, higher_is_better: bool = True) -> list[float
     return [float(x) for x in ranks]
 
 
+def _time_spread_sample_indices(n_rows: int, max_rows: int | None) -> np.ndarray:
+    n = max(0, int(n_rows))
+    cap = int(max_rows or 0)
+    if n <= 0:
+        return np.zeros(0, dtype=np.int64)
+    if cap > 0 and n > cap:
+        return np.linspace(0, n - 1, cap, dtype=np.int64)
+    return np.arange(n, dtype=np.int64)
+
+
+def _sample_index_manifest(idx: np.ndarray, n_rows: int) -> dict[str, Any]:
+    idx = np.asarray(idx, dtype=np.int64)
+    if idx.size == 0 or int(n_rows) <= 0:
+        return {
+            "rows": 0,
+            "first_index": None,
+            "middle_index": None,
+            "last_index": None,
+            "first_frac": None,
+            "middle_frac": None,
+            "last_frac": None,
+        }
+    denom = float(max(int(n_rows) - 1, 1))
+    mid = int(idx.size // 2)
+    first = int(idx[0])
+    middle = int(idx[mid])
+    last = int(idx[-1])
+    return {
+        "rows": int(idx.size),
+        "first_index": first,
+        "middle_index": middle,
+        "last_index": last,
+        "first_frac": float(first / denom),
+        "middle_frac": float(middle / denom),
+        "last_frac": float(last / denom),
+    }
+
+
 def fit_ae_gmm_state(
     x_reference: Any,
     *,
     economic_targets: dict[str, Any] | None = None,
     random_state: int = 42,
     max_train_rows: int = 5000,
+    gmm_max_train_rows: int | None = None,
     ae_max_iter: int = 80,
     cluster_candidates: Any = None,
     reg_covar_candidates: Any = None,
@@ -914,25 +1086,29 @@ def fit_ae_gmm_state(
             "reason": "insufficient_rows_or_features",
             "feature_columns": list(x_df.columns),
         }
-    if max_train_rows > 0 and len(x_df) > int(max_train_rows):
-        idx = np.linspace(0, len(x_df) - 1, int(max_train_rows), dtype=int)
-        fit_df = x_df.iloc[idx].reset_index(drop=True)
-        economic_targets_fit = {
-            k: np.asarray(v)[idx]
-            for k, v in (economic_targets or {}).items()
-            if len(np.asarray(v)) == len(x_df)
-        }
-    else:
-        fit_df = x_df.reset_index(drop=True)
-        economic_targets_fit = economic_targets or {}
-    center, scale = _robust_scale_fit(fit_df)
-    x_scaled = _robust_scale_apply(fit_df, center, scale)
+    gmm_cap = int(max_train_rows if gmm_max_train_rows is None else gmm_max_train_rows)
+    ae_idx = _time_spread_sample_indices(len(x_df), int(max_train_rows))
+    gmm_idx = _time_spread_sample_indices(len(x_df), int(gmm_cap))
+    sample_manifest = {
+        "ae": _sample_index_manifest(ae_idx, len(x_df)),
+        "gmm": _sample_index_manifest(gmm_idx, len(x_df)),
+    }
+    ae_fit_df = x_df.iloc[ae_idx].reset_index(drop=True)
+    gmm_fit_df = x_df.iloc[gmm_idx].reset_index(drop=True)
+    economic_targets_fit = {
+        k: np.asarray(v)[gmm_idx]
+        for k, v in (economic_targets or {}).items()
+        if len(np.asarray(v)) == len(x_df)
+    }
+    center, scale = _robust_scale_fit(ae_fit_df)
+    x_scaled_ae = _robust_scale_apply(ae_fit_df, center, scale)
     ae_state = fit_denoising_autoencoder_state(
-        x_scaled,
+        x_scaled_ae,
         random_state=random_state,
         max_train_rows=max_train_rows,
         max_iter=ae_max_iter,
     )
+    x_scaled = _robust_scale_apply(gmm_fit_df, center, scale)
     ae_features = transform_denoising_autoencoder_features(
         x_scaled,
         ae_state,
@@ -945,6 +1121,13 @@ def fit_ae_gmm_state(
             "reason": "ae_b16_unavailable",
             "feature_columns": list(x_df.columns),
             "ae_state": ae_state,
+            "train_rows_available": int(len(x_df)),
+            "ae_fit_rows": int(len(ae_fit_df)),
+            "gmm_fit_rows": int(len(gmm_fit_df)),
+            "ae_max_train_rows": int(max_train_rows),
+            "gmm_max_train_rows": int(gmm_cap),
+            "sample_policy": "train_only_time_spread_evenly_spaced",
+            "sample_manifest": sample_manifest,
         }
     z = ae_features[latent_cols].to_numpy(dtype=np.float32, copy=False)
     recon = pd.to_numeric(
@@ -1111,10 +1294,22 @@ def fit_ae_gmm_state(
             "center": center.astype(float).tolist(),
             "scale": scale.astype(float).tolist(),
             "ae_state": ae_state,
+            "train_rows_available": int(len(x_df)),
+            "ae_fit_rows": int(len(ae_fit_df)),
+            "gmm_fit_rows": int(len(gmm_fit_df)),
+            "ae_max_train_rows": int(max_train_rows),
+            "gmm_max_train_rows": int(gmm_cap),
+            "sample_policy": "train_only_time_spread_evenly_spaced",
+            "sample_manifest": sample_manifest,
             "hpo_grid": {
                 "cluster_candidates": [int(v) for v in clusters_to_try],
                 "reg_covar_candidates": [float(v) for v in regs_to_try],
                 "smooth_lambda_candidates": [float(v) for v in smooth_to_try],
+                "ae_max_train_rows": int(max_train_rows),
+                "gmm_max_train_rows": int(gmm_cap),
+                "ae_fit_rows": int(len(ae_fit_df)),
+                "gmm_fit_rows": int(len(gmm_fit_df)),
+                "sample_manifest": sample_manifest,
                 "require_both_sides": bool(require_both_sides),
                 "path_aware_hpo": bool(use_path_aware_hpo),
                 "temporal_concentration_hpo": bool(use_temporal_concentration_hpo),
@@ -1173,6 +1368,13 @@ def fit_ae_gmm_state(
         "scale": scale.astype(float).tolist(),
         "clip": [-8.0, 8.0],
         "ae_state": ae_state,
+        "train_rows_available": int(len(x_df)),
+        "ae_fit_rows": int(len(ae_fit_df)),
+        "gmm_fit_rows": int(len(gmm_fit_df)),
+        "ae_max_train_rows": int(max_train_rows),
+        "gmm_max_train_rows": int(gmm_cap),
+        "sample_policy": "train_only_time_spread_evenly_spaced",
+        "sample_manifest": sample_manifest,
         "latent_columns": list(AE_GMM_LATENT_FEATURE_COLUMNS),
         "gmm_n_components": int(best_gmm.n_components),
         "gmm_covariance_type": "diag",
@@ -1190,6 +1392,11 @@ def fit_ae_gmm_state(
             "cluster_candidates": [int(v) for v in clusters_to_try],
             "reg_covar_candidates": [float(v) for v in regs_to_try],
             "smooth_lambda_candidates": [float(v) for v in smooth_to_try],
+            "ae_max_train_rows": int(max_train_rows),
+            "gmm_max_train_rows": int(gmm_cap),
+            "ae_fit_rows": int(len(ae_fit_df)),
+            "gmm_fit_rows": int(len(gmm_fit_df)),
+            "sample_manifest": sample_manifest,
             "require_both_sides": bool(require_both_sides),
             "path_aware_hpo": bool(use_path_aware_hpo),
             "temporal_concentration_hpo": bool(use_temporal_concentration_hpo),
@@ -1337,6 +1544,7 @@ def fit_transform_ae_gmm_features(
     economic_targets: dict[str, Any] | None = None,
     random_state: int = 42,
     max_train_rows: int = 5000,
+    gmm_max_train_rows: int | None = None,
     ae_max_iter: int = 80,
     cluster_candidates: Any = None,
     reg_covar_candidates: Any = None,
@@ -1352,6 +1560,7 @@ def fit_transform_ae_gmm_features(
         economic_targets=economic_targets,
         random_state=random_state,
         max_train_rows=max_train_rows,
+        gmm_max_train_rows=gmm_max_train_rows,
         ae_max_iter=ae_max_iter,
         cluster_candidates=cluster_candidates,
         reg_covar_candidates=reg_covar_candidates,

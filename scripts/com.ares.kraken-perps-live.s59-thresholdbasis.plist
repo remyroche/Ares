@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ares.kraken-perps-live.s59-thresholdbasis</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/remyroche/Documents/Ares/scripts/run_kraken_perps_live_supervisor.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/remyroche/Documents/Ares</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>RUN_ID</key>
+    <string>s59_s52_frozen_native_shadow_20260709</string>
+    <key>EPM_MODEL_ARTIFACT_RUN_ID</key>
+    <string>s59_s52_frozen_native_shadow_20260709</string>
+    <key>EPM_POLICY_ARTIFACT_RUN_ID</key>
+    <string>s59_s52_frozen_native_shadow_20260709</string>
+    <key>EPM_CHALLENGER_INTERVAL_SECONDS</key>
+    <string>30</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/remyroche/Documents/Ares/logs/kraken_perps_live_launchd_s59_thresholdbasis.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/remyroche/Documents/Ares/logs/kraken_perps_live_launchd_s59_thresholdbasis.stderr.log</string>
+</dict>
+</plist>

@@ -53,7 +53,6 @@ import json
 import os
 import re
 import resource
-import sys
 import threading
 import time
 from dataclasses import replace
@@ -117,7 +116,6 @@ from extreme_price_movements.inference.data_fetcher import (
     DataFetcher,
     classify_api_error,
     fetch_and_build_panel,
-    fetch_latest_ohlcv,
     make_exchange,
 )
 from extreme_price_movements.inference.feature_generator import (
@@ -134,7 +132,6 @@ from extreme_price_movements.inference.feature_generator import (
     generate_features,
     get_features_for_candidates,
     get_inference_required_feature_keys,
-    get_market_data,
     is_model_derived_feature_key,
     live_model_feature_store_strict,
     load_or_compute_features,
@@ -246,7 +243,6 @@ from extreme_price_movements.path_utils import mode_file_candidates
 from extreme_price_movements.inference.trade_executor import TradeExecutor
 from extreme_price_movements.inference.trade_logger import (
     TradeLogger,
-    log_trade_decision,
 )
 from extreme_price_movements.portfolio_manager import PortfolioManager
 from extreme_price_movements.utils import tprint
@@ -21622,7 +21618,6 @@ def _emit_inference_heartbeat(
 
 
 def main():
-    import argparse
 
     _load_local_env_if_present()
     _configure_numba_threading_layer()
@@ -23528,11 +23523,20 @@ def _evaluate_oco_policy(
                     position_state.update(refreshed)
                     stop_price = float(position_state.get("stop_price", stop_price))
 
-        for bar_ts, row in bars.iterrows():
-            bar_open = float(row["open"])
-            bar_high = float(row["high"])
-            bar_low = float(row["low"])
-            bar_close = float(row["close"])
+        # ⚡ Bolt: Replace slow iterrows with vectorized numpy zip to speed up intrabar evaluation loop
+        bars_index = bars.index.to_numpy()
+        bars_open = bars.get("open", pd.Series(np.nan, index=bars.index)).to_numpy()
+        bars_high = bars.get("high", pd.Series(np.nan, index=bars.index)).to_numpy()
+        bars_low = bars.get("low", pd.Series(np.nan, index=bars.index)).to_numpy()
+        bars_close = bars.get("close", pd.Series(np.nan, index=bars.index)).to_numpy()
+
+        for bar_ts, b_open, b_high, b_low, b_close in zip(
+            bars_index, bars_open, bars_high, bars_low, bars_close
+        ):
+            bar_open = float(b_open)
+            bar_high = float(b_high)
+            bar_low = float(b_low)
+            bar_close = float(b_close)
             price_dev_pct = (
                 (bar_close - entry_price) / max(abs(entry_price), 1e-12)
                 if side == "long"
